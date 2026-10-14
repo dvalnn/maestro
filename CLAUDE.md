@@ -59,3 +59,17 @@ the codebase. A well built, maintainable system is more important and mission cr
 This repo is jj-colocated, and `.claude/hooks/deny-git-mutations.py` denies `git` where jj owns the operation,
 answering with the jj that does it. The conventions, and the jj behaviour that surprises, are the `ticket-to-merge`
 skill.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as local markdown under `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` at the root plus `docs/adr/`. See `docs/agents/domain.md`.
