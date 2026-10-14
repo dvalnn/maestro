@@ -4,6 +4,20 @@ import irSchema from "../ir.schema.json";
 import { checkGraph } from "./graph";
 import type { Ir, IrDiagnostic } from "./types";
 
+export {
+	CORE_TYPES,
+	findMarked,
+	MAESTRO_TYPE,
+	type Marked,
+	registerMaestroType,
+	unreachableMarkers,
+} from "./maestro-type";
+export {
+	type Outcome,
+	type Settled,
+	settledSchema,
+	worstOutcome,
+} from "./outcome";
 export type * from "./types";
 /** The published IR JSON Schema (draft 2020-12). Also at packages/ir/ir.schema.json. */
 export { irSchema };

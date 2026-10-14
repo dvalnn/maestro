@@ -1,5 +1,7 @@
 // TypeScript view of ir.schema.json. The schema is the contract; keep these in step with it.
 
+import type { Outcome } from "./outcome";
+
 /** `code` is IR.version, IR.schema, IR.ref, IR.graph or SCOPE.duplicate. `path` is a JSON Pointer. */
 export type IrDiagnostic = {
 	code: string;
@@ -52,7 +54,7 @@ export type CodeNode = NodeBase & {
 export type AssertNode = NodeBase & {
 	kind: "assert";
 	message: string;
-	onFail: "rejected" | "failed";
+	onFail: Extract<Outcome, "rejected" | "failed">;
 };
 
 type GroupBase = NodeBase & {

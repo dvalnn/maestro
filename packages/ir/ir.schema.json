@@ -93,6 +93,11 @@
 			"pattern": "^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$"
 		},
 		"portName": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+		"qualifiedName": {
+			"description": "<namespace>.<name>: a host node kind, or an x-maestro-type name.",
+			"type": "string",
+			"pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$"
+		},
 		"schema": {
 			"description": "A JSON Schema (draft 2020-12) document. Opaque to the IR validator.",
 			"type": ["object", "boolean"]
@@ -163,8 +168,7 @@
 						{ "enum": ["code", "assert", "map", "seq", "repeat"] },
 						{
 							"description": "A host kind, namespaced as <host>.<kind>.",
-							"type": "string",
-							"pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$"
+							"$ref": "#/$defs/qualifiedName"
 						}
 					]
 				},

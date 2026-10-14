@@ -36,7 +36,39 @@
 			"cardinality": { "exact": 3 },
 			"onError": "settle",
 			"inner": { "item": { "type": "string" } },
-			"out": { "results": { "type": "array" } },
+			"out": {
+				"results": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["outcome"],
+						"additionalProperties": false,
+						"properties": {
+							"outcome": { "enum": ["ok", "skipped", "rejected", "failed"] },
+							"value": { "type": "object" },
+							"reason": { "type": "string" }
+						},
+						"oneOf": [
+							{
+								"required": ["value"],
+								"properties": {
+									"outcome": { "const": "ok" },
+									"value": true,
+									"reason": false
+								}
+							},
+							{
+								"required": ["reason"],
+								"properties": {
+									"outcome": { "enum": ["rejected", "failed"] },
+									"reason": true
+								}
+							},
+							{ "properties": { "outcome": { "const": "skipped" } } }
+						]
+					}
+				}
+			},
 			"members": { "result": "topics/draft" }
 		},
 		{
@@ -52,7 +84,39 @@
 			"id": "pick",
 			"kind": "code",
 			"label": "pick",
-			"in": { "drafts": { "type": "array" } },
+			"in": {
+				"drafts": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["outcome"],
+						"additionalProperties": false,
+						"properties": {
+							"outcome": { "enum": ["ok", "skipped", "rejected", "failed"] },
+							"value": { "type": "object" },
+							"reason": { "type": "string" }
+						},
+						"oneOf": [
+							{
+								"required": ["value"],
+								"properties": {
+									"outcome": { "const": "ok" },
+									"value": true,
+									"reason": false
+								}
+							},
+							{
+								"required": ["reason"],
+								"properties": {
+									"outcome": { "enum": ["rejected", "failed"] },
+									"reason": true
+								}
+							},
+							{ "properties": { "outcome": { "const": "skipped" } } }
+						]
+					}
+				}
+			},
 			"out": { "text": { "type": "string" } },
 			"worker": {
 				"runtime": "ts",

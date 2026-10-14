@@ -1,7 +1,6 @@
 # format check, lint, typecheck, test
 check:
-    bunx biome format .
-    bunx biome lint .
+    bunx biome check .
     bunx tsc --noEmit
     bun test
 

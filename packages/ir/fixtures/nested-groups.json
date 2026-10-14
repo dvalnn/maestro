@@ -18,7 +18,39 @@
 			"cardinality": { "exact": 2 },
 			"onError": "settle",
 			"inner": { "item": { "type": "string" } },
-			"out": { "results": { "type": "array" } },
+			"out": {
+				"results": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["outcome"],
+						"additionalProperties": false,
+						"properties": {
+							"outcome": { "enum": ["ok", "skipped", "rejected", "failed"] },
+							"value": { "type": "object" },
+							"reason": { "type": "string" }
+						},
+						"oneOf": [
+							{
+								"required": ["value"],
+								"properties": {
+									"outcome": { "const": "ok" },
+									"value": true,
+									"reason": false
+								}
+							},
+							{
+								"required": ["reason"],
+								"properties": {
+									"outcome": { "enum": ["rejected", "failed"] },
+									"reason": true
+								}
+							},
+							{ "properties": { "outcome": { "const": "skipped" } } }
+						]
+					}
+				}
+			},
 			"members": { "draft": "angles/polish", "critique": "angles/critique" }
 		},
 		{
@@ -64,7 +96,39 @@
 			"id": "tally",
 			"kind": "code",
 			"label": "tally",
-			"in": { "angles": { "type": "array" } },
+			"in": {
+				"angles": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["outcome"],
+						"additionalProperties": false,
+						"properties": {
+							"outcome": { "enum": ["ok", "skipped", "rejected", "failed"] },
+							"value": { "type": "object" },
+							"reason": { "type": "string" }
+						},
+						"oneOf": [
+							{
+								"required": ["value"],
+								"properties": {
+									"outcome": { "const": "ok" },
+									"value": true,
+									"reason": false
+								}
+							},
+							{
+								"required": ["reason"],
+								"properties": {
+									"outcome": { "enum": ["rejected", "failed"] },
+									"reason": true
+								}
+							},
+							{ "properties": { "outcome": { "const": "skipped" } } }
+						]
+					}
+				}
+			},
 			"out": { "okCount": { "type": "integer" }, "any": { "type": "boolean" } },
 			"worker": {
 				"runtime": "ts",

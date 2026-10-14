@@ -5,7 +5,9 @@ TypeScript SDK, or any other language) and the engine. This package holds:
 
 - `ir.schema.json`: the published JSON Schema (draft 2020-12). It is the contract, and it is usable with any
   validator.
-- `src/`: `parseIr`, `IR_VERSION`, `irSchema` and the TypeScript types.
+- `src/`: `parseIr`, `IR_VERSION`, `irSchema` and the TypeScript types, plus the shared contracts below: outcomes
+  (`Outcome`, `Settled`, `worstOutcome`, `settledSchema`) and type markers (`MAESTRO_TYPE`, `CORE_TYPES`,
+  `registerMaestroType`, `findMarked`, `unreachableMarkers`).
 - `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`.
 - `test/read_ir.py`: an independent reader (Python standard library only), which proves the format is readable without
   maestro code.
@@ -57,8 +59,8 @@ from the scope path and label (IR-01). A `parent` names a scope or a group node.
 diagnostics and do not change execution. Groups do.
 
 Every schema inside the IR (ports, params, config) is a JSON Schema document that the IR treats as opaque, except for
-the `x-maestro-type` annotation that names artifacts and host types (ADR 0007). Edge type checks are pre-flight's job
-(CORE-02), not this package's.
+the `x-maestro-type` annotation that names artifacts and host types ([Type markers](#type-markers-x-maestro-type)).
+Edge type checks are pre-flight's job (CORE-02), not this package's.
 
 ## Nodes
 
@@ -136,13 +138,88 @@ Enforced by `parseIr` after the schema:
 
 Violations of rules 3 to 8 are `IR.graph`. Shape violations are `IR.schema`, and version problems are `IR.version`.
 
+## Outcomes
+
+A node settles `ok`, `rejected`, `failed` or `skipped` (`Outcome`, CORE-04). A settled value is `Settled<T>`:
+
+```ts
+type Settled<T> =
+	| { outcome: "ok"; value: T }
+	| { outcome: "rejected" | "failed"; value?: T; reason: string }
+	| { outcome: "skipped"; value?: T; reason?: string };
+```
+
+`worstOutcome(outcomes)` is the one rule wherever several outcomes collapse into one: `failed` > `rejected` >
+`skipped` > `ok`, and an empty input is `ok` (ADR 0006). It decides a `map` member with several results and a `map`
+with `onError: "propagate"`. `firstOk` with no `ok` input first counts `skipped` inputs as `rejected`, then takes the
+worst.
+
+`settledSchema(T)` is the JSON Schema of `Settled<T>`, closed to `outcome`, `value` and `reason`:
+
+- `ok` requires `value` and has no `reason`.
+- `rejected` and `failed` require `reason`, and `value` is optional.
+- `skipped` has both optional.
+
+T sits at `properties.value`. Port schemas describe the delivered value, so:
+
+- a map's `results` port, and every input fed by a `collect` edge, declare an array whose `items` is
+  `settledSchema(T)`,
+- a fan-in node's input fed by a `data` edge declares `settledSchema(T)`.
+
+The golden fixtures do so with T `{ "type": "object" }`, the member result record, and a test keeps them equal to
+`settledSchema`'s output.
+
+**Fan-in edge rule.** A `data` edge into a fan-in input checks the upstream port's schema against the input's
+`properties.value` subschema, not against the whole `Settled` schema (ADR 0006).
+
+## Type markers (`x-maestro-type`)
+
+The annotation names an artifact or host type on any subschema of a port, param or scope port (ADR 0007):
+
+```json
+{ "type": "array", "items": { "x-maestro-type": "core.file" } }
+```
+
+- **Namespaces.** A name is `<namespace>.<type>`, the pattern host node kinds use (`$defs/qualifiedName` in
+  `ir.schema.json`). Core owns `core.file`, `core.dir`, `core.json-file` and `core.markdown` (`CORE_TYPES`). Each host
+  owns its own namespace.
+- **Registration.** Ajv's strict mode rejects unknown keywords, so whatever compiles port schemas calls
+  `registerMaestroType(ajv)`. A name outside the pattern then fails to compile.
+- **Matching.** A marked type matches only the same name. A `core.json-file` also compares its content schema.
+  Unmarked values match by schema. An artifact never feeds a value port: a reader node turns it into one.
+- **Content versus reference.** A marked artifact subschema's other keywords describe the file's content. The runtime
+  value is the reference to the file, whose shape core fixes.
+
+`findMarked(schema, value)` returns one `{ type, schema, pointer, value }` per marked subschema whose value is
+present, where `pointer` is a JSON Pointer into `value`. It never descends into a marked subschema, since that schema
+describes content and not the reference. It descends:
+
+- `properties`,
+- `additionalProperties`, for keys that neither `properties` nor `patternProperties` claim,
+- `items` and `prefixItems`,
+- a `$ref` of the form `#` or `#/<pointer>`.
+
+Nothing else. It never throws: any other `$ref` (an anchor, a remote ref, or one that does not resolve or decode) is
+not followed.
+
+`unreachableMarkers(schema)` returns the JSON Pointer into `schema` of every marker `findMarked` cannot reach:
+
+- under any other keyword that holds subschemas (`allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else`, `contains`,
+  `propertyNames`, `patternProperties`, `dependentSchemas`, `unevaluatedItems`, `unevaluatedProperties`),
+- behind a `$ref` it does not follow (an anchor naming a `$defs` entry),
+- inside a marked subschema.
+
+A `$defs` entry counts only when a `$ref` reaches it. An unreachable marker is a compose error (a `TYPE` diagnostic in
+pre-flight), not a silent gap: compose reports each pointer this function returns.
+
 ## Left to the consumers
 
 The IR carries structure. These semantics belong to the slices that execute or validate it, and are not fixed here:
 
 - compose-time additions such as folded values, expansion and bounds (the plan).
 
-[^fanin]: A `fanin` node runs once every upstream has settled and receives each `data` input as `Settled` (ADR 0006).
+[^fanin]: A `fanin` node runs once every upstream has settled and receives each `data` input as `Settled`
+    ([Outcomes](#outcomes)).
 
 ## Changelog
 

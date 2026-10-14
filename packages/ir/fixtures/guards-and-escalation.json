@@ -51,7 +51,39 @@
 			},
 			"in": { "items": { "type": "array", "items": { "type": "string" } } },
 			"inner": { "item": { "type": "string" } },
-			"out": { "results": { "type": "array" } },
+			"out": {
+				"results": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["outcome"],
+						"additionalProperties": false,
+						"properties": {
+							"outcome": { "enum": ["ok", "skipped", "rejected", "failed"] },
+							"value": { "type": "object" },
+							"reason": { "type": "string" }
+						},
+						"oneOf": [
+							{
+								"required": ["value"],
+								"properties": {
+									"outcome": { "const": "ok" },
+									"value": true,
+									"reason": false
+								}
+							},
+							{
+								"required": ["reason"],
+								"properties": {
+									"outcome": { "enum": ["rejected", "failed"] },
+									"reason": true
+								}
+							},
+							{ "properties": { "outcome": { "const": "skipped" } } }
+						]
+					}
+				}
+			},
 			"members": { "result": "each/work" }
 		},
 		{
@@ -66,7 +98,40 @@
 			"id": "merge",
 			"kind": "code",
 			"label": "merge",
-			"in": { "parts": { "type": "array" }, "separator": { "type": "string" } },
+			"in": {
+				"parts": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["outcome"],
+						"additionalProperties": false,
+						"properties": {
+							"outcome": { "enum": ["ok", "skipped", "rejected", "failed"] },
+							"value": { "type": "object" },
+							"reason": { "type": "string" }
+						},
+						"oneOf": [
+							{
+								"required": ["value"],
+								"properties": {
+									"outcome": { "const": "ok" },
+									"value": true,
+									"reason": false
+								}
+							},
+							{
+								"required": ["reason"],
+								"properties": {
+									"outcome": { "enum": ["rejected", "failed"] },
+									"reason": true
+								}
+							},
+							{ "properties": { "outcome": { "const": "skipped" } } }
+						]
+					}
+				},
+				"separator": { "type": "string" }
+			},
 			"literals": { "separator": "\n" },
 			"out": {
 				"text": { "type": "string" },

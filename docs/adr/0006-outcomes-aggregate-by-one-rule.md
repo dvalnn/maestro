@@ -24,6 +24,14 @@ their kind's cancel hook. A member cancelled this way settles `skipped` with the
 receives each `data` input as `Settled(T)`, and a `collect` input as `Settled(T)[]` as before. Its own `when` guard and
 control edges apply as on any node.
 
+**Port schemas describe the delivered value.** A map's `results` port, every input fed by a `collect` edge and every
+`data` input of a fan-in node declare `Settled`, built by `settledSchema` in `packages/ir`. A `data` edge into a
+fan-in input checks the upstream schema against the port's `value` subschema.
+
+**`Settled`'s shape.** An `ok` one carries a value and no reason. A `rejected` or `failed` one carries a reason. A value
+on any non-ok outcome, and a reason on `skipped`, stay optional until a slice pins them. The schema is closed to
+`outcome`, `value` and `reason`, so a misspelt field fails; opening it later breaks nothing already valid.
+
 **`firstOk`.** Delivers the first `ok` input's value. With no `ok` input it settles `failed` if any input failed, else
 `rejected`, with the inputs' reasons. A code node can only reject or throw, so `skipped` inputs count as `rejected`.
 

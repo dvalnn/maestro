@@ -44,8 +44,9 @@ library. The type vocabulary is:
 - **Artifacts.** `File`, `Dir`, and typed files such as `JsonFile(schema)` and `Markdown`. An artifact has provenance and
   a content hash and is staged by whichever node needs it (CORE-15). Artifacts are values only in the sense that nodes
   consume and produce them. Large payloads are always artifacts.
-- **Outcome and Settled.** `Outcome` is `ok | rejected | failed | skipped`. `Settled(T)` is `{outcome, value?: T, reason?: Text}`
-  and is what a group member produces.
+- **Outcome and Settled.** `Outcome` is `ok | rejected | failed | skipped`. `Settled(T)` is what a group member produces:
+  `{outcome: ok, value: T}`, `{outcome: rejected | failed, value?: T, reason: Text}` or
+  `{outcome: skipped, value?: T, reason?: Text}` (ADR 0006).
 - **Host types.** Registered by a host (for example a lane handle). Core treats them as opaque, named, serializable.
   Artifacts and host types are named in their schemas by `x-maestro-type` (ADR 0007).
 
