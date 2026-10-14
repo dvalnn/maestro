@@ -19,8 +19,8 @@ const list = (xs: string[]) => `[${xs.toSorted().join(", ")}]`;
 /** Checks the structural rules the JSON Schema cannot express. Call only with IR whose shape already validates. */
 export function checkGraph(ir: Ir): IrDiagnostic[] {
 	const diagnostics: IrDiagnostic[] = [];
-	const report = (code: string, path: string, message: string) =>
-		diagnostics.push({ code, path, message });
+	const report: Report = (code, path, message, hint) =>
+		diagnostics.push({ code, path, message, hint });
 
 	// Nodes and scopes share one id space, and both may sit inside a scope or a group.
 	const entries = [
@@ -44,7 +44,12 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 	const seen = new Set<string>();
 	for (const { id, parent, path } of entries) {
 		if (seen.has(id))
-			report("SCOPE.duplicate", path, `id '${id}' is used more than once`);
+			report(
+				"SCOPE.duplicate",
+				path,
+				`id '${id}' is used more than once`,
+				`Rename one of the entries with id '${id}' so each node and scope id is unique`,
+			);
 		seen.add(id);
 		if (parent === undefined) continue;
 		if (!scopeIds.has(parent) && !isGroup(nodes.get(parent))) {
@@ -52,9 +57,15 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 				"IR.ref",
 				path,
 				`parent '${parent}' is not a scope or a group node`,
+				`Declare '${parent}' as a scope or as a map, seq or repeat node, or fix parent of '${id}'`,
 			);
 		} else if (ancestors(id).loops) {
-			report("IR.graph", path, `the parent chain of '${id}' loops back to it`);
+			report(
+				"IR.graph",
+				path,
+				`the parent chain of '${id}' loops back to it`,
+				`Remove or change parent on one id in the chain of '${id}'`,
+			);
 		}
 	}
 
@@ -84,6 +95,7 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 					"IR.ref",
 					`/nodes/${i}`,
 					`node '${n.id}' has no input port '${port}'`,
+					`Declare '${port}' in in of node '${n.id}', or remove its literal`,
 				);
 			feed(n.id, port);
 		}
@@ -100,6 +112,7 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 					"IR.ref",
 					path,
 					`edge refers to node '${id}', which does not exist`,
+					`Declare node '${id}' in nodes, or fix the edge`,
 				);
 		}
 		if (!from || !to) return;
@@ -113,6 +126,7 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 				"IR.ref",
 				path,
 				`node '${from.id}' has no ${inner ? "inner" : "output"} port '${fromPort}'`,
+				`Declare '${fromPort}' in ${inner ? "inner" : "out"} of node '${from.id}', or fix the edge`,
 			);
 		}
 		if (e.kind !== "control") {
@@ -121,6 +135,7 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 					"IR.ref",
 					path,
 					`node '${to.id}' has no input port '${e.to.port}'`,
+					`Declare '${e.to.port}' in in of node '${to.id}', or fix the edge`,
 				);
 			feed(to.id, e.to.port);
 		}
@@ -135,6 +150,7 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 				"IR.graph",
 				path,
 				`edge from '${from.id}' leaves the body of group '${left}'`,
+				`Pass the value out through an out port of group '${left}'`,
 			);
 		} else if (!inner) {
 			// Lift the target to the source's level, so an edge into a body depends on its group.
@@ -151,12 +167,14 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 					"IR.graph",
 					path,
 					`input port '${port}' of node '${n.id}' is not fed`,
+					`Feed port '${port}' of node '${n.id}' with an edge or a literal`,
 				);
 			if (count > 1)
 				report(
 					"IR.graph",
 					path,
 					`input port '${port}' of node '${n.id}' is fed more than once`,
+					`Feed port '${port}' of node '${n.id}' with one edge or one literal, not several`,
 				);
 		}
 		if (isGroup(n)) checkGroup(n, path, nodes, nearestGroup, report);
@@ -165,22 +183,38 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 	if (ir.result.rule === "node") {
 		const id = ir.result.node;
 		if (!nodes.has(id))
-			report("IR.ref", "/result", `node '${id}' does not exist`);
+			report(
+				"IR.ref",
+				"/result",
+				`node '${id}' does not exist`,
+				`Set result.node to a node declared in nodes, or use { "rule": "default" }`,
+			);
 		else if (groupsOf(id).length > 0)
 			report(
 				"IR.graph",
 				"/result",
 				`result node '${id}' is inside a group body`,
+				`Point result.node at a node outside every group body, such as its group '${groupsOf(id)[0]}'`,
 			);
 	}
 
 	const cycle = findCycle(dependencies);
 	if (cycle)
-		report("IR.graph", "/edges", `edges form a cycle: ${cycle.join(" -> ")}`);
+		report(
+			"IR.graph",
+			"/edges",
+			`edges form a cycle: ${cycle.join(" -> ")}`,
+			"Remove one of the edges in the cycle",
+		);
 	return diagnostics;
 }
 
-type Report = (code: string, path: string, message: string) => void;
+type Report = (
+	code: string,
+	path: string,
+	message: string,
+	hint: string,
+) => void;
 
 /** Fan-in is explicit: a map's results leave it only through collect edges, and collect edges only carry them. */
 function checkFanIn(
@@ -196,6 +230,7 @@ function checkFanIn(
 			"IR.graph",
 			path,
 			`collect edge from '${from.id}' must start at a map node's 'results' port`,
+			`Start the edge at the 'results' port of a map node, or make it a data edge`,
 		);
 	}
 	if (e.kind !== "collect" && isResults) {
@@ -203,6 +238,7 @@ function checkFanIn(
 			"IR.graph",
 			path,
 			`results of map '${from.id}' must leave it through a collect edge`,
+			`Set the edge kind to "collect"`,
 		);
 	}
 }
@@ -221,12 +257,14 @@ function checkGroup(
 				"IR.ref",
 				path,
 				`${role} '${id}' of group '${g.id}' does not exist`,
+				`Declare node '${id}' in nodes, or fix the ${role} of group '${g.id}'`,
 			);
 		else if (nearestGroup(id) !== g.id)
 			report(
 				"IR.graph",
 				path,
 				`${role} '${id}' is not in the body of group '${g.id}'`,
+				`Set parent of '${id}' to '${g.id}', or fix the ${role} of the group`,
 			);
 		return n;
 	};
@@ -238,6 +276,7 @@ function checkGroup(
 			"IR.graph",
 			path,
 			`${g.kind} '${g.id}' must have exactly one member in IR 1.0, got ${members.length}`,
+			`Keep exactly one entry in members of '${g.id}'`,
 		);
 	}
 	const member = members.length === 1 ? members[0] : undefined;
@@ -251,6 +290,7 @@ function checkGroup(
 				"IR.ref",
 				path,
 				`node '${until.id}' has no output port '${g.until.port}'`,
+				`Declare '${g.until.port}' in out of node '${until.id}', or fix until of group '${g.id}'`,
 			);
 		}
 	}
@@ -266,6 +306,7 @@ function checkGroup(
 				"IR.graph",
 				path,
 				`${g.kind} '${g.id}' must declare ${side} ports ${list(wanted)}, got ${list(actual)}`,
+				`Declare exactly the ${side} ports ${list(wanted)} on '${g.id}'`,
 			);
 		}
 	};
@@ -296,6 +337,7 @@ function checkGroup(
 			"IR.graph",
 			path,
 			`${g.kind} '${g.id}' must declare cardinality ${wanted}`,
+			`Set cardinality of '${g.id}' to ${wanted}`,
 		);
 	}
 }

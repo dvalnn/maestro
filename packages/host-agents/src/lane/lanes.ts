@@ -185,7 +185,13 @@ export function openLanes(options: LanesOptions): Lanes {
 			"--verify",
 			"--end-of-options",
 			`${base}^{commit}`,
-		]);
+		]).catch((e) => {
+			throw /Needed a single revision/.test(String(e))
+				? new Error(
+						`base '${base}' is not a commit in ${target}. Pass a branch, tag or commit id`,
+					)
+				: e;
+		});
 		await initStore();
 		const have = await git(G("cat-file", "-e", `${sha}^{commit}`)).then(
 			() => true,

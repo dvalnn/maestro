@@ -1,3 +1,4 @@
+import type { ErrorObject } from "ajv";
 import Ajv2020 from "ajv/dist/2020";
 import irSchema from "../ir.schema.json";
 import { checkGraph } from "./graph";
@@ -64,6 +65,23 @@ export function parseIr(value: unknown): ParseResult {
 		: { ok: true, ir: value as Ir };
 }
 
+const quote = (v: unknown) => JSON.stringify(v);
+
+/** Plain-words rewrites of Ajv messages, keyed by Ajv keyword. Other keywords keep Ajv's message. */
+const SHAPE_MESSAGES: Record<string, (p: ErrorObject["params"]) => string> = {
+	enum: (p) => `must be one of ${p.allowedValues.map(quote).join(", ")}`,
+	const: (p) => `must be ${quote(p.allowedValue)}`,
+	oneOf: () => "must match exactly one of the allowed shapes",
+	anyOf: () => "must match at least one of the allowed shapes",
+	additionalProperties: (p) =>
+		`has unexpected property '${p.additionalProperty}'`,
+	unevaluatedProperties: (p) =>
+		`has unexpected property '${p.unevaluatedProperty}'`,
+	required: (p) => `is missing required property '${p.missingProperty}'`,
+	pattern: (p) => `must match the pattern '${p.pattern}'`,
+	type: (p) => `must be of type ${[p.type].flat().join(" or ")}`,
+};
+
 function shapeDiagnostics(): IrDiagnostic[] {
 	// An "if" error only repeats its "then" branch's more precise error.
 	const errors = (validateShape.errors ?? []).filter((e) => e.keyword !== "if");
@@ -79,10 +97,10 @@ function shapeDiagnostics(): IrDiagnostic[] {
 	const diagnostics: IrDiagnostic[] = [];
 	for (const e of errors) {
 		if (isExtra(e) && pathsWithOtherErrors.has(e.instancePath)) continue;
-		const extra = e.params.unevaluatedProperty ?? e.params.additionalProperty;
-		const message = isExtra(e)
-			? `must NOT have property '${extra}'`
-			: (e.message ?? "violates the IR schema");
+		const message =
+			SHAPE_MESSAGES[e.keyword]?.(e.params) ??
+			e.message ??
+			"violates the IR schema";
 		const path = e.instancePath || "/";
 		if (messages.has(path + message)) continue;
 		messages.add(path + message);

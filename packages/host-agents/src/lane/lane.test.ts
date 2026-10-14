@@ -90,6 +90,14 @@ describe("fresh", () => {
 		expect((await lanes.changeset("c1.noop")).patches).toEqual([]);
 	});
 
+	test("a base that is no commit of the target names the base and the target", async () => {
+		const target = toyTarget();
+		const lanes = openLanes({ target, root: tmp("root") });
+		await expect(lanes.fresh("no-such-branch", "c1.a")).rejects.toThrow(
+			`base 'no-such-branch' is not a commit in ${target}. Pass a branch, tag or commit id`,
+		);
+	});
+
 	test("a node instance seals at most one version", async () => {
 		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
 		const lane = await lanes.fresh("main", "c1.a");

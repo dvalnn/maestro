@@ -95,7 +95,7 @@ test("schema diagnostics name the offending property", () => {
 		{
 			code: "IR.schema",
 			path: "/nodes/0",
-			message: "must NOT have property 'onFail'",
+			message: "has unexpected property 'onFail'",
 		},
 	]);
 });
@@ -103,20 +103,66 @@ test("schema diagnostics name the offending property", () => {
 test("schema diagnostics skip noise from the branch that failed", () => {
 	const diagnostics = rejects(minimal, (ir) => delete ir.nodes[0].worker);
 	expect(diagnostics.map((d) => d.message)).toEqual([
-		"must have required property 'worker'",
+		"is missing required property 'worker'",
 	]);
+});
+
+test.each<[string, Mutation, string, string]>([
+	[
+		"enum lists the allowed values",
+		(ir) => (ir.nodes[0].kind = "loop"),
+		"/nodes/0/kind",
+		'must be one of "code", "assert", "map", "seq", "repeat"',
+	],
+	[
+		"const names the required value",
+		(ir) => (ir.result = { rule: "x" }),
+		"/result/rule",
+		'must be "default"',
+	],
+	[
+		"oneOf says no allowed shape matched",
+		(ir) => (ir.result = { rule: "x" }),
+		"/result",
+		"must match exactly one of the allowed shapes",
+	],
+	[
+		"anyOf says no allowed shape matched",
+		(ir) => (ir.nodes[0].kind = "loop"),
+		"/nodes/0/kind",
+		"must match at least one of the allowed shapes",
+	],
+	[
+		"pattern names the pattern",
+		(ir) => (ir.nodes[0].id = "a//b"),
+		"/nodes/0/id",
+		"must match the pattern '^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$'",
+	],
+	[
+		"type names the expected type",
+		(ir) => (ir.nodes[0].label = 3),
+		"/nodes/0/label",
+		"must be of type string",
+	],
+])("schema diagnostics say in plain words: %s", (_, mutate, path, message) => {
+	expect(rejects(minimal, mutate)).toContainEqual({
+		code: "IR.schema",
+		path,
+		message,
+	});
 });
 
 const node = (ir: { nodes: { id: string }[] }, id: string) =>
 	ir.nodes.find((n) => n.id === id) as never as Record<string, unknown>;
 
-test.each<[string, Mutation, string, string, string]>([
+test.each<[string, Mutation, string, string, string, string]>([
 	[
 		"a duplicate id",
 		(ir) => ir.scopes.push({ id: "pick", composition: "x", ports: {} }),
 		"SCOPE.duplicate",
 		"/scopes/1",
 		"id 'pick' is used more than once",
+		"Rename one of the entries with id 'pick' so each node and scope id is unique",
 	],
 	[
 		"an unknown parent",
@@ -124,6 +170,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.ref",
 		"/nodes/2",
 		"parent 'nowhere' is not a scope or a group node",
+		"Declare 'nowhere' as a scope or as a map, seq or repeat node, or fix parent of 'pick'",
 	],
 	[
 		"a parent that is not a group",
@@ -131,6 +178,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.ref",
 		"/nodes/5",
 		"parent 'pick' is not a scope or a group node",
+		"Declare 'pick' as a scope or as a map, seq or repeat node, or fix parent of 'refine/loop/done'",
 	],
 	[
 		"an edge from an unknown node",
@@ -138,6 +186,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.ref",
 		"/edges/2",
 		"edge refers to node 'ghost', which does not exist",
+		"Declare node 'ghost' in nodes, or fix the edge",
 	],
 	[
 		"an edge into an undeclared port",
@@ -145,6 +194,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.ref",
 		"/edges/2",
 		"node 'refine/loop' has no input port 'txt'",
+		"Declare 'txt' in in of node 'refine/loop', or fix the edge",
 	],
 	[
 		"an edge from an undeclared port",
@@ -152,6 +202,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.ref",
 		"/edges/2",
 		"node 'pick' has no output port 'txt'",
+		"Declare 'txt' in out of node 'pick', or fix the edge",
 	],
 	[
 		"a literal for an undeclared port",
@@ -159,6 +210,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.ref",
 		"/nodes/2",
 		"node 'pick' has no input port 'mode'",
+		"Declare 'mode' in in of node 'pick', or remove its literal",
 	],
 	[
 		"a result rule naming an unknown node",
@@ -166,6 +218,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.ref",
 		"/result",
 		"node 'ghost' does not exist",
+		'Set result.node to a node declared in nodes, or use { "rule": "default" }',
 	],
 	[
 		"a parent cycle",
@@ -173,6 +226,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/scopes/0",
 		"the parent chain of 'refine' loops back to it",
+		"Remove or change parent on one id in the chain of 'refine'",
 	],
 	[
 		"an unfed input port",
@@ -180,6 +234,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/nodes/3",
 		"input port 'text' of node 'refine/loop' is not fed",
+		"Feed port 'text' of node 'refine/loop' with an edge or a literal",
 	],
 	[
 		"an input port fed twice",
@@ -187,6 +242,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/nodes/2",
 		"input port 'drafts' of node 'pick' is fed more than once",
+		"Feed port 'drafts' of node 'pick' with one edge or one literal, not several",
 	],
 	[
 		"an edge leaving a group body",
@@ -199,6 +255,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/edges/1",
 		"edge from 'topics/draft' leaves the body of group 'topics'",
+		"Pass the value out through an out port of group 'topics'",
 	],
 	[
 		"an inner port read outside the body",
@@ -206,6 +263,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.ref",
 		"/edges/2",
 		"node 'topics' has no output port 'item'",
+		"Declare 'item' in out of node 'topics', or fix the edge",
 	],
 	[
 		"a collect edge that does not start at map results",
@@ -213,6 +271,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/edges/2",
 		"collect edge from 'pick' must start at a map node's 'results' port",
+		"Start the edge at the 'results' port of a map node, or make it a data edge",
 	],
 	[
 		"map results leaving through a data edge",
@@ -220,6 +279,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/edges/1",
 		"results of map 'topics' must leave it through a collect edge",
+		'Set the edge kind to "collect"',
 	],
 	[
 		"a member outside the group body",
@@ -227,6 +287,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/nodes/0",
 		"member 'pick' is not in the body of group 'topics'",
+		"Set parent of 'pick' to 'topics', or fix the member of the group",
 	],
 	[
 		"a repeat with two members",
@@ -238,6 +299,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/nodes/3",
 		"repeat 'refine/loop' must have exactly one member in IR 1.0, got 2",
+		"Keep exactly one entry in members of 'refine/loop'",
 	],
 	[
 		"a stop condition outside the group body",
@@ -245,6 +307,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/nodes/3",
 		"until 'pick' is not in the body of group 'refine/loop'",
+		"Set parent of 'pick' to 'refine/loop', or fix the until of the group",
 	],
 	[
 		"map ports other than item and results",
@@ -253,6 +316,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/nodes/0",
 		"map 'topics' must declare out ports [results], got [extra, results]",
+		"Declare exactly the out ports [results] on 'topics'",
 	],
 	[
 		"repeat state ports that do not mirror the member",
@@ -263,6 +327,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/nodes/3",
 		"repeat 'refine/loop' must declare inner ports [index, notes, text], got [index, text]",
+		"Declare exactly the inner ports [index, notes, text] on 'refine/loop'",
 	],
 	[
 		"literal items with an items port",
@@ -270,6 +335,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/nodes/0",
 		"map 'topics' must declare in ports [], got [items]",
+		"Declare exactly the in ports [] on 'topics'",
 	],
 	[
 		"an exact cardinality that disagrees with the items",
@@ -277,6 +343,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/nodes/0",
 		"map 'topics' must declare cardinality { exact: 3 }",
+		"Set cardinality of 'topics' to { exact: 3 }",
 	],
 	[
 		"an exact cardinality on a loop",
@@ -284,6 +351,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/nodes/3",
 		"repeat 'refine/loop' must declare cardinality { upTo: N }",
+		"Set cardinality of 'refine/loop' to { upTo: N }",
 	],
 	[
 		"a cycle",
@@ -296,6 +364,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/edges",
 		"edges form a cycle: pick -> refine/loop -> pick",
+		"Remove one of the edges in the cycle",
 	],
 	[
 		"a cycle through a group body",
@@ -308,6 +377,7 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/edges",
 		"edges form a cycle: topics -> pick -> topics",
+		"Remove one of the edges in the cycle",
 	],
 	[
 		"a result node inside a group body",
@@ -315,12 +385,14 @@ test.each<[string, Mutation, string, string, string]>([
 		"IR.graph",
 		"/result",
 		"result node 'topics/draft' is inside a group body",
+		"Point result.node at a node outside every group body, such as its group 'topics'",
 	],
-])("the graph check rejects %s", (_, mutate, code, path, message) => {
+])("the graph check rejects %s", (_, mutate, code, path, message, hint) => {
 	expect(rejects(fanoutFaninLoop, mutate)).toContainEqual({
 		code,
 		path,
 		message,
+		hint,
 	});
 });
 
