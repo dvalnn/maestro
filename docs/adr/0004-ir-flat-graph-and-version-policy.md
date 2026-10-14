@@ -35,14 +35,12 @@ IR 1.0 (`packages/ir`, CORE-16, IR-01) fixes three things that every emitter and
 
 ## Consequences
 
-- The IR has no default for `map.onError`. The emitter writes it, because `sdk-spec.md` (propagate) and
-  `architecture.md` section 7 (settle) disagree on the default.
+- The IR has no default for `map.onError`, and neither has the SDK (ADR 0006).
 - A `map` member result is a record keyed by result name, which covers the object-returning bodies of sdk-spec
   section 14. A `seq` or `repeat` takes exactly one member in 1.0, because its ports mirror that member. Allowing
   several later relaxes a rule and is a minor change.
-- A fan-in over non-ok inputs (`firstOk([a, b])`, where `a` may be skipped) is for S2 and S4 to define. The expected
-  path is an optional edge-level marker meaning "deliver as Settled". That is an additive, minor change, not a major
-  one.
+- A fan-in over non-ok inputs (`firstOk([a, b])`, where `a` may be skipped) needs no edge marker: a `fanin` node
+  receives its inputs as `Settled` (ADR 0006).
 - `tolerate` is the scalar `"rejected"`. Only `rejected` is ever tolerable (CORE-04), so an array would only add a
   shape to validate.
 - Compose-time additions (folded values, expansion, bounds) are not in 1.0. The plan slice adds them as a minor

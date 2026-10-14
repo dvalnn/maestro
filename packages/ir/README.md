@@ -56,8 +56,9 @@ Nodes and scopes share one id space. Ids are paths of `[A-Za-z0-9_-]` segments j
 from the scope path and label (IR-01). A `parent` names a scope or a group node. Scopes are for renderers, caches and
 diagnostics and do not change execution. Groups do.
 
-Every schema inside the IR (ports, params, config) is a JSON Schema document that the IR treats as opaque. Edge type
-checks are pre-flight's job (CORE-02), not this package's.
+Every schema inside the IR (ports, params, config) is a JSON Schema document that the IR treats as opaque, except for
+the `x-maestro-type` annotation that names artifacts and host types (ADR 0007). Edge type checks are pre-flight's job
+(CORE-02), not this package's.
 
 ## Nodes
 
@@ -69,7 +70,7 @@ Every node also has three implicit outputs: `outcome`, `ok` and `reason`. They m
 
 | Kind                     | Own fields                                                                                                        |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `code`                   | `worker` `{runtime, module, export, codeHash}`, `pure`, optional `reads`, `writes`, `fanin` (a reducer, D-08). |
+| `code`                   | `worker` `{runtime, module, export, codeHash}`, `pure`, optional `reads`, `writes`, `fanin` (a reducer, D-08).[^fanin] |
 | `assert`                 | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                                     |
 | `map`, `seq`, `repeat`   | Groups, below.                                                                                                    |
 | `<host>.<kind>`          | Any kind with a dot is a host kind, with an optional opaque `config` object.                                      |
@@ -95,12 +96,13 @@ item or iteration. Every group has:
 - A `map` over literal items is `exact` with the item count. Every other group is `upTo`, equal to the item count for a
   literal `seq`.
 - `key` is an optional worker reference for an author key function (D-18).
-- `onError` is `settle` or `propagate`, and has no default in the IR.
+- `onError` is `settle` or `propagate`, and has no default (ADR 0006).
 - `until` is a body port `{node, port}` holding a boolean.
 - `tolerate: "rejected"` on a `repeat` lets rejected state, including the initial state, carry into the next
   iteration.
 - A `repeat`'s inner state ports hold the previous iteration's member outputs, or the initial state for the first
-  iteration.
+  iteration. At least one iteration runs, and `until` is read after each.
+- A member result with several entries takes the worst entry outcome (ADR 0006).
 
 ## Edges
 
@@ -138,12 +140,9 @@ Violations of rules 3 to 8 are `IR.graph`. Shape violations are `IR.schema`, and
 
 The IR carries structure. These semantics belong to the slices that execute or validate it, and are not fixed here:
 
-- how a `fanin` node receives non-ok inputs (`firstOk([a, b])`). The expected path is an optional edge-level marker for
-  "deliver as Settled", added as a minor version (ADR 0004),
-- the outcome of a member result with several entries,
-- whether `until` is evaluated on a `repeat`'s initial state,
-- how port schemas mark artifacts and host types,
 - compose-time additions such as folded values, expansion and bounds (the plan).
+
+[^fanin]: A `fanin` node runs once every upstream has settled and receives each `data` input as `Settled` (ADR 0006).
 
 ## Changelog
 

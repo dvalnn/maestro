@@ -36,8 +36,8 @@ What an agent can discover:
   the store's refs are not mounted.
 - By enumerating objects (`cat-file --batch-all-objects`, or a listing of the objects directory), it can read objects
   that no visible ref names: other lanes' and other concerts' versions, and target commits fetched for other bases.
-  This is accepted provisionally, because no ref, reflog or packed-refs entry it can see names them. The owner ruling
-  is pending (handoff Q3): keep it as a known V1 gap, or give each lane only its own objects.
+  No ref, reflog or packed-refs entry it can see names them. Accepted as a known V1 gap: lanes isolate writes, not
+  reads between the agents of one store. Giving each lane only its own objects stays open for a later version.
 
 ## Considered options
 

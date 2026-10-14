@@ -173,7 +173,8 @@ The core never inspects a host's types or rules. It only calls these hooks and r
     - A dependent over an `ok` edge runs only after `ok`. A dependent over a tolerant edge also runs after `rejected` and
       receives the reason.
     - `failed` and `skipped` are not tolerable. The dependent is `skipped` and its own dependents follow the same rule.
-    - A `map` member with a failure becomes a `Settled` value. The group itself is `ok` unless configured to propagate.
+    - A `map` declares `onError`. With `settle`, a non-ok member becomes a `Settled` value and the group is `ok`. With
+      `propagate`, the worst member outcome becomes the group's and running members are cancelled (ADR 0006).
       `seq` and `repeat` end on their stop condition or bound.
 - **Groups.**
     - `map` instantiates its body once per item, in parallel up to the cap. An item with a primitive value is keyed by
@@ -343,8 +344,8 @@ number, a commit SHA) are inputs or round-folder data, never constants in a pack
 ## 16. Failure modes
 
 - **Compose error.** No agent starts. The CLI prints diagnostics and exits with a usage-category code.
-- **Node `failed`.** Dependents `skipped` unless a group collected it as `Settled`. The concert result follows the result
-  rule.
+- **Node `failed`.** Dependents `skipped` unless a settling group or a fan-in node received it as `Settled`. The concert
+  result follows the result rule.
 - **Node `rejected`.** Follows edge tolerance. This is the normal path for a red check or a negative review.
 - **Host crash or kill.** The record is consistent as of the last event. `resume` continues. Agent process trees are
   killed by the host's cancel hook.

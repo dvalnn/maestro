@@ -47,6 +47,7 @@ library. The type vocabulary is:
 - **Outcome and Settled.** `Outcome` is `ok | rejected | failed | skipped`. `Settled(T)` is `{outcome, value?: T, reason?: Text}`
   and is what a group member produces.
 - **Host types.** Registered by a host (for example a lane handle). Core treats them as opaque, named, serializable.
+  Artifacts and host types are named in their schemas by `x-maestro-type` (ADR 0007).
 
 Optional values are `Maybe(T)`. Reading a `Maybe` requires an explicit default or a guard, and compose rejects an
 unguarded use.
@@ -81,11 +82,13 @@ Semantics each constructor must honor:
   known at compose time, and compose reports "up to N". A list of unknown length comes from a code node and feeds a
   bounded `map` (D-16). Items are keyed: a primitive item by its value, any other item by index, or by an optional key
   function. Duplicate keys are a compose error (D-18, SDK-13). Keys only name node instances for `ls` and lane refs.
-  The cache is a content hash and does not depend on them. With `onError: "settle"` a failed or rejected member becomes a
-  `Settled` value and the group is `ok`. Otherwise the first non-ok member propagates per the outcome rules.
+  The cache is a content hash and does not depend on them. `onError` is required. With `"settle"` a non-ok member
+  becomes a `Settled` value and the group is `ok`. With `"propagate"` the group takes the worst member outcome, and
+  the first non-ok member cancels the rest (ADR 0006).
 - **`seq`.** Covers escalation over an ordered list. Members after a satisfied `until` are `skipped` and appear as such
   in the plan. The bound is `items.length` or `max`.
-- **`repeat`.** The step receives the previous state and the iteration index. `until` is evaluated on the new state.
+- **`repeat`.** The step receives the previous state and the iteration index. At least one iteration runs: `until` is
+  evaluated on each new state, never on `init`.
   Compose unrolls to `max` for bounds and rendering. `max` must be known at compose time, from a literal or a param. State edges are tolerant of `rejected` only if `tolerate` says so.
 - **`assert`.** Evaluated at build if the condition is a plain value, at compose time if it folds, and at perform time otherwise.
   A failed build-time or compose-time assert is a diagnostic error. A perform-time assert yields a `rejected` or `failed`
@@ -192,7 +195,9 @@ A code node is the SDK's answer to "this needs real code".
 
 The standard library is built only from the constructors above (NFR-09). Initial contents (SDK-07):
 
-- **Reducers.** `firstOk(results)`, `okOnly(results)` and `settle(results)`. Marked fan-in in the IR.
+- **Reducers.** `firstOk(results)`, `okOnly(results)` and `settle(results)`. Marked fan-in in the IR, so they run once
+  every input has settled and receive each as `Settled` (ADR 0006). `firstOk` with no `ok` input settles `failed` if any
+  input failed, else `rejected`.
 - **Templating.** `tpl` as above. Prompt files are text artifacts staged by the consuming host node.
 - **Readers.** Typed readers for JSON and text artifacts, with schema validation, as pure code nodes.
 - **Selection helpers.** The default result rule as a function, for compositions that want a variant.
@@ -370,7 +375,7 @@ return firstOk([
         when: good.nonEmpty,
         prompt: tpl("synthesis.md", { good }),
     }),
-    plans[0],
+    firstOk(plans),
 ]);
 ```
 

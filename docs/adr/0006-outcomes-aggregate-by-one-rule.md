@@ -1,0 +1,50 @@
+---
+status: accepted
+---
+# Outcomes aggregate by one rule, and fan-in nodes see settled inputs
+
+Wherever several outcomes collapse into one, the worst wins: `failed` > `rejected` > `skipped` > `ok`. `Outcome`,
+`Settled` and one `worstOutcome` function live in `packages/ir`, the package every emitter and consumer already
+depends on, and are the only implementation. The SDK, the executor and the stdlib reducers call it. The rule applies
+to:
+
+- a `map` member whose body returns several results,
+- a `map` group with `onError: "propagate"`,
+- `firstOk` when no input is `ok`.
+
+**`map.onError` has no default.** The SDK requires it on every `map`, as the IR already does (ADR 0004).
+
+**Propagate.** The group's outcome is the worst member outcome, and its `reason` is that of the first such member by
+key order. When the first member settles non-ok, no further member starts, and running members are cancelled through
+their kind's cancel hook. A member cancelled this way settles `skipped` with the reason `cancelled: <instance>
+<outcome>`, so it never worsens the group's outcome. Cancelling a concert still settles running instances `failed`
+(architecture section 7).
+
+**Fan-in.** A code node with `fanin: true` runs once all its upstreams have settled, whatever their outcome. It
+receives each `data` input as `Settled(T)`, and a `collect` input as `Settled(T)[]` as before. Its own `when` guard and
+control edges apply as on any node.
+
+**`firstOk`.** Delivers the first `ok` input's value. With no `ok` input it settles `failed` if any input failed, else
+`rejected`, with the inputs' reasons. A code node can only reject or throw, so `skipped` inputs count as `rejected`.
+
+## Considered options
+
+- **A default for `onError`.** `sdk-spec.md` said propagate and `architecture.md` said settle, and every worked example
+  writes the field. Requiring it removes the conflict for one field per `map`.
+- **Propagate without cancellation.** Every member runs to completion and the group's spend is thrown away once its
+  outcome is decided. Rejected.
+- **Drain** (start no new member, let running ones finish). Keeps their results in the cache for a resume, but keeps
+  spending on a run whose cause, often quota or environment, likely fails them too. Rejected for cancel.
+- **An edge-level "deliver as Settled" marker** (expected by ADR 0004). Per-edge control, but an IR 1.1 bump and a
+  second mechanism that every reducer would set the same way. The `fanin` flag already marks every reducer.
+- **`firstOk` always `rejected` when nothing is `ok`.** Reports a crashed run as a negative verdict, so the operator
+  gives up instead of resuming.
+
+## Consequences
+
+- A `fanin` node cannot mix inputs that must be `ok` with settled ones. A strict input is checked upstream.
+- Under propagate, which members ran depends on timing, so the record varies between runs. The outcome does not.
+- The plan-panel example indexes no settled list: `firstOk([synth, firstOk(plans)])` falls back to a plan that
+  succeeded.
+- `Outcome`, `Settled` and `worstOutcome` land in `packages/ir` before the SDK and executor build on them. The home is
+  revisited if those slices find a better one.
