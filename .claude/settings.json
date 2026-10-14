@@ -15,6 +15,17 @@
         ],
         "matcher": "Bash"
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/after-compact.sh"
+          }
+        ]
+      }
     ]
   },
   "permissions": {
