@@ -120,9 +120,9 @@
 			"out": { "text": { "type": "string" } },
 			"worker": {
 				"runtime": "ts",
-				"module": "stdlib/reducers.ts",
+				"module": "maestro:stdlib",
 				"export": "firstOk",
-				"codeHash": "sha256:1111"
+				"codeHash": "maestro:stdlib@0.0.0"
 			},
 			"pure": true,
 			"fanin": true
@@ -160,9 +160,9 @@
 			"out": { "value": { "type": "boolean" } },
 			"worker": {
 				"runtime": "ts",
-				"module": "fixtures/refine.ts",
+				"module": "refine.ts",
 				"export": "isDone",
-				"codeHash": "sha256:2222"
+				"codeHash": "sha256:a07519256fd37fd32ba1b5f04a3d33167fa96eb1f4369cbb8ce19fe6fdb29e4c"
 			},
 			"pure": true
 		}

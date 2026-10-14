@@ -9,7 +9,7 @@ TypeScript SDK, or any other language) and the engine. This package holds:
   (`Outcome`, `Settled`, `worstOutcome`, `settledSchema`), type markers (`MAESTRO_TYPE`, `CORE_TYPES`,
   `registerMaestroType`, `findMarked`, `unreachableMarkers`) and artifact references (`ArtifactRef`,
   `artifactRefSchema`).
-- `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`.
+- `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`, and its worker modules sit beside it.
 - `test/read_ir.py`: an independent reader (Python standard library only), which proves the format is readable without
   maestro code.
 
@@ -68,6 +68,10 @@ Edge type checks are pre-flight's job (CORE-02), not this package's.
 Common fields: `id`, `kind`, `label`, optional `tag` (a human label used in records, not an identity), `parent`,
 `source` (`file`, `line`, `column`), `in` and `out` (port name to schema), and `literals` (port name to a plain value,
 D-16).
+
+A worker's `module` is relative to the IR file's directory, and `codeHash` is `sha256:` plus 64 lowercase hex digits of
+the module file's bytes. `maestro:stdlib` is a reserved `module` whose `codeHash` is `maestro:stdlib@<sdk version>`
+(ADR 0008). The golden fixtures keep their modules beside them in `fixtures/`, and a test checks each hash.
 
 Every node also has three implicit outputs: `outcome`, `ok` and `reason`. They may not be declared in `out`.
 

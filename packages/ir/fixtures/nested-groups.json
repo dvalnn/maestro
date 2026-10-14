@@ -132,9 +132,9 @@
 			"out": { "okCount": { "type": "integer" }, "any": { "type": "boolean" } },
 			"worker": {
 				"runtime": "ts",
-				"module": "fixtures/nested.ts",
+				"module": "nested.ts",
 				"export": "tally",
-				"codeHash": "sha256:8888"
+				"codeHash": "sha256:e1cb8999f079ded1922b6ec70881864d59c0e45786fe0fe868e271fde2011447"
 			},
 			"pure": true,
 			"fanin": true

@@ -14,9 +14,9 @@
 			"literals": { "name": "world" },
 			"worker": {
 				"runtime": "ts",
-				"module": "fixtures/greet.ts",
+				"module": "greet.ts",
 				"export": "greet",
-				"codeHash": "sha256:0000"
+				"codeHash": "sha256:54d884a1032f6ad058f0b9b458ac56c55c09323ce7f78113db111c26fcdfc351"
 			},
 			"pure": true
 		}

@@ -30,9 +30,9 @@
 			"out": { "parts": { "type": "array", "items": { "type": "string" } } },
 			"worker": {
 				"runtime": "ts",
-				"module": "fixtures/guards.ts",
+				"module": "guards.ts",
 				"export": "plan",
-				"codeHash": "sha256:4444"
+				"codeHash": "sha256:b51b0837a6c64659a9ccfb93f09915c4157b1ae03d5d02cd84ad85d7c11b1d3f"
 			},
 			"pure": false,
 			"reads": ["inputs/"]
@@ -45,9 +45,9 @@
 			"onError": "propagate",
 			"key": {
 				"runtime": "ts",
-				"module": "fixtures/guards.ts",
+				"module": "guards.ts",
 				"export": "partKey",
-				"codeHash": "sha256:5555"
+				"codeHash": "sha256:b51b0837a6c64659a9ccfb93f09915c4157b1ae03d5d02cd84ad85d7c11b1d3f"
 			},
 			"in": { "items": { "type": "array", "items": { "type": "string" } } },
 			"inner": { "item": { "type": "string" } },
@@ -139,9 +139,9 @@
 			},
 			"worker": {
 				"runtime": "ts",
-				"module": "fixtures/guards.ts",
+				"module": "guards.ts",
 				"export": "merge",
-				"codeHash": "sha256:6666"
+				"codeHash": "sha256:b51b0837a6c64659a9ccfb93f09915c4157b1ae03d5d02cd84ad85d7c11b1d3f"
 			},
 			"pure": true,
 			"writes": ["merged/"]
@@ -181,9 +181,9 @@
 			"out": { "summary": { "type": "string" } },
 			"worker": {
 				"runtime": "ts",
-				"module": "fixtures/guards.ts",
+				"module": "guards.ts",
 				"export": "summarize",
-				"codeHash": "sha256:7777"
+				"codeHash": "sha256:b51b0837a6c64659a9ccfb93f09915c4157b1ae03d5d02cd84ad85d7c11b1d3f"
 			},
 			"pure": true
 		}
