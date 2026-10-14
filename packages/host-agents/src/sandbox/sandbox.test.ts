@@ -23,7 +23,6 @@ afterEach(() => {
 	for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-/** Runs a shell script in the sandbox and returns its stdout lines and exit status. */
 async function sh(script: string, extra: Partial<SandboxSpec> = {}) {
 	const lane = extra.lane ?? tmp("lane");
 	const p = bubblewrap.start({ lane, argv: ["sh", "-c", script], ...extra });

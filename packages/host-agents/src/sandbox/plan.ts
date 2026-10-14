@@ -38,6 +38,7 @@ function resolveBind(b: Bind, what: string): { src: string; dst: string } {
 /**
  * The full set of mounts for a spec, in the order they are applied. This is the whole confinement policy: the
  * writable mounts are exactly the `bind` and `tmpfs` entries.
+ * @throws if a bind path is relative, missing or lands at `/` or in the lane, or a read-only source is inside the lane.
  */
 export function mountPlan(spec: SandboxSpec): Mount[] {
 	const plan: Mount[] = [

@@ -14,12 +14,11 @@ import type {
 	Metrics,
 } from "./types";
 
-/** What differs per harness: how to launch it, and how to read one line of its JSON event stream. */
 export interface SubprocessAdapter {
 	readonly name: string;
-	/** The process to run. The lane and the node's read-only binds are added by the driver. */
+	/** The driver supplies `lane` and appends the request's `readOnly` binds. */
 	spec(req: HarnessRequest): Omit<SandboxSpec, "lane">;
-	/** One stdout line to an event, or undefined to drop it (non-JSON noise). */
+	/** Returns undefined to drop a line (non-JSON noise). */
 	parse(line: string): HarnessEvent | undefined;
 }
 
@@ -43,7 +42,6 @@ function collect(lane: string, paths: string[]) {
 	return { outputs, missing };
 }
 
-/** Runs an adapter's process in the sandbox: streams events, sums usage, collects outputs, supports cancel. */
 export function subprocessHarness(
 	adapter: SubprocessAdapter,
 	backend: SandboxBackend = bubblewrap,

@@ -2,12 +2,11 @@ import { bubblewrap, type SandboxBackend } from "../sandbox/index";
 import { type SubprocessAdapter, subprocessHarness } from "./subprocess";
 import type { Harness, HarnessEvent } from "./types";
 
-/** One step of a stub run. Emitted objects are JSON lines on stdout, exactly like a real harness's event stream. */
+/** Emitted objects are written as JSON lines on stdout, like a real harness's event stream. */
 export type StubStep =
 	| { emit: Record<string, unknown>; delayMs?: number }
-	/** Write a file in the lane, as an agent producing a declared output would. */
+	/** `write` is a lane-relative path. */
 	| { write: string; content: string }
-	/** Run until killed. */
 	| { hang: true };
 
 const q = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
@@ -60,7 +59,10 @@ function parse(line: string): HarnessEvent | undefined {
 	}
 }
 
-/** A harness that replays a script inside the real sandbox. The prompt arrives on stdin and is echoed as a `prompt` event. */
+/**
+ * Replays `steps` inside the real sandbox. The prompt is read from stdin and reported as a `prompt` event carrying its
+ * byte count and sha256.
+ */
 export function stubHarness(
 	steps: StubStep[],
 	backend?: SandboxBackend,

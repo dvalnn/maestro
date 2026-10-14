@@ -43,7 +43,6 @@ function git(cwd: string, ...args: string[]): string {
 	return p.stdout.toString().trim();
 }
 
-/** A toy target with two commits on `main`. */
 function toyTarget(): string {
 	const t = tmp("target");
 	git(t, "init", "-q", "-b", "main");
@@ -56,7 +55,6 @@ function toyTarget(): string {
 	return t;
 }
 
-/** Applies a changeset to a fresh clone of the target at its base and returns the clone. */
 function applyToBase(target: string, base: string, patches: string[]) {
 	const c = tmp("apply");
 	git(c, "clone", "-q", target, ".");
@@ -267,7 +265,6 @@ describe("the target", () => {
 	});
 });
 
-/** Runs a shell script in the real sandbox over `lane`, with the binds git needs. */
 async function inSandbox(lane: Lane, script: string) {
 	const p = bubblewrap.start({
 		lane: lane.dir,

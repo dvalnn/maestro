@@ -5,11 +5,10 @@ import minimal from "../fixtures/minimal.json";
 import nestedGroups from "../fixtures/nested-groups.json";
 import type { Ir, IrNode } from "./types";
 
-// JSON imports type every string as `string`, so `satisfies Ir` cannot hold on them. Widen the
-// types' string literals to match, and make the node union strict, so that a node only matches
-// the kind whose fields it has. Otherwise any node matches the host kind's open shape.
-// Record values admit `undefined` because TypeScript gives sibling JSON objects each other's keys
-// as optional `undefined`.
+// JSON imports type every string as `string`, so `satisfies Ir` cannot hold on them: widen the literals,
+// and make the node union strict so a node matches only the kind whose fields it has, not the host kind's
+// open shape. Record values admit `undefined` because TypeScript gives sibling JSON objects each other's
+// keys as optional `undefined`.
 type Widen<T> = T extends string
 	? string
 	: T extends readonly (infer U)[]

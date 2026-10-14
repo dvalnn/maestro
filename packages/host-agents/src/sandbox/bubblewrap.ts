@@ -84,7 +84,7 @@ export const bubblewrap: SandboxBackend = {
 		if (spec.stdin !== undefined) {
 			const sink = child.stdin as import("bun").FileSink;
 			sink.write(spec.stdin);
-			// always close it, or the agent waits for more input. EPIPE if bwrap died early: exit status tells
+			// Always close stdin, or the agent waits for more input. EPIPE means bwrap died early; the exit status reports that.
 			Promise.resolve(sink.end()).catch(() => {});
 		}
 

@@ -2,7 +2,7 @@
 export type Bind = { src: string; dst?: string };
 
 /**
- * Everything a sandboxed process needs. The lane is the only writable place by default (mounted at `LANE_DST`);
+ * The lane is the only writable place by default (mounted at `LANE_DST`);
  * anything else writable must be named in `writable`, which is for adapters and never for node declarations.
  */
 export type SandboxSpec = {
@@ -47,6 +47,6 @@ export interface SandboxedProcess {
 
 /** D-25: the sandbox backend is pluggable. Bubblewrap is the only implementation in V1. */
 export interface SandboxBackend {
-	/** Throws if the spec violates the mount policy. */
+	/** @throws if the spec violates the mount policy. */
 	start(spec: SandboxSpec): SandboxedProcess;
 }

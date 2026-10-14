@@ -21,7 +21,6 @@ export type Version = string;
 /** A patch series against `base`, the target commit its lane chain was cut from. */
 export type Changeset = { base: string; patches: string[] };
 
-/** A working copy open for one node instance. */
 export interface Lane {
 	/** Host directory of the working copy. This is `SandboxSpec.lane`. */
 	readonly dir: string;
@@ -38,13 +37,13 @@ export interface Lane {
 }
 
 export interface Lanes {
-	/** Cuts a new lane at `base`, any revision of the target, for node instance `at`. */
+	/** `base` is any revision of the target. */
 	fresh(base: string, at: Version): Promise<Lane>;
 	/** A new lane holding `v`'s content. Any number of times, from any concert (lane refs, D-27). */
 	fork(v: Version, at: Version): Promise<Lane>;
 	/**
-	 * Continues `v`'s working copy in place (ignored files kept) as node instance `at`'s lane. At most once per version,
-	 * and only within `v`'s own concert. Throws otherwise.
+	 * Continues `v`'s working copy in place (ignored files kept) as node instance `at`'s lane.
+	 * @throws if `v` was already joined or belongs to another concert.
 	 */
 	join(v: Version, at: Version): Promise<Lane>;
 	/** The patch series from the lane chain's base up to `v`. Unchanged versions add no patch. */
@@ -126,7 +125,7 @@ function parse(v: Version): { concert: string; node: string } {
 	return { concert: v.slice(0, i), node: v.slice(i + 1) };
 }
 
-/** Allocated bytes of a file tree, links not followed. */
+/** Allocated (not apparent) bytes of a file tree. Links are not followed. */
 function bytesOnDisk(p: string): number {
 	const s = lstatSync(p, { throwIfNoEntry: false });
 	if (!s) return 0;
@@ -156,14 +155,14 @@ export function openLanes(options: LanesOptions): Lanes {
 		};
 	};
 	const concertDir = (c: string) => join(root, "lanes", enc(concertId(c)));
-	/** A lane is one directory: `work` is the working copy, `git` its git directory (HEAD, index, no refs). */
+	// A lane is one directory: `work` is the working copy, `git` its git directory (HEAD, index, no refs).
 	const paths = (v: Version) => {
 		const { concert, node } = parse(v);
 		const home = join(concertDir(concert), enc(node));
 		return { home, dir: join(home, "work"), gitdir: join(home, "git") };
 	};
 
-	/** Created aside and renamed in, so concerts racing to create it all end up with the one store. */
+	// Created aside and renamed in, so concerts racing to create it all end up with the one store.
 	async function initStore() {
 		if (existsSync(store)) return;
 		mkdirSync(root, { recursive: true });
@@ -177,7 +176,7 @@ export function openLanes(options: LanesOptions): Lanes {
 		}
 	}
 
-	/** Copies the target commit `base` resolves to into the store. The target is only read (by upload-pack). */
+	// The target is only read (by upload-pack).
 	async function importBase(base: string): Promise<string> {
 		const sha = await value([
 			"-C",
@@ -199,11 +198,10 @@ export function openLanes(options: LanesOptions): Lanes {
 		return sha;
 	}
 
-	/** One atomic ref transaction. A `create` fails if the ref exists, which is how "at most once" holds. */
+	// One atomic ref transaction. A `create` fails if the ref exists, which is how "at most once" holds.
 	const updateRefs = (lines: string[]) =>
 		git(G("update-ref", "--stdin"), {}, `start\n${lines.join("\n")}\ncommit\n`);
 
-	/** Runs a `create` transaction, reporting an existing ref as `taken`. */
 	async function createOnce(lines: string[], taken: string) {
 		try {
 			await updateRefs(lines);
@@ -212,7 +210,6 @@ export function openLanes(options: LanesOptions): Lanes {
 		}
 	}
 
-	/** The commit and chain base of a sealed version. */
 	async function resolve(v: Version) {
 		const r = refs(v);
 		try {
@@ -225,7 +222,7 @@ export function openLanes(options: LanesOptions): Lanes {
 		}
 	}
 
-	/** Reserves `at`'s lane directory. `mkdir` is atomic, so one node instance gets one lane. */
+	// `mkdir` is atomic, so one node instance gets one lane.
 	function claim(at: Version) {
 		const p = paths(at);
 		mkdirSync(dirname(p.home), { recursive: true });
@@ -237,7 +234,7 @@ export function openLanes(options: LanesOptions): Lanes {
 		return p;
 	}
 
-	/** A new lane for `at` holding `commit`, with an empty git directory that borrows the store's objects. */
+	// The lane's git directory is empty and borrows the store's objects through alternates.
 	async function checkout(at: Version, commit: string) {
 		const p = claim(at);
 		try {
@@ -258,7 +255,7 @@ export function openLanes(options: LanesOptions): Lanes {
 		}
 	}
 
-	/** Points the lane's git at `head`. Its `.git` file is rewritten too, undoing anything the last agent did to it. */
+	// Points the lane's git at `head`. Its `.git` file is rewritten too, undoing anything the last agent did to it.
 	function open(at: Version, head: string, base: string): Lane {
 		const { dir, gitdir } = paths(at);
 		const idx = { GIT_INDEX_FILE: join(gitdir, "index") };

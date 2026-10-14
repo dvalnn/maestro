@@ -1,4 +1,3 @@
-// Structural rules the JSON Schema cannot express. Applies only to IR whose shape is valid.
 import type {
 	GroupNode,
 	Ir,
@@ -17,6 +16,7 @@ const names = (ports: Ports | undefined) => Object.keys(ports ?? {});
 
 const list = (xs: string[]) => `[${xs.toSorted().join(", ")}]`;
 
+/** Checks the structural rules the JSON Schema cannot express. Call only with IR whose shape already validates. */
 export function checkGraph(ir: Ir): IrDiagnostic[] {
 	const diagnostics: IrDiagnostic[] = [];
 	const report = (code: string, path: string, message: string) =>
@@ -31,7 +31,7 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 	const scopeIds = new Set(ir.scopes.map((s) => s.id));
 	const parents = new Map(entries.map((e) => [e.id, e.parent]));
 
-	/** Ancestors, nearest first. Stops at a repeat so a parent cycle cannot hang the walk. */
+	// Nearest first. Stops at a revisited id so a parent cycle cannot hang the walk.
 	const ancestors = (id: string) => {
 		const chain: string[] = [];
 		for (let p = parents.get(id); p !== undefined; p = parents.get(p)) {
@@ -66,7 +66,7 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 	const nearestGroup = (id: string) => groupsOf(id).at(-1);
 	const isInside = (id: string, group: string) => groupsOf(id).includes(group);
 
-	/** Output ports of `source` as seen from `consumer`: a group's inner ports from inside its body. */
+	// A group's inner ports are visible only from inside its body.
 	const sourcePorts = (source: IrNode, consumer: string) =>
 		isGroup(source) && isInside(consumer, source.id)
 			? names(source.inner)
@@ -300,7 +300,7 @@ function checkGroup(
 	}
 }
 
-/** Returns one cycle as a closed path of node ids, or undefined. */
+/** One cycle as a closed path of node ids (first id repeated last), or undefined. */
 function findCycle(edges: [string, string][]): string[] | undefined {
 	const next = new Map<string, string[]>();
 	for (const [a, b] of edges) next.set(a, [...(next.get(a) ?? []), b]);
