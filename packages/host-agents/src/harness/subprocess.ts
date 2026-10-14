@@ -2,7 +2,9 @@ import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import {
 	bubblewrap,
+	type ExitStatus,
 	type SandboxBackend,
+	type SandboxedProcess,
 	type SandboxSpec,
 } from "../sandbox/index";
 import type {
@@ -42,6 +44,62 @@ function collect(lane: string, paths: string[]) {
 	return { outputs, missing };
 }
 
+function addUsage(metrics: Metrics, usage: Metrics) {
+	for (const [k, v] of Object.entries(usage))
+		metrics[k] = (metrics[k] ?? 0) + v;
+}
+
+/** Forwards parsed events and sums usage into `metrics`. Returns why reading stopped early, if it did. */
+async function pump(
+	proc: SandboxedProcess,
+	parse: SubprocessAdapter["parse"],
+	emit: ReadableStreamDefaultController<HarnessEvent>,
+	metrics: Metrics,
+): Promise<string | undefined> {
+	try {
+		for await (const line of proc.stdout) {
+			const e = parse(line);
+			if (!e) continue;
+			if (e.kind === "usage") addUsage(metrics, e.metrics);
+			emit.enqueue(e);
+		}
+	} catch (err) {
+		await proc.kill().catch(() => {});
+		return `cannot read harness output: ${err instanceof Error ? err.message : err}`;
+	} finally {
+		emit.close();
+	}
+}
+
+/** `error` is why the run failed before its exit status counts, if it did. */
+function settle(
+	req: HarnessRequest,
+	exit: ExitStatus,
+	metrics: Metrics,
+	error: string | undefined,
+): HarnessResult {
+	const fail = (reason: string): HarnessResult => ({
+		outcome: "failed",
+		reason,
+		outputs: {},
+		metrics,
+	});
+	if (error) return fail(error);
+	if (exit.code !== 0) {
+		const how =
+			exit.code === null
+				? `killed by ${exit.signal}`
+				: `exited with code ${exit.code}`;
+		return fail(
+			`${how}: ${exit.stderr.trim().split("\n").slice(-5).join(" | ")}`,
+		);
+	}
+	const { outputs, missing } = collect(req.lane, req.outputs ?? []);
+	if (missing.length)
+		return fail(`declared outputs not written: ${missing.join(", ")}`);
+	return { outcome: "ok", outputs, metrics };
+}
+
 export function subprocessHarness(
 	adapter: SubprocessAdapter,
 	backend: SandboxBackend = bubblewrap,
@@ -64,47 +122,18 @@ export function subprocessHarness(
 			const metrics: Metrics = {};
 			let cancelled = false;
 			let settled = false;
-			let pumpError: string | undefined;
+			const pumped = pump(proc, adapter.parse, emit, metrics);
 
-			const pump = (async () => {
-				try {
-					for await (const line of proc.stdout) {
-						const e = adapter.parse(line);
-						if (!e) continue;
-						if (e.kind === "usage")
-							for (const [k, v] of Object.entries(e.metrics))
-								metrics[k] = (metrics[k] ?? 0) + v;
-						emit.enqueue(e);
-					}
-				} catch (err) {
-					pumpError = `cannot read harness output: ${err instanceof Error ? err.message : err}`;
-					await proc.kill().catch(() => {});
-				} finally {
-					emit.close();
-				}
-			})();
-
-			const result: Promise<HarnessResult> = (async () => {
+			const result = (async () => {
 				const exit = await proc.exited;
-				await pump;
-				const fail = (reason: string): HarnessResult => ({
-					outcome: "failed",
-					reason,
-					outputs: {},
-					metrics,
-				});
+				const pumpError = await pumped;
 				settled = true;
-				if (pumpError) return fail(pumpError);
-				if (cancelled) return fail("cancelled");
-				if (exit.code !== 0) {
-					return fail(
-						`${exit.code === null ? `killed by ${exit.signal}` : `exited with code ${exit.code}`}: ${exit.stderr.trim().split("\n").slice(-5).join(" | ")}`,
-					);
-				}
-				const { outputs, missing } = collect(req.lane, req.outputs ?? []);
-				if (missing.length)
-					return fail(`declared outputs not written: ${missing.join(", ")}`);
-				return { outcome: "ok", outputs, metrics };
+				return settle(
+					req,
+					exit,
+					metrics,
+					pumpError ?? (cancelled ? "cancelled" : undefined),
+				);
 			})();
 
 			return {
