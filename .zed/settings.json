@@ -2,7 +2,7 @@
   "languages": {
     "Markdown": {
       "preferred_line_length": 120,
-      "soft_wrap": "bounded",
+      "soft_wrap": "none",
       "wrap_guides": [120]
     }
   }

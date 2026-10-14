@@ -52,7 +52,9 @@ Non-trivial logic leaves one runnable check behind. Trivial one-liners need no t
 ## Codebase Architecture:
 
 Invoke and follow the `codebase-design` skill when the task at hand impacts the overall project structure. Care for
-the codebase. A well built, maintainable system is more important and mission critical, than a system that 'just works'. Shipping feature 'X' must not compromise maintainabily mid to long term.
+the codebase. A well built, maintainable system is more important and mission critical, than a system that 'just works'.
+Shipping feature 'X' must not compromise maintainabily mid to long term. A codebase should improve over time with each
+change, not degrade and accumulate tech debt. The codebase is a living system, and we are its caretakers.
 
 ## jj
 
