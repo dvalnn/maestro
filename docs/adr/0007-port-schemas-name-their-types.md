@@ -21,7 +21,8 @@ A JSON Schema annotation names the type, on any subschema of a port, param or sc
 - A marked type matches only the same name. A `core.json-file` also compares its content schema. Unmarked values match
   by schema.
 - An artifact never feeds a value port. A reader node turns it into a value, visible in the graph (sdk-spec section 5).
-- An artifact port's schema describes the file's content. The runtime value is the reference, whose shape core fixes.
+- An artifact port's schema describes the file's content. The runtime value is the reference, `ArtifactRef` in
+  `packages/ir`: the SDK types artifact ports with it, and the SDK shares only `ir` with core.
 - `packages/ir` owns the keyword's name, its Ajv registration and the one walker that finds marked subschemas in a
   schema and value pair. The SDK emits the annotation. Compose, the cache, host staging and host validation call the
   walker.

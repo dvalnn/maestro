@@ -4,6 +4,7 @@ import irSchema from "../ir.schema.json";
 import { checkGraph } from "./graph";
 import type { Ir, IrDiagnostic } from "./types";
 
+export { type ArtifactRef, artifactRefSchema } from "./artifact-ref";
 export {
 	CORE_TYPES,
 	findMarked,

@@ -5,7 +5,7 @@ import type { JsonSchema } from "./types";
 /** The annotation that names an artifact or host type on a subschema, as `<namespace>.<type>` (ADR 0007). */
 export const MAESTRO_TYPE = "x-maestro-type";
 
-/** The type names core owns (ADR 0007). The reference shape of an artifact value is core's, not the IR's. */
+/** The type names core owns (ADR 0007). Each names an artifact, whose runtime value is an `ArtifactRef`. */
 export const CORE_TYPES = {
 	file: "core.file",
 	dir: "core.dir",

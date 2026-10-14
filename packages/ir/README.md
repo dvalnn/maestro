@@ -6,8 +6,9 @@ TypeScript SDK, or any other language) and the engine. This package holds:
 - `ir.schema.json`: the published JSON Schema (draft 2020-12). It is the contract, and it is usable with any
   validator.
 - `src/`: `parseIr`, `IR_VERSION`, `irSchema` and the TypeScript types, plus the shared contracts below: outcomes
-  (`Outcome`, `Settled`, `worstOutcome`, `settledSchema`) and type markers (`MAESTRO_TYPE`, `CORE_TYPES`,
-  `registerMaestroType`, `findMarked`, `unreachableMarkers`).
+  (`Outcome`, `Settled`, `worstOutcome`, `settledSchema`), type markers (`MAESTRO_TYPE`, `CORE_TYPES`,
+  `registerMaestroType`, `findMarked`, `unreachableMarkers`) and artifact references (`ArtifactRef`,
+  `artifactRefSchema`).
 - `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`.
 - `test/read_ir.py`: an independent reader (Python standard library only), which proves the format is readable without
   maestro code.
@@ -188,7 +189,26 @@ The annotation names an artifact or host type on any subschema of a port, param 
 - **Matching.** A marked type matches only the same name. A `core.json-file` also compares its content schema.
   Unmarked values match by schema. An artifact never feeds a value port: a reader node turns it into one.
 - **Content versus reference.** A marked artifact subschema's other keywords describe the file's content. The runtime
-  value is the reference to the file, whose shape core fixes.
+  value is an `ArtifactRef`, the reference to the file. The SDK's artifact port types, the worker protocol, the record
+  and the cache all use it.
+
+```ts
+type ArtifactRef = {
+	path: string;
+	contentHash: string;
+	producer?: { node: string; expansion: string };
+};
+```
+
+- `path` is relative to the concert's artifact area. It uses forward slashes, has no leading `/`, and has no empty,
+  `.` or `..` segment. It names a file or, for `core.dir`, a directory.
+- `contentHash` is `sha256:` plus 64 lowercase hex digits. How a directory is hashed is the executor's, behind the same
+  form.
+- `producer` is the node instance that wrote the artifact: the node id and its expansion path. It is absent only for
+  an artifact from outside the concert, such as a param.
+
+`artifactRefSchema` is its JSON Schema, closed to these fields and enforcing the path and hash rules. Every boundary
+that reads a reference parses it against this one definition.
 
 `findMarked(schema, value)` returns one `{ type, schema, pointer, value }` per marked subschema whose value is
 present, where `pointer` is a JSON Pointer into `value`. It never descends into a marked subschema, since that schema
