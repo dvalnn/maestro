@@ -1,0 +1,5 @@
+[tools]
+bun = "latest"
+pi = "latest"
+node = "latest"
+just = "latest"

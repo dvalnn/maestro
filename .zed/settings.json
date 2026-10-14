@@ -1,0 +1,9 @@
+{
+  "languages": {
+    "Markdown": {
+      "preferred_line_length": 120,
+      "soft_wrap": "bounded",
+      "wrap_guides": [120]
+    }
+  }
+}
