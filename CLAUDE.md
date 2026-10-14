@@ -54,30 +54,10 @@ Do not cut validation, error handling, security, accessibility, data-loss protec
 Do not skip understanding. A small diff you do not understand is just laziness dressed up as efficiency.
 Non-trivial logic leaves one runnable check behind. Trivial one-liners need no test.
 
-## Comments
+## Coding standards
 
-Contract-only: a comment says what the name and type cannot. That is a contract, invariant, precondition, unit,
-encoded format, ownership or lifetime, security assumption, or a pointer to a decision (D-n, ADR). The reasoning is in
-`docs/research/ts-doc-comments.md`.
-
-- `/** */` goes on exports and interface members that carry one of those. Plain data types stay bare.
-- `//` inside a body says why: a threat, an ordering constraint, a workaround.
-- One or two sentences. A comment that needs a paragraph signals a design to fix or an ADR to point at.
-- Tags: `@deprecated <replacement>`, and `@throws` when throwing is part of the contract. A parameter's constraint goes
-  in the sentence.
-- History, slices and tickets live in jj and the ADRs, so comments describe the code as it is.
-- A behaviour change updates or deletes its comment in the same change.
-
-## User-facing output
-
-CLI output, errors, prompts and confirmations follow [clig.dev](https://clig.dev):
-
-- An error says what went wrong and what to do next in one or two lines, with the likely fix last.
-- Name the offending path, flag or value exactly as the user would type it.
-- Errors go to stderr with a non-zero exit. Primary output goes to stdout, machine-readable where it is meant to be
-  piped, with `--json` where structure matters.
-- Stack traces and internal jargon appear only in debug output the user asked for.
-- Prompt only when stdin is a TTY, and give every prompt a flag that answers it.
+`CODING_STANDARDS.md` holds the standards code is reviewed against: function shape, types, comments and user-facing
+output. Read it before writing or reviewing code.
 
 ## Codebase Architecture:
 

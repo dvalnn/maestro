@@ -1,6 +1,7 @@
 # Handoff: maestro V1 port, ready for wave 3
 
-Date: 2026-10-15. Read this first, then CLAUDE.md and `docs/port-plan.md`.
+Date: 2026-10-15. Read this first, then CLAUDE.md, `docs/port-plan.md` and
+`docs/agents/implementation-loop.md`.
 
 ## 1. State
 
@@ -11,12 +12,18 @@ Date: 2026-10-15. Read this first, then CLAUDE.md and `docs/port-plan.md`.
 | S8a lanes and changesets | Done, reviewed, 1 fix round. | `packages/host-agents/src/lane`, ADR 0005, `docs/reports/s8a/` |
 | S8b+c sandbox, supervision, harness interface, stub harness | Done, reviewed, 1 fix round. | `packages/host-agents/src/{sandbox,harness}`, `docs/reports/s8bc/` |
 
-`just check` passes: Biome, `tsc --noEmit`, 93 tests. Since wave 2: comment, user-facing output and commit message
-standards in CLAUDE.md, a comment sweep of both packages, clig.dev message fixes, and every open decision ruled.
+`just check` passes: Biome, `tsc --noEmit`, 93 tests. Since wave 2: `CODING_STANDARDS.md` (shape, types, comments,
+user-facing output), commit message rules in CLAUDE.md, a comment sweep of both packages, clig.dev message fixes, every
+open decision ruled, and Biome's cognitive-complexity rule on at 10.
 
-Next is wave 3: S2 (SDK build phase), S3 (compose and plan), S4 (executor, record, events), in parallel. Before they
-branch off, land `Outcome`, `Settled` and `worstOutcome` in `packages/ir` (ADR 0006), and the `x-maestro-type` keyword
-name, Ajv registration and walker (ADR 0007). Both are small and every wave 3 slice builds on them.
+Next is wave 3: S2 (SDK build phase), S3 (compose and plan), S4 (executor, record, events), in parallel, each through
+the loop in section 3. In order:
+
+1. Land the shared IR pieces every wave 3 slice builds on: `Outcome`, `Settled` and `worstOutcome` in `packages/ir`
+   (ADR 0006), and the `x-maestro-type` keyword name, Ajv registration and walker (ADR 0007). Run them as one small
+   contract-setting slice through the loop.
+2. Write the S2, S3 and S4 briefs, and dispatch them.
+3. Once all three are committed, run the wave review (loop step 6), then judge the loop against its exit criteria.
 
 ## 2. Owner rulings
 
@@ -39,14 +46,13 @@ Decisions with lasting weight are in ADRs 0003 to 0007. The rest:
 
 ## 3. How the work runs
 
-- The main session orchestrates and owns the mission goals. Work is delegated to background agents: sonnet by
-  default, opus for contract-setting or design-heavy slices.
-- Each slice gets a brief in `.scratch/<slice>/spec.md` (port plan section 6 template), one implementing agent, then
-  an independent read-only review agent, then at most two fix rounds by the original author (port plan rule 9).
+Each slice runs the loop in `docs/agents/implementation-loop.md`, a trial through wave 3 with its own exit criteria.
+Beyond it:
+
 - Agents running in parallel share one working copy. Each brief fences the agent to its own package dirs. Root files
   change only when unavoidable.
-- The orchestrator verifies `just check` itself and commits one jj change per slice, following CLAUDE.md "Commit
-  messages". `.claude/settings.json` turns off tool attribution.
+- `.claude/settings.json` turns off tool attribution, and a `SessionStart` hook re-injects the loop and this handoff
+  after a compaction.
 - The remote is SSH, `ssh://git@git.amorimcasa.org:2222/tiago/maestro.git`, like sssf's.
 
 ## 4. Machine requirements

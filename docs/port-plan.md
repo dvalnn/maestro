@@ -218,7 +218,8 @@ Suggested waves:
 ```
 Slice:        S<n> <name>
 Goal:         <one sentence>
-Read:         requirements.md, architecture.md, sdk-spec.md, port-plan.md, docs/adr/, prior slice reports
+Read:         requirements.md, architecture.md, sdk-spec.md, port-plan.md, CODING_STANDARDS.md, docs/adr/,
+              prior slice reports
 Deliverables: <list from the plan>
 Acceptance:   <IDs from requirements.md and the plan>
 Constraints:  clean break, no domain words in core, lean primitives, no guessing on open questions
