@@ -1,0 +1,175 @@
+{
+	"irVersion": "1.0",
+	"composition": {
+		"id": "guards-and-escalation",
+		"version": "0.1.0",
+		"pack": "fixtures",
+		"doc": "Split work into an unknown number of parts, merge them, then try sizes in order until one is ok. A gate asserts the outcome, and a summary is written either way."
+	},
+	"emitter": { "name": "hand", "version": "1", "sourceHash": "sha256:3333" },
+	"params": {
+		"schema": {
+			"type": "object",
+			"properties": { "maxParts": { "type": "integer", "default": 4 } }
+		},
+		"examples": [{ "maxParts": 4 }]
+	},
+	"config": {
+		"fake": {
+			"type": "object",
+			"properties": { "retries": { "type": "integer", "default": 1 } }
+		}
+	},
+	"scopes": [],
+	"nodes": [
+		{
+			"id": "plan",
+			"kind": "code",
+			"label": "plan",
+			"source": { "file": "fixtures/guards.ts", "line": 12, "column": 3 },
+			"out": { "parts": { "type": "array", "items": { "type": "string" } } },
+			"worker": {
+				"runtime": "ts",
+				"module": "fixtures/guards.ts",
+				"export": "plan",
+				"codeHash": "sha256:4444"
+			},
+			"pure": false,
+			"reads": ["inputs/"]
+		},
+		{
+			"id": "each",
+			"kind": "map",
+			"label": "each",
+			"cardinality": { "upTo": 4 },
+			"onError": "propagate",
+			"key": {
+				"runtime": "ts",
+				"module": "fixtures/guards.ts",
+				"export": "partKey",
+				"codeHash": "sha256:5555"
+			},
+			"in": { "items": { "type": "array", "items": { "type": "string" } } },
+			"inner": { "item": { "type": "string" } },
+			"out": { "results": { "type": "array" } },
+			"members": { "result": "each/work" }
+		},
+		{
+			"id": "each/work",
+			"kind": "fake.task",
+			"label": "work",
+			"parent": "each",
+			"in": { "prompt": { "type": "string" } },
+			"out": { "text": { "type": "string" } }
+		},
+		{
+			"id": "merge",
+			"kind": "code",
+			"label": "merge",
+			"in": { "parts": { "type": "array" }, "separator": { "type": "string" } },
+			"literals": { "separator": "\n" },
+			"out": {
+				"text": { "type": "string" },
+				"nonEmpty": { "type": "boolean" }
+			},
+			"worker": {
+				"runtime": "ts",
+				"module": "fixtures/guards.ts",
+				"export": "merge",
+				"codeHash": "sha256:6666"
+			},
+			"pure": true,
+			"writes": ["merged/"]
+		},
+		{
+			"id": "escalate",
+			"kind": "seq",
+			"label": "escalate",
+			"items": ["small", "medium", "large"],
+			"cardinality": { "upTo": 3 },
+			"inner": { "item": { "type": "string" } },
+			"out": { "text": { "type": "string" } },
+			"members": { "result": "escalate/try" },
+			"until": { "node": "escalate/try", "port": "ok" }
+		},
+		{
+			"id": "escalate/try",
+			"kind": "fake.task",
+			"label": "try",
+			"parent": "escalate",
+			"in": { "prompt": { "type": "string" }, "size": { "type": "string" } },
+			"out": { "text": { "type": "string" } }
+		},
+		{
+			"id": "gate",
+			"kind": "assert",
+			"label": "gate",
+			"in": { "cond": { "type": "boolean" } },
+			"message": "an escalation step must end ok",
+			"onFail": "rejected"
+		},
+		{
+			"id": "summary",
+			"kind": "code",
+			"label": "summary",
+			"in": { "text": { "type": "string" } },
+			"out": { "summary": { "type": "string" } },
+			"worker": {
+				"runtime": "ts",
+				"module": "fixtures/guards.ts",
+				"export": "summarize",
+				"codeHash": "sha256:7777"
+			},
+			"pure": true
+		}
+	],
+	"edges": [
+		{
+			"kind": "data",
+			"from": { "node": "plan", "port": "parts" },
+			"to": { "node": "each", "port": "items" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "each", "port": "item" },
+			"to": { "node": "each/work", "port": "prompt" }
+		},
+		{
+			"kind": "collect",
+			"from": { "node": "each", "port": "results" },
+			"to": { "node": "merge", "port": "parts" }
+		},
+		{
+			"kind": "control",
+			"from": { "node": "merge", "port": "nonEmpty" },
+			"to": { "node": "escalate" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "merge", "port": "text" },
+			"to": { "node": "escalate/try", "port": "prompt" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "escalate", "port": "item" },
+			"to": { "node": "escalate/try", "port": "size" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "escalate", "port": "ok" },
+			"to": { "node": "gate", "port": "cond" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "escalate", "port": "text" },
+			"to": { "node": "summary", "port": "text" }
+		},
+		{
+			"kind": "control",
+			"from": { "node": "gate" },
+			"to": { "node": "summary" },
+			"tolerate": "rejected"
+		}
+	],
+	"result": { "rule": "node", "node": "summary" }
+}

@@ -1,0 +1,26 @@
+{
+	"irVersion": "1.0",
+	"composition": { "id": "minimal", "version": "0.1.0", "pack": "fixtures" },
+	"emitter": { "name": "hand", "version": "1" },
+	"params": { "schema": { "type": "object" }, "examples": [{}] },
+	"scopes": [],
+	"nodes": [
+		{
+			"id": "greet",
+			"kind": "code",
+			"label": "greet",
+			"in": { "name": { "type": "string" } },
+			"out": { "text": { "type": "string" } },
+			"literals": { "name": "world" },
+			"worker": {
+				"runtime": "ts",
+				"module": "fixtures/greet.ts",
+				"export": "greet",
+				"codeHash": "sha256:0000"
+			},
+			"pure": true
+		}
+	],
+	"edges": [],
+	"result": { "rule": "default" }
+}

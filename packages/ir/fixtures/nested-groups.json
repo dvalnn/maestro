@@ -1,0 +1,125 @@
+{
+	"irVersion": "1.0",
+	"composition": {
+		"id": "nested-groups",
+		"version": "0.1.0",
+		"pack": "fixtures",
+		"doc": "Per angle, draft a text, polish it in a bounded loop, then critique it. Each member result has two named parts. At least one angle must settle ok, or the concert fails."
+	},
+	"emitter": { "name": "hand", "version": "1" },
+	"params": { "schema": { "type": "object" }, "examples": [{}] },
+	"scopes": [],
+	"nodes": [
+		{
+			"id": "angles",
+			"kind": "map",
+			"label": "angles",
+			"items": ["wide", "deep"],
+			"cardinality": { "exact": 2 },
+			"onError": "settle",
+			"inner": { "item": { "type": "string" } },
+			"out": { "results": { "type": "array" } },
+			"members": { "draft": "angles/polish", "critique": "angles/critique" }
+		},
+		{
+			"id": "angles/draft",
+			"kind": "fake.task",
+			"label": "draft",
+			"tag": "first draft",
+			"parent": "angles",
+			"in": { "prompt": { "type": "string" } },
+			"out": { "text": { "type": "string" } }
+		},
+		{
+			"id": "angles/polish",
+			"kind": "repeat",
+			"label": "polish",
+			"parent": "angles",
+			"cardinality": { "upTo": 3 },
+			"in": { "text": { "type": "string" } },
+			"inner": {
+				"index": { "type": "integer" },
+				"text": { "type": "string" }
+			},
+			"out": { "text": { "type": "string" } },
+			"members": { "result": "angles/polish/step" }
+		},
+		{
+			"id": "angles/polish/step",
+			"kind": "fake.task",
+			"label": "step",
+			"parent": "angles/polish",
+			"in": { "prompt": { "type": "string" }, "round": { "type": "integer" } },
+			"out": { "text": { "type": "string" } }
+		},
+		{
+			"id": "angles/critique",
+			"kind": "fake.task",
+			"label": "critique",
+			"parent": "angles",
+			"in": { "prompt": { "type": "string" } },
+			"out": { "notes": { "type": "string" } }
+		},
+		{
+			"id": "tally",
+			"kind": "code",
+			"label": "tally",
+			"in": { "angles": { "type": "array" } },
+			"out": { "okCount": { "type": "integer" }, "any": { "type": "boolean" } },
+			"worker": {
+				"runtime": "ts",
+				"module": "fixtures/nested.ts",
+				"export": "tally",
+				"codeHash": "sha256:8888"
+			},
+			"pure": true,
+			"fanin": true
+		},
+		{
+			"id": "enough",
+			"kind": "assert",
+			"label": "enough",
+			"in": { "cond": { "type": "boolean" } },
+			"message": "at least one angle must settle ok",
+			"onFail": "failed"
+		}
+	],
+	"edges": [
+		{
+			"kind": "data",
+			"from": { "node": "angles", "port": "item" },
+			"to": { "node": "angles/draft", "port": "prompt" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "angles/draft", "port": "text" },
+			"to": { "node": "angles/polish", "port": "text" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "angles/polish", "port": "text" },
+			"to": { "node": "angles/polish/step", "port": "prompt" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "angles/polish", "port": "index" },
+			"to": { "node": "angles/polish/step", "port": "round" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "angles/polish", "port": "text" },
+			"to": { "node": "angles/critique", "port": "prompt" }
+		},
+		{
+			"kind": "collect",
+			"from": { "node": "angles", "port": "results" },
+			"to": { "node": "tally", "port": "angles" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "tally", "port": "any" },
+			"to": { "node": "enough", "port": "cond" }
+		}
+	],
+	"result": { "rule": "default" }
+}

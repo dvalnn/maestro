@@ -1,0 +1,134 @@
+{
+	"irVersion": "1.0",
+	"composition": {
+		"id": "fanout-fanin-loop",
+		"version": "0.1.0",
+		"pack": "fixtures",
+		"doc": "Draft one text per topic in parallel, keep the first good draft, then refine it until done, at most twice."
+	},
+	"emitter": { "name": "hand", "version": "1" },
+	"params": {
+		"schema": {
+			"type": "object",
+			"properties": {
+				"topics": {
+					"type": "array",
+					"items": { "type": "string" },
+					"default": ["alpha", "beta", "gamma"]
+				}
+			}
+		},
+		"examples": [{ "topics": ["alpha", "beta", "gamma"] }]
+	},
+	"scopes": [
+		{
+			"id": "refine",
+			"composition": "refine-until-done",
+			"ports": { "text": { "type": "string" } }
+		}
+	],
+	"nodes": [
+		{
+			"id": "topics",
+			"kind": "map",
+			"label": "topics",
+			"items": ["alpha", "beta", "gamma"],
+			"cardinality": { "exact": 3 },
+			"onError": "settle",
+			"inner": { "item": { "type": "string" } },
+			"out": { "results": { "type": "array" } },
+			"members": { "result": "topics/draft" }
+		},
+		{
+			"id": "topics/draft",
+			"kind": "fake.task",
+			"label": "draft",
+			"parent": "topics",
+			"in": { "prompt": { "type": "string" } },
+			"out": { "text": { "type": "string" } },
+			"config": { "effort": "low" }
+		},
+		{
+			"id": "pick",
+			"kind": "code",
+			"label": "pick",
+			"in": { "drafts": { "type": "array" } },
+			"out": { "text": { "type": "string" } },
+			"worker": {
+				"runtime": "ts",
+				"module": "stdlib/reducers.ts",
+				"export": "firstOk",
+				"codeHash": "sha256:1111"
+			},
+			"pure": true,
+			"fanin": true
+		},
+		{
+			"id": "refine/loop",
+			"kind": "repeat",
+			"label": "loop",
+			"parent": "refine",
+			"cardinality": { "upTo": 2 },
+			"tolerate": "rejected",
+			"in": { "text": { "type": "string" } },
+			"inner": {
+				"index": { "type": "integer" },
+				"text": { "type": "string" }
+			},
+			"out": { "text": { "type": "string" } },
+			"members": { "result": "refine/loop/step" },
+			"until": { "node": "refine/loop/done", "port": "value" }
+		},
+		{
+			"id": "refine/loop/step",
+			"kind": "fake.task",
+			"label": "step",
+			"parent": "refine/loop",
+			"in": { "prompt": { "type": "string" } },
+			"out": { "text": { "type": "string" } }
+		},
+		{
+			"id": "refine/loop/done",
+			"kind": "code",
+			"label": "done",
+			"parent": "refine/loop",
+			"in": { "text": { "type": "string" } },
+			"out": { "value": { "type": "boolean" } },
+			"worker": {
+				"runtime": "ts",
+				"module": "fixtures/refine.ts",
+				"export": "isDone",
+				"codeHash": "sha256:2222"
+			},
+			"pure": true
+		}
+	],
+	"edges": [
+		{
+			"kind": "data",
+			"from": { "node": "topics", "port": "item" },
+			"to": { "node": "topics/draft", "port": "prompt" }
+		},
+		{
+			"kind": "collect",
+			"from": { "node": "topics", "port": "results" },
+			"to": { "node": "pick", "port": "drafts" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "pick", "port": "text" },
+			"to": { "node": "refine/loop", "port": "text" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "refine/loop", "port": "text" },
+			"to": { "node": "refine/loop/step", "port": "prompt" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "refine/loop/step", "port": "text" },
+			"to": { "node": "refine/loop/done", "port": "text" }
+		}
+	],
+	"result": { "rule": "default" }
+}
