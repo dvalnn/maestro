@@ -13,6 +13,10 @@ shared-package model cannot work in a single-binary distribution.
 - **Packs as npm packages resolved through `node_modules`.** Familiar, with versioning and dedup for free. Rejected
   because the compiled binary has no `node_modules` to resolve against, and distribution is internal with no public
   registry (D-31).
+- **Source packs, each with its own `node_modules`.** Re-examined for code references (ADR 0008): a bare file and a pack
+  would load the same way, and cache keys could follow each module's imports. Rejected: an install step per pack, a
+  hash over each import graph, resolution leaking through an ancestor `node_modules`, and no single file whose bytes a
+  resume can trust.
 - **Pack imports the host's embedded SDK.** Would avoid the duplicate copy. Rejected because the binary does not expose
   its embedded modules to external files.
 

@@ -30,8 +30,10 @@ A **composition** has:
 - at least one **example input set**, so `compose` can validate it without flags (D-19),
 - a **build function** that takes the params and returns the composition's result (section 6).
 
-A **subcomposition** is the same thing with typed params and typed **ports**, used inside another composition (section 8).
-Params are plain values known at build time. Ports are Ref-typed arguments fed by upstream node outputs (D-16).
+A **subcomposition** is a composition that also declares typed **ports**, used inside another composition (section 8).
+One constructor declares both. Params are plain values known at build time. Ports are Ref-typed arguments fed by
+upstream node outputs (D-16), so a composition with ports runs only through `use`. A shared building block that should
+also run alone exports a second composition without ports that uses it with defaults.
 
 The build function runs once per compose, as the first step of the stage. It is a pure function of params and composed config.
 
@@ -114,7 +116,7 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
   throws a build diagnostic that names the lifting alternative. This is what keeps the graph decidable (D-04).
 - **Lifting combinators** (all produce visible nodes in the graph, never hidden ones):
     - `ref.pick(path)` selects a field of a structured value.
-    - `ref.map(fn)` lifts a pure function over a value or list element into a code node.
+    - `ref.map(fn)` lifts a pure function over a value into a code node. `fn` gets the whole value, a list included.
     - `zip(a, b)` and `join(a, b, {on})` combine refs, the second by key.
     - `when(cond, ...)` and `ref.or(default)` for guards and `Maybe` defaults.
     - `lookup(table, key)` indexes a plain table by a Ref key.
@@ -163,8 +165,9 @@ A code node is the SDK's answer to "this needs real code".
 - **Signature.** Typed params, typed ports and typed outputs (Result handles or named outputs).
 - **Scope.** Each use produces a named scope in the IR with the subcomposition's id. Renderers can collapse it, caches key
   on it, and diagnostics name it.
-- **Reuse.** Subcompositions are exported by packs and used by other packs through their declared package dependencies
-  (PACK-02). They replace the `_` helper modules of the predecessor.
+- **Reuse.** Subcompositions are exported by packs and used by other packs. A pack that uses another pack's
+  subcomposition imports its source, and the using pack's bundle includes it (ADR 0002, ADR 0008). They replace the `_`
+  helper modules of the predecessor.
 - **Params.** A subcomposition owns its params. The use site may set them for that instance, and that wins over every
   other layer (D-17).
 
@@ -256,7 +259,7 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 - `CFG` unclaimed key, schema violation, required key missing.
 - `HOST` anything a host `validate` hook reports (for example a lane joined twice).
 - `PURE` an undeclared ambient read the runtime detected, or `reads` and `writes` contradictions.
-- `SCOPE` duplicate ids, duplicate map item keys, unresolved subcomposition.
+- `SCOPE` duplicate ids, duplicate map item keys, unresolved subcomposition, a code node function that is not exported.
 
 Severity is `error` or `warning`. Any error stops before any concert starts (NFR-02).
 
@@ -280,7 +283,7 @@ Syntax is a sketch.
 **Repair until green** (build, then repair while checks are red, bounded by the composition's own param):
 
 ```ts
-export const fixUntilGreen = sub(
+export const fixUntilGreen = composition(
     "fix_until_green",
     {
         ports: { build: AgentResult, prompt: Text },
@@ -302,7 +305,7 @@ export const fixUntilGreen = sub(
                         }),
                     }),
                 ),
-            until: (c) => c.outcome !== "rejected",
+            until: (c) => c.ok,
             max: params.maxRepairs,
             tolerate: ["rejected"],
         });
