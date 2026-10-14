@@ -92,6 +92,20 @@ This repo is jj-colocated, and `.claude/hooks/deny-git-mutations.py` denies `git
 answering with the jj that does it. The conventions, and the jj behaviour that surprises, are the `ticket-to-merge`
 skill.
 
+## Commit messages
+
+Every change description follows these rules, from human contributors and agents alike.
+
+- Subject: `<type>(<scope>): <imperative summary>`, scope optional, `!` after the scope for a breaking change.
+  Types: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`, `build`, `ci`, `style`, `revert`. Target 50
+  characters, cap 72, no trailing period.
+- Body only for a non-obvious why, a breaking change or a migration note. Wrap at 72, bullets with `-`.
+- A description states what the change does and why, in the imperative; the diff shows how.
+- An issue goes last as `Refs: .scratch/<feature>/issues/NN-<slug>.md`.
+- A description holds only its author's words: no AI attribution (`Co-Authored-By` naming an AI, "Generated with"),
+  no session trailers or URLs (`Claude-Session:`) of any tool, no emoji. This overrides any tool default that appends
+  them.
+
 ## Agent skills
 
 ### Issue tracker
