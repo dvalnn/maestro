@@ -318,10 +318,11 @@ number, a commit SHA) are inputs or round-folder data, never constants in a pack
 - Bun is the runtime baseline (D-03). Distribution is internal (D-31): the binary `maestro` and package tarballs are
   released from a private forge, nothing is published to a public registry, and the license is `UNLICENSED`.
 - The executable is built with `bun build --compile`, embeds core, SDK, CLI and the agent host, and runs on Linux x64
-  (glibc only). Packs load as external bundles (section 13), which keeps the binary generic.
-- Slice 0 checks five things (D-32): the compiled binary runs on RHEL 8, `bun:sqlite` WAL works inside it, it loads an
+  (glibc only), on modern Linux (D-34). Packs load as external bundles (section 13), which keeps the binary generic.
+- Slice 0 checks five things (D-32): the compiled binary runs on modern Linux, `bun:sqlite` WAL works inside it, it loads an
   external pack bundle and calls its code node, Bun spawns bubblewrap plus pi and streams the JSON events, and a binary
-  built on a newer-glibc host runs on RHEL 8. The first four gate the port. The fifth decides the release build host.
+  built on a modern host runs on RHEL 8 as a best-effort probe. The first four gate the port. The fifth does not gate,
+  and releases build on a modern host (D-34).
 - The IR carries a version so a newer core can still read older IR within the compatibility policy (CORE-16).
 
 ## 15. Key design decisions and alternatives

@@ -14,7 +14,7 @@ session. No schedule or effort estimates are given. Sizes are relative (S, M, L,
 4. **Lean (NFR-09).** A new node kind, edge kind or SDK primitive needs a written justification in the slice report.
    The default is a code node or a stdlib helper.
 5. **Do not guess.** A new open question that blocks a slice is raised to the project owner and not decided silently. Section
-   8 lists the decisions each slice relies on, and none is open now. A decision a session does make goes into `DECISIONS.md` in the repository
+   8 lists the decisions each slice relies on, and none is open now. A decision a session does make goes into a new ADR under `docs/adr/`
    with the reason and the alternative rejected.
 6. **Evidence.** A slice is done when its acceptance items pass, shown by command output in the slice report. A claim
    without output is not evidence.
@@ -41,7 +41,7 @@ packages/
   harness-<name>/   one adapter each
   pack-general/     the ported compositions (placeholder name)
   render-text/      static graph render (text or Mermaid), live view
-docs/               these documents (including GLOSSARY.md and adr/), DECISIONS.md, slice reports
+docs/               these documents (including adr/), slice reports under reports/
 ```
 
 ## 3. Slices
@@ -51,13 +51,13 @@ docs/               these documents (including GLOSSARY.md and adr/), DECISIONS.
 - **Goal.** A working repository and the facts the rest depends on.
 - **Deliverables.** Bun workspace, formatting, lint, a test runner, a one-command check. Five spike reports, each with a
   go or no-go (D-32):
-    1. A `bun build --compile` binary runs on a RHEL 8 class host (glibc 2.28, kernel 4.18).
+    1. A `bun build --compile` binary runs on modern Linux. A RHEL 8 class host run is a compatibility probe (D-34).
     2. `bun:sqlite` in WAL mode works inside the compiled binary: concurrent writers, durability, file location.
     3. The binary loads an external pack bundle (a directory with `maestro-pack.json` and one pre-bundled entry file) and
        calls its code node (D-30).
     4. Bun spawns bubblewrap plus pi (`pi -p --mode json`) and streams the JSON events, including cancel and process-tree
        kill (D-20, R-4).
-    5. A binary built on a newer-glibc host runs on RHEL 8. This decides the release build host.
+    5. A binary built on a modern host runs on RHEL 8, as a best-effort probe. Releases build on a modern host (D-34).
 - **Acceptance.** Reports exist and the repository's check command passes on an empty skeleton. Spikes 1 to 4 gate the
   port. Spike 5 does not.
 - **Depends on.** Nothing.
@@ -176,8 +176,8 @@ need the core. S8d and S8e need S7.
 - **Goal.** DIST-01 to DIST-04, AC-7.
 - **Deliverables.** The single executable if S0's spikes were a go, otherwise the package install path. Install and
   upgrade notes. Release setup on the private forge: the binary and package tarballs, license `UNLICENSED` (D-31). The
-  release build host follows spike 5.
-- **Acceptance.** AC-7 on a RHEL 8 class host.
+  release build host is a modern host (D-34).
+- **Acceptance.** AC-7 on a modern Linux host.
 - **Depends on.** S9.
 
 ## 4. Order and parallelism
@@ -218,7 +218,7 @@ Suggested waves:
 ```
 Slice:        S<n> <name>
 Goal:         <one sentence>
-Read:         requirements.md, architecture.md, sdk-spec.md, port-plan.md, DECISIONS.md, prior slice reports
+Read:         requirements.md, architecture.md, sdk-spec.md, port-plan.md, docs/adr/, prior slice reports
 Deliverables: <list from the plan>
 Acceptance:   <IDs from requirements.md and the plan>
 Constraints:  clean break, no domain words in core, lean primitives, no guessing on open questions
@@ -238,7 +238,7 @@ No open question blocks a slice. `requirements.md` section 9 maps every earlier 
 
 | Slice | Read these decisions first                                          |
 | ----- | ------------------------------------------------------------------- |
-| S0    | D-20, D-25, D-30, D-32                                              |
+| S0    | D-20, D-25, D-30, D-32, D-34                                        |
 | S2    | D-16 (build-time values), D-17 (params), D-18, D-19                 |
 | S3    | D-23 (bounds), D-24 (unclaimed keys)                                |
 | S4    | D-23 (metrics), D-26 (concurrent concerts, SQLite WAL)              |
@@ -248,4 +248,4 @@ No open question blocks a slice. `requirements.md` section 9 maps every earlier 
 | S8d   | D-20 (adapters)                                                     |
 | S8e   | D-21 (vocabulary), D-22 (check node)                                |
 | S9    | D-28 (acceptance comparison), D-30 (packs)                          |
-| S11   | D-31 (distribution), D-32 (spike 5)                                 |
+| S11   | D-31 (distribution), D-34 (modern Linux baseline)                   |

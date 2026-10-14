@@ -62,15 +62,16 @@ Decisions ruled by the project owner during design. Anything not listed here is 
 | D-22 | A check node is its own host node kind. | It runs untrusted target commands and needs the sandbox, lane staging, process-tree kill and logs. Code nodes are trusted and in-process and provide none of that. |
 | D-23 | The engine stores named additive numbers (metrics) per node instance and sums each name per concert. v1 reports token counts only. There is no cost, price table or budget in v1. Compose bounds are counts of node instances and agent runs. A compaction mechanism per adapter may come later, outside the engine. | Cost is host policy that v1 does not need, and tokens are enough. |
 | D-24 | An unclaimed config key fails compose with a did-you-mean hint only when no installed registrant claims it. A key claimed by an installed registrant that the concert does not use is ignored. | Typos are caught, and a shared workspace config does not break compositions that use only some of its keys. |
-| D-25 | The initial port targets Linux x64 only. The sandbox backend sits behind an interface. | arm64 and macOS come later. |
+| D-25 | The initial port targets Linux x64 only. The sandbox backend sits behind an interface. | arm64 and macOS come later. Modern Linux is the baseline. See D-34. |
 | D-26 | Several concerts may run in one workspace with no coordination beyond lane isolation. The record store is one SQLite file in WAL mode and the concurrency cap is per concert. | Keeps the first version simple. |
 | D-27 | Cross-concert lanes are fork only, through a lane ref param written `<concert id>.<node instance id>`. There is no cross-concert join. Lanes stay on disk until `prune` removes them. | Earlier concerts stay immutable and join-at-most-once never needs cross-concert tracking. A warm harness session cannot continue across concerts. |
 | D-28 | Acceptance against the predecessor is semantic, on two toy tasks: T1 (fixable) and T2 (unfixable by construction). Compared: the sequence of agent and check runs by kind, the final outcome class, the files touched, and a clean target checkout. Not compared: patch text, tokens, wall time. | The clean break (D-02) removes byte-level comparison. |
 | D-29 | CLI details. Aliases: `c` compose, `p` perform, `cfg` config, `w` wait, `k` kill, `wt` watch, `ls` unchanged, `prune` has no alias. `compose --out <file>` saves the IR. `compose` prints diagnostics and a one-line plan summary by default, with `--graph` and `--plan` for more. Resume is `perform --resume <concert id>`. `perform` tells a composition from IR by extension (`.ts` or `.js` versus `.json`). | `prune` is typed in full by decision. |
 | D-30 | A pack is a directory or release tarball with a `maestro-pack.json` manifest and one pre-bundled entry file that includes its own SDK copy. Workspace config lists packs by path or URL. There is no `node_modules` resolution. | A compiled binary cannot share its embedded SDK with external files. Compose consumes only IR, so a second SDK copy is harmless if nothing relies on cross-copy `instanceof`. See `adr/0002-pack-bundles.md`. |
 | D-31 | Distribution is internal. Package names are workspace names (`@maestro/*`, with `maestro-ai` as the fallback), releases (binary and tarballs) are served from a private forge, the license is `UNLICENSED`, and the binary is `maestro`. Nothing is published to a public registry. | Licensing is decided later. |
-| D-32 | Slice 0 proves five things: a compiled binary runs on RHEL 8, `bun:sqlite` in WAL mode works inside it, the binary loads an external pack bundle and calls its code node, Bun spawns bubblewrap plus pi and streams the JSON events, and a binary built on a newer-glibc host runs on RHEL 8. The first four gate the port. The fifth decides where releases are built. | Cheapest way to retire the platform risks first. |
+| D-32 | Slice 0 proves five things: a compiled binary runs on modern Linux, `bun:sqlite` in WAL mode works inside it, the binary loads an external pack bundle and calls its code node, Bun spawns bubblewrap plus pi and streams the JSON events, and a binary built on a modern host runs on RHEL 8 as a best-effort probe. The first four gate the port. The fifth does not gate and does not pick the build host (D-34). | Cheapest way to retire the platform risks first. |
 | D-33 | A secret param type is out of v1. Secrets are never params. A design where the host resolves secret handles at perform time is deferred. | YAGNI. |
+| D-34 | Maestro targets modern Linux x64 and is built with current tooling on a modern host. The host floor is Bun's documented platform minimum, with no stricter floor. RHEL 8 class hosts are best-effort, and a failure there is a known limitation with a user workaround. | RHEL 8 must not constrain tooling or the build host. See `adr/0003-modern-linux-baseline.md`. |
 
 ## 3. Goals and non-goals
 
@@ -267,7 +268,7 @@ The executable is `maestro`.
 - **PACK-02 (Must).** A pack declares semver ranges on the SDK and host packages it uses.
 - **PACK-03 (Must).** Domain concepts never leak into core or host packages. Packs may be domain-specific.
 - **DIST-01 (Must).** The baseline runtime is Bun. The floor version is fixed during the first slice.
-- **DIST-02 (Should).** A single executable via `bun build --compile`, verified in slice 0 on RHEL 8 class hosts (D-25, D-32).
+- **DIST-02 (Should).** A single executable via `bun build --compile`, verified in slice 0 on modern Linux (D-32, D-34).
 - **DIST-03 (Must).** The repository is a monorepo of separately versioned packages with an independently versioned IR.
 - **DIST-04 (Must).** No network use beyond harness and model traffic and explicit installs.
 - **DIST-05 (Must).** Distribution is internal (D-31): release artifacts (the `maestro` binary and package tarballs)
@@ -287,8 +288,8 @@ The executable is `maestro`.
 - **NFR-06 Testability.** The core runs without a host. A host runs without real agents (stub harness).
 - **NFR-07 Observability.** Every node instance is traceable from the CLI by id. The event stream is the single source
   for live views.
-- **NFR-08 Portability.** Linux x64 is the baseline and the only initial platform (D-25). The minimum supported host
-  class is RHEL 8 (glibc 2.28, kernel 4.18, bubblewrap 0.4.0).
+- **NFR-08 Portability.** Linux x64 is the baseline and the only initial platform (D-25). The host floor is Bun's own
+  documented platform minimum (kernel 3.10 or newer, 5.6 or newer recommended). RHEL 8 class hosts are best-effort, a known limitation with a user workaround (D-34).
 - **NFR-09 Leanness.** Each new node kind, edge kind or SDK primitive needs a written justification. The default answer
   is a code node or a stdlib helper.
 
@@ -305,7 +306,7 @@ The executable is `maestro`.
 - **AC-5.** Compose renders both compositions as a graph showing fan-out, fan-in, loop bounds and conditionals.
 - **AC-6.** `compose`, `perform`, `ls`, `wait`, `kill` and `config` work with JSON output, the documented exit codes and
   their short aliases.
-- **AC-7.** The package installs and runs on a RHEL 8 class host, as `bunx` or as a single binary.
+- **AC-7.** The package installs and runs on a modern Linux host, as `bunx` or as a single binary.
 - **AC-8.** A hand-written IR file is performed without the SDK.
 - **AC-9.** Against the predecessor, tasks T1 (fixable) and T2 (unfixable by construction) match on the sequence of
   agent and check runs by kind, the final outcome class, the files touched, and a clean target checkout (D-28).
@@ -351,8 +352,8 @@ Deferred beyond v1, with no decision needed now:
 - **R-2.** Compose strength is bounded by schemas. Code node bodies are opaque, so declared reads and writes matter.
 - **R-3.** Graphs whose shape depends on a model's output (a planner choosing lenses) are bounded, not exact.
 - **R-4.** The JSON event streams of pi and Claude Code are assumed stable and sufficient. Slice 0 checks pi's (D-32).
-- **R-5.** Single binary on RHEL 8: a minimal binary is known to run. SQLite, external pack loading and cross-host
-  builds are checked in slice 0 (D-32).
+- **R-5.** Single binary on modern Linux: a minimal binary is known to run. SQLite and external pack loading are
+  checked in slice 0 (D-32). RHEL 8 is a best-effort probe (D-34).
 - **R-6.** Scope creep from porting legacy features. The slice boundary (D-10) and the legacy disposition table below
   are the guard.
 - **R-7.** Lane semantics are the heaviest piece to rebuild (isolated worktrees, fork and join, applying changesets, keeping
