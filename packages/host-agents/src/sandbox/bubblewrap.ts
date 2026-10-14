@@ -60,7 +60,8 @@ async function* lines(
 export const bubblewrap: SandboxBackend = {
 	start(spec) {
 		const bwrap = Bun.which("bwrap");
-		if (!bwrap) throw new Error("bubblewrap (bwrap) is not on PATH");
+		if (!bwrap)
+			throw new Error("bubblewrap (bwrap) is not on PATH. Install bubblewrap");
 		const args = bwrapArgs(mountPlan(spec), spec.argv); // validates the mount policy before anything runs
 
 		const id = crypto.randomUUID();
@@ -116,7 +117,9 @@ export const bubblewrap: SandboxBackend = {
 					left = runProcesses(id);
 				}
 				if (left.length)
-					throw new Error(`sandbox kill left survivors: ${left.join(",")}`);
+					throw new Error(
+						`sandbox processes survived the kill, pids ${left.join(", ")}`,
+					);
 			},
 		};
 		return proc;

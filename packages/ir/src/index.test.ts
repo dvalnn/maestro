@@ -137,7 +137,7 @@ test.each<[string, Mutation, string, string, string]>([
 		(ir) => (ir.edges[2].from.node = "ghost"),
 		"IR.ref",
 		"/edges/2",
-		"node 'ghost' does not exist",
+		"edge refers to node 'ghost', which does not exist",
 	],
 	[
 		"an edge into an undeclared port",
@@ -212,7 +212,7 @@ test.each<[string, Mutation, string, string, string]>([
 		(ir) => (ir.edges[2].kind = "collect"),
 		"IR.graph",
 		"/edges/2",
-		"a collect edge must start at a map node's 'results' port",
+		"collect edge from 'pick' must start at a map node's 'results' port",
 	],
 	[
 		"map results leaving through a data edge",
@@ -237,7 +237,7 @@ test.each<[string, Mutation, string, string, string]>([
 			}),
 		"IR.graph",
 		"/nodes/3",
-		"repeat 'refine/loop' must have exactly one member in IR 1.0",
+		"repeat 'refine/loop' must have exactly one member in IR 1.0, got 2",
 	],
 	[
 		"a stop condition outside the group body",
@@ -347,7 +347,7 @@ test("a newer minor version than the reader knows is rejected", () => {
 	if (!result.ok) {
 		expect(result.diagnostics[0]?.code).toBe("IR.version");
 		expect(result.diagnostics[0]?.message).toBe(
-			"IR version 1.7 is newer than this maestro reads (1.0). It was emitted by a newer SDK, for example one bundled in a pack (D-30)",
+			"IR version 1.7 is newer than this maestro reads (1.0). It was emitted by a newer SDK, for example one bundled in a pack",
 		);
 		expect(result.diagnostics[0]?.hint).toBe(
 			"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.0",

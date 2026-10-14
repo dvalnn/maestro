@@ -79,7 +79,7 @@ export function subprocessHarness(
 						emit.enqueue(e);
 					}
 				} catch (err) {
-					pumpError = `adapter parse failed: ${err}`;
+					pumpError = `cannot read harness output: ${err instanceof Error ? err.message : err}`;
 					await proc.kill().catch(() => {});
 				} finally {
 					emit.close();
@@ -100,7 +100,7 @@ export function subprocessHarness(
 				if (cancelled) return fail("cancelled");
 				if (exit.code !== 0) {
 					return fail(
-						`exit ${exit.code ?? exit.signal}: ${exit.stderr.trim().split("\n").slice(-5).join(" | ")}`,
+						`${exit.code === null ? `killed by ${exit.signal}` : `exited with code ${exit.code}`}: ${exit.stderr.trim().split("\n").slice(-5).join(" | ")}`,
 					);
 				}
 				const { outputs, missing } = collect(req.lane, req.outputs ?? []);

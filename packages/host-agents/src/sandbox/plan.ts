@@ -19,13 +19,18 @@ const inLane = (p: string) => p === LANE_DST || p.startsWith(`${LANE_DST}/`);
 
 function resolveBind(b: Bind, what: string): { src: string; dst: string } {
 	const dst = posix.resolve(b.dst ?? b.src);
-	if (!isAbsolute(b.src) || !isAbsolute(b.dst ?? b.src))
-		throw new Error(`${what} bind must be absolute: ${b.src}`);
+	const relative = [b.src, b.dst].find(
+		(p) => p !== undefined && !isAbsolute(p),
+	);
+	if (relative !== undefined)
+		throw new Error(`${what} bind path must be absolute: ${relative}`);
 	if (!existsSync(b.src))
-		throw new Error(`${what} bind source does not exist: ${b.src}`);
+		throw new Error(
+			`${what} bind source does not exist: ${b.src}. Create it or drop the bind`,
+		);
 	if (dst === "/" || inLane(dst))
 		throw new Error(
-			`${what} bind may not land at ${dst}: it is the lane's area`,
+			`${what} bind may not land at ${dst}: ${LANE_DST} is the lane's area. Bind to another destination`,
 		);
 	return { src: b.src, dst };
 }
@@ -49,7 +54,9 @@ export function mountPlan(spec: SandboxSpec): Mount[] {
 		const bind = resolveBind(b, "read-only");
 		const real = realpathSync(bind.src); // follows symlinks, so a link into the lane is caught too
 		if (real === laneReal || real.startsWith(`${laneReal}/`))
-			throw new Error(`read-only bind source is inside the lane: ${b.src}`);
+			throw new Error(
+				`read-only bind source is inside the lane: ${b.src}. Bind a path outside the lane`,
+			);
 		plan.push({ kind: "ro-bind", ...bind, origin: "declared" });
 	}
 	for (const b of spec.writable ?? [])

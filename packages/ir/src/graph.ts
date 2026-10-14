@@ -95,7 +95,12 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 		const from = nodes.get(e.from.node);
 		const to = nodes.get(e.to.node);
 		for (const id of [e.from.node, e.to.node]) {
-			if (!nodes.has(id)) report("IR.ref", path, `node '${id}' does not exist`);
+			if (!nodes.has(id))
+				report(
+					"IR.ref",
+					path,
+					`edge refers to node '${id}', which does not exist`,
+				);
 		}
 		if (!from || !to) return;
 		const inner = isGroup(from) && isInside(to.id, from.id);
@@ -190,7 +195,7 @@ function checkFanIn(
 		report(
 			"IR.graph",
 			path,
-			"a collect edge must start at a map node's 'results' port",
+			`collect edge from '${from.id}' must start at a map node's 'results' port`,
 		);
 	}
 	if (e.kind !== "collect" && isResults) {
@@ -232,7 +237,7 @@ function checkGroup(
 		report(
 			"IR.graph",
 			path,
-			`${g.kind} '${g.id}' must have exactly one member in IR 1.0`,
+			`${g.kind} '${g.id}' must have exactly one member in IR 1.0, got ${members.length}`,
 		);
 	}
 	const member = members.length === 1 ? members[0] : undefined;

@@ -192,7 +192,7 @@ describe("fork and join", () => {
 
 		const later = openLanes({ target, root }); // a separate concert, as from another process
 		await expect(later.join("c1.build", "c2.fix")).rejects.toThrow(
-			/cross-concert/,
+			/only versions of its own concert/,
 		);
 		const lane = await later.fork("c1.build", "c2.fix");
 		expect(readFileSync(join(lane.dir, "a.txt"), "utf8")).toBe("v1\n");

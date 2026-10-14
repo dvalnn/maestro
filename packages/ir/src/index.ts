@@ -46,7 +46,7 @@ function checkVersion(value: unknown): IrDiagnostic | undefined {
 	}
 	if (Number(match[2]) > MINOR) {
 		return fail(
-			`IR version ${v} is newer than this maestro reads (${IR_VERSION}). It was emitted by a newer SDK, for example one bundled in a pack (D-30)`,
+			`IR version ${v} is newer than this maestro reads (${IR_VERSION}). It was emitted by a newer SDK, for example one bundled in a pack`,
 			`Upgrade maestro to a version that reads IR ${v}, or re-emit the IR with an SDK that targets IR ${IR_VERSION}`,
 		);
 	}

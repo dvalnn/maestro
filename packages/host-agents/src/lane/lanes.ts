@@ -94,7 +94,7 @@ async function git(
 		p.exited,
 	]);
 	if (code !== 0) {
-		const cmd = args.find((a) => !a.startsWith("-"));
+		const cmd = args.find((a, i) => !a.startsWith("-") && args[i - 1] !== "-C");
 		throw new Error(`git ${cmd} failed: ${err.trim()}`);
 	}
 	return out;
@@ -111,7 +111,9 @@ const enc = (s: string) =>
 
 function concertId(c: string): string {
 	if (!c || c.includes("."))
-		throw new Error(`not a concert id: ${JSON.stringify(c)}`);
+		throw new Error(
+			`not a concert id: ${JSON.stringify(c)} (must be non-empty and contain no ".")`,
+		);
 	return c;
 }
 
@@ -283,7 +285,7 @@ export function openLanes(options: LanesOptions): Lanes {
 					.map((l) => l.split("\t")[1]);
 				if (nested.length)
 					throw new Error(
-						`${at}: nested repository at ${nested.join(", ")}; its files cannot be sealed`,
+						`${at}: nested repository at ${nested.join(", ")}; its files cannot be sealed. Remove its .git directory`,
 					);
 				const commit = changed.length
 					? await value(G("commit-tree", tree, "-p", head, "-m", at))
@@ -317,7 +319,9 @@ export function openLanes(options: LanesOptions): Lanes {
 		},
 		async join(v, at) {
 			if (parse(v).concert !== parse(at).concert)
-				throw new Error(`${at} cannot join ${v}: no cross-concert join (D-27)`);
+				throw new Error(
+					`${at} cannot join ${v}: a lane joins only versions of its own concert. Fork it instead`,
+				);
 			const { commit, base } = await resolve(v);
 			const from = paths(v).home;
 			const to = claim(at).home;
