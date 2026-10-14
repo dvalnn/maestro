@@ -1,0 +1,10 @@
+{
+	"name": "@maestro/host-agents",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./lane": "./src/lane/index.ts",
+		"./sandbox": "./src/sandbox/index.ts",
+		"./harness": "./src/harness/index.ts"
+	}
+}
