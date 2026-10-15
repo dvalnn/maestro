@@ -220,3 +220,21 @@ Classifier blocks: none.
 - K45: A. The cache is a table in the record store, policy `on` or `off`. A hit whose artifact is gone or differs is
   a miss; `prune` drops the entries of the concerts it removes.
 - K46: A. The cache key's config is a cacheable host node's own host namespace; a code node's key has no config.
+
+## Open for the owner (2026-10-17 morning)
+
+- K47 (S5 brief, `.scratch/s5-cache-resume/spec.md`): does the cache key's node definition include the node id?
+- K48 (S5 brief): on resume, do the current code hashes replace the stored IR's in the record?
+- K49 (wave 3 review, finding 1): core never reads a host kind's `config`, `outcomes` or `ports(node)`, nor
+  `Host.types`, so host outputs go unvalidated. A: compose and perform check them (recommended). B: drop them from the
+  interface. C: leave them to the host's `validate`.
+- K50 (finding 2): a code `Rejection` carries no outputs, yet tolerance and `repeat.tolerate` assume a tolerated
+  source's values flow. A: a compose error on reading a tolerant code source's outputs. B: `reject(reason, outputs?)`,
+  amending ADR 0008 (recommended). C: tolerance on control edges only.
+- K51 (finding 3): the IR does not record its param values, so K38's premise fails and resume cannot rebuild them.
+  A: an IR `params.values` field (recommended). B: the CLI refuses param flags on an IR. C: params given at perform.
+- K52 (finding 4): artifact refs are relative to one concert, so a cache hit from another concert points at the wrong
+  place. A: link or copy the artifact on a hit, keyed by content hash (recommended). B: refs relative to the store
+  root. C: no caching for nodes with artifacts. Blocks S5 with K47, K48 and K51.
+- K53 to K78 (S6 brief, `.scratch/s6-config-cli/spec.md`, Open Qs): config layout, packs, params, CLI verbs and exit
+  codes; each has options and a recommendation there. K70 builds on K51.
