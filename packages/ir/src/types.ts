@@ -2,12 +2,23 @@
 
 import type { Outcome } from "./outcome";
 
-/** `code` is IR.version, IR.schema, IR.ref, IR.graph or SCOPE.duplicate. `path` is a JSON Pointer. */
-export type IrDiagnostic = {
+export type Severity = "error" | "warning";
+
+/**
+ * A finding about a graph (CORE-17), from ir, the SDK or core. `code` is stable, with a prefix from sdk-spec 13.3, and
+ * any `error` stops compose. `hint` is the next step. Without `node`, `scope`, `source` and `path` it is about the
+ * whole IR.
+ */
+export type Diagnostic = {
 	code: string;
-	path: string;
+	severity: Severity;
 	message: string;
-	hint?: string;
+	hint: string;
+	node?: string;
+	scope?: string;
+	source?: SourceLocation;
+	/** A JSON Pointer into the IR. */
+	path?: string;
 };
 
 /** A JSON Schema (draft 2020-12) document. Opaque to the IR. */

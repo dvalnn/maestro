@@ -1,10 +1,11 @@
 import type {
+	Diagnostic,
 	GroupNode,
 	Ir,
-	IrDiagnostic,
 	IrEdge,
 	IrNode,
 	Ports,
+	Scope,
 } from "./types";
 
 const IMPLICIT_OUT = ["outcome", "ok", "reason"];
@@ -19,6 +20,91 @@ const names = (ports: Ports | undefined) => Object.keys(ports ?? {});
 
 const list = (xs: string[]) => `[${xs.toSorted().join(", ")}]`;
 
+/** Lookups over a graph. An id that resolves to nothing gives `undefined` or an empty list. */
+export type GraphIndex = {
+	nodes: ReadonlyMap<string, IrNode>;
+	scopes: ReadonlyMap<string, Scope>;
+	/** The `parent` of a node or scope. */
+	parent(id: string): string | undefined;
+	/** Enclosing scopes and groups, nearest first. Stops before a revisited id, so a parent cycle cannot hang it. */
+	ancestors(id: string): string[];
+	/** Enclosing groups, outermost first. Scopes do not affect execution, so they are left out. */
+	groupsOf(id: string): string[];
+	/** The nodes whose nearest enclosing group is `group`, in IR order. */
+	body(group: string): readonly IrNode[];
+	edgesInto(node: string): readonly IrEdge[];
+	edgesFrom(node: string): readonly IrEdge[];
+};
+
+/** Indexes `ir`. Safe on IR whose references do not resolve or whose parents loop. */
+export function indexGraph(ir: Ir): GraphIndex {
+	const nodes = new Map(ir.nodes.map((n) => [n.id, n]));
+	const parents = new Map(
+		[...ir.nodes, ...ir.scopes].map((e) => [e.id, e.parent]),
+	);
+	const ancestors = (id: string) => {
+		const chain: string[] = [];
+		for (let p = parents.get(id); p !== undefined; p = parents.get(p)) {
+			if (p === id || chain.includes(p)) break;
+			chain.push(p);
+		}
+		return chain;
+	};
+	const groupsOf = (id: string) =>
+		ancestors(id)
+			.filter((p) => isGroup(nodes.get(p)))
+			.reverse();
+	const bodies = Map.groupBy(ir.nodes, (n) => groupsOf(n.id).at(-1));
+	const into = Map.groupBy(ir.edges, (e) => e.to.node);
+	const from = Map.groupBy(ir.edges, (e) => e.from.node);
+	return {
+		nodes,
+		scopes: new Map(ir.scopes.map((s) => [s.id, s])),
+		parent: (id) => parents.get(id),
+		ancestors,
+		groupsOf,
+		body: (group) => bodies.get(group) ?? [],
+		edgesInto: (node) => into.get(node) ?? [],
+		edgesFrom: (node) => from.get(node) ?? [],
+	};
+}
+
+const NODE_PATH = /^\/nodes\/(\d+)(?:\/|$)/;
+
+/** The id of the node `path` points into, when `ir`, valid IR or not, has a string id there. */
+function nodeAt(ir: unknown, path: string): string | undefined {
+	const index = NODE_PATH.exec(path)?.[1];
+	if (index === undefined) return undefined;
+	const nodes =
+		typeof ir === "object" && ir !== null && "nodes" in ir ? ir.nodes : [];
+	const node: unknown = Array.isArray(nodes) ? nodes[Number(index)] : undefined;
+	return typeof node === "object" &&
+		node !== null &&
+		"id" in node &&
+		typeof node.id === "string"
+		? node.id
+		: undefined;
+}
+
+/** An error at `path` in `ir`, naming the node the path points into. */
+export function irError(
+	ir: unknown,
+	code: string,
+	path: string,
+	message: string,
+	hint: string,
+): Diagnostic {
+	const node = nodeAt(ir, path);
+	return {
+		code,
+		severity: "error",
+		path,
+		message,
+		hint,
+		...(node !== undefined && { node }),
+	};
+}
+
 type Report = (
 	code: string,
 	path: string,
@@ -26,11 +112,11 @@ type Report = (
 	hint: string,
 ) => void;
 
-type Graph = ReturnType<typeof graphOf>;
+type Graph = ReturnType<typeof checkerOf>;
 
 /** Checks the structural rules the JSON Schema cannot express. Call only with IR whose shape already validates. */
-export function checkGraph(ir: Ir): IrDiagnostic[] {
-	const graph = graphOf(ir);
+export function checkGraph(ir: Ir): Diagnostic[] {
+	const graph = checkerOf(ir);
 	checkParents(ir, graph);
 	ir.nodes.forEach((n, i) => {
 		checkLiterals(n, `/nodes/${i}`, graph);
@@ -54,38 +140,16 @@ export function checkGraph(ir: Ir): IrDiagnostic[] {
 	return graph.diagnostics;
 }
 
-function graphOf(ir: Ir) {
-	const diagnostics: IrDiagnostic[] = [];
+function checkerOf(ir: Ir) {
+	const diagnostics: Diagnostic[] = [];
 	const feeds = new Map<string, number>();
-	const nodes = new Map(ir.nodes.map((n) => [n.id, n]));
-	const parents = new Map(
-		[...ir.nodes, ...ir.scopes].map((e) => [e.id, e.parent]),
-	);
-
-	// Nearest first. Stops at a revisited id so a parent cycle cannot hang the walk.
-	const ancestors = (id: string) => {
-		const chain: string[] = [];
-		for (let p = parents.get(id); p !== undefined; p = parents.get(p)) {
-			if (p === id || chain.includes(p)) return { chain, loops: p === id };
-			chain.push(p);
-		}
-		return { chain, loops: false };
-	};
-
 	const report: Report = (code, path, message, hint) => {
-		diagnostics.push({ code, path, message, hint });
+		diagnostics.push(irError(ir, code, path, message, hint));
 	};
 	return {
+		...indexGraph(ir),
 		diagnostics,
 		feeds,
-		nodes,
-		scopeIds: new Set(ir.scopes.map((s) => s.id)),
-		ancestors,
-		// Scopes do not affect execution, so only enclosing groups (outermost first) matter for edges.
-		groupsOf: (id: string) =>
-			ancestors(id)
-				.chain.filter((p) => isGroup(nodes.get(p)))
-				.reverse(),
 		report,
 		feed: (node: string, port: string) => {
 			const key = `${node}\0${port}`;
@@ -94,8 +158,14 @@ function graphOf(ir: Ir) {
 	};
 }
 
+// `ancestors` stops before a revisited id, so the chain loops back to `id` exactly when its last entry's parent is
+// `id`.
+const loopsBack = (id: string, { ancestors, parent }: Graph) =>
+	parent(ancestors(id).at(-1) ?? id) === id;
+
 // Nodes and scopes share one id space, and both may sit inside a scope or a group.
-function checkParents(ir: Ir, { nodes, scopeIds, ancestors, report }: Graph) {
+function checkParents(ir: Ir, graph: Graph) {
+	const { nodes, scopes, report } = graph;
 	const entries = [
 		...ir.nodes.map((n, i) => ({ ...n, path: `/nodes/${i}` })),
 		...ir.scopes.map((s, i) => ({ ...s, path: `/scopes/${i}` })),
@@ -111,14 +181,14 @@ function checkParents(ir: Ir, { nodes, scopeIds, ancestors, report }: Graph) {
 			);
 		seen.add(id);
 		if (parent === undefined) continue;
-		if (!scopeIds.has(parent) && !isGroup(nodes.get(parent))) {
+		if (!scopes.has(parent) && !isGroup(nodes.get(parent))) {
 			report(
 				"IR.ref",
 				path,
 				`parent '${parent}' is not a scope or a group node`,
 				`Declare '${parent}' as a scope or as a map, seq or repeat node, or fix parent of '${id}'`,
 			);
-		} else if (ancestors(id).loops) {
+		} else if (loopsBack(id, graph)) {
 			report(
 				"IR.graph",
 				path,

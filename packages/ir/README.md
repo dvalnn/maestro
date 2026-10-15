@@ -1,14 +1,16 @@
 # @maestro/ir
 
 The IR is the language-neutral, versioned JSON form of a graph (D-09, IR-01). It is the contract between emitters (the
-TypeScript SDK, or any other language) and the engine. This package holds:
+TypeScript SDK, or any other language) and the engine. ir holds the IR plus what the SDK and core must both see, since
+the SDK imports nothing else (ADR 0007). It depends on nothing beyond Ajv. This package holds:
 
 - `ir.schema.json`: the published JSON Schema (draft 2020-12). It is the contract, and it is usable with any
   validator.
-- `src/`: `parseIr`, `IR_VERSION`, `irSchema` and the TypeScript types, plus the shared contracts below: outcomes
-  (`Outcome`, `Settled`, `worstOutcome`, `settledSchema`), type markers (`MAESTRO_TYPE`, `CORE_TYPES`,
-  `registerMaestroType`, `findMarked`, `unreachableMarkers`) and artifact references (`ArtifactRef`,
-  `artifactRefSchema`).
+- `src/`: `parseIr`, `IR_VERSION`, `irSchema` and the TypeScript types, plus the shared contracts below: diagnostics
+  (`Diagnostic`, `Severity`), outcomes (`OUTCOMES`, `Outcome`, `Settled`, `worstOutcome`, `settledSchema`), the
+  code-function contract (`Context`, `CodeContext`, `Facts`, `Rejection`, `reject`), type markers (`MAESTRO_TYPE`,
+  `CORE_TYPES`, `registerMaestroType`, `findMarked`, `unreachableMarkers`), artifact references (`ArtifactRef`,
+  `artifactRefSchema`) and the graph index (`indexGraph`, `GraphIndex`).
 - `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`, and its worker modules sit beside it.
 - `test/read_ir.py`: an independent reader (Python standard library only), which proves the format is readable without
   maestro code.
@@ -17,10 +19,15 @@ TypeScript SDK, or any other language) and the engine. This package holds:
 import { parseIr } from "@maestro/ir";
 
 const result = parseIr(JSON.parse(text));
-if (!result.ok) console.error(result.diagnostics); // [{ code, path, message, hint? }]
+if (!result.ok) console.error(result.diagnostics); // [{ code, severity, message, hint, path }]
 ```
 
 `parseIr` checks the version first, then the schema, then the structural rules below. It never throws on bad input.
+
+`Diagnostic` is the one diagnostic type of ir, the SDK and core (CORE-17): `code`, `severity`, `message` and `hint`
+(the next step), plus optional `node`, `scope`, `source` and `path` (a JSON Pointer). Without those four it is about the
+whole IR. Every diagnostic `parseIr` returns is an `error` with a hint and a path, and one whose path points into a node
+with a string `id` also names that node in `node`.
 
 ## Version and compatibility (CORE-16, ADR 0004)
 
@@ -149,6 +156,13 @@ Enforced by `parseIr` after the schema:
 
 Violations of rules 3 to 8 are `IR.graph`. Shape violations are `IR.schema`, and version problems are `IR.version`.
 
+## Graph index
+
+`indexGraph(ir)` returns the lookups the structural rules use, for every consumer of the graph: a node or scope by id,
+an entry's `parent` and `ancestors` (nearest first), the enclosing groups of a node (`groupsOf`, outermost first,
+scopes left out), a group's `body` (the nodes whose nearest enclosing group it is) and the edges into and out of a
+node. An id that resolves to nothing gives `undefined` or an empty list.
+
 ## Outcomes
 
 A node settles `ok`, `rejected`, `failed` or `skipped` (`Outcome`, CORE-04). A settled value is `Settled<T>`:
@@ -182,6 +196,16 @@ The golden fixtures do so with T `{ "type": "object" }`, the member result recor
 
 **Fan-in edge rule.** A `data` edge into a fan-in input checks the upstream port's schema against the input's
 `properties.value` subschema, not against the whole `Settled` schema (ADR 0006).
+
+## Code functions
+
+`src/code-function.ts` is the code-function contract, kept in one module so it can leave ir in one step:
+
+- `Context`: what core gives every node instance, `concert`, `clock`, `path(ref)` and `scratch`, the instance's own
+  scratch directory (ADR 0007).
+- `CodeContext`: `Context` plus `env`, each host's `Facts` keyed by host name.
+- `Rejection`: a code function's negative verdict, `{ outcome: "rejected", reason }`, which `reject(reason)` builds
+  (ADR 0008). No node declares an `outcome` or `reason` port, so a rejection never reads as outputs.
 
 ## Type markers (`x-maestro-type`)
 

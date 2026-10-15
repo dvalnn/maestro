@@ -23,6 +23,10 @@ function rejects(base: object, mutate: Mutation) {
 	mutate(ir);
 	const result = parseIr(ir);
 	if (result.ok) throw new Error("expected the IR to be rejected");
+	for (const d of result.diagnostics) {
+		expect(d.severity).toBe("error");
+		expect(d.hint).not.toBe("");
+	}
 	return result.diagnostics;
 }
 
@@ -95,8 +99,11 @@ test("schema diagnostics name the offending property", () => {
 	expect(diagnostics).toEqual([
 		{
 			code: "IR.schema",
+			severity: "error",
 			path: "/nodes/0",
 			message: "has unexpected property 'onFail'",
+			hint: "Remove 'onFail' from /nodes/0, or correct its spelling",
+			node: minimal.nodes[0]?.id,
 		},
 	]);
 });
@@ -108,50 +115,57 @@ test("schema diagnostics skip noise from the branch that failed", () => {
 	]);
 });
 
-test.each<[string, Mutation, string, string]>([
+test.each<[string, Mutation, string, string, string]>([
 	[
 		"enum lists the allowed values",
 		(ir) => (ir.nodes[0].kind = "loop"),
 		"/nodes/0/kind",
 		'must be one of "code", "assert", "map", "seq", "repeat"',
+		'Set /nodes/0/kind to one of "code", "assert", "map", "seq", "repeat"',
 	],
 	[
 		"const names the required value",
 		(ir) => (ir.result = { rule: "x" }),
 		"/result/rule",
 		'must be "default"',
+		'Set /result/rule to "default"',
 	],
 	[
 		"oneOf says no allowed shape matched",
 		(ir) => (ir.result = { rule: "x" }),
 		"/result",
 		"must match exactly one of the allowed shapes",
+		"Change /result to match ir.schema.json, which packages/ir/README.md describes",
 	],
 	[
 		"anyOf says no allowed shape matched",
 		(ir) => (ir.nodes[0].kind = "loop"),
 		"/nodes/0/kind",
 		"must match at least one of the allowed shapes",
+		"Change /nodes/0/kind to match ir.schema.json, which packages/ir/README.md describes",
 	],
 	[
 		"pattern names the pattern",
 		(ir) => (ir.nodes[0].id = "a//b"),
 		"/nodes/0/id",
 		"must match the pattern '^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$'",
+		"Change /nodes/0/id to match '^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$'",
 	],
 	[
 		"type names the expected type",
 		(ir) => (ir.nodes[0].label = 3),
 		"/nodes/0/label",
 		"must be of type string",
+		"Set /nodes/0/label to a string",
 	],
-])("schema diagnostics say in plain words: %s", (_, mutate, path, message) => {
-	expect(rejects(minimal, mutate)).toContainEqual({
-		code: "IR.schema",
-		path,
-		message,
-	});
-});
+])(
+	"schema diagnostics say in plain words: %s",
+	(_, mutate, path, message, hint) => {
+		expect(rejects(minimal, mutate)).toContainEqual(
+			expect.objectContaining({ code: "IR.schema", path, message, hint }),
+		);
+	},
+);
 
 test.each<[string, Mutation, [string, string][]]>([
 	[
@@ -460,13 +474,48 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"Point result.node at a node outside every group body, such as its group 'topics'",
 	],
 ])("the graph check rejects %s", (_, mutate, code, path, message, hint) => {
-	expect(rejects(fanoutFaninLoop, mutate)).toContainEqual({
-		code,
-		path,
-		message,
-		hint,
-	});
+	expect(rejects(fanoutFaninLoop, mutate)).toContainEqual(
+		expect.objectContaining({ code, path, message, hint }),
+	);
 });
+
+test.each<[string, object, Mutation, string, string | undefined]>([
+	[
+		"a schema error inside a node",
+		minimal,
+		(ir) => (ir.nodes[0].kind = "loop"),
+		"/nodes/0/kind",
+		minimal.nodes[0]?.id,
+	],
+	[
+		"a schema error on a node's unreadable id",
+		minimal,
+		(ir) => (ir.nodes[0].id = 3),
+		"/nodes/0/id",
+		undefined,
+	],
+	[
+		"a graph error on a node",
+		fanoutFaninLoop,
+		(ir) => ir.edges.splice(2, 1),
+		"/nodes/3",
+		"refine/loop",
+	],
+	[
+		"a graph error on a scope",
+		fanoutFaninLoop,
+		(ir) => (ir.scopes[0].parent = "refine/loop"),
+		"/scopes/0",
+		undefined,
+	],
+])(
+	"a diagnostic names the node its path points into: %s",
+	(_, base, mutate, path, node) => {
+		const found = rejects(base, mutate).filter((d) => d.path === path);
+		expect(found).not.toEqual([]);
+		for (const d of found) expect(d.node).toBe(node);
+	},
+);
 
 const withVersion = (irVersion: unknown) => ({ ...minimal, irVersion });
 
@@ -476,6 +525,7 @@ test("an unknown major version is rejected with a clear error", () => {
 		diagnostics: [
 			{
 				code: "IR.version",
+				severity: "error",
 				path: "/irVersion",
 				message:
 					"IR version 2.0 has major version 2, and this reader supports major version 1 only",

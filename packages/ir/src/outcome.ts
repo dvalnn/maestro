@@ -1,7 +1,7 @@
 import type { JsonSchema } from "./types";
 
 /** Best to worst, the one order every aggregation of outcomes follows (ADR 0006). */
-const OUTCOMES = ["ok", "skipped", "rejected", "failed"] as const;
+export const OUTCOMES = ["ok", "skipped", "rejected", "failed"] as const;
 
 export type Outcome = (typeof OUTCOMES)[number];
 

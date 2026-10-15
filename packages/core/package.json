@@ -1,0 +1,14 @@
+{
+	"name": "@maestro/core",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./host": "./src/host.ts",
+		"./worker": "./src/worker.ts",
+		"./compose": "./src/compose/index.ts",
+		"./perform": "./src/perform/index.ts"
+	},
+	"dependencies": {
+		"@maestro/ir": "workspace:*"
+	}
+}

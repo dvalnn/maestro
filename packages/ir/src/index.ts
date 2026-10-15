@@ -1,10 +1,18 @@
 import type { ErrorObject } from "ajv";
 import Ajv2020 from "ajv/dist/2020";
 import irSchema from "../ir.schema.json";
-import { checkGraph } from "./graph";
-import type { Ir, IrDiagnostic } from "./types";
+import { checkGraph, irError } from "./graph";
+import type { Diagnostic, Ir } from "./types";
 
 export { type ArtifactRef, artifactRefSchema } from "./artifact-ref";
+export {
+	type CodeContext,
+	type Context,
+	type Facts,
+	type Rejection,
+	reject,
+} from "./code-function";
+export { type GraphIndex, indexGraph } from "./graph";
 export {
 	CORE_TYPES,
 	findMarked,
@@ -14,6 +22,7 @@ export {
 	unreachableMarkers,
 } from "./maestro-type";
 export {
+	OUTCOMES,
 	type Outcome,
 	type Settled,
 	settledSchema,
@@ -25,7 +34,7 @@ export { irSchema };
 
 export type ParseResult =
 	| { ok: true; ir: Ir }
-	| { ok: false; diagnostics: IrDiagnostic[] };
+	| { ok: false; diagnostics: Diagnostic[] };
 
 // strictTypes off: the if/then sub-schemas apply only inside already-typed objects.
 const validateShape = new Ajv2020({
@@ -38,11 +47,12 @@ export const IR_VERSION = "1.0";
 const [MAJOR, MINOR] = IR_VERSION.split(".").map(Number) as [number, number];
 
 /** Checked before the shape, so IR of another major gets this error and not a pile of schema errors. */
-function checkVersion(value: unknown): IrDiagnostic | undefined {
+function checkVersion(value: unknown): Diagnostic | undefined {
 	const v = (value as { irVersion?: unknown } | null)?.irVersion;
 	const match = typeof v === "string" ? /^(\d+)\.(\d+)$/.exec(v) : null;
-	const fail = (message: string, hint: string) => ({
+	const fail = (message: string, hint: string): Diagnostic => ({
 		code: "IR.version",
+		severity: "error",
 		path: "/irVersion",
 		message,
 		hint,
@@ -73,7 +83,7 @@ export function parseIr(value: unknown): ParseResult {
 	const versionError = checkVersion(value);
 	if (versionError) return { ok: false, diagnostics: [versionError] };
 	if (!validateShape(value))
-		return { ok: false, diagnostics: shapeDiagnostics() };
+		return { ok: false, diagnostics: shapeDiagnostics(value) };
 	const diagnostics = checkGraph(value as Ir);
 	return diagnostics.length
 		? { ok: false, diagnostics }
@@ -97,7 +107,27 @@ const SHAPE_MESSAGES: Record<string, (p: ErrorObject["params"]) => string> = {
 	type: (p) => `must be of type ${[p.type].flat().join(" or ")}`,
 };
 
-function shapeDiagnostics(): IrDiagnostic[] {
+type Hint = (p: ErrorObject["params"], path: string) => string;
+
+const removeExtra: Hint = (p, path) =>
+	`Remove '${p.additionalProperty ?? p.unevaluatedProperty}' from ${path}, or correct its spelling`;
+
+/** The next step for an Ajv keyword. Other keywords get `schemaHint`. */
+const SHAPE_HINTS: Record<string, Hint> = {
+	enum: (p, path) =>
+		`Set ${path} to one of ${p.allowedValues.map(quote).join(", ")}`,
+	const: (p, path) => `Set ${path} to ${quote(p.allowedValue)}`,
+	additionalProperties: removeExtra,
+	unevaluatedProperties: removeExtra,
+	required: (p, path) => `Add '${p.missingProperty}' to ${path}`,
+	pattern: (p, path) => `Change ${path} to match '${p.pattern}'`,
+	type: (p, path) => `Set ${path} to a ${[p.type].flat().join(" or ")}`,
+};
+
+const schemaHint = (path: string) =>
+	`Change ${path} to match ir.schema.json, which packages/ir/README.md describes`;
+
+function shapeDiagnostics(value: unknown): Diagnostic[] {
 	// An "if" error only repeats its "then" branch's more precise error.
 	const errors = (validateShape.errors ?? []).filter((e) => e.keyword !== "if");
 	const isExtra = (e: (typeof errors)[number]) =>
@@ -116,7 +146,7 @@ function shapeDiagnostics(): IrDiagnostic[] {
 		(e.keyword === "unevaluatedProperties" &&
 			paths.some((p) => p.startsWith(`${e.instancePath}/`)));
 	const messages = new Set<string>();
-	const diagnostics: IrDiagnostic[] = [];
+	const diagnostics: Diagnostic[] = [];
 	for (const e of errors) {
 		if (isExtra(e) && isUntrusted(e)) continue;
 		const message =
@@ -126,7 +156,8 @@ function shapeDiagnostics(): IrDiagnostic[] {
 		const path = e.instancePath || "/";
 		if (messages.has(path + message)) continue;
 		messages.add(path + message);
-		diagnostics.push({ code: "IR.schema", path, message });
+		const hint = SHAPE_HINTS[e.keyword]?.(e.params, path) ?? schemaHint(path);
+		diagnostics.push(irError(value, "IR.schema", path, message, hint));
 	}
 	return diagnostics;
 }
