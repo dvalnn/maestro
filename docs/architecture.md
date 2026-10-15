@@ -156,9 +156,11 @@ A host is a package that the core loads. It is the only way node kinds beyond th
 4. **`bounds(node)`.** Bounds for a node instance as named counts, like metrics (CORE-19): core sums each name and
    config caps it by name, for the plan's size bound (D-23). The agent host counts agent runs under its own name.
 5. **Environment.** Host facts visible to code nodes through a typed context (for example the current target). The core's
-   own context holds only the concert id and a clock value.
+   own context holds only the concert id, a clock value and the instance's scratch directory (ADR 0007).
 6. **Config namespaces.** Schemas for the namespaces the host owns.
-7. **Event enrichment.** Extra fields added to events and the record for its node kinds. The core stores them opaquely.
+7. **Event enrichment.** Extra fields added to events and the record for its node kinds, when an instance settles, and
+   progress events emitted while it executes, such as an agent's tool calls and thinking (CORE-10). The core stores
+   them opaquely.
 8. **Cancellation.** A way to cancel a running node instance and release resources (kill the process tree).
 
 The core never inspects a host's types or rules. It only calls these hooks and records what they return.

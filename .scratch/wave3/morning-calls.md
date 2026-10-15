@@ -123,3 +123,37 @@ Blocked and stopped:
 - Nothing else can be dispatched without one of these calls.
 
 Classifier blocks: none.
+
+## Rulings from the S2 and S34 reviews (2026-10-16)
+
+- K1: diagnostic `hint` required; node, scope and source optional (absent means the whole IR). One `Diagnostic` and
+  `SourceLocation` type in ir, used by ir, the SDK and core; `fromIrDiagnostic` goes; `BuildError` carries a
+  `Diagnostic`.
+- K2: A. `execute` gets `emit(event)` for host progress events (tool calls, thinking), stored durably in the event
+  stream by node id and expansion path, contents opaque to core. Settle-time enrichment stays. Docs: CORE-10 and the
+  sssf disposition table gain a line; `thinking` becomes a harness event kind in S8d.
+- K3: a node hands back a file it wrote as a plain absolute path string at an artifact output; an object there is an
+  `ArtifactRef` passed on.
+- K4: A. `reject(reason)` returns plain `{ outcome: "rejected", reason }`; the outputs type excludes `outcome` and
+  `reason`.
+- K5: A. Every code function is `(inputs, ctx) => outputs | Rejection`, a ports object in and out; `ref.map` goes,
+  so the worker reference needs no call field. `Rejection` and `reject()` live in ir. The SDK types `code()` so `fn`
+  is checked against `in` and `out` at compile time, and a function that can reject shows it in its inferred return.
+  No Rust-style wrapper: the union already is the sum type. A `map` key function stays `(item) => key`.
+- K6: a failed build-time `assert` is an `ASSERT` diagnostic; the SDK's `TYPE` cases stay `TYPE`.
+- K7: a build function is `(params, ports)`.
+- K8: `tolerate: "rejected"`, a single value.
+- K9: A. `defaultResult` and the sdk-spec 11 "selection helpers" line go (YAGNI). The SDK emits `{ rule: "default" }`.
+- K10: a reducer worker receives one `Settled[]`, the `results` list or `[in0, in1, …]` in order (ADR 0006). A
+  reducer given a map's handle uses its `results`, so `firstOk(plans)` works.
+- K11: two unlabelled nodes with one derived id are `SCOPE.duplicate`, with a hint to add a `label`; no numbering.
+- K12: core gives each instance its own scratch directory, `ctx.scratch`, deleted once the outputs are moved into the
+  artifact area. A configurable scratch root is backlog.
+- K13: `NodeInstance` moves into core's `./worker`; the `./graph` subpath goes.
+- K14: the code-function context types move to ir, next to `Rejection`, so the SDK types `ctx` from them.
+- K16: A. No shared-types package. ir holds the IR plus what the SDK and core must both see, since the SDK imports
+  nothing else; the code-function contract (`Rejection`, `reject`, the context types) sits in one ir module so it can
+  move out in one step if it outgrows ir.
+- K15: D. A lift's id is its source node plus what it does (`review_summary`, `x_a_b`, `x_or`, `zip_a_b`), never the
+  variable name, which JavaScript cannot see and bundling renames. Every lift also takes `label` for the clashes left;
+  a second identical lift's hint says to reuse the earlier Ref.

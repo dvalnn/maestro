@@ -21,7 +21,7 @@ The product of compose: the IR plus composed config, diagnostics, expansion and 
 
 **Perform**:
 The second stage. It starts a concert from a plan.
-_Avoid_: launch, execute
+_Avoid_: launch, and execute for the stage. A host kind's `execute` hook carries out one node instance.
 
 **Concert**:
 One run of the perform stage over a plan. It has an id, a record and a result.

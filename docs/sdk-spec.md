@@ -28,7 +28,8 @@ A **composition** has:
 - a name (pack-scoped id) and a doc string,
 - **params** with defaults and CLI hints: one declaration for CLI inputs and tunables (section 9, D-17),
 - at least one **example input set**, so `compose` can validate it without flags (D-19),
-- a **build function** that takes the params and returns the composition's result (section 6).
+- a **build function** `(params, ports)` that returns the composition's result (section 6). Without ports it is
+  `(params)`.
 
 A **subcomposition** is a composition that also declares typed **ports**, used inside another composition (section 8).
 One constructor declares both. Params are plain values known at build time. Ports are Ref-typed arguments fed by
@@ -80,19 +81,21 @@ records, not an identity).
 Semantics each constructor must honor:
 
 - **`code`.** Never runs during build. Compose evaluates it only when it is pure and all its inputs are known (folding,
-  CORE-07). It can return `reject(reason)` for a negative verdict, which becomes outcome `rejected`.
+  CORE-07). Its function is an exported `(inputs, ctx) => outputs`, sync or async, with inputs and outputs keyed by
+  port name (ADR 0008). It can return `reject(reason)` for a negative verdict, which becomes outcome `rejected`.
 - **`map`.** `items` may be a build-time list or a Ref resolved later. `max` is mandatory when the item count is not
   known at compose time, and compose reports "up to N". A list of unknown length comes from a code node and feeds a
   bounded `map` (D-16). Items are keyed: a primitive item by its value, any other item by index, or by an optional key
-  function. Duplicate keys are a compose error (D-18, SDK-13). Keys only name node instances for `ls` and lane refs.
-  The cache is a content hash and does not depend on them. `onError` is required. With `"settle"` a non-ok member
+  function `(item) => key`. Duplicate keys are a compose error (D-18, SDK-13). Keys only name node instances for `ls`
+  and lane refs. The cache is a content hash and does not depend on them. `onError` is required. With `"settle"` a non-ok member
   becomes a `Settled` value and the group is `ok`. With `"propagate"` the group takes the worst member outcome, and
   the first non-ok member cancels the rest (ADR 0006).
-- **`seq`.** Covers escalation over an ordered list. Members after a satisfied `until` are `skipped` and appear as such
-  in the plan. The bound is `items.length` or `max`.
-- **`repeat`.** The step receives the previous state and the iteration index. At least one iteration runs: `until` is
-  evaluated on each new state, never on `init`.
-  Compose unrolls to `max` for bounds and rendering. `max` must be known at compose time, from a literal or a param. State edges are tolerant of `rejected` only if `tolerate` says so.
+- **`seq`.** Covers escalation over an ordered list. `until` gets a member's result and returns a `Ref<Bool>`. Members
+  after a satisfied `until` are `skipped` and appear as such in the plan. The bound is `items.length` or `max`.
+- **`repeat`.** The step receives the previous state and the iteration index. At least one iteration runs: `until`
+  gets each new state, never `init`, and returns a `Ref<Bool>`. Compose unrolls to `max` for bounds and rendering.
+  `max` must be known at compose time, from a literal or a param. State edges are tolerant of `rejected` only if
+  `tolerate` says so.
 - **`assert`.** Evaluated at build if the condition is a plain value, at compose time if it folds, and at perform time otherwise.
   A failed build-time or compose-time assert is a diagnostic error. A perform-time assert yields a `rejected` or `failed`
   node, whichever the assert declares.
@@ -104,7 +107,7 @@ Host SDKs add constructors with the same Result handle shape (section 12).
 ### 4.2 Guards and tolerance
 
 - **`when: Ref<Bool>`** on any node. A false guard makes the node `skipped`, and its result's ports are `Maybe`.
-- **`tolerate: ["rejected"]`** on a consuming node or a `repeat` state edge lets the node run after a `rejected`
+- **`tolerate: "rejected"`** on a consuming node or a `repeat` state edge lets the node run after a `rejected`
   upstream. It then receives `reason`. Without it a non-ok upstream makes the node `skipped` (CORE-04). `failed` and
   `skipped` are never tolerable.
 
@@ -116,10 +119,12 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
   throws a build diagnostic that names the lifting alternative. This is what keeps the graph decidable (D-04).
 - **Lifting combinators** (all produce visible nodes in the graph, never hidden ones):
     - `ref.pick(path)` selects a field of a structured value.
-    - `ref.map(fn)` lifts a pure function over a value into a code node. `fn` gets the whole value, a list included.
     - `zip(a, b)` and `join(a, b, {on})` combine refs, the second by key.
     - `when(cond, ...)` and `ref.or(default)` for guards and `Maybe` defaults.
     - `lookup(table, key)` indexes a plain table by a Ref key.
+
+  A lift's id names its source node and what it does, so it needs no label: `review.out.result.pick("summary")` is
+  `review_summary`, and `x.or(…)` is `x_or`. Every lift also takes `label`, for the rare clash that remains.
 - **Mapping between ports** is by typed assignment. A mismatch is a compose-time type error (CORE-02) naming both ports
   and schemas.
 - **Templates.** `tpl(file, vars)` renders a prompt or text from a template file. The variable set is checked against
@@ -147,7 +152,8 @@ The result's outcome gives the CLI its exit-code category: accepted (`ok`), reje
 
 A code node is the SDK's answer to "this needs real code".
 
-- **Typed in and out.** Input and output schemas are declared. Output validation happens at the node boundary. A return that
+- **Typed in and out.** Input and output schemas are declared, and the function's type is checked against them at
+  compile time. Output validation happens at the node boundary. A return that
   fails its schema makes the node `failed` with the validation error.
 - **Purity.** A pure node is a function of its inputs and declared artifacts. It is cacheable and foldable. An impure node
   declares `pure: false`, is never cached, and is never folded. Clock access goes through the context, not ambient state.
@@ -155,8 +161,9 @@ A code node is the SDK's answer to "this needs real code".
   explicit `reads` and `writes`. Compose can check write scope and the cache can hash declared reads. Undeclared
   access is the author's error. The SDK detects what it can (for example through the context's clock and environment) and
   does not promise exhaustive detection (R-2).
-- **Context.** A typed, read-only context offers the concert id and the clock value, plus whatever the loaded hosts add
-  (architecture section 6).
+- **Context.** A typed, read-only context offers the concert id, the clock value and the instance's own scratch
+  directory, plus whatever the loaded hosts add (architecture section 6). A file the node writes there and returns at an
+  artifact output becomes an artifact (ADR 0007).
 - **Errors.** A thrown error settles the node as `failed`. `reject(reason)` settles it as `rejected`.
 - **Runtime.** A worker reference names the runtime. The initial runtime is `ts`, in-process (CORE-14).
 
@@ -200,11 +207,10 @@ A code node is the SDK's answer to "this needs real code".
 The standard library is built only from the constructors above (NFR-09). Initial contents (SDK-07):
 
 - **Reducers.** `firstOk(results)`, `okOnly(results)` and `settle(results)`. Marked fan-in in the IR, so they run once
-  every input has settled and receive each as `Settled` (ADR 0006). `firstOk` with no `ok` input settles `failed` if any
-  input failed, else `rejected`.
+  every input has settled and receive each as `Settled` (ADR 0006). They take a map's handle or a list of outputs.
+  `firstOk` with no `ok` input settles `failed` if any input failed, else `rejected`.
 - **Templating.** `tpl` as above. Prompt files are text artifacts staged by the consuming host node.
 - **Readers.** Typed readers for JSON and text artifacts, with schema validation, as pure code nodes.
-- **Selection helpers.** The default result rule as a function, for compositions that want a variant.
 
 ## 12. Host SDK contract
 
@@ -259,7 +265,9 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 - `CFG` unclaimed key, schema violation, required key missing.
 - `HOST` anything a host `validate` hook reports (for example a lane joined twice).
 - `PURE` an undeclared ambient read the runtime detected, or `reads` and `writes` contradictions.
-- `SCOPE` duplicate ids, duplicate map item keys, unresolved subcomposition, a code node function that is not exported.
+- `ASSERT` an `assert` that fails at build or compose time.
+- `SCOPE` duplicate ids (two unlabelled nodes deriving one id need a `label`), duplicate map item keys, unresolved
+  subcomposition, a code node function that is not exported.
 
 Severity is `error` or `warning`. Any error stops before any concert starts (NFR-02).
 
@@ -289,7 +297,7 @@ export const fixUntilGreen = composition(
         ports: { build: AgentResult, prompt: Text },
         params: { maxRepairs: Int({ default: 2 }) },
     },
-    ({ build, prompt }, params) => {
+    (params, { build, prompt }) => {
         const check = (b) => checkNode({ lane: join(b.lane), prompt });
         return repeat({
             init: check(build),
@@ -307,7 +315,7 @@ export const fixUntilGreen = composition(
                 ),
             until: (c) => c.ok,
             max: params.maxRepairs,
-            tolerate: ["rejected"],
+            tolerate: "rejected",
         });
     },
 );
@@ -372,15 +380,13 @@ const plans = map(
         }),
     { onError: "settle" },
 );
-const good = code(renderOk, { in: { plans }, out: Text });
-return firstOk([
-    agent("plan", {
-        lane: join(scout.lane),
-        when: good.nonEmpty,
-        prompt: tpl("synthesis.md", { good }),
-    }),
-    firstOk(plans),
-]);
+const good = code(renderOk, { in: { plans: plans.out.results }, out: { text: Text, nonEmpty: Bool } });
+const synthesis = agent("plan", {
+    lane: join(scout.lane),
+    when: good.out.nonEmpty,
+    prompt: tpl("synthesis.md", { good: good.out.text }),
+});
+return firstOk([synthesis.out.text, firstOk(plans).out.value.pick("text")]);
 ```
 
 ## 15. Coverage of the predecessor's workflows

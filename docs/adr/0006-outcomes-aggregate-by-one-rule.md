@@ -24,6 +24,9 @@ their kind's cancel hook. A member cancelled this way settles `skipped` with the
 receives each `data` input as `Settled(T)`, and a `collect` input as `Settled(T)[]` as before. Its own `when` guard and
 control edges apply as on any node.
 
+**Reducer inputs.** A reducer's ports are a map's `results`, or one `data` input per output it was given, `in0` to
+`inN` in order. It reads either as one `Settled[]` in that order. Given a map's handle, the SDK uses its `results`.
+
 **Port schemas describe the delivered value.** A map's `results` port, every input fed by a `collect` edge and every
 `data` input of a fan-in node declare `Settled`, built by `settledSchema` in `packages/ir`. A `data` edge into a
 fan-in input checks the upstream schema against the port's `value` subschema.
@@ -52,7 +55,7 @@ on any non-ok outcome, and a reason on `skipped`, stay optional until a slice pi
 
 - A `fanin` node cannot mix inputs that must be `ok` with settled ones. A strict input is checked upstream.
 - Under propagate, which members ran depends on timing, so the record varies between runs. The outcome does not.
-- The plan-panel example indexes no settled list: `firstOk([synth, firstOk(plans)])` falls back to a plan that
-  succeeded.
+- The plan-panel example indexes no settled list:
+  `firstOk([synthesis.out.text, firstOk(plans).out.value.pick("text")])` falls back to a plan that succeeded.
 - `Outcome`, `Settled` and `worstOutcome` land in `packages/ir` before the SDK and executor build on them. The home is
   revisited if those slices find a better one.

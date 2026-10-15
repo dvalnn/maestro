@@ -11,11 +11,20 @@ value carries none of this, and a lambda or closure cannot be found again from t
 **Naming.** Every function the SDK turns into a code node is a named export of a module that can be imported again
 after build:
 
-- `code(fn)` and `ref.map(fn)` each make one code node whose worker is `fn`.
+- `code(fn)` makes one code node whose worker is `fn`.
 - A `map` key function is a worker reference on the group (IR `key`).
 - A predicate that needs code, such as an `until` that is not a Ref expression, is an exported code node.
 
 Build-time values reach a code node as `literals` (D-16), never through a closure, so the cache sees them.
+
+**One call shape.** Every code function is `(inputs, ctx) => outputs | Rejection`, or a promise of either, with
+inputs and outputs keyed by port name, so the worker calls each the same way and the worker reference needs no field saying how:
+
+- `Rejection` and `reject(reason)` live in `packages/ir`. Outputs never carry `outcome` or `reason`, so a rejection is
+  never mistaken for them.
+- The SDK types `code()` so the function is checked against its declared ports at compile time, and a function that
+  can reject shows it in its inferred return type.
+- A `map` key function is `(item) => key`. It names members and is not a node.
 
 **Resolution is the loader's.** The loader that loads a composition owns both directions:
 
@@ -52,6 +61,12 @@ Ref, run during build and are not code nodes.
   depend on rebuilding, IR alone would not run (AC-8), and values a closure captures stay invisible to the cache.
 - **Explicit names**, such as `code("byFinding", fn)`. No lookup, but the author keeps a name and an export in step
   by hand, and a mismatch shows up only at perform.
+- **`ref.map(fn)` handing `fn` the bare value.** Reads like `Array.map`, but it is a second call shape the IR cannot
+  tell apart from the first, a returned rejection looks like a value, and it takes one input only. Rejected, and
+  `ref.map` with it.
+- **A result wrapper**, `ok(outputs)` in the manner of Rust's `Result`. The union `outputs | Rejection` already is the
+  sum type, and a wrapper taxes every function that never rejects. A throw, settling `failed`, stays outside any
+  return type either way.
 - **`codeHash` from `fn.toString()`.** Changes only with the function's own text. Rejected: blind to the helpers it
   calls, so a changed helper serves stale cached results.
 - **The SDK resolves packs itself**, from a pack entry namespace the build context hands it. Ties the SDK to the pack
@@ -59,7 +74,8 @@ Ref, run during build and are not code nodes.
 
 ## Consequences
 
-- Authors export every function a code node runs. `ref.map(x => x.foo)` becomes `ref.pick("foo")` or a named export.
+- Authors export every function a code node runs. A field read is `ref.pick(path)`, and anything else is a `code`
+  node.
 - SDK tests resolve through a test resolver. The loader's rules are tested where the loader lands.
 - The worker reply gains an additive field for the stdlib version it ran (CORE-14), so older workers stay valid and
   the cache and the record can key on it.

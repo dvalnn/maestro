@@ -142,8 +142,9 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   cancellation, and propagates outcomes per CORE-04.
 - **CORE-09 (Must).** Node results are cached by a content hash of node definition, code version and inputs. A failed or
   killed concert resumes at node granularity. Nodes marked impure are never cached.
-- **CORE-10 (Must).** Every node-instance state transition emits an event with node id and expansion path. Events are
-  durable.
+- **CORE-10 (Must).** Every node-instance state transition emits an event with node id and expansion path. A host may
+  emit progress events for an instance it is executing, such as an agent's tool calls and thinking, under the same
+  keys. Events are durable.
 - **CORE-11 (Must).** A record store holds concerts, node instances, outcomes, durations, metrics, artifacts and
   events, and supports the CLI queries in 6.6.
 - **CORE-12 (Must).** Core has no domain words. A test enforces it: the core's own suite runs real graphs with only code
@@ -383,6 +384,7 @@ descriptions only and need a closer look during the slice.
 | `seat()` copied between chains, `_` helper modules          | Typed subcompositions.                                                        |
 | stderr degraded-run logging                                 | `Settled` results and outcomes in the record.                                 |
 | `obs` viewer (deprecated)                                   | Renderer contract on the IR and event stream.                                 |
+| tool call and thinking events, streamed as each completes   | Host progress events on the node instance (CORE-10).                          |
 | `seams` (pick up a previous run's record)                   | Superseded by cache, resume and lane versions (unread).                       |
 | `resolution` (what one run resolved to)                     | The plan (unread).                                                            |
 | `gates` (verify an envelope's claims)                       | Re-evaluate in the host slice (unread).                                       |
