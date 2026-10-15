@@ -129,8 +129,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **CORE-03 (Must).** The IR distinguishes edge kinds `data`, `collect` and `control`. Fan-in is an explicit `collect`
   edge or a reducer node, never inferred.
 - **CORE-04 (Must).** Outcomes are `ok`, `rejected`, `failed`, `skipped`. By default a dependent runs only after `ok`
-  upstreams. An edge can tolerate `rejected`. The concert result defaults to the first non-ok node on the critical
-  path, else the final node. The rule is overridable.
+  upstreams. An edge can tolerate `rejected`. The concert result is the node the composition returns when it is
+  `ok`, else the root cause of its outcome.
 - **CORE-05 (Must).** Every group declares its cardinality, `exact` or `up to N`, so compose can bound node instances.
 - **CORE-06 (Must).** Building is symbolic, deterministic and side-effect free. It never reads a node's value. The
   same inputs and config yield byte-identical IR.

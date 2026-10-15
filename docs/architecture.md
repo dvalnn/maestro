@@ -129,7 +129,7 @@ Contents, at the level of what it must carry:
   `collect` edges.
 - **Edges.** From port to port, with kind `data`, `collect` or `control`, and for `control` the tolerance (`ok` only,
   or `ok` and `rejected`).
-- **Result rule.** The concert result selection, default or overridden.
+- **Result.** The node the composition returns, from which the result rule derives the concert result.
 - **Provenance.** Optional compose-time additions: folded values, expansion, bounds. A plan is an IR plus these.
 
 Properties:
@@ -167,8 +167,10 @@ The core never inspects a host's types or rules. It only calls these hooks and r
 
 ## 7. Execution model
 
-- **Node instances.** A node instance is a node id plus an expansion path (for example `lens[3]/skeptic`). Events and
-  records use this identity.
+- **Node instances.** A node instance is a node id plus an expansion path: one `[key]` per enclosing group, outermost
+  first, where a `map` contributes its item key and `repeat` and `seq` their iteration index (`[risk]`, `[risk][2]`,
+  or empty outside groups). It is shown merged into the id, as `lens[risk]/skeptic`. Events and records use this
+  identity.
 - **Scheduling.** A node instance is ready when all `data` and `collect` inputs are settled and its `control` edges
   allow it. The executor runs ready instances up to the concurrency cap.
 - **Outcomes.** `ok`, `rejected`, `failed`, `skipped`.
@@ -189,7 +191,10 @@ The core never inspects a host's types or rules. It only calls these hooks and r
       This covers fix-until-green and review-revise loops.
 - **Guards.** A `when` guard that is false makes the node `skipped`. Compose resolves guards that depend only on
   known values.
-- **Result.** The default result rule is the first non-ok node on the critical path, else the final node.
+- **Result.** The result rule starts at the returned node. An `ok` node is the result. Otherwise it follows the
+  node's non-`ok` inputs, and a group's result member, that the graph does not tolerate (a tolerated rejection or a
+  `Settled` input), the first to settle when several did, to a node with no such input: the root cause, with its
+  outcome and reason. A node skipped by its own false guard is the result, and counts as rejected.
 - **Cache.** Key: hash of (node definition, code hash for code nodes, input values and artifact content hashes, relevant
   config). Host nodes participate only if their kind declares itself cacheable. Agent nodes are not cacheable by default
   (non-deterministic, costly), but their recorded results are reusable by resume.
@@ -229,8 +234,9 @@ claimed by an installed but unused registrant is ignored.
   references and context. The reply carries outputs and an outcome (`ok` or `rejected` with reason), or an error.
   Workers support cancellation and timeouts.
 - **Purity.** A pure node reads only its inputs and declared artifacts, writes only declared outputs, and is cached.
-  Reading ambient state (clock, environment, files not declared) marks the node impure, and it is never cached. The clock
-  is a context input, never read ambiently.
+  Reading ambient state (clock, environment, files not declared) marks the node impure, and it is never cached. An
+  impure node reads the clock and the concert id from its context. A pure node that reads them fails, so a cached or
+  folded value never freezes them.
 - **Compose-time folding.** Pure code nodes whose inputs are all known at compose time are evaluated there, which lets the
   plan expand groups exactly.
 

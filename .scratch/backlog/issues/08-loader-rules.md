@@ -2,6 +2,8 @@
 
 Status: ready-for-human
 
+Owner ruling 2026-10-16: the real loader builds in S6. S3 and S4 take `loadCode` as an argument until then.
+
 ADR 0008 leaves `resolveCode(fn)` and `loadCode(ref)` to the loader. Rulings and findings to carry into the slice that
 builds it:
 

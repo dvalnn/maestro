@@ -86,8 +86,10 @@ Semantics each constructor must honor:
 - **`map`.** `items` may be a build-time list or a Ref resolved later. `max` is mandatory when the item count is not
   known at compose time, and compose reports "up to N". A list of unknown length comes from a code node and feeds a
   bounded `map` (D-16). Items are keyed: a primitive item by its value, any other item by index, or by an optional key
-  function `(item) => key`. Duplicate keys are a compose error (D-18, SDK-13). Keys only name node instances for `ls`
-  and lane refs. The cache is a content hash and does not depend on them. `onError` is required. With `"settle"` a non-ok member
+  function `(item) => key`. Give a key function whenever items are records or paths, so keys stay short and survive
+  reordering. A key is sanitized to `[A-Za-z0-9_.-]`, anything else becoming `_`, and keys that sanitize alike are
+  duplicates: a compose error for a build-time list (D-18, SDK-13), a failed `map` for a list known only at perform
+  time. Keys only name node instances for `ls` and lane refs. The cache is a content hash and does not depend on them. `onError` is required. With `"settle"` a non-ok member
   becomes a `Settled` value and the group is `ok`. With `"propagate"` the group takes the worst member outcome, and
   the first non-ok member cancels the rest (ADR 0006).
 - **`seq`.** Covers escalation over an ordered list. `until` gets a member's result and returns a `Ref<Bool>`. Members
@@ -141,10 +143,12 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
 ## 6. Results of a composition
 
 A build function returns a Result handle (or an object of named outputs, for subcompositions). For an executable
-composition the **concert result** is chosen by the **result rule**:
+composition the **concert result** follows from the returned node by the **result rule** (CORE-04, architecture 7):
 
-- default: the first non-ok node on the critical path, else the final node (CORE-04),
-- override: an explicit result reference, or a reducer such as `firstOk`.
+- an `ok` node is the result,
+- otherwise the result is the root cause of its outcome, so a skipped consolidator reports the code node that threw.
+
+Returning a reducer such as `firstOk` makes it the result, since the rule never looks past a tolerated input.
 
 The result's outcome gives the CLI its exit-code category: accepted (`ok`), rejected, or failed.
 
@@ -153,10 +157,11 @@ The result's outcome gives the CLI its exit-code category: accepted (`ok`), reje
 A code node is the SDK's answer to "this needs real code".
 
 - **Typed in and out.** Input and output schemas are declared, and the function's type is checked against them at
-  compile time. Output validation happens at the node boundary. A return that
-  fails its schema makes the node `failed` with the validation error.
-- **Purity.** A pure node is a function of its inputs and declared artifacts. It is cacheable and foldable. An impure node
-  declares `pure: false`, is never cached, and is never folded. Clock access goes through the context, not ambient state.
+  compile time. Output validation happens at the node boundary. A return that fails its schema makes the node `failed`
+  with the validation error.
+- **Purity.** A pure node is a function of its inputs and declared artifacts. It is cacheable and foldable. An impure
+  node declares `pure: false`, is never cached, and is never folded. A pure node that reads `ctx.clock` or
+  `ctx.concert` fails.
 - **Declared reads and writes.** File and directory paths a node reads or writes are declared by artifact ports or by
   explicit `reads` and `writes`. Compose can check write scope and the cache can hash declared reads. Undeclared
   access is the author's error. The SDK detects what it can (for example through the context's clock and environment) and

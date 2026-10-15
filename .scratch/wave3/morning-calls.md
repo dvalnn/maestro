@@ -157,3 +157,25 @@ Classifier blocks: none.
 - K15: D. A lift's id is its source node plus what it does (`review_summary`, `x_a_b`, `x_or`, `zip_a_b`), never the
   variable name, which JavaScript cannot see and bundling renames. Every lift also takes `label` for the clashes left;
   a second identical lift's hint says to reuse the earlier Ref.
+
+## Rulings for S3 and S4 (2026-10-16)
+
+- K17: C. An expansion path is one `[key]` per enclosing group, outermost first; `repeat` and `seq` use the iteration
+  index. Keys are sanitized to `[A-Za-z0-9_.-]` (keys only name instances, D-18), and keys that sanitize alike are
+  duplicates. Authors give a key function for records and paths: that is the intended way to get short, stable keys.
+- K18: A. S3 and S4 take `loadCode` as an argument and test with fixture functions. The real loader (`resolveCode`,
+  `loadCode`, backlog 08) lands in S6, the first slice that loads compositions from disk.
+- K19: A. A slice S2b, fenced to `packages/sdk`, writes the stdlib functions (`pick`, `or`, `when`, `lookup`, `zip`,
+  `join`, `firstOk`, `okOnly`, `settle`) in parallel with S3 and S4.
+- K20: C. Compose compares only the `x-maestro-type` name and the JSON `type` (an `integer` fits a `number`) wherever
+  both schemas declare structure, ignoring enums, required fields, extra properties and annotations. Perform checks
+  each node's inputs against its declared `in` schema before it starts, so a finer mismatch spends nothing on that
+  node. Equality falsely rejects `Enum` into `Text` and `Int` into `Float`; widening rules are easy to get wrong.
+- K21: B. One result rule: the IR's `result` is `{ node }`, the node the build returned, still IR 1.0 (no emitter has
+  shipped). An `ok` node is the result; otherwise the result is the root cause, reached by following non-`ok` inputs
+  the graph does not tolerate (architecture 7). A reducer stays the result, since its inputs are `Settled`. Read
+  literally, "first non-ok node on the critical path" reported a recovered escalation as rejected.
+- K22: C. A pure node's context throws when `concert` or `clock` is read, at compose and at perform alike, with a hint
+  to mark the node `pure: false`. A cached or folded pure node would otherwise freeze the first value. A folded node
+  gets compose's scratch area and the hosts' facts, and `path()` throws; a node with artifact outputs never folds.
+  `concert` is the concert id and `clock` is epoch milliseconds fixed at instance start.
