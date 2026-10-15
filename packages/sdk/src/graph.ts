@@ -12,6 +12,7 @@ import {
 } from "@maestro/ir";
 import pkg from "../package.json";
 import { BuildError } from "./diagnostic";
+import type * as stdlibFunctions from "./stdlib-functions";
 import type { Type, Types, ValueOf } from "./types";
 
 /** Any function the loader may name: a code function or a `map` key function (ADR 0008). */
@@ -229,6 +230,7 @@ export class RefImpl<T> implements Ref<T> {
 	}
 
 	or(fallback: T, common: Common = {}): Ref<T> {
+		checkOr(this, fallback);
 		return lift(
 			"or",
 			`${sourceOf(this)}_or`,
@@ -245,6 +247,21 @@ export class RefImpl<T> implements Ref<T> {
 	toJSON(): never {
 		throw usedAsValue();
 	}
+}
+
+function checkOr(value: RefImpl<unknown>, fallback: unknown): void {
+	if (fallback instanceof RefImpl || fallback instanceof ResultImpl)
+		throw fail(
+			"TYPE.or",
+			"the fallback of or is a Ref, and it must be a plain value",
+			"Pick between two node outputs with firstOk([x, y])",
+		);
+	if (value.source.kind === "port" && isResults(visible(value)))
+		throw fail(
+			"TYPE.or",
+			"or was called on a map's results, which are a list of Settled",
+			"Reduce the results with okOnly or settle",
+		);
 }
 
 const usedAsValue = () =>
@@ -382,19 +399,37 @@ export const itemsOf = (list: JsonSchema): JsonSchema =>
 		? (list.items as JsonSchema)
 		: {};
 
+/** A schema that types a list: `type: "array"` or an `items` keyword. An untyped schema is not one. */
+const isListSchema = (schema: JsonSchema) =>
+	typeof schema === "object" &&
+	(schema.type === "array" || schema.items !== undefined);
+
+/** The schema of field `key` of `at`, or nothing when `at` names no fields. */
+function fieldSchema(at: JsonSchema, key: string, path: string) {
+	if (isListSchema(at))
+		throw fail(
+			"TYPE.path",
+			`pick path '${path}' goes into a list at '${key}'`,
+			"Pick a field of one item, or reduce the list with a code node",
+		);
+	const props =
+		typeof at === "object" ? (at.properties as Ports | undefined) : undefined;
+	if (!props) return undefined;
+	const next = Object.hasOwn(props, key) ? props[key] : undefined;
+	if (next === undefined)
+		throw fail(
+			"TYPE.path",
+			`pick path '${path}' names no field '${key}'`,
+			`Pick one of: ${Object.keys(props).join(", ")}`,
+		);
+	return next;
+}
+
 function pickSchema(schema: JsonSchema, path: string): JsonSchema {
 	let at = schema;
 	for (const key of path.split(".")) {
-		const props =
-			typeof at === "object" ? (at.properties as Ports | undefined) : undefined;
-		if (!props) return {};
-		const next = Object.hasOwn(props, key) ? props[key] : undefined;
-		if (next === undefined)
-			throw fail(
-				"TYPE.path",
-				`pick path '${path}' names no field '${key}'`,
-				`Pick one of: ${Object.keys(props).join(", ")}`,
-			);
+		const next = fieldSchema(at, key, path);
+		if (next === undefined) return {};
 		at = next;
 	}
 	return at;
@@ -459,7 +494,10 @@ export function worker(fn: CodeFn): WorkerRef {
 	);
 }
 
-const STDLIB_MODULE = "maestro:stdlib";
+export const STDLIB_MODULE = "maestro:stdlib";
+
+/** The name of a stdlib function, so a node cannot name an export the module lacks (ADR 0008). */
+export type StdlibName = keyof typeof stdlibFunctions;
 
 type StdlibOptions = Common & {
 	fanin?: boolean;
@@ -469,7 +507,7 @@ type StdlibOptions = Common & {
 
 /** A pure node of the engine's standard library (ADR 0008). */
 export function stdlib(
-	name: string,
+	name: StdlibName,
 	inputs: Record<string, unknown>,
 	out: Ports,
 	{ fanin = false, derived = name, ...common }: StdlibOptions = {},
@@ -514,7 +552,7 @@ const described = (value: unknown) =>
  * @throws `SCOPE.duplicate` that says to reuse the earlier Ref when an identical lift already holds the id.
  */
 export function lift(
-	name: string,
+	name: StdlibName,
 	derived: string,
 	inputs: Record<string, unknown>,
 	value: JsonSchema,

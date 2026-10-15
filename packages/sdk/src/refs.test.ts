@@ -103,6 +103,23 @@ describe("lifting combinators", () => {
 		expect(error.code).toBe("TYPE.path");
 	});
 
+	test("pick into a list fails with TYPE.path, and into an untyped value builds", () => {
+		const error = diagnose(() => buildOf(() => task().out.names.pick("0")));
+		expect(error.code).toBe("TYPE.path");
+		const bare = diagnose(() =>
+			buildOf(() =>
+				hostNode("fake.task", {
+					out: { l: Json({ items: { type: "string" } }) },
+				}).out.l.pick("0"),
+			),
+		);
+		expect(bare.code).toBe("TYPE.path");
+		const ir = buildOf(() =>
+			hostNode("fake.task", { out: { any: Json({}) } }).out.any.pick("a.b"),
+		);
+		expect(nodeOf(ir, "task_a_b")).toMatchObject({ out: { value: {} } });
+	});
+
 	test("or is a fan-in node that receives its input as Settled", () => {
 		const ir = buildOf(() => task().out.text.or("none"));
 		expect(nodeOf(ir, "task_or")).toMatchObject({
@@ -111,6 +128,24 @@ describe("lifting combinators", () => {
 			literals: { fallback: "none" },
 			out: { value: STRING },
 		});
+	});
+
+	test("or fails with TYPE.or on a map's results, and on a Ref fallback", () => {
+		const results = diagnose(() =>
+			buildOf(() =>
+				map(["a"], () => task(), { onError: "settle" }).out.results.or([]),
+			),
+		);
+		expect(results).toMatchObject({ code: "TYPE.or" });
+		expect(results.hint).toContain("okOnly");
+		const fallback = diagnose(() =>
+			buildOf(() => {
+				const t = task();
+				return t.out.text.or(t.out.text as never);
+			}),
+		);
+		expect(fallback).toMatchObject({ code: "TYPE.or" });
+		expect(fallback.hint).toContain("firstOk");
 	});
 
 	test("zip and join pair the items of two lists", () => {
@@ -154,6 +189,16 @@ describe("lifting combinators", () => {
 			in: { key: STRING },
 			out: { value: { type: "integer" } },
 		});
+	});
+
+	test("lookup into an array takes a number key, and a string key fails with TYPE.key", () => {
+		const t = () =>
+			hostNode("fake.task", { out: { n: Int(), text: Text() } }).out;
+		expect(() => buildOf(() => lookup(["x"], t().n))).not.toThrow();
+		const error = diagnose(() =>
+			buildOf(() => lookup(["x"], t().text as never)),
+		);
+		expect(error.code).toBe("TYPE.key");
 	});
 
 	test("lookup with a Ref in its table fails with REF.value", () => {

@@ -17,6 +17,7 @@ import {
 	RefImpl,
 	type Result,
 	ResultImpl,
+	type StdlibName,
 	schemaOf,
 	sourceOf,
 	stdlib,
@@ -24,6 +25,9 @@ import {
 } from "./graph";
 import { type MapResults, MEMBER } from "./nodes";
 import type { Type } from "./types";
+
+const isStringSchema = (schema: JsonSchema) =>
+	typeof schema === "object" && schema.type === "string";
 
 const pairs = (a: Ref<unknown>, b: Ref<unknown>) => ({
 	type: "array",
@@ -78,13 +82,29 @@ export function when<T>(
 	}) as Ref<T>;
 }
 
-/** The entry of the plain `table` under `key`: a stdlib `lookup` node. */
+/** The entry of the plain `table` under `key`: a stdlib `lookup` node. An array table takes a number key only. */
+export function lookup<V>(
+	table: readonly V[],
+	key: Ref<number>,
+	common?: Common,
+): Ref<V>;
+export function lookup<V>(
+	table: Record<string, V>,
+	key: Ref<string> | Ref<number>,
+	common?: Common,
+): Ref<V>;
 export function lookup<V>(
 	table: Record<string, V> | readonly V[],
 	key: Ref<string> | Ref<number>,
 	common: Common = {},
 ): Ref<V> {
 	checkPlain(table, "lookup table");
+	if (Array.isArray(table) && isStringSchema(key.type.schema))
+		throw fail(
+			"TYPE.key",
+			"lookup into an array takes a number key, and this key is a string",
+			"Pass a number key, or put the entries in an object keyed by string",
+		);
 	const entries =
 		isPlainObject(table) || Array.isArray(table) ? Object.values(table) : [];
 	return lift(
@@ -102,7 +122,7 @@ export type ReducerInputs<T> =
 	| Ref<SettledValue<T>[]>
 	| Result<MapResults>;
 
-const badInputs = (name: string) =>
+const badInputs = (name: StdlibName) =>
 	fail(
 		"TYPE.reducer",
 		`${name} takes a map, its results or a non-empty list of node outputs`,
@@ -115,7 +135,7 @@ const isNodeOutput = (ref: unknown): ref is RefImpl<unknown> =>
 	!isResults(visible(ref));
 
 /** The input ports of a reducer, and the schema of one input's value. */
-function reducerPorts(name: string, given: unknown) {
+function reducerPorts(name: StdlibName, given: unknown) {
 	const inputs =
 		given instanceof ResultImpl && info(given.node).kind === "map"
 			? given.out.results
@@ -141,7 +161,7 @@ function reducerPorts(name: string, given: unknown) {
 }
 
 function reducer(
-	name: string,
+	name: StdlibName,
 	inputs: unknown,
 	common: Common,
 	out: (value: JsonSchema) => JsonSchema,
