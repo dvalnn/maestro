@@ -255,7 +255,7 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 - `IR` schema violation, unknown version.
 - `REF` a Ref used where a value is required, a Ref that escaped its scope.
 - `TYPE` edge schema mismatch, template variable missing or mistyped, unguarded `Maybe`.
-- `BOUND` a group without a bound, a bound over a configured cap on node instances or agent runs.
+- `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count.
 - `CFG` unclaimed key, schema violation, required key missing.
 - `HOST` anything a host `validate` hook reports (for example a lane joined twice).
 - `PURE` an undeclared ambient read the runtime detected, or `reads` and `writes` contradictions.

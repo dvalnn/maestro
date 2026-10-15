@@ -98,8 +98,8 @@ is steps 5 to 7 and starts a concert.
     5. Expand bounded groups whose cardinality is now known. A group whose size depends on a node result stays as a
        bounded region.
     6. Run host `validate(graph)` hooks (for example the lane double-join rule, a role and model policy).
-    7. Compute bounds with host `bounds(node)`: maximum node instances, maximum agent runs and maximum concurrency
-       (D-23). There is no cost bound in v1.
+    7. Compute bounds with host `bounds(node)`: maximum node instances, the hosts' named counts (such as agent runs)
+       and maximum concurrency (D-23). There is no cost bound in v1.
     8. Emit the **plan**: diagnostics, counts, bounds and a renderable graph. Diagnostics of severity error stop here
        (NFR-02).
 5. **Perform.** The executor instantiates node instances, schedules them by dependency, applies outcomes and edge
@@ -148,13 +148,13 @@ Properties:
 A host is a package that the core loads. It is the only way node kinds beyond the core's set exist. A host supplies:
 
 1. **Node kinds.** For each kind: name, configuration schema, input and output port schemas (possibly generic over
-   the node's configuration), the possible outcomes, and `run(instance, inputs, context)` returning outputs and an
-   outcome. A kind can declare its outputs include artifacts.
+   the node's configuration), the possible outcomes, and `execute(instance, inputs, context)` returning outputs and an
+   outcome. Core never says run or build (CORE-12): the SDK builds, core composes and executes. A kind can declare its outputs include artifacts.
 2. **Types.** Named types the host's ports use (for example a lane handle), with a way to serialize them into the IR.
 3. **`validate(graph)`.** A compose-time hook returning diagnostics. It sees the whole graph and its own kinds' nodes.
    This is where host rules live (the lane join rule, role and model policy, bind validity).
-4. **`bounds(node)`.** Bounds for a node instance, as counts of node instances and agent runs, for the plan's size bound
-   (D-23).
+4. **`bounds(node)`.** Bounds for a node instance as named counts, like metrics (CORE-19): core sums each name and
+   config caps it by name, for the plan's size bound (D-23). The agent host counts agent runs under its own name.
 5. **Environment.** Host facts visible to code nodes through a typed context (for example the current target). The core's
    own context holds only the concert id and a clock value.
 6. **Config namespaces.** Schemas for the namespaces the host owns.
