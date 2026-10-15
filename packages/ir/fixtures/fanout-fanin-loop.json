@@ -31,7 +31,6 @@
 		{
 			"id": "topics",
 			"kind": "map",
-			"label": "topics",
 			"items": ["alpha", "beta", "gamma"],
 			"cardinality": { "exact": 3 },
 			"onError": "settle",
@@ -74,8 +73,6 @@
 		{
 			"id": "topics/draft",
 			"kind": "fake.task",
-			"label": "draft",
-			"parent": "topics",
 			"in": { "prompt": { "type": "string" } },
 			"out": { "text": { "type": "string" } },
 			"config": { "effort": "low" }
@@ -83,7 +80,6 @@
 		{
 			"id": "pick",
 			"kind": "code",
-			"label": "pick",
 			"in": {
 				"drafts": {
 					"type": "array",
@@ -130,8 +126,6 @@
 		{
 			"id": "refine/loop",
 			"kind": "repeat",
-			"label": "loop",
-			"parent": "refine",
 			"cardinality": { "upTo": 2 },
 			"tolerate": "rejected",
 			"in": { "text": { "type": "string" } },
@@ -146,16 +140,12 @@
 		{
 			"id": "refine/loop/step",
 			"kind": "fake.task",
-			"label": "step",
-			"parent": "refine/loop",
 			"in": { "prompt": { "type": "string" } },
 			"out": { "text": { "type": "string" } }
 		},
 		{
 			"id": "refine/loop/done",
 			"kind": "code",
-			"label": "done",
-			"parent": "refine/loop",
 			"in": { "text": { "type": "string" } },
 			"out": { "value": { "type": "boolean" } },
 			"worker": {
@@ -194,5 +184,5 @@
 			"to": { "node": "refine/loop/done", "port": "text" }
 		}
 	],
-	"result": { "rule": "default" }
+	"result": { "node": "refine/loop" }
 }

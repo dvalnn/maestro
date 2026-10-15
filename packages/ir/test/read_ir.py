@@ -20,15 +20,13 @@ def main(path):
         sys.exit(f"unsupported IR major version {major}")
 
     nodes = {n["id"]: n for n in ir["nodes"]}
-    parents = {x["id"]: x.get("parent") for x in ir["nodes"] + ir["scopes"]}
-
     def top(node_id):
         """The outermost group holding a node, or the node itself. Scopes do not count."""
-        result, p = node_id, parents.get(node_id)
-        while p is not None:
+        result, p = node_id, node_id.rpartition("/")[0]
+        while p:
             if p in nodes and nodes[p]["kind"] in GROUP_KINDS:
                 result = p
-            p = parents.get(p)
+            p = p.rpartition("/")[0]
         return result
 
     def members(g):

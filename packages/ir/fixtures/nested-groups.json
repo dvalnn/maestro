@@ -13,7 +13,6 @@
 		{
 			"id": "angles",
 			"kind": "map",
-			"label": "angles",
 			"items": ["wide", "deep"],
 			"cardinality": { "exact": 2 },
 			"onError": "settle",
@@ -56,17 +55,13 @@
 		{
 			"id": "angles/draft",
 			"kind": "fake.task",
-			"label": "draft",
 			"tag": "first draft",
-			"parent": "angles",
 			"in": { "prompt": { "type": "string" } },
 			"out": { "text": { "type": "string" } }
 		},
 		{
 			"id": "angles/polish",
 			"kind": "repeat",
-			"label": "polish",
-			"parent": "angles",
 			"cardinality": { "upTo": 3 },
 			"in": { "text": { "type": "string" } },
 			"inner": {
@@ -79,23 +74,18 @@
 		{
 			"id": "angles/polish/step",
 			"kind": "fake.task",
-			"label": "step",
-			"parent": "angles/polish",
 			"in": { "prompt": { "type": "string" }, "round": { "type": "integer" } },
 			"out": { "text": { "type": "string" } }
 		},
 		{
 			"id": "angles/critique",
 			"kind": "fake.task",
-			"label": "critique",
-			"parent": "angles",
 			"in": { "prompt": { "type": "string" } },
 			"out": { "notes": { "type": "string" } }
 		},
 		{
 			"id": "tally",
 			"kind": "code",
-			"label": "tally",
 			"in": {
 				"angles": {
 					"type": "array",
@@ -142,7 +132,6 @@
 		{
 			"id": "enough",
 			"kind": "assert",
-			"label": "enough",
 			"in": { "cond": { "type": "boolean" } },
 			"message": "at least one angle must settle ok",
 			"onFail": "failed"
@@ -185,5 +174,5 @@
 			"to": { "node": "enough", "port": "cond" }
 		}
 	],
-	"result": { "rule": "default" }
+	"result": { "node": "enough" }
 }

@@ -32,7 +32,7 @@ test("ArtifactRef and its schema agree on fields", () => {
 
 const validate = new Ajv2020({ strict: true }).compile(artifactRefSchema);
 const hash = `sha256:${"0123456789abcdef".repeat(4)}`;
-const producer = { node: "g/n", expansion: "x" };
+const producer = { node: "g/n", expansion: "[risk][2]" };
 
 test.each<[string, ArtifactRef]>([
 	[
@@ -40,6 +40,10 @@ test.each<[string, ArtifactRef]>([
 		{ path: "out/report.md", contentHash: hash, producer },
 	],
 	["a file without a producer", { path: "params/brief.md", contentHash: hash }],
+	[
+		"a producer outside groups",
+		{ path: "a", contentHash: hash, producer: { node: "n", expansion: "" } },
+	],
 	["a directory path", { path: "out/reports", contentHash: hash, producer }],
 	[
 		"dot names that are not . or ..",
@@ -84,6 +88,18 @@ test.each<[string, unknown]>([
 	[
 		"a producer with a bad node id",
 		{ path: "a", contentHash: hash, producer: { ...producer, node: "a b" } },
+	],
+	[
+		"a producer expansion without brackets",
+		{ path: "a", contentHash: hash, producer: { ...producer, expansion: "x" } },
+	],
+	[
+		"a producer expansion with an unsanitized key",
+		{
+			path: "a",
+			contentHash: hash,
+			producer: { ...producer, expansion: "[a/b]" },
+		},
 	],
 	["an extra field", { path: "a", contentHash: hash, size: 1 }],
 	[

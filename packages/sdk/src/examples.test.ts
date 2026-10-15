@@ -16,13 +16,13 @@ describe("worked examples", () => {
 			tolerate: "rejected",
 			until: { node: "seq/fix_until_green/repeat/check", port: "ok" },
 		});
-		expect(ir.result).toEqual({ rule: "default" });
+		expect(ir.result).toEqual({ node: "seq" });
 	});
 
 	test("fan-out maps over models and keeps the first green", () => {
 		const ir = buildValid(fanout, { models: ["a", "b", "c"] });
 		expect(nodeOf(ir, "map")).toMatchObject({ cardinality: { exact: 3 } });
-		expect(ir.result).toEqual({ rule: "node", node: "firstOk" });
+		expect(ir.result).toEqual({ node: "firstOk" });
 	});
 
 	test("plan-panel falls back from the synthesis to the first good plan", () => {
@@ -42,6 +42,6 @@ describe("worked examples", () => {
 			from: { node: "firstOk_result_text", port: "value" },
 			to: { node: "answer", port: "in1" },
 		});
-		expect(ir.result).toEqual({ rule: "node", node: "answer" });
+		expect(ir.result).toEqual({ node: "answer" });
 	});
 });

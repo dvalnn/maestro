@@ -36,7 +36,6 @@ describe("map", () => {
 			inner: { item: { type: "string" } },
 			members: { result: "map/task" },
 		});
-		expect(nodeOf(ir, "map/task").parent).toBe("map");
 		expect(ir.edges).toContainEqual({
 			kind: "data",
 			from: { node: "map", port: "item" },

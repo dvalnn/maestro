@@ -10,7 +10,8 @@ the SDK imports nothing else (ADR 0007). It depends on nothing beyond Ajv. This 
   (`Diagnostic`, `Severity`), outcomes (`OUTCOMES`, `Outcome`, `Settled`, `worstOutcome`, `settledSchema`), the
   code-function contract (`Context`, `CodeContext`, `Facts`, `Rejection`, `reject`), type markers (`MAESTRO_TYPE`,
   `CORE_TYPES`, `registerMaestroType`, `findMarked`, `unreachableMarkers`), artifact references (`ArtifactRef`,
-  `artifactRefSchema`) and the graph index (`indexGraph`, `GraphIndex`).
+  `artifactRefSchema`), the graph index (`indexGraph`, `GraphIndex`) and expansion paths (`itemKey`,
+  `formatExpansion`, `parseExpansion`, `formatInstance`).
 - `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`, and its worker modules sit beside it.
 - `test/read_ir.py`: an independent reader (Python standard library only), which proves the format is readable without
   maestro code.
@@ -57,14 +58,15 @@ with a string `id` also names that node in `node`.
 | `emitter`     | `name` and `version` of what produced the IR, optional `sourceHash`. Hand-written IR uses `"hand"`.           |
 | `params`      | The param `schema` (with CLI hints as schema annotations) and at least one entry in `examples` (D-17, D-19).  |
 | `config`      | Optional. The config schema of each namespace the graph claims, with defaults (CFG-03).                      |
-| `scopes`      | One per subcomposition use: `id`, `composition`, optional `parent`, and its `ports` with schemas.             |
-| `nodes`       | Flat list. Nesting is by `parent`.                                                                            |
+| `scopes`      | One per subcomposition use: `id`, `composition` and its `ports` with schemas.                                 |
+| `nodes`       | Flat list. Nesting is by id.                                                                                  |
 | `edges`       | Flat list, port to port.                                                                                      |
-| `result`      | `{ "rule": "default" }` (CORE-04) or `{ "rule": "node", "node": id }` (an explicit node or a reducer).      |
+| `result`      | `{ "node": id }`, the node the build returned, where the result rule starts (architecture 7).                 |
 
-Nodes and scopes share one id space. Ids are paths of `[A-Za-z0-9_-]` segments joined by `/`, derived by the emitter
-from the scope path and label (IR-01). A `parent` names a scope or a group node. Scopes are for renderers, caches and
-diagnostics and do not change execution. Groups do.
+Nodes and scopes share one id space. An id is a path of `[A-Za-z0-9_-]` segments joined by `/` (IR-01). Anything
+inside a scope or a group has the id `<enclosing id>/<segment>`, so every proper prefix of an id is a declared scope or
+group node, its parent is the id minus the last segment, and that last segment is its name. Scopes are for renderers,
+caches and diagnostics and do not change execution. Groups do.
 
 Every schema inside the IR (ports, params, config) is a JSON Schema document that the IR treats as opaque, except for
 the `x-maestro-type` annotation that names artifacts and host types ([Type markers](#type-markers-x-maestro-type)).
@@ -72,9 +74,8 @@ Edge type checks are pre-flight's job (CORE-02), not this package's.
 
 ## Nodes
 
-Common fields: `id`, `kind`, `label`, optional `tag` (a human label used in records, not an identity), `parent`,
-`source` (`file`, `line`, `column`), `in` and `out` (port name to schema), and `literals` (port name to a plain value,
-D-16).
+Common fields: `id`, `kind`, optional `tag` (a human label used in records, not an identity), `source` (`file`,
+`line`, `column`), `in` and `out` (port name to schema), and `literals` (port name to a plain value, D-16).
 
 A worker's `module` is relative to the IR file's directory. `codeHash` takes one of two forms (ADR 0008), and the
 schema pairs each with its module both ways:
@@ -146,22 +147,38 @@ anywhere else, it exposes `out` and the implicit outputs.
 Enforced by `parseIr` after the schema:
 
 1. Ids are unique across nodes and scopes (`SCOPE.duplicate`).
-2. Every `parent`, edge endpoint, port, literal, member, `until` and result node resolves (`IR.ref`).
-3. Parent chains do not loop. An edge never leaves a group body: only the group's `out` ports reach outside it.
-4. Every input port is fed exactly once.
-5. `collect` edges start only at a map's `results` port, and that port feeds nothing else.
-6. Group ports, `members`, `until`, `items` and `cardinality` follow the group rules above.
-7. The result node is not inside a group body.
-8. Edges form no cycle. An edge into a body counts as an edge into its group.
+2. Every proper prefix of an id is a declared scope or group node.
+3. Every edge endpoint, port, literal, member, `until` and result node resolves (`IR.ref`).
+4. An edge never leaves a group body: only the group's `out` ports reach outside it.
+5. Every input port is fed exactly once.
+6. `collect` edges start only at a map's `results` port, and that port feeds nothing else.
+7. Group ports, `members`, `until`, `items` and `cardinality` follow the group rules above.
+8. The result node is not inside a group body.
+9. Edges form no cycle. An edge into a body counts as an edge into its group.
 
-Violations of rules 3 to 8 are `IR.graph`. Shape violations are `IR.schema`, and version problems are `IR.version`.
+Violations of rule 2 and rules 4 to 9 are `IR.graph`. Shape violations are `IR.schema`, and version problems are
+`IR.version`.
 
 ## Graph index
 
 `indexGraph(ir)` returns the lookups the structural rules use, for every consumer of the graph: a node or scope by id,
-an entry's `parent` and `ancestors` (nearest first), the enclosing groups of a node (`groupsOf`, outermost first,
-scopes left out), a group's `body` (the nodes whose nearest enclosing group it is) and the edges into and out of a
-node. An id that resolves to nothing gives `undefined` or an empty list.
+an entry's `parent` and `ancestors` (nearest first), both read from the id alone, the enclosing groups of a node
+(`groupsOf`, outermost first, scopes left out), a group's `body` (the nodes whose nearest enclosing group it is) and
+the edges into and out of a node. Otherwise an id that resolves to nothing gives `undefined` or an empty list.
+
+## Expansion paths
+
+A node instance is a node id plus its expansion path (architecture 7): one `[key]` per enclosing group, outermost
+first, and empty outside groups. A `map` contributes its item's key, a `seq` or `repeat` its iteration index, so the
+path of a node in a `repeat` inside a `map` reads `[risk][2]`.
+
+- `itemKey(item, index)` is a `map` item's key (D-18): a string, number, boolean or `null` item is keyed by its value,
+  any other item by its index. Each character outside `[A-Za-z0-9_.-]` becomes `_`. Keys that come out equal are
+  duplicates, so `3` and `"3"` collide; the caller reports them.
+- `formatExpansion(keys)` builds the path and throws on a key outside that alphabet. `parseExpansion(path)` returns
+  the keys, or `undefined` for anything else. A key may be empty (`[]`), as `itemKey("")` is.
+- `formatInstance(instance, groups)` merges an instance into one name, each key right after its group's id within the
+  node id, given the node's enclosing groups: `lens/skeptic` in the map `lens` shows as `lens[risk]/skeptic`.
 
 ## Outcomes
 
@@ -201,8 +218,8 @@ The golden fixtures do so with T `{ "type": "object" }`, the member result recor
 
 `src/code-function.ts` is the code-function contract, kept in one module so it can leave ir in one step:
 
-- `Context`: what core gives every node instance, `concert`, `clock`, `path(ref)` and `scratch`, the instance's own
-  scratch directory (ADR 0007).
+- `Context`: what core gives every node instance, `concert` (the concert id), `clock`, `path(ref)` and `scratch`, the
+  instance's own scratch directory (ADR 0007).
 - `CodeContext`: `Context` plus `env`, each host's `Facts` keyed by host name.
 - `Rejection`: a code function's negative verdict, `{ outcome: "rejected", reason }`, which `reject(reason)` builds
   (ADR 0008). No node declares an `outcome` or `reason` port, so a rejection never reads as outputs.
@@ -238,11 +255,11 @@ type ArtifactRef = {
   `.` or `..` segment. It names a file or, for `core.dir`, a directory.
 - `contentHash` is `sha256:` plus 64 lowercase hex digits. How a directory is hashed is the executor's, behind the same
   form.
-- `producer` is the node instance that wrote the artifact: the node id and its expansion path. It is absent only for
-  an artifact from outside the concert, such as a param.
+- `producer` is the node instance that wrote the artifact: the node id and its expansion path ([Expansion
+  paths](#expansion-paths)). It is absent only for an artifact from outside the concert, such as a param.
 
-`artifactRefSchema` is its JSON Schema, closed to these fields and enforcing the path and hash rules. Every boundary
-that reads a reference parses it against this one definition.
+`artifactRefSchema` is its JSON Schema, closed to these fields and enforcing the path, hash and expansion rules.
+Every boundary that reads a reference parses it against this one definition.
 
 `findMarked(schema, value)` returns one `{ type, schema, pointer, value }` per marked subschema whose value is
 present, where `pointer` is a JSON Pointer into `value`. It never descends into a marked subschema, since that schema

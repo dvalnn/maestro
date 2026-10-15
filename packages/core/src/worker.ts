@@ -5,7 +5,7 @@ import type {
 	WorkerRef,
 } from "@maestro/ir";
 
-/** A node id and its expansion path (architecture 7). The executor fixes the expansion's format. */
+/** A node id and its expansion path (architecture 7), in ir's format (`formatExpansion`). */
 export type NodeInstance = NonNullable<ArtifactRef["producer"]>;
 
 /** Input values by port name, literals included. An artifact arrives as its `ArtifactRef` (ADR 0007). */
@@ -60,4 +60,21 @@ export interface Worker {
 	): Promise<Settlement>;
 	/** Stops the instance's invocation, whose `invoke` then replies promptly. Timeouts cancel through this too. */
 	cancel(instance: NodeInstance): Promise<void>;
+}
+
+const impure = (field: "concert" | "clock") => ({
+	enumerable: true,
+	get(): never {
+		throw new Error(
+			`a pure node cannot read ctx.${field}. Mark the node pure: false to read it`,
+		);
+	},
+});
+
+/** `context` for a pure node: reading `concert` or `clock` throws, as a cached or folded result would freeze it. */
+export function pureContext(context: CodeContext): CodeContext {
+	return Object.defineProperties(
+		{ ...context },
+		{ concert: impure("concert"), clock: impure("clock") },
+	);
 }

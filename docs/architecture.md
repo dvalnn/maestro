@@ -121,9 +121,9 @@ Contents, at the level of what it must carry:
 - **Config.** Each config schema the graph claims, keyed by namespace, with defaults (CFG-03).
 - **Scopes.** Named subgraphs created by subcomposition use, with their ports, so renderers can collapse them and
   caches can key on them.
-- **Nodes.** For each node: stable id, kind, label, scope, source location, typed ports (schemas), guard, purity flag,
-  declared reads and writes (code nodes), kind-specific configuration (host kinds), and for code nodes a worker
-  reference `{runtime, module, export, code hash}`.
+- **Nodes.** For each node: stable id (a path whose prefixes are its scopes and groups), kind, source location, typed
+  ports (schemas), guard, purity flag, declared reads and writes (code nodes), kind-specific configuration (host
+  kinds), and for code nodes a worker reference `{runtime, module, export, code hash}`.
 - **Groups.** For `map`, `seq`, `repeat`: the body subgraph (a template), the cardinality (`exact` or `up to N`),
   the source of its items or iteration state, the stop condition reference, and the member-result port that feeds
   `collect` edges.

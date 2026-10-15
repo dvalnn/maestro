@@ -10,8 +10,8 @@ import type { Diagnostic, SourceLocation } from "@maestro/ir";
  *   a constructor called outside a build (`SCOPE.build`).
  * - `PURE`: an ambient read during build (`PURE.ambient`), two builds that differ (`PURE.unstable`).
  * - `BOUND`: a group bound that is missing or not a whole number of at least 1 (`BOUND.max`).
- * - `TYPE`: a literal that is not JSON, a body or step that returns the wrong thing, a bad pick path, ports or
- *   reducer inputs that do not fit.
+ * - `TYPE`: a literal that is not JSON, a body or step that returns the wrong thing, a build that returns no node
+ *   (`TYPE.result`), a bad pick path, ports or reducer inputs that do not fit.
  * - `CFG.examples`: a composition without ports and without an example input set.
  * - `ASSERT.failed`: an `assert` on a plain value that is false.
  * - `IR`: emitted IR that `parseIr` rejects.

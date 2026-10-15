@@ -67,23 +67,11 @@
 		},
 		"edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } },
 		"result": {
-			"oneOf": [
-				{
-					"type": "object",
-					"required": ["rule"],
-					"additionalProperties": false,
-					"properties": { "rule": { "const": "default" } }
-				},
-				{
-					"type": "object",
-					"required": ["rule", "node"],
-					"additionalProperties": false,
-					"properties": {
-						"rule": { "const": "node" },
-						"node": { "$ref": "#/$defs/id" }
-					}
-				}
-			]
+			"description": "The node the build returned, where the result rule starts (architecture 7).",
+			"type": "object",
+			"required": ["node"],
+			"additionalProperties": false,
+			"properties": { "node": { "$ref": "#/$defs/id" } }
 		}
 	},
 	"$defs": {
@@ -174,13 +162,12 @@
 			"properties": {
 				"id": { "$ref": "#/$defs/id" },
 				"composition": { "$ref": "#/$defs/name" },
-				"parent": { "$ref": "#/$defs/id" },
 				"ports": { "$ref": "#/$defs/ports" }
 			}
 		},
 		"node": {
 			"type": "object",
-			"required": ["id", "kind", "label"],
+			"required": ["id", "kind"],
 			"properties": {
 				"id": { "$ref": "#/$defs/id" },
 				"kind": {
@@ -192,13 +179,11 @@
 						}
 					]
 				},
-				"label": { "type": "string", "minLength": 1 },
 				"tag": {
 					"description": "A human label used in records. Not an identity.",
 					"type": "string",
 					"minLength": 1
 				},
-				"parent": { "$ref": "#/$defs/id" },
 				"source": {
 					"type": "object",
 					"required": ["file", "line"],

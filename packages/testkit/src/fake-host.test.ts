@@ -17,7 +17,6 @@ import { CANCELLED, FAKE_TASK, type FakeScript, fakeHost } from "./index";
 const node: HostNode = {
 	id: "loop/step",
 	kind: FAKE_TASK,
-	label: "step",
 	in: { prompt: { type: "string" } },
 	out: { text: { type: "string" } },
 };
@@ -115,7 +114,7 @@ test("validate and bounds return what the script says, and nothing by default", 
 		scopes: [],
 		nodes: [node],
 		edges: [],
-		result: { rule: "default" },
+		result: { node: node.id },
 	};
 	const graph = indexGraph(ir);
 	const diagnostic: Diagnostic = {

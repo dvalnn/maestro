@@ -64,7 +64,6 @@ export type Common = {
 
 type Frame = {
 	readonly path: string;
-	readonly parent?: string;
 	/** Enclosing groups, outermost first. */
 	readonly groups: readonly string[];
 };
@@ -169,7 +168,7 @@ export function withFrame<T>(frame: Frame, fn: () => T): T {
 /** The frame of a group's body, or of a scope when `group` is false. */
 export function innerFrame(id: string, group: boolean): Frame {
 	const { groups } = current().frame;
-	return { path: id, parent: id, groups: group ? [...groups, id] : groups };
+	return { path: id, groups: group ? [...groups, id] : groups };
 }
 
 const LABEL = /^[A-Za-z0-9_-]+$/;
@@ -584,9 +583,7 @@ export function pushNode(spec: NodeSpec, common: Common): IrNode {
 	const node = {
 		id,
 		kind: spec.kind,
-		label: lastSegment(id),
 		tag: common.tag,
-		parent: s.frame.parent,
 		out: Object.keys(spec.out).length ? spec.out : undefined,
 		...spec.fields,
 	} as IrNode;

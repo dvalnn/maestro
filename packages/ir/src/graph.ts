@@ -20,13 +20,16 @@ const names = (ports: Ports | undefined) => Object.keys(ports ?? {});
 
 const list = (xs: string[]) => `[${xs.toSorted().join(", ")}]`;
 
-/** Lookups over a graph. An id that resolves to nothing gives `undefined` or an empty list. */
+/**
+ * Lookups over a graph. `parent` and `ancestors` read the id alone; the others give `undefined` or an empty list for
+ * an id that resolves to nothing.
+ */
 export type GraphIndex = {
 	nodes: ReadonlyMap<string, IrNode>;
 	scopes: ReadonlyMap<string, Scope>;
-	/** The `parent` of a node or scope. */
+	/** The id minus its last segment, or `undefined` for a top-level id. */
 	parent(id: string): string | undefined;
-	/** Enclosing scopes and groups, nearest first. Stops before a revisited id, so a parent cycle cannot hang it. */
+	/** Enclosing scopes and groups: the id's proper prefixes, nearest first. */
 	ancestors(id: string): string[];
 	/** Enclosing groups, outermost first. Scopes do not affect execution, so they are left out. */
 	groupsOf(id: string): string[];
@@ -36,18 +39,17 @@ export type GraphIndex = {
 	edgesFrom(node: string): readonly IrEdge[];
 };
 
-/** Indexes `ir`. Safe on IR whose references do not resolve or whose parents loop. */
+const parentOf = (id: string) => {
+	const cut = id.lastIndexOf("/");
+	return cut < 0 ? undefined : id.slice(0, cut);
+};
+
+/** Indexes `ir`. Safe on IR whose references do not resolve. */
 export function indexGraph(ir: Ir): GraphIndex {
 	const nodes = new Map(ir.nodes.map((n) => [n.id, n]));
-	const parents = new Map(
-		[...ir.nodes, ...ir.scopes].map((e) => [e.id, e.parent]),
-	);
 	const ancestors = (id: string) => {
 		const chain: string[] = [];
-		for (let p = parents.get(id); p !== undefined; p = parents.get(p)) {
-			if (p === id || chain.includes(p)) break;
-			chain.push(p);
-		}
+		for (let p = parentOf(id); p !== undefined; p = parentOf(p)) chain.push(p);
 		return chain;
 	};
 	const groupsOf = (id: string) =>
@@ -60,7 +62,7 @@ export function indexGraph(ir: Ir): GraphIndex {
 	return {
 		nodes,
 		scopes: new Map(ir.scopes.map((s) => [s.id, s])),
-		parent: (id) => parents.get(id),
+		parent: parentOf,
 		ancestors,
 		groupsOf,
 		body: (group) => bodies.get(group) ?? [],
@@ -117,7 +119,7 @@ type Graph = ReturnType<typeof checkerOf>;
 /** Checks the structural rules the JSON Schema cannot express. Call only with IR whose shape already validates. */
 export function checkGraph(ir: Ir): Diagnostic[] {
 	const graph = checkerOf(ir);
-	checkParents(ir, graph);
+	checkIds(ir, graph);
 	ir.nodes.forEach((n, i) => {
 		checkLiterals(n, `/nodes/${i}`, graph);
 	});
@@ -158,20 +160,14 @@ function checkerOf(ir: Ir) {
 	};
 }
 
-// `ancestors` stops before a revisited id, so the chain loops back to `id` exactly when its last entry's parent is
-// `id`.
-const loopsBack = (id: string, { ancestors, parent }: Graph) =>
-	parent(ancestors(id).at(-1) ?? id) === id;
-
 // Nodes and scopes share one id space, and both may sit inside a scope or a group.
-function checkParents(ir: Ir, graph: Graph) {
-	const { nodes, scopes, report } = graph;
+function checkIds(ir: Ir, { nodes, scopes, report }: Graph) {
 	const entries = [
-		...ir.nodes.map((n, i) => ({ ...n, path: `/nodes/${i}` })),
-		...ir.scopes.map((s, i) => ({ ...s, path: `/scopes/${i}` })),
+		...ir.nodes.map((n, i) => ({ id: n.id, path: `/nodes/${i}` })),
+		...ir.scopes.map((s, i) => ({ id: s.id, path: `/scopes/${i}` })),
 	];
 	const seen = new Set<string>();
-	for (const { id, parent, path } of entries) {
+	for (const { id, path } of entries) {
 		if (seen.has(id))
 			report(
 				"SCOPE.duplicate",
@@ -180,22 +176,18 @@ function checkParents(ir: Ir, graph: Graph) {
 				`Rename one of the entries with id '${id}' so each node and scope id is unique`,
 			);
 		seen.add(id);
-		if (parent === undefined) continue;
-		if (!scopes.has(parent) && !isGroup(nodes.get(parent))) {
-			report(
-				"IR.ref",
-				path,
-				`parent '${parent}' is not a scope or a group node`,
-				`Declare '${parent}' as a scope or as a map, seq or repeat node, or fix parent of '${id}'`,
-			);
-		} else if (loopsBack(id, graph)) {
+		const parent = parentOf(id);
+		if (
+			parent !== undefined &&
+			!scopes.has(parent) &&
+			!isGroup(nodes.get(parent))
+		)
 			report(
 				"IR.graph",
 				path,
-				`the parent chain of '${id}' loops back to it`,
-				`Remove or change parent on one id in the chain of '${id}'`,
+				`id '${id}' sits under '${parent}', which is not a scope or a group node`,
+				`Declare '${parent}' as a scope or as a map, seq or repeat node, or move '${id}' out of it`,
 			);
-		}
 	}
 }
 
@@ -340,14 +332,13 @@ function checkFeeds(n: IrNode, path: string, { feeds, report }: Graph) {
 }
 
 function checkResult(result: Ir["result"], { nodes, groupsOf, report }: Graph) {
-	if (result.rule !== "node") return;
 	const id = result.node;
 	if (!nodes.has(id))
 		report(
 			"IR.ref",
 			"/result",
 			`node '${id}' does not exist`,
-			`Set result.node to a node declared in nodes, or use { "rule": "default" }`,
+			"Set result.node to a node declared in nodes",
 		);
 	else if (groupsOf(id).length > 0)
 		report(
@@ -416,7 +407,7 @@ function bodyNode(
 			"IR.graph",
 			path,
 			`${role} '${id}' is not in the body of group '${g.id}'`,
-			`Set parent of '${id}' to '${g.id}', or fix the ${role} of the group`,
+			`Give '${id}' an id directly under '${g.id}/', or fix the ${role} of the group`,
 		);
 	return n;
 }

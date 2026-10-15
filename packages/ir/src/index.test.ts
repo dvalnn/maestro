@@ -48,6 +48,11 @@ test.each<[string, Mutation, string]>([
 	],
 	["an unknown top-level field", (ir) => (ir.extra = 1), "/"],
 	[
+		"a result rule",
+		(ir) => (ir.result = { rule: "node", node: "greet" }),
+		"/result",
+	],
+	[
 		"no example input set",
 		(ir) => (ir.params.examples = []),
 		"/params/examples",
@@ -58,7 +63,6 @@ test.each<[string, Mutation, string]>([
 			(ir.nodes[0] = {
 				id: "g",
 				kind: "map",
-				label: "g",
 				inner: {},
 				members: {},
 				cardinality: { upTo: 1 },
@@ -125,17 +129,28 @@ test.each<[string, Mutation, string, string, string]>([
 	],
 	[
 		"const names the required value",
-		(ir) => (ir.result = { rule: "x" }),
-		"/result/rule",
-		'must be "default"',
-		'Set /result/rule to "default"',
+		(ir) =>
+			(ir.edges = [
+				{
+					kind: "control",
+					from: { node: "greet" },
+					to: { node: "greet" },
+					tolerate: "x",
+				},
+			]),
+		"/edges/0/tolerate",
+		'must be "rejected"',
+		'Set /edges/0/tolerate to "rejected"',
 	],
 	[
 		"oneOf says no allowed shape matched",
-		(ir) => (ir.result = { rule: "x" }),
-		"/result",
+		(ir) => {
+			ir.nodes[0].kind = "map";
+			ir.nodes[0].cardinality = { exact: 1, upTo: 1 };
+		},
+		"/nodes/0/cardinality",
 		"must match exactly one of the allowed shapes",
-		"Change /result to match ir.schema.json, which packages/ir/README.md describes",
+		"Change /nodes/0/cardinality to match ir.schema.json, which packages/ir/README.md describes",
 	],
 	[
 		"anyOf says no allowed shape matched",
@@ -153,10 +168,10 @@ test.each<[string, Mutation, string, string, string]>([
 	],
 	[
 		"type names the expected type",
-		(ir) => (ir.nodes[0].label = 3),
-		"/nodes/0/label",
+		(ir) => (ir.nodes[0].tag = 3),
+		"/nodes/0/tag",
 		"must be of type string",
-		"Set /nodes/0/label to a string",
+		"Set /nodes/0/tag to a string",
 	],
 ])(
 	"schema diagnostics say in plain words: %s",
@@ -251,20 +266,20 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"Rename one of the entries with id 'pick' so each node and scope id is unique",
 	],
 	[
-		"an unknown parent",
-		(ir) => (node(ir, "pick").parent = "nowhere"),
-		"IR.ref",
-		"/nodes/2",
-		"parent 'nowhere' is not a scope or a group node",
-		"Declare 'nowhere' as a scope or as a map, seq or repeat node, or fix parent of 'pick'",
+		"a scope under an undeclared id",
+		(ir) => ir.scopes.push({ id: "nowhere/s", composition: "x", ports: {} }),
+		"IR.graph",
+		"/scopes/1",
+		"id 'nowhere/s' sits under 'nowhere', which is not a scope or a group node",
+		"Declare 'nowhere' as a scope or as a map, seq or repeat node, or move 'nowhere/s' out of it",
 	],
 	[
-		"a parent that is not a group",
-		(ir) => (node(ir, "refine/loop/done").parent = "pick"),
-		"IR.ref",
-		"/nodes/5",
-		"parent 'pick' is not a scope or a group node",
-		"Declare 'pick' as a scope or as a map, seq or repeat node, or fix parent of 'refine/loop/done'",
+		"a node under a node that is not a group",
+		(ir) => ir.nodes.push({ id: "pick/extra", kind: "fake.task" }),
+		"IR.graph",
+		"/nodes/6",
+		"id 'pick/extra' sits under 'pick', which is not a scope or a group node",
+		"Declare 'pick' as a scope or as a map, seq or repeat node, or move 'pick/extra' out of it",
 	],
 	[
 		"an edge from an unknown node",
@@ -299,20 +314,12 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"Declare 'mode' in in of node 'pick', or remove its literal",
 	],
 	[
-		"a result rule naming an unknown node",
-		(ir) => (ir.result = { rule: "node", node: "ghost" }),
+		"a result naming an unknown node",
+		(ir) => (ir.result = { node: "ghost" }),
 		"IR.ref",
 		"/result",
 		"node 'ghost' does not exist",
-		'Set result.node to a node declared in nodes, or use { "rule": "default" }',
-	],
-	[
-		"a parent cycle",
-		(ir) => (ir.scopes[0].parent = "refine/loop"),
-		"IR.graph",
-		"/scopes/0",
-		"the parent chain of 'refine' loops back to it",
-		"Remove or change parent on one id in the chain of 'refine'",
+		"Set result.node to a node declared in nodes",
 	],
 	[
 		"an unfed input port",
@@ -373,7 +380,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"IR.graph",
 		"/nodes/0",
 		"member 'pick' is not in the body of group 'topics'",
-		"Set parent of 'pick' to 'topics', or fix the member of the group",
+		"Give 'pick' an id directly under 'topics/', or fix the member of the group",
 	],
 	[
 		"a repeat with two members",
@@ -393,7 +400,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"IR.graph",
 		"/nodes/3",
 		"until 'pick' is not in the body of group 'refine/loop'",
-		"Set parent of 'pick' to 'refine/loop', or fix the until of the group",
+		"Give 'pick' an id directly under 'refine/loop/', or fix the until of the group",
 	],
 	[
 		"map ports other than item and results",
@@ -467,7 +474,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 	],
 	[
 		"a result node inside a group body",
-		(ir) => (ir.result = { rule: "node", node: "topics/draft" }),
+		(ir) => (ir.result = { node: "topics/draft" }),
 		"IR.graph",
 		"/result",
 		"result node 'topics/draft' is inside a group body",
@@ -504,8 +511,8 @@ test.each<[string, object, Mutation, string, string | undefined]>([
 	[
 		"a graph error on a scope",
 		fanoutFaninLoop,
-		(ir) => (ir.scopes[0].parent = "refine/loop"),
-		"/scopes/0",
+		(ir) => ir.scopes.push({ id: "pick/s", composition: "x", ports: {} }),
+		"/scopes/1",
 		undefined,
 	],
 ])(

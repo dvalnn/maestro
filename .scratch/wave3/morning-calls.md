@@ -179,3 +179,14 @@ Classifier blocks: none.
   to mark the node `pure: false`. A cached or folded pure node would otherwise freeze the first value. A folded node
   gets compose's scratch area and the hosts' facts, and `path()` throws; a node with artifact outputs never folds.
   `concert` is the concert id and `clock` is epoch milliseconds fixed at instance start.
+- K23: A. A root build that returns no node is `TYPE.result`: returning nothing is an empty or invalid graph. Builds
+  return the node whose outcome is the concert result, or a reducer over several.
+- K24: A. A mixed list whose index key equals a primitive's value is a duplicate key; the hint says to give the map a
+  key function (K17).
+- K25: A. An id is `<enclosing id>/<segment>` for anything inside a scope or group, and `parseIr` enforces it, so every
+  reader of ids can rely on it and `formatInstance` needs no fallback.
+- K26: A. The IR drops `parent`: a node's parent is its id minus the last segment, and every proper prefix of an id is a
+  declared scope or group (`IR.graph`). Parent cycles become impossible. An investigation built 68 IRs (fixtures, SDK
+  tests, 11 ported sssf workflows) and found no construct whose logical parent differs from its id prefix.
+- K27: A. The IR drops `label`: a node's name is its id's last segment, which every SDK-built node already matched.
+  The SDK's `label` option stays, naming the segment; `tag` stays for display.

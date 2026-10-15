@@ -15,7 +15,6 @@ import {
 	current,
 	fail,
 	inBuild,
-	info,
 	innerFrame,
 	literalRef,
 	plainProblem,
@@ -119,7 +118,6 @@ export function use<P extends Types, Q extends Types, R>(
 	s.scopes.push({
 		id,
 		composition: sub.name,
-		parent: s.frame.parent,
 		ports: schemas(sub.ports),
 	});
 	const refs = Object.fromEntries(
@@ -215,7 +213,7 @@ function emit(root: Header, s: State, returned: unknown): Ir {
 		scopes: s.scopes,
 		nodes: s.nodes,
 		edges: s.edges,
-		result: resultRule(returned),
+		result: resultOf(root.name, returned),
 	};
 }
 
@@ -231,11 +229,20 @@ function paramsSchema(params: Types): JsonSchema {
 	};
 }
 
-// A returned reducer overrides the default rule (sdk-spec 6); anything else keeps it (CORE-04).
-const resultRule = (returned: unknown): Ir["result"] =>
-	returned instanceof ResultImpl && info(returned.node).fanin
-		? { rule: "node", node: returned.node }
-		: { rule: "default" };
+/**
+ * The node `returned` is, or whose output port it is: where the result rule starts (architecture 7).
+ * @throws `TYPE.result` for anything else.
+ */
+function resultOf(name: string, returned: unknown): Ir["result"] {
+	if (returned instanceof ResultImpl) return { node: returned.node };
+	if (returned instanceof RefImpl && returned.source.kind === "port")
+		return { node: returned.source.node };
+	throw fail(
+		"TYPE.result",
+		`the build of '${name}' returned no node`,
+		"Return the node whose outcome is the concert result, or a reducer over several",
+	);
+}
 
 /** `ir` as JSON with object keys sorted, so equal IR gives equal bytes (CORE-06). */
 export const irJson = (ir: Ir): string => canonicalJson(ir);

@@ -10,8 +10,9 @@ IR 1.0 (`packages/ir`, CORE-16, IR-01) fixes three things that every emitter and
    a 1.1 IR cannot be read by a 1.0 engine. The usual cause is a pack that bundles a newer SDK than the `maestro`
    binary (D-30), and the error tells the operator to upgrade maestro. The schema's `irVersion` enum and `IR_VERSION`
    are bumped together.
-2. **Flat graph.** Nodes, scopes and edges are flat lists. Nesting is a `parent` pointer to a scope or a group node, and
-   nodes and scopes share one id space. Scopes are presentation and cache structure. Only groups change execution.
+2. **Flat graph.** Nodes, scopes and edges are flat lists, and nodes and scopes share one id space. Nesting is the id
+   itself: an id is a path, each proper prefix of it a declared scope or group node, and its last segment the node's
+   name. Scopes are presentation and cache structure. Only groups change execution.
 3. **Explicit group ports.** A group declares `in`, `inner` (what its body reads: `item`, or a `repeat`'s previous state
    and `index`) and `out` (what leaves it: a map's `results`, or a `seq`/`repeat` member's outputs). It names its
    `members` (result name to body node, several for a map body that returns several results) and its `until` node in

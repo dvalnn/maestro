@@ -1,4 +1,5 @@
 import irSchema from "../ir.schema.json";
+import { EXPANSION_PATTERN } from "./expansion";
 import type { JsonSchema } from "./types";
 
 /** The runtime value of an artifact port (ADR 0007). Its rules are in README.md, "Type markers". */
@@ -31,7 +32,7 @@ export const artifactRefSchema = {
 			additionalProperties: false,
 			properties: {
 				node: { type: "string", pattern: irSchema.$defs.id.pattern },
-				expansion: { type: "string" },
+				expansion: { type: "string", pattern: EXPANSION_PATTERN },
 			},
 		},
 	},

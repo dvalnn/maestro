@@ -4,6 +4,7 @@ import pkg from "../package.json";
 import { buildOf, diagnose, nodeOf } from "./fixtures/context";
 import {
 	Bool,
+	composition,
 	firstOk,
 	hostNode,
 	Int,
@@ -18,6 +19,7 @@ import {
 	type Result,
 	settle,
 	Text,
+	use,
 	when,
 	zip,
 } from "./index";
@@ -115,7 +117,7 @@ describe("lifting combinators", () => {
 		const ir = buildOf(() => {
 			const t = task();
 			zip(t.out.names, t.out.counts);
-			join(t.out.names, t.out.counts, { on: "id" });
+			return join(t.out.names, t.out.counts, { on: "id" });
 		});
 		const pairs = {
 			type: "array",
@@ -135,7 +137,7 @@ describe("lifting combinators", () => {
 	test("when is a stdlib node guarded by its condition", () => {
 		const ir = buildOf(() => {
 			const t = task();
-			when(t.out.done, t.out.text);
+			return when(t.out.done, t.out.text);
 		});
 		expect(stdlibNode(ir, "task_when").worker.export).toBe("when");
 		expect(ir.edges).toContainEqual({
@@ -175,7 +177,7 @@ describe("lift ids", () => {
 	test("are the source node and what the lift does, so one field of two nodes builds", () => {
 		const ir = buildOf(() => {
 			result("plan").pick("text");
-			result("critique").pick("text");
+			return result("critique").pick("text");
 		});
 		expect(ir.nodes.map((n) => n.id)).toEqual([
 			"plan",
@@ -203,7 +205,7 @@ describe("lift ids", () => {
 		const ir = buildOf(() => {
 			const text = result("x").pick("text");
 			text.or("a");
-			text.or("b", { label: "fallback" });
+			return text.or("b", { label: "fallback" });
 		});
 		expect(nodeOf(ir, "fallback").literals).toEqual({ fallback: "b" });
 	});
@@ -244,7 +246,7 @@ describe("reducers", () => {
 				in: { in0: settledSchema(STRING), in1: settledSchema(STRING) },
 				out: { value },
 			});
-			expect(ir.result).toEqual({ rule: "node", node: name });
+			expect(ir.result).toEqual({ node: name });
 		},
 	);
 
@@ -281,7 +283,26 @@ describe("reducers", () => {
 		expect(error.code).toBe("TYPE.reducer");
 	});
 
-	test("a build that returns no reducer keeps the default result rule", () => {
-		expect(buildOf(() => task()).result).toEqual({ rule: "default" });
+	test("the result is the returned node, or the node of a returned port", () => {
+		expect(buildOf(() => task()).result).toEqual({ node: "task" });
+		expect(buildOf(() => task().out.text).result).toEqual({ node: "task" });
+	});
+
+	const echo = composition(
+		"echo",
+		{ ports: { text: Text() } },
+		(_, { text }) => text,
+	);
+
+	test.each([
+		["nothing", () => {}],
+		["a plain-value Ref", () => use(echo, { text: "x" })],
+		["an object of named outputs", () => ({ text: task().out.text })],
+	])("a build that returns %s fails with TYPE.result", (_name, returned) => {
+		expect(diagnose(() => buildOf(returned))).toMatchObject({
+			code: "TYPE.result",
+			message: "the build of 't' returned no node",
+			hint: "Return the node whose outcome is the concert result, or a reducer over several",
+		});
 	});
 });

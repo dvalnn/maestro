@@ -2,6 +2,7 @@ import type { ArtifactRef } from "./artifact-ref";
 
 /** What core gives every node instance it starts. */
 export type Context = {
+	/** The concert id. */
 	concert: string;
 	/** Milliseconds since the Unix epoch, fixed when the instance starts. A node reads time only from here. */
 	clock: number;

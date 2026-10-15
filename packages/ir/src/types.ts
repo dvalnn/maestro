@@ -42,11 +42,10 @@ export type Cardinality = { exact: number } | { upTo: number };
 export type Tolerate = "rejected";
 
 type NodeBase = {
+	/** A path: each proper prefix is a declared scope or group, and the last segment is the node's name. */
 	id: string;
-	label: string;
 	/** A human label used in records. Not an identity. */
 	tag?: string;
-	parent?: string;
 	source?: SourceLocation;
 	in?: Ports;
 	out?: Ports;
@@ -121,7 +120,6 @@ export type IrEdge = DataEdge | CollectEdge | ControlEdge;
 export type Scope = {
 	id: string;
 	composition: string;
-	parent?: string;
 	ports: Ports;
 };
 
@@ -134,5 +132,5 @@ export type Ir = {
 	scopes: Scope[];
 	nodes: IrNode[];
 	edges: IrEdge[];
-	result: { rule: "default" } | { rule: "node"; node: string };
+	result: { node: string };
 };

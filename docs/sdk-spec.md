@@ -142,8 +142,8 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
 
 ## 6. Results of a composition
 
-A build function returns a Result handle (or an object of named outputs, for subcompositions). For an executable
-composition the **concert result** follows from the returned node by the **result rule** (CORE-04, architecture 7):
+A build function returns a Result handle or a Ref to a node's port; a subcomposition's may return an object of named
+outputs for `use`. A root build that returns no node is `TYPE.result`. For an executable composition the **concert result** follows from the returned node by the **result rule** (CORE-04, architecture 7):
 
 - an `ok` node is the result,
 - otherwise the result is the root cause of its outcome, so a skipped consolidator reports the code node that threw.
@@ -240,7 +240,8 @@ host's own spec, written during the host slice.
 An emitter (the TypeScript SDK or any future one) must produce IR that:
 
 - validates against the published IR schema and declares its IR version,
-- has stable, unique node ids derived from scope path and label,
+- has stable, unique ids that are paths, each proper prefix a declared scope or group and the last segment the
+  node's name,
 - carries the typed ports, edge kinds, group cardinalities and result rule described in architecture section 5,
 - is byte-stable for identical params and composed config (CORE-06),
 - names code nodes by worker reference `{runtime, module, export, code hash}`.
@@ -265,7 +266,7 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 
 - `IR` schema violation, unknown version.
 - `REF` a Ref used where a value is required, a Ref that escaped its scope.
-- `TYPE` edge schema mismatch, template variable missing or mistyped, unguarded `Maybe`.
+- `TYPE` edge schema mismatch, template variable missing or mistyped, unguarded `Maybe`, a build that returns no node.
 - `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count.
 - `CFG` unclaimed key, schema violation, required key missing.
 - `HOST` anything a host `validate` hook reports (for example a lane joined twice).

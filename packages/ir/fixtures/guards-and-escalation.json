@@ -25,7 +25,6 @@
 		{
 			"id": "plan",
 			"kind": "code",
-			"label": "plan",
 			"source": { "file": "fixtures/guards.ts", "line": 12, "column": 3 },
 			"out": { "parts": { "type": "array", "items": { "type": "string" } } },
 			"worker": {
@@ -40,7 +39,6 @@
 		{
 			"id": "each",
 			"kind": "map",
-			"label": "each",
 			"cardinality": { "upTo": 4 },
 			"onError": "propagate",
 			"key": {
@@ -89,15 +87,12 @@
 		{
 			"id": "each/work",
 			"kind": "fake.task",
-			"label": "work",
-			"parent": "each",
 			"in": { "prompt": { "type": "string" } },
 			"out": { "text": { "type": "string" } }
 		},
 		{
 			"id": "merge",
 			"kind": "code",
-			"label": "merge",
 			"in": {
 				"parts": {
 					"type": "array",
@@ -149,7 +144,6 @@
 		{
 			"id": "escalate",
 			"kind": "seq",
-			"label": "escalate",
 			"items": ["small", "medium", "large"],
 			"cardinality": { "upTo": 3 },
 			"inner": { "item": { "type": "string" } },
@@ -160,15 +154,12 @@
 		{
 			"id": "escalate/try",
 			"kind": "fake.task",
-			"label": "try",
-			"parent": "escalate",
 			"in": { "prompt": { "type": "string" }, "size": { "type": "string" } },
 			"out": { "text": { "type": "string" } }
 		},
 		{
 			"id": "gate",
 			"kind": "assert",
-			"label": "gate",
 			"in": { "cond": { "type": "boolean" } },
 			"message": "an escalation step must end ok",
 			"onFail": "rejected"
@@ -176,7 +167,6 @@
 		{
 			"id": "summary",
 			"kind": "code",
-			"label": "summary",
 			"in": { "text": { "type": "string" } },
 			"out": { "summary": { "type": "string" } },
 			"worker": {
@@ -236,5 +226,5 @@
 			"tolerate": "rejected"
 		}
 	],
-	"result": { "rule": "node", "node": "summary" }
+	"result": { "node": "summary" }
 }

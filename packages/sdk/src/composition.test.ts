@@ -118,7 +118,7 @@ describe("use", () => {
 	test("builds the sub in a scope of its own, with its ports fed by edge or literal", () => {
 		const ir = buildOf(() => {
 			use(shout, { text: task().out.text }, { params: { times: 2 } });
-			use(shout, { text: "plain" }, { label: "again" });
+			return use(shout, { text: "plain" }, { label: "again" });
 		});
 		expect(ir.scopes).toEqual([
 			{
@@ -133,7 +133,6 @@ describe("use", () => {
 			},
 		]);
 		expect(nodeOf(ir, "shout/task")).toMatchObject({
-			parent: "shout",
 			literals: { times: 2 },
 		});
 		expect(ir.edges).toContainEqual({
@@ -231,6 +230,7 @@ describe("byte stability", () => {
 		let kept: Ref<string> | undefined;
 		buildOf(() => {
 			kept = task().out.text;
+			return kept;
 		});
 		expect(diagnose(() => buildOf(() => task({ kept }))).code).toBe(
 			"REF.escape",

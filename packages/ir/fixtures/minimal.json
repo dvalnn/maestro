@@ -8,7 +8,6 @@
 		{
 			"id": "greet",
 			"kind": "code",
-			"label": "greet",
 			"in": { "name": { "type": "string" } },
 			"out": { "text": { "type": "string" } },
 			"literals": { "name": "world" },
@@ -22,5 +21,5 @@
 		}
 	],
 	"edges": [],
-	"result": { "rule": "default" }
+	"result": { "node": "greet" }
 }

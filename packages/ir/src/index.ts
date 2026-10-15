@@ -12,6 +12,12 @@ export {
 	type Rejection,
 	reject,
 } from "./code-function";
+export {
+	formatExpansion,
+	formatInstance,
+	itemKey,
+	parseExpansion,
+} from "./expansion";
 export { type GraphIndex, indexGraph } from "./graph";
 export {
 	CORE_TYPES,

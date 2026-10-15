@@ -37,7 +37,7 @@ describe("code", () => {
 	test("emits the resolved worker, ports, literals, reads and writes as written", () => {
 		const ir = buildOf(() => {
 			const t = task();
-			code(merge, {
+			return code(merge, {
 				in: { parts: t.out.parts, sep: "\n" },
 				out: { text: Text() },
 				reads: ["src/**"],
@@ -47,7 +47,6 @@ describe("code", () => {
 		});
 		expect(nodeOf(ir, "merge")).toMatchObject({
 			kind: "code",
-			label: "merge",
 			worker: WORKER,
 			pure: false,
 			reads: ["src/**"],
@@ -92,7 +91,7 @@ describe("code", () => {
 			});
 			// @ts-expect-error: merge's 'parts' is a list, and 'text' is Text.
 			code(merge, { in: { parts: t.out.text, sep: "," }, label: "merge_3" });
-			code(verdict, { in: { text: t.out.text }, out: { text: Text() } });
+			return code(verdict, { in: { text: t.out.text }, out: { text: Text() } });
 		});
 		const canReject: Rejection extends ReturnType<typeof verdict>
 			? true
@@ -106,7 +105,7 @@ describe("code", () => {
 			code(copyOut, { in: { doc }, out: { copy: File() } });
 			code(fetchText, { in: { url: "u" }, out: { text: Text() } });
 			// @ts-expect-error: a code function's context is a CodeContext.
-			code(wantsOtherContext, { out: { at: Int() } });
+			return code(wantsOtherContext, { out: { at: Int() } });
 		});
 		expect(ir.nodes.map((n) => n.id)).toEqual([
 			"doc",
@@ -136,7 +135,7 @@ describe("code", () => {
 });
 
 describe("hostNode", () => {
-	test("emits the kind, a label from it and a plain config", () => {
+	test("emits the kind, an id from it and a plain config", () => {
 		const ir = buildOf(() =>
 			hostNode("fake.check", { config: { strict: true } }),
 		);
@@ -158,7 +157,7 @@ describe("common options", () => {
 	test("when is a control edge from the guard's port", () => {
 		const ir = buildOf(() => {
 			const t = task();
-			hostNode("fake.check", { when: t.out.done, tag: "gate" });
+			return hostNode("fake.check", { when: t.out.done, tag: "gate" });
 		});
 		expect(nodeOf(ir, "check").tag).toBe("gate");
 		expect(ir.edges).toContainEqual({
@@ -172,7 +171,7 @@ describe("common options", () => {
 		const ir = buildOf(() => {
 			const a = task("a");
 			const b = task("b");
-			hostNode("fake.check", {
+			return hostNode("fake.check", {
 				in: { text: a.out.text },
 				when: b.out.done,
 				tolerate: "rejected",
@@ -220,7 +219,7 @@ describe("assert", () => {
 	test("a true plain condition emits nothing", () => {
 		const ir = buildOf(() => {
 			assert(true, "holds", { onFail: "failed" });
-			task();
+			return task();
 		});
 		expect(ir.nodes.map((n) => n.kind)).toEqual(["fake.task"]);
 	});
@@ -243,9 +242,11 @@ describe("assert", () => {
 	});
 
 	test("a Ref condition is an assert node fed by an edge", () => {
-		const ir = buildOf(() =>
-			assert(task().out.done, "done", { onFail: "rejected" }),
-		);
+		const ir = buildOf(() => {
+			const t = task();
+			assert(t.out.done, "done", { onFail: "rejected" });
+			return t;
+		});
 		expect(nodeOf(ir, "assert")).toMatchObject({
 			kind: "assert",
 			message: "done",
