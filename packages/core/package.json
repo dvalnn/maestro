@@ -9,6 +9,7 @@
 		"./perform": "./src/perform/index.ts"
 	},
 	"dependencies": {
-		"@maestro/ir": "workspace:*"
+		"@maestro/ir": "workspace:*",
+		"ajv": "8.20.0"
 	}
 }

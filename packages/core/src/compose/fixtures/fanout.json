@@ -1,0 +1,205 @@
+{
+	"composition": { "id": "fanout", "pack": "fixtures", "version": "0.1.0" },
+	"edges": [
+		{
+			"from": { "node": "map", "port": "item" },
+			"kind": "data",
+			"to": { "node": "map/task", "port": "model" }
+		},
+		{
+			"from": { "node": "map/task", "port": "text" },
+			"kind": "data",
+			"to": { "node": "map/fix_until_green/check", "port": "text" }
+		},
+		{
+			"from": { "node": "map/fix_until_green/check", "port": "text" },
+			"kind": "data",
+			"to": { "node": "map/fix_until_green/repeat", "port": "text" }
+		},
+		{
+			"from": { "node": "map/fix_until_green/check", "port": "logs" },
+			"kind": "data",
+			"to": { "node": "map/fix_until_green/repeat", "port": "logs" }
+		},
+		{
+			"from": { "node": "map/fix_until_green/repeat", "port": "logs" },
+			"kind": "data",
+			"to": { "node": "map/fix_until_green/repeat/task", "port": "failures" }
+		},
+		{
+			"from": { "node": "map/fix_until_green/repeat", "port": "index" },
+			"kind": "data",
+			"to": { "node": "map/fix_until_green/repeat/task", "port": "index" }
+		},
+		{
+			"from": { "node": "map/fix_until_green/repeat/task", "port": "text" },
+			"kind": "data",
+			"to": { "node": "map/fix_until_green/repeat/check", "port": "text" }
+		},
+		{
+			"from": { "node": "map", "port": "results" },
+			"kind": "collect",
+			"to": { "node": "firstOk", "port": "results" }
+		}
+	],
+	"emitter": { "name": "@maestro/sdk", "version": "0.1.0" },
+	"irVersion": "1.0",
+	"nodes": [
+		{
+			"cardinality": { "exact": 2 },
+			"id": "map",
+			"inner": { "item": { "type": "string" } },
+			"items": ["small", "large"],
+			"kind": "map",
+			"members": { "result": "map/fix_until_green/repeat" },
+			"onError": "settle",
+			"out": {
+				"results": {
+					"items": {
+						"additionalProperties": false,
+						"oneOf": [
+							{
+								"properties": {
+									"outcome": { "const": "ok" },
+									"reason": false,
+									"value": true
+								},
+								"required": ["value"]
+							},
+							{
+								"properties": {
+									"outcome": { "enum": ["rejected", "failed"] },
+									"reason": true
+								},
+								"required": ["reason"]
+							},
+							{ "properties": { "outcome": { "const": "skipped" } } }
+						],
+						"properties": {
+							"outcome": { "enum": ["ok", "skipped", "rejected", "failed"] },
+							"reason": { "type": "string" },
+							"value": { "type": "object" }
+						},
+						"required": ["outcome"],
+						"type": "object"
+					},
+					"type": "array"
+				}
+			}
+		},
+		{
+			"id": "map/task",
+			"in": { "model": { "type": "string" }, "prompt": { "type": "string" } },
+			"kind": "fake.task",
+			"literals": { "prompt": "write it" },
+			"out": { "text": { "type": "string" } }
+		},
+		{
+			"id": "map/fix_until_green/check",
+			"in": { "text": { "type": "string" } },
+			"kind": "fake.check",
+			"out": { "logs": { "type": "string" }, "text": { "type": "string" } }
+		},
+		{
+			"cardinality": { "upTo": 2 },
+			"id": "map/fix_until_green/repeat",
+			"in": { "logs": { "type": "string" }, "text": { "type": "string" } },
+			"inner": {
+				"index": { "type": "integer" },
+				"logs": { "type": "string" },
+				"text": { "type": "string" }
+			},
+			"kind": "repeat",
+			"members": { "result": "map/fix_until_green/repeat/check" },
+			"out": { "logs": { "type": "string" }, "text": { "type": "string" } },
+			"tolerate": "rejected",
+			"until": { "node": "map/fix_until_green/repeat/check", "port": "ok" }
+		},
+		{
+			"id": "map/fix_until_green/repeat/task",
+			"in": {
+				"failures": { "type": "string" },
+				"index": { "type": "integer" },
+				"prompt": { "type": "string" }
+			},
+			"kind": "fake.task",
+			"literals": { "prompt": "write it" },
+			"out": { "text": { "type": "string" } }
+		},
+		{
+			"id": "map/fix_until_green/repeat/check",
+			"in": { "text": { "type": "string" } },
+			"kind": "fake.check",
+			"out": { "logs": { "type": "string" }, "text": { "type": "string" } }
+		},
+		{
+			"fanin": true,
+			"id": "firstOk",
+			"in": {
+				"results": {
+					"items": {
+						"additionalProperties": false,
+						"oneOf": [
+							{
+								"properties": {
+									"outcome": { "const": "ok" },
+									"reason": false,
+									"value": true
+								},
+								"required": ["value"]
+							},
+							{
+								"properties": {
+									"outcome": { "enum": ["rejected", "failed"] },
+									"reason": true
+								},
+								"required": ["reason"]
+							},
+							{ "properties": { "outcome": { "const": "skipped" } } }
+						],
+						"properties": {
+							"outcome": { "enum": ["ok", "skipped", "rejected", "failed"] },
+							"reason": { "type": "string" },
+							"value": { "type": "object" }
+						},
+						"required": ["outcome"],
+						"type": "object"
+					},
+					"type": "array"
+				}
+			},
+			"kind": "code",
+			"out": { "value": { "type": "object" } },
+			"pure": true,
+			"worker": {
+				"codeHash": "maestro:stdlib@0.1.0",
+				"export": "firstOk",
+				"module": "maestro:stdlib",
+				"runtime": "ts"
+			}
+		}
+	],
+	"params": {
+		"examples": [{}],
+		"schema": {
+			"additionalProperties": false,
+			"properties": {
+				"models": {
+					"default": ["small", "large"],
+					"items": { "type": "string" },
+					"type": "array"
+				},
+				"prompt": { "default": "write it", "type": "string" }
+			},
+			"type": "object"
+		}
+	},
+	"result": { "node": "firstOk" },
+	"scopes": [
+		{
+			"composition": "fix_until_green",
+			"id": "map/fix_until_green",
+			"ports": { "draft": { "type": "string" }, "prompt": { "type": "string" } }
+		}
+	]
+}
