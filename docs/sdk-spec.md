@@ -72,7 +72,7 @@ records, not an identity).
 
 | Constructor              | Purpose                                                                                  | Key arguments                                            | Result                                          |
 | ------------------------ | ---------------------------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------- |
-| `code(fn, opts)`         | Run the author's function over typed inputs.                                             | `in` ports, `out` schema, `reads`, `writes`, `pure` flag | outputs per `out`                               |
+| `code(fn, opts)`         | Run the author's function over typed inputs.                                             | `in` ports, `out` schema, `reads`, `writes`, `pure` flag, `timeout` | outputs per `out`                               |
 | `map(items, body, opts)` | Instantiate `body` once per item, in parallel.                                           | `items`, body, `max`, `onError`                          | `Settled(R)[]` with static cardinality metadata |
 | `seq(items, body, opts)` | Instantiate `body` per item in order, stop at the first item whose result meets `until`. | `items`, body, `until`, `max`                            | the stopping result, or the last                |
 | `repeat(opts)`           | Bounded loop carrying typed state.                                                       | `init`, `step(state, i)`, `until`, `max`, `tolerate`     | the last state                                  |
@@ -94,7 +94,8 @@ Semantics each constructor must honor:
   becomes a `Settled` value and the group is `ok`. With `"propagate"` the group takes the worst member outcome, and
   the first non-ok member cancels the rest (ADR 0006).
 - **`seq`.** Covers escalation over an ordered list. `until` gets a member's result and returns a `Ref<Bool>`. Members
-  after a satisfied `until` are `skipped` and appear as such in the plan. The bound is `items.length` or `max`.
+  after a satisfied `until` are `skipped` and appear as such in the plan. The bound is `items.length` or `max`. A `seq`
+  over no items settles `skipped`.
 - **`repeat`.** The step receives the previous state and the iteration index. At least one iteration runs: `until`
   gets each new state, never `init`, and returns a `Ref<Bool>`. Compose unrolls to `max` for bounds and rendering.
   `max` must be known at compose time, from a literal or a param. State edges are tolerant of `rejected` only if
@@ -163,6 +164,8 @@ A code node is the SDK's answer to "this needs real code".
 - **Purity.** A pure node is a function of its inputs and declared artifacts. It is cacheable and foldable. An impure
   node declares `pure: false`, is never cached, and is never folded. A pure node that reads `ctx.clock` or
   `ctx.concert` fails.
+- **Timeout.** A code node runs with no time limit unless its author sets `timeout` in milliseconds. One that runs
+  past it settles `failed`.
 - **Declared reads and writes.** File and directory paths a node reads or writes are declared by artifact ports or by
   explicit `reads` and `writes`. Compose can check write scope and the cache can hash declared reads. Undeclared
   access is the author's error. The SDK detects what it can (for example through the context's clock and environment) and

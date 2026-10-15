@@ -197,3 +197,26 @@ Classifier blocks: none.
   unmatched; an object or array key fails the node.
 - K30: A. No unguarded-`Maybe` check and no `Maybe(T)` type: a skipped node's dependents are skipped (CORE-04), and an
   optional value is a record field left out of `required`. Closes S2-Q4.
+
+## Rulings from the S3 and S4 reviews, and for S5 (2026-10-16)
+
+- K31: A. The plan reports no maximum concurrency: perform's cap bounds it, and no decision reads the number (D-23).
+- K32: A. The record stores the IR as a JSON column on the concert, written at start, for resume and renderers.
+- K33: A. No record migrations until the first release; another schema version is refused, naming the file.
+- K34: A. The concert stores its process id; a reader that finds a `running` concert's process gone settles it
+  `failed`, "process exited". Matches the legacy approach.
+- K35: A. An instance that never started has no record row; a cancelled concert is `failed` with the reason.
+- K36: A. A concert that fails before any node runs has a result with no node, `failed` with the reason (CORE-04).
+- K37: keep. An empty `seq` settles `skipped`.
+- K38: A. The record stores neither params nor config; params are in the IR; secrets never go in params (CFG-03).
+- K39: A. A cancelled or timed-out code node settles `failed` at once and its in-process function is abandoned.
+- K40: A. An instance's scratch directory is removed when it settles.
+- K41: A. A code node's `timeout` is a per-node option set by its author, in the IR, none by default. Timeouts on every
+  kind and tolerating a timeout are backlog 11.
+- K42: C. Resume runs the stored IR and reuses a recorded `ok` instance of that concert when its key (node definition,
+  current code hash, inputs) matches, pure or not. A changed node and its dependents run again.
+- K43: A. Resume reuses only `ok` instances; `rejected`, `failed` and `skipped` ones run again.
+- K44: A. A resume keeps the concert id; resuming a concert whose process is alive is refused.
+- K45: A. The cache is a table in the record store, policy `on` or `off`. A hit whose artifact is gone or differs is
+  a miss; `prune` drops the entries of the concerts it removes.
+- K46: A. The cache key's config is a cacheable host node's own host namespace; a code node's key has no config.

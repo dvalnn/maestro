@@ -130,7 +130,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   edge or a reducer node, never inferred.
 - **CORE-04 (Must).** Outcomes are `ok`, `rejected`, `failed`, `skipped`. By default a dependent runs only after `ok`
   upstreams. An edge can tolerate `rejected`. The concert result is the node the composition returns when it is
-  `ok`, else the root cause of its outcome.
+  `ok`, else the root cause of its outcome. A concert that fails before any node runs has a result with no node,
+  only `failed` and the reason.
 - **CORE-05 (Must).** Every group declares its cardinality, `exact` or `up to N`, so compose can bound node instances.
 - **CORE-06 (Must).** Building is symbolic, deterministic and side-effect free. It never reads a node's value. The
   same inputs and config yield byte-identical IR.
@@ -167,12 +168,13 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 
 ### 6.2 Configuration (CFG)
 
-- **CFG-01 (Must).** Core config is a small closed schema of engine concerns only: cache location and policy,
+- **CFG-01 (Must).** Core config is a small closed schema of engine concerns only: cache on or off,
   concurrency cap, record store location, event sinks, pre-flight strictness.
 - **CFG-02 (Must).** Every other top-level config key belongs to a namespace owned by a registrant. The core checks
   YAML syntax, layers the files, and hands each namespace to its owner's schema at compose time.
 - **CFG-03 (Must).** A composition declares typed params with defaults in code (D-17). The schema is exported in the IR.
-  Subcompositions declare params and ports.
+  Subcompositions declare params and ports. Param values end up in the IR and the record, so secrets belong in config
+  or the environment, never in params.
 - **CFG-04 (Must).** Precedence, lowest to highest: param default, user-level YAML, workspace-level YAML, profile YAML,
   then the CLI flag (root composition) or the use site (subcomposition). YAML keys live under the pack id and the
   composition id (D-17).

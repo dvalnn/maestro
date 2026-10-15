@@ -98,8 +98,8 @@ is steps 5 to 7 and starts a concert.
     5. Expand bounded groups whose cardinality is now known. A group whose size depends on a node result stays as a
        bounded region.
     6. Run host `validate(graph)` hooks (for example the lane double-join rule, a role and model policy).
-    7. Compute bounds with host `bounds(node)`: maximum node instances, the hosts' named counts (such as agent runs)
-       and maximum concurrency (D-23). There is no cost bound in v1.
+    7. Compute bounds with host `bounds(node)`: maximum node instances and the hosts' named counts (such as agent
+       runs) (D-23). There is no cost bound in v1.
     8. Emit the **plan**: diagnostics, counts, bounds and a renderable graph. Diagnostics of severity error stop here
        (NFR-02).
 5. **Perform.** The executor instantiates node instances, schedules them by dependency, applies outcomes and edge
@@ -195,13 +195,18 @@ The core never inspects a host's types or rules. It only calls these hooks and r
   node's non-`ok` inputs, and a group's result member, that the graph does not tolerate (a tolerated rejection or a
   `Settled` input), the first to settle when several did, to a node with no such input: the root cause, with its
   outcome and reason. A node skipped by its own false guard is the result, and counts as rejected.
-- **Cache.** Key: hash of (node definition, code hash for code nodes, input values and artifact content hashes, relevant
-  config). Host nodes participate only if their kind declares itself cacheable. Agent nodes are not cacheable by default
-  (non-deterministic, costly), but their recorded results are reusable by resume.
-- **Resume.** Re-entering a concert replays settled node instances from the record and continues from unsettled ones.
-  Resuming never repeats an `ok` node whose inputs are unchanged.
+- **Cache.** Key: hash of (node definition, code hash for code nodes, input values and artifact content hashes, and for
+  a host node its host's config namespace). Host nodes participate only if their kind declares itself cacheable. Agent
+  nodes are not cacheable by default (non-deterministic, costly), but their recorded results are reusable by resume.
+  The cache is a table in the record store, turned `on` or `off` by config. A hit whose artifact is gone or no longer
+  matches its hash is a miss, and `prune` drops the entries of the concerts it removes.
+- **Resume.** Re-entering a concert keeps its id and runs its stored IR. A recorded `ok` instance whose key matches,
+  with the code hash recomputed from the current code, is reused, pure or not. Any other instance runs again, so a fix
+  to one node's code reruns that node and its dependents only. A concert whose process is still alive cannot be
+  resumed.
 - **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in
-  reverse dependency order, and settles them as `failed` with a cancellation reason.
+  reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started
+  has no record. A code node that runs past the timeout its author set settles `failed`. It has none by default.
 
 ## 8. Configuration
 
@@ -232,7 +237,8 @@ claimed by an installed but unused registrant is ignored.
 - v1 provides an **in-process TypeScript worker**. The **worker protocol** is specified so other runtimes and
   out-of-process workers can follow: a node invocation carries node id, expansion path, input values, artifact
   references and context. The reply carries outputs and an outcome (`ok` or `rejected` with reason), or an error.
-  Workers support cancellation and timeouts.
+  Workers support cancellation and timeouts. The in-process worker cannot stop a running function: a cancelled or
+  timed-out invocation settles at once and its function is abandoned. Long work belongs in a host.
 - **Purity.** A pure node reads only its inputs and declared artifacts, writes only declared outputs, and is cached.
   Reading ambient state (clock, environment, files not declared) marks the node impure, and it is never cached. An
   impure node reads the clock and the concert id from its context. A pure node that reads them fails, so a cached or
@@ -242,13 +248,18 @@ claimed by an installed but unused registrant is ignored.
 
 ## 10. Record and events
 
-- The **record store** is local and embedded. SQLite in WAL mode through `bun:sqlite` is the store (D-26). Concerts may run concurrently with no coordination beyond lane isolation, and the concurrency cap is per concert. The schema
-  is new (D-02). It holds concerts, node instances, outcomes with reasons, durations, metrics, artifact references and
-  events.
+- The **record store** is local and embedded. SQLite in WAL mode through `bun:sqlite` is the store (D-26). Concerts
+  may run concurrently with no coordination beyond lane isolation, and the concurrency cap is per concert. The schema
+  is new (D-02). It holds concerts with their IR and the id of the process performing them, node instances, outcomes
+  with reasons, durations, metrics, artifact references and events. Config is not stored.
+- A concert whose process is gone while it is still `running` settles `failed`, by whichever reader finds it, so
+  `wait` ends and resume can continue from it.
+- Until the first release, a record store of another schema version is refused, not migrated.
 - **Metrics** (CORE-19, D-23) are named additive numbers per node instance. The engine sums each name per concert and
   attaches no meaning to a name. v1 reports token counts only.
 - **Events** are append-only, keyed by node id and expansion path, with the instance's state, timestamps, outcome and
   host enrichment. They are the single source for `watch` and renderers (NFR-07).
+- An instance's scratch directory is removed when it settles. What lasts is in artifacts, lanes and events.
 - **Artifacts** are files on disk under the concert's area, referenced by content hash and provenance (which node
   instance produced them). Large values are artifacts, not inline.
 - **Queries** needed by the CLI: list concerts with filters, list node instances of a concert, wait for a terminal

@@ -15,7 +15,7 @@ to:
 **`map.onError` has no default.** The SDK requires it on every `map`, as the IR already does (ADR 0004).
 
 **Propagate.** The group's outcome is the worst member outcome, and its `reason` is that of the first such member by
-key order. When the first member settles non-ok, no further member starts, and running members are cancelled through
+item order. When the first member settles non-ok, no further member starts, and running members are cancelled through
 their kind's cancel hook. A member cancelled this way settles `skipped` with the reason `cancelled: <instance>
 <outcome>`, so it never worsens the group's outcome. Cancelling a concert still settles running instances `failed`
 (architecture section 7).
