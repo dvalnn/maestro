@@ -124,8 +124,28 @@
 				"runtime": { "type": "string", "minLength": 1 },
 				"module": { "type": "string", "minLength": 1 },
 				"export": { "type": "string", "minLength": 1 },
-				"codeHash": { "type": "string", "minLength": 1 }
+				"codeHash": { "type": "string" }
+			},
+			"if": {
+				"required": ["module"],
+				"properties": { "module": { "const": "maestro:stdlib" } }
+			},
+			"then": {
+				"properties": { "codeHash": { "$ref": "#/$defs/stdlibHash" } }
+			},
+			"else": {
+				"properties": { "codeHash": { "$ref": "#/$defs/contentHash" } }
 			}
+		},
+		"contentHash": {
+			"description": "sha256: plus 64 lowercase hex digits.",
+			"type": "string",
+			"pattern": "^sha256:[0-9a-f]{64}$"
+		},
+		"stdlibHash": {
+			"description": "maestro:stdlib@<semver>: the one code hash that is not a content hash (ADR 0008).",
+			"type": "string",
+			"pattern": "^maestro:stdlib@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
 		},
 		"cardinality": {
 			"oneOf": [

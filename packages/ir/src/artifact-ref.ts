@@ -21,7 +21,10 @@ export const artifactRefSchema = {
 	additionalProperties: false,
 	properties: {
 		path: { type: "string", pattern: `^${SEGMENT}(?:/${SEGMENT})*$` },
-		contentHash: { type: "string", pattern: "^sha256:[0-9a-f]{64}$" },
+		contentHash: {
+			type: "string",
+			pattern: irSchema.$defs.contentHash.pattern,
+		},
 		producer: {
 			type: "object",
 			required: ["node", "expansion"],

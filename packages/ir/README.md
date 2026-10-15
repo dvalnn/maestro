@@ -69,9 +69,15 @@ Common fields: `id`, `kind`, `label`, optional `tag` (a human label used in reco
 `source` (`file`, `line`, `column`), `in` and `out` (port name to schema), and `literals` (port name to a plain value,
 D-16).
 
-A worker's `module` is relative to the IR file's directory, and `codeHash` is `sha256:` plus 64 lowercase hex digits of
-the module file's bytes. `maestro:stdlib` is a reserved `module` whose `codeHash` is `maestro:stdlib@<sdk version>`
-(ADR 0008). The golden fixtures keep their modules beside them in `fixtures/`, and a test checks each hash.
+A worker's `module` is relative to the IR file's directory. `codeHash` takes one of two forms (ADR 0008), and the
+schema pairs each with its module both ways:
+
+- `sha256:` plus 64 lowercase hex digits, the hash of the module file's bytes. The same form as an artifact's
+  `contentHash`.
+- `maestro:stdlib@<semver>` (`major.minor.patch`, optional pre-release and build parts), only on the reserved module
+  `maestro:stdlib`, and that module takes no other form. The version is the building SDK's and informational.
+
+The golden fixtures keep their modules beside them in `fixtures/`, and a test checks each hash.
 
 Every node also has three implicit outputs: `outcome`, `ok` and `reason`. They may not be declared in `out`.
 

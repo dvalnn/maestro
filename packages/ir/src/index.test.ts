@@ -1,6 +1,7 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import fanoutFaninLoop from "../fixtures/fanout-fanin-loop.json";
+import guards from "../fixtures/guards-and-escalation.json";
 import minimal from "../fixtures/minimal.json";
 import { IR_VERSION, irSchema, parseIr } from "./index";
 
@@ -149,6 +150,77 @@ test.each<[string, Mutation, string, string]>([
 		code: "IR.schema",
 		path,
 		message,
+	});
+});
+
+test.each<[string, Mutation, [string, string][]]>([
+	[
+		"an extra property on the worker",
+		(ir) => (ir.nodes[0].worker.foo = 1),
+		[["/nodes/0/worker", "has unexpected property 'foo'"]],
+	],
+	[
+		"an extra property on the node and a bad codeHash",
+		(ir) => {
+			ir.nodes[0].foo = 1;
+			ir.nodes[0].worker.codeHash = "sha256:0000";
+		},
+		[
+			[
+				"/nodes/0/worker/codeHash",
+				"must match the pattern '^sha256:[0-9a-f]{64}$'",
+			],
+		],
+	],
+])(
+	"schema diagnostics drop unexpected-property noise above an error: %s",
+	(_, mutate, expected) => {
+		expect(rejects(minimal, mutate).map((d) => [d.path, d.message])).toEqual(
+			expected,
+		);
+	},
+);
+
+const SHA = `sha256:${"ab".repeat(32)}`;
+const STDLIB = "maestro:stdlib";
+
+const workerSites = [
+	["a code node", minimal, "nodes/0/worker"],
+	["a group key", guards, "nodes/1/key"],
+] as const;
+
+const setWorker =
+	(site: string, module: string, codeHash: string): Mutation =>
+	(ir) =>
+		Object.assign(
+			site.split("/").reduce((o, k) => o[k], ir),
+			{ module, codeHash },
+		);
+
+describe.each(workerSites)("a worker reference on %s", (_, base, site) => {
+	test.each([
+		["a content hash", "w.ts", SHA],
+		["a stdlib version", STDLIB, `${STDLIB}@1.2.3`],
+		["a stdlib pre-release and build", STDLIB, `${STDLIB}@1.0.0-rc.1+b.5`],
+	])("accepts %s", (_n, module, hash) => {
+		const ir: Parameters<Mutation>[0] = structuredClone(base);
+		setWorker(site, module, hash)(ir);
+		expect(parseIr(ir)).toEqual({ ok: true, ir });
+	});
+
+	test.each([
+		["a placeholder", "w.ts", "sha256:0000"],
+		["uppercase hex", "w.ts", `sha256:${"AB".repeat(32)}`],
+		["a missing prefix", "w.ts", "ab".repeat(32)],
+		["a stdlib hash on another module", "w.ts", `${STDLIB}@1.2.3`],
+		["a content hash on the stdlib module", STDLIB, SHA],
+		["a non-semver stdlib version", STDLIB, `${STDLIB}@1.2`],
+		["a leading-zero stdlib version", STDLIB, `${STDLIB}@01.2.3`],
+	])("rejects %s", (_n, module, hash) => {
+		const diagnostics = rejects(base, setWorker(site, module, hash));
+		expect(diagnostics.map((d) => [d.code, d.path])).toEqual([
+			["IR.schema", `/${site}/codeHash`],
+		]);
 	});
 });
 

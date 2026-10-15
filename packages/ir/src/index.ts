@@ -103,15 +103,22 @@ function shapeDiagnostics(): IrDiagnostic[] {
 	const isExtra = (e: (typeof errors)[number]) =>
 		e.keyword === "unevaluatedProperties" ||
 		e.keyword === "additionalProperties";
-	// A failed branch drops the properties it evaluated, so extra-property errors are only
-	// trustworthy on a path that has no other error.
-	const pathsWithOtherErrors = new Set(
-		errors.filter((e) => !isExtra(e)).map((e) => e.instancePath),
-	);
+	// A failed branch drops the properties it evaluated, so an extra-property error is dropped when
+	// another error sits on its own path. An unevaluatedProperties error is also dropped when any
+	// error, an extra-property one included, sits beneath its path. The extra property shows on
+	// the next parse.
+	const paths = errors.map((e) => e.instancePath);
+	const otherPaths = errors
+		.filter((e) => !isExtra(e))
+		.map((e) => e.instancePath);
+	const isUntrusted = (e: (typeof errors)[number]) =>
+		otherPaths.includes(e.instancePath) ||
+		(e.keyword === "unevaluatedProperties" &&
+			paths.some((p) => p.startsWith(`${e.instancePath}/`)));
 	const messages = new Set<string>();
 	const diagnostics: IrDiagnostic[] = [];
 	for (const e of errors) {
-		if (isExtra(e) && pathsWithOtherErrors.has(e.instancePath)) continue;
+		if (isExtra(e) && isUntrusted(e)) continue;
 		const message =
 			SHAPE_MESSAGES[e.keyword]?.(e.params) ??
 			e.message ??
