@@ -190,3 +190,10 @@ Classifier blocks: none.
   tests, 11 ported sssf workflows) and found no construct whose logical parent differs from its id prefix.
 - K27: A. The IR drops `label`: a node's name is its id's last segment, which every SDK-built node already matched.
   The SDK's `label` option stays, naming the segment; `tag` stays for display.
+- K28: B. A stdlib lift that finds nothing (`pick` on a missing path, `lookup` on a missing key, `zip` over lists of
+  different lengths) settles `failed`: a gap in data is a defect, not a verdict (ADR 0006). `.or(default)` still
+  catches it; the stdlib rejects only in `firstOk`.
+- K29: A. `join` matches scalar keys (string, number, boolean) by strict equality; a `null` or missing key is
+  unmatched; an object or array key fails the node.
+- K30: A. No unguarded-`Maybe` check and no `Maybe(T)` type: a skipped node's dependents are skipped (CORE-04), and an
+  optional value is a record field left out of `required`. Closes S2-Q4.

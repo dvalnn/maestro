@@ -43,7 +43,7 @@ The build function runs once per compose, as the first step of the stage. It is 
 Every port, param and config value has a schema that serializes to JSON Schema (CORE-02). The SDK chooses the schema
 library. The type vocabulary is:
 
-- **Values.** `Text`, `Bool`, `Int`, `Float`, `Json(schema)`, `List(T)`, `Record`, enumerations, and `Maybe(T)`.
+- **Values.** `Text`, `Bool`, `Int`, `Float`, `Json(schema)`, `List(T)`, `Record`, and enumerations.
 - **Artifacts.** `File`, `Dir`, and typed files such as `JsonFile(schema)` and `Markdown`. An artifact has provenance and
   a content hash and is staged by whichever node needs it (CORE-15). Artifacts are values only in the sense that nodes
   consume and produce them. Large payloads are always artifacts.
@@ -53,14 +53,15 @@ library. The type vocabulary is:
 - **Host types.** Registered by a host (for example a lane handle). Core treats them as opaque, named, serializable.
   Artifacts and host types are named in their schemas by `x-maestro-type` (ADR 0007).
 
-Optional values are `Maybe(T)`. Reading a `Maybe` requires an explicit default or a guard, and compose rejects an
-unguarded use.
+An optional value is a record field left out of `required`. A dependent never reads a skipped node's outputs, since
+it is skipped too (CORE-04), so a guarded output needs no default; `ref.or(default)` gives one where a value must
+flow on.
 
 ## 4. Nodes and their results
 
 Every node constructor returns a **Result handle** with:
 
-- `outcome`, `ok`, and `reason` (a `Maybe(Text)`, present when rejected or failed),
+- `outcome`, `ok`, and `reason` (text, present when rejected or failed),
 - one port per declared output, under `out`,
 - any extra ports its kind defines (for a host kind, for example a lane).
 
@@ -108,7 +109,7 @@ Host SDKs add constructors with the same Result handle shape (section 12).
 
 ### 4.2 Guards and tolerance
 
-- **`when: Ref<Bool>`** on any node. A false guard makes the node `skipped`, and its result's ports are `Maybe`.
+- **`when: Ref<Bool>`** on any node. A false guard makes the node `skipped`.
 - **`tolerate: "rejected"`** on a consuming node or a `repeat` state edge lets the node run after a `rejected`
   upstream. It then receives `reason`. Without it a non-ok upstream makes the node `skipped` (CORE-04). `failed` and
   `skipped` are never tolerable.
@@ -122,7 +123,7 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
 - **Lifting combinators** (all produce visible nodes in the graph, never hidden ones):
     - `ref.pick(path)` selects a field of a structured value.
     - `zip(a, b)` and `join(a, b, {on})` combine refs, the second by key.
-    - `when(cond, ...)` and `ref.or(default)` for guards and `Maybe` defaults.
+    - `when(cond, ...)` and `ref.or(default)` for guards and defaults.
     - `lookup(table, key)` indexes a plain table by a Ref key.
 
   A lift's id names its source node and what it does, so it needs no label: `review.out.result.pick("summary")` is
@@ -266,7 +267,7 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 
 - `IR` schema violation, unknown version.
 - `REF` a Ref used where a value is required, a Ref that escaped its scope.
-- `TYPE` edge schema mismatch, template variable missing or mistyped, unguarded `Maybe`, a build that returns no node.
+- `TYPE` edge schema mismatch, template variable missing or mistyped, a build that returns no node.
 - `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count.
 - `CFG` unclaimed key, schema violation, required key missing.
 - `HOST` anything a host `validate` hook reports (for example a lane joined twice).

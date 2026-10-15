@@ -155,7 +155,7 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **CORE-14 (Must).** The worker protocol is defined for code nodes. The TypeScript runtime provides an in-process
   worker in the initial port. Out-of-process workers are specified and not required.
 - **CORE-15 (Must).** Artifacts are first-class: typed file, directory and text, with provenance, optional values
-  (`Maybe`), and staging by whichever host node needs them.
+  (a record field left out of `required`), and staging by whichever host node needs them.
 - **CORE-16 (Must).** The IR carries a version and an explicit compatibility policy. A consumer rejects an unknown major
   version with a clear error.
 - **CORE-17 (Should).** Diagnostics carry stable codes, the node id, the source location in the composition, and a
