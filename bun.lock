@@ -25,6 +25,13 @@
         "ajv": "8.20.0",
       },
     },
+    "packages/sdk": {
+      "name": "@maestro/sdk",
+      "version": "0.1.0",
+      "dependencies": {
+        "@maestro/ir": "workspace:*",
+      },
+    },
     "packages/testkit": {
       "name": "@maestro/testkit",
       "dependencies": {
@@ -59,6 +66,8 @@
     "@maestro/host-agents": ["@maestro/host-agents@workspace:packages/host-agents"],
 
     "@maestro/ir": ["@maestro/ir@workspace:packages/ir"],
+
+    "@maestro/sdk": ["@maestro/sdk@workspace:packages/sdk"],
 
     "@maestro/testkit": ["@maestro/testkit@workspace:packages/testkit"],
 
