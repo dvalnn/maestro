@@ -123,7 +123,8 @@ type Namespace = Readonly<Record<string, unknown>>;
 /** A module's current `codeHash`, and its namespace, imported on demand. */
 type Opened = { hash: string; load: () => Promise<Namespace> };
 
-const codeHashOf = (bytes: Uint8Array | string) =>
+/** The `codeHash` of a module's `bytes` (ADR 0008). */
+export const codeHashOf = (bytes: Uint8Array | string) =>
 	HASH_PREFIX + sha256Hex(bytes);
 
 /** The function `ref.export` names in `namespace`: an export, or a function one object export down (`b.fn`). */
@@ -503,22 +504,26 @@ export async function openFile(file: string): Promise<Bundle> {
 	);
 }
 
-/** `ir` with each worker reference's `module` moved from relative to `from` to relative to `to`. */
-export function rewriteModules(ir: Ir, from: string, to: string): Ir {
-	const moved = (ref: WorkerRef): WorkerRef =>
-		ref.module === STDLIB_MODULE
-			? ref
-			: { ...ref, module: relative(to, resolve(from, ref.module)) };
+/** `ir` with each code node's worker and each `map`'s key function replaced by `change` of it. */
+export function mapWorkers(ir: Ir, change: (ref: WorkerRef) => WorkerRef): Ir {
 	return {
 		...ir,
 		nodes: ir.nodes.map((node) => {
-			if (node.kind === "code") return { ...node, worker: moved(node.worker) };
+			if (node.kind === "code") return { ...node, worker: change(node.worker) };
 			if (node.kind === "map" && node.key)
-				return { ...node, key: moved(node.key) };
+				return { ...node, key: change(node.key) };
 			return node;
 		}),
 	};
 }
+
+/** `ir` with each worker reference's `module` moved from relative to `from` to relative to `to`. */
+export const rewriteModules = (ir: Ir, from: string, to: string): Ir =>
+	mapWorkers(ir, (ref) =>
+		ref.module === STDLIB_MODULE
+			? ref
+			: { ...ref, module: relative(to, resolve(from, ref.module)) },
+	);
 
 /**
  * The config each bundle claims: its pack id, then its compositions' names, then each one's param names.

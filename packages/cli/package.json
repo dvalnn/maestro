@@ -2,6 +2,9 @@
 	"name": "@maestro/cli",
 	"private": true,
 	"type": "module",
+	"bin": {
+		"maestro": "./src/maestro.ts"
+	},
 	"dependencies": {
 		"@maestro/core": "workspace:*",
 		"@maestro/ir": "workspace:*",

@@ -1,0 +1,149 @@
+import { readFileSync } from "node:fs";
+import { lstat, mkdir, readdir } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
+import {
+	type ConcertRecord,
+	openRecord,
+	type RecordStore,
+} from "@maestro/core/perform";
+import {
+	type Deps,
+	isSet,
+	type Options,
+	parse,
+	textOf,
+	type Values,
+} from "./command";
+import { type LoadedConfig, loadConfig } from "./config";
+import { usageError } from "./output";
+
+/** The executable's name, which a process performing a concert shows in its command line. */
+const COMMAND = "maestro";
+/** The runtime that executes a script given as its first argument, so the script's name stands for the process. */
+const RUNTIME = "bun";
+
+const stem = (path: string) => basename(path, extname(path));
+
+/** Whether `pid` is a process whose executable, or script when it is the runtime's, is named `maestro`. */
+export function isMaestro(pid: number): boolean {
+	try {
+		const [executable = "", script = ""] = readFileSync(
+			`/proc/${pid}/cmdline`,
+			"utf8",
+		).split("\0");
+		return stem(stem(executable) === RUNTIME ? script : executable) === COMMAND;
+	} catch {
+		return false;
+	}
+}
+
+/** The config a command resolved, and where the data root keeps what a command reads and writes. */
+export type Session = {
+	deps: Deps;
+	config: LoadedConfig;
+	files: {
+		/** The one record store. */
+		record: string;
+		/** Each concert's artifact area, in `<concert id>/`. */
+		concerts: string;
+	};
+};
+
+/** The session for `deps`, with the config layered for `profile`. @throws ConfigError as `loadConfig` does. */
+export async function openSession(
+	deps: Deps,
+	profile?: string,
+): Promise<Session> {
+	const config = await loadConfig({ cwd: deps.cwd, env: deps.env, profile });
+	const { dataRoot } = config.core;
+	return {
+		deps,
+		config,
+		files: {
+			record: join(dataRoot, "record.db"),
+			concerts: join(dataRoot, "concerts"),
+		},
+	};
+}
+
+/**
+ * The concert `id` of `store`.
+ * @throws CliError, a usage error, when the store has no such concert.
+ */
+export function concertOf(store: RecordStore, id: string): ConcertRecord {
+	const found = store.find(id);
+	if (!found)
+		throw usageError(
+			`no concert '${id}' in the record`,
+			"Check the id with 'maestro ls'",
+		);
+	return found;
+}
+
+/** What a command that works on the record is handed. */
+export type Stored = {
+	session: Session;
+	store: RecordStore;
+	values: Values;
+	positionals: string[];
+	json: boolean;
+};
+
+/**
+ * Opens the session for `profile` and its record store, made when it is new, and gives `body` both until it settles.
+ * @throws ConfigError as `openSession` does.
+ */
+export async function withSession<T>(
+	deps: Deps,
+	profile: string | undefined,
+	body: (session: Session, store: RecordStore) => Promise<T>,
+): Promise<T> {
+	const session = await openSession(deps, profile);
+	await mkdir(session.config.core.dataRoot, { recursive: true });
+	const store = openRecord(session.files.record);
+	try {
+		return await body(session, store);
+	} finally {
+		store.close();
+	}
+}
+
+/**
+ * Reads `args` against `options`, then gives `body` the session, the record store and what it read.
+ * @throws CliError, a usage error ending with `fix`, for flags `options` does not take.
+ */
+export async function withStore(
+	options: Options,
+	args: readonly string[],
+	deps: Deps,
+	fix: string,
+	body: (stored: Stored) => Promise<number>,
+): Promise<number> {
+	const { values, positionals } = parse(options, args, fix);
+	return withSession(deps, textOf(values, "profile"), (session, store) =>
+		body({ session, store, values, positionals, json: isSet(values, "json") }),
+	);
+}
+
+/** The bytes held under `dir`, 0 when it is not there. */
+async function sizeOf(dir: string): Promise<number> {
+	const names = await readdir(dir, { recursive: true }).catch(() => []);
+	const sizes = await Promise.all(
+		names.map((name) =>
+			lstat(join(dir, name)).then(
+				(entry) => (entry.isFile() ? entry.size : 0),
+				() => 0,
+			),
+		),
+	);
+	return sizes.reduce((sum, size) => sum + size, 0);
+}
+
+/** The bytes concert `id` holds: its directory under the data root, and what each host reports holding for it. */
+export async function diskOf(session: Session, id: string): Promise<number> {
+	const held = await Promise.all([
+		sizeOf(join(session.files.concerts, id)),
+		...session.deps.hosts.map((host) => host.usage?.(id) ?? 0),
+	]);
+	return held.reduce((sum, bytes) => sum + bytes, 0);
+}

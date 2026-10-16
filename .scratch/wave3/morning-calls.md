@@ -318,6 +318,19 @@ Classifier blocks: none.
 - K97: "build" is allowed in `cli`, as in `sdk`: the CLI drives the SDK's build phase and calls `Bun.build`.
 - Hand-written IR is the golden fixtures' exercise of IR-01: it runs when correct, and no effort goes to edge cases only
   hand-writing can express. The loader's import refusal stays, since it also guards pack entries.
+- K98: durations are a positive integer and one unit of `s`, `m`, `h` or `d`; anything else is a usage error naming the
+  flag.
+- K99: `--json` prints one JSON document per command, field names the record's columns in camelCase, sizes in bytes.
+
+## Rulings on S6b (2026-10-16)
+
+- K100: a state refusal (a running concert pruned or resumed, an `ok` one resumed) exits 1; an id that names no concert
+  exits 2.
+- K101: the data root holds `record.db` and `concerts/<id>/`.
+- K102: a bare file exporting several compositions is a usage error listing them; a `file.ts#name` selector is
+  backlog 18.
+- K103: boolean flags take `--no-<flag>`.
+- A reused pid that lands on another maestro process is an accepted risk (YAGNI): the start-time check is backlog 19.
 
 ## Open for the owner (2026-10-17 morning)
 

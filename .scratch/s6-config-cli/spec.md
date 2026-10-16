@@ -163,15 +163,40 @@ Constraints:  as above.
 Open Qs:      none.
 Report:       .scratch/s6-config-cli/s6a-report.md with the Loop table.
 
-Slice:        S6b CLI verbs
+Slice:        S6b CLI verbs (contract-setting: the CLI's JSON output and duration syntax)
 Goal:         Drive compose and perform from the `maestro` CLI with JSON output and documented exit codes (CFG-06,
               CLI-01 to CLI-04, CLI-06, CLI-07, AC-6).
-Package:      packages/cli/, with narrow changes in packages/core/src/perform/record.ts (prune, resume base),
-              packages/core/src/host.ts (optional seams) and packages/testkit/.
-Deliverables: 8 to 18 above: the package and verbs, flags, `compose`, `perform`, `ls`, `wait`, `kill`, `config`,
-              `prune`, output and errors, `tour`, `release` and `usage`, docs.
-Acceptance:   the S6 acceptance above, less what S6a showed.
+Read:         as above, plus .scratch/s6-config-cli/s6a-report.md and what S6a landed: packages/cli/src/{config,
+              loader,params}.ts, packages/core/src/config/, `withCurrentHashes` in packages/core/src/perform/.
+Package:      packages/cli/, with narrow changes in packages/core/src/perform/record.ts (concert row fields, prune,
+              listing), packages/core/src/host.ts (`release`, `usage`) and packages/testkit/ (the fake host's seams).
+Deliverables: 8 to 18 above, less `param` (landed in S6a), and:
+              - `compose --out` of a bare file also writes the bundle beside the IR, `<out stem>.bundle.js`, and
+                `module` names it, so the saved IR loads as an IR file with a matching `codeHash` (K95). A pack's
+                modules are rewritten relative to the output with S6a's `rewriteModules`.
+              - `perform --resume` applies `withCurrentHashes` to the stored IR before pre-flight, then performs it.
+              - The record's concert row gains `workspace`, `tour`, `title` and the module directory: schema version 3,
+                another version refused as now (no migrations).
+              - Durations (`wait --timeout`, `prune --before`) are a positive integer and one unit of `s`, `m`, `h` or
+                `d` (`90s`, `7d`); anything else is a usage error naming the flag.
+              - `--json` prints one JSON document to stdout per command: `compose` the diagnostics and the plan,
+                `perform` and `wait` the concert id and outcome, `ls` an array of rows with disk use in bytes, `ls
+                <concert>` its instances with `stale`, `config` each value with its layer, file and line, `prune` the
+                pruned ids and bytes freed, `tour` the concerts changed. Field names are the record's columns in
+                camelCase. Human output shows sizes in readable units.
+Acceptance:   the S6 acceptance above, less what S6a showed (precedence and provenance, merge tags, did-you-mean,
+              loading, hash mismatch, stdlib export, two names, typed params): AC-6; each verb by name and alias, with
+              `--json` and the exit code for accepted, rejected, failed, usage error and wait timeout; a compose error
+              starts no concert (NFR-02); a hand-written IR file performs through the CLI with no SDK import (AC-8);
+              `compose --out` IR performs, from a pack and from a bare file; a concert killed from another process
+              settles `failed`, and `perform --resume` finishes it without repeating an `ok` node, including after its
+              pack changed; resuming a live or `ok` concert is refused; tours and titles set, changed, listed and
+              filtered; `prune` removes a settled concert's record, artifacts and fake host resources, and refuses a
+              running one; `ls` shows disk use; `ls` cold start measured (NFR-03); `just check` output.
 Out of scope: as above.
-Constraints:  as above. Runs after S6a is committed.
-Open Qs:      none.
-Report:       .scratch/s6-config-cli/s6b-report.md with the Loop table.
+Constraints:  as above. `cli` is in the domain-word scan with `build` allowed (K97); keep it clean otherwise.
+Open Qs:      none. K93 to K99 are ruled in .scratch/wave3/morning-calls.md.
+Derived:      - Schema version 3 for the new concert row fields (S5 bumped it the same way; architecture 10).
+              - The bare-file bundle sits beside the `--out` file, named after it (K95).
+              - Disk use is bytes in JSON, readable units for people (clig.dev, CLI-04).
+Report:       .scratch/s6-config-cli/s6b-report.md with the Loop table and a "Derived, not ruled" table.

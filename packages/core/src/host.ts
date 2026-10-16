@@ -77,6 +77,10 @@ export interface Host {
 		type: string,
 		text: string,
 	): { value: unknown } | { diagnostics: Diagnostic[] };
+	/** Frees what the host holds for the settled concert `concert`, such as the files it keeps for it. */
+	release?(concert: string): Awaitable<void>;
+	/** The bytes the host holds on disk for `concert`. */
+	usage?(concert: string): Awaitable<number>;
 }
 
 export type HostKind = { host: Host; kind: NodeKind };

@@ -34,6 +34,10 @@ export type FakeScript = {
 	steps?: Readonly<Record<string, Steps>>;
 	validate?: Host["validate"];
 	bounds?: Host["bounds"];
+	/** Called with the concert when the host is asked to release it. Releases nothing by default. */
+	release?: (concert: string) => void | Promise<void>;
+	/** The bytes the host reports holding for a concert. 0 by default. */
+	usage?: (concert: string) => number | Promise<number>;
 };
 
 /**
@@ -49,6 +53,8 @@ export function fakeHost(script: FakeScript = {}): Host {
 		validate: script.validate ?? (() => []),
 		bounds: script.bounds ?? (() => ({})),
 		environment: () => ({}),
+		release: script.release ?? (() => {}),
+		usage: script.usage ?? (() => 0),
 		param: (type, text) => {
 			const match = type === FAKE_HANDLE ? HANDLE.exec(text) : null;
 			if (match) return { value: { name: match[1], number: Number(match[2]) } };

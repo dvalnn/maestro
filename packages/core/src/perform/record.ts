@@ -5,13 +5,23 @@ import { instanceKey, isRecord } from "../shared";
 import type { NodeInstance, Outputs } from "../worker";
 
 /** The version of the schema below, kept in SQLite's `user_version`. */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 /** How long a write waits for another connection's lock before it fails, in milliseconds. */
 const BUSY_TIMEOUT_MS = 5000;
 /** How long opening retries switching a new file to WAL mode while another connection holds it, in milliseconds. */
 const WAL_RETRY_MS = 5000;
 /** The pause between those retries, in milliseconds. */
 const WAL_RETRY_PAUSE_MS = 10;
+/** SQLite's `LIMIT` for no limit. */
+const NO_LIMIT = -1;
+/** The tables with a row per concert, keyed by `concert`. */
+const CONCERT_TABLES = [
+	"instances",
+	"metrics",
+	"earlier_metrics",
+	"artifacts",
+	"events",
+];
 /** How often `wait` reads a concert's status, in milliseconds. */
 const WAIT_POLL_MS = 50;
 /** The reason a reader settles a concert, and its running instances, with when the process performing it is gone. */
@@ -20,10 +30,11 @@ export const PROCESS_EXITED = "process exited";
 export const CONCERT_FINISHED = "the concert finished before it settled";
 
 // Timestamps are epoch milliseconds, and `expansion` is '' outside groups. `ir`, `outputs`, `enrichment` and `body`
-// hold JSON. `reason` is set on every non-ok outcome. `result_node` is NULL while a concert is running, and after one
-// that failed before any node ran. `key` is the resume key of an `ok` instance. `stale` marks an instance row left by
-// an earlier attempt, which a resume reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume
-// replaced, which still count as spend.
+// hold JSON. `workspace` is '' outside any workspace, and `module_dir` is '' when the concert has none. `reason` is set
+// on every non-ok outcome. `result_node` is NULL while a concert is running, and after one that failed before any node
+// ran. `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an earlier attempt, which a
+// resume reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume replaced, which still count
+// as spend.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -36,7 +47,12 @@ CREATE TABLE concerts (
 	settled_at INTEGER,
 	result_node TEXT,
 	result_expansion TEXT,
-	reason TEXT
+	reason TEXT,
+	workspace TEXT NOT NULL,
+	tour TEXT,
+	title TEXT,
+	module_dir TEXT NOT NULL,
+	file TEXT
 ) STRICT;
 CREATE TABLE instances (
 	concert TEXT NOT NULL,
@@ -87,8 +103,20 @@ CREATE INDEX events_by_concert ON events (concert, seq);
 /** A concert is `running` until it settles with its result's outcome. */
 export type ConcertStatus = "running" | Exclude<Outcome, "skipped">;
 
+/**
+ * What a concert row keeps beside its IR. `moduleDir` is the directory its worker references' modules are found in,
+ * and `file` the composition file in it that the IR was built from, when it was built from a bare file.
+ */
+export type ConcertOrigin = {
+	workspace: string;
+	moduleDir: string;
+	file?: string;
+	tour?: string;
+	title?: string;
+};
+
 /** Timestamps are milliseconds since the Unix epoch. `pid` is the process performing the concert. */
-export type ConcertRecord = {
+export type ConcertRecord = ConcertOrigin & {
 	id: string;
 	composition: string;
 	pack: string;
@@ -99,7 +127,17 @@ export type ConcertRecord = {
 	settledAt?: number;
 };
 
-export type ConcertFilter = { status?: ConcertStatus; composition?: string };
+/** `limit` is a positive integer. */
+export type ConcertFilter = {
+	status?: ConcertStatus;
+	composition?: string;
+	tour?: string;
+	workspace?: string;
+	limit?: number;
+};
+
+/** Decides whether the process `pid`, which a concert's row names, is still performing it. */
+export type Alive = (pid: number) => boolean;
 
 /**
  * A concert's result (architecture 7): the returned node when it is `ok`, else the root cause of its outcome, where
@@ -170,13 +208,15 @@ export type ConcertEvent = NodeInstance & {
 } & EventBody;
 
 /**
- * The durable record of concerts, their node instances and events (CORE-11), in one SQLite file. Every query throws
- * on an unknown concert id. A reader that finds a `running` concert whose process is gone settles it, and its running
+ * The durable record of concerts, their node instances and events (CORE-11), in one SQLite file. Every query but
+ * `find` throws on an unknown concert id. A reader that finds a `running` concert whose process is gone settles it, and its running
  * instances, `failed` with `PROCESS_EXITED`.
  */
 export interface RecordStore {
-	/** Records a new concert as `running`, performed by this process. */
-	begin(concert: { id: string; ir: Ir; startedAt: number }): void;
+	/** Records a new concert as `running`, performed by this process. `workspace` and `moduleDir` default to ''. */
+	begin(
+		concert: { id: string; ir: Ir; startedAt: number } & Partial<ConcertOrigin>,
+	): void;
 	/**
 	 * Restarts a concert that failed or was rejected as `running`, performed by this process, with `ir` as its stored IR.
 	 * Its instance records and events stay. `reuse`, `start` and `settle` take over each instance record from before.
@@ -221,8 +261,17 @@ export interface RecordStore {
 	 */
 	finish(concert: string, result: ConcertResult, at: number): void;
 	concert(concert: string): ConcertRecord;
+	/** The concert, or `undefined` for an id the record does not hold. */
+	find(concert: string): ConcertRecord | undefined;
 	/** Concerts matching every field of `filter`, newest first. */
 	concerts(filter?: ConcertFilter): ConcertRecord[];
+	/** Puts the concert on `tour`, or takes it off with `undefined`. */
+	setTour(concert: string, tour: string | undefined): void;
+	/**
+	 * Deletes the concert's rows: the concert, its instances, metrics, artifact references and events.
+	 * @throws Error when the concert is running.
+	 */
+	remove(concert: string): void;
 	/** A concert's node instances, in the order they started or settled without starting, read as one snapshot. */
 	instances(concert: string): InstanceRecord[];
 	/** The concert's result, `undefined` while it is running. */
@@ -248,6 +297,11 @@ type ConcertRow = {
 	result_node: string | null;
 	result_expansion: string | null;
 	reason: string | null;
+	workspace: string;
+	tour: string | null;
+	title: string | null;
+	module_dir: string;
+	file: string | null;
 };
 
 type InstanceStatus = InstanceRecord["status"];
@@ -285,10 +339,14 @@ const unknownConcert = (id: string) =>
 
 /**
  * Opens the record store at `path`, creating it with the current schema when it is new. WAL mode lets several
- * concerts, in this process or others, share the file (D-26).
+ * concerts, in this process or others, share the file (D-26). `alive` decides whether a running concert's process is
+ * still performing it, by default whether the process exists.
  * @throws Error when the file holds another schema version.
  */
-export function openRecord(path: string): RecordStore {
+export function openRecord(
+	path: string,
+	{ alive = processExists }: { alive?: Alive } = {},
+): RecordStore {
 	const db = new Database(path, { create: true, strict: true });
 	try {
 		db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
@@ -298,7 +356,7 @@ export function openRecord(path: string): RecordStore {
 		db.close();
 		throw error;
 	}
-	return storeOf(db);
+	return storeOf(db, alive);
 }
 
 /** Switches to WAL mode, retrying while another connection holds the file, which `busy_timeout` does not cover. */
@@ -332,7 +390,7 @@ function migrate(db: Database, path: string): void {
 }
 
 /** Whether the process `pid` exists. One owned by another user exists too. */
-function alive(pid: number): boolean {
+function processExists(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
@@ -341,7 +399,7 @@ function alive(pid: number): boolean {
 	}
 }
 
-function storeOf(db: Database): RecordStore {
+function storeOf(db: Database, alive: Alive): RecordStore {
 	const event = (
 		concert: string,
 		{ node, expansion }: NodeInstance,
@@ -468,13 +526,18 @@ function storeOf(db: Database): RecordStore {
 		return true;
 	};
 
-	const rowOf = (id: string): ConcertRow => {
+	const rowIf = (id: string): ConcertRow | undefined => {
 		const query = db.query<ConcertRow, [string]>(
 			"SELECT * FROM concerts WHERE id = ?",
 		);
 		const row = query.get(id);
+		return row && reaped(row) ? (query.get(id) ?? row) : (row ?? undefined);
+	};
+
+	const rowOf = (id: string): ConcertRow => {
+		const row = rowIf(id);
 		if (!row) throw unknownConcert(id);
-		return reaped(row) ? (query.get(id) ?? row) : row;
+		return row;
 	};
 
 	const concert = (id: string) => concertOf(rowOf(id));
@@ -490,9 +553,10 @@ function storeOf(db: Database): RecordStore {
 	});
 
 	return {
-		begin({ id, ir, startedAt }) {
+		begin({ id, ir, startedAt, workspace, moduleDir, file, tour, title }) {
 			db.exec(
-				"INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at) VALUES (?, ?, ?, ?, ?, 'running', ?)",
+				`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, tour, title, module_dir, file)
+				VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)`,
 				[
 					id,
 					ir.composition.id,
@@ -500,8 +564,17 @@ function storeOf(db: Database): RecordStore {
 					JSON.stringify(ir),
 					process.pid,
 					startedAt,
+					workspace ?? "",
+					tour ?? null,
+					title ?? null,
+					moduleDir ?? "",
+					file ?? null,
 				],
 			);
+		},
+		find: (id) => {
+			const row = rowIf(id);
+			return row && concertOf(row);
 		},
 		resume: ({ id, ir }) => {
 			rowOf(id);
@@ -558,13 +631,34 @@ function storeOf(db: Database): RecordStore {
 				.all())
 				reaped(row);
 			return db
-				.query<ConcertRow, [string | null, string | null]>(
+				.query<ConcertRow, (string | number | null)[]>(
 					`SELECT * FROM concerts WHERE (?1 IS NULL OR status = ?1) AND (?2 IS NULL OR composition = ?2)
-					ORDER BY started_at DESC, id DESC`,
+					AND (?3 IS NULL OR tour = ?3) AND (?4 IS NULL OR workspace = ?4)
+					ORDER BY started_at DESC, id DESC LIMIT ?5`,
 				)
-				.all(filter.status ?? null, filter.composition ?? null)
+				.all(
+					filter.status ?? null,
+					filter.composition ?? null,
+					filter.tour ?? null,
+					filter.workspace ?? null,
+					filter.limit ?? NO_LIMIT,
+				)
 				.map(concertOf);
 		},
+		setTour(id, tour) {
+			rowOf(id);
+			db.exec("UPDATE concerts SET tour = ? WHERE id = ?", [tour ?? null, id]);
+		},
+		remove: db.transaction((id: string) => {
+			const row = rowOf(id);
+			if (row.status === "running")
+				throw new Error(
+					`concert '${id}' is still running in process ${row.pid}, so it cannot be removed. Wait for it to settle, or kill it, then remove it`,
+				);
+			for (const table of CONCERT_TABLES)
+				db.exec(`DELETE FROM ${table} WHERE concert = ?`, [id]);
+			db.exec("DELETE FROM concerts WHERE id = ?", [id]);
+		}),
 		instances(id) {
 			rowOf(id);
 			return db.transaction(() => instancesOf(db, id))();
@@ -650,7 +744,12 @@ function concertOf(row: ConcertRow): ConcertRecord {
 		pid: row.pid,
 		status: row.status,
 		startedAt: row.started_at,
+		workspace: row.workspace,
+		moduleDir: row.module_dir,
+		...(row.file !== null && { file: row.file }),
 		...(row.settled_at !== null && { settledAt: row.settled_at }),
+		...(row.tour !== null && { tour: row.tour }),
+		...(row.title !== null && { title: row.title }),
 	};
 }
 

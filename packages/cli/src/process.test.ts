@@ -1,0 +1,265 @@
+import { Database } from "bun:sqlite";
+import { afterEach, describe, expect, test } from "bun:test";
+import { rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fakeHost } from "@maestro/testkit";
+import { cleanup, demoSource, packOf, scratch } from "./fixtures/packs";
+import {
+	ECHO,
+	FIRST,
+	GREET,
+	hostOf,
+	idOf,
+	json,
+	world,
+} from "./fixtures/world";
+
+afterEach(cleanup);
+
+const CLI = join(import.meta.dir, "cli");
+const TESTKIT = join(import.meta.dir, "../../testkit/src/index");
+const WAIT_STEP_MS = 25;
+const WAIT_LIMIT_MS = 5000;
+
+/** An executable named `maestro.ts`, as the real one is, whose `echo/echo` node never settles. */
+async function hanging() {
+	const file = join(await scratch(), "maestro.ts");
+	await Bun.write(
+		file,
+		`import { main } from "${CLI}";
+import { fakeHost } from "${TESTKIT}";
+const host = fakeHost({
+	steps: {
+		first: [{ outcome: "ok", outputs: { text: "hi" } }],
+		"echo/echo": [new Promise(() => {})],
+	},
+});
+process.exit(
+	await main(process.argv.slice(2), {
+		hosts: [host],
+		cwd: process.cwd(),
+		env: process.env,
+		stdout: console.log,
+		stderr: console.error,
+	}),
+);
+`,
+	);
+	return file;
+}
+
+async function until(done: () => Promise<boolean>) {
+	for (let waited = 0; waited < WAIT_LIMIT_MS; waited += WAIT_STEP_MS) {
+		if (await done()) return;
+		await Bun.sleep(WAIT_STEP_MS);
+	}
+	throw new Error("timed out waiting for the concert to reach echo/echo");
+}
+
+describe("a concert in another process", () => {
+	test("is waited on, refused a resume and a prune while running, killed, then resumed from the changed pack without redoing settled nodes", async () => {
+		const w = await world();
+		const child = Bun.spawn(
+			[process.execPath, await hanging(), "perform", ...GREET],
+			{
+				cwd: w.cwd,
+				env: { ...process.env, ...w.env },
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		);
+		const reader = child.stdout.getReader();
+		const id = new TextDecoder().decode((await reader.read()).value).trim();
+		const reached = async () =>
+			json(await w.call(["ls", id, "--json"])).instances.some(
+				(i: { node: string }) => i.node === "echo/echo",
+			);
+		await until(reached);
+
+		const waited = await w.call(["wait", id, "--timeout", "1s"]);
+		expect(waited.code).toBe(124);
+		expect(waited.err).toMatch(
+			new RegExp(
+				`^concert ${id} is still running after 1s\nWait again, or stop it with 'maestro kill ${id}'$`,
+			),
+		);
+		expect(
+			json(await w.call(["wait", id, "--timeout", "1s", "--json"])),
+		).toEqual({
+			id,
+			status: "running",
+		});
+		for (const args of [
+			["perform", "--resume", id],
+			["prune", id, "--yes"],
+		]) {
+			const refused = await w.call(args);
+			expect(refused.code).toBe(1);
+			expect(refused.err).toMatch(
+				new RegExp(
+					`^concert ${id} is still running.*\nWait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'$`,
+				),
+			);
+		}
+
+		expect(json(await w.call(["k", id, "--json"]))).toEqual({
+			id,
+			status: "failed",
+			reason: "the concert was cancelled",
+		});
+		expect(await child.exited).toBe(1);
+		expect(await w.call(["wait", id])).toMatchObject({
+			code: 1,
+			out: "failed",
+			err: "the concert was cancelled",
+		});
+		expect((await w.call(["kill", id])).err).toMatch(
+			/is not running, it settled failed/,
+		);
+
+		await packOf(
+			join(await demoSource((t) => t.replace('"v1"', '"v2"')), "index.ts"),
+			w.pack,
+		);
+		const started: string[] = [];
+		const host = fakeHost({
+			steps: {
+				first: () => {
+					started.push("first");
+					return FIRST;
+				},
+				"echo/echo": () => {
+					started.push("echo/echo");
+					return ECHO;
+				},
+			},
+		});
+		const resumed = await w.call(["perform", "--resume", id], {
+			hosts: [host],
+		});
+		expect(resumed).toMatchObject({ code: 0, out: id });
+		expect(started).toEqual(["echo/echo"]);
+		const shape = json(await w.call(["ls", id, "--json"])).instances.filter(
+			(i: { node: string; stale: boolean }) => i.node === "shape" && !i.stale,
+		);
+		expect(shape.map((i: { outputs: unknown }) => i.outputs)).toEqual([
+			{ text: "hi v2" },
+		]);
+
+		expect((await w.call(["perform", "--resume", id])).err).toBe(
+			`concert ${id} finished ok, so there is nothing to resume\nPerform its composition as a new concert`,
+		);
+	}, 30_000);
+});
+
+describe("resume", () => {
+	const failing = (node: string) =>
+		fakeHost({ steps: { [node]: [{ outcome: "failed", reason: "flaky" }] } });
+
+	test("a bare file's concert resumes from its current source, rerunning an edited code node only", async () => {
+		const w = await world();
+		const file = join(await scratch(), "work.ts");
+		const source = `import { code, composition, hostNode, Text } from "@maestro/sdk";
+export function mark(inputs: { text: string }) {
+	return { text: \`\${inputs.text} v1\` };
+}
+export const work = composition("work", { examples: [{}] }, () => {
+	const before = hostNode("fake.task", { label: "before", out: { text: Text() } });
+	const marked = code(mark, { in: { text: before.out.text }, out: { text: Text() } });
+	return hostNode("fake.task", { label: "after", in: { text: marked.out.text } });
+});
+`;
+		await Bun.write(file, source);
+		const failAfter = fakeHost({
+			steps: {
+				before: [{ outcome: "ok", outputs: { text: "hi" } }],
+				after: [{ outcome: "failed", reason: "flaky" }],
+			},
+		});
+		const id = idOf(await w.call(["perform", file], { hosts: [failAfter] }));
+		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
+			moduleDir: dirname(file),
+			file: "work.ts",
+		});
+
+		await Bun.write(file, source.replace("v1", "v2"));
+		const started: string[] = [];
+		const note = (node: string, outputs: Record<string, unknown>) => () => {
+			started.push(node);
+			return { outcome: "ok", outputs } as const;
+		};
+		const resumed = await w.call(["perform", "--resume", id], {
+			hosts: [
+				fakeHost({
+					steps: {
+						before: note("before", { text: "hi" }),
+						after: note("after", {}),
+					},
+				}),
+			],
+		});
+		expect(resumed).toMatchObject({ code: 0, err: `concert ${id} ok` });
+		expect(started).toEqual(["after"]);
+		const marks = json(await w.call(["ls", id, "--json"])).instances.filter(
+			(i: { node: string; stale: boolean }) => i.node === "mark" && !i.stale,
+		);
+		expect(marks.map((i: { outputs: unknown }) => i.outputs)).toEqual([
+			{ text: "hi v2" },
+		]);
+
+		const again = idOf(await w.call(["perform", file], { hosts: [failAfter] }));
+		await rm(file);
+		expect((await w.call(["perform", "--resume", again])).err).toBe(
+			`the code of concert ${again} was in ${file}, which is gone\nRestore it, or perform its composition as a new concert`,
+		);
+	});
+
+	test("a pack's concert whose modules directory is gone is refused, naming it", async () => {
+		const w = await world();
+		const id = idOf(
+			await w.call(["perform", ...GREET], { hosts: [failing("first")] }),
+		);
+		await rm(w.pack, { recursive: true });
+		const refused = await w.call(["perform", "--resume", id]);
+		expect(refused.code).toBe(1);
+		expect(refused.err).toBe(
+			`the code of concert ${id} was in ${w.pack}, which is gone\nRestore it, or perform its composition as a new concert`,
+		);
+	});
+});
+
+describe("kill", () => {
+	test("never signals a live process that is not maestro, and settles its concert failed", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const other = Bun.spawn(["sh", "-c", "sleep 30; true", "maestro.md"]);
+		try {
+			const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+			db.exec(
+				"UPDATE concerts SET status = 'running', settled_at = NULL, pid = ? WHERE id = ?",
+				[other.pid, id],
+			);
+			db.close();
+			expect(json(await w.call(["ls", "--json"]))[0].status).toBe("running");
+			const killed = await w.call(["kill", id]);
+			expect(killed.code).toBe(1);
+			expect(killed.err).toMatch(
+				new RegExp(
+					`^the process ${other.pid} of concert ${id} is gone, and its pid now belongs to another program\n`,
+				),
+			);
+			expect(() => process.kill(other.pid, 0)).not.toThrow();
+			expect(await w.call(["wait", id])).toMatchObject({
+				code: 1,
+				out: "failed",
+				err: "process exited",
+			});
+			expect(await w.call(["perform", "--resume", id])).toMatchObject({
+				code: 0,
+			});
+			expect((await w.call(["prune", id, "--yes"])).code).toBe(0);
+		} finally {
+			other.kill();
+		}
+	});
+});

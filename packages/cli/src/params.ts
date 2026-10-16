@@ -23,12 +23,20 @@ import {
 } from "@maestro/ir";
 import type { ConfiguredParams, Described } from "@maestro/sdk";
 
-/** A param's flag: its declared name in kebab-case, so `maxRepairs` and `max_repairs` are `--max-repairs`. */
-export const flagOf = (param: string) =>
-	`--${param
+const FLAG_PREFIX = "--";
+
+/** A param's flag name, without the dashes: its declared name in kebab-case. */
+export const flagName = (param: string) =>
+	param
 		.replaceAll("_", "-")
 		.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-		.toLowerCase()}`;
+		.toLowerCase();
+
+/** A param's flag: its name in kebab-case, so `maxRepairs` and `max_repairs` are `--max-repairs`. */
+export const flagOf = (param: string) => FLAG_PREFIX + flagName(param);
+
+/** The flag whose name, without the dashes, is `name`. */
+export const flagFor = (name: string) => FLAG_PREFIX + name;
 
 export type ParamRequest = {
 	/** The config layers beneath the example set and the flags, lowest first. */

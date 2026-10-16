@@ -48,7 +48,12 @@ import {
 	scratchDir,
 } from "./artifacts";
 import { asserted, callOf, finish, type Kit } from "./execute";
-import type { ConcertResult, RecordStore, Settling } from "./record";
+import type {
+	ConcertOrigin,
+	ConcertResult,
+	RecordStore,
+	Settling,
+} from "./record";
 import {
 	type CodeHash,
 	type Kept,
@@ -64,6 +69,8 @@ type PerformBase = {
 	/** Replaces each code reference's `codeHash` in the IR before it is stored and keyed (ADR 0008). */
 	codeHash: CodeHash;
 	record: RecordStore;
+	/** What a new concert's row keeps beside its IR. A resumed concert keeps its own. */
+	origin?: ConcertOrigin;
 	/** The directory each concert's artifact area and scratch directories go under, in `<dir>/<concert id>/`. */
 	dir: string;
 	/** The most node instances executing at once in this concert (D-26). A positive integer. */
@@ -183,7 +190,7 @@ async function enter(
 	const { record, resume, codeHash } = options;
 	if (resume === undefined) {
 		const ir = await withCurrentHashes(options.ir, codeHash);
-		record.begin({ id, ir, startedAt: Date.now() });
+		record.begin({ id, ir, startedAt: Date.now(), ...options.origin });
 		return { ir, kept: new Map() };
 	}
 	const ir = await withCurrentHashes(record.concert(id).ir, codeHash);

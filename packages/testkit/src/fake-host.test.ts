@@ -121,7 +121,7 @@ test("cancel settles a pending instance and leaves the others running", async ()
 	expect(await second).toEqual(CANCELLED);
 });
 
-test("validate and bounds return what the script says, and nothing by default", async () => {
+test("validate, bounds, release and usage return what the script says, and nothing by default", async () => {
 	const ir: Ir = {
 		irVersion: "1.0",
 		composition: { id: "fake", version: "1", pack: "fake" },
@@ -139,12 +139,22 @@ test("validate and bounds return what the script says, and nothing by default", 
 		hint: "Unscript it",
 		node: node.id,
 	};
+	const released: string[] = [];
 	const scripted = fakeHost({
 		validate: () => [diagnostic],
 		bounds: () => ({ "fake.tasks": 2 }),
+		release: (concert) => {
+			released.push(concert);
+		},
+		usage: async (concert) => concert.length,
 	});
 	expect(await scripted.validate(graph)).toEqual([diagnostic]);
 	expect(scripted.bounds(node)).toEqual({ "fake.tasks": 2 });
 	expect(await fakeHost().validate(graph)).toEqual([]);
 	expect(fakeHost().bounds(node)).toEqual({});
+	await scripted.release?.("abc");
+	expect(released).toEqual(["abc"]);
+	expect(await scripted.usage?.("abc")).toBe(3);
+	expect(await fakeHost().release?.("abc")).toBeUndefined();
+	expect(await fakeHost().usage?.("abc")).toBe(0);
 });

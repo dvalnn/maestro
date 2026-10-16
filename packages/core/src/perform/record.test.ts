@@ -57,7 +57,7 @@ test("a record store of another schema version is refused, and one of this versi
 		db.exec(`PRAGMA user_version = ${version}`);
 		db.close();
 		expect(() => openRecord(path)).toThrow(
-			`record store '${path}' has schema version ${version}, and this maestro reads version 2. Use a record store this maestro made, or move '${path}' aside`,
+			`record store '${path}' has schema version ${version}, and this maestro reads version 3. Use a record store this maestro made, or move '${path}' aside`,
 		);
 	}
 });
@@ -132,5 +132,89 @@ test("finishing a concert settles its running instances, and a settled instance 
 		"running",
 		"settled",
 	]);
+	record.close();
+});
+
+test("a concert keeps its origin, tour and title, and concerts filter by them, newest first, up to a limit", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const record = openRecord(join(dir, "record.db"));
+	const ir = await fixtureIr();
+	const origin = {
+		workspace: "w",
+		moduleDir: "/m",
+		file: "f.ts",
+		tour: "t1",
+		title: "T",
+	};
+	record.begin({ id: "a", ir, startedAt: 1, ...origin });
+	record.begin({ id: "b", ir, startedAt: 2 });
+	record.begin({ id: "c", ir, startedAt: 3, workspace: "w", moduleDir: "/m" });
+	expect(record.concert("a")).toMatchObject(origin);
+	expect(record.concert("b")).toMatchObject({ workspace: "", moduleDir: "" });
+	expect(record.concert("b")).not.toHaveProperty("tour");
+	expect(record.concert("b")).not.toHaveProperty("file");
+	expect(record.find("a")).toMatchObject(origin);
+	expect(record.find("z")).toBeUndefined();
+	const ids = (filter?: Parameters<typeof record.concerts>[0]) =>
+		record.concerts(filter).map((c) => c.id);
+	expect(ids()).toEqual(["c", "b", "a"]);
+	expect(ids({ workspace: "w" })).toEqual(["c", "a"]);
+	expect(ids({ limit: 2 })).toEqual(["c", "b"]);
+	record.setTour("c", "t1");
+	expect(ids({ tour: "t1" })).toEqual(["c", "a"]);
+	record.setTour("a", undefined);
+	expect(ids({ tour: "t1", workspace: "w" })).toEqual(["c"]);
+	expect(record.concert("a")).not.toHaveProperty("tour");
+	expect(() => record.setTour("z", "t1")).toThrow("no concert 'z'");
+	record.close();
+});
+
+test("removing a concert deletes its rows, and a running concert is refused", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const record = openRecord(path);
+	const ir = await fixtureIr();
+	record.begin({ id: "gone", ir, startedAt: 1 });
+	record.begin({ id: "kept", ir, startedAt: 2 });
+	for (const id of ["gone", "kept"]) {
+		record.start(id, A, 3);
+		record.settle(
+			id,
+			A,
+			{ outcome: "ok", outputs: {}, metrics: { tokens: 1 } },
+			4,
+		);
+	}
+	expect(() => record.remove("gone")).toThrow(
+		`concert 'gone' is still running in process ${process.pid}, so it cannot be removed`,
+	);
+	record.finish("gone", { outcome: "failed", reason: "x" }, 5);
+	record.remove("gone");
+	expect(() => record.concert("gone")).toThrow("no concert 'gone'");
+	const db = new Database(path);
+	const rows = (table: string, concert: string) =>
+		db.query(`SELECT 1 FROM ${table} WHERE concert = ?`).all(concert).length;
+	for (const table of ["instances", "metrics", "events"]) {
+		expect([rows(table, "gone"), rows(table, "kept")]).toEqual([
+			0,
+			1 + (table === "events" ? 1 : 0),
+		]);
+	}
+	db.close();
+	record.close();
+});
+
+test("a running concert is settled when the alive check says its process is gone", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const record = openRecord(path);
+	record.begin({ id: "c", ir: await fixtureIr(), startedAt: 1 });
+	const reader = openRecord(path, { alive: () => false });
+	expect(reader.concert("c")).toMatchObject({ status: "failed" });
+	expect(reader.result("c")).toEqual({
+		outcome: "failed",
+		reason: PROCESS_EXITED,
+	});
+	reader.close();
 	record.close();
 });
