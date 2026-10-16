@@ -31,9 +31,10 @@ in order. It reads either as one `Settled[]` in that order. Given a map's handle
 `data` input of a fan-in node declare `Settled`, built by `settledSchema` in `packages/ir`. A `data` edge into a fan-in
 input checks the upstream schema against the port's `value` subschema.
 
-**`Settled`'s shape.** An `ok` one carries a value and no reason. A `rejected` or `failed` one carries a reason. A value
-on any non-ok outcome, and a reason on `skipped`, stay optional until a slice pins them. The schema is closed to
-`outcome`, `value` and `reason`, so a misspelt field fails; opening it later breaks nothing already valid.
+**`Settled`'s shape.** An `ok` one carries a value and no reason. A `rejected` or `failed` one carries a reason. A
+`rejected` one carries a value when its node rejected with outputs (ADR 0008). A value on `failed`, and a reason on
+`skipped`, stay optional until a slice pins them. The schema is closed to `outcome`, `value` and `reason`, so a misspelt
+field fails; opening it later breaks nothing already valid.
 
 **`firstOk`.** Delivers the first `ok` input's value. With no `ok` input it settles `failed` if any input failed, else
 `rejected`, with the inputs' reasons. A code node can only reject or throw, so `skipped` inputs count as `rejected`.

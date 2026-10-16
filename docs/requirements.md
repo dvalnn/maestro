@@ -143,8 +143,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   writes nothing outside a scratch area and spends nothing.
 - **CORE-08 (Must).** The executor schedules node instances by dependency with a configurable concurrency cap, supports
   cancellation, and propagates outcomes per CORE-04.
-- **CORE-09 (Must).** Node results are cached by a content hash of node definition, code version and inputs. A failed or
-  killed concert resumes at node granularity. Nodes marked impure are never cached.
+- **CORE-09 (Must).** A failed or killed concert resumes at node granularity. A recorded `ok` node instance is reused
+  while a content hash of its node definition, code version and inputs still matches.
 - **CORE-10 (Must).** Every node-instance state transition emits an event with node id and expansion path. A host may
   emit progress events for an instance it is executing, such as an agent's tool calls and thinking, under the same keys.
   Events are durable.
@@ -170,8 +170,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 
 ### 6.2 Configuration (CFG)
 
-- **CFG-01 (Must).** Core config is a small closed schema of engine concerns only: cache on or off, concurrency cap,
-  record store location, event sinks, pre-flight strictness.
+- **CFG-01 (Must).** Core config is a small closed schema of engine concerns only: concurrency cap, record store
+  location, event sinks, pre-flight strictness.
 - **CFG-02 (Must).** Every other top-level config key belongs to a namespace owned by a registrant. The core checks YAML
   syntax, layers the files, and hands each namespace to its owner's schema at compose time.
 - **CFG-03 (Must).** A composition declares typed params with defaults in code (D-17). The schema is exported in the IR.
@@ -306,8 +306,8 @@ The executable is `maestro`.
 - **AC-2.** Composing the ported verification composition (the lens, skeptic, consolidator shape) reports the exact
   node-instance count, rejects a same-family skeptic before any spend, and rejects an unclaimed config key.
 - **AC-3.** The ported build-then-repair composition shows its bounded unroll in the plan. With a stub host that rejects
-  once then accepts, it performs to completion, a rerun hits the cache, and a killed concert resumes at node
-  granularity.
+  once then accepts, it performs to completion, and a killed concert resumes at node granularity without repeating an
+  `ok` node.
 - **AC-4.** With one real harness, the build-then-repair composition is performed on a toy target. It leaves a changeset
   and the target's checkout is untouched.
 - **AC-5.** Compose renders both compositions as a graph showing fan-out, fan-in, loop bounds and conditionals.
@@ -386,12 +386,12 @@ descriptions only and need a closer look during the slice.
 | `vars` file, `.in` templates, shell-sourced values          | Typed inputs and checked prompt templates.                                    |
 | sidecar JSON and `isinstance` checks                        | Typed outputs validated by the engine.                                        |
 | `limits.fix_loops`                                          | A composition param (D-17).                                                   |
-| "reuse output if the json exists"                           | Node cache and resume.                                                        |
+| "reuse output if the json exists"                           | Resume.                                                                       |
 | `seat()` copied between chains, `_` helper modules          | Typed subcompositions.                                                        |
 | stderr degraded-run logging                                 | `Settled` results and outcomes in the record.                                 |
 | `obs` viewer (deprecated)                                   | Renderer contract on the IR and event stream.                                 |
 | tool call and thinking events, streamed as each completes   | Host progress events on the node instance (CORE-10).                          |
-| `seams` (pick up a previous run's record)                   | Superseded by cache, resume and lane versions (unread).                       |
+| `seams` (pick up a previous run's record)                   | Superseded by resume and lane versions (unread).                              |
 | `resolution` (what one run resolved to)                     | The plan (unread).                                                            |
 | `gates` (verify an envelope's claims)                       | Re-evaluate in the host slice (unread).                                       |
 | profiles and rosters (`extends:`)                           | Re-evaluate: host namespace and layered config (unread).                      |

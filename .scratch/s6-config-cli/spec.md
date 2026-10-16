@@ -8,7 +8,7 @@ Goal:         Load packs, composition files and IR from disk, compose layered co
               compose and perform from the `maestro` CLI with JSON output and documented exit codes (CFG-01 to
               CFG-06, CLI-01 to CLI-04, CLI-06, CLI-07, AC-6).
 Read:         requirements.md (CFG-01 to CFG-06, CLI-01 to CLI-07, D-12 to D-17, D-19, D-24, D-26, D-27, D-29,
-              D-30, NFR-02, NFR-03, NFR-05, AC-6 to AC-8), architecture.md 3, 4, 7 (Cache, Resume, Cancellation),
+              D-30, NFR-02, NFR-03, NFR-05, AC-6 to AC-8), architecture.md 3, 4, 7 (Resume, Cancellation),
               8, 10, 13, 16, sdk-spec.md 2, 8 to 10, 12, 13.3, ADRs 0002, 0007, 0008, packages/ir/README.md (worker
               references, `codeHash`), packages/core/src/compose/README.md, packages/core/src/{host.ts,perform/},
               packages/sdk/src/{composition,graph}.ts, packages/testkit, backlog 02, 03, 08, 09,
@@ -21,10 +21,10 @@ Deliverables:
   1. Config files (CFG-02, CFG-04, CORE-18, D-07): user, workspace and profile YAML located per K53 and parsed with
      `Bun.YAML`, a syntax error naming the file and line. Layers merge lowest first, default, user, workspace,
      profile, flag, by the rule K54 gives, and every value keeps the layer and file it came from.
-  2. Core config (CFG-01, D-23, D-26, K41, K45): a closed schema of the top-level keys core owns, handed to compose
-     as `ComposeInput.core`: `cache` (`on` or `off`, to S5's perform option), the concurrency cap
-     (`PerformOptions.concurrency`) and caps by name (`ComposeInput.caps`). Event sinks and pre-flight strictness
-     per K55, where the record, concert areas and compose scratch live per K56. No timeout key (K41).
+  2. Core config (CFG-01, D-23, D-26, K41): a closed schema of the top-level keys core owns, handed to compose
+     as `ComposeInput.core`: the concurrency cap (`PerformOptions.concurrency`) and caps by name
+     (`ComposeInput.caps`). Event sinks and pre-flight strictness per K55, where the record, concert areas and
+     compose scratch live per K56. No timeout key (K41).
   3. Claims (CFG-02, CFG-05, D-17, D-24): an installed pack claims its id, each of its compositions a key under it,
      and each composition's params the keys under that. Compose's `checkConfig` counts installed packs as
      claimants. An unclaimed key at any of these levels fails with a did-you-mean hint
@@ -65,8 +65,8 @@ Deliverables:
       consistent.
   13. `config` (CFG-06, CORE-18): the composed config for a composition, each value with its layer and file,
       validated as compose validates it. Secrets per K75.
-  14. `prune` (CLI-03, D-27, K45): removes what K76 says, the concerts' cache entries included, through a new
-      record query, and their host resources through the seam K77 gives. No alias (D-14).
+  14. `prune` (CLI-03, D-27): removes what K76 says through a new record query, and the concerts' host resources
+      through the seam K77 gives. No alias (D-14).
   15. Output and errors (CLI-04, CLI-06, CORE-17, backlogs 02 and 03): `--json` on every command. One diagnostic
       renderer to stderr: the source location when known, the code and message, then the hint. Exit codes per K78.
       Any other error is one or two lines naming what failed and what to do, with no stack unless `--debug`.
@@ -81,7 +81,7 @@ Acceptance:   With the fake host and fixture packs: AC-6, each of `compose`, `pe
               differ from its `codeHash` fails before any node starts; a missing stdlib export is a compose error;
               a concert killed from another process settles `failed`, and `perform --resume` finishes it without
               repeating an `ok` node; resuming a live concert is refused; `prune` removes a settled concert's
-              record, artifacts, cache entries and fake host resources, and refuses a running one; `ls` cold start
+              record, artifacts and fake host resources, and refuses a running one; `ls` cold start
               measured (NFR-03); no domain words in `cli` (CORE-12); `just check` output.
 Out of scope: `watch` (S10, CLI-05); wiring the coding-agent host and implementing the lane ref param type (S8e);
               the compiled binary and releases (S11, AC-7 beyond the bin entry); pack build tooling and the real
@@ -89,9 +89,9 @@ Out of scope: `watch` (S10, CLI-05); wiring the coding-agent host and implementi
               backlog 11); record migrations (K33); a secret param type (D-33); out-of-process workers.
 Constraints:  clean break, no domain words in `cli` (port plan rule 3), lean (NFR-09), no guessing, no new
               dependencies (`Bun.YAML`, `node:util` and the installed `ajv` cover parsing). Parse config, manifests,
-              flags and IR at the boundary (CODING_STANDARDS). The record stores no config (K38), and param values
-              reach it only inside the IR (wave review K51). Host interface changes follow wave review K49 as
-              ruled. Runs after S5 is committed, with K47 and K48 as ruled for it.
+              flags and IR at the boundary (CODING_STANDARDS). The record stores no config (K38), and params live
+              only in the SDK and the CLI: core and the IR take none (wave review K51). Host interface changes
+              follow wave review K49 as ruled. Runs after S5 is committed.
 Open Qs:      K53. Where are the config files, and what is a workspace (GLOSSARY has no entry)? A: user
               `$XDG_CONFIG_HOME/maestro/config.yaml`, workspace `.maestro/config.yaml` in the nearest ancestor of
               the cwd holding `.maestro/`, profile `.maestro/profiles/<name>.yaml` chosen by `--profile`
@@ -132,8 +132,8 @@ Open Qs:      K53. Where are the config files, and what is a workspace (GLOSSARY
               files from V1, amending D-29.
               K65. One function reachable under two names, such as `found` and `b.score` (backlog 08)? A: the first
               name in sorted order, top-level names before nested ones (recommended). B: a build error naming both.
-              K66. A pack's `codeHash` hashes its whole bundle, so any change reruns all its code nodes on resume
-              and misses their cache. Does that meet CORE-09's "exactly the affected nodes"? A: yes, read as "nodes
+              K66. A pack's `codeHash` hashes its whole bundle, so any change reruns all its code nodes on
+              resume. Does that meet CORE-09's "exactly the affected nodes"? A: yes, read as "nodes
               whose `codeHash` or inputs changed", shown per node on hand-written IR (recommended). B: no; the pack
               build writes a per-export hash map from the bundler's metafile into the manifest.
               K67. How does the CLI name a pack's composition (CLI-01)? A: `<pack>.<composition>`, as the YAML keys
@@ -147,10 +147,9 @@ Open Qs:      K53. Where are the config files, and what is a workspace (GLOSSARY
               freezes the interface, tested with a fake type; an artifact-typed param is a usage error until a
               composition needs one (recommended). B: the seam waits for S8e, and S6 refuses every marked param.
               C: A, with an artifact param's path hashed into an `ArtifactRef` that has no producer.
-              K70. An already built IR, a hand-written file or a resumed concert's, carries its build's param values
-              (wave review K51). A: it takes no param flags, a given one being a usage error, pre-flight checks the
-              recorded values, and resume re-runs pre-flight under the current config and hosts (recommended). B:
-              flags are taken and must equal the recorded values. C: as A, but resume skips pre-flight.
+              K70. An already built IR, a hand-written file or a resumed concert's, takes no param flags, a given one
+              being a usage error (wave review K51). Does resume re-run pre-flight? A: yes, under the current config
+              and hosts (recommended). B: no, it runs the stored IR as it is.
               K71. Does `perform` stay in the foreground? A: it prints the id at once, stays until the concert
               settles and exits with its outcome's code; Ctrl-C cancels it (recommended). B: it starts a detached
               process, prints the id and exits 0, leaving the outcome to `wait`. C: A, with `--detach` for B.
@@ -168,8 +167,8 @@ Open Qs:      K53. Where are the config files, and what is a workspace (GLOSSARY
               K75. `config` prints values that may be secrets (CFG-03, NFR-05). A: as they are, since it is the
               operator's own stdout and not a log (recommended). B: mask values whose schema marks `writeOnly`.
               K76. What does `prune` remove, and when? A: `prune <concert>...` or `prune --before <duration>`, for
-              settled concerts only: record rows and events, artifact area, cache entries (K45) and host
-              resources, confirming on a TTY with `--yes` to skip (recommended). B: with no argument, every
+              settled concerts only: record rows and events, artifact area and host resources, confirming
+              on a TTY with `--yes` to skip (recommended). B: with no argument, every
               settled concert. C: all but the newest N.
               K77. How do `prune` and `ls` reach host resources such as lanes (D-27, HOST-13) with no domain words
               in `cli`? A: two optional `Host` members, `release(concert)` and `usage(concert)` in bytes, tested

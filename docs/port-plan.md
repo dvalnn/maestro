@@ -32,7 +32,7 @@ A Bun workspace monorepo. Package names are workspace names under `@maestro/*` a
 ```
 packages/
   ir/               schema, version, validators, golden fixtures
-  core/             graph model, compose checks, executor, cache, record, events, config, worker protocol, host interface
+  core/             graph model, compose checks, executor, resume, record, events, config, worker protocol, host interface
   sdk/              authoring API, stdlib
   testkit/          fake host, assertions, stub concert
   cli/              commands, flags, formats, exit codes
@@ -107,12 +107,12 @@ docs/               these documents (including adr/), slice reports under report
 - **Depends on.** S1.
 - **Parallel with.** S2, S3.
 
-### S5. Cache and resume (M)
+### S5. Resume (M)
 
 - **Goal.** CORE-09.
-- **Deliverables.** Content hashing, purity handling, node-granularity resume.
-- **Acceptance.** A rerun hits the cache. A changed input or code hash invalidates exactly the affected nodes. An impure
-  node is never cached. A killed concert resumes without repeating an `ok` node (AC-3 in part).
+- **Deliverables.** The resume key, node-granularity resume.
+- **Acceptance.** A killed concert resumes without repeating an `ok` node, agent nodes included. A changed input or code
+  hash reruns exactly the affected node and its dependents (AC-3 in part).
 - **Depends on.** S4.
 
 ### S6. Config and CLI (L)

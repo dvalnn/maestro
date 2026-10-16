@@ -83,16 +83,16 @@ Semantics each constructor must honor:
 
 - **`code`.** Never runs during build. Compose evaluates it only when it is pure and all its inputs are known (folding,
   CORE-07). Its function is an exported `(inputs, ctx) => outputs`, sync or async, with inputs and outputs keyed by port
-  name (ADR 0008). It can return `reject(reason)` for a negative verdict, which becomes outcome `rejected`.
+  name (ADR 0008). It can return `reject(reason, outputs?)` for a negative verdict, which becomes outcome `rejected`.
 - **`map`.** `items` may be a build-time list or a Ref resolved later. `max` is mandatory when the item count is not
   known at compose time, and compose reports "up to N". A list of unknown length comes from a code node and feeds a
   bounded `map` (D-16). Items are keyed: a primitive item by its value, any other item by index, or by an optional key
   function `(item) => key`. Give a key function whenever items are records or paths, so keys stay short and survive
   reordering. A key is sanitized to `[A-Za-z0-9_.-]`, anything else becoming `_`, and keys that sanitize alike are
   duplicates: a compose error for a build-time list (D-18, SDK-13), a failed `map` for a list known only at perform
-  time. Keys only name node instances for `ls` and lane refs. The cache is a content hash and does not depend on them.
-  `onError` is required. With `"settle"` a non-ok member becomes a `Settled` value and the group is `ok`. With
-  `"propagate"` the group takes the worst member outcome, and the first non-ok member cancels the rest (ADR 0006).
+  time. Keys only name node instances for `ls` and lane refs. `onError` is required. With `"settle"` a non-ok member
+  becomes a `Settled` value and the group is `ok`. With `"propagate"` the group takes the worst member outcome, and the
+  first non-ok member cancels the rest (ADR 0006).
 - **`seq`.** Covers escalation over an ordered list. `until` gets a member's result and returns a `Ref<Bool>`. Members
   after a satisfied `until` never start. The bound is `items.length` or `max`. A `seq` with `until` stays an "up to N"
   region in the plan. A `seq` over no items settles `skipped`.
@@ -113,8 +113,9 @@ Host SDKs add constructors with the same Result handle shape (section 12).
 
 - **`when: Ref<Bool>`** on any node. A false guard makes the node `skipped`.
 - **`tolerate: "rejected"`** on a consuming node or a `repeat` state edge lets the node run after a `rejected` upstream.
-  It then receives `reason`. Without it a non-ok upstream makes the node `skipped` (CORE-04). `failed` and `skipped` are
-  never tolerable.
+  It then receives `reason`, and the upstream's outputs when it rejected with them. Reading a declared output of a
+  rejection that carried none fails the node, naming the upstream. Without it a non-ok upstream makes the node `skipped`
+  (CORE-04). `failed` and `skipped` are never tolerable.
 
 ## 5. Refs and mapping between nodes
 
@@ -164,26 +165,25 @@ A code node is the SDK's answer to "this needs real code".
 - **Typed in and out.** Input and output schemas are declared, and the function's type is checked against them at
   compile time. Output validation happens at the node boundary. A return that fails its schema makes the node `failed`
   with the validation error.
-- **Purity.** A pure node is a function of its inputs and declared artifacts. It is cacheable and foldable. An impure
-  node declares `pure: false`, is never cached, and is never folded. A pure node that reads `ctx.clock` or `ctx.concert`
-  fails.
+- **Purity.** A pure node is a function of its inputs and declared artifacts. It is foldable. An impure node declares
+  `pure: false` and is never folded. A pure node that reads `ctx.clock` or `ctx.concert` fails.
 - **Timeout.** A code node runs with no time limit unless its author sets `timeout` in milliseconds. One that runs past
   it settles `failed`.
 - **Declared reads and writes.** File and directory paths a node reads or writes are declared by artifact ports or by
-  explicit `reads` and `writes`. Compose can check write scope and the cache can hash declared reads. Undeclared access
-  is the author's error. The SDK detects what it can (for example through the context's clock and environment) and does
-  not promise exhaustive detection (R-2).
+  explicit `reads` and `writes`. Compose can check write scope. Undeclared access is the author's error. The SDK detects
+  what it can (for example through the context's clock and environment) and does not promise exhaustive detection (R-2).
 - **Context.** A typed, read-only context offers the concert id, the clock value, the instance's own scratch directory
   and `log(line)`, which records a line on the instance, plus whatever the loaded hosts add (architecture section 6). A
   file the node writes there and returns at an artifact output becomes an artifact (ADR 0007).
-- **Errors.** A thrown error settles the node as `failed`. `reject(reason)` settles it as `rejected`.
+- **Errors.** A thrown error settles the node as `failed`. `reject(reason, outputs?)` settles it as `rejected`, with its
+  outputs when given, checked like an `ok` node's.
 - **Runtime.** A worker reference names the runtime. The initial runtime is `ts`, in-process (CORE-14).
 
 ## 8. Subcompositions
 
 - **Signature.** Typed params, typed ports and typed outputs (Result handles or named outputs).
-- **Scope.** Each use produces a named scope in the IR with the subcomposition's id. Renderers can collapse it, caches
-  key on it, and diagnostics name it.
+- **Scope.** Each use produces a named scope in the IR with the subcomposition's id. Renderers can collapse it, and
+  diagnostics name it.
 - **Reuse.** Subcompositions are exported by packs and used by other packs. A pack that uses another pack's
   subcomposition imports its source, and the using pack's bundle includes it (ADR 0002, ADR 0008). They replace the `_`
   helper modules of the predecessor.
@@ -205,7 +205,7 @@ A code node is the SDK's answer to "this needs real code".
 
 ## 10. Config
 
-- Params carry defaults declared in code (CFG-03). The declaration goes into the IR under the composition's id.
+- Params carry defaults declared in code (CFG-03).
 - Composed config reaches the build function. Values that bound groups (`max` on `repeat` and `map`) come from params
   and are therefore known at compose time.
 - Precedence, highest first (CFG-04, D-17): the use site for a subcomposition or the CLI flag for a root composition,
@@ -254,7 +254,7 @@ An emitter (the TypeScript SDK or any future one) must produce IR that:
 - names code nodes by worker reference `{runtime, module, export, code hash}`.
 
 The core validates IR on load and rejects an unknown major version (CORE-16). The IR carries enough for a renderer and
-for the cache without consulting the composition's source.
+for resume without consulting the composition's source.
 
 ### 13.2 Worker protocol (CORE-14)
 
@@ -290,7 +290,7 @@ Severity is `error` or `warning`. Any error stops before any concert starts (NFR
 
 - A **fake host** with configurable node kinds and scripted outcomes (including reject-then-accept).
 - **Graph assertions:** node counts, kinds, edges, bounds, diagnostics, derived metadata.
-- **Stub concert** over the real executor, for outcome propagation, cache and resume tests.
+- **Stub concert** over the real executor, for outcome propagation and resume tests.
 - **Core-only fixtures** proving CORE-12.
 
 ### 13.5 Renderer contract

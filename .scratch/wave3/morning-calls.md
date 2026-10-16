@@ -231,23 +231,39 @@ Classifier blocks: none.
   miss; `prune` drops the entries of the concerts it removes.
 - K46: A. The cache key's config is a cacheable host node's own host namespace; a code node's key has no config.
 
+## Rulings from the wave 3 review (2026-10-16)
+
+- K51: B. Params live only in the SDK and the CLI: the build consumes them, and the IR is the snapshot it produces. Core
+  drops its params argument and `checkParams`, the plan stops echoing params, and the IR drops its `params` block (still
+  IR 1.0). The CLI refuses a param flag on an IR file. Composed config resolving at perform and code pinned by hash are
+  intended boundaries of that snapshot; recording the profile is YAGNI.
+- K80: A. No content-hash cache in V1. A cache across concerts hits only pure code nodes and a pure prefix that compose
+  already folds, since agent nodes are not cached and every node downstream of one sees new inputs. Resume carries
+  CORE-09 and AC-3. `Host.cacheable` and core's cache config go; K45 and K46 are withdrawn and K52 is moot. Reusing a
+  finished concert's results is a concert fork (K81, backlog 12).
+- K48: A. On resume, the current code hashes replace the stored IR's in the record, so the stored IR names the code
+  every `ok` instance ran under.
+- K81: A. A concert fork selects by naming: a composition with ports may run at the root, each port fed from an earlier
+  concert's recorded instance, written `<concert id>.<node instance id>` like a lane ref (HOST-13). Values are copied,
+  artifacts imported by content hash, lanes fork-only, and the port's schema is checked against the recorded outputs
+  before any spend. A map instance feeds its `results`. Matching a re-declared prefix by key is rejected: its misses are
+  silent and spend. Timing waits for S8, backlog 12.
+- K47: resume finds a recorded instance by node id and expansion path, then compares its key, so identical instances in
+  a fan-out never share one result. The key holds no config: a changed profile does not rerun `ok` instances. Keys only
+  compare inside one concert (K81), so no portability rule is needed.
+- K50: B. `reject(reason, outputs?)`, the outputs nested in the rejection and, when given, complete and checked against
+  `out` like an `ok` node's, so code and host verdicts carry findings alike. A tolerant consumer that reads a declared
+  output of a rejection that carried none, code or host, fails with a reason naming the upstream. Amends ADR 0008 and
+  pins ADR 0006's value on `rejected`.
+- K49: A, refined. Compose checks each host node's `config` against its kind's schema, the IR's `in` and `out` against
+  `kind.ports(node)` (the same port names, compatible by K20's rule) and that every `x-maestro-type` name is core's or
+  an installed host's. Perform checks host outputs against `out` as it does code outputs, on `ok` and on a rejection
+  that carries outputs (K50). `kind.outcomes` goes: nothing reads it.
+- K79: A. Folding races a code node against its `timeout` through a helper shared with perform; a fold past it is a
+  compose error naming the node and its timeout, and the function is abandoned. No `timeout` means no limit, as at
+  perform. A synchronous function that never returns blocks the process at compose and at perform alike.
+
 ## Open for the owner (2026-10-17 morning)
 
-- K47 (S5 brief, `.scratch/s5-cache-resume/spec.md`): does the cache key's node definition include the node id?
-- K48 (S5 brief): on resume, do the current code hashes replace the stored IR's in the record?
-- K49 (wave 3 review, finding 1): core never reads a host kind's `config`, `outcomes` or `ports(node)`, nor
-  `Host.types`, so host outputs go unvalidated. A: compose and perform check them (recommended). B: drop them from the
-  interface. C: leave them to the host's `validate`.
-- K50 (finding 2): a code `Rejection` carries no outputs, yet tolerance and `repeat.tolerate` assume a tolerated
-  source's values flow. A: a compose error on reading a tolerant code source's outputs. B: `reject(reason, outputs?)`,
-  amending ADR 0008 (recommended). C: tolerance on control edges only.
-- K51 (finding 3): the IR does not record its param values, so K38's premise fails and resume cannot rebuild them. A: an
-  IR `params.values` field (recommended). B: the CLI refuses param flags on an IR. C: params given at perform.
-- K52 (finding 4): artifact refs are relative to one concert, so a cache hit from another concert points at the wrong
-  place. A: link or copy the artifact on a hit, keyed by content hash (recommended). B: refs relative to the store root.
-  C: no caching for nodes with artifacts. Blocks S5 with K47, K48 and K51.
 - K53 to K78 (S6 brief, `.scratch/s6-config-cli/spec.md`, Open Qs): config layout, packs, params, CLI verbs and exit
-  codes; each has options and a recommendation there. K70 builds on K51.
-- K79 (wave 3 follow-up review): compose folding runs a pure code node at pre-flight with no timer, so a foldable
-  function that never returns hangs compose whatever its `timeout`. A: fold honours the node's `timeout`, and a fold
-  past it is a compose error naming the node (recommended). B: fold ignores it, and the docs say so.
+  codes; each has options and a recommendation there. K70 is restated after K51.

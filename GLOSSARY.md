@@ -96,7 +96,7 @@ flow to one node, the explicit fan-in) and `control` (guards, tolerance, orderin
 
 **Host**: A plugin that registers node kinds, types, validation and bounds hooks and an environment.
 
-**Engine**: The domain-free core: the graph model, compose checks, scheduling, cache, record and events. It knows no
+**Engine**: The domain-free core: the graph model, compose checks, scheduling, resume, record and events. It knows no
 host.
 
 ### Coding-agent host

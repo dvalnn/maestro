@@ -65,8 +65,8 @@ with a string `id` also names that node in `node`.
 
 Nodes and scopes share one id space. An id is a path of `[A-Za-z0-9_-]` segments joined by `/` (IR-01). Anything inside
 a scope or a group has the id `<enclosing id>/<segment>`, so every proper prefix of an id is a declared scope or group
-node, its parent is the id minus the last segment, and that last segment is its name. Scopes are for renderers, caches
-and diagnostics and do not change execution. Groups do.
+node, its parent is the id minus the last segment, and that last segment is its name. Scopes are for renderers and
+diagnostics and do not change execution. Groups do.
 
 Every schema inside the IR (ports, params, config) is a JSON Schema document that the IR treats as opaque, except for
 the `x-maestro-type` annotation that names artifacts and host types ([Type markers](#type-markers-x-maestro-type)). Edge
@@ -242,8 +242,8 @@ The annotation names an artifact or host type on any subschema of a port, param 
 - **Matching.** A marked type matches only the same name. A `core.json-file` also compares its content schema. Unmarked
   values match by schema. An artifact never feeds a value port: a reader node turns it into one.
 - **Content versus reference.** A marked artifact subschema's other keywords describe the file's content. The runtime
-  value is an `ArtifactRef`, the reference to the file. The SDK's artifact port types, the worker protocol, the record
-  and the cache all use it.
+  value is an `ArtifactRef`, the reference to the file. The SDK's artifact port types, the worker protocol and the
+  record all use it.
 
 ```ts
 type ArtifactRef = {

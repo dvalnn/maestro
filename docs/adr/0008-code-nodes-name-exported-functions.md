@@ -22,8 +22,10 @@ Build-time values reach a code node as `literals` (D-16), never through a closur
 and outputs keyed by port name, so the worker calls each the same way and the worker reference needs no field saying
 how:
 
-- `Rejection` and `reject(reason)` live in `packages/ir`. Outputs never carry `outcome` or `reason`, so a rejection is
-  never mistaken for them.
+- `Rejection` and `reject(reason, outputs?)` live in `packages/ir`. A rejection's outputs sit in its own `outputs`
+  field, never beside `outcome` or `reason`, so a rejection is never mistaken for outputs. When given, they are the
+  node's full outputs, checked against its `out` schemas like an `ok` node's, so a tolerant consumer reads a code
+  verdict's findings as it reads a host's.
 - The SDK types `code()` so the function is checked against its declared ports at compile time, and a function that can
   reject shows it in its inferred return type.
 - A `map` key function is `(item) => key`. It names members and is not a node.

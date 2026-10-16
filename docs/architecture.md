@@ -7,8 +7,8 @@ internals to the implementation.
 ## 1. Overview
 
 maestro executes **compositions**. A composition is TypeScript code that, when built, yields a **graph**: typed nodes
-joined by typed edges, serialized as a language-neutral **IR**. The **core** validates, bounds, caches, schedules and
-records graphs and knows nothing about what the nodes do. A **host** teaches the core new node kinds. The coding-agent
+joined by typed edges, serialized as a language-neutral **IR**. The **core** validates, bounds, schedules, records and
+resumes graphs and knows nothing about what the nodes do. A **host** teaches the core new node kinds. The coding-agent
 host adds nodes that run coding agents in isolated working copies. **Packs** carry compositions, prompts and code nodes
 for a domain.
 
@@ -39,7 +39,7 @@ Actors and external systems:
 - **Harnesses** (coding-agent runtimes such as pi and Claude Code) are driven by the coding-agent host through adapters.
 - **Model providers** are reached only through harnesses.
 - A **target repository** is read by the host to cut lanes. It is never written by a concert (HOST-03).
-- The **filesystem** holds config, the record store, the cache, lanes and artifacts.
+- The **filesystem** holds config, the record store, lanes and artifacts.
 - **Renderers** consume the IR and the event stream.
 
 ```
@@ -58,18 +58,18 @@ Actors and external systems:
 A monorepo of separately versioned packages (DIST-03). Package names are workspace names that are never published
 (D-31).
 
-| Layer            | Package           | Responsibility                                                                                                        | Knows about                |
-| ---------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| IR               | `ir`              | The IR schema, its version and validators. No runtime.                                                                | nothing                    |
-| Core             | `core`            | Graph model, compose checks, executor, cache, record store, events, config layering, worker protocol, host interface. | `ir`                       |
-| SDK              | `sdk`             | Authoring API: compositions, node constructors, Refs, types, subcompositions, stdlib. Emits IR.                       | `ir`                       |
-| Test kit         | `testkit`         | Fake host, build and compose-time assertions, stub concert.                                                           | `core`, `sdk`              |
-| CLI              | `cli`             | Commands, derived input flags, output formats, exit codes, host and pack loading.                                     | `core`, `sdk`              |
-| Agent host       | `host-agents`     | Agent and check node kinds, lanes, sandbox, harness adapter interface, host config namespaces.                        | `core`                     |
-| Agent host SDK   | `host-agents-sdk` | Typed constructors for agent and check nodes, lane types, report types.                                               | `sdk`, `host-agents` types |
-| Harness adapters | `harness-<name>`  | One adapter per coding-agent runtime.                                                                                 | `host-agents`              |
-| Packs            | `pack-<domain>`   | Compositions, prompts, schemas, code nodes, config schemas.                                                           | `sdk`, `host-agents-sdk`   |
-| Renderers        | `render-<form>`   | Static graph render, live view.                                                                                       | `ir`, event stream         |
+| Layer            | Package           | Responsibility                                                                                                         | Knows about                |
+| ---------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| IR               | `ir`              | The IR schema, its version and validators. No runtime.                                                                 | nothing                    |
+| Core             | `core`            | Graph model, compose checks, executor, resume, record store, events, config layering, worker protocol, host interface. | `ir`                       |
+| SDK              | `sdk`             | Authoring API: compositions, node constructors, Refs, types, subcompositions, stdlib. Emits IR.                        | `ir`                       |
+| Test kit         | `testkit`         | Fake host, build and compose-time assertions, stub concert.                                                            | `core`, `sdk`              |
+| CLI              | `cli`             | Commands, derived input flags, output formats, exit codes, host and pack loading.                                      | `core`, `sdk`              |
+| Agent host       | `host-agents`     | Agent and check node kinds, lanes, sandbox, harness adapter interface, host config namespaces.                         | `core`                     |
+| Agent host SDK   | `host-agents-sdk` | Typed constructors for agent and check nodes, lane types, report types.                                                | `sdk`, `host-agents` types |
+| Harness adapters | `harness-<name>`  | One adapter per coding-agent runtime.                                                                                  | `host-agents`              |
+| Packs            | `pack-<domain>`   | Compositions, prompts, schemas, code nodes, config schemas.                                                            | `sdk`, `host-agents-sdk`   |
+| Renderers        | `render-<form>`   | Static graph render, live view.                                                                                        | `ir`, event stream         |
 
 Dependency rule: arrows only point down the table. `core` and `ir` never import a host, a pack or an adapter. CORE-12 is
 enforced by a test and by an import-graph check.
@@ -105,7 +105,7 @@ The lifecycle has two stages (D-12). **Compose** is steps 1 to 4, ending with pr
    8. Emit the **plan**: diagnostics, counts, bounds and a renderable graph. Diagnostics of severity error stop here
       (NFR-02).
 5. **Perform.** The executor instantiates node instances, schedules them by dependency, applies outcomes and edge
-   tolerance, consults the cache, dispatches code nodes to workers and host nodes to their host, and writes events.
+   tolerance, dispatches code nodes to workers and host nodes to their host, and writes events.
 6. **Record.** Events and results go to the record store as they happen. A final result is derived by the result rule
    (CORE-04).
 7. **Observe and resume.** `ls`, `wait`, `watch` and renderers read the record and events. `perform --resume` re-enters
@@ -119,10 +119,8 @@ renderer needs nothing else.
 Contents, at the level of what it must carry:
 
 - **Header.** IR version, composition id and version, pack id, build metadata (SDK version, source hash).
-- **Params.** The composition's param schema, with CLI hints and its example input sets (D-17, D-19).
 - **Config.** Each config schema the graph claims, keyed by namespace, with defaults (CFG-03).
-- **Scopes.** Named subgraphs created by subcomposition use, with their ports, so renderers can collapse them and caches
-  can key on them.
+- **Scopes.** Named subgraphs created by subcomposition use, with their ports, so renderers can collapse them.
 - **Nodes.** For each node: stable id (a path whose prefixes are its scopes and groups), kind, source location, typed
   ports (schemas), guard, purity flag, declared reads and writes (code nodes), kind-specific configuration (host kinds),
   and for code nodes a worker reference `{runtime, module, export, code hash}`.
@@ -140,7 +138,7 @@ Properties:
   node marked `fanin`. A node with several distinct upstreams is a barrier and shows as a multi-edge join.
 - **Lanes are not fan-in.** A host node takes exactly one lane. Results from several lanes reach the next node as
   values.
-- **Stable ids.** Node ids are derived from scope path and label so that renders, events and caches stay stable across
+- **Stable ids.** Node ids are derived from scope path and label so that renders, events and resume stay stable across
   builds of the same composition.
 - **Byte-stable.** Same params, composed config and code give the same IR (CORE-06).
 - **Language-neutral.** Nothing in the IR assumes TypeScript. A worker reference names a runtime, and v1 implements
@@ -151,10 +149,12 @@ Properties:
 A host is a package that the core loads. It is the only way node kinds beyond the core's set exist. A host supplies:
 
 1. **Node kinds.** For each kind: name, configuration schema, input and output port schemas (possibly generic over the
-   node's configuration), the possible outcomes, and `execute(instance, inputs, context)` returning outputs and an
-   outcome. Core never says run or build (CORE-12): the SDK builds, core composes and executes. A kind can declare its
-   outputs include artifacts.
+   node's configuration), and `execute(instance, inputs, context)` returning outputs and an outcome. Compose checks a
+   node's configuration and its ports in the IR against its kind, and perform checks the outputs against the ports. Core
+   never says run or build (CORE-12): the SDK builds, core composes and executes. A kind can declare its outputs include
+   artifacts.
 2. **Types.** Named types the host's ports use (for example a lane handle), with a way to serialize them into the IR.
+   Compose rejects a type name that neither core nor an installed host owns.
 3. **`validate(graph)`.** A compose-time hook returning diagnostics. It sees the whole graph and its own kinds' nodes.
    This is where host rules live (the lane join rule, role and model policy, bind validity).
 4. **`bounds(node)`.** Bounds for a node instance as named counts, like metrics (CORE-19): core sums each name and
@@ -167,7 +167,8 @@ A host is a package that the core loads. It is the only way node kinds beyond th
    opaquely.
 8. **Cancellation.** A way to cancel a running node instance and release resources (kill the process tree).
 
-The core never inspects a host's types or rules. It only calls these hooks and records what they return.
+The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
+hooks and records what they return.
 
 ## 7. Execution model
 
@@ -186,8 +187,7 @@ The core never inspects a host's types or rules. It only calls these hooks and r
 - **Groups.**
   - `map` instantiates its body once per item, in parallel up to the cap. An item with a primitive value is keyed by
     value and any other item by index, or by an author-supplied key function. Duplicate keys are a compose error (D-18,
-    SDK-13). Keys give readable node instance ids for `ls` and lane refs. The cache is a content hash and does not
-    depend on them.
+    SDK-13). Keys give readable node instance ids for `ls` and lane refs.
   - `seq` instantiates the body per item in order and stops at the first item meeting the condition. This covers
     escalation over models.
   - `repeat` carries typed state: an initial value, a step producing the next state, a stop condition and a maximum.
@@ -198,14 +198,11 @@ The core never inspects a host's types or rules. It only calls these hooks and r
   non-`ok` inputs, and a group's result member, that the graph does not tolerate (a tolerated rejection or a `Settled`
   input), the first to settle when several did, to a node with no such input: the root cause, with its outcome and
   reason. A node skipped by its own false guard is the result, and counts as rejected.
-- **Cache.** Key: hash of (node definition, code hash for code nodes, input values and artifact content hashes, and for
-  a host node its host's config namespace). Host nodes participate only if their kind declares itself cacheable. Agent
-  nodes are not cacheable by default (non-deterministic, costly), but their recorded results are reusable by resume. The
-  cache is a table in the record store, turned `on` or `off` by config. A hit whose artifact is gone or no longer
-  matches its hash is a miss, and `prune` drops the entries of the concerts it removes.
-- **Resume.** Re-entering a concert keeps its id and runs its stored IR. A recorded `ok` instance whose key matches,
-  with the code hash recomputed from the current code, is reused, pure or not. Any other instance runs again, so a fix
-  to one node's code reruns that node and its dependents only. A concert whose process is still alive cannot be resumed.
+- **Resume.** Re-entering a concert keeps its id and runs its stored IR. A recorded `ok` instance is reused, pure or
+  not, when its key still matches: a hash of the node definition, its code hash recomputed from the current code, and
+  its input values with artifact content hashes. Any other instance runs again, so a fix to one node's code reruns that
+  node and its dependents only. A concert whose process is still alive cannot be resumed. Nothing is reused across
+  concerts.
 - **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in
   reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started has
   no record. A code node that runs past the timeout its author set settles `failed`. It has none by default.
@@ -223,10 +220,10 @@ under its pack id and then its composition id. Hosts and packs keep pure-config 
 
 Who owns what:
 
-- **Core.** Cache, concurrency, record store, event sinks, pre-flight strictness.
+- **Core.** Concurrency, record store, event sinks, pre-flight strictness.
 - **Host.** `target`, `roles` and other host namespaces (HOST-12).
-- **Composition.** One param declaration in code covers CLI inputs and tunables, with defaults, exported in the IR. For
-  example a repair-loop subcomposition owns its maximum iteration count. The core has no limits concept.
+- **Composition.** One param declaration in code covers CLI inputs and tunables, with defaults. For example a
+  repair-loop subcomposition owns its maximum iteration count. The core has no limits concept.
 - **Pack.** Any additional namespaces the pack's compositions claim.
 
 Unclaimed keys (D-24): a key that no installed registrant claims is a compose error with a did-you-mean hint. A key
@@ -239,15 +236,16 @@ claimed by an installed but unused registrant is ignored.
 - v1 provides an **in-process TypeScript worker**. The **worker protocol** is specified so other runtimes and
   out-of-process workers can follow: a node invocation carries node id, expansion path, input values and their port
   schemas (`in`), whether the node is pure (`pure`), artifact references and context. The reply carries outputs and an
-  outcome (`ok` or `rejected` with reason), or an error. Workers support cancellation and timeouts. The in-process
-  worker cannot stop a running function: a cancelled or timed-out invocation settles at once and its function is
-  abandoned. Long work belongs in a host.
-- **Purity.** A pure node reads only its inputs and declared artifacts, writes only declared outputs, and is cached.
-  Reading ambient state (clock, environment, files not declared) marks the node impure, and it is never cached. An
-  impure node reads the clock and the concert id from its context. A pure node that reads them fails, so a cached or
-  folded value never freezes them.
+  outcome (`ok`, or `rejected` with a reason and optional outputs), or an error. Workers support cancellation and
+  timeouts. The in-process worker cannot stop a running function: a cancelled or timed-out invocation settles at once
+  and its function is abandoned. A synchronous function that never returns blocks the process, at compose and at perform
+  alike. Long work belongs in a host.
+- **Purity.** A pure node reads only its inputs and declared artifacts, writes only declared outputs, and can be folded.
+  Reading ambient state (clock, environment, files not declared) marks the node impure, and it is never folded. An
+  impure node reads the clock and the concert id from its context. A pure node that reads them fails, so a folded value
+  never freezes them.
 - **Compose-time folding.** Pure code nodes whose inputs are all known at compose time are evaluated there, which lets
-  the plan expand groups exactly.
+  the plan expand groups exactly. A node's `timeout` holds there too: a fold that runs past it is a compose error.
 
 ## 10. Record and events
 
@@ -376,10 +374,12 @@ round-folder data, never constants in a pack.
 - **Worker error.** A code node that throws settles as `failed` with the error. A timeout is `failed`.
 - **Disk full.** Hosts with a small system partition are common. The record store and artifacts live in a configurable
   area, and compose warns when free space is below a configurable threshold.
-- **Cache poisoning.** Impure nodes are never cached, and a code hash change invalidates a node's entries.
+- **Stale reuse.** Resume recomputes each code hash from the current code, so a changed node and its dependents run
+  again.
 
 ## 17. Open design points
 
 No open question blocks the initial port. `requirements.md` section 9 maps every earlier question to the decision that
 resolved it. Deferred, with no design committed: a secret param type (D-33), cost accounting and budgets, per-adapter
-compaction, a cross-concert join, in-process SDK adapters, arm64 and macOS, and licensing.
+compaction, a cross-concert join, starting a concert from a finished one's results, in-process SDK adapters, arm64 and
+macOS, and licensing.
