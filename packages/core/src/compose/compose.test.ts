@@ -30,7 +30,7 @@ describe("compose", () => {
 		[
 			"fanout-fanin-loop.json",
 			golden,
-			{ upTo: 10 },
+			{ upTo: 11 },
 			"topics/draft",
 			{ exact: 3 },
 		],
@@ -123,11 +123,11 @@ describe("bounds (D-23)", () => {
 	});
 
 	test.each([
-		["fanout-fanin-loop.json", { instances: 10, calls: 10 }, []],
+		["fanout-fanin-loop.json", { instances: 11, calls: 10 }, []],
 		[
 			"fanout-fanin-loop.json",
-			{ instances: 9 },
-			["'instances' may reach at least 10, over its cap of 9"],
+			{ instances: 10 },
+			["'instances' may reach at least 11, over its cap of 10"],
 		],
 		[
 			"fanout-fanin-loop.json",

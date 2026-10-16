@@ -41,6 +41,7 @@ const functions: Record<string, CodeFunction> = {
 	},
 	nothing: () => undefined as never,
 	pathRead: (_, ctx) => ({ text: typeof ctx.path }),
+	shown: ({ opts }) => ({ text: JSON.stringify(opts) }),
 	pathCall: (_, ctx) => ({ text: (ctx.path as () => string)() }),
 	index: ({ index, text }) => {
 		if (Number(index) > 0) throw new Error("past the first iteration");
@@ -145,7 +146,11 @@ describe("fold", () => {
 		let loads = 0;
 		const load = loader(functions);
 		const [nodes = [], edges = []] = mapOver(2);
-		await plan(nodes, edges, {
+		const again = code("x", "upper", {
+			in: { name: STRING },
+			literals: { name: "z" },
+		});
+		await plan([...nodes, again], edges, {
 			loadCode: (ref: Parameters<typeof load>[0]) => {
 				loads++;
 				return load(ref);
@@ -205,7 +210,7 @@ describe("fold", () => {
 		expect(folded).toEqual({});
 	});
 
-	test("a rejection is folded, and only a tolerant ordering edge admits it (CORE-04)", async () => {
+	test("a rejection is folded, and only a tolerant ordering edge or repeat admits it (CORE-04)", async () => {
 		const after = (to: string, tolerate?: string) => ({
 			kind: "control",
 			from: { node: "r" },
@@ -218,8 +223,25 @@ describe("fold", () => {
 				exclaim("d"),
 				named("strict", "upper"),
 				named("tolerant", "upper"),
+				code("loop/step", "exclaim", { pure: false, in: { text: STRING } }),
+				{
+					id: "loop",
+					kind: "repeat",
+					cardinality: { upTo: 2 },
+					tolerate: "rejected",
+					in: { text: STRING },
+					inner: { index: { type: "integer" }, text: STRING },
+					out: { text: STRING },
+					members: { result: "loop/step" },
+				},
 			],
-			[data("r", "d"), after("strict"), after("tolerant", "rejected")],
+			[
+				data("r", "d"),
+				after("strict"),
+				after("tolerant", "rejected"),
+				data("r", "loop"),
+				data("loop", "loop/step"),
+			],
 		);
 		expect(folded.r?.[""]).toEqual({
 			outcome: "rejected",
@@ -234,6 +256,7 @@ describe("fold", () => {
 			outcome: "ok",
 			value: { text: "AB" },
 		});
+		expect(folded.loop).toBeUndefined();
 	});
 
 	test("a fan-in node is not skipped for a rejected input (ADR 0006)", async () => {
@@ -246,6 +269,17 @@ describe("fold", () => {
 			[data("r", "f")],
 		);
 		expect(folded.f).toBeUndefined();
+	});
+
+	test("a folded node's inputs are checked without their schema defaults", async () => {
+		const opts = {
+			type: "object",
+			properties: { n: { type: "integer", default: 3 } },
+		};
+		const { folded } = await plan([
+			code("a", "shown", { in: { opts }, literals: { opts: {} } }),
+		]);
+		expect(folded.a?.[""]).toEqual({ outcome: "ok", value: { text: "{}" } });
 	});
 
 	test("a node that only reads ctx.path folds", async () => {
@@ -263,7 +297,7 @@ describe("fold", () => {
 		[
 			"boom",
 			"PURE.fold",
-			"Fix 'boom' in 'test.ts', which throws on these inputs",
+			"Fix 'boom' in 'test.ts', which fails on these inputs",
 		],
 		[
 			"number",
@@ -272,13 +306,8 @@ describe("fold", () => {
 		],
 		[
 			"nothing",
-			"TYPE.output",
-			expect.stringContaining("return outputs that match"),
-		],
-		[
-			"missing",
-			"SCOPE.export",
-			"Export 'missing' from 'test.ts', or fix the worker reference of 'a'",
+			"PURE.fold",
+			"Fix 'nothing' in 'test.ts', which fails on these inputs",
 		],
 	])(
 		"a node that fails to fold with '%s' stops compose with %s",
@@ -286,6 +315,62 @@ describe("fold", () => {
 			expect(await codes([code("a", name)])).toEqual([[want, hint]]);
 		},
 	);
+
+	test("a node folded with inputs off its in schemas points at what feeds it", async () => {
+		const node = code("a", "upper", {
+			in: { name: { type: "integer" } },
+			literals: { name: "x" },
+		});
+		expect(await codes([node])).toEqual([
+			[
+				"PURE.fold",
+				"Feed 'a' values that match its in schemas: fix the edges, params or literals that feed it",
+			],
+		]);
+	});
+
+	const absent = (module: string) => ({
+		runtime: "ts",
+		module,
+		export: "absent",
+		codeHash: module === "maestro:stdlib" ? "maestro:stdlib@0.1.0" : HASH,
+	});
+
+	test.each([
+		["a node compose does not fold", "greet.ts"],
+		["a stdlib node", "maestro:stdlib"],
+	])("a function compose cannot load stops compose: %s", async (_, module) => {
+		const node = code("a", "absent", { pure: false, worker: absent(module) });
+		expect(await codes([node])).toEqual([
+			[
+				"SCOPE.export",
+				`Export 'absent' from '${module}', or fix the worker reference of 'a'`,
+			],
+		]);
+	});
+
+	test("a key function compose cannot load stops compose, though the map's items are unknown", async () => {
+		const [nodes = [], edges = []] = mapOver(
+			2,
+			{ key: absent("greet.ts") },
+			{ pure: false },
+		);
+		expect(await codes(nodes, edges)).toEqual([
+			[
+				"SCOPE.export",
+				"Export 'absent' from 'greet.ts', or fix the worker reference of 'm'",
+			],
+		]);
+	});
+
+	test("a loaded value that is not a function stops compose", async () => {
+		const result = await composed([code("a", "upper", { pure: false })], [], {
+			loadCode: async () => 42 as never,
+		});
+		expect(result.ok ? [] : result.diagnostics.map((d) => d.message)).toEqual([
+			"compose cannot load 'upper' from 'test.ts' for 'a': 'upper' in 'test.ts' is not a function",
+		]);
+	});
 
 	test("an assert on known inputs folds, and a false one stops compose", async () => {
 		const assert = (cond: boolean) => ({
@@ -437,7 +522,7 @@ describe("expansion", () => {
 		],
 	])(
 		"caps instances at %d, under an IR bound of 32, with 11 known",
-		async (instances, messages, loaded, bound) => {
+		async (instances, messages, called, bound) => {
 			const [nodes = [], edges = []] = mapOver(
 				3,
 				{ cardinality: { upTo: 10 } },
@@ -453,19 +538,25 @@ describe("expansion", () => {
 			const body = ["m/v", "m/w"].map((id) =>
 				code(id, "boom", { pure: false }),
 			);
-			const loads: string[] = [];
-			const load = loader(functions);
+			const calls = new Set<string>();
+			const spy =
+				(name: string): CodeFunction =>
+				(inputs, ctx) => {
+					calls.add(name);
+					return functions[name]?.(inputs, ctx) ?? {};
+				};
 			const result = await composed([...body, ...nodes], edges, {
 				caps: { instances },
-				loadCode: (ref: Parameters<typeof load>[0]) => {
-					loads.push(ref.export);
-					return load(ref);
-				},
+				loadCode: loader({
+					...functions,
+					lenses: spy("lenses"),
+					upper: spy("upper"),
+				}),
 			});
 			expect(result.ok ? [] : result.diagnostics.map((d) => d.message)).toEqual(
 				messages,
 			);
-			expect(loads).toEqual(loaded);
+			expect([...calls]).toEqual(called);
 			expect(result.ok ? result.plan.bounds.instances : undefined).toEqual(
 				bound,
 			);

@@ -65,3 +65,8 @@ Against the exit criteria, the conductor's recommendation:
 - **Wave review.** Keep. 11 of 11 accepted, four contracts no slice owned surfaced, at 16% of implementer spend.
 
 No step meets a drop criterion. Keeping, trimming or dropping each step is the owner's call.
+
+## Follow-up change
+
+The conductor findings and the known list landed as the wave 3 follow-up; its Loop table is in
+`docs/reports/wave3-followup/slice-report.md`. Its review raised owner call K79.

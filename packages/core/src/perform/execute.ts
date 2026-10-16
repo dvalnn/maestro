@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import type { AssertNode, CodeNode, Facts, HostNode } from "@maestro/ir";
 import type { Execution, HostContext, HostKind, Metrics } from "../host";
+import type { PortCheck } from "../ports";
+import { isOutputs, isRecord, messageOf } from "../shared";
 import type {
 	Inputs,
 	Invocation,
@@ -9,16 +11,14 @@ import type {
 	Worker,
 } from "../worker";
 import { type ConcertDirs, collectArtifacts } from "./artifacts";
-import type { PortCheck } from "./ports";
 import type { RecordStore, Settling } from "./record";
-import { isOutputs, isRecord, messageOf } from "./ts-worker";
 
 /** What executing a concert's leaf instances needs. */
 export type Kit = {
 	concert: string;
 	record: RecordStore;
 	dirs: ConcertDirs;
-	/** Each host's facts, by host name, frozen. */
+	/** Each host's facts, by host name. */
 	env: Readonly<Record<string, Facts>>;
 	kinds: (name: string) => HostKind | undefined;
 	/** By runtime name. */
@@ -70,7 +70,9 @@ function codeCall(
 	const invocation: Invocation = {
 		instance,
 		worker: node.worker,
+		in: node.in,
 		inputs,
+		pure: node.pure,
 		context: {
 			concert: kit.concert,
 			clock,

@@ -238,3 +238,6 @@ Classifier blocks: none.
   root. C: no caching for nodes with artifacts. Blocks S5 with K47, K48 and K51.
 - K53 to K78 (S6 brief, `.scratch/s6-config-cli/spec.md`, Open Qs): config layout, packs, params, CLI verbs and exit
   codes; each has options and a recommendation there. K70 builds on K51.
+- K79 (wave 3 follow-up review): compose folding runs a pure code node at pre-flight with no timer, so a foldable
+  function that never returns hangs compose whatever its `timeout`. A: fold honours the node's `timeout`, and a fold
+  past it is a compose error naming the node (recommended). B: fold ignores it, and the docs say so.

@@ -1,4 +1,5 @@
 import {
+	boundOf,
 	type Cardinality,
 	type Diagnostic,
 	formatExpansion,
@@ -7,9 +8,9 @@ import {
 	type HostNode,
 	type Ir,
 	type IrNode,
+	isGroup,
 } from "@maestro/ir";
 import type { Bounds, HostKind } from "../host";
-import { boundOf, isGroup } from "./common";
 import type { Expansion, PlanBounds } from "./index";
 
 /** The expansion of a group instance, by its expansion path. */

@@ -21,6 +21,19 @@ export function itemKey(item: unknown, index: number): string {
 	return raw.replace(NOT_KEY, "_");
 }
 
+/** The first key of `keys` that an earlier one equals, with both indexes, or `undefined` when all are distinct. */
+export function firstDuplicate(
+	keys: readonly string[],
+): { key: string; first: number; second: number } | undefined {
+	const seen = new Map<string, number>();
+	for (const [second, key] of keys.entries()) {
+		const first = seen.get(key);
+		if (first !== undefined) return { key, first, second };
+		seen.set(key, second);
+	}
+	return undefined;
+}
+
 /**
  * The expansion path of `keys`, outermost first: a `map` item's `itemKey`, or a `seq` or `repeat` iteration index.
  * @throws when a key holds a character outside `[A-Za-z0-9_.-]`.

@@ -1,4 +1,10 @@
-import type { Diagnostic, Ir, IrNode, WorkerRef } from "@maestro/ir";
+import {
+	type Diagnostic,
+	type Ir,
+	type IrNode,
+	TS_RUNTIME,
+	type WorkerRef,
+} from "@maestro/ir";
 import {
 	type BuildContext,
 	BuildError,
@@ -14,7 +20,7 @@ const refs = new Map<unknown, WorkerRef>(
 	Object.entries(workers).map(([name, fn]) => [
 		fn,
 		{
-			runtime: "ts",
+			runtime: TS_RUNTIME,
 			module: "workers.ts",
 			export: name,
 			codeHash: `sha256:${"0".repeat(64)}`,

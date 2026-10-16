@@ -1,5 +1,6 @@
 import type AjvCore from "ajv/dist/core";
 import irSchema from "../ir.schema.json";
+import { artifactRefSchema } from "./artifact-ref";
 import type { JsonSchema } from "./types";
 
 /** The annotation that names an artifact or host type on a subschema, as `<namespace>.<type>` (ADR 0007). */
@@ -12,6 +13,11 @@ export const CORE_TYPES = {
 	jsonFile: "core.json-file",
 	markdown: "core.markdown",
 } as const;
+
+/** The `x-maestro-type` names whose runtime value is an `ArtifactRef`: every core type (ADR 0007). */
+export const ARTIFACT_TYPES: ReadonlySet<string> = new Set(
+	Object.values(CORE_TYPES),
+);
 
 /** Registers `x-maestro-type` on `ajv` once, so a strict instance compiles schemas that carry it and rejects a bad name. */
 export function registerMaestroType<A extends AjvCore>(ajv: A): A {
@@ -124,6 +130,34 @@ const UNWALKED = [
 ];
 
 const MAPS = new Set(["properties", "patternProperties", "dependentSchemas"]);
+
+/**
+ * `schema` with each subschema an artifact type marks replaced by `artifactRefSchema`, the shape of the artifact's
+ * runtime value (ADR 0007). Descends every keyword that holds subschemas, `$defs` included.
+ */
+export function artifactsAsRefs(schema: JsonSchema): JsonSchema {
+	if (typeof schema === "boolean") return schema;
+	const type = schema[MAESTRO_TYPE];
+	if (typeof type === "string" && ARTIFACT_TYPES.has(type))
+		return artifactRefSchema;
+	const replaced: SchemaObject = { ...schema };
+	for (const keyword of [...WALKED, ...UNWALKED, "$defs"])
+		if (Object.hasOwn(schema, keyword))
+			replaced[keyword] = refsIn(keyword, schema[keyword]);
+	return replaced;
+}
+
+function refsIn(keyword: string, value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(artifactsAsRefs);
+	if (!isObject(value)) return value;
+	if (!MAPS.has(keyword) && keyword !== "$defs") return artifactsAsRefs(value);
+	return Object.fromEntries(
+		Object.entries(value).map(([key, sub]) => [
+			key,
+			artifactsAsRefs(sub as JsonSchema),
+		]),
+	);
+}
 
 /**
  * The JSON Pointer into `schema` of every `x-maestro-type` that `findMarked` cannot reach: under a keyword it does

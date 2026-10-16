@@ -1,13 +1,14 @@
 import {
+	IMPLICIT_OUT,
 	type IrEdge,
 	type IrNode,
 	type JsonSchema,
-	OUTCOMES,
 	type Outcome,
 	type Ports,
 	type Scope,
 	settledSchema,
 	type Tolerate,
+	TS_RUNTIME,
 	type WorkerRef,
 } from "@maestro/ir";
 import pkg from "../package.json";
@@ -210,8 +211,6 @@ export function info(node: string): NodeInfo {
 	return found;
 }
 
-const OUTCOME_SCHEMA = { enum: [...OUTCOMES] };
-
 export class RefImpl<T> implements Ref<T> {
 	constructor(
 		readonly source: Source,
@@ -279,9 +278,10 @@ export class ResultImpl implements Result {
 
 	constructor(readonly node: string) {
 		const { out } = info(node);
-		this.outcome = this.port("outcome", OUTCOME_SCHEMA) as RefImpl<Outcome>;
-		this.ok = this.port("ok", { type: "boolean" }) as RefImpl<boolean>;
-		this.reason = this.port("reason", { type: "string" }) as RefImpl<string>;
+		const { outcome, ok, reason } = IMPLICIT_OUT;
+		this.outcome = this.port("outcome", outcome) as RefImpl<Outcome>;
+		this.ok = this.port("ok", ok) as RefImpl<boolean>;
+		this.reason = this.port("reason", reason) as RefImpl<string>;
 		this.out = Object.fromEntries(
 			Object.entries(out).map(([port, schema]) => [
 				port,
@@ -521,7 +521,7 @@ export function stdlib(
 			fanin,
 			fields: {
 				worker: {
-					runtime: "ts",
+					runtime: TS_RUNTIME,
 					module: STDLIB_MODULE,
 					export: name,
 					codeHash: `${STDLIB_MODULE}@${pkg.version}`,

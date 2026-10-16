@@ -82,27 +82,28 @@ records, not an identity).
 Semantics each constructor must honor:
 
 - **`code`.** Never runs during build. Compose evaluates it only when it is pure and all its inputs are known (folding,
-  CORE-07). Its function is an exported `(inputs, ctx) => outputs`, sync or async, with inputs and outputs keyed by
-  port name (ADR 0008). It can return `reject(reason)` for a negative verdict, which becomes outcome `rejected`.
+  CORE-07). Its function is an exported `(inputs, ctx) => outputs`, sync or async, with inputs and outputs keyed by port
+  name (ADR 0008). It can return `reject(reason)` for a negative verdict, which becomes outcome `rejected`.
 - **`map`.** `items` may be a build-time list or a Ref resolved later. `max` is mandatory when the item count is not
   known at compose time, and compose reports "up to N". A list of unknown length comes from a code node and feeds a
   bounded `map` (D-16). Items are keyed: a primitive item by its value, any other item by index, or by an optional key
   function `(item) => key`. Give a key function whenever items are records or paths, so keys stay short and survive
   reordering. A key is sanitized to `[A-Za-z0-9_.-]`, anything else becoming `_`, and keys that sanitize alike are
   duplicates: a compose error for a build-time list (D-18, SDK-13), a failed `map` for a list known only at perform
-  time. Keys only name node instances for `ls` and lane refs. The cache is a content hash and does not depend on them. `onError` is required. With `"settle"` a non-ok member
-  becomes a `Settled` value and the group is `ok`. With `"propagate"` the group takes the worst member outcome, and
-  the first non-ok member cancels the rest (ADR 0006).
+  time. Keys only name node instances for `ls` and lane refs. The cache is a content hash and does not depend on them.
+  `onError` is required. With `"settle"` a non-ok member becomes a `Settled` value and the group is `ok`. With
+  `"propagate"` the group takes the worst member outcome, and the first non-ok member cancels the rest (ADR 0006).
 - **`seq`.** Covers escalation over an ordered list. `until` gets a member's result and returns a `Ref<Bool>`. Members
-  after a satisfied `until` are `skipped` and appear as such in the plan. The bound is `items.length` or `max`. A `seq`
-  over no items settles `skipped`.
-- **`repeat`.** The step receives the previous state and the iteration index. At least one iteration runs: `until`
-  gets each new state, never `init`, and returns a `Ref<Bool>`. Compose unrolls to `max` for bounds and rendering.
-  `max` must be known at compose time, from a literal or a param. State edges are tolerant of `rejected` only if
-  `tolerate` says so.
-- **`assert`.** Evaluated at build if the condition is a plain value, at compose time if it folds, and at perform time otherwise.
-  A failed build-time or compose-time assert is a diagnostic error. A perform-time assert yields a `rejected` or `failed`
-  node, whichever the assert declares.
+  after a satisfied `until` never start. The bound is `items.length` or `max`. A `seq` with `until` stays an
+  "up to N" region in the plan. A `seq` over no items settles `skipped`.
+- **`repeat`.** The step receives the previous state and the iteration index. At least one iteration runs: `until` gets
+  each new state, never `init`, and returns a `Ref<Bool>`. A `repeat` stays an "up to `max`" region in the plan, for
+  bounds and rendering. `max` must be known at compose time, from a literal or a param. State edges are tolerant of
+  `rejected` only if `tolerate` says so. A state port named `index` is a build error, since the step's index takes that
+  name.
+- **`assert`.** Evaluated at build if the condition is a plain value, at compose time if it folds, and at perform time
+  otherwise. A failed build-time or compose-time assert is a diagnostic error. A perform-time assert yields a `rejected`
+  or `failed` node, whichever the assert declares.
 - **`use`.** Creates a scope in the IR (architecture section 5). Params of the subcomposition may be set at the use
   site, which has the highest precedence (D-17).
 
@@ -170,9 +171,9 @@ A code node is the SDK's answer to "this needs real code".
   explicit `reads` and `writes`. Compose can check write scope and the cache can hash declared reads. Undeclared
   access is the author's error. The SDK detects what it can (for example through the context's clock and environment) and
   does not promise exhaustive detection (R-2).
-- **Context.** A typed, read-only context offers the concert id, the clock value and the instance's own scratch
-  directory, plus whatever the loaded hosts add (architecture section 6). A file the node writes there and returns at an
-  artifact output becomes an artifact (ADR 0007).
+- **Context.** A typed, read-only context offers the concert id, the clock value, the instance's own scratch
+  directory and `log(line)`, which records a line on the instance, plus whatever the loaded hosts add (architecture
+  section 6). A file the node writes there and returns at an artifact output becomes an artifact (ADR 0007).
 - **Errors.** A thrown error settles the node as `failed`. `reject(reason)` settles it as `rejected`.
 - **Runtime.** A worker reference names the runtime. The initial runtime is `ts`, in-process (CORE-14).
 
@@ -258,10 +259,11 @@ the cache without consulting the composition's source.
 Specified for later runtimes and out-of-process workers, implemented in-process for `ts` in the initial port:
 
 - **Handshake.** Runtime name and version, supported IR version.
-- **Invoke.** Node id, expansion path, input values, artifact references, context. Reply: outputs and an outcome, or an
-  error.
+- **Invoke.** Node id, expansion path, input values and their port schemas, whether the node is pure, artifact
+  references, context. Reply: outputs and an outcome, or an error.
 - **Cancel and timeout.** The core can cancel an invocation. A worker must stop work and reply promptly.
-- **Logs.** A worker can emit log lines tagged with the node instance, stored in the record.
+- **Logs.** A worker can emit log lines tagged with the node instance, stored in the record. A code function writes
+  one with `ctx.log(line)`.
 - **Isolation.** A worker process is operator-trusted (NFR-05). It is not sandboxed by the core.
 
 ### 13.3 Diagnostics catalogue (CORE-17)
@@ -271,7 +273,8 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 - `IR` schema violation, unknown version.
 - `REF` a Ref used where a value is required, a Ref that escaped its scope.
 - `TYPE` edge schema mismatch, template variable missing or mistyped, a build that returns no node.
-- `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count.
+- `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count, a
+  code node `timeout` that is not a whole number of milliseconds within the timer range (`BOUND.timeout`).
 - `CFG` unclaimed key, schema violation, required key missing.
 - `HOST` anything a host `validate` hook reports (for example a lane joined twice).
 - `PURE` an undeclared ambient read the runtime detected, or `reads` and `writes` contradictions.
@@ -396,7 +399,7 @@ const synthesis = agent("plan", {
     when: good.out.nonEmpty,
     prompt: tpl("synthesis.md", { good: good.out.text }),
 });
-return firstOk([synthesis.out.text, firstOk(plans).out.value.pick("text")]);
+return firstOk([synthesis.out.text, firstOk(plans).out.value.pick("result.text")]);
 ```
 
 ## 15. Coverage of the predecessor's workflows

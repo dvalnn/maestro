@@ -3,9 +3,11 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	type AssertNode,
+	boundOf,
 	type CodeContext,
 	type CodeNode,
 	type Diagnostic,
+	firstDuplicate,
 	formatExpansion,
 	formatInstance,
 	type GraphIndex,
@@ -13,28 +15,26 @@ import {
 	type Ir,
 	type IrEdge,
 	type IrNode,
+	isGroup,
 	itemKey,
 	MAESTRO_TYPE,
 	type MapNode,
+	outputValue,
 	type Settled,
+	tolerates,
 	type WorkerRef,
 } from "@maestro/ir";
+import { type PortCheck, type Validator, violations } from "../ports";
+import { type Loaded, loadFunction, messageOf } from "../shared";
 import {
-	type CodeFunction,
 	type Inputs,
+	invokeCode,
+	type LoadCode,
 	type Outputs,
 	pureContext,
+	type Settlement,
 } from "../worker";
 import type { ExpansionOf } from "./bounds";
-import {
-	boundOf,
-	isGroup,
-	type Known,
-	messageOf,
-	outputValue,
-	type Validator,
-	violations,
-} from "./common";
 import type { ComposeInput, Expansion, Plan } from "./index";
 
 /**
@@ -45,10 +45,16 @@ type Expanded = { keys: string[]; items: unknown[]; upTo?: number };
 
 type Folded = Settled<Outputs>;
 
+/** A port value compose knows. */
+type Known = { value: unknown };
+
 export type Setup = {
 	graph: GraphIndex;
 	input: ComposeInput;
 	ajv: Validator;
+	check: PortCheck;
+	/** Every function the IR names, by `refKey`. */
+	functions: ReadonlyMap<string, Loaded>;
 	/** Each host's `environment()`, by host name. */
 	env: CodeContext["env"];
 	/** The cap errors of the bounds so far, checked after each group instance. Fold stops at the first. */
@@ -58,7 +64,6 @@ export type Setup = {
 type Folding = Setup & {
 	expansion: Map<string, Map<string, Expanded>>;
 	folded: Map<string, Map<string, Folded>>;
-	loaded: Map<string, Promise<CodeFunction>>;
 	diagnostics: Diagnostic[];
 };
 
@@ -131,7 +136,8 @@ function valueAt(
 	if (depth >= 0 && isGroup(group))
 		return innerValue(s, group, port, keys.slice(0, depth + 1));
 	const f = foldedAt(s, from.node, keysOf(s, from.node, keys));
-	return f && outputValue(f, port);
+	const value = f && outputValue(f, f.value, port);
+	return value === undefined ? undefined : { value };
 }
 
 /** The value of inner `port` of `group` in the iteration `keys` ends with. */
@@ -182,7 +188,7 @@ function inputsOf(
 }
 
 /** Whether `node` still starts after the folded `outcome` of the source of `e` (CORE-04, ADR 0006). */
-function tolerates(
+function admits(
 	s: Folding,
 	node: IrNode,
 	e: IrEdge,
@@ -193,12 +199,7 @@ function tolerates(
 		outcome === "rejected" &&
 		s.graph
 			.edgesInto(node.id)
-			.some(
-				(c) =>
-					c.kind === "control" &&
-					c.from.node === e.from.node &&
-					c.tolerate === "rejected",
-			)
+			.some((c) => c.from.node === e.from.node && tolerates(node, c))
 	);
 }
 
@@ -208,7 +209,7 @@ function blocked(s: Folding, node: IrNode, keys: string[]): string | undefined {
 	for (const e of s.graph.edgesInto(node.id)) {
 		if (groups.includes(e.from.node)) continue;
 		const f = foldedAt(s, e.from.node, keysOf(s, e.from.node, keys));
-		if (f && f.outcome !== "ok" && !tolerates(s, node, e, f.outcome))
+		if (f && f.outcome !== "ok" && !admits(s, node, e, f.outcome))
 			return `'${e.from.node}' is ${f.outcome}`;
 	}
 	return undefined;
@@ -247,40 +248,59 @@ const error = (
 	hint: string,
 ): Diagnostic => ({ code, severity: "error", node, message, hint });
 
-function threw(
+function failed(
 	what: string,
 	node: string,
 	ref: WorkerRef,
-	e: unknown,
+	reason: string,
 ): Diagnostic {
 	return error(
 		"PURE.fold",
 		node,
-		`${what} threw while compose folded it: ${messageOf(e)}`,
-		`Fix '${ref.export}' in '${ref.module}', which throws on these inputs`,
+		`${what} failed while compose folded it: ${reason}`,
+		`Fix '${ref.export}' in '${ref.module}', which fails on these inputs`,
 	);
 }
 
-/** The function `ref` names, loaded once per compose. */
-async function load(
-	s: Folding,
-	node: string,
-	ref: WorkerRef,
-): Promise<CodeFunction | Diagnostic> {
-	const key = JSON.stringify([ref.runtime, ref.module, ref.export]);
-	const loading =
-		s.loaded.get(key) ?? Promise.resolve().then(() => s.input.loadCode(ref));
-	s.loaded.set(key, loading);
-	try {
-		return await loading;
-	} catch (e) {
-		return error(
-			"SCOPE.export",
-			node,
-			`compose cannot load '${ref.export}' from '${ref.module}' for '${node}': ${messageOf(e)}`,
-			`Export '${ref.export}' from '${ref.module}', or fix the worker reference of '${node}'`,
-		);
+/** The key `functions` holds `ref`'s function under. */
+const refKey = (ref: WorkerRef) =>
+	JSON.stringify([ref.runtime, ref.module, ref.export]);
+
+/** Every worker reference of `ir`: each code node's function and each map's key function, with the node naming it. */
+const refsOf = (ir: Ir) =>
+	ir.nodes.flatMap((n) => {
+		if (n.kind === "code") return [{ node: n.id, ref: n.worker }];
+		if (n.kind === "map" && n.key) return [{ node: n.id, ref: n.key }];
+		return [];
+	});
+
+/** Loads every function `ir` names, each once, or a `SCOPE.export` error for each one that does not load (ADR 0008). */
+export async function loadFunctions(ir: Ir, loadCode: LoadCode) {
+	const functions = new Map<string, Loaded>();
+	const diagnostics: Diagnostic[] = [];
+	for (const { node, ref } of refsOf(ir)) {
+		if (functions.has(refKey(ref))) continue;
+		try {
+			functions.set(refKey(ref), await loadFunction(loadCode, ref));
+		} catch (e) {
+			diagnostics.push(
+				error(
+					"SCOPE.export",
+					node,
+					`compose cannot load '${ref.export}' from '${ref.module}' for '${node}': ${messageOf(e)}`,
+					`Export '${ref.export}' from '${ref.module}', or fix the worker reference of '${node}'`,
+				),
+			);
+		}
 	}
+	return { functions, diagnostics };
+}
+
+/** The function `ref` names, which `loadFunctions` loaded. */
+function functionOf(s: Folding, ref: WorkerRef): Loaded {
+	const fn = s.functions.get(refKey(ref));
+	if (!fn) throw new Error(`'${ref.export}' in '${ref.module}' was not loaded`);
+	return fn;
 }
 
 /** The fields a folded node may not use, in the order a hint names them. */
@@ -323,18 +343,36 @@ const noPath = (used: Set<string>) => (): never => {
 	throw new Error("ctx.path is unavailable while compose folds a node");
 };
 
+/** A folded node's settlement as compose folds it. A failure is an error, as are outputs off the `out` schemas. */
 function settled(
 	s: Folding,
 	node: CodeNode,
 	keys: string[],
-	result: unknown,
+	settlement: Settlement,
+	used: ReadonlySet<string>,
 ): Folded | Diagnostic {
-	const outputs = (
-		typeof result === "object" && result !== null ? result : {}
-	) as Record<string, unknown>;
-	if (outputs.outcome === "rejected")
-		return { outcome: "rejected", reason: String(outputs.reason) };
 	const name = instanceName(s, node.id, keys);
+	if (settlement.outcome === "ok")
+		return checked(s, node, name, settlement.outputs);
+	if (settlement.outcome === "rejected")
+		return { outcome: "rejected", reason: settlement.reason };
+	const read = UNREADABLE.find((f) => used.has(f));
+	if (read === undefined)
+		return failed(`node '${name}'`, node.id, node.worker, settlement.reason);
+	return error(
+		"PURE.ambient",
+		node.id,
+		`node '${name}' used ctx.${read} while compose folded it`,
+		`Mark node '${node.id}' pure: false to use ctx.${read}`,
+	);
+}
+
+function checked(
+	s: Folding,
+	node: CodeNode,
+	name: string,
+	outputs: Outputs,
+): Folded | Diagnostic {
 	const messages = Object.entries(node.out ?? {}).flatMap(([port, schema]) =>
 		violations(
 			s.ajv,
@@ -344,7 +382,7 @@ function settled(
 				`output '${[port, ...segments].join(".")}' of node '${name}'`,
 		),
 	);
-	if (!messages.length) return { outcome: "ok", value: outputs as Outputs };
+	if (!messages.length) return { outcome: "ok", value: outputs };
 	return error(
 		"TYPE.output",
 		node.id,
@@ -353,15 +391,25 @@ function settled(
 	);
 }
 
-/** Calls a code node's function as a worker would, with a pure context whose `path` throws. */
+/**
+ * Settles a code node through `invokeCode`, as a worker would, with a pure context whose `path` throws. Its log lines
+ * go nowhere, as compose keeps no record. Inputs off its `in` schemas are a `PURE.fold` error whose hint points at what
+ * feeds the node.
+ */
 async function invoke(
 	s: Folding,
 	node: CodeNode,
 	keys: string[],
 	inputs: Inputs,
 ): Promise<Folded | Diagnostic> {
-	const fn = await load(s, node.id, node.worker);
-	if (typeof fn !== "function") return fn;
+	const mismatch = s.check(node.in, inputs, "input");
+	if (mismatch)
+		return error(
+			"PURE.fold",
+			node.id,
+			`node '${instanceName(s, node.id, keys)}' failed while compose folded it: ${mismatch}`,
+			`Feed '${node.id}' values that match its in schemas: fix the edges, params or literals that feed it`,
+		);
 	const used = new Set<string>();
 	const scratch = lazyScratch(s.input.scratch);
 	const context = pureContext({
@@ -370,25 +418,15 @@ async function invoke(
 		path: noPath(used),
 		scratch: "",
 		env: s.env,
+		log: () => {},
 	});
 	try {
-		return settled(
-			s,
-			node,
-			keys,
-			await fn(inputs, watched(context, used, scratch)),
+		const settlement = await invokeCode(
+			functionOf(s, node.worker),
+			{ in: node.in, inputs, context: watched(context, used, scratch) },
+			s.check,
 		);
-	} catch (e) {
-		const name = instanceName(s, node.id, keys);
-		const read = UNREADABLE.find((f) => used.has(f));
-		if (read === undefined)
-			return threw(`node '${name}'`, node.id, node.worker, e);
-		return error(
-			"PURE.ambient",
-			node.id,
-			`node '${name}' used ctx.${read} while compose folded it`,
-			`Mark node '${node.id}' pure: false to use ctx.${read}`,
-		);
+		return settled(s, node, keys, settlement, used);
 	} finally {
 		await scratch.remove();
 	}
@@ -440,18 +478,6 @@ async function settle(s: Folding, node: IrNode, keys: string[]) {
 	return true;
 }
 
-function duplicate(
-	keys: readonly string[],
-): [string, number, number] | undefined {
-	const seen = new Map<string, number>();
-	for (const [i, key] of keys.entries()) {
-		const first = seen.get(key);
-		if (first !== undefined) return [key, first, i];
-		seen.set(key, i);
-	}
-	return undefined;
-}
-
 /** A map's item keys (D-18), through its key function when it has one, or a diagnostic. */
 async function mapKeys(
 	s: Folding,
@@ -461,21 +487,23 @@ async function mapKeys(
 ): Promise<string[] | Diagnostic> {
 	let keys = items.map(itemKey);
 	if (group.key) {
-		const fn = await load(s, group.id, group.key);
-		if (typeof fn !== "function") return fn;
-		// A key function is `(item) => key` (ADR 0008), which `LoadCode`'s type does not describe.
-		const key = fn as unknown as (item: unknown) => unknown;
+		const key = functionOf(s, group.key);
 		try {
 			keys = await Promise.all(
 				items.map(async (item, i) => itemKey(await key(item), i)),
 			);
 		} catch (e) {
-			return threw(`the key function of map '${name}'`, group.id, group.key, e);
+			return failed(
+				`the key function of map '${name}'`,
+				group.id,
+				group.key,
+				messageOf(e),
+			);
 		}
 	}
-	const dup = duplicate(keys);
+	const dup = firstDuplicate(keys);
 	if (!dup) return keys;
-	const [key, first, second] = dup;
+	const { key, first, second } = dup;
 	return error(
 		"SCOPE.key",
 		group.id,
@@ -592,7 +620,6 @@ export async function fold(
 		...setup,
 		expansion: new Map(),
 		folded: new Map(),
-		loaded: new Map(),
 		diagnostics: [],
 	};
 	await walk(s, ir);

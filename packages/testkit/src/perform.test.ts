@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { compose } from "@maestro/core/compose";
 import type { Execution, Host, HostInstance } from "@maestro/core/host";
 import {
 	type InstanceRecord,
@@ -25,10 +26,14 @@ import {
 	parseIr,
 	reject,
 	type Settled,
+	TS_RUNTIME,
 	type WorkerRef,
 } from "@maestro/ir";
+import * as stdlib from "@maestro/sdk/stdlib";
 import { partKey, summarize } from "../../ir/fixtures/guards";
 import { isDone } from "../../ir/fixtures/refine";
+import { planPanelIr } from "../../sdk/src/fixtures/examples";
+import * as workers from "../../sdk/src/fixtures/workers";
 import { FAKE_TASK, type FakeScript, fakeHost } from "./index";
 
 const FIXTURES = join(import.meta.dir, "../../ir/fixtures");
@@ -73,6 +78,7 @@ async function play(
 		script?: FakeScript;
 		hosts?: Host[];
 		code?: Readonly<Record<string, Fn>>;
+		loadCode?: LoadCode;
 		concurrency?: number;
 		record?: RecordStore;
 		dir?: string;
@@ -85,7 +91,7 @@ async function play(
 	const performOptions: PerformOptions = {
 		ir,
 		hosts: options.hosts ?? [fakeHost(options.script)],
-		loadCode: loader(options.code ?? {}),
+		loadCode: options.loadCode ?? loader(options.code ?? {}),
 		record,
 		dir,
 		concurrency: options.concurrency ?? 4,
@@ -122,7 +128,7 @@ const graph = (
 	});
 
 const worker = (name: string): WorkerRef => ({
-	runtime: "ts",
+	runtime: TS_RUNTIME,
 	module: "fixture.ts",
 	export: name,
 	codeHash: `sha256:${"0".repeat(64)}`,
@@ -202,12 +208,10 @@ test("a map fans out, a reducer fans in over its settled members, and a repeat c
 			},
 			code: {
 				isDone,
-				firstOk: (ports: { drafts: Settled<MemberValue>[] }) => {
-					drafts.push(...ports.drafts);
-					const first = ports.drafts.find((d) => d.outcome === "ok");
-					return first?.outcome === "ok"
-						? { text: first.value.result.text }
-						: reject("no draft");
+				pick: stdlib.pick,
+				firstOk: (ports: { results: Settled<MemberValue>[] }) => {
+					drafts.push(...ports.results);
+					return stdlib.firstOk(ports);
 				},
 			},
 		},
@@ -236,6 +240,10 @@ test("a repeat that tolerates rejected carries a rejected iteration into one tha
 		{
 			script: {
 				steps: {
+					"topics/draft": (_, inputs) => ({
+						outcome: "ok",
+						outputs: { text: `${inputs.prompt}` },
+					}),
 					"refine/loop/step": [
 						{
 							outcome: "rejected",
@@ -246,10 +254,7 @@ test("a repeat that tolerates rejected carries a rejected iteration into one tha
 					],
 				},
 			},
-			code: {
-				isDone,
-				firstOk: () => ({ text: "alpha" }),
-			},
+			code: { isDone, firstOk: stdlib.firstOk, pick: stdlib.pick },
 		},
 	);
 	expect(result).toMatchObject({
@@ -830,6 +835,7 @@ test("a code node sees a fixed clock, its scratch directory and frozen host fact
 						scratch: existsSync(ctx.scratch),
 						env: ctx.env,
 					});
+					ctx.log("looked");
 					return {};
 				},
 			},
@@ -849,6 +855,151 @@ test("a code node sees a fixed clock, its scratch directory and frozen host fact
 			"a pure node cannot read ctx.clock. Mark the node pure: false to read it",
 	});
 	expect(instances.meddle?.status).toBe("failed");
+	const logOf = (node: string) =>
+		record
+			.events(concert)
+			.flatMap((e) => (e.node === node && e.type === "log" ? [e.line] : []));
+	expect(logOf("look")).toEqual(["looked"]);
+	expect(logOf("meddle")[0]).toStartWith("TypeError: ");
+});
+
+test("a code node past its timeout settles failed naming the node and the limit; one within it or without one settles ok", async () => {
+	const { record, concert } = await play(
+		graph(
+			[
+				{ ...code("slow", "hang"), timeout: 20 },
+				{ ...code("quick", "late"), timeout: 1000 },
+				code("unbounded", "late"),
+			],
+			[],
+			"slow",
+		),
+		{
+			code: {
+				hang: () => new Promise(() => {}),
+				late: () => Bun.sleep(40).then(() => ({})),
+			},
+		},
+	);
+	const instances = byInstance(record.instances(concert));
+	expect(instances.slow).toMatchObject({
+		status: "failed",
+		reason: "node 'slow' ran past its timeout of 20 ms",
+	});
+	expect(instances.quick?.status).toBe("ok");
+	expect(instances.unbounded?.status).toBe("ok");
+});
+
+const MISMATCHED = { in: { n: { type: "integer" } }, literals: { n: "one" } };
+
+test("a line logged after the instance settled is dropped, never thrown", async () => {
+	const { record, concert } = await play(
+		graph(
+			[{ ...code("abandoned", "hang"), timeout: 10 }, code("returned", "done")],
+			[],
+			"returned",
+		),
+		{
+			code: {
+				hang: (_: never, ctx: CodeContext) => {
+					setTimeout(() => ctx.log("late"), 30);
+					return new Promise(() => {});
+				},
+				done: (_: never, ctx: CodeContext) => {
+					setTimeout(() => ctx.log("late"), 30);
+					return {};
+				},
+			},
+		},
+	);
+	await Bun.sleep(60);
+	expect(record.events(concert).filter((e) => e.type === "log")).toEqual([]);
+});
+
+test.each<[string, Fn, Pick<IrNode, "in" | "literals">?]>([
+	["returns nothing", () => undefined],
+	["returns extra", () => ({ text: "a", reason: "r" })],
+	[
+		"returns rejected",
+		() => ({ outcome: "rejected", reason: "no", text: "a" }),
+	],
+	["throws", () => Promise.reject(new Error("broke"))],
+	["takes a mismatched input", () => ({ text: "a" }), MISMATCHED],
+])(
+	"a function that %s settles alike when folded and when performed",
+	async (_, fn, ports = {}) => {
+		const ir = graph(
+			[code("a", "fn", { ...ports, out: { text: STRING } }, true)],
+			[],
+			"a",
+		);
+		const loadCode = loader({ fn });
+		const composed = await compose({
+			ir,
+			params: {},
+			config: {},
+			core: {},
+			hosts: [fakeHost()],
+			loadCode,
+			caps: {},
+			scratch: tmpdir(),
+		});
+		const { result } = await play(ir, { code: { fn } });
+		expect(result).toMatchObject({ node: "a", outcome: "failed" });
+		const reason = result.outcome === "failed" ? result.reason : "";
+		expect(composed.ok ? [] : composed.diagnostics).toEqual([
+			expect.objectContaining({
+				code: "PURE.fold",
+				message: `node 'a' failed while compose folded it: ${reason}`,
+			}),
+		]);
+	},
+);
+
+test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", async () => {
+	const modules: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
+		"maestro:stdlib": stdlib,
+		"workers.ts": workers,
+	};
+	const loadCode: LoadCode = async (ref) =>
+		modules[ref.module]?.[ref.export] as CodeFunction;
+	const ir = checked(JSON.parse(JSON.stringify(planPanelIr())));
+	const script: FakeScript = {
+		steps: {
+			scout: [{ outcome: "ok", outputs: { text: "scouted" } }],
+			"map/plan": (_, inputs) =>
+				inputs.prompt === "risk"
+					? { outcome: "rejected", reason: "too risky" }
+					: { outcome: "ok", outputs: { text: `${inputs.prompt} plan` } },
+			synthesis: [{ outcome: "rejected", reason: "unclear" }],
+		},
+	};
+	const composed = await compose({
+		ir,
+		params: ir.params.examples[0] ?? {},
+		config: {},
+		core: {},
+		hosts: [fakeHost(script)],
+		loadCode,
+		caps: {},
+		scratch: tmpdir(),
+	});
+	expect(
+		composed.ok ? composed.plan.diagnostics : composed.diagnostics,
+	).toEqual([]);
+	const { result, record, concert } = await play(ir, {
+		script,
+		loadCode,
+	});
+	expect(result).toEqual({
+		node: "answer",
+		expansion: "",
+		outcome: "ok",
+		outputs: { value: "cost plan" },
+	});
+	expect(
+		byInstance(record.instances(concert)).firstOk_result_text,
+	).toMatchObject({ status: "ok", outputs: { value: "cost plan" } });
 });
 
 test("a concert that cannot start settles failed with the reason", async () => {
@@ -955,6 +1106,25 @@ test("inputs, code outputs and host returns are checked, and a runtime is looked
 		status: "failed",
 		reason: "no worker serves runtime 'constructor'. Use one of: ts",
 	});
+});
+
+test("perform checks ports without defaults, so a default under anyOf compiles", async () => {
+	const v = {
+		type: "object",
+		anyOf: [
+			{ properties: { a: { type: "integer", default: 1 } } },
+			{ required: ["b"] },
+		],
+	};
+	const { result } = await play(
+		graph(
+			[code("a", "seen", { in: { v }, literals: { v: { b: 2 } }, out: { v } })],
+			[],
+			"a",
+		),
+		{ code: { seen: (inputs: { v: unknown }) => ({ v: inputs.v }) } },
+	);
+	expect(result).toMatchObject({ outcome: "ok", outputs: { v: { b: 2 } } });
 });
 
 test("a written file is moved into the artifact area, hashed, and its scratch directory deleted", async () => {

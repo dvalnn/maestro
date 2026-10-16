@@ -59,6 +59,8 @@ export type CodeNode = NodeBase & {
 	reads?: string[];
 	writes?: string[];
 	fanin?: boolean;
+	/** Milliseconds the node may run before it settles `failed`. None when absent. */
+	timeout?: number;
 };
 
 export type AssertNode = NodeBase & {

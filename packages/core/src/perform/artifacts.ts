@@ -10,18 +10,14 @@ import {
 } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
 import {
+	ARTIFACT_TYPES,
 	type ArtifactRef,
 	CORE_TYPES,
 	findMarked,
 	type Ports,
 } from "@maestro/ir";
+import { isRecord } from "../shared";
 import type { NodeInstance, Outputs } from "../worker";
-import { isRecord } from "./ts-worker";
-
-/** The `x-maestro-type` names whose runtime value is an `ArtifactRef` (ADR 0007). */
-export const ARTIFACT_TYPES: ReadonlySet<string> = new Set(
-	Object.values(CORE_TYPES),
-);
 
 /** A concert's artifact area and the directory its instances' scratch directories go in, both absolute. */
 export type ConcertDirs = { artifacts: string; scratch: string };

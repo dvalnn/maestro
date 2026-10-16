@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
-import { type GraphIndex, type Ir, indexGraph, parseIr } from "./index";
+import {
+	type GraphIndex,
+	type Ir,
+	indexGraph,
+	outputValue,
+	parseIr,
+} from "./index";
 
 const fixturesDir = `${import.meta.dir}/../fixtures`;
 const fixtureFiles = readdirSync(fixturesDir).filter((f) =>
@@ -90,6 +96,7 @@ test("edges into and out of a node, every kind included", async () => {
 	expect(index.edgesFrom("escalate").map((e) => e.to.node)).toEqual([
 		"escalate/try",
 		"gate",
+		"gate",
 		"summary",
 	]);
 });
@@ -103,4 +110,15 @@ test("an unknown id resolves to nothing", async () => {
 	expect(index.body("ghost")).toEqual([]);
 	expect(index.edgesInto("ghost")).toEqual([]);
 	expect(index.edgesFrom("ghost")).toEqual([]);
+});
+
+test.each<[{ outcome: "ok" | "rejected"; reason?: string }, string, unknown]>([
+	[{ outcome: "ok" }, "outcome", "ok"],
+	[{ outcome: "ok" }, "ok", true],
+	[{ outcome: "ok", reason: "stale" }, "reason", undefined],
+	[{ outcome: "ok" }, "text", "a"],
+	[{ outcome: "rejected", reason: "no" }, "ok", false],
+	[{ outcome: "rejected", reason: "no" }, "reason", "no"],
+])("outputValue of %j at '%s' is %j", (settled, port, value) => {
+	expect(outputValue(settled, { text: "a" }, port)).toEqual(value);
 });

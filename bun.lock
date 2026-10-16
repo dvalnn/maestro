@@ -37,6 +37,7 @@
       "name": "@maestro/testkit",
       "dependencies": {
         "@maestro/core": "workspace:*",
+        "@maestro/sdk": "workspace:*",
       },
       "devDependencies": {
         "@maestro/ir": "workspace:*",

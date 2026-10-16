@@ -65,7 +65,7 @@ describe("text forms", () => {
 				await planOf(await golden("fanout-fanin-loop.json"), { hosts: [host] }),
 			),
 		).toBe(
-			"fanout-fanin-loop: up to 10 node instances, up to 5 calls, 0 folded, 1 warning",
+			"fanout-fanin-loop: up to 11 node instances, up to 5 calls, 0 folded, 1 warning",
 		);
 	});
 

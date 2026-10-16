@@ -4,7 +4,7 @@
 		"id": "fanout-fanin-loop",
 		"version": "0.1.0",
 		"pack": "fixtures",
-		"doc": "Draft one text per topic in parallel, keep the first good draft, then refine it until done, at most twice."
+		"doc": "Draft one text per topic in parallel, keep the first good draft and pick its text, then refine it until done, at most twice."
 	},
 	"emitter": { "name": "hand", "version": "1" },
 	"params": {
@@ -81,7 +81,7 @@
 			"id": "pick",
 			"kind": "code",
 			"in": {
-				"drafts": {
+				"results": {
 					"type": "array",
 					"items": {
 						"type": "object",
@@ -113,7 +113,17 @@
 					}
 				}
 			},
-			"out": { "text": { "type": "string" } },
+			"out": {
+				"value": {
+					"type": "object",
+					"properties": {
+						"result": {
+							"type": "object",
+							"properties": { "text": { "type": "string" } }
+						}
+					}
+				}
+			},
 			"worker": {
 				"runtime": "ts",
 				"module": "maestro:stdlib",
@@ -155,6 +165,31 @@
 				"codeHash": "sha256:a07519256fd37fd32ba1b5f04a3d33167fa96eb1f4369cbb8ce19fe6fdb29e4c"
 			},
 			"pure": true
+		},
+		{
+			"id": "text",
+			"kind": "code",
+			"in": {
+				"value": {
+					"type": "object",
+					"properties": {
+						"result": {
+							"type": "object",
+							"properties": { "text": { "type": "string" } }
+						}
+					}
+				},
+				"path": { "type": "string" }
+			},
+			"literals": { "path": "result.text" },
+			"out": { "value": { "type": "string" } },
+			"worker": {
+				"runtime": "ts",
+				"module": "maestro:stdlib",
+				"export": "pick",
+				"codeHash": "maestro:stdlib@0.0.0"
+			},
+			"pure": true
 		}
 	],
 	"edges": [
@@ -166,11 +201,11 @@
 		{
 			"kind": "collect",
 			"from": { "node": "topics", "port": "results" },
-			"to": { "node": "pick", "port": "drafts" }
+			"to": { "node": "pick", "port": "results" }
 		},
 		{
 			"kind": "data",
-			"from": { "node": "pick", "port": "text" },
+			"from": { "node": "text", "port": "value" },
 			"to": { "node": "refine/loop", "port": "text" }
 		},
 		{
@@ -182,6 +217,11 @@
 			"kind": "data",
 			"from": { "node": "refine/loop/step", "port": "text" },
 			"to": { "node": "refine/loop/done", "port": "text" }
+		},
+		{
+			"kind": "data",
+			"from": { "node": "pick", "port": "value" },
+			"to": { "node": "text", "port": "value" }
 		}
 	],
 	"result": { "node": "refine/loop" }

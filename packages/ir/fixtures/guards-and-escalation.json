@@ -31,7 +31,7 @@
 				"runtime": "ts",
 				"module": "guards.ts",
 				"export": "plan",
-				"codeHash": "sha256:b51b0837a6c64659a9ccfb93f09915c4157b1ae03d5d02cd84ad85d7c11b1d3f"
+				"codeHash": "sha256:abf3433dcec85d2bdff49a41652ab84527da1e22e8ef78b7deda4f0a19a3decc"
 			},
 			"pure": false,
 			"reads": ["inputs/"]
@@ -45,7 +45,7 @@
 				"runtime": "ts",
 				"module": "guards.ts",
 				"export": "partKey",
-				"codeHash": "sha256:b51b0837a6c64659a9ccfb93f09915c4157b1ae03d5d02cd84ad85d7c11b1d3f"
+				"codeHash": "sha256:abf3433dcec85d2bdff49a41652ab84527da1e22e8ef78b7deda4f0a19a3decc"
 			},
 			"in": { "items": { "type": "array", "items": { "type": "string" } } },
 			"inner": { "item": { "type": "string" } },
@@ -136,7 +136,7 @@
 				"runtime": "ts",
 				"module": "guards.ts",
 				"export": "merge",
-				"codeHash": "sha256:b51b0837a6c64659a9ccfb93f09915c4157b1ae03d5d02cd84ad85d7c11b1d3f"
+				"codeHash": "sha256:abf3433dcec85d2bdff49a41652ab84527da1e22e8ef78b7deda4f0a19a3decc"
 			},
 			"pure": true,
 			"writes": ["merged/"]
@@ -173,7 +173,7 @@
 				"runtime": "ts",
 				"module": "guards.ts",
 				"export": "summarize",
-				"codeHash": "sha256:b51b0837a6c64659a9ccfb93f09915c4157b1ae03d5d02cd84ad85d7c11b1d3f"
+				"codeHash": "sha256:abf3433dcec85d2bdff49a41652ab84527da1e22e8ef78b7deda4f0a19a3decc"
 			},
 			"pure": true
 		}
@@ -213,6 +213,12 @@
 			"kind": "data",
 			"from": { "node": "escalate", "port": "ok" },
 			"to": { "node": "gate", "port": "cond" }
+		},
+		{
+			"kind": "control",
+			"from": { "node": "escalate" },
+			"to": { "node": "gate" },
+			"tolerate": "rejected"
 		},
 		{
 			"kind": "data",

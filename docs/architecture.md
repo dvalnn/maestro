@@ -235,16 +235,17 @@ claimed by an installed but unused registrant is ignored.
 - A **code node** is the author's function, with typed inputs, typed outputs, declared reads and writes, and a purity
   flag. It runs in a **worker** of its declared runtime.
 - v1 provides an **in-process TypeScript worker**. The **worker protocol** is specified so other runtimes and
-  out-of-process workers can follow: a node invocation carries node id, expansion path, input values, artifact
-  references and context. The reply carries outputs and an outcome (`ok` or `rejected` with reason), or an error.
+  out-of-process workers can follow: a node invocation carries node id, expansion path, input values and their port
+  schemas (`in`), whether the node is pure (`pure`), artifact references and context. The reply carries outputs and an
+  outcome (`ok` or `rejected` with reason), or an error.
   Workers support cancellation and timeouts. The in-process worker cannot stop a running function: a cancelled or
   timed-out invocation settles at once and its function is abandoned. Long work belongs in a host.
 - **Purity.** A pure node reads only its inputs and declared artifacts, writes only declared outputs, and is cached.
   Reading ambient state (clock, environment, files not declared) marks the node impure, and it is never cached. An
   impure node reads the clock and the concert id from its context. A pure node that reads them fails, so a cached or
   folded value never freezes them.
-- **Compose-time folding.** Pure code nodes whose inputs are all known at compose time are evaluated there, which lets the
-  plan expand groups exactly.
+- **Compose-time folding.** Pure code nodes whose inputs are all known at compose time are evaluated there, which lets
+  the plan expand groups exactly.
 
 ## 10. Record and events
 

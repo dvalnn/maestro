@@ -9,11 +9,12 @@ import {
 	type Settled,
 } from "@maestro/ir";
 import { type Bounds, type Host, kindLookup } from "../host";
+import { portCheck, validator } from "../ports";
+import { messageOf } from "../shared";
 import type { LoadCode, Outputs } from "../worker";
 import { boundsOf, capErrors, type ExpansionOf, unexpanded } from "./bounds";
 import { checkConfig, checkParams, checkTypes } from "./checks";
-import { messageOf, validator } from "./common";
-import { fold } from "./fold";
+import { fold, loadFunctions } from "./fold";
 
 export { listing, render, summary } from "./text";
 
@@ -115,16 +116,16 @@ async function validations(hosts: readonly Host[], graph: GraphIndex) {
 }
 
 /**
- * Pre-flight (architecture 4): checks params, edge types and config, folds and expands what compose knows, calls the
- * hosts' `validate` hooks, and bounds the plan against the caps. It writes only under `scratch` and starts no host
- * node (NFR-02).
+ * Pre-flight (architecture 4): checks params, edge types and config, loads every function the IR names, folds and
+ * expands what compose knows, calls the hosts' `validate` hooks, and bounds the plan against the caps. It writes only
+ * under `scratch` and starts no host node (NFR-02).
  * @throws Error when two hosts register one node kind.
  */
 export async function compose(input: ComposeInput): Promise<ComposeResult> {
 	const { ir, hosts } = input;
 	const graph = indexGraph(ir);
 	const lookup = kindLookup(hosts);
-	const ajv = validator();
+	const ajv = validator({ useDefaults: true });
 	const params = checkParams(ajv, ir, input.params);
 	const checked = [
 		...params.diagnostics,
@@ -132,6 +133,9 @@ export async function compose(input: ComposeInput): Promise<ComposeResult> {
 		...checkConfig(ajv, input, lookup),
 	];
 	if (hasError(checked)) return { ok: false, diagnostics: checked };
+	const loaded = await loadFunctions(ir, input.loadCode);
+	if (hasError(loaded.diagnostics))
+		return { ok: false, diagnostics: [...checked, ...loaded.diagnostics] };
 	const { env, diagnostics: broken } = await environments(hosts);
 	if (hasError(broken))
 		return { ok: false, diagnostics: [...checked, ...broken] };
@@ -140,7 +144,15 @@ export async function compose(input: ComposeInput): Promise<ComposeResult> {
 	const limit = capped(unexpanded).length
 		? (sofar: ExpansionOf) => capped(sofar, "may reach at least")
 		: undefined;
-	const folded = await fold(ir, { graph, input, ajv, env, limit });
+	const folded = await fold(ir, {
+		graph,
+		input,
+		ajv,
+		check: portCheck(ajv),
+		functions: loaded.functions,
+		env,
+		limit,
+	});
 	const expansionOf: ExpansionOf = (group, path) =>
 		folded.expansion[group.id]?.[path] ?? unexpanded(group, path);
 	const diagnostics = [

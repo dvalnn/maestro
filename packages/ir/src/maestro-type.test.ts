@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import Ajv2020 from "ajv/dist/2020";
 import {
+	artifactRefSchema,
+	artifactsAsRefs,
 	CORE_TYPES,
 	findMarked,
 	type JsonSchema,
@@ -217,4 +219,40 @@ test.each<[string, JsonSchema, string[]]>([
 	],
 ])("unreachableMarkers: %s", (_, schema, pointers) => {
 	expect(unreachableMarkers(schema)).toEqual(pointers);
+});
+
+const file = { [MAESTRO_TYPE]: CORE_TYPES.file, type: "string" };
+const asRef = (k: string): [string, JsonSchema, JsonSchema] => {
+	const holds = (sub: JsonSchema): JsonSchema => {
+		if (["allOf", "anyOf", "oneOf", "prefixItems"].includes(k))
+			return { [k]: [sub] };
+		if (
+			["properties", "patternProperties", "dependentSchemas", "$defs"].includes(
+				k,
+			)
+		)
+			return { [k]: { a: sub } };
+		return { [k]: sub };
+	};
+	return [k, holds(file), holds(artifactRefSchema)];
+};
+
+test.each(
+	[
+		...["properties", "additionalProperties", "items", "prefixItems", "$defs"],
+		...UNWALKED_KEYWORDS.map(([k]) => k),
+	].map(asRef),
+)(
+	"artifactsAsRefs replaces an artifact subschema under %s with artifactRefSchema",
+	(_, schema, expected) => {
+		expect(artifactsAsRefs(schema)).toEqual(expected);
+	},
+);
+
+test("artifactsAsRefs descends a host type and keeps its marker", () => {
+	const schema = { ...handle, properties: { f: file } };
+	expect(artifactsAsRefs(schema)).toEqual({
+		...handle,
+		properties: { f: artifactRefSchema },
+	});
 });

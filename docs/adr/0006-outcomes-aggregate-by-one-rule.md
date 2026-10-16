@@ -56,6 +56,7 @@ on any non-ok outcome, and a reason on `skipped`, stay optional until a slice pi
 - A `fanin` node cannot mix inputs that must be `ok` with settled ones. A strict input is checked upstream.
 - Under propagate, which members ran depends on timing, so the record varies between runs. The outcome does not.
 - The plan-panel example indexes no settled list:
-  `firstOk([synthesis.out.text, firstOk(plans).out.value.pick("text")])` falls back to a plan that succeeded.
+  `firstOk([synthesis.out.text, firstOk(plans).out.value.pick("result.text")])` falls back to a plan that succeeded.
+  A member's value holds its outputs under the member's name, here `result`.
 - `Outcome`, `Settled` and `worstOutcome` land in `packages/ir` before the SDK and executor build on them. The home is
   revisited if those slices find a better one.

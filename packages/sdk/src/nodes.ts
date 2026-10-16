@@ -2,8 +2,11 @@ import {
 	type ArtifactRef,
 	type Cardinality,
 	type CodeContext,
+	firstDuplicate,
 	type GroupNode,
+	itemKey,
 	type JsonSchema,
+	MAX_TIMEOUT,
 	type PortRef,
 	type Ports,
 	type Rejection,
@@ -19,6 +22,7 @@ import {
 	type Common,
 	canonicalJson,
 	checkPlain,
+	current,
 	fail,
 	info,
 	innerFrame,
@@ -75,6 +79,8 @@ export type CodeOptions<I, O extends Types> = Common &
 		writes?: string[];
 		/** Default true. An impure node is never cached or folded. */
 		pure?: boolean;
+		/** Milliseconds the node may take before it settles `failed`. None by default. */
+		timeout?: number;
 	};
 
 /**
@@ -96,6 +102,7 @@ export function code<I, O extends Types = NoOutputs>(
 				fields: {
 					worker: ref,
 					pure: opts.pure ?? true,
+					timeout: checkTimeout(opts.timeout, opts.label ?? ref.export),
 					reads: opts.reads,
 					writes: opts.writes,
 				},
@@ -203,6 +210,22 @@ function checkMax(max: unknown, what: string): number {
 	);
 }
 
+/** @throws `BOUND.timeout` unless `timeout` is absent or a whole number from 1 to `MAX_TIMEOUT`. */
+function checkTimeout(timeout: unknown, what: string): number | undefined {
+	if (
+		timeout === undefined ||
+		(Number.isInteger(timeout) &&
+			Number(timeout) >= 1 &&
+			Number(timeout) <= MAX_TIMEOUT)
+	)
+		return timeout as number | undefined;
+	throw fail(
+		"BOUND.timeout",
+		`timeout of code node '${what}' must be a whole number of milliseconds from 1 to ${MAX_TIMEOUT}, got ${JSON.stringify(timeout)}`,
+		"Set timeout within that range, or leave it out for no limit",
+	);
+}
+
 // Only a map over build-time items has an exact size; any other group may stop early or wait on a node (CORE-05).
 function cardinality(
 	kind: "map" | "seq",
@@ -232,7 +255,6 @@ function openGroup(
 	max: number | undefined,
 	common: Common,
 	fields: object,
-	out: Ports = {},
 ) {
 	const plain = plainItems(items, kind);
 	const group = pushNode(
@@ -240,7 +262,7 @@ function openGroup(
 			kind,
 			label: kind,
 			inputs: plain ? {} : { items },
-			out,
+			out: {},
 			fields: {
 				...fields,
 				items: plain,
@@ -326,18 +348,28 @@ export type MapOptions<T> = Common & {
 	key?: (item: T) => string;
 };
 
-/** The value of one map member: a record keyed by result name (ADR 0004). */
-export const MEMBER = { type: "object" };
-
-const RESULTS = { type: "array", items: settledSchema(MEMBER) };
+/** The value of one member of map `id`: a record by result name of each result's outputs (ADR 0004). */
+export function memberSchema(id: string): JsonSchema {
+	const node = current().nodes.find((n) => n.id === id);
+	const members = node?.kind === "map" ? node.members : {};
+	return {
+		type: "object",
+		properties: Object.fromEntries(
+			Object.entries(members).map(([name, member]) => [
+				name,
+				{ type: "object", properties: info(member).out },
+			]),
+		),
+	};
+}
 
 export type MapResults = {
 	results: Type<SettledValue<Record<string, unknown>>[]>;
 };
 
 /**
- * One body instance per item, in parallel. Build-time items are keyed by value when primitive, else by index, and
- * a duplicate key throws `SCOPE.key`. With a key function the keys are checked at compose.
+ * One body instance per item, in parallel. Build-time items are keyed by `itemKey`, and a duplicate key throws
+ * `SCOPE.key`. With a key function the keys are checked at compose.
  */
 export function map<T>(
 	items: Items<T>,
@@ -352,29 +384,28 @@ export function map<T>(
 		opts.max,
 		opts,
 		fields,
-		{ results: RESULTS },
 	);
 	if (plain && !key) checkKeys(plain);
 	group.members = withFrame(innerFrame(group.id, true), () =>
 		mapMembers(body(item as Ref<T>), group.id),
 	);
+	const results = {
+		type: "array",
+		items: settledSchema(memberSchema(group.id)),
+	};
+	group.out = { results };
+	info(group.id).out = group.out;
 	return typed(new ResultImpl(group.id));
 }
 
 function checkKeys(items: unknown[]): void {
-	const seen = new Set<string>();
-	items.forEach((item, i) => {
-		const key = ["string", "number", "boolean"].includes(typeof item)
-			? String(item)
-			: String(i);
-		if (seen.has(key))
-			throw fail(
-				"SCOPE.key",
-				`map item key '${key}' appears more than once`,
-				"Make the items unique, or give map a key function",
-			);
-		seen.add(key);
-	});
+	const dup = firstDuplicate(items.map(itemKey));
+	if (dup)
+		throw fail(
+			"SCOPE.key",
+			`map item key '${dup.key}' appears more than once`,
+			"Make the items unique, or give map a key function",
+		);
 }
 
 export type SeqOptions<O extends Types> = Common & {
@@ -440,6 +471,12 @@ export function repeat<O extends Types>(opts: RepeatOptions<O>): Result<O> {
 		},
 		{ label: opts.label, when: opts.when, tag: opts.tag },
 	) as RepeatNode;
+	if (Object.hasOwn(state, "index"))
+		throw fail(
+			"TYPE.state",
+			`the state of repeat '${group.id}' has a port named 'index', which names the iteration`,
+			"Rename the 'index' output of init and of the step",
+		);
 	group.inner = { ...state, index: { type: "integer" } };
 	const refs = Object.fromEntries(
 		Object.entries(state).map(([port, schema]) => [

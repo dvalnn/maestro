@@ -85,6 +85,8 @@ describe("map", () => {
 	test.each<[string, unknown[]]>([
 		["primitive", ["a", "b", "a"]],
 		["numeric", [1, 2, 1]],
+		["sanitized alike", ["a b", "a_b"]],
+		["index and primitive", [{ a: 1 }, "0"]],
 	])("duplicate %s items fail with SCOPE.key", (_name, items) => {
 		const error = diagnose(() =>
 			buildOf(() => map(items, () => task(), { onError: "settle" })),
@@ -92,10 +94,11 @@ describe("map", () => {
 		expect(error.code).toBe("SCOPE.key");
 	});
 
-	test("structured items are keyed by index, so equal ones pass", () => {
-		const ir = buildOf(() =>
-			map([{ a: 1 }, { a: 1 }], () => task(), { onError: "settle" }),
-		);
+	test.each<[string, unknown[]]>([
+		["structured items keyed by index", [{ a: 1 }, { a: 1 }]],
+		["null and the index it stands at", [null, "0"]],
+	])("%s are distinct", (_name, items) => {
+		const ir = buildOf(() => map(items, () => task(), { onError: "settle" }));
 		expect(nodeOf(ir, "map")).toMatchObject({ cardinality: { exact: 2 } });
 	});
 
@@ -265,6 +268,19 @@ describe("repeat", () => {
 			expect(error.code).toBe("TYPE.state");
 		},
 	);
+
+	test("a state port named index fails with TYPE.state", () => {
+		const indexed = () =>
+			hostNode("fake.count", { in: {}, out: { index: Int() } });
+		const error = diagnose(() =>
+			buildOf(() => repeat({ init: indexed(), step: indexed, max: 2 })),
+		);
+		expect(error).toMatchObject({
+			code: "TYPE.state",
+			message:
+				"the state of repeat 'repeat' has a port named 'index', which names the iteration",
+		});
+	});
 
 	test("an init that is not a node's result fails with TYPE.member", () => {
 		const error = diagnose(() =>

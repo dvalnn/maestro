@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { MAX_TIMEOUT } from "@maestro/ir";
 import { buildOf, diagnose, nodeOf } from "./fixtures/context";
 import {
 	copyOut,
@@ -43,12 +44,14 @@ describe("code", () => {
 				reads: ["src/**"],
 				writes: ["out/a.txt"],
 				pure: false,
+				timeout: 5000,
 			});
 		});
 		expect(nodeOf(ir, "merge")).toMatchObject({
 			kind: "code",
 			worker: WORKER,
 			pure: false,
+			timeout: 5000,
 			reads: ["src/**"],
 			writes: ["out/a.txt"],
 			in: {
@@ -65,16 +68,26 @@ describe("code", () => {
 		});
 	});
 
-	test("is pure by default", () => {
-		expect(
-			nodeOf(
-				buildOf(() => code(stamp)),
-				"stamp",
-			),
-		).toMatchObject({
-			pure: true,
-		});
+	test("is pure by default, with no timeout", () => {
+		const node = nodeOf(
+			buildOf(() => code(stamp)),
+			"stamp",
+		);
+		expect(node).toMatchObject({ pure: true });
+		expect(node).not.toHaveProperty("timeout");
 	});
+
+	test.each([0, 1.5, -1, MAX_TIMEOUT + 1])(
+		"a timeout of %p fails with BOUND.timeout",
+		(timeout) => {
+			expect(
+				diagnose(() => buildOf(() => code(stamp, { timeout }))),
+			).toMatchObject({
+				code: "BOUND.timeout",
+				message: `timeout of code node 'stamp' must be a whole number of milliseconds from 1 to ${MAX_TIMEOUT}, got ${timeout}`,
+			});
+		},
+	);
 
 	test("checks the function against in and out at compile time", () => {
 		buildOf(() => {

@@ -15,8 +15,15 @@ export type Context = {
 /** Facts a host offers code nodes, as JSON. */
 export type Facts = Readonly<Record<string, unknown>>;
 
+/** The `runtime` of a worker ref whose function runs in core's own TypeScript worker. */
+export const TS_RUNTIME = "ts";
+
 /** A code function's context: core's, plus each host's facts keyed by host name. */
-export type CodeContext = Context & { env: Readonly<Record<string, Facts>> };
+export type CodeContext = Context & {
+	env: Readonly<Record<string, Facts>>;
+	/** Records `line` as a `log` event on the instance. */
+	log(line: string): void;
+};
 
 /** A code function's negative verdict, as `reject` builds it. Outputs never carry `outcome` or `reason` (ADR 0008). */
 export type Rejection = { outcome: "rejected"; reason: string };

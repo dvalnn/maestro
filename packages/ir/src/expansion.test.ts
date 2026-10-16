@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+	firstDuplicate,
 	formatExpansion,
 	formatInstance,
 	itemKey,
@@ -68,4 +69,12 @@ test("an instance whose expansion does not fit its groups cannot be shown", () =
 	expect(() =>
 		formatInstance({ node: "a/b", expansion: "risk" }, ["a"]),
 	).toThrow();
+});
+
+test.each<[string[], ReturnType<typeof firstDuplicate>]>([
+	[[], undefined],
+	[["a", "b"], undefined],
+	[["a", "b", "a", "b"], { key: "a", first: 0, second: 2 }],
+])("the first duplicate of %j is %j", (keys, duplicate) => {
+	expect(firstDuplicate(keys)).toEqual(duplicate);
 });

@@ -78,7 +78,18 @@
 						"properties": {
 							"outcome": { "enum": ["ok", "skipped", "rejected", "failed"] },
 							"reason": { "type": "string" },
-							"value": { "type": "object" }
+							"value": {
+								"properties": {
+									"result": {
+										"properties": {
+											"logs": { "type": "string" },
+											"text": { "type": "string" }
+										},
+										"type": "object"
+									}
+								},
+								"type": "object"
+							}
 						},
 						"required": ["outcome"],
 						"type": "object"
@@ -160,7 +171,18 @@
 						"properties": {
 							"outcome": { "enum": ["ok", "skipped", "rejected", "failed"] },
 							"reason": { "type": "string" },
-							"value": { "type": "object" }
+							"value": {
+								"properties": {
+									"result": {
+										"properties": {
+											"logs": { "type": "string" },
+											"text": { "type": "string" }
+										},
+										"type": "object"
+									}
+								},
+								"type": "object"
+							}
 						},
 						"required": ["outcome"],
 						"type": "object"
@@ -169,7 +191,20 @@
 				}
 			},
 			"kind": "code",
-			"out": { "value": { "type": "object" } },
+			"out": {
+				"value": {
+					"properties": {
+						"result": {
+							"properties": {
+								"logs": { "type": "string" },
+								"text": { "type": "string" }
+							},
+							"type": "object"
+						}
+					},
+					"type": "object"
+				}
+			},
 			"pure": true,
 			"worker": {
 				"codeHash": "maestro:stdlib@0.1.0",

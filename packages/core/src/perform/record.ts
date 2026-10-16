@@ -1,8 +1,8 @@
 import { Database } from "bun:sqlite";
 import type { ArtifactRef, Ir, Outcome } from "@maestro/ir";
 import type { Enrichment, HostEvent, Metrics } from "../host";
+import { instanceKey, isRecord } from "../shared";
 import type { NodeInstance, Outputs } from "../worker";
-import { instanceKey, isRecord } from "./ts-worker";
 
 /** The version of the schema below, kept in SQLite's `user_version`. */
 const SCHEMA_VERSION = 1;

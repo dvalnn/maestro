@@ -1,11 +1,13 @@
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { type Ir, parseIr } from "@maestro/ir";
+import { type Ir, parseIr, TS_RUNTIME } from "@maestro/ir";
 import type { Host, NodeKind } from "../../host";
-import type { CodeFunction, LoadCode } from "../../worker";
+import type { CodeFunction, KeyFunction, LoadCode } from "../../worker";
 import { type ComposeInput, compose } from "../index";
 
 const GOLDEN = resolve(import.meta.dir, "../../../../ir/fixtures");
+const TEST_MODULE = "test.ts";
+const STDLIB_MODULE = "maestro:stdlib";
 
 const kind = (name: string): NodeKind => ({
 	name,
@@ -33,14 +35,32 @@ export function fakeHost(over: Partial<Host> = {}): Host {
 	};
 }
 
-/** Loads a worker reference from `functions` by export name, else from the golden fixtures directory of ir. */
+/** The function of a `test.ts` export a test does not give, which throws when called. */
+const unset = (name: string) => () => {
+	throw new Error(`'${name}' is not given to this test`);
+};
+
+/** Stand-ins for the stdlib exports the fixtures name. The real stdlib is the SDK's, which core does not depend on. */
+const STDLIB: Readonly<Record<string, CodeFunction>> = {
+	firstOk: unset("firstOk"),
+	pick: unset("pick"),
+};
+
+/**
+ * Loads a worker reference from `functions` by export name. Else it loads a `test.ts` export as `unset`, a
+ * `maestro:stdlib` export from `STDLIB`, and any other module from the golden fixtures directory of ir.
+ */
 export function loader(
-	functions: Readonly<Record<string, CodeFunction>> = {},
+	functions: Readonly<Record<string, CodeFunction | KeyFunction>> = {},
 ): LoadCode {
 	return async (ref) => {
 		const own = functions[ref.export];
 		if (own) return own;
-		const module = await import(resolve(GOLDEN, ref.module));
+		if (ref.module === TEST_MODULE) return unset(ref.export);
+		const module =
+			ref.module === STDLIB_MODULE
+				? STDLIB
+				: await import(resolve(GOLDEN, ref.module));
 		const fn = module[ref.export];
 		if (typeof fn !== "function")
 			throw new Error(`'${ref.module}' has no export '${ref.export}'`);
@@ -87,8 +107,8 @@ export const code = (id: string, name: string, over: object = {}) => ({
 	id,
 	kind: "code",
 	worker: {
-		runtime: "ts",
-		module: "test.ts",
+		runtime: TS_RUNTIME,
+		module: TEST_MODULE,
 		export: name,
 		codeHash: HASH,
 	},

@@ -2,9 +2,10 @@ import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
 	type AssertNode,
-	type Cardinality,
+	boundOf,
 	type CodeNode,
 	type Facts,
+	firstDuplicate,
 	formatExpansion,
 	formatInstance,
 	type GraphIndex,
@@ -14,15 +15,21 @@ import {
 	type IrEdge,
 	type IrNode,
 	indexGraph,
+	isGroup,
 	itemKey,
 	type MapNode,
 	type Outcome,
+	outputValue,
 	type RepeatNode,
 	type SeqNode,
 	type Settled,
+	TS_RUNTIME,
+	tolerates,
 	worstOutcome,
 } from "@maestro/ir";
 import { type Execution, type Host, kindLookup } from "../host";
+import { portCheck, validator } from "../ports";
+import { instanceKey, loadFunction, messageOf } from "../shared";
 import type { Inputs, LoadCode, NodeInstance } from "../worker";
 import {
 	type ConcertDirs,
@@ -31,9 +38,8 @@ import {
 	scratchDir,
 } from "./artifacts";
 import { asserted, callOf, finish, type Kit } from "./execute";
-import { portCheck } from "./ports";
 import type { ConcertResult, RecordStore, Settling } from "./record";
-import { instanceKey, messageOf, TS_RUNTIME, tsWorker } from "./ts-worker";
+import { tsWorker } from "./ts-worker";
 
 export type PerformOptions = {
 	/** IR that passed `parseIr`. */
@@ -173,14 +179,15 @@ async function performed(
 	const { ir, hosts, loadCode } = options;
 	const index = indexGraph(ir);
 	await makeDirs(dirs);
+	const check = portCheck(validator());
 	const kit: Kit = {
 		concert: id,
 		record: options.record,
 		dirs,
-		env: frozen(await environments(hosts)),
+		env: await environments(hosts),
 		kinds: kindLookup(hosts),
-		workers: new Map([[TS_RUNTIME, tsWorker(loadCode, isPure(index))]]),
-		check: portCheck(),
+		workers: new Map([[TS_RUNTIME, tsWorker(loadCode, check)]]),
+		check,
 	};
 	const c: Concert = {
 		id,
@@ -202,24 +209,12 @@ async function performed(
 		: resultOf(returned);
 }
 
-/** `value` with every object in it frozen. */
-function frozen<T>(value: T): T {
-	if (typeof value !== "object" || value === null) return value;
-	for (const field of Object.values(value)) frozen(field);
-	return Object.freeze(value);
-}
-
 async function environments(
 	hosts: readonly Host[],
 ): Promise<Record<string, Facts>> {
 	const facts = hosts.map(async (h) => [h.name, await h.environment()]);
 	return Object.fromEntries(await Promise.all(facts));
 }
-
-const isPure = (index: GraphIndex) => (instance: NodeInstance) => {
-	const node = index.nodes.get(instance.node);
-	return node?.kind === "code" && node.pure;
-};
 
 function slots(size: number): Slots {
 	let free = size;
@@ -305,9 +300,6 @@ function start(c: Concert, instance: NodeInstance, at: number): void {
 	c.kit.record.start(c.id, instance, at);
 	c.started.add(instanceKey(instance));
 }
-
-const isGroup = (node: IrNode): node is GroupNode =>
-	node.kind === "map" || node.kind === "seq" || node.kind === "repeat";
 
 const isFanIn = (node: IrNode) => node.kind === "code" && node.fanin === true;
 
@@ -414,11 +406,6 @@ function blocks(
 	);
 }
 
-const tolerates = (node: IrNode, edge: IrEdge) =>
-	edge.kind === "control"
-		? edge.tolerate === "rejected"
-		: node.kind === "repeat" && node.tolerate === "rejected";
-
 function edgeValue(
 	edge: IrEdge,
 	frame: Frame,
@@ -426,18 +413,9 @@ function edgeValue(
 ): unknown {
 	const port = edge.from.port ?? "";
 	const state = sources.get(edge.from.node);
-	if (state) return portValue(state, port);
+	if (state) return outputValue(state, state.outputs, port);
 	for (let at: Frame | undefined = frame; at; at = at.parent)
 		if (at.group === edge.from.node) return at.inner[port];
-}
-
-/** A port's value, the implicit `outcome`, `ok` and `reason` included. */
-function portValue(state: State, port: string): unknown {
-	if (port === "outcome") return state.outcome;
-	if (port === "ok") return state.outcome === "ok";
-	if (port === "reason")
-		return state.outcome === "ok" ? undefined : state.reason;
-	return state.outputs?.[port];
 }
 
 /** `node`'s input values, a copy so no instance changes another's. A fan-in node gets each `data` input `Settled`. */
@@ -523,10 +501,12 @@ async function execute(
 			},
 		};
 		c.running.add(entry);
+		const timer = timeoutOf(c, node, instance, entry);
 		const execution = await Promise.race([
 			call.invoke(),
 			abandoned.promise,
 		]).finally(() => {
+			clearTimeout(timer);
 			c.running.delete(entry);
 		});
 		const { metrics, enrichment } = execution;
@@ -536,6 +516,19 @@ async function execute(
 	} finally {
 		await rm(scratch, { recursive: true, force: true });
 	}
+}
+
+/** Halts a code instance `failed` once its node's `timeout` has passed since it started, as a cancel halts it. */
+function timeoutOf(
+	c: Concert,
+	node: CodeNode | HostNode,
+	instance: NodeInstance,
+	entry: Running,
+): Timer | undefined {
+	if (node.kind !== "code" || node.timeout === undefined) return undefined;
+	const { timeout } = node;
+	const reason = `node '${shown(c, instance)}' ran past its timeout of ${timeout} ms`;
+	return setTimeout(() => stop(entry, { outcome: "failed", reason }), timeout);
 }
 
 /**
@@ -549,11 +542,14 @@ async function halt(
 ): Promise<void> {
 	frame.halt ??= reason;
 	const inside = [...running].filter((r) => within(r.frame, frame)).reverse();
-	for (const r of inside) {
-		const cancelled = r.halted !== undefined;
-		r.halted = worseOf(r.halted, reason);
-		if (!cancelled) await r.cancel();
-	}
+	for (const r of inside) await stop(r, reason);
+}
+
+/** Gives a running instance `reason`, the worst it was given, and cancels it on its first halt. */
+async function stop(r: Running, reason: Halt): Promise<void> {
+	const cancelled = r.halted !== undefined;
+	r.halted = worseOf(r.halted, reason);
+	if (!cancelled) await r.cancel();
 }
 
 function within(frame: Frame, outer: Frame): boolean {
@@ -590,9 +586,6 @@ const childFrame = (
 	states: new Map(),
 });
 
-const bound = (cardinality: Cardinality) =>
-	"exact" in cardinality ? cardinality.exact : cardinality.upTo;
-
 /** A `map` or `seq`'s items, or why they cannot be expanded. */
 function itemsOf(
 	c: Concert,
@@ -607,7 +600,7 @@ function itemsOf(
 			outcome: "failed",
 			reason: `${name} got items that are not a list`,
 		};
-	const most = bound(node.cardinality);
+	const most = boundOf(node.cardinality);
 	if (items.length > most)
 		return {
 			outcome: "failed",
@@ -629,10 +622,7 @@ async function keysOf(
 	const name = `map '${shown(c, instance)}'`;
 	let named = items;
 	try {
-		// LoadCode is typed for code functions, while a key's worker reference names `(item) => key` (ADR 0008).
-		const key = node.key
-			? ((await c.loadCode(node.key)) as unknown as (item: unknown) => unknown)
-			: undefined;
+		const key = node.key && (await loadFunction(c.loadCode, node.key));
 		if (key) named = await Promise.all(items.map(async (item) => key(item)));
 	} catch (error) {
 		return {
@@ -641,19 +631,13 @@ async function keysOf(
 		};
 	}
 	const keys = named.map((k, i) => itemKey(k, i));
-	const seen = new Map<string, number>();
-	for (const [i, key] of keys.entries()) {
-		const first = seen.get(key);
-		if (first !== undefined) {
-			const fix = node.key
-				? "Make its key function return a unique key per item"
-				: "Give the map a key function that returns a unique key per item";
-			const reason = `${name} has items ${first} and ${i} keyed '${key}'. ${fix}`;
-			return { outcome: "failed", reason };
-		}
-		seen.set(key, i);
-	}
-	return keys;
+	const dup = firstDuplicate(keys);
+	if (!dup) return keys;
+	const fix = node.key
+		? "Make its key function return a unique key per item"
+		: "Give the map a key function that returns a unique key per item";
+	const reason = `${name} has items ${dup.first} and ${dup.second} keyed '${dup.key}'. ${fix}`;
+	return { outcome: "failed", reason };
 }
 
 /** A `map` member's `Settled` result, a record by result name, and the entry whose outcome it takes (ADR 0006). */
@@ -786,7 +770,7 @@ function stepsOf(
 ): { count: number; inner(i: number, state: Inputs): Inputs } | Settling {
 	if (node.kind === "repeat")
 		return {
-			count: bound(node.cardinality),
+			count: boundOf(node.cardinality),
 			inner: (i, state) => ({ ...state, index: i }),
 		};
 	const items = itemsOf(c, node, instance, inputs);
@@ -800,7 +784,7 @@ async function untilHolds(
 ): Promise<boolean> {
 	if (!node.until) return false;
 	const state = await stateIn(frame, node.until.node);
-	return portValue(state, node.until.port) === true;
+	return outputValue(state, state.outputs, node.until.port) === true;
 }
 
 /** A `seq` goes on whatever its member's outcome. A `repeat` carries `ok` state, and `rejected` when tolerated. */

@@ -11,15 +11,27 @@ export {
 	type Facts,
 	type Rejection,
 	reject,
+	TS_RUNTIME,
 } from "./code-function";
 export {
+	firstDuplicate,
 	formatExpansion,
 	formatInstance,
 	itemKey,
 	parseExpansion,
 } from "./expansion";
-export { type GraphIndex, indexGraph } from "./graph";
 export {
+	boundOf,
+	type GraphIndex,
+	IMPLICIT_OUT,
+	indexGraph,
+	isGroup,
+	outputValue,
+	tolerates,
+} from "./graph";
+export {
+	ARTIFACT_TYPES,
+	artifactsAsRefs,
 	CORE_TYPES,
 	findMarked,
 	MAESTRO_TYPE,
@@ -51,6 +63,9 @@ const validateShape = new Ajv2020({
 /** The IR version this package emits and reads. See README.md for the compatibility policy. */
 export const IR_VERSION = "1.0";
 const [MAJOR, MINOR] = IR_VERSION.split(".").map(Number) as [number, number];
+
+/** The longest code-node `timeout` in milliseconds: the largest delay a JavaScript timer holds. */
+export const MAX_TIMEOUT = 2_147_483_647;
 
 /** Checked before the shape, so IR of another major gets this error and not a pile of schema errors. */
 function checkVersion(value: unknown): Diagnostic | undefined {

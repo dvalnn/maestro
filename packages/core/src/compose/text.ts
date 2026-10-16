@@ -6,10 +6,11 @@ import {
 	type IrEdge,
 	type IrNode,
 	indexGraph,
+	isGroup,
+	outputValue,
 	type Settled,
 } from "@maestro/ir";
 import type { Outputs } from "../worker";
-import { isGroup, outputValue } from "./common";
 import type { Expansion, Plan } from "./index";
 
 /** Longest value or key list a text form shows before it cuts with an ellipsis. */
@@ -148,9 +149,9 @@ const container = (containers: readonly string[], id: string) =>
 
 function guardValue(plan: Plan, e: IrEdge): string {
 	const at = Object.values(plan.folded[e.from.node] ?? {});
-	const [first] = at.map((f) => outputValue(f, e.from.port ?? ""));
-	return at.length === 1 && first
-		? ` = ${cut(JSON.stringify(first.value))}`
+	const [first] = at.map((f) => outputValue(f, f.value, e.from.port ?? ""));
+	return at.length === 1 && first !== undefined
+		? ` = ${cut(JSON.stringify(first))}`
 		: "";
 }
 

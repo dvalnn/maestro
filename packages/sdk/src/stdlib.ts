@@ -23,7 +23,7 @@ import {
 	stdlib,
 	visible,
 } from "./graph";
-import { type MapResults, MEMBER } from "./nodes";
+import { type MapResults, memberSchema } from "./nodes";
 import type { Type } from "./types";
 
 const isStringSchema = (schema: JsonSchema) =>
@@ -143,7 +143,10 @@ function reducerPorts(name: StdlibName, given: unknown) {
 	if (inputs instanceof RefImpl) {
 		if (inputs.source.kind !== "port" || !isResults(visible(inputs)))
 			throw badInputs(name);
-		return { ports: { results: inputs }, value: MEMBER };
+		return {
+			ports: { results: inputs },
+			value: memberSchema(inputs.source.node),
+		};
 	}
 	if (!Array.isArray(inputs) || inputs.length === 0) throw badInputs(name);
 	if (!inputs.every(isNodeOutput)) throw badInputs(name);

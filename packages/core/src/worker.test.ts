@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { type CodeContext, reject } from "@maestro/ir";
-import { type CodeFunction, type Outputs, pureContext } from "./worker";
+import { portCheck, validator } from "./ports";
+import {
+	type CodeFunction,
+	invokeCode,
+	type Outputs,
+	pureContext,
+} from "./worker";
 
 const context: CodeContext = {
 	concert: "c1",
@@ -8,6 +14,7 @@ const context: CodeContext = {
 	path: (ref) => `/area/${ref.path}`,
 	scratch: "/scratch/c1",
 	env: {},
+	log: () => {},
 };
 
 test("outputs exclude a rejection's keys, so a code function's return discriminates", async () => {
@@ -32,4 +39,21 @@ test("a pure node's context throws on concert and clock, naming the field, and k
 	expect(pure.env).toBe(context.env);
 	expect(pure.path({ path: "a", contentHash: "" })).toBe("/area/a");
 	expect(context.clock).toBe(0);
+});
+
+test("invokeCode settles failed on inputs off the in schemas, without calling the function", async () => {
+	let called = false;
+	const settlement = await invokeCode(
+		() => {
+			called = true;
+			return {};
+		},
+		{ in: { n: { type: "integer" } }, inputs: { n: "one" }, context },
+		portCheck(validator()),
+	);
+	expect(settlement).toEqual({
+		outcome: "failed",
+		reason: "input 'n' must be integer",
+	});
+	expect(called).toBe(false);
 });

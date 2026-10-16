@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import fanoutFaninLoop from "../fixtures/fanout-fanin-loop.json";
 import guards from "../fixtures/guards-and-escalation.json";
 import minimal from "../fixtures/minimal.json";
-import { IR_VERSION, irSchema, parseIr } from "./index";
+import { IR_VERSION, irSchema, MAX_TIMEOUT, parseIr } from "./index";
 
 const fixturesDir = `${import.meta.dir}/../fixtures`;
 
@@ -71,6 +71,17 @@ test.each<[string, Mutation, string]>([
 		"/nodes/0/members",
 	],
 	["a bad node id", (ir) => (ir.nodes[0].id = "a//b"), "/nodes/0/id"],
+	["a timeout of 0", (ir) => (ir.nodes[0].timeout = 0), "/nodes/0/timeout"],
+	[
+		"a fractional timeout",
+		(ir) => (ir.nodes[0].timeout = 1.5),
+		"/nodes/0/timeout",
+	],
+	[
+		"a timeout past the longest timer",
+		(ir) => (ir.nodes[0].timeout = MAX_TIMEOUT + 1),
+		"/nodes/0/timeout",
+	],
 	[
 		"an unknown edge kind",
 		(ir) =>
@@ -277,7 +288,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"a node under a node that is not a group",
 		(ir) => ir.nodes.push({ id: "pick/extra", kind: "fake.task" }),
 		"IR.graph",
-		"/nodes/6",
+		"/nodes/7",
 		"id 'pick/extra' sits under 'pick', which is not a scope or a group node",
 		"Declare 'pick' as a scope or as a map, seq or repeat node, or move 'pick/extra' out of it",
 	],
@@ -302,8 +313,8 @@ test.each<[string, Mutation, string, string, string, string]>([
 		(ir) => (ir.edges[2].from.port = "txt"),
 		"IR.ref",
 		"/edges/2",
-		"node 'pick' has no output port 'txt'",
-		"Declare 'txt' in out of node 'pick', or fix the edge",
+		"node 'text' has no output port 'txt'",
+		"Declare 'txt' in out of node 'text', or fix the edge",
 	],
 	[
 		"a literal for an undeclared port",
@@ -331,11 +342,11 @@ test.each<[string, Mutation, string, string, string, string]>([
 	],
 	[
 		"an input port fed twice",
-		(ir) => (node(ir, "pick").literals = { drafts: [] }),
+		(ir) => (node(ir, "pick").literals = { results: [] }),
 		"IR.graph",
 		"/nodes/2",
-		"input port 'drafts' of node 'pick' is fed more than once",
-		"Feed port 'drafts' of node 'pick' with one edge or one literal, not several",
+		"input port 'results' of node 'pick' is fed more than once",
+		"Feed port 'results' of node 'pick' with one edge or one literal, not several",
 	],
 	[
 		"an edge leaving a group body",
@@ -363,7 +374,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 		(ir) => (ir.edges[2].kind = "collect"),
 		"IR.graph",
 		"/edges/2",
-		"collect edge from 'pick' must start at a map node's 'results' port",
+		"collect edge from 'text' must start at a map node's 'results' port",
 		"Start the edge at the 'results' port of a map node, or make it a data edge",
 	],
 	[
@@ -456,7 +467,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 			}),
 		"IR.graph",
 		"/edges",
-		"edges form a cycle: pick -> refine/loop -> pick",
+		"edges form a cycle: pick -> text -> refine/loop -> pick",
 		"Remove one of the edges in the cycle",
 	],
 	[
@@ -567,6 +578,13 @@ test.each([[undefined], ["1"], [1], ["v1.0"]])(
 	},
 );
 
+test("a code node may carry a timeout of whole milliseconds", () => {
+	for (const timeout of [1, MAX_TIMEOUT]) {
+		const node = { ...minimal.nodes[0], timeout };
+		expect(parseIr({ ...minimal, nodes: [node] }).ok).toBe(true);
+	}
+});
+
 test("the schema accepts exactly the versions this reader reads", () => {
 	// The schema pins accepted versions, so it and IR_VERSION are bumped together.
 	expect(irSchema.properties.irVersion.enum.at(-1)).toBe(IR_VERSION);
@@ -589,8 +607,8 @@ test("an independent reader with no maestro code parses the fan-out, fan-in and 
 		[
 			"fan-out: map topics, exactly 3 members, each result=topics/draft",
 			"loop: repeat refine/loop, up to 2 iterations, each result=refine/loop/step, until refine/loop/done.value, tolerating rejected",
-			"fan-in: topics.results -> pick.drafts (reducer)",
-			"order: topics -> pick -> refine/loop",
+			"fan-in: topics.results -> pick.results (reducer)",
+			"order: topics -> pick -> text -> refine/loop",
 			"",
 		].join("\n"),
 	);

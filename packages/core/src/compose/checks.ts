@@ -2,16 +2,19 @@ import {
 	CORE_TYPES,
 	type Diagnostic,
 	type GraphIndex,
+	IMPLICIT_OUT,
 	type Ir,
 	type IrEdge,
 	type IrNode,
+	isGroup,
 	type JsonSchema,
 	MAESTRO_TYPE,
 	type Ports,
 	unreachableMarkers,
 } from "@maestro/ir";
 import type { HostKind } from "../host";
-import { IMPLICIT, isGroup, type Validator, violations } from "./common";
+import { type Validator, violations } from "../ports";
+import { isRecord } from "../shared";
 import type { ComposeInput } from "./index";
 
 type Lookup = (kind: string) => HostKind | undefined;
@@ -182,17 +185,15 @@ const GUARD: JsonSchema = { type: "boolean" };
 type SchemaObject = Exclude<JsonSchema, boolean>;
 type Mismatch = { at: string; from: SchemaObject; to: SchemaObject };
 
-const isObject = (v: unknown): v is SchemaObject =>
-	typeof v === "object" && v !== null && !Array.isArray(v);
 const isSchema = (v: unknown): v is JsonSchema =>
-	isObject(v) || typeof v === "boolean";
+	isRecord(v) || typeof v === "boolean";
 
 /** The schema of the port an edge leaves: a group's inner port seen from its body, else an output. */
 function sourceSchema(e: IrEdge, graph: GraphIndex): JsonSchema | undefined {
 	const node = graph.nodes.get(e.from.node);
 	if (!node || e.from.port === undefined) return undefined;
 	const inner = isGroup(node) && graph.groupsOf(e.to.node).includes(node.id);
-	const ports = inner ? node.inner : { ...IMPLICIT, ...node.out };
+	const ports: Ports = inner ? node.inner : { ...IMPLICIT_OUT, ...node.out };
 	return ports[e.from.port];
 }
 
@@ -203,8 +204,8 @@ function targetSchema(e: IrEdge, graph: GraphIndex): JsonSchema | undefined {
 	const schema = node?.in?.[e.to.port];
 	const fanin = e.kind === "data" && node?.kind === "code" && node.fanin;
 	if (!fanin) return schema;
-	const properties = isObject(schema) ? schema.properties : undefined;
-	return isObject(properties) && isSchema(properties.value)
+	const properties = isRecord(schema) ? schema.properties : undefined;
+	return isRecord(properties) && isSchema(properties.value)
 		? properties.value
 		: undefined;
 }
@@ -236,7 +237,7 @@ function mismatch(
 	to: JsonSchema,
 	at: string,
 ): Mismatch | undefined {
-	if (!isObject(from) || !isObject(to)) return undefined;
+	if (!isRecord(from) || !isRecord(to)) return undefined;
 	const marker = from[MAESTRO_TYPE];
 	if (marker !== to[MAESTRO_TYPE])
 		return declares(from) && declares(to) ? { at, from, to } : undefined;
@@ -262,8 +263,8 @@ function propertyMismatch(
 	to: SchemaObject,
 	at: string,
 ): Mismatch | undefined {
-	const fromProps = isObject(from.properties) ? from.properties : {};
-	const toProps = isObject(to.properties) ? to.properties : {};
+	const fromProps = isRecord(from.properties) ? from.properties : {};
+	const toProps = isRecord(to.properties) ? to.properties : {};
 	for (const [key, sub] of Object.entries(fromProps)) {
 		const other = toProps[key];
 		if (!isSchema(sub) || !isSchema(other)) continue;

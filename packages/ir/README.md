@@ -8,10 +8,11 @@ the SDK imports nothing else (ADR 0007). It depends on nothing beyond Ajv. This 
   validator.
 - `src/`: `parseIr`, `IR_VERSION`, `irSchema` and the TypeScript types, plus the shared contracts below: diagnostics
   (`Diagnostic`, `Severity`), outcomes (`OUTCOMES`, `Outcome`, `Settled`, `worstOutcome`, `settledSchema`), the
-  code-function contract (`Context`, `CodeContext`, `Facts`, `Rejection`, `reject`), type markers (`MAESTRO_TYPE`,
-  `CORE_TYPES`, `registerMaestroType`, `findMarked`, `unreachableMarkers`), artifact references (`ArtifactRef`,
-  `artifactRefSchema`), the graph index (`indexGraph`, `GraphIndex`) and expansion paths (`itemKey`,
-  `formatExpansion`, `parseExpansion`, `formatInstance`).
+  code-function contract (`Context`, `CodeContext`, `Facts`, `Rejection`, `reject`, `TS_RUNTIME`), type markers
+  (`MAESTRO_TYPE`, `CORE_TYPES`, `ARTIFACT_TYPES`, `registerMaestroType`, `findMarked`, `unreachableMarkers`,
+  `artifactsAsRefs`), artifact references (`ArtifactRef`, `artifactRefSchema`), the graph index (`indexGraph`,
+  `GraphIndex`, `IMPLICIT_OUT`, `outputValue`, `isGroup`, `boundOf`, `tolerates`), expansion paths (`itemKey`,
+  `firstDuplicate`, `formatExpansion`, `parseExpansion`, `formatInstance`) and `MAX_TIMEOUT`.
 - `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`, and its worker modules sit beside it.
 - `test/read_ir.py`: an independent reader (Python standard library only), which proves the format is readable without
   maestro code.
@@ -87,11 +88,12 @@ schema pairs each with its module both ways:
 
 The golden fixtures keep their modules beside them in `fixtures/`, and a test checks each hash.
 
-Every node also has three implicit outputs: `outcome`, `ok` and `reason`. They may not be declared in `out`.
+Every node also has three implicit outputs: `outcome`, `ok` and `reason`, whose schemas are `IMPLICIT_OUT`. They may
+not be declared in `out`. `outputValue(settled, outputs, port)` reads any port of a settled node, implicit or declared.
 
 | Kind                     | Own fields                                                                                                        |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `code`                   | `worker` `{runtime, module, export, codeHash}`, `pure`, optional `reads`, `writes`, `fanin` (a reducer, D-08).[^fanin] |
+| `code`                   | `worker` `{runtime, module, export, codeHash}`, `pure`, optional `reads`, `writes`, `fanin` (a reducer, D-08),[^fanin] `timeout`.[^timeout] |
 | `assert`                 | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                                     |
 | `map`, `seq`, `repeat`   | Groups, below.                                                                                                    |
 | `<host>.<kind>`          | Any kind with a dot is a host kind, with an optional opaque `config` object.                                      |
@@ -137,7 +139,8 @@ Every input port is fed exactly once, by a `data` or `collect` edge or by a lite
 | `control` | `{node}`                 | `{node}`                | Ordering. It may carry `tolerate: "rejected"` to admit a rejected upstream.        |
 
 A dependent starts only after every upstream it has an edge from is `ok`, unless a control edge from that upstream
-tolerates `rejected` (CORE-04).
+tolerates `rejected` (CORE-04). `tolerates(node, edge)` is this rule for one edge into `node`: a control edge by its own
+`tolerate`, any other edge by the `tolerate` of a `repeat`.
 
 The edge source decides which ports a group exposes. Seen from inside its body, a group exposes `inner`. From
 anywhere else, it exposes `out` and the implicit outputs.
@@ -165,6 +168,7 @@ Violations of rule 2 and rules 4 to 9 are `IR.graph`. Shape violations are `IR.s
 an entry's `parent` and `ancestors` (nearest first), both read from the id alone, the enclosing groups of a node
 (`groupsOf`, outermost first, scopes left out), a group's `body` (the nodes whose nearest enclosing group it is) and
 the edges into and out of a node. Otherwise an id that resolves to nothing gives `undefined` or an empty list.
+`isGroup(node)` tells a group node, and `boundOf(cardinality)` is a group's most iterations.
 
 ## Expansion paths
 
@@ -174,7 +178,7 @@ path of a node in a `repeat` inside a `map` reads `[risk][2]`.
 
 - `itemKey(item, index)` is a `map` item's key (D-18): a string, number, boolean or `null` item is keyed by its value,
   any other item by its index. Each character outside `[A-Za-z0-9_.-]` becomes `_`. Keys that come out equal are
-  duplicates, so `3` and `"3"` collide; the caller reports them.
+  duplicates, so `3` and `"3"` collide; the caller reports them. `firstDuplicate(keys)` finds the first repeat.
 - `formatExpansion(keys)` builds the path and throws on a key outside that alphabet. `parseExpansion(path)` returns
   the keys, or `undefined` for anything else. A key may be empty (`[]`), as `itemKey("")` is.
 - `formatInstance(instance, groups)` merges an instance into one name, each key right after its group's id within the
@@ -220,7 +224,9 @@ The golden fixtures do so with T `{ "type": "object" }`, the member result recor
 
 - `Context`: what core gives every node instance, `concert` (the concert id), `clock`, `path(ref)` and `scratch`, the
   instance's own scratch directory (ADR 0007).
-- `CodeContext`: `Context` plus `env`, each host's `Facts` keyed by host name.
+- `CodeContext`: `Context` plus `env`, each host's `Facts` keyed by host name, and `log(line)`, which records `line`
+  as a `log` event on the instance.
+- `TS_RUNTIME`: `"ts"`, the runtime name of the in-process TypeScript worker (CORE-14).
 - `Rejection`: a code function's negative verdict, `{ outcome: "rejected", reason }`, which `reject(reason)` builds
   (ADR 0008). No node declares an `outcome` or `reason` port, so a rejection never reads as outputs.
 
@@ -259,7 +265,9 @@ type ArtifactRef = {
   paths](#expansion-paths)). It is absent only for an artifact from outside the concert, such as a param.
 
 `artifactRefSchema` is its JSON Schema, closed to these fields and enforcing the path, hash and expansion rules.
-Every boundary that reads a reference parses it against this one definition.
+Every boundary that reads a reference parses it against this one definition. `ARTIFACT_TYPES` are the names whose
+runtime value is an `ArtifactRef`: every core type. `artifactsAsRefs(schema)` replaces each subschema one of them
+marks with `artifactRefSchema`, so a validator checks a port's runtime value rather than the file's content.
 
 `findMarked(schema, value)` returns one `{ type, schema, pointer, value }` per marked subschema whose value is
 present, where `pointer` is a JSON Pointer into `value`. It never descends into a marked subschema, since that schema
@@ -291,7 +299,9 @@ The IR carries structure. These semantics belong to the slices that execute or v
 
 [^fanin]: A `fanin` node runs once every upstream has settled and receives each `data` input as `Settled`
     ([Outcomes](#outcomes)).
+[^timeout]: Whole milliseconds, from 1 to `MAX_TIMEOUT` (the longest timer delay), that an instance may take before it
+    settles `failed`. None when absent.
 
 ## Changelog
 
-- **1.0**: first version.
+- **1.0**: first version. Code nodes took the optional `timeout` before release.

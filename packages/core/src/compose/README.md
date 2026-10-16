@@ -30,17 +30,21 @@ It writes only under `input.scratch` and starts no host node (NFR-02). It return
    - artifact markers and host kinds.
 
    Any error stops compose here, before anything is loaded or called.
-2. Each host's `environment()`.
-3. Folding and expansion, in dependency order, one node instance at a time. The rules:
-   - A node after a non-`ok` folded upstream is `skipped` (CORE-04), unless a tolerant ordering edge admits a
-     rejection or the node is a fan-in.
+2. Loading, through `loadCode`, of every function the IR names: each code node's worker and each map's key function,
+   once per reference. One that does not load is a `SCOPE.export` error, which stops compose here (ADR 0008).
+3. Each host's `environment()`.
+4. Folding and expansion, in dependency order, one node instance at a time. The rules:
+   - A node after a non-`ok` folded upstream is `skipped` (CORE-04), unless the node is a fan-in, or the upstream is
+     `rejected` and a tolerant ordering edge or a `repeat` with `tolerate: "rejected"` admits it.
    - A guard that depends only on known values resolves:
      - `false` skips the node;
      - an unknown guard leaves the node, and a group's body, to perform.
-   - A pure code node with known inputs and no artifact output is called with a pure context:
+   - A pure code node with known inputs and no artifact output is called as perform's `ts` worker calls it
+     (`invokeCode` in `../worker.ts`), so it settles alike in both, with a pure context:
      - reading `ctx.concert` or `ctx.clock` throws;
      - calling `ctx.path()` throws, as a folded node has no artifact area;
-     - `ctx.env` holds each host's `environment()` under the host's name.
+     - `ctx.env` holds each host's `environment()` under the host's name;
+     - `ctx.log()` lines are dropped.
    - An assert with known inputs folds; a false one is an error.
    - A group instance known to start expands, but only in these cases:
      - a `map` whose items are known expands into one instance per item;
@@ -53,8 +57,8 @@ It writes only under `input.scratch` and starts no host node (NFR-02). It return
    When the IR's own bounds, with every group at its declared bound, pass a cap, fold checks the bounds so far after
    each group instance. A group instance fold has not reached counts nothing yet, so the bounds so far only grow. Fold
    stops at the first cap they pass, with a `BOUND.cap` error that says "may reach at least".
-4. Each host's `validate(graph)`. Its codes get the `HOST.` prefix.
-5. The plan's bounds, from the expansion, against `caps`.
+5. Each host's `validate(graph)`. Its codes get the `HOST.` prefix.
+6. The plan's bounds, from the expansion, against `caps`.
 
 A host hook that throws or rejects gives a `HOST.environment` or `HOST.validate` error naming the host. What still
 throws:
@@ -143,8 +147,8 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
 | `HOST.validate`    | A host's `validate()` threw or rejected.                                                 |
 | `HOST.*`           | A host's `validate` finding.                                                             |
 | `PURE.ambient`     | A folded node read `ctx.concert` or `ctx.clock`, or called `ctx.path()`.                 |
-| `PURE.fold`        | A folded node or a key function threw.                                                   |
-| `SCOPE.export`     | `loadCode` could not load a folded node's function or a key function.                    |
+| `PURE.fold`        | A folded node failed, or a key function threw.[^fold]                                    |
+| `SCOPE.export`     | `loadCode` could not load a function the IR names: a code node's or a key function.      |
 | `SCOPE.key`        | Two items of a map instance share a key.[^keys]                                          |
 | `ASSERT.failed`    | A folded assert is false.                                                                |
 | `BOUND.items`      | A group instance has more known items than its bound.                                    |
@@ -154,6 +158,9 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
     `properties`. Enums, `required`, extra properties and annotations are ignored, and only a `core.json-file`
     compares what a marked subschema says of its content. A `data` edge into a fan-in input is checked against the
     `Settled` value (ADR 0006).
+[^fold]: A node fails as it would in perform: its inputs are off its `in` schemas, it throws, or it returns something
+    other than outputs or `reject(reason)`. For inputs off its `in` schemas, the hint points at the edges, params or
+    literals that feed the node.
 [^keys]: Keys come from `itemKey`, so `3` and `"3"` collide, as do an item keyed by its index and a primitive item
     with that value. The hint is to give the map a key function.
 

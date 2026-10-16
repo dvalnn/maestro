@@ -309,6 +309,21 @@ describe("reducers", () => {
 		});
 	});
 
+	test("over a map, the value is typed by the members' outputs, so a pick path is checked at build", () => {
+		const reduced = () =>
+			firstOk(map(["a"], () => task(), { onError: "settle" })).out.value;
+		const ir = buildOf(() => reduced().pick("result.text"));
+		expect(nodeOf(ir, "firstOk_result_text")).toMatchObject({
+			out: { value: STRING },
+		});
+		const error = diagnose(() => buildOf(() => reduced().pick("text")));
+		expect(error).toMatchObject({
+			code: "TYPE.path",
+			message: "pick path 'text' names no field 'text'",
+			hint: "Pick one of: result",
+		});
+	});
+
 	test("inputs of different types give a value of anyOf", () => {
 		const ir = buildOf(() => {
 			const t = task();

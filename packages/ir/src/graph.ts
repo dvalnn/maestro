@@ -1,4 +1,6 @@
+import { OUTCOMES, type Outcome } from "./outcome";
 import type {
+	Cardinality,
 	Diagnostic,
 	GroupNode,
 	Ir,
@@ -8,10 +10,43 @@ import type {
 	Scope,
 } from "./types";
 
-const IMPLICIT_OUT = ["outcome", "ok", "reason"];
+/** The outputs every node has beside its declared ones. */
+export const IMPLICIT_OUT = {
+	outcome: { type: "string", enum: [...OUTCOMES] },
+	ok: { type: "boolean" },
+	reason: { type: "string" },
+} satisfies Ports;
 
-const isGroup = (n: IrNode | undefined): n is GroupNode =>
+/**
+ * The value of output `port` of an instance that settled as `settled` with its declared `outputs`: an implicit output
+ * derived from the outcome, else the declared output. `reason` is absent on an `ok` instance.
+ */
+export function outputValue(
+	settled: { outcome: Outcome; reason?: string },
+	outputs: Readonly<Record<string, unknown>> | undefined,
+	port: string,
+): unknown {
+	const { outcome, reason } = settled;
+	if (port === "outcome") return outcome;
+	if (port === "ok") return outcome === "ok";
+	if (port === "reason") return outcome === "ok" ? undefined : reason;
+	return outputs?.[port];
+}
+
+export const isGroup = (n: IrNode | undefined): n is GroupNode =>
 	n?.kind === "map" || n?.kind === "seq" || n?.kind === "repeat";
+
+/** The most iterations a group may have. */
+export const boundOf = (c: Cardinality) => ("exact" in c ? c.exact : c.upTo);
+
+/**
+ * Whether `edge` into `node` admits a `rejected` source: a tolerating control edge, or state into a tolerating
+ * `repeat`.
+ */
+export const tolerates = (node: IrNode, edge: IrEdge) =>
+	edge.kind === "control"
+		? edge.tolerate === "rejected"
+		: node.kind === "repeat" && node.tolerate === "rejected";
 
 const hasLiteralItems = (g: GroupNode) =>
 	g.kind !== "repeat" && g.items !== undefined;
@@ -236,7 +271,7 @@ function checkEdgePorts(
 	const ports =
 		inner && isGroup(from)
 			? names(from.inner)
-			: [...names(from.out), ...IMPLICIT_OUT];
+			: [...names(from.out), ...names(IMPLICIT_OUT)];
 	const fromPort = e.from.port;
 	if (fromPort !== undefined && !ports.includes(fromPort)) {
 		report(
@@ -374,7 +409,7 @@ function checkBody(g: GroupNode, path: string, graph: Graph) {
 		const until = bodyNode(g, g.until.node, "until", path, graph);
 		if (
 			until &&
-			![...names(until.out), ...IMPLICIT_OUT].includes(g.until.port)
+			![...names(until.out), ...names(IMPLICIT_OUT)].includes(g.until.port)
 		) {
 			graph.report(
 				"IR.ref",

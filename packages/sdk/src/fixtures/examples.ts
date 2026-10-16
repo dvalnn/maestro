@@ -15,6 +15,7 @@ import {
 	Text,
 	use,
 } from "../index";
+import { buildValid } from "./context";
 import { renderOk } from "./workers";
 
 const task = (inputs: Record<string, unknown>, label?: string) =>
@@ -99,3 +100,6 @@ export const planPanel = composition(
 		);
 	},
 );
+
+/** The IR of `planPanel`, emitted with the test context. */
+export const planPanelIr = () => buildValid(planPanel);
