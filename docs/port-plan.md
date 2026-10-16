@@ -13,9 +13,9 @@ session. No schedule or effort estimates are given. Sizes are relative (S, M, L,
 3. **Domain-free core (CORE-12).** No domain words in `ir`, `core`, `sdk`, `testkit` or `cli`. The check runs in tests.
 4. **Lean (NFR-09).** A new node kind, edge kind or SDK primitive needs a written justification in the slice report. The
    default is a code node or a stdlib helper.
-5. **Do not guess.** A new open question that blocks a slice is raised to the project owner and not decided silently.
-   Section 8 lists the decisions each slice relies on, and none is open now. A decision a session does make goes into a
-   new ADR under `docs/adr/` with the reason and the alternative rejected.
+5. **Do not guess.** A question the docs settle is derived and listed in the slice report; a real fork, a contract, a
+   removal or a conflict goes to the project owner (`docs/agents/implementation-loop.md`, "Owner calls"). A decision
+   with lasting weight goes into a new ADR under `docs/adr/` with the reason and the alternative rejected.
 6. **Evidence.** A slice is done when its acceptance items pass, shown by command output in the slice report. A claim
    without output is not evidence.
 7. **Scope.** A session changes its own slice's packages. A needed change to another slice's interface is raised in the

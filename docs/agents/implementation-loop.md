@@ -9,7 +9,7 @@ wraps them.
 ## Steps
 
 1. **Brief** (conductor). Port plan section 6 template, plus an `Out of scope:` line. Done when every deliverable maps
-   to a requirement ID or a plan item. Anything else is cut, or raised to the owner as an open question (rule 5).
+   to a requirement ID or a plan item. Anything else is cut, derived or raised, as "Owner calls" below says.
 2. **Implement** (one background subagent, fenced to the slice's package dirs). Sonnet by default, opus for
    contract-setting or design-heavy slices. Done when the acceptance items pass, shown by command output.
 3. **Mechanical gate** (conductor). The conductor runs `just check` itself. Anything a linter can check stays in Biome,
@@ -32,6 +32,24 @@ wraps them.
    diff against `architecture.md` and the ADRs for what no single slice can show: one concept defined twice, drift at
    the seams between slices, a decision buried in code. Findings follow the citation rule of step 4 and the triage of
    step 5. Fixes land as their own changes.
+
+## Owner calls
+
+A question a brief or a session meets is derived or raised.
+
+- **Derive** when one quotable line decides it (an ADR, a requirement ID, a ruling or a coding-ladder rung) and a worked
+  example in `sdk-spec.md` or `architecture.md` agrees. If the text and its purpose disagree, raise the defect.
+- **Raise a contract**: anything that cannot change after release without breaking someone, such as an IR field, a CLI
+  flag or exit code, a config key, a file layout, an id or path format, or the pack manifest. Batch these, each with a
+  default.
+- **Always raise a removal**, deferral or narrowing of anything a doc lists or sssf does; YAGNI alone does not clear it.
+  A mandated subsystem needs a concrete use case before its details are derived. Without one, raise the subsystem.
+- **Raise a conflict**: two sources disagree, or the answer would reword a Must requirement or an accepted ADR.
+- **Answer an owner's question**, such as "what is the use case?", in full. It is never a call to derive.
+- **Raise a fork with a use case**: a concrete example or command, the doc line that is silent, and a recommendation.
+- **Report what was derived** in a "Derived, not ruled" table: decision, source, strength (decided or by consistency),
+  reversal cost (cheap or contract) and where it landed. A contract-setting slice shows it before dispatch, any other
+  slice in its report. Weak derivations come as one list the owner can strike from.
 
 ## Log
 

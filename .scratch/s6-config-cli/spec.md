@@ -178,7 +178,7 @@ Open Qs:      K53. Where are the config files, and what is a workspace (GLOSSARY
               error including compose diagnostics (architecture 16), 3 rejected, 124 wait timeout as GNU `timeout`
               (recommended). B: as A, with sysexits 64 for usage and 65 for compose diagnostics. C: 0, 1 rejected,
               2 failed, 64 usage, 75 timeout.
-Report:       docs/reports/s6/slice-report.md with the Loop table.
+Report:       .scratch/s6-config-cli/s6-report.md with the Loop table.
 
 ## Proposed split
 
@@ -199,7 +199,7 @@ Acceptance:   Precedence and provenance across every layer; did-you-mean at each
 Out of scope: deliverables 8 to 16; as above otherwise.
 Constraints:  as above. Runs beside S5 once S5's current-hash function type is fixed.
 Open Qs:      K53 to K66.
-Report:       docs/reports/s6a/slice-report.md with the Loop table.
+Report:       .scratch/s6-config-cli/s6a-report.md with the Loop table.
 
 Slice:        S6b CLI verbs
 Goal:         Drive compose and perform from the `maestro` CLI with JSON output and documented exit codes (CFG-06,
@@ -212,4 +212,4 @@ Acceptance:   the S6 acceptance above, less what S6a showed.
 Out of scope: as above.
 Constraints:  as above. Runs after S6a and S5 are committed.
 Open Qs:      K67 to K78.
-Report:       docs/reports/s6b/slice-report.md with the Loop table.
+Report:       .scratch/s6-config-cli/s6b-report.md with the Loop table.
