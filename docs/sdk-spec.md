@@ -70,29 +70,30 @@ records, not an identity).
 
 ### 4.1 Core node constructors
 
-| Constructor              | Purpose                                                                                  | Key arguments                                                       | Result                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------- |
-| `code(fn, opts)`         | Run the author's function over typed inputs.                                             | `in` ports, `out` schema, `reads`, `writes`, `pure` flag, `timeout` | outputs per `out`                               |
-| `map(items, body, opts)` | Instantiate `body` once per item, in parallel.                                           | `items`, body, `max`, `onError`                                     | `Settled(R)[]` with static cardinality metadata |
-| `seq(items, body, opts)` | Instantiate `body` per item in order, stop at the first item whose result meets `until`. | `items`, body, `until`, `max`                                       | the stopping result, or the last                |
-| `repeat(opts)`           | Bounded loop carrying typed state.                                                       | `init`, `step(state, i)`, `until`, `max`, `tolerate`                | the last state                                  |
-| `assert(cond, message)`  | A policy or invariant.                                                                   | a boolean                                                           | none                                            |
-| `use(sub, ports, opts)`  | Instantiate a subcomposition.                                                            | `ports` (Refs or plain values), `opts.params` overrides             | the subcomposition's declared outputs           |
+| Constructor              | Purpose                                                                                  | Key arguments                                           | Result                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------- |
+| `code(fn, opts)`         | Run the author's function over typed inputs.                                             | `in` ports, `out` schema, `reads`, `writes`, `timeout`  | outputs per `out`                               |
+| `map(items, body, opts)` | Instantiate `body` once per item, in parallel.                                           | `items`, body, `max`, `onError`                         | `Settled(R)[]` with static cardinality metadata |
+| `seq(items, body, opts)` | Instantiate `body` per item in order, stop at the first item whose result meets `until`. | `items`, body, `until`, `max`                           | the stopping result, or the last                |
+| `repeat(opts)`           | Bounded loop carrying typed state.                                                       | `init`, `step(state, i)`, `until`, `max`, `tolerate`    | the last state                                  |
+| `assert(cond, message)`  | A policy or invariant.                                                                   | a boolean                                               | none                                            |
+| `use(sub, ports, opts)`  | Instantiate a subcomposition.                                                            | `ports` (Refs or plain values), `opts.params` overrides | the subcomposition's declared outputs           |
 
 Semantics each constructor must honor:
 
-- **`code`.** Never runs during build. Compose evaluates it only when it is pure and all its inputs are known (folding,
-  CORE-07). Its function is an exported `(inputs, ctx) => outputs`, sync or async, with inputs and outputs keyed by port
-  name (ADR 0008). It can return `reject(reason, outputs?)` for a negative verdict, which becomes outcome `rejected`.
+- **`code`.** Runs only at perform, never during build or compose (ADR 0009). Its function is an exported
+  `(inputs, ctx) => outputs`, sync or async, with inputs and outputs keyed by port name (ADR 0008). It can return
+  `reject(reason, outputs?)` for a negative verdict, which becomes outcome `rejected`.
 - **`map`.** `items` may be a build-time list or a Ref resolved later. `max` is mandatory when the item count is not
   known at compose time, and compose reports "up to N". A list of unknown length comes from a code node and feeds a
   bounded `map` (D-16). Items are keyed: a primitive item by its value, any other item by index, or by an optional key
   function `(item) => key`. Give a key function whenever items are records or paths, so keys stay short and survive
   reordering. A key is sanitized to `[A-Za-z0-9_.-]`, anything else becoming `_`, and keys that sanitize alike are
-  duplicates: a compose error for a build-time list (D-18, SDK-13), a failed `map` for a list known only at perform
-  time. Keys only name node instances for `ls` and lane refs. `onError` is required. With `"settle"` a non-ok member
-  becomes a `Settled` value and the group is `ok`. With `"propagate"` the group takes the worst member outcome, and the
-  first non-ok member cancels the rest (ADR 0006).
+  duplicates: a compose error for a build-time list without a key function (D-18, SDK-13), and a failed `map` when a key
+  function runs, at perform (ADR 0009), or the list is known only at perform time. Keys only name node instances for
+  `ls` and lane refs. `onError` is required. With `"settle"` a non-ok member becomes a `Settled` value and the group is
+  `ok`. With `"propagate"` the group takes the worst member outcome, and the first non-ok member cancels the rest (ADR
+  0006).
 - **`seq`.** Covers escalation over an ordered list. `until` gets a member's result and returns a `Ref<Bool>`. Members
   after a satisfied `until` never start. The bound is `items.length` or `max`. A `seq` with `until` stays an "up to N"
   region in the plan. A `seq` over no items settles `skipped`.
@@ -101,9 +102,9 @@ Semantics each constructor must honor:
   bounds and rendering. `max` must be known at compose time, from a literal or a param. State edges are tolerant of
   `rejected` only if `tolerate` says so. A state port named `index` is a build error, since the step's index takes that
   name.
-- **`assert`.** Evaluated at build if the condition is a plain value, at compose time if it folds, and at perform time
-  otherwise. A failed build-time or compose-time assert is a diagnostic error. A perform-time assert yields a `rejected`
-  or `failed` node, whichever the assert declares.
+- **`assert`.** Evaluated at build if the condition is a plain value, and at perform time otherwise. A failed build-time
+  assert is a diagnostic error. A perform-time assert yields a `rejected` or `failed` node, whichever the assert
+  declares.
 - **`use`.** Creates a scope in the IR (architecture section 5). Params of the subcomposition may be set at the use
   site, which has the highest precedence (D-17).
 
@@ -139,8 +140,9 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
   error before spend.
 - **Known at build (D-16).** Params and composed config are plain values. Node outputs and file contents are Refs. A
   subcomposition takes plain params and Ref ports. A plain value may feed a port, and a Ref never feeds a param.
-- **Three tiers.** Build (plain values, shapes the graph), compose after build (folding, guards, bounds), perform (Refs
-  resolve). A build-time `if` on a plain value changes the graph's shape. A `when` guard on a Ref keeps both branches.
+- **Three tiers.** Build (plain values, shapes the graph), compose after build (checks, expansion, bounds), perform
+  (Refs resolve). A build-time `if` on a plain value changes the graph's shape. A `when` guard on a Ref keeps both
+  branches.
 - **Enforcement.** Plain and Ref are distinct types. A Ref throws when coerced to a boolean or a string. Ambient state
   (environment, clock, randomness) is frozen during build (SDK-11). Compose can build twice and compare IR hashes
   (SDK-12).
@@ -165,13 +167,11 @@ A code node is the SDK's answer to "this needs real code".
 - **Typed in and out.** Input and output schemas are declared, and the function's type is checked against them at
   compile time. Output validation happens at the node boundary. A return that fails its schema makes the node `failed`
   with the validation error.
-- **Purity.** A pure node is a function of its inputs and declared artifacts. It is foldable. An impure node declares
-  `pure: false` and is never folded. A pure node that reads `ctx.clock` or `ctx.concert` fails.
 - **Timeout.** A code node runs with no time limit unless its author sets `timeout` in milliseconds. One that runs past
   it settles `failed`.
 - **Declared reads and writes.** File and directory paths a node reads or writes are declared by artifact ports or by
-  explicit `reads` and `writes`. Compose can check write scope. Undeclared access is the author's error. The SDK detects
-  what it can (for example through the context's clock and environment) and does not promise exhaustive detection (R-2).
+  explicit `reads` and `writes`. Compose can check write scope. Undeclared access is the author's error, and nothing
+  detects it (R-2).
 - **Context.** A typed, read-only context offers the concert id, the clock value, the instance's own scratch directory
   and `log(line)`, which records a line on the instance, plus whatever the loaded hosts add (architecture section 6). A
   file the node writes there and returns at an artifact output becomes an artifact (ADR 0007).
@@ -225,7 +225,7 @@ The standard library is built only from the constructors above (NFR-09). Initial
   every input has settled and receive each as `Settled` (ADR 0006). They take a map's handle or a list of outputs.
   `firstOk` with no `ok` input settles `failed` if any input failed, else `rejected`.
 - **Templating.** `tpl` as above. Prompt files are text artifacts staged by the consuming host node.
-- **Readers.** Typed readers for JSON and text artifacts, with schema validation, as pure code nodes.
+- **Readers.** Typed readers for JSON and text artifacts, with schema validation, as code nodes.
 
 ## 12. Host SDK contract
 
@@ -264,8 +264,8 @@ for resume without consulting the composition's source.
 Specified for later runtimes and out-of-process workers, implemented in-process for `ts` in the initial port:
 
 - **Handshake.** Runtime name and version, supported IR version.
-- **Invoke.** Node id, expansion path, input values and their port schemas, whether the node is pure, artifact
-  references, context. Reply: outputs and an outcome, or an error.
+- **Invoke.** Node id, expansion path, input values and their port schemas, artifact references, context. Reply: outputs
+  and an outcome, or an error.
 - **Cancel and timeout.** The core can cancel an invocation. A worker must stop work and reply promptly.
 - **Logs.** A worker can emit log lines tagged with the node instance, stored in the record. A code function writes one
   with `ctx.log(line)`.
@@ -282,10 +282,10 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
   node `timeout` that is not a whole number of milliseconds within the timer range (`BOUND.timeout`).
 - `CFG` unclaimed key, schema violation, required key missing.
 - `HOST` anything a host `validate` hook reports (for example a lane joined twice).
-- `PURE` an undeclared ambient read the runtime detected, or `reads` and `writes` contradictions.
-- `ASSERT` an `assert` that fails at build or compose time.
+- `BUILD` an ambient read during build (SDK-11), or a build that yields different IR twice (SDK-12).
+- `ASSERT` an `assert` that fails at build.
 - `SCOPE` duplicate ids (two unlabelled nodes deriving one id need a `label`), duplicate map item keys, unresolved
-  subcomposition, a code node function that is not exported.
+  subcomposition, a code node function that is not exported, `reads` and `writes` contradictions.
 
 Severity is `error` or `warning`. Any error stops before any concert starts (NFR-02).
 
@@ -299,7 +299,7 @@ Severity is `error` or `warning`. Any error stops before any concert starts (NFR
 ### 13.5 Renderer contract
 
 A renderer may rely on the IR and plan only, plus the event stream for live views (architecture section 11): node kinds,
-scopes, edge kinds, cardinalities, folded values, and node-instance events keyed by node id and expansion path.
+scopes, edge kinds, cardinalities, expansions, and node-instance events keyed by node id and expansion path.
 
 ## 14. Worked examples (non-normative, illustrative syntax)
 

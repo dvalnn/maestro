@@ -87,9 +87,9 @@ docs/               these documents (including adr/), slice reports under report
 ### S3. Compose and plan (L)
 
 - **Goal.** CORE-07 and the plan output.
-- **Deliverables.** IR validation, edge and template type checks, config resolution against owners' schemas, constant
-  folding of pure code nodes, bounded-group expansion, host hook plumbing, bounds on node instances and agent runs
-  (D-23), diagnostics with stable codes, the plan in JSON and text, and the static graph render (CORE-03, D-08).
+- **Deliverables.** IR validation, edge and template type checks, config resolution against owners' schemas,
+  bounded-group expansion, host hook plumbing, bounds on node instances and agent runs (D-23), diagnostics with stable
+  codes, the plan in JSON and text, and the static graph render (CORE-03, D-08).
 - **Acceptance.** On hand-written IR and on SDK-built graphs with the fake host: exact node-instance count where known
   and "up to N" otherwise, a policy violation caught before any run, a config key no installed registrant claims
   rejected (D-24), and a render that shows fan-out, fan-in, loop bounds and guards (AC-2 and AC-5 in part).

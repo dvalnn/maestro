@@ -13,4 +13,5 @@ a member the interface lacks. Before adding it, review the whole interface:
   `param`), run time (`kinds`, `environment`), and resource lifecycle (`release`, `usage`). An optional capability could
   then be one facet object a host supplies whole, such as `resources: { release, usage }`.
 - Check each optional member still has a reader, and drop the ones that do not.
+- Give hosts a version, so a pack manifest can declare a range on the hosts it uses (PACK-02).
 - Record the result in an ADR, since the interface is frozen from S7.

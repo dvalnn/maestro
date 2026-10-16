@@ -332,6 +332,24 @@ Classifier blocks: none.
 - K103: boolean flags take `--no-<flag>`.
 - A reused pid that lands on another maestro process is an accepted risk (YAGNI): the start-time check is backlog 19.
 
+## Rulings after the CLI demo (2026-10-16)
+
+- K108: node purity and compose-time folding go. Purity cannot be checked in TypeScript (a console print is a side
+  effect no runtime sees), and D-16 already gives the build function every value folding could see. Compose runs no
+  author code: CORE-07 and SDK-04 lose folding and the purity flag, and the IR's `pure` field goes (still IR 1.0).
+- A flag typo's did-you-mean is tolerated for now: backlog 20.
+- K106: a pack manifest declares a range on the SDK only. Host ranges wait for host versions (backlog 17).
+- K107: `tour` takes the alias `t`.
+- K104: A. A bare file claims no config key: its params come from flags, its example set and its defaults. A YAML key
+  under its name is unclaimed whichever target runs, and the hint says a pack is how to configure it.
+- K105: `perform` and `wait` print the result node's outputs: `outputs` in `--json` as stored, and in text one
+  `name  value` line per port after the id. A one-line string, number, boolean or null prints as is; anything else as
+  compact JSON; an artifact anywhere in a value as its path. A rejected result carries its root cause's outputs. `ls`
+  prints none; `wait <id>` reads a settled concert's result.
+- K110: A. A `map` key function runs only at perform, so duplicate keys it gives fail the `map` there; primitive and
+  index keys of a build-time list stay a compose error. D-18 and SDK-13 narrowed.
+- K109: the build-purity diagnostics are `BUILD.ambient` and `BUILD.unstable`, the word allowed where they live.
+
 ## Open for the owner (2026-10-17 morning)
 
 - None. S6's derived calls K64, K70, K72 and K74 are listed in its brief.

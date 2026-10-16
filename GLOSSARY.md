@@ -28,6 +28,12 @@ performance
 
 **Node instance**: One concrete run of a node within a concert, identified by node id and expansion path. _Avoid_: leg
 
+**Resume key**: What a recorded `ok` node instance is reused on when its concert resumes: a hash of the node definition,
+its current code hash and its input values with artifact content hashes.
+
+**Stale instance**: A node instance row left by an earlier attempt of a resumed concert, which the resume has neither
+reused nor replaced.
+
 **Event**: A state transition of a node instance.
 
 **Outcome**: How a node instance ended: `ok`, `rejected` (completed with a negative verdict), `failed` (could not
@@ -99,11 +105,12 @@ the user's. Each concert records its workspace's name.
 **Data root**: The directory holding the record store, concert areas, scratch and host stores. By default in the user's
 XDG data home; a workspace can point it elsewhere.
 
-**Composed config**: Layered config as produced by compose, with each value's source layer.
+**Composed config**: The config layers merged, with each value's source layer. Compose reads it.
 
 ### Hosts
 
-**Host**: A plugin that registers node kinds, types, validation and bounds hooks and an environment.
+**Host**: A plugin that registers node kinds, types, validation and bounds hooks and an environment, and optionally
+parses its types' params, releases what a concert held and reports its disk use.
 
 **Engine**: The domain-free core: the graph model, compose checks, scheduling, resume, record and events. It knows no
 host.

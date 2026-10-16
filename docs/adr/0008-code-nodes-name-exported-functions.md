@@ -5,9 +5,9 @@ status: accepted
 # Code nodes name exported functions, resolved by the loader
 
 A code node's IR names its function as `worker: {runtime, module, export, codeHash}`. That reference must survive
-everything that happens after build: compose folds pure code nodes, a concert runs them in another process on resume
-(CORE-09), hand-written IR runs with no SDK (IR-01, AC-8), and the cache keys on `codeHash` (CORE-09). A function value
-carries none of this, and a lambda or closure cannot be found again from the IR.
+everything that happens after build: a concert runs them in another process on resume (CORE-09), hand-written IR runs
+with no SDK (IR-01, AC-8), and the cache keys on `codeHash` (CORE-09). A function value carries none of this, and a
+lambda or closure cannot be found again from the IR.
 
 **Naming.** Every function the SDK turns into a code node is a named export of a module that can be imported again after
 build:
@@ -36,9 +36,10 @@ how:
   an export it can name. It is deterministic (CORE-06). The SDK calls it for every function it turns into a code node,
   and knows nothing of packs, files or hashing.
 - Nothing returned is a build diagnostic that names the function's source position and says to export it.
-- `loadCode(ref)` returns the function a worker reference names, for the worker and for compose folding. What `module`
-  is relative to, for a pack bundle, a bare composition file and an IR file, is the loader's. For an IR file it checks
-  the module against `codeHash` and errors when they differ, so a stale hand-written hash never serves a cached result.
+- `loadCode(ref)` returns the function a worker reference names, for the worker and for compose's check that it
+  resolves. What `module` is relative to, for a pack bundle, a bare composition file and an IR file, is the loader's.
+  For an IR file it checks the module against `codeHash` and errors when they differ, so a stale hand-written hash never
+  serves a cached result.
 - A function a pack takes from another pack's subcomposition is part of the using pack's bundle (ADR 0002), so `fn`
   alone identifies it.
 

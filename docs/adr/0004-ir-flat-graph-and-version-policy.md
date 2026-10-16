@@ -44,4 +44,4 @@ IR 1.0 (`packages/ir`, CORE-16, IR-01) fixes three things that every emitter and
   receives its inputs as `Settled` (ADR 0006).
 - `tolerate` is the scalar `"rejected"`. Only `rejected` is ever tolerable (CORE-04), so an array would only add a shape
   to validate.
-- Compose-time additions (folded values, expansion, bounds) are not in 1.0. The plan slice adds them as a minor version.
+- Compose-time additions (expansion, bounds) are not in 1.0. The plan slice adds them as a minor version.
