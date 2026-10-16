@@ -53,6 +53,8 @@ export interface NodeKind {
 	cancel(instance: HostInstance): Promise<void>;
 }
 
+// TODO: reassess this interface as a whole before a second host widens it, so it does not grow into unrelated
+// optional members: .scratch/backlog/issues/17-reassess-host-interface.md
 /** A plugin that gives core node kinds beyond its own (CORE-13). Core calls its hooks and never inspects its types. */
 export interface Host {
 	/** The namespace of the host's kind and type names. Also keys its facts in `CodeContext.env`. */

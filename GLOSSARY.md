@@ -35,6 +35,9 @@ complete) or `skipped` (not run).
 
 **Settled**: A group member's result together with its outcome: the value if present, the reason if rejected or failed.
 
+**Tour**: A group of thematically related concerts, one per concert, for listing and pruning them together. Bookkeeping
+only. _Avoid_: group, tag
+
 **Metric**: A named, additive number reported by a node instance, such as `tokens_in`. The engine sums each name per
 concert and attaches no meaning to it.
 
@@ -89,6 +92,12 @@ flow to one node, the explicit fan-in) and `control` (guards, tolerance, orderin
 **Core config**: The small closed set of engine settings.
 
 **Config namespace**: A top-level config key owned by a host or pack and validated by that owner's schema.
+
+**Workspace**: The nearest ancestor of the working directory holding a `.maestro/` directory, whose config layers over
+the user's. Each concert records its workspace's name.
+
+**Data root**: The directory holding the record store, concert areas, scratch and host stores. By default in the user's
+XDG data home; a workspace can point it elsewhere.
 
 **Composed config**: Layered config as produced by compose, with each value's source layer.
 

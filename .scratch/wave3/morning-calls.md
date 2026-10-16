@@ -268,11 +268,38 @@ Classifier blocks: none.
 - K53: A. User config `$XDG_CONFIG_HOME/maestro/config.yaml`; workspace `.maestro/config.yaml` in the nearest ancestor
   of the cwd holding `.maestro/`; profile `.maestro/profiles/<name>.yaml`, chosen by `--profile`.
 - K54: A. Maps merge by key; any other value, lists included, is replaced whole. Legacy merge tags are K87.
-- K56: A. One data root key, default `.maestro/` in the workspace, closing backlog 09. No low-disk warning key.
+- K56: A, amended. One data root key, closing backlog 09, defaulting to `$XDG_DATA_HOME/maestro` (XDG's
+  `~/.local/share/maestro` when unset); a workspace opts into a local root by setting the key. No low-disk warning key.
 - K62: A. Packs by path only in V1; a URL needs an install step (DIST-04).
 - K65: B. One function reachable under two names is a build error naming both.
 - K66: A. A pack's whole-bundle `codeHash` meets CORE-09, read as "nodes whose `codeHash` or inputs changed".
 - K75: A. `config` prints values as they are. Secret handling is deferred (backlog 13).
+- K88: each CLI command targets exactly one record store: the data root after config resolution, the workspace's when it
+  overrides the key, else the user default. `ls` lists that store; no `--all`, which would need workspace discovery.
+  Each concert row records the workspace's name: a core key `workspace`, set in the workspace config, defaulting to the
+  basename of the workspace's directory, and empty outside any workspace. A target column in `ls` would be the host's,
+  through K77's hooks. Listing another store is backlog 14.
+- K89: A. A relative path in config is relative to the directory of the file that sets it.
+- K57, K59, K60, K63, K67, K71: A, as the S6 brief words them.
+- K73: A, plus a `--workspace <name>` filter, on every verb it applies to.
+- K76: A. Pruning by outcome is backlog 15.
+- K55: A. Neither event sinks nor `strict` in V1, amending CFG-01: no warning exists to promote, and `watch` reads the
+  record. A sink copying the event stream to a third-party consumer is backlog 16.
+- K90: A. A tour groups thematically related concerts: one per concert, on the concert row, set by `perform --tour` or
+  `MAESTRO_TOUR`, changed with the `tour` verb, filtered on by `ls` and `prune`, kept by resume. Bookkeeping only.
+- K91: B. `perform --title "<text>"`, a free-text concert title shown by `ls`.
+- K92: A. `--workspace <name>` filters every verb it applies to, with no default value.
+- K61: A′. Authors export compositions plainly, from a pack or a bare file, and whatever bundles them (the loader for a
+  bare file, the pack build for a pack) adds an entry exporting the bundle's own SDK `describe()` and `build()`, so the
+  build runs through that copy (ADR 0002). Nobody writes the glue by hand.
+- K68: B. A param's flag is its declared name in kebab-case; YAML keys stay as declared. A list repeats the flag, an
+  object takes JSON text, and no custom names or short flags in V1. Two params on one flag, or a param flag clashing
+  with a CLI flag, is an error naming both.
+- K69: A. An optional `Host.param(type, text)` returns a typed param's value or diagnostics, called by the CLI for flags
+  and YAML alike before build. It parses only; existence stays in the host's compose-time `validate`, so IR files and
+  resume are checked too. A core artifact type as a param stays a usage error.
+- K77: A. Optional `Host.release(concert)` and `Host.usage(concert)` now, for `prune` and the disk use HOST-13 asks of
+  `ls`. The host interface is reassessed when a second host needs to widen it (backlog 17).
 - K58: A. No pack namespaces beyond its compositions' params in V1: nothing would read one. The IR's top-level `config`
   block goes with it (still IR 1.0), and architecture 8's Pack bullet with it.
 - K87: A. The `yaml` package parses config, a new dependency allowed for it: `!replace`, `!append` and `!delete` with
@@ -283,5 +310,4 @@ Classifier blocks: none.
 
 ## Open for the owner (2026-10-17 morning)
 
-- S6 (brief `.scratch/s6-config-cli/spec.md`, Open Qs): forks K55, K61, K68, K69, K77; contracts K57, K59, K60, K63,
-  K67, K71, K73, K76; derived K64, K70, K72, K74.
+- None. S6's derived calls K64, K70, K72 and K74 are listed in its brief.

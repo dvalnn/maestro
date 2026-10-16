@@ -170,8 +170,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 
 ### 6.2 Configuration (CFG)
 
-- **CFG-01 (Must).** Core config is a small closed schema of engine concerns only: concurrency cap, record store
-  location, event sinks, pre-flight strictness.
+- **CFG-01 (Must).** Core config is a small closed schema of engine concerns only: concurrency cap, caps by name, the
+  data root (by default under the user's XDG data home) and the workspace's name.
 - **CFG-02 (Must).** Every other top-level config key belongs to a namespace owned by a registrant. The core checks YAML
   syntax, layers the files, and hands each namespace to its owner's schema at compose time.
 - **CFG-03 (Must).** A composition declares typed params with defaults in code (D-17). Params live in the SDK and the
@@ -258,7 +258,8 @@ The executable is `maestro`.
   earlier concert to resume it (CORE-09). Resume is `perform --resume <concert id>`. `perform` tells a composition from
   an IR file by extension (`.ts` or `.js` versus `.json`). `perform` never uses example input sets. Performing an IR
   file with no SDK is AC-8.
-- **CLI-03 (Must).** `ls`, `wait`, `kill`, `config` and `prune` exist. `prune` removes concerts and their lanes.
+- **CLI-03 (Must).** `ls`, `wait`, `kill`, `config`, `prune` and `tour` exist. `prune` removes concerts and their lanes.
+  `tour` groups concerts, and `ls` and `prune` filter by tour.
 - **CLI-04 (Must).** Every command supports machine-readable output. Exit codes are stable and distinguish accepted,
   rejected, failed, usage error and wait timeout.
 - **CLI-05 (Should).** `watch` draws the live graph.

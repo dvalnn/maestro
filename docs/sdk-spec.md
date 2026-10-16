@@ -193,9 +193,9 @@ A code node is the SDK's answer to "this needs real code".
 ## 9. Params and the CLI
 
 - A composition's param declaration is the single source for its CLI flags (SDK-01) and its tunables. Schemas carry
-  hints: flag name, short description, repeatable, required, default.
-- Host types may appear as param types, with the host supplying CLI resolution. The coding-agent host adds the lane ref,
-  written `<concert id>.<node instance id>`, for forking a lane left by an earlier concert (D-27).
+  hints: short description, repeatable, required, default. A param's flag is its name in kebab-case.
+- Host types may appear as param types, the host reading each value from its text. The coding-agent host adds the lane
+  ref, written `<concert id>.<node instance id>`, for forking a lane left by an earlier concert (D-27).
 - The CLI validates params before build. A required param that is absent, or a constraint violation (for example a list
   of fewer than two models for a comparison), is a usage error with a next-step message (CLI-06).
 - Every composition declares at least one example input set. `compose` with no params uses the first one, and `perform`

@@ -165,6 +165,9 @@ A host is a package that the core loads. It is the only way node kinds beyond th
    progress events emitted while it executes, such as an agent's tool calls and thinking (CORE-10). The core stores them
    opaquely.
 8. **Cancellation.** A way to cancel a running node instance and release resources (kill the process tree).
+9. **Optional seams.** `param(type, text)` reads a param of one of its types from the text a flag or YAML gave it.
+   `release(concert)` frees what it holds for a settled concert, and `usage(concert)` reports its bytes on disk, for
+   `prune` and `ls`.
 
 The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
 hooks and records what they return.
@@ -219,7 +222,7 @@ under its pack id and then its composition id. Hosts keep pure-config namespaces
 
 Who owns what:
 
-- **Core.** Concurrency, record store, event sinks, pre-flight strictness.
+- **Core.** Concurrency, caps by name, the data root and the workspace's name.
 - **Host.** `target`, `roles` and other host namespaces (HOST-12).
 - **Composition.** One param declaration in code covers CLI inputs and tunables, with defaults. For example a
   repair-loop subcomposition owns its maximum iteration count. The core has no limits concept.
@@ -371,8 +374,8 @@ round-folder data, never constants in a pack.
 - **Host crash or kill.** The record is consistent as of the last event. `resume` continues. Agent process trees are
   killed by the host's cancel hook.
 - **Worker error.** A code node that throws settles as `failed` with the error. A timeout is `failed`.
-- **Disk full.** Hosts with a small system partition are common. The record store and artifacts live in a configurable
-  area, and compose warns when free space is below a configurable threshold.
+- **Disk full.** Hosts with a small system partition are common. The record store, artifacts and lane stores live under
+  a configurable data root, by default in the user's XDG data home.
 - **Stale reuse.** Resume recomputes each code hash from the current code, so a changed node runs again, and so does
   each dependent whose inputs changed.
 
