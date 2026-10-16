@@ -12,7 +12,7 @@ Read:         requirements.md (CFG-01 to CFG-06, CLI-01 to CLI-07, D-12 to D-17,
               8, 10, 13, 16, sdk-spec.md 2, 8 to 10, 12, 13.3, ADRs 0002, 0007, 0008, packages/ir/README.md (worker
               references, `codeHash`), packages/core/src/compose/README.md, packages/core/src/{host.ts,perform/},
               packages/sdk/src/{composition,graph}.ts, packages/testkit, backlog 02, 03, 08, 09,
-              docs/reports/{s0/spike-3.md,s2,s2b,s3,s4,s5}/, morning-calls K18, K32 to K48, CODING_STANDARDS.md
+              docs/reports/s0/spike-3.md, morning-calls K18, K32 to K48, CODING_STANDARDS.md
 Package:      packages/cli/ (new) and packages/core/src/config/ (new), with narrow changes in
               packages/core/src/compose/checks.ts (pack claims), packages/core/src/perform/record.ts (prune and the
               resume base), packages/core/src/host.ts (optional seams), packages/sdk/src/composition.ts (use-site
@@ -27,12 +27,12 @@ Deliverables:
      per K55, where the record, concert areas and compose scratch live per K56. No timeout key (K41).
   3. Claims (CFG-02, CFG-05, D-17, D-24): an installed pack claims its id, each of its compositions a key under it,
      and each composition's params the keys under that. Compose's `checkConfig` counts installed packs as
-     claimants (S3 report, decision 3). An unclaimed key at any of these levels fails with a did-you-mean hint
+     claimants. An unclaimed key at any of these levels fails with a did-you-mean hint
      through the existing `closest` in `compose/checks.ts`. Where packs are listed per K57, any other namespace a
      pack claims per K58.
   4. Param values (D-16, D-17, D-19, CFG-03, CFG-04, SDK-05): a root composition's params resolve default, YAML
      layers, then flags, and are checked before build, the example set placed per K59. A subcomposition's YAML
-     values reach `use` through the build context (S2 report, item 12) under the namespace K60 names, and the use
+     values reach `use` through the build context under the namespace K60 names, and the use
      site still wins.
   5. Packs (D-30, PACK-01, PACK-02, ADR 0002): a `maestro-pack.json` schema (id, version, entry, semver ranges on
      the SDK and hosts it uses, checked at load), an entry that cannot leave the pack directory, and import errors
@@ -41,7 +41,7 @@ Deliverables:
      perform, for a pack bundle (K63), a bare composition file (K64) and an IR file (`module` relative to the IR
      file's directory, its bytes checked against `codeHash` before any node starts, ruling W1-rel). Lookup by
      identity walks object exports one level down (backlog 08 spike), and a function under two names follows K65.
-     `maestro:stdlib` maps to `@maestro/sdk/stdlib`, and an export it lacks is a compose error (S2b report).
+     `maestro:stdlib` maps to `@maestro/sdk/stdlib`, and an export it lacks is a compose error.
   7. `codeHash` (ADR 0008, CORE-09, K42): each loader's form, recorded in ADR 0008 as it asks, and the current-hash
      function S5's resume takes, so a changed module reruns the nodes K66 rules affected, and their dependents.
   8. The `cli` package (CLI-07, D-14, D-29, AC-7): a `maestro` bin entry and the verbs `compose`, `perform`, `ls`,

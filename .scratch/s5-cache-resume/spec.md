@@ -7,7 +7,7 @@ Goal:         A rerun hits the cache and a failed or killed concert resumes at n
               AC-3 in part).
 Read:         requirements.md (CORE-09, CFG-01, NFR-04, AC-3, D-26), architecture.md 7 (Cache, Resume) and 10,
               sdk-spec.md 7 and 13, ADRs 0006, 0007, 0008 (`codeHash`), packages/core/src/perform/ and its record,
-              packages/core/src/{host,worker}.ts, packages/testkit, docs/reports/s4/, CODING_STANDARDS.md
+              packages/core/src/{host,worker}.ts, packages/testkit, CODING_STANDARDS.md
 Package:      packages/core/src/perform/ and packages/testkit/.
 Deliverables:
   1. The cache key (architecture 7): a content hash of the node's definition, its `codeHash` for a code node, its

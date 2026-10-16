@@ -1,86 +1,95 @@
 # Calls for the owner, wave 3
 
-Accumulated by the conductor overnight on 2026-10-15. Each call has a tag to answer by, the options, and the
-conductor's recommendation. Nothing listed here has been decided or dispatched.
+Accumulated by the conductor overnight on 2026-10-15. Each call has a tag to answer by, the options, and the conductor's
+recommendation. Nothing listed here has been decided or dispatched.
 
 ## Blocking the core-seams slice (S34), and so S3 and S4
 
 **[C1] CORE-12's word list vs the host interface.** CORE-12's scan rejects `run` and `build` in core packages.
 Architecture 6 names the host kind hook `run(instance, inputs, context)`, and D-23 bounds count "agent runs".
-- A. Name the hook `execute`, and say "build" only outside core (the SDK builds, core composes). *(recommended)*
+
+- A. Name the hook `execute`, and say "build" only outside core (the SDK builds, core composes). _(recommended)_
 - B. Narrow CORE-12's scan to the domain words that matter (lane, seat, leg, review, quality) and keep `run`/`build`.
 
 **[C2] Where the graph index lives.** `packages/ir/src/graph.ts` already builds a private index (nodes, parents,
 ancestors, enclosing groups) for `checkGraph`. S3 and S4 need the same lookups.
-- A. Extract it into a small exported index in `packages/ir`, which `checkGraph`, S3 and S4 all use. *(recommended:
-  no duplicate, and ir already owns the structural rules)*
+
+- A. Extract it into a small exported index in `packages/ir`, which `checkGraph`, S3 and S4 all use. _(recommended: no
+  duplicate, and ir already owns the structural rules)_
 - B. Core builds its own in the core-seams slice. Architecture 3 gives core the "graph model", but it duplicates ir's.
 
 **[C3] `bounds(node)` without the word "agent".** D-23 bounds node instances and agent runs. Core cannot name agents.
-- A. `bounds` returns named counts, like metrics (CORE-19). Core sums each name, and core config caps them by name.
-  The agent host returns `{ "agents.runs": n }`. *(recommended)*
+
+- A. `bounds` returns named counts, like metrics (CORE-19). Core sums each name, and core config caps them by name. The
+  agent host returns `{ "agents.runs": n }`. _(recommended)_
 - B. A fixed second field with a neutral name, such as `hostUnits`.
 
 ## Carved out of S2 (S2 runs without them)
 
 **[S2-Q1] Derived metadata (SDK-06).** "Composition metadata derives from the graph", but the IR has no metadata field,
 and the predecessor's examples (roles used, whether checks run) are host concepts.
-- A. A function over IR in the SDK (kinds and host namespaces used), computed on demand, never stored. *(recommended)*
+
+- A. A function over IR in the SDK (kinds and host namespaces used), computed on demand, never stored. _(recommended)_
 - B. An IR field, which is an IR 1.1 change.
 - C. Drop it from the SDK; the CLI or the host derives what it shows.
 
 **[S2-Q2] Config namespaces a pack or composition claims (CFG-03, architecture 8).** The IR has `config`, but sdk-spec
 gives no SDK API to claim a namespace.
-- A. Wait for S6 (config) to define the claim API; S2 emits `params` only. *(recommended)*
+
+- A. Wait for S6 (config) to define the claim API; S2 emits `params` only. _(recommended)_
 - B. Design it in S2 now.
 
 **[S2-Q3] CLI hints on params (sdk-spec 9: flag name, description, repeatable, required, default).** Standard JSON
 Schema covers description, default, required and repeatable (an array). A flag name other than the param's own needs a
 custom keyword, registered like `x-maestro-type`.
-- A. Standard keywords only; the flag is the param name. S6 adds a keyword if it needs one. *(recommended)*
+
+- A. Standard keywords only; the flag is the param name. S6 adds a keyword if it needs one. _(recommended)_
 - B. Define `x-maestro-flag` (and short aliases) now.
 
 **[S2-Q4] How a declared `Maybe(T)` serializes.** `anyOf: [T, null]` would hide an artifact marker from the walker,
 which is now a compose error (D2). So `Maybe(File)`, an optional artifact (CORE-15), would never compose.
-- A. Maybe-ness of a whole port comes from the graph: a guarded node's outputs are Maybe, and compose checks for
-  `or` or a matching guard. Inside a record, `Maybe` is a property left out of `required`. No new keyword.
-  *(recommended)*
+
+- A. Maybe-ness of a whole port comes from the graph: a guarded node's outputs are Maybe, and compose checks for `or` or
+  a matching guard. Inside a record, `Maybe` is a property left out of `required`. No new keyword. _(recommended)_
 - B. An annotation keyword, `x-maestro-maybe`, on T.
 - C. `anyOf` with null, and the walker learns that one combinator shape.
 
 ## ADR 0008 (worker references): review says not lockable, so S2 is blocked
 
 `docs/adr/0008-code-nodes-name-exported-functions.md` stays `proposed`. A fresh sonnet reviewer found three breaking
-issues. The conductor checked each against the docs and agrees. Each needs a design call before the ADR can be
-revised:
+issues. The conductor checked each against the docs and agrees. Each needs a design call before the ADR can be revised:
 
 **[W1] Code outside a pack has nothing to resolve against.** D-29 lets `compose`/`perform` take a bare `.ts`/`.js`
 composition. Hand-written IR (AC-8) and SDK unit tests have no pack either. And hashing one unbundled `.ts` file misses
 its relative imports, which is the same stale-helper flaw the ADR rejects for `fn.toString()`.
-- A. A bare composition file is its own entry: `module` is relative to the file's directory. `perform` bundles a
-  bare `.ts` in memory first (`Bun.build`), so `codeHash` always covers a bundle. IR files resolve `module` against
-  the IR file's directory. *(conductor's lean)*
+
+- A. A bare composition file is its own entry: `module` is relative to the file's directory. `perform` bundles a bare
+  `.ts` in memory first (`Bun.build`), so `codeHash` always covers a bundle. IR files resolve `module` against the IR
+  file's directory. _(conductor's lean)_
 - B. Bare files are not bundled, and a bare file's `codeHash` is a hash of the whole source tree under its directory.
 - C. Drop bare-file `perform` from V1 (changes D-29): only packs and IR files run.
 
 **[W2] Cross-pack subcompositions (SDK-05, sdk-spec 8).** Pack A using pack B's subcomposition builds code nodes whose
 functions are B's exports. One entry namespace cannot name them, and the worker reference has no pack field.
-- A. `module` is pack-qualified, `<pack id>:<entry path>`, and the build gets every loaded pack's namespace. The
-  worker resolves the pack id through workspace config. No IR field change, but `module` gains a format. *(lean)*
+
+- A. `module` is pack-qualified, `<pack id>:<entry path>`, and the build gets every loaded pack's namespace. The worker
+  resolves the pack id through workspace config. No IR field change, but `module` gains a format. _(lean)_
 - B. Add a `pack` field to the worker reference, which is an IR 1.1 change.
 - C. Cross-pack use only reuses graph shape; a pack re-exports any foreign function it runs. This is fragile.
 
-**[W3] `until` and `key`.** `until` lowers to a body port holding a boolean (IR README). The sdk-spec 14 examples
-write `until: (c) => c.ok`, a build callback returning a Ref, which is fine. They also write
+**[W3] `until` and `key`.** `until` lowers to a body port holding a boolean (IR README). The sdk-spec 14 examples write
+`until: (c) => c.ok`, a build callback returning a Ref, which is fine. They also write
 `(c) => c.outcome !== "rejected"`, a JS comparison on a Ref, which SDK-03 already forbids regardless of ADR 0008. The
 golden fixture lowers its `until` to an exported code node.
+
 - A. The ADR states that `until` is a build callback returning a `Ref<Bool>`, and that a predicate needing code is an
-  exported code node. Fix the sdk-spec 14 example to a Ref expression. A `map` key function is an exported function
-  like `code`. *(lean; an amendment, not a redesign)*
+  exported code node. Fix the sdk-spec 14 example to a Ref expression. A `map` key function is an exported function like
+  `code`. _(lean; an amendment, not a redesign)_
 
 **AMEND items to fold into the revision** (no call needed unless you disagree):
+
 - Stdlib `codeHash` is an explicit exception to `sha256:`.
-- The cache keys stdlib nodes on the version the engine *will* run.
+- The cache keys stdlib nodes on the version the engine _will_ run.
 - What happens when the engine lacks a named stdlib export: a compose error.
 - Fixtures migrate `stdlib/reducers.ts` to `maestro:stdlib`.
 - S5's "exactly the affected nodes" needs your explicit sign-off as "nodes whose code hash or inputs changed". With a
@@ -92,11 +101,12 @@ golden fixture lowers its `until` to an exported code node.
 
 ## Raised by S1c (not blocking)
 
-**[A1] `codeHash` form.** `ArtifactRef.contentHash` enforces `sha256:<64 lowercase hex>`. A worker's `codeHash` is
-only a non-empty string in `ir.schema.json`, and the golden fixtures use placeholders (`sha256:0000`). Proposed
-ADR 0008 adds a second form for stdlib nodes (`maestro:stdlib@<version>`).
+**[A1] `codeHash` form.** `ArtifactRef.contentHash` enforces `sha256:<64 lowercase hex>`. A worker's `codeHash` is only
+a non-empty string in `ir.schema.json`, and the golden fixtures use placeholders (`sha256:0000`). Proposed ADR 0008 adds
+a second form for stdlib nodes (`maestro:stdlib@<version>`).
+
 - A. Settle the form in the ADR 0008 revision, then tighten the IR schema and fixtures in one change. Tightening the
-  schema is a breaking change under the IR policy, so it happens before any emitter ships. *(recommended)*
+  schema is a breaking change under the IR policy, so it happens before any emitter ships. _(recommended)_
 - B. Leave `codeHash` free-form; only the executor and cache interpret it.
 
 **[A2] `producer.expansion` format.** It is any string for now. S4 fixes the node-instance identity (architecture 7,
@@ -106,14 +116,14 @@ ADR 0008 adds a second form for stdlib nodes (`maestro:stdlib@<version>`).
 
 Commits, not pushed:
 
-| Change         | Subject                                                     |
-| -------------- | ----------------------------------------------------------- |
+| Change         | Subject                                                      |
+| -------------- | ------------------------------------------------------------ |
 | `wowryznkvwkv` | `feat(ir): outcomes, Settled and the x-maestro-type keyword` |
-| `mlwyprmozvzn` | `feat(ir): artifact reference shape`                        |
-| `zulppwvmytkz` | `docs: wave 3 briefs, proposed ADR 0008, open calls`        |
+| `mlwyprmozvzn` | `feat(ir): artifact reference shape`                         |
+| `zulppwvmytkz` | `docs: wave 3 briefs, proposed ADR 0008, open calls`         |
 
-S1c passed review with 7 findings, 4 of them accepted, and one fix round. `just check`: 197 pass, 0 fail. The loop
-table is in `docs/reports/s1c/slice-report.md`.
+S1c passed review with 7 findings, 4 of them accepted, and one fix round. `just check`: 197 pass, 0 fail. The loop table
+is in `docs/reports/s1c/slice-report.md`.
 
 Blocked and stopped:
 
@@ -136,16 +146,16 @@ Classifier blocks: none.
   `ArtifactRef` passed on.
 - K4: A. `reject(reason)` returns plain `{ outcome: "rejected", reason }`; the outputs type excludes `outcome` and
   `reason`.
-- K5: A. Every code function is `(inputs, ctx) => outputs | Rejection`, a ports object in and out; `ref.map` goes,
-  so the worker reference needs no call field. `Rejection` and `reject()` live in ir. The SDK types `code()` so `fn`
-  is checked against `in` and `out` at compile time, and a function that can reject shows it in its inferred return.
-  No Rust-style wrapper: the union already is the sum type. A `map` key function stays `(item) => key`.
+- K5: A. Every code function is `(inputs, ctx) => outputs | Rejection`, a ports object in and out; `ref.map` goes, so
+  the worker reference needs no call field. `Rejection` and `reject()` live in ir. The SDK types `code()` so `fn` is
+  checked against `in` and `out` at compile time, and a function that can reject shows it in its inferred return. No
+  Rust-style wrapper: the union already is the sum type. A `map` key function stays `(item) => key`.
 - K6: a failed build-time `assert` is an `ASSERT` diagnostic; the SDK's `TYPE` cases stay `TYPE`.
 - K7: a build function is `(params, ports)`.
 - K8: `tolerate: "rejected"`, a single value.
 - K9: A. `defaultResult` and the sdk-spec 11 "selection helpers" line go (YAGNI). The SDK emits `{ rule: "default" }`.
-- K10: a reducer worker receives one `Settled[]`, the `results` list or `[in0, in1, …]` in order (ADR 0006). A
-  reducer given a map's handle uses its `results`, so `firstOk(plans)` works.
+- K10: a reducer worker receives one `Settled[]`, the `results` list or `[in0, in1, …]` in order (ADR 0006). A reducer
+  given a map's handle uses its `results`, so `firstOk(plans)` works.
 - K11: two unlabelled nodes with one derived id are `SCOPE.duplicate`, with a hint to add a `label`; no numbering.
 - K12: core gives each instance its own scratch directory, `ctx.scratch`, deleted once the outputs are moved into the
   artifact area. A configurable scratch root is backlog.
@@ -155,8 +165,8 @@ Classifier blocks: none.
   nothing else; the code-function contract (`Rejection`, `reject`, the context types) sits in one ir module so it can
   move out in one step if it outgrows ir.
 - K15: D. A lift's id is its source node plus what it does (`review_summary`, `x_a_b`, `x_or`, `zip_a_b`), never the
-  variable name, which JavaScript cannot see and bundling renames. Every lift also takes `label` for the clashes left;
-  a second identical lift's hint says to reuse the earlier Ref.
+  variable name, which JavaScript cannot see and bundling renames. Every lift also takes `label` for the clashes left; a
+  second identical lift's hint says to reuse the earlier Ref.
 
 ## Rulings for S3 and S4 (2026-10-16)
 
@@ -168,13 +178,13 @@ Classifier blocks: none.
 - K19: A. A slice S2b, fenced to `packages/sdk`, writes the stdlib functions (`pick`, `or`, `when`, `lookup`, `zip`,
   `join`, `firstOk`, `okOnly`, `settle`) in parallel with S3 and S4.
 - K20: C. Compose compares only the `x-maestro-type` name and the JSON `type` (an `integer` fits a `number`) wherever
-  both schemas declare structure, ignoring enums, required fields, extra properties and annotations. Perform checks
-  each node's inputs against its declared `in` schema before it starts, so a finer mismatch spends nothing on that
-  node. Equality falsely rejects `Enum` into `Text` and `Int` into `Float`; widening rules are easy to get wrong.
+  both schemas declare structure, ignoring enums, required fields, extra properties and annotations. Perform checks each
+  node's inputs against its declared `in` schema before it starts, so a finer mismatch spends nothing on that node.
+  Equality falsely rejects `Enum` into `Text` and `Int` into `Float`; widening rules are easy to get wrong.
 - K21: B. One result rule: the IR's `result` is `{ node }`, the node the build returned, still IR 1.0 (no emitter has
-  shipped). An `ok` node is the result; otherwise the result is the root cause, reached by following non-`ok` inputs
-  the graph does not tolerate (architecture 7). A reducer stays the result, since its inputs are `Settled`. Read
-  literally, "first non-ok node on the critical path" reported a recovered escalation as rejected.
+  shipped). An `ok` node is the result; otherwise the result is the root cause, reached by following non-`ok` inputs the
+  graph does not tolerate (architecture 7). A reducer stays the result, since its inputs are `Settled`. Read literally,
+  "first non-ok node on the critical path" reported a recovered escalation as rejected.
 - K22: C. A pure node's context throws when `concert` or `clock` is read, at compose and at perform alike, with a hint
   to mark the node `pure: false`. A cached or folded pure node would otherwise freeze the first value. A folded node
   gets compose's scratch area and the hosts' facts, and `path()` throws; a node with artifact outputs never folds.
@@ -188,13 +198,13 @@ Classifier blocks: none.
 - K26: A. The IR drops `parent`: a node's parent is its id minus the last segment, and every proper prefix of an id is a
   declared scope or group (`IR.graph`). Parent cycles become impossible. An investigation built 68 IRs (fixtures, SDK
   tests, 11 ported sssf workflows) and found no construct whose logical parent differs from its id prefix.
-- K27: A. The IR drops `label`: a node's name is its id's last segment, which every SDK-built node already matched.
-  The SDK's `label` option stays, naming the segment; `tag` stays for display.
+- K27: A. The IR drops `label`: a node's name is its id's last segment, which every SDK-built node already matched. The
+  SDK's `label` option stays, naming the segment; `tag` stays for display.
 - K28: B. A stdlib lift that finds nothing (`pick` on a missing path, `lookup` on a missing key, `zip` over lists of
-  different lengths) settles `failed`: a gap in data is a defect, not a verdict (ADR 0006). `.or(default)` still
-  catches it; the stdlib rejects only in `firstOk`.
-- K29: A. `join` matches scalar keys (string, number, boolean) by strict equality; a `null` or missing key is
-  unmatched; an object or array key fails the node.
+  different lengths) settles `failed`: a gap in data is a defect, not a verdict (ADR 0006). `.or(default)` still catches
+  it; the stdlib rejects only in `firstOk`.
+- K29: A. `join` matches scalar keys (string, number, boolean) by strict equality; a `null` or missing key is unmatched;
+  an object or array key fails the node.
 - K30: A. No unguarded-`Maybe` check and no `Maybe(T)` type: a skipped node's dependents are skipped (CORE-04), and an
   optional value is a record field left out of `required`. Closes S2-Q4.
 
@@ -203,8 +213,8 @@ Classifier blocks: none.
 - K31: A. The plan reports no maximum concurrency: perform's cap bounds it, and no decision reads the number (D-23).
 - K32: A. The record stores the IR as a JSON column on the concert, written at start, for resume and renderers.
 - K33: A. No record migrations until the first release; another schema version is refused, naming the file.
-- K34: A. The concert stores its process id; a reader that finds a `running` concert's process gone settles it
-  `failed`, "process exited". Matches the legacy approach.
+- K34: A. The concert stores its process id; a reader that finds a `running` concert's process gone settles it `failed`,
+  "process exited". Matches the legacy approach.
 - K35: A. An instance that never started has no record row; a cancelled concert is `failed` with the reason.
 - K36: A. A concert that fails before any node runs has a result with no node, `failed` with the reason (CORE-04).
 - K37: keep. An empty `seq` settles `skipped`.
@@ -217,8 +227,8 @@ Classifier blocks: none.
   current code hash, inputs) matches, pure or not. A changed node and its dependents run again.
 - K43: A. Resume reuses only `ok` instances; `rejected`, `failed` and `skipped` ones run again.
 - K44: A. A resume keeps the concert id; resuming a concert whose process is alive is refused.
-- K45: A. The cache is a table in the record store, policy `on` or `off`. A hit whose artifact is gone or differs is
-  a miss; `prune` drops the entries of the concerts it removes.
+- K45: A. The cache is a table in the record store, policy `on` or `off`. A hit whose artifact is gone or differs is a
+  miss; `prune` drops the entries of the concerts it removes.
 - K46: A. The cache key's config is a cacheable host node's own host namespace; a code node's key has no config.
 
 ## Open for the owner (2026-10-17 morning)
@@ -231,11 +241,11 @@ Classifier blocks: none.
 - K50 (finding 2): a code `Rejection` carries no outputs, yet tolerance and `repeat.tolerate` assume a tolerated
   source's values flow. A: a compose error on reading a tolerant code source's outputs. B: `reject(reason, outputs?)`,
   amending ADR 0008 (recommended). C: tolerance on control edges only.
-- K51 (finding 3): the IR does not record its param values, so K38's premise fails and resume cannot rebuild them.
-  A: an IR `params.values` field (recommended). B: the CLI refuses param flags on an IR. C: params given at perform.
+- K51 (finding 3): the IR does not record its param values, so K38's premise fails and resume cannot rebuild them. A: an
+  IR `params.values` field (recommended). B: the CLI refuses param flags on an IR. C: params given at perform.
 - K52 (finding 4): artifact refs are relative to one concert, so a cache hit from another concert points at the wrong
-  place. A: link or copy the artifact on a hit, keyed by content hash (recommended). B: refs relative to the store
-  root. C: no caching for nodes with artifacts. Blocks S5 with K47, K48 and K51.
+  place. A: link or copy the artifact on a hit, keyed by content hash (recommended). B: refs relative to the store root.
+  C: no caching for nodes with artifacts. Blocks S5 with K47, K48 and K51.
 - K53 to K78 (S6 brief, `.scratch/s6-config-cli/spec.md`, Open Qs): config layout, packs, params, CLI verbs and exit
   codes; each has options and a recommendation there. K70 builds on K51.
 - K79 (wave 3 follow-up review): compose folding runs a pure code node at pre-flight with no timer, so a foldable

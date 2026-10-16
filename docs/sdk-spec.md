@@ -1,7 +1,7 @@
 # maestro: SDK specification (concept level)
 
-Status: draft 2, 2026-10-14. Defines what the authoring SDK, the IR emission contract, the host SDK contract, the
-worker protocol and the test kit must offer, and the semantics an author can rely on. It is not a code-level spec: type
+Status: draft 2, 2026-10-14. Defines what the authoring SDK, the IR emission contract, the host SDK contract, the worker
+protocol and the test kit must offer, and the semantics an author can rely on. It is not a code-level spec: type
 signatures, module layout and wire formats are decided during implementation. Code in section 14 is illustrative and
 non-normative.
 
@@ -13,8 +13,8 @@ The SDK is the only thing an author learns. It builds a graph (CORE-06) and noth
 
 1. **Lean.** A small set of constructors. Each addition needs a written justification (NFR-09). The default answer to
    "should the SDK have X" is "that is a code node or a stdlib helper".
-2. **Symbolic over results.** While building, a node's output is a Ref, never a value. Everything that can be known before
-   any spend is checked before any spend.
+2. **Symbolic over results.** While building, a node's output is a Ref, never a value. Everything that can be known
+   before any spend is checked before any spend.
 3. **Typed edges.** Every port has a schema. Mapping between nodes is by typed ports and lifting combinators, not by
    untyped dictionaries.
 4. **Code where code is honest.** Structure is in the graph. Parsing, merging, regrouping and policy that need real code
@@ -36,7 +36,8 @@ One constructor declares both. Params are plain values known at build time. Port
 upstream node outputs (D-16), so a composition with ports runs only through `use`. A shared building block that should
 also run alone exports a second composition without ports that uses it with defaults.
 
-The build function runs once per compose, as the first step of the stage. It is a pure function of params and composed config.
+The build function runs once per compose, as the first step of the stage. It is a pure function of params and composed
+config.
 
 ## 3. Types
 
@@ -44,18 +45,17 @@ Every port, param and config value has a schema that serializes to JSON Schema (
 library. The type vocabulary is:
 
 - **Values.** `Text`, `Bool`, `Int`, `Float`, `Json(schema)`, `List(T)`, `Record`, and enumerations.
-- **Artifacts.** `File`, `Dir`, and typed files such as `JsonFile(schema)` and `Markdown`. An artifact has provenance and
-  a content hash and is staged by whichever node needs it (CORE-15). Artifacts are values only in the sense that nodes
-  consume and produce them. Large payloads are always artifacts.
-- **Outcome and Settled.** `Outcome` is `ok | rejected | failed | skipped`. `Settled(T)` is what a group member produces:
-  `{outcome: ok, value: T}`, `{outcome: rejected | failed, value?: T, reason: Text}` or
+- **Artifacts.** `File`, `Dir`, and typed files such as `JsonFile(schema)` and `Markdown`. An artifact has provenance
+  and a content hash and is staged by whichever node needs it (CORE-15). Artifacts are values only in the sense that
+  nodes consume and produce them. Large payloads are always artifacts.
+- **Outcome and Settled.** `Outcome` is `ok | rejected | failed | skipped`. `Settled(T)` is what a group member
+  produces: `{outcome: ok, value: T}`, `{outcome: rejected | failed, value?: T, reason: Text}` or
   `{outcome: skipped, value?: T, reason?: Text}` (ADR 0006).
 - **Host types.** Registered by a host (for example a lane handle). Core treats them as opaque, named, serializable.
   Artifacts and host types are named in their schemas by `x-maestro-type` (ADR 0007).
 
-An optional value is a record field left out of `required`. A dependent never reads a skipped node's outputs, since
-it is skipped too (CORE-04), so a guarded output needs no default; `ref.or(default)` gives one where a value must
-flow on.
+An optional value is a record field left out of `required`. A dependent never reads a skipped node's outputs, since it
+is skipped too (CORE-04), so a guarded output needs no default; `ref.or(default)` gives one where a value must flow on.
 
 ## 4. Nodes and their results
 
@@ -70,14 +70,14 @@ records, not an identity).
 
 ### 4.1 Core node constructors
 
-| Constructor              | Purpose                                                                                  | Key arguments                                            | Result                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------- |
+| Constructor              | Purpose                                                                                  | Key arguments                                                       | Result                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------- |
 | `code(fn, opts)`         | Run the author's function over typed inputs.                                             | `in` ports, `out` schema, `reads`, `writes`, `pure` flag, `timeout` | outputs per `out`                               |
-| `map(items, body, opts)` | Instantiate `body` once per item, in parallel.                                           | `items`, body, `max`, `onError`                          | `Settled(R)[]` with static cardinality metadata |
-| `seq(items, body, opts)` | Instantiate `body` per item in order, stop at the first item whose result meets `until`. | `items`, body, `until`, `max`                            | the stopping result, or the last                |
-| `repeat(opts)`           | Bounded loop carrying typed state.                                                       | `init`, `step(state, i)`, `until`, `max`, `tolerate`     | the last state                                  |
-| `assert(cond, message)`  | A policy or invariant.                                                                   | a boolean                                                | none                                            |
-| `use(sub, ports, opts)`  | Instantiate a subcomposition.                                                            | `ports` (Refs or plain values), `opts.params` overrides  | the subcomposition's declared outputs           |
+| `map(items, body, opts)` | Instantiate `body` once per item, in parallel.                                           | `items`, body, `max`, `onError`                                     | `Settled(R)[]` with static cardinality metadata |
+| `seq(items, body, opts)` | Instantiate `body` per item in order, stop at the first item whose result meets `until`. | `items`, body, `until`, `max`                                       | the stopping result, or the last                |
+| `repeat(opts)`           | Bounded loop carrying typed state.                                                       | `init`, `step(state, i)`, `until`, `max`, `tolerate`                | the last state                                  |
+| `assert(cond, message)`  | A policy or invariant.                                                                   | a boolean                                                           | none                                            |
+| `use(sub, ports, opts)`  | Instantiate a subcomposition.                                                            | `ports` (Refs or plain values), `opts.params` overrides             | the subcomposition's declared outputs           |
 
 Semantics each constructor must honor:
 
@@ -94,8 +94,8 @@ Semantics each constructor must honor:
   `onError` is required. With `"settle"` a non-ok member becomes a `Settled` value and the group is `ok`. With
   `"propagate"` the group takes the worst member outcome, and the first non-ok member cancels the rest (ADR 0006).
 - **`seq`.** Covers escalation over an ordered list. `until` gets a member's result and returns a `Ref<Bool>`. Members
-  after a satisfied `until` never start. The bound is `items.length` or `max`. A `seq` with `until` stays an
-  "up to N" region in the plan. A `seq` over no items settles `skipped`.
+  after a satisfied `until` never start. The bound is `items.length` or `max`. A `seq` with `until` stays an "up to N"
+  region in the plan. A `seq` over no items settles `skipped`.
 - **`repeat`.** The step receives the previous state and the iteration index. At least one iteration runs: `until` gets
   each new state, never `init`, and returns a `Ref<Bool>`. A `repeat` stays an "up to `max`" region in the plan, for
   bounds and rendering. `max` must be known at compose time, from a literal or a param. State edges are tolerant of
@@ -112,31 +112,32 @@ Host SDKs add constructors with the same Result handle shape (section 12).
 ### 4.2 Guards and tolerance
 
 - **`when: Ref<Bool>`** on any node. A false guard makes the node `skipped`.
-- **`tolerate: "rejected"`** on a consuming node or a `repeat` state edge lets the node run after a `rejected`
-  upstream. It then receives `reason`. Without it a non-ok upstream makes the node `skipped` (CORE-04). `failed` and
-  `skipped` are never tolerable.
+- **`tolerate: "rejected"`** on a consuming node or a `repeat` state edge lets the node run after a `rejected` upstream.
+  It then receives `reason`. Without it a non-ok upstream makes the node `skipped` (CORE-04). `failed` and `skipped` are
+  never tolerable.
 
 ## 5. Refs and mapping between nodes
 
 A **Ref** is a symbolic handle to a typed value that will exist at perform time. Rules:
 
-- **No branching.** Using a Ref where a plain value is required (`if (ref)`, string concatenation, array indexing by a Ref)
-  throws a build diagnostic that names the lifting alternative. This is what keeps the graph decidable (D-04).
+- **No branching.** Using a Ref where a plain value is required (`if (ref)`, string concatenation, array indexing by a
+  Ref) throws a build diagnostic that names the lifting alternative. This is what keeps the graph decidable (D-04).
 - **Lifting combinators** (all produce visible nodes in the graph, never hidden ones):
-    - `ref.pick(path)` selects a field of a structured value.
-    - `zip(a, b)` and `join(a, b, {on})` combine refs, the second by key.
-    - `when(cond, ...)` and `ref.or(default)` for guards and defaults.
-    - `lookup(table, key)` indexes a plain table by a Ref key.
+  - `ref.pick(path)` selects a field of a structured value.
+  - `zip(a, b)` and `join(a, b, {on})` combine refs, the second by key.
+  - `when(cond, ...)` and `ref.or(default)` for guards and defaults.
+  - `lookup(table, key)` indexes a plain table by a Ref key.
 
   A lift's id names its source node and what it does, so it needs no label: `review.out.result.pick("summary")` is
   `review_summary`, and `x.or(…)` is `x_or`. Every lift also takes `label`, for the rare clash that remains.
+
 - **Mapping between ports** is by typed assignment. A mismatch is a compose-time type error (CORE-02) naming both ports
   and schemas.
 - **Templates.** `tpl(file, vars)` renders a prompt or text from a template file. The variable set is checked against
   the template's declared variables and against the Refs' schemas at compose time. A missing or mistyped variable is an
   error before spend.
-- **Known at build (D-16).** Params and composed config are plain values. Node outputs and file contents are Refs.
-  A subcomposition takes plain params and Ref ports. A plain value may feed a port, and a Ref never feeds a param.
+- **Known at build (D-16).** Params and composed config are plain values. Node outputs and file contents are Refs. A
+  subcomposition takes plain params and Ref ports. A plain value may feed a port, and a Ref never feeds a param.
 - **Three tiers.** Build (plain values, shapes the graph), compose after build (folding, guards, bounds), perform (Refs
   resolve). A build-time `if` on a plain value changes the graph's shape. A `when` guard on a Ref keeps both branches.
 - **Enforcement.** Plain and Ref are distinct types. A Ref throws when coerced to a boolean or a string. Ambient state
@@ -146,7 +147,8 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
 ## 6. Results of a composition
 
 A build function returns a Result handle or a Ref to a node's port; a subcomposition's may return an object of named
-outputs for `use`. A root build that returns no node is `TYPE.result`. For an executable composition the **concert result** follows from the returned node by the **result rule** (CORE-04, architecture 7):
+outputs for `use`. A root build that returns no node is `TYPE.result`. For an executable composition the **concert
+result** follows from the returned node by the **result rule** (CORE-04, architecture 7):
 
 - an `ok` node is the result,
 - otherwise the result is the root cause of its outcome, so a skipped consolidator reports the code node that threw.
@@ -163,25 +165,25 @@ A code node is the SDK's answer to "this needs real code".
   compile time. Output validation happens at the node boundary. A return that fails its schema makes the node `failed`
   with the validation error.
 - **Purity.** A pure node is a function of its inputs and declared artifacts. It is cacheable and foldable. An impure
-  node declares `pure: false`, is never cached, and is never folded. A pure node that reads `ctx.clock` or
-  `ctx.concert` fails.
-- **Timeout.** A code node runs with no time limit unless its author sets `timeout` in milliseconds. One that runs
-  past it settles `failed`.
+  node declares `pure: false`, is never cached, and is never folded. A pure node that reads `ctx.clock` or `ctx.concert`
+  fails.
+- **Timeout.** A code node runs with no time limit unless its author sets `timeout` in milliseconds. One that runs past
+  it settles `failed`.
 - **Declared reads and writes.** File and directory paths a node reads or writes are declared by artifact ports or by
-  explicit `reads` and `writes`. Compose can check write scope and the cache can hash declared reads. Undeclared
-  access is the author's error. The SDK detects what it can (for example through the context's clock and environment) and
-  does not promise exhaustive detection (R-2).
-- **Context.** A typed, read-only context offers the concert id, the clock value, the instance's own scratch
-  directory and `log(line)`, which records a line on the instance, plus whatever the loaded hosts add (architecture
-  section 6). A file the node writes there and returns at an artifact output becomes an artifact (ADR 0007).
+  explicit `reads` and `writes`. Compose can check write scope and the cache can hash declared reads. Undeclared access
+  is the author's error. The SDK detects what it can (for example through the context's clock and environment) and does
+  not promise exhaustive detection (R-2).
+- **Context.** A typed, read-only context offers the concert id, the clock value, the instance's own scratch directory
+  and `log(line)`, which records a line on the instance, plus whatever the loaded hosts add (architecture section 6). A
+  file the node writes there and returns at an artifact output becomes an artifact (ADR 0007).
 - **Errors.** A thrown error settles the node as `failed`. `reject(reason)` settles it as `rejected`.
 - **Runtime.** A worker reference names the runtime. The initial runtime is `ts`, in-process (CORE-14).
 
 ## 8. Subcompositions
 
 - **Signature.** Typed params, typed ports and typed outputs (Result handles or named outputs).
-- **Scope.** Each use produces a named scope in the IR with the subcomposition's id. Renderers can collapse it, caches key
-  on it, and diagnostics name it.
+- **Scope.** Each use produces a named scope in the IR with the subcomposition's id. Renderers can collapse it, caches
+  key on it, and diagnostics name it.
 - **Reuse.** Subcompositions are exported by packs and used by other packs. A pack that uses another pack's
   subcomposition imports its source, and the using pack's bundle includes it (ADR 0002, ADR 0008). They replace the `_`
   helper modules of the predecessor.
@@ -190,12 +192,12 @@ A code node is the SDK's answer to "this needs real code".
 
 ## 9. Params and the CLI
 
-- A composition's param declaration is the single source for its CLI flags (SDK-01) and its tunables. Schemas carry hints:
-  flag name, short description, repeatable, required, default.
+- A composition's param declaration is the single source for its CLI flags (SDK-01) and its tunables. Schemas carry
+  hints: flag name, short description, repeatable, required, default.
 - Host types may appear as param types, with the host supplying CLI resolution. The coding-agent host adds the lane ref,
   written `<concert id>.<node instance id>`, for forking a lane left by an earlier concert (D-27).
-- The CLI validates params before build. A required param that is absent, or a constraint violation (for example a list of
-  fewer than two models for a comparison), is a usage error with a next-step message (CLI-06).
+- The CLI validates params before build. A required param that is absent, or a constraint violation (for example a list
+  of fewer than two models for a comparison), is a usage error with a next-step message (CLI-06).
 - Every composition declares at least one example input set. `compose` with no params uses the first one, and `perform`
   never does (D-19).
 - Composition metadata the predecessor declared by hand (the roles used, whether checks run) is derived from the graph
@@ -204,10 +206,10 @@ A code node is the SDK's answer to "this needs real code".
 ## 10. Config
 
 - Params carry defaults declared in code (CFG-03). The declaration goes into the IR under the composition's id.
-- Composed config reaches the build function. Values that bound groups (`max` on `repeat` and `map`) come from params and
-  are therefore known at compose time.
-- Precedence, highest first (CFG-04, D-17): the use site for a subcomposition or the CLI flag for a root composition, then
-  profile, workspace and user YAML, then the default. YAML keys live under the pack id and then the composition id.
+- Composed config reaches the build function. Values that bound groups (`max` on `repeat` and `map`) come from params
+  and are therefore known at compose time.
+- Precedence, highest first (CFG-04, D-17): the use site for a subcomposition or the CLI flag for a root composition,
+  then profile, workspace and user YAML, then the default. YAML keys live under the pack id and then the composition id.
 - A key that no installed registrant claims fails compose with a did-you-mean hint. A key claimed by an installed but
   unused registrant is ignored (CFG-05, D-24). The composed config view reports value provenance (CFG-06).
 - Core config is not visible to compositions. They never read engine settings.
@@ -245,14 +247,14 @@ host's own spec, written during the host slice.
 An emitter (the TypeScript SDK or any future one) must produce IR that:
 
 - validates against the published IR schema and declares its IR version,
-- has stable, unique ids that are paths, each proper prefix a declared scope or group and the last segment the
-  node's name,
+- has stable, unique ids that are paths, each proper prefix a declared scope or group and the last segment the node's
+  name,
 - carries the typed ports, edge kinds, group cardinalities and result rule described in architecture section 5,
 - is byte-stable for identical params and composed config (CORE-06),
 - names code nodes by worker reference `{runtime, module, export, code hash}`.
 
-The core validates IR on load and rejects an unknown major version (CORE-16). The IR carries enough for a renderer and for
-the cache without consulting the composition's source.
+The core validates IR on load and rejects an unknown major version (CORE-16). The IR carries enough for a renderer and
+for the cache without consulting the composition's source.
 
 ### 13.2 Worker protocol (CORE-14)
 
@@ -262,8 +264,8 @@ Specified for later runtimes and out-of-process workers, implemented in-process 
 - **Invoke.** Node id, expansion path, input values and their port schemas, whether the node is pure, artifact
   references, context. Reply: outputs and an outcome, or an error.
 - **Cancel and timeout.** The core can cancel an invocation. A worker must stop work and reply promptly.
-- **Logs.** A worker can emit log lines tagged with the node instance, stored in the record. A code function writes
-  one with `ctx.log(line)`.
+- **Logs.** A worker can emit log lines tagged with the node instance, stored in the record. A code function writes one
+  with `ctx.log(line)`.
 - **Isolation.** A worker process is operator-trusted (NFR-05). It is not sandboxed by the core.
 
 ### 13.3 Diagnostics catalogue (CORE-17)
@@ -273,8 +275,8 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 - `IR` schema violation, unknown version.
 - `REF` a Ref used where a value is required, a Ref that escaped its scope.
 - `TYPE` edge schema mismatch, template variable missing or mistyped, a build that returns no node.
-- `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count, a
-  code node `timeout` that is not a whole number of milliseconds within the timer range (`BOUND.timeout`).
+- `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count, a code
+  node `timeout` that is not a whole number of milliseconds within the timer range (`BOUND.timeout`).
 - `CFG` unclaimed key, schema violation, required key missing.
 - `HOST` anything a host `validate` hook reports (for example a lane joined twice).
 - `PURE` an undeclared ambient read the runtime detected, or `reads` and `writes` contradictions.
@@ -305,32 +307,32 @@ Syntax is a sketch.
 
 ```ts
 export const fixUntilGreen = composition(
-    "fix_until_green",
-    {
-        ports: { build: AgentResult, prompt: Text },
-        params: { maxRepairs: Int({ default: 2 }) },
-    },
-    (params, { build, prompt }) => {
-        const check = (b) => checkNode({ lane: join(b.lane), prompt });
-        return repeat({
-            init: check(build),
-            step: (checked, i) =>
-                check(
-                    agent("build", {
-                        lane: join(checked.lane),
-                        tag: `fix_${i}`,
-                        prompt: tpl("fix.md", {
-                            failures: checked.reason,
-                            logs: checked.out.logs,
-                            request: prompt,
-                        }),
-                    }),
-                ),
-            until: (c) => c.ok,
-            max: params.maxRepairs,
-            tolerate: "rejected",
-        });
-    },
+  "fix_until_green",
+  {
+    ports: { build: AgentResult, prompt: Text },
+    params: { maxRepairs: Int({ default: 2 }) },
+  },
+  (params, { build, prompt }) => {
+    const check = (b) => checkNode({ lane: join(b.lane), prompt });
+    return repeat({
+      init: check(build),
+      step: (checked, i) =>
+        check(
+          agent("build", {
+            lane: join(checked.lane),
+            tag: `fix_${i}`,
+            prompt: tpl("fix.md", {
+              failures: checked.reason,
+              logs: checked.out.logs,
+              request: prompt,
+            }),
+          }),
+        ),
+      until: (c) => c.ok,
+      max: params.maxRepairs,
+      tolerate: "rejected",
+    });
+  },
 );
 ```
 
@@ -338,16 +340,16 @@ export const fixUntilGreen = composition(
 
 ```ts
 const builtOn = (m, prompt, run) =>
-    use(fixUntilGreen, {
-        build: agent("build", { prompt, lane: fork(run), role: { model: m } }),
-        prompt,
-    });
+  use(fixUntilGreen, {
+    build: agent("build", { prompt, lane: fork(run), role: { model: m } }),
+    prompt,
+  });
 
 escalate = composition("build_escalate", Params, ({ prompt, run, models }) =>
-    seq(models, (m) => builtOn(m, prompt, run), { until: (r) => r.ok }),
+  seq(models, (m) => builtOn(m, prompt, run), { until: (r) => r.ok }),
 );
 fanout = composition("build_fanout", Params, ({ prompt, run, models }) =>
-    firstOk(map(models, (m) => builtOn(m, prompt, run), { onError: "settle" })),
+  firstOk(map(models, (m) => builtOn(m, prompt, run), { onError: "settle" })),
 );
 ```
 
@@ -355,28 +357,28 @@ fanout = composition("build_fanout", Params, ({ prompt, run, models }) =>
 
 ```ts
 const runs = map(
-    jobs,
-    (job) => {
-        const lens = agent("review", {
-            prompt: tpl("lens.md", { job, ctx }),
-            role: job.lens,
-            out: { findings: Json("findings.json", Findings) },
-        });
-        const skeptic = agent("review", {
-            when: lens.out.findings.nonEmpty,
-            role: job.skeptic,
-            prompt: tpl("skeptic.md", { job, findings: lens.out.findings }),
-            out: { verdicts: Json("skeptic.json", Verdicts) },
-        });
-        return { lens, skeptic };
-    },
-    { max: 14, onError: "settle" },
+  jobs,
+  (job) => {
+    const lens = agent("review", {
+      prompt: tpl("lens.md", { job, ctx }),
+      role: job.lens,
+      out: { findings: Json("findings.json", Findings) },
+    });
+    const skeptic = agent("review", {
+      when: lens.out.findings.nonEmpty,
+      role: job.skeptic,
+      prompt: tpl("skeptic.md", { job, findings: lens.out.findings }),
+      out: { verdicts: Json("skeptic.json", Verdicts) },
+    });
+    return { lens, skeptic };
+  },
+  { max: 14, onError: "settle" },
 );
 const merged = code(byFinding, { in: { runs }, out: Merged });
 return agent("review", {
-    prompt: tpl("consolidate.md", { merged }),
-    role: SOL,
-    out: { report: Markdown("review.md") },
+  prompt: tpl("consolidate.md", { merged }),
+  role: SOL,
+  out: { report: Markdown("review.md") },
 });
 ```
 
@@ -385,19 +387,19 @@ return agent("review", {
 ```ts
 const scout = agent("scout", { prompt, lane: fresh() });
 const plans = map(
-    ANGLES,
-    (a) =>
-        agent("plan", {
-            lane: fork(scout.lane),
-            prompt: tpl("angle.md", { a, scouted }),
-        }),
-    { onError: "settle" },
+  ANGLES,
+  (a) =>
+    agent("plan", {
+      lane: fork(scout.lane),
+      prompt: tpl("angle.md", { a, scouted }),
+    }),
+  { onError: "settle" },
 );
 const good = code(renderOk, { in: { plans: plans.out.results }, out: { text: Text, nonEmpty: Bool } });
 const synthesis = agent("plan", {
-    lane: join(scout.lane),
-    when: good.out.nonEmpty,
-    prompt: tpl("synthesis.md", { good: good.out.text }),
+  lane: join(scout.lane),
+  when: good.out.nonEmpty,
+  prompt: tpl("synthesis.md", { good: good.out.text }),
 });
 return firstOk([synthesis.out.text, firstOk(plans).out.value.pick("result.text")]);
 ```
@@ -425,4 +427,5 @@ general compositions). It was not exercised by running anything. Re-check each r
 - SDKs in languages other than TypeScript (the IR allows them).
 - An expression language. Code nodes cover it.
 - Perform-time-shaped graphs beyond bounded groups. A region's size may depend on a result only with a declared maximum.
-- Dynamic subcomposition choice at perform time. A composition may select among subcompositions at build time from params.
+- Dynamic subcomposition choice at perform time. A composition may select among subcompositions at build time from
+  params.

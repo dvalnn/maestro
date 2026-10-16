@@ -1,12 +1,12 @@
 ---
 status: accepted
 ---
+
 # Outcomes aggregate by one rule, and fan-in nodes see settled inputs
 
 Wherever several outcomes collapse into one, the worst wins: `failed` > `rejected` > `skipped` > `ok`. `Outcome`,
-`Settled` and one `worstOutcome` function live in `packages/ir`, the package every emitter and consumer already
-depends on, and are the only implementation. The SDK, the executor and the stdlib reducers call it. The rule applies
-to:
+`Settled` and one `worstOutcome` function live in `packages/ir`, the package every emitter and consumer already depends
+on, and are the only implementation. The SDK, the executor and the stdlib reducers call it. The rule applies to:
 
 - a `map` member whose body returns several results,
 - a `map` group with `onError: "propagate"`,
@@ -16,20 +16,20 @@ to:
 
 **Propagate.** The group's outcome is the worst member outcome, and its `reason` is that of the first such member by
 item order. When the first member settles non-ok, no further member starts, and running members are cancelled through
-their kind's cancel hook. A member cancelled this way settles `skipped` with the reason `cancelled: <instance>
-<outcome>`, so it never worsens the group's outcome. Cancelling a concert still settles running instances `failed`
-(architecture section 7).
+their kind's cancel hook. A member cancelled this way settles `skipped` with the reason
+`cancelled: <instance> <outcome>`, so it never worsens the group's outcome. Cancelling a concert still settles running
+instances `failed` (architecture section 7).
 
-**Fan-in.** A code node with `fanin: true` runs once all its upstreams have settled, whatever their outcome. It
-receives each `data` input as `Settled(T)`, and a `collect` input as `Settled(T)[]` as before. Its own `when` guard and
-control edges apply as on any node.
+**Fan-in.** A code node with `fanin: true` runs once all its upstreams have settled, whatever their outcome. It receives
+each `data` input as `Settled(T)`, and a `collect` input as `Settled(T)[]` as before. Its own `when` guard and control
+edges apply as on any node.
 
-**Reducer inputs.** A reducer's ports are a map's `results`, or one `data` input per output it was given, `in0` to
-`inN` in order. It reads either as one `Settled[]` in that order. Given a map's handle, the SDK uses its `results`.
+**Reducer inputs.** A reducer's ports are a map's `results`, or one `data` input per output it was given, `in0` to `inN`
+in order. It reads either as one `Settled[]` in that order. Given a map's handle, the SDK uses its `results`.
 
 **Port schemas describe the delivered value.** A map's `results` port, every input fed by a `collect` edge and every
-`data` input of a fan-in node declare `Settled`, built by `settledSchema` in `packages/ir`. A `data` edge into a
-fan-in input checks the upstream schema against the port's `value` subschema.
+`data` input of a fan-in node declare `Settled`, built by `settledSchema` in `packages/ir`. A `data` edge into a fan-in
+input checks the upstream schema against the port's `value` subschema.
 
 **`Settled`'s shape.** An `ok` one carries a value and no reason. A `rejected` or `failed` one carries a reason. A value
 on any non-ok outcome, and a reason on `skipped`, stay optional until a slice pins them. The schema is closed to
@@ -56,7 +56,7 @@ on any non-ok outcome, and a reason on `skipped`, stay optional until a slice pi
 - A `fanin` node cannot mix inputs that must be `ok` with settled ones. A strict input is checked upstream.
 - Under propagate, which members ran depends on timing, so the record varies between runs. The outcome does not.
 - The plan-panel example indexes no settled list:
-  `firstOk([synthesis.out.text, firstOk(plans).out.value.pick("result.text")])` falls back to a plan that succeeded.
-  A member's value holds its outputs under the member's name, here `result`.
+  `firstOk([synthesis.out.text, firstOk(plans).out.value.pick("result.text")])` falls back to a plan that succeeded. A
+  member's value holds its outputs under the member's name, here `result`.
 - `Outcome`, `Settled` and `worstOutcome` land in `packages/ir` before the SDK and executor build on them. The home is
   revisited if those slices find a better one.

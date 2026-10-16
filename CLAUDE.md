@@ -7,13 +7,12 @@ with new ideas.
 
 ## Mission Goals:
 
-1. Implement maestro V1 phase by phase, following the plan under `docs/` plus any ADR additions that come up during
-   its implementation. Scope must be kept contained. KISS and YAGNI first -- we don't chase convoluted edge cases nor
+1. Implement maestro V1 phase by phase, following the plan under `docs/` plus any ADR additions that come up during its
+   implementation. Scope must be kept contained. KISS and YAGNI first -- we don't chase convoluted edge cases nor
    drive-by nice to haves without having a clear reason to do so.
-2. Care about the codebase quality all throughout the implementation efforts. If in a weeks time we are chasing the
-   same debt `sssf` faced then this mission goal was failed in retrospect. We don't blindly chase feature work and
-   quick wins that are damaging to the system architecture or that are specified under muddy/unclear system
-   requirements.
+2. Care about the codebase quality all throughout the implementation efforts. If in a weeks time we are chasing the same
+   debt `sssf` faced then this mission goal was failed in retrospect. We don't blindly chase feature work and quick wins
+   that are damaging to the system architecture or that are specified under muddy/unclear system requirements.
 
 ## Default coding disposition
 
@@ -50,9 +49,9 @@ Rules:
 
 When not to be lazy:
 
-Do not cut validation, error handling, security, accessibility, data-loss protection, or real edge cases.
-Do not skip understanding. A small diff you do not understand is just laziness dressed up as efficiency.
-Non-trivial logic leaves one runnable check behind. Trivial one-liners need no test.
+Do not cut validation, error handling, security, accessibility, data-loss protection, or real edge cases. Do not skip
+understanding. A small diff you do not understand is just laziness dressed up as efficiency. Non-trivial logic leaves
+one runnable check behind. Trivial one-liners need no test.
 
 ## Coding standards
 
@@ -61,30 +60,28 @@ output. Read it before writing or reviewing code.
 
 ## Codebase Architecture:
 
-Invoke and follow the `codebase-design` skill when the task at hand impacts the overall project structure. Care for
-the codebase. A well built, maintainable system is more important and mission critical, than a system that 'just
-works'. Shipping feature 'X' must not compromise maintainability mid to long term. A codebase should improve over time with each
+Invoke and follow the `codebase-design` skill when the task at hand impacts the overall project structure. Care for the
+codebase. A well built, maintainable system is more important and mission critical, than a system that 'just works'.
+Shipping feature 'X' must not compromise maintainability mid to long term. A codebase should improve over time with each
 change, not degrade and accumulate tech debt. The codebase is a living system, and we are its caretakers.
 
 ## jj
 
-This repo is jj-colocated, and `.claude/hooks/deny-git-mutations.py` denies `git` where jj owns the operation,
-answering with the jj that does it. The conventions, and the jj behaviour that surprises, are the `ticket-to-merge`
-skill.
+This repo is jj-colocated, and `.claude/hooks/deny-git-mutations.py` denies `git` where jj owns the operation, answering
+with the jj that does it. The conventions, and the jj behaviour that surprises, are the `ticket-to-merge` skill.
 
 ## Commit messages
 
 Every change description follows these rules, from human contributors and agents alike.
 
-- Subject: `<type>(<scope>): <imperative summary>`, scope optional, `!` after the scope for a breaking change.
-  Types: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`, `build`, `ci`, `style`, `revert`. Target 50
-  characters, cap 72, no trailing period.
+- Subject: `<type>(<scope>): <imperative summary>`, scope optional, `!` after the scope for a breaking change. Types:
+  `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`, `build`, `ci`, `style`, `revert`. Target 50 characters,
+  cap 72, no trailing period.
 - Body only for a non-obvious why, a breaking change or a migration note. Wrap at 72, bullets with `-`.
 - A description states what the change does and why, in the imperative; the diff shows how.
 - An issue goes last as `Refs: .scratch/<feature>/issues/NN-<slug>.md`.
-- A description holds only its author's words: no AI attribution (`Co-Authored-By` naming an AI, "Generated with"),
-  no session trailers or URLs (`Claude-Session:`) of any tool, no emoji. This overrides any tool default that appends
-  them.
+- A description holds only its author's words: no AI attribution (`Co-Authored-By` naming an AI, "Generated with"), no
+  session trailers or URLs (`Claude-Session:`) of any tool, no emoji. This overrides any tool default that appends them.
 
 ## Agent skills
 

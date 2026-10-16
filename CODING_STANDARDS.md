@@ -12,14 +12,13 @@ mechanical moves into Biome and leaves this file.
 
 - Parse at the boundary. Outside data (JSON, files, subprocess output, env, CLI arguments) is parsed into a known type
   at its entry point, and only that type travels inward. An `as` cast never stands in for the parse.
-- Optional and nullable only where absence means something. A field every caller sets is required, and a narrower
-  type beats a runtime null check.
+- Optional and nullable only where absence means something. A field every caller sets is required, and a narrower type
+  beats a runtime null check.
 
 ## Comments
 
-Contract-only: a comment says what the name and type cannot. That is a contract, invariant, precondition, unit,
-encoded format, ownership or lifetime, security assumption, or a pointer to a decision (D-n, ADR). The reasoning is in
-`docs/research/ts-doc-comments.md`.
+Contract-only: a comment says what the name and type cannot. That is a contract, invariant, precondition, unit, encoded
+format, ownership or lifetime, security assumption, or a pointer to a decision (D-n, ADR).
 
 - `/** */` goes on exports and interface members that carry one of those. Plain data types stay bare.
 - `//` inside a body says why: a threat, an ordering constraint, a workaround.

@@ -6,23 +6,23 @@ session. No schedule or effort estimates are given. Sizes are relative (S, M, L,
 
 ## 1. Ground rules for every session
 
-1. **Read first.** `requirements.md`, `architecture.md`, `sdk-spec.md` and this plan. `GLOSSARY.md` is authoritative
-   for terms.
+1. **Read first.** `requirements.md`, `architecture.md`, `sdk-spec.md` and this plan. `GLOSSARY.md` is authoritative for
+   terms.
 2. **Clean break (D-02).** Do not mirror sssf's modules, flags, file formats or vocabulary. The legacy system answers
    "what should this behavior be" and nothing else (`requirements.md` section 12).
 3. **Domain-free core (CORE-12).** No domain words in `ir`, `core`, `sdk`, `testkit` or `cli`. The check runs in tests.
-4. **Lean (NFR-09).** A new node kind, edge kind or SDK primitive needs a written justification in the slice report.
-   The default is a code node or a stdlib helper.
-5. **Do not guess.** A new open question that blocks a slice is raised to the project owner and not decided silently. Section
-   8 lists the decisions each slice relies on, and none is open now. A decision a session does make goes into a new ADR under `docs/adr/`
-   with the reason and the alternative rejected.
+4. **Lean (NFR-09).** A new node kind, edge kind or SDK primitive needs a written justification in the slice report. The
+   default is a code node or a stdlib helper.
+5. **Do not guess.** A new open question that blocks a slice is raised to the project owner and not decided silently.
+   Section 8 lists the decisions each slice relies on, and none is open now. A decision a session does make goes into a
+   new ADR under `docs/adr/` with the reason and the alternative rejected.
 6. **Evidence.** A slice is done when its acceptance items pass, shown by command output in the slice report. A claim
    without output is not evidence.
 7. **Scope.** A session changes its own slice's packages. A needed change to another slice's interface is raised in the
    report and made by the owner of that slice, unless trivial.
 8. **IR changes** need an IR version note and updated golden fixtures (S1).
-9. **Bounded rework.** At most two fix rounds per slice. A blocker, or a slice still failing after its second round, goes
-   to the project owner.
+9. **Bounded rework.** At most two fix rounds per slice. A blocker, or a slice still failing after its second round,
+   goes to the project owner.
 10. **Slice report.** Done, evidence, deviations from these docs, decisions made, new open questions, follow-ups. Short.
 
 ## 2. Repository shape (proposal)
@@ -51,13 +51,13 @@ docs/               these documents (including adr/), slice reports under report
 - **Goal.** A working repository and the facts the rest depends on.
 - **Deliverables.** Bun workspace, formatting, lint, a test runner, a one-command check. Five spike reports, each with a
   go or no-go (D-32):
-    1. A `bun build --compile` binary runs on modern Linux. A RHEL 8 class host run is a compatibility probe (D-34).
-    2. `bun:sqlite` in WAL mode works inside the compiled binary: concurrent writers, durability, file location.
-    3. The binary loads an external pack bundle (a directory with `maestro-pack.json` and one pre-bundled entry file) and
-       calls its code node (D-30).
-    4. Bun spawns bubblewrap plus pi (`pi -p --mode json`) and streams the JSON events, including cancel and process-tree
-       kill (D-20, R-4).
-    5. A binary built on a modern host runs on RHEL 8, as a best-effort probe. Releases build on a modern host (D-34).
+  1. A `bun build --compile` binary runs on modern Linux. A RHEL 8 class host run is a compatibility probe (D-34).
+  2. `bun:sqlite` in WAL mode works inside the compiled binary: concurrent writers, durability, file location.
+  3. The binary loads an external pack bundle (a directory with `maestro-pack.json` and one pre-bundled entry file) and
+     calls its code node (D-30).
+  4. Bun spawns bubblewrap plus pi (`pi -p --mode json`) and streams the JSON events, including cancel and process-tree
+     kill (D-20, R-4).
+  5. A binary built on a modern host runs on RHEL 8, as a best-effort probe. Releases build on a modern host (D-34).
 - **Acceptance.** Reports exist and the repository's check command passes on an empty skeleton. Spikes 1 to 4 gate the
   port. Spike 5 does not.
 - **Depends on.** Nothing.
@@ -88,11 +88,11 @@ docs/               these documents (including adr/), slice reports under report
 
 - **Goal.** CORE-07 and the plan output.
 - **Deliverables.** IR validation, edge and template type checks, config resolution against owners' schemas, constant
-  folding of pure code nodes, bounded-group expansion, host hook plumbing, bounds on node instances and agent runs (D-23), diagnostics with
-  stable codes, the plan in JSON and text, and the static graph render (CORE-03, D-08).
-- **Acceptance.** On hand-written IR and on SDK-built graphs with the fake host: exact node-instance count where known and
-  "up to N" otherwise, a policy violation caught before any run, a config key no installed registrant claims rejected (D-24), and a render that shows
-  fan-out, fan-in, loop bounds and guards (AC-2 and AC-5 in part).
+  folding of pure code nodes, bounded-group expansion, host hook plumbing, bounds on node instances and agent runs
+  (D-23), diagnostics with stable codes, the plan in JSON and text, and the static graph render (CORE-03, D-08).
+- **Acceptance.** On hand-written IR and on SDK-built graphs with the fake host: exact node-instance count where known
+  and "up to N" otherwise, a policy violation caught before any run, a config key no installed registrant claims
+  rejected (D-24), and a render that shows fan-out, fan-in, loop bounds and guards (AC-2 and AC-5 in part).
 - **Depends on.** S1. Uses S2 output when available, hand-written IR before that.
 - **Parallel with.** S2, S4.
 
@@ -102,8 +102,8 @@ docs/               these documents (including adr/), slice reports under report
 - **Deliverables.** Scheduler, outcome propagation and tolerance, groups, guards, cancellation, the result rule, an
   in-process TypeScript worker and the worker protocol definition, the record store, the event stream.
 - **Acceptance.** With a stub host: reject-then-accept, fan-in with settled members, escalation (`seq`), `repeat` to its
-  bound, cancellation settling `failed`, and the result rule. Events carry node id and expansion path. The record answers
-  the CLI queries. Metrics (CORE-19) are summed per concert and exposed by name, with no meaning attached.
+  bound, cancellation settling `failed`, and the result rule. Events carry node id and expansion path. The record
+  answers the CLI queries. Metrics (CORE-19) are summed per concert and exposed by name, with no meaning attached.
 - **Depends on.** S1.
 - **Parallel with.** S2, S3.
 
@@ -119,8 +119,8 @@ docs/               these documents (including adr/), slice reports under report
 
 - **Goal.** CFG and CLI requirements, against the fake host.
 - **Deliverables.** Layered YAML config with namespaces, ownership and provenance, flag derivation from param
-  declarations, the commands `compose`, `perform` (including `--resume`), `ls`, `wait`, `kill`, `config` and `prune` with
-  their built-in short aliases (D-12 to D-15, D-29), JSON output, documented exit codes.
+  declarations, the commands `compose`, `perform` (including `--resume`), `ls`, `wait`, `kill`, `config` and `prune`
+  with their built-in short aliases (D-12 to D-15, D-29), JSON output, documented exit codes.
 - **Acceptance.** AC-6 with the fake host. Config precedence and provenance tested. A typo'd key gives a did-you-mean
   diagnostic.
 - **Depends on.** S3 and S4.
@@ -146,11 +146,12 @@ need the core. S8d and S8e need S7.
   handling, process-tree kill (HOST-04, HOST-10). Consult the behavioral reference for the mount plan.
 - **S8c. Harness interface and stub harness (M).** The adapter interface, a scripted stub harness, prompt staging
   without argument-length limits, token usage reported as metrics (HOST-05, HOST-06, HOST-07).
-- **S8d. First real adapter (M).** pi as a sandboxed subprocess over its JSON event stream, using spike 4's findings (D-20). Claude Code is the second adapter.
+- **S8d. First real adapter (M).** pi as a sandboxed subprocess over its JSON event stream, using spike 4's findings
+  (D-20). Claude Code is the second adapter.
 - **S8e. Host kinds, SDK and hooks (L).** `agent` and `check` node kinds (D-22), `host-agents-sdk`, `validate` and
   `bounds` hooks, host config namespaces (HOST-01, HOST-09, HOST-11, HOST-12). Vocabulary per D-21.
-- **Acceptance (whole slice).** AC-4 and the host parts of AC-2. The lane double-join diagnostic and a model-family policy
-  assertion fire in compose with no spend.
+- **Acceptance (whole slice).** AC-4 and the host parts of AC-2. The lane double-join diagnostic and a model-family
+  policy assertion fire in compose with no spend.
 
 ### S9. Pack: ported compositions (L)
 
@@ -203,7 +204,8 @@ Suggested waves:
 
 ## 5. Verification strategy
 
-- **Core without a host.** Every core slice is tested with code nodes and the fake host kind only. This is the proof of D-06.
+- **Core without a host.** Every core slice is tested with code nodes and the fake host kind only. This is the proof of
+  D-06.
 - **Host without agents.** The host slices run against the stub harness and a toy target repository. A real harness is
   exercised only in S8d and S9.
 - **Fixtures.** Golden IR files (S1), plan snapshots (S3), concert scenarios with scripted outcomes (S4, S5).
@@ -230,23 +232,23 @@ Report:       done, evidence, deviations, decisions, new open questions, follow-
 
 ## 7. After the initial port (not planned here)
 
-Second harness adapter (Claude Code), more compositions from the predecessor, `watch` polish, a richer renderer, SDKs in other
-languages, out-of-process workers, macOS, delivery and apply tooling for changesets.
+Second harness adapter (Claude Code), more compositions from the predecessor, `watch` polish, a richer renderer, SDKs in
+other languages, out-of-process workers, macOS, delivery and apply tooling for changesets.
 
 ## 8. Decisions each slice relies on
 
 No open question blocks a slice. `requirements.md` section 9 maps every earlier question to its decision.
 
-| Slice | Read these decisions first                                          |
-| ----- | ------------------------------------------------------------------- |
-| S0    | D-20, D-25, D-30, D-32, D-34                                        |
-| S2    | D-16 (build-time values), D-17 (params), D-18, D-19                 |
-| S3    | D-23 (bounds), D-24 (unclaimed keys)                                |
-| S4    | D-23 (metrics), D-26 (concurrent concerts, SQLite WAL)              |
-| S6    | D-12 to D-15, D-17, D-29                                            |
-| S8a   | D-27 (lane refs)                                                    |
-| S8b   | D-25 (platform, pluggable sandbox)                                  |
-| S8d   | D-20 (adapters)                                                     |
-| S8e   | D-21 (vocabulary), D-22 (check node)                                |
-| S9    | D-28 (acceptance comparison), D-30 (packs)                          |
-| S11   | D-31 (distribution), D-34 (modern Linux baseline)                   |
+| Slice | Read these decisions first                             |
+| ----- | ------------------------------------------------------ |
+| S0    | D-20, D-25, D-30, D-32, D-34                           |
+| S2    | D-16 (build-time values), D-17 (params), D-18, D-19    |
+| S3    | D-23 (bounds), D-24 (unclaimed keys)                   |
+| S4    | D-23 (metrics), D-26 (concurrent concerts, SQLite WAL) |
+| S6    | D-12 to D-15, D-17, D-29                               |
+| S8a   | D-27 (lane refs)                                       |
+| S8b   | D-25 (platform, pluggable sandbox)                     |
+| S8d   | D-20 (adapters)                                        |
+| S8e   | D-21 (vocabulary), D-22 (check node)                   |
+| S9    | D-28 (acceptance comparison), D-30 (packs)             |
+| S11   | D-31 (distribution), D-34 (modern Linux baseline)      |

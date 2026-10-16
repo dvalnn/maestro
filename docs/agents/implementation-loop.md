@@ -4,8 +4,8 @@ Status: **trial through wave 3**. At the end of wave 3 the owner keeps, trims or
 criteria below. Until then it is the default, not a mandate: the conductor may skip a step for a slice where it cannot
 pay off, and says why in one line of the slice report.
 
-The port plan's ground rules (section 1), verification (section 5) and brief template (section 6) still hold. This
-loop wraps them.
+The port plan's ground rules (section 1), verification (section 5) and brief template (section 6) still hold. This loop
+wraps them.
 
 ## Steps
 
@@ -13,11 +13,11 @@ loop wraps them.
    to a requirement ID or a plan item. Anything else is cut, or raised to the owner as an open question (rule 5).
 2. **Implement** (one background subagent, fenced to the slice's package dirs). Sonnet by default, opus for
    contract-setting or design-heavy slices. Done when the acceptance items pass, shown by command output.
-3. **Mechanical gate** (conductor). The conductor runs `just check` itself. Anything a linter can check stays in
-   Biome, so review spends no tokens on it.
+3. **Mechanical gate** (conductor). The conductor runs `just check` itself. Anything a linter can check stays in Biome,
+   so review spends no tokens on it.
 4. **Review** (one fresh read-only subagent, the other model from the implementer). Runs the `code-review` skill from
-   the slice's base change. Standards are `CODING_STANDARDS.md`, Spec is the brief, its requirement IDs and the ADRs.
-   It also asks, of every changed file:
+   the slice's base change. Standards are `CODING_STANDARDS.md`, Spec is the brief, its requirement IDs and the ADRs. It
+   also asks, of every changed file:
    - A module, export or dependency that no requirement or plan item asks for (NFR-09)?
    - A duplicate of a helper or pattern the codebase already has?
    - An interface wider than the brief needs?
@@ -25,6 +25,7 @@ loop wraps them.
 
    Every finding cites the rule, requirement or ADR it breaks, names `file:line` and states the failure. A finding
    without a citation is dropped.
+
 5. **Triage and fix** (conductor, then the author). Each finding is accepted or rejected with a one-line reason in the
    slice report. At most two fix rounds (rule 9). The conductor then commits one jj change per slice, following
    CLAUDE.md "Commit messages".

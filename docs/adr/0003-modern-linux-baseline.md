@@ -1,6 +1,7 @@
 ---
 status: accepted
 ---
+
 # Maestro targets modern Linux, and RHEL 8 is best-effort
 
 Maestro targets modern Linux x64 and is built with current tooling on a modern host. The host floor is Bun's own

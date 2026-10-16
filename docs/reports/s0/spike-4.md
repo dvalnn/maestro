@@ -1,8 +1,15 @@
 # Spike 4: Bun spawns bubblewrap plus pi and streams JSON events
 
-Verdict: **go**. bwrap 0.12.0 + pi 1.2.0 (default provider/model in this environment: github-copilot / gpt-5.4) work under a compiled Bun binary. Streaming is incremental, a tool-using run lands its file only in the lane, and `--die-with-parent` is the one thing that reaps the process tree. Kernel 4.18 / real RHEL 8 stays pending until `rhel8-check.sh` runs there.
+Verdict: **go**. bwrap 0.12.0 + pi 1.2.0 (default provider/model in this environment: github-copilot / gpt-5.4) work
+under a compiled Bun binary. Streaming is incremental, a tool-using run lands its file only in the lane, and
+`--die-with-parent` is the one thing that reaps the process tree. Kernel 4.18 / real RHEL 8 stays pending until
+`rhel8-check.sh` runs there.
 
-Code: `.scratch/s0-skeleton-spikes/spike4/` (`build.sh` -> `out/spike4`). No args = sandbox probe, streaming, prompt staging and cancel matrix against a stand-in child (`sh` script emitting JSON lines, stderr noise and three grandchildren, one of which escapes via `setsid`); exits 0 on pass. `out/spike4 --pi` = real pi runs (spends tokens; exits non-zero if a run fails or the cancel leaves survivors). Process tree is checked by scanning `/proc/*/environ` for a per-run marker env var, so bwrap, its init, pi and every descendant are counted whatever their pgid/session.
+Code: `.scratch/s0-skeleton-spikes/spike4/` (`build.sh` -> `out/spike4`). No args = sandbox probe, streaming, prompt
+staging and cancel matrix against a stand-in child (`sh` script emitting JSON lines, stderr noise and three
+grandchildren, one of which escapes via `setsid`); exits 0 on pass. `out/spike4 --pi` = real pi runs (spends tokens;
+exits non-zero if a run fails or the cancel leaves survivors). Process tree is checked by scanning `/proc/*/environ` for
+a per-run marker env var, so bwrap, its init, pi and every descendant are counted whatever their pgid/session.
 
 ## Mount plan (what `bwrapArgv` builds)
 
@@ -15,16 +22,34 @@ bwrap --unshare-all --share-net --die-with-parent --new-session
   --proc /proc --dev /dev --tmpfs /tmp
   --bind <lane> /lane --chdir /lane
   --remount-ro /
-  --clearenv --setenv PATH /usr/bin:/bin --setenv HOME /tmp --setenv MAESTRO_SPIKE_MARK <uuid>  
+  --clearenv --setenv PATH /usr/bin:/bin --setenv HOME /tmp --setenv MAESTRO_SPIKE_MARK <uuid>
   -- <cmd>
 ```
 
 Notes:
-- `--unshare-all` unshares user, ipc, pid, net, uts, cgroup; `--share-net` gives the net ns back (probe: 10 interfaces visible with it, 1 without).
-- `--new-session` (setsid) is kept: it blocks TIOCSTI terminal injection. Side effect: the sandboxed tree is in a different session/pgrp than bwrap, so a process-group kill of bwrap's pgid does not reach it (see cancel).
-- **`--remount-ro /` is needed.** bwrap's root is a writable tmpfs, so without it `echo x > /etc/x` and `/x` succeed (in memory, gone on exit, host untouched, but not "writes fail"). It must come after the last bind, because it makes `mkdir` for later mount points fail. `/tmp` (tmpfs, own mount) stays writable and ephemeral; that is deliberate (pi and tools want a scratch dir) and is the only writable thing besides the lane.
-- Paths that had to be visible for pi to run (paths only): the pi install dir (`~/.local/share/mise/installs/pi/1.2.0/pi`, must be bound at the **realpath**, the `latest` symlink does not resolve inside the sandbox), and pi's config dir `~/.pi/agent/` (files used: `auth.json`, `settings.json`, `models-store.json`), plus the `/etc` network/TLS entries above. No env var carried credentials: this pi authenticates from `auth.json`. A provider that uses an env var key would need that passed with an explicit `--setenv`, never inherited (`--clearenv`).
-- **pi needs its config dir writable, so V1 mounts `~/.pi/agent` read-write.** Owner ruling 2026-10-14: this matches the legacy system and is a known sandbox defect, tracked in `.scratch/backlog/issues/01-pi-config-rw-mount.md`. Reason: pi takes a lock by `mkdir settings.json.lock` next to `settings.json`. With the dir ro-bound, pi warns "Invalid settings file ... EROFS" and then reports "No API key found for the selected model" (misleading) and emits only the `session` event. Risk: a sandboxed agent can change pi's real config. Backlog candidate fix, which is what the spike binary builds today: `--tmpfs /pi-agent` with the three files bound ro on top and `PI_CODING_AGENT_DIR=/pi-agent`. It is in-memory and ephemeral, but an OAuth token refresh writes `auth.json` and would fail on a ro file bind. Not hit here (token was fresh), see follow-ups.
+
+- `--unshare-all` unshares user, ipc, pid, net, uts, cgroup; `--share-net` gives the net ns back (probe: 10 interfaces
+  visible with it, 1 without).
+- `--new-session` (setsid) is kept: it blocks TIOCSTI terminal injection. Side effect: the sandboxed tree is in a
+  different session/pgrp than bwrap, so a process-group kill of bwrap's pgid does not reach it (see cancel).
+- **`--remount-ro /` is needed.** bwrap's root is a writable tmpfs, so without it `echo x > /etc/x` and `/x` succeed (in
+  memory, gone on exit, host untouched, but not "writes fail"). It must come after the last bind, because it makes
+  `mkdir` for later mount points fail. `/tmp` (tmpfs, own mount) stays writable and ephemeral; that is deliberate (pi
+  and tools want a scratch dir) and is the only writable thing besides the lane.
+- Paths that had to be visible for pi to run (paths only): the pi install dir
+  (`~/.local/share/mise/installs/pi/1.2.0/pi`, must be bound at the **realpath**, the `latest` symlink does not resolve
+  inside the sandbox), and pi's config dir `~/.pi/agent/` (files used: `auth.json`, `settings.json`,
+  `models-store.json`), plus the `/etc` network/TLS entries above. No env var carried credentials: this pi authenticates
+  from `auth.json`. A provider that uses an env var key would need that passed with an explicit `--setenv`, never
+  inherited (`--clearenv`).
+- **pi needs its config dir writable, so V1 mounts `~/.pi/agent` read-write.** Owner ruling 2026-10-14: this matches the
+  legacy system and is a known sandbox defect, tracked in `.scratch/backlog/issues/01-pi-config-rw-mount.md`. Reason: pi
+  takes a lock by `mkdir settings.json.lock` next to `settings.json`. With the dir ro-bound, pi warns "Invalid settings
+  file ... EROFS" and then reports "No API key found for the selected model" (misleading) and emits only the `session`
+  event. Risk: a sandboxed agent can change pi's real config. Backlog candidate fix, which is what the spike binary
+  builds today: `--tmpfs /pi-agent` with the three files bound ro on top and `PI_CODING_AGENT_DIR=/pi-agent`. It is
+  in-memory and ephemeral, but an OAuth token refresh writes `auth.json` and would fail on a ro file bind. Not hit here
+  (token was fresh), see follow-ups.
 - Also used `--no-session` so pi does not write session files.
 
 ## Commands and output
@@ -81,7 +106,8 @@ ALL PASS
 exit=0
 ```
 
-(Survivors are killed by the spike after each row so nothing leaks. `<539` is the host's subreaper: orphans got reparented to it.)
+(Survivors are killed by the spike after each row so nothing leaks. `<539` is the host's subreaper: orphans got
+reparented to it.)
 
 ### Pi runs (`--pi`)
 
@@ -121,13 +147,17 @@ hello.txt elsewhere on host: [none]            # find /home /tmp /var/tmp /root 
 exit=null signal=SIGKILL events=104 nonJson=0 ... tokens=688 cost=0.0029
 ```
 
-The "hello.txt only in the lane" result is an observation backed by a `find`, not an assertion. Real confinement is proven by the stand-in probe (section 1).
+The "hello.txt only in the lane" result is an observation backed by a `find`, not an assertion. Real confinement is
+proven by the stand-in probe (section 1).
 
-Incremental arrival is real: in A the 7 header/system/user events land at ~325 ms, the assistant events at +1.3 s when the model answers, in B the thinking and tool-call deltas arrive in 20-50 ms bursts; nothing is buffered to exit.
+Incremental arrival is real: in A the 7 header/system/user events land at ~325 ms, the assistant events at +1.3 s when
+the model answers, in B the thinking and tool-call deltas arrive in 20-50 ms bursts; nothing is buffered to exit.
 
 ## Event schema sample (pi 1.2.0, `--mode json`)
 
-Framing: strict JSONL, LF-terminated, one object per line (pi's `docs/json.md` says do not use readline, split on LF). 0 non-JSON stdout lines, 0 bytes of stderr in all three healthy runs. First line is a header, then session events. Top-level keys per event, with the nested discriminator after `/`:
+Framing: strict JSONL, LF-terminated, one object per line (pi's `docs/json.md` says do not use readline, split on LF). 0
+non-JSON stdout lines, 0 bytes of stderr in all three healthy runs. First line is a header, then session events.
+Top-level keys per event, with the nested discriminator after `/`:
 
 ```
 session: type,version,id,timestamp,cwd                         (header; cwd was /lane)
@@ -156,51 +186,103 @@ Redacted samples (strings over 40 chars truncated):
 
 ### Things R-4 should worry about
 
-Verdict on the schema: **sufficient, stability unproven.** The evidence is one pi version (1.2.0), one provider (github-copilot) and 3 runs, and several fields look provider-specific and unstable (listed below).
+Verdict on the schema: **sufficient, stability unproven.** The evidence is one pi version (1.2.0), one provider
+(github-copilot) and 3 runs, and several fields look provider-specific and unstable (listed below).
 
-- **Token usage is only authoritative at `message_end` (assistant)**: `message.usage` = `{input,output,cacheRead,cacheWrite,reasoning,totalTokens,cost:{input,output,cacheRead,cacheWrite,total}}`. The top-level `usage` on every `message_update` stayed all zeros in these runs (pi's docs say it can stay zero until completion). Sum `message_end` over assistant messages, do not trust updates. A killed run has the usage of completed messages only. Cost is provider-computed dollars; may be 0 for some providers.
-- `message_update` volume is high (thinking and tool-call argument deltas, ~100 lines for a 2-turn run) and each carries a `usage` object. The adapter should ignore deltas it does not display. `agent_end.messages` repeats the whole transcript, and the system `message_start/end` carries the full system prompt `sections`: large lines, never log them raw.
+- **Token usage is only authoritative at `message_end` (assistant)**: `message.usage` =
+  `{input,output,cacheRead,cacheWrite,reasoning,totalTokens,cost:{input,output,cacheRead,cacheWrite,total}}`. The
+  top-level `usage` on every `message_update` stayed all zeros in these runs (pi's docs say it can stay zero until
+  completion). Sum `message_end` over assistant messages, do not trust updates. A killed run has the usage of completed
+  messages only. Cost is provider-computed dollars; may be 0 for some providers.
+- `message_update` volume is high (thinking and tool-call argument deltas, ~100 lines for a 2-turn run) and each carries
+  a `usage` object. The adapter should ignore deltas it does not display. `agent_end.messages` repeats the whole
+  transcript, and the system `message_start/end` carries the full system prompt `sections`: large lines, never log them
+  raw.
 - Tool call/result ids contain a `|` plus a long opaque suffix, treat as opaque strings.
-- `agent_end` is not the end: `willRetry`, and the real terminal event is `agent_settled` (`aborted`). Treat process exit plus `agent_settled` together; a failed run still exits 1 after the header (the EROFS case produced `session` and nothing else, error text only on stderr, so adapters need stderr capture for diagnostics).
-- Fields observed that look provider-specific and likely unstable: `message.api`, `provider`, `model`, `responseId`, `rawStopReason`, `textSignature`, `thinkingLevel`, `sections`. The contract that looks stable (not proven) is `type`, `message.role`, `assistantMessageEvent.type/contentIndex/delta`, `toolName`, `args`, `isError`, `usage`. Pin the schema with fixtures (ADR 0001, see S8d follow-up) and tolerate unknown keys/types.
+- `agent_end` is not the end: `willRetry`, and the real terminal event is `agent_settled` (`aborted`). Treat process
+  exit plus `agent_settled` together; a failed run still exits 1 after the header (the EROFS case produced `session` and
+  nothing else, error text only on stderr, so adapters need stderr capture for diagnostics).
+- Fields observed that look provider-specific and likely unstable: `message.api`, `provider`, `model`, `responseId`,
+  `rawStopReason`, `textSignature`, `thinkingLevel`, `sections`. The contract that looks stable (not proven) is `type`,
+  `message.role`, `assistantMessageEvent.type/contentIndex/delta`, `toolName`, `args`, `isError`, `usage`. Pin the
+  schema with fixtures (ADR 0001, see S8d follow-up) and tolerate unknown keys/types.
 - `session.version` is 3; pi bumps it when the format changes, which is a cheap guard to assert on.
 - Agent-chosen tool args (e.g. `timeout` on bash) show up in `args`.
-- Healthy runs wrote nothing to stderr. Startup problems (config dir, missing auth) only appear on stderr and look like auth errors even when the cause is a read-only config dir.
+- Healthy runs wrote nothing to stderr. Startup problems (config dir, missing auth) only appear on stderr and look like
+  auth errors even when the cause is a read-only config dir.
 
 ## Prompt staging
 
-`pi --help` / `docs/cli.md`: positional `message`, `@path` (text file or image, resolved from cwd), and **piped stdin which is prepended to the first prompt**. Linux limits a single argv string to 128 KiB (`MAX_ARG_STRLEN`): the spike shows a 300 KB argument is refused with E2BIG. Delivery paths proven with a stand-in through bwrap: stdin (300 KB via `proc.stdin.write/end`) and a file inside the lane (300 KB `wc -c` = 307200). For pi itself, both paths were proven end to end with tiny prompts: A used stdin ("reply with the word ok"), B used `@prompt.md` from the lane. No 300 KB prompt was sent to a model. Preferred for S8c: write `prompt.md` into the lane and pass `@prompt.md` plus a short instruction (also leaves an audit copy in the lane); stdin works too. Caution: with stdin as a pipe pi waits for EOF, so always `end()` it, or pass `"ignore"` (/dev/null) when there is none (that is what B and C do).
+`pi --help` / `docs/cli.md`: positional `message`, `@path` (text file or image, resolved from cwd), and **piped stdin
+which is prepended to the first prompt**. Linux limits a single argv string to 128 KiB (`MAX_ARG_STRLEN`): the spike
+shows a 300 KB argument is refused with E2BIG. Delivery paths proven with a stand-in through bwrap: stdin (300 KB via
+`proc.stdin.write/end`) and a file inside the lane (300 KB `wc -c` = 307200). For pi itself, both paths were proven end
+to end with tiny prompts: A used stdin ("reply with the word ok"), B used `@prompt.md` from the lane. No 300 KB prompt
+was sent to a model. Preferred for S8c: write `prompt.md` into the lane and pass `@prompt.md` plus a short instruction
+(also leaves an audit copy in the lane); stdin works too. Caution: with stdin as a pipe pi waits for EOF, so always
+`end()` it, or pass `"ignore"` (/dev/null) when there is none (that is what B and C do).
 
 ## Cancel and process-tree kill
 
-Two bwrap processes exist per run: the outer one (the pid Bun gets) and an inner one that is pid 1 of the new pid ns and does `setsid` for `--new-session`. In the table, the binary asserts only two rows: `die-with-parent=true` with SIGKILL of the bwrap pid, and `die-with-parent=true` with the parent killed. All other rows are printed observations, not assertions. Result matrix (stand-in tree of 7 processes incl. one `setsid` escapee; the pi run C confirms the winning row with the real tree `bwrap, bwrap, pi, sleep`):
+Two bwrap processes exist per run: the outer one (the pid Bun gets) and an inner one that is pid 1 of the new pid ns and
+does `setsid` for `--new-session`. In the table, the binary asserts only two rows: `die-with-parent=true` with SIGKILL
+of the bwrap pid, and `die-with-parent=true` with the parent killed. All other rows are printed observations, not
+assertions. Result matrix (stand-in tree of 7 processes incl. one `setsid` escapee; the pi run C confirms the winning
+row with the real tree `bwrap, bwrap, pi, sleep`):
 
-| Kill | without `--die-with-parent` | with `--die-with-parent` |
-|---|---|---|
-| SIGKILL bwrap pid | whole sandbox survives (inner bwrap + everything, reparented to subreaper) | tree gone |
-| SIGTERM bwrap pid | whole sandbox survives | tree gone |
-| SIGKILL process group (`detached: true`, `kill(-pid)`) | whole sandbox survives (only outer bwrap dies, inner called setsid) | tree gone |
-| SIGKILL the parent of bwrap (maestro dying) | everything survives, incl. both bwrap | tree gone |
+| Kill                                                   | without `--die-with-parent`                                                | with `--die-with-parent` |
+| ------------------------------------------------------ | -------------------------------------------------------------------------- | ------------------------ |
+| SIGKILL bwrap pid                                      | whole sandbox survives (inner bwrap + everything, reparented to subreaper) | tree gone                |
+| SIGTERM bwrap pid                                      | whole sandbox survives                                                     | tree gone                |
+| SIGKILL process group (`detached: true`, `kill(-pid)`) | whole sandbox survives (only outer bwrap dies, inner called setsid)        | tree gone                |
+| SIGKILL the parent of bwrap (maestro dying)            | everything survives, incl. both bwrap                                      | tree gone                |
 
-What reaps the tree: **`--die-with-parent`** (PR_SET_PDEATHSIG SIGKILL on the inner bwrap, whose death takes down the whole pid ns, including `setsid` escapees). Then killing the outer bwrap pid (SIGKILL or SIGTERM) is enough, and so is maestro crashing. Process-group kill alone does nothing because of `--new-session`; do not rely on it. Without `--die-with-parent` there is no equivalent on the host side; the processes would need to be found by pid ns / cgroup.
+What reaps the tree: **`--die-with-parent`** (PR_SET_PDEATHSIG SIGKILL on the inner bwrap, whose death takes down the
+whole pid ns, including `setsid` escapees). Then killing the outer bwrap pid (SIGKILL or SIGTERM) is enough, and so is
+maestro crashing. Process-group kill alone does nothing because of `--new-session`; do not rely on it. Without
+`--die-with-parent` there is no equivalent on the host side; the processes would need to be found by pid ns / cgroup.
 
-Pi run C, real pi + tool child: tree `bwrap(25205) > bwrap(25206) > pi(25207) > sleep(25224)`, `SIGKILL` on the outer bwrap, 0 survivors within the 2.5 s poll. pi spawns its bash tool child directly (no intermediate shell visible in the tree for `sleep 4711`).
+Pi run C, real pi + tool child: tree `bwrap(25205) > bwrap(25206) > pi(25207) > sleep(25224)`, `SIGKILL` on the outer
+bwrap, 0 survivors within the 2.5 s poll. pi spawns its bash tool child directly (no intermediate shell visible in the
+tree for `sleep 4711`).
 
 ## Caveats
 
-- Tested on this WSL2 box (kernel 6.18, merged-/usr Linux, bwrap 0.12.0). The RHEL 8 bwrap is likely an older release than 0.12.0 (not checked here; confirm `--remount-ro`, `--die-with-parent`, `--new-session` there) and user namespaces may be disabled (`user.max_user_namespaces=0`). The no-args run on the real host answers this; if bwrap is missing or userns are off the binary reports FAIL and exits 1.
-- `--remount-ro /` ordering and `--ro-bind /bin /bin` on merged-usr (symlink source) worked here; on a non-merged host `/bin` is a real directory and is bound as such.
+- Tested on this WSL2 box (kernel 6.18, merged-/usr Linux, bwrap 0.12.0). The RHEL 8 bwrap is likely an older release
+  than 0.12.0 (not checked here; confirm `--remount-ro`, `--die-with-parent`, `--new-session` there) and user namespaces
+  may be disabled (`user.max_user_namespaces=0`). The no-args run on the real host answers this; if bwrap is missing or
+  userns are off the binary reports FAIL and exits 1.
+- `--remount-ro /` ordering and `--ro-bind /bin /bin` on merged-usr (symlink source) worked here; on a non-merged host
+  `/bin` is a real directory and is bound as such.
 - Probe of ro-ness covers `/usr`, `/etc`, `/`, `..` of the lane; `/tmp` and `/pi-agent` are writable tmpfs by design.
-- The cancel test only used SIGKILL on a pi that was mid tool call, not mid model request. SIGTERM graceful abort of pi (does it emit `agent_settled aborted:true`?) was not tried; with `--die-with-parent` plus SIGTERM to bwrap the tree is killed hard with no final event.
+- The cancel test only used SIGKILL on a pi that was mid tool call, not mid model request. SIGTERM graceful abort of pi
+  (does it emit `agent_settled aborted:true`?) was not tried; with `--die-with-parent` plus SIGTERM to bwrap the tree is
+  killed hard with no final event.
 - OAuth refresh (github-copilot here) writes `auth.json`; on a ro bind that write fails. Not hit, not tested.
 - Real-model checks do not run in no-args mode, so on the RHEL 8 host without pi only the stand-in checks run.
 
 ## Follow-ups
 
-- **S8b (sandbox/supervision):** use the mount plan above as the base policy (pi config dir RW per backlog 01) (`--remount-ro /` after the binds, `--clearenv`, `--new-session`, `--die-with-parent` mandatory). Cancel = SIGKILL the outer bwrap pid; assert no survivors by scanning for the marker (the `/proc/*/environ` trick works for tests). Per-harness extras (pi install dir at realpath, config dir) belong to the adapter, the policy stays host config. Decide the `/etc` allow-list (resolv.conf, ssl, pki, hosts, nsswitch, passwd, group) per distro; `/etc/resolv.conf` symlinks resolved fine here. Decide whether `/tmp` stays a tmpfs.
-- **S8c (harness interface):** stage prompts as a file in the lane (`@prompt.md`) or stdin, never argv. Read stdout as a stream split on LF; keep a stderr capture (startup failures only show there). The stub harness should emit pi's event shapes, including `agent_settled`, to keep fixtures aligned.
-- **S8d (pi adapter):** map `message_end` (assistant) usage to metrics, derive turns from `turn_start/turn_end`, tool calls from `tool_execution_*`, completion from `agent_settled` + exit code. Tolerate unknown event types and keys. Check `session.version`. Use `--no-session`. Resolve the OAuth refresh question (copy credentials per run into the tmpfs vs. host-side token refresh before launch). Pin the pi version and keep event fixtures per pi version. Consider `--no-tools`/`--tools` allow-lists per role. Graceful abort (stdin close or SIGTERM to pi inside the sandbox) is worth a separate check before relying on `agent_settled aborted:true`.
+- **S8b (sandbox/supervision):** use the mount plan above as the base policy (pi config dir RW per backlog 01)
+  (`--remount-ro /` after the binds, `--clearenv`, `--new-session`, `--die-with-parent` mandatory). Cancel = SIGKILL the
+  outer bwrap pid; assert no survivors by scanning for the marker (the `/proc/*/environ` trick works for tests).
+  Per-harness extras (pi install dir at realpath, config dir) belong to the adapter, the policy stays host config.
+  Decide the `/etc` allow-list (resolv.conf, ssl, pki, hosts, nsswitch, passwd, group) per distro; `/etc/resolv.conf`
+  symlinks resolved fine here. Decide whether `/tmp` stays a tmpfs.
+- **S8c (harness interface):** stage prompts as a file in the lane (`@prompt.md`) or stdin, never argv. Read stdout as a
+  stream split on LF; keep a stderr capture (startup failures only show there). The stub harness should emit pi's event
+  shapes, including `agent_settled`, to keep fixtures aligned.
+- **S8d (pi adapter):** map `message_end` (assistant) usage to metrics, derive turns from `turn_start/turn_end`, tool
+  calls from `tool_execution_*`, completion from `agent_settled` + exit code. Tolerate unknown event types and keys.
+  Check `session.version`. Use `--no-session`. Resolve the OAuth refresh question (copy credentials per run into the
+  tmpfs vs. host-side token refresh before launch). Pin the pi version and keep event fixtures per pi version. Consider
+  `--no-tools`/`--tools` allow-lists per role. Graceful abort (stdin close or SIGTERM to pi inside the sandbox) is worth
+  a separate check before relying on `agent_settled aborted:true`.
 
 ## Spend
 
-Real model calls that reached the model: 6 short prompts (two full A/B/C passes: one while developing, one final), all github-copilot / gpt-5.4. Two earlier attempts failed before reaching the model (bad exec path, then the config lock error). Final pass: A 436 tokens (~$0.0012), B 2438 tokens (~$0.0071), C 688 tokens (~$0.0029); the first pass cost about the same, so roughly $0.02-0.03 in total at the provider-reported rates. No credentials were printed, logged or written; only file paths appear above.
+Real model calls that reached the model: 6 short prompts (two full A/B/C passes: one while developing, one final), all
+github-copilot / gpt-5.4. Two earlier attempts failed before reaching the model (bad exec path, then the config lock
+error). Final pass: A 436 tokens (~$0.0012), B 2438 tokens (~$0.0071), C 688 tokens (~$0.0029); the first pass cost
+about the same, so roughly $0.02-0.03 in total at the provider-reported rates. No credentials were printed, logged or
+written; only file paths appear above.

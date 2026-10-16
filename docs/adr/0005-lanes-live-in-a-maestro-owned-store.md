@@ -1,6 +1,7 @@
 ---
 status: accepted
 ---
+
 # Lanes live in a maestro-owned store, and each lane gets a small read-only git directory
 
 Each lane root holds one bare git repository owned by maestro, the store. A base is copied into it with
@@ -29,15 +30,15 @@ The sandbox binds two paths read-only, at their host paths (`Lane.readOnly`): th
 
 What an agent can discover:
 
-- Through history: its own lane's ancestry, meaning the target's history up to the base plus its own chain of
-  versions, whose subjects are those versions' ids.
+- Through history: its own lane's ancestry, meaning the target's history up to the base plus its own chain of versions,
+  whose subjects are those versions' ids.
 - In the file system: the host path of its git directory and of the store's objects.
 - Nothing else is named anywhere it can see. `git log --all`, `for-each-ref` and `reflog` show only that ancestry, and
   the store's refs are not mounted.
 - By enumerating objects (`cat-file --batch-all-objects`, or a listing of the objects directory), it can read objects
-  that no visible ref names: other lanes' and other concerts' versions, and target commits fetched for other bases.
-  No ref, reflog or packed-refs entry it can see names them. Accepted as a known V1 gap: lanes isolate writes, not
-  reads between the agents of one store. Giving each lane only its own objects stays open for a later version.
+  that no visible ref names: other lanes' and other concerts' versions, and target commits fetched for other bases. No
+  ref, reflog or packed-refs entry it can see names them. Accepted as a known V1 gap: lanes isolate writes, not reads
+  between the agents of one store. Giving each lane only its own objects stays open for a later version.
 
 ## Considered options
 
@@ -52,13 +53,13 @@ For materialising lanes:
 
 For git inside a lane:
 
-- **`git worktree add` on the store.** Its worktrees share the store's refs, so `git log --all` would show every lane
-  of every concert. Rejected for lane isolation.
+- **`git worktree add` on the store.** Its worktrees share the store's refs, so `git log --all` would show every lane of
+  every concert. Rejected for lane isolation.
 - **Binding the whole store, or using `GIT_NAMESPACE`.** The whole store exposes its refs. Namespaces only scope
   transport commands, not `log` or `for-each-ref`. Rejected.
 - **A clone per lane, or a git directory inside the lane.** The agent could commit, and the host would then run git
-  against a config that the agent controls (`core.fsmonitor` runs code). Copying objects for each lane also costs
-  disk. Rejected.
+  against a config that the agent controls (`core.fsmonitor` runs code). Copying objects for each lane also costs disk.
+  Rejected.
 
 ## Consequences
 
@@ -66,5 +67,5 @@ For git inside a lane:
   large targets.
 - Ignored files are not part of a version. `join` keeps them because it moves the directory. `fork` starts from the
   version, so they are absent. A nested repository (a gitlink) is refused when the lane is sealed.
-- `prune` and `diskUse` count lane bytes only. `prune` does not gc the store, because concurrent concerts may be
-  writing objects that nothing references yet.
+- `prune` and `diskUse` count lane bytes only. `prune` does not gc the store, because concurrent concerts may be writing
+  objects that nothing references yet.

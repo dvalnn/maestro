@@ -7,6 +7,11 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",
 		"@types/bun": "1.4.3",
+		"prettier": "3.9.10",
 		"typescript": "7.0.2"
+	},
+	"prettier": {
+		"printWidth": 120,
+		"proseWrap": "always"
 	}
 }
