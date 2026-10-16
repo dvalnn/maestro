@@ -119,7 +119,6 @@ renderer needs nothing else.
 Contents, at the level of what it must carry:
 
 - **Header.** IR version, composition id and version, pack id, build metadata (SDK version, source hash).
-- **Config.** Each config schema the graph claims, keyed by namespace, with defaults (CFG-03).
 - **Scopes.** Named subgraphs created by subcomposition use, with their ports, so renderers can collapse them.
 - **Nodes.** For each node: stable id (a path whose prefixes are its scopes and groups), kind, source location, typed
   ports (schemas), guard, purity flag, declared reads and writes (code nodes), kind-specific configuration (host kinds),
@@ -201,8 +200,8 @@ hooks and records what they return.
 - **Resume.** Re-entering a concert keeps its id and runs its stored IR. A recorded `ok` instance is reused, pure or
   not, when its key still matches: a hash of the node definition, its code hash recomputed from the current code, and
   its input values with artifact content hashes. Any other instance runs again, so a fix to one node's code reruns that
-  node and its dependents only. A concert whose process is still alive cannot be resumed. Nothing is reused across
-  concerts.
+  node and those of its dependents whose inputs changed. A concert whose process is still alive cannot be resumed.
+  Nothing is reused across concerts.
 - **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in
   reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started has
   no record. A code node that runs past the timeout its author set settles `failed`. It has none by default.
@@ -211,7 +210,7 @@ hooks and records what they return.
 
 Params and config resolve, highest precedence first (CFG-04, D-17): the use site for a subcomposition or the CLI flag
 for a root composition, then profile, workspace and user YAML, then the declared default. A composition's YAML keys live
-under its pack id and then its composition id. Hosts and packs keep pure-config namespaces. Files are YAML. The core:
+under its pack id and then its composition id. Hosts keep pure-config namespaces. Files are YAML. The core:
 
 - parses and layers them,
 - validates the closed **core config** schema (CFG-01),
@@ -224,7 +223,7 @@ Who owns what:
 - **Host.** `target`, `roles` and other host namespaces (HOST-12).
 - **Composition.** One param declaration in code covers CLI inputs and tunables, with defaults. For example a
   repair-loop subcomposition owns its maximum iteration count. The core has no limits concept.
-- **Pack.** Any additional namespaces the pack's compositions claim.
+- **Pack.** Its id, holding its compositions' params, and no other namespace.
 
 Unclaimed keys (D-24): a key that no installed registrant claims is a compose error with a did-you-mean hint. A key
 claimed by an installed but unused registrant is ignored.
@@ -374,8 +373,8 @@ round-folder data, never constants in a pack.
 - **Worker error.** A code node that throws settles as `failed` with the error. A timeout is `failed`.
 - **Disk full.** Hosts with a small system partition are common. The record store and artifacts live in a configurable
   area, and compose warns when free space is below a configurable threshold.
-- **Stale reuse.** Resume recomputes each code hash from the current code, so a changed node and its dependents run
-  again.
+- **Stale reuse.** Resume recomputes each code hash from the current code, so a changed node runs again, and so does
+  each dependent whose inputs changed.
 
 ## 17. Open design points
 

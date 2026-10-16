@@ -263,7 +263,25 @@ Classifier blocks: none.
   compose error naming the node and its timeout, and the function is abandoned. No `timeout` means no limit, as at
   perform. A synchronous function that never returns blocks the process at compose and at perform alike.
 
+## Rulings on S6 (2026-10-16)
+
+- K53: A. User config `$XDG_CONFIG_HOME/maestro/config.yaml`; workspace `.maestro/config.yaml` in the nearest ancestor
+  of the cwd holding `.maestro/`; profile `.maestro/profiles/<name>.yaml`, chosen by `--profile`.
+- K54: A. Maps merge by key; any other value, lists included, is replaced whole. Legacy merge tags are K87.
+- K56: A. One data root key, default `.maestro/` in the workspace, closing backlog 09. No low-disk warning key.
+- K62: A. Packs by path only in V1; a URL needs an install step (DIST-04).
+- K65: B. One function reachable under two names is a build error naming both.
+- K66: A. A pack's whole-bundle `codeHash` meets CORE-09, read as "nodes whose `codeHash` or inputs changed".
+- K75: A. `config` prints values as they are. Secret handling is deferred (backlog 13).
+- K58: A. No pack namespaces beyond its compositions' params in V1: nothing would read one. The IR's top-level `config`
+  block goes with it (still IR 1.0), and architecture 8's Pack bullet with it.
+- K87: A. The `yaml` package parses config, a new dependency allowed for it: `!replace`, `!append` and `!delete` with
+  sssf's semantics, any other tag refused, and errors and provenance naming the file and line.
+- K86: A, derived from K66. A dependent of a changed node reruns only when its inputs changed.
+- K78: A. Exit codes 0 accepted, 1 failed and internal errors, 2 usage including compose diagnostics, 3 rejected, 124
+  wait timeout.
+
 ## Open for the owner (2026-10-17 morning)
 
-- K53 to K78 (S6 brief, `.scratch/s6-config-cli/spec.md`, Open Qs): config layout, packs, params, CLI verbs and exit
-  codes; each has options and a recommendation there. K70 is restated after K51.
+- S6 (brief `.scratch/s6-config-cli/spec.md`, Open Qs): forks K55, K61, K68, K69, K77; contracts K57, K59, K60, K63,
+  K67, K71, K73, K76; derived K64, K70, K72, K74.

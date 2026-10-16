@@ -112,7 +112,7 @@ docs/               these documents (including adr/), slice reports under report
 - **Goal.** CORE-09.
 - **Deliverables.** The resume key, node-granularity resume.
 - **Acceptance.** A killed concert resumes without repeating an `ok` node, agent nodes included. A changed input or code
-  hash reruns exactly the affected node and its dependents (AC-3 in part).
+  hash reruns exactly the affected node and the dependents whose inputs changed (AC-3 in part).
 - **Depends on.** S4.
 
 ### S6. Config and CLI (L)
