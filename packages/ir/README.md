@@ -88,12 +88,12 @@ The golden fixtures keep their modules beside them in `fixtures/`, and a test ch
 Every node also has three implicit outputs: `outcome`, `ok` and `reason`, whose schemas are `IMPLICIT_OUT`. They may not
 be declared in `out`. `outputValue(settled, outputs, port)` reads any port of a settled node, implicit or declared.
 
-| Kind                   | Own fields                                                                                                                                  |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `code`                 | `worker` `{runtime, module, export, codeHash}`, `pure`, optional `reads`, `writes`, `fanin` (a reducer, D-08),[^fanin] `timeout`.[^timeout] |
-| `assert`               | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                                                               |
-| `map`, `seq`, `repeat` | Groups, below.                                                                                                                              |
-| `<host>.<kind>`        | Any kind with a dot is a host kind, with an optional opaque `config` object.                                                                |
+| Kind                   | Own fields                                                                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `code`                 | `worker` `{runtime, module, export, codeHash}`, optional `reads`, `writes`, `fanin` (a reducer, D-08),[^fanin] `timeout`.[^timeout] |
+| `assert`               | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                                                       |
+| `map`, `seq`, `repeat` | Groups, below.                                                                                                                      |
+| `<host>.<kind>`        | Any kind with a dot is a host kind, with an optional opaque `config` object.                                                        |
 
 ### Groups
 
@@ -292,7 +292,7 @@ pre-flight), not a silent gap: compose reports each pointer this function return
 
 The IR carries structure. These semantics belong to the slices that execute or validate it, and are not fixed here:
 
-- compose-time additions such as folded values, expansion and bounds (the plan).
+- compose-time additions such as expansion and bounds (the plan).
 
 [^fanin]:
     A `fanin` node runs once every upstream has settled and receives each `data` input as `Settled`
@@ -304,5 +304,5 @@ The IR carries structure. These semantics belong to the slices that execute or v
 
 ## Changelog
 
-- **1.0**: first version. Before release, code nodes took the optional `timeout`, and the `params` and `config` blocks
-  left the IR.
+- **1.0**: first version. Before release, code nodes took the optional `timeout` and lost `pure`, and the `params` and
+  `config` blocks left the IR.

@@ -34,8 +34,8 @@ const edge = (from: object, to: object, over: object = {}) =>
 	failures(
 		irOf(
 			[
-				code("a", "a", { pure: false, out: { v: from } }),
-				code("b", "b", { pure: false, in: { v: to }, ...over }),
+				code("a", "a", { out: { v: from } }),
+				code("b", "b", { in: { v: to }, ...over }),
 			],
 			[data("a", "b", "v")],
 		),
@@ -102,7 +102,7 @@ describe("edge types", () => {
 
 	test("checks a data edge into a fan-in input against the settled value (ADR 0006)", async () => {
 		const fanin = (value: JsonSchema) =>
-			edge(STRING, settledSchema(value), { fanin: true, pure: true });
+			edge(STRING, settledSchema(value), { fanin: true });
 		expect(await fanin(STRING)).toEqual([]);
 		expect((await fanin(NUMBER)).map((d) => d.code)).toEqual(["TYPE.edge"]);
 	});
@@ -111,10 +111,7 @@ describe("edge types", () => {
 		const guard = (out: object) =>
 			failures(
 				irOf(
-					[
-						code("a", "a", { pure: false, out: { v: out } }),
-						code("b", "b", { pure: false }),
-					],
+					[code("a", "a", { out: { v: out } }), code("b", "b")],
 					[
 						{
 							kind: "control",
@@ -132,9 +129,7 @@ describe("edge types", () => {
 
 	test("rejects a marker the artifact walker cannot reach", async () => {
 		const out = { v: { anyOf: [marked(CORE_TYPES.file)] } };
-		const [found] = await failures(
-			irOf([code("a", "a", { pure: false, out })]),
-		);
+		const [found] = await failures(irOf([code("a", "a", { out })]));
 		expect(found?.code).toBe("TYPE.marker");
 		expect(found?.path).toBe("/nodes/0/out/v/anyOf/0");
 	});
@@ -239,7 +234,7 @@ describe("host nodes", () => {
 			other: marked("other.thing"),
 			value: { type: "object", default: marked("other.value") },
 		};
-		const ir = irOf([code("a", "a", { pure: false, out })]);
+		const ir = irOf([code("a", "a", { out })]);
 		const diagnostics = await failures(ir, { hosts: [fixed] });
 		expect(diagnostics.map((d) => [d.code, d.message])).toEqual([
 			[
@@ -288,13 +283,13 @@ describe("config", () => {
 			"a short unclaimed key, too far for a hint",
 			{ fa: {} },
 			"CFG.unclaimed",
-			"Remove 'fa' from the config, or install what claims it",
+			"Remove 'fa' from the config, or install the pack or host that claims it. To configure a composition file, make it a pack",
 		],
 		[
 			"an unclaimed key",
 			{ zzzzz: {} },
 			"CFG.unclaimed",
-			"Remove 'zzzzz' from the config, or install what claims it",
+			"Remove 'zzzzz' from the config, or install the pack or host that claims it. To configure a composition file, make it a pack",
 		],
 		[
 			"a key under a pack that names none of its compositions",

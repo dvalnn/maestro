@@ -186,7 +186,7 @@ export function build<P extends Types, R>(
 
 /**
  * Builds `root` twice and compares the IR (SDK-12).
- * @throws `PURE.unstable` when the two differ.
+ * @throws `BUILD.unstable` when the two differ.
  */
 export function buildTwice<P extends Types, R>(
 	root: Composition<P, Types, R>,
@@ -196,7 +196,7 @@ export function buildTwice<P extends Types, R>(
 	const first = irJson(build(root, params, context));
 	if (first !== irJson(build(root, params, context)))
 		throw fail(
-			"PURE.unstable",
+			"BUILD.unstable",
 			`two builds of '${root.name}' with the same params gave different IR`,
 			"Keep the build a function of its params alone: no state kept between builds",
 		);

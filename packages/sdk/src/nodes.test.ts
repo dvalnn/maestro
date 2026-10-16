@@ -45,14 +45,12 @@ describe("code", () => {
 				out: { text: Text() },
 				reads: ["src/**"],
 				writes: ["out/a.txt"],
-				pure: false,
 				timeout: 5000,
 			});
 		});
 		expect(nodeOf(ir, "merge")).toMatchObject({
 			kind: "code",
 			worker: WORKER,
-			pure: false,
 			timeout: 5000,
 			reads: ["src/**"],
 			writes: ["out/a.txt"],
@@ -70,12 +68,11 @@ describe("code", () => {
 		});
 	});
 
-	test("is pure by default, with no timeout", () => {
+	test("has no timeout by default", () => {
 		const node = nodeOf(
 			buildOf(() => code(stamp)),
 			"stamp",
 		);
-		expect(node).toMatchObject({ pure: true });
 		expect(node).not.toHaveProperty("timeout");
 	});
 

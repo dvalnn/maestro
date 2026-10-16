@@ -72,7 +72,6 @@ function codeCall(
 		worker: node.worker,
 		in: node.in,
 		inputs,
-		pure: node.pure,
 		context: {
 			concert: kit.concert,
 			clock,

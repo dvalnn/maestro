@@ -1,11 +1,13 @@
 import { basename } from "node:path";
 import {
-	type ConcertRecord,
 	type ConcertResult,
 	perform as conduct,
 	type Performance,
 	type RecordStore,
+	unresumable,
 } from "@maestro/core/perform";
+import { mapWorkers } from "@maestro/ir";
+import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk";
 import {
 	COMMON,
 	type Command,
@@ -17,15 +19,15 @@ import {
 	type Values,
 } from "./command";
 import {
-	CliError,
 	exitOf,
 	instanceName,
 	jsonOf,
+	outputsText,
 	parseTour,
 	reasonOf,
 	renderDiagnostic,
 	resultDoc,
-	stillRunning,
+	resumeRefused,
 	usageError,
 } from "./output";
 import {
@@ -35,7 +37,7 @@ import {
 	prepare,
 	resumable,
 } from "./prepare";
-import { concertOf, type Session, withSession } from "./session";
+import { artifactsOf, concertOf, type Session, withSession } from "./session";
 
 /** The environment variable that puts a new concert on a tour when `--tour` is not given. */
 const TOUR_VARIABLE = "MAESTRO_TOUR";
@@ -59,6 +61,7 @@ const tourOf = (values: Values, env: Deps["env"]) => {
 	return variable ? parseTour(TOUR_VARIABLE, variable) : undefined;
 };
 
+/** A new concert from `args`, each stdlib reference keyed on the stdlib this engine embeds (ADR 0008). */
 async function begin(
 	session: Session,
 	args: readonly string[],
@@ -68,24 +71,19 @@ async function begin(
 		{ verb: "perform", options: PERFORM_OPTIONS, examples: false },
 		args,
 	);
+	const ir = mapWorkers(prepared.ir, (ref) =>
+		ref.module === STDLIB_MODULE ? { ...ref, codeHash: STDLIB_HASH } : ref,
+	);
 	return {
-		prepared,
+		prepared: { ...prepared, ir },
 		tour: tourOf(prepared.values, session.deps.env),
 		title: textOf(prepared.values, "title") || undefined,
 	};
 }
 
-function refuseResume({ id, status, pid }: ConcertRecord) {
-	if (status === "running") throw stillRunning(id, pid);
-	if (status === "ok")
-		throw new CliError(
-			`concert ${id} finished ok, so there is nothing to resume\nPerform its composition as a new concert`,
-		);
-}
-
 /**
  * The concert `id` to resume, with its code as it stands now.
- * @throws CliError when the concert is running or finished `ok`, or its code is gone.
+ * @throws CliError when core refuses to resume it, its code is gone, or the flags are not a resume's.
  */
 async function restart(
 	session: Session,
@@ -104,7 +102,8 @@ async function restart(
 			"Drop them, or start a new concert without --resume",
 		);
 	const row = concertOf(store, id);
-	refuseResume(row);
+	const refused = unresumable(row);
+	if (refused) throw resumeRefused(refused);
 	return { prepared: await resumable(session, row, values), resume: id };
 }
 
@@ -120,16 +119,19 @@ async function settled(performance: Performance): Promise<ConcertResult> {
 	}
 }
 
-/** Prints how the concert ended, and gives its exit code. */
+/** Prints how the concert ended, with the outputs its result carries, and gives its exit code. */
 function report(
-	deps: Deps,
+	session: Session,
 	json: boolean,
 	id: string,
 	{ ir }: Prepared,
 	result: ConcertResult,
 ): number {
+	const { deps } = session;
 	if (json) deps.stdout(jsonOf(resultDoc(id, result)));
 	else {
+		const outputs = outputsText(ir, artifactsOf(session, id), result);
+		if (outputs !== undefined) deps.stdout(outputs);
 		const at =
 			result.outcome === "ok" ||
 			result.node === undefined ||
@@ -162,13 +164,12 @@ async function performed(
 	const performance = conduct({
 		hosts: deps.hosts,
 		loadCode: prepared.loader.loadCode,
-		codeHash: prepared.loader.codeHash,
 		record: store,
 		dir: session.files.concerts,
 		concurrency: session.config.core.concurrency,
+		ir: prepared.ir,
 		...(start.resume === undefined
 			? {
-					ir: prepared.ir,
 					origin: {
 						workspace: session.config.core.workspace,
 						moduleDir: prepared.moduleDir,
@@ -183,7 +184,7 @@ async function performed(
 		json ? `concert ${performance.concert}` : performance.concert,
 	);
 	return report(
-		deps,
+		session,
 		json,
 		performance.concert,
 		prepared,

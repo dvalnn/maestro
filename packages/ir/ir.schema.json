@@ -217,10 +217,9 @@
 			"unevaluatedProperties": false
 		},
 		"codeNode": {
-			"required": ["worker", "pure"],
+			"required": ["worker"],
 			"properties": {
 				"worker": { "$ref": "#/$defs/workerRef" },
-				"pure": { "type": "boolean" },
 				"reads": { "type": "array", "items": { "type": "string" } },
 				"writes": { "type": "array", "items": { "type": "string" } },
 				"fanin": { "type": "boolean" },

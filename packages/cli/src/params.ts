@@ -19,6 +19,7 @@ import {
 	findMarked,
 	isPlainObject,
 	type JsonSchema,
+	replaceAt,
 	schemaMarkers,
 } from "@maestro/ir";
 import type { ConfiguredParams, Described } from "@maestro/sdk";
@@ -52,7 +53,7 @@ export type ParamRequest = {
 	hosts: readonly Host[];
 };
 
-export type Params = {
+type Params = {
 	/** The config with the example set and the flags layered on top. */
 	composed: Composed;
 	/** The root's params as given, without their declared defaults, which its build fills in. */
@@ -81,20 +82,6 @@ const fixing = (r: Reading, name: string) =>
 	r.root
 		? `Pass a valid ${flagOf(name)}, or fix '${[...r.path, name].join(".")}' in the config`
 		: `Fix '${[...r.path, name].join(".")}' in the config`;
-
-/** `value` with the value at JSON Pointer `pointer` replaced by `replacement`. */
-function replaced(value: unknown, pointer: string, replacement: unknown) {
-	if (pointer === "") return replacement;
-	const keys = pointer
-		.split("/")
-		.slice(1)
-		.map((k) => k.replaceAll("~1", "/").replaceAll("~0", "~"));
-	const last = keys.pop() ?? "";
-	let parent = value as Record<string, unknown>;
-	for (const key of keys) parent = parent[key] as Record<string, unknown>;
-	parent[last] = replacement;
-	return value;
-}
 
 type Read = { value: unknown } | { diagnostics: Diagnostic[] };
 
@@ -139,7 +126,7 @@ function typed(
 					),
 				),
 			};
-		result = replaced(result, marked.pointer, read.value);
+		result = replaceAt(result, marked.pointer, read.value);
 	}
 	return { value: result };
 }

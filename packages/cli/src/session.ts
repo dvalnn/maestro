@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { lstat, mkdir, readdir } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { basename, extname, join, resolve } from "node:path";
 import {
 	type ConcertRecord,
+	concertDirs,
 	openRecord,
 	type RecordStore,
 } from "@maestro/core/perform";
@@ -48,6 +49,10 @@ export type Session = {
 		concerts: string;
 	};
 };
+
+/** The absolute path of concert `id`'s artifact area. */
+export const artifactsOf = (session: Session, id: string) =>
+	concertDirs(resolve(session.files.concerts), id).artifacts;
 
 /** The session for `deps`, with the config layered for `profile`. @throws ConfigError as `loadConfig` does. */
 export async function openSession(

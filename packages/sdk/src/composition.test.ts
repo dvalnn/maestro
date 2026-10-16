@@ -298,14 +298,14 @@ describe("byte stability", () => {
 		expect(outputs[1]).toBe(outputs[0]);
 	});
 
-	test("a build that keeps state between builds fails with PURE.unstable", () => {
+	test("a build that keeps state between builds fails with BUILD.unstable", () => {
 		let calls = 0;
 		const drifting = composition("drift", { examples: [{}] }, () => {
 			calls++;
 			return task({ calls });
 		});
 		expect(diagnose(() => buildTwice(drifting, {}, context)).code).toBe(
-			"PURE.unstable",
+			"BUILD.unstable",
 		);
 	});
 

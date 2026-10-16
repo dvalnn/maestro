@@ -6,7 +6,6 @@ import {
 	type Invocation,
 	invokeCode,
 	type LoadCode,
-	pureContext,
 	type Settlement,
 	type Worker,
 } from "../worker";
@@ -15,9 +14,8 @@ const CANCELLED: Settlement = { outcome: "failed", reason: "cancelled" };
 
 /**
  * The in-process worker of the `ts` runtime (CORE-14). It settles each invocation through `invokeCode`, with the
- * function `loadCode` resolves and a pure context for a pure node (ADR 0008). `cancel` settles the invocation
- * `failed` at once and abandons the function, which an in-process worker cannot stop. A line the function logs once
- * its invocation has settled is dropped.
+ * function `loadCode` resolves (ADR 0008). `cancel` settles the invocation `failed` at once and abandons the function,
+ * which an in-process worker cannot stop. A line the function logs once its invocation has settled is dropped.
  */
 export function tsWorker(loadCode: LoadCode, check: PortCheck): Worker {
 	const cancels = new Map<string, () => void>();
@@ -57,16 +55,15 @@ export function tsWorker(loadCode: LoadCode, check: PortCheck): Worker {
 async function call(
 	loadCode: LoadCode,
 	check: PortCheck,
-	{ worker, in: ports, inputs, pure, context }: Invocation,
+	{ worker, in: ports, inputs, context }: Invocation,
 	log: (line: string) => void,
 ): Promise<Settlement> {
 	const fn = await loadFunction(loadCode, worker);
 	const { artifacts, ...rest } = context;
-	const full: CodeContext = {
+	const ctx: CodeContext = {
 		...rest,
 		path: (ref) => join(artifacts, ref.path),
 		log,
 	};
-	const ctx = pure ? pureContext(full) : full;
 	return invokeCode(fn, { in: ports, inputs, context: ctx }, check);
 }

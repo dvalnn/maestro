@@ -1,3 +1,4 @@
+export { concertDirs } from "./artifacts";
 export { type Performance, type PerformOptions, perform } from "./perform";
 export {
 	type ConcertEvent,
@@ -10,5 +11,6 @@ export {
 	openRecord,
 	type RecordStore,
 	type Settling,
+	Unresumable,
+	unresumable,
 } from "./record";
-export { type CodeHash, withCurrentHashes } from "./resume";

@@ -1,15 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Diagnostic, HostNode, Ir } from "@maestro/ir";
 import type { Bounds, Host } from "../host";
-import {
-	code,
-	composeWith,
-	fakeHost,
-	golden,
-	irOf,
-	loader,
-	sdkBuilt,
-} from "./fixtures/support";
+import { composeWith, fakeHost, golden, sdkBuilt } from "./fixtures/support";
 
 const planOf = async (ir: Ir, hosts?: Host[], caps = {}) => {
 	const result = await composeWith(ir, { caps, ...(hosts ? { hosts } : {}) });
@@ -83,22 +75,19 @@ describe("compose", () => {
 		});
 	});
 
-	test.each(["environment", "validate"] as const)(
-		"a host whose %s() throws stops compose with a HOST error naming it",
-		async (name) => {
-			const host = fakeHost({
-				[name]: () => {
-					throw new Error("down");
-				},
-			});
-			const result = await composeWith(await golden("minimal.json"), {
-				hosts: [host],
-			});
-			expect(
-				result.ok ? [] : result.diagnostics.map((d) => [d.code, d.message]),
-			).toEqual([[`HOST.${name}`, `host 'fake' failed in ${name}(): down`]]);
-		},
-	);
+	test("a host whose validate() throws stops compose with a HOST error naming it", async () => {
+		const host = fakeHost({
+			validate: () => {
+				throw new Error("down");
+			},
+		});
+		const result = await composeWith(await golden("minimal.json"), {
+			hosts: [host],
+		});
+		expect(
+			result.ok ? [] : result.diagnostics.map((d) => [d.code, d.message]),
+		).toEqual([["HOST.validate", "host 'fake' failed in validate(): down"]]);
+	});
 
 	test("keeps a host's warnings in the plan, each code under HOST once", async () => {
 		const host = fakeHost({
@@ -154,32 +143,5 @@ describe("bounds (D-23)", () => {
 		expect(
 			result.ok ? [] : result.diagnostics.map((d) => [d.code, d.message]),
 		).toEqual(messages.map((m) => ["BOUND.cap", m]));
-	});
-
-	test("stops at the first group instance that passes a cap", async () => {
-		const ir = irOf([
-			code("r/c", "boom", { pure: true }),
-			{
-				id: "r",
-				kind: "repeat",
-				cardinality: { upTo: 20000 },
-				in: { text: { type: "string" } },
-				literals: { text: "" },
-				inner: { index: { type: "integer" }, text: { type: "string" } },
-				out: { text: { type: "string" } },
-				members: { result: "r/c" },
-			},
-		]);
-		const result = await composeWith(ir, {
-			caps: { instances: 10 },
-			loadCode: loader({
-				boom: () => {
-					throw new Error("folded");
-				},
-			}),
-		});
-		expect(result.ok ? [] : result.diagnostics.map((d) => d.message)).toEqual([
-			"'instances' may reach at least 20001, over its cap of 10",
-		]);
 	});
 });

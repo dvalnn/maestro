@@ -83,8 +83,6 @@ export type CodeOptions<I, O extends Types> = Common &
 		reads?: string[];
 		/** Paths the node writes, as written. Never read at build. */
 		writes?: string[];
-		/** Default true. An impure node is never folded. */
-		pure?: boolean;
 		/** Milliseconds the node may take before it settles `failed`. None by default. */
 		timeout?: number;
 	};
@@ -107,7 +105,6 @@ export function code<I, O extends Types = NoOutputs>(
 				out: schemas(opts.out),
 				fields: {
 					worker: ref,
-					pure: opts.pure ?? true,
 					timeout: checkTimeout(opts.timeout, opts.label ?? ref.export),
 					reads: opts.reads,
 					writes: opts.writes,
@@ -319,7 +316,9 @@ function mapMembers(returned: unknown, group: string): Record<string, string> {
 const UNTIL_HINT =
 	"Return r.ok or a Bool output of a node in the body; a comparison such as !== on a Ref gives a plain boolean";
 
-/** Calls `until` on the member's handle inside the body. `until` must return a Bool port of a body node (sdk-spec 4.1). */
+/**
+ * Calls `until` on the member's handle inside the body. `until` must return a Bool port of a body node (sdk-spec 4.1).
+ */
 function untilPort(
 	until: ((result: Result<Types>) => Ref<boolean>) | undefined,
 	memberId: string,
@@ -375,7 +374,7 @@ export type MapResults = {
 
 /**
  * One body instance per item, in parallel. Build-time items are keyed by `itemKey`, and a duplicate key throws
- * `SCOPE.key`. With a key function the keys are checked at compose.
+ * `SCOPE.key`. A key function is called only at perform, where a duplicate key fails the map.
  */
 export function map<T>(
 	items: Items<T>,

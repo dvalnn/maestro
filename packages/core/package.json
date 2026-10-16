@@ -3,13 +3,13 @@
 	"private": true,
 	"type": "module",
 	"exports": {
+		".": "./src/index.ts",
 		"./host": "./src/host.ts",
 		"./worker": "./src/worker.ts",
 		"./compose": "./src/compose/index.ts",
 		"./config": "./src/config/index.ts",
 		"./perform": "./src/perform/index.ts",
-		"./ports": "./src/ports.ts",
-		"./shared": "./src/shared.ts"
+		"./ports": "./src/ports.ts"
 	},
 	"dependencies": {
 		"@maestro/ir": "workspace:*",

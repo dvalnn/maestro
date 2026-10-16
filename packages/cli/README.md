@@ -19,15 +19,30 @@ maestro wait <concert> --timeout 15m
 | `wait <concert>`             | `w`   | Waits for a concert to settle. `--timeout <duration>`.                                                            |
 | `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                               |
 | `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line.                                              |
-| `prune <concert>...`         |       | Deletes settled concerts, their files and what their hosts hold.                                                  |
-| `tour <slug> <concert>...`   |       | Puts concerts on a tour. `--clear` takes them off.                                                                |
+| `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                          |
+| `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                |
+
+[^prune]:
+    Names concerts, or picks every concert settled longer ago than `--before <duration>`, narrowed by `--tour <slug>`
+    and `--workspace <name>`. It asks before deleting unless given `--yes`.
 
 Every command takes `--json` (one JSON document on stdout), `--profile <name>`, `--debug` (stack traces) and `--help`.
 Primary output goes to stdout, messages to stderr.
 
+`ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
+
+`perform` and `wait` print the concert's result: after `perform`'s id or `wait`'s status, one `name  value` line per
+output port of the result node. A one-line string, a number, a boolean or `null` prints as is, anything else as compact
+JSON, and an artifact as its path. A rejected concert shows its root cause's rejection outputs; a failed one has none.
+With `--json` the document holds them as stored, under `outputs`.
+
 A composition is a `.ts` or `.js` file that exports exactly one composition, a `.json` IR file, or
 `<pack>.<composition>` of an installed pack. Its params are flags in kebab-case, layered over the config. An IR file is
 already built and takes no param flags.
+
+A file's stem is its pack id, so it must be one: lower case, starting with a letter, then letters, digits, `_` or `-`,
+and no installed pack's. A bare file takes params from its flags, its example set and its defaults only. No config key
+configures it; make it a pack for that.
 
 ## Config
 
@@ -36,13 +51,13 @@ Layers, lowest first: the defaults, `$XDG_CONFIG_HOME/maestro/config.yaml`, the 
 changes that: `!replace` on a map, `!append` on a list, `!delete` to drop a key. `maestro config <composition>` shows
 where each value came from.
 
-| Key           | Meaning                                                                                             |
-| ------------- | --------------------------------------------------------------------------------------------------- |
-| `packs`       | Directories of installed packs.                                                                     |
-| `concurrency` | Most node instances at once in one concert. Defaults to the CPU count.                              |
-| `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                |
-| `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`. |
-| `caps`        | Host capabilities.                                                                                  |
+| Key           | Meaning                                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| `packs`       | Directories of installed packs.                                                                      |
+| `concurrency` | Most node instances at once in one concert. Defaults to the CPU count.                               |
+| `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                 |
+| `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`.  |
+| `caps`        | Caps by name: `instances` caps a concert's node instances, any other name the total of a host count. |
 
 A pack is operator-trusted code: `maestro` loads and executes what `packs` lists with the user's own permissions.
 

@@ -54,20 +54,12 @@ import type {
 	RecordStore,
 	Settling,
 } from "./record";
-import {
-	type CodeHash,
-	type Kept,
-	keptOf,
-	resumeKey,
-	withCurrentHashes,
-} from "./resume";
+import { type Kept, keptOf, resumeKey } from "./resume";
 import { tsWorker } from "./ts-worker";
 
 type PerformBase = {
 	hosts: readonly Host[];
 	loadCode: LoadCode;
-	/** Replaces each code reference's `codeHash` in the IR before it is stored and keyed (ADR 0008). */
-	codeHash: CodeHash;
 	record: RecordStore;
 	/** What a new concert's row keeps beside its IR. A resumed concert keeps its own. */
 	origin?: ConcertOrigin;
@@ -78,13 +70,13 @@ type PerformBase = {
 };
 
 /**
- * The concert to perform, one of:
- * - `ir`, which passed `parseIr`: a new concert.
- * - `resume`, the id of a concert that failed or was rejected: it keeps its id, takes its stored IR, and reuses each
- *   `ok` instance whose resume key still matches (architecture 7).
+ * `ir` passed `parseIr`, and each code reference in it carries its code's current `codeHash` (ADR 0008). The concert is
+ * one of:
+ * - a new one, without `resume`;
+ * - the one `resume` names, which failed or was rejected: it keeps its id, takes `ir` in place of its stored IR, and
+ *   reuses each `ok` instance whose resume key still matches (architecture 7).
  */
-export type PerformOptions = PerformBase &
-	({ ir: Ir; resume?: undefined } | { resume: string; ir?: undefined });
+export type PerformOptions = PerformBase & { ir: Ir; resume?: string };
 
 /** A concert being performed. */
 export type Performance = {
@@ -141,8 +133,8 @@ type Running = { frame: Frame; cancel(): Promise<void>; halted?: Halt };
 type Slots = { acquire(): Promise<void>; release(): void };
 
 /**
- * `started` holds the instance keys `record.start` took. `inflight` holds each node settling, until it has. `kept` holds
- * the instances a resume may reuse, by instance key.
+ * `started` holds the instance keys `record.start` took. `inflight` holds each node settling, until it has. `kept`
+ * holds the instances a resume may reuse, by instance key.
  */
 type Concert = {
 	id: string;
@@ -160,9 +152,10 @@ type Concert = {
 
 /**
  * Starts performing a concert, a new one or the one `options.resume` names. Code nodes execute in process through
- * `loadCode`, host nodes through their host, and every instance and event goes to `record`. `done` rejects when the
- * concert to resume is unknown, is running, or settled `ok`.
+ * `loadCode`, host nodes through their host, and every instance and event goes to `record`.
  * @throws RangeError when `concurrency` is not a positive integer.
+ * @throws Error when the concert to resume is unknown.
+ * @throws Unresumable when it is running, or settled `ok`.
  */
 export function perform(options: PerformOptions): Performance {
 	const { concurrency } = options;
@@ -173,29 +166,23 @@ export function perform(options: PerformOptions): Performance {
 	const id = options.resume ?? Bun.randomUUIDv7();
 	const root: Frame = { keys: [], inner: {}, states: new Map() };
 	const running = new Set<Running>();
+	const kept = enter(id, options);
 	return {
 		concert: id,
-		done: enter(id, options).then(({ ir, kept }) =>
-			conduct(id, ir, kept, options, root, running),
-		),
+		done: conduct(id, options.ir, kept, options, root, running),
 		cancel: () => halt(running, root, CANCELLED),
 	};
 }
 
-/** Records the concert as running with the current code hashes, and finds what a resume may reuse of it. */
-async function enter(
-	id: string,
-	options: PerformOptions,
-): Promise<{ ir: Ir; kept: Map<string, Kept> }> {
-	const { record, resume, codeHash } = options;
+/** Records the concert as running, and finds what a resume may reuse of it. */
+function enter(id: string, options: PerformOptions): Map<string, Kept> {
+	const { record, resume, ir } = options;
 	if (resume === undefined) {
-		const ir = await withCurrentHashes(options.ir, codeHash);
 		record.begin({ id, ir, startedAt: Date.now(), ...options.origin });
-		return { ir, kept: new Map() };
+		return new Map();
 	}
-	const ir = await withCurrentHashes(record.concert(id).ir, codeHash);
 	record.resume({ id, ir });
-	return { ir, kept: keptOf(record.instances(id)) };
+	return keptOf(record.instances(id));
 }
 
 /**
@@ -317,6 +304,13 @@ function resultOf(returned: State): ConcertResult {
 	const instance = { node: state.node, expansion: state.expansion };
 	if (state.outcome === "ok")
 		return { ...instance, outcome: "ok", outputs: state.outputs };
+	if (state.outcome === "rejected" && state.outputs !== undefined)
+		return {
+			...instance,
+			outcome: "rejected",
+			reason: state.reason,
+			outputs: state.outputs,
+		};
 	const outcome = state.outcome === "skipped" ? "rejected" : state.outcome;
 	return { ...instance, outcome, reason: state.reason };
 }

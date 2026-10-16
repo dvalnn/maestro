@@ -1,13 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { type Ir, reject } from "@maestro/ir";
-import {
-	code,
-	composeWith,
-	fakeHost,
-	golden,
-	irOf,
-	loader,
-} from "./fixtures/support";
+import type { Ir } from "@maestro/ir";
+import { code, composeWith, fakeHost, golden, irOf } from "./fixtures/support";
 import type { ComposeInput } from "./index";
 import { listing, render, summary } from "./index";
 
@@ -17,40 +10,34 @@ const planOf = async (ir: Ir, over: Partial<ComposeInput> = {}) => {
 	return result.plan;
 };
 
-/** A guard folded false, one on an implicit port folded true, a long value with a `#` and a long rejection. */
-const folding = () =>
-	planOf(
-		irOf(
-			[
-				code("g", "flag", { out: { yes: { type: "boolean" } } }),
-				code("long", "long"),
-				code("t", "never"),
-				code("r", "refuse"),
-			],
-			[
-				{
-					kind: "control",
-					from: { node: "g", port: "yes" },
-					to: { node: "t" },
-				},
-				{
-					kind: "control",
-					from: { node: "long", port: "ok" },
-					to: { node: "r" },
-				},
-			],
-		),
+/** A map named `id` over `items`, its body reading each item, with `over` merged on the map. */
+const map = (id: string, items: string[], over: object = {}) => ({
+	nodes: [
+		code(`${id}/u`, "upper", { in: { name: { type: "string" } } }),
 		{
-			loadCode: loader({
-				flag: () => ({ yes: false }),
-				long: () => ({ text: `#${"x".repeat(100)}` }),
-				refuse: () => reject(`line one\nline two ${"y".repeat(60)}`),
-			}),
+			id,
+			kind: "map",
+			cardinality: { upTo: items.length },
+			onError: "settle",
+			literals: { items },
+			in: { items: { type: "array", items: { type: "string" } } },
+			inner: { item: { type: "string" } },
+			out: { results: { type: "array" } },
+			members: { r: `${id}/u` },
+			...over,
 		},
-	);
+	],
+	edges: [
+		{
+			kind: "data",
+			from: { node: id, port: "item" },
+			to: { node: `${id}/u`, port: "name" },
+		},
+	],
+});
 
 describe("text forms", () => {
-	test("summary: instances, host counts, folded instances and warnings in one line", async () => {
+	test("summary: instances, host counts and warnings in one line", async () => {
 		const host = fakeHost({
 			bounds: () => ({ calls: 1 }),
 			validate: () => [
@@ -58,24 +45,23 @@ describe("text forms", () => {
 			],
 		});
 		expect(summary(await planOf(await golden("minimal.json")))).toBe(
-			"minimal: 1 node instance, 1 folded",
+			"minimal: 1 node instance",
 		);
 		expect(
 			summary(
 				await planOf(await golden("fanout-fanin-loop.json"), { hosts: [host] }),
 			),
 		).toBe(
-			"fanout-fanin-loop: up to 11 node instances, up to 5 calls, 0 folded, 1 warning",
+			"fanout-fanin-loop: up to 11 node instances, up to 5 calls, 1 warning",
 		);
 	});
 
-	test("listing: each node's count, expansions and folded values, then bounds", async () => {
+	test("listing: each node's count and expansions, then bounds", async () => {
 		expect(listing(await planOf(await golden("minimal.json")))).toBe(
 			[
-				"minimal: 1 node instance, 1 folded",
+				"minimal: 1 node instance",
 				"nodes:",
 				"  greet  code  1",
-				'    greet folded ok {"text":"hello, world"}',
 				"bounds:",
 				"  instances  1",
 			].join("\n"),
@@ -114,18 +100,26 @@ describe("render (architecture 11)", () => {
 		expect(chart).toContain('  n6{"gate<br/>assert"}');
 	});
 
-	test("marks folded values and resolved guards, cut and escaped", async () => {
-		const chart = render(await folding()).split("\n");
-		expect(chart).toContain('  n0 -.->|"when yes = false"| n2');
+	test("cuts a long key list, and counts the instances a key function names", async () => {
+		const long = map("long", [
+			"alpha",
+			"bravo",
+			"charlie",
+			"delta",
+			"echo",
+			"foxtrot",
+		]);
+		const keyed = map("k", ["a", "b", "c"], {
+			key: { ...code("k", "firstChar").worker },
+		});
+		const chart = render(
+			await planOf(
+				irOf([...long.nodes, ...keyed.nodes], [...long.edges, ...keyed.edges]),
+			),
+		).split("\n");
 		expect(chart).toContain(
-			`  n1["long<br/>code long<br/>folded long ok {#quot;text#quot;:#quot;#35;${"x".repeat(29)}…"]`,
+			'    n1[["map long<br/>up to 6<br/>long: alpha, bravo, charlie, delta, echo, fox…"]]',
 		);
-		expect(chart).toContain('  n1 -.->|"when ok = true"| n3');
-		expect(chart).toContain(
-			`  n3["r<br/>code refuse<br/>folded r rejected: line one line two ${"y".repeat(21)}…"]`,
-		);
-		expect(chart).toContain(
-			'  n2["t<br/>code never<br/>folded t skipped: its guard is false"]',
-		);
+		expect(chart).toContain('    n3[["map k<br/>up to 3<br/>k: 3"]]');
 	});
 });

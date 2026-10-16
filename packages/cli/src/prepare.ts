@@ -1,11 +1,10 @@
-import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
+import { messageOf } from "@maestro/core";
 import { type ComposeInput, compose, type Plan } from "@maestro/core/compose";
-import { CORE_CONFIG, type Composed } from "@maestro/core/config";
-import { type ConcertRecord, withCurrentHashes } from "@maestro/core/perform";
-import { messageOf } from "@maestro/core/shared";
-import { type Ir, parseIr } from "@maestro/ir";
+import { CORE_CONFIG, type Composed, type Layer } from "@maestro/core/config";
+import type { ConcertRecord } from "@maestro/core/perform";
+import { type Ir, irSchema, mapWorkers, parseIr } from "@maestro/ir";
 import { type Described, STDLIB_MODULE } from "@maestro/sdk";
 import { COMMON, type Options, parse, type Values } from "./command";
 import { CLI_CONFIG } from "./config";
@@ -16,11 +15,11 @@ import {
 	claimsOf,
 	codeHashOf,
 	type Loader,
-	mapWorkers,
 	moduleLoader,
 	openFile,
 	openPack,
 	rewriteModules,
+	withCurrentHashes,
 } from "./loader";
 import { CliError, Diagnosed, usageError } from "./output";
 import { paramValues } from "./params";
@@ -73,6 +72,7 @@ const RESERVED: Options = { ...COMMON, ...COMPOSE_FLAGS, ...PERFORM_FLAGS };
 export type Reading = { verb: string; options: Options; examples: boolean };
 
 const FILE = /\.(?:ts|js)$/;
+const PACK_ID = new RegExp(irSchema.$defs.name.pattern);
 const IR_FILE = /\.json$/;
 const BUNDLE_SUFFIX = ".bundle.js";
 
@@ -157,15 +157,18 @@ async function loadIr(
 	};
 }
 
-/** Builds `composition` of `bundle` from the config, the example set when `reading` says so, and the flags in `args`. */
+/**
+ * Builds `composition` of `bundle` from the config `layers`, the example set when `reading` says so, and the flags in
+ * `args`. Its config is `layers` with the example set and the flags on top.
+ */
 async function build(
 	session: Session,
 	reading: Reading,
-	bundles: readonly Bundle[],
 	bundle: Bundle,
 	composition: Described,
 	args: readonly string[],
-): Promise<Prepared> {
+	layers: readonly Layer[],
+): Promise<Omit<Prepared, "claims">> {
 	const label = `${bundle.pack.id}.${composition.name}`;
 	const flags = paramFlags(composition, RESERVED, label);
 	const { values } = parse(
@@ -174,7 +177,7 @@ async function build(
 		`Flags are ${reading.verb}'s and the params of '${label}', in kebab-case`,
 	);
 	const params = paramValues({
-		layers: session.config.layers,
+		layers,
 		pack: bundle.pack.id,
 		compositions: bundle.compositions,
 		root: composition.name,
@@ -189,8 +192,42 @@ async function build(
 		loader: bundle,
 		moduleDir: bundle.dir,
 		config: params.composed,
-		claims: claimsOf(bundles),
 		values,
+	};
+}
+
+/**
+ * Builds the composition of the bare file `target` from its example set and flags only: its stem claims no config.
+ * @throws CliError, a usage error, when its stem is not a pack id or is an installed pack's.
+ */
+async function buildFile(
+	session: Session,
+	reading: Reading,
+	packs: readonly Bundle[],
+	target: string,
+	args: readonly string[],
+): Promise<Prepared> {
+	const file = resolve(session.deps.cwd, target);
+	const id = basename(file, extname(file));
+	if (!PACK_ID.test(id))
+		throw usageError(
+			`composition file ${target} is named '${id}', which is not a pack id`,
+			"Rename it in lower case, starting with a letter, then letters, digits, '_' or '-'",
+		);
+	const taken = packs.find((p) => p.pack.id === id);
+	if (taken)
+		throw usageError(
+			`composition file ${target} is named '${id}', the id of the pack at ${taken.dir}`,
+			"Rename the file",
+		);
+	const bundle = await openFile(file);
+	const composition = chosen(bundle, target, undefined);
+	const built = await build(session, reading, bundle, composition, args, []);
+	return {
+		...built,
+		config: session.config.composed,
+		claims: claimsOf(packs),
+		file,
 	};
 }
 
@@ -216,20 +253,8 @@ export async function prepare(
 	if (isIr || FILE.test(target)) await requireFile(session, target);
 	if (isIr) return loadIr(session, reading, target, rest);
 	const packs = await installed(session);
-	if (FILE.test(target)) {
-		const file = resolve(session.deps.cwd, target);
-		const bundle = await openFile(file);
-		const composition = chosen(bundle, target, undefined);
-		const built = await build(
-			session,
-			reading,
-			[...packs, bundle],
-			bundle,
-			composition,
-			rest,
-		);
-		return { ...built, file };
-	}
+	if (FILE.test(target))
+		return buildFile(session, reading, packs, target, rest);
 	const [pack, name] = split(target);
 	const bundle = packs.find((b) => b.pack.id === pack);
 	if (!bundle)
@@ -237,41 +262,33 @@ export async function prepare(
 			`no pack '${pack}' is installed`,
 			`Add its directory to packs in the config${packs.length ? `, or use one of: ${packs.map((b) => b.pack.id).join(", ")}` : ""}`,
 		);
-	return build(
-		session,
-		reading,
-		packs,
-		bundle,
-		chosen(bundle, `pack '${pack}'`, name),
-		rest,
-	);
+	const composition = chosen(bundle, `pack '${pack}'`, name);
+	const layers = session.config.layers;
+	return {
+		...(await build(session, reading, bundle, composition, rest, layers)),
+		claims: claimsOf(packs),
+	};
 }
 
 /**
- * Pre-flight of `prepared` under the session's config and hosts. It writes only to a temporary directory.
+ * Pre-flight of `prepared` under the session's config and hosts.
  * @throws Diagnosed when composing fails.
  */
 export async function preflight(
 	session: Session,
 	{ ir, loader, config, claims }: Prepared,
 ): Promise<Plan> {
-	const scratch = await mkdtemp(join(tmpdir(), "maestro-compose-"));
-	try {
-		const result = await compose({
-			ir,
-			config,
-			core: { ...CORE_CONFIG, ...CLI_CONFIG },
-			packs: claims,
-			hosts: session.deps.hosts,
-			loadCode: loader.loadCode,
-			caps: session.config.core.caps,
-			scratch,
-		});
-		if (!result.ok) throw new Diagnosed(result.diagnostics);
-		return result.plan;
-	} finally {
-		await rm(scratch, { recursive: true, force: true });
-	}
+	const result = await compose({
+		ir,
+		config,
+		core: { ...CORE_CONFIG, ...CLI_CONFIG },
+		packs: claims,
+		hosts: session.deps.hosts,
+		loadCode: loader.loadCode,
+		caps: session.config.core.caps,
+	});
+	if (!result.ok) throw new Diagnosed(result.diagnostics);
+	return result.plan;
 }
 
 /**
@@ -340,7 +357,7 @@ export async function resumable(
 		loader,
 		moduleDir,
 		config: session.config.composed,
-		claims: claimsOf(bundle ? [...packs, bundle] : packs),
+		claims: claimsOf(packs),
 		values,
 	};
 }

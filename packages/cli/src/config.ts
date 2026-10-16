@@ -21,13 +21,13 @@ import type { JsonSchema } from "@maestro/ir";
 
 const APP = "maestro";
 /** The directory that makes its parent a workspace. */
-export const WORKSPACE_DIR = ".maestro";
+const WORKSPACE_DIR = ".maestro";
 const CONFIG_FILE = "config.yaml";
 const PROFILES_DIR = "profiles";
 const PROFILE_EXTENSION = ".yaml";
 
 /** The top-level key that lists the installed packs, each by the path of its directory. */
-export const PACKS = "packs";
+const PACKS = "packs";
 
 /** The config schemas the CLI owns beside core's, by top-level key. */
 export const CLI_CONFIG: Readonly<Record<string, JsonSchema>> = {

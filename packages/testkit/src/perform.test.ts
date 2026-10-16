@@ -6,7 +6,6 @@ import { join } from "node:path";
 import { compose } from "@maestro/core/compose";
 import type { Execution, Host, HostInstance } from "@maestro/core/host";
 import {
-	type CodeHash,
 	type InstanceRecord,
 	openRecord,
 	type PerformOptions,
@@ -24,6 +23,7 @@ import {
 	type IrEdge,
 	type IrNode,
 	MAESTRO_TYPE,
+	mapWorkers,
 	parseIr,
 	reject,
 	type Settled,
@@ -73,13 +73,22 @@ const loader =
 		return fn as CodeFunction;
 	};
 
-/** A new concert for an IR, or a resumed one for a concert id. */
-const which = (source: Ir | string) =>
-	typeof source === "string" ? { resume: source } : { ir: source };
+/** The `codeHash` of the code a worker reference names as it is now. */
+type CodeHash = (ref: WorkerRef) => string;
 
 /** The hashes the IR already holds. */
-const keep: CodeHash = async (ref) => ref.codeHash;
+const keep: CodeHash = (ref) => ref.codeHash;
 
+/** The record and directory `options` name, or a new workspace's. */
+async function storage(options: { record?: RecordStore; dir?: string }) {
+	const space = options.dir ? undefined : await workspace();
+	const record = options.record ?? space?.open();
+	const dir = options.dir ?? space?.dir;
+	if (!record || !dir) throw new Error("give both record and dir, or neither");
+	return { record, dir };
+}
+
+/** Performs `source`, an IR or the id of a concert to resume, with its code hashed by `options.codeHash`. */
 async function play(
 	source: Ir | string,
 	options: {
@@ -93,13 +102,14 @@ async function play(
 		dir?: string;
 	} = {},
 ) {
-	const space = options.dir ? undefined : await workspace();
-	const record = options.record ?? space?.open();
-	const dir = options.dir ?? space?.dir;
-	if (!record || !dir) throw new Error("give both record and dir, or neither");
+	const { record, dir } = await storage(options);
+	const ir = typeof source === "string" ? record.concert(source).ir : source;
 	const performOptions: PerformOptions = {
-		...which(source),
-		codeHash: options.codeHash ?? keep,
+		ir: mapWorkers(ir, (ref) => ({
+			...ref,
+			codeHash: (options.codeHash ?? keep)(ref),
+		})),
+		...(typeof source === "string" && { resume: source }),
 		hosts: options.hosts ?? [fakeHost(options.script)],
 		loadCode: options.loadCode ?? loader(options.code ?? {}),
 		record,
@@ -152,8 +162,7 @@ const code = (
 	id: string,
 	name: string,
 	ports: Pick<IrNode, "in" | "out" | "literals"> = {},
-	pure = false,
-): CodeNode => ({ id, kind: "code", worker: worker(name), pure, ...ports });
+): CodeNode => ({ id, kind: "code", worker: worker(name), ...ports });
 
 const data = (from: string, to: string): IrEdge => {
 	const [fromNode = "", fromPort = ""] = from.split(".");
@@ -619,7 +628,7 @@ test("a fan-in node takes each data input settled, whatever its outcome", async 
 				task("bad", { out: { text: STRING } }),
 				task("flawed", { out: { text: STRING } }),
 				{
-					...code("pick", "pick", { in: { a: true, b: true, c: true } }, true),
+					...code("pick", "pick", { in: { a: true, b: true, c: true } }),
 					fanin: true,
 				},
 			],
@@ -673,17 +682,18 @@ test("a guard that is not true skips its node, and the result counts that as rej
 	});
 });
 
-test("a map names duplicate keys and how to fix them", async () => {
+test("a map names duplicate keys and how to fix them, a key function's over a literal list only at perform", async () => {
 	const keyed = await play(await fixture("guards-and-escalation.json"), {
 		code: { plan: () => ({ parts: ["a", "a"] }), partKey, merge, summarize },
 	});
-	const unkeyed = await play(
+	const over = (items: string[], key?: WorkerRef) =>
 		graph(
 			[
 				{
 					id: "m",
 					kind: "map",
-					items: ["a b", "a_b"],
+					items,
+					...(key && { key }),
 					cardinality: { exact: 2 },
 					onError: "settle",
 					inner: { item: STRING },
@@ -694,8 +704,26 @@ test("a map names duplicate keys and how to fix them", async () => {
 			],
 			[],
 			"m",
-		),
-	);
+		);
+	const unkeyed = await play(over(["a b", "a_b"]));
+	const listed = over(["ab", "ac"], worker("firstChar"));
+	const firstChar = (item: string) => item[0];
+	const composed = await compose({
+		ir: listed,
+		config: { values: {}, sources: [] },
+		core: {},
+		packs: {},
+		hosts: [fakeHost()],
+		loadCode: loader({ firstChar }),
+		caps: {},
+	});
+	expect(composed.ok).toBe(true);
+	expect((await play(listed, { code: { firstChar } })).result).toMatchObject({
+		node: "m",
+		outcome: "failed",
+		reason:
+			"map 'm' has items 0 and 1 keyed 'a'. Make its key function return a unique key per item",
+	});
 	expect(keyed.result).toMatchObject({
 		node: "each",
 		outcome: "failed",
@@ -757,7 +785,6 @@ test("cancelling a concert cancels running instances latest first, keeps what th
 	const { dir, open } = await workspace();
 	const record = open();
 	const performance = perform({
-		codeHash: keep,
 		ir: graph(
 			[task("a"), task("b"), task("c"), code("d", "hang")],
 			[{ kind: "control", from: { node: "a" }, to: { node: "c" } }],
@@ -816,7 +843,6 @@ test("a cancelled host instance whose execute never settles is abandoned, and th
 	const { dir, open } = await workspace();
 	const record = open();
 	const performance = perform({
-		codeHash: keep,
 		ir: graph([task("t")], [], "t"),
 		hosts: [stuck],
 		loadCode: loader({}),
@@ -925,7 +951,6 @@ test("propagate halts the other members before the failing member's frame settle
 	const { dir, open } = await workspace();
 	const record = open();
 	const performance = perform({
-		codeHash: keep,
 		ir: propagating,
 		hosts: [blocking],
 		loadCode: loader({}),
@@ -1001,19 +1026,11 @@ test("only a tolerating edge admits a rejected upstream, and the result follows 
 	expect(instances.strict?.reason).toBe("'check' settled rejected");
 });
 
-test("a code node sees a fixed clock, its scratch directory and frozen host facts; a pure one cannot read the clock", async () => {
+test("a code node sees a fixed clock, its scratch directory and frozen host facts", async () => {
 	const seen: { clock?: number; scratch?: boolean; env?: unknown }[] = [];
 	const host: Host = { ...fakeHost(), environment: () => ({ target: "main" }) };
 	const { record, concert } = await play(
-		graph(
-			[
-				code("look", "look"),
-				code("pure", "look", {}, true),
-				code("meddle", "meddle"),
-			],
-			[],
-			"look",
-		),
+		graph([code("look", "look"), code("meddle", "meddle")], [], "look"),
 		{
 			hosts: [host],
 			code: {
@@ -1041,11 +1058,6 @@ test("a code node sees a fixed clock, its scratch directory and frozen host fact
 			env: { fake: { target: "main" } },
 		},
 	]);
-	expect(instances.pure).toMatchObject({
-		status: "failed",
-		reason:
-			"a pure node cannot read ctx.clock. Mark the node pure: false to read it",
-	});
 	expect(instances.meddle?.status).toBe("failed");
 	const logOf = (node: string) =>
 		record
@@ -1136,34 +1148,16 @@ test.each<[string, Fn, string, Pick<IrNode, "in" | "literals">?]>([
 		MISMATCHED,
 	],
 ])(
-	"a function that %s settles alike when folded and when performed",
+	"a function that %s settles failed, saying why",
 	async (_, fn, why, ports = {}) => {
 		const ir = graph(
-			[code("a", "fn", { ...ports, out: { text: STRING } }, true)],
+			[code("a", "fn", { ...ports, out: { text: STRING } })],
 			[],
 			"a",
 		);
-		const loadCode = loader({ fn });
-		const composed = await compose({
-			ir,
-			config: { values: {}, sources: [] },
-			core: {},
-			packs: {},
-			hosts: [fakeHost()],
-			loadCode,
-			caps: {},
-			scratch: tmpdir(),
-		});
 		const { result } = await play(ir, { code: { fn } });
 		expect(result).toMatchObject({ node: "a", outcome: "failed" });
-		const reason = result.outcome === "failed" ? result.reason : "";
-		expect(reason).toContain(why);
-		expect(composed.ok ? [] : composed.diagnostics).toEqual([
-			expect.objectContaining({
-				code: "PURE.fold",
-				message: `node 'a' failed while compose folded it: ${reason}`,
-			}),
-		]);
+		expect(result.outcome === "failed" ? result.reason : "").toContain(why);
 	},
 );
 
@@ -1193,7 +1187,6 @@ test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", a
 		hosts: [fakeHost(script)],
 		loadCode,
 		caps: {},
-		scratch: tmpdir(),
 	});
 	expect(
 		composed.ok ? composed.plan.diagnostics : composed.diagnostics,
@@ -1491,7 +1484,6 @@ test("two concerts share one record store at once, and the record answers the CL
 	const slow = graph([task("t")], [], "t", "slow");
 	const quick = graph([task("t")], [], "t", "quick");
 	const first = perform({
-		codeHash: keep,
 		ir: slow,
 		hosts: [
 			fakeHost({
@@ -1558,7 +1550,7 @@ const INTEGER = { type: "integer" };
 /** The current hashes of a loader that finds `changed` exports altered. */
 const hashes =
 	(...changed: string[]): CodeHash =>
-	async (ref) =>
+	(ref) =>
 		changed.includes(ref.export) ? CHANGED : ref.codeHash;
 
 const executed = (calls: string[], names: string[]) =>
@@ -1596,7 +1588,6 @@ test("a killed concert resumes without repeating an ok host node, and the record
 				a: [{ outcome: "ok", outputs: { text: "A" } }],
 				b: (_, __, context) => { console.log(context.concert); return new Promise(() => {}); },
 			} })],
-			codeHash: async (ref) => ref.codeHash,
 			loadCode: async () => { throw new Error("no code nodes"); },
 			record: openRecord(${JSON.stringify(join(dir, "record.db"))}),
 			dir: ${JSON.stringify(dir)},
@@ -1865,17 +1856,15 @@ test("a concert whose process is alive is not resumed, and the refusal names its
 			}),
 		],
 		loadCode: loader({}),
-		codeHash: keep,
 		record: open(),
 		dir,
 		concurrency: 1,
 	};
-	const live = perform({ ...options, ir: graph([task("t")], [], "t") });
+	const ir = graph([task("t")], [], "t");
+	const live = perform({ ...options, ir });
 	await started.promise;
-	await expect(
-		perform({ ...options, resume: live.concert }).done,
-	).rejects.toThrow(
-		`concert '${live.concert}' is still running in process ${process.pid}. Wait for it to settle, or kill it, then resume it`,
+	expect(() => perform({ ...options, ir, resume: live.concert })).toThrow(
+		`concert '${live.concert}' is still running in process ${process.pid}\nWait for it to settle, or kill it, then resume it`,
 	);
 	await live.cancel();
 	await live.done;
@@ -1886,35 +1875,8 @@ test("a concert that finished ok is not resumed", async () => {
 	await expect(
 		play(first.concert, { record: first.record, dir: first.dir }),
 	).rejects.toThrow(
-		`concert '${first.concert}' finished ok, so it has nothing to resume. Perform its composition as a new concert`,
+		`concert '${first.concert}' finished ok, so it has nothing to resume\nPerform its composition as a new concert`,
 	);
-});
-
-test("a fresh concert stores and keys on the current code hashes, not the IR's", async () => {
-	const STALE = "maestro:stdlib@0.0.1";
-	const CURRENT = "maestro:stdlib@9.9.9";
-	const stdlibNode = (codeHash: string): CodeNode => ({
-		id: "p",
-		kind: "code",
-		worker: {
-			runtime: TS_RUNTIME,
-			module: "maestro:stdlib",
-			export: "probe",
-			codeHash,
-		},
-		pure: false,
-		out: { v: INTEGER },
-	});
-	const code = { probe: () => ({ v: 1 }) };
-	const old = await play(graph([stdlibNode(STALE)], [], "p"), {
-		code,
-		codeHash: async () => CURRENT,
-	});
-	const current = await play(graph([stdlibNode(CURRENT)], [], "p"), { code });
-	const stored = old.record.concert(old.concert).ir.nodes[0];
-	expect(stored?.kind === "code" && stored.worker.codeHash).toBe(CURRENT);
-	const key = (r: typeof old) => r.record.instances(r.concert)[0]?.key;
-	expect(key(old)).toBe(key(current));
 });
 
 test("a resume marks the records it has not revisited stale, and keeps their spend", async () => {
@@ -1939,10 +1901,10 @@ test("a resume marks the records it has not revisited stale, and keeps their spe
 		["b", false],
 	]);
 	const cancelled = perform({
+		ir,
 		resume: first.concert,
 		hosts,
 		loadCode: loader({}),
-		codeHash: keep,
 		record: first.record,
 		dir: first.dir,
 		concurrency: 1,

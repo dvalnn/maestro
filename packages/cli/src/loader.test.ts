@@ -3,9 +3,8 @@ import { cp, mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { type ComposeInput, compose } from "@maestro/core/compose";
 import type { Execution, HostInstance } from "@maestro/core/host";
-import { openRecord, perform, withCurrentHashes } from "@maestro/core/perform";
+import { openRecord, perform } from "@maestro/core/perform";
 import { type Ir, parseIr, type WorkerRef } from "@maestro/ir";
-import { SDK_VERSION } from "@maestro/sdk";
 import { fakeHost } from "@maestro/testkit";
 import {
 	cleanup,
@@ -22,7 +21,7 @@ import {
 	openFile,
 	openPack,
 	rewriteModules,
-	type Versions,
+	withCurrentHashes,
 } from "./loader";
 
 const GOLDEN = join(FIXTURES, "../../../ir/fixtures");
@@ -50,7 +49,6 @@ const composed = async (
 		hosts: [fakeHost()],
 		loadCode: loader.loadCode,
 		caps: {},
-		scratch: await scratch(),
 		...over,
 	});
 
@@ -77,7 +75,7 @@ const workerOf = (ir: Ir, id: string) => {
 };
 
 describe("a pack", () => {
-	test("builds through its bundle, names its functions by identity, and folds through compose", async () => {
+	test("builds through its bundle, names its functions by identity, and composes", async () => {
 		const pack = await demoPack();
 		expect(pack.pack).toEqual({ id: "demo", version: "1.0.0" });
 		expect(claimsOf([pack])).toEqual({
@@ -93,19 +91,11 @@ describe("a pack", () => {
 			codeHash: expected,
 		});
 		expect(workerOf(ir, "shape").export).toBe("shape");
-		const result = await composed(ir, pack);
-		expect(result.ok && result.plan.folded.helpers_exclaim).toEqual({
-			"": { outcome: "ok", value: { text: "x!" } },
-		});
+		expect((await composed(ir, pack)).ok).toBe(true);
 	});
 
 	test.each<
-		[
-			string,
-			Record<string, unknown>,
-			string,
-			{ at?: string; versions?: Versions }?,
-		]
+		[string, Record<string, unknown>, string, { at?: string; sdk?: string }?]
 	>([
 		[
 			"a missing directory",
@@ -125,10 +115,9 @@ describe("a pack", () => {
 			"pack 'demo' at <dir> needs SDK ^99.0.0, and this maestro has",
 		],
 		[
-			"a host out of range",
-			{ hosts: { fake: "^2.0.0" } },
-			"pack 'demo' at <dir> needs host 'fake' ^2.0.0, and this maestro has 1.0.0",
-			{ versions: { sdk: SDK_VERSION, hosts: { fake: "1.0.0" } } },
+			"a manifest naming hosts",
+			{ hosts: { fake: "^1.0.0" } },
+			"maestro-pack.json: manifest must NOT have additional properties",
 		],
 		[
 			"an entry outside the pack",
@@ -169,7 +158,7 @@ describe("a pack", () => {
 		);
 		await Bun.write(join(dir, "../index.js"), "");
 		await symlink(join(dir, "../index.js"), join(dir, "link.js"));
-		const error = await openPack(join(dir, how.at ?? "."), how.versions).catch(
+		const error = await openPack(join(dir, how.at ?? "."), how.sdk).catch(
 			(e: Error) => e.message,
 		);
 		expect(String(error).replaceAll(dir, "<dir>")).toContain(message);
@@ -185,7 +174,7 @@ describe("a pack", () => {
 });
 
 describe("a bare file", () => {
-	test("builds from its own entry, bundled in memory, and folds through compose", async () => {
+	test("builds from its own entry, bundled in memory, and composes", async () => {
 		const file = await openFile(join(FIXTURES, "hello.ts"));
 		expect(file.pack).toEqual({ id: "hello", version: "0.0.0" });
 		const ir = built(file.build("hello", {}));
@@ -194,10 +183,7 @@ describe("a bare file", () => {
 			export: "exclaim",
 		});
 		expect(workerOf(ir, "exclaim").codeHash).toMatch(SHA256);
-		const result = await composed(ir, file);
-		expect(result.ok && result.plan.folded.exclaim).toEqual({
-			"": { outcome: "ok", value: { text: "you!" } },
-		});
+		expect((await composed(ir, file)).ok).toBe(true);
 	});
 
 	test("hashes its imports, so a changed helper changes its codeHash", async () => {
@@ -225,29 +211,28 @@ describe("a bare file", () => {
 		);
 	});
 
-	test("fails a function exported under two names, naming both", async () => {
+	test("fails a function exported under two names, naming both, with no location inside its bundle", async () => {
 		const file = await openFile(join(FIXTURES, "twice.ts"));
 		const result = file.build("twice", {});
-		expect(
-			result.ok ? [] : result.diagnostics.map((d) => [d.code, d.message]),
-		).toEqual([
-			[
-				"SCOPE.export",
-				"function 'exclaim' is exported under two names, 'again.exclaim' and 'exclaim'",
-			],
+		expect(result.ok ? [] : result.diagnostics).toEqual([
+			{
+				code: "SCOPE.export",
+				severity: "error",
+				message:
+					"function 'exclaim' is exported under two names, 'again.exclaim' and 'exclaim'",
+				hint: expect.any(String),
+			},
 		]);
 	});
 });
 
 describe("an IR file", () => {
-	test("loads its modules relative to its directory, checked against codeHash, and folds through compose", async () => {
+	test("loads its modules relative to its directory, checked against codeHash, and composes", async () => {
 		const result = await composed(
 			await golden("minimal.json"),
 			moduleLoader(GOLDEN),
 		);
-		expect(result.ok && result.plan.folded.greet).toEqual({
-			"": { outcome: "ok", value: { text: "hello, world" } },
-		});
+		expect(result.ok).toBe(true);
 	});
 
 	test.each([
@@ -379,12 +364,7 @@ describe("resume", () => {
 		const hosts = [fakeHost({ steps: { first: step, "echo/echo": step } })];
 		const options = { hosts, record, dir, concurrency: 4 };
 		const ir = built(first.build("greet", { name: "x" }));
-		const failed = perform({
-			...options,
-			ir,
-			loadCode: first.loadCode,
-			codeHash: first.codeHash,
-		});
+		const failed = perform({ ...options, ir, loadCode: first.loadCode });
 		expect((await failed.done).outcome).toBe("failed");
 
 		await packOf(
@@ -398,9 +378,9 @@ describe("resume", () => {
 		expect((await composed(rehashed, second)).ok).toBe(true);
 		const resumed = perform({
 			...options,
+			ir: rehashed,
 			resume: failed.concert,
 			loadCode: second.loadCode,
-			codeHash: second.codeHash,
 		});
 		expect(await resumed.done).toMatchObject({
 			outcome: "ok",

@@ -5,7 +5,7 @@ import { usageError } from "./output";
 import { flagFor, flagName } from "./params";
 
 /** The flags a composition's params add to a command, and the param each one sets. */
-export type ParamFlags = {
+type ParamFlags = {
 	options: Options;
 	/** Param name by flag name, without the dashes. */
 	params: ReadonlyMap<string, string>;

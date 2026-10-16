@@ -527,7 +527,7 @@ type StdlibOptions = Common & {
 	derived?: string;
 };
 
-/** A pure node of the engine's standard library (ADR 0008). */
+/** A node of the engine's standard library (ADR 0008). */
 export function stdlib(
 	name: StdlibName,
 	inputs: Record<string, unknown>,
@@ -548,7 +548,6 @@ export function stdlib(
 					export: name,
 					codeHash: STDLIB_HASH,
 				},
-				pure: true,
 				fanin: fanin || undefined,
 			},
 		},

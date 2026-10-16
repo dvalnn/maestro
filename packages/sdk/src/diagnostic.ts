@@ -8,7 +8,7 @@ import type { Diagnostic, SourceLocation } from "@maestro/ir";
  * - `SCOPE`: a duplicate id (`SCOPE.duplicate`), a duplicate map item key (`SCOPE.key`), a function the loader cannot
  *   name (`SCOPE.export`), a bad name or label (`SCOPE.name`), a composition with ports built alone (`SCOPE.ports`),
  *   a constructor called outside a build (`SCOPE.build`).
- * - `PURE`: an ambient read during build (`PURE.ambient`), two builds that differ (`PURE.unstable`).
+ * - `BUILD`: an ambient read during build (`BUILD.ambient`), two builds that differ (`BUILD.unstable`).
  * - `BOUND`: a group bound that is missing or not a whole number of at least 1 (`BOUND.max`).
  * - `TYPE`: a literal that is not JSON, a body or step that returns the wrong thing, a build that returns no node
  *   (`TYPE.result`), a bad pick path (`TYPE.path`), an `or` with a Ref fallback or over a map's results
@@ -32,7 +32,7 @@ const SDK_DIR = import.meta.dirname;
 const FRAME = /^\s*at (?:.*? \()?(.+?):(\d+):(\d+)\)?$/;
 
 // The SDK's modules sit directly in its src directory, and its tests and fixtures stand in for author code. In a
-// bundle every frame is the bundle's, so no frame qualifies and the location is left out.
+// bundle every frame is the bundle's, so the first one is taken; it is no file path, and the loader drops it.
 const isSdkFrame = (file: string) =>
 	dirname(file) === SDK_DIR && !basename(file).includes(".test.");
 

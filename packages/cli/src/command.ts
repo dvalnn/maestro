@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
+import { messageOf } from "@maestro/core";
 import type { Host } from "@maestro/core/host";
-import { messageOf } from "@maestro/core/shared";
 import type { Environment } from "./config";
 import { table, usageError } from "./output";
 
@@ -17,7 +17,7 @@ export type Deps = {
 	confirm?(question: string): Promise<boolean>;
 };
 
-export type OptionSpec = {
+type OptionSpec = {
 	type: "string" | "boolean";
 	/** The value's placeholder in help, for a `string` option. */
 	arg?: string;

@@ -1,4 +1,3 @@
-import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { type Ir, parseIr, TS_RUNTIME } from "@maestro/ir";
 import type { Host, NodeKind } from "../../host";
@@ -92,7 +91,6 @@ export const composeWith = (ir: Ir, over: Partial<ComposeInput> = {}) =>
 		hosts: [fakeHost()],
 		loadCode: loader(),
 		caps: {},
-		scratch: tmpdir(),
 		...over,
 	});
 
@@ -100,7 +98,7 @@ const STRING = { type: "string" };
 
 export const HASH = `sha256:${"0".repeat(64)}`;
 
-/** A code node whose worker is export `name` of a test module, pure unless `over` says otherwise. */
+/** A code node whose worker is export `name` of a test module, with `over` merged on top. */
 export const code = (id: string, name: string, over: object = {}) => ({
 	id,
 	kind: "code",
@@ -110,7 +108,6 @@ export const code = (id: string, name: string, over: object = {}) => ({
 		export: name,
 		codeHash: HASH,
 	},
-	pure: true,
 	out: { text: STRING },
 	...over,
 });

@@ -53,6 +53,7 @@ test.each<[string, Mutation, string]>([
 		"/result",
 	],
 	["a params block", (ir) => (ir.params = { schema: {}, examples: [{}] }), "/"],
+	["a code node's purity", (ir) => (ir.nodes[0].pure = true), "/nodes/0"],
 	[
 		"a group with no members",
 		(ir) =>

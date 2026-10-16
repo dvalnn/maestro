@@ -7,10 +7,7 @@ import {
 	type IrNode,
 	indexGraph,
 	isGroup,
-	outputValue,
-	type Settled,
 } from "@maestro/ir";
-import type { Outputs } from "../worker";
 import type { Expansion, Plan } from "./index";
 
 /** Longest value or key list a text form shows before it cuts with an ellipsis. */
@@ -22,27 +19,18 @@ const cut = (s: string) =>
 const amount = (c: Cardinality) =>
 	"exact" in c ? `${c.exact}` : `up to ${c.upTo}`;
 
-const shownValue = (f: Settled<Outputs>) =>
-	f.outcome === "ok"
-		? `ok ${cut(JSON.stringify(f.value))}`
-		: `${f.outcome}: ${cut((f.reason ?? "").replace(/\s+/g, " "))}`;
-
 const counted = (n: number | string, noun: string) =>
 	`${n} ${noun}${n === 1 || n === "1" ? "" : "s"}`;
 
 const shownExpansion = (e: Expansion) =>
-	"keys" in e ? cut(e.keys.join(", ")) : `up to ${e.upTo}`;
+	"keys" in e ? cut(e.keys.join(", ")) : amount(e);
 
-const countOf = (plan: Plan) =>
-	Object.values(plan.folded).reduce((n, at) => n + Object.keys(at).length, 0);
-
-/** The plan in one line: node instances, each host count, folded instances and any warnings. */
+/** The plan in one line: node instances, each host count and any warnings. */
 export function summary(plan: Plan): string {
 	const { bounds, diagnostics } = plan;
 	const parts = [
 		counted(amount(bounds.instances), "node instance"),
 		...Object.entries(bounds.counts).map(([name, c]) => `${amount(c)} ${name}`),
-		`${countOf(plan)} folded`,
 		...(diagnostics.length ? [counted(diagnostics.length, "warning")] : []),
 	];
 	return `${plan.ir.composition.id}: ${parts.join(", ")}`;
@@ -62,7 +50,7 @@ function table(rows: readonly string[][]): string[] {
 	);
 }
 
-/** Each node's instance count, then a line per expanded group instance and per folded instance. */
+/** Each node's instance count, then a line per expanded group instance. */
 function nodeLines(plan: Plan, graph: GraphIndex): string[] {
 	const heads = table(
 		plan.ir.nodes.map((n) => {
@@ -76,14 +64,10 @@ function nodeLines(plan: Plan, graph: GraphIndex): string[] {
 			([path, e]) =>
 				`    ${instance(graph, n.id, path)} expands to ${shownExpansion(e)}`,
 		),
-		...Object.entries(plan.folded[n.id] ?? {}).map(
-			([path, f]) =>
-				`    ${instance(graph, n.id, path)} folded ${shownValue(f)}`,
-		),
 	]);
 }
 
-/** The plan in full: each node with its kind, instance count, expansions and folded values, then bounds and warnings. */
+/** The plan in full: each node with its kind, instance count and expansions, then bounds and warnings. */
 export function listing(plan: Plan): string {
 	const graph = indexGraph(plan.ir);
 	const { bounds } = plan;
@@ -125,20 +109,12 @@ function groupLabel(plan: Plan, graph: GraphIndex, g: GroupNode): string {
 	return label(`${g.kind} ${g.id}`, count, ...expanded);
 }
 
-function foldedLines(plan: Plan, graph: GraphIndex, id: string): string[] {
-	return Object.entries(plan.folded[id] ?? {}).map(
-		([path, f]) => `folded ${instance(graph, id, path)} ${shownValue(f)}`,
-	);
-}
-
 function shape(plan: Plan, graph: GraphIndex, n: IrNode): string {
-	const folded = foldedLines(plan, graph, n.id);
 	if (isGroup(n)) return `[[${groupLabel(plan, graph, n)}]]`;
-	if (n.kind === "assert") return `{${label(n.id, "assert", ...folded)}}`;
-	if (n.kind !== "code") return `([${label(n.id, n.kind, ...folded)}])`;
-	if (n.fanin)
-		return `[/${label(n.id, `fan-in ${n.worker.export}`, ...folded)}/]`;
-	return `[${label(n.id, `code ${n.worker.export}`, ...folded)}]`;
+	if (n.kind === "assert") return `{${label(n.id, "assert")}}`;
+	if (n.kind !== "code") return `([${label(n.id, n.kind)}])`;
+	if (n.fanin) return `[/${label(n.id, `fan-in ${n.worker.export}`)}/]`;
+	return `[${label(n.id, `code ${n.worker.export}`)}]`;
 }
 
 /** The innermost scope or group whose body holds `id`, by id prefix. */
@@ -147,25 +123,13 @@ const container = (containers: readonly string[], id: string) =>
 		.filter((c) => id.startsWith(`${c}/`))
 		.sort((a, b) => b.length - a.length)[0];
 
-function guardValue(plan: Plan, e: IrEdge): string {
-	const at = Object.values(plan.folded[e.from.node] ?? {});
-	const [first] = at.map((f) => outputValue(f, f.value, e.from.port ?? ""));
-	return at.length === 1 && first !== undefined
-		? ` = ${cut(JSON.stringify(first))}`
-		: "";
-}
-
-function edgeLine(
-	plan: Plan,
-	ids: ReadonlyMap<string, string>,
-	e: IrEdge,
-): string {
+function edgeLine(ids: ReadonlyMap<string, string>, e: IrEdge): string {
 	const [from, to] = [ids.get(e.from.node), ids.get(e.to.node)];
 	if (e.kind === "collect") return `${from} ==>|${label("collect")}| ${to}`;
 	if (e.kind === "data")
 		return `${from} -->|${label(`${e.from.port} to ${e.to.port}`)}| ${to}`;
 	if (e.from.port !== undefined)
-		return `${from} -.->|${label(`when ${e.from.port}${guardValue(plan, e)}`)}| ${to}`;
+		return `${from} -.->|${label(`when ${e.from.port}`)}| ${to}`;
 	const after = e.tolerate ? `after, tolerates ${e.tolerate}` : "after";
 	return `${from} -.->|${label(after)}| ${to}`;
 }
@@ -205,7 +169,7 @@ function body(d: Diagram, parent: string | undefined, depth: number): string[] {
 /**
  * A static Mermaid flowchart (architecture 11): one shape per node kind, scopes and groups as subgraphs, `data` edges
  * solid, `control` edges dashed, `collect` edges thick into their fan-in reducer, and each group's cardinality,
- * expansion and folded values in its label.
+ * expansion in its label.
  */
 export function render(plan: Plan): string {
 	const ids = new Map(plan.ir.nodes.map((n, i) => [n.id, `n${i}`]));
@@ -221,6 +185,6 @@ export function render(plan: Plan): string {
 	return [
 		"flowchart TD",
 		...body(d, undefined, 1),
-		...plan.ir.edges.map((e) => `  ${edgeLine(plan, ids, e)}`),
+		...plan.ir.edges.map((e) => `  ${edgeLine(ids, e)}`),
 	].join("\n");
 }

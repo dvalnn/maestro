@@ -1,4 +1,4 @@
-import { messageOf } from "@maestro/core/shared";
+import { messageOf } from "@maestro/core";
 import {
 	COMMON,
 	type Command,
@@ -68,6 +68,7 @@ const VERBS: readonly Verb[] = [
 	},
 	{
 		name: "tour",
+		alias: "t",
 		summary: "Put concerts on a tour, or take them off",
 		load: async () => (await import("./records")).tour,
 	},

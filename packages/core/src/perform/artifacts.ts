@@ -15,8 +15,8 @@ import {
 	CORE_TYPES,
 	findMarked,
 	type Ports,
+	replaceAt,
 } from "@maestro/ir";
-import { isRecord } from "../shared";
 import type { NodeInstance, Outputs } from "../worker";
 
 /** A concert's artifact area and the directory its instances' scratch directories go in, both absolute. */
@@ -106,27 +106,6 @@ async function moveInto(
 		contentHash: `sha256:${await digest(target)}`,
 		producer,
 	};
-}
-
-function child(at: unknown, key: string): unknown {
-	if (Array.isArray(at)) return at[Number(key)];
-	if (isRecord(at)) return at[key];
-}
-
-/** `root` with the value at the JSON Pointer `pointer` replaced. */
-function replaceAt(root: unknown, pointer: string, value: unknown): unknown {
-	if (pointer === "") return value;
-	const keys = pointer
-		.slice(1)
-		.split("/")
-		.map((k) => k.replaceAll("~1", "/").replaceAll("~0", "~"));
-	const last = keys.pop() ?? "";
-	let at = root;
-	for (const key of keys) at = child(at, key);
-	if (Array.isArray(at)) at[Number(last)] = value;
-	else if (isRecord(at)) at[last] = value;
-	else throw new Error(`no value at '${pointer}'`);
-	return root;
 }
 
 /**

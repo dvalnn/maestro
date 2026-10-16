@@ -27,6 +27,7 @@ export {
 	IMPLICIT_OUT,
 	indexGraph,
 	isGroup,
+	mapWorkers,
 	outputValue,
 	tolerates,
 } from "./graph";
@@ -38,6 +39,7 @@ export {
 	MAESTRO_TYPE,
 	type Marked,
 	registerMaestroType,
+	replaceAt,
 	schemaMarkers,
 	unreachableMarkers,
 } from "./maestro-type";

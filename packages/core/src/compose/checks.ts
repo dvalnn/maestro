@@ -10,9 +10,11 @@ import {
 	isGroup,
 	type JsonSchema,
 	MAESTRO_TYPE,
+	mapWorkers,
 	type Ports,
 	schemaMarkers,
 	unreachableMarkers,
+	type WorkerRef,
 } from "@maestro/ir";
 import {
 	type Composed,
@@ -23,7 +25,8 @@ import {
 } from "../config";
 import type { Host, HostKind, NodeKind } from "../host";
 import { type Validator, violations } from "../ports";
-import { isRecord, messageOf } from "../shared";
+import { isRecord, loadFunction, messageOf } from "../shared";
+import type { LoadCode } from "../worker";
 import type { ComposeInput } from "./index";
 
 type Lookup = (kind: string) => HostKind | undefined;
@@ -61,12 +64,16 @@ function closest(word: string, candidates: readonly string[]) {
 	return ranked[0]?.c;
 }
 
-/** An unclaimed key at `path`: `what` says what lacks it, and `claimed` holds its siblings that are claimed. */
+/**
+ * An unclaimed key at `path`: `what` says what lacks it, `claimed` holds its siblings that are claimed, and `remedy`
+ * follows removing it in the hint when no sibling is near.
+ */
 function unclaimed(
 	config: Composed,
 	path: KeyPath,
 	what: string,
 	claimed: readonly string[],
+	remedy = "install what claims it",
 ): Diagnostic {
 	const key = path.join(".");
 	const near = closest(path.at(-1) ?? "", claimed);
@@ -77,7 +84,7 @@ function unclaimed(
 		`config key '${key}' is claimed by ${what}`,
 		fix
 			? `Did you mean '${fix}'? Rename '${key}' to '${fix}'`
-			: `Remove '${key}' from the config, or install what claims it`,
+			: `Remove '${key}' from the config, or ${remedy}`,
 	);
 }
 
@@ -173,7 +180,13 @@ export function checkConfig(
 		...Object.keys(config.values).flatMap((key) => {
 			if (!claimed.includes(key))
 				return [
-					unclaimed(config, [key], "no installed host, pack or core", claimed),
+					unclaimed(
+						config,
+						[key],
+						"no installed host, pack or core",
+						claimed,
+						"install the pack or host that claims it. To configure a composition file, make it a pack",
+					),
 				];
 			const compositions = packs[key];
 			return compositions ? packErrors(config, key, compositions) : [];
@@ -499,4 +512,37 @@ function portError(
 		message,
 		hint: `Declare the ${side} ports of '${node.id}' as kind '${node.kind}' gives them for its config, or rebuild the IR`,
 	};
+}
+
+/**
+ * A `SCOPE.export` error for each function `ir` names, a code node's or a map's key function, that `loadCode` cannot
+ * load (ADR 0008). Each reference loads once. A load error's message after its first line is the fix.
+ */
+export async function checkWorkers(
+	ir: Ir,
+	loadCode: LoadCode,
+): Promise<Diagnostic[]> {
+	const named = new Map<string, { ref: WorkerRef; node: string }>();
+	mapWorkers(ir, (ref, node) => {
+		const key = JSON.stringify([ref.runtime, ref.module, ref.export]);
+		if (!named.has(key)) named.set(key, { ref, node });
+		return ref;
+	});
+	const diagnostics: Diagnostic[] = [];
+	for (const { ref, node } of named.values())
+		try {
+			await loadFunction(loadCode, ref);
+		} catch (e) {
+			const [why, fix] = messageOf(e).split("\n", 2);
+			diagnostics.push({
+				code: "SCOPE.export",
+				severity: "error",
+				node,
+				message: `compose cannot load '${ref.export}' from '${ref.module}' for '${node}': ${why}`,
+				hint:
+					fix ??
+					`Export '${ref.export}' from '${ref.module}', or fix the worker reference of '${node}'`,
+			});
+		}
+	return diagnostics;
 }

@@ -1,15 +1,72 @@
 import { Database } from "bun:sqlite";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { openRecord } from "@maestro/core/perform";
+import { STDLIB_HASH } from "@maestro/sdk";
 import { fakeHost } from "@maestro/testkit";
 import { cleanup, FIXTURES } from "./fixtures/packs";
 import { ECHO, GREET, hostOf, idOf, json, world } from "./fixtures/world";
+import { codeHashOf } from "./loader";
 
 const GOLDEN = join(FIXTURES, "../../../ir/fixtures");
 const HELLO = join(FIXTURES, "hello.ts");
 const CLASH = join(FIXTURES, "clash.ts");
 const CLASH_OUT = join(FIXTURES, "clash-out.ts");
+const LOUD = join(FIXTURES, "loud.ts");
+
+/** A code node writing two files and returning them beside plain values, and a stdlib node keyed on SDK 0.0.0. */
+const WRITE = `export async function write(_: object, ctx: { scratch: string }) {
+	for (const name of ["a.txt", "b.txt"]) await Bun.write(\`\${ctx.scratch}/\${name}\`, name);
+	const [a, b] = ["a.txt", "b.txt"].map((name) => \`\${ctx.scratch}/\${name}\`);
+	return { file: a, nested: { files: [b] }, n: 2, s: "a b", multi: "a\\nb", tab: "a\\tb", cr: "a\\rb", sep: "a\\u2028b", none: null };
+}
+`;
+
+const FILE = { "x-maestro-type": "core.file" };
+
+const writeIr = (codeHash: string) => ({
+	irVersion: "1.0",
+	composition: { id: "write", version: "0.1.0", pack: "fixtures" },
+	emitter: { name: "hand", version: "1" },
+	scopes: [],
+	nodes: [
+		{
+			id: "pick",
+			kind: "code",
+			in: { value: { type: "object" }, path: { type: "string" } },
+			literals: { value: { a: 1 }, path: "a" },
+			out: { value: { type: "integer" } },
+			worker: {
+				runtime: "ts",
+				module: "maestro:stdlib",
+				export: "pick",
+				codeHash: "maestro:stdlib@0.0.0",
+			},
+		},
+		{
+			id: "write",
+			kind: "code",
+			out: {
+				file: FILE,
+				nested: {
+					type: "object",
+					properties: { files: { type: "array", items: FILE } },
+				},
+				n: { type: "number" },
+				s: { type: "string" },
+				multi: { type: "string" },
+				tab: { type: "string" },
+				cr: { type: "string" },
+				sep: { type: "string" },
+				none: { type: "null" },
+			},
+			worker: { runtime: "ts", module: "write.ts", export: "write", codeHash },
+		},
+	],
+	edges: [],
+	result: { node: "write" },
+});
 
 afterEach(cleanup);
 
@@ -33,16 +90,36 @@ describe("compose and config", () => {
 		});
 	});
 
-	test("a composition that cannot be built exits 2 with its diagnostics, or one document with --json", async () => {
+	test("a composition that cannot be built exits 2 with its diagnostics, no location inside its bundle, or one document with --json", async () => {
 		const w = await world();
 		const file = join(FIXTURES, "twice.ts");
 		const human = await w.call(["compose", file]);
 		expect(human.code).toBe(2);
-		expect(human.err).toMatch(/^\S+: [A-Z]+\.\w+: /);
+		expect(human.err).toMatch(/^SCOPE\.export: /);
 		const document = json(await w.call(["compose", file, "--json"]));
 		expect(document.ok).toBe(false);
 		expect(document.diagnostics.length).toBeGreaterThan(0);
 	});
+
+	test.each([
+		["a pack's composition", GREET],
+		["the file itself", [HELLO]],
+	])(
+		"a key under a bare file's name is unclaimed config when the target is %s",
+		async (_, target) => {
+			const w = await world();
+			await Bun.write(
+				join(w.cwd, ".maestro/config.yaml"),
+				`packs:\n  - ${w.pack}\nhello:\n  hello:\n    name: yaml\n`,
+			);
+			expect(await w.call(["compose", ...target])).toMatchObject({
+				code: 2,
+				err: expect.stringContaining(
+					"CFG.unclaimed: config key 'hello' is claimed by no installed host, pack or core\n  Remove 'hello' from the config, or install the pack or host that claims it. To configure a composition file, make it a pack",
+				),
+			});
+		},
+	);
 
 	test("config lists every value with the layer and the file and line it came from", async () => {
 		const w = await world();
@@ -93,23 +170,73 @@ describe("compose and config", () => {
 });
 
 describe("perform", () => {
+	test("a code node that prints prints once when performed, and never when composed", async () => {
+		const w = await world();
+		const log = spyOn(console, "log").mockImplementation(() => {});
+		try {
+			expect((await w.call(["compose", LOUD])).code).toBe(0);
+			expect(log.mock.calls).toEqual([]);
+			expect((await w.call(["perform", LOUD])).code).toBe(0);
+			expect(log.mock.calls).toEqual([["shout hey"]]);
+		} finally {
+			log.mockRestore();
+		}
+	});
+
+	test("prints each output on a line, an artifact as its path, and keys a stdlib node on this engine's stdlib", async () => {
+		const w = await world();
+		await Bun.write(join(w.root, "write.ts"), WRITE);
+		const file = join(w.root, "write.json");
+		await Bun.write(file, JSON.stringify(writeIr(codeHashOf(WRITE))));
+		const performed = await w.call(["perform", file]);
+		expect(performed.code).toBe(0);
+		const id = idOf(performed);
+		const { outputs } = json(await w.call(["wait", id, "--json"]));
+		const area = join(w.root, "data/maestro/concerts", id, "artifacts");
+		const a = join(area, outputs.file.path);
+		const b = join(area, outputs.nested.files[0].path);
+		expect(await Bun.file(a).text()).toBe("a.txt");
+		const lines = [
+			`file    ${a}`,
+			`nested  {"files":["${b}"]}`,
+			"n       2",
+			"s       a b",
+			'multi   "a\\nb"',
+			'tab     "a\\tb"',
+			'cr      "a\\rb"',
+			'sep     "a\\u2028b"',
+			"none    null",
+		];
+		expect(performed.out.split("\n")).toEqual([id, ...lines]);
+		expect((await w.call(["wait", id])).out.split("\n")).toEqual([
+			"ok",
+			...lines,
+		]);
+		const record = openRecord(join(w.root, "data/maestro/record.db"));
+		const [pick] = record.concert(id).ir.nodes;
+		record.close();
+		expect(pick?.kind === "code" && pick.worker.codeHash).toBe(STDLIB_HASH);
+	});
+
 	test.each([
-		["ok", ECHO, 0, /ok$/],
+		["ok", ECHO, 0, /ok$/, ["text  done"]],
 		[
 			"failed",
 			{ outcome: "failed", reason: "flaky" },
 			1,
 			/failed at echo\/echo: flaky$/,
+			[],
 		],
 		[
 			"rejected",
-			{ outcome: "rejected", reason: "not today" },
+			{ outcome: "rejected", reason: "not today", outputs: { text: "draft" } },
 			3,
 			/rejected at echo\/echo: not today$/,
+			["text  draft"],
 		],
 	])(
-		"a concert that settles %s prints its id first and exits %d",
-		async (status, echo, code, report) => {
+		"a concert that settles %s prints its id first, then its result's outputs, and exits %d",
+		async (status, echo, code, report, outputs) => {
 			const w = await world();
 			const performed = await w.call(["p", ...GREET], {
 				hosts: [hostOf(echo)],
@@ -117,7 +244,7 @@ describe("perform", () => {
 			expect(performed.code).toBe(code);
 			expect(performed.err).toMatch(report);
 			const id = idOf(performed);
-			expect(performed.out).toBe(id);
+			expect(performed.out.split("\n")).toEqual([id, ...outputs]);
 			expect(json(await w.call(["ls", "--json"]))).toMatchObject([
 				{ id, status },
 			]);
@@ -131,6 +258,7 @@ describe("perform", () => {
 				status,
 				resultNode: "echo/echo",
 			});
+			expect(doc.outputs).toEqual("outputs" in echo ? echo.outputs : undefined);
 		},
 	);
 
@@ -276,6 +404,16 @@ describe("usage errors", () => {
 			/^param 'tour' of 'clash\.clash' takes --tour, which the command takes too\nRename/,
 		],
 		[
+			"a composition file whose name is not a pack id",
+			["compose", join(FIXTURES, "Shout.ts")],
+			/^composition file \S+\/Shout\.ts is named 'Shout', which is not a pack id\nRename it/,
+		],
+		[
+			"a composition file named as an installed pack",
+			["perform", join(FIXTURES, "demo.ts")],
+			/^composition file \S+\/demo\.ts is named 'demo', the id of the pack at \S+\nRename the file$/,
+		],
+		[
 			"a composition file that is not there",
 			["compose", "missing.ts"],
 			/^no such file: missing\.ts\nCheck the path$/,
@@ -363,7 +501,7 @@ describe("the record", () => {
 		const moved = await w.call(["tour", "release-2", a, b]);
 		expect(moved.out).toBe(`release-2: ${a} ${b}`);
 		expect(await rows("--tour", "release-2")).toEqual([b, a]);
-		expect(json(await w.call(["tour", "--clear", a, "--json"]))).toEqual({
+		expect(json(await w.call(["t", "--clear", a, "--json"]))).toEqual({
 			tour: null,
 			concerts: [a],
 		});
@@ -384,11 +522,15 @@ describe("the record", () => {
 				(r: { id: string }) => r.id,
 			);
 		expect(await rows("--status", "failed")).toEqual([broke]);
-		expect(await rows("--composition", "greet", "--workspace", "ws")).toEqual([
-			broke,
-			done,
-		]);
-		expect(await rows("--composition", "other")).toEqual([]);
+		expect(
+			await rows("--composition", "demo.greet", "--workspace", "ws"),
+		).toEqual([broke, done]);
+		expect(await rows("--composition", "other.greet")).toEqual([]);
+		expect(await w.call(["ls", "--composition", "greet"])).toMatchObject({
+			code: 2,
+			err: "--composition takes <pack>.<composition>, not 'greet'\nWrite it as greet.hello",
+		});
+		expect((await w.call(["ls"])).out).toMatch(/\sdemo\.greet\s+failed\s/);
 		expect(await rows("--limit", "1")).toEqual([broke]);
 		const table = await w.call(["ls", broke]);
 		expect(table.out).toMatch(/^echo\/echo\s+failed\s+flaky$/m);
@@ -416,7 +558,7 @@ describe("the record", () => {
 		);
 	});
 
-	test("wait exits with the concert's outcome, and 0 for one that is already settled", async () => {
+	test("wait exits with the concert's outcome and prints its result's outputs, and 0 for one that is already settled", async () => {
 		const w = await world();
 		const done = idOf(
 			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
@@ -428,22 +570,40 @@ describe("the record", () => {
 		);
 		const refused = idOf(
 			await w.call(["perform", ...GREET], {
-				hosts: [hostOf({ outcome: "rejected", reason: "no" })],
+				hosts: [
+					hostOf({
+						outcome: "rejected",
+						reason: "no",
+						outputs: { text: "draft" },
+					}),
+				],
 			}),
 		);
-		expect(await w.call(["w", done])).toMatchObject({ code: 0, out: "ok" });
+		expect(await w.call(["w", done])).toMatchObject({
+			code: 0,
+			out: "ok\ntext  done",
+		});
+		expect(json(await w.call(["wait", done, "--json"]))).toMatchObject({
+			status: "ok",
+			outputs: { text: "done" },
+		});
 		expect(await w.call(["wait", broke])).toMatchObject({
 			code: 1,
 			out: "failed",
 			err: "flaky",
 		});
-		expect((await w.call(["wait", refused, "--timeout", "5s"])).code).toBe(3);
+		expect(await w.call(["wait", refused, "--timeout", "5s"])).toMatchObject({
+			code: 3,
+			out: "rejected\ntext  draft",
+			err: "no",
+		});
 		expect(json(await w.call(["wait", refused, "--json"]))).toEqual({
 			id: refused,
 			status: "rejected",
 			resultNode: "echo/echo",
 			resultExpansion: "",
 			reason: "no",
+			outputs: { text: "draft" },
 		});
 	});
 });

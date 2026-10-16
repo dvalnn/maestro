@@ -1,21 +1,19 @@
 import {
 	type Cardinality,
 	type Diagnostic,
-	type Facts,
 	type GraphIndex,
 	type Ir,
 	indexGraph,
 	type JsonSchema,
-	type Settled,
 } from "@maestro/ir";
 import type { Composed } from "../config";
 import { type Bounds, type Host, kindLookup } from "../host";
-import { portCheck, validator } from "../ports";
+import { validator } from "../ports";
 import { messageOf } from "../shared";
-import type { LoadCode, Outputs } from "../worker";
+import type { LoadCode } from "../worker";
 import { boundsOf, capErrors, type ExpansionOf, unexpanded } from "./bounds";
-import { checkConfig, checkHosts, checkTypes } from "./checks";
-import { fold, loadFunctions } from "./fold";
+import { checkConfig, checkHosts, checkTypes, checkWorkers } from "./checks";
+import { expand } from "./expand";
 
 export { listing, render, summary } from "./text";
 
@@ -32,12 +30,15 @@ export type ComposeInput = {
 	loadCode: LoadCode;
 	/** Caps by name: `instances` caps the node-instance total, any other name the total of a host's count (D-23). */
 	caps: Bounds;
-	/** An absolute directory, made when a folded node first reads `ctx.scratch`. */
-	scratch: string;
 };
 
-/** A group instance's iteration keys, or the bound of a region whose iterations compose does not know. */
-export type Expansion = { keys: string[] } | { upTo: number };
+/**
+ * A group instance's expansion, one of:
+ * - `keys`: its iteration keys, in order;
+ * - `exact`: its iteration count, when a key function names its iterations at perform;
+ * - `upTo`: the bound of a region whose iterations compose does not know.
+ */
+export type Expansion = { keys: string[] } | Cardinality;
 
 export type PlanBounds = {
 	instances: Cardinality;
@@ -52,8 +53,6 @@ export type Plan = {
 	ir: Ir;
 	/** Group id, then the group instance's expansion path. */
 	expansion: Record<string, Record<string, Expansion>>;
-	/** Node id, then the instance's expansion path. An `ok` value holds the outputs. */
-	folded: Record<string, Record<string, Settled<Outputs>>>;
 	bounds: PlanBounds;
 	/** Warnings only: any error stops compose before the plan. */
 	diagnostics: Diagnostic[];
@@ -75,50 +74,31 @@ export function stampHost(d: Diagnostic): Diagnostic {
 		: { ...d, code: `${HOST}.${d.code}` };
 }
 
-/** Calls a host hook, turning a throw or a rejection into a `HOST.<hook>` error that names the host. */
-async function hook<T>(
-	host: Host,
-	name: "environment" | "validate",
-	call: () => T | Promise<T>,
-): Promise<{ value: T } | { diagnostic: Diagnostic }> {
-	try {
-		return { value: await call() };
-	} catch (e) {
-		return {
-			diagnostic: {
-				code: `${HOST}.${name}`,
-				severity: "error",
-				message: `host '${host.name}' failed in ${name}(): ${messageOf(e)}`,
-				hint: `Check the setup of host '${host.name}', or uninstall it`,
-			},
-		};
-	}
-}
-
-async function environments(hosts: readonly Host[]) {
-	const env: Record<string, Facts> = {};
-	const diagnostics: Diagnostic[] = [];
-	for (const host of hosts) {
-		const got = await hook(host, "environment", () => host.environment());
-		if ("value" in got) env[host.name] = got.value;
-		else diagnostics.push(got.diagnostic);
-	}
-	return { env, diagnostics };
-}
-
+/** Each host's `validate` findings, a throw or a rejection being a `HOST.validate` error that names the host. */
 async function validations(hosts: readonly Host[], graph: GraphIndex) {
 	const results = await Promise.all(
-		hosts.map((h) => hook(h, "validate", () => h.validate(graph))),
+		hosts.map(async (host): Promise<Diagnostic[]> => {
+			try {
+				return (await host.validate(graph)).map(stampHost);
+			} catch (e) {
+				return [
+					{
+						code: `${HOST}.validate`,
+						severity: "error",
+						message: `host '${host.name}' failed in validate(): ${messageOf(e)}`,
+						hint: `Check the setup of host '${host.name}', or uninstall it`,
+					},
+				];
+			}
+		}),
 	);
-	return results.flatMap((r) =>
-		"value" in r ? r.value.map(stampHost) : [r.diagnostic],
-	);
+	return results.flat();
 }
 
 /**
- * Pre-flight (architecture 4): checks types, config and host nodes, loads every function the IR names, folds and
- * expands what compose knows, calls the hosts' `validate` hooks, and bounds the plan against the caps. It writes only
- * under `scratch` and starts no host node (NFR-02).
+ * Pre-flight (architecture 4): checks types, config and host nodes, loads every function the IR names, expands the
+ * groups whose items are plain values, calls the hosts' `validate` hooks, and bounds the plan against the caps. It
+ * calls no author code, writes nothing and starts no host node (NFR-02, ADR 0009).
  * @throws Error when two hosts register one node kind.
  */
 export async function compose(input: ComposeInput): Promise<ComposeResult> {
@@ -132,31 +112,20 @@ export async function compose(input: ComposeInput): Promise<ComposeResult> {
 		...checkHosts(ajv, ir, lookup),
 	];
 	if (hasError(checked)) return { ok: false, diagnostics: checked };
-	const loaded = await loadFunctions(ir, input.loadCode);
-	if (hasError(loaded.diagnostics))
-		return { ok: false, diagnostics: [...checked, ...loaded.diagnostics] };
-	const { env, diagnostics: broken } = await environments(hosts);
-	if (hasError(broken))
-		return { ok: false, diagnostics: [...checked, ...broken] };
+	const unloaded = await checkWorkers(ir, input.loadCode);
+	if (hasError(unloaded))
+		return { ok: false, diagnostics: [...checked, ...unloaded] };
 	const capped = (expansionOf: ExpansionOf, reach?: string) =>
 		capErrors(boundsOf(ir, graph, expansionOf, lookup), input.caps, reach);
 	const limit = capped(unexpanded).length
 		? (sofar: ExpansionOf) => capped(sofar, "may reach at least")
 		: undefined;
-	const folded = await fold(ir, {
-		graph,
-		input,
-		ajv,
-		check: portCheck(ajv),
-		functions: loaded.functions,
-		env,
-		limit,
-	});
+	const expanded = expand(ir, graph, limit);
 	const expansionOf: ExpansionOf = (group, path) =>
-		folded.expansion[group.id]?.[path] ?? unexpanded(group, path);
+		expanded.expansion[group.id]?.[path] ?? unexpanded(group, path);
 	const diagnostics = [
 		...checked,
-		...folded.diagnostics,
+		...expanded.diagnostics,
 		...(await validations(hosts, graph)),
 	];
 	const bounds = boundsOf(ir, graph, expansionOf, lookup);
@@ -165,12 +134,6 @@ export async function compose(input: ComposeInput): Promise<ComposeResult> {
 	if (hasError(diagnostics)) return { ok: false, diagnostics };
 	return {
 		ok: true,
-		plan: {
-			ir,
-			expansion: folded.expansion,
-			folded: folded.folded,
-			bounds,
-			diagnostics,
-		},
+		plan: { ir, expansion: expanded.expansion, bounds, diagnostics },
 	};
 }

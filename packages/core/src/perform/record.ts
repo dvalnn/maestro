@@ -130,6 +130,7 @@ export type ConcertRecord = ConcertOrigin & {
 /** `limit` is a positive integer. */
 export type ConcertFilter = {
 	status?: ConcertStatus;
+	pack?: string;
 	composition?: string;
 	tour?: string;
 	workspace?: string;
@@ -142,13 +143,14 @@ export type Alive = (pid: number) => boolean;
 /**
  * A concert's result (architecture 7): the returned node when it is `ok`, else the root cause of its outcome, where
  * a cause skipped by its own guard counts as rejected. A concert that failed before any node ran, was cancelled, or
- * whose process exited has no node.
+ * whose process exited has no node. A rejected result carries its root cause's rejection outputs, when it has any.
  */
 export type ConcertResult =
 	| (NodeInstance & { outcome: "ok"; outputs: Outputs })
 	| (Partial<NodeInstance> & {
 			outcome: "rejected" | "failed";
 			reason: string;
+			outputs?: Outputs;
 	  });
 
 /**
@@ -209,8 +211,8 @@ export type ConcertEvent = NodeInstance & {
 
 /**
  * The durable record of concerts, their node instances and events (CORE-11), in one SQLite file. Every query but
- * `find` throws on an unknown concert id. A reader that finds a `running` concert whose process is gone settles it, and its running
- * instances, `failed` with `PROCESS_EXITED`.
+ * `find` throws on an unknown concert id. A reader that finds a `running` concert whose process is gone settles it,
+ * and its running instances, `failed` with `PROCESS_EXITED`.
  */
 export interface RecordStore {
 	/** Records a new concert as `running`, performed by this process. `workspace` and `moduleDir` default to ''. */
@@ -220,7 +222,7 @@ export interface RecordStore {
 	/**
 	 * Restarts a concert that failed or was rejected as `running`, performed by this process, with `ir` as its stored IR.
 	 * Its instance records and events stay. `reuse`, `start` and `settle` take over each instance record from before.
-	 * @throws Error when the concert is running, as its process is alive, or settled `ok`.
+	 * @throws Unresumable when the concert is running, as its process is alive, or settled `ok`.
 	 */
 	resume(concert: { id: string; ir: Ir }): void;
 	/**
@@ -543,12 +545,13 @@ function storeOf(db: Database, alive: Alive): RecordStore {
 	const concert = (id: string) => concertOf(rowOf(id));
 
 	const restart = db.transaction((id: string, ir: Ir) => {
-		const { changes } = db.exec(
+		const refused = unresumable(concert(id));
+		if (refused) throw refused;
+		db.exec(
 			`UPDATE concerts SET ir = ?, pid = ?, status = 'running', settled_at = NULL, result_node = NULL,
-			result_expansion = NULL, reason = NULL WHERE id = ? AND status IN ('rejected', 'failed')`,
+			result_expansion = NULL, reason = NULL WHERE id = ?`,
 			[JSON.stringify(ir), process.pid, id],
 		);
-		if (changes === 0) throw unresumable(db, id);
 		db.exec("UPDATE instances SET stale = 1 WHERE concert = ?", [id]);
 	});
 
@@ -576,10 +579,7 @@ function storeOf(db: Database, alive: Alive): RecordStore {
 			const row = rowIf(id);
 			return row && concertOf(row);
 		},
-		resume: ({ id, ir }) => {
-			rowOf(id);
-			restart(id, ir);
-		},
+		resume: ({ id, ir }) => restart(id, ir),
 		start: db.transaction((id: string, instance: NodeInstance, at: number) => {
 			replaceStale(id, instance);
 			writable(id, instance, [null]);
@@ -633,14 +633,15 @@ function storeOf(db: Database, alive: Alive): RecordStore {
 			return db
 				.query<ConcertRow, (string | number | null)[]>(
 					`SELECT * FROM concerts WHERE (?1 IS NULL OR status = ?1) AND (?2 IS NULL OR composition = ?2)
-					AND (?3 IS NULL OR tour = ?3) AND (?4 IS NULL OR workspace = ?4)
-					ORDER BY started_at DESC, id DESC LIMIT ?5`,
+					AND (?3 IS NULL OR tour = ?3) AND (?4 IS NULL OR workspace = ?4) AND (?5 IS NULL OR pack = ?5)
+					ORDER BY started_at DESC, id DESC LIMIT ?6`,
 				)
 				.all(
 					filter.status ?? null,
 					filter.composition ?? null,
 					filter.tour ?? null,
 					filter.workspace ?? null,
+					filter.pack ?? null,
 					filter.limit ?? NO_LIMIT,
 				)
 				.map(concertOf);
@@ -666,21 +667,19 @@ function storeOf(db: Database, alive: Alive): RecordStore {
 		result(id) {
 			const row = rowOf(id);
 			if (row.status === "running") return undefined;
-			if (row.status !== "ok") return failure(row, row.status);
 			const instance = {
 				node: row.result_node ?? "",
 				expansion: row.result_expansion ?? "",
 			};
-			const outputs = db
+			const stored = db
 				.query<{ outputs: string | null }, [string, string, string]>(
 					"SELECT outputs FROM instances WHERE concert = ? AND node = ? AND expansion = ?",
 				)
 				.get(id, instance.node, instance.expansion)?.outputs;
-			return {
-				...instance,
-				outcome: "ok",
-				outputs: parsed(outputs ?? null) ?? {},
-			};
+			const outputs = parsed<Outputs>(stored ?? null);
+			if (row.status === "ok")
+				return { ...instance, outcome: "ok", outputs: outputs ?? {} };
+			return failure(row, row.status, outputs);
 		},
 		events(id, after = 0) {
 			rowOf(id);
@@ -719,20 +718,31 @@ function storeOf(db: Database, alive: Alive): RecordStore {
 	};
 }
 
-/** Why `id`, which `restart` found neither failed nor rejected, cannot be resumed. */
-function unresumable(db: Database, id: string): Error {
-	const row = db
-		.query<{ status: ConcertStatus; pid: number }, [string]>(
-			"SELECT status, pid FROM concerts WHERE id = ?",
-		)
-		.get(id);
-	if (row?.status === "running")
-		return new Error(
-			`concert '${id}' is still running in process ${row.pid}. Wait for it to settle, or kill it, then resume it`,
+/** The refusal to resume a concert that is still running, or that settled `ok` and so has nothing to resume. */
+export class Unresumable extends Error {
+	override readonly name = "Unresumable";
+	readonly concert: { id: string; status: "running" | "ok"; pid: number };
+
+	constructor(concert: Unresumable["concert"]) {
+		const { id, status, pid } = concert;
+		super(
+			status === "running"
+				? `concert '${id}' is still running in process ${pid}\nWait for it to settle, or kill it, then resume it`
+				: `concert '${id}' finished ok, so it has nothing to resume\nPerform its composition as a new concert`,
 		);
-	return new Error(
-		`concert '${id}' finished ok, so it has nothing to resume. Perform its composition as a new concert`,
-	);
+		this.concert = concert;
+	}
+}
+
+/** The refusal to resume `concert`, unless it failed or was rejected. */
+export function unresumable({
+	id,
+	status,
+	pid,
+}: ConcertRecord): Unresumable | undefined {
+	return status === "running" || status === "ok"
+		? new Unresumable({ id, status, pid })
+		: undefined;
 }
 
 function concertOf(row: ConcertRow): ConcertRecord {
@@ -753,15 +763,18 @@ function concertOf(row: ConcertRow): ConcertRecord {
 	};
 }
 
+/** The result of a concert that settled other than `ok`, with `outputs` when it was rejected. */
 function failure(
 	row: ConcertRow,
 	outcome: "rejected" | "failed",
+	outputs: Outputs | undefined,
 ): ConcertResult {
 	const node = row.result_node;
 	const reason = row.reason ?? "";
 	if (node === null) return { outcome, reason };
 	const expansion = row.result_expansion ?? "";
-	return { node, expansion, outcome, reason };
+	const carried = outcome === "rejected" && outputs !== undefined;
+	return { node, expansion, outcome, reason, ...(carried && { outputs }) };
 }
 
 function instancesOf(db: Database, concert: string): InstanceRecord[] {

@@ -91,7 +91,6 @@ describe("lifting combinators", () => {
 		const ir = buildOf(() => task().out.doc.pick("meta.title"));
 		expect(nodeOf(ir, "task_meta_title")).toMatchObject({
 			kind: "code",
-			pure: true,
 			worker: { module: "maestro:stdlib", export: "pick", codeHash: STDLIB },
 			literals: { path: "meta.title" },
 			out: { value: STRING },

@@ -8,6 +8,7 @@ import type {
 	IrNode,
 	Ports,
 	Scope,
+	WorkerRef,
 } from "./types";
 
 /** The outputs every node has beside its declared ones. */
@@ -47,6 +48,24 @@ export const tolerates = (node: IrNode, edge: IrEdge) =>
 	edge.kind === "control"
 		? edge.tolerate === "rejected"
 		: node.kind === "repeat" && node.tolerate === "rejected";
+
+/**
+ * `ir` with each worker reference, a code node's `worker` and a map's `key` (ADR 0008), replaced by what `change` gives
+ * for it. `change` gets the id of the node naming the reference, once per reference, in node order.
+ */
+export function mapWorkers(
+	ir: Ir,
+	change: (ref: WorkerRef, node: string) => WorkerRef,
+): Ir {
+	const nodes = ir.nodes.map((node): IrNode => {
+		if (node.kind === "code")
+			return { ...node, worker: change(node.worker, node.id) };
+		if (node.kind === "map" && node.key)
+			return { ...node, key: change(node.key, node.id) };
+		return node;
+	});
+	return { ...ir, nodes };
+}
 
 const hasLiteralItems = (g: GroupNode) =>
 	g.kind !== "repeat" && g.items !== undefined;

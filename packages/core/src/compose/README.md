@@ -3,10 +3,10 @@
 `compose(input)` is pre-flight (architecture 4, CORE-07). It does three things without spending anything:
 
 - checks an IR against its config and hosts;
-- folds and expands what it can know;
+- expands the groups whose items are plain values;
 - bounds the result.
 
-It writes only under `input.scratch` and starts no host node (NFR-02). It returns `{ ok: true, plan }`, or
+It calls no author code, writes nothing and starts no host node (NFR-02, ADR 0009). It returns `{ ok: true, plan }`, or
 `{ ok: false, diagnostics }` when any check gives an error.
 
 ## Input
@@ -20,7 +20,6 @@ It writes only under `input.scratch` and starts no host node (NFR-02). It return
 | `hosts`    | The installed hosts.                                                                              |
 | `loadCode` | Resolves a worker reference to its function (ADR 0008), once per reference per compose.           |
 | `caps`     | Caps by name: `instances` caps the node-instance total, any other name the total of a host count. |
-| `scratch`  | An absolute directory, made with its parents the first time a folded node reads `ctx.scratch`.    |
 
 ## Steps
 
@@ -32,46 +31,26 @@ It writes only under `input.scratch` and starts no host node (NFR-02). It return
    Any error stops compose here, before anything is loaded or called.
 
 2. Loading, through `loadCode`, of every function the IR names: each code node's worker and each map's key function,
-   once per reference. One that does not load is a `SCOPE.export` error, which stops compose here (ADR 0008).
-3. Each host's `environment()`.
-4. Folding and expansion, in dependency order, one node instance at a time. The rules:
-   - A node after a non-`ok` folded upstream is `skipped` (CORE-04), unless the node is a fan-in, or the upstream is
-     `rejected` and a tolerant ordering edge or a `repeat` with `tolerate: "rejected"` admits it.
-   - A guard that depends only on known values resolves:
-     - `false` skips the node;
-     - an unknown guard leaves the node, and a group's body, to perform.
-   - A node known to start that reads, over a `data` edge, a declared output of a folded rejection without outputs is an
-     error, worded as perform's failure (`unreadableReason` in `../shared.ts`). A fan-in node is exempt.
-   - A pure code node with known inputs and no artifact output is called as perform's `ts` worker calls it (`invokeCode`
-     in `../worker.ts`), so it settles alike in both, with a pure context:
-     - reading `ctx.concert` or `ctx.clock` throws;
-     - calling `ctx.path()` throws, as a folded node has no artifact area;
-     - `ctx.env` holds each host's `environment()` under the host's name;
-     - `ctx.log()` lines are dropped;
-     - its outputs, when `ok` or carried by a rejection, are checked against its `out` schemas (ADR 0008);
-     - past the node's `timeout`, if it has one, the function is abandoned and compose stops (`timed` in `../worker.ts`,
-       as perform times it).
-   - An assert with known inputs folds; a false one is an error.
-   - A group instance known to start expands, but only in these cases:
-     - a `map` whose items are known expands into one instance per item;
-     - a `seq` without `until` whose items are known expands into one instance per index.
+   once per reference. One that does not load is a `SCOPE.export` error, which stops compose here (ADR 0008). No loaded
+   function is called.
+3. Expansion, enclosing groups first, one group instance at a time. A group instance expands only when every guard on it
+   is known true and its items are plain values: a literal, or an enclosing group's item. Then:
+   - a `map` expands into one instance per item, keyed by `itemKey`;
+   - a `map` with a key function expands to a count of its items, as the key function is called only at perform;
+   - a `seq` without `until` expands into one instance per index.
 
-     Every other group instance stays a region of up to its bound, as do a `repeat`, a `seq` with `until`, and a group
-     whose guard is false or unknown. Of a region, only the first iteration (`[0]`) may fold: it always starts, and
-     inside a `repeat` its state ports hold the repeat's own inputs.
+   Every other group instance stays a region of up to its bound (CORE-05), as do a `repeat`, a `seq` with `until`, a
+   group sized by a node result, and a group whose guard a node result feeds.
 
-   When the IR's own bounds, with every group at its declared bound, pass a cap, fold checks the bounds so far after
-   each group instance. A group instance fold has not reached counts nothing yet, so the bounds so far only grow. Fold
+   When the IR's own bounds, with every group at its declared bound, pass a cap, expansion checks the bounds so far
+   after each group instance. A group instance not yet reached counts nothing, so the bounds so far only grow. Expansion
    stops at the first cap they pass, with a `BOUND.cap` error that says "may reach at least".
 
-5. Each host's `validate(graph)`. Its codes get the `HOST.` prefix.
-6. The plan's bounds, from the expansion, against `caps`.
+4. Each host's `validate(graph)`. Its codes get the `HOST.` prefix.
+5. The plan's bounds, from the expansion, against `caps`.
 
-A host hook that throws or rejects gives a `HOST.environment` or `HOST.validate` error naming the host. What still
-throws:
-
-- two hosts that register one node kind;
-- a failure to remove a folded node's scratch directory.
+A host's `validate()` that throws or rejects gives a `HOST.validate` error naming the host. Two hosts that register one
+node kind still throw.
 
 ## Plan
 
@@ -82,20 +61,17 @@ the plan carries no format version.
 | ------------- | ------------------------------------------------------------------------- |
 | `ir`          | The IR, unchanged.                                                        |
 | `expansion`   | Group id, then the group instance's expansion path, then its `Expansion`. |
-| `folded`      | Node id, then the instance's expansion path, then its `Settled<Outputs>`. |
 | `bounds`      | `PlanBounds`, below.                                                      |
 | `diagnostics` | Warnings only, each an ir `Diagnostic` (`packages/ir/src/types.ts`).      |
 
 Expansion paths are ir's (`formatExpansion`): one `[key]` per enclosing group, outermost first, `""` outside groups. A
-map item's key is its `itemKey` or its key function's. A `seq` or `repeat` iteration's key is its index.
+map item's key is its `itemKey`, or at perform its key function's. A `seq` or `repeat` iteration's key is its index.
 
 An `Expansion` is either:
 
 - `{ keys }`: the instance's iteration keys in order.
-- `{ upTo }`: a region with its bound. Its body may still have a folded `[0]` instance.
-
-A `folded` entry is `{ outcome: "ok", value }` with the node's outputs, `{ outcome: "rejected", reason }` with `value`
-when the rejection carried outputs, or `{ outcome: "skipped", reason }`. An `ok` assert's value is `{}`.
+- `{ exact }`: a map's iteration count, when its key function names the iterations at perform.
+- `{ upTo }`: a region with its bound.
 
 `PlanBounds` (D-23):
 
@@ -105,8 +81,7 @@ when the rejection carried outputs, or `{ outcome: "skipped", reason }`. An `ok`
 | `nodes`     | Instances per node id.                                                                    |
 | `counts`    | Each name a host's `bounds(node)` reports, times the node's instances, summed over nodes. |
 
-Counts include instances that folded or were skipped. A count is exact only when every group above it is a map whose
-items compose knows.
+A count is exact only when every group above it is a map whose items compose knows.
 
 A plan for a map over two topics, then a repeat, with a host that counts one `calls` per node and `ir` cut short:
 
@@ -116,12 +91,6 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
   "expansion": {
     "topics": { "": { "keys": ["alpha", "beta"] } },
     "loop": { "": { "upTo": 2 } }
-  },
-  "folded": {
-    "topics/slug": {
-      "[alpha]": { "outcome": "ok", "value": { "text": "ALPHA" } },
-      "[beta]": { "outcome": "ok", "value": { "text": "BETA" } }
-    }
   },
   "bounds": {
     "instances": { "upTo": 8 },
@@ -140,30 +109,23 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
 
 ## Diagnostics
 
-| Code               | When                                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------ |
-| `CFG.unclaimed`    | A config key nothing installed claims, at any level.[^claims] Hints a near name.           |
-| `CFG.schema`       | A config namespace is off the schema of core or a host whose kinds the IR uses.[^pack]     |
-| `CFG.claim`        | A pack's id is a namespace core or an installed host already claims.                       |
-| `TYPE.edge`        | An edge's source and target schemas disagree.[^types]                                      |
-| `TYPE.marker`      | An `x-maestro-type` the artifact walker cannot reach.                                      |
-| `TYPE.owner`       | An `x-maestro-type` name neither core (`CORE_TYPES`) nor an installed host owns.           |
-| `TYPE.output`      | A folded node's outputs, or those its rejection carries, are off its `out` schemas.        |
-| `TYPE.unreadable`  | A node reads a declared output of a folded rejection that carried no outputs.              |
-| `HOST.kind`        | A node kind no installed host registers.                                                   |
-| `HOST.config`      | A host node's `config` is off its kind's `config` schema.                                  |
-| `HOST.ports`       | A host node's `in` or `out` differs from its kind's `ports(node)`.[^ports]                 |
-| `HOST.environment` | A host's `environment()` threw or rejected.                                                |
-| `HOST.validate`    | A host's `validate()` threw or rejected.                                                   |
-| `HOST.*`           | A host's `validate` finding.                                                               |
-| `PURE.ambient`     | A folded node read `ctx.concert` or `ctx.clock`, or called `ctx.path()`.                   |
-| `PURE.fold`        | A folded node failed, or a key function threw.[^fold]                                      |
-| `PURE.timeout`     | A folded node ran past its `timeout`.                                                      |
-| `SCOPE.export`     | `loadCode` could not load a function the IR names: a code node's or a key function.[^load] |
-| `SCOPE.key`        | Two items of a map instance share a key.[^keys]                                            |
-| `ASSERT.failed`    | A folded assert is false.                                                                  |
-| `BOUND.items`      | A group instance has more known items than its bound.                                      |
-| `BOUND.cap`        | A total of the plan's bounds, or of its bounds so far while folding, is over its cap.      |
+| Code            | When                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------ |
+| `CFG.unclaimed` | A config key nothing installed claims, at any level.[^claims] Hints a near name.           |
+| `CFG.schema`    | A config namespace is off the schema of core or a host whose kinds the IR uses.[^pack]     |
+| `CFG.claim`     | A pack's id is a namespace core or an installed host already claims.                       |
+| `TYPE.edge`     | An edge's source and target schemas disagree.[^types]                                      |
+| `TYPE.marker`   | An `x-maestro-type` the artifact walker cannot reach.                                      |
+| `TYPE.owner`    | An `x-maestro-type` name neither core (`CORE_TYPES`) nor an installed host owns.           |
+| `HOST.kind`     | A node kind no installed host registers.                                                   |
+| `HOST.config`   | A host node's `config` is off its kind's `config` schema.                                  |
+| `HOST.ports`    | A host node's `in` or `out` differs from its kind's `ports(node)`.[^ports]                 |
+| `HOST.validate` | A host's `validate()` threw or rejected.                                                   |
+| `HOST.*`        | A host's `validate` finding.                                                               |
+| `SCOPE.export`  | `loadCode` could not load a function the IR names: a code node's or a key function.[^load] |
+| `SCOPE.key`     | Two items of a map instance share a key.[^keys]                                            |
+| `BOUND.items`   | A group instance has more known items than its bound.                                      |
+| `BOUND.cap`     | A total of the plan's bounds, or of its bounds so far while expanding, is over its cap.    |
 
 [^claims]:
     A top-level key belongs to core, an installed host or an installed pack. Under a pack's id, a key names one of its
@@ -184,22 +146,16 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
     the kind's `out` into the IR's. A `ports(node)` that throws is a `HOST.ports` error too. A node with a `HOST.config`
     error gets no ports check.
 
-[^fold]:
-    A node fails as it would in perform: its inputs are off its `in` schemas, it throws, or it returns something other
-    than outputs or `reject(reason, outputs?)`. For inputs off its `in` schemas, the hint points at the edges, params or
-    literals that feed the node.
-
 [^keys]:
     Keys come from `itemKey`, so `3` and `"3"` collide, as do an item keyed by its index and a primitive item with that
-    value. The hint is to give the map a key function.
+    value. The hint is to give the map a key function, whose duplicate keys fail the `map` at perform.
 
 No value gets its schema defaults. `format` is an annotation only: neither compose nor perform validates it.
 
 ## Text forms
 
-- `summary(plan)`: one line, for example `fanout: up to 16 node instances, 0 folded`.
-- `listing(plan)`: each node with its kind and instance count, its expansions and folded instances, then the bounds and
-  any warnings.
+- `summary(plan)`: one line, for example `fanout: up to 16 node instances`.
+- `listing(plan)`: each node with its kind and instance count and its expansions, then the bounds and any warnings.
 - `render(plan)`: a Mermaid flowchart (architecture 11). Scopes and groups are subgraphs, and a group's header shows its
   kind, cardinality and expansions.
 
@@ -212,8 +168,7 @@ No value gets its schema defaults. `format` is an annotation only: neither compo
 | `[[ ]]`         | A group's header.                                         |
 | `-->`           | A `data` edge, labelled `<from port> to <to port>`.       |
 | `==>`           | A `collect` edge: the barrier before the fan-in.          |
-| `-.->` `when p` | A guard, with its folded value when compose knows it.     |
+| `-.->` `when p` | A guard on output `p`.                                    |
 | `-.->` `after`  | An ordering edge, with `tolerates rejected` when it does. |
 
-Folded values show as `folded <instance> <outcome> <value or reason>` in the node's label. A value or reason is cut at
-40 characters and kept on one line.
+A key list is cut at 40 characters.

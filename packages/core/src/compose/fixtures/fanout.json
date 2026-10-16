@@ -205,7 +205,6 @@
 					"type": "object"
 				}
 			},
-			"pure": true,
 			"worker": {
 				"codeHash": "maestro:stdlib@0.1.0",
 				"export": "firstOk",

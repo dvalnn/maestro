@@ -1,11 +1,21 @@
+import { join } from "node:path";
 import { ConfigError } from "@maestro/core/config";
-import type { ConcertResult, ConcertStatus } from "@maestro/core/perform";
+import type {
+	ConcertResult,
+	ConcertStatus,
+	Unresumable,
+} from "@maestro/core/perform";
 import type { NodeInstance } from "@maestro/core/worker";
 import {
+	ARTIFACT_TYPES,
+	type ArtifactRef,
 	type Diagnostic,
+	findMarked,
 	formatInstance,
 	type Ir,
 	indexGraph,
+	isPlainObject,
+	replaceAt,
 } from "@maestro/ir";
 
 /** The exit codes of every command. */
@@ -142,19 +152,76 @@ export const resultDoc = (
 	resultNode?: string;
 	resultExpansion?: string;
 	reason?: string;
+	outputs?: Record<string, unknown>;
 } => ({
 	id,
 	status: result?.outcome ?? "running",
 	resultNode: result?.node,
 	resultExpansion: result?.expansion,
 	reason: reasonOf(result),
+	outputs: result?.outputs,
 });
+
+const isArtifactRef = (value: unknown): value is ArtifactRef =>
+	isPlainObject(value) && typeof value.path === "string";
+
+/** A control character, or a line or paragraph separator: anything that would break a string's line. */
+const BREAKING = /[\p{Cc}\u2028\u2029]/u;
+/** The separators `JSON.stringify` leaves as they are. */
+const SEPARATORS = /[\u2028\u2029]/g;
+
+/**
+ * `value` on one line: a string without a control character or line separator, a number, a boolean or null as it is,
+ * else compact JSON.
+ */
+const oneLine = (value: unknown) =>
+	(typeof value === "string" && !BREAKING.test(value)) ||
+	typeof value === "number" ||
+	typeof value === "boolean" ||
+	value === null
+		? String(value)
+		: JSON.stringify(value).replace(
+				SEPARATORS,
+				(c) => `\\u${c.charCodeAt(0).toString(16)}`,
+			);
+
+/**
+ * The outputs of `result` as a `name  value` line per port, with each artifact in a value replaced by its path in the
+ * artifact area `artifacts`, or `undefined` when it carries none.
+ */
+export function outputsText(
+	ir: Ir,
+	artifacts: string,
+	result: ConcertResult | undefined,
+): string | undefined {
+	if (result?.outputs === undefined) return undefined;
+	const out = ir.nodes.find((n) => n.id === result.node)?.out ?? {};
+	const rows = Object.entries(result.outputs).map(([port, value]) => {
+		let shown = structuredClone(value);
+		for (const { type, pointer, value: ref } of findMarked(
+			out[port] ?? {},
+			value,
+		))
+			if (ARTIFACT_TYPES.has(type) && isArtifactRef(ref))
+				shown = replaceAt(shown, pointer, join(artifacts, ref.path));
+		return [port, oneLine(shown)];
+	});
+	return rows.length ? table(rows) : undefined;
+}
 
 /** The error of a command that finds concert `id` running, which a command on settled concerts refuses. */
 export const stillRunning = (id: string, pid: number) =>
 	new CliError(
 		`concert ${id} is still running in process ${pid}\nWait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'`,
 	);
+
+/** The error of `perform --resume` for a concert core refuses to resume. */
+export const resumeRefused = ({ concert }: Unresumable) =>
+	concert.status === "running"
+		? stillRunning(concert.id, concert.pid)
+		: new CliError(
+				`concert ${concert.id} finished ok, so it has nothing to resume\nPerform its composition as a new concert with 'maestro perform <composition>'`,
+			);
 
 const TOUR = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const TOUR_MAX_LENGTH = 64;

@@ -125,7 +125,6 @@
 				"export": "tally",
 				"codeHash": "sha256:a55968949270e16093979170fb82b773652c1ca4dea2c3f6986dab4cf09b60d7"
 			},
-			"pure": true,
 			"fanin": true
 		},
 		{

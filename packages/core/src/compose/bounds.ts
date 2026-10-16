@@ -38,7 +38,10 @@ const tally = (c: Cardinality): Tally =>
 
 const isHostNode = (n: IrNode): n is HostNode => n.kind.includes(".");
 
-/** The instances under `groups` below the group instance at `keys`. A region counts up to every bound left. */
+/**
+ * The instances under `groups` below the group instance at `keys`. A region counts up to every bound left, and an
+ * iteration count up to every bound below it.
+ */
 function countFrom(
 	groups: GroupNode[],
 	keys: string[],
@@ -47,9 +50,12 @@ function countFrom(
 	const group = groups[keys.length];
 	if (!group) return { n: 1, exact: true };
 	const e = expansionOf(group, formatExpansion(keys));
-	if ("upTo" in e) {
-		const rest = groups.slice(keys.length).map((g) => boundOf(g.cardinality));
-		return { n: product(rest), exact: false };
+	const below = (depth: number) =>
+		groups.slice(depth).map((g) => boundOf(g.cardinality));
+	if ("upTo" in e) return { n: product(below(keys.length)), exact: false };
+	if ("exact" in e) {
+		const rest = below(keys.length + 1);
+		return { n: e.exact * product(rest), exact: rest.length === 0 };
 	}
 	const parts = e.keys.map((k) => countFrom(groups, [...keys, k], expansionOf));
 	return {
@@ -80,7 +86,9 @@ function hostCounts(
 	);
 }
 
-/** The plan's bounds (D-23): node instances per node and in total, and each host's named counts summed over instances. */
+/**
+ * The plan's bounds (D-23): node instances per node and in total, and each host's named counts summed over instances.
+ */
 export function boundsOf(
 	ir: Ir,
 	graph: GraphIndex,

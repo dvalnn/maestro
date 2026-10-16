@@ -18,11 +18,11 @@ describe("ambient reads during build", () => {
 			"crypto.getRandomValues()",
 			() => crypto.getRandomValues(new Uint8Array(1)),
 		],
-	])("%s fails with PURE.ambient", (_name, read) => {
+	])("%s fails with BUILD.ambient", (_name, read) => {
 		const error = diagnose(() =>
 			buildOf(() => hostNode("fake.task", { config: { x: read() as never } })),
 		);
-		expect(error.code).toBe("PURE.ambient");
+		expect(error.code).toBe("BUILD.ambient");
 	});
 
 	test("a fixed date is no ambient read", () => {

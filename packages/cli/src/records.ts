@@ -20,6 +20,7 @@ import {
 	instanceName,
 	jsonOf,
 	MS_PER_UNIT,
+	outputsText,
 	parseCount,
 	parseDuration,
 	parseTour,
@@ -28,6 +29,7 @@ import {
 	usageError,
 } from "./output";
 import {
+	artifactsOf,
 	concertOf,
 	diskOf,
 	isMaestro,
@@ -54,7 +56,11 @@ const LS_OPTIONS = {
 		arg: "status",
 		desc: `Only concerts that are ${STATUSES.join(", ")}`,
 	},
-	composition: { type: "string", arg: "name", desc: "Only this composition" },
+	composition: {
+		type: "string",
+		arg: "pack.name",
+		desc: "Only this composition, as <pack>.<composition>",
+	},
 	tour: { type: "string", arg: "slug", desc: "Only this tour" },
 	workspace: { type: "string", arg: "name", desc: "Only this workspace" },
 	limit: {
@@ -77,6 +83,21 @@ function statusOf(text: string | undefined): ConcertStatus | undefined {
 			"Pick one of those",
 		);
 	return status;
+}
+
+/**
+ * The pack and composition filters of `--composition <pack>.<composition>`.
+ * @throws CliError, a usage error, for any other form.
+ */
+function compositionOf(text: string | undefined) {
+	if (text === undefined) return {};
+	const dot = text.indexOf(".");
+	if (dot < 1 || dot === text.length - 1)
+		throw usageError(
+			`--composition takes <pack>.<composition>, not '${text}'`,
+			"Write it as greet.hello",
+		);
+	return { pack: text.slice(0, dot), composition: text.slice(dot + 1) };
 }
 
 export const ls: Command = {
@@ -104,7 +125,7 @@ async function listed({ session, store, values, json }: Stored) {
 	const limit = textOf(values, "limit");
 	const concerts = store.concerts({
 		status: statusOf(textOf(values, "status")),
-		composition: textOf(values, "composition"),
+		...compositionOf(textOf(values, "composition")),
 		tour: textOf(values, "tour"),
 		workspace: textOf(values, "workspace"),
 		limit: limit === undefined ? LIST_LIMIT : parseCount("--limit", limit),
@@ -125,7 +146,7 @@ async function listed({ session, store, values, json }: Stored) {
 						dash(r.title),
 						dash(r.tour),
 						dash(r.workspace),
-						r.composition,
+						`${r.pack}.${r.composition}`,
 						r.status,
 						formatBytes(r.diskUse),
 					]),
@@ -162,23 +183,20 @@ const WAIT_OPTIONS = {
 	},
 } as const satisfies Options;
 
-async function waited({
-	session: { deps },
-	store,
-	values,
-	positionals,
-	json,
-}: Stored) {
+async function waited({ session, store, values, positionals, json }: Stored) {
+	const { deps } = session;
 	const id = only(positionals, "concert", "Name the concert to wait for");
 	const timeout = textOf(values, "timeout");
 	const limit =
 		timeout === undefined ? undefined : parseDuration("--timeout", timeout);
-	concertOf(store, id);
+	const { ir } = concertOf(store, id);
 	const result = (await store.wait(id, limit)) && store.result(id);
 	const { status, reason } = resultDoc(id, result);
 	if (json) deps.stdout(jsonOf(resultDoc(id, result)));
 	else if (result) {
 		deps.stdout(status);
+		const outputs = outputsText(ir, artifactsOf(session, id), result);
+		if (outputs !== undefined) deps.stdout(outputs);
 		if (reason !== undefined) deps.stderr(reason);
 	} else
 		deps.stderr(
@@ -200,7 +218,10 @@ export const wait: Command = {
 		),
 };
 
-/** Settles concert `id` failed, as a reader does for a concert whose process exited, taking only maestro's processes as live. */
+/**
+ * Settles concert `id` failed, as a reader does for a concert whose process exited, taking only maestro's processes as
+ * live.
+ */
 function reap(session: Session, id: string) {
 	const reader = openRecord(session.files.record, { alive: isMaestro });
 	try {
@@ -297,7 +318,7 @@ async function toured({
 
 export const tour: Command = {
 	usage:
-		"tour <slug> <concert>... [flags]\n       maestro tour --clear <concert>... [flags]",
+		"tour <slug> <concert>... [flags]  (alias: t)\n       maestro tour --clear <concert>... [flags]",
 	options: TOUR_OPTIONS,
 	execute: (args, deps) =>
 		withStore(

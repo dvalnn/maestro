@@ -19,7 +19,9 @@ export const ARTIFACT_TYPES: ReadonlySet<string> = new Set(
 	Object.values(CORE_TYPES),
 );
 
-/** Registers `x-maestro-type` on `ajv` once, so a strict instance compiles schemas that carry it and rejects a bad name. */
+/**
+ * Registers `x-maestro-type` on `ajv` once, so a strict instance compiles schemas that carry it and rejects a bad name.
+ */
 export function registerMaestroType<A extends AjvCore>(ajv: A): A {
 	if (ajv.getKeyword(MAESTRO_TYPE)) return ajv;
 	ajv.addKeyword({
@@ -302,3 +304,30 @@ const escapeSegment = (s: string) =>
 
 const unescapeSegment = (s: string) =>
 	s.replaceAll("~1", "/").replaceAll("~0", "~");
+
+function child(at: unknown, key: string): unknown {
+	if (Array.isArray(at)) return at[Number(key)];
+	if (typeof at === "object" && at !== null)
+		return (at as Record<string, unknown>)[key];
+}
+
+/**
+ * `root` with the value at the JSON Pointer `pointer` replaced, in place below the top.
+ * @throws Error when nothing holds that value.
+ */
+export function replaceAt(
+	root: unknown,
+	pointer: string,
+	value: unknown,
+): unknown {
+	if (pointer === "") return value;
+	const keys = pointer.slice(1).split("/").map(unescapeSegment);
+	const last = keys.pop() ?? "";
+	let at = root;
+	for (const key of keys) at = child(at, key);
+	if (Array.isArray(at)) at[Number(last)] = value;
+	else if (typeof at === "object" && at !== null)
+		(at as Record<string, unknown>)[last] = value;
+	else throw new Error(`no value at '${pointer}'`);
+	return root;
+}

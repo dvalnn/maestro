@@ -2,7 +2,7 @@ import { fail } from "./graph";
 
 const ambient = (what: string) =>
 	fail(
-		"PURE.ambient",
+		"BUILD.ambient",
 		`the build read ${what}, which is frozen during a build`,
 		"Pass the value in as a param, or read it in a code node at perform time",
 	);
@@ -54,7 +54,7 @@ const FROZEN: [owner: object, key: string, stand: () => unknown][] = [
 	[crypto, "randomUUID", () => trap("crypto.randomUUID()")],
 ];
 
-/** Calls `fn` with the environment, the clock and randomness throwing `PURE.ambient` (SDK-11). */
+/** Calls `fn` with the environment, the clock and randomness throwing `BUILD.ambient` (SDK-11). */
 export function frozen<T>(fn: () => T): T {
 	const restores: (() => void)[] = [];
 	try {

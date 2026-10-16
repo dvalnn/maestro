@@ -20,7 +20,6 @@
 				"export": "plan",
 				"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
 			},
-			"pure": false,
 			"reads": ["inputs/"]
 		},
 		{
@@ -125,7 +124,6 @@
 				"export": "merge",
 				"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
 			},
-			"pure": true,
 			"writes": ["merged/"]
 		},
 		{
@@ -161,8 +159,7 @@
 				"module": "guards.ts",
 				"export": "summarize",
 				"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
-			},
-			"pure": true
+			}
 		}
 	],
 	"edges": [

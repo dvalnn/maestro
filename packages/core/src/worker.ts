@@ -49,8 +49,6 @@ export type Invocation = {
 	/** The node's input ports, which `inputs` are checked against. */
 	in?: Ports;
 	inputs: Inputs;
-	/** The node is pure, so its context throws on `concert` and `clock`. */
-	pure: boolean;
 	/**
 	 * `CodeContext` without `path`, which the worker derives from `artifacts`, the area's absolute path, and without
 	 * `log`, which is `invoke`'s.
@@ -73,23 +71,6 @@ export interface Worker {
 	): Promise<Settlement>;
 	/** Stops the instance's invocation, whose `invoke` then replies promptly. Timeouts cancel through this too. */
 	cancel(instance: NodeInstance): Promise<void>;
-}
-
-const impure = (field: "concert" | "clock") => ({
-	enumerable: true,
-	get(): never {
-		throw new Error(
-			`a pure node cannot read ctx.${field}. Mark the node pure: false to read it`,
-		);
-	},
-});
-
-/** `context` for a pure node: reading `concert` or `clock` throws, as a folded result would freeze it. */
-export function pureContext(context: CodeContext): CodeContext {
-	return Object.defineProperties(
-		{ ...context },
-		{ concert: impure("concert"), clock: impure("clock") },
-	);
 }
 
 const REJECTION_FIELDS: ReadonlySet<string> = new Set([

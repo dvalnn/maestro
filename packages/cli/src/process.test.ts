@@ -89,18 +89,18 @@ describe("a concert in another process", () => {
 			id,
 			status: "running",
 		});
-		for (const args of [
-			["perform", "--resume", id],
-			["prune", id, "--yes"],
-		]) {
-			const refused = await w.call(args);
-			expect(refused.code).toBe(1);
-			expect(refused.err).toMatch(
-				new RegExp(
-					`^concert ${id} is still running.*\nWait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'$`,
-				),
-			);
-		}
+		expect(await w.call(["perform", "--resume", id])).toEqual({
+			code: 1,
+			out: "",
+			err: `concert ${id} is still running in process ${child.pid}\nWait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'`,
+		});
+		const pruned = await w.call(["prune", id, "--yes"]);
+		expect(pruned.code).toBe(1);
+		expect(pruned.err).toMatch(
+			new RegExp(
+				`^concert ${id} is still running.*\nWait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'$`,
+			),
+		);
 
 		expect(json(await w.call(["k", id, "--json"]))).toEqual({
 			id,
@@ -137,7 +137,7 @@ describe("a concert in another process", () => {
 		const resumed = await w.call(["perform", "--resume", id], {
 			hosts: [host],
 		});
-		expect(resumed).toMatchObject({ code: 0, out: id });
+		expect(resumed).toMatchObject({ code: 0, out: `${id}\ntext  done` });
 		expect(started).toEqual(["echo/echo"]);
 		const shape = json(await w.call(["ls", id, "--json"])).instances.filter(
 			(i: { node: string; stale: boolean }) => i.node === "shape" && !i.stale,
@@ -146,9 +146,12 @@ describe("a concert in another process", () => {
 			{ text: "hi v2" },
 		]);
 
-		expect((await w.call(["perform", "--resume", id])).err).toBe(
-			`concert ${id} finished ok, so there is nothing to resume\nPerform its composition as a new concert`,
-		);
+		await rm(w.pack, { recursive: true });
+		expect(await w.call(["perform", "--resume", id])).toEqual({
+			code: 1,
+			out: "",
+			err: `concert ${id} finished ok, so it has nothing to resume\nPerform its composition as a new concert with 'maestro perform <composition>'`,
+		});
 	}, 30_000);
 });
 

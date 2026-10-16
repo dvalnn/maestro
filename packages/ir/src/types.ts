@@ -55,7 +55,6 @@ type NodeBase = {
 export type CodeNode = NodeBase & {
 	kind: "code";
 	worker: WorkerRef;
-	pure: boolean;
 	reads?: string[];
 	writes?: string[];
 	fanin?: boolean;

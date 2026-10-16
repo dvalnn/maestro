@@ -4,14 +4,14 @@ import {
 	basename,
 	dirname,
 	extname,
+	isAbsolute,
 	join,
 	relative,
 	resolve,
 	sep,
 } from "node:path";
-import type { CodeHash } from "@maestro/core/perform";
+import { messageOf, sha256Hex } from "@maestro/core";
 import { validator, violations } from "@maestro/core/ports";
-import { messageOf, sha256Hex } from "@maestro/core/shared";
 import type { CodeFunction, KeyFunction, LoadCode } from "@maestro/core/worker";
 import {
 	type Diagnostic,
@@ -19,6 +19,7 @@ import {
 	irSchema,
 	isPlainObject,
 	type JsonSchema,
+	mapWorkers,
 	type ParseResult,
 	parseIr,
 	TS_RUNTIME,
@@ -33,6 +34,9 @@ import {
 	STDLIB_MODULE,
 } from "@maestro/sdk";
 import * as stdlib from "@maestro/sdk/stdlib";
+
+/** The `codeHash` of the code a worker reference names as it is now (ADR 0008). */
+export type CodeHash = (ref: WorkerRef) => Promise<string>;
 
 /** Resolves a worker reference to its function, and to its code's current `codeHash` (ADR 0008). */
 export type Loader = { loadCode: LoadCode; codeHash: CodeHash };
@@ -56,12 +60,6 @@ export type Bundle = Loader & {
 	): ParseResult;
 };
 
-/** The versions a pack's manifest ranges are checked against: the engine's SDK, and each installed host's by name. */
-export type Versions = {
-	sdk: string;
-	hosts: Readonly<Record<string, string>>;
-};
-
 const MANIFEST = "maestro-pack.json";
 
 const MANIFEST_SCHEMA: JsonSchema = {
@@ -73,7 +71,6 @@ const MANIFEST_SCHEMA: JsonSchema = {
 		version: { type: "string", minLength: 1 },
 		entry: { type: "string", minLength: 1 },
 		sdk: { type: "string", minLength: 1 },
-		hosts: { type: "object", additionalProperties: { type: "string" } },
 	},
 };
 
@@ -84,8 +81,6 @@ type Manifest = {
 	entry: string;
 	/** A semver range on the SDK. */
 	sdk: string;
-	/** A semver range on each host the pack uses, by host name. */
-	hosts?: Readonly<Record<string, string>>;
 };
 
 /** What a bundle's `describe()` must return. */
@@ -284,12 +279,16 @@ function namesOf(namespace: Namespace): Map<unknown, string[]> {
 	return names;
 }
 
-/** The `diagnostic` a build error from any SDK copy carries, read by shape, not class (ADR 0002). */
+/**
+ * The `diagnostic` a build error from any SDK copy carries, read by shape, not class (ADR 0002). Its location is
+ * dropped unless it names an absolute file path, as a bundle's frames name the bundle itself.
+ */
 function diagnosticOf(error: unknown): Diagnostic | undefined {
 	const diagnostic = (error as { diagnostic?: unknown } | null)?.diagnostic;
-	return isPlainObject(diagnostic) && typeof diagnostic.code === "string"
-		? (diagnostic as Diagnostic)
-		: undefined;
+	if (!isPlainObject(diagnostic) || typeof diagnostic.code !== "string")
+		return undefined;
+	const { source, ...rest } = diagnostic as Diagnostic;
+	return source && isAbsolute(source.file) ? { ...rest, source } : rest;
 }
 
 type Entry = {
@@ -384,20 +383,11 @@ async function manifestOf(dir: string): Promise<Manifest> {
 	return value as Manifest;
 }
 
-function checkVersions(manifest: Manifest, versions: Versions, dir: string) {
-	const wanted = [
-		["SDK", manifest.sdk, versions.sdk],
-		...Object.entries(manifest.hosts ?? {}).map(([host, range]) => [
-			`host '${host}'`,
-			range,
-			versions.hosts[host],
-		]),
-	];
-	for (const [what, range = "", have] of wanted)
-		if (have !== undefined && !Bun.semver.satisfies(have, range))
-			throw new Error(
-				`pack '${manifest.id}' at ${dir} needs ${what} ${range}, and this maestro has ${have}\nRebuild the pack against ${what} ${have}, or remove it from packs`,
-			);
+function checkSdk(manifest: Manifest, sdk: string, dir: string) {
+	if (!Bun.semver.satisfies(sdk, manifest.sdk))
+		throw new Error(
+			`pack '${manifest.id}' at ${dir} needs SDK ${manifest.sdk}, and this maestro has ${sdk}\nRebuild the pack against SDK ${sdk}, or remove it from packs`,
+		);
 }
 
 /** The pack's entry file. @throws Error when it resolves outside the pack's directory. */
@@ -415,15 +405,15 @@ async function entryOf(manifest: Manifest, dir: string): Promise<string> {
 }
 
 /**
- * Loads the pack in directory `dir`: its manifest, checked against `versions`, and its entry. Worker references name
- * the entry relative to the pack's directory, and their `codeHash` is the entry's, as `moduleLoader` hashes it: the
- * whole bundle (ADR 0008).
+ * Loads the pack in directory `dir`: its manifest, its SDK range checked against `sdk`, and its entry. Worker references
+ * name the entry relative to the pack's directory, and their `codeHash` is the entry's, as `moduleLoader` hashes it:
+ * the whole bundle (ADR 0008).
  * @throws Error for a missing directory or manifest, a manifest off its schema, a version out of range, an entry
  * outside the pack, or one that does not import, each naming the pack.
  */
 export async function openPack(
 	dir: string,
-	versions: Versions = { sdk: SDK_VERSION, hosts: {} },
+	sdk = SDK_VERSION,
 ): Promise<Bundle> {
 	const root = await realpath(dir).catch(() => {
 		throw new Error(
@@ -431,7 +421,7 @@ export async function openPack(
 		);
 	});
 	const manifest = await manifestOf(root);
-	checkVersions(manifest, versions, root);
+	checkSdk(manifest, sdk, root);
 	const entry = await entryOf(manifest, root);
 	const module = relative(root, entry);
 	const { hash, load } = await openModule(root, module);
@@ -477,6 +467,7 @@ export async function bundled(file: string): Promise<string> {
 export async function openFile(file: string): Promise<Bundle> {
 	const path = resolve(file);
 	const module = basename(path);
+	const id = basename(path, extname(path));
 	const text = await bundled(path);
 	const hash = codeHashOf(text);
 	const what = `composition file ${path}`;
@@ -495,7 +486,7 @@ export async function openFile(file: string): Promise<Bundle> {
 			);
 		return { hash, load: async () => namespace };
 	});
-	const pack = { id: basename(path, extname(path)), version: FILE_VERSION };
+	const pack = { id, version: FILE_VERSION };
 	return bundleOf(
 		what,
 		{ pack, dir: dirname(path), module, hash },
@@ -504,17 +495,22 @@ export async function openFile(file: string): Promise<Bundle> {
 	);
 }
 
-/** `ir` with each code node's worker and each `map`'s key function replaced by `change` of it. */
-export function mapWorkers(ir: Ir, change: (ref: WorkerRef) => WorkerRef): Ir {
-	return {
-		...ir,
-		nodes: ir.nodes.map((node) => {
-			if (node.kind === "code") return { ...node, worker: change(node.worker) };
-			if (node.kind === "map" && node.key)
-				return { ...node, key: change(node.key) };
-			return node;
-		}),
-	};
+/** `ir` with the `codeHash` of each code node and each `map` key function replaced by its current one. */
+export async function withCurrentHashes(
+	ir: Ir,
+	codeHash: CodeHash,
+): Promise<Ir> {
+	const refs: WorkerRef[] = [];
+	mapWorkers(ir, (ref) => {
+		refs.push(ref);
+		return ref;
+	});
+	const hashes = new Map<WorkerRef, string>();
+	for (const ref of refs) hashes.set(ref, await codeHash(ref));
+	return mapWorkers(ir, (ref) => ({
+		...ref,
+		codeHash: hashes.get(ref) ?? ref.codeHash,
+	}));
 }
 
 /** `ir` with each worker reference's `module` moved from relative to `from` to relative to `to`. */
