@@ -84,7 +84,7 @@ const impure = (field: "concert" | "clock") => ({
 	},
 });
 
-/** `context` for a pure node: reading `concert` or `clock` throws, as a cached or folded result would freeze it. */
+/** `context` for a pure node: reading `concert` or `clock` throws, as a folded result would freeze it. */
 export function pureContext(context: CodeContext): CodeContext {
 	return Object.defineProperties(
 		{ ...context },
@@ -92,25 +92,48 @@ export function pureContext(context: CodeContext): CodeContext {
 	);
 }
 
-/** The fields of a `Rejection`: `outcome` and `reason`. */
-const REJECTION_FIELDS = 2;
+const REJECTION_FIELDS: ReadonlySet<string> = new Set([
+	"outcome",
+	"reason",
+	"outputs",
+]);
 
-const isRejection = (value: unknown): value is Rejection =>
+const isRejection = (value: unknown): value is Rejection<Outputs> =>
 	isRecord(value) &&
 	value.outcome === "rejected" &&
 	typeof value.reason === "string" &&
-	Object.keys(value).length === REJECTION_FIELDS;
+	Object.keys(value).every((field) => REJECTION_FIELDS.has(field)) &&
+	(value.outputs === undefined || isOutputs(value.outputs));
 
 /** Parses what a code function returned (ADR 0008). */
 function settlementOf(returned: unknown): Settlement {
 	if (isOutputs(returned)) return { outcome: "ok", outputs: returned };
-	if (isRejection(returned))
-		return { outcome: "rejected", reason: returned.reason };
-	const reason = isRecord(returned)
-		? "the function returned 'outcome' or 'reason' beside its outputs. Return reject(reason) to reject"
-		: `the function returned ${Array.isArray(returned) ? "a list" : String(returned)}, not outputs. Return an object keyed by output port`;
-	return { outcome: "failed", reason };
+	if (isRejection(returned)) {
+		const { reason, outputs } = returned;
+		return { outcome: "rejected", reason, ...(outputs && { outputs }) };
+	}
+	return { outcome: "failed", reason: misshapen(returned) };
 }
+
+/** Why `returned` is neither outputs nor a `Rejection`, with the fix last. */
+function misshapen(returned: unknown): string {
+	if (!isRecord(returned))
+		return `the function returned ${shapeOf(returned)}, not outputs. Return an object keyed by output port`;
+	if (
+		returned.outcome === "rejected" &&
+		returned.outputs !== undefined &&
+		!isOutputs(returned.outputs)
+	)
+		return `the function rejected with ${shapeOf(returned.outputs)} as outputs. Pass reject(reason, outputs) an object keyed by output port`;
+	return "the function returned 'outcome' or 'reason' beside its outputs. Return reject(reason, outputs) to reject";
+}
+
+const shapeOf = (value: unknown) => {
+	if (Array.isArray(value)) return "a list";
+	return isRecord(value)
+		? "an object with 'outcome' or 'reason'"
+		: String(value);
+};
 
 /** `value` with every object in it frozen, in place. */
 function frozen<T>(value: T): T {
@@ -138,5 +161,29 @@ export async function invokeCode(
 		const stack = error instanceof Error ? error.stack : undefined;
 		for (const line of stack?.split("\n") ?? []) call.context.log(line);
 		return { outcome: "failed", reason: messageOf(error) };
+	}
+}
+
+/**
+ * `work`, or what `late` gives once `limit.timeout` milliseconds pass first, with the reason naming `limit.name` and
+ * the timeout. Work past its timeout is abandoned, as an in-process function cannot be stopped. No `timeout` is no
+ * limit.
+ */
+export async function timed<T>(
+	work: Promise<T>,
+	limit: { name: string; timeout: number | undefined },
+	late: (reason: string) => T | Promise<T>,
+): Promise<T> {
+	const { name, timeout } = limit;
+	if (timeout === undefined) return work;
+	const reason = `node '${name}' ran past its timeout of ${timeout} ms`;
+	let timer: Timer | undefined;
+	const expired = new Promise<T>((resolve) => {
+		timer = setTimeout(() => resolve(late(reason)), timeout);
+	});
+	try {
+		return await Promise.race([work, expired]);
+	} finally {
+		clearTimeout(timer);
 	}
 }

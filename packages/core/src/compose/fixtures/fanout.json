@@ -214,21 +214,6 @@
 			}
 		}
 	],
-	"params": {
-		"examples": [{}],
-		"schema": {
-			"additionalProperties": false,
-			"properties": {
-				"models": {
-					"default": ["small", "large"],
-					"items": { "type": "string" },
-					"type": "array"
-				},
-				"prompt": { "default": "write it", "type": "string" }
-			},
-			"type": "object"
-		}
-	},
 	"result": { "node": "firstOk" },
 	"scopes": [
 		{

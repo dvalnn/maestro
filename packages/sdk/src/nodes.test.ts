@@ -4,7 +4,9 @@ import { buildOf, diagnose, nodeOf } from "./fixtures/context";
 import {
 	copyOut,
 	fetchText,
+	lint,
 	merge,
+	miscount,
 	stamp,
 	verdict,
 	wantsOtherContext,
@@ -104,9 +106,15 @@ describe("code", () => {
 			});
 			// @ts-expect-error: merge's 'parts' is a list, and 'text' is Text.
 			code(merge, { in: { parts: t.out.text, sep: "," }, label: "merge_3" });
+			code(lint, { in: { text: t.out.text }, out: { findings: List(Text()) } });
+			// @ts-expect-error: miscount rejects with 'findings' that are no list of Text.
+			code(miscount, {
+				in: { text: t.out.text },
+				out: { findings: List(Text()) },
+			});
 			return code(verdict, { in: { text: t.out.text }, out: { text: Text() } });
 		});
-		const canReject: Rejection extends ReturnType<typeof verdict>
+		const canReject: Rejection<never> extends ReturnType<typeof verdict>
 			? true
 			: false = true;
 		expect(canReject).toBe(true);

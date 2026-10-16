@@ -200,8 +200,8 @@ const isMetrics = (value: unknown): value is Metrics =>
 	);
 
 /**
- * `execution` with its written artifacts moved into the area (ADR 0007), and a code node's `ok` outputs checked
- * against its `out` ports (sdk-spec 7). A failed move or check settles `failed`.
+ * `execution` with its written artifacts moved into the area (ADR 0007), and its outputs checked against the node's
+ * `out` ports when it settled `ok` or `rejected` (sdk-spec 7, ADR 0008). A failed move or check settles `failed`.
  */
 export async function finish(
 	kit: Kit,
@@ -220,10 +220,10 @@ export async function finish(
 			kit.dirs.artifacts,
 			instance,
 		);
-		const checked = node.kind === "code" && execution.outcome === "ok";
-		const mismatch = checked
-			? kit.check(node.out, outputs, "output")
-			: undefined;
+		const mismatch =
+			execution.outcome === "failed"
+				? undefined
+				: kit.check(node.out, outputs, "output");
 		if (mismatch)
 			return {
 				outcome: "failed",

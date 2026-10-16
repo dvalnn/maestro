@@ -4,8 +4,6 @@ import { type Host, kindLookup, type NodeKind } from "./host";
 const kind = (name: string): NodeKind => ({
 	name,
 	config: { type: "object" },
-	outcomes: ["ok"],
-	cacheable: false,
 	ports: () => ({ in: {}, out: {} }),
 	execute: async () => ({ outcome: "ok", outputs: {} }),
 	cancel: async () => {},

@@ -8,10 +8,10 @@ the SDK imports nothing else (ADR 0007). It depends on nothing beyond Ajv. This 
 - `src/`: `parseIr`, `IR_VERSION`, `irSchema` and the TypeScript types, plus the shared contracts below: diagnostics
   (`Diagnostic`, `Severity`), outcomes (`OUTCOMES`, `Outcome`, `Settled`, `worstOutcome`, `settledSchema`), the
   code-function contract (`Context`, `CodeContext`, `Facts`, `Rejection`, `reject`, `TS_RUNTIME`), type markers
-  (`MAESTRO_TYPE`, `CORE_TYPES`, `ARTIFACT_TYPES`, `registerMaestroType`, `findMarked`, `unreachableMarkers`,
-  `artifactsAsRefs`), artifact references (`ArtifactRef`, `artifactRefSchema`), the graph index (`indexGraph`,
-  `GraphIndex`, `IMPLICIT_OUT`, `outputValue`, `isGroup`, `boundOf`, `tolerates`), expansion paths (`itemKey`,
-  `firstDuplicate`, `formatExpansion`, `parseExpansion`, `formatInstance`) and `MAX_TIMEOUT`.
+  (`MAESTRO_TYPE`, `CORE_TYPES`, `ARTIFACT_TYPES`, `registerMaestroType`, `findMarked`, `schemaMarkers`,
+  `unreachableMarkers`, `artifactsAsRefs`), artifact references (`ArtifactRef`, `artifactRefSchema`), the graph index
+  (`indexGraph`, `GraphIndex`, `IMPLICIT_OUT`, `outputValue`, `isGroup`, `boundOf`, `tolerates`), expansion paths
+  (`itemKey`, `firstDuplicate`, `formatExpansion`, `parseExpansion`, `formatInstance`) and `MAX_TIMEOUT`.
 - `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`, and its worker modules sit beside it.
 - `test/read_ir.py`: an independent reader (Python standard library only), which proves the format is readable without
   maestro code.
@@ -51,25 +51,24 @@ with a string `id` also names that node in `node`.
 
 ## Document
 
-| Field         | Content                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------------------ |
-| `irVersion`   | See above.                                                                                                   |
-| `composition` | `id`, `version`, `pack`, optional `doc`.                                                                     |
-| `emitter`     | `name` and `version` of what produced the IR, optional `sourceHash`. Hand-written IR uses `"hand"`.          |
-| `params`      | The param `schema` (with CLI hints as schema annotations) and at least one entry in `examples` (D-17, D-19). |
-| `config`      | Optional. The config schema of each namespace the graph claims, with defaults (CFG-03).                      |
-| `scopes`      | One per subcomposition use: `id`, `composition` and its `ports` with schemas.                                |
-| `nodes`       | Flat list. Nesting is by id.                                                                                 |
-| `edges`       | Flat list, port to port.                                                                                     |
-| `result`      | `{ "node": id }`, the node the build returned, where the result rule starts (architecture 7).                |
+| Field         | Content                                                                                             |
+| ------------- | --------------------------------------------------------------------------------------------------- |
+| `irVersion`   | See above.                                                                                          |
+| `composition` | `id`, `version`, `pack`, optional `doc`.                                                            |
+| `emitter`     | `name` and `version` of what produced the IR, optional `sourceHash`. Hand-written IR uses `"hand"`. |
+| `config`      | Optional. The config schema of each namespace the graph claims, with defaults (CFG-03).             |
+| `scopes`      | One per subcomposition use: `id`, `composition` and its `ports` with schemas.                       |
+| `nodes`       | Flat list. Nesting is by id.                                                                        |
+| `edges`       | Flat list, port to port.                                                                            |
+| `result`      | `{ "node": id }`, the node the build returned, where the result rule starts (architecture 7).       |
 
 Nodes and scopes share one id space. An id is a path of `[A-Za-z0-9_-]` segments joined by `/` (IR-01). Anything inside
 a scope or a group has the id `<enclosing id>/<segment>`, so every proper prefix of an id is a declared scope or group
 node, its parent is the id minus the last segment, and that last segment is its name. Scopes are for renderers and
 diagnostics and do not change execution. Groups do.
 
-Every schema inside the IR (ports, params, config) is a JSON Schema document that the IR treats as opaque, except for
-the `x-maestro-type` annotation that names artifacts and host types ([Type markers](#type-markers-x-maestro-type)). Edge
+Every schema inside the IR (ports, config) is a JSON Schema document that the IR treats as opaque, except for the
+`x-maestro-type` annotation that names artifacts and host types ([Type markers](#type-markers-x-maestro-type)). Edge
 type checks are pre-flight's job (CORE-02), not this package's.
 
 ## Nodes
@@ -223,12 +222,13 @@ The golden fixtures do so with T `{ "type": "object" }`, the member result recor
 - `CodeContext`: `Context` plus `env`, each host's `Facts` keyed by host name, and `log(line)`, which records `line` as
   a `log` event on the instance.
 - `TS_RUNTIME`: `"ts"`, the runtime name of the in-process TypeScript worker (CORE-14).
-- `Rejection`: a code function's negative verdict, `{ outcome: "rejected", reason }`, which `reject(reason)` builds (ADR
-  0008). No node declares an `outcome` or `reason` port, so a rejection never reads as outputs.
+- `Rejection`: a code function's negative verdict, `{ outcome: "rejected", reason, outputs? }`, which
+  `reject(reason, outputs?)` builds (ADR 0008). `outputs`, when given, are the node's full outputs, checked against its
+  `out` like an `ok` node's. No node declares an `outcome` or `reason` port, so a rejection never reads as outputs.
 
 ## Type markers (`x-maestro-type`)
 
-The annotation names an artifact or host type on any subschema of a port, param or scope port (ADR 0007):
+The annotation names an artifact or host type on any subschema of a schema in the IR (ADR 0007):
 
 ```json
 { "type": "array", "items": { "x-maestro-type": "core.file" } }
@@ -236,7 +236,7 @@ The annotation names an artifact or host type on any subschema of a port, param 
 
 - **Namespaces.** A name is `<namespace>.<type>`, the pattern host node kinds use (`$defs/qualifiedName` in
   `ir.schema.json`). Core owns `core.file`, `core.dir`, `core.json-file` and `core.markdown` (`CORE_TYPES`). Each host
-  owns its own namespace.
+  owns the names it lists in its `types`. Compose rejects a name that neither core nor an installed host owns.
 - **Registration.** Ajv's strict mode rejects unknown keywords, so whatever compiles port schemas calls
   `registerMaestroType(ajv)`. A name outside the pattern then fails to compile.
 - **Matching.** A marked type matches only the same name. A `core.json-file` also compares its content schema. Unmarked
@@ -277,7 +277,9 @@ content and not the reference. It descends:
 Nothing else. It never throws: any other `$ref` (an anchor, a remote ref, or one that does not resolve or decode) is not
 followed.
 
-`unreachableMarkers(schema)` returns the JSON Pointer into `schema` of every marker `findMarked` cannot reach:
+`schemaMarkers(schema)` returns every marker in `schema`, each once, with the type it names, the JSON Pointer of the
+subschema it marks, and whether `findMarked` reaches it. `unreachableMarkers(schema)` returns the pointer of each one
+`findMarked` cannot reach:
 
 - under any other keyword that holds subschemas (`allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else`, `contains`,
   `propertyNames`, `patternProperties`, `dependentSchemas`, `unevaluatedItems`, `unevaluatedProperties`),
@@ -303,4 +305,4 @@ The IR carries structure. These semantics belong to the slices that execute or v
 
 ## Changelog
 
-- **1.0**: first version. Code nodes took the optional `timeout` before release.
+- **1.0**: first version. Before release, code nodes took the optional `timeout` and the `params` block left the IR.

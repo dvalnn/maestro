@@ -5,7 +5,6 @@ import type {
 	GraphIndex,
 	HostNode,
 	JsonSchema,
-	Outcome,
 	Ports,
 } from "@maestro/ir";
 import type { Inputs, Settlement } from "./worker";
@@ -38,11 +37,12 @@ export type HostContext = Context & { emit(event: HostEvent): void };
 export interface NodeKind {
 	/** `<host>.<kind>`, as a node's `kind` in the IR. */
 	readonly name: string;
+	/** The schema a node's `config` matches. */
 	readonly config: JsonSchema;
-	/** The outcomes `execute` settles with. Core decides `skipped`. */
-	readonly outcomes: readonly Exclude<Outcome, "skipped">[];
-	readonly cacheable: boolean;
-	/** The ports a node of this kind has, which may depend on its `config`. Artifact ports carry a type marker. */
+	/**
+	 * The ports a node of this kind has, which may depend on its `config`: its `in` and `out` in the IR, and the shape of
+	 * the outputs it settles with. Artifact ports carry a type marker.
+	 */
 	ports(node: HostNode): { in: Ports; out: Ports };
 	execute(
 		instance: HostInstance,

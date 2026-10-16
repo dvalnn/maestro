@@ -12,8 +12,6 @@ const STDLIB_MODULE = "maestro:stdlib";
 const kind = (name: string): NodeKind => ({
 	name,
 	config: { type: "object" },
-	outcomes: ["ok", "rejected", "failed"],
-	cacheable: false,
 	ports: (node) => ({ in: node.in ?? {}, out: node.out ?? {} }),
 	execute: () => Promise.reject(new Error("compose starts no host node")),
 	cancel: () => Promise.resolve(),
@@ -88,7 +86,6 @@ export const sdkBuilt = async (name: string) =>
 export const composeWith = (ir: Ir, over: Partial<ComposeInput> = {}) =>
 	compose({
 		ir,
-		params: ir.params.examples[0] ?? {},
 		config: {},
 		core: {},
 		hosts: [fakeHost()],
@@ -134,7 +131,6 @@ export const irOf = (
 		irVersion: "1.0",
 		composition: { id: "test", version: "0.1.0", pack: "test" },
 		emitter: { name: "hand", version: "1" },
-		params: { schema: { type: "object" }, examples: [{}] },
 		scopes: [],
 		nodes,
 		edges,

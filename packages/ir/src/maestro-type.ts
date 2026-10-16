@@ -159,16 +159,29 @@ function refsIn(keyword: string, value: unknown): unknown {
 	);
 }
 
+/** An `x-maestro-type` in a schema: the type it names, and the JSON Pointer of the subschema it marks. */
+export type SchemaMarker = {
+	type: string;
+	pointer: string;
+	reachable: boolean;
+};
+
 /**
- * The JSON Pointer into `schema` of every `x-maestro-type` that `findMarked` cannot reach: under a keyword it does
- * not descend, behind a `$ref` it does not follow (an anchor into `$defs`), or inside a marked subschema. A `$defs`
- * entry counts only when a `$ref` reaches it. Remote and unresolvable refs show nothing to report.
+ * Every `x-maestro-type` in `schema`, each once. `reachable` is false when `findMarked` cannot reach it on some path:
+ * under a keyword it does not descend, behind a `$ref` it does not follow (an anchor into `$defs`), or inside a marked
+ * subschema. A `$defs` entry counts only when a `$ref` reaches it. Remote and unresolvable refs show nothing.
  */
-export function unreachableMarkers(schema: JsonSchema): string[] {
-	const found = new Set<string>();
+export function schemaMarkers(schema: JsonSchema): SchemaMarker[] {
+	const found = new Map<string, SchemaMarker>();
 	scan(schema, schema, "", true, new Set(), found);
-	return [...found];
+	return [...found.values()];
 }
+
+/** The JSON Pointer of every marker in `schema` that `findMarked` cannot reach, as `schemaMarkers` finds them. */
+export const unreachableMarkers = (schema: JsonSchema): string[] =>
+	schemaMarkers(schema)
+		.filter((m) => !m.reachable)
+		.map((m) => m.pointer);
 
 function scan(
 	root: JsonSchema,
@@ -176,13 +189,17 @@ function scan(
 	pointer: string,
 	reachable: boolean,
 	seen: Set<string>,
-	found: Set<string>,
+	found: Map<string, SchemaMarker>,
 ): void {
 	const visit = `${reachable}${pointer}`;
 	if (typeof schema === "boolean" || seen.has(visit)) return;
 	seen.add(visit);
-	const marked = typeof schema[MAESTRO_TYPE] === "string";
-	if (marked && !reachable) found.add(pointer);
+	const type = schema[MAESTRO_TYPE];
+	const marked = typeof type === "string";
+	if (marked) {
+		const before = found.get(pointer)?.reachable ?? true;
+		found.set(pointer, { type, pointer, reachable: reachable && before });
+	}
 	const inner = reachable && !marked;
 	for (const [target, walked] of nextSchemas(root, schema, pointer))
 		scan(root, target.schema, target.pointer, inner && walked, seen, found);

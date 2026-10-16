@@ -7,7 +7,6 @@
 		"doc": "Per angle, draft a text, polish it in a bounded loop, then critique it. Each member result has two named parts. At least one angle must settle ok, or the concert fails."
 	},
 	"emitter": { "name": "hand", "version": "1" },
-	"params": { "schema": { "type": "object" }, "examples": [{}] },
 	"scopes": [],
 	"nodes": [
 		{

@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
 	CORE_TYPES,
+	type HostNode,
 	type JsonSchema,
 	MAESTRO_TYPE,
 	settledSchema,
 } from "@maestro/ir";
+import type { NodeKind } from "../host";
 import {
 	code,
 	composeWith,
@@ -141,33 +143,107 @@ describe("edge types", () => {
 	});
 });
 
-describe("params", () => {
-	test("applies defaults (D-17)", async () => {
-		const result = await composeWith(
-			await golden("guards-and-escalation.json"),
-			{ params: {} },
-		);
-		expect(result.ok && result.plan.params).toEqual({ maxParts: 4 });
-	});
-
-	test("composes one param schema with an $id twice in a process", async () => {
-		const ir = () =>
-			irOf([code("a", "a", { pure: false })], [], {
-				params: {
-					schema: { $id: "https://x.test/p", type: "object" },
-					examples: [{}],
+describe("host nodes", () => {
+	const INTEGER = { type: "integer" };
+	const fixed = fakeHost({
+		types: ["fake.handle"],
+		kinds: [
+			{
+				...fakeHost().kinds[0],
+				name: "fake.fixed",
+				config: { type: "object", properties: { retries: INTEGER } },
+				ports: (n: HostNode) => {
+					const { retries = 0 } = n.config ?? {};
+					if (!Number.isInteger(retries))
+						throw new Error(`retries ${retries} is no integer`);
+					return {
+						in: { prompt: STRING },
+						out: { text: STRING, count: INTEGER },
+					};
 				},
-			});
-		expect((await failures(ir())).concat(await failures(ir()))).toEqual([]);
+			} as NodeKind,
+		],
+	});
+	const node = (over: object = {}) => ({
+		id: "t",
+		kind: "fake.fixed",
+		in: { prompt: STRING },
+		literals: { prompt: "p" },
+		out: { text: STRING, count: NUMBER },
+		...over,
+	});
+	const found = async (over: object) =>
+		(await failures(irOf([node(over)]), { hosts: [fixed] })).map((d) => [
+			d.code,
+			d.message,
+		]);
+
+	test("accept a node whose config and ports match its kind's, by the edge rule", async () => {
+		expect(await found({ config: { retries: 2 } })).toEqual([]);
 	});
 
-	test("rejects a value off the param schema", async () => {
-		const [found] = await failures(await golden("guards-and-escalation.json"), {
-			params: { maxParts: "x" },
+	test.each([
+		[
+			"a config off the kind's schema",
+			{ config: { retries: "x" } },
+			"HOST.config",
+			"config 'retries' of node 't' must be integer",
+		],
+		[
+			"a port the IR lacks",
+			{ in: {}, literals: {} },
+			"HOST.ports",
+			"node 't' lacks in port 'prompt', which kind 'fake.fixed' gives it",
+		],
+		[
+			"a port the kind lacks",
+			{ out: { text: STRING, count: INTEGER, extra: STRING } },
+			"HOST.ports",
+			"node 't' has out port 'extra', which kind 'fake.fixed' does not give it",
+		],
+		[
+			"a port of another type",
+			{ out: { text: NUMBER, count: INTEGER } },
+			"HOST.ports",
+			"out port 'text' of node 't' is number where kind 'fake.fixed' gives string",
+		],
+	])("reject %s", async (_, over, code, message) => {
+		expect(await found(over)).toEqual([[code, message]]);
+	});
+
+	test("a ports() that throws is a HOST.ports error naming the host", async () => {
+		const throwing = fakeHost({
+			kinds: [
+				{
+					...fakeHost().kinds[0],
+					ports: () => {
+						throw new Error("down");
+					},
+				} as NodeKind,
+			],
 		});
-		expect([found?.code, found?.message]).toEqual([
-			"CFG.params",
-			"param 'maxParts' must be integer",
+		const diagnostics = await failures(irOf([node({ kind: "fake.task" })]), {
+			hosts: [throwing],
+		});
+		expect(diagnostics.map((d) => [d.code, d.message])).toEqual([
+			["HOST.ports", "host 'fake' failed in ports() of node 't': down"],
+		]);
+	});
+
+	test("reject a type no one installed owns, and accept core's, an installed host's and a marker-shaped value", async () => {
+		const out = {
+			mine: marked("fake.handle"),
+			core: { type: "array", items: marked(CORE_TYPES.file) },
+			other: marked("other.thing"),
+			value: { type: "object", default: marked("other.value") },
+		};
+		const ir = irOf([code("a", "a", { pure: false, out })]);
+		const diagnostics = await failures(ir, { hosts: [fixed] });
+		expect(diagnostics.map((d) => [d.code, d.message])).toEqual([
+			[
+				"TYPE.owner",
+				"the x-maestro-type 'other.thing' at /nodes/0/out/other is owned by neither core nor an installed host",
+			],
 		]);
 	});
 });

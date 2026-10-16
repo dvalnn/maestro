@@ -15,6 +15,17 @@ export function verdict(inputs: { text: string }) {
 	return inputs.text ? { text: inputs.text } : reject("empty");
 }
 
+export function lint(inputs: { text: string }) {
+	const findings = inputs.text.split(" ");
+	return findings.length > 1 ? reject("dirty", { findings }) : { findings };
+}
+
+export function miscount(inputs: { text: string }) {
+	return inputs.text
+		? { findings: [inputs.text] }
+		: reject("dirty", { findings: 0 });
+}
+
 export function partKey(item: { name: string }): string {
 	return item.name;
 }

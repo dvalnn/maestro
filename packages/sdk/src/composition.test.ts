@@ -34,7 +34,7 @@ const shout = composition(
 );
 
 describe("composition", () => {
-	test("emits its header, the emitter and a closed params schema, and fills defaults", () => {
+	test("emits its header and the emitter but not its params, and fills defaults", () => {
 		const root = composition(
 			"greet",
 			{
@@ -52,18 +52,7 @@ describe("composition", () => {
 			doc: "Says hello.",
 		});
 		expect(ir.emitter).toEqual({ name: "@maestro/sdk", version: pkg.version });
-		expect(ir.params).toEqual({
-			schema: {
-				type: "object",
-				properties: {
-					name: { type: "string" },
-					times: { type: "integer", default: 1 },
-				},
-				required: ["name"],
-				additionalProperties: false,
-			},
-			examples: [{ name: "x" }],
-		});
+		expect(ir).not.toHaveProperty("params");
 		expect(nodeOf(ir, "task").literals).toEqual({ name: "ada", times: 1 });
 	});
 
@@ -201,9 +190,7 @@ describe("byte stability", () => {
 		);
 		const ir = buildTwice(greedy, {}, context);
 		expect(nodeOf(ir, "task").literals).toEqual({ names: ["a", "b"] });
-		expect(ir.params.schema).toMatchObject({
-			properties: { names: { default: ["a"] } },
-		});
+		expect(greedy.params.names.schema).toMatchObject({ default: ["a"] });
 	});
 
 	test("two processes give identical bytes", () => {

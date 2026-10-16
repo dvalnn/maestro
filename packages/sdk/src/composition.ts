@@ -1,10 +1,4 @@
-import {
-	type Diagnostic,
-	IR_VERSION,
-	type Ir,
-	type JsonSchema,
-	parseIr,
-} from "@maestro/ir";
+import { type Diagnostic, IR_VERSION, type Ir, parseIr } from "@maestro/ir";
 import pkg from "../package.json";
 import { frozen } from "./ambient";
 import { BuildError } from "./diagnostic";
@@ -192,14 +186,11 @@ export function buildTwice<P extends Types, R>(
 	return JSON.parse(first) as Ir;
 }
 
-type Header = {
-	name: string;
-	doc?: string;
-	params: Types;
-	examples: Record<string, unknown>[];
-};
-
-function emit(root: Header, s: State, returned: unknown): Ir {
+function emit(
+	root: { name: string; doc?: string },
+	s: State,
+	returned: unknown,
+): Ir {
 	return {
 		irVersion: IR_VERSION,
 		composition: {
@@ -209,23 +200,10 @@ function emit(root: Header, s: State, returned: unknown): Ir {
 			doc: root.doc,
 		},
 		emitter: { name: pkg.name, version: pkg.version },
-		params: { schema: paramsSchema(root.params), examples: root.examples },
 		scopes: s.scopes,
 		nodes: s.nodes,
 		edges: s.edges,
 		result: resultOf(root.name, returned),
-	};
-}
-
-function paramsSchema(params: Types): JsonSchema {
-	const required = Object.entries(params).flatMap(([name, { schema }]) =>
-		typeof schema === "object" && schema.default !== undefined ? [] : [name],
-	);
-	return {
-		type: "object",
-		properties: schemas(params),
-		required: required.length ? required : undefined,
-		additionalProperties: false,
 	};
 }
 

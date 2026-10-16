@@ -25,10 +25,22 @@ export type CodeContext = Context & {
 	log(line: string): void;
 };
 
-/** A code function's negative verdict, as `reject` builds it. Outputs never carry `outcome` or `reason` (ADR 0008). */
-export type Rejection = { outcome: "rejected"; reason: string };
+/**
+ * A code function's negative verdict, as `reject` builds it. `outputs`, when given, are the node's full outputs,
+ * checked against its `out` like an `ok` node's. They sit in their own field, so a rejection never reads as outputs
+ * (ADR 0008).
+ */
+export type Rejection<O = Readonly<Record<string, unknown>>> = {
+	outcome: "rejected";
+	reason: string;
+	outputs?: O;
+};
 
-export const reject = (reason: string): Rejection => ({
+export const reject = <O = never>(
+	reason: string,
+	outputs?: O,
+): Rejection<O> => ({
 	outcome: "rejected",
 	reason,
+	...(outputs !== undefined && { outputs }),
 });

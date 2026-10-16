@@ -52,11 +52,7 @@ test.each<[string, Mutation, string]>([
 		(ir) => (ir.result = { rule: "node", node: "greet" }),
 		"/result",
 	],
-	[
-		"no example input set",
-		(ir) => (ir.params.examples = []),
-		"/params/examples",
-	],
+	["a params block", (ir) => (ir.params = { schema: {}, examples: [{}] }), "/"],
 	[
 		"a group with no members",
 		(ir) =>

@@ -13,7 +13,7 @@ import { portCheck, validator } from "../ports";
 import { messageOf } from "../shared";
 import type { LoadCode, Outputs } from "../worker";
 import { boundsOf, capErrors, type ExpansionOf, unexpanded } from "./bounds";
-import { checkConfig, checkParams, checkTypes } from "./checks";
+import { checkConfig, checkHosts, checkTypes } from "./checks";
 import { fold, loadFunctions } from "./fold";
 
 export { listing, render, summary } from "./text";
@@ -21,7 +21,6 @@ export { listing, render, summary } from "./text";
 export type ComposeInput = {
 	/** IR that `parseIr` accepted. */
 	ir: Ir;
-	params: Readonly<Record<string, unknown>>;
 	/** The composed config, by top-level namespace. */
 	config: Readonly<Record<string, unknown>>;
 	/** The config schemas core owns, by namespace (CFG-01). */
@@ -48,8 +47,6 @@ export type PlanBounds = {
 /** The product of compose, as JSON. `README.md` beside this file is the format's reference. */
 export type Plan = {
 	ir: Ir;
-	/** The param values, defaults applied (D-17). */
-	params: Record<string, unknown>;
 	/** Group id, then the group instance's expansion path. */
 	expansion: Record<string, Record<string, Expansion>>;
 	/** Node id, then the instance's expansion path. An `ok` value holds the outputs. */
@@ -116,7 +113,7 @@ async function validations(hosts: readonly Host[], graph: GraphIndex) {
 }
 
 /**
- * Pre-flight (architecture 4): checks params, edge types and config, loads every function the IR names, folds and
+ * Pre-flight (architecture 4): checks types, config and host nodes, loads every function the IR names, folds and
  * expands what compose knows, calls the hosts' `validate` hooks, and bounds the plan against the caps. It writes only
  * under `scratch` and starts no host node (NFR-02).
  * @throws Error when two hosts register one node kind.
@@ -125,12 +122,11 @@ export async function compose(input: ComposeInput): Promise<ComposeResult> {
 	const { ir, hosts } = input;
 	const graph = indexGraph(ir);
 	const lookup = kindLookup(hosts);
-	const ajv = validator({ useDefaults: true });
-	const params = checkParams(ajv, ir, input.params);
+	const ajv = validator();
 	const checked = [
-		...params.diagnostics,
-		...checkTypes(ir, graph, lookup),
+		...checkTypes(ir, graph, hosts),
 		...checkConfig(ajv, input, lookup),
+		...checkHosts(ajv, ir, lookup),
 	];
 	if (hasError(checked)) return { ok: false, diagnostics: checked };
 	const loaded = await loadFunctions(ir, input.loadCode);
@@ -168,7 +164,6 @@ export async function compose(input: ComposeInput): Promise<ComposeResult> {
 		ok: true,
 		plan: {
 			ir,
-			params: params.values,
 			expansion: folded.expansion,
 			folded: folded.folded,
 			bounds,

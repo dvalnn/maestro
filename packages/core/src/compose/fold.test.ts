@@ -22,6 +22,9 @@ const functions: Record<string, CodeFunction> = {
 	exclaim: ({ text }) => ({ text: `${text}!` }),
 	flag: ({ on }) => ({ yes: on }),
 	refuse: () => reject("not today"),
+	draft: () => reject("not today", { text: "draft" }),
+	misdraft: () => reject("not today", { text: 3 }) as never,
+	hang: () => new Promise(() => {}),
 	clock: (_, ctx) => ({ text: String(ctx.clock) }),
 	concert: (_, ctx) => ({ text: ctx.concert }),
 	boom: () => {
@@ -220,6 +223,7 @@ describe("fold", () => {
 		const { folded } = await plan(
 			[
 				code("r", "refuse"),
+				code("w", "draft"),
 				exclaim("d"),
 				named("strict", "upper"),
 				named("tolerant", "upper"),
@@ -239,7 +243,7 @@ describe("fold", () => {
 				data("r", "d"),
 				after("strict"),
 				after("tolerant", "rejected"),
-				data("r", "loop"),
+				data("w", "loop"),
 				data("loop", "loop/step"),
 			],
 		);
@@ -257,6 +261,66 @@ describe("fold", () => {
 			value: { text: "AB" },
 		});
 		expect(folded.loop).toBeUndefined();
+	});
+
+	test("a rejection's outputs are folded and reach a tolerant consumer (ADR 0008)", async () => {
+		const { folded } = await plan(
+			[code("w", "draft"), exclaim("reader")],
+			[
+				data("w", "reader"),
+				{
+					kind: "control",
+					from: { node: "w" },
+					to: { node: "reader" },
+					tolerate: "rejected",
+				},
+			],
+		);
+		expect(folded.w?.[""]).toEqual({
+			outcome: "rejected",
+			reason: "not today",
+			value: { text: "draft" },
+		});
+		expect(folded.reader?.[""]).toEqual({
+			outcome: "ok",
+			value: { text: "draft!" },
+		});
+	});
+
+	test("a tolerant reader of a declared output of a rejection without outputs stops compose, naming it", async () => {
+		const tolerant = {
+			kind: "control",
+			from: { node: "r" },
+			to: { node: "reader" },
+			tolerate: "rejected",
+		};
+		const result = await composed(
+			[code("r", "refuse"), exclaim("reader")],
+			[data("r", "reader"), tolerant],
+		);
+		expect(result.ok ? [] : result.diagnostics).toEqual([
+			{
+				code: "TYPE.unreadable",
+				severity: "error",
+				node: "reader",
+				message: "'r' rejected without outputs; its 'text' cannot be read",
+				hint: "Have 'r' reject with reject(reason, outputs), or read only its outcome, ok or reason",
+			},
+		]);
+	});
+
+	test("a fold past the node's timeout stops compose, naming the node and its timeout", async () => {
+		const result = await composed([code("a", "hang", { timeout: 20 })]);
+		expect(result.ok ? [] : result.diagnostics).toEqual([
+			{
+				code: "PURE.timeout",
+				severity: "error",
+				node: "a",
+				message:
+					"node 'a' ran past its timeout of 20 ms while compose folded it",
+				hint: "Raise the timeout of 'a', or make 'hang' in 'test.ts' finish within it",
+			},
+		]);
 	});
 
 	test("a fan-in node is not skipped for a rejected input (ADR 0006)", async () => {
@@ -301,6 +365,11 @@ describe("fold", () => {
 		],
 		[
 			"number",
+			"TYPE.output",
+			expect.stringContaining("return outputs that match"),
+		],
+		[
+			"misdraft",
 			"TYPE.output",
 			expect.stringContaining("return outputs that match"),
 		],

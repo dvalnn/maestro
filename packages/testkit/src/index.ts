@@ -65,8 +65,6 @@ function fakeTask(steps: Readonly<Record<string, Steps>>): NodeKind {
 	return {
 		name: FAKE_TASK,
 		config: { type: "object" },
-		outcomes: ["ok", "rejected", "failed"],
-		cacheable: false,
 		ports: (node) => ({ in: node.in ?? {}, out: node.out ?? {} }),
 		async execute(instance, inputs, context) {
 			const cancelled = new Promise<Execution>((settle) => {

@@ -55,6 +55,13 @@ describe("compose", () => {
 		expect(bounds.nodes[node]).toEqual(count);
 	});
 
+	test("takes no params, and its plan carries none", async () => {
+		const ir = await golden("guards-and-escalation.json");
+		// @ts-expect-error: params live in the SDK and the CLI, and the IR is a snapshot of their values.
+		const result = await composeWith(ir, { params: { maxParts: 4 } });
+		expect(result.ok && result.plan).not.toHaveProperty("params");
+	});
+
 	test("an error from a host's validate stops compose before the plan", async () => {
 		const host = fakeHost({
 			validate: (graph) => [

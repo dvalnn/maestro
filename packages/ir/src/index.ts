@@ -37,6 +37,7 @@ export {
 	MAESTRO_TYPE,
 	type Marked,
 	registerMaestroType,
+	schemaMarkers,
 	unreachableMarkers,
 } from "./maestro-type";
 export {

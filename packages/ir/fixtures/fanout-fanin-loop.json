@@ -7,19 +7,6 @@
 		"doc": "Draft one text per topic in parallel, keep the first good draft and pick its text, then refine it until done, at most twice."
 	},
 	"emitter": { "name": "hand", "version": "1" },
-	"params": {
-		"schema": {
-			"type": "object",
-			"properties": {
-				"topics": {
-					"type": "array",
-					"items": { "type": "string" },
-					"default": ["alpha", "beta", "gamma"]
-				}
-			}
-		},
-		"examples": [{ "topics": ["alpha", "beta", "gamma"] }]
-	},
 	"scopes": [
 		{
 			"id": "refine",

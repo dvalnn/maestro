@@ -8,7 +8,6 @@
 		"irVersion",
 		"composition",
 		"emitter",
-		"params",
 		"scopes",
 		"nodes",
 		"edges",
@@ -39,19 +38,6 @@
 				"name": { "type": "string", "minLength": 1 },
 				"version": { "type": "string", "minLength": 1 },
 				"sourceHash": { "type": "string", "minLength": 1 }
-			}
-		},
-		"params": {
-			"type": "object",
-			"required": ["schema", "examples"],
-			"additionalProperties": false,
-			"properties": {
-				"schema": { "$ref": "#/$defs/schema" },
-				"examples": {
-					"type": "array",
-					"minItems": 1,
-					"items": { "type": "object" }
-				}
 			}
 		},
 		"config": {

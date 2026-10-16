@@ -1,4 +1,4 @@
-import type { WorkerRef } from "@maestro/ir";
+import type { Outcome, Ports, WorkerRef } from "@maestro/ir";
 import type { LoadCode, NodeInstance, Outputs } from "./worker";
 
 export const messageOf = (error: unknown) =>
@@ -16,6 +16,22 @@ export const isOutputs = (value: unknown): value is Outputs =>
 	isRecord(value) &&
 	!Object.hasOwn(value, "outcome") &&
 	!Object.hasOwn(value, "reason");
+
+/**
+ * Why output `port` of the instance `name` cannot be read: it settled `rejected` without `outputs`, though its
+ * node's `out` declares `port` (ADR 0008).
+ */
+export function unreadableReason(
+	name: string,
+	settled: { outcome: Outcome; outputs?: unknown },
+	out: Ports | undefined,
+	port: string,
+): string | undefined {
+	const without =
+		settled.outcome === "rejected" && settled.outputs === undefined;
+	if (without && Object.hasOwn(out ?? {}, port))
+		return `'${name}' rejected without outputs; its '${port}' cannot be read`;
+}
 
 /** A loaded function as core calls it: with a code node's inputs and context, or with a map item. */
 export type Loaded = (...args: unknown[]) => unknown;

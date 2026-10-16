@@ -64,11 +64,17 @@ export type CodeOutputs<O extends Types> = {
 /** Each input a code function takes, fed by a Ref to its value or by the value itself as a literal (D-16). */
 export type CodeInputs<I> = { [K in keyof I]: Ref<I[K]> | I[K] };
 
-/** A code function: inputs and outputs keyed by port name, returned as such or as a promise (ADR 0008). */
+/**
+ * A code function: inputs and outputs keyed by port name, returned as such or as a promise (ADR 0008). A rejection's
+ * outputs, when given, are the same full outputs.
+ */
 export type CodeFunction<I, O extends Types> = (
 	inputs: I,
 	ctx: CodeContext,
-) => CodeOutputs<O> | Rejection | Promise<CodeOutputs<O> | Rejection>;
+) =>
+	| CodeOutputs<O>
+	| Rejection<CodeOutputs<O>>
+	| Promise<CodeOutputs<O> | Rejection<CodeOutputs<O>>>;
 
 export type CodeOptions<I, O extends Types> = Common &
 	(keyof I extends never ? { in?: CodeInputs<I> } : { in: CodeInputs<I> }) & {
@@ -77,7 +83,7 @@ export type CodeOptions<I, O extends Types> = Common &
 		reads?: string[];
 		/** Paths the node writes, as written. Never read at build. */
 		writes?: string[];
-		/** Default true. An impure node is never cached or folded. */
+		/** Default true. An impure node is never folded. */
 		pure?: boolean;
 		/** Milliseconds the node may take before it settles `failed`. None by default. */
 		timeout?: number;

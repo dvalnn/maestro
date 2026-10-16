@@ -2,6 +2,7 @@ import {
 	CORE_TYPES,
 	type Diagnostic,
 	type GraphIndex,
+	type HostNode,
 	IMPLICIT_OUT,
 	type Ir,
 	type IrEdge,
@@ -10,43 +11,18 @@ import {
 	type JsonSchema,
 	MAESTRO_TYPE,
 	type Ports,
+	schemaMarkers,
 	unreachableMarkers,
 } from "@maestro/ir";
-import type { HostKind } from "../host";
+import type { Host, HostKind, NodeKind } from "../host";
 import { type Validator, violations } from "../ports";
-import { isRecord } from "../shared";
+import { isRecord, messageOf } from "../shared";
 import type { ComposeInput } from "./index";
 
 type Lookup = (kind: string) => HostKind | undefined;
 
 const escapePointer = (s: string) =>
 	s.replaceAll("~", "~0").replaceAll("/", "~1");
-
-const paramSubject = (segments: string[]) =>
-	segments.length ? `param '${segments.join(".")}'` : "params";
-
-/** The param values with defaults applied (D-17), checked against the IR's param schema. */
-export function checkParams(
-	ajv: Validator,
-	ir: Ir,
-	params: Readonly<Record<string, unknown>>,
-): { values: Record<string, unknown>; diagnostics: Diagnostic[] } {
-	const values = structuredClone(params) as Record<string, unknown>;
-	const diagnostics = violations(
-		ajv,
-		ir.params.schema,
-		values,
-		paramSubject,
-	).map(
-		(message): Diagnostic => ({
-			code: "CFG.params",
-			severity: "error",
-			message,
-			hint: "Pass param values that match the param schema of the composition",
-		}),
-	);
-	return { values, diagnostics };
-}
 
 /** A did-you-mean hint allows one edit per this many characters of the typed key, and at most `MAX_TYPOS`. */
 const CHARS_PER_TYPO = 3;
@@ -116,7 +92,7 @@ export function checkConfig(
 			violations(
 				ajv,
 				schema,
-				structuredClone(config[ns] ?? {}),
+				config[ns] ?? {},
 				(segments) => `config '${[ns, ...segments].join(".")}'`,
 			).map(
 				(message): Diagnostic => ({
@@ -138,7 +114,6 @@ function schemasOf(ir: Ir): [string, JsonSchema][] {
 			s,
 		]);
 	return [
-		["/params/schema", ir.params.schema],
 		...ports("/config", ir.config),
 		...ir.scopes.flatMap((s, i) => ports(`/scopes/${i}/ports`, s.ports)),
 		...ir.nodes.flatMap((n, i) => [
@@ -163,21 +138,25 @@ function markerErrors(ir: Ir): Diagnostic[] {
 	);
 }
 
-function kindErrors(ir: Ir, lookup: Lookup): Diagnostic[] {
-	return ir.nodes.flatMap((n, i): Diagnostic[] =>
-		n.kind.includes(".") && !lookup(n.kind)
-			? [
-					{
-						code: "HOST.kind",
-						severity: "error",
-						node: n.id,
-						path: `/nodes/${i}/kind`,
-						message: `no installed host registers node kind '${n.kind}' of node '${n.id}'`,
-						hint: `Install the host that registers '${n.kind}', or change the kind of '${n.id}'`,
-					},
-				]
-			: [],
-	);
+function ownerErrors(ir: Ir, hosts: readonly Host[]): Diagnostic[] {
+	const owned = new Set<string>([
+		...Object.values(CORE_TYPES),
+		...hosts.flatMap((h) => h.types),
+	]);
+	return schemasOf(ir)
+		.flatMap(([at, schema]) =>
+			schemaMarkers(schema).map((m) => ({ ...m, path: at + m.pointer })),
+		)
+		.filter(({ type }) => !owned.has(type))
+		.map(
+			({ path, type }): Diagnostic => ({
+				code: "TYPE.owner",
+				severity: "error",
+				path,
+				message: `the ${MAESTRO_TYPE} '${type}' at ${path} is owned by neither core nor an installed host`,
+				hint: `Install the host that owns '${type}', or name a type core or an installed host owns`,
+			}),
+		);
 }
 
 const GUARD: JsonSchema = { type: "boolean" };
@@ -307,15 +286,140 @@ function edgeErrors(ir: Ir, graph: GraphIndex): Diagnostic[] {
 	});
 }
 
-/** Edge types (CORE-02), markers the artifact walker cannot reach, and host kinds no installed host registers. */
+/** Edge types (CORE-02), markers the artifact walker cannot reach, and type names no one installed owns. */
 export function checkTypes(
 	ir: Ir,
 	graph: GraphIndex,
-	lookup: Lookup,
+	hosts: readonly Host[],
 ): Diagnostic[] {
 	return [
 		...edgeErrors(ir, graph),
 		...markerErrors(ir),
-		...kindErrors(ir, lookup),
+		...ownerErrors(ir, hosts),
 	];
+}
+
+const isHostNode = (n: IrNode): n is HostNode => n.kind.includes(".");
+
+/**
+ * Each host node against its kind (architecture 6): a kind no installed host registers, a `config` off the kind's
+ * schema, and, for a node whose config holds, `in` or `out` ports that differ from the kind's by name or by the edge
+ * rule (`mismatch`).
+ */
+export function checkHosts(
+	ajv: Validator,
+	ir: Ir,
+	lookup: Lookup,
+): Diagnostic[] {
+	return ir.nodes.flatMap((n, i) => {
+		if (!isHostNode(n)) return [];
+		const found = lookup(n.kind);
+		if (!found) return [kindError(n, i)];
+		const config = configErrors(ajv, n, i, found.kind);
+		return config.length ? config : portErrors(n, i, found);
+	});
+}
+
+function kindError(node: HostNode, i: number): Diagnostic {
+	return {
+		code: "HOST.kind",
+		severity: "error",
+		node: node.id,
+		path: `/nodes/${i}/kind`,
+		message: `no installed host registers node kind '${node.kind}' of node '${node.id}'`,
+		hint: `Install the host that registers '${node.kind}', or change the kind of '${node.id}'`,
+	};
+}
+
+function configErrors(
+	ajv: Validator,
+	node: HostNode,
+	i: number,
+	kind: NodeKind,
+): Diagnostic[] {
+	const subject = (segments: string[]) =>
+		`config${segments.length ? ` '${segments.join(".")}'` : ""} of node '${node.id}'`;
+	return violations(ajv, kind.config, node.config ?? {}, subject).map(
+		(message): Diagnostic => ({
+			code: "HOST.config",
+			severity: "error",
+			node: node.id,
+			path: `/nodes/${i}/config`,
+			message,
+			hint: `Change the config of '${node.id}' to match the config schema of kind '${node.kind}'`,
+		}),
+	);
+}
+
+const SIDES = ["in", "out"] as const;
+
+type Side = (typeof SIDES)[number];
+
+function portErrors(
+	node: HostNode,
+	i: number,
+	{ host, kind }: HostKind,
+): Diagnostic[] {
+	let ports: { in: Ports; out: Ports };
+	try {
+		ports = kind.ports(node);
+	} catch (e) {
+		return [
+			{
+				code: "HOST.ports",
+				severity: "error",
+				node: node.id,
+				path: `/nodes/${i}`,
+				message: `host '${host.name}' failed in ports() of node '${node.id}': ${messageOf(e)}`,
+				hint: `Check the setup of host '${host.name}', or uninstall it`,
+			},
+		];
+	}
+	return SIDES.flatMap((side) =>
+		Object.keys({ ...node[side], ...ports[side] }).flatMap((port) => {
+			const message = portProblem(node, side, port, ports[side]);
+			return message
+				? [portError(node, `/nodes/${i}/${side}`, side, message)]
+				: [];
+		}),
+	);
+}
+
+/** How `port` on `side` of `node` in the IR differs from `declared`, the kind's ports on that side. */
+function portProblem(
+	node: HostNode,
+	side: Side,
+	port: string,
+	declared: Ports,
+): string | undefined {
+	const ir = node[side]?.[port];
+	const own = declared[port];
+	const kind = `kind '${node.kind}'`;
+	if (ir === undefined)
+		return `node '${node.id}' lacks ${side} port '${port}', which ${kind} gives it`;
+	if (own === undefined)
+		return `node '${node.id}' has ${side} port '${port}', which ${kind} does not give it`;
+	// Values flow from the IR's inputs into the kind, and from the kind's outputs into the IR.
+	const found = side === "in" ? mismatch(ir, own, "") : mismatch(own, ir, "");
+	if (!found) return undefined;
+	const [inIr, inKind] =
+		side === "in" ? [found.from, found.to] : [found.to, found.from];
+	const where = found.at ? ` at ${found.at}` : "";
+	return `${side} port '${port}' of node '${node.id}' is ${describe(inIr)} where ${kind} gives ${describe(inKind)}${where}`;
+}
+
+function portError(
+	node: HostNode,
+	path: string,
+	side: Side,
+	message: string,
+): Diagnostic {
+	return {
+		code: "HOST.ports",
+		severity: "error",
+		node: node.id,
+		path,
+		message,
+		hint: `Declare the ${side} ports of '${node.id}' as kind '${node.kind}' gives them for its config, or rebuild the IR`,
+	};
 }

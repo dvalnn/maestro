@@ -9,28 +9,21 @@ import { messageOf } from "./shared";
 
 export type Validator = Ajv2020;
 
-/**
- * A fresh schema validator. `format` is an annotation only: neither compose nor perform validates it.
- * @param options.useDefaults writes schema defaults into what it checks, and refuses a `default` it would ignore.
- */
-export const validator = (options: { useDefaults?: boolean } = {}): Validator =>
+/** A fresh schema validator. `format` is an annotation only: neither compose nor perform validates it. */
+export const validator = (): Validator =>
 	registerMaestroType(
 		new Ajv2020({
 			allErrors: true,
 			strictTypes: false,
 			strictTuples: false,
 			validateFormats: false,
-			...options,
 		}),
 	);
 
 const unescapePointer = (s: string) =>
 	s.replaceAll("~1", "/").replaceAll("~0", "~");
 
-/**
- * One message per way `data` violates `schema`, each led by `subject` of the offending position's path segments.
- * A validator made with `useDefaults` writes defaults into `data`.
- */
+/** One message per way `data` violates `schema`, each led by `subject` of the offending position's path segments. */
 export function violations(
 	ajv: Validator,
 	schema: JsonSchema,

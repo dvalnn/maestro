@@ -120,7 +120,6 @@ const graph = (
 		irVersion: IR_VERSION,
 		composition: { id: composition, version: "0.1.0", pack: "tests" },
 		emitter: { name: "hand", version: "1" },
-		params: { schema: { type: "object" }, examples: [{}] },
 		scopes: [],
 		nodes,
 		edges,
@@ -188,7 +187,7 @@ function barrier(count: number) {
 
 const pending = () => new Promise<Execution>(() => {});
 
-test("a map fans out, a reducer fans in over its settled members, and a repeat carries state to its bound", async () => {
+test("a map fans out, a reducer fans in over its settled members, a rejection's outputs included, and a repeat carries state to its bound", async () => {
 	const drafts: unknown[] = [];
 	const prompts: unknown[] = [];
 	const { result, record, concert } = await play(
@@ -196,10 +195,14 @@ test("a map fans out, a reducer fans in over its settled members, and a repeat c
 		{
 			script: {
 				steps: {
-					"topics/draft": (_, inputs) =>
-						inputs.prompt === "beta"
-							? { outcome: "rejected", reason: "off topic" }
-							: { outcome: "ok", outputs: { text: `${inputs.prompt} draft` } },
+					"topics/draft": (_, inputs) => {
+						if (inputs.prompt === "beta")
+							return { outcome: "rejected", reason: "off topic" };
+						const outputs = { text: `${inputs.prompt} draft` };
+						return inputs.prompt === "gamma"
+							? { outcome: "rejected", reason: "rough", outputs }
+							: { outcome: "ok", outputs };
+					},
 					"refine/loop/step": (_, inputs) => {
 						prompts.push(inputs.prompt);
 						return { outcome: "ok", outputs: { text: `${inputs.prompt}+` } };
@@ -219,7 +222,11 @@ test("a map fans out, a reducer fans in over its settled members, and a repeat c
 	expect(drafts).toEqual([
 		{ outcome: "ok", value: { result: { text: "alpha draft" } } },
 		{ outcome: "rejected", reason: "off topic" },
-		{ outcome: "ok", value: { result: { text: "gamma draft" } } },
+		{
+			outcome: "rejected",
+			reason: "rough",
+			value: { result: { text: "gamma draft" } },
+		},
 	]);
 	expect(prompts).toEqual(["alpha draft", "alpha draft+"]);
 	expect(result).toEqual({
@@ -311,6 +318,169 @@ test("a repeat stops at a rejected iteration it does not tolerate", async () => 
 	expect(
 		record.instances(concert).filter((i) => i.node === "loop/step"),
 	).toHaveLength(1);
+});
+
+const FINDINGS = { type: "array", items: STRING };
+
+/** A tolerant `repeat` whose code member `lint` reads the last state's findings as `seen`. */
+const lintLoop = graph(
+	[
+		{
+			id: "loop",
+			kind: "repeat",
+			cardinality: { upTo: 3 },
+			tolerate: "rejected",
+			in: { findings: FINDINGS },
+			literals: { findings: [] },
+			inner: { index: { type: "integer" }, findings: FINDINGS },
+			out: { findings: FINDINGS },
+			members: { result: "loop/lint" },
+		},
+		code("loop/lint", "lint", {
+			in: { seen: FINDINGS },
+			out: { findings: FINDINGS },
+		}),
+	],
+	[data("loop.findings", "loop/lint.seen")],
+	"loop",
+);
+
+test("a code node in a tolerant repeat hands the findings it rejected with to the next iteration", async () => {
+	const seen: unknown[] = [];
+	const { result } = await play(lintLoop, {
+		code: {
+			lint: ({ seen: last }: { seen: string[] }) => {
+				seen.push(last);
+				const findings = [...last, "x"];
+				return last.length < 2 ? reject("dirty", { findings }) : { findings };
+			},
+		},
+	});
+	expect(seen).toEqual([[], ["x"], ["x", "x"]]);
+	expect(result).toMatchObject({
+		node: "loop",
+		outcome: "ok",
+		outputs: { findings: ["x", "x", "x"] },
+	});
+});
+
+test("a tolerant reader of a declared output of a rejection without outputs fails before it starts, naming it, as does an until", async () => {
+	const after = (from: string, to: string): IrEdge => ({
+		kind: "control",
+		from: { node: from },
+		to: { node: to },
+		tolerate: "rejected",
+	});
+	const { record, concert } = await play(
+		graph(
+			[
+				code("check", "refuse", { out: { findings: FINDINGS } }),
+				task("inspect", { out: { findings: FINDINGS } }),
+				code("fix", "fix", { in: { findings: FINDINGS } }),
+				task("redo", { in: { findings: FINDINGS } }),
+				code("note", "fix", { in: { reason: STRING } }),
+			],
+			[
+				data("check.findings", "fix.findings"),
+				data("inspect.findings", "redo.findings"),
+				data("check.reason", "note.reason"),
+				after("check", "fix"),
+				after("inspect", "redo"),
+				after("check", "note"),
+			],
+			"note",
+		),
+		{
+			script: { steps: { inspect: [{ outcome: "rejected", reason: "poor" }] } },
+			code: { refuse: () => reject("dirty"), fix: () => ({}) },
+		},
+	);
+	const instances = byInstance(record.instances(concert));
+	expect(instances.fix).toMatchObject({
+		status: "failed",
+		reason: "'check' rejected without outputs; its 'findings' cannot be read",
+	});
+	expect(instances.fix?.startedAt).toBeUndefined();
+	expect(instances.redo).toMatchObject({
+		status: "failed",
+		reason: "'inspect' rejected without outputs; its 'findings' cannot be read",
+	});
+	expect(instances.note?.status).toBe("ok");
+	const { result } = await play(lintLoop, {
+		code: { lint: () => reject("dirty") },
+	});
+	expect(result).toEqual({
+		node: "loop/lint",
+		expansion: "[1]",
+		outcome: "failed",
+		reason:
+			"'loop[0]/lint' rejected without outputs; its 'findings' cannot be read",
+	});
+	const DONE = { type: "boolean" };
+	const untilLoop = graph(
+		[
+			{
+				id: "loop",
+				kind: "repeat",
+				cardinality: { upTo: 3 },
+				tolerate: "rejected",
+				in: { done: DONE },
+				literals: { done: false },
+				inner: { index: { type: "integer" }, done: DONE },
+				out: { done: DONE },
+				members: { result: "loop/lint" },
+				until: { node: "loop/lint", port: "done" },
+			},
+			code("loop/lint", "lint", { out: { done: DONE } }),
+		],
+		[],
+		"loop",
+	);
+	const untilRead = await play(untilLoop, {
+		code: { lint: () => reject("dirty") },
+	});
+	expect(untilRead.result).toEqual({
+		node: "loop",
+		expansion: "",
+		outcome: "failed",
+		reason:
+			"'loop[0]/lint' rejected without outputs; its 'done' cannot be read",
+	});
+});
+
+test("a seq's item is read from the seq, not from a previous member that rejected without outputs", async () => {
+	const { result } = await play(
+		graph(
+			[
+				{
+					id: "each",
+					kind: "seq",
+					items: ["a", "b"],
+					cardinality: { upTo: 2 },
+					inner: { item: STRING },
+					out: { item: STRING },
+					members: { result: "each/step" },
+				},
+				code("each/step", "step", {
+					in: { item: STRING },
+					out: { item: STRING },
+				}),
+			],
+			[data("each.item", "each/step.item")],
+			"each",
+		),
+		{
+			code: {
+				step: ({ item }: { item: string }) =>
+					item === "a" ? reject("first") : { item },
+			},
+		},
+	);
+	expect(result).toMatchObject({
+		node: "each",
+		outcome: "ok",
+		outputs: { item: "b" },
+	});
 });
 
 test("a repeat that tolerates rejected starts from rejected state and carries it to its bound", async () => {
@@ -437,12 +607,17 @@ test("a fan-in node takes each data input settled, whatever its outcome", async 
 			[
 				task("good", { out: { text: STRING } }),
 				task("bad", { out: { text: STRING } }),
+				task("flawed", { out: { text: STRING } }),
 				{
-					...code("pick", "pick", { in: { a: true, b: true } }, true),
+					...code("pick", "pick", { in: { a: true, b: true, c: true } }, true),
 					fanin: true,
 				},
 			],
-			[data("good.text", "pick.a"), data("bad.text", "pick.b")],
+			[
+				data("good.text", "pick.a"),
+				data("bad.text", "pick.b"),
+				data("flawed.text", "pick.c"),
+			],
 			"pick",
 		),
 		{
@@ -450,6 +625,9 @@ test("a fan-in node takes each data input settled, whatever its outcome", async 
 				steps: {
 					good: [{ outcome: "ok", outputs: { text: "fine" } }],
 					bad: [{ outcome: "rejected", reason: "poor" }],
+					flawed: [
+						{ outcome: "rejected", reason: "rough", outputs: { text: "kept" } },
+					],
 				},
 			},
 			code: {
@@ -464,6 +642,7 @@ test("a fan-in node takes each data input settled, whatever its outcome", async 
 		{
 			a: { outcome: "ok", value: "fine" },
 			b: { outcome: "rejected", reason: "poor" },
+			c: { outcome: "rejected", value: "kept", reason: "rough" },
 		},
 	]);
 	expect(result.outcome).toBe("ok");
@@ -916,18 +1095,36 @@ test("a line logged after the instance settled is dropped, never thrown", async 
 	expect(record.events(concert).filter((e) => e.type === "log")).toEqual([]);
 });
 
-test.each<[string, Fn, Pick<IrNode, "in" | "literals">?]>([
-	["returns nothing", () => undefined],
-	["returns extra", () => ({ text: "a", reason: "r" })],
+const BESIDE =
+	"the function returned 'outcome' or 'reason' beside its outputs. Return reject(reason, outputs) to reject";
+
+test.each<[string, Fn, string, Pick<IrNode, "in" | "literals">?]>([
+	[
+		"returns nothing",
+		() => undefined,
+		"the function returned undefined, not outputs. Return an object keyed by output port",
+	],
+	["returns extra", () => ({ text: "a", reason: "r" }), BESIDE],
 	[
 		"returns rejected",
 		() => ({ outcome: "rejected", reason: "no", text: "a" }),
+		BESIDE,
 	],
-	["throws", () => Promise.reject(new Error("broke"))],
-	["takes a mismatched input", () => ({ text: "a" }), MISMATCHED],
+	[
+		"rejects with a list",
+		() => reject("no", ["a"]),
+		"the function rejected with a list as outputs. Pass reject(reason, outputs) an object keyed by output port",
+	],
+	["throws", () => Promise.reject(new Error("broke")), "broke"],
+	[
+		"takes a mismatched input",
+		() => ({ text: "a" }),
+		"input 'n' must be integer",
+		MISMATCHED,
+	],
 ])(
 	"a function that %s settles alike when folded and when performed",
-	async (_, fn, ports = {}) => {
+	async (_, fn, why, ports = {}) => {
 		const ir = graph(
 			[code("a", "fn", { ...ports, out: { text: STRING } }, true)],
 			[],
@@ -936,7 +1133,6 @@ test.each<[string, Fn, Pick<IrNode, "in" | "literals">?]>([
 		const loadCode = loader({ fn });
 		const composed = await compose({
 			ir,
-			params: {},
 			config: {},
 			core: {},
 			hosts: [fakeHost()],
@@ -947,6 +1143,7 @@ test.each<[string, Fn, Pick<IrNode, "in" | "literals">?]>([
 		const { result } = await play(ir, { code: { fn } });
 		expect(result).toMatchObject({ node: "a", outcome: "failed" });
 		const reason = result.outcome === "failed" ? result.reason : "";
+		expect(reason).toContain(why);
 		expect(composed.ok ? [] : composed.diagnostics).toEqual([
 			expect.objectContaining({
 				code: "PURE.fold",
@@ -976,7 +1173,6 @@ test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", a
 	};
 	const composed = await compose({
 		ir,
-		params: ir.params.examples[0] ?? {},
 		config: {},
 		core: {},
 		hosts: [fakeHost(script)],
@@ -1066,6 +1262,8 @@ test("inputs, code outputs and host returns are checked, and a runtime is looked
 				}),
 				code("wrong-out", "count", { out: { n: { type: "integer" } } }),
 				code("rejects", "refuse", { out: { n: { type: "integer" } } }),
+				code("rejects-off", "refuseOff", { out: { n: { type: "integer" } } }),
+				task("host-off", { out: { n: { type: "integer" } } }),
 				task("odd"),
 				inherited,
 			],
@@ -1074,9 +1272,16 @@ test("inputs, code outputs and host returns are checked, and a runtime is looked
 		),
 		{
 			script: {
-				steps: { odd: () => ({ outcome: "maybe" }) as unknown as Execution },
+				steps: {
+					odd: () => ({ outcome: "maybe" }) as unknown as Execution,
+					"host-off": [{ outcome: "ok", outputs: { n: "one" } }],
+				},
 			},
-			code: { count: () => ({ n: "one" }), refuse: () => reject("no count") },
+			code: {
+				count: () => ({ n: "one" }),
+				refuse: () => reject("no count"),
+				refuseOff: () => reject("no count", { n: "one" }),
+			},
 		},
 	);
 	const instances = byInstance(record.instances(concert));
@@ -1098,6 +1303,11 @@ test("inputs, code outputs and host returns are checked, and a runtime is looked
 		status: "rejected",
 		reason: "no count",
 	});
+	for (const off of ["rejects-off", "host-off"])
+		expect(instances[off]).toMatchObject({
+			status: "failed",
+			reason: "output 'n' must be integer",
+		});
 	expect(instances.odd).toMatchObject({
 		status: "failed",
 		reason: `node kind '${FAKE_TASK}' returned the outcome "maybe", not one of: ok, rejected, failed. Report this to its author`,

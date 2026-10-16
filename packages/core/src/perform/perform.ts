@@ -29,8 +29,18 @@ import {
 } from "@maestro/ir";
 import { type Execution, type Host, kindLookup } from "../host";
 import { portCheck, validator } from "../ports";
-import { instanceKey, loadFunction, messageOf } from "../shared";
-import type { Inputs, LoadCode, NodeInstance } from "../worker";
+import {
+	instanceKey,
+	loadFunction,
+	messageOf,
+	unreadableReason,
+} from "../shared";
+import {
+	type Inputs,
+	type LoadCode,
+	type NodeInstance,
+	timed,
+} from "../worker";
 import {
 	type ConcertDirs,
 	concertDirs,
@@ -88,6 +98,8 @@ type Frame = {
 	readonly parent?: Frame;
 	readonly group?: string;
 	readonly inner: Inputs;
+	/** The previous iteration's member, whose outputs a `repeat` iteration's state ports hold. */
+	readonly carried?: State;
 	readonly states: Map<string, Promise<State>>;
 	halt?: Halt;
 };
@@ -277,7 +289,10 @@ async function settleNode(
 ): Promise<State> {
 	const instance = { node: node.id, expansion: formatExpansion(frame.keys) };
 	const sources = await upstreams(c, node, frame);
-	const stop = haltOf(frame) ?? gate(c, node, frame, sources);
+	const stop =
+		haltOf(frame) ??
+		gate(c, node, frame, sources) ??
+		unreadable(c, node, frame, sources);
 	if (stop) return settle(c, instance, stop);
 	const inputs = gather(c, node, frame, sources);
 	const mismatch = c.kit.check(node.in, inputs, "input");
@@ -406,6 +421,46 @@ function blocks(
 	);
 }
 
+/**
+ * `failed` when `node` reads a declared output of an upstream that rejected without outputs, naming the first such
+ * upstream and port (ADR 0008). A fan-in node takes that upstream `Settled` instead.
+ */
+function unreadable(
+	c: Concert,
+	node: IrNode,
+	frame: Frame,
+	sources: ReadonlyMap<string, State>,
+): Ending | undefined {
+	for (const edge of c.index.edgesInto(node.id)) {
+		if (edge.kind === "control" || (edge.kind === "data" && isFanIn(node)))
+			continue;
+		const source = sources.get(edge.from.node) ?? carriedBy(c, frame, edge);
+		const failure = source && unreadablePort(c, source, edge.from.port ?? "");
+		if (failure) return failure;
+	}
+}
+
+/** `failed` when output `port` of `state` cannot be read, as `unreadableReason` rules. */
+function unreadablePort(
+	c: Concert,
+	state: State,
+	port: string,
+): Ending | undefined {
+	const out = c.index.nodes.get(state.node)?.out;
+	const reason = unreadableReason(shown(c, state), state, out, port);
+	return reason === undefined ? undefined : { outcome: "failed", reason };
+}
+
+/** The member a `repeat` state port that `edge` reads carries over from the previous iteration, if any. */
+function carriedBy(c: Concert, frame: Frame, edge: IrEdge): State | undefined {
+	const group = c.index.nodes.get(edge.from.node);
+	const port = edge.from.port ?? "";
+	if (group?.kind !== "repeat" || !Object.hasOwn(group.out ?? {}, port))
+		return undefined;
+	for (let at: Frame | undefined = frame; at; at = at.parent)
+		if (at.group === group.id) return at.carried;
+}
+
 function edgeValue(
 	edge: IrEdge,
 	frame: Frame,
@@ -437,13 +492,21 @@ function gather(
 	return structuredClone(inputs);
 }
 
+/** A fan-in input: `value` as `Settled`. */
 function asSettled(state: State | undefined, value: unknown): Settled<unknown> {
-	return !state || state.outcome === "ok"
-		? { outcome: "ok", value }
-		: notOk(state);
+	if (!state) return { outcome: "ok", value };
+	return settledOf(state, state.outputs !== undefined, value);
 }
 
-/** A non-`ok` instance as `Settled`, which carries a value only when `ok`. */
+/** `state` as `Settled`, with `value` when `ok`, or when `rejected` with `complete` outputs (ADR 0006, ADR 0008). */
+function settledOf<T>(state: State, complete: boolean, value: T): Settled<T> {
+	if (state.outcome === "ok") return { outcome: "ok", value };
+	if (state.outcome === "rejected" && complete)
+		return { outcome: "rejected", reason: state.reason, value };
+	return notOk(state);
+}
+
+/** A non-`ok` instance as `Settled`, without a value. */
 function notOk(state: {
 	outcome: Exclude<Outcome, "ok">;
 	reason: string;
@@ -501,14 +564,15 @@ async function execute(
 			},
 		};
 		c.running.add(entry);
-		const timer = timeoutOf(c, node, instance, entry);
-		const execution = await Promise.race([
-			call.invoke(),
-			abandoned.promise,
-		]).finally(() => {
-			clearTimeout(timer);
-			c.running.delete(entry);
-		});
+		const timeout = node.kind === "code" ? node.timeout : undefined;
+		const execution = await timed(
+			Promise.race([call.invoke(), abandoned.promise]),
+			{ name: shown(c, instance), timeout },
+			async (reason) => {
+				await stop(entry, { outcome: "failed", reason });
+				return abandoned.promise;
+			},
+		).finally(() => c.running.delete(entry));
 		const { metrics, enrichment } = execution;
 		return entry.halted
 			? { ...entry.halted, metrics, enrichment }
@@ -516,19 +580,6 @@ async function execute(
 	} finally {
 		await rm(scratch, { recursive: true, force: true });
 	}
-}
-
-/** Halts a code instance `failed` once its node's `timeout` has passed since it started, as a cancel halts it. */
-function timeoutOf(
-	c: Concert,
-	node: CodeNode | HostNode,
-	instance: NodeInstance,
-	entry: Running,
-): Timer | undefined {
-	if (node.kind !== "code" || node.timeout === undefined) return undefined;
-	const { timeout } = node;
-	const reason = `node '${shown(c, instance)}' ran past its timeout of ${timeout} ms`;
-	return setTimeout(() => stop(entry, { outcome: "failed", reason }), timeout);
 }
 
 /**
@@ -578,11 +629,13 @@ const childFrame = (
 	group: string,
 	key: string,
 	inner: Inputs,
+	carried?: State,
 ): Frame => ({
 	keys: [...frame.keys, key],
 	parent: frame,
 	group,
 	inner,
+	...(carried && { carried }),
 	states: new Map(),
 });
 
@@ -653,11 +706,9 @@ async function memberOf(
 	const worst = worstOutcome(entries.map(([, s]) => s.outcome));
 	const [, state] = entries.find(([, s]) => s.outcome === worst) ?? [];
 	if (!state) throw new Error(`map '${node.id}' has no members`);
-	if (state.outcome === "ok") {
-		const value = Object.fromEntries(entries.map(([n, s]) => [n, s.outputs]));
-		return { settled: { outcome: "ok", value }, state };
-	}
-	return { settled: notOk(state), state };
+	const value = Object.fromEntries(entries.map(([n, s]) => [n, s.outputs]));
+	const complete = entries.every(([, s]) => s.outputs !== undefined);
+	return { settled: settledOf(state, complete, value), state };
 }
 
 /**
@@ -740,10 +791,12 @@ async function serial(
 	let state = inputs;
 	let last: State | undefined;
 	for (let i = 0; i < steps.count && !haltOf(frame); i++) {
-		const f = childFrame(frame, node.id, String(i), steps.inner(i, state));
+		const inner = steps.inner(i, state);
+		const f = childFrame(frame, node.id, String(i), inner, last);
 		await startFrame(c, c.index.body(node.id), f);
 		last = await stateIn(f, member);
-		if ((await untilHolds(node, f)) || !carries(node, last)) break;
+		const ending = await endAfter(c, node, f, last);
+		if (ending) return ending;
 		state = last.outputs ?? {};
 	}
 	if (!last)
@@ -751,6 +804,31 @@ async function serial(
 			outcome: "skipped",
 			reason: `${node.kind} '${shown(c, instance)}' has no items`,
 		};
+	return endingOf(last);
+}
+
+/**
+ * How `node` ends after the iteration in `frame` whose member settled `last`, or nothing when it goes on: at a member
+ * it cannot carry on from, at an `until` that holds, or `failed` at an `until` read from a rejection without outputs.
+ */
+async function endAfter(
+	c: Concert,
+	node: SeqNode | RepeatNode,
+	frame: Frame,
+	last: State,
+): Promise<Ending | undefined> {
+	if (!carries(node, last)) return endingOf(last);
+	if (!node.until) return undefined;
+	const { port } = node.until;
+	const state = await stateIn(frame, node.until.node);
+	const failure = unreadablePort(c, state, port);
+	if (failure) return failure;
+	const holds = outputValue(state, state.outputs, port) === true;
+	return holds ? endingOf(last) : undefined;
+}
+
+/** A member's outcome and outputs as its `seq` or `repeat`'s ending. */
+function endingOf(last: State): Ending {
 	return last.outcome === "ok"
 		? { outcome: "ok", outputs: last.outputs }
 		: {
@@ -776,15 +854,6 @@ function stepsOf(
 	const items = itemsOf(c, node, instance, inputs);
 	if (!Array.isArray(items)) return items;
 	return { count: items.length, inner: (i) => ({ item: items[i] }) };
-}
-
-async function untilHolds(
-	node: SeqNode | RepeatNode,
-	frame: Frame,
-): Promise<boolean> {
-	if (!node.until) return false;
-	const state = await stateIn(frame, node.until.node);
-	return outputValue(state, state.outputs, node.until.port) === true;
 }
 
 /** A `seq` goes on whatever its member's outcome. A `repeat` carries `ok` state, and `rejected` when tolerated. */

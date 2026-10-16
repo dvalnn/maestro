@@ -2,7 +2,6 @@
 	"irVersion": "1.0",
 	"composition": { "id": "minimal", "version": "0.1.0", "pack": "fixtures" },
 	"emitter": { "name": "hand", "version": "1" },
-	"params": { "schema": { "type": "object" }, "examples": [{}] },
 	"scopes": [],
 	"nodes": [
 		{

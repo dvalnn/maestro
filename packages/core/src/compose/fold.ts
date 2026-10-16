@@ -25,7 +25,12 @@ import {
 	type WorkerRef,
 } from "@maestro/ir";
 import { type PortCheck, type Validator, violations } from "../ports";
-import { type Loaded, loadFunction, messageOf } from "../shared";
+import {
+	type Loaded,
+	loadFunction,
+	messageOf,
+	unreadableReason,
+} from "../shared";
 import {
 	type Inputs,
 	invokeCode,
@@ -33,6 +38,7 @@ import {
 	type Outputs,
 	pureContext,
 	type Settlement,
+	timed,
 } from "../worker";
 import type { ExpansionOf } from "./bounds";
 import type { ComposeInput, Expansion, Plan } from "./index";
@@ -215,6 +221,50 @@ function blocked(s: Folding, node: IrNode, keys: string[]): string | undefined {
 	return undefined;
 }
 
+/**
+ * A `TYPE.unreadable` error when `node` reads, over a `data` edge, a declared output of a folded rejection without
+ * outputs, as `unreadableReason` rules. A fan-in node takes that upstream `Settled` instead.
+ */
+function unreadable(
+	s: Folding,
+	node: IrNode,
+	keys: string[],
+): Diagnostic | undefined {
+	if (node.kind === "code" && node.fanin) return undefined;
+	const groups = s.graph.groupsOf(node.id);
+	for (const e of s.graph.edgesInto(node.id)) {
+		if (e.kind !== "data" || groups.includes(e.from.node)) continue;
+		const reason = unreadableFrom(s, e.from, keys);
+		if (reason)
+			return error(
+				"TYPE.unreadable",
+				node.id,
+				reason,
+				`Have '${e.from.node}' reject with reject(reason, outputs), or read only its outcome, ok or reason`,
+			);
+	}
+	return undefined;
+}
+
+/** Why output `from.port` of the folded instance of `from.node` at `keys` cannot be read, if it cannot. */
+function unreadableFrom(
+	s: Folding,
+	from: { node: string; port?: string },
+	keys: string[],
+): string | undefined {
+	const at = keysOf(s, from.node, keys);
+	const f = foldedAt(s, from.node, at);
+	if (!f) return undefined;
+	const out = s.graph.nodes.get(from.node)?.out;
+	const settled = { outcome: f.outcome, outputs: f.value };
+	return unreadableReason(
+		instanceName(s, from.node, at),
+		settled,
+		out,
+		from.port ?? "",
+	);
+}
+
 /** `false` when a guard is known false, `undefined` when one is unknown, else `true` (architecture 7). */
 function guardOf(
 	s: Folding,
@@ -343,7 +393,10 @@ const noPath = (used: Set<string>) => (): never => {
 	throw new Error("ctx.path is unavailable while compose folds a node");
 };
 
-/** A folded node's settlement as compose folds it. A failure is an error, as are outputs off the `out` schemas. */
+/**
+ * A folded node's settlement as compose folds it. A failure is an error, as are outputs off the `out` schemas, of an
+ * `ok` node or of a rejection that carries them (ADR 0008).
+ */
 function settled(
 	s: Folding,
 	node: CodeNode,
@@ -352,13 +405,25 @@ function settled(
 	used: ReadonlySet<string>,
 ): Folded | Diagnostic {
 	const name = instanceName(s, node.id, keys);
+	if (settlement.outcome === "failed")
+		return failure(node, name, settlement.reason, used);
+	const off = settlement.outputs && offOut(s, node, name, settlement.outputs);
+	if (off) return off;
 	if (settlement.outcome === "ok")
-		return checked(s, node, name, settlement.outputs);
-	if (settlement.outcome === "rejected")
-		return { outcome: "rejected", reason: settlement.reason };
+		return { outcome: "ok", value: settlement.outputs };
+	const { reason, outputs } = settlement;
+	return { outcome: "rejected", reason, ...(outputs && { value: outputs }) };
+}
+
+function failure(
+	node: CodeNode,
+	name: string,
+	reason: string,
+	used: ReadonlySet<string>,
+): Diagnostic {
 	const read = UNREADABLE.find((f) => used.has(f));
 	if (read === undefined)
-		return failed(`node '${name}'`, node.id, node.worker, settlement.reason);
+		return failed(`node '${name}'`, node.id, node.worker, reason);
 	return error(
 		"PURE.ambient",
 		node.id,
@@ -367,22 +432,23 @@ function settled(
 	);
 }
 
-function checked(
+/** A `TYPE.output` error when `outputs` are off the node's `out` schemas. */
+function offOut(
 	s: Folding,
 	node: CodeNode,
 	name: string,
 	outputs: Outputs,
-): Folded | Diagnostic {
+): Diagnostic | undefined {
 	const messages = Object.entries(node.out ?? {}).flatMap(([port, schema]) =>
 		violations(
 			s.ajv,
 			schema,
-			structuredClone(outputs[port]),
+			outputs[port],
 			(segments) =>
 				`output '${[port, ...segments].join(".")}' of node '${name}'`,
 		),
 	);
-	if (!messages.length) return { outcome: "ok", value: outputs };
+	if (!messages.length) return undefined;
 	return error(
 		"TYPE.output",
 		node.id,
@@ -420,13 +486,21 @@ async function invoke(
 		env: s.env,
 		log: () => {},
 	});
+	const name = instanceName(s, node.id, keys);
 	try {
-		const settlement = await invokeCode(
+		const settling = invokeCode(
 			functionOf(s, node.worker),
 			{ in: node.in, inputs, context: watched(context, used, scratch) },
 			s.check,
+		).then((settlement) => settled(s, node, keys, settlement, used));
+		return await timed(settling, { name, timeout: node.timeout }, (reason) =>
+			error(
+				"PURE.timeout",
+				node.id,
+				`${reason} while compose folded it`,
+				`Raise the timeout of '${node.id}', or make '${node.worker.export}' in '${node.worker.module}' finish within it`,
+			),
 		);
-		return settled(s, node, keys, settlement, used);
 	} finally {
 		await scratch.remove();
 	}
@@ -458,8 +532,8 @@ function settleAssert(s: Folding, node: AssertNode, keys: string[]) {
 }
 
 /**
- * Folds what compose can of one node instance: a skip, a pure code node or an assert. Returns whether the instance
- * is known to start: no guard is false or unknown and no upstream stops it.
+ * Folds what compose can of one node instance: a skip, a pure code node or an assert, or reports a read it cannot
+ * make. Returns whether the instance is known to start: no guard is false or unknown and no upstream stops it.
  */
 async function settle(s: Folding, node: IrNode, keys: string[]) {
 	const guard = guardOf(s, node, keys);
@@ -471,6 +545,11 @@ async function settle(s: Folding, node: IrNode, keys: string[]) {
 		return false;
 	}
 	if (!guard) return false;
+	const unread = unreadable(s, node, keys);
+	if (unread) {
+		s.diagnostics.push(unread);
+		return false;
+	}
 	if (node.kind === "assert") settleAssert(s, node, keys);
 	const inputs =
 		node.kind === "code" && foldable(node) && inputsOf(s, node, keys);

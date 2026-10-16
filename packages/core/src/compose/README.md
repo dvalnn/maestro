@@ -2,7 +2,7 @@
 
 `compose(input)` is pre-flight (architecture 4, CORE-07). It does three things without spending anything:
 
-- checks an IR against its params, config and hosts;
+- checks an IR against its config and hosts;
 - folds and expands what it can know;
 - bounds the result.
 
@@ -14,7 +14,6 @@ It writes only under `input.scratch` and starts no host node (NFR-02). It return
 | Field      | Holds                                                                                             |
 | ---------- | ------------------------------------------------------------------------------------------------- |
 | `ir`       | IR that `parseIr` accepted.                                                                       |
-| `params`   | Param values, checked against `ir.params.schema` with its defaults applied (D-17).                |
 | `config`   | The composed config, by top-level namespace.                                                      |
 | `core`     | The config schemas core owns, by namespace.                                                       |
 | `hosts`    | The installed hosts.                                                                              |
@@ -25,10 +24,9 @@ It writes only under `input.scratch` and starts no host node (NFR-02). It return
 ## Steps
 
 1. Checks, in this order:
-   - params;
-   - edge types;
+   - edge types, artifact markers and type owners;
    - config (D-24);
-   - artifact markers and host kinds.
+   - host nodes against their kinds: the kind, the `config` and the ports (architecture 6).
 
    Any error stops compose here, before anything is loaded or called.
 
@@ -41,12 +39,17 @@ It writes only under `input.scratch` and starts no host node (NFR-02). It return
    - A guard that depends only on known values resolves:
      - `false` skips the node;
      - an unknown guard leaves the node, and a group's body, to perform.
+   - A node known to start that reads, over a `data` edge, a declared output of a folded rejection without outputs is an
+     error, worded as perform's failure (`unreadableReason` in `../shared.ts`). A fan-in node is exempt.
    - A pure code node with known inputs and no artifact output is called as perform's `ts` worker calls it (`invokeCode`
      in `../worker.ts`), so it settles alike in both, with a pure context:
      - reading `ctx.concert` or `ctx.clock` throws;
      - calling `ctx.path()` throws, as a folded node has no artifact area;
      - `ctx.env` holds each host's `environment()` under the host's name;
-     - `ctx.log()` lines are dropped.
+     - `ctx.log()` lines are dropped;
+     - its outputs, when `ok` or carried by a rejection, are checked against its `out` schemas (ADR 0008);
+     - past the node's `timeout`, if it has one, the function is abandoned and compose stops (`timed` in `../worker.ts`,
+       as perform times it).
    - An assert with known inputs folds; a false one is an error.
    - A group instance known to start expands, but only in these cases:
      - a `map` whose items are known expands into one instance per item;
@@ -77,7 +80,6 @@ the plan carries no format version.
 | Field         | Holds                                                                     |
 | ------------- | ------------------------------------------------------------------------- |
 | `ir`          | The IR, unchanged.                                                        |
-| `params`      | The param values, defaults applied.                                       |
 | `expansion`   | Group id, then the group instance's expansion path, then its `Expansion`. |
 | `folded`      | Node id, then the instance's expansion path, then its `Settled<Outputs>`. |
 | `bounds`      | `PlanBounds`, below.                                                      |
@@ -91,8 +93,8 @@ An `Expansion` is either:
 - `{ keys }`: the instance's iteration keys in order.
 - `{ upTo }`: a region with its bound. Its body may still have a folded `[0]` instance.
 
-A `folded` entry is `{ outcome: "ok", value }` with the node's outputs, `{ outcome: "rejected", reason }` or
-`{ outcome: "skipped", reason }`. An `ok` assert's value is `{}`.
+A `folded` entry is `{ outcome: "ok", value }` with the node's outputs, `{ outcome: "rejected", reason }` with `value`
+when the rejection carried outputs, or `{ outcome: "skipped", reason }`. An `ok` assert's value is `{}`.
 
 `PlanBounds` (D-23):
 
@@ -110,7 +112,6 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
 ```json
 {
   "ir": { "irVersion": "1.0", "nodes": [], "edges": [] },
-  "params": { "topics": ["alpha", "beta"] },
   "expansion": {
     "topics": { "": { "keys": ["alpha", "beta"] } },
     "loop": { "": { "upTo": 2 } }
@@ -140,18 +141,22 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
 
 | Code               | When                                                                                    |
 | ------------------ | --------------------------------------------------------------------------------------- |
-| `CFG.params`       | A param value is off the param schema.                                                  |
 | `CFG.unclaimed`    | A config key no core, IR or installed host namespace claims. Hints a near name.         |
 | `CFG.schema`       | A config namespace is off the schema of core, the IR or a host whose kinds the IR uses. |
 | `TYPE.edge`        | An edge's source and target schemas disagree.[^types]                                   |
 | `TYPE.marker`      | An `x-maestro-type` the artifact walker cannot reach.                                   |
-| `TYPE.output`      | A folded node's outputs are off its `out` schemas.                                      |
+| `TYPE.owner`       | An `x-maestro-type` name neither core (`CORE_TYPES`) nor an installed host owns.        |
+| `TYPE.output`      | A folded node's outputs, or those its rejection carries, are off its `out` schemas.     |
+| `TYPE.unreadable`  | A node reads a declared output of a folded rejection that carried no outputs.           |
 | `HOST.kind`        | A node kind no installed host registers.                                                |
+| `HOST.config`      | A host node's `config` is off its kind's `config` schema.                               |
+| `HOST.ports`       | A host node's `in` or `out` differs from its kind's `ports(node)`.[^ports]              |
 | `HOST.environment` | A host's `environment()` threw or rejected.                                             |
 | `HOST.validate`    | A host's `validate()` threw or rejected.                                                |
 | `HOST.*`           | A host's `validate` finding.                                                            |
 | `PURE.ambient`     | A folded node read `ctx.concert` or `ctx.clock`, or called `ctx.path()`.                |
 | `PURE.fold`        | A folded node failed, or a key function threw.[^fold]                                   |
+| `PURE.timeout`     | A folded node ran past its `timeout`.                                                   |
 | `SCOPE.export`     | `loadCode` could not load a function the IR names: a code node's or a key function.     |
 | `SCOPE.key`        | Two items of a map instance share a key.[^keys]                                         |
 | `ASSERT.failed`    | A folded assert is false.                                                               |
@@ -164,17 +169,21 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
     what a marked subschema says of its content. A `data` edge into a fan-in input is checked against the `Settled`
     value (ADR 0006).
 
+[^ports]:
+    By port name, then by the edge rule on each shared port: values flow from the IR's `in` into the kind's, and from
+    the kind's `out` into the IR's. A `ports(node)` that throws is a `HOST.ports` error too. A node with a `HOST.config`
+    error gets no ports check.
+
 [^fold]:
     A node fails as it would in perform: its inputs are off its `in` schemas, it throws, or it returns something other
-    than outputs or `reject(reason)`. For inputs off its `in` schemas, the hint points at the edges, params or literals
-    that feed the node.
+    than outputs or `reject(reason, outputs?)`. For inputs off its `in` schemas, the hint points at the edges, params or
+    literals that feed the node.
 
 [^keys]:
     Keys come from `itemKey`, so `3` and `"3"` collide, as do an item keyed by its index and a primitive item with that
     value. The hint is to give the map a key function.
 
-Only params get their schema defaults; other values are checked on a copy. `format` is an annotation only: neither
-compose nor perform validates it.
+No value gets its schema defaults. `format` is an annotation only: neither compose nor perform validates it.
 
 ## Text forms
 

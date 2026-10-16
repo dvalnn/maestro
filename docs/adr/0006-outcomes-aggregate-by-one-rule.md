@@ -32,7 +32,8 @@ in order. It reads either as one `Settled[]` in that order. Given a map's handle
 input checks the upstream schema against the port's `value` subschema.
 
 **`Settled`'s shape.** An `ok` one carries a value and no reason. A `rejected` or `failed` one carries a reason. A
-`rejected` one carries a value when its node rejected with outputs (ADR 0008). A value on `failed`, and a reason on
+`rejected` one carries a value when its node rejected with outputs (ADR 0008). A rejected `map` member carries one when
+each of its result nodes has outputs, in the same shape as an `ok` member's. A value on `failed`, and a reason on
 `skipped`, stay optional until a slice pins them. The schema is closed to `outcome`, `value` and `reason`, so a misspelt
 field fails; opening it later breaks nothing already valid.
 
