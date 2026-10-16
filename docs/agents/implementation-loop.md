@@ -1,7 +1,6 @@
 # Implementation loop
 
-Status: **trial through wave 3**. At the end of wave 3 the owner keeps, trims or drops each step against the exit
-criteria below. Until then it is the default, not a mandate: the conductor may skip a step for a slice where it cannot
+Status: **adopted** after its wave 3 trial, every step kept. The conductor may skip a step for a slice where it cannot
 pay off, and says why in one line of the slice report.
 
 The port plan's ground rules (section 1), verification (section 5) and brief template (section 6) still hold. This loop
@@ -34,7 +33,7 @@ wraps them.
    the seams between slices, a decision buried in code. Findings follow the citation rule of step 4 and the triage of
    step 5. Fixes land as their own changes.
 
-## Trial log
+## Log
 
 Each slice report gets a `Loop` table. The wave review writes its row to `docs/reports/wave-<n>-review.md`.
 
@@ -43,9 +42,9 @@ Each slice report gets a `Loop` table. The wave review writes its row to `docs/r
 
 [^1]: Tokens and wall time from the agent's completion notice.
 
-## Exit criteria
+## Revisiting a step
 
-At the end of wave 3, drop a step that, over the wave:
+The owner may drop a step that, over a wave:
 
 - produced no accepted finding that changed code or design,
 - had more rejected findings than accepted ones, or

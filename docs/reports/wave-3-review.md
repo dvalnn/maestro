@@ -64,7 +64,7 @@ Against the exit criteria, the conductor's recommendation:
   dispatch, as the S5 and S6 briefs now ask, is the lever on this cost.
 - **Wave review.** Keep. 11 of 11 accepted, four contracts no slice owned surfaced, at 16% of implementer spend.
 
-No step meets a drop criterion. Keeping, trimming or dropping each step is the owner's call.
+No step meets a drop criterion. The owner kept every step.
 
 ## Follow-up change
 
