@@ -5,6 +5,7 @@ import { checkGraph, irError } from "./graph";
 import type { Diagnostic, Ir } from "./types";
 
 export { type ArtifactRef, artifactRefSchema } from "./artifact-ref";
+export { canonicalJson, isPlainObject } from "./canonical-json";
 export {
 	type CodeContext,
 	type Context,

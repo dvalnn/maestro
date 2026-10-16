@@ -49,19 +49,35 @@ import {
 } from "./artifacts";
 import { asserted, callOf, finish, type Kit } from "./execute";
 import type { ConcertResult, RecordStore, Settling } from "./record";
+import {
+	type CodeHash,
+	type Kept,
+	keptOf,
+	resumeKey,
+	withCurrentHashes,
+} from "./resume";
 import { tsWorker } from "./ts-worker";
 
-export type PerformOptions = {
-	/** IR that passed `parseIr`. */
-	ir: Ir;
+type PerformBase = {
 	hosts: readonly Host[];
 	loadCode: LoadCode;
+	/** Replaces each code reference's `codeHash` in the IR before it is stored and keyed (ADR 0008). */
+	codeHash: CodeHash;
 	record: RecordStore;
 	/** The directory each concert's artifact area and scratch directories go under, in `<dir>/<concert id>/`. */
 	dir: string;
 	/** The most node instances executing at once in this concert (D-26). A positive integer. */
 	concurrency: number;
 };
+
+/**
+ * The concert to perform, one of:
+ * - `ir`, which passed `parseIr`: a new concert.
+ * - `resume`, the id of a concert that failed or was rejected: it keeps its id, takes its stored IR, and reuses each
+ *   `ok` instance whose resume key still matches (architecture 7).
+ */
+export type PerformOptions = PerformBase &
+	({ ir: Ir; resume?: undefined } | { resume: string; ir?: undefined });
 
 /** A concert being performed. */
 export type Performance = {
@@ -104,8 +120,11 @@ type Frame = {
 	halt?: Halt;
 };
 
-/** How an instance ended, and the next step of the result rule from it (architecture 7). */
-type Ending = Settling & { cause?: State };
+/**
+ * How an instance ended, and the next step of the result rule from it (architecture 7). `reused` is an `ok` instance a
+ * resume kept, which has no new record.
+ */
+type Ending = Settling & { cause?: State; reused?: true };
 
 /** A settled instance. `order` counts settlements within the concert. */
 type State = NodeInstance & Ending & { order: number };
@@ -114,10 +133,14 @@ type Running = { frame: Frame; cancel(): Promise<void>; halted?: Halt };
 
 type Slots = { acquire(): Promise<void>; release(): void };
 
-/** `started` holds the instance keys `record.start` took. `inflight` holds each node settling, until it has. */
+/**
+ * `started` holds the instance keys `record.start` took. `inflight` holds each node settling, until it has. `kept` holds
+ * the instances a resume may reuse, by instance key.
+ */
 type Concert = {
 	id: string;
 	index: GraphIndex;
+	kept: ReadonlyMap<string, Kept>;
 	loadCode: LoadCode;
 	kit: Kit;
 	slots: Slots;
@@ -129,25 +152,43 @@ type Concert = {
 };
 
 /**
- * Starts performing `ir` as a new concert. Code nodes execute in process through `loadCode`, host nodes through their
- * host, and every instance and event goes to `record`.
+ * Starts performing a concert, a new one or the one `options.resume` names. Code nodes execute in process through
+ * `loadCode`, host nodes through their host, and every instance and event goes to `record`. `done` rejects when the
+ * concert to resume is unknown, is running, or settled `ok`.
  * @throws RangeError when `concurrency` is not a positive integer.
  */
 export function perform(options: PerformOptions): Performance {
-	const { ir, record, concurrency } = options;
+	const { concurrency } = options;
 	if (!Number.isInteger(concurrency) || concurrency < 1)
 		throw new RangeError(
 			`concurrency must be a positive integer, got ${concurrency}`,
 		);
-	const id = Bun.randomUUIDv7();
-	record.begin({ id, ir, startedAt: Date.now() });
+	const id = options.resume ?? Bun.randomUUIDv7();
 	const root: Frame = { keys: [], inner: {}, states: new Map() };
 	const running = new Set<Running>();
 	return {
 		concert: id,
-		done: conduct(id, options, root, running),
+		done: enter(id, options).then(({ ir, kept }) =>
+			conduct(id, ir, kept, options, root, running),
+		),
 		cancel: () => halt(running, root, CANCELLED),
 	};
+}
+
+/** Records the concert as running with the current code hashes, and finds what a resume may reuse of it. */
+async function enter(
+	id: string,
+	options: PerformOptions,
+): Promise<{ ir: Ir; kept: Map<string, Kept> }> {
+	const { record, resume, codeHash } = options;
+	if (resume === undefined) {
+		const ir = await withCurrentHashes(options.ir, codeHash);
+		record.begin({ id, ir, startedAt: Date.now() });
+		return { ir, kept: new Map() };
+	}
+	const ir = await withCurrentHashes(record.concert(id).ir, codeHash);
+	record.resume({ id, ir });
+	return { ir, kept: keptOf(record.instances(id)) };
 }
 
 /**
@@ -156,6 +197,8 @@ export function perform(options: PerformOptions): Performance {
  */
 async function conduct(
 	id: string,
+	ir: Ir,
+	kept: ReadonlyMap<string, Kept>,
 	options: PerformOptions,
 	root: Frame,
 	running: Set<Running>,
@@ -164,7 +207,16 @@ async function conduct(
 	const dirs = concertDirs(resolve(options.dir), id);
 	let result: ConcertResult;
 	try {
-		result = await performed(id, options, dirs, root, running, inflight);
+		result = await performed(
+			id,
+			ir,
+			kept,
+			options,
+			dirs,
+			root,
+			running,
+			inflight,
+		);
 	} catch (error) {
 		const failed = { outcome: "failed", reason: messageOf(error) } as const;
 		await halt(running, root, failed);
@@ -182,13 +234,15 @@ async function conduct(
 
 async function performed(
 	id: string,
+	ir: Ir,
+	kept: ReadonlyMap<string, Kept>,
 	options: PerformOptions,
 	dirs: ConcertDirs,
 	root: Frame,
 	running: Set<Running>,
 	inflight: Set<Promise<void>>,
 ): Promise<ConcertResult> {
-	const { ir, hosts, loadCode } = options;
+	const { hosts, loadCode } = options;
 	const index = indexGraph(ir);
 	await makeDirs(dirs);
 	const check = portCheck(validator());
@@ -204,6 +258,7 @@ async function performed(
 	const c: Concert = {
 		id,
 		index,
+		kept,
 		loadCode,
 		kit,
 		slots: slots(options.concurrency),
@@ -304,9 +359,10 @@ async function settleNode(
 	return settle(c, instance, ending);
 }
 
-/** Records how `instance` settled, unless it never started in a halted concert (architecture 7). */
+/** Records how `instance` settled, unless it was reused or never started in a halted concert (architecture 7). */
 function settle(c: Concert, instance: NodeInstance, ending: Ending): State {
-	if (c.started.has(instanceKey(instance)) || !c.root.halt)
+	const recorded = c.started.has(instanceKey(instance)) || !c.root.halt;
+	if (recorded && !ending.reused)
 		c.kit.record.settle(c.id, instance, ending, Date.now());
 	return { ...ending, ...instance, order: c.order++ };
 }
@@ -520,20 +576,35 @@ async function leaf(
 	frame: Frame,
 	instance: NodeInstance,
 	inputs: Inputs,
-): Promise<Settling> {
+): Promise<Ending> {
 	const halted = haltOf(frame);
 	if (halted) return halted;
+	const key = resumeKey(node, inputs);
+	const kept = c.kept.get(instanceKey(instance));
+	if (kept?.key === key) {
+		c.kit.record.reuse(c.id, instance, Date.now());
+		return { outcome: "ok", outputs: kept.outputs, key, reused: true };
+	}
 	await c.slots.acquire();
 	try {
-		if (node.kind !== "assert")
-			return await execute(c, node, frame, instance, inputs);
-		const late = haltOf(frame);
-		if (late) return late;
-		start(c, instance, Date.now());
-		return asserted(node, inputs);
+		return { ...(await settleLeaf(c, node, frame, instance, inputs)), key };
 	} finally {
 		c.slots.release();
 	}
+}
+
+async function settleLeaf(
+	c: Concert,
+	node: CodeNode | HostNode | AssertNode,
+	frame: Frame,
+	instance: NodeInstance,
+	inputs: Inputs,
+): Promise<Settling> {
+	if (node.kind !== "assert") return execute(c, node, frame, instance, inputs);
+	const late = haltOf(frame);
+	if (late) return late;
+	start(c, instance, Date.now());
+	return asserted(node, inputs);
 }
 
 /**

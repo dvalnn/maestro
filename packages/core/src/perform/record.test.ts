@@ -52,12 +52,14 @@ test("a record store of another schema version is refused, and one of this versi
 	const path = join(dir, "record.db");
 	openRecord(path).close();
 	openRecord(path).close();
-	const db = new Database(path);
-	db.exec("PRAGMA user_version = 7");
-	db.close();
-	expect(() => openRecord(path)).toThrow(
-		`record store '${path}' has schema version 7, and this maestro reads version 1. Use a record store this maestro made, or move '${path}' aside`,
-	);
+	for (const version of [1, 7]) {
+		const db = new Database(path);
+		db.exec(`PRAGMA user_version = ${version}`);
+		db.close();
+		expect(() => openRecord(path)).toThrow(
+			`record store '${path}' has schema version ${version}, and this maestro reads version 2. Use a record store this maestro made, or move '${path}' aside`,
+		);
+	}
 });
 
 test("several processes open one new record store at once", async () => {

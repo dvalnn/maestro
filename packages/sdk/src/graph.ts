@@ -1,7 +1,9 @@
 import {
+	canonicalJson,
 	IMPLICIT_OUT,
 	type IrEdge,
 	type IrNode,
+	isPlainObject,
 	type JsonSchema,
 	type Outcome,
 	type Ports,
@@ -337,11 +339,6 @@ export function literalRef(
 
 type PlainProblem = "ref" | "json" | undefined;
 
-export const isPlainObject = (v: unknown): v is Record<string, unknown> =>
-	typeof v === "object" &&
-	v !== null &&
-	[Object.prototype, null].includes(Object.getPrototypeOf(v));
-
 const isJsonScalar = (v: unknown) =>
 	v === null ||
 	typeof v === "string" ||
@@ -579,19 +576,6 @@ export function lift(
 	const node = stdlib(name, inputs, { value }, { ...opts, derived });
 	s.lifts.set(node.node, what);
 	return node.port("value");
-}
-
-/** JSON with object keys sorted, so equal values give equal bytes. */
-export function canonicalJson(value: unknown): string {
-	return JSON.stringify(value, (_key, v: unknown) =>
-		isPlainObject(v)
-			? Object.fromEntries(
-					Object.keys(v)
-						.toSorted()
-						.map((k) => [k, v[k]]),
-				)
-			: v,
-	);
 }
 
 export type NodeSpec = {

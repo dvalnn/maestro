@@ -1,10 +1,15 @@
-import { type Diagnostic, IR_VERSION, type Ir, parseIr } from "@maestro/ir";
+import {
+	canonicalJson,
+	type Diagnostic,
+	IR_VERSION,
+	type Ir,
+	parseIr,
+} from "@maestro/ir";
 import pkg from "../package.json";
 import { frozen } from "./ambient";
 import { BuildError } from "./diagnostic";
 import {
 	type BuildContext,
-	canonicalJson,
 	claimId,
 	current,
 	fail,

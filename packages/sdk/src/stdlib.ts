@@ -1,15 +1,15 @@
 import {
+	canonicalJson,
+	isPlainObject,
 	type JsonSchema,
 	type Settled as SettledValue,
 	settledSchema,
 } from "@maestro/ir";
 import {
 	type Common,
-	canonicalJson,
 	checkPlain,
 	fail,
 	info,
-	isPlainObject,
 	isResults,
 	itemsOf,
 	lift,

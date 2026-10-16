@@ -1,6 +1,6 @@
 # S5. Resume
 
-Status: ready-for-agent
+Status: done
 
 Slice:        S5 Resume
 Goal:         A failed or killed concert resumes at node granularity (CORE-09, NFR-04, AC-3 in part).

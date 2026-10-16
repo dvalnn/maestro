@@ -5,7 +5,7 @@ import { instanceKey, isRecord } from "../shared";
 import type { NodeInstance, Outputs } from "../worker";
 
 /** The version of the schema below, kept in SQLite's `user_version`. */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 /** How long a write waits for another connection's lock before it fails, in milliseconds. */
 const BUSY_TIMEOUT_MS = 5000;
 /** How long opening retries switching a new file to WAL mode while another connection holds it, in milliseconds. */
@@ -21,7 +21,9 @@ export const CONCERT_FINISHED = "the concert finished before it settled";
 
 // Timestamps are epoch milliseconds, and `expansion` is '' outside groups. `ir`, `outputs`, `enrichment` and `body`
 // hold JSON. `reason` is set on every non-ok outcome. `result_node` is NULL while a concert is running, and after one
-// that failed before any node ran.
+// that failed before any node ran. `key` is the resume key of an `ok` instance. `stale` marks an instance row left by
+// an earlier attempt, which a resume reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume
+// replaced, which still count as spend.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -46,6 +48,8 @@ CREATE TABLE instances (
 	enrichment TEXT,
 	started_at INTEGER,
 	settled_at INTEGER,
+	key TEXT,
+	stale INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (concert, node, expansion)
 ) STRICT;
 CREATE TABLE metrics (
@@ -55,6 +59,11 @@ CREATE TABLE metrics (
 	name TEXT NOT NULL,
 	value REAL NOT NULL,
 	PRIMARY KEY (concert, node, expansion, name)
+) STRICT;
+CREATE TABLE earlier_metrics (
+	concert TEXT NOT NULL,
+	name TEXT NOT NULL,
+	value REAL NOT NULL
 ) STRICT;
 CREATE TABLE artifacts (
 	concert TEXT NOT NULL,
@@ -104,12 +113,18 @@ export type ConcertResult =
 			reason: string;
 	  });
 
-/** An instance without `startedAt` never started. `artifacts` are the files it wrote, as moved into the area. */
+/**
+ * An instance without `startedAt` never started. `key` is the resume key of an `ok` instance. `stale` marks a record
+ * left by an earlier attempt, which the current one has neither reused nor replaced. `artifacts` are the files it
+ * wrote, as moved into the area.
+ */
 export type InstanceRecord = NodeInstance & {
 	status: "running" | Outcome;
 	reason?: string;
 	outputs?: Outputs;
 	enrichment?: Enrichment;
+	key?: string;
+	stale: boolean;
 	startedAt?: number;
 	settledAt?: number;
 	metrics: Metrics;
@@ -124,12 +139,15 @@ export type Settling = (
 	metrics?: Metrics;
 	enrichment?: Enrichment;
 	artifacts?: readonly ArtifactRef[];
+	/** The resume key, kept for an `ok` instance. */
+	key?: string;
 };
 
 /**
  * What an event says about its instance (CORE-10):
  * - `running`: it started.
  * - `settled`: it settled, with its outcome, reason and host enrichment.
+ * - `reused`: a resume kept its `ok` record from before.
  * - `progress`: its host emitted `event`, stored as given.
  * - `log`: its worker wrote `line`, or its cancel hook failed.
  */
@@ -141,6 +159,7 @@ export type EventBody =
 			reason?: string;
 			enrichment?: Enrichment;
 	  }
+	| { type: "reused" }
 	| { type: "progress"; event: HostEvent }
 	| { type: "log"; line: string };
 
@@ -159,12 +178,25 @@ export interface RecordStore {
 	/** Records a new concert as `running`, performed by this process. */
 	begin(concert: { id: string; ir: Ir; startedAt: number }): void;
 	/**
-	 * Records that `instance` started, with its `running` event.
+	 * Restarts a concert that failed or was rejected as `running`, performed by this process, with `ir` as its stored IR.
+	 * Its instance records and events stay. `reuse`, `start` and `settle` take over each instance record from before.
+	 * @throws Error when the concert is running, as its process is alive, or settled `ok`.
+	 */
+	resume(concert: { id: string; ir: Ir }): void;
+	/**
+	 * Records that `instance` started, with its `running` event. A record from before a resume is replaced, its events
+	 * kept.
 	 * @throws Error when the concert has settled or the instance has a record.
 	 */
 	start(concert: string, instance: NodeInstance, at: number): void;
 	/**
-	 * Records how `instance` settled, with its `settled` event.
+	 * Keeps `instance`'s `ok` record from before a resume, with a `reused` event.
+	 * @throws Error when the concert has settled or the instance has no `ok` record from before.
+	 */
+	reuse(concert: string, instance: NodeInstance, at: number): void;
+	/**
+	 * Records how `instance` settled, with its `settled` event. A record from before a resume is replaced, its events
+	 * kept.
 	 * @throws Error when the concert or the instance has settled.
 	 */
 	settle(
@@ -197,7 +229,7 @@ export interface RecordStore {
 	result(concert: string): ConcertResult | undefined;
 	/** The concert's events after the cursor `after`, oldest first. */
 	events(concert: string, after?: number): ConcertEvent[];
-	/** The concert's metrics, each name summed over its instances (CORE-19). */
+	/** The concert's metrics, each name summed over its instances and over the attempts a resume replaced (CORE-19). */
 	metrics(concert: string): Metrics;
 	/** The concert once it settles, or `undefined` when `timeoutMs` passes first. Another process may be performing it. */
 	wait(concert: string, timeoutMs?: number): Promise<ConcertRecord | undefined>;
@@ -229,6 +261,8 @@ type InstanceRow = {
 	enrichment: string | null;
 	started_at: number | null;
 	settled_at: number | null;
+	key: string | null;
+	stale: number;
 };
 
 type EventRow = {
@@ -345,6 +379,22 @@ function storeOf(db: Database): RecordStore {
 			);
 	};
 
+	/** Drops what a resume left of `instance` from before, so the write that follows replaces it. */
+	const replaceStale = (id: string, { node, expansion }: NodeInstance) => {
+		const where = "WHERE concert = ? AND node = ? AND expansion = ?";
+		const { changes } = db.exec(
+			`DELETE FROM instances ${where} AND stale = 1`,
+			[id, node, expansion],
+		);
+		if (changes === 0) return;
+		db.exec(
+			`INSERT INTO earlier_metrics (concert, name, value) SELECT concert, name, value FROM metrics ${where}`,
+			[id, node, expansion],
+		);
+		db.exec(`DELETE FROM metrics ${where}`, [id, node, expansion]);
+		db.exec(`DELETE FROM artifacts ${where}`, [id, node, expansion]);
+	};
+
 	const settleRow = (
 		id: string,
 		instance: NodeInstance,
@@ -352,10 +402,11 @@ function storeOf(db: Database): RecordStore {
 		at: number,
 	) => {
 		db.exec(
-			`INSERT INTO instances (concert, node, expansion, status, reason, outputs, enrichment, settled_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			`INSERT INTO instances (concert, node, expansion, status, reason, outputs, enrichment, settled_at, key)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (concert, node, expansion) DO UPDATE SET status = excluded.status, reason = excluded.reason,
-			outputs = excluded.outputs, enrichment = excluded.enrichment, settled_at = excluded.settled_at`,
+			outputs = excluded.outputs, enrichment = excluded.enrichment, settled_at = excluded.settled_at,
+			key = excluded.key`,
 			[
 				id,
 				instance.node,
@@ -365,6 +416,7 @@ function storeOf(db: Database): RecordStore {
 				json(s.outputs),
 				json(s.enrichment),
 				at,
+				s.outcome === "ok" ? (s.key ?? null) : null,
 			],
 		);
 		const reason = s.outcome === "ok" ? undefined : s.reason;
@@ -374,6 +426,7 @@ function storeOf(db: Database): RecordStore {
 
 	const settle = db.transaction(
 		(id: string, instance: NodeInstance, s: Settling, at: number) => {
+			replaceStale(id, instance);
 			writable(id, instance, [null, "running"]);
 			settleRow(id, instance, s, at);
 			for (const [name, value] of Object.entries(s.metrics ?? {}))
@@ -426,6 +479,16 @@ function storeOf(db: Database): RecordStore {
 
 	const concert = (id: string) => concertOf(rowOf(id));
 
+	const restart = db.transaction((id: string, ir: Ir) => {
+		const { changes } = db.exec(
+			`UPDATE concerts SET ir = ?, pid = ?, status = 'running', settled_at = NULL, result_node = NULL,
+			result_expansion = NULL, reason = NULL WHERE id = ? AND status IN ('rejected', 'failed')`,
+			[JSON.stringify(ir), process.pid, id],
+		);
+		if (changes === 0) throw unresumable(db, id);
+		db.exec("UPDATE instances SET stale = 1 WHERE concert = ?", [id]);
+	});
+
 	return {
 		begin({ id, ir, startedAt }) {
 			db.exec(
@@ -440,13 +503,30 @@ function storeOf(db: Database): RecordStore {
 				],
 			);
 		},
+		resume: ({ id, ir }) => {
+			rowOf(id);
+			restart(id, ir);
+		},
 		start: db.transaction((id: string, instance: NodeInstance, at: number) => {
+			replaceStale(id, instance);
 			writable(id, instance, [null]);
 			db.exec(
 				"INSERT INTO instances (concert, node, expansion, status, started_at) VALUES (?, ?, ?, 'running', ?)",
 				[id, instance.node, instance.expansion, at],
 			);
 			event(id, instance, { type: "running" }, at);
+		}),
+		reuse: db.transaction((id: string, instance: NodeInstance, at: number) => {
+			writable(id, instance, ["ok"]);
+			const { changes } = db.exec(
+				"UPDATE instances SET stale = 0 WHERE concert = ? AND node = ? AND expansion = ? AND stale = 1",
+				[id, instance.node, instance.expansion],
+			);
+			if (changes === 0)
+				throw new Error(
+					`'${instance.node}${instance.expansion}' of concert '${id}' has no ok record from before the resume, so it cannot be reused`,
+				);
+			event(id, instance, { type: "reused" }, at);
 		}),
 		settle,
 		note: db.transaction(
@@ -524,7 +604,10 @@ function storeOf(db: Database): RecordStore {
 			rowOf(id);
 			const rows = db
 				.query<{ name: string; total: number }, [string]>(
-					"SELECT name, SUM(value) AS total FROM metrics WHERE concert = ? GROUP BY name ORDER BY name",
+					`SELECT name, SUM(value) AS total FROM (
+						SELECT name, value FROM metrics WHERE concert = ?1
+						UNION ALL SELECT name, value FROM earlier_metrics WHERE concert = ?1
+					) GROUP BY name ORDER BY name`,
 				)
 				.all(id);
 			return Object.fromEntries(rows.map((r) => [r.name, r.total]));
@@ -540,6 +623,22 @@ function storeOf(db: Database): RecordStore {
 		},
 		close: () => db.close(),
 	};
+}
+
+/** Why `id`, which `restart` found neither failed nor rejected, cannot be resumed. */
+function unresumable(db: Database, id: string): Error {
+	const row = db
+		.query<{ status: ConcertStatus; pid: number }, [string]>(
+			"SELECT status, pid FROM concerts WHERE id = ?",
+		)
+		.get(id);
+	if (row?.status === "running")
+		return new Error(
+			`concert '${id}' is still running in process ${row.pid}. Wait for it to settle, or kill it, then resume it`,
+		);
+	return new Error(
+		`concert '${id}' finished ok, so it has nothing to resume. Perform its composition as a new concert`,
+	);
 }
 
 function concertOf(row: ConcertRow): ConcertRecord {
@@ -619,6 +718,8 @@ function instanceOf(
 		...(row.reason !== null && { reason: row.reason }),
 		...(outputs !== undefined && { outputs }),
 		...(enrichment !== undefined && { enrichment }),
+		...(row.key !== null && { key: row.key }),
+		stale: row.stale === 1,
 		...(row.started_at !== null && { startedAt: row.started_at }),
 		...(row.settled_at !== null && { settledAt: row.settled_at }),
 	};
