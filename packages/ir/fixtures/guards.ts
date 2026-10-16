@@ -1,7 +1,4 @@
-type Settled = {
-	outcome: "ok" | "skipped" | "rejected" | "failed";
-	value?: { result?: { text?: string } };
-};
+import type { Settled } from "../src/outcome";
 
 export function plan(): { parts: string[] } {
 	return { parts: ["intro", "body", "outro"] };
@@ -11,7 +8,10 @@ export function partKey(item: string): string {
 	return item;
 }
 
-export function merge(ports: { parts: Settled[]; separator: string }): {
+export function merge(ports: {
+	parts: Settled<{ result?: { text?: string } }>[];
+	separator: string;
+}): {
 	text: string;
 	nonEmpty: boolean;
 } {

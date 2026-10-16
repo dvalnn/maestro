@@ -1,6 +1,6 @@
-type Settled = { outcome: "ok" | "skipped" | "rejected" | "failed" };
+import type { Settled } from "../src/outcome";
 
-export function tally(ports: { angles: Settled[] }): {
+export function tally(ports: { angles: Settled<unknown>[] }): {
 	okCount: number;
 	any: boolean;
 } {
