@@ -69,6 +69,14 @@ export interface Host {
 	/** Bounds one instance of `node`, a node of one of the host's kinds. */
 	bounds(node: HostNode): Bounds;
 	environment(): Awaitable<Facts>;
+	/**
+	 * Parses `text`, a param value given as a flag or in YAML, into a value of `type`, one of the host's `types`. It
+	 * parses only: whether what the value names exists is `validate`'s to check.
+	 */
+	param?(
+		type: string,
+		text: string,
+	): { value: unknown } | { diagnostics: Diagnostic[] };
 }
 
 export type HostKind = { host: Host; kind: NodeKind };

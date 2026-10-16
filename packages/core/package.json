@@ -6,10 +6,14 @@
 		"./host": "./src/host.ts",
 		"./worker": "./src/worker.ts",
 		"./compose": "./src/compose/index.ts",
-		"./perform": "./src/perform/index.ts"
+		"./config": "./src/config/index.ts",
+		"./perform": "./src/perform/index.ts",
+		"./ports": "./src/ports.ts",
+		"./shared": "./src/shared.ts"
 	},
 	"dependencies": {
 		"@maestro/ir": "workspace:*",
-		"ajv": "8.20.0"
+		"ajv": "8.20.0",
+		"yaml": "2.9.1"
 	}
 }

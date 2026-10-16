@@ -12,9 +12,11 @@ import { stamp } from "./fixtures/workers";
 import {
 	type BuildContext,
 	build,
+	buildNamed,
 	buildTwice,
 	code,
 	composition,
+	describe as describeExports,
 	hostNode,
 	Int,
 	irJson,
@@ -164,6 +166,100 @@ describe("use", () => {
 	test("ports that differ from the declared ones fail with TYPE.ports", () => {
 		const error = diagnose(() => buildOf(() => use(shout, {} as never)));
 		expect(error.code).toBe("TYPE.ports");
+	});
+
+	test("the build context's configured params stand over the defaults, and the use site over them", () => {
+		const root = composition("t", { examples: [{}] }, () => {
+			use(shout, { text: "a" });
+			return use(shout, { text: "b" }, { params: { times: 2 }, label: "set" });
+		});
+		const params = { [context.pack.id]: { shout: { times: 3 } } };
+		const ir = build(root, {}, { ...context, params });
+		expect(nodeOf(ir, "shout/task").literals?.times).toBe(3);
+		expect(nodeOf(ir, "set/task").literals?.times).toBe(2);
+	});
+});
+
+describe("a bundle's entry", () => {
+	const greet = composition(
+		"greet",
+		{
+			doc: "Greets.",
+			params: { name: Text(), loud: Int({ default: 0 }) },
+			examples: [{ name: "x" }],
+		},
+		({ name }) => task({ name }),
+	);
+	const exports = { greet, again: greet, shout, helper: stamp };
+
+	test("describe gives each exported composition once, with its params as JSON Schema", () => {
+		expect(describeExports(exports)).toEqual([
+			{
+				name: "greet",
+				doc: "Greets.",
+				params: {
+					type: "object",
+					properties: {
+						name: { type: "string" },
+						loud: { type: "integer", default: 0 },
+					},
+					required: ["name"],
+					additionalProperties: false,
+				},
+				examples: [{ name: "x" }],
+			},
+			{
+				name: "shout",
+				doc: undefined,
+				params: {
+					type: "object",
+					properties: { times: { type: "integer", default: 1 } },
+					required: [],
+					additionalProperties: false,
+				},
+				examples: [],
+			},
+		]);
+	});
+
+	test("buildNamed builds a composition by name, as irJson", () => {
+		const ir = buildNamed(exports, "greet", { name: "x" }, context);
+		expect(ir).toBe(irJson(build(greet, { name: "x" }, context)));
+	});
+
+	test.each([
+		[
+			"an export named as the entry's own",
+			{ build: stamp, greet },
+			"SCOPE.name",
+		],
+		[
+			"two compositions sharing a name",
+			{ greet, other: composition("greet", { examples: [{}] }, () => task()) },
+			"SCOPE.duplicate",
+		],
+	])("describe refuses %s", (_, given, code) => {
+		expect(diagnose(() => describeExports(given)).code).toBe(code);
+	});
+
+	test("buildNamed refuses a name no export has", () => {
+		expect(diagnose(() => buildNamed(exports, "nope", {}, context)).code).toBe(
+			"SCOPE.name",
+		);
+	});
+
+	test("a resolveCode that throws fails the node with SCOPE.export and its message", () => {
+		const throwing: BuildContext = {
+			...context,
+			resolveCode: () => {
+				throw new Error("function 'stamp' is reachable under two names");
+			},
+		};
+		const root = composition("t", { examples: [{}] }, () => code(stamp));
+		expect(diagnose(() => build(root, {}, throwing))).toMatchObject({
+			code: "SCOPE.export",
+			message: "function 'stamp' is reachable under two names",
+		});
 	});
 });
 

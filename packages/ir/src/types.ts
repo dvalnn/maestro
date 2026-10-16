@@ -129,7 +129,6 @@ export type Ir = {
 	irVersion: string;
 	composition: { id: string; version: string; pack: string; doc?: string };
 	emitter: { name: string; version: string; sourceHash?: string };
-	config?: Record<string, JsonSchema>;
 	scopes: Scope[];
 	nodes: IrNode[];
 	edges: IrEdge[];

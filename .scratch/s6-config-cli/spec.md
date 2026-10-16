@@ -39,8 +39,7 @@ Deliverables:
      `ir.schema.json`, the README and the fixtures (still IR 1.0, the changelog's 1.0 entry noting it).
   4. Param values (D-16, D-17, D-19, CFG-03, CFG-04, SDK-05): a root composition's params resolve default, YAML
      layers, the example set (`compose` only, standing over every YAML layer, a given flag overriding its own key),
-     then flags, and are checked before build. A subcomposition's params live under its own `<pack>.<id>`, wherever it
-     is used, and reach `use` through the build context; the use site still wins. A param whose schema carries an
+     then flags, and are checked before build. A subcomposition's params live under the `<pack>.<id>` of the bundle that holds it, and reach `use` through the build context; the use site still wins. A param whose schema carries an
      `x-maestro-type` is read through its owning host's `param` (deliverable 17), from a flag and from YAML alike; a
      core artifact type as a param is a usage error naming the flag.
   5. Packs (D-30, PACK-01, PACK-02, ADR 0002): listed by path in `packs`, no URL. A `maestro-pack.json` schema (id,

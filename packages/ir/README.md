@@ -56,7 +56,6 @@ with a string `id` also names that node in `node`.
 | `irVersion`   | See above.                                                                                          |
 | `composition` | `id`, `version`, `pack`, optional `doc`.                                                            |
 | `emitter`     | `name` and `version` of what produced the IR, optional `sourceHash`. Hand-written IR uses `"hand"`. |
-| `config`      | Optional. The config schema of each namespace the graph claims, with defaults (CFG-03).             |
 | `scopes`      | One per subcomposition use: `id`, `composition` and its `ports` with schemas.                       |
 | `nodes`       | Flat list. Nesting is by id.                                                                        |
 | `edges`       | Flat list, port to port.                                                                            |
@@ -67,9 +66,9 @@ a scope or a group has the id `<enclosing id>/<segment>`, so every proper prefix
 node, its parent is the id minus the last segment, and that last segment is its name. Scopes are for renderers and
 diagnostics and do not change execution. Groups do.
 
-Every schema inside the IR (ports, config) is a JSON Schema document that the IR treats as opaque, except for the
-`x-maestro-type` annotation that names artifacts and host types ([Type markers](#type-markers-x-maestro-type)). Edge
-type checks are pre-flight's job (CORE-02), not this package's.
+Every schema inside the IR is a JSON Schema document that the IR treats as opaque, except for the `x-maestro-type`
+annotation that names artifacts and host types ([Type markers](#type-markers-x-maestro-type)). Edge type checks are
+pre-flight's job (CORE-02), not this package's.
 
 ## Nodes
 
@@ -305,4 +304,5 @@ The IR carries structure. These semantics belong to the slices that execute or v
 
 ## Changelog
 
-- **1.0**: first version. Before release, code nodes took the optional `timeout` and the `params` block left the IR.
+- **1.0**: first version. Before release, code nodes took the optional `timeout`, and the `params` and `config` blocks
+  left the IR.

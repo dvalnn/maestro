@@ -14,8 +14,9 @@ It writes only under `input.scratch` and starts no host node (NFR-02). It return
 | Field      | Holds                                                                                             |
 | ---------- | ------------------------------------------------------------------------------------------------- |
 | `ir`       | IR that `parseIr` accepted.                                                                       |
-| `config`   | The composed config, by top-level namespace.                                                      |
-| `core`     | The config schemas core owns, by namespace.                                                       |
+| `config`   | The layered config: its values, and each value's source (`../config`).                            |
+| `core`     | The config schemas the engine owns, by top-level key.                                             |
+| `packs`    | Each installed pack's claims: its id, then its compositions' ids, then each one's param names.    |
 | `hosts`    | The installed hosts.                                                                              |
 | `loadCode` | Resolves a worker reference to its function (ADR 0008), once per reference per compose.           |
 | `caps`     | Caps by name: `instances` caps the node-instance total, any other name the total of a host count. |
@@ -25,7 +26,7 @@ It writes only under `input.scratch` and starts no host node (NFR-02). It return
 
 1. Checks, in this order:
    - edge types, artifact markers and type owners;
-   - config (D-24);
+   - config, each diagnostic at the file and line that set the key (D-24);
    - host nodes against their kinds: the kind, the `config` and the ports (architecture 6).
 
    Any error stops compose here, before anything is loaded or called.
@@ -139,29 +140,38 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
 
 ## Diagnostics
 
-| Code               | When                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| `CFG.unclaimed`    | A config key no core, IR or installed host namespace claims. Hints a near name.         |
-| `CFG.schema`       | A config namespace is off the schema of core, the IR or a host whose kinds the IR uses. |
-| `TYPE.edge`        | An edge's source and target schemas disagree.[^types]                                   |
-| `TYPE.marker`      | An `x-maestro-type` the artifact walker cannot reach.                                   |
-| `TYPE.owner`       | An `x-maestro-type` name neither core (`CORE_TYPES`) nor an installed host owns.        |
-| `TYPE.output`      | A folded node's outputs, or those its rejection carries, are off its `out` schemas.     |
-| `TYPE.unreadable`  | A node reads a declared output of a folded rejection that carried no outputs.           |
-| `HOST.kind`        | A node kind no installed host registers.                                                |
-| `HOST.config`      | A host node's `config` is off its kind's `config` schema.                               |
-| `HOST.ports`       | A host node's `in` or `out` differs from its kind's `ports(node)`.[^ports]              |
-| `HOST.environment` | A host's `environment()` threw or rejected.                                             |
-| `HOST.validate`    | A host's `validate()` threw or rejected.                                                |
-| `HOST.*`           | A host's `validate` finding.                                                            |
-| `PURE.ambient`     | A folded node read `ctx.concert` or `ctx.clock`, or called `ctx.path()`.                |
-| `PURE.fold`        | A folded node failed, or a key function threw.[^fold]                                   |
-| `PURE.timeout`     | A folded node ran past its `timeout`.                                                   |
-| `SCOPE.export`     | `loadCode` could not load a function the IR names: a code node's or a key function.     |
-| `SCOPE.key`        | Two items of a map instance share a key.[^keys]                                         |
-| `ASSERT.failed`    | A folded assert is false.                                                               |
-| `BOUND.items`      | A group instance has more known items than its bound.                                   |
-| `BOUND.cap`        | A total of the plan's bounds, or of its bounds so far while folding, is over its cap.   |
+| Code               | When                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------ |
+| `CFG.unclaimed`    | A config key nothing installed claims, at any level.[^claims] Hints a near name.           |
+| `CFG.schema`       | A config namespace is off the schema of core or a host whose kinds the IR uses.[^pack]     |
+| `CFG.claim`        | A pack's id is a namespace core or an installed host already claims.                       |
+| `TYPE.edge`        | An edge's source and target schemas disagree.[^types]                                      |
+| `TYPE.marker`      | An `x-maestro-type` the artifact walker cannot reach.                                      |
+| `TYPE.owner`       | An `x-maestro-type` name neither core (`CORE_TYPES`) nor an installed host owns.           |
+| `TYPE.output`      | A folded node's outputs, or those its rejection carries, are off its `out` schemas.        |
+| `TYPE.unreadable`  | A node reads a declared output of a folded rejection that carried no outputs.              |
+| `HOST.kind`        | A node kind no installed host registers.                                                   |
+| `HOST.config`      | A host node's `config` is off its kind's `config` schema.                                  |
+| `HOST.ports`       | A host node's `in` or `out` differs from its kind's `ports(node)`.[^ports]                 |
+| `HOST.environment` | A host's `environment()` threw or rejected.                                                |
+| `HOST.validate`    | A host's `validate()` threw or rejected.                                                   |
+| `HOST.*`           | A host's `validate` finding.                                                               |
+| `PURE.ambient`     | A folded node read `ctx.concert` or `ctx.clock`, or called `ctx.path()`.                   |
+| `PURE.fold`        | A folded node failed, or a key function threw.[^fold]                                      |
+| `PURE.timeout`     | A folded node ran past its `timeout`.                                                      |
+| `SCOPE.export`     | `loadCode` could not load a function the IR names: a code node's or a key function.[^load] |
+| `SCOPE.key`        | Two items of a map instance share a key.[^keys]                                            |
+| `ASSERT.failed`    | A folded assert is false.                                                                  |
+| `BOUND.items`      | A group instance has more known items than its bound.                                      |
+| `BOUND.cap`        | A total of the plan's bounds, or of its bounds so far while folding, is over its cap.      |
+
+[^claims]:
+    A top-level key belongs to core, an installed host or an installed pack. Under a pack's id, a key names one of its
+    compositions, and under that, one of its params (D-17). A key only an unused host claims is ignored (D-24).
+
+[^pack]: Or a pack's value, or a composition's under it, is not a mapping.
+
+[^load]: The hint is the load error's message after its first line, when it has one.
 
 [^types]:
     The `x-maestro-type` names, then the JSON `type` (an `integer` fits a `number`), then `items` and shared

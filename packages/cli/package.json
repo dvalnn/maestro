@@ -1,0 +1,13 @@
+{
+	"name": "@maestro/cli",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@maestro/core": "workspace:*",
+		"@maestro/ir": "workspace:*",
+		"@maestro/sdk": "workspace:*"
+	},
+	"devDependencies": {
+		"@maestro/testkit": "workspace:*"
+	}
+}

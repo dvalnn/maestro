@@ -42,9 +42,17 @@ how:
 - A function a pack takes from another pack's subcomposition is part of the using pack's bundle (ADR 0002), so `fn`
   alone identifies it.
 
-**`codeHash`.** It changes whenever any code the function reaches changes, so a changed helper never serves a stale
-cached result. A loader may hash more than that, such as a whole bundle, which costs cache hits but is never stale. How
-each loader forms it is recorded when the loader lands.
+**`codeHash`.** It changes whenever any code the function reaches changes, so a resume never reuses a result a changed
+helper would alter. A loader may hash more than that, such as a whole bundle, which costs reuse but is never stale. Each
+loader's form is `sha256:` and the hex SHA-256 of:
+
+- a pack: its entry file's bytes, the whole bundle. `module` is the entry's path relative to the pack directory.
+- a bare composition file: the file bundled in memory, its SDK import mapped to the engine's. `module` is the file's
+  name.
+- an IR file: the module file's bytes. `module` is relative to the IR file's directory.
+
+The loader imports the bytes it hashed, so what runs is what the hash names. A pack entry or IR-file module that imports
+anything but builtins and `@maestro/sdk` is refused, since its bytes would not be all the code it reaches.
 
 **Standard library.** Stdlib code nodes, such as `firstOk`, use the reserved module `maestro:stdlib`. The SDK emits them
 directly, without `resolveCode`. The loader resolves the module to the stdlib of the SDK the engine embeds, never to a

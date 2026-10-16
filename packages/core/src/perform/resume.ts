@@ -8,7 +8,7 @@ import {
 	type Ir,
 	type WorkerRef,
 } from "@maestro/ir";
-import { instanceKey, isRecord } from "../shared";
+import { instanceKey, isRecord, sha256Hex } from "../shared";
 import type { Inputs, Outputs } from "../worker";
 import type { InstanceRecord } from "./record";
 
@@ -66,5 +66,5 @@ export function resumeKey(
 	const text = canonicalJson({ node, inputs }, (value) =>
 		hashes.has(value) ? hashes.get(value) : value,
 	);
-	return new Bun.CryptoHasher("sha256").update(text).digest("hex");
+	return sha256Hex(text);
 }

@@ -6,6 +6,7 @@ import {
 	MAESTRO_TYPE,
 	settledSchema,
 } from "@maestro/ir";
+import { layered, parseLayer, valuesLayer } from "../config";
 import type { NodeKind } from "../host";
 import {
 	code,
@@ -15,6 +16,7 @@ import {
 	golden,
 	irOf,
 } from "./fixtures/support";
+import type { ComposeInput } from "./index";
 
 const STRING = { type: "string" };
 const NUMBER = { type: "number" };
@@ -255,12 +257,27 @@ describe("config", () => {
 		kinds: [],
 		config: { other: { type: "object", required: ["x"] } },
 	});
-	const hints = async (config: Record<string, unknown>) =>
-		(await failures(await ir(), { config, hosts: [fakeHost(), unused] })).map(
-			(d) => [d.code, d.hint],
-		);
+	const packs = { demo: { greet: ["name", "loud"] } };
+	const configOf = (values: Record<string, unknown>) =>
+		layered([valuesLayer(values, { layer: "user" })]);
+	const found = async (
+		values: Record<string, unknown>,
+		over: Partial<ComposeInput> = {},
+	) =>
+		failures(await ir(), {
+			config: configOf(values),
+			core: { core: { type: "object", additionalProperties: false } },
+			hosts: [fakeHost(), unused],
+			packs,
+			...over,
+		});
+	const requiring = fakeHost({
+		config: { fake: { type: "object", required: ["retries"] } },
+	});
 
-	test.each([
+	test.each<
+		[string, Record<string, unknown>, string, string, Partial<ComposeInput>?]
+	>([
 		[
 			"an unclaimed key near a claimed one",
 			{ fak: {} },
@@ -280,6 +297,24 @@ describe("config", () => {
 			"Remove 'zzzzz' from the config, or install what claims it",
 		],
 		[
+			"a key under a pack that names none of its compositions",
+			{ demo: { gret: {} } },
+			"CFG.unclaimed",
+			"Did you mean 'demo.greet'? Rename 'demo.gret' to 'demo.greet'",
+		],
+		[
+			"a key under a composition that names none of its params",
+			{ demo: { greet: { nane: "x" } } },
+			"CFG.unclaimed",
+			"Did you mean 'demo.greet.name'? Rename 'demo.greet.nane' to 'demo.greet.name'",
+		],
+		[
+			"a pack's value that is not a mapping",
+			{ demo: 3 },
+			"CFG.schema",
+			"Set 'demo' to a mapping of its compositions, or remove it",
+		],
+		[
 			"a used host's namespace off its schema",
 			{ fake: { retries: "x" } },
 			"CFG.schema",
@@ -291,27 +326,52 @@ describe("config", () => {
 			"CFG.schema",
 			expect.any(String),
 		],
-	])("rejects %s", async (_, config, want, hint) => {
-		const core = { core: { type: "object", additionalProperties: false } };
-		const found = await failures(await ir(), {
-			config,
-			core,
-			hosts: [fakeHost(), unused],
-		});
-		expect(found.map((d) => [d.code, d.hint])).toEqual([[want, hint]]);
+		[
+			"a used host's absent namespace that requires a key",
+			{},
+			"CFG.schema",
+			"Change 'fake' in the config to match the schema of its owner",
+			{ hosts: [requiring] },
+		],
+		[
+			"a composition named like an inherited property",
+			{ demo: { constructor: { a: 1 } } },
+			"CFG.unclaimed",
+			"Remove 'demo.constructor' from the config, or install what claims it",
+		],
+		[
+			"a pack whose id a host's namespace claims",
+			{},
+			"CFG.claim",
+			"Rename pack 'fake', or uninstall it",
+			{ packs: { ...packs, fake: {} } },
+		],
+	])("rejects %s", async (_, values, want, hint, over = {}) => {
+		expect((await found(values, over)).map((d) => [d.code, d.hint])).toEqual([
+			[want, hint],
+		]);
 	});
 
-	test("ignores the namespace of an installed host the graph does not use (D-24)", async () => {
-		expect(await hints({ other: {} })).toEqual([]);
+	test("accepts a pack's composition params, and ignores the namespace of a host the graph does not use (D-24)", async () => {
+		expect(await found({ demo: { greet: { name: "x" } }, other: {} })).toEqual(
+			[],
+		);
 	});
 
-	test("checks the IR's own config namespaces", async () => {
-		const found = await failures(await golden("guards-and-escalation.json"), {
-			config: { fake: { retries: "x" } },
-			hosts: [fakeHost({ config: {} })],
+	test("locates a config error at the file and line that set the key", async () => {
+		const layer = parseLayer("demo:\n  greet:\n    nmae: x\n", {
+			file: "/w/.maestro/config.yaml",
+			layer: "workspace",
 		});
-		expect(found.map((d) => d.message)).toEqual([
-			"config 'fake.retries' must be integer",
+		const diagnostics = await failures(await ir(), {
+			config: layered([layer]),
+			packs,
+		});
+		expect(diagnostics.map((d) => [d.message, d.source])).toEqual([
+			[
+				"config key 'demo.greet.nmae' is claimed by no param of composition 'demo.greet'",
+				{ file: "/w/.maestro/config.yaml", line: 3 },
+			],
 		]);
 	});
 });

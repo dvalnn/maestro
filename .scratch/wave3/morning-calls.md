@@ -308,6 +308,17 @@ Classifier blocks: none.
 - K78: A. Exit codes 0 accepted, 1 failed and internal errors, 2 usage including compose diagnostics, 3 rejected, 124
   wait timeout.
 
+## Rulings on S6a (2026-10-16)
+
+- K93: `concurrency` defaults to the CPU count; massive parallelism is the operator's call.
+- K94: a bare file's pack id is its file stem, its version `0.0.0`.
+- K95: `compose --out` of a bare file also writes its bundle beside the IR, and `module` names it (S6b).
+- K96: A. Config follows the bundle: a composition's params live under the id of the pack whose bundle holds it, a
+  borrowed subcomposition included, so the schema that checks a key is the one of the code that runs.
+- K97: "build" is allowed in `cli`, as in `sdk`: the CLI drives the SDK's build phase and calls `Bun.build`.
+- Hand-written IR is the golden fixtures' exercise of IR-01: it runs when correct, and no effort goes to edge cases only
+  hand-writing can express. The loader's import refusal stays, since it also guards pack entries.
+
 ## Open for the owner (2026-10-17 morning)
 
 - None. S6's derived calls K64, K70, K72 and K74 are listed in its brief.

@@ -11,4 +11,4 @@ export {
 	type RecordStore,
 	type Settling,
 } from "./record";
-export type { CodeHash } from "./resume";
+export { type CodeHash, withCurrentHashes } from "./resume";

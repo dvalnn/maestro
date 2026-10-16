@@ -21,11 +21,21 @@ import type { Type, Types, ValueOf } from "./types";
 /** Any function the loader may name: a code function or a `map` key function (ADR 0008). */
 export type CodeFn = (...args: never[]) => unknown;
 
+/** Param values by pack id, then composition id, then param name. */
+export type ConfiguredParams = Readonly<
+	Record<string, Readonly<Record<string, Readonly<Record<string, unknown>>>>>
+>;
+
 /** What the loader supplies to a build (ADR 0008). */
 export type BuildContext = {
 	pack: { id: string; version: string };
-	/** The worker reference of an exported function, or nothing when `fn` is not one. Deterministic. */
+	/**
+	 * The worker reference of an exported function, or nothing when `fn` is not one. Deterministic.
+	 * @throws Error when it cannot name `fn`, for example when two exports reach it.
+	 */
 	resolveCode: (fn: CodeFn) => WorkerRef | undefined;
+	/** The configured params of each subcomposition a `use` instantiates, under the pack being built (CFG-04). */
+	params?: ConfiguredParams;
 };
 
 /**
@@ -481,7 +491,17 @@ export function boolPort(
 }
 
 export function worker(fn: CodeFn): WorkerRef {
-	const found = current().context.resolveCode(fn);
+	const { context } = current();
+	let found: WorkerRef | undefined;
+	try {
+		found = context.resolveCode(fn);
+	} catch (error) {
+		throw fail(
+			"SCOPE.export",
+			error instanceof Error ? error.message : String(error),
+			"Export the function under one name",
+		);
+	}
 	if (found) return found;
 	const name = fn.name ? `function '${fn.name}'` : "an anonymous function";
 	throw fail(
@@ -492,6 +512,11 @@ export function worker(fn: CodeFn): WorkerRef {
 }
 
 export const STDLIB_MODULE = "maestro:stdlib";
+
+export const SDK_VERSION = pkg.version;
+
+/** The `codeHash` of every stdlib reference: the module and the version of the SDK that holds it (ADR 0008). */
+export const STDLIB_HASH = `${STDLIB_MODULE}@${SDK_VERSION}`;
 
 /** The name of a stdlib function, so a node cannot name an export the module lacks (ADR 0008). */
 export type StdlibName = keyof typeof stdlibFunctions;
@@ -521,7 +546,7 @@ export function stdlib(
 					runtime: TS_RUNTIME,
 					module: STDLIB_MODULE,
 					export: name,
-					codeHash: `${STDLIB_MODULE}@${pkg.version}`,
+					codeHash: STDLIB_HASH,
 				},
 				pure: true,
 				fanin: fanin || undefined,

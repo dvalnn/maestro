@@ -3,11 +3,12 @@ import { resolve } from "node:path";
 
 // CORE-12. This file holds the list, so it is the one file the scan skips.
 const DOMAIN_WORD = /^(lane|seat|leg|run|review|build|quality)s?$/;
-/** The packages scanned, each with the domain words it may use. The SDK has a build phase; core composes. */
+/** The packages scanned, each with the domain words it may use. The SDK has a build phase, which the CLI drives. */
 const SCANNED: Readonly<Record<string, readonly string[]>> = {
 	core: [],
 	testkit: [],
 	sdk: ["build"],
+	cli: ["build"],
 };
 const packagesDir = resolve(import.meta.dir, "../..");
 

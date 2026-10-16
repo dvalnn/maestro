@@ -1,0 +1,207 @@
+import { describe, expect, test } from "bun:test";
+import {
+	ConfigError,
+	coreConfig,
+	coreDefaults,
+	DEFAULT_CONCURRENCY,
+	type LayerName,
+	layered,
+	parseLayer,
+	sourceOf,
+	valuesLayer,
+} from "./index";
+
+const USER = "/home/u/.config/maestro/config.yaml";
+const WORKSPACE = "/w/.maestro/config.yaml";
+
+const parse = (
+	text: string,
+	file = WORKSPACE,
+	layer: LayerName = "workspace",
+) => parseLayer(text, { file, layer, paths: ["dataRoot", "packs"] });
+
+/** The diagnostics a failed parse or merge gives, as code, message and location. */
+function refusal(make: () => unknown) {
+	try {
+		make();
+	} catch (e) {
+		if (e instanceof ConfigError)
+			return e.diagnostics.map((d) => [d.code, d.message, d.source]);
+		throw e;
+	}
+	throw new Error("expected a ConfigError");
+}
+
+describe("merge tags", () => {
+	const user = () =>
+		parse("a:\n  b: 1\n  c: 2\nlist: [x]\nkeep: 1\n", USER, "user");
+
+	test("a mapping merges by key, and any other value is replaced whole", () => {
+		const top = parse("a:\n  b: 3\nlist: [y]\n");
+		expect(layered([user(), top]).values).toEqual({
+			a: { b: 3, c: 2 },
+			list: ["y"],
+			keep: 1,
+		});
+	});
+
+	test("!replace, !append and !delete apply to what is beneath", () => {
+		const top = parse(
+			"a: !replace\n  d: 4\nlist: !append [y]\nkeep: !delete\n",
+		);
+		const composed = layered([user(), top]);
+		expect(composed.values).toEqual({ a: { d: 4 }, list: ["x", "y"] });
+		expect(sourceOf(composed, ["list", "0"])).toEqual({
+			layer: "user",
+			file: USER,
+			line: 4,
+		});
+		expect(sourceOf(composed, ["list", "1"])).toMatchObject({
+			file: WORKSPACE,
+		});
+	});
+
+	test("!append over nothing is the list itself", () => {
+		expect(layered([parse("list: !append [y]\n")]).values).toEqual({
+			list: ["y"],
+		});
+	});
+
+	test.each([
+		["an unknown tag", "a: !merge {}\n", "workspace", "unknown tag !merge", 1],
+		["a YAML tag", "a:\n  b: !!str 1\n", "workspace", "unknown tag !!str", 2],
+		[
+			"!replace on a scalar",
+			"a: !replace 1\n",
+			"workspace",
+			"!replace tags a scalar, and only a mapping merges",
+			1,
+		],
+		[
+			"!append on a mapping",
+			"a: !append {}\n",
+			"workspace",
+			"!append tags a mapping, and only a list appends",
+			1,
+		],
+		[
+			"!delete with a value",
+			"keep: !delete 1\n",
+			"workspace",
+			"!delete takes no value",
+			1,
+		],
+		[
+			"a tag inside a list item",
+			"list:\n  - x\n  - !replace {}\n",
+			"workspace",
+			"the tag !replace is not allowed inside a list item",
+			3,
+		],
+		[
+			"!delete of a key nothing beneath sets",
+			"zz: !delete\n",
+			"merge",
+			"!delete on 'zz', which nothing beneath sets",
+			1,
+		],
+		[
+			"!append over a scalar",
+			"keep: !append [1]\n",
+			"merge",
+			"!append on 'keep', which is a scalar beneath it, and only a list takes it",
+			1,
+		],
+	])(
+		"refuses %s, naming the file and line",
+		(_, text, stage, message, line) => {
+			const make = () =>
+				stage === "merge" ? layered([user(), parse(text)]) : parse(text);
+			expect(refusal(make)).toEqual([
+				[
+					"CFG.tag",
+					`${WORKSPACE}:${line}: ${message}`,
+					{ file: WORKSPACE, line },
+				],
+			]);
+		},
+	);
+
+	test.each([
+		["invalid YAML", "a: [1\n", 2],
+		["a file that is not a mapping", "- a\n", 1],
+		["a YAML merge key", "base: &b\n  x: 1\nc:\n  <<: *b\n", 4],
+	])("refuses %s, naming the file and line", (_, text, line) => {
+		expect(refusal(() => parse(text))).toEqual([
+			[
+				"CFG.yaml",
+				expect.stringContaining(WORKSPACE),
+				{ file: WORKSPACE, line },
+			],
+		]);
+	});
+});
+
+describe("provenance", () => {
+	test("a relative path is relative to the directory of the file that sets it", () => {
+		const composed = layered([
+			parse("packs: [../p]\n", USER, "user"),
+			parse("dataRoot: data\npacks: !append [./q, /abs]\n"),
+		]);
+		expect(composed.values).toEqual({
+			dataRoot: "/w/.maestro/data",
+			packs: ["/home/u/.config/p", "/w/.maestro/q", "/abs"],
+		});
+	});
+
+	test("a path without a value of its own takes the nearest value above it, else the first beneath it", () => {
+		const composed = layered([parse("a:\n  b:\n    c: 1\n")]);
+		const line = (path: string[]) => sourceOf(composed, path)?.line;
+		expect([line(["a", "b", "c", "d"]), line(["a"]), line(["z"])]).toEqual([
+			3,
+			3,
+			undefined,
+		]);
+	});
+});
+
+describe("core config", () => {
+	const defaults = coreDefaults("/data", "w");
+
+	test("defaults to the default layer's values", () => {
+		expect(coreConfig(layered([defaults]))).toEqual({
+			concurrency: DEFAULT_CONCURRENCY,
+			caps: {},
+			dataRoot: "/data",
+			workspace: "w",
+		});
+	});
+
+	test("refuses a value off its schema at its file and line, and a key a !delete unset", () => {
+		const top = parse(
+			'workspace: !delete\ncaps:\n  instances: -1\ndataRoot: ""\n',
+		);
+		expect(refusal(() => coreConfig(layered([defaults, top])))).toEqual([
+			["CFG.required", "config key 'workspace' is unset", undefined],
+			[
+				"CFG.schema",
+				"config 'caps.instances' must be >= 0",
+				{ file: WORKSPACE, line: 3 },
+			],
+			[
+				"CFG.schema",
+				"config 'dataRoot' must NOT have fewer than 1 characters",
+				{ file: WORKSPACE, line: 4 },
+			],
+		]);
+	});
+
+	test("a values layer credits every value to its source", () => {
+		const composed = layered([
+			defaults,
+			valuesLayer({ concurrency: 2 }, { layer: "flag" }),
+		]);
+		expect(sourceOf(composed, ["concurrency"])).toEqual({ layer: "flag" });
+		expect(coreConfig(composed).concurrency).toBe(2);
+	});
+});

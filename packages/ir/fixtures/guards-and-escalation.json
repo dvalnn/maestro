@@ -7,12 +7,6 @@
 		"doc": "Split work into an unknown number of parts, merge them, then try sizes in order until one is ok. A gate asserts the outcome, and a summary is written either way."
 	},
 	"emitter": { "name": "hand", "version": "1", "sourceHash": "sha256:3333" },
-	"config": {
-		"fake": {
-			"type": "object",
-			"properties": { "retries": { "type": "integer", "default": 1 } }
-		}
-	},
 	"scopes": [],
 	"nodes": [
 		{

@@ -12,7 +12,13 @@ import {
 	type Ir,
 	indexGraph,
 } from "@maestro/ir";
-import { CANCELLED, FAKE_TASK, type FakeScript, fakeHost } from "./index";
+import {
+	CANCELLED,
+	FAKE_HANDLE,
+	FAKE_TASK,
+	type FakeScript,
+	fakeHost,
+} from "./index";
 
 const node: HostNode = {
 	id: "loop/step",
@@ -40,6 +46,16 @@ test("the fake host satisfies the host interface", () => {
 	// The annotation is the check: tsc fails here if the fake drifts from Host.
 	const host: Host = fakeHost();
 	expect(host.kinds.map((k) => k.name)).toEqual([FAKE_TASK]);
+});
+
+test("the fake host parses a handle param, and refuses malformed text", () => {
+	const host = fakeHost();
+	expect(host.param?.(FAKE_HANDLE, "item#3")).toEqual({
+		value: { name: "item", number: 3 },
+	});
+	expect(host.param?.(FAKE_HANDLE, "item")).toEqual({
+		diagnostics: [expect.objectContaining({ code: "HOST.param" })],
+	});
 });
 
 test("a node's listed steps settle its instances in order, the last repeating", async () => {

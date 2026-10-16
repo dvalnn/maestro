@@ -4,6 +4,10 @@ import type { LoadCode, NodeInstance, Outputs } from "./worker";
 export const messageOf = (error: unknown) =>
 	error instanceof Error ? error.message : String(error);
 
+/** The hex SHA-256 of `data`. */
+export const sha256Hex = (data: string | Uint8Array) =>
+	new Bun.CryptoHasher("sha256").update(data).digest("hex");
+
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 

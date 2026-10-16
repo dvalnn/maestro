@@ -324,7 +324,10 @@ const refsOf = (ir: Ir) =>
 		return [];
 	});
 
-/** Loads every function `ir` names, each once, or a `SCOPE.export` error for each one that does not load (ADR 0008). */
+/**
+ * Loads every function `ir` names, each once, or a `SCOPE.export` error for each one that does not load (ADR 0008).
+ * A load error's message after its first line is the fix.
+ */
 export async function loadFunctions(ir: Ir, loadCode: LoadCode) {
 	const functions = new Map<string, Loaded>();
 	const diagnostics: Diagnostic[] = [];
@@ -333,12 +336,14 @@ export async function loadFunctions(ir: Ir, loadCode: LoadCode) {
 		try {
 			functions.set(refKey(ref), await loadFunction(loadCode, ref));
 		} catch (e) {
+			const [why, fix] = messageOf(e).split("\n", 2);
 			diagnostics.push(
 				error(
 					"SCOPE.export",
 					node,
-					`compose cannot load '${ref.export}' from '${ref.module}' for '${node}': ${messageOf(e)}`,
-					`Export '${ref.export}' from '${ref.module}', or fix the worker reference of '${node}'`,
+					`compose cannot load '${ref.export}' from '${ref.module}' for '${node}': ${why}`,
+					fix ??
+						`Export '${ref.export}' from '${ref.module}', or fix the worker reference of '${node}'`,
 				),
 			);
 		}

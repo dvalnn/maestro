@@ -6,10 +6,14 @@ export {
 } from "@maestro/ir";
 export {
 	build,
+	buildNamed,
 	buildTwice,
 	type Composition,
 	composition,
 	type Declaration,
+	type Described,
+	describe,
+	glue,
 	irJson,
 	type PortRefs,
 	type PortValues,
@@ -17,7 +21,18 @@ export {
 	type Values,
 } from "./composition";
 export { BuildError } from "./diagnostic";
-export type { BuildContext, CodeFn, Common, Ref, Refs, Result } from "./graph";
+export {
+	type BuildContext,
+	type CodeFn,
+	type Common,
+	type ConfiguredParams,
+	type Ref,
+	type Refs,
+	type Result,
+	SDK_VERSION,
+	STDLIB_HASH,
+	STDLIB_MODULE,
+} from "./graph";
 export {
 	assert,
 	type CodeFunction,

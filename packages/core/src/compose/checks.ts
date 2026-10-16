@@ -14,6 +14,13 @@ import {
 	schemaMarkers,
 	unreachableMarkers,
 } from "@maestro/ir";
+import {
+	type Composed,
+	configDiagnostic,
+	type KeyPath,
+	schemaErrors,
+	sourceOf,
+} from "../config";
 import type { Host, HostKind, NodeKind } from "../host";
 import { type Validator, violations } from "../ports";
 import { isRecord, messageOf } from "../shared";
@@ -54,54 +61,125 @@ function closest(word: string, candidates: readonly string[]) {
 	return ranked[0]?.c;
 }
 
-function unclaimed(key: string, claimed: readonly string[]): Diagnostic {
-	const near = closest(key, claimed);
-	return {
-		code: "CFG.unclaimed",
-		severity: "error",
-		message: `config key '${key}' is claimed by no installed host, pack or core`,
-		hint: near
-			? `Did you mean '${near}'? Rename '${key}' to '${near}'`
+/** An unclaimed key at `path`: `what` says what lacks it, and `claimed` holds its siblings that are claimed. */
+function unclaimed(
+	config: Composed,
+	path: KeyPath,
+	what: string,
+	claimed: readonly string[],
+): Diagnostic {
+	const key = path.join(".");
+	const near = closest(path.at(-1) ?? "", claimed);
+	const fix = near && [...path.slice(0, -1), near].join(".");
+	return configDiagnostic(
+		"CFG.unclaimed",
+		sourceOf(config, path),
+		`config key '${key}' is claimed by ${what}`,
+		fix
+			? `Did you mean '${fix}'? Rename '${key}' to '${fix}'`
 			: `Remove '${key}' from the config, or install what claims it`,
-	};
+	);
+}
+
+function notMapping(config: Composed, path: KeyPath, of: string): Diagnostic {
+	const key = path.join(".");
+	return configDiagnostic(
+		"CFG.schema",
+		sourceOf(config, path),
+		`config '${key}' must be a mapping of ${of}`,
+		`Set '${key}' to a mapping of ${of}, or remove it`,
+	);
+}
+
+/** The keys under an installed pack's id that none of its compositions, or their params, claims (D-17). */
+function packErrors(
+	config: Composed,
+	pack: string,
+	compositions: Readonly<Record<string, readonly string[]>>,
+): Diagnostic[] {
+	const value = config.values[pack];
+	if (!isRecord(value)) return [notMapping(config, [pack], "its compositions")];
+	return Object.entries(value).flatMap(([id, params]) => {
+		const names = Object.hasOwn(compositions, id)
+			? compositions[id]
+			: undefined;
+		const path = [pack, id];
+		if (!names)
+			return [
+				unclaimed(
+					config,
+					path,
+					`no composition of pack '${pack}'`,
+					Object.keys(compositions),
+				),
+			];
+		if (!isRecord(params)) return [notMapping(config, path, "its params")];
+		return Object.keys(params)
+			.filter((param) => !names.includes(param))
+			.map((param) =>
+				unclaimed(
+					config,
+					[...path, param],
+					`no param of composition '${pack}.${id}'`,
+					names,
+				),
+			);
+	});
+}
+
+/** A pack whose id is a namespace core or an installed host already claims, naming both owners. */
+function collisions(
+	core: ComposeInput["core"],
+	hosts: readonly Host[],
+	packs: ComposeInput["packs"],
+): Diagnostic[] {
+	const owners = [
+		...Object.keys(core).map((ns) => [ns, "core"]),
+		...hosts.flatMap((h) =>
+			Object.keys(h.config).map((ns) => [ns, `host '${h.name}'`]),
+		),
+	];
+	return owners
+		.filter(([ns = ""]) => Object.hasOwn(packs, ns))
+		.map(([ns, owner]) =>
+			configDiagnostic(
+				"CFG.claim",
+				undefined,
+				`config namespace '${ns}' is claimed by both ${owner} and pack '${ns}'`,
+				`Rename pack '${ns}', or uninstall it`,
+			),
+		);
 }
 
 /**
- * Hands each config namespace to its owners' schemas (CFG-02): core's, the IR's and those of the hosts whose kinds the
- * graph uses. A key nothing installed claims is an error; one only an unused host claims is ignored (D-24).
+ * Hands each config namespace to its owners (CFG-02, CFG-05):
+ * - core's schemas and those of the hosts whose kinds the graph uses check theirs;
+ * - an installed pack claims its id, its compositions under it and their params under those.
+ *
+ * A key nothing installed claims, at any of those levels, is an error; one only an unused host claims is ignored
+ * (D-24). So is a pack whose id core or a host already claims.
  */
 export function checkConfig(
 	ajv: Validator,
-	{ ir, core, hosts, config }: ComposeInput,
+	{ ir, core, hosts, packs, config }: ComposeInput,
 	lookup: Lookup,
 ): Diagnostic[] {
 	const used = new Set(ir.nodes.map((n) => lookup(n.kind)?.host));
-	const owners = [core, ir.config ?? {}];
-	const claimed = [...owners, ...hosts.map((h) => h.config)].flatMap((o) =>
+	const claimed = [core, packs, ...hosts.map((h) => h.config)].flatMap((o) =>
 		Object.keys(o),
 	);
-	const checked = [
-		...owners,
-		...hosts.filter((h) => used.has(h)).map((h) => h.config),
-	].flatMap((o) => Object.entries(o));
 	return [
-		...Object.keys(config)
-			.filter((key) => !claimed.includes(key))
-			.map((key) => unclaimed(key, claimed)),
-		...checked.flatMap(([ns, schema]) =>
-			violations(
-				ajv,
-				schema,
-				config[ns] ?? {},
-				(segments) => `config '${[ns, ...segments].join(".")}'`,
-			).map(
-				(message): Diagnostic => ({
-					code: "CFG.schema",
-					severity: "error",
-					message,
-					hint: `Change '${ns}' in the config to match the schema of its owner`,
-				}),
-			),
+		...collisions(core, hosts, packs),
+		...Object.keys(config.values).flatMap((key) => {
+			if (!claimed.includes(key))
+				return [
+					unclaimed(config, [key], "no installed host, pack or core", claimed),
+				];
+			const compositions = packs[key];
+			return compositions ? packErrors(config, key, compositions) : [];
+		}),
+		...[core, ...hosts.filter((h) => used.has(h)).map((h) => h.config)].flatMap(
+			(schemas) => schemaErrors(ajv, schemas, config),
 		),
 	];
 }
@@ -114,7 +192,6 @@ function schemasOf(ir: Ir): [string, JsonSchema][] {
 			s,
 		]);
 	return [
-		...ports("/config", ir.config),
 		...ir.scopes.flatMap((s, i) => ports(`/scopes/${i}/ports`, s.ports)),
 		...ir.nodes.flatMap((n, i) => [
 			...ports(`/nodes/${i}/in`, n.in),

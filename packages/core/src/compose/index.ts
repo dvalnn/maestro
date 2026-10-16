@@ -8,6 +8,7 @@ import {
 	type JsonSchema,
 	type Settled,
 } from "@maestro/ir";
+import type { Composed } from "../config";
 import { type Bounds, type Host, kindLookup } from "../host";
 import { portCheck, validator } from "../ports";
 import { messageOf } from "../shared";
@@ -21,10 +22,12 @@ export { listing, render, summary } from "./text";
 export type ComposeInput = {
 	/** IR that `parseIr` accepted. */
 	ir: Ir;
-	/** The composed config, by top-level namespace. */
-	config: Readonly<Record<string, unknown>>;
-	/** The config schemas core owns, by namespace (CFG-01). */
+	/** The layered config. */
+	config: Composed;
+	/** The config schemas the engine owns, by top-level key (CFG-01). */
 	core: Readonly<Record<string, JsonSchema>>;
+	/** Each installed pack's claims: its id, then its compositions' ids, then each one's param names (D-17). */
+	packs: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
 	hosts: readonly Host[];
 	loadCode: LoadCode;
 	/** Caps by name: `instances` caps the node-instance total, any other name the total of a host's count (D-23). */
@@ -66,7 +69,7 @@ const hasError = (diagnostics: readonly Diagnostic[]) =>
 const HOST = "HOST";
 
 /** Gives a host's diagnostic the `HOST` prefix (sdk-spec 13.3), unless it has it. */
-function stampHost(d: Diagnostic): Diagnostic {
+export function stampHost(d: Diagnostic): Diagnostic {
 	return d.code === HOST || d.code.startsWith(`${HOST}.`)
 		? d
 		: { ...d, code: `${HOST}.${d.code}` };

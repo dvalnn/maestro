@@ -9,6 +9,11 @@ import type { Inputs } from "@maestro/core/worker";
 
 export const FAKE_TASK = "fake.task";
 
+/** The fake host's one type: a handle written `<name>#<number>`, whose value is `{ name, number }`. */
+export const FAKE_HANDLE = "fake.handle";
+
+const HANDLE = /^([a-z]+)#(\d+)$/;
+
 export const CANCELLED: Execution = { outcome: "failed", reason: "cancelled" };
 
 const UNSCRIPTED: Execution = { outcome: "ok", outputs: {} };
@@ -31,16 +36,33 @@ export type FakeScript = {
 	bounds?: Host["bounds"];
 };
 
-/** A host named `fake` with one kind, `fake.task`. Its nodes take any ports, and settle as `script` says. */
+/**
+ * A host named `fake` with one kind, `fake.task`, and one type, `fake.handle`. Its nodes take any ports, and settle as
+ * `script` says.
+ */
 export function fakeHost(script: FakeScript = {}): Host {
 	return {
 		name: "fake",
 		kinds: [fakeTask(script.steps ?? {})],
-		types: [],
+		types: [FAKE_HANDLE],
 		config: {},
 		validate: script.validate ?? (() => []),
 		bounds: script.bounds ?? (() => ({})),
 		environment: () => ({}),
+		param: (type, text) => {
+			const match = type === FAKE_HANDLE ? HANDLE.exec(text) : null;
+			if (match) return { value: { name: match[1], number: Number(match[2]) } };
+			return {
+				diagnostics: [
+					{
+						code: "HOST.param",
+						severity: "error",
+						message: `'${text}' is not a ${type}`,
+						hint: "Write a handle as <name>#<number>, for example 'item#3'",
+					},
+				],
+			};
+		},
 	};
 }
 

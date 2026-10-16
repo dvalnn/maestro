@@ -1146,8 +1146,9 @@ test.each<[string, Fn, string, Pick<IrNode, "in" | "literals">?]>([
 		const loadCode = loader({ fn });
 		const composed = await compose({
 			ir,
-			config: {},
+			config: { values: {}, sources: [] },
 			core: {},
+			packs: {},
 			hosts: [fakeHost()],
 			loadCode,
 			caps: {},
@@ -1186,8 +1187,9 @@ test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", a
 	};
 	const composed = await compose({
 		ir,
-		config: {},
+		config: { values: {}, sources: [] },
 		core: {},
+		packs: {},
 		hosts: [fakeHost(script)],
 		loadCode,
 		caps: {},

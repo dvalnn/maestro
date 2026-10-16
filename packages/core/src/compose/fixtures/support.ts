@@ -82,12 +82,13 @@ export const golden = async (name: string) =>
 export const sdkBuilt = async (name: string) =>
 	valid(await Bun.file(resolve(import.meta.dir, name)).json());
 
-/** Composes `ir` with the fake host, the golden loader, no config and no caps, unless `over` says otherwise. */
+/** Composes `ir` with the fake host, the golden loader, no config, packs or caps, unless `over` says otherwise. */
 export const composeWith = (ir: Ir, over: Partial<ComposeInput> = {}) =>
 	compose({
 		ir,
-		config: {},
+		config: { values: {}, sources: [] },
 		core: {},
+		packs: {},
 		hosts: [fakeHost()],
 		loadCode: loader(),
 		caps: {},

@@ -3,6 +3,8 @@ import {
 	type Diagnostic,
 	IR_VERSION,
 	type Ir,
+	type JsonSchema,
+	type Ports,
 	parseIr,
 } from "@maestro/ir";
 import pkg from "../package.json";
@@ -76,8 +78,13 @@ export function composition<P extends Types, Q extends Types, R>(
 			`composition '${name}' declares no example input set`,
 			"Add examples with at least one set of params, which compose uses when given no flags",
 		);
-	return { name, doc, params, ports, examples, build };
+	const declared = { name, doc, params, ports, examples, build };
+	compositions.add(declared);
+	return declared;
 }
+
+/** Every composition declared so far. */
+const compositions = new WeakSet<object>();
 
 /** `given` over the declared defaults, as a copy, so a build that changes a value changes no later build. */
 const withDefaults = <P extends Types>(
@@ -96,7 +103,8 @@ const withDefaults = <P extends Types>(
 	}) as Values<P>;
 
 /**
- * Instantiates `sub` in a scope of its own (sdk-spec 8). Use-site params win over the defaults.
+ * Instantiates `sub` in a scope of its own (sdk-spec 8). Use-site params win over its configured params in the build
+ * context, and those over the defaults.
  * @throws `REF.param` when a param gets a Ref.
  */
 export function use<P extends Types, Q extends Types, R>(
@@ -132,7 +140,11 @@ export function use<P extends Types, Q extends Types, R>(
 			return [name, new RefImpl(source, type, s)];
 		}),
 	) as unknown as PortRefs<Q>;
-	const params = withDefaults(sub.params, opts.params);
+	const configured = s.context.params?.[s.context.pack.id]?.[sub.name];
+	const params = withDefaults(sub.params, {
+		...configured,
+		...opts.params,
+	} as Partial<Values<P>>);
 	return withFrame(innerFrame(id, false), () => sub.build(params, refs));
 }
 
@@ -229,3 +241,109 @@ function resultOf(name: string, returned: unknown): Ir["result"] {
 
 /** `ir` as JSON with object keys sorted, so equal IR gives equal bytes (CORE-06). */
 export const irJson = (ir: Ir): string => canonicalJson(ir);
+
+/** A composition's name, doc, params and examples, known without building it (ADR 0002). */
+export type Described = {
+	name: string;
+	doc?: string;
+	/** An object schema of the params: a param without a default is required. */
+	params: {
+		type: "object";
+		properties: Ports;
+		required: string[];
+		additionalProperties: false;
+	};
+	examples: Record<string, unknown>[];
+};
+
+/** The names a bundle's entry exports beside the authored ones. */
+const ENTRY_EXPORTS = ["describe", "build"];
+
+/**
+ * The compositions among `exports`, the values of a module namespace, by name.
+ * @throws `SCOPE.name` when an export takes a name the bundle's entry exports, `SCOPE.duplicate` when two
+ * compositions share a name.
+ */
+function compositionsOf(
+	exports: Readonly<Record<string, unknown>>,
+): Map<string, Composition<Types, Types, unknown>> {
+	const taken = ENTRY_EXPORTS.filter((name) => Object.hasOwn(exports, name));
+	if (taken.length)
+		throw fail(
+			"SCOPE.name",
+			`the module exports '${taken.join("' and '")}', a name its bundle's entry exports`,
+			`Rename the export '${taken[0]}'`,
+		);
+	const found = new Map<string, Composition<Types, Types, unknown>>();
+	for (const value of Object.values(exports)) {
+		if (!compositions.has(value as object)) continue;
+		const c = value as Composition<Types, Types, unknown>;
+		const other = found.get(c.name);
+		if (other && other !== c)
+			throw fail(
+				"SCOPE.duplicate",
+				`two exported compositions are named '${c.name}'`,
+				`Rename one of the compositions named '${c.name}'`,
+			);
+		found.set(c.name, c);
+	}
+	return found;
+}
+
+const hasDefault = (type: { schema: JsonSchema }) =>
+	typeof type.schema === "object" && type.schema.default !== undefined;
+
+/** Each composition among `exports`, a module namespace: its name, doc, params as JSON Schema and examples. */
+export function describe(
+	exports: Readonly<Record<string, unknown>>,
+): Described[] {
+	return [...compositionsOf(exports).values()].map((c) => ({
+		name: c.name,
+		doc: c.doc,
+		params: {
+			type: "object",
+			properties: schemas(c.params),
+			required: Object.entries(c.params)
+				.filter(([, type]) => !hasDefault(type))
+				.map(([name]) => name),
+			additionalProperties: false,
+		},
+		examples: structuredClone(c.examples) as Record<string, unknown>[],
+	}));
+}
+
+/**
+ * Builds the composition named `name` among `exports`, a module namespace, and emits its IR as `irJson`.
+ * @throws `SCOPE.name` when none has that name, else as `build` does.
+ */
+export function buildNamed(
+	exports: Readonly<Record<string, unknown>>,
+	name: string,
+	params: Readonly<Record<string, unknown>>,
+	context: BuildContext,
+): string {
+	const root = compositionsOf(exports).get(name);
+	if (!root)
+		throw fail(
+			"SCOPE.name",
+			`no exported composition is named '${name}'`,
+			"Name one of the compositions the module exports",
+		);
+	return irJson(build(root, params, context));
+}
+
+/**
+ * The source of a bundle's entry over `entry`, the authored module's import specifier: it exports what `entry`
+ * exports, plus `describe()` and `build(name, params, context)` through the bundle's own SDK copy (ADR 0002).
+ */
+export function glue(entry: string): string {
+	const from = JSON.stringify(entry);
+	return [
+		`import { buildNamed, describe as described } from "${pkg.name}";`,
+		`import * as authored from ${from};`,
+		`export * from ${from};`,
+		"export const describe = () => described(authored);",
+		"export const build = (name, params, context) => buildNamed(authored, name, params, context);",
+		"",
+	].join("\n");
+}
