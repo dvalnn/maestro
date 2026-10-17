@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { cp, mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { type ComposeInput, compose } from "@maestro/core/compose";
+import type { ComposeInput } from "@maestro/core/compose";
 import type { HostInstance, HostNodeResult } from "@maestro/core/host";
 import { openRecord, perform } from "@maestro/core/perform";
 import { type Ir, parseIr, type WorkerRef } from "@maestro/ir";
-import { fakeHost } from "@maestro/testkit";
+import { composeIr, fakeHost } from "@maestro/testkit";
 import {
 	cleanup,
 	DEMO,
@@ -36,21 +36,8 @@ function built(
 	return result.ir;
 }
 
-const composed = async (
-	ir: Ir,
-	loader: Loader,
-	over: Partial<ComposeInput> = {},
-) =>
-	compose({
-		ir,
-		config: { values: { dataRoot: "/data" }, sources: [] },
-		core: { dataRoot: { type: "string" } },
-		packs: {},
-		hosts: [fakeHost()],
-		loadCode: loader.loadCode,
-		caps: {},
-		...over,
-	});
+const composed = (ir: Ir, loader: Loader, over: Partial<ComposeInput> = {}) =>
+	composeIr(ir, { loadCode: loader.loadCode, ...over });
 
 const demoPack = async () =>
 	openPack(await packOf(join(DEMO, "index.ts"), await scratch()));

@@ -295,8 +295,10 @@ Severity is `error` or `warning`. Any error stops before any concert starts (NFR
 ### 13.4 Test kit (SDK-08)
 
 - A **fake host** with configurable node kinds and scripted outcomes (including reject-then-accept).
-- **Graph assertions:** node counts, kinds, edges, bounds, diagnostics.
-- **Stub concert** over the real executor, for outcome propagation and resume tests.
+- **Graph assertions:** `buildIr` builds a composition, `shapeOf` counts an IR's nodes, kinds and edges, and `composeIr`
+  gives the plan's bounds or the diagnostics.
+- **Stub concert:** `stubConcert` performs an IR over the real executor with scripted host nodes and stubbed code, for
+  outcome propagation and resume tests.
 - **Core-only fixtures** proving CORE-12.
 
 ### 13.5 Renderer contract

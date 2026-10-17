@@ -5,9 +5,7 @@
 	"exports": "./src/index.ts",
 	"dependencies": {
 		"@maestro/core": "workspace:*",
+		"@maestro/ir": "workspace:*",
 		"@maestro/sdk": "workspace:*"
-	},
-	"devDependencies": {
-		"@maestro/ir": "workspace:*"
 	}
 }

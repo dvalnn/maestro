@@ -151,7 +151,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   and supports the CLI queries in 6.6.
 - **CORE-12 (Must).** Core has no domain words. A lint enforces it, and the core's own suite runs real graphs with only
   code nodes plus a fake host kind. The lint rejects the words lane, seat, leg, run, review, build and quality in core
-  packages, except that `build` is allowed in `sdk` and `cli`, which drive the build phase.
+  packages, except that `build` is allowed in `sdk` and `cli`, which drive the build phase, and in `testkit`, which
+  tests it.
 - **CORE-13 (Must).** A host interface lets a host register node kinds, types, a `validate(graph, setup)` hook, an
   `bounds(node)` hook and an environment, per `architecture.md` section 6.
 - **CORE-14 (Must).** The worker protocol is defined for code nodes. The TypeScript runtime provides an in-process
@@ -165,7 +166,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **CORE-18 (Should).** Config is layered and validated per namespace per 6.2, and the composed config reports the layer
   each value came from.
 - **CORE-19 (Must).** A node instance carries named additive numbers (metrics). The engine sums each name per concert
-  and exposes the totals to hosts and the CLI. It attaches no meaning to a name (D-23).
+  and exposes the totals to the CLI. It attaches no meaning to a name (D-23). The host half of the totals arrives with
+  HOST-08.
 
 ### 6.2 Configuration (CFG)
 
@@ -261,7 +263,7 @@ The executable is `maestro`.
   `tour` groups concerts, and `ls` and `prune` filter by tour.
 - **CLI-04 (Must).** Every command supports machine-readable output. Exit codes are stable and distinguish accepted,
   rejected, failed, usage error and wait timeout.
-- **CLI-05 (Should).** `watch` draws the live graph.
+- **CLI-05 (Must).** `watch` draws the live graph.
 - **CLI-06 (Must).** An error names what the operator or agent should do next.
 - **CLI-07 (Must).** Every verb except `prune` has a built-in short alias, shown in help. Aliases are explicit and not
   inferred from unambiguous prefixes, so adding a verb never changes the meaning of an existing alias. Aliases are
@@ -303,7 +305,8 @@ The executable is `maestro`.
 
 ## 8. Acceptance criteria for the initial port
 
-- **AC-1.** The core test suite passes with no host and no domain words (CORE-12).
+- **AC-1.** The core test suite passes with no host and no domain words (CORE-12). Pinned by the compose test "composes
+  the %s golden IR into its plan golden", over core-only fixtures, and the domain-words lint.
 - **AC-2.** Composing the ported verification composition (the lens, skeptic, consolidator shape) reports the exact
   node-instance count, rejects a same-family skeptic before any spend, and rejects an unclaimed config key.
 - **AC-3.** The ported build-then-repair composition shows its bounded unroll in the plan. With a stub host that rejects
@@ -315,7 +318,8 @@ The executable is `maestro`.
 - **AC-6.** `compose`, `perform`, `ls`, `wait`, `kill` and `config` work with JSON output, the documented exit codes and
   their short aliases.
 - **AC-7.** The package installs and runs on a modern Linux host, as `bunx` or as a single binary.
-- **AC-8.** A hand-written IR file is performed without the SDK.
+- **AC-8.** A hand-written IR file is performed without the SDK. Pinned by the CLI test "a golden IR file performs
+  through the CLI".
 - **AC-9.** Against the predecessor, tasks T1 (fixable) and T2 (unfixable by construction) match on the sequence of
   agent and check runs by kind, the final outcome class, the files touched, and a clean target checkout (D-28).
 

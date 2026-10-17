@@ -176,6 +176,46 @@ A host is a package that the core loads. It is the only way node kinds beyond th
 The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
 hooks and records what they return.
 
+### Host reference
+
+What a host author writes against. ADR 0010 records why the shape is this one.
+
+**Imports.** The contract spans three entry points and nothing else:
+
+| Import                 | Gives                                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `@maestro/core/host`   | `Host`, `NodeKind`, `HostInstance`, `HostSetup`, `HostContext`, `HostResources`, `HostNodeResult`, `Metrics`, `Bounds`. |
+| `@maestro/core/worker` | `Inputs`, `Outputs`, `NodeResult`: the values a node takes and settles with.                                            |
+| `@maestro/ir`          | `HostNode`, `Ports`, `JsonSchema`, `Diagnostic`, `GraphIndex`, `Facts`, `HostEvent`, `Enrichment`, `Context`.           |
+
+**Host members.** Required members sit flat on the host. Core calls each at a fixed stage and never inspects what it
+returns beyond the check named.
+
+| Member               | When core calls it                                                    | Returns                          |
+| -------------------- | --------------------------------------------------------------------- | -------------------------------- |
+| `name`               | Always: it namespaces kinds, types and facts.                         |                                  |
+| `kinds`, `types`     | At compose and at perform start: core reads the kind and type owners. |                                  |
+| `kind.name`          | At compose: the `<host>.<kind>` a node's `kind` names.                |                                  |
+| `kind.config`        | At compose: the schema a node's `config` is checked against.          | `HOST.config` diagnostics.       |
+| `config`             | At config compose: one schema per namespace the host owns.            |                                  |
+| `validate(graph, s)` | At compose, once per graph, after core's own checks.                  | Diagnostics, `HOST.`-prefixed.   |
+| `bounds(node)`       | At compose, per node of one of the host's kinds.                      | Named counts per instance.       |
+| `environment(s)`     | At perform start, once per concert.                                   | Facts for code nodes' `env`.     |
+| `kind.ports(node)`   | At compose, per node.                                                 | The node's `in` and `out`.       |
+| `kind.execute(...)`  | Per node instance, when its inputs are ready.                         | `HostNodeResult`.                |
+| `kind.cancel(i)`     | When the concert is cancelled or a halt stops a running instance.     | Nothing; `execute` then settles. |
+| `param?(type, text)` | The CLI only, to read a param of one of the host's `types` from text. | A value, or diagnostics.         |
+| `resources?.release` | The CLI only, for `prune`, on a settled concert.                      | Nothing.                         |
+| `resources?.usage`   | The CLI only, for `ls`, per concert.                                  | Bytes on disk.                   |
+
+The setup each hook gets, `HostSetup`, is item 6 above and ADR 0010.
+
+**Naming.** A host named `h` prefixes its node kinds (`h.agent`) and types (`h.lane`) with `h.`. Config namespaces are
+not prefixed (`target`, `roles`). Core refuses two hosts that register one kind, and a type name no installed host owns.
+
+**Logging.** A host writes no log of its own. It reports progress through `context.emit(event)`, a JSON object core
+stores by node id and expansion path as a `progress` event, opaquely.
+
 ## 7. Execution model
 
 - **Node instances.** A node instance is a node id plus an expansion path: one `[key]` per enclosing group, outermost

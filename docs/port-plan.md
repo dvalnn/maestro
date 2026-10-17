@@ -11,7 +11,8 @@ session. No schedule or effort estimates are given. Sizes are relative (S, M, L,
 2. **Clean break (D-02).** Do not mirror sssf's modules, flags, file formats or vocabulary. The legacy system answers
    "what should this behavior be" and nothing else (`requirements.md` section 12).
 3. **Domain-free core (CORE-12).** No domain words in `ir` (its source), `core`, `sdk`, `testkit` or `cli`. The check is
-   a lint in `just check`. `build` is allowed in `sdk` and `cli`, which drive the build phase.
+   a lint in `just check`. `build` is allowed in `sdk` and `cli`, which drive the build phase, and in `testkit`, which
+   tests it.
 4. **Lean (NFR-09).** A new node kind, edge kind or SDK primitive needs a written justification in the slice report. The
    default is a code node or a stdlib helper.
 5. **Do not guess.** A question the docs settle is derived and listed in the slice report; a real fork, a contract, a
@@ -165,7 +166,7 @@ need the core. S8d and S8e need S7.
   checkout (D-28).
 - **Depends on.** S2, S7, S8.
 
-### S10. Live view (S, optional)
+### S10. Live view (S)
 
 - **Goal.** CLI-05.
 - **Deliverables.** `watch`: the graph with node-instance state overlaid from events.
@@ -188,7 +189,7 @@ S0 ──> S1 ──┬──> S2 ──┐
             ├──> S3 ──┼──> S6 ──> S7 ──> S8d/S8e ──> S9 ──> S11
             └──> S4 ──┴──> S5 ───┘                    ▲
 S0 ──> S8a, S8b, S8c (standalone libraries) ──────────┘
-                                          S10 after S3, S4 (optional)
+                                          S10 after S3, S4
 ```
 
 Suggested waves:

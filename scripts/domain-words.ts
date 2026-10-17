@@ -4,13 +4,13 @@ const EXIT_FOUND = 1;
 const DOMAIN_WORD = /^(lane|seat|leg|run|review|build|quality)s?$/;
 /**
  * The paths scanned, relative to `packages/`, each with the domain words it may use. ir is scanned by its source alone.
- * The SDK has a build phase, which the CLI drives.
+ * The SDK has a build phase.
  */
 const SCANNED: Readonly<Record<string, readonly string[]>> = {
 	"ir/src": ["build"],
 	core: [],
 	"render-text": [],
-	testkit: [],
+	testkit: ["build"],
 	sdk: ["build"],
 	cli: ["build"],
 };

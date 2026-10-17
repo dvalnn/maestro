@@ -29,7 +29,6 @@ import {
 	type IrEdge,
 	type IrNode,
 	MAESTRO_TYPE,
-	mapWorkers,
 	parseIr,
 	reject,
 	type Settled,
@@ -41,7 +40,13 @@ import { isDone } from "@maestro/ir/fixtures/refine";
 import { planPanelIr } from "@maestro/sdk/fixtures/examples";
 import * as workers from "@maestro/sdk/fixtures/workers";
 import * as stdlib from "@maestro/sdk/stdlib";
-import { FAKE_TASK, type FakeScript, fakeHost } from "./index";
+import {
+	FAKE_TASK,
+	type FakeScript,
+	fakeHost,
+	type StubOptions,
+	stubConcert,
+} from "./index";
 
 const FIXTURES = join(import.meta.dir, "../../ir/fixtures");
 const STRING = { type: "string" };
@@ -87,9 +92,6 @@ const loader =
 /** The `codeHash` of the code a worker reference names as it is now. */
 type CodeHash = (ref: WorkerRef) => string;
 
-/** The hashes the IR already holds. */
-const keep: CodeHash = (ref) => ref.codeHash;
-
 /** The directory `options` names, or a new workspace's. */
 const storage = async (options: { dir?: string }) =>
 	options.dir ?? (await workspace()).dir;
@@ -110,33 +112,15 @@ const start = (
 /** Performs `source`, an IR or the id of a concert to resume, with its code hashed by `options.codeHash`. */
 async function play(
 	source: Ir | string,
-	options: {
-		script?: FakeScript;
-		hosts?: Host[];
-		code?: Readonly<Record<string, Fn>>;
-		loadCode?: LoadCode;
-		concurrency?: number;
-		codeHash?: CodeHash;
-		dir?: string;
-	} = {},
+	options: Omit<StubOptions, "hosts"> & { hosts?: Host[] } = {},
 ) {
 	const dir = await storage(options);
-	const record = readerIn(dir);
-	const ir = typeof source === "string" ? recorded(record, source).ir : source;
-	const performOptions: Parameters<typeof start>[0] = {
-		ir: mapWorkers(ir, (ref) => ({
-			...ref,
-			codeHash: (options.codeHash ?? keep)(ref),
-		})),
-		...(typeof source === "string" && { resume: source }),
-		hosts: options.hosts ?? [fakeHost(options.script)],
-		loadCode: options.loadCode ?? loader(options.code ?? {}),
+	const concert = await stubConcert(source, {
+		...options,
 		dir,
-		concurrency: options.concurrency ?? 4,
-	};
-	const playing = await start(performOptions);
-	const result = await playing.done;
-	return { ...playing, concert: playing.id, result, record, dir };
+	});
+	cleanups.push(concert.close);
+	return { ...concert, concert: concert.id };
 }
 
 const fixture = async (name: string) =>
