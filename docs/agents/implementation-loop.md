@@ -10,13 +10,16 @@ wraps them.
 
 1. **Brief** (conductor). Port plan section 6 template, plus an `Out of scope:` line. Done when every deliverable maps
    to a requirement ID or a plan item. Anything else is cut, derived or raised, as "Owner calls" below says.
-2. **Implement** (one background subagent, fenced to the slice's package dirs). Sonnet by default, opus for
-   contract-setting or design-heavy slices. Done when the acceptance items pass, shown by command output.
+2. **Implement** (one background subagent, fenced to the slice's package dirs). Done when the acceptance items pass,
+   shown by command output. Model and effort follow the task's complexity:
+   - a mechanical or small fix: sonnet, low effort;
+   - an ordinary slice: sonnet, medium effort, or opus, low effort;
+   - a contract-setting or design-heavy slice: opus, medium effort.
 3. **Mechanical gate** (conductor). The conductor runs `just check` itself. Anything a linter can check stays in Biome,
    so review spends no tokens on it.
-4. **Review** (one fresh read-only subagent, the other model from the implementer). Runs the `code-review` skill from
-   the slice's base change. Standards are `CODING_STANDARDS.md`, Spec is the brief, its requirement IDs and the ADRs. It
-   also asks, of every changed file:
+4. **Review** (one fresh read-only subagent, the other model from the implementer, at high effort). Runs the
+   `code-review` skill from the slice's base change. Standards are `CODING_STANDARDS.md`, Spec is the brief, its
+   requirement IDs and the ADRs. It also asks, of every changed file:
    - A module, export or dependency that no requirement or plan item asks for (NFR-09)?
    - A duplicate of a helper or pattern the codebase already has?
    - An interface wider than the brief needs?
@@ -63,7 +66,10 @@ Each slice report gets a `Loop` table. The wave review writes its row to `docs/r
 | Step | Findings | Accepted | Changed code or design | Spend[^1] |
 | ---- | -------- | -------- | ---------------------- | --------- |
 
-[^1]: Tokens and wall time from the agent's completion notice.
+[^1]: Model and effort, then tokens and wall time from the agent's completion notice.
+
+The effort levels in steps 2 and 4 are an experiment. The Spend column is its evidence: a wave review compares what each
+level cost against what its review caught, and the owner keeps, shifts or drops a level from that.
 
 ## Revisiting a step
 
