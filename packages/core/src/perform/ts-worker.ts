@@ -2,6 +2,7 @@ import { join } from "node:path";
 import {
 	type CodeContext,
 	IR_VERSION,
+	type NodeInstance,
 	type Ports,
 	type Rejection,
 	TS_RUNTIME,
@@ -15,13 +16,7 @@ import {
 	loadFunction,
 	messageOf,
 } from "../shared";
-import type {
-	Inputs,
-	LoadCode,
-	NodeInstance,
-	NodeResult,
-	Outputs,
-} from "../worker";
+import type { Inputs, LoadCode, NodeResult, Outputs } from "../worker";
 import type { PortCheck } from "./execute";
 
 /** What a worker announces before its first invocation. */

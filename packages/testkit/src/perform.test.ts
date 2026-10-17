@@ -36,11 +36,11 @@ import {
 	TS_RUNTIME,
 	type WorkerRef,
 } from "@maestro/ir";
+import { partKey, summarize } from "@maestro/ir/fixtures/guards";
+import { isDone } from "@maestro/ir/fixtures/refine";
+import { planPanelIr } from "@maestro/sdk/fixtures/examples";
+import * as workers from "@maestro/sdk/fixtures/workers";
 import * as stdlib from "@maestro/sdk/stdlib";
-import { partKey, summarize } from "../../ir/fixtures/guards";
-import { isDone } from "../../ir/fixtures/refine";
-import { planPanelIr } from "../../sdk/src/fixtures/examples";
-import * as workers from "../../sdk/src/fixtures/workers";
 import { FAKE_TASK, type FakeScript, fakeHost } from "./index";
 
 const FIXTURES = join(import.meta.dir, "../../ir/fixtures");

@@ -6,6 +6,7 @@ import {
 	type Facts,
 	type HostNode,
 	type JsonSchema,
+	type NodeInstance,
 	type Ports,
 } from "@maestro/ir";
 import type { ValidateFunction } from "ajv/dist/2020";
@@ -18,7 +19,7 @@ import type {
 } from "../host";
 import type { Validator } from "../ports";
 import { type HostKind, isOutputs, isRecord, messageOf } from "../shared";
-import type { Inputs, NodeInstance, NodeResult } from "../worker";
+import type { Inputs, NodeResult } from "../worker";
 import { type ConcertDirs, collectArtifacts } from "./artifacts";
 import type { RecordWriter, Settling } from "./record";
 import type { Invocation, Worker } from "./ts-worker";

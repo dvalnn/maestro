@@ -1,8 +1,9 @@
 # @maestro/ir
 
 The IR is the language-neutral, versioned JSON form of a graph (D-09, IR-01). It is the contract between emitters (the
-TypeScript SDK, or any other language) and the engine. ir holds the IR plus what the SDK and core must both see, since
-the SDK imports nothing else (ADR 0007). It depends on nothing beyond Ajv. This package holds:
+TypeScript SDK, or any other language) and the engine. ir also holds the data formats maestro emits (the plan and the
+events) and what the SDK, core and renderers must all see, since the SDK imports nothing else (ADR 0007) and renderers
+import ir alone. It depends on nothing beyond Ajv. This package holds:
 
 - `ir.schema.json`: the published JSON Schema (draft 2020-12). It is the contract, and it is usable with any validator.
 - `src/`: `parseIr`, `IR_VERSION`, `irSchema` and the TypeScript types, plus the shared contracts below: diagnostics
@@ -11,8 +12,10 @@ the SDK imports nothing else (ADR 0007). It depends on nothing beyond Ajv. This 
   (`MAESTRO_TYPE`, `CORE_TYPES`, `ARTIFACT_TYPES`, `registerMaestroType`, `findMarked`, `schemaMarkers`,
   `unreachableMarkers`, `artifactsAsRefs`), artifact references (`ArtifactRef`, `artifactRefSchema`), the graph index
   (`indexGraph`, `GraphIndex`, `IMPLICIT_OUT`, `outputValue`, `isGroup`, `boundOf`, `tolerates`), expansion paths
-  (`itemKey`, `firstDuplicate`, `formatExpansion`, `parseExpansion`, `formatInstance`) and `MAX_TIMEOUT`.
-- `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`, and its worker modules sit beside it.
+  (`itemKey`, `firstDuplicate`, `formatExpansion`, `parseExpansion`, `formatInstance`), the plan (`Plan`, `Expansion`,
+  `PlanBounds`), events (`ConcertEvent`, `EventBody`, `NodeInstance`, `HostEvent`, `Enrichment`) and `MAX_TIMEOUT`.
+- `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`, and its worker modules sit beside it. A
+  `plans/<name>.json` is the plan compose gives the IR of that name, which the renderers' tests read.
 - `test/read_ir.py`: an independent reader (Python standard library only), which proves the format is readable without
   maestro code.
 
@@ -288,11 +291,83 @@ subschema it marks, and whether `findMarked` reaches it. `unreachableMarkers(sch
 A `$defs` entry counts only when a `$ref` reaches it. An unreachable marker is a compose error (a `TYPE` diagnostic in
 pre-flight), not a silent gap: compose reports each pointer this function returns.
 
+## Plan
+
+compose produces the plan. It is JSON, and `Plan` in `src/plan.ts` is its type. In V1 it is output only: perform takes
+the IR, not a plan, so the plan carries no format version.
+
+| Field         | Holds                                                                     |
+| ------------- | ------------------------------------------------------------------------- |
+| `ir`          | The IR, unchanged.                                                        |
+| `expansion`   | Group id, then the group instance's expansion path, then its `Expansion`. |
+| `bounds`      | `PlanBounds`, below.                                                      |
+| `diagnostics` | Warnings only, each an ir `Diagnostic` (`src/types.ts`).                  |
+
+Expansion paths are in the format of [Expansion paths](#expansion-paths) (`formatExpansion`): one `[key]` per enclosing
+group, outermost first, `""` outside groups. A map item's key is its `itemKey`, or at perform its key function's. A
+`seq` or `repeat` iteration's key is its index.
+
+An `Expansion` is either:
+
+- `{ keys }`: the instance's iteration keys in order.
+- `{ exact }`: a map's iteration count, when its key function names the iterations at perform.
+- `{ upTo }`: a region with its bound.
+
+`PlanBounds` (D-23):
+
+| Field       | Holds                                                                                     |
+| ----------- | ----------------------------------------------------------------------------------------- |
+| `instances` | The node-instance total, groups included, as a `Cardinality`: `{ exact }` or `{ upTo }`.  |
+| `nodes`     | Instances per node id.                                                                    |
+| `counts`    | Each name a host's `bounds(node)` reports, times the node's instances, summed over nodes. |
+
+A count is exact only when every group above it is a map whose items compose knows.
+
+A plan for a map over two topics, then a repeat, with a host that counts one `calls` per node and `ir` cut short:
+
+```json
+{
+  "ir": { "irVersion": "1.0", "nodes": [], "edges": [] },
+  "expansion": {
+    "topics": { "": { "keys": ["alpha", "beta"] } },
+    "loop": { "": { "upTo": 2 } }
+  },
+  "bounds": {
+    "instances": { "upTo": 8 },
+    "nodes": {
+      "topics": { "exact": 1 },
+      "topics/slug": { "exact": 2 },
+      "topics/draft": { "exact": 2 },
+      "loop": { "exact": 1 },
+      "loop/step": { "upTo": 2 }
+    },
+    "counts": { "calls": { "upTo": 4 } }
+  },
+  "diagnostics": []
+}
+```
+
+## Events
+
+`ConcertEvent` is one entry of a concert's event stream (CORE-10): the `NodeInstance` it is about (`node` and
+`expansion`), `seq` (orders all events of a store and is the cursor to read after), `at` (epoch milliseconds) and an
+`EventBody`, told apart by `type`:
+
+| `type`     | Carries                                       | Means                                               |
+| ---------- | --------------------------------------------- | --------------------------------------------------- |
+| `running`  |                                               | The instance started.                               |
+| `settled`  | `outcome`, optional `reason` and `enrichment` | It settled.                                         |
+| `reused`   |                                               | A resume kept its `ok` record from before.          |
+| `progress` | `event` (a `HostEvent`)                       | Its host emitted `event`, stored as given.          |
+| `log`      | `line`                                        | Its worker wrote `line`, or its cancel hook failed. |
+
+`HostEvent` and `Enrichment` are open JSON records that the host owns and the engine stores as given.
+
 ## Left to the consumers
 
 The IR carries structure. These semantics belong to the slices that execute or validate it, and are not fixed here:
 
-- compose-time additions such as expansion and bounds (the plan).
+- how compose computes a plan and how perform produces events: ir fixes only their formats.
 
 [^fanin]:
     A `fanin` node runs once every upstream has settled and receives each `data` input as `Settled`

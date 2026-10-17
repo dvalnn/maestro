@@ -1,0 +1,57 @@
+{
+	"ir": {
+		"irVersion": "1.0",
+		"composition": {
+			"id": "minimal",
+			"version": "0.1.0",
+			"pack": "fixtures"
+		},
+		"emitter": {
+			"name": "hand",
+			"version": "1"
+		},
+		"scopes": [],
+		"nodes": [
+			{
+				"id": "greet",
+				"kind": "code",
+				"in": {
+					"name": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"literals": {
+					"name": "world"
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "greet.ts",
+					"export": "greet",
+					"codeHash": "sha256:54d884a1032f6ad058f0b9b458ac56c55c09323ce7f78113db111c26fcdfc351"
+				}
+			}
+		],
+		"edges": [],
+		"result": {
+			"node": "greet"
+		}
+	},
+	"expansion": {},
+	"bounds": {
+		"instances": {
+			"exact": 1
+		},
+		"nodes": {
+			"greet": {
+				"exact": 1
+			}
+		},
+		"counts": {}
+	},
+	"diagnostics": []
+}

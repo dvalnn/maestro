@@ -1,0 +1,9 @@
+{
+	"name": "@maestro/render-text",
+	"private": true,
+	"type": "module",
+	"exports": "./src/index.ts",
+	"dependencies": {
+		"@maestro/ir": "workspace:*"
+	}
+}

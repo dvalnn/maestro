@@ -14,10 +14,11 @@ import {
 	type ArtifactRef,
 	CORE_TYPES,
 	findMarked,
+	type NodeInstance,
 	type Ports,
 	replaceAt,
 } from "@maestro/ir";
-import type { NodeInstance, Outputs } from "../worker";
+import type { Outputs } from "../worker";
 
 /** A concert's artifact area and the directory its instances' scratch directories go in, both absolute. */
 export type ConcertDirs = { artifacts: string; scratch: string };

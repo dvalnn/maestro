@@ -13,9 +13,13 @@
     },
     "packages/cli": {
       "name": "@maestro/cli",
+      "bin": {
+        "maestro": "./src/maestro.ts",
+      },
       "dependencies": {
         "@maestro/core": "workspace:*",
         "@maestro/ir": "workspace:*",
+        "@maestro/render-text": "workspace:*",
         "@maestro/sdk": "workspace:*",
       },
       "devDependencies": {
@@ -37,6 +41,12 @@
       "name": "@maestro/ir",
       "dependencies": {
         "ajv": "8.20.0",
+      },
+    },
+    "packages/render-text": {
+      "name": "@maestro/render-text",
+      "dependencies": {
+        "@maestro/ir": "workspace:*",
       },
     },
     "packages/sdk": {
@@ -83,6 +93,8 @@
     "@maestro/host-agents": ["@maestro/host-agents@workspace:packages/host-agents"],
 
     "@maestro/ir": ["@maestro/ir@workspace:packages/ir"],
+
+    "@maestro/render-text": ["@maestro/render-text@workspace:packages/render-text"],
 
     "@maestro/sdk": ["@maestro/sdk@workspace:packages/sdk"],
 

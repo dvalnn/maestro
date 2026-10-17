@@ -24,6 +24,16 @@ const warning = (code: string): Diagnostic => ({
 
 describe("compose", () => {
 	test.each([
+		"minimal",
+		"fanout-fanin-loop",
+		"nested-groups",
+		"guards-and-escalation",
+	])("composes the %s golden IR into its plan golden", async (name) => {
+		const expected = (await import(`@maestro/ir/plans/${name}`)).default;
+		expect(await planOf(await golden(`${name}.json`))).toEqual(expected);
+	});
+
+	test.each([
 		["minimal.json", golden, { exact: 1 }, "greet", { exact: 1 }],
 		[
 			"fanout-fanin-loop.json",

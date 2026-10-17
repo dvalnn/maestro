@@ -5,7 +5,6 @@ import type {
 	ConcertStatus,
 	Unresumable,
 } from "@maestro/core/perform";
-import type { NodeInstance } from "@maestro/core/worker";
 import {
 	ARTIFACT_TYPES,
 	type ArtifactRef,
@@ -15,6 +14,7 @@ import {
 	type Ir,
 	indexGraph,
 	isPlainObject,
+	type NodeInstance,
 	replaceAt,
 } from "@maestro/ir";
 

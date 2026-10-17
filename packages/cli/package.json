@@ -8,6 +8,7 @@
 	"dependencies": {
 		"@maestro/core": "workspace:*",
 		"@maestro/ir": "workspace:*",
+		"@maestro/render-text": "workspace:*",
 		"@maestro/sdk": "workspace:*"
 	},
 	"devDependencies": {

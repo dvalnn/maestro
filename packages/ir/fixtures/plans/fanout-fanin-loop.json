@@ -1,0 +1,402 @@
+{
+	"ir": {
+		"irVersion": "1.0",
+		"composition": {
+			"id": "fanout-fanin-loop",
+			"version": "0.1.0",
+			"pack": "fixtures",
+			"doc": "Draft one text per topic in parallel, keep the first good draft and pick its text, then refine it until done, at most twice."
+		},
+		"emitter": {
+			"name": "hand",
+			"version": "1"
+		},
+		"scopes": [
+			{
+				"id": "refine",
+				"composition": "refine-until-done",
+				"ports": {
+					"text": {
+						"type": "string"
+					}
+				}
+			}
+		],
+		"nodes": [
+			{
+				"id": "topics",
+				"kind": "map",
+				"items": ["alpha", "beta", "gamma"],
+				"cardinality": {
+					"exact": 3
+				},
+				"onError": "settle",
+				"inner": {
+					"item": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"results": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["outcome"],
+							"additionalProperties": false,
+							"properties": {
+								"outcome": {
+									"enum": ["ok", "skipped", "rejected", "failed"]
+								},
+								"value": {
+									"type": "object"
+								},
+								"reason": {
+									"type": "string"
+								}
+							},
+							"oneOf": [
+								{
+									"required": ["value"],
+									"properties": {
+										"outcome": {
+											"const": "ok"
+										},
+										"value": true,
+										"reason": false
+									}
+								},
+								{
+									"required": ["reason"],
+									"properties": {
+										"outcome": {
+											"enum": ["rejected", "failed"]
+										},
+										"reason": true
+									}
+								},
+								{
+									"properties": {
+										"outcome": {
+											"const": "skipped"
+										}
+									}
+								}
+							]
+						}
+					}
+				},
+				"members": {
+					"result": "topics/draft"
+				}
+			},
+			{
+				"id": "topics/draft",
+				"kind": "fake.task",
+				"in": {
+					"prompt": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"config": {
+					"effort": "low"
+				}
+			},
+			{
+				"id": "pick",
+				"kind": "code",
+				"in": {
+					"results": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["outcome"],
+							"additionalProperties": false,
+							"properties": {
+								"outcome": {
+									"enum": ["ok", "skipped", "rejected", "failed"]
+								},
+								"value": {
+									"type": "object"
+								},
+								"reason": {
+									"type": "string"
+								}
+							},
+							"oneOf": [
+								{
+									"required": ["value"],
+									"properties": {
+										"outcome": {
+											"const": "ok"
+										},
+										"value": true,
+										"reason": false
+									}
+								},
+								{
+									"required": ["reason"],
+									"properties": {
+										"outcome": {
+											"enum": ["rejected", "failed"]
+										},
+										"reason": true
+									}
+								},
+								{
+									"properties": {
+										"outcome": {
+											"const": "skipped"
+										}
+									}
+								}
+							]
+						}
+					}
+				},
+				"out": {
+					"value": {
+						"type": "object",
+						"properties": {
+							"result": {
+								"type": "object",
+								"properties": {
+									"text": {
+										"type": "string"
+									}
+								}
+							}
+						}
+					}
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "maestro:stdlib",
+					"export": "firstOk",
+					"codeHash": "maestro:stdlib@0.0.0"
+				},
+				"fanin": true
+			},
+			{
+				"id": "refine/loop",
+				"kind": "repeat",
+				"cardinality": {
+					"upTo": 2
+				},
+				"tolerate": "rejected",
+				"in": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"inner": {
+					"index": {
+						"type": "integer"
+					},
+					"text": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"members": {
+					"result": "refine/loop/step"
+				},
+				"until": {
+					"node": "refine/loop/done",
+					"port": "value"
+				}
+			},
+			{
+				"id": "refine/loop/step",
+				"kind": "fake.task",
+				"in": {
+					"prompt": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				}
+			},
+			{
+				"id": "refine/loop/done",
+				"kind": "code",
+				"in": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"value": {
+						"type": "boolean"
+					}
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "refine.ts",
+					"export": "isDone",
+					"codeHash": "sha256:a07519256fd37fd32ba1b5f04a3d33167fa96eb1f4369cbb8ce19fe6fdb29e4c"
+				}
+			},
+			{
+				"id": "text",
+				"kind": "code",
+				"in": {
+					"value": {
+						"type": "object",
+						"properties": {
+							"result": {
+								"type": "object",
+								"properties": {
+									"text": {
+										"type": "string"
+									}
+								}
+							}
+						}
+					},
+					"path": {
+						"type": "string"
+					}
+				},
+				"literals": {
+					"path": "result.text"
+				},
+				"out": {
+					"value": {
+						"type": "string"
+					}
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "maestro:stdlib",
+					"export": "pick",
+					"codeHash": "maestro:stdlib@0.0.0"
+				}
+			}
+		],
+		"edges": [
+			{
+				"kind": "data",
+				"from": {
+					"node": "topics",
+					"port": "item"
+				},
+				"to": {
+					"node": "topics/draft",
+					"port": "prompt"
+				}
+			},
+			{
+				"kind": "collect",
+				"from": {
+					"node": "topics",
+					"port": "results"
+				},
+				"to": {
+					"node": "pick",
+					"port": "results"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "text",
+					"port": "value"
+				},
+				"to": {
+					"node": "refine/loop",
+					"port": "text"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "refine/loop",
+					"port": "text"
+				},
+				"to": {
+					"node": "refine/loop/step",
+					"port": "prompt"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "refine/loop/step",
+					"port": "text"
+				},
+				"to": {
+					"node": "refine/loop/done",
+					"port": "text"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "pick",
+					"port": "value"
+				},
+				"to": {
+					"node": "text",
+					"port": "value"
+				}
+			}
+		],
+		"result": {
+			"node": "refine/loop"
+		}
+	},
+	"expansion": {
+		"topics": {
+			"": {
+				"keys": ["alpha", "beta", "gamma"]
+			}
+		},
+		"refine/loop": {
+			"": {
+				"upTo": 2
+			}
+		}
+	},
+	"bounds": {
+		"instances": {
+			"upTo": 11
+		},
+		"nodes": {
+			"topics": {
+				"exact": 1
+			},
+			"topics/draft": {
+				"exact": 3
+			},
+			"pick": {
+				"exact": 1
+			},
+			"refine/loop": {
+				"exact": 1
+			},
+			"refine/loop/step": {
+				"upTo": 2
+			},
+			"refine/loop/done": {
+				"upTo": 2
+			},
+			"text": {
+				"exact": 1
+			}
+		},
+		"counts": {}
+	},
+	"diagnostics": []
+}

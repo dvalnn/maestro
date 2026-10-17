@@ -2,12 +2,12 @@ import { expect, test } from "bun:test";
 import type {
 	Host,
 	HostContext,
-	HostEvent,
 	HostInstance,
 	HostSetup,
 } from "@maestro/core/host";
 import {
 	type Diagnostic,
+	type HostEvent,
 	type HostNode,
 	type Ir,
 	indexGraph,

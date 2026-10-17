@@ -14,6 +14,13 @@ export {
 	reject,
 	TS_RUNTIME,
 } from "./code-function";
+export type {
+	ConcertEvent,
+	Enrichment,
+	EventBody,
+	HostEvent,
+	NodeInstance,
+} from "./events";
 export {
 	firstDuplicate,
 	formatExpansion,
@@ -50,6 +57,7 @@ export {
 	settledSchema,
 	worstOutcome,
 } from "./outcome";
+export type { Expansion, Plan, PlanBounds } from "./plan";
 export type * from "./types";
 /** The published IR JSON Schema (draft 2020-12). Also at packages/ir/ir.schema.json. */
 export { irSchema };

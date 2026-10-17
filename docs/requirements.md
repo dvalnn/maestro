@@ -149,8 +149,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   Events are durable.
 - **CORE-11 (Must).** A record store holds concerts, node instances, outcomes, durations, metrics, artifacts and events,
   and supports the CLI queries in 6.6.
-- **CORE-12 (Must).** Core has no domain words. A test enforces it: the core's own suite runs real graphs with only code
-  nodes plus a fake host kind, and a scan rejects the words lane, seat, leg, run, review, build and quality in core
+- **CORE-12 (Must).** Core has no domain words. A lint enforces it, and the core's own suite runs real graphs with only
+  code nodes plus a fake host kind. The lint rejects the words lane, seat, leg, run, review, build and quality in core
   packages, except that `build` is allowed in `sdk` and `cli`, which drive the build phase.
 - **CORE-13 (Must).** A host interface lets a host register node kinds, types, a `validate(graph, setup)` hook, an
   `bounds(node)` hook and an environment, per `architecture.md` section 6.

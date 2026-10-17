@@ -2,8 +2,10 @@ import { join } from "node:path";
 import type {
 	Context,
 	Diagnostic,
+	Enrichment,
 	Facts,
 	GraphIndex,
+	HostEvent,
 	HostNode,
 	JsonSchema,
 	Ports,
@@ -22,17 +24,11 @@ export type Metrics = Readonly<Record<string, number>>;
 /** Named counts that bound one instance (D-23). Core sums each name over the plan and caps it by name. */
 export type Bounds = Readonly<Record<string, number>>;
 
-/** Fields core stores opaquely with the instance's events and record, as JSON. */
-export type Enrichment = Readonly<Record<string, unknown>>;
-
 /** How a host node instance ended, with the metrics and enrichment it reports beside its outcome. */
 export type HostNodeResult = NodeResult & {
 	metrics?: Metrics;
 	enrichment?: Enrichment;
 };
-
-/** A progress event a host instance emits, as JSON. Core stores it by node id and expansion path, opaquely. */
-export type HostEvent = Readonly<Record<string, unknown>>;
 
 /** The directory of host stores under the data root. */
 const HOSTS_DIR = "hosts";

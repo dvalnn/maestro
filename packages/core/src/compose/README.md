@@ -7,7 +7,8 @@
 - bounds the result.
 
 It calls no author code, writes nothing and starts no host node (NFR-02, ADR 0009). It returns `{ ok: true, plan }`, or
-`{ ok: false, diagnostics }` when any check gives an error.
+`{ ok: false, diagnostics }` when any check gives an error. The plan is `Plan` of `@maestro/ir`, described in its
+README.
 
 ## Input
 
@@ -51,61 +52,6 @@ It calls no author code, writes nothing and starts no host node (NFR-02, ADR 000
 
 A host's `validate()` that throws or rejects gives a `HOST.validate` error naming the host. Two hosts that register one
 node kind still throw, as `perform` does.
-
-## Plan
-
-The plan is JSON, and `Plan` in `index.ts` is its type. In V1 it is output only: perform takes the IR, not a plan, so
-the plan carries no format version.
-
-| Field         | Holds                                                                     |
-| ------------- | ------------------------------------------------------------------------- |
-| `ir`          | The IR, unchanged.                                                        |
-| `expansion`   | Group id, then the group instance's expansion path, then its `Expansion`. |
-| `bounds`      | `PlanBounds`, below.                                                      |
-| `diagnostics` | Warnings only, each an ir `Diagnostic` (`packages/ir/src/types.ts`).      |
-
-Expansion paths are ir's (`formatExpansion`): one `[key]` per enclosing group, outermost first, `""` outside groups. A
-map item's key is its `itemKey`, or at perform its key function's. A `seq` or `repeat` iteration's key is its index.
-
-An `Expansion` is either:
-
-- `{ keys }`: the instance's iteration keys in order.
-- `{ exact }`: a map's iteration count, when its key function names the iterations at perform.
-- `{ upTo }`: a region with its bound.
-
-`PlanBounds` (D-23):
-
-| Field       | Holds                                                                                     |
-| ----------- | ----------------------------------------------------------------------------------------- |
-| `instances` | The node-instance total, groups included, as a `Cardinality`: `{ exact }` or `{ upTo }`.  |
-| `nodes`     | Instances per node id.                                                                    |
-| `counts`    | Each name a host's `bounds(node)` reports, times the node's instances, summed over nodes. |
-
-A count is exact only when every group above it is a map whose items compose knows.
-
-A plan for a map over two topics, then a repeat, with a host that counts one `calls` per node and `ir` cut short:
-
-```json
-{
-  "ir": { "irVersion": "1.0", "nodes": [], "edges": [] },
-  "expansion": {
-    "topics": { "": { "keys": ["alpha", "beta"] } },
-    "loop": { "": { "upTo": 2 } }
-  },
-  "bounds": {
-    "instances": { "upTo": 8 },
-    "nodes": {
-      "topics": { "exact": 1 },
-      "topics/slug": { "exact": 2 },
-      "topics/draft": { "exact": 2 },
-      "loop": { "exact": 1 },
-      "loop/step": { "upTo": 2 }
-    },
-    "counts": { "calls": { "upTo": 4 } }
-  },
-  "diagnostics": []
-}
-```
 
 ## Diagnostics
 
@@ -152,28 +98,3 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
     value. The hint is to give the map a key function, whose duplicate keys fail the `map` at perform.
 
 No value gets its schema defaults. `format` is an annotation only: neither compose nor perform validates it.
-
-## Text forms
-
-- `summary(plan)`: one line, for example `fanout: up to 16 node instances`.
-- `listing(plan)`: each node with its kind and instance count and its expansions, then the bounds and any warnings.
-- `render(plan)`: a Mermaid flowchart (architecture 11). Scopes and groups are subgraphs, and a node inside one is named
-  by its id's last segment. A code node shows its worker export only when it differs from that name. A group's header,
-  inside the subgraph that names its id, shows its kind and its expansion (one line per path when there are several), or
-  its cardinality when nothing expanded. `start` points at each node with no incoming edge outside a group body, and the
-  result node points at `stop`, drawn `end`.
-
-| Drawn as        | Means                                                                              |
-| --------------- | ---------------------------------------------------------------------------------- |
-| `[ ]`           | A code node.                                                                       |
-| `[/ /]`         | A fan-in code node, the reducer behind a `collect`.                                |
-| `{ }`           | An assert.                                                                         |
-| `([ ])`         | A host node.                                                                       |
-| `[[ ]]`         | A group's header.                                                                  |
-| `-->`           | `data` edges between two nodes: `<from> to <to>` per port, a same-named port once. |
-| `-.->` `next`   | A repeat's body result feeding its next iteration.                                 |
-| `==>`           | A `collect` edge: the barrier before the fan-in.                                   |
-| `-.->` `when p` | A guard on output `p`.                                                             |
-| `-.->` `after`  | An ordering edge, with `tolerates rejected` when it does.                          |
-
-A key list is cut at 40 characters.

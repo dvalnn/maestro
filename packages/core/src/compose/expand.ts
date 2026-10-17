@@ -1,6 +1,7 @@
 import {
 	boundOf,
 	type Diagnostic,
+	type Expansion,
 	firstDuplicate,
 	formatExpansion,
 	formatInstance,
@@ -9,9 +10,9 @@ import {
 	type Ir,
 	isGroup,
 	itemKey,
+	type Plan,
 } from "@maestro/ir";
 import type { ExpansionOf } from "./bounds";
-import type { Expansion, Plan } from "./index";
 
 /** A group instance's expansion, with the item each iteration it lists delivers. */
 type Expanded = { expansion: Expansion; items: readonly unknown[] };

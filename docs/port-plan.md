@@ -10,8 +10,8 @@ session. No schedule or effort estimates are given. Sizes are relative (S, M, L,
    terms.
 2. **Clean break (D-02).** Do not mirror sssf's modules, flags, file formats or vocabulary. The legacy system answers
    "what should this behavior be" and nothing else (`requirements.md` section 12).
-3. **Domain-free core (CORE-12).** No domain words in `ir`, `core`, `sdk`, `testkit` or `cli`. The check runs in tests.
-   `build` is allowed in `sdk` and `cli`, which drive the build phase.
+3. **Domain-free core (CORE-12).** No domain words in `ir` (its source), `core`, `sdk`, `testkit` or `cli`. The check is
+   a lint in `just check`. `build` is allowed in `sdk` and `cli`, which drive the build phase.
 4. **Lean (NFR-09).** A new node kind, edge kind or SDK primitive needs a written justification in the slice report. The
    default is a code node or a stdlib helper.
 5. **Do not guess.** A question the docs settle is derived and listed in the slice report; a real fork, a contract, a
@@ -32,7 +32,7 @@ A Bun workspace monorepo. Package names are workspace names under `@maestro/*` a
 
 ```
 packages/
-  ir/               schema, version, validators, golden fixtures
+  ir/               schema, version, validators, plan and event shapes, golden fixtures
   core/             graph model, compose checks, executor, resume, record, events, config, worker protocol, host interface
   sdk/              authoring API, stdlib
   testkit/          fake host, assertions, stub concert
@@ -41,7 +41,7 @@ packages/
   host-agents-sdk/  typed constructors and types for the agent host
   harness-<name>/   one adapter each
   pack-general/     the ported compositions (placeholder name)
-  render-text/      static graph render (text or Mermaid), live view
+  render-text/      summary, listing and Mermaid render of a plan
 docs/               these documents (including adr/), slice reports under reports/
 ```
 
@@ -128,8 +128,8 @@ docs/               these documents (including adr/), slice reports under report
 ### S7. Core gate (S)
 
 - **Goal.** Freeze the core's interface before the host builds on it.
-- **Deliverables.** The CORE-12 test and an import-graph check, the test kit complete (SDK-08), an API review of `core`,
-  `sdk` and the host interface against `architecture.md` section 6, and the host interface documented.
+- **Deliverables.** The CORE-12 and import-graph lints, the test kit complete (SDK-08), an API review of `core`, `sdk`
+  and the host interface against `architecture.md` section 6, and the host interface documented.
 - **Acceptance.** AC-1 and AC-8. A written go from the project owner.
 - **Depends on.** S2 to S6.
 

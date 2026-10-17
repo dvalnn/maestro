@@ -1,8 +1,16 @@
 import { Database } from "bun:sqlite";
-import type { ArtifactRef, Ir, Outcome } from "@maestro/ir";
-import type { Enrichment, HostEvent, Metrics } from "../host";
+import type {
+	ArtifactRef,
+	ConcertEvent,
+	Enrichment,
+	EventBody,
+	Ir,
+	NodeInstance,
+	Outcome,
+} from "@maestro/ir";
+import type { Metrics } from "../host";
 import { instanceKey, isRecord } from "../shared";
-import type { NodeInstance, Outputs } from "../worker";
+import type { Outputs } from "../worker";
 
 /** The version of the schema below, kept in SQLite's `user_version`. */
 const SCHEMA_VERSION = 3;
@@ -182,32 +190,6 @@ export type Settling = (
 	/** The resume key, kept for an `ok` instance. */
 	key?: string;
 };
-
-/**
- * What an event says about its instance (CORE-10):
- * - `running`: it started.
- * - `settled`: it settled, with its outcome, reason and host enrichment.
- * - `reused`: a resume kept its `ok` record from before.
- * - `progress`: its host emitted `event`, stored as given.
- * - `log`: its worker wrote `line`, or its cancel hook failed.
- */
-export type EventBody =
-	| { type: "running" }
-	| {
-			type: "settled";
-			outcome: Outcome;
-			reason?: string;
-			enrichment?: Enrichment;
-	  }
-	| { type: "reused" }
-	| { type: "progress"; event: HostEvent }
-	| { type: "log"; line: string };
-
-/** `seq` orders all events of a store and is the cursor `events` reads after. `at` is epoch milliseconds. */
-export type ConcertEvent = NodeInstance & {
-	seq: number;
-	at: number;
-} & EventBody;
 
 /** The record outside a performance: its reads, and the operator's bookkeeping (tour, remove). */
 export interface Records {

@@ -2,6 +2,7 @@ import {
 	boundOf,
 	type Cardinality,
 	type Diagnostic,
+	type Expansion,
 	formatExpansion,
 	type GraphIndex,
 	type GroupNode,
@@ -9,10 +10,10 @@ import {
 	type Ir,
 	type IrNode,
 	isGroup,
+	type PlanBounds,
 } from "@maestro/ir";
 import type { Bounds } from "../host";
 import type { HostKind } from "../shared";
-import type { Expansion, PlanBounds } from "./index";
 
 /** The expansion of a group instance, by its expansion path. */
 export type ExpansionOf = (group: GroupNode, path: string) => Expansion;

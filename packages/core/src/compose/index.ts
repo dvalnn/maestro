@@ -1,10 +1,10 @@
 import {
-	type Cardinality,
 	type Diagnostic,
 	type GraphIndex,
 	type Ir,
 	indexGraph,
 	type JsonSchema,
+	type Plan,
 } from "@maestro/ir";
 import type { Composed } from "../config";
 import { type Bounds, type Host, hostSetup } from "../host";
@@ -14,8 +14,6 @@ import type { LoadCode } from "../worker";
 import { boundsOf, capErrors, type ExpansionOf, unexpanded } from "./bounds";
 import { checkConfig, checkHosts, checkTypes, checkWorkers } from "./checks";
 import { expand } from "./expand";
-
-export { listing, render, summary } from "./text";
 
 export type ComposeInput = {
 	/** IR that `parseIr` accepted. */
@@ -30,32 +28,6 @@ export type ComposeInput = {
 	loadCode: LoadCode;
 	/** Caps by name: `instances` caps the node-instance total, any other name the total of a host's count (D-23). */
 	caps: Bounds;
-};
-
-/**
- * A group instance's expansion, one of:
- * - `keys`: its iteration keys, in order;
- * - `exact`: its iteration count, when a key function names its iterations at perform;
- * - `upTo`: the bound of a region whose iterations compose does not know.
- */
-export type Expansion = { keys: string[] } | Cardinality;
-
-export type PlanBounds = {
-	instances: Cardinality;
-	/** Instances per node id. */
-	nodes: Record<string, Cardinality>;
-	/** Each name a host's `bounds(node)` reports, summed over the node's instances. */
-	counts: Record<string, Cardinality>;
-};
-
-/** The product of compose, as JSON. `README.md` beside this file is the format's reference. */
-export type Plan = {
-	ir: Ir;
-	/** Group id, then the group instance's expansion path. */
-	expansion: Record<string, Record<string, Expansion>>;
-	bounds: PlanBounds;
-	/** Warnings only: any error stops compose before the plan. */
-	diagnostics: Diagnostic[];
 };
 
 export type ComposeResult =

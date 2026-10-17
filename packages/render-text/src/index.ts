@@ -1,6 +1,7 @@
 import {
 	type Cardinality,
 	type DataEdge,
+	type Expansion,
 	formatInstance,
 	type GraphIndex,
 	type GroupNode,
@@ -8,8 +9,8 @@ import {
 	type IrNode,
 	indexGraph,
 	isGroup,
+	type Plan,
 } from "@maestro/ir";
-import type { Expansion, Plan } from "./index";
 
 /** Longest value or key list a text form shows before it cuts with an ellipsis. */
 const MAX_SHOWN = 40;
@@ -215,7 +216,7 @@ function body(d: Diagram, parent: string | undefined, depth: number): string[] {
 
 /**
  * A static Mermaid flowchart of the plan, with start and end markers and a `next` edge closing each repeat.
- * The README's "Text forms" section holds the drawing rules.
+ * The README's "Drawing rules" section holds the drawing rules.
  */
 export function render(plan: Plan): string {
 	const ids = new Map(plan.ir.nodes.map((n, i) => [n.id, `n${i}`]));

@@ -60,19 +60,19 @@ A monorepo of separately versioned packages (DIST-03). Package names are workspa
 
 | Layer            | Package           | Responsibility                                                                                                         | Knows about                |
 | ---------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| IR               | `ir`              | The IR schema, its version and validators. No runtime.                                                                 | nothing                    |
+| IR               | `ir`              | The IR and the data formats maestro emits: schema, version, validators, plan and event shapes. No runtime.             | nothing                    |
 | Core             | `core`            | Graph model, compose checks, executor, resume, record store, events, config layering, worker protocol, host interface. | `ir`                       |
 | SDK              | `sdk`             | Authoring API: compositions, node constructors, Refs, types, subcompositions, stdlib. Emits IR.                        | `ir`                       |
 | Test kit         | `testkit`         | Fake host, build and compose-time assertions, stub concert.                                                            | `core`, `sdk`              |
-| CLI              | `cli`             | Commands, derived input flags, output formats, exit codes, host and pack loading.                                      | `core`, `sdk`              |
+| CLI              | `cli`             | Commands, derived input flags, output formats, exit codes, host and pack loading.                                      | `core`, `sdk`, `render-*`  |
 | Agent host       | `host-agents`     | Agent and check node kinds, lanes, sandbox, harness adapter interface, host config namespaces.                         | `core`                     |
 | Agent host SDK   | `host-agents-sdk` | Typed constructors for agent and check nodes, lane types, report types.                                                | `sdk`, `host-agents` types |
 | Harness adapters | `harness-<name>`  | One adapter per coding-agent runtime.                                                                                  | `host-agents`              |
 | Packs            | `pack-<domain>`   | Compositions, prompts, schemas, code nodes, params.                                                                    | `sdk`, `host-agents-sdk`   |
-| Renderers        | `render-<form>`   | Static graph render, live view.                                                                                        | `ir`, event stream         |
+| Renderers        | `render-<form>`   | Static graph render, live view.                                                                                        | `ir`                       |
 
-Dependency rule: arrows only point down the table. `core` and `ir` never import a host, a pack or an adapter. CORE-12 is
-enforced by a test and by an import-graph check.
+Dependency rule: arrows only point down the table. `core` and `ir` never import a host, a pack or an adapter. CORE-12
+and the graph are enforced by lints in `just check`: Biome import restrictions and a domain-word scan.
 
 ## 4. Lifecycle of a concert
 

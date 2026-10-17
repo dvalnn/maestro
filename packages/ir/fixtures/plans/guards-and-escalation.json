@@ -1,0 +1,440 @@
+{
+	"ir": {
+		"irVersion": "1.0",
+		"composition": {
+			"id": "guards-and-escalation",
+			"version": "0.1.0",
+			"pack": "fixtures",
+			"doc": "Split work into an unknown number of parts, merge them, then try sizes in order until one is ok. A gate asserts the outcome, and a summary is written either way."
+		},
+		"emitter": {
+			"name": "hand",
+			"version": "1",
+			"sourceHash": "sha256:3333"
+		},
+		"scopes": [],
+		"nodes": [
+			{
+				"id": "plan",
+				"kind": "code",
+				"source": {
+					"file": "fixtures/guards.ts",
+					"line": 12,
+					"column": 3
+				},
+				"out": {
+					"parts": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					}
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "guards.ts",
+					"export": "plan",
+					"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
+				},
+				"reads": ["inputs/"]
+			},
+			{
+				"id": "each",
+				"kind": "map",
+				"cardinality": {
+					"upTo": 4
+				},
+				"onError": "propagate",
+				"key": {
+					"runtime": "ts",
+					"module": "guards.ts",
+					"export": "partKey",
+					"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
+				},
+				"in": {
+					"items": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					}
+				},
+				"inner": {
+					"item": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"results": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["outcome"],
+							"additionalProperties": false,
+							"properties": {
+								"outcome": {
+									"enum": ["ok", "skipped", "rejected", "failed"]
+								},
+								"value": {
+									"type": "object"
+								},
+								"reason": {
+									"type": "string"
+								}
+							},
+							"oneOf": [
+								{
+									"required": ["value"],
+									"properties": {
+										"outcome": {
+											"const": "ok"
+										},
+										"value": true,
+										"reason": false
+									}
+								},
+								{
+									"required": ["reason"],
+									"properties": {
+										"outcome": {
+											"enum": ["rejected", "failed"]
+										},
+										"reason": true
+									}
+								},
+								{
+									"properties": {
+										"outcome": {
+											"const": "skipped"
+										}
+									}
+								}
+							]
+						}
+					}
+				},
+				"members": {
+					"result": "each/work"
+				}
+			},
+			{
+				"id": "each/work",
+				"kind": "fake.task",
+				"in": {
+					"prompt": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				}
+			},
+			{
+				"id": "merge",
+				"kind": "code",
+				"in": {
+					"parts": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["outcome"],
+							"additionalProperties": false,
+							"properties": {
+								"outcome": {
+									"enum": ["ok", "skipped", "rejected", "failed"]
+								},
+								"value": {
+									"type": "object"
+								},
+								"reason": {
+									"type": "string"
+								}
+							},
+							"oneOf": [
+								{
+									"required": ["value"],
+									"properties": {
+										"outcome": {
+											"const": "ok"
+										},
+										"value": true,
+										"reason": false
+									}
+								},
+								{
+									"required": ["reason"],
+									"properties": {
+										"outcome": {
+											"enum": ["rejected", "failed"]
+										},
+										"reason": true
+									}
+								},
+								{
+									"properties": {
+										"outcome": {
+											"const": "skipped"
+										}
+									}
+								}
+							]
+						}
+					},
+					"separator": {
+						"type": "string"
+					}
+				},
+				"literals": {
+					"separator": "\n"
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					},
+					"nonEmpty": {
+						"type": "boolean"
+					}
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "guards.ts",
+					"export": "merge",
+					"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
+				},
+				"writes": ["merged/"]
+			},
+			{
+				"id": "escalate",
+				"kind": "seq",
+				"items": ["small", "medium", "large"],
+				"cardinality": {
+					"upTo": 3
+				},
+				"inner": {
+					"item": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"members": {
+					"result": "escalate/try"
+				},
+				"until": {
+					"node": "escalate/try",
+					"port": "ok"
+				}
+			},
+			{
+				"id": "escalate/try",
+				"kind": "fake.task",
+				"in": {
+					"prompt": {
+						"type": "string"
+					},
+					"size": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				}
+			},
+			{
+				"id": "gate",
+				"kind": "assert",
+				"in": {
+					"cond": {
+						"type": "boolean"
+					}
+				},
+				"message": "an escalation step must end ok",
+				"onFail": "rejected"
+			},
+			{
+				"id": "summary",
+				"kind": "code",
+				"in": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"summary": {
+						"type": "string"
+					}
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "guards.ts",
+					"export": "summarize",
+					"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
+				}
+			}
+		],
+		"edges": [
+			{
+				"kind": "data",
+				"from": {
+					"node": "plan",
+					"port": "parts"
+				},
+				"to": {
+					"node": "each",
+					"port": "items"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "each",
+					"port": "item"
+				},
+				"to": {
+					"node": "each/work",
+					"port": "prompt"
+				}
+			},
+			{
+				"kind": "collect",
+				"from": {
+					"node": "each",
+					"port": "results"
+				},
+				"to": {
+					"node": "merge",
+					"port": "parts"
+				}
+			},
+			{
+				"kind": "control",
+				"from": {
+					"node": "merge",
+					"port": "nonEmpty"
+				},
+				"to": {
+					"node": "escalate"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "merge",
+					"port": "text"
+				},
+				"to": {
+					"node": "escalate/try",
+					"port": "prompt"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "escalate",
+					"port": "item"
+				},
+				"to": {
+					"node": "escalate/try",
+					"port": "size"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "escalate",
+					"port": "ok"
+				},
+				"to": {
+					"node": "gate",
+					"port": "cond"
+				}
+			},
+			{
+				"kind": "control",
+				"from": {
+					"node": "escalate"
+				},
+				"to": {
+					"node": "gate"
+				},
+				"tolerate": "rejected"
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "escalate",
+					"port": "text"
+				},
+				"to": {
+					"node": "summary",
+					"port": "text"
+				}
+			},
+			{
+				"kind": "control",
+				"from": {
+					"node": "gate"
+				},
+				"to": {
+					"node": "summary"
+				},
+				"tolerate": "rejected"
+			}
+		],
+		"result": {
+			"node": "summary"
+		}
+	},
+	"expansion": {
+		"each": {
+			"": {
+				"upTo": 4
+			}
+		},
+		"escalate": {
+			"": {
+				"upTo": 3
+			}
+		}
+	},
+	"bounds": {
+		"instances": {
+			"upTo": 13
+		},
+		"nodes": {
+			"plan": {
+				"exact": 1
+			},
+			"each": {
+				"exact": 1
+			},
+			"each/work": {
+				"upTo": 4
+			},
+			"merge": {
+				"exact": 1
+			},
+			"escalate": {
+				"exact": 1
+			},
+			"escalate/try": {
+				"upTo": 3
+			},
+			"gate": {
+				"exact": 1
+			},
+			"summary": {
+				"exact": 1
+			}
+		},
+		"counts": {}
+	},
+	"diagnostics": []
+}

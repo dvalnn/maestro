@@ -18,6 +18,7 @@ import {
 	isGroup,
 	itemKey,
 	type MapNode,
+	type NodeInstance,
 	type Outcome,
 	outputValue,
 	type RepeatNode,
@@ -42,7 +43,7 @@ import {
 	messageOf,
 	unreadableReason,
 } from "../shared";
-import type { Inputs, LoadCode, NodeInstance } from "../worker";
+import type { Inputs, LoadCode } from "../worker";
 import {
 	type ConcertDirs,
 	concertDirs,

@@ -17,6 +17,30 @@
 		"enabled": true,
 		"rules": {
 			"preset": "recommended",
+			"style": {
+				"noRestrictedImports": {
+					"level": "error",
+					"options": {
+						"patterns": [
+							{
+								"group": ["@maestro/cli", "@maestro/*/src/**"],
+								"message": "Nothing imports cli, and packages are imported by their exports."
+							},
+							{
+								"group": [
+									"../../*/src/**",
+									"../../*/fixtures/**",
+									"../../../*/src/**",
+									"../../../*/fixtures/**",
+									"../../../../*/src/**",
+									"../../../../*/fixtures/**"
+								],
+								"message": "Import another package by its name, never by a relative path."
+							}
+						]
+					}
+				}
+			},
 			"complexity": {
 				"noExcessiveCognitiveComplexity": {
 					"level": "error",
@@ -27,6 +51,145 @@
 			}
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["packages/ir/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": ["@maestro/**"],
+										"message": "ir imports no other package."
+									},
+									{
+										"group": [
+											"../../*/src/**",
+											"../../*/fixtures/**",
+											"../../../*/src/**",
+											"../../../*/fixtures/**",
+											"../../../../*/src/**",
+											"../../../../*/fixtures/**"
+										],
+										"message": "Import another package by its name, never by a relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": [
+				"packages/core/**",
+				"packages/sdk/**",
+				"packages/render-*/**"
+			],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": ["@maestro/**", "!@maestro/ir"],
+										"message": "core, sdk and render-* import ir alone."
+									},
+									{
+										"group": [
+											"../../*/src/**",
+											"../../*/fixtures/**",
+											"../../../*/src/**",
+											"../../../*/fixtures/**",
+											"../../../../*/src/**",
+											"../../../../*/fixtures/**"
+										],
+										"message": "Import another package by its name, never by a relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/host-agents/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"@maestro/**",
+											"!@maestro/ir",
+											"!@maestro/core",
+											"!@maestro/core/**"
+										],
+										"message": "host-agents imports core and ir alone."
+									},
+									{
+										"group": [
+											"../../*/src/**",
+											"../../*/fixtures/**",
+											"../../../*/src/**",
+											"../../../*/fixtures/**",
+											"../../../../*/src/**",
+											"../../../../*/fixtures/**"
+										],
+										"message": "Import another package by its name, never by a relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/testkit/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"@maestro/cli",
+											"@maestro/render-*",
+											"@maestro/*/src/**"
+										],
+										"message": "testkit imports only what a host or pack could."
+									},
+									{
+										"group": [
+											"../../*/src/**",
+											"../../*/fixtures/**",
+											"../../../*/src/**",
+											"../../../*/fixtures/**",
+											"../../../../*/src/**",
+											"../../../../*/fixtures/**"
+										],
+										"message": "Import another package by its name, never by a relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		}
+	],
 	"javascript": {
 		"formatter": {
 			"quoteStyle": "double"

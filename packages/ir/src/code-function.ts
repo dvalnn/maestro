@@ -15,7 +15,7 @@ export type Context = {
 /** Facts a host offers code nodes, as JSON. */
 export type Facts = Readonly<Record<string, unknown>>;
 
-/** The `runtime` of a worker ref whose function runs in core's own TypeScript worker. */
+/** The `runtime` of a worker ref whose function executes in core's own TypeScript worker. */
 export const TS_RUNTIME = "ts";
 
 /** A code function's context: core's, plus each host's facts keyed by host name. */

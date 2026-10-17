@@ -1,0 +1,364 @@
+{
+	"ir": {
+		"irVersion": "1.0",
+		"composition": {
+			"id": "nested-groups",
+			"version": "0.1.0",
+			"pack": "fixtures",
+			"doc": "Per angle, draft a text, polish it in a bounded loop, then critique it. Each member result has two named parts. At least one angle must settle ok, or the concert fails."
+		},
+		"emitter": {
+			"name": "hand",
+			"version": "1"
+		},
+		"scopes": [],
+		"nodes": [
+			{
+				"id": "angles",
+				"kind": "map",
+				"items": ["wide", "deep"],
+				"cardinality": {
+					"exact": 2
+				},
+				"onError": "settle",
+				"inner": {
+					"item": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"results": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["outcome"],
+							"additionalProperties": false,
+							"properties": {
+								"outcome": {
+									"enum": ["ok", "skipped", "rejected", "failed"]
+								},
+								"value": {
+									"type": "object"
+								},
+								"reason": {
+									"type": "string"
+								}
+							},
+							"oneOf": [
+								{
+									"required": ["value"],
+									"properties": {
+										"outcome": {
+											"const": "ok"
+										},
+										"value": true,
+										"reason": false
+									}
+								},
+								{
+									"required": ["reason"],
+									"properties": {
+										"outcome": {
+											"enum": ["rejected", "failed"]
+										},
+										"reason": true
+									}
+								},
+								{
+									"properties": {
+										"outcome": {
+											"const": "skipped"
+										}
+									}
+								}
+							]
+						}
+					}
+				},
+				"members": {
+					"draft": "angles/polish",
+					"critique": "angles/critique"
+				}
+			},
+			{
+				"id": "angles/draft",
+				"kind": "fake.task",
+				"in": {
+					"prompt": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				}
+			},
+			{
+				"id": "angles/polish",
+				"kind": "repeat",
+				"cardinality": {
+					"upTo": 3
+				},
+				"in": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"inner": {
+					"index": {
+						"type": "integer"
+					},
+					"text": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"members": {
+					"result": "angles/polish/step"
+				}
+			},
+			{
+				"id": "angles/polish/step",
+				"kind": "fake.task",
+				"in": {
+					"prompt": {
+						"type": "string"
+					},
+					"round": {
+						"type": "integer"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				}
+			},
+			{
+				"id": "angles/critique",
+				"kind": "fake.task",
+				"in": {
+					"prompt": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"notes": {
+						"type": "string"
+					}
+				}
+			},
+			{
+				"id": "tally",
+				"kind": "code",
+				"in": {
+					"angles": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["outcome"],
+							"additionalProperties": false,
+							"properties": {
+								"outcome": {
+									"enum": ["ok", "skipped", "rejected", "failed"]
+								},
+								"value": {
+									"type": "object"
+								},
+								"reason": {
+									"type": "string"
+								}
+							},
+							"oneOf": [
+								{
+									"required": ["value"],
+									"properties": {
+										"outcome": {
+											"const": "ok"
+										},
+										"value": true,
+										"reason": false
+									}
+								},
+								{
+									"required": ["reason"],
+									"properties": {
+										"outcome": {
+											"enum": ["rejected", "failed"]
+										},
+										"reason": true
+									}
+								},
+								{
+									"properties": {
+										"outcome": {
+											"const": "skipped"
+										}
+									}
+								}
+							]
+						}
+					}
+				},
+				"out": {
+					"okCount": {
+						"type": "integer"
+					},
+					"any": {
+						"type": "boolean"
+					}
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "nested.ts",
+					"export": "tally",
+					"codeHash": "sha256:a55968949270e16093979170fb82b773652c1ca4dea2c3f6986dab4cf09b60d7"
+				},
+				"fanin": true
+			},
+			{
+				"id": "enough",
+				"kind": "assert",
+				"in": {
+					"cond": {
+						"type": "boolean"
+					}
+				},
+				"message": "at least one angle must settle ok",
+				"onFail": "failed"
+			}
+		],
+		"edges": [
+			{
+				"kind": "data",
+				"from": {
+					"node": "angles",
+					"port": "item"
+				},
+				"to": {
+					"node": "angles/draft",
+					"port": "prompt"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "angles/draft",
+					"port": "text"
+				},
+				"to": {
+					"node": "angles/polish",
+					"port": "text"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "angles/polish",
+					"port": "text"
+				},
+				"to": {
+					"node": "angles/polish/step",
+					"port": "prompt"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "angles/polish",
+					"port": "index"
+				},
+				"to": {
+					"node": "angles/polish/step",
+					"port": "round"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "angles/polish",
+					"port": "text"
+				},
+				"to": {
+					"node": "angles/critique",
+					"port": "prompt"
+				}
+			},
+			{
+				"kind": "collect",
+				"from": {
+					"node": "angles",
+					"port": "results"
+				},
+				"to": {
+					"node": "tally",
+					"port": "angles"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "tally",
+					"port": "any"
+				},
+				"to": {
+					"node": "enough",
+					"port": "cond"
+				}
+			}
+		],
+		"result": {
+			"node": "enough"
+		}
+	},
+	"expansion": {
+		"angles": {
+			"": {
+				"keys": ["wide", "deep"]
+			}
+		},
+		"angles/polish": {
+			"[wide]": {
+				"upTo": 3
+			},
+			"[deep]": {
+				"upTo": 3
+			}
+		}
+	},
+	"bounds": {
+		"instances": {
+			"upTo": 15
+		},
+		"nodes": {
+			"angles": {
+				"exact": 1
+			},
+			"angles/draft": {
+				"exact": 2
+			},
+			"angles/polish": {
+				"exact": 2
+			},
+			"angles/polish/step": {
+				"upTo": 6
+			},
+			"angles/critique": {
+				"exact": 2
+			},
+			"tally": {
+				"exact": 1
+			},
+			"enough": {
+				"exact": 1
+			}
+		},
+		"counts": {}
+	},
+	"diagnostics": []
+}

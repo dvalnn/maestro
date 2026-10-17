@@ -1,7 +1,8 @@
 # Coding standards
 
 The judgement calls code is reviewed against. `just check` enforces everything a linter can; a rule that becomes
-mechanical moves into Biome and leaves this file.
+mechanical moves into Biome and leaves this file. Source rules, the import graph and domain words among them, are lints
+in `just check`, never tests.
 
 ## Shape
 

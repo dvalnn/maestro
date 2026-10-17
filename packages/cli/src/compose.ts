@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
-import { listing, type Plan, render, summary } from "@maestro/core/compose";
 import type { Composed } from "@maestro/core/config";
-import { canonicalJson, isPlainObject } from "@maestro/ir";
+import { canonicalJson, isPlainObject, type Plan } from "@maestro/ir";
+import { listing, render, summary } from "@maestro/render-text";
 import {
 	COMMON,
 	type Command,

@@ -1,12 +1,4 @@
-import type {
-	ArtifactRef,
-	CodeContext,
-	Rejection,
-	WorkerRef,
-} from "@maestro/ir";
-
-/** A node id and its expansion path (architecture 7), in ir's format (`formatExpansion`). */
-export type NodeInstance = NonNullable<ArtifactRef["producer"]>;
+import type { CodeContext, Rejection, WorkerRef } from "@maestro/ir";
 
 /** Input values by port name, literals included. An artifact arrives as its `ArtifactRef` (ADR 0007). */
 export type Inputs = Readonly<Record<string, unknown>>;
