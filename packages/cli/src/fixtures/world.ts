@@ -6,6 +6,8 @@ import { main } from "../cli";
 import type { Deps } from "../command";
 import { DEMO, packOf, scratch } from "./packs";
 
+const MAESTRO = join(import.meta.dir, "../maestro.ts");
+
 export type Outcome = { code: number; out: string; err: string };
 
 /** A workspace with the `demo` pack installed, and the data and config homes beside it. */
@@ -37,7 +39,15 @@ export async function world() {
 		});
 		return { code, out: out.join("\n"), err: err.join("\n") };
 	};
-	return { root, pack, cwd, env, call };
+	/** Starts `script`, the real `maestro.ts` by default, as its own process in this world. */
+	const spawn = (args: string[], script = MAESTRO) =>
+		Bun.spawn([process.execPath, script, ...args], {
+			cwd,
+			env: { ...process.env, ...env },
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+	return { root, pack, cwd, env, call, spawn };
 }
 
 /** The id a perform announces on stderr, as its own `concert <id>` line. */

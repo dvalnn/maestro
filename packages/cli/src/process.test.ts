@@ -60,15 +60,7 @@ async function until(done: () => Promise<boolean>) {
 describe("a concert in another process", () => {
 	test("is waited on, refused a resume and a prune while running, killed, then resumed from the changed pack without redoing settled nodes", async () => {
 		const w = await world();
-		const child = Bun.spawn(
-			[process.execPath, await hanging(), "perform", ...GREET],
-			{
-				cwd: w.cwd,
-				env: { ...process.env, ...w.env },
-				stdout: "pipe",
-				stderr: "pipe",
-			},
-		);
+		const child = w.spawn(["perform", ...GREET], await hanging());
 		const reader = child.stderr.getReader();
 		const id =
 			/^concert (\S+)$/m.exec(
@@ -171,10 +163,7 @@ describe("the real maestro.ts", () => {
 				hosts: [hostOf()],
 			});
 		const expected = (await w.call(["ls", "--json"])).out.length + 1;
-		const child = Bun.spawn(
-			[process.execPath, join(import.meta.dir, "maestro.ts"), "ls", "--json"],
-			{ cwd: w.cwd, env: { ...process.env, ...w.env }, stdout: "pipe" },
-		);
+		const child = w.spawn(["ls", "--json"]);
 		await Bun.sleep(SLOW_READER_MS);
 		expect((await new Response(child.stdout).text()).length).toBe(expected);
 	});
