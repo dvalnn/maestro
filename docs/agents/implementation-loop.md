@@ -14,7 +14,8 @@ wraps them.
    shown by command output. Model and effort follow the task's complexity:
    - a mechanical or small fix: sonnet, low effort;
    - an ordinary slice: sonnet, medium effort, or opus, low effort;
-   - a contract-setting or design-heavy slice: opus, medium effort.
+   - a contract-setting or design-heavy slice: opus, medium effort;
+   - a read-only review slice, such as an API review: high effort, as in step 4.
 3. **Mechanical gate** (conductor). The conductor runs `just check` itself. Anything a linter can check stays in Biome,
    so review spends no tokens on it.
 4. **Review** (one fresh read-only subagent, the other model from the implementer, at high effort). Runs the
