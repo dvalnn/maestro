@@ -8,6 +8,7 @@ import {
 	TS_RUNTIME,
 	type WorkerRef,
 } from "@maestro/ir";
+import type { Inputs, LoadCode, NodeResult, Outputs } from "../node";
 import {
 	instanceKey,
 	isOutputs,
@@ -16,7 +17,6 @@ import {
 	loadFunction,
 	messageOf,
 } from "../shared";
-import type { Inputs, LoadCode, NodeResult, Outputs } from "../worker";
 import type { PortCheck } from "./execute";
 
 /** What a worker announces before its first invocation. */

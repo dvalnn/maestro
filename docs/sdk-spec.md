@@ -22,7 +22,7 @@ The SDK is the only thing an author learns. It builds a graph (CORE-06) and noth
 5. **Domain-free.** The core SDK knows no host. Host SDKs add their node constructors and types on top.
 6. **Author API alone at the root.** `@maestro/sdk` exports what an author writes. What the engine's loader calls to
    describe, build and bundle compositions (`build`, `buildNamed`, `describe`, `glue`, the build context and the SDK and
-   stdlib identity) is the `@maestro/sdk/loader` subpath.
+   stdlib identity) is the `@maestro/sdk/loader` subpath, and the engine also loads `@maestro/sdk/stdlib`.
 
 ## 2. What an author writes
 

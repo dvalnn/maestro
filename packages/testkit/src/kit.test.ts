@@ -29,6 +29,27 @@ test("composeIr gives the plan's bounds, or the diagnostics that refused the gra
 	expect(composed.ok && composed.plan.bounds.instances).toEqual({ exact: 2 });
 	const refused = await composeIr(ir, { hosts: [] });
 	expect(refused.ok).toBe(false);
+	const limited = await composeIr(ir, {
+		config: {
+			values: {
+				concurrency: 2,
+				caps: {},
+				dataRoot: "/data",
+				workspace: "",
+			},
+			sources: [],
+		},
+	});
+	expect(limited.ok).toBe(true);
+});
+
+test("buildIr refuses a composition that keeps state between builds", () => {
+	let calls = 0;
+	const drifting = composition("drift", { examples: [{}] }, () => {
+		calls++;
+		return hostNode(FAKE_TASK, { out: { n: Text() }, config: { calls } });
+	});
+	expect(() => buildIr(drifting)).toThrow(/two builds/);
 });
 
 test("stubConcert performs the graph with its host node scripted and its code node stubbed", async () => {

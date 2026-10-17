@@ -11,7 +11,7 @@ import type {
 	Ports,
 } from "@maestro/ir";
 import type { Composed } from "./config";
-import type { Inputs, NodeResult } from "./worker";
+import type { Inputs, NodeResult } from "./node";
 
 type Awaitable<T> = T | Promise<T>;
 

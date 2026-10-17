@@ -6,8 +6,8 @@ import {
 	findMarked,
 	type HostNode,
 } from "@maestro/ir";
+import type { Inputs, Outputs } from "../node";
 import { instanceKey, isRecord, sha256Hex } from "../shared";
-import type { Inputs, Outputs } from "../worker";
 import type { InstanceRecord } from "./record";
 
 /** What a resume may reuse of a recorded `ok` instance. */

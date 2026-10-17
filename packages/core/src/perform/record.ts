@@ -8,9 +8,9 @@ import type {
 	NodeInstance,
 	Outcome,
 } from "@maestro/ir";
-import type { Metrics } from "../host";
+import type { HostNodeResult, Metrics } from "../host";
+import type { Outputs } from "../node";
 import { instanceKey, isRecord } from "../shared";
-import type { Outputs } from "../worker";
 
 /** The version of the schema below, kept in SQLite's `user_version`. */
 const SCHEMA_VERSION = 3;
@@ -181,11 +181,12 @@ export type InstanceRecord = NodeInstance & {
 
 /** How an instance settled, with what the record keeps beside its outcome. */
 export type Settling = (
-	| { outcome: "ok"; outputs: Outputs }
-	| { outcome: Exclude<Outcome, "ok">; reason: string; outputs?: Outputs }
+	| HostNodeResult
+	| (Omit<HostNodeResult, "outcome" | "reason"> & {
+			outcome: "skipped";
+			reason: string;
+	  })
 ) & {
-	metrics?: Metrics;
-	enrichment?: Enrichment;
 	artifacts?: readonly ArtifactRef[];
 	/** The resume key, kept for an `ok` instance. */
 	key?: string;

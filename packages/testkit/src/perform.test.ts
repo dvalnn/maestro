@@ -11,6 +11,7 @@ import type {
 	HostNodeResult,
 	HostSetup,
 } from "@maestro/core/host";
+import type { CodeEntry, LoadCode } from "@maestro/core/node";
 import {
 	type InstanceRecord,
 	openRecord,
@@ -18,7 +19,6 @@ import {
 	perform,
 	type Records,
 } from "@maestro/core/perform";
-import type { CodeEntry, LoadCode } from "@maestro/core/worker";
 import {
 	type ArtifactRef,
 	CORE_TYPES,

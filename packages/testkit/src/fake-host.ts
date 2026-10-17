@@ -6,7 +6,7 @@ import type {
 	HostResources,
 	NodeKind,
 } from "@maestro/core/host";
-import type { Inputs } from "@maestro/core/worker";
+import type { Inputs } from "@maestro/core/node";
 
 export const FAKE_TASK = "fake.task";
 

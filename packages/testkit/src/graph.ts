@@ -3,14 +3,22 @@ import {
 	type ComposeResult,
 	compose,
 } from "@maestro/core/compose";
-import type { CodeEntry } from "@maestro/core/worker";
+import { CORE_CONFIG } from "@maestro/core/config";
+import type { CodeEntry } from "@maestro/core/node";
 import { type Ir, TS_RUNTIME } from "@maestro/ir";
 import type { Composition, Types } from "@maestro/sdk";
-import { build, type CodeFn } from "@maestro/sdk/loader";
+import { buildNamed, type CodeFn } from "@maestro/sdk/loader";
 import { fakeHost } from "./fake-host";
 
 /** The data root a composed graph is given unless a test gives its own. */
 const TEST_DATA_ROOT = "/data";
+
+const TEST_CORE_VALUES = {
+	concurrency: 1,
+	caps: {},
+	dataRoot: TEST_DATA_ROOT,
+	workspace: "",
+};
 
 const TEST_MODULE = "test.ts";
 const ZERO_HASH = `sha256:${"0".repeat(64)}`;
@@ -39,30 +47,32 @@ export function shapeOf(ir: Ir): Shape {
 
 /**
  * Builds `root` with `params` into its IR, naming each function of `code` as an export of `test.ts`.
- * @throws `BuildError` for any build diagnostic.
+ * @throws `BuildError` for any build diagnostic, `BUILD.unstable` when two builds differ.
  */
 export function buildIr<P extends Types, R>(
 	root: Composition<P, Types, R>,
-	params: Parameters<typeof build<P, R>>[1] = {},
+	params: Parameters<typeof buildNamed>[2] = {},
 	code: Readonly<Record<string, CodeFn>> = {},
 ): Ir {
 	const exports = new Map<CodeFn, string>(
 		Object.entries(code).map(([name, fn]) => [fn, name]),
 	);
-	return build(root, params, {
-		pack: { id: "test", version: "0.1.0" },
-		resolveCode: (fn) => {
-			const name = exports.get(fn);
-			return name === undefined
-				? undefined
-				: {
-						runtime: TS_RUNTIME,
-						module: TEST_MODULE,
-						export: name,
-						codeHash: ZERO_HASH,
-					};
-		},
-	});
+	return JSON.parse(
+		buildNamed({ root }, root.name, params, {
+			pack: { id: "test", version: "0.1.0" },
+			resolveCode: (fn) => {
+				const name = exports.get(fn);
+				return name === undefined
+					? undefined
+					: {
+							runtime: TS_RUNTIME,
+							module: TEST_MODULE,
+							export: name,
+							codeHash: ZERO_HASH,
+						};
+			},
+		}),
+	) as Ir;
 }
 
 /**
@@ -76,8 +86,8 @@ export function composeIr(
 	const noop: CodeEntry = () => ({});
 	return compose({
 		ir,
-		config: { values: { dataRoot: TEST_DATA_ROOT }, sources: [] },
-		core: { dataRoot: { type: "string" } },
+		config: { values: TEST_CORE_VALUES, sources: [] },
+		core: CORE_CONFIG,
 		packs: {},
 		hosts: [fakeHost()],
 		loadCode: async () => noop,

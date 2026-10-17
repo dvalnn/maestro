@@ -10,9 +10,9 @@ session. No schedule or effort estimates are given. Sizes are relative (S, M, L,
    terms.
 2. **Clean break (D-02).** Do not mirror sssf's modules, flags, file formats or vocabulary. The legacy system answers
    "what should this behavior be" and nothing else (`requirements.md` section 12).
-3. **Domain-free core (CORE-12).** No domain words in `ir` (its source), `core`, `sdk`, `testkit` or `cli`. The check is
-   a lint in `just check`. `build` is allowed in `sdk` and `cli`, which drive the build phase, and in `testkit`, which
-   tests it.
+3. **Domain-free core (CORE-12).** No domain words in `ir` (its source), `core`, `sdk`, `testkit`, `cli` or
+   `render-text`. The check is a lint in `just check`. `build` is allowed in `sdk` and `cli`, which drive the build
+   phase, and in `testkit`, which tests it.
 4. **Lean (NFR-09).** A new node kind, edge kind or SDK primitive needs a written justification in the slice report. The
    default is a code node or a stdlib helper.
 5. **Do not guess.** A question the docs settle is derived and listed in the slice report; a real fork, a contract, a
@@ -42,7 +42,7 @@ packages/
   host-agents-sdk/  typed constructors and types for the agent host
   harness-<name>/   one adapter each
   pack-general/     the ported compositions (placeholder name)
-  render-text/      summary, listing and Mermaid render of a plan
+  render-text/      the text forms of a plan: summary, listing, Mermaid. The live view's package is placed by S10
 docs/               these documents (including adr/), slice reports under reports/
 ```
 

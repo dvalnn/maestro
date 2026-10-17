@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { type CodeContext, reject } from "@maestro/ir";
-import type { CodeEntry, Outputs } from "./worker";
+import type { CodeEntry, Outputs } from "./node";
 
 const context: CodeContext = {
 	concert: "c1",

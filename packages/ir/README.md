@@ -380,4 +380,4 @@ The IR carries structure. These semantics belong to the slices that execute or v
 ## Changelog
 
 - **1.0**: first version. Before release, code nodes took the optional `timeout` and lost `pure`, and the `params` and
-  `config` blocks left the IR.
+  `config` blocks left the IR. The node field `tag` was removed.

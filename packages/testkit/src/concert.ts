@@ -2,13 +2,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Host } from "@maestro/core/host";
+import type { CodeEntry, LoadCode } from "@maestro/core/node";
 import {
 	type ConcertResult,
 	openRecord,
 	perform,
 	type Records,
 } from "@maestro/core/perform";
-import type { CodeEntry, LoadCode } from "@maestro/core/worker";
 import {
 	type CodeContext,
 	type Ir,

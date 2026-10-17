@@ -8,9 +8,9 @@ import {
 } from "@maestro/ir";
 import type { Composed } from "../config";
 import { type Bounds, type Host, hostSetup } from "../host";
+import type { LoadCode } from "../node";
 import { validator } from "../ports";
 import { kindLookup, messageOf } from "../shared";
-import type { LoadCode } from "../worker";
 import { boundsOf, capErrors, type ExpansionOf, unexpanded } from "./bounds";
 import { checkConfig, checkHosts, checkTypes, checkWorkers } from "./checks";
 import { expand } from "./expand";

@@ -35,6 +35,7 @@ import {
 	type HostSetup,
 	hostSetup,
 } from "../host";
+import type { Inputs, LoadCode } from "../node";
 import { validator } from "../ports";
 import {
 	instanceKey,
@@ -43,7 +44,6 @@ import {
 	messageOf,
 	unreadableReason,
 } from "../shared";
-import type { Inputs, LoadCode } from "../worker";
 import {
 	type ConcertDirs,
 	concertDirs,

@@ -1,6 +1,6 @@
 import type { NodeInstance, Outcome, Ports, WorkerRef } from "@maestro/ir";
 import type { Host, NodeKind } from "./host";
-import type { LoadCode, Outputs } from "./worker";
+import type { LoadCode, Outputs } from "./node";
 
 export const messageOf = (error: unknown) =>
 	error instanceof Error ? error.message : String(error);

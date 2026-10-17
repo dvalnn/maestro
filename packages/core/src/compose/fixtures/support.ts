@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { type Ir, parseIr, TS_RUNTIME } from "@maestro/ir";
 import type { Host, NodeKind } from "../../host";
-import type { CodeEntry, KeyFunction, LoadCode } from "../../worker";
+import type { CodeEntry, KeyFunction, LoadCode } from "../../node";
 import { type ComposeInput, compose } from "../index";
 
 const GOLDEN = resolve(import.meta.dir, "../../../../ir/fixtures");

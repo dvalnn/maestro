@@ -5,7 +5,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./host": "./src/host.ts",
-		"./worker": "./src/worker.ts",
+		"./node": "./src/node.ts",
 		"./compose": "./src/compose/index.ts",
 		"./config": "./src/config/index.ts",
 		"./perform": "./src/perform/index.ts",

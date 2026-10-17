@@ -17,9 +17,9 @@ import type {
 	HostSetup,
 	Metrics,
 } from "../host";
+import type { Inputs, NodeResult } from "../node";
 import type { Validator } from "../ports";
 import { type HostKind, isOutputs, isRecord, messageOf } from "../shared";
-import type { Inputs, NodeResult } from "../worker";
 import { type ConcertDirs, collectArtifacts } from "./artifacts";
 import type { RecordWriter, Settling } from "./record";
 import type { Invocation, Worker } from "./ts-worker";

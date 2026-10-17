@@ -11,8 +11,8 @@ import {
 	sep,
 } from "node:path";
 import { messageOf, sha256Hex } from "@maestro/core";
+import type { CodeEntry, KeyFunction, LoadCode } from "@maestro/core/node";
 import { validator, violations } from "@maestro/core/ports";
-import type { CodeEntry, KeyFunction, LoadCode } from "@maestro/core/worker";
 import {
 	type Diagnostic,
 	type Ir,

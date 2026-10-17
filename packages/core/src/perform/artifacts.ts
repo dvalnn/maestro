@@ -18,7 +18,7 @@ import {
 	type Ports,
 	replaceAt,
 } from "@maestro/ir";
-import type { Outputs } from "../worker";
+import type { Outputs } from "../node";
 
 /** A concert's artifact area and the directory its instances' scratch directories go in, both absolute. */
 export type ConcertDirs = { artifacts: string; scratch: string };

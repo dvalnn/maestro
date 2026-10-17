@@ -25,4 +25,4 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 | `-.->` `when p` | A guard on output `p`.                                                             |
 | `-.->` `after`  | An ordering edge, with `tolerates rejected` when it does.                          |
 
-A key list is cut at 40 characters. `fixtures/` holds the plans the tests draw.
+A key list is cut at 40 characters. The plans the tests draw are ir's `fixtures/plans`.

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { settledSchema } from "@maestro/ir";
-import type { CodeEntry, KeyFunction } from "../worker";
+import type { CodeEntry, KeyFunction } from "../node";
 import { code, composeWith, HASH, irOf, loader } from "./fixtures/support";
 
 const STRING = { type: "string" };

@@ -24,9 +24,9 @@ import {
 	sourceOf,
 } from "../config";
 import type { Host, NodeKind } from "../host";
+import type { LoadCode } from "../node";
 import { type Validator, violations } from "../ports";
 import { type HostKind, isRecord, loadFunction, messageOf } from "../shared";
-import type { LoadCode } from "../worker";
 import type { ComposeInput } from "./index";
 
 type Lookup = (kind: string) => HostKind | undefined;
