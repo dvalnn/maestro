@@ -38,24 +38,31 @@ const escapePointer = (s: string) =>
 const CHARS_PER_TYPO = 3;
 const MAX_TYPOS = 2;
 
+const at = (rows: number[][], i: number, j: number) => rows[i]?.[j] ?? 0;
+
+/** The edits between `a` and `b`, an adjacent swap counting as one. */
 function distance(a: string, b: string): number {
-	let row = Array.from({ length: b.length + 1 }, (_, j) => j);
-	for (const [i, ca] of [...a].entries()) {
+	const [x, y] = [[...a], [...b]];
+	const rows = [Array.from({ length: y.length + 1 }, (_, j) => j)];
+	for (const [i, ca] of x.entries()) {
 		const next = [i + 1];
-		for (const [j, cb] of [...b].entries())
-			next.push(
-				Math.min(
-					(row[j + 1] ?? 0) + 1,
-					(next[j] ?? 0) + 1,
-					(row[j] ?? 0) + (ca === cb ? 0 : 1),
-				),
-			);
-		row = next;
+		rows.push(next);
+		for (const [j, cb] of y.entries()) {
+			const edits = [
+				at(rows, i, j + 1) + 1,
+				at(rows, i + 1, j) + 1,
+				at(rows, i, j) + (ca === cb ? 0 : 1),
+			];
+			if (ca === y[j - 1] && cb === x[i - 1])
+				edits.push(at(rows, i - 1, j - 1) + 1);
+			next.push(Math.min(...edits));
+		}
 	}
-	return row.at(-1) ?? 0;
+	return at(rows, x.length, y.length);
 }
 
-function closest(word: string, candidates: readonly string[]) {
+/** The candidate nearest `word` within a few typos, ties alphabetical; undefined when none is. */
+export function closest(word: string, candidates: readonly string[]) {
 	const allowed = Math.min(MAX_TYPOS, Math.floor(word.length / CHARS_PER_TYPO));
 	const ranked = candidates
 		.map((c) => ({ c, d: distance(word, c) }))

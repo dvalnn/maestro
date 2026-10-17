@@ -299,9 +299,9 @@ describe("config", () => {
 		],
 		[
 			"a key under a composition that names none of its params",
-			{ demo: { greet: { nane: "x" } } },
+			{ demo: { greet: { nmae: "x" } } },
 			"CFG.unclaimed",
-			"Did you mean 'demo.greet.name'? Rename 'demo.greet.nane' to 'demo.greet.name'",
+			"Did you mean 'demo.greet.name'? Rename 'demo.greet.nmae' to 'demo.greet.name'",
 		],
 		[
 			"a pack's value that is not a mapping",

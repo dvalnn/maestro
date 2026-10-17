@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { messageOf } from "@maestro/core";
+import { closest, messageOf } from "@maestro/core";
 import type { Host } from "@maestro/core/host";
 import type { Environment } from "./config";
 import { table, usageError } from "./output";
@@ -74,7 +74,9 @@ export function parse(options: Options, args: readonly string[], fix: string) {
 		return { values: values as Values, positionals };
 	} catch (error) {
 		const [what = "unusable arguments"] = messageOf(error).split(". ");
-		throw usageError(what, fix);
+		const flag = /^Unknown option '--([^']+)'/.exec(what)?.[1];
+		const near = flag && closest(flag, Object.keys(options));
+		throw usageError(what, near ? `Did you mean --${near}?` : fix);
 	}
 }
 

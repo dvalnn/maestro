@@ -314,8 +314,18 @@ describe("usage errors", () => {
 		],
 		[
 			"an unknown flag",
-			["perform", ...GREET, "--nme", "x"],
-			/^Unknown option '--nme'/,
+			["perform", ...GREET, "--nmae", "x"],
+			/^Unknown option '--nmae'\nDid you mean --name\?$/,
+		],
+		[
+			"a mistyped verb flag",
+			["perform", ...GREET, "--titie", "x"],
+			/^Unknown option '--titie'\nDid you mean --title\?$/,
+		],
+		[
+			"an unknown flag with no near name",
+			["perform", ...GREET, "--zzzzzz", "x"],
+			/^Unknown option '--zzzzzz'\nFlags are perform's/,
 		],
 		[
 			"a tour that is not a slug",
