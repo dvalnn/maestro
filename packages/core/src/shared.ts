@@ -1,4 +1,5 @@
 import type { Outcome, Ports, WorkerRef } from "@maestro/ir";
+import type { Host, NodeKind } from "./host";
 import type { LoadCode, NodeInstance, Outputs } from "./worker";
 
 export const messageOf = (error: unknown) =>
@@ -55,4 +56,26 @@ export async function loadFunction(
 	if (!isFunction(fn))
 		throw new Error(`'${ref.export}' in '${ref.module}' is not a function`);
 	return fn;
+}
+
+export type HostKind = { host: Host; kind: NodeKind };
+
+/**
+ * Indexes the kinds of `hosts` by name, so a node's `kind` resolves to its host and kind.
+ * @throws Error when two hosts register one kind name.
+ */
+export function kindLookup(
+	hosts: readonly Host[],
+): (name: string) => HostKind | undefined {
+	const kinds = new Map<string, HostKind>();
+	for (const host of hosts)
+		for (const kind of host.kinds) {
+			const other = kinds.get(kind.name)?.host.name;
+			if (other !== undefined)
+				throw new Error(
+					`node kind '${kind.name}' is registered twice, by host '${other}' and by host '${host.name}'\nLoad only one host that registers '${kind.name}'`,
+				);
+			kinds.set(kind.name, { host, kind });
+		}
+	return (name) => kinds.get(name);
 }

@@ -46,11 +46,11 @@ It calls no author code, writes nothing and starts no host node (NFR-02, ADR 000
    after each group instance. A group instance not yet reached counts nothing, so the bounds so far only grow. Expansion
    stops at the first cap they pass, with a `BOUND.cap` error that says "may reach at least".
 
-4. Each host's `validate(graph)`. Its codes get the `HOST.` prefix.
+4. Each host's `validate(graph, setup)`. Its codes get the `HOST.` prefix.
 5. The plan's bounds, from the expansion, against `caps`.
 
 A host's `validate()` that throws or rejects gives a `HOST.validate` error naming the host. Two hosts that register one
-node kind still throw.
+node kind still throw, as `perform` does.
 
 ## Plan
 

@@ -478,7 +478,7 @@ export function schemaErrors(
 }
 
 /** The `concurrency` of the default layer: one node instance per CPU. */
-export const DEFAULT_CONCURRENCY = availableParallelism();
+const DEFAULT_CONCURRENCY = availableParallelism();
 
 /** Core's own config keys and their schemas (CFG-01). */
 export const CORE_CONFIG: Readonly<Record<string, JsonSchema>> = {

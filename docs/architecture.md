@@ -98,7 +98,7 @@ The lifecycle has two stages (D-12). **Compose** is steps 1 to 4, ending with pr
    3. Resolve config: each namespace goes to its owner's schema (CFG-02, CFG-05).
    4. Expand bounded groups whose cardinality is known from plain values. A group whose size depends on a node result
       stays as a bounded region. Compose runs no author code (ADR 0009).
-   5. Run host `validate(graph)` hooks (for example the lane double-join rule, a role and model policy).
+   5. Run host `validate(graph, setup)` hooks (for example the lane double-join rule, a role and model policy).
    6. Compute bounds with host `bounds(node)`: maximum node instances and the hosts' named counts (such as agent runs)
       (D-23). There is no cost bound in v1.
    7. Emit the **plan**: diagnostics, counts, bounds and a renderable graph. Diagnostics of severity error stop here
@@ -153,20 +153,25 @@ A host is a package that the core loads. It is the only way node kinds beyond th
    artifacts.
 2. **Types.** Named types the host's ports use (for example a lane handle), with a way to serialize them into the IR.
    Compose rejects a type name that neither core nor an installed host owns.
-3. **`validate(graph)`.** A compose-time hook returning diagnostics. It sees the whole graph and its own kinds' nodes.
-   This is where host rules live (the lane join rule, role and model policy, bind validity).
+3. **`validate(graph, setup)`.** A compose-time hook returning diagnostics. It sees the whole graph and its own kinds'
+   nodes. This is where host rules live (the lane join rule, role and model policy, bind validity).
 4. **`bounds(node)`.** Bounds for a node instance as named counts, like metrics (CORE-19): core sums each name and
    config caps it by name, for the plan's size bound (D-23). The agent host counts agent runs under its own name.
-5. **Environment.** Host facts visible to code nodes through a typed context (for example the current target). The
-   core's own context holds only the concert id, a clock value and the instance's scratch directory (ADR 0007).
-6. **Config namespaces.** Schemas for the namespaces the host owns.
+5. **Environment.** `environment(setup)` gives host facts visible to code nodes through a typed context (for example the
+   current target). The core's own context holds only the concert id, a clock value and the instance's scratch directory
+   (ADR 0007).
+6. **Config namespaces.** Schemas for the namespaces the host owns. A **setup** goes to `validate`, `environment`,
+   `resources.release` and `resources.usage`, and to `execute` as `context.setup`. It holds the values of the host's own
+   namespaces as compose checked them, and its store, `<data root>/hosts/<host name>`, which the host creates on first
+   write.
 7. **Event enrichment.** Extra fields added to events and the record for its node kinds, when an instance settles, and
    progress events emitted while it executes, such as an agent's tool calls and thinking (CORE-10). The core stores them
    opaquely.
 8. **Cancellation.** A way to cancel a running node instance and release resources (kill the process tree).
 9. **Optional seams.** `param(type, text)` reads a param of one of its types from the text a flag or YAML gave it.
-   `release(concert)` frees what it holds for a settled concert, and `usage(concert)` reports its bytes on disk, for
-   `prune` and `ls`.
+   `resources`, for a host that holds disk per concert, groups `release(concert, setup)`, which frees what it holds for
+   a settled concert, and `usage(concert, setup)`, which reports its bytes on disk, for `prune` and `ls`. ADR 0010
+   records the shape.
 
 The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
 hooks and records what they return.

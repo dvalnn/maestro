@@ -23,9 +23,9 @@ import {
 	schemaErrors,
 	sourceOf,
 } from "../config";
-import type { Host, HostKind, NodeKind } from "../host";
+import type { Host, NodeKind } from "../host";
 import { type Validator, violations } from "../ports";
-import { isRecord, loadFunction, messageOf } from "../shared";
+import { type HostKind, isRecord, loadFunction, messageOf } from "../shared";
 import type { LoadCode } from "../worker";
 import type { ComposeInput } from "./index";
 

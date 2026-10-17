@@ -1,9 +1,9 @@
 import { basename } from "node:path";
 import {
+	type Concert,
 	type ConcertResult,
 	perform as conduct,
-	type Performance,
-	type RecordStore,
+	type Records,
 	unresumable,
 } from "@maestro/core/perform";
 import { mapWorkers } from "@maestro/ir";
@@ -86,7 +86,7 @@ async function begin(
  */
 async function restart(
 	session: Session,
-	store: RecordStore,
+	store: Records,
 	id: string,
 	args: readonly string[],
 ): Promise<Start> {
@@ -106,13 +106,13 @@ async function restart(
 	return { prepared: await resumable(session, row, values), resume: id };
 }
 
-/** Cancels `performance` on SIGINT or SIGTERM, until it settles. */
-async function settled(performance: Performance): Promise<ConcertResult> {
+/** Cancels `concert` on SIGINT or SIGTERM, until it settles. */
+async function settled(concert: Concert): Promise<ConcertResult> {
 	const signals = ["SIGINT", "SIGTERM"] as const;
-	const stop = () => void performance.cancel();
+	const stop = () => void concert.cancel();
 	for (const signal of signals) process.once(signal, stop);
 	try {
-		return await performance.done;
+		return await concert.done;
 	} finally {
 		for (const signal of signals) process.off(signal, stop);
 	}
@@ -138,7 +138,7 @@ function report(
 
 async function performed(
 	session: Session,
-	store: RecordStore,
+	store: Records,
 	args: readonly string[],
 	json: boolean,
 	resume: string | undefined,
@@ -151,10 +151,11 @@ async function performed(
 	const { prepared } = start;
 	for (const d of (await preflight(session, prepared)).diagnostics)
 		deps.stderr(renderDiagnostic(d));
-	const performance = conduct({
+	const concert = await conduct({
 		hosts: deps.hosts,
+		config: prepared.config,
 		loadCode: prepared.loader.loadCode,
-		record: store,
+		recordPath: session.files.record,
 		dir: session.files.concerts,
 		concurrency: session.config.core.concurrency,
 		ir: prepared.ir,
@@ -170,14 +171,8 @@ async function performed(
 				}
 			: { resume: start.resume }),
 	});
-	deps.stderr(`concert ${performance.concert}`);
-	return report(
-		session,
-		json,
-		performance.concert,
-		prepared,
-		await settled(performance),
-	);
+	deps.stderr(`concert ${concert.id}`);
+	return report(session, json, concert.id, prepared, await settled(concert));
 }
 
 export const perform: Command = {

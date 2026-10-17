@@ -1,5 +1,5 @@
 export { concertDirs } from "./artifacts";
-export { type Performance, type PerformOptions, perform } from "./perform";
+export { type Concert, type PerformOptions, perform } from "./perform";
 export {
 	type ConcertEvent,
 	type ConcertFilter,
@@ -9,7 +9,7 @@ export {
 	type EventBody,
 	type InstanceRecord,
 	openRecord,
-	type RecordStore,
+	type Records,
 	type Settling,
 	Unresumable,
 	unresumable,

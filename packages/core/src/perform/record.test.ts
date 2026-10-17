@@ -4,7 +4,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Ir, parseIr } from "@maestro/ir";
-import { CONCERT_FINISHED, openRecord, PROCESS_EXITED } from "./record";
+import {
+	CONCERT_FINISHED,
+	openRecord,
+	openWriter,
+	PROCESS_EXITED,
+} from "./record";
 
 const OPENERS = 6;
 /** How long after spawning the openers they all open at once, in milliseconds: longer than a process takes to start. */
@@ -34,9 +39,9 @@ async function inProcess(path: string, body: string, at = 0): Promise<string> {
 	const module = JSON.stringify(join(import.meta.dir, "record.ts"));
 	await writeFile(
 		script,
-		`import { openRecord } from ${module};
+		`import { openWriter } from ${module};
 		while (Date.now() < ${at});
-		const record = openRecord(${JSON.stringify(path)});
+		const record = openWriter(${JSON.stringify(path)});
 		${body}`,
 	);
 	const child = Bun.spawn([process.execPath, script], { stderr: "pipe" });
@@ -87,7 +92,7 @@ test("a reader settles a concert whose process exited failed, with its running i
 	const reader = openRecord(path);
 	const events = () => reader.events("gone").map((e) => e.type);
 	expect(reader.concerts({ status: "running" })).toEqual([]);
-	expect(reader.concert("gone")).toMatchObject({ status: "failed", ir });
+	expect(reader.find("gone")).toMatchObject({ status: "failed", ir });
 	expect(reader.result("gone")).toEqual({
 		outcome: "failed",
 		reason: PROCESS_EXITED,
@@ -105,7 +110,9 @@ test("a reader settles a concert whose process exited failed, with its running i
 
 test("finishing a concert settles its running instances, and a settled instance or concert takes no more writes", async () => {
 	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
-	const record = openRecord(join(dir, "record.db"));
+	const path = join(dir, "record.db");
+	const record = openWriter(path);
+	const reader = openRecord(path);
 	record.begin({ id: "c", ir: await fixtureIr(), startedAt: 1 });
 	record.start("c", A, 2);
 	record.settle("c", A, { outcome: "ok", outputs: {} }, 3);
@@ -119,25 +126,28 @@ test("finishing a concert settles its running instances, and a settled instance 
 		late,
 	);
 	record.finish("c", { outcome: "failed", reason: "broke" }, 5);
-	expect(record.instances("c")).toMatchObject([
+	expect(reader.instances("c")).toMatchObject([
 		{ ...A, status: "ok" },
 		{ ...b, status: "failed", reason: CONCERT_FINISHED, settledAt: 5 },
 	]);
 	expect(() => record.start("c", { node: "z", expansion: "" }, 6)).toThrow(
 		"concert 'c' has settled, so it takes no more writes",
 	);
-	expect(record.events("c").map((e) => e.type)).toEqual([
+	expect(reader.events("c").map((e) => e.type)).toEqual([
 		"running",
 		"settled",
 		"running",
 		"settled",
 	]);
 	record.close();
+	reader.close();
 });
 
 test("a concert keeps its origin, tour and title, and concerts filter by them, newest first, up to a limit", async () => {
 	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
-	const record = openRecord(join(dir, "record.db"));
+	const path = join(dir, "record.db");
+	const record = openWriter(path);
+	const reader = openRecord(path);
 	const ir = await fixtureIr();
 	const origin = {
 		workspace: "w",
@@ -149,30 +159,31 @@ test("a concert keeps its origin, tour and title, and concerts filter by them, n
 	record.begin({ id: "a", ir, startedAt: 1, ...origin });
 	record.begin({ id: "b", ir, startedAt: 2 });
 	record.begin({ id: "c", ir, startedAt: 3, workspace: "w", moduleDir: "/m" });
-	expect(record.concert("a")).toMatchObject(origin);
-	expect(record.concert("b")).toMatchObject({ workspace: "", moduleDir: "" });
-	expect(record.concert("b")).not.toHaveProperty("tour");
-	expect(record.concert("b")).not.toHaveProperty("file");
-	expect(record.find("a")).toMatchObject(origin);
-	expect(record.find("z")).toBeUndefined();
-	const ids = (filter?: Parameters<typeof record.concerts>[0]) =>
-		record.concerts(filter).map((c) => c.id);
+	expect(reader.find("a")).toMatchObject(origin);
+	expect(reader.find("b")).toMatchObject({ workspace: "", moduleDir: "" });
+	expect(reader.find("b")).not.toHaveProperty("tour");
+	expect(reader.find("b")).not.toHaveProperty("file");
+	expect(reader.find("z")).toBeUndefined();
+	const ids = (filter?: Parameters<typeof reader.concerts>[0]) =>
+		reader.concerts(filter).map((c) => c.id);
 	expect(ids()).toEqual(["c", "b", "a"]);
 	expect(ids({ workspace: "w" })).toEqual(["c", "a"]);
 	expect(ids({ limit: 2 })).toEqual(["c", "b"]);
-	record.setTour("c", "t1");
+	reader.setTour("c", "t1");
 	expect(ids({ tour: "t1" })).toEqual(["c", "a"]);
-	record.setTour("a", undefined);
+	reader.setTour("a", undefined);
 	expect(ids({ tour: "t1", workspace: "w" })).toEqual(["c"]);
-	expect(record.concert("a")).not.toHaveProperty("tour");
-	expect(() => record.setTour("z", "t1")).toThrow("no concert 'z'");
+	expect(reader.find("a")).not.toHaveProperty("tour");
+	expect(() => reader.setTour("z", "t1")).toThrow("no concert 'z'");
 	record.close();
+	reader.close();
 });
 
 test("removing a concert deletes its rows, and a running concert is refused", async () => {
 	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
 	const path = join(dir, "record.db");
-	const record = openRecord(path);
+	const record = openWriter(path);
+	const reader = openRecord(path);
 	const ir = await fixtureIr();
 	record.begin({ id: "gone", ir, startedAt: 1 });
 	record.begin({ id: "kept", ir, startedAt: 2 });
@@ -185,12 +196,12 @@ test("removing a concert deletes its rows, and a running concert is refused", as
 			4,
 		);
 	}
-	expect(() => record.remove("gone")).toThrow(
+	expect(() => reader.remove("gone")).toThrow(
 		`concert 'gone' is still running in process ${process.pid}, so it cannot be removed`,
 	);
 	record.finish("gone", { outcome: "failed", reason: "x" }, 5);
-	record.remove("gone");
-	expect(() => record.concert("gone")).toThrow("no concert 'gone'");
+	reader.remove("gone");
+	expect(reader.find("gone")).toBeUndefined();
 	const db = new Database(path);
 	const rows = (table: string, concert: string) =>
 		db.query(`SELECT 1 FROM ${table} WHERE concert = ?`).all(concert).length;
@@ -202,15 +213,16 @@ test("removing a concert deletes its rows, and a running concert is refused", as
 	}
 	db.close();
 	record.close();
+	reader.close();
 });
 
 test("a running concert is settled when the alive check says its process is gone", async () => {
 	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
 	const path = join(dir, "record.db");
-	const record = openRecord(path);
+	const record = openWriter(path);
 	record.begin({ id: "c", ir: await fixtureIr(), startedAt: 1 });
 	const reader = openRecord(path, { alive: () => false });
-	expect(reader.concert("c")).toMatchObject({ status: "failed" });
+	expect(reader.find("c")).toMatchObject({ status: "failed" });
 	expect(reader.result("c")).toEqual({
 		outcome: "failed",
 		reason: PROCESS_EXITED,

@@ -7,9 +7,9 @@ import {
 	type JsonSchema,
 } from "@maestro/ir";
 import type { Composed } from "../config";
-import { type Bounds, type Host, kindLookup } from "../host";
+import { type Bounds, type Host, hostSetup } from "../host";
 import { validator } from "../ports";
-import { messageOf } from "../shared";
+import { kindLookup, messageOf } from "../shared";
 import type { LoadCode } from "../worker";
 import { boundsOf, capErrors, type ExpansionOf, unexpanded } from "./bounds";
 import { checkConfig, checkHosts, checkTypes, checkWorkers } from "./checks";
@@ -75,11 +75,13 @@ export function stampHost(d: Diagnostic): Diagnostic {
 }
 
 /** Each host's `validate` findings, a throw or a rejection being a `HOST.validate` error that names the host. */
-async function validations(hosts: readonly Host[], graph: GraphIndex) {
+async function validations({ hosts, config }: ComposeInput, graph: GraphIndex) {
 	const results = await Promise.all(
 		hosts.map(async (host): Promise<Diagnostic[]> => {
 			try {
-				return (await host.validate(graph)).map(stampHost);
+				return (await host.validate(graph, hostSetup(host, config))).map(
+					stampHost,
+				);
 			} catch (e) {
 				return [
 					{
@@ -99,7 +101,7 @@ async function validations(hosts: readonly Host[], graph: GraphIndex) {
  * Pre-flight (architecture 4): checks types, config and host nodes, loads every function the IR names, expands the
  * groups whose items are plain values, calls the hosts' `validate` hooks, and bounds the plan against the caps. It
  * calls no author code, writes nothing and starts no host node (NFR-02, ADR 0009).
- * @throws Error when two hosts register one node kind.
+ * @throws Error when two hosts register one node kind, as `perform` does.
  */
 export async function compose(input: ComposeInput): Promise<ComposeResult> {
 	const { ir, hosts } = input;
@@ -126,7 +128,7 @@ export async function compose(input: ComposeInput): Promise<ComposeResult> {
 	const diagnostics = [
 		...checked,
 		...expanded.diagnostics,
-		...(await validations(hosts, graph)),
+		...(await validations(input, graph)),
 	];
 	const bounds = boundsOf(ir, graph, expansionOf, lookup);
 	if (!hasError(diagnostics))

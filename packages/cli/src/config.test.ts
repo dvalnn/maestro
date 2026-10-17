@@ -1,10 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
-import {
-	ConfigError,
-	DEFAULT_CONCURRENCY,
-	sourceOf,
-} from "@maestro/core/config";
+import { ConfigError, sourceOf } from "@maestro/core/config";
 import { type ConfigRequest, loadConfig } from "./config";
 import { cleanup, scratch } from "./fixtures/packs";
 
@@ -73,7 +70,7 @@ describe("config files", () => {
 			}),
 		);
 		expect(config.core).toEqual({
-			concurrency: DEFAULT_CONCURRENCY,
+			concurrency: availableParallelism(),
 			caps: {},
 			dataRoot: "/data/maestro",
 			workspace: "",

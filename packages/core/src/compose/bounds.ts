@@ -10,7 +10,8 @@ import {
 	type IrNode,
 	isGroup,
 } from "@maestro/ir";
-import type { Bounds, HostKind } from "../host";
+import type { Bounds } from "../host";
+import type { HostKind } from "../shared";
 import type { Expansion, PlanBounds } from "./index";
 
 /** The expansion of a group instance, by its expansion path. */

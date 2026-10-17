@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import {
-	type Host,
-	type HostContext,
-	type HostEvent,
-	type HostInstance,
-	kindLookup,
+import type {
+	Host,
+	HostContext,
+	HostEvent,
+	HostInstance,
+	HostSetup,
 } from "@maestro/core/host";
 import {
 	type Diagnostic,
@@ -26,18 +26,20 @@ const node: HostNode = {
 	in: { prompt: { type: "string" } },
 	out: { text: { type: "string" } },
 };
+const setup: HostSetup = { config: {}, store: "/data/hosts/fake" };
 const emitted: HostEvent[] = [];
 const context: HostContext = {
 	concert: "c1",
 	clock: 0,
 	path: (ref) => `/area/${ref.path}`,
 	scratch: "/scratch/c1",
+	setup,
 	emit: (event) => emitted.push(event),
 };
 const at = (expansion: string): HostInstance => ({ node, expansion });
 
 function fakeTask(script: FakeScript) {
-	const kind = kindLookup([fakeHost(script)])(FAKE_TASK)?.kind;
+	const kind = fakeHost(script).kinds.find((k) => k.name === FAKE_TASK);
 	if (!kind) throw new Error(`${FAKE_TASK} is not registered`);
 	return kind;
 }
@@ -148,13 +150,13 @@ test("validate, bounds, release and usage return what the script says, and nothi
 		},
 		usage: async (concert) => concert.length,
 	});
-	expect(await scripted.validate(graph)).toEqual([diagnostic]);
+	expect(await scripted.validate(graph, setup)).toEqual([diagnostic]);
 	expect(scripted.bounds(node)).toEqual({ "fake.tasks": 2 });
-	expect(await fakeHost().validate(graph)).toEqual([]);
+	expect(await fakeHost().validate(graph, setup)).toEqual([]);
 	expect(fakeHost().bounds(node)).toEqual({});
-	await scripted.release?.("abc");
+	await scripted.resources?.release("abc", setup);
 	expect(released).toEqual(["abc"]);
-	expect(await scripted.usage?.("abc")).toBe(3);
-	expect(await fakeHost().release?.("abc")).toBeUndefined();
-	expect(await fakeHost().usage?.("abc")).toBe(0);
+	expect(await scripted.resources?.usage("abc", setup)).toBe(3);
+	expect(await fakeHost().resources?.release("abc", setup)).toBeUndefined();
+	expect(await fakeHost().resources?.usage("abc", setup)).toBe(0);
 });

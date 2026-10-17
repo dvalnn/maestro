@@ -225,7 +225,7 @@ export const wait: Command = {
 function reap(session: Session, id: string) {
 	const reader = openRecord(session.files.record, { alive: isMaestro });
 	try {
-		reader.concert(id);
+		reader.find(id);
 	} finally {
 		reader.close();
 	}

@@ -27,40 +27,53 @@ import {
 	tolerates,
 	worstOutcome,
 } from "@maestro/ir";
-import { type Execution, type Host, kindLookup } from "../host";
-import { portCheck, validator } from "../ports";
+import type { Composed } from "../config";
+import {
+	type Host,
+	type HostNodeResult,
+	type HostSetup,
+	hostSetup,
+} from "../host";
+import { validator } from "../ports";
 import {
 	instanceKey,
+	kindLookup,
 	loadFunction,
 	messageOf,
 	unreadableReason,
 } from "../shared";
-import {
-	type Inputs,
-	type LoadCode,
-	type NodeInstance,
-	timed,
-} from "../worker";
+import type { Inputs, LoadCode, NodeInstance } from "../worker";
 import {
 	type ConcertDirs,
 	concertDirs,
 	makeDirs,
 	scratchDir,
 } from "./artifacts";
-import { asserted, callOf, finish, type Kit } from "./execute";
-import type {
-	ConcertOrigin,
-	ConcertResult,
-	RecordStore,
-	Settling,
+import {
+	asserted,
+	callOf,
+	finish,
+	type Kit,
+	portCheck,
+	timed,
+} from "./execute";
+import {
+	type ConcertOrigin,
+	type ConcertResult,
+	openWriter,
+	type RecordWriter,
+	type Settling,
 } from "./record";
 import { type Kept, keptOf, resumeKey } from "./resume";
 import { tsWorker } from "./ts-worker";
 
 type PerformBase = {
 	hosts: readonly Host[];
+	/** The composed config the concert was composed under, from which each host gets its own namespaces. */
+	config: Composed;
 	loadCode: LoadCode;
-	record: RecordStore;
+	/** The file of the record store the concert is written to. */
+	recordPath: string;
 	/** What a new concert's row keeps beside its IR. A resumed concert keeps its own. */
 	origin?: ConcertOrigin;
 	/** The directory each concert's artifact area and scratch directories go under, in `<dir>/<concert id>/`. */
@@ -79,8 +92,8 @@ type PerformBase = {
 export type PerformOptions = PerformBase & { ir: Ir; resume?: string };
 
 /** A concert being performed. */
-export type Performance = {
-	concert: string;
+export type Concert = {
+	id: string;
 	/** Settles with the result once every node instance has settled. */
 	done: Promise<ConcertResult>;
 	/**
@@ -90,8 +103,14 @@ export type Performance = {
 	cancel(): Promise<void>;
 };
 
+/** `PerformOptions` once the record store is open for writing. */
+type Opened = Omit<PerformOptions, "recordPath"> & {
+	record: RecordWriter;
+	kinds: Kit["kinds"];
+};
+
 /** What an abandoned call settles with, which its halt then replaces. */
-const ABANDONED: Execution = { outcome: "failed", reason: "abandoned" };
+const ABANDONED: HostNodeResult = { outcome: "failed", reason: "abandoned" };
 
 const CANCELLED: Halt = {
 	outcome: "failed",
@@ -136,7 +155,7 @@ type Slots = { acquire(): Promise<void>; release(): void };
  * `started` holds the instance keys `record.start` took. `inflight` holds each node settling, until it has. `kept`
  * holds the instances a resume may reuse, by instance key.
  */
-type Concert = {
+type Live = {
 	id: string;
 	index: GraphIndex;
 	kept: ReadonlyMap<string, Kept>;
@@ -152,37 +171,48 @@ type Concert = {
 
 /**
  * Starts performing a concert, a new one or the one `options.resume` names. Code nodes execute in process through
- * `loadCode`, host nodes through their host, and every instance and event goes to `record`.
+ * `loadCode`, host nodes through their host, and every instance and event goes to the record at `recordPath`, which
+ * stays open until the concert settles. Every refusal rejects:
  * @throws RangeError when `concurrency` is not a positive integer.
- * @throws Error when the concert to resume is unknown.
- * @throws Unresumable when it is running, or settled `ok`.
+ * @throws Error when two hosts register one node kind, or the concert to resume is unknown.
+ * @throws Unresumable when the concert to resume is running, or settled `ok`.
  */
-export function perform(options: PerformOptions): Performance {
-	const { concurrency } = options;
+export async function perform(options: PerformOptions): Promise<Concert> {
+	const { concurrency, recordPath } = options;
 	if (!Number.isInteger(concurrency) || concurrency < 1)
 		throw new RangeError(
 			`concurrency must be a positive integer, got ${concurrency}`,
 		);
+	const kinds = kindLookup(options.hosts);
 	const id = options.resume ?? Bun.randomUUIDv7();
+	const record = openWriter(recordPath);
+	const opened: Opened = { ...options, record, kinds };
+	let kept: Map<string, Kept>;
+	try {
+		kept = enter(id, opened);
+	} catch (error) {
+		record.close();
+		throw error;
+	}
 	const root: Frame = { keys: [], inner: {}, states: new Map() };
 	const running = new Set<Running>();
-	const kept = enter(id, options);
 	return {
-		concert: id,
-		done: conduct(id, options.ir, kept, options, root, running),
+		id,
+		done: conduct(id, options.ir, kept, opened, root, running).finally(() =>
+			record.close(),
+		),
 		cancel: () => halt(running, root, CANCELLED),
 	};
 }
 
 /** Records the concert as running, and finds what a resume may reuse of it. */
-function enter(id: string, options: PerformOptions): Map<string, Kept> {
-	const { record, resume, ir } = options;
+function enter(id: string, opened: Opened): Map<string, Kept> {
+	const { record, resume, ir } = opened;
 	if (resume === undefined) {
-		record.begin({ id, ir, startedAt: Date.now(), ...options.origin });
+		record.begin({ id, ir, startedAt: Date.now(), ...opened.origin });
 		return new Map();
 	}
-	record.resume({ id, ir });
-	return keptOf(record.instances(id));
+	return keptOf(record.resume({ id, ir }));
 }
 
 /**
@@ -193,7 +223,7 @@ async function conduct(
 	id: string,
 	ir: Ir,
 	kept: ReadonlyMap<string, Kept>,
-	options: PerformOptions,
+	options: Opened,
 	root: Frame,
 	running: Set<Running>,
 ): Promise<ConcertResult> {
@@ -230,13 +260,14 @@ async function performed(
 	id: string,
 	ir: Ir,
 	kept: ReadonlyMap<string, Kept>,
-	options: PerformOptions,
+	options: Opened,
 	dirs: ConcertDirs,
 	root: Frame,
 	running: Set<Running>,
 	inflight: Set<Promise<void>>,
 ): Promise<ConcertResult> {
 	const { hosts, loadCode } = options;
+	const setup = (host: Host) => hostSetup(host, options.config);
 	const index = indexGraph(ir);
 	await makeDirs(dirs);
 	const check = portCheck(validator());
@@ -244,12 +275,13 @@ async function performed(
 		concert: id,
 		record: options.record,
 		dirs,
-		env: await environments(hosts),
-		kinds: kindLookup(hosts),
+		env: await environments(hosts, setup),
+		kinds: options.kinds,
+		setup,
 		workers: new Map([[TS_RUNTIME, tsWorker(loadCode, check)]]),
 		check,
 	};
-	const c: Concert = {
+	const c: Live = {
 		id,
 		index,
 		kept,
@@ -272,8 +304,9 @@ async function performed(
 
 async function environments(
 	hosts: readonly Host[],
+	setup: (host: Host) => HostSetup,
 ): Promise<Record<string, Facts>> {
-	const facts = hosts.map(async (h) => [h.name, await h.environment()]);
+	const facts = hosts.map(async (h) => [h.name, await h.environment(setup(h))]);
 	return Object.fromEntries(await Promise.all(facts));
 }
 
@@ -317,7 +350,7 @@ function resultOf(returned: State): ConcertResult {
 
 /** Settles every node of `nodes` in `frame`, each once its upstreams have. */
 function startFrame(
-	c: Concert,
+	c: Live,
 	nodes: readonly IrNode[],
 	frame: Frame,
 ): Promise<State[]> {
@@ -338,11 +371,7 @@ function startFrame(
 	return Promise.all(pending.map((p) => p.settled.promise));
 }
 
-async function settleNode(
-	c: Concert,
-	node: IrNode,
-	frame: Frame,
-): Promise<State> {
+async function settleNode(c: Live, node: IrNode, frame: Frame): Promise<State> {
 	const instance = { node: node.id, expansion: formatExpansion(frame.keys) };
 	const sources = await upstreams(c, node, frame);
 	const stop =
@@ -361,14 +390,14 @@ async function settleNode(
 }
 
 /** Records how `instance` settled, unless it was reused or never started in a halted concert (architecture 7). */
-function settle(c: Concert, instance: NodeInstance, ending: Ending): State {
+function settle(c: Live, instance: NodeInstance, ending: Ending): State {
 	const recorded = c.started.has(instanceKey(instance)) || !c.root.halt;
 	if (recorded && !ending.reused)
 		c.kit.record.settle(c.id, instance, ending, Date.now());
 	return { ...ending, ...instance, order: c.order++ };
 }
 
-function start(c: Concert, instance: NodeInstance, at: number): void {
+function start(c: Live, instance: NodeInstance, at: number): void {
 	c.kit.record.start(c.id, instance, at);
 	c.started.add(instanceKey(instance));
 }
@@ -376,12 +405,12 @@ function start(c: Concert, instance: NodeInstance, at: number): void {
 const isFanIn = (node: IrNode) => node.kind === "code" && node.fanin === true;
 
 /** An edge from an enclosing group reads one of its inner ports. */
-const isInner = (c: Concert, edge: IrEdge) =>
+const isInner = (c: Live, edge: IrEdge) =>
 	c.index.groupsOf(edge.to.node).includes(edge.from.node);
 
 /** The settled states of the nodes with an edge into `node`, by id, leaving out inner ports. */
 async function upstreams(
-	c: Concert,
+	c: Live,
 	node: IrNode,
 	frame: Frame,
 ): Promise<Map<string, State>> {
@@ -398,7 +427,7 @@ async function upstreams(
 }
 
 /** The frame on `frame`'s chain that holds `id`'s instance: the one as deep as `id` sits in groups. */
-function frameOf(c: Concert, frame: Frame, id: string): Frame {
+function frameOf(c: Live, frame: Frame, id: string): Frame {
 	const depth = c.index.groupsOf(id).length;
 	let at = frame;
 	while (at.keys.length > depth && at.parent) at = at.parent;
@@ -425,7 +454,7 @@ const worseOf = (current: Halt | undefined, halt: Halt): Halt =>
 		? current
 		: halt;
 
-const shown = (c: Concert, instance: NodeInstance) =>
+const shown = (c: Live, instance: NodeInstance) =>
 	formatInstance(instance, c.index.groupsOf(instance.node));
 
 /**
@@ -433,7 +462,7 @@ const shown = (c: Concert, instance: NodeInstance) =>
  * settle as the cause, or when a guard is not true.
  */
 function gate(
-	c: Concert,
+	c: Live,
 	node: IrNode,
 	frame: Frame,
 	sources: ReadonlyMap<string, State>,
@@ -483,7 +512,7 @@ function blocks(
  * upstream and port (ADR 0008). A fan-in node takes that upstream `Settled` instead.
  */
 function unreadable(
-	c: Concert,
+	c: Live,
 	node: IrNode,
 	frame: Frame,
 	sources: ReadonlyMap<string, State>,
@@ -499,7 +528,7 @@ function unreadable(
 
 /** `failed` when output `port` of `state` cannot be read, as `unreadableReason` rules. */
 function unreadablePort(
-	c: Concert,
+	c: Live,
 	state: State,
 	port: string,
 ): Ending | undefined {
@@ -509,7 +538,7 @@ function unreadablePort(
 }
 
 /** The member a `repeat` state port that `edge` reads carries over from the previous iteration, if any. */
-function carriedBy(c: Concert, frame: Frame, edge: IrEdge): State | undefined {
+function carriedBy(c: Live, frame: Frame, edge: IrEdge): State | undefined {
 	const group = c.index.nodes.get(edge.from.node);
 	const port = edge.from.port ?? "";
 	if (group?.kind !== "repeat" || !Object.hasOwn(group.out ?? {}, port))
@@ -532,7 +561,7 @@ function edgeValue(
 
 /** `node`'s input values, a copy so no instance changes another's. A fan-in node gets each `data` input `Settled`. */
 function gather(
-	c: Concert,
+	c: Live,
 	node: IrNode,
 	frame: Frame,
 	sources: ReadonlyMap<string, State>,
@@ -572,7 +601,7 @@ function notOk(state: {
 }
 
 async function leaf(
-	c: Concert,
+	c: Live,
 	node: CodeNode | HostNode | AssertNode,
 	frame: Frame,
 	instance: NodeInstance,
@@ -595,7 +624,7 @@ async function leaf(
 }
 
 async function settleLeaf(
-	c: Concert,
+	c: Live,
 	node: CodeNode | HostNode | AssertNode,
 	frame: Frame,
 	instance: NodeInstance,
@@ -614,7 +643,7 @@ async function settleLeaf(
  * metrics and enrichment its call reported by then. Its call is abandoned, and a later result is ignored.
  */
 async function execute(
-	c: Concert,
+	c: Live,
 	node: CodeNode | HostNode,
 	frame: Frame,
 	instance: NodeInstance,
@@ -627,7 +656,7 @@ async function execute(
 		const clock = Date.now();
 		start(c, instance, clock);
 		const call = callOf(c.kit, node, instance, inputs, { scratch, clock });
-		const abandoned = Promise.withResolvers<Execution>();
+		const abandoned = Promise.withResolvers<HostNodeResult>();
 		const entry: Running = {
 			frame,
 			cancel: async () => {
@@ -637,7 +666,7 @@ async function execute(
 		};
 		c.running.add(entry);
 		const timeout = node.kind === "code" ? node.timeout : undefined;
-		const execution = await timed(
+		const reported = await timed(
 			Promise.race([call.invoke(), abandoned.promise]),
 			{ name: shown(c, instance), timeout },
 			async (reason) => {
@@ -645,10 +674,10 @@ async function execute(
 				return abandoned.promise;
 			},
 		).finally(() => c.running.delete(entry));
-		const { metrics, enrichment } = execution;
+		const { metrics, enrichment } = reported;
 		return entry.halted
 			? { ...entry.halted, metrics, enrichment }
-			: await finish(c.kit, node, instance, scratch, execution);
+			: await finish(c.kit, node, instance, scratch, reported);
 	} finally {
 		await rm(scratch, { recursive: true, force: true });
 	}
@@ -682,7 +711,7 @@ function within(frame: Frame, outer: Frame): boolean {
 }
 
 async function group(
-	c: Concert,
+	c: Live,
 	node: GroupNode,
 	frame: Frame,
 	instance: NodeInstance,
@@ -713,7 +742,7 @@ const childFrame = (
 
 /** A `map` or `seq`'s items, or why they cannot be expanded. */
 function itemsOf(
-	c: Concert,
+	c: Live,
 	node: MapNode | SeqNode,
 	instance: NodeInstance,
 	inputs: Inputs,
@@ -739,7 +768,7 @@ function itemsOf(
  * cannot name its members: a throwing key function, or two items keyed alike.
  */
 async function keysOf(
-	c: Concert,
+	c: Live,
 	node: MapNode,
 	instance: NodeInstance,
 	items: unknown[],
@@ -789,7 +818,7 @@ async function memberOf(
  * worst member outcome and the first such member's reason (ADR 0006).
  */
 async function mapGroup(
-	c: Concert,
+	c: Live,
 	node: MapNode,
 	frame: Frame,
 	instance: NodeInstance,
@@ -835,7 +864,7 @@ async function mapGroup(
 
 /** Halts every member frame but `member`, whose non-`ok` `state` cancels them as `skipped` (ADR 0006). */
 async function haltOthers(
-	c: Concert,
+	c: Live,
 	frames: readonly Frame[],
 	member: Frame,
 	state: State,
@@ -851,7 +880,7 @@ async function haltOthers(
  * last member's outcome and outputs.
  */
 async function serial(
-	c: Concert,
+	c: Live,
 	node: SeqNode | RepeatNode,
 	frame: Frame,
 	instance: NodeInstance,
@@ -884,7 +913,7 @@ async function serial(
  * it cannot carry on from, at an `until` that holds, or `failed` at an `until` read from a rejection without outputs.
  */
 async function endAfter(
-	c: Concert,
+	c: Live,
 	node: SeqNode | RepeatNode,
 	frame: Frame,
 	last: State,
@@ -913,7 +942,7 @@ function endingOf(last: State): Ending {
 
 /** How many members a `seq` or `repeat` may have, and the inner port values of each given the last state. */
 function stepsOf(
-	c: Concert,
+	c: Live,
 	node: SeqNode | RepeatNode,
 	instance: NodeInstance,
 	inputs: Inputs,

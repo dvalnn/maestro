@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { cp, mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { type ComposeInput, compose } from "@maestro/core/compose";
-import type { Execution, HostInstance } from "@maestro/core/host";
+import type { HostInstance, HostNodeResult } from "@maestro/core/host";
 import { openRecord, perform } from "@maestro/core/perform";
 import { type Ir, parseIr, type WorkerRef } from "@maestro/ir";
 import { fakeHost } from "@maestro/testkit";
@@ -43,8 +43,8 @@ const composed = async (
 ) =>
 	compose({
 		ir,
-		config: { values: {}, sources: [] },
-		core: {},
+		config: { values: { dataRoot: "/data" }, sources: [] },
+		core: { dataRoot: { type: "string" } },
 		packs: {},
 		hosts: [fakeHost()],
 		loadCode: loader.loadCode,
@@ -353,7 +353,7 @@ describe("resume", () => {
 		const record = openRecord(join(dir, "record.db"));
 		const started: string[] = [];
 		const attempts = new Map<string, number>();
-		const step = (instance: HostInstance): Execution => {
+		const step = (instance: HostInstance): HostNodeResult => {
 			const id = instance.node.id;
 			started.push(id);
 			attempts.set(id, (attempts.get(id) ?? 0) + 1);
@@ -362,9 +362,19 @@ describe("resume", () => {
 			return { outcome: "ok", outputs: { text: id } };
 		};
 		const hosts = [fakeHost({ steps: { first: step, "echo/echo": step } })];
-		const options = { hosts, record, dir, concurrency: 4 };
+		const options = {
+			hosts,
+			config: { values: { dataRoot: dir }, sources: [] },
+			recordPath: join(dir, "record.db"),
+			dir,
+			concurrency: 4,
+		};
 		const ir = built(first.build("greet", { name: "x" }));
-		const failed = perform({ ...options, ir, loadCode: first.loadCode });
+		const failed = await perform({
+			...options,
+			ir,
+			loadCode: first.loadCode,
+		});
 		expect((await failed.done).outcome).toBe("failed");
 
 		await packOf(
@@ -372,14 +382,15 @@ describe("resume", () => {
 			packDir,
 		);
 		const second = await openPack(packDir);
-		const stored = record.concert(failed.concert).ir;
+		const stored = record.find(failed.id)?.ir;
+		if (!stored) throw new Error("the failed concert is not recorded");
 		expect((await composed(stored, second)).ok).toBe(false);
 		const rehashed = await withCurrentHashes(stored, second.codeHash);
 		expect((await composed(rehashed, second)).ok).toBe(true);
-		const resumed = perform({
+		const resumed = await perform({
 			...options,
 			ir: rehashed,
-			resume: failed.concert,
+			resume: failed.id,
 			loadCode: second.loadCode,
 		});
 		expect(await resumed.done).toMatchObject({
@@ -388,7 +399,7 @@ describe("resume", () => {
 		});
 		expect(started).toEqual(["first", "echo/echo", "echo/echo"]);
 		const shape = record
-			.instances(failed.concert)
+			.instances(failed.id)
 			.filter((i) => i.node === "shape" && !i.stale);
 		expect(shape.map((i) => i.outputs)).toEqual([{ text: "first v2" }]);
 		record.close();

@@ -11,6 +11,7 @@ import type { NodeKind } from "../host";
 import {
 	code,
 	composeWith,
+	DATA_ROOT,
 	data,
 	fakeHost,
 	golden,
@@ -254,14 +255,19 @@ describe("config", () => {
 	});
 	const packs = { demo: { greet: ["name", "loud"] } };
 	const configOf = (values: Record<string, unknown>) =>
-		layered([valuesLayer(values, { layer: "user" })]);
+		layered([
+			valuesLayer({ dataRoot: DATA_ROOT, ...values }, { layer: "user" }),
+		]);
 	const found = async (
 		values: Record<string, unknown>,
 		over: Partial<ComposeInput> = {},
 	) =>
 		failures(await ir(), {
 			config: configOf(values),
-			core: { core: { type: "object", additionalProperties: false } },
+			core: {
+				dataRoot: STRING,
+				core: { type: "object", additionalProperties: false },
+			},
 			hosts: [fakeHost(), unused],
 			packs,
 			...over,
@@ -354,10 +360,13 @@ describe("config", () => {
 	});
 
 	test("locates a config error at the file and line that set the key", async () => {
-		const layer = parseLayer("demo:\n  greet:\n    nmae: x\n", {
-			file: "/w/.maestro/config.yaml",
-			layer: "workspace",
-		});
+		const layer = parseLayer(
+			"demo:\n  greet:\n    nmae: x\ndataRoot: /data\n",
+			{
+				file: "/w/.maestro/config.yaml",
+				layer: "workspace",
+			},
+		);
 		const diagnostics = await failures(await ir(), {
 			config: layered([layer]),
 			packs,

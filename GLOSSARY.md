@@ -39,6 +39,8 @@ reused nor replaced.
 **Outcome**: How a node instance ended: `ok`, `rejected` (completed with a negative verdict), `failed` (could not
 complete) or `skipped` (not run).
 
+**Node result**: How a node instance ended: its outcome with its outputs, or with its reason.
+
 **Settled**: A group member's result together with its outcome: the value if present, the reason if rejected or failed.
 
 **Tour**: A group of thematically related concerts, one per concert, for listing and pruning them together. Bookkeeping
@@ -110,7 +112,10 @@ XDG data home; a workspace can point it elsewhere.
 ### Hosts
 
 **Host**: A plugin that registers node kinds, types, validation and bounds hooks and an environment, and optionally
-parses its types' params, releases what a concert held and reports its disk use.
+parses its types' params and, through its resources, releases what a concert held and reports its disk use.
+
+**Host setup**: What the engine gives a host in its hooks: the values of the config namespaces the host owns, and its
+store, a directory of its own under the data root.
 
 **Engine**: The domain-free core: the graph model, compose checks, scheduling, resume, record and events. It knows no
 host.

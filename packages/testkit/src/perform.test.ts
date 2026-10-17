@@ -1,18 +1,24 @@
+import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compose } from "@maestro/core/compose";
-import type { Execution, Host, HostInstance } from "@maestro/core/host";
+import type {
+	Host,
+	HostInstance,
+	HostNodeResult,
+	HostSetup,
+} from "@maestro/core/host";
 import {
 	type InstanceRecord,
 	openRecord,
 	type PerformOptions,
 	perform,
-	type RecordStore,
+	type Records,
 } from "@maestro/core/perform";
-import type { CodeFunction, LoadCode } from "@maestro/core/worker";
+import type { CodeEntry, LoadCode } from "@maestro/core/worker";
 import {
 	type ArtifactRef,
 	CORE_TYPES,
@@ -46,20 +52,25 @@ afterEach(async () => {
 	for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
+/** A reader of the record store in `dir`, closed when the test ends. */
+function readerIn(dir: string): Records {
+	const record = openRecord(join(dir, "record.db"));
+	cleanups.push(async () => record.close());
+	return record;
+}
+
+/** The record of concert `id`. */
+function recorded(record: Records, id: string) {
+	const found = record.find(id);
+	if (!found) throw new Error(`no concert '${id}' in the record`);
+	return found;
+}
+
 /** A temporary directory for one test's record store and concert directories. */
 async function workspace() {
 	const dir = await mkdtemp(join(tmpdir(), "maestro-perform-"));
-	const records: RecordStore[] = [];
-	cleanups.push(async () => {
-		for (const r of records) r.close();
-		await rm(dir, { recursive: true, force: true });
-	});
-	const open = () => {
-		const record = openRecord(join(dir, "record.db"));
-		records.push(record);
-		return record;
-	};
-	return { dir, open };
+	cleanups.push(() => rm(dir, { recursive: true, force: true }));
+	return { dir, open: () => readerIn(dir) };
 }
 
 type Fn = (inputs: never, context: CodeContext) => unknown;
@@ -70,7 +81,7 @@ const loader =
 	async (ref) => {
 		const fn = fns[ref.export];
 		if (!fn) throw new Error(`no fixture function '${ref.export}'`);
-		return fn as CodeFunction;
+		return fn as CodeEntry;
 	};
 
 /** The `codeHash` of the code a worker reference names as it is now. */
@@ -79,14 +90,22 @@ type CodeHash = (ref: WorkerRef) => string;
 /** The hashes the IR already holds. */
 const keep: CodeHash = (ref) => ref.codeHash;
 
-/** The record and directory `options` name, or a new workspace's. */
-async function storage(options: { record?: RecordStore; dir?: string }) {
-	const space = options.dir ? undefined : await workspace();
-	const record = options.record ?? space?.open();
-	const dir = options.dir ?? space?.dir;
-	if (!record || !dir) throw new Error("give both record and dir, or neither");
-	return { record, dir };
-}
+/** The directory `options` names, or a new workspace's. */
+const storage = async (options: { dir?: string }) =>
+	options.dir ?? (await workspace()).dir;
+
+/** `perform` under no config, with the data root and record store in `options.dir`. */
+const start = (
+	options: Omit<PerformOptions, "config" | "recordPath"> & {
+		dir: string;
+		config?: PerformOptions["config"];
+	},
+) =>
+	perform({
+		config: { values: { dataRoot: options.dir }, sources: [] },
+		recordPath: join(options.dir, "record.db"),
+		...options,
+	});
 
 /** Performs `source`, an IR or the id of a concert to resume, with its code hashed by `options.codeHash`. */
 async function play(
@@ -98,13 +117,13 @@ async function play(
 		loadCode?: LoadCode;
 		concurrency?: number;
 		codeHash?: CodeHash;
-		record?: RecordStore;
 		dir?: string;
 	} = {},
 ) {
-	const { record, dir } = await storage(options);
-	const ir = typeof source === "string" ? record.concert(source).ir : source;
-	const performOptions: PerformOptions = {
+	const dir = await storage(options);
+	const record = readerIn(dir);
+	const ir = typeof source === "string" ? recorded(record, source).ir : source;
+	const performOptions: Parameters<typeof start>[0] = {
 		ir: mapWorkers(ir, (ref) => ({
 			...ref,
 			codeHash: (options.codeHash ?? keep)(ref),
@@ -112,13 +131,12 @@ async function play(
 		...(typeof source === "string" && { resume: source }),
 		hosts: options.hosts ?? [fakeHost(options.script)],
 		loadCode: options.loadCode ?? loader(options.code ?? {}),
-		record,
 		dir,
 		concurrency: options.concurrency ?? 4,
 	};
-	const performance = perform(performOptions);
-	const result = await performance.done;
-	return { ...performance, result, record, dir };
+	const playing = await start(performOptions);
+	const result = await playing.done;
+	return { ...playing, concert: playing.id, result, record, dir };
 }
 
 const fixture = async (name: string) =>
@@ -204,7 +222,7 @@ function barrier(count: number) {
 	};
 }
 
-const pending = () => new Promise<Execution>(() => {});
+const pending = () => new Promise<HostNodeResult>(() => {});
 
 test("a map fans out, a reducer fans in over its settled members, a rejection's outputs included, and a repeat carries state to its bound", async () => {
 	const drafts: unknown[] = [];
@@ -710,8 +728,8 @@ test("a map names duplicate keys and how to fix them, a key function's over a li
 	const firstChar = (item: string) => item[0];
 	const composed = await compose({
 		ir: listed,
-		config: { values: {}, sources: [] },
-		core: {},
+		config: { values: { dataRoot: "/data" }, sources: [] },
+		core: { dataRoot: { type: "string" } },
 		packs: {},
 		hosts: [fakeHost()],
 		loadCode: loader({ firstChar }),
@@ -784,7 +802,7 @@ test("cancelling a concert cancels running instances latest first, keeps what th
 	};
 	const { dir, open } = await workspace();
 	const record = open();
-	const performance = perform({
+	const playing = await start({
 		ir: graph(
 			[task("a"), task("b"), task("c"), code("d", "hang")],
 			[{ kind: "control", from: { node: "a" }, to: { node: "c" } }],
@@ -792,33 +810,32 @@ test("cancelling a concert cancels running instances latest first, keeps what th
 		),
 		hosts: [watched],
 		loadCode: loader({ hang }),
-		record,
 		dir,
 		concurrency: 4,
 	});
 	await started.all;
-	await performance.cancel();
-	const result = await performance.done;
+	await playing.cancel();
+	const result = await playing.done;
 	const startOrder = record
-		.events(performance.concert)
+		.events(playing.id)
 		.filter((e) => e.type === "running" && e.node !== "d")
 		.map((e) => e.node);
 	expect(cancelled).toEqual(startOrder.toReversed());
 	const statuses = record
-		.instances(performance.concert)
+		.instances(playing.id)
 		.map((i) => [i.node, i.status, i.reason]);
 	expect(statuses.toSorted()).toEqual([
 		["a", "failed", CANCELLED_CONCERT],
 		["b", "failed", CANCELLED_CONCERT],
 		["d", "failed", CANCELLED_CONCERT],
 	]);
-	expect(record.metrics(performance.concert)).toEqual({ tokens: 4 });
+	expect(record.metrics(playing.id)).toEqual({ tokens: 4 });
 	expect(
-		record.events(performance.concert).filter((e) => e.type === "log"),
+		record.events(playing.id).filter((e) => e.type === "log"),
 	).toMatchObject([{ node: "b", line: "cancel failed: hook broke" }]);
 	expect(result).toEqual({ outcome: "failed", reason: CANCELLED_CONCERT });
 	expect(record.concerts({ status: "failed" }).map((c) => c.id)).toEqual([
-		performance.concert,
+		playing.id,
 	]);
 });
 
@@ -842,21 +859,20 @@ test("a cancelled host instance whose execute never settles is abandoned, and th
 	};
 	const { dir, open } = await workspace();
 	const record = open();
-	const performance = perform({
+	const playing = await start({
 		ir: graph([task("t")], [], "t"),
 		hosts: [stuck],
 		loadCode: loader({}),
-		record,
 		dir,
 		concurrency: 1,
 	});
 	await started.promise;
-	await performance.cancel();
-	expect(await performance.done).toEqual({
+	await playing.cancel();
+	expect(await playing.done).toEqual({
 		outcome: "failed",
 		reason: CANCELLED_CONCERT,
 	});
-	expect(record.instances(performance.concert)).toMatchObject([
+	expect(record.instances(playing.id)).toMatchObject([
 		{ node: "t", status: "failed", reason: CANCELLED_CONCERT },
 	]);
 });
@@ -950,23 +966,22 @@ test("propagate halts the other members before the failing member's frame settle
 	};
 	const { dir, open } = await workspace();
 	const record = open();
-	const performance = perform({
+	const playing = await start({
 		ir: propagating,
 		hosts: [blocking],
 		loadCode: loader({}),
-		record,
 		dir,
 		concurrency: 4,
 	});
 	await cancelling.promise;
-	const cancel = performance.cancel();
+	const cancel = playing.cancel();
 	gate.resolve();
 	await cancel;
-	expect(await performance.done).toEqual({
+	expect(await playing.done).toEqual({
 		outcome: "failed",
 		reason: CANCELLED_CONCERT,
 	});
-	const instances = byInstance(record.instances(performance.concert));
+	const instances = byInstance(record.instances(playing.id));
 	expect(instances["m/t[x]"]).toMatchObject({
 		status: "failed",
 		reason: CANCELLED_CONCERT,
@@ -1167,7 +1182,7 @@ test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", a
 		"workers.ts": workers,
 	};
 	const loadCode: LoadCode = async (ref) =>
-		modules[ref.module]?.[ref.export] as CodeFunction;
+		modules[ref.module]?.[ref.export] as CodeEntry;
 	const ir = checked(JSON.parse(JSON.stringify(planPanelIr())));
 	const script: FakeScript = {
 		steps: {
@@ -1181,8 +1196,8 @@ test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", a
 	};
 	const composed = await compose({
 		ir,
-		config: { values: {}, sources: [] },
-		core: {},
+		config: { values: { dataRoot: "/data" }, sources: [] },
+		core: { dataRoot: { type: "string" } },
 		packs: {},
 		hosts: [fakeHost(script)],
 		loadCode,
@@ -1227,13 +1242,10 @@ test("a throw while performing halts the running instances and records them sett
 	const started = Promise.withResolvers<void>();
 	const { dir, open } = await workspace();
 	const record = open();
-	const broken: RecordStore = {
-		...record,
-		settle: (concert, instance, settling, at) => {
-			if (instance.node === "a") throw new Error("disk full");
-			record.settle(concert, instance, settling, at);
-		},
-	};
+	const db = new Database(join(dir, "record.db"));
+	db.exec(`CREATE TRIGGER disk_full BEFORE UPDATE ON instances
+		WHEN NEW.node = 'a' AND NEW.status = 'ok' BEGIN SELECT RAISE(ABORT, 'disk full'); END`);
+	db.close();
 	const { result, concert } = await play(
 		graph([code("a", "quick"), task("b")], [], "b"),
 		{
@@ -1246,7 +1258,6 @@ test("a throw while performing halts the running instances and records them sett
 				},
 			},
 			code: { quick: () => started.promise.then(() => ({})) },
-			record: broken,
 			dir,
 		},
 	);
@@ -1254,7 +1265,7 @@ test("a throw while performing halts the running instances and records them sett
 	const b = byInstance(record.instances(concert)).b;
 	expect(b).toMatchObject({ status: "failed", reason: "disk full" });
 	expect(b?.settledAt).toBeLessThanOrEqual(
-		record.concert(concert).settledAt ?? 0,
+		recorded(record, concert).settledAt ?? 0,
 	);
 });
 
@@ -1281,7 +1292,7 @@ test("inputs, code outputs and host returns are checked, and a runtime is looked
 		{
 			script: {
 				steps: {
-					odd: () => ({ outcome: "maybe" }) as unknown as Execution,
+					odd: () => ({ outcome: "maybe" }) as unknown as HostNodeResult,
 					"host-off": [{ outcome: "ok", outputs: { n: "one" } }],
 				},
 			},
@@ -1465,7 +1476,7 @@ test("events carry node id and expansion path, progress included, and read from 
 test("no more instances execute at once than the concurrency cap", async () => {
 	let now = 0;
 	let most = 0;
-	const step = async (): Promise<Execution> => {
+	const step = async (): Promise<HostNodeResult> => {
 		most = Math.max(most, ++now);
 		await Bun.sleep(5);
 		now--;
@@ -1483,7 +1494,7 @@ test("two concerts share one record store at once, and the record answers the CL
 	const gate = Promise.withResolvers<void>();
 	const slow = graph([task("t")], [], "t", "slow");
 	const quick = graph([task("t")], [], "t", "quick");
-	const first = perform({
+	const first = await start({
 		ir: slow,
 		hosts: [
 			fakeHost({
@@ -1494,28 +1505,26 @@ test("two concerts share one record store at once, and the record answers the CL
 			}),
 		],
 		loadCode: loader({}),
-		record: open(),
 		dir,
 		concurrency: 1,
 	});
 	const reader = open();
 	const second = await play(quick, {
 		script: { steps: { t: [{ outcome: "rejected", reason: "nope" }] } },
-		record: open(),
 		dir,
 	});
-	expect(await reader.wait(first.concert, 1)).toBeUndefined();
-	expect(reader.result(first.concert)).toBeUndefined();
+	expect(await reader.wait(first.id, 1)).toBeUndefined();
+	expect(reader.result(first.id)).toBeUndefined();
 	expect(reader.concerts({ status: "running" }).map((c) => c.id)).toEqual([
-		first.concert,
+		first.id,
 	]);
 	gate.resolve();
-	expect(await reader.wait(first.concert)).toMatchObject({
+	expect(await reader.wait(first.id)).toMatchObject({
 		status: "ok",
 		composition: "slow",
 		ir: slow,
 	});
-	expect(reader.result(first.concert)).toEqual({
+	expect(reader.result(first.id)).toEqual({
 		node: "t",
 		expansion: "",
 		outcome: "ok",
@@ -1529,12 +1538,12 @@ test("two concerts share one record store at once, and the record answers the CL
 	});
 	expect(reader.concerts().map((c) => c.id)).toEqual([
 		second.concert,
-		first.concert,
+		first.id,
 	]);
 	expect(reader.concerts({ composition: "quick" }).map((c) => c.id)).toEqual([
 		second.concert,
 	]);
-	expect(reader.instances(first.concert)).toMatchObject([
+	expect(reader.instances(first.id)).toMatchObject([
 		{ node: "t", status: "ok", outputs: { v: 1 } },
 	]);
 	await first.done;
@@ -1580,16 +1589,17 @@ test("a killed concert resumes without repeating an ok host node, and the record
 	await writeFile(irFile, JSON.stringify(ir));
 	await writeFile(
 		script,
-		`import { openRecord, perform } from ${JSON.stringify(join(import.meta.dir, "../../core/src/perform/index.ts"))};
+		`import { perform } from ${JSON.stringify(join(import.meta.dir, "../../core/src/perform/index.ts"))};
 		import { fakeHost } from ${JSON.stringify(join(import.meta.dir, "index.ts"))};
-		perform({
+		await perform({
 			ir: await Bun.file(${JSON.stringify(irFile)}).json(),
+			config: { values: { dataRoot: ${JSON.stringify(dir)} }, sources: [] },
 			hosts: [fakeHost({ steps: {
 				a: [{ outcome: "ok", outputs: { text: "A" } }],
 				b: (_, __, context) => { console.log(context.concert); return new Promise(() => {}); },
 			} })],
 			loadCode: async () => { throw new Error("no code nodes"); },
-			record: openRecord(${JSON.stringify(join(dir, "record.db"))}),
+			recordPath: ${JSON.stringify(join(dir, "record.db"))},
 			dir: ${JSON.stringify(dir)},
 			concurrency: 2,
 		});`,
@@ -1600,13 +1610,12 @@ test("a killed concert resumes without repeating an ok host node, and the record
 	await child.exited;
 
 	const calls: string[] = [];
-	const step = (id: string) => (): Execution => {
+	const step = (id: string) => (): HostNodeResult => {
 		calls.push(id);
 		return { outcome: "ok", outputs: { text: id } };
 	};
 	const record = open();
 	const { result } = await play(concert, {
-		record,
 		dir,
 		script: { steps: { a: step("a"), b: step("b"), c: step("c") } },
 	});
@@ -1675,16 +1684,13 @@ test.each([
 		const { result, record, concert } = await play(first.concert, {
 			code: fns,
 			codeHash: hashes("seed"),
-			record: first.record,
 			dir: first.dir,
 		});
 		expect(result).toMatchObject({ node: "boom", outcome: "ok" });
 		expect(executed(calls, ["seed", "mid", "leaf", "solo"])).toEqual(expected);
-		const stored = record
-			.concert(concert)
-			.ir.nodes.flatMap((n) =>
-				n.kind === "code" ? [[n.id, n.worker.codeHash]] : [],
-			);
+		const stored = recorded(record, concert).ir.nodes.flatMap((n) =>
+			n.kind === "code" ? [[n.id, n.worker.codeHash]] : [],
+		);
 		expect(Object.fromEntries(stored)).toEqual({
 			seed: CHANGED,
 			mid: UNCHANGED,
@@ -1730,7 +1736,6 @@ test("an input artifact counts by its content hash, not its path, so a rewritten
 	const { record, concert } = await play(first.concert, {
 		code: fns,
 		codeHash: hashes("write"),
-		record: first.record,
 		dir: first.dir,
 	});
 	expect(calls).toEqual(["write", "read", "write"]);
@@ -1771,13 +1776,13 @@ test("of identical map instances a resume reruns only the one that did not settl
 	);
 	const script: FakeScript = {
 		steps: {
-			"m/t": ({ expansion }): Execution => {
+			"m/t": ({ expansion }): HostNodeResult => {
 				calls.push(expansion);
 				return expansion === "[y]" && !fixed
 					? { outcome: "failed", reason: "flaked" }
 					: { outcome: "ok", outputs: {} };
 			},
-			done: (_, inputs): Execution => {
+			done: (_, inputs): HostNodeResult => {
 				calls.push("done");
 				const results = inputs.results as Settled<unknown>[];
 				return results.every((r) => r.outcome === "ok")
@@ -1792,7 +1797,6 @@ test("of identical map instances a resume reruns only the one that did not settl
 	fixed = true;
 	const { result } = await play(first.concert, {
 		script,
-		record: first.record,
 		dir: first.dir,
 	});
 	expect(result).toMatchObject({ node: "done", outcome: "ok" });
@@ -1813,7 +1817,7 @@ test("a host that rejects then accepts resumes to completion, the spend of both 
 	const hosts = [
 		fakeHost({
 			steps: {
-				a: (): Execution => {
+				a: (): HostNodeResult => {
 					aCalls++;
 					return { outcome: "ok", outputs: { text: "A" } };
 				},
@@ -1828,7 +1832,6 @@ test("a host that rejects then accepts resumes to completion, the spend of both 
 	expect(first.result).toMatchObject({ node: "v", outcome: "rejected" });
 	const { result, record, concert } = await play(first.concert, {
 		hosts,
-		record: first.record,
 		dir: first.dir,
 	});
 	expect(result).toMatchObject({ node: "c", outcome: "ok" });
@@ -1841,8 +1844,82 @@ test("a host that rejects then accepts resumes to completion, the spend of both 
 	]);
 });
 
-test("a concert whose process is alive is not resumed, and the refusal names its process", async () => {
+test("each host gets its own config namespaces and store in environment and execute, and no other host's", async () => {
+	const { dir } = await workspace();
+	const seen: Record<string, HostSetup> = {};
+	const watching =
+		(name: string): Host["environment"] =>
+		(setup) => {
+			seen[name] = setup;
+			return {};
+		};
+	const first = fakeHost({
+		steps: {
+			t: (_, __, context) => {
+				seen.execute = context.setup;
+				return { outcome: "ok", outputs: {} };
+			},
+		},
+	});
+	const hosts: Host[] = [
+		{
+			...first,
+			config: { fake: { type: "object" } },
+			environment: watching("fake"),
+		},
+		{
+			...fakeHost(),
+			name: "other",
+			kinds: [],
+			config: { other: { type: "object" } },
+			environment: watching("other"),
+		},
+	];
+	const concert = await start({
+		ir: graph([task("t")], [], "t"),
+		hosts,
+		loadCode: loader({}),
+		config: {
+			values: {
+				fake: { retries: 2 },
+				other: { depth: 1 },
+				dataRoot: dir,
+			},
+			sources: [],
+		},
+		dir,
+		concurrency: 1,
+	});
+	await concert.done;
+	const fake = {
+		config: { fake: { retries: 2 } },
+		store: join(dir, "hosts/fake"),
+	};
+	expect(seen).toEqual({
+		fake,
+		execute: fake,
+		other: { config: { other: { depth: 1 } }, store: join(dir, "hosts/other") },
+	});
+});
+
+test("two hosts registering one node kind are refused, and nothing is recorded", async () => {
 	const { dir, open } = await workspace();
+	await expect(
+		start({
+			ir: graph([task("t")], [], "t"),
+			hosts: [fakeHost(), { ...fakeHost(), name: "other" }],
+			loadCode: loader({}),
+			dir,
+			concurrency: 1,
+		}),
+	).rejects.toThrow(
+		"node kind 'fake.task' is registered twice, by host 'fake' and by host 'other'\nLoad only one host that registers 'fake.task'",
+	);
+	expect(open().concerts()).toEqual([]);
+});
+
+test("a concert whose process is alive is not resumed, and the refusal names its process", async () => {
+	const { dir } = await workspace();
 	const started = Promise.withResolvers<void>();
 	const options = {
 		hosts: [
@@ -1856,15 +1933,18 @@ test("a concert whose process is alive is not resumed, and the refusal names its
 			}),
 		],
 		loadCode: loader({}),
-		record: open(),
 		dir,
 		concurrency: 1,
 	};
 	const ir = graph([task("t")], [], "t");
-	const live = perform({ ...options, ir });
+	const live = await start({ ...options, ir });
 	await started.promise;
-	expect(() => perform({ ...options, ir, resume: live.concert })).toThrow(
-		`concert '${live.concert}' is still running in process ${process.pid}\nWait for it to settle, or kill it, then resume it`,
+	let refused: Promise<unknown> | undefined;
+	expect(() => {
+		refused = start({ ...options, ir, resume: live.id });
+	}).not.toThrow();
+	await expect(refused).rejects.toThrow(
+		`concert '${live.id}' is still running in process ${process.pid}\nWait for it to settle, or kill it, then resume it`,
 	);
 	await live.cancel();
 	await live.done;
@@ -1872,9 +1952,7 @@ test("a concert whose process is alive is not resumed, and the refusal names its
 
 test("a concert that finished ok is not resumed", async () => {
 	const first = await play(graph([task("t")], [], "t"));
-	await expect(
-		play(first.concert, { record: first.record, dir: first.dir }),
-	).rejects.toThrow(
+	await expect(play(first.concert, { dir: first.dir })).rejects.toThrow(
 		`concert '${first.concert}' finished ok, so it has nothing to resume\nPerform its composition as a new concert`,
 	);
 });
@@ -1900,12 +1978,11 @@ test("a resume marks the records it has not revisited stale, and keeps their spe
 		["a", false],
 		["b", false],
 	]);
-	const cancelled = perform({
+	const cancelled = await start({
 		ir,
 		resume: first.concert,
 		hosts,
 		loadCode: loader({}),
-		record: first.record,
 		dir: first.dir,
 		concurrency: 1,
 	});
@@ -1916,7 +1993,7 @@ test("a resume marks the records it has not revisited stale, and keeps their spe
 		["b", true],
 	]);
 	expect(first.record.metrics(first.concert)).toEqual({ tokens: 3 });
-	await play(first.concert, { hosts, record: first.record, dir: first.dir });
+	await play(first.concert, { hosts, dir: first.dir });
 	expect(stale().every(([, s]) => s === false)).toBe(true);
 	expect(first.record.metrics(first.concert)).toEqual({ tokens: 3 });
 });

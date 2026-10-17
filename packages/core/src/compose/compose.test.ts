@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { Diagnostic, HostNode, Ir } from "@maestro/ir";
-import type { Bounds, Host } from "../host";
-import { composeWith, fakeHost, golden, sdkBuilt } from "./fixtures/support";
+import type { Bounds, Host, HostSetup } from "../host";
+import {
+	composeWith,
+	DATA_ROOT,
+	fakeHost,
+	golden,
+	sdkBuilt,
+} from "./fixtures/support";
 
 const planOf = async (ir: Ir, hosts?: Host[], caps = {}) => {
 	const result = await composeWith(ir, { caps, ...(hosts ? { hosts } : {}) });
@@ -87,6 +93,54 @@ describe("compose", () => {
 		expect(
 			result.ok ? [] : result.diagnostics.map((d) => [d.code, d.message]),
 		).toEqual([["HOST.validate", "host 'fake' failed in validate(): down"]]);
+	});
+
+	test("each host's validate gets its own config namespaces and store, and no other host's", async () => {
+		const seen: Record<string, HostSetup> = {};
+		const watching =
+			(name: string): Host["validate"] =>
+			(_, setup) => {
+				seen[name] = setup;
+				return [];
+			};
+		const other: Host = {
+			...fakeHost({ validate: watching("other") }),
+			name: "other",
+			kinds: [],
+			config: { other: { type: "object" } },
+		};
+		const result = await composeWith(await golden("minimal.json"), {
+			hosts: [fakeHost({ validate: watching("fake") }), other],
+			config: {
+				values: {
+					fake: { retries: 2 },
+					other: { depth: 1 },
+					dataRoot: DATA_ROOT,
+				},
+				sources: [],
+			},
+		});
+		expect(result.ok).toBe(true);
+		expect(seen).toEqual({
+			fake: {
+				config: { fake: { retries: 2 } },
+				store: `${DATA_ROOT}/hosts/fake`,
+			},
+			other: {
+				config: { other: { depth: 1 } },
+				store: `${DATA_ROOT}/hosts/other`,
+			},
+		});
+	});
+
+	test("two hosts registering one node kind are refused", async () => {
+		await expect(
+			composeWith(await golden("minimal.json"), {
+				hosts: [fakeHost(), { ...fakeHost(), name: "other" }],
+			}),
+		).rejects.toThrow(
+			"node kind 'fake.task' is registered twice, by host 'fake' and by host 'other'\nLoad only one host that registers 'fake.task'",
+		);
 	});
 
 	test("keeps a host's warnings in the plan, each code under HOST once", async () => {

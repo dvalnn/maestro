@@ -17,6 +17,7 @@ import {
 	diskOf,
 	type Session,
 	type Stored,
+	setupOf,
 	withStore,
 } from "./session";
 
@@ -91,7 +92,7 @@ async function pruneOne(
 		return { id: concert, reason: `it is running in process ${row.pid}` };
 	for (const host of session.deps.hosts) {
 		try {
-			await host.release?.(concert);
+			await host.resources?.release(concert, setupOf(session, host));
 		} catch (error) {
 			return {
 				id: concert,

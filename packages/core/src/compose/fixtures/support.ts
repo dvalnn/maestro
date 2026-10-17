@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { type Ir, parseIr, TS_RUNTIME } from "@maestro/ir";
 import type { Host, NodeKind } from "../../host";
-import type { CodeFunction, KeyFunction, LoadCode } from "../../worker";
+import type { CodeEntry, KeyFunction, LoadCode } from "../../worker";
 import { type ComposeInput, compose } from "../index";
 
 const GOLDEN = resolve(import.meta.dir, "../../../../ir/fixtures");
@@ -38,7 +38,7 @@ const unset = (name: string) => () => {
 };
 
 /** Stand-ins for the stdlib exports the fixtures name. The real stdlib is the SDK's, which core does not depend on. */
-const STDLIB: Readonly<Record<string, CodeFunction>> = {
+const STDLIB: Readonly<Record<string, CodeEntry>> = {
 	firstOk: unset("firstOk"),
 	pick: unset("pick"),
 };
@@ -48,7 +48,7 @@ const STDLIB: Readonly<Record<string, CodeFunction>> = {
  * `maestro:stdlib` export from `STDLIB`, and any other module from the golden fixtures directory of ir.
  */
 export function loader(
-	functions: Readonly<Record<string, CodeFunction | KeyFunction>> = {},
+	functions: Readonly<Record<string, CodeEntry | KeyFunction>> = {},
 ): LoadCode {
 	return async (ref) => {
 		const own = functions[ref.export];
@@ -85,14 +85,17 @@ export const sdkBuilt = async (name: string) =>
 export const composeWith = (ir: Ir, over: Partial<ComposeInput> = {}) =>
 	compose({
 		ir,
-		config: { values: {}, sources: [] },
-		core: {},
+		config: { values: { dataRoot: DATA_ROOT }, sources: [] },
+		core: { dataRoot: { type: "string" } },
 		packs: {},
 		hosts: [fakeHost()],
 		loadCode: loader(),
 		caps: {},
 		...over,
 	});
+
+/** The data root the fixtures compose under. */
+export const DATA_ROOT = "/data";
 
 const STRING = { type: "string" };
 

@@ -12,7 +12,7 @@ import {
 } from "node:path";
 import { messageOf, sha256Hex } from "@maestro/core";
 import { validator, violations } from "@maestro/core/ports";
-import type { CodeFunction, KeyFunction, LoadCode } from "@maestro/core/worker";
+import type { CodeEntry, KeyFunction, LoadCode } from "@maestro/core/worker";
 import {
 	type Diagnostic,
 	type Ir,
@@ -127,7 +127,7 @@ function exported(
 	namespace: Namespace,
 	ref: WorkerRef,
 	what: string,
-): CodeFunction | KeyFunction {
+): CodeEntry | KeyFunction {
 	const [head = "", tail, ...rest] = ref.export.split(".");
 	const outer = Object.hasOwn(namespace, head) ? namespace[head] : undefined;
 	const fn =
@@ -138,7 +138,7 @@ function exported(
 				: undefined;
 	if (rest.length > 0 || typeof fn !== "function")
 		throw new Error(`${what} has no exported function '${ref.export}'`);
-	return fn as CodeFunction | KeyFunction;
+	return fn as CodeEntry | KeyFunction;
 }
 
 /**

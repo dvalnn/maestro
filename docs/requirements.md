@@ -152,7 +152,7 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **CORE-12 (Must).** Core has no domain words. A test enforces it: the core's own suite runs real graphs with only code
   nodes plus a fake host kind, and a scan rejects the words lane, seat, leg, run, review, build and quality in core
   packages, except that `build` is allowed in `sdk` and `cli`, which drive the build phase.
-- **CORE-13 (Must).** A host interface lets a host register node kinds, types, a `validate(graph)` hook, an
+- **CORE-13 (Must).** A host interface lets a host register node kinds, types, a `validate(graph, setup)` hook, an
   `bounds(node)` hook and an environment, per `architecture.md` section 6.
 - **CORE-14 (Must).** The worker protocol is defined for code nodes. The TypeScript runtime provides an in-process
   worker in the initial port. Out-of-process workers are specified and not required.

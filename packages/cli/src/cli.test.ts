@@ -212,7 +212,7 @@ describe("perform", () => {
 		expect(waited.out.split("\n")).toEqual(lines);
 		expect(waited.err).toBe(`concert ${id} ok`);
 		const record = openRecord(join(w.root, "data/maestro/record.db"));
-		const [pick] = record.concert(id).ir.nodes;
+		const [pick] = record.find(id)?.ir.nodes ?? [];
 		record.close();
 		expect(pick?.kind === "code" && pick.worker.codeHash).toBe(STDLIB_HASH);
 	});

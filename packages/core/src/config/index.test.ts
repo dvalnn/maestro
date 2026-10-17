@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { availableParallelism } from "node:os";
 import {
 	ConfigError,
 	coreConfig,
 	coreDefaults,
-	DEFAULT_CONCURRENCY,
 	type LayerName,
 	layered,
 	parseLayer,
@@ -170,7 +170,7 @@ describe("core config", () => {
 
 	test("defaults to the default layer's values", () => {
 		expect(coreConfig(layered([defaults]))).toEqual({
-			concurrency: DEFAULT_CONCURRENCY,
+			concurrency: availableParallelism(),
 			caps: {},
 			dataRoot: "/data",
 			workspace: "w",

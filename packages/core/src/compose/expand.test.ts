@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { settledSchema } from "@maestro/ir";
-import type { CodeFunction, KeyFunction } from "../worker";
+import type { CodeEntry, KeyFunction } from "../worker";
 import { code, composeWith, HASH, irOf, loader } from "./fixtures/support";
 
 const STRING = { type: "string" };
@@ -61,7 +61,7 @@ describe("compose calls no author code (ADR 0009)", () => {
 		const calls: string[] = [];
 		let loads = 0;
 		const spy =
-			(name: string): CodeFunction & KeyFunction =>
+			(name: string): CodeEntry & KeyFunction =>
 			() => {
 				calls.push(name);
 				return { text: name };

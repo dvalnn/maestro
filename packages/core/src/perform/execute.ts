@@ -1,26 +1,37 @@
 import { join } from "node:path";
-import type { AssertNode, CodeNode, Facts, HostNode } from "@maestro/ir";
-import type { Execution, HostContext, HostKind, Metrics } from "../host";
-import type { PortCheck } from "../ports";
-import { isOutputs, isRecord, messageOf } from "../shared";
+import {
+	type AssertNode,
+	artifactsAsRefs,
+	type CodeNode,
+	type Facts,
+	type HostNode,
+	type JsonSchema,
+	type Ports,
+} from "@maestro/ir";
+import type { ValidateFunction } from "ajv/dist/2020";
 import type {
-	Inputs,
-	Invocation,
-	NodeInstance,
-	Settlement,
-	Worker,
-} from "../worker";
+	Host,
+	HostContext,
+	HostNodeResult,
+	HostSetup,
+	Metrics,
+} from "../host";
+import type { Validator } from "../ports";
+import { type HostKind, isOutputs, isRecord, messageOf } from "../shared";
+import type { Inputs, NodeInstance, NodeResult } from "../worker";
 import { type ConcertDirs, collectArtifacts } from "./artifacts";
-import type { RecordStore, Settling } from "./record";
+import type { RecordWriter, Settling } from "./record";
+import type { Invocation, Worker } from "./ts-worker";
 
 /** What executing a concert's leaf instances needs. */
 export type Kit = {
 	concert: string;
-	record: RecordStore;
+	record: RecordWriter;
 	dirs: ConcertDirs;
 	/** Each host's facts, by host name. */
 	env: Readonly<Record<string, Facts>>;
 	kinds: (name: string) => HostKind | undefined;
+	setup: (host: Host) => HostSetup;
 	/** By runtime name. */
 	workers: ReadonlyMap<string, Worker>;
 	check: PortCheck;
@@ -31,7 +42,7 @@ export type Kit = {
  * a malformed return, and a failed cancel goes to the instance's log.
  */
 type Call = {
-	invoke(): Promise<Execution>;
+	invoke(): Promise<HostNodeResult>;
 	cancel(): Promise<void>;
 };
 
@@ -106,6 +117,7 @@ function hostCall(
 		clock,
 		scratch,
 		path: (ref) => join(kit.dirs.artifacts, ref.path),
+		setup: kit.setup(found.host),
 		emit: (event) =>
 			kit.record.note(
 				kit.concert,
@@ -141,43 +153,43 @@ const refused = (reason: string): Call => ({
 	cancel: async () => {},
 });
 
-/** What `call` returned, parsed, or `failed` with why it could not be: a throw, or a value that is no `Execution`. */
+/** What `call` returned, parsed, or `failed` with why it could not be: a throw, or a value that is no `HostNodeResult`. */
 async function guarded(
 	call: () => Promise<unknown>,
 	who: string,
-): Promise<Execution> {
+): Promise<HostNodeResult> {
 	let returned: unknown;
 	try {
 		returned = await call();
 	} catch (error) {
 		return { outcome: "failed", reason: messageOf(error) };
 	}
-	const execution = executionOf(returned);
-	if (typeof execution !== "string") return execution;
+	const result = hostResultOf(returned);
+	if (typeof result !== "string") return result;
 	return {
 		outcome: "failed",
-		reason: `${who} returned ${execution}. Report this to its author`,
+		reason: `${who} returned ${result}. Report this to its author`,
 	};
 }
 
-/** `value` as an `Execution`, or what is wrong with it. */
-function executionOf(value: unknown): Execution | string {
+/** `value` as a `HostNodeResult`, or what is wrong with it. */
+function hostResultOf(value: unknown): HostNodeResult | string {
 	if (!isRecord(value)) return "a value that is not an object";
-	const settlement = settlementIn(value);
-	if (typeof settlement === "string") return settlement;
+	const node = nodeResultIn(value);
+	if (typeof node === "string") return node;
 	const { metrics, enrichment } = value;
 	if (metrics !== undefined && !isMetrics(metrics))
 		return "metrics that are not numbers by name";
 	if (enrichment !== undefined && !isRecord(enrichment))
 		return "enrichment that is not an object";
 	return {
-		...settlement,
+		...node,
 		...(metrics !== undefined && { metrics }),
 		...(enrichment !== undefined && { enrichment }),
 	};
 }
 
-function settlementIn(value: Record<string, unknown>): Settlement | string {
+function nodeResultIn(value: Record<string, unknown>): NodeResult | string {
 	const { outcome, reason, outputs } = value;
 	if (outcome === "ok")
 		return isOutputs(outputs)
@@ -199,7 +211,7 @@ const isMetrics = (value: unknown): value is Metrics =>
 	);
 
 /**
- * `execution` with its written artifacts moved into the area (ADR 0007), and its outputs checked against the node's
+ * `result` with its written artifacts moved into the area (ADR 0007), and its outputs checked against the node's
  * `out` ports when it settled `ok` or `rejected` (sdk-spec 7, ADR 0008). A failed move or check settles `failed`.
  */
 export async function finish(
@@ -207,20 +219,20 @@ export async function finish(
 	node: CodeNode | HostNode,
 	instance: NodeInstance,
 	scratch: string,
-	execution: Execution,
+	result: HostNodeResult,
 ): Promise<Settling> {
-	if (execution.outputs === undefined) return execution;
-	const { metrics, enrichment } = execution;
+	if (result.outputs === undefined) return result;
+	const { metrics, enrichment } = result;
 	try {
 		const { outputs, artifacts } = await collectArtifacts(
 			node.out,
-			execution.outputs,
+			result.outputs,
 			scratch,
 			kit.dirs.artifacts,
 			instance,
 		);
 		const mismatch =
-			execution.outcome === "failed"
+			result.outcome === "failed"
 				? undefined
 				: kit.check(node.out, outputs, "output");
 		if (mismatch)
@@ -231,8 +243,80 @@ export async function finish(
 				enrichment,
 				artifacts,
 			};
-		return { ...execution, outputs, artifacts };
+		return { ...result, outputs, artifacts };
 	} catch (error) {
 		return { outcome: "failed", reason: messageOf(error), metrics, enrichment };
 	}
+}
+
+/**
+ * `work`, or what `late` gives once `limit.timeout` milliseconds pass first, with the reason naming `limit.name` and
+ * the timeout. Work past its timeout is abandoned, as an in-process function cannot be stopped. No `timeout` is no
+ * limit.
+ */
+export async function timed<T>(
+	work: Promise<T>,
+	limit: { name: string; timeout: number | undefined },
+	late: (reason: string) => T | Promise<T>,
+): Promise<T> {
+	const { name, timeout } = limit;
+	if (timeout === undefined) return work;
+	const reason = `node '${name}' ran past its timeout of ${timeout} ms`;
+	let timer: Timer | undefined;
+	const expired = new Promise<T>((resolve) => {
+		timer = setTimeout(() => resolve(late(reason)), timeout);
+	});
+	try {
+		return await Promise.race([work, expired]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+/** Checks values by port name against `ports`. Returns the first mismatch as a sentence, or `undefined`. */
+export type PortCheck = (
+	ports: Ports | undefined,
+	values: Readonly<Record<string, unknown>>,
+	side: "input" | "output",
+) => string | undefined;
+
+/**
+ * A `PortCheck` over `ajv` that checks a copy of each value, so no default is written into it. An artifact is checked
+ * as its `ArtifactRef`, not its content (ADR 0007).
+ */
+export function portCheck(ajv: Validator): PortCheck {
+	const compiled = new Map<JsonSchema, ValidateFunction>();
+	const compile = (schema: JsonSchema) => {
+		const known = compiled.get(schema);
+		if (known) return known;
+		const validate = ajv.compile(artifactsAsRefs(schema));
+		compiled.set(schema, validate);
+		return validate;
+	};
+	return (ports, values, side) => {
+		for (const [port, schema] of Object.entries(ports ?? {})) {
+			const where = `${side} '${port}'`;
+			const mismatch = checkValue(compile, schema, values[port], where);
+			if (mismatch) return mismatch;
+		}
+	};
+}
+
+function checkValue(
+	compile: (schema: JsonSchema) => ValidateFunction,
+	schema: JsonSchema,
+	value: unknown,
+	where: string,
+): string | undefined {
+	if (value === undefined) return `${where} has no value`;
+	let validate: ValidateFunction;
+	try {
+		validate = compile(schema);
+	} catch (error) {
+		return `${where} has a schema that does not compile: ${messageOf(error)}`;
+	}
+	if (validate(structuredClone(value))) return undefined;
+	const error = validate.errors?.[0];
+	const at = error?.instancePath ? ` at ${error.instancePath}` : "";
+	return `${where}${at} ${error?.message ?? "does not match its schema"}`;
 }

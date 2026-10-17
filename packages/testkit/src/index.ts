@@ -1,8 +1,9 @@
 import type {
-	Execution,
 	Host,
 	HostContext,
 	HostInstance,
+	HostNodeResult,
+	HostResources,
 	NodeKind,
 } from "@maestro/core/host";
 import type { Inputs } from "@maestro/core/worker";
@@ -14,12 +15,15 @@ export const FAKE_HANDLE = "fake.handle";
 
 const HANDLE = /^([a-z]+)#(\d+)$/;
 
-export const CANCELLED: Execution = { outcome: "failed", reason: "cancelled" };
+export const CANCELLED: HostNodeResult = {
+	outcome: "failed",
+	reason: "cancelled",
+};
 
-const UNSCRIPTED: Execution = { outcome: "ok", outputs: {} };
+const UNSCRIPTED: HostNodeResult = { outcome: "ok", outputs: {} };
 
 /** A pending promise holds its instance until it settles or the instance is cancelled. */
-export type Step = Execution | Promise<Execution>;
+export type Step = HostNodeResult | Promise<HostNodeResult>;
 
 /**
  * The steps of one node's instances. A list is taken in order, one step per instance started, and its last step
@@ -34,10 +38,10 @@ export type FakeScript = {
 	steps?: Readonly<Record<string, Steps>>;
 	validate?: Host["validate"];
 	bounds?: Host["bounds"];
-	/** Called with the concert when the host is asked to release it. Releases nothing by default. */
-	release?: (concert: string) => void | Promise<void>;
+	/** Called with the concert and the host's setup when the host is asked to release it. Releases nothing by default. */
+	release?: HostResources["release"];
 	/** The bytes the host reports holding for a concert. 0 by default. */
-	usage?: (concert: string) => number | Promise<number>;
+	usage?: HostResources["usage"];
 };
 
 /**
@@ -53,8 +57,10 @@ export function fakeHost(script: FakeScript = {}): Host {
 		validate: script.validate ?? (() => []),
 		bounds: script.bounds ?? (() => ({})),
 		environment: () => ({}),
-		release: script.release ?? (() => {}),
-		usage: script.usage ?? (() => 0),
+		resources: {
+			release: script.release ?? (() => {}),
+			usage: script.usage ?? (() => 0),
+		},
 		param: (type, text) => {
 			const match = type === FAKE_HANDLE ? HANDLE.exec(text) : null;
 			if (match) return { value: { name: match[1], number: Number(match[2]) } };
@@ -95,7 +101,7 @@ function fakeTask(steps: Readonly<Record<string, Steps>>): NodeKind {
 		config: { type: "object" },
 		ports: (node) => ({ in: node.in ?? {}, out: node.out ?? {} }),
 		async execute(instance, inputs, context) {
-			const cancelled = new Promise<Execution>((settle) => {
+			const cancelled = new Promise<HostNodeResult>((settle) => {
 				cancels.set(key(instance), () => settle(CANCELLED));
 			});
 			try {

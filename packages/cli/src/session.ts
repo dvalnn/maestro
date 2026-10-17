@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 import { lstat, mkdir, readdir } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
+import type { Host } from "@maestro/core/host";
+import { hostSetup } from "@maestro/core/host";
 import {
 	type ConcertRecord,
 	concertDirs,
 	openRecord,
-	type RecordStore,
+	type Records,
 } from "@maestro/core/perform";
 import {
 	type Deps,
@@ -75,7 +77,7 @@ export async function openSession(
  * The concert `id` of `store`.
  * @throws CliError, a usage error, when the store has no such concert.
  */
-export function concertOf(store: RecordStore, id: string): ConcertRecord {
+export function concertOf(store: Records, id: string): ConcertRecord {
 	const found = store.find(id);
 	if (!found)
 		throw usageError(
@@ -88,7 +90,7 @@ export function concertOf(store: RecordStore, id: string): ConcertRecord {
 /** What a command that works on the record is handed. */
 export type Stored = {
 	session: Session;
-	store: RecordStore;
+	store: Records;
 	values: Values;
 	positionals: string[];
 	json: boolean;
@@ -101,7 +103,7 @@ export type Stored = {
 export async function withSession<T>(
 	deps: Deps,
 	profile: string | undefined,
-	body: (session: Session, store: RecordStore) => Promise<T>,
+	body: (session: Session, store: Records) => Promise<T>,
 ): Promise<T> {
 	const session = await openSession(deps, profile);
 	await mkdir(session.config.core.dataRoot, { recursive: true });
@@ -144,11 +146,17 @@ async function sizeOf(dir: string): Promise<number> {
 	return sizes.reduce((sum, size) => sum + size, 0);
 }
 
+/** The setup core gives `host` under the session's config. */
+export const setupOf = (session: Session, host: Host) =>
+	hostSetup(host, session.config.composed);
+
 /** The bytes concert `id` holds: its directory under the data root, and what each host reports holding for it. */
 export async function diskOf(session: Session, id: string): Promise<number> {
 	const held = await Promise.all([
 		sizeOf(join(session.files.concerts, id)),
-		...session.deps.hosts.map((host) => host.usage?.(id) ?? 0),
+		...session.deps.hosts.map(
+			(host) => host.resources?.usage(id, setupOf(session, host)) ?? 0,
+		),
 	]);
 	return held.reduce((sum, bytes) => sum + bytes, 0);
 }
