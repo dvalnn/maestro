@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { Ir } from "@maestro/ir";
-import { code, composeWith, fakeHost, golden, irOf } from "./fixtures/support";
+import {
+	code,
+	composeWith,
+	data,
+	fakeHost,
+	golden,
+	irOf,
+} from "./fixtures/support";
 import type { ComposeInput } from "./index";
 import { listing, render, summary } from "./index";
 
@@ -78,14 +85,89 @@ describe("render (architecture 11)", () => {
 		for (const line of [
 			"flowchart TD",
 			'  subgraph s0["refine"]',
-			'      n3[["repeat refine/loop<br/>up to 2<br/>refine/loop: up to 2"]]',
-			'    n0[["map topics<br/>3<br/>topics: alpha, beta, gamma"]]',
-			'    n1(["topics/draft<br/>fake.task"])',
+			'      n3[["repeat<br/>up to 2"]]',
+			'    n0[["map<br/>alpha, beta, gamma"]]',
+			'    n1(["draft<br/>fake.task"])',
 			'  n2[/"pick<br/>fan-in firstOk"/]',
 			'  n0 -->|"item to prompt"| n1',
 			'  n0 ==>|"collect"| n2',
 		])
 			expect(chart.split("\n")).toContain(line);
+	});
+
+	test("marks start and end, merges parallel data edges, loops a repeat back and shows each header fact once", async () => {
+		const items = map("map", ["cats", "dogs", "owls"]);
+		const chart = render(
+			await planOf(
+				irOf(
+					[
+						...items.nodes,
+						code("gather", "gather", {
+							fanin: true,
+							in: { results: { type: "array" } },
+						}),
+						code("repeat/polish", "polish", {
+							in: { round: { type: "integer" }, text: { type: "string" } },
+						}),
+						{
+							id: "repeat",
+							kind: "repeat",
+							cardinality: { upTo: 3 },
+							in: { text: { type: "string" } },
+							inner: { index: { type: "integer" }, text: { type: "string" } },
+							out: { text: { type: "string" } },
+							members: { result: "repeat/polish" },
+						},
+						code("publish", "publish", { in: { text: { type: "string" } } }),
+					],
+					[
+						...items.edges,
+						{
+							kind: "collect",
+							from: { node: "map", port: "results" },
+							to: { node: "gather", port: "results" },
+						},
+						{
+							kind: "data",
+							from: { node: "gather", port: "text" },
+							to: { node: "repeat", port: "text" },
+						},
+						data("repeat", "repeat/polish"),
+						{
+							kind: "data",
+							from: { node: "repeat", port: "index" },
+							to: { node: "repeat/polish", port: "round" },
+						},
+						data("repeat", "publish"),
+					],
+				),
+			),
+		);
+		expect(chart).toBe(
+			[
+				"flowchart TD",
+				"  start((start))",
+				"  stop(((end)))",
+				'  subgraph gn1["map"]',
+				'    n1[["map<br/>cats, dogs, owls"]]',
+				'    n0["u<br/>code upper"]',
+				"  end",
+				'  subgraph gn4["repeat"]',
+				'    n4[["repeat<br/>up to 3"]]',
+				'    n3["polish<br/>code"]',
+				"  end",
+				'  n2[/"gather<br/>fan-in"/]',
+				'  n5["publish<br/>code"]',
+				"  start --> n1",
+				'  n1 -->|"item to name"| n0',
+				'  n1 ==>|"collect"| n2',
+				'  n2 -->|"text"| n4',
+				'  n4 -->|"text, index to round"| n3',
+				'  n4 -->|"text"| n5',
+				'  n3 -.->|"next"| n4',
+				"  n5 --> stop",
+			].join("\n"),
+		);
 	});
 
 	test("draws guards and ordering edges dashed, and regions as up to their bound", async () => {
@@ -94,10 +176,26 @@ describe("render (architecture 11)", () => {
 		).split("\n");
 		expect(chart).toContain('  n3 -.->|"when nonEmpty"| n4');
 		expect(chart).toContain('  n6 -.->|"after, tolerates rejected"| n7');
-		expect(chart).toContain(
-			'    n1[["map each<br/>up to 4<br/>each: up to 4"]]',
-		);
+		expect(chart).toContain('    n1[["map<br/>up to 4"]]');
 		expect(chart).toContain('  n6{"gate<br/>assert"}');
+		expect(chart).toContain('  n7["summary<br/>code summarize"]');
+		expect(chart).toContain('  n0["plan<br/>code"]');
+
+		const nested = await golden("nested-groups.json");
+		const empty = structuredClone(nested);
+		for (const n of empty.nodes)
+			if (n.id === "angles" && n.kind === "map")
+				Object.assign(n, { items: [], cardinality: { exact: 0 } });
+		const header = (ir: Ir) =>
+			planOf(ir).then((p) =>
+				render(p)
+					.split("\n")
+					.find((l) => l.includes('[["repeat')),
+			);
+		expect(await header(nested)).toBe(
+			'      n2[["repeat<br/>[wide]: up to 3<br/>[deep]: up to 3"]]',
+		);
+		expect(await header(empty)).toBe('      n2[["repeat<br/>up to 3"]]');
 	});
 
 	test("cuts a long key list, and counts the instances a key function names", async () => {
@@ -118,8 +216,8 @@ describe("render (architecture 11)", () => {
 			),
 		).split("\n");
 		expect(chart).toContain(
-			'    n1[["map long<br/>up to 6<br/>long: alpha, bravo, charlie, delta, echo, fox…"]]',
+			'    n1[["map<br/>alpha, bravo, charlie, delta, echo, fox…"]]',
 		);
-		expect(chart).toContain('    n3[["map k<br/>up to 3<br/>k: 3"]]');
+		expect(chart).toContain('    n3[["map<br/>3"]]');
 	});
 });
