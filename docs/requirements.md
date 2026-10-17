@@ -252,12 +252,12 @@ The executable is `maestro`.
   explicit validation step: it reports diagnostics and exits with a category code, and starts no node instance.
   Optionally it saves the IR with `--out <file>`. With no params given it uses the first example input set (D-19). It
   prints diagnostics and a one-line plan summary by default, and `--graph` and `--plan` print more (D-29).
-- **CLI-02 (Must).** `perform <composition | IR file>` starts a concert and prints the concert id on stdout. A
-  composition is run through the compose subsystem first. An IR file is not built, and still goes through pre-flight
-  (NFR-02). An error-severity diagnostic stops it before any node instance starts. `perform` can also re-enter an
-  earlier concert to resume it (CORE-09). Resume is `perform --resume <concert id>`. `perform` tells a composition from
-  an IR file by extension (`.ts` or `.js` versus `.json`). `perform` never uses example input sets. Performing an IR
-  file with no SDK is AC-8.
+- **CLI-02 (Must).** `perform <composition | IR file>` starts a concert, announces `concert <id>` on stderr and prints
+  the result's outputs on stdout. A composition is run through the compose subsystem first. An IR file is not built, and
+  still goes through pre-flight (NFR-02). An error-severity diagnostic stops it before any node instance starts.
+  `perform` can also re-enter an earlier concert to resume it (CORE-09). Resume is `perform --resume <concert id>`.
+  `perform` tells a composition from an IR file by extension (`.ts` or `.js` versus `.json`). `perform` never uses
+  example input sets. Performing an IR file with no SDK is AC-8.
 - **CLI-03 (Must).** `ls`, `wait`, `kill`, `config`, `prune` and `tour` exist. `prune` removes concerts and their lanes.
   `tour` groups concerts, and `ls` and `prune` filter by tour.
 - **CLI-04 (Must).** Every command supports machine-readable output. Exit codes are stable and distinguish accepted,

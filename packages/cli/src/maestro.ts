@@ -1,6 +1,11 @@
 #!/usr/bin/env bun
+import { writeSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { main } from "./cli";
+
+/** Synchronous writes: `process.exit` drops what an async write to a slow pipe has not yet flushed. */
+const STDOUT_FD = 1;
+const STDERR_FD = 2;
 
 /** Asks `question` on the terminal, and whether the answer starts with `y`. */
 async function confirm(question: string): Promise<boolean> {
@@ -20,8 +25,8 @@ process.exit(
 		hosts: [],
 		cwd: process.cwd(),
 		env: process.env,
-		stdout: (line) => console.log(line),
-		stderr: (line) => console.error(line),
+		stdout: (line) => writeSync(STDOUT_FD, `${line}\n`),
+		stderr: (line) => writeSync(STDERR_FD, `${line}\n`),
 		confirm: process.stdin.isTTY ? confirm : undefined,
 	}),
 );

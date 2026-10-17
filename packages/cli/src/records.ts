@@ -14,6 +14,7 @@ import {
 } from "./command";
 import {
 	CliError,
+	closingLine,
 	EXIT,
 	exitOf,
 	formatBytes,
@@ -191,13 +192,12 @@ async function waited({ session, store, values, positionals, json }: Stored) {
 		timeout === undefined ? undefined : parseDuration("--timeout", timeout);
 	const { ir } = concertOf(store, id);
 	const result = (await store.wait(id, limit)) && store.result(id);
-	const { status, reason } = resultDoc(id, result);
+	const { status } = resultDoc(id, result);
 	if (json) deps.stdout(jsonOf(resultDoc(id, result)));
 	else if (result) {
-		deps.stdout(status);
 		const outputs = outputsText(ir, artifactsOf(session, id), result);
 		if (outputs !== undefined) deps.stdout(outputs);
-		if (reason !== undefined) deps.stderr(reason);
+		deps.stderr(closingLine(ir, id, result));
 	} else
 		deps.stderr(
 			`concert ${id} is still running after ${timeout}\nWait again, or stop it with 'maestro kill ${id}'`,
@@ -308,11 +308,8 @@ async function toured({
 	const { slug, ids } = tourAndConcerts(values, positionals);
 	for (const id of ids) concertOf(store, id);
 	for (const id of ids) store.setTour(id, slug);
-	deps.stdout(
-		json
-			? jsonOf({ tour: slug ?? null, concerts: ids })
-			: `${slug ?? "no tour"}: ${ids.join(" ")}`,
-	);
+	if (json) deps.stdout(jsonOf({ tour: slug ?? null, concerts: ids }));
+	else deps.stderr(`${slug ?? "no tour"}: ${ids.join(" ")}`);
 	return EXIT.ok;
 }
 

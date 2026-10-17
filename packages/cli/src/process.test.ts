@@ -20,6 +20,7 @@ const CLI = join(import.meta.dir, "cli");
 const TESTKIT = join(import.meta.dir, "../../testkit/src/index");
 const WAIT_STEP_MS = 25;
 const WAIT_LIMIT_MS = 5000;
+const SLOW_READER_MS = 500;
 
 /** An executable named `maestro.ts`, as the real one is, whose `echo/echo` node never settles. */
 async function hanging() {
@@ -39,8 +40,8 @@ process.exit(
 		hosts: [host],
 		cwd: process.cwd(),
 		env: process.env,
-		stdout: console.log,
-		stderr: console.error,
+		stdout: (line) => void process.stdout.write(\`\${line}\\n\`),
+		stderr: (line) => void process.stderr.write(\`\${line}\\n\`),
 	}),
 );
 `,
@@ -68,8 +69,11 @@ describe("a concert in another process", () => {
 				stderr: "pipe",
 			},
 		);
-		const reader = child.stdout.getReader();
-		const id = new TextDecoder().decode((await reader.read()).value).trim();
+		const reader = child.stderr.getReader();
+		const id =
+			/^concert (\S+)$/m.exec(
+				new TextDecoder().decode((await reader.read()).value),
+			)?.[1] ?? "";
 		const reached = async () =>
 			json(await w.call(["ls", id, "--json"])).instances.some(
 				(i: { node: string }) => i.node === "echo/echo",
@@ -110,8 +114,8 @@ describe("a concert in another process", () => {
 		expect(await child.exited).toBe(1);
 		expect(await w.call(["wait", id])).toMatchObject({
 			code: 1,
-			out: "failed",
-			err: "the concert was cancelled",
+			out: "",
+			err: `concert ${id} failed: the concert was cancelled`,
 		});
 		expect((await w.call(["kill", id])).err).toMatch(
 			/is not running, it settled failed/,
@@ -137,7 +141,11 @@ describe("a concert in another process", () => {
 		const resumed = await w.call(["perform", "--resume", id], {
 			hosts: [host],
 		});
-		expect(resumed).toMatchObject({ code: 0, out: `${id}\ntext  done` });
+		expect(resumed).toMatchObject({
+			code: 0,
+			out: "text  done",
+			err: `concert ${id}\nconcert ${id} ok`,
+		});
 		expect(started).toEqual(["echo/echo"]);
 		const shape = json(await w.call(["ls", id, "--json"])).instances.filter(
 			(i: { node: string; stale: boolean }) => i.node === "shape" && !i.stale,
@@ -153,6 +161,23 @@ describe("a concert in another process", () => {
 			err: `concert ${id} finished ok, so it has nothing to resume\nPerform its composition as a new concert with 'maestro perform <composition>'`,
 		});
 	}, 30_000);
+});
+
+describe("the real maestro.ts", () => {
+	test("delivers every byte of stdout through a slow pipe", async () => {
+		const w = await world();
+		for (const letter of "abcdefghij")
+			await w.call(["perform", ...GREET, "--title", letter.repeat(1_000_000)], {
+				hosts: [hostOf()],
+			});
+		const expected = (await w.call(["ls", "--json"])).out.length + 1;
+		const child = Bun.spawn(
+			[process.execPath, join(import.meta.dir, "maestro.ts"), "ls", "--json"],
+			{ cwd: w.cwd, env: { ...process.env, ...w.env }, stdout: "pipe" },
+		);
+		await Bun.sleep(SLOW_READER_MS);
+		expect((await new Response(child.stdout).text()).length).toBe(expected);
+	});
 });
 
 describe("resume", () => {
@@ -201,7 +226,10 @@ export const work = composition("work", { examples: [{}] }, () => {
 				}),
 			],
 		});
-		expect(resumed).toMatchObject({ code: 0, err: `concert ${id} ok` });
+		expect(resumed).toMatchObject({
+			code: 0,
+			err: `concert ${id}\nconcert ${id} ok`,
+		});
 		expect(started).toEqual(["after"]);
 		const marks = json(await w.call(["ls", id, "--json"])).instances.filter(
 			(i: { node: string; stale: boolean }) => i.node === "mark" && !i.stale,
@@ -254,8 +282,8 @@ describe("kill", () => {
 			expect(() => process.kill(other.pid, 0)).not.toThrow();
 			expect(await w.call(["wait", id])).toMatchObject({
 				code: 1,
-				out: "failed",
-				err: "process exited",
+				out: "",
+				err: `concert ${id} failed at echo/echo: process exited`,
 			});
 			expect(await w.call(["perform", "--resume", id])).toMatchObject({
 				code: 0,

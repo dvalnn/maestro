@@ -207,11 +207,10 @@ describe("perform", () => {
 			'sep     "a\\u2028b"',
 			"none    null",
 		];
-		expect(performed.out.split("\n")).toEqual([id, ...lines]);
-		expect((await w.call(["wait", id])).out.split("\n")).toEqual([
-			"ok",
-			...lines,
-		]);
+		expect(performed.out.split("\n")).toEqual(lines);
+		const waited = await w.call(["wait", id]);
+		expect(waited.out.split("\n")).toEqual(lines);
+		expect(waited.err).toBe(`concert ${id} ok`);
 		const record = openRecord(join(w.root, "data/maestro/record.db"));
 		const [pick] = record.concert(id).ir.nodes;
 		record.close();
@@ -235,16 +234,21 @@ describe("perform", () => {
 			["text  draft"],
 		],
 	])(
-		"a concert that settles %s prints its id first, then its result's outputs, and exits %d",
+		"a concert that settles %s prints only its outputs on stdout, its id and closing line on stderr, and exits %d",
 		async (status, echo, code, report, outputs) => {
 			const w = await world();
 			const performed = await w.call(["p", ...GREET], {
 				hosts: [hostOf(echo)],
 			});
 			expect(performed.code).toBe(code);
-			expect(performed.err).toMatch(report);
 			const id = idOf(performed);
-			expect(performed.out.split("\n")).toEqual([id, ...outputs]);
+			expect(performed.err).toMatch(report);
+			expect(performed.err.split("\n")[0]).toBe(`concert ${id}`);
+			expect(performed.out === "" ? [] : performed.out.split("\n")).toEqual(
+				outputs,
+			);
+			const [, closing = ""] = performed.err.split("\n");
+			expect((await w.call(["wait", id])).err).toBe(closing);
 			expect(json(await w.call(["ls", "--json"]))).toMatchObject([
 				{ id, status },
 			]);
@@ -509,7 +513,10 @@ describe("the record", () => {
 		});
 
 		const moved = await w.call(["tour", "release-2", a, b]);
-		expect(moved.out).toBe(`release-2: ${a} ${b}`);
+		expect(moved).toMatchObject({
+			out: "",
+			err: `release-2: ${a} ${b}`,
+		});
 		expect(await rows("--tour", "release-2")).toEqual([b, a]);
 		expect(json(await w.call(["t", "--clear", a, "--json"]))).toEqual({
 			tour: null,
@@ -591,7 +598,8 @@ describe("the record", () => {
 		);
 		expect(await w.call(["w", done])).toMatchObject({
 			code: 0,
-			out: "ok\ntext  done",
+			out: "text  done",
+			err: `concert ${done} ok`,
 		});
 		expect(json(await w.call(["wait", done, "--json"]))).toMatchObject({
 			status: "ok",
@@ -599,13 +607,13 @@ describe("the record", () => {
 		});
 		expect(await w.call(["wait", broke])).toMatchObject({
 			code: 1,
-			out: "failed",
-			err: "flaky",
+			out: "",
+			err: `concert ${broke} failed at echo/echo: flaky`,
 		});
 		expect(await w.call(["wait", refused, "--timeout", "5s"])).toMatchObject({
 			code: 3,
-			out: "rejected\ntext  draft",
-			err: "no",
+			out: "text  draft",
+			err: `concert ${refused} rejected at echo/echo: no`,
 		});
 		expect(json(await w.call(["wait", refused, "--json"]))).toEqual({
 			id: refused,

@@ -139,6 +139,18 @@ export const exitOf = (status: ConcertStatus) =>
 export const reasonOf = (result: ConcertResult | undefined) =>
 	result && "reason" in result ? result.reason : undefined;
 
+/** The line that says how concert `id` ended: `concert <id> <outcome>[ at <node>][: <reason>]`. */
+export function closingLine(ir: Ir, id: string, result: ConcertResult): string {
+	const at =
+		result.outcome === "ok" ||
+		result.node === undefined ||
+		result.expansion === undefined
+			? ""
+			: ` at ${instanceName(ir, { node: result.node, expansion: result.expansion })}`;
+	const reason = reasonOf(result);
+	return `concert ${id} ${result.outcome}${at}${reason === undefined ? "" : `: ${reason}`}`;
+}
+
 /**
  * The JSON document of concert `id` and its `result`, `undefined` while it is running: the record's columns, in
  * camelCase.

@@ -19,12 +19,11 @@ import {
 	type Values,
 } from "./command";
 import {
+	closingLine,
 	exitOf,
-	instanceName,
 	jsonOf,
 	outputsText,
 	parseTour,
-	reasonOf,
 	renderDiagnostic,
 	resultDoc,
 	resumeRefused,
@@ -119,7 +118,7 @@ async function settled(performance: Performance): Promise<ConcertResult> {
 	}
 }
 
-/** Prints how the concert ended, with the outputs its result carries, and gives its exit code. */
+/** Prints the outputs the concert's result carries and how it ended, and gives its exit code. */
 function report(
 	session: Session,
 	json: boolean,
@@ -132,16 +131,7 @@ function report(
 	else {
 		const outputs = outputsText(ir, artifactsOf(session, id), result);
 		if (outputs !== undefined) deps.stdout(outputs);
-		const at =
-			result.outcome === "ok" ||
-			result.node === undefined ||
-			result.expansion === undefined
-				? ""
-				: ` at ${instanceName(ir, { node: result.node, expansion: result.expansion })}`;
-		const reason = reasonOf(result);
-		deps.stderr(
-			`concert ${id} ${result.outcome}${at}${reason === undefined ? "" : `: ${reason}`}`,
-		);
+		deps.stderr(closingLine(ir, id, result));
 	}
 	return exitOf(result.outcome);
 }
@@ -180,9 +170,7 @@ async function performed(
 				}
 			: { resume: start.resume }),
 	});
-	(json ? deps.stderr : deps.stdout)(
-		json ? `concert ${performance.concert}` : performance.concert,
-	);
+	deps.stderr(`concert ${performance.concert}`);
 	return report(
 		session,
 		json,

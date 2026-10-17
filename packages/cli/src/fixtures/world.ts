@@ -40,7 +40,9 @@ export async function world() {
 	return { root, pack, cwd, env, call };
 }
 
-export const idOf = ({ out }: Outcome) => out.split("\n")[0] ?? "";
+/** The id a perform announces on stderr, as its own `concert <id>` line. */
+export const idOf = ({ err }: Outcome) =>
+	/^concert (\S+)$/m.exec(err)?.[1] ?? "";
 export const json = (outcome: Outcome) => JSON.parse(outcome.out);
 
 export const FIRST = { outcome: "ok", outputs: { text: "hi" } } as const;

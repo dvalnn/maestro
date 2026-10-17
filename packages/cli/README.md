@@ -31,11 +31,13 @@ Primary output goes to stdout, messages to stderr.
 
 `ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
 
-`perform` and `wait` print the concert's result: after `perform`'s id or `wait`'s status, one `name  value` line per
-output port of the result node. A one-line string, a number, a boolean or `null` prints as is, anything else as compact
-JSON, and an artifact as its path. A rejected concert shows its root cause's rejection outputs; a failed one has none.
-With `--json` the document holds them as stored, under `outputs`. Other `--json` field names are the record's columns in
-camelCase, with sizes in bytes.
+`perform` and `wait` print one `name  value` line per output port of the result node on stdout, and nothing else there.
+Stderr carries `concert <id>` when a `perform` starts and the closing line
+`concert <id> <outcome>[ at <node>][: <reason>]`. With `--json`, stdout holds the document instead, and the id of a
+`perform` stays on its stderr line. A one-line string, a number, a boolean or `null` prints as is, anything else as
+compact JSON, and an artifact as its path. A rejected concert shows its root cause's rejection outputs; a failed one has
+none. In the `--json` document they are as stored, under `outputs`, and its other field names are the record's columns
+in camelCase, with sizes in bytes.
 
 A composition is a `.ts` or `.js` file that exports exactly one composition, a `.json` IR file, or
 `<pack>.<composition>` of an installed pack. Its params are flags in kebab-case, layered over the config; a boolean
