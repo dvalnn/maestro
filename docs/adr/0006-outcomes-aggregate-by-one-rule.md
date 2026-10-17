@@ -46,8 +46,8 @@ field fails; opening it later breaks nothing already valid.
   writes the field. Requiring it removes the conflict for one field per `map`.
 - **Propagate without cancellation.** Every member runs to completion and the group's spend is thrown away once its
   outcome is decided. Rejected.
-- **Drain** (start no new member, let running ones finish). Keeps their results in the cache for a resume, but keeps
-  spending on a run whose cause, often quota or environment, likely fails them too. Rejected for cancel.
+- **Drain** (start no new member, let running ones finish). Keeps their results for a resume, but keeps spending on a
+  run whose cause, often quota or environment, likely fails them too. Rejected for cancel.
 - **An edge-level "deliver as Settled" marker** (expected by ADR 0004). Per-edge control, but an IR 1.1 bump and a
   second mechanism that every reducer would set the same way. The `fanin` flag already marks every reducer.
 - **`firstOk` always `rejected` when nothing is `ok`.** Reports a crashed run as a negative verdict, so the operator

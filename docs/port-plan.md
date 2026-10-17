@@ -11,6 +11,7 @@ session. No schedule or effort estimates are given. Sizes are relative (S, M, L,
 2. **Clean break (D-02).** Do not mirror sssf's modules, flags, file formats or vocabulary. The legacy system answers
    "what should this behavior be" and nothing else (`requirements.md` section 12).
 3. **Domain-free core (CORE-12).** No domain words in `ir`, `core`, `sdk`, `testkit` or `cli`. The check runs in tests.
+   `build` is allowed in `sdk` and `cli`, which drive the build phase.
 4. **Lean (NFR-09).** A new node kind, edge kind or SDK primitive needs a written justification in the slice report. The
    default is a code node or a stdlib helper.
 5. **Do not guess.** A question the docs settle is derived and listed in the slice report; a real fork, a contract, a

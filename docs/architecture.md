@@ -85,7 +85,8 @@ The lifecycle has two stages (D-12). **Compose** is steps 1 to 4, ending with pr
 - `perform <IR file>` skips the build (step 3), loads the IR, and still runs pre-flight before any node instance starts
   (NFR-02).
 
-1. **Resolve.** The CLI loads layered config, the host(s) named by config, and the pack that owns the composition.
+1. **Resolve.** The CLI loads layered config, every host the binary embeds (config has no `hosts` key), and the pack
+   that owns the composition.
 2. **Params.** A composition's declared params become CLI flags and are validated before build (D-17). They are plain
    values at build time. Node outputs and file contents are Refs, and a Ref never feeds a param (D-16).
 3. **Build.** The composition's build function runs once with symbolic Refs and produces the graph. It is deterministic
@@ -186,8 +187,9 @@ hooks and records what they return.
     `repeat` end on their stop condition or bound.
 - **Groups.**
   - `map` instantiates its body once per item, in parallel up to the cap. An item with a primitive value is keyed by
-    value and any other item by index, or by an author-supplied key function. Duplicate keys are a compose error (D-18,
-    SDK-13). Keys give readable node instance ids for `ls` and lane refs.
+    value and any other item by index, or by an author-supplied key function. Duplicate primitive or index keys of a
+    list known at build are a compose error. Duplicates a key function gives fail the `map` at perform, since the
+    function runs only there (D-18, SDK-13). Keys give readable node instance ids for `ls` and lane refs.
   - `seq` instantiates the body per item in order and stops at the first item meeting the condition. This covers
     escalation over models.
   - `repeat` carries typed state: an initial value, a step producing the next state, a stop condition and a maximum.
@@ -360,7 +362,7 @@ round-folder data, never constants in a pack.
 | Config            | Namespaced pass-through, composition-declared schemas | One global schema                                   | Core must not grow with every composition's needs (D-07).                                                                                                                                                                                                        |
 | Adapters          | Sandboxed subprocess over each harness's JSON events  | In-process harness SDKs                             | An in-process agent cannot be confined by bubblewrap, and the subprocess contract is the same for every harness (D-20).                                                                                                                                          |
 | Packs             | Pre-bundled directory or tarball, listed by path      | npm packages resolved through `node_modules`        | The compiled binary cannot resolve `node_modules`, and compose only consumes IR JSON, so a bundled SDK copy is harmless (D-30).                                                                                                                                  |
-| Resume            | Content-hashed node instances                         | File-presence reuse                                 | Correct under code or input change.                                                                                                                                                                                                                              |
+| Resume            | Content-hashed node instances                         | File-presence reuse; a result cache across concerts | Correct under code or input change. A cross-concert cache would hit only code nodes upstream of every agent node, since agent nodes are never reused. Concert fork replaces it (`rulings.md`).                                                                   |     |
 
 ## 16. Failure modes
 
@@ -379,6 +381,6 @@ round-folder data, never constants in a pack.
 ## 17. Open design points
 
 No open question blocks the initial port. `requirements.md` section 9 maps every earlier question to the decision that
-resolved it. Deferred, with no design committed: a secret param type (D-33), cost accounting and budgets, per-adapter
-compaction, a cross-concert join, starting a concert from a finished one's results, in-process SDK adapters, arm64 and
+resolved it. Deferred: a secret param type (D-33), cost accounting and budgets, per-adapter compaction, a cross-concert
+join, starting a concert from a finished one's results (`rulings.md` "Concert fork"), in-process SDK adapters, arm64 and
 macOS, and licensing.

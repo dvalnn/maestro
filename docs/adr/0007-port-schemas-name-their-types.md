@@ -6,7 +6,7 @@ status: accepted
 
 At runtime every artifact is the same small record (path, content hash, producer), and a host value such as a lane
 handle is a record of strings. Structure alone cannot tell a Markdown report from a findings file or a lane, yet compose
-must type-check edges between them (CORE-02), the cache must hash artifact contents, hosts must stage artifacts into a
+must type-check edges between them (CORE-02), resume keys must hash artifact contents, hosts must stage artifacts into a
 sandbox, and a host's `validate` hook must find its handles wherever they travel.
 
 A JSON Schema annotation names the type, on any subschema of a port, param or scope port:
@@ -30,8 +30,8 @@ A JSON Schema annotation names the type, on any subschema of a port, param or sc
   each written path into the concert's artifact area and hashes it, the output then holds its `ArtifactRef`, and the
   scratch directory is deleted. A node reads an input artifact in place, through `ctx.path(ref)`.
 - `packages/ir` owns the keyword's name, its Ajv registration and the one walker that finds marked subschemas in a
-  schema and value pair. The SDK emits the annotation. Compose, the cache, host staging and host validation call the
-  walker.
+  schema and value pair. The SDK emits the annotation. Compose, the resume key, host staging and host validation call
+  the walker.
 
 ## Considered options
 
@@ -50,4 +50,4 @@ A JSON Schema annotation names the type, on any subschema of a port, param or sc
 - Ajv's strict mode rejects unknown keywords, so every place that compiles port schemas registers the keyword through
   `packages/ir`.
 - The content-versus-reference reading of an artifact schema is documented once, in `packages/ir`.
-- Core owns where scratch directories live. Making that root configurable comes later.
+- Core owns where scratch directories live. It sits under the data root, which `dataRoot` configures.

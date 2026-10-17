@@ -34,11 +34,12 @@ Primary output goes to stdout, messages to stderr.
 `perform` and `wait` print the concert's result: after `perform`'s id or `wait`'s status, one `name  value` line per
 output port of the result node. A one-line string, a number, a boolean or `null` prints as is, anything else as compact
 JSON, and an artifact as its path. A rejected concert shows its root cause's rejection outputs; a failed one has none.
-With `--json` the document holds them as stored, under `outputs`.
+With `--json` the document holds them as stored, under `outputs`. Other `--json` field names are the record's columns in
+camelCase, with sizes in bytes.
 
 A composition is a `.ts` or `.js` file that exports exactly one composition, a `.json` IR file, or
-`<pack>.<composition>` of an installed pack. Its params are flags in kebab-case, layered over the config. An IR file is
-already built and takes no param flags.
+`<pack>.<composition>` of an installed pack. Its params are flags in kebab-case, layered over the config; a boolean
+takes `--name` and `--no-name`. An IR file is already built and takes no param flags.
 
 A file's stem is its pack id, so it must be one: lower case, starting with a letter, then letters, digits, `_` or `-`,
 and no installed pack's. A bare file takes params from its flags, its example set and its defaults only. No config key

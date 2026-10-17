@@ -51,6 +51,11 @@ A question a brief or a session meets is derived or raised.
   reversal cost (cheap or contract) and where it landed. A contract-setting slice shows it before dispatch, any other
   slice in its report. Weak derivations come as one list the owner can strike from.
 
+- **A rare edge case** becomes a backlog issue. Fix it now only when it is dead simple.
+- **Show a brief before dispatch.**
+- **Record no ruling** while the owner is only discussing.
+- **Report every auto-mode classifier block** to the owner: the tool, the reason label and what was attempted.
+
 ## Log
 
 Each slice report gets a `Loop` table. The wave review writes its row to `docs/reports/wave-<n>-review.md`.

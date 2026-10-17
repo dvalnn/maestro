@@ -5,7 +5,7 @@ status: accepted
 # Packs are pre-bundled directories, not npm packages
 
 A pack is a directory or release tarball with a `maestro-pack.json` manifest and one pre-bundled entry file that
-includes its own copy of the SDK (D-30). Workspace config lists packs by path or URL, and nothing resolves through
+includes its own copy of the SDK (D-30). Workspace config lists packs by path, and nothing resolves through
 `node_modules`. The compiled `maestro` binary embeds its own SDK, and an external file that imports the SDK gets a
 different copy, so a shared-package model cannot work in a single-binary distribution.
 

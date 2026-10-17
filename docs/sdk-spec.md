@@ -201,8 +201,8 @@ A code node is the SDK's answer to "this needs real code".
   ref, written `<concert id>.<node instance id>`, for forking a lane left by an earlier concert (D-27).
 - The CLI validates params before build. A required param that is absent, or a constraint violation (for example a list
   of fewer than two models for a comparison), is a usage error with a next-step message (CLI-06).
-- Every composition declares at least one example input set. `compose` with no params uses the first one, and `perform`
-  never does (D-19).
+- Every composition declares at least one example input set. `compose` uses the first one, over every YAML layer and
+  under the flags, a given flag overriding its own key, and `perform` never does (D-19).
 - Composition metadata the predecessor declared by hand (the roles used, whether checks run) is derived from the graph
   (SDK-06).
 
@@ -212,7 +212,8 @@ A code node is the SDK's answer to "this needs real code".
 - Composed config reaches the build function. Values that bound groups (`max` on `repeat` and `map`) come from params
   and are therefore known at compose time.
 - Precedence, highest first (CFG-04, D-17): the use site for a subcomposition or the CLI flag for a root composition,
-  then profile, workspace and user YAML, then the default. YAML keys live under the pack id and then the composition id.
+  then, for `compose`, the example set, then profile, workspace and user YAML, then the default. YAML keys live under
+  the pack id and then the composition id.
 - A key that no installed registrant claims fails compose with a did-you-mean hint. A key claimed by an installed but
   unused registrant is ignored (CFG-05, D-24). The composed config view reports value provenance (CFG-06).
 - Core config is not visible to compositions. They never read engine settings.

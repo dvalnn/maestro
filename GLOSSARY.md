@@ -77,7 +77,7 @@ build-time logic. _Avoid_: variable, promise
 **IR**: The language-neutral, versioned JSON form of a graph and its metadata. It is the contract between authors and
 the engine.
 
-**Node**: A unit of the graph with a stable id, a label and typed ports. Kinds: code, group, assert and host kinds.
+**Node**: A unit of the graph with a stable id and typed ports. Kinds: code, group, assert and host kinds.
 
 **Group node**: A node holding a body that is instantiated several times: `map` (parallel), `seq` (ordered, stops when
 satisfied) or `repeat` (a bounded loop carrying state).

@@ -139,7 +139,8 @@ A plan for a map over two topics, then a repeat, with a host that counts one `ca
     The `x-maestro-type` names, then the JSON `type` (an `integer` fits a `number`), then `items` and shared
     `properties`. Enums, `required`, extra properties and annotations are ignored, and only a `core.json-file` compares
     what a marked subschema says of its content. A `data` edge into a fan-in input is checked against the `Settled`
-    value (ADR 0006).
+    value (ADR 0006). The check is loose because equality would reject an enum into `Text` and an `Int` into `Float`;
+    perform checks each node's inputs against its `in` before it starts.
 
 [^ports]:
     By port name, then by the edge rule on each shared port: values flow from the IR's `in` into the kind's, and from
