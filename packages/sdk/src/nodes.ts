@@ -474,7 +474,7 @@ export function repeat<O extends Types>(opts: RepeatOptions<O>): Result<O> {
 				tolerate: opts.tolerate,
 			},
 		},
-		{ label: opts.label, when: opts.when, tag: opts.tag },
+		{ label: opts.label, when: opts.when },
 	) as RepeatNode;
 	if (Object.hasOwn(state, "index"))
 		throw fail(

@@ -251,6 +251,13 @@ describe("an IR file", () => {
 			"Bundle it, e.g. through `maestro compose --out`",
 		],
 		[
+			"a module that imports the SDK's loader subpath",
+			(text: string) => `import "@maestro/sdk/loader";\n${text}`,
+			true,
+			/: module 'greet.ts' imports '@maestro\/sdk\/loader', which its codeHash does not cover$/,
+			"Bundle it, e.g. through `maestro compose --out`",
+		],
+		[
 			"a missing module",
 			undefined,
 			false,

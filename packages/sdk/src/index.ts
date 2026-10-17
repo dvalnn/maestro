@@ -5,33 +5,20 @@ export {
 	reject,
 } from "@maestro/ir";
 export {
-	build,
-	buildNamed,
-	buildTwice,
 	type Composition,
 	composition,
 	type Declaration,
-	type Described,
-	describe,
-	glue,
-	irJson,
 	type PortRefs,
 	type PortValues,
 	use,
 	type Values,
 } from "./composition";
 export { BuildError } from "./diagnostic";
-export {
-	type BuildContext,
-	type CodeFn,
-	type Common,
-	type ConfiguredParams,
-	type Ref,
-	type Refs,
-	type Result,
-	SDK_VERSION,
-	STDLIB_HASH,
-	STDLIB_MODULE,
+export type {
+	Common,
+	Ref,
+	Refs,
+	Result,
 } from "./graph";
 export {
 	assert,
@@ -53,7 +40,6 @@ export {
 } from "./nodes";
 export {
 	firstOk,
-	join,
 	lookup,
 	okOnly,
 	type ReducerInputs,

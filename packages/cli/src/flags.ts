@@ -1,5 +1,5 @@
 import { isPlainObject, type JsonSchema, MAESTRO_TYPE } from "@maestro/ir";
-import type { Described } from "@maestro/sdk";
+import type { Described } from "@maestro/sdk/loader";
 import type { Options, Values } from "./command";
 import { usageError } from "./output";
 import { flagFor, flagName } from "./params";

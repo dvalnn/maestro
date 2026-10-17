@@ -1,7 +1,7 @@
 import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SDK_VERSION } from "@maestro/sdk";
+import { SDK_VERSION } from "@maestro/sdk/loader";
 import { bundled } from "../loader";
 
 export const FIXTURES = import.meta.dir;

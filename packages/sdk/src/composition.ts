@@ -160,7 +160,7 @@ function checkPorts(sub: string, declared: object, ports: object): void {
 
 /**
  * Builds `root` with `params` over its defaults and emits its IR, with ambient state frozen (SDK-11). Identical
- * params and context give byte-identical `irJson` (CORE-06).
+ * params and context give byte-identical canonical JSON (CORE-06).
  * @throws `BuildError` for any build diagnostic, or with the first diagnostic `parseIr` finds in the emitted IR.
  */
 export function build<P extends Types, R>(
@@ -177,30 +177,11 @@ export function build<P extends Types, R>(
 	const emitted = inBuild(context, (s) => {
 		const all = withDefaults(root.params, params);
 		const returned = frozen(() => root.build(all, {} as PortRefs<Types>));
-		return JSON.parse(irJson(emit(root, s, returned))) as unknown;
+		return JSON.parse(canonicalJson(emit(root, s, returned))) as unknown;
 	});
 	const parsed = parseIr(emitted);
 	if (!parsed.ok) throw new BuildError(parsed.diagnostics[0] as Diagnostic);
 	return parsed.ir;
-}
-
-/**
- * Builds `root` twice and compares the IR (SDK-12).
- * @throws `BUILD.unstable` when the two differ.
- */
-export function buildTwice<P extends Types, R>(
-	root: Composition<P, Types, R>,
-	params: Partial<Values<P>>,
-	context: BuildContext,
-): Ir {
-	const first = irJson(build(root, params, context));
-	if (first !== irJson(build(root, params, context)))
-		throw fail(
-			"BUILD.unstable",
-			`two builds of '${root.name}' with the same params gave different IR`,
-			"Keep the build a function of its params alone: no state kept between builds",
-		);
-	return JSON.parse(first) as Ir;
 }
 
 function emit(
@@ -238,9 +219,6 @@ function resultOf(name: string, returned: unknown): Ir["result"] {
 		"Return the node whose outcome is the concert result, or a reducer over several",
 	);
 }
-
-/** `ir` as JSON with object keys sorted, so equal IR gives equal bytes (CORE-06). */
-export const irJson = (ir: Ir): string => canonicalJson(ir);
 
 /** A composition's name, doc, params and examples, known without building it (ADR 0002). */
 export type Described = {
@@ -313,8 +291,9 @@ export function describe(
 }
 
 /**
- * Builds the composition named `name` among `exports`, a module namespace, and emits its IR as `irJson`.
- * @throws `SCOPE.name` when none has that name, else as `build` does.
+ * Builds the composition named `name` among `exports`, a module namespace, twice, and emits its IR as canonical JSON
+ * (SDK-12).
+ * @throws `SCOPE.name` when none has that name, `BUILD.unstable` when the two builds differ, else as `build` does.
  */
 export function buildNamed(
 	exports: Readonly<Record<string, unknown>>,
@@ -329,7 +308,14 @@ export function buildNamed(
 			`no exported composition is named '${name}'`,
 			"Name one of the compositions the module exports",
 		);
-	return irJson(build(root, params, context));
+	const first = canonicalJson(build(root, params, context));
+	if (first !== canonicalJson(build(root, params, context)))
+		throw fail(
+			"BUILD.unstable",
+			`two builds of '${name}' with the same params gave different IR`,
+			"Keep the build a function of its params alone: no state kept between builds",
+		);
+	return first;
 }
 
 /**
@@ -339,7 +325,7 @@ export function buildNamed(
 export function glue(entry: string): string {
 	const from = JSON.stringify(entry);
 	return [
-		`import { buildNamed, describe as described } from "${pkg.name}";`,
+		`import { buildNamed, describe as described } from "${pkg.name}/loader";`,
 		`import * as authored from ${from};`,
 		`export * from ${from};`,
 		"export const describe = () => described(authored);",

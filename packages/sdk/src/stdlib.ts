@@ -38,31 +38,16 @@ const pairs = (a: Ref<unknown>, b: Ref<unknown>) => ({
 	},
 });
 
-/** The i-th items of two lists, as pairs: a stdlib `zip` node. */
+/** The i-th items of two lists, as pairs, or with `on` the pairs whose field `on` is equal: a stdlib `zip` node. */
 export function zip<A, B>(
 	a: Ref<A[]>,
 	b: Ref<B[]>,
-	common: Common = {},
+	{ on, ...common }: Common & { on?: string } = {},
 ): Ref<[A, B][]> {
 	return lift(
 		"zip",
-		`zip_${sourceOf(a)}_${sourceOf(b)}`,
-		{ a, b },
-		pairs(a, b),
-		common,
-	) as Ref<[A, B][]>;
-}
-
-/** The pairs of items of two lists whose field `on` is equal: a stdlib `join` node. */
-export function join<A, B>(
-	a: Ref<A[]>,
-	b: Ref<B[]>,
-	{ on, ...common }: Common & { on: string },
-): Ref<[A, B][]> {
-	return lift(
-		"join",
-		`join_${sourceOf(a)}_${sourceOf(b)}`,
-		{ a, b, on },
+		`zip_${sourceOf(a)}_${sourceOf(b)}${on === undefined ? "" : `_${on}`}`,
+		on === undefined ? { a, b } : { a, b, on },
 		pairs(a, b),
 		common,
 	) as Ref<[A, B][]>;

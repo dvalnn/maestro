@@ -72,8 +72,8 @@ pre-flight's job (CORE-02), not this package's.
 
 ## Nodes
 
-Common fields: `id`, `kind`, optional `tag` (a human label used in records, not an identity), `source` (`file`, `line`,
-`column`), `in` and `out` (port name to schema), and `literals` (port name to a plain value, D-16).
+Common fields: `id`, `kind`, `source` (`file`, `line`, `column`), `in` and `out` (port name to schema), and `literals`
+(port name to a plain value, D-16).
 
 A worker's `module` is relative to the IR file's directory. `codeHash` takes one of two forms (ADR 0008), and the schema
 pairs each with its module both ways:

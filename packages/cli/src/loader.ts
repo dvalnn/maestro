@@ -32,7 +32,7 @@ import {
 	SDK_VERSION,
 	STDLIB_HASH,
 	STDLIB_MODULE,
-} from "@maestro/sdk";
+} from "@maestro/sdk/loader";
 import * as stdlib from "@maestro/sdk/stdlib";
 
 /** The `codeHash` of the code a worker reference names as it is now (ADR 0008). */
@@ -110,8 +110,7 @@ const ENTRY = ".maestro-entry.js";
 const HASH_PREFIX = "sha256:";
 /** The `version` of a bare file's compositions, which have no manifest to declare one. */
 const FILE_VERSION = "0.0.0";
-const SDK = "@maestro/sdk";
-const SDK_IMPORT = /^@maestro\/sdk$/;
+const SDK_IMPORT = /^@maestro\/sdk(\/loader)?$/;
 
 type Namespace = Readonly<Record<string, unknown>>;
 
@@ -185,7 +184,6 @@ async function bundle(
 	entry: string,
 	files: Record<string, string>,
 ): Promise<string> {
-	const sdk = Bun.resolveSync(SDK, import.meta.dir);
 	try {
 		const out = await Bun.build({
 			entrypoints: [entry],
@@ -198,7 +196,9 @@ async function bundle(
 				{
 					name: "maestro-sdk",
 					setup: (b) => {
-						b.onResolve({ filter: SDK_IMPORT }, () => ({ path: sdk }));
+						b.onResolve({ filter: SDK_IMPORT }, ({ path }) => ({
+							path: Bun.resolveSync(path, import.meta.dir),
+						}));
 					},
 				},
 			],
@@ -222,7 +222,7 @@ const outsideOf = (text: string): string[] =>
 	new Bun.Transpiler({ loader: "ts" })
 		.scanImports(text)
 		.map((i) => i.path)
-		.filter((path) => !isBuiltin(path) && !SDK_IMPORT.test(path));
+		.filter((path) => !isBuiltin(path) && path !== "@maestro/sdk");
 
 /**
  * The module file `module`, relative to `dir`: its `codeHash`, `sha256:` and the hex SHA-256 of its bytes, and a load

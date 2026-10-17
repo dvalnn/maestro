@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { canonicalJson } from "@maestro/ir";
 import pkg from "../package.json";
 import {
 	buildOf,
@@ -10,21 +11,21 @@ import {
 import { fanout } from "./fixtures/examples";
 import { stamp } from "./fixtures/workers";
 import {
-	type BuildContext,
-	build,
-	buildNamed,
-	buildTwice,
 	code,
 	composition,
-	describe as describeExports,
 	hostNode,
 	Int,
-	irJson,
 	List,
 	type Ref,
 	Text,
 	use,
 } from "./index";
+import {
+	type BuildContext,
+	build,
+	buildNamed,
+	describe as describeExports,
+} from "./loader";
 
 const task = (inputs: Record<string, unknown> = {}) =>
 	hostNode("fake.task", { in: inputs, out: { text: Text() } });
@@ -222,9 +223,9 @@ describe("a bundle's entry", () => {
 		]);
 	});
 
-	test("buildNamed builds a composition by name, as irJson", () => {
+	test("buildNamed builds a composition by name, as canonical JSON", () => {
 		const ir = buildNamed(exports, "greet", { name: "x" }, context);
-		expect(ir).toBe(irJson(build(greet, { name: "x" }, context)));
+		expect(ir).toBe(canonicalJson(build(greet, { name: "x" }, context)));
 	});
 
 	test.each([
@@ -264,15 +265,14 @@ describe("a bundle's entry", () => {
 });
 
 describe("byte stability", () => {
-	test("two builds give identical bytes, and buildTwice returns the IR", () => {
-		const first = irJson(buildValid(fanout));
-		expect(irJson(buildValid(fanout))).toBe(first);
-		expect(irJson(buildTwice(fanout, {}, context))).toBe(first);
+	test("two builds give identical bytes", () => {
+		const first = canonicalJson(buildValid(fanout));
+		expect(canonicalJson(buildValid(fanout))).toBe(first);
 	});
 
-	test("irJson sorts every object's keys", () => {
+	test("canonicalJson sorts every object's keys", () => {
 		const ir = buildOf(() => task({ b: 1, a: { d: 2, c: 3 } }));
-		expect(irJson(ir)).toContain('"literals":{"a":{"c":3,"d":2},"b":1}');
+		expect(canonicalJson(ir)).toContain('"literals":{"a":{"c":3,"d":2},"b":1}');
 	});
 
 	test("a build that changes a param default changes no later build", () => {
@@ -284,7 +284,7 @@ describe("byte stability", () => {
 				return task({ names });
 			},
 		);
-		const ir = buildTwice(greedy, {}, context);
+		const ir = JSON.parse(buildNamed({ greedy }, "greedy", {}, context));
 		expect(nodeOf(ir, "task").literals).toEqual({ names: ["a", "b"] });
 		expect(greedy.params.names.schema).toMatchObject({ default: ["a"] });
 	});
@@ -294,7 +294,7 @@ describe("byte stability", () => {
 		const outputs = [1, 2].map(() =>
 			Bun.spawnSync([process.execPath, script]).stdout.toString(),
 		);
-		expect(outputs[0]).toBe(irJson(buildValid(fanout)));
+		expect(outputs[0]).toBe(canonicalJson(buildValid(fanout)));
 		expect(outputs[1]).toBe(outputs[0]);
 	});
 
@@ -304,9 +304,9 @@ describe("byte stability", () => {
 			calls++;
 			return task({ calls });
 		});
-		expect(diagnose(() => buildTwice(drifting, {}, context)).code).toBe(
-			"BUILD.unstable",
-		);
+		expect(
+			diagnose(() => buildNamed({ drifting }, "drift", {}, context)).code,
+		).toBe("BUILD.unstable");
 	});
 
 	test("a Ref from another build fails with REF.escape", () => {

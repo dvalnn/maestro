@@ -9,7 +9,6 @@ import {
 	hostNode,
 	Int,
 	Json,
-	join,
 	List,
 	lookup,
 	type MapResults,
@@ -147,11 +146,11 @@ describe("lifting combinators", () => {
 		expect(fallback.hint).toContain("firstOk");
 	});
 
-	test("zip and join pair the items of two lists", () => {
+	test("zip pairs the items of two lists, by key with on", () => {
 		const ir = buildOf(() => {
 			const t = task();
 			zip(t.out.names, t.out.counts);
-			return join(t.out.names, t.out.counts, { on: "id" });
+			return zip(t.out.names, t.out.counts, { on: "id" });
 		});
 		const pairs = {
 			type: "array",
@@ -161,8 +160,11 @@ describe("lifting combinators", () => {
 				items: false,
 			},
 		};
-		expect(nodeOf(ir, "zip_task_task").out).toEqual({ value: pairs });
-		expect(nodeOf(ir, "join_task_task")).toMatchObject({
+		expect(nodeOf(ir, "zip_task_task")).toMatchObject({
+			out: { value: pairs },
+		});
+		expect(nodeOf(ir, "zip_task_task").literals).toBeUndefined();
+		expect(nodeOf(ir, "zip_task_task_id")).toMatchObject({
 			literals: { on: "id" },
 			out: { value: pairs },
 		});

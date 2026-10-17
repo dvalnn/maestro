@@ -5,6 +5,7 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./loader": "./src/loader.ts",
 		"./stdlib": "./src/stdlib-functions.ts"
 	},
 	"dependencies": {

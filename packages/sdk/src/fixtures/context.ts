@@ -6,14 +6,13 @@ import {
 	type WorkerRef,
 } from "@maestro/ir";
 import {
-	type BuildContext,
 	BuildError,
-	build,
 	type Composition,
 	composition,
 	type Types,
 	type Values,
 } from "../index";
+import { type BuildContext, build } from "../loader";
 import * as workers from "./workers";
 
 const refs = new Map<unknown, WorkerRef>(

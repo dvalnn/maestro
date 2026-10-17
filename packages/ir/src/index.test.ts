@@ -176,10 +176,10 @@ test.each<[string, Mutation, string, string, string]>([
 	],
 	[
 		"type names the expected type",
-		(ir) => (ir.nodes[0].tag = 3),
-		"/nodes/0/tag",
+		(ir) => (ir.nodes[0].id = 3),
+		"/nodes/0/id",
 		"must be of type string",
-		"Set /nodes/0/tag to a string",
+		"Set /nodes/0/id to a string",
 	],
 ])(
 	"schema diagnostics say in plain words: %s",

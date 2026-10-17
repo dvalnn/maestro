@@ -5,7 +5,7 @@ import { type ComposeInput, compose, type Plan } from "@maestro/core/compose";
 import { CORE_CONFIG, type Composed, type Layer } from "@maestro/core/config";
 import type { ConcertRecord } from "@maestro/core/perform";
 import { type Ir, irSchema, mapWorkers, parseIr } from "@maestro/ir";
-import { type Described, STDLIB_MODULE } from "@maestro/sdk";
+import { type Described, STDLIB_MODULE } from "@maestro/sdk/loader";
 import { COMMON, type Options, parse, type Values } from "./command";
 import { CLI_CONFIG } from "./config";
 import { flagValues, paramFlags } from "./flags";

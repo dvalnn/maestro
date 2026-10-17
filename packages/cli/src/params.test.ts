@@ -7,7 +7,7 @@ import {
 	sourceOf,
 } from "@maestro/core/config";
 import type { Ir } from "@maestro/ir";
-import type { Described } from "@maestro/sdk";
+import type { Described } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
 import { cleanup, DEMO, packOf, scratch } from "./fixtures/packs";
 import { openPack } from "./loader";

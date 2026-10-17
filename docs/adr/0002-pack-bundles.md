@@ -27,5 +27,6 @@ different copy, so a shared-package model cannot work in a single-binary distrib
   copies. Types that cross the pack boundary are checked by schema.
 - Each pack is rebuilt when the SDK changes. The IR version (CORE-16) is what keeps an older pack usable.
 - Authors export compositions plainly. Whatever bundles them adds an entry exporting the bundle's own SDK `describe()`
-  and `build()`, so the CLI builds through that copy and reads each composition's params and examples without building.
+  and `build()`, imported from `@maestro/sdk/loader`, so the CLI builds through that copy and reads each composition's
+  params and examples without building.
 - Slice 0 verifies that the binary loads an external bundle and calls its code node (D-32, spike 3).

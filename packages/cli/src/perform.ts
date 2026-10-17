@@ -7,7 +7,7 @@ import {
 	unresumable,
 } from "@maestro/core/perform";
 import { mapWorkers } from "@maestro/ir";
-import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk";
+import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk/loader";
 import {
 	COMMON,
 	type Command,

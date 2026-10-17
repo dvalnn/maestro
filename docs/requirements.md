@@ -190,22 +190,21 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **SDK-02 (Must).** Constructors exist for code, map, seq, repeat, assert, subcomposition use, and for host node kinds
   contributed by host SDKs.
 - **SDK-03 (Must).** `Ref` semantics are enforced: build code cannot branch on a Ref. Lifting combinators (`pick`,
-  `map`, `zip`, `join`, `when`) cover the common cases, and anything else is a code node. Params and composed config are
-  plain values (D-16). The types distinguish Plain from Ref, and coercing a Ref to a boolean or string during build
-  throws.
+  `map`, `zip`, `when`) cover the common cases, and anything else is a code node. Params and composed config are plain
+  values (D-16). The types distinguish Plain from Ref, and coercing a Ref to a boolean or string during build throws.
 - **SDK-04 (Must).** Code nodes declare typed inputs and outputs, and declared reads and writes. They run only at
   perform (ADR 0009).
 - **SDK-05 (Must).** Subcompositions have typed signatures, plain params plus Ref ports (D-16), and are reusable across
   packs.
-- **SDK-06 (Must).** Composition metadata that the predecessor declared by hand (required agents, whether checks run) is
-  derived from the graph.
+- **SDK-06 (Must).** What a composition needs (plan node kinds, instance counts, host counts) is derived by compose and
+  host `validate`, never declared by hand. No SDK function and no IR field carries it.
 - **SDK-07 (Should).** A standard library supplies reducers (`firstOk`, `okOnly`), prompt templating with variables
   checked at compose time, and typed file readers.
 - **SDK-08 (Must).** A test kit provides a fake host, build and compose assertions, and concerts with stubbed nodes.
 - **SDK-09 (Should).** The SDK can emit IR to a file without performing it.
 - **SDK-10 (May).** SDKs in other languages emit the same IR.
 - **SDK-11 (Must).** Build runs with ambient state frozen: no environment, clock or randomness (CORE-06, D-16).
-- **SDK-12 (Should).** Compose can build twice and compare IR hashes to catch nondeterministic build code.
+- **SDK-12 (Should).** The loader builds twice and compares the IR to catch nondeterministic build code.
 - **SDK-13 (Must).** `map` items are identified by key: the value for primitive items, the index otherwise, or an
   author-supplied key function. Duplicate keys are a compose error, or a failed `map` when a key function or a list
   known only at perform time gives them (D-18).

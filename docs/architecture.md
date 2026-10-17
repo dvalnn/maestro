@@ -90,8 +90,8 @@ The lifecycle has two stages (D-12). **Compose** is steps 1 to 4, ending with pr
 2. **Params.** A composition's declared params become CLI flags and are validated before build (D-17). They are plain
    values at build time. Node outputs and file contents are Refs, and a Ref never feeds a param (D-16).
 3. **Build.** The composition's build function runs once with symbolic Refs and produces the graph. It is deterministic
-   and side-effect free (CORE-06). Ambient state (environment, clock, randomness) is frozen (SDK-11). Compose can build
-   twice and compare IR hashes (SDK-12).
+   and side-effect free (CORE-06). Ambient state (environment, clock, randomness) is frozen (SDK-11). The loader builds
+   twice and compares the IR (SDK-12).
 4. **Pre-flight.**
    1. Serialize to IR and validate against the IR schema.
    2. Type-check every edge (CORE-02) and every prompt template variable.

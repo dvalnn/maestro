@@ -160,11 +160,6 @@
 						}
 					]
 				},
-				"tag": {
-					"description": "A human label used in records. Not an identity.",
-					"type": "string",
-					"minLength": 1
-				},
 				"source": {
 					"type": "object",
 					"required": ["file", "line"],

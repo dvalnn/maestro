@@ -54,7 +54,6 @@
 		{
 			"id": "angles/draft",
 			"kind": "fake.task",
-			"tag": "first draft",
 			"in": { "prompt": { "type": "string" } },
 			"out": { "text": { "type": "string" } }
 		},

@@ -22,7 +22,7 @@ import {
 	replaceAt,
 	schemaMarkers,
 } from "@maestro/ir";
-import type { ConfiguredParams, Described } from "@maestro/sdk";
+import type { ConfiguredParams, Described } from "@maestro/sdk/loader";
 
 const FLAG_PREFIX = "--";
 

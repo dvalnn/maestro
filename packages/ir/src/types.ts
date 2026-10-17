@@ -44,8 +44,6 @@ export type Tolerate = "rejected";
 type NodeBase = {
 	/** A path: each proper prefix is a declared scope or group, and the last segment is the node's name. */
 	id: string;
-	/** A human label used in records. Not an identity. */
-	tag?: string;
 	source?: SourceLocation;
 	in?: Ports;
 	out?: Ports;

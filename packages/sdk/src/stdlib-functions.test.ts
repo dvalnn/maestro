@@ -8,7 +8,6 @@ import {
 	Bool,
 	firstOk,
 	hostNode,
-	join,
 	List,
 	lookup,
 	okOnly,
@@ -49,7 +48,6 @@ describe("the stdlib module", () => {
 				},
 			});
 			zip(t.out.names, t.out.names);
-			join(t.out.names, t.out.names, { on: "id" });
 			lookup({ a: 1 }, t.out.text);
 			when(t.out.done, t.out.text);
 			t.out.doc.pick("a");
@@ -147,9 +145,7 @@ describe("zip", () => {
 			"zip: lists differ in length, 2 and 1",
 		);
 	});
-});
 
-describe("join", () => {
 	const a = [{ id: 1 }, { id: 2 }, { n: "no id" }, { id: null }, { id: 4 }];
 	const b = [
 		{ id: 2, m: 1 },
@@ -161,7 +157,7 @@ describe("join", () => {
 	];
 
 	test("pairs items whose key is equal, a's order then b's, and drops the unmatched", () => {
-		expect(fns.join({ a, b, on: "id" })).toEqual({
+		expect(fns.zip({ a, b, on: "id" })).toEqual({
 			value: [
 				[a[0], b[1]],
 				[a[1], b[0]],
@@ -180,16 +176,16 @@ describe("join", () => {
 			[[{ id: false }, { id: false }]],
 		],
 	])("compares %s by strict equality", (_name, left, right, value) => {
-		expect(fns.join({ a: left, b: right, on: "id" })).toEqual({ value });
+		expect(fns.zip({ a: left, b: right, on: "id" })).toEqual({ value });
 	});
 
 	test.each([
 		["an object", { k: 1 }, '{"k":1}'],
 		["an array", [1], "[1]"],
 	])("throws on %s as a key, naming it, in either list", (_name, id, named) => {
-		const message = `join: key ${named} of field 'id' is not a string, number or boolean`;
-		expect(() => fns.join({ a: [{ id }], b: [], on: "id" })).toThrow(message);
-		expect(() => fns.join({ a: [], b: [{ id }], on: "id" })).toThrow(message);
+		const message = `zip: key ${named} of field 'id' is not a string, number or boolean`;
+		expect(() => fns.zip({ a: [{ id }], b: [], on: "id" })).toThrow(message);
+		expect(() => fns.zip({ a: [], b: [{ id }], on: "id" })).toThrow(message);
 	});
 });
 

@@ -78,10 +78,9 @@ docs/               these documents (including adr/), slice reports under report
 - **Deliverables.** Composition and subcomposition declaration, node constructors (`code`, `map`, `seq`, `repeat`,
   `assert`, `use`), guards and tolerance, Refs with misuse diagnostics, types and schemas, `tpl`, lifting combinators,
   params and ports with example input sets (D-16, D-17, D-19), map item keys (SDK-13), frozen ambient state during build
-  (SDK-11), the optional double-build hash comparison (SDK-12), derived metadata, stdlib reducers. Emits IR.
+  (SDK-11), the double-build comparison (SDK-12), stdlib reducers. Emits IR.
 - **Acceptance.** Build tests for every constructor. Byte-stable IR for identical params and composed config. A Ref used
-  as a value, or fed to a param, fails with the documented diagnostic. Duplicate item keys fail. Composition metadata
-  derives from the graph.
+  as a value, or fed to a param, fails with the documented diagnostic. Duplicate item keys fail.
 - **Depends on.** S1.
 - **Parallel with.** S3, S4.
 

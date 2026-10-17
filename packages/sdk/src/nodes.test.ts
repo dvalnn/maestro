@@ -175,9 +175,8 @@ describe("common options", () => {
 	test("when is a control edge from the guard's port", () => {
 		const ir = buildOf(() => {
 			const t = task();
-			return hostNode("fake.check", { when: t.out.done, tag: "gate" });
+			return hostNode("fake.check", { when: t.out.done });
 		});
-		expect(nodeOf(ir, "check").tag).toBe("gate");
 		expect(ir.edges).toContainEqual({
 			kind: "control",
 			from: { node: "task", port: "done" },

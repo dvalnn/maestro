@@ -1,8 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { listing, type Plan, render, summary } from "@maestro/core/compose";
 import type { Composed } from "@maestro/core/config";
-import { isPlainObject } from "@maestro/ir";
-import { irJson } from "@maestro/sdk";
+import { canonicalJson, isPlainObject } from "@maestro/ir";
 import {
 	COMMON,
 	type Command,
@@ -38,7 +37,7 @@ async function composed(reading: Reading, args: readonly string[], deps: Deps) {
 async function save(prepared: Prepared, out: string) {
 	const file = resolve(out);
 	const saved = await persist(prepared, dirname(file), bundleName(file));
-	await Bun.write(file, `${irJson(saved.ir)}\n`);
+	await Bun.write(file, `${canonicalJson(saved.ir)}\n`);
 }
 
 /** Prints the warnings on stderr, then the summary, or the plan in full with `--plan`, and the graph with `--graph`. */

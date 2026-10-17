@@ -20,6 +20,9 @@ The SDK is the only thing an author learns. It builds a graph (CORE-06) and noth
 4. **Code where code is honest.** Structure is in the graph. Parsing, merging, regrouping and policy that need real code
    are code nodes.
 5. **Domain-free.** The core SDK knows no host. Host SDKs add their node constructors and types on top.
+6. **Author API alone at the root.** `@maestro/sdk` exports what an author writes. What the engine's loader calls to
+   describe, build and bundle compositions (`build`, `buildNamed`, `describe`, `glue`, the build context and the SDK and
+   stdlib identity) is the `@maestro/sdk/loader` subpath.
 
 ## 2. What an author writes
 
@@ -65,8 +68,7 @@ Every node constructor returns a **Result handle** with:
 - one port per declared output, under `out`,
 - any extra ports its kind defines (for a host kind, for example a lane).
 
-All of these are Refs. A node accepts common options: `label`, `when`, `tolerate` and `tag` (a human label used in
-records, not an identity).
+All of these are Refs. A node accepts common options: `label`, `when` and `tolerate`.
 
 ### 4.1 Core node constructors
 
@@ -126,7 +128,7 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
   Ref) throws a build diagnostic that names the lifting alternative. This is what keeps the graph decidable (D-04).
 - **Lifting combinators** (all produce visible nodes in the graph, never hidden ones):
   - `ref.pick(path)` selects a field of a structured value.
-  - `zip(a, b)` and `join(a, b, {on})` combine refs, the second by key.
+  - `zip(a, b, { on? })` pairs the items of two lists, by position or by the key field `on`.
   - `when(cond, ...)` and `ref.or(default)` for guards and defaults.
   - `lookup(table, key)` indexes a plain table by a Ref key.
 
@@ -144,7 +146,7 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
   (Refs resolve). A build-time `if` on a plain value changes the graph's shape. A `when` guard on a Ref keeps both
   branches.
 - **Enforcement.** Plain and Ref are distinct types. A Ref throws when coerced to a boolean or a string. Ambient state
-  (environment, clock, randomness) is frozen during build (SDK-11). Compose can build twice and compare IR hashes
+  (environment, clock, randomness) is frozen during build (SDK-11). The loader builds twice and compares the IR
   (SDK-12).
 
 ## 6. Results of a composition
@@ -203,8 +205,8 @@ A code node is the SDK's answer to "this needs real code".
   of fewer than two models for a comparison), is a usage error with a next-step message (CLI-06).
 - Every composition declares at least one example input set. `compose` uses the first one, over every YAML layer and
   under the flags, a given flag overriding its own key, and `perform` never does (D-19).
-- Composition metadata the predecessor declared by hand (the roles used, whether checks run) is derived from the graph
-  (SDK-06).
+- What a composition needs (plan node kinds, instance counts, host counts) is derived by compose and host `validate`,
+  never declared (SDK-06).
 
 ## 10. Config
 
@@ -293,7 +295,7 @@ Severity is `error` or `warning`. Any error stops before any concert starts (NFR
 ### 13.4 Test kit (SDK-08)
 
 - A **fake host** with configurable node kinds and scripted outcomes (including reject-then-accept).
-- **Graph assertions:** node counts, kinds, edges, bounds, diagnostics, derived metadata.
+- **Graph assertions:** node counts, kinds, edges, bounds, diagnostics.
 - **Stub concert** over the real executor, for outcome propagation and resume tests.
 - **Core-only fixtures** proving CORE-12.
 
@@ -320,11 +322,10 @@ export const fixUntilGreen = composition(
     const check = (b) => checkNode({ lane: join(b.lane), prompt });
     return repeat({
       init: check(build),
-      step: (checked, i) =>
+      step: (checked) =>
         check(
           agent("build", {
             lane: join(checked.lane),
-            tag: `fix_${i}`,
             prompt: tpl("fix.md", {
               failures: checked.reason,
               logs: checked.out.logs,

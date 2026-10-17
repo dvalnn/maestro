@@ -3,7 +3,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { openRecord } from "@maestro/core/perform";
-import { STDLIB_HASH } from "@maestro/sdk";
+import { STDLIB_HASH } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
 import { cleanup, FIXTURES } from "./fixtures/packs";
 import { ECHO, GREET, hostOf, idOf, json, world } from "./fixtures/world";

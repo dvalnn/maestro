@@ -58,51 +58,48 @@ export function lookup({
 }
 
 /**
- * The i-th items of `a` and `b`, as pairs.
- * @throws when the lists differ in length, naming both lengths.
- */
-export function zip({
-	a,
-	b,
-}: {
-	a: readonly unknown[];
-	b: readonly unknown[];
-}): Value<unknown[][]> {
-	if (a.length !== b.length)
-		throw new Error(`zip: lists differ in length, ${a.length} and ${b.length}`);
-	return { value: a.map((item, i) => [item, b[i]]) };
-}
-
-/**
- * Every pair of an item of `a` and an item of `b` whose field `on` is equal, in the order of `a`, then of `b`. A
- * string, number or boolean key matches by strict equality, and an item whose key is `null` or missing matches nothing.
+ * Pairs the items of `a` and `b`.
+ * - Without `on`, the i-th items, in order.
+ * - With `on`, every item of `a` with every item of `b` whose field `on` is equal, in the order of `a`, then of `b`. A
+ *   string, number or boolean key matches by strict equality, and an item whose key is `null` or missing matches
+ *   nothing.
+ * @throws when the lists differ in length without `on`, naming both lengths.
  * @throws when a key is an object or an array, naming the key.
  */
-export function join({
+export function zip({
 	a,
 	b,
 	on,
 }: {
 	a: readonly unknown[];
 	b: readonly unknown[];
-	on: string;
+	on?: string;
 }): Value<unknown[][]> {
+	if (on !== undefined) return { value: zipByKey(a, b, on) };
+	if (a.length !== b.length)
+		throw new Error(`zip: lists differ in length, ${a.length} and ${b.length}`);
+	return { value: a.map((item, i) => [item, b[i]]) };
+}
+
+function zipByKey(
+	a: readonly unknown[],
+	b: readonly unknown[],
+	on: string,
+): unknown[][] {
 	const keyOf = (item: unknown) => {
 		const key = isRecord(item) ? item[on] : undefined;
 		if (typeof key === "object" && key !== null)
 			throw new Error(
-				`join: key ${JSON.stringify(key)} of field '${on}' is not a string, number or boolean`,
+				`zip: key ${JSON.stringify(key)} of field '${on}' is not a string, number or boolean`,
 			);
 		return key ?? undefined;
 	};
 	const matches = Map.groupBy(b, keyOf);
-	return {
-		value: a.flatMap((x) => {
-			const key = keyOf(x);
-			if (key === undefined) return [];
-			return (matches.get(key) ?? []).map((y) => [x, y]);
-		}),
-	};
+	return a.flatMap((x) => {
+		const key = keyOf(x);
+		if (key === undefined) return [];
+		return (matches.get(key) ?? []).map((y) => [x, y]);
+	});
 }
 
 /** A reducer's ports: a map's `results`, or one `Settled` input per output, `in0` to `inN`. */

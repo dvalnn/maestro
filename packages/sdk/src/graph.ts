@@ -72,8 +72,6 @@ export type Common = {
 	when?: Ref<boolean>;
 	/** Performs the node after a `rejected` upstream too. */
 	tolerate?: Tolerate;
-	/** A human label used in records, not an identity. */
-	tag?: string;
 };
 
 type Frame = {
@@ -376,7 +374,7 @@ export function checkPlain(value: unknown, what: string): void {
 		throw fail(
 			"REF.value",
 			`${what} holds a Ref, and it must be a plain value`,
-			"Feed the Ref to an input port of its own, or combine Refs with zip, join or a code node",
+			"Feed the Ref to an input port of its own, or combine Refs with zip or a code node",
 		);
 	if (problem === "json")
 		throw fail(
@@ -587,7 +585,6 @@ export function lift(
 		),
 		when: opts.when === undefined ? undefined : described(opts.when),
 		tolerate: opts.tolerate,
-		tag: opts.tag,
 	});
 	const id = idOf(derived);
 	if (opts.label === undefined && s.lifts.get(id) === what)
@@ -629,7 +626,6 @@ export function pushNode(spec: NodeSpec, common: Common): IrNode {
 	const node = {
 		id,
 		kind: spec.kind,
-		tag: common.tag,
 		out: Object.keys(spec.out).length ? spec.out : undefined,
 		...spec.fields,
 	} as IrNode;
