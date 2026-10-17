@@ -27,11 +27,11 @@ const PRUNE_OPTIONS = {
 		arg: "duration",
 		desc: "Prune concerts that settled longer ago than this, such as 90s, 15m, 12h or 7d",
 	},
-	tour: { type: "string", arg: "slug", desc: "With --before, only this tour" },
+	tour: { type: "string", arg: "slug", desc: "Only this tour" },
 	workspace: {
 		type: "string",
 		arg: "name",
-		desc: "With --before, only this workspace",
+		desc: "Only this workspace",
 	},
 	yes: { type: "boolean", desc: "Do not ask before deleting" },
 } as const satisfies Options;
@@ -40,17 +40,19 @@ const PRUNE_OPTIONS = {
 type Failure = { id: string; reason: string };
 
 /**
- * The settled concerts to prune: those named, or those of `--before` narrowed by `--tour` and `--workspace`.
+ * The settled concerts to prune: those named, or those matching `--before`, `--tour` and `--workspace`, at any age
+ * when `--before` is absent.
  * @throws CliError for a selection that is none or both, or a named concert that is running.
  */
 function selected({ store, values, positionals }: Stored): ConcertRecord[] {
 	const before = textOf(values, "before");
 	const tour = textOf(values, "tour");
 	const workspace = textOf(values, "workspace");
+	const filtered = [before, tour, workspace].some((v) => v !== undefined);
 	if (positionals.length > 0) {
-		if (before || tour || workspace)
+		if (filtered)
 			throw usageError(
-				"prune takes concert ids or --before, not both",
+				"prune takes concert ids or filters, not both",
 				"Drop the ids, or drop --before, --tour and --workspace",
 			);
 		const named = positionals.map((id) => concertOf(store, id));
@@ -58,12 +60,15 @@ function selected({ store, values, positionals }: Stored): ConcertRecord[] {
 		if (running) throw stillRunning(running.id, running.pid);
 		return named;
 	}
-	if (before === undefined)
+	if (!filtered)
 		throw usageError(
-			"prune needs concert ids or --before",
-			"Name concerts, or pick them with --before <duration>, such as --before 7d",
+			"prune needs concert ids, --before, --tour or --workspace",
+			"Name concerts, or pick them with --before <duration>, --tour <slug> or --workspace <name>",
 		);
-	const cutoff = Date.now() - parseDuration("--before", before);
+	const cutoff =
+		before === undefined
+			? Number.POSITIVE_INFINITY
+			: Date.now() - parseDuration("--before", before);
 	return store
 		.concerts({
 			tour: tour === undefined ? undefined : parseTour("--tour", tour),
@@ -171,7 +176,8 @@ async function pruned(stored: Stored) {
 }
 
 export const prune: Command = {
-	usage: "prune <concert>... | --before <duration> [flags]",
+	usage:
+		"prune <concert>... | --before <duration> | --tour <slug> | --workspace <name> [flags]",
 	options: PRUNE_OPTIONS,
 	execute: (args, deps) =>
 		withStore(

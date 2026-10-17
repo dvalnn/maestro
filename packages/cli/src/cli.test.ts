@@ -355,12 +355,12 @@ describe("usage errors", () => {
 		[
 			"prune with no selection",
 			["prune"],
-			/^prune needs concert ids or --before/,
+			/^prune needs concert ids, --before, --tour or --workspace\nName concerts, .*--tour <slug> or --workspace <name>$/,
 		],
 		[
 			"prune with ids and --before",
 			["prune", "a", "--before", "1d"],
-			/^prune takes concert ids or --before, not both/,
+			/^prune takes concert ids or filters, not both/,
 		],
 		[
 			"a bad --before",
@@ -707,6 +707,25 @@ describe("prune", () => {
 					"--json",
 				]),
 			),
+		).toMatchObject({ pruned: [x] });
+		expect(await ids(w)).toEqual([y]);
+	});
+
+	test("--tour alone takes that tour's settled concerts, after a yes", async () => {
+		const w = await world();
+		const perform = async (tour: string) =>
+			idOf(
+				await w.call(["perform", ...GREET, "--tour", tour], {
+					hosts: [hostOf()],
+				}),
+			);
+		const [x, y] = [await perform("t1"), await perform("t2")];
+		expect(await w.call(["prune", "--tour", "t1"])).toMatchObject({
+			code: 2,
+			err: "prune asks before it deletes, and there is no terminal to ask on\nPass --yes",
+		});
+		expect(
+			json(await w.call(["prune", "--tour", "t1", "--yes", "--json"])),
 		).toMatchObject({ pruned: [x] });
 		expect(await ids(w)).toEqual([y]);
 	});

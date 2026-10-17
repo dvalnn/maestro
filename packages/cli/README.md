@@ -23,8 +23,8 @@ maestro wait <concert> --timeout 15m
 | `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                |
 
 [^prune]:
-    Names concerts, or picks every concert settled longer ago than `--before <duration>`, narrowed by `--tour <slug>`
-    and `--workspace <name>`. It asks before deleting unless given `--yes`.
+    Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`
+    and `--workspace <name>`; without `--before` there is no age cutoff. It asks before deleting unless given `--yes`.
 
 Every command takes `--json` (one JSON document on stdout), `--profile <name>`, `--debug` (stack traces) and `--help`.
 Primary output goes to stdout, messages to stderr.
