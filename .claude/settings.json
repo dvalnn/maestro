@@ -1,4 +1,7 @@
 {
+  "env": {
+    "FJ_USE_BOT": 1
+  },
   "attribution": {
     "commit": "",
     "pr": "",

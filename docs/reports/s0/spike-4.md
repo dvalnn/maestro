@@ -5,11 +5,13 @@ under a compiled Bun binary. Streaming is incremental, a tool-using run lands it
 `--die-with-parent` is the one thing that reaps the process tree. Kernel 4.18 / real RHEL 8 stays pending until
 `rhel8-check.sh` runs there.
 
-Code: `.scratch/s0-skeleton-spikes/spike4/` (`build.sh` -> `out/spike4`). No args = sandbox probe, streaming, prompt
-staging and cancel matrix against a stand-in child (`sh` script emitting JSON lines, stderr noise and three
-grandchildren, one of which escapes via `setsid`); exits 0 on pass. `out/spike4 --pi` = real pi runs (spends tokens;
-exits non-zero if a run fails or the cancel leaves survivors). Process tree is checked by scanning `/proc/*/environ` for
-a per-run marker env var, so bwrap, its init, pi and every descendant are counted whatever their pgid/session.
+Code: `.scratch/s0-skeleton-spikes/spike4/` in change `zzrpmxxx`, restored with
+`jj restore --from zzrpmxxx .scratch/s0-skeleton-spikes` (`build.sh` -> `out/spike4`). No args = sandbox probe,
+streaming, prompt staging and cancel matrix against a stand-in child (`sh` script emitting JSON lines, stderr noise and
+three grandchildren, one of which escapes via `setsid`); exits 0 on pass. `out/spike4 --pi` = real pi runs (spends
+tokens; exits non-zero if a run fails or the cancel leaves survivors). Process tree is checked by scanning
+`/proc/*/environ` for a per-run marker env var, so bwrap, its init, pi and every descendant are counted whatever their
+pgid/session.
 
 ## Mount plan (what `bwrapArgv` builds)
 
@@ -43,13 +45,13 @@ Notes:
   from `auth.json`. A provider that uses an env var key would need that passed with an explicit `--setenv`, never
   inherited (`--clearenv`).
 - **pi needs its config dir writable, so V1 mounts `~/.pi/agent` read-write.** Owner ruling 2026-10-14: this matches the
-  legacy system and is a known sandbox defect, tracked in `.scratch/backlog/issues/01-pi-config-rw-mount.md`. Reason: pi
-  takes a lock by `mkdir settings.json.lock` next to `settings.json`. With the dir ro-bound, pi warns "Invalid settings
-  file ... EROFS" and then reports "No API key found for the selected model" (misleading) and emits only the `session`
-  event. Risk: a sandboxed agent can change pi's real config. Backlog candidate fix, which is what the spike binary
-  builds today: `--tmpfs /pi-agent` with the three files bound ro on top and `PI_CODING_AGENT_DIR=/pi-agent`. It is
-  in-memory and ephemeral, but an OAuth token refresh writes `auth.json` and would fail on a ro file bind. Not hit here
-  (token was fresh), see follow-ups.
+  legacy system and is a known sandbox defect, tracked in the backlog. Reason: pi takes a lock by
+  `mkdir settings.json.lock` next to `settings.json`. With the dir ro-bound, pi warns "Invalid settings file ... EROFS"
+  and then reports "No API key found for the selected model" (misleading) and emits only the `session` event. Risk: a
+  sandboxed agent can change pi's real config. Backlog candidate fix, which is what the spike binary builds today:
+  `--tmpfs /pi-agent` with the three files bound ro on top and `PI_CODING_AGENT_DIR=/pi-agent`. It is in-memory and
+  ephemeral, but an OAuth token refresh writes `auth.json` and would fail on a ro file bind. Not hit here (token was
+  fresh), see follow-ups.
 - Also used `--no-session` so pi does not write session files.
 
 ## Commands and output

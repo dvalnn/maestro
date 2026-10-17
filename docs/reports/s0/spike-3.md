@@ -2,9 +2,10 @@
 
 Verdict: **go** (host and rockylinux:8 container; kernel 4.18 pending real RHEL 8 run per spec).
 
-Code: `.scratch/s0-skeleton-spikes/spike3/` (`build.sh` -> `out/spike3`, packs in `out/pack`, `out/pack-bad`,
-`out/pack-ts`). No args = full self-test; the pack is located from `dirname(process.execPath)`. `spike3 <packdir>` loads
-one pack only.
+Code: `.scratch/s0-skeleton-spikes/spike3/` in change `zzrpmxxx`, restored with
+`jj restore --from zzrpmxxx .scratch/s0-skeleton-spikes` (`build.sh` -> `out/spike3`, packs in `out/pack`,
+`out/pack-bad`, `out/pack-ts`). No args = full self-test; the pack is located from `dirname(process.execPath)`.
+`spike3 <packdir>` loads one pack only.
 
 ## Commands and output
 

@@ -13,7 +13,7 @@ probes ran SDK-built IR and the real stdlib through compose and perform.
 
 ## Triage
 
-Owner calls, logged in `.scratch/wave3/morning-calls.md` under "Open for the owner":
+Owner calls, since ruled and folded into the docs:
 
 | #   | Finding                                                                 | Call |
 | --- | ----------------------------------------------------------------------- | ---- |

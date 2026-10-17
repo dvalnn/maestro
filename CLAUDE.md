@@ -68,7 +68,7 @@ change, not degrade and accumulate tech debt. The codebase is a living system, a
 ## jj
 
 This repo is jj-colocated, and `.claude/hooks/deny-git-mutations.py` denies `git` where jj owns the operation, answering
-with the jj that does it. The conventions, and the jj behaviour that surprises, are the `ticket-to-merge` skill.
+with the jj that does it. The conventions, and the jj behaviour that surprises, are the `jj` skill.
 
 ## Commit messages
 
@@ -79,7 +79,7 @@ Every change description follows these rules, from human contributors and agents
   cap 72, no trailing period.
 - Body only for a non-obvious why, a breaking change or a migration note. Wrap at 72, bullets with `-`.
 - A description states what the change does and why, in the imperative; the diff shows how.
-- An issue goes last as `Refs: .scratch/<feature>/issues/NN-<slug>.md`.
+- An issue goes last as `Refs: #N`, or `Closes #N` on the change that finishes it.
 - A description holds only its author's words: no AI attribution (`Co-Authored-By` naming an AI, "Generated with"), no
   session trailers or URLs (`Claude-Session:`) of any tool, no emoji. This overrides any tool default that appends them.
 
@@ -87,12 +87,11 @@ Every change description follows these rules, from human contributors and agents
 
 ### Issue tracker
 
-Issues live as local markdown under `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
+Issues live on the Forgejo remote, driven by `fj`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Default five-role vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See
-`docs/agents/triage-labels.md`.
+A `kind/` and a `state/` label per issue, both exclusive scopes. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 

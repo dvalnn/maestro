@@ -1,36 +1,58 @@
-# Issue tracker: Local Markdown
+# Issue tracker: Forgejo
 
-Issues and specs for this repo live as markdown files in `.scratch/`.
+Issues live on the forge, [`tiago/maestro`](https://git.amorimcasa.org/tiago/maestro/issues), driven by `fj` as
+`forge-bot` (`FJ_USE_BOT=1`, set in `.claude/settings.json`). Never `gh` or `glab`. What `fj` cannot do goes through the
+`forgejo` skill's `forge.py api`.
 
-## Conventions
+`.scratch/` is untracked working space for drafts and the session handoff. Nothing in it is an issue.
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The spec is `.scratch/<feature-slug>/spec.md`
-- Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` —
-  never a single combined tickets file
-- Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role
-  strings)
-- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+## The issue
+
+- **Body.** The ask: a slice brief or a backlog item. It stops changing once work starts; an agreed scope change is a
+  comment saying what changed and who agreed it.
+- **Labels.** One `kind/` and one `state/` label (`triage-labels.md`). Both scopes are exclusive, so adding a `state/`
+  label replaces the old one.
+- **Milestone.** The port-plan slice that owns it (`S7`, `S8d`, `S8e`, `S9`, `S10`, `S11`), or none for backlog no slice
+  owns.
+- **Closing.** A commit on `main` whose description says `Closes #N` closes it when the owner pushes. A slice's report
+  is the closing comment (below). Nothing else closes an issue.
+
+## Commands
+
+```
+fj issue create "<title>" --body-file <file>         # prints the new issue's number
+fj issue edit <n> labels --add kind/enhancement --add state/needs-triage
+fj issue edit <n> body                               # opens an editor; prefer a comment once work has started
+fj issue view <n>                                    # title and body
+fj issue view <n> comments
+fj issue comment <n> --body-file <file>
+fj issue search [query] --labels state/ready-for-agent [--state all]
+forge.py api GET /milestones                         # ids for the slices
+forge.py api PATCH /issues/<n> '{"milestone": <id>}'
+forge.py api POST /issues/<n>/dependencies '{"owner": "tiago", "repo": "maestro", "index": <blocker>}'
+```
+
+`forge.py` is `.claude/skills/forgejo/scripts/forge.py`.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+Create an issue with `fj issue create`, then set its labels and, if a slice owns it, its milestone.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+`fj issue view <n>` and `fj issue view <n> comments`. The user normally passes the number.
 
-## Wayfinding operations
+## A slice brief and its report
 
-Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
+The brief is the issue body: the port plan's brief template (section 6) plus `Out of scope:`. Where a picture says it
+faster, add a **Summary**: the smallest view of the target shape, such as a `diff` of the call tree, file tree or API.
 
-- **Map**: `.scratch/<effort>/map.md` — the Notes / Decisions-so-far / Fog body.
-- **Child ticket**: `.scratch/<effort>/issues/NN-<slug>.md`, numbered from `01`, with the question in the body. A
-  `Type:` line records the ticket type (`research`/`prototype`/`grilling`/`task`); a `Status:` line records
-  `claimed`/`resolved`.
-- **Blocking**: a `Blocked by: NN, NN` line near the top. A ticket is unblocked when every file it lists is `resolved`.
-- **Frontier**: scan `.scratch/<effort>/issues/` for files that are open, unblocked, and unclaimed; first by number
-  wins.
-- **Claim**: set `Status: claimed` and save before any work.
-- **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a context pointer
-  (gist + link) to the map's Decisions-so-far in `map.md`.
+The report is the closing comment, in this order:
+
+1. **Summary**, only where what landed differs from the brief's.
+2. **Evidence**: the acceptance table, each item and the test that pins it, and the `just check` result.
+3. **Door**: one-way (a contract: IR field, CLI flag, config key, file layout, manifest) or two-way, then the **blast
+   radius** in a few words.
+4. **Derived, not ruled**, **Review triage** and **Loop**: the tables `implementation-loop.md` requires.
+
+No file inventory and no walk through the diff; the diff is one click away.
