@@ -59,7 +59,7 @@ export function callOf(
 	node: CodeNode | HostNode,
 	instance: NodeInstance,
 	inputs: Inputs,
-	context: { scratch: string; clock: number },
+	context: { scratch: string; clock: number; id: string },
 ): Call {
 	return node.kind === "code"
 		? codeCall(kit, node, instance, inputs, context)
@@ -105,14 +105,14 @@ function hostCall(
 	node: HostNode,
 	instance: NodeInstance,
 	inputs: Inputs,
-	{ scratch, clock }: { scratch: string; clock: number },
+	{ scratch, clock, id }: { scratch: string; clock: number; id: string },
 ): Call {
 	const found = kit.kinds(node.kind);
 	if (!found)
 		return refused(
 			`no loaded host registers node kind '${node.kind}'. Load the host that registers it`,
 		);
-	const hostInstance = { node, expansion: instance.expansion };
+	const hostInstance = { node, expansion: instance.expansion, id };
 	const context: HostContext = {
 		concert: kit.concert,
 		clock,

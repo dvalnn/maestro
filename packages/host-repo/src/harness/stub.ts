@@ -1,12 +1,14 @@
 import { bubblewrap, type SandboxBackend } from "../sandbox/index";
 import { type SubprocessAdapter, subprocessHarness } from "./subprocess";
-import type { Harness, HarnessEvent } from "./types";
+import type { Harness, HarnessEvent, HarnessRequest } from "./types";
 
 /** Emitted objects are written as JSON lines on stdout, like a real harness's event stream. */
 export type StubStep =
 	| { emit: Record<string, unknown>; delayMs?: number }
 	/** `write` is a lane-relative path, or absolute (`OUTBOX`, `SESSION_DIR`). */
 	| { write: string; content: string }
+	/** A shell line run in the sandbox, its output discarded. */
+	| { sh: string }
 	/** Never settles. */
 	| { hang: true };
 
@@ -14,6 +16,7 @@ const q = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 
 function shell(s: StubStep): string[] {
 	if ("hang" in s) return ["sleep 300"];
+	if ("sh" in s) return [`(${s.sh}) >/dev/null 2>&1`];
 	if ("emit" in s)
 		return [
 			`printf '%s\\n' ${q(JSON.stringify(s.emit))}`,
@@ -73,16 +76,23 @@ function parseLine(line: string): HarnessEvent | undefined {
 }
 
 /**
- * Replays `steps` inside the real sandbox, then emits `{"type":"settled"}`. The prompt is read from stdin and reported as a `prompt` event carrying its
- * byte count and sha256.
+ * Replays `steps`, or the steps it gives for a request, inside the real sandbox, then emits `{"type":"settled"}`. The
+ * prompt is read from stdin and reported as a `prompt` event carrying its byte count and sha256.
  */
 export function stubHarness(
-	steps: StubStep[],
+	steps: StubStep[] | ((req: HarnessRequest) => StubStep[]),
 	backend?: SandboxBackend,
 ): Harness {
 	const adapter: SubprocessAdapter = {
 		name: "stub",
-		spec: (req) => ({ argv: ["sh", "-c", script(steps)], stdin: req.prompt }),
+		spec: (req) => ({
+			argv: [
+				"sh",
+				"-c",
+				script(typeof steps === "function" ? steps(req) : steps),
+			],
+			stdin: req.prompt,
+		}),
 		parser: () => parse,
 	};
 	return subprocessHarness(adapter, backend ?? bubblewrap);

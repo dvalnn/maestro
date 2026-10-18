@@ -3,8 +3,13 @@
 	"private": true,
 	"type": "module",
 	"exports": {
+		".": "./src/host/index.ts",
 		"./lane": "./src/lane/index.ts",
 		"./sandbox": "./src/sandbox/index.ts",
 		"./harness": "./src/harness/index.ts"
+	},
+	"dependencies": {
+		"@maestro/core": "workspace:*",
+		"@maestro/ir": "workspace:*"
 	}
 }

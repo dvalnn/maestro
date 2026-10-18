@@ -656,7 +656,11 @@ async function execute(
 		if (halted) return halted;
 		const clock = Date.now();
 		start(c, instance, clock);
-		const call = callOf(c.kit, node, instance, inputs, { scratch, clock });
+		const call = callOf(c.kit, node, instance, inputs, {
+			scratch,
+			clock,
+			id: shown(c, instance),
+		});
 		const abandoned = Promise.withResolvers<HostNodeResult>();
 		const entry: Running = {
 			frame,

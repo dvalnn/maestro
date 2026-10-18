@@ -124,13 +124,21 @@ host.
 
 **Agent node**: Runs one role against a prompt in a lane. _Avoid_: leg
 
-**Role**: The configured identity of an agent: harness, model, thinking level and prompt includes. _Avoid_: seat
+**Role**: The runtime an agent runs on: harness, model and thinking level.
 
-**Lane**: An isolated, versioned working copy cut from a target. An agent node takes one with `fresh`, `fork` or `join`.
-_Avoid_: worktree, run
+**Identity**: An agent's standing text, appended to its harness's own system prompt from a staged file. The task goes
+separately, as the user message.
+
+**Envelope**: An agent's final reply, `{ outcome: ok | rejected, reason?, report }`, the reason required when rejected.
+
+**Outbox**: The per-instance directory at `/out`, outside the lane, where an agent writes its declared outputs for the
+host to read and check.
+
+**Lane**: An isolated, versioned working copy cut from a target. A node takes one with `fresh`, `fork`, `join` or
+`read`. _Avoid_: worktree, run
 
 **Lane ref**: A param type naming a lane version left by an earlier concert, written `<concert id>.<node instance id>`.
-It can be forked and not joined.
+It can be forked or read, and not joined.
 
 **Target**: The repository lanes are cut from.
 

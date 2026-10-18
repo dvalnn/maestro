@@ -6,6 +6,7 @@ export {
 	type HarnessRequest,
 	type HarnessResult,
 	type HarnessRun,
+	IDENTITY,
 	type Metrics,
 	OUTBOX,
 	type Role,

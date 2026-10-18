@@ -36,7 +36,11 @@ const context: HostContext = {
 	setup,
 	emit: (event) => emitted.push(event),
 };
-const at = (expansion: string): HostInstance => ({ node, expansion });
+const at = (expansion: string): HostInstance => ({
+	node,
+	expansion,
+	id: `${node.id}${expansion}`,
+});
 
 function fakeTask(script: FakeScript) {
 	const kind = fakeHost(script).kinds.find((k) => k.name === FAKE_TASK);

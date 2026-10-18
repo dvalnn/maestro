@@ -344,7 +344,7 @@ describe("usage errors", () => {
 		[
 			"a bad duration",
 			["wait", "nope", "--timeout", "5x"],
-			/^--timeout takes a positive whole number and one unit, not '5x'\nWrite it as 90s, 15m, 12h or 7d$/,
+			/^--timeout takes a positive whole number and one unit, not '5x'\nWrite it as 500ms, 90s, 15m, 12h or 7d$/,
 		],
 		[
 			"an unknown concert",
@@ -573,6 +573,23 @@ describe("the record", () => {
 		expect((await w.call(["ls"], { hosts: [host] })).out).toMatch(
 			/ok\s+2\.1 KiB$/m,
 		);
+	});
+
+	test("a host that cannot measure a concert leaves ls and prune working, and ls says why", async () => {
+		const w = await world();
+		const host = hostOf(ECHO, {
+			usage: () => Promise.reject(new Error("record '/x' is malformed")),
+		});
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
+		const listed = await w.call(["ls"], { hosts: [host] });
+		expect(listed).toMatchObject({ code: 0 });
+		expect(listed.out).toContain(id);
+		expect(listed.err).toBe(
+			`host 'fake' cannot measure concert ${id}: record '/x' is malformed`,
+		);
+		expect(
+			await w.call(["prune", id, "--yes"], { hosts: [host] }),
+		).toMatchObject({ code: 0 });
 	});
 
 	test("wait exits with the concert's outcome and prints its result's outputs, and 0 for one that is already settled", async () => {

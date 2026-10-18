@@ -200,7 +200,7 @@ A code node is the SDK's answer to "this needs real code".
   from another pack is configured under the using pack's id, and only if that pack exports it. The schema that checks a
   key is always the one of the code that runs.
 - Host types may appear as param types, the host reading each value from its text. The coding-agent host adds the lane
-  ref, written `<concert id>.<node instance id>`, for forking a lane left by an earlier concert (D-27).
+  ref, written `<concert id>.<node instance id>`, for forking or reading a lane left by an earlier concert (D-27).
 - The CLI validates params before build. A required param that is absent, or a constraint violation (for example a list
   of fewer than two models for a comparison), is a usage error with a next-step message (CLI-06).
 - Every composition declares at least one example input set. `compose` uses the first one, over every YAML layer and

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { lstat, mkdir, readdir } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
+import { messageOf } from "@maestro/core";
 import type { Host } from "@maestro/core/host";
 import { hostSetup } from "@maestro/core/host";
 import {
@@ -150,13 +151,24 @@ async function sizeOf(dir: string): Promise<number> {
 export const setupOf = (session: Session, host: Host) =>
 	hostSetup(host, session.config.composed);
 
-/** The bytes concert `id` holds: its directory under the data root, and what each host reports holding for it. */
+/**
+ * The bytes concert `id` holds: its directory under the data root, and what each host reports holding for it. A host
+ * that cannot measure its share counts none, and why goes to stderr.
+ */
 export async function diskOf(session: Session, id: string): Promise<number> {
+	const usage = async (host: Host) => {
+		try {
+			return (await host.resources?.usage(id, setupOf(session, host))) ?? 0;
+		} catch (error) {
+			session.deps.stderr(
+				`host '${host.name}' cannot measure concert ${id}: ${messageOf(error)}`,
+			);
+			return 0;
+		}
+	};
 	const held = await Promise.all([
 		sizeOf(join(session.files.concerts, id)),
-		...session.deps.hosts.map(
-			(host) => host.resources?.usage(id, setupOf(session, host)) ?? 0,
-		),
+		...session.deps.hosts.map(usage),
 	]);
 	return held.reduce((sum, bytes) => sum + bytes, 0);
 }

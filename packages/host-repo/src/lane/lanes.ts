@@ -9,7 +9,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 import type { Bind } from "../sandbox/index";
 
 /**
@@ -54,16 +54,23 @@ export interface Lane {
 		changesets: Changeset[],
 		strategy?: ApplyStrategy,
 	): Promise<ApplyResult>;
+	/** Removes the working copy and its git directory. A version it sealed stays. */
+	discard(): void;
 }
 
+/**
+ * Every `at` is the node instance whose lane it opens. A claim belongs to its instance: opening `at` again takes back
+ * whatever an earlier run of `at` left, its lane and its version.
+ */
 export interface Lanes {
 	/** `base` is any revision of the target. */
 	fresh(base: string, at: Version): Promise<Lane>;
 	/** A new lane holding `v`'s content. Any number of times, from any concert (lane refs, D-27). */
 	fork(v: Version, at: Version): Promise<Lane>;
 	/**
-	 * Continues `v`'s working copy in place (ignored files kept) as node instance `at`'s lane.
-	 * @throws if `v` was already joined or belongs to another concert.
+	 * Continues `v`'s working copy in place (ignored files kept) as node instance `at`'s lane. When `at` joined `v`
+	 * before, it re-opens `v`'s sealed content instead.
+	 * @throws if another instance joined `v`, or `v` belongs to another concert.
 	 */
 	join(v: Version, at: Version): Promise<Lane>;
 	/** The patch series from the lane chain's base up to `v`. Unchanged versions add no patch. */
@@ -146,7 +153,7 @@ function parse(v: Version): { concert: string; node: string } {
 }
 
 /** Allocated (not apparent) bytes of a file tree. Links are not followed. */
-function bytesOnDisk(p: string): number {
+export function bytesOnDisk(p: string): number {
 	const s = lstatSync(p, { throwIfNoEntry: false });
 	if (!s) return 0;
 	let n = s.blocks * 512;
@@ -169,9 +176,11 @@ export function openLanes(options: LanesOptions): Lanes {
 		const { concert, node } = parse(v);
 		const p = `refs/maestro/${enc(concert)}/${enc(node)}`;
 		return {
+			own: `${p}/`,
 			version: `${p}/version`,
 			base: `${p}/base`,
 			joined: `${p}/joined`,
+			joinedBy: (at: Version) => `${p}/joined-by/${enc(parse(at).node)}`,
 		};
 	};
 	const concertDir = (c: string) => join(root, "lanes", enc(concertId(c)));
@@ -236,6 +245,12 @@ export function openLanes(options: LanesOptions): Lanes {
 		}
 	}
 
+	const exists = (ref: string) =>
+		git(G("rev-parse", "--verify", "-q", ref)).then(
+			() => true,
+			() => false,
+		);
+
 	async function resolve(v: Version) {
 		const r = refs(v);
 		try {
@@ -248,21 +263,28 @@ export function openLanes(options: LanesOptions): Lanes {
 		}
 	}
 
-	// `mkdir` is atomic, so one node instance gets one lane.
-	function claim(at: Version) {
+	const refsUnder = async (prefix: string) =>
+		existsSync(store)
+			? (await value(G("for-each-ref", "--format=%(refname)", prefix)))
+					.split("\n")
+					.filter(Boolean)
+			: [];
+	const deleteRefs = async (names: string[]) => {
+		if (names.length) await updateRefs(names.map((r) => `delete ${r}`));
+	};
+
+	// Takes back what an earlier run of `at` left: its lane, and its version with the refs under it.
+	async function claim(at: Version) {
 		const p = paths(at);
-		mkdirSync(dirname(p.home), { recursive: true });
-		try {
-			mkdirSync(p.home);
-		} catch {
-			throw new Error(`${at} already has a lane`);
-		}
+		rmSync(p.home, { recursive: true, force: true });
+		await deleteRefs(await refsUnder(refs(at).own));
+		mkdirSync(p.home, { recursive: true });
 		return p;
 	}
 
 	// The lane's git directory is empty and borrows the store's objects through alternates.
 	async function checkout(at: Version, commit: string) {
-		const p = claim(at);
+		const p = await claim(at);
 		try {
 			mkdirSync(p.dir);
 			mkdirSync(join(p.gitdir, "objects", "info"), { recursive: true });
@@ -283,7 +305,7 @@ export function openLanes(options: LanesOptions): Lanes {
 
 	// Points the lane's git at `head`. Its `.git` file is rewritten too, undoing anything the last agent did to it.
 	function open(at: Version, head: string, base: string): Lane {
-		const { dir, gitdir } = paths(at);
+		const { home, dir, gitdir } = paths(at);
 		const idx = { GIT_INDEX_FILE: join(gitdir, "index") };
 		const point = (commit: string) => {
 			writeFileSync(join(gitdir, "HEAD"), `${commit}\n`);
@@ -326,6 +348,7 @@ export function openLanes(options: LanesOptions): Lanes {
 			},
 			apply: (changesets, strategy = "3way") =>
 				applyChangesets(lg, changesets, strategy),
+			discard: () => rmSync(home, { recursive: true, force: true }),
 		};
 	}
 
@@ -351,18 +374,23 @@ export function openLanes(options: LanesOptions): Lanes {
 					`${at} cannot join ${v}: a lane joins only versions of its own concert. Fork it instead`,
 				);
 			const { commit, base } = await resolve(v);
+			const r = refs(v);
+			if (await exists(r.joinedBy(at))) {
+				await checkout(at, commit);
+				return open(at, commit, base);
+			}
 			const from = paths(v).home;
-			const to = claim(at).home;
+			const to = (await claim(at)).home;
 			try {
-				const joined = refs(v).joined;
+				const { joined } = r;
 				await createOnce(
-					[`create ${joined} ${commit}`],
+					[`create ${joined} ${commit}`, `create ${r.joinedBy(at)} ${commit}`],
 					`version ${v} is already joined`,
 				);
 				try {
 					renameSync(from, to); // replaces the empty claimed directory
 				} catch (e) {
-					await updateRefs([`delete ${joined} ${commit}`]);
+					await deleteRefs([joined, r.joinedBy(at)]);
 					throw new Error(`the lane of ${v} cannot be moved: ${e}`);
 				}
 			} catch (e) {
@@ -381,16 +409,7 @@ export function openLanes(options: LanesOptions): Lanes {
 		diskUse,
 		async prune(concert) {
 			const freed = await diskUse(concert);
-			const owned = existsSync(store)
-				? await value(
-						G(
-							"for-each-ref",
-							"--format=%(refname)",
-							`refs/maestro/${enc(concert)}/`,
-						),
-					)
-				: "";
-			if (owned) await updateRefs(owned.split("\n").map((r) => `delete ${r}`));
+			await deleteRefs(await refsUnder(`refs/maestro/${enc(concert)}/`));
 			rmSync(concertDir(concert), { recursive: true, force: true });
 			return freed;
 		},

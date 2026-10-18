@@ -9,6 +9,8 @@ export type Metrics = Record<string, number>;
 export const OUTBOX = "/out";
 /** Where an adapter's sandbox sees `HarnessRequest.session.dir`. */
 export const SESSION_DIR = "/session";
+/** Where an adapter's sandbox sees `HarnessRequest.identity`. */
+export const IDENTITY = "/identity.md";
 
 export type HarnessRequest = {
 	role: Role;
@@ -18,6 +20,15 @@ export type HarnessRequest = {
 	lane: string;
 	/** Read-only binds declared by the node. Cannot widen write access. */
 	readOnly?: Bind[];
+	/** Read-write binds outside the lane, beside the outbox and session. */
+	writable?: Bind[];
+	/** Environment of the agent process. The adapter's own variables win over these. */
+	env?: Record<string, string>;
+	/**
+	 * Host path of a file bound read-only at `IDENTITY`, whose text the adapter appends to the harness's own system
+	 * prompt, never replacing it. Without it the system prompt is unchanged.
+	 */
+	identity?: string;
 	/** Host directory bound read-write at `OUTBOX`, outside the lane. The agent writes declared outputs there. */
 	outbox: string;
 	/**

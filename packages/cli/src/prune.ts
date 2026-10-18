@@ -26,7 +26,7 @@ const PRUNE_OPTIONS = {
 	before: {
 		type: "string",
 		arg: "duration",
-		desc: "Prune concerts that settled longer ago than this, such as 90s, 15m, 12h or 7d",
+		desc: "Prune concerts that settled longer ago than this, such as 500ms, 90s, 15m, 12h or 7d",
 	},
 	tour: { type: "string", arg: "slug", desc: "Only this tour" },
 	workspace: {

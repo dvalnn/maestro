@@ -58,18 +58,18 @@ Actors and external systems:
 A monorepo of separately versioned packages (DIST-03). Package names are workspace names that are never published
 (D-31).
 
-| Layer            | Package          | Responsibility                                                                                                         | Knows about                     |
-| ---------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| IR               | `ir`             | The IR and the data formats maestro emits: schema, version, validators, plan and event shapes. No runtime.             | nothing                         |
-| Core             | `core`           | Graph model, compose checks, executor, resume, record store, events, config layering, worker protocol, host interface. | `ir`                            |
-| SDK              | `sdk`            | Authoring API: compositions, node constructors, Refs, types, subcompositions, stdlib. Emits IR.                        | `ir`                            |
-| Test kit         | `testkit`        | Fake host, build and compose-time assertions, stub concert.                                                            | `core`, `sdk`, `ir`             |
-| CLI              | `cli`            | Commands, derived input flags, output formats, exit codes, host and pack loading.                                      | `core`, `sdk`, `ir`, `render-*` |
-| Repo host        | `host-repo`      | Agent and check node kinds, lanes, sandbox, harness adapter interface, host config namespaces.                         | `core`, `ir`                    |
-| Repo host SDK    | `host-repo-sdk`  | Typed constructors for agent and check nodes, lane types, report types.                                                | `sdk`, `host-repo` types        |
-| Harness adapters | `harness-<name>` | One adapter per coding-agent runtime.                                                                                  | `host-repo`                     |
-| Packs            | `pack-<domain>`  | Compositions, prompts, schemas, code nodes, params.                                                                    | `sdk`, `host-repo-sdk`          |
-| Renderers        | `render-<form>`  | Static graph render, live view.                                                                                        | `ir`                            |
+| Layer            | Package          | Responsibility                                                                                                         | Knows about                                                |
+| ---------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| IR               | `ir`             | The IR and the data formats maestro emits: schema, version, validators, plan and event shapes. No runtime.             | nothing                                                    |
+| Core             | `core`           | Graph model, compose checks, executor, resume, record store, events, config layering, worker protocol, host interface. | `ir`                                                       |
+| SDK              | `sdk`            | Authoring API: compositions, node constructors, Refs, types, subcompositions, stdlib. Emits IR.                        | `ir`                                                       |
+| Test kit         | `testkit`        | Fake host, build and compose-time assertions, stub concert.                                                            | `core`, `sdk`, `ir`                                        |
+| CLI              | `cli`            | Commands, derived input flags, output formats, exit codes, host and pack loading.                                      | `core`, `sdk`, `ir`, `render-*`, `host-repo`, `harness-pi` |
+| Repo host        | `host-repo`      | Agent and check node kinds, lanes, sandbox, harness adapter interface, host config namespaces.                         | `core`, `ir`                                               |
+| Repo host SDK    | `host-repo-sdk`  | Typed constructors for agent and check nodes, lane types, report types.                                                | `sdk`, `host-repo` types                                   |
+| Harness adapters | `harness-<name>` | One adapter per coding-agent runtime.                                                                                  | `host-repo`                                                |
+| Packs            | `pack-<domain>`  | Compositions, prompts, schemas, code nodes, params.                                                                    | `sdk`, `host-repo-sdk`                                     |
+| Renderers        | `render-<form>`  | Static graph render, live view.                                                                                        | `ir`                                                       |
 
 Dependency rule: arrows only point down the table. `core` and `ir` never import a host, a pack or an adapter. CORE-12
 and the graph are enforced by lints in `just check`: Biome import restrictions and a domain-word scan.
@@ -98,7 +98,7 @@ The lifecycle has two stages (D-12). **Compose** is steps 1 to 4, ending with pr
    3. Resolve config: each namespace goes to its owner's schema (CFG-02, CFG-05).
    4. Expand bounded groups whose cardinality is known from plain values. A group whose size depends on a node result
       stays as a bounded region. Compose runs no author code (ADR 0009).
-   5. Run host `validate(graph, setup)` hooks (for example the lane double-join rule, a role and model policy).
+   5. Run host `validate(graph, setup)` hooks (for example the lane double-join rule).
    6. Compute bounds with host `bounds(node)`: maximum node instances and the hosts' named counts (such as agent runs)
       (D-23). There is no cost bound in v1.
    7. Emit the **plan**: diagnostics, counts, bounds and a renderable graph. Diagnostics of severity error stop here
@@ -147,14 +147,15 @@ Properties:
 A host is a package that the core loads. It is the only way node kinds beyond the core's set exist. A host supplies:
 
 1. **Node kinds.** For each kind: name, configuration schema, input and output port schemas (possibly generic over the
-   node's configuration), and `execute(instance, inputs, context)` returning outputs and an outcome. Compose checks a
-   node's configuration and its ports in the IR against its kind, and perform checks the outputs against the ports. Core
-   never says run or build (CORE-12): the SDK builds, core composes and executes. A kind can declare its outputs include
+   node's configuration), and `execute(instance, inputs, context)` returning outputs and an outcome. The instance holds
+   its node, its expansion path and its id as `ls` shows it, such as `lens[risk]/skeptic`. Compose checks a node's
+   configuration and its ports in the IR against its kind, and perform checks the outputs against the ports. Core never
+   says run or build (CORE-12): the SDK builds, core composes and executes. A kind can declare its outputs include
    artifacts.
 2. **Types.** Named types the host's ports use (for example a lane handle), with a way to serialize them into the IR.
    Compose rejects a type name that neither core nor an installed host owns.
 3. **`validate(graph, setup)`.** A compose-time hook returning diagnostics. It sees the whole graph and its own kinds'
-   nodes. This is where host rules live (the lane join rule, role and model policy, bind validity).
+   nodes. This is where host rules live (the lane join rule, the roles and checks a node names, bind validity).
 4. **`bounds(node)`.** Bounds for a node instance as named counts, like metrics (CORE-19): core sums each name and
    config caps it by name, for the plan's size bound (D-23). The agent host counts agent runs under its own name.
 5. **Environment.** `environment(setup)` gives host facts visible to code nodes through a typed context (for example the
@@ -351,26 +352,58 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 **Node kinds**
 
-- **Agent node.** Inputs: a prompt (text, staged by the host, no argument-length limits), a role (harness, model,
-  thinking level, prompt includes), a lane input, optional read-only binds, and typed output declarations (files the
-  agent must write, with schemas). Outputs: the declared files as typed artifacts, a standard report, outcome and
-  reason, metrics (token counts), and the resulting lane handle. `rejected` means the agent's own verdict is negative.
-  `failed` means the run did not complete.
-- **Check node** (D-22). Runs deterministic commands in a lane. `rejected` on a red result, logs as an artifact. It is
-  its own host kind and not a code node, because it runs untrusted target commands and needs the sandbox, lane staging,
-  kill and logs. Code nodes are trusted and run in process.
+- **Agent node.** Inputs: a task prompt and an optional identity (both text, staged by the host, no argument-length
+  limits), a role by name with overrides (harness, model, thinking level), a lane input, optional read-only binds, typed
+  output declarations (a JSON file with a schema, or Markdown) and `resume`. Outputs: the declared files as typed
+  artifacts, the report, outcome and reason from its envelope, metrics (token counts), the staged text as an artifact,
+  and the resulting lane version. `rejected` means the agent's own verdict is negative. `failed` means the run did not
+  complete.
+- **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
+  failures reported), or an inline `{ run, timeout }`. Each line runs through `sh -c` in the sandbox, in order, and the
+  first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout) and 127 are `failed`; any other non-zero
+  exit is `rejected`, the reason naming the check and the line. Logs are an artifact. It is its own host kind and not a
+  code node, because it runs untrusted target commands and needs the sandbox, lane staging, kill and logs. Code nodes
+  are trusted and run in process.
+
+**Staging, outbox and envelope**
+
+- The identity is appended to the harness's own system prompt from a staged file, never replacing it. The task, with the
+  host's output contract appended, goes as the user message on stdin. The exact staged text is an output artifact.
+- Declared outputs are files the agent writes in its **outbox**, a per-instance directory at `/out` outside the lane.
+  The host reads only regular files there and checks each against its schema. A missing file or a schema violation is
+  `failed`.
+- The agent's final reply is its **envelope**, `{ outcome: ok | rejected, reason?, report }`, with the reason required
+  when rejected. A malformed envelope gets at most two correction turns in the same session, then `failed`.
+
+**Sessions**
+
+- The host mints each agent's harness session, and records which session wrote each lane version under `sessions/` in
+  its store. An agent that joins a version with `resume: true` continues the session that wrote it.
+- A session continues only within its concert and on its harness, so a warm session never crosses concerts.
 
 **Lanes**
 
 - A lane is an isolated working copy cut from a target at a base. Every node's lane output is an immutable version.
+  Lanes live in the host store, under `<data root>/hosts/repo/<target id>/`, the target id being the first 16 hex digits
+  of the SHA-256 of the target's realpath.
 - `fresh(base)` makes a new lane. `fork(v)` copies the state at version `v`. `join(v)` continues the lane from `v` and
-  yields the next version. A version may be joined at most once and forked any number of times. The host's `validate`
-  hook rejects a second join of one version and a node with more than one lane input.
+  yields the next version. `read(v)` sees `v` with its writes discarded, yields no version and spends no join. A version
+  may be joined at most once and forked or read any number of times. A node whose lane input is not a `read` outputs its
+  lane version.
+- A lane belongs to its node instance. A failed or cancelled instance drops its lane, and when a resume runs the
+  instance again it takes back whatever an earlier run left, its sealed version included. A retried join re-opens the
+  version it joined, from that version's content.
 - The concert's result is a **changeset** (a patch series) attached to the record. Applying or committing it is a
   separate, operator-owned step. The target's checkout, refs and commits are never written by the host (HOST-03).
-- A **lane ref** param, written `<concert id>.<node instance id>`, lets a concert fork a version left by an earlier
-  concert (D-27, HOST-13). There is no cross-concert join, and a warm harness session cannot continue across concerts.
-  Lanes stay on disk until `prune`.
+- A **lane ref** param, written `<concert id>.<node instance id>`, lets a concert fork or read a version left by an
+  earlier concert (D-27, HOST-13). There is no cross-concert join. Lanes stay on disk until `prune`, and `ls` shows
+  their disk use.
+
+**Configuration**
+
+- The host owns three namespaces: `target` (`repo`, the default `base` and the named `checks`), `roles` (each a
+  `harness`, `model` and optional `thinking`) and `sandbox` (`readOnly` paths bound into every agent and check).
+- A check is a shell line or a list of them, or the long form `{ run, timeout }` with a duration such as `10m`.
 
 **Sandbox**
 
@@ -388,10 +421,13 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   second is Claude Code.
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
-**Host validation rules (initial)**
+**Host validation rules**
 
-- Lane rule (HOST-02).
-- Read-only binds exist and are not inside a lane's writable area.
+- Lane rule (HOST-02): no version joined twice, whether by two nodes or by one node once per group iteration, and no
+  join of a lane ref.
+- Resume only on a join, and not of a version no agent wrote, written on another harness, or of another concert.
+- Every role, harness and check a node names exists, the message listing those that do.
+- Read-only binds exist and are not inside a lane.
 
 Role and model policy, such as a skeptic's model family differing from its lens's, belongs to the composition: a
 build-time `assert` over the models it takes as params, with the pack's own family helper.

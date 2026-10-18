@@ -9,6 +9,7 @@ import {
 	ARTIFACT_TYPES,
 	type ArtifactRef,
 	type Diagnostic,
+	durationMs,
 	findMarked,
 	formatInstance,
 	type Ir,
@@ -104,23 +105,18 @@ export function formatBytes(bytes: number): string {
 	return `${shown} ${BYTE_UNITS[unit]}`;
 }
 
-const COUNT = "[1-9]\\d*";
-const DURATION = new RegExp(`^${COUNT}[smhd]$`);
-const WHOLE_NUMBER = new RegExp(`^${COUNT}$`);
-export const MS_PER_UNIT = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
-
 /**
- * `text` as milliseconds: a positive integer and one unit of `s`, `m`, `h` or `d`, such as `90s` or `7d`.
+ * `text` as milliseconds, a duration such as `90s` or `7d`.
  * @throws CliError, a usage error naming `flag`, for anything else.
  */
 export function parseDuration(flag: string, text: string): number {
-	if (!DURATION.test(text))
+	const ms = durationMs(text);
+	if (ms === undefined)
 		throw usageError(
 			`${flag} takes a positive whole number and one unit, not '${text}'`,
-			`Write it as 90s, 15m, 12h or 7d`,
+			`Write it as 500ms, 90s, 15m, 12h or 7d`,
 		);
-	const unit = text.slice(-1) as keyof typeof MS_PER_UNIT;
-	return Number(text.slice(0, -1)) * MS_PER_UNIT[unit];
+	return ms;
 }
 
 /** `value` as the one JSON document a command prints with `--json`. */
@@ -254,6 +250,8 @@ export function parseTour(source: string, text: string): string {
 /** `instance` of `ir`'s graph as one name, such as `lens[risk]/skeptic`. */
 export const instanceName = (ir: Ir, instance: NodeInstance) =>
 	formatInstance(instance, indexGraph(ir).groupsOf(instance.node));
+
+const WHOLE_NUMBER = /^[1-9]\d*$/;
 
 /**
  * `text` as a positive whole number.

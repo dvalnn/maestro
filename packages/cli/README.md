@@ -77,7 +77,8 @@ own. A pack's modules are made relative to the IR.
 ## Tours, titles, durations
 
 A tour is a slug of lower-case words joined by hyphens, at most 64 characters. `perform` takes it from `--tour`, else
-`MAESTRO_TOUR`. A duration is a positive whole number and one unit of `s`, `m`, `h` or `d`, such as `90s` or `7d`.
+`MAESTRO_TOUR`. A duration is a positive whole number and one unit of `ms`, `s`, `m`, `h` or `d`, such as `500ms` or
+`7d`.
 
 ## Exit codes
 

@@ -18,6 +18,8 @@
       },
       "dependencies": {
         "@maestro/core": "workspace:*",
+        "@maestro/harness-pi": "workspace:*",
+        "@maestro/host-repo": "workspace:*",
         "@maestro/ir": "workspace:*",
         "@maestro/render-text": "workspace:*",
         "@maestro/sdk": "workspace:*",
@@ -42,6 +44,10 @@
     },
     "packages/host-repo": {
       "name": "@maestro/host-repo",
+      "dependencies": {
+        "@maestro/core": "workspace:*",
+        "@maestro/ir": "workspace:*",
+      },
     },
     "packages/ir": {
       "name": "@maestro/ir",

@@ -64,7 +64,7 @@ Decisions ruled by the project owner during design. Anything not listed here is 
 | D-24 | An unclaimed config key fails compose with a did-you-mean hint only when no installed registrant claims it. A key claimed by an installed registrant that the concert does not use is ignored.                                                                                                                                                                                                                               | Typos are caught, and a shared workspace config does not break compositions that use only some of its keys.                                                                                                   |
 | D-25 | The initial port targets Linux x64 only. The sandbox backend sits behind an interface.                                                                                                                                                                                                                                                                                                                                       | arm64 and macOS come later. Modern Linux is the baseline. See D-34.                                                                                                                                           |
 | D-26 | Several concerts may run in one workspace with no coordination beyond lane isolation. The record store is one SQLite file in WAL mode and the concurrency cap is per concert.                                                                                                                                                                                                                                                | Keeps the first version simple.                                                                                                                                                                               |
-| D-27 | Cross-concert lanes are fork only, through a lane ref param written `<concert id>.<node instance id>`. There is no cross-concert join. Lanes stay on disk until `prune` removes them.                                                                                                                                                                                                                                        | Earlier concerts stay immutable and join-at-most-once never needs cross-concert tracking. A warm harness session cannot continue across concerts.                                                             |
+| D-27 | Cross-concert lanes are forked or read only, through a lane ref param written `<concert id>.<node instance id>`. There is no cross-concert join. Lanes stay on disk until `prune` removes them.                                                                                                                                                                                                                              | Earlier concerts stay immutable and join-at-most-once never needs cross-concert tracking. A warm harness session cannot continue across concerts.                                                             |
 | D-28 | Acceptance against the predecessor is semantic, on two toy tasks: T1 (fixable) and T2 (unfixable by construction). Compared: the sequence of agent and check runs by kind, the final outcome class, the files touched, and a clean target checkout. Not compared: patch text, tokens, wall time.                                                                                                                             | The clean break (D-02) removes byte-level comparison.                                                                                                                                                         |
 | D-29 | CLI details. Aliases: `c` compose, `p` perform, `cfg` config, `w` wait, `k` kill, `wt` watch, `t` tour, `ls` unchanged, `prune` has no alias. `compose --out <file>` saves the IR. `compose` prints diagnostics and a one-line plan summary by default, with `--graph` and `--plan` for more. Resume is `perform --resume <concert id>`. `perform` tells a composition from IR by extension (`.ts` or `.js` versus `.json`). | `prune` is typed in full by decision.                                                                                                                                                                         |
 | D-30 | A pack is a directory or release tarball with a `maestro-pack.json` manifest and one pre-bundled entry file that includes its own SDK copy. Workspace config lists packs by path. There is no `node_modules` resolution.                                                                                                                                                                                                     | A compiled binary cannot share its embedded SDK with external files. Compose consumes only IR, so a second SDK copy is harmless if nothing relies on cross-copy `instanceof`. See `adr/0002-pack-bundles.md`. |
@@ -100,7 +100,7 @@ Non-goals for the initial port:
 - Node.js compatibility. Bun is the baseline (D-03).
 - Cost accounting, price tables and budget caps (D-23). Token counts are recorded.
 - A secret param type (D-33).
-- Joining a lane across concerts (D-27). Forking is supported.
+- Joining a lane across concerts (D-27). Forking and reading are supported.
 - macOS and arm64 (D-25).
 - Publishing to a public package registry (D-31).
 - SDKs in languages other than TypeScript. The IR allows them (D-09), and none is built.
@@ -219,7 +219,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 ### 6.5 Coding-agent host (HOST)
 
 - **HOST-01 (Must).** An agent node runs one role against a prompt in a lane of a target. It produces typed outputs
-  (declared files), an outcome and reason, a report, metrics (token counts), and a lane handle.
+  (declared files), its envelope (an outcome, a reason when rejected, and a report), metrics (token counts), and a lane
+  handle.
 - **HOST-02 (Must).** Lanes are versioned handles. `fresh(base)` cuts a new lane. `fork(handle)` copies the state at
   that version. `join(handle)` continues it. A version may be joined at most once, forked any number of times, and a
   node takes exactly one lane input. A host `validate` hook enforces this.
@@ -238,10 +239,10 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   with logs as artifacts.
 - **HOST-10 (Must).** `kill` terminates agent process trees and the record stays consistent.
 - **HOST-11 (Must).** The host's compose-time hook enforces lane rules and read-only bind validity.
-- **HOST-12 (Should).** The host owns the `target` and `roles` config namespaces.
+- **HOST-12 (Should).** The host owns the `target`, `roles` and `sandbox` config namespaces.
 - **HOST-13 (Must).** A lane ref param type names a lane version left by an earlier concert, written
-  `<concert id>.<node instance id>`. Across concerts it can only be forked. Lanes stay on disk until `prune` removes
-  them, and `ls` shows their disk use (D-27).
+  `<concert id>.<node instance id>`. Across concerts it can only be forked or read. Lanes stay on disk until `prune`
+  removes them, and `ls` shows their disk use (D-27).
 - **HOST-14 (Must).** An apply node applies one or more changesets to a lane in order, three-way by default or
   fast-forward only. A clean apply yields a new lane version. A conflict is rejected naming the files and leaves a
   version, holding conflict markers where git can write them, for an agent to join and resolve.

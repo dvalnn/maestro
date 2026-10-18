@@ -190,6 +190,48 @@
 			}
 		},
 		{
+			"includes": ["packages/cli/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"@maestro/**",
+											"!@maestro/core",
+											"!@maestro/core/**",
+											"!@maestro/sdk",
+											"!@maestro/sdk/**",
+											"!@maestro/ir",
+											"!@maestro/render-*",
+											"!@maestro/host-repo",
+											"!@maestro/harness-pi",
+											"!@maestro/testkit"
+										],
+										"message": "cli imports core, sdk, ir, render-*, host-repo and harness-pi, and testkit in tests."
+									},
+									{
+										"group": [
+											"../../*/src/**",
+											"../../*/fixtures/**",
+											"../../../*/src/**",
+											"../../../*/fixtures/**",
+											"../../../../*/src/**",
+											"../../../../*/fixtures/**"
+										],
+										"message": "Import another package by its name, never by a relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
 			"includes": ["packages/testkit/**"],
 			"linter": {
 				"rules": {

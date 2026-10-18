@@ -35,7 +35,7 @@ function standIn(lines: string[]) {
 	writeFileSync(join(home, "run.jsonl"), `${lines.join("\n")}\n`);
 	writeFileSync(
 		bin,
-		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\ncat "$(dirname "$0")/run.jsonl"\n`,
+		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\n[ -f /identity.md ] && cp /identity.md /out/identity\ncat "$(dirname "$0")/run.jsonl"\n`,
 		{ mode: 0o755 },
 	);
 	return { bin, agentDir: tmp("agent") };
@@ -85,16 +85,27 @@ describe("stand-in pi", () => {
 		expect(seen.filter((e) => e.kind === "raw")).toHaveLength(1);
 	});
 
-	test("the prompt goes on stdin, never argv, and the session is addressed by dir and id", async () => {
-		const req = request("a secret prompt");
+	test("the prompt goes on stdin, the identity in an appended file, and the session is addressed by dir and id", async () => {
+		const identity = join(tmp("staged"), "identity.md");
+		writeFileSync(identity, "You are terse.");
+		const req = request("a secret prompt", { identity });
 		await piHarness(standIn(fixture())).run(req).result;
 		expect(readFileSync(join(req.outbox, "stdin"), "utf8")).toBe(
 			"a secret prompt",
+		);
+		expect(readFileSync(join(req.outbox, "identity"), "utf8")).toBe(
+			"You are terse.",
 		);
 		expect(readFileSync(join(req.outbox, "argv"), "utf8").split("\n")).toEqual([
 			"-p",
 			"--mode",
 			"json",
+			"--no-skills",
+			"--no-extensions",
+			"--no-prompt-templates",
+			"--no-context-files",
+			"--append-system-prompt",
+			"/identity.md",
 			"--session-dir",
 			"/session",
 			"--session-id",
@@ -196,7 +207,6 @@ describe.skipIf(!process.env.MAESTRO_PI)("real pi", () => {
 			base,
 		);
 		const firstResult = await first.result;
-		console.log(JSON.stringify(firstResult));
 		expect(firstResult.outcome).toBe("ok");
 		expect(readFileSync(join(base.outbox, "note.txt"), "utf8")).toContain(
 			"hello",
@@ -208,7 +218,6 @@ describe.skipIf(!process.env.MAESTRO_PI)("real pi", () => {
 			"Which word did I ask you to remember? Reply with that word only.",
 			base,
 		).result;
-		console.log(JSON.stringify(second));
 		expect(second.outcome).toBe("ok");
 		expect(second.reply.toLowerCase()).toContain("pumpernickel");
 	}, 180_000);

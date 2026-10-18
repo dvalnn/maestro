@@ -5,6 +5,7 @@ import {
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,
+	IDENTITY,
 	type Metrics,
 	SESSION_DIR,
 	type SubprocessAdapter,
@@ -149,7 +150,15 @@ function resolveBin(bin: string | undefined): string {
 	return asked ? realpathSync(asked) : real;
 }
 
-/** The pi argv for a request. The prompt travels on stdin. */
+/** What pi would otherwise discover on its own, none of which maestro manages. */
+const UNMANAGED_OFF = [
+	"--no-skills",
+	"--no-extensions",
+	"--no-prompt-templates",
+	"--no-context-files",
+];
+
+/** The pi argv for a request. The prompt travels on stdin, the identity in a file pi appends to its system prompt. */
 function piArgv(bin: string, req: HarnessRequest): string[] {
 	const { model, thinking } = req.role;
 	return [
@@ -157,6 +166,8 @@ function piArgv(bin: string, req: HarnessRequest): string[] {
 		"-p",
 		"--mode",
 		"json",
+		...UNMANAGED_OFF,
+		...(req.identity ? ["--append-system-prompt", IDENTITY] : []),
 		"--session-dir",
 		SESSION_DIR,
 		"--session-id",

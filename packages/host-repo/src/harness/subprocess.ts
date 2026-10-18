@@ -13,13 +13,14 @@ import type {
 	HarnessRun,
 	Metrics,
 } from "./types";
-import { OUTBOX, SESSION_DIR } from "./types";
+import { IDENTITY, OUTBOX, SESSION_DIR } from "./types";
 
 export interface SubprocessAdapter {
 	readonly name: string;
 	/**
-	 * The driver supplies `lane`, appends the request's `readOnly` binds and binds its `outbox` and `session.dir`
-	 * read-write at `OUTBOX` and `SESSION_DIR`.
+	 * The driver supplies `lane`, appends the request's `readOnly` and `writable` binds, binds its `identity` read-only
+	 * at `IDENTITY` and its `outbox` and `session.dir` read-write at `OUTBOX` and `SESSION_DIR`, and lays the spec's
+	 * `env` over the request's.
 	 */
 	spec(req: HarnessRequest): Omit<SandboxSpec, "lane">;
 	/** A fresh line parser per run, so it may keep state. It returns the events a stdout line carries: none for noise. */
@@ -111,12 +112,21 @@ export function subprocessHarness(
 		name: adapter.name,
 		run(req): HarnessRun {
 			const spec = adapter.spec(req);
+			const identity = req.identity
+				? [{ src: req.identity, dst: IDENTITY }]
+				: [];
 			const proc = backend.start({
 				...spec,
 				lane: req.lane,
-				readOnly: [...(spec.readOnly ?? []), ...(req.readOnly ?? [])],
+				env: { ...req.env, ...spec.env },
+				readOnly: [
+					...(spec.readOnly ?? []),
+					...(req.readOnly ?? []),
+					...identity,
+				],
 				writable: [
 					...(spec.writable ?? []),
+					...(req.writable ?? []),
 					{ src: req.outbox, dst: OUTBOX },
 					{ src: req.session.dir, dst: SESSION_DIR },
 				],

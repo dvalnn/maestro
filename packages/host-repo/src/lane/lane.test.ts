@@ -98,14 +98,19 @@ describe("fresh", () => {
 		);
 	});
 
-	test("a node instance seals at most one version", async () => {
+	test("a lane seals at most once, and a re-run of its instance takes back its lane and version", async () => {
 		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
 		const lane = await lanes.fresh("main", "c1.a");
+		writeFileSync(join(lane.dir, "first.txt"), "1\n");
 		await lane.seal();
 		await expect(lane.seal()).rejects.toThrow(/already sealed/);
-		await expect(lanes.fresh("main", "c1.a")).rejects.toThrow(
-			/already has a lane/,
-		);
+		const again = await lanes.fresh("main", "c1.a");
+		expect(existsSync(join(again.dir, "first.txt"))).toBe(false);
+		writeFileSync(join(again.dir, "second.txt"), "2\n");
+		await again.seal();
+		const fork = await lanes.fork("c1.a", "c1.b");
+		expect(existsSync(join(fork.dir, "first.txt"))).toBe(false);
+		expect(existsSync(join(fork.dir, "second.txt"))).toBe(true);
 	});
 });
 
@@ -163,13 +168,20 @@ describe("fork and join", () => {
 		expect(readFileSync(join(next.dir, "a.txt"), "utf8")).toBe("v1\n");
 	});
 
-	test("a version is joined at most once", async () => {
+	test("a version is joined at most once, but its joiner may re-open it", async () => {
 		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
 		await sealed(lanes, "c1.build");
-		await lanes.join("c1.build", "c1.fix");
+		const first = await lanes.join("c1.build", "c1.fix");
+		writeFileSync(join(first.dir, "a.txt"), "half-done\n");
 		await expect(lanes.join("c1.build", "c1.other")).rejects.toThrow(
 			/already joined/,
 		);
+		const retry = await lanes.join("c1.build", "c1.fix");
+		expect(readFileSync(join(retry.dir, "a.txt"), "utf8")).toBe("v1\n");
+		retry.discard();
+		const dropped = await lanes.join("c1.build", "c1.fix");
+		expect(readFileSync(join(dropped.dir, "a.txt"), "utf8")).toBe("v1\n");
+		await dropped.seal();
 	});
 
 	test("fork copies the version's content into a new lane, any number of times, independent of later joins", async () => {

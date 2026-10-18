@@ -15,8 +15,14 @@ import type { Inputs, NodeResult } from "./node";
 
 type Awaitable<T> = T | Promise<T>;
 
-/** A host node and the expansion path of one of its instances. */
-export type HostInstance = { node: HostNode; expansion: string };
+/** A host node instance. */
+export type HostInstance = {
+	node: HostNode;
+	/** The instance's expansion path, `''` outside groups. */
+	expansion: string;
+	/** The instance's id as `ls` shows it, such as `lens[risk]/skeptic`. */
+	id: string;
+};
 
 /** Named additive numbers an instance reports (CORE-19). Core sums each name per concert and gives it no meaning. */
 export type Metrics = Readonly<Record<string, number>>;

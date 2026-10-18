@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 import { writeSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
+import { piHarness } from "@maestro/harness-pi";
+import { repoHost } from "@maestro/host-repo";
 import { main } from "./cli";
 
 /** Synchronous writes: `process.exit` drops what an async write to a slow pipe has not yet flushed. */
@@ -22,7 +24,7 @@ async function confirm(question: string): Promise<boolean> {
 
 process.exit(
 	await main(process.argv.slice(2), {
-		hosts: [],
+		hosts: [repoHost({ harnesses: [piHarness()] })],
 		cwd: process.cwd(),
 		env: process.env,
 		stdout: (line) => writeSync(STDOUT_FD, `${line}\n`),

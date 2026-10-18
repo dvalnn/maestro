@@ -12,7 +12,6 @@ const SCANNED: Readonly<Record<string, readonly string[]>> = {
 	"render-text": [],
 	testkit: ["build"],
 	sdk: ["build"],
-	cli: ["build"],
 };
 const packagesDir = resolve(import.meta.dir, "../packages");
 

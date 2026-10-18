@@ -141,8 +141,9 @@ need the core. S8d and S8e need S7.
 
 - **S8a. Lanes and changesets (L).** Isolated working copies of a target, version handles, `fresh`, `fork`, `join`, the
   join-at-most-once rule, the changeset, and the guarantee that the target's checkout is untouched (HOST-02, HOST-03).
-  Lane refs for forking a lane left by an earlier concert, with no cross-concert join (D-27, HOST-13), and `prune` for
-  lanes. Consult the behavioral reference for worktree handling, series delivery and what to do with rejected output.
+  Lane refs for forking or reading a lane left by an earlier concert, with no cross-concert join (D-27, HOST-13), and
+  `prune` for lanes. Consult the behavioral reference for worktree handling, series delivery and what to do with
+  rejected output.
 - **S8b. Sandbox and process supervision (M).** Bubblewrap mount plans, read-only binds, writable lane only, secrets
   handling, process-tree kill (HOST-04, HOST-10). Consult the behavioral reference for the mount plan.
 - **S8c. Harness interface and stub harness (M).** The adapter interface, a scripted stub harness, prompt staging
