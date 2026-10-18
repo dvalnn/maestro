@@ -1,0 +1,310 @@
+{
+	"composition": {
+		"id": "ship",
+		"version": "0.1.0",
+		"pack": "fixtures"
+	},
+	"edges": [
+		{
+			"from": {
+				"node": "plan",
+				"port": "spec"
+			},
+			"kind": "data",
+			"to": {
+				"node": "implement",
+				"port": "spec"
+			}
+		},
+		{
+			"from": {
+				"node": "plan",
+				"port": "spec"
+			},
+			"kind": "data",
+			"to": {
+				"node": "writeTests",
+				"port": "spec"
+			}
+		},
+		{
+			"from": {
+				"node": "implement",
+				"port": "patch"
+			},
+			"kind": "data",
+			"to": {
+				"node": "verify",
+				"port": "patch"
+			}
+		},
+		{
+			"from": {
+				"node": "writeTests",
+				"port": "tests"
+			},
+			"kind": "data",
+			"to": {
+				"node": "verify",
+				"port": "tests"
+			}
+		},
+		{
+			"from": {
+				"node": "implement",
+				"port": "patch"
+			},
+			"kind": "data",
+			"to": {
+				"node": "audit",
+				"port": "patch"
+			}
+		},
+		{
+			"from": {
+				"node": "plan",
+				"port": "risky"
+			},
+			"kind": "control",
+			"to": {
+				"node": "audit"
+			}
+		},
+		{
+			"from": {
+				"node": "audit",
+				"port": "note"
+			},
+			"kind": "data",
+			"to": {
+				"node": "audit_or",
+				"port": "value"
+			}
+		},
+		{
+			"from": {
+				"node": "verify",
+				"port": "verdict"
+			},
+			"kind": "data",
+			"to": {
+				"node": "report",
+				"port": "verdict"
+			}
+		},
+		{
+			"from": {
+				"node": "audit_or",
+				"port": "value"
+			},
+			"kind": "data",
+			"to": {
+				"node": "report",
+				"port": "note"
+			}
+		}
+	],
+	"emitter": {
+		"name": "hand",
+		"version": "1"
+	},
+	"irVersion": "1.0",
+	"nodes": [
+		{
+			"id": "plan",
+			"kind": "code",
+			"out": {
+				"risky": {
+					"type": "boolean"
+				},
+				"spec": {
+					"type": "string"
+				}
+			},
+			"worker": {
+				"codeHash": "sha256:7d255b91777e527b4a25dec9b49abb829d373db92b03090c82714b8b9c098c9c",
+				"export": "plan",
+				"module": "ship.ts",
+				"runtime": "ts"
+			}
+		},
+		{
+			"id": "implement",
+			"in": {
+				"spec": {
+					"type": "string"
+				}
+			},
+			"kind": "code",
+			"out": {
+				"patch": {
+					"type": "string"
+				}
+			},
+			"worker": {
+				"codeHash": "sha256:7d255b91777e527b4a25dec9b49abb829d373db92b03090c82714b8b9c098c9c",
+				"export": "implement",
+				"module": "ship.ts",
+				"runtime": "ts"
+			}
+		},
+		{
+			"id": "writeTests",
+			"in": {
+				"spec": {
+					"type": "string"
+				}
+			},
+			"kind": "code",
+			"out": {
+				"tests": {
+					"type": "string"
+				}
+			},
+			"worker": {
+				"codeHash": "sha256:7d255b91777e527b4a25dec9b49abb829d373db92b03090c82714b8b9c098c9c",
+				"export": "writeTests",
+				"module": "ship.ts",
+				"runtime": "ts"
+			}
+		},
+		{
+			"id": "verify",
+			"in": {
+				"patch": {
+					"type": "string"
+				},
+				"tests": {
+					"type": "string"
+				}
+			},
+			"kind": "code",
+			"out": {
+				"verdict": {
+					"type": "string"
+				}
+			},
+			"worker": {
+				"codeHash": "sha256:7d255b91777e527b4a25dec9b49abb829d373db92b03090c82714b8b9c098c9c",
+				"export": "verify",
+				"module": "ship.ts",
+				"runtime": "ts"
+			}
+		},
+		{
+			"id": "audit",
+			"in": {
+				"patch": {
+					"type": "string"
+				}
+			},
+			"kind": "code",
+			"out": {
+				"note": {
+					"type": "string"
+				}
+			},
+			"worker": {
+				"codeHash": "sha256:7d255b91777e527b4a25dec9b49abb829d373db92b03090c82714b8b9c098c9c",
+				"export": "audit",
+				"module": "ship.ts",
+				"runtime": "ts"
+			}
+		},
+		{
+			"fanin": true,
+			"id": "audit_or",
+			"in": {
+				"fallback": {
+					"type": "string"
+				},
+				"value": {
+					"additionalProperties": false,
+					"oneOf": [
+						{
+							"properties": {
+								"outcome": {
+									"const": "ok"
+								},
+								"reason": false,
+								"value": true
+							},
+							"required": ["value"]
+						},
+						{
+							"properties": {
+								"outcome": {
+									"enum": ["rejected", "failed"]
+								},
+								"reason": true
+							},
+							"required": ["reason"]
+						},
+						{
+							"properties": {
+								"outcome": {
+									"const": "skipped"
+								}
+							}
+						}
+					],
+					"properties": {
+						"outcome": {
+							"enum": ["ok", "skipped", "rejected", "failed"]
+						},
+						"reason": {
+							"type": "string"
+						},
+						"value": {
+							"type": "string"
+						}
+					},
+					"required": ["outcome"],
+					"type": "object"
+				}
+			},
+			"kind": "code",
+			"literals": {
+				"fallback": "none"
+			},
+			"out": {
+				"value": {
+					"type": "string"
+				}
+			},
+			"worker": {
+				"codeHash": "maestro:stdlib@0.1.0",
+				"export": "or",
+				"module": "maestro:stdlib",
+				"runtime": "ts"
+			}
+		},
+		{
+			"id": "report",
+			"in": {
+				"note": {
+					"type": "string"
+				},
+				"verdict": {
+					"type": "string"
+				}
+			},
+			"kind": "code",
+			"out": {
+				"text": {
+					"type": "string"
+				}
+			},
+			"worker": {
+				"codeHash": "sha256:7d255b91777e527b4a25dec9b49abb829d373db92b03090c82714b8b9c098c9c",
+				"export": "report",
+				"module": "ship.ts",
+				"runtime": "ts"
+			}
+		}
+	],
+	"result": {
+		"node": "report"
+	},
+	"scopes": []
+}

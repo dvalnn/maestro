@@ -8,6 +8,40 @@ const plan = async (name: string): Promise<Plan> =>
 
 const lines = async (name: string) => render(await plan(name)).split("\n");
 
+const SHIP = [
+	"flowchart TD",
+	"  start((start))",
+	"  stop(((end)))",
+	'  n0["plan<br/>code"]',
+	'  n1["implement<br/>code"]',
+	'  n2["writeTests<br/>code"]',
+	'  n3["verify<br/>code"]',
+	'  n4["audit<br/>code"]',
+	'  n5[/"audit_or<br/>fan-in or"/]',
+	'  n6["report<br/>code"]',
+	'  f0@{ shape: fork, label: " " }',
+	'  f1@{ shape: fork, label: " " }',
+	'  j3@{ shape: join, label: " " }',
+	'  j6@{ shape: join, label: " " }',
+	'  j4@{ shape: join, label: " " }',
+	"  start --> n0",
+	"  n0 --> f0",
+	'  f0 -->|"spec"| n1',
+	'  f0 -->|"spec"| n2',
+	"  n1 --> f1",
+	'  f1 -->|"patch"| j3',
+	'  n2 -->|"tests"| j3',
+	"  j3 --> n3",
+	'  f1 -->|"patch"| j4',
+	'  f0 -.->|"when risky, else skip"| j4',
+	"  j4 --> n4",
+	'  n4 -->|"note to value"| n5',
+	'  n3 -->|"verdict"| j6',
+	'  n5 -->|"value to note"| j6',
+	"  j6 --> n6",
+	"  n6 --> stop",
+];
+
 describe("text forms", () => {
 	test("summary: instances, host counts and warnings in one line", async () => {
 		expect(summary(await plan("minimal"))).toBe("minimal: 1 node instance");
@@ -68,17 +102,43 @@ describe("render", () => {
 	test("merges parallel data edges and loops a repeat back", async () => {
 		const chart = await lines("nested-groups");
 		expect(chart).toContain('  n2 -->|"text to prompt, index to round"| n3');
+		expect(chart.join("\n")).not.toContain("shape: fork");
 		expect(chart).toContain('  n3 -.->|"next"| n2');
 	});
 
 	test("draws guards and ordering edges dashed, and regions as up to their bound", async () => {
 		const chart = await lines("guards-and-escalation");
-		expect(chart).toContain('  n3 -.->|"when nonEmpty"| n4');
-		expect(chart).toContain('  n6 -.->|"after, tolerates rejected"| n7');
+		expect(chart).toContain('  f3 -.->|"when nonEmpty, else skip"| n4');
+		expect(chart).toContain('  n6 -.->|"after, tolerates rejected"| j7');
 		expect(chart).toContain('    n1[["map<br/>up to 4"]]');
 		expect(chart).toContain('  n6{"gate<br/>assert"}');
 		expect(chart).toContain('  n7["summary<br/>code summarize"]');
 		expect(chart).toContain('  n0["plan<br/>code"]');
+	});
+
+	test("declares a bar inside its node's group and leaves a group's reads of its own body unbarred", async () => {
+		const nested = await plan("nested-groups");
+		nested.ir.edges.push({
+			kind: "data",
+			from: { node: "angles/draft", port: "text" },
+			to: { node: "angles/critique", port: "context" },
+		});
+		const chart = render(nested).split("\n");
+		expect(chart.slice(chart.indexOf('  subgraph gn0["angles"]'))).toEqual(
+			expect.arrayContaining([
+				'    f1@{ shape: fork, label: " " }',
+				'    j4@{ shape: join, label: " " }',
+				"  n1 --> f1",
+				'  f1 -->|"text"| n2',
+				'  f1 -->|"text to context"| j4',
+				"  j4 --> n4",
+			]),
+		);
+		expect(chart.filter((l) => l.includes("@{"))).toHaveLength(2);
+	});
+
+	test("draws the ship plan with fork and join bars, an explicit skip and an or", async () => {
+		expect(await lines("ship")).toEqual(SHIP);
 	});
 
 	test("shows a group header's expansion once, or one line per path", async () => {

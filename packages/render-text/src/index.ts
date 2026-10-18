@@ -144,9 +144,12 @@ const portPair = (e: DataEdge) =>
 		? `${e.from.port}`
 		: `${e.from.port} to ${e.to.port}`;
 
+/** An edge as drawn: a `data` edge carries the ports of every `data` edge between its pair of nodes. */
+type Merged = { edge: IrEdge; ports: string[] };
+
 /** The edges with each `data` edge after the first between a pair of nodes folded into it, as its list of ports. */
-function mergeData(edges: readonly IrEdge[]) {
-	const merged = new Map<string, { edge: IrEdge; ports: string[] }>();
+function mergeData(edges: readonly IrEdge[]): Merged[] {
+	const merged = new Map<string, Merged>();
 	for (const [i, e] of edges.entries()) {
 		const key = e.kind === "data" ? `${e.from.node}\0${e.to.node}` : `${i}`;
 		const ports = e.kind === "data" ? [portPair(e)] : [];
@@ -158,16 +161,79 @@ function mergeData(edges: readonly IrEdge[]) {
 }
 
 function edgeLine(
-	ids: ReadonlyMap<string, string>,
-	{ edge: e, ports }: { edge: IrEdge; ports: string[] },
+	from: string,
+	to: string,
+	{ edge: e, ports }: Merged,
 ): string {
-	const [from, to] = [ids.get(e.from.node), ids.get(e.to.node)];
 	if (e.kind === "collect") return `${from} ==>|${label("collect")}| ${to}`;
 	if (e.kind === "data") return `${from} -->|${label(ports.join(", "))}| ${to}`;
 	if (e.from.port !== undefined)
-		return `${from} -.->|${label(`when ${e.from.port}`)}| ${to}`;
+		return `${from} -.->|${label(`when ${e.from.port}, else skip`)}| ${to}`;
 	const after = e.tolerate ? `after, tolerates ${e.tolerate}` : "after";
 	return `${from} -.->|${label(after)}| ${to}`;
+}
+
+/** The ids that occur at least twice in `names`, in the order their second occurrence appears. */
+function repeated(names: readonly string[]): string[] {
+	const seen = new Set<string>();
+	const twice = new Set<string>();
+	for (const name of names) (seen.has(name) ? twice : seen).add(name);
+	return [...twice];
+}
+
+/** The Mermaid ids a node is drawn with: the node itself and the fork and join bars beside it. */
+type Names = ReadonlyMap<string, { node: string; fork: string; join: string }>;
+
+const barDeclaration = (id: string | undefined, shape: "fork" | "join") =>
+	`${id}@{ shape: ${shape}, label: " " }`;
+
+/**
+ * The nodes that get a fork bar (two or more outgoing edges) and a join bar (two or more incoming), by id.
+ * Data edges are walked before the others, so a node a guard or ordering edge makes crowded is declared last.
+ */
+function crowds(edges: readonly Merged[]) {
+	const walk = [
+		...edges.filter((m) => m.edge.kind === "data"),
+		...edges.filter((m) => m.edge.kind !== "data"),
+	];
+	return {
+		forks: repeated(walk.map((m) => m.edge.from.node)),
+		joins: repeated(walk.map((m) => m.edge.to.node)),
+	};
+}
+
+/** An edge from an enclosing group into its body reads an inner port: it orders nothing before or after the body. */
+const isInner = (graph: GraphIndex, { edge }: Merged) =>
+	graph.groupsOf(edge.to.node).includes(edge.from.node);
+
+/** The ids with a fork or join bar, and the edges: each fork bar fed before its first edge, each join bar drained after its last. */
+function wire(graph: GraphIndex, names: Names, edges: readonly Merged[]) {
+	const counted = edges.filter((m) => !isInner(graph, m));
+	const { forks, joins } = crowds(counted);
+	const node = (id: string) => `${names.get(id)?.node}`;
+	const feed = (m: Merged) => {
+		const from = m.edge.from.node;
+		const first = counted.find((c) => c.edge.from.node === from) === m;
+		return forks.includes(from) && first
+			? [`${node(from)} --> ${names.get(from)?.fork}`]
+			: [];
+	};
+	const drain = (m: Merged) => {
+		const to = m.edge.to.node;
+		const last = counted.findLast((c) => c.edge.to.node === to) === m;
+		return joins.includes(to) && last
+			? [`${names.get(to)?.join} --> ${node(to)}`]
+			: [];
+	};
+	const lines = edges.flatMap((m) => {
+		const [from, to] = [m.edge.from.node, m.edge.to.node];
+		const live = counted.includes(m);
+		const source =
+			live && forks.includes(from) ? names.get(from)?.fork : node(from);
+		const target = live && joins.includes(to) ? names.get(to)?.join : node(to);
+		return [...feed(m), edgeLine(`${source}`, `${target}`, m), ...drain(m)];
+	});
+	return { forks, joins, lines };
 }
 
 /** A dashed `next` edge from each repeat's body result to its header: the state the next iteration starts from. */
@@ -184,11 +250,14 @@ type Diagram = {
 	plan: Plan;
 	graph: GraphIndex;
 	ids: ReadonlyMap<string, string>;
+	names: Names;
+	forks: readonly string[];
+	joins: readonly string[];
 	scopes: readonly string[];
 	containers: readonly string[];
 };
 
-/** The Mermaid lines of what lies directly in `parent`, or at the top when it is `undefined`: subgraphs, then nodes. */
+/** The Mermaid lines of what lies directly in `parent`, or at the top when it is `undefined`: subgraphs, nodes, then the bars beside them. */
 function body(d: Diagram, parent: string | undefined, depth: number): string[] {
 	const pad = "  ".repeat(depth);
 	const inside = (id: string) => container(d.containers, id) === parent;
@@ -211,7 +280,23 @@ function body(d: Diagram, parent: string | undefined, depth: number): string[] {
 		const name = parent === undefined ? n.id : n.id.slice(parent.length + 1);
 		return [`${pad}${d.ids.get(n.id)}${shape(n, name)}`];
 	});
-	return [...subgraphs, ...nodes];
+	return [...subgraphs, ...nodes, ...bars(d, parent, pad)];
+}
+
+/** The declarations of the bars of the nodes drawn directly in `parent`: a group's header is drawn in its own subgraph. */
+function bars(d: Diagram, parent: string | undefined, pad: string): string[] {
+	const home = (id: string) => {
+		const n = d.graph.nodes.get(id);
+		return n && isGroup(n) ? id : container(d.containers, id);
+	};
+	return [
+		...d.forks
+			.filter((id) => home(id) === parent)
+			.map((id) => [d.names.get(id)?.fork, "fork"] as const),
+		...d.joins
+			.filter((id) => home(id) === parent)
+			.map((id) => [d.names.get(id)?.join, "join"] as const),
+	].map(([id, shape]) => `${pad}${barDeclaration(id, shape)}`);
 }
 
 /**
@@ -219,11 +304,27 @@ function body(d: Diagram, parent: string | undefined, depth: number): string[] {
  * The README's "Drawing rules" section holds the drawing rules.
  */
 export function render(plan: Plan): string {
-	const ids = new Map(plan.ir.nodes.map((n, i) => [n.id, `n${i}`]));
+	const names: Names = new Map(
+		plan.ir.nodes.map((n, i) => [
+			n.id,
+			{ node: `n${i}`, fork: `f${i}`, join: `j${i}` },
+		]),
+	);
+	const ids = new Map([...names].map(([id, n]) => [id, n.node]));
 	const scopes = plan.ir.scopes.map((s) => s.id);
 	const groups = plan.ir.nodes.filter(isGroup).map((g) => g.id);
 	const graph = indexGraph(plan.ir);
-	const d = { plan, graph, ids, scopes, containers: [...scopes, ...groups] };
+	const { forks, joins, lines } = wire(graph, names, mergeData(plan.ir.edges));
+	const d = {
+		plan,
+		graph,
+		ids,
+		names,
+		forks,
+		joins,
+		scopes,
+		containers: [...scopes, ...groups],
+	};
 	const starts = plan.ir.nodes
 		.filter(
 			(n) =>
@@ -236,7 +337,7 @@ export function render(plan: Plan): string {
 		`  ${STOP}(((end)))`,
 		...body(d, undefined, 1),
 		...starts,
-		...mergeData(plan.ir.edges).map((m) => `  ${edgeLine(ids, m)}`),
+		...lines.map((l) => `  ${l}`),
 		...loopBacks(plan, ids).map((l) => `  ${l}`),
 		`  ${ids.get(plan.ir.result.node)} --> ${STOP}`,
 	].join("\n");

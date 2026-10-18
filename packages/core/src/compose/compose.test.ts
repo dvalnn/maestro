@@ -28,6 +28,7 @@ describe("compose", () => {
 		"fanout-fanin-loop",
 		"nested-groups",
 		"guards-and-escalation",
+		"ship",
 	])("composes the %s golden IR into its plan golden", async (name) => {
 		const expected = (await import(`@maestro/ir/plans/${name}`)).default;
 		expect(await planOf(await golden(`${name}.json`))).toEqual(expected);

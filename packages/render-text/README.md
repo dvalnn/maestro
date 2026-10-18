@@ -12,17 +12,21 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 
 ## Drawing rules
 
-| Drawn as        | Means                                                                              |
-| --------------- | ---------------------------------------------------------------------------------- |
-| `[ ]`           | A code node.                                                                       |
-| `[/ /]`         | A fan-in code node, the reducer behind a `collect`.                                |
-| `{ }`           | An assert.                                                                         |
-| `([ ])`         | A host node.                                                                       |
-| `[[ ]]`         | A group's header.                                                                  |
-| `-->`           | `data` edges between two nodes: `<from> to <to>` per port, a same-named port once. |
-| `-.->` `next`   | A repeat's body result feeding its next iteration.                                 |
-| `==>`           | A `collect` edge: the barrier before the fan-in.                                   |
-| `-.->` `when p` | A guard on output `p`.                                                             |
-| `-.->` `after`  | An ordering edge, with `tolerates rejected` when it does.                          |
+| Drawn as                   | Means                                                                              |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| `[ ]`                      | A code node.                                                                       |
+| `[/ /]`                    | A fan-in code node, the reducer behind a `collect`.                                |
+| `{ }`                      | An assert.                                                                         |
+| `([ ])`                    | A host node.                                                                       |
+| `[[ ]]`                    | A group's header.                                                                  |
+| `-->`                      | `data` edges between two nodes: `<from> to <to>` per port, a same-named port once. |
+| `-.->` `next`              | A repeat's body result feeding its next iteration.                                 |
+| `==>`                      | A `collect` edge: the barrier before the fan-in.                                   |
+| `-.->` `when p, else skip` | A guard on output `p`: when false the node is skipped.                             |
+| `@{ shape: fork }`         | A bar after a node with several outgoing edges.                                    |
+| `@{ shape: join }`         | A bar before a node with several incoming edges.                                   |
+| `-.->` `after`             | An ordering edge, with `tolerates rejected` when it does.                          |
 
-A key list is cut at 40 characters. The plans the tests draw are ir's `fixtures/plans`.
+Every edge counts toward the bars, guards and ordering edges included, except a group's reads of its own body and the
+`next` loop-backs, which are drawn direct. Each bar is declared inside its node's subgraph. Bars need Mermaid 11.3 or
+later. A key list is cut at 40 characters. The plans the tests draw are ir's `fixtures/plans`.

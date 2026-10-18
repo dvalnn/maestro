@@ -40,6 +40,7 @@ const unset = (name: string) => () => {
 /** Stand-ins for the stdlib exports the fixtures name. The real stdlib is the SDK's, which core does not depend on. */
 const STDLIB: Readonly<Record<string, CodeEntry>> = {
 	firstOk: unset("firstOk"),
+	or: unset("or"),
 	pick: unset("pick"),
 };
 

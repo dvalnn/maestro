@@ -254,6 +254,28 @@ stores by node id and expansion path as a `progress` event, opaquely.
   reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started has
   no record. A code node that runs past the timeout its author set settles `failed`. It has none by default.
 
+### Lifecycle of a node instance
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending
+  pending --> skipped: false guard, intolerable input or a sibling's halt
+  pending --> failed: input type mismatch
+  pending --> ok: resume reuses the record
+  pending --> running
+  running --> ok
+  running --> rejected
+  running --> failed
+  running --> failed: cancelled
+  running --> skipped: halted by a propagating map, or an empty seq or repeat
+  ok --> [*]
+  rejected --> [*]
+  failed --> [*]
+  skipped --> [*]
+```
+
+A resume runs every instance that is not a reusable `ok` again, from `pending`.
+
 ## 8. Configuration
 
 Params and config resolve, highest precedence first (CFG-04, D-17): the use site for a subcomposition or the CLI flag
