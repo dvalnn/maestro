@@ -369,9 +369,10 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 **Host validation rules (initial)**
 
 - Lane rule (HOST-02).
-- Role and model policy declared by a composition (for example a skeptic's model family must differ from its lens's).
-  Compositions state such policy with `assert` nodes. The host supplies the helpers that compute a model's family.
 - Read-only binds exist and are not inside a lane's writable area.
+
+Role and model policy, such as a skeptic's model family differing from its lens's, belongs to the composition: a
+build-time `assert` over the models it takes as params, with the pack's own family helper.
 
 ## 13. Packs
 

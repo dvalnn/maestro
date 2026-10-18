@@ -151,8 +151,8 @@ need the core. S8d and S8e need S7.
   (D-20). Claude Code is the second adapter.
 - **S8e. Host kinds, SDK and hooks (L).** `agent` and `check` node kinds (D-22), `host-agents-sdk`, `validate` and
   `bounds` hooks, host config namespaces (HOST-01, HOST-09, HOST-11, HOST-12). Vocabulary per D-21.
-- **Acceptance (whole slice).** AC-4 and the host parts of AC-2. The lane double-join diagnostic and a model-family
-  policy assertion fire in compose with no spend.
+- **Acceptance (whole slice).** AC-4 and the host parts of AC-2. The lane double-join diagnostic fires in compose with
+  no spend.
 
 ### S9. Pack: ported compositions (L)
 

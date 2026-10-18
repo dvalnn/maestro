@@ -237,8 +237,7 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **HOST-09 (Must).** A check node (D-22) runs deterministic commands in a lane and returns pass or fail (`rejected`)
   with logs as artifacts.
 - **HOST-10 (Must).** `kill` terminates agent process trees and the record stays consistent.
-- **HOST-11 (Must).** The host's compose-time hook enforces lane rules, role-and-model policies declared by
-  compositions, and read-only bind validity.
+- **HOST-11 (Must).** The host's compose-time hook enforces lane rules and read-only bind validity.
 - **HOST-12 (Should).** The host owns the `target` and `roles` config namespaces.
 - **HOST-13 (Must).** A lane ref param type names a lane version left by an earlier concert, written
   `<concert id>.<node instance id>`. Across concerts it can only be forked. Lanes stay on disk until `prune` removes
