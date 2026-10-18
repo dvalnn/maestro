@@ -143,35 +143,35 @@ host.
 **Identity**: An agent's standing text, appended to its harness's own system prompt from a staged file. The task goes
 separately, as the user message.
 
-**Seat**: An agent's standing setup, its role, identity, refs, declared outputs, checks and read-only binds, bundled
-once and called with a task and a lane to emit an agent node. A call may override the role and add to the rest.
+**Seat**: An agent's standing setup, its role, identity, attachments, declared outputs, checks and read-only binds,
+bundled once and called with a task and a lane to emit an agent node. A call may override the role and add to the rest.
 
 **Envelope**: An agent's final reply, `{ outcome: ok | rejected, reason?, report }`, the reason required when rejected.
 
 **Outbox**: The per-instance directory at `/out`, outside the lane, where an agent writes its declared outputs for the
 host to read and check.
 
-**Ref**: A named artifact an agent reads, mounted read-only at `/in/<name>` and listed in its prompt with a `when`. Its
-content is in the resume key. _Avoid_: attachment
+**Attachment**: A named artifact an agent reads, mounted read-only at `/in/<name>` and listed in its prompt with its
+`hint`, which tells the agent when to read it. Its content is in the resume key. _Avoid_: ref
 
 **Bind**: A host path outside the lane made visible in a sandbox at its own path, read-only or, for a check, read-write.
 It is not an input and not in the resume key (ADR 0011).
 
-**Lane**: An isolated, versioned working copy cut from a target. A node takes one with `fresh`, `fork`, `join` or
+**Lane**: An isolated, versioned working copy cut from a target. A node takes one with `fresh`, `fork`, `extend` or
 `read`. _Avoid_: worktree, run
 
 **Lane ref**: A param type naming a lane version left by an earlier concert, written `<concert id>.<node instance id>`.
-It can be forked, read or made into a changeset, and not joined.
+It can be forked, read or made into a changeset, and not extended.
 
 **Target**: The repository lanes are cut from.
 
 **Changeset**: A lane version's patch series, held as an artifact. A concert leaves one only by ending in a changeset
 node. The target's checkout is never touched. _Avoid_: series
 
-**Changeset node**: Takes one lane version and outputs its changeset. It opens no lane and spends no join.
+**Changeset node**: Takes one lane version and outputs its changeset. It opens no lane and spends no extension.
 
-**Apply node**: Applies one or more changesets to a lane in order and yields a new version. A conflict is `rejected`,
-naming the files, and leaves a version holding the markers for an agent to join.
+**Apply node**: Applies one changeset to a lane and yields a new version. A conflict is `rejected`, naming the files,
+and leaves a version holding the markers for an agent to extend.
 
 **Harness**: The adapter to one coding-agent runtime, such as pi or Claude Code.
 

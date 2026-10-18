@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from "node:fs";
-import { isAbsolute, resolve, sep } from "node:path";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import {
 	boundOf,
 	type Diagnostic,
@@ -20,11 +20,13 @@ import {
 	type CheckSpec,
 	checkConfig,
 	LANE_PORT,
-	type LaneInput,
 	listed,
 	type RepoSetup,
 	useOneOf,
 } from "./config";
+
+/** The entry, a directory or a file, that makes a directory a git repository. */
+const GIT_ENTRY = ".git";
 
 type Finding = Omit<Diagnostic, "severity">;
 
@@ -70,20 +72,20 @@ const harnessOf = (r: RepoNode, setup: RepoSetup) =>
 		? (r.config.role.harness ?? setup.roles[r.config.role.name]?.harness)
 		: undefined;
 
-/** Joins that would join one version twice: two nodes joining one output, or a node joining once per iteration. */
-function doubleJoins(
+/** Lane extensions that would extend one version twice: two nodes extending one output, or one node once per iteration. */
+function doubleExtends(
 	graph: GraphIndex,
-	joins: [RepoNode, LaneSource][],
+	chained: [RepoNode, LaneSource][],
 ): Finding[] {
 	const found: Finding[] = [];
 	const first = new Map<string, string>();
-	for (const [{ node }, source] of joins) {
+	for (const [{ node }, source] of chained) {
 		if ("literal" in source) {
 			found.push({
 				code: "HOST.lane",
 				node: node.id,
-				message: `'${node.id}' joins a lane ref of another concert, which only a fork or a read can take`,
-				hint: `Fork or read the lane ref in '${node.id}', or join a version of this concert`,
+				message: `'${node.id}' extends a lane ref of another concert, which only a fork or a read can take`,
+				hint: `Fork or read the lane ref in '${node.id}', or extend a version of this concert`,
 			});
 			continue;
 		}
@@ -93,7 +95,7 @@ function doubleJoins(
 			found.push({
 				code: "HOST.lane",
 				node: node.id,
-				message: `'${node.id}' joins '${from}', which '${other}' joins too; a version is joined at most once`,
+				message: `'${node.id}' extends '${from}', which '${other}' extends too; a version is extended at most once`,
 				hint: `Fork '${from}' in one of '${other}' and '${node.id}'`,
 			});
 		first.set(from, node.id);
@@ -108,8 +110,8 @@ function doubleJoins(
 			found.push({
 				code: "HOST.lane",
 				node: node.id,
-				message: `'${node.id}' joins '${from}' once per iteration of group '${repeated}'; a version is joined at most once`,
-				hint: `Fork '${from}' in '${node.id}', or join it outside '${repeated}'`,
+				message: `'${node.id}' extends '${from}' once per iteration of group '${repeated}'; a version is extended at most once`,
+				hint: `Fork '${from}' in '${node.id}', or extend it outside '${repeated}'`,
 			});
 	}
 	return found;
@@ -122,7 +124,7 @@ function repeats(graph: GraphIndex, id: string): boolean {
 
 /**
  * The agent whose session the version out of node `id` carries: the agent itself, or the one behind the version a
- * joining check joined. A string says what the node is instead, and `undefined` that it is not known at compose.
+ * extending check extended. A string says what the node is instead, and `undefined` that it is not known at compose.
  */
 function sessionWriter(
 	graph: GraphIndex,
@@ -133,21 +135,19 @@ function sessionWriter(
 	if (node.kind === AGENT_KIND) return node;
 	if (node.kind !== CHECK_KIND) return `'${id}', a '${node.kind}' node`;
 	const { lane } = checkConfig(node.config);
-	if (lane.mode !== "join") return `'${id}', a check on a '${lane.mode}' lane`;
+	if (lane.mode !== "extend")
+		return `'${id}', a check on a '${lane.mode}' lane`;
 	const from = laneSource(graph, node);
 	return from && "node" in from ? sessionWriter(graph, from.node) : undefined;
 }
 
-/** Why `r` cannot resume the session of the version it joins from `source`, when that is known at compose. */
+/** Why `r` cannot resume the session of the version it extends from `source`, when that is known at compose. */
 function resumeProblem(
 	graph: GraphIndex,
 	setup: RepoSetup,
 	r: RepoNode,
-	lane: LaneInput,
 	source: LaneSource | undefined,
 ): string | undefined {
-	if (lane.mode !== "join")
-		return `'${r.node.id}' resumes, but its lane mode is '${lane.mode}'; only a join continues a session`;
 	if (!source) return undefined;
 	if ("literal" in source)
 		return `'${r.node.id}' resumes a version of another concert`;
@@ -171,14 +171,10 @@ function resumes(
 	nodes: RepoNode[],
 ): Finding[] {
 	return nodes.flatMap((r) => {
-		if (r.kind !== "agent" || !r.config.resume) return [];
-		const message = resumeProblem(
-			graph,
-			setup,
-			r,
-			r.config.lane,
-			laneSource(graph, r.node),
-		);
+		if (r.kind !== "agent") return [];
+		const { lane } = r.config;
+		if (lane.mode !== "extend" || !lane.resume) return [];
+		const message = resumeProblem(graph, setup, r, laneSource(graph, r.node));
 		return message
 			? [
 					{
@@ -367,12 +363,20 @@ function targetProblems(setup: RepoSetup): Finding[] {
 				hint: "Set 'target.repo' to the repository lanes are cut from",
 			},
 		];
-	if (!existsSync(resolve(repo)))
+	if (!existsSync(repo))
 		return [
 			{
 				code: "HOST.target",
 				message: `target repository '${repo}' does not exist`,
 				hint: "Set 'target.repo' to an existing repository",
+			},
+		];
+	if (!existsSync(join(repo, GIT_ENTRY)))
+		return [
+			{
+				code: "HOST.target",
+				message: `target repository '${repo}' is not a git repository`,
+				hint: "Set 'target.repo' relative to the config file's directory",
 			},
 		];
 	return [];
@@ -389,9 +393,9 @@ export function validateRepo(
 ): Diagnostic[] {
 	const nodes = repoNodes(graph);
 	if (!nodes.length) return [];
-	const joins = nodes.flatMap((r): [RepoNode, LaneSource][] => {
+	const chained = nodes.flatMap((r): [RepoNode, LaneSource][] => {
 		const source = laneSource(graph, r.node);
-		return r.config.lane.mode === "join" && source ? [[r, source]] : [];
+		return r.config.lane.mode === "extend" && source ? [[r, source]] : [];
 	});
 	return [
 		...targetProblems(setup),
@@ -403,7 +407,7 @@ export function validateRepo(
 			...names(setup, harnesses, r),
 			...nodeBinds(setup, r),
 		]),
-		...doubleJoins(graph, joins),
+		...doubleExtends(graph, chained),
 		...resumes(graph, setup, nodes),
 	].map(error);
 }

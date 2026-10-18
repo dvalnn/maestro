@@ -1,5 +1,6 @@
 import { type ArtifactRef, type JsonSchema, MAESTRO_TYPE } from "@maestro/ir";
 import {
+	BuildError,
 	type Common,
 	Dir,
 	File,
@@ -20,14 +21,24 @@ export const Lane: Type<string> = {
 	schema: { type: "string", [MAESTRO_TYPE]: "repo.lane" },
 };
 
-type LaneMode = "fresh" | "fork" | "join" | "read";
+type LaneMode = "fresh" | "fork" | "extend" | "read";
 
-/** Where a node's lane comes from, as `fresh`, `fork`, `join` and `read` make it. */
+/** Where a node's lane comes from, as `fresh`, `fork`, `extend` and `read` make it. */
 export type LaneInput<M extends LaneMode = LaneMode> = {
 	readonly mode: M;
 	readonly base?: string;
 	readonly version?: Ref<string>;
+	readonly resume?: never;
 };
+
+/** An `extend` that continues the session that wrote its version. Only an agent or a seat takes one. */
+export type ResumedLane<M extends LaneMode = "extend"> = Omit<
+	LaneInput<M>,
+	"resume"
+> & { readonly resume: true };
+
+/** A lane input an agent takes: any, or an `extend` that resumes. */
+type AgentLane<M extends LaneMode> = LaneInput<M> | ResumedLane<M>;
 
 /** The lane output of a node whose lane mode is `M`: none when it may read. */
 export type LaneOut<M extends LaneMode> = "read" extends M
@@ -48,26 +59,38 @@ export const fork = (v: Ref<string> | string): LaneInput<"fork"> => ({
 	version: versionOf(v),
 });
 
-/** The lane continued from version `v`, which at most one node joins. A lane ref is never joined. */
-export const join = (v: Ref<string>): LaneInput<"join"> => ({
-	mode: "join",
-	version: v,
-});
+/**
+ * The lane continued from version `v`, which at most one node extends. A lane ref is never extended. With `resume`, an
+ * agent continues the session that wrote `v`.
+ */
+export function extend(v: Ref<string>): LaneInput<"extend">;
+export function extend(
+	v: Ref<string>,
+	options: { resume: true },
+): ResumedLane<"extend">;
+export function extend(
+	v: Ref<string>,
+	options?: { resume: true },
+): LaneInput<"extend"> | ResumedLane<"extend"> {
+	return options
+		? { mode: "extend", version: v, resume: true }
+		: { mode: "extend", version: v };
+}
 
-/** Version `v` with its writes discarded: the node outputs no lane and spends no join. */
+/** Version `v` with its writes discarded: the node outputs no lane and spends no extension. */
 export const read = (v: Ref<string> | string): LaneInput<"read"> => ({
 	mode: "read",
 	version: versionOf(v),
 });
 
 /** A node's lane config, its lane input port and its lane output port. */
-function lanePorts({ mode, base, version }: LaneInput): {
-	config: Record<string, string>;
+function lanePorts({ mode, base, version, resume }: AgentLane<LaneMode>): {
+	config: Record<string, string | boolean>;
 	in: Record<string, Ref<string>>;
 	out: Types;
 } {
 	return {
-		config: base === undefined ? { mode } : { mode, base },
+		config: defined({ mode, base, resume }) as Record<string, string | boolean>,
 		in: version === undefined ? {} : { lane: version },
 		out: mode === "read" ? {} : { lane: Lane },
 	};
@@ -104,28 +127,26 @@ export type Role = {
 	thinking?: string;
 };
 
-/** An artifact mounted read-only at `/in/<name>`, and when the agent should read it, as the staged prompt says. */
-export type AgentRef = { artifact: Ref<ArtifactRef>; when: string };
+/** An artifact mounted read-only at `/in/<name>`, and the hint that says when the agent should read it. */
+export type Attachment = { artifact: Ref<ArtifactRef>; hint: string };
 
-type AgentRefs = Readonly<Record<string, AgentRef>>;
+type Attachments = Readonly<Record<string, Attachment>>;
 
 export type AgentOptions<
 	O extends Outputs,
 	M extends LaneMode = LaneMode,
 > = Common & {
 	task: string | Ref<string>;
-	lane: LaneInput<M>;
+	lane: AgentLane<M>;
 	role: string | Role;
 	/** Appended to the harness's own system prompt. */
 	identity?: string | Ref<string>;
-	refs?: AgentRefs;
+	attachments?: Attachments;
 	out?: O;
 	/** Names of `target.checks` the agent may run. */
 	checks?: string[];
 	/** Absolute host paths bound read-only at their own paths. */
 	readOnly?: string[];
-	/** Continues the session that wrote the joined version. */
-	resume?: boolean;
 };
 
 /** The outputs of an agent: its report, its staged prompt, its lane unless it reads one, and those `O` declares. */
@@ -152,11 +173,30 @@ const nonEmpty = <V>(record: Readonly<Record<string, V>>) =>
 const roleOf = (role: string | Role): Role =>
 	typeof role === "string" ? { name: role } : role;
 
-/** A ref's config: its `when` and its artifact type. */
-function refConfig({ artifact, when }: AgentRef) {
+/** An attachment's config: its `hint` and its artifact type. */
+function attachmentConfig({ artifact, hint }: Attachment) {
 	const schema: JsonSchema = artifact.type.schema;
 	const type = typeof schema === "object" ? schema[MAESTRO_TYPE] : undefined;
-	return defined({ when, type });
+	return defined({ hint, type });
+}
+
+/** Ports an agent has of its own, which no attachment or declared output may take. */
+const AGENT_PORTS = ["prompt", "identity", "lane", "report", "staged"];
+
+/**
+ * Refuses an attachment or output named after one of an agent's own ports.
+ * @throws BuildError when one is.
+ */
+function checkNames(attachments: Attachments, out: Outputs): void {
+	const taken = [...Object.keys(attachments), ...Object.keys(out)].find((n) =>
+		AGENT_PORTS.includes(n),
+	);
+	if (taken !== undefined)
+		throw new BuildError({
+			code: "SCOPE.name",
+			message: `'${taken}' names an agent's own port, so an attachment or an output cannot take it`,
+			hint: `Rename '${taken}'; an agent's own ports are ${AGENT_PORTS.join(", ")}`,
+		});
 }
 
 /** A `repo.agent` node: a coding agent performing `task` in its lane (architecture 12). */
@@ -164,18 +204,18 @@ export function agent<
 	O extends Outputs = Record<never, never>,
 	M extends LaneMode = LaneMode,
 >(opts: AgentOptions<O, M>): Result<AgentOut<O, M>> {
-	const { task, lane, role, identity, checks, readOnly, resume, ...rest } =
-		opts;
-	const { refs: givenRefs, out: givenOut, ...common } = rest;
-	const refs: AgentRefs = givenRefs ?? {};
+	const { task, lane, role, identity, checks, readOnly, ...rest } = opts;
+	const { attachments: given, out: givenOut, ...common } = rest;
+	const attachments: Attachments = given ?? {};
 	const out: Outputs = givenOut ?? {};
+	checkNames(attachments, out);
 	const ports = lanePorts(lane);
 	return hostNode("repo.agent", {
 		...common,
 		in: defined({
 			prompt: task,
 			identity,
-			...mapValues(refs, (r) => r.artifact),
+			...mapValues(attachments, (a) => a.artifact),
 			...ports.in,
 		}),
 		out: {
@@ -187,10 +227,9 @@ export function agent<
 		config: defined({
 			role: defined(roleOf(role)),
 			lane: ports.config,
-			resume,
 			readOnly,
 			checks,
-			refs: nonEmpty(mapValues(refs, refConfig)),
+			attachments: nonEmpty(mapValues(attachments, attachmentConfig)),
 			out: nonEmpty(mapValues(out, (o) => o.config)),
 		}),
 	}) as Result<AgentOut<O, M>>;
@@ -201,7 +240,7 @@ export type SeatOptions<S extends Outputs> = {
 	role: string | Role;
 	/** The seat's standing text, appended to the harness's own system prompt. */
 	identity: string | Ref<string>;
-	refs?: AgentRefs;
+	attachments?: Attachments;
 	out?: S;
 	/** Names of `target.checks` the agent may run. */
 	checks?: string[];
@@ -210,18 +249,17 @@ export type SeatOptions<S extends Outputs> = {
 };
 
 /**
- * What a call of a seat adds: the task, the lane and `resume`, overrides of the seat's role, refs and outputs, and
+ * What a call of a seat adds: the task and the lane, overrides of the seat's role, attachments and outputs, and
  * further checks and read-only binds.
  */
 export type SeatCall<C extends Outputs, M extends LaneMode> = Common & {
 	task: string | Ref<string>;
-	lane: LaneInput<M>;
+	lane: AgentLane<M>;
 	role?: Partial<Role>;
-	refs?: AgentRefs;
+	attachments?: Attachments;
 	out?: C;
 	checks?: string[];
 	readOnly?: string[];
-	resume?: boolean;
 };
 
 /** The names of `a` then those of `b` not in `a`, or nothing when there are none. */
@@ -232,7 +270,7 @@ function union(a: string[] = [], b: string[] = []): string[] | undefined {
 
 /**
  * An agent's standing setup, as a function that emits a `repo.agent` node per call. A call's role fields override the
- * seat's; its refs and outputs add to the seat's, the call's winning on a name; its checks and read-only binds add to
+ * seat's; its attachments and outputs add to the seat's, the call's winning on a name; its checks and read-only binds add to
  * the seat's.
  */
 export function seat<S extends Outputs = Record<never, never>>(
@@ -248,7 +286,7 @@ export function seat<S extends Outputs = Record<never, never>>(
 			...call,
 			identity: standing.identity,
 			role: { ...roleOf(standing.role), ...defined(call.role ?? {}) },
-			refs: { ...standing.refs, ...call.refs },
+			attachments: { ...standing.attachments, ...call.attachments },
 			out: { ...standing.out, ...call.out } as Omit<S, keyof C> & C,
 			checks: union(standing.checks, call.checks),
 			readOnly: union(standing.readOnly, call.readOnly),
@@ -291,7 +329,7 @@ export function check<M extends LaneMode>(
 	}) as Result<CheckOut<M>>;
 }
 
-/** A `repo.changeset` node: the patch series of version `v` as a directory. It opens no lane and spends no join. */
+/** A `repo.changeset` node: the patch series of version `v` as a directory. It opens no lane and spends no extension. */
 export function changeset(
 	v: Ref<string> | string,
 	common: Common = {},
@@ -304,28 +342,24 @@ export function changeset(
 }
 
 export type ApplyOptions = Common & {
-	/** `3way` by default; `ff` refuses any changeset that does not apply cleanly. */
-	strategy?: "3way" | "ff";
+	/** `3way` by default; `clean` refuses a changeset that does not apply cleanly. */
+	strategy?: "3way" | "clean";
 };
 
 /**
- * A `repo.apply` node: `changesets` applied to `lane` in their order, each on an input port of its name. A conflict
- * rejects it, with a version holding the markers for an agent to join.
+ * A `repo.apply` node: `changeset` applied to `lane`. A conflict rejects it, with a version holding the markers for an
+ * agent to extend.
  */
 export function apply(
-	lane: LaneInput<"fresh" | "fork" | "join">,
-	changesets: Readonly<Record<string, Ref<ArtifactRef>>>,
+	lane: LaneInput<"fresh" | "fork" | "extend">,
+	changeset: Ref<ArtifactRef>,
 	{ strategy, ...common }: ApplyOptions = {},
 ): Result<{ lane: Type<string> }> {
 	const ports = lanePorts(lane);
 	return hostNode("repo.apply", {
 		...common,
-		in: { ...ports.in, ...changesets },
+		in: { ...ports.in, changeset },
 		out: { lane: Lane },
-		config: defined({
-			lane: ports.config,
-			changesets: Object.keys(changesets),
-			strategy,
-		}),
+		config: defined({ lane: ports.config, strategy }),
 	});
 }

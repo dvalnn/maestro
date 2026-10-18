@@ -29,7 +29,7 @@ import {
 afterEach(cleanup);
 
 describe("compose", () => {
-	test("a double join and a resume across harnesses are HOST errors, with no harness run", async () => {
+	test("a double extension and a resume across harnesses are HOST errors, with no harness run", async () => {
 		const target = toyTarget();
 		const { host, requests } = stubHost(() => [OK]);
 		const prompt = { prompt: "go" };
@@ -45,7 +45,7 @@ describe("compose", () => {
 				{
 					id: "b",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: { mode: "join" } },
+					config: { role: { name: "builder" }, lane: { mode: "extend" } },
 					literals: prompt,
 					lane: "a",
 				},
@@ -54,8 +54,7 @@ describe("compose", () => {
 					kind: "agent",
 					config: {
 						role: { name: "other" },
-						lane: { mode: "join" },
-						resume: true,
+						lane: { mode: "extend", resume: true },
 					},
 					literals: prompt,
 					lane: "a",
@@ -69,7 +68,7 @@ describe("compose", () => {
 				{
 					id: "k",
 					kind: "check",
-					config: { lane: { mode: "join" }, check: "hello" },
+					config: { lane: { mode: "extend" }, check: "hello" },
 					lane: "e",
 				},
 				{
@@ -77,8 +76,7 @@ describe("compose", () => {
 					kind: "agent",
 					config: {
 						role: { name: "other" },
-						lane: { mode: "join" },
-						resume: true,
+						lane: { mode: "extend", resume: true },
 					},
 					literals: prompt,
 					lane: "k",
@@ -103,7 +101,7 @@ describe("compose", () => {
 			[
 				"HOST.lane",
 				"c",
-				"'c' joins 'a.lane', which 'b' joins too; a version is joined at most once",
+				"'c' extends 'a.lane', which 'b' extends too; a version is extended at most once",
 			],
 			[
 				"HOST.resume",
@@ -122,9 +120,9 @@ describe("compose", () => {
 	const applied: NodeSpec = {
 		id: "ap",
 		kind: "apply",
-		config: { lane: { mode: "fork" }, changesets: ["c"] },
+		config: { lane: { mode: "fork" } },
 		lane: "root",
-		wires: { c: "cs.changeset" },
+		wires: { changeset: "cs.changeset" },
 	};
 	test.each([
 		[
@@ -138,13 +136,13 @@ describe("compose", () => {
 			"'r' resumes 'w', which carries 'w', a check on a 'fresh' lane and no agent session",
 		],
 		[
-			"a check joining an apply",
+			"a check extending an apply",
 			[
 				applied,
 				{
 					id: "w",
 					kind: "check",
-					config: { lane: { mode: "join" }, check: "hello" },
+					config: { lane: { mode: "extend" }, check: "hello" },
 					lane: "ap",
 				},
 			],
@@ -169,8 +167,7 @@ describe("compose", () => {
 					kind: "agent",
 					config: {
 						role: { name: "builder" },
-						lane: { mode: "join" },
-						resume: true,
+						lane: { mode: "extend", resume: true },
 					},
 					literals: task,
 					lane: "w",
@@ -193,55 +190,85 @@ describe("compose", () => {
 
 	test.each([
 		[
+			"agent",
+			{ role: { name: "builder" }, lane: fresh, refs: {} },
+			"config 'refs' is now 'attachments'",
+		],
+		[
+			"apply",
+			{ lane: fresh, strategy: "ff" },
+			"config strategy 'ff' is now 'clean'",
+		],
+	])(
+		"a retired %s config shape is refused, naming its replacement",
+		(kind, config, message) => {
+			const { host } = stubHost(() => [OK]);
+			const found = host.kinds.find((k) => k.name === `repo.${kind}`);
+			expect(() =>
+				found?.ports({ id: "x", kind: `repo.${kind}`, config }),
+			).toThrow(`${message}\nRebuild the composition with the current SDK`);
+		},
+	);
+
+	test.each([
+		[
 			"a role config lacks",
 			{ role: { name: "nobody" }, lane: fresh },
 			"HOST.role",
 			"Use one of: 'builder', 'other'",
+			toyTarget,
 		],
 		[
 			"a harness not loaded",
 			{ role: { name: "builder", harness: "gone" }, lane: fresh },
 			"HOST.harness",
 			"Use one of: 'stub', 'other'",
+			toyTarget,
 		],
 		[
 			"a missing read-only bind",
 			{ role: { name: "builder" }, lane: fresh, readOnly: ["/no/such/path"] },
 			"HOST.bind",
 			"Create it, or drop the bind",
+			toyTarget,
 		],
 		[
 			"a relative read-only bind",
 			{ role: { name: "builder" }, lane: fresh, readOnly: ["notes"] },
 			"HOST.bind",
 			"Give an absolute path",
+			toyTarget,
 		],
 		[
-			"a resume of a fresh lane",
-			{ role: { name: "builder" }, lane: fresh, resume: true },
-			"HOST.resume",
-			"Drop resume from 'x'",
+			"a target that is no git repository",
+			{ role: { name: "builder" }, lane: fresh },
+			"HOST.target",
+			"Set 'target.repo' relative to the config file's directory",
+			() => tmp("plain"),
 		],
-	])("an agent naming %s is a HOST error", async (_, config, code, hint) => {
-		const { host } = stubHost(() => [OK]);
-		const ir = irOf(
-			host,
-			[{ id: "x", kind: "agent", config, literals: { prompt: "go" } }],
-			"x",
-		);
-		const composed = await compose({
-			ir,
-			config: configOf(toyTarget()),
-			core: CORE_CONFIG,
-			packs: {},
-			hosts: [host],
-			loadCode: noCode,
-			caps: {},
-		});
-		expect(
-			composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.hint]),
-		).toEqual([[code, hint]]);
-	});
+	])(
+		"an agent naming %s is a HOST error",
+		async (_, config, code, hint, target) => {
+			const { host } = stubHost(() => [OK]);
+			const ir = irOf(
+				host,
+				[{ id: "x", kind: "agent", config, literals: { prompt: "go" } }],
+				"x",
+			);
+			const composed = await compose({
+				ir,
+				config: configOf(target()),
+				core: CORE_CONFIG,
+				packs: {},
+				hosts: [host],
+				loadCode: noCode,
+				caps: {},
+			});
+			expect(
+				composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.hint]),
+			).toEqual([[code, hint]]);
+		},
+	);
 
 	test.each([
 		[
@@ -279,7 +306,7 @@ describe("compose", () => {
 });
 
 describe("perform", () => {
-	test("fresh, agent, read check, then an agent joining with resume continues the first agent's session", async () => {
+	test("fresh, agent, read check, then an agent extending with resume continues the first agent's session", async () => {
 		const target = toyTarget();
 		const before = snapshot(target);
 		const { host, requests } = stubHost((req) =>
@@ -322,8 +349,7 @@ describe("perform", () => {
 					kind: "agent",
 					config: {
 						role: { name: "builder" },
-						lane: { mode: "join" },
-						resume: true,
+						lane: { mode: "extend", resume: true },
 					},
 					literals: { prompt: "second task" },
 					lane: "first",
@@ -461,49 +487,31 @@ describe("perform", () => {
 		});
 	});
 
-	test.each([
-		["writes it once corrected", 2, true],
-		["still misses it after the correction budget", 3, false],
-	])(
-		"a rejecting agent that misses a declared output %s",
-		async (_, asked, written) => {
-			const rejection = reply({
-				outcome: "rejected",
-				reason: "not doable",
-				report: "tried",
-			});
-			const { host, requests } = stubHost(() =>
-				written && requests.length > 1
-					? [{ write: `${OUTBOX}/notes.md`, content: "why" }, rejection]
-					: [rejection],
-			);
-			const ir = irOf(
-				host,
-				[
-					{
-						id: "x",
-						kind: "agent",
-						config: {
-							role: { name: "builder" },
-							lane: { mode: "fresh" },
-							out: { notes: { file: "notes.md", format: "markdown" } },
-						},
-						literals: { prompt: "go" },
+	test("a rejecting agent that misses a declared output is rejected at once, with no outputs", async () => {
+		const { host, requests } = stubHost(() => [
+			reply({ outcome: "rejected", reason: "not doable", report: "tried" }),
+		]);
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "x",
+					kind: "agent",
+					config: {
+						role: { name: "builder" },
+						lane: { mode: "fresh" },
+						out: { notes: { file: "notes.md", format: "markdown" } },
 					},
-				],
-				"x",
-			);
-			const { result } = await performed(host, ir, configOf(toyTarget()));
-			expect(requests).toHaveLength(asked);
-			expect(requests[1]?.prompt).toContain(`${OUTBOX}/notes.md`);
-			expect(new Set(requests.map((r) => r.session.id)).size).toBe(1);
-			expect(result).toMatchObject({
-				outcome: "rejected",
-				reason: "not doable",
-			});
-			expect("outputs" in result).toBe(written);
-		},
-	);
+					literals: { prompt: "go" },
+				},
+			],
+			"x",
+		);
+		const { result } = await performed(host, ir, configOf(toyTarget()));
+		expect(requests).toHaveLength(1);
+		expect(result).toMatchObject({ outcome: "rejected", reason: "not doable" });
+		expect("outputs" in result).toBe(false);
+	});
 
 	test.each([
 		["missing", [OK], "output 'notes': the agent wrote no /out/notes.json"],
@@ -592,10 +600,10 @@ describe("perform", () => {
 	test.each([
 		["fresh", "fails"],
 		["fork", "fails"],
-		["join", "fails"],
+		["extend", "fails"],
 		["fresh", "is cancelled"],
 		["fork", "is cancelled"],
-		["join", "is cancelled"],
+		["extend", "is cancelled"],
 	])(
 		"an agent on a %s lane that %s mid-run resumes to ok in a clean lane",
 		async (mode, how) => {
@@ -770,8 +778,20 @@ describe("perform", () => {
 	});
 });
 
-/** Live processes of any sandbox. */
-const sandboxed = () => runProcesses("");
+const parentOf = (pid: number) =>
+	Number(/\) \S (\d+)/.exec(readFileSync(`/proc/${pid}/stat`, "utf8"))?.[1]);
+
+/** Whether `pid` descends from this process, by its parent chain. */
+function ownedProcess(pid: number): boolean {
+	try {
+		for (let p = pid; p > 1; p = parentOf(p))
+			if (p === process.pid) return true;
+	} catch {} // exited while walking
+	return false;
+}
+
+/** Live sandbox processes this process started, so a run in another checkout does not count. */
+const sandboxed = () => runProcesses("").filter(ownedProcess);
 
 test("param reads a lane ref and refuses other text", () => {
 	const { host } = stubHost(() => []);

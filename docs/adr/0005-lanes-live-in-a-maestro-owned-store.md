@@ -19,7 +19,7 @@ Sealing runs `add -A`, `write-tree` and `commit-tree`, then moves `HEAD`. The ho
 `--git-dir=<store> --work-tree=<work>` with the lane's index, and never opens the lane's `.git`. It rewrites that file
 every time it opens a lane. It also passes `--attr-source=<empty tree>`, so the lane's `.gitattributes` cannot change
 the bytes that are sealed or checked out. That flag needs **git 2.40 or newer**. git runs with no system or global
-config and with a fixed `maestro` identity. A join moves the lane directory with one `rename`.
+config and with a fixed `maestro` identity. An extend moves the lane directory with one `rename`.
 
 ## Inside the sandbox
 
@@ -65,7 +65,7 @@ For git inside a lane:
 
 - The first `fresh` of a root copies the target's history reachable from the base. A shallow fetch is an option for
   large targets.
-- Ignored files are not part of a version. `join` keeps them because it moves the directory. `fork` starts from the
+- Ignored files are not part of a version. `extend` keeps them because it moves the directory. `fork` starts from the
   version, so they are absent. A nested repository (a gitlink) is refused when the lane is sealed.
 - `prune` and `diskUse` count lane bytes only. `prune` does not gc the store, because concurrent concerts may be writing
   objects that nothing references yet.

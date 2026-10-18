@@ -39,8 +39,8 @@ function configWith(checks: Record<string, unknown>) {
 	};
 }
 
-describe("agent-runnable checks and refs", () => {
-	test("an agent reads a ref at /in, runs `check` from its sandbox, and the staged prompt lists both", async () => {
+describe("agent-runnable checks and attachments", () => {
+	test("an agent reads an attachment at /in, runs `check` from its sandbox, and the staged prompt lists both", async () => {
 		const cache = tmp("cache");
 		const config = configWith({
 			lint: {
@@ -87,8 +87,11 @@ describe("agent-runnable checks and refs", () => {
 					...builder,
 					lane: fresh,
 					checks: ["lint", "red", "slow", "stubborn", "crash", "killed"],
-					refs: {
-						notes: { when: "you need the notes", type: "core.markdown" },
+					attachments: {
+						notes: {
+							hint: "read when you need the notes",
+							type: "core.markdown",
+						},
 					},
 					out: {
 						ref: markdown("ref.md"),
@@ -144,7 +147,7 @@ describe("agent-runnable checks and refs", () => {
 		expect(target?.checks.open?.timeout).toBeUndefined();
 	});
 
-	test("a ref is an input port of its artifact type, so its content is part of the resume key", () => {
+	test("an attachment is an input port of its artifact type, so its content is part of the resume key", () => {
 		const { host } = stubHost(() => [OK]);
 		const kind = host.kinds.find((k) => k.name === "repo.agent");
 		const ports = kind?.ports({
@@ -153,9 +156,9 @@ describe("agent-runnable checks and refs", () => {
 			config: {
 				...builder,
 				lane: fresh,
-				refs: {
-					spec: { when: "you change the API" },
-					docs: { when: "you need them", type: "core.dir" },
+				attachments: {
+					spec: { hint: "you change the API" },
+					docs: { hint: "you need them", type: "core.dir" },
 				},
 			},
 		});
@@ -221,6 +224,7 @@ describe("agent-runnable checks and refs", () => {
 			config.values.target.repo = repo;
 			mkdirSync(store, { recursive: true });
 			mkdirSync(join(repo, "sub"), { recursive: true });
+			mkdirSync(join(repo, ".git"));
 			const bind = pick({ store, dataRoot, repo });
 			Object.assign(config.values.target.checks, {
 				put: { run: "true", writable: [bind] },

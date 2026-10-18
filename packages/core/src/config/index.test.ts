@@ -18,7 +18,12 @@ const parse = (
 	text: string,
 	file = WORKSPACE,
 	layer: LayerName = "workspace",
-) => parseLayer(text, { file, layer, paths: ["dataRoot", "packs"] });
+) =>
+	parseLayer(text, {
+		file,
+		layer,
+		paths: [["dataRoot"], ["packs"], ["target", "repo"]],
+	});
 
 /** The diagnostics a failed parse or merge gives, as code, message and location. */
 function refusal(make: () => unknown) {
@@ -146,11 +151,14 @@ describe("provenance", () => {
 	test("a relative path is relative to the directory of the file that sets it", () => {
 		const composed = layered([
 			parse("packs: [../p]\n", USER, "user"),
-			parse("dataRoot: data\npacks: !append [./q, /abs]\n"),
+			parse(
+				"dataRoot: data\npacks: !append [./q, /abs]\ntarget:\n  repo: ../repo\n",
+			),
 		]);
 		expect(composed.values).toEqual({
 			dataRoot: "/w/.maestro/data",
 			packs: ["/home/u/.config/p", "/w/.maestro/q", "/abs"],
+			target: { repo: "/w/repo" },
 		});
 	});
 

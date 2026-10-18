@@ -23,7 +23,10 @@ const forkRoot = { ...builder, lane: { mode: "fork" } };
 const writes = (files: Record<string, string>): StubStep[] =>
 	Object.entries(files).map(([write, content]) => ({ write, content }));
 
-/** An empty root lane, two agents forking it to write `left` and `right`, and a changeset node over each. */
+/**
+ * An empty root lane, two agents forking it to write `left` and `right`, and a changeset node over each. `first`
+ * applies the left changeset to a fork of the root, and `merge` the right one to the lane `first` yields.
+ */
 function forksOf(strategy?: string, tail: NodeSpec[] = []): NodeSpec[] {
 	const task = { prompt: "go" };
 	return [
@@ -50,15 +53,21 @@ function forksOf(strategy?: string, tail: NodeSpec[] = []): NodeSpec[] {
 		{ id: "csl", kind: "changeset", config: {}, lane: "left" },
 		{ id: "csr", kind: "changeset", config: {}, lane: "right" },
 		{
+			id: "first",
+			kind: "apply",
+			config: { lane: { mode: "fork" } },
+			lane: "root",
+			wires: { changeset: "csl.changeset" },
+		},
+		{
 			id: "merge",
 			kind: "apply",
 			config: {
-				lane: { mode: "fork" },
-				changesets: ["left", "right"],
+				lane: { mode: "extend" },
 				...(strategy && { strategy }),
 			},
-			lane: "root",
-			wires: { left: "csl.changeset", right: "csr.changeset" },
+			lane: "first",
+			wires: { changeset: "csr.changeset" },
 		},
 		...tail.map((n) => ({ ...n, literals: { ...task, ...n.literals } })),
 	];
@@ -76,14 +85,14 @@ const edits = (left: Record<string, string>, right: Record<string, string>) =>
 const resolver: NodeSpec = {
 	id: "resolver",
 	kind: "agent",
-	config: { ...builder, lane: { mode: "join" } },
+	config: { ...builder, lane: { mode: "extend" } },
 	literals: { prompt: "resolve" },
 	lane: "merge",
 	tolerates: "merge",
 };
 
 describe("apply", () => {
-	test("two forks merged by apply hold both changes, and a changeset is its base and numbered patches", async () => {
+	test("two forks applied in turn hold both changes, and a changeset is its base and numbered patches", async () => {
 		const target = toyTarget();
 		const { host } = edits({ "l.txt": "l\n" }, { "r.txt": "r\n" });
 		const config = configOf(target);
@@ -105,7 +114,7 @@ describe("apply", () => {
 		).toBeDefined();
 	});
 
-	test("a same-line conflict is rejected naming the file, and an agent joining that version resolves it", async () => {
+	test("a same-line conflict is rejected naming the file, and an agent extending that version resolves it", async () => {
 		const target = toyTarget();
 		const { host } = edits({ "a.txt": "left\n" }, { "a.txt": "right\n" });
 		const config = configOf(target);
@@ -118,25 +127,25 @@ describe("apply", () => {
 		expect(result).toMatchObject({ outcome: "ok", node: "resolver" });
 		const merge = instances.find((i) => i.node === "merge");
 		expect(merge).toMatchObject({ status: "rejected" });
-		expect(merge?.reason).toContain("changeset 'right' conflicts in 'a.txt'");
+		expect(merge?.reason).toContain("changeset conflicts in 'a.txt'");
 		const series = await changed(config, target, `${id}.resolver`);
 		expect(series).toContain("<<<<<<<");
 		expect(series).toContain("resolved");
 	});
 
-	test("ff rejects a conflict naming the file and leaves the lane without markers", async () => {
+	test("clean rejects a conflict naming the file and leaves the lane without markers", async () => {
 		const target = toyTarget();
 		const { host } = edits({ "a.txt": "left\n" }, { "a.txt": "right\n" });
 		const config = configOf(target);
 		const { id, result, instances } = await performed(
 			host,
-			irOf(host, forksOf("ff"), "merge"),
+			irOf(host, forksOf("clean"), "merge"),
 			config,
 		);
 
 		expect(result).toMatchObject({ outcome: "rejected", node: "merge" });
 		expect(instances.find((i) => i.node === "merge")?.reason).toContain(
-			"changeset 'right' does not apply cleanly to 'a.txt'",
+			"changeset does not apply cleanly to 'a.txt'",
 		);
 		expect(await changed(config, target, `${id}.merge`)).not.toContain(
 			"<<<<<<<",
@@ -156,9 +165,9 @@ describe("apply", () => {
 			{
 				id: "merge",
 				kind: "apply",
-				config: { lane: { mode: "fork" }, changesets: ["notes"] },
+				config: { lane: { mode: "fork" } },
 				lane: "root",
-				wires: { notes: "root.staged" },
+				wires: { changeset: "root.staged" },
 			},
 		];
 		const { result } = await performed(
@@ -169,7 +178,7 @@ describe("apply", () => {
 
 		expect(result).toMatchObject({ outcome: "failed", node: "merge" });
 		expect(JSON.stringify(result)).toContain(
-			"input 'notes' is not a changeset",
+			"input 'changeset' is not a changeset",
 		);
 	});
 });

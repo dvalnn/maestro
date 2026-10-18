@@ -16,6 +16,7 @@ import {
 	applyConfig,
 	CHANGESET_CONFIG,
 	CHANGESET_KIND,
+	CHANGESET_PORT,
 	LANE_PORT,
 	repoSetup,
 	requireTarget,
@@ -30,7 +31,6 @@ const PATCH_EXT = ".patch";
 const PATCH_DIGITS = 4;
 const DIGITS = /^\d+$/;
 
-const CHANGESET_PORT = "changeset";
 const CHANGESET_DIR = "changeset";
 
 /**
@@ -56,16 +56,16 @@ function patchIndex(f: string): number | undefined {
 }
 
 /**
- * The changeset in `dir`, which `port` names in errors.
+ * The changeset in `dir`, the artifact on the apply node's `changeset` port.
  * @throws Error when `dir` has no `base` file.
  */
-function readChangeset(dir: string, port: string): Changeset {
+function readChangeset(dir: string): Changeset {
 	let base: string;
 	try {
 		base = readFileSync(join(dir, BASE_FILE), "utf8").trim();
 	} catch {
 		throw new Error(
-			`input '${port}' is not a changeset: it has no '${BASE_FILE}' file. Wire '${port}' from a '${CHANGESET_KIND}' node's '${CHANGESET_PORT}' output`,
+			`input '${CHANGESET_PORT}' is not a changeset: it has no '${BASE_FILE}' file. Wire it from a '${CHANGESET_KIND}' node's '${CHANGESET_PORT}' output`,
 		);
 	}
 	const patches = readdirSync(dir)
@@ -105,11 +105,11 @@ export function changesetKind(): NodeKind {
 	};
 }
 
-const conflictReason = (name: string, files: string[], strategy?: string) => {
+const conflictReason = (files: string[], strategy?: string) => {
 	const named = files.map((f) => `'${f}'`).join(", ");
-	return strategy === "ff"
-		? `changeset '${name}' does not apply cleanly to ${named}. Use strategy 3way to merge it into a version an agent can resolve`
-		: `changeset '${name}' conflicts in ${named}. Join the lane output in an agent that resolves them`;
+	return strategy === "clean"
+		? `changeset does not apply cleanly to ${named}. Use strategy 3way to merge it into a version an agent can resolve`
+		: `changeset conflicts in ${named}. Extend the lane output in an agent that resolves them`;
 };
 
 async function executeApply(
@@ -120,8 +120,8 @@ async function executeApply(
 	const setup = repoSetup(context.setup);
 	const config = applyConfig(instance.node.config);
 	const store = openTarget(setup.store, requireTarget(setup).repo);
-	const changesets = config.changesets.map((port) =>
-		readChangeset(artifactInput(inputs, context, port), port),
+	const changeset = readChangeset(
+		artifactInput(inputs, context, CHANGESET_PORT),
 	);
 	const at = { concert: context.concert, instance };
 	return withLane(
@@ -131,16 +131,12 @@ async function executeApply(
 		inputs[LANE_PORT],
 		at,
 		async ({ lane }) => {
-			const { conflicts, conflictAt = 0 } = await lane.apply(
-				changesets,
-				config.strategy,
-			);
+			const conflicts = await lane.apply(changeset, config.strategy);
 			const outputs = { [LANE_PORT]: await lane.seal() };
 			if (!conflicts.length) return { outcome: "ok", outputs };
-			const stopped = config.changesets[conflictAt] ?? "";
 			return {
 				outcome: "rejected",
-				reason: conflictReason(stopped, conflicts, config.strategy),
+				reason: conflictReason(conflicts, config.strategy),
 				outputs,
 			};
 		},
@@ -149,17 +145,13 @@ async function executeApply(
 
 const applyPorts = (config: ApplyConfig): { in: Ports; out: Ports } => {
 	const lane = lanePorts(config.lane);
-	const changesets = config.changesets.map((port) => [
-		port,
-		{ [MAESTRO_TYPE]: CORE_TYPES.dir },
-	]);
 	return {
-		in: { ...lane.in, ...Object.fromEntries(changesets) },
+		in: { ...lane.in, [CHANGESET_PORT]: { [MAESTRO_TYPE]: CORE_TYPES.dir } },
 		out: lane.out,
 	};
 };
 
-/** The `repo.apply` kind: changesets applied in order to a lane, which a conflict leaves for an agent to join. */
+/** The `repo.apply` kind: a changeset applied to a lane, which a conflict leaves for an agent to extend. */
 export function applyKind(): NodeKind {
 	return {
 		name: APPLY_KIND,

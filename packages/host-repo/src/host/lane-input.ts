@@ -44,8 +44,8 @@ async function openLane(
 		return { lane: await store.lanes.fresh(base, at), read: false };
 	}
 	const version = laneVersion(value);
-	if (input.mode === "join")
-		return { lane: await store.lanes.join(version, at), read: false };
+	if (input.mode === "extend")
+		return { lane: await store.lanes.extend(version, at), read: false };
 	return {
 		lane: await store.lanes.fork(version, at),
 		read: input.mode === "read",

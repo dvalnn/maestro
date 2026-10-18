@@ -34,7 +34,8 @@ describe("config files", () => {
 	test("layer default, user, workspace and profile, each value keeping its layer, file and line", async () => {
 		const { root, request } = await tree({
 			[USER]: "concurrency: 2\ncaps:\n  instances: 10\npacks: [../packs/a]\n",
-			[WORKSPACE]: "concurrency: 3\ncaps:\n  calls: 4\n",
+			[WORKSPACE]:
+				"concurrency: 3\ncaps:\n  calls: 4\ntarget:\n  repo: ../app\n",
 			[PROFILE]: "\nconcurrency: 5\n",
 			"ws/sub/deeper/.keep": "",
 		});
@@ -47,6 +48,9 @@ describe("config files", () => {
 		});
 		expect(config.workspace).toBe(join(root, "ws"));
 		expect(config.packs).toEqual([join(root, "xdg/packs/a")]);
+		expect(config.composed.values.target).toEqual({
+			repo: join(root, "ws/app"),
+		});
 		const source = (...path: string[]) => sourceOf(config.composed, path);
 		expect([
 			source("concurrency"),

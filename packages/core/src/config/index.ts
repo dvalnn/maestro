@@ -225,30 +225,46 @@ function taggedOf(
 	);
 }
 
-/** Makes each relative path among the values of `keys` relative to `dir` instead. An empty string stays empty. */
-function anchored(layer: Layer, keys: readonly string[], dir: string): Layer {
-	const anchor = (value: unknown) =>
-		typeof value === "string" && value !== "" ? resolve(dir, value) : value;
-	const entries = new Map(layer.entries);
-	for (const key of keys) {
-		const tree = entries.get(key);
-		if (tree?.kind === "scalar")
-			entries.set(key, { ...tree, value: anchor(tree.value) });
-		if (tree?.kind === "list")
-			entries.set(key, {
+/** `tree` with the value at `path` below it made relative to `dir`: a string, or a list of strings. */
+function anchoredTree(
+	tree: Tagged,
+	[head, ...rest]: KeyPath,
+	anchor: (value: unknown) => unknown,
+): Tagged {
+	if (head === undefined) {
+		if (tree.kind === "scalar") return { ...tree, value: anchor(tree.value) };
+		if (tree.kind === "list")
+			return {
 				...tree,
 				items: tree.items.map((i) => ({ ...i, value: anchor(i.value) })),
-			});
+			};
+		return tree;
 	}
-	return { ...layer, entries };
+	const child = tree.kind === "map" ? tree.entries.get(head) : undefined;
+	if (tree.kind !== "map" || !child) return tree;
+	const entries = new Map(tree.entries).set(
+		head,
+		anchoredTree(child, rest, anchor),
+	);
+	return { ...tree, entries };
+}
+
+/** Makes each relative path among the values at `paths` relative to `dir` instead. An empty string stays empty. */
+function anchored(layer: Layer, paths: readonly KeyPath[], dir: string): Layer {
+	const anchor = (value: unknown) =>
+		typeof value === "string" && value !== "" ? resolve(dir, value) : value;
+	return paths.reduce(
+		(l, path) => anchoredTree(l, path, anchor) as Layer,
+		layer,
+	);
 }
 
 export type LayerFile = {
 	/** The file's path, as diagnostics name it. Relative paths in it are relative to its directory. */
 	file: string;
 	layer: LayerName;
-	/** The top-level keys whose values are file paths: a string, or a list of strings. */
-	paths?: readonly string[];
+	/** The key paths whose values are file paths: a string, or a list of strings. */
+	paths?: readonly KeyPath[];
 };
 
 /**
@@ -492,7 +508,7 @@ export const CORE_CONFIG: Readonly<Record<string, JsonSchema>> = {
 };
 
 /** The core config keys whose values are file paths. */
-export const CORE_PATHS = ["dataRoot"] as const;
+export const CORE_PATHS: readonly KeyPath[] = [["dataRoot"]];
 
 export type CoreConfig = {
 	/** The most node instances in flight at once. */

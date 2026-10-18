@@ -16,6 +16,7 @@ import {
 	schemaErrors,
 	valuesLayer,
 } from "@maestro/core/config";
+import { HOST_PATHS } from "@maestro/host-repo";
 import type { JsonSchema } from "@maestro/ir";
 import { validator } from "@maestro/ir";
 
@@ -34,7 +35,7 @@ export const CLI_CONFIG: Readonly<Record<string, JsonSchema>> = {
 	[PACKS]: { type: "array", items: { type: "string", minLength: 1 } },
 };
 
-const PATH_KEYS = [...CORE_PATHS, PACKS];
+const PATH_KEYS = [...CORE_PATHS, ...HOST_PATHS, [PACKS]];
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 

@@ -1,5 +1,4 @@
 export {
-	type ApplyResult,
 	type ApplyStrategy,
 	bytesOnDisk,
 	type Changeset,

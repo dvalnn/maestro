@@ -13,7 +13,7 @@ import {
 import { concertUsage, releaseConcert } from "./store";
 import { validateRepo } from "./validate";
 
-export { AGENT_KIND } from "./config";
+export { AGENT_KIND, HOST_PATHS } from "./config";
 
 /** `<concert id>.<node instance id>`: concert ids hold no `.`, and the instance part is not empty. */
 const LANE_REF = /^[^.]+\.[^\s]+$/;

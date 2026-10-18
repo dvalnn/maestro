@@ -19,8 +19,10 @@ export const LANE_TYPE = "repo.lane";
 
 /** The port a lane version travels on, in and out. */
 export const LANE_PORT = "lane";
-/** Input ports every agent has; a ref takes none of these names. */
+/** Input ports every agent has; an attachment takes none of these names. */
 const AGENT_IN_PORTS = ["prompt", "identity", LANE_PORT];
+/** The port an apply node takes its changeset on. */
+export const CHANGESET_PORT = "changeset";
 
 const NAME = { type: "string", minLength: 1 } as const;
 const PATHS = { type: "array", items: NAME } as const;
@@ -47,6 +49,9 @@ const INLINE_CHECK = {
 		env: ENV,
 	},
 } as const;
+
+/** The host's config key paths that hold file paths. */
+export const HOST_PATHS: readonly (readonly string[])[] = [["target", "repo"]];
 
 /** The config namespaces the host owns. */
 export const HOST_CONFIG = {
@@ -79,7 +84,7 @@ export const HOST_CONFIG = {
 	},
 } as const satisfies Record<string, JsonSchema>;
 
-/** The lane input schema for a node that may also take the modes `others` beside `fresh`. */
+/** The lane input schema for a node that may take the modes `others` beside `fresh`. */
 const laneInput = (others: readonly string[]) =>
 	({
 		oneOf: [
@@ -97,7 +102,20 @@ const laneInput = (others: readonly string[]) =>
 			},
 		],
 	}) as const;
-const LANE_INPUT = laneInput(["fork", "join", "read"]);
+const LANE_INPUT = laneInput(["fork", "extend", "read"]);
+
+/** An agent's lane input: an `extend` may also resume the session that wrote the version it continues. */
+const AGENT_LANE_INPUT = {
+	oneOf: [
+		...laneInput(["fork", "read"]).oneOf,
+		{
+			type: "object",
+			required: ["mode"],
+			additionalProperties: false,
+			properties: { mode: { const: "extend" }, resume: { type: "boolean" } },
+		},
+	],
+} as const;
 
 /** Output ports every agent has; a declared output takes none of these names. */
 const AGENT_PORTS = [LANE_PORT, "report", "staged"];
@@ -118,11 +136,10 @@ export const AGENT_CONFIG = {
 			additionalProperties: false,
 			properties: { name: NAME, harness: NAME, model: NAME, thinking: NAME },
 		},
-		lane: LANE_INPUT,
-		resume: { type: "boolean" },
+		lane: AGENT_LANE_INPUT,
 		readOnly: PATHS,
 		checks: { type: "array", items: NAME, uniqueItems: true },
-		refs: {
+		attachments: {
 			type: "object",
 			propertyNames: {
 				pattern: PORT_NAME,
@@ -130,10 +147,10 @@ export const AGENT_CONFIG = {
 			},
 			additionalProperties: {
 				type: "object",
-				required: ["when"],
+				required: ["hint"],
 				additionalProperties: false,
 				properties: {
-					when: NAME,
+					hint: NAME,
 					type: { enum: Object.values(CORE_TYPES) },
 				},
 			},
@@ -174,17 +191,11 @@ export const CHECK_CONFIG = {
 
 export const APPLY_CONFIG = {
 	type: "object",
-	required: ["lane", "changesets"],
+	required: ["lane"],
 	additionalProperties: false,
 	properties: {
-		lane: laneInput(["fork", "join"]),
-		changesets: {
-			type: "array",
-			minItems: 1,
-			uniqueItems: true,
-			items: { type: "string", pattern: PORT_NAME, not: { const: LANE_PORT } },
-		},
-		strategy: { enum: ["3way", "ff"] },
+		lane: laneInput(["fork", "extend"]),
+		strategy: { enum: ["3way", "clean"] },
 	},
 } as const;
 
@@ -195,7 +206,8 @@ export const CHANGESET_CONFIG = {
 
 export type LaneInput =
 	| { mode: "fresh"; base?: string }
-	| { mode: "fork" | "join" | "read" };
+	| { mode: "fork" | "read" }
+	| { mode: "extend"; resume?: boolean };
 
 /**
  * Shell lines run in order, and the milliseconds they may take together, none when unset. `readOnly` and `writable` are absolute host
@@ -209,11 +221,11 @@ export type CheckSpec = {
 	env: Record<string, string>;
 };
 
-/** The artifact types a ref can have. */
-type RefType = (typeof CORE_TYPES)[keyof typeof CORE_TYPES];
+/** The artifact types an attachment can have. */
+type AttachmentType = (typeof CORE_TYPES)[keyof typeof CORE_TYPES];
 
-/** A file or directory an agent reads at `/in/<name>`, and when it should. */
-export type Ref = { when: string; type?: RefType };
+/** A file or directory an agent reads at `/in/<name>`, and the hint that says when it should. */
+export type Attachment = { hint: string; type?: AttachmentType };
 
 export type Output =
 	| { file: string; format: "json"; schema: JsonSchema }
@@ -222,17 +234,15 @@ export type Output =
 export type AgentConfig = {
 	role: { name: string } & Partial<Role>;
 	lane: LaneInput;
-	resume?: boolean;
 	readOnly?: string[];
 	checks?: string[];
-	refs?: Record<string, Ref>;
+	attachments?: Record<string, Attachment>;
 	out?: Record<string, Output>;
 };
 
-/** Applies the artifacts at input ports `changesets`, in that order, to the lane. */
+/** Applies the changeset at input port `changeset` to the lane. */
 export type ApplyConfig = {
 	lane: LaneInput;
-	changesets: string[];
 	strategy?: ApplyStrategy;
 };
 
@@ -270,6 +280,46 @@ export type RepoSetup = {
 };
 
 const ajv = validator();
+
+type Loose = Record<string, unknown>;
+const isLoose = (value: unknown): value is Loose =>
+	typeof value === "object" && value !== null;
+
+/** A config shape the host once took: how to spot it, and the message that says what replaced it. */
+type Retired = readonly [found: (config: Loose) => boolean, message: string];
+
+const hasKey = (key: string, message: string): Retired => [
+	(config) => Object.hasOwn(config, key),
+	message,
+];
+
+const REBUILD = "Rebuild the composition with the current SDK";
+
+const RETIRED_AGENT: Retired[] = [
+	hasKey("refs", `config 'refs' is now 'attachments'\n${REBUILD}`),
+];
+
+const RETIRED_APPLY: Retired[] = [
+	[
+		(config) => config.strategy === "ff",
+		`config strategy 'ff' is now 'clean'\n${REBUILD}`,
+	],
+];
+
+/**
+ * `config`, once it holds none of the `retired` shapes.
+ * @throws Error naming the shape and what replaced it.
+ */
+function parsedNode<T>(
+	schema: JsonSchema,
+	config: unknown,
+	retired: Retired[],
+) {
+	const loose = isLoose(config) ? config : {};
+	const [, message] = retired.find(([found]) => found(loose)) ?? [];
+	if (message) throw new Error(message);
+	return parsed<T>(schema, config ?? {}, "config");
+}
 
 /**
  * `value`, once it matches `schema`.
@@ -334,10 +384,10 @@ export function repoSetup(setup: HostSetup): RepoSetup {
 }
 
 export const agentConfig = (config: unknown): AgentConfig =>
-	parsed(AGENT_CONFIG, config ?? {}, "config");
+	parsedNode(AGENT_CONFIG, config, RETIRED_AGENT);
 
 export const applyConfig = (config: unknown): ApplyConfig =>
-	parsed(APPLY_CONFIG, config ?? {}, "config");
+	parsedNode(APPLY_CONFIG, config, RETIRED_APPLY);
 
 /**
  * The target `setup` names.

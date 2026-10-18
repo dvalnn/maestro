@@ -22,9 +22,9 @@ import {
 	apply,
 	changeset,
 	check,
+	extend,
 	fresh,
 	JsonOut,
-	join,
 	type LaneInput,
 	MarkdownOut,
 	seat,
@@ -86,10 +86,10 @@ export const review = composition(
 					task: "Challenge each finding: does it hold?",
 					lane: fresh(),
 					role: { name: "reviewer", model: skepticModel },
-					refs: {
+					attachments: {
 						findings: {
 							artifact: found.out.findings,
-							when: "before judging any finding",
+							hint: "Read before judging any finding",
 						},
 					},
 					out: { verdicts: JsonOut("verdicts.json", Verdicts) },
@@ -131,21 +131,20 @@ export const buildThenRepair = composition(
 	({ task, maxRepairs }) => {
 		const built = builder({ label: "build", task, lane: fresh() });
 		const repaired = loop.while((checked) => not(checked.ok), {
-			init: check(join(built.out.lane), "test"),
+			init: check(extend(built.out.lane), "test"),
 			step: (checked) => {
 				const repair = builder({
 					label: "repair",
 					task: "Make check 'test' pass.",
-					lane: join(checked.out.lane),
-					resume: true,
-					refs: {
+					lane: extend(checked.out.lane, { resume: true }),
+					attachments: {
 						logs: {
 							artifact: checked.out.logs,
-							when: "first, to see why the check failed",
+							hint: "Read first, to see why the check failed",
 						},
 					},
 				});
-				return check(join(repair.out.lane), "test");
+				return check(extend(repair.out.lane), "test");
 			},
 			max: maxRepairs,
 			tolerate: "rejected",
@@ -159,16 +158,22 @@ const resolver = seat({
 	identity: "You resolve merge conflicts, keeping both sides' intent.",
 });
 
-/** The changeset of `item` applied to `lane`, and a resolver joining the result on a conflict: the merged version. */
+/** The changeset of `item` applied to `lane`, and a resolver extending the result on a conflict: the merged version. */
 function merge(
-	lane: LaneInput<"fresh" | "join">,
+	lane: LaneInput<"fresh" | "extend">,
 	item: Ref<{ changeset: ArtifactRef }>,
 ) {
 	const change = item.get("changeset");
-	const applied = apply(lane, { change });
+	const applied = apply(lane, change);
 	const resolved = resolver({
 		task: "Resolve the conflict markers in the files.",
-		lane: join(applied.out.lane),
+		lane: extend(applied.out.lane),
+		attachments: {
+			incoming: {
+				artifact: change,
+				hint: "Read when you need to see what the incoming change set out to do",
+			},
+		},
 		when: not(applied.ok),
 		tolerate: "rejected",
 	});
@@ -198,7 +203,7 @@ export const fold = composition(
 		);
 		const merged = iter.fold(okOnly(implemented), {
 			first: (cs) => merge(fresh(), cs),
-			step: (acc, cs) => merge(join(acc.out.value), cs),
+			step: (acc, cs) => merge(extend(acc.out.value), cs),
 			max: tasks.length,
 		});
 		return changeset(merged.out.value, { label: "result" });

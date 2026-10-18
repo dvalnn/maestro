@@ -15,10 +15,10 @@ import {
 	apply,
 	changeset,
 	check,
+	extend,
 	fork,
 	fresh,
 	JsonOut,
-	join,
 	Lane,
 	MarkdownOut,
 	read,
@@ -154,19 +154,19 @@ describe("lanes", () => {
 		expect(requests).toEqual([]);
 	});
 
-	test("one version joined twice fails compose with HOST.lane, with no spend", async () => {
+	test("one version extended twice fails compose with HOST.lane, with no spend", async () => {
 		const twice = composition("twice", { examples: [{}] }, () => {
 			const first = agent({ task: "a", lane: fresh(), role: "builder" });
 			agent({
 				label: "x",
 				task: "b",
-				lane: join(first.out.lane),
+				lane: extend(first.out.lane),
 				role: "builder",
 			});
 			return agent({
 				label: "y",
 				task: "c",
-				lane: join(first.out.lane),
+				lane: extend(first.out.lane),
 				role: "builder",
 			});
 		});
@@ -194,9 +194,8 @@ test("every option of agent, check and apply composes against the repo host", as
 		const resumed = agent({
 			label: "resumed",
 			task: "go on",
-			lane: join(built.out.lane),
+			lane: extend(built.out.lane, { resume: true }),
 			role: "builder",
-			resume: true,
 		});
 		const checked = check(fork(resumed.out.lane), {
 			run: ["true", "true"],
@@ -213,16 +212,58 @@ test("every option of agent, check and apply composes against the repo host", as
 			},
 		);
 		return apply(
-			join(checked.out.lane),
-			{ built: changeset(built.out.lane).out.changeset },
-			{ strategy: "ff" },
+			extend(checked.out.lane),
+			changeset(built.out.lane).out.changeset,
+			{ strategy: "clean" },
 		);
 	});
 	const ir = buildIr(everything);
+	expect(nodeOf(ir, "resumed")).toMatchObject({
+		config: { lane: { mode: "extend", resume: true } },
+	});
+	expect(nodeOf(ir, "apply")).toMatchObject({
+		in: { changeset: expect.anything() },
+		config: { lane: { mode: "extend" }, strategy: "clean" },
+	});
 	expect(nodeOf(ir, "again")).toMatchObject({
 		config: { check: { run: "true" } },
 	});
 	expect(await repo().composeIt(ir)).toMatchObject({ ok: true });
+});
+
+test("an attachment or output named after an agent's own port is a build error", () => {
+	for (const name of ["prompt", "lane", "report"])
+		for (const field of ["attachments", "out"]) {
+			const clash = composition("clash", { examples: [{}] }, () => {
+				const first = agent({ task: "a", lane: fresh(), role: "builder" });
+				return agent({
+					task: "b",
+					lane: fresh(),
+					role: "builder",
+					[field]:
+						field === "out"
+							? { [name]: MarkdownOut("x.md") }
+							: { [name]: { artifact: first.out.report, hint: "now" } },
+				});
+			});
+			expect(buildCode(() => buildIr(clash))).toBe("SCOPE.name");
+		}
+});
+
+test("only a lane input resumes, only an agent takes it, and apply takes one changeset", () => {
+	composition("types", { examples: [{}] }, () => {
+		const built = agent({ task: "a", lane: fresh(), role: "builder" });
+		const cs = changeset(built.out.lane).out.changeset;
+		// @ts-expect-error resume belongs to the lane input, `extend(v, { resume })`
+		agent({ task: "b", lane: fresh(), role: "builder", resume: true });
+		// @ts-expect-error only an agent or a seat resumes
+		check(extend(built.out.lane, { resume: true }));
+		// @ts-expect-error only an agent or a seat resumes
+		apply(extend(built.out.lane, { resume: true }), cs);
+		// @ts-expect-error apply takes one changeset, not a record of them
+		apply(fresh(), { a: cs, b: cs });
+		return built;
+	});
 });
 
 describe("seat", () => {
@@ -244,7 +285,9 @@ describe("seat", () => {
 				task: "look again",
 				lane: fork(first.out.lane),
 				role: { model: "b/two", thinking: undefined },
-				refs: { earlier: { artifact: first.out.notes, when: "first" } },
+				attachments: {
+					earlier: { artifact: first.out.notes, hint: "first" },
+				},
 				out: { notes: MarkdownOut("more.md"), plan: MarkdownOut("plan.md") },
 				checks: ["lint", "test"],
 			});
@@ -271,7 +314,7 @@ describe("seat", () => {
 				role: { name: "reviewer", model: "b/two", thinking: "high" },
 				lane: { mode: "fork" },
 				checks: ["test", "lint"],
-				refs: { earlier: { when: "first", type: "core.markdown" } },
+				attachments: { earlier: { hint: "first", type: "core.markdown" } },
 				out: {
 					notes: { file: "more.md" },
 					score: { file: "score.json" },
@@ -310,7 +353,7 @@ describe("examples", () => {
 		});
 		expect(nodeOf(ir, "loop/repair")).toMatchObject({
 			literals: { identity: expect.any(String) },
-			config: { refs: { logs: { type: "core.file" } } },
+			config: { attachments: { logs: { type: "core.file" } } },
 		});
 		expect(await repo().composeIt(ir)).toMatchObject({ ok: true });
 	});
@@ -360,20 +403,22 @@ describe("examples", () => {
 	};
 
 	test.each([
-		{ tasks: ["Write b.txt."], agents: 1, added: ["b.txt"] },
+		{ tasks: ["Write b.txt."], agents: 1, added: ["b.txt"], resolved: false },
 		{
 			tasks: ["Write b.txt.", "Write c.txt.", "Write d.txt."],
 			agents: 3,
 			added: ["b.txt", "c.txt", "d.txt"],
+			resolved: false,
 		},
 		{
 			tasks: ["Write b.txt.", "Write b.txt. Twice", "Write c.txt."],
 			agents: 4,
 			added: ["b.txt", "c.txt", "+resolved"],
+			resolved: true,
 		},
 	])(
 		"the fold builds, composes, and merges $tasks in a stub concert",
-		async ({ tasks, agents, added }) => {
+		async ({ tasks, agents, added, resolved }) => {
 			const ir = buildIr(fold, { tasks }, CODE);
 			const { host, hostConfig, composeIt, requests } = repo(implement);
 			expect(await composeIt(ir)).toMatchObject({ ok: true });
@@ -388,6 +433,10 @@ describe("examples", () => {
 				.find((i) => i.node === "result")?.outputs?.changeset as ArtifactRef;
 			expect(concert.result).toMatchObject({ outcome: "ok", node: "result" });
 			expect(requests).toHaveLength(agents);
+			const resolver = requests.find((r) => r.prompt.startsWith("Resolve"));
+			expect(resolver !== undefined).toBe(resolved);
+			if (resolver)
+				expect(resolver.prompt).toContain("- /in/incoming: Read when you need");
 			const series = joinPath(
 				concertDirs(concert.dir, concert.id).artifacts,
 				result.path,

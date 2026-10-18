@@ -24,19 +24,9 @@ export type Changeset = { base: string; patches: string[] };
 /**
  * How `Lane.apply` meets a patch that does not apply cleanly:
  * - `3way`: merges it, leaving conflict markers in the working copy
- * - `ff`: refuses it, leaving the working copy as it was
+ * - `clean`: refuses it, leaving the working copy as it was
  */
-export type ApplyStrategy = "3way" | "ff";
-
-/**
- * `applied` counts the changesets left applied cleanly; `conflicts` lists lane-relative files, empty when all applied.
- * `conflictAt` is the index of the changeset that conflicted, set exactly when `conflicts` is not empty.
- */
-export type ApplyResult = {
-	applied: number;
-	conflicts: string[];
-	conflictAt?: number;
-};
+export type ApplyStrategy = "3way" | "clean";
 
 export interface Lane {
 	/** Host directory of the working copy. This is `SandboxSpec.lane`. */
@@ -52,15 +42,12 @@ export interface Lane {
 	 */
 	seal(): Promise<Version>;
 	/**
-	 * Applies each changeset's patches in order to the working copy. `3way` stops at the first conflicting changeset
-	 * with its markers left in place; `ff` applies all or nothing.
-	 * @throws naming the changeset index on a malformed patch or objects the store lacks; the working copy is left as
-	 * it was.
+	 * Applies the changeset's patches in order to the working copy and returns the lane-relative files that conflict,
+	 * none when it applied. `3way` stops at the first conflicting patch with its markers left in place; `clean`
+	 * applies all or nothing.
+	 * @throws on a malformed patch or objects the store lacks; the working copy is left as it was.
 	 */
-	apply(
-		changesets: Changeset[],
-		strategy?: ApplyStrategy,
-	): Promise<ApplyResult>;
+	apply(changeset: Changeset, strategy?: ApplyStrategy): Promise<string[]>;
 	/** Removes the working copy and its git directory. A version it sealed stays. */
 	discard(): void;
 }
@@ -75,11 +62,11 @@ export interface Lanes {
 	/** A new lane holding `v`'s content. Any number of times, from any concert (lane refs, D-27). */
 	fork(v: Version, at: Version): Promise<Lane>;
 	/**
-	 * Continues `v`'s working copy in place (ignored files kept) as node instance `at`'s lane. When `at` joined `v`
+	 * Continues `v`'s working copy in place (ignored files kept) as node instance `at`'s lane. When `at` extended `v`
 	 * before, it re-opens `v`'s sealed content instead.
-	 * @throws if another instance joined `v`, or `v` belongs to another concert.
+	 * @throws if another instance extended `v`, or `v` belongs to another concert.
 	 */
-	join(v: Version, at: Version): Promise<Lane>;
+	extend(v: Version, at: Version): Promise<Lane>;
 	/** The patch series from the lane chain's base up to `v`. Unchanged versions add no patch. */
 	changeset(v: Version): Promise<Changeset>;
 	/** Lane bytes on disk for a concert: its working copies and their git directories. The shared store is not counted. */
@@ -186,8 +173,8 @@ export function openLanes(options: LanesOptions): Lanes {
 			own: `${p}/`,
 			version: `${p}/version`,
 			base: `${p}/base`,
-			joined: `${p}/joined`,
-			joinedBy: (at: Version) => `${p}/joined-by/${enc(parse(at).node)}`,
+			extended: `${p}/extended`,
+			extendedBy: (at: Version) => `${p}/extended-by/${enc(parse(at).node)}`,
 		};
 	};
 	const concertDir = (c: string) => join(root, "lanes", enc(concertId(c)));
@@ -353,8 +340,8 @@ export function openLanes(options: LanesOptions): Lanes {
 				point(commit);
 				return at;
 			},
-			apply: (changesets, strategy = "3way") =>
-				applyChangesets(lg, changesets, strategy),
+			apply: (changeset, strategy = "3way") =>
+				applyChangeset(lg, changeset, strategy),
 			discard: () => rmSync(home, { recursive: true, force: true }),
 		};
 	}
@@ -375,29 +362,32 @@ export function openLanes(options: LanesOptions): Lanes {
 			await checkout(at, commit);
 			return open(at, commit, base);
 		},
-		async join(v, at) {
+		async extend(v, at) {
 			if (parse(v).concert !== parse(at).concert)
 				throw new Error(
-					`${at} cannot join ${v}: a lane joins only versions of its own concert. Fork it instead`,
+					`${at} cannot extend ${v}: a lane extends only versions of its own concert. Fork it instead`,
 				);
 			const { commit, base } = await resolve(v);
 			const r = refs(v);
-			if (await exists(r.joinedBy(at))) {
+			if (await exists(r.extendedBy(at))) {
 				await checkout(at, commit);
 				return open(at, commit, base);
 			}
 			const from = paths(v).home;
 			const to = (await claim(at)).home;
 			try {
-				const { joined } = r;
+				const { extended } = r;
 				await createOnce(
-					[`create ${joined} ${commit}`, `create ${r.joinedBy(at)} ${commit}`],
-					`version ${v} is already joined`,
+					[
+						`create ${extended} ${commit}`,
+						`create ${r.extendedBy(at)} ${commit}`,
+					],
+					`version ${v} is already extended`,
 				);
 				try {
 					renameSync(from, to); // replaces the empty claimed directory
 				} catch (e) {
-					await deleteRefs([joined, r.joinedBy(at)]);
+					await deleteRefs([extended, r.extendedBy(at)]);
 					throw new Error(`the lane of ${v} cannot be moved: ${e}`);
 				}
 			} catch (e) {
@@ -480,14 +470,34 @@ async function applyPatch(l: LaneGit, patch: string, strategy: ApplyStrategy) {
 }
 
 /**
- * The first conflicting patch's files, empty when every patch applied cleanly.
+ * The first conflicting patch's files, empty when every patch applied cleanly. A `clean` conflict leaves the working
+ * copy as it was.
  * @throws on a malformed patch or a base the store lacks
  */
 async function applyChangeset(
 	l: LaneGit,
 	cs: Changeset,
 	strategy: ApplyStrategy,
-) {
+): Promise<string[]> {
+	await git([...l.wt, "add", "-A"], l.idx);
+	const before = await value([...l.wt, "write-tree"], l.idx);
+	const restore = () =>
+		git([...l.wt, "read-tree", "--reset", "-u", before], l.idx);
+	const conflicts = await applyPatches(l, cs, strategy).catch(async (e) => {
+		await restore();
+		throw new Error(
+			`${l.at}: the changeset cannot be applied: ${e instanceof Error ? e.message : e}`,
+		);
+	});
+	if (conflicts.length && strategy === "clean") await restore();
+	return conflicts;
+}
+
+async function applyPatches(
+	l: LaneGit,
+	cs: Changeset,
+	strategy: ApplyStrategy,
+): Promise<string[]> {
 	await git([...l.wt, "cat-file", "-e", `${cs.base}^{commit}`]).catch(() => {
 		throw new Error(
 			`its base ${cs.base} is not in the store. Pass the changeset of a version sealed from this target`,
@@ -504,28 +514,4 @@ async function applyChangeset(
 		if (conflicts.length) return conflicts;
 	}
 	return [];
-}
-
-async function applyChangesets(
-	l: LaneGit,
-	changesets: Changeset[],
-	strategy: ApplyStrategy,
-): Promise<ApplyResult> {
-	await git([...l.wt, "add", "-A"], l.idx);
-	const before = await value([...l.wt, "write-tree"], l.idx);
-	const restore = () =>
-		git([...l.wt, "read-tree", "--reset", "-u", before], l.idx);
-	for (const [i, cs] of changesets.entries()) {
-		const conflicts = await applyChangeset(l, cs, strategy).catch(async (e) => {
-			await restore();
-			throw new Error(
-				`${l.at}: changeset ${i} cannot be applied: ${e instanceof Error ? e.message : e}`,
-			);
-		});
-		if (!conflicts.length) continue;
-		if (strategy === "3way") return { applied: i, conflicts, conflictAt: i };
-		await restore();
-		return { applied: 0, conflicts, conflictAt: i };
-	}
-	return { applied: changesets.length, conflicts: [] };
 }

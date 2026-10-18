@@ -139,22 +139,22 @@ docs/               these documents (including adr/), slice reports under report
 Sub-slices S8a to S8c can start after S0 as standalone libraries, in parallel with the core slices, because they do not
 need the core. S8d and S8e need S7.
 
-- **S8a. Lanes and changesets (L).** Isolated working copies of a target, version handles, `fresh`, `fork`, `join`, the
-  join-at-most-once rule, the changeset, and the guarantee that the target's checkout is untouched (HOST-02, HOST-03).
-  Lane refs for forking or reading a lane left by an earlier concert, with no cross-concert join (D-27, HOST-13), and
-  `prune` for lanes. Consult the behavioral reference for worktree handling, series delivery and what to do with
-  rejected output.
+- **S8a. Lanes and changesets (L).** Isolated working copies of a target, version handles, `fresh`, `fork`, `extend`,
+  the extend-at-most-once rule, the changeset, and the guarantee that the target's checkout is untouched (HOST-02,
+  HOST-03). Lane refs for forking or reading a lane left by an earlier concert, with no cross-concert extension (D-27,
+  HOST-13), and `prune` for lanes. Consult the behavioral reference for worktree handling, series delivery and what to
+  do with rejected output.
 - **S8b. Sandbox and process supervision (M).** Bubblewrap mount plans, read-only binds, writable lane only, secrets
   handling, process-tree kill (HOST-04, HOST-10). Consult the behavioral reference for the mount plan.
 - **S8c. Harness interface and stub harness (M).** The adapter interface, a scripted stub harness, prompt staging
   without argument-length limits, token usage reported as metrics (HOST-05, HOST-06, HOST-07).
 - **S8d. First real adapter (M).** pi as a sandboxed subprocess over its JSON event stream, using spike 4's findings
   (D-20). Claude Code is the second adapter.
-- **S8e. Host kinds, SDK and hooks (L).** Agent, check, changeset and apply node kinds (D-22), refs, agent-run checks,
-  the Claude Code adapter, `host-repo-sdk`, `validate` and `bounds` hooks, host config namespaces (HOST-01, HOST-09,
-  HOST-11 to HOST-15). Vocabulary per D-21.
-- **Acceptance (whole slice).** AC-4 and the host parts of AC-2. The lane double-join diagnostic fires in compose with
-  no spend.
+- **S8e. Host kinds, SDK and hooks (L).** Agent, check, changeset and apply node kinds (D-22), attachments, agent-run
+  checks, the Claude Code adapter, `host-repo-sdk`, `validate` and `bounds` hooks, host config namespaces (HOST-01,
+  HOST-09, HOST-11 to HOST-15). Vocabulary per D-21.
+- **Acceptance (whole slice).** AC-4 and the host parts of AC-2. The lane double-extension diagnostic fires in compose
+  with no spend.
 
 ### S9. Pack: ported compositions (L)
 

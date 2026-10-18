@@ -30,12 +30,12 @@ import {
 	AGENT_CONFIG,
 	AGENT_KIND,
 	type AgentConfig,
+	type Attachment,
 	agentConfig,
 	LANE_PORT,
 	listed,
 	namedCheck,
 	type Output,
-	type Ref,
 	repoSetup,
 	requireTarget,
 	resolveRole,
@@ -57,10 +57,10 @@ const MAX_CORRECTIONS = 2;
 
 const TEXT = { type: "string" };
 
-/** The directory where an agent's sandbox mounts its refs. */
-const REF_DIR = "/in";
-/** Where the sandbox sees ref `name`. */
-const refPath = (name: string) => `${REF_DIR}/${name}`;
+/** The directory where an agent's sandbox mounts its attachments. */
+const ATTACHMENT_DIR = "/in";
+/** Where the sandbox sees attachment `name`. */
+const attachmentPath = (name: string) => `${ATTACHMENT_DIR}/${name}`;
 
 /** An agent's final reply (GLOSSARY: Envelope). */
 type Envelope = { outcome: "ok" | "rejected"; reason?: string; report: string };
@@ -99,12 +99,19 @@ function agentPorts(node: HostNode): { in: Ports; out: Ports } {
 				}
 			: { [MAESTRO_TYPE]: CORE_TYPES.markdown },
 	]);
-	const refs = Object.entries(config.refs ?? {}).map(([name, ref]) => [
-		name,
-		{ [MAESTRO_TYPE]: ref.type ?? CORE_TYPES.file },
-	]);
+	const attachments = Object.entries(config.attachments ?? {}).map(
+		([name, attachment]) => [
+			name,
+			{ [MAESTRO_TYPE]: attachment.type ?? CORE_TYPES.file },
+		],
+	);
 	return {
-		in: { prompt: TEXT, ...identity, ...Object.fromEntries(refs), ...lane.in },
+		in: {
+			prompt: TEXT,
+			...identity,
+			...Object.fromEntries(attachments),
+			...lane.in,
+		},
 		out: {
 			report: TEXT,
 			staged: { [MAESTRO_TYPE]: CORE_TYPES.dir },
@@ -140,9 +147,6 @@ function contract(out: Record<string, Output>): string {
 
 const correction = (problem: string) =>
 	`Your final reply is not the envelope: ${problem}.\nReply again with only this JSON object:\n${ENVELOPE_SHAPE}`;
-
-const outputsCorrection = (problems: string[]) =>
-	`You rejected, but these declared outputs are not usable: ${problems.join("; ")}.\nWrite every declared file, then reply again with only this JSON object:\n${ENVELOPE_SHAPE}`;
 
 /** The envelope `reply` holds, bare or in one fenced block, or what is wrong with it. */
 function envelopeOf(reply: string): Envelope | string {
@@ -185,11 +189,6 @@ function outputProblem(outbox: string, o: Output): string | undefined {
 	return found.length ? found.join("; ") : undefined;
 }
 
-/** What is wrong with each declared output in `outbox`. */
-function outputProblems(outbox: string, out: Record<string, Output>): string[] {
-	return Object.values(out).flatMap((o) => outputProblem(outbox, o) ?? []);
-}
-
 /** The declared outputs' paths by port, or why one cannot be read. */
 function readOutbox(
 	outbox: string,
@@ -205,19 +204,18 @@ function readOutbox(
 }
 
 /**
- * The session an agent continues, the one that wrote the version it joins.
- * @throws Error when it joins no version, or one no agent of its harness and concert wrote.
+ * The session an agent continues, the one that wrote the version it extends.
+ * @throws Error when it extends no version, or one no agent of its harness and concert wrote.
  */
 function resumed(
 	root: string,
-	config: AgentConfig,
 	lane: unknown,
 	harness: string,
 	concert: string,
 ): Session {
-	if (config.lane.mode !== "join" || typeof lane !== "string")
+	if (typeof lane !== "string")
 		throw new Error(
-			"resume continues the session of a joined version. Join the lane, or drop resume",
+			"resume continues the session of an extended version. Extend a lane version, or drop resume",
 		);
 	const session = writerOf(root, lane);
 	if (!session)
@@ -258,37 +256,23 @@ async function turn(
 /** What follows an agent's final reply: how the run ends, or the correction to send. */
 type Next = { envelope: Envelope } | { failure: string } | { prompt: string };
 
-function next(
-	reply: string,
-	outbox: string,
-	out: Record<string, Output>,
-	spent: boolean,
-): Next {
+function next(reply: string, spent: boolean): Next {
 	const envelope = envelopeOf(reply);
-	if (typeof envelope === "string")
-		return spent
-			? {
-					failure: `the final reply is not the envelope after ${MAX_CORRECTIONS} corrections: ${envelope}. Check the role's model follows the output contract in staged/prompt.md`,
-				}
-			: { prompt: correction(envelope) };
-	const problems =
-		envelope.outcome === "rejected" ? outputProblems(outbox, out) : [];
-	return !problems.length || spent
-		? { envelope }
-		: { prompt: outputsCorrection(problems) };
+	if (typeof envelope !== "string") return { envelope };
+	return spent
+		? {
+				failure: `the final reply is not the envelope after ${MAX_CORRECTIONS} corrections: ${envelope}. Check the role's model follows the output contract in staged/prompt.md`,
+			}
+		: { prompt: correction(envelope) };
 }
 
-/**
- * Runs the agent, then corrects it in the same session while its final reply is not an envelope, or is a rejection
- * with declared outputs missing. The corrections share one budget.
- */
+/** Runs the agent, then corrects it in the same session while its final reply is not an envelope. */
 async function converse(
 	harness: Harness,
 	req: HarnessRequest,
 	live: Live,
 	context: HostContext,
 	staged: string,
-	out: Record<string, Output>,
 ): Promise<Turns> {
 	const metrics: Metrics = {};
 	let prompt = req.prompt;
@@ -298,12 +282,7 @@ async function converse(
 		addMetrics(metrics, result.metrics);
 		if (result.outcome === "failed")
 			return { metrics, failure: result.reason ?? "the harness failed" };
-		const step = next(
-			result.reply,
-			req.outbox,
-			out,
-			corrections === MAX_CORRECTIONS,
-		);
+		const step = next(result.reply, corrections === MAX_CORRECTIONS);
 		if (!("prompt" in step)) return { metrics, ...step };
 		prompt = step.prompt;
 		writeFileSync(join(staged, `correction-${corrections + 1}.md`), prompt);
@@ -361,39 +340,39 @@ async function settle(
 		: { outcome, reason, outputs, metrics, enrichment };
 }
 
-/** The prompt text each ref adds, one line per ref. */
-const refNote = (refs: [string, Ref][]) =>
-	refs.length
+/** The prompt text the attachments add, one line per attachment. */
+const attachmentNote = (attachments: [string, Attachment][]) =>
+	attachments.length
 		? [
 				"",
 				"",
-				"Read-only references in your sandbox:",
-				...refs.map(
-					([name, ref]) => `- ${refPath(name)}: read when ${ref.when}`,
+				"Read-only attachments in your sandbox:",
+				...attachments.map(
+					([name, a]) => `- ${attachmentPath(name)}: ${a.hint}`,
 				),
 			].join("\n")
 		: "";
 
-/** What the refs and checks of `config` add to an agent's sandbox and prompt. */
+/** What the attachments and checks of `config` add to an agent's sandbox and prompt. */
 function extrasOf(
 	config: AgentConfig,
 	target: Target,
 	inputs: Inputs,
 	context: HostContext,
 ): AgentChecks {
-	const refs = Object.entries(config.refs ?? {});
+	const attachments = Object.entries(config.attachments ?? {});
 	const checks = stageChecks(
 		context.scratch,
 		(config.checks ?? []).map((name) => [name, namedCheck(target, name)]),
 	);
-	const mounts: Bind[] = refs.map(([name]) => ({
+	const mounts: Bind[] = attachments.map(([name]) => ({
 		src: artifactInput(inputs, context, name),
-		dst: refPath(name),
+		dst: attachmentPath(name),
 	}));
 	return {
 		...checks,
 		readOnly: [...mounts, ...checks.readOnly],
-		note: refNote(refs) + checks.note,
+		note: attachmentNote(attachments) + checks.note,
 	};
 }
 
@@ -414,15 +393,10 @@ async function execute(
 		);
 	const target = requireTarget(setup);
 	const store = openTarget(setup.store, target.repo);
-	const session = config.resume
-		? resumed(
-				store.root,
-				config,
-				inputs[LANE_PORT],
-				role.harness,
-				context.concert,
-			)
-		: mintSession(store.root, role.harness, context.concert);
+	const session =
+		config.lane.mode === "extend" && config.lane.resume
+			? resumed(store.root, inputs[LANE_PORT], role.harness, context.concert)
+			: mintSession(store.root, role.harness, context.concert);
 	const at = { concert: context.concert, instance };
 	return withLane(
 		store,
@@ -462,14 +436,7 @@ async function execute(
 				outbox: staging.outbox,
 				session: { dir: session.dir, id: session.id },
 			};
-			const turns = await converse(
-				harness,
-				req,
-				live,
-				context,
-				staging.staged,
-				staging.config.out ?? {},
-			);
+			const turns = await converse(harness, req, live, context, staging.staged);
 			return settle(staging, turns, async () => {
 				if (read) return undefined;
 				const version = await lane.seal();

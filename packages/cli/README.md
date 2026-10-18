@@ -61,9 +61,11 @@ where each value came from.
 | `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                 |
 | `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`.  |
 | `caps`        | Caps by name: `instances` caps a concert's node instances, any other name the total of a host count. |
-| `target`      | The repo host's repository, default `base` and named `checks`.                                       |
+| `target`      | The repo host's `repo`, default `base` and named `checks`.                                           |
 | `roles`       | The repo host's roles: a `harness`, `model` and optional `thinking` each.                            |
 | `sandbox`     | The repo host's `readOnly` paths, bound into every agent and check.                                  |
+
+A relative `packs`, `dataRoot` or `target.repo` is relative to the directory of the file that sets it.
 
 The repo host's namespaces are set out in architecture.md section 12, Configuration. Its Claude Code harness reads the
 token from `CLAUDE_CODE_OAUTH_TOKEN`, set in the shell or in `.env`; get one with `claude setup-token`.

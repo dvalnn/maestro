@@ -15,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { bubblewrap } from "../sandbox/index";
-import { type Lane, openLanes } from "./index";
+import { type Changeset, type Lane, openLanes } from "./index";
 
 const dirs: string[] = [];
 const tmp = (name: string) => {
@@ -114,7 +114,7 @@ describe("fresh", () => {
 	});
 });
 
-describe("fork and join", () => {
+describe("fork and extend", () => {
 	async function sealed(lanes: ReturnType<typeof openLanes>, at: string) {
 		const lane = await lanes.fresh("main", at);
 		writeFileSync(join(lane.dir, "a.txt"), "v1\n");
@@ -124,12 +124,12 @@ describe("fork and join", () => {
 		return lane;
 	}
 
-	test("join continues the lane in place and yields the next version, chained in the changeset", async () => {
+	test("extend continues the lane in place and yields the next version, chained in the changeset", async () => {
 		const target = toyTarget();
 		const lanes = openLanes({ target, root: tmp("root") });
 		const first = await sealed(lanes, "c1.build");
 
-		const next = await lanes.join("c1.build", "c1.fix");
+		const next = await lanes.extend("c1.build", "c1.fix");
 		expect(readFileSync(join(next.dir, "a.txt"), "utf8")).toBe("v1\n");
 		expect(existsSync(join(next.dir, "ignored.log"))).toBe(true); // the same working copy
 		expect(existsSync(first.dir)).toBe(false);
@@ -141,56 +141,56 @@ describe("fork and join", () => {
 		const applied = applyToBase(target, cs.base, cs.patches);
 		expect(readFileSync(join(applied, "a.txt"), "utf8")).toBe("v2\n");
 		expect(existsSync(join(applied, "ignored.log"))).toBe(false);
-		// The joined version itself is unchanged.
+		// The extended version itself is unchanged.
 		expect((await lanes.changeset("c1.build")).patches).toHaveLength(1);
 	});
 
-	test("an unchanged lane at the end of a join chain seals to its parent and adds no patch", async () => {
+	test("an unchanged lane at the end of an extend chain seals to its parent and adds no patch", async () => {
 		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
 		await sealed(lanes, "c1.build");
-		await (await lanes.join("c1.build", "c1.check")).seal();
+		await (await lanes.extend("c1.build", "c1.check")).seal();
 		expect((await lanes.changeset("c1.check")).patches).toHaveLength(1);
 		const fork = await lanes.fork("c1.check", "c1.look");
 		expect(readFileSync(join(fork.dir, "a.txt"), "utf8")).toBe("v1\n");
 	});
 
-	test("a join that cannot move the lane does not use up the version's one join", async () => {
+	test("an extend that cannot move the lane does not use up the version's one extension", async () => {
 		const root = tmp("root");
 		const lanes = openLanes({ target: toyTarget(), root });
 		const first = await sealed(lanes, "c1.build");
 		const home = join(first.dir, "..");
 		renameSync(home, `${home}.away`);
-		await expect(lanes.join("c1.build", "c1.fix")).rejects.toThrow(
+		await expect(lanes.extend("c1.build", "c1.fix")).rejects.toThrow(
 			/cannot be moved/,
 		);
 		renameSync(`${home}.away`, home);
-		const next = await lanes.join("c1.build", "c1.fix");
+		const next = await lanes.extend("c1.build", "c1.fix");
 		expect(readFileSync(join(next.dir, "a.txt"), "utf8")).toBe("v1\n");
 	});
 
-	test("a version is joined at most once, but its joiner may re-open it", async () => {
+	test("a version is extended at most once, but its extender may re-open it", async () => {
 		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
 		await sealed(lanes, "c1.build");
-		const first = await lanes.join("c1.build", "c1.fix");
+		const first = await lanes.extend("c1.build", "c1.fix");
 		writeFileSync(join(first.dir, "a.txt"), "half-done\n");
-		await expect(lanes.join("c1.build", "c1.other")).rejects.toThrow(
-			/already joined/,
+		await expect(lanes.extend("c1.build", "c1.other")).rejects.toThrow(
+			/already extended/,
 		);
-		const retry = await lanes.join("c1.build", "c1.fix");
+		const retry = await lanes.extend("c1.build", "c1.fix");
 		expect(readFileSync(join(retry.dir, "a.txt"), "utf8")).toBe("v1\n");
 		retry.discard();
-		const dropped = await lanes.join("c1.build", "c1.fix");
+		const dropped = await lanes.extend("c1.build", "c1.fix");
 		expect(readFileSync(join(dropped.dir, "a.txt"), "utf8")).toBe("v1\n");
 		await dropped.seal();
 	});
 
-	test("fork copies the version's content into a new lane, any number of times, independent of later joins", async () => {
+	test("fork copies the version's content into a new lane, any number of times, independent of later extensions", async () => {
 		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
 		await sealed(lanes, "c1.build");
 		const a = await lanes.fork("c1.build", "c1.reviewA");
-		const joined = await lanes.join("c1.build", "c1.fix");
-		writeFileSync(join(joined.dir, "a.txt"), "v2\n");
-		await joined.seal();
+		const extended = await lanes.extend("c1.build", "c1.fix");
+		writeFileSync(join(extended.dir, "a.txt"), "v2\n");
+		await extended.seal();
 		const b = await lanes.fork("c1.build", "c1.reviewB");
 
 		for (const lane of [a, b]) {
@@ -202,14 +202,14 @@ describe("fork and join", () => {
 		expect((await lanes.changeset("c1.reviewA")).patches).toHaveLength(2);
 	});
 
-	test("a later concert forks a lane left by an earlier one through its lane ref, and cannot join it", async () => {
+	test("a later concert forks a lane left by an earlier one through its lane ref, and cannot extend it", async () => {
 		const target = toyTarget();
 		const root = tmp("root");
 		const earlier = openLanes({ target, root });
 		await sealed(earlier, "c1.build");
 
 		const later = openLanes({ target, root }); // a separate concert, as from another process
-		await expect(later.join("c1.build", "c2.fix")).rejects.toThrow(
+		await expect(later.extend("c1.build", "c2.fix")).rejects.toThrow(
 			/only versions of its own concert/,
 		);
 		const lane = await later.fork("c1.build", "c2.fix");
@@ -221,8 +221,8 @@ describe("fork and join", () => {
 		const applied = applyToBase(target, cs.base, cs.patches);
 		expect(readFileSync(join(applied, "a.txt"), "utf8")).toBe("v1\n");
 		expect(readFileSync(join(applied, "c.txt"), "utf8")).toBe("c\n");
-		// The earlier concert's lane is still there to be joined by its own concert.
-		await earlier.join("c1.build", "c1.fix");
+		// The earlier concert's lane is still there to be extended by its own concert.
+		await earlier.extend("c1.build", "c1.fix");
 	});
 
 	test("ids are checked: a version needs a concert id without `.` and a node instance id", async () => {
@@ -236,11 +236,11 @@ describe("fork and join", () => {
 		).toBeString();
 	});
 
-	test("an unknown or unsealed version cannot be forked or joined", async () => {
+	test("an unknown or unsealed version cannot be forked or extended", async () => {
 		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
 		await lanes.fresh("main", "c1.open");
 		await expect(lanes.fork("c1.open", "c1.x")).rejects.toThrow(/unknown/);
-		await expect(lanes.join("c1.nope", "c1.y")).rejects.toThrow(/unknown/);
+		await expect(lanes.extend("c1.nope", "c1.y")).rejects.toThrow(/unknown/);
 	});
 });
 
@@ -304,11 +304,12 @@ describe("apply", () => {
 		);
 
 		const merge = await lanes.fork("c1.root", "c1.merge");
-		expect(await merge.apply(css)).toEqual({ applied: 2, conflicts: [] });
+		expect(await merge.apply(css[0] as Changeset)).toEqual([]);
+		expect(await merge.apply(css[1] as Changeset)).toEqual([]);
 		await merge.seal();
 
 		const fresh = await lanes.fresh("main", "c2.replay");
-		await fresh.apply([await lanes.changeset("c1.merge")]);
+		await fresh.apply(await lanes.changeset("c1.merge"));
 		expect(["a.txt", "b.txt", "c.txt"].map((f) => read(fresh, f))).toEqual([
 			"a2\n",
 			"b2\n",
@@ -316,7 +317,6 @@ describe("apply", () => {
 		]);
 	});
 
-	const later: Edits = { "b.txt": "later\n" };
 	test.each([
 		{
 			name: "same lines, leaving markers",
@@ -352,16 +352,13 @@ describe("apply", () => {
 		conflicts: string[];
 		holds: Record<string, RegExp | null>;
 	}[])(
-		"3way stops at a conflict ($name), names the files and seals it; later changesets stay unapplied",
+		"3way merges a conflicting changeset ($name), names the files and seals it with the markers",
 		async ({ root, edits, conflicts, holds }) => {
-			const { lanes, css } = await forks(root, ...edits, later);
+			const { lanes, css } = await forks(root, ...edits);
 
 			const merge = await lanes.fork("c1.root", "c1.merge");
-			expect(await merge.apply(css)).toEqual({
-				applied: 1,
-				conflicts,
-				conflictAt: 1,
-			});
+			expect(await merge.apply(css[0] as Changeset)).toEqual([]);
+			expect(await merge.apply(css[1] as Changeset)).toEqual(conflicts);
 			await merge.seal();
 
 			const sealed = await lanes.fork("c1.merge", "c1.resolve");
@@ -376,7 +373,7 @@ describe("apply", () => {
 		{ name: "same lines", left: "left\n2\n3\n", right: "right\n2\n3\n" },
 		{ name: "lines apart", left: "one\n2\n3\n", right: "1\n2\nthree\n" },
 	])(
-		"ff refuses a patch that does not apply cleanly ($name) and leaves the lane as it was",
+		"clean refuses a patch that does not apply cleanly ($name) and leaves the lane as it was",
 		async ({ left, right }) => {
 			const { lanes, css } = await forks(
 				{ "c.txt": "1\n2\n3\n" },
@@ -391,19 +388,18 @@ describe("apply", () => {
 				".gitignore": "*.log\n",
 				"scratch.log": "s\n",
 			};
+			expect(await merge.apply(css[0] as Changeset, "clean")).toEqual([]);
 			write(merge, agent);
-			expect(await merge.apply(css, "ff")).toEqual({
-				applied: 0,
-				conflicts: ["c.txt"],
-				conflictAt: 1,
-			});
-			expect(read(merge, "c.txt")).toBe("1\n2\n3\n");
+			expect(await merge.apply(css[1] as Changeset, "clean")).toEqual([
+				"c.txt",
+			]);
+			expect(read(merge, "c.txt")).toBe(left);
 			for (const [f, text] of Object.entries(agent))
 				expect(read(merge, f)).toBe(text ?? "");
 		},
 	);
 
-	test("unusable input throws naming the changeset and leaves the lane as it was", async () => {
+	test("unusable input throws and leaves the lane as it was", async () => {
 		const { lanes } = await forks({}, { "a.txt": "a2\n", "new.txt": "n\n" });
 		const good = await lanes.changeset("c1.f0");
 		const merge = await lanes.fork("c1.root", "c1.merge");
@@ -411,8 +407,8 @@ describe("apply", () => {
 		const unknownBase = { base: "0".repeat(40), patches: good.patches };
 
 		for (const bad of [garbage, unknownBase])
-			await expect(merge.apply([good, bad])).rejects.toThrow(
-				/^c1\.merge: changeset 1 cannot be applied/,
+			await expect(merge.apply(bad)).rejects.toThrow(
+				/^c1\.merge: the changeset cannot be applied/,
 			);
 		expect(read(merge, "a.txt")).toBe("a\n");
 		expect(existsSync(join(merge.dir, "new.txt"))).toBe(false);
@@ -420,7 +416,7 @@ describe("apply", () => {
 });
 
 describe("the target", () => {
-	test("is byte-identical after lanes are cut, forked, joined, sealed, turned into changesets and pruned", async () => {
+	test("is byte-identical after lanes are cut, forked, extended, sealed, turned into changesets and pruned", async () => {
 		const target = toyTarget();
 		writeFileSync(join(target, "wip.txt"), "the operator's uncommitted work\n");
 		const before = snapshot(target);
@@ -431,12 +427,12 @@ describe("the target", () => {
 		writeFileSync(join(a.dir, "a.txt"), "changed\n");
 		await a.seal();
 		await (await lanes.fork("c1.a", "c1.b")).seal();
-		const c = await lanes.join("c1.a", "c1.c");
+		const c = await lanes.extend("c1.a", "c1.c");
 		writeFileSync(join(c.dir, "z.txt"), "z\n");
 		await c.seal();
 		await lanes.fresh("main", "c2.d"); // a second base is fetched
 		const merged = await lanes.fresh("main~1", "c2.e");
-		await merged.apply([await lanes.changeset("c1.c")]);
+		await merged.apply(await lanes.changeset("c1.c"));
 		await lanes.prune("c1");
 
 		expect(snapshot(target)).toEqual(before);
@@ -469,7 +465,7 @@ describe("git inside a lane", () => {
 				await l.seal();
 			}
 			await (await lanes.fork("c1.build", "c1.sibling")).seal();
-			const lane = await lanes.join("c1.build", "c1.fix");
+			const lane = await lanes.extend("c1.build", "c1.fix");
 			writeFileSync(join(lane.dir, "a.txt"), "fixed\n");
 
 			const { out, code } = await inSandbox(
@@ -518,7 +514,7 @@ describe("git inside a lane", () => {
 });
 
 describe("what the host seals", () => {
-	test("a .git the agent plants or redirects is never run, never sealed, and is restored on join", async () => {
+	test("a .git the agent plants or redirects is never run, never sealed, and is restored on extend", async () => {
 		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
 		const marker = join(tmp("marker"), "ran");
 		const evil = `[core]\n\tfsmonitor = touch ${marker}\n\thooksPath = hooks\n`;
@@ -544,7 +540,7 @@ describe("what the host seals", () => {
 		const planted_ = (await lanes.changeset("c1.planted")).patches.join("");
 		expect(planted_).toContain("f.txt");
 		expect(planted_).not.toContain(".git/");
-		const next = await lanes.join("c1.redirected", "c1.next");
+		const next = await lanes.extend("c1.redirected", "c1.next");
 		expect(readFileSync(join(next.dir, ".git"), "utf8")).toBe(
 			`gitdir: ${next.readOnly[0]?.src}\n`,
 		);

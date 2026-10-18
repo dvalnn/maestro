@@ -160,7 +160,7 @@ function overall(verdicts: Verdict[]): Verdict {
 		: { outcome, reason: reasons.join("; ") };
 }
 
-/** Seals `lane`; a join passes the writer of the version it joined on to the new one, so an agent can resume it. */
+/** Seals `lane`; an extend passes the writer of the version it extended on to the new one, so an agent can resume it. */
 async function sealed(
 	root: string,
 	config: CheckConfig,
@@ -168,7 +168,7 @@ async function sealed(
 	lane: Lane,
 ): Promise<string> {
 	const version = await lane.seal();
-	if (config.lane.mode === "join")
+	if (config.lane.mode === "extend")
 		carryWriter(root, laneVersion(inputs[LANE_PORT]), version);
 	return version;
 }

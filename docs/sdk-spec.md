@@ -283,8 +283,8 @@ A host SDK is a package that exports typed constructors and types for the host's
 1. Produce the same Result handle shape as core constructors (section 4).
 2. Declare each constructor's ports with schemas, including ports whose schema depends on the node's configuration.
 3. Contribute host types (for example a lane handle) with serialization into the IR.
-4. Provide builders for host-specific references (for example `fresh`, `fork`, `join`) that return typed handles, never
-   raw strings.
+4. Provide builders for host-specific references (for example `fresh`, `fork`, `extend`) that return typed handles,
+   never raw strings.
 5. Register its compose-time `validate` and `bounds` hooks with the core through the host interface (architecture
    section 6).
 6. Contribute param types and their CLI resolution.
@@ -303,26 +303,27 @@ bundle it.
 | `Lane`                                     | The `repo.lane` type of a lane version, and the lane ref param type                                                                     |
 | `fresh(base?)`                             | A new lane cut at `base`, else `target.base`, else the target's `HEAD`                                                                  |
 | `fork(v)`, `read(v)`                       | A copy of version `v`, or `v` with its writes discarded; `v` is a lane output or a lane ref                                             |
-| `join(v)`                                  | The lane continued from `v`, a lane output of this concert                                                                              |
+| `extend(v, { resume? })`                   | The lane continued from `v`, a lane output of this concert; with `resume`, an agent continues the session that wrote `v`                |
 | `JsonOut(file, type)`, `MarkdownOut(file)` | An agent output: a file in its outbox, arriving as a `core.json-file` or `core.markdown` artifact                                       |
 | `agent({ task, lane, role, ... })`         | A `repo.agent` node; outputs `report`, `staged`, `lane` unless it reads, and each declared output¹                                      |
 | `seat({ role, identity, ... })`            | A function of `{ task, lane, ... }` that emits a `repo.agent` node²                                                                     |
 | `check(lane, which?)`                      | A `repo.check` node: every named check, the one named, or an inline `{ run, timeout, ... }`; outputs `logs`, and `lane` unless it reads |
 | `changeset(v)`                             | A `repo.changeset` node: version `v` as a patch series, output `changeset`                                                              |
-| `apply(lane, { name: changeset }, opts)`   | A `repo.apply` node: the changesets applied in key order, each on a port of its name; output `lane`                                     |
+| `apply(lane, changeset, opts)`             | A `repo.apply` node: one changeset applied, on its `changeset` port; `opts.strategy` is `3way` or `clean`; output `lane`                |
 
-¹ `agent` also takes `identity`, `refs` (each `{ artifact, when }`), `out`, `checks`, `readOnly`, `resume` and the
-common options. `role` is a role name or `{ name, harness?, model?, thinking? }`.
+¹ `agent` also takes `identity`, `attachments` (each `{ artifact, hint }`), `out`, `checks`, `readOnly` and the common
+options. An attachment or output named `prompt`, `identity`, `lane`, `report` or `staged` is a build error. `role` is a
+role name or `{ name, harness?, model?, thinking? }`.
 
-² A seat takes `role`, `identity`, `refs`, `out`, `checks` and `readOnly`. A call takes `task`, `lane`, `resume` and the
-common options, and may override the role and add refs, outputs, checks and read-only binds: its role fields override
-the seat's, refs and outputs add with the call winning on a name, checks and binds are a union, and the result's outputs
-are typed by both.
+² A seat takes `role`, `identity`, `attachments`, `out`, `checks` and `readOnly`. A call takes `task`, `lane` and the
+common options, and may override the role and add attachments, outputs, checks and read-only binds: its role fields
+override the seat's, attachments and outputs add with the call winning on a name, checks and binds are a union, and the
+result's outputs are typed by both.
 
 A check with no `timeout` has none: it runs until it ends or the concert is killed.
 
 A lane ref given to `fork`, `read` or `changeset` becomes a `literal` of type `Lane`. N lanes merge by folding `apply`
-over their changesets with `iter.fold`, a resolver agent joining on conflict.
+over their changesets with `iter.fold`, a resolver agent extending on conflict.
 
 ## 13. IR emission, the worker protocol, diagnostics, test kit and renderers
 
@@ -363,7 +364,7 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 - `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count, a code
   node `timeout` that is neither a duration nor a whole number of milliseconds within the timer range (`BOUND.timeout`).
 - `CFG` unclaimed key, schema violation, required key missing, examples missing or given with ports.
-- `HOST` anything a host `validate` hook reports (for example a lane joined twice).
+- `HOST` anything a host `validate` hook reports (for example a lane extended twice).
 - `BUILD` an ambient read during build (SDK-11), or a build that yields different IR twice (SDK-12).
 - `ASSERT` an `assert` that fails at build.
 - `SCOPE` duplicate ids (two unlabelled nodes deriving one id need a `label`), duplicate `parMap` or `parFind` item
@@ -400,7 +401,7 @@ export const fixUntilGreen = composition(
     params: { maxRepairs: Int({ default: 2 }), model: Text() },
   },
   (params, { build, prompt }) => {
-    const verify = (lane) => check(join(lane), "test");
+    const verify = (lane) => check(extend(lane), "test");
     return loop.while((checked) => not(checked.ok), {
       init: verify(build),
       step: (checked) =>
@@ -408,11 +409,10 @@ export const fixUntilGreen = composition(
           agent({
             label: "repair",
             task: tpl("fix.md", { failures: checked.reason, request: prompt }),
-            lane: join(checked.out.lane),
+            lane: extend(checked.out.lane, { resume: true }),
             role: { name: "builder", model: params.model },
-            resume: true,
-            refs: {
-              logs: { artifact: checked.out.logs, when: "first, to see why the check failed" },
+            attachments: {
+              logs: { artifact: checked.out.logs, hint: "Read first, to see why the check failed" },
             },
           }),
         ),
@@ -464,7 +464,7 @@ const runs = iter.parMap(
       task: tpl("skeptic.md", { job }),
       lane: fresh(),
       role: job.skeptic,
-      refs: { findings: { artifact: lens.out.findings, when: "before judging any finding" } },
+      attachments: { findings: { artifact: lens.out.findings, hint: "Read before judging any finding" } },
       out: { verdicts: JsonOut("skeptic.json", Verdicts) },
     });
     return { lens, skeptic };
@@ -481,7 +481,7 @@ return agent({
 });
 ```
 
-**Plan from several angles, then synthesize** (`fork` several, then `join` the original):
+**Plan from several angles, then synthesize** (`fork` several, then `extend` the original):
 
 ```ts
 const scout = agent({ label: "scout", task: prompt, lane: fresh(), role: "scout" });
@@ -500,7 +500,7 @@ const good = code(renderOk, { in: { plans: plans.out.results }, out: { text: Tex
 const synthesis = agent({
   label: "synthesis",
   task: tpl("synthesis.md", { good: good.out.text }),
-  lane: join(scout.out.lane),
+  lane: extend(scout.out.lane),
   role: "planner",
   when: good.out.nonEmpty,
 });
@@ -512,10 +512,10 @@ return firstOk([synthesis.out.report, firstOk(plans).out.value.get("report")]);
 | Predecessor workflow                     | Constructs it needs                                                                                                                                                   |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | scout_plan, build_quality, review_panel  | `agent`, `check`, `use`, `iter.parMap`, reducers                                                                                                                      |
-| full                                     | `use` of two subcompositions, `agent` joined to the result                                                                                                            |
+| full                                     | `use` of two subcompositions, `agent` extending the result                                                                                                            |
 | build_escalate                           | `iter.find`, `use`, `fork` of one source                                                                                                                              |
 | build_fanout                             | `iter.parMap` with `onError: "continue"`, `firstOk`                                                                                                                   |
-| plan_panel                               | `fork` and `join` of lane versions, `iter.parMap`, `Settled` fan-in, code node                                                                                        |
+| plan_panel                               | `fork` and `extend` of lane versions, `iter.parMap`, `Settled` fan-in, code node                                                                                      |
 | build_review                             | `loop` carrying two values, `tolerate` on a rejected check, a typed field in its condition                                                                            |
 | verification round (lenses, skeptics)    | `iter.parMap`, conditional second node, `assert` for the model-family policy, code node                                                                               |
 | rework, then a review gate, then a round | `use`, `loop`, staging by artifact ports, a final subcomposition use                                                                                                  |
