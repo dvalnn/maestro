@@ -1,3 +1,4 @@
+export { resolveBin } from "./bin";
 export { type StubStep, stubHarness } from "./stub";
 export { type SubprocessAdapter, subprocessHarness } from "./subprocess";
 export {

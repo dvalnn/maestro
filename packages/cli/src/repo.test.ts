@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { claudeHarness } from "@maestro/harness-claude";
 import { piHarness } from "@maestro/harness-pi";
 import { repoHost } from "@maestro/host-repo";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
@@ -9,7 +10,14 @@ import { idOf, json, world } from "./fixtures/world";
 afterEach(cleanup);
 
 const REPO = join(FIXTURES, "repo");
-const hosts = [repoHost({ harnesses: [piHarness()] })];
+const hosts = [
+	repoHost({
+		harnesses: [
+			piHarness(),
+			claudeHarness({ token: process.env.CLAUDE_CODE_OAUTH_TOKEN }),
+		],
+	}),
+];
 
 const GIT_ENV = {
 	PATH: process.env.PATH ?? "/usr/bin:/bin",
@@ -80,26 +88,41 @@ test("a lane ref names a version by the instance id ls shows, ls shows its disk 
 	).toMatchObject({ code: 1 });
 });
 
-test.skipIf(!process.env.MAESTRO_PI)(
-	"pi performs an agent with an identity, and its file is in the version a check reads",
-	async () => {
-		const model = process.env.MAESTRO_PI_MODEL ?? "github-copilot/gpt-5-mini";
-		const w = await repoWorld(
-			`roles:\n  writer:\n    harness: pi\n    model: ${model}\n    thinking: low\n`,
-		);
-		const done = await w.call(["perform", join(REPO, "write.ts")]);
-		expect(done).toMatchObject({ code: 0 });
-		const { instances } = json(await w.call(["ls", idOf(done), "--json"]));
-		const agent = instances.find((i: { node: string }) => i.node === "write");
-		expect(agent.outputs.report.toLowerCase()).toContain("kumquat");
-		expect(agent.metrics.tokens_in).toBeGreaterThan(0);
-		const [identity] = [
-			...new Bun.Glob("**/staged/identity.md").scanSync({
-				cwd: w.root,
-				absolute: true,
-			}),
-		];
-		expect(readFileSync(identity ?? "", "utf8")).toContain("kumquat");
+/** Each real harness behind its gate: the agent's identity and file, and the metrics it reports. */
+const REAL_HARNESSES = [
+	{
+		gate: "MAESTRO_PI",
+		harness: "pi",
+		model: process.env.MAESTRO_PI_MODEL ?? "github-copilot/gpt-5-mini",
 	},
-	180_000,
-);
+	{
+		gate: "MAESTRO_CLAUDE",
+		harness: "claude",
+		model: process.env.MAESTRO_CLAUDE_MODEL ?? "haiku",
+	},
+];
+
+for (const { gate, harness, model } of REAL_HARNESSES) {
+	test.skipIf(!process.env[gate])(
+		`${harness} performs an agent with an identity, and its file is in the version a check reads`,
+		async () => {
+			const w = await repoWorld(
+				`roles:\n  writer:\n    harness: ${harness}\n    model: ${model}\n    thinking: low\n`,
+			);
+			const done = await w.call(["perform", join(REPO, "write.ts")]);
+			expect(done).toMatchObject({ code: 0 });
+			const { instances } = json(await w.call(["ls", idOf(done), "--json"]));
+			const agent = instances.find((i: { node: string }) => i.node === "write");
+			expect(agent.outputs.report.toLowerCase()).toContain("kumquat");
+			expect(agent.metrics.tokens_in).toBeGreaterThan(0);
+			const [identity] = [
+				...new Bun.Glob("**/staged/identity.md").scanSync({
+					cwd: w.root,
+					absolute: true,
+				}),
+			];
+			expect(readFileSync(identity ?? "", "utf8")).toContain("kumquat");
+		},
+		180_000,
+	);
+}

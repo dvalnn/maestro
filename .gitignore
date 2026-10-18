@@ -3,3 +3,4 @@ dist/
 *.tsbuildinfo
 *.bun-build
 .scratch/
+.env

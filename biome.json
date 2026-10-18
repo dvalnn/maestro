@@ -155,7 +155,7 @@
 			}
 		},
 		{
-			"includes": ["packages/harness-pi/**"],
+			"includes": ["packages/harness-*/**"],
 			"linter": {
 				"rules": {
 					"style": {
@@ -169,7 +169,7 @@
 											"!@maestro/host-repo",
 											"!@maestro/host-repo/**"
 										],
-										"message": "harness-pi imports host-repo alone."
+										"message": "Harness adapters import host-repo alone."
 									},
 									{
 										"group": [
@@ -208,10 +208,10 @@
 											"!@maestro/ir",
 											"!@maestro/render-*",
 											"!@maestro/host-repo",
-											"!@maestro/harness-pi",
+											"!@maestro/harness-*",
 											"!@maestro/testkit"
 										],
-										"message": "cli imports core, sdk, ir, render-*, host-repo and harness-pi, and testkit in tests."
+										"message": "cli imports core, sdk, ir, render-*, host-repo and the harness adapters, and testkit in tests."
 									},
 									{
 										"group": [

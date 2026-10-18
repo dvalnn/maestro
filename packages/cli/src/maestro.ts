@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { writeSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
+import { claudeHarness } from "@maestro/harness-claude";
 import { piHarness } from "@maestro/harness-pi";
 import { repoHost } from "@maestro/host-repo";
 import { main } from "./cli";
@@ -24,7 +25,14 @@ async function confirm(question: string): Promise<boolean> {
 
 process.exit(
 	await main(process.argv.slice(2), {
-		hosts: [repoHost({ harnesses: [piHarness()] })],
+		hosts: [
+			repoHost({
+				harnesses: [
+					piHarness(),
+					claudeHarness({ token: process.env.CLAUDE_CODE_OAUTH_TOKEN }),
+				],
+			}),
+		],
 		cwd: process.cwd(),
 		env: process.env,
 		stdout: (line) => writeSync(STDOUT_FD, `${line}\n`),

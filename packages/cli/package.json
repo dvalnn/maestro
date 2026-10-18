@@ -7,6 +7,7 @@
 	},
 	"dependencies": {
 		"@maestro/core": "workspace:*",
+		"@maestro/harness-claude": "workspace:*",
 		"@maestro/harness-pi": "workspace:*",
 		"@maestro/host-repo": "workspace:*",
 		"@maestro/ir": "workspace:*",

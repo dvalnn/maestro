@@ -1,0 +1,258 @@
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import {
+	type Harness,
+	type HarnessEvent,
+	type HarnessRequest,
+	IDENTITY,
+	type Metrics,
+	resolveBin,
+	SESSION_DIR,
+	type SubprocessAdapter,
+	subprocessHarness,
+} from "@maestro/host-repo/harness";
+import type { SandboxBackend } from "@maestro/host-repo/sandbox";
+
+const CLAUDE_BIN = "claude";
+const CONFIG_DIR_VAR = "CLAUDE_CONFIG_DIR";
+const TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN";
+const TOKEN_HINT = `Run \`claude setup-token\`, then set ${TOKEN_VAR} in your shell profile or in .env`;
+/** The `error` a claude assistant message carries when the login was refused. */
+const AUTH_FAILED = "authentication_failed";
+/** Per-session config dir under the session dir, so transcripts and settings are the session's own. */
+const SESSION_CONFIG = "claude";
+
+/** What claude would otherwise load on its own, none of which maestro manages. */
+const UNMANAGED_OFF = [
+	"--setting-sources",
+	"",
+	"--settings",
+	JSON.stringify({ disableAllHooks: true }),
+	"--strict-mcp-config",
+	"--disable-slash-commands",
+	"--no-chrome",
+];
+
+/** Tells claude it already runs inside bubblewrap, which it requires to accept `bypassPermissions` as root. */
+const UNMANAGED_OFF_ENV = {
+	CLAUDE_CODE_BUBBLEWRAP: "1",
+	CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+	CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
+	CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+};
+
+/** The metric each key of a message's or a result's `usage` is summed into. */
+const USAGE_METRICS = {
+	input_tokens: "tokens_in",
+	output_tokens: "tokens_out",
+	cache_read_input_tokens: "tokens_cache_read",
+	cache_creation_input_tokens: "tokens_cache_write",
+} as const;
+
+/** The same, for each model's entry in a result's `modelUsage`. */
+const MODEL_USAGE_METRICS = {
+	inputTokens: "tokens_in",
+	outputTokens: "tokens_out",
+	cacheReadInputTokens: "tokens_cache_read",
+	cacheCreationInputTokens: "tokens_cache_write",
+} as const;
+
+export type ClaudeOptions = {
+	/** The claude executable. Defaults to `claude` on PATH, looked through a mise shim. */
+	bin?: string;
+	/** A `claude setup-token` token, passed to claude as a masked secret. Without one, a run fails before it starts. */
+	token?: string;
+};
+
+type Json = Record<string, unknown>;
+
+const isObject = (v: unknown): v is Json =>
+	typeof v === "object" && v !== null && !Array.isArray(v);
+
+function number(v: unknown): number {
+	return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
+function sumUsage(entries: Json[], keys: Record<string, string>): Metrics {
+	const metrics: Metrics = {};
+	for (const [key, metric] of Object.entries(keys)) {
+		metrics[metric] = entries.reduce((n, u) => n + number(u[key]), 0);
+	}
+	return metrics;
+}
+
+/**
+ * A result's totals: the sum over `modelUsage`, which also counts subagents and side models, else its `usage`.
+ */
+function resultMetrics(e: Json): Metrics {
+	const models = isObject(e.modelUsage)
+		? Object.values(e.modelUsage).filter(isObject)
+		: [];
+	return models.length
+		? sumUsage(models, MODEL_USAGE_METRICS)
+		: sumUsage(isObject(e.usage) ? [e.usage] : [], USAGE_METRICS);
+}
+
+/** What `now` adds to `before`, never negative. */
+function growth(now: Metrics, before: Metrics): Metrics {
+	const out: Metrics = {};
+	for (const [k, v] of Object.entries(now))
+		out[k] = Math.max(0, v - (before[k] ?? 0));
+	return out;
+}
+
+function blockEvent(block: unknown): HarnessEvent[] {
+	if (!isObject(block)) return [];
+	if (block.type === "text")
+		return [{ kind: "text", text: String(block.text) }];
+	if (block.type === "tool_use")
+		return [{ kind: "tool", name: String(block.name) }];
+	return [];
+}
+
+/** One run's final line. `is_error` also rides on `subtype: "success"`, so both are checked. */
+function resultEvents(
+	e: Json,
+	authFailed: boolean,
+	counted: Metrics,
+): HarnessEvent[] {
+	const failed = e.is_error === true || e.subtype !== "success";
+	const reply = typeof e.result === "string" ? e.result : "";
+	const reason = reply || `claude ended with ${String(e.subtype)}`;
+	return [
+		{ kind: "usage", metrics: growth(resultMetrics(e), counted) },
+		{ kind: "text", text: reply },
+		failed
+			? {
+					kind: "fault",
+					reason: authFailed ? `${reason}. ${TOKEN_HINT}` : reason,
+				}
+			: { kind: "settled" },
+	];
+}
+
+/**
+ * Maps `claude -p --output-format stream-json` lines to events. An assistant message is repeated once per content
+ * block, so its usage is counted once per message id, as growth. The closing `result` line adds what the messages
+ * missed: subagents, side models and streamed output tokens. A run that ends without one reports the messages'
+ * usage alone, which undercounts output. Unknown types pass through as raw, never fail.
+ */
+function parser(): (line: string) => HarnessEvent[] {
+	const turns = new Set<string>();
+	const seen = new Map<string, Metrics>();
+	const counted: Metrics = {};
+	let authFailed = false;
+	const assistantEvents = (message: Json): HarnessEvent[] => {
+		const id = String(message.id);
+		const now = sumUsage(
+			isObject(message.usage) ? [message.usage] : [],
+			USAGE_METRICS,
+		);
+		const added = growth(now, seen.get(id) ?? {});
+		seen.set(id, now);
+		for (const [k, v] of Object.entries(added))
+			counted[k] = (counted[k] ?? 0) + v;
+		const first: HarnessEvent[] = turns.has(id) ? [] : [{ kind: "turn" }];
+		turns.add(id);
+		const blocks = Array.isArray(message.content) ? message.content : [];
+		return [
+			...first,
+			{ kind: "usage", metrics: added },
+			...blocks.flatMap(blockEvent),
+		];
+	};
+	const eventsOf = (e: Json): HarnessEvent[] => {
+		switch (e.type) {
+			case "assistant":
+				authFailed ||= e.error === AUTH_FAILED;
+				return isObject(e.message) ? assistantEvents(e.message) : [];
+			case "result":
+				return resultEvents(e, authFailed, counted);
+			case "user":
+				return [];
+			case "system":
+				return e.subtype === "init" ? [] : [{ kind: "raw", data: e }];
+			default:
+				return [{ kind: "raw", data: e }];
+		}
+	};
+	return (line) => {
+		let e: unknown;
+		try {
+			e = JSON.parse(line);
+		} catch {
+			return [];
+		}
+		return isObject(e) ? eventsOf(e) : [];
+	};
+}
+
+/** Whether the session's config dir already holds a transcript of `session.id`. */
+function hasTranscript(session: HarnessRequest["session"]): boolean {
+	const transcripts = new Bun.Glob(`projects/*/${session.id}.jsonl`);
+	return (
+		transcripts.scanSync({ cwd: join(session.dir, SESSION_CONFIG) }).next()
+			.done === false
+	);
+}
+
+/**
+ * The claude argv for a request. The prompt travels on stdin, the identity in a file claude appends to its system
+ * prompt. The sandbox is the confinement, so claude's own permission prompts are off. The system prompt is not
+ * snapshotted, or a resumed session would keep its first identity.
+ */
+function claudeArgv(
+	bin: string,
+	req: HarnessRequest,
+	resuming: boolean,
+): string[] {
+	const { model, thinking } = req.role;
+	return [
+		bin,
+		"-p",
+		"--output-format",
+		"stream-json",
+		"--verbose",
+		...UNMANAGED_OFF,
+		"--permission-mode",
+		"bypassPermissions",
+		"--system-prompt-snapshot",
+		"off",
+		...(req.identity ? ["--append-system-prompt-file", IDENTITY] : []),
+		resuming ? "--resume" : "--session-id",
+		req.session.id,
+		"--model",
+		model,
+		...(thinking ? ["--effort", thinking] : []),
+	];
+}
+
+/** Claude Code, run as a sandboxed subprocess (ADR 0001). */
+export function claudeHarness(
+	options: ClaudeOptions = {},
+	backend?: SandboxBackend,
+): Harness {
+	let bin: string | undefined;
+	const adapter: SubprocessAdapter = {
+		name: "claude",
+		spec(req) {
+			const { token } = options;
+			if (!token) throw new Error(`${TOKEN_VAR} is not set. ${TOKEN_HINT}`);
+			bin ??= resolveBin(CLAUDE_BIN, options.bin);
+			mkdirSync(join(req.session.dir, SESSION_CONFIG), { recursive: true });
+			const resuming = hasTranscript(req.session);
+			return {
+				argv: claudeArgv(bin, req, resuming),
+				stdin: req.prompt,
+				env: {
+					...UNMANAGED_OFF_ENV,
+					[CONFIG_DIR_VAR]: join(SESSION_DIR, SESSION_CONFIG),
+				},
+				secrets: { [TOKEN_VAR]: token },
+				readOnly: [{ src: dirname(bin) }],
+			};
+		},
+		parser,
+	};
+	return subprocessHarness(adapter, backend);
+}

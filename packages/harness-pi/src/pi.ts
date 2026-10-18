@@ -1,12 +1,13 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import {
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,
 	IDENTITY,
 	type Metrics,
+	resolveBin,
 	SESSION_DIR,
 	type SubprocessAdapter,
 	subprocessHarness,
@@ -137,19 +138,6 @@ function parser(): (line: string) => HarnessEvent[] {
 	};
 }
 
-/** The real pi executable: a version-manager shim resolves to the manager, so it is asked where pi lives. */
-function resolveBin(bin: string | undefined): string {
-	const found = bin ?? Bun.which(PI_BIN);
-	if (!found)
-		throw new Error("pi is not on PATH. Install pi or pass its path as `bin`");
-	const real = realpathSync(found);
-	if (bin || basename(real) === PI_BIN) return real;
-	const asked = Bun.spawnSync(["mise", "which", PI_BIN])
-		.stdout.toString()
-		.trim();
-	return asked ? realpathSync(asked) : real;
-}
-
 /** What pi would otherwise discover on its own, none of which maestro manages. */
 const UNMANAGED_OFF = [
 	"--no-skills",
@@ -184,6 +172,7 @@ export function piHarness(
 	backend?: SandboxBackend,
 ): Harness {
 	const agentDir = options.agentDir ?? join(homedir(), ".pi", "agent");
+	let bin: string | undefined;
 	const adapter: SubprocessAdapter = {
 		name: "pi",
 		spec(req) {
@@ -191,7 +180,7 @@ export function piHarness(
 				throw new Error(
 					`pi config dir does not exist: ${agentDir}. Run pi once and log in`,
 				);
-			const bin = resolveBin(options.bin);
+			bin ??= resolveBin(PI_BIN, options.bin);
 			return {
 				argv: piArgv(bin, req),
 				stdin: req.prompt,
