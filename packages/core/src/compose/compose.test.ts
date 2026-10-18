@@ -39,7 +39,7 @@ describe("compose", () => {
 		[
 			"fanout-fanin-loop.json",
 			golden,
-			{ upTo: 11 },
+			{ upTo: 13 },
 			"topics/draft",
 			{ exact: 3 },
 		],
@@ -57,7 +57,7 @@ describe("compose", () => {
 			"each/work",
 			{ upTo: 4 },
 		],
-		["fanout.json", sdkBuilt, { upTo: 16 }, "map/task", { exact: 2 }],
+		["fanout.json", sdkBuilt, { upTo: 20 }, "map/task", { exact: 2 }],
 	])("bounds %s", async (file, load, instances, node, count) => {
 		const { bounds } = await planOf(await load(file));
 		expect(bounds.instances).toEqual(instances);
@@ -184,11 +184,11 @@ describe("bounds (D-23)", () => {
 	});
 
 	test.each([
-		["fanout-fanin-loop.json", { instances: 11, calls: 10 }, []],
+		["fanout-fanin-loop.json", { instances: 13, calls: 10 }, []],
 		[
 			"fanout-fanin-loop.json",
-			{ instances: 10 },
-			["'instances' may reach at least 11, over its cap of 10"],
+			{ instances: 12 },
+			["'instances' may reach at least 13, over its cap of 12"],
 		],
 		[
 			"fanout-fanin-loop.json",

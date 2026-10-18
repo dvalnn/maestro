@@ -71,7 +71,7 @@ function itemsOf(
 	group: GroupNode,
 	keys: readonly string[],
 ): unknown[] | undefined {
-	if (group.kind === "repeat") return undefined;
+	if (group.kind === "loop") return undefined;
 	const edge = s.graph
 		.edgesInto(group.id)
 		.find((e) => e.kind === "data" && e.to.port === "items");

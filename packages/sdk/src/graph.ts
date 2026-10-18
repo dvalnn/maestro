@@ -5,7 +5,6 @@ import {
 	type IrNode,
 	isPlainObject,
 	type JsonSchema,
-	type Outcome,
 	type Ports,
 	type Scope,
 	settledSchema,
@@ -57,7 +56,6 @@ export type Refs<O extends Types> = {
 
 /** What every node constructor returns (sdk-spec 4). */
 export interface Result<O extends Types = Types> {
-	readonly outcome: Ref<Outcome>;
 	readonly ok: Ref<boolean>;
 	/** Present when the node settled `rejected` or `failed`. */
 	readonly reason: Ref<string>;
@@ -281,15 +279,13 @@ const usedAsValue = () =>
 	);
 
 export class ResultImpl implements Result {
-	readonly outcome: RefImpl<Outcome>;
 	readonly ok: RefImpl<boolean>;
 	readonly reason: RefImpl<string>;
 	readonly out: Record<string, RefImpl<unknown>>;
 
 	constructor(readonly node: string) {
 		const { out } = info(node);
-		const { outcome, ok, reason } = IMPLICIT_OUT;
-		this.outcome = this.port("outcome", outcome) as RefImpl<Outcome>;
+		const { ok, reason } = IMPLICIT_OUT;
 		this.ok = this.port("ok", ok) as RefImpl<boolean>;
 		this.reason = this.port("reason", reason) as RefImpl<string>;
 		this.out = Object.fromEntries(

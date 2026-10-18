@@ -8,13 +8,16 @@ describe("worked examples", () => {
 		const ir = buildValid(escalate);
 		expect(nodeOf(ir, "seq")).toMatchObject({
 			cardinality: { upTo: 2 },
-			members: { result: "seq/fix_until_green/repeat" },
-			until: { node: "seq/fix_until_green/repeat", port: "ok" },
+			members: { result: "seq/fix_until_green/loop" },
+			until: { node: "seq/fix_until_green/loop", port: "ok" },
 		});
-		expect(nodeOf(ir, "seq/fix_until_green/repeat")).toMatchObject({
+		expect(nodeOf(ir, "seq/fix_until_green/loop")).toMatchObject({
 			cardinality: { upTo: 2 },
 			tolerate: "rejected",
-			until: { node: "seq/fix_until_green/repeat/check", port: "ok" },
+			test: {
+				at: "start",
+				port: { node: "seq/fix_until_green/loop/loop_not", port: "value" },
+			},
 		});
 		expect(ir.result).toEqual({ node: "seq" });
 	});

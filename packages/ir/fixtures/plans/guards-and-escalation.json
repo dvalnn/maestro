@@ -357,16 +357,6 @@
 				}
 			},
 			{
-				"kind": "control",
-				"from": {
-					"node": "escalate"
-				},
-				"to": {
-					"node": "gate"
-				},
-				"tolerate": "rejected"
-			},
-			{
 				"kind": "data",
 				"from": {
 					"node": "escalate",

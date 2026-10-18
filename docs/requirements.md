@@ -125,15 +125,16 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 
 ### 6.1 Core: graph and engine (CORE)
 
-- **CORE-01 (Must).** The graph model has node kinds `code`, `map`, `seq`, `repeat`, `assert` and host kinds, with
-  `when` guards and subcomposition scopes.
+- **CORE-01 (Must).** The graph model has node kinds `code`, `map`, `seq`, `loop`, `assert` and host kinds, with `when`
+  guards and subcomposition scopes.
 - **CORE-02 (Must).** Ports are typed with schemas that serialize to JSON Schema. Compose type-checks every edge.
 - **CORE-03 (Must).** The IR distinguishes edge kinds `data`, `collect` and `control`. Fan-in is an explicit `collect`
   edge or a reducer node, never inferred.
 - **CORE-04 (Must).** Outcomes are `ok`, `rejected`, `failed`, `skipped`. By default a dependent runs only after `ok`
-  upstreams. An edge can tolerate `rejected`. The concert result is the node the composition returns when it is `ok`,
-  else the root cause of its outcome. A concert that fails before any node runs has a result with no node, only `failed`
-  and the reason.
+  upstreams. An edge can tolerate `rejected`, and a dependent that reads only status ports (`ok` or `reason`) of an
+  upstream needs no tolerance. The concert result is the node the composition returns when it is `ok`, else the root
+  cause of its outcome. A concert that fails before any node runs has a result with no node, only `failed` and the
+  reason.
 - **CORE-05 (Must).** Every group declares its cardinality, `exact` or `up to N`, so compose can bound node instances.
 - **CORE-06 (Must).** Building is symbolic, deterministic and side-effect free. It never reads a node's value. The same
   inputs and config yield byte-identical IR.
@@ -189,8 +190,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 
 - **SDK-01 (Must).** A TypeScript SDK declares compositions: name, doc, typed params with CLI hints and defaults, and at
   least one example input set (D-19).
-- **SDK-02 (Must).** Constructors exist for code, map, seq, repeat, assert, subcomposition use, and for host node kinds
-  contributed by host SDKs.
+- **SDK-02 (Must).** Constructors exist for code, map, seq, the loops (`loop.while`, `loop.doWhile`), assert,
+  subcomposition use, and for host node kinds contributed by host SDKs.
 - **SDK-03 (Must).** `Ref` semantics are enforced: build code cannot branch on a Ref. Lifting combinators (`pick`,
   `map`, `zip`, `when`) cover the common cases, and anything else is a code node. Params and composed config are plain
   values (D-16). The types distinguish Plain from Ref, and coercing a Ref to a boolean or string during build throws.

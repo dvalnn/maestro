@@ -10,11 +10,11 @@ import {
 	firstOk,
 	Int,
 	List,
-	lookup,
+	loop,
 	map,
+	not,
 	Record,
 	type Ref,
-	repeat,
 	Text,
 } from "@maestro/sdk";
 import {
@@ -131,7 +131,7 @@ export const buildThenRepair = composition(
 	},
 	({ task, maxRepairs }) => {
 		const built = builder({ label: "build", task, lane: fresh() });
-		const repaired = repeat({
+		const repaired = loop.while((checked) => not(checked.ok), {
 			init: check(join(built.out.lane), "test"),
 			step: (checked) => {
 				const repair = builder({
@@ -148,7 +148,6 @@ export const buildThenRepair = composition(
 				});
 				return check(join(repair.out.lane), "test");
 			},
-			until: (c) => c.ok,
 			max: maxRepairs,
 			tolerate: "rejected",
 		});
@@ -174,9 +173,6 @@ export function nthChangeset({
 	return { changeset: member.value.result.changeset };
 }
 
-/** Whether an apply that settled each outcome left conflicts to resolve. */
-const CONFLICTED = { ok: false, rejected: true, failed: false, skipped: false };
-
 const resolver = seat({
 	role: "resolver",
 	identity: "You resolve merge conflicts, keeping both sides' intent.",
@@ -185,13 +181,10 @@ const resolver = seat({
 /** `cs` applied to `lane`, and a resolver joining the result on a conflict: the merged version. */
 function merge(lane: LaneInput<"fresh" | "join">, cs: Ref<ArtifactRef>) {
 	const applied = apply(lane, { change: cs });
-	const conflicted = lookup(CONFLICTED, applied.outcome, {
-		tolerate: "rejected",
-	});
 	const resolved = resolver({
 		task: "Resolve the conflict markers in the files.",
 		lane: join(applied.out.lane),
-		when: conflicted,
+		when: not(applied.ok),
 		tolerate: "rejected",
 	});
 	return firstOk([resolved.out.lane, applied.out.lane], { label: "merged" });
@@ -224,7 +217,7 @@ export const fold = composition(
 				in: { results, index, offset },
 				out: { changeset: Dir() },
 			}).out.changeset;
-		const merged = repeat({
+		const merged = loop.doWhile((last) => last.ok, {
 			init: merge(fresh(), nth(0, 0)),
 			step: (state, i) => merge(join(state.out.value), nth(i, 1)),
 			max: tasks.length - 1,

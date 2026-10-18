@@ -199,12 +199,6 @@
 			"to": { "node": "gate", "port": "cond" }
 		},
 		{
-			"kind": "control",
-			"from": { "node": "escalate" },
-			"to": { "node": "gate" },
-			"tolerate": "rejected"
-		},
-		{
 			"kind": "data",
 			"from": { "node": "escalate", "port": "text" },
 			"to": { "node": "summary", "port": "text" }

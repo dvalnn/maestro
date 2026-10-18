@@ -51,7 +51,7 @@ describe("text forms", () => {
 			{ code: "x", severity: "warning", message: "m", hint: "h" },
 		];
 		expect(summary(warned)).toBe(
-			"fanout-fanin-loop: up to 11 node instances, up to 5 calls, 1 warning",
+			"fanout-fanin-loop: up to 13 node instances, up to 5 calls, 1 warning",
 		);
 	});
 
@@ -66,7 +66,7 @@ describe("text forms", () => {
 			].join("\n"),
 		);
 		expect(listing(await plan("nested-groups"))).toContain(
-			"  angles/polish       repeat     2\n    angles[wide]/polish expands to up to 3\n",
+			"  angles/polish       loop       2\n    angles[wide]/polish expands to 1 to 3\n",
 		);
 	});
 });
@@ -89,7 +89,7 @@ describe("render", () => {
 		const chart = await lines("fanout-fanin-loop");
 		for (const line of [
 			'  subgraph s0["refine"]',
-			'      n3[["repeat<br/>up to 2"]]',
+			'      n3[["loop<br/>0 to 2"]]',
 			'    n0[["map<br/>alpha, beta, gamma"]]',
 			'    n1(["draft<br/>fake.task"])',
 			'  n2[/"pick<br/>fan-in firstOk"/]',
@@ -99,7 +99,7 @@ describe("render", () => {
 			expect(chart).toContain(line);
 	});
 
-	test("merges parallel data edges and loops a repeat back", async () => {
+	test("merges parallel data edges and loops a loop back", async () => {
 		const chart = await lines("nested-groups");
 		expect(chart).toContain('  n2 -->|"text to prompt, index to round"| n3');
 		expect(chart.join("\n")).not.toContain("shape: fork");
@@ -141,15 +141,18 @@ describe("render", () => {
 		expect(await lines("ship")).toEqual(SHIP);
 	});
 
-	test("shows a group header's expansion once, or one line per path", async () => {
+	test("shows a group header's expansion once, or one line per path, a loop's as its steps", async () => {
 		const header = (chart: string) =>
-			chart.split("\n").find((l) => l.includes('[["repeat'));
+			chart.split("\n").find((l) => l.includes('[["loop'));
 		const nested = await plan("nested-groups");
 		expect(header(render(nested))).toBe(
-			'      n2[["repeat<br/>[wide]: up to 3<br/>[deep]: up to 3"]]',
+			'      n2[["loop<br/>[wide]: 1 to 3<br/>[deep]: 1 to 3"]]',
 		);
 		nested.expansion["angles/polish"] = {};
-		expect(header(render(nested))).toBe('      n2[["repeat<br/>up to 3"]]');
+		expect(header(render(nested))).toBe('      n2[["loop<br/>1 to 3"]]');
+		const polish = nested.ir.nodes.find((n) => n.id === "angles/polish");
+		if (polish?.kind === "loop") polish.test.at = "start";
+		expect(header(render(nested))).toBe('      n2[["loop<br/>0 to 3"]]');
 	});
 
 	test("cuts a long key list, and counts the instances a key function names", async () => {

@@ -8,9 +8,10 @@ import {
 	hostNode,
 	Int,
 	List,
+	loop,
 	map,
+	not,
 	type Ref,
-	repeat,
 	seq,
 	Text,
 	use,
@@ -32,11 +33,10 @@ export const fixUntilGreen = composition(
 		params: { maxRepairs: Int({ default: 2 }) },
 	},
 	({ maxRepairs }, { draft, prompt }) =>
-		repeat({
+		loop.while((checked) => not(checked.ok), {
 			init: check(draft),
 			step: (checked, i) =>
 				check(task({ prompt, failures: checked.out.logs, index: i }).out.text),
-			until: (c) => c.ok,
 			max: maxRepairs,
 			tolerate: "rejected",
 		}),

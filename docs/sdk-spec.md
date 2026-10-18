@@ -64,7 +64,7 @@ is skipped too (CORE-04), so a guarded output needs no default; `ref.or(default)
 
 Every node constructor returns a **Result handle** with:
 
-- `outcome`, `ok`, and `reason` (text, present when rejected or failed),
+- the status ports `ok` and `reason` (text, present when rejected or failed),
 - one port per declared output, under `out`,
 - any extra ports its kind defines (for a host kind, for example a lane).
 
@@ -72,14 +72,15 @@ All of these are Refs. A node accepts common options: `label`, `when` and `toler
 
 ### 4.1 Core node constructors
 
-| Constructor              | Purpose                                                                                  | Key arguments                                           | Result                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------- |
-| `code(fn, opts)`         | Run the author's function over typed inputs.                                             | `in` ports, `out` schema, `reads`, `writes`, `timeout`  | outputs per `out`                               |
-| `map(items, body, opts)` | Instantiate `body` once per item, in parallel.                                           | `items`, body, `max`, `onError`                         | `Settled(R)[]` with static cardinality metadata |
-| `seq(items, body, opts)` | Instantiate `body` per item in order, stop at the first item whose result meets `until`. | `items`, body, `until`, `max`                           | the stopping result, or the last                |
-| `repeat(opts)`           | Bounded loop carrying typed state.                                                       | `init`, `step(state, i)`, `until`, `max`, `tolerate`    | the last state                                  |
-| `assert(cond, message)`  | A policy or invariant.                                                                   | a boolean                                               | none                                            |
-| `use(sub, ports, opts)`  | Instantiate a subcomposition.                                                            | `ports` (Refs or plain values), `opts.params` overrides | the subcomposition's declared outputs           |
+| Constructor                | Purpose                                                                                  | Key arguments                                               | Result                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------- |
+| `code(fn, opts)`           | Run the author's function over typed inputs.                                             | `in` ports, `out` schema, `reads`, `writes`, `timeout`      | outputs per `out`                               |
+| `map(items, body, opts)`   | Instantiate `body` once per item, in parallel.                                           | `items`, body, `max`, `onError`                             | `Settled(R)[]` with static cardinality metadata |
+| `seq(items, body, opts)`   | Instantiate `body` per item in order, stop at the first item whose result meets `until`. | `items`, body, `until`, `max`                               | the stopping result, or the last                |
+| `loop.while(cond, opts)`   | Bounded loop carrying typed state, testing the state before each step.                   | `cond(state)`, `init`, `step(state, i)`, `max`, `tolerate`  | the last state                                  |
+| `loop.doWhile(cond, opts)` | Bounded loop carrying typed state, testing each step's result.                           | `cond(result)`, `init`, `step(state, i)`, `max`, `tolerate` | the last state                                  |
+| `assert(cond, message)`    | A policy or invariant.                                                                   | a boolean                                                   | none                                            |
+| `use(sub, ports, opts)`    | Instantiate a subcomposition.                                                            | `ports` (Refs or plain values), `opts.params` overrides     | the subcomposition's declared outputs           |
 
 Semantics each constructor must honor:
 
@@ -99,11 +100,19 @@ Semantics each constructor must honor:
 - **`seq`.** Covers escalation over an ordered list. `until` gets a member's result and returns a `Ref<Bool>`. Members
   after a satisfied `until` never start. The bound is `items.length` or `max`. A `seq` with `until` stays an "up to N"
   region in the plan. A `seq` over no items settles `skipped`.
-- **`repeat`.** The step receives the previous state and the iteration index. At least one iteration runs: `until` gets
-  each new state, never `init`, and returns a `Ref<Bool>`. A `repeat` stays an "up to `max`" region in the plan, for
-  bounds and rendering. `max` must be known at compose time, from a literal or a param. State edges are tolerant of
-  `rejected` only if `tolerate` says so. A state port named `index` is a build error, since the step's index takes that
-  name.
+- **`loop`.** Two loops, the condition first. Each goes on while its condition, a `Ref<Bool>`, holds:
+  - `loop.while` reads the condition on the state before each step, so it may run no step. The condition is a Bool port
+    of the state, such as `s.ok`, or of a node made from the state alone. A condition false on `init` ends the loop as
+    `init` ended. The plan shows `0 to max` steps.
+  - `loop.doWhile` reads the condition on each step's result, so at least one step runs. The plan shows `1 to max`.
+
+  The condition and the step receive the state as a Result handle (section 4): the previous node's outputs, its `ok` and
+  its `reason`, so `loop.while((s) => not(s.ok), ...)` repairs while a check is red. The step also receives the
+  iteration index. Whatever stops it, its condition or `max`, a loop ends with its last state's outcome, reason and
+  outputs. A loop stays an "up to `max`" region in the plan, for bounds and rendering. `max` must be known at compose
+  time, from a literal or a param. State edges are tolerant of `rejected` only if `tolerate` says so. A state port named
+  `ok`, `reason` or `index` is a build error, since the loop's state holds those names.
+
 - **`assert`.** Evaluated at build if the condition is a plain value, and at perform time otherwise. A failed build-time
   assert is a diagnostic error. A perform-time assert yields a `rejected` or `failed` node, whichever the assert
   declares.
@@ -115,10 +124,12 @@ Host SDKs add constructors with the same Result handle shape (section 12).
 ### 4.2 Guards and tolerance
 
 - **`when: Ref<Bool>`** on any node. A false guard makes the node `skipped`.
-- **`tolerate: "rejected"`** on a consuming node or a `repeat` state edge lets the node run after a `rejected` upstream.
-  It then receives `reason`, and the upstream's outputs when it rejected with them. Reading a declared output of a
-  rejection that carried none fails the node, naming the upstream. Without it a non-ok upstream makes the node `skipped`
-  (CORE-04). `failed` and `skipped` are never tolerable.
+- **Status ports.** A node that reads only an upstream's `ok` or `reason` runs after a `rejected` upstream with no
+  `tolerate`, so `not(check.ok)` needs none.
+- **`tolerate: "rejected"`** on a consuming node or a `loop` state edge lets the node run after a `rejected` upstream
+  whose declared outputs it reads. It then receives the upstream's outputs when it rejected with them. Reading a
+  declared output of a rejection that carried none fails the node, naming the upstream. Without either, a non-ok
+  upstream makes the node `skipped` (CORE-04). `failed` and `skipped` are never tolerable.
 
 ## 5. Refs and mapping between nodes
 
@@ -131,9 +142,11 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
   - `zip(a, b, { on? })` pairs the items of two lists, by position or by the key field `on`.
   - `when(cond, ...)` and `ref.or(default)` for guards and defaults.
   - `lookup(table, key)` indexes a plain table by a Ref key.
+  - `not(ref)` negates a `Ref<Bool>`.
 
   A lift's id names its source node and what it does, so it needs no label: `review.out.result.pick("summary")` is
-  `review_summary`, and `x.or(…)` is `x_or`. Every lift also takes `label`, for the rare clash that remains.
+  `review_summary`, `x.or(…)` is `x_or`, and `not(x.ok)` is `x_not`. Every lift also takes `label`, for the rare clash
+  that remains.
 
 - **Mapping between ports** is by typed assignment. A mismatch is a compose-time type error (CORE-02) naming both ports
   and schemas.
@@ -211,8 +224,8 @@ A code node is the SDK's answer to "this needs real code".
 ## 10. Config
 
 - Params carry defaults declared in code (CFG-03).
-- Composed config reaches the build function. Values that bound groups (`max` on `repeat` and `map`) come from params
-  and are therefore known at compose time.
+- Composed config reaches the build function. Values that bound groups (`max` on `loop` and `map`) come from params and
+  are therefore known at compose time.
 - Precedence, highest first (CFG-04, D-17): the use site for a subcomposition or the CLI flag for a root composition,
   then, for `compose`, the example set, then profile, workspace and user YAML, then the default. YAML keys live under
   the pack id and then the composition id.
@@ -229,6 +242,7 @@ The standard library is built only from the constructors above (NFR-09). Initial
   `firstOk` with no `ok` input settles `failed` if any input failed, else `rejected`.
 - **Templating.** `tpl` as above. Prompt files are text artifacts staged by the consuming host node.
 - **Readers.** Typed readers for JSON and text artifacts, with schema validation, as code nodes.
+- **Logic.** `not(ref)` negates a `Ref<Bool>`, a lift as in section 5, for a loop condition such as `not(state.ok)`.
 
 ## 12. Host SDK contract
 
@@ -275,7 +289,7 @@ are typed by both.
 A check with no `timeout` has none: it runs until it ends or the concert is killed.
 
 A lane ref given to `fork`, `read` or `changeset` becomes a `literal` of type `Lane`. N lanes merge by folding `apply`
-over their changesets in a `repeat`, a resolver agent joining on conflict.
+over their changesets in a `loop.doWhile`, a resolver agent joining on conflict.
 
 ## 13. IR emission, the worker protocol, diagnostics, test kit and renderers
 
@@ -353,7 +367,7 @@ export const fixUntilGreen = composition(
   },
   (params, { build, prompt }) => {
     const verify = (lane) => check(join(lane), "test");
-    return repeat({
+    return loop.while((checked) => not(checked.ok), {
       init: verify(build),
       step: (checked) =>
         verify(
@@ -368,7 +382,6 @@ export const fixUntilGreen = composition(
             },
           }),
         ),
-      until: (c) => c.ok,
       max: params.maxRepairs,
       tolerate: "rejected",
     });
@@ -465,9 +478,9 @@ return firstOk([synthesis.out.report, firstOk(plans).out.value.pick("result.repo
 | build_escalate                           | `seq`, `use`, `fork` of one source                                                                                                         |
 | build_fanout                             | `map` with `onError: "settle"`, `firstOk`                                                                                                  |
 | plan_panel                               | `fork` and `join` of lane versions, `map`, `Settled` fan-in, code node                                                                     |
-| build_review                             | `repeat` carrying two values, `tolerate` on a rejected check, a typed field in `until`                                                     |
+| build_review                             | `loop` carrying two values, `tolerate` on a rejected check, a typed field in its condition                                                 |
 | verification round (lenses, skeptics)    | `map`, conditional second node, `assert` for the model-family policy, code node                                                            |
-| rework, then a review gate, then a round | `use`, `repeat`, staging by artifact ports, a final subcomposition use                                                                     |
+| rework, then a review gate, then a round | `use`, `loop`, staging by artifact ports, a final subcomposition use                                                                       |
 | triage over a cross product              | `map` over a cross product made by a code node, typed outputs, code node for regrouping, `assert`                                          |
 | review of a locking change               | planner node whose output feeds a bounded `map`, fallback via `ref.or`, expansion in a code node, a pack code node for the Gerrit artifact |
 

@@ -37,10 +37,12 @@ import {
 } from "@maestro/ir";
 import { partKey, summarize } from "@maestro/ir/fixtures/guards";
 import { isDone } from "@maestro/ir/fixtures/refine";
+import { Bool, composition, hostNode, Int, loop, not } from "@maestro/sdk";
 import { planPanelIr } from "@maestro/sdk/fixtures/examples";
 import * as workers from "@maestro/sdk/fixtures/workers";
 import * as stdlib from "@maestro/sdk/stdlib";
 import {
+	buildIr,
 	FAKE_TASK,
 	type FakeScript,
 	fakeHost,
@@ -208,7 +210,7 @@ function barrier(count: number) {
 
 const pending = () => new Promise<HostNodeResult>(() => {});
 
-test("a map fans out, a reducer fans in over its settled members, a rejection's outputs included, and a repeat carries state to its bound", async () => {
+test("a map fans out, a reducer fans in over its settled members, a rejection's outputs included, and a loop carries state until its test is false", async () => {
 	const drafts: unknown[] = [];
 	const prompts: unknown[] = [];
 	const { result, record, concert } = await play(
@@ -232,6 +234,7 @@ test("a map fans out, a reducer fans in over its settled members, a rejection's 
 			},
 			code: {
 				isDone,
+				not: stdlib.not,
 				pick: stdlib.pick,
 				firstOk: (ports: { results: Settled<MemberValue>[] }) => {
 					drafts.push(...ports.results);
@@ -262,7 +265,7 @@ test("a map fans out, a reducer fans in over its settled members, a rejection's 
 	expect(instances["topics/draft[beta]"]?.status).toBe("rejected");
 });
 
-test("a repeat that tolerates rejected carries a rejected iteration into one that is accepted", async () => {
+test("a loop that tolerates rejected carries a rejected iteration into one that is accepted", async () => {
 	const { result, record, concert } = await play(
 		await fixture("fanout-fanin-loop.json"),
 		{
@@ -282,7 +285,12 @@ test("a repeat that tolerates rejected carries a rejected iteration into one tha
 					],
 				},
 			},
-			code: { isDone, firstOk: stdlib.firstOk, pick: stdlib.pick },
+			code: {
+				isDone,
+				not: stdlib.not,
+				firstOk: stdlib.firstOk,
+				pick: stdlib.pick,
+			},
 		},
 	);
 	expect(result).toMatchObject({
@@ -300,29 +308,51 @@ test("a repeat that tolerates rejected carries a rejected iteration into one tha
 	]);
 });
 
-/** A `repeat` fed by `seed`, its step reading the state's `text`. */
-const loopGraph = (tolerate: boolean) =>
-	graph(
+const BOOL = { type: "boolean" };
+const LOOP_INNER = { ok: BOOL, reason: STRING, index: { type: "integer" } };
+
+/** A body node `<loop>/more`, true while `<loop>/<member>` is not `ok`. */
+const notOk = (loop: string, member: string) => ({
+	node: code(`${loop}/more`, "not", {
+		in: { value: BOOL },
+		out: { value: BOOL },
+	}),
+	edge: data(`${loop}/${member}.ok`, `${loop}/more.value`),
+	test: { at: "end" as const, port: { node: `${loop}/more`, port: "value" } },
+});
+
+/** A loop fed by `seed` that goes on while its step is not `ok`, the step reading the state's `text`. */
+const loopGraph = (tolerate: boolean) => {
+	const more = notOk("loop", "step");
+	return graph(
 		[
 			task("seed", { out: { text: STRING } }),
 			{
 				id: "loop",
-				kind: "repeat",
+				kind: "loop",
 				cardinality: { upTo: 3 },
 				...(tolerate && { tolerate: "rejected" as const }),
 				in: { text: STRING },
-				inner: { index: { type: "integer" }, text: STRING },
+				inner: { ...LOOP_INNER, text: STRING },
 				out: { text: STRING },
 				members: { result: "loop/step" },
+				test: more.test,
 			},
 			task("loop/step", { in: { prompt: STRING }, out: { text: STRING } }),
+			more.node,
 		],
-		[data("seed.text", "loop.text"), data("loop.text", "loop/step.prompt")],
+		[
+			data("seed.text", "loop.text"),
+			data("loop.text", "loop/step.prompt"),
+			more.edge,
+		],
 		"loop",
 	);
+};
 
-test("a repeat stops at a rejected iteration it does not tolerate", async () => {
+test("a loop stops at a rejected iteration it does not tolerate", async () => {
 	const { result, record, concert } = await play(loopGraph(false), {
+		code: { not: stdlib.not },
 		script: {
 			steps: {
 				seed: [{ outcome: "ok", outputs: { text: "seed" } }],
@@ -343,33 +373,38 @@ test("a repeat stops at a rejected iteration it does not tolerate", async () => 
 
 const FINDINGS = { type: "array", items: STRING };
 
-/** A tolerant `repeat` whose code member `lint` reads the last state's findings as `seen`. */
+const lintMore = notOk("loop", "lint");
+
+/** A tolerant loop, going on while its code member `lint` rejects, that reads the last state's findings as `seen`. */
 const lintLoop = graph(
 	[
 		{
 			id: "loop",
-			kind: "repeat",
+			kind: "loop",
 			cardinality: { upTo: 3 },
 			tolerate: "rejected",
 			in: { findings: FINDINGS },
 			literals: { findings: [] },
-			inner: { index: { type: "integer" }, findings: FINDINGS },
+			inner: { ...LOOP_INNER, findings: FINDINGS },
 			out: { findings: FINDINGS },
 			members: { result: "loop/lint" },
+			test: lintMore.test,
 		},
 		code("loop/lint", "lint", {
 			in: { seen: FINDINGS },
 			out: { findings: FINDINGS },
 		}),
+		lintMore.node,
 	],
-	[data("loop.findings", "loop/lint.seen")],
+	[data("loop.findings", "loop/lint.seen"), lintMore.edge],
 	"loop",
 );
 
-test("a code node in a tolerant repeat hands the findings it rejected with to the next iteration", async () => {
+test("a code node in a tolerant loop hands the findings it rejected with to the next iteration", async () => {
 	const seen: unknown[] = [];
 	const { result } = await play(lintLoop, {
 		code: {
+			not: stdlib.not,
 			lint: ({ seen: last }: { seen: string[] }) => {
 				seen.push(last);
 				const findings = [...last, "x"];
@@ -385,7 +420,7 @@ test("a code node in a tolerant repeat hands the findings it rejected with to th
 	});
 });
 
-test("a tolerant reader of a declared output of a rejection without outputs fails before it starts, naming it, as does an until", async () => {
+test("a tolerant reader of a declared output of a rejection without outputs fails before it starts, naming it, as does a loop test", async () => {
 	const after = (from: string, to: string): IrEdge => ({
 		kind: "control",
 		from: { node: from },
@@ -428,7 +463,7 @@ test("a tolerant reader of a declared output of a rejection without outputs fail
 	});
 	expect(instances.note?.status).toBe("ok");
 	const { result } = await play(lintLoop, {
-		code: { lint: () => reject("dirty") },
+		code: { not: stdlib.not, lint: () => reject("dirty") },
 	});
 	expect(result).toEqual({
 		node: "loop/lint",
@@ -437,36 +472,67 @@ test("a tolerant reader of a declared output of a rejection without outputs fail
 		reason:
 			"'loop[0]/lint' rejected without outputs; its 'findings' cannot be read",
 	});
-	const DONE = { type: "boolean" };
-	const untilLoop = graph(
+	const testLoop = graph(
 		[
 			{
 				id: "loop",
-				kind: "repeat",
+				kind: "loop",
 				cardinality: { upTo: 3 },
 				tolerate: "rejected",
-				in: { done: DONE },
-				literals: { done: false },
-				inner: { index: { type: "integer" }, done: DONE },
-				out: { done: DONE },
+				in: { more: BOOL },
+				literals: { more: true },
+				inner: { ...LOOP_INNER, more: BOOL },
+				out: { more: BOOL },
 				members: { result: "loop/lint" },
-				until: { node: "loop/lint", port: "done" },
+				test: { at: "end", port: { node: "loop/lint", port: "more" } },
 			},
-			code("loop/lint", "lint", { out: { done: DONE } }),
+			code("loop/lint", "lint", { out: { more: BOOL } }),
 		],
 		[],
 		"loop",
 	);
-	const untilRead = await play(untilLoop, {
+	const testRead = await play(testLoop, {
 		code: { lint: () => reject("dirty") },
 	});
-	expect(untilRead.result).toEqual({
+	expect(testRead.result).toEqual({
 		node: "loop",
 		expansion: "",
 		outcome: "failed",
 		reason:
-			"'loop[0]/lint' rejected without outputs; its 'done' cannot be read",
+			"'loop[0]/lint' rejected without outputs; its 'more' cannot be read",
 	});
+});
+
+test("a reader of a rejected node's status ports alone starts untolerated, and one that also reads a declared output is skipped", async () => {
+	const { record, concert } = await play(
+		graph(
+			[
+				task("x", { out: { text: STRING } }),
+				task("both", { in: { ok: BOOL, text: STRING } }),
+				task("status", { in: { ok: BOOL, reason: STRING } }),
+			],
+			[
+				data("x.ok", "both.ok"),
+				data("x.text", "both.text"),
+				data("x.ok", "status.ok"),
+				data("x.reason", "status.reason"),
+			],
+			"status",
+		),
+		{
+			script: {
+				steps: {
+					x: [{ outcome: "rejected", reason: "red", outputs: { text: "t" } }],
+				},
+			},
+		},
+	);
+	const instances = byInstance(record.instances(concert));
+	expect(instances.both).toMatchObject({
+		status: "skipped",
+		reason: "'x' settled rejected",
+	});
+	expect(instances.status?.status).toBe("ok");
 });
 
 test("a seq's item is read from the seq, not from a previous member that rejected without outputs", async () => {
@@ -504,9 +570,10 @@ test("a seq's item is read from the seq, not from a previous member that rejecte
 	});
 });
 
-test("a repeat that tolerates rejected starts from rejected state and carries it to its bound", async () => {
+test("a loop that tolerates rejected starts from rejected state and goes on while its step rejects", async () => {
 	const prompts: unknown[] = [];
 	const { result } = await play(loopGraph(true), {
+		code: { not: stdlib.not },
 		script: {
 			steps: {
 				seed: [
@@ -525,12 +592,166 @@ test("a repeat that tolerates rejected starts from rejected state and carries it
 			},
 		},
 	});
-	expect(prompts).toEqual(["seed", "again", "done"]);
+	expect(prompts).toEqual(["seed", "again"]);
 	expect(result).toMatchObject({
 		node: "loop",
 		outcome: "ok",
 		outputs: { text: "done" },
 	});
+});
+
+const COUNT = { n: Int(), done: Bool() };
+
+/**
+ * A loop of `kind` from an `init` node to `step` nodes, at most 2, that goes on while its state, or a doWhile's step:
+ * - is not `done`, by default;
+ * - is `ok`, given `"ok"`.
+ */
+const counting = (
+	kind: "while" | "doWhile",
+	cond: "notDone" | "ok" = "notDone",
+) =>
+	buildIr(
+		composition("counting", { examples: [{}] }, () =>
+			loop[kind]((state) => (cond === "ok" ? state.ok : not(state.out.done)), {
+				init: hostNode(FAKE_TASK, { label: "init", out: COUNT }),
+				step: (state) =>
+					hostNode(FAKE_TASK, {
+						label: "step",
+						in: { n: state.out.n },
+						out: COUNT,
+					}),
+				max: 2,
+				tolerate: "rejected",
+			}),
+		),
+	);
+
+/** Performs `ir` with `init` settling as given and each step adding one to `n`, settling as `step` gives for it. */
+async function countFrom(
+	ir: Ir,
+	init: HostNodeResult,
+	step: (n: number) => HostNodeResult,
+) {
+	const concert = await play(ir, {
+		script: {
+			steps: {
+				init: [init],
+				"loop/step": (_, inputs) => step(Number(inputs.n) + 1),
+			},
+		},
+		code: { not: stdlib.not },
+	});
+	const steps = concert.record
+		.instances(concert.concert)
+		.filter((i) => i.node === "loop/step");
+	return { result: concert.result, steps: steps.length };
+}
+
+const doneAt =
+	(last: number) =>
+	(n: number): HostNodeResult => ({
+		outcome: "ok",
+		outputs: { n, done: n >= last },
+	});
+
+const rough = (n: number, done: boolean): HostNodeResult => ({
+	outcome: "rejected",
+	reason: `rough ${n}`,
+	outputs: { n, done },
+});
+
+test.each([
+	["while", "false on init ends ok on init's outputs with no step", 0, 0],
+	["while", "true once takes one step", 1, 1],
+	["doWhile", "takes a step even when init is done", 0, 1],
+] as const)(
+	"loop.%s whose condition is %s",
+	async (kind, _title, last, steps) => {
+		const ran = await countFrom(
+			counting(kind),
+			{ outcome: "ok", outputs: { n: 0, done: last === 0 } },
+			doneAt(last),
+		);
+		expect(ran.steps).toBe(steps);
+		expect(ran.result).toMatchObject({
+			node: "loop",
+			outcome: "ok",
+			outputs: { n: steps, done: true },
+		});
+	},
+);
+
+test.each([
+	["while", "a step", 0, 1],
+	["doWhile", "a step", 0, 1],
+	["while", "init, taking no step", 1, 0],
+] as const)(
+	"a loop.%s whose condition is false on a tolerated rejected state ends rejected on %s",
+	async (kind, _title, initDone, steps) => {
+		const ran = await countFrom(
+			counting(kind),
+			initDone ? rough(0, true) : doneAt(1)(0),
+			(n) => rough(n, true),
+		);
+		expect(ran.steps).toBe(steps);
+		expect(ran.result).toMatchObject({
+			outcome: "rejected",
+			reason: `rough ${steps}`,
+			outputs: { n: steps, done: true },
+		});
+	},
+);
+
+test.each(["while", "doWhile"] as const)(
+	"a loop.%s on ok that tolerates a step that rejects ends rejected with its reason",
+	async (kind) => {
+		const ran = await countFrom(counting(kind, "ok"), doneAt(1)(0), (n) =>
+			rough(n, false),
+		);
+		expect(ran.steps).toBe(1);
+		expect(ran.result).toMatchObject({
+			outcome: "rejected",
+			reason: "rough 1",
+		});
+	},
+);
+
+test("a loop.doWhile on not(r.ok) goes on past a rejected step it tolerates", async () => {
+	const ir = buildIr(
+		composition("retry", { examples: [{}] }, () =>
+			loop.doWhile((r) => not(r.ok), {
+				init: hostNode(FAKE_TASK, { label: "init", out: COUNT }),
+				step: (state) =>
+					hostNode(FAKE_TASK, {
+						label: "step",
+						in: { n: state.out.n },
+						out: COUNT,
+					}),
+				max: 3,
+				tolerate: "rejected",
+			}),
+		),
+	);
+	const ran = await countFrom(ir, doneAt(1)(0), (n) =>
+		n === 1 ? rough(n, false) : doneAt(n)(n),
+	);
+	expect(ran.steps).toBe(2);
+	expect(ran.result).toMatchObject({
+		node: "loop",
+		outcome: "ok",
+		outputs: { n: 2, done: true },
+	});
+});
+
+test("a loop that reaches max with its condition still true ends on its last state's outcome", async () => {
+	const ran = await countFrom(counting("while"), doneAt(1)(0), (n) => ({
+		outcome: "rejected",
+		reason: `still ${n}`,
+		outputs: { n, done: false },
+	}));
+	expect(ran.steps).toBe(2);
+	expect(ran.result).toMatchObject({ outcome: "rejected", reason: "still 2" });
 });
 
 test("a seq escalates through its items until one settles ok, after a map keyed by its key function", async () => {
@@ -667,6 +888,91 @@ test("a fan-in node takes each data input settled, whatever its outcome", async 
 		},
 	]);
 	expect(result.outcome).toBe("ok");
+});
+
+/** A loop fed by `seed`, tested `at` on `loop/done.ok`, `done` reading the state beside the step. */
+const doneOkLoop = (at: "start" | "end") =>
+	graph(
+		[
+			task("seed", { out: { text: STRING } }),
+			{
+				id: "loop",
+				kind: "loop",
+				cardinality: { upTo: 2 },
+				in: { text: STRING },
+				inner: { ...LOOP_INNER, text: STRING },
+				out: { text: STRING },
+				members: { result: "loop/step" },
+				test: { at, port: { node: "loop/done", port: "ok" } },
+			},
+			task("loop/step", { in: { prompt: STRING }, out: { text: STRING } }),
+			task("loop/done", { in: { text: STRING } }),
+		],
+		[
+			data("seed.text", "loop.text"),
+			data("loop.text", "loop/step.prompt"),
+			data("loop.text", "loop/done.text"),
+		],
+		"loop",
+	);
+
+const performDoneOk = (at: "start" | "end", done: HostNodeResult) =>
+	play(doneOkLoop(at), {
+		script: {
+			steps: {
+				seed: [{ outcome: "ok", outputs: { text: "seed" } }],
+				"loop/step": [{ outcome: "ok", outputs: { text: "step" } }],
+				"loop/done": [done],
+			},
+		},
+	});
+
+test.each([
+	["start", "seed"],
+	["end", "step"],
+] as const)(
+	"a loop tested at %s on the ok of a test node that rejects ends on its state",
+	async (at, text) => {
+		const { result } = await performDoneOk(at, {
+			outcome: "rejected",
+			reason: "not yet",
+		});
+		expect(result).toMatchObject({ outcome: "ok", outputs: { text } });
+	},
+);
+
+test.each(["start", "end"] as const)(
+	"a loop tested at %s on a test node that fails fails",
+	async (at) => {
+		const { result } = await performDoneOk(at, {
+			outcome: "failed",
+			reason: "broke",
+		});
+		expect(result).toMatchObject({ outcome: "failed", reason: "broke" });
+	},
+);
+
+test("a node skipped by a guard on the ok of a rejected node names that node as the result", async () => {
+	const { result } = await play(
+		graph(
+			[task("x"), task("y")],
+			[
+				{
+					kind: "control",
+					from: { node: "x", port: "ok" },
+					to: { node: "y" },
+				},
+			],
+			"y",
+		),
+		{ script: { steps: { x: [{ outcome: "rejected", reason: "no x" }] } } },
+	);
+	expect(result).toEqual({
+		node: "x",
+		expansion: "",
+		outcome: "rejected",
+		reason: "no x",
+	});
 });
 
 test("a guard that is not true skips its node, and the result counts that as rejected", async () => {

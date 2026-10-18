@@ -11,9 +11,10 @@ import ir alone. It depends on nothing beyond Ajv. This package holds:
   code-function contract (`Context`, `CodeContext`, `Facts`, `Rejection`, `reject`, `TS_RUNTIME`), type markers
   (`MAESTRO_TYPE`, `CORE_TYPES`, `ARTIFACT_TYPES`, `registerMaestroType`, `findMarked`, `schemaMarkers`,
   `unreachableMarkers`, `artifactsAsRefs`), artifact references (`ArtifactRef`, `artifactRefSchema`), the graph index
-  (`indexGraph`, `GraphIndex`, `IMPLICIT_OUT`, `outputValue`, `isGroup`, `boundOf`, `tolerates`), expansion paths
-  (`itemKey`, `firstDuplicate`, `formatExpansion`, `parseExpansion`, `formatInstance`), the plan (`Plan`, `Expansion`,
-  `PlanBounds`), events (`ConcertEvent`, `EventBody`, `NodeInstance`, `HostEvent`, `Enrichment`) and `MAX_TIMEOUT`.
+  (`indexGraph`, `GraphIndex`, `IMPLICIT_OUT`, `outputValue`, `isGroup`, `boundOf`, `tolerates`, `LOOP_STATE`,
+  `startNodes`), expansion paths (`itemKey`, `firstDuplicate`, `formatExpansion`, `parseExpansion`, `formatInstance`),
+  the plan (`Plan`, `Expansion`, `PlanBounds`), events (`ConcertEvent`, `EventBody`, `NodeInstance`, `HostEvent`,
+  `Enrichment`) and `MAX_TIMEOUT`.
 - `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`, and its worker modules sit beside it. A
   `plans/<name>.json` is the plan compose gives the IR of that name, which the renderers' tests read.
 - `test/read_ir.py`: an independent reader (Python standard library only), which proves the format is readable without
@@ -88,15 +89,16 @@ pairs each with its module both ways:
 
 The golden fixtures keep their modules beside them in `fixtures/`, and a test checks each hash.
 
-Every node also has three implicit outputs: `outcome`, `ok` and `reason`, whose schemas are `IMPLICIT_OUT`. They may not
-be declared in `out`. `outputValue(settled, outputs, port)` reads any port of a settled node, implicit or declared.
+Every node also has two implicit outputs, its status ports `ok` and `reason`, whose schemas are `IMPLICIT_OUT`. They,
+and `outcome`, may not be declared in `out`. `outputValue(settled, outputs, port)` reads any port of a settled node,
+implicit or declared.
 
-| Kind                   | Own fields                                                                                                                          |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `code`                 | `worker` `{runtime, module, export, codeHash}`, optional `reads`, `writes`, `fanin` (a reducer, D-08),[^fanin] `timeout`.[^timeout] |
-| `assert`               | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                                                       |
-| `map`, `seq`, `repeat` | Groups, below.                                                                                                                      |
-| `<host>.<kind>`        | Any kind with a dot is a host kind, with an optional opaque `config` object.                                                        |
+| Kind                 | Own fields                                                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `code`               | `worker` `{runtime, module, export, codeHash}`, optional `reads`, `writes`, `fanin` (a reducer, D-08),[^fanin] `timeout`.[^timeout] |
+| `assert`             | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                                                       |
+| `map`, `seq`, `loop` | Groups, below.                                                                                                                      |
+| `<host>.<kind>`      | Any kind with a dot is a host kind, with an optional opaque `config` object.                                                        |
 
 ### Groups
 
@@ -104,26 +106,33 @@ A group's body is the nodes whose nearest enclosing group is the group. The body
 item or iteration. Every group has:
 
 - `members`: result name to body node id. A member result is a record with one entry per result name. A body with one
-  result has one entry. A `map` may have several. A `seq` and a `repeat` take exactly one in 1.0, because their ports
+  result has one entry. A `map` may have several. A `seq` and a `loop` take exactly one in 1.0, because their ports
   mirror that member's outputs. Allowing more later is a minor change.
 - `cardinality`: `{ "exact": n }` or `{ "upTo": n }` (CORE-05),
 - `inner`: ports the body reads, in addition to `in` and `out`.
 
-| Kind     | `in`                                 | `inner`                   | `out`                | Own fields                |
-| -------- | ------------------------------------ | ------------------------- | -------------------- | ------------------------- |
-| `map`    | `items`, unless `items` is a literal | `item`                    | `results`            | `items`, `key`, `onError` |
-| `seq`    | `items`, unless `items` is a literal | `item`                    | the member's outputs | `items`, `until`          |
-| `repeat` | the member's outputs (initial state) | member's outputs, `index` | the member's outputs | `until`, `tolerate`       |
+| Kind   | `in`                                 | `inner`                                   | `out`                | Own fields                |
+| ------ | ------------------------------------ | ----------------------------------------- | -------------------- | ------------------------- |
+| `map`  | `items`, unless `items` is a literal | `item`                                    | `results`            | `items`, `key`, `onError` |
+| `seq`  | `items`, unless `items` is a literal | `item`                                    | the member's outputs | `items`, `until`          |
+| `loop` | the member's outputs (initial state) | member's outputs, `ok`, `reason`, `index` | the member's outputs | `test`, `tolerate`        |
 
 - `items` is either a literal array on the node or an `items` input port fed by an edge, never both.
 - A `map` over literal items is `exact` with the item count. Every other group is `upTo`, equal to the item count for a
   literal `seq`.
 - `key` is an optional worker reference for an author key function (D-18).
 - `onError` is `settle` or `propagate`, and has no default (ADR 0006).
-- `until` is a body port `{node, port}` holding a boolean.
-- `tolerate: "rejected"` on a `repeat` lets rejected state, including the initial state, carry into the next iteration.
-- A `repeat`'s inner state ports hold the previous iteration's member outputs, or the initial state for the first
-  iteration. At least one iteration runs, and `until` is read after each.
+- `until` is a body port `{node, port}` holding a boolean. A `seq` stops once it holds.
+- `test` is `{ at, port }`, `port` holding a boolean. A `loop` goes on while it reads `true`, and fails when its node
+  failed:
+  - at `start` it is read before each step, and is a state port of the loop or a body port. A body port's node and the
+    body nodes that node reads run first. They may not read the member, so a test at `start` reads only the loop state.
+    The loop runs 0 to its bound steps.
+  - at `end` it is a body port, read after each step. The loop runs 1 to its bound steps.
+- `tolerate: "rejected"` on a `loop` lets rejected state, including the initial state, carry into the next iteration.
+- A `loop`'s inner state ports hold the previous iteration's member outputs, `ok` and `reason` (absent when `ok`), or
+  for the first iteration its inputs, `ok` unless a node feeding it rejected, the first such to settle giving its
+  `reason`. Whatever stops it, its test or its bound, the loop ends with its last state's outcome, reason and outputs.
 - A member result with several entries takes the worst entry outcome (ADR 0006).
 
 ## Edges
@@ -137,9 +146,12 @@ Every input port is fed exactly once, by a `data` or `collect` edge or by a lite
 | `control` | `{node, port}`         | `{node}`       | A guard. The target proceeds only when the boolean port is true, else it is skipped. |
 | `control` | `{node}`               | `{node}`       | Ordering. It may carry `tolerate: "rejected"` to admit a rejected upstream.          |
 
-A dependent starts only after every upstream it has an edge from is `ok`, unless a control edge from that upstream
-tolerates `rejected` (CORE-04). `tolerates(node, edge)` is this rule for one edge into `node`: a control edge by its own
-`tolerate`, any other edge by the `tolerate` of a `repeat`.
+A dependent starts only after every upstream it has an edge from is `ok`, unless its edges from that upstream tolerate
+`rejected` (CORE-04). `tolerates(node, edges)` is this rule for every edge from one upstream into `node`. They tolerate
+it when:
+
+- one is a control edge whose own `tolerate` says so, or any other edge into a `loop` whose `tolerate` says so;
+- or each reads a status port, `ok` or `reason`.
 
 The edge source decides which ports a group exposes. Seen from inside its body, a group exposes `inner`. From anywhere
 else, it exposes `out` and the implicit outputs.
@@ -150,11 +162,11 @@ Enforced by `parseIr` after the schema:
 
 1. Ids are unique across nodes and scopes (`SCOPE.duplicate`).
 2. Every proper prefix of an id is a declared scope or group node.
-3. Every edge endpoint, port, literal, member, `until` and result node resolves (`IR.ref`).
+3. Every edge endpoint, port, literal, member, `until`, `test` and result node resolves (`IR.ref`).
 4. An edge never leaves a group body: only the group's `out` ports reach outside it.
 5. Every input port is fed exactly once.
 6. `collect` edges start only at a map's `results` port, and that port feeds nothing else.
-7. Group ports, `members`, `until`, `items` and `cardinality` follow the group rules above.
+7. Group ports, `members`, `until`, `test`, `items` and `cardinality` follow the group rules above.
 8. The result node is not inside a group body.
 9. Edges form no cycle. An edge into a body counts as an edge into its group.
 
@@ -172,8 +184,8 @@ edges into and out of a node. Otherwise an id that resolves to nothing gives `un
 ## Expansion paths
 
 A node instance is a node id plus its expansion path (architecture 7): one `[key]` per enclosing group, outermost first,
-and empty outside groups. A `map` contributes its item's key, a `seq` or `repeat` its iteration index, so the path of a
-node in a `repeat` inside a `map` reads `[risk][2]`.
+and empty outside groups. A `map` contributes its item's key, a `seq` or `loop` its iteration index, so the path of a
+node in a `loop` inside a `map` reads `[risk][2]`.
 
 - `itemKey(item, index)` is a `map` item's key (D-18): a string, number, boolean or `null` item is keyed by its value,
   any other item by its index. Each character outside `[A-Za-z0-9_.-]` becomes `_`. Keys that come out equal are
@@ -305,7 +317,7 @@ the IR, not a plan, so the plan carries no format version.
 
 Expansion paths are in the format of [Expansion paths](#expansion-paths) (`formatExpansion`): one `[key]` per enclosing
 group, outermost first, `""` outside groups. A map item's key is its `itemKey`, or at perform its key function's. A
-`seq` or `repeat` iteration's key is its index.
+`seq` or `loop` iteration's key is its index.
 
 An `Expansion` is either:
 
@@ -323,7 +335,7 @@ An `Expansion` is either:
 
 A count is exact only when every group above it is a map whose items compose knows.
 
-A plan for a map over two topics, then a repeat, with a host that counts one `calls` per node and `ir` cut short:
+A plan for a map over two topics, then a loop, with a host that counts one `calls` per node and `ir` cut short:
 
 ```json
 {
@@ -380,4 +392,6 @@ The IR carries structure. These semantics belong to the slices that execute or v
 ## Changelog
 
 - **1.0**: first version. Before release, code nodes took the optional `timeout` and lost `pure`, and the `params` and
-  `config` blocks left the IR. The node field `tag` was removed.
+  `config` blocks left the IR. The node field `tag` was removed. The `repeat` kind became `loop`: it lost `until`,
+  gained a required `test`, and its inner ports carry `ok` and `reason`. The implicit output `outcome` was removed: `ok`
+  and `reason` are the status ports, and an edge from one admits a `rejected` source.

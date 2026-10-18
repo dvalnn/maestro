@@ -11,19 +11,22 @@ import {
 	type GraphIndex,
 	type GroupNode,
 	type HostNode,
+	IMPLICIT_OUT,
 	type Ir,
 	type IrEdge,
 	type IrNode,
 	indexGraph,
 	isGroup,
 	itemKey,
+	type LoopNode,
 	type MapNode,
 	type NodeInstance,
 	type Outcome,
 	outputValue,
-	type RepeatNode,
+	type PortRef,
 	type SeqNode,
 	type Settled,
+	startNodes,
 	TS_RUNTIME,
 	tolerates,
 	worstOutcome,
@@ -133,7 +136,7 @@ type Frame = {
 	readonly parent?: Frame;
 	readonly group?: string;
 	readonly inner: Inputs;
-	/** The previous iteration's member, whose outputs a `repeat` iteration's state ports hold. */
+	/** The previous iteration's member, whose outputs a `loop` iteration's state ports hold. */
 	readonly carried?: State;
 	readonly states: Map<string, Promise<State>>;
 	halt?: Halt;
@@ -385,7 +388,7 @@ async function settleNode(c: Live, node: IrNode, frame: Frame): Promise<State> {
 	if (mismatch)
 		return settle(c, instance, { outcome: "failed", reason: mismatch });
 	const ending = isGroup(node)
-		? await group(c, node, frame, instance, inputs)
+		? await group(c, node, frame, instance, inputs, sources)
 		: await leaf(c, node, frame, instance, inputs);
 	return settle(c, instance, ending);
 }
@@ -458,9 +461,14 @@ const worseOf = (current: Halt | undefined, halt: Halt): Halt =>
 const shown = (c: Live, instance: NodeInstance) =>
 	formatInstance(instance, c.index.groupsOf(instance.node));
 
+/** The first of `states` to settle. */
+const firstSettled = (states: readonly (State | undefined)[]) =>
+	states.filter((s) => s !== undefined).sort((a, b) => a.order - b.order)[0];
+
 /**
  * `skipped` when an upstream settled other than `ok` and nothing tolerates it (CORE-04), naming the first such to
- * settle as the cause, or when a guard is not true.
+ * settle as the cause, or when a guard is not true, naming as the cause an upstream not `ok` whose status port the
+ * guard reads.
  */
 function gate(
 	c: Live,
@@ -469,9 +477,9 @@ function gate(
 	sources: ReadonlyMap<string, State>,
 ): Ending | undefined {
 	const edges = c.index.edgesInto(node.id);
-	const cause = [...sources.values()]
-		.filter((s) => blocks(node, edges, s))
-		.sort((a, b) => a.order - b.order)[0];
+	const cause = firstSettled(
+		[...sources.values()].filter((s) => blocks(node, edges, s)),
+	);
 	if (cause)
 		return {
 			outcome: "skipped",
@@ -484,16 +492,19 @@ function gate(
 			e.from.port !== undefined &&
 			edgeValue(e, frame, sources) !== true,
 	);
-	if (guard)
-		return {
-			outcome: "skipped",
-			reason: `the guard '${guard.from.node}.${guard.from.port}' is not true`,
-		};
+	if (!guard) return undefined;
+	const source = sources.get(guard.from.node);
+	const status = Object.hasOwn(IMPLICIT_OUT, guard.from.port ?? "");
+	return {
+		outcome: "skipped",
+		reason: `the guard '${guard.from.node}.${guard.from.port}' is not true`,
+		...(status && source?.outcome !== "ok" && { cause: source }),
+	};
 }
 
 /**
  * Whether `source`'s outcome keeps `node` from starting. A fan-in node takes any outcome over a `data` or `collect`
- * edge (ADR 0006). A tolerating control edge admits `rejected`, as a `repeat`'s `tolerate` does for its state.
+ * edge (ADR 0006). `rejected` passes where `tolerates` admits it.
  */
 function blocks(
 	node: IrNode,
@@ -503,9 +514,7 @@ function blocks(
 	if (source.outcome === "ok") return false;
 	const from = edges.filter((e) => e.from.node === source.node);
 	if (!from.some((e) => e.kind === "control" || !isFanIn(node))) return false;
-	return !(
-		source.outcome === "rejected" && from.some((e) => tolerates(node, e))
-	);
+	return !(source.outcome === "rejected" && tolerates(node, from));
 }
 
 /**
@@ -538,11 +547,11 @@ function unreadablePort(
 	return reason === undefined ? undefined : { outcome: "failed", reason };
 }
 
-/** The member a `repeat` state port that `edge` reads carries over from the previous iteration, if any. */
+/** The member a `loop` state port that `edge` reads carries over from the previous iteration, if any. */
 function carriedBy(c: Live, frame: Frame, edge: IrEdge): State | undefined {
 	const group = c.index.nodes.get(edge.from.node);
 	const port = edge.from.port ?? "";
-	if (group?.kind !== "repeat" || !Object.hasOwn(group.out ?? {}, port))
+	if (group?.kind !== "loop" || !Object.hasOwn(group.out ?? {}, port))
 		return undefined;
 	for (let at: Frame | undefined = frame; at; at = at.parent)
 		if (at.group === group.id) return at.carried;
@@ -721,13 +730,43 @@ async function group(
 	frame: Frame,
 	instance: NodeInstance,
 	inputs: Inputs,
+	sources: ReadonlyMap<string, State>,
 ): Promise<Ending> {
 	start(c, instance, Date.now());
 	const ending =
 		node.kind === "map"
 			? await mapGroup(c, node, frame, instance, inputs)
-			: await serial(c, node, frame, instance, inputs);
+			: await serial(
+					c,
+					node,
+					frame,
+					instance,
+					node.kind === "loop"
+						? firstState(c, node, sources, inputs)
+						: { outcome: "ok", outputs: inputs },
+				);
 	return haltOf(frame) ?? ending;
+}
+
+/**
+ * A loop's first state: its inputs, `ok` unless a node whose data feeds it rejected, a tolerated rejection taking the
+ * first such to settle.
+ */
+function firstState(
+	c: Live,
+	node: LoopNode,
+	sources: ReadonlyMap<string, State>,
+	inputs: Inputs,
+): Ending {
+	const rejected = firstSettled(
+		c.index
+			.edgesInto(node.id)
+			.flatMap((e) => (e.kind === "data" ? [sources.get(e.from.node)] : []))
+			.filter((s) => s?.outcome === "rejected"),
+	);
+	return rejected
+		? { ...endingOf(rejected), outputs: inputs }
+		: { outcome: "ok", outputs: inputs };
 }
 
 const childFrame = (
@@ -880,60 +919,128 @@ async function haltOthers(
 }
 
 /**
- * A `seq` or `repeat`: one body instance per item or iteration, in order, each read by `until` once it settles. A
- * `seq` stops after its last item, a `repeat` at its bound or at a member it cannot carry on from. Either takes its
- * last member's outcome and outputs.
+ * A `seq` or `loop` entered on `first`, its inputs as outputs: one body instance per item or iteration, in order. A
+ * `seq` stops after its last item or at an `until` that holds, a `loop` at its bound, at a member it cannot carry on
+ * from, or at a test that does not hold. Each ends with its last state's outcome and outputs: its last member's, or a
+ * loop's first state when it takes no step.
  */
 async function serial(
 	c: Live,
-	node: SeqNode | RepeatNode,
+	node: SeqNode | LoopNode,
 	frame: Frame,
 	instance: NodeInstance,
-	inputs: Inputs,
+	first: Ending,
 ): Promise<Ending> {
-	const steps = stepsOf(c, node, instance, inputs);
+	const steps = stepsOf(c, node, instance, first);
 	if ("outcome" in steps) return steps;
 	const member = Object.values(node.members)[0] ?? "";
-	let state = inputs;
+	const { test, body } = phasesOf(c, node);
 	let last: State | undefined;
+	let state = first;
 	for (let i = 0; i < steps.count && !haltOf(frame); i++) {
-		const inner = steps.inner(i, state);
-		const f = childFrame(frame, node.id, String(i), inner, last);
-		await startFrame(c, c.index.body(node.id), f);
+		const f = childFrame(
+			frame,
+			node.id,
+			String(i),
+			steps.inner(i, state),
+			last,
+		);
+		const before = test && (await startTest(c, f, test, state));
+		if (before) return before;
+		await startFrame(c, body, f);
 		last = await stateIn(f, member);
+		state = endingOf(last);
 		const ending = await endAfter(c, node, f, last);
 		if (ending) return ending;
-		state = last.outputs ?? {};
 	}
 	if (!last)
 		return {
 			outcome: "skipped",
 			reason: `${node.kind} '${shown(c, instance)}' has no items`,
 		};
-	return endingOf(last);
+	return state;
+}
+
+type StartTest = { port: PortRef; nodes: IrNode[] };
+
+/** The body of `node` split into a loop's test at `start`, performed first, and the rest. */
+function phasesOf(
+	c: Live,
+	node: SeqNode | LoopNode,
+): { test?: StartTest; body: readonly IrNode[] } {
+	const body = c.index.body(node.id);
+	if (node.kind !== "loop" || node.test.at !== "start") return { body };
+	const first = startNodes(c.index, node);
+	return {
+		test: {
+			port: node.test.port,
+			nodes: body.filter((n) => first.has(n.id)),
+		},
+		body: body.filter((n) => !first.has(n.id)),
+	};
 }
 
 /**
+ * How a loop ends at its test at `start` in `frame`, before its step, or nothing when the test holds:
+ * - on a state port, as `state` when the port is not `true`;
+ * - on a body node, as `loopTest` reads it once its nodes are performed.
+ */
+async function startTest(
+	c: Live,
+	frame: Frame,
+	test: StartTest,
+	state: Ending,
+): Promise<Ending | undefined> {
+	if (test.port.node === frame.group)
+		return frame.inner[test.port.port] === true ? undefined : state;
+	await startFrame(c, test.nodes, frame);
+	return loopTest(c, frame, test.port, state);
+}
+
+/**
+ * How a loop ends at its test `port` in `frame`, or nothing when the test holds:
+ * - `failed` when the test node failed, or its port cannot be read;
+ * - as `state` when the port does not read `true`.
+ */
+async function loopTest(
+	c: Live,
+	frame: Frame,
+	port: PortRef,
+	state: Ending,
+): Promise<Ending | undefined> {
+	const read = await stateIn(frame, port.node);
+	if (read.outcome === "failed") return endingOf(read);
+	const held = holds(c, read, port.port);
+	if (held === true) return undefined;
+	return held === false ? state : held;
+}
+
+/** Whether output `port` of `read` is `true`, or `failed` when it cannot be read. */
+const holds = (c: Live, read: State, port: string): boolean | Ending =>
+	unreadablePort(c, read, port) ??
+	outputValue(read, read.outputs, port) === true;
+
+/**
  * How `node` ends after the iteration in `frame` whose member settled `last`, or nothing when it goes on: at a member
- * it cannot carry on from, at an `until` that holds, or `failed` at an `until` read from a rejection without outputs.
+ * it cannot carry on from, at a seq's `until` that holds, or as a loop's test at `end` ends it.
  */
 async function endAfter(
 	c: Live,
-	node: SeqNode | RepeatNode,
+	node: SeqNode | LoopNode,
 	frame: Frame,
 	last: State,
 ): Promise<Ending | undefined> {
 	if (!carries(node, last)) return endingOf(last);
+	if (node.kind === "loop")
+		return node.test.at === "end"
+			? loopTest(c, frame, node.test.port, endingOf(last))
+			: undefined;
 	if (!node.until) return undefined;
-	const { port } = node.until;
-	const state = await stateIn(frame, node.until.node);
-	const failure = unreadablePort(c, state, port);
-	if (failure) return failure;
-	const holds = outputValue(state, state.outputs, port) === true;
-	return holds ? endingOf(last) : undefined;
+	const held = holds(c, await stateIn(frame, node.until.node), node.until.port);
+	return held === true ? endingOf(last) : held || undefined;
 }
 
-/** A member's outcome and outputs as its `seq` or `repeat`'s ending. */
+/** A member's outcome and outputs as its `seq` or `loop`'s ending. */
 function endingOf(last: State): Ending {
 	return last.outcome === "ok"
 		? { outcome: "ok", outputs: last.outputs }
@@ -945,25 +1052,38 @@ function endingOf(last: State): Ending {
 			};
 }
 
-/** How many members a `seq` or `repeat` may have, and the inner port values of each given the last state. */
+/**
+ * How many members a `seq` or `loop` entered on `first` may have, and the inner port values of each given the last state. A loop's state
+ * carries its `ok` and `reason` beside its outputs.
+ */
 function stepsOf(
 	c: Live,
-	node: SeqNode | RepeatNode,
+	node: SeqNode | LoopNode,
 	instance: NodeInstance,
-	inputs: Inputs,
-): { count: number; inner(i: number, state: Inputs): Inputs } | Settling {
-	if (node.kind === "repeat")
+	first: Ending,
+):
+	| {
+			count: number;
+			inner(i: number, state: Ending): Inputs;
+	  }
+	| Settling {
+	if (node.kind === "loop")
 		return {
 			count: boundOf(node.cardinality),
-			inner: (i, state) => ({ ...state, index: i }),
+			inner: (index, state) => ({
+				...state.outputs,
+				ok: state.outcome === "ok",
+				...(state.outcome !== "ok" && { reason: state.reason }),
+				index,
+			}),
 		};
-	const items = itemsOf(c, node, instance, inputs);
+	const items = itemsOf(c, node, instance, first.outputs ?? {});
 	if (!Array.isArray(items)) return items;
 	return { count: items.length, inner: (i) => ({ item: items[i] }) };
 }
 
-/** A `seq` goes on whatever its member's outcome. A `repeat` carries `ok` state, and `rejected` when tolerated. */
-const carries = (node: SeqNode | RepeatNode, last: State) =>
+/** A `seq` goes on whatever its member's outcome. A `loop` carries `ok` state, and `rejected` when tolerated. */
+const carries = (node: SeqNode | LoopNode, last: State) =>
 	node.kind === "seq" ||
 	last.outcome === "ok" ||
 	(last.outcome === "rejected" && node.tolerate === "rejected");

@@ -40,6 +40,11 @@ export function when({ value }: Value): Value {
 	return { value };
 }
 
+/** `value` negated. */
+export function not({ value }: Value<boolean>): Value<boolean> {
+	return { value: !value };
+}
+
 /**
  * The entry of `table` under `key`. An array takes a number key only.
  * @throws when there is no such entry, naming the key.

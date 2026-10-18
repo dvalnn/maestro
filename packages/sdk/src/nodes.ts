@@ -5,14 +5,16 @@ import {
 	canonicalJson,
 	firstDuplicate,
 	type GroupNode,
+	IMPLICIT_OUT,
 	isPlainObject,
 	itemKey,
 	type JsonSchema,
+	LOOP_STATE,
+	type LoopNode,
 	MAX_TIMEOUT,
 	type PortRef,
 	type Ports,
 	type Rejection,
-	type RepeatNode,
 	type SeqNode,
 	type Settled as SettledValue,
 	settledSchema,
@@ -33,7 +35,6 @@ import {
 	pushNode,
 	type Ref,
 	RefImpl,
-	type Refs,
 	type Result,
 	ResultImpl,
 	schemaOf,
@@ -322,27 +323,31 @@ const UNTIL_HINT =
 	"Return r.ok or a Bool output of a node in the body; a comparison such as !== on a Ref gives a plain boolean";
 
 /**
- * Calls `until` on the member's handle inside the body. `until` must return a Bool port of a body node (sdk-spec 4.1).
+ * The Bool port `read` returns inside the body of `group`, which must belong to a node of that body, or to the state
+ * of `group` when `state` (sdk-spec 4.1).
  */
-function untilPort(
-	until: ((result: Result<Types>) => Ref<boolean>) | undefined,
-	memberId: string,
+function bodyBool(
 	group: string,
-): PortRef | undefined {
-	if (!until) return undefined;
+	what: string,
+	hint: string,
+	read: () => unknown,
+	state = false,
+): PortRef {
 	const source = withFrame(innerFrame(group, true), () =>
-		boolPort(until(new ResultImpl(memberId)), "until", UNTIL_HINT),
+		boolPort(read(), what, hint),
 	);
+	if (state && source.inner && source.node === group)
+		return { node: source.node, port: source.port };
 	if (source.inner || info(source.node).groups.at(-1) !== group)
 		throw fail(
 			"REF.bool",
-			`until of '${group}' must read a node inside its body`,
-			UNTIL_HINT,
+			`${what} of '${group}' must read a node inside its body`,
+			hint,
 		);
 	return { node: source.node, port: source.port };
 }
 
-/** A seq or repeat exposes its member's outputs as its own (ADR 0004). */
+/** A seq or loop exposes its member's outputs as its own (ADR 0004). */
 function mirror(group: GroupNode, memberId: string): void {
 	const { out } = info(memberId);
 	info(group.id).out = out;
@@ -437,75 +442,136 @@ export function seq<T, O extends Types>(
 	);
 	group.members = { result: id };
 	mirror(group, id);
-	(group as SeqNode).until = untilPort(
-		opts.until as (r: Result<Types>) => Ref<boolean>,
-		id,
-		group.id,
-	);
+	const { until } = opts;
+	if (until)
+		(group as SeqNode).until = bodyBool(group.id, "until", UNTIL_HINT, () =>
+			until(new ResultImpl(id) as unknown as Result<O>),
+		);
 	return typed(new ResultImpl(group.id));
 }
 
-export type RepeatOptions<O extends Types> = Omit<Common, "tolerate"> & {
+export type LoopOptions<O extends Types> = Omit<Common, "tolerate"> & {
 	/** The node whose outputs are the first state. */
 	init: Result<O>;
 	/** Builds one iteration from the previous state, whose outputs it must repeat. */
-	step: (state: { out: Refs<O> }, index: Ref<number>) => Result<O>;
-	/** Read on each new state, never on `init`. */
-	until?: (result: Result<O>) => Ref<boolean>;
+	step: (state: Result<O>, index: Ref<number>) => Result<O>;
 	/** A literal or a param. */
 	max: number;
 	/** Carries a `rejected` state, the initial one included, into the next iteration. */
 	tolerate?: Tolerate;
 };
 
-/** A bounded loop over typed state. At least one iteration happens. */
-export function repeat<O extends Types>(opts: RepeatOptions<O>): Result<O> {
+const WHILE_HINT =
+	"Return s.ok, a Bool port of the state, or a Bool output of one node made from the state alone, such as not(s.ok)";
+
+const DO_WHILE_HINT =
+	"Return r.ok or a Bool output of a node in the body, such as not(r.ok)";
+
+/**
+ * A loop over typed state that reads `cond` on the state before each step and steps while it holds: 0 to `max` steps.
+ * `cond` must return a Bool port of the state, or a Bool output of one node that reads only the state.
+ */
+function whileLoop<O extends Types>(
+	cond: (state: Result<O>) => Ref<boolean>,
+	opts: LoopOptions<O>,
+): Result<O> {
+	const { group, state } = openLoop(opts, "start");
+	const port = bodyBool(
+		group.id,
+		"the condition of loop.while",
+		WHILE_HINT,
+		() => cond(state),
+		true,
+	);
+	group.test = { at: "start", port };
+	group.members = { result: loopStep(group.id, opts, state) };
+	return typed(new ResultImpl(group.id));
+}
+
+/** A loop over typed state that steps, then reads `cond` on the step's result and goes on while it holds: 1 to `max` steps. */
+function doWhile<O extends Types>(
+	cond: (result: Result<O>) => Ref<boolean>,
+	opts: LoopOptions<O>,
+): Result<O> {
+	const { group, state } = openLoop(opts, "end");
+	const id = loopStep(group.id, opts, state);
+	group.members = { result: id };
+	group.test = {
+		at: "end",
+		port: bodyBool(
+			group.id,
+			"the condition of loop.doWhile",
+			DO_WHILE_HINT,
+			() => cond(new ResultImpl(id) as unknown as Result<O>),
+		),
+	};
+	return typed(new ResultImpl(group.id));
+}
+
+/** Bounded loops over typed state, told apart by when they read their condition (sdk-spec 4.1). */
+export const loop = { while: whileLoop, doWhile };
+
+/** The loop group fed by `opts.init`, and the state its body reads. */
+function openLoop<O extends Types>(
+	opts: LoopOptions<O>,
+	at: LoopNode["test"]["at"],
+) {
 	const init: unknown = opts.init;
+	const name = at === "start" ? "loop.while" : "loop.doWhile";
 	if (!(init instanceof ResultImpl))
 		throw fail(
 			"TYPE.member",
-			"repeat init must be a node's result",
+			`${name} init must be a node's result`,
 			"Pass the Result handle of the node that makes the first state",
 		);
-	const state = info(init.node).out;
+	const out = info(init.node).out;
 	const group = pushNode(
 		{
-			kind: "repeat",
-			label: "repeat",
+			kind: "loop",
+			label: "loop",
 			inputs: init.out,
-			out: state,
+			out,
 			fields: {
-				cardinality: { upTo: checkMax(opts.max, "repeat") },
+				cardinality: { upTo: checkMax(opts.max, name) },
 				tolerate: opts.tolerate,
 			},
 		},
 		{ label: opts.label, when: opts.when },
-	) as RepeatNode;
-	if (Object.hasOwn(state, "index"))
+	) as LoopNode;
+	const reserved = LOOP_STATE.find((port) => Object.hasOwn(out, port));
+	if (reserved)
 		throw fail(
 			"TYPE.state",
-			`the state of repeat '${group.id}' has a port named 'index', which names the iteration`,
-			"Rename the 'index' output of init and of the step",
+			`the state of loop '${group.id}' has a port named '${reserved}', a name the loop state holds itself`,
+			`Rename the '${reserved}' output of init and of the step`,
 		);
-	group.inner = { ...state, index: { type: "integer" } };
-	const refs = Object.fromEntries(
-		Object.entries(state).map(([port, schema]) => [
-			port,
-			innerRef(group.id, port, schema),
-		]),
+	const { ok, reason } = IMPLICIT_OUT;
+	group.inner = { ...out, ok, reason, index: { type: "integer" } };
+	const state = {
+		ok: innerRef(group.id, "ok", ok),
+		reason: innerRef(group.id, "reason", reason),
+		out: Object.fromEntries(
+			Object.entries(out).map(([port, schema]) => [
+				port,
+				innerRef(group.id, port, schema),
+			]),
+		),
+	} as unknown as Result<O>;
+	return { group, state };
+}
+
+/** Builds the step in the body of loop `group`. Returns its member's id. */
+function loopStep<O extends Types>(
+	group: string,
+	opts: LoopOptions<O>,
+	state: Result<O>,
+): string {
+	const index = innerRef(group, "index", { type: "integer" }) as Ref<number>;
+	const id = withFrame(innerFrame(group, true), () =>
+		member(opts.step(state, index), group),
 	);
-	const index = innerRef(group.id, "index", { type: "integer" }) as Ref<number>;
-	const id = withFrame(innerFrame(group.id, true), () =>
-		member(opts.step({ out: refs as unknown as Refs<O> }, index), group.id),
-	);
-	checkState(id, state, group.id);
-	group.members = { result: id };
-	group.until = untilPort(
-		opts.until as (r: Result<Types>) => Ref<boolean>,
-		id,
-		group.id,
-	);
-	return typed(new ResultImpl(group.id));
+	checkState(id, info(group).out, group);
+	return id;
 }
 
 function checkState(memberId: string, state: Ports, group: string): void {
@@ -516,7 +582,7 @@ function checkState(memberId: string, state: Ports, group: string): void {
 	if (differ.length)
 		throw fail(
 			"TYPE.state",
-			`the step of repeat '${group}' differs from init in the ports ${differ.join(", ")}`,
+			`the step of loop '${group}' differs from init in the ports ${differ.join(", ")}`,
 			"Return a node whose outputs have the names and types of init's",
 		);
 }

@@ -10,6 +10,7 @@ import {
 	hostNode,
 	List,
 	lookup,
+	not,
 	okOnly,
 	Record,
 	settle,
@@ -50,6 +51,7 @@ describe("the stdlib module", () => {
 			zip(t.out.names, t.out.names);
 			lookup({ a: 1 }, t.out.text);
 			when(t.out.done, t.out.text);
+			not(t.out.done);
 			t.out.doc.pick("a");
 			t.out.text.or("none");
 			okOnly([t.out.text]);
@@ -89,6 +91,13 @@ describe("pick", () => {
 			`pick: path '${path}' has no field '${key}'`,
 		);
 	});
+});
+
+test("not negates its value", () => {
+	expect([fns.not({ value: true }), fns.not({ value: false })]).toEqual([
+		{ value: false },
+		{ value: true },
+	]);
 });
 
 describe("or", () => {

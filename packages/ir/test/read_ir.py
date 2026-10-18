@@ -9,7 +9,7 @@ Usage: python3 read_ir.py <ir.json>
 import json
 import sys
 
-GROUP_KINDS = {"map", "seq", "repeat"}
+GROUP_KINDS = {"map", "seq", "loop"}
 
 
 def main(path):
@@ -41,11 +41,11 @@ def main(path):
             print(f"fan-out: map {n['id']}, {bound(n)} members, each {members(n)}")
         elif n["kind"] == "seq":
             print(f"escalation: seq {n['id']}, {bound(n)} members, each {members(n)}")
-        elif n["kind"] == "repeat":
-            until = n.get("until")
-            stop = f", until {until['node']}.{until['port']}" if until else ""
+        elif n["kind"] == "loop":
+            test = n["test"]
+            tested = f", tested at {test['at']} on {test['port']['node']}.{test['port']['port']}"
             tolerate = ", tolerating rejected" if n.get("tolerate") else ""
-            print(f"loop: repeat {n['id']}, {bound(n)} iterations, each {members(n)}{stop}{tolerate}")
+            print(f"loop: {n['id']}, {bound(n)} iterations, each {members(n)}{tested}{tolerate}")
     for e in ir["edges"]:
         if e["kind"] == "collect":
             to = e["to"]

@@ -35,8 +35,10 @@ export {
 	IMPLICIT_OUT,
 	indexGraph,
 	isGroup,
+	LOOP_STATE,
 	mapWorkers,
 	outputValue,
+	startNodes,
 	tolerates,
 } from "./graph";
 export {

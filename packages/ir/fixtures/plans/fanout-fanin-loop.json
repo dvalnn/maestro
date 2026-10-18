@@ -183,7 +183,7 @@
 			},
 			{
 				"id": "refine/loop",
-				"kind": "repeat",
+				"kind": "loop",
 				"cardinality": {
 					"upTo": 2
 				},
@@ -194,6 +194,12 @@
 					}
 				},
 				"inner": {
+					"ok": {
+						"type": "boolean"
+					},
+					"reason": {
+						"type": "string"
+					},
 					"index": {
 						"type": "integer"
 					},
@@ -209,9 +215,12 @@
 				"members": {
 					"result": "refine/loop/step"
 				},
-				"until": {
-					"node": "refine/loop/done",
-					"port": "value"
+				"test": {
+					"at": "start",
+					"port": {
+						"node": "refine/loop/more",
+						"port": "value"
+					}
 				}
 			},
 			{
@@ -246,6 +255,26 @@
 					"module": "refine.ts",
 					"export": "isDone",
 					"codeHash": "sha256:a07519256fd37fd32ba1b5f04a3d33167fa96eb1f4369cbb8ce19fe6fdb29e4c"
+				}
+			},
+			{
+				"id": "refine/loop/more",
+				"kind": "code",
+				"in": {
+					"value": {
+						"type": "boolean"
+					}
+				},
+				"out": {
+					"value": {
+						"type": "boolean"
+					}
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "maestro:stdlib",
+					"export": "not",
+					"codeHash": "maestro:stdlib@0.0.0"
 				}
 			},
 			{
@@ -333,12 +362,23 @@
 			{
 				"kind": "data",
 				"from": {
-					"node": "refine/loop/step",
+					"node": "refine/loop",
 					"port": "text"
 				},
 				"to": {
 					"node": "refine/loop/done",
 					"port": "text"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "refine/loop/done",
+					"port": "value"
+				},
+				"to": {
+					"node": "refine/loop/more",
+					"port": "value"
 				}
 			},
 			{
@@ -371,7 +411,7 @@
 	},
 	"bounds": {
 		"instances": {
-			"upTo": 11
+			"upTo": 13
 		},
 		"nodes": {
 			"topics": {
@@ -390,6 +430,9 @@
 				"upTo": 2
 			},
 			"refine/loop/done": {
+				"upTo": 2
+			},
+			"refine/loop/more": {
 				"upTo": 2
 			},
 			"text": {

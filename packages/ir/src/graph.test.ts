@@ -28,9 +28,7 @@ test.each(fixtureFiles)(
 		const [ir, index] = await fixture(file);
 		const topLevel = ir.nodes.filter((n) => index.groupsOf(n.id).length === 0);
 		const inBodies = [...index.nodes.values()]
-			.filter(
-				(n) => n.kind === "map" || n.kind === "seq" || n.kind === "repeat",
-			)
+			.filter((n) => n.kind === "map" || n.kind === "seq" || n.kind === "loop")
 			.flatMap((g) => index.body(g.id));
 		expect(ids([...topLevel, ...inBodies]).toSorted()).toEqual(
 			ids(ir.nodes).toSorted(),
@@ -96,7 +94,6 @@ test("edges into and out of a node, every kind included", async () => {
 	expect(index.edgesFrom("escalate").map((e) => e.to.node)).toEqual([
 		"escalate/try",
 		"gate",
-		"gate",
 		"summary",
 	]);
 });
@@ -113,7 +110,7 @@ test("an unknown id resolves to nothing", async () => {
 });
 
 test.each<[{ outcome: "ok" | "rejected"; reason?: string }, string, unknown]>([
-	[{ outcome: "ok" }, "outcome", "ok"],
+	[{ outcome: "ok" }, "outcome", undefined],
 	[{ outcome: "ok" }, "ok", true],
 	[{ outcome: "ok", reason: "stale" }, "reason", undefined],
 	[{ outcome: "ok" }, "text", "a"],

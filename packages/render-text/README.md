@@ -7,7 +7,8 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 - `render(plan)`: a Mermaid flowchart. Scopes and groups are subgraphs, and a node inside one is named by its id's last
   segment. A code node shows its worker export only when it differs from that name. A group's header, inside the
   subgraph that names its id, shows its kind and its expansion (one line per path when there are several), or its
-  cardinality when nothing expanded. `start` points at each node with no incoming edge outside a group body, and the
+  cardinality when nothing expanded. A loop's region shows its steps: `0 to N` when it tests the state first, `1 to N`
+  when it tests each step's result. `start` points at each node with no incoming edge outside a group body, and the
   result node points at `stop`, drawn `end`.
 
 ## Drawing rules
@@ -20,7 +21,7 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 | `([ ])`                    | A host node.                                                                       |
 | `[[ ]]`                    | A group's header.                                                                  |
 | `-->`                      | `data` edges between two nodes: `<from> to <to>` per port, a same-named port once. |
-| `-.->` `next`              | A repeat's body result feeding its next iteration.                                 |
+| `-.->` `next`              | A loop's body result feeding its next iteration.                                   |
 | `==>`                      | A `collect` edge: the barrier before the fan-in.                                   |
 | `-.->` `when p, else skip` | A guard on output `p`: when false the node is skipped.                             |
 | `@{ shape: fork }`         | A bar after a node with several outgoing edges.                                    |

@@ -153,7 +153,7 @@
 				"id": { "$ref": "#/$defs/id" },
 				"kind": {
 					"anyOf": [
-						{ "enum": ["code", "assert", "map", "seq", "repeat"] },
+						{ "enum": ["code", "assert", "map", "seq", "loop"] },
 						{
 							"description": "A host kind, namespaced as <host>.<kind>.",
 							"$ref": "#/$defs/qualifiedName"
@@ -174,7 +174,7 @@
 				"out": {
 					"$ref": "#/$defs/ports",
 					"propertyNames": {
-						"description": "Every node has the implicit outputs outcome, ok and reason.",
+						"description": "Every node has the implicit outputs ok and reason. outcome is reserved: a code result holding it reads as a rejection.",
 						"not": { "enum": ["outcome", "ok", "reason"] }
 					}
 				},
@@ -201,8 +201,8 @@
 					"then": { "$ref": "#/$defs/seqNode" }
 				},
 				{
-					"if": { "properties": { "kind": { "const": "repeat" } } },
-					"then": { "$ref": "#/$defs/repeatNode" }
+					"if": { "properties": { "kind": { "const": "loop" } } },
+					"then": { "$ref": "#/$defs/loopNode" }
 				},
 				{
 					"if": { "properties": { "kind": { "pattern": "\\." } } },
@@ -263,10 +263,20 @@
 				"until": { "$ref": "#/$defs/portRef" }
 			}
 		},
-		"repeatNode": {
+		"loopNode": {
 			"$ref": "#/$defs/group",
+			"required": ["test"],
 			"properties": {
-				"until": { "$ref": "#/$defs/portRef" },
+				"test": {
+					"description": "A Bool port read before each step (start), of the loop state or a body node, or after it (end), of a body node. The loop goes on while it is true.",
+					"type": "object",
+					"required": ["at", "port"],
+					"additionalProperties": false,
+					"properties": {
+						"at": { "enum": ["start", "end"] },
+						"port": { "$ref": "#/$defs/portRef" }
+					}
+				},
 				"tolerate": { "$ref": "#/$defs/tolerate" }
 			}
 		},

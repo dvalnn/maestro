@@ -122,7 +122,7 @@ Contents, at the level of what it must carry:
 - **Nodes.** For each node: stable id (a path whose prefixes are its scopes and groups), kind, source location, typed
   ports (schemas), guard, declared reads and writes (code nodes), kind-specific configuration (host kinds), and for code
   nodes a worker reference `{runtime, module, export, code hash}`.
-- **Groups.** For `map`, `seq`, `repeat`: the body subgraph (a template), the cardinality (`exact` or `up to N`), the
+- **Groups.** For `map`, `seq`, `loop`: the body subgraph (a template), the cardinality (`exact` or `up to N`), the
   source of its items or iteration state, the stop condition reference, and the member-result port that feeds `collect`
   edges.
 - **Edges.** From port to port, with kind `data`, `collect` or `control`, and for `control` the tolerance (`ok` only, or
@@ -220,17 +220,17 @@ stores by node id and expansion path as a `progress` event, opaquely.
 ## 7. Execution model
 
 - **Node instances.** A node instance is a node id plus an expansion path: one `[key]` per enclosing group, outermost
-  first, where a `map` contributes its item key and `repeat` and `seq` their iteration index (`[risk]`, `[risk][2]`, or
+  first, where a `map` contributes its item key and `loop` and `seq` their iteration index (`[risk]`, `[risk][2]`, or
   empty outside groups). It is shown merged into the id, as `lens[risk]/skeptic`. Events and records use this identity.
 - **Scheduling.** A node instance is ready when all `data` and `collect` inputs are settled and its `control` edges
   allow it. The executor runs ready instances up to the concurrency cap.
 - **Outcomes.** `ok`, `rejected`, `failed`, `skipped`.
-  - A dependent over an `ok` edge runs only after `ok`. A dependent over a tolerant edge also runs after `rejected` and
-    receives the reason.
+  - A dependent over an `ok` edge runs only after `ok`. A dependent over a tolerant edge, or one that reads only status
+    ports (`ok` or `reason`) of that upstream, also runs after `rejected` and receives the reason.
   - `failed` and `skipped` are not tolerable. The dependent is `skipped` and its own dependents follow the same rule.
   - A `map` declares `onError`. With `settle`, a non-ok member becomes a `Settled` value and the group is `ok`. With
     `propagate`, the worst member outcome becomes the group's and running members are cancelled (ADR 0006). `seq` and
-    `repeat` end on their stop condition or bound.
+    `loop` end on their stop condition or bound.
 - **Groups.**
   - `map` instantiates its body once per item, in parallel up to the cap. An item with a primitive value is keyed by
     value and any other item by index, or by an author-supplied key function. Duplicate primitive or index keys of a
@@ -238,14 +238,18 @@ stores by node id and expansion path as a `progress` event, opaquely.
     function runs only there (D-18, SDK-13). Keys give readable node instance ids for `ls` and lane refs.
   - `seq` instantiates the body per item in order and stops at the first item meeting the condition. This covers
     escalation over models.
-  - `repeat` carries typed state: an initial value, a step producing the next state, a stop condition and a maximum.
-    This covers fix-until-green and review-revise loops.
+  - `loop` carries typed state: an initial value, a step producing the next state, a test and a maximum. The state holds
+    the previous node's outputs, `ok` and `reason`, the shape of a node's result. The loop goes on while its test reads
+    true, read at `start` before each step (`0 to N` steps) or at `end` on each step's result (`1 to N`). A test node
+    that fails fails the loop. Whatever else stops it, its test or its maximum, it ends with its last state's outcome,
+    reason and outputs. This covers fix-until-green and review-revise loops.
 - **Guards.** A `when` guard that is false makes the node `skipped`. Compose resolves guards that depend only on known
   values.
 - **Result.** The result rule starts at the returned node. An `ok` node is the result. Otherwise it follows the node's
   non-`ok` inputs, and a group's result member, that the graph does not tolerate (a tolerated rejection or a `Settled`
   input), the first to settle when several did, to a node with no such input: the root cause, with its outcome and
-  reason. A node skipped by its own false guard is the result, and counts as rejected.
+  reason. A node skipped by its own false guard is the result, and counts as rejected, unless the guard reads the status
+  port of a node that is not `ok`: the rule follows that node.
 - **Resume.** Re-entering a concert keeps its id and runs its stored IR. A recorded `ok` instance is reused when its key
   still matches: a hash of the node definition, its code hash recomputed from the current code, and its input values
   with artifact content hashes. Any other instance runs again, so a fix to one node's code reruns that node and those of
@@ -268,7 +272,7 @@ stateDiagram-v2
   running --> rejected
   running --> failed
   running --> failed: cancelled
-  running --> skipped: halted by a propagating map, or an empty seq or repeat
+  running --> skipped: halted by a propagating map, or an empty seq or loop
   ok --> [*]
   rejected --> [*]
   failed --> [*]

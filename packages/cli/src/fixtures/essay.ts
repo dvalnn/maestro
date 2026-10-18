@@ -6,8 +6,9 @@ import {
 	composition,
 	Int,
 	List,
+	loop,
 	map,
-	repeat,
+	not,
 	Text,
 } from "@maestro/sdk";
 
@@ -55,7 +56,7 @@ export const essay = composition(
 			out: { text: Text() },
 		});
 		const Polished = { text: Text(), round: Int(), done: Bool() };
-		return repeat({
+		return loop.doWhile((p) => not(p.out.done), {
 			init: code(polish, {
 				in: { text: joined.out.text, round: 0 },
 				out: Polished,
@@ -65,7 +66,6 @@ export const essay = composition(
 					in: { text: p.out.text, round: p.out.round },
 					out: Polished,
 				}),
-			until: (p) => p.out.done,
 			max: 3,
 		});
 	},

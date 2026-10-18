@@ -35,7 +35,7 @@ export function firstDuplicate(
 }
 
 /**
- * The expansion path of `keys`, outermost first: a `map` item's `itemKey`, or a `seq` or `repeat` iteration index.
+ * The expansion path of `keys`, outermost first: a `map` item's `itemKey`, or a `seq` or `loop` iteration index.
  * @throws when a key holds a character outside `[A-Za-z0-9_.-]`.
  */
 export function formatExpansion(keys: readonly string[]): string {

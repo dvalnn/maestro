@@ -82,12 +82,15 @@ the engine.
 **Node**: A unit of the graph with a stable id and typed ports. Kinds: code, group, assert and host kinds.
 
 **Group node**: A node holding a body that is instantiated several times: `map` (parallel), `seq` (ordered, stops when
-satisfied) or `repeat` (a bounded loop carrying state).
+satisfied) or `loop` (a bounded loop carrying state shaped like a node's result, going on while its test holds).
 
 **Host node**: A node whose kind is registered by a host. The engine treats it as opaque work.
 
 **Edge**: A dependency between ports. Kinds: `data` (a value or artifact flows), `collect` (settled results of a group
 flow to one node, the explicit fan-in) and `control` (guards, tolerance, ordering).
+
+**Status port**: A port every node has, `ok` or `reason`, telling how it settled. A node that reads only status ports of
+a `rejected` upstream starts with no tolerance.
 
 **Reducer**: A named code node marked as fan-in, such as `firstOk` or `okOnly`.
 

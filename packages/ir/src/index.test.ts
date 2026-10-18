@@ -38,7 +38,7 @@ test.each<[string, Mutation, string]>([
 	],
 	[
 		"an unknown node kind",
-		(ir) => (ir.nodes[0].kind = "loop"),
+		(ir) => (ir.nodes[0].kind = "repeat"),
 		"/nodes/0/kind",
 	],
 	[
@@ -130,10 +130,10 @@ test("schema diagnostics skip noise from the branch that failed", () => {
 test.each<[string, Mutation, string, string, string]>([
 	[
 		"enum lists the allowed values",
-		(ir) => (ir.nodes[0].kind = "loop"),
+		(ir) => (ir.nodes[0].kind = "repeat"),
 		"/nodes/0/kind",
-		'must be one of "code", "assert", "map", "seq", "repeat"',
-		'Set /nodes/0/kind to one of "code", "assert", "map", "seq", "repeat"',
+		'must be one of "code", "assert", "map", "seq", "loop"',
+		'Set /nodes/0/kind to one of "code", "assert", "map", "seq", "loop"',
 	],
 	[
 		"const names the required value",
@@ -162,7 +162,7 @@ test.each<[string, Mutation, string, string, string]>([
 	],
 	[
 		"anyOf says no allowed shape matched",
-		(ir) => (ir.nodes[0].kind = "loop"),
+		(ir) => (ir.nodes[0].kind = "repeat"),
 		"/nodes/0/kind",
 		"must match at least one of the allowed shapes",
 		"Change /nodes/0/kind to match ir.schema.json, which packages/ir/README.md describes",
@@ -279,15 +279,15 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"IR.graph",
 		"/scopes/1",
 		"id 'nowhere/s' sits under 'nowhere', which is not a scope or a group node",
-		"Declare 'nowhere' as a scope or as a map, seq or repeat node, or move 'nowhere/s' out of it",
+		"Declare 'nowhere' as a scope or as a map, seq or loop node, or move 'nowhere/s' out of it",
 	],
 	[
 		"a node under a node that is not a group",
 		(ir) => ir.nodes.push({ id: "pick/extra", kind: "fake.task" }),
 		"IR.graph",
-		"/nodes/7",
+		"/nodes/8",
 		"id 'pick/extra' sits under 'pick', which is not a scope or a group node",
-		"Declare 'pick' as a scope or as a map, seq or repeat node, or move 'pick/extra' out of it",
+		"Declare 'pick' as a scope or as a map, seq or loop node, or move 'pick/extra' out of it",
 	],
 	[
 		"an edge from an unknown node",
@@ -391,7 +391,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"Give 'pick' an id directly under 'topics/', or fix the member of the group",
 	],
 	[
-		"a repeat with two members",
+		"a loop with two members",
 		(ir) =>
 			(node(ir, "refine/loop").members = {
 				a: "refine/loop/step",
@@ -399,16 +399,113 @@ test.each<[string, Mutation, string, string, string, string]>([
 			}),
 		"IR.graph",
 		"/nodes/3",
-		"repeat 'refine/loop' must have exactly one member in IR 1.0, got 2",
+		"loop 'refine/loop' must have exactly one member in IR 1.0, got 2",
 		"Keep exactly one entry in members of 'refine/loop'",
 	],
 	[
-		"a stop condition outside the group body",
-		(ir) => (node(ir, "refine/loop").until = { node: "pick", port: "text" }),
+		"a test outside the group body",
+		(ir) =>
+			(node(ir, "refine/loop").test = {
+				at: "end",
+				port: { node: "pick", port: "value" },
+			}),
 		"IR.graph",
 		"/nodes/3",
-		"until 'pick' is not in the body of group 'refine/loop'",
-		"Give 'pick' an id directly under 'refine/loop/', or fix the until of the group",
+		"test 'pick' is not in the body of group 'refine/loop'",
+		"Give 'pick' an id directly under 'refine/loop/', or fix the test of the group",
+	],
+	[
+		"a test on a port that is not a boolean",
+		(ir) =>
+			(node(ir, "refine/loop").test = {
+				at: "end",
+				port: { node: "refine/loop/step", port: "text" },
+			}),
+		"IR.graph",
+		"/nodes/3",
+		"test 'refine/loop/step.text' of group 'refine/loop' is not a boolean port",
+		"Point test of 'refine/loop' at a port whose schema has type boolean",
+	],
+	[
+		"a test at end on a state port",
+		(ir) =>
+			(node(ir, "refine/loop").test = {
+				at: "end",
+				port: { node: "refine/loop", port: "ok" },
+			}),
+		"IR.graph",
+		"/nodes/3",
+		"test 'refine/loop.ok' of loop 'refine/loop' reads the loop state, but a test at end reads a body node",
+		`Point test of 'refine/loop' at a body node, or set test.at to "start"`,
+	],
+	[
+		"a test at start on a state port that is not a boolean",
+		(ir) =>
+			(node(ir, "refine/loop").test = {
+				at: "start",
+				port: { node: "refine/loop", port: "index" },
+			}),
+		"IR.graph",
+		"/nodes/3",
+		"test 'refine/loop.index' of group 'refine/loop' is not a boolean port",
+		"Point test of 'refine/loop' at a port whose schema has type boolean",
+	],
+	[
+		"a test at start that reads the member through another body node",
+		(ir) => (ir.edges[4].from.node = "refine/loop/step"),
+		"IR.graph",
+		"/nodes/3",
+		"test 'refine/loop/more' of loop 'refine/loop' reads its member 'refine/loop/step', but a test at start reads only the loop state",
+		`Feed 'refine/loop/more' from the inner ports of 'refine/loop', or set test.at to "end"`,
+	],
+	[
+		"a test at start that reads the member through a nested group",
+		(ir) => {
+			const text = { type: "string" };
+			ir.nodes.push(
+				{
+					id: "refine/loop/inner",
+					kind: "loop",
+					cardinality: { upTo: 1 },
+					in: { text },
+					inner: {
+						ok: { type: "boolean" },
+						reason: text,
+						index: { type: "integer" },
+						text,
+					},
+					out: { text },
+					members: { result: "refine/loop/inner/s" },
+					test: {
+						at: "end",
+						port: { node: "refine/loop/inner/s", port: "ok" },
+					},
+				},
+				{
+					id: "refine/loop/inner/s",
+					kind: "fake.task",
+					in: { prompt: text },
+					out: { text },
+				},
+			);
+			ir.edges.push(
+				{
+					kind: "data",
+					from: { node: "refine/loop", port: "text" },
+					to: { node: "refine/loop/inner", port: "text" },
+				},
+				{
+					kind: "data",
+					from: { node: "refine/loop/step", port: "text" },
+					to: { node: "refine/loop/inner/s", port: "prompt" },
+				},
+			);
+			ir.edges[5].from = { node: "refine/loop/inner", port: "ok" };
+		},
+		"IR.graph",
+		"/nodes/3",
+		"test 'refine/loop/more' of loop 'refine/loop' reads its member 'refine/loop/step', but a test at start reads only the loop state",
+		`Feed 'refine/loop/more' from the inner ports of 'refine/loop', or set test.at to "end"`,
 	],
 	[
 		"map ports other than item and results",
@@ -420,15 +517,15 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"Declare exactly the out ports [results] on 'topics'",
 	],
 	[
-		"repeat state ports that do not mirror the member",
+		"loop state ports that do not mirror the member",
 		(ir) =>
 			((
 				node(ir, "refine/loop/step").out as object as Record<string, object>
 			).notes = {}),
 		"IR.graph",
 		"/nodes/3",
-		"repeat 'refine/loop' must declare inner ports [index, notes, text], got [index, text]",
-		"Declare exactly the inner ports [index, notes, text] on 'refine/loop'",
+		"loop 'refine/loop' must declare inner ports [index, notes, ok, reason, text], got [index, ok, reason, text]",
+		"Declare exactly the inner ports [index, notes, ok, reason, text] on 'refine/loop'",
 	],
 	[
 		"literal items with an items port",
@@ -451,7 +548,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 		(ir) => (node(ir, "refine/loop").cardinality = { exact: 2 }),
 		"IR.graph",
 		"/nodes/3",
-		"repeat 'refine/loop' must declare cardinality { upTo: N }",
+		"loop 'refine/loop' must declare cardinality { upTo: N }",
 		"Set cardinality of 'refine/loop' to { upTo: N }",
 	],
 	[
@@ -498,7 +595,7 @@ test.each<[string, object, Mutation, string, string | undefined]>([
 	[
 		"a schema error inside a node",
 		minimal,
-		(ir) => (ir.nodes[0].kind = "loop"),
+		(ir) => (ir.nodes[0].kind = "repeat"),
 		"/nodes/0/kind",
 		minimal.nodes[0]?.id,
 	],
@@ -603,7 +700,7 @@ test("an independent reader with no maestro code parses the fan-out, fan-in and 
 	expect(reader.stdout.toString()).toBe(
 		[
 			"fan-out: map topics, exactly 3 members, each result=topics/draft",
-			"loop: repeat refine/loop, up to 2 iterations, each result=refine/loop/step, until refine/loop/done.value, tolerating rejected",
+			"loop: refine/loop, up to 2 iterations, each result=refine/loop/step, tested at start on refine/loop/more.value, tolerating rejected",
 			"fan-in: topics.results -> pick.results (reducer)",
 			"order: topics -> pick -> text -> refine/loop",
 			"",

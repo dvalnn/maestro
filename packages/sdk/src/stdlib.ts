@@ -67,6 +67,17 @@ export function when<T>(
 	}) as Ref<T>;
 }
 
+/** `value` negated: a stdlib `not` node. */
+export function not(value: Ref<boolean>, common: Common = {}): Ref<boolean> {
+	return lift(
+		"not",
+		`${sourceOf(value)}_not`,
+		{ value },
+		{ type: "boolean" },
+		common,
+	) as Ref<boolean>;
+}
+
 /** The entry of the plain `table` under `key`: a stdlib `lookup` node. An array table takes a number key only. */
 export function lookup<V>(
 	table: readonly V[],

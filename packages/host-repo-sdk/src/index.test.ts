@@ -314,7 +314,7 @@ describe("examples", () => {
 		expect(nodeOf(ir, "build")).toMatchObject({
 			literals: { identity: expect.any(String) },
 		});
-		expect(nodeOf(ir, "repeat/repair")).toMatchObject({
+		expect(nodeOf(ir, "loop/repair")).toMatchObject({
 			literals: { identity: expect.any(String) },
 			config: { refs: { logs: { type: "core.file" } } },
 		});
@@ -331,6 +331,7 @@ describe("examples", () => {
 		const concert = await stubConcert(ir, {
 			hosts: [host],
 			config: hostConfig,
+			code: stdlib,
 		});
 		await concert.close();
 		expect(concert.result).toMatchObject({ outcome: "ok", node: "result" });
@@ -339,6 +340,21 @@ describe("examples", () => {
 		expect(repair?.session).toEqual(
 			build?.session as HarnessRequest["session"],
 		);
+	});
+
+	test("build-then-repair runs no repair on a green build", async () => {
+		const ir = buildIr(buildThenRepair);
+		const { host, hostConfig, requests } = repo();
+		const concert = await stubConcert(ir, {
+			hosts: [host],
+			config: hostConfig,
+			code: stdlib,
+		});
+		await concert.close();
+		expect(concert.result).toMatchObject({ outcome: "ok", node: "result" });
+		expect(requests.map((r) => r.prompt)).toEqual([
+			expect.stringContaining("Add a greeting"),
+		]);
 	});
 
 	/** What an implementer writes: the file its task names, holding the task. A resolver writes `resolved`. */

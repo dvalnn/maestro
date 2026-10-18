@@ -59,15 +59,21 @@
 		},
 		{
 			"id": "angles/polish",
-			"kind": "repeat",
+			"kind": "loop",
 			"cardinality": { "upTo": 3 },
 			"in": { "text": { "type": "string" } },
 			"inner": {
+				"ok": { "type": "boolean" },
+				"reason": { "type": "string" },
 				"index": { "type": "integer" },
 				"text": { "type": "string" }
 			},
 			"out": { "text": { "type": "string" } },
-			"members": { "result": "angles/polish/step" }
+			"members": { "result": "angles/polish/step" },
+			"test": {
+				"at": "end",
+				"port": { "node": "angles/polish/step", "port": "ok" }
+			}
 		},
 		{
 			"id": "angles/polish/step",

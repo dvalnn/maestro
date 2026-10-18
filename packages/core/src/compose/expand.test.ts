@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { settledSchema } from "@maestro/ir";
+import { IMPLICIT_OUT, settledSchema } from "@maestro/ir";
 import type { CodeEntry, KeyFunction } from "../node";
 import { code, composeWith, HASH, irOf, loader } from "./fixtures/support";
 
@@ -216,20 +216,22 @@ describe("expansion", () => {
 		expect(bounds.nodes["m/u"]).toEqual({ upTo: 4 });
 	});
 
-	test("leaves a repeat a region", async () => {
+	test("leaves a loop a region", async () => {
 		const INTEGER = { type: "integer" };
+		const { ok, reason } = IMPLICIT_OUT;
 		const { expansion } = await plan(
 			[
 				code("r/s", "index", { in: { index: INTEGER, text: STRING } }),
 				{
 					id: "r",
-					kind: "repeat",
+					kind: "loop",
 					cardinality: { upTo: 5 },
 					in: { text: STRING },
 					literals: { text: "s" },
-					inner: { index: INTEGER, text: STRING },
+					inner: { ok, reason, index: INTEGER, text: STRING },
 					out: { text: STRING },
 					members: { result: "r/s" },
+					test: { at: "end", port: { node: "r/s", port: "ok" } },
 				},
 			],
 			["index", "text"].map((port) => intoBody("r", port, "r/s", port)),

@@ -68,7 +68,7 @@ export type AssertNode = NodeBase & {
 
 type GroupBase = NodeBase & {
 	inner: Ports;
-	/** Result name to body node id. `seq` and `repeat` take exactly one in IR 1.0. */
+	/** Result name to body node id. `seq` and `loop` take exactly one in IR 1.0. */
 	members: Record<string, string>;
 	cardinality: Cardinality;
 };
@@ -86,13 +86,19 @@ export type SeqNode = GroupBase & {
 	until?: PortRef;
 };
 
-export type RepeatNode = GroupBase & {
-	kind: "repeat";
-	until?: PortRef;
+/**
+ * A Bool port of a loop's body node, read before each step at `start` or after each step at `end`. The loop goes on
+ * while it is true. At `start` the node reads only the loop state.
+ */
+export type LoopTest = { at: "start" | "end"; port: PortRef };
+
+export type LoopNode = GroupBase & {
+	kind: "loop";
+	test: LoopTest;
 	tolerate?: Tolerate;
 };
 
-export type GroupNode = MapNode | SeqNode | RepeatNode;
+export type GroupNode = MapNode | SeqNode | LoopNode;
 
 /** A node whose kind a host registers, namespaced as `<host>.<kind>`. */
 export type HostNode = NodeBase & {

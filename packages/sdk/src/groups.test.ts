@@ -6,9 +6,11 @@ import {
 	hostNode,
 	Int,
 	List,
+	loop,
 	map,
+	not,
 	type Ref,
-	repeat,
+	type Result,
 	seq,
 	Text,
 } from "./index";
@@ -177,7 +179,7 @@ describe("seq", () => {
 		const error = diagnose(() =>
 			buildOf(() =>
 				seq(["a"], () => task(), {
-					until: (r) => (r.outcome !== ("ok" as never)) as never,
+					until: (r) => (r.reason !== ("" as never)) as never,
 				}),
 			),
 		);
@@ -202,7 +204,7 @@ describe("seq", () => {
 	});
 });
 
-describe("repeat", () => {
+describe("loop", () => {
 	const counter = (inputs: Record<string, unknown>, label?: string) =>
 		hostNode("fake.count", {
 			label,
@@ -210,18 +212,17 @@ describe("repeat", () => {
 			out: { n: Int(), done: Bool() },
 		});
 
-	test("threads the state from init through its step, bounded by max", () => {
+	test("while reads its condition on the state before the step: a node of the body fed only by the state", () => {
 		const ir = buildOf(() =>
-			repeat({
+			loop.while((state) => not(state.ok), {
 				init: counter({}, "init"),
 				step: (state, index) => counter({ n: state.out.n, index }),
-				until: (r) => r.out.done,
 				max: 3,
 				tolerate: "rejected",
 			}),
 		);
-		expect(nodeOf(ir, "repeat")).toMatchObject({
-			kind: "repeat",
+		expect(nodeOf(ir, "loop")).toMatchObject({
+			kind: "loop",
 			cardinality: { upTo: 3 },
 			tolerate: "rejected",
 			in: { n: { type: "integer" }, done: { type: "boolean" } },
@@ -229,20 +230,66 @@ describe("repeat", () => {
 			inner: {
 				n: { type: "integer" },
 				done: { type: "boolean" },
+				ok: { type: "boolean" },
+				reason: { type: "string" },
 				index: { type: "integer" },
 			},
-			members: { result: "repeat/count" },
-			until: { node: "repeat/count", port: "done" },
+			members: { result: "loop/count" },
+			test: { at: "start", port: { node: "loop/loop_not", port: "value" } },
 		});
 		expect(ir.edges).toContainEqual({
 			kind: "data",
 			from: { node: "init", port: "n" },
-			to: { node: "repeat", port: "n" },
+			to: { node: "loop", port: "n" },
 		});
 		expect(ir.edges).toContainEqual({
 			kind: "data",
-			from: { node: "repeat", port: "index" },
-			to: { node: "repeat/count", port: "index" },
+			from: { node: "loop", port: "ok" },
+			to: { node: "loop/loop_not", port: "value" },
+		});
+		expect(ir.edges).toContainEqual({
+			kind: "data",
+			from: { node: "loop", port: "index" },
+			to: { node: "loop/count", port: "index" },
+		});
+	});
+
+	test("doWhile reads its condition on the step's result", () => {
+		const ir = buildOf(() =>
+			loop.doWhile((r) => not(r.out.done), {
+				init: counter({}, "init"),
+				step: (state) => counter({ n: state.out.n }),
+				max: 2,
+			}),
+		);
+		expect(nodeOf(ir, "loop")).toMatchObject({
+			members: { result: "loop/count" },
+			test: { at: "end", port: { node: "loop/count_not", port: "value" } },
+		});
+	});
+
+	test("takes only its own options", () => {
+		buildOf(() =>
+			loop.doWhile((r) => r.ok, {
+				init: counter({}),
+				step: () => counter({}),
+				max: 2,
+				// @ts-expect-error until is no option of a loop: its condition comes first.
+				until: (r: Result) => r.ok,
+			}),
+		);
+	});
+
+	test("a while condition on a Bool port of the state tests that port at start", () => {
+		const ir = buildOf(() =>
+			loop.while((state) => state.ok, {
+				init: counter({}),
+				step: (state) => counter({ n: state.out.n }),
+				max: 2,
+			}),
+		);
+		expect(nodeOf(ir, "loop")).toMatchObject({
+			test: { at: "start", port: { node: "loop", port: "ok" } },
 		});
 	});
 
@@ -258,7 +305,7 @@ describe("repeat", () => {
 		(_name, step) => {
 			const error = diagnose(() =>
 				buildOf(() =>
-					repeat({
+					loop.doWhile((r) => r.ok, {
 						init: counter({}),
 						step: () => step() as never,
 						max: 2,
@@ -269,23 +316,27 @@ describe("repeat", () => {
 		},
 	);
 
-	test("a state port named index fails with TYPE.state", () => {
-		const indexed = () =>
-			hostNode("fake.count", { in: {}, out: { index: Int() } });
-		const error = diagnose(() =>
-			buildOf(() => repeat({ init: indexed(), step: indexed, max: 2 })),
-		);
-		expect(error).toMatchObject({
-			code: "TYPE.state",
-			message:
-				"the state of repeat 'repeat' has a port named 'index', which names the iteration",
-		});
-	});
+	test.each(["index", "ok", "reason"])(
+		"a state port named %s fails with TYPE.state",
+		(port) => {
+			const named = () =>
+				hostNode("fake.count", { in: {}, out: { [port]: Int() } });
+			const error = diagnose(() =>
+				buildOf(() =>
+					loop.doWhile((r) => r.ok, { init: named(), step: named, max: 2 }),
+				),
+			);
+			expect(error).toMatchObject({
+				code: "TYPE.state",
+				message: `the state of loop 'loop' has a port named '${port}', a name the loop state holds itself`,
+			});
+		},
+	);
 
 	test("an init that is not a node's result fails with TYPE.member", () => {
 		const error = diagnose(() =>
 			buildOf(() =>
-				repeat({
+				loop.while((s) => not(s.ok), {
 					init: counter({}).out.n as never,
 					step: (s) => s as never,
 					max: 2,
@@ -298,7 +349,7 @@ describe("repeat", () => {
 	test("a missing max fails with BOUND.max", () => {
 		const error = diagnose(() =>
 			buildOf(() =>
-				repeat({
+				loop.while((s) => not(s.ok), {
 					init: counter({}),
 					step: (s) => counter({ n: s.out.n }),
 					max: undefined as never,

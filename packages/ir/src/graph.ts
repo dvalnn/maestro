@@ -1,4 +1,4 @@
-import { OUTCOMES, type Outcome } from "./outcome";
+import type { Outcome } from "./outcome";
 import type {
 	Cardinality,
 	Diagnostic,
@@ -6,6 +6,9 @@ import type {
 	Ir,
 	IrEdge,
 	IrNode,
+	JsonSchema,
+	LoopNode,
+	PortRef,
 	Ports,
 	Scope,
 	WorkerRef,
@@ -13,7 +16,6 @@ import type {
 
 /** The outputs every node has beside its declared ones. */
 export const IMPLICIT_OUT = {
-	outcome: { type: "string", enum: [...OUTCOMES] },
 	ok: { type: "boolean" },
 	reason: { type: "string" },
 } satisfies Ports;
@@ -28,26 +30,31 @@ export function outputValue(
 	port: string,
 ): unknown {
 	const { outcome, reason } = settled;
-	if (port === "outcome") return outcome;
 	if (port === "ok") return outcome === "ok";
 	if (port === "reason") return outcome === "ok" ? undefined : reason;
 	return outputs?.[port];
 }
 
 export const isGroup = (n: IrNode | undefined): n is GroupNode =>
-	n?.kind === "map" || n?.kind === "seq" || n?.kind === "repeat";
+	n?.kind === "map" || n?.kind === "seq" || n?.kind === "loop";
 
 /** The most iterations a group may have. */
 export const boundOf = (c: Cardinality) => ("exact" in c ? c.exact : c.upTo);
 
 /**
- * Whether `edge` into `node` admits a `rejected` source: a tolerating control edge, or state into a tolerating
- * `repeat`.
+ * Whether `edges`, every edge from one source into `node`, admit that source `rejected`:
+ * - one of them is a tolerating control edge, or state into a tolerating `loop`;
+ * - or each reads a status port, an implicit output.
  */
-export const tolerates = (node: IrNode, edge: IrEdge) =>
-	edge.kind === "control"
-		? edge.tolerate === "rejected"
-		: node.kind === "repeat" && node.tolerate === "rejected";
+export const tolerates = (node: IrNode, edges: readonly IrEdge[]) =>
+	edges.some((e) =>
+		e.kind === "control"
+			? e.tolerate === "rejected"
+			: node.kind === "loop" && node.tolerate === "rejected",
+	) || edges.every((e) => Object.hasOwn(IMPLICIT_OUT, e.from.port ?? ""));
+
+/** The ports a loop's state carries beside its member's outputs: the status ports, and the iteration's index. */
+export const LOOP_STATE = ["ok", "reason", "index"] as const;
 
 /**
  * `ir` with each worker reference, a code node's `worker` and a map's `key` (ADR 0008), replaced by what `change` gives
@@ -68,7 +75,7 @@ export function mapWorkers(
 }
 
 const hasLiteralItems = (g: GroupNode) =>
-	g.kind !== "repeat" && g.items !== undefined;
+	g.kind !== "loop" && g.items !== undefined;
 
 const names = (ports: Ports | undefined) => Object.keys(ports ?? {});
 
@@ -123,6 +130,29 @@ export function indexGraph(ir: Ir): GraphIndex {
 		edgesInto: (node) => into.get(node) ?? [],
 		edgesFrom: (node) => from.get(node) ?? [],
 	};
+}
+
+/**
+ * The body nodes performed first in each iteration of a loop tested at `start`: its test node and the body nodes that
+ * node reads, transitively, a group reading what its descendants read.
+ */
+export function startNodes(
+	index: Pick<GraphIndex, "nodes" | "body" | "edgesInto">,
+	loop: LoopNode,
+): ReadonlySet<string> {
+	const body = new Set(index.body(loop.id).map((n) => n.id));
+	const found = new Set<string>();
+	const visit = (id: string) => {
+		if (!body.has(id) || found.has(id)) return;
+		found.add(id);
+		const within = [...index.nodes.keys()].filter((k) =>
+			k.startsWith(`${id}/`),
+		);
+		for (const n of [id, ...within])
+			for (const e of index.edgesInto(n)) visit(e.from.node);
+	};
+	visit(loop.test.port.node);
+	return found;
 }
 
 const NODE_PATH = /^\/nodes\/(\d+)(?:\/|$)/;
@@ -240,7 +270,7 @@ function checkIds(ir: Ir, { nodes, scopes, report }: Graph) {
 				"IR.graph",
 				path,
 				`id '${id}' sits under '${parent}', which is not a scope or a group node`,
-				`Declare '${parent}' as a scope or as a map, seq or repeat node, or move '${id}' out of it`,
+				`Declare '${parent}' as a scope or as a map, seq or loop node, or move '${id}' out of it`,
 			);
 	}
 }
@@ -409,12 +439,12 @@ function checkGroup(g: GroupNode, path: string, graph: Graph) {
 	checkCardinality(g, path, graph.report);
 }
 
-/** Checks that members and `until` sit in the group's own body. Returns the member when there is exactly one. */
+/** Checks that members, `until` and `test` sit in the group's own body. Returns the member when there is exactly one. */
 function checkBody(g: GroupNode, path: string, graph: Graph) {
 	const members = Object.values(g.members).map((id) =>
 		bodyNode(g, id, "member", path, graph),
 	);
-	// A seq or repeat mirrors its member's ports, which needs exactly one member. A map's
+	// A seq or loop mirrors its member's ports, which needs exactly one member. A map's
 	// member results are records keyed by result name, so it may have several.
 	if (g.kind !== "map" && members.length !== 1) {
 		graph.report(
@@ -424,21 +454,113 @@ function checkBody(g: GroupNode, path: string, graph: Graph) {
 			`Keep exactly one entry in members of '${g.id}'`,
 		);
 	}
-	if (g.kind !== "map" && g.until) {
-		const until = bodyNode(g, g.until.node, "until", path, graph);
-		if (
-			until &&
-			![...names(until.out), ...names(IMPLICIT_OUT)].includes(g.until.port)
-		) {
-			graph.report(
-				"IR.ref",
-				path,
-				`node '${until.id}' has no output port '${g.until.port}'`,
-				`Declare '${g.until.port}' in out of node '${until.id}', or fix until of group '${g.id}'`,
-			);
-		}
+	if (g.kind === "seq" && g.until) boolPort(g, g.until, "until", path, graph);
+	const member = members.length === 1 ? members[0] : undefined;
+	if (g.kind === "loop") checkTest(g, member, path, graph);
+	return member;
+}
+
+/**
+ * Checks the test of `g`:
+ * - at `start`, a Bool state port of `g`, or a Bool port of a body node that does not read `member`;
+ * - at `end`, a Bool port of a body node.
+ */
+function checkTest(
+	g: LoopNode,
+	member: IrNode | undefined,
+	path: string,
+	graph: Graph,
+) {
+	const { at, port } = g.test;
+	if (port.node === g.id && at === "start")
+		statePort(g, port.port, path, graph);
+	else if (port.node === g.id)
+		graph.report(
+			"IR.graph",
+			path,
+			`test '${g.id}.${port.port}' of loop '${g.id}' reads the loop state, but a test at end reads a body node`,
+			`Point test of '${g.id}' at a body node, or set test.at to "start"`,
+		);
+	else {
+		const test = boolPort(g, port, "test", path, graph);
+		if (test && member && at === "start")
+			checkStartTest(g, test, member, path, graph);
 	}
-	return members.length === 1 ? members[0] : undefined;
+}
+
+/** Checks that `port` is a Bool state port of `g`. */
+function statePort(g: LoopNode, port: string, path: string, graph: Graph) {
+	const schema =
+		g.inner && Object.hasOwn(g.inner, port) ? g.inner[port] : undefined;
+	if (schema === undefined)
+		graph.report(
+			"IR.ref",
+			path,
+			`loop '${g.id}' has no state port '${port}'`,
+			`Declare '${port}' in inner of '${g.id}', or fix test of group '${g.id}'`,
+		);
+	else checkBool(g, `${g.id}.${port}`, schema, "test", path, graph);
+}
+
+/** Checks that `ref`, the `role` of `g`, is a Bool port of a node in its body. Returns that node. */
+function boolPort(
+	g: GroupNode,
+	ref: PortRef,
+	role: string,
+	path: string,
+	graph: Graph,
+) {
+	const n = bodyNode(g, ref.node, role, path, graph);
+	if (!n) return undefined;
+	const schema = Object.hasOwn(IMPLICIT_OUT, ref.port)
+		? IMPLICIT_OUT[ref.port as keyof typeof IMPLICIT_OUT]
+		: n.out && Object.hasOwn(n.out, ref.port)
+			? n.out[ref.port]
+			: undefined;
+	if (schema === undefined)
+		graph.report(
+			"IR.ref",
+			path,
+			`node '${n.id}' has no output port '${ref.port}'`,
+			`Declare '${ref.port}' in out of node '${n.id}', or fix ${role} of group '${g.id}'`,
+		);
+	else checkBool(g, `${n.id}.${ref.port}`, schema, role, path, graph);
+	return n;
+}
+
+/** Checks that `schema`, of port `name`, the `role` of `g`, has type boolean. */
+function checkBool(
+	g: GroupNode,
+	name: string,
+	schema: JsonSchema,
+	role: string,
+	path: string,
+	graph: Graph,
+) {
+	if (typeof schema !== "object" || schema.type !== "boolean")
+		graph.report(
+			"IR.graph",
+			path,
+			`${role} '${name}' of group '${g.id}' is not a boolean port`,
+			`Point ${role} of '${g.id}' at a port whose schema has type boolean`,
+		);
+}
+
+/** A test read before the step reads only the loop state: neither it nor a body node it reads depends on the member. */
+function checkStartTest(
+	g: LoopNode,
+	test: IrNode,
+	member: IrNode,
+	path: string,
+	graph: Graph,
+) {
+	if (startNodes(graph, g).has(member.id))
+		graph.report(
+			"IR.graph",
+			path,
+			`test '${test.id}' of loop '${g.id}' reads its member '${member.id}', but a test at start reads only the loop state`,
+			`Feed '${test.id}' from the inner ports of '${g.id}', or set test.at to "end"`,
+		);
 }
 
 function bodyNode(
@@ -466,7 +588,7 @@ function bodyNode(
 	return n;
 }
 
-/** `state` is the member's out ports, which a seq or repeat mirrors. */
+/** `state` is the member's out ports, which a seq or loop mirrors. */
 function checkGroupPorts(
 	g: GroupNode,
 	state: string[],
@@ -487,9 +609,9 @@ function checkGroupPorts(
 			);
 		}
 	};
-	if (g.kind === "repeat") {
+	if (g.kind === "loop") {
 		expect("in", names(g.in), state);
-		expect("inner", names(g.inner), [...state, "index"]);
+		expect("inner", names(g.inner), [...state, ...LOOP_STATE]);
 		expect("out", names(g.out), state);
 	} else {
 		expect("in", names(g.in), hasLiteralItems(g) ? [] : ["items"]);
@@ -503,7 +625,7 @@ function checkGroupPorts(
 function checkCardinality(g: GroupNode, path: string, report: Report) {
 	const c = g.cardinality;
 	const literal = hasLiteralItems(g);
-	const count = g.kind === "repeat" ? undefined : g.items?.length;
+	const count = g.kind === "loop" ? undefined : g.items?.length;
 	const exact = g.kind === "map" && literal;
 	const valid = exact
 		? "exact" in c && c.exact === count

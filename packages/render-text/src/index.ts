@@ -27,6 +27,12 @@ const counted = (n: number | string, noun: string) =>
 const shownExpansion = (e: Expansion) =>
 	"keys" in e ? cut(e.keys.join(", ")) : amount(e);
 
+/** `n`'s expansion `e` as shown: a loop's region by its steps, `0 to N` when it tests first, else `1 to N`. */
+const expansionOf = (n: IrNode, e: Expansion) =>
+	n.kind === "loop" && "upTo" in e
+		? `${n.test.at === "start" ? 0 : 1} to ${e.upTo}`
+		: shownExpansion(e);
+
 /** The plan in one line: node instances, each host count and any warnings. */
 export function summary(plan: Plan): string {
 	const { bounds, diagnostics } = plan;
@@ -64,7 +70,7 @@ function nodeLines(plan: Plan, graph: GraphIndex): string[] {
 		heads[i] ?? "",
 		...Object.entries(plan.expansion[n.id] ?? {}).map(
 			([path, e]) =>
-				`    ${instance(graph, n.id, path)} expands to ${shownExpansion(e)}`,
+				`    ${instance(graph, n.id, path)} expands to ${expansionOf(n, e)}`,
 		),
 	]);
 }
@@ -113,10 +119,10 @@ function groupLabel(plan: Plan, g: GroupNode): string {
 	const [only] = paths;
 	const facts =
 		paths.length === 1 && only
-			? [shownExpansion(only[1])]
+			? [expansionOf(g, only[1])]
 			: paths.length
-				? paths.map(([path, e]) => `${path}: ${shownExpansion(e)}`)
-				: [amount(g.cardinality)];
+				? paths.map(([path, e]) => `${path}: ${expansionOf(g, e)}`)
+				: [expansionOf(g, g.cardinality)];
 	return label(g.kind, ...facts);
 }
 
@@ -236,10 +242,10 @@ function wire(graph: GraphIndex, names: Names, edges: readonly Merged[]) {
 	return { forks, joins, lines };
 }
 
-/** A dashed `next` edge from each repeat's body result to its header: the state the next iteration starts from. */
+/** A dashed `next` edge from each loop's body result to its header: the state the next iteration starts from. */
 const loopBacks = (plan: Plan, ids: ReadonlyMap<string, string>) =>
 	plan.ir.nodes.flatMap((n) =>
-		n.kind === "repeat"
+		n.kind === "loop"
 			? Object.values(n.members).map(
 					(m) => `${ids.get(m)} -.->|${label("next")}| ${ids.get(n.id)}`,
 				)
@@ -300,7 +306,7 @@ function bars(d: Diagram, parent: string | undefined, pad: string): string[] {
 }
 
 /**
- * A static Mermaid flowchart of the plan, with start and end markers and a `next` edge closing each repeat.
+ * A static Mermaid flowchart of the plan, with start and end markers and a `next` edge closing each loop.
  * The README's "Drawing rules" section holds the drawing rules.
  */
 export function render(plan: Plan): string {

@@ -14,27 +14,32 @@
 		{
 			"from": { "node": "map/fix_until_green/check", "port": "text" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/repeat", "port": "text" }
+			"to": { "node": "map/fix_until_green/loop", "port": "text" }
 		},
 		{
 			"from": { "node": "map/fix_until_green/check", "port": "logs" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/repeat", "port": "logs" }
+			"to": { "node": "map/fix_until_green/loop", "port": "logs" }
 		},
 		{
-			"from": { "node": "map/fix_until_green/repeat", "port": "logs" },
+			"from": { "node": "map/fix_until_green/loop", "port": "ok" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/repeat/task", "port": "failures" }
+			"to": { "node": "map/fix_until_green/loop/loop_not", "port": "value" }
 		},
 		{
-			"from": { "node": "map/fix_until_green/repeat", "port": "index" },
+			"from": { "node": "map/fix_until_green/loop", "port": "logs" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/repeat/task", "port": "index" }
+			"to": { "node": "map/fix_until_green/loop/task", "port": "failures" }
 		},
 		{
-			"from": { "node": "map/fix_until_green/repeat/task", "port": "text" },
+			"from": { "node": "map/fix_until_green/loop", "port": "index" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/repeat/check", "port": "text" }
+			"to": { "node": "map/fix_until_green/loop/task", "port": "index" }
+		},
+		{
+			"from": { "node": "map/fix_until_green/loop/task", "port": "text" },
+			"kind": "data",
+			"to": { "node": "map/fix_until_green/loop/check", "port": "text" }
 		},
 		{
 			"from": { "node": "map", "port": "results" },
@@ -51,7 +56,7 @@
 			"inner": { "item": { "type": "string" } },
 			"items": ["small", "large"],
 			"kind": "map",
-			"members": { "result": "map/fix_until_green/repeat" },
+			"members": { "result": "map/fix_until_green/loop" },
 			"onError": "settle",
 			"out": {
 				"results": {
@@ -113,21 +118,38 @@
 		},
 		{
 			"cardinality": { "upTo": 2 },
-			"id": "map/fix_until_green/repeat",
+			"id": "map/fix_until_green/loop",
 			"in": { "logs": { "type": "string" }, "text": { "type": "string" } },
 			"inner": {
 				"index": { "type": "integer" },
 				"logs": { "type": "string" },
+				"ok": { "type": "boolean" },
+				"reason": { "type": "string" },
 				"text": { "type": "string" }
 			},
-			"kind": "repeat",
-			"members": { "result": "map/fix_until_green/repeat/check" },
+			"kind": "loop",
+			"members": { "result": "map/fix_until_green/loop/check" },
 			"out": { "logs": { "type": "string" }, "text": { "type": "string" } },
-			"tolerate": "rejected",
-			"until": { "node": "map/fix_until_green/repeat/check", "port": "ok" }
+			"test": {
+				"at": "start",
+				"port": { "node": "map/fix_until_green/loop/loop_not", "port": "value" }
+			},
+			"tolerate": "rejected"
 		},
 		{
-			"id": "map/fix_until_green/repeat/task",
+			"id": "map/fix_until_green/loop/loop_not",
+			"in": { "value": { "type": "boolean" } },
+			"kind": "code",
+			"out": { "value": { "type": "boolean" } },
+			"worker": {
+				"codeHash": "maestro:stdlib@0.1.0",
+				"export": "not",
+				"module": "maestro:stdlib",
+				"runtime": "ts"
+			}
+		},
+		{
+			"id": "map/fix_until_green/loop/task",
 			"in": {
 				"failures": { "type": "string" },
 				"index": { "type": "integer" },
@@ -138,7 +160,7 @@
 			"out": { "text": { "type": "string" } }
 		},
 		{
-			"id": "map/fix_until_green/repeat/check",
+			"id": "map/fix_until_green/loop/check",
 			"in": { "text": { "type": "string" } },
 			"kind": "fake.check",
 			"out": { "logs": { "type": "string" }, "text": { "type": "string" } }

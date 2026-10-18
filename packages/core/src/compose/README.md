@@ -40,8 +40,8 @@ README.
    - a `map` with a key function expands to a count of its items, as the key function is called only at perform;
    - a `seq` without `until` expands into one instance per index.
 
-   Every other group instance stays a region of up to its bound (CORE-05), as do a `repeat`, a `seq` with `until`, a
-   group sized by a node result, and a group whose guard a node result feeds.
+   Every other group instance stays a region of up to its bound (CORE-05), as do a `loop`, a `seq` with `until`, a group
+   sized by a node result, and a group whose guard a node result feeds.
 
    When the IR's own bounds, with every group at its declared bound, pass a cap, expansion checks the bounds so far
    after each group instance. A group instance not yet reached counts nothing, so the bounds so far only grow. Expansion
