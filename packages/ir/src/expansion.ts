@@ -12,8 +12,8 @@ const EXPANSION = new RegExp(EXPANSION_PATTERN);
 const PRIMITIVES = new Set(["string", "number", "boolean"]);
 
 /**
- * A `map` item's key (D-18): a primitive item's value, any other item's index, with each character outside
- * `[A-Za-z0-9_.-]` turned to `_`. Items with equal keys are duplicates, so `3` and `"3"` collide.
+ * A `parMap` or `parFind` item's key (D-18): a primitive item's value, any other item's index, with each character
+ * outside `[A-Za-z0-9_.-]` turned to `_`. Items with equal keys are duplicates, so `3` and `"3"` collide.
  */
 export function itemKey(item: unknown, index: number): string {
 	const raw =
@@ -35,7 +35,8 @@ export function firstDuplicate(
 }
 
 /**
- * The expansion path of `keys`, outermost first: a `map` item's `itemKey`, or a `seq` or `loop` iteration index.
+ * The expansion path of `keys`, outermost first: a `parMap` or `parFind` item's `itemKey`, or another group's iteration
+ * index.
  * @throws when a key holds a character outside `[A-Za-z0-9_.-]`.
  */
 export function formatExpansion(keys: readonly string[]): string {

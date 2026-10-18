@@ -29,6 +29,7 @@ import {
 	type IrEdge,
 	type IrNode,
 	MAESTRO_TYPE,
+	type Ports,
 	parseIr,
 	reject,
 	type Settled,
@@ -186,12 +187,12 @@ const settledList = {
 const byInstance = (instances: InstanceRecord[]) =>
 	Object.fromEntries(instances.map((i) => [`${i.node}${i.expansion}`, i]));
 
-type MemberValue = { result: { text: string } };
+type MemberValue = { text: string };
 
-/** The fixture's `merge`, reading member results as records by result name (ADR 0004). */
+/** The fixture's `merge`, reading each member's outputs (ADR 0004). */
 function merge(ports: { parts: Settled<MemberValue>[]; separator: string }) {
 	const texts = ports.parts.flatMap((p) =>
-		p.outcome === "ok" && p.value.result.text ? [p.value.result.text] : [],
+		p.outcome === "ok" && p.value.text ? [p.value.text] : [],
 	);
 	return { text: texts.join(ports.separator), nonEmpty: texts.length > 0 };
 }
@@ -210,7 +211,7 @@ function barrier(count: number) {
 
 const pending = () => new Promise<HostNodeResult>(() => {});
 
-test("a map fans out, a reducer fans in over its settled members, a rejection's outputs included, and a loop carries state until its test is false", async () => {
+test("a parMap fans out, a reducer fans in over its settled members, a rejection's outputs included, and a loop carries state until its test is false", async () => {
 	const drafts: unknown[] = [];
 	const prompts: unknown[] = [];
 	const { result, record, concert } = await play(
@@ -244,12 +245,12 @@ test("a map fans out, a reducer fans in over its settled members, a rejection's 
 		},
 	);
 	expect(drafts).toEqual([
-		{ outcome: "ok", value: { result: { text: "alpha draft" } } },
+		{ outcome: "ok", value: { text: "alpha draft" } },
 		{ outcome: "rejected", reason: "off topic" },
 		{
 			outcome: "rejected",
 			reason: "rough",
-			value: { result: { text: "gamma draft" } },
+			value: { text: "gamma draft" },
 		},
 	]);
 	expect(prompts).toEqual(["alpha draft", "alpha draft+"]);
@@ -420,14 +421,14 @@ test("a code node in a tolerant loop hands the findings it rejected with to the 
 	});
 });
 
-test("a tolerant reader of a declared output of a rejection without outputs fails before it starts, naming it, as does a loop test", async () => {
+test("a tolerant reader of a declared output of a rejection without outputs is skipped before it starts, and a loop test reading one does not hold", async () => {
 	const after = (from: string, to: string): IrEdge => ({
 		kind: "control",
 		from: { node: from },
 		to: { node: to },
 		tolerate: "rejected",
 	});
-	const { record, concert } = await play(
+	const { record, concert, result } = await play(
 		graph(
 			[
 				code("check", "refuse", { out: { findings: FINDINGS } }),
@@ -444,7 +445,7 @@ test("a tolerant reader of a declared output of a rejection without outputs fail
 				after("inspect", "redo"),
 				after("check", "note"),
 			],
-			"note",
+			"fix",
 		),
 		{
 			script: { steps: { inspect: [{ outcome: "rejected", reason: "poor" }] } },
@@ -453,24 +454,28 @@ test("a tolerant reader of a declared output of a rejection without outputs fail
 	);
 	const instances = byInstance(record.instances(concert));
 	expect(instances.fix).toMatchObject({
-		status: "failed",
-		reason: "'check' rejected without outputs; its 'findings' cannot be read",
+		status: "skipped",
+		reason: "'check' rejected without its 'findings'",
 	});
 	expect(instances.fix?.startedAt).toBeUndefined();
 	expect(instances.redo).toMatchObject({
-		status: "failed",
-		reason: "'inspect' rejected without outputs; its 'findings' cannot be read",
+		status: "skipped",
+		reason: "'inspect' rejected without its 'findings'",
 	});
 	expect(instances.note?.status).toBe("ok");
-	const { result } = await play(lintLoop, {
+	expect(result).toMatchObject({
+		node: "check",
+		outcome: "rejected",
+		reason: "dirty",
+	});
+	const loop = await play(lintLoop, {
 		code: { not: stdlib.not, lint: () => reject("dirty") },
 	});
-	expect(result).toEqual({
+	expect(loop.result).toMatchObject({
 		node: "loop/lint",
-		expansion: "[1]",
-		outcome: "failed",
-		reason:
-			"'loop[0]/lint' rejected without outputs; its 'findings' cannot be read",
+		expansion: "[0]",
+		outcome: "rejected",
+		reason: "dirty",
 	});
 	const testLoop = graph(
 		[
@@ -494,12 +499,11 @@ test("a tolerant reader of a declared output of a rejection without outputs fail
 	const testRead = await play(testLoop, {
 		code: { lint: () => reject("dirty") },
 	});
-	expect(testRead.result).toEqual({
-		node: "loop",
-		expansion: "",
-		outcome: "failed",
-		reason:
-			"'loop[0]/lint' rejected without outputs; its 'more' cannot be read",
+	expect(testRead.result).toMatchObject({
+		node: "loop/lint",
+		expansion: "[0]",
+		outcome: "rejected",
+		reason: "dirty",
 	});
 });
 
@@ -535,18 +539,19 @@ test("a reader of a rejected node's status ports alone starts untolerated, and o
 	expect(instances.status?.status).toBe("ok");
 });
 
-test("a seq's item is read from the seq, not from a previous member that rejected without outputs", async () => {
+test("a find's item is read from the find, not from a previous member that rejected without outputs", async () => {
 	const { result } = await play(
 		graph(
 			[
 				{
 					id: "each",
-					kind: "seq",
+					kind: "find",
 					items: ["a", "b"],
 					cardinality: { upTo: 2 },
 					inner: { item: STRING },
 					out: { item: STRING },
 					members: { result: "each/step" },
+					cond: { node: "each/step", port: "ok" },
 				},
 				code("each/step", "step", {
 					in: { item: STRING },
@@ -754,7 +759,7 @@ test("a loop that reaches max with its condition still true ends on its last sta
 	expect(ran.result).toMatchObject({ outcome: "rejected", reason: "still 2" });
 });
 
-test("a seq escalates through its items until one settles ok, after a map keyed by its key function", async () => {
+test("a find escalates through its items until one settles ok, after a parMap keyed by its key function", async () => {
 	const sizes: unknown[] = [];
 	const { result, record, concert } = await play(
 		await fixture("guards-and-escalation.json"),
@@ -797,7 +802,7 @@ test("a seq escalates through its items until one settles ok, after a map keyed 
 	expect(Object.keys(instances)).toContain("each/work[p-intro]");
 });
 
-test("propagate cancels the running members of a map as skipped, and the result names the failed member", async () => {
+test("stop cancels the running members of a parMap as skipped, and the result names the failed member", async () => {
 	const others = barrier(2);
 	const { result, record, concert } = await play(
 		await fixture("guards-and-escalation.json"),
@@ -990,7 +995,7 @@ test("a guard that is not true skips its node, and the result counts that as rej
 	});
 });
 
-test("a map names duplicate keys and how to fix them, a key function's over a literal list only at perform", async () => {
+test("a parMap or parFind names duplicate keys and how to fix them, a key function's over a literal list only at perform", async () => {
 	const keyed = await play(await fixture("guards-and-escalation.json"), {
 		code: { plan: () => ({ parts: ["a", "a"] }), partKey, merge, summarize },
 	});
@@ -999,11 +1004,11 @@ test("a map names duplicate keys and how to fix them, a key function's over a li
 			[
 				{
 					id: "m",
-					kind: "map",
+					kind: "parMap",
 					items,
 					...(key && { key }),
 					cardinality: { exact: 2 },
-					onError: "settle",
+					onError: "continue",
 					inner: { item: STRING },
 					out: { results: settledList },
 					members: { result: "m/t" },
@@ -1030,23 +1035,38 @@ test("a map names duplicate keys and how to fix them, a key function's over a li
 		node: "m",
 		outcome: "failed",
 		reason:
-			"map 'm' has items 0 and 1 keyed 'a'. Make its key function return a unique key per item",
+			"parMap 'm' has items 0 and 1 keyed 'a'. Make its key function return a unique key per item",
 	});
 	expect(keyed.result).toMatchObject({
 		node: "each",
 		outcome: "failed",
 		reason:
-			"map 'each' has items 0 and 1 keyed 'a'. Make its key function return a unique key per item",
+			"parMap 'each' has items 0 and 1 keyed 'a'. Make its key function return a unique key per item",
+	});
+	const parFind = await play(
+		overItems({
+			...PAR_FIND,
+			items: ["ab", "ac"],
+			cardinality: { upTo: 2 },
+			key: worker("firstChar"),
+		}),
+		{ code: { firstChar } },
+	);
+	expect(parFind.result).toMatchObject({
+		node: "g",
+		outcome: "failed",
+		reason:
+			"parFind 'g' has items 0 and 1 keyed 'a'. Make its key function return a unique key per item",
 	});
 	expect(unkeyed.result).toMatchObject({
 		node: "m",
 		outcome: "failed",
 		reason:
-			"map 'm' has items 0 and 1 keyed 'a_b'. Give the map a key function that returns a unique key per item",
+			"parMap 'm' has items 0 and 1 keyed 'a_b'. Give the parMap a key function that returns a unique key per item",
 	});
 });
 
-test("a map over more items than its bound fails", async () => {
+test("a parMap over more items than its bound fails", async () => {
 	const { result } = await play(await fixture("guards-and-escalation.json"), {
 		code: {
 			plan: () => ({ parts: ["a", "b", "c", "d", "e"] }),
@@ -1059,7 +1079,7 @@ test("a map over more items than its bound fails", async () => {
 		node: "each",
 		outcome: "failed",
 		reason:
-			"map 'each' got 5 items, over its bound of 4. Raise its bound, or pass fewer items",
+			"parMap 'each' got 5 items, over its bound of 4. Raise its bound, or pass fewer items",
 	});
 });
 
@@ -1168,17 +1188,17 @@ test("a cancelled host instance whose execute never settles is abandoned, and th
 });
 
 /**
- * A `map` over `x` and `y` that propagates, whose members' `m/t` reads the item, `m/slow` goes beside it and
+ * A `parMap` over `x` and `y` that stops, whose members' `m/t` reads the item, `m/slow` goes beside it and
  * `m/after` follows it.
  */
-const propagating = graph(
+const stopping = graph(
 	[
 		{
 			id: "m",
-			kind: "map",
+			kind: "parMap",
 			items: ["x", "y"],
 			cardinality: { exact: 2 },
-			onError: "propagate",
+			onError: "stop",
 			inner: { item: STRING },
 			out: { results: settledList },
 			members: { result: "m/t" },
@@ -1194,9 +1214,9 @@ const propagating = graph(
 	"m",
 );
 
-test("a node after a member cancelled by propagate settles with the halt's reason", async () => {
+test("a node after a member cancelled by stop settles with the halt's reason", async () => {
 	const xStarted = Promise.withResolvers<void>();
-	const { record, concert } = await play(propagating, {
+	const { record, concert } = await play(stopping, {
 		script: {
 			steps: {
 				"m/t": (_, inputs) => {
@@ -1217,7 +1237,7 @@ test("a node after a member cancelled by propagate settles with the halt's reaso
 	});
 });
 
-test("propagate halts the other members before the failing member's frame settles, and a later concert cancel outranks it", async () => {
+test("stop halts the other members before the failing member's frame settles, and a later concert cancel outranks it", async () => {
 	const xStarted = Promise.withResolvers<void>();
 	const cancelling = Promise.withResolvers<void>();
 	const gate = Promise.withResolvers<void>();
@@ -1257,7 +1277,7 @@ test("propagate halts the other members before the failing member's frame settle
 	const { dir, open } = await workspace();
 	const record = open();
 	const playing = await start({
-		ir: propagating,
+		ir: stopping,
 		hosts: [blocking],
 		loadCode: loader({}),
 		dir,
@@ -1466,6 +1486,226 @@ test.each<[string, Fn, string, Pick<IrNode, "in" | "literals">?]>([
 	},
 );
 
+/** A group `g` over `a`, `b` and `c`, with `fields`, whose member `g/t` takes the item as its prompt and has `out`. */
+const overItems = (
+	fields: Record<string, unknown>,
+	out: Ports = { text: STRING },
+) =>
+	graph(
+		[
+			{
+				id: "g",
+				items: ["a", "b", "c"],
+				cardinality: { upTo: 3 },
+				inner: { item: STRING },
+				members: { result: "g/t" },
+				...fields,
+			} as never,
+			task("g/t", { in: { prompt: STRING }, out }),
+		],
+		[data("g.item", "g/t.prompt")],
+		"g",
+	);
+
+test.each([
+	["stop starts no item after", "stop", ["a", "b"], "rejected"],
+	[
+		"continue goes on through every item past",
+		"continue",
+		["a", "b", "c"],
+		"ok",
+	],
+] as const)(
+	"a map with %s a rejected member",
+	async (_, onError, prompts, outcome) => {
+		const seen: unknown[] = [];
+		const { result } = await play(
+			overItems({ kind: "map", onError, out: { results: settledList } }),
+			{
+				script: {
+					steps: {
+						"g/t": (_, inputs) => {
+							seen.push(inputs.prompt);
+							return inputs.prompt === "b"
+								? { outcome: "rejected", reason: "no" }
+								: { outcome: "ok", outputs: { text: inputs.prompt } };
+						},
+					},
+				},
+			},
+		);
+		expect(seen).toEqual([...prompts]);
+		expect(result.outcome).toBe(outcome);
+	},
+);
+
+const PAR_FIND = {
+	kind: "parFind",
+	cond: { node: "g/t", port: "ok" },
+	out: { text: STRING },
+};
+
+test("a parFind ends on the first member to meet its condition and cancels the others as skipped", async () => {
+	const started = barrier(2);
+	const { result, record, concert } = await play(overItems(PAR_FIND), {
+		script: {
+			steps: {
+				"g/t": (_, inputs) => {
+					if (inputs.prompt === "c")
+						return started.all.then(() => ({
+							outcome: "ok",
+							outputs: { text: "c" },
+						}));
+					started.arrive();
+					return inputs.prompt === "a"
+						? pending()
+						: { outcome: "rejected", reason: "no" };
+				},
+			},
+		},
+	});
+	expect(result).toMatchObject({
+		node: "g",
+		outcome: "ok",
+		outputs: { text: "c" },
+	});
+	const instances = byInstance(record.instances(concert));
+	expect(instances["g/t[a]"]).toMatchObject({
+		status: "skipped",
+		reason: "cancelled: g[c]/t met the condition",
+	});
+	expect(instances["g/t[b]"]?.status).toBe("rejected");
+});
+
+test("a parFind whose condition reads an output a rejected member did not produce goes on to the next", async () => {
+	const { result } = await play(
+		overItems(
+			{
+				...PAR_FIND,
+				cond: { node: "g/t", port: "done" },
+				out: { done: BOOL },
+			},
+			{ done: BOOL },
+		),
+		{
+			script: {
+				steps: {
+					"g/t": async (_, inputs) => {
+						if (inputs.prompt === "a")
+							return { outcome: "rejected", reason: "no" };
+						await Bun.sleep(inputs.prompt === "b" ? 1 : 5);
+						return { outcome: "ok", outputs: { done: inputs.prompt === "c" } };
+					},
+				},
+			},
+		},
+	);
+	expect(result).toMatchObject({
+		node: "g",
+		outcome: "ok",
+		outputs: { done: true },
+	});
+});
+
+test.each(["find", "parFind"])(
+	"a %s fails at a member that failed",
+	async (kind) => {
+		const { result } = await play(overItems({ ...PAR_FIND, kind }), {
+			script: {
+				steps: {
+					"g/t": (_, inputs) =>
+						inputs.prompt === "a"
+							? { outcome: "failed", reason: "broke" }
+							: pending(),
+				},
+			},
+		});
+		expect(result).toMatchObject({ outcome: "failed", reason: "broke" });
+	},
+);
+
+test("a parFind none of whose members meets its condition ends on the last to settle", async () => {
+	const { result } = await play(overItems(PAR_FIND), {
+		script: {
+			steps: {
+				"g/t": async (_, inputs) => {
+					if (inputs.prompt === "b") await Bun.sleep(5);
+					return { outcome: "rejected", reason: `${inputs.prompt}` };
+				},
+			},
+		},
+	});
+	expect(result).toMatchObject({ outcome: "rejected", reason: "b" });
+});
+
+test.each([
+	[
+		"seeds from its first item, performing its first phase on it alone, and steps over the rest",
+		["a", "b", "c"],
+		{ outcome: "ok", outputs: { text: "ab1c2" } },
+		["g/first/check[0]"],
+	],
+	[
+		"over no items is skipped, which the result counts as rejected",
+		[],
+		{ outcome: "rejected", reason: "fold 'g' has no items" },
+		[],
+	],
+])("a fold %s", async (_, items, ending, checks) => {
+	const LIST = { type: "array", items: STRING };
+	const ir = graph(
+		[
+			code("src", "src", { out: { items: LIST } }),
+			{
+				id: "g",
+				kind: "fold",
+				cardinality: { upTo: 3 },
+				in: { items: LIST },
+				inner: { item: STRING, text: STRING, ...LOOP_INNER },
+				out: { text: STRING },
+				members: { first: "g/first/seed", step: "g/step/add" },
+				first: ["g/first/seed", "g/first/check"],
+			},
+			code("g/first/seed", "first", {
+				in: { item: STRING },
+				out: { text: STRING },
+			}),
+			{
+				id: "g/first/check",
+				kind: "assert",
+				message: "the seed failed",
+				onFail: "rejected",
+				in: { cond: BOOL },
+			},
+			code("g/step/add", "step", {
+				in: { text: STRING, item: STRING, index: { type: "integer" } },
+				out: { text: STRING },
+			}),
+		],
+		[
+			data("src.items", "g.items"),
+			data("g.item", "g/first/seed.item"),
+			data("g/first/seed.ok", "g/first/check.cond"),
+			data("g.text", "g/step/add.text"),
+			data("g.item", "g/step/add.item"),
+			data("g.index", "g/step/add.index"),
+		],
+		"g",
+	);
+	const { result, record, concert } = await play(ir, {
+		code: {
+			src: () => ({ items }),
+			first: ({ item }: { item: string }) => ({ text: item }),
+			step: (p: { text: string; item: string; index: number }) => ({
+				text: `${p.text}${p.item}${p.index}`,
+			}),
+		},
+	});
+	expect(result).toMatchObject({ node: "g", ...ending });
+	const performed = Object.keys(byInstance(record.instances(concert)));
+	expect(performed.filter((k) => k.includes("check"))).toEqual(checks);
+});
+
 test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", async () => {
 	const modules: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
 		"maestro:stdlib": stdlib,
@@ -1477,7 +1717,7 @@ test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", a
 	const script: FakeScript = {
 		steps: {
 			scout: [{ outcome: "ok", outputs: { text: "scouted" } }],
-			"map/plan": (_, inputs) =>
+			"parMap/plan": (_, inputs) =>
 				inputs.prompt === "risk"
 					? { outcome: "rejected", reason: "too risky" }
 					: { outcome: "ok", outputs: { text: `${inputs.prompt} plan` } },
@@ -1506,9 +1746,10 @@ test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", a
 		outcome: "ok",
 		outputs: { value: "cost plan" },
 	});
-	expect(
-		byInstance(record.instances(concert)).firstOk_result_text,
-	).toMatchObject({ status: "ok", outputs: { value: "cost plan" } });
+	expect(byInstance(record.instances(concert)).firstOk_text).toMatchObject({
+		status: "ok",
+		outputs: { value: "cost plan" },
+	});
 });
 
 test("a concert that cannot start settles failed with the reason", async () => {
@@ -1707,10 +1948,10 @@ test("events carry node id and expansion path, progress included, and read from 
 			[
 				{
 					id: "m",
-					kind: "map",
+					kind: "parMap",
 					items: ["x", "y"],
 					cardinality: { exact: 2 },
-					onError: "settle",
+					onError: "continue",
 					inner: { item: STRING },
 					out: { results: settledList },
 					members: { result: "m/t" },
@@ -2037,17 +2278,17 @@ test("an input artifact counts by its content hash, not its path, so a rewritten
 	expect(after?.artifacts[0]?.path).not.toBe(before?.artifacts[0]?.path);
 });
 
-test("of identical map instances a resume reruns only the one that did not settle ok", async () => {
+test("of identical parMap instances a resume reruns only the one that did not settle ok", async () => {
 	const calls: string[] = [];
 	let fixed = false;
 	const ir = graph(
 		[
 			{
 				id: "m",
-				kind: "map",
+				kind: "parMap",
 				items: ["x", "y", "z"],
 				cardinality: { exact: 3 },
-				onError: "settle",
+				onError: "continue",
 				inner: { item: STRING },
 				out: { results: settledList },
 				members: { result: "m/t" },

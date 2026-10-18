@@ -7,12 +7,11 @@ import {
 	firstOk,
 	hostNode,
 	Int,
+	iter,
 	List,
 	loop,
-	map,
 	not,
 	type Ref,
-	seq,
 	Text,
 	use,
 } from "../index";
@@ -55,7 +54,11 @@ export const escalate = composition(
 	"escalate",
 	{ params: Params, examples: [{}] },
 	({ models, prompt }) =>
-		seq(models, (m) => triedOn(m, prompt), { until: (r) => r.ok }),
+		iter.find(
+			models,
+			(m) => triedOn(m, prompt),
+			(r) => r.ok,
+		),
 );
 
 /** Fan out over models, and keep the first that ends green. */
@@ -64,7 +67,8 @@ export const fanout = composition(
 	{ params: Params, examples: [{}] },
 	({ models, prompt }) =>
 		firstOk(
-			map(models, (m) => triedOn(m, prompt), { onError: "settle" }).out.results,
+			iter.parMap(models, (m) => triedOn(m, prompt), { onError: "continue" })
+				.out.results,
 		),
 );
 
@@ -77,12 +81,10 @@ export const planPanel = composition(
 	},
 	({ angles }) => {
 		const scout = task({ prompt: "scout" }, "scout");
-		const plans = map(
+		const plans = iter.parMap(
 			angles,
 			(a) => task({ prompt: a, context: scout.out.text }, "plan"),
-			{
-				onError: "settle",
-			},
+			{ onError: "continue" },
 		);
 		const good = code(renderOk, {
 			in: { plans: plans.out.results },
@@ -95,7 +97,7 @@ export const planPanel = composition(
 			out: { text: Text() },
 		});
 		return firstOk<unknown>(
-			[synthesis.out.text, firstOk(plans).out.value.pick("result.text")],
+			[synthesis.out.text, firstOk(plans).out.value.pick("text")],
 			{ label: "answer" },
 		);
 	},

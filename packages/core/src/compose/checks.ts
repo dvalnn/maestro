@@ -522,7 +522,7 @@ function portError(
 }
 
 /**
- * A `SCOPE.export` error for each function `ir` names, a code node's or a map's key function, that `loadCode` cannot
+ * A `SCOPE.export` error for each function `ir` names, a code node's or a parMap's key function, that `loadCode` cannot
  * load (ADR 0008). Each reference loads once. A load error's message after its first line is the fix.
  */
 export async function checkWorkers(

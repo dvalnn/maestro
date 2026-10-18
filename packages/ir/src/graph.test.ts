@@ -4,6 +4,7 @@ import {
 	type GraphIndex,
 	type Ir,
 	indexGraph,
+	isGroup,
 	outputValue,
 	parseIr,
 } from "./index";
@@ -28,7 +29,7 @@ test.each(fixtureFiles)(
 		const [ir, index] = await fixture(file);
 		const topLevel = ir.nodes.filter((n) => index.groupsOf(n.id).length === 0);
 		const inBodies = [...index.nodes.values()]
-			.filter((n) => n.kind === "map" || n.kind === "seq" || n.kind === "loop")
+			.filter(isGroup)
 			.flatMap((g) => index.body(g.id));
 		expect(ids([...topLevel, ...inBodies]).toSorted()).toEqual(
 			ids(ir.nodes).toSorted(),

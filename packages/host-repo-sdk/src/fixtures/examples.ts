@@ -6,13 +6,13 @@ import {
 	assert,
 	code,
 	composition,
-	Dir,
 	firstOk,
 	Int,
+	iter,
 	List,
 	loop,
-	map,
 	not,
+	okOnly,
 	Record,
 	type Ref,
 	Text,
@@ -72,7 +72,7 @@ export const review = composition(
 			`skeptic model '${skepticModel}' is of the family of lens model '${lensModel}'`,
 			{ onFail: "failed" },
 		);
-		const rounds = map(
+		const rounds = iter.parMap(
 			LENSES,
 			(lens) => {
 				const found = agent({
@@ -97,10 +97,10 @@ export const review = composition(
 				});
 				return { lens: found, skeptic };
 			},
-			{ onError: "settle" },
+			{ onError: "continue" },
 		);
 		const merged = code(byFinding, {
-			in: { runs: rounds.out.results as Ref<Settled<Round>[]> },
+			in: { runs: rounds.out.results },
 			out: { text: Text() },
 		});
 		return agent({
@@ -155,42 +155,31 @@ export const buildThenRepair = composition(
 	},
 );
 
-type Implemented = { result: { changeset: ArtifactRef } };
-
-/** The changeset of the implementer at `index + offset`. @throws Error when that implementer has none. */
-export function nthChangeset({
-	results,
-	index,
-	offset,
-}: {
-	results: Settled<Implemented>[];
-	index: number;
-	offset: number;
-}): { changeset: ArtifactRef } {
-	const member = results[index + offset];
-	if (member?.outcome !== "ok" || !member.value)
-		throw new Error(`implementer ${index + offset} left no changeset`);
-	return { changeset: member.value.result.changeset };
-}
-
 const resolver = seat({
 	role: "resolver",
 	identity: "You resolve merge conflicts, keeping both sides' intent.",
 });
 
-/** `cs` applied to `lane`, and a resolver joining the result on a conflict: the merged version. */
-function merge(lane: LaneInput<"fresh" | "join">, cs: Ref<ArtifactRef>) {
-	const applied = apply(lane, { change: cs });
+/** The changeset of `item` applied to `lane`, and a resolver joining the result on a conflict: the merged version. */
+function merge(
+	lane: LaneInput<"fresh" | "join">,
+	item: Ref<{ changeset: ArtifactRef }>,
+) {
+	const change = item.pick("changeset");
+	const applied = apply(lane, { change });
 	const resolved = resolver({
 		task: "Resolve the conflict markers in the files.",
 		lane: join(applied.out.lane),
 		when: not(applied.ok),
 		tolerate: "rejected",
 	});
-	return firstOk([resolved.out.lane, applied.out.lane], { label: "merged" });
+	return firstOk([resolved.out.lane, applied.out.lane]);
 }
 
-/** Implementers in parallel, one per task, then their changesets folded into one lane by apply, in task order. */
+/**
+ * Implementers in parallel, one per task, then the changesets of those that settled `ok` folded into one lane by
+ * apply, in task order.
+ */
 export const fold = composition(
 	"fold",
 	{
@@ -202,25 +191,16 @@ export const fold = composition(
 		examples: [{}],
 	},
 	({ tasks }) => {
-		assert(tasks.length >= 2, "fold needs two tasks or more", {
-			onFail: "failed",
-		});
-		const implemented = map(
+		const implemented = iter.parMap(
 			tasks,
 			(task) =>
 				changeset(agent({ task, lane: fresh(), role: "implementer" }).out.lane),
-			{ onError: "propagate" },
+			{ onError: "stop" },
 		);
-		const results = implemented.out.results as Ref<Settled<Implemented>[]>;
-		const nth = (index: Ref<number> | number, offset: number) =>
-			code(nthChangeset, {
-				in: { results, index, offset },
-				out: { changeset: Dir() },
-			}).out.changeset;
-		const merged = loop.doWhile((last) => last.ok, {
-			init: merge(fresh(), nth(0, 0)),
-			step: (state, i) => merge(join(state.out.value), nth(i, 1)),
-			max: tasks.length - 1,
+		const merged = iter.fold(okOnly(implemented).out.value, {
+			first: (cs) => merge(fresh(), cs),
+			step: (acc, cs) => merge(join(acc.out.value), cs),
+			max: tasks.length,
 		});
 		return changeset(merged.out.value, { label: "result" });
 	},

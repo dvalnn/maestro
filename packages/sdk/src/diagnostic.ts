@@ -4,14 +4,14 @@ import type { Diagnostic, SourceLocation } from "@maestro/ir";
 /**
  * A build error, carrying its diagnostic. `code` is `<prefix>.<case>`, and the prefix is sdk-spec 13.3's:
  * - `REF`: a Ref used as a plain value (`REF.value`), fed to a param (`REF.param`), used outside the body or build
- *   that made it (`REF.escape`), or not a `Ref<Bool>` where a guard, an `until` or an `assert` needs one (`REF.bool`).
+ *   that made it (`REF.escape`), or not a `Ref<Bool>` where a guard, a condition or an `assert` needs one (`REF.bool`).
  * - `SCOPE`: a duplicate id (`SCOPE.duplicate`), a duplicate map item key (`SCOPE.key`), a function the loader cannot
  *   name (`SCOPE.export`), a bad name or label (`SCOPE.name`), a composition with ports built alone (`SCOPE.ports`),
  *   a constructor called outside a build (`SCOPE.build`).
  * - `BUILD`: an ambient read during build (`BUILD.ambient`), two builds that differ (`BUILD.unstable`).
  * - `BOUND`: a group bound that is missing or not a whole number of at least 1 (`BOUND.max`).
  * - `TYPE`: a literal that is not JSON, a body or step that returns the wrong thing, a build that returns no node
- *   (`TYPE.result`), a bad pick path (`TYPE.path`), an `or` with a Ref fallback or over a map's results
+ *   (`TYPE.result`), a bad pick path (`TYPE.path`), an `or` with a Ref fallback or over a group's results
  *   (`TYPE.or`), a string key into an array table (`TYPE.key`), ports or reducer inputs that do not fit.
  * - `CFG.examples`: a composition without ports and without an example input set.
  * - `ASSERT.failed`: an `assert` on a plain value that is false.

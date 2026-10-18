@@ -62,7 +62,7 @@ function countFrom(
 	const parts = e.keys.map((k) => countFrom(groups, [...keys, k], expansionOf));
 	return {
 		n: sum(parts.map((p) => p.n)),
-		exact: group.kind === "map" && parts.every((p) => p.exact),
+		exact: group.kind === "parMap" && parts.every((p) => p.exact),
 	};
 }
 

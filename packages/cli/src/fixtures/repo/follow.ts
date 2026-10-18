@@ -4,7 +4,7 @@ import { composition } from "@maestro/sdk";
 
 export const follow = composition(
 	"follow",
-	{ params: { from: Lane }, examples: [{ from: "c.lens[risk]/skeptic" }] },
+	{ params: { from: Lane }, examples: [{ from: "c.parMap[risk]/skeptic" }] },
 	({ from }) =>
 		check(read(from), { run: "grep -q marked mark.txt" }, { label: "look" }),
 );

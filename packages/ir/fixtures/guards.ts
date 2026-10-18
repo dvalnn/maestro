@@ -9,14 +9,14 @@ export function partKey(item: string): string {
 }
 
 export function merge(ports: {
-	parts: Settled<{ result?: { text?: string } }>[];
+	parts: Settled<{ text?: string }>[];
 	separator: string;
 }): {
 	text: string;
 	nonEmpty: boolean;
 } {
 	const texts = ports.parts.flatMap((p) => {
-		const text = p.value?.result?.text;
+		const text = p.value?.text;
 		return text ? [text] : [];
 	});
 	return { text: texts.join(ports.separator), nonEmpty: texts.length > 0 };

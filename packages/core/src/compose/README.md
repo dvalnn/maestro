@@ -31,17 +31,17 @@ README.
 
    Any error stops compose here, before anything is loaded or called.
 
-2. Loading, through `loadCode`, of every function the IR names: each code node's worker and each map's key function,
+2. Loading, through `loadCode`, of every function the IR names: each code node's worker and each parMap's key function,
    once per reference. One that does not load is a `SCOPE.export` error, which stops compose here (ADR 0008). No loaded
    function is called.
 3. Expansion, enclosing groups first, one group instance at a time. A group instance expands only when every guard on it
    is known true and its items are plain values: a literal, or an enclosing group's item. Then:
-   - a `map` expands into one instance per item, keyed by `itemKey`;
-   - a `map` with a key function expands to a count of its items, as the key function is called only at perform;
-   - a `seq` without `until` expands into one instance per index.
+   - a `parMap` expands into one instance per item, keyed by `itemKey`;
+   - a `parMap` with a key function expands to a count of its items, as the key function is called only at perform;
+   - a `map` or a `fold` expands into one instance per index.
 
-   Every other group instance stays a region of up to its bound (CORE-05), as do a `loop`, a `seq` with `until`, a group
-   sized by a node result, and a group whose guard a node result feeds.
+   Every other group instance stays a region of up to its bound (CORE-05), as do a `loop`, a `find`, a `parFind`, a
+   group sized by a node result, and a group whose guard a node result feeds.
 
    When the IR's own bounds, with every group at its declared bound, pass a cap, expansion checks the bounds so far
    after each group instance. A group instance not yet reached counts nothing, so the bounds so far only grow. Expansion
@@ -69,7 +69,7 @@ node kind still throw, as `perform` does.
 | `HOST.validate` | A host's `validate()` threw or rejected.                                                   |
 | `HOST.*`        | A host's `validate` finding.                                                               |
 | `SCOPE.export`  | `loadCode` could not load a function the IR names: a code node's or a key function.[^load] |
-| `SCOPE.key`     | Two items of a map instance share a key.[^keys]                                            |
+| `SCOPE.key`     | Two items of a parMap instance share a key.[^keys]                                         |
 | `BOUND.items`   | A group instance has more known items than its bound.                                      |
 | `BOUND.cap`     | A total of the plan's bounds, or of its bounds so far while expanding, is over its cap.    |
 
@@ -95,6 +95,6 @@ node kind still throw, as `perform` does.
 
 [^keys]:
     Keys come from `itemKey`, so `3` and `"3"` collide, as do an item keyed by its index and a primitive item with that
-    value. The hint is to give the map a key function, whose duplicate keys fail the `map` at perform.
+    value. The hint is to give the parMap a key function, whose duplicate keys fail the `parMap` at perform.
 
 No value gets its schema defaults. `format` is an annotation only: neither compose nor perform validates it.

@@ -1,6 +1,7 @@
 export {
 	type ArtifactRef,
 	type CodeContext,
+	type OnError,
 	type Rejection,
 	reject,
 } from "@maestro/ir";
@@ -27,16 +28,16 @@ export {
 	type CodeOptions,
 	type CodeOutputs,
 	code,
+	type FoldOptions,
 	type HostNodeOptions,
 	hostNode,
+	iter,
 	type LoopOptions,
 	literal,
 	loop,
 	type MapOptions,
 	type MapResults,
-	map,
-	type SeqOptions,
-	seq,
+	type ParMapOptions,
 	type Written,
 } from "./nodes";
 export {

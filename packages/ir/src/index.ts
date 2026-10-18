@@ -31,6 +31,8 @@ export {
 } from "./expansion";
 export {
 	boundOf,
+	collects,
+	FOLD_STATE,
 	type GraphIndex,
 	IMPLICIT_OUT,
 	indexGraph,
@@ -38,8 +40,8 @@ export {
 	LOOP_STATE,
 	mapWorkers,
 	outputValue,
-	startNodes,
 	tolerates,
+	upstreamIn,
 } from "./graph";
 export {
 	ARTIFACT_TYPES,

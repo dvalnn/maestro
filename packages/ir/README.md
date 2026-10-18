@@ -93,43 +93,58 @@ Every node also has two implicit outputs, its status ports `ok` and `reason`, wh
 and `outcome`, may not be declared in `out`. `outputValue(settled, outputs, port)` reads any port of a settled node,
 implicit or declared.
 
-| Kind                 | Own fields                                                                                                                          |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `code`               | `worker` `{runtime, module, export, codeHash}`, optional `reads`, `writes`, `fanin` (a reducer, D-08),[^fanin] `timeout`.[^timeout] |
-| `assert`             | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                                                       |
-| `map`, `seq`, `loop` | Groups, below.                                                                                                                      |
-| `<host>.<kind>`      | Any kind with a dot is a host kind, with an optional opaque `config` object.                                                        |
+| Kind                                               | Own fields                                                                                                                          |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `code`                                             | `worker` `{runtime, module, export, codeHash}`, optional `reads`, `writes`, `fanin` (a reducer, D-08),[^fanin] `timeout`.[^timeout] |
+| `assert`                                           | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                                                       |
+| `parMap`, `map`, `find`, `parFind`, `fold`, `loop` | Groups, below.                                                                                                                      |
+| `<host>.<kind>`                                    | Any kind with a dot is a host kind, with an optional opaque `config` object.                                                        |
 
 ### Groups
 
 A group's body is the nodes whose nearest enclosing group is the group. The body is a template that is instantiated per
 item or iteration. Every group has:
 
-- `members`: result name to body node id. A member result is a record with one entry per result name. A body with one
-  result has one entry. A `map` may have several. A `seq` and a `loop` take exactly one in 1.0, because their ports
-  mirror that member's outputs. Allowing more later is a minor change.
+- `members`: result name to body node id. A member's value is its one entry's outputs, or a record of each entry's
+  outputs by result name when it has several. A `parMap` and a `map` may have several. A `find`, a `parFind` and a
+  `loop` take exactly one in 1.0, because their ports mirror that member's outputs, and a `fold` exactly `first` and
+  `step`. Allowing more later is a minor change.
 - `cardinality`: `{ "exact": n }` or `{ "upTo": n }` (CORE-05),
 - `inner`: ports the body reads, in addition to `in` and `out`.
 
-| Kind   | `in`                                 | `inner`                                   | `out`                | Own fields                |
-| ------ | ------------------------------------ | ----------------------------------------- | -------------------- | ------------------------- |
-| `map`  | `items`, unless `items` is a literal | `item`                                    | `results`            | `items`, `key`, `onError` |
-| `seq`  | `items`, unless `items` is a literal | `item`                                    | the member's outputs | `items`, `until`          |
-| `loop` | the member's outputs (initial state) | member's outputs, `ok`, `reason`, `index` | the member's outputs | `test`, `tolerate`        |
+| Kind      | `in`                                 | `inner`                                           | `out`                | Own fields                   |
+| --------- | ------------------------------------ | ------------------------------------------------- | -------------------- | ---------------------------- |
+| `parMap`  | `items`[^items]                      | `item`                                            | `results`            | `items`, `key`, `onError`    |
+| `map`     | `items`[^items]                      | `item`                                            | `results`            | `items`, `onError`           |
+| `find`    | `items`[^items]                      | `item`                                            | the member's outputs | `items`, `cond`              |
+| `parFind` | `items`[^items]                      | `item`                                            | the member's outputs | `items`, `key`, `cond`       |
+| `fold`    | `items`[^items]                      | `item`, member's outputs, `ok`, `reason`, `index` | the member's outputs | `items`, `first`, `tolerate` |
+| `loop`    | the member's outputs (initial state) | member's outputs, `ok`, `reason`, `index`         | the member's outputs | `test`, `tolerate`           |
 
 - `items` is either a literal array on the node or an `items` input port fed by an edge, never both.
-- A `map` over literal items is `exact` with the item count. Every other group is `upTo`, equal to the item count for a
-  literal `seq`.
-- `key` is an optional worker reference for an author key function (D-18).
-- `onError` is `settle` or `propagate`, and has no default (ADR 0006).
-- `until` is a body port `{node, port}` holding a boolean. A `seq` stops once it holds.
+- A `parMap` over literal items, and any group over an empty literal list, is `exact` with the item count. Every other
+  group is `upTo`, equal to the item count for literal items.
+- `key` is an optional worker reference for an author key function (D-18) of a `parMap` or `parFind`.
+- `onError` is `stop` or `continue`, and has no default (ADR 0006). With `stop` a `parMap` cancels its running members
+  and a `map` starts no further item at a member that is not `ok`.
+- `cond` is a body port `{node, port}` holding a boolean, read on each member. A `find` runs its members in order and
+  stops once it holds. A `parFind` runs them all at once, ends on the first to settle with it holding and cancels the
+  others. Either ends on its last member, or a `parFind` its last to settle, when it never holds. A member or `cond`
+  node that settles `failed` fails the group.
+- A `fold`'s `first` lists the body nodes that run on item 0, with inner `item` and `index` 0, its `first` member among
+  them. The other body nodes run on each next item, with inner ports holding the previous accumulator's outputs, `ok`
+  and `reason`, and the item and its index. `first`'s nodes read no accumulator port, no other body node reads them, and
+  both members have the same outputs. A body node's id may put `first` or `step` after the fold's id, a phase segment
+  that needs no declared scope. The fold ends on its last accumulator, or on one that is not `ok` unless
+  `tolerate: "rejected"` carries it. A `fold`, `find` or `parFind` over no items settles `skipped`.
 - `test` is `{ at, port }`, `port` holding a boolean. A `loop` goes on while it reads `true`, and fails when its node
   failed:
   - at `start` it is read before each step, and is a state port of the loop or a body port. A body port's node and the
     body nodes that node reads run first. They may not read the member, so a test at `start` reads only the loop state.
     The loop runs 0 to its bound steps.
   - at `end` it is a body port, read after each step. The loop runs 1 to its bound steps.
-- `tolerate: "rejected"` on a `loop` lets rejected state, including the initial state, carry into the next iteration.
+- `tolerate: "rejected"` on a `loop` or `fold` lets rejected state, including the initial state, carry into the next
+  iteration.
 - A `loop`'s inner state ports hold the previous iteration's member outputs, `ok` and `reason` (absent when `ok`), or
   for the first iteration its inputs, `ok` unless a node feeding it rejected, the first such to settle giving its
   `reason`. Whatever stops it, its test or its bound, the loop ends with its last state's outcome, reason and outputs.
@@ -139,12 +154,12 @@ item or iteration. Every group has:
 
 Every input port is fed exactly once, by a `data` or `collect` edge or by a literal.
 
-| Kind      | From                   | To             | Meaning                                                                              |
-| --------- | ---------------------- | -------------- | ------------------------------------------------------------------------------------ |
-| `data`    | `{node, port}`         | `{node, port}` | A value or artifact flows.                                                           |
-| `collect` | a map's `results` port | `{node, port}` | The settled member results flow, as the explicit fan-in (CORE-03, D-08).             |
-| `control` | `{node, port}`         | `{node}`       | A guard. The target proceeds only when the boolean port is true, else it is skipped. |
-| `control` | `{node}`               | `{node}`       | Ordering. It may carry `tolerate: "rejected"` to admit a rejected upstream.          |
+| Kind      | From                                 | To             | Meaning                                                                              |
+| --------- | ------------------------------------ | -------------- | ------------------------------------------------------------------------------------ |
+| `data`    | `{node, port}`                       | `{node, port}` | A value or artifact flows.                                                           |
+| `collect` | a `parMap` or `map`'s `results` port | `{node, port}` | The settled member results flow, as the explicit fan-in (CORE-03, D-08).             |
+| `control` | `{node, port}`                       | `{node}`       | A guard. The target proceeds only when the boolean port is true, else it is skipped. |
+| `control` | `{node}`                             | `{node}`       | Ordering. It may carry `tolerate: "rejected"` to admit a rejected upstream.          |
 
 A dependent starts only after every upstream it has an edge from is `ok`, unless its edges from that upstream tolerate
 `rejected` (CORE-04). `tolerates(node, edges)` is this rule for every edge from one upstream into `node`. They tolerate
@@ -152,6 +167,9 @@ it when:
 
 - one is a control edge whose own `tolerate` says so, or any other edge into a `loop` whose `tolerate` says so;
 - or each reads a status port, `ok` or `reason`.
+
+An output a node declares but did not produce, as when it rejected without outputs, is never a crash. A data edge from
+it skips its reader, with that node as the cause. A guard, a `cond` or a loop `test` that reads it reads not true.
 
 The edge source decides which ports a group exposes. Seen from inside its body, a group exposes `inner`. From anywhere
 else, it exposes `out` and the implicit outputs.
@@ -161,12 +179,12 @@ else, it exposes `out` and the implicit outputs.
 Enforced by `parseIr` after the schema:
 
 1. Ids are unique across nodes and scopes (`SCOPE.duplicate`).
-2. Every proper prefix of an id is a declared scope or group node.
-3. Every edge endpoint, port, literal, member, `until`, `test` and result node resolves (`IR.ref`).
+2. Every proper prefix of an id is a declared scope or group node, or a fold's id and phase segment.
+3. Every edge endpoint, port, literal, member, `cond`, `test` and result node resolves (`IR.ref`).
 4. An edge never leaves a group body: only the group's `out` ports reach outside it.
 5. Every input port is fed exactly once.
-6. `collect` edges start only at a map's `results` port, and that port feeds nothing else.
-7. Group ports, `members`, `until`, `test`, `items` and `cardinality` follow the group rules above.
+6. `collect` edges start only at a `parMap` or `map`'s `results` port, and that port feeds nothing else.
+7. Group ports, `members`, `first`, `cond`, `test`, `items` and `cardinality` follow the group rules above.
 8. The result node is not inside a group body.
 9. Edges form no cycle. An edge into a body counts as an edge into its group.
 
@@ -184,16 +202,17 @@ edges into and out of a node. Otherwise an id that resolves to nothing gives `un
 ## Expansion paths
 
 A node instance is a node id plus its expansion path (architecture 7): one `[key]` per enclosing group, outermost first,
-and empty outside groups. A `map` contributes its item's key, a `seq` or `loop` its iteration index, so the path of a
-node in a `loop` inside a `map` reads `[risk][2]`.
+and empty outside groups. A `parMap` or `parFind` contributes its item's key, any other group its iteration index, so
+the path of a node in a `loop` inside a `parMap` reads `[risk][2]`.
 
-- `itemKey(item, index)` is a `map` item's key (D-18): a string, number, boolean or `null` item is keyed by its value,
-  any other item by its index. Each character outside `[A-Za-z0-9_.-]` becomes `_`. Keys that come out equal are
-  duplicates, so `3` and `"3"` collide; the caller reports them. `firstDuplicate(keys)` finds the first repeat.
+- `itemKey(item, index)` is a `parMap` or `parFind` item's key (D-18): a string, number, boolean or `null` item is keyed
+  by its value, any other item by its index. Each character outside `[A-Za-z0-9_.-]` becomes `_`. Keys that come out
+  equal are duplicates, so `3` and `"3"` collide; the caller reports them. `firstDuplicate(keys)` finds the first
+  repeat.
 - `formatExpansion(keys)` builds the path and throws on a key outside that alphabet. `parseExpansion(path)` returns the
   keys, or `undefined` for anything else. A key may be empty (`[]`), as `itemKey("")` is.
 - `formatInstance(instance, groups)` merges an instance into one name, each key right after its group's id within the
-  node id, given the node's enclosing groups: `lens/skeptic` in the map `lens` shows as `lens[risk]/skeptic`.
+  node id, given the node's enclosing groups: `lens/skeptic` in the parMap `lens` shows as `lens[risk]/skeptic`.
 
 ## Outcomes
 
@@ -207,8 +226,9 @@ type Settled<T> =
 ```
 
 `worstOutcome(outcomes)` is the one rule wherever several outcomes collapse into one: `failed` > `rejected` >
-`skipped` > `ok`, and an empty input is `ok` (ADR 0006). It decides a `map` member with several results and a `map` with
-`onError: "propagate"`. `firstOk` with no `ok` input first counts `skipped` inputs as `rejected`, then takes the worst.
+`skipped` > `ok`, and an empty input is `ok` (ADR 0006). It decides a member with several results and a `parMap` or
+`map` with `onError: "stop"`. `firstOk` with no `ok` input first counts `skipped` inputs as `rejected`, then takes the
+worst.
 
 `settledSchema(T)` is the JSON Schema of `Settled<T>`, closed to `outcome`, `value` and `reason`:
 
@@ -218,10 +238,11 @@ type Settled<T> =
 
 T sits at `properties.value`. Port schemas describe the delivered value, so:
 
-- a map's `results` port, and every input fed by a `collect` edge, declare an array whose `items` is `settledSchema(T)`,
+- a `parMap` or `map`'s `results` port, and every input fed by a `collect` edge, declare an array whose `items` is
+  `settledSchema(T)`,
 - a fan-in node's input fed by a `data` edge declares `settledSchema(T)`.
 
-The golden fixtures do so with T `{ "type": "object" }`, the member result record, and a test keeps them equal to
+The golden fixtures do so with T `{ "type": "object" }`, a member's value, and a test keeps them equal to
 `settledSchema`'s output.
 
 **Fan-in edge rule.** A `data` edge into a fan-in input checks the upstream port's schema against the input's
@@ -316,13 +337,13 @@ the IR, not a plan, so the plan carries no format version.
 | `diagnostics` | Warnings only, each an ir `Diagnostic` (`src/types.ts`).                  |
 
 Expansion paths are in the format of [Expansion paths](#expansion-paths) (`formatExpansion`): one `[key]` per enclosing
-group, outermost first, `""` outside groups. A map item's key is its `itemKey`, or at perform its key function's. A
-`seq` or `loop` iteration's key is its index.
+group, outermost first, `""` outside groups. A `parMap` or `parFind` item's key is its `itemKey`, or at perform a key
+function's. Any other group's iteration key is its index.
 
 An `Expansion` is either:
 
 - `{ keys }`: the instance's iteration keys in order.
-- `{ exact }`: a map's iteration count, when its key function names the iterations at perform.
+- `{ exact }`: a `parMap`'s iteration count, when its key function names the iterations at perform.
 - `{ upTo }`: a region with its bound.
 
 `PlanBounds` (D-23):
@@ -333,9 +354,9 @@ An `Expansion` is either:
 | `nodes`     | Instances per node id.                                                                    |
 | `counts`    | Each name a host's `bounds(node)` reports, times the node's instances, summed over nodes. |
 
-A count is exact only when every group above it is a map whose items compose knows.
+A count is exact only when every group above it is a `parMap` whose items compose knows.
 
-A plan for a map over two topics, then a loop, with a host that counts one `calls` per node and `ir` cut short:
+A plan for a `parMap` over two topics, then a loop, with a host that counts one `calls` per node and `ir` cut short:
 
 ```json
 {
@@ -385,6 +406,8 @@ The IR carries structure. These semantics belong to the slices that execute or v
     A `fanin` node runs once every upstream has settled and receives each `data` input as `Settled`
     ([Outcomes](#outcomes)).
 
+[^items]: Unless `items` is a literal.
+
 [^timeout]:
     Whole milliseconds, from 1 to `MAX_TIMEOUT` (the longest timer delay), that an instance may take before it settles
     `failed`. None when absent.
@@ -394,4 +417,6 @@ The IR carries structure. These semantics belong to the slices that execute or v
 - **1.0**: first version. Before release, code nodes took the optional `timeout` and lost `pure`, and the `params` and
   `config` blocks left the IR. The node field `tag` was removed. The `repeat` kind became `loop`: it lost `until`,
   gained a required `test`, and its inner ports carry `ok` and `reason`. The implicit output `outcome` was removed: `ok`
-  and `reason` are the status ports, and an edge from one admits a `rejected` source.
+  and `reason` are the status ports, and an edge from one admits a `rejected` source. The group kinds `map` and `seq`
+  became `parMap`, `map` (in order), `find`, `parFind` and `fold`, `onError` became `stop` or `continue`, and a member
+  with one result has that result's outputs as its value.

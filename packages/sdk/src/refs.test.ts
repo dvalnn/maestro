@@ -8,11 +8,11 @@ import {
 	firstOk,
 	hostNode,
 	Int,
+	iter,
 	Json,
 	List,
 	lookup,
 	type MapResults,
-	map,
 	okOnly,
 	Record,
 	type Result,
@@ -128,10 +128,12 @@ describe("lifting combinators", () => {
 		});
 	});
 
-	test("or fails with TYPE.or on a map's results, and on a Ref fallback", () => {
+	test("or fails with TYPE.or on a parMap's results, and on a Ref fallback", () => {
 		const results = diagnose(() =>
 			buildOf(() =>
-				map(["a"], () => task(), { onError: "settle" }).out.results.or([]),
+				iter
+					.parMap(["a"], () => task(), { onError: "continue" })
+					.out.results.or([]),
 			),
 		);
 		expect(results).toMatchObject({ code: "TYPE.or" });
@@ -299,29 +301,32 @@ describe("reducers", () => {
 	test.each([
 		["results", (m: Result<MapResults>) => m.out.results],
 		["handle", (m: Result<MapResults>) => m],
-	])("over a map's %s it reads one collect edge", (_name, inputs) => {
+	])("over a parMap's %s it reads one collect edge", (_name, inputs) => {
 		const ir = buildOf(() =>
-			firstOk(inputs(map(["a"], () => task(), { onError: "settle" }))),
+			firstOk(
+				inputs(iter.parMap(["a"], () => task(), { onError: "continue" })),
+			),
 		);
 		expect(ir.edges).toContainEqual({
 			kind: "collect",
-			from: { node: "map", port: "results" },
+			from: { node: "parMap", port: "results" },
 			to: { node: "firstOk", port: "results" },
 		});
 	});
 
-	test("over a map, the value is typed by the members' outputs, so a pick path is checked at build", () => {
+	test("over a parMap, the value is typed by the members' outputs, so a pick path is checked at build", () => {
 		const reduced = () =>
-			firstOk(map(["a"], () => task(), { onError: "settle" })).out.value;
-		const ir = buildOf(() => reduced().pick("result.text"));
-		expect(nodeOf(ir, "firstOk_result_text")).toMatchObject({
+			firstOk(iter.parMap(["a"], () => task(), { onError: "continue" })).out
+				.value;
+		const ir = buildOf(() => reduced().pick("text"));
+		expect(nodeOf(ir, "firstOk_text")).toMatchObject({
 			out: { value: STRING },
 		});
-		const error = diagnose(() => buildOf(() => reduced().pick("text")));
+		const error = diagnose(() => buildOf(() => reduced().pick("result")));
 		expect(error).toMatchObject({
 			code: "TYPE.path",
-			message: "pick path 'text' names no field 'text'",
-			hint: "Pick one of: result",
+			message: "pick path 'result' names no field 'result'",
+			hint: "Pick one of: text, done, doc, names, counts",
 		});
 	});
 
@@ -338,7 +343,7 @@ describe("reducers", () => {
 	test.each([
 		["an empty list", () => []],
 		["a plain Ref", () => task().out.text],
-		["the handle of a node that is not a map", () => task()],
+		["the handle of a node that is not a parMap", () => task()],
 	])("given %s fails with TYPE.reducer", (_name, inputs) => {
 		const error = diagnose(() => buildOf(() => firstOk(inputs() as never)));
 		expect(error.code).toBe("TYPE.reducer");

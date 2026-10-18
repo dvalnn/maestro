@@ -1,5 +1,6 @@
 import {
 	canonicalJson,
+	collects,
 	IMPLICIT_OUT,
 	type IrEdge,
 	type IrNode,
@@ -17,7 +18,7 @@ import { BuildError } from "./diagnostic";
 import type * as stdlibFunctions from "./stdlib-functions";
 import type { Type, Types, ValueOf } from "./types";
 
-/** Any function the loader may name: a code function or a `map` key function (ADR 0008). */
+/** Any function the loader may name: a code function or a `parMap` key function (ADR 0008). */
 export type CodeFn = (...args: never[]) => unknown;
 
 /** Param values by pack id, then composition id, then param name. */
@@ -39,12 +40,13 @@ export type BuildContext = {
 
 /**
  * A typed value that exists only at perform time. It throws a `REF.value` diagnostic when coerced to a string, a
- * number or JSON. Truthiness cannot be trapped in JavaScript, so a guard, an `until` and an `assert` check what they
+ * number or JSON. Truthiness cannot be trapped in JavaScript, so a guard, a condition and an `assert` check what they
  * receive instead.
  */
 export interface Ref<T> {
 	readonly type: Type<T>;
-	/** A field of a structured value, by a dotted path of field names: a stdlib `pick` node. */
+	/** A field of a structured value, by a dotted path of field names: a stdlib `pick` node. A field keeps its type. */
+	pick<K extends keyof T & string>(path: K, common?: Common): Ref<T[K]>;
 	pick(path: string, common?: Common): Ref<unknown>;
 	/** The value, or `fallback` when its node did not settle `ok`: a fan-in stdlib `or` node. */
 	or(fallback: T, common?: Common): Ref<T>;
@@ -226,6 +228,8 @@ export class RefImpl<T> implements Ref<T> {
 		readonly owner: State,
 	) {}
 
+	pick<K extends keyof T & string>(path: K, common?: Common): Ref<T[K]>;
+	pick(path: string, common?: Common): Ref<unknown>;
 	pick(path: string, common: Common = {}): Ref<unknown> {
 		return lift(
 			"pick",
@@ -266,7 +270,7 @@ function checkOr(value: RefImpl<unknown>, fallback: unknown): void {
 	if (value.source.kind === "port" && isResults(visible(value)))
 		throw fail(
 			"TYPE.or",
-			"or was called on a map's results, which are a list of Settled",
+			"or was called on a group's results, which are a list of Settled",
 			"Reduce the results with okOnly or settle",
 		);
 }
@@ -453,7 +457,7 @@ export function visible(ref: RefImpl<unknown>): PortSource {
 		throw fail(
 			"REF.escape",
 			`a Ref to '${source.node}.${source.port}' was used outside the body of group '${left}'`,
-			`Read it outside through the result of group '${left}', such as a map's results`,
+			`Read it outside through the result of group '${left}', such as a parMap's results`,
 		);
 	return source;
 }
@@ -711,8 +715,6 @@ function wirePort(
 	if (!source.inner) w.upstream.add(source.node);
 }
 
-/** A map's `results`, which leave it only through `collect` edges (CORE-03). */
+/** A `parMap` or `map`'s `results`, which leave it only through `collect` edges (CORE-03). */
 export const isResults = (source: PortSource) =>
-	!source.inner &&
-	source.port === "results" &&
-	info(source.node).kind === "map";
+	!source.inner && source.port === "results" && collects(info(source.node));

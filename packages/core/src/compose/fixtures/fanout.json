@@ -2,47 +2,47 @@
 	"composition": { "id": "fanout", "pack": "fixtures", "version": "0.1.0" },
 	"edges": [
 		{
-			"from": { "node": "map", "port": "item" },
+			"from": { "node": "parMap", "port": "item" },
 			"kind": "data",
-			"to": { "node": "map/task", "port": "model" }
+			"to": { "node": "parMap/task", "port": "model" }
 		},
 		{
-			"from": { "node": "map/task", "port": "text" },
+			"from": { "node": "parMap/task", "port": "text" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/check", "port": "text" }
+			"to": { "node": "parMap/fix_until_green/check", "port": "text" }
 		},
 		{
-			"from": { "node": "map/fix_until_green/check", "port": "text" },
+			"from": { "node": "parMap/fix_until_green/check", "port": "text" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/loop", "port": "text" }
+			"to": { "node": "parMap/fix_until_green/loop", "port": "text" }
 		},
 		{
-			"from": { "node": "map/fix_until_green/check", "port": "logs" },
+			"from": { "node": "parMap/fix_until_green/check", "port": "logs" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/loop", "port": "logs" }
+			"to": { "node": "parMap/fix_until_green/loop", "port": "logs" }
 		},
 		{
-			"from": { "node": "map/fix_until_green/loop", "port": "ok" },
+			"from": { "node": "parMap/fix_until_green/loop", "port": "ok" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/loop/loop_not", "port": "value" }
+			"to": { "node": "parMap/fix_until_green/loop/loop_not", "port": "value" }
 		},
 		{
-			"from": { "node": "map/fix_until_green/loop", "port": "logs" },
+			"from": { "node": "parMap/fix_until_green/loop", "port": "logs" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/loop/task", "port": "failures" }
+			"to": { "node": "parMap/fix_until_green/loop/task", "port": "failures" }
 		},
 		{
-			"from": { "node": "map/fix_until_green/loop", "port": "index" },
+			"from": { "node": "parMap/fix_until_green/loop", "port": "index" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/loop/task", "port": "index" }
+			"to": { "node": "parMap/fix_until_green/loop/task", "port": "index" }
 		},
 		{
-			"from": { "node": "map/fix_until_green/loop/task", "port": "text" },
+			"from": { "node": "parMap/fix_until_green/loop/task", "port": "text" },
 			"kind": "data",
-			"to": { "node": "map/fix_until_green/loop/check", "port": "text" }
+			"to": { "node": "parMap/fix_until_green/loop/check", "port": "text" }
 		},
 		{
-			"from": { "node": "map", "port": "results" },
+			"from": { "node": "parMap", "port": "results" },
 			"kind": "collect",
 			"to": { "node": "firstOk", "port": "results" }
 		}
@@ -52,12 +52,12 @@
 	"nodes": [
 		{
 			"cardinality": { "exact": 2 },
-			"id": "map",
+			"id": "parMap",
 			"inner": { "item": { "type": "string" } },
 			"items": ["small", "large"],
-			"kind": "map",
-			"members": { "result": "map/fix_until_green/loop" },
-			"onError": "settle",
+			"kind": "parMap",
+			"members": { "result": "parMap/fix_until_green/loop" },
+			"onError": "continue",
 			"out": {
 				"results": {
 					"items": {
@@ -85,13 +85,8 @@
 							"reason": { "type": "string" },
 							"value": {
 								"properties": {
-									"result": {
-										"properties": {
-											"logs": { "type": "string" },
-											"text": { "type": "string" }
-										},
-										"type": "object"
-									}
+									"logs": { "type": "string" },
+									"text": { "type": "string" }
 								},
 								"type": "object"
 							}
@@ -104,21 +99,21 @@
 			}
 		},
 		{
-			"id": "map/task",
+			"id": "parMap/task",
 			"in": { "model": { "type": "string" }, "prompt": { "type": "string" } },
 			"kind": "fake.task",
 			"literals": { "prompt": "write it" },
 			"out": { "text": { "type": "string" } }
 		},
 		{
-			"id": "map/fix_until_green/check",
+			"id": "parMap/fix_until_green/check",
 			"in": { "text": { "type": "string" } },
 			"kind": "fake.check",
 			"out": { "logs": { "type": "string" }, "text": { "type": "string" } }
 		},
 		{
 			"cardinality": { "upTo": 2 },
-			"id": "map/fix_until_green/loop",
+			"id": "parMap/fix_until_green/loop",
 			"in": { "logs": { "type": "string" }, "text": { "type": "string" } },
 			"inner": {
 				"index": { "type": "integer" },
@@ -128,16 +123,19 @@
 				"text": { "type": "string" }
 			},
 			"kind": "loop",
-			"members": { "result": "map/fix_until_green/loop/check" },
+			"members": { "result": "parMap/fix_until_green/loop/check" },
 			"out": { "logs": { "type": "string" }, "text": { "type": "string" } },
 			"test": {
 				"at": "start",
-				"port": { "node": "map/fix_until_green/loop/loop_not", "port": "value" }
+				"port": {
+					"node": "parMap/fix_until_green/loop/loop_not",
+					"port": "value"
+				}
 			},
 			"tolerate": "rejected"
 		},
 		{
-			"id": "map/fix_until_green/loop/loop_not",
+			"id": "parMap/fix_until_green/loop/loop_not",
 			"in": { "value": { "type": "boolean" } },
 			"kind": "code",
 			"out": { "value": { "type": "boolean" } },
@@ -149,7 +147,7 @@
 			}
 		},
 		{
-			"id": "map/fix_until_green/loop/task",
+			"id": "parMap/fix_until_green/loop/task",
 			"in": {
 				"failures": { "type": "string" },
 				"index": { "type": "integer" },
@@ -160,7 +158,7 @@
 			"out": { "text": { "type": "string" } }
 		},
 		{
-			"id": "map/fix_until_green/loop/check",
+			"id": "parMap/fix_until_green/loop/check",
 			"in": { "text": { "type": "string" } },
 			"kind": "fake.check",
 			"out": { "logs": { "type": "string" }, "text": { "type": "string" } }
@@ -195,13 +193,8 @@
 							"reason": { "type": "string" },
 							"value": {
 								"properties": {
-									"result": {
-										"properties": {
-											"logs": { "type": "string" },
-											"text": { "type": "string" }
-										},
-										"type": "object"
-									}
+									"logs": { "type": "string" },
+									"text": { "type": "string" }
 								},
 								"type": "object"
 							}
@@ -216,13 +209,8 @@
 			"out": {
 				"value": {
 					"properties": {
-						"result": {
-							"properties": {
-								"logs": { "type": "string" },
-								"text": { "type": "string" }
-							},
-							"type": "object"
-						}
+						"logs": { "type": "string" },
+						"text": { "type": "string" }
 					},
 					"type": "object"
 				}
@@ -239,7 +227,7 @@
 	"scopes": [
 		{
 			"composition": "fix_until_green",
-			"id": "map/fix_until_green",
+			"id": "parMap/fix_until_green",
 			"ports": { "draft": { "type": "string" }, "prompt": { "type": "string" } }
 		}
 	]

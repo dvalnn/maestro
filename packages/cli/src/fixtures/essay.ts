@@ -5,9 +5,9 @@ import {
 	code,
 	composition,
 	Int,
+	iter,
 	List,
 	loop,
-	map,
 	not,
 	Text,
 } from "@maestro/sdk";
@@ -19,13 +19,9 @@ export function draft(inputs: { topic: string }) {
 	return { text: `${inputs.topic} are great.` };
 }
 
-export function gather(inputs: {
-	drafts: { value?: Record<string, unknown> }[];
-}) {
+export function gather(inputs: { drafts: { value?: { text: string } }[] }) {
 	return {
-		text: inputs.drafts
-			.map((d) => JSON.stringify(d.value?.result ?? "(missing)"))
-			.join(" "),
+		text: inputs.drafts.map((d) => d.value?.text ?? "(missing)").join(" "),
 	};
 }
 
@@ -44,12 +40,10 @@ export const essay = composition(
 		examples: [{}],
 	},
 	({ topics }) => {
-		const drafts = map(
+		const drafts = iter.parMap(
 			topics,
 			(topic) => code(draft, { in: { topic }, out: { text: Text() } }),
-			{
-				onError: "propagate",
-			},
+			{ onError: "stop" },
 		);
 		const joined = code(gather, {
 			in: { drafts: drafts.out.results },

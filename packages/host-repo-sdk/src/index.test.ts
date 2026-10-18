@@ -9,13 +9,7 @@ import type { ArtifactRef, Ir, IrNode } from "@maestro/ir";
 import { BuildError, composition, type Ref, Text } from "@maestro/sdk";
 import * as stdlib from "@maestro/sdk/stdlib";
 import { buildIr, composeIr, stubConcert } from "@maestro/testkit";
-import {
-	buildThenRepair,
-	byFinding,
-	fold,
-	nthChangeset,
-	review,
-} from "./fixtures/examples";
+import { buildThenRepair, byFinding, fold, review } from "./fixtures/examples";
 import {
 	agent,
 	apply,
@@ -116,7 +110,7 @@ function repo(
 	return { host, hostConfig, requests, composeIt };
 }
 
-const CODE = { byFinding, nthChangeset };
+const CODE = { byFinding };
 
 const nodeOf = (ir: Ir, id: string): IrNode | undefined =>
 	ir.nodes.find((n) => n.id === id);
@@ -366,6 +360,7 @@ describe("examples", () => {
 	};
 
 	test.each([
+		{ tasks: ["Write b.txt."], agents: 1, added: ["b.txt"] },
 		{
 			tasks: ["Write b.txt.", "Write c.txt.", "Write d.txt."],
 			agents: 3,

@@ -1,10 +1,10 @@
-// A bare composition: a check in a map cuts a fresh lane and seals a marked 64 KiB version per item.
+// A bare composition: a check in a parMap cuts a fresh lane and seals a marked 64 KiB version per item.
 
 import { check, fresh } from "@maestro/host-repo-sdk";
-import { composition, map } from "@maestro/sdk";
+import { composition, iter } from "@maestro/sdk";
 
 export const mark = composition("mark", { examples: [{}] }, () =>
-	map(
+	iter.parMap(
 		["risk"],
 		() =>
 			check(
@@ -14,6 +14,6 @@ export const mark = composition("mark", { examples: [{}] }, () =>
 				},
 				{ label: "skeptic" },
 			),
-		{ label: "lens", onError: "propagate" },
+		{ onError: "stop" },
 	),
 );

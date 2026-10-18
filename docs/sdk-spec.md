@@ -72,34 +72,53 @@ All of these are Refs. A node accepts common options: `label`, `when` and `toler
 
 ### 4.1 Core node constructors
 
-| Constructor                | Purpose                                                                                  | Key arguments                                               | Result                                          |
-| -------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------- |
-| `code(fn, opts)`           | Run the author's function over typed inputs.                                             | `in` ports, `out` schema, `reads`, `writes`, `timeout`      | outputs per `out`                               |
-| `map(items, body, opts)`   | Instantiate `body` once per item, in parallel.                                           | `items`, body, `max`, `onError`                             | `Settled(R)[]` with static cardinality metadata |
-| `seq(items, body, opts)`   | Instantiate `body` per item in order, stop at the first item whose result meets `until`. | `items`, body, `until`, `max`                               | the stopping result, or the last                |
-| `loop.while(cond, opts)`   | Bounded loop carrying typed state, testing the state before each step.                   | `cond(state)`, `init`, `step(state, i)`, `max`, `tolerate`  | the last state                                  |
-| `loop.doWhile(cond, opts)` | Bounded loop carrying typed state, testing each step's result.                           | `cond(result)`, `init`, `step(state, i)`, `max`, `tolerate` | the last state                                  |
-| `assert(cond, message)`    | A policy or invariant.                                                                   | a boolean                                                   | none                                            |
-| `use(sub, ports, opts)`    | Instantiate a subcomposition.                                                            | `ports` (Refs or plain values), `opts.params` overrides     | the subcomposition's declared outputs           |
+| Constructor                             | Purpose                                                                        | Key arguments                                                   | Result                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------- | ------------------------------------------------ |
+| `code(fn, opts)`                        | Run the author's function over typed inputs.                                   | `in` ports, `out` schema, `reads`, `writes`, `timeout`          | outputs per `out`                                |
+| `iter.parMap(items, body, opts)`        | Instantiate `body` once per item, all at once.                                 | `items`, body, `max`, `onError`, `key`                          | `Settled(M)[]` with static cardinality metadata  |
+| `iter.map(items, body, opts)`           | Instantiate `body` once per item, in order.                                    | `items`, body, `max`, `onError`                                 | `Settled(M)[]`                                   |
+| `iter.find(items, body, cond, opts)`    | Instantiate `body` per item in order, stop at the first result meeting `cond`. | `items`, body, `cond(result)`, `max`                            | the result meeting `cond`, or the last           |
+| `iter.parFind(items, body, cond, opts)` | Instantiate `body` once per item, all at once; the first to meet `cond` wins.  | `items`, body, `cond(result)`, `max`, `key`                     | the result meeting `cond`, or the last to settle |
+| `iter.fold(items, opts)`                | Fold the items into an accumulator, in order.                                  | `items`, `first(item)`, `step(acc, item, i)`, `max`, `tolerate` | the last accumulator                             |
+| `loop.while(cond, opts)`                | Bounded loop carrying typed state, testing the state before each step.         | `cond(state)`, `init`, `step(state, i)`, `max`, `tolerate`      | the last state                                   |
+| `loop.doWhile(cond, opts)`              | Bounded loop carrying typed state, testing each step's result.                 | `cond(result)`, `init`, `step(state, i)`, `max`, `tolerate`     | the last state                                   |
+| `assert(cond, message)`                 | A policy or invariant.                                                         | a boolean                                                       | none                                             |
+| `use(sub, ports, opts)`                 | Instantiate a subcomposition.                                                  | `ports` (Refs or plain values), `opts.params` overrides         | the subcomposition's declared outputs            |
 
 Semantics each constructor must honor:
 
 - **`code`.** Runs only at perform, never during build or compose (ADR 0009). Its function is an exported
   `(inputs, ctx) => outputs`, sync or async, with inputs and outputs keyed by port name (ADR 0008). It can return
   `reject(reason, outputs?)` for a negative verdict, which becomes outcome `rejected`.
-- **`map`.** `items` may be a build-time list or a Ref resolved later. `max` is mandatory when the item count is not
-  known at compose time, and compose reports "up to N". A list of unknown length comes from a code node and feeds a
-  bounded `map` (D-16). Items are keyed: a primitive item by its value, any other item by index, or by an optional key
+- **`iter`.** `items` may be a build-time list or a Ref resolved later. The types require `max` over a Ref and refuse it
+  over a written list, which bounds the group itself; compose reports "up to N" for every group but a `parMap` over a
+  written list. A list of unknown length comes from a code node and feeds a bounded group (D-16). A member's value `M`
+  is the outputs of the body's result, or a record of them by result name when the body returns an object of two or more
+  results.
+- **`iter.parMap`.** Items are keyed: a primitive item by its value, any other item by index, or by an optional key
   function `(item) => key`. Give a key function whenever items are records or paths, so keys stay short and survive
   reordering. A key is sanitized to `[A-Za-z0-9_.-]`, anything else becoming `_`, and keys that sanitize alike are
-  duplicates: a compose error for a build-time list without a key function (D-18, SDK-13), and a failed `map` when a key
-  function runs, at perform (ADR 0009), or the list is known only at perform time. Keys only name node instances for
-  `ls` and lane refs. `onError` is required. With `"settle"` a non-ok member becomes a `Settled` value and the group is
-  `ok`. With `"propagate"` the group takes the worst member outcome, and the first non-ok member cancels the rest (ADR
+  duplicates: a compose error for a build-time list without a key function (D-18, SDK-13), and a failed `parMap` when a
+  key function runs, at perform (ADR 0009), or the list is known only at perform time. Keys only name node instances for
+  `ls` and lane refs. `onError` is required. With `"continue"` a non-ok member becomes a `Settled` value and the group
+  is `ok`. With `"stop"` the group takes the worst member outcome, and the first non-ok member cancels the rest (ADR
   0006).
-- **`seq`.** Covers escalation over an ordered list. `until` gets a member's result and returns a `Ref<Bool>`. Members
-  after a satisfied `until` never start. The bound is `items.length` or `max`. A `seq` with `until` stays an "up to N"
-  region in the plan. A `seq` over no items settles `skipped`.
+- **`iter.map`.** As `parMap`, one item at a time in item order, its members keyed by index. With `"stop"` no item
+  starts after a non-ok member, and `results` hold the members that ran.
+- **`iter.find`.** Covers escalation over an ordered list. `cond` gets a member's result and returns a `Ref<Bool>`.
+  Members after one meeting `cond` never start, and the group mirrors its member's outputs. A member, or the node `cond`
+  reads, that settles `failed` fails the group. A `find` stays an "up to N" region in the plan. A `find` over no items
+  settles `skipped`.
+- **`iter.parFind`.** As `find`, with every member started at once and keyed as `parMap` keys them, key function
+  included. The first member to settle meeting `cond` is the result, and the others are cancelled as `skipped` with the
+  reason `cancelled: <instance> met the condition`. When none meets it, the group ends on the last member to settle.
+- **`iter.fold`.** `first` builds the first accumulator from the first item, and `step` each next one from the previous
+  accumulator, the item and its index. The accumulator is a Result handle (section 4), as a loop's state is, and the
+  step must repeat `first`'s outputs. The nodes `first` builds run on the first item alone, and those `step` builds on
+  each next one. Ids take the phase after the fold's (`fold/first/merge`, `fold/step/merge`), so a helper called in both
+  needs no label. The fold ends on its last accumulator, or on one it cannot carry on from: a `rejected` one is carried
+  only when `tolerate` says so. A fold over no items settles `skipped`. An accumulator port named `ok`, `reason`,
+  `index` or `item` is a build error.
 - **`loop`.** Two loops, the condition first. Each goes on while its condition, a `Ref<Bool>`, holds:
   - `loop.while` reads the condition on the state before each step, so it may run no step. The condition is a Bool port
     of the state, such as `s.ok`, or of a node made from the state alone. A condition false on `init` ends the loop as
@@ -127,9 +146,11 @@ Host SDKs add constructors with the same Result handle shape (section 12).
 - **Status ports.** A node that reads only an upstream's `ok` or `reason` runs after a `rejected` upstream with no
   `tolerate`, so `not(check.ok)` needs none.
 - **`tolerate: "rejected"`** on a consuming node or a `loop` state edge lets the node run after a `rejected` upstream
-  whose declared outputs it reads. It then receives the upstream's outputs when it rejected with them. Reading a
-  declared output of a rejection that carried none fails the node, naming the upstream. Without either, a non-ok
-  upstream makes the node `skipped` (CORE-04). `failed` and `skipped` are never tolerable.
+  whose declared outputs it reads. It then receives the upstream's outputs when it rejected with them. Without either, a
+  non-ok upstream makes the node `skipped` (CORE-04). `failed` and `skipped` are never tolerable.
+- **Missing outputs.** A declared output a rejection did not carry is never a crash. A node that reads it is `skipped`,
+  with that upstream as its cause, so the concert result names the rejection and its reason. A condition that reads it,
+  a guard, a `cond` or a loop's, reads not true.
 
 ## 5. Refs and mapping between nodes
 
@@ -224,8 +245,8 @@ A code node is the SDK's answer to "this needs real code".
 ## 10. Config
 
 - Params carry defaults declared in code (CFG-03).
-- Composed config reaches the build function. Values that bound groups (`max` on `loop` and `map`) come from params and
-  are therefore known at compose time.
+- Composed config reaches the build function. Values that bound groups (`max` on a `loop` and on an `iter` group) come
+  from params and are therefore known at compose time.
 - Precedence, highest first (CFG-04, D-17): the use site for a subcomposition or the CLI flag for a root composition,
   then, for `compose`, the example set, then profile, workspace and user YAML, then the default. YAML keys live under
   the pack id and then the composition id.
@@ -238,8 +259,8 @@ A code node is the SDK's answer to "this needs real code".
 The standard library is built only from the constructors above (NFR-09). Initial contents (SDK-07):
 
 - **Reducers.** `firstOk(results)`, `okOnly(results)` and `settle(results)`. Marked fan-in in the IR, so they run once
-  every input has settled and receive each as `Settled` (ADR 0006). They take a map's handle or a list of outputs.
-  `firstOk` with no `ok` input settles `failed` if any input failed, else `rejected`.
+  every input has settled and receive each as `Settled` (ADR 0006). They take a `parMap` or `map`'s handle or a list of
+  outputs. `firstOk` with no `ok` input settles `failed` if any input failed, else `rejected`.
 - **Templating.** `tpl` as above. Prompt files are text artifacts staged by the consuming host node.
 - **Readers.** Typed readers for JSON and text artifacts, with schema validation, as code nodes.
 - **Logic.** `not(ref)` negates a `Ref<Bool>`, a lift as in section 5, for a loop condition such as `not(state.ok)`.
@@ -289,7 +310,7 @@ are typed by both.
 A check with no `timeout` has none: it runs until it ends or the concert is killed.
 
 A lane ref given to `fork`, `read` or `changeset` becomes a `literal` of type `Lane`. N lanes merge by folding `apply`
-over their changesets in a `loop.doWhile`, a resolver agent joining on conflict.
+over their changesets with `iter.fold`, a resolver agent joining on conflict.
 
 ## 13. IR emission, the worker protocol, diagnostics, test kit and renderers
 
@@ -332,8 +353,8 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 - `HOST` anything a host `validate` hook reports (for example a lane joined twice).
 - `BUILD` an ambient read during build (SDK-11), or a build that yields different IR twice (SDK-12).
 - `ASSERT` an `assert` that fails at build.
-- `SCOPE` duplicate ids (two unlabelled nodes deriving one id need a `label`), duplicate map item keys, unresolved
-  subcomposition, a code node function that is not exported, `reads` and `writes` contradictions.
+- `SCOPE` duplicate ids (two unlabelled nodes deriving one id need a `label`), duplicate `parMap` or `parFind` item
+  keys, unresolved subcomposition, a code node function that is not exported, `reads` and `writes` contradictions.
 
 Severity is `error` or `warning`. Any error stops before any concert starts (NFR-02).
 
@@ -400,17 +421,21 @@ const builtOn = (m, prompt, run) =>
   });
 
 escalate = composition("build_escalate", Params, ({ prompt, run, models }) =>
-  seq(models, (m) => builtOn(m, prompt, run), { until: (r) => r.ok }),
+  iter.find(
+    models,
+    (m) => builtOn(m, prompt, run),
+    (r) => r.ok,
+  ),
 );
 fanout = composition("build_fanout", Params, ({ prompt, run, models }) =>
-  firstOk(map(models, (m) => builtOn(m, prompt, run), { onError: "settle" })),
+  firstOk(iter.parMap(models, (m) => builtOn(m, prompt, run), { onError: "continue" })),
 );
 ```
 
 **Lens, skeptic, consolidator** (the shape shared by four legacy chains):
 
 ```ts
-const runs = map(
+const runs = iter.parMap(
   jobs,
   (job) => {
     const lens = agent({
@@ -431,7 +456,7 @@ const runs = map(
     });
     return { lens, skeptic };
   },
-  { max: 14, onError: "settle" },
+  { max: 14, onError: "continue" },
 );
 const merged = code(byFinding, { in: { runs }, out: Merged });
 return agent({
@@ -447,7 +472,7 @@ return agent({
 
 ```ts
 const scout = agent({ label: "scout", task: prompt, lane: fresh(), role: "scout" });
-const plans = map(
+const plans = iter.parMap(
   ANGLES,
   (a) =>
     agent({
@@ -456,7 +481,7 @@ const plans = map(
       lane: fork(scout.out.lane),
       role: "planner",
     }),
-  { onError: "settle" },
+  { onError: "continue" },
 );
 const good = code(renderOk, { in: { plans: plans.out.results }, out: { text: Text, nonEmpty: Bool } });
 const synthesis = agent({
@@ -466,23 +491,23 @@ const synthesis = agent({
   role: "planner",
   when: good.out.nonEmpty,
 });
-return firstOk([synthesis.out.report, firstOk(plans).out.value.pick("result.report")]);
+return firstOk([synthesis.out.report, firstOk(plans).out.value.pick("report")]);
 ```
 
 ## 15. Coverage of the predecessor's workflows
 
-| Predecessor workflow                     | Constructs it needs                                                                                                                        |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| scout_plan, build_quality, review_panel  | `agent`, `check`, `use`, `map`, reducers                                                                                                   |
-| full                                     | `use` of two subcompositions, `agent` joined to the result                                                                                 |
-| build_escalate                           | `seq`, `use`, `fork` of one source                                                                                                         |
-| build_fanout                             | `map` with `onError: "settle"`, `firstOk`                                                                                                  |
-| plan_panel                               | `fork` and `join` of lane versions, `map`, `Settled` fan-in, code node                                                                     |
-| build_review                             | `loop` carrying two values, `tolerate` on a rejected check, a typed field in its condition                                                 |
-| verification round (lenses, skeptics)    | `map`, conditional second node, `assert` for the model-family policy, code node                                                            |
-| rework, then a review gate, then a round | `use`, `loop`, staging by artifact ports, a final subcomposition use                                                                       |
-| triage over a cross product              | `map` over a cross product made by a code node, typed outputs, code node for regrouping, `assert`                                          |
-| review of a locking change               | planner node whose output feeds a bounded `map`, fallback via `ref.or`, expansion in a code node, a pack code node for the Gerrit artifact |
+| Predecessor workflow                     | Constructs it needs                                                                                                                                |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| scout_plan, build_quality, review_panel  | `agent`, `check`, `use`, `iter.parMap`, reducers                                                                                                   |
+| full                                     | `use` of two subcompositions, `agent` joined to the result                                                                                         |
+| build_escalate                           | `iter.find`, `use`, `fork` of one source                                                                                                           |
+| build_fanout                             | `iter.parMap` with `onError: "continue"`, `firstOk`                                                                                                |
+| plan_panel                               | `fork` and `join` of lane versions, `iter.parMap`, `Settled` fan-in, code node                                                                     |
+| build_review                             | `loop` carrying two values, `tolerate` on a rejected check, a typed field in its condition                                                         |
+| verification round (lenses, skeptics)    | `iter.parMap`, conditional second node, `assert` for the model-family policy, code node                                                            |
+| rework, then a review gate, then a round | `use`, `loop`, staging by artifact ports, a final subcomposition use                                                                               |
+| triage over a cross product              | `iter.parMap` over a cross product made by a code node, typed outputs, code node for regrouping, `assert`                                          |
+| review of a locking change               | planner node whose output feeds a bounded `iter.parMap`, fallback via `ref.or`, expansion in a code node, a pack code node for the Gerrit artifact |
 
 Coverage was assessed by reading the workflows (four verification and review chains with their helpers, and eight
 general compositions). It was not exercised by running anything. Re-check each row when its workflow is ported.

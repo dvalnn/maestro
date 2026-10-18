@@ -1,5 +1,6 @@
 import {
 	canonicalJson,
+	collects,
 	isPlainObject,
 	type JsonSchema,
 	type Settled as SettledValue,
@@ -112,17 +113,20 @@ export function lookup<V>(
 	) as Ref<V>;
 }
 
-/** A map's handle or its results, or node outputs each delivered as `Settled` (ADR 0006 "Reducer inputs"). */
+/**
+ * A `parMap` or `map`'s handle or its results, or node outputs each delivered as `Settled` (ADR 0006 "Reducer
+ * inputs").
+ */
 export type ReducerInputs<T> =
 	| readonly Ref<T>[]
 	| Ref<SettledValue<T>[]>
-	| Result<MapResults>;
+	| Result<MapResults<T>>;
 
 const badInputs = (name: StdlibName) =>
 	fail(
 		"TYPE.reducer",
-		`${name} takes a map, its results or a non-empty list of node outputs`,
-		`Pass a map's handle, or a list such as [a.out.x, b.out.y]`,
+		`${name} takes a parMap or map, its results or a non-empty list of node outputs`,
+		`Pass a parMap's handle, or a list such as [a.out.x, b.out.y]`,
 	);
 
 const isNodeOutput = (ref: unknown): ref is RefImpl<unknown> =>
@@ -133,7 +137,7 @@ const isNodeOutput = (ref: unknown): ref is RefImpl<unknown> =>
 /** The input ports of a reducer, and the schema of one input's value. */
 function reducerPorts(name: StdlibName, given: unknown) {
 	const inputs =
-		given instanceof ResultImpl && info(given.node).kind === "map"
+		given instanceof ResultImpl && collects(info(given.node))
 			? given.out.results
 			: given;
 	if (inputs instanceof RefImpl) {

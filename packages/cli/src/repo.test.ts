@@ -51,13 +51,13 @@ test("a lane ref names a version by the instance id ls shows, ls shows its disk 
 	expect(marked).toMatchObject({ code: 0 });
 	const id = idOf(marked);
 
-	const shown = "lens[risk]/skeptic";
+	const shown = "parMap[risk]/skeptic";
 	expect((await w.call(["ls", id])).out).toContain(shown);
 	const { instances } = json(await w.call(["ls", id, "--json"]));
 	const ref = `${id}.${shown}`;
 	expect(
-		instances.find((i: { node: string }) => i.node === "lens/skeptic")?.outputs
-			.lane,
+		instances.find((i: { node: string }) => i.node === "parMap/skeptic")
+			?.outputs.lane,
 	).toBe(ref);
 	const followed = await w.call([
 		"perform",

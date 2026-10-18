@@ -122,9 +122,9 @@ Contents, at the level of what it must carry:
 - **Nodes.** For each node: stable id (a path whose prefixes are its scopes and groups), kind, source location, typed
   ports (schemas), guard, declared reads and writes (code nodes), kind-specific configuration (host kinds), and for code
   nodes a worker reference `{runtime, module, export, code hash}`.
-- **Groups.** For `map`, `seq`, `loop`: the body subgraph (a template), the cardinality (`exact` or `up to N`), the
-  source of its items or iteration state, the stop condition reference, and the member-result port that feeds `collect`
-  edges.
+- **Groups.** For `parMap`, `map`, `find`, `parFind`, `fold`, `loop`: the body subgraph (a template), the cardinality
+  (`exact` or `up to N`), the source of its items or iteration state, the stop condition reference, and the members
+  whose results the group delivers.
 - **Edges.** From port to port, with kind `data`, `collect` or `control`, and for `control` the tolerance (`ok` only, or
   `ok` and `rejected`).
 - **Result.** The node the composition returns, from which the result rule derives the concert result.
@@ -220,24 +220,39 @@ stores by node id and expansion path as a `progress` event, opaquely.
 ## 7. Execution model
 
 - **Node instances.** A node instance is a node id plus an expansion path: one `[key]` per enclosing group, outermost
-  first, where a `map` contributes its item key and `loop` and `seq` their iteration index (`[risk]`, `[risk][2]`, or
-  empty outside groups). It is shown merged into the id, as `lens[risk]/skeptic`. Events and records use this identity.
+  first, where a `parMap` or `parFind` contributes its item key and the other groups their iteration index (`[risk]`,
+  `[risk][2]`, or empty outside groups). It is shown merged into the id, as `parMap[risk]/skeptic`. Events and records
+  use this identity.
 - **Scheduling.** A node instance is ready when all `data` and `collect` inputs are settled and its `control` edges
   allow it. The executor runs ready instances up to the concurrency cap.
 - **Outcomes.** `ok`, `rejected`, `failed`, `skipped`.
   - A dependent over an `ok` edge runs only after `ok`. A dependent over a tolerant edge, or one that reads only status
     ports (`ok` or `reason`) of that upstream, also runs after `rejected` and receives the reason.
   - `failed` and `skipped` are not tolerable. The dependent is `skipped` and its own dependents follow the same rule.
-  - A `map` declares `onError`. With `settle`, a non-ok member becomes a `Settled` value and the group is `ok`. With
-    `propagate`, the worst member outcome becomes the group's and running members are cancelled (ADR 0006). `seq` and
-    `loop` end on their stop condition or bound.
+  - A declared output an upstream did not produce, as when it rejected without outputs, is never a crash. A data read of
+    it skips the reader, with that upstream as its cause, and a condition (a guard, a `cond` or a loop test) reading it
+    reads not true. `failed` stays for crashes and broken contracts.
+  - A `parMap` or `map` declares `onError`. With `continue`, a non-ok member becomes a `Settled` value and the group is
+    `ok`. With `stop`, the worst member outcome becomes the group's, running members are cancelled and a `map` starts no
+    further item (ADR 0006). `find`, `parFind`, `fold` and `loop` end on their condition, their last member or their
+    bound.
 - **Groups.**
-  - `map` instantiates its body once per item, in parallel up to the cap. An item with a primitive value is keyed by
+  - A group's member value is the outputs of its body's one result, or a record of them by result name when the body
+    returns several.
+  - `parMap` instantiates its body once per item, in parallel up to the cap. An item with a primitive value is keyed by
     value and any other item by index, or by an author-supplied key function. Duplicate primitive or index keys of a
-    list known at build are a compose error. Duplicates a key function gives fail the `map` at perform, since the
-    function runs only there (D-18, SDK-13). Keys give readable node instance ids for `ls` and lane refs.
-  - `seq` instantiates the body per item in order and stops at the first item meeting the condition. This covers
-    escalation over models.
+    list known at build are a compose error. Duplicates a key function gives fail the group at perform, since the
+    function runs only there (D-18, SDK-13). `parFind` keys its items the same way. Keys give readable node instance ids
+    for `ls` and lane refs.
+  - `map` instantiates its body once per item, one at a time in item order.
+  - `find` instantiates the body per item in order and stops at the first member meeting the condition, else ends on the
+    last member. This covers escalation over models. `parFind` runs every item at once: the first member to settle
+    meeting the condition is the result and the others are cancelled as `skipped`, with the reason
+    `cancelled: <instance> met the condition`, else it ends on the last member to settle. In either, a member or
+    condition node that fails fails the group.
+  - `fold` seeds an accumulator from the first item, through the body nodes its `first` lists, and steps it with each
+    next item through the others, in order. The accumulator has the shape of a node's result, as a loop's state does.
+    The fold ends on its last accumulator, and over no items it is `skipped`.
   - `loop` carries typed state: an initial value, a step producing the next state, a test and a maximum. The state holds
     the previous node's outputs, `ok` and `reason`, the shape of a node's result. The loop goes on while its test reads
     true, read at `start` before each step (`0 to N` steps) or at `end` on each step's result (`1 to N`). A test node
@@ -272,7 +287,7 @@ stateDiagram-v2
   running --> rejected
   running --> failed
   running --> failed: cancelled
-  running --> skipped: halted by a propagating map, or an empty seq or loop
+  running --> skipped: halted by a stopping group, or an empty find, parFind, fold or loop
   ok --> [*]
   rejected --> [*]
   failed --> [*]

@@ -107,7 +107,7 @@ function zipByKey(
 	});
 }
 
-/** A reducer's ports: a map's `results`, or one `Settled` input per output, `in0` to `inN`. */
+/** A reducer's ports: a `parMap` or `map`'s `results`, or one `Settled` input per output, `in0` to `inN`. */
 type ReducerPorts =
 	| { results: readonly Settled<unknown>[] }
 	| { [port: `in${number}`]: Settled<unknown> };

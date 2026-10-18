@@ -3,6 +3,10 @@ import {
 	type Cardinality,
 	type CodeContext,
 	canonicalJson,
+	collects,
+	type FindNode,
+	FOLD_STATE,
+	type FoldNode,
 	firstDuplicate,
 	type GroupNode,
 	IMPLICIT_OUT,
@@ -12,13 +16,15 @@ import {
 	LOOP_STATE,
 	type LoopNode,
 	MAX_TIMEOUT,
+	type OnError,
+	type ParFindNode,
 	type PortRef,
 	type Ports,
 	type Rejection,
-	type SeqNode,
 	type Settled as SettledValue,
 	settledSchema,
 	type Tolerate,
+	type WorkerRef,
 } from "@maestro/ir";
 import {
 	addNode,
@@ -179,6 +185,22 @@ export function assert(
 
 type Items<T> = readonly T[] | Ref<T[]>;
 
+type ItemOf<I> = I extends readonly (infer T)[]
+	? T
+	: I extends Ref<(infer T)[]>
+		? T
+		: never;
+
+/** Over a written list a group takes no `max`; over a Ref it needs one, a literal or a param (CORE-05). */
+type Bound<I> = I extends readonly unknown[]
+	? { max?: never }
+	: { max: number };
+
+/** The options argument of a group whose options are all optional over a written list. */
+type BoundArgs<I, O> = I extends readonly unknown[]
+	? [opts?: O & Bound<I>]
+	: [opts: O & Bound<I>];
+
 /** Build-time items as an array, or undefined for items a node delivers. */
 function plainItems(items: unknown, kind: string): unknown[] | undefined {
 	let value = items;
@@ -204,14 +226,8 @@ const itemSchema = (
 
 /** @throws `BOUND.max` unless `max` is a whole number of at least 1. */
 function checkMax(max: unknown, what: string): number {
-	if (max === undefined)
-		throw fail(
-			"BOUND.max",
-			`${what} needs max, since its size is not known at build`,
-			"Set max to a literal or a param",
-		);
 	if (typeof max === "number" && Number.isInteger(max) && max >= 1) return max;
-	const got = max instanceof RefImpl ? "a Ref" : JSON.stringify(max);
+	const got = max instanceof RefImpl ? "a Ref" : String(JSON.stringify(max));
 	throw fail(
 		"BOUND.max",
 		`max of ${what} must be a whole number of at least 1, got ${got}`,
@@ -235,35 +251,24 @@ function checkTimeout(timeout: unknown, what: string): number | undefined {
 	);
 }
 
-// Only a map over build-time items has an exact size; any other group may stop early or wait on a node (CORE-05).
+type ItemsKind = Exclude<GroupNode["kind"], "loop">;
+
+// Only a parMap over build-time items, or a group over none, has an exact size; any other may stop early (CORE-05).
 function cardinality(
-	kind: "map" | "seq",
+	kind: ItemsKind,
 	plain: unknown[] | undefined,
-	max: number | undefined,
+	max: unknown,
 ): Cardinality {
 	if (plain === undefined) return { upTo: checkMax(max, `${kind} over a Ref`) };
-	if (max !== undefined)
-		throw fail(
-			"BOUND.max",
-			`${kind} over a build-time list takes no max`,
-			`Remove max: the list's ${plain.length} items bound it`,
-		);
-	if (kind === "map") return { exact: plain.length };
-	if (plain.length === 0)
-		throw fail(
-			"BOUND.max",
-			"seq over an empty list has nothing to try",
-			"Give seq at least one item",
-		);
+	if (kind === "parMap" || plain.length === 0) return { exact: plain.length };
 	return { upTo: plain.length };
 }
 
 function openGroup(
-	kind: "map" | "seq",
+	kind: ItemsKind,
 	items: unknown,
-	max: number | undefined,
-	common: Common,
-	fields: object,
+	opts: Omit<Common, "tolerate"> & { max?: unknown },
+	fields: object = {},
 ) {
 	const plain = plainItems(items, kind);
 	const group = pushNode(
@@ -275,10 +280,10 @@ function openGroup(
 			fields: {
 				...fields,
 				items: plain,
-				cardinality: cardinality(kind, plain, max),
+				cardinality: cardinality(kind, plain, opts.max),
 			},
 		},
-		common,
+		opts,
 	) as GroupNode;
 	const schema = itemSchema(items, plain);
 	group.inner = { item: schema };
@@ -303,12 +308,21 @@ function member(returned: unknown, group: string): string {
 	return id;
 }
 
-/** One member named `result`, or one per entry of an object of results (ADR 0004). */
-function mapMembers(returned: unknown, group: string): Record<string, string> {
+/** One member named `result`, or one per entry of an object of two or more results (ADR 0004). */
+function collectedMembers(
+	returned: unknown,
+	group: string,
+): Record<string, string> {
 	const one = memberOf(returned, group);
 	if (one !== undefined) return { result: one };
-	const wanted = "a result, or an object of results,";
+	const wanted = "a result, or an object of two or more results,";
 	const entries = isPlainObject(returned) ? Object.entries(returned) : [];
+	if (entries.length === 1)
+		throw fail(
+			"TYPE.member",
+			`the body of ${info(group).kind} '${group}' returns an object of one result`,
+			"Return that Result handle itself",
+		);
 	if (entries.length === 0) throw noMember(group, wanted);
 	return Object.fromEntries(
 		entries.map(([name, value]) => {
@@ -319,7 +333,7 @@ function mapMembers(returned: unknown, group: string): Record<string, string> {
 	);
 }
 
-const UNTIL_HINT =
+const MEMBER_HINT =
 	"Return r.ok or a Bool output of a node in the body; a comparison such as !== on a Ref gives a plain boolean";
 
 /**
@@ -347,62 +361,70 @@ function bodyBool(
 	return { node: source.node, port: source.port };
 }
 
-/** A seq or loop exposes its member's outputs as its own (ADR 0004). */
+/** A group exposes the outputs of the member it mirrors as its own (ADR 0004). */
 function mirror(group: GroupNode, memberId: string): void {
 	const { out } = info(memberId);
 	info(group.id).out = out;
 	if (Object.keys(out).length) group.out = out;
 }
 
-export type MapOptions<T> = Common & {
-	/** No default (ADR 0006). */
-	onError: "settle" | "propagate";
-	/** Required when `items` is a Ref. */
-	max?: number;
+type Keyed<T> = {
 	/** An exported function that names an item (D-18, ADR 0008). */
 	key?: (item: T) => string;
 };
 
-/** The value of one member of map `id`: a record by result name of each result's outputs (ADR 0004). */
+/** `onError` has no default. */
+export type ParMapOptions<T> = Common & Keyed<T> & { onError: OnError };
+
+export type MapOptions = Common & { onError: OnError };
+
+type Body = Result | Readonly<Record<string, Result>>;
+
+type OutputsOf<R> = R extends { readonly out: infer P }
+	? { [K in keyof P]: P[K] extends Ref<infer V> ? V : never }
+	: never;
+
+/** The value of one member of a body returning `B`: a result's outputs, or a record of them by result name. */
+type MemberOf<B> = B extends Result
+	? OutputsOf<B>
+	: { [K in keyof B]: OutputsOf<B[K]> };
+
+/** The handle of a `parMap` or `map` whose members are each a `V`. */
+export type MapResults<V = unknown> = { results: Type<SettledValue<V>[]> };
+
+/**
+ * The value of one member of `parMap` or `map` `id`: its one result's outputs, or a record by result name of each
+ * result's outputs (ADR 0004).
+ */
 export function memberSchema(id: string): JsonSchema {
 	const node = current().nodes.find((n) => n.id === id);
-	const members = node?.kind === "map" ? node.members : {};
+	const members = node && collects(node) ? node.members : {};
+	const outputs = (member: string) => ({
+		type: "object",
+		properties: info(member).out,
+	});
+	const entries = Object.entries(members);
+	const [only] = entries;
+	if (entries.length === 1 && only) return outputs(only[1]);
 	return {
 		type: "object",
 		properties: Object.fromEntries(
-			Object.entries(members).map(([name, member]) => [
-				name,
-				{ type: "object", properties: info(member).out },
-			]),
+			entries.map(([name, member]) => [name, outputs(member)]),
 		),
 	};
 }
 
-export type MapResults = {
-	results: Type<SettledValue<Record<string, unknown>>[]>;
-};
-
-/**
- * One body instance per item, in parallel. Build-time items are keyed by `itemKey`, and a duplicate key throws
- * `SCOPE.key`. A key function is called only at perform, where a duplicate key fails the map.
- */
-export function map<T>(
-	items: Items<T>,
-	body: (item: Ref<T>) => Result | Record<string, Result>,
-	opts: MapOptions<T>,
-): Result<MapResults> {
-	const key = opts.key === undefined ? undefined : worker(opts.key);
-	const fields = { onError: opts.onError, key };
-	const { group, plain, item } = openGroup(
-		"map",
-		items,
-		opts.max,
-		opts,
-		fields,
-	);
-	if (plain && !key) checkKeys(plain);
+function collected<B extends Body>(
+	kind: "parMap" | "map",
+	items: unknown,
+	body: (item: Ref<never>) => B,
+	opts: Common & { max?: unknown },
+	fields: { onError: OnError; key?: WorkerRef },
+): Result<MapResults<MemberOf<B>>> {
+	const { group, plain, item } = openGroup(kind, items, opts, fields);
+	if (plain && kind === "parMap" && !fields.key) checkKeys(plain, kind);
 	group.members = withFrame(innerFrame(group.id, true), () =>
-		mapMembers(body(item as Ref<T>), group.id),
+		collectedMembers(body(item as unknown as Ref<never>), group.id),
 	);
 	const results = {
 		type: "array",
@@ -413,41 +435,177 @@ export function map<T>(
 	return typed(new ResultImpl(group.id));
 }
 
-function checkKeys(items: unknown[]): void {
+/**
+ * One body instance per item, all at once. Build-time items are keyed by `itemKey`, and a duplicate key throws
+ * `SCOPE.key`. A key function is called only at perform, where a duplicate key fails the group.
+ */
+function parMap<I extends Items<unknown>, B extends Body>(
+	items: I,
+	body: (item: Ref<ItemOf<I>>) => B,
+	opts: ParMapOptions<ItemOf<I>> & Bound<I>,
+): Result<MapResults<MemberOf<B>>> {
+	return collected("parMap", items, body, opts, {
+		onError: opts.onError,
+		key: keyOf(opts.key),
+	});
+}
+
+/** One body instance per item, in order; `stop` starts no item after a non-`ok` member. */
+function map<I extends Items<unknown>, B extends Body>(
+	items: I,
+	body: (item: Ref<ItemOf<I>>) => B,
+	opts: MapOptions & Bound<I>,
+): Result<MapResults<MemberOf<B>>> {
+	return collected("map", items, body, opts, { onError: opts.onError });
+}
+
+const keyOf = (key: ((item: never) => string) | undefined) =>
+	key === undefined ? undefined : worker(key);
+
+/** @throws `SCOPE.key` when two of `items` share an item key. */
+function checkKeys(items: unknown[], kind: string): void {
 	const dup = firstDuplicate(items.map(itemKey));
 	if (dup)
 		throw fail(
 			"SCOPE.key",
-			`map item key '${dup.key}' appears more than once`,
-			"Make the items unique, or give map a key function",
+			`${kind} item key '${dup.key}' appears more than once`,
+			`Make the items unique, or give ${kind} a key function`,
 		);
 }
 
-export type SeqOptions<O extends Types> = Common & {
-	/** Stops at the first item whose result meets it. */
-	until?: (result: Result<O>) => Ref<boolean>;
-	/** Required when `items` is a Ref. */
-	max?: number;
-};
-
-/** One body instance per item, in order, up to the first whose result meets `until`. */
-export function seq<T, O extends Types>(
-	items: Items<T>,
-	body: (item: Ref<T>) => Result<O>,
-	opts: SeqOptions<O> = {},
+function found<I extends Items<unknown>, O extends Types>(
+	kind: "find" | "parFind",
+	items: I,
+	body: (item: Ref<ItemOf<I>>) => Result<O>,
+	cond: (result: Result<O>) => Ref<boolean>,
+	opts: Common & Keyed<never> & { max?: unknown } = {},
 ): Result<O> {
-	const { group, item } = openGroup("seq", items, opts.max, opts, {});
+	const key = keyOf(opts.key);
+	const { group, plain, item } = openGroup(kind, items, opts, { key });
+	if (plain && kind === "parFind" && !key) checkKeys(plain, kind);
 	const id = withFrame(innerFrame(group.id, true), () =>
-		member(body(item as Ref<T>), group.id),
+		member(body(item as Ref<ItemOf<I>>), group.id),
 	);
 	group.members = { result: id };
 	mirror(group, id);
-	const { until } = opts;
-	if (until)
-		(group as SeqNode).until = bodyBool(group.id, "until", UNTIL_HINT, () =>
-			until(new ResultImpl(id) as unknown as Result<O>),
-		);
+	(group as FindNode | ParFindNode).cond = bodyBool(
+		group.id,
+		`the condition of iter.${kind}`,
+		MEMBER_HINT,
+		() => cond(new ResultImpl(id) as unknown as Result<O>),
+	);
 	return typed(new ResultImpl(group.id));
+}
+
+/** One body instance per item, in order, up to the first whose result meets `cond`; else the last member. */
+function find<I extends Items<unknown>, O extends Types>(
+	items: I,
+	body: (item: Ref<ItemOf<I>>) => Result<O>,
+	cond: (result: Result<O>) => Ref<boolean>,
+	...[opts]: BoundArgs<I, Common>
+): Result<O> {
+	return found("find", items, body, cond, opts);
+}
+
+/**
+ * One body instance per item, all at once. The first member to settle meeting `cond` is the result, and the others
+ * are cancelled; else the last member to settle. Items are keyed as `parMap` keys them.
+ */
+function parFind<I extends Items<unknown>, O extends Types>(
+	items: I,
+	body: (item: Ref<ItemOf<I>>) => Result<O>,
+	cond: (result: Result<O>) => Ref<boolean>,
+	...[opts]: BoundArgs<I, Common & Keyed<ItemOf<I>>>
+): Result<O> {
+	return found("parFind", items, body, cond, opts as Keyed<never>);
+}
+
+export type FoldOptions<T, O extends Types> = Omit<Common, "tolerate"> & {
+	/** Builds the first accumulator from the first item. */
+	first: (item: Ref<T>) => Result<O>;
+	/** Builds each next accumulator from the previous one and the next item, whose outputs it must repeat. */
+	step: (acc: Result<O>, item: Ref<T>, index: Ref<number>) => Result<O>;
+	/** Carries a `rejected` accumulator into the next step. */
+	tolerate?: Tolerate;
+};
+
+/**
+ * The first item seeds the accumulator through `first`, and `step` adds each next item, in order. The fold ends on its
+ * last accumulator, or on one it cannot carry on from; no items is `skipped`.
+ */
+function fold<I extends Items<unknown>, O extends Types>(
+	items: I,
+	opts: FoldOptions<ItemOf<I>, O> & Bound<I>,
+): Result<O> {
+	const { group, item } = openGroup(
+		"fold",
+		items,
+		{ label: opts.label, when: opts.when, max: opts.max },
+		{ tolerate: opts.tolerate },
+	);
+	const phase = (name: string) => ({
+		...innerFrame(group.id, true),
+		path: `${group.id}/${name}`,
+	});
+	const built = current().nodes.length;
+	const first = withFrame(phase("first"), () =>
+		member(opts.first(item as Ref<ItemOf<I>>), group.id),
+	);
+	const once = current()
+		.nodes.slice(built)
+		.filter((n) => info(n.id).groups.at(-1) === group.id);
+	const out = info(first).out;
+	mirror(group, first);
+	const acc = carried<O>(group, out, FOLD_STATE, "first");
+	const index = innerRef(group.id, "index", { type: "integer" }) as Ref<number>;
+	const step = withFrame(phase("step"), () =>
+		member(opts.step(acc, item as Ref<ItemOf<I>>, index), group.id),
+	);
+	checkState(step, out, group.id, "first");
+	group.members = { first, step };
+	(group as FoldNode).first = once.map((n) => n.id);
+	return typed(new ResultImpl(group.id));
+}
+
+/** Iteration over a list known up front (sdk-spec 4.1). */
+export const iter = { parMap, map, find, parFind, fold };
+
+/**
+ * The state `group` carries, with the outputs `out` and the ports `reserved` holds beside them, as a Result handle its
+ * body reads. Sets the group's inner ports.
+ * @throws `TYPE.state` when `out` has a port `reserved` names.
+ */
+function carried<O extends Types>(
+	group: GroupNode,
+	out: Ports,
+	reserved: readonly string[],
+	from: string,
+): Result<O> {
+	const clash = reserved.find((port) => Object.hasOwn(out, port));
+	if (clash)
+		throw fail(
+			"TYPE.state",
+			`the state of ${group.kind} '${group.id}' has a port named '${clash}', a name the ${group.kind} state holds itself`,
+			`Rename the '${clash}' output of ${from} and of the step`,
+		);
+	const { ok, reason } = IMPLICIT_OUT;
+	group.inner = {
+		...group.inner,
+		...out,
+		ok,
+		reason,
+		index: { type: "integer" },
+	};
+	return {
+		ok: innerRef(group.id, "ok", ok),
+		reason: innerRef(group.id, "reason", reason),
+		out: Object.fromEntries(
+			Object.entries(out).map(([port, schema]) => [
+				port,
+				innerRef(group.id, port, schema),
+			]),
+		),
+	} as unknown as Result<O>;
 }
 
 export type LoopOptions<O extends Types> = Omit<Common, "tolerate"> & {
@@ -488,7 +646,10 @@ function whileLoop<O extends Types>(
 	return typed(new ResultImpl(group.id));
 }
 
-/** A loop over typed state that steps, then reads `cond` on the step's result and goes on while it holds: 1 to `max` steps. */
+/**
+ * A loop over typed state that steps, then reads `cond` on the step's result and goes on while it holds: 1 to `max`
+ * steps.
+ */
 function doWhile<O extends Types>(
 	cond: (result: Result<O>) => Ref<boolean>,
 	opts: LoopOptions<O>,
@@ -538,25 +699,7 @@ function openLoop<O extends Types>(
 		},
 		{ label: opts.label, when: opts.when },
 	) as LoopNode;
-	const reserved = LOOP_STATE.find((port) => Object.hasOwn(out, port));
-	if (reserved)
-		throw fail(
-			"TYPE.state",
-			`the state of loop '${group.id}' has a port named '${reserved}', a name the loop state holds itself`,
-			`Rename the '${reserved}' output of init and of the step`,
-		);
-	const { ok, reason } = IMPLICIT_OUT;
-	group.inner = { ...out, ok, reason, index: { type: "integer" } };
-	const state = {
-		ok: innerRef(group.id, "ok", ok),
-		reason: innerRef(group.id, "reason", reason),
-		out: Object.fromEntries(
-			Object.entries(out).map(([port, schema]) => [
-				port,
-				innerRef(group.id, port, schema),
-			]),
-		),
-	} as unknown as Result<O>;
+	const state = carried<O>(group, out, LOOP_STATE, "init");
 	return { group, state };
 }
 
@@ -570,11 +713,16 @@ function loopStep<O extends Types>(
 	const id = withFrame(innerFrame(group, true), () =>
 		member(opts.step(state, index), group),
 	);
-	checkState(id, info(group).out, group);
+	checkState(id, info(group).out, group, "init");
 	return id;
 }
 
-function checkState(memberId: string, state: Ports, group: string): void {
+function checkState(
+	memberId: string,
+	state: Ports,
+	group: string,
+	from: "init" | "first",
+): void {
 	const got = info(memberId).out;
 	const differ = [...new Set([...Object.keys(state), ...Object.keys(got)])]
 		.filter((port) => canonicalJson(state[port]) !== canonicalJson(got[port]))
@@ -582,7 +730,7 @@ function checkState(memberId: string, state: Ports, group: string): void {
 	if (differ.length)
 		throw fail(
 			"TYPE.state",
-			`the step of loop '${group}' differs from init in the ports ${differ.join(", ")}`,
-			"Return a node whose outputs have the names and types of init's",
+			`the step of ${info(group).kind} '${group}' differs from ${from} in the ports ${differ.join(", ")}`,
+			`Return a node whose outputs have the names and types of ${from}'s`,
 		);
 }

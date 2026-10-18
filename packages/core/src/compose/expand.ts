@@ -93,7 +93,7 @@ const starts = (s: Expanding, group: GroupNode, keys: readonly string[]) =>
 				innerValue(s, group, e.from, keys)?.value === true,
 		);
 
-/** A map's item keys (D-18), or the `SCOPE.key` error of two items keyed alike. */
+/** A parMap's item keys (D-18), or the `SCOPE.key` error of two items keyed alike. */
 function mapKeys(
 	group: GroupNode,
 	name: string,
@@ -105,16 +105,16 @@ function mapKeys(
 	return error(
 		"SCOPE.key",
 		group.id,
-		`map '${name}' gives items ${dup.first} and ${dup.second} the same key '${dup.key}'`,
-		`Give map '${group.id}' a key function, or make its items distinct`,
+		`parMap '${name}' gives items ${dup.first} and ${dup.second} the same key '${dup.key}'`,
+		`Give parMap '${group.id}' a key function, or make its items distinct`,
 	);
 }
 
 /**
  * How a group instance expands:
- * - a `map` over a plain list into one instance per item, counted when a key function names them, as that is called
+ * - a `parMap` over a plain list into one instance per item, counted when a key function names them, as that is called
  *   only at perform (ADR 0009);
- * - a `seq` without `until` over a plain list into one instance per index;
+ * - a `map` or `fold` over a plain list into one instance per index;
  * - anything else, or a group with a guard compose does not know true, stays a region of up to its bound (CORE-05).
  */
 function expansionOf(
@@ -141,12 +141,10 @@ function expansionOf(
 		);
 		return region;
 	}
-	if (group.kind === "seq")
-		return group.until
-			? region
-			: { expansion: { keys: items.map((_, i) => String(i)) }, items };
-	if (group.kind === "map" && group.key)
-		return { expansion: { exact: items.length }, items: [] };
+	if (group.kind === "map" || group.kind === "fold")
+		return { expansion: { keys: items.map((_, i) => String(i)) }, items };
+	if (group.kind !== "parMap") return region;
+	if (group.key) return { expansion: { exact: items.length }, items: [] };
 	const named = mapKeys(group, name, items);
 	if (Array.isArray(named)) return { expansion: { keys: named }, items };
 	s.diagnostics.push(named);

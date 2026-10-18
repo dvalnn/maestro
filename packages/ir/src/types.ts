@@ -68,22 +68,41 @@ export type AssertNode = NodeBase & {
 
 type GroupBase = NodeBase & {
 	inner: Ports;
-	/** Result name to body node id. `seq` and `loop` take exactly one in IR 1.0. */
+	/**
+	 * Result name to body node id. A group with one member delivers that member's outputs, with several a record by
+	 * result name. `parMap` and `map` may have several, `fold` exactly `first` and `step`, and the others exactly one in
+	 * IR 1.0.
+	 */
 	members: Record<string, string>;
 	cardinality: Cardinality;
 };
 
-export type MapNode = GroupBase & {
-	kind: "map";
-	items?: unknown[];
-	key?: WorkerRef;
-	onError: "settle" | "propagate";
-};
+/** At a non-`ok` member, `stop` halts the group and `continue` goes on through every item (ADR 0006). */
+export type OnError = "stop" | "continue";
 
-export type SeqNode = GroupBase & {
-	kind: "seq";
-	items?: unknown[];
-	until?: PortRef;
+type ItemsGroup = GroupBase & { items?: unknown[] };
+
+/** An optional worker naming each item, in place of `itemKey` (D-18, ADR 0008). */
+type Keyed = ItemsGroup & { key?: WorkerRef };
+
+export type ParMapNode = Keyed & { kind: "parMap"; onError: OnError };
+
+export type MapNode = ItemsGroup & { kind: "map"; onError: OnError };
+
+/** `cond` is a Bool port of a body node, read on each member as it settles; the first that holds is the result. */
+export type FindNode = ItemsGroup & { kind: "find"; cond: PortRef };
+
+export type ParFindNode = Keyed & { kind: "parFind"; cond: PortRef };
+
+/**
+ * Members `first`, made from the first item, and `step`, made from each later item and the accumulator, the previous
+ * iteration's member. `first` lists the body nodes performed on the first item in place of the rest of the body.
+ */
+export type FoldNode = ItemsGroup & {
+	kind: "fold";
+	members: { first: string; step: string };
+	first: string[];
+	tolerate?: Tolerate;
 };
 
 /**
@@ -98,7 +117,13 @@ export type LoopNode = GroupBase & {
 	tolerate?: Tolerate;
 };
 
-export type GroupNode = MapNode | SeqNode | LoopNode;
+export type GroupNode =
+	| ParMapNode
+	| MapNode
+	| FindNode
+	| ParFindNode
+	| FoldNode
+	| LoopNode;
 
 /** A node whose kind a host registers, namespaced as `<host>.<kind>`. */
 export type HostNode = NodeBase & {

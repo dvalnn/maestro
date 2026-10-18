@@ -153,7 +153,18 @@
 				"id": { "$ref": "#/$defs/id" },
 				"kind": {
 					"anyOf": [
-						{ "enum": ["code", "assert", "map", "seq", "loop"] },
+						{
+							"enum": [
+								"code",
+								"assert",
+								"parMap",
+								"map",
+								"find",
+								"parFind",
+								"fold",
+								"loop"
+							]
+						},
 						{
 							"description": "A host kind, namespaced as <host>.<kind>.",
 							"$ref": "#/$defs/qualifiedName"
@@ -193,12 +204,24 @@
 					"then": { "$ref": "#/$defs/assertNode" }
 				},
 				{
+					"if": { "properties": { "kind": { "const": "parMap" } } },
+					"then": { "$ref": "#/$defs/parMapNode" }
+				},
+				{
 					"if": { "properties": { "kind": { "const": "map" } } },
 					"then": { "$ref": "#/$defs/mapNode" }
 				},
 				{
-					"if": { "properties": { "kind": { "const": "seq" } } },
-					"then": { "$ref": "#/$defs/seqNode" }
+					"if": { "properties": { "kind": { "const": "find" } } },
+					"then": { "$ref": "#/$defs/findNode" }
+				},
+				{
+					"if": { "properties": { "kind": { "const": "parFind" } } },
+					"then": { "$ref": "#/$defs/parFindNode" }
+				},
+				{
+					"if": { "properties": { "kind": { "const": "fold" } } },
+					"then": { "$ref": "#/$defs/foldNode" }
 				},
 				{
 					"if": { "properties": { "kind": { "const": "loop" } } },
@@ -247,20 +270,59 @@
 				"cardinality": { "$ref": "#/$defs/cardinality" }
 			}
 		},
-		"mapNode": {
+		"parMapNode": {
 			"$ref": "#/$defs/group",
 			"required": ["onError"],
 			"properties": {
 				"items": { "type": "array" },
 				"key": { "$ref": "#/$defs/workerRef" },
-				"onError": { "enum": ["settle", "propagate"] }
+				"onError": { "$ref": "#/$defs/onError" }
 			}
 		},
-		"seqNode": {
+		"mapNode": {
 			"$ref": "#/$defs/group",
+			"required": ["onError"],
 			"properties": {
 				"items": { "type": "array" },
-				"until": { "$ref": "#/$defs/portRef" }
+				"onError": { "$ref": "#/$defs/onError" }
+			}
+		},
+		"onError": {
+			"description": "At a non-ok member, stop halts the group and continue runs every item.",
+			"enum": ["stop", "continue"]
+		},
+		"findNode": {
+			"$ref": "#/$defs/group",
+			"required": ["cond"],
+			"properties": {
+				"items": { "type": "array" },
+				"cond": {
+					"description": "A Bool port of a body node, read on each member as it settles. The first member it holds on is the result.",
+					"$ref": "#/$defs/portRef"
+				}
+			}
+		},
+		"parFindNode": {
+			"$ref": "#/$defs/findNode",
+			"properties": { "key": { "$ref": "#/$defs/workerRef" } }
+		},
+		"foldNode": {
+			"$ref": "#/$defs/group",
+			"required": ["first"],
+			"properties": {
+				"items": { "type": "array" },
+				"members": {
+					"description": "first: made from the first item. step: made from each later item and the accumulator.",
+					"required": ["first", "step"],
+					"maxProperties": 2
+				},
+				"first": {
+					"description": "The body nodes performed on the first item in place of the rest of the body.",
+					"type": "array",
+					"minItems": 1,
+					"items": { "$ref": "#/$defs/id" }
+				},
+				"tolerate": { "$ref": "#/$defs/tolerate" }
 			}
 		},
 		"loopNode": {

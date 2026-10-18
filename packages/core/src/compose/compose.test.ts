@@ -57,7 +57,7 @@ describe("compose", () => {
 			"each/work",
 			{ upTo: 4 },
 		],
-		["fanout.json", sdkBuilt, { upTo: 20 }, "map/task", { exact: 2 }],
+		["fanout.json", sdkBuilt, { upTo: 20 }, "parMap/task", { exact: 2 }],
 	])("bounds %s", async (file, load, instances, node, count) => {
 		const { bounds } = await planOf(await load(file));
 		expect(bounds.instances).toEqual(instances);

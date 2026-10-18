@@ -495,7 +495,7 @@ export async function openFile(file: string): Promise<Bundle> {
 	);
 }
 
-/** `ir` with the `codeHash` of each code node and each `map` key function replaced by its current one. */
+/** `ir` with the `codeHash` of each code node and each key function replaced by its current one. */
 export async function withCurrentHashes(
 	ir: Ir,
 	codeHash: CodeHash,

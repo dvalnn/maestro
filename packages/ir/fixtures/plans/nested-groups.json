@@ -15,12 +15,12 @@
 		"nodes": [
 			{
 				"id": "angles",
-				"kind": "map",
+				"kind": "parMap",
 				"items": ["wide", "deep"],
 				"cardinality": {
 					"exact": 2
 				},
-				"onError": "settle",
+				"onError": "continue",
 				"inner": {
 					"item": {
 						"type": "string"

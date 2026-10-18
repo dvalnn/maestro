@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import Ajv2020 from "ajv/dist/2020";
 import {
+	collects,
 	type Ir,
 	type JsonSchema,
 	type Outcome,
@@ -60,7 +61,7 @@ const fixturesDir = `${import.meta.dir}/../fixtures`;
 /** Map `results` ports and the inputs `collect` edges feed: each holds a list of Settled. */
 function settledLists(ir: Ir): JsonSchema[] {
 	const results = ir.nodes.flatMap((n) =>
-		n.kind === "map" && n.out?.results ? [n.out.results] : [],
+		collects(n) && n.out?.results ? [n.out.results] : [],
 	);
 	const collected = ir.edges.flatMap((e) => {
 		const port =
@@ -83,6 +84,6 @@ test.each(readdirSync(fixturesDir).filter((f) => f.endsWith(".json")))(
 			items: settledSchema({ type: "object" }),
 		};
 		for (const schema of lists) expect(schema).toEqual(settledList);
-		expect(lists.length > 0).toBe(ir.nodes.some((n) => n.kind === "map"));
+		expect(lists.length > 0).toBe(ir.nodes.some(collects));
 	},
 );

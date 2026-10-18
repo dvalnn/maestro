@@ -48,11 +48,11 @@ const golden = async (name: string) => {
 	return parsed.ir;
 };
 
-/** Every worker reference in `ir`: each code node's worker and each map's key function. */
+/** Every worker reference in `ir`: each code node's worker and each parMap's key function. */
 const refsOf = (ir: Ir): WorkerRef[] =>
 	ir.nodes.flatMap((n) => {
 		if (n.kind === "code") return [n.worker];
-		return n.kind === "map" && n.key ? [n.key] : [];
+		return n.kind === "parMap" && n.key ? [n.key] : [];
 	});
 
 const workerOf = (ir: Ir, id: string) => {

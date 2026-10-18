@@ -5,6 +5,8 @@ import {
 	boundOf,
 	type CodeNode,
 	type Facts,
+	type FindNode,
+	type FoldNode,
 	firstDuplicate,
 	formatExpansion,
 	formatInstance,
@@ -23,12 +25,13 @@ import {
 	type NodeInstance,
 	type Outcome,
 	outputValue,
+	type ParFindNode,
+	type ParMapNode,
 	type PortRef,
-	type SeqNode,
 	type Settled,
-	startNodes,
 	TS_RUNTIME,
 	tolerates,
+	upstreamIn,
 	worstOutcome,
 } from "@maestro/ir";
 import type { Composed } from "../config";
@@ -40,13 +43,7 @@ import {
 } from "../host";
 import type { Inputs, LoadCode } from "../node";
 import { validator } from "../ports";
-import {
-	instanceKey,
-	kindLookup,
-	loadFunction,
-	messageOf,
-	unreadableReason,
-} from "../shared";
+import { instanceKey, kindLookup, loadFunction, messageOf } from "../shared";
 import {
 	type ConcertDirs,
 	concertDirs,
@@ -381,7 +378,7 @@ async function settleNode(c: Live, node: IrNode, frame: Frame): Promise<State> {
 	const stop =
 		haltOf(frame) ??
 		gate(c, node, frame, sources) ??
-		unreadable(c, node, frame, sources);
+		unproduced(c, node, frame, sources);
 	if (stop) return settle(c, instance, stop);
 	const inputs = gather(c, node, frame, sources);
 	const mismatch = c.kit.check(node.in, inputs, "input");
@@ -518,10 +515,10 @@ function blocks(
 }
 
 /**
- * `failed` when `node` reads a declared output of an upstream that rejected without outputs, naming the first such
- * upstream and port (ADR 0008). A fan-in node takes that upstream `Settled` instead.
+ * `skipped` when `node` reads a declared output of an upstream that rejected without outputs, naming the first such
+ * upstream as the cause (ADR 0008). A fan-in node takes that upstream `Settled` instead.
  */
-function unreadable(
+function unproduced(
 	c: Live,
 	node: IrNode,
 	frame: Frame,
@@ -531,28 +528,28 @@ function unreadable(
 		if (edge.kind === "control" || (edge.kind === "data" && isFanIn(node)))
 			continue;
 		const source = sources.get(edge.from.node) ?? carriedBy(c, frame, edge);
-		const failure = source && unreadablePort(c, source, edge.from.port ?? "");
-		if (failure) return failure;
+		const port = edge.from.port ?? "";
+		if (source && lacks(c, source, port))
+			return {
+				outcome: "skipped",
+				reason: `'${shown(c, source)}' rejected without its '${port}'`,
+				cause: source,
+			};
 	}
 }
 
-/** `failed` when output `port` of `state` cannot be read, as `unreadableReason` rules. */
-function unreadablePort(
-	c: Live,
-	state: State,
-	port: string,
-): Ending | undefined {
-	const out = c.index.nodes.get(state.node)?.out;
-	const reason = unreadableReason(shown(c, state), state, out, port);
-	return reason === undefined ? undefined : { outcome: "failed", reason };
-}
+/** Whether `state` rejected without outputs, though its node's `out` declares `port`. */
+const lacks = (c: Live, state: State, port: string) =>
+	state.outcome === "rejected" &&
+	state.outputs === undefined &&
+	Object.hasOwn(c.index.nodes.get(state.node)?.out ?? {}, port);
 
-/** The member a `loop` state port that `edge` reads carries over from the previous iteration, if any. */
+/** The member a `loop` or `fold` state port that `edge` reads carries over from the previous iteration, if any. */
 function carriedBy(c: Live, frame: Frame, edge: IrEdge): State | undefined {
 	const group = c.index.nodes.get(edge.from.node);
 	const port = edge.from.port ?? "";
-	if (group?.kind !== "loop" || !Object.hasOwn(group.out ?? {}, port))
-		return undefined;
+	const carrying = group?.kind === "loop" || group?.kind === "fold";
+	if (!carrying || !Object.hasOwn(group.out ?? {}, port)) return undefined;
 	for (let at: Frame | undefined = frame; at; at = at.parent)
 		if (at.group === group.id) return at.carried;
 }
@@ -733,19 +730,26 @@ async function group(
 	sources: ReadonlyMap<string, State>,
 ): Promise<Ending> {
 	start(c, instance, Date.now());
-	const ending =
-		node.kind === "map"
-			? await mapGroup(c, node, frame, instance, inputs)
-			: await serial(
-					c,
-					node,
-					frame,
-					instance,
-					node.kind === "loop"
-						? firstState(c, node, sources, inputs)
-						: { outcome: "ok", outputs: inputs },
-				);
+	const ending = await groupEnding(c, node, frame, instance, inputs, sources);
 	return haltOf(frame) ?? ending;
+}
+
+function groupEnding(
+	c: Live,
+	node: GroupNode,
+	frame: Frame,
+	instance: NodeInstance,
+	inputs: Inputs,
+	sources: ReadonlyMap<string, State>,
+): Promise<Ending> {
+	if (node.kind === "parMap" || node.kind === "parFind")
+		return parallel(c, node, frame, instance, inputs);
+	if (node.kind === "map") return inOrder(c, node, frame, instance, inputs);
+	const first: Ending =
+		node.kind === "loop"
+			? firstState(c, node, sources, inputs)
+			: { outcome: "ok", outputs: inputs };
+	return serial(c, node, frame, instance, first);
 }
 
 /**
@@ -784,10 +788,10 @@ const childFrame = (
 	states: new Map(),
 });
 
-/** A `map` or `seq`'s items, or why they cannot be expanded. */
+/** A group's items, or why they cannot be expanded. */
 function itemsOf(
 	c: Live,
-	node: MapNode | SeqNode,
+	node: Exclude<GroupNode, LoopNode>,
 	instance: NodeInstance,
 	inputs: Inputs,
 ): unknown[] | Settling {
@@ -807,17 +811,25 @@ function itemsOf(
 	return items;
 }
 
+type Parallel = ParMapNode | ParFindNode;
+
+/** How a group that takes its result from a member ends over no items. */
+const noItems = (c: Live, node: GroupNode, instance: NodeInstance): Ending => ({
+	outcome: "skipped",
+	reason: `${node.kind} '${shown(c, instance)}' has no items`,
+});
+
 /**
- * The item keys of a `map` (D-18), each from its key function when it has one, sanitized by `itemKey`, or why they
- * cannot name its members: a throwing key function, or two items keyed alike.
+ * The item keys of a `parMap` or `parFind` (D-18), each from its key function when it has one, sanitized by
+ * `itemKey`, or why they cannot name its members: a throwing key function, or two items keyed alike.
  */
 async function keysOf(
 	c: Live,
-	node: MapNode,
+	node: Parallel,
 	instance: NodeInstance,
 	items: unknown[],
 ): Promise<string[] | Settling> {
-	const name = `map '${shown(c, instance)}'`;
+	const name = `${node.kind} '${shown(c, instance)}'`;
 	let named = items;
 	try {
 		const key = node.key && (await loadFunction(c.loadCode, node.key));
@@ -831,18 +843,22 @@ async function keysOf(
 	const keys = named.map((k, i) => itemKey(k, i));
 	const dup = firstDuplicate(keys);
 	if (!dup) return keys;
-	const fix = node.key
-		? "Make its key function return a unique key per item"
-		: "Give the map a key function that returns a unique key per item";
-	const reason = `${name} has items ${dup.first} and ${dup.second} keyed '${dup.key}'. ${fix}`;
+	const reason = `${name} has items ${dup.first} and ${dup.second} keyed '${dup.key}'. ${keyFix(node)}`;
 	return { outcome: "failed", reason };
 }
 
-/** A `map` member's `Settled` result, a record by result name, and the entry whose outcome it takes (ADR 0006). */
-async function memberOf(
-	node: MapNode,
-	frame: Frame,
-): Promise<{ settled: Settled<Record<string, unknown>>; state: State }> {
+const keyFix = (node: Parallel) =>
+	node.key
+		? "Make its key function return a unique key per item"
+		: `Give the ${node.kind} a key function that returns a unique key per item`;
+
+type Member = { settled: Settled<unknown>; state: State };
+
+/**
+ * A member's `Settled` value, its one result's outputs or a record of them by result name, and the entry whose
+ * outcome it takes (ADR 0006).
+ */
+async function memberOf(node: GroupNode, frame: Frame): Promise<Member> {
 	const entries = await Promise.all(
 		Object.entries(node.members).map(
 			async ([name, id]) => [name, await stateIn(frame, id)] as const,
@@ -850,18 +866,98 @@ async function memberOf(
 	);
 	const worst = worstOutcome(entries.map(([, s]) => s.outcome));
 	const [, state] = entries.find(([, s]) => s.outcome === worst) ?? [];
-	if (!state) throw new Error(`map '${node.id}' has no members`);
-	const value = Object.fromEntries(entries.map(([n, s]) => [n, s.outputs]));
+	if (!state) throw new Error(`${node.kind} '${node.id}' has no members`);
+	const value =
+		entries.length === 1
+			? state.outputs
+			: Object.fromEntries(entries.map(([n, s]) => [n, s.outputs]));
 	const complete = entries.every(([, s]) => s.outputs !== undefined);
 	return { settled: settledOf(state, complete, value), state };
 }
 
 /**
- * A `map`: one body instance per item, in parallel. With `settle` it is `ok` and its `results` hold each member
- * settled. With `propagate` the first member to settle non-ok halts the others as `skipped`, and the map takes the
- * worst member outcome and the first such member's reason (ADR 0006).
+ * A `parMap` or `parFind`: one body instance per item, all at once. Once a member ends the group, the others are
+ * halted as `skipped` (ADR 0006): with `stop`, a parMap's first member to settle non-`ok`; a parFind's first member to
+ * settle failed or meeting `cond`.
  */
-async function mapGroup(
+async function parallel(
+	c: Live,
+	node: Parallel,
+	frame: Frame,
+	instance: NodeInstance,
+	inputs: Inputs,
+): Promise<Ending> {
+	const items = itemsOf(c, node, instance, inputs);
+	if (!Array.isArray(items)) return items;
+	if (node.kind === "parFind" && items.length === 0)
+		return noItems(c, node, instance);
+	const keys = await keysOf(c, node, instance, items);
+	if (!Array.isArray(keys)) return keys;
+	const frames = keys.map((key, i) =>
+		childFrame(frame, node.id, key, { item: items[i] }),
+	);
+	let ended: Ending | undefined;
+	const members = await Promise.all(
+		frames.map(async (member) => {
+			const body = startFrame(c, c.index.body(node.id), member);
+			const found = await memberOf(node, member);
+			const ends = await endsGroup(node, member, found.state);
+			if (ends && !ended) {
+				ended = ends;
+				await haltOthers(
+					c,
+					frames,
+					member,
+					cancelled(c, node, found.state, ends),
+				);
+			}
+			await body;
+			return found;
+		}),
+	);
+	if (node.kind === "parMap") return collectedEnding(node, members);
+	return ended ?? endingOf(lastSettled(members));
+}
+
+/**
+ * How a member that settled as `state` in `frame` ends its group, or nothing when it does not:
+ * - a parMap with `stop`, at a non-`ok` member;
+ * - a parFind, as `found` reads its `cond`.
+ */
+async function endsGroup(
+	node: Parallel,
+	frame: Frame,
+	state: State,
+): Promise<Ending | undefined> {
+	if (node.kind === "parFind") return found(node, frame, state);
+	return node.onError === "stop" && state.outcome !== "ok"
+		? endingOf(state)
+		: undefined;
+}
+
+/**
+ * How a `find` or `parFind` ends on the member that settled as `last` in `frame`, or nothing when it goes on:
+ * - `failed` when the member or the `cond` node failed;
+ * - as `last` when `cond` holds.
+ */
+async function found(
+	node: FindNode | ParFindNode,
+	frame: Frame,
+	last: State,
+): Promise<Ending | undefined> {
+	const read = await stateIn(frame, node.cond.node);
+	const broken = [last, read].find((s) => s.outcome === "failed");
+	if (broken) return endingOf(broken);
+	return holds(read, node.cond.port) ? endingOf(last) : undefined;
+}
+
+const lastSettled = (members: readonly Member[]) =>
+	members.map((m) => m.state).toSorted((a, b) => b.order - a.order)[0] as State;
+
+/**
+ * A `map`: one body instance per item, in order. With `stop` it starts no item after a non-`ok` member.
+ */
+async function inOrder(
 	c: Live,
 	node: MapNode,
 	frame: Frame,
@@ -870,33 +966,29 @@ async function mapGroup(
 ): Promise<Ending> {
 	const items = itemsOf(c, node, instance, inputs);
 	if (!Array.isArray(items)) return items;
-	const keys = await keysOf(c, node, instance, items);
-	if (!Array.isArray(keys)) return keys;
-	const frames = keys.map((key, i) =>
-		childFrame(frame, node.id, key, { item: items[i] }),
-	);
-	let halting = false;
-	const members = await Promise.all(
-		frames.map(async (member) => {
-			const body = startFrame(c, c.index.body(node.id), member);
-			const [settled] = await Promise.all([
-				memberOf(node, member).then(async (found) => {
-					const failing = found.state.outcome !== "ok";
-					if (node.onError === "propagate" && failing && !halting) {
-						halting = true;
-						await haltOthers(c, frames, member, found.state);
-					}
-					return found;
-				}),
-				body,
-			]);
-			return settled;
-		}),
-	);
+	const members: Member[] = [];
+	for (let i = 0; i < items.length && !haltOf(frame); i++) {
+		const f = childFrame(frame, node.id, String(i), { item: items[i] });
+		await startFrame(c, c.index.body(node.id), f);
+		const member = await memberOf(node, f);
+		members.push(member);
+		if (node.onError === "stop" && member.state.outcome !== "ok") break;
+	}
+	return collectedEnding(node, members);
+}
+
+/**
+ * A `parMap` or `map`'s ending over its `members`, its `results` holding each settled. With `continue` it is `ok`.
+ * With `stop` it takes the worst member outcome and the reason of the first such member (ADR 0006).
+ */
+function collectedEnding(
+	node: ParMapNode | MapNode,
+	members: readonly Member[],
+): Ending {
 	const results = members.map((m) => m.settled);
 	const worst = worstOutcome(results.map((r) => r.outcome));
 	const first = members.find((m) => m.settled.outcome === worst)?.state;
-	if (node.onError === "settle" || !first || first.outcome === "ok")
+	if (node.onError === "continue" || !first || first.outcome === "ok")
 		return { outcome: "ok", outputs: { results } };
 	return {
 		outcome: worst,
@@ -906,35 +998,52 @@ async function mapGroup(
 	};
 }
 
-/** Halts every member frame but `member`, whose non-`ok` `state` cancels them as `skipped` (ADR 0006). */
+/**
+ * Why the members of `node` are cancelled when the one that settled as `state` ends it as `ending`:
+ * - a parFind's member that met its `cond`;
+ * - otherwise the instance that settled as the group ends.
+ */
+function cancelled(
+	c: Live,
+	node: Parallel,
+	state: State,
+	ending: Ending,
+): string {
+	const by = shown(c, ending.cause ?? state);
+	return node.kind === "parFind" && ending.outcome !== "failed"
+		? `cancelled: ${by} met the condition`
+		: `cancelled: ${by} ${ending.outcome}`;
+}
+
+/** Halts every member frame but `member`, cancelling them as `skipped` for `reason` (ADR 0006). */
 async function haltOthers(
 	c: Live,
 	frames: readonly Frame[],
 	member: Frame,
-	state: State,
+	reason: string,
 ): Promise<void> {
-	const reason = `cancelled: ${shown(c, state)} ${state.outcome}`;
 	for (const other of frames.filter((f) => f !== member))
 		await halt(c.running, other, { outcome: "skipped", reason });
 }
 
+type Serial = FindNode | FoldNode | LoopNode;
+
 /**
- * A `seq` or `loop` entered on `first`, its inputs as outputs: one body instance per item or iteration, in order. A
- * `seq` stops after its last item or at an `until` that holds, a `loop` at its bound, at a member it cannot carry on
- * from, or at a test that does not hold. Each ends with its last state's outcome and outputs: its last member's, or a
- * loop's first state when it takes no step.
+ * A `find`, `fold` or `loop` entered on `first`, its inputs as outputs: one body instance per item or iteration, in
+ * order. A `find` stops after its last item or at a `cond` that holds, a `fold` after its last item, a `loop` at its
+ * bound or at a test that does not hold, and a `fold` or `loop` at a member it cannot carry on from. Each ends with its
+ * last state's outcome and outputs: its last member's, or a loop's first state when it takes no step.
  */
 async function serial(
 	c: Live,
-	node: SeqNode | LoopNode,
+	node: Serial,
 	frame: Frame,
 	instance: NodeInstance,
 	first: Ending,
 ): Promise<Ending> {
 	const steps = stepsOf(c, node, instance, first);
 	if ("outcome" in steps) return steps;
-	const member = Object.values(node.members)[0] ?? "";
-	const { test, body } = phasesOf(c, node);
+	const phases = phasesOf(c, node);
 	let last: State | undefined;
 	let state = first;
 	for (let i = 0; i < steps.count && !haltOf(frame); i++) {
@@ -945,38 +1054,51 @@ async function serial(
 			steps.inner(i, state),
 			last,
 		);
-		const before = test && (await startTest(c, f, test, state));
+		const before = phases.test && (await startTest(c, f, phases.test, state));
 		if (before) return before;
-		await startFrame(c, body, f);
-		last = await stateIn(f, member);
+		const phase = (i === 0 && phases.first) || phases.step;
+		await startFrame(c, phase.nodes, f);
+		last = await stateIn(f, phase.member);
 		state = endingOf(last);
-		const ending = await endAfter(c, node, f, last);
+		const ending = await endAfter(node, f, last);
 		if (ending) return ending;
 	}
-	if (!last)
-		return {
-			outcome: "skipped",
-			reason: `${node.kind} '${shown(c, instance)}' has no items`,
-		};
 	return state;
 }
 
 type StartTest = { port: PortRef; nodes: IrNode[] };
 
-/** The body of `node` split into a loop's test at `start`, performed first, and the rest. */
+/** Body nodes performed together, and the member whose state they end on. */
+type Phase = { nodes: readonly IrNode[]; member: string };
+
+/**
+ * The body of `node` split into the phases each iteration performs: a loop's test at `start`, performed first; a
+ * fold's `first`, performed on the first item in place of its step; and the step.
+ */
 function phasesOf(
 	c: Live,
-	node: SeqNode | LoopNode,
-): { test?: StartTest; body: readonly IrNode[] } {
+	node: Serial,
+): { test?: StartTest; first?: Phase; step: Phase } {
 	const body = c.index.body(node.id);
-	if (node.kind !== "loop" || node.test.at !== "start") return { body };
-	const first = startNodes(c.index, node);
+	const apart = (phase: ReadonlySet<string>) =>
+		[
+			body.filter((n) => phase.has(n.id)),
+			body.filter((n) => !phase.has(n.id)),
+		] as const;
+	if (node.kind === "fold") {
+		const [once, rest] = apart(new Set(node.first));
+		return {
+			first: { nodes: once, member: node.members.first },
+			step: { nodes: rest, member: node.members.step },
+		};
+	}
+	const member = Object.values(node.members)[0] ?? "";
+	if (node.kind !== "loop" || node.test.at !== "start")
+		return { step: { nodes: body, member } };
+	const [test, rest] = apart(upstreamIn(c.index, node.id, node.test.port.node));
 	return {
-		test: {
-			port: node.test.port,
-			nodes: body.filter((n) => first.has(n.id)),
-		},
-		body: body.filter((n) => !first.has(n.id)),
+		test: { port: node.test.port, nodes: [...test] },
+		step: { nodes: rest, member },
 	};
 }
 
@@ -994,53 +1116,44 @@ async function startTest(
 	if (test.port.node === frame.group)
 		return frame.inner[test.port.port] === true ? undefined : state;
 	await startFrame(c, test.nodes, frame);
-	return loopTest(c, frame, test.port, state);
+	return loopTest(frame, test.port, state);
 }
 
 /**
  * How a loop ends at its test `port` in `frame`, or nothing when the test holds:
- * - `failed` when the test node failed, or its port cannot be read;
- * - as `state` when the port does not read `true`.
+ * - `failed` when the test node failed;
+ * - as `state` when the port does not read `true`, as when the test node rejected without it.
  */
 async function loopTest(
-	c: Live,
 	frame: Frame,
 	port: PortRef,
 	state: Ending,
 ): Promise<Ending | undefined> {
 	const read = await stateIn(frame, port.node);
 	if (read.outcome === "failed") return endingOf(read);
-	const held = holds(c, read, port.port);
-	if (held === true) return undefined;
-	return held === false ? state : held;
+	return holds(read, port.port) ? undefined : state;
 }
 
-/** Whether output `port` of `read` is `true`, or `failed` when it cannot be read. */
-const holds = (c: Live, read: State, port: string): boolean | Ending =>
-	unreadablePort(c, read, port) ??
+/** Whether output `port` of `read` is `true`. */
+const holds = (read: State, port: string) =>
 	outputValue(read, read.outputs, port) === true;
 
 /**
  * How `node` ends after the iteration in `frame` whose member settled `last`, or nothing when it goes on: at a member
- * it cannot carry on from, at a seq's `until` that holds, or as a loop's test at `end` ends it.
+ * it cannot carry on from, at a find's `cond` that holds, or as a loop's test at `end` ends it.
  */
 async function endAfter(
-	c: Live,
-	node: SeqNode | LoopNode,
+	node: Serial,
 	frame: Frame,
 	last: State,
 ): Promise<Ending | undefined> {
 	if (!carries(node, last)) return endingOf(last);
-	if (node.kind === "loop")
-		return node.test.at === "end"
-			? loopTest(c, frame, node.test.port, endingOf(last))
-			: undefined;
-	if (!node.until) return undefined;
-	const held = holds(c, await stateIn(frame, node.until.node), node.until.port);
-	return held === true ? endingOf(last) : held || undefined;
+	if (node.kind === "find") return found(node, frame, last);
+	if (node.kind === "loop" && node.test.at === "end")
+		return loopTest(frame, node.test.port, endingOf(last));
 }
 
-/** A member's outcome and outputs as its `seq` or `loop`'s ending. */
+/** A member's outcome and outputs as its group's ending. */
 function endingOf(last: State): Ending {
 	return last.outcome === "ok"
 		? { outcome: "ok", outputs: last.outputs }
@@ -1052,13 +1165,21 @@ function endingOf(last: State): Ending {
 			};
 }
 
+/** The inner ports of a carried `state`: its outputs, `ok`, and `reason` when not `ok`. */
+const stateInner = (state: Ending): Inputs => ({
+	...state.outputs,
+	ok: state.outcome === "ok",
+	...(state.outcome !== "ok" && { reason: state.reason }),
+});
+
 /**
- * How many members a `seq` or `loop` entered on `first` may have, and the inner port values of each given the last state. A loop's state
- * carries its `ok` and `reason` beside its outputs.
+ * How many members `node` entered on `first` may have, and the inner port values of each given the last state, or
+ * how it ends without one: `skipped` with no items. A loop's state, and a fold's after its first item, carry `ok` and
+ * `reason` beside the outputs.
  */
 function stepsOf(
 	c: Live,
-	node: SeqNode | LoopNode,
+	node: Serial,
 	instance: NodeInstance,
 	first: Ending,
 ):
@@ -1070,20 +1191,28 @@ function stepsOf(
 	if (node.kind === "loop")
 		return {
 			count: boundOf(node.cardinality),
-			inner: (index, state) => ({
-				...state.outputs,
-				ok: state.outcome === "ok",
-				...(state.outcome !== "ok" && { reason: state.reason }),
-				index,
-			}),
+			inner: (index, state) => ({ ...stateInner(state), index }),
 		};
 	const items = itemsOf(c, node, instance, first.outputs ?? {});
 	if (!Array.isArray(items)) return items;
-	return { count: items.length, inner: (i) => ({ item: items[i] }) };
+	if (items.length === 0) return noItems(c, node, instance);
+	if (node.kind === "find")
+		return { count: items.length, inner: (i) => ({ item: items[i] }) };
+	return {
+		count: items.length,
+		inner: (index, state) => ({
+			...(index > 0 && stateInner(state)),
+			item: items[index],
+			index,
+		}),
+	};
 }
 
-/** A `seq` goes on whatever its member's outcome. A `loop` carries `ok` state, and `rejected` when tolerated. */
-const carries = (node: SeqNode | LoopNode, last: State) =>
-	node.kind === "seq" ||
+/**
+ * Whether `node` goes on past a member that settled as `last`. A `find` leaves that to `found`. A `fold` or `loop`
+ * carries `ok` state, and `rejected` when tolerated.
+ */
+const carries = (node: Serial, last: State) =>
+	node.kind === "find" ||
 	last.outcome === "ok" ||
 	(last.outcome === "rejected" && node.tolerate === "rejected");

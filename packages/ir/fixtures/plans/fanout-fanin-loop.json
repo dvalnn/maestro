@@ -25,12 +25,12 @@
 		"nodes": [
 			{
 				"id": "topics",
-				"kind": "map",
+				"kind": "parMap",
 				"items": ["alpha", "beta", "gamma"],
 				"cardinality": {
 					"exact": 3
 				},
-				"onError": "settle",
+				"onError": "continue",
 				"inner": {
 					"item": {
 						"type": "string"
@@ -162,13 +162,8 @@
 					"value": {
 						"type": "object",
 						"properties": {
-							"result": {
-								"type": "object",
-								"properties": {
-									"text": {
-										"type": "string"
-									}
-								}
+							"text": {
+								"type": "string"
 							}
 						}
 					}
@@ -284,13 +279,8 @@
 					"value": {
 						"type": "object",
 						"properties": {
-							"result": {
-								"type": "object",
-								"properties": {
-									"text": {
-										"type": "string"
-									}
-								}
+							"text": {
+								"type": "string"
 							}
 						}
 					},
@@ -299,7 +289,7 @@
 					}
 				},
 				"literals": {
-					"path": "result.text"
+					"path": "text"
 				},
 				"out": {
 					"value": {

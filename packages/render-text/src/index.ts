@@ -242,15 +242,19 @@ function wire(graph: GraphIndex, names: Names, edges: readonly Merged[]) {
 	return { forks, joins, lines };
 }
 
-/** A dashed `next` edge from each loop's body result to its header: the state the next iteration starts from. */
+/**
+ * A dashed `next` edge to each loop or fold header from the member the next iteration starts from: a loop's result, a
+ * fold's step.
+ */
 const loopBacks = (plan: Plan, ids: ReadonlyMap<string, string>) =>
-	plan.ir.nodes.flatMap((n) =>
-		n.kind === "loop"
-			? Object.values(n.members).map(
-					(m) => `${ids.get(m)} -.->|${label("next")}| ${ids.get(n.id)}`,
-				)
-			: [],
-	);
+	plan.ir.nodes.flatMap((n) => {
+		if (n.kind !== "loop" && n.kind !== "fold") return [];
+		const carried =
+			n.kind === "fold" ? [n.members.step] : Object.values(n.members);
+		return carried.map(
+			(m) => `${ids.get(m)} -.->|${label("next")}| ${ids.get(n.id)}`,
+		);
+	});
 
 type Diagram = {
 	plan: Plan;
@@ -306,7 +310,7 @@ function bars(d: Diagram, parent: string | undefined, pad: string): string[] {
 }
 
 /**
- * A static Mermaid flowchart of the plan, with start and end markers and a `next` edge closing each loop.
+ * A static Mermaid flowchart of the plan, with start and end markers and a `next` edge closing each loop and fold.
  * The README's "Drawing rules" section holds the drawing rules.
  */
 export function render(plan: Plan): string {

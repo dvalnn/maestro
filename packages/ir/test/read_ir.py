@@ -9,7 +9,7 @@ Usage: python3 read_ir.py <ir.json>
 import json
 import sys
 
-GROUP_KINDS = {"map", "seq", "loop"}
+GROUP_KINDS = {"parMap", "map", "find", "parFind", "fold", "loop"}
 
 
 def main(path):
@@ -37,10 +37,10 @@ def main(path):
         return f"exactly {c['exact']}" if "exact" in c else f"up to {c['upTo']}"
 
     for n in ir["nodes"]:
-        if n["kind"] == "map":
-            print(f"fan-out: map {n['id']}, {bound(n)} members, each {members(n)}")
-        elif n["kind"] == "seq":
-            print(f"escalation: seq {n['id']}, {bound(n)} members, each {members(n)}")
+        if n["kind"] in ("parMap", "map"):
+            print(f"fan-out: {n['kind']} {n['id']}, {bound(n)} members, each {members(n)}")
+        elif n["kind"] in ("find", "parFind", "fold"):
+            print(f"{n['kind']}: {n['id']}, {bound(n)} members, each {members(n)}")
         elif n["kind"] == "loop":
             test = n["test"]
             tested = f", tested at {test['at']} on {test['port']['node']}.{test['port']['port']}"

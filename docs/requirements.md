@@ -55,7 +55,7 @@ Decisions ruled by the project owner during design. Anything not listed here is 
 | D-15 | A run is a **concert**. "Performance" keeps its plain meaning, execution speed.                                                                                                                                                                                                                                                                                                                                              | Leaves "performance" for speed, which is how engineers read it, and completes the theme.                                                                                                                      |
 | D-16 | Build-time values: composition params and composed config are plain values during build, so build code may loop, branch and compute bounds on them. Node outputs and file contents are Refs. A subcomposition takes plain params and Ref ports. A plain value may feed a port, and a Ref never feeds a param.                                                                                                                | The graph stays a deterministic function of params and composed config, and everything else stays checkable before spend.                                                                                     |
 | D-17 | A composition declares one set of typed params, covering CLI inputs and tunables alike. A param's value comes from, highest first: the use site (subcomposition) or the CLI flag (root), then profile, workspace and user YAML, then the default. YAML keys live under the pack id and the composition id. Hosts keep pure-config namespaces.                                                                                | One declaration instead of separate inputs and config. Keeps D-07, since a composition still declares its own typed settings in code.                                                                         |
-| D-18 | `map` items with primitive values are keyed by that value. Other items are keyed by index unless the author gives a key function. Duplicate keys are a compose error, or a failed `map` when a key function or a list known only at perform time gives them.                                                                                                                                                                 | Readable, stable ids in events, `ls` and lane refs.                                                                                                                                                           |
+| D-18 | `parMap` and `parFind` items with primitive values are keyed by that value. Other items are keyed by index unless the author gives a `parMap` or `parFind` a key function. Duplicate keys are a compose error, or a failed group when a key function or a list known only at perform time gives them.                                                                                                                        | Readable, stable ids in events, `ls` and lane refs.                                                                                                                                                           |
 | D-19 | Every composition declares at least one example input set. `compose` uses the first, over every YAML layer and under the flags, and a given flag overrides its own key. `perform` never uses examples.                                                                                                                                                                                                                       | `compose` can validate a bare composition file.                                                                                                                                                               |
 | D-20 | Harness adapters drive coding agents as sandboxed subprocesses speaking each harness's JSON event stream. In-process SDK adapters are a later option for unsandboxed use. pi is the first adapter and Claude Code the second.                                                                                                                                                                                                | An in-process agent cannot be confined by the sandbox, because its tools would run inside the maestro process. See `adr/0001-sandboxed-subprocess-adapters.md`.                                               |
 | D-21 | The coding-agent host vocabulary is final: agent node, role, lane (`fresh`, `fork`, `join`, `read`), target, changeset node, apply node, harness, check node, sandbox.                                                                                                                                                                                                                                                       | Settled by the project owner.                                                                                                                                                                                 |
@@ -125,8 +125,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 
 ### 6.1 Core: graph and engine (CORE)
 
-- **CORE-01 (Must).** The graph model has node kinds `code`, `map`, `seq`, `loop`, `assert` and host kinds, with `when`
-  guards and subcomposition scopes.
+- **CORE-01 (Must).** The graph model has node kinds `code`, `parMap`, `map`, `find`, `parFind`, `fold`, `loop`,
+  `assert` and host kinds, with `when` guards and subcomposition scopes.
 - **CORE-02 (Must).** Ports are typed with schemas that serialize to JSON Schema. Compose type-checks every edge.
 - **CORE-03 (Must).** The IR distinguishes edge kinds `data`, `collect` and `control`. Fan-in is an explicit `collect`
   edge or a reducer node, never inferred.
@@ -190,8 +190,9 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 
 - **SDK-01 (Must).** A TypeScript SDK declares compositions: name, doc, typed params with CLI hints and defaults, and at
   least one example input set (D-19).
-- **SDK-02 (Must).** Constructors exist for code, map, seq, the loops (`loop.while`, `loop.doWhile`), assert,
-  subcomposition use, and for host node kinds contributed by host SDKs.
+- **SDK-02 (Must).** Constructors exist for code, the iteration groups (`iter.parMap`, `iter.map`, `iter.find`,
+  `iter.parFind`, `iter.fold`), the loops (`loop.while`, `loop.doWhile`), assert, subcomposition use, and for host node
+  kinds contributed by host SDKs.
 - **SDK-03 (Must).** `Ref` semantics are enforced: build code cannot branch on a Ref. Lifting combinators (`pick`,
   `map`, `zip`, `when`) cover the common cases, and anything else is a code node. Params and composed config are plain
   values (D-16). The types distinguish Plain from Ref, and coercing a Ref to a boolean or string during build throws.
@@ -208,9 +209,9 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **SDK-10 (May).** SDKs in other languages emit the same IR.
 - **SDK-11 (Must).** Build runs with ambient state frozen: no environment, clock or randomness (CORE-06, D-16).
 - **SDK-12 (Should).** The loader builds twice and compares the IR to catch nondeterministic build code.
-- **SDK-13 (Must).** `map` items are identified by key: the value for primitive items, the index otherwise, or an
-  author-supplied key function. Duplicate keys are a compose error, or a failed `map` when a key function or a list
-  known only at perform time gives them (D-18).
+- **SDK-13 (Must).** `parMap` and `parFind` items are identified by key: the value for primitive items, the index
+  otherwise, or an author-supplied key function. Duplicate keys are a compose error, or a failed group when a key
+  function or a list known only at perform time gives them (D-18).
 
 ### 6.4 IR emitters (IR)
 

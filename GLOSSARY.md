@@ -81,8 +81,15 @@ the engine.
 
 **Node**: A unit of the graph with a stable id and typed ports. Kinds: code, group, assert and host kinds.
 
-**Group node**: A node holding a body that is instantiated several times: `map` (parallel), `seq` (ordered, stops when
-satisfied) or `loop` (a bounded loop carrying state shaped like a node's result, going on while its test holds).
+**Group node**: A node holding a body that is instantiated several times. Kinds:
+
+- `parMap` (one instance per item, all at once) and `map` (in order), which collect every member as `Settled`;
+- `find` (in order, up to the first member meeting a condition) and `parFind` (all at once, the first to meet it wins);
+- `fold` (in order, carrying an accumulator shaped like a node's result from item to item);
+- `loop` (a bounded loop carrying state shaped like a node's result, going on while its test holds).
+
+**On error**: What a `parMap` or `map` does at a member that is not `ok`: `stop` halts the group, `continue` runs every
+item.
 
 **Host node**: A node whose kind is registered by a host. The engine treats it as opaque work.
 
@@ -91,6 +98,10 @@ flow to one node, the explicit fan-in) and `control` (guards, tolerance, orderin
 
 **Status port**: A port every node has, `ok` or `reason`, telling how it settled. A node that reads only status ports of
 a `rejected` upstream starts with no tolerance.
+
+**Missing output**: A declared output an upstream did not produce, as when it rejected without outputs. A node that
+reads it is `skipped` with that upstream as its cause, and a condition that reads it reads not true; it is never a
+crash.
 
 **Reducer**: A named code node marked as fan-in, such as `firstOk` or `okOnly`.
 

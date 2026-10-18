@@ -90,7 +90,7 @@ describe("render", () => {
 		for (const line of [
 			'  subgraph s0["refine"]',
 			'      n3[["loop<br/>0 to 2"]]',
-			'    n0[["map<br/>alpha, beta, gamma"]]',
+			'    n0[["parMap<br/>alpha, beta, gamma"]]',
 			'    n1(["draft<br/>fake.task"])',
 			'  n2[/"pick<br/>fan-in firstOk"/]',
 			'  n0 -->|"item to prompt"| n1',
@@ -106,11 +106,23 @@ describe("render", () => {
 		expect(chart).toContain('  n3 -.->|"next"| n2');
 	});
 
+	test("loops a fold back from its step alone", async () => {
+		const folded = await plan("nested-groups");
+		const polish = folded.ir.nodes.find((n) => n.id === "angles/polish");
+		Object.assign(polish ?? {}, {
+			kind: "fold",
+			members: { first: "angles/draft", step: "angles/polish/step" },
+		});
+		const chart = render(folded);
+		expect(chart).toContain('  n3 -.->|"next"| n2');
+		expect(chart).not.toContain('  n1 -.->|"next"|');
+	});
+
 	test("draws guards and ordering edges dashed, and regions as up to their bound", async () => {
 		const chart = await lines("guards-and-escalation");
 		expect(chart).toContain('  f3 -.->|"when nonEmpty, else skip"| n4');
 		expect(chart).toContain('  n6 -.->|"after, tolerates rejected"| j7');
-		expect(chart).toContain('    n1[["map<br/>up to 4"]]');
+		expect(chart).toContain('    n1[["parMap<br/>up to 4"]]');
 		expect(chart).toContain('  n6{"gate<br/>assert"}');
 		expect(chart).toContain('  n7["summary<br/>code summarize"]');
 		expect(chart).toContain('  n0["plan<br/>code"]');
@@ -161,9 +173,9 @@ describe("render", () => {
 			"": { keys: ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot"] },
 		};
 		expect(render(fanout).split("\n")).toContain(
-			'    n0[["map<br/>alpha, bravo, charlie, delta, echo, fox…"]]',
+			'    n0[["parMap<br/>alpha, bravo, charlie, delta, echo, fox…"]]',
 		);
 		fanout.expansion.topics = { "": { exact: 3 } };
-		expect(render(fanout).split("\n")).toContain('    n0[["map<br/>3"]]');
+		expect(render(fanout).split("\n")).toContain('    n0[["parMap<br/>3"]]');
 	});
 });

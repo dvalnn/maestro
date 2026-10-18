@@ -229,9 +229,11 @@ describe("fork and join", () => {
 		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
 		for (const bad of ["nodot", ".n", "c."])
 			await expect(lanes.fresh("main", bad)).rejects.toThrow(/not a version/);
-		const odd = await lanes.fresh("main", "c1.map[0]/fix..x ~*");
+		const odd = await lanes.fresh("main", "c1.parMap[0]/fix..x ~*");
 		await odd.seal();
-		expect((await lanes.fork("c1.map[0]/fix..x ~*", "c1.n")).dir).toBeString();
+		expect(
+			(await lanes.fork("c1.parMap[0]/fix..x ~*", "c1.n")).dir,
+		).toBeString();
 	});
 
 	test("an unknown or unsealed version cannot be forked or joined", async () => {

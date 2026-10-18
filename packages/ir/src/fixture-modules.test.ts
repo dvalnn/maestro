@@ -11,7 +11,7 @@ async function workerRefs(file: string): Promise<[string, WorkerRef][]> {
 	if (!parsed.ok) throw new Error(`${file} is not valid IR`);
 	return parsed.ir.nodes.flatMap((node): [string, WorkerRef][] => {
 		if (node.kind === "code") return [[`${file} ${node.id}`, node.worker]];
-		if (node.kind === "map" && node.key)
+		if (node.kind === "parMap" && node.key)
 			return [[`${file} ${node.id} key`, node.key]];
 		return [];
 	});

@@ -2,12 +2,15 @@ import type { Outcome } from "./outcome";
 import type {
 	Cardinality,
 	Diagnostic,
+	FoldNode,
 	GroupNode,
 	Ir,
 	IrEdge,
 	IrNode,
 	JsonSchema,
 	LoopNode,
+	MapNode,
+	ParMapNode,
 	PortRef,
 	Ports,
 	Scope,
@@ -35,8 +38,22 @@ export function outputValue(
 	return outputs?.[port];
 }
 
+const GROUP_KINDS: ReadonlySet<string> = new Set([
+	"parMap",
+	"map",
+	"find",
+	"parFind",
+	"fold",
+	"loop",
+] satisfies GroupNode["kind"][]);
+
 export const isGroup = (n: IrNode | undefined): n is GroupNode =>
-	n?.kind === "map" || n?.kind === "seq" || n?.kind === "loop";
+	n !== undefined && GROUP_KINDS.has(n.kind);
+
+/** A group whose `results` hold each member settled. */
+export const collects = <N extends { kind: string }>(
+	n: N | undefined,
+): n is N & (MapNode | ParMapNode) => n?.kind === "parMap" || n?.kind === "map";
 
 /** The most iterations a group may have. */
 export const boundOf = (c: Cardinality) => ("exact" in c ? c.exact : c.upTo);
@@ -56,9 +73,12 @@ export const tolerates = (node: IrNode, edges: readonly IrEdge[]) =>
 /** The ports a loop's state carries beside its member's outputs: the status ports, and the iteration's index. */
 export const LOOP_STATE = ["ok", "reason", "index"] as const;
 
+/** The ports a fold's accumulator carries beside its member's outputs: a loop's, and the item. */
+export const FOLD_STATE = [...LOOP_STATE, "item"] as const;
+
 /**
- * `ir` with each worker reference, a code node's `worker` and a map's `key` (ADR 0008), replaced by what `change` gives
- * for it. `change` gets the id of the node naming the reference, once per reference, in node order.
+ * `ir` with each worker reference, a code node's `worker` and a group's `key` (ADR 0008), replaced by what `change`
+ * gives for it. `change` gets the id of the node naming the reference, once per reference, in node order.
  */
 export function mapWorkers(
 	ir: Ir,
@@ -67,7 +87,7 @@ export function mapWorkers(
 	const nodes = ir.nodes.map((node): IrNode => {
 		if (node.kind === "code")
 			return { ...node, worker: change(node.worker, node.id) };
-		if (node.kind === "map" && node.key)
+		if ((node.kind === "parMap" || node.kind === "parFind") && node.key)
 			return { ...node, key: change(node.key, node.id) };
 		return node;
 	});
@@ -133,14 +153,15 @@ export function indexGraph(ir: Ir): GraphIndex {
 }
 
 /**
- * The body nodes performed first in each iteration of a loop tested at `start`: its test node and the body nodes that
- * node reads, transitively, a group reading what its descendants read.
+ * `node` of the body of `group` and the body nodes it reads, transitively, a group reading what its descendants read:
+ * a loop's test at `start`, performed apart from the rest of the body.
  */
-export function startNodes(
+export function upstreamIn(
 	index: Pick<GraphIndex, "nodes" | "body" | "edgesInto">,
-	loop: LoopNode,
+	group: string,
+	node: string,
 ): ReadonlySet<string> {
-	const body = new Set(index.body(loop.id).map((n) => n.id));
+	const body = new Set(index.body(group).map((n) => n.id));
 	const found = new Set<string>();
 	const visit = (id: string) => {
 		if (!body.has(id) || found.has(id)) return;
@@ -151,7 +172,7 @@ export function startNodes(
 		for (const n of [id, ...within])
 			for (const e of index.edgesInto(n)) visit(e.from.node);
 	};
-	visit(loop.test.port.node);
+	visit(node);
 	return found;
 }
 
@@ -244,7 +265,17 @@ function checkerOf(ir: Ir) {
 	};
 }
 
-// Nodes and scopes share one id space, and both may sit inside a scope or a group.
+/** Whether `id` is a phase of a fold, `<fold>/first` or `<fold>/step`, under which the fold's body nodes may sit. */
+function isFoldPhase(id: string, nodes: ReadonlyMap<string, IrNode>) {
+	const fold = parentOf(id);
+	const phase = id.slice((fold?.length ?? -1) + 1);
+	return (
+		nodes.get(fold ?? "")?.kind === "fold" &&
+		(phase === "first" || phase === "step")
+	);
+}
+
+// Nodes and scopes share one id space, and both may sit inside a scope, a group or a fold's phase.
 function checkIds(ir: Ir, { nodes, scopes, report }: Graph) {
 	const entries = [
 		...ir.nodes.map((n, i) => ({ id: n.id, path: `/nodes/${i}` })),
@@ -264,13 +295,14 @@ function checkIds(ir: Ir, { nodes, scopes, report }: Graph) {
 		if (
 			parent !== undefined &&
 			!scopes.has(parent) &&
-			!isGroup(nodes.get(parent))
+			!isGroup(nodes.get(parent)) &&
+			!isFoldPhase(parent, nodes)
 		)
 			report(
 				"IR.graph",
 				path,
 				`id '${id}' sits under '${parent}', which is not a scope or a group node`,
-				`Declare '${parent}' as a scope or as a map, seq or loop node, or move '${id}' out of it`,
+				`Declare '${parent}' as a scope or a group node, or move '${id}' out of it`,
 			);
 	}
 }
@@ -341,7 +373,7 @@ function checkEdgePorts(
 	feed(to.id, e.to.port);
 }
 
-/** Fan-in is explicit: a map's results leave it only through collect edges, and collect edges only carry them. */
+/** Fan-in is explicit: a group's results leave it only through collect edges, and collect edges only carry them. */
 function checkFanIn(
 	e: IrEdge,
 	from: IrNode,
@@ -349,20 +381,20 @@ function checkFanIn(
 	path: string,
 	report: Report,
 ) {
-	const isResults = from.kind === "map" && !inner && e.from.port === "results";
+	const isResults = collects(from) && !inner && e.from.port === "results";
 	if (e.kind === "collect" && !isResults) {
 		report(
 			"IR.graph",
 			path,
-			`collect edge from '${from.id}' must start at a map node's 'results' port`,
-			`Start the edge at the 'results' port of a map node, or make it a data edge`,
+			`collect edge from '${from.id}' must start at a parMap or map node's 'results' port`,
+			`Start the edge at the 'results' port of a parMap or map node, or make it a data edge`,
 		);
 	}
 	if (e.kind !== "collect" && isResults) {
 		report(
 			"IR.graph",
 			path,
-			`results of map '${from.id}' must leave it through a collect edge`,
+			`results of ${from.kind} '${from.id}' must leave it through a collect edge`,
 			`Set the edge kind to "collect"`,
 		);
 	}
@@ -439,14 +471,18 @@ function checkGroup(g: GroupNode, path: string, graph: Graph) {
 	checkCardinality(g, path, graph.report);
 }
 
-/** Checks that members, `until` and `test` sit in the group's own body. Returns the member when there is exactly one. */
+/**
+ * Checks that members, `cond` and `test` sit in the group's own body. Returns the member whose outputs the group
+ * mirrors, when there is one.
+ */
 function checkBody(g: GroupNode, path: string, graph: Graph) {
 	const members = Object.values(g.members).map((id) =>
 		bodyNode(g, id, "member", path, graph),
 	);
-	// A seq or loop mirrors its member's ports, which needs exactly one member. A map's
-	// member results are records keyed by result name, so it may have several.
-	if (g.kind !== "map" && members.length !== 1) {
+	if (g.kind === "fold") return checkFold(g, path, graph);
+	// A group that mirrors its member's ports needs exactly one member. A collecting group's member results are
+	// records keyed by result name, so it may have several.
+	if (!collects(g) && members.length !== 1) {
 		graph.report(
 			"IR.graph",
 			path,
@@ -454,10 +490,72 @@ function checkBody(g: GroupNode, path: string, graph: Graph) {
 			`Keep exactly one entry in members of '${g.id}'`,
 		);
 	}
-	if (g.kind === "seq" && g.until) boolPort(g, g.until, "until", path, graph);
+	if (g.kind === "find" || g.kind === "parFind")
+		boolPort(g, g.cond, "cond", path, graph);
 	const member = members.length === 1 ? members[0] : undefined;
 	if (g.kind === "loop") checkTest(g, member, path, graph);
 	return member;
+}
+
+/**
+ * Checks the two phases of fold `g`: its `first` nodes, made from the first item, and the rest of its body, made from
+ * each later item and the accumulator. Returns `step`, whose outputs the fold mirrors.
+ */
+function checkFold(g: FoldNode, path: string, graph: Graph) {
+	const once = g.first.map((id) => bodyNode(g, id, "first", path, graph));
+	const first = graph.nodes.get(g.members.first);
+	const step = graph.nodes.get(g.members.step);
+	if (!first || !step || once.includes(undefined)) return undefined;
+	const inFirst = (id: string) =>
+		g.first.some((f) => id === f || id.startsWith(`${f}/`));
+	if (!g.first.includes(first.id) || inFirst(step.id))
+		graph.report(
+			"IR.graph",
+			path,
+			`first of fold '${g.id}' must list its member '${first.id}' and not its member '${step.id}'`,
+			`List in first of '${g.id}' the body nodes made from the first item`,
+		);
+	const crossing = g.first
+		.flatMap((id) => graph.edgesFrom(id))
+		.find((e) => e.to.node.startsWith(`${g.id}/`) && !inFirst(e.to.node));
+	if (crossing)
+		graph.report(
+			"IR.graph",
+			path,
+			`'${crossing.to.node}' of fold '${g.id}' reads '${crossing.from.node}' of its first phase, which takes a different item`,
+			`Build the step of '${g.id}' from the accumulator and the item alone`,
+		);
+	checkFirstReads(g, inFirst, path, graph);
+	if (list(names(first.out)) !== list(names(step.out)))
+		graph.report(
+			"IR.graph",
+			path,
+			`members of fold '${g.id}' must declare the same out ports, got first ${list(names(first.out))} and step ${list(names(step.out))}`,
+			`Give '${first.id}' and '${step.id}' the same out ports`,
+		);
+	return step;
+}
+
+/** Checks that the `first` phase of fold `g` reads only the item and the index, as no accumulator exists yet. */
+function checkFirstReads(
+	g: FoldNode,
+	inFirst: (id: string) => boolean,
+	path: string,
+	graph: Graph,
+) {
+	const read = graph
+		.edgesFrom(g.id)
+		.find(
+			(e) =>
+				!["item", "index"].includes(e.from.port ?? "") && inFirst(e.to.node),
+		);
+	if (read)
+		graph.report(
+			"IR.graph",
+			path,
+			`'${read.to.node}' reads '${g.id}.${read.from.port}', but the first phase of fold '${g.id}' has no accumulator`,
+			`Feed '${read.to.node}' from the item, or move it to the step of '${g.id}'`,
+		);
 }
 
 /**
@@ -554,7 +652,7 @@ function checkStartTest(
 	path: string,
 	graph: Graph,
 ) {
-	if (startNodes(graph, g).has(member.id))
+	if (upstreamIn(graph, g.id, g.test.port.node).has(member.id))
 		graph.report(
 			"IR.graph",
 			path,
@@ -588,7 +686,17 @@ function bodyNode(
 	return n;
 }
 
-/** `state` is the member's out ports, which a seq or loop mirrors. */
+/** The ports `g` must declare, given `state`, the out ports of the member it mirrors. */
+function wantedPorts(g: GroupNode, state: string[]) {
+	if (g.kind === "loop")
+		return { in: state, inner: [...state, ...LOOP_STATE], out: state };
+	const items = hasLiteralItems(g) ? [] : ["items"];
+	if (g.kind === "fold")
+		return { in: items, inner: [...state, ...FOLD_STATE], out: state };
+	return { in: items, inner: ["item"], out: collects(g) ? ["results"] : state };
+}
+
+/** `state` is the out ports of the member a group mirrors. */
 function checkGroupPorts(
 	g: GroupNode,
 	state: string[],
@@ -609,31 +717,23 @@ function checkGroupPorts(
 			);
 		}
 	};
-	if (g.kind === "loop") {
-		expect("in", names(g.in), state);
-		expect("inner", names(g.inner), [...state, ...LOOP_STATE]);
-		expect("out", names(g.out), state);
-	} else {
-		expect("in", names(g.in), hasLiteralItems(g) ? [] : ["items"]);
-		expect("inner", names(g.inner), ["item"]);
-		expect("out", names(g.out), g.kind === "map" ? ["results"] : state);
-	}
+	const wanted = wantedPorts(g, state);
+	expect("in", names(g.in), wanted.in);
+	expect("inner", names(g.inner), wanted.inner);
+	expect("out", names(g.out), wanted.out);
 }
 
-// Only a map over literal items has an exact size. Every other group may stop early or
-// depends on a result, so it declares an upper bound, equal to the item count when known.
+// Only a parMap over literal items, or a group over an empty literal list, has an exact size. Every other group may
+// stop early or depends on a result, so it declares an upper bound, equal to the item count when known.
+const literalSize = (kind: string, count: number): Cardinality =>
+	kind === "parMap" || count === 0 ? { exact: count } : { upTo: count };
+
 function checkCardinality(g: GroupNode, path: string, report: Report) {
 	const c = g.cardinality;
-	const literal = hasLiteralItems(g);
 	const count = g.kind === "loop" ? undefined : g.items?.length;
-	const exact = g.kind === "map" && literal;
-	const valid = exact
-		? "exact" in c && c.exact === count
-		: "upTo" in c && (!literal || c.upTo === count);
-	if (valid) return;
-	const wanted = exact
-		? `{ exact: ${count} }`
-		: `{ upTo: ${literal ? count : "N"} }`;
+	const want = count === undefined ? undefined : literalSize(g.kind, count);
+	if (want ? JSON.stringify(c) === JSON.stringify(want) : "upTo" in c) return;
+	const wanted = want ? `{ ${Object.keys(want)[0]}: ${count} }` : "{ upTo: N }";
 	report(
 		"IR.graph",
 		path,

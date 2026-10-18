@@ -59,11 +59,11 @@ test.each<[string, Mutation, string]>([
 		(ir) =>
 			(ir.nodes[0] = {
 				id: "g",
-				kind: "map",
+				kind: "parMap",
 				inner: {},
 				members: {},
 				cardinality: { upTo: 1 },
-				onError: "settle",
+				onError: "continue",
 			}),
 		"/nodes/0/members",
 	],
@@ -132,8 +132,8 @@ test.each<[string, Mutation, string, string, string]>([
 		"enum lists the allowed values",
 		(ir) => (ir.nodes[0].kind = "repeat"),
 		"/nodes/0/kind",
-		'must be one of "code", "assert", "map", "seq", "loop"',
-		'Set /nodes/0/kind to one of "code", "assert", "map", "seq", "loop"',
+		'must be one of "code", "assert", "parMap", "map", "find", "parFind", "fold", "loop"',
+		'Set /nodes/0/kind to one of "code", "assert", "parMap", "map", "find", "parFind", "fold", "loop"',
 	],
 	[
 		"const names the required value",
@@ -153,7 +153,7 @@ test.each<[string, Mutation, string, string, string]>([
 	[
 		"oneOf says no allowed shape matched",
 		(ir) => {
-			ir.nodes[0].kind = "map";
+			ir.nodes[0].kind = "parMap";
 			ir.nodes[0].cardinality = { exact: 1, upTo: 1 };
 		},
 		"/nodes/0/cardinality",
@@ -279,7 +279,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"IR.graph",
 		"/scopes/1",
 		"id 'nowhere/s' sits under 'nowhere', which is not a scope or a group node",
-		"Declare 'nowhere' as a scope or as a map, seq or loop node, or move 'nowhere/s' out of it",
+		"Declare 'nowhere' as a scope or a group node, or move 'nowhere/s' out of it",
 	],
 	[
 		"a node under a node that is not a group",
@@ -287,7 +287,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"IR.graph",
 		"/nodes/8",
 		"id 'pick/extra' sits under 'pick', which is not a scope or a group node",
-		"Declare 'pick' as a scope or as a map, seq or loop node, or move 'pick/extra' out of it",
+		"Declare 'pick' as a scope or a group node, or move 'pick/extra' out of it",
 	],
 	[
 		"an edge from an unknown node",
@@ -367,19 +367,19 @@ test.each<[string, Mutation, string, string, string, string]>([
 		"Declare 'item' in out of node 'topics', or fix the edge",
 	],
 	[
-		"a collect edge that does not start at map results",
+		"a collect edge that does not start at parMap results",
 		(ir) => (ir.edges[2].kind = "collect"),
 		"IR.graph",
 		"/edges/2",
-		"collect edge from 'text' must start at a map node's 'results' port",
-		"Start the edge at the 'results' port of a map node, or make it a data edge",
+		"collect edge from 'text' must start at a parMap or map node's 'results' port",
+		"Start the edge at the 'results' port of a parMap or map node, or make it a data edge",
 	],
 	[
-		"map results leaving through a data edge",
+		"parMap results leaving through a data edge",
 		(ir) => (ir.edges[1].kind = "data"),
 		"IR.graph",
 		"/edges/1",
-		"results of map 'topics' must leave it through a collect edge",
+		"results of parMap 'topics' must leave it through a collect edge",
 		'Set the edge kind to "collect"',
 	],
 	[
@@ -508,12 +508,12 @@ test.each<[string, Mutation, string, string, string, string]>([
 		`Feed 'refine/loop/more' from the inner ports of 'refine/loop', or set test.at to "end"`,
 	],
 	[
-		"map ports other than item and results",
+		"parMap ports other than item and results",
 		(ir) =>
 			((node(ir, "topics").out as object as Record<string, object>).extra = {}),
 		"IR.graph",
 		"/nodes/0",
-		"map 'topics' must declare out ports [results], got [extra, results]",
+		"parMap 'topics' must declare out ports [results], got [extra, results]",
 		"Declare exactly the out ports [results] on 'topics'",
 	],
 	[
@@ -532,7 +532,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 		(ir) => (node(ir, "topics").in = { items: {} }),
 		"IR.graph",
 		"/nodes/0",
-		"map 'topics' must declare in ports [], got [items]",
+		"parMap 'topics' must declare in ports [], got [items]",
 		"Declare exactly the in ports [] on 'topics'",
 	],
 	[
@@ -540,7 +540,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 		(ir) => (node(ir, "topics").cardinality = { exact: 2 }),
 		"IR.graph",
 		"/nodes/0",
-		"map 'topics' must declare cardinality { exact: 3 }",
+		"parMap 'topics' must declare cardinality { exact: 3 }",
 		"Set cardinality of 'topics' to { exact: 3 }",
 	],
 	[
@@ -699,7 +699,7 @@ test("an independent reader with no maestro code parses the fan-out, fan-in and 
 	expect(reader.stderr.toString()).toBe("");
 	expect(reader.stdout.toString()).toBe(
 		[
-			"fan-out: map topics, exactly 3 members, each result=topics/draft",
+			"fan-out: parMap topics, exactly 3 members, each result=topics/draft",
 			"loop: refine/loop, up to 2 iterations, each result=refine/loop/step, tested at start on refine/loop/more.value, tolerating rejected",
 			"fan-in: topics.results -> pick.results (reducer)",
 			"order: topics -> pick -> text -> refine/loop",
@@ -707,3 +707,130 @@ test("an independent reader with no maestro code parses the fan-out, fan-in and 
 		].join("\n"),
 	);
 });
+
+describe("a fold", () => {
+	const text = { type: "string" };
+	const fold = {
+		irVersion: IR_VERSION,
+		composition: { id: "merge", version: "0.1.0", pack: "fixtures" },
+		emitter: { name: "hand", version: "1" },
+		scopes: [],
+		nodes: [
+			{
+				id: "fold",
+				kind: "fold",
+				items: ["a", "b"],
+				cardinality: { upTo: 2 },
+				inner: {
+					item: text,
+					index: { type: "integer" },
+					ok: { type: "boolean" },
+					reason: text,
+					text,
+				},
+				out: { text },
+				members: { first: "fold/first/seed", step: "fold/step/add" },
+				first: ["fold/first/seed"],
+			},
+			{
+				id: "fold/first/seed",
+				kind: "fake.task",
+				in: { prompt: text },
+				out: { text },
+			},
+			{
+				id: "fold/step/add",
+				kind: "fake.task",
+				in: { prompt: text, acc: text },
+				out: { text },
+			},
+		],
+		edges: [
+			{
+				kind: "data",
+				from: { node: "fold", port: "item" },
+				to: { node: "fold/first/seed", port: "prompt" },
+			},
+			{
+				kind: "data",
+				from: { node: "fold", port: "item" },
+				to: { node: "fold/step/add", port: "prompt" },
+			},
+			{
+				kind: "data",
+				from: { node: "fold", port: "text" },
+				to: { node: "fold/step/add", port: "acc" },
+			},
+		],
+		result: { node: "fold" },
+	};
+
+	test("is accepted with a first and a step member", () => {
+		expect(parseIr(fold).ok).toBe(true);
+	});
+
+	test.each<[string, Mutation, string]>([
+		[
+			"a step member",
+			(ir) => delete ir.nodes[0].members.step,
+			"/nodes/0/members",
+		],
+		["its first phase", (ir) => delete ir.nodes[0].first, "/nodes/0"],
+	])("without %s fails the shape check", (_, mutate, at) => {
+		const diagnostics = rejects(fold, mutate);
+		expect(diagnostics.map((d) => [d.code, d.path])).toContainEqual([
+			"IR.schema",
+			at,
+		]);
+	});
+
+	test.each<[string, Mutation, string, string]>([
+		[
+			"a first phase that reads the accumulator",
+			(ir) => (ir.edges[0].from.port = "text"),
+			"'fold/first/seed' reads 'fold.text', but the first phase of fold 'fold' has no accumulator",
+			"Feed 'fold/first/seed' from the item, or move it to the step of 'fold'",
+		],
+		[
+			"a step that reads the first phase",
+			(ir) => (ir.edges[2].from = { node: "fold/first/seed", port: "text" }),
+			"'fold/step/add' of fold 'fold' reads 'fold/first/seed' of its first phase, which takes a different item",
+			"Build the step of 'fold' from the accumulator and the item alone",
+		],
+		[
+			"a first phase that lists the step",
+			(ir) => ir.nodes[0].first.push("fold/step/add"),
+			"first of fold 'fold' must list its member 'fold/first/seed' and not its member 'fold/step/add'",
+			"List in first of 'fold' the body nodes made from the first item",
+		],
+		[
+			"members whose out ports differ",
+			(ir) => (ir.nodes[1].out = { text, notes: text }),
+			"members of fold 'fold' must declare the same out ports, got first [notes, text] and step [text]",
+			"Give 'fold/first/seed' and 'fold/step/add' the same out ports",
+		],
+	])("rejects %s", (_, mutate, message, hint) => {
+		expect(rejects(fold, mutate)).toContainEqual(
+			expect.objectContaining({
+				code: "IR.graph",
+				path: "/nodes/0",
+				message,
+				hint,
+			}),
+		);
+	});
+});
+
+test.each(["find", "parFind"])(
+	"a %s without cond fails the shape check",
+	(kind) => {
+		const diagnostics = rejects(guards, (ir) => {
+			ir.nodes[4].kind = kind;
+			delete ir.nodes[4].cond;
+		});
+		expect(diagnostics.map((d) => [d.code, d.path])).toContainEqual([
+			"IR.schema",
+			"/nodes/4",
+		]);
+	},
+);

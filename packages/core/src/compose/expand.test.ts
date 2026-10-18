@@ -15,14 +15,14 @@ const keyFn = {
 	},
 };
 
-/** A map `m` over `items`, its body `m/u` reading each item, with `over` merged on the map. */
+/** A parMap `m` over `items`, its body `m/u` reading each item, with `over` merged on the parMap. */
 const mapOver = (items: unknown, over: object = {}) => [
 	code("m/u", "upper", { in: { name: STRING } }),
 	{
 		id: "m",
-		kind: "map",
+		kind: "parMap",
 		cardinality: { upTo: 4 },
-		onError: "settle",
+		onError: "continue",
 		in: { items: { type: "array", items: STRING } },
 		literals: { items },
 		inner: { item: STRING },
@@ -123,13 +123,13 @@ describe("compose calls no author code (ADR 0009)", () => {
 });
 
 describe("expansion", () => {
-	test("expands a map over a plain list into keyed instances", async () => {
+	test("expands a parMap over a plain list into keyed instances", async () => {
 		const { expansion, bounds } = await plan(mapOver(["a b", "c"]), body);
 		expect(expansion.m).toEqual({ "": { keys: ["a_b", "c"] } });
 		expect(bounds.nodes["m/u"]).toEqual({ exact: 2 });
 	});
 
-	test("counts a map keyed by a key function without calling it, though its keys would collide, and up to its groups' bounds below", async () => {
+	test("counts a parMap keyed by a key function without calling it, though its keys would collide, and up to its groups' bounds below", async () => {
 		const { expansion, bounds } = await plan(
 			mapOver(["ab", "ac", "b"], keyFn),
 			body,
@@ -151,12 +151,12 @@ describe("expansion", () => {
 		expect(nested.bounds.nodes["m/n/u"]).toEqual({ upTo: 12 });
 	});
 
-	test("keys a map over an enclosing map's item per outer instance, naming the instance", async () => {
+	test("keys a parMap over an enclosing parMap's item per outer instance, naming the instance", async () => {
 		const inner = {
 			id: "o/m",
-			kind: "map",
+			kind: "parMap",
 			cardinality: { upTo: 3 },
-			onError: "settle",
+			onError: "continue",
 			in: { items: { type: "array", items: STRING } },
 			inner: { item: STRING },
 			out: { results: { type: "array" } },
@@ -164,9 +164,9 @@ describe("expansion", () => {
 		};
 		const outer = {
 			id: "o",
-			kind: "map",
+			kind: "parMap",
 			cardinality: { exact: 2 },
-			onError: "settle",
+			onError: "continue",
 			items: [
 				["x", "y"],
 				["z", "z"],
@@ -185,7 +185,7 @@ describe("expansion", () => {
 		expect(result.ok ? [] : result.diagnostics).toEqual([
 			expect.objectContaining({
 				code: "SCOPE.key",
-				message: "map 'o[1]/m' gives items 0 and 1 the same key 'z'",
+				message: "parMap 'o[1]/m' gives items 0 and 1 the same key 'z'",
 			}),
 		]);
 	});
@@ -201,12 +201,12 @@ describe("expansion", () => {
 
 	test.each([
 		[
-			"a map over a node's result",
+			"a parMap over a node's result",
 			[list, ...mapOver(undefined, { literals: {} })],
 			[...body, intoBody("p", "items", "m", "items")],
 		],
 		[
-			"a map under a guard a node feeds",
+			"a parMap under a guard a node feeds",
 			[code("g", "flag", { out: { yes: BOOLEAN } }), ...mapOver(["a"])],
 			[...body, guard],
 		],
@@ -240,17 +240,29 @@ describe("expansion", () => {
 	});
 
 	test.each([
-		[{}, { keys: ["0", "1"] }, { upTo: 2 }],
-		[{ until: { node: "q/u", port: "ok" } }, { upTo: 2 }, { upTo: 2 }],
+		[
+			{ kind: "map", onError: "stop", out: { results: { type: "array" } } },
+			{ keys: ["0", "1"] },
+			{ upTo: 2 },
+		],
+		[
+			{ kind: "find", cond: { node: "q/u", port: "ok" } },
+			{ upTo: 2 },
+			{ upTo: 2 },
+		],
+		[
+			{ kind: "parFind", cond: { node: "q/u", port: "ok" } },
+			{ upTo: 2 },
+			{ upTo: 2 },
+		],
 	])(
-		"a seq over a plain list with %o expands to %o",
+		"a group over a plain list as %o expands to %o",
 		async (over, want, count) => {
 			const { expansion, bounds } = await plan(
 				[
 					code("q/u", "upper", { in: { name: STRING } }),
 					{
 						id: "q",
-						kind: "seq",
 						cardinality: { upTo: 2 },
 						items: ["a", "b"],
 						inner: { item: STRING },
@@ -266,12 +278,43 @@ describe("expansion", () => {
 		},
 	);
 
+	test("expands a fold over a plain list into one instance per index, each phase up to its bound", async () => {
+		const { ok, reason } = IMPLICIT_OUT;
+		const phase = (id: string) =>
+			code(id, "upper", { in: { name: STRING }, out: { text: STRING } });
+		const { expansion, bounds } = await plan(
+			[
+				phase("f/first/u"),
+				phase("f/step/u"),
+				{
+					id: "f",
+					kind: "fold",
+					cardinality: { upTo: 3 },
+					items: ["a", "b", "c"],
+					inner: {
+						item: STRING,
+						text: STRING,
+						ok,
+						reason,
+						index: { type: "integer" },
+					},
+					out: { text: STRING },
+					members: { first: "f/first/u", step: "f/step/u" },
+					first: ["f/first/u"],
+				},
+			],
+			["f/first/u", "f/step/u"].map((to) => intoBody("f", "item", to, "name")),
+		);
+		expect(expansion.f).toEqual({ "": { keys: ["0", "1", "2"] } });
+		expect(bounds.nodes["f/step/u"]).toEqual({ upTo: 3 });
+	});
+
 	test.each([
 		[
 			["a", "a"],
 			{},
 			"SCOPE.key",
-			"Give map 'm' a key function, or make its items distinct",
+			"Give parMap 'm' a key function, or make its items distinct",
 		],
 		[
 			["a", "b", "c", "d", "e"],

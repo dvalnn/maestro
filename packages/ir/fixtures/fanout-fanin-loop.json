@@ -17,10 +17,10 @@
 	"nodes": [
 		{
 			"id": "topics",
-			"kind": "map",
+			"kind": "parMap",
 			"items": ["alpha", "beta", "gamma"],
 			"cardinality": { "exact": 3 },
-			"onError": "settle",
+			"onError": "continue",
 			"inner": { "item": { "type": "string" } },
 			"out": {
 				"results": {
@@ -103,12 +103,7 @@
 			"out": {
 				"value": {
 					"type": "object",
-					"properties": {
-						"result": {
-							"type": "object",
-							"properties": { "text": { "type": "string" } }
-						}
-					}
+					"properties": { "text": { "type": "string" } }
 				}
 			},
 			"worker": {
@@ -174,16 +169,11 @@
 			"in": {
 				"value": {
 					"type": "object",
-					"properties": {
-						"result": {
-							"type": "object",
-							"properties": { "text": { "type": "string" } }
-						}
-					}
+					"properties": { "text": { "type": "string" } }
 				},
 				"path": { "type": "string" }
 			},
-			"literals": { "path": "result.text" },
+			"literals": { "path": "text" },
 			"out": { "value": { "type": "string" } },
 			"worker": {
 				"runtime": "ts",

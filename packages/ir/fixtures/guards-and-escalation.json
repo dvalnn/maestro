@@ -18,20 +18,20 @@
 				"runtime": "ts",
 				"module": "guards.ts",
 				"export": "plan",
-				"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
+				"codeHash": "sha256:50c022de954262e176f3c597f70204e1f960e42c633f5fc8c3fa7e455b64db9b"
 			},
 			"reads": ["inputs/"]
 		},
 		{
 			"id": "each",
-			"kind": "map",
+			"kind": "parMap",
 			"cardinality": { "upTo": 4 },
-			"onError": "propagate",
+			"onError": "stop",
 			"key": {
 				"runtime": "ts",
 				"module": "guards.ts",
 				"export": "partKey",
-				"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
+				"codeHash": "sha256:50c022de954262e176f3c597f70204e1f960e42c633f5fc8c3fa7e455b64db9b"
 			},
 			"in": { "items": { "type": "array", "items": { "type": "string" } } },
 			"inner": { "item": { "type": "string" } },
@@ -122,19 +122,19 @@
 				"runtime": "ts",
 				"module": "guards.ts",
 				"export": "merge",
-				"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
+				"codeHash": "sha256:50c022de954262e176f3c597f70204e1f960e42c633f5fc8c3fa7e455b64db9b"
 			},
 			"writes": ["merged/"]
 		},
 		{
 			"id": "escalate",
-			"kind": "seq",
+			"kind": "find",
 			"items": ["small", "medium", "large"],
 			"cardinality": { "upTo": 3 },
 			"inner": { "item": { "type": "string" } },
 			"out": { "text": { "type": "string" } },
 			"members": { "result": "escalate/try" },
-			"until": { "node": "escalate/try", "port": "ok" }
+			"cond": { "node": "escalate/try", "port": "ok" }
 		},
 		{
 			"id": "escalate/try",
@@ -158,7 +158,7 @@
 				"runtime": "ts",
 				"module": "guards.ts",
 				"export": "summarize",
-				"codeHash": "sha256:f8a14bf569d750c18444c790d38c5597f7960d51bf3973f3a81fd064821f53c0"
+				"codeHash": "sha256:50c022de954262e176f3c597f70204e1f960e42c633f5fc8c3fa7e455b64db9b"
 			}
 		}
 	],
