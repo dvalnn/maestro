@@ -361,9 +361,9 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
   failures reported), or an inline `{ run, timeout }`. Each line runs through `sh -c` in the sandbox, in order, and the
   first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are `failed`; any
-  other non-zero exit is `rejected`, the reason naming the check and the line. Logs are an artifact. It is its own host
-  kind and not a code node, because it runs untrusted target commands and needs the sandbox, lane staging, kill and
-  logs. Code nodes are trusted and run in process.
+  other non-zero exit is `rejected`, the reason naming the check and the line number. Logs, holding each line and its
+  output, are an artifact. It is its own host kind and not a code node, because it runs untrusted target commands and
+  needs the sandbox, lane staging, kill and logs. Code nodes are trusted and run in process.
 - **Changeset node.** Takes one lane version and outputs its patch series as an artifact: a directory holding `base`,
   the target commit the lane chain was cut from, and the patches as `0001.patch`, `0002.patch` and on. It opens no lane
   and spends no join.

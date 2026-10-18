@@ -401,23 +401,19 @@ describe("perform", () => {
 	);
 
 	test.each([
-		["red", "rejected", "check 'red' line 2 exited 1: exit 1"],
-		["missing", "failed", "check 'missing' line 1 exited 127: no-such-command"],
+		["red", "rejected", "check 'red' line 2 exited 1"],
+		["missing", "failed", "check 'missing' line 1 exited 127"],
 		[
 			undefined,
 			"failed",
-			"check 'hello' line 1 exited 1: test -f hello.txt && touch from-check.txt; check 'red' line 2",
+			"check 'hello' line 1 exited 1; check 'red' line 2 exited 1",
 		],
 		[
 			{ run: "sleep 5", timeout: "1s" },
 			"failed",
-			"check 'inline' line 1 exited 124: sleep 5",
+			"check 'inline' line 1 exited 124",
 		],
-		[
-			{ run: "exit 137" },
-			"failed",
-			"check 'inline' line 1 exited 137: exit 137",
-		],
+		[{ run: "exit 137" }, "failed", "check 'inline' line 1 exited 137"],
 	])("check %j ends %s, naming the line", async (check, outcome, reason) => {
 		const { host } = stubHost(() => [OK]);
 		const ir = irOf(
@@ -706,7 +702,7 @@ describe("perform", () => {
 		for (const pid of pids) process.kill(pid, "SIGKILL");
 		expect((await done).result).toMatchObject({
 			outcome: "failed",
-			reason: "check 'inline' line 1 was killed by signal SIGKILL: sleep 300",
+			reason: "check 'inline' line 1 was killed by signal SIGKILL",
 		});
 	});
 

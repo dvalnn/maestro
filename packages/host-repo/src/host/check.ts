@@ -140,7 +140,7 @@ async function runCheck(
 		const failed = couldNotRun(ended) || s.live.cancelled;
 		return {
 			outcome: failed ? "failed" : "rejected",
-			reason: `${what}: ${line}`,
+			reason: what,
 		};
 	}
 	return { outcome: "ok" };
