@@ -1,23 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { claudeHarness } from "@maestro/harness-claude";
-import { piHarness } from "@maestro/harness-pi";
-import { repoHost } from "@maestro/host-repo";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
 import { idOf, json, world } from "./fixtures/world";
+import { builtinHosts } from "./hosts";
 
 afterEach(cleanup);
 
 const REPO = join(FIXTURES, "repo");
-const hosts = [
-	repoHost({
-		harnesses: [
-			piHarness(),
-			claudeHarness({ token: process.env.CLAUDE_CODE_OAUTH_TOKEN }),
-		],
-	}),
-];
+const hosts = builtinHosts(process.env);
 
 const GIT_ENV = {
 	PATH: process.env.PATH ?? "/usr/bin:/bin",

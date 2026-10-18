@@ -1,10 +1,14 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
+	finite,
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,
 	IDENTITY,
+	isObject,
+	type JsonObject,
+	METRIC,
 	type Metrics,
 	resolveBin,
 	SESSION_DIR,
@@ -43,18 +47,18 @@ const UNMANAGED_OFF_ENV = {
 
 /** The metric each key of a message's or a result's `usage` is summed into. */
 const USAGE_METRICS = {
-	input_tokens: "tokens_in",
-	output_tokens: "tokens_out",
-	cache_read_input_tokens: "tokens_cache_read",
-	cache_creation_input_tokens: "tokens_cache_write",
+	input_tokens: METRIC.tokensIn,
+	output_tokens: METRIC.tokensOut,
+	cache_read_input_tokens: METRIC.tokensCacheRead,
+	cache_creation_input_tokens: METRIC.tokensCacheWrite,
 } as const;
 
 /** The same, for each model's entry in a result's `modelUsage`. */
 const MODEL_USAGE_METRICS = {
-	inputTokens: "tokens_in",
-	outputTokens: "tokens_out",
-	cacheReadInputTokens: "tokens_cache_read",
-	cacheCreationInputTokens: "tokens_cache_write",
+	inputTokens: METRIC.tokensIn,
+	outputTokens: METRIC.tokensOut,
+	cacheReadInputTokens: METRIC.tokensCacheRead,
+	cacheCreationInputTokens: METRIC.tokensCacheWrite,
 } as const;
 
 export type ClaudeOptions = {
@@ -64,19 +68,13 @@ export type ClaudeOptions = {
 	token?: string;
 };
 
-type Json = Record<string, unknown>;
-
-const isObject = (v: unknown): v is Json =>
-	typeof v === "object" && v !== null && !Array.isArray(v);
-
-function number(v: unknown): number {
-	return typeof v === "number" && Number.isFinite(v) ? v : 0;
-}
-
-function sumUsage(entries: Json[], keys: Record<string, string>): Metrics {
+function sumUsage(
+	entries: JsonObject[],
+	keys: Record<string, string>,
+): Metrics {
 	const metrics: Metrics = {};
 	for (const [key, metric] of Object.entries(keys)) {
-		metrics[metric] = entries.reduce((n, u) => n + number(u[key]), 0);
+		metrics[metric] = entries.reduce((n, u) => n + finite(u[key]), 0);
 	}
 	return metrics;
 }
@@ -84,7 +82,7 @@ function sumUsage(entries: Json[], keys: Record<string, string>): Metrics {
 /**
  * A result's totals: the sum over `modelUsage`, which also counts subagents and side models, else its `usage`.
  */
-function resultMetrics(e: Json): Metrics {
+function resultMetrics(e: JsonObject): Metrics {
 	const models = isObject(e.modelUsage)
 		? Object.values(e.modelUsage).filter(isObject)
 		: [];
@@ -112,7 +110,7 @@ function blockEvent(block: unknown): HarnessEvent[] {
 
 /** One run's final line. `is_error` also rides on `subtype: "success"`, so both are checked. */
 function resultEvents(
-	e: Json,
+	e: JsonObject,
 	authFailed: boolean,
 	counted: Metrics,
 ): HarnessEvent[] {
@@ -137,12 +135,12 @@ function resultEvents(
  * missed: subagents, side models and streamed output tokens. A run that ends without one reports the messages'
  * usage alone, which undercounts output. Unknown types pass through as raw, never fail.
  */
-function parser(): (line: string) => HarnessEvent[] {
+function parser(): (e: JsonObject) => HarnessEvent[] {
 	const turns = new Set<string>();
 	const seen = new Map<string, Metrics>();
 	const counted: Metrics = {};
 	let authFailed = false;
-	const assistantEvents = (message: Json): HarnessEvent[] => {
+	const assistantEvents = (message: JsonObject): HarnessEvent[] => {
 		const id = String(message.id);
 		const now = sumUsage(
 			isObject(message.usage) ? [message.usage] : [],
@@ -161,7 +159,7 @@ function parser(): (line: string) => HarnessEvent[] {
 			...blocks.flatMap(blockEvent),
 		];
 	};
-	const eventsOf = (e: Json): HarnessEvent[] => {
+	const eventsOf = (e: JsonObject): HarnessEvent[] => {
 		switch (e.type) {
 			case "assistant":
 				authFailed ||= e.error === AUTH_FAILED;
@@ -176,15 +174,7 @@ function parser(): (line: string) => HarnessEvent[] {
 				return [{ kind: "raw", data: e }];
 		}
 	};
-	return (line) => {
-		let e: unknown;
-		try {
-			e = JSON.parse(line);
-		} catch {
-			return [];
-		}
-		return isObject(e) ? eventsOf(e) : [];
-	};
+	return eventsOf;
 }
 
 /** Whether the session's config dir already holds a transcript of `session.id`. */

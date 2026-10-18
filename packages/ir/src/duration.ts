@@ -7,6 +7,9 @@ export const MS_PER_UNIT = {
 	d: 86_400_000,
 };
 
+/** Durations written out, for the message that asks for one. */
+export const DURATION_EXAMPLE = "500ms, 90s, 15m, 12h or 7d";
+
 const DURATION = /^([1-9]\d*)(ms|s|m|h|d)$/;
 
 /**

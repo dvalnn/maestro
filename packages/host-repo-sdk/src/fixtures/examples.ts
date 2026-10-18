@@ -119,7 +119,7 @@ const builder = seat({
 	checks: ["test"],
 });
 
-/** Build, then repair while check `test` is red, bounded by a param. */
+/** Build, then repair in the builder's session while check `test` is red, bounded by a param; the result is the patch. */
 export const buildThenRepair = composition(
 	"build_then_repair",
 	{
@@ -131,13 +131,14 @@ export const buildThenRepair = composition(
 	},
 	({ task, maxRepairs }) => {
 		const built = builder({ label: "build", task, lane: fresh() });
-		return repeat({
+		const repaired = repeat({
 			init: check(join(built.out.lane), "test"),
 			step: (checked) => {
-				const repaired = builder({
+				const repair = builder({
 					label: "repair",
 					task: "Make check 'test' pass.",
 					lane: join(checked.out.lane),
+					resume: true,
 					refs: {
 						logs: {
 							artifact: checked.out.logs,
@@ -145,12 +146,13 @@ export const buildThenRepair = composition(
 						},
 					},
 				});
-				return check(join(repaired.out.lane), "test");
+				return check(join(repair.out.lane), "test");
 			},
 			until: (c) => c.ok,
 			max: maxRepairs,
 			tolerate: "rejected",
 		});
+		return changeset(repaired.out.lane, { label: "result" });
 	},
 );
 

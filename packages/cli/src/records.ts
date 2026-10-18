@@ -3,7 +3,7 @@ import {
 	type ConcertStatus,
 	openRecord,
 } from "@maestro/core/perform";
-import { MS_PER_UNIT } from "@maestro/ir";
+import { DURATION_EXAMPLE, MS_PER_UNIT } from "@maestro/ir";
 import {
 	COMMON,
 	type Command,
@@ -180,7 +180,7 @@ const WAIT_OPTIONS = {
 	timeout: {
 		type: "string",
 		arg: "duration",
-		desc: "Give up after this long, such as 500ms, 90s, 15m, 12h or 7d, and exit 124",
+		desc: `Give up after this long, such as ${DURATION_EXAMPLE}, and exit ${EXIT.timeout}`,
 	},
 } as const satisfies Options;
 

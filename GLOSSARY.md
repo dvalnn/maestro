@@ -147,11 +147,14 @@ It is not an input and not in the resume key (ADR 0011).
 `read`. _Avoid_: worktree, run
 
 **Lane ref**: A param type naming a lane version left by an earlier concert, written `<concert id>.<node instance id>`.
-It can be forked or read, and not joined.
+It can be forked, read or made into a changeset, and not joined.
 
 **Target**: The repository lanes are cut from.
 
-**Changeset**: The patch series a concert leaves. The target's checkout is never touched. _Avoid_: series
+**Changeset**: A lane version's patch series, held as an artifact. A concert leaves one only by ending in a changeset
+node. The target's checkout is never touched. _Avoid_: series
+
+**Changeset node**: Takes one lane version and outputs its changeset. It opens no lane and spends no join.
 
 **Apply node**: Applies one or more changesets to a lane in order and yields a new version. A conflict is `rejected`,
 naming the files, and leaves a version holding the markers for an agent to join.

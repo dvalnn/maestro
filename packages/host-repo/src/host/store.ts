@@ -1,4 +1,5 @@
 import {
+	copyFileSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -91,6 +92,12 @@ export function recordWriter(root: string, v: Version, session: Session) {
 	const file = writtenFile(root, v);
 	mkdirSync(join(file, ".."), { recursive: true });
 	writeFileSync(file, session.id);
+}
+
+/** Records that the session that wrote version `from`, if any agent did, is the writer of version `to` too. */
+export function carryWriter(root: string, from: Version, to: Version) {
+	const source = writtenFile(root, from);
+	if (existsSync(source)) copyFileSync(source, writtenFile(root, to));
 }
 
 const isMeta = (v: unknown): v is { harness: string; concert: string } =>

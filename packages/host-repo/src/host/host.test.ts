@@ -60,6 +60,29 @@ describe("compose", () => {
 					literals: prompt,
 					lane: "a",
 				},
+				{
+					id: "e",
+					kind: "agent",
+					config: { role: { name: "builder" }, lane: { mode: "fresh" } },
+					literals: prompt,
+				},
+				{
+					id: "k",
+					kind: "check",
+					config: { lane: { mode: "join" }, check: "hello" },
+					lane: "e",
+				},
+				{
+					id: "d",
+					kind: "agent",
+					config: {
+						role: { name: "other" },
+						lane: { mode: "join" },
+						resume: true,
+					},
+					literals: prompt,
+					lane: "k",
+				},
 			],
 			"c",
 		);
@@ -87,9 +110,86 @@ describe("compose", () => {
 				"c",
 				"'c' runs on harness 'other' and resumes 'a', written on harness 'stub'",
 			],
+			[
+				"HOST.resume",
+				"d",
+				"'d' runs on harness 'other' and resumes 'k', written on harness 'stub'",
+			],
 		]);
 		expect(requests).toEqual([]);
 	});
+
+	const applied: NodeSpec = {
+		id: "ap",
+		kind: "apply",
+		config: { lane: { mode: "fork" }, changesets: ["c"] },
+		lane: "root",
+		wires: { c: "cs.changeset" },
+	};
+	test.each([
+		[
+			"an apply",
+			[{ ...applied, id: "w" }],
+			"'r' resumes 'w', which carries 'w', a 'repo.apply' node and no agent session",
+		],
+		[
+			"a check on a fresh lane",
+			[{ id: "w", kind: "check", config: { lane: fresh, check: "hello" } }],
+			"'r' resumes 'w', which carries 'w', a check on a 'fresh' lane and no agent session",
+		],
+		[
+			"a check joining an apply",
+			[
+				applied,
+				{
+					id: "w",
+					kind: "check",
+					config: { lane: { mode: "join" }, check: "hello" },
+					lane: "ap",
+				},
+			],
+			"'r' resumes 'w', which carries 'ap', a 'repo.apply' node and no agent session",
+		],
+	] as [string, NodeSpec[], string][])(
+		"a resume of the version of %s is a HOST error",
+		async (_, writers, message) => {
+			const { host } = stubHost(() => [OK]);
+			const task = { prompt: "go" };
+			const specs: NodeSpec[] = [
+				{
+					id: "root",
+					kind: "agent",
+					config: { role: { name: "builder" }, lane: fresh },
+					literals: task,
+				},
+				{ id: "cs", kind: "changeset", config: {}, lane: "root" },
+				...writers,
+				{
+					id: "r",
+					kind: "agent",
+					config: {
+						role: { name: "builder" },
+						lane: { mode: "join" },
+						resume: true,
+					},
+					literals: task,
+					lane: "w",
+				},
+			];
+			const composed = await compose({
+				ir: irOf(host, specs, "r"),
+				config: configOf(toyTarget()),
+				core: CORE_CONFIG,
+				packs: {},
+				hosts: [host],
+				loadCode: noCode,
+				caps: {},
+			});
+			expect(
+				composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.message]),
+			).toEqual([["HOST.resume", message]]);
+		},
+	);
 
 	test.each([
 		[
@@ -313,6 +413,11 @@ describe("perform", () => {
 			"failed",
 			"check 'inline' line 1 exited 124: sleep 5",
 		],
+		[
+			{ run: "exit 137" },
+			"failed",
+			"check 'inline' line 1 exited 137: exit 137",
+		],
 	])("check %j ends %s, naming the line", async (check, outcome, reason) => {
 		const { host } = stubHost(() => [OK]);
 		const ir = irOf(
@@ -359,6 +464,50 @@ describe("perform", () => {
 			outputs: { report: "tried" },
 		});
 	});
+
+	test.each([
+		["writes it once corrected", 2, true],
+		["still misses it after the correction budget", 3, false],
+	])(
+		"a rejecting agent that misses a declared output %s",
+		async (_, asked, written) => {
+			const rejection = reply({
+				outcome: "rejected",
+				reason: "not doable",
+				report: "tried",
+			});
+			const { host, requests } = stubHost(() =>
+				written && requests.length > 1
+					? [{ write: `${OUTBOX}/notes.md`, content: "why" }, rejection]
+					: [rejection],
+			);
+			const ir = irOf(
+				host,
+				[
+					{
+						id: "x",
+						kind: "agent",
+						config: {
+							role: { name: "builder" },
+							lane: { mode: "fresh" },
+							out: { notes: { file: "notes.md", format: "markdown" } },
+						},
+						literals: { prompt: "go" },
+					},
+				],
+				"x",
+			);
+			const { result } = await performed(host, ir, configOf(toyTarget()));
+			expect(requests).toHaveLength(asked);
+			expect(requests[1]?.prompt).toContain(`${OUTBOX}/notes.md`);
+			expect(new Set(requests.map((r) => r.session.id)).size).toBe(1);
+			expect(result).toMatchObject({
+				outcome: "rejected",
+				reason: "not doable",
+			});
+			expect("outputs" in result).toBe(written);
+		},
+	);
 
 	test.each([
 		["missing", [OK], "output 'notes': the agent wrote no /out/notes.json"],

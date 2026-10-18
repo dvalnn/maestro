@@ -61,15 +61,22 @@ where each value came from.
 | `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                 |
 | `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`.  |
 | `caps`        | Caps by name: `instances` caps a concert's node instances, any other name the total of a host count. |
+| `target`      | The repo host's repository, default `base` and named `checks`.                                       |
+| `roles`       | The repo host's roles: a `harness`, `model` and optional `thinking` each.                            |
+| `sandbox`     | The repo host's `readOnly` paths, bound into every agent and check.                                  |
+
+The repo host's namespaces are set out in architecture.md section 12, Configuration. Its Claude Code harness reads the
+token from `CLAUDE_CODE_OAUTH_TOKEN`, set in the shell or in `.env`; get one with `claude setup-token`.
 
 A pack is operator-trusted code: `maestro` loads and executes what `packs` lists with the user's own permissions.
 
 ## Data root
 
-| Path             | Holds                                                       |
-| ---------------- | ----------------------------------------------------------- |
-| `record.db`      | The record of concerts, node instances and events (SQLite). |
-| `concerts/<id>/` | One concert's artifact area and scratch directories.        |
+| Path                      | Holds                                                       |
+| ------------------------- | ----------------------------------------------------------- |
+| `record.db`               | The record of concerts, node instances and events (SQLite). |
+| `concerts/<id>/`          | One concert's artifact area and scratch directories.        |
+| `hosts/repo/<target id>/` | The repo host's lanes, versions and sessions, per target.   |
 
 `compose --out <file>` of a bare file writes its code as `<file stem>.bundle.js` beside the IR, so the IR loads on its
 own. A pack's modules are made relative to the IR.

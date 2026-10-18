@@ -1,10 +1,8 @@
 #!/usr/bin/env bun
 import { writeSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { claudeHarness } from "@maestro/harness-claude";
-import { piHarness } from "@maestro/harness-pi";
-import { repoHost } from "@maestro/host-repo";
 import { main } from "./cli";
+import { builtinHosts } from "./hosts";
 
 /** Synchronous writes: `process.exit` drops what an async write to a slow pipe has not yet flushed. */
 const STDOUT_FD = 1;
@@ -25,14 +23,7 @@ async function confirm(question: string): Promise<boolean> {
 
 process.exit(
 	await main(process.argv.slice(2), {
-		hosts: [
-			repoHost({
-				harnesses: [
-					piHarness(),
-					claudeHarness({ token: process.env.CLAUDE_CODE_OAUTH_TOKEN }),
-				],
-			}),
-		],
+		hosts: builtinHosts(process.env),
 		cwd: process.cwd(),
 		env: process.env,
 		stdout: (line) => writeSync(STDOUT_FD, `${line}\n`),

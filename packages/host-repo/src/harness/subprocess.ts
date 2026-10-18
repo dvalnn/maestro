@@ -23,8 +23,30 @@ export interface SubprocessAdapter {
 	 * `env` over the request's.
 	 */
 	spec(req: HarnessRequest): Omit<SandboxSpec, "lane">;
-	/** A fresh line parser per run, so it may keep state. It returns the events a stdout line carries: none for noise. */
-	parser(): (line: string) => HarnessEvent[];
+	/**
+	 * A fresh parser per run, so it may keep state. It takes each stdout line that is a JSON object and returns the
+	 * events it carries: none for noise. Other lines never reach it.
+	 */
+	parser(): (event: JsonObject) => HarnessEvent[];
+}
+
+/** A JSON object, as a harness prints one per stdout line. */
+export type JsonObject = Record<string, unknown>;
+
+export const isObject = (v: unknown): v is JsonObject =>
+	typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** `v` when it is a finite number, else 0. */
+export const finite = (v: unknown): number =>
+	typeof v === "number" && Number.isFinite(v) ? v : 0;
+
+function objectOf(line: string): JsonObject | undefined {
+	try {
+		const value: unknown = JSON.parse(line);
+		return isObject(value) ? value : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 function addUsage(metrics: Metrics, usage: Metrics) {
@@ -56,7 +78,7 @@ function fold(tally: Tally, e: HarnessEvent) {
 /** Forwards parsed events and folds them into `tally`. Returns why reading stopped early, if it did. */
 async function pump(
 	proc: SandboxedProcess,
-	parse: ReturnType<SubprocessAdapter["parser"]>,
+	parse: (line: string) => HarnessEvent[],
 	emit: ReadableStreamDefaultController<HarnessEvent>,
 	tally: Tally,
 ): Promise<string | undefined> {
@@ -140,7 +162,16 @@ export function subprocessHarness(
 			const tally: Tally = { metrics: {}, reply: "", settled: false };
 			let cancelled = false;
 			let settled = false;
-			const pumped = pump(proc, adapter.parser(), emit, tally);
+			const parse = adapter.parser();
+			const pumped = pump(
+				proc,
+				(line) => {
+					const event = objectOf(line);
+					return event ? parse(event) : [];
+				},
+				emit,
+				tally,
+			);
 
 			const result = (async () => {
 				const exit = await proc.exited;

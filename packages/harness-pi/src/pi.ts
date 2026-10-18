@@ -2,10 +2,14 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+	finite,
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,
 	IDENTITY,
+	isObject,
+	type JsonObject,
+	METRIC,
 	type Metrics,
 	resolveBin,
 	SESSION_DIR,
@@ -33,11 +37,11 @@ const IGNORED = new Set([
 
 /** pi usage keys and the metric each is summed into. */
 const USAGE_METRICS = {
-	input: "tokens_in",
-	output: "tokens_out",
-	cacheRead: "tokens_cache_read",
-	cacheWrite: "tokens_cache_write",
-	reasoning: "tokens_reasoning",
+	input: METRIC.tokensIn,
+	output: METRIC.tokensOut,
+	cacheRead: METRIC.tokensCacheRead,
+	cacheWrite: METRIC.tokensCacheWrite,
+	reasoning: METRIC.tokensReasoning,
 } as const;
 
 export type PiOptions = {
@@ -47,20 +51,11 @@ export type PiOptions = {
 	agentDir?: string;
 };
 
-type Json = Record<string, unknown>;
-
-const isObject = (v: unknown): v is Json =>
-	typeof v === "object" && v !== null && !Array.isArray(v);
-
-function number(v: unknown): number {
-	return typeof v === "number" && Number.isFinite(v) ? v : 0;
-}
-
-function assistantEvents(message: Json): HarnessEvent[] {
+function assistantEvents(message: JsonObject): HarnessEvent[] {
 	const usage = isObject(message.usage) ? message.usage : {};
 	const metrics: Metrics = {};
 	for (const [key, metric] of Object.entries(USAGE_METRICS))
-		metrics[metric] = number(usage[key]);
+		metrics[metric] = finite(usage[key]);
 	const parts = Array.isArray(message.content) ? message.content : [];
 	const text = parts
 		.filter((p) => isObject(p) && p.type === "text")
@@ -79,7 +74,7 @@ function assistantEvents(message: Json): HarnessEvent[] {
 	return events;
 }
 
-function sessionEvents(e: Json): HarnessEvent[] {
+function sessionEvents(e: JsonObject): HarnessEvent[] {
 	if (e.version === SESSION_VERSION) return [];
 	return [
 		{
@@ -89,7 +84,7 @@ function sessionEvents(e: Json): HarnessEvent[] {
 	];
 }
 
-function eventsOf(e: Json): HarnessEvent[] {
+function eventsOf(e: JsonObject): HarnessEvent[] {
 	switch (e.type) {
 		case "session":
 			return sessionEvents(e);
@@ -114,16 +109,9 @@ function eventsOf(e: Json): HarnessEvent[] {
  * Maps pi `--mode json` lines to events. The first event must be the session header. Unknown types and keys pass
  * through or are dropped, never fail.
  */
-function parser(): (line: string) => HarnessEvent[] {
+function parser(): (e: JsonObject) => HarnessEvent[] {
 	let first = true;
-	return (line) => {
-		let e: unknown;
-		try {
-			e = JSON.parse(line);
-		} catch {
-			return [];
-		}
-		if (!isObject(e)) return [];
+	return (e) => {
 		if (first && e.type !== "session") {
 			first = false;
 			return [

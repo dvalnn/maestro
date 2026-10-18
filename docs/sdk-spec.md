@@ -254,7 +254,7 @@ bundle it.
 | Export                                     | What it gives                                                                                                                           |
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `Lane`                                     | The `repo.lane` type of a lane version, and the lane ref param type                                                                     |
-| `fresh(base?)`                             | A new lane cut at `base`, else `target.base`                                                                                            |
+| `fresh(base?)`                             | A new lane cut at `base`, else `target.base`, else the target's `HEAD`                                                                  |
 | `fork(v)`, `read(v)`                       | A copy of version `v`, or `v` with its writes discarded; `v` is a lane output or a lane ref                                             |
 | `join(v)`                                  | The lane continued from `v`, a lane output of this concert                                                                              |
 | `JsonOut(file, type)`, `MarkdownOut(file)` | An agent output: a file in its outbox, arriving as a `core.json-file` or `core.markdown` artifact                                       |
@@ -271,6 +271,8 @@ common options. `role` is a role name or `{ name, harness?, model?, thinking? }`
 common options, and may override the role and add refs, outputs, checks and read-only binds: its role fields override
 the seat's, refs and outputs add with the call winning on a name, checks and binds are a union, and the result's outputs
 are typed by both.
+
+A check with no `timeout` has none: it runs until it ends or the concert is killed.
 
 A lane ref given to `fork`, `read` or `changeset` becomes a `literal` of type `Lane`. N lanes merge by folding `apply`
 over their changesets in a `repeat`, a resolver agent joining on conflict.
@@ -346,22 +348,24 @@ Syntax is a sketch.
 export const fixUntilGreen = composition(
   "fix_until_green",
   {
-    ports: { build: AgentResult, prompt: Text },
-    params: { maxRepairs: Int({ default: 2 }) },
+    ports: { build: Lane, prompt: Text },
+    params: { maxRepairs: Int({ default: 2 }), model: Text() },
   },
   (params, { build, prompt }) => {
-    const check = (b) => checkNode({ lane: join(b.lane), prompt });
+    const verify = (lane) => check(join(lane), "test");
     return repeat({
-      init: check(build),
+      init: verify(build),
       step: (checked) =>
-        check(
-          agent("build", {
-            lane: join(checked.lane),
-            prompt: tpl("fix.md", {
-              failures: checked.reason,
-              logs: checked.out.logs,
-              request: prompt,
-            }),
+        verify(
+          agent({
+            label: "repair",
+            task: tpl("fix.md", { failures: checked.reason, request: prompt }),
+            lane: join(checked.out.lane),
+            role: { name: "builder", model: params.model },
+            resume: true,
+            refs: {
+              logs: { artifact: checked.out.logs, when: "first, to see why the check failed" },
+            },
           }),
         ),
       until: (c) => c.ok,
@@ -377,8 +381,9 @@ export const fixUntilGreen = composition(
 ```ts
 const builtOn = (m, prompt, run) =>
   use(fixUntilGreen, {
-    build: agent("build", { prompt, lane: fork(run), role: { model: m } }),
+    build: agent({ task: prompt, lane: fork(run), role: { name: "builder", model: m } }).out.lane,
     prompt,
+    model: m,
   });
 
 escalate = composition("build_escalate", Params, ({ prompt, run, models }) =>
@@ -395,15 +400,20 @@ fanout = composition("build_fanout", Params, ({ prompt, run, models }) =>
 const runs = map(
   jobs,
   (job) => {
-    const lens = agent("review", {
-      prompt: tpl("lens.md", { job, ctx }),
+    const lens = agent({
+      label: "lens",
+      task: tpl("lens.md", { job, ctx }),
+      lane: fresh(),
       role: job.lens,
       out: { findings: JsonOut("findings.json", Findings) },
     });
-    const skeptic = agent("review", {
+    const skeptic = agent({
+      label: "skeptic",
       when: lens.out.findings.nonEmpty,
+      task: tpl("skeptic.md", { job }),
+      lane: fresh(),
       role: job.skeptic,
-      prompt: tpl("skeptic.md", { job, findings: lens.out.findings }),
+      refs: { findings: { artifact: lens.out.findings, when: "before judging any finding" } },
       out: { verdicts: JsonOut("skeptic.json", Verdicts) },
     });
     return { lens, skeptic };
@@ -411,33 +421,39 @@ const runs = map(
   { max: 14, onError: "settle" },
 );
 const merged = code(byFinding, { in: { runs }, out: Merged });
-return agent("review", {
-  prompt: tpl("consolidate.md", { merged }),
+return agent({
+  label: "consolidator",
+  task: tpl("consolidate.md", { merged }),
+  lane: fresh(),
   role: SOL,
-  out: { report: MarkdownOut("review.md") },
+  out: { review: MarkdownOut("review.md") },
 });
 ```
 
 **Plan from several angles, then synthesize** (`fork` several, then `join` the original):
 
 ```ts
-const scout = agent("scout", { prompt, lane: fresh() });
+const scout = agent({ label: "scout", task: prompt, lane: fresh(), role: "scout" });
 const plans = map(
   ANGLES,
   (a) =>
-    agent("plan", {
-      lane: fork(scout.lane),
-      prompt: tpl("angle.md", { a, scouted }),
+    agent({
+      label: "plan",
+      task: tpl("angle.md", { a, scouted: scout.out.report }),
+      lane: fork(scout.out.lane),
+      role: "planner",
     }),
   { onError: "settle" },
 );
 const good = code(renderOk, { in: { plans: plans.out.results }, out: { text: Text, nonEmpty: Bool } });
-const synthesis = agent("plan", {
-  lane: join(scout.lane),
+const synthesis = agent({
+  label: "synthesis",
+  task: tpl("synthesis.md", { good: good.out.text }),
+  lane: join(scout.out.lane),
+  role: "planner",
   when: good.out.nonEmpty,
-  prompt: tpl("synthesis.md", { good: good.out.text }),
 });
-return firstOk([synthesis.out.text, firstOk(plans).out.value.pick("result.text")]);
+return firstOk([synthesis.out.report, firstOk(plans).out.value.pick("result.report")]);
 ```
 
 ## 15. Coverage of the predecessor's workflows

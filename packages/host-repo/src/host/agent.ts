@@ -125,7 +125,11 @@ function contract(out: Record<string, Output>): string {
 		"---",
 		"",
 		...(files.length
-			? ["Before your final reply, write these files:", ...files, ""]
+			? [
+					"Before your final reply, write every one of these files, even when you reject:",
+					...files,
+					"",
+				]
 			: []),
 		"Your final reply must be only this JSON object, with no other text:",
 		ENVELOPE_SHAPE,
@@ -135,6 +139,9 @@ function contract(out: Record<string, Output>): string {
 
 const correction = (problem: string) =>
 	`Your final reply is not the envelope: ${problem}.\nReply again with only this JSON object:\n${ENVELOPE_SHAPE}`;
+
+const outputsCorrection = (problems: string[]) =>
+	`You rejected, but these declared outputs are not usable: ${problems.join("; ")}.\nWrite every declared file, then reply again with only this JSON object:\n${ENVELOPE_SHAPE}`;
 
 /** The envelope `reply` holds, bare or in one fenced block, or what is wrong with it. */
 function envelopeOf(reply: string): Envelope | string {
@@ -175,6 +182,11 @@ function outputProblem(outbox: string, o: Output): string | undefined {
 		[shown, ...at].join(" at "),
 	);
 	return found.length ? found.join("; ") : undefined;
+}
+
+/** What is wrong with each declared output in `outbox`. */
+function outputProblems(outbox: string, out: Record<string, Output>): string[] {
+	return Object.values(out).flatMap((o) => outputProblem(outbox, o) ?? []);
 }
 
 /** The declared outputs' paths by port, or why one cannot be read. */
@@ -242,13 +254,40 @@ async function turn(
 	return run.result;
 }
 
-/** Runs the agent, then corrects it in the same session while its final reply is not an envelope. */
+/** What follows an agent's final reply: how the run ends, or the correction to send. */
+type Next = { envelope: Envelope } | { failure: string } | { prompt: string };
+
+function next(
+	reply: string,
+	outbox: string,
+	out: Record<string, Output>,
+	spent: boolean,
+): Next {
+	const envelope = envelopeOf(reply);
+	if (typeof envelope === "string")
+		return spent
+			? {
+					failure: `the final reply is not the envelope after ${MAX_CORRECTIONS} corrections: ${envelope}. Check the role's model follows the output contract in staged/prompt.md`,
+				}
+			: { prompt: correction(envelope) };
+	const problems =
+		envelope.outcome === "rejected" ? outputProblems(outbox, out) : [];
+	return !problems.length || spent
+		? { envelope }
+		: { prompt: outputsCorrection(problems) };
+}
+
+/**
+ * Runs the agent, then corrects it in the same session while its final reply is not an envelope, or is a rejection
+ * with declared outputs missing. The corrections share one budget.
+ */
 async function converse(
 	harness: Harness,
 	req: HarnessRequest,
 	live: Live,
 	context: HostContext,
 	staged: string,
+	out: Record<string, Output>,
 ): Promise<Turns> {
 	const metrics: Metrics = {};
 	let prompt = req.prompt;
@@ -258,14 +297,14 @@ async function converse(
 		addMetrics(metrics, result.metrics);
 		if (result.outcome === "failed")
 			return { metrics, failure: result.reason ?? "the harness failed" };
-		const envelope = envelopeOf(result.reply);
-		if (typeof envelope !== "string") return { metrics, envelope };
-		if (corrections === MAX_CORRECTIONS)
-			return {
-				metrics,
-				failure: `the final reply is not the envelope after ${MAX_CORRECTIONS} corrections: ${envelope}. Check the role's model follows the output contract in staged/prompt.md`,
-			};
-		prompt = correction(envelope);
+		const step = next(
+			result.reply,
+			req.outbox,
+			out,
+			corrections === MAX_CORRECTIONS,
+		);
+		if (!("prompt" in step)) return { metrics, ...step };
+		prompt = step.prompt;
 		writeFileSync(join(staged, `correction-${corrections + 1}.md`), prompt);
 	}
 }
@@ -422,7 +461,14 @@ async function execute(
 				outbox: staging.outbox,
 				session: { dir: session.dir, id: session.id },
 			};
-			const turns = await converse(harness, req, live, context, staging.staged);
+			const turns = await converse(
+				harness,
+				req,
+				live,
+				context,
+				staging.staged,
+				staging.config.out ?? {},
+			);
 			return settle(staging, turns, async () => {
 				if (read) return undefined;
 				const version = await lane.seal();

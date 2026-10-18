@@ -14,7 +14,7 @@ export {
 	reject,
 	TS_RUNTIME,
 } from "./code-function";
-export { durationMs, MS_PER_UNIT } from "./duration";
+export { DURATION_EXAMPLE, durationMs, MS_PER_UNIT } from "./duration";
 export type {
 	ConcertEvent,
 	Enrichment,

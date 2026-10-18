@@ -120,6 +120,24 @@ function repeats(graph: GraphIndex, id: string): boolean {
 	return isGroup(group) && boundOf(group.cardinality) > 1;
 }
 
+/**
+ * The agent whose session the version out of node `id` carries: the agent itself, or the one behind the version a
+ * joining check joined. A string says what the node is instead, and `undefined` that it is not known at compose.
+ */
+function sessionWriter(
+	graph: GraphIndex,
+	id: string,
+): HostNode | string | undefined {
+	const node = graph.nodes.get(id);
+	if (!node || !isHostNode(node)) return undefined;
+	if (node.kind === AGENT_KIND) return node;
+	if (node.kind !== CHECK_KIND) return `'${id}', a '${node.kind}' node`;
+	const { lane } = checkConfig(node.config);
+	if (lane.mode !== "join") return `'${id}', a check on a '${lane.mode}' lane`;
+	const from = laneSource(graph, node);
+	return from && "node" in from ? sessionWriter(graph, from.node) : undefined;
+}
+
 /** Why `r` cannot resume the session of the version it joins from `source`, when that is known at compose. */
 function resumeProblem(
 	graph: GraphIndex,
@@ -133,11 +151,10 @@ function resumeProblem(
 	if (!source) return undefined;
 	if ("literal" in source)
 		return `'${r.node.id}' resumes a version of another concert`;
-	const writer = graph.nodes.get(source.node);
-	if (writer?.kind === CHECK_KIND)
-		return `'${r.node.id}' resumes '${source.node}', a check, which no agent session wrote`;
-	if (!writer || !isHostNode(writer) || writer.kind !== AGENT_KIND)
-		return undefined;
+	const writer = sessionWriter(graph, source.node);
+	if (typeof writer === "string")
+		return `'${r.node.id}' resumes '${source.node}', which carries ${writer} and no agent session`;
+	if (!writer) return undefined;
 	const wrote = harnessOf(
 		{ node: writer, kind: "agent", config: agentConfig(writer.config) },
 		setup,

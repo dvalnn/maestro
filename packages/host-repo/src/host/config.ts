@@ -1,6 +1,11 @@
 import type { HostSetup } from "@maestro/core/host";
 import { validator, violations } from "@maestro/core/ports";
-import { CORE_TYPES, durationMs, type JsonSchema } from "@maestro/ir";
+import {
+	CORE_TYPES,
+	DURATION_EXAMPLE,
+	durationMs,
+	type JsonSchema,
+} from "@maestro/ir";
 import type { Role } from "../harness/index";
 import type { ApplyStrategy } from "../lane/index";
 
@@ -15,9 +20,6 @@ export const LANE_TYPE = "repo.lane";
 export const LANE_PORT = "lane";
 /** Input ports every agent has; a ref takes none of these names. */
 const AGENT_IN_PORTS = ["prompt", "identity", LANE_PORT];
-
-/** The timeout of a check whose config gives none. */
-const DEFAULT_CHECK_TIMEOUT_MS = 10 * 60 * 1000;
 
 const NAME = { type: "string", minLength: 1 } as const;
 const PATHS = { type: "array", items: NAME } as const;
@@ -195,12 +197,12 @@ export type LaneInput =
 	| { mode: "fork" | "join" | "read" };
 
 /**
- * Shell lines run in order, and the milliseconds they may take together. `readOnly` and `writable` are absolute host
+ * Shell lines run in order, and the milliseconds they may take together, none when unset. `readOnly` and `writable` are absolute host
  * paths bound at their own paths; `env` is set for the check alone.
  */
 export type CheckSpec = {
 	lines: string[];
-	timeout: number;
+	timeout?: number;
 	readOnly: string[];
 	writable: string[];
 	env: Record<string, string>;
@@ -293,11 +295,10 @@ function checkSpec(raw: RawCheck): CheckSpec {
 		writable = [],
 		env = {},
 	} = longForm(raw);
-	const ms =
-		timeout === undefined ? DEFAULT_CHECK_TIMEOUT_MS : durationMs(timeout);
-	if (ms === undefined)
+	const ms = timeout === undefined ? undefined : durationMs(timeout);
+	if (timeout !== undefined && ms === undefined)
 		throw new Error(
-			`check timeout '${timeout}' is not a duration. Write it as 500ms, 90s, 15m, 12h or 7d`,
+			`check timeout '${timeout}' is not a duration. Write it as ${DURATION_EXAMPLE}`,
 		);
 	return { lines: [run].flat(), timeout: ms, readOnly, writable, env };
 }

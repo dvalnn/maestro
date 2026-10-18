@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { messageOf } from "@maestro/core";
 import type { ConcertRecord } from "@maestro/core/perform";
+import { DURATION_EXAMPLE } from "@maestro/ir";
 import { COMMON, type Command, isSet, type Options, textOf } from "./command";
 import {
 	EXIT,
@@ -26,7 +27,7 @@ const PRUNE_OPTIONS = {
 	before: {
 		type: "string",
 		arg: "duration",
-		desc: "Prune concerts that settled longer ago than this, such as 500ms, 90s, 15m, 12h or 7d",
+		desc: `Prune concerts that settled longer ago than this, such as ${DURATION_EXAMPLE}`,
 	},
 	tour: { type: "string", arg: "slug", desc: "Only this tour" },
 	workspace: {

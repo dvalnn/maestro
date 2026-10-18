@@ -22,9 +22,15 @@ import {
 	requireTarget,
 	type Target,
 } from "./config";
-import { lanePorts, pathBinds, readOnlyBinds, withLane } from "./lane-input";
+import {
+	lanePorts,
+	laneVersion,
+	pathBinds,
+	readOnlyBinds,
+	withLane,
+} from "./lane-input";
 import { type Live, liveInstances } from "./live";
-import { openTarget } from "./store";
+import { carryWriter, openTarget } from "./store";
 
 /** A check's usage error. */
 export const USAGE_EXIT = 3;
@@ -32,8 +38,15 @@ export const USAGE_EXIT = 3;
 const TIMEOUT_EXIT = 124;
 /** The shell's exit for a command it cannot find. */
 const NOT_FOUND_EXIT = 127;
-/** Exits that mean the check could not run, rather than that it found a fault. */
-export const FAILED_EXITS = [USAGE_EXIT, TIMEOUT_EXIT, NOT_FOUND_EXIT];
+/** The exit of a line that was sent SIGKILL: out of memory, `kill -9`, a hard timeout kill. */
+const KILLED_EXIT = 137;
+/** Exits that mean the check could not run, rather than that it found a fault; any other non-zero exit is a fault. */
+export const FAILED_EXITS = [
+	USAGE_EXIT,
+	TIMEOUT_EXIT,
+	NOT_FOUND_EXIT,
+	KILLED_EXIT,
+];
 /** The name an inline check goes by in reasons and logs. */
 const INLINE = "inline";
 
@@ -61,12 +74,12 @@ type Sandboxed = {
 	log: string[];
 };
 
-/** Runs `line` of check `spec` in the lane until `deadline`, an epoch millisecond, logging its output. */
+/** Runs `line` of check `spec` in the lane until `deadline`, an epoch millisecond, or without limit, logging its output. */
 async function runLine(
 	s: Sandboxed,
 	spec: CheckSpec,
 	line: string,
-	deadline: number,
+	deadline: number | undefined,
 ): Promise<Ended> {
 	const proc = bubblewrap.start({
 		lane: s.lane.dir,
@@ -77,13 +90,16 @@ async function runLine(
 	});
 	s.live.stop = () => proc.kill();
 	let late = false;
-	const timer = setTimeout(
-		() => {
-			late = true;
-			proc.kill().catch(() => {});
-		},
-		Math.max(0, deadline - Date.now()),
-	);
+	const timer =
+		deadline === undefined
+			? undefined
+			: setTimeout(
+					() => {
+						late = true;
+						proc.kill().catch(() => {});
+					},
+					Math.max(0, deadline - Date.now()),
+				);
 	try {
 		for await (const out of proc.stdout) s.log.push(out);
 		const exit = await proc.exited;
@@ -112,7 +128,8 @@ async function runCheck(
 	name: string,
 	spec: CheckSpec,
 ): Promise<Verdict> {
-	const deadline = Date.now() + spec.timeout;
+	const deadline =
+		spec.timeout === undefined ? undefined : Date.now() + spec.timeout;
 	for (const [i, line] of spec.lines.entries()) {
 		if (s.live.cancelled) return { outcome: "failed", reason: "cancelled" };
 		s.log.push(`$ ${line}`);
@@ -141,6 +158,19 @@ function overall(verdicts: Verdict[]): Verdict {
 	return outcome === "ok"
 		? { outcome }
 		: { outcome, reason: reasons.join("; ") };
+}
+
+/** Seals `lane`; a join passes the writer of the version it joined on to the new one, so an agent can resume it. */
+async function sealed(
+	root: string,
+	config: CheckConfig,
+	inputs: Inputs,
+	lane: Lane,
+): Promise<string> {
+	const version = await lane.seal();
+	if (config.lane.mode === "join")
+		carryWriter(root, laneVersion(inputs[LANE_PORT]), version);
+	return version;
 }
 
 async function execute(
@@ -178,7 +208,9 @@ async function execute(
 			if (outcome === "failed") return { outcome, reason, outputs: { logs } };
 			const outputs = {
 				logs,
-				...(!read && { [LANE_PORT]: await lane.seal() }),
+				...(!read && {
+					[LANE_PORT]: await sealed(store.root, config, inputs, lane),
+				}),
 			};
 			return outcome === "ok"
 				? { outcome, outputs }

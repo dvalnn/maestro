@@ -9,6 +9,7 @@ import {
 	ARTIFACT_TYPES,
 	type ArtifactRef,
 	type Diagnostic,
+	DURATION_EXAMPLE,
 	durationMs,
 	findMarked,
 	formatInstance,
@@ -114,7 +115,7 @@ export function parseDuration(flag: string, text: string): number {
 	if (ms === undefined)
 		throw usageError(
 			`${flag} takes a positive whole number and one unit, not '${text}'`,
-			`Write it as 500ms, 90s, 15m, 12h or 7d`,
+			`Write it as ${DURATION_EXAMPLE}`,
 		);
 	return ms;
 }

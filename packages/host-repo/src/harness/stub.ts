@@ -1,6 +1,15 @@
 import { bubblewrap, type SandboxBackend } from "../sandbox/index";
-import { type SubprocessAdapter, subprocessHarness } from "./subprocess";
-import type { Harness, HarnessEvent, HarnessRequest } from "./types";
+import {
+	type JsonObject,
+	type SubprocessAdapter,
+	subprocessHarness,
+} from "./subprocess";
+import {
+	type Harness,
+	type HarnessEvent,
+	type HarnessRequest,
+	METRIC,
+} from "./types";
 
 /** Emitted objects are written as JSON lines on stdout, like a real harness's event stream. */
 export type StubStep =
@@ -41,18 +50,9 @@ function script(steps: StubStep[]) {
 	].join("\n");
 }
 
-function parse(line: string): HarnessEvent[] {
-	const e = parseLine(line);
-	return e ? [e] : [];
-}
+const parse = (e: JsonObject): HarnessEvent[] => [eventOf(e)];
 
-function parseLine(line: string): HarnessEvent | undefined {
-	let e: Record<string, unknown>;
-	try {
-		e = JSON.parse(line);
-	} catch {
-		return undefined;
-	}
+function eventOf(e: JsonObject): HarnessEvent {
 	switch (e.type) {
 		case "turn":
 			return { kind: "turn" };
@@ -68,8 +68,8 @@ function parseLine(line: string): HarnessEvent | undefined {
 			return {
 				kind: "usage",
 				metrics: {
-					tokens_in: Number(e.tokens_in ?? 0),
-					tokens_out: Number(e.tokens_out ?? 0),
+					[METRIC.tokensIn]: Number(e.tokens_in ?? 0),
+					[METRIC.tokensOut]: Number(e.tokens_out ?? 0),
 				},
 			};
 		default:

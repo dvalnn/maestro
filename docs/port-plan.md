@@ -150,8 +150,9 @@ need the core. S8d and S8e need S7.
   without argument-length limits, token usage reported as metrics (HOST-05, HOST-06, HOST-07).
 - **S8d. First real adapter (M).** pi as a sandboxed subprocess over its JSON event stream, using spike 4's findings
   (D-20). Claude Code is the second adapter.
-- **S8e. Host kinds, SDK and hooks (L).** `agent` and `check` node kinds (D-22), `host-repo-sdk`, `validate` and
-  `bounds` hooks, host config namespaces (HOST-01, HOST-09, HOST-11, HOST-12). Vocabulary per D-21.
+- **S8e. Host kinds, SDK and hooks (L).** Agent, check, changeset and apply node kinds (D-22), refs, agent-run checks,
+  the Claude Code adapter, `host-repo-sdk`, `validate` and `bounds` hooks, host config namespaces (HOST-01, HOST-09,
+  HOST-11 to HOST-15). Vocabulary per D-21.
 - **Acceptance (whole slice).** AC-4 and the host parts of AC-2. The lane double-join diagnostic fires in compose with
   no spend.
 

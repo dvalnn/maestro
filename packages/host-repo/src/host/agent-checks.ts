@@ -15,8 +15,6 @@ const SCRIPT_MODE = 0o755;
 const TAIL_LINES = 40;
 /** Seconds a line gets after `timeout(1)` asks it to stop, before it is killed. */
 const KILL_GRACE_S = 2;
-/** What `timeout(1)` exits with when it had to kill a line that ignored its request to stop. */
-const TIMEOUT_KILLED_EXIT = 137;
 
 /** What an agent that can run checks needs beyond its role. */
 export type AgentChecks = {
@@ -40,12 +38,16 @@ function body(name: string, spec: CheckSpec): string {
 	return [...env, ...lines, ""].join("\n");
 }
 
-/** The `check` command: runs the named check under its timeout, prints its output's tail and its verdict. */
+/** The `check` command: runs the named check under its timeout if it has one, prints its output's tail and its verdict. */
 function command(checks: [string, CheckSpec][]): string {
-	const cases = checks.map(
-		([name, spec], i) =>
-			`${quote(name)}) script=${ROOT}/${i}.sh secs=${spec.timeout / MS_PER_UNIT.s};;`,
-	);
+	const cases = checks.map(([name, spec], i) => {
+		const run = `sh ${ROOT}/${i}.sh`;
+		const limited =
+			spec.timeout === undefined
+				? run
+				: `timeout -k ${KILL_GRACE_S}s ${spec.timeout / MS_PER_UNIT.s}s ${run}`;
+		return `${quote(name)}) run=${quote(limited)};;`;
+	});
 	return `#!/bin/sh
 case "$1" in
 ${cases.join("\n")}
@@ -53,13 +55,13 @@ ${cases.join("\n")}
 esac
 cd ${LANE_DST} || exit ${USAGE_EXIT}
 log=$(mktemp) || exit ${USAGE_EXIT}
-timeout -k ${KILL_GRACE_S}s "\${secs}s" sh "$script" >"$log" 2>&1
+$run >"$log" 2>&1
 code=$?
 tail -n ${TAIL_LINES} "$log"
 rm -f "$log"
 case $code in
 0) verdict=ok;;
-${[...FAILED_EXITS, TIMEOUT_KILLED_EXIT].join("|")}) verdict=failed;;
+${FAILED_EXITS.join("|")}) verdict=failed;;
 *) verdict=rejected;;
 esac
 printf "check '%s': %s\\n" "$1" "$verdict"
@@ -81,7 +83,7 @@ const NONE: AgentChecks = { readOnly: [], writable: [], env: {}, note: "" };
 
 /**
  * Writes the `check` command and the scripts of `checks` under `dir/checks`, and the binds, environment and prompt
- * note an agent that runs them needs. The scripts hold the checks' env values, so `dir` is never an artifact. The command runs a check as the host's own check node would, with its timeout
+ * note an agent that runs them needs. The scripts hold the checks' env values, so `dir` is never an artifact. The command runs a check as the host's own check node would, with its timeout, if any,
  * and its exit classification, but in the agent's sandbox: the binds of every check apply to all of it.
  */
 export function stageChecks(

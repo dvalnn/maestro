@@ -70,6 +70,7 @@ const ROLES = ["builder", "implementer", "resolver", "reviewer"];
 /** A repo host on a toy target whose stub harness writes the files `writes` gives each request, and the requests it got. */
 function repo(
 	writes: (req: HarnessRequest) => Record<string, string> = () => ({}),
+	checks: Record<string, string> = { test: "true", lint: "true" },
 ) {
 	const requests: HarnessRequest[] = [];
 	const host = repoHost({
@@ -95,7 +96,7 @@ function repo(
 		target: {
 			repo: toyTarget(),
 			base: "main",
-			checks: { test: "true", lint: "true" },
+			checks,
 		},
 		roles: Object.fromEntries(
 			ROLES.map((r) => [r, { harness: "stub", model: "none" }]),
@@ -318,6 +319,26 @@ describe("examples", () => {
 			config: { refs: { logs: { type: "core.file" } } },
 		});
 		expect(await repo().composeIt(ir)).toMatchObject({ ok: true });
+	});
+
+	test("build-then-repair repairs a red check in the builder's session", async () => {
+		const ir = buildIr(buildThenRepair);
+		const { host, hostConfig, requests } = repo(
+			(req): Record<string, string> =>
+				req.prompt.startsWith("Make") ? { "fixed.txt": "x\n" } : {},
+			{ test: "test -f fixed.txt" },
+		);
+		const concert = await stubConcert(ir, {
+			hosts: [host],
+			config: hostConfig,
+		});
+		await concert.close();
+		expect(concert.result).toMatchObject({ outcome: "ok", node: "result" });
+		const [build, repair] = requests;
+		expect(requests).toHaveLength(2);
+		expect(repair?.session).toEqual(
+			build?.session as HarnessRequest["session"],
+		);
 	});
 
 	/** What an implementer writes: the file its task names, holding the task. A resolver writes `resolved`. */

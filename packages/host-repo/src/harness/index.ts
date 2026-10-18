@@ -1,6 +1,12 @@
 export { resolveBin } from "./bin";
 export { type StubStep, stubHarness } from "./stub";
-export { type SubprocessAdapter, subprocessHarness } from "./subprocess";
+export {
+	finite,
+	isObject,
+	type JsonObject,
+	type SubprocessAdapter,
+	subprocessHarness,
+} from "./subprocess";
 export {
 	type Harness,
 	type HarnessEvent,
@@ -8,6 +14,7 @@ export {
 	type HarnessResult,
 	type HarnessRun,
 	IDENTITY,
+	METRIC,
 	type Metrics,
 	OUTBOX,
 	type Role,

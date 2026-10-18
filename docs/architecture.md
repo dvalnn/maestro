@@ -360,10 +360,10 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   negative. `failed` means the run did not complete.
 - **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
   failures reported), or an inline `{ run, timeout }`. Each line runs through `sh -c` in the sandbox, in order, and the
-  first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout) and 127 are `failed`; any other non-zero
-  exit is `rejected`, the reason naming the check and the line. Logs are an artifact. It is its own host kind and not a
-  code node, because it runs untrusted target commands and needs the sandbox, lane staging, kill and logs. Code nodes
-  are trusted and run in process.
+  first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are `failed`; any
+  other non-zero exit is `rejected`, the reason naming the check and the line. Logs are an artifact. It is its own host
+  kind and not a code node, because it runs untrusted target commands and needs the sandbox, lane staging, kill and
+  logs. Code nodes are trusted and run in process.
 - **Changeset node.** Takes one lane version and outputs its patch series as an artifact: a directory holding `base`,
   the target commit the lane chain was cut from, and the patches as `0001.patch`, `0002.patch` and on. It opens no lane
   and spends no join.
@@ -378,26 +378,29 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - A ref is a named artifact input of an agent, each with a required `when`. It is mounted read-only at `/in/<name>` and
   listed in the staged prompt, and its content hash is in the resume key. A bind is not (ADR 0011).
 - An agent that names checks gets a `check <name>` command on its `PATH`, staged read-only; one that names none gets no
-  `check` command. It runs the named check in `/lane` under the check's timeout and sets the check's `env` inside that
-  command alone, never in the rest of the agent's sandbox, prints the tail of the output, and ends `ok`, `rejected` or
-  `failed` by the exit classification above. The staged prompt lists the checks and says to run them rather than write
-  new ones (HOST-15). The agent's sandbox gets the read-only and writable binds of those checks, which bind paths cannot
-  be scoped to one command.
+  `check` command. It runs the named check in `/lane` under the check's timeout, if any, and sets the check's `env`
+  inside that command alone, never in the rest of the agent's sandbox, prints the tail of the output, and ends `ok`,
+  `rejected` or `failed` by the exit classification above. The staged prompt lists the checks and says to run them
+  rather than write new ones (HOST-15). The agent's sandbox gets the read-only and writable binds of those checks, which
+  bind paths cannot be scoped to one command.
 
 **Staging, outbox and envelope**
 
 - The identity is appended to the harness's own system prompt from a staged file, never replacing it. The task, with the
   host's output contract appended, goes as the user message on stdin. The exact staged text is an output artifact.
 - Declared outputs are files the agent writes in its **outbox**, a per-instance directory at `/out` outside the lane.
-  The host reads only regular files there and checks each against its schema. A missing file or a schema violation is
-  `failed`.
+  The host reads only regular files there and checks each against its schema. The contract tells the agent to write
+  every declared file, even when it rejects. A missing file or a schema violation is `failed`.
 - The agent's final reply is its **envelope**, `{ outcome: ok | rejected, reason?, report }`, with the reason required
-  when rejected. A malformed envelope gets at most two correction turns in the same session, then `failed`.
+  when rejected. A malformed envelope gets at most two correction turns in the same session, then `failed`. A rejection
+  with declared files missing or invalid shares those two turns, then ends `rejected` with its reason and no outputs.
 
 **Sessions**
 
 - The host mints each agent's harness session, and records which session wrote each lane version under `sessions/` in
-  its store. An agent that joins a version with `resume: true` continues the session that wrote it.
+  its store. An agent that joins a version with `resume: true` continues the session that wrote it. A check that joins a
+  version and seals a new one passes the joined version's session on to the new one, so build, check and a resumed
+  repair share a session. An apply records none.
 - A session continues only within its concert and on its harness, so a warm session never crosses concerts.
 
 **Lanes**
@@ -412,11 +415,12 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - A lane belongs to its node instance. A failed or cancelled instance drops its lane, and when a resume runs the
   instance again it takes back whatever an earlier run left, its sealed version included. A retried join re-opens the
   version it joined, from that version's content.
-- The concert's result is a **changeset** (a patch series) attached to the record. Applying or committing it is a
-  separate, operator-owned step. The target's checkout, refs and commits are never written by the host (HOST-03).
-- A **lane ref** param, written `<concert id>.<node instance id>`, lets a concert fork or read a version left by an
-  earlier concert (D-27, HOST-13). There is no cross-concert join. Lanes stay on disk until `prune`, and `ls` shows
-  their disk use.
+- A concert leaves a **changeset** (a patch series) attached to the record only by ending in a changeset node. Applying
+  or committing it is a separate, operator-owned step. The target's checkout, refs and commits are never written by the
+  host (HOST-03).
+- A **lane ref** param, written `<concert id>.<node instance id>`, lets a concert fork, read or make into a changeset a
+  version left by an earlier concert (D-27, HOST-13). There is no cross-concert join. Lanes stay on disk until `prune`,
+  and `ls` shows their disk use.
 
 **Configuration**
 
@@ -425,6 +429,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - A check is a shell line or a list of them, or the long form `{ run, timeout, readOnly, writable, env }`: a duration
   such as `10m`, absolute host paths bound read-only or read-write at their own paths, and environment variables for
   that check. A check that needs a toolchain, a cache or a lock file shared across lanes names it there.
+- A fresh lane takes its node's `base`, else `target.base`, else is cut from the target's `HEAD`. A check with no
+  `timeout` has no limit and runs until it ends or the concert is killed, in the agent's `check` command as on the node.
 
 **Sandbox**
 
@@ -449,7 +455,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 - Lane rule (HOST-02): no version joined twice, whether by two nodes or by one node once per group iteration, and no
   join of a lane ref.
-- Resume only on a join, and not of a version no agent wrote, written on another harness, or of another concert.
+- Resume only on a join of an agent's version or of a joining check's, and not of any other writer (an apply, a check on
+  a fresh or forked lane), nor a version written on another harness or in another concert.
 - Every role, harness and check a node names exists, the message listing those that do.
 - Every bind, read-only or writable, is absolute, exists and is not inside a lane. A writable bind also neither contains
   nor lies inside the lanes or the target repository. An agent names only checks config has.

@@ -5,6 +5,15 @@ export type Role = { harness: string; model: string; thinking?: string };
 /** Named, additive numbers (GLOSSARY: Metric), e.g. `tokens_in`. */
 export type Metrics = Record<string, number>;
 
+/** The token metric names adapters report. */
+export const METRIC = {
+	tokensIn: "tokens_in",
+	tokensOut: "tokens_out",
+	tokensCacheRead: "tokens_cache_read",
+	tokensCacheWrite: "tokens_cache_write",
+	tokensReasoning: "tokens_reasoning",
+} as const;
+
 /** Where an adapter's sandbox sees `HarnessRequest.outbox`. */
 export const OUTBOX = "/out";
 /** Where an adapter's sandbox sees `HarnessRequest.session.dir`. */

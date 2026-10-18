@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
+import { repoSetup } from "./config";
 import {
 	cleanup,
 	configOf,
@@ -51,6 +52,7 @@ describe("agent-runnable checks and refs", () => {
 			slow: { run: "sleep 5", timeout: "500ms" },
 			stubborn: { run: "trap '' TERM; sleep 30", timeout: "500ms" },
 			crash: "kill -SEGV $$",
+			killed: "exit 137",
 		});
 		const { host, requests } = stubHost((req) =>
 			req.prompt.startsWith("write")
@@ -58,7 +60,7 @@ describe("agent-runnable checks and refs", () => {
 				: [
 						{ sh: "cat /in/notes > /out/ref.md" },
 						{
-							sh: `(cd /tmp; check lint; check red; check slow; check stubborn; check crash; check nope) > /out/check.md 2>&1; echo "env:\${MODE-unset}" >> /out/check.md`,
+							sh: `(cd /tmp; check lint; check red; check slow; check stubborn; check crash; check killed; check nope) > /out/check.md 2>&1; echo "env:\${MODE-unset}" >> /out/check.md`,
 						},
 						{ sh: `echo hi > ${cache}/agent.txt` },
 						{
@@ -84,7 +86,7 @@ describe("agent-runnable checks and refs", () => {
 				config: {
 					...builder,
 					lane: fresh,
-					checks: ["lint", "red", "slow", "stubborn", "crash"],
+					checks: ["lint", "red", "slow", "stubborn", "crash", "killed"],
 					refs: {
 						notes: { when: "you need the notes", type: "core.markdown" },
 					},
@@ -115,8 +117,9 @@ describe("agent-runnable checks and refs", () => {
 		expect(log).toContain("check 'slow': failed");
 		expect(log).toContain("check 'stubborn': failed");
 		expect(log).toContain("check 'crash': rejected");
+		expect(log).toContain("check 'killed': failed");
 		expect(log).toContain(
-			"check: 'nope' is not one of: 'lint', 'red', 'slow', 'stubborn', 'crash'",
+			"check: 'nope' is not one of: 'lint', 'red', 'slow', 'stubborn', 'crash', 'killed'",
 		);
 		expect(log).toContain("env:unset");
 		expect(readFileSync(artifact("reader", "ro"), "utf8")).toBe("readonly\n");
@@ -126,6 +129,19 @@ describe("agent-runnable checks and refs", () => {
 		expect(prompt).toContain("- /in/notes: read when you need the notes");
 		expect(prompt).toContain("`check <name>`, and do not write your own");
 		expect(prompt).toContain("- check red: true && exit 1");
+	});
+
+	test("a check with no timeout has no deadline in its spec", () => {
+		const target = repoSetup({
+			config: {
+				target: {
+					repo: ".",
+					checks: { open: "true", capped: { run: "true", timeout: "2s" } },
+				},
+			},
+			store: "",
+		}).target;
+		expect(target?.checks.open?.timeout).toBeUndefined();
 	});
 
 	test("a ref is an input port of its artifact type, so its content is part of the resume key", () => {
