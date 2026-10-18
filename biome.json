@@ -155,6 +155,41 @@
 			}
 		},
 		{
+			"includes": ["packages/harness-pi/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"@maestro/**",
+											"!@maestro/host-agents",
+											"!@maestro/host-agents/**"
+										],
+										"message": "harness-pi imports host-agents alone."
+									},
+									{
+										"group": [
+											"../../*/src/**",
+											"../../*/fixtures/**",
+											"../../../*/src/**",
+											"../../../*/fixtures/**",
+											"../../../../*/src/**",
+											"../../../../*/fixtures/**"
+										],
+										"message": "Import another package by its name, never by a relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
 			"includes": ["packages/testkit/**"],
 			"linter": {
 				"rules": {

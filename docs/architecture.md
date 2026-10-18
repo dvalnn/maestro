@@ -359,10 +359,11 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 **Harness adapters**
 
-- An adapter starts an agent session for a role, feeds it the prompt, streams events (turns, tool calls, usage),
-  collects the declared outputs, and supports cancel. It is a sandboxed subprocess driving the harness's JSON event
-  stream (D-20). An in-process SDK is deferred, because an in-process agent cannot be confined by bubblewrap. The first
-  adapter is pi (`pi -p --mode json`) and the second is Claude Code.
+- An adapter starts an agent session for a role, feeds it the prompt, streams events (turns, tool calls, usage), reports
+  the agent's final reply, and supports cancel. The host reads declared outputs from the agent's outbox, not the
+  adapter. It is a sandboxed subprocess driving the harness's JSON event stream (D-20). An in-process SDK is deferred,
+  because an in-process agent cannot be confined by bubblewrap. The first adapter is pi (`pi -p --mode json`) and the
+  second is Claude Code.
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
 **Host validation rules (initial)**

@@ -1,0 +1,9 @@
+{
+	"name": "@maestro/harness-pi",
+	"private": true,
+	"type": "module",
+	"exports": "./src/index.ts",
+	"dependencies": {
+		"@maestro/host-agents": "workspace:*"
+	}
+}

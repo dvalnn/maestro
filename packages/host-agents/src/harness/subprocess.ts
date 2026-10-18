@@ -1,5 +1,3 @@
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
 import {
 	bubblewrap,
 	type ExitStatus,
@@ -15,33 +13,17 @@ import type {
 	HarnessRun,
 	Metrics,
 } from "./types";
+import { OUTBOX, SESSION_DIR } from "./types";
 
 export interface SubprocessAdapter {
 	readonly name: string;
-	/** The driver supplies `lane` and appends the request's `readOnly` binds. */
+	/**
+	 * The driver supplies `lane`, appends the request's `readOnly` binds and binds its `outbox` and `session.dir`
+	 * read-write at `OUTBOX` and `SESSION_DIR`.
+	 */
 	spec(req: HarnessRequest): Omit<SandboxSpec, "lane">;
-	/** Returns undefined to drop a line (non-JSON noise). */
-	parse(line: string): HarnessEvent | undefined;
-}
-
-function collect(lane: string, paths: string[]) {
-	const outputs: Record<string, Uint8Array> = {};
-	const missing: string[] = [];
-	const root = realpathSync(lane);
-	for (const rel of paths) {
-		try {
-			// The agent controls the lane, so a declared output may be a symlink to a host file: only regular
-			// files whose real path stays inside the lane are read.
-			const path = resolve(root, rel);
-			if (!lstatSync(path).isFile()) throw new Error("not a regular file");
-			if (!realpathSync(path).startsWith(`${root}/`))
-				throw new Error("outside lane");
-			outputs[rel] = readFileSync(path);
-		} catch {
-			missing.push(rel);
-		}
-	}
-	return { outputs, missing };
+	/** A fresh line parser per run, so it may keep state. It returns the events a stdout line carries: none for noise. */
+	parser(): (line: string) => HarnessEvent[];
 }
 
 function addUsage(metrics: Metrics, usage: Metrics) {
@@ -49,42 +31,65 @@ function addUsage(metrics: Metrics, usage: Metrics) {
 		metrics[k] = (metrics[k] ?? 0) + v;
 }
 
-/** Forwards parsed events and sums usage into `metrics`. Returns why reading stopped early, if it did. */
+type Tally = {
+	metrics: Metrics;
+	reply: string;
+	settled: boolean;
+	fault?: string;
+};
+
+/** A consumer that stops iterating `events` closes the stream, and the run carries on without it. */
+function ignoreClosed(f: () => void) {
+	try {
+		f();
+	} catch {}
+}
+
+function fold(tally: Tally, e: HarnessEvent) {
+	if (e.kind === "usage") addUsage(tally.metrics, e.metrics);
+	else if (e.kind === "text") tally.reply = e.text;
+	else if (e.kind === "settled") tally.settled = true;
+	else if (e.kind === "fault") tally.fault ??= e.reason;
+}
+
+/** Forwards parsed events and folds them into `tally`. Returns why reading stopped early, if it did. */
 async function pump(
 	proc: SandboxedProcess,
-	parse: SubprocessAdapter["parse"],
+	parse: ReturnType<SubprocessAdapter["parser"]>,
 	emit: ReadableStreamDefaultController<HarnessEvent>,
-	metrics: Metrics,
+	tally: Tally,
 ): Promise<string | undefined> {
 	try {
 		for await (const line of proc.stdout) {
-			const e = parse(line);
-			if (!e) continue;
-			if (e.kind === "usage") addUsage(metrics, e.metrics);
-			emit.enqueue(e);
+			for (const e of parse(line)) {
+				fold(tally, e);
+				ignoreClosed(() => emit.enqueue(e));
+				if (e.kind === "fault") await proc.kill().catch(() => {});
+			}
 		}
 	} catch (err) {
 		await proc.kill().catch(() => {});
 		return `cannot read harness output: ${err instanceof Error ? err.message : err}`;
 	} finally {
-		emit.close();
+		ignoreClosed(() => emit.close());
 	}
 }
 
 /** `error` is why the run failed before its exit status counts, if it did. */
 function settle(
-	req: HarnessRequest,
 	exit: ExitStatus,
-	metrics: Metrics,
+	tally: Tally,
 	error: string | undefined,
 ): HarnessResult {
+	const { metrics, reply } = tally;
 	const fail = (reason: string): HarnessResult => ({
 		outcome: "failed",
 		reason,
-		outputs: {},
+		reply,
 		metrics,
 	});
-	if (error) return fail(error);
+	const failure = tally.fault ?? error;
+	if (failure) return fail(failure);
 	if (exit.code !== 0) {
 		const how =
 			exit.code === null
@@ -94,10 +99,8 @@ function settle(
 			`${how}: ${exit.stderr.trim().split("\n").slice(-5).join(" | ")}`,
 		);
 	}
-	const { outputs, missing } = collect(req.lane, req.outputs ?? []);
-	if (missing.length)
-		return fail(`declared outputs not written: ${missing.join(", ")}`);
-	return { outcome: "ok", outputs, metrics };
+	if (!tally.settled) return fail("harness ended without settling");
+	return { outcome: "ok", reply, metrics };
 }
 
 export function subprocessHarness(
@@ -112,6 +115,11 @@ export function subprocessHarness(
 				...spec,
 				lane: req.lane,
 				readOnly: [...(spec.readOnly ?? []), ...(req.readOnly ?? [])],
+				writable: [
+					...(spec.writable ?? []),
+					{ src: req.outbox, dst: OUTBOX },
+					{ src: req.session.dir, dst: SESSION_DIR },
+				],
 			});
 			let emit!: ReadableStreamDefaultController<HarnessEvent>;
 			const events = new ReadableStream<HarnessEvent>({
@@ -119,19 +127,18 @@ export function subprocessHarness(
 					emit = c;
 				},
 			});
-			const metrics: Metrics = {};
+			const tally: Tally = { metrics: {}, reply: "", settled: false };
 			let cancelled = false;
 			let settled = false;
-			const pumped = pump(proc, adapter.parse, emit, metrics);
+			const pumped = pump(proc, adapter.parser(), emit, tally);
 
 			const result = (async () => {
 				const exit = await proc.exited;
 				const pumpError = await pumped;
 				settled = true;
 				return settle(
-					req,
 					exit,
-					metrics,
+					tally,
 					pumpError ?? (cancelled ? "cancelled" : undefined),
 				);
 			})();

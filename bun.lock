@@ -34,6 +34,12 @@
         "yaml": "2.9.1",
       },
     },
+    "packages/harness-pi": {
+      "name": "@maestro/harness-pi",
+      "dependencies": {
+        "@maestro/host-agents": "workspace:*",
+      },
+    },
     "packages/host-agents": {
       "name": "@maestro/host-agents",
     },
@@ -60,10 +66,8 @@
       "name": "@maestro/testkit",
       "dependencies": {
         "@maestro/core": "workspace:*",
-        "@maestro/sdk": "workspace:*",
-      },
-      "devDependencies": {
         "@maestro/ir": "workspace:*",
+        "@maestro/sdk": "workspace:*",
       },
     },
   },
@@ -89,6 +93,8 @@
     "@maestro/cli": ["@maestro/cli@workspace:packages/cli"],
 
     "@maestro/core": ["@maestro/core@workspace:packages/core"],
+
+    "@maestro/harness-pi": ["@maestro/harness-pi@workspace:packages/harness-pi"],
 
     "@maestro/host-agents": ["@maestro/host-agents@workspace:packages/host-agents"],
 
