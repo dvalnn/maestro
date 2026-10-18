@@ -29,6 +29,7 @@ export {
 	code,
 	type HostNodeOptions,
 	hostNode,
+	literal,
 	type MapOptions,
 	type MapResults,
 	map,

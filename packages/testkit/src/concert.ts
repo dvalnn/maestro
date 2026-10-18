@@ -28,6 +28,8 @@ export type StubOptions = {
 	script?: FakeScript;
 	/** The hosts to perform with, in place of the fake host. */
 	hosts?: Host[];
+	/** Config values by namespace, such as a host's, under the data root the concert is given. */
+	config?: Readonly<Record<string, unknown>>;
 	/** The code nodes' and key functions' stand-ins, by export name. */
 	code?: Readonly<Record<string, Stub>>;
 	/** The directory holding the record store and the concert directories. A new temporary directory by default. */
@@ -92,7 +94,7 @@ async function performIn(
 			codeHash: options.codeHash?.(ref) ?? ref.codeHash,
 		})),
 		...(typeof source === "string" && { resume: source }),
-		config: { values: { dataRoot: dir }, sources: [] },
+		config: { values: { ...options.config, dataRoot: dir }, sources: [] },
 		hosts: options.hosts ?? [fakeHost(options.script)],
 		loadCode,
 		recordPath,

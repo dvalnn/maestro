@@ -1,6 +1,7 @@
 // A bare composition: an agent with an identity writes a file in a fresh lane, and a check reads it in that version.
-import { composition, Dir, hostNode, Text } from "@maestro/sdk";
-import { Lane, Logs } from "./lane";
+
+import { Lane } from "@maestro/host-repo-sdk";
+import { composition, Dir, File, hostNode, Text } from "@maestro/sdk";
 
 export const write = composition("write", { examples: [{}] }, () => {
 	const agent = hostNode("repo.agent", {
@@ -18,6 +19,6 @@ export const write = composition("write", { examples: [{}] }, () => {
 		label: "look",
 		in: { lane: agent.out.lane },
 		config: { lane: { mode: "read" }, check: { run: "grep -q hi hello.txt" } },
-		out: { logs: Logs },
+		out: { logs: File() },
 	});
 });

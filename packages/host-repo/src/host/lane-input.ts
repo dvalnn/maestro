@@ -87,15 +87,10 @@ export const readOnlyBinds = (lane: Lane, ...paths: string[][]): Bind[] => [
 	...pathBinds(...paths),
 ];
 
-const LANE_OUT = { [MAESTRO_TYPE]: LANE_TYPE, type: "string" };
-/**
- * Untyped, so a lane ref param, which reaches the node as a literal typed only `string`, and a node's `lane` output
- * both fit it. The version is checked when the lane opens.
- */
-const LANE_IN = {};
+const LANE = { [MAESTRO_TYPE]: LANE_TYPE, type: "string" };
 
 /** The lane ports of a node whose lane input is `input`: a version in unless fresh, a version out unless read. */
 export const lanePorts = (input: LaneInput): { in: Ports; out: Ports } => ({
-	in: input.mode === "fresh" ? {} : { [LANE_PORT]: LANE_IN },
-	out: input.mode === "read" ? {} : { [LANE_PORT]: LANE_OUT },
+	in: input.mode === "fresh" ? {} : { [LANE_PORT]: LANE },
+	out: input.mode === "read" ? {} : { [LANE_PORT]: LANE },
 });

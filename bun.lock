@@ -26,6 +26,7 @@
         "@maestro/sdk": "workspace:*",
       },
       "devDependencies": {
+        "@maestro/host-repo-sdk": "workspace:*",
         "@maestro/testkit": "workspace:*",
       },
     },
@@ -54,6 +55,18 @@
       "dependencies": {
         "@maestro/core": "workspace:*",
         "@maestro/ir": "workspace:*",
+      },
+    },
+    "packages/host-repo-sdk": {
+      "name": "@maestro/host-repo-sdk",
+      "dependencies": {
+        "@maestro/ir": "workspace:*",
+        "@maestro/sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "@maestro/core": "workspace:*",
+        "@maestro/host-repo": "workspace:*",
+        "@maestro/testkit": "workspace:*",
       },
     },
     "packages/ir": {
@@ -112,6 +125,8 @@
     "@maestro/harness-pi": ["@maestro/harness-pi@workspace:packages/harness-pi"],
 
     "@maestro/host-repo": ["@maestro/host-repo@workspace:packages/host-repo"],
+
+    "@maestro/host-repo-sdk": ["@maestro/host-repo-sdk@workspace:packages/host-repo-sdk"],
 
     "@maestro/ir": ["@maestro/ir@workspace:packages/ir"],
 

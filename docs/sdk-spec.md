@@ -243,8 +243,37 @@ A host SDK is a package that exports typed constructors and types for the host's
    section 6).
 6. Contribute param types and their CLI resolution.
 
-The coding-agent host SDK exports at least `agent`, `check`, and the lane constructors. Its exact surface is in that
-host's own spec, written during the host slice.
+A host type works as a param type and a port type alike. `literal(value, type)` from `@maestro/sdk` makes a plain value
+an input of a declared type, so a param read from its text can feed a host node's port of that type.
+
+### 12.1 Repo host SDK
+
+`@maestro/host-repo-sdk` builds the repo host's nodes (architecture 12). It imports only the SDK and the IR, since packs
+bundle it.
+
+| Export                                     | What it gives                                                                                                                           |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `Lane`                                     | The `repo.lane` type of a lane version, and the lane ref param type                                                                     |
+| `fresh(base?)`                             | A new lane cut at `base`, else `target.base`                                                                                            |
+| `fork(v)`, `read(v)`                       | A copy of version `v`, or `v` with its writes discarded; `v` is a lane output or a lane ref                                             |
+| `join(v)`                                  | The lane continued from `v`, a lane output of this concert                                                                              |
+| `JsonOut(file, type)`, `MarkdownOut(file)` | An agent output: a file in its outbox, arriving as a `core.json-file` or `core.markdown` artifact                                       |
+| `agent({ task, lane, role, ... })`         | A `repo.agent` node; outputs `report`, `staged`, `lane` unless it reads, and each declared output¹                                      |
+| `seat({ role, identity, ... })`            | A function of `{ task, lane, ... }` that emits a `repo.agent` node²                                                                     |
+| `check(lane, which?)`                      | A `repo.check` node: every named check, the one named, or an inline `{ run, timeout, ... }`; outputs `logs`, and `lane` unless it reads |
+| `changeset(v)`                             | A `repo.changeset` node: version `v` as a patch series, output `changeset`                                                              |
+| `apply(lane, { name: changeset }, opts)`   | A `repo.apply` node: the changesets applied in key order, each on a port of its name; output `lane`                                     |
+
+¹ `agent` also takes `identity`, `refs` (each `{ artifact, when }`), `out`, `checks`, `readOnly`, `resume` and the
+common options. `role` is a role name or `{ name, harness?, model?, thinking? }`.
+
+² A seat takes `role`, `identity`, `refs`, `out`, `checks` and `readOnly`. A call takes `task`, `lane`, `resume` and the
+common options, and may override the role and add refs, outputs, checks and read-only binds: its role fields override
+the seat's, refs and outputs add with the call winning on a name, checks and binds are a union, and the result's outputs
+are typed by both.
+
+A lane ref given to `fork`, `read` or `changeset` becomes a `literal` of type `Lane`. N lanes merge by folding `apply`
+over their changesets in a `repeat`, a resolver agent joining on conflict.
 
 ## 13. IR emission, the worker protocol, diagnostics, test kit and renderers
 
@@ -369,13 +398,13 @@ const runs = map(
     const lens = agent("review", {
       prompt: tpl("lens.md", { job, ctx }),
       role: job.lens,
-      out: { findings: Json("findings.json", Findings) },
+      out: { findings: JsonOut("findings.json", Findings) },
     });
     const skeptic = agent("review", {
       when: lens.out.findings.nonEmpty,
       role: job.skeptic,
       prompt: tpl("skeptic.md", { job, findings: lens.out.findings }),
-      out: { verdicts: Json("skeptic.json", Verdicts) },
+      out: { verdicts: JsonOut("skeptic.json", Verdicts) },
     });
     return { lens, skeptic };
   },
@@ -385,7 +414,7 @@ const merged = code(byFinding, { in: { runs }, out: Merged });
 return agent("review", {
   prompt: tpl("consolidate.md", { merged }),
   role: SOL,
-  out: { report: Markdown("review.md") },
+  out: { report: MarkdownOut("review.md") },
 });
 ```
 

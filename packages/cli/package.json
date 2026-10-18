@@ -15,6 +15,7 @@
 		"@maestro/sdk": "workspace:*"
 	},
 	"devDependencies": {
+		"@maestro/host-repo-sdk": "workspace:*",
 		"@maestro/testkit": "workspace:*"
 	}
 }

@@ -29,6 +29,7 @@ import {
 	innerFrame,
 	innerRef,
 	itemsOf,
+	literalRef,
 	pushNode,
 	type Ref,
 	RefImpl,
@@ -141,6 +142,10 @@ export function hostNode<O extends Types = NoOutputs>(
 		),
 	);
 }
+
+/** `value` as an input of declared `type`, so a plain value can feed a port of a host type (sdk-spec 9). */
+export const literal = <T>(value: T, type: Type<T>): Ref<T> =>
+	literalRef(value, type, "literal") as Ref<T>;
 
 /**
  * A policy or invariant. A plain `cond` is checked now: true emits nothing, false throws `ASSERT.failed`. A Ref

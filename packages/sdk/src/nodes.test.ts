@@ -19,6 +19,7 @@ import {
 	hostNode,
 	Int,
 	List,
+	literal,
 	type Rejection,
 	Text,
 } from "./index";
@@ -168,6 +169,21 @@ describe("hostNode", () => {
 			buildOf(() => hostNode("fake.check", { config: { x: task().out.text } })),
 		);
 		expect(error.code).toBe("REF.value");
+	});
+
+	test("a literal input carries its declared type, and a bare value only its JSON type", () => {
+		const Handle = {
+			schema: { type: "string", "x-maestro-type": "fake.handle" },
+		};
+		const ir = buildOf(() =>
+			hostNode("fake.check", {
+				in: { typed: literal("h1", Handle), bare: "h1" },
+			}),
+		);
+		expect(nodeOf(ir, "check")).toMatchObject({
+			in: { typed: Handle.schema, bare: { type: "string" } },
+			literals: { typed: "h1", bare: "h1" },
+		});
 	});
 });
 

@@ -1,6 +1,7 @@
 // A bare composition: a check in a map cuts a fresh lane and seals a marked 64 KiB version per item.
-import { composition, hostNode, map } from "@maestro/sdk";
-import { Lane, Logs } from "./lane";
+
+import { Lane } from "@maestro/host-repo-sdk";
+import { composition, File, hostNode, map } from "@maestro/sdk";
 
 export const mark = composition("mark", { examples: [{}] }, () =>
 	map(
@@ -17,7 +18,7 @@ export const mark = composition("mark", { examples: [{}] }, () =>
 						],
 					},
 				},
-				out: { logs: Logs, lane: Lane },
+				out: { logs: File(), lane: Lane },
 			}),
 		{ label: "lens", onError: "propagate" },
 	),

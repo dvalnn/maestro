@@ -129,6 +129,9 @@ host.
 **Identity**: An agent's standing text, appended to its harness's own system prompt from a staged file. The task goes
 separately, as the user message.
 
+**Seat**: An agent's standing setup, its role, identity, refs, declared outputs, checks and read-only binds, bundled
+once and called with a task and a lane to emit an agent node. A call may override the role and add to the rest.
+
 **Envelope**: An agent's final reply, `{ outcome: ok | rejected, reason?, report }`, the reason required when rejected.
 
 **Outbox**: The per-instance directory at `/out`, outside the lane, where an agent writes its declared outputs for the

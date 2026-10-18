@@ -155,6 +155,77 @@
 			}
 		},
 		{
+			"includes": ["packages/host-repo-sdk/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": ["@maestro/**", "!@maestro/ir", "!@maestro/sdk"],
+										"message": "host-repo-sdk imports sdk and ir alone, since packs bundle it."
+									},
+									{
+										"group": [
+											"../../*/src/**",
+											"../../*/fixtures/**",
+											"../../../*/src/**",
+											"../../../*/fixtures/**",
+											"../../../../*/src/**",
+											"../../../../*/fixtures/**"
+										],
+										"message": "Import another package by its name, never by a relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/host-repo-sdk/**/*.test.ts"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"@maestro/**",
+											"!@maestro/ir",
+											"!@maestro/sdk",
+											"!@maestro/sdk/**",
+											"!@maestro/core/**",
+											"!@maestro/host-repo",
+											"!@maestro/host-repo/**",
+											"!@maestro/testkit"
+										],
+										"message": "host-repo-sdk tests import sdk, ir, core, host-repo and testkit."
+									},
+									{
+										"group": [
+											"../../*/src/**",
+											"../../*/fixtures/**",
+											"../../../*/src/**",
+											"../../../*/fixtures/**",
+											"../../../../*/src/**",
+											"../../../../*/fixtures/**"
+										],
+										"message": "Import another package by its name, never by a relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
 			"includes": ["packages/harness-*/**"],
 			"linter": {
 				"rules": {
@@ -208,10 +279,11 @@
 											"!@maestro/ir",
 											"!@maestro/render-*",
 											"!@maestro/host-repo",
+											"!@maestro/host-repo-sdk",
 											"!@maestro/harness-*",
 											"!@maestro/testkit"
 										],
-										"message": "cli imports core, sdk, ir, render-*, host-repo and the harness adapters, and testkit in tests."
+										"message": "cli imports core, sdk, ir, render-*, host-repo and the harness adapters, and testkit and host-repo-sdk in tests."
 									},
 									{
 										"group": [
