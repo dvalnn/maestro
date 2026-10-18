@@ -1,4 +1,6 @@
 export {
+	type ApplyResult,
+	type ApplyStrategy,
 	type Changeset,
 	type Lane,
 	type Lanes,

@@ -243,6 +243,9 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **HOST-13 (Must).** A lane ref param type names a lane version left by an earlier concert, written
   `<concert id>.<node instance id>`. Across concerts it can only be forked. Lanes stay on disk until `prune` removes
   them, and `ls` shows their disk use (D-27).
+- **HOST-14 (Must).** An apply node applies one or more changesets to a lane in order, three-way by default or
+  fast-forward only. A clean apply yields a new lane version. A conflict is rejected naming the files and leaves a
+  version, holding conflict markers where git can write them, for an agent to join and resolve.
 
 ### 6.6 CLI (CLI)
 
@@ -322,6 +325,9 @@ The executable is `maestro`.
   through the CLI".
 - **AC-9.** Against the predecessor, tasks T1 (fixable) and T2 (unfixable by construction) match on the sequence of
   agent and check runs by kind, the final outcome class, the files touched, and a clean target checkout (D-28).
+- **AC-10.** Two lanes forked from one version, each changing a different file, merge by apply into one version holding
+  both changes. When both change the same lines the apply is rejected naming the file, and an agent joining its version
+  can resolve it.
 
 ## 9. Open questions
 

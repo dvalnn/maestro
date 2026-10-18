@@ -21,6 +21,16 @@ export type Version = string;
 /** A patch series against `base`, the target commit its lane chain was cut from. */
 export type Changeset = { base: string; patches: string[] };
 
+/**
+ * How `Lane.apply` meets a patch that does not apply cleanly:
+ * - `3way`: merges it, leaving conflict markers in the working copy
+ * - `ff`: refuses it, leaving the working copy as it was
+ */
+export type ApplyStrategy = "3way" | "ff";
+
+/** `applied` counts the changesets left applied cleanly; `conflicts` lists lane-relative files, empty when all applied. */
+export type ApplyResult = { applied: number; conflicts: string[] };
+
 export interface Lane {
 	/** Host directory of the working copy. This is `SandboxSpec.lane`. */
 	readonly dir: string;
@@ -34,6 +44,16 @@ export interface Lane {
 	 * repository is refused. At most once.
 	 */
 	seal(): Promise<Version>;
+	/**
+	 * Applies each changeset's patches in order to the working copy. `3way` stops at the first conflicting changeset
+	 * with its markers left in place; `ff` applies all or nothing.
+	 * @throws naming the changeset index on a malformed patch or objects the store lacks; the working copy is left as
+	 * it was.
+	 */
+	apply(
+		changesets: Changeset[],
+		strategy?: ApplyStrategy,
+	): Promise<ApplyResult>;
 }
 
 export interface Lanes {
@@ -271,18 +291,21 @@ export function openLanes(options: LanesOptions): Lanes {
 			writeFileSync(join(dir, ".git"), `gitdir: ${gitdir}\n`);
 		};
 		point(head);
+		const lg: LaneGit = { dir, wt: G(`--work-tree=${dir}`), idx, at };
+		const { wt } = lg;
 		return {
 			dir,
 			readOnly: [{ src: gitdir }, { src: join(store, "objects") }],
 			async seal() {
-				const wt = G(`--work-tree=${dir}`);
 				await git([...wt, "add", "-A"], idx);
 				const tree = await value([...wt, "write-tree"], idx);
-				const changed = (
-					await value(G("diff-tree", "-r", "--no-renames", head, tree))
-				)
-					.split("\n")
-					.filter(Boolean);
+				const changed = await lines(lg, [
+					"diff-tree",
+					"-r",
+					"--no-renames",
+					head,
+					tree,
+				]);
 				const nested = changed
 					.filter((l) => l.split(" ")[1] === "160000")
 					.map((l) => l.split("\t")[1]);
@@ -301,6 +324,8 @@ export function openLanes(options: LanesOptions): Lanes {
 				point(commit);
 				return at;
 			},
+			apply: (changesets, strategy = "3way") =>
+				applyChangesets(lg, changesets, strategy),
 		};
 	}
 
@@ -378,4 +403,103 @@ function splitMbox(mbox: string): string[] {
 	return mbox
 		.split(/^(?=From [0-9a-f]{40} Mon Sep 17 00:00:00 2001$)/m)
 		.filter(Boolean);
+}
+
+/** Git run on one lane: the store, the lane's working copy and its index. */
+type LaneGit = {
+	dir: string;
+	wt: string[];
+	idx: Record<string, string>;
+	at: Version;
+};
+
+const lines = async (l: LaneGit, args: string[], stdin?: string) =>
+	(await value([...l.wt, ...args], l.idx, stdin)).split("\n").filter(Boolean);
+
+/** Paths as written: `-z` output is never quoted. */
+const nulFields = async (l: LaneGit, args: string[], stdin?: string) =>
+	(await git([...l.wt, ...args, "-z"], l.idx, stdin))
+		.split("\0")
+		.filter(Boolean);
+
+/**
+ * The files a patch touches, a rename giving both names.
+ * @throws if the patch is malformed
+ */
+async function patchFiles(l: LaneGit, patch: string) {
+	// `-z` numstat: `<added>\t<deleted>\t<path>`, or for a rename `<added>\t<deleted>\t` then old and new path.
+	return (await nulFields(l, ["apply", "--numstat"], patch)).flatMap((f) => {
+		const m = /^\S+\t\S+\t(.*)$/s.exec(f);
+		return m ? (m[1] ? [m[1]] : []) : [f];
+	});
+}
+
+/** The conflicting files, empty when the patch applied cleanly. */
+async function applyPatch(l: LaneGit, patch: string, strategy: ApplyStrategy) {
+	const mode = strategy === "3way" ? "--3way" : "--index";
+	// git apply resolves the patch's paths against the working directory, not the work tree.
+	const clean = await git(
+		["-C", l.dir, ...l.wt, "apply", mode],
+		l.idx,
+		patch,
+	).then(
+		() => true,
+		() => false,
+	);
+	if (clean) return [];
+	const unmerged = (await nulFields(l, ["ls-files", "-u"])).map((f) =>
+		f.slice(f.indexOf("\t") + 1),
+	);
+	return unmerged.length ? [...new Set(unmerged)] : patchFiles(l, patch);
+}
+
+/**
+ * The first conflicting patch's files, empty when every patch applied cleanly.
+ * @throws on a malformed patch or a base the store lacks
+ */
+async function applyChangeset(
+	l: LaneGit,
+	cs: Changeset,
+	strategy: ApplyStrategy,
+) {
+	await git([...l.wt, "cat-file", "-e", `${cs.base}^{commit}`]).catch(() => {
+		throw new Error(
+			`its base ${cs.base} is not in the store. Pass the changeset of a version sealed from this target`,
+		);
+	});
+	for (const [j, patch] of cs.patches.entries())
+		await patchFiles(l, patch).catch(() => {
+			throw new Error(
+				`patch ${j} is malformed. Pass the changeset of a sealed version`,
+			);
+		});
+	for (const patch of cs.patches) {
+		const conflicts = await applyPatch(l, patch, strategy);
+		if (conflicts.length) return conflicts;
+	}
+	return [];
+}
+
+async function applyChangesets(
+	l: LaneGit,
+	changesets: Changeset[],
+	strategy: ApplyStrategy,
+): Promise<ApplyResult> {
+	await git([...l.wt, "add", "-A"], l.idx);
+	const before = await value([...l.wt, "write-tree"], l.idx);
+	const restore = () =>
+		git([...l.wt, "read-tree", "--reset", "-u", before], l.idx);
+	for (const [i, cs] of changesets.entries()) {
+		const conflicts = await applyChangeset(l, cs, strategy).catch(async (e) => {
+			await restore();
+			throw new Error(
+				`${l.at}: changeset ${i} cannot be applied: ${e instanceof Error ? e.message : e}`,
+			);
+		});
+		if (!conflicts.length) continue;
+		if (strategy === "3way") return { applied: i, conflicts };
+		await restore();
+		return { applied: 0, conflicts };
+	}
+	return { applied: changesets.length, conflicts: [] };
 }

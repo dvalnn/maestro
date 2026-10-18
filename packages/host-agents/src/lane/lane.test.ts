@@ -250,6 +250,156 @@ function snapshot(dir: string): string[] {
 	return out;
 }
 
+describe("apply", () => {
+	const read = (lane: Lane, f: string) =>
+		readFileSync(join(lane.dir, f), "utf8");
+
+	/** File contents by path; `null` deletes the file. */
+	type Edits = Record<string, string | null>;
+	const write = (lane: Lane, edits: Edits) => {
+		for (const [f, text] of Object.entries(edits))
+			if (text === null) rmSync(join(lane.dir, f));
+			else writeFileSync(join(lane.dir, f), text);
+	};
+
+	// A toy target with `root` committed on main, `c1.root` sealed unchanged from it, and one fork of it per entry of
+	// `edits`; returns the lanes and the forks' changesets.
+	async function forks(root: Record<string, string>, ...edits: Edits[]) {
+		const target = toyTarget();
+		for (const [f, text] of Object.entries(root))
+			writeFileSync(join(target, f), text);
+		git(target, "add", "-A");
+		git(target, "commit", "-q", "--allow-empty", "-m", "root");
+		const lanes = openLanes({ target, root: tmp("root") });
+		await (await lanes.fresh("main", "c1.root")).seal();
+		const out = [];
+		for (const [i, files] of edits.entries()) {
+			const lane = await lanes.fork("c1.root", `c1.f${i}`);
+			write(lane, files);
+			await lane.seal();
+			out.push(await lanes.changeset(`c1.f${i}`));
+		}
+		return { lanes, css: out };
+	}
+
+	test("3way merges forks changing different files or lines apart into one version, whose changeset applies to a fresh lane", async () => {
+		const { lanes, css } = await forks(
+			{ "c.txt": "1\n2\n3\n" },
+			{ "a.txt": "a2\n", "c.txt": "one\n2\n3\n" },
+			{ "b.txt": "b2\n", "c.txt": "1\n2\nthree\n" },
+		);
+
+		const merge = await lanes.fork("c1.root", "c1.merge");
+		expect(await merge.apply(css)).toEqual({ applied: 2, conflicts: [] });
+		await merge.seal();
+
+		const fresh = await lanes.fresh("main", "c2.replay");
+		await fresh.apply([await lanes.changeset("c1.merge")]);
+		expect(["a.txt", "b.txt", "c.txt"].map((f) => read(fresh, f))).toEqual([
+			"a2\n",
+			"b2\n",
+			"one\n2\nthree\n",
+		]);
+	});
+
+	const later: Edits = { "b.txt": "later\n" };
+	test.each([
+		{
+			name: "same lines, leaving markers",
+			root: {},
+			edits: [{ "a.txt": "left\n" }, { "a.txt": "right\n" }],
+			conflicts: ["a.txt"],
+			holds: {
+				"a.txt":
+					/^<<<<<<< [\s\S]*left[\s\S]*=======[\s\S]*right[\s\S]*>>>>>>> /,
+			},
+		},
+		{
+			name: "delete/modify of a non-ASCII name",
+			root: { "ñ.txt": "n\n" },
+			edits: [{ "ñ.txt": "n2\n" }, { "ñ.txt": null }],
+			conflicts: ["ñ.txt"],
+			holds: { "ñ.txt": /^n2\n$/ },
+		},
+		{
+			name: "modify/rename",
+			root: { "r.txt": "1\n2\n3\n4\n5\n" },
+			edits: [
+				{ "r.txt": "one\n2\n3\n4\n5\n" },
+				{ "r.txt": null, "moved.txt": "uno\n2\n3\n4\n5\n" },
+			],
+			conflicts: ["moved.txt"],
+			holds: { "moved.txt": /^<<<<<<< [\s\S]*one[\s\S]*uno/ },
+		},
+	] as {
+		name: string;
+		root: Record<string, string>;
+		edits: Edits[];
+		conflicts: string[];
+		holds: Record<string, RegExp | null>;
+	}[])(
+		"3way stops at a conflict ($name), names the files and seals it; later changesets stay unapplied",
+		async ({ root, edits, conflicts, holds }) => {
+			const { lanes, css } = await forks(root, ...edits, later);
+
+			const merge = await lanes.fork("c1.root", "c1.merge");
+			expect(await merge.apply(css)).toEqual({ applied: 1, conflicts });
+			await merge.seal();
+
+			const sealed = await lanes.fork("c1.merge", "c1.resolve");
+			for (const [f, text] of Object.entries(holds))
+				if (text === null) expect(existsSync(join(sealed.dir, f))).toBe(false);
+				else expect(read(sealed, f)).toMatch(text);
+			expect(read(sealed, "b.txt")).toBe("b\n");
+		},
+	);
+
+	test.each([
+		{ name: "same lines", left: "left\n2\n3\n", right: "right\n2\n3\n" },
+		{ name: "lines apart", left: "one\n2\n3\n", right: "1\n2\nthree\n" },
+	])(
+		"ff refuses a patch that does not apply cleanly ($name) and leaves the lane as it was",
+		async ({ left, right }) => {
+			const { lanes, css } = await forks(
+				{ "c.txt": "1\n2\n3\n" },
+				{ "c.txt": left },
+				{ "c.txt": right },
+			);
+
+			const merge = await lanes.fork("c1.root", "c1.merge");
+			const agent: Edits = {
+				"b.txt": "agent\n",
+				"untracked.txt": "u\n",
+				".gitignore": "*.log\n",
+				"scratch.log": "s\n",
+			};
+			write(merge, agent);
+			expect(await merge.apply(css, "ff")).toEqual({
+				applied: 0,
+				conflicts: ["c.txt"],
+			});
+			expect(read(merge, "c.txt")).toBe("1\n2\n3\n");
+			for (const [f, text] of Object.entries(agent))
+				expect(read(merge, f)).toBe(text ?? "");
+		},
+	);
+
+	test("unusable input throws naming the changeset and leaves the lane as it was", async () => {
+		const { lanes } = await forks({}, { "a.txt": "a2\n", "new.txt": "n\n" });
+		const good = await lanes.changeset("c1.f0");
+		const merge = await lanes.fork("c1.root", "c1.merge");
+		const garbage = { base: good.base, patches: ["not a patch\n"] };
+		const unknownBase = { base: "0".repeat(40), patches: good.patches };
+
+		for (const bad of [garbage, unknownBase])
+			await expect(merge.apply([good, bad])).rejects.toThrow(
+				/^c1\.merge: changeset 1 cannot be applied/,
+			);
+		expect(read(merge, "a.txt")).toBe("a\n");
+		expect(existsSync(join(merge.dir, "new.txt"))).toBe(false);
+	});
+});
+
 describe("the target", () => {
 	test("is byte-identical after lanes are cut, forked, joined, sealed, turned into changesets and pruned", async () => {
 		const target = toyTarget();
@@ -266,7 +416,8 @@ describe("the target", () => {
 		writeFileSync(join(c.dir, "z.txt"), "z\n");
 		await c.seal();
 		await lanes.fresh("main", "c2.d"); // a second base is fetched
-		await lanes.changeset("c1.c");
+		const merged = await lanes.fresh("main~1", "c2.e");
+		await merged.apply([await lanes.changeset("c1.c")]);
 		await lanes.prune("c1");
 
 		expect(snapshot(target)).toEqual(before);
