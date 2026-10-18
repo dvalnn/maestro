@@ -38,8 +38,8 @@ packages/
   sdk/              authoring API, stdlib
   testkit/          fake host, assertions, stub concert
   cli/              commands, flags, formats, exit codes
-  host-agents/      agent and check kinds, lanes, sandbox, harness interface
-  host-agents-sdk/  typed constructors and types for the agent host
+  host-repo/      agent and check kinds, lanes, sandbox, harness interface
+  host-repo-sdk/  typed constructors and types for the agent host
   harness-<name>/   one adapter each
   pack-general/     the ported compositions (placeholder name)
   render-text/      the text forms of a plan: summary, listing, Mermaid. The live view's package is placed by S10
@@ -149,7 +149,7 @@ need the core. S8d and S8e need S7.
   without argument-length limits, token usage reported as metrics (HOST-05, HOST-06, HOST-07).
 - **S8d. First real adapter (M).** pi as a sandboxed subprocess over its JSON event stream, using spike 4's findings
   (D-20). Claude Code is the second adapter.
-- **S8e. Host kinds, SDK and hooks (L).** `agent` and `check` node kinds (D-22), `host-agents-sdk`, `validate` and
+- **S8e. Host kinds, SDK and hooks (L).** `agent` and `check` node kinds (D-22), `host-repo-sdk`, `validate` and
   `bounds` hooks, host config namespaces (HOST-01, HOST-09, HOST-11, HOST-12). Vocabulary per D-21.
 - **Acceptance (whole slice).** AC-4 and the host parts of AC-2. The lane double-join diagnostic fires in compose with
   no spend.

@@ -1,5 +1,5 @@
 {
-	"name": "@maestro/host-agents",
+	"name": "@maestro/host-repo",
 	"private": true,
 	"type": "module",
 	"exports": {

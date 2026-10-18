@@ -2,10 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-	HarnessEvent,
-	HarnessRequest,
-} from "@maestro/host-agents/harness";
+import type { HarnessEvent, HarnessRequest } from "@maestro/host-repo/harness";
 import { piHarness } from "./index";
 
 const FIXTURES = join(import.meta.dir, "../fixtures/1.3.0");

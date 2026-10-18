@@ -37,11 +37,11 @@
     "packages/harness-pi": {
       "name": "@maestro/harness-pi",
       "dependencies": {
-        "@maestro/host-agents": "workspace:*",
+        "@maestro/host-repo": "workspace:*",
       },
     },
-    "packages/host-agents": {
-      "name": "@maestro/host-agents",
+    "packages/host-repo": {
+      "name": "@maestro/host-repo",
     },
     "packages/ir": {
       "name": "@maestro/ir",
@@ -96,7 +96,7 @@
 
     "@maestro/harness-pi": ["@maestro/harness-pi@workspace:packages/harness-pi"],
 
-    "@maestro/host-agents": ["@maestro/host-agents@workspace:packages/host-agents"],
+    "@maestro/host-repo": ["@maestro/host-repo@workspace:packages/host-repo"],
 
     "@maestro/ir": ["@maestro/ir@workspace:packages/ir"],
 

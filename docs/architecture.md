@@ -58,18 +58,18 @@ Actors and external systems:
 A monorepo of separately versioned packages (DIST-03). Package names are workspace names that are never published
 (D-31).
 
-| Layer            | Package           | Responsibility                                                                                                         | Knows about                     |
-| ---------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| IR               | `ir`              | The IR and the data formats maestro emits: schema, version, validators, plan and event shapes. No runtime.             | nothing                         |
-| Core             | `core`            | Graph model, compose checks, executor, resume, record store, events, config layering, worker protocol, host interface. | `ir`                            |
-| SDK              | `sdk`             | Authoring API: compositions, node constructors, Refs, types, subcompositions, stdlib. Emits IR.                        | `ir`                            |
-| Test kit         | `testkit`         | Fake host, build and compose-time assertions, stub concert.                                                            | `core`, `sdk`, `ir`             |
-| CLI              | `cli`             | Commands, derived input flags, output formats, exit codes, host and pack loading.                                      | `core`, `sdk`, `ir`, `render-*` |
-| Agent host       | `host-agents`     | Agent and check node kinds, lanes, sandbox, harness adapter interface, host config namespaces.                         | `core`, `ir`                    |
-| Agent host SDK   | `host-agents-sdk` | Typed constructors for agent and check nodes, lane types, report types.                                                | `sdk`, `host-agents` types      |
-| Harness adapters | `harness-<name>`  | One adapter per coding-agent runtime.                                                                                  | `host-agents`                   |
-| Packs            | `pack-<domain>`   | Compositions, prompts, schemas, code nodes, params.                                                                    | `sdk`, `host-agents-sdk`        |
-| Renderers        | `render-<form>`   | Static graph render, live view.                                                                                        | `ir`                            |
+| Layer            | Package          | Responsibility                                                                                                         | Knows about                     |
+| ---------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| IR               | `ir`             | The IR and the data formats maestro emits: schema, version, validators, plan and event shapes. No runtime.             | nothing                         |
+| Core             | `core`           | Graph model, compose checks, executor, resume, record store, events, config layering, worker protocol, host interface. | `ir`                            |
+| SDK              | `sdk`            | Authoring API: compositions, node constructors, Refs, types, subcompositions, stdlib. Emits IR.                        | `ir`                            |
+| Test kit         | `testkit`        | Fake host, build and compose-time assertions, stub concert.                                                            | `core`, `sdk`, `ir`             |
+| CLI              | `cli`            | Commands, derived input flags, output formats, exit codes, host and pack loading.                                      | `core`, `sdk`, `ir`, `render-*` |
+| Repo host        | `host-repo`      | Agent and check node kinds, lanes, sandbox, harness adapter interface, host config namespaces.                         | `core`, `ir`                    |
+| Repo host SDK    | `host-repo-sdk`  | Typed constructors for agent and check nodes, lane types, report types.                                                | `sdk`, `host-repo` types        |
+| Harness adapters | `harness-<name>` | One adapter per coding-agent runtime.                                                                                  | `host-repo`                     |
+| Packs            | `pack-<domain>`  | Compositions, prompts, schemas, code nodes, params.                                                                    | `sdk`, `host-repo-sdk`          |
+| Renderers        | `render-<form>`  | Static graph render, live view.                                                                                        | `ir`                            |
 
 Dependency rule: arrows only point down the table. `core` and `ir` never import a host, a pack or an adapter. CORE-12
 and the graph are enforced by lints in `just check`: Biome import restrictions and a domain-word scan.

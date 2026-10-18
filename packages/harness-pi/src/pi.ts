@@ -9,8 +9,8 @@ import {
 	SESSION_DIR,
 	type SubprocessAdapter,
 	subprocessHarness,
-} from "@maestro/host-agents/harness";
-import type { SandboxBackend } from "@maestro/host-agents/sandbox";
+} from "@maestro/host-repo/harness";
+import type { SandboxBackend } from "@maestro/host-repo/sandbox";
 
 /** The `session.version` of pi's JSON header this adapter reads. */
 const SESSION_VERSION = 3;
