@@ -100,7 +100,9 @@ function eventsOf(e: Json): HarnessEvent[] {
 				? assistantEvents(e.message)
 				: [];
 		case "agent_settled":
-			return [{ kind: "settled" }];
+			return e.aborted === true
+				? [{ kind: "fault", reason: "pi settled aborted" }]
+				: [{ kind: "settled" }];
 		default:
 			return IGNORED.has(String(e.type)) ? [] : [{ kind: "raw", data: e }];
 	}

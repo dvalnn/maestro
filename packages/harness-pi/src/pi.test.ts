@@ -8,7 +8,7 @@ import type {
 } from "@maestro/host-agents/harness";
 import { piHarness } from "./index";
 
-const FIXTURES = join(import.meta.dir, "../fixtures/1.0.2");
+const FIXTURES = join(import.meta.dir, "../fixtures/1.3.0");
 const dirs: string[] = [];
 const tmp = (name: string) => {
 	const d = mkdtempSync(join(tmpdir(), `pi-${name}-`));
@@ -56,7 +56,7 @@ async function drain(events: AsyncIterable<HarnessEvent>) {
 }
 
 describe("stand-in pi", () => {
-	test("the recorded 1.0.2 run is read into turns, tools, usage and a reply", async () => {
+	test("the recorded 1.3.0 run is read into turns, tools, usage and a reply", async () => {
 		const req = request("write hello.txt");
 		const unknown = '{"type":"future_event","extra":{"a":1}}';
 		const run = piHarness(standIn([...fixture(), unknown])).run(req);
@@ -67,8 +67,8 @@ describe("stand-in pi", () => {
 			outcome: "ok",
 			reply: "done",
 			metrics: {
-				tokens_in: 1251,
-				tokens_out: 56,
+				tokens_in: 1257,
+				tokens_out: 58,
 				tokens_cache_read: 1152,
 				tokens_cache_write: 0,
 				tokens_reasoning: 0,
@@ -156,6 +156,20 @@ describe("stand-in pi", () => {
 		).toThrow(
 			`pi config dir does not exist: ${missing}. Run pi once and log in`,
 		);
+	});
+
+	test("a run pi settles as aborted fails", async () => {
+		const lines = fixture().map((l) =>
+			l.replace(
+				'"agent_settled","aborted":false',
+				'"agent_settled","aborted":true',
+			),
+		);
+		const result = await piHarness(standIn(lines)).run(request("x")).result;
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: "pi settled aborted",
+		});
 	});
 
 	test("a run whose stream never settles fails", async () => {
