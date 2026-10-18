@@ -11,9 +11,12 @@ import {
 	type JsonSchema,
 	MAESTRO_TYPE,
 	mapWorkers,
+	messageOf,
 	type Ports,
 	schemaMarkers,
 	unreachableMarkers,
+	type Validator,
+	violations,
 	type WorkerRef,
 } from "@maestro/ir";
 import {
@@ -25,8 +28,7 @@ import {
 } from "../config";
 import type { Host, NodeKind } from "../host";
 import type { LoadCode } from "../node";
-import { type Validator, violations } from "../ports";
-import { type HostKind, isRecord, loadFunction, messageOf } from "../shared";
+import { type HostKind, isRecord, loadFunction } from "../shared";
 import type { ComposeInput } from "./index";
 
 type Lookup = (kind: string) => HostKind | undefined;

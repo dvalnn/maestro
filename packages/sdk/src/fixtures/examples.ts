@@ -1,11 +1,11 @@
 // The worked examples of sdk-spec 14 that need no host, with the fake host kind standing in for host nodes.
 
+import { hostNode } from "../host";
 import {
 	Bool,
 	code,
 	composition,
 	firstOk,
-	hostNode,
 	Int,
 	iter,
 	List,
@@ -97,7 +97,7 @@ export const planPanel = composition(
 			out: { text: Text() },
 		});
 		return firstOk<unknown>(
-			[synthesis.out.text, firstOk(plans).out.value.pick("text")],
+			[synthesis.out.text, firstOk(plans).out.value.get("text")],
 			{ label: "answer" },
 		);
 	},

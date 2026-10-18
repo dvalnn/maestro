@@ -1,6 +1,10 @@
-import { type JsonSchema, registerMaestroType } from "@maestro/ir";
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020";
-import { messageOf } from "./shared";
+import { registerMaestroType } from "./maestro-type";
+import type { JsonSchema } from "./types";
+
+/** The message of a thrown value, an `Error` or not. */
+export const messageOf = (error: unknown) =>
+	error instanceof Error ? error.message : String(error);
 
 export type Validator = Ajv2020;
 

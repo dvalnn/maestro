@@ -22,25 +22,32 @@ const DEFAULT_CONCURRENCY = 4;
 /** A code node's or key function's stand-in, typed by whatever inputs it reads. */
 type Stub = (inputs: never, context: CodeContext) => unknown;
 
+/** The hosts of a stubbed concert: the fake host with its script, or the hosts given. */
+type HostsOptions =
+	| { script?: FakeScript; hosts?: never }
+	| { hosts: Host[]; script?: never };
+
+/** How a stubbed concert loads code: by export name from `code`, or through `loadCode`. */
+type CodeOptions =
+	| {
+			/** The code nodes' and key functions' stand-ins, by export name. */
+			code?: Readonly<Record<string, Stub>>;
+			loadCode?: never;
+	  }
+	| { loadCode: LoadCode; code?: never };
+
 /** What a stubbed concert takes. */
-export type StubOptions = {
-	/** The fake host's script. Ignored when `hosts` is given. */
-	script?: FakeScript;
-	/** The hosts to perform with, in place of the fake host. */
-	hosts?: Host[];
-	/** Config values by namespace, such as a host's, under the data root the concert is given. */
-	config?: Readonly<Record<string, unknown>>;
-	/** The code nodes' and key functions' stand-ins, by export name. */
-	code?: Readonly<Record<string, Stub>>;
-	/** The directory holding the record store and the concert directories. A new temporary directory by default. */
-	dir?: string;
-	/** Replaces `code` as the loader of worker references. */
-	loadCode?: LoadCode;
-	/** The `codeHash` each worker reference carries when performed. The IR's own by default. */
-	codeHash?: (ref: WorkerRef) => string;
-	/** The most instances executing at once. 4 by default. */
-	concurrency?: number;
-};
+export type StubOptions = HostsOptions &
+	CodeOptions & {
+		/** Config values by namespace, such as a host's, under the data root the concert is given. */
+		config?: Readonly<Record<string, unknown>>;
+		/** The directory holding the record store and the concert directories. A new temporary directory by default. */
+		dir?: string;
+		/** The `codeHash` each worker reference carries when performed. The IR's own by default. */
+		codeHash?: (ref: WorkerRef) => string;
+		/** The most instances executing at once. 4 by default. */
+		concurrency?: number;
+	};
 
 /** A concert performed to its end. */
 export type StubConcert = {
@@ -63,6 +70,14 @@ export async function stubConcert(
 	source: Ir | string,
 	options: StubOptions = {},
 ): Promise<StubConcert> {
+	if (options.script !== undefined && options.hosts !== undefined)
+		throw new Error(
+			"stubConcert takes script or hosts, not both\nScript the fake host, or pass your own hosts",
+		);
+	if (options.code !== undefined && options.loadCode !== undefined)
+		throw new Error(
+			"stubConcert takes code or loadCode, not both\nStub code by export name, or pass your own loader",
+		);
 	const dir = options.dir ?? (await mkdtemp(join(tmpdir(), "maestro-stub-")));
 	try {
 		return await performIn(dir, source, options);

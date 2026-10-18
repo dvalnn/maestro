@@ -1,7 +1,14 @@
+import { readFile } from "node:fs/promises";
 import {
+	type ArtifactRef,
+	type CodeContext,
+	type JsonSchema,
+	messageOf,
 	type Rejection,
 	reject,
 	type Settled,
+	validator,
+	violations,
 	worstOutcome,
 } from "@maestro/ir";
 
@@ -14,17 +21,20 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
  * The field of `value` at the dotted `path`.
  * @throws when a field on the path is missing, naming the path.
  */
-export function pick({ value, path }: { value: unknown; path: string }): Value {
+export function get({ value, path }: { value: unknown; path: string }): Value {
 	let at = value;
 	for (const key of path.split(".")) {
 		if (!isRecord(at) || !Object.hasOwn(at, key))
-			throw new Error(`pick: path '${path}' has no field '${key}'`);
+			throw new Error(`get: path '${path}' has no field '${key}'`);
 		at = at[key];
 	}
 	return { value: at };
 }
 
-/** `value`'s value when it settled `ok`, else `fallback`. */
+/**
+ * `value`'s value when it settled `ok`, else `fallback`.
+ * @throws when `value` failed, so the node settles `failed` (ADR 0006).
+ */
 export function or({
 	value,
 	fallback,
@@ -32,7 +42,36 @@ export function or({
 	value: Settled<unknown>;
 	fallback: unknown;
 }): Value {
+	if (value.outcome === "failed")
+		throw new Error(`or: its input failed: ${value.reason}`);
 	return { value: value.outcome === "ok" ? value.value : fallback };
+}
+
+const ajv = validator();
+
+/**
+ * The content of the JSON file `file`. Rejects when it is not JSON or does not match `schema`.
+ * @throws when the file cannot be read.
+ */
+export async function readJson(
+	{ file, schema }: { file: ArtifactRef; schema: JsonSchema },
+	ctx: CodeContext,
+): Promise<Value | Rejection> {
+	const text = await readFile(ctx.path(file), "utf8");
+	let value: unknown;
+	try {
+		value = JSON.parse(text);
+	} catch (error) {
+		return reject(`readJson: '${file.path}' is not JSON: ${messageOf(error)}`);
+	}
+	const found = violations(ajv, schema, value, (at) =>
+		at.length ? `'${at.join(".")}'` : "the content",
+	);
+	if (found.length)
+		return reject(
+			`readJson: '${file.path}' does not match its schema: ${found.join("; ")}`,
+		);
+	return { value };
 }
 
 /** `value`, unchanged. */
@@ -60,51 +99,6 @@ export function lookup({
 	if (!indexed || !Object.hasOwn(table, key))
 		throw new Error(`lookup: no entry under key ${JSON.stringify(key)}`);
 	return { value: Reflect.get(table, key) };
-}
-
-/**
- * Pairs the items of `a` and `b`.
- * - Without `on`, the i-th items, in order.
- * - With `on`, every item of `a` with every item of `b` whose field `on` is equal, in the order of `a`, then of `b`. A
- *   string, number or boolean key matches by strict equality, and an item whose key is `null` or missing matches
- *   nothing.
- * @throws when the lists differ in length without `on`, naming both lengths.
- * @throws when a key is an object or an array, naming the key.
- */
-export function zip({
-	a,
-	b,
-	on,
-}: {
-	a: readonly unknown[];
-	b: readonly unknown[];
-	on?: string;
-}): Value<unknown[][]> {
-	if (on !== undefined) return { value: zipByKey(a, b, on) };
-	if (a.length !== b.length)
-		throw new Error(`zip: lists differ in length, ${a.length} and ${b.length}`);
-	return { value: a.map((item, i) => [item, b[i]]) };
-}
-
-function zipByKey(
-	a: readonly unknown[],
-	b: readonly unknown[],
-	on: string,
-): unknown[][] {
-	const keyOf = (item: unknown) => {
-		const key = isRecord(item) ? item[on] : undefined;
-		if (typeof key === "object" && key !== null)
-			throw new Error(
-				`zip: key ${JSON.stringify(key)} of field '${on}' is not a string, number or boolean`,
-			);
-		return key ?? undefined;
-	};
-	const matches = Map.groupBy(b, keyOf);
-	return a.flatMap((x) => {
-		const key = keyOf(x);
-		if (key === undefined) return [];
-		return (matches.get(key) ?? []).map((y) => [x, y]);
-	});
 }
 
 /** A reducer's ports: a `parMap` or `map`'s `results`, or one `Settled` input per output, `in0` to `inN`. */
@@ -162,7 +156,7 @@ export function okOnly(ports: ReducerPorts): Value<unknown[]> {
  * Every input as `Settled`, in input order.
  * @throws when the ports are not `results` or exactly `in0` to `in(n-1)`.
  */
-export function settle(
+export function allSettled(
 	ports: ReducerPorts,
 ): Value<readonly Settled<unknown>[]> {
 	return { value: settledOf(ports) };

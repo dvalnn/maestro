@@ -22,6 +22,7 @@ import {
 	itemKey,
 	type LoopNode,
 	type MapNode,
+	messageOf,
 	type NodeInstance,
 	type Outcome,
 	outputValue,
@@ -32,6 +33,7 @@ import {
 	TS_RUNTIME,
 	tolerates,
 	upstreamIn,
+	validator,
 	worstOutcome,
 } from "@maestro/ir";
 import type { Composed } from "../config";
@@ -42,8 +44,7 @@ import {
 	hostSetup,
 } from "../host";
 import type { Inputs, LoadCode } from "../node";
-import { validator } from "../ports";
-import { instanceKey, kindLookup, loadFunction, messageOf } from "../shared";
+import { instanceKey, kindLookup, loadFunction } from "../shared";
 import {
 	type ConcertDirs,
 	concertDirs,

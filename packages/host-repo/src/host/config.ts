@@ -1,10 +1,11 @@
 import type { HostSetup } from "@maestro/core/host";
-import { validator, violations } from "@maestro/core/ports";
 import {
 	CORE_TYPES,
 	DURATION_EXAMPLE,
 	durationMs,
 	type JsonSchema,
+	validator,
+	violations,
 } from "@maestro/ir";
 import type { Role } from "../harness/index";
 import type { ApplyStrategy } from "../lane/index";

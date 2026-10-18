@@ -22,7 +22,8 @@ The SDK is the only thing an author learns. It builds a graph (CORE-06) and noth
 5. **Domain-free.** The core SDK knows no host. Host SDKs add their node constructors and types on top.
 6. **Author API alone at the root.** `@maestro/sdk` exports what an author writes. What the engine's loader calls to
    describe, build and bundle compositions (`build`, `buildNamed`, `describe`, `glue`, the build context and the SDK and
-   stdlib identity) is the `@maestro/sdk/loader` subpath, and the engine also loads `@maestro/sdk/stdlib`.
+   stdlib identity) is the `@maestro/sdk/loader` subpath, and the engine also loads `@maestro/sdk/stdlib`. `hostNode`,
+   which host SDKs wrap, is the `@maestro/sdk/host` subpath.
 
 ## 2. What an author writes
 
@@ -30,14 +31,14 @@ A **composition** has:
 
 - a name (pack-scoped id) and a doc string,
 - **params** with defaults and CLI hints: one declaration for CLI inputs and tunables (section 9, D-17),
-- at least one **example input set**, so `compose` can validate it without flags (D-19),
+- without ports, at least one **example input set**, so `compose` can validate it without flags (D-19),
 - a **build function** `(params, ports)` that returns the composition's result (section 6). Without ports it is
   `(params)`.
 
 A **subcomposition** is a composition that also declares typed **ports**, used inside another composition (section 8).
 One constructor declares both. Params are plain values known at build time. Ports are Ref-typed arguments fed by
-upstream node outputs (D-16), so a composition with ports runs only through `use`. A shared building block that should
-also run alone exports a second composition without ports that uses it with defaults.
+upstream node outputs (D-16), so a composition with ports runs only through `use` and declares no examples. A shared
+building block that should also run alone exports a second composition without ports that uses it with defaults.
 
 The build function runs once per compose, as the first step of the stage. It is a pure function of params and composed
 config.
@@ -47,13 +48,14 @@ config.
 Every port, param and config value has a schema that serializes to JSON Schema (CORE-02). The SDK chooses the schema
 library. The type vocabulary is:
 
-- **Values.** `Text`, `Bool`, `Int`, `Float`, `Json(schema)`, `List(T)`, `Record`, and enumerations.
-- **Artifacts.** `File`, `Dir`, and typed files such as `JsonFile(schema)` and `Markdown`. An artifact has provenance
-  and a content hash and is staged by whichever node needs it (CORE-15). Artifacts are values only in the sense that
-  nodes consume and produce them. Large payloads are always artifacts.
+- **Values.** `Text`, `Bool`, `Int`, `Float`, `Json(schema)`, `List(T)`, `Struct(fields)`, and enumerations.
+- **Artifacts.** `File`, `Dir`, and typed files such as `JsonFile(T)` and `Markdown`. An artifact has provenance and a
+  content hash and is staged by whichever node needs it (CORE-15). Artifacts are values only in the sense that nodes
+  consume and produce them. Large payloads are always artifacts. An artifact param takes a description but no default.
 - **Outcome and Settled.** `Outcome` is `ok | rejected | failed | skipped`. `Settled(T)` is what a group member
   produces: `{outcome: ok, value: T}`, `{outcome: rejected | failed, value?: T, reason: Text}` or
-  `{outcome: skipped, value?: T, reason?: Text}` (ADR 0006).
+  `{outcome: skipped, value?: T, reason?: Text}` (ADR 0006). The SDK exports both as types, and `Settled(T)` as a type
+  constructor.
 - **Host types.** Registered by a host (for example a lane handle). Core treats them as opaque, named, serializable.
   Artifacts and host types are named in their schemas by `x-maestro-type` (ADR 0007).
 
@@ -74,7 +76,7 @@ All of these are Refs. A node accepts common options: `label`, `when` and `toler
 
 | Constructor                             | Purpose                                                                        | Key arguments                                                   | Result                                           |
 | --------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------- | ------------------------------------------------ |
-| `code(fn, opts)`                        | Run the author's function over typed inputs.                                   | `in` ports, `out` schema, `reads`, `writes`, `timeout`          | outputs per `out`                                |
+| `code(fn, opts)`                        | Run the author's function over typed inputs.                                   | `in` ports, `out` schema, `timeout`                             | outputs per `out`                                |
 | `iter.parMap(items, body, opts)`        | Instantiate `body` once per item, all at once.                                 | `items`, body, `max`, `onError`, `key`                          | `Settled(M)[]` with static cardinality metadata  |
 | `iter.map(items, body, opts)`           | Instantiate `body` once per item, in order.                                    | `items`, body, `max`, `onError`                                 | `Settled(M)[]`                                   |
 | `iter.find(items, body, cond, opts)`    | Instantiate `body` per item in order, stop at the first result meeting `cond`. | `items`, body, `cond(result)`, `max`                            | the result meeting `cond`, or the last           |
@@ -82,7 +84,7 @@ All of these are Refs. A node accepts common options: `label`, `when` and `toler
 | `iter.fold(items, opts)`                | Fold the items into an accumulator, in order.                                  | `items`, `first(item)`, `step(acc, item, i)`, `max`, `tolerate` | the last accumulator                             |
 | `loop.while(cond, opts)`                | Bounded loop carrying typed state, testing the state before each step.         | `cond(state)`, `init`, `step(state, i)`, `max`, `tolerate`      | the last state                                   |
 | `loop.doWhile(cond, opts)`              | Bounded loop carrying typed state, testing each step's result.                 | `cond(result)`, `init`, `step(state, i)`, `max`, `tolerate`     | the last state                                   |
-| `assert(cond, message)`                 | A policy or invariant.                                                         | a boolean                                                       | none                                             |
+| `assert(cond, message, opts?)`          | A policy or invariant.                                                         | a boolean, or a `Ref<Bool>` and `onFail`                        | none, or the assert node's handle for a Ref      |
 | `use(sub, ports, opts)`                 | Instantiate a subcomposition.                                                  | `ports` (Refs or plain values), `opts.params` overrides         | the subcomposition's declared outputs            |
 
 Semantics each constructor must honor:
@@ -116,9 +118,8 @@ Semantics each constructor must honor:
   accumulator, the item and its index. The accumulator is a Result handle (section 4), as a loop's state is, and the
   step must repeat `first`'s outputs. The nodes `first` builds run on the first item alone, and those `step` builds on
   each next one. Ids take the phase after the fold's (`fold/first/merge`, `fold/step/merge`), so a helper called in both
-  needs no label. The fold ends on its last accumulator, or on one it cannot carry on from: a `rejected` one is carried
-  only when `tolerate` says so. A fold over no items settles `skipped`. An accumulator port named `ok`, `reason`,
-  `index` or `item` is a build error.
+  needs no label. The fold ends on its last accumulator, or on a `rejected` one it does not tolerate (4.2). A fold over
+  no items settles `skipped`. An accumulator port named `ok`, `reason`, `index` or `item` is a build error.
 - **`loop`.** Two loops, the condition first. Each goes on while its condition, a `Ref<Bool>`, holds:
   - `loop.while` reads the condition on the state before each step, so it may run no step. The condition is a Bool port
     of the state, such as `s.ok`, or of a node made from the state alone. A condition false on `init` ends the loop as
@@ -129,12 +130,13 @@ Semantics each constructor must honor:
   its `reason`, so `loop.while((s) => not(s.ok), ...)` repairs while a check is red. The step also receives the
   iteration index. Whatever stops it, its condition or `max`, a loop ends with its last state's outcome, reason and
   outputs. A loop stays an "up to `max`" region in the plan, for bounds and rendering. `max` must be known at compose
-  time, from a literal or a param. State edges are tolerant of `rejected` only if `tolerate` says so. A state port named
-  `ok`, `reason` or `index` is a build error, since the loop's state holds those names.
+  time, from a literal or a param. A `rejected` state ends it unless it tolerates one (4.2). A state port named `ok`,
+  `reason` or `index` is a build error, since the loop's state holds those names.
 
 - **`assert`.** Evaluated at build if the condition is a plain value, and at perform time otherwise. A failed build-time
-  assert is a diagnostic error. A perform-time assert yields a `rejected` or `failed` node, whichever the assert
-  declares.
+  assert is a diagnostic error, and a plain condition takes no `onFail`. A perform-time assert is a node that settles
+  `onFail`, `rejected` or `failed`, when its condition is false. It returns its Result handle, so a node can wait on it
+  (`when: holds.ok`) and the result rule finds it as a cause.
 - **`use`.** Creates a scope in the IR (architecture section 5). Params of the subcomposition may be set at the use
   site, which has the highest precedence (D-17).
 
@@ -145,9 +147,11 @@ Host SDKs add constructors with the same Result handle shape (section 12).
 - **`when: Ref<Bool>`** on any node. A false guard makes the node `skipped`.
 - **Status ports.** A node that reads only an upstream's `ok` or `reason` runs after a `rejected` upstream with no
   `tolerate`, so `not(check.ok)` needs none.
-- **`tolerate: "rejected"`** on a consuming node or a `loop` state edge lets the node run after a `rejected` upstream
-  whose declared outputs it reads. It then receives the upstream's outputs when it rejected with them. Without either, a
-  non-ok upstream makes the node `skipped` (CORE-04). `failed` and `skipped` are never tolerable.
+- **`tolerate: "rejected"`** on a consuming node lets it run after a `rejected` upstream whose declared outputs it
+  reads. It then receives the upstream's outputs when it rejected with them. Without it, a non-ok upstream makes the
+  node `skipped` (CORE-04). On a `loop` or an `iter.fold` it carries a `rejected` state or accumulator, `init`'s or
+  `first`'s included, into the next step; without it the group ends on that one. `failed` and `skipped` are never
+  tolerable.
 - **Missing outputs.** A declared output a rejection did not carry is never a crash. A node that reads it is `skipped`,
   with that upstream as its cause, so the concert result names the rejection and its reason. A condition that reads it,
   a guard, a `cond` or a loop's, reads not true.
@@ -159,15 +163,20 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
 - **No branching.** Using a Ref where a plain value is required (`if (ref)`, string concatenation, array indexing by a
   Ref) throws a build diagnostic that names the lifting alternative. This is what keeps the graph decidable (D-04).
 - **Lifting combinators** (all produce visible nodes in the graph, never hidden ones):
-  - `ref.pick(path)` selects a field of a structured value.
-  - `zip(a, b, { on? })` pairs the items of two lists, by position or by the key field `on`.
-  - `when(cond, ...)` and `ref.or(default)` for guards and defaults.
+  - `ref.get(path)` selects a field of a structured value by a dotted path, typed by the path. The type checks paths of
+    up to 8 fields; a longer one does not compile.
+  - `when(cond, ...)` and `ref.or(default)` for guards and defaults. `or` gives the default when its node settled
+    `rejected` or `skipped`, and fails when it failed, as `firstOk` does (ADR 0006).
   - `lookup(table, key)` indexes a plain table by a Ref key.
   - `not(ref)` negates a `Ref<Bool>`.
 
-  A lift's id names its source node and what it does, so it needs no label: `review.out.result.pick("summary")` is
-  `review_summary`, `x.or(…)` is `x_or`, and `not(x.ok)` is `x_not`. Every lift also takes `label`, for the rare clash
-  that remains.
+  A method reads or defaults one value: `x.get(path)`, `x.or(d)`. A helper that builds a new value from its inputs is a
+  function: `not`, `when`, `lookup`, `firstOk`, `readJson`.
+
+  A lift's id names its source node and what it does, so it needs no label: `review.out.result.get("summary")` is
+  `review_summary`, `x.or(…)` is `x_or`, `not(x.ok)` is `x_not`, and `readJson(planner.out.plan)` names the port too,
+  `planner_plan_json`, so two JSON outputs of one node read without labels. Every lift also takes `label`, for the rare
+  clash that remains.
 
 - **Mapping between ports** is by typed assignment. A mismatch is a compose-time type error (CORE-02) naming both ports
   and schemas.
@@ -203,11 +212,10 @@ A code node is the SDK's answer to "this needs real code".
 - **Typed in and out.** Input and output schemas are declared, and the function's type is checked against them at
   compile time. Output validation happens at the node boundary. A return that fails its schema makes the node `failed`
   with the validation error.
-- **Timeout.** A code node runs with no time limit unless its author sets `timeout` in milliseconds. One that runs past
-  it settles `failed`.
-- **Declared reads and writes.** File and directory paths a node reads or writes are declared by artifact ports or by
-  explicit `reads` and `writes`. Compose can check write scope. Undeclared access is the author's error, and nothing
-  detects it (R-2).
+- **Timeout.** A code node runs with no time limit unless its author sets `timeout`, in milliseconds or as a duration
+  such as `90s`. One that runs past it settles `failed`.
+- **Trusted.** A code node reads and writes what its function does. Files it hands on travel by artifact ports, and
+  nothing checks other access (R-2).
 - **Context.** A typed, read-only context offers the concert id, the clock value, the instance's own scratch directory
   and `log(line)`, which records a line on the instance, plus whatever the loaded hosts add (architecture section 6). A
   file the node writes there and returns at an artifact output becomes an artifact (ADR 0007).
@@ -237,8 +245,8 @@ A code node is the SDK's answer to "this needs real code".
   ref, written `<concert id>.<node instance id>`, for forking or reading a lane left by an earlier concert (D-27).
 - The CLI validates params before build. A required param that is absent, or a constraint violation (for example a list
   of fewer than two models for a comparison), is a usage error with a next-step message (CLI-06).
-- Every composition declares at least one example input set. `compose` uses the first one, over every YAML layer and
-  under the flags, a given flag overriding its own key, and `perform` never does (D-19).
+- Every composition without ports declares at least one example input set. `compose` uses the first one, over every YAML
+  layer and under the flags, a given flag overriding its own key, and `perform` never does (D-19).
 - What a composition needs (plan node kinds, instance counts, host counts) is derived by compose and host `validate`,
   never declared (SDK-06).
 
@@ -258,11 +266,14 @@ A code node is the SDK's answer to "this needs real code".
 
 The standard library is built only from the constructors above (NFR-09). Initial contents (SDK-07):
 
-- **Reducers.** `firstOk(results)`, `okOnly(results)` and `settle(results)`. Marked fan-in in the IR, so they run once
-  every input has settled and receive each as `Settled` (ADR 0006). They take a `parMap` or `map`'s handle or a list of
-  outputs. `firstOk` with no `ok` input settles `failed` if any input failed, else `rejected`.
+- **Reducers.** `firstOk(results)`, `okOnly(results)` and `allSettled(results)`. Marked fan-in in the IR, so they run
+  once every input has settled and receive each as `Settled` (ADR 0006). They take a `parMap` or `map`'s handle or a
+  list of outputs. `firstOk` returns its Result handle and, with no `ok` input, settles `failed` if any input failed,
+  else `rejected`. `okOnly` and `allSettled` return a Ref to their list.
 - **Templating.** `tpl` as above. Prompt files are text artifacts staged by the consuming host node.
-- **Readers.** Typed readers for JSON and text artifacts, with schema validation, as code nodes.
+- **Readers.** `readJson(file)` reads a `JsonFile(T)` artifact, such as an agent's `JsonOut`, into a `Ref<T>`, checked
+  against its schema. It rejects with the reason when the file is not JSON or misses the schema, so a planner's output
+  feeds a group with no code node of the author's.
 - **Logic.** `not(ref)` negates a `Ref<Bool>`, a lift as in section 5, for a loop condition such as `not(state.ok)`.
 
 ## 12. Host SDK contract
@@ -278,8 +289,9 @@ A host SDK is a package that exports typed constructors and types for the host's
    section 6).
 6. Contribute param types and their CLI resolution.
 
-A host type works as a param type and a port type alike. `literal(value, type)` from `@maestro/sdk` makes a plain value
-an input of a declared type, so a param read from its text can feed a host node's port of that type.
+Its constructors wrap `hostNode(kind, opts)` from `@maestro/sdk/host`, which emits a node of a host kind with its ports
+and a plain config. A host type works as a param type and a port type alike. `literal(value, type)` from `@maestro/sdk`
+makes a plain value an input of a declared type, so a param read from its text can feed a host node's port of that type.
 
 ### 12.1 Repo host SDK
 
@@ -346,15 +358,16 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 
 - `IR` schema violation, unknown version.
 - `REF` a Ref used where a value is required, a Ref that escaped its scope.
-- `TYPE` edge schema mismatch, template variable missing or mistyped, a build that returns no node.
+- `TYPE` edge schema mismatch, template variable missing or mistyped, a build that returns no node, a `readJson` of an
+  artifact that is not a JSON file.
 - `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count, a code
-  node `timeout` that is not a whole number of milliseconds within the timer range (`BOUND.timeout`).
-- `CFG` unclaimed key, schema violation, required key missing.
+  node `timeout` that is neither a duration nor a whole number of milliseconds within the timer range (`BOUND.timeout`).
+- `CFG` unclaimed key, schema violation, required key missing, examples missing or given with ports.
 - `HOST` anything a host `validate` hook reports (for example a lane joined twice).
 - `BUILD` an ambient read during build (SDK-11), or a build that yields different IR twice (SDK-12).
 - `ASSERT` an `assert` that fails at build.
 - `SCOPE` duplicate ids (two unlabelled nodes deriving one id need a `label`), duplicate `parMap` or `parFind` item
-  keys, unresolved subcomposition, a code node function that is not exported, `reads` and `writes` contradictions.
+  keys, unresolved subcomposition, a code node function that is not exported.
 
 Severity is `error` or `warning`. Any error stops before any concert starts (NFR-02).
 
@@ -491,23 +504,23 @@ const synthesis = agent({
   role: "planner",
   when: good.out.nonEmpty,
 });
-return firstOk([synthesis.out.report, firstOk(plans).out.value.pick("report")]);
+return firstOk([synthesis.out.report, firstOk(plans).out.value.get("report")]);
 ```
 
 ## 15. Coverage of the predecessor's workflows
 
-| Predecessor workflow                     | Constructs it needs                                                                                                                                |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| scout_plan, build_quality, review_panel  | `agent`, `check`, `use`, `iter.parMap`, reducers                                                                                                   |
-| full                                     | `use` of two subcompositions, `agent` joined to the result                                                                                         |
-| build_escalate                           | `iter.find`, `use`, `fork` of one source                                                                                                           |
-| build_fanout                             | `iter.parMap` with `onError: "continue"`, `firstOk`                                                                                                |
-| plan_panel                               | `fork` and `join` of lane versions, `iter.parMap`, `Settled` fan-in, code node                                                                     |
-| build_review                             | `loop` carrying two values, `tolerate` on a rejected check, a typed field in its condition                                                         |
-| verification round (lenses, skeptics)    | `iter.parMap`, conditional second node, `assert` for the model-family policy, code node                                                            |
-| rework, then a review gate, then a round | `use`, `loop`, staging by artifact ports, a final subcomposition use                                                                               |
-| triage over a cross product              | `iter.parMap` over a cross product made by a code node, typed outputs, code node for regrouping, `assert`                                          |
-| review of a locking change               | planner node whose output feeds a bounded `iter.parMap`, fallback via `ref.or`, expansion in a code node, a pack code node for the Gerrit artifact |
+| Predecessor workflow                     | Constructs it needs                                                                                                                                                   |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| scout_plan, build_quality, review_panel  | `agent`, `check`, `use`, `iter.parMap`, reducers                                                                                                                      |
+| full                                     | `use` of two subcompositions, `agent` joined to the result                                                                                                            |
+| build_escalate                           | `iter.find`, `use`, `fork` of one source                                                                                                                              |
+| build_fanout                             | `iter.parMap` with `onError: "continue"`, `firstOk`                                                                                                                   |
+| plan_panel                               | `fork` and `join` of lane versions, `iter.parMap`, `Settled` fan-in, code node                                                                                        |
+| build_review                             | `loop` carrying two values, `tolerate` on a rejected check, a typed field in its condition                                                                            |
+| verification round (lenses, skeptics)    | `iter.parMap`, conditional second node, `assert` for the model-family policy, code node                                                                               |
+| rework, then a review gate, then a round | `use`, `loop`, staging by artifact ports, a final subcomposition use                                                                                                  |
+| triage over a cross product              | `iter.parMap` over a cross product made by a code node, typed outputs, code node for regrouping, `assert`                                                             |
+| review of a locking change               | planner node whose output feeds a bounded `iter.parMap` through `readJson`, fallback via `ref.or`, expansion in a code node, a pack code node for the Gerrit artifact |
 
 Coverage was assessed by reading the workflows (four verification and review chains with their helpers, and eight
 general compositions). It was not exercised by running anything. Re-check each row when its workflow is ported.

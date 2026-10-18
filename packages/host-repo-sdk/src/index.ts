@@ -3,7 +3,7 @@ import {
 	type Common,
 	Dir,
 	File,
-	hostNode,
+	type JsonArtifact,
 	JsonFile,
 	literal,
 	Markdown,
@@ -13,6 +13,7 @@ import {
 	type Type,
 	type Types,
 } from "@maestro/sdk";
+import { hostNode } from "@maestro/sdk/host";
 
 /** A lane version, `<concert id>.<node instance id>`. As a param, it is a lane ref to a version of an earlier concert. */
 export const Lane: Type<string> = {
@@ -73,14 +74,17 @@ function lanePorts({ mode, base, version }: LaneInput): {
 }
 
 /** A file an agent writes in its outbox, and the artifact type of the output it arrives on. */
-export type Output = {
-	readonly type: Type<ArtifactRef>;
+export type Output<T extends ArtifactRef = ArtifactRef> = {
+	readonly type: Type<T>;
 	readonly config: Readonly<Record<string, unknown>>;
 };
 
 /** A JSON file `file` whose content `type` describes. */
-export const JsonOut = (file: string, type: Type<unknown>): Output => ({
-	type: JsonFile(typeof type.schema === "object" ? type.schema : {}),
+export const JsonOut = <T>(
+	file: string,
+	type: Type<T>,
+): Output<JsonArtifact<T>> => ({
+	type: JsonFile(type),
 	config: { file, format: "json", schema: type.schema },
 });
 
@@ -128,7 +132,7 @@ export type AgentOptions<
 export type AgentOut<O extends Outputs, M extends LaneMode = LaneMode> = {
 	report: Type<string>;
 	staged: Type<ArtifactRef>;
-} & LaneOut<M> & { [K in keyof O]: Type<ArtifactRef> };
+} & LaneOut<M> & { [K in keyof O]: O[K]["type"] };
 
 const mapValues = <V, W>(
 	record: Readonly<Record<string, V>>,

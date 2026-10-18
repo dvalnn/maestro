@@ -51,7 +51,7 @@ export const List = <T>(item: Type<T>, hints?: Hints<T[]>) =>
 	typed<T[]>({ type: "array", items: item.schema }, hints);
 
 /** An object with exactly these fields, each one required. */
-export const Record = <F extends Types>(
+export const Struct = <F extends Types>(
 	fields: F,
 	hints?: Hints<{ [K in keyof F]: ValueOf<F[K]> }>,
 ) =>
@@ -71,27 +71,43 @@ export const Enum = <const V extends readonly string[]>(
 	hints?: Hints<V[number]>,
 ) => typed<V[number]>({ type: "string", enum: [...values] }, hints);
 
+/** An artifact's value is its reference, so a hint carries no default. */
+type ArtifactHints = Omit<Hints<ArtifactRef>, "default">;
+
+/** The reference to a JSON file whose content is a `T`, as `readJson` reads it. */
+export type JsonArtifact<T> = ArtifactRef & { readonly [JSON_CONTENT]: T };
+
+// A type-only brand: no value carries it, so only a `JsonFile` type yields a `JsonArtifact`.
+declare const JSON_CONTENT: unique symbol;
+
 // An artifact's schema describes the file's content, and its value is the reference (ADR 0007).
-const artifact = (
+const artifact = <T extends ArtifactRef = ArtifactRef>(
 	type: string,
 	content: SchemaObject,
-	hints?: Hints<ArtifactRef>,
-) => typed<ArtifactRef>({ ...content, [MAESTRO_TYPE]: type }, hints);
+	hints?: ArtifactHints,
+) => typed<T>({ ...content, [MAESTRO_TYPE]: type }, hints);
 
-export const File = (hints?: Hints<ArtifactRef>) =>
+export const File = (hints?: ArtifactHints) =>
 	artifact(CORE_TYPES.file, {}, hints);
 
-export const Dir = (hints?: Hints<ArtifactRef>) =>
+export const Dir = (hints?: ArtifactHints) =>
 	artifact(CORE_TYPES.dir, {}, hints);
 
-/** A JSON file whose content `schema` describes. */
-export const JsonFile = (schema: SchemaObject, hints?: Hints<ArtifactRef>) =>
-	artifact(CORE_TYPES.jsonFile, schema, hints);
+/** A JSON file whose content is a `type`. */
+export const JsonFile = <T>(type: Type<T>, hints?: ArtifactHints) =>
+	artifact<JsonArtifact<T>>(
+		CORE_TYPES.jsonFile,
+		typeof type.schema === "object" ? type.schema : {},
+		hints,
+	);
 
-export const Markdown = (hints?: Hints<ArtifactRef>) =>
+export const Markdown = (hints?: ArtifactHints) =>
 	artifact(CORE_TYPES.markdown, {}, hints);
 
 /** What a group member or a fan-in input delivers (ADR 0006). */
+export type Settled<T> = SettledValue<T>;
+
+/** The type of a `Settled` value of `type`. */
 export const Settled = <T>(type: Type<T>): Type<SettledValue<T>> => ({
 	schema: settledSchema(type.schema),
 });

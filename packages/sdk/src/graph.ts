@@ -6,6 +6,7 @@ import {
 	type IrNode,
 	isPlainObject,
 	type JsonSchema,
+	messageOf,
 	type Ports,
 	type Scope,
 	settledSchema,
@@ -45,12 +46,43 @@ export type BuildContext = {
  */
 export interface Ref<T> {
 	readonly type: Type<T>;
-	/** A field of a structured value, by a dotted path of field names: a stdlib `pick` node. A field keeps its type. */
-	pick<K extends keyof T & string>(path: K, common?: Common): Ref<T[K]>;
-	pick(path: string, common?: Common): Ref<unknown>;
-	/** The value, or `fallback` when its node did not settle `ok`: a fan-in stdlib `or` node. */
+	/** The field at a dotted path of field names, typed by the path: a stdlib `get` node. */
+	get<P extends string>(path: P & PathOf<T>, common?: Common): Ref<At<T, P>>;
+	/**
+	 * The value, or `fallback` when its node settled `rejected` or `skipped`: a fan-in stdlib `or` node. A `failed`
+	 * node fails it too.
+	 */
 	or(fallback: T, common?: Common): Ref<T>;
 }
+
+/** The most fields a typed `get` path names; past it, `PathOf` offers no longer path. */
+type MaxPathDepth = 8;
+
+/** The dotted field paths of `T`, up to `MaxPathDepth` fields, or any string when `T` is unknown. */
+export type PathOf<T> = unknown extends T ? string : Paths<T, []>;
+
+type Paths<T, Above extends unknown[]> = Above["length"] extends MaxPathDepth
+	? never
+	: T extends readonly unknown[]
+		? never
+		: T extends object
+			? {
+					[K in keyof T & string]:
+						| K
+						| `${K}.${Paths<NonNullable<T[K]>, [...Above, unknown]>}`;
+				}[keyof T & string]
+			: never;
+
+/** The type of the field of `T` at the dotted `path`. */
+export type At<T, P extends string> = unknown extends T
+	? unknown
+	: P extends `${infer K}.${infer Rest}`
+		? K extends keyof T
+			? At<NonNullable<T[K]>, Rest>
+			: unknown
+		: P extends keyof T
+			? T[P]
+			: unknown;
 
 export type Refs<O extends Types> = {
 	readonly [K in keyof O]: Ref<ValueOf<O[K]>>;
@@ -228,16 +260,17 @@ export class RefImpl<T> implements Ref<T> {
 		readonly owner: State,
 	) {}
 
-	pick<K extends keyof T & string>(path: K, common?: Common): Ref<T[K]>;
-	pick(path: string, common?: Common): Ref<unknown>;
-	pick(path: string, common: Common = {}): Ref<unknown> {
+	get<P extends string>(
+		path: P & PathOf<T>,
+		common: Common = {},
+	): Ref<At<T, P>> {
 		return lift(
-			"pick",
+			"get",
 			`${sourceOf(this)}_${path}`,
 			{ value: this, path },
-			pickSchema(this.type.schema, path),
+			pathSchema(this.type.schema, path),
 			common,
-		);
+		) as Ref<At<T, P>>;
 	}
 
 	or(fallback: T, common: Common = {}): Ref<T> {
@@ -260,18 +293,18 @@ export class RefImpl<T> implements Ref<T> {
 	}
 }
 
-function checkOr(value: RefImpl<unknown>, fallback: unknown): void {
+function checkOr<T>(value: RefImpl<T>, fallback: unknown): void {
 	if (fallback instanceof RefImpl || fallback instanceof ResultImpl)
 		throw fail(
 			"TYPE.or",
 			"the fallback of or is a Ref, and it must be a plain value",
-			"Pick between two node outputs with firstOk([x, y])",
+			"Choose between two node outputs with firstOk([x, y])",
 		);
 	if (value.source.kind === "port" && isResults(visible(value)))
 		throw fail(
 			"TYPE.or",
 			"or was called on a group's results, which are a list of Settled",
-			"Reduce the results with okOnly or settle",
+			"Reduce the results with okOnly or allSettled",
 		);
 }
 
@@ -279,7 +312,7 @@ const usedAsValue = () =>
 	fail(
 		"REF.value",
 		"a Ref was used as a plain value during build",
-		"Lift it instead: ref.pick(path), ref.or(fallback), when(cond, value), lookup(table, key), or a code node",
+		"Lift it instead: ref.get(path), ref.or(fallback), when(cond, value), lookup(table, key), or a code node",
 	);
 
 export class ResultImpl implements Result {
@@ -374,7 +407,7 @@ export function checkPlain(value: unknown, what: string): void {
 		throw fail(
 			"REF.value",
 			`${what} holds a Ref, and it must be a plain value`,
-			"Feed the Ref to an input port of its own, or combine Refs with zip or a code node",
+			"Feed the Ref to an input port of its own, or combine Refs with a code node",
 		);
 	if (problem === "json")
 		throw fail(
@@ -414,8 +447,8 @@ function fieldSchema(at: JsonSchema, key: string, path: string) {
 	if (isListSchema(at))
 		throw fail(
 			"TYPE.path",
-			`pick path '${path}' goes into a list at '${key}'`,
-			"Pick a field of one item, or reduce the list with a code node",
+			`get path '${path}' goes into a list at '${key}'`,
+			"Get a field of one item, or reduce the list with a code node",
 		);
 	const props =
 		typeof at === "object" ? (at.properties as Ports | undefined) : undefined;
@@ -424,13 +457,13 @@ function fieldSchema(at: JsonSchema, key: string, path: string) {
 	if (next === undefined)
 		throw fail(
 			"TYPE.path",
-			`pick path '${path}' names no field '${key}'`,
-			`Pick one of: ${Object.keys(props).join(", ")}`,
+			`get path '${path}' names no field '${key}'`,
+			`Get one of: ${Object.keys(props).join(", ")}`,
 		);
 	return next;
 }
 
-function pickSchema(schema: JsonSchema, path: string): JsonSchema {
+function pathSchema(schema: JsonSchema, path: string): JsonSchema {
 	let at = schema;
 	for (const key of path.split(".")) {
 		const next = fieldSchema(at, key, path);
@@ -441,7 +474,7 @@ function pickSchema(schema: JsonSchema, path: string): JsonSchema {
 }
 
 /** Checks that a Ref can be read from the current frame. Returns its port source. */
-export function visible(ref: RefImpl<unknown>): PortSource {
+export function visible<T>(ref: RefImpl<T>): PortSource {
 	const s = current();
 	if (ref.owner !== s)
 		throw fail(
@@ -496,7 +529,7 @@ export function worker(fn: CodeFn): WorkerRef {
 	} catch (error) {
 		throw fail(
 			"SCOPE.export",
-			error instanceof Error ? error.message : String(error),
+			messageOf(error),
 			"Export the function under one name",
 		);
 	}

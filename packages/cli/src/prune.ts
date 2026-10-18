@@ -1,8 +1,7 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { messageOf } from "@maestro/core";
 import type { ConcertRecord } from "@maestro/core/perform";
-import { DURATION_EXAMPLE } from "@maestro/ir";
+import { DURATION_EXAMPLE, messageOf } from "@maestro/ir";
 import { COMMON, type Command, isSet, type Options, textOf } from "./command";
 import {
 	EXIT,

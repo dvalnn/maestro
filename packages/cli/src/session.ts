@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { lstat, mkdir, readdir } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
-import { messageOf } from "@maestro/core";
 import type { Host } from "@maestro/core/host";
 import { hostSetup } from "@maestro/core/host";
 import {
@@ -10,6 +9,7 @@ import {
 	openRecord,
 	type Records,
 } from "@maestro/core/perform";
+import { messageOf } from "@maestro/ir";
 import {
 	type Deps,
 	isSet,

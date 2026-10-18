@@ -56,7 +56,7 @@ Decisions ruled by the project owner during design. Anything not listed here is 
 | D-16 | Build-time values: composition params and composed config are plain values during build, so build code may loop, branch and compute bounds on them. Node outputs and file contents are Refs. A subcomposition takes plain params and Ref ports. A plain value may feed a port, and a Ref never feeds a param.                                                                                                                | The graph stays a deterministic function of params and composed config, and everything else stays checkable before spend.                                                                                     |
 | D-17 | A composition declares one set of typed params, covering CLI inputs and tunables alike. A param's value comes from, highest first: the use site (subcomposition) or the CLI flag (root), then profile, workspace and user YAML, then the default. YAML keys live under the pack id and the composition id. Hosts keep pure-config namespaces.                                                                                | One declaration instead of separate inputs and config. Keeps D-07, since a composition still declares its own typed settings in code.                                                                         |
 | D-18 | `parMap` and `parFind` items with primitive values are keyed by that value. Other items are keyed by index unless the author gives a `parMap` or `parFind` a key function. Duplicate keys are a compose error, or a failed group when a key function or a list known only at perform time gives them.                                                                                                                        | Readable, stable ids in events, `ls` and lane refs.                                                                                                                                                           |
-| D-19 | Every composition declares at least one example input set. `compose` uses the first, over every YAML layer and under the flags, and a given flag overrides its own key. `perform` never uses examples.                                                                                                                                                                                                                       | `compose` can validate a bare composition file.                                                                                                                                                               |
+| D-19 | Every composition without ports declares at least one example input set, and one with ports declares none. `compose` uses the first, over every YAML layer and under the flags, and a given flag overrides its own key. `perform` never uses examples.                                                                                                                                                                       | `compose` can validate a bare composition file.                                                                                                                                                               |
 | D-20 | Harness adapters drive coding agents as sandboxed subprocesses speaking each harness's JSON event stream. In-process SDK adapters are a later option for unsandboxed use. pi is the first adapter and Claude Code the second.                                                                                                                                                                                                | An in-process agent cannot be confined by the sandbox, because its tools would run inside the maestro process. See `adr/0001-sandboxed-subprocess-adapters.md`.                                               |
 | D-21 | The coding-agent host vocabulary is final: agent node, role, lane (`fresh`, `fork`, `join`, `read`), target, changeset node, apply node, harness, check node, sandbox.                                                                                                                                                                                                                                                       | Settled by the project owner.                                                                                                                                                                                 |
 | D-22 | A check node is its own host node kind.                                                                                                                                                                                                                                                                                                                                                                                      | It runs untrusted target commands and needs the sandbox, lane staging, process-tree kill and logs. Code nodes are trusted and in-process and provide none of that.                                            |
@@ -188,22 +188,22 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 
 ### 6.3 SDK (SDK)
 
-- **SDK-01 (Must).** A TypeScript SDK declares compositions: name, doc, typed params with CLI hints and defaults, and at
-  least one example input set (D-19).
+- **SDK-01 (Must).** A TypeScript SDK declares compositions: name, doc, typed params with CLI hints and defaults, and,
+  without ports, at least one example input set (D-19).
 - **SDK-02 (Must).** Constructors exist for code, the iteration groups (`iter.parMap`, `iter.map`, `iter.find`,
   `iter.parFind`, `iter.fold`), the loops (`loop.while`, `loop.doWhile`), assert, subcomposition use, and for host node
   kinds contributed by host SDKs.
-- **SDK-03 (Must).** `Ref` semantics are enforced: build code cannot branch on a Ref. Lifting combinators (`pick`,
-  `map`, `zip`, `when`) cover the common cases, and anything else is a code node. Params and composed config are plain
-  values (D-16). The types distinguish Plain from Ref, and coercing a Ref to a boolean or string during build throws.
-- **SDK-04 (Must).** Code nodes declare typed inputs and outputs, and declared reads and writes. They run only at
-  perform (ADR 0009).
+- **SDK-03 (Must).** `Ref` semantics are enforced: build code cannot branch on a Ref. Lifting combinators (`get`, `or`,
+  `when`, `lookup`, `not`) cover the common cases, and anything else is a code node. Params and composed config are
+  plain values (D-16). The types distinguish Plain from Ref, and coercing a Ref to a boolean or string during build
+  throws.
+- **SDK-04 (Must).** Code nodes declare typed inputs and outputs. They run only at perform (ADR 0009).
 - **SDK-05 (Must).** Subcompositions have typed signatures, plain params plus Ref ports (D-16), and are reusable across
   packs.
 - **SDK-06 (Must).** What a composition needs (plan node kinds, instance counts, host counts) is derived by compose and
   host `validate`, never declared by hand. No SDK function and no IR field carries it.
-- **SDK-07 (Should).** A standard library supplies reducers (`firstOk`, `okOnly`), prompt templating with variables
-  checked at compose time, and typed file readers.
+- **SDK-07 (Should).** A standard library supplies reducers (`firstOk`, `okOnly`, `allSettled`), prompt templating with
+  variables checked at compose time, and a typed JSON file reader (`readJson`).
 - **SDK-08 (Must).** A test kit provides a fake host, build and compose assertions, and concerts with stubbed nodes.
 - **SDK-09 (Should).** The SDK can emit IR to a file without performing it.
 - **SDK-10 (May).** SDKs in other languages emit the same IR.
@@ -375,7 +375,8 @@ Deferred beyond v1, with no decision needed now:
 
 - **R-1.** Symbolic build ergonomics: authors cannot branch on a Ref. Mitigation: lifting combinators, examples, a quick
   feedback loop with compose.
-- **R-2.** Compose strength is bounded by schemas. Code node bodies are opaque, so declared reads and writes matter.
+- **R-2.** Compose strength is bounded by schemas. Code node bodies are opaque, so their typed ports are all compose can
+  check.
 - **R-3.** Graphs whose shape depends on a model's output (a planner choosing lenses) are bounded, not exact.
 - **R-4.** The JSON event streams of pi and Claude Code are assumed stable and sufficient. Slice 0 checks pi's (D-32).
 - **R-5.** Single binary on modern Linux: a minimal binary is known to run. SQLite and external pack loading are checked

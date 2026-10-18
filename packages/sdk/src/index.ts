@@ -2,6 +2,7 @@ export {
 	type ArtifactRef,
 	type CodeContext,
 	type OnError,
+	type Outcome,
 	type Rejection,
 	reject,
 } from "@maestro/ir";
@@ -29,8 +30,6 @@ export {
 	type CodeOutputs,
 	code,
 	type FoldOptions,
-	type HostNodeOptions,
-	hostNode,
 	iter,
 	type LoopOptions,
 	literal,
@@ -41,14 +40,14 @@ export {
 	type Written,
 } from "./nodes";
 export {
+	allSettled,
 	firstOk,
 	lookup,
 	not,
 	okOnly,
 	type ReducerInputs,
-	settle,
+	readJson,
 	when,
-	zip,
 } from "./stdlib";
 export {
 	Bool,
@@ -59,11 +58,12 @@ export {
 	type Hints,
 	Int,
 	Json,
+	type JsonArtifact,
 	JsonFile,
 	List,
 	Markdown,
-	Record,
 	Settled,
+	Struct,
 	Text,
 	type Type,
 	type Types,

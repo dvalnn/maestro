@@ -37,15 +37,23 @@ export type PortValues<Q extends Types> = {
 	[K in keyof Q]: Ref<ValueOf<Q[K]>> | ValueOf<Q[K]>;
 };
 
+/** A composition with ports builds only through `use`, so only one without ports takes examples (D-16, D-19). */
 export type Declaration<P extends Types, Q extends Types> = {
 	doc?: string;
 	/** Plain values at build: CLI inputs and tunables alike (D-17). A param without a default is required. */
 	params?: P;
-	/** Ref-typed inputs fed by the `use` site. A composition with ports builds only through `use` (D-16). */
-	ports?: Q;
-	/** Param sets for `compose` without flags. Required without ports, optional with them (D-19). */
-	examples?: Partial<Values<P>>[];
-};
+} & (
+	| {
+			ports?: never;
+			/** Param sets for `compose` without flags; at least one. */
+			examples: Partial<Values<P>>[];
+	  }
+	| {
+			/** Ref-typed inputs fed by the `use` site. */
+			ports: Q;
+			examples?: never;
+	  }
+);
 
 export type Composition<P extends Types, Q extends Types, R> = {
 	readonly name: string;
@@ -71,8 +79,17 @@ export function composition<P extends Types, Q extends Types, R>(
 			`composition name '${name}' is not a valid id`,
 			"Use lowercase letters, digits, '_' and '-', starting with a letter",
 		);
-	const { doc, params = {} as P, ports = {} as Q, examples = [] } = declaration;
-	if (Object.keys(ports).length === 0 && examples.length === 0)
+	const { doc, params = {} as P } = declaration;
+	const ports = declaration.ports ?? ({} as Q);
+	const examples = declaration.examples ?? [];
+	const hasPorts = Object.keys(ports).length > 0;
+	if (hasPorts && declaration.examples !== undefined)
+		throw fail(
+			"CFG.examples",
+			`composition '${name}' has ports and declares examples`,
+			"Remove examples: a composition with ports takes its values from the use that calls it",
+		);
+	if (!hasPorts && examples.length === 0)
 		throw fail(
 			"CFG.examples",
 			`composition '${name}' declares no example input set`,

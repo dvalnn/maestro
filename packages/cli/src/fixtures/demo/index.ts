@@ -1,13 +1,6 @@
 // The source of the fixture pack `demo`, which `packOf` bundles behind the SDK's glue.
-import {
-	code,
-	composition,
-	hostNode,
-	Int,
-	Json,
-	Text,
-	use,
-} from "@maestro/sdk";
+import { code, composition, Int, Json, Text, use } from "@maestro/sdk";
+import { hostNode } from "@maestro/sdk/host";
 import * as helpers from "./helpers";
 
 export * as helpers from "./helpers";

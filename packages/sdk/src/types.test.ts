@@ -11,8 +11,8 @@ import {
 	JsonFile,
 	List,
 	Markdown,
-	Record,
 	Settled,
+	Struct,
 	Text,
 } from "./index";
 
@@ -26,8 +26,8 @@ describe("type vocabulary", () => {
 		["List", List(Int()), { type: "array", items: { type: "integer" } }],
 		["Enum", Enum(["a", "b"]), { type: "string", enum: ["a", "b"] }],
 		[
-			"Record",
-			Record({ n: Int(), s: Text() }),
+			"Struct",
+			Struct({ n: Int(), s: Text() }),
 			{
 				type: "object",
 				properties: { n: { type: "integer" }, s: { type: "string" } },
@@ -46,9 +46,9 @@ describe("type vocabulary", () => {
 		["Markdown", Markdown(), CORE_TYPES.markdown, {}],
 		[
 			"JsonFile",
-			JsonFile({ type: "array" }),
+			JsonFile(List(Text())),
 			CORE_TYPES.jsonFile,
-			{ type: "array" },
+			{ type: "array", items: { type: "string" } },
 		],
 	])("%s is marked with its core type", (_name, type, marker, content) => {
 		expect(type.schema).toEqual({ ...content, [MAESTRO_TYPE]: marker });
@@ -60,5 +60,10 @@ describe("type vocabulary", () => {
 			default: 2,
 			description: "tries",
 		});
+		expect(File({ description: "notes" }).schema).toMatchObject({
+			description: "notes",
+		});
+		// @ts-expect-error an artifact's value is a reference, so it takes no default.
+		File({ default: { path: "a", contentHash: "sha256:0" } });
 	});
 });

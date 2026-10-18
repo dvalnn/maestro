@@ -6,8 +6,10 @@ import {
 	type Facts,
 	type HostNode,
 	type JsonSchema,
+	messageOf,
 	type NodeInstance,
 	type Ports,
+	type Validator,
 } from "@maestro/ir";
 import type { ValidateFunction } from "ajv/dist/2020";
 import type {
@@ -18,8 +20,7 @@ import type {
 	Metrics,
 } from "../host";
 import type { Inputs, NodeResult } from "../node";
-import type { Validator } from "../ports";
-import { type HostKind, isOutputs, isRecord, messageOf } from "../shared";
+import { type HostKind, isOutputs, isRecord } from "../shared";
 import { type ConcertDirs, collectArtifacts } from "./artifacts";
 import type { RecordWriter, Settling } from "./record";
 import type { Invocation, Worker } from "./ts-worker";

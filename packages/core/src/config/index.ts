@@ -1,6 +1,7 @@
 import { availableParallelism } from "node:os";
 import { dirname, resolve } from "node:path";
 import type { Diagnostic, JsonSchema, SourceLocation } from "@maestro/ir";
+import { type Validator, validator, violations } from "@maestro/ir";
 import {
 	type Document,
 	isAlias,
@@ -13,7 +14,6 @@ import {
 	type YAMLSeq,
 } from "yaml";
 import type { Bounds } from "../host";
-import { type Validator, validator, violations } from "../ports";
 import { isRecord } from "../shared";
 
 /** The layers, lowest first. `example` is the example input set `compose` falls back to. */

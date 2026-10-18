@@ -16,8 +16,8 @@ import {
 	schemaErrors,
 	valuesLayer,
 } from "@maestro/core/config";
-import { validator } from "@maestro/core/ports";
 import type { JsonSchema } from "@maestro/ir";
+import { validator } from "@maestro/ir";
 
 const APP = "maestro";
 /** The directory that makes its parent a workspace. */

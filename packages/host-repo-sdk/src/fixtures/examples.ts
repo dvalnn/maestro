@@ -13,8 +13,8 @@ import {
 	loop,
 	not,
 	okOnly,
-	Record,
 	type Ref,
+	Struct,
 	Text,
 } from "@maestro/sdk";
 import {
@@ -30,8 +30,8 @@ import {
 	seat,
 } from "../index";
 
-const Findings = List(Record({ file: Text(), issue: Text() }));
-const Verdicts = List(Record({ issue: Text(), holds: Text() }));
+const Findings = List(Struct({ file: Text(), issue: Text() }));
+const Verdicts = List(Struct({ issue: Text(), holds: Text() }));
 
 const LENSES = ["correctness", "security", "tests"];
 
@@ -70,7 +70,6 @@ export const review = composition(
 		assert(
 			family(lensModel) !== family(skepticModel),
 			`skeptic model '${skepticModel}' is of the family of lens model '${lensModel}'`,
-			{ onFail: "failed" },
 		);
 		const rounds = iter.parMap(
 			LENSES,
@@ -165,7 +164,7 @@ function merge(
 	lane: LaneInput<"fresh" | "join">,
 	item: Ref<{ changeset: ArtifactRef }>,
 ) {
-	const change = item.pick("changeset");
+	const change = item.get("changeset");
 	const applied = apply(lane, { change });
 	const resolved = resolver({
 		task: "Resolve the conflict markers in the files.",
@@ -197,7 +196,7 @@ export const fold = composition(
 				changeset(agent({ task, lane: fresh(), role: "implementer" }).out.lane),
 			{ onError: "stop" },
 		);
-		const merged = iter.fold(okOnly(implemented).out.value, {
+		const merged = iter.fold(okOnly(implemented), {
 			first: (cs) => merge(fresh(), cs),
 			step: (acc, cs) => merge(join(acc.out.value), cs),
 			max: tasks.length,

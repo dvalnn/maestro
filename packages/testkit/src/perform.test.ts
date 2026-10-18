@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -38,9 +38,22 @@ import {
 } from "@maestro/ir";
 import { partKey, summarize } from "@maestro/ir/fixtures/guards";
 import { isDone } from "@maestro/ir/fixtures/refine";
-import { Bool, composition, hostNode, Int, loop, not } from "@maestro/sdk";
+import {
+	assert,
+	Bool,
+	composition,
+	Int,
+	iter,
+	JsonFile,
+	List,
+	loop,
+	not,
+	readJson,
+	Text,
+} from "@maestro/sdk";
 import { planPanelIr } from "@maestro/sdk/fixtures/examples";
 import * as workers from "@maestro/sdk/fixtures/workers";
+import { hostNode } from "@maestro/sdk/host";
 import * as stdlib from "@maestro/sdk/stdlib";
 import {
 	buildIr,
@@ -113,10 +126,7 @@ const start = (
 	});
 
 /** Performs `source`, an IR or the id of a concert to resume, with its code hashed by `options.codeHash`. */
-async function play(
-	source: Ir | string,
-	options: Omit<StubOptions, "hosts"> & { hosts?: Host[] } = {},
-) {
+async function play(source: Ir | string, options: StubOptions = {}) {
 	const dir = await storage(options);
 	const concert = await stubConcert(source, {
 		...options,
@@ -236,7 +246,7 @@ test("a parMap fans out, a reducer fans in over its settled members, a rejection
 			code: {
 				isDone,
 				not: stdlib.not,
-				pick: stdlib.pick,
+				get: stdlib.get,
 				firstOk: (ports: { results: Settled<MemberValue>[] }) => {
 					drafts.push(...ports.results);
 					return stdlib.firstOk(ports);
@@ -290,7 +300,7 @@ test("a loop that tolerates rejected carries a rejected iteration into one that 
 				isDone,
 				not: stdlib.not,
 				firstOk: stdlib.firstOk,
-				pick: stdlib.pick,
+				get: stdlib.get,
 			},
 		},
 	);
@@ -856,16 +866,16 @@ test("a fan-in node takes each data input settled, whatever its outcome", async 
 				task("bad", { out: { text: STRING } }),
 				task("flawed", { out: { text: STRING } }),
 				{
-					...code("pick", "pick", { in: { a: true, b: true, c: true } }),
+					...code("gather", "gather", { in: { a: true, b: true, c: true } }),
 					fanin: true,
 				},
 			],
 			[
-				data("good.text", "pick.a"),
-				data("bad.text", "pick.b"),
-				data("flawed.text", "pick.c"),
+				data("good.text", "gather.a"),
+				data("bad.text", "gather.b"),
+				data("flawed.text", "gather.c"),
 			],
-			"pick",
+			"gather",
 		),
 		{
 			script: {
@@ -878,7 +888,7 @@ test("a fan-in node takes each data input settled, whatever its outcome", async 
 				},
 			},
 			code: {
-				pick: (ports: unknown) => {
+				gather: (ports: unknown) => {
 					seen.push(ports);
 					return {};
 				},
@@ -1749,6 +1759,108 @@ test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", a
 	expect(byInstance(record.instances(concert)).firstOk_text).toMatchObject({
 		status: "ok",
 		outputs: { value: "cost plan" },
+	});
+});
+
+test("an assert node that rejects is the concert's cause, through a node that waits on it", async () => {
+	const ir = buildIr(
+		composition("asserted", { examples: [{}] }, () => {
+			const t = hostNode(FAKE_TASK, { label: "t", out: { done: Bool() } });
+			const holds = assert(t.out.done, "t is done", { onFail: "rejected" });
+			return hostNode(FAKE_TASK, { label: "after", when: holds.ok });
+		}),
+	);
+	const { result } = await play(ir, {
+		script: { steps: { t: [{ outcome: "ok", outputs: { done: false } }] } },
+	});
+	expect(result).toMatchObject({ node: "assert", outcome: "rejected" });
+});
+
+test.each([
+	["rejected", { outcome: "ok", outputs: { value: "none" } }],
+	["failed", { outcome: "failed", reason: "or: its input failed: crashed" }],
+] as const)(
+	"or over a %s input settles as its own result",
+	async (outcome, ending) => {
+		const ir = buildIr(
+			composition("fallback", { examples: [{}] }, () =>
+				hostNode(FAKE_TASK, { label: "t", out: { text: Text() } }).out.text.or(
+					"none",
+				),
+			),
+		);
+		const { result } = await play(ir, {
+			script: { steps: { t: [{ outcome, reason: "crashed" }] } },
+			code: { or: stdlib.or },
+		});
+		expect(result).toMatchObject({ node: "t_or", ...ending });
+	},
+);
+
+describe("readJson over a planner's file", () => {
+	const planned = buildIr(
+		composition("planned", { examples: [{}] }, () => {
+			const planner = hostNode(FAKE_TASK, {
+				label: "planner",
+				out: { plan: JsonFile(List(Text())) },
+			});
+			return iter.parMap(
+				readJson(planner.out.plan),
+				(step) =>
+					hostNode(FAKE_TASK, {
+						label: "do",
+						in: { step },
+						out: { done: Text() },
+					}),
+				{ max: 4, onError: "continue" },
+			);
+		}),
+	);
+
+	/** Performs `planned` with the planner writing `content` to its file. */
+	const perform = (content: string) =>
+		play(planned, {
+			script: {
+				steps: {
+					planner: async (_, __, context) => {
+						const plan = join(context.scratch, "plan.json");
+						await writeFile(plan, content);
+						return { outcome: "ok", outputs: { plan } };
+					},
+					"parMap/do": (_, inputs) => ({
+						outcome: "ok",
+						outputs: { done: `${inputs.step} done` },
+					}),
+				},
+			},
+			code: { readJson: stdlib.readJson },
+		});
+
+	test("feeds a parMap its items, with no code node of the author's", async () => {
+		const exports = planned.nodes.flatMap((n) =>
+			n.kind === "code" ? [n.worker.module, n.worker.export] : [],
+		);
+		expect(exports).toEqual(["maestro:stdlib", "readJson"]);
+		const { result } = await perform('["a","b"]');
+		expect(result).toMatchObject({
+			node: "parMap",
+			outcome: "ok",
+			outputs: {
+				results: [
+					{ outcome: "ok", value: { done: "a done" } },
+					{ outcome: "ok", value: { done: "b done" } },
+				],
+			},
+		});
+	});
+
+	test("rejects a file that misses the schema, naming it as the cause", async () => {
+		const { result } = await perform('["a",2]');
+		expect(result).toMatchObject({
+			node: "planner_plan_json",
+			outcome: "rejected",
+			reason: expect.stringContaining("'1' must be string"),
+		});
 	});
 });
 

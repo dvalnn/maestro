@@ -32,7 +32,7 @@ const writeIr = (codeHash: string) => ({
 	scopes: [],
 	nodes: [
 		{
-			id: "pick",
+			id: "get",
 			kind: "code",
 			in: { value: { type: "object" }, path: { type: "string" } },
 			literals: { value: { a: 1 }, path: "a" },
@@ -40,7 +40,7 @@ const writeIr = (codeHash: string) => ({
 			worker: {
 				runtime: "ts",
 				module: "maestro:stdlib",
-				export: "pick",
+				export: "get",
 				codeHash: "maestro:stdlib@0.0.0",
 			},
 		},
@@ -212,9 +212,9 @@ describe("perform", () => {
 		expect(waited.out.split("\n")).toEqual(lines);
 		expect(waited.err).toBe(`concert ${id} ok`);
 		const record = openRecord(join(w.root, "data/maestro/record.db"));
-		const [pick] = record.find(id)?.ir.nodes ?? [];
+		const [get] = record.find(id)?.ir.nodes ?? [];
 		record.close();
-		expect(pick?.kind === "code" && pick.worker.codeHash).toBe(STDLIB_HASH);
+		expect(get?.kind === "code" && get.worker.codeHash).toBe(STDLIB_HASH);
 	});
 
 	test.each([

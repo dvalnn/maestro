@@ -1,8 +1,10 @@
 import {
+	CORE_TYPES,
 	canonicalJson,
 	collects,
 	isPlainObject,
 	type JsonSchema,
+	MAESTRO_TYPE,
 	type Settled as SettledValue,
 	settledSchema,
 } from "@maestro/ir";
@@ -12,7 +14,6 @@ import {
 	fail,
 	info,
 	isResults,
-	itemsOf,
 	lift,
 	type Ref,
 	RefImpl,
@@ -25,34 +26,10 @@ import {
 	visible,
 } from "./graph";
 import { type MapResults, memberSchema } from "./nodes";
-import type { Type } from "./types";
+import type { JsonArtifact, Type } from "./types";
 
 const isStringSchema = (schema: JsonSchema) =>
 	typeof schema === "object" && schema.type === "string";
-
-const pairs = (a: Ref<unknown>, b: Ref<unknown>) => ({
-	type: "array",
-	items: {
-		type: "array",
-		prefixItems: [itemsOf(a.type.schema), itemsOf(b.type.schema)],
-		items: false,
-	},
-});
-
-/** The i-th items of two lists, as pairs, or with `on` the pairs whose field `on` is equal: a stdlib `zip` node. */
-export function zip<A, B>(
-	a: Ref<A[]>,
-	b: Ref<B[]>,
-	{ on, ...common }: Common & { on?: string } = {},
-): Ref<[A, B][]> {
-	return lift(
-		"zip",
-		`zip_${sourceOf(a)}_${sourceOf(b)}${on === undefined ? "" : `_${on}`}`,
-		on === undefined ? { a, b } : { a, b, on },
-		pairs(a, b),
-		common,
-	) as Ref<[A, B][]>;
-}
 
 /** `value`, from a stdlib `when` node that is skipped unless `cond` is true. `or` gives it a fallback. */
 export function when<T>(
@@ -190,20 +167,50 @@ export function firstOk<T>(
 export function okOnly<T>(
 	inputs: ReducerInputs<T>,
 	common: Common = {},
-): Value<T[]> {
+): Ref<T[]> {
 	return reducer("okOnly", inputs, common, (v) => ({
 		type: "array",
 		items: v,
-	})) as unknown as Value<T[]>;
+	})).port("value") as Ref<T[]>;
 }
 
 /** Every input as `Settled`, in input order. */
-export function settle<T>(
+export function allSettled<T>(
 	inputs: ReducerInputs<T>,
 	common: Common = {},
-): Value<SettledValue<T>[]> {
-	return reducer("settle", inputs, common, (v) => ({
+): Ref<SettledValue<T>[]> {
+	return reducer("allSettled", inputs, common, (v) => ({
 		type: "array",
 		items: settledSchema(v),
-	})) as unknown as Value<SettledValue<T>[]>;
+	})).port("value") as Ref<SettledValue<T>[]>;
+}
+
+/**
+ * The content of a JSON file, typed and checked by the schema of its `JsonFile` type: a stdlib `readJson` node. It
+ * rejects with the reason when the file is not JSON or misses the schema.
+ * @throws `TYPE.artifact` for a Ref that is not a JSON file.
+ */
+export function readJson<T>(
+	file: Ref<JsonArtifact<T>>,
+	common: Common = {},
+): Ref<T> {
+	const { [MAESTRO_TYPE]: type, ...content } =
+		typeof file.type.schema === "object" ? file.type.schema : {};
+	if (type !== CORE_TYPES.jsonFile)
+		throw fail(
+			"TYPE.artifact",
+			`readJson reads a ${CORE_TYPES.jsonFile} artifact, and this Ref is ${type === undefined ? "not an artifact" : `a ${String(type)}`}`,
+			"Pass an output typed JsonFile(type), such as an agent's JsonOut",
+		);
+	const port =
+		file instanceof RefImpl && file.source.kind === "port"
+			? `${file.source.port}_`
+			: "";
+	return lift(
+		"readJson",
+		`${sourceOf(file)}_${port}json`,
+		{ file, schema: content },
+		content,
+		common,
+	) as Ref<T>;
 }

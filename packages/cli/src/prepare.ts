@@ -1,10 +1,16 @@
 import { mkdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import { messageOf } from "@maestro/core";
 import { type ComposeInput, compose } from "@maestro/core/compose";
 import { CORE_CONFIG, type Composed, type Layer } from "@maestro/core/config";
 import type { ConcertRecord } from "@maestro/core/perform";
-import { type Ir, irSchema, mapWorkers, type Plan, parseIr } from "@maestro/ir";
+import {
+	type Ir,
+	irSchema,
+	mapWorkers,
+	messageOf,
+	type Plan,
+	parseIr,
+} from "@maestro/ir";
 import { type Described, STDLIB_MODULE } from "@maestro/sdk/loader";
 import { COMMON, type Options, parse, type Values } from "./command";
 import { CLI_CONFIG } from "./config";

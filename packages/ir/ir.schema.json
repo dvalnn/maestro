@@ -238,8 +238,6 @@
 			"required": ["worker"],
 			"properties": {
 				"worker": { "$ref": "#/$defs/workerRef" },
-				"reads": { "type": "array", "items": { "type": "string" } },
-				"writes": { "type": "array", "items": { "type": "string" } },
 				"fanin": { "type": "boolean" },
 				"timeout": {
 					"description": "Milliseconds the node may run before it settles failed. None when absent.",

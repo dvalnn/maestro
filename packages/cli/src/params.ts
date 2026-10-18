@@ -12,7 +12,6 @@ import {
 	valuesLayer,
 } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
-import { type Validator, validator } from "@maestro/core/ports";
 import {
 	ARTIFACT_TYPES,
 	type Diagnostic,
@@ -21,6 +20,8 @@ import {
 	type JsonSchema,
 	replaceAt,
 	schemaMarkers,
+	type Validator,
+	validator,
 } from "@maestro/ir";
 import type { ConfiguredParams, Described } from "@maestro/sdk/loader";
 

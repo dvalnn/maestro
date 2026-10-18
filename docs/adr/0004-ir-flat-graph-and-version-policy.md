@@ -30,9 +30,9 @@ IR 1.0 (`packages/ir`, CORE-16, IR-01) fixes three things that every emitter and
   older maestro tells the operator to upgrade instead.
 - **`tolerate` on data edges.** Fewer edges, but it contradicts architecture section 5, which puts tolerance on control
   edges. Kept as the architecture says.
-- **Selecting a `seq`/`repeat` result field by a pick code node.** Uniform, but a Result handle's ports are structure,
-  not data (sdk-spec section 5). A host value such as a handle that may be consumed only once would then pass through a
-  code node. Rejected for mirrored ports.
+- **Selecting a `seq`/`repeat` result field by a field-read code node.** Uniform, but a Result handle's ports are
+  structure, not data (sdk-spec section 5). A host value such as a handle that may be consumed only once would then pass
+  through a code node. Rejected for mirrored ports.
 
 ## Consequences
 

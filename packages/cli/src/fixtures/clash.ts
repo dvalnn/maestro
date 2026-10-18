@@ -1,5 +1,6 @@
 // A bare composition file whose param shares its flag with a command's.
-import { composition, hostNode, Text } from "@maestro/sdk";
+import { composition, Text } from "@maestro/sdk";
+import { hostNode } from "@maestro/sdk/host";
 
 export const clash = composition(
 	"clash",

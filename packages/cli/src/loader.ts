@@ -10,9 +10,8 @@ import {
 	resolve,
 	sep,
 } from "node:path";
-import { messageOf, sha256Hex } from "@maestro/core";
+import { sha256Hex } from "@maestro/core";
 import type { CodeEntry, KeyFunction, LoadCode } from "@maestro/core/node";
-import { validator, violations } from "@maestro/core/ports";
 import {
 	type Diagnostic,
 	type Ir,
@@ -20,9 +19,12 @@ import {
 	isPlainObject,
 	type JsonSchema,
 	mapWorkers,
+	messageOf,
 	type ParseResult,
 	parseIr,
 	TS_RUNTIME,
+	validator,
+	violations,
 	type WorkerRef,
 } from "@maestro/ir";
 import {
@@ -110,7 +112,7 @@ const ENTRY = ".maestro-entry.js";
 const HASH_PREFIX = "sha256:";
 /** The `version` of a bare file's compositions, which have no manifest to declare one. */
 const FILE_VERSION = "0.0.0";
-const SDK_IMPORT = /^@maestro\/sdk(\/loader)?$/;
+const SDK_IMPORT = /^@maestro\/sdk(\/host|\/loader)?$/;
 
 type Namespace = Readonly<Record<string, unknown>>;
 

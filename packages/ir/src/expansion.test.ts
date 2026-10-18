@@ -51,7 +51,7 @@ test("keys that sanitize alike are equal, so the number 3 and the string '3' col
 });
 
 test.each<[string, string, string[], string]>([
-	["outside groups", "pick", [], "pick"],
+	["outside groups", "best", [], "best"],
 	["one map", "lens/skeptic", ["lens"], "lens[risk]/skeptic"],
 	["nested groups", "a/b/c", ["a", "a/b"], "a[risk]/b[2]/c"],
 	["a scope between", "a/s/b/c", ["a", "a/s/b"], "a[risk]/s/b[2]/c"],

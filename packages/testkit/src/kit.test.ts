@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { code, composition, hostNode, Text } from "@maestro/sdk";
+import { code, composition, Text } from "@maestro/sdk";
+import { hostNode } from "@maestro/sdk/host";
 import { buildIr, composeIr, FAKE_TASK, shapeOf, stubConcert } from "./index";
 
 const shout = (inputs: { text: string }) => ({
@@ -73,4 +74,16 @@ test("stubConcert performs the graph with its host node scripted and its code no
 	} finally {
 		await concert.close();
 	}
+});
+
+test("stubConcert takes a script or hosts, and code or a loader, never both", async () => {
+	const ir = buildIr(pipeline, {}, { shout });
+	await expect(
+		// @ts-expect-error a script scripts the fake host, which given hosts replace.
+		stubConcert(ir, { script: {}, hosts: [] }),
+	).rejects.toThrow("stubConcert takes script or hosts, not both");
+	await expect(
+		// @ts-expect-error code stubs load by export name, which a loader replaces.
+		stubConcert(ir, { code: {}, loadCode: async () => () => ({}) }),
+	).rejects.toThrow("stubConcert takes code or loadCode, not both");
 });

@@ -10,16 +10,8 @@ import {
 } from "./fixtures/context";
 import { fanout } from "./fixtures/examples";
 import { stamp } from "./fixtures/workers";
-import {
-	code,
-	composition,
-	hostNode,
-	Int,
-	List,
-	type Ref,
-	Text,
-	use,
-} from "./index";
+import { hostNode } from "./host";
+import { code, composition, Int, List, type Ref, Text, use } from "./index";
 import {
 	type BuildContext,
 	build,
@@ -67,6 +59,7 @@ describe("composition", () => {
 		],
 		[
 			"no ports and no examples",
+			// @ts-expect-error a composition without ports needs examples.
 			() => composition("c", {}, () => 0),
 			"CFG.examples",
 		],
@@ -79,13 +72,21 @@ describe("composition", () => {
 		expect(diagnose(fn).code).toBe(code);
 	});
 
-	test("a composition with ports may take examples", () => {
-		const ported = composition(
-			"c",
-			{ ports: { t: Text() }, examples: [{}] },
-			() => 0,
-		);
-		expect(ported.examples).toEqual([{}]);
+	test("a composition with ports takes no examples", () => {
+		const withExamples = () =>
+			composition(
+				"c",
+				// @ts-expect-error a composition with ports takes no examples
+				{ ports: { t: Text() }, examples: [{}] },
+				() => 0,
+			);
+		expect(diagnose(withExamples)).toMatchObject({
+			code: "CFG.examples",
+			message: "composition 'c' has ports and declares examples",
+		});
+		expect(
+			composition("c", { ports: { t: Text() } }, () => 0).examples,
+		).toEqual([]);
 	});
 
 	test("build returns only IR that parseIr accepts", () => {

@@ -176,7 +176,8 @@ describe("resume", () => {
 	test("a bare file's concert resumes from its current source, rerunning an edited code node only", async () => {
 		const w = await world();
 		const file = join(await scratch(), "work.ts");
-		const source = `import { code, composition, hostNode, Text } from "@maestro/sdk";
+		const source = `import { code, composition, Text } from "@maestro/sdk";
+import { hostNode } from "@maestro/sdk/host";
 export function mark(inputs: { text: string }) {
 	return { text: \`\${inputs.text} v1\` };
 }

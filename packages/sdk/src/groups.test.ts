@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { buildOf, diagnose, nodeOf } from "./fixtures/context";
 import { partKey } from "./fixtures/workers";
+import { hostNode } from "./host";
 import {
 	assert,
 	Bool,
-	hostNode,
 	Int,
 	iter,
 	List,

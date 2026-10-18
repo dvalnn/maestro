@@ -4,7 +4,7 @@
 		"id": "fanout-fanin-loop",
 		"version": "0.1.0",
 		"pack": "fixtures",
-		"doc": "Draft one text per topic in parallel, keep the first good draft and pick its text, then refine it until done, at most twice."
+		"doc": "Draft one text per topic in parallel, keep the first good draft and take its text, then refine it until done, at most twice."
 	},
 	"emitter": { "name": "hand", "version": "1" },
 	"scopes": [
@@ -65,7 +65,7 @@
 			"config": { "effort": "low" }
 		},
 		{
-			"id": "pick",
+			"id": "best",
 			"kind": "code",
 			"in": {
 				"results": {
@@ -178,7 +178,7 @@
 			"worker": {
 				"runtime": "ts",
 				"module": "maestro:stdlib",
-				"export": "pick",
+				"export": "get",
 				"codeHash": "maestro:stdlib@0.0.0"
 			}
 		}
@@ -192,7 +192,7 @@
 		{
 			"kind": "collect",
 			"from": { "node": "topics", "port": "results" },
-			"to": { "node": "pick", "port": "results" }
+			"to": { "node": "best", "port": "results" }
 		},
 		{
 			"kind": "data",
@@ -216,7 +216,7 @@
 		},
 		{
 			"kind": "data",
-			"from": { "node": "pick", "port": "value" },
+			"from": { "node": "best", "port": "value" },
 			"to": { "node": "text", "port": "value" }
 		}
 	],

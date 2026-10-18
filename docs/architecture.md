@@ -120,8 +120,8 @@ Contents, at the level of what it must carry:
 - **Header.** IR version, composition id and version, pack id, build metadata (SDK version, source hash).
 - **Scopes.** Named subgraphs created by subcomposition use, with their ports, so renderers can collapse them.
 - **Nodes.** For each node: stable id (a path whose prefixes are its scopes and groups), kind, source location, typed
-  ports (schemas), guard, declared reads and writes (code nodes), kind-specific configuration (host kinds), and for code
-  nodes a worker reference `{runtime, module, export, code hash}`.
+  ports (schemas), guard, kind-specific configuration (host kinds), and for code nodes a worker reference
+  `{runtime, module, export, code hash}`.
 - **Groups.** For `parMap`, `map`, `find`, `parFind`, `fold`, `loop`: the body subgraph (a template), the cardinality
   (`exact` or `up to N`), the source of its items or iteration state, the stop condition reference, and the members
   whose results the group delivers.
@@ -320,8 +320,8 @@ claimed by an installed but unused registrant is ignored.
 
 ## 9. Workers and code nodes
 
-- A **code node** is the author's function, with typed inputs, typed outputs, and declared reads and writes. It runs at
-  perform, in a **worker** of its declared runtime.
+- A **code node** is the author's function, with typed inputs and typed outputs. It runs at perform, in a **worker** of
+  its declared runtime.
 - v1 provides an **in-process TypeScript worker**. The **worker protocol** is specified so other runtimes and
   out-of-process workers can follow: a node invocation carries node id, expansion path, input values and their port
   schemas (`in`), artifact references and context. The reply carries outputs and an outcome (`ok`, or `rejected` with a

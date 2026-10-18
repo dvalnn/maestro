@@ -4,6 +4,8 @@ import {
 	type CodeContext,
 	canonicalJson,
 	collects,
+	DURATION_EXAMPLE,
+	durationMs,
 	type FindNode,
 	FOLD_STATE,
 	type FoldNode,
@@ -49,10 +51,10 @@ import {
 } from "./graph";
 import { schemas, type Type, type Types, type ValueOf } from "./types";
 
-type NoOutputs = Record<never, never>;
+export type NoOutputs = Record<never, never>;
 
 // The constructors' generic output types are the caller's declaration; the handle holds the same ports.
-const typed = <O extends Types>(result: ResultImpl) =>
+export const typed = <O extends Types>(result: ResultImpl) =>
 	result as unknown as Result<O>;
 
 /** A value a code function hands back. At an artifact it may be the absolute path of a file it wrote (ADR 0007). */
@@ -87,12 +89,8 @@ export type CodeFunction<I, O extends Types> = (
 export type CodeOptions<I, O extends Types> = Common &
 	(keyof I extends never ? { in?: CodeInputs<I> } : { in: CodeInputs<I> }) & {
 		out?: O;
-		/** Paths the node reads, as written. Never read at build. */
-		reads?: string[];
-		/** Paths the node writes, as written. Never read at build. */
-		writes?: string[];
-		/** Milliseconds the node may take before it settles `failed`. None by default. */
-		timeout?: number;
+		/** How long the node may take before it settles `failed`: milliseconds, or a duration such as `90s`. None by default. */
+		timeout?: number | string;
 	};
 
 /**
@@ -114,36 +112,7 @@ export function code<I, O extends Types = NoOutputs>(
 				fields: {
 					worker: ref,
 					timeout: checkTimeout(opts.timeout, opts.label ?? ref.export),
-					reads: opts.reads,
-					writes: opts.writes,
 				},
-			},
-			opts,
-		),
-	);
-}
-
-export type HostNodeOptions<O extends Types> = Common & {
-	in?: Record<string, unknown>;
-	out?: O;
-	/** Kind-specific configuration, a plain value. */
-	config?: Record<string, unknown>;
-};
-
-/** A node of a host kind, `<host>.<kind>`, for host SDKs to wrap (sdk-spec 12). */
-export function hostNode<O extends Types = NoOutputs>(
-	kind: `${string}.${string}`,
-	opts: HostNodeOptions<O> = {},
-): Result<O> {
-	if (opts.config !== undefined) checkPlain(opts.config, `config of '${kind}'`);
-	return typed(
-		addNode(
-			{
-				kind,
-				label: kind.slice(kind.indexOf(".") + 1),
-				inputs: opts.in ?? {},
-				out: schemas(opts.out),
-				fields: { config: opts.config },
 			},
 			opts,
 		),
@@ -154,15 +123,19 @@ export function hostNode<O extends Types = NoOutputs>(
 export const literal = <T>(value: T, type: Type<T>): Ref<T> =>
 	literalRef(value, type, "literal") as Ref<T>;
 
-/**
- * A policy or invariant. A plain `cond` is checked now: true emits nothing, false throws `ASSERT.failed`. A Ref
- * becomes an assert node that settles `onFail` when the condition is false.
- */
+/** A policy or invariant on a plain value, checked now: true emits nothing, false throws `ASSERT.failed`. */
+export function assert(cond: boolean, message: string): void;
+/** A policy or invariant on a Ref: an assert node that settles `onFail` when the condition is false. */
+export function assert(
+	cond: Ref<boolean>,
+	message: string,
+	opts: Common & { onFail: "rejected" | "failed" },
+): Result;
 export function assert(
 	cond: boolean | Ref<boolean>,
 	message: string,
-	opts: Common & { onFail: "rejected" | "failed" },
-): void {
+	opts?: Common & { onFail: "rejected" | "failed" },
+): Result | undefined {
 	if (cond === true) return;
 	if (cond === false)
 		throw fail(
@@ -171,15 +144,15 @@ export function assert(
 			"Change the params or config that break it",
 		);
 	boolPort(cond, "assert", "Pass a plain boolean, or a Bool output of a node");
-	pushNode(
+	return addNode(
 		{
 			kind: "assert",
 			label: "assert",
 			inputs: { cond },
 			out: {},
-			fields: { message, onFail: opts.onFail },
+			fields: { message, onFail: opts?.onFail },
 		},
-		opts,
+		opts ?? {},
 	);
 }
 
@@ -235,19 +208,24 @@ function checkMax(max: unknown, what: string): number {
 	);
 }
 
-/** @throws `BOUND.timeout` unless `timeout` is absent or a whole number from 1 to `MAX_TIMEOUT`. */
+/**
+ * `timeout` in milliseconds.
+ * @throws `BOUND.timeout` unless it is absent, a duration, or a whole number from 1 to `MAX_TIMEOUT`.
+ */
 function checkTimeout(timeout: unknown, what: string): number | undefined {
+	if (timeout === undefined) return undefined;
+	const ms = typeof timeout === "string" ? durationMs(timeout) : timeout;
 	if (
-		timeout === undefined ||
-		(Number.isInteger(timeout) &&
-			Number(timeout) >= 1 &&
-			Number(timeout) <= MAX_TIMEOUT)
+		typeof ms === "number" &&
+		Number.isInteger(ms) &&
+		ms >= 1 &&
+		ms <= MAX_TIMEOUT
 	)
-		return timeout as number | undefined;
+		return ms;
 	throw fail(
 		"BOUND.timeout",
-		`timeout of code node '${what}' must be a whole number of milliseconds from 1 to ${MAX_TIMEOUT}, got ${JSON.stringify(timeout)}`,
-		"Set timeout within that range, or leave it out for no limit",
+		`timeout of code node '${what}' must be a duration or a whole number of milliseconds from 1 to ${MAX_TIMEOUT}, got ${JSON.stringify(timeout)}`,
+		`Write it as a duration such as ${DURATION_EXAMPLE}, or leave it out for no limit`,
 	);
 }
 

@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
-import { closest, messageOf } from "@maestro/core";
+import { closest } from "@maestro/core";
 import type { Host } from "@maestro/core/host";
+import { messageOf } from "@maestro/ir";
 import type { Environment } from "./config";
 import { table, usageError } from "./output";
 

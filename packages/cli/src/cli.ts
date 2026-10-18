@@ -1,4 +1,4 @@
-import { messageOf } from "@maestro/core";
+import { messageOf } from "@maestro/ir";
 import {
 	COMMON,
 	type Command,

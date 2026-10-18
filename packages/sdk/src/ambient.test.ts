@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildOf, diagnose } from "./fixtures/context";
-import { hostNode } from "./index";
+import { hostNode } from "./host";
 
 describe("ambient reads during build", () => {
 	test.each([

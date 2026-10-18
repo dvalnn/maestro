@@ -86,7 +86,7 @@ run during build and are not code nodes.
 
 ## Consequences
 
-- Authors export every function a code node runs. A field read is `ref.pick(path)`, and anything else is a `code` node.
+- Authors export every function a code node runs. A field read is `ref.get(path)`, and anything else is a `code` node.
 - SDK tests resolve through a test resolver. The loader's rules are tested where the loader lands.
 - The worker reply gains an additive field for the stdlib version it ran (CORE-14), so older workers stay valid and the
   resume key and the record can key on it.

@@ -1,6 +1,5 @@
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { messageOf } from "@maestro/core";
 import type {
 	HostContext,
 	HostInstance,
@@ -8,13 +7,15 @@ import type {
 	NodeKind,
 } from "@maestro/core/host";
 import type { Inputs } from "@maestro/core/node";
-import { validator, violations } from "@maestro/core/ports";
 import {
 	CORE_TYPES,
 	type HostNode,
 	type JsonSchema,
 	MAESTRO_TYPE,
+	messageOf,
 	type Ports,
+	validator,
+	violations,
 } from "@maestro/ir";
 import {
 	type Harness,

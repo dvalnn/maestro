@@ -64,6 +64,12 @@ export {
 } from "./outcome";
 export type { Expansion, Plan, PlanBounds } from "./plan";
 export type * from "./types";
+export {
+	messageOf,
+	type Validator,
+	validator,
+	violations,
+} from "./validator";
 /** The published IR JSON Schema (draft 2020-12). Also at packages/ir/ir.schema.json. */
 export { irSchema };
 

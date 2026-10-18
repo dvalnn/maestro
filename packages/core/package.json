@@ -8,8 +8,7 @@
 		"./node": "./src/node.ts",
 		"./compose": "./src/compose/index.ts",
 		"./config": "./src/config/index.ts",
-		"./perform": "./src/perform/index.ts",
-		"./ports": "./src/ports.ts"
+		"./perform": "./src/perform/index.ts"
 	},
 	"dependencies": {
 		"@maestro/ir": "workspace:*",

@@ -2,6 +2,7 @@ import { join } from "node:path";
 import {
 	type CodeContext,
 	IR_VERSION,
+	messageOf,
 	type NodeInstance,
 	type Ports,
 	type Rejection,
@@ -15,7 +16,6 @@ import {
 	isRecord,
 	type Loaded,
 	loadFunction,
-	messageOf,
 } from "../shared";
 import type { PortCheck } from "./execute";
 

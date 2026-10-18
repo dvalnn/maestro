@@ -92,7 +92,7 @@ describe("render", () => {
 			'      n3[["loop<br/>0 to 2"]]',
 			'    n0[["parMap<br/>alpha, beta, gamma"]]',
 			'    n1(["draft<br/>fake.task"])',
-			'  n2[/"pick<br/>fan-in firstOk"/]',
+			'  n2[/"best<br/>fan-in firstOk"/]',
 			'  n0 -->|"item to prompt"| n1',
 			'  n0 ==>|"collect"| n2',
 		])

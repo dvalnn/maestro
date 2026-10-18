@@ -42,7 +42,7 @@ const STDLIB: Readonly<Record<string, CodeEntry>> = {
 	firstOk: unset("firstOk"),
 	not: unset("not"),
 	or: unset("or"),
-	pick: unset("pick"),
+	get: unset("get"),
 };
 
 /**

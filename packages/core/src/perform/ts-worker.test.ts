@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { CodeContext } from "@maestro/ir";
-import { validator } from "../ports";
+import { validator } from "@maestro/ir";
 import { portCheck } from "./execute";
 import { invokeCode } from "./ts-worker";
 

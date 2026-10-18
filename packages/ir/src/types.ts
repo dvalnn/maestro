@@ -53,8 +53,6 @@ type NodeBase = {
 export type CodeNode = NodeBase & {
 	kind: "code";
 	worker: WorkerRef;
-	reads?: string[];
-	writes?: string[];
 	fanin?: boolean;
 	/** Milliseconds the node may take before it settles `failed`. None when absent. */
 	timeout?: number;

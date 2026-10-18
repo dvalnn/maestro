@@ -5,6 +5,7 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./host": "./src/host.ts",
 		"./loader": "./src/loader.ts",
 		"./stdlib": "./src/stdlib-functions.ts",
 		"./fixtures/*": "./src/fixtures/*.ts"

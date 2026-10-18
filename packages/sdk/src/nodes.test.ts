@@ -11,12 +11,12 @@ import {
 	verdict,
 	wantsOtherContext,
 } from "./fixtures/workers";
+import { hostNode } from "./host";
 import {
 	assert,
 	Bool,
 	code,
 	File,
-	hostNode,
 	Int,
 	List,
 	literal,
@@ -38,14 +38,12 @@ const task = (label?: string) =>
 	});
 
 describe("code", () => {
-	test("emits the resolved worker, ports, literals, reads and writes as written", () => {
+	test("emits the resolved worker, ports and literals as written", () => {
 		const ir = buildOf(() => {
 			const t = task();
 			return code(merge, {
 				in: { parts: t.out.parts, sep: "\n" },
 				out: { text: Text() },
-				reads: ["src/**"],
-				writes: ["out/a.txt"],
 				timeout: 5000,
 			});
 		});
@@ -53,8 +51,6 @@ describe("code", () => {
 			kind: "code",
 			worker: WORKER,
 			timeout: 5000,
-			reads: ["src/**"],
-			writes: ["out/a.txt"],
 			in: {
 				parts: { type: "array", items: { type: "string" } },
 				sep: { type: "string" },
@@ -77,14 +73,26 @@ describe("code", () => {
 		expect(node).not.toHaveProperty("timeout");
 	});
 
-	test.each([0, 1.5, -1, MAX_TIMEOUT + 1])(
+	test.each([
+		["90s", 90_000],
+		["2m", 120_000],
+		[1500, 1500],
+	])("a timeout of %p is %p milliseconds", (timeout, ms) => {
+		const node = nodeOf(
+			buildOf(() => code(stamp, { timeout })),
+			"stamp",
+		);
+		expect(node).toMatchObject({ timeout: ms });
+	});
+
+	test.each([0, 1.5, -1, MAX_TIMEOUT + 1, "90", "1.5s", "30d"])(
 		"a timeout of %p fails with BOUND.timeout",
 		(timeout) => {
 			expect(
 				diagnose(() => buildOf(() => code(stamp, { timeout }))),
 			).toMatchObject({
 				code: "BOUND.timeout",
-				message: `timeout of code node 'stamp' must be a whole number of milliseconds from 1 to ${MAX_TIMEOUT}, got ${timeout}`,
+				message: `timeout of code node 'stamp' must be a duration or a whole number of milliseconds from 1 to ${MAX_TIMEOUT}, got ${JSON.stringify(timeout)}`,
 			});
 		},
 	);
@@ -251,16 +259,14 @@ describe("node ids", () => {
 describe("assert", () => {
 	test("a true plain condition emits nothing", () => {
 		const ir = buildOf(() => {
-			assert(true, "holds", { onFail: "failed" });
+			assert(true, "holds");
 			return task();
 		});
 		expect(ir.nodes.map((n) => n.kind)).toEqual(["fake.task"]);
 	});
 
 	test("a false plain condition fails with ASSERT.failed", () => {
-		const error = diagnose(() =>
-			buildOf(() => assert(false, "too many", { onFail: "failed" })),
-		);
+		const error = diagnose(() => buildOf(() => assert(false, "too many")));
 		expect(error.code).toBe("ASSERT.failed");
 	});
 
@@ -274,12 +280,22 @@ describe("assert", () => {
 		expect(error.code).toBe("REF.bool");
 	});
 
-	test("a Ref condition is an assert node fed by an edge", () => {
+	test("a plain condition takes no onFail, and a Ref condition needs one", () => {
+		const unbuilt = () => {
+			// @ts-expect-error a plain condition is checked at build, so it settles no node.
+			assert(true, "holds", { onFail: "failed" });
+			// @ts-expect-error an assert node settles onFail when its condition is false.
+			assert(task().out.done, "done");
+		};
+		expect(unbuilt).toBeFunction();
+	});
+
+	test("a Ref condition is an assert node fed by an edge, and returns its result", () => {
 		const ir = buildOf(() => {
 			const t = task();
-			assert(t.out.done, "done", { onFail: "rejected" });
-			return t;
+			return assert(t.out.done, "done", { onFail: "rejected" });
 		});
+		expect(ir.result).toEqual({ node: "assert" });
 		expect(nodeOf(ir, "assert")).toMatchObject({
 			kind: "assert",
 			message: "done",

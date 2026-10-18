@@ -35,8 +35,7 @@
 					"module": "guards.ts",
 					"export": "plan",
 					"codeHash": "sha256:50c022de954262e176f3c597f70204e1f960e42c633f5fc8c3fa7e455b64db9b"
-				},
-				"reads": ["inputs/"]
+				}
 			},
 			{
 				"id": "each",
@@ -202,8 +201,7 @@
 					"module": "guards.ts",
 					"export": "merge",
 					"codeHash": "sha256:50c022de954262e176f3c597f70204e1f960e42c633f5fc8c3fa7e455b64db9b"
-				},
-				"writes": ["merged/"]
+				}
 			},
 			{
 				"id": "escalate",

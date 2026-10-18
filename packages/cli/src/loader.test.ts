@@ -282,7 +282,7 @@ describe("an IR file", () => {
 		const lacking = {
 			...ir,
 			nodes: ir.nodes.map((n) =>
-				n.kind === "code" && n.worker.export === "pick"
+				n.kind === "code" && n.worker.export === "get"
 					? { ...n, worker: { ...n.worker, export: "nope" } }
 					: n,
 			),

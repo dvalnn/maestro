@@ -164,7 +164,12 @@
 							"options": {
 								"patterns": [
 									{
-										"group": ["@maestro/**", "!@maestro/ir", "!@maestro/sdk"],
+										"group": [
+											"@maestro/**",
+											"!@maestro/ir",
+											"!@maestro/sdk",
+											"!@maestro/sdk/host"
+										],
 										"message": "host-repo-sdk imports sdk and ir alone, since packs bundle it."
 									},
 									{

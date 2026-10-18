@@ -1,22 +1,25 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join as joinPath } from "node:path";
-import { reject, type Settled } from "@maestro/ir";
+import { type CodeContext, reject, type Settled } from "@maestro/ir";
 import pkg from "../package.json";
 import { buildOf } from "./fixtures/context";
 import { STDLIB_MODULE } from "./graph";
+import { hostNode } from "./host";
 import {
+	allSettled,
 	Bool,
 	firstOk,
-	hostNode,
+	JsonFile,
 	List,
 	lookup,
 	not,
 	okOnly,
-	Record,
-	settle,
+	readJson,
+	Struct,
 	Text,
 	when,
-	zip,
 } from "./index";
 import * as fns from "./stdlib-functions";
 
@@ -42,20 +45,21 @@ describe("the stdlib module", () => {
 		const ir = buildOf(() => {
 			const t = hostNode("fake.task", {
 				out: {
-					doc: Record({ a: Text() }),
+					doc: Struct({ a: Text() }),
+					file: JsonFile(Text()),
 					text: Text(),
 					names: List(Text()),
 					done: Bool(),
 				},
 			});
-			zip(t.out.names, t.out.names);
 			lookup({ a: 1 }, t.out.text);
 			when(t.out.done, t.out.text);
 			not(t.out.done);
-			t.out.doc.pick("a");
+			t.out.doc.get("a");
+			readJson(t.out.file);
 			t.out.text.or("none");
 			okOnly([t.out.text]);
-			settle([t.out.text]);
+			allSettled([t.out.text]);
 			return firstOk([t.out.text]);
 		});
 		const emitted = ir.nodes.flatMap((n) =>
@@ -71,13 +75,13 @@ describe("the stdlib module", () => {
 	});
 });
 
-describe("pick", () => {
+describe("get", () => {
 	test.each([
 		["a field", { a: 1 }, "a", 1],
 		["a nested field", { a: { b: [2] } }, "a.b", [2]],
 		["a null field", { a: null }, "a", null],
 	])("returns %s", (_name, value, path, expected) => {
-		expect(fns.pick({ value, path })).toEqual({ value: expected });
+		expect(fns.get({ value, path })).toEqual({ value: expected });
 	});
 
 	test.each([
@@ -87,8 +91,8 @@ describe("pick", () => {
 		["an array index", { a: [7] }, "a.0", "0"],
 		["an inherited field", {}, "toString", "toString"],
 	])("throws on %s, naming the path", (_name, value, path, key) => {
-		expect(() => fns.pick({ value, path })).toThrow(
-			`pick: path '${path}' has no field '${key}'`,
+		expect(() => fns.get({ value, path })).toThrow(
+			`get: path '${path}' has no field '${key}'`,
 		);
 	});
 });
@@ -105,15 +109,72 @@ describe("or", () => {
 		["ok", ok("v"), "v"],
 		["ok with a falsy value", ok(0), 0],
 		["rejected", rejected("no"), "fb"],
-		["failed", failed("no"), "fb"],
+		["rejected with a value", { ...rejected("no"), value: "v" }, "fb"],
 		["skipped", skipped, "fb"],
-		["failed with a value", { ...failed("no"), value: "v" }, "fb"],
 	])(
 		"delivers the right value when the input is %s",
 		(_name, value, expected) => {
 			expect(fns.or({ value, fallback: "fb" })).toEqual({ value: expected });
 		},
 	);
+
+	test("throws when the input failed, naming its reason", () => {
+		const value = { ...failed("disk full"), value: "v" };
+		expect(() => fns.or({ value, fallback: "fb" })).toThrow(
+			"or: its input failed: disk full",
+		);
+	});
+});
+
+describe("readJson", () => {
+	let dir = "";
+	beforeAll(async () => {
+		dir = await mkdtemp(joinPath(tmpdir(), "maestro-read-json-"));
+	});
+	afterAll(() => rm(dir, { recursive: true, force: true }));
+	const ctx = { path: (ref) => joinPath(dir, ref.path) } as CodeContext;
+	const schema = {
+		type: "object",
+		required: ["steps"],
+		properties: { steps: { type: "array", items: { type: "string" } } },
+	};
+	const read = async (text: string) => {
+		await writeFile(joinPath(dir, "plan.json"), text);
+		const file = { path: "plan.json", contentHash: `sha256:${"0".repeat(64)}` };
+		return fns.readJson({ file, schema }, ctx);
+	};
+
+	test("returns the file's content when it matches the schema", async () => {
+		expect(await read('{"steps":["a","b"]}')).toEqual({
+			value: { steps: ["a", "b"] },
+		});
+	});
+
+	test.each([
+		["is not JSON", "{steps", "readJson: 'plan.json' is not JSON: "],
+		[
+			"misses the schema",
+			'{"steps":[1]}',
+			"readJson: 'plan.json' does not match its schema: 'steps.0' must be string",
+		],
+		[
+			"misses a required field",
+			"{}",
+			"readJson: 'plan.json' does not match its schema: the content must have required property 'steps'",
+		],
+	])(
+		"rejects with the reason when the file %s",
+		async (_name, text, reason) => {
+			const result = await read(text);
+			expect(result).toMatchObject({ outcome: "rejected" });
+			expect("reason" in result ? result.reason : "").toStartWith(reason);
+		},
+	);
+
+	test("throws when the file is missing", async () => {
+		const file = { path: "none.json", contentHash: `sha256:${"0".repeat(64)}` };
+		await expect(fns.readJson({ file, schema }, ctx)).rejects.toThrow("ENOENT");
+	});
 });
 
 describe("lookup", () => {
@@ -139,78 +200,19 @@ describe("lookup", () => {
 	});
 });
 
-describe("zip", () => {
-	test("pairs the i-th items", () => {
-		expect(fns.zip({ a: [1, 2], b: ["x", "y"] })).toEqual({
-			value: [
-				[1, "x"],
-				[2, "y"],
-			],
-		});
-	});
-
-	test("throws on lists of different lengths, naming both", () => {
-		expect(() => fns.zip({ a: [1, 2], b: ["x"] })).toThrow(
-			"zip: lists differ in length, 2 and 1",
-		);
-	});
-
-	const a = [{ id: 1 }, { id: 2 }, { n: "no id" }, { id: null }, { id: 4 }];
-	const b = [
-		{ id: 2, m: 1 },
-		{ id: 1 },
-		{ id: 2, m: 2 },
-		{ m: "no id" },
-		{ id: null },
-		{ id: 3 },
-	];
-
-	test("pairs items whose key is equal, a's order then b's, and drops the unmatched", () => {
-		expect(fns.zip({ a, b, on: "id" })).toEqual({
-			value: [
-				[a[0], b[1]],
-				[a[1], b[0]],
-				[a[1], b[2]],
-			],
-		});
-	});
-
-	test.each([
-		["a number and its string", [{ id: 1 }], [{ id: "1" }], []],
-		["a string", [{ id: "x" }], [{ id: "x" }], [[{ id: "x" }, { id: "x" }]]],
-		[
-			"a boolean",
-			[{ id: false }],
-			[{ id: false }],
-			[[{ id: false }, { id: false }]],
-		],
-	])("compares %s by strict equality", (_name, left, right, value) => {
-		expect(fns.zip({ a: left, b: right, on: "id" })).toEqual({ value });
-	});
-
-	test.each([
-		["an object", { k: 1 }, '{"k":1}'],
-		["an array", [1], "[1]"],
-	])("throws on %s as a key, naming it, in either list", (_name, id, named) => {
-		const message = `zip: key ${named} of field 'id' is not a string, number or boolean`;
-		expect(() => fns.zip({ a: [{ id }], b: [], on: "id" })).toThrow(message);
-		expect(() => fns.zip({ a: [], b: [{ id }], on: "id" })).toThrow(message);
-	});
-});
-
 describe("reducers", () => {
 	const mixed = [ok("a"), rejected("r"), ok("b"), skipped, failed("f")];
 
-	test("settle returns every input in order, from results", () => {
-		expect(fns.settle({ results: mixed })).toEqual({ value: mixed });
+	test("allSettled returns every input in order, from results", () => {
+		expect(fns.allSettled({ results: mixed })).toEqual({ value: mixed });
 	});
 
-	test("in0 to inN are read in order past in9, by settle and okOnly", () => {
+	test("in0 to inN are read in order past in9, by allSettled and okOnly", () => {
 		const thirteen = [
 			...Array.from({ length: 12 }, (_, i) => ok(i)),
 			rejected("r"),
 		];
-		expect(fns.settle(ins(...thirteen))).toEqual({ value: thirteen });
+		expect(fns.allSettled(ins(...thirteen))).toEqual({ value: thirteen });
 		expect(fns.okOnly(ins(...thirteen))).toEqual({
 			value: Array.from({ length: 12 }, (_, i) => i),
 		});
@@ -229,7 +231,7 @@ describe("reducers", () => {
 			"'in1' is missing from: in0, other",
 		],
 	])("a reducer throws on %s", (_name, ports, named) => {
-		for (const reduce of [fns.firstOk, fns.okOnly, fns.settle])
+		for (const reduce of [fns.firstOk, fns.okOnly, fns.allSettled])
 			expect(() => reduce(ports as never)).toThrow(named);
 	});
 

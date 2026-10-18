@@ -2,25 +2,29 @@ import { describe, expect, test } from "bun:test";
 import { settledSchema } from "@maestro/ir";
 import pkg from "../package.json";
 import { buildOf, diagnose, nodeOf } from "./fixtures/context";
+import { hostNode } from "./host";
 import {
+	allSettled,
 	Bool,
 	composition,
+	File,
 	firstOk,
-	hostNode,
 	Int,
 	iter,
 	Json,
+	type JsonArtifact,
+	JsonFile,
 	List,
 	lookup,
 	type MapResults,
 	okOnly,
-	Record,
+	type Ref,
 	type Result,
-	settle,
+	readJson,
+	Struct,
 	Text,
 	use,
 	when,
-	zip,
 } from "./index";
 
 const STDLIB = `maestro:stdlib@${pkg.version}`;
@@ -32,7 +36,7 @@ const task = (label?: string) =>
 		out: {
 			text: Text(),
 			done: Bool(),
-			doc: Record({ meta: Record({ title: Text() }) }),
+			doc: Struct({ meta: Struct({ title: Text() }) }),
 			names: List(Text()),
 			counts: List(Int()),
 		},
@@ -60,7 +64,7 @@ describe("a Ref used as a value", () => {
 	])("%s fails with REF.value and names the lift", (_name, use) => {
 		const error = diagnose(() => buildOf(() => use(task().out.text)));
 		expect(error.code).toBe("REF.value");
-		expect(error.hint).toMatch(/pick|code node|own/);
+		expect(error.hint).toMatch(/get|code node|own/);
 	});
 
 	test.each([
@@ -86,34 +90,57 @@ describe("a Ref used as a value", () => {
 });
 
 describe("lifting combinators", () => {
-	test("pick is a stdlib node typed by the path", () => {
-		const ir = buildOf(() => task().out.doc.pick("meta.title"));
+	test("get is a stdlib node typed by the path", () => {
+		const ir = buildOf(() => task().out.doc.get("meta.title"));
 		expect(nodeOf(ir, "task_meta_title")).toMatchObject({
 			kind: "code",
-			worker: { module: "maestro:stdlib", export: "pick", codeHash: STDLIB },
+			worker: { module: "maestro:stdlib", export: "get", codeHash: STDLIB },
 			literals: { path: "meta.title" },
 			out: { value: STRING },
 		});
 	});
 
-	test("pick on a path the type lacks fails with TYPE.path", () => {
-		const error = diagnose(() => buildOf(() => task().out.doc.pick("meta.x")));
+	test("get takes its type from the path, and a path the type lacks does not compile", () => {
+		const unbuilt = () => {
+			const doc = task().out.doc;
+			const title: Ref<string> = doc.get("meta.title");
+			// @ts-expect-error the field at meta.title is Text.
+			const count: Ref<number> = doc.get("meta.title");
+			// @ts-expect-error the type has no field meta.x.
+			doc.get("meta.x");
+			const deep = doc as unknown as Ref<{
+				a: { b: { c: { d: { e: { f: { g: { h: { i: string } } } } } } } };
+			}>;
+			deep.get("a.b.c.d.e.f.g.h");
+			// @ts-expect-error a typed path names at most 8 fields.
+			deep.get("a.b.c.d.e.f.g.h.i");
+			return [title, count];
+		};
+		expect(unbuilt).toBeFunction();
+	});
+
+	test("get on a path the type lacks fails with TYPE.path", () => {
+		const error = diagnose(() =>
+			buildOf(() => task().out.doc.get("meta.x" as never)),
+		);
 		expect(error.code).toBe("TYPE.path");
 	});
 
-	test("pick into a list fails with TYPE.path, and into an untyped value builds", () => {
-		const error = diagnose(() => buildOf(() => task().out.names.pick("0")));
+	test("get into a list fails with TYPE.path, and into an untyped value builds", () => {
+		const error = diagnose(() =>
+			buildOf(() => task().out.names.get("0" as never)),
+		);
 		expect(error.code).toBe("TYPE.path");
 		const bare = diagnose(() =>
 			buildOf(() =>
 				hostNode("fake.task", {
 					out: { l: Json({ items: { type: "string" } }) },
-				}).out.l.pick("0"),
+				}).out.l.get("0"),
 			),
 		);
 		expect(bare.code).toBe("TYPE.path");
 		const ir = buildOf(() =>
-			hostNode("fake.task", { out: { any: Json({}) } }).out.any.pick("a.b"),
+			hostNode("fake.task", { out: { any: Json({}) } }).out.any.get("a.b"),
 		);
 		expect(nodeOf(ir, "task_a_b")).toMatchObject({ out: { value: {} } });
 	});
@@ -146,30 +173,6 @@ describe("lifting combinators", () => {
 		);
 		expect(fallback).toMatchObject({ code: "TYPE.or" });
 		expect(fallback.hint).toContain("firstOk");
-	});
-
-	test("zip pairs the items of two lists, by key with on", () => {
-		const ir = buildOf(() => {
-			const t = task();
-			zip(t.out.names, t.out.counts);
-			return zip(t.out.names, t.out.counts, { on: "id" });
-		});
-		const pairs = {
-			type: "array",
-			items: {
-				type: "array",
-				prefixItems: [STRING, { type: "integer" }],
-				items: false,
-			},
-		};
-		expect(nodeOf(ir, "zip_task_task")).toMatchObject({
-			out: { value: pairs },
-		});
-		expect(nodeOf(ir, "zip_task_task").literals).toBeUndefined();
-		expect(nodeOf(ir, "zip_task_task_id")).toMatchObject({
-			literals: { on: "id" },
-			out: { value: pairs },
-		});
 	});
 
 	test("when is a stdlib node guarded by its condition", () => {
@@ -215,17 +218,80 @@ describe("lifting combinators", () => {
 	});
 });
 
+describe("readJson", () => {
+	const Plan = Struct({ steps: List(Text()) });
+	const planner = () =>
+		hostNode("fake.task", {
+			label: "planner",
+			out: {
+				plan: JsonFile(Plan, { description: "the plan" }),
+				summary: JsonFile(Text()),
+				notes: File(),
+				raw: Json({}),
+			},
+		}).out;
+
+	test("is a stdlib node whose value is the file's content, typed and checked by its schema", () => {
+		const ir = buildOf(() => {
+			const plan: Ref<{ steps: string[] }> = readJson(planner().plan);
+			return plan;
+		});
+		const content = { ...(Plan.schema as object), description: "the plan" };
+		expect(nodeOf(ir, "planner_plan_json")).toMatchObject({
+			kind: "code",
+			worker: { module: "maestro:stdlib", export: "readJson" },
+			literals: { schema: content },
+			out: { value: content },
+		});
+	});
+
+	test("names its node by the source node and port, so two JSON outputs of one node read without labels", () => {
+		const ir = buildOf(() => {
+			const out = planner();
+			readJson(out.plan);
+			return readJson(out.summary);
+		});
+		expect(ir.nodes.map((n) => n.id)).toEqual([
+			"planner",
+			"planner_plan_json",
+			"planner_summary_json",
+		]);
+	});
+
+	test("over an artifact that is not a JSON file does not compile, and fails with TYPE.artifact", () => {
+		const error = diagnose(() =>
+			// @ts-expect-error a File is no JsonFile.
+			buildOf(() => readJson(planner().notes)),
+		);
+		expect(error).toMatchObject({
+			code: "TYPE.artifact",
+			message:
+				"readJson reads a core.json-file artifact, and this Ref is a core.file",
+		});
+	});
+
+	test("over a Ref cast past its type fails with TYPE.artifact", () => {
+		const raw = () => planner().raw as Ref<JsonArtifact<unknown>>;
+		const error = diagnose(() => buildOf(() => readJson(raw())));
+		expect(error).toMatchObject({
+			code: "TYPE.artifact",
+			message:
+				"readJson reads a core.json-file artifact, and this Ref is not an artifact",
+		});
+	});
+});
+
 describe("lift ids", () => {
 	const result = (label: string) =>
 		hostNode("fake.task", {
 			label,
-			out: { result: Record({ text: Text(), a: Json({}) }) },
+			out: { result: Struct({ text: Text(), a: Json({}) }) },
 		}).out.result;
 
 	test("are the source node and what the lift does, so one field of two nodes builds", () => {
 		const ir = buildOf(() => {
-			result("plan").pick("text");
-			return result("critique").pick("text");
+			result("plan").get("text");
+			return result("critique").get("text");
 		});
 		expect(ir.nodes.map((n) => n.id)).toEqual([
 			"plan",
@@ -236,7 +302,7 @@ describe("lift ids", () => {
 	});
 
 	test("compose along a chain", () => {
-		const ir = buildOf(() => result("x").pick("a").pick("b"));
+		const ir = buildOf(() => result("x").get("a").get("b"));
 		expect(ir.edges).toContainEqual({
 			kind: "data",
 			from: { node: "x_a", port: "value" },
@@ -245,13 +311,13 @@ describe("lift ids", () => {
 	});
 
 	test("turn characters an id cannot hold into _", () => {
-		const ir = buildOf(() => result("x").pick("a").pick("my field"));
+		const ir = buildOf(() => result("x").get("a").get("my field"));
 		expect(nodeOf(ir, "x_a_my_field").literals).toEqual({ path: "my field" });
 	});
 
 	test("give way to a label", () => {
 		const ir = buildOf(() => {
-			const text = result("x").pick("text");
+			const text = result("x").get("text");
 			text.or("a");
 			return text.or("b", { label: "fallback" });
 		});
@@ -268,7 +334,7 @@ describe("lift ids", () => {
 	])("taken by %s fail with SCOPE.duplicate", (_name, second, hint) => {
 		const error = diagnose(() =>
 			buildOf(() => {
-				const text = result("x").pick("text");
+				const text = result("x").get("text");
 				text.or("a");
 				text.or(second);
 			}),
@@ -281,7 +347,7 @@ describe("reducers", () => {
 	test.each([
 		["firstOk", firstOk, STRING],
 		["okOnly", okOnly, { type: "array", items: STRING }],
-		["settle", settle, { type: "array", items: settledSchema(STRING) }],
+		["allSettled", allSettled, { type: "array", items: settledSchema(STRING) }],
 	])(
 		"%s is a fan-in stdlib node with one port per input",
 		(name, reduce, value) => {
@@ -314,19 +380,21 @@ describe("reducers", () => {
 		});
 	});
 
-	test("over a parMap, the value is typed by the members' outputs, so a pick path is checked at build", () => {
+	test("over a parMap, the value is typed by the members' outputs, so a get path is checked at build", () => {
 		const reduced = () =>
 			firstOk(iter.parMap(["a"], () => task(), { onError: "continue" })).out
 				.value;
-		const ir = buildOf(() => reduced().pick("text"));
+		const ir = buildOf(() => reduced().get("text"));
 		expect(nodeOf(ir, "firstOk_text")).toMatchObject({
 			out: { value: STRING },
 		});
-		const error = diagnose(() => buildOf(() => reduced().pick("result")));
+		const error = diagnose(() =>
+			buildOf(() => reduced().get("result" as never)),
+		);
 		expect(error).toMatchObject({
 			code: "TYPE.path",
-			message: "pick path 'result' names no field 'result'",
-			hint: "Pick one of: text, done, doc, names, counts",
+			message: "get path 'result' names no field 'result'",
+			hint: "Get one of: text, done, doc, names, counts",
 		});
 	});
 

@@ -14,7 +14,7 @@ import ir alone. It depends on nothing beyond Ajv. This package holds:
   (`indexGraph`, `GraphIndex`, `IMPLICIT_OUT`, `outputValue`, `isGroup`, `boundOf`, `tolerates`, `LOOP_STATE`,
   `startNodes`), expansion paths (`itemKey`, `firstDuplicate`, `formatExpansion`, `parseExpansion`, `formatInstance`),
   the plan (`Plan`, `Expansion`, `PlanBounds`), events (`ConcertEvent`, `EventBody`, `NodeInstance`, `HostEvent`,
-  `Enrichment`) and `MAX_TIMEOUT`.
+  `Enrichment`), schema validation (`validator`, `Validator`, `violations`), `messageOf` and `MAX_TIMEOUT`.
 - `fixtures/`: golden hand-written IR files. Each one is accepted by `parseIr`, and its worker modules sit beside it. A
   `plans/<name>.json` is the plan compose gives the IR of that name, which the renderers' tests read.
 - `test/read_ir.py`: an independent reader (Python standard library only), which proves the format is readable without
@@ -93,12 +93,12 @@ Every node also has two implicit outputs, its status ports `ok` and `reason`, wh
 and `outcome`, may not be declared in `out`. `outputValue(settled, outputs, port)` reads any port of a settled node,
 implicit or declared.
 
-| Kind                                               | Own fields                                                                                                                          |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `code`                                             | `worker` `{runtime, module, export, codeHash}`, optional `reads`, `writes`, `fanin` (a reducer, D-08),[^fanin] `timeout`.[^timeout] |
-| `assert`                                           | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                                                       |
-| `parMap`, `map`, `find`, `parFind`, `fold`, `loop` | Groups, below.                                                                                                                      |
-| `<host>.<kind>`                                    | Any kind with a dot is a host kind, with an optional opaque `config` object.                                                        |
+| Kind                                               | Own fields                                                                                                       |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `code`                                             | `worker` `{runtime, module, export, codeHash}`, optional `fanin` (a reducer, D-08),[^fanin] `timeout`.[^timeout] |
+| `assert`                                           | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                                    |
+| `parMap`, `map`, `find`, `parFind`, `fold`, `loop` | Groups, below.                                                                                                   |
+| `<host>.<kind>`                                    | Any kind with a dot is a host kind, with an optional opaque `config` object.                                     |
 
 ### Groups
 

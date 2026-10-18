@@ -267,11 +267,11 @@ const node = (ir: { nodes: { id: string }[] }, id: string) =>
 test.each<[string, Mutation, string, string, string, string]>([
 	[
 		"a duplicate id",
-		(ir) => ir.scopes.push({ id: "pick", composition: "x", ports: {} }),
+		(ir) => ir.scopes.push({ id: "best", composition: "x", ports: {} }),
 		"SCOPE.duplicate",
 		"/scopes/1",
-		"id 'pick' is used more than once",
-		"Rename one of the entries with id 'pick' so each node and scope id is unique",
+		"id 'best' is used more than once",
+		"Rename one of the entries with id 'best' so each node and scope id is unique",
 	],
 	[
 		"a scope under an undeclared id",
@@ -283,11 +283,11 @@ test.each<[string, Mutation, string, string, string, string]>([
 	],
 	[
 		"a node under a node that is not a group",
-		(ir) => ir.nodes.push({ id: "pick/extra", kind: "fake.task" }),
+		(ir) => ir.nodes.push({ id: "best/extra", kind: "fake.task" }),
 		"IR.graph",
 		"/nodes/8",
-		"id 'pick/extra' sits under 'pick', which is not a scope or a group node",
-		"Declare 'pick' as a scope or a group node, or move 'pick/extra' out of it",
+		"id 'best/extra' sits under 'best', which is not a scope or a group node",
+		"Declare 'best' as a scope or a group node, or move 'best/extra' out of it",
 	],
 	[
 		"an edge from an unknown node",
@@ -315,11 +315,11 @@ test.each<[string, Mutation, string, string, string, string]>([
 	],
 	[
 		"a literal for an undeclared port",
-		(ir) => (node(ir, "pick").literals = { mode: "first" }),
+		(ir) => (node(ir, "best").literals = { mode: "first" }),
 		"IR.ref",
 		"/nodes/2",
-		"node 'pick' has no input port 'mode'",
-		"Declare 'mode' in in of node 'pick', or remove its literal",
+		"node 'best' has no input port 'mode'",
+		"Declare 'mode' in in of node 'best', or remove its literal",
 	],
 	[
 		"a result naming an unknown node",
@@ -339,11 +339,11 @@ test.each<[string, Mutation, string, string, string, string]>([
 	],
 	[
 		"an input port fed twice",
-		(ir) => (node(ir, "pick").literals = { results: [] }),
+		(ir) => (node(ir, "best").literals = { results: [] }),
 		"IR.graph",
 		"/nodes/2",
-		"input port 'results' of node 'pick' is fed more than once",
-		"Feed port 'results' of node 'pick' with one edge or one literal, not several",
+		"input port 'results' of node 'best' is fed more than once",
+		"Feed port 'results' of node 'best' with one edge or one literal, not several",
 	],
 	[
 		"an edge leaving a group body",
@@ -384,11 +384,11 @@ test.each<[string, Mutation, string, string, string, string]>([
 	],
 	[
 		"a member outside the group body",
-		(ir) => (node(ir, "topics").members = { result: "pick" }),
+		(ir) => (node(ir, "topics").members = { result: "best" }),
 		"IR.graph",
 		"/nodes/0",
-		"member 'pick' is not in the body of group 'topics'",
-		"Give 'pick' an id directly under 'topics/', or fix the member of the group",
+		"member 'best' is not in the body of group 'topics'",
+		"Give 'best' an id directly under 'topics/', or fix the member of the group",
 	],
 	[
 		"a loop with two members",
@@ -407,12 +407,12 @@ test.each<[string, Mutation, string, string, string, string]>([
 		(ir) =>
 			(node(ir, "refine/loop").test = {
 				at: "end",
-				port: { node: "pick", port: "value" },
+				port: { node: "best", port: "value" },
 			}),
 		"IR.graph",
 		"/nodes/3",
-		"test 'pick' is not in the body of group 'refine/loop'",
-		"Give 'pick' an id directly under 'refine/loop/', or fix the test of the group",
+		"test 'best' is not in the body of group 'refine/loop'",
+		"Give 'best' an id directly under 'refine/loop/', or fix the test of the group",
 	],
 	[
 		"a test on a port that is not a boolean",
@@ -557,11 +557,11 @@ test.each<[string, Mutation, string, string, string, string]>([
 			ir.edges.push({
 				kind: "control",
 				from: { node: "refine/loop" },
-				to: { node: "pick" },
+				to: { node: "best" },
 			}),
 		"IR.graph",
 		"/edges",
-		"edges form a cycle: pick -> text -> refine/loop -> pick",
+		"edges form a cycle: best -> text -> refine/loop -> best",
 		"Remove one of the edges in the cycle",
 	],
 	[
@@ -569,12 +569,12 @@ test.each<[string, Mutation, string, string, string, string]>([
 		(ir) =>
 			ir.edges.push({
 				kind: "control",
-				from: { node: "pick" },
+				from: { node: "best" },
 				to: { node: "topics/draft" },
 			}),
 		"IR.graph",
 		"/edges",
-		"edges form a cycle: topics -> pick -> topics",
+		"edges form a cycle: topics -> best -> topics",
 		"Remove one of the edges in the cycle",
 	],
 	[
@@ -616,7 +616,7 @@ test.each<[string, object, Mutation, string, string | undefined]>([
 	[
 		"a graph error on a scope",
 		fanoutFaninLoop,
-		(ir) => ir.scopes.push({ id: "pick/s", composition: "x", ports: {} }),
+		(ir) => ir.scopes.push({ id: "best/s", composition: "x", ports: {} }),
 		"/scopes/1",
 		undefined,
 	],
@@ -701,8 +701,8 @@ test("an independent reader with no maestro code parses the fan-out, fan-in and 
 		[
 			"fan-out: parMap topics, exactly 3 members, each result=topics/draft",
 			"loop: refine/loop, up to 2 iterations, each result=refine/loop/step, tested at start on refine/loop/more.value, tolerating rejected",
-			"fan-in: topics.results -> pick.results (reducer)",
-			"order: topics -> pick -> text -> refine/loop",
+			"fan-in: topics.results -> best.results (reducer)",
+			"order: topics -> best -> text -> refine/loop",
 			"",
 		].join("\n"),
 	);

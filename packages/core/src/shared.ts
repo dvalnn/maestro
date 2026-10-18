@@ -2,9 +2,6 @@ import type { NodeInstance, WorkerRef } from "@maestro/ir";
 import type { Host, NodeKind } from "./host";
 import type { LoadCode, Outputs } from "./node";
 
-export const messageOf = (error: unknown) =>
-	error instanceof Error ? error.message : String(error);
-
 /** The hex SHA-256 of `data`. */
 export const sha256Hex = (data: string | Uint8Array) =>
 	new Bun.CryptoHasher("sha256").update(data).digest("hex");
