@@ -1,257 +1,32 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import {
-	existsSync,
-	lstatSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
-import type { Host, HostSetup } from "@maestro/core/host";
-import { concertDirs, openRecord, perform } from "@maestro/core/perform";
-import { type HostNode, type Ir, type IrEdge, parseIr } from "@maestro/ir";
-import {
-	type Harness,
-	type HarnessRequest,
-	OUTBOX,
-	type StubStep,
-	stubHarness,
-} from "../harness/index";
+import { openRecord } from "@maestro/core/perform";
+import { type HarnessRequest, OUTBOX, type StubStep } from "../harness/index";
 import { runProcesses } from "../sandbox/bubblewrap";
-import { repoHost } from "./index";
 import { openTarget } from "./store";
+import {
+	changed,
+	cleanup,
+	configOf,
+	fresh,
+	irOf,
+	type NodeSpec,
+	noCode,
+	OK,
+	performed,
+	reply,
+	setupOf,
+	snapshot,
+	start,
+	stubHost,
+	tmp,
+	toyTarget,
+} from "./test-support";
 
-const dirs: string[] = [];
-const tmp = (name: string) => {
-	const d = mkdtempSync(join(tmpdir(), `host-${name}-`));
-	dirs.push(d);
-	return d;
-};
-afterEach(() => {
-	for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
-
-const GIT_ENV = {
-	PATH: process.env.PATH ?? "/usr/bin:/bin",
-	GIT_CONFIG_NOSYSTEM: "1",
-	GIT_CONFIG_GLOBAL: "/dev/null",
-	GIT_AUTHOR_NAME: "op",
-	GIT_AUTHOR_EMAIL: "op@x",
-	GIT_COMMITTER_NAME: "op",
-	GIT_COMMITTER_EMAIL: "op@x",
-};
-
-function toyTarget(): string {
-	const t = tmp("target");
-	const git = (...args: string[]) => {
-		const p = Bun.spawnSync(["git", ...args], { cwd: t, env: GIT_ENV });
-		if (p.exitCode !== 0) throw new Error(`git ${args[0]}: ${p.stderr}`);
-	};
-	git("init", "-q", "-b", "main");
-	writeFileSync(join(t, "a.txt"), "a\n");
-	git("add", "a.txt");
-	git("commit", "-qm", "one");
-	return t;
-}
-
-/** Every entry under `dir` with its kind, size, mtime, ctime and content. Atime is left out. */
-function snapshot(dir: string): string[] {
-	const out: string[] = [];
-	const walk = (p: string) => {
-		const s = lstatSync(p, { bigint: true });
-		const body = s.isFile() ? readFileSync(p, "latin1") : "";
-		out.push(
-			`${relative(dir, p)} ${s.mode} ${s.size} ${s.mtimeNs} ${s.ctimeNs} ${body}`,
-		);
-		if (s.isDirectory())
-			for (const e of readdirSync(p).sort()) walk(join(p, e));
-	};
-	walk(dir);
-	return out;
-}
-
-const ROLES = {
-	builder: { harness: "stub", model: "none" },
-	other: { harness: "other", model: "none" },
-};
-const CHECKS = {
-	hello: "test -f hello.txt && touch from-check.txt",
-	red: ["true", "exit 1"],
-	missing: "no-such-command",
-};
-
-/** A harness named `other` that must never be run. */
-const other: Harness = {
-	name: "other",
-	run: () => {
-		throw new Error("other was run");
-	},
-};
-
-/** A repo host whose stub harness replays what `steps` gives each request, and the requests it got. */
-function stubHost(steps: (req: HarnessRequest) => StubStep[]) {
-	const requests: HarnessRequest[] = [];
-	const host = repoHost({
-		harnesses: [
-			stubHarness((req) => {
-				requests.push(req);
-				return steps(req);
-			}),
-			other,
-		],
-	});
-	return { host, requests };
-}
-
-const fresh = { mode: "fresh" };
-
-const reply = (envelope: unknown): StubStep => ({
-	emit: { type: "text", text: JSON.stringify(envelope) },
-});
-const OK = reply({ outcome: "ok", report: "done" });
-
-type NodeSpec = {
-	id: string;
-	kind: "agent" | "check";
-	config: Record<string, unknown>;
-	literals?: Record<string, unknown>;
-	lane?: string;
-	identity?: boolean;
-};
-
-/** A node of `host` with the ports its kind gives it, fed by `literals` and, from `lane`, an edge. */
-function repoNode(
-	host: Host,
-	spec: NodeSpec,
-): { node: HostNode; edges: IrEdge[] } {
-	const kind = `repo.${spec.kind}` as const;
-	const draft: HostNode = {
-		id: spec.id,
-		kind,
-		config: spec.config,
-		...(spec.identity && { in: { identity: { type: "string" } } }),
-	};
-	const ports = host.kinds.find((k) => k.name === kind)?.ports(draft);
-	const node = {
-		...draft,
-		in: ports?.in,
-		out: ports?.out,
-		literals: spec.literals,
-	};
-	const edges: IrEdge[] = spec.lane
-		? [
-				{
-					kind: "data",
-					from: { node: spec.lane, port: "lane" },
-					to: { node: spec.id, port: "lane" },
-				},
-			]
-		: [];
-	return { node, edges };
-}
-
-function irOf(host: Host, specs: NodeSpec[], result: string): Ir {
-	const built = specs.map((s) => repoNode(host, s));
-	const parsed = parseIr({
-		irVersion: "1.0",
-		composition: { id: "toy", version: "0.1.0", pack: "test" },
-		emitter: { name: "hand", version: "0.1.0" },
-		scopes: [],
-		nodes: built.map((b) => b.node),
-		edges: built.flatMap((b) => b.edges),
-		result: { node: result },
-	});
-	if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
-	return parsed.ir;
-}
-
-function configOf(target: string, extra: Record<string, unknown> = {}) {
-	const dataRoot = tmp("data");
-	return {
-		values: {
-			concurrency: 4,
-			caps: {},
-			dataRoot,
-			workspace: "",
-			target: { repo: target, base: "main", checks: CHECKS },
-			roles: ROLES,
-			...extra,
-		},
-		sources: [],
-	};
-}
-
-const setupOf = (config: ReturnType<typeof configOf>): HostSetup => ({
-	config: { target: config.values.target, roles: config.values.roles },
-	store: join(config.values.dataRoot, "hosts", "repo"),
-});
-
-const noCode = async () => () => ({});
-
-async function start(
-	host: Host,
-	ir: Ir,
-	config: ReturnType<typeof configOf>,
-	resume?: string,
-) {
-	const composed = await compose({
-		ir,
-		config,
-		core: CORE_CONFIG,
-		packs: {},
-		hosts: [host],
-		loadCode: noCode,
-		caps: {},
-	});
-	if (!composed.ok) throw new Error(JSON.stringify(composed.diagnostics));
-	const dir = join(config.values.dataRoot, "concerts");
-	const recordPath = join(config.values.dataRoot, "record.db");
-	const concert = await perform({
-		ir,
-		hosts: [host],
-		config,
-		loadCode: noCode,
-		recordPath,
-		dir,
-		concurrency: 4,
-		resume,
-	});
-	return { concert, dir, recordPath };
-}
-
-async function performed(
-	host: Host,
-	ir: Ir,
-	config: ReturnType<typeof configOf>,
-	resume?: string,
-) {
-	const { concert, dir, recordPath } = await start(host, ir, config, resume);
-	const result = await concert.done;
-	const record = openRecord(recordPath);
-	const instances = record.instances(concert.id);
-	record.close();
-	const artifact = (node: string, port: string) => {
-		const ref = instances.find((i) => i.node === node)?.outputs?.[port] as {
-			path: string;
-		};
-		return join(concertDirs(dir, concert.id).artifacts, ref.path);
-	};
-	return { id: concert.id, result, instances, artifact };
-}
-
-const changed = async (
-	config: ReturnType<typeof configOf>,
-	target: string,
-	version: string,
-) =>
-	(
-		await openTarget(setupOf(config).store, target).lanes.changeset(version)
-	).patches.join("");
+afterEach(cleanup);
 
 describe("compose", () => {
 	test("a double join and a resume across harnesses are HOST errors, with no harness run", async () => {
@@ -368,26 +143,39 @@ describe("compose", () => {
 		).toEqual([[code, hint]]);
 	});
 
-	test("a check name config lacks is a HOST error listing the target's checks", async () => {
-		const { host } = stubHost(() => [OK]);
-		const ir = irOf(
-			host,
-			[{ id: "x", kind: "check", config: { lane: fresh, check: "lint" } }],
-			"x",
-		);
-		const composed = await compose({
-			ir,
-			config: configOf(toyTarget()),
-			core: CORE_CONFIG,
-			packs: {},
-			hosts: [host],
-			loadCode: noCode,
-			caps: {},
-		});
-		expect(
-			composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.hint]),
-		).toEqual([["HOST.check", "Use one of: 'hello', 'red', 'missing'"]]);
-	});
+	test.each([
+		[
+			"a check node",
+			{ id: "x", kind: "check", config: { lane: fresh, check: "lint" } },
+		],
+		[
+			"an agent allowed to run it",
+			{
+				id: "x",
+				kind: "agent",
+				config: { role: { name: "builder" }, lane: fresh, checks: ["lint"] },
+				literals: { prompt: "go" },
+			},
+		],
+	] as [string, NodeSpec][])(
+		"%s naming a check config lacks is a HOST error listing the target's checks",
+		async (_, spec) => {
+			const { host } = stubHost(() => [OK]);
+			const ir = irOf(host, [spec], "x");
+			const composed = await compose({
+				ir,
+				config: configOf(toyTarget()),
+				core: CORE_CONFIG,
+				packs: {},
+				hosts: [host],
+				loadCode: noCode,
+				caps: {},
+			});
+			expect(
+				composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.hint]),
+			).toEqual([["HOST.check", "Use one of: 'hello', 'red', 'missing'"]]);
+		},
+	);
 });
 
 describe("perform", () => {

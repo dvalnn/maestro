@@ -18,9 +18,9 @@ export type HarnessRequest = {
 	prompt: string;
 	/** Host directory of the lane the agent works in. */
 	lane: string;
-	/** Read-only binds declared by the node. Cannot widen write access. */
+	/** Read-only binds from the node, config, refs and the checks the agent may run. Cannot widen write access. */
 	readOnly?: Bind[];
-	/** Read-write binds outside the lane, beside the outbox and session. */
+	/** Read-write binds outside the lane, beside the outbox and session: those of the checks the agent may run. */
 	writable?: Bind[];
 	/** Environment of the agent process. The adapter's own variables win over these. */
 	env?: Record<string, string>;

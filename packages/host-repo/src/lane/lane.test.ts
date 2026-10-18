@@ -355,7 +355,11 @@ describe("apply", () => {
 			const { lanes, css } = await forks(root, ...edits, later);
 
 			const merge = await lanes.fork("c1.root", "c1.merge");
-			expect(await merge.apply(css)).toEqual({ applied: 1, conflicts });
+			expect(await merge.apply(css)).toEqual({
+				applied: 1,
+				conflicts,
+				conflictAt: 1,
+			});
 			await merge.seal();
 
 			const sealed = await lanes.fork("c1.merge", "c1.resolve");
@@ -389,6 +393,7 @@ describe("apply", () => {
 			expect(await merge.apply(css, "ff")).toEqual({
 				applied: 0,
 				conflicts: ["c.txt"],
+				conflictAt: 1,
 			});
 			expect(read(merge, "c.txt")).toBe("1\n2\n3\n");
 			for (const [f, text] of Object.entries(agent))

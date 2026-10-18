@@ -12,20 +12,22 @@ export type StubStep =
 	/** Never settles. */
 	| { hang: true };
 
-const q = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
+export const shellQuote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 
 function shell(s: StubStep): string[] {
 	if ("hang" in s) return ["sleep 300"];
 	if ("sh" in s) return [`(${s.sh}) >/dev/null 2>&1`];
 	if ("emit" in s)
 		return [
-			`printf '%s\\n' ${q(JSON.stringify(s.emit))}`,
+			`printf '%s\\n' ${shellQuote(JSON.stringify(s.emit))}`,
 			...(s.delayMs ? [`sleep ${s.delayMs / 1000}`] : []),
 		];
-	const path = q(s.write.startsWith("/") ? s.write : `/lane/${s.write}`);
+	const path = shellQuote(
+		s.write.startsWith("/") ? s.write : `/lane/${s.write}`,
+	);
 	return [
 		`mkdir -p "$(dirname ${path})"`,
-		`printf '%s' ${q(s.content)} > ${path}`,
+		`printf '%s' ${shellQuote(s.content)} > ${path}`,
 	];
 }
 

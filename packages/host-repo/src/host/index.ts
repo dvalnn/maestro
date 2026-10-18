@@ -1,6 +1,7 @@
 import type { Bounds, Host } from "@maestro/core/host";
 import type { Harness } from "../harness/index";
 import { agentKind } from "./agent";
+import { applyKind, changesetKind } from "./apply";
 import { checkKind } from "./check";
 import {
 	AGENT_KIND,
@@ -26,7 +27,7 @@ export type RepoHostOptions = {
 export function repoHost({ harnesses }: RepoHostOptions): Host {
 	return {
 		name: HOST_NAME,
-		kinds: [agentKind(harnesses), checkKind()],
+		kinds: [agentKind(harnesses), checkKind(), changesetKind(), applyKind()],
 		types: [LANE_TYPE],
 		config: HOST_CONFIG,
 		validate: (graph, setup) =>

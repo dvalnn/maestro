@@ -23,16 +23,24 @@ import {
 	OUTBOX,
 	type Role,
 } from "../harness/index";
+import type { Bind } from "../sandbox/index";
+import { type AgentChecks, stageChecks } from "./agent-checks";
 import {
 	AGENT_CONFIG,
 	AGENT_KIND,
 	type AgentConfig,
 	agentConfig,
+	LANE_PORT,
 	listed,
+	namedCheck,
 	type Output,
+	type Ref,
 	repoSetup,
+	requireTarget,
 	resolveRole,
+	type Target,
 } from "./config";
+import { artifactInput, textInput } from "./inputs";
 import { lanePorts, readOnlyBinds, withLane } from "./lane-input";
 import { type Live, liveInstances } from "./live";
 import {
@@ -47,6 +55,11 @@ import {
 const MAX_CORRECTIONS = 2;
 
 const TEXT = { type: "string" };
+
+/** The directory where an agent's sandbox mounts its refs. */
+const REF_DIR = "/in";
+/** Where the sandbox sees ref `name`. */
+const refPath = (name: string) => `${REF_DIR}/${name}`;
 
 /** An agent's final reply (GLOSSARY: Envelope). */
 type Envelope = { outcome: "ok" | "rejected"; reason?: string; report: string };
@@ -85,8 +98,12 @@ function agentPorts(node: HostNode): { in: Ports; out: Ports } {
 				}
 			: { [MAESTRO_TYPE]: CORE_TYPES.markdown },
 	]);
+	const refs = Object.entries(config.refs ?? {}).map(([name, ref]) => [
+		name,
+		{ [MAESTRO_TYPE]: ref.type ?? CORE_TYPES.file },
+	]);
 	return {
-		in: { prompt: TEXT, ...identity, ...lane.in },
+		in: { prompt: TEXT, ...identity, ...Object.fromEntries(refs), ...lane.in },
 		out: {
 			report: TEXT,
 			staged: { [MAESTRO_TYPE]: CORE_TYPES.dir },
@@ -174,15 +191,6 @@ function readOutbox(
 	return { outputs };
 }
 
-function text(inputs: Inputs, port: string): string {
-	const value = inputs[port];
-	if (typeof value !== "string")
-		throw new Error(
-			`input '${port}' is not text. Wire '${port}' from a text output`,
-		);
-	return value;
-}
-
 /**
  * The session an agent continues, the one that wrote the version it joins.
  * @throws Error when it joins no version, or one no agent of its harness and concert wrote.
@@ -264,7 +272,6 @@ async function converse(
 
 /** Writes the staged text: the user message, and the identity when there is one, whose path it returns. */
 function stage(dir: string, prompt: string, identity: string | undefined) {
-	mkdirSync(dir);
 	writeFileSync(join(dir, "prompt.md"), prompt);
 	if (!identity) return undefined;
 	const path = join(dir, "identity.md");
@@ -306,12 +313,48 @@ async function settle(
 	const outputs = {
 		report,
 		staged: staging.staged,
-		...(version && { lane: version }),
+		...(version && { [LANE_PORT]: version }),
 		...read.outputs,
 	};
 	return outcome === "ok"
 		? { outcome, outputs, metrics, enrichment }
 		: { outcome, reason, outputs, metrics, enrichment };
+}
+
+/** The prompt text each ref adds, one line per ref. */
+const refNote = (refs: [string, Ref][]) =>
+	refs.length
+		? [
+				"",
+				"",
+				"Read-only references in your sandbox:",
+				...refs.map(
+					([name, ref]) => `- ${refPath(name)}: read when ${ref.when}`,
+				),
+			].join("\n")
+		: "";
+
+/** What the refs and checks of `config` add to an agent's sandbox and prompt. */
+function extrasOf(
+	config: AgentConfig,
+	target: Target,
+	inputs: Inputs,
+	context: HostContext,
+): AgentChecks {
+	const refs = Object.entries(config.refs ?? {});
+	const checks = stageChecks(
+		context.scratch,
+		(config.checks ?? []).map((name) => [name, namedCheck(target, name)]),
+	);
+	const mounts: Bind[] = refs.map(([name]) => ({
+		src: artifactInput(inputs, context, name),
+		dst: refPath(name),
+	}));
+	return {
+		...checks,
+		readOnly: [...mounts, ...checks.readOnly],
+		note: refNote(refs) + checks.note,
+	};
 }
 
 async function execute(
@@ -329,45 +372,65 @@ async function execute(
 		throw new Error(
 			`harness '${role.harness}' is not loaded. Use one of: ${listed(harnesses.map((h) => h.name))}`,
 		);
-	if (!setup.target)
-		throw new Error(
-			"config 'target.repo' is not set. Set it to the repository lanes are cut from",
-		);
-	const store = openTarget(setup.store, setup.target.repo);
+	const target = requireTarget(setup);
+	const store = openTarget(setup.store, target.repo);
 	const session = config.resume
-		? resumed(store.root, config, inputs.lane, role.harness, context.concert)
+		? resumed(
+				store.root,
+				config,
+				inputs[LANE_PORT],
+				role.harness,
+				context.concert,
+			)
 		: mintSession(store.root, role.harness, context.concert);
 	const at = { concert: context.concert, instance };
-	return withLane(store, setup, config.lane, inputs.lane, at, async (open) => {
-		const { lane, read } = open;
-		const staging: Staging = {
-			role,
-			config,
-			session,
-			staged: join(context.scratch, "staged"),
-			outbox: join(context.scratch, "out"),
-		};
-		const prompt = text(inputs, "prompt") + contract(config.out ?? {});
-		const identity =
-			inputs.identity === undefined ? undefined : text(inputs, "identity");
-		mkdirSync(staging.outbox);
-		const req: HarnessRequest = {
-			role,
-			prompt,
-			lane: lane.dir,
-			readOnly: readOnlyBinds(lane, setup.readOnly, config.readOnly ?? []),
-			identity: stage(staging.staged, prompt, identity),
-			outbox: staging.outbox,
-			session: { dir: session.dir, id: session.id },
-		};
-		const turns = await converse(harness, req, live, context, staging.staged);
-		return settle(staging, turns, async () => {
-			if (read) return undefined;
-			const version = await lane.seal();
-			recordWriter(store.root, version, session);
-			return version;
-		});
-	});
+	return withLane(
+		store,
+		setup,
+		config.lane,
+		inputs[LANE_PORT],
+		at,
+		async (open) => {
+			const { lane, read } = open;
+			const staging: Staging = {
+				role,
+				config,
+				session,
+				staged: join(context.scratch, "staged"),
+				outbox: join(context.scratch, "out"),
+			};
+			mkdirSync(staging.staged);
+			mkdirSync(staging.outbox);
+			const extras = extrasOf(config, target, inputs, context);
+			const prompt =
+				textInput(inputs, "prompt") + extras.note + contract(config.out ?? {});
+			const identity =
+				inputs.identity === undefined
+					? undefined
+					: textInput(inputs, "identity");
+			const req: HarnessRequest = {
+				role,
+				prompt,
+				lane: lane.dir,
+				readOnly: [
+					...readOnlyBinds(lane, setup.readOnly, config.readOnly ?? []),
+					...extras.readOnly,
+				],
+				writable: extras.writable,
+				env: extras.env,
+				identity: stage(staging.staged, prompt, identity),
+				outbox: staging.outbox,
+				session: { dir: session.dir, id: session.id },
+			};
+			const turns = await converse(harness, req, live, context, staging.staged);
+			return settle(staging, turns, async () => {
+				if (read) return undefined;
+				const version = await lane.seal();
+				recordWriter(store.root, version, session);
+				return version;
+			});
+		},
+	);
 }
 
 /** The `repo.agent` kind, running each instance's role on the harness of that name among `harnesses`. */

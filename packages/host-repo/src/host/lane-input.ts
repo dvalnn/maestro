@@ -2,7 +2,7 @@ import type { HostInstance, HostNodeResult } from "@maestro/core/host";
 import { MAESTRO_TYPE, type Ports } from "@maestro/ir";
 import type { Lane, Version } from "../lane/index";
 import type { Bind } from "../sandbox/index";
-import { LANE_TYPE, type LaneInput, type RepoSetup } from "./config";
+import { LANE_PORT, LANE_TYPE, type LaneInput, type RepoSetup } from "./config";
 import type { TargetStore } from "./store";
 
 /** The base a fresh lane is cut at when neither its node nor `target.base` names one. */
@@ -11,6 +11,18 @@ const DEFAULT_BASE = "HEAD";
 /** The version node instance `instance` of `concert` writes: `<concert id>.<node instance id>`. */
 const versionAt = (concert: string, { id }: HostInstance): Version =>
 	`${concert}.${id}`;
+
+/**
+ * The version `value`, a lane input, names.
+ * @throws Error when it is not a version.
+ */
+export function laneVersion(value: unknown): Version {
+	if (typeof value !== "string")
+		throw new Error(
+			"input 'lane' is not a lane version. Wire it from a node's 'lane' output, or pass a lane ref",
+		);
+	return value;
+}
 
 /** An instance's lane, and whether it is a `read`, which yields no version. */
 type InstanceLane = { lane: Lane; read: boolean };
@@ -31,15 +43,13 @@ async function openLane(
 		const base = input.base ?? setup.target?.base ?? DEFAULT_BASE;
 		return { lane: await store.lanes.fresh(base, at), read: false };
 	}
-	if (typeof value !== "string")
-		throw new Error(
-			"input 'lane' is not a lane version. Wire it from a node's 'lane' output, or pass a lane ref",
-		);
-	if (input.mode === "fork")
-		return { lane: await store.lanes.fork(value, at), read: false };
+	const version = laneVersion(value);
 	if (input.mode === "join")
-		return { lane: await store.lanes.join(value, at), read: false };
-	return { lane: await store.lanes.fork(value, at), read: true };
+		return { lane: await store.lanes.join(version, at), read: false };
+	return {
+		lane: await store.lanes.fork(version, at),
+		read: input.mode === "read",
+	};
 }
 
 /**
@@ -67,10 +77,14 @@ export async function withLane(
 	}
 }
 
+/** Binds of `paths`, each at its own path. */
+export const pathBinds = (...paths: string[][]): Bind[] =>
+	[...new Set(paths.flat())].map((src) => ({ src }));
+
 /** The lane's own read-only binds, then the paths config and the node bind read-only at their own paths. */
 export const readOnlyBinds = (lane: Lane, ...paths: string[][]): Bind[] => [
 	...lane.readOnly,
-	...paths.flat().map((src) => ({ src })),
+	...pathBinds(...paths),
 ];
 
 const LANE_OUT = { [MAESTRO_TYPE]: LANE_TYPE, type: "string" };
@@ -82,6 +96,6 @@ const LANE_IN = {};
 
 /** The lane ports of a node whose lane input is `input`: a version in unless fresh, a version out unless read. */
 export const lanePorts = (input: LaneInput): { in: Ports; out: Ports } => ({
-	in: input.mode === "fresh" ? {} : { lane: LANE_IN },
-	out: input.mode === "read" ? {} : { lane: LANE_OUT },
+	in: input.mode === "fresh" ? {} : { [LANE_PORT]: LANE_IN },
+	out: input.mode === "read" ? {} : { [LANE_PORT]: LANE_OUT },
 });

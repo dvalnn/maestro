@@ -134,6 +134,12 @@ separately, as the user message.
 **Outbox**: The per-instance directory at `/out`, outside the lane, where an agent writes its declared outputs for the
 host to read and check.
 
+**Ref**: A named artifact an agent reads, mounted read-only at `/in/<name>` and listed in its prompt with a `when`. Its
+content is in the resume key. _Avoid_: attachment
+
+**Bind**: A host path outside the lane made visible in a sandbox at its own path, read-only or, for a check, read-write.
+It is not an input and not in the resume key (ADR 0011).
+
 **Lane**: An isolated, versioned working copy cut from a target. A node takes one with `fresh`, `fork`, `join` or
 `read`. _Avoid_: worktree, run
 
@@ -143,6 +149,9 @@ It can be forked or read, and not joined.
 **Target**: The repository lanes are cut from.
 
 **Changeset**: The patch series a concert leaves. The target's checkout is never touched. _Avoid_: series
+
+**Apply node**: Applies one or more changesets to a lane in order and yields a new version. A conflict is `rejected`,
+naming the files, and leaves a version holding the markers for an agent to join.
 
 **Harness**: The adapter to one coding-agent runtime, such as pi or Claude Code.
 

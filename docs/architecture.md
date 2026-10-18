@@ -354,16 +354,35 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 - **Agent node.** Inputs: a task prompt and an optional identity (both text, staged by the host, no argument-length
   limits), a role by name with overrides (harness, model, thinking level), a lane input, optional read-only binds, typed
-  output declarations (a JSON file with a schema, or Markdown) and `resume`. Outputs: the declared files as typed
-  artifacts, the report, outcome and reason from its envelope, metrics (token counts), the staged text as an artifact,
-  and the resulting lane version. `rejected` means the agent's own verdict is negative. `failed` means the run did not
-  complete.
+  output declarations (a JSON file with a schema, or Markdown), `resume`, `refs` and the named checks it may run.
+  Outputs: the declared files as typed artifacts, the report, outcome and reason from its envelope, metrics (token
+  counts), the staged text as an artifact, and the resulting lane version. `rejected` means the agent's own verdict is
+  negative. `failed` means the run did not complete.
 - **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
   failures reported), or an inline `{ run, timeout }`. Each line runs through `sh -c` in the sandbox, in order, and the
   first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout) and 127 are `failed`; any other non-zero
   exit is `rejected`, the reason naming the check and the line. Logs are an artifact. It is its own host kind and not a
   code node, because it runs untrusted target commands and needs the sandbox, lane staging, kill and logs. Code nodes
   are trusted and run in process.
+- **Changeset node.** Takes one lane version and outputs its patch series as an artifact: a directory holding `base`,
+  the target commit the lane chain was cut from, and the patches as `0001.patch`, `0002.patch` and on. It opens no lane
+  and spends no join.
+- **Apply node.** Takes a lane input (`fresh`, `fork` or `join`) and one or more changesets, each an input port named in
+  its config, and applies them in that order with a strategy, `3way` by default or `ff` (HOST-14). A clean apply is `ok`
+  with the new lane version. A conflict is `rejected`, the reason naming the files, with a version holding the markers
+  for an agent to join and resolve; under `ff` nothing is applied and the version is the lane as it was. A changeset
+  that is not one, or one the store cannot apply, is `failed`.
+
+**Refs and agent-run checks**
+
+- A ref is a named artifact input of an agent, each with a required `when`. It is mounted read-only at `/in/<name>` and
+  listed in the staged prompt, and its content hash is in the resume key. A bind is not (ADR 0011).
+- An agent that names checks gets a `check <name>` command on its `PATH`, staged read-only; one that names none gets no
+  `check` command. It runs the named check in `/lane` under the check's timeout and sets the check's `env` inside that
+  command alone, never in the rest of the agent's sandbox, prints the tail of the output, and ends `ok`, `rejected` or
+  `failed` by the exit classification above. The staged prompt lists the checks and says to run them rather than write
+  new ones (HOST-15). The agent's sandbox gets the read-only and writable binds of those checks, which bind paths cannot
+  be scoped to one command.
 
 **Staging, outbox and envelope**
 
@@ -403,14 +422,19 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 - The host owns three namespaces: `target` (`repo`, the default `base` and the named `checks`), `roles` (each a
   `harness`, `model` and optional `thinking`) and `sandbox` (`readOnly` paths bound into every agent and check).
-- A check is a shell line or a list of them, or the long form `{ run, timeout }` with a duration such as `10m`.
+- A check is a shell line or a list of them, or the long form `{ run, timeout, readOnly, writable, env }`: a duration
+  such as `10m`, absolute host paths bound read-only or read-write at their own paths, and environment variables for
+  that check. A check that needs a toolchain, a cache or a lock file shared across lanes names it there.
 
 **Sandbox**
 
-- The agent process is confined: writable only in its lane's directory, read-only for declared binds, no secrets in its
-  environment beyond what the harness needs, and none written to logs. The backend is bubblewrap behind a pluggable
-  interface, and the initial port targets Linux x64 only (D-25).
-- Sandbox policy is host config. A node can add read-only binds and cannot widen write access.
+- The agent process is confined: writable only in its lane's directory, its outbox, its session directory and the
+  writable binds of the checks it may run, read-only for declared binds and refs, no secrets in its environment beyond
+  what the harness needs, and none written to logs. The backend is bubblewrap behind a pluggable interface, and the
+  initial port targets Linux x64 only (D-25).
+- Sandbox policy is host config. A node can add read-only binds. Config or a check node may name writable binds; an
+  agent node never does (ADR 0011).
+- An agent can reach its own harness's credentials, such as Claude's token and pi's login directory.
 
 **Harness adapters**
 
@@ -427,7 +451,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   join of a lane ref.
 - Resume only on a join, and not of a version no agent wrote, written on another harness, or of another concert.
 - Every role, harness and check a node names exists, the message listing those that do.
-- Read-only binds exist and are not inside a lane.
+- Every bind, read-only or writable, is absolute, exists and is not inside a lane. A writable bind also neither contains
+  nor lies inside the lanes or the target repository. An agent names only checks config has.
 
 Role and model policy, such as a skeptic's model family differing from its lens's, belongs to the composition: a
 build-time `assert` over the models it takes as params, with the pack's own family helper.

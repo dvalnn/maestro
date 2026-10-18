@@ -226,8 +226,9 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   node takes exactly one lane input. A host `validate` hook enforces this.
 - **HOST-03 (Must).** A concert writes only its own lanes. The target's checkout, refs and commits are untouched.
   Results leave as a changeset.
-- **HOST-04 (Must).** An agent runs sandboxed: writable only in its lane, read-only binds declared by the node or
-  config, secrets never written to logs, events or records.
+- **HOST-04 (Must).** An agent runs sandboxed: writable only in its lane, its outbox, its session directory and the
+  writable binds of the checks it may run; read-only binds declared by the node, config or those checks, and the
+  artifacts it reads as refs; secrets never written to logs, events or records.
 - **HOST-05 (Must).** A harness adapter interface exists. An adapter drives its harness as a sandboxed subprocess over
   the harness's JSON event stream (D-20). The slice implements pi. A Claude Code adapter is a Should.
 - **HOST-06 (Must).** Prompts of any size reach the agent without hitting argument-length limits.
@@ -238,7 +239,7 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **HOST-09 (Must).** A check node (D-22) runs deterministic commands in a lane and returns pass or fail (`rejected`)
   with logs as artifacts.
 - **HOST-10 (Must).** `kill` terminates agent process trees and the record stays consistent.
-- **HOST-11 (Must).** The host's compose-time hook enforces lane rules and read-only bind validity.
+- **HOST-11 (Must).** The host's compose-time hook enforces lane rules and bind validity.
 - **HOST-12 (Should).** The host owns the `target`, `roles` and `sandbox` config namespaces.
 - **HOST-13 (Must).** A lane ref param type names a lane version left by an earlier concert, written
   `<concert id>.<node instance id>`. Across concerts it can only be forked or read. Lanes stay on disk until `prune`
@@ -246,6 +247,10 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **HOST-14 (Must).** An apply node applies one or more changesets to a lane in order, three-way by default or
   fast-forward only. A clean apply yields a new lane version. A conflict is rejected naming the files and leaves a
   version, holding conflict markers where git can write them, for an agent to join and resolve.
+- **HOST-15 (Should).** An agent can run the target's named checks. The `check` command in its sandbox runs a named
+  check in the lane with the check's timeout and exit classification, prints the tail of its output, and ends ok,
+  rejected or failed. The staged prompt lists the checks and tells the agent to run them rather than write its own. An
+  agent gets the command only for the checks it names, and a check's env applies inside the command alone.
 
 ### 6.6 CLI (CLI)
 

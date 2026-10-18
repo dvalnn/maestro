@@ -3,7 +3,7 @@ export type Bind = { src: string; dst?: string };
 
 /**
  * The lane is the only writable place by default (mounted at `LANE_DST`);
- * anything else writable must be named in `writable`, which is for adapters and never for node declarations.
+ * anything else writable must be named in `writable`, by an adapter, config or a check node, never by an agent node.
  */
 export type SandboxSpec = {
 	/** Host directory of the lane. Mounted read-write at `LANE_DST`, which is also the working directory. */
@@ -17,7 +17,7 @@ export type SandboxSpec = {
 	stdin?: string | Uint8Array;
 	/** Read-only binds declared by a node or config. Rejected if they land in the lane's writable area. */
 	readOnly?: Bind[];
-	/** Extra read-write paths outside the lane, declared by an adapter. Shown as `origin: "adapter"` in the plan. */
+	/** Extra read-write paths outside the lane, declared by an adapter or a check. Shown as `origin: "adapter"` in the plan. */
 	writable?: Bind[];
 };
 

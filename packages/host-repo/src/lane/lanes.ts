@@ -28,8 +28,15 @@ export type Changeset = { base: string; patches: string[] };
  */
 export type ApplyStrategy = "3way" | "ff";
 
-/** `applied` counts the changesets left applied cleanly; `conflicts` lists lane-relative files, empty when all applied. */
-export type ApplyResult = { applied: number; conflicts: string[] };
+/**
+ * `applied` counts the changesets left applied cleanly; `conflicts` lists lane-relative files, empty when all applied.
+ * `conflictAt` is the index of the changeset that conflicted, set exactly when `conflicts` is not empty.
+ */
+export type ApplyResult = {
+	applied: number;
+	conflicts: string[];
+	conflictAt?: number;
+};
 
 export interface Lane {
 	/** Host directory of the working copy. This is `SandboxSpec.lane`. */
@@ -516,9 +523,9 @@ async function applyChangesets(
 			);
 		});
 		if (!conflicts.length) continue;
-		if (strategy === "3way") return { applied: i, conflicts };
+		if (strategy === "3way") return { applied: i, conflicts, conflictAt: i };
 		await restore();
-		return { applied: 0, conflicts };
+		return { applied: 0, conflicts, conflictAt: i };
 	}
 	return { applied: changesets.length, conflicts: [] };
 }

@@ -1,0 +1,172 @@
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import type {
+	HostContext,
+	HostInstance,
+	HostNodeResult,
+	NodeKind,
+} from "@maestro/core/host";
+import type { Inputs } from "@maestro/core/node";
+import { CORE_TYPES, MAESTRO_TYPE, type Ports } from "@maestro/ir";
+import type { Changeset } from "../lane/index";
+import {
+	APPLY_CONFIG,
+	APPLY_KIND,
+	type ApplyConfig,
+	applyConfig,
+	CHANGESET_CONFIG,
+	CHANGESET_KIND,
+	LANE_PORT,
+	repoSetup,
+	requireTarget,
+} from "./config";
+import { artifactInput } from "./inputs";
+import { lanePorts, laneVersion, withLane } from "./lane-input";
+import { openTarget } from "./store";
+
+/** The file in a changeset directory that names the target commit its patches were cut from. */
+const BASE_FILE = "base";
+const PATCH_EXT = ".patch";
+const PATCH_DIGITS = 4;
+const DIGITS = /^\d+$/;
+
+const CHANGESET_PORT = "changeset";
+const CHANGESET_DIR = "changeset";
+
+/**
+ * Writes `changeset` into a new directory under `scratch`: its `base` file, and its patches as `0001.patch`, `0002.patch`
+ * and on, which `git am` applies in name order. Returns the directory.
+ */
+function writeChangeset(scratch: string, changeset: Changeset): string {
+	const dir = join(scratch, CHANGESET_DIR);
+	mkdirSync(dir);
+	writeFileSync(join(dir, BASE_FILE), `${changeset.base}\n`);
+	for (const [i, patch] of changeset.patches.entries())
+		writeFileSync(
+			join(dir, `${String(i + 1).padStart(PATCH_DIGITS, "0")}${PATCH_EXT}`),
+			patch,
+		);
+	return dir;
+}
+
+/** The number in the patch file name `f`, or `undefined` when `f` is not a patch file. */
+function patchIndex(f: string): number | undefined {
+	const digits = f.endsWith(PATCH_EXT) ? f.slice(0, -PATCH_EXT.length) : "";
+	return DIGITS.test(digits) ? Number(digits) : undefined;
+}
+
+/**
+ * The changeset in `dir`, which `port` names in errors.
+ * @throws Error when `dir` has no `base` file.
+ */
+function readChangeset(dir: string, port: string): Changeset {
+	let base: string;
+	try {
+		base = readFileSync(join(dir, BASE_FILE), "utf8").trim();
+	} catch {
+		throw new Error(
+			`input '${port}' is not a changeset: it has no '${BASE_FILE}' file. Wire '${port}' from a '${CHANGESET_KIND}' node's '${CHANGESET_PORT}' output`,
+		);
+	}
+	const patches = readdirSync(dir)
+		.flatMap((f) => {
+			const index = patchIndex(f);
+			return index === undefined ? [] : [{ f, index }];
+		})
+		.sort((a, b) => a.index - b.index)
+		.map(({ f }) => readFileSync(join(dir, f), "utf8"));
+	return { base, patches };
+}
+
+async function executeChangeset(
+	inputs: Inputs,
+	context: HostContext,
+): Promise<HostNodeResult> {
+	const setup = repoSetup(context.setup);
+	const store = openTarget(setup.store, requireTarget(setup).repo);
+	const changeset = await store.lanes.changeset(laneVersion(inputs[LANE_PORT]));
+	return {
+		outcome: "ok",
+		outputs: { [CHANGESET_PORT]: writeChangeset(context.scratch, changeset) },
+	};
+}
+
+/** The `repo.changeset` kind: the patch series of a lane version, as an artifact. */
+export function changesetKind(): NodeKind {
+	return {
+		name: CHANGESET_KIND,
+		config: CHANGESET_CONFIG,
+		ports: () => ({
+			in: lanePorts({ mode: "read" }).in,
+			out: { [CHANGESET_PORT]: { [MAESTRO_TYPE]: CORE_TYPES.dir } },
+		}),
+		execute: (_, inputs, context) => executeChangeset(inputs, context),
+		cancel: async () => {},
+	};
+}
+
+const conflictReason = (name: string, files: string[], strategy?: string) => {
+	const named = files.map((f) => `'${f}'`).join(", ");
+	return strategy === "ff"
+		? `changeset '${name}' does not apply cleanly to ${named}. Use strategy 3way to merge it into a version an agent can resolve`
+		: `changeset '${name}' conflicts in ${named}. Join the lane output in an agent that resolves them`;
+};
+
+async function executeApply(
+	instance: HostInstance,
+	inputs: Inputs,
+	context: HostContext,
+): Promise<HostNodeResult> {
+	const setup = repoSetup(context.setup);
+	const config = applyConfig(instance.node.config);
+	const store = openTarget(setup.store, requireTarget(setup).repo);
+	const changesets = config.changesets.map((port) =>
+		readChangeset(artifactInput(inputs, context, port), port),
+	);
+	const at = { concert: context.concert, instance };
+	return withLane(
+		store,
+		setup,
+		config.lane,
+		inputs[LANE_PORT],
+		at,
+		async ({ lane }) => {
+			const { conflicts, conflictAt = 0 } = await lane.apply(
+				changesets,
+				config.strategy,
+			);
+			const outputs = { [LANE_PORT]: await lane.seal() };
+			if (!conflicts.length) return { outcome: "ok", outputs };
+			const stopped = config.changesets[conflictAt] ?? "";
+			return {
+				outcome: "rejected",
+				reason: conflictReason(stopped, conflicts, config.strategy),
+				outputs,
+			};
+		},
+	);
+}
+
+const applyPorts = (config: ApplyConfig): { in: Ports; out: Ports } => {
+	const lane = lanePorts(config.lane);
+	const changesets = config.changesets.map((port) => [
+		port,
+		{ [MAESTRO_TYPE]: CORE_TYPES.dir },
+	]);
+	return {
+		in: { ...lane.in, ...Object.fromEntries(changesets) },
+		out: lane.out,
+	};
+};
+
+/** The `repo.apply` kind: changesets applied in order to a lane, which a conflict leaves for an agent to join. */
+export function applyKind(): NodeKind {
+	return {
+		name: APPLY_KIND,
+		config: APPLY_CONFIG,
+		ports: (node) => applyPorts(applyConfig(node.config)),
+		execute: (instance, inputs, context) =>
+			executeApply(instance, inputs, context),
+		cancel: async () => {},
+	};
+}

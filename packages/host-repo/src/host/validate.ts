@@ -11,13 +11,19 @@ import {
 import {
 	AGENT_KIND,
 	type AgentConfig,
+	APPLY_KIND,
+	type ApplyConfig,
 	agentConfig,
+	applyConfig,
 	CHECK_KIND,
 	type CheckConfig,
+	type CheckSpec,
 	checkConfig,
+	LANE_PORT,
 	type LaneInput,
 	listed,
 	type RepoSetup,
+	useOneOf,
 } from "./config";
 
 type Finding = Omit<Diagnostic, "severity">;
@@ -25,7 +31,8 @@ type Finding = Omit<Diagnostic, "severity">;
 /** A repo node and the config of its kind. */
 type RepoNode =
 	| { node: HostNode; kind: "agent"; config: AgentConfig }
-	| { node: HostNode; kind: "check"; config: CheckConfig };
+	| { node: HostNode; kind: "check"; config: CheckConfig }
+	| { node: HostNode; kind: "apply"; config: ApplyConfig };
 
 /** Where a node's lane input comes from: an edge from a node's port, or a literal, a lane ref of another concert. */
 type LaneSource = { node: string; port: string } | { literal: unknown };
@@ -42,16 +49,18 @@ function repoNodes(graph: GraphIndex): RepoNode[] {
 				return [{ node, kind: "agent", config: agentConfig(node.config) }];
 			if (node.kind === CHECK_KIND)
 				return [{ node, kind: "check", config: checkConfig(node.config) }];
+			if (node.kind === APPLY_KIND)
+				return [{ node, kind: "apply", config: applyConfig(node.config) }];
 			return [];
 		});
 }
 
 function laneSource(graph: GraphIndex, node: HostNode): LaneSource | undefined {
-	if (node.literals && Object.hasOwn(node.literals, "lane"))
-		return { literal: node.literals.lane };
+	if (node.literals && Object.hasOwn(node.literals, LANE_PORT))
+		return { literal: node.literals[LANE_PORT] };
 	const edge = graph
 		.edgesInto(node.id)
-		.find((e) => e.kind === "data" && e.to.port === "lane");
+		.find((e) => e.kind === "data" && e.to.port === LANE_PORT);
 	return edge?.kind === "data" ? edge.from : undefined;
 }
 
@@ -166,35 +175,32 @@ function resumes(
 	});
 }
 
-/** The hint for a name not among `names`: use one of them, or `add` when there are none. */
-const useOneOf = (names: string[], add: string) =>
-	names.length ? `Use one of: ${listed(names)}` : add;
-
-/** A check a check node names that config does not have. */
-function checkNames(setup: RepoSetup, id: string, check: CheckConfig["check"]) {
+/** The checks `named` that config does not have, which `id` runs or lets its agent run. */
+function checkNames(
+	setup: RepoSetup,
+	id: string,
+	named: string[],
+	verb: string,
+	add: string,
+): Finding[] {
 	const checks = Object.keys(setup.target?.checks ?? {});
-	if (typeof check !== "string" || checks.includes(check)) return [];
-	return [
-		{
+	return named
+		.filter((name) => !checks.includes(name))
+		.map((name) => ({
 			code: "HOST.check",
 			node: id,
-			message: `'${id}' runs check '${check}', which config 'target.checks' does not have`,
-			hint: useOneOf(
-				checks,
-				"Add it under 'target.checks', or give the node an inline check",
-			),
-		},
-	];
+			message: `'${id}' ${verb} check '${name}', which config 'target.checks' does not have`,
+			hint: useOneOf(checks, add),
+		}));
 }
 
-/** A role, harness or check a node names that config or the loaded harnesses do not have. */
-function names(
+/** A role or harness an agent node names that config or the loaded harnesses do not have. */
+function roleNames(
 	setup: RepoSetup,
 	harnesses: readonly string[],
-	r: RepoNode,
+	r: RepoNode & { kind: "agent" },
 ): Finding[] {
 	const id = r.node.id;
-	if (r.kind === "check") return checkNames(setup, id, r.config.check);
 	const { name } = r.config.role;
 	if (!Object.hasOwn(setup.roles, name))
 		return [
@@ -220,44 +226,117 @@ function names(
 	];
 }
 
-/** A read-only bind that is relative or missing, or lies in the host store, where lanes are. */
+/** A role, harness or check a node names that config or the loaded harnesses do not have. */
+function names(
+	setup: RepoSetup,
+	harnesses: readonly string[],
+	r: RepoNode,
+): Finding[] {
+	const id = r.node.id;
+	if (r.kind === "apply") return [];
+	if (r.kind === "check") {
+		const { check } = r.config;
+		return checkNames(
+			setup,
+			id,
+			typeof check === "string" ? [check] : [],
+			"runs",
+			"Add it under 'target.checks', or give the node an inline check",
+		);
+	}
+	return [
+		...roleNames(setup, harnesses, r),
+		...checkNames(
+			setup,
+			id,
+			r.config.checks ?? [],
+			"may run",
+			"Add it under 'target.checks'",
+		),
+	];
+}
+
+const within = (inner: string, outer: string) =>
+	inner === outer || inner.startsWith(outer + sep);
+
+/** The realpath of `path` when it exists, else its absolute spelling. */
+const realOrResolved = (path: string) =>
+	existsSync(path) ? realpathSync(path) : resolve(path);
+
+/**
+ * How the bind of `real` reaches what a bind must not: the lanes, and for a writable one also the target repository.
+ * A writable bind may not contain or lie inside either, or an agent could write them.
+ */
+function reach(
+	setup: RepoSetup,
+	real: string,
+	writable: boolean,
+): string | undefined {
+	const store = realOrResolved(setup.store);
+	if (within(real, store)) return "is inside a lane";
+	if (!writable) return undefined;
+	const repo = setup.target && realOrResolved(setup.target.repo);
+	if (within(store, real)) return "contains the lanes";
+	if (repo === undefined) return undefined;
+	if (within(repo, real)) return "contains the target repository";
+	return within(real, repo) ? "is inside the target repository" : undefined;
+}
+
+/**
+ * A bind of `paths`, described by `what`, that is relative or missing, or reaches the lanes or, when `writable`, the
+ * target repository.
+ */
 function bindProblems(
 	setup: RepoSetup,
 	paths: string[],
+	what: string,
 	node?: string,
+	writable = false,
 ): Finding[] {
-	const store = resolve(setup.store);
 	return paths.flatMap((path) => {
+		const found = (message: string, hint: string): Finding[] => [
+			{
+				code: "HOST.bind",
+				node,
+				message: `${what} '${path}' ${message}`,
+				hint,
+			},
+		];
 		if (!isAbsolute(path))
-			return [
-				{
-					code: "HOST.bind",
-					node,
-					message: `read-only bind '${path}' is not an absolute path`,
-					hint: "Give an absolute path",
-				},
-			];
+			return found("is not an absolute path", "Give an absolute path");
 		if (!existsSync(path))
-			return [
-				{
-					code: "HOST.bind",
-					node,
-					message: `read-only bind '${path}' does not exist`,
-					hint: "Create it, or drop the bind",
-				},
-			];
-		const real = realpathSync(path);
-		if (real === store || real.startsWith(store + sep))
-			return [
-				{
-					code: "HOST.bind",
-					node,
-					message: `read-only bind '${path}' is inside a lane`,
-					hint: "Bind a path outside the lanes",
-				},
-			];
-		return [];
+			return found("does not exist", "Create it, or drop the bind");
+		const how = reach(setup, realpathSync(path), writable);
+		return how
+			? found(
+					how,
+					writable
+						? "Bind a path outside the lanes and the target repository"
+						: "Bind a path outside the lanes",
+				)
+			: [];
 	});
+}
+
+/** The binds of check `label`, read-only then writable. */
+const checkBinds = (
+	setup: RepoSetup,
+	label: string,
+	spec: CheckSpec,
+	node?: string,
+) => [
+	...bindProblems(setup, spec.readOnly, `${label} read-only bind`, node),
+	...bindProblems(setup, spec.writable, `${label} writable bind`, node, true),
+];
+
+/** The binds `r` declares: an agent's read-only paths, or the binds of a check node's inline check. */
+function nodeBinds(setup: RepoSetup, r: RepoNode): Finding[] {
+	const id = r.node.id;
+	if (r.kind === "agent")
+		return bindProblems(setup, r.config.readOnly ?? [], "read-only bind", id);
+	if (r.kind === "check" && typeof r.config.check === "object")
+		return checkBinds(setup, "inline check", r.config.check, id);
+	return [];
 }
 
 function targetProblems(setup: RepoSetup): Finding[] {
@@ -283,7 +362,7 @@ function targetProblems(setup: RepoSetup): Finding[] {
 }
 
 /**
- * The host's compose-time rules: the lane rules (HOST-02), resume, names config must have, read-only binds (HOST-11)
+ * The host's compose-time rules: the lane rules (HOST-02), resume, names config must have, binds (HOST-11)
  * and the target. A graph without repo nodes has none to break.
  */
 export function validateRepo(
@@ -299,12 +378,13 @@ export function validateRepo(
 	});
 	return [
 		...targetProblems(setup),
-		...bindProblems(setup, setup.readOnly),
+		...bindProblems(setup, setup.readOnly, "read-only bind"),
+		...Object.entries(setup.target?.checks ?? {}).flatMap(([name, spec]) =>
+			checkBinds(setup, `check '${name}'`, spec),
+		),
 		...nodes.flatMap((r) => [
 			...names(setup, harnesses, r),
-			...(r.kind === "agent"
-				? bindProblems(setup, r.config.readOnly ?? [], r.node.id)
-				: []),
+			...nodeBinds(setup, r),
 		]),
 		...doubleJoins(graph, joins),
 		...resumes(graph, setup, nodes),

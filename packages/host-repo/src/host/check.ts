@@ -16,22 +16,24 @@ import {
 	type CheckConfig,
 	type CheckSpec,
 	checkConfig,
-	listed,
+	LANE_PORT,
+	namedCheck,
 	repoSetup,
+	requireTarget,
 	type Target,
 } from "./config";
-import { lanePorts, readOnlyBinds, withLane } from "./lane-input";
+import { lanePorts, pathBinds, readOnlyBinds, withLane } from "./lane-input";
 import { type Live, liveInstances } from "./live";
 import { openTarget } from "./store";
 
 /** A check's usage error. */
-const USAGE_EXIT = 3;
+export const USAGE_EXIT = 3;
 /** The exit a line that runs past its check's timeout counts as, as `timeout(1)` gives. */
 const TIMEOUT_EXIT = 124;
 /** The shell's exit for a command it cannot find. */
 const NOT_FOUND_EXIT = 127;
 /** Exits that mean the check could not run, rather than that it found a fault. */
-const FAILED_EXITS = new Set([USAGE_EXIT, TIMEOUT_EXIT, NOT_FOUND_EXIT]);
+export const FAILED_EXITS = [USAGE_EXIT, TIMEOUT_EXIT, NOT_FOUND_EXIT];
 /** The name an inline check goes by in reasons and logs. */
 const INLINE = "inline";
 
@@ -43,21 +45,13 @@ type Ended = { code: number } | { signal: string };
 /** The checks `config` runs, by name. */
 function checksOf(config: CheckConfig, target: Target): [string, CheckSpec][] {
 	const { check } = config;
-	const named = Object.keys(target.checks);
 	if (typeof check === "object") return [[INLINE, check]];
-	if (!named.length)
+	if (check !== undefined) return [[check, namedCheck(target, check)]];
+	if (!Object.keys(target.checks).length)
 		throw new Error(
 			"config 'target.checks' names no check. Add one, or give the node an inline check",
 		);
-	if (check === undefined) return Object.entries(target.checks);
-	const spec = Object.hasOwn(target.checks, check)
-		? target.checks[check]
-		: undefined;
-	if (!spec)
-		throw new Error(
-			`check '${check}' is not in config 'target.checks'. Use one of: ${listed(named)}`,
-		);
-	return [[check, spec]];
+	return Object.entries(target.checks);
 }
 
 type Sandboxed = {
@@ -67,16 +61,19 @@ type Sandboxed = {
 	log: string[];
 };
 
-/** Runs `line` in the lane until `deadline`, an epoch millisecond, logging its output. */
+/** Runs `line` of check `spec` in the lane until `deadline`, an epoch millisecond, logging its output. */
 async function runLine(
 	s: Sandboxed,
+	spec: CheckSpec,
 	line: string,
 	deadline: number,
 ): Promise<Ended> {
 	const proc = bubblewrap.start({
 		lane: s.lane.dir,
 		argv: ["sh", "-c", line],
-		readOnly: s.binds,
+		env: spec.env,
+		readOnly: [...s.binds, ...pathBinds(spec.readOnly)],
+		writable: pathBinds(spec.writable),
 	});
 	s.live.stop = () => proc.kill();
 	let late = false;
@@ -107,7 +104,7 @@ const how = (ended: Ended) =>
 
 /** Whether a line that ended so means the check could not run. */
 const couldNotRun = (ended: Ended) =>
-	!("code" in ended) || FAILED_EXITS.has(ended.code);
+	!("code" in ended) || FAILED_EXITS.includes(ended.code);
 
 /** Runs the lines of check `name` in order, the first that does not exit 0 stopping it. */
 async function runCheck(
@@ -119,7 +116,7 @@ async function runCheck(
 	for (const [i, line] of spec.lines.entries()) {
 		if (s.live.cancelled) return { outcome: "failed", reason: "cancelled" };
 		s.log.push(`$ ${line}`);
-		const ended = await runLine(s, line, deadline);
+		const ended = await runLine(s, spec, line, deadline);
 		const what = `check '${name}' line ${i + 1} ${how(ended)}`;
 		s.log.push(`[${what}]`);
 		if ("code" in ended && ended.code === 0) continue;
@@ -154,33 +151,40 @@ async function execute(
 ): Promise<HostNodeResult> {
 	const setup = repoSetup(context.setup);
 	const config = checkConfig(instance.node.config);
-	if (!setup.target)
-		throw new Error(
-			"config 'target.repo' is not set. Set it to the repository lanes are cut from",
-		);
-	const checks = checksOf(config, setup.target);
-	const store = openTarget(setup.store, setup.target.repo);
+	const target = requireTarget(setup);
+	const checks = checksOf(config, target);
+	const store = openTarget(setup.store, target.repo);
 	const at = { concert: context.concert, instance };
-	return withLane(store, setup, config.lane, inputs.lane, at, async (open) => {
-		const { lane, read } = open;
-		const s: Sandboxed = {
-			lane,
-			binds: readOnlyBinds(lane, setup.readOnly),
-			live,
-			log: [],
-		};
-		const verdicts: Verdict[] = [];
-		for (const [name, spec] of checks)
-			verdicts.push(await runCheck(s, name, spec));
-		const logs = join(context.scratch, "check.log");
-		writeFileSync(logs, `${s.log.join("\n")}\n`);
-		const { outcome, reason = "" } = overall(verdicts);
-		if (outcome === "failed") return { outcome, reason, outputs: { logs } };
-		const outputs = { logs, ...(!read && { lane: await lane.seal() }) };
-		return outcome === "ok"
-			? { outcome, outputs }
-			: { outcome, reason, outputs };
-	});
+	return withLane(
+		store,
+		setup,
+		config.lane,
+		inputs[LANE_PORT],
+		at,
+		async (open) => {
+			const { lane, read } = open;
+			const s: Sandboxed = {
+				lane,
+				binds: readOnlyBinds(lane, setup.readOnly),
+				live,
+				log: [],
+			};
+			const verdicts: Verdict[] = [];
+			for (const [name, spec] of checks)
+				verdicts.push(await runCheck(s, name, spec));
+			const logs = join(context.scratch, "check.log");
+			writeFileSync(logs, `${s.log.join("\n")}\n`);
+			const { outcome, reason = "" } = overall(verdicts);
+			if (outcome === "failed") return { outcome, reason, outputs: { logs } };
+			const outputs = {
+				logs,
+				...(!read && { [LANE_PORT]: await lane.seal() }),
+			};
+			return outcome === "ok"
+				? { outcome, outputs }
+				: { outcome, reason, outputs };
+		},
+	);
 }
 
 /** The `repo.check` kind, running each line in the sandbox. */
