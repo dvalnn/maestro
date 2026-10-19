@@ -19,7 +19,10 @@ import {
 	CHECK_KIND,
 	type CheckConfig,
 	type CheckSpec,
+	COMMITS_KIND,
+	type CommitsConfig,
 	checkConfig,
+	commitsConfig,
 	LANE_PORT,
 	listed,
 	type RepoSetup,
@@ -35,7 +38,8 @@ type Finding = Omit<Diagnostic, "severity">;
 type RepoNode =
 	| { node: HostNode; kind: "agent"; config: AgentConfig }
 	| { node: HostNode; kind: "check"; config: CheckConfig }
-	| { node: HostNode; kind: "apply"; config: ApplyConfig };
+	| { node: HostNode; kind: "apply"; config: ApplyConfig }
+	| { node: HostNode; kind: "commits"; config: CommitsConfig };
 
 /** Where a node's lane input comes from: an edge from a node's port, or a literal, a lane ref of another concert. */
 type LaneSource = { node: string; port: string } | { literal: unknown };
@@ -54,6 +58,8 @@ function repoNodes(graph: GraphIndex): RepoNode[] {
 				return [{ node, kind: "check", config: checkConfig(node.config) }];
 			if (node.kind === APPLY_KIND)
 				return [{ node, kind: "apply", config: applyConfig(node.config) }];
+			if (node.kind === COMMITS_KIND)
+				return [{ node, kind: "commits", config: commitsConfig(node.config) }];
 			return [];
 		});
 }
@@ -73,6 +79,29 @@ const harnessOf = (r: RepoNode, setup: RepoSetup) =>
 		? (r.config.role.harness ?? setup.roles[r.config.role.name]?.harness)
 		: undefined;
 
+/** Why `node` cannot extend `source`, a lane ref or a commits node's version, which only a fork or a read can take. */
+function unextendable(
+	graph: GraphIndex,
+	node: HostNode,
+	source: LaneSource,
+): Finding | undefined {
+	const id = node.id;
+	if ("literal" in source)
+		return {
+			code: "HOST.lane",
+			node: id,
+			message: `'${id}' extends a lane ref of another concert, which only a fork or a read can take`,
+			hint: `Fork or read the lane ref in '${id}', or extend a version of this concert`,
+		};
+	if (graph.nodes.get(source.node)?.kind !== COMMITS_KIND) return undefined;
+	return {
+		code: "HOST.lane",
+		node: id,
+		message: `'${id}' extends '${source.node}.${source.port}', a version of target commits, which only a fork or a read can take`,
+		hint: `Fork it in '${id}'`,
+	};
+}
+
 /** Lane extensions that would extend one version twice: two nodes extending one output, or one node once per iteration. */
 function doubleExtends(
 	graph: GraphIndex,
@@ -81,15 +110,9 @@ function doubleExtends(
 	const found: Finding[] = [];
 	const first = new Map<string, string>();
 	for (const [{ node }, source] of chained) {
-		if ("literal" in source) {
-			found.push({
-				code: "HOST.lane",
-				node: node.id,
-				message: `'${node.id}' extends a lane ref of another concert, which only a fork or a read can take`,
-				hint: `Fork or read the lane ref in '${node.id}', or extend a version of this concert`,
-			});
-			continue;
-		}
+		const refused = unextendable(graph, node, source);
+		if (refused) found.push(refused);
+		if (refused || "literal" in source) continue;
 		const from = `${source.node}.${source.port}`;
 		const other = first.get(from);
 		if (other !== undefined)
@@ -258,7 +281,7 @@ function names(
 	r: RepoNode,
 ): Finding[] {
 	const id = r.node.id;
-	if (r.kind === "apply") return [];
+	if (r.kind === "apply" || r.kind === "commits") return [];
 	if (r.kind === "check")
 		return checkNames(
 			setup,
@@ -434,7 +457,8 @@ export function validateRepo(
 	if (!nodes.length) return [];
 	const chained = nodes.flatMap((r): [RepoNode, LaneSource][] => {
 		const source = laneSource(graph, r.node);
-		return r.config.lane.mode === "extend" && source ? [[r, source]] : [];
+		const extending = r.kind !== "commits" && r.config.lane.mode === "extend";
+		return extending && source ? [[r, source]] : [];
 	});
 	return [
 		...targetProblems(setup),

@@ -16,6 +16,7 @@ import type { Diagnostic, SourceLocation } from "@maestro/ir";
  *   (`TYPE.or`), a string key into an array table (`TYPE.key`), a `readJson` of an artifact that is not a JSON file
  *   (`TYPE.artifact`), ports or reducer inputs that do not fit.
  * - `CFG.examples`: a composition without ports and without an example input set.
+ * - `CFG.param`: params a build refuses together, such as two of which exactly one must be given.
  * - `ASSERT.failed`: an `assert` on a plain value that is false.
  * - `IR`: emitted IR that `parseIr` rejects.
  */

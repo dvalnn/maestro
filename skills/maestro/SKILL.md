@@ -127,9 +127,10 @@ maestro's release ships one pack, `classics`:
 
 - `classics.build_then_repair`: builds the request in a fresh lane, repairs while the checks are red, and leaves a
   changeset.
-- `classics.panel_review`: reviews a lane version through each lens, a skeptic weighing each lens's findings, then
-  consolidates. Lenses run on the `reviewer` role's model and skeptics on the `skeptic` role's: pick models of different
-  families for the two, since a skeptic of the lens's family tends to share its blind spots.
+- `classics.panel_review`: reviews a lane version (`--change`) or target commits (`--revs main..feature`) through each
+  lens, a skeptic weighing each lens's findings, then consolidates. Lenses run on the `reviewer` role's model and
+  skeptics on the `skeptic` role's: pick models of different families for the two, since a skeptic of the lens's family
+  tends to share its blind spots.
 - `classics.v_model`: scouts, plans, builds and repairs, reviews each scouted risk, and traces acceptance to the plan.
 - `classics.repair_until_green`: the repair loop the others use; it is not performed alone.
 

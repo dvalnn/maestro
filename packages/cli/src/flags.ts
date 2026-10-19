@@ -163,13 +163,19 @@ function shownDefault(value: unknown): string {
 	return JSON.stringify(value);
 }
 
-/** The `Params` block of `composition`: per param its flag, its default or `required`, and its description. */
+/** What a param falls back to when absent: nothing (`required`), its default, or `optional`. */
+function fallback(p: ParamEntry): string {
+	if (p.required) return "required";
+	return p.default === undefined ? "optional" : shownDefault(p.default);
+}
+
+/** The `Params` block of `composition`: per param its flag, its fallback and its description. */
 export function paramsBlock(composition: Described): string | undefined {
 	const params = paramEntries(composition);
 	if (!params.length) return undefined;
 	const rows = params.map((p) => [
 		`  ${flagUsage(p)}`,
-		p.required ? "required" : shownDefault(p.default),
+		fallback(p),
 		p.description ?? "",
 	]);
 	return `Params\n${table(rows)}`;

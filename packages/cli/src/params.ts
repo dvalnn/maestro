@@ -47,7 +47,7 @@ export type ParamRequest = {
 	compositions: readonly Described[];
 	/** The name of the composition to build. */
 	root: string;
-	/** The root's example input set, which fills only the params no config file or flag gives. */
+	/** The root's example input set, which fills params no config file or flag gives (D-19). */
 	example?: Readonly<Record<string, unknown>>;
 	/** The root's param values given as flags, by param name. */
 	flags?: Readonly<Record<string, unknown>>;
@@ -57,7 +57,7 @@ export type ParamRequest = {
 };
 
 type Params = {
-	/** The config with the flags on top and the example set filling the root params nothing else gives. */
+	/** The config with the flags on top and the example set filling the root params nothing else gives, optional ones only when none is given. */
 	composed: Composed;
 	/** The root's params as given, without their declared defaults, which its build fills in. */
 	root: Record<string, unknown>;
@@ -218,12 +218,45 @@ function paramsOf(r: Reading): Read {
 	return diagnostics.length ? { diagnostics } : { value: values };
 }
 
+/** The params of `composition` that may be absent: neither required nor defaulted. */
+function optionalParams(composition: Described | undefined): string[] {
+	const { properties = {}, required = [] } = composition?.params ?? {};
+	return Object.entries(properties)
+		.filter(
+			([name, schema]) =>
+				!required.includes(name) &&
+				!(isPlainObject(schema) && schema.default !== undefined),
+		)
+		.map(([name]) => name);
+}
+
+/**
+ * The part of the root's example set that `set`, the root's params the layers and flags give, leaves to it: each
+ * param `set` lacks, an optional one only when `set` has none of the root's optional params (D-19).
+ */
+function exampleFill(
+	request: ParamRequest,
+	set: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+	const optional = optionalParams(
+		request.compositions.find((c) => c.name === request.root),
+	);
+	const optionalGiven = optional.some((name) => Object.hasOwn(set, name));
+	return Object.fromEntries(
+		Object.entries(request.example ?? {}).filter(
+			([name]) =>
+				!Object.hasOwn(set, name) &&
+				!(optionalGiven && optional.includes(name)),
+		),
+	);
+}
+
 /**
  * Resolves params, lowest first: the config layers, then the flags, with a composition's keys under
  * `<pack>.<composition>`. The example set is no layer: it gives the root's value for each param the rest leave unset,
- * and no merge tag acts on it. Every composition of the pack is read, so a subcomposition's configured params reach its
- * `use` through the build context; only the root's must hold every required param. Declared defaults are left to the
- * build.
+ * an optional one only when the rest give none of the root's optional params, and no merge tag acts on it. Every
+ * composition of the pack is read, so a subcomposition's configured params reach its `use` through the build context;
+ * only the root's must hold every required param. Declared defaults are left to the build.
  * @throws ConfigError for a missing required root param, a value off its schema, a typed param no host reads or that
  * does not parse, or a param that takes an artifact.
  */
@@ -238,15 +271,10 @@ export function paramValues(request: ParamRequest): Params {
 		pack,
 		root,
 	]);
-	const fallback = Object.fromEntries(
-		Object.entries(request.example ?? {}).filter(
-			([name]) => !Object.hasOwn(set, name),
-		),
-	);
 	const config = layered([
 		...request.layers,
 		...flagged,
-		rooted("example", fallback),
+		rooted("example", exampleFill(request, set)),
 	]);
 	const ajv = validator();
 	const configured: Record<string, Record<string, unknown>> = {};

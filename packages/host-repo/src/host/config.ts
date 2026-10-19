@@ -16,6 +16,7 @@ export const AGENT_KIND = "repo.agent";
 export const CHECK_KIND = "repo.check";
 export const CHANGESET_KIND = "repo.changeset";
 export const APPLY_KIND = "repo.apply";
+export const COMMITS_KIND = "repo.commits";
 export const LANE_TYPE = "repo.lane";
 
 /** The port a lane version travels on, in and out. */
@@ -222,6 +223,15 @@ export const CHANGESET_CONFIG = {
 	additionalProperties: false,
 } as const;
 
+export const COMMITS_CONFIG = {
+	type: "object",
+	required: ["revs"],
+	additionalProperties: false,
+	properties: { revs: NAME },
+} as const;
+
+export type CommitsConfig = { revs: string };
+
 export type LaneInput =
 	| { mode: "fresh"; base?: string }
 	| { mode: "fork" | "read" }
@@ -421,6 +431,9 @@ export const agentConfig = (config: unknown): AgentConfig =>
 
 export const applyConfig = (config: unknown): ApplyConfig =>
 	parsedNode(APPLY_CONFIG, config, RETIRED_APPLY);
+
+export const commitsConfig = (config: unknown): CommitsConfig =>
+	parsed(COMMITS_CONFIG, config ?? {}, "config");
 
 /**
  * The target `setup` names.

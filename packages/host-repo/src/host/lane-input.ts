@@ -4,7 +4,7 @@ import type {
 	HostNodeResult,
 } from "@maestro/core/host";
 import { MAESTRO_TYPE, type Ports } from "@maestro/ir";
-import type { Lane, Version } from "../lane/index";
+import { DEFAULT_BASE, type Lane, type Version } from "../lane/index";
 import type { Bind } from "../sandbox/index";
 import {
 	type CheckSpec,
@@ -17,14 +17,16 @@ import type { Live } from "./live";
 import { pathBinds, runLines, type Sandboxed, tailOf } from "./run-lines";
 import type { TargetStore } from "./store";
 
-/** The base a fresh lane is cut at when neither its node nor `target.base` names one. */
-const DEFAULT_BASE = "HEAD";
+/** The base a lane is cut at: `base`, else `target.base`, else the target's `HEAD`. */
+export const baseOf = (setup: RepoSetup, base?: string) =>
+	base ?? setup.target?.base ?? DEFAULT_BASE;
+
 /** How many changed files a refused `target.prepare` names. */
 const LISTED_CHANGES = 10;
 const PREPARE = "target.prepare";
 
 /** The version node instance `instance` of `concert` writes: `<concert id>.<node instance id>`. */
-const versionAt = (concert: string, { id }: HostInstance): Version =>
+export const versionAt = (concert: string, { id }: HostInstance): Version =>
 	`${concert}.${id}`;
 
 /**
@@ -55,7 +57,7 @@ async function openLane(
 	at: Version,
 ): Promise<InstanceLane> {
 	if (input.mode === "fresh") {
-		const base = input.base ?? setup.target?.base ?? DEFAULT_BASE;
+		const base = baseOf(setup, input.base);
 		return { lane: await store.lanes.fresh(base, at), read: false };
 	}
 	const version = laneVersion(value);

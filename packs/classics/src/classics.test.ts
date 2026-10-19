@@ -81,6 +81,36 @@ describe("panel_review", () => {
 		expect(roleOf("lenses/skeptic")).toEqual({ name: "skeptic" });
 	});
 
+	test("--revs reviews target commits through one commits node; both or neither of --change and --revs is refused", async () => {
+		const revs = ["--revs", "main..feature"];
+		const { out, code } = await maestro(
+			"compose",
+			...REVIEW.slice(0, 3),
+			...revs,
+			"--json",
+		);
+		expect(code).toBe(0);
+		const { plan } = JSON.parse(out);
+		expect(plan.bounds).toMatchObject({ instances: { exact: 24 } });
+		expect(
+			plan.ir.nodes.filter((n: { kind: string }) => n.kind === "repo.commits"),
+		).toEqual([
+			expect.objectContaining({
+				id: "commits",
+				config: { revs: "main..feature" },
+			}),
+		]);
+		expect(await maestro("compose", ...REVIEW, ...revs)).toMatchObject({
+			code: 2,
+			err: "CFG.param: classics.panel_review takes --change or --revs, not both\n  Drop one of --change and --revs\n",
+		});
+		// perform takes no example set, so it alone can give neither.
+		expect(await maestro("perform", ...REVIEW.slice(0, 3))).toMatchObject({
+			code: 2,
+			err: "CFG.param: classics.panel_review needs --change or --revs\n  Pass --revs main..feature, or --change <concert id>.<node instance id>\n",
+		});
+	});
+
 	test("names a misspelt config key and the param it meant", async () => {
 		await configure({ classics: { panel_review: { lense: ["spec"] } } });
 		const { err, code } = await maestro("compose", ...REVIEW).finally(() =>

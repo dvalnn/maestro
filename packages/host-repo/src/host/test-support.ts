@@ -45,20 +45,26 @@ const GIT_ENV = {
 	GIT_COMMITTER_EMAIL: "op@x",
 };
 
+const gitIn = (repo: string, ...args: string[]) => {
+	const p = Bun.spawnSync(["git", ...args], { cwd: repo, env: GIT_ENV });
+	if (p.exitCode !== 0) throw new Error(`git ${args[0]}: ${p.stderr}`);
+};
+
+/** Commits `files`, by path, on the checked-out branch of `repo`. */
+export function commitTo(repo: string, files: Record<string, string>) {
+	for (const [path, content] of Object.entries(files)) {
+		mkdirSync(dirname(join(repo, path)), { recursive: true });
+		writeFileSync(join(repo, path), content);
+	}
+	gitIn(repo, "add", "-A");
+	gitIn(repo, "commit", "-qm", Object.keys(files).join(" "));
+}
+
 /** A target repository whose `main` holds `a.txt` and `files`, by path. */
 export function toyTarget(files: Record<string, string> = {}): string {
 	const t = tmp("target");
-	const git = (...args: string[]) => {
-		const p = Bun.spawnSync(["git", ...args], { cwd: t, env: GIT_ENV });
-		if (p.exitCode !== 0) throw new Error(`git ${args[0]}: ${p.stderr}`);
-	};
-	git("init", "-q", "-b", "main");
-	for (const [path, content] of Object.entries({ "a.txt": "a\n", ...files })) {
-		mkdirSync(dirname(join(t, path)), { recursive: true });
-		writeFileSync(join(t, path), content);
-	}
-	git("add", "-A");
-	git("commit", "-qm", "one");
+	gitIn(t, "init", "-q", "-b", "main");
+	commitTo(t, { "a.txt": "a\n", ...files });
 	return t;
 }
 
@@ -121,7 +127,7 @@ export const APPROVED = reply({ outcome: "ok", report: "done" });
 
 export type NodeSpec = {
 	id: string;
-	kind: "agent" | "check" | "changeset" | "apply";
+	kind: "agent" | "check" | "changeset" | "apply" | "commits";
 	config: Record<string, unknown>;
 	literals?: Record<string, unknown>;
 	lane?: string;

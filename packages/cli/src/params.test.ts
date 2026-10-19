@@ -110,7 +110,7 @@ describe("param values", () => {
 		expect(literalOf(defaults, "echo/echo", "times")).toBe(1);
 	});
 
-	test("the example set fills only an unset param, and no merge tag acts on it", async () => {
+	test("the example set fills only an unset param, an optional one only when no optional one is set, and no merge tag acts on it", async () => {
 		const pack = await demo();
 		const greet = pack.compositions.find((c) => c.name === "greet");
 		if (!greet) throw new Error("no greet");
@@ -120,7 +120,9 @@ describe("param values", () => {
 				...greet.params,
 				properties: {
 					...greet.params.properties,
-					tags: { type: "array", items: { type: "string" } },
+					tags: { type: "array", items: { type: "string" }, default: [] },
+					change: { type: "string" },
+					revs: { type: "string" },
 				},
 			},
 		};
@@ -130,14 +132,20 @@ describe("param values", () => {
 				pack: "demo",
 				compositions: [tagged],
 				root: "greet",
-				example: { name: "e", tags: ["e"] },
+				example: { name: "e", tags: ["e"], change: "e" },
 				hosts: [fakeHost()],
 			}).root;
 		expect(root("demo:\n  greet:\n    tags: !append [c]\n")).toEqual({
 			name: "e",
 			tags: ["c"],
+			change: "e",
 		});
-		expect(root("")).toEqual({ name: "e", tags: ["e"] });
+		expect(root("")).toEqual({ name: "e", tags: ["e"], change: "e" });
+		expect(root("demo:\n  greet:\n    revs: r\n")).toEqual({
+			name: "e",
+			tags: ["e"],
+			revs: "r",
+		});
 	});
 
 	test("refuse a missing required param, and a value off its schema, naming the flag", async () => {

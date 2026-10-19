@@ -71,6 +71,12 @@ export interface Lanes {
 	 * @throws if another instance extended `v`, or `v` belongs to another concert.
 	 */
 	extend(v: Version, at: Version): Promise<Lane>;
+	/**
+	 * Records the target commits `revs` names (`A..B`, `C^!`, or a bare `B` from `base`) as version `at`, its base the
+	 * one merge base of the head and the commit `revs` excludes. It opens no lane.
+	 * @throws on a revision git cannot resolve, a range with no commit in it, or one that is not one linear series.
+	 */
+	commits(revs: string, base: string, at: Version): Promise<void>;
 	/** The patch series from the lane chain's base up to `v`. Unchanged versions add no patch. */
 	changeset(v: Version): Promise<Changeset>;
 	/** Lane bytes on disk for a concert: its working copies and their git directories. The shared store is not counted. */
@@ -102,6 +108,15 @@ const GIT_ENV = {
 	GIT_COMMITTER_NAME: "maestro",
 	GIT_COMMITTER_EMAIL: "maestro@localhost",
 };
+
+/** The base a lane is cut at when neither a lane input nor `target.base` names one. */
+export const DEFAULT_BASE = "HEAD";
+
+/** `git merge-base` exits 1 when the commits share no ancestor. */
+const NO_COMMON_ANCESTOR = 1;
+
+/** The fix line of revisions git cannot resolve to commits of the target. */
+const REVS_FIX = "Pass A..B, C^!, or a branch, tag or commit id";
 
 /** git's well-known empty tree. As the attribute source it disables the lane's `.gitattributes` (git >= 2.40). */
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -232,6 +247,10 @@ export function openLanes(options: LanesOptions): Lanes {
 					)
 				: e;
 		});
+		return importCommit(sha);
+	}
+
+	async function importCommit(sha: string): Promise<string> {
 		await initStore();
 		const have = await git(G("cat-file", "-e", `${sha}^{commit}`)).then(
 			() => true,
@@ -242,6 +261,101 @@ export function openLanes(options: LanesOptions): Lanes {
 				G("fetch", "-q", "--no-tags", "--no-write-fetch-head", target, sha),
 			);
 		return sha;
+	}
+
+	/**
+	 * What `git rev-parse` prints for `args` in the target.
+	 * @throws with git's own error and the fix line when it refuses them.
+	 */
+	async function parsedRevs(...args: string[]): Promise<string[]> {
+		const { out, err, code } = await spawnGit([
+			"-C",
+			target,
+			"rev-parse",
+			...args,
+		]);
+		if (code !== 0) throw new Error(`${err.trim()}\n${REVS_FIX}`);
+		return out.split("\n").filter(Boolean);
+	}
+
+	/** The commit object `sha` of the target names, fetched into the store. */
+	const peeled = async (sha: string) => {
+		const [commit = ""] = await parsedRevs(
+			"--verify",
+			"--end-of-options",
+			`${sha}^{commit}`,
+		);
+		return importCommit(commit);
+	};
+
+	const baseName = (base: string) =>
+		base === DEFAULT_BASE ? DEFAULT_BASE : `target.base '${base}'`;
+
+	const notLinear = (revs: string) =>
+		new Error(
+			`'${revs}' is not one linear series of commits. Pass A..B or C^! with no merge in it`,
+		);
+
+	/**
+	 * The head `revs` names in the target, and `from`, the commit it excludes, or `base` when it excludes none (`bare`),
+	 * both fetched into the store.
+	 */
+	async function ends(revs: string, base: string) {
+		// `--` makes git refuse a name it cannot resolve, rather than drop it as a path.
+		const names = await parsedRevs(
+			"--revs-only",
+			"--end-of-options",
+			revs,
+			"--",
+		);
+		const heads = names.filter((n) => !n.startsWith("^"));
+		const [head] = heads;
+		// Several exclusions come only from a merge's `C^!`, whose merge the merge check refuses.
+		const exclusion = names.find((n) => n.startsWith("^"));
+		if (head === undefined)
+			throw new Error(`'${revs}' names no revision\n${REVS_FIX}`);
+		if (heads.length > 1) throw notLinear(revs);
+		return {
+			head: await peeled(head),
+			from: exclusion
+				? await peeled(exclusion.slice(1))
+				: await importBase(base),
+			bare: exclusion === undefined,
+		};
+	}
+
+	/**
+	 * The one merge base of `from` and `head`; of several, git gives one, and they imply a merge in the range, which
+	 * the merge check refuses.
+	 * @throws when the two share no history, or git refuses them.
+	 */
+	async function mergeBaseOf(revs: string, from: string, head: string) {
+		const found = await spawnGit(G("merge-base", from, head));
+		if (found.code === NO_COMMON_ANCESTOR)
+			throw new Error(`'${revs}' shares no history with its base\n${REVS_FIX}`);
+		if (found.code !== 0) throw new Error(`${found.err.trim()}\n${REVS_FIX}`);
+		return found.out.trim();
+	}
+
+	/**
+	 * The head and the base of the series `revs` names, fetched into the store: the base is the one merge base of the
+	 * head and the commit `revs` excludes, else `base`.
+	 * @throws when git cannot resolve `revs`, or it names no commit past its base, or no one linear series.
+	 */
+	async function series(revs: string, base: string) {
+		const { head, from, bare } = await ends(revs, base);
+		const mergeBase = await mergeBaseOf(revs, from, head);
+		if (mergeBase === head) {
+			const past = bare
+				? baseName(base)
+				: `its base ${await value(G("rev-parse", "--short", head))}`;
+			throw new Error(
+				`'${revs}' names no commit past ${past}. Pass a range with a commit in it, such as main..feature`,
+			);
+		}
+		if (await value(G("rev-list", "--merges", "-1", `${mergeBase}..${head}`)))
+			throw notLinear(revs);
+		return { head, base: mergeBase };
 	}
 
 	// One atomic ref transaction. A `create` fails if the ref exists, which is how "at most once" holds.
@@ -285,10 +399,15 @@ export function openLanes(options: LanesOptions): Lanes {
 	};
 
 	// Takes back what an earlier run of `at` left: its lane, and its version with the refs under it.
-	async function claim(at: Version) {
+	async function takeBack(at: Version) {
 		const p = paths(at);
 		rmSync(p.home, { recursive: true, force: true });
 		await deleteRefs(await refsUnder(refs(at).own));
+		return p;
+	}
+
+	async function claim(at: Version) {
+		const p = await takeBack(at);
 		mkdirSync(p.home, { recursive: true });
 		return p;
 	}
@@ -450,6 +569,16 @@ export function openLanes(options: LanesOptions): Lanes {
 				throw e;
 			}
 			return open(at, commit, base, false);
+		},
+		async commits(revs, base, at) {
+			parse(at);
+			const found = await series(revs, base);
+			const r = refs(at);
+			await takeBack(at);
+			await createOnce(
+				[`create ${r.version} ${found.head}`, `create ${r.base} ${found.base}`],
+				`${at} is already sealed`,
+			);
 		},
 		async changeset(v) {
 			const { commit, base } = await resolve(v);

@@ -11,8 +11,9 @@ unless given `--out`.
 - `<c>` is `<pack>.<composition>`, a `.ts` or `.js` composition file, or a `.json` IR file.
 - Params are flags in kebab-case: `maxRepairs` is `--max-repairs <value>`; a boolean is `--strict` or `--no-strict`. A
   param with no flag takes its value from config (a pack's only), then its default.
-- Compose falls back on the composition's first example set for params no flag or config gives, so a composition
-  composes with no flags and a config-driven compose shows what perform will run. Perform never uses the example set.
+- Compose falls back on the composition's first example set for params no flag or config gives, an optional param only
+  when no optional param is given, so a composition composes with no flags and a config-driven compose shows what
+  perform will run. Perform never uses the example set.
 - Default output: one line, `<name>: <count> node instances, <count> repo.agent`, with `up to` where a group or loop
   bounds it. Warnings and diagnostics go to stderr.
 - `--plan` prints every node with its kind and count, and the bounds. `--graph` prints a Mermaid flowchart.

@@ -355,6 +355,22 @@ export function changeset(
 	});
 }
 
+/**
+ * A `repo.commits` node: the target commits git revisions `revs` name (`A..B`, `C^!`, or a bare `B` from `target.base`),
+ * resolved once, as a lane version whose base is their one merge base. It opens no lane, and its version is never
+ * extended.
+ */
+export function commits(
+	revs: string,
+	common: Common = {},
+): Result<{ lane: Type<string> }> {
+	return hostNode("repo.commits", {
+		...common,
+		out: { lane: Lane },
+		config: { revs },
+	});
+}
+
 export type ApplyOptions = Common & {
 	/** `3way` by default; `clean` refuses a changeset that does not apply cleanly. */
 	strategy?: "3way" | "clean";

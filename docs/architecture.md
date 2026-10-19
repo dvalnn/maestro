@@ -398,6 +398,11 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - **Changeset node.** Takes one lane version and outputs its patch series as an artifact: a directory holding `base`,
   the target commit the lane chain was cut from, and the patches as `0001.patch`, `0002.patch` and on. It opens no lane
   and spends no extension.
+- **Commits node.** Config `revs`, git revisions of the target: `A..B`, `C^!`, or a bare `B` from `target.base`, else
+  the target's `HEAD`. It takes no inputs, so it runs as the concert starts and a resume reuses it. It resolves `revs`
+  with `git rev-parse` and records a version of refs only, its content the one head and its base the one merge base of
+  the head and the commit `revs` excludes, opening no lane. A revision git cannot resolve, a range with no commit in it,
+  and anything but one linear series (two heads, several bases, a merge) are `failed`.
 - **Apply node.** Takes a lane input (`fresh`, `fork` or `extend`) and one changeset on its `changeset` input port, and
   applies it with a strategy, `3way` by default or `clean` (HOST-14). A clean apply is `ok` with the new lane version. A
   conflict is `rejected`, the reason naming the files, with a version holding the markers for an agent to extend and
@@ -446,7 +451,7 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - `fresh(base)` makes a new lane. `fork(v)` copies the state at version `v`. `extend(v)` continues the lane from `v` and
   yields the next version. `read(v)` sees `v` with its writes discarded, yields no version and spends no extension. A
   version may be extended at most once and forked or read any number of times. A node whose lane input is not a `read`
-  outputs its lane version.
+  outputs its lane version. A commits node's version has no working copy, so it is forked or read, never extended.
 - A lane belongs to its node instance. A failed or cancelled instance drops its lane, and when a resume runs the
   instance again it takes back whatever an earlier run left, its sealed version included. A retried extension re-opens
   the version it extended, from that version's content.
@@ -508,7 +513,7 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 **Host validation rules**
 
 - Lane rule (HOST-02): no version extended twice, whether by two nodes or by one node once per group iteration, and no
-  extension of a lane ref.
+  extension of a lane ref or of a commits node's version.
 - Resume only on an extension of an agent's version or of an extending check's, and not of any other writer (an apply, a
   check on a fresh or forked lane), nor a version written on another harness or in another concert.
 - Every role, harness and check a node names exists, the message listing those that do.

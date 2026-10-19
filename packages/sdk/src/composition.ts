@@ -3,7 +3,6 @@ import {
 	type Diagnostic,
 	IR_VERSION,
 	type Ir,
-	type JsonSchema,
 	type Ports,
 	parseIr,
 } from "@maestro/ir";
@@ -26,7 +25,7 @@ import {
 	visible,
 	withFrame,
 } from "./graph";
-import { schemas, type Types, type ValueOf } from "./types";
+import { schemas, type Type, type Types, type ValueOf } from "./types";
 
 export type Values<P extends Types> = { [K in keyof P]: ValueOf<P[K]> };
 
@@ -40,7 +39,10 @@ export type PortValues<Q extends Types> = {
 /** A composition with ports builds only through `use`, so only one without ports takes examples (D-16, D-19). */
 export type Declaration<P extends Types, Q extends Types> = {
 	doc?: string;
-	/** Plain values at build: CLI inputs and tunables alike (D-17). A param without a default is required. */
+	/**
+	 * Plain values at build: CLI inputs and tunables alike (D-17). A param without a default is required, unless
+	 * `Optional`.
+	 */
 	params?: P;
 } & (
 	| {
@@ -241,7 +243,7 @@ function resultOf(name: string, returned: unknown): Ir["result"] {
 export type Described = {
 	name: string;
 	doc?: string;
-	/** An object schema of the params: a param without a default is required. */
+	/** An object schema of the params: a param without a default is required, unless `Optional`. */
 	params: {
 		type: "object";
 		properties: Ports;
@@ -285,8 +287,10 @@ function compositionsOf(
 	return found;
 }
 
-const hasDefault = (type: { schema: JsonSchema }) =>
-	typeof type.schema === "object" && type.schema.default !== undefined;
+/** Whether a param may be left out: it has a default, or is `Optional`. */
+const omissible = (type: Type<unknown>) =>
+	type.optional === true ||
+	(typeof type.schema === "object" && type.schema.default !== undefined);
 
 /** Each composition among `exports`, a module namespace: its name, doc, params as JSON Schema and examples. */
 export function describe(
@@ -299,7 +303,7 @@ export function describe(
 			type: "object",
 			properties: schemas(c.params),
 			required: Object.entries(c.params)
-				.filter(([, type]) => !hasDefault(type))
+				.filter(([, type]) => !omissible(type))
 				.map(([name]) => name),
 			additionalProperties: false,
 		},

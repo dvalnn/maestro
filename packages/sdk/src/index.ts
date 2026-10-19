@@ -62,6 +62,7 @@ export {
 	JsonFile,
 	List,
 	Markdown,
+	Optional,
 	Settled,
 	Struct,
 	Text,

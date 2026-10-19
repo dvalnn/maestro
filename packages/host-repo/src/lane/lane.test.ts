@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
+import { commitTo } from "../host/test-support";
 import { bubblewrap } from "../sandbox/index";
 import { type Changeset, type Lane, openLanes } from "./index";
 
@@ -111,6 +112,111 @@ describe("fresh", () => {
 		const fork = await lanes.fork("c1.a", "c1.b");
 		expect(existsSync(join(fork.dir, "first.txt"))).toBe(false);
 		expect(existsSync(join(fork.dir, "second.txt"))).toBe(true);
+	});
+});
+
+describe("commits", () => {
+	/**
+	 * `toyTarget` with `feature` two commits past `main~1`, and `main` one past it; `merged` merges `main` into
+	 * `feature`, and `x` and `y` are a criss-cross of `x0` and `y0`, which both branch from `main`.
+	 */
+	function seriesTarget(): string {
+		const t = toyTarget();
+		git(t, "checkout", "-qb", "feature");
+		commitTo(t, { "c.txt": "c.txt\n" });
+		commitTo(t, { "d.txt": "d.txt\n" });
+		git(t, "checkout", "-q", "main");
+		commitTo(t, { "e.txt": "e.txt\n" });
+		git(t, "checkout", "-qb", "merged", "feature");
+		git(t, "merge", "-q", "--no-edit", "main");
+		for (const side of ["x", "y"]) {
+			git(t, "checkout", "-qb", side, "main");
+			commitTo(t, { [`${side}0.txt`]: "x\n" });
+		}
+		git(t, "checkout", "-q", "x");
+		git(t, "merge", "-q", "--no-edit", "y~0");
+		git(t, "checkout", "-q", "y");
+		git(t, "merge", "-q", "--no-edit", "x~1");
+		git(t, "checkout", "-q", "--orphan", "orphan");
+		commitTo(t, { "o.txt": "o\n" });
+		git(t, "checkout", "-q", "main");
+		return t;
+	}
+
+	const subjects = (cs: Changeset) =>
+		cs.patches.map((p) => /^Subject: \[PATCH[^\]]*\] (.*)$/m.exec(p)?.[1]);
+
+	test.each([
+		["main..feature", "main~1", ["c.txt", "d.txt"]],
+		["feature^!", "feature~1", ["d.txt"]],
+		["feature", "main~1", ["c.txt", "d.txt"]],
+	])("%s seals its commits on base %s", async (revs, base, files) => {
+		const target = seriesTarget();
+		const lanes = openLanes({ target, root: tmp("root") });
+		await lanes.commits(revs, "main", "c1.commits");
+		await lanes.commits(revs, "main", "c1.commits"); // a re-run takes the first seal back
+		const cs = await lanes.changeset("c1.commits");
+		expect(cs.base).toBe(git(target, "rev-parse", base));
+		expect(subjects(cs)).toEqual(files);
+		const fork = await lanes.fork("c1.commits", "c1.fork");
+		expect(readFileSync(join(fork.dir, "d.txt"), "utf8")).toBe("d.txt\n");
+	});
+
+	const LINEAR =
+		"is not one linear series of commits. Pass A..B or C^! with no merge in it";
+	const refused: [revs: string, message: string, base?: string][] = [
+		[
+			"nope..main",
+			"fatal: bad revision 'nope..main'\nPass A..B, C^!, or a branch, tag or commit id",
+		],
+		[
+			"main:a.txt",
+			"dereferences to blob type\nfatal: Needed a single revision\nPass A..B, C^!, or a branch, tag or commit id",
+		],
+		[
+			"main..main~1",
+			"'main..main~1' names no commit past its base SHORT. Pass a range with a commit in it, such as main..feature",
+		],
+		[
+			"main~1",
+			"'main~1' names no commit past target.base 'main'. Pass a range with a commit in it, such as main..feature",
+		],
+		[
+			"main~1",
+			"'main~1' names no commit past HEAD. Pass a range with a commit in it, such as main..feature",
+			"HEAD",
+		],
+		[
+			"orphan..feature",
+			"'orphan..feature' shares no history with its base\nPass A..B, C^!, or a branch, tag or commit id",
+		],
+		[
+			"feature..orphan",
+			"'feature..orphan' shares no history with its base\nPass A..B, C^!, or a branch, tag or commit id",
+		],
+		[
+			"orphan",
+			"'orphan' shares no history with its base\nPass A..B, C^!, or a branch, tag or commit id",
+		],
+		[
+			"--",
+			"'--' names no revision\nPass A..B, C^!, or a branch, tag or commit id",
+		],
+		["main...feature", `'main...feature' ${LINEAR}`],
+		["merged^!", `'merged^!' ${LINEAR}`],
+		["x..y", `'x..y' ${LINEAR}`],
+		["main..merged", `'main..merged' ${LINEAR}`],
+	];
+	test.each(refused)("%s is refused", async (revs, message, base = "main") => {
+		const target = seriesTarget();
+		const lanes = openLanes({ target, root: tmp("root") });
+		const short = git(target, "rev-parse", "--short", "main~1");
+		await expect(lanes.commits(revs, base, "c1.commits")).rejects.toThrow(
+			message.replace("SHORT", short),
+		);
+		await expect(lanes.changeset("c1.commits")).rejects.toThrow(
+			/unknown version/,
+		);
 	});
 });
 
@@ -433,6 +539,7 @@ describe("the target", () => {
 		await lanes.fresh("main", "c2.d"); // a second base is fetched
 		const merged = await lanes.fresh("main~1", "c2.e");
 		await merged.apply(await lanes.changeset("c1.c"));
+		await lanes.commits("main^!", "main", "c2.f");
 		await lanes.prune("c1");
 
 		expect(snapshot(target)).toEqual(before);

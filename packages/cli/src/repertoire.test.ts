@@ -9,7 +9,7 @@ import { json, world } from "./fixtures/world";
 afterEach(cleanup);
 
 /** A composition whose one agent-like node names role `writer` in its config, the way the repo host's agents do. */
-const STAFFED = `import { composition, Text } from "@maestro/sdk";
+const STAFFED = `import { composition, Optional, Text } from "@maestro/sdk";
 import { hostNode } from "@maestro/sdk/host";
 
 export const draft = composition(
@@ -19,6 +19,7 @@ export const draft = composition(
 		params: {
 			topic: Text({ description: "What the page is about" }),
 			tags: Text({ default: "a" }),
+			note: Optional(Text()),
 		},
 		examples: [{ topic: "x" }],
 	},
@@ -90,6 +91,7 @@ describe("repertoire", () => {
 				"Params",
 				"  --topic <text>  required  What the page is about",
 				"  --tags <text>   a",
+				"  --note <text>   optional",
 				"Config  roles.write, target.checks.test",
 				"",
 				"  maestro perform staffed.draft --topic <text>",
@@ -128,6 +130,12 @@ describe("repertoire", () => {
 									type: "text",
 									required: false,
 									default: "a",
+								},
+								{
+									name: "note",
+									flag: "--note",
+									type: "text",
+									required: false,
 								},
 							],
 							config: ["roles.write", "target.checks.test"],

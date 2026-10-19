@@ -240,10 +240,14 @@ A code node is the SDK's answer to "this needs real code".
   key is always the one of the code that runs.
 - Host types may appear as param types, the host reading each value from its text. The coding-agent host adds the lane
   ref, written `<concert id>.<node instance id>`, for forking or reading a lane left by an earlier concert (D-27).
+- A param declared `Optional(type)` is neither required nor defaulted: its build value is `undefined` when nothing gives
+  it, and `rep` shows it as `optional`. A rule across params, such as two of which exactly one is given, is the build's,
+  refusing with `CFG.param`.
 - The CLI validates params before build. A required param that is absent, or a constraint violation (for example a list
   of fewer than two models for a comparison), is a usage error with a next-step message (CLI-06).
 - Every composition without ports declares at least one example input set. `compose` uses the first one for the params
-  no YAML layer or flag gives, and `perform` never does (D-19).
+  no YAML layer or flag gives, an optional param's only when they give none of the root's optional params, and `perform`
+  never does (D-19).
 - What a composition needs (plan node kinds, instance counts, host counts) is derived by compose and host `validate`,
   never declared (SDK-06).
 
@@ -305,6 +309,7 @@ bundle it.
 | `seat({ role, identity, ... })`            | A function of `{ task, lane, ... }` that emits a `repo.agent` node²                                                                     |
 | `check(lane, which?)`                      | A `repo.check` node: every named check, the one named, or an inline `{ run, timeout, ... }`; outputs `logs`, and `lane` unless it reads |
 | `changeset(v)`                             | A `repo.changeset` node: version `v` as a patch series, output `changeset`                                                              |
+| `commits(revs)`                            | A `repo.commits` node: the target commits git revisions `revs` name, as a version; output `lane`, which nothing extends                 |
 | `apply(lane, changeset, opts)`             | A `repo.apply` node: one changeset applied, on its `changeset` port; `opts.strategy` is `3way` or `clean`; output `lane`                |
 
 ¹ `agent` also takes `identity`, `verdict`, `attachments` (each `{ artifact, hint }`), `out`, `checks`, `readOnly` and
@@ -359,7 +364,8 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 - `TYPE` edge schema mismatch, a build that returns no node, a `readJson` of an artifact that is not a JSON file.
 - `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count, a code
   node `timeout` that is neither a duration nor a whole number of milliseconds within the timer range (`BOUND.timeout`).
-- `CFG` unclaimed key, schema violation, required key missing, examples missing or given with ports.
+- `CFG` unclaimed key, schema violation, required key missing, examples missing or given with ports, params a build
+  refuses together (`CFG.param`).
 - `HOST` anything a host `validate` hook reports (for example a lane extended twice).
 - `BUILD` an ambient read during build (SDK-11), or a build that yields different IR twice (SDK-12).
 - `ASSERT` an `assert` that fails at build.

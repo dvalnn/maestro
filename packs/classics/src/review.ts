@@ -1,6 +1,13 @@
-import { type Attachment, changeset, Lane, read } from "@maestro/host-repo-sdk";
+import {
+	type Attachment,
+	changeset,
+	commits,
+	Lane,
+	read,
+} from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
+	BuildError,
 	code,
 	composition,
 	Enum,
@@ -9,6 +16,7 @@ import {
 	lookup,
 	Markdown,
 	not,
+	Optional,
 	type Ref,
 	readJson,
 	Text,
@@ -144,13 +152,42 @@ function round(
 	return { lens: found, skeptic: challenged };
 }
 
+/**
+ * The lane version under review: `change`, or the target commits `revs` names.
+ * @throws BuildError `CFG.param` unless exactly one is given.
+ */
+function reviewed(
+	change: string | undefined,
+	revs: string | undefined,
+): Ref<string> | string {
+	if (change !== undefined && revs !== undefined)
+		throw new BuildError({
+			code: "CFG.param",
+			message: "classics.panel_review takes --change or --revs, not both",
+			hint: "Drop one of --change and --revs",
+		});
+	if (change !== undefined) return change;
+	if (revs !== undefined) return commits(revs).out.lane;
+	throw new BuildError({
+		code: "CFG.param",
+		message: "classics.panel_review needs --change or --revs",
+		hint: "Pass --revs main..feature, or --change <concert id>.<node instance id>",
+	});
+}
+
 export const panelReview = composition(
 	"panel_review",
 	{
-		doc: "Review a lane version: a lens per lens name, a skeptic over each lens that found anything, then a consolidator.",
+		doc: "Review a lane version or target commits: a lens per lens name, a skeptic over each lens that found anything, then a consolidator.",
 		params: {
 			request: Text({ description: "What the change must do" }),
-			change: Lane,
+			change: Optional(Lane),
+			revs: Optional(
+				Text({
+					description:
+						"Git revisions of the target: A..B, C^!, or B from target.base",
+				}),
+			),
 			lenses: Json<LensName[]>(
 				{ type: "array", items: Enum(LENS_NAMES).schema, uniqueItems: true },
 				{
@@ -166,7 +203,8 @@ export const panelReview = composition(
 			},
 		],
 	},
-	({ request, change, lenses }) => {
+	({ request, change: given, revs, lenses }) => {
+		const change = reviewed(given, revs);
 		const spec = code(toMarkdown, {
 			in: { text: request },
 			out: { file: Markdown() },

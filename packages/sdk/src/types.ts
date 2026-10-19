@@ -10,8 +10,15 @@ import {
 
 type SchemaObject = Exclude<JsonSchema, boolean>;
 
-/** A port, param or config type: its JSON Schema, and `T`, the TypeScript type of a value at perform time. */
-export type Type<T> = { readonly schema: JsonSchema; readonly __value?: T };
+/**
+ * A port, param or config type: its JSON Schema, and `T`, the TypeScript type of a value at perform time. An
+ * `optional` param may be absent.
+ */
+export type Type<T> = {
+	readonly schema: JsonSchema;
+	readonly optional?: true;
+	readonly __value?: T;
+};
 
 export type ValueOf<X> = X extends Type<infer T> ? T : never;
 
@@ -103,6 +110,12 @@ export const JsonFile = <T>(type: Type<T>, hints?: ArtifactHints) =>
 
 export const Markdown = (hints?: ArtifactHints) =>
 	artifact(CORE_TYPES.markdown, {}, hints);
+
+/** `type` as a param that may be absent: no flag or config needs to give it, and the build sees `undefined`. */
+export const Optional = <T>(type: Type<T>): Type<T | undefined> => ({
+	...type,
+	optional: true,
+});
 
 /** What a group member or a fan-in input delivers (ADR 0006). */
 export type Settled<T> = SettledValue<T>;

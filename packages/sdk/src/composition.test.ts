@@ -11,7 +11,16 @@ import {
 import { fanout } from "./fixtures/examples";
 import { stamp } from "./fixtures/workers";
 import { hostNode } from "./host";
-import { code, composition, Int, List, type Ref, Text, use } from "./index";
+import {
+	code,
+	composition,
+	Int,
+	List,
+	Optional,
+	type Ref,
+	Text,
+	use,
+} from "./index";
 import {
 	type BuildContext,
 	build,
@@ -34,10 +43,14 @@ describe("composition", () => {
 			"greet",
 			{
 				doc: "Says hello.",
-				params: { name: Text(), times: Int({ default: 1 }) },
+				params: {
+					name: Text(),
+					times: Int({ default: 1 }),
+					nick: Optional(Text()),
+				},
 				examples: [{ name: "x" }],
 			},
-			({ name, times }) => task({ name, times }),
+			({ name, times, nick }) => task({ name, times, nick: nick ?? "absent" }),
 		);
 		const ir = buildValid(root, { name: "ada" });
 		expect(ir.composition).toEqual({
@@ -48,7 +61,11 @@ describe("composition", () => {
 		});
 		expect(ir.emitter).toEqual({ name: "@maestro/sdk", version: pkg.version });
 		expect(ir).not.toHaveProperty("params");
-		expect(nodeOf(ir, "task").literals).toEqual({ name: "ada", times: 1 });
+		expect(nodeOf(ir, "task").literals).toEqual({
+			name: "ada",
+			times: 1,
+			nick: "absent",
+		});
 	});
 
 	test.each([
@@ -187,7 +204,11 @@ describe("a bundle's entry", () => {
 		"greet",
 		{
 			doc: "Greets.",
-			params: { name: Text(), loud: Int({ default: 0 }) },
+			params: {
+				name: Text(),
+				loud: Int({ default: 0 }),
+				nick: Optional(Text()),
+			},
 			examples: [{ name: "x" }],
 		},
 		({ name }) => task({ name }),
@@ -204,6 +225,7 @@ describe("a bundle's entry", () => {
 					properties: {
 						name: { type: "string" },
 						loud: { type: "integer", default: 0 },
+						nick: { type: "string" },
 					},
 					required: ["name"],
 					additionalProperties: false,

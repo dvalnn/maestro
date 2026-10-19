@@ -51,6 +51,7 @@ From `@maestro/sdk`:
 | `composition(name, { doc, params, examples }, fn)`          | A composition; `fn(params)` returns its result node                                                                       |
 | `Text`, `Int`, `Float`, `Bool`                              | Value types, called with `{ default, description }`; no default means required                                            |
 | `Enum([...])`, `List(T)`, `Struct({ ... })`, `Json(schema)` | Choice and structured value types                                                                                         |
+| `Optional(T)`                                               | A param that may be absent: not required, `undefined` in the build                                                        |
 | `File()`, `Dir()`, `JsonFile(T)`, `Markdown()`              | Artifact types                                                                                                            |
 | `code(fn, { in, out, timeout })`                            | A code node; `fn` is an exported `(inputs, ctx) => outputs`; `timeout` is a duration                                      |
 | `reject(reason, outputs?)`                                  | A code node's `rejected` verdict, returned from `fn`                                                                      |
@@ -83,6 +84,7 @@ From `@maestro/host-repo-sdk`:
 | `seat({ role, identity, ... })`         | An agent's standing setup, called with `{ task, lane, ... }` per agent      |
 | `check(lane, which?)`                   | Every named check, the one named, or an inline `{ run, timeout, ... }`      |
 | `changeset(v)`                          | Version `v` as a changeset; end a composition on one to deliver results     |
+| `commits(revs)`                         | Target commits `revs` names as a version; fork or read it, never extend     |
 | `apply(lane, cs, { strategy })`         | Changeset `cs` applied to a lane; `"3way"` (default) or `"clean"`           |
 | `JsonOut(file, T)`, `MarkdownOut(file)` | A declared agent output, written in its outbox at `/out/<file>`             |
 | `Lane`                                  | The lane version type, and the lane ref param type                          |

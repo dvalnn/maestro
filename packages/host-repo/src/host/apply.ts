@@ -17,12 +17,21 @@ import {
 	CHANGESET_CONFIG,
 	CHANGESET_KIND,
 	CHANGESET_PORT,
+	COMMITS_CONFIG,
+	COMMITS_KIND,
+	commitsConfig,
 	LANE_PORT,
 	repoSetup,
 	requireTarget,
 } from "./config";
 import { artifactInput } from "./inputs";
-import { lanePorts, laneVersion, withLane } from "./lane-input";
+import {
+	baseOf,
+	lanePorts,
+	laneVersion,
+	versionAt,
+	withLane,
+} from "./lane-input";
 import { type Live, liveInstances } from "./live";
 import { openTarget } from "./store";
 
@@ -102,6 +111,32 @@ export function changesetKind(): NodeKind {
 			out: { [CHANGESET_PORT]: { [MAESTRO_TYPE]: CORE_TYPES.dir } },
 		}),
 		execute: (_, inputs, context) => executeChangeset(inputs, context),
+		cancel: async () => {},
+	};
+}
+
+async function executeCommits(
+	instance: HostInstance,
+	context: HostContext,
+): Promise<HostNodeResult> {
+	const setup = repoSetup(context.setup);
+	const store = openTarget(setup.store, requireTarget(setup).repo);
+	const at = versionAt(context.concert, instance);
+	await store.lanes.commits(
+		commitsConfig(instance.node.config).revs,
+		baseOf(setup),
+		at,
+	);
+	return { outcome: "ok", outputs: { [LANE_PORT]: at } };
+}
+
+/** The `repo.commits` kind: the target commits git revisions name, as a lane version. It opens no lane. */
+export function commitsKind(): NodeKind {
+	return {
+		name: COMMITS_KIND,
+		config: COMMITS_CONFIG,
+		ports: () => lanePorts({ mode: "fresh" }),
+		execute: (instance, _, context) => executeCommits(instance, context),
 		cancel: async () => {},
 	};
 }

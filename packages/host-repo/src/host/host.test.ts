@@ -11,6 +11,7 @@ import {
 	APPROVED,
 	changed,
 	cleanup,
+	commitTo,
 	configOf,
 	fresh,
 	irOf,
@@ -83,6 +84,14 @@ describe("compose", () => {
 					literals: prompt,
 					lane: "k",
 				},
+				{ id: "m", kind: "commits", config: { revs: "main^!" } },
+				{
+					id: "f",
+					kind: "agent",
+					config: { role: { name: "builder" }, lane: { mode: "extend" } },
+					literals: prompt,
+					lane: "m",
+				},
 			],
 			"c",
 		);
@@ -104,6 +113,11 @@ describe("compose", () => {
 				"HOST.lane",
 				"c",
 				"'c' extends 'a.lane', which 'b' extends too; a version is extended at most once",
+			],
+			[
+				"HOST.lane",
+				"f",
+				"'f' extends 'm.lane', a version of target commits, which only a fork or a read can take",
 			],
 			[
 				"HOST.resume",
@@ -908,6 +922,38 @@ describe("perform", () => {
 		expect(readdirSync(join(root, "sessions"))).toEqual(["written"]);
 		expect(existsSync(join(root, "lanes", id))).toBe(false);
 	});
+});
+
+test("a commits version reads, forks and makes a changeset, and keeps its commits after the branch moves", async () => {
+	const { host } = stubHost(() => [OK]);
+	const target = toyTarget();
+	commitTo(target, { "b.txt": "b\n" });
+	const ir = irOf(
+		host,
+		[
+			{ id: "commits", kind: "commits", config: { revs: "main^!" } },
+			...["read", "fork"].map((mode) => ({
+				id: mode,
+				kind: "agent" as const,
+				config: { role: { name: "builder" }, lane: { mode } },
+				literals: { prompt: "go" },
+				lane: "commits",
+			})),
+			{ id: "patches", kind: "changeset", config: {}, lane: "commits" },
+		],
+		"patches",
+	);
+	const config = configOf(target);
+	const { id, result, artifact } = await performed(host, ir, config);
+	expect(result).toMatchObject({ outcome: "ok" });
+	const patches = artifact("patches", "changeset");
+	expect(readdirSync(patches)).toEqual(["0001.patch", "base"]);
+	expect(readFileSync(join(patches, "0001.patch"), "utf8")).toContain("b.txt");
+	expect(await changed(config, target, `${id}.fork`)).toContain("b.txt");
+	commitTo(target, { "c.txt": "c\n" });
+	const pinned = await changed(config, target, `${id}.commits`);
+	expect(pinned).toContain("b.txt");
+	expect(pinned).not.toContain("c.txt");
 });
 
 test("param reads a lane ref and refuses other text", () => {

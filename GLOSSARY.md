@@ -189,6 +189,9 @@ node. The target's checkout is never touched. _Avoid_: series
 
 **Changeset node**: Takes one lane version and outputs its changeset. It opens no lane and spends no extension.
 
+**Commits node**: Takes git revisions of the target and outputs the commits they name as a lane version, resolved once.
+It opens no lane, and its version is forked or read, never extended.
+
 **Apply node**: Applies one changeset to a lane and yields a new version. A conflict is `rejected`, naming the files,
 and leaves a version holding the markers for an agent to extend.
 
