@@ -440,6 +440,11 @@ describe("usage errors", () => {
 			/^composition file \S+\/demo\.ts is named 'demo', the id of the pack at \S+\nRename the file$/,
 		],
 		[
+			"a composition file that declares no example input set",
+			["compose", join(FIXTURES, "bare.ts")],
+			/^CFG\.examples: composition 'bare' declares no example input set\n/,
+		],
+		[
 			"a composition file that is not there",
 			["compose", "missing.ts"],
 			/^no such file: missing\.ts\nCheck the path$/,

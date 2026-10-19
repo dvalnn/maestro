@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
+import { realpathSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fakeHost } from "@maestro/testkit";
@@ -13,6 +14,7 @@ import {
 	json,
 	world,
 } from "./fixtures/world";
+import { isMaestro } from "./session";
 
 afterEach(cleanup);
 
@@ -167,6 +169,15 @@ describe("the real maestro.ts", () => {
 		await Bun.sleep(SLOW_READER_MS);
 		expect((await new Response(child.stdout).text()).length).toBe(expected);
 	});
+
+	test("stops quietly, exiting 0, when the reader of stdout is gone", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const child = w.spawn(["watch", id, "--events"]);
+		await child.stdout.cancel();
+		expect(await child.exited).toBe(0);
+		expect(await new Response(child.stderr).text()).toBe("");
+	});
 });
 
 describe("resume", () => {
@@ -279,6 +290,18 @@ describe("kill", () => {
 				code: 0,
 			});
 			expect((await w.call(["prune", id, "--yes"])).code).toBe(0);
+		} finally {
+			other.kill();
+		}
+	});
+
+	test("a process running this program's own executable is maestro, any other is not", () => {
+		const sleep = realpathSync(Bun.which("sleep") ?? "sleep");
+		const other = Bun.spawn([sleep, "30"]);
+		try {
+			expect(isMaestro(other.pid, sleep)).toBe(true);
+			expect(isMaestro(other.pid, process.execPath)).toBe(false);
+			expect(isMaestro(process.pid, process.execPath)).toBe(false);
 		} finally {
 			other.kill();
 		}

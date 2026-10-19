@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readlinkSync } from "node:fs";
 import { lstat, mkdir, readdir } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import type { Host } from "@maestro/core/host";
@@ -28,14 +28,22 @@ const RUNTIME = "bun";
 
 const stem = (path: string) => basename(path, extname(path));
 
-/** Whether `pid` is a process whose executable, or script when it is the runtime's, is named `maestro`. */
-export function isMaestro(pid: number): boolean {
+/**
+ * Whether `pid` is a process of this program: its executable, or script when it is the runtime's, is named `maestro`,
+ * or it runs `self`, the executable of this process, when that is no runtime (a compiled release binary).
+ */
+export function isMaestro(pid: number, self = process.execPath): boolean {
 	try {
 		const [executable = "", script = ""] = readFileSync(
 			`/proc/${pid}/cmdline`,
 			"utf8",
 		).split("\0");
-		return stem(stem(executable) === RUNTIME ? script : executable) === COMMAND;
+		const named =
+			stem(stem(executable) === RUNTIME ? script : executable) === COMMAND;
+		return (
+			named ||
+			(stem(self) !== RUNTIME && readlinkSync(`/proc/${pid}/exe`) === self)
+		);
 	} catch {
 		return false;
 	}

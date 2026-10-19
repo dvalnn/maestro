@@ -36,7 +36,7 @@ import {
 	STDLIB_MODULE,
 } from "@maestro/sdk/loader";
 import * as stdlib from "@maestro/sdk/stdlib";
-import { usageError } from "./output";
+import { Diagnosed, usageError } from "./output";
 
 /** The `codeHash` of the code a worker reference names as it is now (ADR 0008). */
 export type CodeHash = (ref: WorkerRef) => Promise<string>;
@@ -331,6 +331,12 @@ function diagnosticOf(error: unknown): Diagnostic | undefined {
 	return source && isAbsolute(source.file) ? { ...rest, source } : rest;
 }
 
+/** The error for a module whose import threw `error`: the build diagnostic it carries, else `message`. */
+const importFailure = (error: unknown, message: string): Error => {
+	const diagnostic = diagnosticOf(error);
+	return diagnostic ? new Diagnosed([diagnostic]) : new Error(message);
+};
+
 type Entry = {
 	describe: () => unknown;
 	build: (name: string, params: unknown, context: unknown) => unknown;
@@ -449,7 +455,8 @@ async function entryOf(manifest: Manifest, dir: string): Promise<string> {
  * name the entry relative to the pack's directory, and their `codeHash` is the entry's, as `moduleLoader` hashes it:
  * the whole bundle (ADR 0008).
  * @throws Error for a missing directory or manifest, a manifest off its schema, a version out of range, an entry
- * outside the pack, or one that does not import, each naming the pack.
+ * outside the pack, or one that does not import, each naming the pack. Diagnosed when importing the entry raises a build
+ * diagnostic.
  */
 export async function openPack(
 	dir: string,
@@ -470,7 +477,8 @@ export async function openPack(
 	try {
 		namespace = await load();
 	} catch (error) {
-		throw new Error(
+		throw importFailure(
+			error,
 			`${what}: cannot load its entry '${manifest.entry}': ${messageOf(error)}\nRebuild the pack, or remove it from packs`,
 		);
 	}
@@ -503,7 +511,7 @@ export async function bundled(file: string): Promise<string> {
  * Loads a bare composition file: its own entry, bundled in memory so `codeHash` covers it, its imports and its SDK.
  * Worker references name the file relative to its directory, and their `codeHash` is `sha256:` and the hex SHA-256 of
  * the bundle. Its compositions take the file's name, less its extension, as their pack id.
- * @throws Error when the file does not bundle or import.
+ * @throws Error when the file does not bundle or import, and Diagnosed when importing it raises a build diagnostic.
  */
 export async function openFile(file: string): Promise<Bundle> {
 	const path = resolve(file);
@@ -516,7 +524,8 @@ export async function openFile(file: string): Promise<Bundle> {
 	try {
 		namespace = await imported(text);
 	} catch (error) {
-		throw new Error(
+		throw importFailure(
+			error,
 			`${what}: cannot load it: ${messageOf(error)}\nFix the file`,
 		);
 	}
