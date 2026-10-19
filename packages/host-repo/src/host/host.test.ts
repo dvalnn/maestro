@@ -164,6 +164,7 @@ describe("compose", () => {
 		]);
 	});
 
+	const task = { prompt: "go" };
 	const applied: NodeSpec = {
 		id: "ap",
 		kind: "apply",
@@ -171,15 +172,46 @@ describe("compose", () => {
 		lane: "root",
 		wires: { changeset: "cs.changeset" },
 	};
+	const writer: NodeSpec = {
+		id: "w",
+		kind: "agent",
+		config: { role: { name: "builder" }, lane: fresh },
+		literals: task,
+	};
+	/** An agent that resumes the version out of `from`. */
+	const resumer = (id: string, from: string, role = "builder"): NodeSpec => ({
+		id,
+		kind: "agent",
+		config: { role: { name: role }, lane: { mode: "extend", resume: true } },
+		literals: task,
+		lane: from,
+	});
+	const stepCheck = (lane: Record<string, unknown>): NodeSpec => ({
+		id: "lp/step",
+		kind: "check",
+		config: { lane, check: "hello" },
+		...(lane.mode === "extend" && { lane: "lp" }),
+	});
+	const checkOnFresh: NodeSpec = {
+		id: "w",
+		kind: "check",
+		config: { lane: fresh, check: "hello" },
+	};
+	/** A row: the nodes after `root` and its changeset, the result node, the loop `lp` and where its state starts. */
+	type Row = [string, NodeSpec[], string, string | undefined, string?];
 	test.each([
 		[
 			"an apply",
-			[{ ...applied, id: "w" }],
+			[{ ...applied, id: "w" }, resumer("r", "w")],
+			"r",
+			undefined,
 			"'r' resumes 'w', which carries 'w', a 'repo.apply' node and no agent session",
 		],
 		[
 			"a check on a fresh lane",
-			[{ id: "w", kind: "check", config: { lane: fresh, check: "hello" } }],
+			[checkOnFresh, resumer("r", "w")],
+			"r",
+			undefined,
 			"'r' resumes 'w', which carries 'w', a check on a 'fresh' lane and no agent session",
 		],
 		[
@@ -192,14 +224,51 @@ describe("compose", () => {
 					config: { lane: { mode: "extend" }, check: "hello" },
 					lane: "ap",
 				},
+				resumer("r", "w"),
 			],
+			"r",
+			undefined,
 			"'r' resumes 'w', which carries 'ap', a 'repo.apply' node and no agent session",
 		],
-	] as [string, NodeSpec[], string][])(
-		"a resume of the version of %s is a HOST error",
-		async (_, writers, message) => {
+		[
+			"loop state started by an apply, resumed by the step",
+			[applied, resumer("lp/step", "lp")],
+			"lp",
+			"ap",
+			"'lp/step' resumes 'lp', which carries 'ap', a 'repo.apply' node and no agent session",
+		],
+		[
+			"loop state, resumed by a step on another harness than its starter",
+			[writer, resumer("lp/step", "lp", "other")],
+			"lp",
+			"w",
+			"'lp/step' runs on harness 'other' and resumes 'lp', written on harness 'stub'",
+		],
+		[
+			"loop state whose step is a check on a fresh lane",
+			[writer, stepCheck(fresh), resumer("r", "lp")],
+			"r",
+			"w",
+			"'r' resumes 'lp', which carries 'lp/step', a check on a 'fresh' lane and no agent session",
+		],
+		[
+			"loop state whose step is a check extending it, started by an apply",
+			[applied, stepCheck({ mode: "extend" }), resumer("r", "lp")],
+			"r",
+			"ap",
+			"'r' resumes 'lp', which carries 'ap', a 'repo.apply' node and no agent session",
+		],
+		[
+			"loop state started by an agent on the same harness, resumed by the step",
+			[writer, resumer("lp/step", "lp")],
+			"lp",
+			"w",
+			undefined,
+		],
+	] as Row[])(
+		"a resume of the version of %s",
+		async (_, nodes, result, start, message) => {
 			const { host } = stubHost(() => [OK]);
-			const task = { prompt: "go" };
 			const specs: NodeSpec[] = [
 				{
 					id: "root",
@@ -208,20 +277,10 @@ describe("compose", () => {
 					literals: task,
 				},
 				{ id: "cs", kind: "changeset", config: {}, lane: "root" },
-				...writers,
-				{
-					id: "r",
-					kind: "agent",
-					config: {
-						role: { name: "builder" },
-						lane: { mode: "extend", resume: true },
-					},
-					literals: task,
-					lane: "w",
-				},
+				...nodes,
 			];
 			const composed = await compose({
-				ir: irOf(host, specs, "r"),
+				ir: irOf(host, specs, result, start ? { id: "lp", start } : undefined),
 				config: configOf(toyTarget()),
 				core: CORE_CONFIG,
 				packs: {},
@@ -231,29 +290,72 @@ describe("compose", () => {
 			});
 			expect(
 				composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.message]),
-			).toEqual([["HOST.resume", message]]);
+			).toEqual(message ? [["HOST.resume", message]] : []);
 		},
 	);
 
+	/** An agent that extends the version out of `from`, without resuming. */
+	const extender = (id: string, from: string): NodeSpec => ({
+		...resumer(id, from),
+		config: { role: { name: "builder" }, lane: { mode: "extend" } },
+	});
+	const innerCheck: NodeSpec = {
+		id: "lp/chk",
+		kind: "check",
+		config: { lane: { mode: "extend" }, check: "hello" },
+		lane: "lp",
+	};
 	test.each([
 		[
-			"agent",
-			{ role: { name: "builder" }, lane: fresh, refs: {} },
-			"config 'refs' is now 'attachments'",
+			"a step and a node after the loop extend its lane",
+			[writer, extender("lp/step", "lp"), extender("r", "lp")],
+			[],
 		],
 		[
-			"apply",
-			{ lane: fresh, strategy: "ff" },
-			"config strategy 'ff' is now 'clean'",
+			"two nodes after the loop extend its lane",
+			[
+				writer,
+				extender("lp/step", "lp"),
+				extender("r", "lp"),
+				extender("s", "lp"),
+			],
+			[
+				"'s' extends 'lp.lane', which 'r' extends too; a version is extended at most once",
+			],
 		],
-	])(
-		"a retired %s config shape is refused, naming its replacement",
-		(kind, config, message) => {
+		[
+			"two nodes in the loop extend its state",
+			[writer, extender("lp/step", "lp"), innerCheck],
+			[
+				"'lp/chk' extends 'lp.lane', which 'lp/step' extends too; a version is extended at most once",
+			],
+		],
+	] as [string, NodeSpec[], string[]][])(
+		"when %s, compose refuses only a double extension of one side",
+		async (_, nodes, messages) => {
 			const { host } = stubHost(() => [OK]);
-			const found = host.kinds.find((k) => k.name === `repo.${kind}`);
-			expect(() =>
-				found?.ports({ id: "x", kind: `repo.${kind}`, config }),
-			).toThrow(`${message}\nRebuild the composition with the current SDK`);
+			const specs: NodeSpec[] = [
+				{
+					id: "root",
+					kind: "agent",
+					config: { role: { name: "builder" }, lane: fresh },
+					literals: task,
+				},
+				...nodes,
+			];
+			const result = nodes.some((n) => n.id === "r") ? "r" : "lp";
+			const composed = await compose({
+				ir: irOf(host, specs, result, { id: "lp", start: "w" }),
+				config: configOf(toyTarget()),
+				core: CORE_CONFIG,
+				packs: {},
+				hosts: [host],
+				loadCode: noCode,
+				caps: {},
+			});
+			expect(
+				composed.ok ? [] : composed.diagnostics.map((d) => d.message),
+			).toEqual(messages);
 		},
 	);
 

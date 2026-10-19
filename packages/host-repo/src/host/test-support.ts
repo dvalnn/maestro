@@ -13,7 +13,13 @@ import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
 import type { Host, HostSetup } from "@maestro/core/host";
 import { concertDirs, openRecord, perform } from "@maestro/core/perform";
-import { type HostNode, type Ir, type IrEdge, parseIr } from "@maestro/ir";
+import {
+	type HostNode,
+	type Ir,
+	type IrEdge,
+	type IrNode,
+	parseIr,
+} from "@maestro/ir";
 import {
 	type Harness,
 	type HarnessRequest,
@@ -21,6 +27,7 @@ import {
 	stubHarness,
 } from "../harness/index";
 import { runProcesses } from "../sandbox/bubblewrap";
+import { LANE_PORT } from "./config";
 import { repoHost } from "./index";
 import { openTarget } from "./store";
 
@@ -182,15 +189,65 @@ function repoNode(
 	return { node, edges: [...edges, ...tolerate] };
 }
 
-export function irOf(host: Host, specs: NodeSpec[], result: string): Ir {
+/** A loop `id` around the node `id/step`, its state the step's out ports and started over the lane port from `start`. */
+type LoopSpec = { id: string; start: string };
+
+const SEED: Record<string, unknown> = {
+	string: "",
+	array: [],
+	object: {},
+};
+
+function loopOf(loop: LoopSpec, step: HostNode | undefined) {
+	const state = step?.out ?? {};
+	const node: IrNode = {
+		id: loop.id,
+		kind: "loop",
+		cardinality: { upTo: 2 },
+		in: state,
+		inner: {
+			...state,
+			ok: { type: "boolean" },
+			reason: { type: "string" },
+			index: { type: "integer" },
+		},
+		out: state,
+		literals: Object.fromEntries(
+			Object.entries(state)
+				.filter(([port]) => port !== LANE_PORT)
+				.map(([port, type]) => [port, SEED[(type as { type: string }).type]]),
+		),
+		members: { result: `${loop.id}/step` },
+		test: { at: "start", port: { node: loop.id, port: "ok" } },
+	};
+	const start: IrEdge = {
+		kind: "data",
+		from: { node: loop.start, port: LANE_PORT },
+		to: { node: loop.id, port: LANE_PORT },
+	};
+	return { node, start };
+}
+
+export function irOf(
+	host: Host,
+	specs: NodeSpec[],
+	result: string,
+	loop?: LoopSpec,
+): Ir {
 	const built = specs.map((s) => repoNode(host, s));
+	const looped = loop
+		? loopOf(loop, built.find((b) => b.node.id === `${loop.id}/step`)?.node)
+		: undefined;
 	const parsed = parseIr({
 		irVersion: "1.0",
 		composition: { id: "toy", version: "0.1.0", pack: "test" },
 		emitter: { name: "hand", version: "0.1.0" },
 		scopes: [],
-		nodes: built.map((b) => b.node),
-		edges: built.flatMap((b) => b.edges),
+		nodes: [...built.map((b) => b.node), ...(looped ? [looped.node] : [])],
+		edges: [
+			...built.flatMap((b) => b.edges),
+			...(looped ? [looped.start] : []),
+		],
 		result: { node: result },
 	});
 	if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));

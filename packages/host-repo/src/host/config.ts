@@ -317,46 +317,6 @@ export type RepoSetup = {
 
 const ajv = validator();
 
-type Loose = Record<string, unknown>;
-const isLoose = (value: unknown): value is Loose =>
-	typeof value === "object" && value !== null;
-
-/** A config shape the host once took: how to spot it, and the message that says what replaced it. */
-type Retired = readonly [found: (config: Loose) => boolean, message: string];
-
-const hasKey = (key: string, message: string): Retired => [
-	(config) => Object.hasOwn(config, key),
-	message,
-];
-
-const REBUILD = "Rebuild the composition with the current SDK";
-
-const RETIRED_AGENT: Retired[] = [
-	hasKey("refs", `config 'refs' is now 'attachments'\n${REBUILD}`),
-];
-
-const RETIRED_APPLY: Retired[] = [
-	[
-		(config) => config.strategy === "ff",
-		`config strategy 'ff' is now 'clean'\n${REBUILD}`,
-	],
-];
-
-/**
- * `config`, once it holds none of the `retired` shapes.
- * @throws Error naming the shape and what replaced it.
- */
-function parsedNode<T>(
-	schema: JsonSchema,
-	config: unknown,
-	retired: Retired[],
-) {
-	const loose = isLoose(config) ? config : {};
-	const [, message] = retired.find(([found]) => found(loose)) ?? [];
-	if (message) throw new Error(message);
-	return parsed<T>(schema, config ?? {}, "config");
-}
-
 /**
  * `value`, once it matches `schema`.
  * @throws Error naming `what` and each way it does not.
@@ -427,10 +387,10 @@ export function repoSetup(setup: HostSetup): RepoSetup {
 }
 
 export const agentConfig = (config: unknown): AgentConfig =>
-	parsedNode(AGENT_CONFIG, config, RETIRED_AGENT);
+	parsed(AGENT_CONFIG, config ?? {}, "config");
 
 export const applyConfig = (config: unknown): ApplyConfig =>
-	parsedNode(APPLY_CONFIG, config, RETIRED_APPLY);
+	parsed(APPLY_CONFIG, config ?? {}, "config");
 
 export const commitsConfig = (config: unknown): CommitsConfig =>
 	parsed(COMMITS_CONFIG, config ?? {}, "config");

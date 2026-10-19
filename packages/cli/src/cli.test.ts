@@ -1197,4 +1197,18 @@ describe("prune", () => {
 		);
 		expect(await ids(w)).toEqual([id]);
 	});
+
+	test("a release failure that ends in its own fix gets no second one", async () => {
+		const w = await world();
+		const host = hostOf(ECHO, {
+			release: () =>
+				Promise.reject(new Error("cannot prune\nCheck x, then retry")),
+		});
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
+		const pruned = await w.call(["prune", id, "--yes"], { hosts: [host] });
+		expect(pruned.err).toContain(
+			"could not release it: cannot prune\nCheck x, then retry",
+		);
+		expect(pruned.err).not.toContain("Fix that");
+	});
 });

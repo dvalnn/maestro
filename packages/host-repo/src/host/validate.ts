@@ -5,6 +5,7 @@ import {
 	boundOf,
 	type Diagnostic,
 	type GraphIndex,
+	type GroupNode,
 	type HostNode,
 	type IrNode,
 	isGroup,
@@ -102,43 +103,59 @@ function unextendable(
 	};
 }
 
+/** The findings of one node extending `source`; `first` maps each extended output to its first extender. */
+function extensionFindings(
+	graph: GraphIndex,
+	node: HostNode,
+	source: LaneSource,
+	first: Map<string, string>,
+): Finding[] {
+	const refused = unextendable(graph, node, source);
+	if (refused) return [refused];
+	if ("literal" in source) return [];
+	const from = `${source.node}.${source.port}`;
+	// A loop's state port is read inside its body and its output outside it; the two never write together.
+	const side = graph.groupsOf(node.id).includes(source.node) ? "inner" : "out";
+	const key = `${from}:${side}`;
+	const other = first.get(key);
+	first.set(key, node.id);
+	const found: Finding[] = [];
+	if (other !== undefined)
+		found.push({
+			code: "HOST.lane",
+			node: node.id,
+			message: `'${node.id}' extends '${from}', which '${other}' extends too; a version is extended at most once`,
+			hint: `Fork '${from}' in one of '${other}' and '${node.id}'`,
+		});
+	const repeated = repeatedGroup(graph, node.id, source.node);
+	if (repeated)
+		found.push({
+			code: "HOST.lane",
+			node: node.id,
+			message: `'${node.id}' extends '${from}' once per iteration of group '${repeated}'; a version is extended at most once`,
+			hint: `Fork '${from}' in '${node.id}', or extend it outside '${repeated}'`,
+		});
+	return found;
+}
+
 /** Lane extensions that would extend one version twice: two nodes extending one output, or one node once per iteration. */
 function doubleExtends(
 	graph: GraphIndex,
 	chained: [RepoNode, LaneSource][],
 ): Finding[] {
-	const found: Finding[] = [];
 	const first = new Map<string, string>();
-	for (const [{ node }, source] of chained) {
-		const refused = unextendable(graph, node, source);
-		if (refused) found.push(refused);
-		if (refused || "literal" in source) continue;
-		const from = `${source.node}.${source.port}`;
-		const other = first.get(from);
-		if (other !== undefined)
-			found.push({
-				code: "HOST.lane",
-				node: node.id,
-				message: `'${node.id}' extends '${from}', which '${other}' extends too; a version is extended at most once`,
-				hint: `Fork '${from}' in one of '${other}' and '${node.id}'`,
-			});
-		first.set(from, node.id);
-		const repeated = graph
-			.groupsOf(node.id)
-			.find(
-				(g) =>
-					!(source.node === g || source.node.startsWith(`${g}/`)) &&
-					repeats(graph, g),
-			);
-		if (repeated)
-			found.push({
-				code: "HOST.lane",
-				node: node.id,
-				message: `'${node.id}' extends '${from}' once per iteration of group '${repeated}'; a version is extended at most once`,
-				hint: `Fork '${from}' in '${node.id}', or extend it outside '${repeated}'`,
-			});
-	}
-	return found;
+	return chained.flatMap(([{ node }, source]) =>
+		extensionFindings(graph, node, source, first),
+	);
+}
+
+/** The group around `id`, other than one holding `source`, that runs it more than once. */
+function repeatedGroup(graph: GraphIndex, id: string, source: string) {
+	return graph
+		.groupsOf(id)
+		.find(
+			(g) => !(source === g || source.startsWith(`${g}/`)) && repeats(graph, g),
+		);
 }
 
 function repeats(graph: GraphIndex, id: string): boolean {
@@ -146,23 +163,55 @@ function repeats(graph: GraphIndex, id: string): boolean {
 	return isGroup(group) && boundOf(group.cardinality) > 1;
 }
 
+/** What writes a version: an agent node, or a description of the node that is not one. */
+type Writer = HostNode | string;
+
 /**
- * The agent whose session the version out of node `id` carries: the agent itself, or the one behind the version a
- * extending check extended. A string says what the node is instead, and `undefined` that it is not known at compose.
+ * The writers of the version at `port` of node `id`, followed through extending checks and loop state:
+ * - an agent is its own writer, and an extending check has the writers of the version it extended
+ * - a loop's state has the writers of its initial state and of its step's result
+ * - any other node is described by a string, and one not known at compose has no writer listed
  */
-function sessionWriter(
+function sessionWriters(
 	graph: GraphIndex,
 	id: string,
-): HostNode | string | undefined {
+	port: string,
+	seen = new Set<string>(),
+): Writer[] {
+	const key = `${id}.${port}`;
 	const node = graph.nodes.get(id);
-	if (!node || !isHostNode(node)) return undefined;
-	if (node.kind === AGENT_KIND) return node;
-	if (node.kind !== CHECK_KIND) return `'${id}', a '${node.kind}' node`;
+	if (!node || seen.has(key)) return [];
+	seen.add(key);
+	if (node.kind === "loop") return loopWriters(graph, node, port, seen);
+	if (!isHostNode(node)) return [];
+	if (node.kind === AGENT_KIND) return [node];
+	if (node.kind !== CHECK_KIND) return [`'${id}', a '${node.kind}' node`];
 	const { lane } = checkConfig(node.config);
 	if (lane.mode !== "extend")
-		return `'${id}', a check on a '${lane.mode}' lane`;
+		return [`'${id}', a check on a '${lane.mode}' lane`];
 	const from = laneSource(graph, node);
-	return from && "node" in from ? sessionWriter(graph, from.node) : undefined;
+	return from && "node" in from
+		? sessionWriters(graph, from.node, from.port, seen)
+		: [];
+}
+
+function loopWriters(
+	graph: GraphIndex,
+	loop: GroupNode,
+	port: string,
+	seen: Set<string>,
+): Writer[] {
+	const initial = graph
+		.edgesInto(loop.id)
+		.find((e) => e.kind === "data" && e.to.port === port);
+	return [
+		...(initial?.kind === "data"
+			? sessionWriters(graph, initial.from.node, initial.from.port, seen)
+			: []),
+		...Object.values(loop.members).flatMap((step) =>
+			sessionWriters(graph, step, port, seen),
+		),
+	];
 }
 
 /** Why `r` cannot resume the session of the version it extends from `source`, when that is known at compose. */
@@ -175,17 +224,17 @@ function resumeProblem(
 	if (!source) return undefined;
 	if ("literal" in source)
 		return `'${r.node.id}' resumes a version of another concert`;
-	const writer = sessionWriter(graph, source.node);
-	if (typeof writer === "string")
-		return `'${r.node.id}' resumes '${source.node}', which carries ${writer} and no agent session`;
-	if (!writer) return undefined;
-	const wrote = harnessOf(
-		{ node: writer, kind: "agent", config: agentConfig(writer.config) },
-		setup,
-	);
 	const own = harnessOf(r, setup);
-	if (wrote && own && wrote !== own)
-		return `'${r.node.id}' runs on harness '${own}' and resumes '${source.node}', written on harness '${wrote}'`;
+	for (const writer of sessionWriters(graph, source.node, source.port)) {
+		if (typeof writer === "string")
+			return `'${r.node.id}' resumes '${source.node}', which carries ${writer} and no agent session`;
+		const wrote = harnessOf(
+			{ node: writer, kind: "agent", config: agentConfig(writer.config) },
+			setup,
+		);
+		if (wrote && own && wrote !== own)
+			return `'${r.node.id}' runs on harness '${own}' and resumes '${source.node}', written on harness '${wrote}'`;
+	}
 	return undefined;
 }
 

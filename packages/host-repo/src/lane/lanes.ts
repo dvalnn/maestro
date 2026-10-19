@@ -65,6 +65,8 @@ export interface Lanes {
 	fresh(base: string, at: Version): Promise<Lane>;
 	/** A new lane holding `v`'s content. Any number of times, from any concert (lane refs, D-27). */
 	fork(v: Version, at: Version): Promise<Lane>;
+	/** `fork` for a node that only reads; the two differ in what a failure calls it. */
+	read(v: Version, at: Version): Promise<Lane>;
 	/**
 	 * Continues `v`'s working copy in place (ignored files kept) as node instance `at`'s lane. When `at` extended `v`
 	 * before, it re-opens `v`'s sealed content instead.
@@ -140,14 +142,125 @@ async function spawnGit(
 	return { out, err, code };
 }
 
+/** A git command that exited non-zero: `stderr` is git's own words, `where` the repository it ran against. */
+class GitError extends Error {
+	constructor(
+		readonly cmd: string | undefined,
+		readonly stderr: string,
+		readonly where: string | undefined,
+	) {
+		super(`git ${cmd} failed: ${stderr}`);
+	}
+}
+
+/** The repository git ran against: `-C`'s directory, else the store's `--git-dir`. */
+function ranAgainst(args: string[]) {
+	const c = args.indexOf("-C");
+	if (c >= 0) return args[c + 1];
+	return args
+		.find((a) => a.startsWith("--git-dir="))
+		?.slice("--git-dir=".length);
+}
+
 async function git(...a: Parameters<typeof spawnGit>): Promise<string> {
 	const { out, err, code } = await spawnGit(...a);
 	const [args] = a;
 	if (code !== 0) {
 		const cmd = args.find((a, i) => !a.startsWith("-") && args[i - 1] !== "-C");
-		throw new Error(`git ${cmd} failed: ${err.trim()}`);
+		throw new GitError(cmd, err.trim(), ranAgainst(args));
 	}
 	return out;
+}
+
+type FsError = Error & { code: string; path?: string };
+const isFsError = (e: unknown): e is FsError =>
+	e instanceof Error && typeof (e as FsError).code === "string";
+
+/** Errnos that mean the lane root cannot be written. */
+const UNWRITABLE = new Set(["EACCES", "EPERM", "EROFS", "ENOSPC", "ENOTDIR"]);
+
+/** What went wrong of a raw failure, where it happened (none for a missing git) and the fix. */
+function reasonOf(e: unknown, root: string) {
+	if (e instanceof GitError) {
+		const at = e.where ?? root;
+		return {
+			at,
+			why: `git ${e.cmd}: ${e.stderr.replace(/^(fatal|error): /, "")}`,
+			fix: `Check that ${at} is an intact git repository, then retry`,
+		};
+	}
+	if (!isFsError(e)) return undefined;
+	if (e.code === "ENOENT" && e.path === "git")
+		return {
+			at: undefined,
+			why: "git was not found",
+			fix: "Install git, or put it on PATH",
+		};
+	const at = e.path ?? root;
+	return {
+		at,
+		// "EACCES: permission denied, mkdir '/x'" reads as "permission denied"
+		why: e.message.replace(/^[A-Z]+: /, "").replace(/, \w+( '.*)?$/s, ""),
+		fix: UNWRITABLE.has(e.code)
+			? `Check that ${root} is writable and has free space, then retry`
+			: `Check that ${at} still exists and that nothing else is changing ${root}, then retry`,
+	};
+}
+
+/**
+ * The failure of `what`, as the user reads it: what failed and where, then the fix. A raw fs or git error is
+ * rewritten; an error the lanes raised on purpose is returned as it is.
+ */
+export function describeFailure(
+	what: string,
+	e: unknown,
+	root: string,
+): unknown {
+	const r = reasonOf(e, root);
+	if (!r) return e;
+	const where = r.at ? ` at ${r.at}` : "";
+	return new Error(`cannot ${what}${where}: ${r.why}\n${r.fix}`);
+}
+
+/** What each method does in the user's words, given its arguments. */
+type Names = Record<string, (args: unknown[]) => string>;
+
+const LANES_NAMES: Names = {
+	fresh: ([, at]) => `open a fresh lane for ${at}`,
+	fork: ([v, at]) => `fork the lane of ${v} for ${at}`,
+	read: ([v, at]) => `read the lane of ${v} for ${at}`,
+	extend: ([v, at]) => `extend the lane of ${v} for ${at}`,
+	commits: ([, , at]) => `record the target commits as ${at}`,
+	changeset: ([v]) => `read the changeset of ${v}`,
+	diskUse: ([concert]) => `measure the disk use of concert ${concert}`,
+	prune: ([concert]) => `prune concert ${concert}`,
+};
+
+const laneNames = (at: Version): Names => ({
+	changes: () => `list the changes of lane ${at}`,
+	seal: () => `seal lane ${at}`,
+	apply: () => `apply a changeset to lane ${at}`,
+	discard: () => `discard lane ${at}`,
+});
+
+/** `obj` with each method's raw failures run through `describeFailure`, so no call site wraps its own. */
+function guarded<T extends object>(obj: T, root: string, names: Names): T {
+	const out: Record<string, unknown> = { ...(obj as Record<string, unknown>) };
+	for (const [op, fn] of Object.entries(obj)) {
+		if (typeof fn !== "function") continue;
+		out[op] = (...args: unknown[]) => {
+			const fail = (e: unknown) => {
+				throw describeFailure(names[op]?.(args) ?? op, e, root);
+			};
+			try {
+				const r = fn(...args);
+				return r instanceof Promise ? r.catch(fail) : r;
+			} catch (e) {
+				return fail(e);
+			}
+		};
+	}
+	return out as T;
 }
 
 const value = async (...a: Parameters<typeof git>) => (await git(...a)).trim();
@@ -462,36 +575,40 @@ export function openLanes(options: LanesOptions): Lanes {
 			]);
 			return { tree, changed };
 		};
-		return {
-			dir,
-			readOnly: [{ src: gitdir }, { src: join(store, "objects") }],
-			checkedOut,
-			changes: async () =>
-				(await staged()).changed.map((l) => l.slice(l.indexOf("\t") + 1)),
-			async seal() {
-				const { tree, changed } = await staged();
-				const nested = changed
-					.filter((l) => l.split(" ")[1] === "160000")
-					.map((l) => l.split("\t")[1]);
-				if (nested.length)
-					throw new Error(
-						`${at}: nested repository at ${nested.join(", ")}; its files cannot be sealed. Remove its .git directory`,
+		return guarded<Lane>(
+			{
+				dir,
+				readOnly: [{ src: gitdir }, { src: join(store, "objects") }],
+				checkedOut,
+				changes: async () =>
+					(await staged()).changed.map((l) => l.slice(l.indexOf("\t") + 1)),
+				async seal() {
+					const { tree, changed } = await staged();
+					const nested = changed
+						.filter((l) => l.split(" ")[1] === "160000")
+						.map((l) => l.split("\t")[1]);
+					if (nested.length)
+						throw new Error(
+							`${at}: nested repository at ${nested.join(", ")}; its files cannot be sealed. Remove its .git directory`,
+						);
+					const commit = changed.length
+						? await value(G("commit-tree", tree, "-p", head, "-m", at))
+						: head;
+					const r = refs(at);
+					await createOnce(
+						[`create ${r.version} ${commit}`, `create ${r.base} ${base}`],
+						`${at} is already sealed`,
 					);
-				const commit = changed.length
-					? await value(G("commit-tree", tree, "-p", head, "-m", at))
-					: head;
-				const r = refs(at);
-				await createOnce(
-					[`create ${r.version} ${commit}`, `create ${r.base} ${base}`],
-					`${at} is already sealed`,
-				);
-				point(commit);
-				return at;
+					point(commit);
+					return at;
+				},
+				apply: (changeset, strategy = "3way") =>
+					applyChangeset(lg, changeset, strategy),
+				discard: () => rmSync(home, { recursive: true, force: true }),
 			},
-			apply: (changeset, strategy = "3way") =>
-				applyChangeset(lg, changeset, strategy),
-			discard: () => rmSync(home, { recursive: true, force: true }),
-		};
+			root,
+			laneNames(at),
+		);
 	}
 
 	// A working copy checked out from `head`, narrowed to `sparse`. This is the host's only git call on a lane's git
@@ -524,77 +641,87 @@ export function openLanes(options: LanesOptions): Lanes {
 		return bytesOnDisk(concertDir(concert));
 	}
 
-	return {
-		async fresh(base, at) {
-			parse(at);
-			const sha = await importBase(base);
-			await checkout(at, sha);
-			return checkedOutLane(at, sha, sha);
-		},
-		async fork(v, at) {
-			const { commit, base } = await resolve(v);
-			await checkout(at, commit);
-			return checkedOutLane(at, commit, base);
-		},
-		async extend(v, at) {
-			if (parse(v).concert !== parse(at).concert)
-				throw new Error(
-					`${at} cannot extend ${v}: a lane extends only versions of its own concert. Fork it instead`,
-				);
-			const { commit, base } = await resolve(v);
-			const r = refs(v);
-			if (await exists(r.extendedBy(at))) {
-				await checkout(at, commit);
-				return checkedOutLane(at, commit, base);
-			}
-			const from = paths(v).home;
-			const to = (await claim(at)).home;
-			try {
-				const { extended } = r;
+	async function forkLane(v: Version, at: Version) {
+		const { commit, base } = await resolve(v);
+		await checkout(at, commit);
+		return checkedOutLane(at, commit, base);
+	}
+
+	return guarded<Lanes>(
+		{
+			async fresh(base, at) {
+				parse(at);
+				const sha = await importBase(base);
+				await checkout(at, sha);
+				return checkedOutLane(at, sha, sha);
+			},
+			fork: forkLane,
+			read: forkLane,
+			async extend(v, at) {
+				if (parse(v).concert !== parse(at).concert)
+					throw new Error(
+						`${at} cannot extend ${v}: a lane extends only versions of its own concert. Fork it instead`,
+					);
+				const { commit, base } = await resolve(v);
+				const r = refs(v);
+				if (await exists(r.extendedBy(at))) {
+					await checkout(at, commit);
+					return checkedOutLane(at, commit, base);
+				}
+				const from = paths(v).home;
+				const to = (await claim(at)).home;
+				try {
+					const { extended } = r;
+					await createOnce(
+						[
+							`create ${extended} ${commit}`,
+							`create ${r.extendedBy(at)} ${commit}`,
+						],
+						`version ${v} is already extended`,
+					);
+					try {
+						renameSync(from, to); // replaces the empty claimed directory
+					} catch (e) {
+						await deleteRefs([extended, r.extendedBy(at)]);
+						throw e;
+					}
+				} catch (e) {
+					rmdirSync(to);
+					throw e;
+				}
+				return open(at, commit, base, false);
+			},
+			async commits(revs, base, at) {
+				parse(at);
+				const found = await series(revs, base);
+				const r = refs(at);
+				await takeBack(at);
 				await createOnce(
 					[
-						`create ${extended} ${commit}`,
-						`create ${r.extendedBy(at)} ${commit}`,
+						`create ${r.version} ${found.head}`,
+						`create ${r.base} ${found.base}`,
 					],
-					`version ${v} is already extended`,
+					`${at} is already sealed`,
 				);
-				try {
-					renameSync(from, to); // replaces the empty claimed directory
-				} catch (e) {
-					await deleteRefs([extended, r.extendedBy(at)]);
-					throw new Error(`the lane of ${v} cannot be moved: ${e}`);
-				}
-			} catch (e) {
-				rmdirSync(to);
-				throw e;
-			}
-			return open(at, commit, base, false);
+			},
+			async changeset(v) {
+				const { commit, base } = await resolve(v);
+				const mbox = await git(
+					G("format-patch", "--stdout", "--no-signature", `${base}..${commit}`),
+				);
+				return { base, patches: splitMbox(mbox) };
+			},
+			diskUse,
+			async prune(concert) {
+				const freed = await diskUse(concert);
+				await deleteRefs(await refsUnder(`refs/maestro/${enc(concert)}/`));
+				rmSync(concertDir(concert), { recursive: true, force: true });
+				return freed;
+			},
 		},
-		async commits(revs, base, at) {
-			parse(at);
-			const found = await series(revs, base);
-			const r = refs(at);
-			await takeBack(at);
-			await createOnce(
-				[`create ${r.version} ${found.head}`, `create ${r.base} ${found.base}`],
-				`${at} is already sealed`,
-			);
-		},
-		async changeset(v) {
-			const { commit, base } = await resolve(v);
-			const mbox = await git(
-				G("format-patch", "--stdout", "--no-signature", `${base}..${commit}`),
-			);
-			return { base, patches: splitMbox(mbox) };
-		},
-		diskUse,
-		async prune(concert) {
-			const freed = await diskUse(concert);
-			await deleteRefs(await refsUnder(`refs/maestro/${enc(concert)}/`));
-			rmSync(concertDir(concert), { recursive: true, force: true });
-			return freed;
-		},
-	};
+		root,
+		LANES_NAMES,
+	);
 }
 
 /** Each patch starts with format-patch's fixed `From <sha> Mon Sep 17 ...` line, which no diff line can match. */

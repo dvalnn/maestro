@@ -63,10 +63,9 @@ async function openLane(
 	const version = laneVersion(value);
 	if (input.mode === "extend")
 		return { lane: await store.lanes.extend(version, at), read: false };
-	return {
-		lane: await store.lanes.fork(version, at),
-		read: input.mode === "read",
-	};
+	const read = input.mode === "read";
+	const open = read ? store.lanes.read : store.lanes.fork;
+	return { lane: await open(version, at), read };
 }
 
 /** A running instance of `concert`: its live state, and where its progress events go. */

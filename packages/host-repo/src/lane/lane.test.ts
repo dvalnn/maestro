@@ -17,6 +17,7 @@ import { dirname, join, relative } from "node:path";
 import { commitTo } from "../host/test-support";
 import { bubblewrap } from "../sandbox/index";
 import { type Changeset, type Lane, openLanes } from "./index";
+import { describeFailure } from "./lanes";
 
 const dirs: string[] = [];
 const tmp = (name: string) => {
@@ -267,11 +268,106 @@ describe("fork and extend", () => {
 		const home = join(first.dir, "..");
 		renameSync(home, `${home}.away`);
 		await expect(lanes.extend("c1.build", "c1.fix")).rejects.toThrow(
-			/cannot be moved/,
+			`cannot extend the lane of c1.build for c1.fix at ${home}: no such file or directory`,
 		);
 		renameSync(`${home}.away`, home);
 		const next = await lanes.extend("c1.build", "c1.fix");
 		expect(readFileSync(join(next.dir, "a.txt"), "utf8")).toBe("v1\n");
+	});
+
+	const errno = (code: string, message: string, path: string) =>
+		Object.assign(new Error(`${code}: ${message}`), { code, path });
+
+	test.each([
+		["EACCES", "permission denied, mkdir '/r/x'", "/r/x", "writable"],
+		["ENOSPC", "no space left on device, write", "/r/x", "writable"],
+		["ENOTDIR", "not a directory, mkdir '/r/x'", "/r/x", "writable"],
+		["EBUSY", "resource busy or locked, rename '/r/x'", "/r/x", "still exists"],
+		[
+			"ENOENT",
+			"no such file or directory, rename '/r/x'",
+			"/r/x",
+			"still exists",
+		],
+	])("a %s is named, with the fix that fits it", (code, message, path, fix) => {
+		const e = describeFailure(
+			"seal lane c1.a",
+			errno(code, message, path),
+			"/r",
+		);
+		expect(String(e instanceof Error && e.message)).toBe(
+			`cannot seal lane c1.a at /r/x: ${message.replace(/, \w+( '.*')?$/, "")}\n${
+				fix === "writable"
+					? "Check that /r is writable and has free space, then retry"
+					: "Check that /r/x still exists and that nothing else is changing /r, then retry"
+			}`,
+		);
+	});
+
+	test("a missing git is not read as a path", () => {
+		const e = describeFailure(
+			"seal lane c1.a",
+			errno("ENOENT", "no such file or directory, posix_spawn 'git'", "git"),
+			"/r",
+		);
+		expect(e instanceof Error && e.message).toBe(
+			"cannot seal lane c1.a: git was not found\nInstall git, or put it on PATH",
+		);
+	});
+
+	test("an error the lanes raise on purpose is not rewritten", () => {
+		const own = new Error("c1.a is already sealed");
+		expect(describeFailure("seal lane c1.a", own, "/r")).toBe(own);
+	});
+
+	test("a git failure names the repository git ran against, and not its raw words", async () => {
+		const broken = tmp("root");
+		mkdirSync(join(broken, "store.git"));
+		const store = await openLanes({ target: toyTarget(), root: broken })
+			.fresh("main", "c1.a")
+			.catch((e) => e.message);
+		expect(store).toMatch(
+			/^cannot open a fresh lane for c1\.a at .*store\.git: git .*\nCheck that .*store\.git is an intact git repository, then retry$/,
+		);
+		expect(store).not.toMatch(/fatal:|failed: /);
+
+		const target = tmp("not-a-repo");
+		const elsewhere = await openLanes({ target, root: tmp("root") })
+			.fresh("main", "c1.a")
+			.catch((e) => e.message);
+		expect(elsewhere).toContain(`at ${target}: git rev-parse`);
+		expect(elsewhere).toContain(`Check that ${target} is an intact git`);
+	});
+
+	test("an unwritable lane store gives the wrapped message", async () => {
+		const blocker = join(tmp("blocker"), "file");
+		writeFileSync(blocker, "");
+		const unwritable = openLanes({
+			target: toyTarget(),
+			root: join(blocker, "lanes"),
+		});
+		const message = await unwritable
+			.fresh("main", "c1.a")
+			.catch((e) => e.message);
+		expect(message).toMatch(
+			/^cannot open a fresh lane for c1\.a at .*file\/lanes: not a directory\nCheck that .*file\/lanes is writable and has free space, then retry$/,
+		);
+		expect(message).not.toMatch(/Error|ENOTDIR|errno/);
+	});
+
+	test("a read says read where a fork says fork", async () => {
+		const root = tmp("root");
+		const lanes = openLanes({ target: toyTarget(), root });
+		await sealed(lanes, "c1.build");
+		const lanesDir = join(root, "lanes");
+		rmSync(lanesDir, { recursive: true });
+		writeFileSync(lanesDir, "");
+		await expect(lanes.read("c1.build", "c1.look")).rejects.toThrow(
+			"cannot read the lane of c1.build for c1.look at",
+		);
+		await expect(lanes.fork("c1.build", "c1.look")).rejects.toThrow(
+			"cannot fork the lane of c1.build for c1.look at",
+		);
 	});
 
 	test("a version is extended at most once, but its extender may re-open it", async () => {

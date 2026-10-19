@@ -153,7 +153,10 @@ function report({ session: { deps }, json }: Stored, outcome: Outcome) {
 	);
 	for (const f of outcome.failures)
 		deps.stderr(
-			`concert ${f.id} kept: ${f.reason}\nFix that, then prune it again`,
+			// A reason of several lines already ends in its own fix.
+			f.reason.includes("\n")
+				? `concert ${f.id} kept: ${f.reason}`
+				: `concert ${f.id} kept: ${f.reason}\nFix that, then prune it again`,
 		);
 }
 
