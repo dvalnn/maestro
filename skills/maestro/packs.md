@@ -23,7 +23,8 @@ A directory, or a tarball of one, holding:
 - The entry: one pre-bundled JavaScript file holding every composition the pack exports, its code nodes, its prompts and
   its own copy of the SDK. maestro resolves nothing through `node_modules` for a pack, and refuses an entry that imports
   anything but builtins and `@maestro/sdk`.
-- A `README.md` stating each composition's purpose, params and the roles it needs, since no command lists them.
+- A `README.md` stating each composition's purpose, params and the roles it needs; `maestro rep` lists the same from the
+  bundle.
 
 ## Building the entry
 
