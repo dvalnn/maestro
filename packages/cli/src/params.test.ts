@@ -122,6 +122,24 @@ describe("param values", () => {
 			],
 		]);
 	});
+
+	test("a bare file's missing param names only the flag, and the example set when it has one", async () => {
+		const pack = await demo();
+		const request = (examples: Record<string, unknown>[]) => ({
+			layers: [],
+			pack: "demo",
+			compositions: pack.compositions.map((c) => ({ ...c, examples })),
+			root: "greet",
+			hosts: [fakeHost()],
+			bare: true,
+		});
+		const hints = (examples: Record<string, unknown>[]) =>
+			refusal(() => paramValues(request(examples)))[0]?.[2];
+		expect(hints([])).toBe("Pass --name");
+		expect(hints([{ loud: 1 }])).toBe(
+			"Pass --name, or give it in the composition's example set",
+		);
+	});
 });
 
 describe("a typed param", () => {

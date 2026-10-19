@@ -285,11 +285,12 @@
 											"!@maestro/render-*",
 											"!@maestro/render-*/**",
 											"!@maestro/host-repo",
+											"!@maestro/host-repo/harness",
 											"!@maestro/host-repo-sdk",
 											"!@maestro/harness-*",
 											"!@maestro/testkit"
 										],
-										"message": "cli imports core, sdk, ir, render-*, host-repo and the harness adapters, and testkit and host-repo-sdk in tests."
+										"message": "cli imports core, sdk, ir, render-*, host-repo, host-repo-sdk and the harness adapters, and testkit in tests."
 									},
 									{
 										"group": [

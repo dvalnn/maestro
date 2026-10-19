@@ -52,6 +52,8 @@ export type ParamRequest = {
 	/** The root's param values given as flags, by param name. */
 	flags?: Readonly<Record<string, unknown>>;
 	hosts: readonly Host[];
+	/** The composition comes from a bare file, which no config key can reach. */
+	bare?: boolean;
 };
 
 type Params = {
@@ -71,6 +73,7 @@ type Reading = {
 	composition: Described;
 	path: KeyPath;
 	root: boolean;
+	bare: boolean;
 };
 
 /** A param's name in a diagnostic: with its flag for the root, else by its config key. */
@@ -132,6 +135,16 @@ function typed(
 	return { value: result };
 }
 
+/** What to do about a missing root param: a bare file has no config key to set, only its example set. */
+function requiredHint(r: Reading, name: string): string {
+	const flag = flagOf(name);
+	if (!r.bare)
+		return `Pass ${flag}, or set '${[...r.path, name].join(".")}' in the config`;
+	return r.composition.examples.length
+		? `Pass ${flag}, or give it in the composition's example set`
+		: `Pass ${flag}`;
+}
+
 /** The diagnostics that stop `name` before its value is read: a root param that is missing, or takes an artifact. */
 function declarationErrors(
 	r: Reading,
@@ -142,7 +155,6 @@ function declarationErrors(
 	const artifact = schemaMarkers(schema).find((m) =>
 		ARTIFACT_TYPES.has(m.type),
 	);
-	const at = [...r.path, name].join(".");
 	if (artifact && (r.root || given))
 		return [
 			configDiagnostic(
@@ -158,7 +170,7 @@ function declarationErrors(
 				"CFG.required",
 				undefined,
 				`${naming(r, name)} is required`,
-				`Pass ${flagOf(name)}, or set '${at}' in the config`,
+				requiredHint(r, name),
 			),
 		];
 	return [];
@@ -228,6 +240,7 @@ export function paramValues(request: ParamRequest): Params {
 			composition,
 			path: [pack, composition.name],
 			root: composition.name === root,
+			bare: request.bare ?? false,
 		});
 		if ("diagnostics" in read) diagnostics.push(...read.diagnostics);
 		else configured[composition.name] = read.value as Record<string, unknown>;

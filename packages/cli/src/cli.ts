@@ -1,4 +1,6 @@
-import { messageOf } from "@maestro/ir";
+import { IR_VERSION, messageOf } from "@maestro/ir";
+import { SDK_VERSION } from "@maestro/sdk/loader";
+import pkg from "../package.json";
 import {
 	COMMON,
 	type Command,
@@ -80,6 +82,9 @@ const VERBS: readonly Verb[] = [
 	},
 ];
 
+const versionLine = () =>
+	`maestro ${pkg.version} (sdk ${SDK_VERSION}, ir ${IR_VERSION}, bun ${Bun.version})`;
+
 const rootHelp = () =>
 	[
 		"Usage: maestro <command> [flags]",
@@ -92,6 +97,10 @@ const rootHelp = () =>
 				v.summary,
 			]),
 		),
+		"",
+		"Flags:",
+		"  --version  Print the maestro, SDK, IR and Bun versions",
+		"  --help     Show this help",
 		"",
 		"See 'maestro <command> --help' for a command's flags.",
 	].join("\n");
@@ -141,6 +150,10 @@ export async function main(
 	try {
 		if (word === "--help" || word === "-h") {
 			deps.stdout(rootHelp());
+			return EXIT.ok;
+		}
+		if (word === "--version") {
+			deps.stdout(versionLine());
 			return EXIT.ok;
 		}
 		if (word === undefined) throw usageError("no command given", rootHelp());

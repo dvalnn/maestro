@@ -1,6 +1,7 @@
 {
 	"name": "@maestro/sdk",
-	"version": "0.1.0",
+	"version": "0.1.0-beta.1",
+	"license": "UNLICENSED",
 	"private": true,
 	"type": "module",
 	"exports": {
@@ -12,5 +13,9 @@
 	},
 	"dependencies": {
 		"@maestro/ir": "workspace:*"
-	}
+	},
+	"files": [
+		"src",
+		"!**/*.test.ts"
+	]
 }

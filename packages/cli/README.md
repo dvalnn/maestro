@@ -31,6 +31,8 @@ maestro wait <concert> --timeout 15m
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`
     and `--workspace <name>`; without `--before` there is no age cutoff. It asks before deleting unless given `--yes`.
 
+`maestro --version` prints one line, `maestro <version> (sdk <version>, ir <version>, bun <version>)`, and exits 0.
+
 Every command takes `--json` (one JSON document on stdout), `--profile <name>`, `--debug` (stack traces) and `--help`.
 Primary output goes to stdout, messages to stderr.
 

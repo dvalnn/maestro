@@ -1,5 +1,7 @@
 {
 	"name": "@maestro/host-repo-sdk",
+	"version": "0.1.0-beta.1",
+	"license": "UNLICENSED",
 	"private": true,
 	"type": "module",
 	"exports": "./src/index.ts",
@@ -11,5 +13,10 @@
 		"@maestro/core": "workspace:*",
 		"@maestro/host-repo": "workspace:*",
 		"@maestro/testkit": "workspace:*"
-	}
+	},
+	"files": [
+		"src",
+		"!**/*.test.ts",
+		"!src/fixtures"
+	]
 }

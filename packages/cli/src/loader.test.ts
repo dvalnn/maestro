@@ -23,6 +23,7 @@ import {
 	rewriteModules,
 	withCurrentHashes,
 } from "./loader";
+import { type CliError, EXIT } from "./output";
 
 const GOLDEN = join(FIXTURES, "../../../ir/fixtures");
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
@@ -192,10 +193,11 @@ describe("a bare file", () => {
 	test("refuses a file whose import does not resolve, naming the import and where it sits", async () => {
 		const file = join(await scratch(), "lost.ts");
 		await Bun.write(file, 'import x from "./nope";\nexport const y = x;\n');
-		const error = await openFile(file).catch((e: Error) => e.message);
-		expect(error).toBe(
+		const error = (await openFile(file).catch((e: CliError) => e)) as CliError;
+		expect(error.message).toBe(
 			`cannot bundle ${file}: ${file}:1:15: Could not resolve: "./nope"\nFix the file or its imports`,
 		);
+		expect(error.exit).toBe(EXIT.usage);
 	});
 
 	test("fails a function exported under two names, naming both, with no location inside its bundle", async () => {

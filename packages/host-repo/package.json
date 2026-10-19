@@ -1,5 +1,6 @@
 {
 	"name": "@maestro/host-repo",
+	"version": "0.1.0-beta.1",
 	"private": true,
 	"type": "module",
 	"exports": {

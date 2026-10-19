@@ -174,6 +174,7 @@ async function build(
 	composition: Described,
 	args: readonly string[],
 	layers: readonly Layer[],
+	bare = false,
 ): Promise<Omit<Prepared, "claims">> {
 	const label = `${bundle.pack.id}.${composition.name}`;
 	const flags = paramFlags(composition, RESERVED, label);
@@ -190,6 +191,7 @@ async function build(
 		example: reading.examples ? composition.examples[0] : undefined,
 		flags: flagValues(composition, flags, values),
 		hosts: session.deps.hosts,
+		bare,
 	});
 	const built = bundle.build(composition.name, params.root, params.configured);
 	if (!built.ok) throw new Diagnosed(built.diagnostics);
@@ -228,7 +230,15 @@ async function buildFile(
 		);
 	const bundle = await openFile(file);
 	const composition = chosen(bundle, target, undefined);
-	const built = await build(session, reading, bundle, composition, args, []);
+	const built = await build(
+		session,
+		reading,
+		bundle,
+		composition,
+		args,
+		[],
+		true,
+	);
 	return {
 		...built,
 		config: session.config.composed,

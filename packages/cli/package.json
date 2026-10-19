@@ -1,5 +1,6 @@
 {
 	"name": "@maestro/cli",
+	"version": "0.1.0-beta.1",
 	"private": true,
 	"type": "module",
 	"bin": {
@@ -10,12 +11,12 @@
 		"@maestro/harness-claude": "workspace:*",
 		"@maestro/harness-pi": "workspace:*",
 		"@maestro/host-repo": "workspace:*",
+		"@maestro/host-repo-sdk": "workspace:*",
 		"@maestro/ir": "workspace:*",
 		"@maestro/render-text": "workspace:*",
 		"@maestro/sdk": "workspace:*"
 	},
 	"devDependencies": {
-		"@maestro/host-repo-sdk": "workspace:*",
 		"@maestro/testkit": "workspace:*"
 	}
 }

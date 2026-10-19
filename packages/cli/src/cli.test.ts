@@ -3,8 +3,10 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { openRecord } from "@maestro/core/perform";
-import { STDLIB_HASH } from "@maestro/sdk/loader";
+import { IR_VERSION } from "@maestro/ir";
+import { SDK_VERSION, STDLIB_HASH } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
+import pkg from "../package.json";
 import { cleanup, FIXTURES } from "./fixtures/packs";
 import { ECHO, GREET, hostOf, idOf, json, world } from "./fixtures/world";
 import { codeHashOf } from "./loader";
@@ -492,6 +494,17 @@ describe("usage errors", () => {
 				err: "",
 			});
 		expect((await w.call(["--help"])).out).toMatch(/^ {2}watch +\(wt\) +\S/m);
+	});
+});
+
+describe("--version", () => {
+	test("prints one line with the CLI, SDK, IR and Bun versions on stdout and exits 0", async () => {
+		const w = await world();
+		expect(await w.call(["--version"])).toEqual({
+			code: 0,
+			out: `maestro ${pkg.version} (sdk ${SDK_VERSION}, ir ${IR_VERSION}, bun ${Bun.version})`,
+			err: "",
+		});
 	});
 });
 

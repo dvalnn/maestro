@@ -79,6 +79,31 @@ test("a lane ref names a version by the instance id ls shows, ls shows its disk 
 	).toMatchObject({ code: 1 });
 });
 
+test("the built-in stub harness performs an agent, and the check after it settles ok", async () => {
+	const file = join(await scratch(), "smoke.ts");
+	writeFileSync(
+		file,
+		`import { agent, check, fresh, read } from "@maestro/host-repo-sdk";
+import { composition } from "@maestro/sdk";
+
+export const smoke = composition("smoke", { examples: [{}] }, () => {
+	const a = agent({ label: "a", task: "nothing", lane: fresh(), role: "smoke" });
+	return check(read(a.out.lane), { run: "true" }, { label: "ok" });
+});
+`,
+	);
+	const w = await repoWorld(
+		"roles:\n  smoke:\n    harness: stub\n    model: none\n",
+	);
+	const done = await w.call(["perform", file]);
+	expect(done).toMatchObject({ code: 0 });
+	const { instances } = json(await w.call(["ls", idOf(done), "--json"]));
+	expect(instances.map((i: { status: string }) => i.status)).toEqual([
+		"ok",
+		"ok",
+	]);
+});
+
 /** Each real harness behind its gate: the agent's identity and file, and the metrics it reports. */
 const REAL_HARNESSES = [
 	{

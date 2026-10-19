@@ -36,6 +36,7 @@ import {
 	STDLIB_MODULE,
 } from "@maestro/sdk/loader";
 import * as stdlib from "@maestro/sdk/stdlib";
+import { usageError } from "./output";
 
 /** The `codeHash` of the code a worker reference names as it is now (ADR 0008). */
 export type CodeHash = (ref: WorkerRef) => Promise<string>;
@@ -112,7 +113,17 @@ const ENTRY = ".maestro-entry.js";
 const HASH_PREFIX = "sha256:";
 /** The `version` of a bare file's compositions, which have no manifest to declare one. */
 const FILE_VERSION = "0.0.0";
-const SDK_IMPORT = /^@maestro\/sdk(\/host|\/loader)?$/;
+const SDK_IMPORT = /^@maestro\/(sdk(\/host|\/loader)?|host-repo-sdk)$/;
+const HOST_SDK = "@maestro/host-repo-sdk";
+
+/** The SDK bundles `just release` embeds in the binary: the asset's name, and the path it stands at inside a bundle. */
+const EMBEDDED = {
+	sdk: { asset: "embedded-sdk.js", path: "/maestro-embedded/sdk.js" },
+	hostSdk: {
+		asset: "embedded-host-repo-sdk.js",
+		path: "/maestro-embedded/host-repo-sdk.js",
+	},
+};
 
 type Namespace = Readonly<Record<string, unknown>>;
 
@@ -178,8 +189,34 @@ function bundlerMessage(error: unknown): string {
 		.join("; ");
 }
 
+/** The embedded SDK bundles by their path inside a bundle: empty unless the engine runs as the release binary. */
+let embeddedRead: Promise<Record<string, string>> | undefined;
+const embeddedSdks = () => {
+	embeddedRead ??= readEmbedded();
+	return embeddedRead;
+};
+
+async function readEmbedded(): Promise<Record<string, string>> {
+	const found = await Promise.all(
+		Object.values(EMBEDDED).flatMap(({ asset, path }) =>
+			Bun.embeddedFiles
+				.filter((file) => (file as File).name === asset)
+				.map(
+					async (file): Promise<[string, string]> => [path, await file.text()],
+				),
+		),
+	);
+	return Object.fromEntries(found);
+}
+
+/** Where the engine's own copy of the SDK import `specifier` is: embedded in the binary when it is, else on disk. */
+const sdkPath = (specifier: string, embedded: Record<string, string>) => {
+	const { path } = specifier === HOST_SDK ? EMBEDDED.hostSdk : EMBEDDED.sdk;
+	return path in embedded ? path : Bun.resolveSync(specifier, import.meta.dir);
+};
+
 /**
- * `entry` bundled in memory, `files` standing over the disk, its SDK import the engine's own.
+ * `entry` bundled in memory, `files` standing over the disk, its SDK imports the engine's own.
  * @throws Error when it does not bundle.
  */
 async function bundle(
@@ -187,9 +224,10 @@ async function bundle(
 	files: Record<string, string>,
 ): Promise<string> {
 	try {
+		const embedded = await embeddedSdks();
 		const out = await Bun.build({
 			entrypoints: [entry],
-			files,
+			files: { ...files, ...embedded },
 			target: "bun",
 			format: "esm",
 			// Without whitespace, Bun writes each source path as a comment, and the hash would follow the cwd.
@@ -199,7 +237,7 @@ async function bundle(
 					name: "maestro-sdk",
 					setup: (b) => {
 						b.onResolve({ filter: SDK_IMPORT }, ({ path }) => ({
-							path: Bun.resolveSync(path, import.meta.dir),
+							path: sdkPath(path, embedded),
 						}));
 					},
 				},
@@ -446,16 +484,17 @@ export async function openPack(
 }
 
 /**
- * The bundle of the composition file `file`, made in memory behind the SDK's glue, its SDK import the engine's own.
- * @throws Error when it does not bundle.
+ * The bundle of the composition file `file`, made in memory behind the SDK's glue, its SDK imports the engine's own.
+ * @throws CliError with the usage exit when it does not bundle.
  */
 export async function bundled(file: string): Promise<string> {
 	const entry = join(dirname(file), ENTRY);
 	try {
 		return await bundle(entry, { [entry]: glue(`./${basename(file)}`) });
 	} catch (error) {
-		throw new Error(
-			`cannot bundle ${file}: ${messageOf(error)}\nFix the file or its imports`,
+		throw usageError(
+			`cannot bundle ${file}: ${messageOf(error)}`,
+			"Fix the file or its imports",
 		);
 	}
 }
