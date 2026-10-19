@@ -1,0 +1,6 @@
+{
+	"runs": ["agent", "check", "agent", "check", "agent", "check"],
+	"outcome": "rejected",
+	"files": ["greet.sh"],
+	"clean": true
+}

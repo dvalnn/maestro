@@ -14,7 +14,12 @@ import {
 import { concertUsage, releaseConcert } from "./store";
 import { validateRepo } from "./validate";
 
-export { AGENT_IN_PORTS, AGENT_KIND, AGENT_OUT_PORTS } from "./config";
+export {
+	AGENT_IN_PORTS,
+	AGENT_KIND,
+	AGENT_OUT_PORTS,
+	CHECK_KIND,
+} from "./config";
 
 /** `<concert id>.<node instance id>`: concert ids hold no `.`, and the instance part is not empty. */
 const LANE_REF = /^[^.]+\.[^\s]+$/;

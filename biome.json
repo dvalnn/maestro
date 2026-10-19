@@ -344,6 +344,32 @@
 					}
 				}
 			}
+		},
+		{
+			"includes": ["packs/*/src/**", "!packs/*/src/**/*.test.ts"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"**",
+											"!@maestro/sdk",
+											"!@maestro/host-repo-sdk",
+											"!node:*",
+											"!./**"
+										],
+										"message": "A pack's source imports sdk, host-repo-sdk, node builtins and its own files alone, since it is bundled."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
 		}
 	],
 	"javascript": {

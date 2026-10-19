@@ -6,6 +6,7 @@
       "name": "maestro",
       "devDependencies": {
         "@biomejs/biome": "2.5.15",
+        "@maestro/sdk": "workspace:*",
         "@types/bun": "1.4.3",
         "prettier": "3.9.10",
         "typescript": "7.0.2",
@@ -105,6 +106,19 @@
         "@maestro/sdk": "workspace:*",
       },
     },
+    "packs/repertoire": {
+      "name": "@maestro/repertoire",
+      "version": "0.1.0",
+      "dependencies": {
+        "@maestro/host-repo-sdk": "workspace:*",
+        "@maestro/sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "@maestro/core": "workspace:*",
+        "@maestro/host-repo": "workspace:*",
+        "@maestro/testkit": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@biomejs/biome": ["@biomejs/biome@2.5.15", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.5.15", "@biomejs/cli-darwin-x64": "2.5.15", "@biomejs/cli-linux-arm64": "2.5.15", "@biomejs/cli-linux-arm64-musl": "2.5.15", "@biomejs/cli-linux-x64": "2.5.15", "@biomejs/cli-linux-x64-musl": "2.5.15", "@biomejs/cli-win32-arm64": "2.5.15", "@biomejs/cli-win32-x64": "2.5.15" }, "bin": { "biome": "bin/biome" } }, "sha512-WZTW4slm/pdkh92K6t/3aEN++44JD1PQ7squ7RCMLI1flHGl43DVOIGXvCjHiZgBMO1V4uYxoFNtqrIA4qGuIQ=="],
@@ -140,6 +154,8 @@
     "@maestro/ir": ["@maestro/ir@workspace:packages/ir"],
 
     "@maestro/render-text": ["@maestro/render-text@workspace:packages/render-text"],
+
+    "@maestro/repertoire": ["@maestro/repertoire@workspace:packs/repertoire"],
 
     "@maestro/sdk": ["@maestro/sdk@workspace:packages/sdk"],
 

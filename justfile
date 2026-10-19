@@ -31,3 +31,7 @@ release: check
     done
     (cd dist && sha256sum * > SHA256SUMS)
     scripts/smoke-install.sh dist
+
+# build a pack into its dist/
+pack dir="packs/repertoire":
+    bun scripts/pack.ts {{dir}}

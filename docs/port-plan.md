@@ -41,8 +41,9 @@ packages/
   host-repo/      agent and check kinds, lanes, sandbox, harness interface
   host-repo-sdk/  typed constructors and types for the agent host
   harness-<name>/   one adapter each
-  pack-general/     the ported compositions (placeholder name)
   render-text/      the text forms of a plan: summary, listing, Mermaid. The live view's package is placed by S10
+packs/
+  repertoire/       the ported compositions, built into dist/ by `just pack`; acceptance/ holds the comparison
 docs/               these documents (including adr/), slice reports under reports/
 ```
 

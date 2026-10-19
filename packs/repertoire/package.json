@@ -1,0 +1,15 @@
+{
+	"name": "@maestro/repertoire",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@maestro/host-repo-sdk": "workspace:*",
+		"@maestro/sdk": "workspace:*"
+	},
+	"devDependencies": {
+		"@maestro/core": "workspace:*",
+		"@maestro/host-repo": "workspace:*",
+		"@maestro/testkit": "workspace:*"
+	}
+}
