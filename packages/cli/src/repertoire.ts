@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import { ConfigError } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
-import { type Ir, isPlainObject, messageOf } from "@maestro/ir";
+import { type Ir, indexGraph, messageOf } from "@maestro/ir";
 import type { Described } from "@maestro/sdk/loader";
 import {
 	COMMON,
@@ -25,8 +25,8 @@ type CompositionEntry = {
 	name: string;
 	doc?: string;
 	params: ParamEntry[];
-	/** The roles of the agents its example set builds; absent when it builds from no example set. */
-	roles?: string[];
+	/** The dotted config keys its host nodes read by name when built from its example set; absent when it does not build. */
+	config?: string[];
 	/** A `maestro perform` line with each required flag. */
 	perform: string;
 };
@@ -44,22 +44,15 @@ type Loaded = { bundle: Bundle; entry: PackEntry };
 
 const FIX = "Name an installed pack, or <pack>.<composition>";
 
-/** The role name each host node's `config.role` gives, each once, sorted. */
-function rolesOf(ir: Ir): string[] {
-	const names = ir.nodes.flatMap((node) => {
-		const role =
-			"config" in node && isPlainObject(node.config)
-				? node.config.role
-				: undefined;
-		return isPlainObject(role) && typeof role.name === "string"
-			? [role.name]
-			: [];
-	});
-	return [...new Set(names)].toSorted();
+/** The config entries `ir`'s host nodes read by name, as the loaded hosts name them: dotted, each once, sorted. */
+function needsOf(ir: Ir, hosts: readonly Host[]): string[] {
+	const graph = indexGraph(ir);
+	const keys = hosts.flatMap((host) => host.needs?.(graph) ?? []);
+	return [...new Set(keys.map((key) => key.join(".")))].toSorted();
 }
 
-/** The roles `composition` uses when built from its example set and defaults, without the config. */
-function builtRoles(
+/** The config entries `composition` reads when built from its example set and defaults, without the config. */
+function builtNeeds(
 	bundle: Bundle,
 	composition: Described,
 	hosts: readonly Host[],
@@ -79,7 +72,7 @@ function builtRoles(
 		throw error;
 	}
 	const built = bundle.build(composition.name, params.root, params.configured);
-	return built.ok ? rolesOf(built.ir) : undefined;
+	return built.ok ? needsOf(built.ir, hosts) : undefined;
 }
 
 function compositionEntry(
@@ -95,7 +88,7 @@ function compositionEntry(
 		name: composition.name,
 		doc: composition.doc,
 		params,
-		roles: builtRoles(bundle, composition, hosts),
+		config: builtNeeds(bundle, composition, hosts),
 		perform: `maestro perform ${id}${flags.join("")}`,
 	};
 }
@@ -164,7 +157,7 @@ function compositionText(c: CompositionEntry, composition: Described): string {
 	const lines = [table([[c.id, first]]), ...rest];
 	const params = paramsBlock(composition);
 	if (params) lines.push(params);
-	if (c.roles?.length) lines.push(`Roles  ${c.roles.join(", ")}`);
+	if (c.config?.length) lines.push(`Config  ${c.config.join(", ")}`);
 	lines.push("", `  ${c.perform}`);
 	return lines.join("\n");
 }

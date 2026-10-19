@@ -107,6 +107,8 @@ export interface Host {
 	readonly paths?: readonly KeyPath[];
 	/** Compose-time rules over the whole graph. */
 	validate(graph: GraphIndex, setup: HostSetup): Awaitable<Diagnostic[]>;
+	/** The config entries the graph's host nodes read by name. */
+	needs?(graph: GraphIndex): KeyPath[];
 	/** Bounds one instance of `node`, a node of one of the host's kinds. */
 	bounds(node: HostNode): Bounds;
 	environment(setup: HostSetup): Awaitable<Facts>;

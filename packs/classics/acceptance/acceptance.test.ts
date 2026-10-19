@@ -221,17 +221,15 @@ test("a review keeps the findings its skeptics upheld, and notes a lens that did
 	]);
 	const ir = buildIr(
 		panelReview,
-		{
-			request: TASKS.t1.request,
-			change: lane,
-			lensModel: "lab-a/lens",
-			skepticModel: SKEPTIC,
-		},
+		{ request: TASKS.t1.request, change: lane },
 		{ toMarkdown, survivorsOf },
 	);
 	const run = await stubConcert(ir, {
 		hosts: [repoHost({ harnesses: [reviewer] })],
-		config,
+		config: {
+			...config,
+			roles: { ...config.roles, skeptic: { ...ROLE, model: SKEPTIC } },
+		},
 		code: CODE,
 		dir,
 	});
@@ -398,11 +396,7 @@ describe("v_model", () => {
 		});
 		const ir = buildIr(
 			vModel,
-			{
-				request: TASKS.t1.request,
-				lensModel: "lab-a/lens",
-				skepticModel: "lab-b/skeptic",
-			},
+			{ request: TASKS.t1.request },
 			{ toMarkdown, dossierOf, survivorsOf, traceOf, riskKey },
 		);
 		const run = await stubConcert(ir, {

@@ -85,13 +85,6 @@ roles:
   reviewer: { harness: claude, model: sonnet, thinking: high }
   skeptic: { harness: pi, model: openai/gpt-model-id, thinking: high }
   documenter: { harness: claude, model: sonnet, thinking: high }
-classics:
-  panel_review:
-    lensModel: claude-model-id
-    skepticModel: openai/gpt-model-id
-  v_model:
-    lensModel: claude-model-id
-    skepticModel: openai/gpt-model-id
 YAML
 cat > "$ws/.maestro/profiles/stub.yaml" <<YAML
 roles:

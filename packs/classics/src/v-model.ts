@@ -21,13 +21,7 @@ import { dossierOf, riskKey, toMarkdown, traceOf } from "./code";
 import { EXAMPLE_REQUEST, maxRepairs, repairUntilGreen } from "./repair";
 import { panel } from "./review";
 import { builder, documenter, planner, scout } from "./seats";
-import {
-	atLeastOne,
-	Design,
-	EXAMPLE_MODELS,
-	PANEL_MODELS,
-	Risk,
-} from "./types";
+import { atLeastOne, Design, Risk } from "./types";
 
 /** Each angle a scout looks from, by name, as its task. */
 const ANGLES = {
@@ -51,17 +45,11 @@ export const vModel = composition(
 		doc: "Deliver a request down and up a V: scouts, a plan and a build on the left, each verified on the right by its mirror: checks, a review of every scouted risk, and acceptance traced back to the plan's criteria.",
 		params: {
 			request: Text({ description: "What to build" }),
-			...PANEL_MODELS,
 			maxApproaches: atLeastOne(2, "The most approaches the plan may give"),
 			maxRisks: atLeastOne(4, "The most scouted risks the review rules on"),
 			maxRepairs,
 		},
-		examples: [
-			{
-				request: EXAMPLE_REQUEST,
-				...EXAMPLE_MODELS,
-			},
-		],
+		examples: [{ request: EXAMPLE_REQUEST }],
 	},
 	(p) => {
 		const spec = code(toMarkdown, {
@@ -145,8 +133,6 @@ export const vModel = composition(
 			patches: patches.out.changeset,
 			spec: plan.out.plan,
 			design: plan.out.design,
-			lensModel: p.lensModel,
-			skepticModel: p.skepticModel,
 		});
 
 		const accepted = documenter({

@@ -61,7 +61,7 @@ resume performs every code node of the pack again.
 A pack names roles (`builder`, `reviewer`, `skeptic`) and never a model or harness: the user maps roles to models in
 config, since a model is spend. A composition that needs a model policy, such as a skeptic from another model family
 than its lens, takes the models as params and checks them with a build-time `assert` over a helper of the pack's own,
-here `familyOf`:
+such as `familyOf`:
 
 ```ts
 assert(familyOf(lensModel) !== familyOf(skepticModel), "the skeptic's model family must differ from the lens's");

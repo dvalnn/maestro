@@ -173,7 +173,8 @@ A host is a package that the core loads. It is the only way node kinds beyond th
    `resources`, for a host that holds disk per concert, groups `release(concert, setup)`, which frees what it holds for
    a settled concert, and `usage(concert, setup)`, which reports its bytes on disk, for `prune` and `ls`. `text` groups
    `progress(event)`, which words one of the host's progress events, and `actor(enrichment)`, which names who ran an
-   instance, as plain one-line text for `watch` and `ls`; the renderer styles it. ADR 0010 records the shape.
+   instance, as plain one-line text for `watch` and `ls`; the renderer styles it. `needs(graph)` names the config
+   entries the graph's host nodes read by name. ADR 0010 records the shape.
 
 The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
 hooks and records what they return.
@@ -514,8 +515,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - Every bind, read-only or writable, is absolute, exists and is not inside a lane. A writable bind also neither contains
   nor lies inside the lanes or the target repository. An agent names only checks config has.
 
-Role and model policy, such as a skeptic's model family differing from its lens's, belongs to the composition: a
-build-time `assert` over the models it takes as params, with the pack's own family helper.
+The classics pack's review compositions take their models from the roles in config. Picking different model families for
+a lens and its skeptic is guidance in its README, not a check.
 
 ## 13. Packs
 

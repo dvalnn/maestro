@@ -9,12 +9,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CodeContext, Settled } from "@maestro/sdk";
-import { buildIr } from "@maestro/testkit";
 import { pack } from "../../../scripts/pack";
 import { BASE, rolesOn, setup } from "../acceptance/setup";
-import { dossierOf, survivorsOf, toMarkdown, traceOf } from "./code";
+import { dossierOf, traceOf } from "./code";
 import { EXAMPLE_REQUEST } from "./repair";
-import { panelReview } from "./review";
 
 const MAESTRO = join(import.meta.dir, "../../../packages/cli/src/maestro.ts");
 const ROLE = { harness: "pi", model: "none" };
@@ -24,24 +22,8 @@ const REVIEW = [
 	EXAMPLE_REQUEST,
 	"--change",
 	"c.x",
-	"--lens-model",
-	"lab-a/lens",
-	"--skeptic-model",
-	"lab-b/skeptic",
 ];
 const BUILD = ["classics.build_then_repair", "--request", EXAMPLE_REQUEST];
-const SAME_FAMILY = ["--lens-model", "x/a", "--skeptic-model", "x/b"];
-const ASSERT_FAILED =
-	"skeptic model 'x/b' is of the family of lens model 'x/a'";
-
-/** Builds `panel_review` with a lens and a skeptic on these models. */
-const reviewOn = (lensModel: string, skepticModel: string) =>
-	buildIr(
-		panelReview,
-		{ request: EXAMPLE_REQUEST, change: "c.x", lensModel, skepticModel },
-		{ toMarkdown, survivorsOf },
-	);
-
 let root: string;
 let config: Record<string, unknown>;
 
@@ -93,31 +75,22 @@ describe("panel_review", () => {
 			instances: { exact: 23 },
 			counts: { "repo.agent": { exact: 7 } },
 		});
-		const modelOf = (id: string) =>
-			plan.ir.nodes.find((n: { id: string }) => n.id === id)?.config.role.model;
-		expect(modelOf("lenses/lens")).toBe("lab-a/lens");
-		expect(modelOf("lenses/skeptic")).toBe("lab-b/skeptic");
-	});
-
-	test("refuses a skeptic of the lens's model family before any concert", async () => {
-		const composed = await maestro("compose", ...REVIEW, ...SAME_FAMILY);
-		expect(composed).toMatchObject({ code: 2 });
-		expect(composed.err).toContain(
-			`ASSERT.failed: assert failed: ${ASSERT_FAILED}`,
-		);
-		expect(() => reviewOn("x/a", "x/b")).toThrow(ASSERT_FAILED);
+		const roleOf = (id: string) =>
+			plan.ir.nodes.find((n: { id: string }) => n.id === id)?.config.role;
+		expect(roleOf("lenses/lens")).toEqual({ name: "reviewer" });
+		expect(roleOf("lenses/skeptic")).toEqual({ name: "skeptic" });
 	});
 
 	test("names a misspelt config key and the param it meant", async () => {
-		await configure({ classics: { panel_review: { lensModle: "x/a" } } });
+		await configure({ classics: { panel_review: { lense: ["spec"] } } });
 		const { err, code } = await maestro("compose", ...REVIEW).finally(() =>
 			configure(),
 		);
 		expect(code).toBe(2);
 		expect(err).toContain(
-			"CFG.unclaimed: config key 'classics.panel_review.lensModle'",
+			"CFG.unclaimed: config key 'classics.panel_review.lense'",
 		);
-		expect(err).toContain("Did you mean 'classics.panel_review.lensModel'?");
+		expect(err).toContain("Did you mean 'classics.panel_review.lenses'?");
 	});
 
 	test("graphs the lens fan-out, the skeptic's guard and the collect into survivorsOf", async () => {
@@ -157,10 +130,6 @@ describe("v_model", () => {
 		V_MODEL,
 		"--request",
 		EXAMPLE_REQUEST,
-		"--lens-model",
-		"lab-c/lens",
-		"--skeptic-model",
-		"lab-d/skeptic",
 		"--max-approaches",
 		"3",
 		"--max-risks",
@@ -184,7 +153,7 @@ describe("v_model", () => {
 		);
 	});
 
-	test("bounds every level by its own param, and runs lenses and skeptics on theirs", async () => {
+	test("bounds every level by its own param, and runs lenses and skeptics on their roles", async () => {
 		const planned = await maestro("compose", ...BOUNDED, "--plan");
 		for (const line of [
 			"v_model: up to 56 node instances, up to 16 repo.agent",
@@ -202,8 +171,8 @@ describe("v_model", () => {
 		expect(plan.bounds.counts["repo.agent"]).toEqual({ upTo: 16 });
 		const node = (id: string) =>
 			plan.ir.nodes.find((n: { id: string }) => n.id === id);
-		expect(node("lenses/lens").config.role.model).toBe("lab-c/lens");
-		expect(node("lenses/skeptic").config.role.model).toBe("lab-d/skeptic");
+		expect(node("lenses/lens").config.role).toEqual({ name: "reviewer" });
+		expect(node("lenses/skeptic").config.role).toEqual({ name: "skeptic" });
 		expect(node("plan").literals.prompt).toContain("up to 3 approaches");
 		expect(
 			node("plan").config.out.design.schema.properties.approaches,
@@ -418,31 +387,6 @@ describe("traceOf", () => {
 			reason: `trace gaps: ${gap}${FIX}`,
 			outputs: { trace: join(dir, "trace.md") },
 		});
-	});
-});
-
-describe("a model's family", () => {
-	test.each([
-		["anthropic/claude-x", "anthropic"],
-		["claude-sonnet-4", "anthropic"],
-		["gpt-5", "openai"],
-		["o3", "openai"],
-		["gemini-2", "google"],
-		["github-copilot/gpt-x", "openai"],
-		["github-copilot/claude-x", "anthropic"],
-		["openrouter/anthropic/claude-x", "anthropic"],
-		["mistral/large", "mistral"],
-		["local-model", "local-model"],
-	])("of %p is %p", (model, family) => {
-		expect(() => reviewOn(model, `${family}/x`)).toThrow(
-			`is of the family of lens model '${model}'`,
-		);
-	});
-
-	test("is not its gateway's", () => {
-		expect(() =>
-			reviewOn("github-copilot/gpt-x", "github-copilot/claude-x"),
-		).not.toThrow();
 	});
 });
 

@@ -2,7 +2,7 @@
 status: accepted
 ---
 
-# A host is its required members, flat, and optional `resources` and `text`, with no version
+# A host is its required members, flat, and optional `resources`, `text` and `needs`, with no version
 
 A host gives core node kinds, types, config namespaces and hooks (architecture section 6). Its interface had grown
 optional members one at a time: `param`, `release` and `usage` beside the required ones, and no answer to whether the
@@ -20,6 +20,9 @@ The shape is:
   them and knows ir only. `actor` is called on a settled instance's enrichment and on each of the host's progress
   events, and names an actor only for an event that announces one. A host that says nothing more than the generic line
   omits `text`, or either member.
+- **`needs` is optional and names the config entries a graph's host nodes read by name**, such as `roles.reviewer`, as
+  key paths. The CLI lists them for a composition built from its example set and reads no host node config itself. A
+  host that reads nothing by name omits it.
 - **`param` stays flat and optional.** It reads one of the host's types from text and has no partner member.
 - **`paths` is optional and lists the `config` keys that hold file paths**, namespace first, which the CLI anchors to
   the workspace root, or to the user file's directory for a value in the user file.

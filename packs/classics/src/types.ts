@@ -15,21 +15,6 @@ export const atLeastOne = (value: number, description: string) =>
 		{ default: value, description: `${description}, at least 1` },
 	);
 
-/** The params naming the models of a panel's lenses and skeptics. */
-export const PANEL_MODELS = {
-	lensModel: Text({ description: "The model every lens runs on" }),
-	skepticModel: Text({
-		description:
-			"The model every skeptic runs on, of another family than lensModel's",
-	}),
-};
-
-/** Placeholder models of two families for an example set, since the pack names no real model. */
-export const EXAMPLE_MODELS = {
-	lensModel: "lab-a/lens-model",
-	skepticModel: "lab-b/skeptic-model",
-};
-
 /** What a lens found: `clean` when nothing, else each finding numbered `F1` on. */
 export const Findings = Struct({
 	clean: Bool(),

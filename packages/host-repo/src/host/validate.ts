@@ -1,5 +1,6 @@
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
+import type { KeyPath } from "@maestro/core/config";
 import {
 	boundOf,
 	type Diagnostic,
@@ -207,6 +208,9 @@ function checkNames(
 		}));
 }
 
+/** The name of the role an agent node takes. */
+const roleOf = (r: RepoNode & { kind: "agent" }) => r.config.role.name;
+
 /** A role or harness an agent node names that config or the loaded harnesses do not have. */
 function roleNames(
 	setup: RepoSetup,
@@ -214,7 +218,7 @@ function roleNames(
 	r: RepoNode & { kind: "agent" },
 ): Finding[] {
 	const id = r.node.id;
-	const { name } = r.config.role;
+	const name = roleOf(r);
 	if (!Object.hasOwn(setup.roles, name))
 		return [
 			{
@@ -239,6 +243,14 @@ function roleNames(
 	];
 }
 
+/** The checks a node runs or lets its agent run. */
+function checksNamed(r: RepoNode): string[] {
+	if (r.kind === "agent") return r.config.checks ?? [];
+	if (r.kind === "check")
+		return typeof r.config.check === "string" ? [r.config.check] : [];
+	return [];
+}
+
 /** A role, harness or check a node names that config or the loaded harnesses do not have. */
 function names(
 	setup: RepoSetup,
@@ -247,26 +259,32 @@ function names(
 ): Finding[] {
 	const id = r.node.id;
 	if (r.kind === "apply") return [];
-	if (r.kind === "check") {
-		const { check } = r.config;
+	if (r.kind === "check")
 		return checkNames(
 			setup,
 			id,
-			typeof check === "string" ? [check] : [],
+			checksNamed(r),
 			"runs",
 			"Add it under 'target.checks', or give the node an inline check",
 		);
-	}
 	return [
 		...roleNames(setup, harnesses, r),
 		...checkNames(
 			setup,
 			id,
-			r.config.checks ?? [],
+			checksNamed(r),
 			"may run",
 			"Add it under 'target.checks'",
 		),
 	];
+}
+
+/** The config entries the graph's repo nodes read by name: each agent's role and each check a node names. */
+export function needsRepo(graph: GraphIndex): KeyPath[] {
+	return repoNodes(graph).flatMap((r) => [
+		...(r.kind === "agent" ? [["roles", roleOf(r)]] : []),
+		...checksNamed(r).map((name) => ["target", "checks", name]),
+	]);
 }
 
 const within = (inner: string, outer: string) =>

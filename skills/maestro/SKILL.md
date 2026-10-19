@@ -38,9 +38,9 @@ This skill was checked against maestro 0.1.0-beta.1. When `maestro --version` na
    read [bootstrap.md](bootstrap.md) and follow it. Done when `maestro compose <c>` reports no `CFG.*` or `HOST.*`
    diagnostic; roles mapped only in a profile need `--profile <name>` on that compose too.
 2. **Pick the composition.** `<pack>.<composition>` of an installed pack, or a file. `maestro rep --json` lists every
-   installed composition with its doc, params, roles and a `perform` line; `maestro rep <pack>.<composition>` shows one,
-   such as `classics.panel_review`. Its params are kebab-case flags (`--max-repairs 3`, `--no-strict`). Done when every
-   required param has a value from a flag or the config.
+   installed composition with its doc, params, config entries and a `perform` line; `maestro rep <pack>.<composition>`
+   shows one, such as `classics.panel_review`. Its params are kebab-case flags (`--max-repairs 3`, `--no-strict`). Done
+   when every required param has a value from a flag or the config.
 3. **Pre-flight.** `maestro compose <c> [flags]`, with the flags perform will get. Done on exit 0. Before a perform on a
    paid harness, give the user the `repo.agent` bound from `maestro compose <c> [flags]` as the spend ceiling.
 4. **Perform in its own session.** `perform` holds its terminal until the concert settles, and a signal to its process
@@ -127,12 +127,13 @@ maestro's release ships one pack, `classics`:
 - `classics.build_then_repair`: builds the request in a fresh lane, repairs while the checks are red, and leaves a
   changeset.
 - `classics.panel_review`: reviews a lane version through each lens, a skeptic weighing each lens's findings, then
-  consolidates.
+  consolidates. Lenses run on the `reviewer` role's model and skeptics on the `skeptic` role's: pick models of different
+  families for the two, since a skeptic of the lens's family tends to share its blind spots.
 - `classics.v_model`: scouts, plans, builds and repairs, reviews each scouted risk, and traces acceptance to the plan.
 - `classics.repair_until_green`: the repair loop the others use; it is not performed alone.
 
-Installed, it is `<packs dir>/classics`, and `maestro rep --json` gives each composition's doc, params and roles; its
-`README.md` there says more. Missing: install it by [bootstrap.md](bootstrap.md), step 3.
+Installed, it is `<packs dir>/classics`, and `maestro rep --json` gives each composition's doc, params and config
+entries; its `README.md` there says more. Missing: install it by [bootstrap.md](bootstrap.md), step 3.
 
 ## Writing
 

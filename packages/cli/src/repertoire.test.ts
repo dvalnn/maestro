@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { GraphIndex } from "@maestro/ir";
+import { fakeHost } from "@maestro/testkit";
 import { cleanup, DEMO, packOf, scratch } from "./fixtures/packs";
 import { json, world } from "./fixtures/world";
 
@@ -23,6 +25,18 @@ export const draft = composition(
 	() => hostNode("fake.task", { label: "write", config: { role: { name: "writer" } } }),
 );
 `;
+
+/** A host that names the config its nodes read, the way the repo host does: a role per node twice, and a check. */
+const needy = {
+	...fakeHost(),
+	needs: (graph: GraphIndex) => [
+		...[...graph.nodes.keys()].flatMap((id) => [
+			["roles", id],
+			["roles", id],
+		]),
+		["target", "checks", "test"],
+	],
+};
 
 /** A world with the `staffed` pack installed in its data home's packs directory, which no config lists. */
 async function staffed() {
@@ -63,9 +77,11 @@ describe("repertoire", () => {
 		});
 	});
 
-	test("shows one composition: its doc, params as flags, roles and a perform line", async () => {
+	test("shows one composition: its doc, params as flags, config entries and a perform line", async () => {
 		const w = await staffed();
-		expect(await w.call(["rep", "staffed.draft"])).toMatchObject({
+		expect(
+			await w.call(["rep", "staffed.draft"], { hosts: [needy] }),
+		).toMatchObject({
 			code: 0,
 			err: "",
 			out: [
@@ -74,7 +90,7 @@ describe("repertoire", () => {
 				"Params",
 				"  --topic <text>  required  What the page is about",
 				"  --tags <text>   a",
-				"Roles  writer",
+				"Config  roles.write, target.checks.test",
 				"",
 				"  maestro perform staffed.draft --topic <text>",
 			].join("\n"),
@@ -83,7 +99,11 @@ describe("repertoire", () => {
 
 	test("--json prints the same entries as one document", async () => {
 		const w = await staffed();
-		expect(json(await w.call(["rep", "staffed.draft", "--json"]))).toEqual({
+		expect(
+			json(
+				await w.call(["rep", "staffed.draft", "--json"], { hosts: [needy] }),
+			),
+		).toEqual({
 			packs: [
 				{
 					id: "staffed",
@@ -110,7 +130,7 @@ describe("repertoire", () => {
 									default: "a",
 								},
 							],
-							roles: ["writer"],
+							config: ["roles.write", "target.checks.test"],
 							perform: "maestro perform staffed.draft --topic <text>",
 						},
 					],

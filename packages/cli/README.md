@@ -32,8 +32,9 @@ maestro wait <concert> --timeout 15m
 
 [^rep]:
     `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,
-    the roles its agents use when built from its example set, and a `maestro perform` line with the required flags. A
-    pack that fails to load is named on stderr, the rest are listed, and the exit is 1.
+    the config entries its host nodes read by name when built from its example set (a `Config` line, `config` in
+    `--json`), and a `maestro perform` line with the required flags. A pack that fails to load is named on stderr, the
+    rest are listed, and the exit is 1.
 
 [^prune]:
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`

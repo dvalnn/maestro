@@ -13,7 +13,7 @@ import {
 } from "./config";
 import { concertUsage, releaseConcert } from "./store";
 import { repoText } from "./text";
-import { validateRepo } from "./validate";
+import { needsRepo, validateRepo } from "./validate";
 
 export {
 	AGENT_IN_PORTS,
@@ -44,6 +44,7 @@ export function repoHost({ harnesses }: RepoHostOptions): Host {
 				repoSetup(setup),
 				harnesses.map((h) => h.name),
 			),
+		needs: needsRepo,
 		bounds: (node): Bounds =>
 			node.kind === AGENT_KIND ? { [AGENT_KIND]: 1 } : {},
 		environment(setup) {

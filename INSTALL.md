@@ -77,12 +77,7 @@ roles:
   skeptic: { harness: pi, model: <provider>/<model>, thinking: high }
   documenter: { harness: claude, model: <claude-model>, thinking: high }
 classics:
-  panel_review:
-    lensModel: <claude-model>
-    skepticModel: <provider>/<model>
   v_model:
-    lensModel: <claude-model>
-    skepticModel: <provider>/<model>
     maxApproaches: 2
     maxRisks: 4
     maxRepairs: 2
@@ -90,8 +85,8 @@ classics:
 
 - Claude: `harness: claude`, `model: sonnet` or `opus`, `thinking` as Claude's `--effort`.
 - pi: `harness: pi`, `model: <provider>/<model>` such as `github-copilot/gpt-5-mini`, `thinking` as pi's `--thinking`.
-- `lensModel` and `skepticModel` must come from different model families, or `panel_review` and `v_model` fail to
-  compose. With a Claude lens, the skeptic needs pi.
+- `panel_review` and `v_model` run lenses on the `reviewer` role's model and skeptics on the `skeptic` role's. Pick
+  models of different families for the two, since a skeptic of the lens's family tends to share its blind spots.
 - `v_model` also takes `maxApproaches` (default 2), `maxRisks` (default 4) and `maxRepairs` (default 2), each an integer
   of at least 1. Its `request` is a flag.
 

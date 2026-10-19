@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
 import { openRecord } from "@maestro/core/perform";
+import { indexGraph } from "@maestro/ir";
 import { type HarnessRequest, OUTBOX, type StubStep } from "../harness/index";
 import { openTarget } from "./store";
 import {
@@ -116,6 +117,37 @@ describe("compose", () => {
 			],
 		]);
 		expect(requests).toEqual([]);
+	});
+
+	test("needs names the role of each agent and each check a node names", () => {
+		const { host } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "a",
+					kind: "agent",
+					config: {
+						role: { name: "builder" },
+						lane: { mode: "fresh" },
+						checks: ["lint"],
+					},
+					literals: { prompt: "go" },
+				},
+				{
+					id: "k",
+					kind: "check",
+					config: { lane: { mode: "extend" }, check: "hello" },
+					lane: "a",
+				},
+			],
+			"k",
+		);
+		expect(host.needs?.(indexGraph(ir))).toEqual([
+			["roles", "builder"],
+			["target", "checks", "lint"],
+			["target", "checks", "hello"],
+		]);
 	});
 
 	const applied: NodeSpec = {

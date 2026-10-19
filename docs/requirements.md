@@ -15,7 +15,8 @@ result as a patch series. Its chains are Python modules that mix orchestration, 
 What that costs, as observed in the predecessor's workflows:
 
 - A workflow's shape cannot be checked before money is spent. Errors such as a skeptic model of the same family as its
-  lens surface only when the chain's code reaches them.
+  lens surface only when the chain's code reaches them; a build-time `assert` can refuse a model policy before any
+  spend.
 - The same shape (lenses, a skeptic per lens, a consolidator) is copied between chains. The leg-running helper is
   duplicated verbatim.
 - Data plumbing is hand-rolled in every chain: sidecar JSON parsed and `isinstance`-checked, files copied between run
@@ -286,9 +287,10 @@ The executable is `maestro`.
   unique and stable across versions. The set is in D-29.
 - **CLI-08 (Must).** `repertoire` lists each installed pack, with its version, its directory and the config file that
   lists it, and each composition with the first line of its doc. Given `<pack>.<composition>` it shows the full doc,
-  each param as its kebab-case flag with its type, default or `required` and description, the roles its agents use and a
-  `perform` line with the required flags. A pack that fails to load is named on stderr, the rest are listed, and the
-  exit is non-zero. `compose --help` and `perform --help` given a composition add the same params block.
+  each param as its kebab-case flag with its type, default or `required` and description, the config entries its host
+  nodes read by name and a `perform` line with the required flags. A pack that fails to load is named on stderr, the
+  rest are listed, and the exit is non-zero. `compose --help` and `perform --help` given a composition add the same
+  params block.
 - **CLI-09 (Must).** The CLI loads `$XDG_CONFIG_HOME/maestro/.env` when it exists, a variable already set in the
   environment winning. The release binary loads no `.env` or `bunfig.toml` from the cwd.
 
@@ -332,7 +334,8 @@ The executable is `maestro`.
 - **AC-1.** The core test suite passes with no host and no domain words (CORE-12). Pinned by the compose test "composes
   the %s golden IR into its plan golden", over core-only fixtures, and the domain-words lint.
 - **AC-2.** Composing the ported verification composition (the lens, skeptic, consolidator shape) reports the exact
-  node-instance count, rejects a same-family skeptic before any spend, and rejects an unclaimed config key.
+  node-instance count and rejects an unclaimed config key. A composition can refuse a model policy at build time, before
+  any spend, carried by the host-repo-sdk example, whose test pins a same-family rejection.
 - **AC-3.** The ported build-then-repair composition shows its bounded unroll in the plan. With a stub host that rejects
   once then accepts, it performs to completion, and a killed concert resumes at node granularity without repeating an
   `ok` node.
