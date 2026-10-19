@@ -1,7 +1,6 @@
 import { styleText } from "node:util";
 import {
 	type ConcertEvent,
-	type Enrichment,
 	formatInstance,
 	type HostEvent,
 	type Ir,
@@ -23,10 +22,16 @@ type InstanceState = NodeInstance & {
 	settledAt?: number;
 	/** Its latest progress event, as `eventLine` shows it, on one line. */
 	latest?: string;
-	/** What its `agent` progress event says it uses, as `agentText` shows it before any tokens. */
+	/** The actor a progress event announced for it, as `agentText` shows it before any tokens. */
 	agent?: string;
 	first: number;
 };
+
+/**
+ * An event with the text its host gives it: `line` for a progress event the host words, `actor` for one that names who
+ * executes the instance, which the agent column shows instead of a note.
+ */
+export type Annotated = ConcertEvent & { line?: string; actor?: string };
 
 /** Instance states keyed by node and expansion. */
 export type Seen = ReadonlyMap<string, InstanceState>;
@@ -75,8 +80,6 @@ const COUNTED: readonly Shown[] = [
 ];
 const GAP = "  ";
 const RULE = "─";
-/** The `kind` of the progress event an agent instance emits when it starts. */
-const AGENT_EVENT = "agent";
 type Metrics = Readonly<Record<string, number>>;
 /** The prefix of the metrics that count tokens. */
 const TOKEN_METRIC = "tokens_";
@@ -132,9 +135,15 @@ function progressParts(event: HostEvent) {
 	return { kind, fields };
 }
 
+/** `kind` then each other field, on one line. */
+function genericLine(event: HostEvent): string {
+	const { kind, fields } = progressParts(event);
+	return (kind === undefined ? fields : [kind, ...fields]).join(" ");
+}
+
 function folded(
 	prior: InstanceState | undefined,
-	event: ConcertEvent,
+	event: Annotated,
 ): InstanceState | undefined {
 	const { node, expansion, seq, at } = event;
 	const base = prior ?? {
@@ -164,11 +173,10 @@ function folded(
 		case "reused":
 			return { ...base, state: "ok", reused: true };
 		case "progress": {
-			if (event.event.kind === AGENT_EVENT)
-				return { ...base, agent: identityText(event.event) };
-			const { kind, fields } = progressParts(event.event);
-			const parts = kind === undefined ? fields : [kind, ...fields];
-			return { ...base, latest: flat(parts.join(" ")) };
+			const named =
+				event.actor === undefined ? base : { ...base, agent: event.actor };
+			if (event.actor !== undefined && event.line === undefined) return named;
+			return { ...named, latest: flat(event.line ?? genericLine(event.event)) };
 		}
 		case "log":
 			return prior;
@@ -176,7 +184,7 @@ function folded(
 }
 
 /** `prior` with `events` folded in; the latest event of an instance wins. */
-export function seen(prior: Seen, events: readonly ConcertEvent[]): Seen {
+export function seen(prior: Seen, events: readonly Annotated[]): Seen {
 	const next = new Map(prior);
 	for (const event of events) {
 		const state = folded(next.get(keyOf(event)), event);
@@ -207,12 +215,12 @@ type Widths = {
 	agent: number;
 };
 
-/** What an agent instance's harness reported, as `agentText` shows it, by instance. */
+/** What an agent instance's host says executes it, as `agentText` shows it, by instance. */
 type Agents = ReadonlyMap<string, string>;
 
-/** An instance's record: its enrichment and metrics, with whether an earlier attempt left it. */
+/** An instance's record: who its host says ran it, and its metrics, with whether an earlier attempt left it. */
 type Recorded = NodeInstance & {
-	enrichment?: Enrichment;
+	actor?: string;
 	metrics: Metrics;
 	stale: boolean;
 };
@@ -234,42 +242,18 @@ export function compact(n: number): string {
 		: `${(n / MILLION).toFixed(1)}M`;
 }
 
-const stringOf = (value: unknown) =>
-	typeof value === "string" && value !== "" ? value : undefined;
-
-/** `<harness> · <model> · <effort>` of `fields`, `undefined` when they name no harness and model. */
-function identityText(fields: Readonly<Record<string, unknown>> | undefined) {
-	const harness = stringOf(fields?.harness);
-	const model = stringOf(fields?.model);
-	if (harness === undefined || model === undefined) return undefined;
-	const effort = stringOf(fields?.thinking);
-	return [
-		harness,
-		model.slice(model.lastIndexOf("/") + 1),
-		...(effort === undefined ? [] : [effort]),
-	].join(" · ");
-}
-
-/**
- * An agent instance as `<harness> · <model> · <effort>  <total> tok`: the model without its provider prefix, the
- * effort when its role sets one, the total of `tokensOf`, left out when 0. Empty for an instance that is not an
- * agent's.
- */
-export function agentText(
-	enrichment: Enrichment | undefined,
-	metrics: Metrics,
-): string {
-	const identity = identityText(enrichment);
+/** `actor` as the agent column shows it, then the total of `tokensOf` as `<total> tok`, left out when 0. Empty without an actor. */
+export function agentText(actor: string | undefined, metrics: Metrics): string {
 	const tokens = tokensOf(metrics);
-	if (identity === undefined) return "";
-	return tokens > 0 ? `${identity}${GAP}${compact(tokens)} tok` : identity;
+	if (actor === undefined) return "";
+	return tokens > 0 ? `${actor}${GAP}${compact(tokens)} tok` : actor;
 }
 
 /** The agent text of each current instance of `records` that has one, by instance. */
 export function agentsOf(records: readonly Recorded[]): Agents {
 	const agents = new Map<string, string>();
 	for (const r of records) {
-		const text = r.stale ? "" : agentText(r.enrichment, r.metrics);
+		const text = r.stale ? "" : agentText(r.actor, r.metrics);
 		if (text) agents.set(keyOf(r), text);
 	}
 	return agents;
@@ -480,9 +464,24 @@ export function frame(ir: Ir, seen: Seen, view: View, agents: Agents): string {
 
 type Paint = (text: string, style: Style) => string;
 
-/** A string's newlines continue on the next lines after `indent`. */
-function progressText(event: HostEvent, paint: Paint, indent: string): string {
-	const { kind, fields } = progressParts(event);
+/**
+ * A progress event as text. Without a host `line` it is its kind and fields on one line, a string's newlines
+ * continuing on the next lines after `indent`. With one it is that line, then the lines of each multi-line field
+ * indented beneath it.
+ */
+function progressText(
+	event: Annotated & { type: "progress" },
+	paint: Paint,
+	indent: string,
+): string {
+	const { kind, fields } = progressParts(event.event);
+	if (event.line !== undefined) {
+		const beneath = fields
+			.filter((f) => NEWLINE.test(f))
+			.flatMap((f) => f.split(NEWLINE).filter(Boolean).map(safe))
+			.map((l) => `${indent}${INDENT}${l}`);
+		return [paint(flat(event.line), "magenta"), ...beneath].join("\n");
+	}
 	const body = fields.map((f) =>
 		f.split(NEWLINE).map(safe).join(`\n${indent}`),
 	);
@@ -492,7 +491,7 @@ function progressText(event: HostEvent, paint: Paint, indent: string): string {
 	].join(" ");
 }
 
-function happened(event: ConcertEvent, paint: Paint, indent: string): string {
+function happened(event: Annotated, paint: Paint, indent: string): string {
 	switch (event.type) {
 		case "running":
 			return paint("running", LOOK.running.style);
@@ -506,12 +505,12 @@ function happened(event: ConcertEvent, paint: Paint, indent: string): string {
 		case "log":
 			return paint(`log ${flat(event.line)}`, "dim");
 		case "progress":
-			return progressText(event.event, paint, indent);
+			return progressText(event, paint, indent);
 	}
 }
 
 /** One event as a text line: offset from the concert's start, instance name, what happened. */
-export function eventLine(ir: Ir, event: ConcertEvent, view: View): string {
+export function eventLine(ir: Ir, event: Annotated, view: View): string {
 	const paint: Paint = (text, style) =>
 		view.color && text
 			? styleText(style, text, { validateStream: false })

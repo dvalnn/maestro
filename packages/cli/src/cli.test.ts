@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { Host } from "@maestro/core/host";
 import { openRecord } from "@maestro/core/perform";
 import { IR_VERSION } from "@maestro/ir";
 import { SDK_VERSION, STDLIB_HASH } from "@maestro/sdk/loader";
@@ -684,8 +685,14 @@ describe("the record", () => {
 				thinking: "medium",
 			},
 		};
+		const host: Host = {
+			...hostOf(agent),
+			text: {
+				actor: () => "pi · claude-haiku-5.5 · medium",
+			},
+		};
 		const spent = await w.call(["perform", ...GREET, "--json"], {
-			hosts: [hostOf(agent)],
+			hosts: [host],
 		});
 		const metrics = { cost: 7, tokens_in: 12_000, tokens_out: 3_500 };
 		expect(json(spent).metrics).toEqual(metrics);
@@ -703,7 +710,7 @@ describe("the record", () => {
 		expect(listed[0]).toMatch(/status +tokens +disk$/);
 		expect(listed.find((l) => l.startsWith(id))).toMatch(/ok +15\.5k +/);
 		expect(listed.find((l) => l.startsWith(bare))).toMatch(/ok +- +/);
-		expect((await w.call(["ls", id])).out).toContain(
+		expect((await w.call(["ls", id], { hosts: [host] })).out).toContain(
 			"pi · claude-haiku-5.5 · medium  15.5k tok",
 		);
 	});

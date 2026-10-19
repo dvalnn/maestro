@@ -257,7 +257,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **HOST-16 (Must).** A target can name `prepare`, shell lines in a check's shape, that run in the sandbox in every
   working copy the host checks out from a commit, before its node's work, on every kind: for a dependency sync and the
   like. A failing line fails the node, and so does a prepare that changes content a seal would record. A target can also
-  name `sparse` directories, which the host narrows each such working copy to before prepare runs.
+  name `sparse` directories, or non-cone `{ patterns }`, which the host narrows each such working copy to before prepare
+  runs.
 
 ### 6.6 CLI (CLI)
 

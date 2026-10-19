@@ -171,8 +171,9 @@ A host is a package that the core loads. It is the only way node kinds beyond th
 8. **Cancellation.** A way to cancel a running node instance and release resources (kill the process tree).
 9. **Optional seams.** `param(type, text)` reads a param of one of its types from the text a flag or YAML gave it.
    `resources`, for a host that holds disk per concert, groups `release(concert, setup)`, which frees what it holds for
-   a settled concert, and `usage(concert, setup)`, which reports its bytes on disk, for `prune` and `ls`. ADR 0010
-   records the shape.
+   a settled concert, and `usage(concert, setup)`, which reports its bytes on disk, for `prune` and `ls`. `text` groups
+   `progress(event)`, which words one of the host's progress events, and `actor(enrichment)`, which names who ran an
+   instance, as plain one-line text for `watch` and `ls`; the renderer styles it. ADR 0010 records the shape.
 
 The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
 hooks and records what they return.
@@ -183,31 +184,33 @@ What a host author writes against. ADR 0010 records why the shape is this one.
 
 **Imports.** The contract spans three entry points and nothing else:
 
-| Import               | Gives                                                                                                                        |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `@maestro/core/host` | `Host`, `NodeKind`, `HostInstance`, `HostSetup`, `HostContext`, `HostResources`, `HostNodeResult`, `Metrics`, `Bounds`.      |
-| `@maestro/core/node` | `Inputs`, `Outputs`, `NodeResult`: what a node takes and gives back.                                                         |
-| `@maestro/ir`        | `HostNode`, `Ports`, `JsonSchema`, `Diagnostic`, `GraphIndex`, `Facts`, `HostEvent`, `Enrichment`, `Context`, `ArtifactRef`. |
+| Import               | Gives                                                                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `@maestro/core/host` | `Host`, `NodeKind`, `HostInstance`, `HostSetup`, `HostContext`, `HostResources`, `HostText`, `HostNodeResult`, `Metrics`, `Bounds`. |
+| `@maestro/core/node` | `Inputs`, `Outputs`, `NodeResult`: what a node takes and gives back.                                                                |
+| `@maestro/ir`        | `HostNode`, `Ports`, `JsonSchema`, `Diagnostic`, `GraphIndex`, `Facts`, `HostEvent`, `Enrichment`, `Context`, `ArtifactRef`.        |
 
 **Host members.** Required members sit flat on the host. Core calls each at a fixed stage and never inspects what it
 returns beyond the check named.
 
-| Member               | When core calls it                                                    | Returns                          |
-| -------------------- | --------------------------------------------------------------------- | -------------------------------- |
-| `name`               | Always: it namespaces kinds, types and facts.                         |                                  |
-| `kinds`, `types`     | At compose and at perform start: core reads the kind and type owners. |                                  |
-| `kind.name`          | At compose: the `<host>.<kind>` a node's `kind` names.                |                                  |
-| `kind.config`        | At compose: the schema a node's `config` is checked against.          | `HOST.config` diagnostics.       |
-| `config`             | At config compose: one schema per namespace the host owns.            |                                  |
-| `validate(graph, s)` | At compose, once per graph, after core's own checks.                  | Diagnostics, `HOST.`-prefixed.   |
-| `bounds(node)`       | At compose, per node of one of the host's kinds.                      | Named counts per instance.       |
-| `environment(s)`     | At perform start, once per concert.                                   | Facts for code nodes' `env`.     |
-| `kind.ports(node)`   | At compose, per node.                                                 | The node's `in` and `out`.       |
-| `kind.execute(...)`  | Per node instance, when its inputs are ready.                         | `HostNodeResult`.                |
-| `kind.cancel(i)`     | When the concert is cancelled or a halt stops a running instance.     | Nothing; `execute` then settles. |
-| `param?(type, text)` | The CLI only, to read a param of one of the host's `types` from text. | A value, or diagnostics.         |
-| `resources?.release` | The CLI only, for `prune`, on a settled concert.                      | Nothing.                         |
-| `resources?.usage`   | The CLI only, for `ls`, per concert.                                  | Bytes on disk.                   |
+| Member               | When core calls it                                                      | Returns                          |
+| -------------------- | ----------------------------------------------------------------------- | -------------------------------- |
+| `name`               | Always: it namespaces kinds, types and facts.                           |                                  |
+| `kinds`, `types`     | At compose and at perform start: core reads the kind and type owners.   |                                  |
+| `kind.name`          | At compose: the `<host>.<kind>` a node's `kind` names.                  |                                  |
+| `kind.config`        | At compose: the schema a node's `config` is checked against.            | `HOST.config` diagnostics.       |
+| `config`             | At config compose: one schema per namespace the host owns.              |                                  |
+| `validate(graph, s)` | At compose, once per graph, after core's own checks.                    | Diagnostics, `HOST.`-prefixed.   |
+| `bounds(node)`       | At compose, per node of one of the host's kinds.                        | Named counts per instance.       |
+| `environment(s)`     | At perform start, once per concert.                                     | Facts for code nodes' `env`.     |
+| `kind.ports(node)`   | At compose, per node.                                                   | The node's `in` and `out`.       |
+| `kind.execute(...)`  | Per node instance, when its inputs are ready.                           | `HostNodeResult`.                |
+| `kind.cancel(i)`     | When the concert is cancelled or a halt stops a running instance.       | Nothing; `execute` then settles. |
+| `param?(type, text)` | The CLI only, to read a param of one of the host's `types` from text.   | A value, or diagnostics.         |
+| `resources?.release` | The CLI only, for `prune`, on a settled concert.                        | Nothing.                         |
+| `resources?.usage`   | The CLI only, for `ls`, per concert.                                    | Bytes on disk.                   |
+| `text?.progress(e)`  | The CLI only, for `watch`, per progress event of the host's kinds.      | One line, or the generic one.    |
+| `text?.actor(e)`     | The CLI only, for `watch` and `ls`, on enrichment or an event's fields. | Who ran the instance, or none.   |
 
 The setup each hook gets, `HostSetup`, is item 6 above and ADR 0010.
 
@@ -452,9 +455,10 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - Prepare runs in every working copy checked out from a commit: `fresh`, `fork`, `read` and a re-opened extension, for
   every kind. An in-place `extend` keeps its ignored files and git state, so prepare runs once per working copy. The
   ignored files it makes are never sealed. Any other change it makes fails the node, naming the files.
-- `target.sparse` lists cone-mode directories, relative to the repository root. The host narrows every working copy it
-  checks out to them before prepare runs, and a sealed version still holds the full tree. If narrowing fails, the node
-  fails and leaves no lane.
+- `target.sparse` lists cone-mode directories, relative to the repository root, or is `{ patterns: [...] }`, a non-empty
+  list of gitignore-style patterns applied in non-cone mode (`/*`, `!/b/`, `/b/keep.txt` leaves the root files and
+  `b/keep.txt`). The host narrows every working copy it checks out to them before prepare runs, and a sealed version
+  still holds the full tree. If narrowing fails, the node fails and leaves no lane.
 - A **lane ref** param, written `<concert id>.<node instance id>`, lets a concert fork, read or make into a changeset a
   version left by an earlier concert (D-27, HOST-13). There is no cross-concert extension. Lanes stay on disk until
   `prune`, and `ls` shows their disk use.
@@ -470,9 +474,12 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - A fresh lane takes its node's `base`, else `target.base`, else is cut from the target's `HEAD`. A check with no
   `timeout` has no limit and runs until it ends or the concert is killed, in the agent's `check` command as on the node.
 - `target.prepare` takes a check's shape and sets a lane up, with a dependency sync or the like (HOST-16). Its lines run
-  as a check's do, before the node's own work, and each emits a `prepare` progress event with how it ended and the tail
-  of its output. Any line that does not exit 0 fails the node, never rejects it. Prepare is environment, not input, so
-  neither it nor its binds enter the resume key (ADR 0011).
+  as a check's do, before the node's own work, and each emits a `prepare` progress event, `{ kind, line, of, run }`, as
+  it starts, and again with `ended` (how it ended) and `tail` (the last lines of its output) when it ends. A failing
+  line's reason ends with the last non-blank line of its output, as
+  `target.prepare line 1 exited 7: registry unreachable`; a check line's reason does the same. Any line that does not
+  exit 0 fails the node, never rejects it. Prepare is environment, not input, so neither it nor its binds enter the
+  resume key (ADR 0011).
 
 **Sandbox**
 

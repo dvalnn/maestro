@@ -25,8 +25,10 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
      (`bun install`, `uv sync`), in a check's forms. It runs in the sandbox, network included, in every lane checked out
      from a commit, before the node's work. What it makes must be ignored by the repository's `.gitignore`; any other
      change, or a non-zero exit, fails the node.
-   - `target.sparse`: in a monorepo, the directories the work needs, relative to the repository root (git's cone mode).
-     Lanes check out only those, before prepare runs; checks and agents see nothing else.
+   - `target.sparse`: in a monorepo, the directories the work needs, relative to the repository root (git's cone mode),
+     or `{ patterns: [...] }` of gitignore-style patterns when directories cannot say it, as `/*`, `!/docs/`,
+     `/docs/api.md` for the root files and one file under `docs/`. Lanes check out only those, before prepare runs;
+     checks and agents see nothing else.
    - `roles`: every role the composition names. Compose lists each missing one. A role no layer maps is the user's call,
      since a model is spend: ask the user for its harness and model.
    - `packs`: each installed pack's directory, absolute or relative to the workspace root (the directory that holds
@@ -59,7 +61,7 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
 target:
   repo: /home/me/src/shop # absolute path of the repository lanes are cut from
   base: main # optional; else the target's HEAD
-  sparse: [packages/shop, packages/ui] # optional: lanes check out only these directories
+  sparse: [packages/shop, packages/ui] # optional: lanes check out only these directories, or { patterns: [...] }
   prepare: bun install --frozen-lockfile # optional: runs in every new lane, in any form a check takes
   checks:
     test: bun test # short form: one shell line

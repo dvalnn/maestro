@@ -152,7 +152,7 @@ describe("frame", () => {
 		]);
 		const record = {
 			...step,
-			enrichment: { harness: "pi", model: "a/haiku", thinking: "medium" },
+			actor: "pi · haiku · medium",
 			metrics: { tokens_in: 12_000, tokens_out: 3_500, tokens_reasoning: 900 },
 			stale: false,
 		};
@@ -187,27 +187,31 @@ describe("frame", () => {
 	test("shows the agent a running instance announced, before any tokens, then its note", () => {
 		const announced = eventsOf([
 			["best", "", 0, { type: "running" }],
-			[
-				"best",
-				"",
-				10,
-				{
-					type: "progress",
-					event: {
-						kind: "agent",
-						harness: "pi",
-						model: "a/b",
-						thinking: "low",
-					},
-				},
-			],
+			["best", "", 10, { type: "progress", event: { kind: "agent" } }],
 			["best", "", 20, { type: "progress", event: { kind: "turn" } }],
-		]);
+		]).map((e) => (e.seq === 2 ? { ...e, actor: "pi · b · low" } : e));
 		const line = frame(ir, seen(new Map(), announced), VIEW, new Map()).split(
 			"\n",
 		)[4];
 		expect(line).toBe(
 			"● best      code       running  1m04s  pi · b · low  turn",
+		);
+	});
+
+	test("shows a host's line as a running instance's note, on one line, in place of the generic one", () => {
+		const noted = (extra: object) => {
+			const events = eventsOf([
+				["best", "", 0, { type: "running" }],
+				["best", "", 10, { type: "progress", event: { kind: "turn", n: 1 } }],
+			]).map((e) => (e.seq === 2 ? { ...e, ...extra } : e));
+			return frame(ir, seen(new Map(), events), VIEW, new Map())
+				.split("\n")[4]
+				?.split("  ")
+				.at(-1);
+		};
+		expect(noted({})).toBe("turn 1");
+		expect(noted({ line: "step 1/2:\nbun install" })).toBe(
+			"step 1/2: bun install",
 		);
 	});
 
@@ -299,6 +303,25 @@ describe("eventLine", () => {
 		]);
 	});
 
+	test("shows a host's line as the header, the lines of each multi-line field indented beneath", () => {
+		const shown = (event: Record<string, unknown>, extra: object) =>
+			line({
+				...(eventsOf([
+					["best", "", 0, { type: "progress", event }],
+				])[0] as ConcertEvent),
+				...extra,
+			} as ConcertEvent);
+		const event = { kind: "step", cmd: "bun install", tail: `a\nb${ESC}[2J\n` };
+		expect(shown(event, { line: "step 1/2: b" }).split("\n")).toEqual([
+			"+0.0s   best                    step 1/2: b",
+			`${" ".repeat(34)}a`,
+			`${" ".repeat(34)}b\\u001b[2J`,
+		]);
+		expect(shown({ kind: "step", n: 1 }, { line: "step one" })).toBe(
+			"+0.0s   best                    step one",
+		);
+	});
+
 	test("shows a control character as its escape, so no text moves the cursor", () => {
 		const [log] = eventsOf([
 			["best", "", 0, { type: "log", line: `a${ESC}[2Jb` }],
@@ -315,48 +338,26 @@ describe("eventLine", () => {
 });
 
 describe("agentText", () => {
-	const ENRICHED = {
-		session: "s",
-		harness: "pi",
-		model: "github-copilot/claude-haiku-5.5",
-		thinking: "medium",
-	};
+	const ACTOR = "pi · claude-haiku-5.5 · medium";
 
 	test.each([
+		[ACTOR, { tokens_in: 12_000, tokens_out: 3_500 }, `${ACTOR}  15.5k tok`],
+		[ACTOR, { tokens_in: 1_200_000, cost: 5 }, `${ACTOR}  1.2M tok`],
+		[ACTOR, { tokens_in: 999_990 }, `${ACTOR}  1.0M tok`],
+		[ACTOR, {}, ACTOR],
 		[
-			ENRICHED,
-			{ tokens_in: 12_000, tokens_out: 3_500 },
-			"pi · claude-haiku-5.5 · medium  15.5k tok",
-		],
-		[
-			{ ...ENRICHED, thinking: undefined, model: "none" },
-			{ tokens_out: 999 },
-			"pi · none  999 tok",
-		],
-		[
-			ENRICHED,
-			{ tokens_in: 1_200_000, cost: 5 },
-			"pi · claude-haiku-5.5 · medium  1.2M tok",
-		],
-		[
-			ENRICHED,
-			{ tokens_in: 999_990 },
-			"pi · claude-haiku-5.5 · medium  1.0M tok",
-		],
-		[ENRICHED, {}, "pi · claude-haiku-5.5 · medium"],
-		[
-			ENRICHED,
+			ACTOR,
 			{
 				tokens_in: 100,
 				tokens_out: 50,
 				tokens_cache_read: 25,
 				tokens_reasoning: 40,
 			},
-			"pi · claude-haiku-5.5 · medium  175 tok",
+			`${ACTOR}  175 tok`,
 		],
-		[{ session: "s" }, { tokens_in: 5 }, ""],
-	])("shows %j with %j as %j", (enrichment, metrics, text) => {
-		expect(agentText(enrichment, metrics)).toBe(text);
+		[undefined, { tokens_in: 5 }, ""],
+	])("shows %j with %j as %j", (actor, metrics, text) => {
+		expect(agentText(actor, metrics)).toBe(text);
 	});
 });
 

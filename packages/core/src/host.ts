@@ -120,6 +120,19 @@ export interface Host {
 	): { value: unknown } | { diagnostics: Diagnostic[] };
 	/** What the host holds for a concert, for hosts that hold any. */
 	readonly resources?: HostResources;
+	/** How the host's records read as text, for hosts that say more than the generic line. */
+	readonly text?: HostText;
+}
+
+/** Plain one-line text for a host's records; the renderer styles and cuts it. Each member is optional. */
+export interface HostText {
+	/** For one of the host's progress events, such as `prepare 1/2: bun install`. Undefined leaves the generic line. */
+	progress?(event: HostEvent): string | undefined;
+	/**
+	 * Who ran an instance, such as `pi · claude-haiku-5.5 · medium`. Called on a settled instance's enrichment and on each
+	 * of the host's progress events, and names an actor only for an event that announces one; undefined otherwise.
+	 */
+	actor?(enrichment: Enrichment): string | undefined;
 }
 
 /** The disk a host holds for a concert. */

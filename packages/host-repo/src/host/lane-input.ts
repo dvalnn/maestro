@@ -14,7 +14,7 @@ import {
 	type RepoSetup,
 } from "./config";
 import type { Live } from "./live";
-import { pathBinds, runLines, type Sandboxed, TAIL_LINES } from "./run-lines";
+import { pathBinds, runLines, type Sandboxed, tailOf } from "./run-lines";
 import type { TargetStore } from "./store";
 
 /** The base a fresh lane is cut at when neither its node nor `target.base` names one. */
@@ -83,7 +83,7 @@ function changeList(files: string[]): string {
 }
 
 /**
- * Runs `spec`, the target's prepare, in `lane`'s sandbox as a check runs, emitting one event per line.
+ * Runs `spec`, the target's prepare, in `lane`'s sandbox as a check runs, emitting an event as each line starts and ends.
  * @throws Error when a line does not exit 0, or the lines changed content `seal` would record.
  */
 async function prepare(
@@ -99,15 +99,11 @@ async function prepare(
 		live: run.live,
 		log: [],
 	};
-	const { outcome, reason } = await runLines(s, PREPARE, spec, (end) =>
-		run.emit({
-			kind: "prepare",
-			line: end.line,
-			run: end.run,
-			ended: end.ended,
-			tail: end.output.join("\n").split("\n").slice(-TAIL_LINES).join("\n"),
-		}),
-	);
+	const { outcome, reason } = await runLines(s, PREPARE, spec, {
+		start: (start) => run.emit({ kind: "prepare", ...start }),
+		end: ({ output, ...end }) =>
+			run.emit({ kind: "prepare", ...end, tail: tailOf(output) }),
+	});
 	if (outcome !== "ok") throw new Error(reason);
 	const changed = await lane.changes();
 	if (changed.length)

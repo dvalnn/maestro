@@ -6,5 +6,6 @@ export {
 	type Lanes,
 	type LanesOptions,
 	openLanes,
+	type Sparse,
 	type Version,
 } from "./lanes";

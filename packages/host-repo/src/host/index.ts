@@ -12,6 +12,7 @@ import {
 	repoSetup,
 } from "./config";
 import { concertUsage, releaseConcert } from "./store";
+import { repoText } from "./text";
 import { validateRepo } from "./validate";
 
 export {
@@ -62,6 +63,7 @@ export function repoHost({ harnesses }: RepoHostOptions): Host {
 				],
 			};
 		},
+		text: repoText,
 		resources: {
 			release: (concert, setup) => releaseConcert(setup.store, concert),
 			usage: (concert, setup) => concertUsage(setup.store, concert),

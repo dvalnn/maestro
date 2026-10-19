@@ -384,7 +384,8 @@ function targetProblems(setup: RepoSetup): Finding[] {
 
 /** The `target.sparse` entries that are absolute or step out through `..`. */
 function sparseProblems(setup: RepoSetup): Finding[] {
-	return (setup.target?.sparse ?? []).flatMap((entry) => {
+	const sparse = setup.target?.sparse;
+	return (Array.isArray(sparse) ? sparse : []).flatMap((entry) => {
 		const how = isAbsolute(entry)
 			? "is absolute"
 			: entry.split("/").includes("..")

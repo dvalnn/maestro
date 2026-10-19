@@ -2,7 +2,7 @@
 status: accepted
 ---
 
-# A host is its required members, flat, and an optional `resources`, with no version
+# A host is its required members, flat, and optional `resources` and `text`, with no version
 
 A host gives core node kinds, types, config namespaces and hooks (architecture section 6). Its interface had grown
 optional members one at a time: `param`, `release` and `usage` beside the required ones, and no answer to whether the
@@ -15,6 +15,11 @@ The shape is:
   past without telling the reader anything.
 - **`resources` is optional and holds `release` and `usage`.** Both act on the disk a host keeps for a concert, and a
   host that keeps none has neither, so they are present together or not at all. Neither is ever half implemented.
+- **`text` is optional and holds `progress` and `actor`.** They word one of the host's progress events and name who ran
+  an instance, as plain one-line text. The CLI calls them and hands the strings to the renderer, which styles and cuts
+  them and knows ir only. `actor` is called on a settled instance's enrichment and on each of the host's progress
+  events, and names an actor only for an event that announces one. A host that says nothing more than the generic line
+  omits `text`, or either member.
 - **`param` stays flat and optional.** It reads one of the host's types from text and has no partner member.
 - **`paths` is optional and lists the `config` keys that hold file paths**, namespace first, which the CLI anchors to
   the workspace root, or to the user file's directory for a value in the user file.

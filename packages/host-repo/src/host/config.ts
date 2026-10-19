@@ -9,7 +9,7 @@ import {
 	violations,
 } from "@maestro/ir";
 import type { Role } from "../harness/index";
-import type { ApplyStrategy } from "../lane/index";
+import type { ApplyStrategy, Sparse } from "../lane/index";
 
 export const HOST_NAME = "repo";
 export const AGENT_KIND = "repo.agent";
@@ -66,7 +66,23 @@ export const HOST_CONFIG = {
 			base: NAME,
 			checks: { type: "object", additionalProperties: CHECK },
 			prepare: CHECK,
-			sparse: { type: "array", items: NAME, minItems: 1, uniqueItems: true },
+			sparse: {
+				anyOf: [
+					{ type: "array", items: NAME, minItems: 1, uniqueItems: true },
+					{
+						type: "object",
+						required: ["patterns"],
+						additionalProperties: false,
+						properties: {
+							patterns: {
+								type: "array",
+								items: { type: "string", pattern: "^[^\\n]+$" },
+								minItems: 1,
+							},
+						},
+					},
+				],
+			},
 		},
 	},
 	roles: {
@@ -269,7 +285,7 @@ type RawSetup = {
 		base?: string;
 		checks?: Record<string, RawCheck>;
 		prepare?: RawCheck;
-		sparse?: string[];
+		sparse?: Sparse;
 	};
 	roles?: Record<string, Role>;
 	sandbox?: { readOnly?: string[] };
@@ -281,8 +297,8 @@ export type Target = {
 	checks: Record<string, CheckSpec>;
 	/** Run in every lane checked out from a commit, before its node's own work. */
 	prepare?: CheckSpec;
-	/** Cone-mode directories, relative to the repository root, that every checked-out lane is narrowed to. */
-	sparse?: string[];
+	/** Cone-mode directories, relative to the repository root, or `patterns`, that every checked-out lane is narrowed to. */
+	sparse?: Sparse;
 };
 
 /** The host's config namespaces, parsed. */

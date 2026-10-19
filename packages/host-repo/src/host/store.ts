@@ -14,6 +14,7 @@ import {
 	bytesOnDisk,
 	type Lanes,
 	openLanes,
+	type Sparse,
 	type Version,
 } from "../lane/index";
 
@@ -50,13 +51,13 @@ export type Session = {
 
 /**
  * The store of target `repo`, resolved against the working directory, under the host store `store`, its checked-out
- * lanes narrowed to the cone-mode directories `sparse`, if any.
+ * lanes narrowed to `sparse`, if any.
  * @throws Error when `repo` does not exist.
  */
 export function openTarget(
 	store: string,
 	repo: string,
-	sparse?: string[],
+	sparse?: Sparse,
 ): TargetStore {
 	const target = realpathSync(resolve(repo));
 	const root = join(store, sha256Hex(target).slice(0, TARGET_ID_LENGTH));

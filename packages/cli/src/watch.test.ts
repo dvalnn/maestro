@@ -1,6 +1,6 @@
 import { describe, expect, setSystemTime, test } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
-import type { HostNodeResult } from "@maestro/core/host";
+import type { Host, HostNodeResult } from "@maestro/core/host";
 import { fakeHost } from "@maestro/testkit";
 import {
 	ECHO,
@@ -59,15 +59,21 @@ describe("watch on a running concert", async () => {
 	setSystemTime(START);
 	const w = await world();
 	const step = Promise.withResolvers<HostNodeResult>();
-	const host = fakeHost({
-		steps: {
-			first: [FIRST],
-			"echo/echo": (_instance, _inputs, { emit }) => {
-				emit(TOOL);
-				return step.promise;
+	const host: Host = {
+		...fakeHost({
+			steps: {
+				first: [FIRST],
+				"echo/echo": (_instance, _inputs, { emit }) => {
+					emit(TOOL);
+					return step.promise;
+				},
 			},
+		}),
+		text: {
+			progress: (e) => (e.kind === "tool" ? `ran ${e.name}` : undefined),
+			actor: (e) => (e.kind === "tool" ? "pi · haiku" : undefined),
 		},
-	});
+	};
 	const announced = Promise.withResolvers<string>();
 	const performed = w.call(["perform", ...GREET], {
 		hosts: [host],
@@ -86,6 +92,7 @@ describe("watch on a running concert", async () => {
 	) => {
 		const writes: string[] = [];
 		const outcome: Outcome = await w.call(["watch", id, ...args], {
+			hosts: [host],
 			...over,
 			stdout: (write) => {
 				writes.push(write);
@@ -95,9 +102,7 @@ describe("watch on a running concert", async () => {
 		return { ...outcome, writes };
 	};
 	const graph = watching([], { terminal: TERMINAL }, (write) => {
-		if (
-			/^ +● echo .*running .*tool bash/m.test(stripVTControlCharacters(write))
-		)
+		if (/^ +● echo .*running .*ran bash/m.test(stripVTControlCharacters(write)))
 			setTimeout(() => step.resolve(ECHO), HOLD_MS);
 	});
 	const json = watching(["--events", "--json"], { terminal: TERMINAL });
@@ -126,6 +131,13 @@ describe("watch on a running concert", async () => {
 		expect(frames.filter((f, i) => f === frames[i - 1])).toEqual([]);
 		const last = stripVTControlCharacters(drawn.writes.at(-1) ?? "");
 		expect(last).toMatch(/^ {2}✓ echo +fake\.task +ok/m);
+		expect(
+			frames.some((f) =>
+				/● echo .*running .*pi · haiku +ran bash/.test(
+					stripVTControlCharacters(f),
+				),
+			),
+		).toBe(true);
 		expect(last).toMatch(/^✓ demo\.greet {2}\S+ +ok/m);
 		expect(last).toMatch(/^── 4 ok ─+$/m);
 	});
@@ -154,12 +166,10 @@ describe("watch on a running concert", async () => {
 		expect(types.at(-1)).toBe("concert");
 	});
 
-	test("--events on a terminal prints a text line per event", () => {
+	test("--events on a terminal prints a text line per event, a host's wording of its progress in place of the generic line", () => {
 		expect(listed.code).toBe(0);
 		expect(listed.writes.map(stripVTControlCharacters)).toContainEqual(
-			expect.stringMatching(
-				/^\+\S+ +echo\/echo +tool bash \{"command":"ls"\}$/,
-			),
+			expect.stringMatching(/^\+\S+ +echo\/echo +ran bash$/),
 		);
 	});
 

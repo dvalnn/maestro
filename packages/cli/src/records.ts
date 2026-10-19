@@ -25,6 +25,7 @@ import {
 	textOf,
 	type Values,
 } from "./command";
+import { actorOf, hostTextOf } from "./host-text";
 import {
 	CliError,
 	closingLine,
@@ -211,6 +212,7 @@ async function listed({ session, store, values, json }: Stored) {
 async function instancesOf({ session, store, json }: Stored, prefix: string) {
 	const row = concertOf(store, prefix);
 	const instances = arranged(row.ir, store.instances(row.id));
+	const hostText = hostTextOf(session.deps.hosts, row.ir);
 	session.deps.stdout(
 		json
 			? jsonOf({ ...concertColumns(row), instances })
@@ -220,7 +222,7 @@ async function instancesOf({ session, store, json }: Stored, prefix: string) {
 						instanceName(row.ir, i),
 						i.status,
 						i.stale ? "stale" : "",
-						agentText(i.enrichment, i.metrics),
+						agentText(actorOf(i.enrichment, i.node, hostText), i.metrics),
 						i.reason ?? "",
 					]),
 				]),

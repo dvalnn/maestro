@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { type Bind, bubblewrap } from "../sandbox/index";
 import type { CheckSpec } from "./config";
 import type { Live } from "./live";
@@ -37,13 +38,44 @@ export type Sandboxed = {
 	log: string[];
 };
 
-/** A line that ended: its 1-based number, its text, how it ended and its output. */
-type LineEnd = {
-	line: number;
-	run: string;
-	ended: string;
-	output: string[];
+/** A line of `of` that started: its 1-based number and its text. */
+type LineStart = { line: number; of: number; run: string };
+
+/** A line that ended: how it ended and its output. */
+type LineEnd = LineStart & { ended: string; output: string[] };
+
+/** What `runLines` reports as each line starts and ends. */
+type LineHooks = {
+	start?: (start: LineStart) => void;
+	end?: (end: LineEnd) => void;
 };
+
+/** The most code points of an output line a reason carries. */
+const REASON_LINE_MAX = 200;
+/** A control character, which a reason cannot carry. */
+const CONTROL = /\p{Cc}/gu;
+
+/**
+ * The last line of `output` that is not blank, without its terminal escape sequences, and its other control
+ * characters turned to spaces.
+ */
+export const lastLine = (output: readonly string[]) =>
+	output
+		.flatMap((chunk) => chunk.split("\n"))
+		.map((l) => stripVTControlCharacters(l).replace(CONTROL, " ").trim())
+		.findLast(Boolean);
+
+/** `what`, then the last non-blank line of `output` when there is one. */
+function reasonOf(what: string, output: readonly string[]): string {
+	const last = lastLine(output);
+	return last === undefined
+		? what
+		: `${what}: ${[...last].slice(0, REASON_LINE_MAX).join("")}`;
+}
+
+/** The last `TAIL_LINES` lines of `output`. */
+export const tailOf = (output: readonly string[]) =>
+	output.join("\n").split("\n").slice(-TAIL_LINES).join("\n");
 
 /** Binds of `paths`, each at its own path. */
 export const pathBinds = (...paths: string[][]): Bind[] =>
@@ -58,7 +90,8 @@ async function runLine(
 ): Promise<Ended> {
 	const proc = bubblewrap.start({
 		lane: s.dir,
-		argv: ["sh", "-c", line],
+		// Stderr joins stdout, so the output keeps the order it arrived in.
+		argv: ["sh", "-c", `exec 2>&1; ${line}`],
 		env: spec.env,
 		readOnly: [...s.readOnly, ...pathBinds(spec.readOnly)],
 		writable: [...s.writable, ...pathBinds(spec.writable)],
@@ -99,13 +132,14 @@ const couldNotRun = (ended: Ended) =>
 
 /**
  * Runs the lines of `spec` in order under its one timeout, the first that does not exit 0 stopping them, and calls
- * `onEnd` as each ends. A reason starts with `label`, as `<label> line 2 exited 1`.
+ * `hooks` as each starts and ends. A reason starts with `label`, as `<label> line 2 exited 1`, and ends with the last
+ * non-blank line of the failing line's output, as `: <line>`, when it has one.
  */
 export async function runLines(
 	s: Sandboxed,
 	label: string,
 	spec: CheckSpec,
-	onEnd: (end: LineEnd) => void = () => {},
+	hooks: LineHooks = {},
 ): Promise<Verdict> {
 	const deadline =
 		spec.timeout === undefined ? undefined : Date.now() + spec.timeout;
@@ -113,18 +147,19 @@ export async function runLines(
 		if (s.live.cancelled) return { outcome: "failed", reason: "cancelled" };
 		s.log.push(`$ ${line}`);
 		const from = s.log.length;
+		const start = { line: i + 1, of: spec.lines.length, run: line };
+		hooks.start?.(start);
 		const ended = await runLine(s, spec, line, deadline);
-		onEnd({
-			line: i + 1,
-			run: line,
-			ended: how(ended),
-			output: s.log.slice(from),
-		});
+		const output = s.log.slice(from);
+		hooks.end?.({ ...start, ended: how(ended), output });
 		const what = `${label} line ${i + 1} ${how(ended)}`;
 		s.log.push(`[${what}]`);
 		if ("code" in ended && ended.code === 0) continue;
 		const failed = couldNotRun(ended) || s.live.cancelled;
-		return { outcome: failed ? "failed" : "rejected", reason: what };
+		return {
+			outcome: failed ? "failed" : "rejected",
+			reason: reasonOf(what, output),
+		};
 	}
 	return { outcome: "ok" };
 }

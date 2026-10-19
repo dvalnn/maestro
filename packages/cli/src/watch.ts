@@ -20,6 +20,7 @@ import {
 	only,
 	type Values,
 } from "./command";
+import { actorOf, annotated, hostTextOf } from "./host-text";
 import { closingLine, exitOf, resultDoc } from "./output";
 import { concertOf, type Stored, withStore } from "./session";
 
@@ -81,7 +82,9 @@ const eventLines =
 	(deps: Deps, color: boolean): Show =>
 	(events, row) => {
 		const view = viewOf(row, color);
-		for (const e of events) deps.stdout(eventLine(row.ir, e, view));
+		const hostText = hostTextOf(deps.hosts, row.ir);
+		for (const e of annotated(events, hostText))
+			deps.stdout(eventLine(row.ir, e, view));
 	};
 
 /** Redraws the frame in place, over the one before, when it changed. */
@@ -95,13 +98,19 @@ function frames(
 	let last: string | undefined;
 	const ids = store.ids();
 	return (events, row) => {
-		state = seen(state, events);
+		const hostText = hostTextOf(deps.hosts, row.ir);
+		state = seen(state, annotated(events, hostText));
 		const view = viewOf(row, color, {
 			...terminal(),
 			tokens: tokensOf(store.metrics(row.id)),
 			unique: uniqueLength(row.id, ids),
 		});
-		const agents = agentsOf(store.instances(row.id));
+		const agents = agentsOf(
+			store.instances(row.id).map((i) => ({
+				...i,
+				actor: actorOf(i.enrichment, i.node, hostText),
+			})),
+		);
 		const text = frame(row.ir, state, view, agents);
 		if (text === last) return;
 		const erase =

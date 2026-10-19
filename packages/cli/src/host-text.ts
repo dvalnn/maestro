@@ -1,0 +1,41 @@
+import type { Host, HostText } from "@maestro/core/host";
+import type { ConcertEvent, Enrichment, Ir } from "@maestro/ir";
+import type { Annotated } from "@maestro/render-text/live";
+
+/** The text hooks of the host that registers each node of `ir`, by node id, found by the namespace of its kind. */
+export function hostTextOf(
+	hosts: readonly Host[],
+	ir: Ir,
+): (node: string) => HostText | undefined {
+	const kinds = new Map(ir.nodes.map((n) => [n.id, n.kind]));
+	return (node) => {
+		const kind = kinds.get(node) ?? "";
+		const namespace = kind.slice(0, Math.max(0, kind.indexOf(".")));
+		return hosts.find((h) => h.name === namespace)?.text;
+	};
+}
+
+/** `events`, each progress event with the line and actor its host gives it. */
+export function annotated(
+	events: readonly ConcertEvent[],
+	hostText: ReturnType<typeof hostTextOf>,
+): Annotated[] {
+	return events.map((e) => {
+		if (e.type !== "progress") return e;
+		const text = hostText(e.node);
+		const line = text?.progress?.(e.event);
+		const actor = text?.actor?.(e.event);
+		return {
+			...e,
+			...(line !== undefined && { line }),
+			...(actor !== undefined && { actor }),
+		};
+	});
+}
+
+/** Who its host says ran the instance of `node` that settled with `enrichment`. */
+export const actorOf = (
+	enrichment: Enrichment | undefined,
+	node: string,
+	hostText: ReturnType<typeof hostTextOf>,
+): string | undefined => enrichment && hostText(node)?.actor?.(enrichment);

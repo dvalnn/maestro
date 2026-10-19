@@ -79,13 +79,16 @@ export interface Lanes {
 	prune(concert: string): Promise<number>;
 }
 
+/** A sparse checkout: cone-mode directories relative to the repository root, or gitignore-style `patterns`. */
+export type Sparse = string[] | { patterns: string[] };
+
 export type LanesOptions = {
 	/** The target repository. Only read: its checkout, refs and objects are never written (HOST-03). */
 	target: string;
 	/** Directory owned by maestro holding the store and the lanes of this target. */
 	root: string;
-	/** Cone-mode directories, relative to the repository root, that a checked-out working copy is narrowed to. */
-	sparse?: string[];
+	/** What a checked-out working copy is narrowed to. */
+	sparse?: Sparse;
 };
 
 /** Git with a fixed identity and no system or user config, so the operator's settings cannot change a version. */
@@ -171,7 +174,7 @@ export function bytesOnDisk(p: string): number {
 export function openLanes(options: LanesOptions): Lanes {
 	const target = resolvePath(options.target);
 	const root = resolvePath(options.root);
-	const sparse = options.sparse ?? [];
+	const { sparse } = options;
 	const store = join(root, "store.git");
 	// The host's git names the store and the work tree, never a lane's `.git`, which the agent can write. The one
 	// exception is `checkedOutLane`, which sets sparse on the lane's git dir before any sandbox runs.
@@ -376,18 +379,23 @@ export function openLanes(options: LanesOptions): Lanes {
 	// directory, made before any sandbox has run there (ADR 0005).
 	async function checkedOutLane(at: Version, head: string, base: string) {
 		const lane = open(at, head, base, true);
-		if (!sparse.length) return lane;
+		if (!sparse) return lane;
 		const { dir, gitdir } = paths(at);
-		const { err, code } = await spawnGit([
+		const set = [
 			`--git-dir=${gitdir}`,
 			`--work-tree=${dir}`,
 			`--attr-source=${EMPTY_TREE}`,
 			"sparse-checkout",
 			"set",
-			"--cone",
-			"--",
-			...sparse,
-		]);
+		];
+		// Patterns go on stdin, so no argument limit bounds them.
+		const { err, code } = Array.isArray(sparse)
+			? await spawnGit([...set, "--cone", "--", ...sparse])
+			: await spawnGit(
+					[...set, "--no-cone", "--stdin"],
+					{},
+					`${sparse.patterns.join("\n")}\n`,
+				);
 		if (code === 0) return lane;
 		lane.discard();
 		throw new Error(`target.sparse: ${err.trim()}`);

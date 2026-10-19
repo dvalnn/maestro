@@ -177,8 +177,8 @@ It can be forked, read or made into a changeset, and not extended.
 **Target**: The repository lanes are cut from.
 
 **Prepare**: The target's shell lines, `target.prepare`, that set up every lane the host checks out from a commit, such
-as a dependency sync, in the sandbox before the node's work. A sparse checkout is `target.sparse`, which the host
-applies. _Avoid_: setup, hook, after-create
+as a dependency sync, in the sandbox before the node's work. A sparse checkout is `target.sparse`, directories or
+`{ patterns }`, which the host applies. _Avoid_: setup, hook, after-create
 
 **Changeset**: A lane version's patch series, held as an artifact. A concert leaves one only by ending in a changeset
 node. The target's checkout is never touched. _Avoid_: series

@@ -162,12 +162,17 @@ describe("target.prepare", () => {
 	});
 
 	test.each([
-		["exit 1", undefined, 1],
-		["no-such-command", undefined, 127],
-		["sleep 30", "1s", 124],
+		["exit 1", undefined, 1, "45"],
+		[
+			"no-such-command",
+			undefined,
+			127,
+			"sh: line 1: no-such-command: command not found",
+		],
+		["sleep 30", "1s", 124, "45"],
 	])(
-		"a line running '%s' fails the node with its exit, drops the lane and never starts the node's work",
-		async (line, timeout, code) => {
+		"a line running '%s' fails the node with its exit and the last output line, drops the lane and never starts the node's work",
+		async (line, timeout, code, last) => {
 			const marks = tmp("marks");
 			const { host } = stubHost(() => [OK]);
 			const ir = irOf(
@@ -185,16 +190,25 @@ describe("target.prepare", () => {
 			const { concert, recordPath } = await start(host, ir, config);
 			expect(await concert.done).toMatchObject({
 				outcome: "failed",
-				reason: `target.prepare line 2 exited ${code}`,
+				reason: `target.prepare line 2 exited ${code}: ${last}`,
 			});
 			expect(readdirSync(marks)).toEqual([]);
 			expect(existsSync(laneOf(config, concert.id, "x"))).toBe(false);
 			const events = prepareEvents(recordPath, concert.id);
-			expect(events).toMatchObject([
-				{ line: 1, run: run[0], ended: "exited 0", tail: "started" },
-				{ line: 2, run: run[1], ended: `exited ${code}` },
+			expect(events).toEqual([
+				{ kind: "prepare", line: 1, of: 2, run: run[0] },
+				{
+					kind: "prepare",
+					line: 1,
+					of: 2,
+					run: run[0],
+					ended: "exited 0",
+					tail: "started",
+				},
+				{ kind: "prepare", line: 2, of: 2, run: run[1] },
+				expect.objectContaining({ line: 2, ended: `exited ${code}` }),
 			]);
-			const tail = String(events[1]?.tail).split("\n");
+			const tail = String(events[3]?.tail).split("\n");
 			expect(tail).toHaveLength(TAIL_LINES);
 			expect(tail).toContain(String(TAIL_LINES + 5));
 			expect(tail).not.toContain("5");
@@ -236,37 +250,55 @@ describe("target.prepare", () => {
 		const { result } = await performed(host, ir, config);
 		expect(result).toMatchObject({
 			outcome: "failed",
-			reason: "target.prepare line 1 exited 1",
+			reason: expect.stringMatching(/^target\.prepare line 1 exited 1: ln: /),
 		});
 		expect(readFileSync(victim, "utf8")).toBe("kept\n");
 	});
 
-	test("target.sparse narrows a checked-out lane, which seals the full tree with no change and stays sparse across an in-place extend", async () => {
-		const { host } = stubHost(() => [OK]);
-		const sparse = "test -f packages/app/x && test ! -e packages/lib";
-		const ir = irOf(
-			host,
-			[
-				inline("s", fresh, sparse),
-				inline("e", { mode: "extend" }, sparse, "s"),
-			],
-			"e",
-		);
-		const target = toyTarget({
-			"packages/app/x": "x\n",
-			"packages/lib/y": "y\n",
-		});
-		const config = configOf(target, {
-			target: { repo: target, base: "main", sparse: ["packages/app"] },
-		});
-		const { id, result } = await performed(host, ir, config);
-		expect(result).toMatchObject({ outcome: "ok" });
-		expect(await changed(config, target, `${id}.e`)).toBe("");
-		const { lanes } = openTarget(setupOf(config).store, target);
-		const full = await lanes.fork(`${id}.e`, `${id}.probe`);
-		expect(readFileSync(join(full.dir, "packages/lib/y"), "utf8")).toBe("y\n");
-		full.discard();
-	});
+	test.each([
+		[
+			"cone-mode directories",
+			["packages/app"],
+			"test -f packages/app/x && test ! -e packages/lib",
+			"packages/lib/y",
+		],
+		[
+			"non-cone patterns with a negation",
+			{ patterns: ["/*", "!/b/", "/b/keep.txt"] },
+			"test -f root.txt && test -f b/keep.txt && test ! -e b/drop.txt",
+			"b/drop.txt",
+		],
+	])(
+		"target.sparse as %s narrows a checked-out lane, which seals the full tree with no change and stays sparse across an in-place extend",
+		async (_name, sparse, check, dropped) => {
+			const { host } = stubHost(() => [OK]);
+			const ir = irOf(
+				host,
+				[
+					inline("s", fresh, check),
+					inline("e", { mode: "extend" }, check, "s"),
+				],
+				"e",
+			);
+			const target = toyTarget({
+				"root.txt": "r\n",
+				"packages/app/x": "x\n",
+				"packages/lib/y": "y\n",
+				"b/keep.txt": "k\n",
+				"b/drop.txt": "d\n",
+			});
+			const config = configOf(target, {
+				target: { repo: target, base: "main", sparse },
+			});
+			const { id, result } = await performed(host, ir, config);
+			expect(result).toMatchObject({ outcome: "ok" });
+			expect(await changed(config, target, `${id}.e`)).toBe("");
+			const { lanes } = openTarget(setupOf(config).store, target);
+			const full = await lanes.fork(`${id}.e`, `${id}.probe`);
+			expect(existsSync(join(full.dir, dropped))).toBe(true);
+			full.discard();
+		},
+	);
 
 	const relative = "List directories relative to the repo root";
 	test.each([
@@ -307,6 +339,16 @@ describe("target.prepare", () => {
 		[
 			"an empty sparse list",
 			() => ({ sparse: [] }),
+			{ code: "CFG.schema", message: "config 'target.sparse" },
+		],
+		[
+			"an empty sparse patterns list",
+			() => ({ sparse: { patterns: [] } }),
+			{ code: "CFG.schema", message: "config 'target.sparse" },
+		],
+		[
+			"a sparse pattern spanning lines",
+			() => ({ sparse: { patterns: ["/a\n/b"] } }),
 			{ code: "CFG.schema", message: "config 'target.sparse" },
 		],
 		[

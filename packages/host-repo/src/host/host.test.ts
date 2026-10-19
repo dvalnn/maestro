@@ -436,11 +436,15 @@ describe("perform", () => {
 
 	test.each([
 		["red", "rejected", "check 'red' line 2 exited 1"],
-		["missing", "failed", "check 'missing' line 1 exited 127"],
+		[
+			"missing",
+			"failed",
+			"check 'missing' line 1 exited 127: sh: line 1: no-such-command: command not found",
+		],
 		[
 			undefined,
 			"failed",
-			"check 'hello' line 1 exited 1; check 'red' line 2 exited 1",
+			"check 'hello' line 1 exited 1; check 'red' line 2 exited 1; check 'missing' line 1 exited 127: sh: line 1: no-such-command: command not found",
 		],
 		[
 			{ run: "sleep 5", timeout: "1s" },
@@ -448,6 +452,28 @@ describe("perform", () => {
 			"check 'inline' line 1 exited 124",
 		],
 		[{ run: "exit 137" }, "failed", "check 'inline' line 1 exited 137"],
+		[
+			{
+				run: ["true", "echo warn >&2; echo bad news; printf '\\n\\n'; exit 1"],
+			},
+			"rejected",
+			"check 'inline' line 2 exited 1: bad news",
+		],
+		[
+			{ run: "echo summary; echo warn >&2; exit 1" },
+			"rejected",
+			"check 'inline' line 1 exited 1: warn",
+		],
+		[
+			{ run: "printf '\\033[31mred\\033[0m\\tx\\033]0;title\\007\\n'; exit 1" },
+			"rejected",
+			"check 'inline' line 1 exited 1: red x",
+		],
+		[
+			{ run: "printf '%0250d' 0; exit 1" },
+			"rejected",
+			`check 'inline' line 1 exited 1: ${"0".repeat(200)}`,
+		],
 	])("check %j ends %s, naming the line", async (check, outcome, reason) => {
 		const { host } = stubHost(() => [OK]);
 		const ir = irOf(
@@ -467,7 +493,7 @@ describe("perform", () => {
 			configOf(toyTarget()),
 		);
 		expect(result).toMatchObject({ outcome });
-		expect(result.outcome === "ok" ? "" : result.reason).toContain(reason);
+		expect(result.outcome === "ok" ? "" : result.reason).toEndWith(reason);
 		expect(readFileSync(artifact("x", "logs"), "utf8")).toContain("$ ");
 	});
 
