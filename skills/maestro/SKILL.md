@@ -98,11 +98,14 @@ Read [running.md](running.md), section Recover, for resume's refusals and `--pro
 ## Stub concerts
 
 A stub concert rehearses a composition for free: stub agents change nothing and reply `ok`, while checks run for real,
-so a check that depends on an agent's change stays red. A stub agent writes no declared output either, so the first
-agent that declares one ends the concert: `classics.panel_review` fails and `classics.v_model` rejects early, having
-still proved config, roles, lanes and checks. Use one to try a flow, or whenever the user asks for no spend. Map every
-role the composition names to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose,
-perform and resume. For the classics pack 0.1.0-beta.1's six roles:
+so a check that depends on an agent's change stays red. A stub agent writes a placeholder for each output it declares,
+the smallest value that satisfies the schema keywords it reads (`required`, `properties`, `items`, `minItems`, `enum`,
+`const`, `minLength`, `minimum`, `anyOf`, `oneOf`), `"stub"` for text. A schema beyond those fails the agent, naming the
+output. So a concert runs past its agents and proves config, roles, lanes and checks: `classics.panel_review` ends `ok`
+with an unapproved verdict, and `classics.v_model` is rejected, at the repair loop's recheck while its checks are red
+and at `traceOf` once they are green. Use one to try a flow, or whenever the user asks for no spend. Map every role the
+composition names to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose, perform
+and resume. For the classics pack 0.1.0-beta.1's six roles:
 
 ```yaml
 roles:

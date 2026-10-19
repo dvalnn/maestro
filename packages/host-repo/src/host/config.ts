@@ -8,7 +8,7 @@ import {
 	validator,
 	violations,
 } from "@maestro/ir";
-import type { Role } from "../harness/index";
+import type { Output, Role } from "../harness/index";
 import type { ApplyStrategy, Sparse } from "../lane/index";
 
 export const HOST_NAME = "repo";
@@ -244,10 +244,6 @@ type AttachmentType = (typeof CORE_TYPES)[keyof typeof CORE_TYPES];
 
 /** A file or directory an agent reads at `/in/<name>`, and the hint that says when it should. */
 export type Attachment = { hint: string; type?: AttachmentType };
-
-export type Output =
-	| { file: string; format: "json"; schema: JsonSchema }
-	| { file: string; format: "markdown" };
 
 export type AgentConfig = {
 	role: { name: string } & Partial<Role>;

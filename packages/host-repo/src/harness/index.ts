@@ -1,5 +1,9 @@
 export { resolveBin } from "./bin";
-export { type StubStep, stubHarness } from "./stub";
+export {
+	placeholderOutputs,
+	type StubStep,
+	stubHarness,
+} from "./stub";
 export {
 	finite,
 	isObject,
@@ -17,6 +21,7 @@ export {
 	METRIC,
 	type Metrics,
 	OUTBOX,
+	type Output,
 	type Role,
 	SESSION_DIR,
 } from "./types";

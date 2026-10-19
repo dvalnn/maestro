@@ -1,3 +1,4 @@
+import type { JsonSchema } from "@maestro/ir";
 import type { Bind } from "../sandbox/index";
 
 export type Role = { harness: string; model: string; thinking?: string };
@@ -21,6 +22,11 @@ export const SESSION_DIR = "/session";
 /** Where an adapter's sandbox sees `HarnessRequest.identity`. */
 export const IDENTITY = "/identity.md";
 
+/** A file the agent writes in the outbox: Markdown, or JSON valid against `schema`. */
+export type Output =
+	| { file: string; format: "json"; schema: JsonSchema }
+	| { file: string; format: "markdown" };
+
 export type HarnessRequest = {
 	role: Role;
 	/** Any size: adapters stage it through stdin or a lane file, never argv. */
@@ -40,6 +46,8 @@ export type HarnessRequest = {
 	identity?: string;
 	/** Host directory bound read-write at `OUTBOX`, outside the lane. The agent writes declared outputs there. */
 	outbox: string;
+	/** The files the agent must write in the outbox. */
+	outputs: Output[];
 	/**
 	 * Host directory bound read-write at `SESSION_DIR`, and a UUID. The same dir and id continue the session; a new
 	 * id starts one.

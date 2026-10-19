@@ -79,15 +79,23 @@ test("a lane ref names a version by the instance id ls shows, ls shows its disk 
 	).toMatchObject({ code: 1 });
 });
 
-test("the built-in stub harness performs an agent, and the check after it settles ok", async () => {
+test("the built-in stub harness performs an agent that declares outputs, and the check after it settles ok", async () => {
 	const file = join(await scratch(), "smoke.ts");
 	writeFileSync(
 		file,
-		`import { agent, check, fresh, read } from "@maestro/host-repo-sdk";
-import { composition } from "@maestro/sdk";
+		`import { agent, check, fresh, JsonOut, MarkdownOut, read } from "@maestro/host-repo-sdk";
+import { composition, List, Struct, Text } from "@maestro/sdk";
+
+const Rows = Struct({ rows: List(Struct({ name: Text() })) });
 
 export const smoke = composition("smoke", { examples: [{}] }, () => {
-	const a = agent({ label: "a", task: "nothing", lane: fresh(), role: "smoke" });
+	const a = agent({
+		label: "a",
+		task: "nothing",
+		lane: fresh(),
+		role: "smoke",
+		out: { rows: JsonOut("rows.json", Rows), notes: MarkdownOut("notes.md") },
+	});
 	return check(read(a.out.lane), { run: "true" }, { label: "ok" });
 });
 `,

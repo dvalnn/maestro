@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { settledSchema } from "@maestro/ir";
 import {
 	type HarnessEvent,
 	OUTBOX,
@@ -10,6 +11,7 @@ import {
 	stubHarness,
 	subprocessHarness,
 } from "./index";
+import { placeholder, placeholderOutputs } from "./stub";
 
 const dirs: string[] = [];
 const tmp = (name: string) => {
@@ -23,6 +25,7 @@ const request = (prompt: string, l = lane()) => ({
 	prompt,
 	lane: l,
 	outbox: tmp("out"),
+	outputs: [],
 	session: { dir: tmp("session"), id: crypto.randomUUID() },
 });
 afterEach(() => {
@@ -129,4 +132,58 @@ test("cancel after the run finished keeps the success", async () => {
 	expect((await run.result).outcome).toBe("ok");
 	await run.cancel();
 	expect((await run.result).outcome).toBe("ok");
+});
+
+test.each<[string, unknown, unknown]>([
+	[
+		"required properties, a bounded array and enums",
+		{
+			type: "object",
+			required: ["name", "ok", "items", "kind"],
+			properties: {
+				name: { type: "string" },
+				ok: { type: "boolean" },
+				items: {
+					type: "array",
+					minItems: 2,
+					items: { type: "integer", minimum: 3 },
+				},
+				kind: { enum: ["a", "b"] },
+				extra: { type: "string" },
+			},
+		},
+		{ name: "stub", ok: false, items: [3, 3], kind: "a" },
+	],
+	[
+		"a schema with type and required beside oneOf",
+		settledSchema({ type: "string" }),
+		{ outcome: "ok", value: "stub" },
+	],
+	[
+		"an array with no minimum",
+		{ type: "array", items: { type: "string" } },
+		[],
+	],
+	["a string of a minimum length", { type: "string", minLength: 6 }, "stub__"],
+	[
+		"the first of anyOf",
+		{ anyOf: [{ type: "null" }, { type: "string" }] },
+		null,
+	],
+])("a stub placeholder fills %s", (_, schema, expected) => {
+	expect(placeholder(schema)).toEqual(expected);
+});
+
+test("the stub writes each declared output to the outbox before it replies", async () => {
+	const req = {
+		...request("x"),
+		outputs: [
+			{ file: "a.json", format: "json" as const, schema: { type: "array" } },
+			{ file: "b.md", format: "markdown" as const },
+		],
+	};
+	const run = stubHarness(placeholderOutputs).run(req);
+	expect((await run.result).outcome).toBe("ok");
+	expect(readFileSync(join(req.outbox, "a.json"), "utf8")).toBe("[]");
+	expect(readFileSync(join(req.outbox, "b.md"), "utf8")).toBe("stub\n");
 });

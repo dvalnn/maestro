@@ -52,9 +52,10 @@ Config keys are in [`packages/cli/README.md`](packages/cli/README.md).
 - A workspace file `.maestro/config.yaml` per target holds `target: { repo, base, checks }`, and optionally `prepare`
   (lines run on each checked-out lane, such as a dependency install) and `sparse` (directories, or `{ patterns }` of
   gitignore-style patterns, a lane checks out).
-- A profile `.maestro/profiles/stub.yaml` moves the roles to the built-in `stub` harness, which replies ok and writes no
-  outputs. Run with `--profile stub` to spend nothing: `build_then_repair` runs to completion, while `panel_review` and
-  `v_model` fail at their first agent that declares outputs.
+- A profile `.maestro/profiles/stub.yaml` moves the roles to the built-in `stub` harness, which writes a placeholder for
+  each declared output and replies ok. Run with `--profile stub` to spend nothing: `build_then_repair` and
+  `panel_review` end ok, the latter with an unapproved verdict, while `v_model` is rejected at its repair loop or at
+  `traceOf`.
 
 The classics pack names six roles and no models, and its [README](packs/classics/README.md) holds each composition's
 roles and params: `scout`, `planner`, `builder`, `reviewer`, `skeptic` and `documenter`. `build_then_repair` needs only

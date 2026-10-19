@@ -22,6 +22,7 @@ import {
 	type HarnessRequest,
 	type Metrics,
 	OUTBOX,
+	type Output,
 	type Role,
 } from "../harness/index";
 import type { Bind } from "../sandbox/index";
@@ -35,7 +36,6 @@ import {
 	LANE_PORT,
 	listed,
 	namedCheck,
-	type Output,
 	repoSetup,
 	requireTarget,
 	resolveRole,
@@ -485,6 +485,7 @@ async function execute(
 				env: extras.env,
 				identity: stage(staging.staged, prompt, identity),
 				outbox: staging.outbox,
+				outputs: Object.values(config.out ?? {}),
 				session: { dir: session.dir, id: session.id },
 				verdict: config.verdict,
 			};

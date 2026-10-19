@@ -32,6 +32,7 @@ const request = (
 	prompt,
 	lane: tmp("lane"),
 	outbox: tmp("out"),
+	outputs: [],
 	session: { dir: tmp("session"), id: crypto.randomUUID() },
 	...over,
 });
