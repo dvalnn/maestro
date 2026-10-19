@@ -9,6 +9,20 @@ import { isTaskName, TASKS, type TaskName } from "./tasks";
 export const EXIT = { ok: 0, mismatch: 1, trouble: 2 } as const;
 /** The branch each target is cut on. */
 export const BASE = "main";
+/** Every role the pack's seats name. */
+const ROLES = [
+	"scout",
+	"planner",
+	"builder",
+	"reviewer",
+	"skeptic",
+	"documenter",
+] as const;
+
+/** Each role of the pack on `role`, as the config's `roles`. */
+export const rolesOn = (role: { harness: string; model: string }) =>
+	Object.fromEntries(ROLES.map((name) => [name, role]));
+
 const GREETER = join(import.meta.dir, "greeter");
 const PACK = resolve(import.meta.dir, "../dist");
 

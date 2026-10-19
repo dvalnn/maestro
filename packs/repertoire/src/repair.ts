@@ -2,7 +2,6 @@ import { changeset, check, extend, fresh, Lane } from "@maestro/host-repo-sdk";
 import {
 	code,
 	composition,
-	Json,
 	loop,
 	Markdown,
 	not,
@@ -11,6 +10,7 @@ import {
 } from "@maestro/sdk";
 import { toMarkdown } from "./code";
 import { builder } from "./seats";
+import { atLeastOne } from "./types";
 
 const REPAIR_TASK =
 	"The target's checks failed on your change. Repair what they report, keeping to what the spec asks.";
@@ -18,12 +18,9 @@ const REPAIR_TASK =
 export const EXAMPLE_REQUEST =
 	"Make greet.sh greet the name given as its first argument, and the world when none is given.";
 
-const maxRepairs = Json<number>(
-	{ type: "integer", minimum: 1 },
-	{
-		default: 2,
-		description: "The most repairs before the checks count as red, at least 1",
-	},
+export const maxRepairs = atLeastOne(
+	2,
+	"The most repairs before the checks count as red",
 );
 
 export const repairUntilGreen = composition(

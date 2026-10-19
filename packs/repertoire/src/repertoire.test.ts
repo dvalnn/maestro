@@ -1,11 +1,18 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { CodeContext, Settled } from "@maestro/sdk";
 import { buildIr } from "@maestro/testkit";
 import { pack } from "../../../scripts/pack";
-import { BASE, setup } from "../acceptance/setup";
-import { survivorsOf, toMarkdown } from "./code";
+import { BASE, rolesOn, setup } from "../acceptance/setup";
+import { dossierOf, survivorsOf, toMarkdown, traceOf } from "./code";
 import { EXAMPLE_REQUEST } from "./repair";
 import { review } from "./review";
 
@@ -71,7 +78,7 @@ beforeAll(async () => {
 	config = {
 		packs: [await pack(join(import.meta.dir, ".."), join(root, "pack"))],
 		target: { repo: target, base: BASE, checks: { test: "sh test.sh" } },
-		roles: { builder: ROLE, reviewer: ROLE, skeptic: ROLE },
+		roles: rolesOn(ROLE),
 	};
 	await configure();
 });
@@ -88,8 +95,8 @@ describe("review", () => {
 		});
 		const modelOf = (id: string) =>
 			plan.ir.nodes.find((n: { id: string }) => n.id === id)?.config.role.model;
-		expect(modelOf("parMap/lens")).toBe("lab-a/lens");
-		expect(modelOf("parMap/skeptic")).toBe("lab-b/skeptic");
+		expect(modelOf("lenses/lens")).toBe("lab-a/lens");
+		expect(modelOf("lenses/skeptic")).toBe("lab-b/skeptic");
 	});
 
 	test("refuses a skeptic of the lens's model family before any concert", async () => {
@@ -116,6 +123,7 @@ describe("review", () => {
 	test("graphs the lens fan-out, the skeptic's guard and the collect into survivorsOf", async () => {
 		const { out } = await maestro("compose", ...REVIEW, "--graph");
 		for (const line of [
+			'subgraph gn2["lenses"]',
 			'n2[["parMap<br/>correctness, spec, tests"]]',
 			'n9["survivorsOf<br/>code"]',
 			'n2 ==>|"collect"| n9',
@@ -144,6 +152,276 @@ describe("build_then_repair", () => {
 			'f5 -.->|"after, tolerates rejected"| j6',
 		])
 			expect(out).toContain(`${line}\n`);
+	});
+});
+
+describe("v_model", () => {
+	const V_MODEL = "repertoire.v_model";
+	const BOUNDED = [
+		V_MODEL,
+		"--request",
+		EXAMPLE_REQUEST,
+		"--lens-model",
+		"lab-c/lens",
+		"--skeptic-model",
+		"lab-d/skeptic",
+		"--max-approaches",
+		"3",
+		"--max-risks",
+		"2",
+		"--max-repairs",
+		"1",
+	];
+
+	test("composes from its example set, its approaches and its lenses each up to their bound", async () => {
+		const { out, code } = await maestro("compose", V_MODEL, "--plan");
+		expect(code).toBe(0);
+		for (const line of [
+			"v_model: up to 67 node instances, up to 20 repo.agent",
+			"scouts expands to map, proof, risk",
+			"approaches expands to up to 2",
+			"lenses expands to up to 4",
+		])
+			expect(out).toContain(line);
+		expect(out).toMatch(
+			/approaches\/repair_until_green\/loop\/repair +repo\.agent +up to 4\n/,
+		);
+	});
+
+	test("bounds every level by its own param, and runs lenses and skeptics on theirs", async () => {
+		const planned = await maestro("compose", ...BOUNDED, "--plan");
+		for (const line of [
+			"v_model: up to 56 node instances, up to 16 repo.agent",
+			"approaches expands to up to 3",
+			"lenses expands to up to 2",
+		])
+			expect(planned.out).toContain(line);
+		expect(planned.out).toMatch(
+			/approaches\/repair_until_green\/loop\/repair +repo\.agent +up to 3\n/,
+		);
+		const { plan } = JSON.parse(
+			(await maestro("compose", ...BOUNDED, "--json")).out,
+		);
+		// 3 scouts, a planner, 3 builds, a repair each, 2 lenses, 2 skeptics, a consolidator and a documenter.
+		expect(plan.bounds.counts["repo.agent"]).toEqual({ upTo: 16 });
+		const node = (id: string) =>
+			plan.ir.nodes.find((n: { id: string }) => n.id === id);
+		expect(node("lenses/lens").config.role.model).toBe("lab-c/lens");
+		expect(node("lenses/skeptic").config.role.model).toBe("lab-d/skeptic");
+		expect(node("plan").literals.prompt).toContain("up to 3 approaches");
+		expect(
+			node("plan").config.out.design.schema.properties.approaches,
+		).toMatchObject({ minItems: 1, maxItems: 3 });
+		expect(node("dossierOf").literals.maxRisks).toBe(2);
+	});
+
+	test("graphs the scouts' collect, the find over approaches and the trace's gate on the result", async () => {
+		const { out } = await maestro("compose", V_MODEL, "--graph");
+		for (const line of [
+			'subgraph gn2["scouts"]',
+			'n2 ==>|"collect"| n5',
+			'subgraph gn9["approaches"]',
+			'n9[["find<br/>up to 2"]]',
+			'subgraph gn18["lenses"]',
+			'n18[["parMap<br/>up to 4"]]',
+			'f5 -->|"risks to items"| n18',
+			'n30 -.->|"when ok, else skip"| j31',
+		])
+			expect(out).toContain(`  ${line}\n`);
+	});
+});
+
+/** A new directory `name` in the workspace, as a code function's scratch directory that also holds its artifacts. */
+function contextIn(name: string): { dir: string; ctx: CodeContext } {
+	const dir = join(root, name);
+	mkdirSync(dir);
+	return {
+		dir,
+		ctx: {
+			concert: "c",
+			clock: 0,
+			path: (ref) => join(dir, ref.path),
+			scratch: dir,
+			env: {},
+			log: () => {},
+		},
+	};
+}
+
+/** A scout that settled ok with these facts and risks, its evidence written in `dir`. */
+function scouted(
+	dir: string,
+	name: string,
+	facts: [string, string][],
+	risks: [string, string][],
+): Settled<{ evidence: { path: string; contentHash: string } }> {
+	const path = `${name}.json`;
+	writeFileSync(
+		join(dir, path),
+		JSON.stringify({
+			summary: name,
+			facts: facts.map(([where, note]) => ({ where, note })),
+			risks: risks.map(([where, risk]) => ({ where, risk })),
+		}),
+	);
+	return { outcome: "ok", value: { evidence: { path, contentHash: "" } } };
+}
+
+describe("dossierOf", () => {
+	test("merges facts by where, ranks risks by the scouts raising them, and keeps maxRisks", () => {
+		const { dir, ctx } = contextIn("dossier");
+		const scouts = [
+			scouted(
+				dir,
+				"map",
+				[["greet.sh:2", "prints the greeting"]],
+				[
+					["greet.sh:2", "greet.sh ignores its argument."],
+					["greet.sh:2", "Greet.sh  ignores its argument!"],
+				],
+			),
+			{ outcome: "failed", reason: "timed out" } as const,
+			scouted(
+				dir,
+				"risk",
+				[["greet.sh:2", "takes no argument"]],
+				[
+					["test.sh:3", "No test for an empty name"],
+					["greet.sh:1", "a third risk"],
+				],
+			),
+			scouted(dir, "proof", [], [["test.sh:1", "no test for an empty name"]]),
+		];
+		const angles = ["map", "lost", "risk", "proof"];
+		expect(dossierOf({ scouts, angles, maxRisks: 2 }, ctx)).toEqual({
+			dossier: join(dir, "dossier.md"),
+			risks: [
+				{ id: "R1", risk: "No test for an empty name" },
+				{ id: "R2", risk: "greet.sh ignores its argument." },
+			],
+		});
+		const dossier = readFileSync(join(dir, "dossier.md"), "utf8");
+		expect(dossier).toContain(
+			"- greet.sh:2: prints the greeting; takes no argument\n",
+		);
+		expect(dossier).toContain("- R3, greet.sh:1: a third risk\n");
+	});
+
+	const FIX = ". Check the 'scout' role's harness and model";
+	test.each([
+		[
+			"each scout by its angle",
+			[
+				{ outcome: "failed", reason: "timed out" },
+				{ outcome: "skipped" },
+			] as const,
+			`no scout delivered evidence: map: timed out; proof: skipped${FIX}`,
+		],
+		["no scouts", [] as const, `no scout delivered evidence${FIX}`],
+	])("rejects naming %s when none settled ok", (name, scouts, reason) => {
+		const out = dossierOf(
+			{ scouts: [...scouts], angles: ["map", "proof"], maxRisks: 4 },
+			contextIn(`undelivered ${name}`).ctx,
+		);
+		expect(out).toEqual({ outcome: "rejected", reason });
+	});
+});
+
+describe("traceOf", () => {
+	const FIX =
+		" (trace.md has the matrix). Have the planner name criteria, and the review and the documenter each rule once on every one";
+	const ruling = (id: string, met = true) => ({
+		id,
+		met,
+		evidence: `${id} | ok`,
+	});
+	const design = {
+		criteria: ["C1", "C2"].map((id) => ({
+			id,
+			criterion: `${id} holds`,
+			proof: "sh test.sh",
+		})),
+		approaches: [],
+	};
+	const verdict = {
+		approved: true,
+		criteria: [ruling("C1"), ruling("C2")],
+		blocking: [],
+	};
+	const acceptance = [ruling("C1"), ruling("C2")];
+
+	test("traces every criterion to its proof and both rulings, a missing one shown as such", () => {
+		const { dir, ctx } = contextIn("trace");
+		const lines = { ...ruling("C2"), evidence: "C2 | ok\n  on two lines" };
+		expect(
+			traceOf({ design, verdict, acceptance: [ruling("C1"), lines] }, ctx),
+		).toEqual({ trace: join(dir, "trace.md") });
+		const matrix = () => readFileSync(join(dir, "trace.md"), "utf8");
+		expect(matrix()).toContain(
+			"| C2: C2 holds | sh test.sh | met: C2 \\| ok | met: C2 \\| ok on two lines |\n",
+		);
+		traceOf({ design, verdict, acceptance: [ruling("C1")] }, ctx);
+		expect(matrix()).toContain("| met: C2 \\| ok | missing |\n");
+	});
+
+	test.each([
+		[
+			"no criteria",
+			{ design: { ...design, criteria: [] } },
+			"the plan names no criteria",
+		],
+		[
+			"no approval",
+			{ verdict: { ...verdict, approved: false } },
+			"the review did not approve",
+		],
+		[
+			"a missing review ruling",
+			{ verdict: { ...verdict, criteria: [ruling("C1")] } },
+			"C2 has no review ruling",
+		],
+		[
+			"a missing acceptance ruling",
+			{ acceptance: [ruling("C1")] },
+			"C2 has no acceptance ruling",
+		],
+		[
+			"a repeated review ruling",
+			{
+				verdict: {
+					...verdict,
+					criteria: [ruling("C1"), ruling("C2"), ruling("C2", false)],
+				},
+			},
+			"C2 has 2 review rulings",
+		],
+		[
+			"an unmet review ruling",
+			{
+				verdict: { ...verdict, criteria: [ruling("C1"), ruling("C2", false)] },
+			},
+			"C2 is unmet in review",
+		],
+		[
+			"an unmet acceptance ruling",
+			{ acceptance: [ruling("C1", false), ruling("C2")] },
+			"C1 is unmet in acceptance",
+		],
+		[
+			"several gaps",
+			{
+				verdict: { ...verdict, approved: false },
+				acceptance: [ruling("C1"), ruling("C1")],
+			},
+			"the review did not approve; C1 has 2 acceptance rulings; C2 has no acceptance ruling",
+		],
+	])("rejects with the matrix on %s", (name, over, gap) => {
+		const { dir, ctx } = contextIn(`trace ${name}`);
+		expect(traceOf({ design, verdict, acceptance, ...over }, ctx)).toEqual({
+			outcome: "rejected",
+			reason: `trace gaps: ${gap}${FIX}`,
+			outputs: { trace: join(dir, "trace.md") },
+		});
 	});
 });
 

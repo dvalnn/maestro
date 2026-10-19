@@ -1,4 +1,4 @@
-import { changeset, Lane, read } from "@maestro/host-repo-sdk";
+import { type Attachment, changeset, Lane, read } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
 	assert,
@@ -13,10 +13,16 @@ import {
 	type Ref,
 	readJson,
 	Text,
+	type ValueOf,
 } from "@maestro/sdk";
 import { survivorsOf, toMarkdown } from "./code";
 import { EXAMPLE_REQUEST } from "./repair";
 import { consolidator, lens, skeptic } from "./seats";
+import { EXAMPLE_MODELS, PANEL_MODELS, type Risk } from "./types";
+
+type Consolidated = ReturnType<
+	typeof consolidator<Record<never, never>, "read">
+>;
 
 /** Each lens a review can rule through, by name, as the task of its lens. */
 const LENSES = {
@@ -60,16 +66,27 @@ function family(model: string): string {
 	return known ?? model.split("/")[0] ?? model;
 }
 
-type Panel<T extends string> = {
-	items: readonly T[];
+/** An item a panel puts a lens on: a lens name, or a risk. */
+type Item = string | ValueOf<typeof Risk>;
+
+type Panel<T extends Item> = {
 	/** The task of the lens over `item`. */
 	task: (item: Ref<T>) => string | Ref<string>;
 	/** The lane version under review. */
 	change: Ref<string> | string;
 	patches: Ref<ArtifactRef>;
 	spec: Ref<ArtifactRef>;
+	/** The criteria the consolidator rules on, in place of its own. */
+	design?: Ref<ArtifactRef>;
 	lensModel: string;
 	skepticModel: string;
+};
+
+/** Items a node delivers, keyed by `key`, an exported function, and at most `max` of them. */
+type Delivered<T extends Item> = {
+	items: Ref<T[]>;
+	key: (item: T) => string;
+	max: number;
 };
 
 /**
@@ -77,63 +94,89 @@ type Panel<T extends string> = {
  * skeptics upheld.
  * @throws `ASSERT.failed` when the skeptic's model is of the family of the lens's.
  */
-function panel<T extends string>(p: Panel<T>) {
-	const { change, lensModel, skepticModel } = p;
+export function panel<T extends string>(
+	p: Panel<T> & { items: readonly T[] },
+): Consolidated;
+export function panel<T extends Item>(p: Panel<T> & Delivered<T>): Consolidated;
+export function panel(
+	p: Panel<Item> & ({ items: readonly Item[] } | Delivered<Item>),
+): Consolidated {
+	const { lensModel, skepticModel } = p;
 	assert(
 		family(lensModel) !== family(skepticModel),
 		`skeptic model '${skepticModel}' is of the family of lens model '${lensModel}'`,
 	);
-	const patches = {
-		artifact: p.patches,
-		hint: "for what the change did, patch by patch",
-	};
-	const spec = { artifact: p.spec, hint: "for what the change must do" };
-	const rounds = iter.parMap(
-		p.items,
-		(item) => {
-			const found = lens({
-				label: "lens",
-				task: p.task(item),
-				lane: read(change),
-				role: { model: lensModel },
-				attachments: { patches, spec },
-			});
-			const challenged = skeptic({
-				label: "skeptic",
-				task: SKEPTIC_TASK,
-				lane: read(change),
-				role: { model: skepticModel },
-				when: not(readJson(found.out.findings).get("clean")),
-				attachments: {
-					findings: {
-						artifact: found.out.findings,
-						hint: "first, for the findings to challenge",
-					},
-					patches,
-					spec,
-				},
-			});
-			return { lens: found, skeptic: challenged };
+	const attached = {
+		patches: {
+			artifact: p.patches,
+			hint: "for what the change did, patch by patch",
 		},
-		{ onError: "continue" },
-	);
+		spec: { artifact: p.spec, hint: "for what the change must do" },
+	};
+	const body = (item: Ref<Item>) => round(p, p.task(item), attached);
+	const rounds =
+		"key" in p
+			? iter.parMap(p.items, body, {
+					onError: "continue",
+					label: "lenses",
+					key: p.key,
+					max: p.max,
+				})
+			: iter.parMap(p.items, body, { onError: "continue", label: "lenses" });
 	const kept = code(survivorsOf, {
-		in: { rounds: rounds.out.results, items: [...p.items] },
+		in: { rounds: rounds.out.results, items: p.items },
 		out: { survivors: Markdown() },
 	});
 	return consolidator({
 		label: "consolidator",
 		task: CONSOLIDATE_TASK,
-		lane: read(change),
+		lane: read(p.change),
 		attachments: {
 			survivors: {
 				artifact: kept.out.survivors,
 				hint: "first, for the findings the skeptics upheld",
 			},
-			patches,
-			spec,
+			...attached,
+			...(p.design === undefined
+				? {}
+				: {
+						design: {
+							artifact: p.design,
+							hint: "for the criteria to rule on by their ids, in place of your own",
+						},
+					}),
 		},
 	});
+}
+
+/** A lens over one item on `task`, and a skeptic over its findings unless it is clean. */
+function round(
+	{ change, lensModel, skepticModel }: Panel<Item>,
+	task: string | Ref<string>,
+	attached: { patches: Attachment; spec: Attachment },
+) {
+	const found = lens({
+		label: "lens",
+		task,
+		lane: read(change),
+		role: { model: lensModel },
+		attachments: attached,
+	});
+	const challenged = skeptic({
+		label: "skeptic",
+		task: SKEPTIC_TASK,
+		lane: read(change),
+		role: { model: skepticModel },
+		when: not(readJson(found.out.findings).get("clean")),
+		attachments: {
+			findings: {
+				artifact: found.out.findings,
+				hint: "first, for the findings to challenge",
+			},
+			...attached,
+		},
+	});
+	return { lens: found, skeptic: challenged };
 }
 
 export const review = composition(
@@ -143,11 +186,7 @@ export const review = composition(
 		params: {
 			request: Text({ description: "What the change must do" }),
 			change: Lane,
-			lensModel: Text({ description: "The model every lens runs on" }),
-			skepticModel: Text({
-				description:
-					"The model every skeptic runs on, of another family than lensModel's",
-			}),
+			...PANEL_MODELS,
 			lenses: Json<LensName[]>(
 				{ type: "array", items: Enum(LENS_NAMES).schema, uniqueItems: true },
 				{
@@ -160,8 +199,7 @@ export const review = composition(
 			{
 				request: EXAMPLE_REQUEST,
 				change: "c.repair_until_green/loop[1]/recheck",
-				lensModel: "lab-a/lens-model",
-				skepticModel: "lab-b/skeptic-model",
+				...EXAMPLE_MODELS,
 			},
 		],
 	},
