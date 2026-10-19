@@ -196,6 +196,8 @@ export type Settling = (
 export interface Records {
 	/** The concert, or `undefined` for an id the record does not hold. */
 	find(concert: string): ConcertRecord | undefined;
+	/** The id of every concert in the record, oldest first. */
+	ids(): string[];
 	/** Concerts matching every field of `filter`, newest first. */
 	concerts(filter?: ConcertFilter): ConcertRecord[];
 	/** Puts the concert on `tour`, or takes it off with `undefined`. */
@@ -511,6 +513,13 @@ function readerOf(db: Database, look: Lookup): Records {
 			const row = rowIf(id);
 			return row && concertOf(row);
 		},
+		ids: () =>
+			db
+				.query<{ id: string }, []>(
+					"SELECT id FROM concerts ORDER BY started_at, id",
+				)
+				.all()
+				.map((row) => row.id),
 		concerts(filter = {}) {
 			for (const row of db
 				.query<ConcertRow, []>(

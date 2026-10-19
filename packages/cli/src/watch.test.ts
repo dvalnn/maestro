@@ -96,7 +96,7 @@ describe("watch on a running concert", async () => {
 	};
 	const graph = watching([], { terminal: TERMINAL }, (write) => {
 		if (
-			/echo\/echo .*running .*tool bash/.test(stripVTControlCharacters(write))
+			/^ +● echo .*running .*tool bash/m.test(stripVTControlCharacters(write))
 		)
 			setTimeout(() => step.resolve(ECHO), HOLD_MS);
 	});
@@ -125,8 +125,9 @@ describe("watch on a running concert", async () => {
 		const frames = drawn.writes.map((write) => write.replace(REDRAW, ""));
 		expect(frames.filter((f, i) => f === frames[i - 1])).toEqual([]);
 		const last = stripVTControlCharacters(drawn.writes.at(-1) ?? "");
-		expect(last).toMatch(/✓ echo\/echo +fake\.task +ok/);
-		expect(last).toMatch(/^concert \S+ demo\.greet {2}ok/m);
+		expect(last).toMatch(/^ {2}✓ echo +fake\.task +ok/m);
+		expect(last).toMatch(/^✓ demo\.greet {2}\S+ +ok/m);
+		expect(last).toMatch(/^── 4 ok ─+$/m);
 	});
 
 	test("--events --json holds the progress event verbatim", () => {

@@ -600,7 +600,7 @@ describe("the record", () => {
 			json(await w.call(["ls", "--json"], { hosts: [host] }))[0].diskUse,
 		).toBe(2148);
 		expect((await w.call(["ls"], { hosts: [host] })).out).toMatch(
-			/ok\s+2\.1 KiB$/m,
+			/ok\s+-\s+2\.1 KiB$/m,
 		);
 	});
 
@@ -668,7 +668,95 @@ describe("the record", () => {
 			resultExpansion: "",
 			reason: "no",
 			outputs: { text: "draft" },
+			metrics: {},
 		});
+	});
+
+	test("spend: ls and ls <concert> show the agent and its tokens, ls the concert's total, and the --json documents the metrics", async () => {
+		const w = await world();
+		const agent = {
+			...ECHO,
+			metrics: { tokens_in: 12_000, tokens_out: 3_500, cost: 7 },
+			enrichment: {
+				session: "s",
+				harness: "pi",
+				model: "github-copilot/claude-haiku-5.5",
+				thinking: "medium",
+			},
+		};
+		const spent = await w.call(["perform", ...GREET, "--json"], {
+			hosts: [hostOf(agent)],
+		});
+		const metrics = { cost: 7, tokens_in: 12_000, tokens_out: 3_500 };
+		expect(json(spent).metrics).toEqual(metrics);
+		const id = json(spent).id;
+		const bare = idOf(
+			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
+		);
+		expect(json(await w.call(["wait", id, "--json"])).metrics).toEqual(metrics);
+		expect(
+			json(await w.call(["ls", "--json"])).find(
+				(r: { id: string }) => r.id === id,
+			).metrics,
+		).toEqual(metrics);
+		const listed = (await w.call(["ls"])).out.split("\n");
+		expect(listed[0]).toMatch(/status +tokens +disk$/);
+		expect(listed.find((l) => l.startsWith(id))).toMatch(/ok +15\.5k +/);
+		expect(listed.find((l) => l.startsWith(bare))).toMatch(/ok +- +/);
+		expect((await w.call(["ls", id])).out).toContain(
+			"pi · claude-haiku-5.5 · medium  15.5k tok",
+		);
+	});
+
+	test("an ambiguous prefix lists at most five ids, then how many more", async () => {
+		const w = await world();
+		const ids: string[] = [];
+		for (let i = 0; i < 7; i++)
+			ids.push(
+				idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] })),
+			);
+		const { code, err } = await w.call(["wait", "0"]);
+		expect(code).toBe(2);
+		expect(err.split("\n")).toEqual([
+			`'0' starts 7 concerts: ${ids.slice(0, 5).join(", ")} and 2 more`,
+			"Give more characters of the id",
+		]);
+	});
+
+	test("every command takes a unique prefix of a concert id; an ambiguous one is a usage error naming the matches, an unknown one is refused", async () => {
+		const w = await world();
+		const a = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const b = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const shared = [...a].findIndex((c, i) => c !== b[i]);
+		const ambiguous = a.slice(0, shared);
+		expect(await w.call(["wait", ambiguous])).toEqual({
+			code: 2,
+			out: "",
+			err: `'${ambiguous}' starts 2 concerts: ${a}, ${b}\nGive more characters of the id`,
+		});
+		expect(await w.call(["wait", "nope"])).toMatchObject({
+			code: 2,
+			err: "no concert 'nope' in the record\nCheck the id with 'maestro ls'",
+		});
+		const prefix = a.slice(0, shared + 1);
+		expect(json(await w.call(["wait", prefix, "--json"])).id).toBe(a);
+		expect(json(await w.call(["ls", prefix, "--json"])).id).toBe(a);
+		expect((await w.call(["watch", prefix])).code).toBe(0);
+		expect(await w.call(["kill", prefix])).toMatchObject({
+			err: `concert ${a} is not running, it settled ok\nSee 'maestro ls ${a}'`,
+		});
+		expect(await w.call(["perform", "--resume", prefix])).toMatchObject({
+			err: expect.stringContaining(`concert ${a} finished ok`),
+		});
+		expect(await w.call(["tour", "t1", prefix, a])).toMatchObject({
+			err: `t1: ${a}`,
+		});
+		expect(
+			await w.call(["prune", prefix, a.slice(0, shared + 2), "--yes"]),
+		).toMatchObject({ code: 0 });
+		expect(
+			json(await w.call(["ls", "--json"])).map((r: { id: string }) => r.id),
+		).toEqual([b]);
 	});
 });
 

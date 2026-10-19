@@ -13,7 +13,7 @@ import {
 	usageError,
 } from "./output";
 import {
-	concertOf,
+	concertsOf,
 	diskOf,
 	type Session,
 	type Stored,
@@ -56,7 +56,7 @@ function selected({ store, values, positionals }: Stored): ConcertRecord[] {
 				"prune takes concert ids or filters, not both",
 				"Drop the ids, or drop --before, --tour and --workspace",
 			);
-		const named = positionals.map((id) => concertOf(store, id));
+		const named = concertsOf(store, positionals);
 		const running = named.find((c) => c.status === "running");
 		if (running) throw stillRunning(running.id, running.pid);
 		return named;

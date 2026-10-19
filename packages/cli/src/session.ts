@@ -87,19 +87,41 @@ export async function openSession(
 	};
 }
 
+/** How many ids an ambiguous prefix's error lists. */
+const LISTED_IDS = 5;
+
 /**
- * The concert `id` of `store`.
- * @throws CliError, a usage error, when the store has no such concert.
+ * The concert of `store` whose id is `prefix` or starts with it.
+ * @throws CliError, a usage error, when the store has no such concert, or `prefix` starts several.
  */
-export function concertOf(store: Records, id: string): ConcertRecord {
-	const found = store.find(id);
+export function concertOf(store: Records, prefix: string): ConcertRecord {
+	const ids = store.ids();
+	const matching = ids.includes(prefix)
+		? [prefix]
+		: ids.filter((id) => prefix !== "" && id.startsWith(prefix));
+	if (matching.length > 1) {
+		const more = matching.length - LISTED_IDS;
+		const listed = matching.slice(0, LISTED_IDS).join(", ");
+		throw usageError(
+			`'${prefix}' starts ${matching.length} concerts: ${listed}${more > 0 ? ` and ${more} more` : ""}`,
+			"Give more characters of the id",
+		);
+	}
+	const found = matching[0] === undefined ? undefined : store.find(matching[0]);
 	if (!found)
 		throw usageError(
-			`no concert '${id}' in the record`,
+			`no concert '${prefix}' in the record`,
 			"Check the id with 'maestro ls'",
 		);
 	return found;
 }
+
+/** The concerts the prefixes `prefixes` start, each once, in the order first named. */
+export const concertsOf = (store: Records, prefixes: readonly string[]) => [
+	...new Map(
+		prefixes.map((p) => concertOf(store, p)).map((c) => [c.id, c]),
+	).values(),
+];
 
 /** What a command that works on the record is handed. */
 export type Stored = {

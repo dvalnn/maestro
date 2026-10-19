@@ -344,6 +344,13 @@ type Staging = {
 	outbox: string;
 };
 
+/** The harness, model and effort an agent runs on, as its start event and its enrichment report them. */
+const identityOf = ({ harness, model, thinking }: Role) => ({
+	harness,
+	model,
+	thinking,
+});
+
 /** The node result of `turns`. Once the agent gave an envelope that is not blocked, and readable outputs, `seal` seals its lane. */
 async function settle(
 	staging: Staging,
@@ -352,11 +359,7 @@ async function settle(
 ): Promise<HostNodeResult> {
 	const { role, session } = staging;
 	const { metrics } = turns;
-	const enrichment = {
-		session: session.id,
-		harness: role.harness,
-		model: role.model,
-	};
+	const enrichment = { session: session.id, ...identityOf(role) };
 	if ("failure" in turns)
 		return { outcome: "failed", reason: turns.failure, metrics, enrichment };
 	const { blocked, outcome = "ok", reason = "", report } = turns.envelope;
@@ -459,6 +462,7 @@ async function execute(
 			};
 			mkdirSync(staging.staged);
 			mkdirSync(staging.outbox);
+			context.emit({ kind: "agent", ...identityOf(role) });
 			const extras = extrasOf(config, target, inputs, context);
 			const kind = config.verdict ? VERDICT : WORK;
 			const prompt =

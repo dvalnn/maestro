@@ -20,6 +20,10 @@ export type Deps = {
 	terminal?(): { columns: number; rows: number };
 };
 
+/** Whether output is colored: unless `enabled` is false, `NO_COLOR` is set or `TERM` is `dumb`. */
+export const colorOn = ({ env }: Deps, enabled = true) =>
+	enabled && !env.NO_COLOR && env.TERM !== "dumb";
+
 type OptionSpec = {
 	type: "string" | "boolean";
 	/** The value's placeholder in help, for a `string` option. */

@@ -1,6 +1,7 @@
 import { styleText } from "node:util";
 import {
 	type ConcertEvent,
+	type Enrichment,
 	formatInstance,
 	type HostEvent,
 	type Ir,
@@ -9,9 +10,12 @@ import {
 	type NodeInstance,
 	type Outcome,
 } from "@maestro/ir";
+import { arranged, layout } from "./layout";
+
+export { arranged };
 
 /** What one instance's events say of it. `first` is the seq of its first event, which orders a node's instances. */
-export type InstanceState = NodeInstance & {
+type InstanceState = NodeInstance & {
 	state: "running" | Outcome;
 	reused: boolean;
 	reason?: string;
@@ -19,6 +23,8 @@ export type InstanceState = NodeInstance & {
 	settledAt?: number;
 	/** Its latest progress event, as `eventLine` shows it, on one line. */
 	latest?: string;
+	/** What its `agent` progress event says it uses, as `agentText` shows it before any tokens. */
+	agent?: string;
 	first: number;
 };
 
@@ -30,10 +36,15 @@ export type View = {
 	concert: {
 		id: string;
 		label: string;
-		status: string;
+		title?: string;
+		status: "running" | Outcome;
+		/** How many leading characters of `id` tell it from every other concert's. */
+		unique: number;
 		startedAt: number;
 		settledAt?: number;
 	};
+	/** The concert's token total. */
+	tokens: number;
 	now: number;
 	color: boolean;
 	columns: number;
@@ -63,6 +74,16 @@ const COUNTED: readonly Shown[] = [
 	"pending",
 ];
 const GAP = "  ";
+const RULE = "─";
+/** The `kind` of the progress event an agent instance emits when it starts. */
+const AGENT_EVENT = "agent";
+type Metrics = Readonly<Record<string, number>>;
+/** The prefix of the metrics that count tokens. */
+const TOKEN_METRIC = "tokens_";
+/** A subset of the output tokens, so a total leaves it out. */
+const REASONING_METRIC = "tokens_reasoning";
+const THOUSAND = 1_000;
+const MILLION = 1_000_000;
 const INDENT = "  ";
 /** The width an event line pads its offset and its instance name to, separator included. */
 const OFFSET_WIDTH = 8;
@@ -77,7 +98,7 @@ const keyOf = ({ node, expansion }: NodeInstance) =>
 	JSON.stringify([node, expansion]);
 
 /** Shows each control character but a newline as its JSON escape, so no text moves the terminal's cursor. */
-export const safe = (text: string) =>
+const safe = (text: string) =>
 	text.replace(CONTROL, (c) => JSON.stringify(c).slice(1, -1));
 
 /** `text` on one line: newlines shown as spaces, every other control character as its JSON escape. */
@@ -143,6 +164,8 @@ function folded(
 		case "reused":
 			return { ...base, state: "ok", reused: true };
 		case "progress": {
+			if (event.event.kind === AGENT_EVENT)
+				return { ...base, agent: identityText(event.event) };
 			const { kind, fields } = progressParts(event.event);
 			const parts = kind === undefined ? fields : [kind, ...fields];
 			return { ...base, latest: flat(parts.join(" ")) };
@@ -162,17 +185,95 @@ export function seen(prior: Seen, events: readonly ConcertEvent[]): Seen {
 	return next;
 }
 
-/** One line of the outline, its texts safe for a terminal. */
-type Line = {
-	indent: string;
+/** One row of the frame, its texts safe for a terminal. */
+type Row = {
+	depth: number;
 	shown: Shown;
 	name: string;
 	kind: string;
 	time: string;
+	agent: string;
 	note: string;
 };
+type Line =
+	| { type: "heading"; depth: number; text: string; round: boolean }
+	| ({ type: "row" } & Row);
 type Seg = readonly [text: string, style?: Style];
-type Widths = { lead: number; kind: number; state: number; time: number };
+type Widths = {
+	lead: number;
+	kind: number;
+	state: number;
+	time: number;
+	agent: number;
+};
+
+/** What an agent instance's harness reported, as `agentText` shows it, by instance. */
+type Agents = ReadonlyMap<string, string>;
+
+/** An instance's record: its enrichment and metrics, with whether an earlier attempt left it. */
+type Recorded = NodeInstance & {
+	enrichment?: Enrichment;
+	metrics: Metrics;
+	stale: boolean;
+};
+
+/** The sum of the token metrics of `metrics`, but reasoning tokens, which output tokens already count. */
+export const tokensOf = (metrics: Metrics) =>
+	Object.entries(metrics)
+		.filter(
+			([name]) => name.startsWith(TOKEN_METRIC) && name !== REASONING_METRIC,
+		)
+		.reduce((sum, [, value]) => sum + value, 0);
+
+/** `n` as `1.2M` from a million, `15.5k` from a thousand, else as it is. */
+export function compact(n: number): string {
+	if (n < THOUSAND) return String(n);
+	const thousands = (n / THOUSAND).toFixed(1);
+	return Number(thousands) < THOUSAND
+		? `${thousands}k`
+		: `${(n / MILLION).toFixed(1)}M`;
+}
+
+const stringOf = (value: unknown) =>
+	typeof value === "string" && value !== "" ? value : undefined;
+
+/** `<harness> · <model> · <effort>` of `fields`, `undefined` when they name no harness and model. */
+function identityText(fields: Readonly<Record<string, unknown>> | undefined) {
+	const harness = stringOf(fields?.harness);
+	const model = stringOf(fields?.model);
+	if (harness === undefined || model === undefined) return undefined;
+	const effort = stringOf(fields?.thinking);
+	return [
+		harness,
+		model.slice(model.lastIndexOf("/") + 1),
+		...(effort === undefined ? [] : [effort]),
+	].join(" · ");
+}
+
+/**
+ * An agent instance as `<harness> · <model> · <effort>  <total> tok`: the model without its provider prefix, the
+ * effort when its role sets one, the total of `tokensOf`, left out when 0. Empty for an instance that is not an
+ * agent's.
+ */
+export function agentText(
+	enrichment: Enrichment | undefined,
+	metrics: Metrics,
+): string {
+	const identity = identityText(enrichment);
+	const tokens = tokensOf(metrics);
+	if (identity === undefined) return "";
+	return tokens > 0 ? `${identity}${GAP}${compact(tokens)} tok` : identity;
+}
+
+/** The agent text of each current instance of `records` that has one, by instance. */
+export function agentsOf(records: readonly Recorded[]): Agents {
+	const agents = new Map<string, string>();
+	for (const r of records) {
+		const text = r.stale ? "" : agentText(r.enrichment, r.metrics);
+		if (text) agents.set(keyOf(r), text);
+	}
+	return agents;
+}
 
 function timeOf(s: InstanceState, now: number): string {
 	if (s.startedAt === undefined) return "";
@@ -186,34 +287,31 @@ function noteOf(s: InstanceState): string {
 	return flat(s.reason ?? "");
 }
 
-/** The IR's nodes in order, each as a line per instance by first event, or one `pending` line by its id. */
-function outline(ir: Ir, seen: Seen, now: number): Line[] {
-	const graph = indexGraph(ir);
+/**
+ * The frame's lines: a row per instance by first event, laid out as the IR nests them. A node that never ran is
+ * `pending`, and `skipped` once the concert has settled.
+ */
+function outline(ir: Ir, seen: Seen, agents: Agents, view: View): Line[] {
 	const ordered = [...seen.values()].sort((a, b) => a.first - b.first);
-	const byNode = Map.groupBy(ordered, (s) => s.node);
-	return ir.nodes.flatMap((n): Line[] => {
-		const indent = INDENT.repeat(n.id.split("/").length - 1);
-		const kind = safe(n.kind);
-		const instances = byNode.get(n.id);
-		if (!instances)
-			return [
-				{
-					indent,
-					shown: "pending",
-					name: safe(n.id),
-					kind,
-					time: "",
-					note: "",
-				},
-			];
-		return instances.map((s) => ({
-			indent,
-			shown: s.state,
-			name: flat(formatInstance(s, graph.groupsOf(n.id))),
-			kind,
-			time: timeOf(s, now),
-			note: noteOf(s),
-		}));
+	const never = view.concert.status === "running" ? "pending" : "skipped";
+	return layout(ir, ordered).map((item): Line => {
+		if (item.type === "heading") return { ...item, text: flat(item.text) };
+		const { depth, node, name, instance: s } = item;
+		const shown = {
+			depth,
+			name: flat(name),
+			kind: safe(node.kind),
+		};
+		return s
+			? {
+					type: "row",
+					...shown,
+					shown: s.state,
+					time: timeOf(s, view.now),
+					agent: safe(agents.get(keyOf(s)) ?? s.agent ?? ""),
+					note: noteOf(s),
+				}
+			: { type: "row", ...shown, shown: never, time: "", agent: "", note: "" };
 	});
 }
 
@@ -221,29 +319,42 @@ function outline(ir: Ir, seen: Seen, now: number): Line[] {
 const padCells = (text: string, cells: number) =>
 	text + " ".repeat(Math.max(0, cells - Bun.stringWidth(text)));
 
-const leadOf = (l: Line) => l.indent.length + 2 + Bun.stringWidth(l.name);
+const indentOf = (depth: number) => INDENT.repeat(depth);
 
-const widthsOf = (lines: readonly Line[]): Widths => ({
-	lead: Math.max(0, ...lines.map(leadOf)),
-	kind: Math.max(0, ...lines.map((l) => l.kind.length)),
-	state: Math.max(0, ...lines.map((l) => l.shown.length)),
-	time: Math.max(0, ...lines.map((l) => l.time.length)),
+const leadOf = (l: Row) =>
+	indentOf(l.depth).length + 2 + Bun.stringWidth(l.name);
+
+const rowsOf = (lines: readonly Line[]) =>
+	lines.filter((l): l is { type: "row" } & Row => l.type === "row");
+
+const widthsOf = (rows: readonly Row[]): Widths => ({
+	lead: Math.max(0, ...rows.map(leadOf)),
+	kind: Math.max(0, ...rows.map((l) => l.kind.length)),
+	state: Math.max(0, ...rows.map((l) => l.shown.length)),
+	time: Math.max(0, ...rows.map((l) => l.time.length)),
+	agent: Math.max(0, ...rows.map((l) => Bun.stringWidth(l.agent))),
 });
 
 function segsOf(line: Line, w: Widths): Seg[] {
+	if (line.type === "heading")
+		return [[indentOf(line.depth) + line.text, line.round ? "dim" : "bold"]];
 	const look = LOOK[line.shown];
 	const noteStyle = look.noted
 		? look.style
 		: line.shown === "running"
 			? "dim"
 			: undefined;
+	const indent = indentOf(line.depth);
+	const agent: Seg[] =
+		w.agent === 0 ? [] : [[padCells(line.agent, w.agent) + GAP, "dim"]];
 	const segs: Seg[] = [
-		[line.indent],
+		[indent],
 		[look.glyph, look.style],
-		[padCells(` ${line.name}`, w.lead - line.indent.length - 1) + GAP],
+		[padCells(` ${line.name}`, w.lead - indent.length - 1) + GAP],
 		[line.kind.padEnd(w.kind) + GAP, "dim"],
 		[line.shown.padEnd(w.state) + GAP, look.style],
 		[line.time.padEnd(w.time) + GAP, "dim"],
+		...agent,
 		[line.note, noteStyle],
 	];
 	return look.whole ? segs.map(([text]) => [text, look.style]) : segs;
@@ -277,41 +388,91 @@ function painted(segs: readonly Seg[], limit: number, color: boolean): string {
 	return out;
 }
 
-const styleOf = (state: string) =>
-	Object.entries(LOOK).find(([shown]) => shown === state)?.[1].style;
+const lookOf = (state: string): Look | undefined =>
+	Object.entries(LOOK).find(([shown]) => shown === state)?.[1];
 
-function headerSegs(lines: readonly Line[], { concert, now }: View): Seg[] {
+/** How many characters of a concert id its short form shows at least. */
+const SHORT_ID_MIN = 8;
+
+/** The length of the shortest prefix of `id` that no other of `ids` starts with. */
+export function uniqueLength(id: string, ids: readonly string[]): number {
+	const others = ids.filter((other) => other !== id);
+	let length = 1;
+	while (
+		length < id.length &&
+		others.some((o) => o.startsWith(id.slice(0, length)))
+	)
+		length++;
+	return length;
+}
+
+/** An id as segments: its first `unique` characters, then the rest, dim. */
+export const idSegs = (id: string, unique: number): Seg[] => [
+	[safe(id.slice(0, unique)), "bold"],
+	[safe(id.slice(unique)), "dim"],
+];
+
+function headerSegs({ concert, now }: View): Seg[] {
 	const elapsed = duration((concert.settledAt ?? now) - concert.startedAt);
-	const counts = COUNTED.map((state) => ({
-		state,
-		n: lines.filter((l) => l.shown === state).length,
-	}))
-		.filter(({ n }) => n > 0)
-		.map(({ state, n }) => `${n} ${state}`)
-		.join(", ");
+	const look = lookOf(concert.status);
+	const title =
+		concert.title === undefined ? "" : `"${flat(concert.title)}"${GAP}`;
+	const shown = Math.max(SHORT_ID_MIN, concert.unique);
 	return [
-		["concert "],
-		[safe(concert.id), "bold"],
-		[` ${safe(concert.label)}${GAP}`],
-		[safe(concert.status), styleOf(concert.status)],
-		[`${GAP}${elapsed}${GAP}${counts}`],
+		[`${look?.glyph ?? ""} ${safe(concert.label)}${GAP}${title}`, "bold"],
+		...idSegs(concert.id.slice(0, shown), concert.unique),
+		[`${GAP} `],
+		[safe(concert.status), look?.style],
+		[`${GAP}${elapsed}`],
 	];
 }
 
-/** The live graph as lines, clipped to `columns - 1` terminal cells and `rows - 1` lines. */
-export function frame(ir: Ir, seen: Seen, view: View): string {
-	const lines = outline(ir, seen, view.now);
-	const widths = widthsOf(lines);
+function footerSegs(rows: readonly Row[], view: View): Seg[] {
+	const counts = COUNTED.map((state) => ({
+		state,
+		n: rows.filter((l) => l.shown === state).length,
+	}))
+		.filter(({ n }) => n > 0)
+		.map(({ state, n }) => `${n} ${state}`)
+		.join(" · ");
+	const head = `${RULE}${RULE} ${counts} `;
+	const tail =
+		view.tokens > 0 ? ` ${compact(view.tokens)} tok ${RULE}${RULE}` : "";
+	const fill = Math.max(1, view.columns - 1 - head.length - tail.length);
+	return [[`${head}${RULE.repeat(fill)}${tail}`, "dim"]];
+}
+
+/** Lines the frame holds beside its rows: the header and the footer, each beside a blank line. */
+const CHROME_LINES = 4;
+/** Lines a clipped frame gives up beyond its chrome: the one the terminal keeps free, and the `… n more` line. */
+const CLIPPED_EXTRA_LINES = 2;
+
+/**
+ * The live graph as lines, clipped to `columns - 1` terminal cells and `rows - 1` lines: a header, the rows laid
+ * out by `layout`, and a footer of counts and the concert's tokens. `agents` says what each agent instance ran on.
+ */
+export function frame(ir: Ir, seen: Seen, view: View, agents: Agents): string {
+	const lines = outline(ir, seen, agents, view);
+	const rows = rowsOf(lines);
+	const widths = widthsOf(rows);
 	const limit = view.columns - 1;
-	const fits = lines.length + 1 <= view.rows - 1;
-	const kept = fits ? lines : lines.slice(0, Math.max(0, view.rows - 3));
+	const fits = lines.length + CHROME_LINES <= view.rows - 1;
+	const kept = fits
+		? lines
+		: lines.slice(
+				0,
+				Math.max(0, view.rows - CHROME_LINES - CLIPPED_EXTRA_LINES),
+			);
 	const more: Seg[][] = fits
 		? []
 		: [[[`… ${lines.length - kept.length} more`, "dim"]]];
 	return [
-		headerSegs(lines, view),
+		headerSegs(view),
+		[],
 		...kept.map((l) => segsOf(l, widths)),
 		...more,
+		[],
+		footerSegs(rows, view),
 	]
 		.map((segs) => painted(segs, limit, view.color))
 		.join("\n");

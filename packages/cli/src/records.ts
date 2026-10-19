@@ -1,12 +1,24 @@
+import { styleText } from "node:util";
+import type { Metrics } from "@maestro/core/host";
 import {
 	type ConcertRecord,
 	type ConcertStatus,
 	openRecord,
+	type Records,
 } from "@maestro/core/perform";
 import { DURATION_EXAMPLE, MS_PER_UNIT } from "@maestro/ir";
 import {
+	agentText,
+	arranged,
+	compact,
+	idSegs,
+	tokensOf,
+	uniqueLength,
+} from "@maestro/render-text/live";
+import {
 	COMMON,
 	type Command,
+	colorOn,
 	isSet,
 	type Options,
 	only,
@@ -32,6 +44,7 @@ import {
 import {
 	artifactsOf,
 	concertOf,
+	concertsOf,
 	diskOf,
 	isMaestro,
 	type Session,
@@ -72,6 +85,11 @@ const LS_OPTIONS = {
 } as const satisfies Options;
 
 const concertColumns = ({ ir: _ir, ...row }: ConcertRecord) => row;
+
+const tokenCell = (metrics: Metrics) => {
+	const tokens = tokensOf(metrics);
+	return tokens > 0 ? compact(tokens) : "-";
+};
 
 const dash = (text: string | undefined) => text || "-";
 
@@ -122,6 +140,30 @@ export const ls: Command = {
 		),
 };
 
+/** `text`, the table of `rows`, with each id's first characters that no other id shares in bold and the rest dim. */
+function highlighted(
+	{ deps }: Session,
+	store: Records,
+	rows: readonly { id: string }[],
+	text: string,
+): string {
+	if (!deps.terminal || !colorOn(deps)) return text;
+	const all = store.ids();
+	return text
+		.split("\n")
+		.map((line, i) => {
+			const id = rows[i - 1]?.id;
+			if (id === undefined) return line;
+			const styled = idSegs(id, uniqueLength(id, all)).map(([part, style]) =>
+				style && part
+					? styleText(style, part, { validateStream: false })
+					: part,
+			);
+			return styled.join("") + line.slice(id.length);
+		})
+		.join("\n");
+}
+
 async function listed({ session, store, values, json }: Stored) {
 	const limit = textOf(values, "limit");
 	const concerts = store.concerts({
@@ -134,40 +176,51 @@ async function listed({ session, store, values, json }: Stored) {
 	const rows = await Promise.all(
 		concerts.map(async (c) => ({
 			...concertColumns(c),
+			metrics: store.metrics(c.id),
 			diskUse: await diskOf(session, c.id),
 		})),
 	);
+	const text = table([
+		[
+			"id",
+			"title",
+			"tour",
+			"workspace",
+			"composition",
+			"status",
+			"tokens",
+			"disk",
+		],
+		...rows.map((r) => [
+			r.id,
+			dash(r.title),
+			dash(r.tour),
+			dash(r.workspace),
+			`${r.pack}.${r.composition}`,
+			r.status,
+			tokenCell(r.metrics),
+			formatBytes(r.diskUse),
+		]),
+	]);
 	session.deps.stdout(
-		json
-			? jsonOf(rows)
-			: table([
-					["id", "title", "tour", "workspace", "composition", "status", "disk"],
-					...rows.map((r) => [
-						r.id,
-						dash(r.title),
-						dash(r.tour),
-						dash(r.workspace),
-						`${r.pack}.${r.composition}`,
-						r.status,
-						formatBytes(r.diskUse),
-					]),
-				]),
+		json ? jsonOf(rows) : highlighted(session, store, rows, text),
 	);
 	return EXIT.ok;
 }
 
-async function instancesOf({ session, store, json }: Stored, id: string) {
-	const row = concertOf(store, id);
-	const instances = store.instances(id);
+async function instancesOf({ session, store, json }: Stored, prefix: string) {
+	const row = concertOf(store, prefix);
+	const instances = arranged(row.ir, store.instances(row.id));
 	session.deps.stdout(
 		json
 			? jsonOf({ ...concertColumns(row), instances })
 			: table([
-					["instance", "status", "stale", "reason"],
+					["instance", "status", "stale", "agent", "reason"],
 					...instances.map((i) => [
 						instanceName(row.ir, i),
 						i.status,
 						i.stale ? "stale" : "",
+						agentText(i.enrichment, i.metrics),
 						i.reason ?? "",
 					]),
 				]),
@@ -186,14 +239,17 @@ const WAIT_OPTIONS = {
 
 async function waited({ session, store, values, positionals, json }: Stored) {
 	const { deps } = session;
-	const id = only(positionals, "concert", "Name the concert to wait for");
+	const prefix = only(positionals, "concert", "Name the concert to wait for");
 	const timeout = textOf(values, "timeout");
 	const limit =
 		timeout === undefined ? undefined : parseDuration("--timeout", timeout);
-	const { ir } = concertOf(store, id);
+	const { ir, id } = concertOf(store, prefix);
 	const result = (await store.wait(id, limit)) && store.result(id);
 	const { status } = resultDoc(id, result);
-	if (json) deps.stdout(jsonOf(resultDoc(id, result)));
+	if (json)
+		deps.stdout(
+			jsonOf({ ...resultDoc(id, result), metrics: store.metrics(id) }),
+		);
 	else if (result) {
 		const outputs = outputsText(ir, artifactsOf(session, id), result);
 		if (outputs !== undefined) deps.stdout(outputs);
@@ -242,8 +298,8 @@ function signal(pid: number) {
 
 async function killed({ session, store, positionals, json }: Stored) {
 	const { deps } = session;
-	const id = only(positionals, "concert", "Name the concert to stop");
-	const { status, pid } = concertOf(store, id);
+	const prefix = only(positionals, "concert", "Name the concert to stop");
+	const { id, status, pid } = concertOf(store, prefix);
 	if (status !== "running")
 		throw new CliError(
 			`concert ${id} is not running, it settled ${status}\nSee 'maestro ls ${id}'`,
@@ -305,8 +361,8 @@ async function toured({
 	positionals,
 	json,
 }: Stored) {
-	const { slug, ids } = tourAndConcerts(values, positionals);
-	for (const id of ids) concertOf(store, id);
+	const { slug, ids: prefixes } = tourAndConcerts(values, positionals);
+	const ids = concertsOf(store, prefixes).map((c) => c.id);
 	for (const id of ids) store.setTour(id, slug);
 	if (json) deps.stdout(jsonOf({ tour: slug ?? null, concerts: ids }));
 	else deps.stderr(`${slug ?? "no tour"}: ${ids.join(" ")}`);

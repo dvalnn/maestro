@@ -86,6 +86,7 @@ describe("a concert in another process", () => {
 		).toEqual({
 			id,
 			status: "running",
+			metrics: {},
 		});
 		expect(await w.call(["perform", "--resume", id])).toEqual({
 			code: 1,

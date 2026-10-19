@@ -14,9 +14,20 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 `@maestro/render-text/live` draws a concert as it goes, from the IR and the record's events:
 
 - `seen(prior, events)`: each instance's state, the latest event winning.
-- `frame(ir, seen, view)`: the outline of the IR with each instance's glyph, name, kind, state, time and note, under a
-  header with the concert's status, elapsed time and counts. Lines are cut at `columns - 1` terminal cells, and past
-  `rows - 1` lines it ends with `… <n> more`.
+- `frame(ir, seen, view, agents)`: a header with the concert's status, short id and elapsed time, the IR's rows laid out
+  as the IR nests them, and a footer of counts and the concert's tokens. A row has its glyph, short name, kind, state,
+  time, agent and note; a node that never ran, in a loop round or at all, is `pending`, and `skipped` once the concert
+  has settled. Lines are cut at `columns - 1` terminal cells, and past `rows - 1` lines the rows end with `… <n> more`.
+- `arranged(ir, instances)`: instances in the order `frame` lists them: a subcomposition's members under its name, a
+  loop's by round, each round's in node order.
+- `agentText(enrichment, metrics)` and `agentsOf(records)`: the agent column,
+  `<harness> · <model> · <effort>  <total> tok`, with the model minus its provider prefix and the effort when the role
+  sets one.
+- `tokensOf(metrics)` and `compact(n)`: the sum of the `tokens_*` metrics but `tokens_reasoning`, and a count as `999`,
+  `15.5k` or `1.2M`.
+- `uniqueLength(id, ids)` and `idSegs(id, unique)`: how many leading characters of `id` no other of `ids` shares, and
+  the id as a bold part and a dim rest.
+- `flat(text)`: text on one line, control characters shown as escapes.
 - `eventLine(ir, event, view)`: one event as its offset from the concert's start, instance name and what happened. A
   progress event shows its `kind`, then each other field; a multi-line string continues indented.
 

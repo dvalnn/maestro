@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import type { Metrics } from "@maestro/core/host";
 import {
 	type Concert,
 	type ConcertResult,
@@ -81,13 +82,13 @@ async function begin(
 }
 
 /**
- * The concert `id` to resume, with its code as it stands now.
+ * The concert whose id starts with `prefix`, to resume, with its code as it stands now.
  * @throws CliError when core refuses to resume it, its code is gone, or the flags are not a resume's.
  */
 async function restart(
 	session: Session,
 	store: Records,
-	id: string,
+	prefix: string,
 	args: readonly string[],
 ): Promise<Start> {
 	const { values, positionals } = parse(PERFORM_OPTIONS, args, FIX);
@@ -100,10 +101,10 @@ async function restart(
 			"--resume takes no composition, --tour or --title: the concert keeps its own",
 			"Drop them, or start a new concert without --resume",
 		);
-	const row = concertOf(store, id);
+	const row = concertOf(store, prefix);
 	const refused = unresumable(row);
 	if (refused) throw resumeRefused(refused);
-	return { prepared: await resumable(session, row, values), resume: id };
+	return { prepared: await resumable(session, row, values), resume: row.id };
 }
 
 /** Cancels `concert` on SIGINT or SIGTERM, until it settles. */
@@ -125,9 +126,10 @@ function report(
 	id: string,
 	{ ir }: Prepared,
 	result: ConcertResult,
+	metrics: Metrics,
 ): number {
 	const { deps } = session;
-	if (json) deps.stdout(jsonOf(resultDoc(id, result)));
+	if (json) deps.stdout(jsonOf({ ...resultDoc(id, result), metrics }));
 	else {
 		const outputs = outputsText(ir, artifactsOf(session, id), result);
 		if (outputs !== undefined) deps.stdout(outputs);
@@ -172,7 +174,15 @@ async function performed(
 			: { resume: start.resume }),
 	});
 	deps.stderr(`concert ${concert.id}`);
-	return report(session, json, concert.id, prepared, await settled(concert));
+	const result = await settled(concert);
+	return report(
+		session,
+		json,
+		concert.id,
+		prepared,
+		result,
+		store.metrics(concert.id),
+	);
 }
 
 export const perform: Command = {

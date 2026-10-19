@@ -1,15 +1,19 @@
-import type { ConcertRecord } from "@maestro/core/perform";
+import type { ConcertRecord, Records } from "@maestro/core/perform";
 import type { ConcertEvent } from "@maestro/ir";
 import {
+	agentsOf,
 	eventLine,
 	frame,
 	type Seen,
 	seen,
+	tokensOf,
+	uniqueLength,
 	type View,
 } from "@maestro/render-text/live";
 import {
 	COMMON,
 	type Command,
+	colorOn,
 	type Deps,
 	isSet,
 	type Options,
@@ -28,8 +32,8 @@ const CLEAR_BELOW = `${ESC}[J`;
 const cursorUp = (lines: number) => `${ESC}[${lines}F`;
 /** The event types a view's JSON lines show without `--events`: those that change an instance's state. */
 const STATE_CHANGES = new Set(["running", "settled", "reused"]);
-/** The size of a view `eventLine` draws, which ignores it. */
-const UNCLIPPED = { columns: 0, rows: 0 };
+/** What a view holds beside the record's row, which `eventLine` ignores. */
+const UNFRAMED = { columns: 0, rows: 0, tokens: 0, unique: 0 };
 
 const WATCH_OPTIONS = {
 	...COMMON,
@@ -49,23 +53,22 @@ type Show = (events: readonly ConcertEvent[], row: ConcertRecord) => void;
 const viewOf = (
 	row: ConcertRecord,
 	color: boolean,
-	size = UNCLIPPED,
+	{ unique, tokens, ...size } = UNFRAMED,
 ): View => ({
 	concert: {
 		id: row.id,
 		label: `${row.pack}.${row.composition}`,
+		title: row.title,
 		status: row.status,
+		unique,
 		startedAt: row.startedAt,
 		settledAt: row.settledAt,
 	},
+	tokens,
 	now: Date.now(),
 	color,
 	...size,
 });
-
-/** Whether a terminal view is colored: by `--color`, unless `NO_COLOR` is set or `TERM` is `dumb`. */
-const colorOn = ({ env }: Deps, values: Values) =>
-	!env.NO_COLOR && env.TERM !== "dumb" && values.color !== false;
 
 const jsonLines =
 	(deps: Deps, all: boolean): Show =>
@@ -82,12 +85,24 @@ const eventLines =
 	};
 
 /** Redraws the frame in place, over the one before, when it changed. */
-function frames(deps: Deps, terminal: Terminal, color: boolean): Show {
+function frames(
+	deps: Deps,
+	store: Records,
+	terminal: Terminal,
+	color: boolean,
+): Show {
 	let state: Seen = new Map();
 	let last: string | undefined;
+	const ids = store.ids();
 	return (events, row) => {
 		state = seen(state, events);
-		const text = frame(row.ir, state, viewOf(row, color, terminal()));
+		const view = viewOf(row, color, {
+			...terminal(),
+			tokens: tokensOf(store.metrics(row.id)),
+			unique: uniqueLength(row.id, ids),
+		});
+		const agents = agentsOf(store.instances(row.id));
+		const text = frame(row.ir, state, view, agents);
 		if (text === last) return;
 		const erase =
 			last === undefined
@@ -98,19 +113,25 @@ function frames(deps: Deps, terminal: Terminal, color: boolean): Show {
 	};
 }
 
-function showOf(deps: Deps, values: Values, terminal?: Terminal): Show {
+function showOf(
+	deps: Deps,
+	store: Records,
+	values: Values,
+	terminal?: Terminal,
+): Show {
 	const all = isSet(values, "events");
 	if (!terminal) return jsonLines(deps, all);
-	const color = colorOn(deps, values);
-	return all ? eventLines(deps, color) : frames(deps, terminal, color);
+	const color = colorOn(deps, values.color !== false);
+	return all ? eventLines(deps, color) : frames(deps, store, terminal, color);
 }
 
 async function watched({ session, store, values, positionals, json }: Stored) {
 	const { deps } = session;
-	const id = only(positionals, "concert", "Name the concert to watch");
-	let row = concertOf(store, id);
+	const prefix = only(positionals, "concert", "Name the concert to watch");
+	let row = concertOf(store, prefix);
+	const { id } = row;
 	const terminal = json ? undefined : deps.terminal;
-	const show = showOf(deps, values, terminal);
+	const show = showOf(deps, store, values, terminal);
 	if (terminal && row.status === "running")
 		deps.stderr(
 			`watching concert ${id}; ctrl-c stops watching, not the concert`,
@@ -123,7 +144,7 @@ async function watched({ session, store, values, positionals, json }: Stored) {
 		show(events, row);
 		if (row.status !== "running") break;
 		await Bun.sleep(WATCH_POLL_MS);
-		row = concertOf(store, id);
+		row = store.find(id) ?? row;
 	}
 	const result = store.result(id);
 	const doc = resultDoc(id, result);

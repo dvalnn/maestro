@@ -25,7 +25,9 @@ maestro wait <concert> --timeout 15m
 
 [^watch]:
     On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls and thinking among
-    them. Ctrl-C stops watching, not the concert. Color is off under `NO_COLOR`, `TERM=dumb` or `--no-color`.
+    them. The graph is a header (status, elapsed time and the short id), the rows by subcomposition and loop round, and
+    a footer of counts and the concert's tokens. Ctrl-C stops watching, not the concert. Color is off under `NO_COLOR`,
+    `TERM=dumb` or `--no-color`.
 
 [^prune]:
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`
@@ -42,6 +44,19 @@ event of any type with `--events`, each as the record holds it, then a last line
 `"type":"concert"`. On a terminal stderr carries the closing line, and stdout holds only the view.
 
 `ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
+
+Every `<concert>` is an id or any prefix of one that no other concert's id starts with, as in jj. A prefix that several
+ids start is a usage error (exit 2) naming them. On a terminal, `ls` shows each id with the characters that tell it
+apart in bold and the rest dim.
+
+Spend shows beside the status. An agent instance, in `ls <concert>` and `watch`, has an agent column,
+`<harness> · <model> · <effort>  <total> tok`: the model without its provider (`github-copilot/claude-haiku-5.5` shows
+as `claude-haiku-5.5`), the effort only when the role sets `thinking`, the total the sum of the instance's `tokens_*`
+metrics but `tokens_reasoning`, which output tokens already count, as `999`, `15.5k` or `1.2M`, left out when 0. A
+running agent shows the harness, model and effort from the `agent` progress event it emits when it starts, then its
+latest note. Other instances leave the column blank. The `ls` list has a `tokens` column with the concert's total, `-`
+when it has none. In the `--json` documents of `ls` (each row), `wait` and `perform`, `metrics` holds each metric name's
+total over the concert.
 
 `perform` and `wait` print one `name  value` line per output port of the result node on stdout, and nothing else there.
 Stderr carries `concert <id>` when a `perform` starts and the closing line
