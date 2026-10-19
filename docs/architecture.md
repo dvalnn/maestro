@@ -495,8 +495,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 **Harness adapters**
 
-- An adapter starts an agent session for a role, feeds it the prompt, streams events (turns, text, thinking, tool calls
-  with their input, usage), reports the agent's final reply, and supports cancel. Tool results are not streamed. In the
+- An adapter starts an agent session for a role, feeds it the prompt, streams events (text, thinking, tool calls with
+  their input, usage), reports the agent's final reply, and supports cancel. Tool results are not streamed. In the
   harness's output, secrets the sandbox is given are masked before the adapter parses it: Claude's token, and the
   credential values in pi's `auth.json`. The host reads declared outputs from the agent's outbox, not the adapter. It is
   a sandboxed subprocess driving the harness's JSON event stream (D-20). An in-process SDK is deferred, because an

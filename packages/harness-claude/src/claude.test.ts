@@ -65,7 +65,7 @@ const read = (req: HarnessRequest, file: string) =>
 	readFileSync(join(req.outbox, file), "utf8");
 
 describe("stand-in claude", () => {
-	test("the recorded 2.1.302 run is read into turns, tools, usage and a reply", async () => {
+	test("the recorded 2.1.302 run is read into tools, usage and a reply", async () => {
 		const req = request("write hello.txt");
 		const unknown = '{"type":"future_event","extra":{"a":1}}';
 		const run = claudeHarness(standIn([...fixture(), unknown])).run(req);
@@ -80,7 +80,6 @@ describe("stand-in claude", () => {
 			tokens_cache_read: 19278,
 			tokens_cache_write: 19414,
 		});
-		expect(seen.filter((e) => e.kind === "turn").length).toBeGreaterThan(0);
 		expect(seen.filter((e) => e.kind === "tool")).toContainEqual({
 			kind: "tool",
 			name: "Write",
@@ -92,7 +91,7 @@ describe("stand-in claude", () => {
 		});
 	});
 
-	test("an assistant message repeated per content block is one turn, its non-empty thinking reported", async () => {
+	test("an assistant message repeated per content block has its non-empty thinking reported once, and a result repeating the last text adds no text, while one that differs replaces it", async () => {
 		const block = (type: string, extra: object) =>
 			JSON.stringify({
 				type: "assistant",
@@ -106,13 +105,30 @@ describe("stand-in claude", () => {
 			block("tool_use", { name: "Bash", input: { command: "ls" } }),
 			JSON.stringify({ type: "result", subtype: "success", result: "a" }),
 		];
-		const seen = await drain(
-			claudeHarness(standIn(lines)).run(request("x")).events,
-		);
-		expect(seen.filter((e) => e.kind === "turn")).toHaveLength(1);
+		const run = claudeHarness(standIn(lines)).run(request("x"));
+		const seen = await drain(run.events);
+		expect((await run.result).reply).toBe("a");
+		expect(seen.filter((e) => e.kind === "text")).toEqual([
+			{ kind: "text", text: "a" },
+		]);
 		expect(seen.filter((e) => e.kind === "thinking")).toEqual([
 			{ kind: "thinking", text: "List first." },
 		]);
+
+		const differing = claudeHarness(
+			standIn([
+				block("text", { text: "foo" }),
+				JSON.stringify({ type: "result", subtype: "success", result: "bar" }),
+			]),
+		).run(request("x"));
+		const texts = (await drain(differing.events)).filter(
+			(e) => e.kind === "text",
+		);
+		expect(texts).toEqual([
+			{ kind: "text", text: "foo" },
+			{ kind: "text", text: "bar" },
+		]);
+		expect((await differing.result).reply).toBe("bar");
 	});
 
 	test("the prompt goes on stdin, the identity in an appended file, and the session has its own config dir", async () => {

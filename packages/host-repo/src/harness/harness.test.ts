@@ -51,7 +51,8 @@ test("a 300 KB prompt reaches the stub intact", async () => {
 
 test("events stream incrementally and usage surfaces as metrics", async () => {
 	const run = stubHarness([
-		{ emit: { type: "turn" }, delayMs: 400 },
+		{ emit: { type: "text", text: "hi" }, delayMs: 400 },
+		{ emit: { type: "usage" } },
 		{ emit: { type: "usage", tokens_in: 10, tokens_out: 3 }, delayMs: 400 },
 		{ emit: { type: "tool", name: "bash" }, delayMs: 400 },
 		{ emit: { type: "usage", tokens_in: 5, tokens_out: 2 } },
@@ -62,15 +63,23 @@ test("events stream incrementally and usage surfaces as metrics", async () => {
 	const end = performance.now();
 	expect(arrivals.map((a) => a.kind)).toEqual([
 		"raw",
-		"turn",
+		"text",
 		"usage",
 		"tool",
 		"usage",
 		"settled",
 	]);
-	expect(end - (arrivals[1] as { at: number }).at).toBeGreaterThan(400); // turn arrived well before the run ended
+	expect(end - (arrivals[1] as { at: number }).at).toBeGreaterThan(400); // text arrived well before the run ended
 	const result = await run.result;
 	expect(result.metrics).toEqual({ tokens_in: 15, tokens_out: 5 });
+});
+
+test("a usage event of zeros stays out of the stream but is folded into the metrics", async () => {
+	const run = stubHarness([{ emit: { type: "usage" } }]).run(request("x"));
+	const kinds: string[] = [];
+	for await (const e of run.events) kinds.push(e.kind);
+	expect(kinds).not.toContain("usage");
+	expect((await run.result).metrics).toEqual({ tokens_in: 0, tokens_out: 0 });
 });
 
 test("the agent writes to the outbox and the session dir, and the last text is the reply", async () => {
@@ -122,7 +131,9 @@ test("cancel ends a hung run as failed/cancelled", async () => {
 });
 
 test("abandoning the event stream does not break the run", async () => {
-	const run = stubHarness([{ emit: { type: "turn" } }]).run(request("x"));
+	const run = stubHarness([{ emit: { type: "text", text: "x" } }]).run(
+		request("x"),
+	);
 	for await (const _ of run.events) break;
 	expect((await run.result).outcome).toBe("ok");
 });

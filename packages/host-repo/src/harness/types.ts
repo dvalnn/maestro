@@ -58,7 +58,6 @@ export type HarnessRequest = {
 };
 
 export type HarnessEvent =
-	| { kind: "turn" }
 	| { kind: "text"; text: string }
 	/** A tool call, with its arguments as the harness gave them. */
 	| { kind: "tool"; name: string; input: unknown }

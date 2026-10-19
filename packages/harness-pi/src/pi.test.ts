@@ -54,7 +54,7 @@ async function drain(events: AsyncIterable<HarnessEvent>) {
 }
 
 describe("stand-in pi", () => {
-	test("the recorded 1.3.0 run is read into turns, tools, usage and a reply", async () => {
+	test("the recorded 1.3.0 run is read into tools, usage and a reply", async () => {
 		const req = request("write hello.txt");
 		const unknown = '{"type":"future_event","extra":{"a":1}}';
 		const run = piHarness(standIn([...fixture(), unknown])).run(req);
@@ -72,7 +72,7 @@ describe("stand-in pi", () => {
 				tokens_reasoning: 0,
 			},
 		});
-		expect(seen.filter((e) => e.kind === "turn")).toHaveLength(2);
+		expect(seen.filter((e) => e.kind === "raw")).toHaveLength(1);
 		expect(seen.filter((e) => e.kind === "tool")).toEqual([
 			{
 				kind: "tool",

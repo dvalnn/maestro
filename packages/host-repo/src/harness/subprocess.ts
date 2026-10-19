@@ -75,6 +75,20 @@ function fold(tally: Tally, e: HarnessEvent) {
 	else if (e.kind === "fault") tally.fault ??= e.reason;
 }
 
+/** Folds `e` into `tally` and enqueues it, except a usage event that reports nothing. Kills `proc` on a fault. */
+async function forward(
+	proc: SandboxedProcess,
+	e: HarnessEvent,
+	emit: ReadableStreamDefaultController<HarnessEvent>,
+	tally: Tally,
+) {
+	fold(tally, e);
+	const empty =
+		e.kind === "usage" && Object.values(e.metrics).every((v) => v === 0);
+	if (!empty) ignoreClosed(() => emit.enqueue(e));
+	if (e.kind === "fault") await proc.kill().catch(() => {});
+}
+
 /** Forwards parsed events and folds them into `tally`. Returns why reading stopped early, if it did. */
 async function pump(
 	proc: SandboxedProcess,
@@ -84,11 +98,7 @@ async function pump(
 ): Promise<string | undefined> {
 	try {
 		for await (const line of proc.stdout) {
-			for (const e of parse(line)) {
-				fold(tally, e);
-				ignoreClosed(() => emit.enqueue(e));
-				if (e.kind === "fault") await proc.kill().catch(() => {});
-			}
+			for (const e of parse(line)) await forward(proc, e, emit, tally);
 		}
 	} catch (err) {
 		await proc.kill().catch(() => {});

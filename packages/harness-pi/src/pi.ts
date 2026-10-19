@@ -33,6 +33,7 @@ const IGNORED = new Set([
 	"agent_end",
 	"message_start",
 	"message_update",
+	"turn_start",
 	"turn_end",
 	"tool_execution_update",
 	"tool_execution_end",
@@ -97,8 +98,6 @@ function eventsOf(e: JsonObject): HarnessEvent[] {
 	switch (e.type) {
 		case "session":
 			return sessionEvents(e);
-		case "turn_start":
-			return [{ kind: "turn" }];
 		case "tool_execution_start":
 			return [{ kind: "tool", name: String(e.toolName), input: e.args }];
 		case "message_end":

@@ -59,8 +59,6 @@ const parse = (e: JsonObject): HarnessEvent[] => [eventOf(e)];
 
 function eventOf(e: JsonObject): HarnessEvent {
 	switch (e.type) {
-		case "turn":
-			return { kind: "turn" };
 		case "text":
 			return { kind: "text", text: String(e.text) };
 		case "tool":

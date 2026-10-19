@@ -110,18 +110,22 @@ function blockEvent(block: unknown): HarnessEvent[] {
 	return [];
 }
 
-/** One run's final line. `is_error` also rides on `subtype: "success"`, so both are checked. */
+/**
+ * One run's final line. `is_error` also rides on `subtype: "success"`, so both are checked. Its text is dropped when it
+ * repeats the last assistant text.
+ */
 function resultEvents(
 	e: JsonObject,
 	authFailed: boolean,
 	counted: Metrics,
+	lastText: string | undefined,
 ): HarnessEvent[] {
 	const failed = e.is_error === true || e.subtype !== "success";
 	const reply = typeof e.result === "string" ? e.result : "";
 	const reason = reply || `claude ended with ${String(e.subtype)}`;
 	return [
 		{ kind: "usage", metrics: growth(resultMetrics(e), counted) },
-		{ kind: "text", text: reply },
+		...(reply === lastText ? [] : [{ kind: "text" as const, text: reply }]),
 		failed
 			? {
 					kind: "fault",
@@ -138,11 +142,11 @@ function resultEvents(
  * usage alone, which undercounts output. Unknown types pass through as raw, never fail.
  */
 function parser(): (e: JsonObject) => HarnessEvent[] {
-	const turns = new Set<string>();
 	const seen = new Map<string, Metrics>();
 	const counted: Metrics = {};
 	let authFailed = false;
-	const assistantEvents = (message: JsonObject): HarnessEvent[] => {
+	let lastText: string | undefined;
+	const countUsage = (message: JsonObject): Metrics => {
 		const id = String(message.id);
 		const now = sumUsage(
 			isObject(message.usage) ? [message.usage] : [],
@@ -152,14 +156,13 @@ function parser(): (e: JsonObject) => HarnessEvent[] {
 		seen.set(id, now);
 		for (const [k, v] of Object.entries(added))
 			counted[k] = (counted[k] ?? 0) + v;
-		const first: HarnessEvent[] = turns.has(id) ? [] : [{ kind: "turn" }];
-		turns.add(id);
+		return added;
+	};
+	const assistantEvents = (message: JsonObject): HarnessEvent[] => {
 		const blocks = Array.isArray(message.content) ? message.content : [];
-		return [
-			...first,
-			{ kind: "usage", metrics: added },
-			...blocks.flatMap(blockEvent),
-		];
+		const events = blocks.flatMap(blockEvent);
+		for (const e of events) if (e.kind === "text") lastText = e.text;
+		return [{ kind: "usage", metrics: countUsage(message) }, ...events];
 	};
 	const eventsOf = (e: JsonObject): HarnessEvent[] => {
 		switch (e.type) {
@@ -167,7 +170,7 @@ function parser(): (e: JsonObject) => HarnessEvent[] {
 				authFailed ||= e.error === AUTH_FAILED;
 				return isObject(e.message) ? assistantEvents(e.message) : [];
 			case "result":
-				return resultEvents(e, authFailed, counted);
+				return resultEvents(e, authFailed, counted, lastText);
 			case "user":
 				return [];
 			case "system":
