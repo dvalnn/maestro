@@ -15,6 +15,7 @@ import { EXIT, jsonOf, renderDiagnostic, table } from "./output";
 import {
 	bundleName,
 	COMPOSE_FLAGS,
+	compositionHelp,
 	type Prepared,
 	persist,
 	preflight,
@@ -52,6 +53,7 @@ function print(deps: Deps, plan: Plan, values: Values): void {
 export const compose: Command = {
 	usage: "compose <composition> [flags]  (alias: c)",
 	options: COMPOSE_OPTIONS,
+	help: compositionHelp,
 	async execute(args, deps) {
 		const { json, prepared, plan } = await composed(
 			{ verb: "compose", options: COMPOSE_OPTIONS, examples: true },

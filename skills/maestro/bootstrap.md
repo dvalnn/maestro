@@ -7,8 +7,8 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
 
 1. **Prerequisites.** `maestro --help` prints its commands; `bwrap` (bubblewrap) and `git` 2.40 or newer are on `PATH`.
    Each harness a role names needs its CLI on `PATH` and its credentials:
-   - `claude`: `CLAUDE_CODE_OAUTH_TOKEN` in the environment or in a `.env` file in the directory maestro runs from; made
-     by `claude setup-token`.
+   - `claude`: `CLAUDE_CODE_OAUTH_TOKEN` in the environment or in `$XDG_CONFIG_HOME/maestro/.env` (default
+     `~/.config/maestro/.env`) as `CLAUDE_CODE_OAUTH_TOKEN=<token>`; made by `claude setup-token`.
    - `pi`: pi logged in, its config in `~/.pi/agent`; made by running `pi` once and logging in.
 
    A setup whose roles are all stub needs no harness. Done when each command answers.
@@ -31,19 +31,18 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
      checks and agents see nothing else.
    - `roles`: every role the composition names. Compose lists each missing one. A role no layer maps is the user's call,
      since a model is spend: ask the user for its harness and model.
-   - `packs`: each installed pack's directory, absolute or relative to the workspace root (the directory that holds
-     `.maestro/`) in a workspace file. A list replaces the lower layer's, so to add to the user file's packs write
-     `packs: !append [<dir>]`. The release ships the classics pack as `classics-<version>.tar.gz` beside the binary;
-     install it into the packs directory, then list the printed directory:
+   - Packs: every directory under `$XDG_DATA_HOME/maestro/packs/` is installed, with no config. The release ships the
+     classics pack as `classics-<version>.tar.gz` beside the binary; extracting it there is the whole install, and
+     `maestro rep` then lists it:
 
      ```sh
      packs="${XDG_DATA_HOME:-$HOME/.local/share}/maestro/packs"
-     mkdir -p "$packs" && tar -xzf classics-<version>.tar.gz -C "$packs" && echo "$packs/classics"
+     mkdir -p "$packs" && tar -xzf classics-<version>.tar.gz -C "$packs" && maestro rep
      ```
 
-     ```yaml
-     packs: [/home/me/.local/share/maestro/packs/classics]
-     ```
+     A pack kept elsewhere goes under `packs`: its directory, absolute or relative to the workspace root (the directory
+     that holds `.maestro/`) in a workspace file. A list replaces the lower layer's, so to add to the user file's packs
+     write `packs: !append [<dir>]`.
 
    - Optional: `caps`, `sandbox.readOnly`, `concurrency`, and composition params (see the example).
 
@@ -77,7 +76,7 @@ roles:
   builder: { harness: claude, model: sonnet, thinking: high }
   reviewer: { harness: pi, model: anthropic/claude-opus-4-1, thinking: medium }
 
-packs: [/home/me/.local/share/maestro/packs/classics] # absolute: paths are not expanded
+packs: [/home/me/packs/mine] # a pack outside the packs directory; absolute: paths are not expanded
 
 caps:
   repo.agent: 12 # compose refuses a plan that may start more than 12 agents: a spend guard
@@ -141,4 +140,4 @@ The stub profile, every role on the stub harness, is in SKILL.md, section Stub c
 | `HOST.bind: read-only bind 'p' is not an absolute path`             | Give an absolute path that exists, outside the lanes                          |
 | `BOUND.cap: 'repo.agent' may reach at least N, over its cap of M`   | Lower the params that size the plan, or ask to raise the cap                  |
 | `CFG.required: param 'p' (--p) of 'pack.c' is required`             | Pass `--p`, or for a pack's composition set it under `<pack>: <composition>:` |
-| `no pack 'x' is installed`                                          | Add the pack's directory to `packs`                                           |
+| `no pack 'x' is installed`                                          | Extract it into the packs directory, or add its directory to `packs`          |

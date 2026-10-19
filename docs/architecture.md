@@ -520,12 +520,12 @@ build-time `assert` over the models it takes as params, with the pack's own fami
 ## 13. Packs
 
 A pack is a directory or release tarball with a `maestro-pack.json` manifest and one pre-bundled entry file that
-includes its own SDK copy (D-30). The workspace config lists packs by path, and nothing is resolved through
-`node_modules`. Compose consumes only IR JSON, so a second SDK copy is harmless as long as nothing relies on
-`instanceof` across copies. A pack contributes compositions, prompts, schemas, code nodes and params. Everything
-domain-specific lives here: for example the Gerrit comment parser and renderer, a catalogue of review lenses, a
-knowledge directory. Hard-coded environment facts (a repository path, a change number, a commit SHA) are inputs or
-round-folder data, never constants in a pack.
+includes its own SDK copy (D-30). The config lists packs by path, every directory under `$XDG_DATA_HOME/maestro/packs/`
+is one too, and nothing is resolved through `node_modules`. Compose consumes only IR JSON, so a second SDK copy is
+harmless as long as nothing relies on `instanceof` across copies. A pack contributes compositions, prompts, schemas,
+code nodes and params. Everything domain-specific lives here: for example the Gerrit comment parser and renderer, a
+catalogue of review lenses, a knowledge directory. Hard-coded environment facts (a repository path, a change number, a
+commit SHA) are inputs or round-folder data, never constants in a pack.
 
 ## 14. Distribution
 

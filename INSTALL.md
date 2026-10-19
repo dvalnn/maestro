@@ -9,7 +9,8 @@ Nothing is published to a public registry.
 - bubblewrap, with unprivileged user namespaces enabled.
 - git 2.40 or newer.
 - A harness: pi 1.3.0 logged in (`~/.pi/agent`), or Claude Code 2.1.302 with `CLAUDE_CODE_OAUTH_TOKEN` from
-  `claude setup-token`, set in the shell or in a `.env` in the cwd.
+  `claude setup-token`, exported in the shell or set in `~/.config/maestro/.env` (`$XDG_CONFIG_HOME/maestro/.env`) as
+  `CLAUDE_CODE_OAUTH_TOKEN=<token>`. The shell's value wins over the file's.
 
 Running maestro needs no Bun.
 
@@ -42,13 +43,17 @@ tar -xzf maestro-skill.tar.gz -C ~/.claude/skills
 
 `~/.local/bin` must be on `PATH`. If `maestro --version` prints something else, another `maestro` comes first.
 
+Extracting the pack into `~/.local/share/maestro/packs` (`$XDG_DATA_HOME/maestro/packs`) installs it: every directory
+there is a pack, and no `packs` entry is needed. `maestro rep` lists the installed packs and their compositions.
+
 ## 4. Configure
 
 Config keys are in [`packages/cli/README.md`](packages/cli/README.md).
 
-- The user file `~/.config/maestro/config.yaml` holds `packs`, `roles` and the pack's params. `packs` may instead go in
-  a workspace's `.maestro/config.yaml`. `~` is not expanded; a relative path resolves against the directory of the user
-  file, and in a workspace or profile file against the workspace root, the directory that holds `.maestro/`.
+- The user file `~/.config/maestro/config.yaml` holds `roles` and the pack's params, and `packs` for a pack kept outside
+  the packs directory. `packs` may instead go in a workspace's `.maestro/config.yaml`. `~` is not expanded; a relative
+  path resolves against the directory of the user file, and in a workspace or profile file against the workspace root,
+  the directory that holds `.maestro/`.
 - A workspace file `.maestro/config.yaml` per target holds `target: { repo, base, checks }`, and optionally `prepare`
   (lines run on each checked-out lane, such as a dependency install) and `sparse` (directories, or `{ patterns }` of
   gitignore-style patterns, a lane checks out).
@@ -64,8 +69,6 @@ use your own.
 
 ```yaml
 # ~/.config/maestro/config.yaml
-packs:
-  - /home/me/.local/share/maestro/packs/classics
 roles:
   scout: { harness: claude, model: <claude-model>, thinking: high }
   planner: { harness: claude, model: <claude-model>, thinking: high }
@@ -155,4 +158,3 @@ Bundling a pack and writing its manifest are in the skill's `packs.md`.
 
 - Linux x64 only.
 - Packs are operator-trusted code.
-- A `.env` in the cwd is loaded.

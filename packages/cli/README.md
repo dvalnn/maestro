@@ -19,6 +19,7 @@ maestro wait <concert> --timeout 15m
 | `wait <concert>`             | `w`   | Waits for a concert to settle. `--timeout <duration>`.                                                            |
 | `watch <concert>`            | `wt`  | Shows a concert's node instances live until it settles.[^watch] `--events`, `--no-color`.                         |
 | `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                               |
+| `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                   |
 | `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line.                                              |
 | `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                          |
 | `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                |
@@ -29,9 +30,16 @@ maestro wait <concert> --timeout 15m
     a footer of counts and the concert's tokens. Ctrl-C stops watching, not the concert. Color is off under `NO_COLOR`,
     `TERM=dumb` or `--no-color`.
 
+[^rep]:
+    `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,
+    the roles its agents use when built from its example set, and a `maestro perform` line with the required flags. A
+    pack that fails to load is named on stderr, the rest are listed, and the exit is 1.
+
 [^prune]:
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`
     and `--workspace <name>`; without `--before` there is no age cutoff. It asks before deleting unless given `--yes`.
+
+`compose <composition> --help` and `perform <composition> --help` add the composition's params, as `rep` shows them.
 
 `maestro --version` prints one line, `maestro <version> (sdk <version>, ir <version>, bun <version>)`, and exits 0.
 
@@ -84,7 +92,7 @@ where each value came from.
 
 | Key           | Meaning                                                                                              |
 | ------------- | ---------------------------------------------------------------------------------------------------- |
-| `packs`       | Directories of installed packs.                                                                      |
+| `packs`       | Directories of installed packs, beside each directory under `$XDG_DATA_HOME/maestro/packs/`.         |
 | `concurrency` | Most node instances at once in one concert. Defaults to the CPU count.                               |
 | `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                 |
 | `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`.  |
@@ -97,9 +105,12 @@ A relative `packs`, `dataRoot`, `target.repo` or other path key is relative to t
 holds `.maestro/`, in a workspace or profile file, and to the user file's own directory in the user file.
 
 The repo host's namespaces are set out in architecture.md section 12, Configuration. Its Claude Code harness reads the
-token from `CLAUDE_CODE_OAUTH_TOKEN`, set in the shell or in `.env`; get one with `claude setup-token`.
+token from `CLAUDE_CODE_OAUTH_TOKEN`, set in the shell or in `$XDG_CONFIG_HOME/maestro/.env`; get one with
+`claude setup-token`. maestro loads that `.env` when it exists, a variable the shell sets winning; the release binary
+reads no `.env` or `bunfig.toml` from the cwd, while a run through `bun` from the repository still does.
 
-A pack is operator-trusted code: `maestro` loads and executes what `packs` lists with the user's own permissions.
+A pack is operator-trusted code: `maestro` loads and executes what `packs` lists, and every directory under
+`$XDG_DATA_HOME/maestro/packs/`, with the user's own permissions.
 
 ## Data root
 

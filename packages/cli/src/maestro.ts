@@ -2,7 +2,9 @@
 import { writeSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { isatty } from "node:tty";
+import { messageOf } from "@maestro/ir";
 import { main } from "./cli";
+import { loadDotenv } from "./config";
 import { builtinHosts } from "./hosts";
 import { EXIT } from "./output";
 
@@ -33,6 +35,14 @@ async function confirm(question: string): Promise<boolean> {
 	} finally {
 		lines.close();
 	}
+}
+
+// The release binary is built not to autoload a `.env` from the cwd; a run through `bun` still does.
+try {
+	loadDotenv(process.env);
+} catch (error) {
+	emit(STDERR_FD, messageOf(error));
+	process.exit(EXIT.failed);
 }
 
 process.exit(

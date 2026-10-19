@@ -44,6 +44,8 @@ export type Command = {
 	usage: string;
 	options: Options;
 	execute(args: readonly string[], deps: Deps): Promise<number>;
+	/** What `--help` adds after the flags for `args`, such as the params of the composition they name. */
+	help?(args: readonly string[], deps: Deps): Promise<string | undefined>;
 };
 
 /** The flags every command takes. */
@@ -115,8 +117,8 @@ export function only(
 	return first;
 }
 
-/** Help for `command`: its usage, then each flag with its description. */
-export function helpOf(command: Command): string {
+/** Help for `command`: its usage, then each flag with its description, then `extra` when given. */
+export function helpOf(command: Command, extra?: string): string {
 	const flags = Object.entries(command.options).map(([name, o]) => [
 		`${o.short ? `-${o.short}, ` : "    "}--${name}${o.arg ? ` <${o.arg}>` : ""}`,
 		o.desc,
@@ -126,5 +128,6 @@ export function helpOf(command: Command): string {
 		"",
 		"Flags:",
 		table(flags.map(([flag = "", desc = ""]) => [`  ${flag}`, desc])),
+		...(extra === undefined ? [] : ["", extra]),
 	].join("\n");
 }

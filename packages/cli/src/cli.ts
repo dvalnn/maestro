@@ -70,6 +70,12 @@ const VERBS: readonly Verb[] = [
 		load: async () => (await import("./compose")).config,
 	},
 	{
+		name: "repertoire",
+		alias: "rep",
+		summary: "List installed packs and their compositions",
+		load: async () => (await import("./repertoire")).repertoire,
+	},
+	{
 		name: "prune",
 		summary: "Delete settled concerts and what they hold",
 		load: async () => (await import("./prune")).prune,
@@ -127,6 +133,21 @@ function report(error: unknown, deps: Deps, args: readonly string[]): number {
 	return exit;
 }
 
+/** What `command` adds to its help for `args`; when that fails, why on stderr, and nothing added. */
+async function extraHelp(
+	command: Command,
+	args: readonly string[],
+	deps: Deps,
+): Promise<string | undefined> {
+	try {
+		return await command.help?.(args, deps);
+	} catch (error) {
+		const [why] = messageOf(error).split("\n", 1);
+		deps.stderr(`params not shown: ${why}`);
+		return undefined;
+	}
+}
+
 /** The verb `word` names, by its name or its alias. */
 function verbOf(word: string): Verb {
 	const verb = VERBS.find((v) => v.name === word || v.alias === word);
@@ -159,7 +180,7 @@ export async function main(
 		if (word === undefined) throw usageError("no command given", rootHelp());
 		const command = await verbOf(word).load();
 		if (isSet(peek(COMMON, args), "help")) {
-			deps.stdout(helpOf(command));
+			deps.stdout(helpOf(command, await extraHelp(command, args, deps)));
 			return EXIT.ok;
 		}
 		return await command.execute(args, deps);

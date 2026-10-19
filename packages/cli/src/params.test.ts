@@ -20,7 +20,7 @@ const WORKSPACE = "/w/.maestro/config.yaml";
 const PROFILE = "/w/.maestro/profiles/fast.yaml";
 
 const demo = async () =>
-	openPack(await packOf(join(DEMO, "index.ts"), await scratch()));
+	openPack({ dir: await packOf(join(DEMO, "index.ts"), await scratch()) });
 
 const fileLayers = (user: string, workspace = "", profile = ""): Layer[] => [
 	parseLayer(user, { file: USER, layer: "user" }),

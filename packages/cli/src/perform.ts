@@ -31,6 +31,7 @@ import {
 	usageError,
 } from "./output";
 import {
+	compositionHelp,
 	PERFORM_FLAGS,
 	type Prepared,
 	preflight,
@@ -189,6 +190,7 @@ export const perform: Command = {
 	usage:
 		"perform <composition> [flags]  (alias: p)\n       maestro perform --resume <concert> [flags]",
 	options: PERFORM_OPTIONS,
+	help: compositionHelp,
 	execute(args, deps) {
 		const early = peek(PERFORM_OPTIONS, args);
 		return withSession(deps, textOf(early, "profile"), (session, store) =>

@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
@@ -15,11 +15,13 @@ import {
 	layered,
 	parseLayer,
 	schemaErrors,
+	sourceOf,
 	valuesLayer,
 } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
 import type { JsonSchema } from "@maestro/ir";
-import { validator } from "@maestro/ir";
+import { messageOf, validator } from "@maestro/ir";
+import { CliError } from "./output";
 
 const APP = "maestro";
 /** The directory that makes its parent a workspace. */
@@ -27,9 +29,15 @@ const WORKSPACE_DIR = ".maestro";
 const CONFIG_FILE = "config.yaml";
 const PROFILES_DIR = "profiles";
 const PROFILE_EXTENSION = ".yaml";
+/** The prefix of a name `ls -a` alone shows. */
+const HIDDEN = ".";
+/** The file of variables the CLI loads beside the user config file. */
+const DOTENV_FILE = ".env";
 
 /** The top-level key that lists the installed packs, each by the path of its directory. */
 const PACKS = "packs";
+/** The directory under `$XDG_DATA_HOME/maestro` whose every subdirectory is an installed pack. */
+const PACKS_DIR = "packs";
 
 /** The config schemas the CLI owns beside core's, by top-level key. */
 export const CLI_CONFIG: Readonly<Record<string, JsonSchema>> = {
@@ -53,13 +61,18 @@ export type ConfigRequest = {
 	profile?: string;
 };
 
+/** An installed pack's directory, and the config file that lists it; without one, it was found in the packs directory. */
+export type PackDir = { dir: string; file?: string };
+
 export type LoadedConfig = {
 	/** Every layer, lowest first: the default, then each config file found. */
 	layers: readonly Layer[];
 	composed: Composed;
 	core: CoreConfig;
-	/** The absolute directory of each installed pack. */
-	packs: readonly string[];
+	/** Each installed pack once: those `packs` lists, then each directory under `packsDir`. */
+	packs: readonly PackDir[];
+	/** `$XDG_DATA_HOME/maestro/packs`, the directory of packs installed without config. */
+	packsDir: string;
 	/** The directory that holds `.maestro/`, when the cwd is inside one. */
 	workspace?: string;
 };
@@ -80,6 +93,50 @@ function xdg(env: Environment, variable: string, fallback: string): string {
 	const set = env[variable];
 	if (set && isAbsolute(set)) return set;
 	return join(env.HOME || homedir(), fallback);
+}
+
+/** Each directory under `root` whose name does not start with `.`, by name, none when `root` is missing. */
+async function directoriesIn(root: string): Promise<PackDir[]> {
+	const names = await readdir(root).catch((error: { code?: string }) => {
+		if (error.code !== "ENOENT") throw error;
+		return [];
+	});
+	const dirs = names
+		.filter((name) => !name.startsWith(HIDDEN))
+		.toSorted()
+		.map((name) => join(root, name));
+	const kept = await Promise.all(dirs.map(isDirectory));
+	return dirs.filter((_, i) => kept[i]).map((dir) => ({ dir }));
+}
+
+/** The packs `composed` lists, each with the file that lists it, then those in `root`, each real directory once. */
+async function packDirs(composed: Composed, root: string): Promise<PackDir[]> {
+	const listed = (composed.values[PACKS] as string[]).map((dir, i) => ({
+		dir,
+		file: sourceOf(composed, [PACKS, String(i)])?.file,
+	}));
+	const all = [...listed, ...(await directoriesIn(root))];
+	const keys = await Promise.all(
+		all.map(({ dir }) => realpath(dir).catch(() => resolve(dir))),
+	);
+	return all.filter((_, i) => keys.indexOf(keys[i] ?? "") === i);
+}
+
+/**
+ * Loads `$XDG_CONFIG_HOME/maestro/.env` into `process.env`, each variable `process.env` already holds kept, when the
+ * file exists.
+ * @throws CliError naming the file when it exists and cannot be read.
+ */
+export function loadDotenv(env: Environment): void {
+	const file = join(xdg(env, "XDG_CONFIG_HOME", ".config"), APP, DOTENV_FILE);
+	try {
+		process.loadEnvFile(file);
+	} catch (error) {
+		if ((error as { code?: string }).code === "ENOENT") return;
+		throw new CliError(
+			`cannot read ${file}: ${messageOf(error)}\nMake it readable, or remove it`,
+		);
+	}
 }
 
 /** The layer in `file`, when it exists; its relative paths resolve against `base`, else its own directory. */
@@ -125,14 +182,15 @@ async function profileLayer(
 
 /**
  * Finds and layers the config files for `request`, lowest first:
- * - core's defaults, and no packs;
+ * - core's defaults, and no packs listed;
  * - the user file, `$XDG_CONFIG_HOME/maestro/config.yaml`, when it exists;
  * - the workspace file, `.maestro/config.yaml` in the nearest directory from the cwd up holding `.maestro/`, when it
  *   exists;
  * - the profile `--profile` names, `.maestro/profiles/<name>.yaml` in that workspace.
  *
  * Relative paths in the user file resolve against its directory, those in the workspace file and the profile against
- * the workspace root.
+ * the workspace root. The installed packs are those `packs` lists, then each directory under
+ * `$XDG_DATA_HOME/maestro/packs`, each once.
  *
  * @throws ConfigError for a file that cannot be parsed or layered, a missing profile, or core or CLI keys off their
  * schemas.
@@ -145,6 +203,7 @@ export async function loadConfig({
 }: ConfigRequest): Promise<LoadedConfig> {
 	const workspace = await workspaceOf(cwd);
 	const dataRoot = join(xdg(env, "XDG_DATA_HOME", ".local/share"), APP);
+	const packsDir = join(dataRoot, PACKS_DIR);
 	const paths = pathKeys(hosts);
 	const files = [
 		await fileLayer(
@@ -172,6 +231,6 @@ export async function loadConfig({
 	const core = coreConfig(composed);
 	const errors = schemaErrors(validator(), CLI_CONFIG, composed);
 	if (errors.length) throw new ConfigError(errors);
-	const packs = composed.values[PACKS] as string[];
-	return { layers, composed, core, packs, workspace };
+	const packs = await packDirs(composed, packsDir);
+	return { layers, composed, core, packs, packsDir, workspace };
 }

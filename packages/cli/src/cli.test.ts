@@ -315,6 +315,16 @@ describe("usage errors", () => {
 			/^pack 'demo' has no composition 'nope'\nName one of: echo, greet, ticket$/,
 		],
 		[
+			"a mistyped composition",
+			["rep", "demo.gret"],
+			/^pack 'demo' has no composition 'gret'\nDid you mean 'greet'\?$/,
+		],
+		[
+			"a mistyped pack",
+			["perform", "dmeo.greet"],
+			/^no pack 'dmeo' is installed\nDid you mean 'demo'\?$/,
+		],
+		[
 			"an uninstalled pack",
 			["perform", "other.greet"],
 			/^no pack 'other' is installed/,
@@ -500,6 +510,24 @@ describe("usage errors", () => {
 				err: "",
 			});
 		expect((await w.call(["--help"])).out).toMatch(/^ {2}watch +\(wt\) +\S/m);
+	});
+
+	test("--help given a composition adds its params after the flags, and not without one", async () => {
+		const w = await world();
+		const PARAMS =
+			/\n\nParams\n {2}--name <text> +required\n {2}--loud <integer> +0$/;
+		expect((await w.call(["compose", "demo.greet", "--help"])).out).toMatch(
+			PARAMS,
+		);
+		expect((await w.call(["p", HELLO, "-h"])).out).toMatch(/\n\nParams\n/);
+		expect((await w.call(["compose", "--help"])).out).not.toContain("Params");
+		expect(await w.call(["compose", "demo.nope", "--help"])).toMatchObject({
+			code: 0,
+			out: expect.stringMatching(
+				/^Usage: maestro compose[\s\S]*--graph +\S[^\n]*$/,
+			),
+			err: "params not shown: pack 'demo' has no composition 'nope'",
+		});
 	});
 });
 

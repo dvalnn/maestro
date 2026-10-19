@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { chmod, symlink } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { ConfigError, sourceOf } from "@maestro/core/config";
-import { type ConfigRequest, loadConfig } from "./config";
+import { type ConfigRequest, loadConfig, loadDotenv } from "./config";
 import { cleanup, scratch } from "./fixtures/packs";
 import { builtinHosts } from "./hosts";
 
@@ -48,7 +49,9 @@ describe("config files", () => {
 			workspace: "ws",
 		});
 		expect(config.workspace).toBe(join(root, "ws"));
-		expect(config.packs).toEqual([join(root, "xdg/maestro/packs/a")]);
+		expect(config.packs).toEqual([
+			{ dir: join(root, "xdg/maestro/packs/a"), file: join(root, USER) },
+		]);
 		expect(config.composed.values.target).toEqual({
 			repo: join(root, "ws/app"),
 		});
@@ -135,10 +138,64 @@ describe("config files", () => {
 		expect(found).toEqual([["CFG.profile", expect.stringContaining(message)]]);
 	});
 
+	test("install each directory under the data home's packs once by its real path, after those listed, skipping hidden ones, and none when it is missing", async () => {
+		const { root, request } = await tree({
+			[USER]: "packs: [../../data/maestro/packs/b, elsewhere, ../../real/c]\n",
+			"data/maestro/packs/a/.keep": "",
+			"data/maestro/packs/b/.keep": "",
+			"data/maestro/packs/file": "",
+			"data/maestro/packs/.cache/.keep": "",
+			"real/c/.keep": "",
+		});
+		await symlink(join(root, "real/c"), join(root, "data/maestro/packs/c"));
+		const env = {
+			HOME: join(root, "home"),
+			XDG_CONFIG_HOME: join(root, "xdg"),
+			XDG_DATA_HOME: join(root, "data"),
+		};
+		const packs = join(root, "data/maestro/packs");
+		expect((await loadConfig(request({ env }))).packs).toEqual([
+			{ dir: join(packs, "b"), file: join(root, USER) },
+			{ dir: join(root, "xdg/maestro/elsewhere"), file: join(root, USER) },
+			{ dir: join(root, "real/c"), file: join(root, USER) },
+			{ dir: join(packs, "a") },
+		]);
+		const bare = await loadConfig(
+			request({ env: { HOME: join(root, "home") } }),
+		);
+		expect(bare.packs).toEqual([]);
+	});
+
 	test("refuse packs off the CLI's schema", async () => {
 		const { request } = await tree({ [WORKSPACE]: "packs: ./a\n" });
 		expect(await refusal(loadConfig(request()))).toEqual([
 			["CFG.schema", "config 'packs' must be array"],
 		]);
+	});
+});
+
+describe("the .env beside the user config", () => {
+	test("fills a variable the environment leaves unset, and keeps one it sets", async () => {
+		const { root } = await tree({
+			"xdg/maestro/.env": "MAESTRO_TEST_UNSET=file\nMAESTRO_TEST_SET=file\n",
+		});
+		process.env.MAESTRO_TEST_SET = "shell";
+		try {
+			loadDotenv({ XDG_CONFIG_HOME: join(root, "xdg") });
+			expect(process.env.MAESTRO_TEST_UNSET).toBe("file");
+			expect(process.env.MAESTRO_TEST_SET).toBe("shell");
+		} finally {
+			delete process.env.MAESTRO_TEST_UNSET;
+			delete process.env.MAESTRO_TEST_SET;
+		}
+	});
+
+	test("one that cannot be read is refused, naming it", async () => {
+		const { root } = await tree({ "xdg/maestro/.env": "A=1\n" });
+		const file = join(root, "xdg/maestro/.env");
+		await chmod(file, 0);
+		expect(() => loadDotenv({ XDG_CONFIG_HOME: join(root, "xdg") })).toThrow(
+			`cannot read ${file}: EACCES: permission denied, open '${file}'\nMake it readable, or remove it`,
+		);
 	});
 });

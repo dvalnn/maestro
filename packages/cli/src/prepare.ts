@@ -1,5 +1,6 @@
 import { mkdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
+import { closest } from "@maestro/core";
 import { type ComposeInput, compose } from "@maestro/core/compose";
 import { CORE_CONFIG, type Composed, type Layer } from "@maestro/core/config";
 import type { ConcertRecord } from "@maestro/core/perform";
@@ -12,9 +13,17 @@ import {
 	parseIr,
 } from "@maestro/ir";
 import { type Described, STDLIB_MODULE } from "@maestro/sdk/loader";
-import { COMMON, type Options, parse, type Values } from "./command";
+import {
+	COMMON,
+	type Deps,
+	type Options,
+	parse,
+	peek,
+	textOf,
+	type Values,
+} from "./command";
 import { CLI_CONFIG } from "./config";
-import { flagValues, paramFlags } from "./flags";
+import { flagValues, paramFlags, paramsBlock } from "./flags";
 import {
 	type Bundle,
 	bundled,
@@ -29,7 +38,7 @@ import {
 } from "./loader";
 import { CliError, Diagnosed, usageError } from "./output";
 import { paramValues } from "./params";
-import type { Session } from "./session";
+import { openSession, type Session } from "./session";
 
 /** A composition's IR, with what loads its code, composes it, and keeps it with a concert. */
 export type Prepared = {
@@ -83,12 +92,27 @@ const IR_FILE = /\.json$/;
 const BUNDLE_SUFFIX = ".bundle.js";
 
 const installed = (session: Session): Promise<Bundle[]> =>
-	Promise.all(session.config.packs.map((dir) => openPack(dir)));
+	Promise.all(session.config.packs.map((pack) => openPack(pack)));
 
 const namesOf = (compositions: readonly Described[]) =>
 	compositions.map((c) => c.name).join(", ");
 
-function chosen(
+/** A usage error for `name`, which is none of `names`: `what`, then a did-you-mean when one is near, else `fix`. */
+const unknownName = (
+	what: string,
+	name: string,
+	names: readonly string[],
+	fix: string,
+) => {
+	const near = closest(name, names);
+	return usageError(what, near === undefined ? fix : `Did you mean '${near}'?`);
+};
+
+/**
+ * The composition `name` of `bundle`, or its only one when `name` is undefined.
+ * @throws CliError, a usage error naming `what`, when it has no such composition, or not exactly one.
+ */
+export function chosen(
 	bundle: Bundle,
 	what: string,
 	name: string | undefined,
@@ -102,8 +126,10 @@ function chosen(
 			: compositions.find((c) => c.name === name);
 	if (found) return found;
 	if (name !== undefined)
-		throw usageError(
+		throw unknownName(
 			`${what} has no composition '${name}'`,
+			name,
+			compositions.map((c) => c.name),
 			`Name one of: ${namesOf(compositions)}`,
 		);
 	throw usageError(
@@ -123,6 +149,26 @@ function split(target: string): [string, string] {
 			`Name a .ts, .js or .json file, or a composition of an installed pack as <pack>.<composition>`,
 		);
 	return [target.slice(0, dot), target.slice(dot + 1)];
+}
+
+/**
+ * The installed pack `id` among `packs`, whose directories live in `packsDir` or are listed in the config.
+ * @throws CliError, a usage error, when none is.
+ */
+export function installedPack(
+	packs: readonly Bundle[],
+	id: string,
+	packsDir: string,
+): Bundle {
+	const found = packs.find((p) => p.pack.id === id);
+	if (found) return found;
+	const ids = packs.map((p) => p.pack.id);
+	throw unknownName(
+		`no pack '${id}' is installed`,
+		id,
+		ids,
+		`Extract it into ${packsDir}, or list its directory under packs in the config${ids.length ? `; installed: ${ids.join(", ")}` : ""}`,
+	);
 }
 
 /** @throws CliError, a usage error naming `target` as typed, when no file is there. */
@@ -205,16 +251,14 @@ async function build(
 }
 
 /**
- * Builds the composition of the bare file `target` from its example set and flags only: its stem claims no config.
+ * The bundle of the bare composition file `target`.
  * @throws CliError, a usage error, when its stem is not a pack id or is an installed pack's.
  */
-async function buildFile(
+function fileBundle(
 	session: Session,
-	reading: Reading,
 	packs: readonly Bundle[],
 	target: string,
-	args: readonly string[],
-): Promise<Prepared> {
+): Promise<Bundle> {
 	const file = resolve(session.deps.cwd, target);
 	const id = basename(file, extname(file));
 	if (!PACK_ID.test(id))
@@ -228,23 +272,61 @@ async function buildFile(
 			`composition file ${target} is named '${id}', the id of the pack at ${taken.dir}`,
 			"Rename the file",
 		);
-	const bundle = await openFile(file);
-	const composition = chosen(bundle, target, undefined);
-	const built = await build(
-		session,
-		reading,
-		bundle,
-		composition,
-		args,
-		[],
-		true,
+	return openFile(file);
+}
+
+/** A composition a target names, its bundle, and the installed packs. */
+type Located = {
+	packs: Bundle[];
+	bundle: Bundle;
+	composition: Described;
+	/** The path of the bare composition file, when the target is one. */
+	file?: string;
+};
+
+/**
+ * The composition `target` names: a `.ts` or `.js` composition file, or `<pack>.<composition>` of an installed pack.
+ * @throws CliError, a usage error, for a target that names none.
+ */
+export async function located(
+	session: Session,
+	target: string,
+): Promise<Located> {
+	if (FILE.test(target)) {
+		await requireFile(session, target);
+		const packs = await installed(session);
+		const bundle = await fileBundle(session, packs, target);
+		const file = resolve(session.deps.cwd, target);
+		return {
+			packs,
+			bundle,
+			composition: chosen(bundle, target, undefined),
+			file,
+		};
+	}
+	const [id, name] = split(target);
+	const packs = await installed(session);
+	const bundle = installedPack(packs, id, session.config.packsDir);
+	return { packs, bundle, composition: chosen(bundle, `pack '${id}'`, name) };
+}
+
+/**
+ * The `Params` block of the composition `args` names first, a composition file or `<pack>.<composition>`; undefined
+ * when they name none, or an IR file.
+ * @throws as `located` does.
+ */
+export async function compositionHelp(
+	args: readonly string[],
+	deps: Deps,
+): Promise<string | undefined> {
+	const [target] = args;
+	if (target === undefined || target.startsWith("-") || IR_FILE.test(target))
+		return undefined;
+	const session = await openSession(
+		deps,
+		textOf(peek(COMMON, args), "profile"),
 	);
-	return {
-		...built,
-		config: session.config.composed,
-		claims: claimsOf(packs),
-		file,
-	};
+	return paramsBlock((await located(session, target)).composition);
 }
 
 /**
@@ -265,25 +347,26 @@ export async function prepare(
 			`${reading.verb} takes a composition first`,
 			`Name a file, or <pack>.<composition>, before its flags`,
 		);
-	const isIr = IR_FILE.test(target);
-	if (isIr || FILE.test(target)) await requireFile(session, target);
-	if (isIr) return loadIr(session, reading, target, rest);
-	const packs = await installed(session);
-	if (FILE.test(target))
-		return buildFile(session, reading, packs, target, rest);
-	const [pack, name] = split(target);
-	const bundle = packs.find((b) => b.pack.id === pack);
-	if (!bundle)
-		throw usageError(
-			`no pack '${pack}' is installed`,
-			`Add its directory to packs in the config${packs.length ? `, or use one of: ${packs.map((b) => b.pack.id).join(", ")}` : ""}`,
-		);
-	const composition = chosen(bundle, `pack '${pack}'`, name);
-	const layers = session.config.layers;
-	return {
-		...(await build(session, reading, bundle, composition, rest, layers)),
-		claims: claimsOf(packs),
-	};
+	if (IR_FILE.test(target)) {
+		await requireFile(session, target);
+		return loadIr(session, reading, target, rest);
+	}
+	const { packs, bundle, composition, file } = await located(session, target);
+	const layers = file === undefined ? session.config.layers : [];
+	const built = await build(
+		session,
+		reading,
+		bundle,
+		composition,
+		rest,
+		layers,
+		file !== undefined,
+	);
+	const claims = claimsOf(packs);
+	// A bare file's stem claims no config, so it composes under the config as loaded.
+	return file === undefined
+		? { ...built, claims }
+		: { ...built, config: session.config.composed, claims, file };
 }
 
 /**

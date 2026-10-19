@@ -41,7 +41,7 @@ const composed = (ir: Ir, loader: Loader, over: Partial<ComposeInput> = {}) =>
 	composeIr(ir, { loadCode: loader.loadCode, ...over });
 
 const demoPack = async () =>
-	openPack(await packOf(join(DEMO, "index.ts"), await scratch()));
+	openPack({ dir: await packOf(join(DEMO, "index.ts"), await scratch()) });
 
 const golden = async (name: string) => {
 	const parsed = parseIr(await Bun.file(join(GOLDEN, name)).json());
@@ -148,9 +148,10 @@ describe("a pack", () => {
 		);
 		await Bun.write(join(dir, "../index.js"), "");
 		await symlink(join(dir, "../index.js"), join(dir, "link.js"));
-		const error = await openPack(join(dir, how.at ?? "."), how.sdk).catch(
-			(e: Error) => e.message,
-		);
+		const error = await openPack(
+			{ dir: join(dir, how.at ?? ".") },
+			how.sdk,
+		).catch((e: Error) => e.message);
 		expect(String(error).replaceAll(dir, "<dir>")).toContain(message);
 	});
 
@@ -347,7 +348,7 @@ describe("resume", () => {
 		const packDir = join(dir, "pack");
 		await mkdir(packDir);
 		await packOf(join(await demoSource(), "index.ts"), packDir);
-		const first = await openPack(packDir);
+		const first = await openPack({ dir: packDir });
 		const record = openRecord(join(dir, "record.db"));
 		const started: string[] = [];
 		const attempts = new Map<string, number>();
@@ -379,7 +380,7 @@ describe("resume", () => {
 			join(await demoSource((t) => t.replace('"v1"', '"v2"')), "index.ts"),
 			packDir,
 		);
-		const second = await openPack(packDir);
+		const second = await openPack({ dir: packDir });
 		const stored = record.find(failed.id)?.ir;
 		if (!stored) throw new Error("the failed concert is not recorded");
 		expect((await composed(stored, second)).ok).toBe(false);

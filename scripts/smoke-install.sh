@@ -41,6 +41,23 @@ for file in "$pack/maestro-pack.json" "$pack/README.md" "$home/.claude/skills/ma
 done
 pack_version=$(bun -e 'console.log(require(process.argv[1]).version)' "$pack/maestro-pack.json")
 [ -f "$dist/classics-$pack_version.tar.gz" ] || fail "no classics tarball is named for the manifest's version $pack_version"
+pack_id=$(bun -e 'console.log(require(process.argv[1]).id)' "$pack/maestro-pack.json")
+
+step "extracting the pack installs it, with no packs in config"
+grep -q "\"path\": \"$pack\"" <<<"$(maestro rep --json)" || fail "rep --json does not list $pack"
+maestro rep "$pack_id" >/dev/null || fail "rep $pack_id exited $?"
+
+step "the .env beside the user config is loaded, and one in the cwd is not"
+alt=$scratch/alt
+mkdir -p "$alt/maestro/packs" "$home/.config/maestro"
+cp -r "$pack" "$alt/maestro/packs/$pack_id"
+printf 'XDG_DATA_HOME=%s\n' "$alt" > "$ws/.env"
+grep -q "\"path\": \"$pack\"" <<<"$(cd "$ws" && maestro rep --json)" || fail "the binary loaded the cwd's .env"
+rm "$ws/.env"
+printf 'XDG_DATA_HOME=%s\n' "$alt" > "$home/.config/maestro/.env"
+grep -q "\"path\": \"$alt/maestro/packs/$pack_id\"" <<<"$(maestro rep --json)" \
+  || fail "the binary did not load ~/.config/maestro/.env"
+rm "$home/.config/maestro/.env"
 
 step "toy target"
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=op GIT_AUTHOR_EMAIL=op@x \
@@ -61,8 +78,6 @@ roles:
 YAML
 mkdir -p "$home/.config/maestro"
 cat > "$home/.config/maestro/config.yaml" <<YAML
-packs:
-  - $pack
 roles:
   scout: { harness: claude, model: sonnet, thinking: high }
   planner: { harness: claude, model: sonnet, thinking: high }

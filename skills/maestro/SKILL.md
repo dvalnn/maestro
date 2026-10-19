@@ -27,7 +27,8 @@ This skill was checked against maestro 0.1.0-beta.1. When `maestro --version` na
 - **Changeset**: a lane version's patches, the only way results leave a concert.
 - **Role**: a name the composition uses for an agent, mapped in config to a harness, a model and a thinking level.
 - **Check**: a named shell command from config (tests, lint, build) run in a lane; its exit code is its verdict.
-- **Pack**: an installed directory of compositions, listed in config under `packs`.
+- **Pack**: an installed directory of compositions, under `$XDG_DATA_HOME/maestro/packs/` or listed in config under
+  `packs`.
 - **Workspace**: the nearest directory from the cwd up holding `.maestro/`; its config layers over the user's.
 - **Tour**: a slug grouping related concerts, for listing and pruning them together.
 
@@ -36,8 +37,10 @@ This skill was checked against maestro 0.1.0-beta.1. When `maestro --version` na
 1. **Find the workspace.** Look for `.maestro/config.yaml` from the cwd up. None, or a role, target or check missing:
    read [bootstrap.md](bootstrap.md) and follow it. Done when `maestro compose <c>` reports no `CFG.*` or `HOST.*`
    diagnostic; roles mapped only in a profile need `--profile <name>` on that compose too.
-2. **Pick the composition.** `<pack>.<composition>` of an installed pack, or a file. Its params are kebab-case flags
-   (`--max-repairs 3`, `--no-strict`). Done when every required param has a value from a flag or the config.
+2. **Pick the composition.** `<pack>.<composition>` of an installed pack, or a file. `maestro rep --json` lists every
+   installed composition with its doc, params, roles and a `perform` line; `maestro rep <pack>.<composition>` shows one,
+   such as `classics.panel_review`. Its params are kebab-case flags (`--max-repairs 3`, `--no-strict`). Done when every
+   required param has a value from a flag or the config.
 3. **Pre-flight.** `maestro compose <c> [flags]`, with the flags perform will get. Done on exit 0. Before a perform on a
    paid harness, give the user the `repo.agent` bound from `maestro compose <c> [flags]` as the spend ceiling.
 4. **Perform in its own session.** `perform` holds its terminal until the concert settles, and a signal to its process
@@ -128,8 +131,8 @@ maestro's release ships one pack, `classics`:
 - `classics.v_model`: scouts, plans, builds and repairs, reviews each scouted risk, and traces acceptance to the plan.
 - `classics.repair_until_green`: the repair loop the others use; it is not performed alone.
 
-Installed, it is `<packs dir>/classics`, listed under `packs`, and its `README.md` there gives each composition's roles
-and params. Missing: install it by [bootstrap.md](bootstrap.md), step 3.
+Installed, it is `<packs dir>/classics`, and `maestro rep --json` gives each composition's doc, params and roles; its
+`README.md` there says more. Missing: install it by [bootstrap.md](bootstrap.md), step 3.
 
 ## Writing
 
@@ -140,6 +143,6 @@ and params. Missing: install it by [bootstrap.md](bootstrap.md), step 3.
 
 - The user's checkout stays theirs: maestro never writes it, and applying a changeset waits for the user's yes.
 - Secrets live in the environment (`CLAUDE_CODE_OAUTH_TOKEN`, a harness login); params and committed config hold none.
-- A pack is code that runs with the user's permissions: list under `packs` only packs the user installed.
+- A pack is code that runs with the user's permissions: install or list under `packs` only packs the user chose.
 - Parse `--json` output, which every verb takes; the text form is for people.
 - `maestro <verb> --help` holds every flag this skill does not name.

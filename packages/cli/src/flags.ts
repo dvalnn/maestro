@@ -1,8 +1,8 @@
 import { isPlainObject, type JsonSchema, MAESTRO_TYPE } from "@maestro/ir";
 import type { Described } from "@maestro/sdk/loader";
 import type { Options, Values } from "./command";
-import { usageError } from "./output";
-import { flagFor, flagName } from "./params";
+import { table, usageError } from "./output";
+import { flagFor, flagName, flagOf } from "./params";
 
 /** The flags a composition's params add to a command, and the param each one sets. */
 type ParamFlags = {
@@ -104,4 +104,73 @@ export function flagValues(
 			: read(flag, schema, value);
 	}
 	return given;
+}
+
+/** A param as its flag takes it. */
+export type ParamEntry = {
+	name: string;
+	flag: string;
+	/** `text`, `integer`, `number`, `bool`, `list`, `json`, or the `x-maestro-type` the param takes. */
+	type: string;
+	required: boolean;
+	default?: unknown;
+	description?: string;
+};
+
+const TYPE_LABELS: Readonly<Record<string, string>> = {
+	string: "text",
+	integer: "integer",
+	number: "number",
+	boolean: "bool",
+	array: "list",
+};
+const JSON_LABEL = "json";
+
+function typeLabel(schema: JsonSchema): string {
+	if (!isPlainObject(schema)) return JSON_LABEL;
+	const marked = schema[MAESTRO_TYPE];
+	if (typeof marked === "string") return marked;
+	return TYPE_LABELS[String(schema.type)] ?? JSON_LABEL;
+}
+
+/** Each param of `composition`, in declaration order. */
+export function paramEntries(composition: Described): ParamEntry[] {
+	const { properties, required } = composition.params;
+	return Object.entries(properties).map(([name, schema]) => {
+		const hints = isPlainObject(schema) ? schema : {};
+		return {
+			name,
+			flag: flagOf(name),
+			type: typeLabel(schema),
+			required: required.includes(name),
+			...(hints.default !== undefined && { default: hints.default }),
+			...(typeof hints.description === "string" && {
+				description: hints.description,
+			}),
+		};
+	});
+}
+
+/** A flag with its value's placeholder, as typed: a bool takes none. */
+export const flagUsage = (p: ParamEntry) =>
+	p.type === TYPE_LABELS.boolean ? p.flag : `${p.flag} <${p.type}>`;
+
+/** A default as typed: a list of plain values comma-joined, text as is, anything else as JSON. */
+function shownDefault(value: unknown): string {
+	if (typeof value === "string" && value !== "") return value;
+	if (Array.isArray(value) && value.every((v) => !isPlainObject(v)))
+		return value.join(",");
+	return JSON.stringify(value);
+}
+
+/** The `Params` block of `composition`: per param its flag, its default or `required`, and its description. */
+export function paramsBlock(composition: Described): string | undefined {
+	const params = paramEntries(composition);
+	if (!params.length) return undefined;
+	const rows = params.map((p) => [
+		`  ${flagUsage(p)}`,
+		p.required ? "required" : shownDefault(p.default),
+		p.description ?? "",
+	]);
+	return `Params\n${table(rows)}`;
 }

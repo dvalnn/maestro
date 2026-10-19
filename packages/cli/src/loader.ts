@@ -38,6 +38,7 @@ import {
 	STDLIB_MODULE,
 } from "@maestro/sdk/loader";
 import * as stdlib from "@maestro/sdk/stdlib";
+import type { PackDir } from "./config";
 import { Diagnosed, usageError } from "./output";
 
 /** The `codeHash` of the code a worker reference names as it is now (ADR 0008). */
@@ -402,14 +403,20 @@ function bundleOf(
 	};
 }
 
-async function manifestOf(dir: string): Promise<Manifest> {
+/** How to take the pack in `root`, found as `pack`, out of the installed packs. */
+const removal = (pack: PackDir, root: string) =>
+	pack.file === undefined
+		? `remove ${root}`
+		: `remove '${pack.dir}' from packs in ${pack.file}`;
+
+async function manifestOf(dir: string, remove: string): Promise<Manifest> {
 	const file = join(dir, MANIFEST);
 	let value: unknown;
 	try {
 		value = await Bun.file(file).json();
 	} catch (error) {
 		throw new Error(
-			`cannot read ${file}: ${messageOf(error)}\nGive the pack a JSON manifest, or remove '${dir}' from packs`,
+			`cannot read ${file}: ${messageOf(error)}\nGive the pack a JSON manifest, or ${remove}`,
 		);
 	}
 	const off = violations(validator(), MANIFEST_SCHEMA, value, (segments) =>
@@ -420,10 +427,15 @@ async function manifestOf(dir: string): Promise<Manifest> {
 	return value as Manifest;
 }
 
-function checkSdk(manifest: Manifest, sdk: string, dir: string) {
+function checkSdk(
+	manifest: Manifest,
+	sdk: string,
+	dir: string,
+	remove: string,
+) {
 	if (!Bun.semver.satisfies(sdk, manifest.sdk))
 		throw new Error(
-			`pack '${manifest.id}' at ${dir} needs SDK ${manifest.sdk}, and this maestro has ${sdk}\nRebuild the pack against SDK ${sdk}, or remove it from packs`,
+			`pack '${manifest.id}' at ${dir} needs SDK ${manifest.sdk}, and this maestro has ${sdk}\nRebuild the pack against SDK ${sdk}, or ${remove}`,
 		);
 }
 
@@ -442,24 +454,26 @@ async function entryOf(manifest: Manifest, dir: string): Promise<string> {
 }
 
 /**
- * Loads the pack in directory `dir`: its manifest, its SDK range checked against `sdk`, and its entry. Worker references
+ * Loads the pack in directory `listed.dir`, listed in `listed.file` or found in the packs directory: its manifest, its SDK range checked against `sdk`, and its entry. Worker references
  * name the entry relative to the pack's directory, and their `codeHash` is the entry's, as `moduleLoader` hashes it:
  * the whole bundle (ADR 0008).
  * @throws Error for a missing directory or manifest, a manifest off its schema, a version out of range, an entry
  * outside the pack, or one that does not import, each naming the pack. Diagnosed when importing the entry raises a build
- * diagnostic.
+ * diagnostic. Each error's fix names how to remove the pack: from the file that lists it, else its directory.
  */
 export async function openPack(
-	dir: string,
+	listed: PackDir,
 	sdk = SDK_VERSION,
 ): Promise<Bundle> {
+	const { dir } = listed;
 	const root = await realpath(dir).catch(() => {
 		throw new Error(
 			`pack directory '${dir}' does not exist\nFix its path in packs`,
 		);
 	});
-	const manifest = await manifestOf(root);
-	checkSdk(manifest, sdk, root);
+	const remove = removal(listed, root);
+	const manifest = await manifestOf(root, remove);
+	checkSdk(manifest, sdk, root, remove);
 	const entry = await entryOf(manifest, root);
 	const module = relative(root, entry);
 	const { hash, load } = await openModule(root, module);
@@ -470,7 +484,7 @@ export async function openPack(
 	} catch (error) {
 		throw importFailure(
 			error,
-			`${what}: cannot load its entry '${manifest.entry}': ${messageOf(error)}\nRebuild the pack, or remove it from packs`,
+			`${what}: cannot load its entry '${manifest.entry}': ${messageOf(error)}\nRebuild the pack, or ${remove}`,
 		);
 	}
 	const pack = { id: manifest.id, version: manifest.version };
@@ -575,7 +589,7 @@ export function claimsOf(
 		const other = dirs.get(pack.id);
 		if (other !== undefined)
 			throw new Error(
-				`pack id '${pack.id}' is taken twice, by ${other} and by ${dir}\nRemove one of them from packs`,
+				`pack id '${pack.id}' is taken twice, by ${other} and by ${dir}\nRemove one of them: its directory, or its entry under packs`,
 			);
 		dirs.set(pack.id, dir);
 		claims[pack.id] = Object.fromEntries(
