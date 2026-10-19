@@ -14,6 +14,10 @@ import {
 
 const TOOL = { kind: "tool", name: "bash", input: { command: "ls" } };
 const TERMINAL = () => ({ columns: 120, rows: 40 });
+/** A terminal too narrow for `DETAIL` on one row. */
+const NARROW = () => ({ columns: 50, rows: 40 });
+/** A tool call's detail past the narrow terminal's width. */
+const DETAIL = "over the lane and read what it printed";
 const ESC = "\u001b";
 /** A redraw: the cursor up some lines to column 1, then the screen cleared below it. */
 const REDRAW = new RegExp(`^${ESC}\\[\\d+F${ESC}\\[J`);
@@ -70,7 +74,10 @@ describe("watch on a running concert", async () => {
 			},
 		}),
 		text: {
-			progress: (e) => (e.kind === "tool" ? `ran ${e.name}` : undefined),
+			progress: (e) =>
+				e.kind === "tool"
+					? { word: "tool", detail: `ran ${e.name} ${DETAIL}` }
+					: undefined,
 			actor: (e) => (e.kind === "tool" ? "pi · haiku" : undefined),
 		},
 	};
@@ -107,13 +114,11 @@ describe("watch on a running concert", async () => {
 	});
 	const json = watching(["--events", "--json"], { terminal: TERMINAL });
 	const lines = watching(["--events"], { terminal: TERMINAL });
+	const narrow = watching(["--events"], { terminal: NARROW });
 	const piped = watching([]);
-	const [drawn, streamed, listed, changes] = await Promise.all([
-		graph,
-		json,
-		lines,
-		piped,
-	]);
+	const pipedEvents = watching(["--events"]);
+	const [drawn, streamed, listed, changes, pipedLines, wrapping] =
+		await Promise.all([graph, json, lines, piped, pipedEvents, narrow]);
 	setSystemTime();
 
 	test("redraws the graph in place until the concert settles, then exits as wait does", async () => {
@@ -133,7 +138,7 @@ describe("watch on a running concert", async () => {
 		expect(last).toMatch(/^ {2}✓ echo +fake\.task +ok/m);
 		expect(
 			frames.some((f) =>
-				/● echo .*running .*pi · haiku +ran bash/.test(
+				/● echo .*running .*pi · haiku +tool ran bash/.test(
 					stripVTControlCharacters(f),
 				),
 			),
@@ -169,8 +174,33 @@ describe("watch on a running concert", async () => {
 	test("--events on a terminal prints a text line per event, a host's wording of its progress in place of the generic line", () => {
 		expect(listed.code).toBe(0);
 		expect(listed.writes.map(stripVTControlCharacters)).toContainEqual(
-			expect.stringMatching(/^\+\S+ +echo\/echo +ran bash$/),
+			expect.stringMatching(
+				new RegExp(`^ *\\+\\S+ {2}echo/echo +tool {6}ran bash ${DETAIL}$`),
+			),
 		);
+	});
+
+	test("--events on a terminal colors its lines, and wraps a long detail under its column at the terminal's width", () => {
+		expect(listed.writes.join("\n")).toMatch(SGR);
+		const wrapped = wrapping.writes
+			.map(stripVTControlCharacters)
+			.find((w) => w.includes("ran bash"));
+		const [first, ...more] = wrapped?.split("\n") ?? [];
+		expect(first).toMatch(/tool {6}ran bash over/);
+		expect(more.length).toBeGreaterThan(0);
+		const column = first?.indexOf("ran bash") ?? 0;
+		for (const row of more) expect(row).toMatch(new RegExp(`^ {${column}}\\S`));
+	});
+
+	test("--events off a terminal prints the same text lines without color, then the closing line on stderr", () => {
+		expect(pipedLines.code).toBe(0);
+		expect(pipedLines.writes.join("\n")).not.toContain(ESC);
+		expect(pipedLines.writes).toContainEqual(
+			expect.stringMatching(
+				new RegExp(`^ *\\+\\S+ {2}echo/echo +tool {6}ran bash ${DETAIL}$`),
+			),
+		);
+		expect(pipedLines.err).toBe(`concert ${id} ok`);
 	});
 
 	test.each([

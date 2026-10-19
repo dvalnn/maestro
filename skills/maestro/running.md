@@ -46,9 +46,11 @@ A diagnostic prints as `<code>: <message>` then its hint, indented. The hint is 
 - `maestro ls` lists concerts, newest first: id, title, tour, workspace, composition, status, disk use. `ls --help`
   lists its filters, such as `--status running` and `--tour <slug>`.
 - `maestro watch <id>` shows the concert from its first event until it settles, and exits as `wait` does. On a terminal
-  it redraws the graph in place, for a user to follow; Ctrl-C stops watching, not the concert. Without a terminal it
-  prints one JSON line per instance state change, then a `{"type":"concert",...}` line holding `wait --json`'s document.
-  It takes no timeout: bound it below your tool call's limit with `timeout 90s maestro watch <id>`, which exits 124.
+  it redraws the graph in place, for a user to follow; Ctrl-C stops watching, not the concert. With `--json`, or without
+  a terminal and without `--events`, it prints a JSON Lines stream, a line per instance state change (per event with
+  `--events --json`), ending with the concert document, a `{"type":"concert",...}` line holding `wait --json`'s.
+  `--events` without `--json` prints an aligned text line per event instead. It takes no timeout: bound it below your
+  tool call's limit with `timeout 90s maestro watch <id>`, which exits 124.
 
 ## Records
 

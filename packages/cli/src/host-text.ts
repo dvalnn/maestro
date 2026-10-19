@@ -15,7 +15,7 @@ export function hostTextOf(
 	};
 }
 
-/** `events`, each progress event with the line and actor its host gives it. */
+/** `events`, each progress event with the wording and actor its host gives it. */
 export function annotated(
 	events: readonly ConcertEvent[],
 	hostText: ReturnType<typeof hostTextOf>,
@@ -23,11 +23,11 @@ export function annotated(
 	return events.map((e) => {
 		if (e.type !== "progress") return e;
 		const text = hostText(e.node);
-		const line = text?.progress?.(e.event);
+		const wording = text?.progress?.(e.event);
 		const actor = text?.actor?.(e.event);
 		return {
 			...e,
-			...(line !== undefined && { line }),
+			...(wording !== undefined && { wording }),
 			...(actor !== undefined && { actor }),
 		};
 	});

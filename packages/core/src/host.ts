@@ -126,10 +126,13 @@ export interface Host {
 	readonly text?: HostText;
 }
 
-/** Plain one-line text for a host's records; the renderer styles and cuts it. Each member is optional. */
+/** Plain text for a host's records; the renderer styles and cuts it. Each member is optional. */
 export interface HostText {
-	/** For one of the host's progress events, such as `prepare 1/2: bun install`. Undefined leaves the generic line. */
-	progress?(event: HostEvent): string | undefined;
+	/**
+	 * One of the host's progress events as a word for what happened and its detail, each on one line, such as `prepare`
+	 * and `1/2: bun install`. Undefined leaves the event's kind as the word and its other fields as the detail.
+	 */
+	progress?(event: HostEvent): { word: string; detail: string } | undefined;
 	/**
 	 * Who ran an instance, such as `pi · claude-haiku-5.5 · medium`. Called on a settled instance's enrichment and on each
 	 * of the host's progress events, and names an actor only for an event that announces one; undefined otherwise.

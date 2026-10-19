@@ -5,18 +5,55 @@ const PREPARE = { kind: "prepare", line: 1, of: 2, run: "bun install" };
 
 describe("repoText.progress", () => {
 	test.each([
-		[PREPARE, "prepare 1/2: bun install"],
-		[{ ...PREPARE, of: undefined }, "prepare 1: bun install"],
+		[PREPARE, { word: "prepare", detail: "1/2: bun install" }],
+		[
+			{ ...PREPARE, of: undefined },
+			{ word: "prepare", detail: "1: bun install" },
+		],
 		[
 			{ ...PREPARE, ended: "exited 7", tail: "a\nregistry down\n\n" },
-			"prepare 1/2: registry down",
+			{ word: "prepare", detail: "1/2: registry down" },
 		],
-		[{ ...PREPARE, ended: "exited 7", tail: "" }, "prepare 1/2: exited 7"],
-		[{ ...PREPARE, ended: "exited 0" }, "prepare 1/2: exited 0"],
-		[{ kind: "tool", name: "bash" }, undefined],
+		[
+			{ ...PREPARE, ended: "exited 7", tail: "" },
+			{ word: "prepare", detail: "1/2: exited 7" },
+		],
+		[
+			{ ...PREPARE, ended: "exited 0" },
+			{ word: "prepare", detail: "1/2: exited 0" },
+		],
 		[{ kind: "prepare", run: "x" }, undefined],
-	])("words %j as %j", (event, text) => {
-		expect(repoText.progress?.(event)).toBe(text);
+		[
+			{ kind: "tool", name: "bash", input: { command: "ls" } },
+			{ word: "tool", detail: 'bash {"command":"ls"}' },
+		],
+		[
+			{ kind: "tool", name: "bash" },
+			{ word: "tool", detail: "bash" },
+		],
+		[{ kind: "tool" }, undefined],
+		[
+			{
+				kind: "usage",
+				metrics: {
+					tokens_in: 120,
+					tokens_out: 40,
+					tokens_cache_read: 300,
+					tokens_cache_write: 5,
+					tokens_reasoning: 9,
+				},
+			},
+			{ word: "usage", detail: "in 120 · out 40 · cache 305" },
+		],
+		[
+			{ kind: "usage", metrics: { tokens_in: 1 } },
+			{ word: "usage", detail: "in 1 · out 0 · cache 0" },
+		],
+		[{ kind: "usage" }, undefined],
+		[{ kind: "text", text: "hi" }, undefined],
+		[{ kind: "constructor" }, undefined],
+	])("words %j as %j", (event, wording) => {
+		expect(repoText.progress?.(event)).toEqual(wording);
 	});
 });
 

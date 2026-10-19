@@ -33,11 +33,15 @@ const CLEAR_BELOW = `${ESC}[J`;
 const cursorUp = (lines: number) => `${ESC}[${lines}F`;
 /** The event types a view's JSON lines show without `--events`: those that change an instance's state. */
 const STATE_CHANGES = new Set(["running", "settled", "reused"]);
-/** What a view holds beside the record's row, which `eventLine` ignores. */
+/** What a view holds beside the record's row, off a terminal: no size, so event lines do not wrap. */
 const UNFRAMED = { columns: 0, rows: 0, tokens: 0, unique: 0 };
 
 const WATCH_OPTIONS = {
 	...COMMON,
+	json: {
+		type: "boolean",
+		desc: "Print a JSON Lines stream of events, ending with the concert document",
+	},
 	events: {
 		type: "boolean",
 		desc: "Show every event, tool calls and thinking among them, not the graph",
@@ -78,10 +82,11 @@ const jsonLines =
 			if (all || STATE_CHANGES.has(e.type)) deps.stdout(JSON.stringify(e));
 	};
 
+/** A text line per event: wrapped at the terminal's width on one, else one line each. */
 const eventLines =
-	(deps: Deps, color: boolean): Show =>
+	(deps: Deps, color: boolean, terminal?: Terminal): Show =>
 	(events, row) => {
-		const view = viewOf(row, color);
+		const view = viewOf(row, color, terminal && { ...UNFRAMED, ...terminal() });
 		const hostText = hostTextOf(deps.hosts, row.ir);
 		for (const e of annotated(events, hostText))
 			deps.stdout(eventLine(row.ir, e, view));
@@ -122,16 +127,27 @@ function frames(
 	};
 }
 
+/**
+ * How a watch shows events; `text` when as text, on a terminal or for `--events` without `--json`, else JSON lines, and
+ * `live` when on a terminal.
+ */
 function showOf(
 	deps: Deps,
 	store: Records,
 	values: Values,
-	terminal?: Terminal,
-): Show {
+	json: boolean,
+): { show: Show; text: boolean; live: boolean } {
 	const all = isSet(values, "events");
-	if (!terminal) return jsonLines(deps, all);
-	const color = colorOn(deps, values.color !== false);
-	return all ? eventLines(deps, color) : frames(deps, store, terminal, color);
+	const terminal = json ? undefined : deps.terminal;
+	const live = terminal !== undefined;
+	if (!terminal && (json || !all))
+		return { show: jsonLines(deps, all), text: false, live };
+	const color = live && colorOn(deps, values.color !== false);
+	const show =
+		!all && terminal
+			? frames(deps, store, terminal, color)
+			: eventLines(deps, color, terminal);
+	return { show, text: true, live };
 }
 
 async function watched({ session, store, values, positionals, json }: Stored) {
@@ -139,9 +155,8 @@ async function watched({ session, store, values, positionals, json }: Stored) {
 	const prefix = only(positionals, "concert", "Name the concert to watch");
 	let row = concertOf(store, prefix);
 	const { id } = row;
-	const terminal = json ? undefined : deps.terminal;
-	const show = showOf(deps, store, values, terminal);
-	if (terminal && row.status === "running")
+	const { show, text, live } = showOf(deps, store, values, json);
+	if (live && row.status === "running")
 		deps.stderr(
 			`watching concert ${id}; ctrl-c stops watching, not the concert`,
 		);
@@ -155,10 +170,15 @@ async function watched({ session, store, values, positionals, json }: Stored) {
 		await Bun.sleep(WATCH_POLL_MS);
 		row = store.find(id) ?? row;
 	}
-	const result = store.result(id);
-	const doc = resultDoc(id, result);
-	if (!terminal) deps.stdout(JSON.stringify({ type: "concert", ...doc }));
-	else if (result) deps.stderr(closingLine(row.ir, id, result));
+	return closed(deps, store, row, text);
+}
+
+/** Ends the watch of the settled `row`: the concert document on stdout after JSON lines, else the closing line on stderr. */
+function closed(deps: Deps, store: Records, row: ConcertRecord, text: boolean) {
+	const result = store.result(row.id);
+	const doc = resultDoc(row.id, result);
+	if (!text) deps.stdout(JSON.stringify({ type: "concert", ...doc }));
+	else if (result) deps.stderr(closingLine(row.ir, row.id, result));
 	return exitOf(doc.status);
 }
 

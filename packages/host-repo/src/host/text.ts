@@ -1,5 +1,6 @@
 import type { HostText } from "@maestro/core/host";
 import type { Enrichment, HostEvent } from "@maestro/ir";
+import { METRIC } from "../harness/types";
 import { lastLine } from "./run-lines";
 
 /** The `kind` of the progress event a prepare line emits as it starts and ends. */
@@ -8,18 +9,54 @@ const PREPARE_KIND = "prepare";
 const stringOf = (value: unknown) =>
 	typeof value === "string" && value !== "" ? value : undefined;
 
-/** `prepare <line>/<of>: <run>` while the line runs, and its last output line, else how it ended, once it ended. */
-function progress(event: HostEvent): string | undefined {
-	const { kind, line, of, run, ended, tail } = event;
-	if (kind !== PREPARE_KIND || typeof line !== "number") return undefined;
-	if (typeof run !== "string") return undefined;
+type Wording = { word: string; detail: string };
+
+/** `prepare`, `<line>/<of>: <run>` while the line runs, and its last output line, else how it ended, once it ended. */
+function prepareWording(event: HostEvent): Wording | undefined {
+	const { line, of, run, ended, tail } = event;
+	if (typeof line !== "number" || typeof run !== "string") return undefined;
 	const total = typeof of === "number" ? `/${of}` : "";
 	const shown =
 		typeof ended === "string"
 			? (lastLine([typeof tail === "string" ? tail : ""]) ?? ended)
 			: run;
-	return `${PREPARE_KIND} ${line}${total}: ${shown}`;
+	return { word: PREPARE_KIND, detail: `${line}${total}: ${shown}` };
 }
+
+/** `tool`, `<name> <input as compact JSON>`, the input left out when there is none. */
+function toolWording({ name, input }: HostEvent): Wording | undefined {
+	if (typeof name !== "string") return undefined;
+	const detail =
+		input === undefined ? name : `${name} ${JSON.stringify(input)}`;
+	return { word: "tool", detail };
+}
+
+/** `usage`, `in <n> · out <n> · cache <n>`, cache the tokens read from and written to it. */
+function usageWording({ metrics }: HostEvent): Wording | undefined {
+	if (typeof metrics !== "object" || metrics === null) return undefined;
+	const counts = new Map(Object.entries(metrics));
+	const count = (name: string) => {
+		const value = counts.get(name);
+		return typeof value === "number" ? value : 0;
+	};
+	const cache = count(METRIC.tokensCacheRead) + count(METRIC.tokensCacheWrite);
+	return {
+		word: "usage",
+		detail: `in ${count(METRIC.tokensIn)} · out ${count(METRIC.tokensOut)} · cache ${cache}`,
+	};
+}
+
+/** The wording of each progress kind the host words, by kind. */
+const WORDINGS: ReadonlyMap<
+	unknown,
+	(event: HostEvent) => Wording | undefined
+> = new Map([
+	[PREPARE_KIND, prepareWording],
+	["tool", toolWording],
+	["usage", usageWording],
+]);
+
+const progress = (event: HostEvent) => WORDINGS.get(event.kind)?.(event);
 
 /** `<harness> · <model without its provider> · <thinking>`, the thinking when the role sets one. */
 function actor(enrichment: Enrichment): string | undefined {
@@ -34,5 +71,5 @@ function actor(enrichment: Enrichment): string | undefined {
 	].join(" · ");
 }
 
-/** How the repo host's prepare events and agents read as text. */
+/** How the repo host's prepare, tool and usage events and its agents read as text. */
 export const repoText: HostText = { progress, actor };

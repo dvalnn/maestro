@@ -2,6 +2,7 @@ import { styleText } from "node:util";
 import {
 	type ConcertEvent,
 	formatInstance,
+	type GraphIndex,
 	type HostEvent,
 	type Ir,
 	indexGraph,
@@ -20,7 +21,7 @@ type InstanceState = NodeInstance & {
 	reason?: string;
 	startedAt?: number;
 	settledAt?: number;
-	/** Its latest progress event, as `eventLine` shows it, on one line. */
+	/** Its latest progress event's word and detail, on one line. */
 	latest?: string;
 	/** The actor a progress event announced for it, as `agentText` shows it before any tokens. */
 	agent?: string;
@@ -28,10 +29,13 @@ type InstanceState = NodeInstance & {
 };
 
 /**
- * An event with the text its host gives it: `line` for a progress event the host words, `actor` for one that names who
- * executes the instance, which the agent column shows instead of a note.
+ * An event with the text its host gives it: `wording`, the word and detail of a progress event the host words, and
+ * `actor` for one that names who executes the instance, which the agent column shows instead of a note.
  */
-export type Annotated = ConcertEvent & { line?: string; actor?: string };
+export type Annotated = ConcertEvent & {
+	wording?: { word: string; detail: string };
+	actor?: string;
+};
 
 /** Instance states keyed by node and expansion. */
 export type Seen = ReadonlyMap<string, InstanceState>;
@@ -56,7 +60,18 @@ export type View = {
 	rows: number;
 };
 
-type Style = Parameters<typeof styleText>[0];
+/** A 256-colour grey, which `styleText` has no name for. */
+const SOFT_GREY = { open: "\u001b[38;5;250m", close: "\u001b[39m" } as const;
+/** A style `styleText` names. */
+type Named = Parameters<typeof styleText>[0];
+type Style = Named | typeof SOFT_GREY;
+
+const isGrey = (style: Style): style is typeof SOFT_GREY => style === SOFT_GREY;
+
+const styled = (style: Style, text: string) =>
+	isGrey(style)
+		? `${style.open}${text}${style.close}`
+		: styleText(style, text, { validateStream: false });
 type Shown = "pending" | InstanceState["state"];
 /** How a state is drawn. `whole` styles the whole line, `noted` its note too. */
 type Look = { glyph: string; style: Style; whole?: boolean; noted?: boolean };
@@ -88,9 +103,6 @@ const REASONING_METRIC = "tokens_reasoning";
 const THOUSAND = 1_000;
 const MILLION = 1_000_000;
 const INDENT = "  ";
-/** The width an event line pads its offset and its instance name to, separator included. */
-const OFFSET_WIDTH = 8;
-const NAME_WIDTH = 24;
 const NEWLINE = /\r?\n/;
 /** A control character other than a newline. */
 const CONTROL = /[^\P{Cc}\n]/gu;
@@ -109,11 +121,11 @@ export const flat = (text: string) => safe(text.split(NEWLINE).join(" "));
 
 const twoDigits = (n: number) => String(n).padStart(2, "0");
 
-/** `ms` as `3.1s` under 10 s, `42s` under a minute, `4m05s` under an hour, else `1h02m`. */
-function duration(ms: number): string {
+/** `ms` as `3.1s` under `tenthsBelow` ms, `42s` under a minute, `4m05s` under an hour, else `1h02m`. */
+function duration(ms: number, tenthsBelow = TENTHS_BELOW_MS): string {
 	const { s, m, h } = MS_PER_UNIT;
 	const t = Math.max(0, ms);
-	if (t < TENTHS_BELOW_MS)
+	if (t < tenthsBelow)
 		return `${(Math.floor(t / TENTH_MS) / (s / TENTH_MS)).toFixed(1)}s`;
 	if (t < m) return `${Math.floor(t / s)}s`;
 	if (t < h)
@@ -175,8 +187,12 @@ function folded(
 		case "progress": {
 			const named =
 				event.actor === undefined ? base : { ...base, agent: event.actor };
-			if (event.actor !== undefined && event.line === undefined) return named;
-			return { ...named, latest: flat(event.line ?? genericLine(event.event)) };
+			if (event.actor !== undefined && event.wording === undefined)
+				return named;
+			const line = event.wording
+				? `${event.wording.word} ${event.wording.detail}`.trimEnd()
+				: genericLine(event.event);
+			return { ...named, latest: flat(line) };
 		}
 		case "log":
 			return prior;
@@ -364,10 +380,7 @@ function painted(segs: readonly Seg[], limit: number, color: boolean): string {
 	for (const [text, style] of segs) {
 		const cut = fit(text, room);
 		room = cut === text ? room - Bun.stringWidth(cut) : 0;
-		out +=
-			color && style && cut
-				? styleText(style, cut, { validateStream: false })
-				: cut;
+		out += color && style && cut ? styled(style, cut) : cut;
 	}
 	return out;
 }
@@ -391,7 +404,10 @@ export function uniqueLength(id: string, ids: readonly string[]): number {
 }
 
 /** An id as segments: its first `unique` characters, then the rest, dim. */
-export const idSegs = (id: string, unique: number): Seg[] => [
+export const idSegs = (
+	id: string,
+	unique: number,
+): (readonly [text: string, style: Named])[] => [
 	[safe(id.slice(0, unique)), "bold"],
 	[safe(id.slice(unique)), "dim"],
 ];
@@ -462,66 +478,217 @@ export function frame(ir: Ir, seen: Seen, view: View, agents: Agents): string {
 		.join("\n");
 }
 
-type Paint = (text: string, style: Style) => string;
+/** The style of each word an event line shows; the longest sets the word column's width, and other words are unstyled. */
+const WORD_STYLE: ReadonlyMap<string, Style> = new Map<string, Style>([
+	["running", []],
+	["ok", ["green", "bold"]],
+	["rejected", ["red", "bold"]],
+	["failed", ["red", "bold"]],
+	["skipped", "dim"],
+	["log", []],
+	["agent", "cyan"],
+	["tool", []],
+	["thinking", ["dim", "italic"]],
+	["text", []],
+	["usage", "dim"],
+	["settled", "dim"],
+	["fault", []],
+]);
+const WORD_WIDTH = Math.max(...[...WORD_STYLE.keys()].map((w) => w.length));
+/** The word of a progress event without a `kind`. */
+const PROGRESS_WORD = "progress";
+const TIME_WIDTH = 7;
+/** The room a node path keeps per group for that group's key, a two-digit round. */
+const KEY_ROOM = "[nn]".length;
+/** The fewest cells a wrapped detail keeps per row, however narrow the terminal. */
+const MIN_DETAIL_WIDTH = 20;
+/** What follows a detail's first line when more lines with text follow it. */
+const MORE = " …";
+/** One JSON token per match: a string with the colon after a key, a number, a literal, punctuation or whitespace. */
+const JSON_TOKEN =
+	/("(?:[^"\\]|\\.)*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(true|false|null)|([{}[\],:])|(\s+)/gy;
+const JSON_START = /^\s*[[{]/;
 
-/**
- * A progress event as text. Without a host `line` it is its kind and fields on one line, a string's newlines
- * continuing on the next lines after `indent`. With one it is that line, then the lines of each multi-line field
- * indented beneath it.
- */
-function progressText(
-	event: Annotated & { type: "progress" },
-	paint: Paint,
-	indent: string,
-): string {
-	const { kind, fields } = progressParts(event.event);
-	if (event.line !== undefined) {
-		const beneath = fields
-			.filter((f) => NEWLINE.test(f))
-			.flatMap((f) => f.split(NEWLINE).filter(Boolean).map(safe))
-			.map((l) => `${indent}${INDENT}${l}`);
-		return [paint(flat(event.line), "magenta"), ...beneath].join("\n");
-	}
-	const body = fields.map((f) =>
-		f.split(NEWLINE).map(safe).join(`\n${indent}`),
+/** `ms` as `+12.4s` under a minute, `+12m05s` under an hour, else `+2h05m`, right-aligned in the time column. */
+const elapsed = (ms: number) =>
+	`+${duration(ms, MS_PER_UNIT.m)}`.padStart(TIME_WIDTH);
+
+/** `text`'s first line with text, safe for a terminal, then `MORE` when a line with text follows it. */
+function firstLine(text: string): string {
+	const lines = text.split(NEWLINE);
+	const [first = "", ...rest] = lines.slice(
+		Math.max(
+			0,
+			lines.findIndex((l) => l.trim()),
+		),
 	);
-	return [
-		...(kind === undefined ? [] : [paint(flat(kind), "magenta")]),
-		...body,
-	].join(" ");
+	return safe(first) + (rest.some((l) => l.trim()) ? MORE : "");
 }
 
-function happened(event: Annotated, paint: Paint, indent: string): string {
+/** A progress event's word and detail: the host's, else its kind and then the actor or its other fields. */
+function progressWord(
+	event: Annotated & { type: "progress" },
+): [word: string, detail: string] {
+	if (event.wording) return [event.wording.word, event.wording.detail];
+	const { kind = PROGRESS_WORD, fields } = progressParts(event.event);
+	return [kind, event.actor ?? fields.join(" ")];
+}
+
+/** The word an event line shows for `event`, and the detail after it. */
+function wordOf(event: Annotated): [word: string, detail: string] {
 	switch (event.type) {
 		case "running":
-			return paint("running", LOOK.running.style);
-		case "settled": {
-			const reason =
-				event.reason === undefined ? "" : `: ${flat(event.reason)}`;
-			return paint(`${event.outcome}${reason}`, LOOK[event.outcome].style);
-		}
+			return ["running", ""];
+		case "settled":
+			return [event.outcome, event.reason ?? ""];
 		case "reused":
-			return paint("ok (reused)", LOOK.ok.style);
+			return ["ok", "reused"];
 		case "log":
-			return paint(`log ${flat(event.line)}`, "dim");
+			return ["log", event.line];
 		case "progress":
-			return progressText(event, paint, indent);
+			return progressWord(event);
 	}
 }
 
-/** One event as a text line: offset from the concert's start, instance name, what happened. */
+function tokenSegs([
+	,
+	string,
+	colon,
+	num,
+	literal,
+	punct,
+	space = "",
+]: RegExpMatchArray): Seg[] {
+	if (string !== undefined)
+		return colon === undefined
+			? [[string, "green"]]
+			: [
+					[string, "blue"],
+					[colon, "dim"],
+				];
+	if (num !== undefined) return [[num, "yellow"]];
+	if (literal !== undefined) return [[literal, "cyan"]];
+	if (punct !== undefined) return [[punct, "dim"]];
+	return [[space]];
+}
+
+const parses = (text: string) => {
+	try {
+		JSON.parse(text);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+/** `text` highlighted as JSON when it is a JSON object or array, else in soft grey. */
+function valueSegs(text: string): Seg[] {
+	if (!JSON_START.test(text) || !parses(text)) return [[text, SOFT_GREY]];
+	return [...text.matchAll(JSON_TOKEN)].flatMap(tokenSegs);
+}
+
+/** A detail's first token bold, then the rest as `valueSegs` shows it. */
+function headedSegs(detail: string): Seg[] {
+	const space = detail.indexOf(" ");
+	if (space < 0) return [[detail, "bold"]];
+	return [
+		[detail.slice(0, space), "bold"],
+		[" "],
+		...valueSegs(detail.slice(space + 1)),
+	];
+}
+
+const plainly =
+	(style: Style) =>
+	(detail: string): Seg[] => [[detail, style]];
+
+/**
+ * How the detail after a word shows, for the words whose detail is not `valueSegs`: a reason yellow, a tool's detail
+ * its name bold then its input.
+ */
+const DETAIL_SEGS: ReadonlyMap<string, (detail: string) => Seg[]> = new Map([
+	["rejected", plainly("yellow")],
+	["failed", plainly("yellow")],
+	["skipped", plainly("dim")],
+	["thinking", plainly(["dim", "italic"])],
+	["usage", plainly("dim")],
+	["tool", headedSegs],
+]);
+
+/** Where the row from `start` ends within `width` cells: at the last space that fits, else at the last cell that fits. */
+function breakOf(cells: readonly Seg[], start: number, width: number): number {
+	let end = start;
+	for (let used = 0; end < cells.length; end++) {
+		used += Bun.stringWidth(cells[end]?.[0] ?? "");
+		if (used > width) break;
+	}
+	if (end === cells.length) return end;
+	for (let space = end; space > start; space--)
+		if (cells[space]?.[0] === " ") return space;
+	return end;
+}
+
+/** `cells` with each stretch of one style joined into one segment. */
+function joined(cells: readonly Seg[]): Seg[] {
+	const segs: [string, Style?][] = [];
+	for (const [text, style] of cells) {
+		const last = segs.at(-1);
+		if (last && last[1] === style) last[0] += text;
+		else segs.push([text, style]);
+	}
+	return segs;
+}
+
+/** `segs` in rows of at most `width` terminal cells, each broken at a space where it can be, without leading spaces. */
+function wrapped(segs: readonly Seg[], width: number): Seg[][] {
+	const cells = segs.flatMap(([text, style]) =>
+		[...text].map((c): Seg => [c, style]),
+	);
+	const rows: Seg[][] = [];
+	let at = 0;
+	while (at < cells.length) {
+		const end = breakOf(cells, at, width);
+		rows.push(joined(cells.slice(at, end)));
+		at = end;
+		while (cells[at]?.[0] === " ") at++;
+	}
+	return rows;
+}
+
+/** The width of the node column: the longest node path of `ir` with room for a two-digit key per group. */
+const nodeWidthOf = (ir: Ir, graph: GraphIndex) =>
+	Math.max(
+		0,
+		...ir.nodes.map(
+			(n) => n.id.length + graph.groupsOf(n.id).length * KEY_ROOM,
+		),
+	);
+
+/**
+ * One event as text: the time since the concert's start, the instance, a word for what happened and its detail's first
+ * line. With `view.columns` above 0 the detail wraps at that width under its own column; at 0 it stays on one line.
+ */
 export function eventLine(ir: Ir, event: Annotated, view: View): string {
-	const paint: Paint = (text, style) =>
-		view.color && text
-			? styleText(style, text, { validateStream: false })
-			: text;
-	const offset = `+${duration(event.at - view.concert.startedAt)}`.padEnd(
-		OFFSET_WIDTH - 1,
-	);
-	const name = padCells(
-		flat(formatInstance(event, indexGraph(ir).groupsOf(event.node))),
-		NAME_WIDTH - 1,
-	);
-	const indent = " ".repeat(offset.length + Bun.stringWidth(name) + 2);
-	return `${paint(offset, "dim")} ${name} ${happened(event, paint, indent)}`;
+	const graph = indexGraph(ir);
+	const [raw, detail] = wordOf(event);
+	const word = flat(raw);
+	const name = flat(formatInstance(event, graph.groupsOf(event.node)));
+	const head: Seg[] = [
+		[elapsed(event.at - view.concert.startedAt), "dim"],
+		[`${GAP}${padCells(name, nodeWidthOf(ir, graph))}${GAP}`],
+		[word, WORD_STYLE.get(word)],
+		[`${" ".repeat(Math.max(0, WORD_WIDTH - Bun.stringWidth(word)))}${GAP}`],
+	];
+	const indent = Bun.stringWidth(head.map(([text]) => text).join(""));
+	const segs = (DETAIL_SEGS.get(word) ?? valueSegs)(firstLine(detail));
+	const [first = [], ...more] =
+		view.columns > 0
+			? wrapped(segs, Math.max(MIN_DETAIL_WIDTH, view.columns - indent))
+			: [segs];
+	return [
+		[...head, ...first],
+		...more.map((row): Seg[] => [[" ".repeat(indent)], ...row]),
+	]
+		.map((row) => painted(row, Number.POSITIVE_INFINITY, view.color))
+		.join("\n");
 }

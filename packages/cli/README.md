@@ -26,9 +26,11 @@ maestro wait <concert> --timeout 15m
 
 [^watch]:
     On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls and thinking among
-    them. The graph is a header (status, elapsed time and the short id), the rows by subcomposition and loop round, and
-    a footer of counts and the concert's tokens. Ctrl-C stops watching, not the concert. Color is off under `NO_COLOR`,
-    `TERM=dumb` or `--no-color`.
+    them: the time, the instance, a word for what happened and its detail, in aligned columns, a long detail wrapped
+    under its column and a multi-line one cut to its first line. Off a terminal `--events` prints the same lines
+    unwrapped and without color. The graph is a header (status, elapsed time and the short id), the rows by
+    subcomposition and loop round, and a footer of counts and the concert's tokens. Ctrl-C stops watching, not the
+    concert. Color is off under `NO_COLOR`, `TERM=dumb` or `--no-color`.
 
 [^rep]:
     `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,
@@ -47,10 +49,11 @@ maestro wait <concert> --timeout 15m
 Every command takes `--json` (one JSON document on stdout), `--profile <name>`, `--debug` (stack traces) and `--help`.
 Primary output goes to stdout, messages to stderr.
 
-`watch` replays from the concert's first event, then follows it. With `--json`, or when stdout is not a terminal, it
-prints one compact JSON line per record event that changes an instance's state (`running`, `settled`, `reused`), or per
-event of any type with `--events`, each as the record holds it, then a last line, `wait --json`'s document with
-`"type":"concert"`. On a terminal stderr carries the closing line, and stdout holds only the view.
+`watch` replays from the concert's first event, then follows it. With `--json`, or off a terminal without `--events`, it
+prints a JSON Lines stream: one compact line per record event that changes an instance's state (`running`, `settled`,
+`reused`), or per event of any type with `--events --json`, each as the record holds it, ending with the concert
+document, `wait --json`'s with `"type":"concert"`. Otherwise stderr carries the closing line, and stdout holds only the
+view.
 
 `ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
 

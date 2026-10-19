@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { styleText } from "node:util";
 import type { ConcertEvent, EventBody, Ir } from "@maestro/ir";
 import {
 	agentsOf,
@@ -188,13 +189,13 @@ describe("frame", () => {
 		const announced = eventsOf([
 			["best", "", 0, { type: "running" }],
 			["best", "", 10, { type: "progress", event: { kind: "agent" } }],
-			["best", "", 20, { type: "progress", event: { kind: "turn" } }],
+			["best", "", 20, { type: "progress", event: { kind: "settled" } }],
 		]).map((e) => (e.seq === 2 ? { ...e, actor: "pi · b · low" } : e));
 		const line = frame(ir, seen(new Map(), announced), VIEW, new Map()).split(
 			"\n",
 		)[4];
 		expect(line).toBe(
-			"● best      code       running  1m04s  pi · b · low  turn",
+			"● best      code       running  1m04s  pi · b · low  settled",
 		);
 	});
 
@@ -202,17 +203,22 @@ describe("frame", () => {
 		const noted = (extra: object) => {
 			const events = eventsOf([
 				["best", "", 0, { type: "running" }],
-				["best", "", 10, { type: "progress", event: { kind: "turn", n: 1 } }],
+				[
+					"best",
+					"",
+					10,
+					{ type: "progress", event: { kind: "text", text: "hi" } },
+				],
 			]).map((e) => (e.seq === 2 ? { ...e, ...extra } : e));
 			return frame(ir, seen(new Map(), events), VIEW, new Map())
 				.split("\n")[4]
 				?.split("  ")
 				.at(-1);
 		};
-		expect(noted({})).toBe("turn 1");
-		expect(noted({ line: "step 1/2:\nbun install" })).toBe(
-			"step 1/2: bun install",
-		);
+		expect(noted({})).toBe("text hi");
+		expect(
+			noted({ wording: { word: "step", detail: "1/2:\nbun install" } }),
+		).toBe("step 1/2: bun install");
 	});
 
 	test("with color, an ok line carries green, a failed one red, a pending one dim, a heading bold", () => {
@@ -273,67 +279,188 @@ describe("frame", () => {
 describe("eventLine", () => {
 	const line = (event: ConcertEvent | undefined, view: Partial<View> = {}) =>
 		event ? eventLine(ir, event, { ...VIEW, ...view }) : "";
+	const progress = (event: Record<string, unknown>, extra: object = {}) =>
+		({
+			...eventsOf([["best", "", 0, { type: "progress", event }]])[0],
+			...extra,
+		}) as ConcertEvent;
+	const TIME = 7;
+	/** Where the detail column starts: time 7, node 20 (`refine/loop/step` and a round), word 8, each then a gap of 2. */
+	const DETAIL = 41;
 
-	test("shows the offset, the instance name and what happened", () => {
-		expect(line(EVENTS[0])).toBe("+0.0s   topics                  running");
-		expect(line(EVENTS[5])).toBe(
-			"+0.5s   topics[c]/draft         failed: flaky",
-		);
-		expect(line(EVENTS[11])).toBe(
-			"+12s    best                    ok (reused)",
-		);
-		expect(line(EVENTS[8])).toBe(
-			'+2.1s   topics[b]/draft         tool bash {"command":"ls"}',
-		);
-		expect(line(EVENTS[9])).toBe("+2.2s   topics[b]/draft         log noise");
+	test("aligns the time, the instance, the word and the detail across nodes of every path length, a loop's round on its segment", () => {
+		const [round] = eventsOf([
+			["refine/loop/step", "[1]", 13_000, { type: "running" }],
+		]);
+		const lines = [
+			EVENTS[0],
+			EVENTS[5],
+			EVENTS[8],
+			EVENTS[9],
+			EVENTS[11],
+			round,
+		].map((e) => line(e));
+		expect(lines).toEqual([
+			"  +0.0s  topics                running",
+			"  +0.5s  topics[c]/draft       failed    flaky",
+			'  +2.1s  topics[b]/draft       tool      bash {"command":"ls"}',
+			"  +2.2s  topics[b]/draft       log       noise",
+			" +12.1s  best                  ok        reused",
+			" +13.0s  refine/loop[1]/step   running",
+		]);
 	});
 
-	test("continues a multi-line string on the next lines, under the text's start", () => {
-		const [thinking] = eventsOf([
+	test("shows a host's word and detail, a kind without one as the word, an announced actor as an agent's detail", () => {
+		const worded = (word: string, detail: string) => ({
+			wording: { word, detail },
+		});
+		expect(
+			line(progress({ kind: "step", n: 1 }, worded("step", "1/2: b"))),
+		).toBe("  +0.0s  best                  step      1/2: b");
+		expect(
+			line(progress({ kind: "step" }, worded("tool", "step it"))),
+		).toEndWith("tool      step it");
+		expect(line(progress({ kind: "step", n: 1 }))).toEndWith("step      1");
+		expect(line(progress({ kind: `${ESC}[2Jx` }))).toEndWith(
+			"best                  \\u001b[2Jx",
+		);
+		expect(
+			line(progress({ kind: "agent", harness: "pi" }, { actor: "pi · b" })),
+		).toEndWith("agent     pi · b");
+	});
+
+	test("shows a multi-line detail's first line, marked when more text follows", () => {
+		const [failed] = eventsOf([
+			["best", "", 0, { type: "settled", outcome: "failed", reason: "a\nb" }],
+		]);
+		expect(line(failed)).toEndWith("failed    a …");
+		const [blank] = eventsOf([
 			[
-				"topics/draft",
-				"[b]",
-				2_500,
-				{ type: "progress", event: { kind: "thinking", text: "one\ntwo" } },
+				"best",
+				"",
+				0,
+				{
+					type: "settled",
+					outcome: "failed",
+					reason: "\n \nTypeError boom\nat x",
+				},
 			],
 		]);
-		expect(line(thinking).split("\n")).toEqual([
-			"+2.5s   topics[b]/draft         thinking one",
-			`${" ".repeat(32)}two`,
-		]);
+		expect(line(blank)).toEndWith("failed    TypeError boom …");
+		expect(line(progress({ kind: "thinking", text: "one\ntwo" }))).toEndWith(
+			"thinking  one …",
+		);
+		expect(line(progress({ kind: "text", text: "one\n\n" }))).toEndWith(
+			"text      one",
+		);
+		expect(
+			line(
+				progress(
+					{ kind: "prepare" },
+					{ wording: { word: "prepare", detail: "1: a\nb" } },
+				),
+			),
+		).toEndWith("prepare   1: a …");
 	});
 
-	test("shows a host's line as the header, the lines of each multi-line field indented beneath", () => {
-		const shown = (event: Record<string, unknown>, extra: object) =>
-			line({
-				...(eventsOf([
-					["best", "", 0, { type: "progress", event }],
-				])[0] as ConcertEvent),
-				...extra,
-			} as ConcertEvent);
-		const event = { kind: "step", cmd: "bun install", tail: `a\nb${ESC}[2J\n` };
-		expect(shown(event, { line: "step 1/2: b" }).split("\n")).toEqual([
-			"+0.0s   best                    step 1/2: b",
-			`${" ".repeat(34)}a`,
-			`${" ".repeat(34)}b\\u001b[2J`,
+	test("on a terminal wraps a long detail at a space, under the detail column; off one keeps it on one line", () => {
+		const long = progress({
+			kind: "text",
+			text: "aaaa bbbb cccc dddddd eeee",
+		});
+		expect(line(long, { columns: DETAIL + 20 }).split("\n")).toEqual([
+			"  +0.0s  best                  text      aaaa bbbb cccc",
+			`${" ".repeat(DETAIL)}dddddd eeee`,
 		]);
-		expect(shown({ kind: "step", n: 1 }, { line: "step one" })).toBe(
-			"+0.0s   best                    step one",
+		expect(line(long, { columns: DETAIL + 5 })).toBe(
+			line(long, { columns: DETAIL + 20 }),
 		);
+		expect(line(long, { columns: 0 })).toEndWith("cccc dddddd eeee");
+	});
+
+	test("shows the time in seconds under a minute, minutes and seconds under an hour, else hours and minutes, in 7 columns", () => {
+		const at = (ms: number) =>
+			line(eventsOf([["best", "", ms, { type: "running" }]])[0]).slice(0, TIME);
+		expect([59_999, 60_000, 3_599_999, 3_600_000, 7_500_000].map(at)).toEqual([
+			" +59.9s",
+			" +1m00s",
+			"+59m59s",
+			" +1h00m",
+			" +2h05m",
+		]);
 	});
 
 	test("shows a control character as its escape, so no text moves the cursor", () => {
 		const [log] = eventsOf([
 			["best", "", 0, { type: "log", line: `a${ESC}[2Jb` }],
 		]);
-		expect(line(log)).toBe("+0.0s   best                    log a\\u001b[2Jb");
+		expect(line(log)).toEndWith("log       a\\u001b[2Jb");
 	});
 
-	test("shows a newline in a failure reason as a space", () => {
-		const [settled] = eventsOf([
-			["best", "", 0, { type: "settled", outcome: "failed", reason: "a\nb" }],
-		]);
-		expect(line(settled)).toBe("+0.0s   best                    failed: a b");
+	describe("with color", () => {
+		const p = (style: Parameters<typeof styleText>[0], text: string) =>
+			styleText(style, text, { validateStream: false });
+		const grey = (text: string) => `${ESC}[38;5;250m${text}${ESC}[39m`;
+		const painted = (event: ConcertEvent | undefined) =>
+			line(event, { color: true });
+		/** The painted detail of an event at the start whose word has no style: all after the dim time and the plain columns. */
+		const detailOf = (event: ConcertEvent | undefined) =>
+			painted(event).slice(p("dim", "  +0.0s").length + DETAIL - TIME);
+
+		test("dims the time, and styles each word and its detail", () => {
+			expect(painted(EVENTS[0])).toStartWith(p("dim", "  +0.0s"));
+			expect(painted(EVENTS[5])).toEndWith(
+				`${p(["red", "bold"], "failed")}    ${p("yellow", "flaky")}`,
+			);
+			expect(painted(EVENTS[6])).toContain(p(["green", "bold"], "ok"));
+			expect(painted(progress({ kind: "thinking", text: "hm" }))).toEndWith(
+				`${p(["dim", "italic"], "thinking")}  ${p(["dim", "italic"], "hm")}`,
+			);
+			expect(painted(EVENTS[9])).toEndWith(`log       ${grey("noise")}`);
+			expect(painted(progress({ kind: "agent" }, { actor: "pi" }))).toContain(
+				p("cyan", "agent"),
+			);
+		});
+
+		test("shows a word outside its style table unstyled, an inherited key among them", () => {
+			expect(painted(progress({ kind: "constructor", n: 1 }))).toEndWith(
+				`  best                  constructor  ${grey("1")}`,
+			);
+			expect(painted(progress({ kind: "step" }))).toEndWith(
+				"  best                  step",
+			);
+		});
+
+		test("highlights a JSON detail: keys, strings, numbers, literals and punctuation; other text in soft grey", () => {
+			const input = { a: "s", n: -150, t: true, z: null };
+			expect(detailOf(progress({ kind: "tool", name: "bash", input }))).toBe(
+				[
+					p("bold", "bash"),
+					" ",
+					p("dim", "{"),
+					p("blue", '"a"'),
+					p("dim", ":"),
+					p("green", '"s"'),
+					p("dim", ","),
+					p("blue", '"n"'),
+					p("dim", ":"),
+					p("yellow", "-150"),
+					p("dim", ","),
+					p("blue", '"t"'),
+					p("dim", ":"),
+					p("cyan", "true"),
+					p("dim", ","),
+					p("blue", '"z"'),
+					p("dim", ":"),
+					p("cyan", "null"),
+					p("dim", "}"),
+				].join(""),
+			);
+			expect(detailOf(progress({ kind: "text", text: '{"a":' }))).toBe(
+				grey('{"a":'),
+			);
+			expect(detailOf(progress({ kind: "text", text: "42" }))).toBe(grey("42"));
+		});
 	});
 });
 

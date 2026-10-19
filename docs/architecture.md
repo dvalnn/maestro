@@ -210,7 +210,7 @@ returns beyond the check named.
 | `param?(type, text)` | The CLI only, to read a param of one of the host's `types` from text.   | A value, or diagnostics.         |
 | `resources?.release` | The CLI only, for `prune`, on a settled concert.                        | Nothing.                         |
 | `resources?.usage`   | The CLI only, for `ls`, per concert.                                    | Bytes on disk.                   |
-| `text?.progress(e)`  | The CLI only, for `watch`, per progress event of the host's kinds.      | One line, or the generic one.    |
+| `text?.progress(e)`  | The CLI only, for `watch`, per progress event of the host's kinds.      | A word and detail, or generic.   |
 | `text?.actor(e)`     | The CLI only, for `watch` and `ls`, on enrichment or an event's fields. | Who ran the instance, or none.   |
 
 The setup each hook gets, `HostSetup`, is item 6 above and ADR 0010.
