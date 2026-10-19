@@ -15,6 +15,7 @@ keeps it to one.
 | `deferred`        | `state/deferred`        | Ruled out of this release; revisit later |
 | `wontfix`         | `state/wontfix`         | Will not be actioned; close it too       |
 
-"Done" is the forge's closed state, not a label. A closed issue keeps its `kind/` label and drops its `state/` one.
+"Done" is the forge's closed state, not a label. A closed issue keeps its `kind/` label and drops its `state/` one,
+unless it is `state/wontfix`.
 
 Read the forge's list before using a name: `fj` refuses a label the repo does not have.
