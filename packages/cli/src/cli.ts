@@ -50,6 +50,12 @@ const VERBS: readonly Verb[] = [
 		load: async () => (await import("./records")).wait,
 	},
 	{
+		name: "watch",
+		alias: "wt",
+		summary: "Show a concert's node instances live until it settles",
+		load: async () => (await import("./watch")).watch,
+	},
+	{
 		name: "kill",
 		alias: "k",
 		summary: "Stop a running concert",

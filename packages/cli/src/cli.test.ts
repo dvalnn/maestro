@@ -221,9 +221,9 @@ describe("perform", () => {
 		["ok", ECHO, 0, /ok$/, ["text  done"]],
 		[
 			"failed",
-			{ outcome: "failed", reason: "flaky" },
+			{ outcome: "failed", reason: "flaky\u001b[2J" },
 			1,
-			/failed at echo\/echo: flaky$/,
+			/failed at echo\/echo: flaky\\u001b\[2J$/,
 			[],
 		],
 		[
@@ -353,6 +353,16 @@ describe("usage errors", () => {
 		],
 		["kill without a concert", ["kill"], /^expected one concert, got 0/],
 		[
+			"watch without a concert",
+			["watch"],
+			/^expected one concert, got 0\nName the concert to watch$/,
+		],
+		[
+			"watch of an unknown concert",
+			["wt", "nope"],
+			/^no concert 'nope' in the record\nCheck the id with 'maestro ls'$/,
+		],
+		[
 			"prune with no selection",
 			["prune"],
 			/^prune needs concert ids, --before, --tour or --workspace\nName concerts, .*--tour <slug> or --workspace <name>$/,
@@ -475,12 +485,13 @@ describe("usage errors", () => {
 
 	test("--help prints a command's flags on stdout and exits 0", async () => {
 		const w = await world();
-		for (const args of [["--help"], ["p", "-h"]])
+		for (const args of [["--help"], ["p", "-h"], ["wt", "-h"]])
 			expect(await w.call(args)).toMatchObject({
 				code: 0,
 				out: expect.stringContaining("Usage: maestro"),
 				err: "",
 			});
+		expect((await w.call(["--help"])).out).toMatch(/^ {2}watch +\(wt\) +\S/m);
 	});
 });
 

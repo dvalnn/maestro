@@ -16,6 +16,8 @@ export type Deps = {
 	stderr(line: string): void;
 	/** Asks a yes-or-no question on the terminal. Absent when stdin is not a terminal. */
 	confirm?(question: string): Promise<boolean>;
+	/** The size of the terminal stdout writes to. Absent when stdout is not a terminal. */
+	terminal?(): { columns: number; rows: number };
 };
 
 type OptionSpec = {

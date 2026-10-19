@@ -61,8 +61,14 @@ function assistantEvents(message: JsonObject): HarnessEvent[] {
 		.filter((p) => isObject(p) && p.type === "text")
 		.map((p) => String(p.text))
 		.join("");
+	const thinking = parts.flatMap((p): HarnessEvent[] =>
+		isObject(p) && p.type === "thinking" && p.thinking
+			? [{ kind: "thinking", text: String(p.thinking) }]
+			: [],
+	);
 	const events: HarnessEvent[] = [
 		{ kind: "usage", metrics },
+		...thinking,
 		{ kind: "text", text },
 	];
 	const stop = String(message.stopReason);
@@ -91,7 +97,7 @@ function eventsOf(e: JsonObject): HarnessEvent[] {
 		case "turn_start":
 			return [{ kind: "turn" }];
 		case "tool_execution_start":
-			return [{ kind: "tool", name: String(e.toolName) }];
+			return [{ kind: "tool", name: String(e.toolName), input: e.args }];
 		case "message_end":
 			return isObject(e.message) && e.message.role === "assistant"
 				? assistantEvents(e.message)

@@ -59,7 +59,7 @@ function eventOf(e: JsonObject): HarnessEvent {
 		case "text":
 			return { kind: "text", text: String(e.text) };
 		case "tool":
-			return { kind: "tool", name: String(e.name) };
+			return { kind: "tool", name: String(e.name), input: e.input };
 		case "settled":
 			return { kind: "settled" };
 		case "fault":

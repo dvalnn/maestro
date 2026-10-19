@@ -50,7 +50,9 @@ export type HarnessRequest = {
 export type HarnessEvent =
 	| { kind: "turn" }
 	| { kind: "text"; text: string }
-	| { kind: "tool"; name: string }
+	/** A tool call, with its arguments as the harness gave them. */
+	| { kind: "tool"; name: string; input: unknown }
+	| { kind: "thinking"; text: string }
 	/** Usage reported by the harness. The run's metrics are the sum of these. */
 	| { kind: "usage"; metrics: Metrics }
 	/** The harness finished all its work and will not continue on its own. A run without one is `failed`. */

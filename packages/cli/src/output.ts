@@ -136,7 +136,13 @@ export const exitOf = (status: ConcertStatus) =>
 export const reasonOf = (result: ConcertResult | undefined) =>
 	result && "reason" in result ? result.reason : undefined;
 
-/** The line that says how concert `id` ended: `concert <id> <outcome>[ at <node>][: <reason>]`. */
+/** A control character, shown as its JSON escape so no text moves the terminal's cursor. */
+const CONTROL = /\p{Cc}/gu;
+
+/**
+ * The line that says how concert `id` ended: `concert <id> <outcome>[ at <node>][: <reason>]`, each control character
+ * shown as its escape.
+ */
 export function closingLine(ir: Ir, id: string, result: ConcertResult): string {
 	const at =
 		result.outcome === "ok" ||
@@ -145,7 +151,8 @@ export function closingLine(ir: Ir, id: string, result: ConcertResult): string {
 			? ""
 			: ` at ${instanceName(ir, { node: result.node, expansion: result.expansion })}`;
 	const reason = reasonOf(result);
-	return `concert ${id} ${result.outcome}${at}${reason === undefined ? "" : `: ${reason}`}`;
+	const line = `concert ${id} ${result.outcome}${at}${reason === undefined ? "" : `: ${reason}`}`;
+	return line.replace(CONTROL, (c) => JSON.stringify(c).slice(1, -1));
 }
 
 /**

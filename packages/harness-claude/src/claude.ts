@@ -104,7 +104,9 @@ function blockEvent(block: unknown): HarnessEvent[] {
 	if (block.type === "text")
 		return [{ kind: "text", text: String(block.text) }];
 	if (block.type === "tool_use")
-		return [{ kind: "tool", name: String(block.name) }];
+		return [{ kind: "tool", name: String(block.name), input: block.input }];
+	if (block.type === "thinking" && block.thinking)
+		return [{ kind: "thinking", text: String(block.thinking) }];
 	return [];
 }
 

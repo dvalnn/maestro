@@ -17,10 +17,15 @@ maestro wait <concert> --timeout 15m
 | `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.                                     |
 | `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`. |
 | `wait <concert>`             | `w`   | Waits for a concert to settle. `--timeout <duration>`.                                                            |
+| `watch <concert>`            | `wt`  | Shows a concert's node instances live until it settles.[^watch] `--events`, `--no-color`.                         |
 | `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                               |
 | `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line.                                              |
 | `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                          |
 | `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                |
+
+[^watch]:
+    On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls and thinking among
+    them. Ctrl-C stops watching, not the concert. Color is off under `NO_COLOR`, `TERM=dumb` or `--no-color`.
 
 [^prune]:
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`
@@ -28,6 +33,11 @@ maestro wait <concert> --timeout 15m
 
 Every command takes `--json` (one JSON document on stdout), `--profile <name>`, `--debug` (stack traces) and `--help`.
 Primary output goes to stdout, messages to stderr.
+
+`watch` replays from the concert's first event, then follows it. With `--json`, or when stdout is not a terminal, it
+prints one compact JSON line per record event that changes an instance's state (`running`, `settled`, `reused`), or per
+event of any type with `--events`, each as the record holds it, then a last line, `wait --json`'s document with
+`"type":"concert"`. On a terminal stderr carries the closing line, and stdout holds only the view.
 
 `ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
 
@@ -98,3 +108,5 @@ A tour is a slug of lower-case words joined by hyphens, at most 64 characters. `
 | 2    | Usage error, or a composition that does not compose.                                          |
 | 3    | The concert settled `rejected`.                                                               |
 | 124  | `wait --timeout` passed with the concert still running.                                       |
+
+`watch` exits as `wait` does.

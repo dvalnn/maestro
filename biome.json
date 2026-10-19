@@ -283,6 +283,7 @@
 											"!@maestro/sdk/**",
 											"!@maestro/ir",
 											"!@maestro/render-*",
+											"!@maestro/render-*/**",
 											"!@maestro/host-repo",
 											"!@maestro/host-repo-sdk",
 											"!@maestro/harness-*",

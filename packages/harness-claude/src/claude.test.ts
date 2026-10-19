@@ -83,6 +83,7 @@ describe("stand-in claude", () => {
 		expect(seen.filter((e) => e.kind === "tool")).toContainEqual({
 			kind: "tool",
 			name: "Write",
+			input: { file_path: "/out/note.txt", content: "hello" },
 		});
 		expect(seen.at(-1)).toEqual({
 			kind: "raw",
@@ -90,21 +91,27 @@ describe("stand-in claude", () => {
 		});
 	});
 
-	test("an assistant message repeated per content block is one turn", async () => {
+	test("an assistant message repeated per content block is one turn, its non-empty thinking reported", async () => {
 		const block = (type: string, extra: object) =>
 			JSON.stringify({
 				type: "assistant",
 				message: { id: "m1", content: [{ type, ...extra }] },
 			});
 		const lines = [
+			block("thinking", { thinking: "List first." }),
+			block("thinking", { thinking: "" }),
+			block("redacted_thinking", { data: "opaque" }),
 			block("text", { text: "a" }),
-			block("tool_use", { name: "Bash" }),
+			block("tool_use", { name: "Bash", input: { command: "ls" } }),
 			JSON.stringify({ type: "result", subtype: "success", result: "a" }),
 		];
 		const seen = await drain(
 			claudeHarness(standIn(lines)).run(request("x")).events,
 		);
 		expect(seen.filter((e) => e.kind === "turn")).toHaveLength(1);
+		expect(seen.filter((e) => e.kind === "thinking")).toEqual([
+			{ kind: "thinking", text: "List first." },
+		]);
 	});
 
 	test("the prompt goes on stdin, the identity in an appended file, and the session has its own config dir", async () => {

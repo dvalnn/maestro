@@ -73,8 +73,13 @@ describe("stand-in pi", () => {
 		});
 		expect(seen.filter((e) => e.kind === "turn")).toHaveLength(2);
 		expect(seen.filter((e) => e.kind === "tool")).toEqual([
-			{ kind: "tool", name: "write" },
+			{
+				kind: "tool",
+				name: "write",
+				input: { path: "hello.txt", content: "hi" },
+			},
 		]);
+		expect(seen.filter((e) => e.kind === "thinking")).toEqual([]);
 		expect(seen.at(-1)).toEqual({
 			kind: "raw",
 			data: { type: "future_event", extra: { a: 1 } },
@@ -131,6 +136,22 @@ describe("stand-in pi", () => {
 		).result;
 		expect(result.outcome).toBe("failed");
 		expect(result.reason).toContain("401");
+	});
+
+	test("a message's thinking text is reported before its text", async () => {
+		const lines = fixture().map((l) =>
+			l.startsWith('{"type":"message_end"')
+				? l.replace('"thinking":""', '"thinking":"Write the file."')
+				: l,
+		);
+		const seen = await drain(
+			piHarness(standIn(lines)).run(request("x")).events,
+		);
+		const kinds = seen.map((e) => e.kind);
+		expect(seen.filter((e) => e.kind === "thinking")).toEqual([
+			{ kind: "thinking", text: "Write the file." },
+		]);
+		expect(kinds.indexOf("thinking")).toBeLessThan(kinds.indexOf("text"));
 	});
 
 	test("reply is the last assistant message's text, empty when it has none", async () => {

@@ -11,6 +11,18 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
   when it tests each step's result. `start` points at each node with no incoming edge outside a group body, and the
   result node points at `stop`, drawn `end`.
 
+`@maestro/render-text/live` draws a concert as it goes, from the IR and the record's events:
+
+- `seen(prior, events)`: each instance's state, the latest event winning.
+- `frame(ir, seen, view)`: the outline of the IR with each instance's glyph, name, kind, state, time and note, under a
+  header with the concert's status, elapsed time and counts. Lines are cut at `columns - 1` characters, and past
+  `rows - 1` lines it ends with `… <n> more`.
+- `eventLine(ir, event, view)`: one event as its offset from the concert's start, instance name and what happened. A
+  progress event shows its `kind`, then each other field; a multi-line string continues indented.
+
+Color, when `view.color` is set, goes on after the cut; a glyph and a state word name each state, so the text reads the
+same without it. A control character in shown text appears as its escape.
+
 ## Drawing rules
 
 | Drawn as                   | Means                                                                              |

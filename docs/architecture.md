@@ -361,9 +361,13 @@ A renderer needs only the IR (or plan) and events:
 - **Static.** Nodes by kind, scopes collapsible, `data` edges solid, `control` edges dashed, `collect` edges drawn as
   barriers with the fan-in reducer shown. Groups show their cardinality (`3`, `up to 14`) and, when compose expanded
   them, the expansion.
-- **Live.** The same graph with node-instance state overlaid from events.
+- **Live.** An outline of the IR with node-instance state folded from events: nodes in IR order, indented by scope and
+  group, a line per instance in the order its first event landed, and a `pending` line for a node with none. Each line
+  shows a glyph, the instance name, kind, state, time and a note: a running instance's latest progress event, or the
+  reason of a non-ok one. Edges are `compose --graph`'s.
 
-The first renderer targets text (ASCII or Mermaid) in the plan output. A richer viewer is out of scope.
+The first renderer targets text (ASCII or Mermaid) in the plan output; `maestro watch` draws the live form. A richer
+viewer is out of scope.
 
 ## 12. The coding-agent host
 
@@ -465,11 +469,12 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 **Harness adapters**
 
-- An adapter starts an agent session for a role, feeds it the prompt, streams events (turns, tool calls, usage), reports
-  the agent's final reply, and supports cancel. The host reads declared outputs from the agent's outbox, not the
-  adapter. It is a sandboxed subprocess driving the harness's JSON event stream (D-20). An in-process SDK is deferred,
-  because an in-process agent cannot be confined by bubblewrap. The first adapter is pi (`pi -p --mode json`) and the
-  second is Claude Code.
+- An adapter starts an agent session for a role, feeds it the prompt, streams events (turns, text, thinking, tool calls
+  with their input, usage), reports the agent's final reply, and supports cancel. Tool results are not streamed. In the
+  harness's output, secrets the sandbox is given are masked before the adapter parses it. The host reads declared
+  outputs from the agent's outbox, not the adapter. It is a sandboxed subprocess driving the harness's JSON event stream
+  (D-20). An in-process SDK is deferred, because an in-process agent cannot be confined by bubblewrap. The first adapter
+  is pi (`pi -p --mode json`) and the second is Claude Code.
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
 **Host validation rules**
