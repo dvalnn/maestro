@@ -12,7 +12,7 @@ fmt:
     bunx prettier --write "**/*.md"
 
 # build the release artifacts into dist/ and smoke-test them
-release: check
+release: check pack
     #!/usr/bin/env bash
     set -euo pipefail
     build=$(mktemp -d)
@@ -29,6 +29,11 @@ release: check
     for package in ir sdk host-repo-sdk; do
       (cd "packages/$package" && bun pm pack --destination ../../dist --quiet >/dev/null)
     done
+    pack_version=$(bun -e 'console.log(require(process.argv[1]).version)' "$PWD/packs/repertoire/dist/maestro-pack.json")
+    cp -r packs/repertoire/dist "$build/repertoire"
+    tar -czf "dist/repertoire-$pack_version.tar.gz" --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 \
+      -C "$build" repertoire
+    tar -czf dist/maestro-skill.tar.gz --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C skills maestro
     (cd dist && sha256sum * > SHA256SUMS)
     scripts/smoke-install.sh dist
 

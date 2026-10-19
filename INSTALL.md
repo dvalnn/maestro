@@ -46,19 +46,73 @@ tar -xzf maestro-skill.tar.gz -C ~/.claude/skills
 
 Config keys are in [`packages/cli/README.md`](packages/cli/README.md).
 
-- The user file `~/.config/maestro/config.yaml` holds `packs` and `roles`. Paths are not expanded, so write the absolute
-  path, such as `/home/me/.local/share/maestro/packs/repertoire`. `packs` lists the pack's path. `roles` names the
-  repertoire's roles, with one sample per harness:
-  - Claude: `harness: claude`, `model: sonnet` or `opus`, `thinking` as Claude's `--effort`.
-  - pi: `harness: pi`, `model: <provider>/<model>` such as `github-copilot/gpt-5-mini`, `thinking` as pi's `--thinking`.
-- The `review` composition's lens and skeptic model params go under `repertoire.review`, from different model families.
-- A workspace file `.maestro/config.yaml` per target holds `target: { repo: <absolute path>, base, checks }`.
-- A profile `.maestro/profiles/stub.yaml` sets the same roles to `harness: stub, model: none`. Run with `--profile stub`
-  to spend nothing.
+- The user file `~/.config/maestro/config.yaml` holds `packs`, `roles` and the pack's params. `~` is not expanded; a
+  relative path resolves against the directory of the file that sets it.
+- A workspace file `.maestro/config.yaml` per target holds `target: { repo, base, checks }`, and optionally `prepare`
+  (lines run on each checked-out lane, such as a dependency install) and `sparse` (directories a lane checks out).
+- A profile `.maestro/profiles/stub.yaml` moves the roles to the stub harness. Run with `--profile stub` to spend
+  nothing.
 
-<!-- TODO(part 2): the repertoire's role names and review params, and a sample file for each harness. -->
+The repertoire names six roles and no models: `scout`, `planner`, `builder`, `reviewer`, `skeptic` and `documenter`.
+`build_then_repair` needs only `builder`, `review` needs `reviewer` and `skeptic`, and `v_model` needs all six. Model
+ids below are placeholders; use your own.
 
-Compose before performing: `maestro compose repertoire.<composition>`.
+```yaml
+# ~/.config/maestro/config.yaml
+packs:
+  - /home/me/.local/share/maestro/packs/repertoire
+roles:
+  scout: { harness: claude, model: <claude-model>, thinking: high }
+  planner: { harness: claude, model: <claude-model>, thinking: high }
+  builder: { harness: claude, model: <claude-model>, thinking: high }
+  reviewer: { harness: claude, model: <claude-model>, thinking: high }
+  skeptic: { harness: pi, model: <provider>/<model>, thinking: high }
+  documenter: { harness: claude, model: <claude-model>, thinking: high }
+repertoire:
+  review:
+    lensModel: <claude-model>
+    skepticModel: <provider>/<model>
+  v_model:
+    lensModel: <claude-model>
+    skepticModel: <provider>/<model>
+    maxApproaches: 2
+    maxRisks: 4
+    maxRepairs: 2
+```
+
+- Claude: `harness: claude`, `model: sonnet` or `opus`, `thinking` as Claude's `--effort`.
+- pi: `harness: pi`, `model: <provider>/<model>` such as `github-copilot/gpt-5-mini`, `thinking` as pi's `--thinking`.
+- `lensModel` and `skepticModel` must come from different model families, or `review` and `v_model` fail to compose.
+  With a Claude lens, the skeptic needs pi.
+- `v_model` also takes `maxApproaches` (default 2), `maxRisks` (default 4) and `maxRepairs` (default 2), each an integer
+  of at least 1, as the pack's `README.md` gives them. Its `request` is a flag.
+
+```yaml
+# .maestro/config.yaml, in the target repository
+target:
+  repo: ..
+  base: main
+  checks:
+    test: "bun test"
+```
+
+```yaml
+# .maestro/profiles/stub.yaml
+roles:
+  scout: !replace { harness: stub, model: none }
+  planner: !replace { harness: stub, model: none }
+  builder: !replace { harness: stub, model: none }
+  reviewer: !replace { harness: stub, model: none }
+  skeptic: !replace { harness: stub, model: none }
+  documenter: !replace { harness: stub, model: none }
+```
+
+Compose before performing, then perform:
+
+```sh
+maestro compose repertoire.build_then_repair --request "<what to build>"
+maestro perform repertoire.build_then_repair --request "<what to build>"
+```
 
 ## 5. Upgrade
 
