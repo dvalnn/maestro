@@ -1,5 +1,6 @@
 {
 	"name": "maestro",
+	"license": "UNLICENSED",
 	"private": true,
 	"workspaces": [
 		"packages/*",

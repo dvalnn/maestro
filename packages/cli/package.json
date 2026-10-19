@@ -1,6 +1,7 @@
 {
 	"name": "@maestro/cli",
 	"version": "0.1.0-beta.1",
+	"license": "UNLICENSED",
 	"private": true,
 	"type": "module",
 	"bin": {
