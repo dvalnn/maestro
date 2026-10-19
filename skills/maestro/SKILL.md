@@ -30,6 +30,8 @@ This skill was checked against maestro 0.1.0-beta.1. When `maestro --version` na
 - **Pack**: an installed directory of compositions, under `$XDG_DATA_HOME/maestro/packs/` or listed in config under
   `packs`.
 - **Workspace**: the nearest directory from the cwd up holding `.maestro/`; its config layers over the user's.
+- **Data root**: where the record store and concert files live: `$XDG_DATA_HOME/maestro` (default
+  `~/.local/share/maestro`), moved by the `dataRoot` config key.
 - **Tour**: a slug grouping related concerts, for listing and pruning them together.
 
 ## The loop
@@ -40,7 +42,9 @@ This skill was checked against maestro 0.1.0-beta.1. When `maestro --version` na
 2. **Pick the composition.** `<pack>.<composition>` of an installed pack, or a file. `maestro rep --json` lists every
    installed composition with its doc, params, config entries and a `perform` line; `maestro rep <pack>.<composition>`
    shows one, such as `classics.panel_review`. Its params are kebab-case flags (`--max-repairs 3`, `--no-strict`). Done
-   when every required param has a value from a flag or the config.
+   when every required param has a value from a flag or the config. `compose` also fills a missing required root param
+   from the composition's example set; `perform` never does, and refuses with `CFG.required`, so pass the flag or set it
+   in config (see [running.md](running.md), section Compose).
 3. **Pre-flight.** `maestro compose <c> [flags]`, with the flags perform will get. Done on exit 0. Before a perform on a
    paid harness, give the user the `repo.agent` bound from `maestro compose <c> [flags]` as the spend ceiling.
 4. **Perform in its own session.** `perform` holds its terminal until the concert settles, and a signal to its process
@@ -65,8 +69,10 @@ This skill was checked against maestro 0.1.0-beta.1. When `maestro --version` na
    user who wants to see the concert live runs `maestro watch <id>` in their own terminal.
 6. **Read the result.** The exit code (table below), the closing block on stderr (a
    `concert <short id>  <outcome>  <elapsed>` row, then `at <instance>` and `reason <reason>` when not `ok`) and the
-   result's outputs on stdout (`<port>  <value>` lines, an artifact as its path). Done when the user has the outcome,
-   the root cause instance and its reason when not `ok`, and the changeset's path.
+   result's outputs on stdout (`<port>  <value>` lines, an artifact as its path). On a `rejected` concert the outputs
+   are the root cause's: `logs`, the failing check's log file, and `lane`, a lane ref to the version the concert stopped
+   at. Read the `logs` file next, then report the root cause. Done when the user has the outcome, the root cause
+   instance and its reason when not `ok`, and the changeset's path.
 
 Read [running.md](running.md) for compose and perform flags, the record, artifacts, changesets and lane refs.
 
@@ -103,12 +109,14 @@ prune selects.
 ## Stub concerts
 
 A stub concert rehearses a composition for free: stub agents change nothing and reply `ok`, while checks run for real,
-so a check that depends on an agent's change stays red. A stub agent writes a placeholder for each output it declares,
-the smallest value that satisfies the schema keywords it reads (`required`, `properties`, `items`, `minItems`, `enum`,
-`const`, `minLength`, `minimum`, `anyOf`, `oneOf`), `"stub"` for text. A schema beyond those fails the agent, naming the
-output. So a concert runs past its agents and proves config, roles, lanes and checks: `classics.panel_review` ends `ok`
-with an unapproved verdict, and `classics.v_model` is rejected, at the repair loop's recheck while its checks are red
-and at `traceOf` once they are green. Use one to try a flow, or whenever the user asks for no spend. Map every role the
+so a check that depends on an agent's change stays red. A check already green on the untouched target passes, so a build
+composition such as `classics.build_then_repair` ends `ok` with an empty changeset, holding only its `base`. A stub
+agent writes a placeholder for each output it declares, the smallest value that satisfies the schema keywords it reads
+(`required`, `properties`, `items`, `minItems`, `enum`, `const`, `minLength`, `minimum`, `anyOf`, `oneOf`), `"stub"` for
+text. A schema beyond those fails the agent, naming the output. So a concert runs past its agents and proves config,
+roles, lanes and checks: `classics.panel_review` ends `ok` with an unapproved verdict, and `classics.v_model` is always
+rejected: its checks stay red because nothing was built, and when they are green its final traceability step rejects it,
+since the stub review never approves. Use one to try a flow, or whenever the user asks for no spend. Map every role the
 composition names to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose and
 perform; a resume reapplies it. For the classics pack 0.1.0-beta.1's six roles:
 

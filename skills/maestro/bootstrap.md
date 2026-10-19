@@ -50,7 +50,10 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
    Quote a YAML value that would read as another type or break the line: `"true"`, `"3"`, a line holding `: ` or ` #`.
    Done when every role, check and pack the composition needs has a value in some layer.
 
-4. **Verify.** `maestro compose <c>` and fix each diagnostic it prints by its hint, or by the table below, then compose
+4. **Ignore `.maestro/`.** The workspace directory sits inside the target repository and must not be committed. Ask the
+   user whether to add `.maestro/` to the repository's `.gitignore` or to `.git/info/exclude` (local only), then add it.
+   Done when `git status` no longer lists `.maestro/`.
+5. **Verify.** `maestro compose <c>` and fix each diagnostic it prints by its hint, or by the table below, then compose
    again. Then `maestro config <c> [param flags]` shows each value with its layer, file and line. Done when both exit 0.
 
 ## Reference
