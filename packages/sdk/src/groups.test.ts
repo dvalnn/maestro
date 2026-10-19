@@ -107,6 +107,33 @@ describe("parMap", () => {
 		});
 	});
 
+	test.each<[string, (...args: unknown[]) => unknown, string]>([
+		["iter.map", iter.map as never, "'onError'"],
+		["iter.parMap", iter.parMap as never, "'onError'"],
+		[
+			"iter.fold",
+			((items: unknown) =>
+				iter.fold(items as never, undefined as never)) as never,
+			"'first' and 'step'",
+		],
+		[
+			"loop.while",
+			((cond: never) => loop.while(cond, undefined as never)) as never,
+			"'init', 'step' and 'max'",
+		],
+		[
+			"loop.doWhile",
+			((cond: never) => loop.doWhile(cond, undefined as never)) as never,
+			"'init', 'step' and 'max'",
+		],
+	])("%s without options fails with TYPE.options", (what, call, needs) => {
+		const error = diagnose(() => buildOf(() => call(["a"], () => task())));
+		expect(error).toMatchObject({
+			code: "TYPE.options",
+			message: `${what} needs an options argument with ${needs}`,
+		});
+	});
+
 	test("a key function of a parMap or parFind is emitted as a worker", () => {
 		const items = [{ name: "x" }, { name: "x" }];
 		const ir = buildOf(() => {

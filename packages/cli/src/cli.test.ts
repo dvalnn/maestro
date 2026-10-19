@@ -160,8 +160,8 @@ describe("compose and config", () => {
 			}),
 		);
 		const text = (await w.call(["config", ...GREET, ...SET])).out;
-		expect(text).toMatch(/^packs .*workspace .*config\.yaml:1$/m);
-		expect(text).toMatch(/^concurrency +3 +flag +-c concurrency=3$/m);
+		expect(text).toMatch(/^packs +workspace +.*config\.yaml:1$/m);
+		expect(text).toMatch(/^concurrency +flag +3 +-c concurrency=3$/m);
 	});
 
 	test("--out of a pack writes an IR that performs, and of a bare file writes its bundle beside it", async () => {

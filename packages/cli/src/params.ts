@@ -47,7 +47,7 @@ export type ParamRequest = {
 	compositions: readonly Described[];
 	/** The name of the composition to build. */
 	root: string;
-	/** The root's example input set, which fills params no config file or flag gives (D-19). */
+	/** The root's example input set, which fills params no config file or flag gives (D-19). Absent when the verb reads none. */
 	example?: Readonly<Record<string, unknown>>;
 	/** The root's param values given as flags, by param name. */
 	flags?: Readonly<Record<string, unknown>>;
@@ -74,6 +74,7 @@ type Reading = {
 	path: KeyPath;
 	root: boolean;
 	bare: boolean;
+	examples: boolean;
 };
 
 /** A param's name in a diagnostic: with its flag for the root, else by its config key. */
@@ -135,14 +136,13 @@ function typed(
 	return { value: result };
 }
 
-/** What to do about a missing root param: a bare file has no config key to set, only its example set. */
+/** What to do about a missing root param: the flag, the config key a pack has, the example set a verb reads. */
 function requiredHint(r: Reading, name: string): string {
 	const flag = flagOf(name);
-	if (!r.bare)
-		return `Pass ${flag}, or set '${[...r.path, name].join(".")}' in the config`;
-	return r.composition.examples.length
-		? `Pass ${flag}, or give it in the composition's example set`
-		: `Pass ${flag}`;
+	const ways = [`Pass ${flag}`];
+	if (!r.bare) ways.push(`set '${[...r.path, name].join(".")}' in the config`);
+	if (r.examples) ways.push("give it in the composition's example set");
+	return ways.join(", or ");
 }
 
 /** The diagnostics that stop `name` before its value is read: a root param that is missing, or takes an artifact. */
@@ -288,6 +288,7 @@ export function paramValues(request: ParamRequest): Params {
 			path: [pack, composition.name],
 			root: composition.name === root,
 			bare: request.bare ?? false,
+			examples: request.example !== undefined,
 		});
 		if ("diagnostics" in read) diagnostics.push(...read.diagnostics);
 		else configured[composition.name] = read.value as Record<string, unknown>;

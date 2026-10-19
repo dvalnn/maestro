@@ -171,22 +171,35 @@ describe("param values", () => {
 		]);
 	});
 
-	test("a bare file's missing param names only the flag, and the example set when it has one", async () => {
-		const pack = await demo();
-		const request = (examples: Record<string, unknown>[]) => ({
-			layers: [],
-			pack: "demo",
-			compositions: pack.compositions.map((c) => ({ ...c, examples })),
-			root: "greet",
-			hosts: [fakeHost()],
-			bare: true,
-		});
-		const hints = (examples: Record<string, unknown>[]) =>
-			refusal(() => paramValues(request(examples)))[0]?.[2];
-		expect(hints([])).toBe("Pass --name");
-		expect(hints([{ loud: 1 }])).toBe(
+	test.each<[string, boolean, boolean, string]>([
+		["a bare file with no example set", true, false, "Pass --name"],
+		[
+			"a bare file with an example set",
+			true,
+			true,
 			"Pass --name, or give it in the composition's example set",
-		);
+		],
+		[
+			"a pack with an example set",
+			false,
+			true,
+			"Pass --name, or set 'demo.greet.name' in the config, or give it in the composition's example set",
+		],
+	])("the required hint of %s", async (_, bare, given, hint) => {
+		const pack = await demo();
+		expect(
+			refusal(() =>
+				paramValues({
+					layers: [],
+					pack: "demo",
+					compositions: pack.compositions,
+					root: "greet",
+					example: given ? { loud: 1 } : undefined,
+					hosts: [fakeHost()],
+					bare,
+				}),
+			)[0]?.[2],
+		).toBe(hint);
 	});
 });
 

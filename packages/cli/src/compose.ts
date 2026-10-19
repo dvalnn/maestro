@@ -111,8 +111,8 @@ export const config: Command = {
 			table(
 				rows.map((r) => [
 					r.key,
-					JSON.stringify(r.value),
 					r.layer,
+					JSON.stringify(r.value),
 					r.file ? `${r.file}:${r.line}` : (r.flag ?? ""),
 				]),
 			),

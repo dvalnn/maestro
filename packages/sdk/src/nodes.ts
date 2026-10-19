@@ -413,6 +413,20 @@ function collected<B extends Body>(
 	return typed(new ResultImpl(group.id));
 }
 
+/** @throws `TYPE.options` when `what` is called without its options argument, for a caller the types do not reach. */
+function requireOptions(
+	what: string,
+	needs: string,
+	opts: unknown,
+): asserts opts is object {
+	if (opts) return;
+	throw fail(
+		"TYPE.options",
+		`${what} needs an options argument with ${needs}`,
+		`Pass an options object with ${needs}`,
+	);
+}
+
 /**
  * One body instance per item, all at once. Build-time items are keyed by `itemKey`, and a duplicate key throws
  * `SCOPE.key`. A key function is called only at perform, where a duplicate key fails the group.
@@ -422,6 +436,7 @@ function parMap<I extends Items<unknown>, B extends Body>(
 	body: (item: Ref<ItemOf<I>>) => B,
 	opts: ParMapOptions<ItemOf<I>> & Bound<I>,
 ): Result<MapResults<MemberOf<B>>> {
+	requireOptions("iter.parMap", "'onError'", opts);
 	return collected("parMap", items, body, opts, {
 		onError: opts.onError,
 		key: keyOf(opts.key),
@@ -434,6 +449,7 @@ function map<I extends Items<unknown>, B extends Body>(
 	body: (item: Ref<ItemOf<I>>) => B,
 	opts: MapOptions & Bound<I>,
 ): Result<MapResults<MemberOf<B>>> {
+	requireOptions("iter.map", "'onError'", opts);
 	return collected("map", items, body, opts, { onError: opts.onError });
 }
 
@@ -515,6 +531,7 @@ function fold<I extends Items<unknown>, O extends Types>(
 	items: I,
 	opts: FoldOptions<ItemOf<I>, O> & Bound<I>,
 ): Result<O> {
+	requireOptions("iter.fold", "'first' and 'step'", opts);
 	const { group, item } = openGroup(
 		"fold",
 		items,
@@ -655,8 +672,9 @@ function openLoop<O extends Types>(
 	opts: LoopOptions<O>,
 	at: LoopNode["test"]["at"],
 ) {
-	const init: unknown = opts.init;
 	const name = at === "start" ? "loop.while" : "loop.doWhile";
+	requireOptions(name, "'init', 'step' and 'max'", opts);
+	const init: unknown = opts.init;
 	if (!(init instanceof ResultImpl))
 		throw fail(
 			"TYPE.member",
