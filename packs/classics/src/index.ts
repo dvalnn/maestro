@@ -6,5 +6,5 @@ export {
 	traceOf,
 } from "./code";
 export { buildThenRepair, repairUntilGreen } from "./repair";
-export { review } from "./review";
+export { panelReview } from "./review";
 export { vModel } from "./v-model";

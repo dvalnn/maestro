@@ -25,4 +25,4 @@ fi
 
 mkdir -p "$root"
 cd "$repo"
-exec bun packs/repertoire/acceptance/setup.ts "$task" "$root/$name" "${args[@]}"
+exec bun packs/classics/acceptance/setup.ts "$task" "$root/$name" "${args[@]}"

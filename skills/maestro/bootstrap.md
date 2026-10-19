@@ -33,16 +33,16 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
      since a model is spend: ask the user for its harness and model.
    - `packs`: each installed pack's directory, absolute or relative to the workspace root (the directory that holds
      `.maestro/`) in a workspace file. A list replaces the lower layer's, so to add to the user file's packs write
-     `packs: !append [<dir>]`. The release ships the repertoire as `repertoire-<version>.tar.gz` beside the binary;
+     `packs: !append [<dir>]`. The release ships the classics pack as `classics-<version>.tar.gz` beside the binary;
      install it into the packs directory, then list the printed directory:
 
      ```sh
      packs="${XDG_DATA_HOME:-$HOME/.local/share}/maestro/packs"
-     mkdir -p "$packs" && tar -xzf repertoire-<version>.tar.gz -C "$packs" && echo "$packs/repertoire"
+     mkdir -p "$packs" && tar -xzf classics-<version>.tar.gz -C "$packs" && echo "$packs/classics"
      ```
 
      ```yaml
-     packs: [/home/me/.local/share/maestro/packs/repertoire]
+     packs: [/home/me/.local/share/maestro/packs/classics]
      ```
 
    - Optional: `caps`, `sandbox.readOnly`, `concurrency`, and composition params (see the example).
@@ -77,7 +77,7 @@ roles:
   builder: { harness: claude, model: sonnet, thinking: high }
   reviewer: { harness: pi, model: anthropic/claude-opus-4-1, thinking: medium }
 
-packs: [/home/me/.local/share/maestro/packs/repertoire] # absolute: paths are not expanded
+packs: [/home/me/.local/share/maestro/packs/classics] # absolute: paths are not expanded
 
 caps:
   repo.agent: 12 # compose refuses a plan that may start more than 12 agents: a spend guard
@@ -85,7 +85,7 @@ caps:
 sandbox:
   readOnly: [/home/me/docs] # bound read-only into every agent and check
 
-repertoire: # composition params, under <pack>: <composition>: <param>
+classics: # composition params, under <pack>: <composition>: <param>
   build_then_repair:
     maxRepairs: 3
 ```

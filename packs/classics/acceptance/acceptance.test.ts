@@ -40,7 +40,7 @@ import lensIdentity from "../src/prompts/lens.md" with { type: "text" };
 import plannerIdentity from "../src/prompts/planner.md" with { type: "text" };
 import scoutIdentity from "../src/prompts/scout.md" with { type: "text" };
 import { buildThenRepair } from "../src/repair";
-import { review } from "../src/review";
+import { panelReview } from "../src/review";
 import { vModel } from "../src/v-model";
 import { diff, maestroTrace, sssfTrace } from "./compare";
 import { BASE, git, rolesOn, setup } from "./setup";
@@ -48,7 +48,7 @@ import { TASKS, type TaskName } from "./tasks";
 
 const dirs: string[] = [];
 const tmp = () => {
-	const dir = mkdtempSync(join(tmpdir(), "repertoire-"));
+	const dir = mkdtempSync(join(tmpdir(), "classics-"));
 	dirs.push(dir);
 	return dir;
 };
@@ -220,7 +220,7 @@ test("a review keeps the findings its skeptics upheld, and notes a lens that did
 		done(req),
 	]);
 	const ir = buildIr(
-		review,
+		panelReview,
 		{
 			request: TASKS.t1.request,
 			change: lane,

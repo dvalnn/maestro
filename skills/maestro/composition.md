@@ -5,7 +5,7 @@ surface, and a worked example. Done when the file composes and a stub concert of
 
 ## Steps
 
-1. **Check the repertoire first.** A shape it already has is a param set away; a new file is for a shape it lacks.
+1. **Check the classics pack first.** A shape it already has is a param set away; a new file is for a shape it lacks.
 2. **Write the file** at `.maestro/<id>.ts` in the workspace, by the file rules below, starting from the worked example.
    Done when it holds one exported composition with an example set.
 3. **Compose it:** `maestro compose .maestro/<id>.ts`. For each diagnostic, read its code and hint, fix the file, and

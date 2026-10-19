@@ -99,10 +99,10 @@ Read [running.md](running.md), section Recover, for resume's refusals and `--pro
 
 A stub concert rehearses a composition for free: stub agents change nothing and reply `ok`, while checks run for real,
 so a check that depends on an agent's change stays red. A stub agent writes no declared output either, so the first
-agent that declares one ends the concert: `repertoire.review` fails and `repertoire.v_model` rejects early, having still
-proved config, roles, lanes and checks. Use one to try a flow, or whenever the user asks for no spend. Map every role
-the composition names to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose,
-perform and resume. For repertoire 0.1.0-beta.1's six roles:
+agent that declares one ends the concert: `classics.panel_review` fails and `classics.v_model` rejects early, having
+still proved config, roles, lanes and checks. Use one to try a flow, or whenever the user asks for no spend. Map every
+role the composition names to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose,
+perform and resume. For the classics pack 0.1.0-beta.1's six roles:
 
 ```yaml
 roles:
@@ -114,23 +114,23 @@ roles:
   documenter: { harness: stub, model: none }
 ```
 
-## The repertoire
+## The classics pack
 
-maestro's release ships one pack, `repertoire`:
+maestro's release ships one pack, `classics`:
 
-- `repertoire.build_then_repair`: builds the request in a fresh lane, repairs while the checks are red, and leaves a
+- `classics.build_then_repair`: builds the request in a fresh lane, repairs while the checks are red, and leaves a
   changeset.
-- `repertoire.review`: reviews a lane version through each lens, a skeptic weighing each lens's findings, then
+- `classics.panel_review`: reviews a lane version through each lens, a skeptic weighing each lens's findings, then
   consolidates.
-- `repertoire.v_model`: scouts, plans, builds and repairs, reviews each scouted risk, and traces acceptance to the plan.
-- `repertoire.repair_until_green`: the repair loop the others use; it is not performed alone.
+- `classics.v_model`: scouts, plans, builds and repairs, reviews each scouted risk, and traces acceptance to the plan.
+- `classics.repair_until_green`: the repair loop the others use; it is not performed alone.
 
-Installed, it is `<packs dir>/repertoire`, listed under `packs`, and its `README.md` there gives each composition's
-roles and params. Missing: install it by [bootstrap.md](bootstrap.md), step 3.
+Installed, it is `<packs dir>/classics`, listed under `packs`, and its `README.md` there gives each composition's roles
+and params. Missing: install it by [bootstrap.md](bootstrap.md), step 3.
 
 ## Writing
 
-- A shape the repertoire lacks is a new composition: read [composition.md](composition.md).
+- A shape the classics pack lacks is a new composition: read [composition.md](composition.md).
 - A set of compositions to share or install elsewhere is a pack: read [packs.md](packs.md).
 
 ## Ground rules

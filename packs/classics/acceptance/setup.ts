@@ -85,7 +85,7 @@ export async function setup(
 		join(dir, ".maestro/config.yaml"),
 		`${JSON.stringify(config, null, 2)}\n`,
 	);
-	const line = `cd ${dir} && maestro perform repertoire.build_then_repair --request '${task.request}' --max-repairs ${task.maxRepairs}`;
+	const line = `cd ${dir} && maestro perform classics.build_then_repair --request '${task.request}' --max-repairs ${task.maxRepairs}`;
 	return { target, line };
 }
 

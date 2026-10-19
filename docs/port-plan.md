@@ -38,12 +38,12 @@ packages/
   sdk/              authoring API, stdlib
   testkit/          fake host, assertions, stub concert
   cli/              commands, flags, formats, exit codes
-  host-repo/      agent and check kinds, lanes, sandbox, harness interface
-  host-repo-sdk/  typed constructors and types for the agent host
+  host-repo/        agent and check kinds, lanes, sandbox, harness interface
+  host-repo-sdk/    typed constructors and types for the agent host
   harness-<name>/   one adapter each
   render-text/      the text forms of a plan: summary, listing, Mermaid. The live view is `render-text/live`
 packs/
-  repertoire/       the ported compositions, built into dist/ by `just pack`; acceptance/ holds the comparison
+  classics/         the ported compositions, built into dist/ by `just pack`; acceptance/ holds the comparison
 docs/               these documents (including adr/), slice reports under reports/
 ```
 

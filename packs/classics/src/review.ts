@@ -179,8 +179,8 @@ function round(
 	return { lens: found, skeptic: challenged };
 }
 
-export const review = composition(
-	"review",
+export const panelReview = composition(
+	"panel_review",
 	{
 		doc: "Review a lane version: a lens per lens name, a skeptic of another model family over each lens that found anything, then a consolidator.",
 		params: {

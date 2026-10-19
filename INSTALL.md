@@ -24,7 +24,7 @@ sha256sum -c --ignore-missing SHA256SUMS
 | Asset                                                                                          | Holds                                |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------ |
 | `maestro-linux-x64`                                                                            | The binary.                          |
-| `repertoire-<version>.tar.gz`                                                                  | The repertoire pack.                 |
+| `classics-<version>.tar.gz`                                                                    | The classics pack.                   |
 | `maestro-skill.tar.gz`                                                                         | The maestro skill.                   |
 | `maestro-ir-<version>.tgz`, `maestro-sdk-<version>.tgz`, `maestro-host-repo-sdk-<version>.tgz` | The packages for authoring (step 6). |
 | `SHA256SUMS`                                                                                   | The checksums.                       |
@@ -35,7 +35,7 @@ sha256sum -c --ignore-missing SHA256SUMS
 install -D -m 755 maestro-linux-x64 ~/.local/bin/maestro
 maestro --version
 mkdir -p ~/.local/share/maestro/packs
-tar -xzf repertoire-0.1.0-beta.1.tar.gz -C ~/.local/share/maestro/packs
+tar -xzf classics-0.1.0-beta.1.tar.gz -C ~/.local/share/maestro/packs
 mkdir -p ~/.claude/skills
 tar -xzf maestro-skill.tar.gz -C ~/.claude/skills
 ```
@@ -53,18 +53,18 @@ Config keys are in [`packages/cli/README.md`](packages/cli/README.md).
   (lines run on each checked-out lane, such as a dependency install) and `sparse` (directories, or `{ patterns }` of
   gitignore-style patterns, a lane checks out).
 - A profile `.maestro/profiles/stub.yaml` moves the roles to the built-in `stub` harness, which replies ok and writes no
-  outputs. Run with `--profile stub` to spend nothing: `build_then_repair` runs to completion, while `review` and
+  outputs. Run with `--profile stub` to spend nothing: `build_then_repair` runs to completion, while `panel_review` and
   `v_model` fail at their first agent that declares outputs.
 
-The repertoire names six roles and no models, and its [README](packs/repertoire/README.md) holds each composition's
+The classics pack names six roles and no models, and its [README](packs/classics/README.md) holds each composition's
 roles and params: `scout`, `planner`, `builder`, `reviewer`, `skeptic` and `documenter`. `build_then_repair` needs only
-`builder`, `review` needs `reviewer` and `skeptic`, and `v_model` needs all six. Model ids below are placeholders; use
-your own.
+`builder`, `panel_review` needs `reviewer` and `skeptic`, and `v_model` needs all six. Model ids below are placeholders;
+use your own.
 
 ```yaml
 # ~/.config/maestro/config.yaml
 packs:
-  - /home/me/.local/share/maestro/packs/repertoire
+  - /home/me/.local/share/maestro/packs/classics
 roles:
   scout: { harness: claude, model: <claude-model>, thinking: high }
   planner: { harness: claude, model: <claude-model>, thinking: high }
@@ -72,8 +72,8 @@ roles:
   reviewer: { harness: claude, model: <claude-model>, thinking: high }
   skeptic: { harness: pi, model: <provider>/<model>, thinking: high }
   documenter: { harness: claude, model: <claude-model>, thinking: high }
-repertoire:
-  review:
+classics:
+  panel_review:
     lensModel: <claude-model>
     skepticModel: <provider>/<model>
   v_model:
@@ -86,8 +86,8 @@ repertoire:
 
 - Claude: `harness: claude`, `model: sonnet` or `opus`, `thinking` as Claude's `--effort`.
 - pi: `harness: pi`, `model: <provider>/<model>` such as `github-copilot/gpt-5-mini`, `thinking` as pi's `--thinking`.
-- `lensModel` and `skepticModel` must come from different model families, or `review` and `v_model` fail to compose.
-  With a Claude lens, the skeptic needs pi.
+- `lensModel` and `skepticModel` must come from different model families, or `panel_review` and `v_model` fail to
+  compose. With a Claude lens, the skeptic needs pi.
 - `v_model` also takes `maxApproaches` (default 2), `maxRisks` (default 4) and `maxRepairs` (default 2), each an integer
   of at least 1. Its `request` is a flag.
 
@@ -114,8 +114,8 @@ roles:
 Compose before performing, then perform:
 
 ```sh
-maestro compose repertoire.build_then_repair --request "<what to build>"
-maestro perform repertoire.build_then_repair --request "<what to build>"
+maestro compose classics.build_then_repair --request "<what to build>"
+maestro perform classics.build_then_repair --request "<what to build>"
 ```
 
 ## 5. Upgrade

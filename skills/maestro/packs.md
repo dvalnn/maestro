@@ -102,7 +102,7 @@ Install and list under `packs` only packs the user chose.
 
 Extract the pack into the packs directory, `$XDG_DATA_HOME/maestro/packs` (default `~/.local/share/maestro/packs`), with
 `tar -xzf <pack>.tar.gz -C <that dir>`, and add `<that dir>/<id>` to `packs` in the user or workspace config, as
-SKILL.md's repertoire section shows. Then `maestro compose <id>.<composition>` loads it.
+SKILL.md's classics section shows. Then `maestro compose <id>.<composition>` loads it.
 
 ## Testing
 

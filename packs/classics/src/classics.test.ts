@@ -14,12 +14,12 @@ import { pack } from "../../../scripts/pack";
 import { BASE, rolesOn, setup } from "../acceptance/setup";
 import { dossierOf, survivorsOf, toMarkdown, traceOf } from "./code";
 import { EXAMPLE_REQUEST } from "./repair";
-import { review } from "./review";
+import { panelReview } from "./review";
 
 const MAESTRO = join(import.meta.dir, "../../../packages/cli/src/maestro.ts");
 const ROLE = { harness: "pi", model: "none" };
 const REVIEW = [
-	"repertoire.review",
+	"classics.panel_review",
 	"--request",
 	EXAMPLE_REQUEST,
 	"--change",
@@ -29,15 +29,15 @@ const REVIEW = [
 	"--skeptic-model",
 	"lab-b/skeptic",
 ];
-const BUILD = ["repertoire.build_then_repair", "--request", EXAMPLE_REQUEST];
+const BUILD = ["classics.build_then_repair", "--request", EXAMPLE_REQUEST];
 const SAME_FAMILY = ["--lens-model", "x/a", "--skeptic-model", "x/b"];
 const ASSERT_FAILED =
 	"skeptic model 'x/b' is of the family of lens model 'x/a'";
 
-/** Builds `review` with a lens and a skeptic on these models. */
+/** Builds `panel_review` with a lens and a skeptic on these models. */
 const reviewOn = (lensModel: string, skepticModel: string) =>
 	buildIr(
-		review,
+		panelReview,
 		{ request: EXAMPLE_REQUEST, change: "c.x", lensModel, skepticModel },
 		{ toMarkdown, survivorsOf },
 	);
@@ -73,7 +73,7 @@ async function maestro(...args: string[]) {
 }
 
 beforeAll(async () => {
-	root = mkdtempSync(join(tmpdir(), "repertoire-cli-"));
+	root = mkdtempSync(join(tmpdir(), "classics-cli-"));
 	const { target } = await setup("t1", root, ROLE);
 	config = {
 		packs: [await pack(join(import.meta.dir, ".."), join(root, "pack"))],
@@ -84,7 +84,7 @@ beforeAll(async () => {
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-describe("review", () => {
+describe("panel_review", () => {
 	test("composes to an exact count for three lenses", async () => {
 		const { out, code } = await maestro("compose", ...REVIEW, "--json");
 		expect(code).toBe(0);
@@ -109,15 +109,15 @@ describe("review", () => {
 	});
 
 	test("names a misspelt config key and the param it meant", async () => {
-		await configure({ repertoire: { review: { lensModle: "x/a" } } });
+		await configure({ classics: { panel_review: { lensModle: "x/a" } } });
 		const { err, code } = await maestro("compose", ...REVIEW).finally(() =>
 			configure(),
 		);
 		expect(code).toBe(2);
 		expect(err).toContain(
-			"CFG.unclaimed: config key 'repertoire.review.lensModle'",
+			"CFG.unclaimed: config key 'classics.panel_review.lensModle'",
 		);
-		expect(err).toContain("Did you mean 'repertoire.review.lensModel'?");
+		expect(err).toContain("Did you mean 'classics.panel_review.lensModel'?");
 	});
 
 	test("graphs the lens fan-out, the skeptic's guard and the collect into survivorsOf", async () => {
@@ -152,7 +152,7 @@ describe("build_then_repair", () => {
 });
 
 describe("v_model", () => {
-	const V_MODEL = "repertoire.v_model";
+	const V_MODEL = "classics.v_model";
 	const BOUNDED = [
 		V_MODEL,
 		"--request",
