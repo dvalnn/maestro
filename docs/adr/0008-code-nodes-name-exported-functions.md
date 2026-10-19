@@ -13,8 +13,8 @@ lambda or closure cannot be found again from the IR.
 build:
 
 - `code(fn)` makes one code node whose worker is `fn`.
-- A `map` key function is a worker reference on the group (IR `key`).
-- A predicate that needs code, such as an `until` that is not a Ref expression, is an exported code node.
+- A `parMap` or `parFind` key function is a worker reference on the group (IR `key`).
+- A predicate that needs code, such as a `loop` test that is not a Ref expression, is an exported code node.
 
 Build-time values reach a code node as `literals` (D-16), never through a closure, so the resume key sees them.
 
@@ -28,7 +28,7 @@ how:
   verdict's findings as it reads a host's.
 - The SDK types `code()` so the function is checked against its declared ports at compile time, and a function that can
   reject shows it in its inferred return type.
-- A `map` key function is `(item) => key`. It names members and is not a node.
+- A `parMap` or `parFind` key function is `(item) => key`. It names members and is not a node.
 
 **Resolution is the loader's.** The loader that loads a composition owns both directions:
 
@@ -64,8 +64,8 @@ copy bundled in a pack, so their behaviour is the engine's, versioned with it:
 - The resume key holds the stdlib version the engine will run, so an engine upgrade invalidates them.
 - A stdlib export the engine does not have is a compose error.
 
-Build-time callbacks that only shape the graph, such as a `map` body, a `repeat` step or an `until` that returns a Ref,
-run during build and are not code nodes.
+Build-time callbacks that only shape the graph, such as a `parMap` body, a `loop` step or a `loop` test that returns a
+Ref, run during build and are not code nodes.
 
 ## Considered options
 

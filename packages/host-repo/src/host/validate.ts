@@ -368,7 +368,7 @@ function targetProblems(setup: RepoSetup): Finding[] {
 			{
 				code: "HOST.target",
 				message: `target repository '${repo}' does not exist`,
-				hint: "Set 'target.repo' to an existing repository",
+				hint: "Set 'target.repo' relative to the config file's directory",
 			},
 		];
 	if (!existsSync(join(repo, GIT_ENTRY)))
@@ -376,7 +376,7 @@ function targetProblems(setup: RepoSetup): Finding[] {
 			{
 				code: "HOST.target",
 				message: `target repository '${repo}' is not a git repository`,
-				hint: "Set 'target.repo' relative to the config file's directory",
+				hint: "Point 'target.repo' at a git repository",
 			},
 		];
 	return [];

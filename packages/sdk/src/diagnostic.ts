@@ -5,7 +5,7 @@ import type { Diagnostic, SourceLocation } from "@maestro/ir";
  * A build error, carrying its diagnostic. `code` is `<prefix>.<case>`, and the prefix is sdk-spec 13.3's:
  * - `REF`: a Ref used as a plain value (`REF.value`), fed to a param (`REF.param`), used outside the body or build
  *   that made it (`REF.escape`), or not a `Ref<Bool>` where a guard, a condition or an `assert` needs one (`REF.bool`).
- * - `SCOPE`: a duplicate id (`SCOPE.duplicate`), a duplicate map item key (`SCOPE.key`), a function the loader cannot
+ * - `SCOPE`: a duplicate id (`SCOPE.duplicate`), a duplicate item key (`SCOPE.key`), a function the loader cannot
  *   name (`SCOPE.export`), a bad name or label (`SCOPE.name`), a composition with ports built alone (`SCOPE.ports`),
  *   a constructor called outside a build (`SCOPE.build`).
  * - `BUILD`: an ambient read during build (`BUILD.ambient`), two builds that differ (`BUILD.unstable`).

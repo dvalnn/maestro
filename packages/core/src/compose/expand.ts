@@ -10,6 +10,8 @@ import {
 	type Ir,
 	isGroup,
 	itemKey,
+	type ParFindNode,
+	type ParMapNode,
 	type Plan,
 } from "@maestro/ir";
 import type { ExpansionOf } from "./bounds";
@@ -93,9 +95,9 @@ const starts = (s: Expanding, group: GroupNode, keys: readonly string[]) =>
 				innerValue(s, group, e.from, keys)?.value === true,
 		);
 
-/** A parMap's item keys (D-18), or the `SCOPE.key` error of two items keyed alike. */
-function mapKeys(
-	group: GroupNode,
+/** A `parMap` or `parFind`'s item keys (D-18), or the `SCOPE.key` error of two items keyed alike. */
+function groupKeys(
+	group: ParMapNode | ParFindNode,
 	name: string,
 	items: readonly unknown[],
 ): string[] | Diagnostic {
@@ -105,15 +107,37 @@ function mapKeys(
 	return error(
 		"SCOPE.key",
 		group.id,
-		`parMap '${name}' gives items ${dup.first} and ${dup.second} the same key '${dup.key}'`,
-		`Give parMap '${group.id}' a key function, or make its items distinct`,
+		`${group.kind} '${name}' gives items ${dup.first} and ${dup.second} the same key '${dup.key}'`,
+		`Give ${group.kind} '${group.id}' a key function, or make its items distinct`,
 	);
+}
+
+/**
+ * Expands a `parMap` or `parFind` over a plain list, after checking its keys. A `parFind` stays a region, since its
+ * count depends on the first member to settle.
+ */
+function keyedExpansion(
+	s: Expanding,
+	group: ParMapNode | ParFindNode,
+	name: string,
+	items: readonly unknown[],
+	region: Expanded,
+): Expanded {
+	const expands = group.kind === "parMap";
+	if (group.key)
+		return expands ? { expansion: { exact: items.length }, items: [] } : region;
+	const named = groupKeys(group, name, items);
+	if (!Array.isArray(named)) {
+		s.diagnostics.push(named);
+		return region;
+	}
+	return expands ? { expansion: { keys: named }, items } : region;
 }
 
 /**
  * How a group instance expands:
  * - a `parMap` over a plain list into one instance per item, counted when a key function names them, as that is called
- *   only at perform (ADR 0009);
+ *   only at perform (ADR 0009), and a `parFind` over one is checked for duplicate keys the same way;
  * - a `map` or `fold` over a plain list into one instance per index;
  * - anything else, or a group with a guard compose does not know true, stays a region of up to its bound (CORE-05).
  */
@@ -143,11 +167,8 @@ function expansionOf(
 	}
 	if (group.kind === "map" || group.kind === "fold")
 		return { expansion: { keys: items.map((_, i) => String(i)) }, items };
-	if (group.kind !== "parMap") return region;
-	if (group.key) return { expansion: { exact: items.length }, items: [] };
-	const named = mapKeys(group, name, items);
-	if (Array.isArray(named)) return { expansion: { keys: named }, items };
-	s.diagnostics.push(named);
+	if (group.kind === "parMap" || group.kind === "parFind")
+		return keyedExpansion(s, group, name, items, region);
 	return region;
 }
 

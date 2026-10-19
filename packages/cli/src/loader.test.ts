@@ -49,11 +49,13 @@ const golden = async (name: string) => {
 	return parsed.ir;
 };
 
-/** Every worker reference in `ir`: each code node's worker and each parMap's key function. */
+/** Every worker reference in `ir`: each code node's worker and each `parMap` or `parFind` key function. */
 const refsOf = (ir: Ir): WorkerRef[] =>
 	ir.nodes.flatMap((n) => {
 		if (n.kind === "code") return [n.worker];
-		return n.kind === "parMap" && n.key ? [n.key] : [];
+		return (n.kind === "parMap" || n.kind === "parFind") && n.key
+			? [n.key]
+			: [];
 	});
 
 const workerOf = (ir: Ir, id: string) => {
@@ -316,7 +318,7 @@ describe("an IR file", () => {
 			}),
 		],
 		[
-			"a file naming a map's key function",
+			"a file naming a group's key function",
 			async () => ({
 				ir: await golden("guards-and-escalation.json"),
 				from: GOLDEN,

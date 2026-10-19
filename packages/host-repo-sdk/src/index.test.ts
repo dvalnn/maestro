@@ -3,7 +3,11 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join as joinPath } from "node:path";
 import { concertDirs } from "@maestro/core/perform";
-import { repoHost } from "@maestro/host-repo";
+import {
+	AGENT_IN_PORTS as HOST_IN_PORTS,
+	AGENT_OUT_PORTS as HOST_OUT_PORTS,
+	repoHost,
+} from "@maestro/host-repo";
 import { type HarnessRequest, stubHarness } from "@maestro/host-repo/harness";
 import type { ArtifactRef, Ir, IrNode } from "@maestro/ir";
 import { BuildError, composition, type Ref, Text } from "@maestro/sdk";
@@ -11,6 +15,8 @@ import * as stdlib from "@maestro/sdk/stdlib";
 import { buildIr, composeIr, stubConcert } from "@maestro/testkit";
 import { buildThenRepair, byFinding, fold, review } from "./fixtures/examples";
 import {
+	AGENT_IN_PORTS,
+	AGENT_OUT_PORTS,
 	agent,
 	apply,
 	changeset,
@@ -231,23 +237,35 @@ test("every option of agent, check and apply composes against the repo host", as
 	expect(await repo().composeIt(ir)).toMatchObject({ ok: true });
 });
 
-test("an attachment or output named after an agent's own port is a build error", () => {
-	for (const name of ["prompt", "lane", "report"])
-		for (const field of ["attachments", "out"]) {
-			const clash = composition("clash", { examples: [{}] }, () => {
-				const first = agent({ task: "a", lane: fresh(), role: "builder" });
-				return agent({
-					task: "b",
-					lane: fresh(),
-					role: "builder",
-					[field]:
-						field === "out"
-							? { [name]: MarkdownOut("x.md") }
-							: { [name]: { artifact: first.out.report, hint: "now" } },
-				});
+test("the agent's own port names are the host's, and each is refused only on the side that has it", () => {
+	expect(AGENT_IN_PORTS).toEqual(HOST_IN_PORTS);
+	expect(AGENT_OUT_PORTS).toEqual(HOST_OUT_PORTS);
+	const refused = (field: "attachments" | "out", name: string) => {
+		const clash = composition("clash", { examples: [{}] }, () => {
+			const first = agent({ task: "a", lane: fresh(), role: "builder" });
+			return agent({
+				task: "b",
+				lane: fresh(),
+				role: "builder",
+				[field]:
+					field === "out"
+						? { [name]: MarkdownOut("x.md") }
+						: { [name]: { artifact: first.out.report, hint: "now" } },
 			});
-			expect(buildCode(() => buildIr(clash))).toBe("SCOPE.name");
+		});
+		try {
+			buildIr(clash);
+			return false;
+		} catch (error) {
+			if (error instanceof BuildError)
+				return error.diagnostic.code === "SCOPE.name";
+			throw error;
 		}
+	};
+	for (const name of ["prompt", "identity", "lane", "report", "staged"]) {
+		expect(refused("attachments", name)).toBe(AGENT_IN_PORTS.includes(name));
+		expect(refused("out", name)).toBe(AGENT_OUT_PORTS.includes(name));
+	}
 });
 
 test("only a lane input resumes, only an agent takes it, and apply takes one changeset", () => {

@@ -9,6 +9,7 @@ import {
 	configDiagnostic,
 	coreConfig,
 	coreDefaults,
+	type KeyPath,
 	type Layer,
 	type LayerName,
 	layered,
@@ -16,7 +17,7 @@ import {
 	schemaErrors,
 	valuesLayer,
 } from "@maestro/core/config";
-import { HOST_PATHS } from "@maestro/host-repo";
+import type { Host } from "@maestro/core/host";
 import type { JsonSchema } from "@maestro/ir";
 import { validator } from "@maestro/ir";
 
@@ -35,13 +36,19 @@ export const CLI_CONFIG: Readonly<Record<string, JsonSchema>> = {
 	[PACKS]: { type: "array", items: { type: "string", minLength: 1 } },
 };
 
-const PATH_KEYS = [...CORE_PATHS, ...HOST_PATHS, [PACKS]];
+/** The key paths whose relative values are anchored to their config file: core's, the CLI's and each host's. */
+const pathKeys = (hosts: readonly Host[]) => [
+	...CORE_PATHS,
+	...hosts.flatMap((h) => h.paths ?? []),
+	[PACKS],
+];
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
 export type ConfigRequest = {
 	cwd: string;
 	env: Environment;
+	hosts: readonly Host[];
 	/** The name given to `--profile`. */
 	profile?: string;
 };
@@ -78,10 +85,11 @@ function xdg(env: Environment, variable: string, fallback: string): string {
 async function fileLayer(
 	file: string,
 	layer: LayerName,
+	paths: readonly KeyPath[],
 ): Promise<Layer | undefined> {
 	const found = Bun.file(file);
 	if (!(await found.exists())) return undefined;
-	return parseLayer(await found.text(), { file, layer, paths: PATH_KEYS });
+	return parseLayer(await found.text(), { file, layer, paths });
 }
 
 const refused = (message: string, hint: string) =>
@@ -90,6 +98,7 @@ const refused = (message: string, hint: string) =>
 async function profileLayer(
 	name: string,
 	workspace: string | undefined,
+	paths: readonly KeyPath[],
 ): Promise<Layer> {
 	if (basename(name) !== name)
 		throw refused(
@@ -103,7 +112,7 @@ async function profileLayer(
 		);
 	const dir = join(workspace, WORKSPACE_DIR, PROFILES_DIR);
 	const file = join(dir, `${name}${PROFILE_EXTENSION}`);
-	const found = await fileLayer(file, "profile");
+	const found = await fileLayer(file, "profile", paths);
 	if (!found)
 		throw refused(
 			`--profile ${name} names no file: ${file} does not exist`,
@@ -126,21 +135,27 @@ async function profileLayer(
 export async function loadConfig({
 	cwd,
 	env,
+	hosts,
 	profile,
 }: ConfigRequest): Promise<LoadedConfig> {
 	const workspace = await workspaceOf(cwd);
 	const dataRoot = join(xdg(env, "XDG_DATA_HOME", ".local/share"), APP);
+	const paths = pathKeys(hosts);
 	const files = [
 		await fileLayer(
 			join(xdg(env, "XDG_CONFIG_HOME", ".config"), APP, CONFIG_FILE),
 			"user",
+			paths,
 		),
 		workspace &&
 			(await fileLayer(
 				join(workspace, WORKSPACE_DIR, CONFIG_FILE),
 				"workspace",
+				paths,
 			)),
-		profile === undefined ? undefined : await profileLayer(profile, workspace),
+		profile === undefined
+			? undefined
+			: await profileLayer(profile, workspace, paths),
 	];
 	const layers = [
 		coreDefaults(dataRoot, workspace ? basename(workspace) : ""),

@@ -1,3 +1,4 @@
+import type { KeyPath } from "@maestro/core/config";
 import type { HostSetup } from "@maestro/core/host";
 import {
 	CORE_TYPES,
@@ -20,7 +21,7 @@ export const LANE_TYPE = "repo.lane";
 /** The port a lane version travels on, in and out. */
 export const LANE_PORT = "lane";
 /** Input ports every agent has; an attachment takes none of these names. */
-const AGENT_IN_PORTS = ["prompt", "identity", LANE_PORT];
+export const AGENT_IN_PORTS = ["prompt", "identity", LANE_PORT];
 /** The port an apply node takes its changeset on. */
 export const CHANGESET_PORT = "changeset";
 
@@ -51,7 +52,7 @@ const INLINE_CHECK = {
 } as const;
 
 /** The host's config key paths that hold file paths. */
-export const HOST_PATHS: readonly (readonly string[])[] = [["target", "repo"]];
+export const HOST_PATHS: readonly KeyPath[] = [["target", "repo"]];
 
 /** The config namespaces the host owns. */
 export const HOST_CONFIG = {
@@ -118,7 +119,7 @@ const AGENT_LANE_INPUT = {
 } as const;
 
 /** Output ports every agent has; a declared output takes none of these names. */
-const AGENT_PORTS = [LANE_PORT, "report", "staged"];
+export const AGENT_OUT_PORTS = [LANE_PORT, "report", "staged"];
 
 const OUTBOX_FILE = {
 	type: "string",
@@ -157,7 +158,7 @@ export const AGENT_CONFIG = {
 		},
 		out: {
 			type: "object",
-			propertyNames: { not: { enum: AGENT_PORTS } },
+			propertyNames: { not: { enum: AGENT_OUT_PORTS } },
 			additionalProperties: {
 				oneOf: [
 					{

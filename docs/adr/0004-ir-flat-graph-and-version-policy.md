@@ -14,11 +14,12 @@ IR 1.0 (`packages/ir`, CORE-16, IR-01) fixes three things that every emitter and
 2. **Flat graph.** Nodes, scopes and edges are flat lists, and nodes and scopes share one id space. Nesting is the id
    itself: an id is a path, each proper prefix of it a declared scope or group node, and its last segment the node's
    name. Scopes are presentation and cache structure. Only groups change execution.
-3. **Explicit group ports.** A group declares `in`, `inner` (what its body reads: `item`, or a `repeat`'s previous state
-   and `index`) and `out` (what leaves it: a map's `results`, or a `seq`/`repeat` member's outputs). It names its
-   `members` (result name to body node, several for a map body that returns several results) and its `until` node in the
-   body. Edges never leave a body except through the group's `out`. Fan-in is a `collect` edge from a map's `results`.
-   Guards and tolerance are `control` edges, as architecture section 5 says.
+3. **Explicit group ports.** A group declares `in`, `inner` (what its body reads: `item`, or the state and `index` of a
+   `loop` or `fold`) and `out` (what leaves it: the `results` of a `parMap` or `map`, or the outputs of the member a
+   `find`, `parFind`, `fold` or `loop` mirrors). It names its `members` (result name to body node, several for a
+   `parMap` or `map` body that returns several results; a `fold` names `first` and `step`) and a `loop` its `test`.
+   Edges never leave a body except through the group's `out`. Fan-in is a `collect` edge from a `parMap` or `map`'s
+   `results`. Guards and tolerance are `control` edges, as architecture section 5 says.
 
 ## Considered options
 
@@ -30,16 +31,16 @@ IR 1.0 (`packages/ir`, CORE-16, IR-01) fixes three things that every emitter and
   older maestro tells the operator to upgrade instead.
 - **`tolerate` on data edges.** Fewer edges, but it contradicts architecture section 5, which puts tolerance on control
   edges. Kept as the architecture says.
-- **Selecting a `seq`/`repeat` result field by a field-read code node.** Uniform, but a Result handle's ports are
+- **Selecting a mirrored member's result field by a field-read code node.** Uniform, but a Result handle's ports are
   structure, not data (sdk-spec section 5). A host value such as a handle that may be consumed only once would then pass
   through a code node. Rejected for mirrored ports.
 
 ## Consequences
 
-- The IR has no default for `map.onError`, and neither has the SDK (ADR 0006).
-- A `map` member result is a record keyed by result name, which covers the object-returning bodies of sdk-spec
-  section 14. A `seq` or `repeat` takes exactly one member in 1.0, because its ports mirror that member. Allowing
-  several later relaxes a rule and is a minor change.
+- The IR has no default for `parMap.onError` or `map.onError`, and neither has the SDK (ADR 0006).
+- A `parMap` or `map` member value is the outputs of its body's one result, or a record `{ name: outputs }` by result
+  name when the body returns several. A `find`, `parFind` or `loop` takes exactly one member in 1.0, because its ports
+  mirror that member. Allowing several later relaxes a rule and is a minor change.
 - A fan-in over non-ok inputs (`firstOk([a, b])`, where `a` may be skipped) needs no edge marker: a `fanin` node
   receives its inputs as `Settled` (ADR 0006).
 - `tolerate` is the scalar `"rejected"`. Only `rejected` is ever tolerable (CORE-04), so an array would only add a shape

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { ConfigError, sourceOf } from "@maestro/core/config";
 import { type ConfigRequest, loadConfig } from "./config";
 import { cleanup, scratch } from "./fixtures/packs";
+import { builtinHosts } from "./hosts";
 
 afterEach(cleanup);
 
@@ -15,6 +16,7 @@ async function tree(files: Record<string, string>) {
 	const request = (over: Partial<ConfigRequest> = {}): ConfigRequest => ({
 		cwd: join(root, "ws/sub/deeper"),
 		env: { HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "xdg") },
+		hosts: builtinHosts({}),
 		...over,
 	});
 	return { root, request };
@@ -63,6 +65,21 @@ describe("config files", () => {
 			{ layer: "workspace", file: join(root, WORKSPACE), line: 3 },
 			{ layer: "default" },
 		]);
+	});
+
+	test("anchor the paths each host declares, and leave other keys as written", async () => {
+		const { root, request } = await tree({
+			[WORKSPACE]: "cache:\n  dir: ../c\n  name: ../n\n",
+		});
+		const [repo] = builtinHosts({});
+		if (!repo) throw new Error("no builtin host");
+		const config = await loadConfig(
+			request({ hosts: [{ ...repo, paths: [["cache", "dir"]] }] }),
+		);
+		expect(config.composed.values.cache).toEqual({
+			dir: join(root, "ws/c"),
+			name: "../n",
+		});
 	});
 
 	test("outside a workspace, take the defaults, the workspace named empty", async () => {

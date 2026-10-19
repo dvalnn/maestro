@@ -122,8 +122,8 @@ Semantics each constructor must honor:
   no items settles `skipped`. An accumulator port named `ok`, `reason`, `index` or `item` is a build error.
 - **`loop`.** Two loops, the condition first. Each goes on while its condition, a `Ref<Bool>`, holds:
   - `loop.while` reads the condition on the state before each step, so it may run no step. The condition is a Bool port
-    of the state, such as `s.ok`, or of a node made from the state alone. A condition false on `init` ends the loop as
-    `init` ended. The plan shows `0 to max` steps.
+    of the state, such as `s.ok`, or of a node built from the state, not from the step. A condition false on `init` ends
+    the loop as `init` ended. The plan shows `0 to max` steps.
   - `loop.doWhile` reads the condition on each step's result, so at least one step runs. The plan shows `1 to max`.
 
   The condition and the step receive the state as a Result handle (section 4): the previous node's outputs, its `ok` and
@@ -180,9 +180,6 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
 
 - **Mapping between ports** is by typed assignment. A mismatch is a compose-time type error (CORE-02) naming both ports
   and schemas.
-- **Templates.** `tpl(file, vars)` renders a prompt or text from a template file. The variable set is checked against
-  the template's declared variables and against the Refs' schemas at compose time. A missing or mistyped variable is an
-  error before spend.
 - **Known at build (D-16).** Params and composed config are plain values. Node outputs and file contents are Refs. A
   subcomposition takes plain params and Ref ports. A plain value may feed a port, and a Ref never feeds a param.
 - **Three tiers.** Build (plain values, shapes the graph), compose after build (checks, expansion, bounds), perform
@@ -270,7 +267,6 @@ The standard library is built only from the constructors above (NFR-09). Initial
   once every input has settled and receive each as `Settled` (ADR 0006). They take a `parMap` or `map`'s handle or a
   list of outputs. `firstOk` returns its Result handle and, with no `ok` input, settles `failed` if any input failed,
   else `rejected`. `okOnly` and `allSettled` return a Ref to their list.
-- **Templating.** `tpl` as above. Prompt files are text artifacts staged by the consuming host node.
 - **Readers.** `readJson(file)` reads a `JsonFile(T)` artifact, such as an agent's `JsonOut`, into a `Ref<T>`, checked
   against its schema. It rejects with the reason when the file is not JSON or misses the schema, so a planner's output
   feeds a group with no code node of the author's.
@@ -312,8 +308,8 @@ bundle it.
 | `apply(lane, changeset, opts)`             | A `repo.apply` node: one changeset applied, on its `changeset` port; `opts.strategy` is `3way` or `clean`; output `lane`                |
 
 ¹ `agent` also takes `identity`, `attachments` (each `{ artifact, hint }`), `out`, `checks`, `readOnly` and the common
-options. An attachment or output named `prompt`, `identity`, `lane`, `report` or `staged` is a build error. `role` is a
-role name or `{ name, harness?, model?, thinking? }`.
+options. An attachment named `prompt`, `identity` or `lane`, or an output named `lane`, `report` or `staged`, is a build
+error: the host refuses the same names. `role` is a role name or `{ name, harness?, model?, thinking? }`.
 
 ² A seat takes `role`, `identity`, `attachments`, `out`, `checks` and `readOnly`. A call takes `task`, `lane` and the
 common options, and may override the role and add attachments, outputs, checks and read-only binds: its role fields
@@ -359,8 +355,7 @@ Stable code prefixes. Every diagnostic carries node id, scope, source location, 
 
 - `IR` schema violation, unknown version.
 - `REF` a Ref used where a value is required, a Ref that escaped its scope.
-- `TYPE` edge schema mismatch, template variable missing or mistyped, a build that returns no node, a `readJson` of an
-  artifact that is not a JSON file.
+- `TYPE` edge schema mismatch, a build that returns no node, a `readJson` of an artifact that is not a JSON file.
 - `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count, a code
   node `timeout` that is neither a duration nor a whole number of milliseconds within the timer range (`BOUND.timeout`).
 - `CFG` unclaimed key, schema violation, required key missing, examples missing or given with ports.
@@ -389,7 +384,10 @@ scopes, edge kinds, cardinalities, expansions, and node-instance events keyed by
 ## 14. Worked examples (non-normative, illustrative syntax)
 
 These come from the legacy compositions that were read for this design. They show that the API is expressive enough.
-Syntax is a sketch.
+They type-check and build against the SDK and the repo host SDK, the lens round and build-then-repair as
+`packages/host-repo-sdk/src/fixtures/examples.ts` (`review`, `buildThenRepair`). A prompt is a task, an agent identity
+and attachments: the task is built in TS from plain values, and a run-time value reaches an agent as an attachment, a
+code node's output or the lane it continues.
 
 **Repair until green** (build, then repair while checks are red, bounded by the composition's own param):
 
@@ -397,25 +395,25 @@ Syntax is a sketch.
 export const fixUntilGreen = composition(
   "fix_until_green",
   {
-    ports: { build: Lane, prompt: Text },
+    ports: { build: Lane, prompt: Text() },
     params: { maxRepairs: Int({ default: 2 }), model: Text() },
   },
   (params, { build, prompt }) => {
-    const verify = (lane) => check(extend(lane), "test");
+    const verify = (lane: Ref<string>) => check(extend(lane), "test");
     return loop.while((checked) => not(checked.ok), {
       init: verify(build),
-      step: (checked) =>
-        verify(
-          agent({
-            label: "repair",
-            task: tpl("fix.md", { failures: checked.reason, request: prompt }),
-            lane: extend(checked.out.lane, { resume: true }),
-            role: { name: "builder", model: params.model },
-            attachments: {
-              logs: { artifact: checked.out.logs, hint: "Read first, to see why the check failed" },
-            },
-          }),
-        ),
+      step: (checked) => {
+        const repair = agent({
+          label: "repair",
+          task: prompt,
+          lane: extend(checked.out.lane, { resume: true }),
+          role: { name: "builder", model: params.model },
+          attachments: {
+            logs: { artifact: checked.out.logs, hint: "Read first, to see why the check failed" },
+          },
+        });
+        return verify(repair.out.lane);
+      },
       max: params.maxRepairs,
       tolerate: "rejected",
     });
@@ -423,61 +421,73 @@ export const fixUntilGreen = composition(
 );
 ```
 
-**Escalate and fan out over models:**
+**Escalate and fan out over models.** A model is a role field, plain config, so a group item cannot pick one. The tries
+unroll at build over the plain `models` param, each its own `use` with the model as a param:
 
 ```ts
-const builtOn = (m, prompt, run) =>
-  use(fixUntilGreen, {
-    build: agent({ task: prompt, lane: fork(run), role: { name: "builder", model: m } }).out.lane,
-    prompt,
-    model: m,
+const attempt = (model: string, i: number, prompt: Ref<string>, run: Ref<string>, when?: Ref<boolean>) => {
+  const build = agent({
+    label: `build_${i}`,
+    task: prompt,
+    lane: fork(run),
+    role: { name: "builder", model },
+    when,
   });
+  return use(fixUntilGreen, { build: build.out.lane, prompt }, { params: { model }, label: `try_${i}` });
+};
 
-escalate = composition("build_escalate", Params, ({ prompt, run, models }) =>
-  iter.find(
-    models,
-    (m) => builtOn(m, prompt, run),
-    (r) => r.ok,
-  ),
-);
-fanout = composition("build_fanout", Params, ({ prompt, run, models }) =>
-  firstOk(iter.parMap(models, (m) => builtOn(m, prompt, run), { onError: "continue" })),
+const Params = {
+  params: { models: List(Text()) },
+  ports: { prompt: Text(), run: Lane },
+};
+
+escalate = composition("build_escalate", Params, ({ models }, { prompt, run }) => {
+  const tries: ReturnType<typeof attempt>[] = [];
+  models.forEach((model, i) => {
+    const prev = tries[i - 1];
+    const failed = prev && not(prev.ok, { label: `failed_${i - 1}` });
+    tries.push(attempt(model, i, prompt, run, failed));
+  });
+  return firstOk(tries.map((t) => t.out.lane));
+});
+fanout = composition("build_fanout", Params, ({ models }, { prompt, run }) =>
+  firstOk(models.map((model, i) => attempt(model, i, prompt, run).out.lane)),
 );
 ```
 
-**Lens, skeptic, consolidator** (the shape shared by four legacy chains):
+**Lens, skeptic, consolidator** (the shape shared by four legacy chains; the skeptic's model family must differ from the
+lens's):
 
 ```ts
-const runs = iter.parMap(
-  jobs,
-  (job) => {
-    const lens = agent({
+const rounds = iter.parMap(
+  LENSES,
+  (lens) => {
+    const found = agent({
       label: "lens",
-      task: tpl("lens.md", { job, ctx }),
+      task: lens,
       lane: fresh(),
-      role: job.lens,
+      role: { name: "reviewer", model: lensModel },
       out: { findings: JsonOut("findings.json", Findings) },
     });
     const skeptic = agent({
       label: "skeptic",
-      when: lens.out.findings.nonEmpty,
-      task: tpl("skeptic.md", { job }),
+      task: "Challenge each finding: does it hold?",
       lane: fresh(),
-      role: job.skeptic,
-      attachments: { findings: { artifact: lens.out.findings, hint: "Read before judging any finding" } },
-      out: { verdicts: JsonOut("skeptic.json", Verdicts) },
+      role: { name: "reviewer", model: skepticModel },
+      attachments: { findings: { artifact: found.out.findings, hint: "Read before judging any finding" } },
+      out: { verdicts: JsonOut("verdicts.json", Verdicts) },
     });
-    return { lens, skeptic };
+    return { lens: found, skeptic };
   },
-  { max: 14, onError: "continue" },
+  { onError: "continue" },
 );
-const merged = code(byFinding, { in: { runs }, out: Merged });
+const merged = code(byFinding, { in: { runs: rounds.out.results }, out: { text: Text() } });
 return agent({
   label: "consolidator",
-  task: tpl("consolidate.md", { merged }),
+  task: merged.out.text,
   lane: fresh(),
-  role: SOL,
-  out: { review: MarkdownOut("review.md") },
+  role: "reviewer",
+  out: { summary: MarkdownOut("review.md") },
 });
 ```
 
@@ -487,24 +497,21 @@ return agent({
 const scout = agent({ label: "scout", task: prompt, lane: fresh(), role: "scout" });
 const plans = iter.parMap(
   ANGLES,
-  (a) =>
-    agent({
-      label: "plan",
-      task: tpl("angle.md", { a, scouted: scout.out.report }),
-      lane: fork(scout.out.lane),
-      role: "planner",
-    }),
+  (a) => agent({ label: "plan", task: a, lane: fork(scout.out.lane), role: "planner" }),
   { onError: "continue" },
 );
-const good = code(renderOk, { in: { plans: plans.out.results }, out: { text: Text, nonEmpty: Bool } });
+const good = code(renderOk, {
+  in: { plans: plans.out.results },
+  out: { text: Text(), nonEmpty: Bool() },
+});
 const synthesis = agent({
   label: "synthesis",
-  task: tpl("synthesis.md", { good: good.out.text }),
+  task: good.out.text,
   lane: extend(scout.out.lane),
   role: "planner",
   when: good.out.nonEmpty,
 });
-return firstOk([synthesis.out.report, firstOk(plans).out.value.get("report")]);
+return firstOk([synthesis.out.report, firstOk(plans, { label: "best_plan" }).out.value.get("report")]);
 ```
 
 ## 15. Coverage of the predecessor's workflows
@@ -513,8 +520,8 @@ return firstOk([synthesis.out.report, firstOk(plans).out.value.get("report")]);
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | scout_plan, build_quality, review_panel  | `agent`, `check`, `use`, `iter.parMap`, reducers                                                                                                                      |
 | full                                     | `use` of two subcompositions, `agent` extending the result                                                                                                            |
-| build_escalate                           | `iter.find`, `use`, `fork` of one source                                                                                                                              |
-| build_fanout                             | `iter.parMap` with `onError: "continue"`, `firstOk`                                                                                                                   |
+| build_escalate                           | `use` per model, each guarded by `when` on the last try's failure, `firstOk`, `fork` of one source                                                                    |
+| build_fanout                             | `use` per model, `firstOk`                                                                                                                                            |
 | plan_panel                               | `fork` and `extend` of lane versions, `iter.parMap`, `Settled` fan-in, code node                                                                                      |
 | build_review                             | `loop` carrying two values, `tolerate` on a rejected check, a typed field in its condition                                                                            |
 | verification round (lenses, skeptics)    | `iter.parMap`, conditional second node, `assert` for the model-family policy, code node                                                                               |

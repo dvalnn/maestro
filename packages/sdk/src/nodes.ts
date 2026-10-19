@@ -598,14 +598,14 @@ export type LoopOptions<O extends Types> = Omit<Common, "tolerate"> & {
 };
 
 const WHILE_HINT =
-	"Return s.ok, a Bool port of the state, or a Bool output of one node made from the state alone, such as not(s.ok)";
+	"Return s.ok, a Bool port of the state, or a Bool output of a node built from the state, not from the step, such as not(s.ok)";
 
 const DO_WHILE_HINT =
 	"Return r.ok or a Bool output of a node in the body, such as not(r.ok)";
 
 /**
  * A loop over typed state that reads `cond` on the state before each step and steps while it holds: 0 to `max` steps.
- * `cond` must return a Bool port of the state, or a Bool output of one node that reads only the state.
+ * `cond` must return a Bool port of the state, or a Bool output of a node built from the state, not from the step.
  */
 function whileLoop<O extends Types>(
 	cond: (state: Result<O>) => Ref<boolean>,

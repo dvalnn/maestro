@@ -180,23 +180,30 @@ function attachmentConfig({ artifact, hint }: Attachment) {
 	return defined({ hint, type });
 }
 
-/** Ports an agent has of its own, which no attachment or declared output may take. */
-const AGENT_PORTS = ["prompt", "identity", "lane", "report", "staged"];
+/** The input ports an agent has of its own, which no attachment may take. Equal to the host's `AGENT_IN_PORTS`. */
+export const AGENT_IN_PORTS = ["prompt", "identity", "lane"];
+
+/** The output ports an agent has of its own, which no declared output may take. Equal to the host's `AGENT_OUT_PORTS`. */
+export const AGENT_OUT_PORTS = ["lane", "report", "staged"];
 
 /**
  * Refuses an attachment or output named after one of an agent's own ports.
  * @throws BuildError when one is.
  */
 function checkNames(attachments: Attachments, out: Outputs): void {
-	const taken = [...Object.keys(attachments), ...Object.keys(out)].find((n) =>
-		AGENT_PORTS.includes(n),
-	);
-	if (taken !== undefined)
-		throw new BuildError({
-			code: "SCOPE.name",
-			message: `'${taken}' names an agent's own port, so an attachment or an output cannot take it`,
-			hint: `Rename '${taken}'; an agent's own ports are ${AGENT_PORTS.join(", ")}`,
-		});
+	const checks = [
+		["an attachment", Object.keys(attachments), AGENT_IN_PORTS],
+		["an output", Object.keys(out), AGENT_OUT_PORTS],
+	] as const;
+	for (const [what, names, own] of checks) {
+		const taken = names.find((n) => own.includes(n));
+		if (taken !== undefined)
+			throw new BuildError({
+				code: "SCOPE.name",
+				message: `'${taken}' names an agent's own port, so ${what} cannot take it`,
+				hint: `Rename '${taken}'; ${what} may not take ${own.join(", ")}`,
+			});
+	}
 }
 
 /** A `repo.agent` node: a coding agent performing `task` in its lane (architecture 12). */

@@ -278,6 +278,31 @@ describe("expansion", () => {
 		},
 	);
 
+	test("refuses a parFind over a plain list whose items share a key, naming the group", async () => {
+		const found = await codes(
+			[
+				code("q/u", "upper", { in: { name: STRING } }),
+				{
+					id: "q",
+					kind: "parFind",
+					cardinality: { upTo: 2 },
+					cond: { node: "q/u", port: "ok" },
+					items: ["a", "a"],
+					inner: { item: STRING },
+					out: { text: STRING },
+					members: { result: "q/u" },
+				},
+			],
+			[intoBody("q", "item", "q/u", "name")],
+		);
+		expect(found).toEqual([
+			[
+				"SCOPE.key",
+				"Give parFind 'q' a key function, or make its items distinct",
+			],
+		]);
+	});
+
 	test("expands a fold over a plain list into one instance per index, each phase up to its bound", async () => {
 		const { ok, reason } = IMPLICIT_OUT;
 		const phase = (id: string) =>

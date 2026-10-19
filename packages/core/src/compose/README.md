@@ -31,9 +31,9 @@ README.
 
    Any error stops compose here, before anything is loaded or called.
 
-2. Loading, through `loadCode`, of every function the IR names: each code node's worker and each parMap's key function,
-   once per reference. One that does not load is a `SCOPE.export` error, which stops compose here (ADR 0008). No loaded
-   function is called.
+2. Loading, through `loadCode`, of every function the IR names: each code node's worker and each `parMap` or `parFind`
+   key function, once per reference. One that does not load is a `SCOPE.export` error, which stops compose here (ADR
+   0008). No loaded function is called.
 3. Expansion, enclosing groups first, one group instance at a time. A group instance expands only when every guard on it
    is known true and its items are plain values: a literal, or an enclosing group's item. Then:
    - a `parMap` expands into one instance per item, keyed by `itemKey`;

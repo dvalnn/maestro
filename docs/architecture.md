@@ -94,7 +94,7 @@ The lifecycle has two stages (D-12). **Compose** is steps 1 to 4, ending with pr
    twice and compares the IR (SDK-12).
 4. **Pre-flight.**
    1. Serialize to IR and validate against the IR schema.
-   2. Type-check every edge (CORE-02) and every prompt template variable.
+   2. Type-check every edge (CORE-02).
    3. Resolve config: each namespace goes to its owner's schema (CFG-02, CFG-05).
    4. Expand bounded groups whose cardinality is known from plain values. A group whose size depends on a node result
       stays as a bounded region. Compose runs no author code (ADR 0009).
@@ -246,7 +246,8 @@ stores by node id and expansion path as a `progress` event, opaquely.
     for `ls` and lane refs.
   - `map` instantiates its body once per item, one at a time in item order.
   - `find` instantiates the body per item in order and stops at the first member meeting the condition, else ends on the
-    last member. This covers escalation over models. `parFind` runs every item at once: the first member to settle
+    last member. This covers escalation over items. Escalation over models, which are params, unrolls at build into
+    `use` tries guarded by `when`, ending in `firstOk`. `parFind` runs every item at once: the first member to settle
     meeting the condition is the result and the others are cancelled as `skipped`, with the reason
     `cancelled: <instance> met the condition`, else it ends on the last member to settle. In either, a member or
     condition node that fails fails the group.
@@ -495,9 +496,9 @@ build-time `assert` over the models it takes as params, with the pack's own fami
 A pack is a directory or release tarball with a `maestro-pack.json` manifest and one pre-bundled entry file that
 includes its own SDK copy (D-30). The workspace config lists packs by path, and nothing is resolved through
 `node_modules`. Compose consumes only IR JSON, so a second SDK copy is harmless as long as nothing relies on
-`instanceof` across copies. A pack contributes compositions, prompt templates, schemas, code nodes and params.
-Everything domain-specific lives here: for example the Gerrit comment parser and renderer, a catalogue of review lenses,
-a knowledge directory. Hard-coded environment facts (a repository path, a change number, a commit SHA) are inputs or
+`instanceof` across copies. A pack contributes compositions, prompts, schemas, code nodes and params. Everything
+domain-specific lives here: for example the Gerrit comment parser and renderer, a catalogue of review lenses, a
+knowledge directory. Hard-coded environment facts (a repository path, a change number, a commit SHA) are inputs or
 round-folder data, never constants in a pack.
 
 ## 14. Distribution
@@ -546,6 +547,6 @@ round-folder data, never constants in a pack.
 ## 17. Open design points
 
 No open question blocks the initial port. `requirements.md` section 9 maps every earlier question to the decision that
-resolved it. Deferred: a secret param type (D-33), cost accounting and budgets, per-adapter compaction, a cross-concert
-join, starting a concert from a finished one's results (`rulings.md` "Concert fork"), in-process SDK adapters, arm64 and
-macOS, and licensing.
+resolved it. Deferred: a secret param type (D-33), cost accounting and budgets, per-adapter compaction, extending a lane
+across concerts, starting a concert from a finished one's results (`rulings.md` "Concert fork"), in-process SDK
+adapters, arm64 and macOS, and licensing.

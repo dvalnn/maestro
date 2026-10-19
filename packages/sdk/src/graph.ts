@@ -19,7 +19,7 @@ import { BuildError } from "./diagnostic";
 import type * as stdlibFunctions from "./stdlib-functions";
 import type { Type, Types, ValueOf } from "./types";
 
-/** Any function the loader may name: a code function or a `parMap` key function (ADR 0008). */
+/** Any function the loader may name: a code function or a `parMap` or `parFind` key function (ADR 0008). */
 export type CodeFn = (...args: never[]) => unknown;
 
 /** Param values by pack id, then composition id, then param name. */

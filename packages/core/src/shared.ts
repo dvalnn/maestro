@@ -19,7 +19,7 @@ export const isOutputs = (value: unknown): value is Outputs =>
 	!Object.hasOwn(value, "outcome") &&
 	!Object.hasOwn(value, "reason");
 
-/** A loaded function as core calls it: with a code node's inputs and context, or with a parMap item. */
+/** A loaded function as core calls it: with a code node's inputs and context, or with a `parMap` or `parFind` item. */
 export type Loaded = (...args: unknown[]) => unknown;
 
 const isFunction = (value: unknown): value is Loaded =>

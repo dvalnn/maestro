@@ -76,10 +76,11 @@ docs/               these documents (including adr/), slice reports under report
 ### S2. SDK: build phase (L)
 
 - **Goal.** The authoring API of `sdk-spec.md` sections 2 to 11.
-- **Deliverables.** Composition and subcomposition declaration, node constructors (`code`, `map`, `seq`, `repeat`,
-  `assert`, `use`), guards and tolerance, Refs with misuse diagnostics, types and schemas, `tpl`, lifting combinators,
-  params and ports with example input sets (D-16, D-17, D-19), map item keys (SDK-13), frozen ambient state during build
-  (SDK-11), the double-build comparison (SDK-12), stdlib reducers. Emits IR.
+- **Deliverables.** Composition and subcomposition declaration, node constructors (`code`, `iter.parMap`, `iter.map`,
+  `iter.find`, `iter.parFind`, `iter.fold`, `loop`, `assert`, `use`), guards and tolerance, Refs with misuse
+  diagnostics, types and schemas, lifting combinators, params and ports with example input sets (D-16, D-17, D-19),
+  `parMap` and `parFind` item keys (SDK-13), frozen ambient state during build (SDK-11), the double-build comparison
+  (SDK-12), stdlib reducers. Emits IR.
 - **Acceptance.** Build tests for every constructor. Byte-stable IR for identical params and composed config. A Ref used
   as a value, or fed to a param, fails with the documented diagnostic. Duplicate item keys fail.
 - **Depends on.** S1.
@@ -88,9 +89,9 @@ docs/               these documents (including adr/), slice reports under report
 ### S3. Compose and plan (L)
 
 - **Goal.** CORE-07 and the plan output.
-- **Deliverables.** IR validation, edge and template type checks, config resolution against owners' schemas,
-  bounded-group expansion, host hook plumbing, bounds on node instances and agent runs (D-23), diagnostics with stable
-  codes, the plan in JSON and text, and the static graph render (CORE-03, D-08).
+- **Deliverables.** IR validation, edge type checks, config resolution against owners' schemas, bounded-group expansion,
+  host hook plumbing, bounds on node instances and agent runs (D-23), diagnostics with stable codes, the plan in JSON
+  and text, and the static graph render (CORE-03, D-08).
 - **Acceptance.** On hand-written IR and on SDK-built graphs with the fake host: exact node-instance count where known
   and "up to N" otherwise, a policy violation caught before any run, a config key no installed registrant claims
   rejected (D-24), and a render that shows fan-out, fan-in, loop bounds and guards (AC-2 and AC-5 in part).
@@ -102,8 +103,8 @@ docs/               these documents (including adr/), slice reports under report
 - **Goal.** CORE-08, CORE-10, CORE-11.
 - **Deliverables.** Scheduler, outcome propagation and tolerance, groups, guards, cancellation, the result rule, an
   in-process TypeScript worker and the worker protocol definition, the record store, the event stream.
-- **Acceptance.** With a stub host: reject-then-accept, fan-in with settled members, escalation (`seq`), `repeat` to its
-  bound, cancellation settling `failed`, and the result rule. Events carry node id and expansion path. The record
+- **Acceptance.** With a stub host: reject-then-accept, fan-in with settled members, escalation (`iter.find`), `loop` to
+  its bound, cancellation settling `failed`, and the result rule. Events carry node id and expansion path. The record
   answers the CLI queries. Metrics (CORE-19) are summed per concert and exposed by name, with no meaning attached.
 - **Depends on.** S1.
 - **Parallel with.** S2, S3.

@@ -22,7 +22,7 @@ export type CodeEntry = (
 	context: CodeContext,
 ) => Outputs | Rejection | Promise<Outputs | Rejection>;
 
-/** A parMap's key function, which names its members (ADR 0008). */
+/** A `parMap` or `parFind` key function, which names its members (ADR 0008). */
 export type KeyFunction = (item: unknown) => unknown;
 
 /** Resolves a worker reference to the function it names (ADR 0008). The loader supplies it. */

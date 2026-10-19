@@ -62,7 +62,12 @@ export async function openSession(
 	deps: Deps,
 	profile?: string,
 ): Promise<Session> {
-	const config = await loadConfig({ cwd: deps.cwd, env: deps.env, profile });
+	const config = await loadConfig({
+		cwd: deps.cwd,
+		env: deps.env,
+		hosts: deps.hosts,
+		profile,
+	});
 	const { dataRoot } = config.core;
 	return {
 		deps,

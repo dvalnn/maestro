@@ -243,8 +243,15 @@ describe("compose", () => {
 			"a target that is no git repository",
 			{ role: { name: "builder" }, lane: fresh },
 			"HOST.target",
-			"Set 'target.repo' relative to the config file's directory",
+			"Point 'target.repo' at a git repository",
 			() => tmp("plain"),
+		],
+		[
+			"a target that does not exist",
+			{ role: { name: "builder" }, lane: fresh },
+			"HOST.target",
+			"Set 'target.repo' relative to the config file's directory",
+			() => join(tmp("gone"), "missing"),
 		],
 	])(
 		"an agent naming %s is a HOST error",

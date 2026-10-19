@@ -10,7 +10,7 @@ import type {
 	JsonSchema,
 	Ports,
 } from "@maestro/ir";
-import type { Composed } from "./config";
+import type { Composed, KeyPath } from "./config";
 import type { Inputs, NodeResult } from "./node";
 
 type Awaitable<T> = T | Promise<T>;
@@ -100,6 +100,11 @@ export interface Host {
 	readonly types: readonly string[];
 	/** By config namespace. */
 	readonly config: Readonly<Record<string, JsonSchema>>;
+	/**
+	 * The keys of `config` that hold file paths, namespace first. A relative value in a config file is relative to that
+	 * file's directory.
+	 */
+	readonly paths?: readonly KeyPath[];
 	/** Compose-time rules over the whole graph. */
 	validate(graph: GraphIndex, setup: HostSetup): Awaitable<Diagnostic[]>;
 	/** Bounds one instance of `node`, a node of one of the host's kinds. */

@@ -7,13 +7,14 @@ import {
 	AGENT_KIND,
 	HOST_CONFIG,
 	HOST_NAME,
+	HOST_PATHS,
 	LANE_TYPE,
 	repoSetup,
 } from "./config";
 import { concertUsage, releaseConcert } from "./store";
 import { validateRepo } from "./validate";
 
-export { AGENT_KIND, HOST_PATHS } from "./config";
+export { AGENT_IN_PORTS, AGENT_KIND, AGENT_OUT_PORTS } from "./config";
 
 /** `<concert id>.<node instance id>`: concert ids hold no `.`, and the instance part is not empty. */
 const LANE_REF = /^[^.]+\.[^\s]+$/;
@@ -30,6 +31,7 @@ export function repoHost({ harnesses }: RepoHostOptions): Host {
 		kinds: [agentKind(harnesses), checkKind(), changesetKind(), applyKind()],
 		types: [LANE_TYPE],
 		config: HOST_CONFIG,
+		paths: HOST_PATHS,
 		validate: (graph, setup) =>
 			validateRepo(
 				graph,

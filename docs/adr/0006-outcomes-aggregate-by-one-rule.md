@@ -58,7 +58,8 @@ a misspelt field fails; opening it later breaks nothing already valid.
 
 - A `fanin` node cannot mix inputs that must be `ok` with settled ones. A strict input is checked upstream.
 - Under stop, which members ran depends on timing, so the record varies between runs. The outcome does not.
-- The plan-panel example indexes no settled list: `firstOk([synthesis.out.text, firstOk(plans).out.value.get("text")])`
-  falls back to a plan that succeeded. A member whose body returns one result has that result's outputs as its value.
+- The plan-panel example indexes no settled list:
+  `firstOk([synthesis.out.report, firstOk(plans).out.value.get("report")])` falls back to a plan that succeeded. A
+  member whose body returns one result has that result's outputs as its value.
 - `Outcome`, `Settled` and `worstOutcome` land in `packages/ir` before the SDK and executor build on them. The home is
   revisited if those slices find a better one.
