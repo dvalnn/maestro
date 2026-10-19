@@ -6,7 +6,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { Host } from "@maestro/core/host";
 import { openRecord } from "@maestro/core/perform";
 import { IR_VERSION } from "@maestro/ir";
-import { shortId, shortIds } from "@maestro/render-text/live";
+import { shortId, shortIds, stateWord } from "@maestro/render-text/live";
 import { SDK_VERSION, STDLIB_HASH } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
 import pkg from "../package.json";
@@ -22,11 +22,13 @@ import {
 	world,
 } from "./fixtures/world";
 import { codeHashOf } from "./loader";
+import { renderDiagnostic } from "./output";
 
 const GOLDEN = join(FIXTURES, "../../../ir/fixtures");
 const HELLO = join(FIXTURES, "hello.ts");
 const CLASH = join(FIXTURES, "clash.ts");
 const CLASH_OUT = join(FIXTURES, "clash-out.ts");
+const CLASH_NO = join(FIXTURES, "clash-no.ts");
 const LOUD = join(FIXTURES, "loud.ts");
 const ESC = "\u001b";
 
@@ -269,18 +271,20 @@ describe("perform", () => {
 		const logged = await w.call(["wait", id], { terminal, env });
 		expect(logged.err).not.toContain(ESC);
 		expect(logged.out).toContain(ESC);
-		for (const off of [{ NO_COLOR: "1" }, { TERM: "dumb" }] as Record<
-			string,
-			string
-		>[])
+		const offs: { env: Record<string, string>; flags: string[] }[] = [
+			{ env: { NO_COLOR: "1" }, flags: [] },
+			{ env: { TERM: "dumb" }, flags: [] },
+			{ env: {}, flags: ["--no-color"] },
+		];
+		for (const off of offs)
 			for (const verb of [
 				["wait", id],
 				["perform", file],
 			]) {
-				const plain = await w.call(verb, {
+				const plain = await w.call([...verb, ...off.flags], {
 					terminal,
 					stderrTerminal: terminal,
-					env: { ...env, ...off },
+					env: { ...env, ...off.env },
 				});
 				expect(plain.err + plain.out).not.toContain(ESC);
 				expect(plain.out).toStartWith("file       ~/");
@@ -547,6 +551,11 @@ describe("usage errors", () => {
 			/^param 'out' of 'clash-out\.clash-out' takes --out, which the command takes too\nRename/,
 		],
 		[
+			"a boolean param whose --no- flag negates a common flag",
+			["perform", CLASH_NO],
+			/^param 'noColor' of 'clash-no\.clash-no' takes --no-color, which the command takes too\nRename/,
+		],
+		[
 			"a param whose flag is one of perform's, for compose",
 			["compose", CLASH],
 			/^param 'tour' of 'clash\.clash' takes --tour, which the command takes too\nRename/,
@@ -612,7 +621,7 @@ describe("usage errors", () => {
 		},
 	);
 
-	test("--help prints a command's flags on stdout and exits 0, -c among every verb's", async () => {
+	test("--help prints a command's flags on stdout and exits 0, -c and --no-color among every verb's", async () => {
 		const w = await world();
 		for (const args of [["--help"], ["p", "-h"], ["wt", "-h"]])
 			expect(await w.call(args)).toMatchObject({
@@ -625,10 +634,11 @@ describe("usage errors", () => {
 			...(await w.call(["--help"])).out.matchAll(/^ {2}([a-z]+) /gm),
 		].map(([, verb = ""]) => verb);
 		expect(verbs).toContain("tour");
-		for (const verb of verbs)
-			expect((await w.call([verb, "--help"])).out).toMatch(
-				/^ {2}-c, --config <key=value> +\S/m,
-			);
+		for (const verb of verbs) {
+			const { out } = await w.call([verb, "--help"]);
+			expect(out).toMatch(/^ {2}-c, --config <key=value> +\S/m);
+			expect(out).toMatch(/^ {6}--color +.*--no-color turns it off/m);
+		}
 	});
 
 	test("--help given a composition adds its params after the flags, and not without one", async () => {
@@ -734,6 +744,105 @@ describe("the record", () => {
 				expect.objectContaining({ node: "echo/echo", status: "failed" }),
 			]),
 		});
+	});
+
+	test("ls colors its status column on a terminal stdout only, with color on, and its table stays aligned", async () => {
+		const w = await world();
+		const done = idOf(
+			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
+		);
+		const broke = idOf(
+			await w.call(["perform", ...GREET], {
+				hosts: [hostOf({ outcome: "failed", reason: "flaky" })],
+			}),
+		);
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const plain = await w.call(["ls"]);
+		const listed = await w.call(["ls"], { terminal });
+		expect(listed.out).toContain(stateWord("failed", true));
+		expect(listed.out).toContain(stateWord("ok", true));
+		expect(stripVTControlCharacters(listed.out)).toBe(plain.out);
+		const instances = await w.call(["ls", broke], { terminal });
+		expect(instances.out).toContain(stateWord("failed", true));
+		expect(stripVTControlCharacters(instances.out)).toBe(
+			(await w.call(["ls", broke])).out,
+		);
+		const off: { args: string[]; env: Record<string, string> }[] = [
+			{ args: ["--no-color"], env: {} },
+			{ args: [], env: { NO_COLOR: "1" } },
+			{ args: [], env: { TERM: "dumb" } },
+		];
+		for (const { args, env } of off)
+			for (const target of [[], [done]])
+				expect(
+					(await w.call(["ls", ...target, ...args], { terminal, env })).out,
+				).not.toContain(ESC);
+		expect(
+			(await w.call(["ls"], { stderrTerminal: terminal })).out,
+		).not.toContain(ESC);
+		expect((await w.call(["ls", "--json"], { terminal })).out).not.toContain(
+			ESC,
+		);
+	});
+
+	test("an error on a terminal stderr colors the code of a diagnostic and dims the hint, off a terminal or with color off it is plain", async () => {
+		const w = await world();
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const code = `${ESC}[31mCFG.unclaimed${ESC}[39m`;
+		const hint = (text: string) => `${ESC}[2m${text}${ESC}[22m`;
+		const diagnosed = ["perform", ...GREET, "-c", "nope.x=1"];
+		const bad = await w.call(diagnosed, { stderrTerminal: terminal });
+		expect(bad.err).toStartWith(code);
+		expect(bad.err).toContain(`\n  ${ESC}[2m`);
+		const usage = await w.call(["ls", "--status", "bogus"], {
+			stderrTerminal: terminal,
+		});
+		expect(usage.err).toBe(
+			`--status takes one of running, ok, failed, rejected, not 'bogus'\n${hint("Pick one of those")}`,
+		);
+		const both = { terminal, stderrTerminal: terminal };
+		expect((await w.call([], both)).err).not.toContain(ESC);
+		for (const off of [
+			[...diagnosed, "--no-color"],
+			[...diagnosed, "--json"],
+			["ls", "--status", "bogus", "--no-color"],
+		]) {
+			const plain = await w.call(off, both);
+			expect(plain.err + plain.out).not.toContain(ESC);
+		}
+		for (const piped of [
+			{},
+			{ terminal },
+			{ stderrTerminal: terminal, env: { TERM: "dumb" } },
+		])
+			expect((await w.call(diagnosed, piped)).err).not.toContain(ESC);
+		expect(
+			renderDiagnostic(
+				{ code: "X.y", severity: "warning", message: "m", hint: "h" },
+				true,
+			),
+		).toBe(`${ESC}[33mwarning X.y${ESC}[39m: m\n  ${hint("h")}`);
+	});
+
+	test("ls lists a concert's node instances in graph order, one node's expansions by their first event, whatever order the record holds them", async () => {
+		const w = await world();
+		const id = idOf(
+			await w.call(["perform", join(GOLDEN, "fanout-fanin-loop.json")]),
+		);
+		const drafts = async () =>
+			json(await w.call(["ls", id, "--json"])).instances.flatMap(
+				(i: { node: string; expansion: string }) =>
+					i.node === "topics/draft" ? [i.expansion] : [],
+			);
+		const first = await drafts();
+		expect(first).toHaveLength(3);
+		const db = new Database(join(w.root, "data/maestro/record.db"));
+		db.run(
+			"UPDATE instances SET rowid = rowid + 100 WHERE node = 'topics/draft' AND expansion = ?",
+			[first[0] ?? ""],
+		);
+		db.close();
+		expect(await drafts()).toEqual(first);
 	});
 
 	test("ls shows the disk a concert holds: its directory and what its hosts report", async () => {

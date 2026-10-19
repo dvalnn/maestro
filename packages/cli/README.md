@@ -17,7 +17,7 @@ maestro wait <concert> --timeout 15m
 | `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                            |
 | `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`. |
 | `wait <concert>`             | `w`   | Waits for a concert to settle. `--timeout <duration>`.                                                            |
-| `watch <concert>`            | `wt`  | Shows a concert's node instances live until it settles.[^watch] `--events`, `--no-color`.                         |
+| `watch <concert>`            | `wt`  | Shows a concert's node instances live until it settles.[^watch] `--events`.                                       |
 | `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                               |
 | `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                   |
 | `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                      |
@@ -30,7 +30,7 @@ maestro wait <concert> --timeout 15m
     under its column and a multi-line one cut to its first line. Off a terminal `--events` prints the same lines
     unwrapped and without color. The graph is a header (status, elapsed time and the short id), the rows by
     subcomposition and loop round, and a footer of counts and the concert's tokens. Ctrl-C stops watching, not the
-    concert. Color is off under `NO_COLOR`, `TERM=dumb` or `--no-color`.
+    concert.
 
 [^rep]:
     `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,
@@ -53,13 +53,21 @@ maestro wait <concert> --timeout 15m
 `maestro --version` prints one line, `maestro <version> (sdk <version>, ir <version>, bun <version>)`, and exits 0.
 
 Every command takes `--json` (one JSON document on stdout), `--profile <name>`, `-c, --config <key=value>` (repeatable),
-`--debug` (stack traces) and `--help`. Primary output goes to stdout, messages to stderr.
+`--no-color`, `--debug` (stack traces) and `--help`. Primary output goes to stdout, messages to stderr.
+
+Each stream is colored only when it is a terminal: stdout by its own check, stderr by its own. Color is off under
+`NO_COLOR`, `TERM=dumb` or `--no-color`, and the `--json` document is never colored. It covers the `ls` status column,
+the closing block, the `watch` views, a diagnostic's code (red, yellow for a warning) and its dim hint line, and the dim
+hint line of an error.
 
 `watch` replays from the concert's first event, then follows it. With `--json`, or off a terminal without `--events`, it
 prints a JSON Lines stream: one compact line per record event that changes an instance's state (`running`, `settled`,
 `reused`), or per event of any type with `--events --json`, each as the record holds it, ending with the concert
 document, `wait --json`'s with `"type":"concert"`. Otherwise stdout holds the view, and the watch ends with the closing
 block, as `wait` prints it after the graph, or only its `concert` row with `--events`.
+
+`ls <concert>` lists the node instances in graph order, as `watch` draws them: subcompositions, groups and loop rounds
+nest, and one node's expansions keep the order they started in. `ls <concert> --json` lists `instances` in that order.
 
 `ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
 

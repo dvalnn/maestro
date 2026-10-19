@@ -22,9 +22,19 @@ export type Deps = {
 	stderrTerminal?(): { columns: number };
 };
 
-/** Whether output is colored: unless `enabled` is false, `NO_COLOR` is set or `TERM` is `dumb`. */
-export const colorOn = ({ env }: Deps, enabled = true) =>
-	enabled && !env.NO_COLOR && env.TERM !== "dumb";
+export type Colors = { out: boolean; err: boolean };
+
+/** Which streams color: each one that is a terminal, unless `--no-color` in `values`, `NO_COLOR` or `TERM=dumb` say no. */
+export const colorOf = (
+	{ env, terminal, stderrTerminal }: Deps,
+	values: Values,
+): Colors => {
+	const on = values.color !== false && !env.NO_COLOR && env.TERM !== "dumb";
+	return {
+		out: on && terminal !== undefined,
+		err: on && stderrTerminal !== undefined,
+	};
+};
 
 type OptionSpec = {
 	type: "string" | "boolean";
@@ -64,6 +74,10 @@ export const COMMON: Options = {
 		desc: "Set a config key to a YAML value, over the profile; repeatable",
 		multiple: true,
 		short: "c",
+	},
+	color: {
+		type: "boolean",
+		desc: "Color output on a terminal (default); --no-color turns it off",
 	},
 	debug: { type: "boolean", desc: "Show stack traces" },
 	help: { type: "boolean", short: "h", desc: "Show this help" },
@@ -105,6 +119,7 @@ export const peek = (options: Options, args: readonly string[]): Values =>
 		options: forParser(options),
 		allowPositionals: true,
 		strict: false,
+		allowNegative: true,
 	}).values as Values;
 
 export const textOf = (values: Values, name: string) => {

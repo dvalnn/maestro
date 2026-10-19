@@ -12,8 +12,6 @@ import {
 } from "@maestro/ir";
 import { arranged, layout } from "./layout";
 
-export { arranged };
-
 /** What one instance's events say of it. `first` is the seq of its first event, which orders a node's instances. */
 type InstanceState = NodeInstance & {
 	state: "running" | Outcome;
@@ -68,7 +66,7 @@ type Style = Named | typeof SOFT_GREY;
 
 const isGrey = (style: Style): style is typeof SOFT_GREY => style === SOFT_GREY;
 
-const styled = (style: Style, text: string) =>
+export const styled = (style: Style, text: string) =>
 	isGrey(style)
 		? `${style.open}${text}${style.close}`
 		: styleText(style, text, { validateStream: false });
@@ -287,6 +285,19 @@ function noteOf(s: InstanceState): string {
 	return flat(s.reason ?? "");
 }
 
+/** `instances` in graph order, as the watch view lists them: ordered by first event in `seen`, then laid out. */
+export function inGraphOrder<T extends NodeInstance>(
+	ir: Ir,
+	instances: readonly T[],
+	seen: Seen,
+): T[] {
+	const first = (i: T) => seen.get(keyOf(i))?.first ?? Number.MAX_SAFE_INTEGER;
+	return arranged(
+		ir,
+		[...instances].sort((a, b) => first(a) - first(b)),
+	);
+}
+
 /**
  * The frame's lines: a row per instance by first event, laid out as the IR nests them. A node that never ran is
  * `pending`, and `skipped` once the concert has settled.
@@ -316,7 +327,7 @@ function outline(ir: Ir, seen: Seen, agents: Agents, view: View): Line[] {
 }
 
 /** `text` padded with spaces to `cells` terminal cells. */
-const padCells = (text: string, cells: number) =>
+export const padCells = (text: string, cells: number) =>
 	text + " ".repeat(Math.max(0, cells - Bun.stringWidth(text)));
 
 const indentOf = (depth: number) => INDENT.repeat(depth);
@@ -395,6 +406,12 @@ const line = (segs: readonly Seg[], color: boolean) =>
 
 const lookOf = (state: string): Look | undefined =>
 	Object.entries(LOOK).find(([shown]) => shown === state)?.[1];
+
+/** `state`, an instance's or a concert's, in the style the views give it when `color`. */
+export const stateWord = (state: string, color: boolean) => {
+	const look = lookOf(state);
+	return color && look ? styled(look.style, state) : state;
+};
 
 /** How many letters of a concert's short id are shown at least. */
 const SHORT_ID_MIN = 8;

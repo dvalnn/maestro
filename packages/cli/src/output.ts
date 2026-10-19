@@ -23,11 +23,13 @@ import {
 } from "@maestro/ir";
 import {
 	closingBlock,
+	padCells,
 	shortIds,
+	styled,
 	tokensOf,
 	type View,
 } from "@maestro/render-text/live";
-import { colorOn, type Deps } from "./command";
+import type { Colors, Deps } from "./command";
 
 /** The exit codes of every command. */
 export const EXIT = {
@@ -77,23 +79,46 @@ const located = ({ source }: Diagnostic) =>
 		? `${source.file}:${source.line}${source.column === undefined ? "" : `:${source.column}`}: `
 		: "";
 
-/** A diagnostic as two lines: the source location when known, the code and message, then the hint. */
-export function renderDiagnostic(d: Diagnostic): string {
-	const label = d.severity === "warning" ? `warning ${d.code}` : d.code;
+const paint = (
+	style: Parameters<typeof styled>[0],
+	text: string,
+	color: boolean,
+) => (color ? styled(style, text) : text);
+
+/**
+ * A diagnostic as two lines: the source location when known, the code and message, then the hint. With `color` the code
+ * is red, or yellow for a warning, and the hint dim.
+ */
+export function renderDiagnostic(d: Diagnostic, color: boolean): string {
+	const warning = d.severity === "warning";
+	const label = paint(
+		warning ? "yellow" : "red",
+		warning ? `warning ${d.code}` : d.code,
+		color,
+	);
 	const where = d.message.startsWith(located(d)) ? "" : located(d);
-	return `${where}${label}: ${d.message}\n  ${d.hint}`;
+	return `${where}${label}: ${d.message}\n  ${paint("dim", d.hint, color)}`;
 }
 
-/** Rows of cells in columns two spaces apart, without trailing spaces. */
+/** `message` with its second line dim when `color`, if it is two lines: a hint, not a longer text. */
+export function hinted(message: string, color: boolean): string {
+	const [what, fix, ...more] = message.split("\n");
+	return fix === undefined || more.length > 0
+		? message
+		: `${what}\n${paint("dim", fix, color)}`;
+}
+
+/** Rows of cells in columns two spaces apart, without trailing spaces. A cell's width leaves out its color codes. */
 export function table(rows: readonly (readonly string[])[]): string {
 	const widths = rows.reduce<number[]>(
-		(w, row) => row.map((cell, i) => Math.max(w[i] ?? 0, cell.length)),
+		(w, row) =>
+			row.map((cell, i) => Math.max(w[i] ?? 0, Bun.stringWidth(cell))),
 		[],
 	);
 	return rows
 		.map((row) =>
 			row
-				.map((cell, i) => cell.padEnd(widths[i] ?? 0))
+				.map((cell, i) => padCells(cell, widths[i] ?? 0))
 				.join("  ")
 				.trimEnd(),
 		)
@@ -176,11 +201,10 @@ const tildeOf = (path: string, home: string | undefined) =>
 		: path;
 
 /**
- * How a closing block shows: colored on each stream that is a terminal when `color` allows, by default unless
- * `colorOn` says no. With `artifacts`, the concert's artifact area, it holds where and why the concert ended and its
- * outputs; without, its `concert` row alone.
+ * How a closing block shows: colored on each stream `color` names. With `artifacts`, the concert's artifact area, it
+ * holds where and why the concert ended and its outputs; without, its `concert` row alone.
  */
-type Closing = { color?: boolean; artifacts?: string };
+type Closing = { color: Colors; artifacts?: string };
 
 /**
  * Prints how the settled concert `row` ended: its `concert` row, and where and why when not ok, on stderr, then the
@@ -192,10 +216,10 @@ export function printClosing(
 	store: Records,
 	row: ConcertRecord,
 	result: ConcertResult,
-	{ color = colorOn(deps), artifacts }: Closing,
+	{ color, artifacts }: Closing,
 ) {
 	const { terminal, stderrTerminal } = deps;
-	const view = viewOf(row, color && stderrTerminal !== undefined, {
+	const view = viewOf(row, color.err, {
 		rows: 0,
 		columns: stderrTerminal?.().columns ?? 0,
 		tokens: tokensOf(store.metrics(row.id)),
@@ -214,7 +238,7 @@ export function printClosing(
 					reason: reasonOf(result),
 					outputs: outputRows(row.ir, area, result),
 				},
-		color && terminal !== undefined,
+		color.out,
 	);
 	deps.stderr(block.head);
 	if (block.outputs !== undefined) deps.stdout(block.outputs);

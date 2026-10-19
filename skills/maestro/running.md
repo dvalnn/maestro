@@ -4,6 +4,9 @@ Reference for the verbs after bootstrap, grouped by verb, with what their output
 `maestro <verb> --help`. Each verb takes `--json` (one JSON document on stdout), `--profile <name>`, `-c <key>=<value>`
 (repeatable) and `--debug`.
 
+Output is colored only on a terminal stream. `--no-color`, `NO_COLOR` or `TERM=dumb` turns it off, so a command you read
+is plain either way.
+
 ## Compose
 
 `maestro compose <c> [param flags]` builds the composition and pre-flights it. It spends nothing and writes nothing
@@ -62,6 +65,8 @@ either that no other concert's starts with. `--json` documents, paths and lane r
 
 `maestro ls <id>` lists the concert's node instances: instance, status, `stale`, reason.
 
+- Rows come in graph order, as `watch` draws them: scopes, groups and loop rounds nest, and one node's expansions keep
+  the order they started in. `--json` lists `instances` in the same order.
 - Instance names show their place in groups: `loop[0]/repair` is the first repair of a loop, `parMap[risk]/skeptic` the
   skeptic of item `risk`.
 - `stale` marks a row an earlier attempt of a resumed concert left, which the resume neither reused nor replaced.

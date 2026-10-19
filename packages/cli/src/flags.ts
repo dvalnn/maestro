@@ -11,11 +11,19 @@ type ParamFlags = {
 	params: ReadonlyMap<string, string>;
 };
 
+const NEGATION = "no-";
+
 const typeOf = (schema: JsonSchema) =>
 	isPlainObject(schema) ? schema.type : undefined;
 
 const itemsOf = (schema: JsonSchema): JsonSchema =>
 	isPlainObject(schema) && isPlainObject(schema.items) ? schema.items : true;
+
+/** Whether `taken` has the flag `key`, or for a boolean one its negation `no-<key>`. */
+const takes = (taken: Options, key: string) =>
+	Object.hasOwn(taken, key) ||
+	(key.startsWith(NEGATION) &&
+		taken[key.slice(NEGATION.length)]?.type === "boolean");
 
 /**
  * The flag of each param of `composition`, in kebab-case. A list takes its flag repeated, a boolean takes `--name` and
@@ -38,7 +46,7 @@ export function paramFlags(
 				`params '${other}' and '${name}' of '${label}' both take ${flag}`,
 				`Rename one of them in the composition`,
 			);
-		if (Object.hasOwn(taken, key))
+		if (takes(taken, key))
 			throw usageError(
 				`param '${name}' of '${label}' takes ${flag}, which the command takes too`,
 				`Rename '${name}' in the composition`,

@@ -5,6 +5,7 @@ import { listing, render, summary } from "@maestro/render-text";
 import {
 	COMMON,
 	type Command,
+	colorOf,
 	type Deps,
 	isSet,
 	peek,
@@ -43,7 +44,8 @@ async function save(prepared: Prepared, out: string) {
 
 /** Prints the warnings on stderr, then the summary, or the plan in full with `--plan`, and the graph with `--graph`. */
 function print(deps: Deps, plan: Plan, values: Values): void {
-	for (const d of plan.diagnostics) deps.stderr(renderDiagnostic(d));
+	const { err } = colorOf(deps, values);
+	for (const d of plan.diagnostics) deps.stderr(renderDiagnostic(d, err));
 	const full = isSet(values, "plan");
 	const graph = isSet(values, "graph");
 	if (full || !graph) deps.stdout(full ? listing(plan) : summary(plan));

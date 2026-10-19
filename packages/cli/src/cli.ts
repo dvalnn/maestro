@@ -1,9 +1,10 @@
-import { IR_VERSION, messageOf } from "@maestro/ir";
+import { type Diagnostic, IR_VERSION, messageOf } from "@maestro/ir";
 import { SDK_VERSION } from "@maestro/sdk/loader";
 import pkg from "../package.json";
 import {
 	COMMON,
 	type Command,
+	colorOf,
 	type Deps,
 	helpOf,
 	isSet,
@@ -13,6 +14,7 @@ import {
 	CliError,
 	diagnosticsOf,
 	EXIT,
+	hinted,
 	jsonOf,
 	renderDiagnostic,
 	table,
@@ -111,23 +113,36 @@ const rootHelp = () =>
 		"See 'maestro <command> --help' for a command's flags.",
 	].join("\n");
 
-const describe = (error: unknown, debug: boolean) =>
-	debug && error instanceof Error && error.stack
-		? error.stack
-		: messageOf(error);
+/** The text of `error`: its stack under `debug`, else its message, with the hint of a CliError dim when `color`. */
+const describe = (error: unknown, debug: boolean, color: boolean) => {
+	if (debug && error instanceof Error && error.stack) return error.stack;
+	const message = messageOf(error);
+	return error instanceof CliError ? hinted(message, color) : message;
+};
+
+/** Prints `diagnostics` on stderr, or as one document on stdout under `--json`. */
+function printDiagnostics(
+	diagnostics: readonly Diagnostic[],
+	deps: Deps,
+	json: boolean,
+	color: boolean,
+) {
+	if (json) deps.stdout(jsonOf({ ok: false, diagnostics }));
+	else for (const d of diagnostics) deps.stderr(renderDiagnostic(d, color));
+}
 
 /** Prints what stopped a command, on stderr, or as one document on stdout under `--json`, and gives its exit code. */
 function report(error: unknown, deps: Deps, args: readonly string[]): number {
 	const early = peek(COMMON, args);
 	const json = isSet(early, "json");
+	const { err: color } = colorOf(deps, early);
 	const diagnostics = diagnosticsOf(error);
 	if (diagnostics) {
-		if (json) deps.stdout(jsonOf({ ok: false, diagnostics }));
-		else for (const d of diagnostics) deps.stderr(renderDiagnostic(d));
+		printDiagnostics(diagnostics, deps, json, color);
 		return EXIT.usage;
 	}
 	const exit = error instanceof CliError ? error.exit : EXIT.failed;
-	const message = describe(error, isSet(early, "debug"));
+	const message = describe(error, isSet(early, "debug"), color && !json);
 	if (json) deps.stdout(jsonOf({ ok: false, error: message, exit }));
 	else deps.stderr(message);
 	return exit;

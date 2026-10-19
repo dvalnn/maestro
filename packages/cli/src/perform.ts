@@ -12,7 +12,9 @@ import { shortIds } from "@maestro/render-text/live";
 import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk/loader";
 import {
 	COMMON,
+	type Colors,
 	type Command,
+	colorOf,
 	type Deps,
 	isSet,
 	parse,
@@ -153,6 +155,7 @@ function report(
 	session: Session,
 	store: Records,
 	json: boolean,
+	color: Colors,
 	id: string,
 	result: ConcertResult,
 ): number {
@@ -163,6 +166,7 @@ function report(
 		);
 	else
 		printClosing(deps, store, concertOf(store, id), result, {
+			color,
 			artifacts: artifactsOf(session, id),
 		});
 	return exitOf(result.outcome);
@@ -175,8 +179,9 @@ async function conducted(
 	json: boolean,
 ): Promise<number> {
 	const { deps } = session;
+	const color = colorOf(deps, prepared.values);
 	for (const d of (await preflight(session, prepared)).diagnostics)
-		deps.stderr(renderDiagnostic(d));
+		deps.stderr(renderDiagnostic(d, color.err));
 	const concert = await conduct({
 		hosts: deps.hosts,
 		config: prepared.config,
@@ -200,7 +205,7 @@ async function conducted(
 	});
 	deps.stderr(`concert ${concert.id}`);
 	const result = await settled(concert);
-	return report(session, store, json, concert.id, result);
+	return report(session, store, json, color, concert.id, result);
 }
 
 async function performed(

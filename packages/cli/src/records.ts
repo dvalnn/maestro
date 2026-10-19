@@ -7,16 +7,18 @@ import {
 import { DURATION_EXAMPLE, MS_PER_UNIT } from "@maestro/ir";
 import {
 	agentText,
-	arranged,
 	compact,
+	inGraphOrder,
 	type ShortIds,
+	seen,
 	shortIds,
+	stateWord,
 	tokensOf,
 } from "@maestro/render-text/live";
 import {
 	COMMON,
 	type Command,
-	colorOn,
+	colorOf,
 	isSet,
 	type Options,
 	only,
@@ -138,14 +140,12 @@ export const ls: Command = {
 		),
 };
 
-/** `text`, the table of `rows` led by their short ids, each id's unique letters bold and the rest dim on a terminal. */
+/** `text`, the table of `rows` led by their short ids, each id's unique letters bold and the rest dim. */
 function highlighted(
-	{ deps }: Session,
 	short: ShortIds,
 	rows: readonly { id: string }[],
 	text: string,
 ): string {
-	if (!deps.terminal || !colorOn(deps)) return text;
 	return text
 		.split("\n")
 		.map((line, i) => {
@@ -158,6 +158,7 @@ function highlighted(
 }
 
 async function listed({ session, store, values, json }: Stored) {
+	const color = colorOf(session.deps, values).out;
 	const limit = textOf(values, "limit");
 	const concerts = store.concerts({
 		status: statusOf(textOf(values, "status")),
@@ -191,20 +192,28 @@ async function listed({ session, store, values, json }: Stored) {
 			dash(r.tour),
 			dash(r.workspace),
 			`${r.pack}.${r.composition}`,
-			r.status,
+			stateWord(r.status, color),
 			tokenCell(r.metrics),
 			formatBytes(r.diskUse),
 		]),
 	]);
 	session.deps.stdout(
-		json ? jsonOf(rows) : highlighted(session, short, rows, text),
+		json ? jsonOf(rows) : color ? highlighted(short, rows, text) : text,
 	);
 	return EXIT.ok;
 }
 
-async function instancesOf({ session, store, json }: Stored, prefix: string) {
+async function instancesOf(
+	{ session, store, values, json }: Stored,
+	prefix: string,
+) {
+	const color = colorOf(session.deps, values).out;
 	const row = concertOf(store, prefix);
-	const instances = arranged(row.ir, store.instances(row.id));
+	const instances = inGraphOrder(
+		row.ir,
+		store.instances(row.id),
+		seen(new Map(), store.events(row.id)),
+	);
 	const hostText = hostTextOf(session.deps.hosts, row.ir);
 	session.deps.stdout(
 		json
@@ -213,7 +222,7 @@ async function instancesOf({ session, store, json }: Stored, prefix: string) {
 					["instance", "status", "stale", "agent", "reason"],
 					...instances.map((i) => [
 						instanceName(row.ir, i),
-						i.status,
+						stateWord(i.status, color),
 						i.stale ? "stale" : "",
 						agentText(actorOf(i.enrichment, i.node, hostText), i.metrics),
 						i.reason ?? "",
@@ -247,6 +256,7 @@ async function waited({ session, store, values, positionals, json }: Stored) {
 		);
 	else if (result)
 		printClosing(deps, store, concertOf(store, id), result, {
+			color: colorOf(deps, values),
 			artifacts: artifactsOf(session, id),
 		});
 	else

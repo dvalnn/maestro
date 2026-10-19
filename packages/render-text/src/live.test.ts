@@ -4,13 +4,14 @@ import type { ConcertEvent, EventBody, Ir } from "@maestro/ir";
 import {
 	agentsOf,
 	agentText,
-	arranged,
 	closingBlock,
 	eventLine,
 	frame,
+	inGraphOrder,
 	seen,
 	shortId,
 	shortIds,
+	stateWord,
 	type View,
 } from "./live";
 
@@ -659,7 +660,7 @@ describe("short ids", () => {
 	});
 });
 
-describe("arranged", () => {
+describe("a loop in graph order", () => {
 	test("lists a loop's instances round by round, each round's in node order", () => {
 		const at = (node: string, expansion: string) => ({ node, expansion });
 		const started = [
@@ -669,12 +670,41 @@ describe("arranged", () => {
 			at("refine/loop/step", "[0]"),
 			at("refine/loop", ""),
 		];
-		expect(arranged(ir, started)).toEqual([
+		expect(inGraphOrder(ir, started, new Map())).toEqual([
 			at("refine/loop", ""),
 			at("refine/loop/step", "[0]"),
 			at("refine/loop/done", "[0]"),
 			at("refine/loop/step", "[1]"),
 			at("refine/loop/done", "[1]"),
 		]);
+	});
+});
+
+describe("inGraphOrder", () => {
+	test("lists the instances as the graph nests them, one node's expansions by first event whatever order they come in", () => {
+		const at = (node: string, expansion: string) => ({ node, expansion });
+		const stored = [
+			at("best", ""),
+			at("topics/draft", "[b]"),
+			at("topics", ""),
+			at("topics/draft", "[a]"),
+			at("topics/draft", "[c]"),
+		];
+		expect(inGraphOrder(ir, stored, seen(new Map(), EVENTS))).toEqual([
+			at("topics", ""),
+			at("topics/draft", "[c]"),
+			at("topics/draft", "[a]"),
+			at("topics/draft", "[b]"),
+			at("best", ""),
+		]);
+	});
+});
+
+describe("stateWord", () => {
+	test("styles a state as the views do with color, and leaves it plain without or when it is no state", () => {
+		expect(stateWord("ok", true)).toBe(`${SGR.green}ok${ESC}[39m`);
+		expect(stateWord("failed", true)).toBe(`${SGR.red}failed${ESC}[39m`);
+		expect(stateWord("ok", false)).toBe("ok");
+		expect(stateWord("toString", true)).toBe("toString");
 	});
 });

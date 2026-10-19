@@ -11,8 +11,9 @@ import {
 } from "@maestro/render-text/live";
 import {
 	COMMON,
+	type Colors,
 	type Command,
-	colorOn,
+	colorOf,
 	type Deps,
 	isSet,
 	type Options,
@@ -48,10 +49,6 @@ const WATCH_OPTIONS = {
 	events: {
 		type: "boolean",
 		desc: "Show every event, tool calls and thinking among them, not the graph",
-	},
-	color: {
-		type: "boolean",
-		desc: "Color the view on a terminal (default); --no-color turns it off",
 	},
 } as const satisfies Options;
 
@@ -129,7 +126,7 @@ function showOf(
 	const all = isSet(values, "events");
 	const terminal = json ? undefined : deps.terminal;
 	const live = terminal !== undefined;
-	const color = live && colorOn(deps, values.color !== false);
+	const color = live && colorOf(deps, values).out;
 	if (!terminal && (json || !all))
 		return { show: jsonLines(deps, all), live, ending: "json" };
 	return !all && terminal
@@ -158,17 +155,17 @@ async function watched({ session, store, values, positionals, json }: Stored) {
 		row = store.find(id) ?? row;
 	}
 	return closed(session, store, row, {
-		color: colorOn(deps, values.color !== false),
+		color: colorOf(deps, values),
 		ending,
 	});
 }
 
-/** Ends the watch of the settled `row` as `ending` says, colored where `color` allows, and gives its exit code. */
+/** Ends the watch of the settled `row` as `ending` says, colored on the streams `color` names, and gives its exit code. */
 function closed(
 	session: Session,
 	store: Records,
 	row: ConcertRecord,
-	{ color, ending }: { color: boolean; ending: WatchEnd },
+	{ color, ending }: { color: Colors; ending: WatchEnd },
 ) {
 	const result = store.result(row.id);
 	const doc = resultDoc(row.id, result);
