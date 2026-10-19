@@ -47,7 +47,7 @@ export type View = {
 		label: string;
 		title?: string;
 		status: "running" | Outcome;
-		/** How many leading characters of `id` tell it from every other concert's. */
+		/** How many leading letters of `id`'s short id tell it from every other concert's, as `shortIds` counts. */
 		unique: number;
 		startedAt: number;
 		settledAt?: number;
@@ -372,8 +372,8 @@ function fit(text: string, room: number): string {
 	return cut;
 }
 
-/** One line cut at `limit` terminal cells without trailing spaces, each segment styled after the cut. */
-function painted(segs: readonly Seg[], limit: number, color: boolean): string {
+/** One line cut at `limit` terminal cells without trailing spaces, each segment styled after the cut when `color`. */
+function painted(segs: readonly Seg[], color: boolean, limit: number): string {
 	const plain = segs.map(([text]) => text).join("");
 	let room = Math.min(Bun.stringWidth(plain.trimEnd()), limit);
 	let out = "";
@@ -385,45 +385,97 @@ function painted(segs: readonly Seg[], limit: number, color: boolean): string {
 	return out;
 }
 
+/** `segs` as one line as they are, each styled when `color`. */
+const line = (segs: readonly Seg[], color: boolean) =>
+	segs
+		.map(([text, style]) =>
+			color && style && text ? styled(style, text) : text,
+		)
+		.join("");
+
 const lookOf = (state: string): Look | undefined =>
 	Object.entries(LOOK).find(([shown]) => shown === state)?.[1];
 
-/** How many characters of a concert id its short form shows at least. */
+/** How many letters of a concert's short id are shown at least. */
 const SHORT_ID_MIN = 8;
+/** How many trailing hex digits of a concert's UUIDv7 its short id spells: the random tail. */
+const SHORT_ID_DIGITS = 15;
+/** jj's reverse hex: hex digit `d` is the letter at index `d`, so a short id never reads as hex. */
+const REVERSE_HEX = "zyxwvutsrqponmlk";
+const HEX_DIGIT = /[0-9a-f]/gi;
+const HEX_RADIX = 16;
 
-/** The length of the shortest prefix of `id` that no other of `ids` starts with. */
-export function uniqueLength(id: string, ids: readonly string[]): number {
-	const others = ids.filter((other) => other !== id);
-	let length = 1;
-	while (
-		length < id.length &&
-		others.some((o) => o.startsWith(id.slice(0, length)))
-	)
-		length++;
-	return length;
+/** Concert `id`'s short id: the last 15 hex digits of its UUID, each written as its reverse-hex letter. */
+export const shortId = (id: string) =>
+	id
+		.replaceAll("-", "")
+		.slice(-SHORT_ID_DIGITS)
+		.replace(HEX_DIGIT, (d) =>
+			REVERSE_HEX.charAt(Number.parseInt(d, HEX_RADIX)),
+		);
+
+/** How many leading characters `a` and `b` share. */
+function shared(a: string, b: string): number {
+	let n = 0;
+	while (n < a.length && a[n] === b[n]) n++;
+	return n;
 }
 
-/** An id as segments: its first `unique` characters, then the rest, dim. */
-export const idSegs = (
-	id: string,
-	unique: number,
-): (readonly [text: string, style: Named])[] => [
-	[safe(id.slice(0, unique)), "bold"],
-	[safe(id.slice(unique)), "dim"],
-];
+/** Concert `id`'s short id as segments: its first `unique` letters bold, then dim up to at least 8 letters. */
+function idSegs(id: string, unique: number): Seg[] {
+	const shown = shortId(id).slice(0, Math.max(SHORT_ID_MIN, unique));
+	return [
+		[shown.slice(0, unique), "bold"],
+		[shown.slice(unique), "dim"],
+	];
+}
 
-function headerSegs({ concert, now }: View): Seg[] {
-	const elapsed = duration((concert.settledAt ?? now) - concert.startedAt);
+/** The short ids of the concerts `ids`, each told apart from every other, worked out once for all of them. */
+export type ShortIds = {
+	/** How many leading letters of concert `id`'s short id no other's starts with. */
+	unique(id: string): number;
+	/** Concert `id`'s short id as shown, at least 8 letters, its unique ones bold and the rest dim when `color`. */
+	label(id: string, color: boolean): string;
+};
+
+/** The short ids of the concerts `ids`: each one's unique length is one past what it shares with its sorted neighbours. */
+export function shortIds(ids: readonly string[]): ShortIds {
+	const sorted = ids.map(shortId).sort();
+	const lengths = new Map(
+		sorted.map((short, i) => [
+			short,
+			Math.min(
+				short.length,
+				1 +
+					Math.max(
+						shared(short, sorted[i - 1] ?? ""),
+						shared(short, sorted[i + 1] ?? ""),
+					),
+			),
+		]),
+	);
+	const unique = (id: string) => lengths.get(shortId(id)) ?? 1;
+	return {
+		unique,
+		label: (id, color) => line(idSegs(id, unique(id)), color),
+	};
+}
+
+/** How long `view`'s concert ran: until it settled, else until now. */
+const ranFor = ({ concert, now }: View) =>
+	duration((concert.settledAt ?? now) - concert.startedAt);
+
+function headerSegs(view: View): Seg[] {
+	const { concert } = view;
 	const look = lookOf(concert.status);
 	const title =
 		concert.title === undefined ? "" : `"${flat(concert.title)}"${GAP}`;
-	const shown = Math.max(SHORT_ID_MIN, concert.unique);
 	return [
 		[`${look?.glyph ?? ""} ${safe(concert.label)}${GAP}${title}`, "bold"],
-		...idSegs(concert.id.slice(0, shown), concert.unique),
+		...idSegs(concert.id, concert.unique),
 		[`${GAP} `],
 		[safe(concert.status), look?.style],
-		[`${GAP}${elapsed}`],
+		[`${GAP}${ranFor(view)}`],
 	];
 }
 
@@ -474,7 +526,7 @@ export function frame(ir: Ir, seen: Seen, view: View, agents: Agents): string {
 		[],
 		footerSegs(rows, view),
 	]
-		.map((segs) => painted(segs, limit, view.color))
+		.map((segs) => painted(segs, view.color, limit))
 		.join("\n");
 }
 
@@ -679,16 +731,94 @@ export function eventLine(ir: Ir, event: Annotated, view: View): string {
 		[word, WORD_STYLE.get(word)],
 		[`${" ".repeat(Math.max(0, WORD_WIDTH - Bun.stringWidth(word)))}${GAP}`],
 	];
-	const indent = Bun.stringWidth(head.map(([text]) => text).join(""));
 	const segs = (DETAIL_SEGS.get(word) ?? valueSegs)(firstLine(detail));
+	return hanging(head, segs, view.columns, view.color);
+}
+
+/** How a concert ended beside its view: where and why when not ok, and each output as its port and its value's text. */
+export type Ending = {
+	at?: string;
+	reason?: string;
+	outputs: readonly (readonly [port: string, value: string])[];
+};
+
+/** The closing block's label column: wide enough for `changeset`, the stdlib results' longest port, and a gap. */
+const LABEL_WIDTH = "changeset".length + GAP.length;
+
+function concertSegs(view: View, label: Seg): Seg[] {
+	const { id, unique, status } = view.concert;
+	const tokens = view.tokens > 0 ? ` · ${compact(view.tokens)} tokens` : "";
+	return [
+		label,
+		...idSegs(id, unique),
+		[GAP],
+		[status, WORD_STYLE.get(status)],
+		[`${GAP}${ranFor(view)}${tokens}`, "dim"],
+	];
+}
+
+/**
+ * How `view`'s settled concert ended, in one label column: `head`, its `concert` row then `ending`'s `at` and `reason`,
+ * and `outputs`, a row per output when it has any, colored when `outputsColor`. With `view.columns` above 0 the reason
+ * wraps under the value column; each value is otherwise shown as it is.
+ */
+export function closingBlock(
+	view: View,
+	{ at, reason, outputs }: Ending = { outputs: [] },
+	outputsColor = view.color,
+): { head: string; outputs?: string } {
+	const width = Math.max(
+		LABEL_WIDTH,
+		...outputs.map(([port]) => Bun.stringWidth(flat(port)) + GAP.length),
+	);
+	const label = (text: string): Seg => [padCells(flat(text), width), "dim"];
+	const row = (name: string, value: readonly Seg[], columns = 0) =>
+		hanging([label(name)], value, columns, view.color);
+	const head = [
+		line(concertSegs(view, label("concert")), view.color),
+		...(at === undefined ? [] : [row("at", [[flat(at)]])]),
+		...(reason === undefined
+			? []
+			: [row("reason", [[flat(reason), "yellow"]], view.columns)]),
+	];
+	const rows = outputs.map(([port, value]) =>
+		hanging([label(port)], valueSegs(value), 0, outputsColor),
+	);
+	return {
+		head: head.join("\n"),
+		...(rows.length > 0 && { outputs: rows.join("\n") }),
+	};
+}
+
+/** `segs` without the spaces they end with. */
+function trimmed(segs: readonly Seg[]): Seg[] {
+	const kept = [...segs];
+	while (kept.length > 0 && !kept.at(-1)?.[0].trim()) kept.pop();
+	const [text = "", style] = kept.pop() ?? [];
+	return text ? [...kept, [text.trimEnd(), style]] : kept;
+}
+
+/**
+ * `head` then `detail`, wrapped under the detail's column at `columns` cells when above 0, else as it is. Without a
+ * detail, `head` ends at its last character.
+ */
+function hanging(
+	head: readonly Seg[],
+	detail: readonly Seg[],
+	columns: number,
+	color: boolean,
+): string {
+	const lead = head.map(([text]) => text).join("");
+	if (!detail.some(([text]) => text)) return line(trimmed(head), color);
+	const indent = Bun.stringWidth(lead);
 	const [first = [], ...more] =
-		view.columns > 0
-			? wrapped(segs, Math.max(MIN_DETAIL_WIDTH, view.columns - indent))
-			: [segs];
+		columns > 0
+			? wrapped(detail, Math.max(MIN_DETAIL_WIDTH, columns - indent))
+			: [detail];
 	return [
 		[...head, ...first],
 		...more.map((row): Seg[] => [[" ".repeat(indent)], ...row]),
 	]
-		.map((row) => painted(row, Number.POSITIVE_INFINITY, view.color))
+		.map((row) => line(row, color))
 		.join("\n");
 }

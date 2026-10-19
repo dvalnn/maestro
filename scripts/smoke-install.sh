@@ -136,7 +136,7 @@ maestro compose classics.panel_review --request smoke --change "$id.1" >/dev/nul
 maestro compose classics.v_model >/dev/null || fail "compose classics.v_model exited $?"
 maestro perform classics.build_then_repair --request smoke --profile stub >/dev/null 2>"$scratch/perform.err" \
   || fail "perform classics.build_then_repair exited $?: $(cat "$scratch/perform.err")"
-grep -q '^concert .* ok$' "$scratch/perform.err" || fail "build_then_repair did not settle ok: $(cat "$scratch/perform.err")"
+grep -qE '^concert +[k-z]+ +ok( |$)' "$scratch/perform.err" || fail "build_then_repair did not settle ok: $(cat "$scratch/perform.err")"
 [ -z "$(git -C "$target" status --porcelain)" ] || fail "the target checkout changed"
 [ "$(git -C "$target" rev-parse HEAD)" = "$head" ] || fail "the target HEAD moved"
 

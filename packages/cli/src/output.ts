@@ -1,8 +1,10 @@
 import { join } from "node:path";
 import { ConfigError } from "@maestro/core/config";
 import type {
+	ConcertRecord,
 	ConcertResult,
 	ConcertStatus,
+	Records,
 	Unresumable,
 } from "@maestro/core/perform";
 import {
@@ -19,7 +21,13 @@ import {
 	type NodeInstance,
 	replaceAt,
 } from "@maestro/ir";
-import { flat } from "@maestro/render-text/live";
+import {
+	closingBlock,
+	shortIds,
+	tokensOf,
+	type View,
+} from "@maestro/render-text/live";
+import { colorOn, type Deps } from "./command";
 
 /** The exit codes of every command. */
 export const EXIT = {
@@ -137,21 +145,88 @@ export const exitOf = (status: ConcertStatus) =>
 export const reasonOf = (result: ConcertResult | undefined) =>
 	result && "reason" in result ? result.reason : undefined;
 
+/** What a view holds beside the record's row, off a terminal: no size, so nothing wraps. */
+export const UNFRAMED = { columns: 0, rows: 0, tokens: 0, unique: 0 };
+
+/** The view of concert `row`, with the terminal size, token total and unique short id length given, none by default. */
+export const viewOf = (
+	row: ConcertRecord,
+	color: boolean,
+	{ unique, tokens, ...size } = UNFRAMED,
+): View => ({
+	concert: {
+		id: row.id,
+		label: `${row.pack}.${row.composition}`,
+		title: row.title,
+		status: row.status,
+		unique,
+		startedAt: row.startedAt,
+		settledAt: row.settledAt,
+	},
+	tokens,
+	now: Date.now(),
+	color,
+	...size,
+});
+
+/** `path` with the home directory `home` at its start shown as `~`. */
+const tildeOf = (path: string, home: string | undefined) =>
+	home && (path === home || path.startsWith(`${home}/`))
+		? `~${path.slice(home.length)}`
+		: path;
+
 /**
- * The line that says how concert `id` ended: `concert <id> <outcome>[ at <node>][: <reason>]`, on one line, with each
- * control character shown as its escape.
+ * How a closing block shows: colored on each stream that is a terminal when `color` allows, by default unless
+ * `colorOn` says no. With `artifacts`, the concert's artifact area, it holds where and why the concert ended and its
+ * outputs; without, its `concert` row alone.
  */
-export function closingLine(ir: Ir, id: string, result: ConcertResult): string {
-	const at =
-		result.outcome === "ok" ||
-		result.node === undefined ||
-		result.expansion === undefined
-			? ""
-			: ` at ${instanceName(ir, { node: result.node, expansion: result.expansion })}`;
-	const reason = reasonOf(result);
-	const line = `concert ${id} ${result.outcome}${at}${reason === undefined ? "" : `: ${reason}`}`;
-	return flat(line);
+type Closing = { color?: boolean; artifacts?: string };
+
+/**
+ * Prints how the settled concert `row` ended: its `concert` row, and where and why when not ok, on stderr, then the
+ * outputs of `result` on stdout. On a terminal stderr the reason wraps at its width; on a terminal stdout an artifact
+ * path starts `~` for home.
+ */
+export function printClosing(
+	deps: Deps,
+	store: Records,
+	row: ConcertRecord,
+	result: ConcertResult,
+	{ color = colorOn(deps), artifacts }: Closing,
+) {
+	const { terminal, stderrTerminal } = deps;
+	const view = viewOf(row, color && stderrTerminal !== undefined, {
+		rows: 0,
+		columns: stderrTerminal?.().columns ?? 0,
+		tokens: tokensOf(store.metrics(row.id)),
+		unique: shortIds(store.ids()).unique(row.id),
+	});
+	const area =
+		terminal && artifacts !== undefined
+			? tildeOf(artifacts, deps.env.HOME)
+			: artifacts;
+	const block = closingBlock(
+		view,
+		area === undefined
+			? undefined
+			: {
+					at: atOf(row.ir, result),
+					reason: reasonOf(result),
+					outputs: outputRows(row.ir, area, result),
+				},
+		color && terminal !== undefined,
+	);
+	deps.stderr(block.head);
+	if (block.outputs !== undefined) deps.stdout(block.outputs);
 }
+
+/** The instance `result` settled at, when it is not ok. */
+const atOf = (ir: Ir, result: ConcertResult) =>
+	result.outcome === "ok" ||
+	result.node === undefined ||
+	result.expansion === undefined
+		? undefined
+		: instanceName(ir, { node: result.node, expansion: result.expansion });
 
 /**
  * The JSON document of concert `id` and its `result`, `undefined` while it is running: the record's columns, in
@@ -200,17 +275,16 @@ const oneLine = (value: unknown) =>
 			);
 
 /**
- * The outputs of `result` as a `name  value` line per port, with each artifact in a value replaced by its path in the
- * artifact area `artifacts`, or `undefined` when it carries none.
+ * The outputs of `result` as a port and its value on one line, with each artifact in a value replaced by its path in
+ * the artifact area `artifacts`.
  */
-export function outputsText(
+function outputRows(
 	ir: Ir,
 	artifacts: string,
-	result: ConcertResult | undefined,
-): string | undefined {
-	if (result?.outputs === undefined) return undefined;
+	result: ConcertResult,
+): [port: string, value: string][] {
 	const out = ir.nodes.find((n) => n.id === result.node)?.out ?? {};
-	const rows = Object.entries(result.outputs).map(([port, value]) => {
+	return Object.entries(result.outputs ?? {}).map(([port, value]) => {
 		let shown = structuredClone(value);
 		for (const { type, pointer, value: ref } of findMarked(
 			out[port] ?? {},
@@ -220,7 +294,6 @@ export function outputsText(
 				shown = replaceAt(shown, pointer, join(artifacts, ref.path));
 		return [port, oneLine(shown)];
 	});
-	return rows.length ? table(rows) : undefined;
 }
 
 /** The error of a command that finds concert `id` running, which a command on settled concerts refuses. */

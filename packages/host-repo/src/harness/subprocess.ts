@@ -75,7 +75,10 @@ function fold(tally: Tally, e: HarnessEvent) {
 	else if (e.kind === "fault") tally.fault ??= e.reason;
 }
 
-/** Folds `e` into `tally` and enqueues it, except a usage event that reports nothing. Kills `proc` on a fault. */
+/**
+ * Folds `e` into `tally` and enqueues it, except a usage event that reports nothing or a blank text. Kills `proc` on a
+ * fault.
+ */
 async function forward(
 	proc: SandboxedProcess,
 	e: HarnessEvent,
@@ -84,7 +87,8 @@ async function forward(
 ) {
 	fold(tally, e);
 	const empty =
-		e.kind === "usage" && Object.values(e.metrics).every((v) => v === 0);
+		(e.kind === "usage" && Object.values(e.metrics).every((v) => v === 0)) ||
+		(e.kind === "text" && !e.text.trim());
 	if (!empty) ignoreClosed(() => emit.enqueue(e));
 	if (e.kind === "fault") await proc.kill().catch(() => {});
 }

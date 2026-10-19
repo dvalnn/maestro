@@ -27,11 +27,12 @@ A diagnostic prints as `<code>: <message>` then its hint, indented. The hint is 
 
 - It runs in the foreground until the concert settles. SIGINT or SIGTERM cancels the concert, which settles `failed`.
 - Start it detached, as SKILL.md's loop step 4 shows, and read the id from its stderr file.
-- Stderr: `concert <id>` once the concert starts, then, when it settles,
-  `concert <id> <outcome>[ at <instance>][: <reason>]`. Pre-flight diagnostics come before the first line.
-- Stdout: one `name  value` line per output of the result. A string, number, boolean or `null` prints as is, any other
-  value as compact JSON, and an artifact as its absolute path. A `rejected` concert shows its root cause's outputs, such
-  as a check's `logs` and `lane`; a `failed` one shows none.
+- Stderr: `concert <id>`, the full id, once the concert starts, then, when it settles, the closing block: a
+  `concert <short id>  <outcome>  <elapsed>[ · <tokens> tokens]` row, then `at <instance>` and `reason <reason>` lines
+  when not `ok`. Pre-flight diagnostics come before the first line.
+- Stdout: one `<port>  <value>` line per output of the result, its labels in the closing block's column. A string,
+  number, boolean or `null` prints as is, any other value as compact JSON, and an artifact as its absolute path. A
+  `rejected` concert shows its root cause's outputs, such as a check's `logs` and `lane`; a `failed` one shows none.
 - `--json`: stdout holds `{ id, status, resultNode, resultExpansion, reason, outputs }`; an artifact there is
   `{ path, contentHash, producer }`, its `path` relative to the concert's artifact directory (see Records). The id still
   comes first on stderr.
@@ -40,11 +41,14 @@ A diagnostic prints as `<code>: <message>` then its hint, indented. The hint is 
 
 ## Follow
 
+Each `<id>` below is a concert's full id, its short id (8 letters from `k` to `z`, as `ls` shows it) or a prefix of
+either that no other concert's starts with. `--json` documents, paths and lane refs hold the full id.
+
 - `maestro wait <id> --timeout <duration>` waits for the concert to settle, then prints what `perform` prints and exits
   with its code. A duration is a whole number and one unit: `500ms`, `90s`, `15m`, `12h`, `7d`. On the timeout it exits
   124 with the concert still running; wait again. Without `--timeout` it waits as long as the concert takes.
-- `maestro ls` lists concerts, newest first: id, title, tour, workspace, composition, status, disk use. `ls --help`
-  lists its filters, such as `--status running` and `--tour <slug>`.
+- `maestro ls` lists concerts, newest first: short id, title, tour, workspace, composition, status, disk use.
+  `ls --help` lists its filters, such as `--status running` and `--tour <slug>`.
 - `maestro watch <id>` shows the concert from its first event until it settles, and exits as `wait` does. On a terminal
   it redraws the graph in place, for a user to follow; Ctrl-C stops watching, not the concert. With `--json`, or without
   a terminal and without `--events`, it prints a JSON Lines stream, a line per instance state change (per event with
@@ -59,7 +63,7 @@ A diagnostic prints as `<code>: <message>` then its hint, indented. The hint is 
 - Instance names show their place in groups: `loop[0]/repair` is the first repair of a loop, `parMap[risk]/skeptic` the
   skeptic of item `risk`.
 - `stale` marks a row an earlier attempt of a resumed concert left, which the resume neither reused nor replaced.
-- The reason of the instance the closing line names is the concert's root cause.
+- The reason of the instance the closing block's `at` names is the concert's root cause.
 
 `maestro ls <id> --json` gives the concert's row (`id`, `pack`, `composition`, `status`, `pid`, `startedAt`,
 `settledAt`, `workspace`, `tour`, `title`) and `instances`, each with `node`, `expansion`, `status`, `reason`,

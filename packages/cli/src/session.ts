@@ -10,6 +10,7 @@ import {
 	type Records,
 } from "@maestro/core/perform";
 import { messageOf } from "@maestro/ir";
+import { shortId, shortIds } from "@maestro/render-text/live";
 import {
 	type Deps,
 	isSet,
@@ -91,17 +92,22 @@ export async function openSession(
 const LISTED_IDS = 5;
 
 /**
- * The concert of `store` whose id is `prefix` or starts with it.
+ * The concert of `store` whose id is `prefix`, or whose id or short id starts with it. A short id's letters are no hex
+ * digit, so a prefix never starts both kinds.
  * @throws CliError, a usage error, when the store has no such concert, or `prefix` starts several.
  */
 export function concertOf(store: Records, prefix: string): ConcertRecord {
 	const ids = store.ids();
-	const matching = ids.includes(prefix)
-		? [prefix]
-		: ids.filter((id) => prefix !== "" && id.startsWith(prefix));
+	const starts = (id: string) =>
+		prefix !== "" && (id.startsWith(prefix) || shortId(id).startsWith(prefix));
+	const matching = ids.includes(prefix) ? [prefix] : ids.filter(starts);
 	if (matching.length > 1) {
 		const more = matching.length - LISTED_IDS;
-		const listed = matching.slice(0, LISTED_IDS).join(", ");
+		const short = shortIds(ids);
+		const listed = matching
+			.slice(0, LISTED_IDS)
+			.map((id) => short.label(id, false))
+			.join(", ");
 		throw usageError(
 			`'${prefix}' starts ${matching.length} concerts: ${listed}${more > 0 ? ` and ${more} more` : ""}`,
 			"Give more characters of the id",

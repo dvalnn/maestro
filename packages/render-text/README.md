@@ -25,8 +25,14 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
   sets one.
 - `tokensOf(metrics)` and `compact(n)`: the sum of the `tokens_*` metrics but `tokens_reasoning`, and a count as `999`,
   `15.5k` or `1.2M`.
-- `uniqueLength(id, ids)` and `idSegs(id, unique)`: how many leading characters of `id` no other of `ids` shares, and
-  the id as a bold part and a dim rest.
+- `shortId(id)` and `shortIds(ids)`: a concert's short id, the UUID's last 15 hex digits in jj's reverse-hex letters
+  (`0` to `f` as `z` to `k`); and, worked out once for the concerts `ids`, how many of each one's leading letters no
+  other shares (`unique(id)`) and its label (`label(id, color)`), at least 8 letters, the unique ones bold and the rest
+  dim.
+- `closingBlock(view, ending, outputsColor)`: how a settled concert ended, in one label column: a `concert` row with its
+  short id, outcome, elapsed time and tokens, then `at` and a `reason` that wraps under the value column at
+  `view.columns`, and a row per output, colored when `outputsColor`. A value not wrapped shows as it is. Without
+  `ending`, the `concert` row alone.
 - `flat(text)`: text on one line, control characters shown as escapes.
 - `eventLine(ir, event, view)`: one event as its offset from the concert's start, instance name and what happened. A
   progress event shows its `kind`, then each other field; a multi-line string continues indented.

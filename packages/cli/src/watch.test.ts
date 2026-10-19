@@ -3,6 +3,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { Host, HostNodeResult } from "@maestro/core/host";
 import { fakeHost } from "@maestro/testkit";
 import {
+	closingOf,
 	ECHO,
 	FIRST,
 	GREET,
@@ -35,7 +36,7 @@ describe("watch without a terminal", () => {
 		["failed", { outcome: "failed", reason: "flaky" }, 1, undefined],
 		["rejected", { outcome: "rejected", reason: "not today" }, 3, undefined],
 	])(
-		"prints a %s concert's state changes in seq order, then the concert line, and exits %d",
+		"prints a %s concert's state changes in seq order, then the concert document, or with --events the closing block's concert row alone, and exits %d",
 		async (status, echo, code, outputs) => {
 			const w = await world();
 			const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf(echo)] }));
@@ -54,6 +55,11 @@ describe("watch without a terminal", () => {
 				resultNode: "echo/echo",
 			});
 			expect(lines.at(-1).outputs).toEqual(outputs);
+			const textual = await w.call(["watch", id, "--events"]);
+			expect(textual.err).toMatch(
+				new RegExp(`^${closingOf(id, status).source}`),
+			);
+			expect(textual.out.split("\n").at(-1)).toMatch(/^ *\+\S+ {2}echo\/echo /);
 		},
 	);
 });
@@ -124,17 +130,25 @@ describe("watch on a running concert", async () => {
 	test("redraws the graph in place until the concert settles, then exits as wait does", async () => {
 		expect((await performed).code).toBe(0);
 		expect(drawn.code).toBe(0);
-		expect(drawn.err.split("\n")).toEqual([
+		const [watching, ...closing] = drawn.err.split("\n");
+		expect(watching).toBe(
 			`watching concert ${id}; ctrl-c stops watching, not the concert`,
-			`concert ${id} ok`,
-		]);
+		);
+		expect(stripVTControlCharacters(closing.join("\n"))).toMatch(
+			new RegExp(`^${closingOf(id, "ok").source}`),
+		);
+		expect(stripVTControlCharacters(drawn.writes.at(-1) ?? "")).toBe(
+			"text       done",
+		);
 		expect(drawn.writes.slice(1).some((write) => REDRAW.test(write))).toBe(
 			true,
 		);
 		expect(drawn.writes[0]).not.toMatch(REDRAW);
-		const frames = drawn.writes.map((write) => write.replace(REDRAW, ""));
+		const frames = drawn.writes
+			.slice(0, -1)
+			.map((write) => write.replace(REDRAW, ""));
 		expect(frames.filter((f, i) => f === frames[i - 1])).toEqual([]);
-		const last = stripVTControlCharacters(drawn.writes.at(-1) ?? "");
+		const last = stripVTControlCharacters(frames.at(-1) ?? "");
 		expect(last).toMatch(/^ {2}✓ echo +fake\.task +ok/m);
 		expect(
 			frames.some((f) =>
@@ -192,7 +206,7 @@ describe("watch on a running concert", async () => {
 		for (const row of more) expect(row).toMatch(new RegExp(`^ {${column}}\\S`));
 	});
 
-	test("--events off a terminal prints the same text lines without color, then the closing line on stderr", () => {
+	test("--events off a terminal prints the same text lines without color, then the closing block's concert row on stderr", () => {
 		expect(pipedLines.code).toBe(0);
 		expect(pipedLines.writes.join("\n")).not.toContain(ESC);
 		expect(pipedLines.writes).toContainEqual(
@@ -200,7 +214,7 @@ describe("watch on a running concert", async () => {
 				new RegExp(`^ *\\+\\S+ {2}echo/echo +tool {6}ran bash ${DETAIL}$`),
 			),
 		);
-		expect(pipedLines.err).toBe(`concert ${id} ok`);
+		expect(pipedLines.err).toMatch(closingOf(id, "ok"));
 	});
 
 	test.each([
@@ -210,12 +224,18 @@ describe("watch on a running concert", async () => {
 		for (const mode of [[], ["--events"]]) {
 			const plain = await watching([...mode, ...args], {
 				terminal: TERMINAL,
+				stderrTerminal: TERMINAL,
 				env,
 			});
 			expect(plain.writes.join("\n")).not.toMatch(SGR);
-			expect(plain.err).toBe(`concert ${id} ok`);
+			expect(plain.err).not.toMatch(SGR);
+			expect(plain.err).toMatch(closingOf(id, "ok"));
 		}
-		const colored = await watching([], { terminal: TERMINAL });
+		const colored = await watching([], {
+			terminal: TERMINAL,
+			stderrTerminal: TERMINAL,
+		});
 		expect(colored.writes.join("\n")).toMatch(SGR);
+		expect(colored.err).toMatch(SGR);
 	});
 });

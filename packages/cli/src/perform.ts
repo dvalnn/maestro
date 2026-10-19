@@ -1,5 +1,4 @@
 import { basename } from "node:path";
-import type { Metrics } from "@maestro/core/host";
 import {
 	type Concert,
 	type ConcertResult,
@@ -20,11 +19,10 @@ import {
 	type Values,
 } from "./command";
 import {
-	closingLine,
 	exitOf,
 	jsonOf,
-	outputsText,
 	parseTour,
+	printClosing,
 	renderDiagnostic,
 	resultDoc,
 	resumeRefused,
@@ -120,22 +118,23 @@ async function settled(concert: Concert): Promise<ConcertResult> {
 	}
 }
 
-/** Prints the outputs the concert's result carries and how it ended, and gives its exit code. */
+/** Prints how the concert ended and the outputs its result carries, and gives its exit code. */
 function report(
 	session: Session,
+	store: Records,
 	json: boolean,
 	id: string,
-	{ ir }: Prepared,
 	result: ConcertResult,
-	metrics: Metrics,
 ): number {
 	const { deps } = session;
-	if (json) deps.stdout(jsonOf({ ...resultDoc(id, result), metrics }));
-	else {
-		const outputs = outputsText(ir, artifactsOf(session, id), result);
-		if (outputs !== undefined) deps.stdout(outputs);
-		deps.stderr(closingLine(ir, id, result));
-	}
+	if (json)
+		deps.stdout(
+			jsonOf({ ...resultDoc(id, result), metrics: store.metrics(id) }),
+		);
+	else
+		printClosing(deps, store, concertOf(store, id), result, {
+			artifacts: artifactsOf(session, id),
+		});
 	return exitOf(result.outcome);
 }
 
@@ -176,14 +175,7 @@ async function performed(
 	});
 	deps.stderr(`concert ${concert.id}`);
 	const result = await settled(concert);
-	return report(
-		session,
-		json,
-		concert.id,
-		prepared,
-		result,
-		store.metrics(concert.id),
-	);
+	return report(session, store, json, concert.id, result);
 }
 
 export const perform: Command = {

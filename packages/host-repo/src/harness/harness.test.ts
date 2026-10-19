@@ -74,12 +74,20 @@ test("events stream incrementally and usage surfaces as metrics", async () => {
 	expect(result.metrics).toEqual({ tokens_in: 15, tokens_out: 5 });
 });
 
-test("a usage event of zeros stays out of the stream but is folded into the metrics", async () => {
-	const run = stubHarness([{ emit: { type: "usage" } }]).run(request("x"));
+test("a usage event of zeros and a blank text stay out of the stream but are folded into the result", async () => {
+	const run = stubHarness([
+		{ emit: { type: "usage" } },
+		{ emit: { type: "text", text: "last" } },
+		{ emit: { type: "text", text: " \n" } },
+	]).run(request("x"));
 	const kinds: string[] = [];
 	for await (const e of run.events) kinds.push(e.kind);
 	expect(kinds).not.toContain("usage");
-	expect((await run.result).metrics).toEqual({ tokens_in: 0, tokens_out: 0 });
+	expect(kinds.filter((k) => k === "text")).toEqual(["text"]);
+	expect(await run.result).toMatchObject({
+		metrics: { tokens_in: 0, tokens_out: 0 },
+		reply: " \n",
+	});
 });
 
 test("the agent writes to the outbox and the session dir, and the last text is the reply", async () => {

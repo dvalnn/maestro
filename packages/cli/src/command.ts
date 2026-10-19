@@ -18,6 +18,8 @@ export type Deps = {
 	confirm?(question: string): Promise<boolean>;
 	/** The size of the terminal stdout writes to. Absent when stdout is not a terminal. */
 	terminal?(): { columns: number; rows: number };
+	/** The width of the terminal stderr writes to. Absent when stderr is not a terminal. */
+	stderrTerminal?(): { columns: number };
 };
 
 /** Whether output is colored: unless `enabled` is false, `NO_COLOR` is set or `TERM` is `dumb`. */

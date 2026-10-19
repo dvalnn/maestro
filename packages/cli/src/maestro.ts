@@ -53,11 +53,17 @@ process.exit(
 		stdout: (line) => emit(STDOUT_FD, line),
 		stderr: (line) => emit(STDERR_FD, line),
 		confirm: process.stdin.isTTY ? confirm : undefined,
-		// Reading `process.stdout` makes the descriptor non-blocking, which loses writes to a slow pipe.
+		// Reading `process.stdout` or `process.stderr` makes its descriptor non-blocking, which loses writes to a slow
+		// pipe.
 		terminal: isatty(STDOUT_FD)
 			? () => ({
 					columns: process.stdout.columns || UNSIZED_TERMINAL.columns,
 					rows: process.stdout.rows || UNSIZED_TERMINAL.rows,
+				})
+			: undefined,
+		stderrTerminal: isatty(STDERR_FD)
+			? () => ({
+					columns: process.stderr.columns || UNSIZED_TERMINAL.columns,
 				})
 			: undefined,
 	}),

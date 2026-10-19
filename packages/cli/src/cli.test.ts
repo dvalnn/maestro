@@ -2,14 +2,25 @@ import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import type { Host } from "@maestro/core/host";
 import { openRecord } from "@maestro/core/perform";
 import { IR_VERSION } from "@maestro/ir";
+import { shortId, shortIds } from "@maestro/render-text/live";
 import { SDK_VERSION, STDLIB_HASH } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
 import pkg from "../package.json";
 import { cleanup, FIXTURES } from "./fixtures/packs";
-import { ECHO, GREET, hostOf, idOf, json, world } from "./fixtures/world";
+import {
+	closingOf,
+	ECHO,
+	GREET,
+	hostOf,
+	idOf,
+	json,
+	shortOf,
+	world,
+} from "./fixtures/world";
 import { codeHashOf } from "./loader";
 
 const GOLDEN = join(FIXTURES, "../../../ir/fixtures");
@@ -17,6 +28,7 @@ const HELLO = join(FIXTURES, "hello.ts");
 const CLASH = join(FIXTURES, "clash.ts");
 const CLASH_OUT = join(FIXTURES, "clash-out.ts");
 const LOUD = join(FIXTURES, "loud.ts");
+const ESC = "\u001b";
 
 /** A code node writing two files and returning them beside plain values, and a stdlib node keyed on SDK 0.0.0. */
 const WRITE = `export async function write(_: object, ctx: { scratch: string }) {
@@ -167,7 +179,7 @@ describe("compose and config", () => {
 				await w.call(["perform", join(dir, `${name}.json`)], { hosts }),
 			).toMatchObject({
 				code: 0,
-				err: expect.stringMatching(/ok$/),
+				err: expect.stringMatching(/ {2}ok {2}\S+$/),
 			});
 	});
 });
@@ -186,7 +198,7 @@ describe("perform", () => {
 		}
 	});
 
-	test("prints each output on a line, an artifact as its path, and keys a stdlib node on this engine's stdlib", async () => {
+	test("prints each output on a line, an artifact as its absolute path when piped, and keys a stdlib node on this engine's stdlib", async () => {
 		const w = await world();
 		await Bun.write(join(w.root, "write.ts"), WRITE);
 		const file = join(w.root, "write.json");
@@ -200,58 +212,129 @@ describe("perform", () => {
 		const b = join(area, outputs.nested.files[0].path);
 		expect(await Bun.file(a).text()).toBe("a.txt");
 		const lines = [
-			`file    ${a}`,
-			`nested  {"files":["${b}"]}`,
-			"n       2",
-			"s       a b",
-			'multi   "a\\nb"',
-			'tab     "a\\tb"',
-			'cr      "a\\rb"',
-			'sep     "a\\u2028b"',
-			"none    null",
+			`file       ${a}`,
+			`nested     {"files":["${b}"]}`,
+			"n          2",
+			"s          a b",
+			'multi      "a\\nb"',
+			'tab        "a\\tb"',
+			'cr         "a\\rb"',
+			'sep        "a\\u2028b"',
+			"none       null",
 		];
 		expect(performed.out.split("\n")).toEqual(lines);
-		const waited = await w.call(["wait", id]);
+		const waited = await w.call(["wait", id], { env: { HOME: w.root } });
 		expect(waited.out.split("\n")).toEqual(lines);
-		expect(waited.err).toBe(`concert ${id} ok`);
+		expect(waited.err).toMatch(closingOf(id, "ok"));
 		const record = openRecord(join(w.root, "data/maestro/record.db"));
 		const [get] = record.find(id)?.ir.nodes ?? [];
 		record.close();
 		expect(get?.kind === "code" && get.worker.codeHash).toBe(STDLIB_HASH);
 	});
 
+	test("each stream of the closing block is colored and wrapped only on a terminal with color on, and home is ~ on a terminal stdout", async () => {
+		const w = await world();
+		await Bun.write(join(w.root, "write.ts"), WRITE);
+		const file = join(w.root, "write.json");
+		await Bun.write(file, JSON.stringify(writeIr(codeHashOf(WRITE))));
+		const terminal = () => ({ columns: 40, rows: 24 });
+		const env = { HOME: w.root };
+		const id = idOf(await w.call(["perform", file]));
+		const area = `data/maestro/concerts/${id}/artifacts/`;
+		const both = await w.call(["wait", id], {
+			terminal,
+			stderrTerminal: terminal,
+			env,
+		});
+		const unique = shortIds([id]).unique(id);
+		expect(both.err).toContain(
+			`${ESC}[1m${shortId(id).slice(0, unique)}${ESC}[22m${ESC}[2m${shortId(id).slice(unique, 8)}`,
+		);
+		expect(both.out).toContain(ESC);
+		expect(stripVTControlCharacters(both.out)).toStartWith(
+			`file       ~/${area}`,
+		);
+		const teed = await w.call(["wait", id], { stderrTerminal: terminal, env });
+		expect(teed.err).toContain(ESC);
+		expect(teed.out).not.toContain(ESC);
+		expect(teed.out).toStartWith(`file       ${w.root}/${area}`);
+		const logged = await w.call(["wait", id], { terminal, env });
+		expect(logged.err).not.toContain(ESC);
+		expect(logged.out).toContain(ESC);
+		for (const off of [{ NO_COLOR: "1" }, { TERM: "dumb" }] as Record<
+			string,
+			string
+		>[])
+			for (const verb of [
+				["wait", id],
+				["perform", file],
+			]) {
+				const plain = await w.call(verb, {
+					terminal,
+					stderrTerminal: terminal,
+					env: { ...env, ...off },
+				});
+				expect(plain.err + plain.out).not.toContain(ESC);
+				expect(plain.out).toStartWith("file       ~/");
+			}
+
+		const reason =
+			"a reason long enough to wrap on a terminal forty cells wide, and longer than any default width a piped stream could take";
+		const broke = idOf(
+			await w.call(["p", ...GREET], {
+				hosts: [hostOf({ outcome: "failed", reason })],
+			}),
+		);
+		const wrapped = await w.call(["wait", broke], { stderrTerminal: terminal });
+		const rows = stripVTControlCharacters(wrapped.err).split("\n").slice(2);
+		expect(rows[0]).toStartWith("reason     a reason");
+		expect(rows.length).toBeGreaterThan(1);
+		for (const row of rows.slice(1)) expect(row).toMatch(/^ {11}\S/);
+		expect(rows.map((row) => row.slice(11)).join(" ")).toBe(reason);
+		for (const piped of [{}, { terminal }])
+			expect((await w.call(["wait", broke], piped)).err).toEndWith(
+				`\nreason     ${reason}`,
+			);
+	});
+
 	test.each([
-		["ok", ECHO, 0, /ok$/, ["text  done"]],
+		["ok", ECHO, 0, [], ["text       done"]],
 		[
 			"failed",
 			{ outcome: "failed", reason: "flaky\nnow\u001b[2J" },
 			1,
-			/failed at echo\/echo: flaky now\\u001b\[2J$/,
+			[
+				["at", "echo/echo"],
+				["reason", "flaky now\\u001b[2J"],
+			],
 			[],
 		],
 		[
 			"rejected",
 			{ outcome: "rejected", reason: "not today", outputs: { text: "draft" } },
 			3,
-			/rejected at echo\/echo: not today$/,
-			["text  draft"],
+			[
+				["at", "echo/echo"],
+				["reason", "not today"],
+			],
+			["text       draft"],
 		],
-	])(
-		"a concert that settles %s prints only its outputs on stdout, its id and closing line on stderr, and exits %d",
-		async (status, echo, code, report, outputs) => {
+	] as const)(
+		"a concert that settles %s prints only its outputs on stdout, its id and closing block on stderr, and exits %d",
+		async (status, echo, code, rows, outputs) => {
 			const w = await world();
 			const performed = await w.call(["p", ...GREET], {
 				hosts: [hostOf(echo)],
 			});
 			expect(performed.code).toBe(code);
 			const id = idOf(performed);
-			expect(performed.err).toMatch(report);
+			expect(performed.err).toMatch(closingOf(id, status, ...rows));
 			expect(performed.err.split("\n")[0]).toBe(`concert ${id}`);
-			expect(performed.out === "" ? [] : performed.out.split("\n")).toEqual(
-				outputs,
-			);
-			const [, closing = ""] = performed.err.split("\n");
-			expect((await w.call(["wait", id])).err).toBe(closing);
+			expect(performed.out === "" ? [] : performed.out.split("\n")).toEqual([
+				...outputs,
+			]);
+			const [, ...closing] = performed.err.split("\n");
+			expect((await w.call(["wait", id])).err).toBe(closing.join("\n"));
 			expect(json(await w.call(["ls", "--json"]))).toMatchObject([
 				{ id, status },
 			]);
@@ -295,7 +378,7 @@ describe("perform", () => {
 		});
 		expect(performed).toMatchObject({
 			code: 0,
-			err: expect.stringMatching(/ok$/),
+			err: expect.stringMatching(/ {2}ok {2}\S+$/),
 		});
 	});
 });
@@ -641,7 +724,7 @@ describe("the record", () => {
 		const id = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
 		const listed = await w.call(["ls"], { hosts: [host] });
 		expect(listed).toMatchObject({ code: 0 });
-		expect(listed.out).toContain(id);
+		expect(listed.out).toContain(shortOf(id));
 		expect(listed.err).toBe(
 			`host 'fake' cannot measure concert ${id}: record '/x' is malformed`,
 		);
@@ -673,8 +756,8 @@ describe("the record", () => {
 		);
 		expect(await w.call(["w", done])).toMatchObject({
 			code: 0,
-			out: "text  done",
-			err: `concert ${done} ok`,
+			out: "text       done",
+			err: expect.stringMatching(closingOf(done, "ok")),
 		});
 		expect(json(await w.call(["wait", done, "--json"]))).toMatchObject({
 			status: "ok",
@@ -683,12 +766,16 @@ describe("the record", () => {
 		expect(await w.call(["wait", broke])).toMatchObject({
 			code: 1,
 			out: "",
-			err: `concert ${broke} failed at echo/echo: flaky`,
+			err: expect.stringMatching(
+				closingOf(broke, "failed", ["at", "echo/echo"], ["reason", "flaky"]),
+			),
 		});
 		expect(await w.call(["wait", refused, "--timeout", "5s"])).toMatchObject({
 			code: 3,
-			out: "text  draft",
-			err: `concert ${refused} rejected at echo/echo: no`,
+			out: "text       draft",
+			err: expect.stringMatching(
+				closingOf(refused, "rejected", ["at", "echo/echo"], ["reason", "no"]),
+			),
 		});
 		expect(json(await w.call(["wait", refused, "--json"]))).toEqual({
 			id: refused,
@@ -729,6 +816,8 @@ describe("the record", () => {
 			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
 		);
 		expect(json(await w.call(["wait", id, "--json"])).metrics).toEqual(metrics);
+		expect((await w.call(["wait", id])).err).toMatch(/ · 15\.5k tokens$/m);
+		expect((await w.call(["wait", bare])).err).not.toContain("tokens");
 		expect(
 			json(await w.call(["ls", "--json"])).find(
 				(r: { id: string }) => r.id === id,
@@ -736,14 +825,16 @@ describe("the record", () => {
 		).toEqual(metrics);
 		const listed = (await w.call(["ls"])).out.split("\n");
 		expect(listed[0]).toMatch(/status +tokens +disk$/);
-		expect(listed.find((l) => l.startsWith(id))).toMatch(/ok +15\.5k +/);
-		expect(listed.find((l) => l.startsWith(bare))).toMatch(/ok +- +/);
+		expect(listed.find((l) => l.startsWith(shortOf(id)))).toMatch(
+			/ok +15\.5k +/,
+		);
+		expect(listed.find((l) => l.startsWith(shortOf(bare)))).toMatch(/ok +- +/);
 		expect((await w.call(["ls", id], { hosts: [host] })).out).toContain(
 			"pi · claude-haiku-5.5 · medium  15.5k tok",
 		);
 	});
 
-	test("an ambiguous prefix lists at most five ids, then how many more", async () => {
+	test("an ambiguous prefix of the id or of the short id lists at most five short ids, then how many more", async () => {
 		const w = await world();
 		const ids: string[] = [];
 		for (let i = 0; i < 7; i++)
@@ -753,9 +844,26 @@ describe("the record", () => {
 		const { code, err } = await w.call(["wait", "0"]);
 		expect(code).toBe(2);
 		expect(err.split("\n")).toEqual([
-			`'0' starts 7 concerts: ${ids.slice(0, 5).join(", ")} and 2 more`,
+			`'0' starts 7 concerts: ${ids.slice(0, 5).map(shortOf).join(", ")} and 2 more`,
 			"Give more characters of the id",
 		]);
+		// Copies of a performed concert under ids whose short ids share all but their last letter.
+		const twins = [
+			"01a10000-0000-7000-8000-000000000001",
+			"01a10000-0000-7000-8000-000000000002",
+		];
+		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+		for (const twin of twins)
+			db.run(
+				"INSERT INTO concerts SELECT ?, composition, pack, ir, pid, status, started_at, settled_at, result_node, result_expansion, reason, workspace, tour, title, module_dir, file FROM concerts WHERE id = ?",
+				[twin, ids[0] ?? ""],
+			);
+		db.close();
+		expect((await w.call(["wait", "zzzz"])).err.split("\n")).toEqual([
+			`'zzzz' starts 2 concerts: ${twins.map(shortId).join(", ")}`,
+			"Give more characters of the id",
+		]);
+		expect(twins.map(shortId)).toEqual(["zzzzzzzzzzzzzzy", "zzzzzzzzzzzzzzx"]);
 	});
 
 	test("every command takes a unique prefix of a concert id; an ambiguous one is a usage error naming the matches, an unknown one is refused", async () => {
@@ -767,7 +875,7 @@ describe("the record", () => {
 		expect(await w.call(["wait", ambiguous])).toEqual({
 			code: 2,
 			out: "",
-			err: `'${ambiguous}' starts 2 concerts: ${a}, ${b}\nGive more characters of the id`,
+			err: `'${ambiguous}' starts 2 concerts: ${shortOf(a)}, ${shortOf(b)}\nGive more characters of the id`,
 		});
 		expect(await w.call(["wait", "nope"])).toMatchObject({
 			code: 2,
@@ -776,6 +884,8 @@ describe("the record", () => {
 		const prefix = a.slice(0, shared + 1);
 		expect(json(await w.call(["wait", prefix, "--json"])).id).toBe(a);
 		expect(json(await w.call(["ls", prefix, "--json"])).id).toBe(a);
+		expect(json(await w.call(["wait", shortOf(a), "--json"])).id).toBe(a);
+		expect(json(await w.call(["ls", shortId(a), "--json"])).id).toBe(a);
 		expect((await w.call(["watch", prefix])).code).toBe(0);
 		expect(await w.call(["kill", prefix])).toMatchObject({
 			err: `concert ${a} is not running, it settled ok\nSee 'maestro ls ${a}'`,

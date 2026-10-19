@@ -1,19 +1,17 @@
-import { styleText } from "node:util";
 import type { Metrics } from "@maestro/core/host";
 import {
 	type ConcertRecord,
 	type ConcertStatus,
 	openRecord,
-	type Records,
 } from "@maestro/core/perform";
 import { DURATION_EXAMPLE, MS_PER_UNIT } from "@maestro/ir";
 import {
 	agentText,
 	arranged,
 	compact,
-	idSegs,
+	type ShortIds,
+	shortIds,
 	tokensOf,
-	uniqueLength,
 } from "@maestro/render-text/live";
 import {
 	COMMON,
@@ -28,16 +26,15 @@ import {
 import { actorOf, hostTextOf } from "./host-text";
 import {
 	CliError,
-	closingLine,
 	EXIT,
 	exitOf,
 	formatBytes,
 	instanceName,
 	jsonOf,
-	outputsText,
 	parseCount,
 	parseDuration,
 	parseTour,
+	printClosing,
 	resultDoc,
 	table,
 	usageError,
@@ -141,26 +138,21 @@ export const ls: Command = {
 		),
 };
 
-/** `text`, the table of `rows`, with each id's first characters that no other id shares in bold and the rest dim. */
+/** `text`, the table of `rows` led by their short ids, each id's unique letters bold and the rest dim on a terminal. */
 function highlighted(
 	{ deps }: Session,
-	store: Records,
+	short: ShortIds,
 	rows: readonly { id: string }[],
 	text: string,
 ): string {
 	if (!deps.terminal || !colorOn(deps)) return text;
-	const all = store.ids();
 	return text
 		.split("\n")
 		.map((line, i) => {
 			const id = rows[i - 1]?.id;
-			if (id === undefined) return line;
-			const styled = idSegs(id, uniqueLength(id, all)).map(([part, style]) =>
-				style && part
-					? styleText(style, part, { validateStream: false })
-					: part,
-			);
-			return styled.join("") + line.slice(id.length);
+			return id === undefined
+				? line
+				: short.label(id, true) + line.slice(short.label(id, false).length);
 		})
 		.join("\n");
 }
@@ -181,6 +173,7 @@ async function listed({ session, store, values, json }: Stored) {
 			diskUse: await diskOf(session, c.id),
 		})),
 	);
+	const short = shortIds(store.ids());
 	const text = table([
 		[
 			"id",
@@ -193,7 +186,7 @@ async function listed({ session, store, values, json }: Stored) {
 			"disk",
 		],
 		...rows.map((r) => [
-			r.id,
+			short.label(r.id, false),
 			dash(r.title),
 			dash(r.tour),
 			dash(r.workspace),
@@ -204,7 +197,7 @@ async function listed({ session, store, values, json }: Stored) {
 		]),
 	]);
 	session.deps.stdout(
-		json ? jsonOf(rows) : highlighted(session, store, rows, text),
+		json ? jsonOf(rows) : highlighted(session, short, rows, text),
 	);
 	return EXIT.ok;
 }
@@ -245,18 +238,18 @@ async function waited({ session, store, values, positionals, json }: Stored) {
 	const timeout = textOf(values, "timeout");
 	const limit =
 		timeout === undefined ? undefined : parseDuration("--timeout", timeout);
-	const { ir, id } = concertOf(store, prefix);
+	const { id } = concertOf(store, prefix);
 	const result = (await store.wait(id, limit)) && store.result(id);
 	const { status } = resultDoc(id, result);
 	if (json)
 		deps.stdout(
 			jsonOf({ ...resultDoc(id, result), metrics: store.metrics(id) }),
 		);
-	else if (result) {
-		const outputs = outputsText(ir, artifactsOf(session, id), result);
-		if (outputs !== undefined) deps.stdout(outputs);
-		deps.stderr(closingLine(ir, id, result));
-	} else
+	else if (result)
+		printClosing(deps, store, concertOf(store, id), result, {
+			artifacts: artifactsOf(session, id),
+		});
+	else
 		deps.stderr(
 			`concert ${id} is still running after ${timeout}\nWait again, or stop it with 'maestro kill ${id}'`,
 		);

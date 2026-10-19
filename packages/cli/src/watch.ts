@@ -6,9 +6,8 @@ import {
 	frame,
 	type Seen,
 	seen,
+	shortIds,
 	tokensOf,
-	uniqueLength,
-	type View,
 } from "@maestro/render-text/live";
 import {
 	COMMON,
@@ -21,8 +20,14 @@ import {
 	type Values,
 } from "./command";
 import { actorOf, annotated, hostTextOf } from "./host-text";
-import { closingLine, exitOf, resultDoc } from "./output";
-import { concertOf, type Stored, withStore } from "./session";
+import { exitOf, printClosing, resultDoc, UNFRAMED, viewOf } from "./output";
+import {
+	artifactsOf,
+	concertOf,
+	type Session,
+	type Stored,
+	withStore,
+} from "./session";
 
 /** How often `watch` reads the record, in milliseconds. */
 const WATCH_POLL_MS = 100;
@@ -33,8 +38,6 @@ const CLEAR_BELOW = `${ESC}[J`;
 const cursorUp = (lines: number) => `${ESC}[${lines}F`;
 /** The event types a view's JSON lines show without `--events`: those that change an instance's state. */
 const STATE_CHANGES = new Set(["running", "settled", "reused"]);
-/** What a view holds beside the record's row, off a terminal: no size, so event lines do not wrap. */
-const UNFRAMED = { columns: 0, rows: 0, tokens: 0, unique: 0 };
 
 const WATCH_OPTIONS = {
 	...COMMON,
@@ -54,26 +57,6 @@ const WATCH_OPTIONS = {
 
 type Terminal = NonNullable<Deps["terminal"]>;
 type Show = (events: readonly ConcertEvent[], row: ConcertRecord) => void;
-
-const viewOf = (
-	row: ConcertRecord,
-	color: boolean,
-	{ unique, tokens, ...size } = UNFRAMED,
-): View => ({
-	concert: {
-		id: row.id,
-		label: `${row.pack}.${row.composition}`,
-		title: row.title,
-		status: row.status,
-		unique,
-		startedAt: row.startedAt,
-		settledAt: row.settledAt,
-	},
-	tokens,
-	now: Date.now(),
-	color,
-	...size,
-});
 
 const jsonLines =
 	(deps: Deps, all: boolean): Show =>
@@ -101,14 +84,14 @@ function frames(
 ): Show {
 	let state: Seen = new Map();
 	let last: string | undefined;
-	const ids = store.ids();
+	const short = shortIds(store.ids());
 	return (events, row) => {
 		const hostText = hostTextOf(deps.hosts, row.ir);
 		state = seen(state, annotated(events, hostText));
 		const view = viewOf(row, color, {
 			...terminal(),
 			tokens: tokensOf(store.metrics(row.id)),
-			unique: uniqueLength(row.id, ids),
+			unique: short.unique(row.id),
 		});
 		const agents = agentsOf(
 			store.instances(row.id).map((i) => ({
@@ -128,26 +111,30 @@ function frames(
 }
 
 /**
- * How a watch shows events; `text` when as text, on a terminal or for `--events` without `--json`, else JSON lines, and
- * `live` when on a terminal.
+ * How a watch ends: with the concert document after JSON lines, the closing block after the graph, else the closing
+ * block's `concert` row alone.
+ */
+type WatchEnd = "json" | "block" | "row";
+
+/**
+ * How a watch shows events: as text on a terminal or for `--events` without `--json`, else as JSON lines; `live` when
+ * on a terminal, and how it ends.
  */
 function showOf(
 	deps: Deps,
 	store: Records,
 	values: Values,
 	json: boolean,
-): { show: Show; text: boolean; live: boolean } {
+): { show: Show; live: boolean; ending: WatchEnd } {
 	const all = isSet(values, "events");
 	const terminal = json ? undefined : deps.terminal;
 	const live = terminal !== undefined;
-	if (!terminal && (json || !all))
-		return { show: jsonLines(deps, all), text: false, live };
 	const color = live && colorOn(deps, values.color !== false);
-	const show =
-		!all && terminal
-			? frames(deps, store, terminal, color)
-			: eventLines(deps, color, terminal);
-	return { show, text: true, live };
+	if (!terminal && (json || !all))
+		return { show: jsonLines(deps, all), live, ending: "json" };
+	return !all && terminal
+		? { show: frames(deps, store, terminal, color), live, ending: "block" }
+		: { show: eventLines(deps, color, terminal), live, ending: "row" };
 }
 
 async function watched({ session, store, values, positionals, json }: Stored) {
@@ -155,7 +142,7 @@ async function watched({ session, store, values, positionals, json }: Stored) {
 	const prefix = only(positionals, "concert", "Name the concert to watch");
 	let row = concertOf(store, prefix);
 	const { id } = row;
-	const { show, text, live } = showOf(deps, store, values, json);
+	const { show, live, ending } = showOf(deps, store, values, json);
 	if (live && row.status === "running")
 		deps.stderr(
 			`watching concert ${id}; ctrl-c stops watching, not the concert`,
@@ -170,15 +157,28 @@ async function watched({ session, store, values, positionals, json }: Stored) {
 		await Bun.sleep(WATCH_POLL_MS);
 		row = store.find(id) ?? row;
 	}
-	return closed(deps, store, row, text);
+	return closed(session, store, row, {
+		color: colorOn(deps, values.color !== false),
+		ending,
+	});
 }
 
-/** Ends the watch of the settled `row`: the concert document on stdout after JSON lines, else the closing line on stderr. */
-function closed(deps: Deps, store: Records, row: ConcertRecord, text: boolean) {
+/** Ends the watch of the settled `row` as `ending` says, colored where `color` allows, and gives its exit code. */
+function closed(
+	session: Session,
+	store: Records,
+	row: ConcertRecord,
+	{ color, ending }: { color: boolean; ending: WatchEnd },
+) {
 	const result = store.result(row.id);
 	const doc = resultDoc(row.id, result);
-	if (!text) deps.stdout(JSON.stringify({ type: "concert", ...doc }));
-	else if (result) deps.stderr(closingLine(row.ir, row.id, result));
+	if (ending === "json")
+		session.deps.stdout(JSON.stringify({ type: "concert", ...doc }));
+	else if (result)
+		printClosing(session.deps, store, row, result, {
+			color,
+			artifacts: ending === "block" ? artifactsOf(session, row.id) : undefined,
+		});
 	return exitOf(doc.status);
 }
 

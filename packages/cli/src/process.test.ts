@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fakeHost } from "@maestro/testkit";
 import { cleanup, demoSource, packOf, scratch } from "./fixtures/packs";
 import {
+	closingOf,
 	ECHO,
 	FIRST,
 	GREET,
@@ -110,7 +111,9 @@ describe("a concert in another process", () => {
 		expect(await w.call(["wait", id])).toMatchObject({
 			code: 1,
 			out: "",
-			err: `concert ${id} failed: the concert was cancelled`,
+			err: expect.stringMatching(
+				closingOf(id, "failed", ["reason", "the concert was cancelled"]),
+			),
 		});
 		expect((await w.call(["kill", id])).err).toMatch(
 			/is not running, it settled failed/,
@@ -138,8 +141,10 @@ describe("a concert in another process", () => {
 		});
 		expect(resumed).toMatchObject({
 			code: 0,
-			out: "text  done",
-			err: `concert ${id}\nconcert ${id} ok`,
+			out: "text       done",
+			err: expect.stringMatching(
+				new RegExp(`^concert ${id}${closingOf(id, "ok").source}`),
+			),
 		});
 		expect(started).toEqual(["echo/echo"]);
 		const shape = json(await w.call(["ls", id, "--json"])).instances.filter(
@@ -230,7 +235,9 @@ export const work = composition("work", { examples: [{}] }, () => {
 		});
 		expect(resumed).toMatchObject({
 			code: 0,
-			err: `concert ${id}\nconcert ${id} ok`,
+			err: expect.stringMatching(
+				new RegExp(`^concert ${id}${closingOf(id, "ok").source}`),
+			),
 		});
 		expect(started).toEqual(["after"]);
 		const marks = json(await w.call(["ls", id, "--json"])).instances.filter(
@@ -285,7 +292,14 @@ describe("kill", () => {
 			expect(await w.call(["wait", id])).toMatchObject({
 				code: 1,
 				out: "",
-				err: `concert ${id} failed at echo/echo: process exited`,
+				err: expect.stringMatching(
+					closingOf(
+						id,
+						"failed",
+						["at", "echo/echo"],
+						["reason", "process exited"],
+					),
+				),
 			});
 			expect(await w.call(["perform", "--resume", id])).toMatchObject({
 				code: 0,

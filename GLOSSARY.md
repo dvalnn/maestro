@@ -24,6 +24,10 @@ kind's `execute` hook carries out one node instance.
 **Concert**: One run of the perform stage over a plan. It has an id, a record and a result. _Avoid_: run, execution,
 performance
 
+**Short id**: A concert's display id: the last 15 hex digits of its UUIDv7 written in jj's reverse-hex letters (`0` to
+`f` as `z` to `k`), shown 8 letters long. Commands take a prefix of it or of the full id; the record, paths, lane refs
+and `--json` hold the full id.
+
 **Concert record**: The durable account of a concert: node instances, outcomes, artifacts, events and metrics.
 
 **Node instance**: One concrete run of a node within a concert, identified by node id and expansion path. _Avoid_: leg

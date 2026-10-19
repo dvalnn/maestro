@@ -5,10 +5,12 @@ import {
 	agentsOf,
 	agentText,
 	arranged,
+	closingBlock,
 	eventLine,
 	frame,
 	seen,
-	uniqueLength,
+	shortId,
+	shortIds,
 	type View,
 } from "./live";
 
@@ -18,6 +20,7 @@ const ir: Ir = structuredClone(
 );
 
 const START = 1_792_285_440_000;
+const CONCERT = "01a154df-b99f-72ca-8f73-b1fc195571b6";
 const ESC = "\u001b";
 const SGR = {
 	green: `${ESC}[32m`,
@@ -73,7 +76,7 @@ const EVENTS = eventsOf([
 
 const VIEW: View = {
 	concert: {
-		id: "7f3a91c2",
+		id: CONCERT,
 		label: "fixtures.fanout-fanin-loop",
 		title: "greeting",
 		status: "running",
@@ -94,7 +97,7 @@ describe("frame", () => {
 	test("lays out a header, the rows by scope and group, and a footer; instances by first event, pending nodes by short name", () => {
 		const lines = drawn().split("\n");
 		expect(lines.slice(0, -1)).toEqual([
-			'● fixtures.fanout-fanin-loop  "greeting"  7f3a91c2   running  1m04s',
+			'● fixtures.fanout-fanin-loop  "greeting"  kswoykny   running  1m04s',
 			"",
 			"✓ topics      parMap     ok       12s",
 			"  ! draft[c]  fake.task  failed   0.4s   flaky",
@@ -122,7 +125,7 @@ describe("frame", () => {
 			tokens: 39_300,
 		}).split("\n");
 		expect(settled[0]).toBe(
-			'! fixtures.fanout-fanin-loop  "greeting"  7f3a91c2   failed  4.5s',
+			'! fixtures.fanout-fanin-loop  "greeting"  kswoykny   failed  4.5s',
 		);
 		expect(settled[8]).toBe("  - loop      loop       skipped");
 		expect(settled.at(-1)).toMatch(
@@ -130,15 +133,14 @@ describe("frame", () => {
 		);
 	});
 
-	test("shows the short id at least 8 characters, its unique part bold and the rest dim", () => {
-		const header = drawn({
-			color: true,
-			concert: { ...VIEW.concert, id: "7f3a91c2-beef", unique: 3 },
-		}).split("\n")[0];
+	test("shows the short id at least 8 letters, its unique part bold and the rest dim", () => {
+		const header = drawn({ color: true }).split("\n")[0];
 		expect(header).toContain(
-			`${SGR.bold}7f3${SGR.plain}${SGR.dim}a91c2${SGR.plain}`,
+			`${SGR.bold}ksw${SGR.plain}${SGR.dim}oykny${SGR.plain}`,
 		);
-		expect(header).not.toContain("beef");
+		expect(header).not.toContain("quus");
+		const long = drawn({ concert: { ...VIEW.concert, unique: 10 } });
+		expect(long.split("\n")[0]).toContain("  kswoyknyqu   running");
 	});
 
 	test("groups a loop's members under its rounds in node order, with the agent column, and shows a step that never started in a round as pending, then skipped", () => {
@@ -488,12 +490,172 @@ describe("agentText", () => {
 	});
 });
 
-describe("uniqueLength", () => {
-	test("is the shortest prefix no other id starts with", () => {
-		const ids = ["0198aa", "0198ab", "02"];
-		expect(uniqueLength("0198aa", ids)).toBe(6);
-		expect(uniqueLength("02", ids)).toBe(2);
-		expect(uniqueLength("02", ["02"])).toBe(1);
+describe("closingBlock", () => {
+	const p = (style: Parameters<typeof styleText>[0], text: string) =>
+		styleText(style, text, { validateStream: false });
+	const settled = (
+		status: View["concert"]["status"],
+		view: Partial<View> = {},
+	) => ({
+		...VIEW,
+		concert: { ...VIEW.concert, status, settledAt: START + 8_200 },
+		columns: 0,
+		...view,
+	});
+	const REASON =
+		"check 'test' line 1 exited 1, and the spec says nothing of it";
+
+	test.each([
+		["ok", 27_800, {}, ["concert    kswoykny  ok  8.2s · 27.8k tokens"]],
+		[
+			"rejected",
+			0,
+			{ at: "repair/recheck", reason: "not today" },
+			[
+				"concert    kswoykny  rejected  8.2s",
+				"at         repair/recheck",
+				"reason     not today",
+			],
+		],
+		[
+			"failed",
+			0,
+			{ at: "repair", reason: "flaky\nnow\u001b[2J" },
+			[
+				"concert    kswoykny  failed  8.2s",
+				"at         repair",
+				"reason     flaky now\\u001b[2J",
+			],
+		],
+	] as const)(
+		"leads a %s concert's block with its row, then where and why, all escaped, the tokens only when counted",
+		(status, tokens, ending, head) => {
+			const block = closingBlock(settled(status, { tokens }), {
+				...ending,
+				outputs: [],
+			});
+			expect(block).toEqual({ head: head.join("\n") });
+		},
+	);
+
+	test("lines its outputs up under the label column, widened for a longer port, and ends with the row alone without an ending", () => {
+		const outputs = [
+			["changeset", "/data/changeset"],
+			["text", "done"],
+		] as const;
+		expect(closingBlock(settled("ok"), { outputs }).outputs).toBe(
+			"changeset  /data/changeset\ntext       done",
+		);
+		const wide = closingBlock(settled("ok"), {
+			outputs: [...outputs, ["description", '{"a":1}']],
+		});
+		expect(wide.outputs?.split("\n")).toEqual([
+			"changeset    /data/changeset",
+			"text         done",
+			'description  {"a":1}',
+		]);
+		expect(wide.head).toStartWith("concert      kswoykny");
+		expect(closingBlock(settled("failed"))).toEqual({
+			head: "concert    kswoykny  failed  8.2s",
+		});
+	});
+
+	test("colors the outcome as the events do, dims the labels and the time, a reason yellow and a path soft grey", () => {
+		const view = settled("failed", { color: true });
+		const { head, outputs } = closingBlock(view, {
+			reason: "flaky",
+			outputs: [["logs", "/data/check.log"]],
+		});
+		const [row, reason] = head.split("\n");
+		expect(row).toBe(
+			`${p("dim", "concert    ")}${p("bold", "ksw")}${p("dim", "oykny")}  ${p(["red", "bold"], "failed")}${p("dim", "  8.2s")}`,
+		);
+		expect(reason).toBe(`${p("dim", "reason     ")}${p("yellow", "flaky")}`);
+		expect(outputs).toBe(
+			`${p("dim", "logs       ")}${ESC}[38;5;250m/data/check.log${ESC}[39m`,
+		);
+		expect(closingBlock(settled("ok", { color: true })).head).toContain(
+			p(["green", "bold"], "ok"),
+		);
+	});
+
+	test("shows a value piped as it is, wide and joined characters and trailing spaces kept, and wraps one whole", () => {
+		const family = "family 👨‍👩‍👧 done  ";
+		const piped = closingBlock(settled("failed"), {
+			reason: family,
+			outputs: [["text", family]],
+		});
+		expect(piped.head).toEndWith(`reason     ${family}`);
+		expect(piped.outputs).toBe(`text       ${family}`);
+		const long = `${family}and words enough to wrap it`;
+		const rows = closingBlock(settled("failed", { columns: 31 }), {
+			reason: long,
+			outputs: [],
+		})
+			.head.split("\n")
+			.slice(1);
+		expect(rows.length).toBeGreaterThan(1);
+		for (const row of rows)
+			expect(Bun.stringWidth(row)).toBeLessThanOrEqual(31);
+		expect(rows.map((row) => row.slice(11)).join(" ")).toBe(long);
+	});
+
+	test("colors the head and the outputs each as its own stream allows", () => {
+		const { head, outputs } = closingBlock(
+			settled("ok", { color: true }),
+			{ outputs: [["text", "done"]] },
+			false,
+		);
+		expect(head).toContain(ESC);
+		expect(outputs).toBe("text       done");
+		expect(
+			closingBlock(settled("ok"), { outputs: [["text", "done"]] }, true)
+				.outputs,
+		).toContain(ESC);
+	});
+
+	test("wraps a reason under the value column at the view's width, and keeps it on one line at width 0", () => {
+		const outputs = [
+			["logs", "/a/very/long/path/to/the/check/log/of/this/concert"],
+		] as const;
+		const narrow = closingBlock(settled("failed", { columns: 40 }), {
+			reason: REASON,
+			outputs,
+		});
+		const [, first, ...more] = narrow.head.split("\n");
+		expect(first).toBe("reason     check 'test' line 1 exited 1,");
+		expect(more.length).toBeGreaterThan(0);
+		for (const row of more) expect(row).toMatch(/^ {11}\S/);
+		expect(narrow.outputs).toBe(`logs       ${outputs[0][1]}`);
+		expect(
+			closingBlock(settled("failed"), { reason: REASON, outputs }).head,
+		).toEndWith(`reason     ${REASON}`);
+	});
+});
+
+describe("short ids", () => {
+	test("spell a UUID's last 15 hex digits in reverse-hex letters", () => {
+		expect(shortId(CONCERT)).toBe("kswoyknyquusyot");
+		expect(shortId("01a154df-0000-7000-8000-0123456789ab")).toBe(
+			"zzzzyxwvutsrqpo",
+		);
+	});
+
+	test("are told apart by the shortest prefix no other concert's short id starts with", () => {
+		const ids = [
+			"01a154df-0000-7000-8000-0000000000ab",
+			"01a154df-0000-7000-8000-0000000000ac",
+			"01a154df-0000-7000-8000-1000000000ab",
+		];
+		const [aa = "", ab = "", other = ""] = ids;
+		const short = shortIds(ids);
+		expect([aa, ab, other].map(short.unique)).toEqual([15, 15, 4]);
+		expect(shortIds([ab]).unique(ab)).toBe(1);
+		expect(short.label(other, false)).toBe("zzzyzzzz");
+		expect(short.label(aa, false)).toBe("zzzzzzzzzzzzzpo");
+		expect(short.label(other, true)).toBe(
+			`${SGR.bold}zzzy${SGR.plain}${SGR.dim}zzzz${SGR.plain}`,
+		);
 	});
 });
 

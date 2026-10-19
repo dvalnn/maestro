@@ -52,14 +52,17 @@ Primary output goes to stdout, messages to stderr.
 `watch` replays from the concert's first event, then follows it. With `--json`, or off a terminal without `--events`, it
 prints a JSON Lines stream: one compact line per record event that changes an instance's state (`running`, `settled`,
 `reused`), or per event of any type with `--events --json`, each as the record holds it, ending with the concert
-document, `wait --json`'s with `"type":"concert"`. Otherwise stderr carries the closing line, and stdout holds only the
-view.
+document, `wait --json`'s with `"type":"concert"`. Otherwise stdout holds the view, and the watch ends with the closing
+block, as `wait` prints it after the graph, or only its `concert` row with `--events`.
 
 `ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
 
-Every `<concert>` is an id or any prefix of one that no other concert's id starts with, as in jj. A prefix that several
-ids start is a usage error (exit 2) naming them. On a terminal, `ls` shows each id with the characters that tell it
-apart in bold and the rest dim.
+A concert's id is a UUIDv7, which the record, its paths, lane refs and every `--json` document hold. `ls`, `watch`'s
+header and the closing block show its short id instead: the UUID's last 15 hex digits written in jj's reverse-hex
+letters (`0` to `f` as `z` to `k`), 8 of them, more when 8 do not tell it apart. Every `<concert>` is a prefix of either
+that no other concert's starts with, as in jj; a short id's letters are no hex digit, so a prefix is never both. A
+prefix that several concerts start is a usage error (exit 2) naming their short ids. On a terminal a short id shows the
+letters that tell it apart in bold and the rest dim.
 
 Spend shows beside the status. An agent instance, in `ls <concert>` and `watch`, has an agent column,
 `<harness> · <model> · <effort>  <total> tok`: the model without its provider (`github-copilot/claude-haiku-5.5` shows
@@ -70,9 +73,22 @@ latest note. Other instances leave the column blank. The `ls` list has a `tokens
 when it has none. In the `--json` documents of `ls` (each row), `wait` and `perform`, `metrics` holds each metric name's
 total over the concert.
 
-`perform` and `wait` print one `name  value` line per output port of the result node on stdout, and nothing else there.
-Stderr carries `concert <id>` when a `perform` starts and the closing line
-`concert <id> <outcome>[ at <node>][: <reason>]`. With `--json`, stdout holds the document instead, and the id of a
+`perform` announces `concert <id>`, the full id, on stderr when it starts. `perform`, `wait` and `watch` on a terminal
+end with the closing block, its labels in one column:
+
+```text
+concert    pwmqwmlu  failed  13s · 29.7k tokens
+at         repair_until_green/loop[0]/repair
+reason     blocked: the failing check contradicts the spec
+logs       ~/.local/share/maestro/concerts/01a154e0-0160-7590-ba3d-93de543f1059/artifacts/abuKV1B/check.log
+```
+
+Stderr carries the `concert` row, with the outcome, the elapsed time and the concert's tokens when it has any, then for
+a concert that is not ok `at`, the instance it settled at, and `reason`, each control character shown as its escape.
+Stdout holds a `<port>  <value>` line per output port of the result node, and nothing else. Each stream is styled only
+when it is a terminal: on stderr the outcome is colored and the reason wraps under the value column, on stdout values
+are colored and a path in the home directory starts with `~`. Piped or redirected, a stream has no color or wrapping,
+values show as they are and paths are absolute. With `--json`, stdout holds the document instead, and the id of a
 `perform` stays on its stderr line. A one-line string, a number, a boolean or `null` prints as is, anything else as
 compact JSON, and an artifact as its path. A rejected concert shows its root cause's rejection outputs; a failed one has
 none. In the `--json` document they are as stored, under `outputs`, and its other field names are the record's columns

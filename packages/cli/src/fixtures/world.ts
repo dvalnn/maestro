@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Host } from "@maestro/core/host";
+import { shortId } from "@maestro/render-text/live";
 import { fakeHost } from "@maestro/testkit";
 import { main } from "../cli";
 import type { Deps } from "../command";
@@ -54,6 +55,30 @@ export async function world() {
 export const idOf = ({ err }: Outcome) =>
 	/^concert (\S+)$/m.exec(err)?.[1] ?? "";
 export const json = (outcome: Outcome) => JSON.parse(outcome.out);
+
+/** How many letters of a short id a listing shows. */
+const SHOWN = 8;
+/** Concert `id`'s short id as a listing shows it. */
+export const shortOf = (id: string) => shortId(id).slice(0, SHOWN);
+/** The closing block's label column. */
+const LABEL = 11;
+
+/**
+ * The plain closing block of concert `id` settled `outcome`, at the end of a stream: its `concert` row with any time
+ * and tokens, then a `label  value` line per row of `rows`.
+ */
+export const closingOf = (
+	id: string,
+	outcome: string,
+	...rows: (readonly [label: string, value: string])[]
+) =>
+	new RegExp(
+		`(?:^|\n)concert {4}${shortOf(id)}  ${outcome}  \\S+(?: · \\S+ tokens)?${rows
+			.map(
+				([label, value]) => `\\n${RegExp.escape(label.padEnd(LABEL) + value)}`,
+			)
+			.join("")}$`,
+	);
 
 export const FIRST = { outcome: "ok", outputs: { text: "hi" } } as const;
 export const ECHO = { outcome: "ok", outputs: { text: "done" } } as const;

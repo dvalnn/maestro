@@ -63,9 +63,10 @@ This skill was checked against maestro 0.1.0-beta.1. When `maestro --version` na
 5. **Follow.** `maestro wait <id> --timeout 90s` in a loop, the timeout shorter than your tool call's own limit, which
    would otherwise cut it off before exit 124: exit 124 means still running, so wait again. Done on any exit but 124. A
    user who wants to see the concert live runs `maestro watch <id>` in their own terminal.
-6. **Read the result.** The exit code (table below), the result's outputs on stdout (`name  value` lines, an artifact as
-   its path), and the closing line on stderr: `concert <id> <outcome>[ at <instance>][: <reason>]`. Done when the user
-   has the outcome, the root cause instance and its reason when not `ok`, and the changeset's path.
+6. **Read the result.** The exit code (table below), the closing block on stderr (a
+   `concert <short id>  <outcome>  <elapsed>` row, then `at <instance>` and `reason <reason>` when not `ok`) and the
+   result's outputs on stdout (`<port>  <value>` lines, an artifact as its path). Done when the user has the outcome,
+   the root cause instance and its reason when not `ok`, and the changeset's path.
 
 Read [running.md](running.md) for compose and perform flags, the record, artifacts, changesets and lane refs.
 

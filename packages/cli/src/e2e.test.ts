@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanup } from "./fixtures/packs";
-import { idOf, json, world } from "./fixtures/world";
+import { closingOf, idOf, json, shortOf, world } from "./fixtures/world";
 
 afterEach(cleanup);
 
@@ -29,7 +29,7 @@ test("a journey through the real maestro.ts: compose, perform, fail, resume, lis
 	const okId = idOf(ok);
 	expect(ok.code).toBe(0);
 	expect(ok.err).toContain(`concert ${okId}\n`);
-	expect(ok.err).toEndWith(`concert ${okId} ok`);
+	expect(ok.err).toMatch(closingOf(okId, "ok"));
 	expect(ok.out).not.toBe("");
 
 	await Bun.write(join(w.cwd, "dog"), "");
@@ -37,7 +37,7 @@ test("a journey through the real maestro.ts: compose, perform, fail, resume, lis
 	const brokeId = idOf(broke);
 	expect(broke.code).not.toBe(0);
 	expect(broke.err).toMatch(
-		new RegExp(`concert ${brokeId} failed at \\S*draft`),
+		new RegExp(`concert {4}${shortOf(brokeId)} {2}failed .*\nat +\\S*draft`),
 	);
 
 	await rm(join(w.cwd, "dog"));
