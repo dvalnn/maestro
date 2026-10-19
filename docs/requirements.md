@@ -202,8 +202,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   packs.
 - **SDK-06 (Must).** What a composition needs (plan node kinds, instance counts, host counts) is derived by compose and
   host `validate`, never declared by hand. No SDK function and no IR field carries it.
-- **SDK-07 (Should).** A standard library supplies reducers (`firstOk`, `okOnly`, `allSettled`), prompt templating with
-  variables checked at compose time, and a typed JSON file reader (`readJson`).
+- **SDK-07 (Should).** A standard library supplies reducers (`firstOk`, `okOnly`, `allSettled`) and a typed JSON file
+  reader (`readJson`).
 - **SDK-08 (Must).** A test kit provides a fake host, build and compose assertions, and concerts with stubbed nodes.
 - **SDK-09 (Should).** The SDK can emit IR to a file without performing it.
 - **SDK-10 (May).** SDKs in other languages emit the same IR.
@@ -407,7 +407,7 @@ descriptions only and need a closer look during the slice.
 | performance, run, leg                                       | Concert and node instance. Lane is a host resource.                           |
 | `--join`, `--from`, `--base`, `--group`, `--label`, `--tag` | Lane inputs on agent nodes, and concert metadata.                             |
 | `WorkflowSpec` (required agents, runs quality)              | Derived from the graph.                                                       |
-| `vars` file, `.in` templates, shell-sourced values          | Typed inputs and checked prompt templates.                                    |
+| `vars` file, `.in` templates, shell-sourced values          | Typed inputs and plain prompt files.                                          |
 | sidecar JSON and `isinstance` checks                        | Typed outputs validated by the engine.                                        |
 | `limits.fix_loops`                                          | A composition param (D-17).                                                   |
 | "reuse output if the json exists"                           | Resume.                                                                       |

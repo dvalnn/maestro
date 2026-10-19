@@ -530,7 +530,10 @@ return firstOk([synthesis.out.report, firstOk(plans, { label: "best_plan" }).out
 | review of a locking change               | planner node whose output feeds a bounded `iter.parMap` through `readJson`, fallback via `ref.or`, expansion in a code node, a pack code node for the Gerrit artifact |
 
 Coverage was assessed by reading the workflows (four verification and review chains with their helpers, and eight
-general compositions). It was not exercised by running anything. Re-check each row when its workflow is ported.
+general compositions). S9 ported and ran `build_then_repair`, `review` and `v_model` in `packs/repertoire`. They
+exercise `agent`, `check`, `use`, `iter.parMap`, `loop` with `tolerate` on a rejected check, `when`, `assert` and code
+nodes, so the scout_plan, build_quality, review_panel and verification round rows held, except that a code node folds
+each panel's results where a row names reducers. The other rows were not run: re-check each when its workflow is ported.
 
 ## 16. Out of scope for the SDK in v1
 

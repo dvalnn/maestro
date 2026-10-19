@@ -154,8 +154,8 @@ host to read and check.
 **Attachment**: A named artifact an agent reads, mounted read-only at `/in/<name>` and listed in its prompt with its
 `hint`, which tells the agent when to read it. Its content is in the resume key. _Avoid_: ref
 
-**Bind**: A host path outside the lane made visible in a sandbox at its own path, read-only or, for a check, read-write.
-It is not an input and not in the resume key (ADR 0011).
+**Bind**: A host path outside the lane made visible in a sandbox at its own path, read-only or, for a check or a prepare
+line, read-write. It is not an input and not in the resume key (ADR 0011).
 
 **Lane**: An isolated, versioned working copy cut from a target. A node takes one with `fresh`, `fork`, `extend` or
 `read`. _Avoid_: worktree, run
@@ -181,4 +181,4 @@ and leaves a version holding the markers for an agent to extend.
 
 **Check node**: Runs deterministic commands in a lane and ends `ok`, `rejected` or `failed`, with logs. _Avoid_: quality
 
-**Sandbox**: The confinement an agent or check runs in.
+**Sandbox**: The confinement an agent, a check or a prepare line runs in.

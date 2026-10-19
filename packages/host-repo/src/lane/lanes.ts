@@ -173,7 +173,8 @@ export function openLanes(options: LanesOptions): Lanes {
 	const root = resolvePath(options.root);
 	const sparse = options.sparse ?? [];
 	const store = join(root, "store.git");
-	// The host's git always names the store and the work tree, never a lane's `.git`, which the agent can write.
+	// The host's git names the store and the work tree, never a lane's `.git`, which the agent can write. The one
+	// exception is `checkedOutLane`, which sets sparse on the lane's git dir before any sandbox runs.
 	const G = (...a: string[]) => [
 		`--git-dir=${store}`,
 		`--attr-source=${EMPTY_TREE}`,

@@ -2,7 +2,12 @@
 import { existsSync, statSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { glue, SDK_VERSION } from "@maestro/sdk/loader";
+import {
+	bundlerMessage,
+	GLUE_FILE,
+	glue,
+	SDK_VERSION,
+} from "@maestro/sdk/loader";
 
 const EXIT_FAILED = 1;
 const EXIT_USAGE = 2;
@@ -10,8 +15,6 @@ const ENTRY = "index.js";
 const SOURCE = "src/index.ts";
 const README = "README.md";
 const PACKAGE = "package.json";
-/** The bundle's entry, beside the pack's source so its relative import resolves. Never written to disk. */
-const GLUE = ".maestro-entry.js";
 
 /** Throws an error that says what went wrong, then the likely fix on its own line. */
 function fail(what: string, fix: string): never {
@@ -39,7 +42,7 @@ async function versionOf(root: string): Promise<string> {
 
 /** The bundle of the pack in `root`. @throws Error with each bundler message at its file, line and column. */
 async function bundleOf(root: string): Promise<Blob> {
-	const entry = join(root, GLUE);
+	const entry = join(root, GLUE_FILE);
 	const built = await Bun.build({
 		entrypoints: [entry],
 		files: { [entry]: glue(`./${SOURCE}`) },
@@ -51,12 +54,9 @@ async function bundleOf(root: string): Promise<Blob> {
 	});
 	const [bundle] = built.outputs;
 	if (built.success && bundle) return bundle;
-	const messages = built.logs.map(({ message, position: at }) =>
-		at ? `${at.file}:${at.line}:${at.column}: ${message}` : message,
-	);
 	const file = built.logs.find((l) => l.position)?.position?.file;
 	return fail(
-		messages.join("; ") || "the bundler wrote nothing",
+		bundlerMessage(built.logs) || "the bundler wrote nothing",
 		`Check ${file ?? join(root, SOURCE)}`,
 	);
 }

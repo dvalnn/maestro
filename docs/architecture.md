@@ -68,7 +68,7 @@ A monorepo of separately versioned packages (DIST-03). Package names are workspa
 | Repo host        | `host-repo`      | Agent and check node kinds, lanes, sandbox, harness adapter interface, host config namespaces.                         | `core`, `ir`                                                               |
 | Repo host SDK    | `host-repo-sdk`  | Typed constructors for the repo node kinds and lanes, output declarations, `seat()`.                                   | `sdk`, `ir`                                                                |
 | Harness adapters | `harness-<name>` | One adapter per coding-agent runtime.                                                                                  | `host-repo`                                                                |
-| Packs            | `pack-<domain>`  | Compositions, prompts, schemas, code nodes, params.                                                                    | `sdk`, `host-repo-sdk`                                                     |
+| Packs            | `packs/<id>`     | Compositions, prompts, schemas, code nodes, params.                                                                    | `sdk`, `host-repo-sdk`                                                     |
 | Renderers        | `render-<form>`  | Static graph render, live view.                                                                                        | `ir`                                                                       |
 
 Dependency rule: arrows only point down the table. `core` and `ir` never import a host, a pack or an adapter. CORE-12
@@ -487,7 +487,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   harness's output, secrets the sandbox is given are masked before the adapter parses it. The host reads declared
   outputs from the agent's outbox, not the adapter. It is a sandboxed subprocess driving the harness's JSON event stream
   (D-20). An in-process SDK is deferred, because an in-process agent cannot be confined by bubblewrap. The first adapter
-  is pi (`pi -p --mode json`) and the second is Claude Code.
+  is pi (`pi -p --mode json`) and the second is Claude Code. The built-in `stub` harness replies with an ok envelope and
+  writes nothing, so an agent that declares outputs fails under it.
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
 **Host validation rules**

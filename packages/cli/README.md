@@ -73,7 +73,7 @@ where each value came from.
 | `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                 |
 | `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`.  |
 | `caps`        | Caps by name: `instances` caps a concert's node instances, any other name the total of a host count. |
-| `target`      | The repo host's `repo`, default `base`, named `checks`, and per new lane `prepare` and `sparse`.     |
+| `target`      | The repo host's `repo`, default `base`, `checks`, and per checked-out copy `prepare` and `sparse`.   |
 | `roles`       | The repo host's roles: a `harness`, `model` and optional `thinking` each.                            |
 | `sandbox`     | The repo host's `readOnly` paths, bound into every agent, check and prepare.                         |
 

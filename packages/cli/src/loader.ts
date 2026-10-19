@@ -28,8 +28,10 @@ import {
 	type WorkerRef,
 } from "@maestro/ir";
 import {
+	bundlerMessage,
 	type ConfiguredParams,
 	type Described,
+	GLUE_FILE,
 	glue,
 	SDK_VERSION,
 	STDLIB_HASH,
@@ -108,8 +110,6 @@ const DESCRIBED_SCHEMA: JsonSchema = {
 	},
 };
 
-/** The source of a bare file's bundle entry, beside the file, so the file's relative imports resolve. */
-const ENTRY = ".maestro-entry.js";
 const HASH_PREFIX = "sha256:";
 /** The `version` of a bare file's compositions, which have no manifest to declare one. */
 const FILE_VERSION = "0.0.0";
@@ -176,19 +176,6 @@ function loaderOver(open: (module: string) => Promise<Opened>): Loader {
 	};
 }
 
-/** `error`'s message, each of a bundler's messages led by its file, line and column. */
-function bundlerMessage(error: unknown): string {
-	if (!(error instanceof AggregateError)) return messageOf(error);
-	return error.errors
-		.map((e: { position?: { file: string; line: number; column: number } }) => {
-			const at = e.position;
-			return at
-				? `${at.file}:${at.line}:${at.column}: ${messageOf(e)}`
-				: messageOf(e);
-		})
-		.join("; ");
-}
-
 /** The embedded SDK bundles by their path inside a bundle: empty unless the engine runs as the release binary. */
 let embeddedRead: Promise<Record<string, string>> | undefined;
 const embeddedSdks = () => {
@@ -247,7 +234,11 @@ async function bundle(
 		if (!output) throw new Error("the bundler wrote nothing");
 		return await output.text();
 	} catch (error) {
-		throw new Error(bundlerMessage(error));
+		throw new Error(
+			error instanceof AggregateError
+				? bundlerMessage(error.errors)
+				: messageOf(error),
+		);
 	}
 }
 
@@ -496,7 +487,7 @@ export async function openPack(
  * @throws CliError with the usage exit when it does not bundle.
  */
 export async function bundled(file: string): Promise<string> {
-	const entry = join(dirname(file), ENTRY);
+	const entry = join(dirname(file), GLUE_FILE);
 	try {
 		return await bundle(entry, { [entry]: glue(`./${basename(file)}`) });
 	} catch (error) {

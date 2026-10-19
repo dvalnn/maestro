@@ -335,6 +335,23 @@ export function buildNamed(
 	return first;
 }
 
+/** The name of a bundle's entry, beside the authored module so its relative import resolves. Never written to disk. */
+export const GLUE_FILE = ".maestro-entry.js";
+
+/** One message of a bundler's log, at a source position when it has one. */
+export type BundlerLog = {
+	message: string;
+	position?: { file: string; line: number; column: number } | null;
+};
+
+/** The bundler's `logs` joined, each led by its file, line and column. */
+export const bundlerMessage = (logs: readonly BundlerLog[]) =>
+	logs
+		.map(({ message, position: at }) =>
+			at ? `${at.file}:${at.line}:${at.column}: ${message}` : message,
+		)
+		.join("; ");
+
 /**
  * The source of a bundle's entry over `entry`, the authored module's import specifier: it exports what `entry`
  * exports, plus `describe()` and `build(name, params, context)` through the bundle's own SDK copy (ADR 0002).

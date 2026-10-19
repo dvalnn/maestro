@@ -185,4 +185,11 @@ describe("eventLine", () => {
 		]);
 		expect(line(log)).toBe("+0.0s   best                    log a\\u001b[2Jb");
 	});
+
+	test("shows a newline in a failure reason as a space", () => {
+		const [settled] = eventsOf([
+			["best", "", 0, { type: "settled", outcome: "failed", reason: "a\nb" }],
+		]);
+		expect(line(settled)).toBe("+0.0s   best                    failed: a b");
+	});
 });

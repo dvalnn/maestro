@@ -1,8 +1,11 @@
 export {
+	type BundlerLog,
 	build,
 	buildNamed,
+	bundlerMessage,
 	type Described,
 	describe,
+	GLUE_FILE,
 	glue,
 } from "./composition";
 export {

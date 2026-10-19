@@ -223,9 +223,9 @@ describe("perform", () => {
 		["ok", ECHO, 0, /ok$/, ["text  done"]],
 		[
 			"failed",
-			{ outcome: "failed", reason: "flaky\u001b[2J" },
+			{ outcome: "failed", reason: "flaky\nnow\u001b[2J" },
 			1,
-			/failed at echo\/echo: flaky\\u001b\[2J$/,
+			/failed at echo\/echo: flaky now\\u001b\[2J$/,
 			[],
 		],
 		[

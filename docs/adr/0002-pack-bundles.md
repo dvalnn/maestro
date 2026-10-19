@@ -6,8 +6,9 @@ status: accepted
 
 A pack is a directory or release tarball with a `maestro-pack.json` manifest and one pre-bundled entry file that
 includes its own copy of the SDK (D-30). Workspace config lists packs by path, and nothing resolves through
-`node_modules`. The compiled `maestro` binary embeds its own SDK, and an external file that imports the SDK gets a
-different copy, so a shared-package model cannot work in a single-binary distribution.
+`node_modules`. The compiled `maestro` binary embeds its own SDK. A bare composition file bundles against the binary's
+embedded SDKs (the loader's `maestro-sdk` plugin), but a pack keeps its own copy, so its bytes, not the binary's, fix
+what a resume replays. A shared-package model cannot work in a single-binary distribution.
 
 ## Considered options
 
@@ -18,8 +19,9 @@ different copy, so a shared-package model cannot work in a single-binary distrib
   would load the same way, and cache keys could follow each module's imports. Rejected: an install step per pack, a hash
   over each import graph, resolution leaking through an ancestor `node_modules`, and no single file whose bytes a resume
   can trust.
-- **Pack imports the host's embedded SDK.** Would avoid the duplicate copy. Rejected because the binary does not expose
-  its embedded modules to external files.
+- **Pack imports the host's embedded SDK.** Would avoid the duplicate copy, as a bare composition file does by bundling
+  against the embedded SDKs. Rejected because the pack's bytes would then depend on the binary: a new binary would
+  change what a resume replays from the same pack.
 
 ## Consequences
 

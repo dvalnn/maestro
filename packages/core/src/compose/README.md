@@ -36,7 +36,8 @@ README.
    0008). No loaded function is called.
 3. Expansion, enclosing groups first, one group instance at a time. A group instance expands only when every guard on it
    is known true and its items are plain values: a literal, or an enclosing group's item. Then:
-   - a `parMap` expands into one instance per item, keyed by `itemKey`;
+   - a `parMap` or `parFind` over plain items keys them by `itemKey`, and two items with one key are a `SCOPE.key`
+     error; a `parMap` then expands into one instance per item;
    - a `parMap` with a key function expands to a count of its items, as the key function is called only at perform;
    - a `map` or a `fold` expands into one instance per index.
 
@@ -69,7 +70,7 @@ node kind still throw, as `perform` does.
 | `HOST.validate` | A host's `validate()` threw or rejected.                                                   |
 | `HOST.*`        | A host's `validate` finding.                                                               |
 | `SCOPE.export`  | `loadCode` could not load a function the IR names: a code node's or a key function.[^load] |
-| `SCOPE.key`     | Two items of a parMap instance share a key.[^keys]                                         |
+| `SCOPE.key`     | Two items of a `parMap` or `parFind` instance share a key.[^keys]                          |
 | `BOUND.items`   | A group instance has more known items than its bound.                                      |
 | `BOUND.cap`     | A total of the plan's bounds, or of its bounds so far while expanding, is over its cap.    |
 
@@ -95,6 +96,6 @@ node kind still throw, as `perform` does.
 
 [^keys]:
     Keys come from `itemKey`, so `3` and `"3"` collide, as do an item keyed by its index and a primitive item with that
-    value. The hint is to give the parMap a key function, whose duplicate keys fail the `parMap` at perform.
+    value. The hint is to give the group a key function, whose duplicate keys fail it at perform.
 
 No value gets its schema defaults. `format` is an annotation only: neither compose nor perform validates it.

@@ -15,7 +15,7 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 
 - `seen(prior, events)`: each instance's state, the latest event winning.
 - `frame(ir, seen, view)`: the outline of the IR with each instance's glyph, name, kind, state, time and note, under a
-  header with the concert's status, elapsed time and counts. Lines are cut at `columns - 1` characters, and past
+  header with the concert's status, elapsed time and counts. Lines are cut at `columns - 1` terminal cells, and past
   `rows - 1` lines it ends with `… <n> more`.
 - `eventLine(ir, event, view)`: one event as its offset from the concert's start, instance name and what happened. A
   progress event shows its `kind`, then each other field; a multi-line string continues indented.

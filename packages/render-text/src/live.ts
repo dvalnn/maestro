@@ -76,12 +76,12 @@ const TENTH_MS = 100;
 const keyOf = ({ node, expansion }: NodeInstance) =>
 	JSON.stringify([node, expansion]);
 
-/** Shows each control character but a newline as its JSON escape. */
-const safe = (text: string) =>
+/** Shows each control character but a newline as its JSON escape, so no text moves the terminal's cursor. */
+export const safe = (text: string) =>
 	text.replace(CONTROL, (c) => JSON.stringify(c).slice(1, -1));
 
-/** Newlines shown as spaces. */
-const flat = (text: string) => safe(text.split(NEWLINE).join(" "));
+/** `text` on one line: newlines shown as spaces, every other control character as its JSON escape. */
+export const flat = (text: string) => safe(text.split(NEWLINE).join(" "));
 
 const twoDigits = (n: number) => String(n).padStart(2, "0");
 

@@ -46,16 +46,19 @@ tar -xzf maestro-skill.tar.gz -C ~/.claude/skills
 
 Config keys are in [`packages/cli/README.md`](packages/cli/README.md).
 
-- The user file `~/.config/maestro/config.yaml` holds `packs`, `roles` and the pack's params. `~` is not expanded; a
-  relative path resolves against the directory of the file that sets it.
+- The user file `~/.config/maestro/config.yaml` holds `packs`, `roles` and the pack's params. `packs` may instead go in
+  a workspace's `.maestro/config.yaml`. `~` is not expanded; a relative path resolves against the directory of the
+  config file that holds it.
 - A workspace file `.maestro/config.yaml` per target holds `target: { repo, base, checks }`, and optionally `prepare`
   (lines run on each checked-out lane, such as a dependency install) and `sparse` (directories a lane checks out).
-- A profile `.maestro/profiles/stub.yaml` moves the roles to the stub harness. Run with `--profile stub` to spend
-  nothing.
+- A profile `.maestro/profiles/stub.yaml` moves the roles to the built-in `stub` harness, which replies ok and writes no
+  outputs. Run with `--profile stub` to spend nothing: `build_then_repair` runs to completion, while `review` and
+  `v_model` fail at their first agent that declares outputs.
 
-The repertoire names six roles and no models: `scout`, `planner`, `builder`, `reviewer`, `skeptic` and `documenter`.
-`build_then_repair` needs only `builder`, `review` needs `reviewer` and `skeptic`, and `v_model` needs all six. Model
-ids below are placeholders; use your own.
+The repertoire names six roles and no models, and its [README](packs/repertoire/README.md) holds each composition's
+roles and params: `scout`, `planner`, `builder`, `reviewer`, `skeptic` and `documenter`. `build_then_repair` needs only
+`builder`, `review` needs `reviewer` and `skeptic`, and `v_model` needs all six. Model ids below are placeholders; use
+your own.
 
 ```yaml
 # ~/.config/maestro/config.yaml
@@ -85,7 +88,7 @@ repertoire:
 - `lensModel` and `skepticModel` must come from different model families, or `review` and `v_model` fail to compose.
   With a Claude lens, the skeptic needs pi.
 - `v_model` also takes `maxApproaches` (default 2), `maxRisks` (default 4) and `maxRepairs` (default 2), each an integer
-  of at least 1, as the pack's `README.md` gives them. Its `request` is a flag.
+  of at least 1. Its `request` is a flag.
 
 ```yaml
 # .maestro/config.yaml, in the target repository
