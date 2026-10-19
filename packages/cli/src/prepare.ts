@@ -19,7 +19,6 @@ import {
 	type Options,
 	parse,
 	peek,
-	textOf,
 	type Values,
 } from "./command";
 import { CLI_CONFIG } from "./config";
@@ -38,7 +37,7 @@ import {
 } from "./loader";
 import { CliError, Diagnosed, usageError } from "./output";
 import { paramValues } from "./params";
-import { openSession, type Session } from "./session";
+import { openSession, overridesOf, type Session } from "./session";
 
 /** A composition's IR, with what loads its code, composes it, and keeps it with a concert. */
 export type Prepared = {
@@ -322,10 +321,7 @@ export async function compositionHelp(
 	const [target] = args;
 	if (target === undefined || target.startsWith("-") || IR_FILE.test(target))
 		return undefined;
-	const session = await openSession(
-		deps,
-		textOf(peek(COMMON, args), "profile"),
-	);
+	const session = await openSession(deps, overridesOf(peek(COMMON, args)));
 	return paramsBlock((await located(session, target)).composition);
 }
 
@@ -429,7 +425,7 @@ export const bundleName = (out: string) =>
 /**
  * The preparation of `concert`, a resumed one: its stored IR with the code hashes as the code stands now, loaded from
  * the directory its row holds, or re-bundled from the composition file there when it was built from one, and the
- * config as it stands.
+ * session's config.
  * @throws CliError when that directory or file is gone.
  */
 export async function resumable(

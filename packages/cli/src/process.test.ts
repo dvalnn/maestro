@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { realpathSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { Host } from "@maestro/core/host";
 import { fakeHost } from "@maestro/testkit";
 import { cleanup, demoSource, packOf, scratch } from "./fixtures/packs";
 import {
@@ -13,6 +14,7 @@ import {
 	hostOf,
 	idOf,
 	json,
+	shortOf,
 	world,
 } from "./fixtures/world";
 import { isMaestro } from "./session";
@@ -252,6 +254,94 @@ export const work = composition("work", { examples: [{}] }, () => {
 		expect((await w.call(["perform", "--resume", again])).err).toBe(
 			`the code of concert ${again} was in ${file}, which is gone\nRestore it, or perform its composition as a new concert`,
 		);
+	});
+
+	test("reapplies the concert's recorded --profile and -c, the resume's own -c on top", async () => {
+		const w = await world();
+		await Bun.write(
+			join(w.cwd, ".maestro/profiles/stub.yaml"),
+			"mode:\n  from: stub\n  keep: stub\n",
+		);
+		const seen: unknown[] = [];
+		const host: Host = {
+			...fakeHost({
+				steps: {
+					first: (_instance, _inputs, { setup }) => {
+						seen.push(setup.config.mode);
+						return { outcome: "failed", reason: "flaky" };
+					},
+				},
+			}),
+			config: { mode: { type: "object" } },
+		};
+		const id = idOf(
+			await w.call(
+				["perform", ...GREET, "--profile", "stub", "-c", "mode.keep=perform"],
+				{ hosts: [host] },
+			),
+		);
+		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
+			profile: "stub",
+			config: ["mode.keep=perform"],
+		});
+		await w.call(["perform", "--resume", id], { hosts: [host] });
+		await w.call(["perform", "--resume", id, "-c", "mode.keep=resume"], {
+			hosts: [host],
+		});
+		expect(seen).toEqual([
+			{ from: "stub", keep: "perform" },
+			{ from: "stub", keep: "perform" },
+			{ from: "stub", keep: "resume" },
+		]);
+	});
+
+	test("names a recorded -c or --profile that no longer holds as the concert's, with a fix the resume can apply", async () => {
+		const w = await world();
+		const profile = join(w.cwd, ".maestro/profiles/stub.yaml");
+		await Bun.write(profile, "mode:\n  from: stub\n");
+		const claiming = (namespaces: string[], over: object = {}): Host => ({
+			...fakeHost(over),
+			config: Object.fromEntries(namespaces.map((ns) => [ns, {}])),
+		});
+		const failFirst = claiming(["mode", "extra"], {
+			steps: { first: [{ outcome: "failed", reason: "flaky" }] },
+		});
+		const perform = async (...flags: string[]) =>
+			idOf(
+				await w.call(["perform", ...GREET, "--profile", "stub", ...flags], {
+					hosts: [failFirst],
+				}),
+			);
+		const id = await perform("-c", "extra.x=1");
+		const resume = (concert: string, ...flags: string[]) =>
+			w.call(["perform", "--resume", concert, ...flags], {
+				hosts: [
+					claiming(["mode"], {
+						steps: { first: [FIRST], "echo/echo": [ECHO] },
+					}),
+				],
+			});
+		expect(await resume(id)).toMatchObject({
+			code: 2,
+			err: `CFG.unclaimed: concert ${shortOf(id)} was performed with -c extra.x=1: config key 'extra' is claimed by no installed host, pack or core\n  Set that key, or !delete it, with -c on the resume, or perform the composition as a new concert`,
+		});
+		expect(await resume(id, "-c", "extra=!delete")).toMatchObject({ code: 0 });
+
+		const again = await perform();
+		await rm(profile);
+		expect(await resume(again)).toMatchObject({
+			code: 2,
+			err: `CFG.profile: concert ${shortOf(again)} was performed with --profile stub, and ${profile} does not exist\n  Restore ${profile}, or perform the composition as a new concert`,
+		});
+
+		const plain = idOf(
+			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
+		);
+		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+		expect(
+			db.query("SELECT profile, config FROM concerts WHERE id = ?").get(plain),
+		).toEqual({ profile: null, config: null });
+		db.close();
 	});
 
 	test("a pack's concert whose modules directory is gone is refused, naming it", async () => {

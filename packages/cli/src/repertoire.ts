@@ -3,21 +3,14 @@ import { ConfigError } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
 import { type Ir, indexGraph, messageOf } from "@maestro/ir";
 import type { Described } from "@maestro/sdk/loader";
-import {
-	COMMON,
-	type Command,
-	type Deps,
-	isSet,
-	parse,
-	textOf,
-} from "./command";
+import { COMMON, type Command, type Deps, isSet, parse } from "./command";
 import type { PackDir } from "./config";
 import { flagUsage, type ParamEntry, paramEntries, paramsBlock } from "./flags";
 import { type Bundle, claimsOf, openPack } from "./loader";
 import { EXIT, jsonOf, table, usageError } from "./output";
 import { paramValues } from "./params";
 import { chosen, installedPack } from "./prepare";
-import { openSession } from "./session";
+import { openSession, overridesOf } from "./session";
 
 type CompositionEntry = {
 	/** `<pack>.<composition>`, as `perform` takes it. */
@@ -35,7 +28,7 @@ type PackEntry = {
 	id: string;
 	version: string;
 	path: string;
-	/** The config file that lists the pack, when one does. */
+	/** The config file or `-c` that lists the pack, when one does. */
 	config?: string;
 	compositions: CompositionEntry[];
 };
@@ -101,7 +94,13 @@ async function loaded(pack: PackDir, hosts: readonly Host[]): Promise<Loaded> {
 	const { id, version } = bundle.pack;
 	return {
 		bundle,
-		entry: { id, version, path: bundle.dir, config: pack.file, compositions },
+		entry: {
+			id,
+			version,
+			path: bundle.dir,
+			config: pack.listedBy,
+			compositions,
+		},
 	};
 }
 
@@ -206,7 +205,7 @@ export const repertoire: Command = {
 				`expected at most one pack or composition, got ${positionals.length}`,
 				FIX,
 			);
-		const session = await openSession(deps, textOf(values, "profile"));
+		const session = await openSession(deps, overridesOf(values));
 		const { packs: dirs, packsDir } = session.config;
 		const all = await loadAll(dirs, deps);
 		const shown = selected(all, positionals[0], packsDir);

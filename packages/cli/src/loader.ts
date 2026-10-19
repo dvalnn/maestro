@@ -405,9 +405,9 @@ function bundleOf(
 
 /** How to take the pack in `root`, found as `pack`, out of the installed packs. */
 const removal = (pack: PackDir, root: string) =>
-	pack.file === undefined
+	pack.listedBy === undefined
 		? `remove ${root}`
-		: `remove '${pack.dir}' from packs in ${pack.file}`;
+		: `remove '${pack.dir}' from packs in ${pack.listedBy}`;
 
 async function manifestOf(dir: string, remove: string): Promise<Manifest> {
 	const file = join(dir, MANIFEST);
@@ -454,12 +454,12 @@ async function entryOf(manifest: Manifest, dir: string): Promise<string> {
 }
 
 /**
- * Loads the pack in directory `listed.dir`, listed in `listed.file` or found in the packs directory: its manifest, its SDK range checked against `sdk`, and its entry. Worker references
- * name the entry relative to the pack's directory, and their `codeHash` is the entry's, as `moduleLoader` hashes it:
- * the whole bundle (ADR 0008).
+ * Loads the pack in directory `listed.dir`, listed by `listed.listedBy` or found in the packs directory: its manifest,
+ * its SDK range checked against `sdk`, and its entry. Worker references name the entry relative to the pack's
+ * directory, and their `codeHash` is the entry's, as `moduleLoader` hashes it: the whole bundle (ADR 0008).
  * @throws Error for a missing directory or manifest, a manifest off its schema, a version out of range, an entry
  * outside the pack, or one that does not import, each naming the pack. Diagnosed when importing the entry raises a build
- * diagnostic. Each error's fix names how to remove the pack: from the file that lists it, else its directory.
+ * diagnostic. Each error's fix names how to remove the pack: from the file or `-c` that lists it, else its directory.
  */
 export async function openPack(
 	listed: PackDir,

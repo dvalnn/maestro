@@ -14,13 +14,13 @@ maestro wait <concert> --timeout 15m
 | ---------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------- |
 | `compose <composition>`      | `c`   | Builds and pre-flights a composition. `--plan`, `--graph`, `--out <file>`.                                        |
 | `perform <composition>`      | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                  |
-| `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.                                     |
+| `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                            |
 | `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`. |
 | `wait <concert>`             | `w`   | Waits for a concert to settle. `--timeout <duration>`.                                                            |
 | `watch <concert>`            | `wt`  | Shows a concert's node instances live until it settles.[^watch] `--events`, `--no-color`.                         |
 | `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                               |
 | `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                   |
-| `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line.                                              |
+| `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                      |
 | `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                          |
 | `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                |
 
@@ -38,6 +38,12 @@ maestro wait <concert> --timeout 15m
     `--json`), and a `maestro perform` line with the required flags. A pack that fails to load is named on stderr, the
     rest are listed, and the exit is 1.
 
+[^resume]:
+    It re-reads the config files, layers the concert's recorded `--profile` and `-c` on them, then the resume's own
+    `--profile` and `-c`. The record store is found by today's `dataRoot`: a recorded `-c dataRoot=` changes the config
+    only, so pass it again to resume a concert in another store. An error from a recorded flag names the concert, and is
+    fixed by a `-c` or `--profile` on the resume, or by performing the composition as a new concert.
+
 [^prune]:
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`
     and `--workspace <name>`; without `--before` there is no age cutoff. It asks before deleting unless given `--yes`.
@@ -46,8 +52,8 @@ maestro wait <concert> --timeout 15m
 
 `maestro --version` prints one line, `maestro <version> (sdk <version>, ir <version>, bun <version>)`, and exits 0.
 
-Every command takes `--json` (one JSON document on stdout), `--profile <name>`, `--debug` (stack traces) and `--help`.
-Primary output goes to stdout, messages to stderr.
+Every command takes `--json` (one JSON document on stdout), `--profile <name>`, `-c, --config <key=value>` (repeatable),
+`--debug` (stack traces) and `--help`. Primary output goes to stdout, messages to stderr.
 
 `watch` replays from the concert's first event, then follows it. With `--json`, or off a terminal without `--events`, it
 prints a JSON Lines stream: one compact line per record event that changes an instance's state (`running`, `settled`,
@@ -106,9 +112,21 @@ configures it; make it a pack for that.
 ## Config
 
 Layers, lowest first: the defaults, `$XDG_CONFIG_HOME/maestro/config.yaml`, the nearest `.maestro/config.yaml`, and
-`.maestro/profiles/<name>.yaml` for `--profile`. Maps merge by key and a list is replaced by the layer above it. A tag
-changes that: `!replace` on a map, `!append` on a list, `!delete` to drop a key. `maestro config <composition>` shows
-where each value came from.
+`.maestro/profiles/<name>.yaml` for `--profile`, then each `-c` in order. Maps merge by key and a list is replaced by
+the layer above it. A tag changes that: `!replace` on a map, `!append` on a list, `!delete` to drop a key.
+`maestro config <composition>` shows where each value came from.
+
+`-c <key>=<value>` sets one key, checked by the same schemas, and an error names the flag. The key is a dotted path,
+with a key holding a `.` in double quotes; the value is YAML, so `=true` is a boolean, `=[a, b]` a list, and the tags
+work:
+
+```sh
+maestro perform demo.greet --name x -c concurrency=2 -c 'packs=!append [../b]' -c target.checks.lint=!delete
+maestro perform demo.greet --name x -c 'roles.reviewer=!replace {harness: stub, model: none}' -c 'target.checks."a.b"=x'
+```
+
+A concert's record keeps its `--profile` and each `-c` as typed, and `ls <concert> --json` shows them as `profile` and
+`config`. Keep secrets out of `-c`: set them in `$XDG_CONFIG_HOME/maestro/.env`.
 
 | Key           | Meaning                                                                                              |
 | ------------- | ---------------------------------------------------------------------------------------------------- |
@@ -122,7 +140,8 @@ where each value came from.
 | `sandbox`     | The repo host's `readOnly` paths, bound into every agent, check and prepare.                         |
 
 A relative `packs`, `dataRoot`, `target.repo` or other path key is relative to the workspace root, the directory that
-holds `.maestro/`, in a workspace or profile file, and to the user file's own directory in the user file.
+holds `.maestro/`, in a workspace or profile file and a `-c`, and to the user file's own directory in the user file. A
+`-c` outside a workspace is relative to the cwd.
 
 The repo host's namespaces are set out in architecture.md section 12, Configuration. Its Claude Code harness reads the
 token from `CLAUDE_CODE_OAUTH_TOKEN`, set in the shell or in `$XDG_CONFIG_HOME/maestro/.env`; get one with

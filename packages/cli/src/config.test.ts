@@ -34,23 +34,25 @@ async function refusal(promise: Promise<unknown>) {
 }
 
 describe("config files", () => {
-	test("layer default, user, workspace and profile, each value keeping its layer, file and line", async () => {
+	test("layer default, user, workspace, profile and -c, each value keeping its layer, and its file and line or flag", async () => {
 		const { root, request } = await tree({
 			[USER]: "concurrency: 2\ncaps:\n  instances: 10\npacks: [packs/a]\n",
 			[WORKSPACE]: "concurrency: 3\ncaps:\n  calls: 4\ntarget:\n  repo: app\n",
 			[PROFILE]: "\nconcurrency: 5\ndataRoot: data\n",
 			"ws/sub/deeper/.keep": "",
 		});
-		const config = await loadConfig(request({ profile: "fast" }));
+		const config = await loadConfig(
+			request({ overrides: [{ profile: "fast", config: ["concurrency=7"] }] }),
+		);
 		expect(config.core).toEqual({
-			concurrency: 5,
+			concurrency: 7,
 			caps: { instances: 10, calls: 4 },
 			dataRoot: join(root, "ws/data"),
 			workspace: "ws",
 		});
 		expect(config.workspace).toBe(join(root, "ws"));
 		expect(config.packs).toEqual([
-			{ dir: join(root, "xdg/maestro/packs/a"), file: join(root, USER) },
+			{ dir: join(root, "xdg/maestro/packs/a"), listedBy: join(root, USER) },
 		]);
 		expect(config.composed.values.target).toEqual({
 			repo: join(root, "ws/app"),
@@ -62,7 +64,7 @@ describe("config files", () => {
 			source("caps", "calls"),
 			source("dataRoot"),
 		]).toEqual([
-			{ layer: "profile", file: join(root, PROFILE), line: 2 },
+			{ layer: "flag", flag: "-c concurrency=7" },
 			{ layer: "user", file: join(root, USER), line: 3 },
 			{ layer: "workspace", file: join(root, WORKSPACE), line: 3 },
 			{ layer: "profile", file: join(root, PROFILE), line: 3 },
@@ -133,10 +135,84 @@ describe("config files", () => {
 	])("refuse %s", async (_, profile, cwd, message) => {
 		const { root, request } = await tree({ "ws/.maestro/.keep": "" });
 		const found = await refusal(
-			loadConfig(request({ profile, cwd: join(root, cwd) })),
+			loadConfig(request({ overrides: [{ profile }], cwd: join(root, cwd) })),
 		);
 		expect(found).toEqual([["CFG.profile", expect.stringContaining(message)]]);
 	});
+
+	test("a -c reads its value as YAML at its key, merge tags and a quoted key holding '.' among them, a path relative to the workspace root, else the cwd", async () => {
+		const { root, request } = await tree({
+			[WORKSPACE]:
+				"packs: [a]\ntarget:\n  checks:\n    lint: l\n    test: t\nroles:\n  reviewer:\n    harness: pi\n    thinking: high\n",
+		});
+		const config = await loadConfig(
+			request({
+				overrides: [
+					{
+						config: [
+							"packs=!append [b]",
+							"target.checks.lint=!delete",
+							"roles.reviewer=!replace {harness: claude, model: y}",
+							'target.checks."a.b"=x',
+							"target.repo=app",
+							"concurrency=4",
+							"target.note=|\n  one\n  two",
+						],
+					},
+				],
+			}),
+		);
+		expect(config.packs).toEqual([
+			{ dir: join(root, "ws/a"), listedBy: join(root, WORKSPACE) },
+			{ dir: join(root, "ws/b"), listedBy: "-c 'packs=!append [b]'" },
+		]);
+		expect(config.composed.values.target).toEqual({
+			checks: { test: "t", "a.b": "x" },
+			repo: join(root, "ws/app"),
+			note: "one\ntwo\n",
+		});
+		expect(config.composed.values.roles).toEqual({
+			reviewer: { harness: "claude", model: "y" },
+		});
+		expect(config.core.concurrency).toBe(4);
+		const outside = await loadConfig(
+			request({ cwd: root, overrides: [{ config: ["dataRoot=d"] }] }),
+		);
+		expect(outside.core.dataRoot).toBe(join(root, "d"));
+	});
+
+	test.each([
+		["no '='", "concurrency", "CFG.flag", "-c concurrency takes <key>=<value>"],
+		["an empty key", "=4", "CFG.flag", "-c =4: '' is not a key path"],
+		[
+			"a value off its key's schema",
+			"concurrency=x",
+			"CFG.schema",
+			"-c concurrency=x: config 'concurrency' must be integer",
+		],
+		["a value that is not YAML", "caps=[1", "CFG.yaml", "-c 'caps=[1': "],
+		[
+			"a value holding a quote",
+			"caps=[it's",
+			"CFG.yaml",
+			"-c 'caps=[it'\\''s': ",
+		],
+		[
+			"a tag on the wrong shape",
+			"packs=!append x",
+			"CFG.tag",
+			"-c 'packs=!append x': !append tags a scalar",
+		],
+	])(
+		"refuse a -c with %s, naming it as typed",
+		async (_, arg, code, message) => {
+			const { request } = await tree({});
+			const found = await refusal(
+				loadConfig(request({ overrides: [{ config: [arg] }] })),
+			);
+			expect(found).toEqual([[code, expect.stringContaining(message)]]);
+		},
+	);
 
 	test("install each directory under the data home's packs once by its real path, after those listed, skipping hidden ones, and none when it is missing", async () => {
 		const { root, request } = await tree({
@@ -155,9 +231,9 @@ describe("config files", () => {
 		};
 		const packs = join(root, "data/maestro/packs");
 		expect((await loadConfig(request({ env }))).packs).toEqual([
-			{ dir: join(packs, "b"), file: join(root, USER) },
-			{ dir: join(root, "xdg/maestro/elsewhere"), file: join(root, USER) },
-			{ dir: join(root, "real/c"), file: join(root, USER) },
+			{ dir: join(packs, "b"), listedBy: join(root, USER) },
+			{ dir: join(root, "xdg/maestro/elsewhere"), listedBy: join(root, USER) },
+			{ dir: join(root, "real/c"), listedBy: join(root, USER) },
 			{ dir: join(packs, "a") },
 		]);
 		const bare = await loadConfig(

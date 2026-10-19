@@ -17,9 +17,10 @@ import {
 	type Options,
 	parse,
 	textOf,
+	textsOf,
 	type Values,
 } from "./command";
-import { type LoadedConfig, loadConfig } from "./config";
+import { type LoadedConfig, loadConfig, type Overrides } from "./config";
 import { usageError } from "./output";
 
 /** The executable's name, which a process performing a concert shows in its command line. */
@@ -66,16 +67,22 @@ export type Session = {
 export const artifactsOf = (session: Session, id: string) =>
 	concertDirs(resolve(session.files.concerts), id).artifacts;
 
-/** The session for `deps`, with the config layered for `profile`. @throws ConfigError as `loadConfig` does. */
+/** The `--profile` and each `-c` of `values`. */
+export const overridesOf = (values: Values): Overrides => ({
+	profile: textOf(values, "profile"),
+	config: textsOf(values, "config"),
+});
+
+/** The session for `deps`, its config layered for `overrides` in order. @throws ConfigError as `loadConfig` does. */
 export async function openSession(
 	deps: Deps,
-	profile?: string,
+	...overrides: Overrides[]
 ): Promise<Session> {
 	const config = await loadConfig({
 		cwd: deps.cwd,
 		env: deps.env,
 		hosts: deps.hosts,
-		profile,
+		overrides,
 	});
 	const { dataRoot } = config.core;
 	return {
@@ -139,15 +146,15 @@ export type Stored = {
 };
 
 /**
- * Opens the session for `profile` and its record store, made when it is new, and gives `body` both until it settles.
+ * Opens the session for `overrides` and its record store, made when it is new, and gives `body` both until it settles.
  * @throws ConfigError as `openSession` does.
  */
 export async function withSession<T>(
 	deps: Deps,
-	profile: string | undefined,
+	overrides: Overrides,
 	body: (session: Session, store: Records) => Promise<T>,
 ): Promise<T> {
-	const session = await openSession(deps, profile);
+	const session = await openSession(deps, overrides);
 	await mkdir(session.config.core.dataRoot, { recursive: true });
 	const store = openRecord(session.files.record);
 	try {
@@ -169,7 +176,7 @@ export async function withStore(
 	body: (stored: Stored) => Promise<number>,
 ): Promise<number> {
 	const { values, positionals } = parse(options, args, fix);
-	return withSession(deps, textOf(values, "profile"), (session, store) =>
+	return withSession(deps, overridesOf(values), (session, store) =>
 		body({ session, store, values, positionals, json: isSet(values, "json") }),
 	);
 }

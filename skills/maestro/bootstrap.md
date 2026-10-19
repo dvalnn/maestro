@@ -14,8 +14,9 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
    A setup whose roles are all stub needs no harness. Done when each command answers.
 
 2. **Read the layers that exist.** Config layers, lowest first: the user file `$XDG_CONFIG_HOME/maestro/config.yaml`
-   (default `~/.config/maestro/config.yaml`), the workspace file `.maestro/config.yaml`, then a profile. The user file
-   often already lists `packs` and maps `roles`. Done when you know which packs, roles and checks are already set.
+   (default `~/.config/maestro/config.yaml`), the workspace file `.maestro/config.yaml`, then a profile, then each
+   `-c <key>=<value>` flag. The user file often already lists `packs` and maps `roles`. Done when you know which packs,
+   roles and checks are already set.
 3. **Write `.maestro/config.yaml`** at the repository root, holding only what no lower layer sets:
    - `target.repo`: the repository's absolute path. `target.base`: a branch or commit, only when the user names one;
      lanes are cut from the target's `HEAD` otherwise.
@@ -124,6 +125,11 @@ key, and a list in a higher layer replaces the lower one. YAML tags change that:
 roles:
   builder: { model: haiku }
 ```
+
+For a one-off change, `-c <key>=<value>` on any verb layers one key over the profile, its value YAML with the same tags:
+`-c roles.builder.model=haiku`, `-c 'packs=!append [../b]'`, `-c target.checks.lint=!delete`. A key holding a `.` goes
+in double quotes. A resume reapplies the concert's `--profile` and `-c`, but finds the record store by today's
+`dataRoot`: pass a `-c dataRoot=` again. The record keeps each `-c` as typed, so keep secrets in the `.env`.
 
 The stub profile, every role on the stub harness, is in SKILL.md, section Stub concerts.
 

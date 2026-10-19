@@ -28,8 +28,15 @@ export type LayerName =
 	| "profile"
 	| "flag";
 
-/** Where a config value came from: its layer, and the file and line when a file set it. */
-export type Source = { layer: LayerName; file?: string; line?: number };
+/** Where a config value came from: its layer, and the file and line when a file set it, or the flag as typed. */
+export type Source = {
+	layer: LayerName;
+	file?: string;
+	line?: number;
+	flag?: string;
+	/** The fix a diagnostic on a value it set gives, in place of its own. */
+	fix?: string;
+};
 
 /** Config keys from the top level down. */
 export type KeyPath = readonly string[];
@@ -79,7 +86,10 @@ const at = ({ file, line }: Source) => (file ? `${file}:${line}: ` : "");
 
 const spell = (path: KeyPath) => path.join(".");
 
-/** An error diagnostic, located at `source` when a file set it. */
+/**
+ * An error diagnostic, located at `source` when a file set it, its message led by the flag when a flag did, and its
+ * hint the source's fix when it has one.
+ */
 export function configDiagnostic(
 	code: string,
 	source: Source | undefined,
@@ -90,8 +100,9 @@ export function configDiagnostic(
 	return {
 		code,
 		severity: "error",
-		message,
-		hint,
+		message:
+			source?.flag === undefined ? message : `${source.flag}: ${message}`,
+		hint: source?.fix ?? hint,
 		...(location && { source: location }),
 	};
 }
@@ -262,34 +273,55 @@ function anchored(layer: Layer, paths: readonly KeyPath[], dir: string): Layer {
 	);
 }
 
-export type LayerFile = {
-	/** The file's path, as diagnostics name it. */
-	file: string;
-	/** The directory the file's relative paths resolve against. The file's own directory when absent. */
-	base?: string;
+/** Where a layer's text came from, and how its values are read. */
+export type LayerText = {
 	layer: LayerName;
 	/** The key paths whose values are file paths: a string, or a list of strings. */
 	paths?: readonly KeyPath[];
-};
+} & (
+	| {
+			/** The file's path, as diagnostics name it. */
+			file: string;
+			/** The directory the file's relative paths resolve against. The file's own directory when absent. */
+			base?: string;
+	  }
+	| {
+			/** The flag the text was given in, as diagnostics name it. Its values have no line. */
+			flag: string;
+			/** The fix a diagnostic on one of its values gives, in place of its own. */
+			fix?: string;
+			/** The directory the flag's relative paths resolve against. */
+			base: string;
+	  }
+);
+
+/** The source `text` credits its values to, but for their line, and the directory its relative paths resolve in. */
+const originOf = (text: LayerText): { source: Source; base: string } =>
+	"file" in text
+		? {
+				source: { layer: text.layer, file: text.file },
+				base: text.base ?? dirname(text.file),
+			}
+		: {
+				source: { layer: text.layer, flag: text.flag, fix: text.fix },
+				base: text.base,
+			};
 
 /**
- * Parses one YAML config file into a layer. Its merge tags:
+ * Parses one YAML config file, or the YAML a flag gives, into a layer. Its merge tags:
  * - `!replace` on a mapping: it replaces what is beneath instead of merging into it;
  * - `!append` on a list: it follows the list beneath;
  * - `!delete` with no value: it removes the key a lower layer set.
  * @throws ConfigError on invalid YAML, a file that is not a mapping, any other tag, or a tag on the wrong shape.
  */
-export function parseLayer(
-	text: string,
-	{ file, base = dirname(file), layer, paths = [] }: LayerFile,
-): Layer {
+export function parseLayer(text: string, from: LayerText): Layer {
+	const { source: origin, base } = originOf(from);
 	const lines = new LineCounter();
 	const doc = parseDocument(text, { lineCounter: lines, prettyErrors: false });
-	const sourceAt = (offset: number): Source => ({
-		layer,
-		file,
-		line: lines.linePos(offset).line,
-	});
+	const sourceAt = (offset: number): Source =>
+		origin.file === undefined
+			? origin
+			: { ...origin, line: lines.linePos(offset).line };
 	const [error] = doc.errors;
 	if (error) {
 		const source = sourceAt(error.pos[0]);
@@ -298,7 +330,9 @@ export function parseLayer(
 				"CFG.yaml",
 				source,
 				`${at(source)}${error.message}`,
-				"Fix the YAML at that line",
+				origin.file === undefined
+					? "Fix the value's YAML"
+					: "Fix the YAML at that line",
 			),
 		]);
 	}
@@ -311,12 +345,12 @@ export function parseLayer(
 			configDiagnostic(
 				"CFG.yaml",
 				source,
-				`${file} holds a ${tagOf(root) ?? shapeOf(root)}, not a mapping of config keys`,
+				`${origin.file ?? origin.flag} holds a ${tagOf(root) ?? shapeOf(root)}, not a mapping of config keys`,
 				"Write the file as untagged 'key: value' lines",
 			),
 		]);
 	const parsed = mapOf(root, { doc, sourceAt }, source, false);
-	return anchored(parsed, paths, base);
+	return anchored(parsed, from.paths ?? [], base);
 }
 
 function treeOfValue(value: unknown, source: Source): Tagged {

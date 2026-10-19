@@ -13,7 +13,7 @@ import type { Outputs } from "../node";
 import { instanceKey, isRecord } from "../shared";
 
 /** The version of the schema below, kept in SQLite's `user_version`. */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 /** How long a write waits for another connection's lock before it fails, in milliseconds. */
 const BUSY_TIMEOUT_MS = 5000;
 /** How long opening retries switching a new file to WAL mode while another connection holds it, in milliseconds. */
@@ -37,12 +37,12 @@ export const PROCESS_EXITED = "process exited";
 /** The reason `finish` settles an instance still running with. */
 export const CONCERT_FINISHED = "the concert finished before it settled";
 
-// Timestamps are epoch milliseconds, and `expansion` is '' outside groups. `ir`, `outputs`, `enrichment` and `body`
-// hold JSON. `workspace` is '' outside any workspace, and `module_dir` is '' when the concert has none. `reason` is set
-// on every non-ok outcome. `result_node` is NULL while a concert is running, and after one that failed before any node
-// ran. `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an earlier attempt, which a
-// resume reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume replaced, which still count
-// as spend.
+// Timestamps are epoch milliseconds, and `expansion` is '' outside groups. `ir`, `outputs`, `enrichment`, `body` and a
+// concert's `config` hold JSON. `workspace` is '' outside any workspace, and `module_dir` is '' when the concert has
+// none. `reason` is set on every non-ok outcome. `result_node` is NULL while a concert is running, and after one that
+// failed before any node ran. `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an
+// earlier attempt, which a resume reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume
+// replaced, which still count as spend.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -60,7 +60,9 @@ CREATE TABLE concerts (
 	tour TEXT,
 	title TEXT,
 	module_dir TEXT NOT NULL,
-	file TEXT
+	file TEXT,
+	profile TEXT,
+	config TEXT
 ) STRICT;
 CREATE TABLE instances (
 	concert TEXT NOT NULL,
@@ -113,7 +115,8 @@ export type ConcertStatus = "running" | Exclude<Outcome, "skipped">;
 
 /**
  * What a concert row keeps beside its IR. `moduleDir` is the directory its worker references' modules are found in,
- * and `file` the composition file in it that the IR was built from, when it was built from a bare file.
+ * and `file` the composition file in it that the IR was built from, when it was built from a bare file. `profile` and
+ * `config` are the profile name and each config override, as given, it was performed with.
  */
 export type ConcertOrigin = {
 	workspace: string;
@@ -121,6 +124,8 @@ export type ConcertOrigin = {
 	file?: string;
 	tour?: string;
 	title?: string;
+	profile?: string;
+	config?: readonly string[];
 };
 
 /** Timestamps are milliseconds since the Unix epoch. `pid` is the process performing the concert. */
@@ -290,6 +295,8 @@ type ConcertRow = {
 	title: string | null;
 	module_dir: string;
 	file: string | null;
+	profile: string | null;
+	config: string | null;
 };
 
 type InstanceStatus = InstanceRecord["status"];
@@ -671,10 +678,22 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 	});
 
 	return {
-		begin({ id, ir, startedAt, workspace, moduleDir, file, tour, title }) {
+		begin({
+			id,
+			ir,
+			startedAt,
+			workspace,
+			moduleDir,
+			file,
+			tour,
+			title,
+			profile,
+			config,
+		}) {
 			db.exec(
-				`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, tour, title, module_dir, file)
-				VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)`,
+				`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, tour, title, module_dir,
+				file, profile, config)
+				VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?)`,
 				[
 					id,
 					ir.composition.id,
@@ -687,6 +706,8 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 					title ?? null,
 					moduleDir ?? "",
 					file ?? null,
+					profile ?? null,
+					config?.length ? JSON.stringify(config) : null,
 				],
 			);
 		},
@@ -795,6 +816,8 @@ function concertOf(row: ConcertRow): ConcertRecord {
 		...(row.settled_at !== null && { settledAt: row.settled_at }),
 		...(row.tour !== null && { tour: row.tour }),
 		...(row.title !== null && { title: row.title }),
+		...(row.profile !== null && { profile: row.profile }),
+		...(row.config !== null && { config: JSON.parse(row.config) }),
 	};
 }
 

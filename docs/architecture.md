@@ -304,10 +304,11 @@ A resume runs every instance that is not a reusable `ok` again, from `pending`.
 ## 8. Configuration
 
 Params and config resolve, highest precedence first (CFG-04, D-17): the use site for a subcomposition or the CLI flag
-for a root composition, then profile, workspace and user YAML, then, for `compose`, the example set (D-19), then the
-declared default. A composition's YAML keys live under its pack id and then its composition id. Hosts keep pure-config
-namespaces. Files are YAML. A relative path value in a workspace or profile file is relative to the workspace root, the
-directory that holds `.maestro/`, and in the user file to its own directory. The core:
+for a root composition, then each `-c <key>=<value>` flag, last first, then profile, workspace and user YAML, then, for
+`compose`, the example set (D-19), then the declared default. A composition's YAML keys live under its pack id and then
+its composition id. Hosts keep pure-config namespaces. Files are YAML. A relative path value in a workspace or profile
+file or a `-c` is relative to the workspace root, the directory that holds `.maestro/`, and in the user file to its own
+directory. The core:
 
 - parses and layers them,
 - validates the closed **core config** schema (CFG-01),
@@ -343,8 +344,9 @@ claimed by an installed but unused registrant is ignored.
 - The **record store** is local and embedded. SQLite in WAL mode through `bun:sqlite` is the store (D-26). Concerts may
   run concurrently with no coordination beyond lane isolation, and the concurrency cap is per concert. The schema is new
   (D-02). It holds concerts with their IR, the id of the process performing them, where their code came from (workspace,
-  module directory, file), tour and title; node instances, outcomes with reasons, durations, metrics, artifact
-  references and events. Config is not stored.
+  module directory, file), tour and title, and the `--profile` name and each `-c` as typed, which a resume reapplies;
+  node instances, outcomes with reasons, durations, metrics, artifact references and events. No other config is stored:
+  a resume re-reads the config files.
 - A resume marks the concert's instance rows **stale**. Each one it reuses or replaces stops being stale, and the
   metrics of a replaced attempt still count towards the concert's.
 - A concert whose process is gone while it is still `running` settles `failed`, by whichever reader finds it, so `wait`

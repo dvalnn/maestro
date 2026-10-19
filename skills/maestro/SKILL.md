@@ -97,7 +97,8 @@ Read [running.md](running.md) for compose and perform flags, the record, artifac
 - **Prune**: `maestro prune` deletes concerts with their records and lanes. Prune the concerts you started or the user
   names, by id or by `--tour`.
 
-Read [running.md](running.md), section Recover, for resume's refusals and `--profile`, and how prune selects.
+Read [running.md](running.md), section Recover, for resume's refusals and the `--profile` and `-c` it reapplies, and how
+prune selects.
 
 ## Stub concerts
 
@@ -108,8 +109,8 @@ the smallest value that satisfies the schema keywords it reads (`required`, `pro
 output. So a concert runs past its agents and proves config, roles, lanes and checks: `classics.panel_review` ends `ok`
 with an unapproved verdict, and `classics.v_model` is rejected, at the repair loop's recheck while its checks are red
 and at `traceOf` once they are green. Use one to try a flow, or whenever the user asks for no spend. Map every role the
-composition names to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose, perform
-and resume. For the classics pack 0.1.0-beta.1's six roles:
+composition names to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose and
+perform; a resume reapplies it. For the classics pack 0.1.0-beta.1's six roles:
 
 ```yaml
 roles:

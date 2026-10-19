@@ -136,9 +136,10 @@ describe("compose and config", () => {
 		},
 	);
 
-	test("config lists every value with the layer and the file and line it came from", async () => {
+	test("config lists every value with the layer and the file and line, or the -c, it came from", async () => {
 		const w = await world();
-		const rows = json(await w.call(["cfg", ...GREET, "--json"])).values;
+		const SET = ["-c", "concurrency=3"];
+		const rows = json(await w.call(["cfg", ...GREET, ...SET, "--json"])).values;
 		expect(rows).toContainEqual(
 			expect.objectContaining({
 				key: "demo.greet.name",
@@ -149,9 +150,16 @@ describe("compose and config", () => {
 		expect(rows).toContainEqual(
 			expect.objectContaining({ key: "packs", layer: "workspace", line: 1 }),
 		);
-		expect((await w.call(["config", ...GREET])).out).toMatch(
-			/^packs .*workspace .*config\.yaml:1$/m,
+		expect(rows).toContainEqual(
+			expect.objectContaining({
+				key: "concurrency",
+				layer: "flag",
+				flag: "-c concurrency=3",
+			}),
 		);
+		const text = (await w.call(["config", ...GREET, ...SET])).out;
+		expect(text).toMatch(/^packs .*workspace .*config\.yaml:1$/m);
+		expect(text).toMatch(/^concurrency +3 +flag +-c concurrency=3$/m);
 	});
 
 	test("--out of a pack writes an IR that performs, and of a bare file writes its bundle beside it", async () => {
@@ -504,6 +512,26 @@ describe("usage errors", () => {
 			/^no concert 'nope'/,
 		],
 		[
+			"a -c without '='",
+			["perform", ...GREET, "-c", "concurrency"],
+			/^CFG\.flag: -c concurrency takes <key>=<value>\n {2}Write it as -c <key>=<value>/,
+		],
+		[
+			"a -c with an empty key",
+			["ls", "--config", "=4"],
+			/^CFG\.flag: -c =4: '' is not a key path\n/,
+		],
+		[
+			"a -c key nothing claims",
+			["perform", ...GREET, "-c", "nope.x=1"],
+			/^CFG\.unclaimed: -c nope\.x=1: config key 'nope' /,
+		],
+		[
+			"a -c value off its key's schema",
+			["compose", ...GREET, "-c", "concurrency=x"],
+			/^CFG\.schema: -c concurrency=x: config 'concurrency' must be integer\n/,
+		],
+		[
 			"param flags on an IR file",
 			["compose", join(GOLDEN, "minimal.json"), "--name", "x"],
 			/^Unknown option '--name'\nAn IR file is already built/,
@@ -584,7 +612,7 @@ describe("usage errors", () => {
 		},
 	);
 
-	test("--help prints a command's flags on stdout and exits 0", async () => {
+	test("--help prints a command's flags on stdout and exits 0, -c among every verb's", async () => {
 		const w = await world();
 		for (const args of [["--help"], ["p", "-h"], ["wt", "-h"]])
 			expect(await w.call(args)).toMatchObject({
@@ -593,6 +621,14 @@ describe("usage errors", () => {
 				err: "",
 			});
 		expect((await w.call(["--help"])).out).toMatch(/^ {2}watch +\(wt\) +\S/m);
+		const verbs = [
+			...(await w.call(["--help"])).out.matchAll(/^ {2}([a-z]+) /gm),
+		].map(([, verb = ""]) => verb);
+		expect(verbs).toContain("tour");
+		for (const verb of verbs)
+			expect((await w.call([verb, "--help"])).out).toMatch(
+				/^ {2}-c, --config <key=value> +\S/m,
+			);
 	});
 
 	test("--help given a composition adds its params after the flags, and not without one", async () => {
@@ -855,7 +891,7 @@ describe("the record", () => {
 		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
 		for (const twin of twins)
 			db.run(
-				"INSERT INTO concerts SELECT ?, composition, pack, ir, pid, status, started_at, settled_at, result_node, result_expansion, reason, workspace, tour, title, module_dir, file FROM concerts WHERE id = ?",
+				"INSERT INTO concerts SELECT ?, composition, pack, ir, pid, status, started_at, settled_at, result_node, result_expansion, reason, workspace, tour, title, module_dir, file, profile, config FROM concerts WHERE id = ?",
 				[twin, ids[0] ?? ""],
 			);
 		db.close();

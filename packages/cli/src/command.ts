@@ -58,6 +58,13 @@ export const COMMON: Options = {
 		arg: "name",
 		desc: "Layer .maestro/profiles/<name>.yaml on the config",
 	},
+	config: {
+		type: "string",
+		arg: "key=value",
+		desc: "Set a config key to a YAML value, over the profile; repeatable",
+		multiple: true,
+		short: "c",
+	},
 	debug: { type: "boolean", desc: "Show stack traces" },
 	help: { type: "boolean", short: "h", desc: "Show this help" },
 };
@@ -104,6 +111,10 @@ export const textOf = (values: Values, name: string) => {
 	const value = values[name];
 	return typeof value === "string" ? value : undefined;
 };
+
+/** The texts given to a repeatable flag, in order, none when it is absent. */
+export const textsOf = (values: Values, name: string) =>
+	[values[name] ?? []].flat().filter((v) => typeof v === "string");
 
 export const isSet = (values: Values, name: string) => values[name] === true;
 

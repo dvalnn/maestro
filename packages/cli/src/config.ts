@@ -53,19 +53,30 @@ const pathKeys = (hosts: readonly Host[]) => [
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
+/** A command's `--profile` name and each `-c` as given, in order. */
+export type Overrides = {
+	profile?: string;
+	config?: readonly string[];
+	/** The short id of the concert they were recorded with, when a resume reapplies them. */
+	recorded?: string;
+};
+
 export type ConfigRequest = {
 	cwd: string;
 	env: Environment;
 	hosts: readonly Host[];
-	/** The name given to `--profile`. */
-	profile?: string;
+	/** Layered above the config files in order, each as its profile, then each of its `-c` in order. */
+	overrides?: readonly Overrides[];
 };
 
-/** An installed pack's directory, and the config file that lists it; without one, it was found in the packs directory. */
-export type PackDir = { dir: string; file?: string };
+/**
+ * An installed pack's directory, and the config file or `-c` that lists it, as diagnostics name them; without one, it
+ * was found in the packs directory.
+ */
+export type PackDir = { dir: string; listedBy?: string };
 
 export type LoadedConfig = {
-	/** Every layer, lowest first: the default, then each config file found. */
+	/** Every layer, lowest first: the default, then each config file found, profile and `-c`. */
 	layers: readonly Layer[];
 	composed: Composed;
 	core: CoreConfig;
@@ -109,12 +120,12 @@ async function directoriesIn(root: string): Promise<PackDir[]> {
 	return dirs.filter((_, i) => kept[i]).map((dir) => ({ dir }));
 }
 
-/** The packs `composed` lists, each with the file that lists it, then those in `root`, each real directory once. */
+/** The packs `composed` lists, with the file or flag listing each, then those in `root`, each real directory once. */
 async function packDirs(composed: Composed, root: string): Promise<PackDir[]> {
-	const listed = (composed.values[PACKS] as string[]).map((dir, i) => ({
-		dir,
-		file: sourceOf(composed, [PACKS, String(i)])?.file,
-	}));
+	const listed = (composed.values[PACKS] as string[]).map((dir, i) => {
+		const source = sourceOf(composed, [PACKS, String(i)]);
+		return { dir, listedBy: source?.file ?? source?.flag };
+	});
 	const all = [...listed, ...(await directoriesIn(root))];
 	const keys = await Promise.all(
 		all.map(({ dir }) => realpath(dir).catch(() => resolve(dir))),
@@ -151,33 +162,153 @@ async function fileLayer(
 	return parseLayer(await found.text(), { file, base, layer, paths });
 }
 
-const refused = (message: string, hint: string) =>
-	new ConfigError([configDiagnostic("CFG.profile", undefined, message, hint)]);
+/** The code of a refused `--profile`. */
+const CFG_PROFILE = "CFG.profile";
+/** The code of a refused `-c`. */
+const CFG_FLAG = "CFG.flag";
+const NEW_CONCERT = "perform the composition as a new concert";
+const NO_WORKSPACE = `needs a workspace, and no directory from here up holds ${WORKSPACE_DIR}/`;
 
+const refused = (code: string, message: string, hint: string) =>
+	new ConfigError([configDiagnostic(code, undefined, message, hint)]);
+
+/** The layer of profile `name`; `recorded` is the short id of the concert a resume reapplies it from. */
 async function profileLayer(
 	name: string,
 	workspace: string | undefined,
 	paths: readonly KeyPath[],
+	recorded?: string,
 ): Promise<Layer> {
+	const by =
+		recorded && `concert ${recorded} was performed with --profile ${name}`;
 	if (basename(name) !== name)
 		throw refused(
+			CFG_PROFILE,
 			`--profile takes a name, not a path: '${name}'`,
 			`Name a profile in ${WORKSPACE_DIR}/${PROFILES_DIR}/, without its ${PROFILE_EXTENSION}`,
 		);
 	if (!workspace)
-		throw refused(
-			`--profile ${name} needs a workspace, and no directory from here up holds ${WORKSPACE_DIR}/`,
-			`Change to a directory inside a workspace, or drop --profile`,
-		);
+		throw by
+			? refused(
+					CFG_PROFILE,
+					`${by}, which ${NO_WORKSPACE}`,
+					`Resume from inside its workspace, or ${NEW_CONCERT}`,
+				)
+			: refused(
+					CFG_PROFILE,
+					`--profile ${name} ${NO_WORKSPACE}`,
+					"Change to a directory inside a workspace, or drop --profile",
+				);
 	const dir = join(workspace, WORKSPACE_DIR, PROFILES_DIR);
 	const file = join(dir, `${name}${PROFILE_EXTENSION}`);
 	const found = await fileLayer(file, "profile", paths, workspace);
 	if (!found)
-		throw refused(
-			`--profile ${name} names no file: ${file} does not exist`,
-			`Create ${file}, or name a profile in ${dir}`,
-		);
+		throw by
+			? refused(
+					CFG_PROFILE,
+					`${by}, and ${file} does not exist`,
+					`Restore ${file}, or ${NEW_CONCERT}`,
+				)
+			: refused(
+					CFG_PROFILE,
+					`--profile ${name} names no file: ${file} does not exist`,
+					`Create ${file}, or name a profile in ${dir}`,
+				);
 	return found;
+}
+
+/** `<key>=<value>`, split at the first `=` outside double quotes. */
+const OVERRIDE = /^((?:"[^"]*"|[^"=])*)=(.*)$/s;
+/** One key of a key path: in double quotes, or up to the next `.`. */
+const KEY = /"([^"]*)"|([^".]+)/y;
+const KEY_SEPARATOR = ".";
+const INDENT = "  ";
+/** A flag value a shell reads as written, which is shown without quotes. */
+const SHELL_SAFE = /^[\w.=/:,@+-]*$/;
+
+/** `arg` as the `-c` that gives it, quoted for a shell when it needs quotes. */
+const typed = (arg: string) =>
+	`-c ${SHELL_SAFE.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`}`;
+
+/** How a `-c` is named and fixed: as typed, or as recorded with concert `recorded`, which a resume reapplies. */
+const flagOrigin = (arg: string, recorded: string | undefined) =>
+	recorded === undefined
+		? { flag: typed(arg) }
+		: {
+				flag: `concert ${recorded} was performed with ${typed(arg)}`,
+				fix: `Set that key, or !delete it, with -c on the resume, or ${NEW_CONCERT}`,
+			};
+
+/** The keys of `key` from the top level down, or undefined when it is not keys joined by `.`. */
+function keyPath(key: string): string[] | undefined {
+	const path: string[] = [];
+	for (let at = 0; ; at += KEY_SEPARATOR.length) {
+		KEY.lastIndex = at;
+		const match = KEY.exec(key);
+		if (!match) return undefined;
+		path.push(match[1] ?? match[2] ?? "");
+		at = KEY.lastIndex;
+		if (at === key.length) return path;
+		if (!key.startsWith(KEY_SEPARATOR, at)) return undefined;
+	}
+}
+
+/**
+ * The layer of one `-c <key>=<value>`: the value, read as YAML with its merge tags, at the key, its relative paths
+ * resolved against `base`; `recorded` is the short id of the concert a resume reapplies it from.
+ * @throws ConfigError naming the flag as typed when it is not `<key>=<value>`, its key is not keys joined by `.`, or
+ * its value is not YAML.
+ */
+function overrideLayer(
+	arg: string,
+	base: string,
+	paths: readonly KeyPath[],
+	recorded?: string,
+): Layer {
+	const flag = typed(arg);
+	const match = OVERRIDE.exec(arg);
+	if (!match)
+		throw refused(
+			CFG_FLAG,
+			`${flag} takes <key>=<value>`,
+			"Write it as -c <key>=<value>, as in -c concurrency=4",
+		);
+	const [, key = "", value = ""] = match;
+	const path = keyPath(key);
+	if (!path)
+		throw refused(
+			CFG_FLAG,
+			`${flag}: '${key}' is not a key path`,
+			`Join keys with '.', and quote a key holding '.', as in -c 'target.checks."a.b"=x'`,
+		);
+	const nested = path
+		.map((k, depth) => `${INDENT.repeat(depth)}${JSON.stringify(k)}:`)
+		.join("\n");
+	const indented = value.replaceAll("\n", `\n${INDENT.repeat(path.length)}`);
+	return parseLayer(`${nested} ${indented}\n`, {
+		...flagOrigin(arg, recorded),
+		base,
+		layer: "flag",
+		paths,
+	});
+}
+
+/** The layers of `overrides` in order: each one's profile, then each of its `-c` in order. */
+async function overrideLayers(
+	overrides: readonly Overrides[],
+	workspace: string | undefined,
+	base: string,
+	paths: readonly KeyPath[],
+): Promise<Layer[]> {
+	const layers: Layer[] = [];
+	for (const { profile, config = [], recorded } of overrides) {
+		if (profile !== undefined)
+			layers.push(await profileLayer(profile, workspace, paths, recorded));
+		layers.push(
+			...config.map((arg) => overrideLayer(arg, base, paths, recorded)),
+		);
+	}
+	return layers;
 }
 
 /**
@@ -186,20 +317,21 @@ async function profileLayer(
  * - the user file, `$XDG_CONFIG_HOME/maestro/config.yaml`, when it exists;
  * - the workspace file, `.maestro/config.yaml` in the nearest directory from the cwd up holding `.maestro/`, when it
  *   exists;
- * - the profile `--profile` names, `.maestro/profiles/<name>.yaml` in that workspace.
+ * - for each of `overrides` in order, the profile its `--profile` names, `.maestro/profiles/<name>.yaml` in that
+ *   workspace, then a layer per `-c <key>=<value>`, in order.
  *
- * Relative paths in the user file resolve against its directory, those in the workspace file and the profile against
- * the workspace root. The installed packs are those `packs` lists, then each directory under
- * `$XDG_DATA_HOME/maestro/packs`, each once.
+ * Relative paths in the user file resolve against its directory, those in the workspace file, a profile and a `-c`
+ * against the workspace root, or the cwd outside a workspace. The installed packs are those `packs` lists, then each
+ * directory under `$XDG_DATA_HOME/maestro/packs`, each once.
  *
- * @throws ConfigError for a file that cannot be parsed or layered, a missing profile, or core or CLI keys off their
- * schemas.
+ * @throws ConfigError for a file or `-c` that cannot be parsed or layered, a missing profile, or core or CLI keys off
+ * their schemas.
  */
 export async function loadConfig({
 	cwd,
 	env,
 	hosts,
-	profile,
+	overrides = [],
 }: ConfigRequest): Promise<LoadedConfig> {
 	const workspace = await workspaceOf(cwd);
 	const dataRoot = join(xdg(env, "XDG_DATA_HOME", ".local/share"), APP);
@@ -218,14 +350,17 @@ export async function loadConfig({
 				paths,
 				workspace,
 			)),
-		profile === undefined
-			? undefined
-			: await profileLayer(profile, workspace, paths),
 	];
 	const layers = [
 		coreDefaults(dataRoot, workspace ? basename(workspace) : ""),
 		valuesLayer({ [PACKS]: [] }, { layer: "default" }),
 		...files.filter((l): l is Layer => Boolean(l)),
+		...(await overrideLayers(
+			overrides,
+			workspace,
+			workspace ?? resolve(cwd),
+			paths,
+		)),
 	];
 	const composed = layered(layers);
 	const core = coreConfig(composed);

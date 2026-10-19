@@ -22,14 +22,14 @@ import {
 	prepare,
 	type Reading,
 } from "./prepare";
-import { openSession } from "./session";
+import { openSession, overridesOf } from "./session";
 
 const COMPOSE_OPTIONS = { ...COMMON, ...COMPOSE_FLAGS } as const;
 
 /** Prepares and pre-flights the target in `args`. @returns the preparation and its plan. */
 async function composed(reading: Reading, args: readonly string[], deps: Deps) {
 	const early = peek(COMMON, args);
-	const session = await openSession(deps, textOf(early, "profile"));
+	const session = await openSession(deps, overridesOf(early));
 	const prepared = await prepare(session, reading, args);
 	const plan = await preflight(session, prepared);
 	return { json: isSet(early, "json"), prepared, plan };
@@ -87,6 +87,7 @@ function rowsOf({ values, sources }: Composed) {
 			layer: source.layer,
 			file: source.file,
 			line: source.line,
+			flag: source.flag,
 		}));
 }
 
@@ -110,7 +111,7 @@ export const config: Command = {
 					r.key,
 					JSON.stringify(r.value),
 					r.layer,
-					r.file ? `${r.file}:${r.line}` : "",
+					r.file ? `${r.file}:${r.line}` : (r.flag ?? ""),
 				]),
 			),
 		);

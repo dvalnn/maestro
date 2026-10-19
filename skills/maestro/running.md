@@ -1,7 +1,8 @@
 # Running: compose, perform, follow, read, recover
 
 Reference for the verbs after bootstrap, grouped by verb, with what their output means. Every flag not named here is in
-`maestro <verb> --help`. Each verb takes `--json` (one JSON document on stdout), `--profile <name>` and `--debug`.
+`maestro <verb> --help`. Each verb takes `--json` (one JSON document on stdout), `--profile <name>`, `-c <key>=<value>`
+(repeatable) and `--debug`.
 
 ## Compose
 
@@ -113,10 +114,13 @@ The versions before it are sealed in the host's own git store.
 
 What SKILL.md's Recover section leaves out:
 
-- **Resume**: pass the `--profile` the concert was performed with again, since resume does not remember it. It takes no
-  composition, `--tour` or `--title`: the concert keeps its own. It is refused for a concert still running (wait or kill
-  it first) and for one that settled `ok` (perform the composition as a new concert). The code it needs is the pack or
-  file it was performed from, still at the same path.
+- **Resume**: it reapplies the `--profile` and `-c` the concert was performed with, over the config files as they are
+  now; a `--profile` or `-c` given to the resume goes on top. It finds the record store by today's `dataRoot`, so a
+  concert performed with `-c dataRoot=<dir>` resumes only with that `-c` given again. An error naming the concert's
+  recorded flag is fixed with a `-c` on the resume (`-c <key>=!delete` drops a recorded key), or by performing anew. It
+  takes no composition, `--tour` or `--title`: the concert keeps its own. It is refused for a concert still running
+  (wait or kill it first) and for one that settled `ok` (perform the composition as a new concert). The code it needs is
+  the pack or file it was performed from, still at the same path.
 - **Kill** waits up to 10 s for the concert to settle `failed` ("the concert was cancelled"). A concert whose process
   died without settling is marked `failed` ("process exited") when the record is next read.
 - **Prune** selects by id, or by the filters in `prune --help`. The lane refs into a pruned concert go with it. It asks
