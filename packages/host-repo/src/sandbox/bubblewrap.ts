@@ -4,6 +4,8 @@ import type { ExitStatus, SandboxBackend, SandboxedProcess } from "./types";
 
 const ID_VAR = "MAESTRO_SANDBOX_ID";
 const STDERR_TAIL = 64 * 1024;
+/** Values shorter than this are not masked, so a short credential cannot garble the output it appears in. */
+const MIN_MASKED_LENGTH = 8;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Live processes whose environment carries the run id: bwrap, its init and every descendant, whatever their pgid. */
@@ -27,10 +29,10 @@ export function runProcesses(id: string): number[] {
 	return pids;
 }
 
-function redactor(secrets: Record<string, string> = {}) {
+function redactor(values: readonly string[]) {
 	const needles = new Set<string>();
-	for (const v of Object.values(secrets)) {
-		if (!v) continue;
+	for (const v of values) {
+		if (v.length < MIN_MASKED_LENGTH) continue;
 		needles.add(v);
 		needles.add(JSON.stringify(v).slice(1, -1)); // the form it takes inside a JSON string
 	}
@@ -65,7 +67,10 @@ export const bubblewrap: SandboxBackend = {
 		const args = bwrapArgs(mountPlan(spec), spec.argv); // validates the mount policy before anything runs
 
 		const id = crypto.randomUUID();
-		const redact = redactor(spec.secrets);
+		const redact = redactor([
+			...Object.values(spec.secrets ?? {}),
+			...(spec.masked ?? []),
+		]);
 		// bwrap is spawned with exactly this environment and passes it on. No --clearenv/--setenv, so values never
 		// reach argv.
 		const env = {

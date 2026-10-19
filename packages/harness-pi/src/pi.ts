@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -22,6 +22,9 @@ import type { SandboxBackend } from "@maestro/host-repo/sandbox";
 const SESSION_VERSION = 3;
 const AGENT_DIR_VAR = "PI_CODING_AGENT_DIR";
 const PI_BIN = "pi";
+const AUTH_FILE = "auth.json";
+/** The fields of a provider entry in pi's `auth.json` that hold a credential: an API key, an OAuth token pair. */
+const CREDENTIAL_FIELDS = ["key", "access", "refresh"];
 const FAILED_STOPS = new Set(["error", "aborted"]);
 
 /** Events that carry nothing the adapter reports. */
@@ -160,6 +163,20 @@ function piArgv(bin: string, req: HarnessRequest): string[] {
 	];
 }
 
+/** The credential values in `<agentDir>/auth.json`: none when the file is missing, unreadable or not a JSON object. */
+function credentials(agentDir: string): string[] {
+	let auth: unknown;
+	try {
+		auth = JSON.parse(readFileSync(join(agentDir, AUTH_FILE), "utf8"));
+	} catch {
+		return [];
+	}
+	return Object.values(isObject(auth) ? auth : {})
+		.filter(isObject)
+		.flatMap((entry) => CREDENTIAL_FIELDS.map((field) => entry[field]))
+		.filter((v): v is string => typeof v === "string" && v !== "");
+}
+
 /** pi, run as a sandboxed subprocess (ADR 0001). */
 export function piHarness(
 	options: PiOptions = {},
@@ -179,6 +196,7 @@ export function piHarness(
 				argv: piArgv(bin, req),
 				stdin: req.prompt,
 				env: { [AGENT_DIR_VAR]: agentDir },
+				masked: credentials(agentDir),
 				readOnly: [{ src: dirname(bin) }],
 				writable: [{ src: agentDir }],
 			};

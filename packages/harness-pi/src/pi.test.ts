@@ -35,7 +35,7 @@ function standIn(lines: string[]) {
 	writeFileSync(join(home, "run.jsonl"), `${lines.join("\n")}\n`);
 	writeFileSync(
 		bin,
-		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\n[ -f /identity.md ] && cp /identity.md /out/identity\ncat "$(dirname "$0")/run.jsonl"\n`,
+		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\nenv > /out/env\n[ -f /identity.md ] && cp /identity.md /out/identity\ncat "$(dirname "$0")/run.jsonl"\n`,
 		{ mode: 0o755 },
 	);
 	return { bin, agentDir: tmp("agent") };
@@ -120,6 +120,47 @@ describe("stand-in pi", () => {
 			"--thinking",
 			"low",
 			"",
+		]);
+	});
+
+	test("the credentials in auth.json are masked in what the sandbox returns and kept out of its environment, and nothing is masked without the file", async () => {
+		const auth = {
+			anthropic: {
+				type: "oauth",
+				access: "tok-access",
+				refresh: "tok-refresh",
+			},
+			openai: { type: "api_key", key: "sk-live-1", env: { REGION: "eu" } },
+		};
+		const leak = (...values: string[]) => [
+			...fixture(),
+			...values.map((t) => JSON.stringify({ type: "leak", t })),
+		];
+		const rawOf = async (agentDir: string, bin: string) => {
+			const req = request("x");
+			const seen = await drain(piHarness({ bin, agentDir }).run(req).events);
+			expect(readFileSync(join(req.outbox, "env"), "utf8")).not.toContain(
+				"tok-access",
+			);
+			return seen
+				.filter((e) => e.kind === "raw")
+				.map((e) => (e.kind === "raw" ? e.data : undefined));
+		};
+
+		const withAuth = standIn(
+			leak("tok-access", "tok-refresh", "sk-live-1", "eu"),
+		);
+		writeFileSync(join(withAuth.agentDir, "auth.json"), JSON.stringify(auth));
+		expect(await rawOf(withAuth.agentDir, withAuth.bin)).toEqual([
+			{ type: "leak", t: "[redacted]" },
+			{ type: "leak", t: "[redacted]" },
+			{ type: "leak", t: "[redacted]" },
+			{ type: "leak", t: "eu" },
+		]);
+
+		const without = standIn(leak("tok-access"));
+		expect(await rawOf(without.agentDir, without.bin)).toEqual([
+			{ type: "leak", t: "tok-access" },
 		]);
 	});
 

@@ -489,11 +489,12 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 - An adapter starts an agent session for a role, feeds it the prompt, streams events (turns, text, thinking, tool calls
   with their input, usage), reports the agent's final reply, and supports cancel. Tool results are not streamed. In the
-  harness's output, secrets the sandbox is given are masked before the adapter parses it. The host reads declared
-  outputs from the agent's outbox, not the adapter. It is a sandboxed subprocess driving the harness's JSON event stream
-  (D-20). An in-process SDK is deferred, because an in-process agent cannot be confined by bubblewrap. The first adapter
-  is pi (`pi -p --mode json`) and the second is Claude Code. The built-in `stub` harness replies with an ok envelope of
-  the agent's kind and writes nothing, so an agent that declares outputs fails under it.
+  harness's output, secrets the sandbox is given are masked before the adapter parses it: Claude's token, and the
+  credential values in pi's `auth.json`. The host reads declared outputs from the agent's outbox, not the adapter. It is
+  a sandboxed subprocess driving the harness's JSON event stream (D-20). An in-process SDK is deferred, because an
+  in-process agent cannot be confined by bubblewrap. The first adapter is pi (`pi -p --mode json`) and the second is
+  Claude Code. The built-in `stub` harness replies with an ok envelope of the agent's kind and writes nothing, so an
+  agent that declares outputs fails under it.
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
 **Host validation rules**

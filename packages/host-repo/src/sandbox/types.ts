@@ -13,6 +13,8 @@ export type SandboxSpec = {
 	env?: Record<string, string>;
 	/** Like `env`, but masked in every line and stderr the sandbox returns. */
 	secrets?: Record<string, string>;
+	/** Values masked like `secrets`, never put in the environment. */
+	masked?: string[];
 	/** Written to the process's stdin, then stdin is closed. No argv size limit applies. */
 	stdin?: string | Uint8Array;
 	/** Read-only binds declared by a node or config. Rejected if they land in the lane's writable area. */

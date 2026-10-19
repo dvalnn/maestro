@@ -121,6 +121,8 @@ describe("confinement", () => {
 	});
 });
 
+const SECRET = "sk-live-12345";
+
 describe("secrets", () => {
 	test("secret values never appear in returned lines or stderr, nor in the bwrap argv", async () => {
 		const secret = 'sk-live-"abc"123';
@@ -146,6 +148,34 @@ describe("secrets", () => {
 		expect(out[0]).toBe("key=[redacted]");
 		expect(exit.stderr).toContain("err [redacted]");
 	});
+
+	test.each<[string, Partial<SandboxSpec>, string, string]>([
+		[
+			"a secret",
+			{ secrets: { API_KEY: SECRET } },
+			"[redacted]",
+			"env=[redacted]",
+		],
+		["a masked value", { masked: [SECRET] }, "[redacted]", "env=none"],
+		["a value too short to mask", { masked: ["abc"] }, "abc", "env=none"],
+	])(
+		"%s is masked in the output, and only a secret reaches the environment",
+		async (_, spec, shown, env) => {
+			const p = bubblewrap.start({
+				lane: tmp("lane"),
+				argv: [
+					"sh",
+					"-c",
+					`echo "${spec.masked?.[0] ?? SECRET}"; echo "env=\${API_KEY:-none}"`,
+				],
+				...spec,
+			});
+			const out: string[] = [];
+			for await (const l of p.stdout) out.push(l);
+			await p.exited;
+			expect(out).toEqual([shown, env]);
+		},
+	);
 });
 
 describe("process tree", () => {
