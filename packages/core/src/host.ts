@@ -102,7 +102,7 @@ export interface Host {
 	readonly config: Readonly<Record<string, JsonSchema>>;
 	/**
 	 * The keys of `config` that hold file paths, namespace first. A relative value in a config file is relative to that
-	 * file's directory.
+	 * file's directory, or to the workspace root for a workspace or profile file.
 	 */
 	readonly paths?: readonly KeyPath[];
 	/** Compose-time rules over the whole graph. */

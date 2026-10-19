@@ -17,7 +17,7 @@ The shape is:
   host that keeps none has neither, so they are present together or not at all. Neither is ever half implemented.
 - **`param` stays flat and optional.** It reads one of the host's types from text and has no partner member.
 - **`paths` is optional and lists the `config` keys that hold file paths**, namespace first, which the CLI anchors to
-  the config file that sets them.
+  the workspace root, or to the user file's directory for a value in the user file.
 - **A setup goes to `validate`, `environment`, `resources.release` and `resources.usage`**, and to `execute` through
   `HostContext.setup`. It holds the values of the config namespaces the host owns, as compose checked them, and its
   store, `<data root>/hosts/<host name>`. The host creates its store on first write, so core holds no host directory a

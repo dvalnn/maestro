@@ -263,8 +263,10 @@ function anchored(layer: Layer, paths: readonly KeyPath[], dir: string): Layer {
 }
 
 export type LayerFile = {
-	/** The file's path, as diagnostics name it. Relative paths in it are relative to its directory. */
+	/** The file's path, as diagnostics name it. */
 	file: string;
+	/** The directory the file's relative paths resolve against. The file's own directory when absent. */
+	base?: string;
 	layer: LayerName;
 	/** The key paths whose values are file paths: a string, or a list of strings. */
 	paths?: readonly KeyPath[];
@@ -279,7 +281,7 @@ export type LayerFile = {
  */
 export function parseLayer(
 	text: string,
-	{ file, layer, paths = [] }: LayerFile,
+	{ file, base = dirname(file), layer, paths = [] }: LayerFile,
 ): Layer {
 	const lines = new LineCounter();
 	const doc = parseDocument(text, { lineCounter: lines, prettyErrors: false });
@@ -314,7 +316,7 @@ export function parseLayer(
 			),
 		]);
 	const parsed = mapOf(root, { doc, sourceAt }, source, false);
-	return anchored(parsed, paths, dirname(file));
+	return anchored(parsed, paths, base);
 }
 
 function treeOfValue(value: unknown, source: Source): Tagged {

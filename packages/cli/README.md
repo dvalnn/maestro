@@ -93,7 +93,8 @@ where each value came from.
 | `roles`       | The repo host's roles: a `harness`, `model` and optional `thinking` each.                            |
 | `sandbox`     | The repo host's `readOnly` paths, bound into every agent, check and prepare.                         |
 
-A relative `packs`, `dataRoot` or `target.repo` is relative to the directory of the file that sets it.
+A relative `packs`, `dataRoot`, `target.repo` or other path key is relative to the workspace root, the directory that
+holds `.maestro/`, in a workspace or profile file, and to the user file's own directory in the user file.
 
 The repo host's namespaces are set out in architecture.md section 12, Configuration. Its Claude Code harness reads the
 token from `CLAUDE_CODE_OAUTH_TOKEN`, set in the shell or in `.env`; get one with `claude setup-token`.

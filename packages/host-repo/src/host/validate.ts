@@ -368,7 +368,7 @@ function targetProblems(setup: RepoSetup): Finding[] {
 			{
 				code: "HOST.target",
 				message: `target repository '${repo}' does not exist`,
-				hint: "Set 'target.repo' relative to the config file's directory",
+				hint: "Set 'target.repo' relative to the file's workspace root, or the user config's directory",
 			},
 		];
 	if (!existsSync(join(repo, GIT_ENTRY)))

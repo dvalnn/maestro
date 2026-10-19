@@ -29,10 +29,10 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
      Lanes check out only those, before prepare runs; checks and agents see nothing else.
    - `roles`: every role the composition names. Compose lists each missing one. A role no layer maps is the user's call,
      since a model is spend: ask the user for its harness and model.
-   - `packs`: each installed pack's directory, absolute or relative to this file. A list replaces the lower layer's, so
-     to add to the user file's packs write `packs: !append [<dir>]`. The release ships the repertoire as
-     `repertoire-<version>.tar.gz` beside the binary; install it into the packs directory, then list the printed
-     directory:
+   - `packs`: each installed pack's directory, absolute or relative to the workspace root (the directory that holds
+     `.maestro/`) in a workspace file. A list replaces the lower layer's, so to add to the user file's packs write
+     `packs: !append [<dir>]`. The release ships the repertoire as `repertoire-<version>.tar.gz` beside the binary;
+     install it into the packs directory, then list the printed directory:
 
      ```sh
      packs="${XDG_DATA_HOME:-$HOME/.local/share}/maestro/packs"

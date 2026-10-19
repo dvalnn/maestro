@@ -302,7 +302,8 @@ A resume runs every instance that is not a reusable `ok` again, from `pending`.
 Params and config resolve, highest precedence first (CFG-04, D-17): the use site for a subcomposition or the CLI flag
 for a root composition, then profile, workspace and user YAML, then, for `compose`, the example set (D-19), then the
 declared default. A composition's YAML keys live under its pack id and then its composition id. Hosts keep pure-config
-namespaces. Files are YAML. The core:
+namespaces. Files are YAML. A relative path value in a workspace or profile file is relative to the workspace root, the
+directory that holds `.maestro/`, and in the user file to its own directory. The core:
 
 - parses and layers them,
 - validates the closed **core config** schema (CFG-01),

@@ -35,21 +35,20 @@ async function refusal(promise: Promise<unknown>) {
 describe("config files", () => {
 	test("layer default, user, workspace and profile, each value keeping its layer, file and line", async () => {
 		const { root, request } = await tree({
-			[USER]: "concurrency: 2\ncaps:\n  instances: 10\npacks: [../packs/a]\n",
-			[WORKSPACE]:
-				"concurrency: 3\ncaps:\n  calls: 4\ntarget:\n  repo: ../app\n",
-			[PROFILE]: "\nconcurrency: 5\n",
+			[USER]: "concurrency: 2\ncaps:\n  instances: 10\npacks: [packs/a]\n",
+			[WORKSPACE]: "concurrency: 3\ncaps:\n  calls: 4\ntarget:\n  repo: app\n",
+			[PROFILE]: "\nconcurrency: 5\ndataRoot: data\n",
 			"ws/sub/deeper/.keep": "",
 		});
 		const config = await loadConfig(request({ profile: "fast" }));
 		expect(config.core).toEqual({
 			concurrency: 5,
 			caps: { instances: 10, calls: 4 },
-			dataRoot: join(root, "home/.local/share/maestro"),
+			dataRoot: join(root, "ws/data"),
 			workspace: "ws",
 		});
 		expect(config.workspace).toBe(join(root, "ws"));
-		expect(config.packs).toEqual([join(root, "xdg/packs/a")]);
+		expect(config.packs).toEqual([join(root, "xdg/maestro/packs/a")]);
 		expect(config.composed.values.target).toEqual({
 			repo: join(root, "ws/app"),
 		});
@@ -63,13 +62,13 @@ describe("config files", () => {
 			{ layer: "profile", file: join(root, PROFILE), line: 2 },
 			{ layer: "user", file: join(root, USER), line: 3 },
 			{ layer: "workspace", file: join(root, WORKSPACE), line: 3 },
-			{ layer: "default" },
+			{ layer: "profile", file: join(root, PROFILE), line: 3 },
 		]);
 	});
 
 	test("anchor the paths each host declares, and leave other keys as written", async () => {
 		const { root, request } = await tree({
-			[WORKSPACE]: "cache:\n  dir: ../c\n  name: ../n\n",
+			[WORKSPACE]: "cache:\n  dir: c\n  name: ../n\n",
 		});
 		const [repo] = builtinHosts({});
 		if (!repo) throw new Error("no builtin host");
@@ -99,12 +98,12 @@ describe("config files", () => {
 		expect(config.workspace).toBeUndefined();
 	});
 
-	test("a workspace may set its own data root, relative to its config file", async () => {
+	test("a workspace may set its own data root, relative to the workspace root", async () => {
 		const { root, request } = await tree({
 			[WORKSPACE]: "dataRoot: data\nworkspace: shop\n",
 		});
 		expect((await loadConfig(request())).core).toMatchObject({
-			dataRoot: join(root, "ws/.maestro/data"),
+			dataRoot: join(root, "ws/data"),
 			workspace: "shop",
 		});
 	});

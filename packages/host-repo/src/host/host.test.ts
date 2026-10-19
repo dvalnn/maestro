@@ -251,7 +251,7 @@ describe("compose", () => {
 			"a target that does not exist",
 			{ role: { name: "builder" }, lane: fresh },
 			"HOST.target",
-			"Set 'target.repo' relative to the config file's directory",
+			"Set 'target.repo' relative to the file's workspace root, or the user config's directory",
 			() => join(tmp("gone"), "missing"),
 		],
 	])(

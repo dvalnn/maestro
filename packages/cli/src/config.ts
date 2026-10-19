@@ -36,7 +36,7 @@ export const CLI_CONFIG: Readonly<Record<string, JsonSchema>> = {
 	[PACKS]: { type: "array", items: { type: "string", minLength: 1 } },
 };
 
-/** The key paths whose relative values are anchored to their config file: core's, the CLI's and each host's. */
+/** The key paths whose relative values are anchored to their config file, or to the workspace root: core's, the CLI's and each host's. */
 const pathKeys = (hosts: readonly Host[]) => [
 	...CORE_PATHS,
 	...hosts.flatMap((h) => h.paths ?? []),
@@ -82,14 +82,16 @@ function xdg(env: Environment, variable: string, fallback: string): string {
 	return join(env.HOME || homedir(), fallback);
 }
 
+/** The layer in `file`, when it exists; its relative paths resolve against `base`, else its own directory. */
 async function fileLayer(
 	file: string,
 	layer: LayerName,
 	paths: readonly KeyPath[],
+	base?: string,
 ): Promise<Layer | undefined> {
 	const found = Bun.file(file);
 	if (!(await found.exists())) return undefined;
-	return parseLayer(await found.text(), { file, layer, paths });
+	return parseLayer(await found.text(), { file, base, layer, paths });
 }
 
 const refused = (message: string, hint: string) =>
@@ -112,7 +114,7 @@ async function profileLayer(
 		);
 	const dir = join(workspace, WORKSPACE_DIR, PROFILES_DIR);
 	const file = join(dir, `${name}${PROFILE_EXTENSION}`);
-	const found = await fileLayer(file, "profile", paths);
+	const found = await fileLayer(file, "profile", paths, workspace);
 	if (!found)
 		throw refused(
 			`--profile ${name} names no file: ${file} does not exist`,
@@ -128,6 +130,9 @@ async function profileLayer(
  * - the workspace file, `.maestro/config.yaml` in the nearest directory from the cwd up holding `.maestro/`, when it
  *   exists;
  * - the profile `--profile` names, `.maestro/profiles/<name>.yaml` in that workspace.
+ *
+ * Relative paths in the user file resolve against its directory, those in the workspace file and the profile against
+ * the workspace root.
  *
  * @throws ConfigError for a file that cannot be parsed or layered, a missing profile, or core or CLI keys off their
  * schemas.
@@ -152,6 +157,7 @@ export async function loadConfig({
 				join(workspace, WORKSPACE_DIR, CONFIG_FILE),
 				"workspace",
 				paths,
+				workspace,
 			)),
 		profile === undefined
 			? undefined
