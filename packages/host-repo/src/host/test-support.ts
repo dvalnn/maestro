@@ -1,5 +1,6 @@
 import {
 	lstatSync,
+	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
@@ -7,7 +8,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
 import type { Host, HostSetup } from "@maestro/core/host";
@@ -19,6 +20,7 @@ import {
 	type StubStep,
 	stubHarness,
 } from "../harness/index";
+import { runProcesses } from "../sandbox/bubblewrap";
 import { repoHost } from "./index";
 import { openTarget } from "./store";
 
@@ -43,15 +45,19 @@ const GIT_ENV = {
 	GIT_COMMITTER_EMAIL: "op@x",
 };
 
-export function toyTarget(): string {
+/** A target repository whose `main` holds `a.txt` and `files`, by path. */
+export function toyTarget(files: Record<string, string> = {}): string {
 	const t = tmp("target");
 	const git = (...args: string[]) => {
 		const p = Bun.spawnSync(["git", ...args], { cwd: t, env: GIT_ENV });
 		if (p.exitCode !== 0) throw new Error(`git ${args[0]}: ${p.stderr}`);
 	};
 	git("init", "-q", "-b", "main");
-	writeFileSync(join(t, "a.txt"), "a\n");
-	git("add", "a.txt");
+	for (const [path, content] of Object.entries({ "a.txt": "a\n", ...files })) {
+		mkdirSync(dirname(join(t, path)), { recursive: true });
+		writeFileSync(join(t, path), content);
+	}
+	git("add", "-A");
 	git("commit", "-qm", "one");
 	return t;
 }
@@ -266,3 +272,18 @@ export const changed = async (
 	(
 		await openTarget(setupOf(config).store, target).lanes.changeset(version)
 	).patches.join("");
+
+const parentOf = (pid: number) =>
+	Number(/\) \S (\d+)/.exec(readFileSync(`/proc/${pid}/stat`, "utf8"))?.[1]);
+
+/** Whether `pid` descends from this process, by its parent chain. */
+function ownedProcess(pid: number): boolean {
+	try {
+		for (let p = pid; p > 1; p = parentOf(p))
+			if (p === process.pid) return true;
+	} catch {} // exited while walking
+	return false;
+}
+
+/** Live sandbox processes this process started, so a run in another checkout does not count. */
+export const sandboxed = () => runProcesses("").filter(ownedProcess);

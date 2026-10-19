@@ -331,7 +331,7 @@ function bindProblems(
 	});
 }
 
-/** The binds of check `label`, read-only then writable. */
+/** The binds of `label`, a check or the target's prepare, read-only then writable. */
 const checkBinds = (
 	setup: RepoSetup,
 	label: string,
@@ -382,6 +382,26 @@ function targetProblems(setup: RepoSetup): Finding[] {
 	return [];
 }
 
+/** The `target.sparse` entries that are absolute or step out through `..`. */
+function sparseProblems(setup: RepoSetup): Finding[] {
+	return (setup.target?.sparse ?? []).flatMap((entry) => {
+		const how = isAbsolute(entry)
+			? "is absolute"
+			: entry.split("/").includes("..")
+				? "has a '..' segment"
+				: undefined;
+		return how
+			? [
+					{
+						code: "HOST.target",
+						message: `target.sparse entry '${entry}' ${how}`,
+						hint: "List directories relative to the repo root",
+					},
+				]
+			: [];
+	});
+}
+
 /**
  * The host's compose-time rules: the lane rules (HOST-02), resume, names config must have, binds (HOST-11)
  * and the target. A graph without repo nodes has none to break.
@@ -399,10 +419,14 @@ export function validateRepo(
 	});
 	return [
 		...targetProblems(setup),
+		...sparseProblems(setup),
 		...bindProblems(setup, setup.readOnly, "read-only bind"),
 		...Object.entries(setup.target?.checks ?? {}).flatMap(([name, spec]) =>
 			checkBinds(setup, `check '${name}'`, spec),
 		),
+		...(setup.target?.prepare
+			? checkBinds(setup, "target.prepare", setup.target.prepare)
+			: []),
 		...nodes.flatMap((r) => [
 			...names(setup, harnesses, r),
 			...nodeBinds(setup, r),

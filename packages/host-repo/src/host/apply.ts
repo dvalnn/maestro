@@ -23,6 +23,7 @@ import {
 } from "./config";
 import { artifactInput } from "./inputs";
 import { lanePorts, laneVersion, withLane } from "./lane-input";
+import { type Live, liveInstances } from "./live";
 import { openTarget } from "./store";
 
 /** The file in a changeset directory that names the target commit its patches were cut from. */
@@ -116,20 +117,22 @@ async function executeApply(
 	instance: HostInstance,
 	inputs: Inputs,
 	context: HostContext,
+	live: Live,
 ): Promise<HostNodeResult> {
 	const setup = repoSetup(context.setup);
 	const config = applyConfig(instance.node.config);
-	const store = openTarget(setup.store, requireTarget(setup).repo);
+	const target = requireTarget(setup);
+	const store = openTarget(setup.store, target.repo, target.sparse);
 	const changeset = readChangeset(
 		artifactInput(inputs, context, CHANGESET_PORT),
 	);
-	const at = { concert: context.concert, instance };
+	const run = { concert: context.concert, instance, live, emit: context.emit };
 	return withLane(
 		store,
 		setup,
 		config.lane,
 		inputs[LANE_PORT],
-		at,
+		run,
 		async ({ lane }) => {
 			const conflicts = await lane.apply(changeset, config.strategy);
 			const outputs = { [LANE_PORT]: await lane.seal() };
@@ -153,12 +156,15 @@ const applyPorts = (config: ApplyConfig): { in: Ports; out: Ports } => {
 
 /** The `repo.apply` kind: a changeset applied to a lane, which a conflict leaves for an agent to extend. */
 export function applyKind(): NodeKind {
+	const live = liveInstances();
 	return {
 		name: APPLY_KIND,
 		config: APPLY_CONFIG,
 		ports: (node) => applyPorts(applyConfig(node.config)),
 		execute: (instance, inputs, context) =>
-			executeApply(instance, inputs, context),
-		cancel: async () => {},
+			live.execute(instance, (state) =>
+				executeApply(instance, inputs, context, state),
+			),
+		cancel: (instance) => live.cancel(instance),
 	};
 }

@@ -49,13 +49,18 @@ export type Session = {
 };
 
 /**
- * The store of target `repo`, resolved against the working directory, under the host store `store`.
+ * The store of target `repo`, resolved against the working directory, under the host store `store`, its checked-out
+ * lanes narrowed to the cone-mode directories `sparse`, if any.
  * @throws Error when `repo` does not exist.
  */
-export function openTarget(store: string, repo: string): TargetStore {
+export function openTarget(
+	store: string,
+	repo: string,
+	sparse?: string[],
+): TargetStore {
 	const target = realpathSync(resolve(repo));
 	const root = join(store, sha256Hex(target).slice(0, TARGET_ID_LENGTH));
-	return { target, root, lanes: openLanes({ target, root }) };
+	return { target, root, lanes: openLanes({ target, root, sparse }) };
 }
 
 /** The directory of every target under the host store `store`. */

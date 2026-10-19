@@ -50,6 +50,7 @@ const INLINE_CHECK = {
 		env: ENV,
 	},
 } as const;
+const CHECK = { anyOf: [LINES, INLINE_CHECK] } as const;
 
 /** The host's config key paths that hold file paths. */
 export const HOST_PATHS: readonly KeyPath[] = [["target", "repo"]];
@@ -63,10 +64,9 @@ export const HOST_CONFIG = {
 		properties: {
 			repo: NAME,
 			base: NAME,
-			checks: {
-				type: "object",
-				additionalProperties: { anyOf: [LINES, INLINE_CHECK] },
-			},
+			checks: { type: "object", additionalProperties: CHECK },
+			prepare: CHECK,
+			sparse: { type: "array", items: NAME, minItems: 1, uniqueItems: true },
 		},
 	},
 	roles: {
@@ -261,7 +261,13 @@ type RawCheck = string | string[] | RawLongCheck;
 export type CheckConfig = { lane: LaneInput; check?: string | CheckSpec };
 
 type RawSetup = {
-	target?: { repo: string; base?: string; checks?: Record<string, RawCheck> };
+	target?: {
+		repo: string;
+		base?: string;
+		checks?: Record<string, RawCheck>;
+		prepare?: RawCheck;
+		sparse?: string[];
+	};
 	roles?: Record<string, Role>;
 	sandbox?: { readOnly?: string[] };
 };
@@ -270,6 +276,10 @@ export type Target = {
 	repo: string;
 	base?: string;
 	checks: Record<string, CheckSpec>;
+	/** Run in every lane checked out from a commit, before its node's own work. */
+	prepare?: CheckSpec;
+	/** Cone-mode directories, relative to the repository root, that every checked-out lane is narrowed to. */
+	sparse?: string[];
 };
 
 /** The host's config namespaces, parsed. */
@@ -336,10 +346,10 @@ const longForm = (raw: RawCheck): RawLongCheck =>
 	typeof raw === "string" || Array.isArray(raw) ? { run: raw } : raw;
 
 /**
- * The check `raw` gives.
+ * The check `raw` gives, `label` naming it in errors.
  * @throws Error when its timeout is not a duration.
  */
-function checkSpec(raw: RawCheck): CheckSpec {
+function checkSpec(raw: RawCheck, label = "check"): CheckSpec {
 	const {
 		run,
 		timeout,
@@ -350,17 +360,24 @@ function checkSpec(raw: RawCheck): CheckSpec {
 	const ms = timeout === undefined ? undefined : durationMs(timeout);
 	if (timeout !== undefined && ms === undefined)
 		throw new Error(
-			`check timeout '${timeout}' is not a duration. Write it as ${DURATION_EXAMPLE}`,
+			`${label} timeout '${timeout}' is not a duration. Write it as ${DURATION_EXAMPLE}`,
 		);
 	return { lines: [run].flat(), timeout: ms, readOnly, writable, env };
 }
 
 function targetOf(raw: RawSetup["target"]): Target | undefined {
 	if (!raw) return undefined;
+	const { prepare, ...rest } = raw;
 	const checks = Object.entries(raw.checks ?? {}).map(
 		([name, c]) => [name, checkSpec(c)] as const,
 	);
-	return { ...raw, checks: Object.fromEntries(checks) };
+	return {
+		...rest,
+		checks: Object.fromEntries(checks),
+		...(prepare !== undefined && {
+			prepare: checkSpec(prepare, "target.prepare"),
+		}),
+	};
 }
 
 const isEmptyObject = (value: unknown) =>

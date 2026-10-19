@@ -444,19 +444,30 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - A concert leaves a **changeset** (a patch series) attached to the record only by ending in a changeset node. Applying
   or committing it is a separate, operator-owned step. The target's checkout, refs and commits are never written by the
   host (HOST-03).
+- Prepare runs in every working copy checked out from a commit: `fresh`, `fork`, `read` and a re-opened extension, for
+  every kind. An in-place `extend` keeps its ignored files and git state, so prepare runs once per working copy. The
+  ignored files it makes are never sealed. Any other change it makes fails the node, naming the files.
+- `target.sparse` lists cone-mode directories, relative to the repository root. The host narrows every working copy it
+  checks out to them before prepare runs, and a sealed version still holds the full tree. If narrowing fails, the node
+  fails and leaves no lane.
 - A **lane ref** param, written `<concert id>.<node instance id>`, lets a concert fork, read or make into a changeset a
   version left by an earlier concert (D-27, HOST-13). There is no cross-concert extension. Lanes stay on disk until
   `prune`, and `ls` shows their disk use.
 
 **Configuration**
 
-- The host owns three namespaces: `target` (`repo`, the default `base` and the named `checks`), `roles` (each a
-  `harness`, `model` and optional `thinking`) and `sandbox` (`readOnly` paths bound into every agent and check).
+- The host owns three namespaces: `target` (`repo`, the default `base`, the named `checks`, `prepare` and `sparse`),
+  `roles` (each a `harness`, `model` and optional `thinking`) and `sandbox` (`readOnly` paths bound into every agent,
+  check and prepare).
 - A check is a shell line or a list of them, or the long form `{ run, timeout, readOnly, writable, env }`: a duration
   such as `10m`, absolute host paths bound read-only or read-write at their own paths, and environment variables for
   that check. A check that needs a toolchain, a cache or a lock file shared across lanes names it there.
 - A fresh lane takes its node's `base`, else `target.base`, else is cut from the target's `HEAD`. A check with no
   `timeout` has no limit and runs until it ends or the concert is killed, in the agent's `check` command as on the node.
+- `target.prepare` takes a check's shape and sets a lane up, with a dependency sync or the like (HOST-16). Its lines run
+  as a check's do, before the node's own work, and each emits a `prepare` progress event with how it ended and the tail
+  of its output. Any line that does not exit 0 fails the node, never rejects it. Prepare is environment, not input, so
+  neither it nor its binds enter the resume key (ADR 0011).
 
 **Sandbox**
 
@@ -467,6 +478,7 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - Sandbox policy is host config. A node can add read-only binds. Config or a check node may name writable binds; an
   agent node never does (ADR 0011).
 - An agent can reach its own harness's credentials, such as Claude's token and pi's login directory.
+- Prepare runs in a check's sandbox. No sandbox can write a lane's git directory (ADR 0005).
 
 **Harness adapters**
 

@@ -392,18 +392,18 @@ async function execute(
 			`harness '${role.harness}' is not loaded. Use one of: ${listed(harnesses.map((h) => h.name))}`,
 		);
 	const target = requireTarget(setup);
-	const store = openTarget(setup.store, target.repo);
+	const store = openTarget(setup.store, target.repo, target.sparse);
 	const session =
 		config.lane.mode === "extend" && config.lane.resume
 			? resumed(store.root, inputs[LANE_PORT], role.harness, context.concert)
 			: mintSession(store.root, role.harness, context.concert);
-	const at = { concert: context.concert, instance };
+	const run = { concert: context.concert, instance, live, emit: context.emit };
 	return withLane(
 		store,
 		setup,
 		config.lane,
 		inputs[LANE_PORT],
-		at,
+		run,
 		async (open) => {
 			const { lane, read } = open;
 			const staging: Staging = {

@@ -28,6 +28,9 @@ The sandbox binds two paths read-only, at their host paths (`Lane.readOnly`): th
 `git status` exits 0 with correct output and silently skips the index refresh. Every write to git fails: `add`,
 `commit`, `update-ref`, files in the git directory, and files in the objects.
 
+The host applies `target.sparse` with git on the lane's git directory at checkout, before any sandbox has run there, and
+no sandbox, `target.prepare` included, can write that directory.
+
 What an agent can discover:
 
 - Through history: its own lane's ancestry, meaning the target's history up to the base plus its own chain of versions,

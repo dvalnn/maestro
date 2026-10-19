@@ -1,12 +1,27 @@
-import type { HostInstance, HostNodeResult } from "@maestro/core/host";
+import type {
+	HostContext,
+	HostInstance,
+	HostNodeResult,
+} from "@maestro/core/host";
 import { MAESTRO_TYPE, type Ports } from "@maestro/ir";
 import type { Lane, Version } from "../lane/index";
 import type { Bind } from "../sandbox/index";
-import { LANE_PORT, LANE_TYPE, type LaneInput, type RepoSetup } from "./config";
+import {
+	type CheckSpec,
+	LANE_PORT,
+	LANE_TYPE,
+	type LaneInput,
+	type RepoSetup,
+} from "./config";
+import type { Live } from "./live";
+import { pathBinds, runLines, type Sandboxed, TAIL_LINES } from "./run-lines";
 import type { TargetStore } from "./store";
 
 /** The base a fresh lane is cut at when neither its node nor `target.base` names one. */
 const DEFAULT_BASE = "HEAD";
+/** How many changed files a refused `target.prepare` names. */
+const LISTED_CHANGES = 10;
+const PREPARE = "target.prepare";
 
 /** The version node instance `instance` of `concert` writes: `<concert id>.<node instance id>`. */
 const versionAt = (concert: string, { id }: HostInstance): Version =>
@@ -52,23 +67,75 @@ async function openLane(
 	};
 }
 
+/** A running instance of `concert`: its live state, and where its progress events go. */
+type InstanceRun = {
+	concert: string;
+	instance: HostInstance;
+	live: Live;
+	emit: HostContext["emit"];
+};
+
+/** The changed files `files` as a refusal names them, up to `LISTED_CHANGES`. */
+function changeList(files: string[]): string {
+	const more = files.length - LISTED_CHANGES;
+	const named = files.slice(0, LISTED_CHANGES).join(", ");
+	return more > 0 ? `${named} and ${more} more` : named;
+}
+
 /**
- * Runs `body` in the lane `input` gives instance `instance` of `concert`. The lane is dropped unless the result
- * carries it, so a failed, cancelled or `read` instance leaves none.
- * @throws Error when the lane cannot be opened.
+ * Runs `spec`, the target's prepare, in `lane`'s sandbox as a check runs, emitting one event per line.
+ * @throws Error when a line does not exit 0, or the lines changed content `seal` would record.
+ */
+async function prepare(
+	lane: Lane,
+	setup: RepoSetup,
+	spec: CheckSpec,
+	run: InstanceRun,
+) {
+	const s: Sandboxed = {
+		dir: lane.dir,
+		readOnly: readOnlyBinds(lane, setup.readOnly),
+		writable: [],
+		live: run.live,
+		log: [],
+	};
+	const { outcome, reason } = await runLines(s, PREPARE, spec, (end) =>
+		run.emit({
+			kind: "prepare",
+			line: end.line,
+			run: end.run,
+			ended: end.ended,
+			tail: end.output.join("\n").split("\n").slice(-TAIL_LINES).join("\n"),
+		}),
+	);
+	if (outcome !== "ok") throw new Error(reason);
+	const changed = await lane.changes();
+	if (changed.length)
+		throw new Error(
+			`${PREPARE} changed lane content: ${changeList(changed)}. Ignore those paths, or keep ${PREPARE} from writing them`,
+		);
+}
+
+/**
+ * Runs `body` in the lane `input` gives `run`, after the target's prepare when the lane was checked out. The lane is
+ * dropped unless the result carries it, so a failed, cancelled or `read` instance leaves none.
+ * @throws Error when the lane cannot be opened, or its prepare fails.
  */
 export async function withLane(
 	store: TargetStore,
 	setup: RepoSetup,
 	input: LaneInput,
 	value: unknown,
-	at: { concert: string; instance: HostInstance },
+	run: InstanceRun,
 	body: (lane: InstanceLane) => Promise<HostNodeResult>,
 ): Promise<HostNodeResult> {
-	const version = versionAt(at.concert, at.instance);
+	const version = versionAt(run.concert, run.instance);
 	const lane = await openLane(store, setup, input, value, version);
+	const spec = setup.target?.prepare;
 	let kept = false;
 	try {
+		if (spec && lane.lane.checkedOut)
+			await prepare(lane.lane, setup, spec, run);
 		const result = await body(lane);
 		kept = result.outputs?.lane === version;
 		return result;
@@ -76,10 +143,6 @@ export async function withLane(
 		if (!kept) lane.lane.discard();
 	}
 }
-
-/** Binds of `paths`, each at its own path. */
-export const pathBinds = (...paths: string[][]): Bind[] =>
-	[...new Set(paths.flat())].map((src) => ({ src }));
 
 /** The lane's own read-only binds, then the paths config and the node bind read-only at their own paths. */
 export const readOnlyBinds = (lane: Lane, ...paths: string[][]): Bind[] => [

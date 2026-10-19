@@ -36,6 +36,10 @@ export interface Lane {
 	 * lane's own git directory and the store's objects. git there can read and diff but never write.
 	 */
 	readonly readOnly: Bind[];
+	/** Whether the working copy was checked out from a commit, rather than moved in place by an `extend`. */
+	readonly checkedOut: boolean;
+	/** The lane-relative files `seal` would record a change to, as git spells them. */
+	changes(): Promise<string[]>;
 	/**
 	 * Records the working copy's content as the node instance's version. Ignored files are left out, and a nested
 	 * repository is refused. At most once.
@@ -80,6 +84,8 @@ export type LanesOptions = {
 	target: string;
 	/** Directory owned by maestro holding the store and the lanes of this target. */
 	root: string;
+	/** Cone-mode directories, relative to the repository root, that a checked-out working copy is narrowed to. */
+	sparse?: string[];
 };
 
 /** Git with a fixed identity and no system or user config, so the operator's settings cannot change a version. */
@@ -97,11 +103,11 @@ const GIT_ENV = {
 /** git's well-known empty tree. As the attribute source it disables the lane's `.gitattributes` (git >= 2.40). */
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
-async function git(
+async function spawnGit(
 	args: string[],
 	env: Record<string, string> = {},
 	stdin?: string,
-): Promise<string> {
+) {
 	const p = Bun.spawn(["git", ...args], {
 		env: { ...GIT_ENV, ...env },
 		stdin: stdin === undefined ? "ignore" : new TextEncoder().encode(stdin),
@@ -113,6 +119,12 @@ async function git(
 		new Response(p.stderr).text(),
 		p.exited,
 	]);
+	return { out, err, code };
+}
+
+async function git(...a: Parameters<typeof spawnGit>): Promise<string> {
+	const { out, err, code } = await spawnGit(...a);
+	const [args] = a;
 	if (code !== 0) {
 		const cmd = args.find((a, i) => !a.startsWith("-") && args[i - 1] !== "-C");
 		throw new Error(`git ${cmd} failed: ${err.trim()}`);
@@ -159,6 +171,7 @@ export function bytesOnDisk(p: string): number {
 export function openLanes(options: LanesOptions): Lanes {
 	const target = resolvePath(options.target);
 	const root = resolvePath(options.root);
+	const sparse = options.sparse ?? [];
 	const store = join(root, "store.git");
 	// The host's git always names the store and the work tree, never a lane's `.git`, which the agent can write.
 	const G = (...a: string[]) => [
@@ -298,7 +311,12 @@ export function openLanes(options: LanesOptions): Lanes {
 	}
 
 	// Points the lane's git at `head`. Its `.git` file is rewritten too, undoing anything the last agent did to it.
-	function open(at: Version, head: string, base: string): Lane {
+	function open(
+		at: Version,
+		head: string,
+		base: string,
+		checkedOut: boolean,
+	): Lane {
 		const { home, dir, gitdir } = paths(at);
 		const idx = { GIT_INDEX_FILE: join(gitdir, "index") };
 		const point = (commit: string) => {
@@ -309,19 +327,26 @@ export function openLanes(options: LanesOptions): Lanes {
 		point(head);
 		const lg: LaneGit = { dir, wt: G(`--work-tree=${dir}`), idx, at };
 		const { wt } = lg;
+		const staged = async () => {
+			await git([...wt, "add", "-A"], idx);
+			const tree = await value([...wt, "write-tree"], idx);
+			const changed = await lines(lg, [
+				"diff-tree",
+				"-r",
+				"--no-renames",
+				head,
+				tree,
+			]);
+			return { tree, changed };
+		};
 		return {
 			dir,
 			readOnly: [{ src: gitdir }, { src: join(store, "objects") }],
+			checkedOut,
+			changes: async () =>
+				(await staged()).changed.map((l) => l.slice(l.indexOf("\t") + 1)),
 			async seal() {
-				await git([...wt, "add", "-A"], idx);
-				const tree = await value([...wt, "write-tree"], idx);
-				const changed = await lines(lg, [
-					"diff-tree",
-					"-r",
-					"--no-renames",
-					head,
-					tree,
-				]);
+				const { tree, changed } = await staged();
 				const nested = changed
 					.filter((l) => l.split(" ")[1] === "160000")
 					.map((l) => l.split("\t")[1]);
@@ -346,6 +371,27 @@ export function openLanes(options: LanesOptions): Lanes {
 		};
 	}
 
+	// A working copy checked out from `head`, narrowed to `sparse`. This is the host's only git call on a lane's git
+	// directory, made before any sandbox has run there (ADR 0005).
+	async function checkedOutLane(at: Version, head: string, base: string) {
+		const lane = open(at, head, base, true);
+		if (!sparse.length) return lane;
+		const { dir, gitdir } = paths(at);
+		const { err, code } = await spawnGit([
+			`--git-dir=${gitdir}`,
+			`--work-tree=${dir}`,
+			`--attr-source=${EMPTY_TREE}`,
+			"sparse-checkout",
+			"set",
+			"--cone",
+			"--",
+			...sparse,
+		]);
+		if (code === 0) return lane;
+		lane.discard();
+		throw new Error(`target.sparse: ${err.trim()}`);
+	}
+
 	async function diskUse(concert: string) {
 		return bytesOnDisk(concertDir(concert));
 	}
@@ -355,12 +401,12 @@ export function openLanes(options: LanesOptions): Lanes {
 			parse(at);
 			const sha = await importBase(base);
 			await checkout(at, sha);
-			return open(at, sha, sha);
+			return checkedOutLane(at, sha, sha);
 		},
 		async fork(v, at) {
 			const { commit, base } = await resolve(v);
 			await checkout(at, commit);
-			return open(at, commit, base);
+			return checkedOutLane(at, commit, base);
 		},
 		async extend(v, at) {
 			if (parse(v).concert !== parse(at).concert)
@@ -371,7 +417,7 @@ export function openLanes(options: LanesOptions): Lanes {
 			const r = refs(v);
 			if (await exists(r.extendedBy(at))) {
 				await checkout(at, commit);
-				return open(at, commit, base);
+				return checkedOutLane(at, commit, base);
 			}
 			const from = paths(v).home;
 			const to = (await claim(at)).home;
@@ -394,7 +440,7 @@ export function openLanes(options: LanesOptions): Lanes {
 				rmdirSync(to);
 				throw e;
 			}
-			return open(at, commit, base);
+			return open(at, commit, base, false);
 		},
 		async changeset(v) {
 			const { commit, base } = await resolve(v);

@@ -5,7 +5,6 @@ import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
 import { openRecord } from "@maestro/core/perform";
 import { type HarnessRequest, OUTBOX, type StubStep } from "../harness/index";
-import { runProcesses } from "../sandbox/bubblewrap";
 import { openTarget } from "./store";
 import {
 	changed,
@@ -18,6 +17,7 @@ import {
 	OK,
 	performed,
 	reply,
+	sandboxed,
 	setupOf,
 	snapshot,
 	start,
@@ -784,21 +784,6 @@ describe("perform", () => {
 		expect(existsSync(join(root, "lanes", id))).toBe(false);
 	});
 });
-
-const parentOf = (pid: number) =>
-	Number(/\) \S (\d+)/.exec(readFileSync(`/proc/${pid}/stat`, "utf8"))?.[1]);
-
-/** Whether `pid` descends from this process, by its parent chain. */
-function ownedProcess(pid: number): boolean {
-	try {
-		for (let p = pid; p > 1; p = parentOf(p))
-			if (p === process.pid) return true;
-	} catch {} // exited while walking
-	return false;
-}
-
-/** Live sandbox processes this process started, so a run in another checkout does not count. */
-const sandboxed = () => runProcesses("").filter(ownedProcess);
 
 test("param reads a lane ref and refuses other text", () => {
 	const { host } = stubHost(() => []);

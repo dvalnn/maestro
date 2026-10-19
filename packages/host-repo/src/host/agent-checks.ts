@@ -3,16 +3,13 @@ import { join } from "node:path";
 import { MS_PER_UNIT } from "@maestro/ir";
 import { shellQuote as quote } from "../harness/stub";
 import { type Bind, LANE_DST } from "../sandbox/index";
-import { FAILED_EXITS, USAGE_EXIT } from "./check";
 import { type CheckSpec, listed } from "./config";
-import { pathBinds } from "./lane-input";
+import { FAILED_EXITS, pathBinds, TAIL_LINES, USAGE_EXIT } from "./run-lines";
 
 /** Where an agent's sandbox sees the staged checks, and so its `check` command on PATH. */
 const ROOT = "/maestro/checks";
 const SANDBOX_PATH = `${ROOT}/bin:/usr/bin:/bin`;
 const SCRIPT_MODE = 0o755;
-/** How many trailing lines of a check's output the `check` command prints. */
-const TAIL_LINES = 40;
 /** Seconds a line gets after `timeout(1)` asks it to stop, before it is killed. */
 const KILL_GRACE_S = 2;
 
