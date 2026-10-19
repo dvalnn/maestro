@@ -85,7 +85,7 @@ function repo(
 					{
 						emit: {
 							type: "text",
-							text: JSON.stringify({ outcome: "ok", report: "done" }),
+							text: JSON.stringify({ report: "done" }),
 						},
 					},
 				];
@@ -288,6 +288,7 @@ describe("seat", () => {
 	const reviewer = seat({
 		role: { name: "reviewer", model: "a/one", thinking: "high" },
 		identity: "You review.",
+		verdict: true,
 		out: {
 			notes: MarkdownOut("notes.md"),
 			score: JsonOut("score.json", Text()),
@@ -295,7 +296,7 @@ describe("seat", () => {
 		checks: ["test"],
 	});
 
-	test("two calls emit agents with the seat's identity, its role overridden where the call sets it, and its outputs and checks added to", async () => {
+	test("two calls emit verdict agents with the seat's identity, its role overridden where the call sets it, and its outputs and checks added to", async () => {
 		const twoCalls = composition("two_calls", { examples: [{}] }, () => {
 			const first = reviewer({ label: "first", task: "look", lane: fresh() });
 			const second = reviewer({
@@ -319,6 +320,7 @@ describe("seat", () => {
 			config: {
 				role: { name: "reviewer", model: "a/one", thinking: "high" },
 				lane: { mode: "fresh" },
+				verdict: true,
 				checks: ["test"],
 				out: {
 					notes: { file: "notes.md", format: "markdown" },
@@ -331,6 +333,7 @@ describe("seat", () => {
 			config: {
 				role: { name: "reviewer", model: "b/two", thinking: "high" },
 				lane: { mode: "fork" },
+				verdict: true,
 				checks: ["test", "lint"],
 				attachments: { earlier: { hint: "first", type: "core.markdown" } },
 				out: {

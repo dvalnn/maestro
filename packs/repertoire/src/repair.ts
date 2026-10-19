@@ -43,10 +43,8 @@ export const repairUntilGreen = composition(
 						spec: { artifact: spec, hint: "for what the change must do" },
 					},
 				});
-				// A repair that rejects its own work still hands its lane to the checks, which judge it.
 				return check(extend(repair.out.lane), undefined, {
 					label: "recheck",
-					tolerate: "rejected",
 				});
 			},
 			max: params.maxRepairs,

@@ -1,6 +1,6 @@
 {
-	"runs": ["agent", "check", "agent", "check", "agent", "check"],
-	"outcome": "rejected",
+	"runs": ["agent", "check", "agent"],
+	"outcome": "failed",
 	"files": ["greet.sh"],
 	"clean": true
 }

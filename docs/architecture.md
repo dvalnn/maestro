@@ -379,10 +379,10 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - **Agent node.** Inputs: a task prompt and an optional identity (both text, staged by the host, no argument-length
   limits), a role by name with overrides (harness, model, thinking level), a lane input, optional read-only binds, typed
   output declarations (a JSON file with a schema, or Markdown), `attachments` and the named checks it may run. Its lane
-  input may ask to `resume` the session that wrote the version it extends. Outputs: the declared files as typed
-  artifacts, the report, outcome and reason from its envelope, metrics (token counts), the staged text as an artifact,
-  and the resulting lane version. `rejected` means the agent's own verdict is negative. `failed` means the run did not
-  complete.
+  input may ask to `resume` the session that wrote the version it extends, and `verdict` marks a verdict agent. Outputs:
+  the declared files as typed artifacts, the report, outcome and reason from its envelope, metrics (token counts), the
+  staged text as an artifact, and the resulting lane version. `rejected` means a verdict agent's verdict is negative.
+  `failed` means the run did not complete, or the agent is blocked (ADR 0012).
 - **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
   failures reported), or an inline `{ run, timeout }`. Each line runs through `sh -c` in the sandbox, in order, and the
   first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are `failed`; any
@@ -416,10 +416,13 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   host's output contract appended, goes as the user message on stdin. The exact staged text is an output artifact.
 - Declared outputs are files the agent writes in its **outbox**, a per-instance directory at `/out` outside the lane.
   The host reads only regular files there and checks each against its schema. The contract tells the agent to write
-  every declared file, even when it rejects. A missing file or a schema violation is `failed`.
-- The agent's final reply is its **envelope**, `{ outcome: ok | rejected, reason?, report }`, with the reason required
-  when rejected. A malformed envelope gets at most two correction turns in the same session, then `failed`. A rejection
-  with declared files missing or invalid ends `rejected` with its reason and no outputs.
+  every declared file, a verdict agent even when it rejects. A missing file or a schema violation is `failed`.
+- The agent's final reply is its **envelope**. A work agent's is `{ report, blocked? }`. A verdict agent's is
+  `{ report, outcome: ok | rejected, reason? }`, with the reason required when rejected, or `{ report, blocked }`. The
+  contract states only the fields of the agent's kind. A malformed envelope, such as a work agent's with an `outcome`, a
+  verdict agent's with neither, or one both blocked and giving a verdict, gets at most two correction turns in the same
+  session, then `failed`. A blocked agent ends `failed` with the reason `blocked: <cause>` and no outputs, its declared
+  files unread. A rejection with declared files missing or invalid ends `rejected` with its reason and no outputs.
 
 **Sessions**
 
@@ -487,8 +490,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   harness's output, secrets the sandbox is given are masked before the adapter parses it. The host reads declared
   outputs from the agent's outbox, not the adapter. It is a sandboxed subprocess driving the harness's JSON event stream
   (D-20). An in-process SDK is deferred, because an in-process agent cannot be confined by bubblewrap. The first adapter
-  is pi (`pi -p --mode json`) and the second is Claude Code. The built-in `stub` harness replies with an ok envelope and
-  writes nothing, so an agent that declares outputs fails under it.
+  is pi (`pi -p --mode json`) and the second is Claude Code. The built-in `stub` harness replies with an ok envelope of
+  the agent's kind and writes nothing, so an agent that declares outputs fails under it.
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
 **Host validation rules**

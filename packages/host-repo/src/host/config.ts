@@ -138,6 +138,7 @@ export const AGENT_CONFIG = {
 			properties: { name: NAME, harness: NAME, model: NAME, thinking: NAME },
 		},
 		lane: AGENT_LANE_INPUT,
+		verdict: { type: "boolean" },
 		readOnly: PATHS,
 		checks: { type: "array", items: NAME, uniqueItems: true },
 		attachments: {
@@ -235,6 +236,8 @@ export type Output =
 export type AgentConfig = {
 	role: { name: string } & Partial<Role>;
 	lane: LaneInput;
+	/** A verdict agent rules on work, `ok` or `rejected`; any other agent does the work. */
+	verdict?: boolean;
 	readOnly?: string[];
 	checks?: string[];
 	attachments?: Record<string, Attachment>;

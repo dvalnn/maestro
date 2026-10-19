@@ -116,7 +116,8 @@ export const fresh = { mode: "fresh" };
 export const reply = (envelope: unknown): StubStep => ({
 	emit: { type: "text", text: JSON.stringify(envelope) },
 });
-export const OK = reply({ outcome: "ok", report: "done" });
+export const OK = reply({ report: "done" });
+export const APPROVED = reply({ outcome: "ok", report: "done" });
 
 export type NodeSpec = {
 	id: string;

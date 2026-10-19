@@ -146,7 +146,18 @@ separately, as the user message.
 **Seat**: An agent's standing setup, its role, identity, attachments, declared outputs, checks and read-only binds,
 bundled once and called with a task and a lane to emit an agent node. A call may override the role and add to the rest.
 
-**Envelope**: An agent's final reply, `{ outcome: ok | rejected, reason?, report }`, the reason required when rejected.
+**Envelope**: An agent's final reply. A work agent's is `{ report, blocked? }`. A verdict agent's is
+`{ report, outcome: ok | rejected, reason? }`, the reason required when rejected, or `{ report, blocked }`.
+
+**Work agent**: An agent that does the work, such as a builder or a planner. It finishes `ok` or is blocked, and never
+rejects.
+
+**Verdict agent**: An agent that rules on work, such as a lens or a consolidator, marked `verdict` on its node. It gives
+`ok` or `rejected`, or is blocked.
+
+**Blocked**: An agent's report that it could not do its job: the cause is outside its reach and nothing later in the
+concert will change it. It settles the agent `failed` with the reason `blocked: <cause>`. A rejection, by contrast, is a
+verdict given after doing the job.
 
 **Outbox**: The per-instance directory at `/out`, outside the lane, where an agent writes its declared outputs for the
 host to read and check.

@@ -45,6 +45,8 @@ export type HarnessRequest = {
 	 * id starts one.
 	 */
 	session: { dir: string; id: string };
+	/** Whether the agent is a verdict agent (GLOSSARY), whose envelope carries an outcome. Adapters need not read it. */
+	verdict?: boolean;
 };
 
 export type HarnessEvent =

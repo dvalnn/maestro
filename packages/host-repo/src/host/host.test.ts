@@ -7,6 +7,7 @@ import { openRecord } from "@maestro/core/perform";
 import { type HarnessRequest, OUTBOX, type StubStep } from "../harness/index";
 import { openTarget } from "./store";
 import {
+	APPROVED,
 	changed,
 	cleanup,
 	configOf,
@@ -470,35 +471,12 @@ describe("perform", () => {
 		expect(readFileSync(artifact("x", "logs"), "utf8")).toContain("$ ");
 	});
 
-	test("a rejecting agent is rejected with its reason and outputs", async () => {
-		const { host } = stubHost(() => [
-			reply({ outcome: "rejected", reason: "not doable", report: "tried" }),
-		]);
-		const ir = irOf(
-			host,
-			[
-				{
-					id: "x",
-					kind: "agent",
-					config: { role: { name: "builder" }, lane: { mode: "fresh" } },
-					literals: { prompt: "go" },
-				},
-			],
-			"x",
-		);
-		const { result } = await performed(host, ir, configOf(toyTarget()));
-		expect(result).toMatchObject({
-			outcome: "rejected",
-			reason: "not doable",
-			outputs: { report: "tried" },
-		});
-	});
-
-	test("a rejecting agent that misses a declared output is rejected at once, with no outputs", async () => {
-		const { host, requests } = stubHost(() => [
-			reply({ outcome: "rejected", reason: "not doable", report: "tried" }),
-		]);
-		const ir = irOf(
+	/** An IR of one agent `x` that may be a verdict agent and may declare the Markdown output `notes`. */
+	const lone = (
+		host: Parameters<typeof irOf>[0],
+		{ verdict = false, notes = false } = {},
+	) =>
+		irOf(
 			host,
 			[
 				{
@@ -507,18 +485,107 @@ describe("perform", () => {
 					config: {
 						role: { name: "builder" },
 						lane: { mode: "fresh" },
-						out: { notes: { file: "notes.md", format: "markdown" } },
+						...(verdict && { verdict }),
+						...(notes && {
+							out: { notes: { file: "notes.md", format: "markdown" } },
+						}),
 					},
 					literals: { prompt: "go" },
 				},
 			],
 			"x",
 		);
+
+	test("a verdict agent that rejects is rejected with its reason and outputs", async () => {
+		const { host } = stubHost(() => [
+			reply({ outcome: "rejected", reason: "not doable", report: "tried" }),
+		]);
+		const ir = lone(host, { verdict: true });
 		const { result } = await performed(host, ir, configOf(toyTarget()));
-		expect(requests).toHaveLength(1);
-		expect(result).toMatchObject({ outcome: "rejected", reason: "not doable" });
-		expect("outputs" in result).toBe(false);
+		expect(result).toMatchObject({
+			outcome: "rejected",
+			reason: "not doable",
+			outputs: { report: "tried" },
+		});
 	});
+
+	test.each([
+		[
+			"a verdict agent that rejects",
+			true,
+			{ outcome: "rejected", reason: "not doable", report: "tried" },
+			{ outcome: "rejected", reason: "not doable" },
+		],
+		[
+			"a blocked agent",
+			false,
+			{ blocked: "no network", report: "tried" },
+			{ outcome: "failed", reason: "blocked: no network" },
+		],
+		[
+			"a blocked verdict agent",
+			true,
+			{ blocked: "no network", report: "tried" },
+			{ outcome: "failed", reason: "blocked: no network" },
+		],
+	])(
+		"%s that misses a declared output ends at once as it said, with no outputs",
+		async (_, verdict, envelope, ended) => {
+			const { host, requests } = stubHost(() => [reply(envelope)]);
+			const ir = lone(host, { verdict, notes: true });
+			const { result } = await performed(host, ir, configOf(toyTarget()));
+			expect(requests).toHaveLength(1);
+			expect(result).toMatchObject(ended);
+			expect("outputs" in result).toBe(false);
+		},
+	);
+
+	test.each([
+		[
+			"a work agent's outcome",
+			false,
+			{ outcome: "ok", report: "done" },
+			"envelope must NOT have additional properties ('outcome')",
+			'Add "blocked": "<the cause>" only when you cannot proceed',
+			'"outcome"',
+		],
+		[
+			"a verdict agent's missing outcome",
+			true,
+			{ report: "done" },
+			"envelope.outcome is required unless envelope.blocked is set",
+			'Set "outcome" to "rejected" when your verdict on the work is negative',
+			'Add "blocked"',
+		],
+		[
+			"a verdict agent's blocked beside its verdict",
+			true,
+			{ blocked: "no network", outcome: "rejected", reason: "x", report: "" },
+			"envelope.blocked excludes envelope.outcome and envelope.reason",
+			'Set "outcome" to "rejected" when your verdict on the work is negative',
+			'Add "blocked"',
+		],
+	])(
+		"%s is corrected, and each prompt states only its kind's fields",
+		async (_, verdict, envelope, problem, line, absent) => {
+			const { host, requests } = stubHost(() =>
+				requests.length <= 1 ? [reply(envelope)] : [verdict ? APPROVED : OK],
+			);
+			const ir = lone(host, { verdict });
+			const { result } = await performed(host, ir, configOf(toyTarget()));
+			expect(result).toMatchObject({ outcome: "ok" });
+			expect(requests).toHaveLength(2);
+			const [first, second] = requests.map((r) => r.prompt);
+			expect(second).toStartWith(
+				`Your final reply is not the envelope: ${problem}.\n`,
+			);
+			for (const prompt of [first, second]) {
+				expect(prompt).toContain(line);
+				expect(prompt).toContain("nothing later in this run will change it");
+				expect(prompt).not.toContain(absent);
+			}
+		},
+	);
 
 	test.each([
 		["missing", [OK], "output 'notes': the agent wrote no /out/notes.json"],

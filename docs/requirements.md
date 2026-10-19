@@ -221,8 +221,8 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 ### 6.5 Coding-agent host (HOST)
 
 - **HOST-01 (Must).** An agent node runs one role against a prompt in a lane of a target. It produces typed outputs
-  (declared files), its envelope (an outcome, a reason when rejected, and a report), metrics (token counts), and a lane
-  handle.
+  (declared files), its envelope (a report, and either the cause it is blocked by or, from a verdict agent, an outcome
+  with a reason when rejected), metrics (token counts), and a lane handle.
 - **HOST-02 (Must).** Lanes are versioned handles. `fresh(base)` cuts a new lane. `fork(handle)` copies the state at
   that version. `extend(handle)` continues it. `read(handle)` sees it with writes discarded, yields no version and
   spends no extension. A version may be extended at most once, forked or read any number of times, and a node takes

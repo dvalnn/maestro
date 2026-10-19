@@ -146,11 +146,7 @@ describe("build_then_repair", () => {
 
 	test("graphs the loop's bound and its next edge", async () => {
 		const { out } = await maestro("compose", ...BUILD, "--graph");
-		for (const line of [
-			'n3[["loop<br/>0 to 2"]]',
-			'n6 -.->|"next"| n3',
-			'f5 -.->|"after, tolerates rejected"| j6',
-		])
+		for (const line of ['n3[["loop<br/>0 to 2"]]', 'n6 -.->|"next"| n3'])
 			expect(out).toContain(`${line}\n`);
 	});
 });

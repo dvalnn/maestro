@@ -23,7 +23,7 @@ export const TASKS = {
 		checks: { test: "sh test.sh" },
 		maxRepairs: MAX_REPAIRS,
 	},
-	/** Unfixable by construction: rejected after exactly `maxRepairs` repairs. */
+	/** Unfixable by construction: fails when the repair reports blocked, after at most `maxRepairs` repairs. */
 	t2: {
 		request: REQUEST,
 		checks: { test: ["sh test.sh", UNSATISFIABLE] },

@@ -80,8 +80,9 @@ Read [running.md](running.md) for compose and perform flags, the record, artifac
 ## Outcomes
 
 - `ok`: the concert did what it was built for.
-- `rejected`: a verdict, such as a red check or an agent's no. The concert's reason is its root cause's.
-- `failed`: a crash or a broken contract (a timeout, a missing declared output, a cancel). Fix the cause, then resume.
+- `rejected`: a verdict, such as a red check or a verdict agent's no. The concert's reason is its root cause's.
+- `failed`: a crash, a broken contract (a timeout, a missing declared output, a cancel) or an agent's
+  `blocked: <cause>`. Fix the cause, then resume.
 - `skipped`: an instance whose guard was false or whose input was not `ok`; it points at a root cause elsewhere.
 
 ## Recover

@@ -76,8 +76,8 @@ A prompt is a task, an identity and attachments:
   Text built from Refs comes from a code node. For `tsc`, declare the import's type once:
   `declare module "*.md" { const text: string; export default text; }`.
 - What an agent reads at perform time reaches it as an attachment, mounted at `/in/<name>` with its `hint`.
-- A `seat({ role, identity, attachments, out, checks, readOnly })` bundles an agent's standing setup once; each call
-  adds the task and lane, may override the role, and adds to the rest.
+- A `seat({ role, identity, verdict, attachments, out, checks, readOnly })` bundles an agent's standing setup once; each
+  call adds the task and lane, may override the role, and adds to the rest.
 
 ## Config
 

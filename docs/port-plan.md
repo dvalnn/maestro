@@ -165,9 +165,9 @@ need the core. S8d and S8e need S7.
   lens, skeptic and consolidator verification shape, with prompts, schemas and code nodes. At least one domain-flavored
   code node to exercise code nodes in a real pack. Packs load as external bundles listed in workspace config (D-30).
 - **Acceptance.** AC-2, AC-3, AC-4 and AC-5 on these compositions, and AC-9: tasks T1 (fixable, accepted after at most
-  one repair) and T2 (unfixable by construction, rejected after exactly `maxRepairs` repairs) compared with the
-  predecessor on the sequence of agent and check runs by kind, the outcome class, the files touched and a clean target
-  checkout (D-28).
+  one repair) and T2 (unfixable by construction, failed when the repair reports blocked, after at most `maxRepairs`
+  repairs) compared with the predecessor on the sequence of agent and check runs by kind, the outcome class, the files
+  touched and a clean target checkout (D-28).
 - **Depends on.** S2, S7, S8.
 
 ### S10. Live view (S)

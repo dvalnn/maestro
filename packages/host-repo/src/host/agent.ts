@@ -62,22 +62,59 @@ const ATTACHMENT_DIR = "/in";
 /** Where the sandbox sees attachment `name`. */
 const attachmentPath = (name: string) => `${ATTACHMENT_DIR}/${name}`;
 
-/** An agent's final reply (GLOSSARY: Envelope). */
-type Envelope = { outcome: "ok" | "rejected"; reason?: string; report: string };
-
-const ENVELOPE: JsonSchema = {
-	type: "object",
-	required: ["outcome", "report"],
-	additionalProperties: false,
-	properties: {
-		outcome: { enum: ["ok", "rejected"] },
-		reason: { type: "string", minLength: 1 },
-		report: { type: "string" },
-	},
+/**
+ * An agent's final reply (GLOSSARY: Envelope). A work agent's has no `outcome` or `reason`; a verdict agent's has an
+ * `outcome` unless blocked.
+ */
+type Envelope = {
+	report: string;
+	blocked?: string;
+	outcome?: "ok" | "rejected";
+	reason?: string;
 };
 
-const ENVELOPE_SHAPE =
-	'{"outcome": "ok" | "rejected", "reason": "<why, required when rejected>", "report": "<what you did>"}';
+const CAUSE = { type: "string", minLength: 1 };
+
+const envelopeSchema = (verdict: Record<string, JsonSchema>): JsonSchema => ({
+	type: "object",
+	required: ["report"],
+	additionalProperties: false,
+	properties: { report: { type: "string" }, blocked: CAUSE, ...verdict },
+});
+
+const BLOCKED_BAR =
+	"you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.";
+
+/** What a reply kind takes: its envelope's schema, the line that asks for the declared files, and how to reply. */
+type ReplyKind = { schema: JsonSchema; files: string; reply: string[] };
+
+const REPLY_LEAD =
+	"Your final reply must be only this JSON object, with no other text:";
+
+const WORK: ReplyKind = {
+	schema: envelopeSchema({}),
+	files: "Before your final reply, write every one of these files:",
+	reply: [
+		REPLY_LEAD,
+		'{"report": "<what you did>"}',
+		`Add "blocked": "<the cause>" only when ${BLOCKED_BAR}`,
+	],
+};
+
+const VERDICT: ReplyKind = {
+	schema: envelopeSchema({
+		outcome: { enum: ["ok", "rejected"] },
+		reason: CAUSE,
+	}),
+	files:
+		"Before your final reply, write every one of these files, even when you reject:",
+	reply: [
+		REPLY_LEAD,
+		'{"report": "<what you did>", "outcome": "ok" | "rejected", "reason": "<why, required when rejected>"}',
+		'Set "outcome" to "rejected" when your verdict on the work is negative, and say why in "reason".',
+		`Give "blocked": "<the cause>" in place of "outcome" and "reason" only when ${BLOCKED_BAR}`,
+	],
+};
 
 const FENCED = /^```(?:json)?\n([\s\S]*)\n```$/;
 
@@ -121,8 +158,8 @@ function agentPorts(node: HostNode): { in: Ports; out: Ports } {
 	};
 }
 
-/** What the output contract appended to the task asks of the agent. */
-function contract(out: Record<string, Output>): string {
+/** What the output contract appended to the task asks of an agent of reply kind `kind`. */
+function contract(out: Record<string, Output>, kind: ReplyKind): string {
 	const files = Object.values(out).map((o) =>
 		o.format === "json"
 			? `- ${OUTBOX}/${o.file}: JSON matching this JSON Schema: ${JSON.stringify(o.schema)}`
@@ -132,24 +169,18 @@ function contract(out: Record<string, Output>): string {
 		"",
 		"---",
 		"",
-		...(files.length
-			? [
-					"Before your final reply, write every one of these files, even when you reject:",
-					...files,
-					"",
-				]
-			: []),
-		"Your final reply must be only this JSON object, with no other text:",
-		ENVELOPE_SHAPE,
-		'Set "outcome" to "rejected" when your own verdict is negative, and say why in "reason".',
+		...(files.length ? [kind.files, ...files, ""] : []),
+		...kind.reply,
 	].join("\n");
 }
 
-const correction = (problem: string) =>
-	`Your final reply is not the envelope: ${problem}.\nReply again with only this JSON object:\n${ENVELOPE_SHAPE}`;
+const correction = (problem: string, kind: ReplyKind) =>
+	[`Your final reply is not the envelope: ${problem}.`, ...kind.reply].join(
+		"\n",
+	);
 
-/** The envelope `reply` holds, bare or in one fenced block, or what is wrong with it. */
-function envelopeOf(reply: string): Envelope | string {
+/** The envelope of reply kind `kind` that `reply` holds, bare or in one fenced block, or what is wrong with it. */
+function envelopeOf(reply: string, kind: ReplyKind): Envelope | string {
 	const trimmed = reply.trim();
 	let value: unknown;
 	try {
@@ -157,11 +188,16 @@ function envelopeOf(reply: string): Envelope | string {
 	} catch {
 		return "it is not a JSON object";
 	}
-	const found = violations(ajv, ENVELOPE, value, (at) =>
+	const found = violations(ajv, kind.schema, value, (at) =>
 		["envelope", ...at].join("."),
 	);
 	if (found.length) return found.join("; ");
 	const envelope = value as Envelope;
+	const verdict = envelope.outcome ?? envelope.reason;
+	if (envelope.blocked !== undefined && verdict !== undefined)
+		return "envelope.blocked excludes envelope.outcome and envelope.reason";
+	if (kind === VERDICT && envelope.blocked === undefined && !envelope.outcome)
+		return "envelope.outcome is required unless envelope.blocked is set";
 	if (envelope.outcome === "rejected" && !envelope.reason)
 		return "envelope.reason is required when outcome is rejected";
 	return envelope;
@@ -256,14 +292,14 @@ async function turn(
 /** What follows an agent's final reply: how the run ends, or the correction to send. */
 type Next = { envelope: Envelope } | { failure: string } | { prompt: string };
 
-function next(reply: string, spent: boolean): Next {
-	const envelope = envelopeOf(reply);
+function next(reply: string, spent: boolean, kind: ReplyKind): Next {
+	const envelope = envelopeOf(reply, kind);
 	if (typeof envelope !== "string") return { envelope };
 	return spent
 		? {
 				failure: `the final reply is not the envelope after ${MAX_CORRECTIONS} corrections: ${envelope}. Check the role's model follows the output contract in staged/prompt.md`,
 			}
-		: { prompt: correction(envelope) };
+		: { prompt: correction(envelope, kind) };
 }
 
 /** Runs the agent, then corrects it in the same session while its final reply is not an envelope. */
@@ -273,6 +309,7 @@ async function converse(
 	live: Live,
 	context: HostContext,
 	staged: string,
+	kind: ReplyKind,
 ): Promise<Turns> {
 	const metrics: Metrics = {};
 	let prompt = req.prompt;
@@ -282,7 +319,7 @@ async function converse(
 		addMetrics(metrics, result.metrics);
 		if (result.outcome === "failed")
 			return { metrics, failure: result.reason ?? "the harness failed" };
-		const step = next(result.reply, corrections === MAX_CORRECTIONS);
+		const step = next(result.reply, corrections === MAX_CORRECTIONS, kind);
 		if (!("prompt" in step)) return { metrics, ...step };
 		prompt = step.prompt;
 		writeFileSync(join(staged, `correction-${corrections + 1}.md`), prompt);
@@ -307,7 +344,7 @@ type Staging = {
 	outbox: string;
 };
 
-/** The node result of `turns`. Once the agent gave its envelope and readable outputs, `seal` seals its lane. */
+/** The node result of `turns`. Once the agent gave an envelope that is not blocked, and readable outputs, `seal` seals its lane. */
 async function settle(
 	staging: Staging,
 	turns: Turns,
@@ -322,7 +359,14 @@ async function settle(
 	};
 	if ("failure" in turns)
 		return { outcome: "failed", reason: turns.failure, metrics, enrichment };
-	const { outcome, reason = "", report } = turns.envelope;
+	const { blocked, outcome = "ok", reason = "", report } = turns.envelope;
+	if (blocked !== undefined)
+		return {
+			outcome: "failed",
+			reason: `blocked: ${blocked}`,
+			metrics,
+			enrichment,
+		};
 	const read = readOutbox(staging.outbox, staging.config.out ?? {});
 	if ("problem" in read)
 		return outcome === "ok"
@@ -416,8 +460,11 @@ async function execute(
 			mkdirSync(staging.staged);
 			mkdirSync(staging.outbox);
 			const extras = extrasOf(config, target, inputs, context);
+			const kind = config.verdict ? VERDICT : WORK;
 			const prompt =
-				textInput(inputs, "prompt") + extras.note + contract(config.out ?? {});
+				textInput(inputs, "prompt") +
+				extras.note +
+				contract(config.out ?? {}, kind);
 			const identity =
 				inputs.identity === undefined
 					? undefined
@@ -435,8 +482,16 @@ async function execute(
 				identity: stage(staging.staged, prompt, identity),
 				outbox: staging.outbox,
 				session: { dir: session.dir, id: session.id },
+				verdict: config.verdict,
 			};
-			const turns = await converse(harness, req, live, context, staging.staged);
+			const turns = await converse(
+				harness,
+				req,
+				live,
+				context,
+				staging.staged,
+				kind,
+			);
 			return settle(staging, turns, async () => {
 				if (read) return undefined;
 				const version = await lane.seal();

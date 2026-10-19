@@ -141,6 +141,8 @@ export type AgentOptions<
 	role: string | Role;
 	/** Appended to the harness's own system prompt. */
 	identity?: string | Ref<string>;
+	/** Marks a verdict agent, which rules `ok` or `rejected` on work; any other agent does the work. */
+	verdict?: boolean;
 	attachments?: Attachments;
 	out?: O;
 	/** Names of `target.checks` the agent may run. */
@@ -211,7 +213,8 @@ export function agent<
 	O extends Outputs = Record<never, never>,
 	M extends LaneMode = LaneMode,
 >(opts: AgentOptions<O, M>): Result<AgentOut<O, M>> {
-	const { task, lane, role, identity, checks, readOnly, ...rest } = opts;
+	const { task, lane, role, identity, verdict, checks, readOnly, ...rest } =
+		opts;
 	const { attachments: given, out: givenOut, ...common } = rest;
 	const attachments: Attachments = given ?? {};
 	const out: Outputs = givenOut ?? {};
@@ -234,6 +237,7 @@ export function agent<
 		config: defined({
 			role: defined(roleOf(role)),
 			lane: ports.config,
+			verdict,
 			readOnly,
 			checks,
 			attachments: nonEmpty(mapValues(attachments, attachmentConfig)),
@@ -247,6 +251,8 @@ export type SeatOptions<S extends Outputs> = {
 	role: string | Role;
 	/** The seat's standing text, appended to the harness's own system prompt. */
 	identity: string | Ref<string>;
+	/** Marks the seat's agents as verdict agents (`AgentOptions.verdict`). */
+	verdict?: boolean;
 	attachments?: Attachments;
 	out?: S;
 	/** Names of `target.checks` the agent may run. */
@@ -292,6 +298,7 @@ export function seat<S extends Outputs = Record<never, never>>(
 		agent({
 			...call,
 			identity: standing.identity,
+			verdict: standing.verdict,
 			role: { ...roleOf(standing.role), ...defined(call.role ?? {}) },
 			attachments: { ...standing.attachments, ...call.attachments },
 			out: { ...standing.out, ...call.out } as Omit<S, keyof C> & C,

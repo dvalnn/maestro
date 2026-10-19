@@ -27,18 +27,21 @@ export const builder = seat({ role: "builder", identity: builderIdentity });
 export const lens = seat({
 	role: "reviewer",
 	identity: lensIdentity,
+	verdict: true,
 	out: { findings: JsonOut("findings.json", Findings) },
 });
 
 export const skeptic = seat({
 	role: "skeptic",
 	identity: skepticIdentity,
+	verdict: true,
 	out: { verdicts: JsonOut("verdicts.json", Verdicts) },
 });
 
 export const consolidator = seat({
 	role: "reviewer",
 	identity: consolidatorIdentity,
+	verdict: true,
 	out: {
 		review: MarkdownOut("review.md"),
 		verdict: JsonOut("verdict.json", Verdict),

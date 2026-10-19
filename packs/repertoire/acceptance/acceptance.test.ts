@@ -59,13 +59,19 @@ afterAll(() => {
 const WRONG = '#!/bin/sh\necho "Hello, $1!"\n';
 const RIGHT =
 	'#!/bin/sh\nname="$1"\n[ -n "$name" ] || name=world\necho "Hello, $name!"\n';
-/** The final reply of an agent that settles `outcome`. */
-const envelope = (outcome: "ok" | "rejected") => ({
-	type: "text",
-	text: JSON.stringify({ outcome, report: outcome, reason: outcome }),
+/** An agent's final reply, `envelope` as JSON. */
+const replying = (envelope: object): StubStep => ({
+	emit: { type: "text", text: JSON.stringify(envelope) },
 });
-const DONE: StubStep = { emit: envelope("ok") };
+const DONE = replying({ report: "done" });
+const APPROVED = replying({ outcome: "ok", report: "done" });
+/** The final reply that settles the agent of `req` ok, for its kind. */
+const done = (req: HarnessRequest) => (req.verdict ? APPROVED : DONE);
 const FIX: StubStep[] = [{ write: "greet.sh", content: RIGHT }, DONE];
+const BLOCKED = replying({
+	report: "tried",
+	blocked: "the checks ask for two greetings at once",
+});
 const ROLE = { harness: "stub", model: "none" };
 const CODE: Readonly<
 	Record<string, (inputs: never, context: CodeContext) => unknown>
@@ -79,13 +85,16 @@ const CODE: Readonly<
 };
 const POLL_MS = 20;
 
-/** The greet.sh each task's build writes. Every repair writes `RIGHT`, so T1 goes red then green and T2 stays red. */
+/** The greet.sh each task's build writes, so T1 goes red and T2 is `RIGHT` but still red. */
 const BUILT: Record<TaskName, string> = { t1: WRONG, t2: RIGHT };
+
+/** Each task's repair: T1's writes `RIGHT`, and T2's, seeing an unsatisfiable check, reports blocked. */
+const REPAIRED: Record<TaskName, StubStep[]> = { t1: FIX, t2: [BLOCKED] };
 
 /** A task's target and workspace, and a stub harness that builds `BUILT[name]` and repairs with `repair`. */
 async function stubbed(
 	name: TaskName,
-	repair: (req: HarnessRequest) => StubStep[] = () => FIX,
+	repair: (req: HarnessRequest) => StubStep[] = () => REPAIRED[name],
 ) {
 	const task = TASKS[name];
 	const dir = tmp();
@@ -145,17 +154,6 @@ describe("the stub runs match their expected traces", () => {
 			for (const attachment of ["/in/logs", "/in/spec"])
 				expect(repairs[0]?.prompt).toContain(attachment);
 		});
-});
-
-test("a repair that rejects its own work is still checked", async () => {
-	const { trace } = await performedTask("t1", () => [
-		{ write: "greet.sh", content: RIGHT },
-		{ emit: envelope("rejected") },
-	]);
-	expect(trace).toMatchObject({
-		runs: ["agent", "check", "agent", "check"],
-		outcome: "accepted",
-	});
 });
 
 test("a trace's files are its last check's, and its target is clean only as setup left it", async () => {
@@ -219,7 +217,7 @@ test("a review keeps the findings its skeptics upheld, and notes a lens that did
 		...(req.role.model === SKEPTIC
 			? [verdicts]
 			: (replies.find(([task]) => req.prompt.includes(task))?.[1] ?? [])),
-		DONE,
+		done(req),
 	]);
 	const ir = buildIr(
 		review,
@@ -396,7 +394,7 @@ describe("v_model", () => {
 		const harness = stubHarness((req) => {
 			const seat = seatOf(req);
 			asked.set(seat, [...(asked.get(seat) ?? []), req]);
-			return [...steps[seat](req), DONE];
+			return [...steps[seat](req), done(req)];
 		});
 		const ir = buildIr(
 			vModel,
