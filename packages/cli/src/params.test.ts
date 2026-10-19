@@ -56,7 +56,7 @@ test("a param's flag is its name in kebab-case", () => {
 });
 
 describe("param values", () => {
-	test("resolve default, user, workspace, profile, example set and flag, each value keeping its source", async () => {
+	test("resolve default, example set, user, workspace, profile and flag, each value keeping its source", async () => {
 		const pack = await demo();
 		const request: ParamRequest = {
 			layers: fileLayers(
@@ -72,7 +72,7 @@ describe("param values", () => {
 			hosts: [fakeHost()],
 		};
 		const params = paramValues(request);
-		expect(params.root).toEqual({ name: "example", loud: 7 });
+		expect(params.root).toEqual({ name: "workspace", loud: 7 });
 		const source = (...path: string[]) =>
 			sourceOf(params.composed, ["demo", ...path]);
 		expect([
@@ -80,12 +80,22 @@ describe("param values", () => {
 			source("greet", "loud"),
 			source("echo", "times"),
 		]).toEqual([
-			{ layer: "example" },
+			{ layer: "workspace", file: WORKSPACE, line: 3 },
 			{ layer: "flag" },
 			{ layer: "profile", file: PROFILE, line: 3 },
 		]);
 		const ir = built(pack.build("greet", params.root, params.configured));
 		expect(literalOf(ir, "echo/echo", "times")).toBe(3);
+
+		const filled = paramValues({
+			...request,
+			flags: undefined,
+			layers: fileLayers("", "demo:\n  greet:\n    name: ws\n"),
+		});
+		expect(filled.root).toEqual({ name: "ws", loud: 5 });
+		expect(sourceOf(filled.composed, ["demo", "greet", "loud"])).toEqual({
+			layer: "example",
+		});
 
 		const workspaceOnly = paramValues({
 			...request,
@@ -98,6 +108,36 @@ describe("param values", () => {
 			pack.build("greet", workspaceOnly.root, workspaceOnly.configured),
 		);
 		expect(literalOf(defaults, "echo/echo", "times")).toBe(1);
+	});
+
+	test("the example set fills only an unset param, and no merge tag acts on it", async () => {
+		const pack = await demo();
+		const greet = pack.compositions.find((c) => c.name === "greet");
+		if (!greet) throw new Error("no greet");
+		const tagged = {
+			...greet,
+			params: {
+				...greet.params,
+				properties: {
+					...greet.params.properties,
+					tags: { type: "array", items: { type: "string" } },
+				},
+			},
+		};
+		const root = (workspace: string) =>
+			paramValues({
+				layers: fileLayers("", workspace),
+				pack: "demo",
+				compositions: [tagged],
+				root: "greet",
+				example: { name: "e", tags: ["e"] },
+				hosts: [fakeHost()],
+			}).root;
+		expect(root("demo:\n  greet:\n    tags: !append [c]\n")).toEqual({
+			name: "e",
+			tags: ["c"],
+		});
+		expect(root("")).toEqual({ name: "e", tags: ["e"] });
 	});
 
 	test("refuse a missing required param, and a value off its schema, naming the flag", async () => {

@@ -165,7 +165,7 @@ async function loadIr(
 
 /**
  * Builds `composition` of `bundle` from the config `layers`, the example set when `reading` says so, and the flags in
- * `args`. Its config is `layers` with the example set and the flags on top.
+ * `args`. The example set fills only the params no config file or flag gives.
  */
 async function build(
 	session: Session,

@@ -16,13 +16,16 @@ import {
 import type { Bounds } from "../host";
 import { isRecord } from "../shared";
 
-/** The layers, lowest first. `example` is the example input set `compose` falls back to. */
+/**
+ * The layers, lowest first. `example` marks a value taken from the composition's example set, which `compose` uses for
+ * a param no file or flag gives.
+ */
 export type LayerName =
 	| "default"
+	| "example"
 	| "user"
 	| "workspace"
 	| "profile"
-	| "example"
 	| "flag";
 
 /** Where a config value came from: its layer, and the file and line when a file set it. */

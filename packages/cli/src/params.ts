@@ -41,13 +41,13 @@ export const flagOf = (param: string) => FLAG_PREFIX + flagName(param);
 export const flagFor = (name: string) => FLAG_PREFIX + name;
 
 export type ParamRequest = {
-	/** The config layers beneath the example set and the flags, lowest first. */
+	/** The config layers beneath the flags, lowest first, the defaults among them. */
 	layers: readonly Layer[];
 	pack: string;
 	compositions: readonly Described[];
 	/** The name of the composition to build. */
 	root: string;
-	/** The root's example input set, which stands over every config file. */
+	/** The root's example input set, which fills only the params no config file or flag gives. */
 	example?: Readonly<Record<string, unknown>>;
 	/** The root's param values given as flags, by param name. */
 	flags?: Readonly<Record<string, unknown>>;
@@ -57,7 +57,7 @@ export type ParamRequest = {
 };
 
 type Params = {
-	/** The config with the example set and the flags layered on top. */
+	/** The config with the flags on top and the example set filling the root params nothing else gives. */
 	composed: Composed;
 	/** The root's params as given, without their declared defaults, which its build fills in. */
 	root: Record<string, unknown>;
@@ -176,13 +176,21 @@ function declarationErrors(
 	return [];
 }
 
+/** The mapping at `path` in `values`, empty when there is none. */
+function sectionAt(
+	values: Readonly<Record<string, unknown>>,
+	path: KeyPath,
+): Readonly<Record<string, unknown>> {
+	const section = path.reduce<unknown>(
+		(at, key) => (isPlainObject(at) ? at[key] : undefined),
+		values,
+	);
+	return isPlainObject(section) ? section : {};
+}
+
 /** One composition's params from the config, each typed param read through its host and checked against its schema. */
 function paramsOf(r: Reading): Read {
-	const section = r.path.reduce<unknown>(
-		(at, key) => (isPlainObject(at) ? at[key] : undefined),
-		r.config.values,
-	);
-	const given = isPlainObject(section) ? section : {};
+	const given = sectionAt(r.config.values, r.path);
 	const values: Record<string, unknown> = {};
 	const diagnostics: Diagnostic[] = [];
 	for (const [name, schema] of Object.entries(
@@ -211,8 +219,9 @@ function paramsOf(r: Reading): Read {
 }
 
 /**
- * Resolves params, lowest first: the config layers, the example set, then the flags, with a composition's keys under
- * `<pack>.<composition>`. Every composition of the pack is read, so a subcomposition's configured params reach its
+ * Resolves params, lowest first: the config layers, then the flags, with a composition's keys under
+ * `<pack>.<composition>`. The example set is no layer: it gives the root's value for each param the rest leave unset,
+ * and no merge tag acts on it. Every composition of the pack is read, so a subcomposition's configured params reach its
  * `use` through the build context; only the root's must hold every required param. Declared defaults are left to the
  * build.
  * @throws ConfigError for a missing required root param, a value off its schema, a typed param no host reads or that
@@ -220,14 +229,24 @@ function paramsOf(r: Reading): Read {
  */
 export function paramValues(request: ParamRequest): Params {
 	const { pack, root } = request;
-	const above = (
+	const rooted = (
 		layer: LayerName,
-		values?: Readonly<Record<string, unknown>>,
-	) => (values ? [valuesLayer({ [pack]: { [root]: values } }, { layer })] : []);
+		values: Readonly<Record<string, unknown>>,
+	) => valuesLayer({ [pack]: { [root]: values } }, { layer });
+	const flagged = request.flags ? [rooted("flag", request.flags)] : [];
+	const set = sectionAt(layered([...request.layers, ...flagged]).values, [
+		pack,
+		root,
+	]);
+	const fallback = Object.fromEntries(
+		Object.entries(request.example ?? {}).filter(
+			([name]) => !Object.hasOwn(set, name),
+		),
+	);
 	const config = layered([
 		...request.layers,
-		...above("example", request.example),
-		...above("flag", request.flags),
+		...flagged,
+		rooted("example", fallback),
 	]);
 	const ajv = validator();
 	const configured: Record<string, Record<string, unknown>> = {};

@@ -38,9 +38,8 @@ This skill was checked against maestro 0.1.0-beta.1. When `maestro --version` na
    diagnostic; roles mapped only in a profile need `--profile <name>` on that compose too.
 2. **Pick the composition.** `<pack>.<composition>` of an installed pack, or a file. Its params are kebab-case flags
    (`--max-repairs 3`, `--no-strict`). Done when every required param has a value from a flag or the config.
-3. **Pre-flight.** `maestro config <c> [flags]`, with exactly the flags perform will get, reads params as perform does,
-   which compose does not ([running.md](running.md), Compose). Done on exit 0. Before a perform on a paid harness, give
-   the user the `repo.agent` bound from `maestro compose <c> [flags]` as the spend ceiling.
+3. **Pre-flight.** `maestro compose <c> [flags]`, with the flags perform will get. Done on exit 0. Before a perform on a
+   paid harness, give the user the `repo.agent` bound from `maestro compose <c> [flags]` as the spend ceiling.
 4. **Perform in its own session.** `perform` holds its terminal until the concert settles, and a signal to its process
    group cancels the concert. Start it detached, its output in a fresh directory outside the checkout; echo the
    directory, since shell state does not carry between tool calls:

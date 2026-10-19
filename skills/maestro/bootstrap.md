@@ -49,9 +49,7 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
    Done when every role, check and pack the composition needs has a value in some layer.
 
 4. **Verify.** `maestro compose <c>` and fix each diagnostic it prints by its hint, or by the table below, then compose
-   again. Then `maestro config <c> [param flags]`, with the flags perform will get, shows each value with its layer,
-   file and line, and pre-flights with params read as perform reads them ([running.md](running.md), Compose). Done when
-   both exit 0.
+   again. Then `maestro config <c> [param flags]` shows each value with its layer, file and line. Done when both exit 0.
 
 ## Reference
 

@@ -67,8 +67,9 @@ none. In the `--json` document they are as stored, under `outputs`, and its othe
 in camelCase, with sizes in bytes.
 
 A composition is a `.ts` or `.js` file that exports exactly one composition, a `.json` IR file, or
-`<pack>.<composition>` of an installed pack. Its params are flags in kebab-case, layered over the config; a boolean
-takes `--name` and `--no-name`. An IR file is already built and takes no param flags.
+`<pack>.<composition>` of an installed pack. Its params are flags in kebab-case, layered over the config, and `compose`
+fills the params neither gives from the composition's example set; a boolean takes `--name` and `--no-name`. An IR file
+is already built and takes no param flags.
 
 A file's stem is its pack id, so it must be one: lower case, starting with a letter, then letters, digits, `_` or `-`,
 and no installed pack's. A bare file takes params from its flags, its example set and its defaults only. No config key
