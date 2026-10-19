@@ -12,6 +12,7 @@ keeps it to one.
 | `needs-info`      | `state/needs-info`      | Waiting on reporter for more information |
 | `ready-for-agent` | `state/ready-for-agent` | Fully specified, ready for an AFK agent  |
 | `ready-for-human` | `state/ready-for-human` | Requires human implementation            |
+| `deferred`        | `state/deferred`        | Ruled out of this release; revisit later |
 | `wontfix`         | `state/wontfix`         | Will not be actioned; close it too       |
 
 "Done" is the forge's closed state, not a label. A closed issue keeps its `kind/` label and drops its `state/` one.
