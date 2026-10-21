@@ -47,7 +47,8 @@ A diagnostic prints as `<code>: <message>` then its hint, indented. The hint is 
 ## Follow
 
 Each `<id>` below is a concert's full id, its short id (8 letters from `k` to `z`, as `ls` shows it) or a prefix of
-either that no other concert's starts with. `--json` documents, paths and lane refs hold the full id.
+either that no other concert's starts with. `--json` documents, paths and lane refs hold the full id; `ls --json` adds
+each concert's short id as `short`.
 
 - `maestro wait <id> --timeout <duration>` waits for the concert to settle, then prints what `perform` prints and exits
   with its code. A duration is a whole number and one unit: `500ms`, `90s`, `15m`, `12h`, `7d`. On the timeout it exits
@@ -72,7 +73,7 @@ either that no other concert's starts with. `--json` documents, paths and lane r
 - `stale` marks a row an earlier attempt of a resumed concert left, which the resume neither reused nor replaced.
 - The reason of the instance the closing block's `at` names is the concert's root cause.
 
-`maestro ls <id> --json` gives the concert's row (`id`, `pack`, `composition`, `status`, `pid`, `startedAt`,
+`maestro ls <id> --json` gives the concert's row (`id`, `short`, `pack`, `composition`, `status`, `pid`, `startedAt`,
 `settledAt`, `workspace`, `tour`, `title`) and `instances`, each with `node`, `expansion`, `status`, `reason`,
 `outputs`, `metrics` (such as `tokens_in`), `artifacts` and `stale`.
 
@@ -130,7 +131,7 @@ What SKILL.md's Recover section leaves out:
   died without settling is marked `failed` ("process exited") when the record is next read.
 - **Prune** selects by id, or by the filters in `prune --help`. The lane refs into a pruned concert go with it. It asks
   before deleting; without a terminal it needs `--yes`. It refuses a running concert named by id and leaves running ones
-  out of a filter.
+  out of a filter, and refuses `--status running`.
 
 ## Tours
 

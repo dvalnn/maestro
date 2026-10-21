@@ -3,7 +3,7 @@ import { closest } from "@maestro/core";
 import type { Host } from "@maestro/core/host";
 import { messageOf } from "@maestro/ir";
 import type { Environment } from "./config";
-import { table, usageError } from "./output";
+import { STATUSES, table, usageError } from "./output";
 
 /** What a command reads and writes outside itself: the hosts, the working directory, the environment and its output. */
 export type Deps = {
@@ -61,6 +61,21 @@ export type Command = {
 };
 
 /** The flags every command takes. */
+export const FILTER_OPTIONS = {
+	status: {
+		type: "string",
+		arg: "status",
+		desc: `Only concerts that are ${STATUSES.join(", ")}`,
+	},
+	composition: {
+		type: "string",
+		arg: "pack.name",
+		desc: "Only this composition, as <pack>.<composition>",
+	},
+	tour: { type: "string", arg: "slug", desc: "Only this tour" },
+	workspace: { type: "string", arg: "name", desc: "Only this workspace" },
+} as const satisfies Options;
+
 export const COMMON: Options = {
 	json: { type: "boolean", desc: "Print one JSON document on stdout" },
 	profile: {

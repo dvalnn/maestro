@@ -473,12 +473,27 @@ describe("usage errors", () => {
 		[
 			"prune with no selection",
 			["prune"],
-			/^prune needs concert ids, --before, --tour or --workspace\nName concerts, .*--tour <slug> or --workspace <name>$/,
+			/^prune needs concert ids, --before, --tour, --workspace, --status or --composition\nName concerts, or pick them with a filter from 'maestro prune --help'$/,
 		],
 		[
 			"prune with ids and --before",
 			["prune", "a", "--before", "1d"],
 			/^prune takes concert ids or filters, not both/,
+		],
+		[
+			"prune with ids and --status",
+			["prune", "a", "--status", "ok"],
+			/^prune takes concert ids or filters, not both/,
+		],
+		[
+			"prune --status running",
+			["prune", "--status", "running"],
+			/^--status running cannot be pruned.*\nPick another status, or stop the concert with 'maestro kill <concert>' first$/,
+		],
+		[
+			"a bad prune --composition",
+			["prune", "--composition", "greet"],
+			/^--composition takes <pack>.<composition>, not 'greet'/,
 		],
 		[
 			"a bad --before",
@@ -736,10 +751,17 @@ describe("the record", () => {
 		});
 		expect((await w.call(["ls"])).out).toMatch(/\sdemo\.greet\s+failed\s/);
 		expect(await rows("--limit", "1")).toEqual([broke]);
+		const short = shortIds([done, broke]);
+		expect(
+			json(await w.call(["ls", "--json"])).map(
+				(r: { short: string }) => r.short,
+			),
+		).toEqual([broke, done].map((id) => short.label(id, false)));
 		const table = await w.call(["ls", broke]);
 		expect(table.out).toMatch(/^echo\/echo\s+failed\s+flaky$/m);
 		expect(json(await w.call(["ls", broke, "--json"]))).toMatchObject({
 			id: broke,
+			short: short.label(broke, false),
 			instances: expect.arrayContaining([
 				expect.objectContaining({ node: "echo/echo", status: "failed" }),
 			]),
@@ -1152,6 +1174,23 @@ describe("prune", () => {
 			json(await w.call(["prune", "--tour", "t1", "--yes", "--json"])),
 		).toMatchObject({ pruned: [x] });
 		expect(await ids(w)).toEqual([y]);
+	});
+
+	test("--status and --composition take the settled concerts that match, with the other filters", async () => {
+		const w = await world();
+		const perform = async (host: Host) =>
+			idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
+		const failed = await perform(hostOf({ outcome: "failed", reason: "x" }));
+		const ok = await perform(hostOf());
+		const prune = async (...flags: string[]) =>
+			json(await w.call(["prune", ...flags, "--yes", "--json"])).pruned;
+		expect(await prune("--composition", "other.greet")).toEqual([]);
+		expect(await prune("--status", "failed", "--workspace", "none")).toEqual(
+			[],
+		);
+		expect(await prune("--status", "failed")).toEqual([failed]);
+		expect(await ids(w)).toEqual([ok]);
+		expect(await prune("--composition", "demo.greet")).toEqual([ok]);
 	});
 
 	test("a concert that is running by the time it is released stays, and the rest are pruned", async () => {

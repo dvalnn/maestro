@@ -45,8 +45,9 @@ maestro wait <concert> --timeout 15m
     fixed by a `-c` or `--profile` on the resume, or by performing the composition as a new concert.
 
 [^prune]:
-    Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`
-    and `--workspace <name>`; without `--before` there is no age cutoff. It asks before deleting unless given `--yes`.
+    Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`,
+    `--workspace <name>`, `--status <status>` and `--composition <pack.name>`, as `ls` takes them; without `--before`
+    there is no age cutoff, and `--status running` is refused. It asks before deleting unless given `--yes`.
 
 `compose <composition> --help` and `perform <composition> --help` add the composition's params, as `rep` shows them.
 
@@ -71,12 +72,12 @@ nest, and one node's expansions keep the order they started in. `ls <concert> --
 
 `ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
 
-A concert's id is a UUIDv7, which the record, its paths, lane refs and every `--json` document hold. `ls`, `watch`'s
-header and the closing block show its short id instead: the UUID's last 15 hex digits written in jj's reverse-hex
-letters (`0` to `f` as `z` to `k`), 8 of them, more when 8 do not tell it apart. Every `<concert>` is a prefix of either
-that no other concert's starts with, as in jj; a short id's letters are no hex digit, so a prefix is never both. A
-prefix that several concerts start is a usage error (exit 2) naming their short ids. On a terminal a short id shows the
-letters that tell it apart in bold and the rest dim.
+A concert's id is a UUIDv7, which the record, its paths, lane refs and every `--json` document hold; `ls --json` adds
+the short id as `short` on each concert. `ls`, `watch`'s header and the closing block show its short id instead: the
+UUID's last 15 hex digits written in jj's reverse-hex letters (`0` to `f` as `z` to `k`), 8 of them, more when 8 do not
+tell it apart. Every `<concert>` is a prefix of either that no other concert's starts with, as in jj; a short id's
+letters are no hex digit, so a prefix is never both. A prefix that several concerts start is a usage error (exit 2)
+naming their short ids. On a terminal a short id shows the letters that tell it apart in bold and the rest dim.
 
 Spend shows beside the status. An agent instance, in `ls <concert>` and `watch`, has an agent column,
 `<harness> · <model> · <effort>  <total> tok`: the model without its provider (`github-copilot/claude-haiku-5.5` shows

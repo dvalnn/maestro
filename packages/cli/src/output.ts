@@ -350,6 +350,43 @@ export function parseTour(source: string, text: string): string {
 	return text;
 }
 
+export const STATUSES: readonly ConcertStatus[] = [
+	"running",
+	"ok",
+	"failed",
+	"rejected",
+];
+
+/**
+ * `text` as a concert status, or `undefined` for no text.
+ * @throws CliError, a usage error, for any other word.
+ */
+export function statusOf(text: string | undefined): ConcertStatus | undefined {
+	if (text === undefined) return undefined;
+	const status = STATUSES.find((s) => s === text);
+	if (!status)
+		throw usageError(
+			`--status takes one of ${STATUSES.join(", ")}, not '${text}'`,
+			"Pick one of those",
+		);
+	return status;
+}
+
+/**
+ * The pack and composition filters of `--composition <pack>.<composition>`.
+ * @throws CliError, a usage error, for any other form.
+ */
+export function compositionOf(text: string | undefined) {
+	if (text === undefined) return {};
+	const dot = text.indexOf(".");
+	if (dot < 1 || dot === text.length - 1)
+		throw usageError(
+			`--composition takes <pack>.<composition>, not '${text}'`,
+			"Write it as greet.hello",
+		);
+	return { pack: text.slice(0, dot), composition: text.slice(dot + 1) };
+}
+
 /** `instance` of `ir`'s graph as one name, such as `lens[risk]/skeptic`. */
 export const instanceName = (ir: Ir, instance: NodeInstance) =>
 	formatInstance(instance, indexGraph(ir).groupsOf(instance.node));

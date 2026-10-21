@@ -1,14 +1,25 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { ConcertRecord } from "@maestro/core/perform";
+import type { ConcertFilter, ConcertRecord } from "@maestro/core/perform";
 import { DURATION_EXAMPLE, messageOf } from "@maestro/ir";
-import { COMMON, type Command, isSet, type Options, textOf } from "./command";
 import {
+	COMMON,
+	type Command,
+	FILTER_OPTIONS,
+	isSet,
+	type Options,
+	textOf,
+	type Values,
+} from "./command";
+import {
+	compositionOf,
 	EXIT,
 	formatBytes,
 	jsonOf,
 	parseDuration,
 	parseTour,
+	STATUSES,
+	statusOf,
 	stillRunning,
 	usageError,
 } from "./output";
@@ -21,6 +32,8 @@ import {
 	withStore,
 } from "./session";
 
+const SETTLED = STATUSES.filter((s) => s !== "running");
+
 const PRUNE_OPTIONS = {
 	...COMMON,
 	before: {
@@ -28,11 +41,10 @@ const PRUNE_OPTIONS = {
 		arg: "duration",
 		desc: `Prune concerts that settled longer ago than this, such as ${DURATION_EXAMPLE}`,
 	},
-	tour: { type: "string", arg: "slug", desc: "Only this tour" },
-	workspace: {
-		type: "string",
-		arg: "name",
-		desc: "Only this workspace",
+	...FILTER_OPTIONS,
+	status: {
+		...FILTER_OPTIONS.status,
+		desc: `Only concerts that are ${SETTLED.join(", ")}`,
 	},
 	yes: { type: "boolean", desc: "Do not ask before deleting" },
 } as const satisfies Options;
@@ -40,21 +52,45 @@ const PRUNE_OPTIONS = {
 /** A concert that stays, and why. */
 type Failure = { id: string; reason: string };
 
+const FILTER_FLAGS = [
+	"before",
+	"tour",
+	"workspace",
+	"status",
+	"composition",
+] as const;
+
 /**
- * The settled concerts to prune: those named, or those matching `--before`, `--tour` and `--workspace`, at any age
- * when `--before` is absent.
- * @throws CliError for a selection that is none or both, or a named concert that is running.
+ * The `store.concerts` filter of `--tour`, `--workspace`, `--status` and `--composition`.
+ * @throws CliError, a usage error, for a bad filter value or `--status running`.
+ */
+function filterOf(values: Values): ConcertFilter {
+	const tour = textOf(values, "tour");
+	const status = statusOf(textOf(values, "status"));
+	if (status === "running")
+		throw usageError(
+			"--status running cannot be pruned, a running concert has not settled",
+			"Pick another status, or stop the concert with 'maestro kill <concert>' first",
+		);
+	return {
+		tour: tour === undefined ? undefined : parseTour("--tour", tour),
+		workspace: textOf(values, "workspace"),
+		status,
+		...compositionOf(textOf(values, "composition")),
+	};
+}
+
+/**
+ * The settled concerts to prune: those named, or those matching the filters, at any age when `--before` is absent.
+ * @throws CliError for a selection that is none or both, a bad filter value, or a named concert that is running.
  */
 function selected({ store, values, positionals }: Stored): ConcertRecord[] {
-	const before = textOf(values, "before");
-	const tour = textOf(values, "tour");
-	const workspace = textOf(values, "workspace");
-	const filtered = [before, tour, workspace].some((v) => v !== undefined);
+	const filtered = FILTER_FLAGS.some((f) => textOf(values, f) !== undefined);
 	if (positionals.length > 0) {
 		if (filtered)
 			throw usageError(
 				"prune takes concert ids or filters, not both",
-				"Drop the ids, or drop --before, --tour and --workspace",
+				"Drop the ids, or drop --before, --tour, --workspace, --status and --composition",
 			);
 		const named = concertsOf(store, positionals);
 		const running = named.find((c) => c.status === "running");
@@ -63,18 +99,16 @@ function selected({ store, values, positionals }: Stored): ConcertRecord[] {
 	}
 	if (!filtered)
 		throw usageError(
-			"prune needs concert ids, --before, --tour or --workspace",
-			"Name concerts, or pick them with --before <duration>, --tour <slug> or --workspace <name>",
+			"prune needs concert ids, --before, --tour, --workspace, --status or --composition",
+			"Name concerts, or pick them with a filter from 'maestro prune --help'",
 		);
+	const before = textOf(values, "before");
 	const cutoff =
 		before === undefined
 			? Number.POSITIVE_INFINITY
 			: Date.now() - parseDuration("--before", before);
 	return store
-		.concerts({
-			tour: tour === undefined ? undefined : parseTour("--tour", tour),
-			workspace,
-		})
+		.concerts(filterOf(values))
 		.filter((c) => c.settledAt !== undefined && c.settledAt < cutoff);
 }
 
@@ -180,8 +214,7 @@ async function pruned(stored: Stored) {
 }
 
 export const prune: Command = {
-	usage:
-		"prune <concert>... | --before <duration> | --tour <slug> | --workspace <name> [flags]",
+	usage: "prune <concert>... | <filter>... [flags]",
 	options: PRUNE_OPTIONS,
 	execute: (args, deps) =>
 		withStore(

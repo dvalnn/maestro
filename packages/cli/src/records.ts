@@ -1,9 +1,5 @@
 import type { Metrics } from "@maestro/core/host";
-import {
-	type ConcertRecord,
-	type ConcertStatus,
-	openRecord,
-} from "@maestro/core/perform";
+import { type ConcertRecord, openRecord } from "@maestro/core/perform";
 import { DURATION_EXAMPLE, MS_PER_UNIT } from "@maestro/ir";
 import {
 	agentText,
@@ -19,6 +15,7 @@ import {
 	COMMON,
 	type Command,
 	colorOf,
+	FILTER_OPTIONS,
 	isSet,
 	type Options,
 	only,
@@ -28,6 +25,7 @@ import {
 import { actorOf, hostTextOf } from "./host-text";
 import {
 	CliError,
+	compositionOf,
 	EXIT,
 	exitOf,
 	formatBytes,
@@ -38,6 +36,7 @@ import {
 	parseTour,
 	printClosing,
 	resultDoc,
+	statusOf,
 	table,
 	usageError,
 } from "./output";
@@ -52,12 +51,6 @@ import {
 	withStore,
 } from "./session";
 
-const STATUSES: readonly ConcertStatus[] = [
-	"running",
-	"ok",
-	"failed",
-	"rejected",
-];
 const LIST_LIMIT = 20;
 /** How long `kill` waits for a concert to settle after it signals its process. */
 const KILL_GRACE_S = 10;
@@ -65,18 +58,7 @@ const KILL_GRACE_MS = KILL_GRACE_S * MS_PER_UNIT.s;
 
 const LS_OPTIONS = {
 	...COMMON,
-	status: {
-		type: "string",
-		arg: "status",
-		desc: `Only concerts that are ${STATUSES.join(", ")}`,
-	},
-	composition: {
-		type: "string",
-		arg: "pack.name",
-		desc: "Only this composition, as <pack>.<composition>",
-	},
-	tour: { type: "string", arg: "slug", desc: "Only this tour" },
-	workspace: { type: "string", arg: "name", desc: "Only this workspace" },
+	...FILTER_OPTIONS,
 	limit: {
 		type: "string",
 		arg: "count",
@@ -92,32 +74,6 @@ const tokenCell = (metrics: Metrics) => {
 };
 
 const dash = (text: string | undefined) => text || "-";
-
-function statusOf(text: string | undefined): ConcertStatus | undefined {
-	if (text === undefined) return undefined;
-	const status = STATUSES.find((s) => s === text);
-	if (!status)
-		throw usageError(
-			`--status takes one of ${STATUSES.join(", ")}, not '${text}'`,
-			"Pick one of those",
-		);
-	return status;
-}
-
-/**
- * The pack and composition filters of `--composition <pack>.<composition>`.
- * @throws CliError, a usage error, for any other form.
- */
-function compositionOf(text: string | undefined) {
-	if (text === undefined) return {};
-	const dot = text.indexOf(".");
-	if (dot < 1 || dot === text.length - 1)
-		throw usageError(
-			`--composition takes <pack>.<composition>, not '${text}'`,
-			"Write it as greet.hello",
-		);
-	return { pack: text.slice(0, dot), composition: text.slice(dot + 1) };
-}
 
 export const ls: Command = {
 	usage: "ls [<concert>] [flags]",
@@ -167,14 +123,15 @@ async function listed({ session, store, values, json }: Stored) {
 		workspace: textOf(values, "workspace"),
 		limit: limit === undefined ? LIST_LIMIT : parseCount("--limit", limit),
 	});
+	const short = shortIds(store.ids());
 	const rows = await Promise.all(
 		concerts.map(async (c) => ({
 			...concertColumns(c),
+			short: short.label(c.id, false),
 			metrics: store.metrics(c.id),
 			diskUse: await diskOf(session, c.id),
 		})),
 	);
-	const short = shortIds(store.ids());
 	const text = table([
 		[
 			"id",
@@ -187,7 +144,7 @@ async function listed({ session, store, values, json }: Stored) {
 			"disk",
 		],
 		...rows.map((r) => [
-			short.label(r.id, false),
+			r.short,
 			dash(r.title),
 			dash(r.tour),
 			dash(r.workspace),
@@ -217,7 +174,11 @@ async function instancesOf(
 	const hostText = hostTextOf(session.deps.hosts, row.ir);
 	session.deps.stdout(
 		json
-			? jsonOf({ ...concertColumns(row), instances })
+			? jsonOf({
+					...concertColumns(row),
+					short: shortIds(store.ids()).label(row.id, false),
+					instances,
+				})
 			: table([
 					["instance", "status", "stale", "agent", "reason"],
 					...instances.map((i) => [
