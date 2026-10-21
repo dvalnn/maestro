@@ -1,3 +1,4 @@
+import { constants } from "node:os";
 import { join } from "node:path";
 import { ConfigError } from "@maestro/core/config";
 import type {
@@ -31,6 +32,9 @@ import {
 } from "@maestro/render-text/live";
 import type { Colors, Deps } from "./command";
 
+/** A process a signal ends exits with this plus the signal's number. */
+export const SIGNAL_EXIT_BASE = 128;
+
 /** The exit codes of every command. */
 export const EXIT = {
 	ok: 0,
@@ -38,8 +42,8 @@ export const EXIT = {
 	usage: 2,
 	rejected: 3,
 	timeout: 124,
-	/** 128 plus SIGINT's number, as Ctrl-C ends a process. */
-	interrupted: 130,
+	/** The signal exit of SIGINT, as Ctrl-C ends a process. */
+	interrupted: SIGNAL_EXIT_BASE + constants.signals.SIGINT,
 } as const;
 
 /** An error to print as it is, with the exit code it ends the command with. */

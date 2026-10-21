@@ -40,6 +40,7 @@ export {
 	LOOP_STATE,
 	mapWorkers,
 	outputValue,
+	STDLIB_MODULE,
 	tolerates,
 	upstreamIn,
 } from "./graph";

@@ -1,7 +1,7 @@
 import { constants } from "node:os";
 import { messageOf } from "@maestro/ir";
 import type { Screen } from "./command";
-import { EXIT } from "./output";
+import { EXIT, SIGNAL_EXIT_BASE } from "./output";
 
 /** What a `Screen` drives: the terminal's input, a write to it, and the process it runs in. */
 export type Tty = {
@@ -34,8 +34,6 @@ const ERASE_LINE = `${ESC}[K`;
 const ERASE_BELOW = `${ESC}[J`;
 /** Ctrl-Z, which raw mode delivers as input instead of a stop. */
 const SUSPEND_KEY = "\u001a";
-/** A process a signal ends exits with this plus the signal's number. */
-const SIGNAL_EXIT_BASE = 128;
 /** The signals that end a process taking the screen, which gives it back first. */
 const ENDING = ["SIGTERM", "SIGHUP", "SIGINT"] as const;
 

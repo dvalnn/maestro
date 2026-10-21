@@ -272,9 +272,9 @@ stores by node id and expansion path as a `progress` event, opaquely.
   port of a node that is not `ok`: the rule follows that node.
 - **Resume.** Re-entering a concert keeps its id and runs its stored IR. A recorded `ok` instance is reused when its key
   still matches: a hash of the node definition, its code hash recomputed from the current code, and its input values
-  with artifact content hashes. Any other instance runs again, so a fix to one node's code reruns that node and those of
-  its dependents whose inputs changed. A concert whose process is still alive cannot be resumed. Nothing is reused
-  across concerts.
+  with artifact content hashes. The code hash covers the whole bundle, so any edit to the composition file reruns every
+  code node, and dependents rerun when their inputs changed (ADR 0008). Any other instance runs again. A concert whose
+  process is still alive cannot be resumed. Nothing is reused across concerts.
 - **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in
   reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started has
   no record. A code node that runs past the timeout its author set settles `failed`. It has none by default.
@@ -335,8 +335,9 @@ claimed by an installed but unused registrant is ignored.
   out-of-process workers can follow: a node invocation carries node id, expansion path, input values and their port
   schemas (`in`), artifact references and context. The reply carries outputs and an outcome (`ok`, or `rejected` with a
   reason and optional outputs), or an error. Workers support cancellation and timeouts. The in-process worker cannot
-  stop a running function: a cancelled or timed-out invocation settles at once and its function is abandoned. A
-  synchronous function that never returns blocks the process. Long work belongs in a host.
+  stop a running function: cancel and timeout abort `ctx.signal`, and a cancelled or timed-out invocation settles at
+  once and its function is abandoned. A synchronous function that never returns blocks the process. Long work belongs in
+  a host.
 - **No compose-time evaluation.** Compose runs no author code (ADR 0009). Every code node may read the clock and the
   concert id from its context.
 
@@ -377,10 +378,11 @@ A renderer needs only the IR (or plan) and events:
   for all its items with a strip of theirs, a fan-out its items against its cardinality. A container is open while it
   holds running work or, once settled, the last failure. A node that never started is `pending`, and `not reached` once
   its round, group or concert is done; a stdlib helper shows only while running, rejected or failed. A `now` line names
-  the latest running instance, a `last` line the latest failed one. Past the terminal's height, settled rows hide from
-  the top, then pending ones from the bottom, as count lines, and the running rows, the last failure and their ancestors
-  stay. Edges are `compose --graph`'s. Browsed on a terminal, a row opens an inspector on its part of the record: a
-  summary, outputs, artifacts and enrichment, and its events, tailing while it runs.
+  the latest running instance, a `last` line the latest failed one. `[` and `]` step the cursor's loop, `map`, `find` or
+  `fold` between its iterations. Past the terminal's height, settled rows hide from the top, then pending ones from the
+  bottom, as count lines, and the running rows, the last failure and their ancestors stay. Edges are
+  `compose --graph`'s. Browsed on a terminal, a row opens an inspector on its part of the record: a summary, outputs,
+  artifacts and enrichment, and its events, tailing while it runs.
 
 The first renderer targets text (ASCII or Mermaid) in the plan output; `maestro watch` draws the live form. A richer
 viewer is out of scope.
@@ -401,9 +403,11 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
   failures reported), or an inline `{ run, timeout }`. Each line runs through `sh -c` in the sandbox, in order, and the
   first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are `failed`; any
-  other non-zero exit is `rejected`, the reason naming the check and the line number. Logs, holding each line and its
-  output, are an artifact. It is its own host kind and not a code node, because it runs untrusted target commands and
-  needs the sandbox, lane staging, kill and logs. Code nodes are trusted and run in process.
+  other non-zero exit is `rejected`, the reason naming the check and the line number. Every line sees
+  `MAESTRO_LANE_BASE`, the commit its lane was cut from, which overrides a configured `env` entry of that name. Logs,
+  holding each line and its output, are an artifact. It is its own host kind and not a code node, because it runs
+  untrusted target commands and needs the sandbox, lane staging, kill and logs. Code nodes are trusted and run in
+  process.
 - **Changeset node.** Takes one lane version and outputs its patch series as an artifact: a directory holding `base`,
   the target commit the lane chain was cut from, and the patches as `0001.patch`, `0002.patch` and on. It opens no lane
   and spends no extension.
@@ -494,9 +498,10 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   as a check's do, before the node's own work, and each emits a `prepare` progress event, `{ kind, line, of, run }`, as
   it starts, and again with `ended` (how it ended) and `tail` (the last lines of its output) when it ends. A failing
   line's reason ends with the last non-blank line of its output, as
-  `target.prepare line 1 exited 7: registry unreachable`; a check line's reason does the same. Any line that does not
-  exit 0 fails the node, never rejects it. Prepare is environment, not input, so neither it nor its binds enter the
-  resume key (ADR 0011).
+  `target.prepare line 1 exited 7: registry unreachable`; a check line's reason does the same. Its lines see
+  `MAESTRO_LANE_BASE` as a check's do, overriding a configured `env` entry of that name. Any line that does not exit 0
+  fails the node, never rejects it. Prepare is environment, not input, so neither it nor its binds enter the resume key
+  (ADR 0011).
 
 **Sandbox**
 
@@ -517,8 +522,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   credential values in pi's `auth.json`. The host reads declared outputs from the agent's outbox, not the adapter. It is
   a sandboxed subprocess driving the harness's JSON event stream (D-20). An in-process SDK is deferred, because an
   in-process agent cannot be confined by bubblewrap. The first adapter is pi (`pi -p --mode json`) and the second is
-  Claude Code. The built-in `stub` harness replies with an ok envelope of the agent's kind and writes nothing, so an
-  agent that declares outputs fails under it.
+  Claude Code. The built-in `stub` harness writes a placeholder for each declared output and replies with an ok envelope
+  of the agent's kind.
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
 **Host validation rules**
@@ -584,8 +589,8 @@ commit SHA) are inputs or round-folder data, never constants in a pack.
 - **Worker error.** A code node that throws settles as `failed` with the error. A timeout is `failed`.
 - **Disk full.** Hosts with a small system partition are common. The record store, artifacts and lane stores live under
   a configurable data root, by default in the user's XDG data home.
-- **Stale reuse.** Resume recomputes each code hash from the current code, so a changed node runs again, and so does
-  each dependent whose inputs changed.
+- **Stale reuse.** Resume recomputes each code hash from the current code, which covers the whole bundle: any edit to
+  the composition file reruns every code node, and so does each dependent whose inputs changed.
 
 ## 17. Open design points
 

@@ -46,8 +46,8 @@ maestro wait <concert> --timeout 15m
     only, so pass it again to resume a concert in another store. An error from a recorded flag names the concert, and is
     fixed by a `-c` or `--profile` on the resume, or by performing the composition as a new concert. It runs the graph
     recorded at first perform, so an edit adds or removes no node, but code nodes load from the file as it is now and
-    their hash covers the whole bundle: any edit reruns every code node and what depends on it. After editing a
-    composition, perform a new concert.
+    their hash covers the whole bundle (ADR 0008): any edit to the composition file reruns every code node, and
+    dependents rerun when their inputs changed. After editing a composition, perform a new concert.
 
 [^prune]:
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`,
@@ -80,19 +80,19 @@ or once the concert settles on the last `failed` one, with the containers leadin
 round unless `[` or `]` pins another, marked `(history)`. Under the tree, a line names the cursor row's instance, kind,
 state, time and agent, then its reason or latest progress, and the last line the mode and keys.
 
-| Key                    | Does                                                                                    |
-| ---------------------- | --------------------------------------------------------------------------------------- |
-| `j` `↓` / `k` `↑`      | Moves the cursor down or up[^off]                                                       |
-| `l` `→` / `h` `←`      | Opens a row, or steps to its first member / closes it, or steps to its container[^step] |
-| `space`                | Opens or closes the row                                                                 |
-| `[` / `]`              | The previous or next round of the loop the cursor is in[^off]                           |
-| `g` `Home` / `G` `End` | The first or last row[^off]                                                             |
-| `PgUp` / `PgDn`        | One viewport up or down[^off]                                                           |
-| `e`                    | The last `failed` instance, its containers opened and its rounds shown[^off]            |
-| `f`                    | Toggles follow; turning it on drops the pinned rounds and keeps the folds               |
-| `Enter`                | Inspects the row                                                                        |
-| `q` `Ctrl-C`           | Quits                                                                                   |
-| `Ctrl-Z`               | Gives the terminal back and suspends; `fg` resumes                                      |
+| Key                    | Does                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `j` `↓` / `k` `↑`      | Moves the cursor down or up[^off]                                                            |
+| `l` `→` / `h` `←`      | Opens a row, or steps to its first member / closes it, or steps to its container[^step]      |
+| `space`                | Opens or closes the row                                                                      |
+| `[` / `]`              | The previous or next iteration of the `loop`, `map`, `find` or `fold` the cursor is in[^off] |
+| `g` `Home` / `G` `End` | The first or last row[^off]                                                                  |
+| `PgUp` / `PgDn`        | One viewport up or down[^off]                                                                |
+| `e`                    | The last `failed` instance, its containers opened and its rounds shown[^off]                 |
+| `f`                    | Toggles follow; turning it on drops the pinned rounds and keeps the folds                    |
+| `Enter`                | Inspects the row                                                                             |
+| `q` `Ctrl-C`           | Quits                                                                                        |
+| `Ctrl-Z`               | Gives the terminal back and suspends; `fg` resumes                                           |
 
 [^off]: Turns follow off.
 
@@ -125,8 +125,8 @@ space-separated key, named as typed (`j`, `[`) or as an input (`down`, `previous
 the tree or `interrupt`. It needs no terminal and exits with the concert's code, or 0 while it runs. It is left out of
 `--help`, and its output may change.
 
-`ls <concert>` lists the node instances in graph order, as `watch` draws them: subcompositions, groups and loop rounds
-nest, and one node's expansions keep the order they started in. `ls <concert> --json` lists `instances` in that order.
+`ls <concert>` lists the node instances in graph order, every instance: subcompositions, groups and loop rounds nest,
+and one node's expansions keep the order they started in. `ls <concert> --json` lists `instances` in that order.
 
 `ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
 
@@ -252,4 +252,5 @@ A tour is a slug of lower-case words joined by hyphens, at most 64 characters. `
 | 3    | The concert settled `rejected`.                                                               |
 | 124  | `wait --timeout` passed with the concert still running.                                       |
 
-`watch` exits as `wait` does, except that browsing a concert quit before it settled exits 130.
+`watch` exits as `wait` does, except that browsing a concert quit before it settled exits 130 (Ctrl-C), 129 (hang-up) or
+143 (SIGTERM).

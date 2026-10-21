@@ -16,6 +16,7 @@ import {
 	type Command,
 	colorOf,
 	FILTER_OPTIONS,
+	filterOf,
 	isSet,
 	type Options,
 	only,
@@ -25,7 +26,6 @@ import {
 import { actorOf, hostTextOf } from "./host-text";
 import {
 	CliError,
-	compositionOf,
 	EXIT,
 	exitOf,
 	formatBytes,
@@ -36,7 +36,6 @@ import {
 	parseTour,
 	printClosing,
 	resultDoc,
-	statusOf,
 	table,
 	usageError,
 } from "./output";
@@ -117,10 +116,7 @@ async function listed({ session, store, values, json }: Stored) {
 	const color = colorOf(session.deps, values).out;
 	const limit = textOf(values, "limit");
 	const concerts = store.concerts({
-		status: statusOf(textOf(values, "status")),
-		...compositionOf(textOf(values, "composition")),
-		tour: textOf(values, "tour"),
-		workspace: textOf(values, "workspace"),
+		...filterOf(values),
 		limit: limit === undefined ? LIST_LIMIT : parseCount("--limit", limit),
 	});
 	const short = shortIds(store.ids());

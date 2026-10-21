@@ -8,6 +8,7 @@ import {
 	OUTCOMES,
 	type Outcome,
 	parseExpansion,
+	STDLIB_MODULE,
 	worstOutcome,
 } from "@maestro/ir";
 import { type Entry, lastSegment } from "./layout";
@@ -109,7 +110,6 @@ const SEQUENTIAL: ReadonlySet<string> = new Set([
 	"find",
 	"fold",
 ]);
-const STDLIB = "maestro:stdlib";
 /** The states a stdlib helper's instance is drawn in. */
 const STDLIB_SHOWN: ReadonlySet<Shown> = new Set([
 	"running",
@@ -141,7 +141,7 @@ const keysOf = (expansion: string) => parseExpansion(expansion) ?? [];
 const isSequential = (node: IrNode | undefined) =>
 	node !== undefined && SEQUENTIAL.has(node.kind);
 const isStdlib = (node: IrNode | undefined) =>
-	node?.kind === "code" && node.worker.module === STDLIB;
+	node?.kind === "code" && node.worker.module === STDLIB_MODULE;
 const isOutcome = (s: Shown): s is Outcome =>
 	(OUTCOMES as readonly string[]).includes(s);
 /** A numeric iteration key 1-based, as a reader counts rounds; another key as it is. */

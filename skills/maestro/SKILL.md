@@ -66,7 +66,8 @@ This skill was checked against maestro 0.1.0-beta.1. When `maestro --version` na
 
 5. **Follow.** `maestro wait <id> --timeout 90s` in a loop, the timeout shorter than your tool call's own limit, which
    would otherwise cut it off before exit 124: exit 124 means still running, so wait again. Done on any exit but 124. A
-   user who wants to see the concert live runs `maestro watch <id>` in their own terminal.
+   user who wants to see the concert live runs `maestro watch <id>` in their own terminal, where it stays open after
+   settle until `q`; piped, it ends at settle.
 6. **Read the result.** The exit code (table below), the closing block on stderr (a
    `concert <short id>  <outcome>  <elapsed>` row, then `at <instance>` and `reason <reason>` when not `ok`) and the
    result's outputs on stdout (`<port>  <value>` lines, an artifact as its path). On a `rejected` concert the outputs

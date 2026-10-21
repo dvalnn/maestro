@@ -92,6 +92,9 @@ the engine.
 - `fold` (in order, carrying an accumulator shaped like a node's result from item to item);
 - `loop` (a bounded loop carrying state shaped like a node's result, going on while its test holds).
 
+**Iteration**: One pass of a `loop`, `map`, `find` or `fold` body, numbered from 0 in its expansion path. A `parMap` or
+`parFind` has items, not iterations.
+
 **On error**: What a `parMap` or `map` does at a member that is not `ok`: `stop` halts the group, `continue` runs every
 item.
 

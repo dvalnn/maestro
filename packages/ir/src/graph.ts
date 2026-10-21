@@ -70,6 +70,9 @@ export const tolerates = (node: IrNode, edges: readonly IrEdge[]) =>
 			: node.kind === "loop" && node.tolerate === "rejected",
 	) || edges.every((e) => Object.hasOwn(IMPLICIT_OUT, e.from.port ?? ""));
 
+/** The module name of every stdlib code reference; its code hash is the SDK version, not a content hash. */
+export const STDLIB_MODULE = "maestro:stdlib";
+
 /** The ports a loop's state carries beside its member's outputs: the status ports, and the iteration's index. */
 export const LOOP_STATE = ["ok", "reason", "index"] as const;
 

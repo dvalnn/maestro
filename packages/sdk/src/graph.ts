@@ -9,6 +9,7 @@ import {
 	messageOf,
 	type Ports,
 	type Scope,
+	STDLIB_MODULE,
 	settledSchema,
 	type Tolerate,
 	TS_RUNTIME,
@@ -547,7 +548,7 @@ export function worker(fn: CodeFn): WorkerRef {
 	);
 }
 
-export const STDLIB_MODULE = "maestro:stdlib";
+export { STDLIB_MODULE };
 
 export const SDK_VERSION = pkg.version;
 

@@ -1,9 +1,17 @@
 import { parseArgs } from "node:util";
 import { closest } from "@maestro/core";
 import type { Host } from "@maestro/core/host";
+import type { ConcertFilter } from "@maestro/core/perform";
 import { messageOf } from "@maestro/ir";
 import type { Environment } from "./config";
-import { STATUSES, table, usageError } from "./output";
+import {
+	compositionOf,
+	parseTour,
+	STATUSES,
+	statusOf,
+	table,
+	usageError,
+} from "./output";
 
 /** What a command reads and writes outside itself: the hosts, the working directory, the environment and its output. */
 export type Deps = {
@@ -77,7 +85,6 @@ export type Command = {
 	help?(args: readonly string[], deps: Deps): Promise<string | undefined>;
 };
 
-/** The flags every command takes. */
 export const FILTER_OPTIONS = {
 	status: {
 		type: "string",
@@ -93,6 +100,21 @@ export const FILTER_OPTIONS = {
 	workspace: { type: "string", arg: "name", desc: "Only this workspace" },
 } as const satisfies Options;
 
+/**
+ * The `store.concerts` filter of `--tour`, `--workspace`, `--status` and `--composition`.
+ * @throws CliError, a usage error, for a bad filter value.
+ */
+export function filterOf(values: Values): ConcertFilter {
+	const tour = textOf(values, "tour");
+	return {
+		tour: tour === undefined ? undefined : parseTour("--tour", tour),
+		workspace: textOf(values, "workspace"),
+		status: statusOf(textOf(values, "status")),
+		...compositionOf(textOf(values, "composition")),
+	};
+}
+
+/** The flags every command takes. */
 export const COMMON: Options = {
 	json: { type: "boolean", desc: "Print one JSON document on stdout" },
 	profile: {

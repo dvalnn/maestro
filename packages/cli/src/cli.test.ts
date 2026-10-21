@@ -515,6 +515,7 @@ describe("usage errors", () => {
 			["ls", "--status", "bogus"],
 			/^--status takes one of running, ok, failed, rejected, not 'bogus'/,
 		],
+		["a tour that is none", ["ls", "--tour", "BAD"], /^--tour takes a slug/],
 		[
 			"a limit of zero",
 			["ls", "--limit", "0"],

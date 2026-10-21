@@ -56,18 +56,19 @@ each concert's short id as `short`.
 - `maestro ls` lists concerts, newest first: short id, title, tour, workspace, composition, status, disk use.
   `ls --help` lists its filters, such as `--status running` and `--tour <slug>`.
 - `maestro watch <id>` shows the concert from its first event until it settles, and exits as `wait` does. On a terminal
-  it redraws the graph in place, for a user to follow; Ctrl-C stops watching, not the concert. With `--json`, or without
-  a terminal and without `--events`, it prints a JSON Lines stream, a line per instance state change (per event with
-  `--events --json`), ending with the concert document, a `{"type":"concert",...}` line holding `wait --json`'s.
-  `--events` without `--json` prints an aligned text line per event instead. It takes no timeout: bound it below your
-  tool call's limit with `timeout 90s maestro watch <id>`, which exits 124.
+  it redraws the graph in place and stays open after the concert settles until `q`, for a user to follow; Ctrl-C stops
+  watching, not the concert. An agent conductor pipes it, which ends at settle, or uses `maestro wait`. With `--json`,
+  or without a terminal and without `--events`, it prints a JSON Lines stream, a line per instance state change (per
+  event with `--events --json`), ending with the concert document, a `{"type":"concert",...}` line holding
+  `wait --json`'s. `--events` without `--json` prints an aligned text line per event instead. It takes no timeout: bound
+  it below your tool call's limit with `timeout 90s maestro watch <id>`, which exits 124.
 
 ## Records
 
 `maestro ls <id>` lists the concert's node instances: instance, status, `stale`, reason.
 
-- Rows come in graph order, as `watch` draws them: scopes, groups and loop rounds nest, and one node's expansions keep
-  the order they started in. `--json` lists `instances` in the same order.
+- Rows come in graph order, every instance: scopes, groups and loop rounds nest, and one node's expansions keep the
+  order they started in. `--json` lists `instances` in the same order.
 - Instance names show their place in groups: `loop[0]/repair` is the first repair of a loop, `parMap[risk]/skeptic` the
   skeptic of item `risk`.
 - `stale` marks a row an earlier attempt of a resumed concert left, which the resume neither reused nor replaced.
@@ -128,7 +129,8 @@ What SKILL.md's Recover section leaves out:
   (wait or kill it first) and for one that settled `ok` (perform the composition as a new concert). The code it needs is
   the pack or file it was performed from, still at the same path. A resume runs the graph recorded at first perform, so
   an edit adds or removes no node; its code nodes load from the file as it is now, and their hash covers the whole
-  bundle, so any edit reruns every code node and what depends on it. After editing a composition, perform a new concert.
+  bundle (ADR 0008), so any edit to the composition file reruns every code node, and dependents rerun when their inputs
+  changed. After editing a composition, perform a new concert.
 - **Kill** waits up to 10 s for the concert to settle `failed` ("the concert was cancelled"). A concert whose process
   died without settling is marked `failed` ("process exited") when the record is next read.
 - **Prune** selects by id, or by the filters in `prune --help`. The lane refs into a pruned concert go with it. It asks

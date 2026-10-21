@@ -6,20 +6,18 @@ import {
 	COMMON,
 	type Command,
 	FILTER_OPTIONS,
+	filterOf,
 	isSet,
 	type Options,
 	textOf,
 	type Values,
 } from "./command";
 import {
-	compositionOf,
 	EXIT,
 	formatBytes,
 	jsonOf,
 	parseDuration,
-	parseTour,
 	STATUSES,
-	statusOf,
 	stillRunning,
 	usageError,
 } from "./output";
@@ -61,23 +59,17 @@ const FILTER_FLAGS = [
 ] as const;
 
 /**
- * The `store.concerts` filter of `--tour`, `--workspace`, `--status` and `--composition`.
+ * The filter of the prune flags.
  * @throws CliError, a usage error, for a bad filter value or `--status running`.
  */
-function filterOf(values: Values): ConcertFilter {
-	const tour = textOf(values, "tour");
-	const status = statusOf(textOf(values, "status"));
-	if (status === "running")
+function prunable(values: Values): ConcertFilter {
+	const filter = filterOf(values);
+	if (filter.status === "running")
 		throw usageError(
 			"--status running cannot be pruned, a running concert has not settled",
 			"Pick another status, or stop the concert with 'maestro kill <concert>' first",
 		);
-	return {
-		tour: tour === undefined ? undefined : parseTour("--tour", tour),
-		workspace: textOf(values, "workspace"),
-		status,
-		...compositionOf(textOf(values, "composition")),
-	};
+	return filter;
 }
 
 /**
@@ -108,7 +100,7 @@ function selected({ store, values, positionals }: Stored): ConcertRecord[] {
 			? Number.POSITIVE_INFINITY
 			: Date.now() - parseDuration("--before", before);
 	return store
-		.concerts(filterOf(values))
+		.concerts(prunable(values))
 		.filter((c) => c.settledAt !== undefined && c.settledAt < cutoff);
 }
 
