@@ -117,7 +117,8 @@ Exits 3, 124 (a timeout), 127 (command not found) and 137 (killed) read as a bro
 | `stub`   | any string; `none` by convention                 | ignored                |
 
 maestro passes model and thinking through unchecked, so confirm an id with the harness's own CLI. A composition may
-override a role's harness, model or thinking per agent.
+override a role's harness, model or thinking per agent. Per field, `--profile` and `-c` beat the composition's override,
+which beats the config file, so `--profile stub` always means no spend.
 
 ### Profiles
 

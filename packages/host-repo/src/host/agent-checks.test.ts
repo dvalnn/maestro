@@ -151,6 +151,7 @@ describe("agent-runnable checks and attachments", () => {
 					checks: { open: "true", capped: { run: "true", timeout: "2s" } },
 				},
 			},
+			commandLine: { values: {}, replaced: [] },
 			store: "",
 		}).target;
 		expect(target?.checks.open?.timeout).toBeUndefined();

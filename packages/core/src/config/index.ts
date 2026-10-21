@@ -45,6 +45,8 @@ export type KeyPath = readonly string[];
 export type Composed = {
 	values: Readonly<Record<string, unknown>>;
 	sources: readonly { path: KeyPath; source: Source }[];
+	/** The mappings a `--profile` or `-c` layer replaced whole with `!replace`, which no layer above merged back into. */
+	replaced?: readonly KeyPath[];
 };
 
 type Item = { value: unknown; source: Source };
@@ -378,21 +380,33 @@ export const valuesLayer = (
 	source: Source,
 ): Layer => treeOfValue(values, source) as Layer;
 
+const COMMAND_LINE: readonly LayerName[] = ["profile", "flag"];
+
+function mergedMap(
+	beneath: Merged | undefined,
+	top: MapOf<Tagged>,
+	path: KeyPath,
+): Merged {
+	const under = beneath?.kind === "map" ? beneath : undefined;
+	const replaced = top.replace || under?.replace === true;
+	return {
+		...top,
+		entries: mergedEntries(
+			under && !top.replace ? under.entries : new Map(),
+			top.entries,
+			path,
+		),
+		replace: replaced && COMMAND_LINE.includes(top.source.layer),
+	};
+}
+
 function merged(
 	beneath: Merged | undefined,
 	top: Exclude<Tagged, Deletion>,
 	path: KeyPath,
 ): Merged {
 	if (top.kind === "scalar") return top;
-	if (top.kind === "map") {
-		const base =
-			beneath?.kind === "map" && !top.replace ? beneath.entries : new Map();
-		return {
-			...top,
-			entries: mergedEntries(base, top.entries, path),
-			replace: false,
-		};
-	}
+	if (top.kind === "map") return mergedMap(beneath, top, path);
 	if (!top.append || beneath === undefined) return { ...top, append: false };
 	if (beneath.kind !== "list")
 		throw tagError(
@@ -447,6 +461,16 @@ function sourcesOf(tree: Merged, path: KeyPath): Composed["sources"] {
 	);
 }
 
+function replacedOf(tree: Merged, path: KeyPath): KeyPath[] {
+	if (tree.kind !== "map") return [];
+	return [
+		...(tree.replace ? [path] : []),
+		...[...tree.entries].flatMap(([key, sub]) =>
+			replacedOf(sub, [...path, key]),
+		),
+	];
+}
+
 /**
  * Merges `layers`, lowest first: mappings by key, any other value replaced whole, as the merge tags say.
  * @throws ConfigError on a `!delete` of a key nothing beneath sets, or an `!append` over a value that is not a list.
@@ -464,7 +488,39 @@ export function layered(layers: readonly Layer[]): Composed {
 	return {
 		values: plainOf(root) as Record<string, unknown>,
 		sources: entries.size ? sourcesOf(root, []) : [],
+		replaced: replacedOf(root, []),
 	};
+}
+
+const valueAt = (root: unknown, path: KeyPath) =>
+	path.reduce<unknown>((at, key) => (isRecord(at) ? at[key] : undefined), root);
+
+function setAt(root: Record<string, unknown>, path: KeyPath, value: unknown) {
+	let at = root;
+	for (const key of path.slice(0, -1)) {
+		if (!isRecord(at[key])) at[key] = {};
+		at = at[key] as Record<string, unknown>;
+	}
+	at[path[path.length - 1] as string] = value;
+}
+
+/** The part of a config the `--profile` and `-c` layers set. */
+export type CommandLine = {
+	/** Their values at their key paths; a list comes whole, never by item. */
+	values: Record<string, unknown>;
+	/** The mappings they replaced whole with `!replace`. */
+	replaced: readonly KeyPath[];
+};
+
+/** The part of `config` that the `--profile` and `-c` layers set, and nothing a file or default set. */
+export function commandLineOf(config: Composed): CommandLine {
+	const values: Record<string, unknown> = {};
+	for (const { path, source } of config.sources) {
+		const item = Array.isArray(valueAt(config.values, path.slice(0, -1)));
+		if (COMMAND_LINE.includes(source.layer) && path.length && !item)
+			setAt(values, path, valueAt(config.values, path));
+	}
+	return { values, replaced: config.replaced ?? [] };
 }
 
 const within = (outer: KeyPath, inner: KeyPath) =>

@@ -28,9 +28,10 @@ The shape is:
 - **`paths` is optional and lists the `config` keys that hold file paths**, namespace first, which the CLI anchors to
   the workspace root, or to the user file's directory for a value in the user file.
 - **A setup goes to `validate`, `environment`, `resources.release` and `resources.usage`**, and to `execute` through
-  `HostContext.setup`. It holds the values of the config namespaces the host owns, as compose checked them, and its
-  store, `<data root>/hosts/<host name>`. The host creates its store on first write, so core holds no host directory a
-  host never uses.
+  `HostContext.setup`. It holds the values of the config namespaces the host owns, as compose checked them, the part of
+  them the profile and `-c` layers set (`commandLine`, at its key paths), and its store,
+  `<data root>/hosts/<host name>`. The host creates its store on first write, so core holds no host directory a host
+  never uses.
 - **No host version, and no host range in a pack manifest.** Hosts ship inside the binary, and the `sdk` range a pack
   declares pins them. The interface is frozen for V1 as an exercise, not as a promise to third parties.
 

@@ -135,10 +135,12 @@ describe("compose", () => {
 		expect(seen).toEqual({
 			fake: {
 				config: { fake: { retries: 2 } },
+				commandLine: { values: {}, replaced: [] },
 				store: `${DATA_ROOT}/hosts/fake`,
 			},
 			other: {
 				config: { other: { depth: 1 } },
+				commandLine: { values: {}, replaced: [] },
 				store: `${DATA_ROOT}/hosts/other`,
 			},
 		});

@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
@@ -131,6 +131,92 @@ test("a malformed MAESTRO_STUB_DELAY fails the stub agent, naming it", async () 
 	const done = await w.call(["perform", await smokeFile()]);
 	expect(done.code).not.toBe(0);
 	expect(done.out + done.err).toContain("MAESTRO_STUB_DELAY");
+});
+
+/** A composition whose agent pins an unloaded harness inline, after a code node that fails while `gate` is missing. */
+async function pinned(gate = "/"): Promise<string> {
+	const file = join(await scratch(), "pinned.ts");
+	writeFileSync(
+		file,
+		`import { existsSync } from "node:fs";
+import { agent, check, fresh, read } from "@maestro/host-repo-sdk";
+import { code, composition, Text } from "@maestro/sdk";
+
+export function opened() {
+	if (!existsSync("${gate}")) throw new Error("gate closed");
+	return { text: "go" };
+}
+
+export const pinned = composition("pinned", { examples: [{}] }, () => {
+	const gate = code(opened, { in: {}, out: { text: Text() } });
+	const a = agent({
+		label: "a",
+		task: gate.out.text,
+		lane: fresh(),
+		role: { name: "smoke", harness: "gone", model: "pinned" },
+	});
+	return check(read(a.out.lane), { run: "true" }, { label: "ok" });
+});
+`,
+	);
+	return file;
+}
+
+const SMOKE_ROLE = (harness: string, model = "none") =>
+	`roles:\n  smoke:\n    harness: ${harness}\n    model: ${model}\n`;
+
+describe("role precedence", () => {
+	test("a role field on the command line beats the inline one, which beats the file's, per field", async () => {
+		const w = await repoWorld(SMOKE_ROLE("gone"));
+		const file = await pinned();
+		await Bun.write(
+			join(w.cwd, ".maestro/profiles/free.yaml"),
+			"roles:\n  smoke:\n    harness: stub\n",
+		);
+		const refused = await w.call([
+			"perform",
+			file,
+			"-c",
+			"roles.smoke.model=x",
+		]);
+		expect(refused).toMatchObject({ code: 2 });
+		expect(refused.err).toContain("harness 'gone', which is not loaded");
+		for (const flags of [
+			["--profile", "free"],
+			["-c", "roles.smoke.harness=stub"],
+		])
+			expect(await w.call(["perform", file, ...flags])).toMatchObject({
+				code: 0,
+			});
+	});
+
+	test("an inline harness beats the config file's", async () => {
+		const w = await repoWorld(SMOKE_ROLE("gone"));
+		const file = await pinned();
+		writeFileSync(file, readFileSync(file, "utf8").replace('"gone"', '"stub"'));
+		expect(await w.call(["perform", file])).toMatchObject({ code: 0 });
+	});
+
+	test("a resume reapplies the recorded profile over the inline role", async () => {
+		const w = await repoWorld(SMOKE_ROLE("gone"));
+		const gate = join(w.cwd, "gate");
+		await Bun.write(
+			join(w.cwd, ".maestro/profiles/free.yaml"),
+			"roles:\n  smoke:\n    harness: stub\n",
+		);
+		const failed = await w.call([
+			"perform",
+			await pinned(gate),
+			"--profile",
+			"free",
+		]);
+		expect(failed).toMatchObject({ code: 1 });
+		expect(failed.err).toContain("gate closed");
+		writeFileSync(gate, "");
+		expect(await w.call(["perform", "--resume", idOf(failed)])).toMatchObject({
+			code: 0,
+		});
+	});
 });
 
 /** Each real harness behind its gate: the agent's identity and file, and the metrics it reports. */

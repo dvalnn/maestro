@@ -26,7 +26,11 @@ const node: HostNode = {
 	in: { prompt: { type: "string" } },
 	out: { text: { type: "string" } },
 };
-const setup: HostSetup = { config: {}, store: "/data/hosts/fake" };
+const setup: HostSetup = {
+	config: {},
+	commandLine: { values: {}, replaced: [] },
+	store: "/data/hosts/fake",
+};
 const emitted: HostEvent[] = [];
 const context: HostContext = {
 	concert: "c1",

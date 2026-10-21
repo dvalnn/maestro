@@ -25,17 +25,23 @@ const host = (
 	environment: () => ({}),
 });
 
-test("a host's setup holds its own config namespaces and store, and no other's", () => {
+test("a host's setup holds its own config namespaces, their command-line part and store, and no other's", () => {
 	const config = {
 		values: { a: { n: 1 }, b: { n: 2 }, dataRoot: "/data" },
-		sources: [],
+		sources: [
+			{ path: ["a", "n"], source: { layer: "workspace" as const } },
+			{ path: ["b", "n"], source: { layer: "flag" as const } },
+		],
+		replaced: [["b"]],
 	};
 	expect(hostSetup(host("a", ["a", "unset"]), config)).toEqual({
 		config: { a: { n: 1 }, unset: {} },
+		commandLine: { values: {}, replaced: [] },
 		store: "/data/hosts/a",
 	});
 	expect(hostSetup(host("b", ["b"]), config)).toEqual({
 		config: { b: { n: 2 } },
+		commandLine: { values: { b: { n: 2 } }, replaced: [["b"]] },
 		store: "/data/hosts/b",
 	});
 });

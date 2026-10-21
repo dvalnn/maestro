@@ -163,8 +163,8 @@ A host is a package that the core loads. It is the only way node kinds beyond th
    (ADR 0007).
 6. **Config namespaces.** Schemas for the namespaces the host owns. A **setup** goes to `validate`, `environment`,
    `resources.release` and `resources.usage`, and to `execute` as `context.setup`. It holds the values of the host's own
-   namespaces as compose checked them, and its store, `<data root>/hosts/<host name>`, which the host creates on first
-   write.
+   namespaces as compose checked them, the part of them the profile and `-c` layers set (`commandLine`, at its key
+   paths), and its store, `<data root>/hosts/<host name>`, which the host creates on first write.
 7. **Event enrichment.** Extra fields added to events and the record for its node kinds, when an instance settles, and
    progress events emitted while it executes, such as an agent's tool calls and thinking (CORE-10). The core stores them
    opaquely.
@@ -305,10 +305,11 @@ A resume runs every instance that is not a reusable `ok` again, from `pending`.
 
 Params and config resolve, highest precedence first (CFG-04, D-17): the use site for a subcomposition or the CLI flag
 for a root composition, then each `-c <key>=<value>` flag, last first, then profile, workspace and user YAML, then, for
-`compose`, the example set (D-19), then the declared default. A composition's YAML keys live under its pack id and then
-its composition id. Hosts keep pure-config namespaces. Files are YAML. A relative path value in a workspace or profile
-file or a `-c` is relative to the workspace root, the directory that holds `.maestro/`, and in the user file to its own
-directory. The core:
+`compose`, the example set (D-19), then the declared default. A role's fields are the exception: the command line
+(`--profile`, `-c`) beats the composition's inline role fields, which beat the config files' `roles`, field by field
+(see `docs/rulings.md`). A composition's YAML keys live under its pack id and then its composition id. Hosts keep
+pure-config namespaces. Files are YAML. A relative path value in a workspace or profile file or a `-c` is relative to
+the workspace root, the directory that holds `.maestro/`, and in the user file to its own directory. The core:
 
 - parses and layers them,
 - validates the closed **core config** schema (CFG-01),

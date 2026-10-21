@@ -2536,12 +2536,17 @@ test("each host gets its own config namespaces and store in environment and exec
 	await concert.done;
 	const fake = {
 		config: { fake: { retries: 2 } },
+		commandLine: { values: {}, replaced: [] },
 		store: join(dir, "hosts/fake"),
 	};
 	expect(seen).toEqual({
 		fake,
 		execute: fake,
-		other: { config: { other: { depth: 1 } }, store: join(dir, "hosts/other") },
+		other: {
+			config: { other: { depth: 1 } },
+			commandLine: { values: {}, replaced: [] },
+			store: join(dir, "hosts/other"),
+		},
 	});
 });
 

@@ -96,7 +96,7 @@ From `@maestro/host-repo-sdk`:
 that rules on work, `ok` or `rejected`), `attachments` (`{ name: { artifact, hint } }`, each mounted read-only at
 `/in/<name>`, `hint` saying when to read it), `out` (declared outputs), `checks` (names from `target.checks` the agent
 may run with its `check <name>` command) and `readOnly` (absolute host paths). `role` is a role name, or
-`{ name, harness?, model?, thinking? }` to override it.
+`{ name, harness?, model?, thinking? }` to override it; a `--profile` or `-c` role field beats an inline one.
 
 An agent ending `ok` must write every declared file, valid, or the instance fails. Only a verdict agent rejects, and one
 that rejects without its declared files ends `rejected` with no outputs. Any agent may report itself blocked: it ends

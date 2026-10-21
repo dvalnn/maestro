@@ -434,7 +434,7 @@ async function execute(
 ): Promise<HostNodeResult> {
 	const setup = repoSetup(context.setup);
 	const config = agentConfig(instance.node.config);
-	const role = resolveRole(config.role, setup.roles);
+	const role = resolveRole(config.role, setup);
 	const harness = harnesses.find((h) => h.name === role.harness);
 	if (!harness)
 		throw new Error(

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { availableParallelism } from "node:os";
 import {
 	ConfigError,
+	commandLineOf,
 	coreConfig,
 	coreDefaults,
 	type LayerName,
@@ -170,6 +171,18 @@ describe("provenance", () => {
 			3,
 			undefined,
 		]);
+	});
+});
+
+test("the command-line values are the leaves a profile or -c set, a list whole, and no file's", () => {
+	const config = layered([
+		parse("roles: {a: {harness: h, model: m}}\nlist: [1]\nkeep: 1"),
+		parse("roles: {a: {harness: stub}}\nlist: [2, 3]", USER, "profile"),
+		parse("roles: {b: {model: z}}", USER, "flag"),
+	]);
+	expect(commandLineOf(config).values).toEqual({
+		roles: { a: { harness: "stub" }, b: { model: "z" } },
+		list: [2, 3],
 	});
 });
 

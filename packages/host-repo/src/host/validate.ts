@@ -27,6 +27,7 @@ import {
 	LANE_PORT,
 	listed,
 	type RepoSetup,
+	roleFields,
 	useOneOf,
 } from "./config";
 
@@ -76,9 +77,7 @@ function laneSource(graph: GraphIndex, node: HostNode): LaneSource | undefined {
 
 /** The harness the role of an agent node runs on, when config has that role. */
 const harnessOf = (r: RepoNode, setup: RepoSetup) =>
-	r.kind === "agent"
-		? (r.config.role.harness ?? setup.roles[r.config.role.name]?.harness)
-		: undefined;
+	r.kind === "agent" ? roleFields(r.config.role, setup).harness : undefined;
 
 /** Why `node` cannot extend `source`, a lane ref or a commits node's version, which only a fork or a read can take. */
 function unextendable(

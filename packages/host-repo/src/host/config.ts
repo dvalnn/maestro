@@ -102,6 +102,15 @@ export const HOST_CONFIG = {
 	},
 } as const satisfies Record<string, JsonSchema>;
 
+/** The schema of the role fields the command line sets: those of `roles`, none required. */
+const COMMAND_ROLES = {
+	type: "object",
+	additionalProperties: {
+		...HOST_CONFIG.roles.additionalProperties,
+		required: [],
+	},
+} as const satisfies JsonSchema;
+
 /** The lane input schema for a node that may take the modes `others` beside `fresh`. */
 const laneInput = (others: readonly string[]) =>
 	({
@@ -312,6 +321,10 @@ export type RepoSetup = {
 	store: string;
 	target?: Target;
 	roles: Record<string, Role>;
+	/** The fields of `roles` that `--profile` and `-c` set, which outrank a composition's inline role fields. */
+	commandRoles: Record<string, Partial<Role>>;
+	/** The key paths `--profile` and `-c` replaced whole with `!replace`. */
+	commandReplaced: readonly KeyPath[];
 	readOnly: string[];
 };
 
@@ -382,6 +395,12 @@ export function repoSetup(setup: HostSetup): RepoSetup {
 		store: setup.store,
 		target: targetOf(namespace<RawSetup["target"]>("target")),
 		roles: namespace<RawSetup["roles"]>("roles") ?? {},
+		commandRoles: parsed(
+			COMMAND_ROLES,
+			setup.commandLine.values.roles ?? {},
+			"roles",
+		),
+		commandReplaced: setup.commandLine.replaced,
 		readOnly: namespace<RawSetup["sandbox"]>("sandbox")?.readOnly ?? [],
 	};
 }
@@ -445,19 +464,41 @@ export const useOneOf = (names: string[], add: string) =>
 export const listed = (names: Iterable<string>) =>
 	[...names].map((n) => `'${n}'`).join(", ") || "none";
 
+const own = <T>(record: Record<string, T>, key: string): T | undefined =>
+	Object.hasOwn(record, key) ? record[key] : undefined;
+
 /**
- * The role `config` names, with its overrides laid over it.
- * @throws Error when `roles` has no role of that name, listing those it has.
+ * The fields `role` resolves to: the config file's role of its name, then its inline fields, then the command line's
+ * fields of that role. Each field comes from the highest of those that sets it, and a role the command line replaced
+ * whole has no inline fields.
+ */
+export const roleFields = (
+	role: AgentConfig["role"],
+	setup: RepoSetup,
+): Partial<Role> => {
+	const { name, ...pinned } = role;
+	const replaced = setup.commandReplaced.some(
+		(path) => path[0] === "roles" && (path.length === 1 || path[1] === name),
+	);
+	const inline = replaced ? {} : pinned;
+	return {
+		...own(setup.roles, name),
+		...inline,
+		...own(setup.commandRoles, name),
+	};
+};
+
+/**
+ * The role `config` names, resolved as `roleFields` says.
+ * @throws Error when `setup.roles` has no role of that name, listing those it has.
  */
 export function resolveRole(
 	config: AgentConfig["role"],
-	roles: Record<string, Role>,
+	setup: RepoSetup,
 ): Role {
-	const { name, ...overrides } = config;
-	const role = Object.hasOwn(roles, name) ? roles[name] : undefined;
-	if (!role)
+	if (!own(setup.roles, config.name))
 		throw new Error(
-			`role '${name}' is not in config 'roles'. ${useOneOf(Object.keys(roles), "Add it under 'roles'")}`,
+			`role '${config.name}' is not in config 'roles'. ${useOneOf(Object.keys(setup.roles), "Add it under 'roles'")}`,
 		);
-	return { ...role, ...overrides };
+	return roleFields(config, setup) as Role;
 }

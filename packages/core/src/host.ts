@@ -10,7 +10,12 @@ import type {
 	JsonSchema,
 	Ports,
 } from "@maestro/ir";
-import type { Composed, KeyPath } from "./config";
+import {
+	type CommandLine,
+	type Composed,
+	commandLineOf,
+	type KeyPath,
+} from "./config";
 import type { Inputs, NodeResult } from "./node";
 
 type Awaitable<T> = T | Promise<T>;
@@ -43,12 +48,15 @@ const HOSTS_DIR = "hosts";
 export type HostSetup = {
 	/** The values of the namespaces the host declares in `Host.config`, as compose checked them. An unset one is `{}`. */
 	readonly config: Readonly<Record<string, unknown>>;
+	/** The part of `config` the profile and `-c` layers set, at its key paths. */
+	readonly commandLine: CommandLine;
 	/** `<data root>/hosts/<host name>`: the host's own directory. Core never creates it, so the host does on first write. */
 	readonly store: string;
 };
 
 /**
- * The setup of `host` under `config`: its own config namespaces and its store under the config's `dataRoot`, no other's.
+ * The setup of `host` under `config`: its own config namespaces, the part of them the profile and `-c` layers set, and
+ * its store under the config's `dataRoot`, no other's.
  * @throws Error when `config` has no `dataRoot`, which core config always sets.
  */
 export function hostSetup(host: Host, config: Composed): HostSetup {
@@ -59,8 +67,17 @@ export function hostSetup(host: Host, config: Composed): HostSetup {
 		ns,
 		Object.hasOwn(config.values, ns) ? config.values[ns] : {},
 	]);
+	const { values, replaced } = commandLineOf(config);
+	const owned = (path: KeyPath) =>
+		path[0] !== undefined && Object.hasOwn(host.config, path[0]);
 	return {
 		config: Object.fromEntries(namespaces),
+		commandLine: {
+			values: Object.fromEntries(
+				Object.entries(values).filter(([ns]) => Object.hasOwn(host.config, ns)),
+			),
+			replaced: replaced.filter(owned),
+		},
 		store: join(dataRoot, HOSTS_DIR, host.name),
 	};
 }

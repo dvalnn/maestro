@@ -138,6 +138,10 @@ maestro perform demo.greet --name x -c concurrency=2 -c 'packs=!append [../b]' -
 maestro perform demo.greet --name x -c 'roles.reviewer=!replace {harness: stub, model: none}' -c 'target.checks."a.b"=x'
 ```
 
+A role's fields resolve per field, highest first: `--profile` and `-c`, then the composition's inline role fields
+(`agent({ role: { name, harness, model } })`), then the config files' `roles`. So `--profile stub` always means no
+spend, while `-c roles.builder.model=haiku` changes only the model. A resume applies the same order.
+
 A concert's record keeps its `--profile` and each `-c` as typed, and `ls <concert> --json` shows them as `profile` and
 `config`. Keep secrets out of `-c`: set them in `$XDG_CONFIG_HOME/maestro/.env`.
 

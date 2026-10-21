@@ -315,7 +315,8 @@ bundle it.
 ¹ `agent` also takes `identity`, `verdict`, `attachments` (each `{ artifact, hint }`), `out`, `checks`, `readOnly` and
 the common options. `verdict: true` marks a verdict agent, which may reject; any other agent finishes or is blocked
 (architecture 12). An attachment named `prompt`, `identity` or `lane`, or an output named `lane`, `report` or `staged`,
-is a build error: the host refuses the same names. `role` is a role name or `{ name, harness?, model?, thinking? }`.
+is a build error: the host refuses the same names. `role` is a role name or `{ name, harness?, model?, thinking? }`; a
+`--profile` or `-c` role field beats an inline one.
 
 ² A seat takes `role`, `identity`, `verdict`, `attachments`, `out`, `checks` and `readOnly`. A call takes `task`, `lane`
 and the common options, and may override the role and add attachments, outputs, checks and read-only binds: its role
@@ -461,6 +462,8 @@ fanout = composition("build_fanout", Params, ({ models }, { prompt, run }) =>
   firstOk(models.map((model, i) => attempt(model, i, prompt, run).out.lane)),
 );
 ```
+
+A `--profile` or `-c` model for that role beats each try's model, so every try then runs on that model.
 
 **Lens, skeptic, consolidator** (the shape shared by four legacy chains; the roles' models in config should come from
 different families):

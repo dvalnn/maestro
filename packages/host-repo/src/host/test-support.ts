@@ -272,6 +272,7 @@ export function configOf(target: string, extra: Record<string, unknown> = {}) {
 
 export const setupOf = (config: ReturnType<typeof configOf>): HostSetup => ({
 	config: { target: config.values.target, roles: config.values.roles },
+	commandLine: { values: {}, replaced: [] },
 	store: join(config.values.dataRoot, "hosts", "repo"),
 });
 
