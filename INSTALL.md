@@ -14,37 +14,47 @@ Nothing is published to a public registry.
 
 Running maestro needs no Bun.
 
-## 2. Download and verify
-
-Download the release assets into one directory and check them:
+## 2. Install
 
 ```sh
-sha256sum -c --ignore-missing SHA256SUMS
+curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | sh
 ```
 
-| Asset                                                                                          | Holds                                |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `maestro-linux-x64`                                                                            | The binary.                          |
-| `classics-<version>.tar.gz`                                                                    | The classics pack.                   |
-| `maestro-skill.tar.gz`                                                                         | The maestro skill.                   |
-| `maestro-ir-<version>.tgz`, `maestro-sdk-<version>.tgz`, `maestro-host-repo-sdk-<version>.tgz` | The packages for authoring (step 6). |
-| `SHA256SUMS`                                                                                   | The checksums.                       |
+The script installs the newest release, prereleases included, and the same command updates an installed maestro.
+`MAESTRO_VERSION=<tag>` installs that release instead. It needs `curl` and `sha256sum`, checks every asset against
+`SHA256SUMS` before touching anything, and refuses while a concert is running: wait for it to settle, or
+`maestro kill <id>`.
 
-## 3. Install
+| Installed                                 | Where                                   |
+| ----------------------------------------- | --------------------------------------- |
+| The binary                                | `~/.local/bin/maestro`                  |
+| The classics pack                         | `$XDG_DATA_HOME/maestro/packs/classics` |
+| The maestro skill                         | `~/.claude/skills/maestro`              |
+| The three package tarballs, for authoring | `$XDG_DATA_HOME/maestro/sdk/`           |
+
+`XDG_DATA_HOME` defaults to `~/.local/share`. The pack and skill directories are replaced, and older package tarballs
+removed. `~/.local/bin` must be on `PATH`, and the script warns when it is not. If `maestro --version` prints something
+else, another `maestro` comes first.
+
+Every directory in `$XDG_DATA_HOME/maestro/packs` is a pack, and no `packs` entry in config is needed. `maestro rep`
+lists the installed packs and their compositions.
+
+## 3. Install by hand
+
+The fallback when the script cannot run. Download the assets of a release into one directory, then:
 
 ```sh
+sha256sum -c SHA256SUMS
 install -D -m 755 maestro-linux-x64 ~/.local/bin/maestro
-maestro --version
-mkdir -p ~/.local/share/maestro/packs
-tar -xzf classics-0.1.0-beta.1.tar.gz -C ~/.local/share/maestro/packs
-mkdir -p ~/.claude/skills
+data="${XDG_DATA_HOME:-$HOME/.local/share}/maestro"
+rm -rf "$data/packs/classics" ~/.claude/skills/maestro
+mkdir -p "$data/packs" "$data/sdk" ~/.claude/skills
+tar -xzf classics-*.tar.gz -C "$data/packs"
 tar -xzf maestro-skill.tar.gz -C ~/.claude/skills
+cp maestro-*.tgz "$data/sdk/"
 ```
 
-`~/.local/bin` must be on `PATH`. If `maestro --version` prints something else, another `maestro` comes first.
-
-Extracting the pack into `~/.local/share/maestro/packs` (`$XDG_DATA_HOME/maestro/packs`) installs it: every directory
-there is a pack, and no `packs` entry is needed. `maestro rep` lists the installed packs and their compositions.
+A relative `XDG_DATA_HOME` is ignored, by the script and by maestro, which use `~/.local/share` instead.
 
 ## 4. Configure
 
@@ -119,10 +129,7 @@ maestro perform classics.build_then_repair --request "<what to build>"
 
 ## 5. Upgrade
 
-1. Let running concerts settle, or `maestro kill` them.
-2. Reinstall the binary over the old one.
-3. Replace the pack and skill directories: `rm -rf` the old directory, then extract, so removed files do not linger.
-4. Config stays.
+Run the install command again, after letting running concerts settle or stopping them with `maestro kill`. Config stays.
 
 A record with a changed schema is refused with a message naming `record.db`: move it aside, as the message says. A pack
 with a new code hash makes a resumed concert rerun its code nodes.
@@ -130,19 +137,20 @@ with a new code hash makes a resumed concert rerun its code nodes.
 ## 6. Authoring packs (needs Bun)
 
 A `package.json` takes the three package tarballs as `file:` dependencies, and the same three under `overrides`, so no
-`@maestro/*` package is fetched from a registry:
+`@maestro/*` package is fetched from a registry. The paths are absolute, `~` is not expanded, and name the tarballs the
+install put in `$XDG_DATA_HOME/maestro/sdk/`:
 
 ```json
 {
   "dependencies": {
-    "@maestro/ir": "file:/abs/path/maestro-ir-0.1.0-beta.1.tgz",
-    "@maestro/sdk": "file:/abs/path/maestro-sdk-0.1.0-beta.1.tgz",
-    "@maestro/host-repo-sdk": "file:/abs/path/maestro-host-repo-sdk-0.1.0-beta.1.tgz"
+    "@maestro/ir": "file:/home/me/.local/share/maestro/sdk/maestro-ir-0.1.0-beta.1.tgz",
+    "@maestro/sdk": "file:/home/me/.local/share/maestro/sdk/maestro-sdk-0.1.0-beta.1.tgz",
+    "@maestro/host-repo-sdk": "file:/home/me/.local/share/maestro/sdk/maestro-host-repo-sdk-0.1.0-beta.1.tgz"
   },
   "overrides": {
-    "@maestro/ir": "file:/abs/path/maestro-ir-0.1.0-beta.1.tgz",
-    "@maestro/sdk": "file:/abs/path/maestro-sdk-0.1.0-beta.1.tgz",
-    "@maestro/host-repo-sdk": "file:/abs/path/maestro-host-repo-sdk-0.1.0-beta.1.tgz"
+    "@maestro/ir": "file:/home/me/.local/share/maestro/sdk/maestro-ir-0.1.0-beta.1.tgz",
+    "@maestro/sdk": "file:/home/me/.local/share/maestro/sdk/maestro-sdk-0.1.0-beta.1.tgz",
+    "@maestro/host-repo-sdk": "file:/home/me/.local/share/maestro/sdk/maestro-host-repo-sdk-0.1.0-beta.1.tgz"
   }
 }
 ```

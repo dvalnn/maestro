@@ -35,6 +35,7 @@ release: check pack
       -C "$build" classics
     tar -czf dist/maestro-skill.tar.gz --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C skills maestro
     (cd dist && sha256sum * > SHA256SUMS)
+    cp install.sh dist/install.sh
     scripts/smoke-install.sh dist
 
 # build a pack into its dist/
