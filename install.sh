@@ -4,6 +4,8 @@
 set -eu
 
 FAILURE=1
+INTERRUPTED=130
+TERMINATED=143
 FORGE=https://git.amorimcasa.org
 REPO=tiago/maestro
 REQUIRED_ASSETS="maestro-linux-x64 maestro-skill.tar.gz"
@@ -46,7 +48,7 @@ fetch_assets() {
   for asset in $REQUIRED_ASSETS; do
     [ -f "$asset" ] || fail "SHA256SUMS does not list $asset" "Pin a release that has it with MAESTRO_VERSION=<tag>"
   done
-  ls classics-*.tar.gz maestro-ir-*.tgz maestro-sdk-*.tgz maestro-host-repo-sdk-*.tgz >/dev/null 2>&1 ||
+  ls classics-*.tar.gz maestro-ir-[0-9]*.tgz maestro-sdk-[0-9]*.tgz maestro-host-repo-sdk-[0-9]*.tgz >/dev/null 2>&1 ||
     fail "SHA256SUMS does not list the classics pack or the sdk tarballs" "Pin a release that has them with MAESTRO_VERSION=<tag>"
   sha256sum -c --quiet SHA256SUMS >&2 || fail "the downloaded assets do not match SHA256SUMS" "Run this again, and report it if it persists"
 }
@@ -55,7 +57,7 @@ fetch_assets() {
 refuse_while_running() {
   [ -x "$bin_dir/maestro" ] || return 0
   status=0
-  listing=$("$bin_dir/maestro" ls --status running --json) || status=$?
+  listing=$(cd "$start_dir" && "$bin_dir/maestro" ls --status running --json) || status=$?
   [ "$status" -eq 0 ] ||
     fail "cannot list concerts with $bin_dir/maestro" "Fix the error above, then run this again"
   running=$(printf '%s\n' "$listing" | sed -n 's/^ *"id": "\([^"]*\)".*/\1/p')
@@ -74,8 +76,10 @@ install_assets() {
   rm -rf "$data_dir/packs/classics" "$skill_dir/maestro"
   tar -xzf classics-*.tar.gz -C "$data_dir/packs"
   tar -xzf maestro-skill.tar.gz -C "$skill_dir"
-  rm -f "$data_dir"/sdk/maestro-ir-*.tgz "$data_dir"/sdk/maestro-sdk-*.tgz "$data_dir"/sdk/maestro-host-repo-sdk-*.tgz
-  cp maestro-ir-*.tgz maestro-sdk-*.tgz maestro-host-repo-sdk-*.tgz "$data_dir/sdk/"
+  rm -f "$data_dir"/sdk/maestro-*-[0-9]*.tgz
+  for package in ir sdk host-repo-sdk; do
+    cp maestro-"$package"-[0-9]*.tgz "$data_dir/sdk/maestro-$package.tgz"
+  done
 }
 
 main() {
@@ -92,8 +96,11 @@ main() {
   need tar
   need install
 
+  start_dir=$PWD
   tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' EXIT INT TERM
+  trap 'rm -rf "$tmp"' EXIT
+  trap 'exit $INTERRUPTED' INT
+  trap 'exit $TERMINATED' TERM
   cd "$tmp"
 
   tag=${MAESTRO_VERSION:-}

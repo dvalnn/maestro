@@ -20,10 +20,15 @@ Running maestro needs no Bun.
 curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | sh
 ```
 
-The script installs the newest release, prereleases included, and the same command updates an installed maestro.
-`MAESTRO_VERSION=<tag>` installs that release instead. It needs `curl` and `sha256sum`, checks every asset against
-`SHA256SUMS` before touching anything, and refuses while a concert is running: wait for it to settle, or
-`maestro kill <id>`.
+The script installs the newest release, prereleases included, and the same command updates an installed maestro. To pin
+a release, set `MAESTRO_VERSION` to its tag, `v` included, before `sh`:
+
+```sh
+curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_VERSION=v0.1.0-beta.1 sh
+```
+
+The script needs `curl` and `sha256sum`, checks every asset against `SHA256SUMS` before touching anything, and refuses
+while a concert is running: wait for it to settle, or `maestro kill <id>`.
 
 | Installed                                 | Where                                   |
 | ----------------------------------------- | --------------------------------------- |
@@ -32,9 +37,9 @@ The script installs the newest release, prereleases included, and the same comma
 | The maestro skill                         | `~/.claude/skills/maestro`              |
 | The three package tarballs, for authoring | `$XDG_DATA_HOME/maestro/sdk/`           |
 
-`XDG_DATA_HOME` defaults to `~/.local/share`. The pack and skill directories are replaced, and older package tarballs
-removed. `~/.local/bin` must be on `PATH`, and the script warns when it is not. If `maestro --version` prints something
-else, another `maestro` comes first.
+`XDG_DATA_HOME` defaults to `~/.local/share`. The pack and skill directories and the package tarballs are replaced.
+`~/.local/bin` must be on `PATH`, and the script warns when it is not. If `maestro --version` prints something else,
+another `maestro` comes first.
 
 Every directory in `$XDG_DATA_HOME/maestro/packs` is a pack, and no `packs` entry in config is needed. `maestro rep`
 lists the installed packs and their compositions.
@@ -51,7 +56,8 @@ rm -rf "$data/packs/classics" ~/.claude/skills/maestro
 mkdir -p "$data/packs" "$data/sdk" ~/.claude/skills
 tar -xzf classics-*.tar.gz -C "$data/packs"
 tar -xzf maestro-skill.tar.gz -C ~/.claude/skills
-cp maestro-*.tgz "$data/sdk/"
+rm -f "$data"/sdk/maestro-*.tgz
+for package in ir sdk host-repo-sdk; do cp maestro-"$package"-[0-9]*.tgz "$data/sdk/maestro-$package.tgz"; done
 ```
 
 A relative `XDG_DATA_HOME` is ignored, by the script and by maestro, which use `~/.local/share` instead.
@@ -137,23 +143,25 @@ with a new code hash makes a resumed concert rerun its code nodes.
 ## 6. Authoring packs (needs Bun)
 
 A `package.json` takes the three package tarballs as `file:` dependencies, and the same three under `overrides`, so no
-`@maestro/*` package is fetched from a registry. The paths are absolute, `~` is not expanded, and name the tarballs the
-install put in `$XDG_DATA_HOME/maestro/sdk/`:
+`@maestro/*` package is fetched from a registry. The paths are absolute, `~` is not expanded, and name the version-less
+tarballs the install put in `$XDG_DATA_HOME/maestro/sdk/`, which each upgrade replaces in place:
 
 ```json
 {
   "dependencies": {
-    "@maestro/ir": "file:/home/me/.local/share/maestro/sdk/maestro-ir-0.1.0-beta.1.tgz",
-    "@maestro/sdk": "file:/home/me/.local/share/maestro/sdk/maestro-sdk-0.1.0-beta.1.tgz",
-    "@maestro/host-repo-sdk": "file:/home/me/.local/share/maestro/sdk/maestro-host-repo-sdk-0.1.0-beta.1.tgz"
+    "@maestro/ir": "file:/home/me/.local/share/maestro/sdk/maestro-ir.tgz",
+    "@maestro/sdk": "file:/home/me/.local/share/maestro/sdk/maestro-sdk.tgz",
+    "@maestro/host-repo-sdk": "file:/home/me/.local/share/maestro/sdk/maestro-host-repo-sdk.tgz"
   },
   "overrides": {
-    "@maestro/ir": "file:/home/me/.local/share/maestro/sdk/maestro-ir-0.1.0-beta.1.tgz",
-    "@maestro/sdk": "file:/home/me/.local/share/maestro/sdk/maestro-sdk-0.1.0-beta.1.tgz",
-    "@maestro/host-repo-sdk": "file:/home/me/.local/share/maestro/sdk/maestro-host-repo-sdk-0.1.0-beta.1.tgz"
+    "@maestro/ir": "file:/home/me/.local/share/maestro/sdk/maestro-ir.tgz",
+    "@maestro/sdk": "file:/home/me/.local/share/maestro/sdk/maestro-sdk.tgz",
+    "@maestro/host-repo-sdk": "file:/home/me/.local/share/maestro/sdk/maestro-host-repo-sdk.tgz"
   }
 }
 ```
+
+Rerun `bun install` after an upgrade to pick up the new tarballs.
 
 Bundling a pack and writing its manifest are in the skill's `packs.md`.
 

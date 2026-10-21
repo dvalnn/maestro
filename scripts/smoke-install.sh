@@ -34,12 +34,14 @@ grep -q '^maestro ' "$scratch/install.out" || fail "install.sh did not print the
 step "install.sh replaces stale files"
 mkdir -p "$home/.claude/skills/maestro" "$home/.local/share/maestro/packs/classics"
 touch "$home/.claude/skills/maestro/stale" "$home/.local/share/maestro/packs/classics/stale" \
-  "$home/.local/share/maestro/sdk/maestro-ir-0.0.0.tgz"
+  "$home/.local/share/maestro/sdk/maestro-ir-0.0.0.tgz" "$home/.local/share/maestro/sdk/maestro-host-repo-sdk-0.0.0.tgz"
 run_installer "$home" "$dist" >/dev/null 2>"$scratch/install.err" \
   || fail "install.sh over an install exited $?: $(cat "$scratch/install.err")"
 [ ! -e "$home/.claude/skills/maestro/stale" ] || fail "install.sh left a stale skill file"
 [ ! -e "$home/.local/share/maestro/packs/classics/stale" ] || fail "install.sh left a stale pack file"
-[ ! -e "$home/.local/share/maestro/sdk/maestro-ir-0.0.0.tgz" ] || fail "install.sh left an old sdk tarball"
+for old in maestro-ir-0.0.0.tgz maestro-host-repo-sdk-0.0.0.tgz; do
+  [ ! -e "$home/.local/share/maestro/sdk/$old" ] || fail "install.sh left the old sdk tarball $old"
+done
 
 step "install.sh installs nothing from a corrupted asset"
 cp -r "$dist" "$scratch/bad"
@@ -57,7 +59,7 @@ if command -v dash >/dev/null; then
 fi
 
 for package in ir sdk host-repo-sdk; do
-  [ -f "$home/.local/share/maestro/sdk/maestro-$package-$version.tgz" ] || fail "install.sh did not install the $package tarball"
+  [ -f "$home/.local/share/maestro/sdk/maestro-$package.tgz" ] || fail "install.sh did not install the $package tarball"
 done
 if env -i PATH="$home/.local/bin:/usr/bin:/bin" sh -c 'command -v bun' >/dev/null; then
   fail "bun is on the smoke's PATH, so the binary is not shown standalone"
