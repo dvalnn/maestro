@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Plan } from "@maestro/ir";
+import { parseIr } from "@maestro/ir";
 import { listing, render, summary } from "./index";
 
 /** A plan golden of ir, by name. */
@@ -103,7 +104,7 @@ describe("render", () => {
 		const chart = await lines("nested-groups");
 		expect(chart).toContain('  n2 -->|"text to prompt, index to round"| n3');
 		expect(chart.join("\n")).not.toContain("shape: fork");
-		expect(chart).toContain('  n3 -.->|"next"| n2');
+		expect(chart).toContain('  n3 -.->|"next, test"| n2');
 	});
 
 	test("loops a fold back from its step alone", async () => {
@@ -116,6 +117,74 @@ describe("render", () => {
 		const chart = render(folded);
 		expect(chart).toContain('  n3 -.->|"next"| n2');
 		expect(chart).not.toContain('  n1 -.->|"next"|');
+	});
+
+	test("titles each subgraph relative to its container", async () => {
+		const chart = await lines("nested-groups");
+		expect(chart).toContain('  subgraph gn0["angles"]');
+		expect(chart).toContain('    subgraph gn2["polish"]');
+		const deep = await plan("nested-groups");
+		for (const n of deep.ir.nodes)
+			n.id = n.id.replace("angles/polish", "angles/ab/polish");
+		for (const e of deep.ir.edges) {
+			e.from.node = e.from.node.replace("angles/polish", "angles/ab/polish");
+			e.to.node = e.to.node.replace("angles/polish", "angles/ab/polish");
+		}
+		expect(render(deep)).toContain('    subgraph gn2["ab/polish"]');
+	});
+
+	test("ties a group's body to its header, one dashed edge per node", async () => {
+		const chart = await lines("nested-groups");
+		expect(chart).toContain('  n3 -.->|"next, test"| n2');
+		expect(chart).not.toContain("  n3 -.-> n2");
+		expect(chart).toContain("  n2 -.-> n0");
+		expect(chart).toContain("  n4 -.-> n0");
+		const found = await plan("nested-groups");
+		const polish = found.ir.nodes.find((n) => n.id === "angles/polish");
+		const step = found.ir.nodes.find((n) => n.id === "angles/polish/step");
+		Object.assign(polish ?? {}, {
+			kind: "find",
+			cond: { node: "angles/polish/step", port: "hit" },
+			in: { items: { type: "array" } },
+			inner: { item: { type: "string" } },
+			out: { hit: { type: "boolean" }, text: { type: "string" } },
+		});
+		delete (polish as { test?: unknown }).test;
+		Object.assign(step ?? {}, {
+			in: { prompt: { type: "string" } },
+			out: { hit: { type: "boolean" }, text: { type: "string" } },
+		});
+		found.ir.edges = found.ir.edges.filter(
+			(e) => e.to.node !== "angles/polish/step",
+		);
+		const feed = found.ir.edges.find((e) => e.to.node === "angles/polish");
+		if (feed?.kind === "data") feed.to.port = "items";
+		found.ir.edges.push({
+			kind: "data",
+			from: { node: "angles/polish", port: "item" },
+			to: { node: "angles/polish/step", port: "prompt" },
+		});
+		expect(parseIr(found.ir)).toMatchObject({ ok: true });
+		expect(render(found).split("\n")).toContain('  n3 -.->|"test"| n2');
+		(polish as { kind: string }).kind = "parFind";
+		expect(render(found).split("\n")).toContain('  n3 -.->|"test"| n2');
+	});
+
+	test("starts only the nodes nothing outside waits on, a group by what feeds its body", async () => {
+		const starts = (chart: string[]) =>
+			chart.filter((l) => l.includes("start -->"));
+		expect(starts(await lines("nested-groups"))).toEqual(["  start --> n0"]);
+		const fed = await plan("fanout-fanin-loop");
+		const loop = fed.ir.nodes.find((n) => n.id === "refine/loop");
+		Object.assign(loop ?? {}, { literals: { text: "x" } });
+		fed.ir.edges = fed.ir.edges.filter((e) => e.to.node !== "refine/loop");
+		fed.ir.edges.push({
+			kind: "control",
+			from: { node: "text" },
+			to: { node: "refine/loop/step" },
+		});
+		expect(parseIr(fed.ir)).toMatchObject({ ok: true });
+		expect(starts(render(fed).split("\n"))).toEqual(["  start --> n0"]);
 	});
 
 	test("draws guards and ordering edges dashed, and regions as up to their bound", async () => {

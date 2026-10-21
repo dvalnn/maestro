@@ -242,17 +242,50 @@ function wire(graph: GraphIndex, names: Names, edges: readonly Merged[]) {
 	return { forks, joins, lines };
 }
 
+const carried = (n: GroupNode) =>
+	n.kind === "fold"
+		? [n.members.step]
+		: n.kind === "loop"
+			? Object.values(n.members)
+			: [];
+
+/** The body node a group's `test` or `cond` reads, when it has one. */
+const tested = (n: GroupNode) =>
+	n.kind === "loop"
+		? n.test.port.node
+		: n.kind === "find" || n.kind === "parFind"
+			? n.cond.node
+			: undefined;
+
 /**
- * A dashed `next` edge to each loop or fold header from the member the next iteration starts from: a loop's result, a
- * fold's step.
+ * The dashed edges that tie a group's body to its header, one per member or tested node: the labels `next` for the
+ * member the next iteration starts from and `test` for the node its condition reads, joined, or none for another member.
  */
-const loopBacks = (plan: Plan, ids: ReadonlyMap<string, string>) =>
-	plan.ir.nodes.flatMap((n) => {
-		if (n.kind !== "loop" && n.kind !== "fold") return [];
-		const carried =
-			n.kind === "fold" ? [n.members.step] : Object.values(n.members);
-		return carried.map(
-			(m) => `${ids.get(m)} -.->|${label("next")}| ${ids.get(n.id)}`,
+const bodyLinks = (plan: Plan, ids: ReadonlyMap<string, string>) =>
+	plan.ir.nodes.filter(isGroup).flatMap((n) => {
+		const back = carried(n);
+		const test = tested(n);
+		const nodes = new Set([
+			...back,
+			...Object.values(n.members),
+			...(test === undefined ? [] : [test]),
+		]);
+		return [...nodes].map((m) => {
+			const text = [
+				...(back.includes(m) ? ["next"] : []),
+				...(m === test ? ["test"] : []),
+			].join(", ");
+			return `${ids.get(m)} -.->${text ? `|${label(text)}|` : ""} ${ids.get(n.id)}`;
+		});
+	});
+
+/** The top-level nodes no edge from outside orders after something: none enters the node or its body. */
+const roots = (plan: Plan, graph: GraphIndex) =>
+	plan.ir.nodes.filter((n) => {
+		const within = (id: string) => id === n.id || id.startsWith(`${n.id}/`);
+		return (
+			graph.groupsOf(n.id).length === 0 &&
+			!plan.ir.edges.some((e) => within(e.to.node) && !within(e.from.node))
 		);
 	});
 
@@ -277,7 +310,7 @@ function body(d: Diagram, parent: string | undefined, depth: number): string[] {
 			? `s${d.scopes.indexOf(c)}`
 			: `g${d.ids.get(c)}`;
 		return [
-			`${pad}subgraph ${name}[${label(c)}]`,
+			`${pad}subgraph ${name}[${label(parent === undefined ? c : c.slice(parent.length + 1))}]`,
 			...(header && isGroup(header)
 				? [`${pad}  ${d.ids.get(c)}[[${groupLabel(d.plan, header)}]]`]
 				: []),
@@ -310,7 +343,8 @@ function bars(d: Diagram, parent: string | undefined, pad: string): string[] {
 }
 
 /**
- * A static Mermaid flowchart of the plan, with start and end markers and a `next` edge closing each loop and fold.
+ * A static Mermaid flowchart of the plan, with start and end markers and dashed edges tying each group's body to its
+ * header.
  * The README's "Drawing rules" section holds the drawing rules.
  */
 export function render(plan: Plan): string {
@@ -335,12 +369,9 @@ export function render(plan: Plan): string {
 		scopes,
 		containers: [...scopes, ...groups],
 	};
-	const starts = plan.ir.nodes
-		.filter(
-			(n) =>
-				graph.edgesInto(n.id).length === 0 && graph.groupsOf(n.id).length === 0,
-		)
-		.map((n) => `  ${START} --> ${ids.get(n.id)}`);
+	const starts = roots(plan, graph).map(
+		(n) => `  ${START} --> ${ids.get(n.id)}`,
+	);
 	return [
 		"flowchart TD",
 		`  ${START}((start))`,
@@ -348,7 +379,7 @@ export function render(plan: Plan): string {
 		...body(d, undefined, 1),
 		...starts,
 		...lines.map((l) => `  ${l}`),
-		...loopBacks(plan, ids).map((l) => `  ${l}`),
+		...bodyLinks(plan, ids).map((l) => `  ${l}`),
 		`  ${ids.get(plan.ir.result.node)} --> ${STOP}`,
 	].join("\n");
 }
