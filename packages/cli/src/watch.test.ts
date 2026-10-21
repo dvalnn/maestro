@@ -70,6 +70,20 @@ function fakeScreen(
 	return { screen, calls, draws, press };
 }
 
+/** A `ready` for `fakeScreen` that holds once a draw meets each of `steps` in turn. */
+function inTurn(...steps: ((lines: readonly string[]) => boolean)[]) {
+	let at = 0;
+	return (lines: readonly string[]) => {
+		const met = steps[at]?.(lines) ?? false;
+		if (met) at++;
+		return met;
+	};
+}
+
+/** Whether a draw is the inspector's. */
+const inspecting = (lines: readonly string[]) =>
+	lines.some((l) => l.startsWith("◆ inspect "));
+
 /** Where the cursor row is among a frame's lines. */
 const cursorAt = (lines: readonly string[] = []) =>
 	lines.findIndex((l) => CURSOR.test(l));
@@ -111,7 +125,11 @@ describe("watch without a terminal", () => {
 describe("watch --frames", () => {
 	test("prints the browsed graph, then again after each key up to q, exits with the concert's code, and is left out of --help", async () => {
 		const w = await world();
-		const failed = { outcome: "failed", reason: "flaky" } as const;
+		const failed = {
+			outcome: "failed",
+			reason: "flaky",
+			metrics: { tokens_in: 1_200 },
+		} as const;
 		const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf(failed)] }));
 		const framed = await w.call(["watch", id, "--frames", "g down q j"]);
 		expect(framed.code).toBe(1);
@@ -133,6 +151,28 @@ describe("watch --frames", () => {
 		expect(unknown.code).toBe(2);
 		expect(unknown.err).toStartWith("--frames names no key: 'zz'");
 		expect((await w.call(["watch", "--help"])).out).not.toContain("--frames");
+	});
+
+	test("enter inspects the cursor row, its events drawn, and q or esc goes back to the tree", async () => {
+		const w = await world();
+		const failed = {
+			outcome: "failed",
+			reason: "flaky",
+			metrics: { tokens_in: 1_200 },
+		} as const;
+		const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf(failed)] }));
+		const framed = await w.call(["watch", id, "--frames", "enter q enter esc"]);
+		const [, opened = "", ...rest] = framed.out.split(/^── (?=[a-z])/m);
+		expect(opened).toMatch(/^◆ inspect {2}echo\/echo +fake\.task +failed /m);
+		expect(opened).toMatch(/^ {2}metrics {5}tokens_in 1\.2k$/m);
+		expect(opened).toMatch(/^ +\S+ {2}echo\/echo +failed +flaky$/m);
+		expect(rest.map((f) => f.split("\n")[0])).toEqual(["quit", "enter", "esc"]);
+		const [quit = "", again = "", back = ""] = rest;
+		expect(again).toMatch(/^◆ inspect /m);
+		for (const tree of [quit, back])
+			expect(tree.split("\n").find((l) => CURSOR.test(l))).toMatch(
+				/^> +! echo +fake\.task/,
+			);
 	});
 });
 
@@ -292,18 +332,42 @@ describe("watch on a running concert", async () => {
 		terminal: TERMINAL,
 		screen: quitter.screen,
 	});
+	/** An inspector draw that shows `echo` settled `ok`. */
+	const echoSettled = (lines: readonly string[]) =>
+		inspecting(lines) && lines.some((l) => /echo\/echo +ok$/.test(l));
+	const inspector = fakeScreen(
+		["\r", ESC, "q"],
+		inTurn(
+			onEcho,
+			echoSettled,
+			(lines) => !inspecting(lines) && /^■ settled /.test(lines.at(-1) ?? ""),
+		),
+	);
+	const inspected = watching(["--no-color"], {
+		terminal: TERMINAL,
+		screen: inspector.screen,
+	});
 	const piped = watching([]);
 	const pipedEvents = watching(["--events"]);
-	const [drawn, streamed, listed, changes, pipedLines, wrapping, interrupted] =
-		await Promise.all([
-			graph,
-			json,
-			lines,
-			piped,
-			pipedEvents,
-			narrow,
-			quitted,
-		]);
+	const [
+		drawn,
+		streamed,
+		listed,
+		changes,
+		pipedLines,
+		wrapping,
+		interrupted,
+		browsedThrough,
+	] = await Promise.all([
+		graph,
+		json,
+		lines,
+		piped,
+		pipedEvents,
+		narrow,
+		quitted,
+		inspected,
+	]);
 	setSystemTime();
 
 	test("redraws the graph in place until the concert settles, then exits as wait does", async () => {
@@ -350,6 +414,24 @@ describe("watch on a running concert", async () => {
 		expect(printed).toMatch(/^● demo\.greet {2}\S+ +running/);
 		expect(printed).toMatch(/^ +● echo .*running/m);
 		expect(interrupted.err).not.toMatch(/^concert /m);
+	});
+
+	test("on a screen, Enter on the running instance draws its events, tailing the new ones, and Esc redraws the tree", () => {
+		expect(browsedThrough.code).toBe(0);
+		const { draws } = inspector;
+		const opened = draws.findIndex(inspecting);
+		const first = draws[opened] ?? [];
+		expect(first[3]).toMatch(/^◆ inspect {2}echo\/echo +fake\.task +running /);
+		expect(first).toContainEqual(expect.stringMatching(/echo\/echo +running$/));
+		expect(first).toContainEqual(
+			expect.stringMatching(/echo\/echo +tool +ran bash /),
+		);
+		expect(first.some((l) => /echo\/echo +ok$/.test(l))).toBe(false);
+		const settled = draws.findIndex(echoSettled);
+		expect(settled).toBeGreaterThan(opened);
+		expect(draws[settled]?.at(-1)).toStartWith("◆ tail ");
+		const back = draws.slice(settled + 1).find((l) => !inspecting(l)) ?? [];
+		expect(back[cursorAt(back)]).toMatch(/^> +✓ echo /);
 	});
 
 	test("--events --json holds the progress event verbatim", () => {

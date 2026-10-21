@@ -1,14 +1,19 @@
 import type { Focus, Folds, Row } from "./tree";
 
+/** The inspector on the row keyed `key`: `scroll` is its first event line in view, and `tail` keeps the newest in view. */
+export type Inspect = { key: string; scroll: number; tail: boolean };
+
 /**
  * Where a reader is in the tree. `follow` keeps the cursor on the follow target; `cursor` is the key of the row under
- * it, `index` that row's place among the rows, and `top` the first row in the viewport.
+ * it, `index` that row's place among the rows, and `top` the first row in the viewport. `inspect` is the inspector,
+ * while open.
  */
 export type Nav = Folds & {
 	follow: boolean;
 	cursor?: string;
 	index: number;
 	top: number;
+	inspect?: Inspect;
 };
 
 /** The navigation a watch starts from: following, nothing folded by hand. */
@@ -29,9 +34,11 @@ export type Browsed = {
 	body: number;
 	/** The focus of the last failure, none without one. */
 	failure?: Focus;
+	/** The inspector's furthest scroll, absent off the inspector. */
+	scrollMax?: number;
 };
 
-/** What input can ask for: a key `press` takes, or `quit`, which ends the view. */
+/** What input can ask for: each a key `press` takes; `quit` and `interrupt`, Ctrl-C, end the view as `ends` says. */
 export const INPUTS = [
 	"up",
 	"down",
@@ -46,16 +53,18 @@ export const INPUTS = [
 	"next",
 	"failure",
 	"follow",
+	"enter",
+	"esc",
 	"quit",
+	"interrupt",
 ] as const;
 export type Input = (typeof INPUTS)[number];
-export type Key = Exclude<Input, "quit">;
 
 export const isInput = (text: string): text is Input =>
 	(INPUTS as readonly string[]).includes(text);
 
 const ESC = "\u001b";
-/** Raw input bytes by key: vi keys, arrows, paging, Home and End as terminals send them, and Ctrl-C. */
+/** Raw input bytes by key: vi keys, arrows, paging, Home and End as terminals send them, Enter, a lone Esc and Ctrl-C. */
 const KEYS: ReadonlyMap<string, Input> = new Map([
 	["k", "up"],
 	[`${ESC}[A`, "up"],
@@ -86,8 +95,10 @@ const KEYS: ReadonlyMap<string, Input> = new Map([
 	["]", "next"],
 	["e", "failure"],
 	["f", "follow"],
+	["\r", "enter"],
+	[ESC, "esc"],
 	["q", "quit"],
-	["\u0003", "quit"],
+	["\u0003", "interrupt"],
 ]);
 /** One key's input: a CSI or SS3 escape sequence whole, else one character. */
 const KEY_INPUT = new RegExp(
@@ -95,7 +106,7 @@ const KEY_INPUT = new RegExp(
 	"gsu",
 );
 
-/** The keys in a chunk of raw input, in order; input bound to no key, a lone Esc among it, is left out. */
+/** The keys in a chunk of raw input, in order; input bound to no key is left out. */
 export const keysOf = (chunk: string): Input[] =>
 	[...chunk.matchAll(KEY_INPUT)].flatMap(([input]) => KEYS.get(input) ?? []);
 
@@ -214,38 +225,79 @@ const followed = (nav: Nav): Nav =>
 		? { ...nav, follow: false }
 		: { ...nav, follow: true, pins: new Map() };
 
-/** The navigation after `key` on the view `f`, from the navigation `f` was drawn with. */
-export function press(key: Key, f: Browsed): Nav {
+/** Whether `input` ends the view navigated as `nav`: Ctrl-C always, `q` from the tree. */
+export const ends = (input: Input, nav: Nav) =>
+	input === "interrupt" || (input === "quit" && nav.inspect === undefined);
+
+/** How far each moving input goes: `lines` rows or event lines and `pages` viewports, the ends as far as there is. */
+const MOVES: ReadonlyMap<Input, { lines: number; pages: number }> = new Map([
+	["up", { lines: -1, pages: 0 }],
+	["down", { lines: 1, pages: 0 }],
+	["pageUp", { lines: 0, pages: -1 }],
+	["pageDown", { lines: 0, pages: 1 }],
+	["first", { lines: Number.NEGATIVE_INFINITY, pages: 0 }],
+	["last", { lines: Number.POSITIVE_INFINITY, pages: 0 }],
+]);
+/** The inspector's inputs back to the tree. */
+const BACK: ReadonlySet<Input> = new Set(["left", "enter", "esc", "quit"]);
+/** The iteration `[` and `]` step to, from the shown one. */
+const STEPS: ReadonlyMap<Input, number> = new Map([
+	["previous", -1],
+	["next", 1],
+]);
+
+/** Where `input` moves from `at` in viewports of `body`, none for an input that does not move. */
+function movedBy(input: Input, at: number, body: number): number | undefined {
+	const move = MOVES.get(input);
+	return move && at + move.lines + move.pages * body;
+}
+
+/** The inspector's navigation after `input`: a scroll, `tail` set once it reaches the newest event line, or back. */
+function inspected(input: Input, f: Browsed, at: Inspect): Nav {
+	if (BACK.has(input)) return { ...f.nav, inspect: undefined };
+	const to = movedBy(input, at.scroll, f.body);
+	if (to === undefined) return f.nav;
+	const max = f.scrollMax ?? 0;
+	const scroll = Math.max(0, Math.min(max, to));
+	return { ...f.nav, inspect: { ...at, scroll, tail: scroll >= max } };
+}
+
+/** `space`: an open row closes, a closed one opens. */
+const toggled = (nav: Nav, row: Row | undefined): Nav =>
+	row?.open === undefined ? nav : withOpen(nav, [row.key], !row.open);
+
+/** `enter`: the inspector on `row`, tailing. */
+const inspecting = (nav: Nav, row: Row | undefined): Nav =>
+	row === undefined
+		? nav
+		: { ...nav, inspect: { key: row.key, scroll: 0, tail: true } };
+
+/** The tree's navigation after `input`; `esc`, and `quit` and `interrupt`, which end the view as `ends` tells, leave it. */
+function browsed(input: Input, f: Browsed): Nav {
 	const { nav } = f;
 	const row = f.rows[nav.index];
-	switch (key) {
-		case "up":
-			return moved(nav, f, nav.index - 1);
-		case "down":
-			return moved(nav, f, nav.index + 1);
-		case "pageUp":
-			return moved(nav, f, nav.index - f.body);
-		case "pageDown":
-			return moved(nav, f, nav.index + f.body);
-		case "first":
-			return moved(nav, f, 0);
-		case "last":
-			return moved(nav, f, f.rows.length - 1);
+	const to = movedBy(input, nav.index, f.body);
+	if (to !== undefined) return moved(nav, f, to);
+	const by = STEPS.get(input);
+	if (by !== undefined) return stepped(nav, f, by);
+	switch (input) {
 		case "right":
 			return opened(nav, f, row);
 		case "left":
 			return closed(nav, f, row);
 		case "toggle":
-			return row?.open === undefined
-				? nav
-				: withOpen(nav, [row.key], !row.open);
-		case "previous":
-			return stepped(nav, f, -1);
-		case "next":
-			return stepped(nav, f, 1);
+			return toggled(nav, row);
 		case "failure":
 			return failed(nav, f.failure);
 		case "follow":
 			return followed(nav);
+		case "enter":
+			return inspecting(nav, row);
+		default:
+			return nav;
 	}
 }
+
+/** The navigation after `input` on the view `f`, from the navigation `f` was drawn with: the inspector's, else the tree's. */
+export const press = (input: Input, f: Browsed): Nav =>
+	f.nav.inspect ? inspected(input, f, f.nav.inspect) : browsed(input, f);

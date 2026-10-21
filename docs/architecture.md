@@ -379,7 +379,8 @@ A renderer needs only the IR (or plan) and events:
   its round, group or concert is done; a stdlib helper shows only while running, rejected or failed. A `now` line names
   the latest running instance, a `last` line the latest failed one. Past the terminal's height, settled rows hide from
   the top, then pending ones from the bottom, as count lines, and the running rows, the last failure and their ancestors
-  stay. Edges are `compose --graph`'s.
+  stay. Edges are `compose --graph`'s. Browsed on a terminal, a row opens an inspector on its part of the record: a
+  summary, outputs, artifacts and enrichment, and its events, tailing while it runs.
 
 The first renderer targets text (ASCII or Mermaid) in the plan output; `maestro watch` draws the live form. A richer
 viewer is out of scope.

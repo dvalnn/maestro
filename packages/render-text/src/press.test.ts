@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { ConcertEvent } from "@maestro/ir";
 import { END_S, MID_S, PANEL_IR, panelEvents, START } from "./fixtures/panel";
+import { navigated } from "./inspect";
 import { browse, seen, type View } from "./live";
 import {
 	type Browsed,
+	ends,
 	type Input,
-	type Key,
 	keysOf,
 	NAV,
 	type Nav,
@@ -16,7 +17,7 @@ import {
 const MS_PER_S = 1_000;
 const ESC = "\u001b";
 
-const viewOf = (settled: boolean, rows: number): View => ({
+const viewOf = (settled: boolean, rows: number, columns = 120): View => ({
 	concert: {
 		id: "01a154df-b99f-72ca-8f73-b1fc195571b6",
 		label: "fixtures.audit",
@@ -28,7 +29,7 @@ const viewOf = (settled: boolean, rows: number): View => ({
 	tokens: 0,
 	now: START + MID_S * MS_PER_S,
 	color: false,
-	columns: 120,
+	columns,
 	rows,
 });
 /** A terminal tall enough for every row of the panel concert. */
@@ -49,12 +50,13 @@ const browsed = (
 		settled = false,
 		events = panelEvents(settled ? undefined : MID_S),
 		rows = TALL,
+		columns = 120,
 	} = {},
 ): Browsed =>
 	browse(
 		PANEL_IR,
 		seen(new Map(), events),
-		viewOf(settled, rows),
+		viewOf(settled, rows, columns),
 		new Map(),
 		nav,
 	);
@@ -72,7 +74,7 @@ const cursorOf = (f: Browsed) => f.rows[f.nav.index]?.key;
 /** `keys` pressed in turn on the view drawn from `nav`, each drawn again. */
 function pressed(
 	nav: Nav,
-	keys: readonly Key[],
+	keys: readonly Input[],
 	over: Parameters<typeof browsed>[1] = {},
 ): Browsed {
 	return keys.reduce(
@@ -91,7 +93,7 @@ type Expected = Partial<Omit<Nav, "open" | "pins">> & {
 };
 
 describe("press", () => {
-	test.each<[what: string, from: Nav, keys: Key[], expected: Expected]>([
+	test.each<[what: string, from: Nav, keys: Input[], expected: Expected]>([
 		[
 			"j moves down, which turns follow off",
 			NAV,
@@ -208,6 +210,12 @@ describe("press", () => {
 			{ at: "panel/lenses/lens#[spec]", given: { settled: true } },
 		],
 		[
+			"Esc leaves the tree as it is",
+			on("request@"),
+			["esc"],
+			{ at: "request@", follow: false },
+		],
+		[
 			"a closed container on the cursor's path opens",
 			on("gate-loop/repair@0", { path: ["gate-loop@"] }),
 			[],
@@ -246,6 +254,88 @@ describe("press", () => {
 	});
 });
 
+describe("press in the inspector", () => {
+	const events = panelEvents(MID_S);
+	/** The panel concert in its second repair round, the tree or the inspector as `nav` says, on `rows` lines. */
+	const shown = (nav: Nav, rows = TALL) =>
+		navigated(
+			PANEL_IR,
+			seen(new Map(), events),
+			viewOf(false, rows),
+			new Map(),
+			nav,
+			{ events, instances: [] },
+		);
+	const keyed = (nav: Nav, keys: readonly Input[], rows = TALL) =>
+		keys.reduce((f, key) => shown(press(key, f), rows), shown(nav, rows));
+	/** A terminal on which the loop's events overflow the inspector. */
+	const SHORT = 14;
+
+	test("Enter opens the inspector on the cursor row, tailing, and leaves follow as it was", () => {
+		const f = keyed(NAV, ["enter"]);
+		expect(f.nav).toMatchObject({
+			follow: true,
+			inspect: { key: "test-loop/repair@1", tail: true },
+		});
+		expect(f.lines[3]).toStartWith("◆ inspect  test-loop[1]/repair ");
+	});
+
+	test.each<Input>(["esc", "enter", "left", "quit"])(
+		"%s goes back to the tree, its cursor where it was",
+		(key) => {
+			const f = keyed(on("test-loop@"), ["enter", key]);
+			expect(f.nav.inspect).toBeUndefined();
+			expect(cursorOf(f)).toBe("test-loop@");
+		},
+	);
+
+	test("Ctrl-C ends the view from either, q only from the tree", () => {
+		const tree = shown(NAV).nav;
+		const inspector = keyed(NAV, ["enter"]).nav;
+		expect(ends("interrupt", tree)).toBe(true);
+		expect(ends("interrupt", inspector)).toBe(true);
+		expect(ends("quit", tree)).toBe(true);
+		expect(ends("quit", inspector)).toBe(false);
+	});
+
+	test("scrolling clears tail, reaching the newest line or G restores it, and g goes to the top", () => {
+		const open = keyed(on("test-loop@"), ["enter"], SHORT);
+		const max = open.scrollMax ?? 0;
+		expect(max).toBeGreaterThan(1);
+		expect(open.nav.inspect).toMatchObject({ scroll: max, tail: true });
+		const at = (keys: Input[]) =>
+			keyed(on("test-loop@"), ["enter", ...keys], SHORT).nav.inspect;
+		expect(at(["up"])).toMatchObject({ scroll: max - 1, tail: false });
+		expect(at(["up", "down"])).toMatchObject({ scroll: max, tail: true });
+		expect(at(["first"])).toMatchObject({ scroll: 0, tail: false });
+		expect(at(["first", "last"])).toMatchObject({ scroll: max, tail: true });
+		expect(at(["pageUp"])).toMatchObject({
+			scroll: max - open.body,
+			tail: false,
+		});
+		expect(at(["first", "pageDown"])).toMatchObject({ tail: false });
+	});
+
+	test("a scrolled inspector keeps its place as events arrive, a tailing one shows the newest", () => {
+		const nav = keyed(on("test-loop@"), ["enter", "up"], SHORT).nav;
+		const later = (n: Nav) =>
+			navigated(
+				PANEL_IR,
+				seen(new Map(), panelEvents()),
+				viewOf(false, SHORT),
+				new Map(),
+				n,
+				{ events: panelEvents(), instances: [] },
+			);
+		expect(later(nav).nav.inspect?.scroll).toBe(nav.inspect?.scroll);
+		const tailing = later({
+			...nav,
+			inspect: { key: "test-loop@", scroll: 0, tail: true },
+		});
+		expect(tailing.lines.at(-3)).toMatch(/test-loop +ok$/);
+	});
+});
+
 describe("keysOf", () => {
 	test.each<[what: string, input: string, keys: Input[]]>([
 		["vi keys", "jkhlgG", ["down", "up", "left", "right", "first", "last"]],
@@ -261,14 +351,23 @@ describe("keysOf", () => {
 			["first", "first", "first", "first", "last", "last", "last", "last"],
 		],
 		[
-			"space, rounds, failure, follow, q and Ctrl-C",
-			" []efq\u0003",
-			["toggle", "previous", "next", "failure", "follow", "quit", "quit"],
+			"space, rounds, failure, follow, Enter, q and Ctrl-C",
+			" []ef\rq\u0003",
+			[
+				"toggle",
+				"previous",
+				"next",
+				"failure",
+				"follow",
+				"enter",
+				"quit",
+				"interrupt",
+			],
 		],
 		[
-			"a lone Esc and an unbound sequence left out",
+			"a lone Esc kept, an unbound sequence left out",
 			`${ESC}j${ESC}[Zx`,
-			["down"],
+			["esc", "down"],
 		],
 	])("%s", (_what, input, keys) => {
 		expect(keysOf(input)).toEqual(keys);
@@ -332,13 +431,19 @@ describe("browse", () => {
 		expect(colored.lines[ABOVE + colored.nav.index]).toStartWith(`${ESC}[7m>`);
 	});
 
-	test("names the mode on the key line, and drops f follow once the concert settled", () => {
+	test("names the mode on the key line, drops f follow once the concert settled, and on a narrow terminal the last hints but q quit", () => {
 		expect(browsed(NAV).lines.at(-1)).toBe(
-			"● follow   j/k move  h/l fold  [ ] round  e last failure  f follow  q quit",
+			"● follow   j/k move  h/l fold  ⏎ inspect  f follow  [ ] round  e last failure  q quit",
 		);
 		expect(browsed(on("request@")).lines.at(-1)).toStartWith("○ browse ");
 		expect(browsed(NAV, { settled: true }).lines.at(-1)).toBe(
-			"■ settled   j/k move  h/l fold  [ ] round  e last failure  q quit",
+			"■ settled   j/k move  h/l fold  ⏎ inspect  [ ] round  e last failure  q quit",
+		);
+		expect(browsed(NAV, { columns: 80 }).lines.at(-1)).toBe(
+			"● follow   j/k move  h/l fold  ⏎ inspect  f follow  [ ] round  q quit",
+		);
+		expect(browsed(NAV, { columns: 40 }).lines.at(-1)).toBe(
+			"● follow   j/k move  h/l fold  q quit",
 		);
 	});
 });

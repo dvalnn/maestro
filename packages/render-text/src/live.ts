@@ -126,7 +126,7 @@ export const flat = (text: string) => safe(text.split(NEWLINE).join(" "));
 const twoDigits = (n: number) => String(n).padStart(2, "0");
 
 /** `ms` as `3.1s` under `tenthsBelow` ms, `42s` under a minute, `4m05s` under an hour, else `1h02m`. */
-function duration(ms: number, tenthsBelow = TENTHS_BELOW_MS): string {
+export function duration(ms: number, tenthsBelow = TENTHS_BELOW_MS): string {
 	const { s, m, h } = MS_PER_UNIT;
 	const t = Math.max(0, ms);
 	if (t < tenthsBelow)
@@ -155,6 +155,20 @@ function progressParts(event: HostEvent) {
 function genericLine(event: HostEvent): string {
 	const { kind, fields } = progressParts(event);
 	return (kind === undefined ? fields : [kind, ...fields]).join(" ");
+}
+
+/** `base` after progress `event`: its actor, and its latest line unless the event names an actor and no wording. */
+function progressed(
+	base: InstanceState,
+	event: Annotated & { type: "progress" },
+): InstanceState {
+	const named =
+		event.actor === undefined ? base : { ...base, agent: event.actor };
+	if (event.actor !== undefined && event.wording === undefined) return named;
+	const line = event.wording
+		? `${event.wording.word} ${event.wording.detail}`.trimEnd()
+		: genericLine(event.event);
+	return { ...named, latest: flat(line) };
 }
 
 function folded(
@@ -188,16 +202,8 @@ function folded(
 			};
 		case "reused":
 			return { ...base, state: "ok", reused: true };
-		case "progress": {
-			const named =
-				event.actor === undefined ? base : { ...base, agent: event.actor };
-			if (event.actor !== undefined && event.wording === undefined)
-				return named;
-			const line = event.wording
-				? `${event.wording.word} ${event.wording.detail}`.trimEnd()
-				: genericLine(event.event);
-			return { ...named, latest: flat(line) };
-		}
+		case "progress":
+			return progressed(base, event);
 		case "log":
 			return prior;
 	}
@@ -221,7 +227,7 @@ type Texts = {
 	agent: string;
 	note: string;
 };
-type Seg = readonly [text: string, style?: Style];
+export type Seg = readonly [text: string, style?: Style];
 type Widths = {
 	lead: number;
 	kind: number;
@@ -234,7 +240,7 @@ type Widths = {
 export type Agents = ReadonlyMap<string, { actor?: string; tokens: number }>;
 
 /** An instance's record: who its host says ran it, and its metrics, with whether an earlier attempt left it. */
-type Recorded = NodeInstance & {
+export type Recorded = NodeInstance & {
 	actor?: string;
 	metrics: Metrics;
 	stale: boolean;
@@ -380,7 +386,11 @@ function fit(text: string, room: number): string {
 }
 
 /** One line cut at `limit` terminal cells without trailing spaces, each segment styled after the cut when `color`. */
-function painted(segs: readonly Seg[], color: boolean, limit: number): string {
+export function painted(
+	segs: readonly Seg[],
+	color: boolean,
+	limit: number,
+): string {
 	const plain = segs.map(([text]) => text).join("");
 	let room = Math.min(Bun.stringWidth(plain.trimEnd()), limit);
 	let out = "";
@@ -400,7 +410,7 @@ const line = (segs: readonly Seg[], color: boolean) =>
 		)
 		.join("");
 
-const lookOf = (state: string): Look | undefined =>
+export const lookOf = (state: string): Look | undefined =>
 	Object.entries(LOOK).find(([shown]) => shown === state)?.[1];
 
 /** `state`, an instance's or a concert's, in the style the views give it when `color`. */
@@ -550,7 +560,11 @@ function footerSegs(states: readonly Shown[], view: View, hint = ""): Seg[] {
 }
 
 /** The header, `now` and `last`. */
-const headSegs = (graph: GraphIndex, seen: Seen, view: View): Seg[][] => [
+export const headSegs = (
+	graph: GraphIndex,
+	seen: Seen,
+	view: View,
+): Seg[][] => [
 	headerSegs(view),
 	nowSegs(graph, seen, view),
 	lastSegs(graph, seen, view.concert.status !== "running"),
@@ -599,12 +613,14 @@ const ABOVE_LINES = 3;
 /** Lines a browsed view holds below its viewport: the rule, the cursor row's two detail lines and the key line. */
 const BELOW_LINES = 4;
 /** The fewest rows a viewport shows, however short the terminal. */
-const MIN_BODY = 3;
+export const MIN_BODY = 3;
 /** Reverse video on and off, which marks the cursor row. */
 const REVERSE = { open: "\u001b[7m", close: "\u001b[27m" } as const;
 /** The column before each row of a viewport: the cursor row's mark, else blank. */
 const LEAD = { cursor: ">", other: " " } as const;
-const KEY_HINTS = "j/k move  h/l fold  [ ] round  e last failure";
+/** The tree's key hints in order, `f follow` between them while running; a narrow key line drops the last first. */
+const KEY_HINTS = ["j/k move", "h/l fold", "⏎ inspect"];
+const MORE_HINTS = ["[ ] round", "e last failure"];
 const FOLLOW_HINT = "f follow";
 const QUIT_HINT = "q quit";
 
@@ -651,18 +667,32 @@ function detailSegs(row: Texted | undefined): Seg[][] {
 	];
 }
 
-/** The key line: the mode, settled, following or browsing, then the keys. */
-function keySegs(nav: Nav, settled: boolean): Seg[] {
-	const [mode, style]: Seg = settled
+/** The key line within `limit` cells: `mode`, then `hints` in order, those before the last dropped from the end until it fits. */
+export function keyLine(
+	mode: Seg,
+	hints: readonly string[],
+	limit: number,
+): Seg[] {
+	const kept = [...hints];
+	const text = () => `${WIDE_GAP}${kept.join(GAP)}`;
+	while (kept.length > 1 && Bun.stringWidth(`${mode[0]}${text()}`) > limit)
+		kept.splice(-2, 1);
+	return [mode, [text(), "dim"]];
+}
+
+/** The key line: the mode, settled, following or browsing, then the keys that fit in `limit` cells. */
+function keySegs(nav: Nav, settled: boolean, limit: number): Seg[] {
+	const mode: Seg = settled
 		? ["■ settled", "green"]
 		: nav.follow
 			? ["● follow", "cyan"]
 			: ["○ browse", "yellow"];
-	const hints = [KEY_HINTS, ...(settled ? [] : [FOLLOW_HINT]), QUIT_HINT];
-	return [
-		[mode, style],
-		[`${WIDE_GAP}${hints.join(GAP)}`, "dim"],
-	];
+	const follow = settled ? [] : [FOLLOW_HINT];
+	return keyLine(
+		mode,
+		[...KEY_HINTS, ...follow, ...MORE_HINTS, QUIT_HINT],
+		limit,
+	);
 }
 
 /**
@@ -703,7 +733,7 @@ export function browse(
 		...viewportLines(rows, nav, body, view),
 		paint(footerSegs(states, view, rows.length > body ? range : "")),
 		...detailSegs(rows[nav.index]).map(paint),
-		paint(keySegs(nav, settled)),
+		paint(keySegs(nav, settled, view.columns - 1)),
 	];
 	return { lines, nav, rows, body, failure: lastFocusOf(graph, seen) };
 }
@@ -812,7 +842,7 @@ const parses = (text: string) => {
 };
 
 /** `text` highlighted as JSON when it is a JSON object or array, else in soft grey. */
-function valueSegs(text: string): Seg[] {
+export function valueSegs(text: string): Seg[] {
 	if (!JSON_START.test(text) || !parses(text)) return [[text, SOFT_GREY]];
 	return [...text.matchAll(JSON_TOKEN)].flatMap(tokenSegs);
 }

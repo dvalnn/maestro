@@ -1,8 +1,9 @@
 import type { ConcertRecord, Records } from "@maestro/core/perform";
 import type { ConcertEvent } from "@maestro/ir";
+import { navigated } from "@maestro/render-text/inspect";
 import {
+	type Annotated,
 	agentsOf,
-	browse,
 	eventLine,
 	frame,
 	type Seen,
@@ -12,6 +13,7 @@ import {
 } from "@maestro/render-text/live";
 import {
 	type Browsed,
+	ends,
 	type Input,
 	isInput,
 	keysOf,
@@ -115,12 +117,18 @@ function drawingOf(
 	let state: Seen = new Map();
 	const short = shortIds(store.ids());
 	return {
-		/** The instance states with `events` folded in. */
-		fold(events: readonly ConcertEvent[], row: ConcertRecord): Seen {
-			state = seen(state, annotated(events, hostTextOf(deps.hosts, row.ir)));
+		/** The instance states with `events` folded in, each annotated event also added to `sink` when given. */
+		fold(
+			events: readonly ConcertEvent[],
+			row: ConcertRecord,
+			sink?: Annotated[],
+		): Seen {
+			const read = annotated(events, hostTextOf(deps.hosts, row.ir));
+			for (const e of read) sink?.push(e);
+			state = seen(state, read);
 			return state;
 		},
-		/** Concert `row` at the terminal's size, and what executes each agent instance and its tokens. */
+		/** Concert `row` at the terminal's size, what executes each agent instance and its tokens, and each instance's record. */
 		read(row: ConcertRecord) {
 			const hostText = hostTextOf(deps.hosts, row.ir);
 			const view = viewOf(row, color, {
@@ -128,13 +136,11 @@ function drawingOf(
 				tokens: tokensOf(store.metrics(row.id)),
 				unique: short.unique(row.id),
 			});
-			const agents = agentsOf(
-				store.instances(row.id).map((i) => ({
-					...i,
-					actor: actorOf(i.enrichment, i.node, hostText),
-				})),
-			);
-			return { view, agents };
+			const instances = store.instances(row.id).map((i) => ({
+				...i,
+				actor: actorOf(i.enrichment, i.node, hostText),
+			}));
+			return { view, agents: agentsOf(instances), instances };
 		},
 	};
 }
@@ -217,7 +223,7 @@ async function polled(
 /** Concert `row` browsed from `nav`, as the record holds it now. */
 type Render = (nav: Nav) => Browsed;
 
-/** `rendered` after each of `inputs` in turn, each drawn again before the next; none once one is `quit`. */
+/** `rendered` after each of `inputs` in turn, each drawn again before the next; none once one `ends` the view. */
 function pressed(
 	render: Render,
 	rendered: Browsed,
@@ -225,7 +231,7 @@ function pressed(
 ): Browsed | undefined {
 	let next = rendered;
 	for (const input of inputs) {
-		if (input === "quit") return undefined;
+		if (ends(input, next.nav)) return undefined;
 		next = render(press(input, next));
 	}
 	return next;
@@ -249,9 +255,13 @@ async function browsed(
 	let state: Seen = new Map();
 	let shown: Browsed | undefined;
 	let drawn: string | undefined;
+	const kept: Annotated[] = [];
 	const render: Render = (nav) => {
-		const { view, agents } = drawing.read(row);
-		return browse(row.ir, state, view, agents, nav);
+		const { view, agents, instances } = drawing.read(row);
+		return navigated(row.ir, state, view, agents, nav, {
+			events: kept,
+			instances,
+		});
 	};
 	/** Draws `next`, unless it is what is drawn and `force` is off. */
 	const paint = (next: Browsed, force: boolean) => {
@@ -272,7 +282,7 @@ async function browsed(
 			row,
 			(events, read) => {
 				row = read;
-				state = drawing.fold(events, read);
+				state = drawing.fold(events, read, kept);
 				paint(render(shown?.nav ?? NAV), false);
 			},
 			quit.promise,
@@ -302,14 +312,14 @@ function inputsOf(keys: string): Input[] {
 			if (inputs.length > 0) return inputs;
 			throw usageError(
 				`--frames names no key: '${token}'`,
-				"Name keys as typed, such as j or [, or as down, previous or follow",
+				"Name keys as typed, such as j or [, or as down, enter or esc",
 			);
 		});
 }
 
 /**
  * `--frames`: concert `row` as the record holds it now, browsed, then again after each input of `keys`, a rule naming
- * it before each; until a `quit`. Gives the concert's exit code once it settled, else `EXIT.ok`.
+ * it before each; until one ends the view. Gives the concert's exit code once it settled, else `EXIT.ok`.
  */
 function framed(
 	{ session, store, values }: Stored,
@@ -320,9 +330,11 @@ function framed(
 	const inputs = inputsOf(keys);
 	const terminal = deps.terminal ?? (() => FRAMES_TERMINAL);
 	const drawing = drawingOf(deps, store, terminal, colorOf(deps, values).out);
-	const state = drawing.fold(store.events(row.id, 0), row);
-	const { view, agents } = drawing.read(row);
-	const render: Render = (nav) => browse(row.ir, state, view, agents, nav);
+	const kept: Annotated[] = [];
+	const state = drawing.fold(store.events(row.id, 0), row, kept);
+	const { view, agents, instances } = drawing.read(row);
+	const render: Render = (nav) =>
+		navigated(row.ir, state, view, agents, nav, { events: kept, instances });
 	let shown = render(NAV);
 	deps.stdout(shown.lines.join("\n"));
 	for (const input of inputs) {

@@ -90,12 +90,28 @@ state, time and agent, then its reason or latest progress, and the last line the
 | `PgUp` / `PgDn`        | One viewport up or down[^off]                                                           |
 | `e`                    | The last `failed` instance, its containers opened and its rounds shown[^off]            |
 | `f`                    | Toggles follow; turning it on drops the pinned rounds and keeps the folds               |
+| `Enter`                | Inspects the row                                                                        |
 | `q` `Ctrl-C`           | Quits                                                                                   |
 | `Ctrl-Z`               | Gives the terminal back and suspends; `fg` resumes                                      |
 
 [^off]: Turns follow off.
 
 [^step]: A step turns follow off.
+
+`Enter` replaces the tree with the row's part of the record, under the same header: a title, then for one instance its
+context, state, start and run time, tokens, actor, a `stale` mark when an earlier attempt left it, and its reason or
+latest progress, then its metrics by name, outputs, artifacts and raw enrichment when the record has them. A group,
+scope or fan-out row counts every instance under it in its round instead. Below come the events of what it shows, as
+`--events` words them, and new ones append while it runs. The inspector tails the newest until a scroll moves away; `G`
+or scrolling back to the end tails again.
+
+| Key                       | Does in the inspector   |
+| ------------------------- | ----------------------- |
+| `j` `↓` / `k` `↑`         | Scrolls one line        |
+| `g` `Home` / `G` `End`    | The first event / tails |
+| `PgUp` / `PgDn`           | One viewport up or down |
+| `Esc` `Enter` `q` `h` `←` | Back to the tree        |
+| `Ctrl-C`                  | Quits                   |
 
 It stays open after the concert settles, and on a settled concert it opens straight into browsing. Quitting gives the
 terminal back, then prints the graph with every row and the closing block, and exits with the concert's code, or 130
@@ -105,8 +121,9 @@ when it has not settled. A resize redraws. `SIGTERM`, `SIGHUP` and `SIGINT` give
 ### Debug
 
 `watch <concert> --frames '<keys>'` prints the browsed graph, then a `── <key>` line and the graph again after each
-space-separated key, named as typed (`j`, `[`) or as an input (`down`, `previous`), stopping at `q`. It needs no
-terminal and exits with the concert's code, or 0 while it runs. It is left out of `--help`, and its output may change.
+space-separated key, named as typed (`j`, `[`) or as an input (`down`, `previous`, `enter`, `esc`), stopping at `q` on
+the tree or `interrupt`. It needs no terminal and exits with the concert's code, or 0 while it runs. It is left out of
+`--help`, and its output may change.
 
 `ls <concert>` lists the node instances in graph order, as `watch` draws them: subcompositions, groups and loop rounds
 nest, and one node's expansions keep the order they started in. `ls <concert> --json` lists `instances` in that order.

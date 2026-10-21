@@ -32,11 +32,11 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 - `browse(ir, seen, view, agents, nav)`: the same graph to drive with keys, in `view.rows` lines: the header, `now` and
   `last`, a viewport of the rows, each behind a lead column holding `>` on the cursor's row, which color also puts in
   reverse video, a rule of counts with the rows in view, the cursor row's instance, kind, state, time and agent, then
-  its note, and a key line. Folds and loop rounds follow `nav`: a row opened or closed by hand stays so, the rows above
-  the cursor open, and a pinned round is shown in place of the latest, marked `(history)`. Following, the cursor goes to
-  the latest started running instance, its aggregated row under a fan-out, and once the concert settled to the last
-  failure. The cursor keeps 2 rows from the viewport's edge while rows remain beyond it. It gives the lines, `nav`
-  resolved against the rows, and what `press` reads.
+  its note, and a key line that drops its last hints but `q quit` when narrow. Folds and loop rounds follow `nav`: a row
+  opened or closed by hand stays so, the rows above the cursor open, and a pinned round is shown in place of the latest,
+  marked `(history)`. Following, the cursor goes to the latest started running instance, its aggregated row under a
+  fan-out, and once the concert settled to the last failure. The cursor keeps 2 rows from the viewport's edge while rows
+  remain beyond it. It gives the lines, `nav` resolved against the rows, and what `press` reads.
 - `arranged(ir, instances)`: instances in the order `ls` lists them: a subcomposition's members under its name, a loop's
   by round, each round's in node order.
 - `agentText(actor, metrics)` and `agentsOf(records)`: the agent column, `<harness> · <model> · <effort>  <total> tok`,
@@ -59,12 +59,32 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 `@maestro/render-text/press` turns input into navigation, with no terminal:
 
 - `keysOf(chunk)`: the keys in a chunk of raw input: vi keys, arrows, paging, Home and End as terminals send them,
-  space, `[`, `]`, `e`, `f`, `q` and Ctrl-C as `quit`. Unbound input, a lone Esc among it, is left out.
-- `isInput(text)`: whether `text` names an input, such as `down` or `quit`.
-- `press(key, browsed)`: the navigation after a key other than `quit` on a browsed view, from the navigation it was
-  drawn with; browse first from `NAV`. A move turns follow off; `f` turned on drops the pinned rounds and keeps the
-  folds; `[` and `]` step the round of the loop the cursor is in, and stay put at either end; `e` goes to the last
-  failure, its path opened and its rounds pinned.
+  space, `[`, `]`, `e`, `f`, Enter as `enter`, a lone Esc as `esc`, `q` as `quit` and Ctrl-C as `interrupt`. Unbound
+  input is left out.
+- `isInput(text)`: whether `text` names an input, such as `down` or `enter`.
+- `ends(input, nav)`: whether an input ends the view: `interrupt` always, `quit` on the tree.
+- `press(input, browsed)`: the navigation after an input on a browsed view, from the navigation it was drawn with;
+  browse first from `NAV`.
+  - On the tree, a move turns follow off; `f` turned on drops the pinned rounds and keeps the folds; `[` and `]` step
+    the round of the loop the cursor is in, and stay put at either end; `e` goes to the last failure, its path opened
+    and its rounds pinned; `enter` opens the inspector on the cursor row, tailing.
+  - In the inspector, `up`, `down` and paging scroll its events, `first` goes to the top and `last` to the newest; a
+    scroll that reaches the newest line tails again, any other stops tailing. `left`, `enter`, `esc` and `quit` go back
+    to the tree.
+
+`@maestro/render-text/inspect` shows a row's part of the record, with no terminal:
+
+- `selected(graph, key, events)`: the events of the instances the row keyed `key` stands for, in their order: an item
+  row's one instance, any other row's instances at or under its node in its context.
+- `inspectorLines(ir, seen, view, key, held)`: the title and summary, then the event lines. One instance of the row's
+  own node shows its context, state, times, tokens, actor, a `stale` mark, its reason or latest progress, then from the
+  record its metrics by name, outputs as JSON, artifacts with their content hash and raw enrichment on one line, each
+  left out when absent. More instances, or none, show their count by state, tokens and span. Each event is drawn as
+  `eventLine` draws it, cut at `columns - 1` cells. `held.events` is only appended to, and only the events new since the
+  last call are drawn.
+- `navigated(ir, seen, view, agents, nav, held)`: `browse`'s tree, or with `nav.inspect` the inspector: the header,
+  `now` and `last`, the summary, a viewport of event lines that keeps the newest in view while tailing, a rule counting
+  the events and the lines in view, and the key line.
 
 Color, when `view.color` is set, goes on after the cut; a glyph and a state word name each state, so the text reads the
 same without it. A control character in shown text appears as its escape.

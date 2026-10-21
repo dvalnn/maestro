@@ -125,9 +125,9 @@ const NO_FOLDS: Folds = { open: new Map(), path: [], pins: NO_PINS };
 /** What a sequential group's note adds while it shows an iteration other than its latest. */
 const HISTORY = " (history)";
 const NUMERIC = /^\d+$/;
-const SCOPE_KIND = "scope";
+export const SCOPE_KIND = "scope";
 const PATH_SEP = " › ";
-const NOTE_SEP = " · ";
+export const NOTE_SEP = " · ";
 /** The gaps between a row's columns, and between the parts of a line or note that read apart. */
 export const GAP = "  ";
 export const WIDE_GAP = "   ";
@@ -151,6 +151,29 @@ const matches = (s: NodeInstance, ctx: Ctx) => {
 	const keys = keysOf(s.expansion);
 	return ctx.every((c, i) => c === ANY || keys[i] === c);
 };
+
+/**
+ * The node of the row keyed `key`, and which instances the row stands for:
+ * - an item row, `<node id>#<expansion>`, its one instance;
+ * - any other, `<node id>@<ctx>`, each instance at or under its node in its context.
+ */
+export function rowOf(
+	graph: GraphIndex,
+	key: string,
+): { node: string; holds: (s: NodeInstance) => boolean } {
+	const [node = "", expansion] = key.split("#");
+	if (expansion !== undefined)
+		return { node, holds: (s) => s.node === node && s.expansion === expansion };
+	const at = key.indexOf("@");
+	const id = key.slice(0, at);
+	// A key never holds a comma, but a context of one empty key joins to the same text as no context.
+	const ctx = graph.groupsOf(id).length > 0 ? key.slice(at + 1).split(",") : [];
+	return {
+		node: id,
+		holds: (s) =>
+			(s.node === id || s.node.startsWith(`${id}/`)) && matches(s, ctx),
+	};
+}
 
 /** `states` counted as `3 ok · 1 failed`, in `COUNTED` order. */
 export const countsText = (states: readonly Shown[]) =>
