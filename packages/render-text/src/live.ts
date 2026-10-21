@@ -12,13 +12,16 @@ import {
 } from "@maestro/ir";
 import { type Fitted, fitted } from "./fit";
 import { arranged, shapeOf } from "./layout";
+import { type Browsed, type Nav, resolve } from "./press";
 import {
 	countsText,
+	followOf,
 	GAP,
 	GLYPH,
 	keyOf,
 	labelOf,
 	lastFailureOf,
+	lastFocusOf,
 	leavesOf,
 	type Row,
 	rowsOf,
@@ -536,18 +539,22 @@ function lastSegs(graph: GraphIndex, seen: Seen, settled: boolean): Seg[] {
 	];
 }
 
-/** The rule under the rows: the drawn node instances counted, groups aside, `maestro ls` when rows are hidden, and the tokens. */
-function footerSegs(states: readonly Shown[], view: View, hid: boolean): Seg[] {
-	const { id, unique } = view.concert;
-	const hint = hid
-		? `${RULE}${RULE} every row: maestro ls ${shownId(id, unique)} `
-		: "";
-	const head = `${RULE}${RULE} ${countsText(states)} ${hint}`;
+/** The rule under the rows: the drawn node instances counted, groups aside, then `hint` when given, and the tokens. */
+function footerSegs(states: readonly Shown[], view: View, hint = ""): Seg[] {
+	const after = hint ? `${RULE}${RULE} ${hint} ` : "";
+	const head = `${RULE}${RULE} ${countsText(states)} ${after}`;
 	const tail =
 		view.tokens > 0 ? ` ${compact(view.tokens)} tok ${RULE}${RULE}` : "";
 	const fill = Math.max(1, view.columns - 1 - head.length - tail.length);
 	return [[`${head}${RULE.repeat(fill)}${tail}`, "dim"]];
 }
+
+/** The header, `now` and `last`. */
+const headSegs = (graph: GraphIndex, seen: Seen, view: View): Seg[][] => [
+	headerSegs(view),
+	nowSegs(graph, seen, view),
+	lastSegs(graph, seen, view.concert.status !== "running"),
+];
 
 /** Lines the frame holds beside its rows: the header, `now`, `last` and the footer. */
 const CHROME_LINES = 4;
@@ -572,16 +579,133 @@ export function frame(ir: Ir, seen: Seen, view: View, agents: Agents): string {
 	const widths = widthsOf(rows);
 	const lines = fitted(rows, view.rows - FREE_LINES - CHROME_LINES);
 	const hid = lines.filter((l) => l.type === "row").length < rows.length;
+	const { id, unique } = view.concert;
 	const states = leavesOf(graph, seen).map((s) => s.state);
 	return [
-		headerSegs(view),
-		nowSegs(graph, seen, view),
-		lastSegs(graph, seen, settled),
+		...headSegs(graph, seen, view),
 		...lines.map((l) => lineSegs(l, widths)),
-		footerSegs(states, view, hid),
+		footerSegs(
+			states,
+			view,
+			hid ? `every row: maestro ls ${shownId(id, unique)}` : "",
+		),
 	]
 		.map((segs) => painted(segs, view.color, view.columns - 1))
 		.join("\n");
+}
+
+/** Lines a browsed view holds above its viewport: the header, `now` and `last`. */
+const ABOVE_LINES = 3;
+/** Lines a browsed view holds below its viewport: the rule, the cursor row's two detail lines and the key line. */
+const BELOW_LINES = 4;
+/** The fewest rows a viewport shows, however short the terminal. */
+const MIN_BODY = 3;
+/** Reverse video on and off, which marks the cursor row. */
+const REVERSE = { open: "\u001b[7m", close: "\u001b[27m" } as const;
+/** The column before each row of a viewport: the cursor row's mark, else blank. */
+const LEAD = { cursor: ">", other: " " } as const;
+const KEY_HINTS = "j/k move  h/l fold  [ ] round  e last failure";
+const FOLLOW_HINT = "f follow";
+const QUIT_HINT = "q quit";
+
+/** The cursor row: its mark in the lead column, and with color reverse video across the line. */
+function cursorLine(segs: readonly Seg[], color: boolean, limit: number) {
+	const plain = `${LEAD.cursor}${painted(segs, false, limit - LEAD.cursor.length)}`;
+	return color
+		? `${REVERSE.open}${padCells(plain, limit)}${REVERSE.close}`
+		: plain;
+}
+
+/** The rows `nav` puts in a viewport of `body` lines, the cursor's marked, blank lines filling what is left. */
+function viewportLines(
+	rows: readonly Texted[],
+	nav: Nav,
+	body: number,
+	view: View,
+): string[] {
+	const widths = widthsOf(rows);
+	const limit = view.columns - 1;
+	const shown = rows.slice(nav.top, nav.top + body).map((row, i) => {
+		const segs = rowSegs(row, row.t, widths);
+		return nav.top + i === nav.index
+			? cursorLine(segs, view.color, limit)
+			: `${LEAD.other}${painted(segs, view.color, limit - LEAD.other.length)}`;
+	});
+	return [...shown, ...Array(body - shown.length).fill("")];
+}
+
+/** The cursor row in full: its instance, kind, state, time and agent, then its note. */
+function detailSegs(row: Texted | undefined): Seg[][] {
+	if (row === undefined) return [[], []];
+	const { t } = row;
+	const look = LOOK[row.shown];
+	return [
+		[
+			["› "],
+			[
+				[row.id, t.kind, row.shown, t.time, t.agent].filter(Boolean).join(GAP),
+				"bold",
+			],
+		],
+		[[INDENT], [t.note, look.noted ? look.style : "dim"]],
+	];
+}
+
+/** The key line: the mode, settled, following or browsing, then the keys. */
+function keySegs(nav: Nav, settled: boolean): Seg[] {
+	const [mode, style]: Seg = settled
+		? ["■ settled", "green"]
+		: nav.follow
+			? ["● follow", "cyan"]
+			: ["○ browse", "yellow"];
+	const hints = [KEY_HINTS, ...(settled ? [] : [FOLLOW_HINT]), QUIT_HINT];
+	return [
+		[mode, style],
+		[`${WIDE_GAP}${hints.join(GAP)}`, "dim"],
+	];
+}
+
+/**
+ * The live graph to browse, in `view.rows` lines within `columns - 1` cells: the header, `now` and `last`, a viewport
+ * of the rows of `rowsOf` folded as `prior` says, a rule of counts with the rows in view, the cursor row's detail, and
+ * the key line. Following, the cursor goes to the follow target. `agents` says what executes each agent instance and its
+ * tokens.
+ */
+export function browse(
+	ir: Ir,
+	seen: Seen,
+	view: View,
+	agents: Agents,
+	prior: Nav,
+): Browsed {
+	const graph = indexGraph(ir);
+	const settled = view.concert.status !== "running";
+	const target = prior.follow ? followOf(graph, seen, settled) : undefined;
+	const wanted = target
+		? { ...prior, cursor: target.key, path: target.path }
+		: prior;
+	const rows = rowsOf(shapeOf(ir, graph), {
+		graph,
+		seen,
+		agents,
+		settled,
+		now: view.now,
+		folds: wanted,
+	}).map((row) => ({ ...row, t: textsOf(row) }));
+	const body = Math.max(MIN_BODY, view.rows - ABOVE_LINES - BELOW_LINES);
+	const nav = resolve(wanted, rows, body);
+	const states = leavesOf(graph, seen).map((s) => s.state);
+	const range = `rows ${nav.top + 1}–${Math.min(rows.length, nav.top + body)} of ${rows.length}`;
+	const paint = (segs: readonly Seg[]) =>
+		painted(segs, view.color, view.columns - 1);
+	const lines = [
+		...headSegs(graph, seen, view).map(paint),
+		...viewportLines(rows, nav, body, view),
+		paint(footerSegs(states, view, rows.length > body ? range : "")),
+		...detailSegs(rows[nav.index]).map(paint),
+		paint(keySegs(nav, settled)),
+	];
+	return { lines, nav, rows, body, failure: lastFocusOf(graph, seen) };
 }
 
 /** The style of each word an event line shows; the longest sets the word column's width, and other words are unstyled. */

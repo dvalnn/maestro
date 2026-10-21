@@ -6,7 +6,8 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./live": "./src/live.ts"
+		"./live": "./src/live.ts",
+		"./press": "./src/press.ts"
 	},
 	"dependencies": {
 		"@maestro/ir": "workspace:*"

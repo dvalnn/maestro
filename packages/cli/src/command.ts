@@ -20,6 +20,21 @@ export type Deps = {
 	terminal?(): { columns: number; rows: number };
 	/** The width of the terminal stderr writes to. Absent when stderr is not a terminal. */
 	stderrTerminal?(): { columns: number };
+	/** The terminal as a screen a view drives by keys. Absent unless stdin and stdout are both terminals. */
+	screen?: Screen;
+};
+
+/** A terminal taken over whole, from `enter` until `leave`. */
+export type Screen = {
+	/**
+	 * Takes the terminal: the alternate screen, the cursor hidden and stdin raw. `onKey` gets each chunk of input, and
+	 * an empty one when what is drawn must be drawn again, after a resize or a resume.
+	 */
+	enter(onKey: (chunk: string) => void): void;
+	/** Draws `lines` over the whole screen, while it is taken. */
+	draw(lines: readonly string[]): void;
+	/** Gives the terminal back as `enter` found it. Idempotent. */
+	leave(): void;
 };
 
 export type Colors = { out: boolean; err: boolean };
@@ -43,6 +58,8 @@ type OptionSpec = {
 	desc: string;
 	multiple?: boolean;
 	short?: string;
+	/** Left out of help: a debug flag whose output may change. */
+	hidden?: boolean;
 };
 
 export type Options = Readonly<Record<string, OptionSpec>>;
@@ -162,10 +179,12 @@ export function only(
 
 /** Help for `command`: its usage, then each flag with its description, then `extra` when given. */
 export function helpOf(command: Command, extra?: string): string {
-	const flags = Object.entries(command.options).map(([name, o]) => [
-		`${o.short ? `-${o.short}, ` : "    "}--${name}${o.arg ? ` <${o.arg}>` : ""}`,
-		o.desc,
-	]);
+	const flags = Object.entries(command.options)
+		.filter(([, o]) => !o.hidden)
+		.map(([name, o]) => [
+			`${o.short ? `-${o.short}, ` : "    "}--${name}${o.arg ? ` <${o.arg}>` : ""}`,
+			o.desc,
+		]);
 	return [
 		`Usage: maestro ${command.usage}`,
 		"",

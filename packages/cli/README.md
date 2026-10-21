@@ -17,7 +17,7 @@ maestro wait <concert> --timeout 15m
 | `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                            |
 | `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`. |
 | `wait <concert>`             | `w`   | Waits for a concert to settle. `--timeout <duration>`.                                                            |
-| `watch <concert>`            | `wt`  | Shows a concert's node instances live until it settles.[^watch] `--events`.                                       |
+| `watch <concert>`            | `wt`  | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.             |
 | `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                               |
 | `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                   |
 | `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                      |
@@ -31,7 +31,8 @@ maestro wait <concert> --timeout 15m
     unwrapped and without color. The graph is a header (status, elapsed time and the short id), `now` and `last` lines
     naming the latest running and failed instances, the composition as authored with each loop at its latest round and
     each fan-out's items on one row, and a footer of counts and the concert's tokens. Rows that don't fit fold into
-    count lines, and the footer then points at `maestro ls`. Ctrl-C stops watching, not the concert.
+    count lines, and the footer then points at `maestro ls`. Ctrl-C stops watching, not the concert. With stdin a
+    terminal too, the graph is a tree to browse: see [Browsing a concert](#browsing-a-concert).
 
 [^rep]:
     `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,
@@ -70,6 +71,42 @@ prints a JSON Lines stream: one compact line per record event that changes an in
 `reused`), or per event of any type with `--events --json`, each as the record holds it, ending with the concert
 document, `wait --json`'s with `"type":"concert"`. Otherwise stdout holds the view, and the watch ends with the closing
 block, as `wait` prints it after the graph, or only its `concert` row with `--events`.
+
+### Browsing a concert
+
+When stdin and stdout are both terminals, `watch <concert>` without `--events` or `--json` takes the alternate screen
+and draws the graph as a tree to drive with keys. It follows by default: the cursor sits on the newest running instance,
+or once the concert settles on the last `failed` one, with the containers leading to it open. A loop shows its latest
+round unless `[` or `]` pins another, marked `(history)`. Under the tree, a line names the cursor row's instance, kind,
+state, time and agent, then its reason or latest progress, and the last line the mode and keys.
+
+| Key                    | Does                                                                                    |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| `j` `↓` / `k` `↑`      | Moves the cursor down or up[^off]                                                       |
+| `l` `→` / `h` `←`      | Opens a row, or steps to its first member / closes it, or steps to its container[^step] |
+| `space`                | Opens or closes the row                                                                 |
+| `[` / `]`              | The previous or next round of the loop the cursor is in[^off]                           |
+| `g` `Home` / `G` `End` | The first or last row[^off]                                                             |
+| `PgUp` / `PgDn`        | One viewport up or down[^off]                                                           |
+| `e`                    | The last `failed` instance, its containers opened and its rounds shown[^off]            |
+| `f`                    | Toggles follow; turning it on drops the pinned rounds and keeps the folds               |
+| `q` `Ctrl-C`           | Quits                                                                                   |
+| `Ctrl-Z`               | Gives the terminal back and suspends; `fg` resumes                                      |
+
+[^off]: Turns follow off.
+
+[^step]: A step turns follow off.
+
+It stays open after the concert settles, and on a settled concert it opens straight into browsing. Quitting gives the
+terminal back, then prints the graph with every row and the closing block, and exits with the concert's code, or 130
+when it has not settled. A resize redraws. `SIGTERM`, `SIGHUP` and `SIGINT` give the terminal back before exiting with
+128 plus the signal's number; after a `SIGKILL`, `reset` restores it.
+
+### Debug
+
+`watch <concert> --frames '<keys>'` prints the browsed graph, then a `── <key>` line and the graph again after each
+space-separated key, named as typed (`j`, `[`) or as an input (`down`, `previous`), stopping at `q`. It needs no
+terminal and exits with the concert's code, or 0 while it runs. It is left out of `--help`, and its output may change.
 
 `ls <concert>` lists the node instances in graph order, as `watch` draws them: subcompositions, groups and loop rounds
 nest, and one node's expansions keep the order they started in. `ls <concert> --json` lists `instances` in that order.
@@ -198,4 +235,4 @@ A tour is a slug of lower-case words joined by hyphens, at most 64 characters. `
 | 3    | The concert settled `rejected`.                                                               |
 | 124  | `wait --timeout` passed with the concert still running.                                       |
 
-`watch` exits as `wait` does.
+`watch` exits as `wait` does, except that browsing a concert quit before it settled exits 130.

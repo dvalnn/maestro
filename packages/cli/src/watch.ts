@@ -2,6 +2,7 @@ import type { ConcertRecord, Records } from "@maestro/core/perform";
 import type { ConcertEvent } from "@maestro/ir";
 import {
 	agentsOf,
+	browse,
 	eventLine,
 	frame,
 	type Seen,
@@ -9,6 +10,15 @@ import {
 	shortIds,
 	tokensOf,
 } from "@maestro/render-text/live";
+import {
+	type Browsed,
+	type Input,
+	isInput,
+	keysOf,
+	NAV,
+	type Nav,
+	press,
+} from "@maestro/render-text/press";
 import {
 	COMMON,
 	type Colors,
@@ -18,10 +28,20 @@ import {
 	isSet,
 	type Options,
 	only,
+	type Screen,
+	textOf,
 	type Values,
 } from "./command";
 import { actorOf, annotated, hostTextOf } from "./host-text";
-import { exitOf, printClosing, resultDoc, UNFRAMED, viewOf } from "./output";
+import {
+	EXIT,
+	exitOf,
+	printClosing,
+	resultDoc,
+	UNFRAMED,
+	usageError,
+	viewOf,
+} from "./output";
 import {
 	artifactsOf,
 	concertOf,
@@ -39,6 +59,13 @@ const CLEAR_BELOW = `${ESC}[J`;
 const cursorUp = (lines: number) => `${ESC}[${lines}F`;
 /** The event types a view's JSON lines show without `--events`: those that change an instance's state. */
 const STATE_CHANGES = new Set(["running", "settled", "reused"]);
+/** A height no frame reaches, so the final frame of a browsed watch shows every row. */
+const EVERY_ROW = Number.POSITIVE_INFINITY;
+/** The terminal `--frames` draws for when stdout is none. */
+const FRAMES_TERMINAL = { columns: 120, rows: 40 };
+/** What separates the frames `--frames` prints, before the key that drew the next. */
+const FRAMES_RULE = "──";
+const KEY_TOKENS = /\s+/;
 
 const WATCH_OPTIONS = {
 	...COMMON,
@@ -49,6 +76,12 @@ const WATCH_OPTIONS = {
 	events: {
 		type: "boolean",
 		desc: "Show every event, tool calls and thinking among them, not the graph",
+	},
+	frames: {
+		type: "string",
+		arg: "keys",
+		desc: "Print the browsed graph, then again after each of the space-separated keys",
+		hidden: true,
 	},
 } as const satisfies Options;
 
@@ -72,6 +105,40 @@ const eventLines =
 			deps.stdout(eventLine(row.ir, e, view));
 	};
 
+/** What a graph view folds in and draws of a concert, read afresh from the record on each call. */
+function drawingOf(
+	deps: Deps,
+	store: Records,
+	terminal: Terminal,
+	color: boolean,
+) {
+	let state: Seen = new Map();
+	const short = shortIds(store.ids());
+	return {
+		/** The instance states with `events` folded in. */
+		fold(events: readonly ConcertEvent[], row: ConcertRecord): Seen {
+			state = seen(state, annotated(events, hostTextOf(deps.hosts, row.ir)));
+			return state;
+		},
+		/** Concert `row` at the terminal's size, and what executes each agent instance and its tokens. */
+		read(row: ConcertRecord) {
+			const hostText = hostTextOf(deps.hosts, row.ir);
+			const view = viewOf(row, color, {
+				...terminal(),
+				tokens: tokensOf(store.metrics(row.id)),
+				unique: short.unique(row.id),
+			});
+			const agents = agentsOf(
+				store.instances(row.id).map((i) => ({
+					...i,
+					actor: actorOf(i.enrichment, i.node, hostText),
+				})),
+			);
+			return { view, agents };
+		},
+	};
+}
+
 /** Redraws the frame in place, over the one before, when it changed. */
 function frames(
 	deps: Deps,
@@ -79,23 +146,11 @@ function frames(
 	terminal: Terminal,
 	color: boolean,
 ): Show {
-	let state: Seen = new Map();
+	const drawing = drawingOf(deps, store, terminal, color);
 	let last: string | undefined;
-	const short = shortIds(store.ids());
 	return (events, row) => {
-		const hostText = hostTextOf(deps.hosts, row.ir);
-		state = seen(state, annotated(events, hostText));
-		const view = viewOf(row, color, {
-			...terminal(),
-			tokens: tokensOf(store.metrics(row.id)),
-			unique: short.unique(row.id),
-		});
-		const agents = agentsOf(
-			store.instances(row.id).map((i) => ({
-				...i,
-				actor: actorOf(i.enrichment, i.node, hostText),
-			})),
-		);
+		const state = drawing.fold(events, row);
+		const { view, agents } = drawing.read(row);
 		const text = frame(row.ir, state, view, agents);
 		if (text === last) return;
 		const erase =
@@ -134,27 +189,168 @@ function showOf(
 		: { show: eventLines(deps, color, terminal), live, ending: "row" };
 }
 
-async function watched({ session, store, values, positionals, json }: Stored) {
+/** Shows the events of the concert `first` names until it settles or `quit` resolves, and gives its row as last read. */
+async function polled(
+	store: Records,
+	first: ConcertRecord,
+	show: Show,
+	quit?: Promise<void>,
+): Promise<ConcertRecord> {
+	let row = first;
+	let cursor = 0;
+	let quitting = false;
+	void quit?.then(() => {
+		quitting = true;
+	});
+	for (;;) {
+		// The row is read before the events: every event of a settled concert is committed before its row settles.
+		const events = store.events(row.id, cursor);
+		cursor = events.at(-1)?.seq ?? cursor;
+		show(events, row);
+		if (row.status !== "running") return row;
+		await Bun.sleep(WATCH_POLL_MS);
+		if (quitting) return row;
+		row = store.find(row.id) ?? row;
+	}
+}
+
+/** Concert `row` browsed from `nav`, as the record holds it now. */
+type Render = (nav: Nav) => Browsed;
+
+/** `rendered` after each of `inputs` in turn, each drawn again before the next; none once one is `quit`. */
+function pressed(
+	render: Render,
+	rendered: Browsed,
+	inputs: readonly Input[],
+): Browsed | undefined {
+	let next = rendered;
+	for (const input of inputs) {
+		if (input === "quit") return undefined;
+		next = render(press(input, next));
+	}
+	return next;
+}
+
+/**
+ * Browses concert `first` on `screen` until `q`, keys moving the cursor and the poll stopping once it settled. Then
+ * prints the frame with every row and the closing block on the main screen, and gives the concert's exit code, or
+ * `EXIT.interrupted` when it had not settled.
+ */
+async function browsed(
+	{ session, store, values }: Stored,
+	screen: Screen,
+	first: ConcertRecord,
+	terminal: Terminal,
+): Promise<number> {
+	const color = colorOf(session.deps, values);
+	const drawing = drawingOf(session.deps, store, terminal, color.out);
+	const quit = Promise.withResolvers<void>();
+	let row = first;
+	let state: Seen = new Map();
+	let shown: Browsed | undefined;
+	let drawn: string | undefined;
+	const render: Render = (nav) => {
+		const { view, agents } = drawing.read(row);
+		return browse(row.ir, state, view, agents, nav);
+	};
+	/** Draws `next`, unless it is what is drawn and `force` is off. */
+	const paint = (next: Browsed, force: boolean) => {
+		shown = next;
+		const text = next.lines.join("\n");
+		if (force || text !== drawn) screen.draw(next.lines);
+		drawn = text;
+	};
+	const onKey = (chunk: string) => {
+		const next = pressed(render, render(shown?.nav ?? NAV), keysOf(chunk));
+		if (next === undefined) quit.resolve();
+		else paint(next, chunk === "");
+	};
+	try {
+		screen.enter(onKey);
+		row = await polled(
+			store,
+			row,
+			(events, read) => {
+				row = read;
+				state = drawing.fold(events, read);
+				paint(render(shown?.nav ?? NAV), false);
+			},
+			quit.promise,
+		);
+		await quit.promise;
+	} finally {
+		screen.leave();
+	}
+	const { view, agents } = drawing.read(row);
+	session.deps.stdout(
+		frame(row.ir, state, { ...view, rows: EVERY_ROW }, agents),
+	);
+	if (row.status === "running") return EXIT.interrupted;
+	return closed(session, store, row, { color, ending: "block" });
+}
+
+/**
+ * The inputs `keys` names, space-separated: each an input's name, such as `down`, or keys as typed, such as `j` or `[`.
+ * @throws CliError, a usage error naming a token that names none.
+ */
+function inputsOf(keys: string): Input[] {
+	return keys
+		.split(KEY_TOKENS)
+		.filter(Boolean)
+		.flatMap((token) => {
+			const inputs = isInput(token) ? [token] : keysOf(token);
+			if (inputs.length > 0) return inputs;
+			throw usageError(
+				`--frames names no key: '${token}'`,
+				"Name keys as typed, such as j or [, or as down, previous or follow",
+			);
+		});
+}
+
+/**
+ * `--frames`: concert `row` as the record holds it now, browsed, then again after each input of `keys`, a rule naming
+ * it before each; until a `quit`. Gives the concert's exit code once it settled, else `EXIT.ok`.
+ */
+function framed(
+	{ session, store, values }: Stored,
+	row: ConcertRecord,
+	keys: string,
+): number {
+	const { deps } = session;
+	const inputs = inputsOf(keys);
+	const terminal = deps.terminal ?? (() => FRAMES_TERMINAL);
+	const drawing = drawingOf(deps, store, terminal, colorOf(deps, values).out);
+	const state = drawing.fold(store.events(row.id, 0), row);
+	const { view, agents } = drawing.read(row);
+	const render: Render = (nav) => browse(row.ir, state, view, agents, nav);
+	let shown = render(NAV);
+	deps.stdout(shown.lines.join("\n"));
+	for (const input of inputs) {
+		const next = pressed(render, shown, [input]);
+		if (next === undefined) break;
+		shown = next;
+		deps.stdout(`${FRAMES_RULE} ${input}`);
+		deps.stdout(shown.lines.join("\n"));
+	}
+	return row.status === "running" ? EXIT.ok : exitOf(row.status);
+}
+
+async function watched(stored: Stored) {
+	const { session, store, values, positionals, json } = stored;
 	const { deps } = session;
 	const prefix = only(positionals, "concert", "Name the concert to watch");
-	let row = concertOf(store, prefix);
-	const { id } = row;
+	const row = concertOf(store, prefix);
+	const keys = textOf(values, "frames");
+	if (keys !== undefined) return framed(stored, row, keys);
 	const { show, live, ending } = showOf(deps, store, values, json);
 	if (live && row.status === "running")
 		deps.stderr(
-			`watching concert ${id}; ctrl-c stops watching, not the concert`,
+			`watching concert ${row.id}; ctrl-c stops watching, not the concert`,
 		);
-	let cursor = 0;
-	for (;;) {
-		// The row is read before the events: every event of a settled concert is committed before its row settles.
-		const events = store.events(id, cursor);
-		cursor = events.at(-1)?.seq ?? cursor;
-		show(events, row);
-		if (row.status !== "running") break;
-		await Bun.sleep(WATCH_POLL_MS);
-		row = store.find(id) ?? row;
-	}
-	return closed(session, store, row, {
+	if (deps.screen && deps.terminal && ending === "block")
+		return browsed(stored, deps.screen, row, deps.terminal);
+	const settled = await polled(store, row, show);
+	return closed(session, store, settled, {
 		color: colorOf(deps, values),
 		ending,
 	});

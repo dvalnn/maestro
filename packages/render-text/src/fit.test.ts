@@ -8,6 +8,7 @@ import { type Row, rowsOf, type Shown } from "./tree";
 
 const row = (name: string, shown: Shown, depth = 0, pinned = false): Row => ({
 	key: name,
+	id: name,
 	depth,
 	shown,
 	name,

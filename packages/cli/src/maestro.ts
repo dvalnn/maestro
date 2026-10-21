@@ -7,7 +7,9 @@ import { main } from "./cli";
 import { loadDotenv } from "./config";
 import { builtinHosts } from "./hosts";
 import { EXIT } from "./output";
+import { fullScreen } from "./screen";
 
+const STDIN_FD = 0;
 /** Synchronous writes: `process.exit` drops what an async write to a slow pipe has not yet flushed. */
 const STDOUT_FD = 1;
 const STDERR_FD = 2;
@@ -66,5 +68,14 @@ process.exit(
 					columns: process.stderr.columns || UNSIZED_TERMINAL.columns,
 				})
 			: undefined,
+		screen:
+			isatty(STDIN_FD) && isatty(STDOUT_FD)
+				? fullScreen({
+						stdin: process.stdin,
+						write: (text) => writeSync(STDOUT_FD, text),
+						process,
+						stderr: (line) => emit(STDERR_FD, line),
+					})
+				: undefined,
 	}),
 );

@@ -1,4 +1,5 @@
 import {
+	formatInstance,
 	type GraphIndex,
 	type GroupNode,
 	type IrNode,
@@ -50,25 +51,40 @@ const ANY = "*";
 type Pins = ReadonlyMap<string, string>;
 
 /** How the rows reach an instance: the row that shows it, the container rows above it, and each iteration to show. */
-type Focus = {
+export type Focus = {
 	key: string;
 	path: string[];
 	pins: [row: string, iteration: string][];
 };
 
-/** What `rowsOf` overlays on the shape. `settled` says the concert has; `now` is epoch ms. */
+/**
+ * What a reader changed of the folds: a row opened or closed by key, the container rows above the cursor, which open
+ * unless closed, and the iteration a sequential group's row shows in place of its latest.
+ */
+export type Folds = {
+	open: ReadonlyMap<string, boolean>;
+	path: readonly string[];
+	pins: Pins;
+};
+
+/** What `rowsOf` overlays on the shape. `settled` says the concert has; `now` is epoch ms; `folds` are a reader's. */
 type Overlay = {
 	graph: GraphIndex;
 	seen: Seen;
 	agents: Agents;
 	settled: boolean;
 	now: number;
+	folds?: Folds;
 };
 
 /** One row of the tree. */
 export type Row = {
 	/** `<node id>@<ctx>`, or `<node id>#<expansion>` for one item of an aggregated row. */
 	key: string;
+	/** The instance it shows as `formatInstance` names it, else its node's id. */
+	id: string;
+	/** The key of the container row it is drawn under. */
+	parent?: string;
 	depth: number;
 	shown: Shown;
 	name: string;
@@ -82,6 +98,8 @@ export type Row = {
 	open?: boolean;
 	/** Whether it shows a running instance or the last failure, or holds one, which fitting never hides. */
 	pinned: boolean;
+	/** A sequential group's iteration keys in order, and the one its members show. */
+	iterations?: { keys: readonly string[]; shown: string };
 };
 
 /** Groups whose iterations follow one another: one is shown, the others are history. */
@@ -103,6 +121,9 @@ const FIRST_ITERATION = "0";
 /** The round a loop's note shows before any has started. */
 const NO_ROUNDS = "0";
 const NO_PINS: Pins = new Map();
+const NO_FOLDS: Folds = { open: new Map(), path: [], pins: NO_PINS };
+/** What a sequential group's note adds while it shows an iteration other than its latest. */
+const HISTORY = " (history)";
 const NUMERIC = /^\d+$/;
 const SCOPE_KIND = "scope";
 const PATH_SEP = " › ";
@@ -261,6 +282,31 @@ export function focusOf(graph: GraphIndex, s: NodeInstance): Focus {
 		: { key: own, path, pins };
 }
 
+/**
+ * The focus a following cursor takes: the latest started running instance, its aggregated row under a parallel group;
+ * else, once the concert settled, the last failure; else none.
+ */
+export function followOf(
+	graph: GraphIndex,
+	seen: Seen,
+	settled: boolean,
+): Focus | undefined {
+	const [running] = runningOf(graph, seen);
+	if (running === undefined)
+		return settled ? lastFocusOf(graph, seen) : undefined;
+	const focus = focusOf(graph, running);
+	const row = focus.path.at(-1);
+	return focus.key === itemKey(running) && row !== undefined
+		? { ...focus, key: row, path: focus.path.slice(0, -1) }
+		: focus;
+}
+
+/** The focus of the last failure, none without one. */
+export function lastFocusOf(graph: GraphIndex, seen: Seen) {
+	const last = lastFailureOf(graph, seen);
+	return last && focusOf(graph, last);
+}
+
 /** Instance `s` as a reader names it: `test-loop ⟲2 › repair`, `panel › lenses[spec] › lens`. */
 export function labelOf(graph: GraphIndex, s: NodeInstance): string {
 	const keys = keysOf(s.expansion);
@@ -318,12 +364,19 @@ const iterationState = (
 			.map((s) => s.state),
 	) ?? "pending";
 
-type Walk = Overlay & { last?: InstanceState; pinned: ReadonlySet<string> };
-/** Where an entry is drawn. `done` says nothing more starts there, so what never started is `UNSTARTED`. */
-type At = { depth: number; done: boolean };
+type Walk = Omit<Overlay, "folds"> & {
+	folds: Folds;
+	last?: InstanceState;
+	pinned: ReadonlySet<string>;
+};
+/**
+ * Where an entry is drawn, under the row keyed `parent`. `done` says nothing more starts there, so what never started is
+ * `UNSTARTED`.
+ */
+type At = { depth: number; done: boolean; parent?: string };
 /** An entry's rows, and the state it stands for among its container's members; none when it is left out. */
 type Drawn = { rows: Row[]; shown?: Shown };
-type Base = Pick<Row, "key" | "depth" | "name" | "kind">;
+type Base = Pick<Row, "key" | "id" | "parent" | "depth" | "name" | "kind">;
 
 const LEFT_OUT: Drawn = { rows: [] };
 const notYet = (done: boolean): Shown => (done ? UNSTARTED : "pending");
@@ -331,9 +384,14 @@ const tokensIn = (w: Walk, states: readonly InstanceState[]) =>
 	states.reduce((sum, s) => sum + (w.agents.get(keyOf(s))?.tokens ?? 0), 0);
 const holdsFailure = (w: Walk, states: readonly InstanceState[]) =>
 	w.settled && w.last !== undefined && states.includes(w.last);
-/** Whether a container is open: it holds running work, or the concert settled and it holds the last failure. */
+/** Whether the row keyed `key` is open: as the reader set it, else when `auto` says so or the cursor is under it. */
+const isOpen = (w: Walk, key: string, auto: boolean) =>
+	w.folds.open.get(key) ?? (auto || w.folds.path.includes(key));
+/** Whether a container opens of itself: it holds running work, or the concert settled and it holds the last failure. */
 const holds = (w: Walk, states: readonly InstanceState[]) =>
 	states.some((s) => s.state === "running") || holdsFailure(w, states);
+const idOf = (w: Walk, s: NodeInstance) =>
+	formatInstance(s, w.graph.groupsOf(s.node));
 const pinnedRow = (w: Walk, row: Omit<Row, "pinned">): Row => ({
 	...row,
 	pinned: row.shown === "running" || w.pinned.has(row.key),
@@ -371,7 +429,7 @@ function aggregated(
 	ctx: Ctx,
 ): Drawn {
 	const shown = worstOf(own.map((s) => s.state)) ?? "pending";
-	const open = holdsFailure(w, own);
+	const open = isOpen(w, base.key, holdsFailure(w, own));
 	const row = pinnedRow(w, {
 		...base,
 		name: `${base.name} ×${own.length}`,
@@ -386,6 +444,8 @@ function aggregated(
 	const items = own.map((s) =>
 		instanceRow(w, s, {
 			key: itemKey(s),
+			id: idOf(w, s),
+			parent: base.key,
 			depth: base.depth + 1,
 			name: itemKeys(s, ctx)
 				.map((k) => `[${k}]`)
@@ -397,10 +457,12 @@ function aggregated(
 }
 
 function leafRows(w: Walk, e: Entry, node: IrNode, at: At): Drawn {
-	const ctx = contextOf(w.graph, w.seen, e.id);
+	const ctx = contextOf(w.graph, w.seen, e.id, w.folds.pins);
 	const { own } = liveOf(w.graph, w.seen, e.id, ctx);
 	const base = {
 		key: rowKey(e.id, ctx),
+		id: e.id,
+		parent: at.parent,
 		depth: at.depth,
 		name: lastSegment(e.id),
 		kind: node.kind,
@@ -415,22 +477,28 @@ function leafRows(w: Walk, e: Entry, node: IrNode, at: At): Drawn {
 		};
 	}
 	if (ctx.includes(ANY)) return aggregated(w, base, own, ctx);
-	return { rows: [instanceRow(w, first, base)], shown: first.state };
+	return {
+		rows: [instanceRow(w, first, { ...base, id: idOf(w, first) })],
+		shown: first.state,
+	};
 }
 
-/** `⟲ 2/3   1✗ 2●`: the latest iteration of the cap, then each iteration's state. */
+/** `⟲ 2/3   1✗ 2●`: the iteration `shown` of the cap, marked when it is not the latest, then each iteration's state. */
 function roundsNote(
 	node: GroupNode,
 	keys: readonly string[],
 	inside: readonly InstanceState[],
 	level: number,
+	shown: string,
 ): string {
-	const latest = keys.at(-1);
-	const at = latest === undefined ? NO_ROUNDS : ordinal(latest);
+	const at = keys.length === 0 ? NO_ROUNDS : ordinal(shown);
+	const history = isHistory({ keys, shown }) ? HISTORY : "";
 	const strip = keys
 		.map((k) => `${ordinal(k)}${GLYPH[iterationState(inside, level, k)]}`)
 		.join(" ");
-	return [`⟲ ${at}/${capOf(node)}`, strip].filter(Boolean).join(WIDE_GAP);
+	return [`⟲ ${at}/${capOf(node)}${history}`, strip]
+		.filter(Boolean)
+		.join(WIDE_GAP);
 }
 
 /** `4/4 items · 1 failed · 3 ok`: the items started of the cardinality, then each item's state counted. */
@@ -446,47 +514,78 @@ function itemsNote(
 		.join(NOTE_SEP);
 }
 
-function groupRows(w: Walk, e: Entry, node: GroupNode, at: At): Drawn {
-	const ctx = contextOf(w.graph, w.seen, e.id);
-	const { own, inside, state } = liveOf(w.graph, w.seen, e.id, ctx);
+/** Whether a sequential group shows an iteration other than its latest. */
+const isHistory = ({ keys, shown }: NonNullable<Row["iterations"]>) =>
+	keys.length > 0 && shown !== keys.at(-1);
+
+/** A group's note, and a sequential group's iterations: which it has, and the one its members show. */
+function iterationsNote(
+	w: Walk,
+	node: GroupNode,
+	ctx: Ctx,
+	inside: readonly InstanceState[],
+): Pick<Row, "note" | "iterations"> {
 	const level = ctx.length;
 	const keys = iterationsOf(inside, level);
+	if (!isSequential(node))
+		return { note: itemsNote(node, keys, inside, level) };
+	const shown = innerKey(w.graph, w.seen, node.id, ctx, w.folds.pins);
+	return {
+		note: roundsNote(node, keys, inside, level, shown),
+		iterations: { keys, shown },
+	};
+}
+
+function groupRows(w: Walk, e: Entry, node: GroupNode, at: At): Drawn {
+	const ctx = contextOf(w.graph, w.seen, e.id, w.folds.pins);
+	const { own, inside, state } = liveOf(w.graph, w.seen, e.id, ctx);
+	const key = rowKey(e.id, ctx);
+	const { note, iterations } = iterationsNote(w, node, ctx, inside);
+	const past = iterations !== undefined && isHistory(iterations);
 	const inner: At = {
 		depth: at.depth + 1,
 		done:
-			at.done || (own.length > 0 && own.every((s) => s.state !== "running")),
+			at.done ||
+			past ||
+			(own.length > 0 && own.every((s) => s.state !== "running")),
+		parent: key,
 	};
 	const members = e.children.map((c) => drawn(w, c, inner));
 	const shown = state ?? notYet(at.done);
+	const [first] = own;
 	const row = pinnedRow(w, {
-		key: rowKey(e.id, ctx),
+		key,
+		id: first === undefined ? e.id : idOf(w, first),
+		parent: at.parent,
 		depth: at.depth,
 		shown,
 		name: lastSegment(e.id),
 		kind: node.kind,
 		span: spanOf(own, w.now),
 		tokens: tokensIn(w, inside),
-		note: isSequential(node)
-			? roundsNote(node, keys, inside, level)
-			: itemsNote(node, keys, inside, level),
-		open: holds(w, [...own, ...inside]),
+		note,
+		open: isOpen(w, key, holds(w, [...own, ...inside])),
+		...(iterations && { iterations }),
 	});
 	return { rows: contained(row, members), shown };
 }
 
 /** A scope: its state is that of its members' rows, each group by its own instance (ADR 0006). */
 function scopeRows(w: Walk, e: Entry, at: At): Drawn {
-	const ctx = contextOf(w.graph, w.seen, e.id);
+	const ctx = contextOf(w.graph, w.seen, e.id, w.folds.pins);
 	const { inside } = liveOf(w.graph, w.seen, e.id, ctx);
+	const key = rowKey(e.id, ctx);
 	const members = e.children.map((c) =>
-		drawn(w, c, { ...at, depth: at.depth + 1 }),
+		drawn(w, c, { ...at, depth: at.depth + 1, parent: key }),
 	);
 	const shown =
 		worstOf(members.flatMap((m) => m.shown ?? [])) ?? notYet(at.done);
 	const composition = w.graph.scopes.get(e.id)?.composition ?? "";
 	const leaves = inside.filter((s) => !isGroup(w.graph.nodes.get(s.node)));
 	const row = pinnedRow(w, {
-		key: rowKey(e.id, ctx),
+		key,
+		id: e.id,
+		parent: at.parent,
 		depth: at.depth,
 		shown,
 		name: lastSegment(e.id),
@@ -496,7 +595,7 @@ function scopeRows(w: Walk, e: Entry, at: At): Drawn {
 		note: [composition, countsText(leaves.map((s) => s.state))]
 			.filter(Boolean)
 			.join(NOTE_SEP),
-		open: holds(w, inside),
+		open: isOpen(w, key, holds(w, inside)),
 	});
 	return { rows: contained(row, members), shown };
 }
@@ -512,7 +611,10 @@ function drawn(w: Walk, e: Entry, at: At): Drawn {
  * The rows of `shape` with `o`'s live state on it, each node once:
  * - a sequential group shows its latest iteration, and a strip of each one's state;
  * - under a parallel group a node is one row for all its items, with a strip of each item's state;
- * - a container is open while it holds running work, and once the concert settled while it holds the last failure;
+ * - a container is open as `o.folds` set it, else while it holds running work or the cursor, and once the concert
+ *   settled while it holds the last failure;
+ * - a sequential group shows the iteration `o.folds` pins in place of its latest, and what never started in an earlier
+ *   one is `UNSTARTED`;
  * - a stdlib helper is left out unless running, rejected or failed;
  * - a member that never started is `pending`, and `UNSTARTED` once its iteration, group or concert is done.
  */
@@ -521,6 +623,11 @@ export function rowsOf(shape: readonly Entry[], o: Overlay): Row[] {
 	const pinned = [...runningOf(o.graph, o.seen), ...(last ? [last] : [])]
 		.map((s) => focusOf(o.graph, s))
 		.flatMap((f) => [f.key, ...f.path]);
-	const w: Walk = { ...o, last, pinned: new Set(pinned) };
+	const w: Walk = {
+		...o,
+		folds: o.folds ?? NO_FOLDS,
+		last,
+		pinned: new Set(pinned),
+	};
 	return shape.flatMap((e) => drawn(w, e, { depth: 0, done: o.settled }).rows);
 }

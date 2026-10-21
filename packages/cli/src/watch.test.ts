@@ -2,6 +2,7 @@ import { describe, expect, setSystemTime, test } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import type { Host, HostNodeResult } from "@maestro/core/host";
 import { fakeHost } from "@maestro/testkit";
+import type { Screen } from "./command";
 import {
 	closingOf,
 	ECHO,
@@ -15,6 +16,8 @@ import {
 
 const TOOL = { kind: "tool", name: "bash", input: { command: "ls" } };
 const TERMINAL = () => ({ columns: 120, rows: 40 });
+/** A terminal whose viewport holds fewer rows than the greet concert's tree. */
+const SHORT = () => ({ columns: 120, rows: 10 });
 /** A terminal too narrow for `DETAIL` on one row. */
 const NARROW = () => ({ columns: 50, rows: 40 });
 /** A tool call's detail past the narrow terminal's width. */
@@ -29,6 +32,47 @@ const HOLD_MS = 400;
 const START = new Date("2026-10-19T00:00:00Z");
 
 const linesOf = (text: string) => text.split("\n").map((l) => JSON.parse(l));
+
+/** Ctrl-C as raw mode delivers it. */
+const CTRL_C = "\u0003";
+/** The cursor row of a frame drawn without color. */
+const CURSOR = /^>/;
+
+/**
+ * A screen that keeps what it is asked, drawn lines plain, and after each draw `ready` holds for presses the next of
+ * `keys`, if any; `press` sends more input once the keys are spent.
+ */
+function fakeScreen(
+	keys: readonly string[] = [],
+	ready: (lines: readonly string[]) => boolean = () => true,
+) {
+	const calls: string[] = [];
+	const draws: string[][] = [];
+	const left = [...keys];
+	let onKey: ((chunk: string) => void) | undefined;
+	const press = (chunk: string) => setTimeout(() => onKey?.(chunk));
+	const screen: Screen = {
+		enter(handler) {
+			calls.push("enter");
+			onKey = handler;
+		},
+		draw(lines) {
+			const plain = lines.map(stripVTControlCharacters);
+			draws.push(plain);
+			if (!ready(plain)) return;
+			const next = left.shift();
+			if (next !== undefined) press(next);
+		},
+		leave() {
+			calls.push("leave");
+		},
+	};
+	return { screen, calls, draws, press };
+}
+
+/** Where the cursor row is among a frame's lines. */
+const cursorAt = (lines: readonly string[] = []) =>
+	lines.findIndex((l) => CURSOR.test(l));
 
 describe("watch without a terminal", () => {
 	test.each([
@@ -62,6 +106,125 @@ describe("watch without a terminal", () => {
 			expect(textual.out.split("\n").at(-1)).toMatch(/^ *\+\S+ {2}echo\/echo /);
 		},
 	);
+});
+
+describe("watch --frames", () => {
+	test("prints the browsed graph, then again after each key up to q, exits with the concert's code, and is left out of --help", async () => {
+		const w = await world();
+		const failed = { outcome: "failed", reason: "flaky" } as const;
+		const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf(failed)] }));
+		const framed = await w.call(["watch", id, "--frames", "g down q j"]);
+		expect(framed.code).toBe(1);
+		const frames = framed.out.split(/^── (?=[a-z])/m);
+		expect(frames.map((f) => f.split("\n")[0])).toEqual([
+			expect.stringMatching(/^! demo\.greet /),
+			"first",
+			"down",
+		]);
+		const cursors = frames.map((f) =>
+			f.split("\n").find((l) => CURSOR.test(l)),
+		);
+		expect(cursors).toEqual([
+			expect.stringMatching(/^> +! echo +fake\.task/),
+			expect.stringMatching(/^> +✓ first /),
+			expect.stringMatching(/^> +✓ helpers_exclaim /),
+		]);
+		const unknown = await w.call(["watch", id, "--frames", "zz"]);
+		expect(unknown.code).toBe(2);
+		expect(unknown.err).toStartWith("--frames names no key: 'zz'");
+		expect((await w.call(["watch", "--help"])).out).not.toContain("--frames");
+	});
+});
+
+describe("watch with a screen", () => {
+	test.each([
+		["ok", ECHO, 0, SHORT, /^> +✓ first /],
+		[
+			"failed",
+			{ outcome: "failed", reason: "flaky" },
+			1,
+			TERMINAL,
+			/^> +! echo +fake\.task/,
+		],
+		[
+			"rejected",
+			{ outcome: "rejected", reason: "not today" },
+			3,
+			TERMINAL,
+			/^> +✓ first /,
+		],
+	])(
+		"browses a settled %s concert until q, the cursor first on its failure, keys moving it, then prints every row and the closing block and exits with its code",
+		async (status, echo, code, terminal, cursor) => {
+			const w = await world();
+			const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf(echo)] }));
+			const { screen, calls, draws, press } = fakeScreen(["gj"]);
+			let ended = false;
+			const watched = w
+				.call(["watch", id, "--no-color"], { terminal, screen })
+				.finally(() => {
+					ended = true;
+				});
+			await Bun.sleep(HOLD_MS);
+			expect(ended).toBe(false);
+			expect(calls).toEqual(["enter"]);
+			const [first, moved] = draws;
+			expect(first).toHaveLength(terminal().rows);
+			expect(first?.[cursorAt(first)]).toMatch(cursor);
+			expect(first?.at(-1)).toStartWith("■ settled ");
+			expect(moved?.[cursorAt(moved)]).toMatch(/^> +✓ helpers_exclaim /);
+			press("q");
+			const outcome = await watched;
+			expect(outcome.code).toBe(code);
+			expect(calls).toEqual(["enter", "leave"]);
+			expect(outcome.out).toMatch(/^[✓!✗] demo\.greet {2}\S+ +\w+/);
+			expect(outcome.out).toMatch(/^[▸▾] [✓!✗] echo +scope/m);
+			expect(outcome.out).not.toMatch(/^>/m);
+			expect(outcome.err).toMatch(
+				new RegExp(`^${closingOf(id, status).source.replace(/\$$/, "")}`),
+			);
+		},
+	);
+
+	test("presses each key of a chunk on the view the one before it drew", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf()] }));
+		const lastDrawn = async (keys: string[]) => {
+			const { screen, draws } = fakeScreen([...keys, "q"]);
+			await w.call(["watch", id, "--no-color"], { terminal: TERMINAL, screen });
+			return draws.at(-1) ?? [];
+		};
+		const apart = await lastDrawn(["G", "l", "l"]);
+		expect(apart[cursorAt(apart)]).toMatch(/^> +✓ echo +fake\.task/);
+		expect(await lastDrawn(["G", "ll"])).toEqual(apart);
+	});
+
+	test("gives the terminal back once when the poll throws", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf()] }));
+		const { screen, calls } = fakeScreen();
+		const gone = () => {
+			throw new Error("terminal gone");
+		};
+		const outcome = await w.call(["watch", id], { terminal: gone, screen });
+		expect(outcome.code).toBe(1);
+		expect(outcome.err).toContain("terminal gone");
+		expect(calls).toEqual(["enter", "leave"]);
+	});
+
+	test("--events and --json print lines, leaving the screen untouched", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf()] }));
+		for (const args of [["--events"], ["--json"]]) {
+			const { screen, calls } = fakeScreen();
+			const outcome = await w.call(["watch", id, ...args], {
+				terminal: TERMINAL,
+				screen,
+			});
+			expect(outcome.code).toBe(0);
+			expect(calls).toEqual([]);
+		}
+	});
 });
 
 describe("watch on a running concert", async () => {
@@ -121,10 +284,26 @@ describe("watch on a running concert", async () => {
 	const json = watching(["--events", "--json"], { terminal: TERMINAL });
 	const lines = watching(["--events"], { terminal: TERMINAL });
 	const narrow = watching(["--events"], { terminal: NARROW });
+	/** Whether the cursor row shows `echo` running. */
+	const onEcho = (lines: readonly string[]) =>
+		/^> +● echo .* running /.test(lines[cursorAt(lines)] ?? "");
+	const quitter = fakeScreen([CTRL_C], onEcho);
+	const quitted = watching(["--no-color"], {
+		terminal: TERMINAL,
+		screen: quitter.screen,
+	});
 	const piped = watching([]);
 	const pipedEvents = watching(["--events"]);
-	const [drawn, streamed, listed, changes, pipedLines, wrapping] =
-		await Promise.all([graph, json, lines, piped, pipedEvents, narrow]);
+	const [drawn, streamed, listed, changes, pipedLines, wrapping, interrupted] =
+		await Promise.all([
+			graph,
+			json,
+			lines,
+			piped,
+			pipedEvents,
+			narrow,
+			quitted,
+		]);
 	setSystemTime();
 
 	test("redraws the graph in place until the concert settles, then exits as wait does", async () => {
@@ -159,6 +338,18 @@ describe("watch on a running concert", async () => {
 		).toBe(true);
 		expect(last).toMatch(/^✓ demo\.greet {2}\S+ +ok/m);
 		expect(last).toMatch(/^── 4 ok ─+$/m);
+	});
+
+	test("on a screen, follows the running instance, and Ctrl-C before the concert settles leaves it and exits 130 with every row printed", () => {
+		expect(interrupted.code).toBe(130);
+		expect(quitter.calls).toEqual(["enter", "leave"]);
+		const lines = quitter.draws.at(-1) ?? [];
+		expect(onEcho(lines)).toBe(true);
+		expect(lines.at(-1)).toStartWith("● follow ");
+		const printed = stripVTControlCharacters(interrupted.writes.join("\n"));
+		expect(printed).toMatch(/^● demo\.greet {2}\S+ +running/);
+		expect(printed).toMatch(/^ +● echo .*running/m);
+		expect(interrupted.err).not.toMatch(/^concert /m);
 	});
 
 	test("--events --json holds the progress event verbatim", () => {

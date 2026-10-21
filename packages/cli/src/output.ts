@@ -38,6 +38,8 @@ export const EXIT = {
 	usage: 2,
 	rejected: 3,
 	timeout: 124,
+	/** 128 plus SIGINT's number, as Ctrl-C ends a process. */
+	interrupted: 130,
 } as const;
 
 /** An error to print as it is, with the exit code it ends the command with. */
