@@ -406,11 +406,13 @@ function extrasOf(
 	target: Target,
 	inputs: Inputs,
 	context: HostContext,
+	base: string,
 ): AgentChecks {
 	const attachments = Object.entries(config.attachments ?? {});
 	const checks = stageChecks(
 		context.scratch,
 		(config.checks ?? []).map((name) => [name, namedCheck(target, name)]),
+		base,
 	);
 	const mounts: Bind[] = attachments.map(([name]) => ({
 		src: artifactInput(inputs, context, name),
@@ -463,7 +465,7 @@ async function execute(
 			mkdirSync(staging.staged);
 			mkdirSync(staging.outbox);
 			context.emit({ kind: "agent", ...identityOf(role) });
-			const extras = extrasOf(config, target, inputs, context);
+			const extras = extrasOf(config, target, inputs, context, lane.base);
 			const kind = config.verdict ? VERDICT : WORK;
 			const prompt =
 				textInput(inputs, "prompt") +

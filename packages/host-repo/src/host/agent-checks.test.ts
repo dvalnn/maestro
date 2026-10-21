@@ -44,8 +44,13 @@ describe("agent-runnable checks and attachments", () => {
 		const cache = tmp("cache");
 		const config = configWith({
 			lint: {
-				run: ["echo linting $MODE", "pwd", `echo ran > ${cache}/lint-ran`],
-				env: { MODE: "ci" },
+				run: [
+					"echo linting $MODE",
+					"pwd",
+					"echo base=$MAESTRO_LANE_BASE",
+					`echo ran > ${cache}/lint-ran`,
+				],
+				env: { MODE: "ci", MAESTRO_LANE_BASE: "spoofed" },
 				writable: [cache],
 			},
 			red: ["true", "exit 1"],
@@ -114,6 +119,10 @@ describe("agent-runnable checks and attachments", () => {
 		const log = readFileSync(artifact("reader", "check"), "utf8");
 		expect(log).toContain("$ echo linting $MODE\nlinting ci\n");
 		expect(log).toContain("\n/lane\n");
+		const main = Bun.spawnSync(["git", "rev-parse", "main"], {
+			cwd: config.values.target.repo,
+		});
+		expect(log).toContain(`\nbase=${main.stdout.toString().trim()}\n`);
 		expect(log).toContain("check 'lint': ok");
 		expect(log).toContain("[check red line 2 exited 1]");
 		expect(log).toContain("check 'red': rejected");
@@ -173,11 +182,23 @@ describe("agent-runnable checks and attachments", () => {
 		const cache = tmp("cache");
 		const config = configWith({
 			put: {
-				run: [`echo $GREETING > ${cache}/lock`],
+				run: [
+					`echo $GREETING > ${cache}/lock`,
+					`echo $MAESTRO_LANE_BASE > ${cache}/base`,
+					"echo b > a.txt",
+				],
 				writable: [cache],
-				env: { GREETING: "hi" },
+				env: { GREETING: "hi", MAESTRO_LANE_BASE: "spoofed" },
 			},
-			see: { run: `test -f ${cache}/lock`, readOnly: [cache] },
+			see: {
+				run: [
+					`test -f ${cache}/lock`,
+					`test "$MAESTRO_LANE_BASE" = "$(cat ${cache}/base)"`,
+					"git diff --quiet HEAD",
+					"! git diff --quiet $MAESTRO_LANE_BASE",
+				],
+				readOnly: [cache],
+			},
 		});
 		const { host } = stubHost(() => [OK]);
 		const specs: NodeSpec[] = [
@@ -198,6 +219,12 @@ describe("agent-runnable checks and attachments", () => {
 		expect(result).toMatchObject({ outcome: "ok", node: "see" });
 		expect(instances.map((i) => i.status)).toEqual(["ok", "ok"]);
 		expect(readFileSync(join(cache, "lock"), "utf8")).toBe("hi\n");
+		const main = Bun.spawnSync(["git", "rev-parse", "main"], {
+			cwd: config.values.target.repo,
+		});
+		expect(readFileSync(join(cache, "base"), "utf8").trim()).toBe(
+			main.stdout.toString().trim(),
+		);
 	});
 
 	test.each([

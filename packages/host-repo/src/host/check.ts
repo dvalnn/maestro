@@ -90,6 +90,7 @@ async function execute(
 			const { lane, read } = open;
 			const s: Sandboxed = {
 				dir: lane.dir,
+				base: lane.base,
 				readOnly: readOnlyBinds(lane, setup.readOnly),
 				writable: [],
 				live,

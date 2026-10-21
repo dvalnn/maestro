@@ -38,6 +38,8 @@ export interface Lane {
 	readonly readOnly: Bind[];
 	/** Whether the working copy was checked out from a commit, rather than moved in place by an `extend`. */
 	readonly checkedOut: boolean;
+	/** The target commit the lane chain was cut from. */
+	readonly base: string;
 	/** The lane-relative files `seal` would record a change to, as git spells them. */
 	changes(): Promise<string[]>;
 	/**
@@ -580,6 +582,7 @@ export function openLanes(options: LanesOptions): Lanes {
 				dir,
 				readOnly: [{ src: gitdir }, { src: join(store, "objects") }],
 				checkedOut,
+				base,
 				changes: async () =>
 					(await staged()).changed.map((l) => l.slice(l.indexOf("\t") + 1)),
 				async seal() {

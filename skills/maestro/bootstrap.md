@@ -22,6 +22,10 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
      lanes are cut from the target's `HEAD` otherwise.
    - `target.checks`: the project's own test, lint and build commands, found in its manifest (`package.json` scripts,
      `Makefile`, `justfile`, `pyproject.toml`) or its CI file. Name them for what they do: `test`, `lint`, `build`.
+     Every line of a check, and of `target.prepare`, sees `MAESTRO_LANE_BASE`, the commit its lane was cut from, so a
+     check judging only the change diffs against it, as `git diff $MAESTRO_LANE_BASE`; `HEAD` is the lane's latest
+     version. An agent running `check` mid-work has new files untracked (`git add` is denied in its sandbox), which that
+     diff misses; list them with `git ls-files --others --exclude-standard`.
    - `target.prepare`: the commands a fresh checkout needs before those commands work, such as a dependency install
      (`bun install`, `uv sync`), in a check's forms. It runs in the sandbox, network included, in every lane checked out
      from a commit, before the node's work. What it makes must be ignored by the repository's `.gitignore`; any other

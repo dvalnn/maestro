@@ -29,9 +29,19 @@ export type Verdict = {
 /** How a line ended: its exit code, or the signal that killed it. */
 type Ended = { code: number } | { signal: string };
 
-/** Where lines run: the lane at `dir` and the binds beside it, and the log their output goes to. */
+/** The variable that names a lane's base to every line run in it. */
+const LANE_BASE_ENV = "MAESTRO_LANE_BASE";
+
+/** The environment a line of `spec` runs with: its own `env`, then the lane's `base`, which a config cannot override. */
+export const checkEnv = (spec: CheckSpec, base: string) => ({
+	...spec.env,
+	[LANE_BASE_ENV]: base,
+});
+
+/** Where lines run: the lane at `dir`, cut from `base`, and the binds beside it, and the log their output goes to. */
 export type Sandboxed = {
 	dir: string;
+	base: string;
 	readOnly: Bind[];
 	writable: Bind[];
 	live: Live;
@@ -92,7 +102,7 @@ async function runLine(
 		lane: s.dir,
 		// Stderr joins stdout, so the output keeps the order it arrived in.
 		argv: ["sh", "-c", `exec 2>&1; ${line}`],
-		env: spec.env,
+		env: checkEnv(spec, s.base),
 		readOnly: [...s.readOnly, ...pathBinds(spec.readOnly)],
 		writable: [...s.writable, ...pathBinds(spec.writable)],
 	});

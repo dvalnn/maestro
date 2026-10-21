@@ -4,7 +4,13 @@ import { MS_PER_UNIT } from "@maestro/ir";
 import { shellQuote as quote } from "../harness/stub";
 import { type Bind, LANE_DST } from "../sandbox/index";
 import { type CheckSpec, listed } from "./config";
-import { FAILED_EXITS, pathBinds, TAIL_LINES, USAGE_EXIT } from "./run-lines";
+import {
+	checkEnv,
+	FAILED_EXITS,
+	pathBinds,
+	TAIL_LINES,
+	USAGE_EXIT,
+} from "./run-lines";
 
 /** Where an agent's sandbox sees the staged checks, and so its `check` command on PATH. */
 const ROOT = "/maestro/checks";
@@ -23,9 +29,9 @@ export type AgentChecks = {
 	note: string;
 };
 
-/** The script of one check: its env, then each line echoed and run, the first that does not exit 0 ending it. */
-function body(name: string, spec: CheckSpec): string {
-	const env = Object.entries(spec.env).map(
+/** The script of one check: its env and the lane's `base`, then each line echoed and run, the first that does not exit 0 ending it. */
+function body(name: string, spec: CheckSpec, base: string): string {
+	const env = Object.entries(checkEnv(spec, base)).map(
 		([k, v]) => `export ${k}=${quote(v)}`,
 	);
 	const lines = spec.lines.flatMap((line, i) => [
@@ -86,13 +92,14 @@ const NONE: AgentChecks = { readOnly: [], writable: [], env: {}, note: "" };
 export function stageChecks(
 	dir: string,
 	checks: [string, CheckSpec][],
+	base: string,
 ): AgentChecks {
 	if (!checks.length) return NONE;
 	const root = join(dir, "checks");
 	const specs = checks.map(([, spec]) => spec);
 	mkdirSync(join(root, "bin"), { recursive: true });
 	for (const [i, [name, spec]] of checks.entries())
-		writeFileSync(join(root, `${i}.sh`), body(name, spec));
+		writeFileSync(join(root, `${i}.sh`), body(name, spec, base));
 	writeFileSync(join(root, "bin", "check"), command(checks), {
 		mode: SCRIPT_MODE,
 	});
