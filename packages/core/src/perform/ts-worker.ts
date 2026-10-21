@@ -31,9 +31,9 @@ export type Invocation = {
 	inputs: Inputs;
 	/**
 	 * `CodeContext` without `path`, which the worker derives from `artifacts`, the area's absolute path, and without
-	 * `log`, which is `invoke`'s.
+	 * `log`, which is `invoke`'s, and without `signal`, which `invoke` makes.
 	 */
-	context: Omit<CodeContext, "path" | "log"> & { artifacts: string };
+	context: Omit<CodeContext, "path" | "log" | "signal"> & { artifacts: string };
 };
 
 /** Executes the code nodes of one runtime (sdk-spec 13.2). It gets each function through `LoadCode`. */
@@ -52,8 +52,8 @@ const CANCELLED: NodeResult = { outcome: "failed", reason: "cancelled" };
 
 /**
  * The in-process worker of the `ts` runtime (CORE-14). It settles each invocation through `invokeCode`, with the
- * function `loadCode` resolves (ADR 0008). `cancel` settles the invocation `failed` at once and abandons the function,
- * which an in-process worker cannot stop. A line the function logs once its invocation has settled is dropped.
+ * function `loadCode` resolves (ADR 0008). `cancel` aborts the invocation's signal and settles it `failed` at once, abandoning
+ * a function that ignores the signal. A line the function logs once its invocation has settled is dropped.
  */
 export function tsWorker(loadCode: LoadCode, check: PortCheck): Worker {
 	const cancels = new Map<string, () => void>();
@@ -65,8 +65,12 @@ export function tsWorker(loadCode: LoadCode, check: PortCheck): Worker {
 		},
 		async invoke(invocation, log) {
 			const id = instanceKey(invocation.instance);
+			const controller = new AbortController();
 			const cancelled = new Promise<NodeResult>((settle) => {
-				cancels.set(id, () => settle(CANCELLED));
+				cancels.set(id, () => {
+					controller.abort();
+					settle(CANCELLED);
+				});
 			});
 			let settled = false;
 			const live = (line: string) => {
@@ -74,7 +78,7 @@ export function tsWorker(loadCode: LoadCode, check: PortCheck): Worker {
 			};
 			try {
 				return await Promise.race([
-					call(loadCode, check, invocation, live),
+					call(loadCode, check, invocation, live, controller.signal),
 					cancelled,
 				]);
 			} catch (error) {
@@ -95,6 +99,7 @@ async function call(
 	check: PortCheck,
 	{ worker, in: ports, inputs, context }: Invocation,
 	log: (line: string) => void,
+	signal: AbortSignal,
 ): Promise<NodeResult> {
 	const fn = await loadFunction(loadCode, worker);
 	const { artifacts, ...rest } = context;
@@ -102,6 +107,7 @@ async function call(
 		...rest,
 		path: (ref) => join(artifacts, ref.path),
 		log,
+		signal,
 	};
 	return invokeCode(fn, { in: ports, inputs, context: ctx }, check);
 }

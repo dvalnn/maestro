@@ -55,7 +55,13 @@ export function repoHost({ harnesses }: RepoHostOptions): Host {
 			node.kind === AGENT_KIND ? { [AGENT_KIND]: 1 } : {},
 		environment(setup) {
 			const { target } = repoSetup(setup);
-			return target ? { target: target.repo, base: target.base ?? null } : {};
+			return target
+				? {
+						target: target.repo,
+						base: target.base ?? null,
+						sparse: target.sparse ?? null,
+					}
+				: {};
 		},
 		param(type, text) {
 			if (type === LANE_TYPE && LANE_REF.test(text)) return { value: text };

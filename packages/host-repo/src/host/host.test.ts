@@ -462,6 +462,21 @@ describe("compose", () => {
 });
 
 describe("perform", () => {
+	test("environment gives code nodes the target, its base and its sparse patterns, null when unset", async () => {
+		const { host } = stubHost(() => []);
+		const environment = (extra: Record<string, unknown>) => {
+			const config = configOf("/repo");
+			const target = { ...config.values.target, ...extra };
+			return host.environment({ ...setupOf(config), config: { target } });
+		};
+		expect(await environment({ sparse: ["src"] })).toEqual({
+			target: "/repo",
+			base: "main",
+			sparse: ["src"],
+		});
+		expect(await environment({})).toMatchObject({ sparse: null });
+	});
+
 	test("fresh, agent, read check, then an agent extending with resume continues the first agent's session", async () => {
 		const target = toyTarget();
 		const before = snapshot(target);

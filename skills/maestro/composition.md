@@ -102,6 +102,11 @@ An agent ending `ok` must write every declared file, valid, or the instance fail
 that rejects without its declared files ends `rejected` with no outputs. Any agent may report itself blocked: it ends
 `failed` with the reason `blocked: <cause>` and no outputs.
 
+A code function's `ctx` carries `signal`, aborted when the concert is killed or the node times out. Pass it to what the
+function starts, as in `Bun.spawn(cmd, { signal: ctx.signal })`, or the process outlives the node. `ctx.env.repo` holds
+`target`, `base` and `sparse`; `sparse` is `target.sparse` as configured, a list of cone directories or `{ patterns }`,
+or `null`. A code node that settles `failed` keeps its scratch directory, and its log says `scratch kept at <path>`.
+
 ## Worked example
 
 An agent builds the task in a fresh lane; the `test` check verifies it; while the check is red, a repair agent resumes

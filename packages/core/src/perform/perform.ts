@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { rm, rmdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
 	type AssertNode,
@@ -249,11 +249,8 @@ async function conduct(
 		while (inflight.size > 0) await Promise.all(inflight);
 		result = failed;
 	}
-	// Each instance removed its own scratch directory, so what is left is empty and does not change how the concert
-	// settled.
-	await rm(dirs.scratch, { recursive: true, force: true }).catch(
-		() => undefined,
-	);
+	// Instances remove their own scratch, except a failed code node's, which stays for inspection.
+	await rmdir(dirs.scratch).catch(() => undefined);
 	options.record.finish(id, result, Date.now());
 	return result;
 }
@@ -647,8 +644,9 @@ async function settleLeaf(
 
 /**
  * Executes a code or host instance in its own scratch directory, which goes once its outputs are moved (ADR 0007). A
- * halted instance settles with its halt once its cancel hook has returned and the event loop has turned, keeping the
- * metrics and enrichment its call reported by then. Its call is abandoned, and a later result is ignored.
+ * code instance that settles `failed` keeps it, and logs where. A halted instance settles with its halt once its
+ * cancel hook has returned and the event loop has turned, keeping the metrics and enrichment its call reported by
+ * then. Its call is abandoned, and a later result is ignored.
  */
 async function execute(
 	c: Live,
@@ -657,42 +655,63 @@ async function execute(
 	instance: NodeInstance,
 	inputs: Inputs,
 ): Promise<Settling> {
+	const halted = haltOf(frame);
+	if (halted) return halted;
 	const scratch = await scratchDir(c.kit.dirs);
+	let keep = false;
 	try {
-		const halted = haltOf(frame);
-		if (halted) return halted;
-		const clock = Date.now();
-		start(c, instance, clock);
-		const call = callOf(c.kit, node, instance, inputs, {
-			scratch,
-			clock,
-			id: shown(c, instance),
-		});
-		const abandoned = Promise.withResolvers<HostNodeResult>();
-		const entry: Running = {
-			frame,
-			cancel: async () => {
-				await call.cancel();
-				setImmediate(() => abandoned.resolve(ABANDONED));
-			},
-		};
-		c.running.add(entry);
-		const timeout = node.kind === "code" ? node.timeout : undefined;
-		const reported = await timed(
-			Promise.race([call.invoke(), abandoned.promise]),
-			{ name: shown(c, instance), timeout },
-			async (reason) => {
-				await stop(entry, { outcome: "failed", reason });
-				return abandoned.promise;
-			},
-		).finally(() => c.running.delete(entry));
-		const { metrics, enrichment } = reported;
-		return entry.halted
-			? { ...entry.halted, metrics, enrichment }
-			: await finish(c.kit, node, instance, scratch, reported);
+		const settling = await executeIn(c, node, frame, instance, inputs, scratch);
+		keep = node.kind === "code" && settling.outcome === "failed";
+		if (keep)
+			c.kit.record.note(
+				c.id,
+				instance,
+				{ type: "log", line: `scratch kept at ${scratch}` },
+				Date.now(),
+			);
+		return settling;
 	} finally {
-		await rm(scratch, { recursive: true, force: true });
+		if (!keep) await rm(scratch, { recursive: true, force: true });
 	}
+}
+
+async function executeIn(
+	c: Live,
+	node: CodeNode | HostNode,
+	frame: Frame,
+	instance: NodeInstance,
+	inputs: Inputs,
+	scratch: string,
+): Promise<Settling> {
+	const clock = Date.now();
+	start(c, instance, clock);
+	const call = callOf(c.kit, node, instance, inputs, {
+		scratch,
+		clock,
+		id: shown(c, instance),
+	});
+	const abandoned = Promise.withResolvers<HostNodeResult>();
+	const entry: Running = {
+		frame,
+		cancel: async () => {
+			await call.cancel();
+			setImmediate(() => abandoned.resolve(ABANDONED));
+		},
+	};
+	c.running.add(entry);
+	const timeout = node.kind === "code" ? node.timeout : undefined;
+	const reported = await timed(
+		Promise.race([call.invoke(), abandoned.promise]),
+		{ name: shown(c, instance), timeout },
+		async (reason) => {
+			await stop(entry, { outcome: "failed", reason });
+			return abandoned.promise;
+		},
+	).finally(() => c.running.delete(entry));
+	const { metrics, enrichment } = reported;
+	return entry.halted
+		? { ...entry.halted, metrics, enrichment }
+		: await finish(c.kit, node, instance, scratch, reported);
 }
 
 /**

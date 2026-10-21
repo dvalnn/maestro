@@ -9,6 +9,7 @@ const context: CodeContext = {
 	scratch: "/scratch/c1",
 	env: {},
 	log: () => {},
+	signal: new AbortController().signal,
 };
 
 test("outputs exclude a rejection's keys, so a code function's return discriminates", async () => {

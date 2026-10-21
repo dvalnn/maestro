@@ -8,7 +8,10 @@ export type Context = {
 	clock: number;
 	/** The absolute path of an artifact in the concert's artifact area. */
 	path(ref: ArtifactRef): string;
-	/** The absolute path of the instance's own scratch directory, which core deletes once it has moved the outputs. */
+	/**
+	 * The absolute path of the instance's own scratch directory. Core deletes it once it has moved the outputs, and a code
+	 * instance that settles `failed` keeps it.
+	 */
 	scratch: string;
 };
 
@@ -21,6 +24,8 @@ export const TS_RUNTIME = "ts";
 /** A code function's context: core's, plus each host's facts keyed by host name. */
 export type CodeContext = Context & {
 	env: Readonly<Record<string, Facts>>;
+	/** Aborts when the instance is cancelled or times out. One signal per invocation. */
+	signal: AbortSignal;
 	/** Records `line` as a `log` event on the instance. */
 	log(line: string): void;
 };

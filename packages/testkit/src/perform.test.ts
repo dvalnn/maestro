@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1152,7 +1152,10 @@ test("cancelling a concert cancels running instances latest first, keeps what th
 	expect(record.metrics(playing.id)).toEqual({ tokens: 4 });
 	expect(
 		record.events(playing.id).filter((e) => e.type === "log"),
-	).toMatchObject([{ node: "b", line: "cancel failed: hook broke" }]);
+	).toMatchObject([
+		{ node: "b", line: "cancel failed: hook broke" },
+		{ node: "d", line: expect.stringContaining("scratch kept at") },
+	]);
 	expect(result).toEqual({ outcome: "failed", reason: CANCELLED_CONCERT });
 	expect(record.concerts({ status: "failed" }).map((c) => c.id)).toEqual([
 		playing.id,
@@ -1429,6 +1432,76 @@ test("a code node past its timeout settles failed naming the node and the limit;
 	expect(instances.unbounded?.status).toBe("ok");
 });
 
+test("a code node's signal aborts when the concert is cancelled and when the node times out", async () => {
+	const aborted: string[] = [];
+	const started = barrier(2);
+	const watch = (name: string) => (_: never, ctx: CodeContext) => {
+		ctx.signal.addEventListener("abort", () => aborted.push(name));
+		started.arrive();
+		return new Promise(() => {});
+	};
+	const code_ = { cancelled: watch("cancelled"), slow: watch("slow") };
+	const { dir } = await workspace();
+	const timed = await play(
+		graph([{ ...code("slow", "slow"), timeout: 20 }], [], "slow"),
+		{ code: code_ },
+	);
+	expect(aborted).toEqual(["slow"]);
+	expect(timed.record.instances(timed.concert)[0]?.status).toBe("failed");
+	const playing = await start({
+		ir: graph([code("cancelled", "cancelled")], [], "cancelled"),
+		hosts: [],
+		loadCode: loader(code_),
+		dir,
+		concurrency: 1,
+	});
+	await started.all;
+	expect(aborted).toEqual(["slow"]);
+	await playing.cancel();
+	await playing.done;
+	expect(aborted).toEqual(["slow", "cancelled"]);
+});
+
+test("a failed code node keeps its scratch and logs where, an ok or rejected one does not, and the concert's scratch goes only when empty", async () => {
+	const scratches: Record<string, string> = {};
+	const note =
+		(name: string, fail: boolean) => async (_: never, ctx: CodeContext) => {
+			scratches[name] = ctx.scratch;
+			await writeFile(join(ctx.scratch, "evidence.log"), "why");
+			if (fail) throw new Error("cannot judge");
+			return {};
+		};
+	const { record, concert, dir } = await play(
+		graph([code("bad", "bad"), code("good", "good")], [], "good"),
+		{ code: { bad: note("bad", true), good: note("good", false) } },
+	);
+	const bad = scratches.bad ?? "";
+	expect(readFileSync(join(bad, "evidence.log"), "utf8")).toBe("why");
+	expect(existsSync(scratches.good ?? "")).toBe(false);
+	expect(
+		record
+			.events(concert)
+			.flatMap((e) => (e.node === "bad" && e.type === "log" ? [e.line] : [])),
+	).toContain(`scratch kept at ${bad}`);
+	expect(existsSync(join(dir, concert, "scratch"))).toBe(true);
+
+	const clean = await play(
+		graph([code("no", "no"), code("yes", "yes")], [], "yes"),
+		{
+			code: {
+				no: async (_: never, ctx: CodeContext) => {
+					scratches.no = ctx.scratch;
+					return reject("nope");
+				},
+				yes: note("yes", false),
+			},
+		},
+	);
+	expect(existsSync(scratches.no ?? "")).toBe(false);
+	expect(existsSync(scratches.yes ?? "")).toBe(false);
+	expect(existsSync(join(clean.dir, clean.concert, "scratch"))).toBe(false);
+});
+
 const MISMATCHED = { in: { n: { type: "integer" } }, literals: { n: "one" } };
 
 test("a line logged after the instance settled is dropped, never thrown", async () => {
@@ -1452,7 +1525,11 @@ test("a line logged after the instance settled is dropped, never thrown", async 
 		},
 	);
 	await Bun.sleep(60);
-	expect(record.events(concert).filter((e) => e.type === "log")).toEqual([]);
+	expect(
+		record
+			.events(concert)
+			.filter((e) => e.type === "log" && !e.line.startsWith("scratch kept")),
+	).toEqual([]);
 });
 
 const BESIDE =
@@ -2047,7 +2124,9 @@ test("a written file is moved into the artifact area, hashed, and its scratch di
 	);
 	expect(scratches).toHaveLength(1);
 	expect(kept).toEqual([]);
-	expect(existsSync(join(dir, concert, "scratch"))).toBe(false);
+	expect(
+		readdirSync(join(dir, concert, "scratch")).filter((n) => n.startsWith("i")),
+	).toHaveLength(1);
 	expect(instances.stray?.status).toBe("failed");
 	expect(instances.stray?.reason).toContain(
 		"outside the instance's scratch directory",

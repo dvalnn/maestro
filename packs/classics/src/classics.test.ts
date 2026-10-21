@@ -239,6 +239,7 @@ function contextIn(name: string): { dir: string; ctx: CodeContext } {
 			scratch: dir,
 			env: {},
 			log: () => {},
+			signal: new AbortController().signal,
 		},
 	};
 }

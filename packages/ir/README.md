@@ -254,8 +254,8 @@ The golden fixtures do so with T `{ "type": "object" }`, a member's value, and a
 
 - `Context`: what core gives every node instance, `concert` (the concert id), `clock`, `path(ref)` and `scratch`, the
   instance's own scratch directory (ADR 0007).
-- `CodeContext`: `Context` plus `env`, each host's `Facts` keyed by host name, and `log(line)`, which records `line` as
-  a `log` event on the instance.
+- `CodeContext`: `Context` plus `env`, each host's `Facts` keyed by host name, `signal`, an `AbortSignal` aborted when
+  the instance is cancelled or times out, and `log(line)`, which records `line` as a `log` event on the instance.
 - `TS_RUNTIME`: `"ts"`, the runtime name of the in-process TypeScript worker (CORE-14).
 - `Rejection`: a code function's negative verdict, `{ outcome: "rejected", reason, outputs? }`, which
   `reject(reason, outputs?)` builds (ADR 0008). `outputs`, when given, are the node's full outputs, checked against its

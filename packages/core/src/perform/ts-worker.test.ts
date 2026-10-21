@@ -11,6 +11,7 @@ const context: CodeContext = {
 	scratch: "/scratch/c1",
 	env: {},
 	log: () => {},
+	signal: new AbortController().signal,
 };
 
 test("invokeCode settles failed on inputs off the in schemas, without calling the function", async () => {

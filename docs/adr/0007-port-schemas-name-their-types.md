@@ -28,7 +28,8 @@ A JSON Schema annotation names the type, on any subschema of a port, param or sc
 - A node writes a file or directory under its own scratch directory, `ctx.scratch`, and hands it back as a plain
   absolute path at an artifact output. An object there is an `ArtifactRef` passed on. When the node finishes, core moves
   each written path into the concert's artifact area and hashes it, the output then holds its `ArtifactRef`, and the
-  scratch directory is deleted. A node reads an input artifact in place, through `ctx.path(ref)`.
+  scratch directory is deleted, unless a code node settled `failed`, which keeps it for inspection. A node reads an
+  input artifact in place, through `ctx.path(ref)`.
 - `packages/ir` owns the keyword's name, its Ajv registration and the one walker that finds marked subschemas in a
   schema and value pair. The SDK emits the annotation. Compose, the resume key, host staging and host validation call
   the walker.

@@ -358,7 +358,8 @@ claimed by an installed but unused registrant is ignored.
   attaches no meaning to a name. v1 reports token counts only.
 - **Events** are append-only, keyed by node id and expansion path, with the instance's state, timestamps, outcome and
   host enrichment. They are the single source for `watch` and renderers (NFR-07).
-- An instance's scratch directory is removed when it settles. What lasts is in artifacts, lanes and events.
+- An instance's scratch directory is removed when it settles, except a failed code node's, which is kept and logged.
+  What lasts is in artifacts, lanes and events.
 - **Artifacts** are files on disk under the concert's area, referenced by content hash and provenance (which node
   instance produced them). Large values are artifacts, not inline.
 - **Queries** needed by the CLI: list concerts with filters, find a concert by id, list node instances of a concert,
@@ -478,6 +479,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 **Configuration**
 
+- A code node sees `target`, `base` and `sparse` as `env.repo`: `base` and `sparse` are `null` when unset, and
+  `env.repo` is empty without a target.
 - The host owns three namespaces: `target` (`repo`, the default `base`, the named `checks`, `prepare` and `sparse`),
   `roles` (each a `harness`, `model` and optional `thinking`) and `sandbox` (`readOnly` paths bound into every agent,
   check and prepare).

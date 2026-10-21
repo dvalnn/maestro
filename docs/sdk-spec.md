@@ -213,9 +213,10 @@ A code node is the SDK's answer to "this needs real code".
   such as `90s`. One that runs past it settles `failed`.
 - **Trusted.** A code node reads and writes what its function does. Files it hands on travel by artifact ports, and
   nothing checks other access (R-2).
-- **Context.** A typed, read-only context offers the concert id, the clock value, the instance's own scratch directory
-  and `log(line)`, which records a line on the instance, plus whatever the loaded hosts add (architecture section 6). A
-  file the node writes there and returns at an artifact output becomes an artifact (ADR 0007).
+- **Context.** A typed, read-only context offers the concert id, the clock value, the instance's own scratch directory,
+  `signal`, which aborts on cancel or timeout, and `log(line)`, which records a line on the instance, plus whatever the
+  loaded hosts add (architecture section 6). A file the node writes there and returns at an artifact output becomes an
+  artifact (ADR 0007). A node that settles `failed` keeps its scratch directory, and core logs its path.
 - **Errors.** A thrown error settles the node as `failed`. `reject(reason, outputs?)` settles it as `rejected`, with its
   outputs when given, checked like an `ok` node's.
 - **Runtime.** A worker reference names the runtime. The initial runtime is `ts`, in-process (CORE-14).
@@ -351,7 +352,9 @@ Specified for later runtimes and out-of-process workers, implemented in-process 
 - **Handshake.** Runtime name and version, supported IR version.
 - **Invoke.** Node id, expansion path, input values and their port schemas, artifact references, context. Reply: outputs
   and an outcome, or an error.
-- **Cancel and timeout.** The core can cancel an invocation. A worker must stop work and reply promptly.
+- **Cancel and timeout.** The core can cancel an invocation. A worker must stop work and reply promptly. A code function
+  gets `ctx.signal`, an `AbortSignal` aborted on cancel or timeout, to pass to `Bun.spawn({ signal })` or `fetch`; a
+  process the function spawned without it outlives the node.
 - **Logs.** A worker can emit log lines tagged with the node instance, stored in the record. A code function writes one
   with `ctx.log(line)`.
 - **Isolation.** A worker process is operator-trusted (NFR-05). It is not sandboxed by the core.
