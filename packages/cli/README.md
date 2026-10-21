@@ -43,7 +43,10 @@ maestro wait <concert> --timeout 15m
     It re-reads the config files, layers the concert's recorded `--profile` and `-c` on them, then the resume's own
     `--profile` and `-c`. The record store is found by today's `dataRoot`: a recorded `-c dataRoot=` changes the config
     only, so pass it again to resume a concert in another store. An error from a recorded flag names the concert, and is
-    fixed by a `-c` or `--profile` on the resume, or by performing the composition as a new concert.
+    fixed by a `-c` or `--profile` on the resume, or by performing the composition as a new concert. It runs the graph
+    recorded at first perform, so an edit adds or removes no node, but code nodes load from the file as it is now and
+    their hash covers the whole bundle: any edit reruns every code node and what depends on it. After editing a
+    composition, perform a new concert.
 
 [^prune]:
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`,
@@ -157,6 +160,9 @@ The repo host's namespaces are set out in architecture.md section 12, Configurat
 token from `CLAUDE_CODE_OAUTH_TOKEN`, set in the shell or in `$XDG_CONFIG_HOME/maestro/.env`; get one with
 `claude setup-token`. maestro loads that `.env` when it exists, a variable the shell sets winning; the release binary
 reads no `.env` or `bunfig.toml` from the cwd, while a run through `bun` from the repository still does.
+
+The `stub` harness waits `MAESTRO_STUB_DELAY` before each agent turn settles, a duration such as `2s` or `500ms`; unset,
+it answers at once.
 
 A pack is operator-trusted code: `maestro` loads and executes what `packs` lists, and every directory under
 `$XDG_DATA_HOME/maestro/packs/`, with the user's own permissions.

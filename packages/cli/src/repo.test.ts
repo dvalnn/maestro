@@ -8,7 +8,6 @@ import { builtinHosts } from "./hosts";
 afterEach(cleanup);
 
 const REPO = join(FIXTURES, "repo");
-const hosts = builtinHosts(process.env);
 
 const GIT_ENV = {
 	PATH: process.env.PATH ?? "/usr/bin:/bin",
@@ -34,14 +33,15 @@ async function toyTarget(): Promise<string> {
 }
 
 /** A world whose workspace config points the repo host at a toy target, with `extra` config lines. */
-async function repoWorld(extra = "") {
+async function repoWorld(extra = "", env: Record<string, string> = {}) {
 	const w = await world();
 	const target = await toyTarget();
 	writeFileSync(
 		join(w.cwd, ".maestro/config.yaml"),
 		`target:\n  repo: ${target}\n  base: main\n${extra}`,
 	);
-	const call = (args: string[]) => w.call(args, { hosts });
+	const stubbed = builtinHosts({ ...process.env, ...env });
+	const call = (args: string[]) => w.call(args, { hosts: stubbed });
 	return { ...w, call, target };
 }
 
@@ -79,7 +79,8 @@ test("a lane ref names a version by the instance id ls shows, ls shows its disk 
 	).toMatchObject({ code: 1 });
 });
 
-test("the built-in stub harness performs an agent that declares outputs, and the check after it settles ok", async () => {
+/** A composition of one stub agent declaring outputs, then a check. */
+async function smokeFile() {
 	const file = join(await scratch(), "smoke.ts");
 	writeFileSync(
 		file,
@@ -100,16 +101,36 @@ export const smoke = composition("smoke", { examples: [{}] }, () => {
 });
 `,
 	);
+	return file;
+}
+
+const STUB_DELAY_MS = 700;
+
+test("the built-in stub harness, delayed per turn, performs an agent that declares outputs, and the check after it settles ok", async () => {
+	const file = await smokeFile();
 	const w = await repoWorld(
 		"roles:\n  smoke:\n    harness: stub\n    model: none\n",
+		{ MAESTRO_STUB_DELAY: `${STUB_DELAY_MS}ms` },
 	);
+	const began = Date.now();
 	const done = await w.call(["perform", file]);
+	expect(Date.now() - began).toBeGreaterThanOrEqual(STUB_DELAY_MS);
 	expect(done).toMatchObject({ code: 0 });
 	const { instances } = json(await w.call(["ls", idOf(done), "--json"]));
 	expect(instances.map((i: { status: string }) => i.status)).toEqual([
 		"ok",
 		"ok",
 	]);
+});
+
+test("a malformed MAESTRO_STUB_DELAY fails the stub agent, naming it", async () => {
+	const w = await repoWorld(
+		"roles:\n  smoke:\n    harness: stub\n    model: none\n",
+		{ MAESTRO_STUB_DELAY: "soon" },
+	);
+	const done = await w.call(["perform", await smokeFile()]);
+	expect(done.code).not.toBe(0);
+	expect(done.out + done.err).toContain("MAESTRO_STUB_DELAY");
 });
 
 /** Each real harness behind its gate: the agent's identity and file, and the metrics it reports. */

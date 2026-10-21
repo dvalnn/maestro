@@ -24,6 +24,8 @@ surface, and a worked example. Done when the file composes and a stub concert of
   ([packs.md](packs.md)) to configure it.
 - Import `@maestro/sdk`, `@maestro/host-repo-sdk`, `node:` builtins and relative files. The `maestro` binary resolves
   the two SDK imports to its own copies, so the file needs no install step.
+- A code node's function must be exported by the composition file itself, or `SCOPE.export` fails it. To run one from a
+  relative file, import it and export it beside the import: `import { tally } from "./lib/util"; export { tally };`.
 
 ## The build model
 
@@ -70,7 +72,8 @@ From `@maestro/sdk`:
 | `readJson(ref)`                                             | A JSON artifact read into a typed, schema-checked Ref                                                                     |
 | `not(ref)`                                                  | A negated `Ref<Bool>`                                                                                                     |
 
-`items` is a written list or a Ref; over a Ref, `max` is required. `max` of a loop is a literal or a param.
+`items` is a written list or a Ref; over a Ref, `max` is required. `max` of a loop is a literal or a param. Two `loop`
+or `allSettled` calls in one scope derive the same id: give one a `label`, or `SCOPE.duplicate` fails the second.
 
 From `@maestro/host-repo-sdk`:
 

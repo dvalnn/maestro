@@ -126,7 +126,9 @@ What SKILL.md's Recover section leaves out:
   recorded flag is fixed with a `-c` on the resume (`-c <key>=!delete` drops a recorded key), or by performing anew. It
   takes no composition, `--tour` or `--title`: the concert keeps its own. It is refused for a concert still running
   (wait or kill it first) and for one that settled `ok` (perform the composition as a new concert). The code it needs is
-  the pack or file it was performed from, still at the same path.
+  the pack or file it was performed from, still at the same path. A resume runs the graph recorded at first perform, so
+  an edit adds or removes no node; its code nodes load from the file as it is now, and their hash covers the whole
+  bundle, so any edit reruns every code node and what depends on it. After editing a composition, perform a new concert.
 - **Kill** waits up to 10 s for the concert to settle `failed` ("the concert was cancelled"). A concert whose process
   died without settling is marked `failed` ("process exited") when the record is next read.
 - **Prune** selects by id, or by the filters in `prune --help`. The lane refs into a pruned concert go with it. It asks

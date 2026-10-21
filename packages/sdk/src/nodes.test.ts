@@ -157,6 +157,7 @@ describe("code", () => {
 			}),
 		);
 		expect(error.code).toBe("SCOPE.export");
+		expect(error.hint).toContain("composition file");
 		expect(error.source?.file).toBe(import.meta.path);
 	});
 });

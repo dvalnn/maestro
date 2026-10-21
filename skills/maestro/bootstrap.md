@@ -97,7 +97,8 @@ classics: # composition params, under <pack>: <composition>: <param>
     maxRepairs: 3
 ```
 
-Each check line runs through `sh -c` in the lane, in a sandbox. Its exit code is its verdict:
+Each check line runs in its own `sh -c` in the lane, in a sandbox: shell variables and `cd` do not carry to the next
+line. A line's exit code is its verdict:
 
 | Exit                    | Outcome    |
 | ----------------------- | ---------- |

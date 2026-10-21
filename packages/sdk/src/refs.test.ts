@@ -48,6 +48,15 @@ const stdlibNode = (ir: ReturnType<typeof buildOf>, id: string) =>
 	};
 
 describe("a Ref used as a value", () => {
+	test("a Ref wrapped in an object says to pass the Ref itself", () => {
+		const error = diagnose(() =>
+			buildOf(() =>
+				hostNode("fake.sink", { in: { x: { r: task().out.text } } }),
+			),
+		);
+		expect(error.hint).toMatch(/Pass the Ref itself/);
+	});
+
 	test.each([
 		["in a template string", (r: unknown) => `${r}`],
 		["by String()", (r: unknown) => String(r)],

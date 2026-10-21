@@ -407,7 +407,9 @@ export function checkPlain(value: unknown, what: string): void {
 		throw fail(
 			"REF.value",
 			`${what} holds a Ref, and it must be a plain value`,
-			"Feed the Ref to an input port of its own, or combine Refs with a code node",
+			childrenOf(value)
+				? "Pass the Ref itself, not an object or array holding it, to an input port of its own, or combine Refs with a code node"
+				: "Feed the Ref to an input port of its own, or combine Refs with a code node",
 		);
 	if (problem === "json")
 		throw fail(
@@ -535,10 +537,13 @@ export function worker(fn: CodeFn): WorkerRef {
 	}
 	if (found) return found;
 	const name = fn.name ? `function '${fn.name}'` : "an anonymous function";
+	const example = fn.name ?? "tally";
 	throw fail(
 		"SCOPE.export",
 		`${name} is not an exported function the loader can name`,
-		"Export it by name from its module, and pass the export itself",
+		fn.name
+			? `Export it from the composition file or pack entry, next to its import: \`export { ${example} };\``
+			: "Name the function and export it from the composition file or pack entry, then pass the export itself",
 	);
 }
 
