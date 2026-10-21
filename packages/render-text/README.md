@@ -14,15 +14,25 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 `@maestro/render-text/live` draws a concert as it goes, from the IR and the record's events:
 
 - `seen(prior, events)`: each instance's state, the latest event winning.
-- `frame(ir, seen, view, agents)`: a header with the concert's status, short id and elapsed time, the IR's rows laid out
-  as the IR nests them, and a footer of counts and the concert's tokens. A row has its glyph, short name, kind, state,
-  time, agent and note; a node that never ran, in a loop round or at all, is `pending`, and `skipped` once the concert
-  has settled. Lines are cut at `columns - 1` terminal cells, and past `rows - 1` lines the rows end with `… <n> more`.
-- `arranged(ir, instances)`: instances in the order `frame` lists them: a subcomposition's members under its name, a
-  loop's by round, each round's in node order.
-- `agentText(enrichment, metrics)` and `agentsOf(records)`: the agent column,
-  `<harness> · <model> · <effort>  <total> tok`, with the model minus its provider prefix and the effort when the role
-  sets one.
+- `frame(ir, seen, view, agents)`: a header with the concert's status, short id and elapsed time, then `now`, `last`,
+  the rows and a footer of the node instances counted and the concert's tokens.
+  - `now` names the latest started running instance as a reader would (`test-loop ⟲2 › repair`), with `+n running` when
+    more are. `last` names the latest `failed` instance and its reason; a later `rejected` one never takes its place.
+  - The rows draw the authored shape, each node once. A loop shows its latest round, with a strip of each round's state
+    (`⟲ 2/3   1✗ 2●`). Under a `parMap` or `parFind` a node is one row for all its items, with a strip of theirs
+    (`lens ×3 … correctness ✓  spec !`). A fan-out counts its items against its cardinality, `n/≤N` for an `upTo` one.
+  - A container is open (`▾`) while it holds running work, and once the concert settled while it holds the last failure;
+    else it folds to its row (`▸`). A scope's state is the worst outcome of its rows, each group by its own instance.
+  - A stdlib helper shows only while running, rejected or failed. A node that never started is `pending`, and
+    `not reached` once its round, group or concert is done.
+  - Lines are cut at `columns - 1` terminal cells. Past `rows - 1` lines, settled rows hide from the top, then pending
+    ones from the bottom, each stretch as one `… <counts>` line; the running rows, the last failure and the rows above
+    them stay, and the footer points at `maestro ls <short id>`.
+- `arranged(ir, instances)`: instances in the order `ls` lists them: a subcomposition's members under its name, a loop's
+  by round, each round's in node order.
+- `agentText(actor, metrics)` and `agentsOf(records)`: the agent column, `<harness> · <model> · <effort>  <total> tok`,
+  with the model minus its provider prefix and the effort when the role sets one; and each current instance's actor and
+  total, which `frame` shows, a container row its instances' total.
 - `tokensOf(metrics)` and `compact(n)`: the sum of the `tokens_*` metrics but `tokens_reasoning`, and a count as `999`,
   `15.5k` or `1.2M`.
 - `shortId(id)` and `shortIds(ids)`: a concert's short id, the UUID's last 15 hex digits in jj's reverse-hex letters

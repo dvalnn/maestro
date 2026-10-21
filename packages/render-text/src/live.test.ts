@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { styleText } from "node:util";
 import type { ConcertEvent, EventBody, Ir } from "@maestro/ir";
+import { END_S, MID_S, PANEL_IR, panelEvents } from "./fixtures/panel";
 import {
 	agentsOf,
 	agentText,
@@ -14,6 +15,7 @@ import {
 	stateWord,
 	type View,
 } from "./live";
+import { WIDE_GAP } from "./tree";
 
 const GOLDEN = "fanout-fanin-loop";
 const ir: Ir = structuredClone(
@@ -95,32 +97,22 @@ const drawn = (view: Partial<View> = {}) =>
 	frame(ir, seen(new Map(), EVENTS), { ...VIEW, ...view }, new Map());
 
 describe("frame", () => {
-	test("lays out a header, the rows by scope and group, and a footer; instances by first event, pending nodes by short name", () => {
+	test("draws a header, `now` and `last`, the authored rows with a parMap body aggregated, and a footer of counts", () => {
 		const lines = drawn().split("\n");
 		expect(lines.slice(0, -1)).toEqual([
 			'● fixtures.fanout-fanin-loop  "greeting"  kswoykny   running  1m04s',
-			"",
-			"✓ topics      parMap     ok       12s",
-			"  ! draft[c]  fake.task  failed   0.4s   flaky",
-			"  ✓ draft[a]  fake.task  ok       3.1s",
-			'  ● draft[b]  fake.task  running  1m02s  tool bash {"command":"ls"}',
-			"✓ best        code       ok              reused",
-			"refine",
-			"  ○ loop      loop       pending",
-			"    ○ step    fake.task  pending",
-			"    ○ done    code       pending",
-			"    ○ more    code       pending",
-			"○ text        code       pending",
-			"",
+			'now   ● topics[b] › draft   1m02s   tool bash {"command":"ls"}',
+			"last  ! topics[c] › draft   failed   flaky",
+			"▾ ✓ topics      parMap     ok       12s    3/3 items · 1 running · 1 ok · 1 failed",
+			"  ▸ ● draft ×3  fake.task  running  1m03s  c !  a ✓  b ●",
+			"▸ ○ refine      scope      pending         refine-until-done",
 		]);
-		expect(lines.at(-1)).toStartWith(
-			"── 1 running · 3 ok · 1 failed · 5 pending ──",
-		);
+		expect(lines.at(-1)).toStartWith("── 1 running · 1 ok · 1 failed ──");
 		expect(lines.at(-1)).toHaveLength(VIEW.columns - 1);
 		expect(drawn()).not.toContain(ESC);
 	});
 
-	test("shows the concert's tokens in the footer, and a node that never ran as skipped once it settled", () => {
+	test("shows the concert's tokens in the footer, the last failure's items once it settled, and a node that never started as not reached", () => {
 		const settled = drawn({
 			concert: { ...VIEW.concert, status: "failed", settledAt: START + 4_500 },
 			tokens: 39_300,
@@ -128,9 +120,16 @@ describe("frame", () => {
 		expect(settled[0]).toBe(
 			'! fixtures.fanout-fanin-loop  "greeting"  kswoykny   failed  4.5s',
 		);
-		expect(settled[8]).toBe("  - loop      loop       skipped");
+		expect(settled[1]).toStartWith("now   ● topics[b] › draft");
+		expect(settled.slice(4, 9)).toEqual([
+			"  ▾ ● draft ×3  fake.task  running      1m03s  c !  a ✓  b ●",
+			"      ! [c]     fake.task  failed       0.4s   flaky",
+			"      ✓ [a]     fake.task  ok           3.1s",
+			'      ● [b]     fake.task  running      1m02s  tool bash {"command":"ls"}',
+			"▸ – refine      scope      not reached         refine-until-done",
+		]);
 		expect(settled.at(-1)).toMatch(
-			/^── 1 running · 3 ok · 1 failed · 5 skipped ─+ 39\.3k tok ──$/,
+			/^── 1 running · 1 ok · 1 failed ─+ 39\.3k tok ──$/,
 		);
 	});
 
@@ -144,7 +143,7 @@ describe("frame", () => {
 		expect(long.split("\n")[0]).toContain("  kswoyknyqu   running");
 	});
 
-	test("groups a loop's members under its rounds in node order, with the agent column, and shows a step that never started in a round as pending, then skipped", () => {
+	test("draws a loop once at its latest round with its round strip and tokens, a step not started in it pending, and not reached once the concert settled", () => {
 		const step = { node: "refine/loop/step", expansion: "[0]" };
 		const loop = eventsOf([
 			["refine/loop", "", 0, { type: "running" }],
@@ -153,6 +152,13 @@ describe("frame", () => {
 			[step.node, step.expansion, 30, { type: "running" }],
 			[step.node, step.expansion, 40, { type: "settled", outcome: "ok" }],
 			["refine/loop/done", "[1]", 50, { type: "running" }],
+			[
+				"refine/loop/done",
+				"[1]",
+				60,
+				{ type: "settled", outcome: "failed", reason: "boom" },
+			],
+			["refine/loop", "", 60, { type: "settled", outcome: "failed" }],
 		]);
 		const record = {
 			...step,
@@ -164,28 +170,26 @@ describe("frame", () => {
 			record,
 			{ ...record, node: "refine/loop/done", stale: true },
 		]);
-		const show = (view: Partial<View>) =>
-			frame(ir, seen(new Map(), loop), { ...VIEW, ...view }, agents)
+		const show = (events: readonly ConcertEvent[], view: Partial<View>) =>
+			frame(ir, seen(new Map(), events), { ...VIEW, ...view }, agents)
 				.split("\n")
-				.slice(5, 16);
-		expect(show({})).toEqual([
-			"refine",
-			"  ● loop    loop       running  1m04s",
-			"  round 0",
-			"    ✓ step  fake.task  ok       0.0s   pi · haiku · medium  15.5k tok",
-			"    ✓ done  code       ok       0.0s",
-			"    ○ more  code       pending",
-			"  round 1",
-			"    ○ step  fake.task  pending",
-			"    ● done  code       running  1m03s",
-			"    ○ more  code       pending",
-			"○ text      code       pending",
+				.slice(3, -1);
+		expect(show(loop.slice(0, 6), {})).toEqual([
+			"▸ ○ topics    parMap     pending                    0/3 items",
+			"▾ ● refine    scope      running  1m04s  15.5k tok  refine-until-done · 1 running · 2 ok",
+			"  ▾ ● loop    loop       running  1m04s  15.5k tok  ⟲ 2/2   1✓ 2●",
+			"      ○ step  fake.task  pending",
+			"      ● done  code       running  1m03s",
 		]);
-		const settled = show({
-			concert: { ...VIEW.concert, status: "ok", settledAt: START + 60_000 },
-		});
-		expect(settled[5]).toBe("    - more  code       skipped");
-		expect(settled[7]).toBe("    - step  fake.task  skipped");
+		expect(
+			show(loop, {
+				concert: { ...VIEW.concert, status: "failed", settledAt: START + 60 },
+			}).slice(2),
+		).toEqual([
+			"  ▾ ! loop    loop       failed       0.0s  15.5k tok  ⟲ 2/2   1✓ 2!",
+			"      – step  fake.task  not reached",
+			"      ! done  code       failed       0.0s             boom",
+		]);
 	});
 
 	test("shows the agent a running instance announced, before any tokens, then its note", () => {
@@ -198,7 +202,7 @@ describe("frame", () => {
 			"\n",
 		)[4];
 		expect(line).toBe(
-			"● best      code       running  1m04s  pi · b · low  settled",
+			"  ● best    code    running  1m04s  pi · b · low  settled",
 		);
 	});
 
@@ -224,25 +228,74 @@ describe("frame", () => {
 		).toBe("step 1/2: bun install");
 	});
 
-	test("with color, an ok line carries green, a failed one red, a pending one dim, a heading bold", () => {
-		const lines = drawn({ color: true }).split("\n");
-		expect(lines[4]).toContain(`${SGR.green}✓`);
-		expect(lines[3]).toContain(`${SGR.red}!`);
-		expect(lines[3]).toContain(`${SGR.red}flaky`);
-		expect(lines[7]).toBe(`${SGR.bold}refine${SGR.plain}`);
-		expect(lines[8]).toStartWith(SGR.dim);
+	test("names the latest failed instance as `last`, and nothing yet before one", () => {
+		const panel = (s: number, status: View["concert"]["status"]) =>
+			frame(
+				PANEL_IR,
+				seen(new Map(), panelEvents(s)),
+				{
+					...VIEW,
+					concert: { ...VIEW.concert, status },
+					now: START + s * 1_000,
+				},
+				new Map(),
+			).split("\n");
+		expect(panel(MID_S, "running").slice(1, 3)).toEqual([
+			"now   ● test-loop ⟲2 › repair   10s   tool",
+			"last  no failure yet",
+		]);
+		expect(panel(END_S, "ok").slice(1, 3)).toEqual([
+			"now   nothing, the concert settled",
+			"last  ! panel › lenses[spec] › lens   failed   harness exited 137: killed, out of memory",
+		]);
 	});
 
-	test("cuts lines at columns - 1, and past rows - 1 lines keeps the header and footer and ends the rows with the count left", () => {
+	test("with color, an ok row carries green, the last failure red, a pending row dim", () => {
+		const lines = drawn({ color: true }).split("\n");
+		expect(lines[3]).toContain(`${SGR.green}✓`);
+		expect(lines[2]).toContain(`${SGR.red}! `);
+		expect(lines[2]).toContain(`${SGR.red}${WIDE_GAP}flaky`);
+		expect(lines[5]).toStartWith(SGR.dim);
+	});
+
+	test("cuts lines at columns - 1, and fits the rows to rows - 1 lines, hidden ones counted and the footer pointing at maestro ls", () => {
 		const narrow = drawn({ columns: 21 }).split("\n");
-		expect(narrow[3]).toBe("  ! draft[c]  fake.t");
-		expect(Math.max(...narrow.map((l) => l.length))).toBe(20);
-		const short = drawn({ rows: 9 }).split("\n");
-		expect(short).toHaveLength(8);
-		expect(short[0]).toStartWith("● fixtures");
-		expect(short[4]).toStartWith("  ✓ draft[a]");
-		expect(short[5]).toBe("… 8 more");
-		expect(short[7]).toStartWith("── 1 running");
+		expect(narrow[3]).toBe("▾ ✓ topics      parM");
+		expect(Math.max(...narrow.map((l) => Bun.stringWidth(l)))).toBe(20);
+		const view = (rows: number): View => ({
+			...VIEW,
+			concert: { ...VIEW.concert, status: "running" },
+			now: START + MID_S * 1_000,
+			columns: 100,
+			rows,
+		});
+		const fitting = (rows: number) =>
+			frame(
+				PANEL_IR,
+				seen(new Map(), panelEvents(MID_S)),
+				view(rows),
+				new Map(),
+			).split("\n");
+		const full = fitting(50);
+		expect(full.at(-1)).not.toContain("maestro ls");
+		for (let rows = 6; rows <= full.length + 1; rows++)
+			expect(fitting(rows).length).toBeLessThanOrEqual(rows - 1);
+		expect(fitting(3).slice(3)).toEqual([
+			"  … 2 running · 3 ok · 1 rejected · 3 pending",
+			expect.stringContaining("every row: maestro ls kswoykny"),
+		]);
+		expect(fitting(12).slice(3)).toEqual([
+			"  … 3 ok",
+			"  ✗ test       code        rejected  9.0s  3 of 41 tests fail",
+			"▾ ● test-loop  loop        running   50s   ⟲ 2/3   1✗ 2●",
+			"    ● repair   fake.agent  running   10s   tool",
+			"    ○ test     code        pending",
+			"▸ ○ panel      scope       pending         verification-panel",
+			"  ○ ruling     code        pending",
+			expect.stringMatching(
+				/^── 1 running · 3 ok · 2 rejected ── every row: maestro ls kswoykny ─+$/,
+			),
+		]);
 	});
 
 	test("cuts by terminal cells, a wide glyph or an emoji whole or not at all", () => {
@@ -263,7 +316,7 @@ describe("frame", () => {
 					columns,
 				},
 				new Map(),
-			).split("\n")[5] ?? "";
+			).split("\n")[1] ?? "";
 		const full = lineAt(VIEW.columns);
 		const before = Bun.stringWidth(full.slice(0, full.indexOf("漢")));
 		for (const [cells, shown] of [

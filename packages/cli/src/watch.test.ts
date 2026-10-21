@@ -149,7 +149,7 @@ describe("watch on a running concert", async () => {
 			.map((write) => write.replace(REDRAW, ""));
 		expect(frames.filter((f, i) => f === frames[i - 1])).toEqual([]);
 		const last = stripVTControlCharacters(frames.at(-1) ?? "");
-		expect(last).toMatch(/^ {2}✓ echo +fake\.task +ok/m);
+		expect(last).toMatch(/^▸ ✓ echo +scope +ok .*echo · 1 ok$/m);
 		expect(
 			frames.some((f) =>
 				/● echo .*running .*pi · haiku +tool ran bash/.test(

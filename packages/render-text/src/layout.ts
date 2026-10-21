@@ -23,12 +23,12 @@ export type Item<T> =
 	  };
 
 /** An IR node, or a scope, which has no node, with what sits inside it. */
-type Entry = { id: string; node?: IrNode; children: Entry[] };
+export type Entry = { id: string; node?: IrNode; children: Entry[] };
 
-const lastSegment = (id: string) => id.slice(id.lastIndexOf("/") + 1);
+export const lastSegment = (id: string) => id.slice(id.lastIndexOf("/") + 1);
 
-/** The entries of `ir` nested by their nearest enclosing scope or group, each level in IR order. */
-function treeOf(ir: Ir, graph: GraphIndex): Entry[] {
+/** The authored shape of `ir`: each node once, nested by its nearest enclosing scope or group, each level in IR order. */
+export function shapeOf(ir: Ir, graph: GraphIndex): Entry[] {
 	const roots: Entry[] = [];
 	const entries = new Map<string, Entry>();
 	const attach = (id: string): Entry => {
@@ -130,7 +130,7 @@ export function layout<T extends NodeInstance>(
 		]);
 	}
 
-	return treeOf(ir, graph).flatMap((e) => lay(e, 0, ""));
+	return shapeOf(ir, graph).flatMap((e) => lay(e, 0, ""));
 }
 
 /** `instances` in the order `layout` lists them. */

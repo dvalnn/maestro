@@ -370,10 +370,14 @@ A renderer needs only the IR (or plan) and events:
 - **Static.** Nodes by kind, scopes collapsible, `data` edges solid, `control` edges dashed, `collect` edges drawn as
   barriers with the fan-in reducer shown. Groups show their cardinality (`3`, `up to 14`) and, when compose expanded
   them, the expansion.
-- **Live.** An outline of the IR with node-instance state folded from events: nodes in IR order, indented by scope and
-  group, a line per instance in the order its first event landed, and a `pending` line for a node with none. Each line
-  shows a glyph, the instance name, kind, state, time and a note: a running instance's latest progress event, or the
-  reason of a non-ok one. Edges are `compose --graph`'s.
+- **Live.** The authored shape with node-instance state folded from events: each node once, nested by scope and group in
+  IR order. A loop shows its latest round with a strip of each round's state, a `parMap` or `parFind` body node one row
+  for all its items with a strip of theirs, a fan-out its items against its cardinality. A container is open while it
+  holds running work or, once settled, the last failure. A node that never started is `pending`, and `not reached` once
+  its round, group or concert is done; a stdlib helper shows only while running, rejected or failed. A `now` line names
+  the latest running instance, a `last` line the latest failed one. Past the terminal's height, settled rows hide from
+  the top, then pending ones from the bottom, as count lines, and the running rows, the last failure and their ancestors
+  stay. Edges are `compose --graph`'s.
 
 The first renderer targets text (ASCII or Mermaid) in the plan output; `maestro watch` draws the live form. A richer
 viewer is out of scope.

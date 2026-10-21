@@ -10,10 +10,26 @@ import {
 	type NodeInstance,
 	type Outcome,
 } from "@maestro/ir";
-import { arranged, layout } from "./layout";
+import { type Fitted, fitted } from "./fit";
+import { arranged, shapeOf } from "./layout";
+import {
+	countsText,
+	GAP,
+	GLYPH,
+	keyOf,
+	labelOf,
+	lastFailureOf,
+	leavesOf,
+	type Row,
+	rowsOf,
+	runningOf,
+	type Shown,
+	UNSTARTED,
+	WIDE_GAP,
+} from "./tree";
 
 /** What one instance's events say of it. `first` is the seq of its first event, which orders a node's instances. */
-type InstanceState = NodeInstance & {
+export type InstanceState = NodeInstance & {
 	state: "running" | Outcome;
 	reused: boolean;
 	reason?: string;
@@ -70,28 +86,18 @@ export const styled = (style: Style, text: string) =>
 	isGrey(style)
 		? `${style.open}${text}${style.close}`
 		: styleText(style, text, { validateStream: false });
-type Shown = "pending" | InstanceState["state"];
 /** How a state is drawn. `whole` styles the whole line, `noted` its note too. */
-type Look = { glyph: string; style: Style; whole?: boolean; noted?: boolean };
+type Look = { style: Style; whole?: boolean; noted?: boolean };
 
 const LOOK: Readonly<Record<Shown, Look>> = {
-	pending: { glyph: "○", style: "dim", whole: true },
-	running: { glyph: "●", style: "cyan" },
-	ok: { glyph: "✓", style: "green" },
-	rejected: { glyph: "✗", style: "yellow", noted: true },
-	failed: { glyph: "!", style: "red", noted: true },
-	skipped: { glyph: "-", style: "dim", whole: true },
+	pending: { style: "dim", whole: true },
+	[UNSTARTED]: { style: "dim", whole: true },
+	running: { style: "cyan" },
+	ok: { style: "green" },
+	rejected: { style: "yellow", noted: true },
+	failed: { style: "red", noted: true },
+	skipped: { style: "dim", whole: true },
 };
-/** The states the header counts, in its order. */
-const COUNTED: readonly Shown[] = [
-	"running",
-	"ok",
-	"rejected",
-	"failed",
-	"skipped",
-	"pending",
-];
-const GAP = "  ";
 const RULE = "─";
 type Metrics = Readonly<Record<string, number>>;
 /** The prefix of the metrics that count tokens. */
@@ -106,9 +112,6 @@ const NEWLINE = /\r?\n/;
 const CONTROL = /[^\P{Cc}\n]/gu;
 const TENTHS_BELOW_MS = 10 * MS_PER_UNIT.s;
 const TENTH_MS = 100;
-
-const keyOf = ({ node, expansion }: NodeInstance) =>
-	JSON.stringify([node, expansion]);
 
 /** Shows each control character but a newline as its JSON escape, so no text moves the terminal's cursor. */
 const safe = (text: string) =>
@@ -207,19 +210,14 @@ export function seen(prior: Seen, events: readonly Annotated[]): Seen {
 	return next;
 }
 
-/** One row of the frame, its texts safe for a terminal. */
-type Row = {
-	depth: number;
-	shown: Shown;
+/** A row's texts as the frame shows them, safe for a terminal. */
+type Texts = {
 	name: string;
 	kind: string;
 	time: string;
 	agent: string;
 	note: string;
 };
-type Line =
-	| { type: "heading"; depth: number; text: string; round: boolean }
-	| ({ type: "row" } & Row);
 type Seg = readonly [text: string, style?: Style];
 type Widths = {
 	lead: number;
@@ -229,8 +227,8 @@ type Widths = {
 	agent: number;
 };
 
-/** What an agent instance's host says executes it, as `agentText` shows it, by instance. */
-type Agents = ReadonlyMap<string, string>;
+/** What executes each current agent instance, as its host says, and its tokens, by instance. */
+export type Agents = ReadonlyMap<string, { actor?: string; tokens: number }>;
 
 /** An instance's record: who its host says ran it, and its metrics, with whether an earlier attempt left it. */
 type Recorded = NodeInstance & {
@@ -263,26 +261,13 @@ export function agentText(actor: string | undefined, metrics: Metrics): string {
 	return tokens > 0 ? `${actor}${GAP}${compact(tokens)} tok` : actor;
 }
 
-/** The agent text of each current instance of `records` that has one, by instance. */
+/** The actor and the `tokensOf` total of each current instance of `records`, by instance. */
 export function agentsOf(records: readonly Recorded[]): Agents {
-	const agents = new Map<string, string>();
-	for (const r of records) {
-		const text = r.stale ? "" : agentText(r.actor, r.metrics);
-		if (text) agents.set(keyOf(r), text);
-	}
+	const agents = new Map<string, { actor?: string; tokens: number }>();
+	for (const r of records)
+		if (!r.stale)
+			agents.set(keyOf(r), { actor: r.actor, tokens: tokensOf(r.metrics) });
 	return agents;
-}
-
-function timeOf(s: InstanceState, now: number): string {
-	if (s.startedAt === undefined) return "";
-	if (s.state === "running") return duration(now - s.startedAt);
-	return s.settledAt === undefined ? "" : duration(s.settledAt - s.startedAt);
-}
-
-function noteOf(s: InstanceState): string {
-	if (s.state === "running") return s.latest ?? "";
-	if (s.state === "ok") return s.reused ? "reused" : "";
-	return flat(s.reason ?? "");
 }
 
 /** `instances` in graph order, as the watch view lists them: ordered by first event in `seen`, then laid out. */
@@ -298,78 +283,86 @@ export function inGraphOrder<T extends NodeInstance>(
 	);
 }
 
-/**
- * The frame's lines: a row per instance by first event, laid out as the IR nests them. A node that never ran is
- * `pending`, and `skipped` once the concert has settled.
- */
-function outline(ir: Ir, seen: Seen, agents: Agents, view: View): Line[] {
-	const ordered = [...seen.values()].sort((a, b) => a.first - b.first);
-	const never = view.concert.status === "running" ? "pending" : "skipped";
-	return layout(ir, ordered).map((item): Line => {
-		if (item.type === "heading") return { ...item, text: flat(item.text) };
-		const { depth, node, name, instance: s } = item;
-		const shown = {
-			depth,
-			name: flat(name),
-			kind: safe(node.kind),
-		};
-		return s
-			? {
-					type: "row",
-					...shown,
-					shown: s.state,
-					time: timeOf(s, view.now),
-					agent: safe(agents.get(keyOf(s)) ?? s.agent ?? ""),
-					note: noteOf(s),
-				}
-			: { type: "row", ...shown, shown: never, time: "", agent: "", note: "" };
-	});
-}
-
 /** `text` padded with spaces to `cells` terminal cells. */
 export const padCells = (text: string, cells: number) =>
 	text + " ".repeat(Math.max(0, cells - Bun.stringWidth(text)));
 
 const indentOf = (depth: number) => INDENT.repeat(depth);
+/** A container row's marker, open or closed, before its glyph; blank on a row with no members. */
+const MARKER = { open: "▾ ", closed: "▸ ", none: "  " } as const;
+/** The cells before a row's name beside its indent: the marker, the glyph and a space. */
+const LEAD_CELLS = MARKER.none.length + 2;
+const ELLIPSIS = "…";
 
-const leadOf = (l: Row) =>
-	indentOf(l.depth).length + 2 + Bun.stringWidth(l.name);
+export const markerOf = ({ open }: Row) => {
+	if (open === undefined) return MARKER.none;
+	return open ? MARKER.open : MARKER.closed;
+};
 
-const rowsOf = (lines: readonly Line[]) =>
-	lines.filter((l): l is { type: "row" } & Row => l.type === "row");
+function textsOf(row: Row): Texts {
+	const tokens = row.tokens > 0 ? `${compact(row.tokens)} tok` : "";
+	return {
+		name: flat(row.name),
+		kind: safe(row.kind),
+		time: row.span ? duration(row.span[1] - row.span[0]) : "",
+		agent: [row.actor === undefined ? "" : safe(row.actor), tokens]
+			.filter(Boolean)
+			.join(GAP),
+		note: flat(row.note),
+	};
+}
 
-const widthsOf = (rows: readonly Row[]): Widths => ({
-	lead: Math.max(0, ...rows.map(leadOf)),
-	kind: Math.max(0, ...rows.map((l) => l.kind.length)),
-	state: Math.max(0, ...rows.map((l) => l.shown.length)),
-	time: Math.max(0, ...rows.map((l) => l.time.length)),
-	agent: Math.max(0, ...rows.map((l) => Bun.stringWidth(l.agent))),
-});
+/** A row with the texts it shows. */
+type Texted = Row & { t: Texts };
 
-function segsOf(line: Line, w: Widths): Seg[] {
-	if (line.type === "heading")
-		return [[indentOf(line.depth) + line.text, line.round ? "dim" : "bold"]];
-	const look = LOOK[line.shown];
-	const noteStyle = look.noted
-		? look.style
-		: line.shown === "running"
-			? "dim"
-			: undefined;
-	const indent = indentOf(line.depth);
+function widthsOf(rows: readonly Texted[]): Widths {
+	const most = (cells: (row: Texted) => number) =>
+		Math.max(0, ...rows.map(cells));
+	return {
+		lead: most(
+			({ depth, t }) =>
+				indentOf(depth).length + LEAD_CELLS + Bun.stringWidth(t.name),
+		),
+		kind: most(({ t }) => t.kind.length),
+		state: most(({ shown }) => shown.length),
+		time: most(({ t }) => t.time.length),
+		agent: most(({ t }) => Bun.stringWidth(t.agent)),
+	};
+}
+
+function noteStyleOf(shown: Shown): Style | undefined {
+	const look = LOOK[shown];
+	if (look.noted) return look.style;
+	return shown === "running" ? "dim" : undefined;
+}
+
+function rowSegs(row: Row, t: Texts, w: Widths): Seg[] {
+	const look = LOOK[row.shown];
+	const indent = indentOf(row.depth);
 	const agent: Seg[] =
-		w.agent === 0 ? [] : [[padCells(line.agent, w.agent) + GAP, "dim"]];
+		w.agent === 0 ? [] : [[padCells(t.agent, w.agent) + GAP, "dim"]];
 	const segs: Seg[] = [
-		[indent],
-		[look.glyph, look.style],
-		[padCells(` ${line.name}`, w.lead - indent.length - 1) + GAP],
-		[line.kind.padEnd(w.kind) + GAP, "dim"],
-		[line.shown.padEnd(w.state) + GAP, look.style],
-		[line.time.padEnd(w.time) + GAP, "dim"],
+		[indent + markerOf(row), "dim"],
+		[GLYPH[row.shown], look.style],
+		[padCells(` ${t.name}`, w.lead - indent.length - LEAD_CELLS + 1) + GAP],
+		[t.kind.padEnd(w.kind) + GAP, "dim"],
+		[row.shown.padEnd(w.state) + GAP, look.style],
+		[t.time.padEnd(w.time) + GAP, "dim"],
 		...agent,
-		[line.note, noteStyle],
+		[t.note, noteStyleOf(row.shown)],
 	];
 	return look.whole ? segs.map(([text]) => [text, look.style]) : segs;
 }
+
+/** A stretch of hidden rows as one line at its depth: `… 12 ok · 1 skipped`. */
+const hiddenSegs = (depth: number, states: readonly Shown[]): Seg[] => [
+	[`${indentOf(depth)}${MARKER.none}${ELLIPSIS} ${countsText(states)}`, "dim"],
+];
+
+const lineSegs = (line: Fitted<Texted>, w: Widths): Seg[] =>
+	line.type === "row"
+		? rowSegs(line.row, line.row.t, w)
+		: hiddenSegs(line.depth, line.states);
 
 /** `text` cut to its first `room` terminal cells, by whole code points. */
 function fit(text: string, room: number): string {
@@ -438,9 +431,13 @@ function shared(a: string, b: string): number {
 	return n;
 }
 
+/** Concert `id`'s short id as shown: its first `unique` letters, and at least 8. */
+const shownId = (id: string, unique: number) =>
+	shortId(id).slice(0, Math.max(SHORT_ID_MIN, unique));
+
 /** Concert `id`'s short id as segments: its first `unique` letters bold, then dim up to at least 8 letters. */
 function idSegs(id: string, unique: number): Seg[] {
-	const shown = shortId(id).slice(0, Math.max(SHORT_ID_MIN, unique));
+	const shown = shownId(id, unique);
 	return [
 		[shown.slice(0, unique), "bold"],
 		[shown.slice(unique), "dim"],
@@ -488,7 +485,7 @@ function headerSegs(view: View): Seg[] {
 	const title =
 		concert.title === undefined ? "" : `"${flat(concert.title)}"${GAP}`;
 	return [
-		[`${look?.glyph ?? ""} ${safe(concert.label)}${GAP}${title}`, "bold"],
+		[`${GLYPH[concert.status]} ${safe(concert.label)}${GAP}${title}`, "bold"],
 		...idSegs(concert.id, concert.unique),
 		[`${GAP} `],
 		[safe(concert.status), look?.style],
@@ -496,54 +493,94 @@ function headerSegs(view: View): Seg[] {
 	];
 }
 
-function footerSegs(rows: readonly Row[], view: View): Seg[] {
-	const counts = COUNTED.map((state) => ({
-		state,
-		n: rows.filter((l) => l.shown === state).length,
-	}))
-		.filter(({ n }) => n > 0)
-		.map(({ state, n }) => `${n} ${state}`)
-		.join(" · ");
-	const head = `${RULE}${RULE} ${counts} `;
+/** The width of the `now` and `last` labels, with their gap. */
+const LABEL_CELLS = "last".length + GAP.length;
+const label = (text: string): Seg => [text.padEnd(LABEL_CELLS), "dim"];
+
+/** `now`: the latest started running instance, its time and how many more are running, then its latest progress. */
+function nowSegs(graph: GraphIndex, seen: Seen, view: View): Seg[] {
+	const [first, ...rest] = runningOf(graph, seen);
+	if (!first) {
+		const idle =
+			view.concert.status === "running"
+				? "between nodes"
+				: "nothing, the concert settled";
+		return [label("now"), [idle, "dim"]];
+	}
+	const time =
+		first.startedAt === undefined ? "" : duration(view.now - first.startedAt);
+	const more: Seg[] =
+		rest.length > 0 ? [[`${WIDE_GAP}+${rest.length} running`, "cyan"]] : [];
+	return [
+		label("now"),
+		[`${GLYPH.running} `, LOOK.running.style],
+		[flat(labelOf(graph, first)), "bold"],
+		[`${WIDE_GAP}${time}`],
+		...more,
+		[first.latest ? `${WIDE_GAP}${first.latest}` : "", "dim"],
+	];
+}
+
+/** `last`: the latest `failed` instance and its reason. */
+function lastSegs(graph: GraphIndex, seen: Seen, settled: boolean): Seg[] {
+	const failure = lastFailureOf(graph, seen);
+	if (!failure)
+		return [label("last"), [settled ? "no failure" : "no failure yet", "dim"]];
+	const { style } = LOOK.failed;
+	return [
+		label("last"),
+		[`${GLYPH.failed} `, style],
+		[flat(labelOf(graph, failure)), "bold"],
+		[`${WIDE_GAP}${failure.state}`, style],
+		[`${WIDE_GAP}${flat(failure.reason ?? "")}`, style],
+	];
+}
+
+/** The rule under the rows: the drawn node instances counted, groups aside, `maestro ls` when rows are hidden, and the tokens. */
+function footerSegs(states: readonly Shown[], view: View, hid: boolean): Seg[] {
+	const { id, unique } = view.concert;
+	const hint = hid
+		? `${RULE}${RULE} every row: maestro ls ${shownId(id, unique)} `
+		: "";
+	const head = `${RULE}${RULE} ${countsText(states)} ${hint}`;
 	const tail =
 		view.tokens > 0 ? ` ${compact(view.tokens)} tok ${RULE}${RULE}` : "";
 	const fill = Math.max(1, view.columns - 1 - head.length - tail.length);
 	return [[`${head}${RULE.repeat(fill)}${tail}`, "dim"]];
 }
 
-/** Lines the frame holds beside its rows: the header and the footer, each beside a blank line. */
+/** Lines the frame holds beside its rows: the header, `now`, `last` and the footer. */
 const CHROME_LINES = 4;
-/** Lines a clipped frame gives up beyond its chrome: the one the terminal keeps free, and the `… n more` line. */
-const CLIPPED_EXTRA_LINES = 2;
+/** The line the terminal keeps free below the frame. */
+const FREE_LINES = 1;
 
 /**
- * The live graph as lines, clipped to `columns - 1` terminal cells and `rows - 1` lines: a header, the rows laid
- * out by `layout`, and a footer of counts and the concert's tokens. `agents` says what each agent instance ran on.
+ * The live graph as lines within `columns - 1` terminal cells and `rows - 1` lines: a header, `now` and `last`, the
+ * rows of `rowsOf` passed through `fitted`, and a footer of counts and the concert's tokens. `agents` says what executes
+ * each agent instance and its tokens.
  */
 export function frame(ir: Ir, seen: Seen, view: View, agents: Agents): string {
-	const lines = outline(ir, seen, agents, view);
-	const rows = rowsOf(lines);
+	const graph = indexGraph(ir);
+	const settled = view.concert.status !== "running";
+	const rows = rowsOf(shapeOf(ir, graph), {
+		graph,
+		seen,
+		agents,
+		settled,
+		now: view.now,
+	}).map((row) => ({ ...row, t: textsOf(row) }));
 	const widths = widthsOf(rows);
-	const limit = view.columns - 1;
-	const fits = lines.length + CHROME_LINES <= view.rows - 1;
-	const kept = fits
-		? lines
-		: lines.slice(
-				0,
-				Math.max(0, view.rows - CHROME_LINES - CLIPPED_EXTRA_LINES),
-			);
-	const more: Seg[][] = fits
-		? []
-		: [[[`… ${lines.length - kept.length} more`, "dim"]]];
+	const lines = fitted(rows, view.rows - FREE_LINES - CHROME_LINES);
+	const hid = lines.filter((l) => l.type === "row").length < rows.length;
+	const states = leavesOf(graph, seen).map((s) => s.state);
 	return [
 		headerSegs(view),
-		[],
-		...kept.map((l) => segsOf(l, widths)),
-		...more,
-		[],
-		footerSegs(rows, view),
+		nowSegs(graph, seen, view),
+		lastSegs(graph, seen, settled),
+		...lines.map((l) => lineSegs(l, widths)),
+		footerSegs(states, view, hid),
 	]
-		.map((segs) => painted(segs, view.color, limit))
+		.map((segs) => painted(segs, view.color, view.columns - 1))
 		.join("\n");
 }
 
