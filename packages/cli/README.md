@@ -16,8 +16,8 @@ maestro wait <concert> --timeout 15m
 | `perform <composition>`      | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                  |
 | `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                            |
 | `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`. |
-| `wait <concert>`             | `w`   | Waits for a concert to settle. `--timeout <duration>`.                                                            |
-| `watch <concert>`            | `wt`  | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.             |
+| `wait <concert>`             | `wt`  | Waits for a concert to settle. `--timeout <duration>`.                                                            |
+| `watch <concert>`            | `w`   | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.             |
 | `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                               |
 | `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                   |
 | `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                      |

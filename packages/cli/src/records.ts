@@ -224,7 +224,7 @@ async function waited({ session, store, values, positionals, json }: Stored) {
 }
 
 export const wait: Command = {
-	usage: "wait <concert> [flags]  (alias: w)",
+	usage: "wait <concert> [flags]  (alias: wt)",
 	options: WAIT_OPTIONS,
 	execute: (args, deps) =>
 		withStore(

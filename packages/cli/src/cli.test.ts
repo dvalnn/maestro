@@ -467,7 +467,7 @@ describe("usage errors", () => {
 		],
 		[
 			"watch of an unknown concert",
-			["wt", "nope"],
+			["w", "nope"],
 			/^no concert 'nope' in the record\nCheck the id with 'maestro ls'$/,
 		],
 		[
@@ -639,13 +639,13 @@ describe("usage errors", () => {
 
 	test("--help prints a command's flags on stdout and exits 0, -c and --no-color among every verb's", async () => {
 		const w = await world();
-		for (const args of [["--help"], ["p", "-h"], ["wt", "-h"]])
+		for (const args of [["--help"], ["p", "-h"], ["w", "-h"]])
 			expect(await w.call(args)).toMatchObject({
 				code: 0,
 				out: expect.stringContaining("Usage: maestro"),
 				err: "",
 			});
-		expect((await w.call(["--help"])).out).toMatch(/^ {2}watch +\(wt\) +\S/m);
+		expect((await w.call(["--help"])).out).toMatch(/^ {2}watch +\(w\) +\S/m);
 		const verbs = [
 			...(await w.call(["--help"])).out.matchAll(/^ {2}([a-z]+) /gm),
 		].map(([, verb = ""]) => verb);
@@ -922,7 +922,7 @@ describe("the record", () => {
 				],
 			}),
 		);
-		expect(await w.call(["w", done])).toMatchObject({
+		expect(await w.call(["wt", done])).toMatchObject({
 			code: 0,
 			out: "text       done",
 			err: expect.stringMatching(closingOf(done, "ok")),

@@ -49,13 +49,13 @@ const VERBS: readonly Verb[] = [
 	},
 	{
 		name: "wait",
-		alias: "w",
+		alias: "wt",
 		summary: "Wait for a concert to settle",
 		load: async () => (await import("./records")).wait,
 	},
 	{
 		name: "watch",
-		alias: "wt",
+		alias: "w",
 		summary: "Show a concert's node instances live until it settles",
 		load: async () => (await import("./watch")).watch,
 	},

@@ -388,7 +388,7 @@ function closed(
 }
 
 export const watch: Command = {
-	usage: "watch <concert> [flags]  (alias: wt)",
+	usage: "watch <concert> [flags]  (alias: w)",
 	options: WATCH_OPTIONS,
 	execute: (args, deps) =>
 		withStore(
