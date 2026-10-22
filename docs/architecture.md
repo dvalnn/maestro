@@ -354,7 +354,8 @@ claimed by an installed but unused registrant is ignored.
 - A concert whose process is gone while it is still `running` settles `failed`, by whichever reader finds it, so `wait`
   ends and resume can continue from it. Only `kill` checks that a live process is maestro, so a pid another program
   reused keeps the concert `running` until `kill` settles it.
-- Until the first release, a record store of another schema version is refused, not migrated.
+- An older record store is upgraded on open, one forward step per schema version in one transaction. A newer one, or one
+  older than the first step, is refused.
 - **Metrics** (CORE-19, D-23) are named additive numbers per node instance. The engine sums each name per concert and
   attaches no meaning to a name. v1 reports token counts only.
 - **Events** are append-only, keyed by node id and expansion path, with the instance's state, timestamps, outcome and
