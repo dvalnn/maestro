@@ -89,6 +89,12 @@ const VERBS: readonly Verb[] = [
 		load: async () => (await import("./changeset")).changeset,
 	},
 	{
+		name: "artifact",
+		alias: "art",
+		summary: "List a concert's artifacts, or print an instance's files",
+		load: async () => (await import("./artifact")).artifact,
+	},
+	{
 		name: "tour",
 		alias: "t",
 		summary: "Put concerts on a tour, or take them off",

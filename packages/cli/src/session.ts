@@ -10,7 +10,12 @@ import {
 	type Records,
 } from "@maestro/core/perform";
 import { messageOf } from "@maestro/ir";
-import { shortId, shortIds } from "@maestro/render-text/live";
+import {
+	inGraphOrder,
+	seen,
+	shortId,
+	shortIds,
+} from "@maestro/render-text/live";
 import {
 	type Deps,
 	isSet,
@@ -21,7 +26,7 @@ import {
 	type Values,
 } from "./command";
 import { type LoadedConfig, loadConfig, type Overrides } from "./config";
-import { usageError } from "./output";
+import { listedOf, usageError } from "./output";
 
 /** The executable's name, which a process performing a concert shows in its command line. */
 const COMMAND = "maestro";
@@ -95,9 +100,6 @@ export async function openSession(
 	};
 }
 
-/** How many ids an ambiguous prefix's error lists. */
-const LISTED_IDS = 5;
-
 /**
  * The concert of `store` whose id is `prefix`, or whose id or short id starts with it. A short id's letters are no hex
  * digit, so a prefix never starts both kinds.
@@ -109,14 +111,10 @@ export function concertOf(store: Records, prefix: string): ConcertRecord {
 		prefix !== "" && (id.startsWith(prefix) || shortId(id).startsWith(prefix));
 	const matching = ids.includes(prefix) ? [prefix] : ids.filter(starts);
 	if (matching.length > 1) {
-		const more = matching.length - LISTED_IDS;
 		const short = shortIds(ids);
-		const listed = matching
-			.slice(0, LISTED_IDS)
-			.map((id) => short.label(id, false))
-			.join(", ");
+		const listed = listedOf(matching.map((id) => short.label(id, false)));
 		throw usageError(
-			`'${prefix}' starts ${matching.length} concerts: ${listed}${more > 0 ? ` and ${more} more` : ""}`,
+			`'${prefix}' starts ${matching.length} concerts: ${listed}`,
 			"Give more characters of the id",
 		);
 	}
@@ -128,6 +126,14 @@ export function concertOf(store: Records, prefix: string): ConcertRecord {
 		);
 	return found;
 }
+
+/** The instances of concert `row`, in graph order. */
+export const instancesInOrder = (store: Records, row: ConcertRecord) =>
+	inGraphOrder(
+		row.ir,
+		store.instances(row.id),
+		seen(new Map(), store.events(row.id)),
+	);
 
 /** The concerts the prefixes `prefixes` start, each once, in the order first named. */
 export const concertsOf = (store: Records, prefixes: readonly string[]) => [

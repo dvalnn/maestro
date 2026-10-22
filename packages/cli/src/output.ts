@@ -21,6 +21,7 @@ import {
 	isPlainObject,
 	type NodeInstance,
 	replaceAt,
+	withoutKeys,
 } from "@maestro/ir";
 import {
 	closingBlock,
@@ -313,17 +314,34 @@ function outputRows(
 	artifacts: string,
 	result: ConcertResult,
 ): [port: string, value: string][] {
-	const out = ir.nodes.find((n) => n.id === result.node)?.out ?? {};
-	return Object.entries(result.outputs ?? {}).map(([port, value]) => {
+	const outputs = result.outputs ?? {};
+	const refs = Map.groupBy(
+		artifactRefs(ir, result.node, outputs),
+		(r) => r.port,
+	);
+	return Object.entries(outputs).map(([port, value]) => {
 		let shown = structuredClone(value);
-		for (const { type, pointer, value: ref } of findMarked(
-			out[port] ?? {},
-			value,
-		))
-			if (ARTIFACT_TYPES.has(type) && isArtifactRef(ref))
-				shown = replaceAt(shown, pointer, join(artifacts, ref.path));
+		for (const { pointer, ref } of refs.get(port) ?? [])
+			shown = replaceAt(shown, pointer, join(artifacts, ref.path));
 		return [port, oneLine(shown)];
 	});
+}
+
+/** Each artifact in `outputs` of node `node` of `ir`: its port, its JSON Pointer in that port's value, and its ref. */
+export function artifactRefs(
+	ir: Ir,
+	node: string | undefined,
+	outputs: Readonly<Record<string, unknown>>,
+): { port: string; pointer: string; ref: ArtifactRef }[] {
+	const out = ir.nodes.find((n) => n.id === node)?.out ?? {};
+	return Object.entries(outputs).flatMap(([port, value]) =>
+		findMarked(out[port] ?? {}, value).flatMap(
+			({ type, pointer, value: ref }) =>
+				ARTIFACT_TYPES.has(type) && isArtifactRef(ref)
+					? [{ port, pointer, ref }]
+					: [],
+		),
+	);
 }
 
 /** The error of a command that finds concert `id` running, which a command on settled concerts refuses. */
@@ -398,6 +416,55 @@ export function compositionOf(text: string | undefined) {
 /** `instance` of `ir`'s graph as one name, such as `lens[risk]/skeptic`. */
 export const instanceName = (ir: Ir, instance: NodeInstance) =>
 	formatInstance(instance, indexGraph(ir).groupsOf(instance.node));
+
+/** How many names an error listing matches shows. */
+const LISTED = 5;
+
+/** `names` comma-joined, the first few only, then how many more there are. */
+export function listedOf(names: readonly string[]): string {
+	const more = names.length - LISTED;
+	return `${names.slice(0, LISTED).join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+}
+
+/** Whether `name` ends in the `/`-separated segments of `text`, each equal to its segment with or without its keys. */
+function endsIn(name: string, text: string): boolean {
+	const own = name.split("/");
+	const given = text.split("/");
+	const start = own.length - given.length;
+	return (
+		start >= 0 &&
+		given.every((segment, i) => {
+			const at = own[start + i] ?? "";
+			return segment === at || segment === withoutKeys(at);
+		})
+	);
+}
+
+/**
+ * The one of `names` that `text` names: itself, else the one it is a whole-segment ending of, such as `build` for
+ * `loop[0]/build`.
+ * @throws CliError, a usage error naming `maestro ls <concert>` when it names none, or listing the names it ends.
+ */
+export function nameOf(
+	text: string,
+	names: Iterable<string>,
+	concert: string,
+): string {
+	const all = new Set(names);
+	if (all.has(text)) return text;
+	const matching = [...all].filter((name) => endsIn(name, text));
+	if (matching.length > 1)
+		throw usageError(
+			`'${text}' ends ${matching.length} instances: ${listedOf(matching)}`,
+			"Name one of them in full",
+		);
+	if (matching[0] === undefined)
+		throw usageError(
+			`no instance '${text}' in concert ${concert}`,
+			`List them with 'maestro ls ${concert}'`,
+		);
+	return matching[0];
+}
 
 const WHOLE_NUMBER = /^[1-9]\d*$/;
 

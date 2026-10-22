@@ -26,6 +26,7 @@ maestro wait <concert> --timeout 15m
 | `changeset show <concert>`   | `cs`  | Prints a concert's changeset as a diff on its base, the checkout untouched.[^changeset] `--stat`, `--summary`.    |
 | `changeset apply <concert>`  | `cs`  | Stages the changeset on the checkout's `HEAD` with `git apply --index --3way`, patch by patch.                    |
 | `changeset drop`             | `cs`  | Resets the checkout's tracked files. It asks first unless given `--yes`.                                          |
+| `artifact <concert>`         | `art` | Lists a concert's artifacts, or prints an instance's files raw.[^artifact] `--path`.                              |
 
 [^watch]:
     On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls and thinking among
@@ -37,8 +38,9 @@ maestro wait <concert> --timeout 15m
     count lines, and the footer then points at `maestro ls`. Ctrl-C stops watching, not the concert. With stdin a
     terminal too, the graph is a tree to browse: see [Browsing a concert](#browsing-a-concert).
     `--events --instance <id>` keeps only that instance's events, `<id>` as `ls <concert>` prints it, such as
-    `lens[risk]/skeptic`; a group, loop, fan-out or scope id, without keys for every iteration, takes everything under
-    it. An id the concert has no node for is a usage error.
+    `lens[risk]/skeptic`, or a unique ending of whole segments of a node or scope id, such as `skeptic`; a group, loop,
+    fan-out or scope id, without keys for every iteration, takes everything under it. An id the concert has no node for
+    is a usage error.
 
 [^changeset]:
     The checkout is `target.repo` from the concert's config: the config files with its recorded `--profile` and `-c`, as
@@ -49,6 +51,16 @@ maestro wait <concert> --timeout 15m
     with no changeset or an empty one, or a checkout without its base (fetch it first); `apply` exits 1 on uncommitted
     tracked changes and 3 when a patch leaves conflicts. `--json`, and a flag the action does not take, are usage
     errors. Git runs with the user's own config, and nothing is committed: commit with git or jj to stack the next one.
+
+[^artifact]:
+    Without an instance, a table of each artifact's instance, port and absolute path (`--json`: a list of
+    `{instance, port, path, contentHash}`). `art <concert> <instance>` prints the bytes of each file of the instance's
+    artifacts as they are, each after a `══ <file>` line when there are several; `art <concert> <instance> <file>`
+    prints one, so it pipes, such as `maestro art <concert> request request.md | glow -p`. A file is named by its
+    artifact's basename plus any inner path, such as `staged/prompt.md`. `--path` prints absolute paths, one per line,
+    instead. An instance is any name `ls <concert>` prints, or a unique ending of whole segments of one, such as `build`
+    for `loop[0]/build`. An unknown or ambiguous instance or file, and `--json` with an instance or `--path`, are usage
+    errors; an instance with no artifacts yet, or an artifact gone from disk, exits 1.
 
 [^rep]:
     `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,

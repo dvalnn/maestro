@@ -46,6 +46,7 @@ process.exit(
 		cwd: process.cwd(),
 		env: process.env,
 		stdout: (line) => void process.stdout.write(\`\${line}\\n\`),
+		stdoutBytes: (bytes) => void process.stdout.write(bytes),
 		stderr: (line) => void process.stderr.write(\`\${line}\\n\`),
 	}),
 );

@@ -29,6 +29,7 @@ export {
 	itemKey,
 	parseExpansion,
 	parseInstance,
+	withoutKeys,
 } from "./expansion";
 export {
 	boundOf,

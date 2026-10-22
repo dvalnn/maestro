@@ -16,10 +16,10 @@ const STDERR_FD = 2;
 /** The size taken for a terminal that reports none. */
 const UNSIZED_TERMINAL = { columns: 80, rows: 24 };
 
-/** Writes `line` to `fd`. A reader that has gone away ends the process quietly, as it does a Unix filter. */
-function emit(fd: number, line: string): void {
+/** Writes `data` to `fd`. A reader that has gone away ends the process quietly, as it does a Unix filter. */
+function emit(fd: number, data: string | Uint8Array): void {
 	try {
-		writeSync(fd, `${line}\n`);
+		writeSync(fd, typeof data === "string" ? Buffer.from(data) : data);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "EPIPE") throw error;
 		process.exit(EXIT.ok);
@@ -43,7 +43,7 @@ async function confirm(question: string): Promise<boolean> {
 try {
 	loadDotenv(process.env);
 } catch (error) {
-	emit(STDERR_FD, messageOf(error));
+	emit(STDERR_FD, `${messageOf(error)}\n`);
 	process.exit(EXIT.failed);
 }
 
@@ -52,8 +52,9 @@ process.exit(
 		hosts: builtinHosts(process.env),
 		cwd: process.cwd(),
 		env: process.env,
-		stdout: (line) => emit(STDOUT_FD, line),
-		stderr: (line) => emit(STDERR_FD, line),
+		stdout: (line) => emit(STDOUT_FD, `${line}\n`),
+		stdoutBytes: (bytes) => emit(STDOUT_FD, bytes),
+		stderr: (line) => emit(STDERR_FD, `${line}\n`),
 		confirm: process.stdin.isTTY ? confirm : undefined,
 		// Reading `process.stdout` or `process.stderr` makes its descriptor non-blocking, which loses writes to a slow
 		// pipe.
@@ -74,7 +75,7 @@ process.exit(
 						stdin: process.stdin,
 						write: (text) => writeSync(STDOUT_FD, text),
 						process,
-						stderr: (line) => emit(STDERR_FD, line),
+						stderr: (line) => emit(STDERR_FD, `${line}\n`),
 					})
 				: undefined,
 	}),

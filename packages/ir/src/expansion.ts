@@ -87,6 +87,9 @@ function keyed(
 
 const KEYED = /\[[^\]]*\]/g;
 
+/** `text` with every `[key]` taken out, such as `lens/skeptic` for `lens[risk]/skeptic`. */
+export const withoutKeys = (text: string) => text.replace(KEYED, "");
+
 /**
  * The inverse of `formatInstance`, for an id naming an instance or, with keys left off the later groups, every
  * instance under it: its node id and the keys it gives, outermost group first. `undefined` when a key is malformed or
@@ -96,7 +99,7 @@ export function parseInstance(
 	text: string,
 	groupsOf: (node: string) => readonly string[],
 ): { node: string; keys: string[] } | undefined {
-	const node = text.replace(KEYED, "");
+	const node = withoutKeys(text);
 	const keys = parseExpansion((text.match(KEYED) ?? []).join(""));
 	const groups = groupsOf(node);
 	if (keys === undefined || keys.length > groups.length) return undefined;

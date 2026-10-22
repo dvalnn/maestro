@@ -75,6 +75,16 @@ each concert's short id as `short`.
 - `stale` marks a row an earlier attempt of a resumed concert left, which the resume neither reused nor replaced.
 - The reason of the instance the closing block's `at` names is the concert's root cause.
 
+`maestro art <id>` lists the concert's artifacts: instance, port, absolute path (`--json` adds `contentHash`).
+`maestro art <id> <instance>` prints the bytes of each file of an instance's artifacts as they are, after a `══ <file>`
+line when there are several, and `maestro art <id> <instance> <file>` prints one, so it pipes. A file is its artifact's
+basename plus any inner path: read an agent's prompt with `maestro art <id> <instance> staged/prompt.md`. `--path`
+prints absolute paths instead. An instance with no artifacts yet exits 1.
+
+`art` takes an instance as `ls <id>` prints it, or a unique ending of whole segments of one, such as `repair` for
+`loop[0]/repair`. `watch --instance` takes the same ending of a node or scope id, such as `repair` for `loop/repair`. An
+ambiguous ending is a usage error listing the matches.
+
 `maestro ls <id> --json` gives the concert's row (`id`, `short`, `pack`, `composition`, `status`, `pid`, `startedAt`,
 `settledAt`, `workspace`, `tour`, `title`) and `instances`, each with `node`, `expansion`, `status`, `reason`,
 `outputs`, `metrics` (such as `tokens_in`), `artifacts` and `stale`.
@@ -89,8 +99,9 @@ The data root, `$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`) unles
 
 What each node leaves, as outputs of its instance:
 
-- An agent: `report`, its final report text; `staged`, a directory holding the exact prompt it was given (`prompt.md`)
-  and its identity (`identity.md`) when it has one; `lane`, its version; and each declared output file.
+- An agent: `report`, its final report text; `staged`, a directory holding the exact prompt it was given (`prompt.md`),
+  its identity (`identity.md`) when it has one and each correction turn's message (`correction-1.md` on); `lane`, its
+  version; and each declared output file.
 - A check: `logs`, each line it ran and its output; `lane`, unless it only read one.
 - A changeset node: `changeset`, a directory (next section).
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
 import { idOf, json, world } from "./fixtures/world";
@@ -41,7 +41,7 @@ async function repoWorld(extra = "", env: Record<string, string> = {}) {
 		`target:\n  repo: ${target}\n  base: main\n${extra}`,
 	);
 	const stubbed = builtinHosts({ ...process.env, ...env });
-	const call = (args: string[], over: { env?: Record<string, string> } = {}) =>
+	const call = (args: string[], over: Parameters<typeof w.call>[1] = {}) =>
 		w.call(args, { hosts: stubbed, ...over });
 	return { ...w, call, target };
 }
@@ -132,6 +132,128 @@ test("a malformed MAESTRO_STUB_DELAY fails the stub agent, naming it", async () 
 	const done = await w.call(["perform", await smokeFile()]);
 	expect(done.code).not.toBe(0);
 	expect(done.out + done.err).toContain("MAESTRO_STUB_DELAY");
+});
+
+/** A composition of a stub agent with an identity and a markdown output in a scope, and two more under a parMap. */
+async function artsFile() {
+	const file = join(await scratch(), "arts.ts");
+	writeFileSync(
+		file,
+		`import { agent, fresh, MarkdownOut } from "@maestro/host-repo-sdk";
+import { composition, iter, use } from "@maestro/sdk";
+
+const inner = composition("inner", { examples: [{}] }, () =>
+	agent({
+		label: "a",
+		task: "nothing",
+		identity: "terse",
+		lane: fresh(),
+		role: "smoke",
+		out: { notes: MarkdownOut("notes.md") },
+	}),
+);
+
+export const arts = composition("arts", { examples: [{}] }, () => {
+	use(inner, {});
+	return iter.parMap(["x", "y"], () =>
+		agent({ label: "b", task: "nothing", lane: fresh(), role: "smoke" }),
+		{ onError: "stop" },
+	);
+});
+`,
+	);
+	return file;
+}
+
+test("artifact lists a concert's artifacts, prints an instance's files by a unique ending, and refuses what names none", async () => {
+	const w = await repoWorld(SMOKE_ROLE("stub"));
+	const done = await w.call(["perform", await artsFile()]);
+	expect(done).toMatchObject({ code: 0 });
+	const id = idOf(done);
+	const area = join(w.root, "data/maestro/concerts", id, "artifacts");
+	const listed: { instance: string; port: string; path: string }[] = json(
+		await w.call(["art", id, "--json"]),
+	);
+	expect(
+		listed
+			.filter((a) => a.instance === "inner/a")
+			.map((a) => [a.port, a.path.startsWith(`${area}/`)]),
+	).toEqual([
+		["notes", true],
+		["staged", true],
+	]);
+	const table = (await w.call(["artifact", id])).out.split("\n");
+	expect(table[0]).toMatch(/^instance +port +path$/);
+	expect(table).toContain(
+		`inner/a      notes   ${listed.find((a) => a.port === "notes")?.path}`,
+	);
+	expect((await w.call(["art", id, "--path"])).out).toBe(
+		listed.map((a) => a.path).join("\n"),
+	);
+
+	const staged = (name: string) =>
+		readFileSync(
+			join(listed.find((a) => a.port === "staged")?.path ?? "", name),
+			"utf8",
+		);
+	const notes = listed.find((a) => a.port === "notes")?.path ?? "";
+	/** Stdout of `art <id> ...args` exactly as written. */
+	const raw = async (...args: string[]) => {
+		const written: string[] = [];
+		const done = await w.call(["art", id, ...args], {
+			stdout: (line) => written.push(`${line}\n`),
+			stdoutBytes: (bytes) => written.push(new TextDecoder().decode(bytes)),
+		});
+		expect(done.code).toBe(0);
+		return written.join("");
+	};
+	const prompt = staged("prompt.md");
+	expect(await raw("a", "staged/prompt.md")).toBe(prompt);
+	const ended = (text: string) =>
+		text === "" || text.endsWith("\n") ? text : `${text}\n`;
+	expect(await raw("inner/a")).toBe(
+		`══ notes.md\n${ended(readFileSync(notes, "utf8"))}══ staged/identity.md\n${ended(staged("identity.md"))}══ staged/prompt.md\n${prompt}`,
+	);
+	expect(await raw("a", "notes.md", "--path")).toBe(`${notes}\n`);
+	expect(await raw("parMap[x]/b")).toBe(
+		readFileSync(
+			join(
+				listed.find((a) => a.instance === "parMap[x]/b")?.path ?? "",
+				"prompt.md",
+			),
+			"utf8",
+		),
+	);
+
+	expect(await w.call(["art", id, "parMap"])).toMatchObject({
+		code: 1,
+		err: `instance 'parMap' of concert ${id} has no artifacts yet\nSee where it stands with 'maestro ls ${id}'`,
+	});
+	for (const ending of ["b", "parMap/b"])
+		expect(await w.call(["art", id, ending])).toMatchObject({
+			code: 2,
+			err: `'${ending}' ends 2 instances: parMap[x]/b, parMap[y]/b\nName one of them in full`,
+		});
+	for (const [args, last] of [
+		[[], "Name the concert, as 'maestro ls' lists it"],
+		[[id, "nope"], `List them with 'maestro ls ${id}'`],
+		[[id, "a", "nope.md"], `List them with 'maestro art ${id} inner/a --path'`],
+		[[id, "a", "--json"], "Drop --json to print the instance's files"],
+		[[id, "--json", "--path"], "Drop one of them"],
+	] as const) {
+		const refused = await w.call(["art", ...args]);
+		expect(refused.code).toBe(2);
+		const text: string = refused.err || json(refused).error;
+		expect(text.split("\n").at(-1)).toBe(last);
+	}
+	expect((await w.call(["art"])).err).toStartWith(
+		"expected one concert, got 0",
+	);
+	rmSync(notes);
+	expect(await w.call(["art", id, "a", "notes.md"])).toMatchObject({
+		code: 1,
+		err: `the artifact is not at ${notes}\nPerform the concert again, or pick another instance`,
+	});
 });
 
 /** A composition whose agent pins an unloaded harness inline, after a code node that fails while `gate` is missing. */

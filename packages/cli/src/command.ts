@@ -20,6 +20,8 @@ export type Deps = {
 	env: Environment;
 	/** Prints a line on stdout. */
 	stdout(line: string): void;
+	/** Writes `bytes` on stdout as they are, adding no newline. */
+	stdoutBytes(bytes: Uint8Array): void;
 	/** Prints a line on stderr. */
 	stderr(line: string): void;
 	/** Asks a yes-or-no question on the terminal. Absent when stdin is not a terminal. */

@@ -38,6 +38,7 @@ import { actorOf, annotated, hostTextOf } from "./host-text";
 import {
 	EXIT,
 	exitOf,
+	nameOf,
 	printClosing,
 	resultDoc,
 	UNFRAMED,
@@ -82,7 +83,7 @@ const WATCH_OPTIONS = {
 	instance: {
 		type: "string",
 		arg: "id",
-		desc: "With --events, show only this instance's events; a group or scope id takes all under it",
+		desc: "With --events, show only this instance's events, or a unique ending of its id; a group or scope id takes all under it",
 	},
 	frames: {
 		type: "string",
@@ -353,23 +354,26 @@ function framed(
 }
 
 /**
- * `show`, fed only the events under the instance `id` names, written as `ls <concert>` prints it, as the inspector
- * selects them.
- * @throws CliError, a usage error, when `id` names no node or scope of the concert, or misplaces a key.
+ * `show`, fed only the events under the instance `id` names, as the inspector selects them: `id` as `ls <concert>`
+ * prints it, or a whole-segment ending of one node or scope id.
+ * @throws CliError, a usage error, as `nameOf` does when `id` is neither, such as when it misplaces a key.
  */
 function narrowed(show: Show, row: ConcertRecord, id: string): Show {
 	const graph = indexGraph(row.ir);
-	const parsed = parseInstance(id, graph.groupsOf);
-	if (
-		parsed === undefined ||
-		!(graph.nodes.has(parsed.node) || graph.scopes.has(parsed.node))
-	)
-		throw usageError(
-			`no instance '${id}' in concert ${row.id}`,
-			`List them with 'maestro ls ${row.id}'`,
-		);
-	return (events, read) =>
-		show(selectedUnder(graph, parsed.node, parsed.keys, events), read);
+	const has = (node: string) => graph.nodes.has(node) || graph.scopes.has(node);
+	const exact = parseInstance(id, graph.groupsOf);
+	const { node, keys } =
+		exact !== undefined && has(exact.node)
+			? exact
+			: {
+					node: nameOf(
+						id,
+						[...graph.nodes.keys(), ...graph.scopes.keys()],
+						row.id,
+					),
+					keys: [],
+				};
+	return (events, read) => show(selectedUnder(graph, node, keys, events), read);
 }
 
 async function watched(stored: Stored) {

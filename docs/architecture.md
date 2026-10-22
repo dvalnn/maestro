@@ -438,7 +438,9 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 **Staging, outbox and envelope**
 
 - The identity is appended to the harness's own system prompt from a staged file, never replacing it. The task, with the
-  host's output contract appended, goes as the user message on stdin. The exact staged text is an output artifact.
+  host's output contract appended, goes as the user message on stdin. The exact staged text is the `staged` output
+  artifact, a directory holding `prompt.md` (the user message), `identity.md` (when there is one) and `correction-N.md`
+  (each correction turn's message).
 - Declared outputs are files the agent writes in its **outbox**, a per-instance directory at `/out` outside the lane.
   The host reads only regular files there and checks each against its schema. The contract tells the agent to write
   every declared file, a verdict agent even when it rejects. A missing file or a schema violation is `failed`.

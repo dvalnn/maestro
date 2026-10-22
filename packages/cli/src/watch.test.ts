@@ -1,9 +1,11 @@
 import { describe, expect, setSystemTime, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { Host, HostNodeResult } from "@maestro/core/host";
 import { fakeHost } from "@maestro/testkit";
 import type { Screen } from "./command";
+import { scratch } from "./fixtures/packs";
 import {
 	closingOf,
 	ECHO,
@@ -145,7 +147,7 @@ describe("watch --events --instance", () => {
 		},
 	);
 
-	test("a keyed id keeps one iteration of a group, and the group's id every iteration", async () => {
+	test("a keyed id keeps one iteration of a group, the group's id every iteration, and a node's unique ending all of its", async () => {
 		const w = await world();
 		const id = idOf(await w.call(["p", ESSAY]));
 		const nodes = async (instance: string) =>
@@ -166,9 +168,48 @@ describe("watch --events --instance", () => {
 		expect(new Set(await nodes("parMap[dogs]/draft"))).toEqual(
 			new Set(["parMap/draft[dogs]"]),
 		);
+		expect(new Set(await nodes("draft"))).toEqual(
+			new Set(["parMap/draft[cats]", "parMap/draft[dogs]"]),
+		);
 		expect(new Set(await nodes("parMap"))).toEqual(
 			new Set(["parMap", "parMap/draft[cats]", "parMap/draft[dogs]"]),
 		);
+	});
+
+	test("a unique ending of a scope id takes everything under that scope", async () => {
+		const file = join(await scratch(), "nested.ts");
+		writeFileSync(
+			file,
+			`import { code, composition, Text, use } from "@maestro/sdk";
+
+export function say() {
+	return { text: "hi" };
+}
+
+const inner = composition("inner", { examples: [{}] }, () =>
+	code(say, { in: {}, out: { text: Text() } }),
+);
+const outer = composition("outer", { examples: [{}] }, () => use(inner, {}));
+export const nested = composition("nested", { examples: [{}] }, () => use(outer, {}));
+`,
+		);
+		const w = await world();
+		const id = idOf(await w.call(["p", file]));
+		const watched = await w.call([
+			"watch",
+			id,
+			"--events",
+			"--json",
+			"--instance",
+			"inner",
+		]);
+		expect(
+			new Set(
+				linesOf(watched.out)
+					.slice(0, -1)
+					.map((e) => e.node),
+			),
+		).toEqual(new Set(["outer/inner/say"]));
 	});
 
 	test.each(["parMap[do gs]/draft", "parMap/draft[dogs]", "parMap[dogs]"])(

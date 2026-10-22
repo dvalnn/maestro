@@ -8,6 +8,7 @@ import type { Deps } from "../command";
 import { DEMO, packOf, scratch } from "./packs";
 
 const MAESTRO = join(import.meta.dir, "../maestro.ts");
+const FINAL_NEWLINE = /\n$/;
 
 export type Outcome = { code: number; out: string; err: string };
 
@@ -33,12 +34,18 @@ export async function world() {
 		const code = await main(args, {
 			hosts: [fakeHost()],
 			cwd,
-			stdout: (line) => out.push(line),
+			stdout: (line) => out.push(`${line}\n`),
+			stdoutBytes: (bytes) => out.push(new TextDecoder().decode(bytes)),
 			stderr: (line) => err.push(line),
 			...over,
 			env: { ...env, ...over.env },
 		});
-		return { code, out: out.join("\n"), err: err.join("\n") };
+		const written = out.join("");
+		return {
+			code,
+			out: written.replace(FINAL_NEWLINE, ""),
+			err: err.join("\n"),
+		};
 	};
 	/** Starts `script`, the real `maestro.ts` by default, as its own process in this world. */
 	const spawn = (args: string[], script = MAESTRO) =>

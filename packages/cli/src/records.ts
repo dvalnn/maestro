@@ -4,9 +4,7 @@ import { DURATION_EXAMPLE, MS_PER_UNIT } from "@maestro/ir";
 import {
 	agentText,
 	compact,
-	inGraphOrder,
 	type ShortIds,
-	seen,
 	shortIds,
 	stateWord,
 	tokensOf,
@@ -44,6 +42,7 @@ import {
 	concertOf,
 	concertsOf,
 	diskOf,
+	instancesInOrder,
 	isMaestro,
 	type Session,
 	type Stored,
@@ -162,11 +161,7 @@ async function instancesOf(
 ) {
 	const color = colorOf(session.deps, values).out;
 	const row = concertOf(store, prefix);
-	const instances = inGraphOrder(
-		row.ir,
-		store.instances(row.id),
-		seen(new Map(), store.events(row.id)),
-	);
+	const instances = instancesInOrder(store, row);
 	const hostText = hostTextOf(session.deps.hosts, row.ir);
 	session.deps.stdout(
 		json
