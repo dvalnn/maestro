@@ -14,6 +14,8 @@ import {
 const OPENERS = 6;
 /** How long after spawning the openers they all open at once, in milliseconds: longer than a process takes to start. */
 const OPEN_AT_MS = 1000;
+/** How long another process holds the write lock, in milliseconds: well inside the record's busy timeout. */
+const HOLD_MS = 200;
 const IR_FIXTURE = join(
 	import.meta.dir,
 	"../../../ir/fixtures/fanout-fanin-loop.json",
@@ -77,6 +79,35 @@ test("several processes open one new record store at once", async () => {
 		),
 	);
 	expect(failures).toEqual(Array(OPENERS).fill(""));
+});
+
+test("a write waits for another process's write to commit, though that write changes what it read", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const record = openWriter(path);
+	record.begin({ id: "c", ir: await fixtureIr(), startedAt: 1 });
+	record.start("c", A, 2);
+	const script = join(dir, "hold.ts");
+	await writeFile(
+		script,
+		`import { Database } from "bun:sqlite";
+		const db = new Database(${JSON.stringify(path)});
+		db.exec("BEGIN IMMEDIATE");
+		db.exec("UPDATE concerts SET title = 'held' WHERE id = 'c'");
+		console.log("held");
+		Bun.sleepSync(${HOLD_MS});
+		db.exec("COMMIT");`,
+	);
+	const holder = Bun.spawn([process.execPath, script], { stdout: "pipe" });
+	await holder.stdout.getReader().read();
+	record.note("c", A, { type: "log", line: "x" }, 3);
+	expect(await holder.exited).toBe(0);
+	expect(
+		openRecord(path)
+			.events("c")
+			.map((e) => e.type),
+	).toEqual(["running", "log"]);
+	record.close();
 });
 
 test("a reader settles a concert whose process exited failed, with its running instances, once", async () => {

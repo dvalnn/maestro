@@ -385,8 +385,17 @@ function walMode(db: Database): void {
 	}
 }
 
+/**
+ * Wraps `fn` in a transaction that takes the write lock at its start, where `busy_timeout` waits for another writer.
+ * A deferred one that reads before it writes fails at once when another writer commits between the two.
+ */
+const writing = <A extends unknown[], T>(
+	db: Database,
+	fn: (...args: A) => T,
+): ((...args: A) => T) => db.transaction(fn).immediate;
+
 function migrate(db: Database, path: string): void {
-	db.transaction(() => {
+	writing(db, () => {
 		const version =
 			db.query<{ user_version: number }, []>("PRAGMA user_version").get()
 				?.user_version ?? 0;
@@ -397,7 +406,7 @@ function migrate(db: Database, path: string): void {
 			);
 		db.exec(SCHEMA);
 		db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-	}).immediate();
+	})();
 }
 
 /** Whether the process `pid` exists. One owned by another user exists too. */
@@ -479,7 +488,7 @@ type Lookup = {
 };
 
 function lookupOf(db: Database, alive: Alive): Lookup {
-	const reap = db.transaction((id: string) => {
+	const reap = writing(db, (id: string) => {
 		const at = Date.now();
 		settleRunning(db, id, PROCESS_EXITED, at);
 		db.exec(
@@ -490,7 +499,7 @@ function lookupOf(db: Database, alive: Alive): Lookup {
 
 	const reaped = (row: ConcertRow) => {
 		if (row.status !== "running" || alive(row.pid)) return false;
-		reap.immediate(row.id);
+		reap(row.id);
 		return true;
 	};
 
@@ -554,7 +563,7 @@ function readerOf(db: Database, look: Lookup): Records {
 			rowOf(id);
 			db.exec("UPDATE concerts SET tour = ? WHERE id = ?", [tour ?? null, id]);
 		},
-		remove: db.transaction((id: string) => {
+		remove: writing(db, (id: string) => {
 			const row = rowOf(id);
 			if (row.status === "running")
 				throw new Error(
@@ -665,7 +674,7 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 		db.exec(`DELETE FROM artifacts ${where}`, [id, node, expansion]);
 	};
 
-	const restart = db.transaction((id: string, ir: Ir) => {
+	const restart = writing(db, (id: string, ir: Ir) => {
 		const refused = unresumable(concertOf(look.rowOf(id)));
 		if (refused) throw refused;
 		db.exec(
@@ -712,7 +721,7 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 			);
 		},
 		resume: ({ id, ir }) => restart(id, ir),
-		start: db.transaction((id: string, instance: NodeInstance, at: number) => {
+		start: writing(db, (id: string, instance: NodeInstance, at: number) => {
 			replaceStale(id, instance);
 			writable(id, instance, [null]);
 			db.exec(
@@ -721,7 +730,7 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 			);
 			insertEvent(db, id, instance, { type: "running" }, at);
 		}),
-		reuse: db.transaction((id: string, instance: NodeInstance, at: number) => {
+		reuse: writing(db, (id: string, instance: NodeInstance, at: number) => {
 			writable(id, instance, ["ok"]);
 			const { changes } = db.exec(
 				"UPDATE instances SET stale = 0 WHERE concert = ? AND node = ? AND expansion = ? AND stale = 1",
@@ -733,7 +742,8 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 				);
 			insertEvent(db, id, instance, { type: "reused" }, at);
 		}),
-		settle: db.transaction(
+		settle: writing(
+			db,
 			(id: string, instance: NodeInstance, s: Settling, at: number) => {
 				replaceStale(id, instance);
 				writable(id, instance, [null, "running"]);
@@ -750,13 +760,14 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 					);
 			},
 		),
-		note: db.transaction(
+		note: writing(
+			db,
 			(id: string, instance: NodeInstance, body: EventBody, at: number) => {
 				writable(id, instance, ["running"]);
 				insertEvent(db, id, instance, body, at);
 			},
 		),
-		finish: db.transaction((id: string, result: ConcertResult, at: number) => {
+		finish: writing(db, (id: string, result: ConcertResult, at: number) => {
 			settleRunning(db, id, CONCERT_FINISHED, at);
 			db.exec(
 				"UPDATE concerts SET status = ?, settled_at = ?, result_node = ?, result_expansion = ?, reason = ? WHERE id = ?",
