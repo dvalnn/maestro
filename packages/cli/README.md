@@ -33,6 +33,9 @@ maestro wait <concert> --timeout 15m
     each fan-out's items on one row, and a footer of counts and the concert's tokens. Rows that don't fit fold into
     count lines, and the footer then points at `maestro ls`. Ctrl-C stops watching, not the concert. With stdin a
     terminal too, the graph is a tree to browse: see [Browsing a concert](#browsing-a-concert).
+    `--events --instance <id>` keeps only that instance's events, `<id>` as `ls <concert>` prints it, such as
+    `lens[risk]/skeptic`; a group, loop, fan-out or scope id, without keys for every iteration, takes everything under
+    it. An id the concert has no node for is a usage error.
 
 [^rep]:
     `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,

@@ -175,6 +175,23 @@ export function rowOf(
 	};
 }
 
+/**
+ * The instances at or under `node` in the iterations `keys` name, outermost enclosing group first; a group `keys` does
+ * not reach holds every iteration.
+ */
+export const holdsUnder = (
+	graph: GraphIndex,
+	node: string,
+	keys: readonly string[],
+) =>
+	rowOf(
+		graph,
+		rowKey(
+			node,
+			graph.groupsOf(node).map((_, i) => keys[i] ?? ANY),
+		),
+	).holds;
+
 /** `states` counted as `3 ok · 1 failed`, in `COUNTED` order. */
 export const countsText = (states: readonly Shown[]) =>
 	COUNTED.map((state): [Shown, number] => [

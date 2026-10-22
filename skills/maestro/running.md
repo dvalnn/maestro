@@ -60,8 +60,9 @@ each concert's short id as `short`.
   watching, not the concert. An agent conductor pipes it, which ends at settle, or uses `maestro wait`. With `--json`,
   or without a terminal and without `--events`, it prints a JSON Lines stream, a line per instance state change (per
   event with `--events --json`), ending with the concert document, a `{"type":"concert",...}` line holding
-  `wait --json`'s. `--events` without `--json` prints an aligned text line per event instead. It takes no timeout: bound
-  it below your tool call's limit with `timeout 90s maestro watch <id>`, which exits 124.
+  `wait --json`'s. `--events` without `--json` prints an aligned text line per event instead. `--events --instance <id>`
+  keeps only one instance's events, `<id>` as `ls <concert>` prints it; a group or scope id takes everything under it.
+  It takes no timeout: bound it below your tool call's limit with `timeout 90s maestro watch <id>`, which exits 124.
 
 ## Records
 

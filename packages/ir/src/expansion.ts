@@ -66,11 +66,39 @@ export function formatInstance(
 		throw new Error(
 			`expansion '${expansion}' of '${node}' does not have one key per group (${groups.length})`,
 		);
+	return keyed(node, keys, groups);
+}
+
+/** `node` with each of `keys` right after the id of its group in `groups`; later groups carry no key. */
+function keyed(
+	node: string,
+	keys: readonly string[],
+	groups: readonly string[],
+): string {
 	let shown = "";
 	let at = 0;
-	for (const [i, group] of groups.entries()) {
-		shown += `${node.slice(at, group.length)}[${keys[i]}]`;
+	for (const [i, key] of keys.entries()) {
+		const group = groups[i] ?? "";
+		shown += `${node.slice(at, group.length)}[${key}]`;
 		at = group.length;
 	}
 	return shown + node.slice(at);
+}
+
+const KEYED = /\[[^\]]*\]/g;
+
+/**
+ * The inverse of `formatInstance`, for an id naming an instance or, with keys left off the later groups, every
+ * instance under it: its node id and the keys it gives, outermost group first. `undefined` when a key is malformed or
+ * does not sit right after its own group's id.
+ */
+export function parseInstance(
+	text: string,
+	groupsOf: (node: string) => readonly string[],
+): { node: string; keys: string[] } | undefined {
+	const node = text.replace(KEYED, "");
+	const keys = parseExpansion((text.match(KEYED) ?? []).join(""));
+	const groups = groupsOf(node);
+	if (keys === undefined || keys.length > groups.length) return undefined;
+	return keyed(node, keys, groups) === text ? { node, keys } : undefined;
 }

@@ -1,4 +1,5 @@
 import { describe, expect, setSystemTime, test } from "bun:test";
+import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { Host, HostNodeResult } from "@maestro/core/host";
 import { fakeHost } from "@maestro/testkit";
@@ -14,6 +15,7 @@ import {
 	world,
 } from "./fixtures/world";
 
+const ESSAY = join(import.meta.dir, "fixtures/essay.ts");
 const TOOL = { kind: "tool", name: "bash", input: { command: "ls" } };
 const TERMINAL = () => ({ columns: 120, rows: 40 });
 /** A terminal whose viewport holds fewer rows than the greet concert's tree. */
@@ -120,6 +122,85 @@ describe("watch without a terminal", () => {
 			expect(textual.out.split("\n").at(-1)).toMatch(/^ *\+\S+ {2}echo\/echo /);
 		},
 	);
+});
+
+describe("watch --events --instance", () => {
+	test.each([
+		["an instance", "echo/echo"],
+		["a scope, taking its members", "echo"],
+	])(
+		"keeps the events of %s, as text and JSON lines",
+		async (_what, instance) => {
+			const w = await world();
+			const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf()] }));
+			const args = ["watch", id, "--events", "--instance", instance];
+			const lines = linesOf((await w.call([...args, "--json"])).out);
+			expect(lines.slice(0, -1).map((e) => [e.node, e.type])).toEqual([
+				["echo/echo", "running"],
+				["echo/echo", "settled"],
+			]);
+			const text = (await w.call(args)).out.split("\n");
+			expect(text).toHaveLength(2);
+			for (const line of text) expect(line).toMatch(/ echo\/echo /);
+		},
+	);
+
+	test("a keyed id keeps one iteration of a group, and the group's id every iteration", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["p", ESSAY]));
+		const nodes = async (instance: string) =>
+			linesOf(
+				(
+					await w.call([
+						"watch",
+						id,
+						"--events",
+						"--json",
+						"--instance",
+						instance,
+					])
+				).out,
+			)
+				.slice(0, -1)
+				.map((e) => `${e.node}${e.expansion}`);
+		expect(new Set(await nodes("parMap[dogs]/draft"))).toEqual(
+			new Set(["parMap/draft[dogs]"]),
+		);
+		expect(new Set(await nodes("parMap"))).toEqual(
+			new Set(["parMap", "parMap/draft[cats]", "parMap/draft[dogs]"]),
+		);
+	});
+
+	test.each(["parMap[do gs]/draft", "parMap/draft[dogs]", "parMap[dogs]"])(
+		"an id with a malformed or misplaced key, %s, is a usage error",
+		async (instance) => {
+			const w = await world();
+			const id = idOf(await w.call(["p", ESSAY]));
+			const refused = await w.call([
+				"watch",
+				id,
+				"--events",
+				"--instance",
+				instance,
+			]);
+			expect(refused.code).toBe(2);
+			expect(refused.err).toContain(`no instance '${instance}'`);
+		},
+	);
+
+	test("an id the concert has no node for is a usage error naming ls, and without --events so is the flag", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf()] }));
+		const unknown = await w.call(["watch", id, "--events", "--instance", "x"]);
+		expect(unknown.code).toBe(2);
+		expect(unknown.err).toContain(`no instance 'x' in concert ${id}`);
+		expect(unknown.err.trimEnd().split("\n").at(-1)).toContain(
+			`maestro ls ${id}`,
+		);
+		const bare = await w.call(["watch", id, "--instance", "echo"]);
+		expect(bare.code).toBe(2);
+		expect(bare.err).toContain("--instance needs --events");
+	});
 });
 
 describe("watch --frames", () => {

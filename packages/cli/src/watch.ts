@@ -1,6 +1,6 @@
 import type { ConcertRecord, Records } from "@maestro/core/perform";
-import type { ConcertEvent } from "@maestro/ir";
-import { navigated } from "@maestro/render-text/inspect";
+import { type ConcertEvent, indexGraph, parseInstance } from "@maestro/ir";
+import { navigated, selectedUnder } from "@maestro/render-text/inspect";
 import {
 	type Annotated,
 	agentsOf,
@@ -78,6 +78,11 @@ const WATCH_OPTIONS = {
 	events: {
 		type: "boolean",
 		desc: "Show every event, tool calls and thinking among them, not the graph",
+	},
+	instance: {
+		type: "string",
+		arg: "id",
+		desc: "With --events, show only this instance's events; a group or scope id takes all under it",
 	},
 	frames: {
 		type: "string",
@@ -347,14 +352,41 @@ function framed(
 	return row.status === "running" ? EXIT.ok : exitOf(row.status);
 }
 
+/**
+ * `show`, fed only the events under the instance `id` names, written as `ls <concert>` prints it, as the inspector
+ * selects them.
+ * @throws CliError, a usage error, when `id` names no node or scope of the concert, or misplaces a key.
+ */
+function narrowed(show: Show, row: ConcertRecord, id: string): Show {
+	const graph = indexGraph(row.ir);
+	const parsed = parseInstance(id, graph.groupsOf);
+	if (
+		parsed === undefined ||
+		!(graph.nodes.has(parsed.node) || graph.scopes.has(parsed.node))
+	)
+		throw usageError(
+			`no instance '${id}' in concert ${row.id}`,
+			`List them with 'maestro ls ${row.id}'`,
+		);
+	return (events, read) =>
+		show(selectedUnder(graph, parsed.node, parsed.keys, events), read);
+}
+
 async function watched(stored: Stored) {
 	const { session, store, values, positionals, json } = stored;
 	const { deps } = session;
+	const instance = textOf(values, "instance");
+	if (instance !== undefined && !isSet(values, "events"))
+		throw usageError(
+			"--instance needs --events",
+			"Add --events, as in 'maestro watch <concert> --events --instance <id>'",
+		);
 	const prefix = only(positionals, "concert", "Name the concert to watch");
 	const row = concertOf(store, prefix);
 	const keys = textOf(values, "frames");
 	if (keys !== undefined) return framed(stored, row, keys);
-	const { show, live, ending } = showOf(deps, store, values, json);
+	const { show: all, live, ending } = showOf(deps, store, values, json);
+	const show = instance === undefined ? all : narrowed(all, row, instance);
 	if (live && row.status === "running")
 		deps.stderr(
 			`watching concert ${row.id}; ctrl-c stops watching, not the concert`,

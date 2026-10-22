@@ -32,6 +32,7 @@ import type { Browsed, Inspect, Nav } from "./press";
 import {
 	countsText,
 	GAP,
+	holdsUnder,
 	keyOf,
 	labelOf,
 	NOTE_SEP,
@@ -72,6 +73,14 @@ export const selected = <T extends NodeInstance>(
 	key: string,
 	events: readonly T[],
 ): T[] => events.filter(rowOf(graph, key).holds);
+
+/** The events of the instances at or under `node` in the iterations `keys` name, as `holdsUnder` reads them. */
+export const selectedUnder = <T extends NodeInstance>(
+	graph: GraphIndex,
+	node: string,
+	keys: readonly string[],
+	events: readonly T[],
+): T[] => events.filter(holdsUnder(graph, node, keys));
 
 const labelled = (name: string, value: readonly Seg[]): Seg[] => [
 	[`${INDENT}${name.padEnd(LABEL_WIDTH)}`, "dim"],

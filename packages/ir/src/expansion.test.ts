@@ -5,6 +5,7 @@ import {
 	formatInstance,
 	itemKey,
 	parseExpansion,
+	parseInstance,
 } from "./index";
 
 test.each<[string[], string]>([
@@ -60,6 +61,22 @@ test.each<[string, string, string[], string]>([
 	expect(
 		formatInstance({ node, expansion: formatExpansion(keys) }, groups),
 	).toBe(shown);
+});
+
+const NESTED = (node: string) =>
+	({ "a/b/c": ["a", "a/b"], "a/b": ["a"], a: [] })[node] ?? [];
+
+test.each<[string, ReturnType<typeof parseInstance>]>([
+	["a/b/c", { node: "a/b/c", keys: [] }],
+	["a[x]/b/c", { node: "a/b/c", keys: ["x"] }],
+	["a[x]/b[3]/c", { node: "a/b/c", keys: ["x", "3"] }],
+	["a/b[3]/c", undefined],
+	["a/b/c[3]", undefined],
+	["a[x][3]/b/c", undefined],
+	["a[x y]/b/c", undefined],
+	["a[x]/b[3]/c[4]", undefined],
+])("the instance id %s is read as %j", (text, parsed) => {
+	expect(parseInstance(text, NESTED)).toEqual(parsed);
 });
 
 test("an instance whose expansion does not fit its groups cannot be shown", () => {
