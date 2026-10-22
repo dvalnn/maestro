@@ -140,7 +140,10 @@ export type ConcertRecord = ConcertOrigin & {
 	settledAt?: number;
 };
 
-/** `limit` is a positive integer. */
+/**
+ * `limit` is a positive integer. `tour` matches that tour and every tour under it on a dot boundary: `epic` matches
+ * `epic` and `epic.story`, not `epic-x`.
+ */
 export type ConcertFilter = {
 	status?: ConcertStatus;
 	pack?: string;
@@ -546,7 +549,7 @@ function readerOf(db: Database, look: Lookup): Records {
 			return db
 				.query<ConcertRow, (string | number | null)[]>(
 					`SELECT * FROM concerts WHERE (?1 IS NULL OR status = ?1) AND (?2 IS NULL OR composition = ?2)
-					AND (?3 IS NULL OR tour = ?3) AND (?4 IS NULL OR workspace = ?4) AND (?5 IS NULL OR pack = ?5)
+					AND (?3 IS NULL OR tour = ?3 OR substr(tour, 1, length(?3) + 1) = ?3 || '.') AND (?4 IS NULL OR workspace = ?4) AND (?5 IS NULL OR pack = ?5)
 					ORDER BY started_at DESC, id DESC LIMIT ?6`,
 				)
 				.all(

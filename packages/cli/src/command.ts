@@ -96,7 +96,11 @@ export const FILTER_OPTIONS = {
 		arg: "pack.name",
 		desc: "Only this composition, as <pack>.<composition>",
 	},
-	tour: { type: "string", arg: "slug", desc: "Only this tour" },
+	tour: {
+		type: "string",
+		arg: "slug",
+		desc: "Only this tour and the tours under it (epic matches epic.story)",
+	},
 	workspace: { type: "string", arg: "name", desc: "Only this workspace" },
 } as const satisfies Options;
 

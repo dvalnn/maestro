@@ -340,18 +340,20 @@ export const resumeRefused = ({ concert }: Unresumable) =>
 				`concert ${concert.id} finished ok, so it has nothing to resume\nPerform its composition as a new concert with 'maestro perform <composition>'`,
 			);
 
-const TOUR = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const TOUR_SEGMENT = "[a-z0-9]+(?:-[a-z0-9]+)*";
+const TOUR = new RegExp(`^${TOUR_SEGMENT}(?:\\.${TOUR_SEGMENT})*$`);
 const TOUR_MAX_LENGTH = 64;
 
 /**
- * `text` as a tour slug: lower-case letters and digits in words joined by single hyphens, at most 64 characters.
+ * `text` as a tour slug: one or more dot-separated segments, each lower-case letters and digits in words joined by
+ * single hyphens, at most 64 characters in all.
  * @throws CliError, a usage error naming `source`, for anything else.
  */
 export function parseTour(source: string, text: string): string {
 	if (!TOUR.test(text) || text.length > TOUR_MAX_LENGTH)
 		throw usageError(
 			`${source} takes a slug of at most ${TOUR_MAX_LENGTH} characters, not '${text}'`,
-			"Write it in lower-case words joined by hyphens, such as release-2-3",
+			"Write it as lower-case words joined by hyphens, in non-empty segments joined by dots, such as release-2.build-3",
 		);
 	return text;
 }

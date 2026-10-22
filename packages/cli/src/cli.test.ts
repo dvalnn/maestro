@@ -445,6 +445,21 @@ describe("usage errors", () => {
 			/^--tour takes a slug of at most 64 characters, not 'Bad Slug'/,
 		],
 		[
+			"a tour with an empty segment",
+			["perform", ...GREET, "--tour", "epic..story"],
+			/^--tour takes a slug of at most 64 characters, not 'epic..story'\nWrite it as lower-case words joined by hyphens, in non-empty segments joined by dots/,
+		],
+		[
+			"a tour with a leading dot",
+			["perform", ...GREET, "--tour", ".epic"],
+			/^--tour takes a slug/,
+		],
+		[
+			"a tour with a trailing dot",
+			["perform", ...GREET, "--tour", "epic."],
+			/^--tour takes a slug/,
+		],
+		[
 			"a tour too long",
 			["perform", ...GREET, "--tour", "a".repeat(65)],
 			/^--tour takes a slug/,
@@ -698,16 +713,16 @@ describe("the record", () => {
 				}),
 			);
 		const a = await perform(["--tour", "release-1", "--title", "first try"]);
-		const b = await perform([], { MAESTRO_TOUR: "from-env" });
+		const b = await perform([], { MAESTRO_TOUR: "from.env" });
 		const c = await perform(["--tour", "release-1"], {
-			MAESTRO_TOUR: "from-env",
+			MAESTRO_TOUR: "from.env",
 		});
 		const rows = async (...flags: string[]) =>
 			json(await w.call(["ls", "--json", ...flags])).map(
 				(r: { id: string }) => r.id,
 			);
 		expect(await rows("--tour", "release-1")).toEqual([c, a]);
-		expect(await rows("--tour", "from-env")).toEqual([b]);
+		expect(await rows("--tour", "from")).toEqual([b]);
 		expect(
 			json(await w.call(["ls", "--json", "--tour", "release-1"]))[1],
 		).toMatchObject({

@@ -41,8 +41,8 @@ A diagnostic prints as `<code>: <message>` then its hint, indented. The hint is 
 - `--json`: stdout holds `{ id, status, resultNode, resultExpansion, reason, outputs }`; an artifact there is
   `{ path, contentHash, producer }`, its `path` relative to the concert's artifact directory (see Records). The id still
   comes first on stderr.
-- `--tour <slug>` puts the concert on a tour (lower-case words joined by hyphens, at most 64 characters), else
-  `MAESTRO_TOUR` does. `--title <text>` labels it in `ls`.
+- `--tour <slug>` puts the concert on a tour (dot-separated segments of lower-case words joined by hyphens, such as
+  `epic.story`, at most 64 characters), else `MAESTRO_TOUR` does. `--title <text>` labels it in `ls`.
 
 ## Follow
 
@@ -140,4 +140,5 @@ What SKILL.md's Recover section leaves out:
 ## Tours
 
 `maestro tour <slug> <id>...` puts concerts on a tour; `maestro tour --clear <id>...` takes them off. Give the concerts
-of one task a tour at perform time, so `ls --tour <slug>` finds them and `prune --tour <slug> --yes` clears them.
+of one task a tour at perform time, so `ls --tour <slug>` finds them (and the tours under it, `epic` matching
+`epic.story`) and `prune --tour <slug> --yes` clears them.

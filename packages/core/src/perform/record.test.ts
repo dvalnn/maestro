@@ -212,6 +212,13 @@ test("a concert keeps its origin, tour, title, profile and config, NULL when not
 	reader.setTour("a", undefined);
 	expect(ids({ tour: "t1", workspace: "w" })).toEqual(["c"]);
 	expect(reader.find("a")).not.toHaveProperty("tour");
+	reader.setTour("a", "epic");
+	reader.setTour("b", "epic.story.task");
+	reader.setTour("c", "epic-x");
+	expect(ids({ tour: "epic" })).toEqual(["b", "a"]);
+	expect(ids({ tour: "epic.story" })).toEqual(["b"]);
+	expect(ids({ tour: "epic-x" })).toEqual(["c"]);
+	expect(ids({ tour: "epi" })).toEqual([]);
 	expect(() => reader.setTour("z", "t1")).toThrow("no concert 'z'");
 	record.close();
 	reader.close();

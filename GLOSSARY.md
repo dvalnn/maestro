@@ -47,8 +47,9 @@ complete) or `skipped` (not run).
 
 **Settled**: A group member's result together with its outcome: the value if present, the reason if rejected or failed.
 
-**Tour**: A group of thematically related concerts, one per concert, for listing and pruning them together. Bookkeeping
-only. _Avoid_: group, tag
+**Tour**: A group of thematically related concerts, one per concert, for listing and pruning them together. Named by a
+dot-separated slug, so a tour holds the tours under it (`epic` holds `epic.story`). Bookkeeping only. _Avoid_: group,
+tag
 
 **Metric**: A named, additive number reported by a node instance, such as `tokens_in`. The engine sums each name per
 concert and attaches no meaning to it.

@@ -238,9 +238,10 @@ own. A pack's modules are made relative to the IR.
 
 ## Tours, titles, durations
 
-A tour is a slug of lower-case words joined by hyphens, at most 64 characters. `perform` takes it from `--tour`, else
-`MAESTRO_TOUR`. A duration is a positive whole number and one unit of `ms`, `s`, `m`, `h` or `d`, such as `500ms` or
-`7d`.
+A tour is a slug of one or more dot-separated segments, each lower-case words joined by hyphens, such as
+`epic.story.task`, at most 64 characters. `--tour <slug>` on `ls` and `prune` matches that tour and every tour under it:
+`epic` matches `epic` and `epic.story`, not `epic-x`. `perform` takes it from `--tour`, else `MAESTRO_TOUR`. A duration
+is a positive whole number and one unit of `ms`, `s`, `m`, `h` or `d`, such as `500ms` or `7d`.
 
 ## Exit codes
 
