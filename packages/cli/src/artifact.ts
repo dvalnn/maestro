@@ -16,6 +16,7 @@ import {
 	instanceName,
 	jsonOf,
 	nameOf,
+	staleCell,
 	table,
 	usageError,
 } from "./output";
@@ -46,6 +47,7 @@ type Listed = {
 	port: string;
 	path: string;
 	contentHash: string;
+	stale?: true;
 };
 
 type Named = ReturnType<typeof checked>;
@@ -73,6 +75,7 @@ function recorded({ session, store }: Stored, row: ConcertRecord) {
 			port: refs.find((r) => r.ref.path === ref.path)?.port ?? NO_PORT,
 			path: join(area, ref.path),
 			contentHash: ref.contentHash,
+			...(i.stale && { stale: true as const }),
 		}));
 	});
 	return { names: instances.map((i) => instanceName(row.ir, i)), artifacts };
@@ -131,8 +134,8 @@ function listed({ session, values, json }: Stored, artifacts: Listed[]) {
 	else
 		deps.stdout(
 			table([
-				["instance", "port", "path"],
-				...artifacts.map((a) => [a.instance, a.port, a.path]),
+				["instance", "port", "stale", "path"],
+				...artifacts.map((a) => [a.instance, a.port, staleCell(a), a.path]),
 			]),
 		);
 	return EXIT.ok;
@@ -186,6 +189,10 @@ async function artifacted(stored: Stored, { prefix, instance, file }: Named) {
 	if (instance === undefined) return listed(stored, artifacts);
 	const name = nameOf(instance, names, row.id);
 	const files = await picked(row, name, artifacts, file);
+	if (artifacts.some((a) => a.instance === name && a.stale))
+		session.deps.stderr(
+			`note: instance '${name}' is stale, left by an earlier attempt`,
+		);
 	if (!isSet(values, "path")) return printed(session.deps, files);
 	for (const f of files) session.deps.stdout(f.path);
 	return EXIT.ok;

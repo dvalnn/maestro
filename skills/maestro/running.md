@@ -75,7 +75,8 @@ each concert's short id as `short`.
 - `stale` marks a row an earlier attempt of a resumed concert left, which the resume neither reused nor replaced.
 - The reason of the instance the closing block's `at` names is the concert's root cause.
 
-`maestro art <id>` lists the concert's artifacts: instance, port, absolute path (`--json` adds `contentHash`).
+`maestro art <id>` lists the concert's artifacts: instance, port, absolute path (`--json` adds `contentHash`), with a
+`stale` column for instances an earlier attempt left; printing one's files adds a `note:` line on stderr.
 `maestro art <id> <instance>` prints the bytes of each file of an instance's artifacts as they are, after a `══ <file>`
 line when there are several, and `maestro art <id> <instance> <file>` prints one, so it pipes. A file is its artifact's
 basename plus any inner path: read an agent's prompt with `maestro art <id> <instance> staged/prompt.md`. `--path`

@@ -115,6 +115,11 @@ export function hinted(message: string, color: boolean): string {
 		: `${what}\n${paint("dim", fix, color)}`;
 }
 
+/** The `stale` cell of an instance or one of its artifacts: `stale` when an earlier attempt left it, else empty. */
+export function staleCell({ stale }: { stale?: boolean }): string {
+	return stale ? "stale" : "";
+}
+
 /** Rows of cells in columns two spaces apart, without trailing spaces. A cell's width leaves out its color codes. */
 export function table(rows: readonly (readonly string[])[]): string {
 	const widths = rows.reduce<number[]>(

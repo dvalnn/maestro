@@ -53,14 +53,16 @@ maestro wait <concert> --timeout 15m
     errors. Git runs with the user's own config, and nothing is committed: commit with git or jj to stack the next one.
 
 [^artifact]:
-    Without an instance, a table of each artifact's instance, port and absolute path (`--json`: a list of
-    `{instance, port, path, contentHash}`). `art <concert> <instance>` prints the bytes of each file of the instance's
-    artifacts as they are, each after a `══ <file>` line when there are several; `art <concert> <instance> <file>`
-    prints one, so it pipes, such as `maestro art <concert> request request.md | glow -p`. A file is named by its
-    artifact's basename plus any inner path, such as `staged/prompt.md`. `--path` prints absolute paths, one per line,
-    instead. An instance is any name `ls <concert>` prints, or a unique ending of whole segments of one, such as `build`
-    for `loop[0]/build`. An unknown or ambiguous instance or file, and `--json` with an instance or `--path`, are usage
-    errors; an instance with no artifacts yet, or an artifact gone from disk, exits 1.
+    Without an instance, a table of each artifact's instance, port, `stale` mark and absolute path (`--json`: a list of
+    `{instance, port, path, contentHash}`, plus `stale: true` on a stale instance's). `art <concert> <instance>` prints
+    the bytes of each file of the instance's artifacts as they are, each after a `══ <file>` line when there are
+    several; `art <concert> <instance> <file>` prints one, so it pipes, such as
+    `maestro art <concert> request request.md | glow -p`. A file is named by its artifact's basename plus any inner
+    path, such as `staged/prompt.md`. `--path` prints absolute paths, one per line, instead. Printing a stale instance's
+    files (one a resume left from an earlier attempt) adds a `note:` line on stderr. An instance is any name
+    `ls <concert>` prints, or a unique ending of whole segments of one, such as `build` for `loop[0]/build`. An unknown
+    or ambiguous instance or file, and `--json` with an instance or `--path`, are usage errors; an instance with no
+    artifacts yet, or an artifact gone from disk, exits 1.
 
 [^rep]:
     `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,

@@ -38,6 +38,7 @@ import {
 	parseTour,
 	printClosing,
 	resultDoc,
+	staleCell,
 	table,
 	usageError,
 } from "./output";
@@ -191,7 +192,7 @@ async function instancesOf(
 					...instances.map((i) => [
 						instanceName(row.ir, i),
 						stateWord(i.status, color),
-						i.stale ? "stale" : "",
+						staleCell(i),
 						agentText(actorOf(i.enrichment, i.node, hostText), i.metrics),
 						i.reason ?? "",
 					]),

@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -183,9 +184,9 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 		["staged", true],
 	]);
 	const table = (await w.call(["artifact", id])).out.split("\n");
-	expect(table[0]).toMatch(/^instance +port +path$/);
+	expect(table[0]).toMatch(/^instance +port +stale +path$/);
 	expect(table).toContain(
-		`inner/a      notes   ${listed.find((a) => a.port === "notes")?.path}`,
+		`inner/a      notes          ${listed.find((a) => a.port === "notes")?.path}`,
 	);
 	expect((await w.call(["art", id, "--path"])).out).toBe(
 		listed.map((a) => a.path).join("\n"),
@@ -249,6 +250,31 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 	expect((await w.call(["art"])).err).toStartWith(
 		"expected one concert, got 0",
 	);
+	const db = new Database(join(w.root, "data/maestro/record.db"));
+	db.run(
+		"UPDATE instances SET stale = 1 WHERE (node, expansion) IN (SELECT node, expansion FROM artifacts WHERE path LIKE '%notes.md')",
+	);
+	db.close();
+	const note = "note: instance 'inner/a' is stale, left by an earlier attempt";
+	const marked: { instance: string; stale?: true }[] = json(
+		await w.call(["art", id, "--json"]),
+	);
+	expect(
+		marked.map((a) => [a.instance === "inner/a", "stale" in a, a.stale]),
+	).toEqual(
+		marked.map((a) =>
+			a.instance === "inner/a" ? [true, true, true] : [false, false, undefined],
+		),
+	);
+	expect(
+		(await w.call(["art", id])).out
+			.split("\n")
+			.filter((l) => /^\S+ +\S+ +stale +\//.test(l))
+			.map((l) => l.split(" ")[0]),
+	).toEqual(["inner/a", "inner/a"]);
+	for (const args of [["a"], ["a", "notes.md"], ["a", "--path"]])
+		expect((await w.call(["art", id, ...args])).err).toBe(note);
+	expect((await w.call(["art", id, "parMap[x]/b"])).err).toBe("");
 	rmSync(notes);
 	expect(await w.call(["art", id, "a", "notes.md"])).toMatchObject({
 		code: 1,
