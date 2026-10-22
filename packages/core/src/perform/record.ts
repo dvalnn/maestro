@@ -12,14 +12,8 @@ import type { HostNodeResult, Metrics } from "../host";
 import type { Outputs } from "../node";
 import { instanceKey, isRecord } from "../shared";
 
-/** The `user_version` of a file SQLite just created. */
-const NEW_STORE_VERSION = 0;
-/** The oldest schema version an upgrade starts from. */
-const OLDEST_UPGRADABLE_VERSION = 4;
-/** `UPGRADE_STEPS[i]` upgrades a record store from version `OLDEST_UPGRADABLE_VERSION + i` to the next. */
-const UPGRADE_STEPS = ["ALTER TABLE concerts ADD COLUMN params TEXT"];
 /** The version of the schema below, kept in SQLite's `user_version`. */
-const SCHEMA_VERSION = OLDEST_UPGRADABLE_VERSION + UPGRADE_STEPS.length;
+const SCHEMA_VERSION = 4;
 /** How long a write waits for another connection's lock before it fails, in milliseconds. */
 const BUSY_TIMEOUT_MS = 5000;
 /** How long opening retries switching a new file to WAL mode while another connection holds it, in milliseconds. */
@@ -44,7 +38,7 @@ export const PROCESS_EXITED = "process exited";
 export const CONCERT_FINISHED = "the concert finished before it settled";
 
 // Timestamps are epoch milliseconds, and `expansion` is '' outside groups. `ir`, `outputs`, `enrichment`, `body` and a
-// concert's `config` and `params` hold JSON. `workspace` is '' outside any workspace, and `module_dir` is '' when the concert has
+// concert's `config` hold JSON. `workspace` is '' outside any workspace, and `module_dir` is '' when the concert has
 // none. `reason` is set on every non-ok outcome. `result_node` is NULL while a concert is running, and after one that
 // failed before any node ran. `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an
 // earlier attempt, which a resume reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume
@@ -68,8 +62,7 @@ CREATE TABLE concerts (
 	module_dir TEXT NOT NULL,
 	file TEXT,
 	profile TEXT,
-	config TEXT,
-	params TEXT
+	config TEXT
 ) STRICT;
 CREATE TABLE instances (
 	concert TEXT NOT NULL,
@@ -360,8 +353,8 @@ function openDatabase(path: string): Database {
 /**
  * Opens the record at `path` for reading, creating it with the current schema when it is new. WAL mode lets several
  * concerts, in this process or others, share the file (D-26). `alive` decides whether a running concert's process is
- * still performing it, by default whether the process exists. An older record store is upgraded first.
- * @throws Error when the file holds a schema version this maestro neither reads nor upgrades.
+ * still performing it, by default whether the process exists.
+ * @throws Error when the file holds another schema version.
  */
 export function openRecord(
 	path: string,
@@ -373,7 +366,7 @@ export function openRecord(
 
 /**
  * Opens the record at `path` for the writes of the process performing a concert, as `openRecord` opens it for reading.
- * @throws Error when the file holds a schema version this maestro neither reads nor upgrades.
+ * @throws Error when the file holds another schema version.
  */
 export function openWriter(path: string): RecordWriter {
 	const db = openDatabase(path);
@@ -404,27 +397,17 @@ const writing = <A extends unknown[], T>(
 	fn: (...args: A) => T,
 ): ((...args: A) => T) => db.transaction(fn).immediate;
 
-/**
- * The SQL that brings a store at `version` to `SCHEMA_VERSION`: the schema for a new one, else each step from `version`.
- * @throws Error when `version` is newer than `SCHEMA_VERSION`, or older than the first step.
- */
-function upgradeFrom(version: number, path: string): string[] {
-	if (version === NEW_STORE_VERSION) return [SCHEMA];
-	if (version < OLDEST_UPGRADABLE_VERSION || version > SCHEMA_VERSION)
-		throw new Error(
-			`record store '${path}' has schema version ${version}, and this maestro reads version ${SCHEMA_VERSION}. Use a record store this maestro made, or move '${path}' aside`,
-		);
-	return UPGRADE_STEPS.slice(version - OLDEST_UPGRADABLE_VERSION);
-}
-
-/** Brings the store to `SCHEMA_VERSION` in one transaction, so a failing step leaves it at its version. */
 function migrate(db: Database, path: string): void {
 	writing(db, () => {
 		const version =
 			db.query<{ user_version: number }, []>("PRAGMA user_version").get()
-				?.user_version ?? NEW_STORE_VERSION;
+				?.user_version ?? 0;
 		if (version === SCHEMA_VERSION) return;
-		for (const sql of upgradeFrom(version, path)) db.exec(sql);
+		if (version !== 0)
+			throw new Error(
+				`record store '${path}' has schema version ${version}, and this maestro reads version ${SCHEMA_VERSION}. Use a record store this maestro made, or move '${path}' aside`,
+			);
+		db.exec(SCHEMA);
 		db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 	})();
 }

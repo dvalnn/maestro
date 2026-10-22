@@ -21,118 +21,9 @@ const IR_FIXTURE = join(
 	"../../../ir/fixtures/fanout-fanin-loop.json",
 );
 const A = { node: "a", expansion: "" };
-const V4 = 4;
-const CURRENT_VERSION = 5;
-/** The record store schema at version 4, the oldest one an upgrade starts from. */
-const V4_SCHEMA = `
-CREATE TABLE concerts (
-	id TEXT PRIMARY KEY,
-	composition TEXT NOT NULL,
-	pack TEXT NOT NULL,
-	ir TEXT NOT NULL,
-	pid INTEGER NOT NULL,
-	status TEXT NOT NULL CHECK (status IN ('running', 'ok', 'rejected', 'failed')),
-	started_at INTEGER NOT NULL,
-	settled_at INTEGER,
-	result_node TEXT,
-	result_expansion TEXT,
-	reason TEXT,
-	workspace TEXT NOT NULL,
-	tour TEXT,
-	title TEXT,
-	module_dir TEXT NOT NULL,
-	file TEXT,
-	profile TEXT,
-	config TEXT
-) STRICT;
-CREATE TABLE instances (
-	concert TEXT NOT NULL,
-	node TEXT NOT NULL,
-	expansion TEXT NOT NULL,
-	status TEXT NOT NULL CHECK (status IN ('running', 'ok', 'skipped', 'rejected', 'failed')),
-	reason TEXT,
-	outputs TEXT,
-	enrichment TEXT,
-	started_at INTEGER,
-	settled_at INTEGER,
-	key TEXT,
-	stale INTEGER NOT NULL DEFAULT 0,
-	PRIMARY KEY (concert, node, expansion)
-) STRICT;
-CREATE TABLE metrics (
-	concert TEXT NOT NULL,
-	node TEXT NOT NULL,
-	expansion TEXT NOT NULL,
-	name TEXT NOT NULL,
-	value REAL NOT NULL,
-	PRIMARY KEY (concert, node, expansion, name)
-) STRICT;
-CREATE TABLE earlier_metrics (
-	concert TEXT NOT NULL,
-	name TEXT NOT NULL,
-	value REAL NOT NULL
-) STRICT;
-CREATE TABLE artifacts (
-	concert TEXT NOT NULL,
-	path TEXT NOT NULL,
-	content_hash TEXT NOT NULL,
-	node TEXT NOT NULL,
-	expansion TEXT NOT NULL,
-	PRIMARY KEY (concert, path)
-) STRICT;
-CREATE TABLE events (
-	seq INTEGER PRIMARY KEY AUTOINCREMENT,
-	concert TEXT NOT NULL,
-	node TEXT NOT NULL,
-	expansion TEXT NOT NULL,
-	at INTEGER NOT NULL,
-	body TEXT NOT NULL
-) STRICT;
-CREATE INDEX events_by_concert ON events (concert, seq);
-`;
 
 let dir = "";
 afterEach(() => rm(dir, { recursive: true, force: true }));
-
-/** Creates a version-4 record store at `path`, holding the settled concert `c`. */
-async function v4Store(path: string): Promise<void> {
-	const db = new Database(path);
-	db.exec(V4_SCHEMA);
-	db.exec(
-		`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, settled_at, workspace, module_dir)
-		VALUES ('c', 'fanout', 'pack', ?, 1, 'ok', 1, 2, '', '')`,
-		[JSON.stringify(await fixtureIr())],
-	);
-	db.exec(`PRAGMA user_version = ${V4}`);
-	db.close();
-}
-
-/** Each table's columns, by table name. */
-function columns(path: string): Record<string, unknown[]> {
-	const db = new Database(path, { readonly: true });
-	const tables = db
-		.query<{ name: string }, []>(
-			"SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
-		)
-		.all();
-	const result = Object.fromEntries(
-		tables.map(({ name }) => [
-			name,
-			db.query(`PRAGMA table_info(${name})`).all(),
-		]),
-	);
-	db.close();
-	return result;
-}
-
-const userVersion = (path: string) => {
-	const db = new Database(path, { readonly: true });
-	const version = db
-		.query<{ user_version: number }, []>("PRAGMA user_version")
-		.get()?.user_version;
-	db.close();
-	return version;
-};
 
 async function fixtureIr(): Promise<Ir> {
 	const parsed = parseIr(await Bun.file(IR_FIXTURE).json());
@@ -173,41 +64,21 @@ test("a record store of another schema version is refused, and one of this versi
 		db.exec(`PRAGMA user_version = ${version}`);
 		db.close();
 		expect(() => openRecord(path)).toThrow(
-			`record store '${path}' has schema version ${version}, and this maestro reads version ${CURRENT_VERSION}. Use a record store this maestro made, or move '${path}' aside`,
+			`record store '${path}' has schema version ${version}, and this maestro reads version 4. Use a record store this maestro made, or move '${path}' aside`,
 		);
 	}
 });
 
-test("a version-4 record store opens upgraded, with its rows kept, and reopens unchanged", async () => {
+test("several processes open one new record store at once", async () => {
 	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
-	const fresh = join(dir, "fresh.db");
 	const path = join(dir, "record.db");
-	openRecord(fresh).close();
-	await v4Store(path);
-	const record = openRecord(path);
-	expect(record.find("c")).toMatchObject({ id: "c", status: "ok" });
-	record.close();
-	expect(userVersion(path)).toBe(CURRENT_VERSION);
-	expect(columns(path)).toEqual(columns(fresh));
-	const upgraded = await Bun.file(path).bytes();
-	openRecord(path).close();
-	expect(await Bun.file(path).bytes()).toEqual(upgraded);
-});
-
-test("several processes open one new, or one version-4, record store at once", async () => {
-	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
-	for (const store of ["new.db", "v4.db"]) {
-		const path = join(dir, store);
-		if (store === "v4.db") await v4Store(path);
-		const at = Date.now() + OPEN_AT_MS;
-		const failures = await Promise.all(
-			Array.from({ length: OPENERS }, () =>
-				inProcess(path, "record.close();", at),
-			),
-		);
-		expect(failures).toEqual(Array(OPENERS).fill(""));
-		expect(userVersion(path)).toBe(CURRENT_VERSION);
-	}
+	const at = Date.now() + OPEN_AT_MS;
+	const failures = await Promise.all(
+		Array.from({ length: OPENERS }, () =>
+			inProcess(path, "record.close();", at),
+		),
+	);
+	expect(failures).toEqual(Array(OPENERS).fill(""));
 });
 
 test("a write waits for another process's write to commit, though that write changes what it read", async () => {
