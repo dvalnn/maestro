@@ -273,7 +273,8 @@ stores by node id and expansion path as a `progress` event, opaquely.
 - **Resume.** Re-entering a concert keeps its id and runs its stored IR. A recorded `ok` instance is reused when its key
   still matches: a hash of the node definition, its code hash recomputed from the current code, and its input values
   with artifact content hashes. The code hash covers the whole bundle, so any edit to the composition file reruns every
-  code node, and dependents rerun when their inputs changed (ADR 0008). Any other instance runs again. A concert whose
+  code node, and dependents rerun when their inputs changed (ADR 0008); a resume whose recomputed code hashes differ
+  from the recorded ones warns that the composition changed and goes on. Any other instance runs again. A concert whose
   process is still alive cannot be resumed. Nothing is reused across concerts.
 - **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in
   reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started has

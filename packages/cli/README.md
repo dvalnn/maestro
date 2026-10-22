@@ -63,7 +63,8 @@ maestro wait <concert> --timeout 15m
     fixed by a `-c` or `--profile` on the resume, or by performing the composition as a new concert. It runs the graph
     recorded at first perform, so an edit adds or removes no node, but code nodes load from the file as it is now and
     their hash covers the whole bundle (ADR 0008): any edit to the composition file reruns every code node, and
-    dependents rerun when their inputs changed. After editing a composition, perform a new concert.
+    dependents rerun when their inputs changed. A changed code hash prints a warning on stderr and the resume goes on.
+    After editing a composition, perform a new concert.
 
 [^prune]:
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`,

@@ -422,10 +422,20 @@ export async function persist(
 export const bundleName = (out: string) =>
 	`${basename(out, extname(out))}${BUNDLE_SUFFIX}`;
 
+/** The code hashes of `ir`'s worker references, stdlib's left out, in graph order. */
+function codeHashes(ir: Ir): string {
+	const hashes: string[] = [];
+	mapWorkers(ir, (ref) => {
+		if (ref.module !== STDLIB_MODULE) hashes.push(ref.codeHash);
+		return ref;
+	});
+	return hashes.join();
+}
+
 /**
  * The preparation of `concert`, a resumed one: its stored IR with the code hashes as the code stands now, loaded from
  * the directory its row holds, or re-bundled from the composition file there when it was built from one, and the
- * session's config.
+ * session's config. Warns on stderr when any of those hashes differs from the recorded one.
  * @throws CliError when that directory or file is gone.
  */
 export async function resumable(
@@ -447,8 +457,13 @@ export async function resumable(
 	const packs = await installed(session);
 	const bundle = file === undefined ? undefined : await openFile(path);
 	const loader = bundle ?? moduleLoader(moduleDir);
+	const ir = await withCurrentHashes(concert.ir, loader.codeHash);
+	if (codeHashes(ir) !== codeHashes(concert.ir))
+		session.deps.stderr(
+			`warning: the composition changed since concert ${id} was performed; resuming its recorded graph`,
+		);
 	return {
-		ir: await withCurrentHashes(concert.ir, loader.codeHash),
+		ir,
 		loader,
 		moduleDir,
 		config: session.config.composed,

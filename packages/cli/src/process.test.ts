@@ -145,7 +145,9 @@ describe("a concert in another process", () => {
 			code: 0,
 			out: "text       done",
 			err: expect.stringMatching(
-				new RegExp(`^concert ${id}${closingOf(id, "ok").source}`),
+				new RegExp(
+					`^warning: the composition changed since concert ${id} was performed; resuming its recorded graph\nconcert ${id}${closingOf(id, "ok").source}`,
+				),
 			),
 		});
 		expect(started).toEqual(["echo/echo"]);
@@ -192,7 +194,7 @@ describe("resume", () => {
 	const failing = (node: string) =>
 		fakeHost({ steps: { [node]: [{ outcome: "failed", reason: "flaky" }] } });
 
-	test("a bare file's concert resumes from its current source, rerunning an edited code node only", async () => {
+	test("a bare file's concert resumes from its current source, warning of the edit and rerunning an edited code node only", async () => {
 		const w = await world();
 		const file = join(await scratch(), "work.ts");
 		const source = `import { code, composition, Text } from "@maestro/sdk";
@@ -238,7 +240,9 @@ export const work = composition("work", { examples: [{}] }, () => {
 		expect(resumed).toMatchObject({
 			code: 0,
 			err: expect.stringMatching(
-				new RegExp(`^concert ${id}${closingOf(id, "ok").source}`),
+				new RegExp(
+					`^warning: the composition changed since concert ${id} was performed; resuming its recorded graph\nconcert ${id}${closingOf(id, "ok").source}`,
+				),
 			),
 		});
 		expect(started).toEqual(["after"]);
@@ -250,6 +254,10 @@ export const work = composition("work", { examples: [{}] }, () => {
 		]);
 
 		const again = idOf(await w.call(["perform", file], { hosts: [failAfter] }));
+		expect(
+			(await w.call(["perform", "--resume", again], { hosts: [failAfter] }))
+				.err,
+		).not.toContain("warning:");
 		await rm(file);
 		expect((await w.call(["perform", "--resume", again])).err).toBe(
 			`the code of concert ${again} was in ${file}, which is gone\nRestore it, or perform its composition as a new concert`,
