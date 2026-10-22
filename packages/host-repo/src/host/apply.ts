@@ -36,7 +36,7 @@ import { type Live, liveInstances } from "./live";
 import { openTarget } from "./store";
 
 /** The file in a changeset directory that names the target commit its patches were cut from. */
-const BASE_FILE = "base";
+export const BASE_FILE = "base";
 const PATCH_EXT = ".patch";
 const PATCH_DIGITS = 4;
 const DIGITS = /^\d+$/;
@@ -65,6 +65,16 @@ function patchIndex(f: string): number | undefined {
 	return DIGITS.test(digits) ? Number(digits) : undefined;
 }
 
+/** The names of the patch files in the changeset directory `dir`, in the order they apply. */
+export const patchFiles = (dir: string): string[] =>
+	readdirSync(dir)
+		.flatMap((f) => {
+			const index = patchIndex(f);
+			return index === undefined ? [] : [{ f, index }];
+		})
+		.sort((a, b) => a.index - b.index)
+		.map(({ f }) => f);
+
 /**
  * The changeset in `dir`, the artifact on the apply node's `changeset` port.
  * @throws Error when `dir` has no `base` file.
@@ -78,13 +88,9 @@ function readChangeset(dir: string): Changeset {
 			`input '${CHANGESET_PORT}' is not a changeset: it has no '${BASE_FILE}' file. Wire it from a '${CHANGESET_KIND}' node's '${CHANGESET_PORT}' output`,
 		);
 	}
-	const patches = readdirSync(dir)
-		.flatMap((f) => {
-			const index = patchIndex(f);
-			return index === undefined ? [] : [{ f, index }];
-		})
-		.sort((a, b) => a.index - b.index)
-		.map(({ f }) => readFileSync(join(dir, f), "utf8"));
+	const patches = patchFiles(dir).map((f) =>
+		readFileSync(join(dir, f), "utf8"),
+	);
 	return { base, patches };
 }
 

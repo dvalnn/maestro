@@ -99,12 +99,17 @@ What each node leaves, as outputs of its instance:
 A changeset is a directory holding `base`, the commit the lane was cut from, and `0001.patch`, `0002.patch` and on, one
 commit each, its subject the lane version that wrote it. An empty changeset holds `base` alone.
 
-Hand the user the directory's path, the commit in `base`, and what the patches change (`git apply --stat` on each).
-Applying it is the user's step, taken on their yes, for example:
+`maestro cs show <id>` prints the concert's changeset as a diff on its base without touching the checkout, `--stat` or
+`--summary` (tour, title, files changed) for less. Hand that to the user. Applying it is the user's step, taken on their
+yes:
 
-```sh
-git switch -c maestro-fix "$(cat <changeset>/base)" && git am <changeset>/*.patch
-```
+- `maestro cs apply <id>` stages it on the checkout's `HEAD`, the checkout being `target.repo` as the concert was
+  performed with, or `-C <repo>` (relative to the current directory). It refuses an empty changeset, uncommitted tracked
+  changes, and a checkout without the base (fetch it). Exit 3: a patch left conflicts, its markers in the files.
+- `maestro cs drop --yes` resets the checkout's tracked files, undoing an apply. It takes no concert: pass `-C <repo>`
+  when the checkout is not the config's `target.repo`.
+- The changeset is the result node's, else the last one a node made; `--node <instance>` picks another. On a concert
+  that is not `ok`, stderr warns that it is a node's change, not a delivered result.
 
 ## Lane refs
 

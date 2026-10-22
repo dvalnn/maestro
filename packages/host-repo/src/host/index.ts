@@ -15,10 +15,12 @@ import { concertUsage, releaseConcert } from "./store";
 import { repoText } from "./text";
 import { needsRepo, validateRepo } from "./validate";
 
+export { BASE_FILE, patchFiles } from "./apply";
 export {
 	AGENT_IN_PORTS,
 	AGENT_KIND,
 	AGENT_OUT_PORTS,
+	CHANGESET_PORT,
 	CHECK_KIND,
 } from "./config";
 

@@ -41,7 +41,8 @@ async function repoWorld(extra = "", env: Record<string, string> = {}) {
 		`target:\n  repo: ${target}\n  base: main\n${extra}`,
 	);
 	const stubbed = builtinHosts({ ...process.env, ...env });
-	const call = (args: string[]) => w.call(args, { hosts: stubbed });
+	const call = (args: string[], over: { env?: Record<string, string> } = {}) =>
+		w.call(args, { hosts: stubbed, ...over });
 	return { ...w, call, target };
 }
 
@@ -257,3 +258,133 @@ for (const { gate, harness, model } of REAL_HARNESSES) {
 		180_000,
 	);
 }
+
+describe("changeset", () => {
+	/** Git `args` in `repo`, its stdout trimmed. */
+	const git = (repo: string, ...args: string[]) => {
+		const p = Bun.spawnSync(["git", "-C", repo, ...args], { env: GIT_ENV });
+		if (p.exitCode !== 0) throw new Error(`git ${args[0]}: ${p.stderr}`);
+		return p.stdout.toString().trim();
+	};
+
+	/** A concert of `file` whose changeset rewrites `a.txt` of the target, committed as `one` before it, and `cs`. */
+	async function edited(file = "edit.ts") {
+		const w = await repoWorld();
+		writeFileSync(join(w.target, "a.txt"), "one\n");
+		git(w.target, "add", "a.txt");
+		git(w.target, "commit", "-q", "-m", "two");
+		const done = await w.call(["perform", join(REPO, file)]);
+		expect(done).toMatchObject({ code: 0 });
+		const cs = (...args: string[]) => w.call(["cs", ...args], { env: GIT_ENV });
+		return { ...w, id: idOf(done), cs };
+	}
+
+	const a = (repo: string) => readFileSync(join(repo, "a.txt"), "utf8");
+
+	test("show prints the diff on its base and leaves the checkout as it is; --node takes a named instance's", async () => {
+		const w = await edited();
+		const shown = await w.cs("show", w.id);
+		const diff = shown.out;
+		expect(shown).toMatchObject({
+			code: 0,
+			out: expect.stringContaining("-one\n+edited"),
+			err: expect.stringMatching(/\(node \S+, concert ok\) on base \w+ two$/),
+		});
+		expect(a(w.target)).toBe("one\n");
+		expect(git(w.target, "status", "--porcelain")).toBe("");
+		expect((await w.cs("show", w.id, "--stat")).out).toContain("a.txt | 2");
+		expect((await w.cs("show", w.id, "--summary")).out).toMatch(
+			/^tour {3}-\ntitle {2}-\nM\ta\.txt$/,
+		);
+
+		const { instances } = json(await w.call(["ls", w.id, "--json"]));
+		const made = instances.find(
+			(i: { outputs?: object }) => i.outputs && "changeset" in i.outputs,
+		);
+		expect((await w.cs("show", w.id, "--node", made.node)).out).toBe(diff);
+		expect(await w.cs("show", w.id, "--node", "edit")).toMatchObject({
+			code: 1,
+			err: expect.stringContaining("instance 'edit' of concert"),
+		});
+		expect(await w.cs("show", w.id, "--node", "nope")).toMatchObject({
+			code: 2,
+		});
+	});
+
+	test("apply stages the changeset on HEAD, refuses uncommitted changes, and drop resets it", async () => {
+		const w = await edited();
+		const applied = await w.cs("apply", w.id);
+		expect(applied).toMatchObject({
+			code: 0,
+			out: expect.stringContaining("a.txt | 2"),
+			err: expect.stringMatching(
+				/^applied \S+ \(node \S+, concert ok\) on \w+, staged\. Next: commit it, or maestro cs drop$/,
+			),
+		});
+		expect(git(w.target, "diff", "--cached", "--name-only")).toBe("a.txt");
+		expect(await w.cs("apply", w.id)).toMatchObject({
+			code: 1,
+			err: `${w.target} has uncommitted changes: commit them, or maestro cs drop`,
+		});
+		for (const refused of [
+			["apply", w.id, "--stat"],
+			["show", w.id, "--stat", "--summary"],
+			["show", w.id, "--json"],
+			["drop", w.id],
+		])
+			expect(await w.cs(...refused)).toMatchObject({ code: 2 });
+		expect(await w.cs("drop")).toMatchObject({
+			code: 2,
+			err: expect.stringContaining("Pass --yes"),
+		});
+		expect(await w.cs("drop", "--yes")).toMatchObject({ code: 0 });
+		expect(a(w.target)).toBe("one\n");
+		expect(await w.cs("drop", "--yes")).toMatchObject({
+			code: 0,
+			err: `nothing to drop: ${w.target} has no uncommitted changes`,
+		});
+	});
+
+	test("a patch that conflicts with HEAD exits 3 and leaves the markers", async () => {
+		const w = await edited();
+		writeFileSync(join(w.target, "a.txt"), "other\n");
+		git(w.target, "commit", "-q", "-am", "three");
+		expect(await w.cs("apply", w.id)).toMatchObject({
+			code: 3,
+			err: expect.stringContaining("Resolve the conflicts and commit"),
+		});
+		expect(a(w.target)).toContain("<<<<<<<");
+	});
+
+	test("-C works in another checkout, and refuses one without the base", async () => {
+		const w = await edited();
+		const clone = join(await scratch(), "clone");
+		git(w.target, "clone", "-q", w.target, clone);
+		expect(await w.cs("apply", w.id, "-C", clone)).toMatchObject({ code: 0 });
+		expect(git(clone, "diff", "--cached", "--name-only")).toBe("a.txt");
+		expect(git(w.target, "status", "--porcelain")).toBe("");
+
+		const other = await toyTarget();
+		const base = git(w.target, "rev-parse", "HEAD");
+		expect(await w.cs("show", w.id, "-C", other)).toMatchObject({
+			code: 1,
+			err: `base ${base} is not in ${other}: fetch it first`,
+		});
+	});
+
+	test("changeset takes the result's changeset, else the last ok one with a warning, and refuses an empty one", async () => {
+		const w = await edited("pick.ts");
+		expect((await w.cs("show", w.id)).out).toContain("+kept");
+		expect(await w.cs("show", w.id, "--node", "emptySet")).toMatchObject({
+			code: 1,
+			err: expect.stringContaining("is empty"),
+		});
+		const failed = await w.call(["perform", join(REPO, "reject.ts")]);
+		expect(failed).toMatchObject({ code: 3 });
+		const shown = await w.cs("show", idOf(failed));
+		expect(shown.out).toContain("+kept");
+		expect(shown.err).toContain(
+			"is rejected: this is node keptSet's change, not a delivered result",
+		);
+	});
+});

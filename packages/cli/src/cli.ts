@@ -83,6 +83,12 @@ const VERBS: readonly Verb[] = [
 		load: async () => (await import("./prune")).prune,
 	},
 	{
+		name: "changeset",
+		alias: "cs",
+		summary: "Show a concert's changeset, or apply it to a checkout or drop it",
+		load: async () => (await import("./changeset")).changeset,
+	},
+	{
 		name: "tour",
 		alias: "t",
 		summary: "Put concerts on a tour, or take them off",

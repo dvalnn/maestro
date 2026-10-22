@@ -281,7 +281,7 @@ export const resultDoc = (
 	outputs: result?.outputs,
 });
 
-const isArtifactRef = (value: unknown): value is ArtifactRef =>
+export const isArtifactRef = (value: unknown): value is ArtifactRef =>
 	isPlainObject(value) && typeof value.path === "string";
 
 /** A control character, or a line or paragraph separator: anything that would break a string's line. */
