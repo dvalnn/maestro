@@ -461,7 +461,7 @@ export function nameOf(
 ): string {
 	const all = new Set(names);
 	if (all.has(text)) return text;
-	const matching = [...all].filter((name) => endsIn(name, text));
+	const matching = [...all].filter((name) => endsIn(name, text)).sort();
 	if (matching.length > 1)
 		throw usageError(
 			`'${text}' ends ${matching.length} instances: ${listedOf(matching)}`,

@@ -129,10 +129,8 @@ function highlighted(
 		.join("\n");
 }
 
-async function listed(
-	{ session, store, values, json }: Stored,
-	query: ConcertFilter,
-) {
+async function listed(stored: Stored, query: ConcertFilter) {
+	const { session, store, values, json } = stored;
 	const color = colorOf(session.deps, values).out;
 	const concerts = store.concerts(query);
 	const short = shortIds(store.ids());
@@ -141,7 +139,7 @@ async function listed(
 			...concertColumns(c),
 			short: short.label(c.id, false),
 			metrics: store.metrics(c.id),
-			diskUse: await diskOf(session, c.id),
+			diskUse: await diskOf(stored, c.id),
 		})),
 	);
 	const text = table([

@@ -25,6 +25,7 @@ import {
 	textOf,
 	textsOf,
 	type Values,
+	warn,
 } from "./command";
 import { type LoadedConfig, loadConfig, type Overrides } from "./config";
 import { listedOf, usageError } from "./output";
@@ -243,12 +244,17 @@ export const setupOf = (session: Session, host: Host) =>
  * The bytes concert `id` holds: its directory under the data root, and what each host reports holding for it. A host
  * that cannot measure its share counts none, and why goes to stderr.
  */
-export async function diskOf(session: Session, id: string): Promise<number> {
+export async function diskOf(
+	{ session, values }: Stored,
+	id: string,
+): Promise<number> {
 	const usage = async (host: Host) => {
 		try {
 			return (await host.resources?.usage(id, setupOf(session, host))) ?? 0;
 		} catch (error) {
-			session.deps.stderr(
+			warn(
+				session.deps,
+				values,
 				`host '${host.name}' cannot measure concert ${id}: ${messageOf(error)}`,
 			);
 			return 0;

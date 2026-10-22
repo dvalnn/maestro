@@ -210,7 +210,7 @@ function report({ session: { deps }, json }: Stored, outcome: Outcome) {
 async function pruned(stored: Stored, selection: Selection) {
 	const { session, values, json } = stored;
 	const targets = selected(stored, selection);
-	const sizes = await Promise.all(targets.map((c) => diskOf(session, c.id)));
+	const sizes = await Promise.all(targets.map((c) => diskOf(stored, c.id)));
 	const total = sizes.reduce((sum, size) => sum + size, 0);
 	if (
 		targets.length > 0 &&

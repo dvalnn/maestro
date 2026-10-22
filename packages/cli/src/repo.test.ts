@@ -464,9 +464,7 @@ describe("changeset", () => {
 		);
 		expect(await w.cs("show", fan, "--node", "set")).toMatchObject({
 			code: 2,
-			err: expect.stringMatching(
-				/^'set' ends 2 instances: parMap\[[xy]\]\/set, parMap\[[xy]\]\/set\nName one of them in full$/,
-			),
+			err: "'set' ends 2 instances: parMap[x]/set, parMap[y]/set\nName one of them in full",
 		});
 
 		const checked = await w.call([

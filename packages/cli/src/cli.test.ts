@@ -945,8 +945,9 @@ describe("the record", () => {
 		expect(listed).toMatchObject({ code: 0 });
 		expect(listed.out).toContain(shortOf(id));
 		expect(listed.err).toBe(
-			`host 'fake' cannot measure concert ${id}: record '/x' is malformed`,
+			`warning: host 'fake' cannot measure concert ${id}: record '/x' is malformed`,
 		);
+		expect((await w.call(["ls", "--json"], { hosts: [host] })).err).toBe("");
 		expect(
 			await w.call(["prune", id, "--yes"], { hosts: [host] }),
 		).toMatchObject({ code: 0 });
