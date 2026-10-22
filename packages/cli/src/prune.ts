@@ -72,35 +72,56 @@ function prunable(values: Values): ConcertFilter {
 	return filter;
 }
 
+/** The time before which a concert must have settled to be pruned, or infinity when `--before` is absent. */
+function cutoffOf(values: Values): number {
+	const before = textOf(values, "before");
+	return before === undefined
+		? Number.POSITIVE_INFINITY
+		: Date.now() - parseDuration("--before", before);
+}
+
+/** The concerts to prune: those named, or those matching `filter` that settled before `cutoff`. */
+type Selection =
+	| { named: readonly string[] }
+	| { filter: ConcertFilter; cutoff: number };
+
 /**
- * The settled concerts to prune: those named, or those matching the filters, at any age when `--before` is absent.
- * @throws CliError for a selection that is none or both, a bad filter value, or a named concert that is running.
+ * The selection the flags and positionals make.
+ * @throws CliError, a usage error, for a selection that is none or both, or a bad filter value.
  */
-function selected({ store, values, positionals }: Stored): ConcertRecord[] {
+function selectionChecked(
+	values: Values,
+	positionals: readonly string[],
+): Selection {
 	const filtered = FILTER_FLAGS.some((f) => textOf(values, f) !== undefined);
-	if (positionals.length > 0) {
-		if (filtered)
-			throw usageError(
-				"prune takes concert ids or filters, not both",
-				"Drop the ids, or drop --before, --tour, --workspace, --status and --composition",
-			);
-		const named = concertsOf(store, positionals);
-		const running = named.find((c) => c.status === "running");
-		if (running) throw stillRunning(running.id, running.pid);
-		return named;
-	}
+	if (positionals.length > 0 && filtered)
+		throw usageError(
+			"prune takes concert ids or filters, not both",
+			"Drop the ids, or drop --before, --tour, --workspace, --status and --composition",
+		);
+	if (positionals.length > 0) return { named: positionals };
 	if (!filtered)
 		throw usageError(
 			"prune needs concert ids, --before, --tour, --workspace, --status or --composition",
 			"Name concerts, or pick them with a filter from 'maestro prune --help'",
 		);
-	const before = textOf(values, "before");
-	const cutoff =
-		before === undefined
-			? Number.POSITIVE_INFINITY
-			: Date.now() - parseDuration("--before", before);
+	return { cutoff: cutoffOf(values), filter: prunable(values) };
+}
+
+/**
+ * The settled concerts to prune: those named, or those matching the filters, at any age when `--before` is absent.
+ * @throws CliError for a named concert that is running.
+ */
+function selected({ store }: Stored, selection: Selection): ConcertRecord[] {
+	if ("named" in selection) {
+		const named = concertsOf(store, selection.named);
+		const running = named.find((c) => c.status === "running");
+		if (running) throw stillRunning(running.id, running.pid);
+		return named;
+	}
+	const { filter, cutoff } = selection;
 	return store
-		.concerts(prunable(values))
+		.concerts(filter)
 		.filter((c) => c.settledAt !== undefined && c.settledAt < cutoff);
 }
 
@@ -186,9 +207,9 @@ function report({ session: { deps }, json }: Stored, outcome: Outcome) {
 		);
 }
 
-async function pruned(stored: Stored) {
+async function pruned(stored: Stored, selection: Selection) {
 	const { session, values, json } = stored;
-	const targets = selected(stored);
+	const targets = selected(stored, selection);
 	const sizes = await Promise.all(targets.map((c) => diskOf(session, c.id)));
 	const total = sizes.reduce((sum, size) => sum + size, 0);
 	if (
@@ -214,6 +235,7 @@ export const prune: Command = {
 			args,
 			deps,
 			"Flags are listed in 'maestro prune --help'",
+			selectionChecked,
 			pruned,
 		),
 };

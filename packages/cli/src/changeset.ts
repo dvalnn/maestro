@@ -395,8 +395,14 @@ async function changesetRun(args: readonly string[], deps: Deps) {
 		return dropped(deps, values);
 	}
 	const prefix = only(rest, "concert", NAME_CONCERT);
-	return withStore(CHANGESET_OPTIONS, args, deps, FIX, (stored) =>
-		action === "show" ? shown(stored, prefix) : applied(stored, prefix),
+	return withStore(
+		CHANGESET_OPTIONS,
+		args,
+		deps,
+		FIX,
+		() => prefix,
+		(stored, id) =>
+			action === "show" ? shown(stored, id) : applied(stored, id),
 	);
 }
 

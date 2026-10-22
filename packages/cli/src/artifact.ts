@@ -7,6 +7,7 @@ import {
 	type Deps,
 	isSet,
 	type Options,
+	type Values,
 } from "./command";
 import {
 	artifactRefs,
@@ -46,6 +47,8 @@ type Listed = {
 	path: string;
 	contentHash: string;
 };
+
+type Named = ReturnType<typeof checked>;
 
 type File = { name: string; path: string };
 
@@ -90,18 +93,34 @@ async function filesOf(path: string): Promise<File[]> {
 		}));
 }
 
-function checked({ values, json }: Stored, instance: string | undefined) {
-	if (!json) return;
-	if (isSet(values, "path"))
+/**
+ * The concert, and the instance and file within it, `positionals` name.
+ * @throws CliError, a usage error, for a count of arguments other than one concert and at most an instance and a file,
+ * or `--json` with `--path` or with an instance.
+ */
+function checked(values: Values, positionals: readonly string[]) {
+	const [prefix, instance, file, ...rest] = positionals;
+	if (rest.length > 0)
+		throw usageError(
+			`expected a concert, an instance and a file at most, got ${positionals.length} arguments`,
+			"Write maestro artifact <concert> [<instance> [<file>]]",
+		);
+	if (prefix === undefined)
+		throw usageError(
+			"expected one concert, got 0",
+			"Name the concert, as 'maestro ls' lists it",
+		);
+	if (isSet(values, "json") && isSet(values, "path"))
 		throw usageError(
 			"--path and --json do not go together",
 			"Drop one of them",
 		);
-	if (instance !== undefined)
+	if (isSet(values, "json") && instance !== undefined)
 		throw usageError(
 			"--json lists a concert's artifacts, so it takes no instance",
 			"Drop --json to print the instance's files",
 		);
+	return { prefix, instance, file };
 }
 
 function listed({ session, values, json }: Stored, artifacts: Listed[]) {
@@ -160,20 +179,8 @@ async function printed(deps: Deps, files: readonly File[]) {
 	return EXIT.ok;
 }
 
-async function artifacted(stored: Stored) {
-	const { positionals, values, store, session } = stored;
-	const [prefix, instance, file, ...rest] = positionals;
-	if (rest.length > 0)
-		throw usageError(
-			`expected a concert, an instance and a file at most, got ${positionals.length} arguments`,
-			"Write maestro artifact <concert> [<instance> [<file>]]",
-		);
-	if (prefix === undefined)
-		throw usageError(
-			"expected one concert, got 0",
-			"Name the concert, as 'maestro ls' lists it",
-		);
-	checked(stored, instance);
+async function artifacted(stored: Stored, { prefix, instance, file }: Named) {
+	const { values, store, session } = stored;
 	const row = concertOf(store, prefix);
 	const { names, artifacts } = recorded(stored, row);
 	if (instance === undefined) return listed(stored, artifacts);
@@ -188,5 +195,5 @@ export const artifact: Command = {
 	usage: "artifact <concert> [<instance> [<file>]] [flags]  (alias: art)",
 	options: ARTIFACT_OPTIONS,
 	execute: (args, deps) =>
-		withStore(ARTIFACT_OPTIONS, args, deps, FIX, artifacted),
+		withStore(ARTIFACT_OPTIONS, args, deps, FIX, checked, artifacted),
 };

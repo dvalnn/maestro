@@ -151,8 +151,22 @@ export type Stored = {
 	json: boolean;
 };
 
+/** Opens the record store of `session`, made with its data root when it is new, and gives `body` it until it settles. */
+export async function withRecord<T>(
+	session: Session,
+	body: (store: Records) => Promise<T>,
+): Promise<T> {
+	await mkdir(session.config.core.dataRoot, { recursive: true });
+	const store = openRecord(session.files.record);
+	try {
+		return await body(store);
+	} finally {
+		store.close();
+	}
+}
+
 /**
- * Opens the session for `overrides` and its record store, made when it is new, and gives `body` both until it settles.
+ * Opens the session for `overrides` and its record store, and gives `body` both until it settles.
  * @throws ConfigError as `openSession` does.
  */
 export async function withSession<T>(
@@ -161,29 +175,30 @@ export async function withSession<T>(
 	body: (session: Session, store: Records) => Promise<T>,
 ): Promise<T> {
 	const session = await openSession(deps, overrides);
-	await mkdir(session.config.core.dataRoot, { recursive: true });
-	const store = openRecord(session.files.record);
-	try {
-		return await body(session, store);
-	} finally {
-		store.close();
-	}
+	return withRecord(session, (store) => body(session, store));
 }
 
 /**
- * Reads `args` against `options`, then gives `body` the session, the record store and what it read.
- * @throws CliError, a usage error ending with `fix`, for flags `options` does not take.
+ * Reads `args` against `options`, has the pure `check` validate and parse the flags and positionals alone, then gives
+ * `body` the session, the record store, what it read and what `check` returned. The store is not opened when `check`
+ * throws.
+ * @throws CliError, a usage error ending with `fix`, for flags `options` does not take, or whatever `check` throws.
  */
-export async function withStore(
+export async function withStore<T>(
 	options: Options,
 	args: readonly string[],
 	deps: Deps,
 	fix: string,
-	body: (stored: Stored) => Promise<number>,
+	check: (values: Values, positionals: readonly string[]) => T,
+	body: (stored: Stored, parsed: T) => Promise<number>,
 ): Promise<number> {
 	const { values, positionals } = parse(options, args, fix);
+	const parsed = check(values, positionals);
 	return withSession(deps, overridesOf(values), (session, store) =>
-		body({ session, store, values, positionals, json: isSet(values, "json") }),
+		body(
+			{ session, store, values, positionals, json: isSet(values, "json") },
+			parsed,
+		),
 	);
 }
 

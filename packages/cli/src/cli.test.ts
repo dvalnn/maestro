@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -526,6 +527,26 @@ describe("usage errors", () => {
 			/^the tour slug takes a slug/,
 		],
 		[
+			"ls with two concerts",
+			["ls", "a", "b"],
+			/^expected at most one concert, got 2/,
+		],
+		[
+			"artifact with too many arguments",
+			["art", "a", "b", "c", "d"],
+			/^expected a concert, an instance and a file at most, got 4 arguments/,
+		],
+		[
+			"changeset with an unknown action",
+			["cs", "frob"],
+			/^expected show, apply or drop, got 'frob'/,
+		],
+		[
+			"watch with a key --frames does not name",
+			["watch", "nope", "--frames", "zz"],
+			/^--frames names no key: 'zz'/,
+		],
+		[
 			"a status that is none",
 			["ls", "--status", "bogus"],
 			/^--status takes one of running, ok, failed, rejected, not 'bogus'/,
@@ -628,6 +649,13 @@ describe("usage errors", () => {
 		],
 	];
 
+	/** The rows whose error needs the record store, so they open it. */
+	const NEEDS_STORE = [
+		"an unknown concert",
+		"watch of an unknown concert",
+		"--resume of an unknown concert",
+	];
+
 	test.each(USAGE)(
 		"%s exits 2 and says what to do",
 		async (_what, args, message) => {
@@ -636,6 +664,8 @@ describe("usage errors", () => {
 			expect(outcome.out).toBe("");
 			expect(outcome.err).toMatch(message);
 			expect(outcome.code).toBe(2);
+			if (!NEEDS_STORE.includes(_what))
+				expect(existsSync(w.env.XDG_DATA_HOME)).toBe(false);
 		},
 	);
 

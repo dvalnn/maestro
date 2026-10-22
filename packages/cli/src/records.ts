@@ -1,5 +1,9 @@
 import type { Metrics } from "@maestro/core/host";
-import { type ConcertRecord, openRecord } from "@maestro/core/perform";
+import {
+	type ConcertFilter,
+	type ConcertRecord,
+	openRecord,
+} from "@maestro/core/perform";
 import { DURATION_EXAMPLE, MS_PER_UNIT } from "@maestro/ir";
 import {
 	agentText,
@@ -73,6 +77,25 @@ const tokenCell = (metrics: Metrics) => {
 
 const dash = (text: string | undefined) => text || "-";
 
+/**
+ * The concert `ls` is to show, if any, and the filter and limit of the list.
+ * @throws CliError, a usage error, for more than one concert, or a bad filter or limit.
+ */
+function lsChecked(values: Values, positionals: readonly string[]) {
+	const [id, ...rest] = positionals;
+	if (rest.length > 0)
+		throw usageError(
+			`expected at most one concert, got ${positionals.length}`,
+			"Name one concert, or none to list them all",
+		);
+	const limit = textOf(values, "limit");
+	const query = {
+		...filterOf(values),
+		limit: limit === undefined ? LIST_LIMIT : parseCount("--limit", limit),
+	};
+	return { id, query };
+}
+
 export const ls: Command = {
 	usage: "ls [<concert>] [flags]",
 	options: LS_OPTIONS,
@@ -82,15 +105,9 @@ export const ls: Command = {
 			args,
 			deps,
 			"Flags are listed in 'maestro ls --help'",
-			async (stored) => {
-				const [id, ...rest] = stored.positionals;
-				if (rest.length > 0)
-					throw usageError(
-						`expected at most one concert, got ${stored.positionals.length}`,
-						"Name one concert, or none to list them all",
-					);
-				return id === undefined ? listed(stored) : instancesOf(stored, id);
-			},
+			lsChecked,
+			async (stored, { id, query }) =>
+				id === undefined ? listed(stored, query) : instancesOf(stored, id),
 		),
 };
 
@@ -111,13 +128,12 @@ function highlighted(
 		.join("\n");
 }
 
-async function listed({ session, store, values, json }: Stored) {
+async function listed(
+	{ session, store, values, json }: Stored,
+	query: ConcertFilter,
+) {
 	const color = colorOf(session.deps, values).out;
-	const limit = textOf(values, "limit");
-	const concerts = store.concerts({
-		...filterOf(values),
-		limit: limit === undefined ? LIST_LIMIT : parseCount("--limit", limit),
-	});
+	const concerts = store.concerts(query);
 	const short = shortIds(store.ids());
 	const rows = await Promise.all(
 		concerts.map(async (c) => ({
@@ -193,12 +209,27 @@ const WAIT_OPTIONS = {
 	},
 } as const satisfies Options;
 
-async function waited({ session, store, values, positionals, json }: Stored) {
-	const { deps } = session;
-	const prefix = only(positionals, "concert", "Name the concert to wait for");
+const NAME_TO_WAIT = "Name the concert to wait for";
+
+/**
+ * The concert to wait for, and the limit to wait for it, if any.
+ * @throws CliError, a usage error, for other than one concert, or a bad `--timeout`.
+ */
+function waitChecked(values: Values, positionals: readonly string[]) {
 	const timeout = textOf(values, "timeout");
-	const limit =
-		timeout === undefined ? undefined : parseDuration("--timeout", timeout);
+	return {
+		prefix: only(positionals, "concert", NAME_TO_WAIT),
+		limit:
+			timeout === undefined ? undefined : parseDuration("--timeout", timeout),
+	};
+}
+
+async function waited(
+	{ session, store, values, json }: Stored,
+	{ prefix, limit }: ReturnType<typeof waitChecked>,
+) {
+	const { deps } = session;
+	const timeout = textOf(values, "timeout");
 	const { id } = concertOf(store, prefix);
 	const result = (await store.wait(id, limit)) && store.result(id);
 	const { status } = resultDoc(id, result);
@@ -227,6 +258,7 @@ export const wait: Command = {
 			args,
 			deps,
 			"Flags are listed in 'maestro wait --help'",
+			waitChecked,
 			waited,
 		),
 };
@@ -253,9 +285,10 @@ function signal(pid: number) {
 	}
 }
 
-async function killed({ session, store, positionals, json }: Stored) {
+const NAME_TO_STOP = "Name the concert to stop";
+
+async function killed({ session, store, json }: Stored, prefix: string) {
 	const { deps } = session;
-	const prefix = only(positionals, "concert", "Name the concert to stop");
 	const { id, status, pid } = concertOf(store, prefix);
 	if (status !== "running")
 		throw new CliError(
@@ -286,6 +319,7 @@ export const kill: Command = {
 			args,
 			deps,
 			"Flags are listed in 'maestro kill --help'",
+			(_values, positionals) => only(positionals, "concert", NAME_TO_STOP),
 			killed,
 		),
 };
@@ -311,14 +345,10 @@ function tourAndConcerts(values: Values, positionals: readonly string[]) {
 	};
 }
 
-async function toured({
-	session: { deps },
-	store,
-	values,
-	positionals,
-	json,
-}: Stored) {
-	const { slug, ids: prefixes } = tourAndConcerts(values, positionals);
+async function toured(
+	{ session: { deps }, store, json }: Stored,
+	{ slug, ids: prefixes }: ReturnType<typeof tourAndConcerts>,
+) {
 	const ids = concertsOf(store, prefixes).map((c) => c.id);
 	for (const id of ids) store.setTour(id, slug);
 	if (json) deps.stdout(jsonOf({ tour: slug ?? null, concerts: ids }));
@@ -336,6 +366,7 @@ export const tour: Command = {
 			args,
 			deps,
 			"Flags are listed in 'maestro tour --help'",
+			tourAndConcerts,
 			toured,
 		),
 };

@@ -47,6 +47,7 @@ import {
 	openSession,
 	overridesOf,
 	type Session,
+	withRecord,
 	withSession,
 } from "./session";
 
@@ -95,18 +96,10 @@ async function begin(
 }
 
 /**
- * The concert whose id starts with `prefix`, to resume, with its code as it stands now, and the config files as they
- * stand layered with its recorded `--profile` and `-c`, then the resume's own. Its record store and concert files stay
- * those of `session`, where it was found, whatever `dataRoot` that config holds.
- * @throws CliError when core refuses to resume it, its code is gone, or the flags are not a resume's.
- * @throws ConfigError as `openSession` does.
+ * The flags of `args` for a resume.
+ * @throws CliError, a usage error, when they hold a composition, `--tour` or `--title`.
  */
-async function restart(
-	session: Session,
-	store: Records,
-	prefix: string,
-	args: readonly string[],
-): Promise<Start> {
+function resumeFlags(args: readonly string[]): Values {
 	const { values, positionals } = parse(PERFORM_OPTIONS, args, FIX);
 	if (
 		positionals.length > 0 ||
@@ -117,6 +110,22 @@ async function restart(
 			"--resume takes no composition, --tour or --title: the concert keeps its own",
 			"Drop them, or start a new concert without --resume",
 		);
+	return values;
+}
+
+/**
+ * The concert whose id starts with `prefix`, to resume, with its code as it stands now, and the config files as they
+ * stand layered with its recorded `--profile` and `-c`, then the resume's own. Its record store and concert files stay
+ * those of `session`, where it was found, whatever `dataRoot` that config holds.
+ * @throws CliError when core refuses to resume it or its code is gone.
+ * @throws ConfigError as `openSession` does.
+ */
+async function restart(
+	session: Session,
+	store: Records,
+	prefix: string,
+	values: Values,
+): Promise<Start> {
 	const row = concertOf(store, prefix);
 	const refused = unresumable(row);
 	if (refused) throw resumeRefused(refused);
@@ -172,7 +181,14 @@ function report(
 	return exitOf(result.outcome);
 }
 
-/** Pre-flights and performs `start` in its session, and reports how it ended. */
+/** Pre-flights `start`, printing what it warns of. */
+async function warned({ session, prepared }: Start): Promise<void> {
+	const color = colorOf(session.deps, prepared.values);
+	for (const d of (await preflight(session, prepared)).diagnostics)
+		session.deps.stderr(renderDiagnostic(d, color.err));
+}
+
+/** Performs `start`, once pre-flown, in its session, and reports how it ended. */
 async function conducted(
 	{ session, prepared, ...start }: Start,
 	store: Records,
@@ -180,8 +196,6 @@ async function conducted(
 ): Promise<number> {
 	const { deps } = session;
 	const color = colorOf(deps, prepared.values);
-	for (const d of (await preflight(session, prepared)).diagnostics)
-		deps.stderr(renderDiagnostic(d, color.err));
 	const concert = await conduct({
 		hosts: deps.hosts,
 		config: prepared.config,
@@ -208,20 +222,6 @@ async function conducted(
 	return report(session, store, json, color, concert.id, result);
 }
 
-async function performed(
-	session: Session,
-	store: Records,
-	args: readonly string[],
-	json: boolean,
-	resume: string | undefined,
-): Promise<number> {
-	const start =
-		resume === undefined
-			? await begin(session, args)
-			: await restart(session, store, resume, args);
-	return conducted(start, store, json);
-}
-
 /**
  * The overrides a resume finds its record store under: its own, or none when they do not layer without the concert's
  * recorded ones beneath, as a `!delete` of a key only those set does not.
@@ -246,9 +246,22 @@ export const perform: Command = {
 		const early = peek(PERFORM_OPTIONS, args);
 		const resume = textOf(early, "resume");
 		const own = overridesOf(early);
-		const overrides = resume === undefined ? own : await locating(deps, own);
-		return withSession(deps, overrides, (session, store) =>
-			performed(session, store, args, isSet(early, "json"), resume),
+		const json = isSet(early, "json");
+		if (resume === undefined) {
+			const session = await openSession(deps, own);
+			const start = await begin(session, args);
+			await warned(start);
+			return withRecord(session, (store) => conducted(start, store, json));
+		}
+		const values = resumeFlags(args);
+		return withSession(
+			deps,
+			await locating(deps, own),
+			async (session, store) => {
+				const start = await restart(session, store, resume, values);
+				await warned(start);
+				return conducted(start, store, json);
+			},
 		);
 	},
 };

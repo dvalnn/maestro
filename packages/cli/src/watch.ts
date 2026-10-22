@@ -324,16 +324,15 @@ function inputsOf(keys: string): Input[] {
 }
 
 /**
- * `--frames`: concert `row` as the record holds it now, browsed, then again after each input of `keys`, a rule naming
+ * `--frames`: concert `row` as the record holds it now, browsed, then again after each of `inputs`, a rule naming
  * it before each; until one ends the view. Gives the concert's exit code once it settled, else `EXIT.ok`.
  */
 function framed(
 	{ session, store, values }: Stored,
 	row: ConcertRecord,
-	keys: string,
+	inputs: readonly Input[],
 ): number {
 	const { deps } = session;
-	const inputs = inputsOf(keys);
 	const terminal = deps.terminal ?? (() => FRAMES_TERMINAL);
 	const drawing = drawingOf(deps, store, terminal, colorOf(deps, values).out);
 	const kept: Annotated[] = [];
@@ -376,19 +375,33 @@ function narrowed(show: Show, row: ConcertRecord, id: string): Show {
 	return (events, read) => show(selectedUnder(graph, node, keys, events), read);
 }
 
-async function watched(stored: Stored) {
-	const { session, store, values, positionals, json } = stored;
-	const { deps } = session;
-	const instance = textOf(values, "instance");
-	if (instance !== undefined && !isSet(values, "events"))
+const NAME_TO_WATCH = "Name the concert to watch";
+
+/**
+ * The concert to watch, and the inputs `--frames` names, if given.
+ * @throws CliError, a usage error, for `--instance` without `--events`, other than one concert, or a key `--frames`
+ * names none of.
+ */
+function watchChecked(values: Values, positionals: readonly string[]) {
+	if (textOf(values, "instance") !== undefined && !isSet(values, "events"))
 		throw usageError(
 			"--instance needs --events",
 			"Add --events, as in 'maestro watch <concert> --events --instance <id>'",
 		);
-	const prefix = only(positionals, "concert", "Name the concert to watch");
-	const row = concertOf(store, prefix);
+	const prefix = only(positionals, "concert", NAME_TO_WATCH);
 	const keys = textOf(values, "frames");
-	if (keys !== undefined) return framed(stored, row, keys);
+	return { prefix, inputs: keys === undefined ? undefined : inputsOf(keys) };
+}
+
+async function watched(
+	stored: Stored,
+	{ prefix, inputs }: ReturnType<typeof watchChecked>,
+) {
+	const { session, store, values, json } = stored;
+	const { deps } = session;
+	const instance = textOf(values, "instance");
+	const row = concertOf(store, prefix);
+	if (inputs !== undefined) return framed(stored, row, inputs);
 	const { show: all, live, ending } = showOf(deps, store, values, json);
 	const show = instance === undefined ? all : narrowed(all, row, instance);
 	if (live && row.status === "running")
@@ -432,6 +445,7 @@ export const watch: Command = {
 			args,
 			deps,
 			"Flags are listed in 'maestro watch --help'",
+			watchChecked,
 			watched,
 		),
 };
