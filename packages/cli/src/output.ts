@@ -107,6 +107,10 @@ export function renderDiagnostic(d: Diagnostic, color: boolean): string {
 	return `${where}${label}: ${d.message}\n  ${paint("dim", d.hint, color)}`;
 }
 
+/** A warning on one line, `warning: <text>`, with `warning` yellow when `color`. */
+export const renderWarning = (text: string, color: boolean) =>
+	`${paint("yellow", "warning", color)}: ${text}`;
+
 /** `message` with its second line dim when `color`, if it is two lines: a hint, not a longer text. */
 export function hinted(message: string, color: boolean): string {
 	const [what, fix, ...more] = message.split("\n");

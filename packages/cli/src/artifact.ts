@@ -8,6 +8,7 @@ import {
 	isSet,
 	type Options,
 	type Values,
+	warn,
 } from "./command";
 import {
 	artifactRefs,
@@ -190,8 +191,10 @@ async function artifacted(stored: Stored, { prefix, instance, file }: Named) {
 	const name = nameOf(instance, names, row.id);
 	const files = await picked(row, name, artifacts, file);
 	if (artifacts.some((a) => a.instance === name && a.stale))
-		session.deps.stderr(
-			`note: instance '${name}' is stale, left by an earlier attempt`,
+		warn(
+			session.deps,
+			values,
+			`instance '${name}' is stale, from an earlier attempt`,
 		);
 	if (!isSet(values, "path")) return printed(session.deps, files);
 	for (const f of files) session.deps.stdout(f.path);

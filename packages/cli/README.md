@@ -47,10 +47,11 @@ maestro wait <concert> --timeout 15m
     a resume layers them, then the command's own; `drop` takes no concert and uses the command's own config alone.
     `-C <repo>` is `-c target.repo=<repo>`, with a relative path taken from the current directory. The changeset is the
     result node's when it made one, else the last `ok` instance's that did; `--node <id>` names one, `<id>` as
-    `ls <concert>` prints it. A concert that is not `ok` is warned of on stderr. `show` and `apply` exit 1 for a concert
-    with no changeset or an empty one, or a checkout without its base (fetch it first); `apply` exits 1 on uncommitted
-    tracked changes and 3 when a patch leaves conflicts. `--json`, and a flag the action does not take, are usage
-    errors. Git runs with the user's own config, and nothing is committed: commit with git or jj to stack the next one.
+    `ls <concert>` prints it or a unique ending of whole segments of one. A concert that is not `ok` is warned of on
+    stderr. `show` and `apply` exit 1 for a concert with no changeset or an empty one, or a checkout without its base
+    (fetch it first); `apply` exits 1 on uncommitted tracked changes and 3 when a patch leaves conflicts. A flag the
+    action does not take is a usage error, and so is `--json`: the output is the diff itself. Git runs with the user's
+    own config, and nothing is committed: commit with git or jj to stack the next one.
 
 [^artifact]:
     Without an instance, a table of each artifact's instance, port, `stale` mark and absolute path (`--json`: a list of
@@ -59,7 +60,7 @@ maestro wait <concert> --timeout 15m
     several; `art <concert> <instance> <file>` prints one, so it pipes, such as
     `maestro art <concert> request request.md | glow -p`. A file is named by its artifact's basename plus any inner
     path, such as `staged/prompt.md`. `--path` prints absolute paths, one per line, instead. Printing a stale instance's
-    files (one a resume left from an earlier attempt) adds a `note:` line on stderr. An instance is any name
+    files (one a resume left from an earlier attempt) adds a `warning:` line on stderr. An instance is any name
     `ls <concert>` prints, or a unique ending of whole segments of one, such as `build` for `loop[0]/build`. An unknown
     or ambiguous instance or file, and `--json` with an instance or `--path`, are usage errors; an instance with no
     artifacts yet, or an artifact gone from disk, exits 1.
@@ -89,8 +90,9 @@ maestro wait <concert> --timeout 15m
 
 `maestro --version` prints one line, `maestro <version> (sdk <version>, ir <version>, bun <version>)`, and exits 0.
 
-Every command takes `--json` (one JSON document on stdout), `--profile <name>`, `-c, --config <key=value>` (repeatable),
-`--no-color`, `--debug` (stack traces) and `--help`. Primary output goes to stdout, messages to stderr.
+Every command but `changeset` takes `--json` (one JSON document on stdout, and no `warning:` lines on stderr),
+`--profile <name>`, `-c, --config <key=value>` (repeatable), `--no-color`, `--debug` (stack traces) and `--help`.
+Primary output goes to stdout, messages to stderr.
 
 Each stream is colored only when it is a terminal: stdout by its own check, stderr by its own. Color is off under
 `NO_COLOR`, `TERM=dumb` or `--no-color`, and the `--json` document is never colored. It covers the `ls` status column,
@@ -281,7 +283,7 @@ is a positive whole number and one unit of `ms`, `s`, `m`, `h` or `d`, such as `
 | 0    | Done, or the concert settled `ok`.                                                            |
 | 1    | The concert settled `failed`, a command could not do what it was asked, or an internal error. |
 | 2    | Usage error, or a composition that does not compose.                                          |
-| 3    | The concert settled `rejected`.                                                               |
+| 3    | The concert settled `rejected`, or a patch of `cs apply` left conflicts.                      |
 | 124  | `wait --timeout` passed with the concert still running.                                       |
 
 `watch` exits as `wait` does, except that browsing a concert quit before it settled exits 130 (Ctrl-C), 129 (hang-up) or

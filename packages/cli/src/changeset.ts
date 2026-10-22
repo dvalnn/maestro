@@ -7,7 +7,7 @@ import type {
 	Records,
 } from "@maestro/core/perform";
 import { BASE_FILE, CHANGESET_PORT, patchFiles } from "@maestro/host-repo";
-import { isPlainObject } from "@maestro/ir";
+import { type Ir, isPlainObject } from "@maestro/ir";
 import { shortIds } from "@maestro/render-text/live";
 import {
 	COMMON,
@@ -20,29 +20,36 @@ import {
 	parse,
 	textOf,
 	type Values,
+	warn,
 } from "./command";
 import type { Environment, Overrides } from "./config";
 import {
+	artifactRefs,
 	CliError,
 	EXIT,
 	instanceName,
-	isArtifactRef,
+	nameOf,
 	table,
 	usageError,
 } from "./output";
 import {
 	artifactsOf,
 	concertOf,
+	locating,
 	openSession,
 	overridesOf,
+	recordedOf,
 	type Stored,
-	withStore,
+	withSession,
 } from "./session";
 
 const FIX = "Flags are listed in 'maestro changeset --help'";
 
+// Its output is the diff itself, so it takes no --json.
+const { json: _json, ...SHARED } = COMMON;
+
 const CHANGESET_OPTIONS = {
-	...COMMON,
+	...SHARED,
 	repo: {
 		type: "string",
 		short: "C",
@@ -52,7 +59,7 @@ const CHANGESET_OPTIONS = {
 	node: {
 		type: "string",
 		arg: "id",
-		desc: "show, apply: take this instance's changeset, as 'maestro ls <concert>' prints it",
+		desc: "show, apply: take this instance's changeset, as 'maestro ls <concert>' prints it, or a unique ending of its id",
 	},
 	stat: { type: "boolean", desc: "show: print a diffstat, not the diff" },
 	summary: {
@@ -77,7 +84,7 @@ const isAction = (word: string | undefined): word is Action =>
 
 /**
  * The action `word` names, after checking `values` takes only flags it takes.
- * @throws CliError, a usage error naming an unknown action, `--json`, a flag the action does not take, or
+ * @throws CliError, a usage error naming an unknown action, a flag the action does not take, or
  * `--stat` with `--summary`.
  */
 function actionOf(word: string | undefined, values: Values): Action {
@@ -86,16 +93,13 @@ function actionOf(word: string | undefined, values: Values): Action {
 			`expected show, apply or drop, got ${word === undefined ? "nothing" : `'${word}'`}`,
 			"Run 'maestro changeset --help'",
 		);
-	const refused = [
-		...(isSet(values, "json") ? ["json"] : []),
-		...OWN_FLAGS.filter(
-			(f) => values[f] !== undefined && !ACTION_FLAGS[word].includes(f),
-		),
-	];
-	if (refused[0] !== undefined)
+	const refused = OWN_FLAGS.find(
+		(f) => values[f] !== undefined && !ACTION_FLAGS[word].includes(f),
+	);
+	if (refused !== undefined)
 		throw usageError(
-			`changeset ${word} takes no --${refused[0]}`,
-			`Drop --${refused[0]}`,
+			`changeset ${word} takes no --${refused}`,
+			`Drop --${refused}`,
 		);
 	if (isSet(values, "stat") && isSet(values, "summary"))
 		throw usageError(
@@ -123,7 +127,9 @@ function run({ repo, env }: Checkout, args: readonly string[]): Ran {
 function git(checkout: Checkout, args: readonly string[]): string {
 	const ran = run(checkout, args);
 	if (ran.code !== 0)
-		throw new CliError(`git ${args[0]} failed in ${checkout.repo}: ${ran.err}`);
+		throw new CliError(
+			`git ${args[0]} failed in ${checkout.repo}: ${ran.err}\nFix what git reports, then run it again`,
+		);
 	return ran.out;
 }
 
@@ -138,10 +144,11 @@ type Picked = {
 	patches: string[];
 };
 
-const changesetOf = (instance: InstanceRecord) => {
-	const value = instance.outputs?.[CHANGESET_PORT];
-	return isArtifactRef(value) ? value : undefined;
-};
+/** The changeset artifact `instance` of `ir` holds on its changeset port, if any. */
+const changesetOf = (ir: Ir, instance: InstanceRecord) =>
+	artifactRefs(ir, instance.node, instance.outputs ?? {}).find(
+		(r) => r.port === CHANGESET_PORT && r.pointer === "",
+	)?.ref;
 
 /**
  * The instance whose changeset to take: `node` when given, else the result's instance when it made one, else the last
@@ -150,29 +157,27 @@ const changesetOf = (instance: InstanceRecord) => {
  */
 function chosen(store: Records, row: ConcertRecord, node?: string) {
 	const instances = store.instances(row.id);
+	const made = (i: InstanceRecord) => changesetOf(row.ir, i);
 	if (node !== undefined) {
-		const named = instances.find((i) => instanceName(row.ir, i) === node);
-		if (!named)
-			throw usageError(
-				`no instance '${node}' in concert ${row.id}`,
-				`List them with 'maestro ls ${row.id}'`,
-			);
-		const ref = changesetOf(named);
-		if (!ref)
+		const names = new Map(instances.map((i) => [instanceName(row.ir, i), i]));
+		const name = nameOf(node, names.keys(), row.id);
+		const named = names.get(name);
+		const ref = named && made(named);
+		if (!named || !ref)
 			throw new CliError(
-				`instance '${node}' of concert ${row.id} made no changeset\nName a changeset node from 'maestro ls ${row.id}'`,
+				`instance '${name}' of concert ${row.id} made no changeset\nName a changeset node from 'maestro ls ${row.id}'`,
 			);
 		return { instance: named, ref };
 	}
 	const result = store.result(row.id);
-	const made = instances
-		.filter((i) => i.status === "ok" && changesetOf(i))
+	const ok = instances
+		.filter((i) => i.status === "ok" && made(i))
 		.sort((a, b) => (a.settledAt ?? 0) - (b.settledAt ?? 0));
 	const instance =
-		made.find(
+		ok.find(
 			(i) => i.node === result?.node && i.expansion === result?.expansion,
-		) ?? made.at(-1);
-	const ref = instance && changesetOf(instance);
+		) ?? ok.at(-1);
+	const ref = instance && made(instance);
 	if (!instance || !ref)
 		throw new CliError(
 			`concert ${row.id} made no changeset\nPick a concert that ends in a changeset node, from 'maestro ls'`,
@@ -223,7 +228,9 @@ async function readChangeset(dir: string, short: string) {
 		);
 	}
 	if (patches.length === 0)
-		throw new CliError(`the changeset of ${short} is empty`);
+		throw new CliError(
+			`the changeset of ${short} is empty\nPick another node with --node`,
+		);
 	return { base, patches };
 }
 
@@ -233,14 +240,9 @@ async function picked(stored: Stored, prefix: string): Promise<Picked> {
 	const { instance, ref } = chosen(store, row, textOf(values, "node"));
 	const short = shortIds(store.ids()).label(row.id, false);
 	const dir = join(artifactsOf(session, row.id), ref.path);
-	const recorded = {
-		profile: row.profile,
-		config: row.config,
-		recorded: short,
-	};
 	return {
 		...(await readChangeset(dir, short)),
-		checkout: await checkoutOf(session.deps, values, recorded),
+		checkout: await checkoutOf(session.deps, values, recordedOf(store, row)),
 		row,
 		short,
 		instance: instanceName(row.ir, instance),
@@ -251,14 +253,19 @@ async function picked(stored: Stored, prefix: string): Promise<Picked> {
  * Warns on stderr when the concert is not `ok`.
  * @throws CliError when the checkout lacks the changeset's base.
  */
-function checked({ checkout, row, short, instance, base }: Picked, deps: Deps) {
+function checked(
+	{ checkout, row, short, instance, base }: Picked,
+	{ session, values }: Stored,
+) {
 	if (run(checkout, ["cat-file", "-e", `${base}^{commit}`]).code !== 0)
 		throw new CliError(
-			`base ${base} is not in ${checkout.repo}: fetch it first`,
+			`base ${base} is not in ${checkout.repo}\nFetch it first`,
 		);
 	if (row.status !== "ok")
-		deps.stderr(
-			`concert ${short} is ${row.status}: this is node ${instance}'s change, not a delivered result`,
+		warn(
+			session.deps,
+			values,
+			`concert ${short} is ${row.status}; this is ${instance}'s changeset, not a delivered result`,
 		);
 }
 
@@ -289,7 +296,7 @@ async function shown(stored: Stored, prefix: string) {
 	const { session, values } = stored;
 	const { deps } = session;
 	const p = await picked(stored, prefix);
-	checked(p, deps);
+	checked(p, stored);
 	const tree = await treeOf(p);
 	const subject = git(p.checkout, ["log", "-1", "--format=%h %s", p.base]);
 	deps.stderr(
@@ -336,10 +343,10 @@ async function applied(stored: Stored, prefix: string) {
 	const { session, values } = stored;
 	const { deps } = session;
 	const p = await picked(stored, prefix);
-	checked(p, deps);
+	checked(p, stored);
 	if (dirty(p.checkout))
 		throw new CliError(
-			`${p.checkout.repo} has uncommitted changes: commit them, or maestro cs drop`,
+			`${p.checkout.repo} has uncommitted changes\nCommit or stash them first`,
 		);
 	for (const patch of p.patches) {
 		const ran = run(p.checkout, ["apply", "--index", "--3way", patch]);
@@ -349,7 +356,7 @@ async function applied(stored: Stored, prefix: string) {
 	print(deps, git(p.checkout, ["diff", color, "--cached", "--stat"]));
 	const head = git(p.checkout, ["rev-parse", "--short", "HEAD"]);
 	deps.stderr(
-		`applied ${p.short} (node ${p.instance}, concert ${p.row.status}) on ${head}, staged. Next: commit it, or maestro cs drop`,
+		`applied ${p.short} (node ${p.instance}, concert ${p.row.status}) on ${head}, staged. Next: commit it, or 'maestro cs drop'`,
 	);
 	return EXIT.ok;
 }
@@ -395,15 +402,11 @@ async function changesetRun(args: readonly string[], deps: Deps) {
 		return dropped(deps, values);
 	}
 	const prefix = only(rest, "concert", NAME_CONCERT);
-	return withStore(
-		CHANGESET_OPTIONS,
-		args,
-		deps,
-		FIX,
-		() => prefix,
-		(stored, id) =>
-			action === "show" ? shown(stored, id) : applied(stored, id),
-	);
+	const own = overridesOf(values);
+	return withSession(deps, await locating(deps, own), (session, store) => {
+		const stored = { session, store, values, json: false };
+		return action === "show" ? shown(stored, prefix) : applied(stored, prefix);
+	});
 }
 
 export const changeset: Command = {

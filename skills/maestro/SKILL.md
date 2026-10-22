@@ -159,5 +159,5 @@ entries; its `README.md` there says more. Missing: install it by [bootstrap.md](
 - The user's checkout stays theirs: maestro never writes it, and applying a changeset waits for the user's yes.
 - Secrets live in the environment (`CLAUDE_CODE_OAUTH_TOKEN`, a harness login); params and committed config hold none.
 - A pack is code that runs with the user's permissions: install or list under `packs` only packs the user chose.
-- Parse `--json` output, which every verb takes; the text form is for people.
+- Parse `--json` output, which every verb but `cs` takes; the text form is for people.
 - `maestro <verb> --help` holds every flag this skill does not name.

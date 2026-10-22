@@ -1,5 +1,4 @@
 import { basename } from "node:path";
-import { ConfigError } from "@maestro/core/config";
 import {
 	type Concert,
 	type ConcertResult,
@@ -8,7 +7,6 @@ import {
 	unresumable,
 } from "@maestro/core/perform";
 import { mapWorkers } from "@maestro/ir";
-import { shortIds } from "@maestro/render-text/live";
 import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk/loader";
 import {
 	COMMON,
@@ -22,7 +20,6 @@ import {
 	textOf,
 	type Values,
 } from "./command";
-import type { Overrides } from "./config";
 import {
 	exitOf,
 	jsonOf,
@@ -44,8 +41,10 @@ import {
 import {
 	artifactsOf,
 	concertOf,
+	locating,
 	openSession,
 	overridesOf,
+	recordedOf,
 	type Session,
 	withRecord,
 	withSession,
@@ -129,14 +128,9 @@ async function restart(
 	const row = concertOf(store, prefix);
 	const refused = unresumable(row);
 	if (refused) throw resumeRefused(refused);
-	const recorded = {
-		profile: row.profile,
-		config: row.config,
-		recorded: shortIds(store.ids()).label(row.id, false),
-	};
 	const { config } = await openSession(
 		session.deps,
-		recorded,
+		recordedOf(store, row),
 		overridesOf(values),
 	);
 	const resumed = { ...session, config };
@@ -220,21 +214,6 @@ async function conducted(
 	deps.stderr(`concert ${concert.id}`);
 	const result = await settled(concert);
 	return report(session, store, json, color, concert.id, result);
-}
-
-/**
- * The overrides a resume finds its record store under: its own, or none when they do not layer without the concert's
- * recorded ones beneath, as a `!delete` of a key only those set does not.
- * @throws as `openSession` does, for an error other than a ConfigError.
- */
-async function locating(deps: Deps, own: Overrides): Promise<Overrides> {
-	try {
-		await openSession(deps, own);
-		return own;
-	} catch (error) {
-		if (error instanceof ConfigError) return {};
-		throw error;
-	}
 }
 
 export const perform: Command = {

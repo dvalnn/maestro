@@ -7,6 +7,7 @@ import type { Environment } from "./config";
 import {
 	compositionOf,
 	parseTour,
+	renderWarning,
 	STATUSES,
 	statusOf,
 	table,
@@ -60,6 +61,12 @@ export const colorOf = (
 		err: on && stderrTerminal !== undefined,
 	};
 };
+
+/** Prints `text` as a warning on stderr, colored as `values` say, unless `values` hold `--json`. */
+export function warn(deps: Deps, values: Values, text: string) {
+	if (!isSet(values, "json"))
+		deps.stderr(renderWarning(text, colorOf(deps, values).err));
+}
 
 type OptionSpec = {
 	type: "string" | "boolean";

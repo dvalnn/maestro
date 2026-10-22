@@ -1,6 +1,7 @@
 import { readFileSync, readlinkSync } from "node:fs";
 import { lstat, mkdir, readdir } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
+import { ConfigError } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
 import { hostSetup } from "@maestro/core/host";
 import {
@@ -142,12 +143,33 @@ export const concertsOf = (store: Records, prefixes: readonly string[]) => [
 	).values(),
 ];
 
+/**
+ * The overrides a command on a recorded concert finds its record store under: its own, or none when they do not layer without the concert's
+ * recorded ones beneath, as a `!delete` of a key only those set does not.
+ * @throws as `openSession` does, for an error other than a ConfigError.
+ */
+export async function locating(deps: Deps, own: Overrides): Promise<Overrides> {
+	try {
+		await openSession(deps, own);
+		return own;
+	} catch (error) {
+		if (error instanceof ConfigError) return {};
+		throw error;
+	}
+}
+
+/** The `--profile` and `-c` concert `row` was performed with, to layer beneath a command's own, as a resume does. */
+export const recordedOf = (store: Records, row: ConcertRecord): Overrides => ({
+	profile: row.profile,
+	config: row.config,
+	recorded: shortIds(store.ids()).label(row.id, false),
+});
+
 /** What a command that works on the record is handed. */
 export type Stored = {
 	session: Session;
 	store: Records;
 	values: Values;
-	positionals: string[];
 	json: boolean;
 };
 
@@ -195,10 +217,7 @@ export async function withStore<T>(
 	const { values, positionals } = parse(options, args, fix);
 	const parsed = check(values, positionals);
 	return withSession(deps, overridesOf(values), (session, store) =>
-		body(
-			{ session, store, values, positionals, json: isSet(values, "json") },
-			parsed,
-		),
+		body({ session, store, values, json: isSet(values, "json") }, parsed),
 	);
 }
 

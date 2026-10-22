@@ -23,7 +23,7 @@ import {
 	world,
 } from "./fixtures/world";
 import { codeHashOf } from "./loader";
-import { renderDiagnostic } from "./output";
+import { renderDiagnostic, renderWarning } from "./output";
 
 const GOLDEN = join(FIXTURES, "../../../ir/fixtures");
 const HELLO = join(FIXTURES, "hello.ts");
@@ -542,6 +542,11 @@ describe("usage errors", () => {
 			/^expected show, apply or drop, got 'frob'/,
 		],
 		[
+			"changeset with --json, which it does not take",
+			["cs", "show", "a", "--json"],
+			/^Unknown option '--json'/,
+		],
+		[
 			"watch with a key --frames does not name",
 			["watch", "nope", "--frames", "zz"],
 			/^--frames names no key: 'zz'/,
@@ -669,7 +674,7 @@ describe("usage errors", () => {
 		},
 	);
 
-	test.each(USAGE.filter(([, args]) => args.length > 0))(
+	test.each(USAGE.filter(([, args]) => args.length > 0 && args[0] !== "cs"))(
 		"%s with --json prints one document on stdout and nothing on stderr",
 		async (_what, args) => {
 			const w = await world();
@@ -890,6 +895,7 @@ describe("the record", () => {
 				true,
 			),
 		).toBe(`${ESC}[33mwarning X.y${ESC}[39m: m\n  ${hint("h")}`);
+		expect(renderWarning("m", true)).toBe(`${ESC}[33mwarning${ESC}[39m: m`);
 	});
 
 	test("ls lists a concert's node instances in graph order, one node's expansions by their first event, whatever order the record holds them", async () => {

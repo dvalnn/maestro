@@ -20,6 +20,7 @@ import {
 	parse,
 	peek,
 	type Values,
+	warn,
 } from "./command";
 import { CLI_CONFIG } from "./config";
 import { flagValues, paramFlags, paramsBlock } from "./flags";
@@ -435,7 +436,7 @@ function codeHashes(ir: Ir): string {
 /**
  * The preparation of `concert`, a resumed one: its stored IR with the code hashes as the code stands now, loaded from
  * the directory its row holds, or re-bundled from the composition file there when it was built from one, and the
- * session's config. Warns on stderr when any of those hashes differs from the recorded one.
+ * session's config. Warns on stderr, unless `--json` in `values`, when any of those hashes differs from the recorded one.
  * @throws CliError when that directory or file is gone.
  */
 export async function resumable(
@@ -459,8 +460,10 @@ export async function resumable(
 	const loader = bundle ?? moduleLoader(moduleDir);
 	const ir = await withCurrentHashes(concert.ir, loader.codeHash);
 	if (codeHashes(ir) !== codeHashes(concert.ir))
-		session.deps.stderr(
-			`warning: the composition changed since concert ${id} was performed; resuming its recorded graph`,
+		warn(
+			session.deps,
+			values,
+			`composition changed since concert ${id}; resuming its recorded graph`,
 		);
 	return {
 		ir,

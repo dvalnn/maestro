@@ -471,9 +471,9 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - A lane belongs to its node instance. A failed or cancelled instance drops its lane, and when a resume runs the
   instance again it takes back whatever an earlier run left, its sealed version included. A retried extension re-opens
   the version it extended, from that version's content.
-- A concert leaves a **changeset** (a patch series) attached to the record only by ending in a changeset node. Applying
-  or committing it is a separate, operator-owned step. The target's checkout, refs and commits are never written by the
-  host (HOST-03).
+- A concert leaves a **changeset** (a patch series) attached to the record only by ending in a changeset node.
+  `maestro cs` takes the `result` node's changeset, else the last `ok` instance's changeset. Applying or committing it
+  is a separate, operator-owned step. The target's checkout, refs and commits are never written by the host (HOST-03).
 - Prepare runs in every working copy checked out from a commit: `fresh`, `fork`, `read` and a re-opened extension, for
   every kind. An in-place `extend` keeps its ignored files and git state, so prepare runs once per working copy. The
   ignored files it makes are never sealed. Any other change it makes fails the node, naming the files.

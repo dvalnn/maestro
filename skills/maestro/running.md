@@ -1,8 +1,8 @@
 # Running: compose, perform, follow, read, recover
 
 Reference for the verbs after bootstrap, grouped by verb, with what their output means. Every flag not named here is in
-`maestro <verb> --help`. Each verb takes `--json` (one JSON document on stdout), `--profile <name>`, `-c <key>=<value>`
-(repeatable) and `--debug`.
+`maestro <verb> --help`. Each verb but `cs` takes `--json` (one JSON document on stdout), and each takes
+`--profile <name>`, `-c <key>=<value>` (repeatable) and `--debug`.
 
 Output is colored only on a terminal stream. `--no-color`, `NO_COLOR` or `TERM=dumb` turns it off, so a command you read
 is plain either way.
@@ -76,7 +76,7 @@ each concert's short id as `short`.
 - The reason of the instance the closing block's `at` names is the concert's root cause.
 
 `maestro art <id>` lists the concert's artifacts: instance, port, absolute path (`--json` adds `contentHash`), with a
-`stale` column for instances an earlier attempt left; printing one's files adds a `note:` line on stderr.
+`stale` column for instances an earlier attempt left; printing one's files adds a `warning:` line on stderr.
 `maestro art <id> <instance>` prints the bytes of each file of an instance's artifacts as they are, after a `══ <file>`
 line when there are several, and `maestro art <id> <instance> <file>` prints one, so it pipes. A file is its artifact's
 basename plus any inner path: read an agent's prompt with `maestro art <id> <instance> staged/prompt.md`. `--path`
@@ -120,8 +120,8 @@ yes:
   changes, and a checkout without the base (fetch it). Exit 3: a patch left conflicts, its markers in the files.
 - `maestro cs drop --yes` resets the checkout's tracked files, undoing an apply. It takes no concert: pass `-C <repo>`
   when the checkout is not the config's `target.repo`.
-- The changeset is the result node's, else the last one a node made; `--node <instance>` picks another. On a concert
-  that is not `ok`, stderr warns that it is a node's change, not a delivered result.
+- The changeset is the `result` node's changeset, else the last `ok` instance's changeset; `--node <instance>` picks
+  another. On a concert that is not `ok`, stderr warns that it is that instance's changeset, not a delivered result.
 
 ## Lane refs
 

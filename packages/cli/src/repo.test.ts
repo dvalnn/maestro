@@ -255,7 +255,7 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 		"UPDATE instances SET stale = 1 WHERE (node, expansion) IN (SELECT node, expansion FROM artifacts WHERE path LIKE '%notes.md')",
 	);
 	db.close();
-	const note = "note: instance 'inner/a' is stale, left by an earlier attempt";
+	const note = "warning: instance 'inner/a' is stale, from an earlier attempt";
 	const marked: { instance: string; stale?: true }[] = json(
 		await w.call(["art", id, "--json"]),
 	);
@@ -457,6 +457,28 @@ describe("changeset", () => {
 		expect(await w.cs("show", w.id, "--node", "nope")).toMatchObject({
 			code: 2,
 		});
+
+		const fan = idOf(await w.call(["perform", join(REPO, "fan.ts")]));
+		expect((await w.cs("show", fan, "--node", "innerSet")).out).toContain(
+			"+inner",
+		);
+		expect(await w.cs("show", fan, "--node", "set")).toMatchObject({
+			code: 2,
+			err: expect.stringMatching(
+				/^'set' ends 2 instances: parMap\[[xy]\]\/set, parMap\[[xy]\]\/set\nName one of them in full$/,
+			),
+		});
+
+		const checked = await w.call([
+			"perform",
+			join(REPO, "edit.ts"),
+			"-c",
+			'target.checks.lint={run: "true"}',
+		]);
+		const unset = ["-c", "target.checks.lint=!delete"];
+		expect(await w.cs("show", idOf(checked), ...unset)).toMatchObject({
+			code: 0,
+		});
 	});
 
 	test("apply stages the changeset on HEAD, refuses uncommitted changes, and drop resets it", async () => {
@@ -466,18 +488,17 @@ describe("changeset", () => {
 			code: 0,
 			out: expect.stringContaining("a.txt | 2"),
 			err: expect.stringMatching(
-				/^applied \S+ \(node \S+, concert ok\) on \w+, staged\. Next: commit it, or maestro cs drop$/,
+				/^applied \S+ \(node \S+, concert ok\) on \w+, staged\. Next: commit it, or 'maestro cs drop'$/,
 			),
 		});
 		expect(git(w.target, "diff", "--cached", "--name-only")).toBe("a.txt");
 		expect(await w.cs("apply", w.id)).toMatchObject({
 			code: 1,
-			err: `${w.target} has uncommitted changes: commit them, or maestro cs drop`,
+			err: `${w.target} has uncommitted changes\nCommit or stash them first`,
 		});
 		for (const refused of [
 			["apply", w.id, "--stat"],
 			["show", w.id, "--stat", "--summary"],
-			["show", w.id, "--json"],
 			["drop", w.id],
 		])
 			expect(await w.cs(...refused)).toMatchObject({ code: 2 });
@@ -516,7 +537,7 @@ describe("changeset", () => {
 		const base = git(w.target, "rev-parse", "HEAD");
 		expect(await w.cs("show", w.id, "-C", other)).toMatchObject({
 			code: 1,
-			err: `base ${base} is not in ${other}: fetch it first`,
+			err: `base ${base} is not in ${other}\nFetch it first`,
 		});
 	});
 
@@ -525,14 +546,14 @@ describe("changeset", () => {
 		expect((await w.cs("show", w.id)).out).toContain("+kept");
 		expect(await w.cs("show", w.id, "--node", "emptySet")).toMatchObject({
 			code: 1,
-			err: expect.stringContaining("is empty"),
+			err: expect.stringContaining("is empty\nPick another node with --node"),
 		});
 		const failed = await w.call(["perform", join(REPO, "reject.ts")]);
 		expect(failed).toMatchObject({ code: 3 });
 		const shown = await w.cs("show", idOf(failed));
 		expect(shown.out).toContain("+kept");
-		expect(shown.err).toContain(
-			"is rejected: this is node keptSet's change, not a delivered result",
+		expect(shown.err).toMatch(
+			/^warning: concert \S+ is rejected; this is keptSet's changeset, not a delivered result$/m,
 		);
 	});
 });

@@ -147,7 +147,7 @@ describe("a concert in another process", () => {
 			out: "text       done",
 			err: expect.stringMatching(
 				new RegExp(
-					`^warning: the composition changed since concert ${id} was performed; resuming its recorded graph\nconcert ${id}${closingOf(id, "ok").source}`,
+					`^warning: composition changed since concert ${id}; resuming its recorded graph\nconcert ${id}${closingOf(id, "ok").source}`,
 				),
 			),
 		});
@@ -242,7 +242,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 			code: 0,
 			err: expect.stringMatching(
 				new RegExp(
-					`^warning: the composition changed since concert ${id} was performed; resuming its recorded graph\nconcert ${id}${closingOf(id, "ok").source}`,
+					`^warning: composition changed since concert ${id}; resuming its recorded graph\nconcert ${id}${closingOf(id, "ok").source}`,
 				),
 			),
 		});
@@ -258,6 +258,14 @@ export const work = composition("work", { examples: [{}] }, () => {
 		expect(
 			(await w.call(["perform", "--resume", again], { hosts: [failAfter] }))
 				.err,
+		).not.toContain("warning:");
+		await Bun.write(file, source.replace("v1", "v3"));
+		expect(
+			(
+				await w.call(["perform", "--resume", again, "--json"], {
+					hosts: [failAfter],
+				})
+			).err,
 		).not.toContain("warning:");
 		await rm(file);
 		expect((await w.call(["perform", "--resume", again])).err).toBe(

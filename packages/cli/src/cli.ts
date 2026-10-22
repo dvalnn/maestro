@@ -8,6 +8,7 @@ import {
 	type Deps,
 	helpOf,
 	isSet,
+	type Options,
 	peek,
 } from "./command";
 import {
@@ -143,10 +144,18 @@ function printDiagnostics(
 	else for (const d of diagnostics) deps.stderr(renderDiagnostic(d, color));
 }
 
-/** Prints what stopped a command, on stderr, or as one document on stdout under `--json`, and gives its exit code. */
-function report(error: unknown, deps: Deps, args: readonly string[]): number {
-	const early = peek(COMMON, args);
-	const json = isSet(early, "json");
+/**
+ * Prints what stopped a command, on stderr, or as one document on stdout under `--json` when `options`, the command's,
+ * take it, and gives its exit code.
+ */
+function report(
+	error: unknown,
+	deps: Deps,
+	args: readonly string[],
+	options: Options,
+): number {
+	const early = peek(options, args);
+	const json = Object.hasOwn(options, "json") && isSet(early, "json");
 	const { err: color } = colorOf(deps, early);
 	const diagnostics = diagnosticsOf(error);
 	if (diagnostics) {
@@ -195,6 +204,7 @@ export async function main(
 	deps: Deps,
 ): Promise<number> {
 	const [word, ...args] = argv;
+	let options = COMMON;
 	try {
 		if (word === "--help" || word === "-h") {
 			deps.stdout(rootHelp());
@@ -206,12 +216,13 @@ export async function main(
 		}
 		if (word === undefined) throw usageError("no command given", rootHelp());
 		const command = await verbOf(word).load();
+		options = command.options;
 		if (isSet(peek(COMMON, args), "help")) {
 			deps.stdout(helpOf(command, await extraHelp(command, args, deps)));
 			return EXIT.ok;
 		}
 		return await command.execute(args, deps);
 	} catch (error) {
-		return report(error, deps, args);
+		return report(error, deps, args, options);
 	}
 }
