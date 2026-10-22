@@ -12,7 +12,7 @@ maestro builds a composition into a checked plan with `compose`, which spends no
 The concert's agents and checks work in lanes, isolated copies of the target repository, never in the user's checkout.
 Results leave as a changeset, a set of patches the user applies.
 
-This skill was checked against maestro 0.1.0-beta.2. When `maestro --version` names another release, trust
+This skill was checked against maestro 0.1.0-beta.3. When `maestro --version` names another release, trust
 `maestro <verb> --help` wherever the two differ.
 
 ## Words
@@ -121,7 +121,7 @@ since the stub review never approves. Use one to try a flow, or whenever the use
 composition names to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose and
 perform; a resume reapplies it. The profile wins over a role a composition pins inline. `MAESTRO_STUB_DELAY` (a duration
 such as `2s` or `500ms`) makes each stub agent turn wait that long, to rehearse a slow run. For the classics pack
-0.1.0-beta.2's six roles:
+0.1.0-beta.3's six roles:
 
 ```yaml
 roles:

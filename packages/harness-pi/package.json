@@ -1,6 +1,6 @@
 {
 	"name": "@maestro/harness-pi",
-	"version": "0.1.0-beta.2",
+	"version": "0.1.0-beta.3",
 	"license": "UNLICENSED",
 	"private": true,
 	"type": "module",
