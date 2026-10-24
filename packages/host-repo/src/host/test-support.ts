@@ -143,6 +143,7 @@ export type NodeSpec = {
 	/** A node whose rejection this one tolerates. */
 	tolerates?: string;
 	identity?: boolean;
+	message?: boolean;
 };
 
 /** A node of `host` with the ports its kind gives it, fed by `literals` and, from `lane`, an edge. */
@@ -155,7 +156,12 @@ function repoNode(
 		id: spec.id,
 		kind,
 		config: spec.config,
-		...(spec.identity && { in: { identity: { type: "string" } } }),
+		...((spec.identity || spec.message) && {
+			in: {
+				...(spec.identity && { identity: { type: "string" } }),
+				...(spec.message && { message: { type: "string" } }),
+			},
+		}),
 	};
 	const ports = host.kinds.find((k) => k.name === kind)?.ports(draft);
 	const node = {

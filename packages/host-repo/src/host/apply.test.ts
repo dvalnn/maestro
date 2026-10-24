@@ -114,6 +114,25 @@ describe("apply", () => {
 		).toBeDefined();
 	});
 
+	test("a changeset's message input is written as its message file, and a changeset without one has none", async () => {
+		const target = toyTarget();
+		const { host } = edits({ "l.txt": "l\n" }, { "r.txt": "r\n" });
+		const nodes = forksOf().map((n) =>
+			n.id === "csl"
+				? { ...n, message: true, literals: { message: "Add l\n" } }
+				: n,
+		);
+		const { artifact } = await performed(
+			host,
+			irOf(host, nodes, "merge"),
+			configOf(target),
+		);
+		const dir = artifact("csl", "changeset");
+		expect(readdirSync(dir).sort()).toEqual(["0001.patch", "base", "message"]);
+		expect(readFileSync(join(dir, "message"), "utf8")).toBe("Add l\n");
+		expect(readdirSync(artifact("csr", "changeset"))).not.toContain("message");
+	});
+
 	test("a same-line conflict is rejected naming the file, and an agent extending that version resolves it", async () => {
 		const target = toyTarget();
 		const { host } = edits({ "a.txt": "left\n" }, { "a.txt": "right\n" });

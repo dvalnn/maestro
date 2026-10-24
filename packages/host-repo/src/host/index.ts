@@ -20,7 +20,7 @@ import { concertUsage, releaseConcert } from "./store";
 import { repoText } from "./text";
 import { needsRepo, validateRepo } from "./validate";
 
-export { BASE_FILE, patchFiles } from "./apply";
+export { BASE_FILE, MESSAGE_FILE, patchFiles } from "./apply";
 export {
 	AGENT_IN_PORTS,
 	AGENT_KIND,

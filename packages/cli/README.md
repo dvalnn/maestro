@@ -24,7 +24,7 @@ maestro wait <concert> --timeout 15m
 | `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                          |
 | `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                |
 | `changeset show <concert>`   | `cs`  | Prints a concert's changeset as a diff on its base, the checkout untouched.[^changeset] `--stat`, `--summary`.    |
-| `changeset apply <concert>`  | `cs`  | Stages the changeset on the checkout's `HEAD` with `git apply --index --3way`, patch by patch.                    |
+| `changeset apply <concert>`  | `cs`  | Stages the changeset on the checkout's `HEAD` with `git apply --index --3way`, patch by patch. `--commit`.        |
 | `changeset drop`             | `cs`  | Resets the checkout's tracked files. It asks first unless given `--yes`.                                          |
 | `artifact <concert>`         | `art` | Lists a concert's artifacts, or prints an instance's files raw.[^artifact] `--path`.                              |
 
@@ -51,7 +51,9 @@ maestro wait <concert> --timeout 15m
     stderr. `show` and `apply` exit 1 for a concert with no changeset or an empty one, or a checkout without its base
     (fetch it first); `apply` exits 1 on uncommitted tracked changes and 3 when a patch leaves conflicts. A flag the
     action does not take is a usage error, and so is `--json`: the output is the diff itself. Git runs with the user's
-    own config, and nothing is committed: commit with git or jj to stack the next one.
+    own config, nothing is committed unless `apply --commit` is given, which commits the staged change with the
+    changeset's message (exit 1, nothing staged, when it has none); otherwise commit with git or jj to stack the next
+    one. `show` prints the message before the diff.
 
 [^artifact]:
     Without an instance, a table of each artifact's instance, port, `stale` mark and absolute path (`--json`: a list of

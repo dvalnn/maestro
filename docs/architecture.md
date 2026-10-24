@@ -473,7 +473,9 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   the version it extended, from that version's content.
 - A concert leaves a **changeset** (a patch series) attached to the record only by ending in a changeset node.
   `maestro cs` takes the `result` node's changeset, else the last `ok` instance's changeset. Applying or committing it
-  is a separate, operator-owned step. The target's checkout, refs and commits are never written by the host (HOST-03).
+  is a separate, operator-owned step: `maestro cs apply --commit` commits it with the changeset's `message`, when the
+  composition gave one. The target's checkout, refs and commits are never written by the host (HOST-03); the user's
+  `cs apply --commit` writes them.
 - Prepare runs in every working copy checked out from a commit: `fresh`, `fork`, `read` and a re-opened extension, for
   every kind. An in-place `extend` keeps its ignored files and git state, so prepare runs once per working copy. The
   ignored files it makes are never sealed. Any other change it makes fails the node, naming the files.

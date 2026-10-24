@@ -24,7 +24,7 @@ import {
 	repoSetup,
 	requireTarget,
 } from "./config";
-import { artifactInput } from "./inputs";
+import { artifactInput, textInput } from "./inputs";
 import {
 	baseOf,
 	lanePorts,
@@ -41,16 +41,25 @@ const PATCH_EXT = ".patch";
 const PATCH_DIGITS = 4;
 const DIGITS = /^\d+$/;
 
+/** The file in a changeset directory that holds its commit message, when it has one. */
+export const MESSAGE_FILE = "message";
+const MESSAGE_PORT = "message";
+
 const CHANGESET_DIR = "changeset";
 
 /**
  * Writes `changeset` into a new directory under `scratch`: its `base` file, and its patches as `0001.patch`, `0002.patch`
- * and on, which `git am` applies in name order. Returns the directory.
+ * and on, which `git am` applies in name order, and a `message` file when it has a commit message. Returns the directory.
  */
-function writeChangeset(scratch: string, changeset: Changeset): string {
+function writeChangeset(
+	scratch: string,
+	changeset: Changeset,
+	message: string | undefined,
+): string {
 	const dir = join(scratch, CHANGESET_DIR);
 	mkdirSync(dir);
 	writeFileSync(join(dir, BASE_FILE), `${changeset.base}\n`);
+	if (message !== undefined) writeFileSync(join(dir, MESSAGE_FILE), message);
 	for (const [i, patch] of changeset.patches.entries())
 		writeFileSync(
 			join(dir, `${String(i + 1).padStart(PATCH_DIGITS, "0")}${PATCH_EXT}`),
@@ -101,9 +110,15 @@ async function executeChangeset(
 	const setup = repoSetup(context.setup);
 	const store = openTarget(setup.store, requireTarget(setup).repo);
 	const changeset = await store.lanes.changeset(laneVersion(inputs[LANE_PORT]));
+	const message =
+		inputs[MESSAGE_PORT] === undefined
+			? undefined
+			: textInput(inputs, MESSAGE_PORT);
 	return {
 		outcome: "ok",
-		outputs: { [CHANGESET_PORT]: writeChangeset(context.scratch, changeset) },
+		outputs: {
+			[CHANGESET_PORT]: writeChangeset(context.scratch, changeset, message),
+		},
 	};
 }
 
@@ -112,8 +127,13 @@ export function changesetKind(): NodeKind {
 	return {
 		name: CHANGESET_KIND,
 		config: CHANGESET_CONFIG,
-		ports: () => ({
-			in: lanePorts({ mode: "read" }).in,
+		ports: (node) => ({
+			in: {
+				...lanePorts({ mode: "read" }).in,
+				...(Object.hasOwn(node.in ?? {}, MESSAGE_PORT)
+					? { [MESSAGE_PORT]: { type: "string" } }
+					: {}),
+			},
 			out: { [CHANGESET_PORT]: { [MAESTRO_TYPE]: CORE_TYPES.dir } },
 		}),
 		execute: (_, inputs, context) => executeChangeset(inputs, context),

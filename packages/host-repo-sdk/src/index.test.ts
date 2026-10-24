@@ -268,6 +268,24 @@ test("the agent's own port names are the host's, and each is refused only on the
 	}
 });
 
+test("changeset lowers a message, literal or ref, to a message input, and has none otherwise", () => {
+	const ir = buildIr(
+		composition("messages", { examples: [{}] }, () => {
+			const built = agent({ task: "a", lane: fresh(), role: "builder" });
+			changeset(built.out.lane, { label: "bare" });
+			changeset(built.out.lane, { label: "literal", message: "Fix it" });
+			return changeset(built.out.lane, {
+				label: "ref",
+				message: built.out.report,
+			});
+		}),
+	);
+	expect(nodeOf(ir, "bare")?.in).not.toHaveProperty("message");
+	expect(nodeOf(ir, "literal")?.literals).toMatchObject({ message: "Fix it" });
+	expect(nodeOf(ir, "ref")?.in).toHaveProperty("message");
+	expect(nodeOf(ir, "ref")?.literals).not.toHaveProperty("message");
+});
+
 test("only a lane input resumes, only an agent takes it, and apply takes one changeset", () => {
 	composition("types", { examples: [{}] }, () => {
 		const built = agent({ task: "a", lane: fresh(), role: "builder" });

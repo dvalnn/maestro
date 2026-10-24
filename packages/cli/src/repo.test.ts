@@ -528,6 +528,33 @@ describe("changeset", () => {
 		});
 	});
 
+	test("a changeset's message is shown first, and apply --commit makes one commit with it, refusing a changeset without one", async () => {
+		const bare = await edited();
+		expect(await bare.cs("apply", bare.id, "--commit")).toMatchObject({
+			code: 1,
+			err: expect.stringContaining("Drop --commit"),
+		});
+		expect(git(bare.target, "diff", "--cached", "--name-only")).toBe("");
+		expect(a(bare.target)).toBe("one\n");
+
+		const w = await edited("message.ts");
+		expect((await w.cs("show", w.id)).out).toMatch(
+			/^Edit a\.txt\n\nIt now says edited\.\n/,
+		);
+		const head = git(w.target, "rev-parse", "HEAD");
+		expect(await w.cs("apply", w.id, "--commit")).toMatchObject({
+			code: 0,
+			err: expect.stringMatching(/and committed it as \w+$/),
+		});
+		expect(git(w.target, "rev-list", "--count", `${head}..HEAD`)).toBe("1");
+		expect(git(w.target, "log", "-1", "--format=%B")).toBe(
+			"Edit a.txt\n\nIt now says edited.",
+		);
+		expect(git(w.target, "log", "-1", "--format=%an")).toBe("op");
+		expect(git(w.target, "status", "--porcelain")).toBe("");
+		expect(a(w.target)).toBe("edited\n");
+	});
+
 	test("apply stages the changeset on HEAD, refuses uncommitted changes, and drop resets it", async () => {
 		const w = await edited();
 		const applied = await w.cs("apply", w.id);

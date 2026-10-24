@@ -7,7 +7,12 @@ import type {
 	InstanceRecord,
 	Records,
 } from "@maestro/core/perform";
-import { BASE_FILE, CHANGESET_PORT, patchFiles } from "@maestro/host-repo";
+import {
+	BASE_FILE,
+	CHANGESET_PORT,
+	MESSAGE_FILE,
+	patchFiles,
+} from "@maestro/host-repo";
 import { type Ir, isPlainObject } from "@maestro/ir";
 import { shortIds } from "@maestro/render-text/live";
 import {
@@ -68,6 +73,10 @@ const CHANGESET_OPTIONS = {
 		type: "boolean",
 		desc: "show: print the concert's tour and title, and the files changed",
 	},
+	commit: {
+		type: "boolean",
+		desc: "apply: commit the staged change with the changeset's message",
+	},
 	yes: { type: "boolean", desc: "drop: do not ask before resetting" },
 } as const satisfies Options;
 
@@ -76,7 +85,7 @@ type Action = "show" | "apply" | "drop";
 /** The flags of this command each action takes; it refuses the others named here. */
 const ACTION_FLAGS: Readonly<Record<Action, readonly string[]>> = {
 	show: ["node", "stat", "summary"],
-	apply: ["node"],
+	apply: ["node", "commit"],
 	drop: ["yes"],
 };
 const OWN_FLAGS = [...new Set(Object.values(ACTION_FLAGS).flat())];
@@ -142,6 +151,8 @@ type Picked = {
 	short: string;
 	instance: string;
 	base: string;
+	/** The changeset's commit message, when it has one. */
+	message?: string;
 	/** Each patch file's path, in order. */
 	patches: string[];
 };
@@ -249,14 +260,18 @@ async function checkoutOf(
 }
 
 /**
- * The base and patch files of the changeset in `dir`, concert `short`'s.
+ * The base, commit message when there is one, and patch files of the changeset in `dir`, concert `short`'s.
  * @throws CliError when `dir` or its `base` file is gone, or it holds no patch.
  */
 async function readChangeset(dir: string, short: string) {
 	let base: string;
 	let patches: string[];
+	let message: string | undefined;
 	try {
 		base = (await readFile(join(dir, BASE_FILE), "utf8")).trim();
+		message = await readFile(join(dir, MESSAGE_FILE), "utf8").catch(
+			() => undefined,
+		);
 		patches = patchFiles(dir).map((f) => join(dir, f));
 	} catch {
 		throw new CliError(
@@ -267,7 +282,7 @@ async function readChangeset(dir: string, short: string) {
 		throw new CliError(
 			`the changeset of ${short} is empty\nPick another node with --node`,
 		);
-	return { base, patches };
+	return { base, message, patches };
 }
 
 async function picked(stored: Stored, prefix: string): Promise<Picked> {
@@ -343,6 +358,7 @@ async function shown(stored: Stored, prefix: string) {
 	deps.stderr(
 		`${p.short} (node ${p.instance}, concert ${p.row.status}) on base ${subject}`,
 	);
+	if (p.message !== undefined) deps.stdout(p.message.trimEnd());
 	const color = colorFlag(deps, values);
 	if (isSet(values, "summary")) {
 		deps.stdout(
@@ -385,6 +401,11 @@ async function applied(stored: Stored, prefix: string) {
 	const { deps } = session;
 	const p = await picked(stored, prefix);
 	checked(p, stored);
+	const commit = isSet(values, "commit");
+	if (commit && !p.message?.trim())
+		throw new CliError(
+			`${p.short} has no commit message, so --commit has nothing to commit with\nDrop --commit, or give the changeset a message in the composition`,
+		);
 	if (dirty(p.checkout))
 		throw new CliError(
 			`${p.checkout.repo} has uncommitted changes\nCommit or stash them first`,
@@ -395,6 +416,14 @@ async function applied(stored: Stored, prefix: string) {
 	}
 	const color = colorFlag(deps, values);
 	print(deps, git(p.checkout, ["diff", color, "--cached", "--stat"]));
+	if (commit) {
+		git(p.checkout, ["commit", "-q", "-m", p.message ?? ""]);
+		const made = git(p.checkout, ["rev-parse", "--short", "HEAD"]);
+		deps.stderr(
+			`applied ${p.short} (node ${p.instance}, concert ${p.row.status}) and committed it as ${made}`,
+		);
+		return EXIT.ok;
+	}
 	const head = git(p.checkout, ["rev-parse", "--short", "HEAD"]);
 	deps.stderr(
 		`applied ${p.short} (node ${p.instance}, concert ${p.row.status}) on ${head}, staged. Next: commit it, or 'maestro cs drop'`,

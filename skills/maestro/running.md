@@ -112,15 +112,18 @@ What each node leaves, as outputs of its instance:
 ## Changesets
 
 A changeset is a directory holding `base`, the commit the lane was cut from, and `0001.patch`, `0002.patch` and on, one
-commit each, its subject the lane version that wrote it. An empty changeset holds `base` alone.
+commit each, its subject the lane version that wrote it. A changeset made with a `message` also holds a `message` file,
+its commit message. An empty changeset holds `base` alone.
 
 `maestro cs show <id>` prints the concert's changeset as a diff on its base without touching the checkout, `--stat` or
-`--summary` (tour, title, files changed) for less. Hand that to the user. Applying it is the user's step, taken on their
-yes:
+`--summary` (tour, title, files changed) for less. It prints the message first when there is one. Hand that to the user.
+Applying it is the user's step, taken on their yes:
 
 - `maestro cs apply <id>` stages it on the checkout's `HEAD`, the checkout being `target.repo` as the concert was
   performed with, or `-C <repo>` (relative to the current directory). It refuses an empty changeset, uncommitted tracked
-  changes, and a checkout without the base (fetch it). Exit 3: a patch left conflicts, its markers in the files.
+  changes, and a checkout without the base (fetch it). Exit 3: a patch left conflicts, its markers in the files. With
+  `--commit` it then commits the staged change in one commit, with the changeset's message and the user's git identity;
+  a changeset with no `message` stages nothing and exits 1 (drop `--commit`, or give it a `message`).
 - `maestro cs drop --yes` resets the checkout's tracked files, undoing an apply. It takes no concert: pass `-C <repo>`
   when the checkout is not the config's `target.repo`.
 - The changeset is the `result` node's changeset, else the last `ok` instance's changeset; `--node <instance>` picks

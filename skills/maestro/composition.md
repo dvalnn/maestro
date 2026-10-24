@@ -86,7 +86,7 @@ From `@maestro/host-repo-sdk`:
 | `agent({ task, lane, role, ... })`      | A coding agent; outputs `report`, `staged`, `lane` and its declared outputs |
 | `seat({ role, identity, ... })`         | An agent's standing setup, called with `{ task, lane, ... }` per agent      |
 | `check(lane, which?)`                   | Every named check, the one named, or an inline `{ run, timeout, ... }`      |
-| `changeset(v)`                          | Version `v` as a changeset; end a composition on one to deliver results     |
+| `changeset(v, { message? })`            | `v` as a changeset, `message` its commit message; end a composition on one  |
 | `commits(revs)`                         | Target commits `revs` names as a version; fork or read it, never extend     |
 | `apply(lane, cs, { strategy })`         | Changeset `cs` applied to a lane; `"3way"` (default) or `"clean"`           |
 | `JsonOut(file, T)`, `MarkdownOut(file)` | A declared agent output, written in its outbox at `/out/<file>`             |

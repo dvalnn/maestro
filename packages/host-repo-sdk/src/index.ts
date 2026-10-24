@@ -343,14 +343,17 @@ export function check<M extends LaneMode>(
 	}) as Result<CheckOut<M>>;
 }
 
-/** A `repo.changeset` node: the patch series of version `v` as a directory. It opens no lane and spends no extension. */
+/**
+ * A `repo.changeset` node: the patch series of version `v` as a directory, with a commit `message` when given. It opens
+ * no lane and spends no extension.
+ */
 export function changeset(
 	v: Ref<string> | string,
-	common: Common = {},
+	{ message, ...common }: Common & { message?: string | Ref<string> } = {},
 ): Result<{ changeset: Type<ArtifactRef> }> {
 	return hostNode("repo.changeset", {
 		...common,
-		in: { lane: versionOf(v) },
+		in: defined({ lane: versionOf(v), message }),
 		out: { changeset: Dir() },
 	});
 }
