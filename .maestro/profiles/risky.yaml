@@ -1,0 +1,4 @@
+roles:
+  builder: { harness: claude, model: claude-opus-5-5, thinking: medium }
+  reviewer: { harness: claude, model: claude-sonnet-5-5, thinking: high }
+  skeptic: { harness: claude, model: claude-opus-5-5, thinking: low }

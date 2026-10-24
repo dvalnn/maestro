@@ -10,5 +10,11 @@
 		"noEmit": true,
 		"types": ["bun"]
 	},
-	"include": ["packages/*/src", "packs/*/src", "packs/*/acceptance", "scripts"]
+	"include": [
+		".maestro/*.ts",
+		"packages/*/src",
+		"packs/*/src",
+		"packs/*/acceptance",
+		"scripts"
+	]
 }

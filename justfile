@@ -5,6 +5,7 @@ check:
     bunx prettier --check "**/*.md"
     bunx tsc --noEmit
     bun test
+    bun test ./.maestro
 
 # auto-format
 fmt:

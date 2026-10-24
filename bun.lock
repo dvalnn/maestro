@@ -6,6 +6,7 @@
       "name": "maestro",
       "devDependencies": {
         "@biomejs/biome": "2.5.15",
+        "@maestro/host-repo-sdk": "workspace:*",
         "@maestro/sdk": "workspace:*",
         "@types/bun": "1.4.3",
         "prettier": "3.9.10",
