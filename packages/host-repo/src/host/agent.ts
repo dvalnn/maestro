@@ -414,7 +414,11 @@ async function settle(
 ): Promise<HostNodeResult> {
 	const { role, session } = staging;
 	const { metrics } = turns;
-	const enrichment = { session: session.id, ...identityOf(role) };
+	const enrichment = {
+		session: session.id,
+		sessionDir: session.dir,
+		...identityOf(role),
+	};
 	if ("failure" in turns)
 		return { outcome: "failed", reason: turns.failure, metrics, enrichment };
 	const { blocked, outcome = "ok", reason = "", report } = turns.envelope;

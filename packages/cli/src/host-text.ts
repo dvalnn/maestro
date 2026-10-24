@@ -33,6 +33,13 @@ export function annotated(
 	});
 }
 
+/** Where its host says the session of the instance of `node` that settled with `enrichment` lives. */
+export const whereOf = (
+	enrichment: Enrichment | undefined,
+	node: string,
+	hostText: ReturnType<typeof hostTextOf>,
+): string | undefined => enrichment && hostText(node)?.where?.(enrichment);
+
 /** Who its host says ran the instance of `node` that settled with `enrichment`. */
 export const actorOf = (
 	enrichment: Enrichment | undefined,

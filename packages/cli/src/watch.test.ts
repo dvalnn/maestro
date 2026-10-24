@@ -410,6 +410,7 @@ describe("watch on a running concert", async () => {
 					? { word: "tool", detail: `ran ${e.name} ${DETAIL}` }
 					: undefined,
 			actor: (e) => (e.kind === "tool" ? "pi · haiku" : undefined),
+			where: (e) => `/store/${String(e.session)}/home`,
 		},
 	};
 	const announced = Promise.withResolvers<string>();
@@ -441,7 +442,10 @@ describe("watch on a running concert", async () => {
 	};
 	const graph = watching([], { terminal: TERMINAL }, (write) => {
 		if (/^ +● echo .*running .*ran bash/m.test(stripVTControlCharacters(write)))
-			setTimeout(() => step.resolve(ECHO), HOLD_MS);
+			setTimeout(
+				() => step.resolve({ ...ECHO, enrichment: { session: "s1" } }),
+				HOLD_MS,
+			);
 	});
 	const json = watching(["--events", "--json"], { terminal: TERMINAL });
 	const lines = watching(["--events"], { terminal: TERMINAL });
@@ -551,6 +555,7 @@ describe("watch on a running concert", async () => {
 		expect(first.some((l) => /echo\/echo +ok$/.test(l))).toBe(false);
 		const settled = draws.findIndex(echoSettled);
 		expect(settled).toBeGreaterThan(opened);
+		expect(draws[settled]).toContain("  session     /store/s1/home");
 		expect(draws[settled]?.at(-1)).toStartWith("◆ tail ");
 		const back = draws.slice(settled + 1).find((l) => !inspecting(l)) ?? [];
 		expect(back[cursorAt(back)]).toMatch(/^> +✓ echo /);

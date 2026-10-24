@@ -79,5 +79,8 @@ function actor(enrichment: Enrichment): string | undefined {
 	].join(" · ");
 }
 
+/** The host directory of the session that ran an agent, where its harness writes the transcript. */
+const where = (enrichment: Enrichment) => stringOf(enrichment.sessionDir);
+
 /** How the repo host's prepare, tool, result and usage events and its agents read as text. */
-export const repoText: HostText = { progress, actor };
+export const repoText: HostText = { progress, actor, where };

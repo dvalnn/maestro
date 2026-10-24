@@ -172,9 +172,10 @@ A host is a package that the core loads. It is the only way node kinds beyond th
 9. **Optional seams.** `param(type, text)` reads a param of one of its types from the text a flag or YAML gave it.
    `resources`, for a host that holds disk per concert, groups `release(concert, setup)`, which frees what it holds for
    a settled concert, and `usage(concert, setup)`, which reports its bytes on disk, for `prune` and `ls`. `text` groups
-   `progress(event)`, which words one of the host's progress events, and `actor(enrichment)`, which names who ran an
-   instance, as plain one-line text for `watch` and `ls`; the renderer styles it. `needs(graph)` names the config
-   entries the graph's host nodes read by name. ADR 0010 records the shape.
+   `progress(event)`, which words one of the host's progress events, `actor(enrichment)`, which names who ran an
+   instance, and `where(enrichment)`, which gives the path its session lives at, as plain one-line text for `watch` and
+   `ls`; the renderer styles it. `needs(graph)` names the config entries the graph's host nodes read by name. ADR 0010
+   records the shape.
 
 The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
 hooks and records what they return.
@@ -194,24 +195,25 @@ What a host author writes against. ADR 0010 records why the shape is this one.
 **Host members.** Required members sit flat on the host. Core calls each at a fixed stage and never inspects what it
 returns beyond the check named.
 
-| Member               | When core calls it                                                      | Returns                          |
-| -------------------- | ----------------------------------------------------------------------- | -------------------------------- |
-| `name`               | Always: it namespaces kinds, types and facts.                           |                                  |
-| `kinds`, `types`     | At compose and at perform start: core reads the kind and type owners.   |                                  |
-| `kind.name`          | At compose: the `<host>.<kind>` a node's `kind` names.                  |                                  |
-| `kind.config`        | At compose: the schema a node's `config` is checked against.            | `HOST.config` diagnostics.       |
-| `config`             | At config compose: one schema per namespace the host owns.              |                                  |
-| `validate(graph, s)` | At compose, once per graph, after core's own checks.                    | Diagnostics, `HOST.`-prefixed.   |
-| `bounds(node)`       | At compose, per node of one of the host's kinds.                        | Named counts per instance.       |
-| `environment(s)`     | At perform start, once per concert.                                     | Facts for code nodes' `env`.     |
-| `kind.ports(node)`   | At compose, per node.                                                   | The node's `in` and `out`.       |
-| `kind.execute(...)`  | Per node instance, when its inputs are ready.                           | `HostNodeResult`.                |
-| `kind.cancel(i)`     | When the concert is cancelled or a halt stops a running instance.       | Nothing; `execute` then settles. |
-| `param?(type, text)` | The CLI only, to read a param of one of the host's `types` from text.   | A value, or diagnostics.         |
-| `resources?.release` | The CLI only, for `prune`, on a settled concert.                        | Nothing.                         |
-| `resources?.usage`   | The CLI only, for `ls`, per concert.                                    | Bytes on disk.                   |
-| `text?.progress(e)`  | The CLI only, for `watch`, per progress event of the host's kinds.      | A word and detail, or generic.   |
-| `text?.actor(e)`     | The CLI only, for `watch` and `ls`, on enrichment or an event's fields. | Who ran the instance, or none.   |
+| Member               | When core calls it                                                      | Returns                           |
+| -------------------- | ----------------------------------------------------------------------- | --------------------------------- |
+| `name`               | Always: it namespaces kinds, types and facts.                           |                                   |
+| `kinds`, `types`     | At compose and at perform start: core reads the kind and type owners.   |                                   |
+| `kind.name`          | At compose: the `<host>.<kind>` a node's `kind` names.                  |                                   |
+| `kind.config`        | At compose: the schema a node's `config` is checked against.            | `HOST.config` diagnostics.        |
+| `config`             | At config compose: one schema per namespace the host owns.              |                                   |
+| `validate(graph, s)` | At compose, once per graph, after core's own checks.                    | Diagnostics, `HOST.`-prefixed.    |
+| `bounds(node)`       | At compose, per node of one of the host's kinds.                        | Named counts per instance.        |
+| `environment(s)`     | At perform start, once per concert.                                     | Facts for code nodes' `env`.      |
+| `kind.ports(node)`   | At compose, per node.                                                   | The node's `in` and `out`.        |
+| `kind.execute(...)`  | Per node instance, when its inputs are ready.                           | `HostNodeResult`.                 |
+| `kind.cancel(i)`     | When the concert is cancelled or a halt stops a running instance.       | Nothing; `execute` then settles.  |
+| `param?(type, text)` | The CLI only, to read a param of one of the host's `types` from text.   | A value, or diagnostics.          |
+| `resources?.release` | The CLI only, for `prune`, on a settled concert.                        | Nothing.                          |
+| `resources?.usage`   | The CLI only, for `ls`, per concert.                                    | Bytes on disk.                    |
+| `text?.progress(e)`  | The CLI only, for `watch`, per progress event of the host's kinds.      | A word and detail, or generic.    |
+| `text?.where(e)`     | The CLI only, for `watch`, on an instance's enrichment.                 | Where its session lives, or none. |
+| `text?.actor(e)`     | The CLI only, for `watch` and `ls`, on enrichment or an event's fields. | Who ran the instance, or none.    |
 
 The setup each hook gets, `HostSetup`, is item 6 above and ADR 0010.
 
@@ -463,6 +465,9 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   its store. An agent that extends a version with `resume` continues the session that wrote it. A check that extends a
   version and seals a new one passes the extended version's session on to the new one, so build, check and a resumed
   repair share a session. An apply records none.
+- An agent's enrichment carries `sessionDir`, the session's host directory `sessions/<id>/home`, where the harness
+  writes its transcript (claude under `claude/projects/`, pi directly in it). A session lasts until its concert is
+  pruned.
 - A session continues only within its concert and on its harness, so a warm session never crosses concerts.
 
 **Lanes**

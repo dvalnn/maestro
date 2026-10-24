@@ -62,6 +62,19 @@ describe("repoText.progress", () => {
 	});
 });
 
+describe("repoText.where", () => {
+	test.each([
+		[
+			{ session: "s", sessionDir: "/store/sessions/s/home" },
+			"/store/sessions/s/home",
+		],
+		[{ session: "s" }, undefined],
+		[{ sessionDir: "" }, undefined],
+	])("places the session of %j at %j", (enrichment, path) => {
+		expect(repoText.where?.(enrichment)).toBe(path);
+	});
+});
+
 describe("repoText.actor", () => {
 	const ENRICHED = {
 		session: "s",

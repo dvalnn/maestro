@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { isAbsolute } from "node:path";
 import type { StubStep } from "../harness/index";
 import {
 	cleanup,
 	configOf,
 	irOf,
+	type NodeSpec,
 	OK,
 	performed,
 	start,
@@ -109,5 +111,40 @@ describe("agent retry", () => {
 		expect(await concert.done).toMatchObject({ outcome: "failed" });
 		await Bun.sleep(50);
 		expect(requests).toHaveLength(1);
+	});
+});
+
+describe("agent session directory", () => {
+	const agent = (
+		id: string,
+		config: Record<string, unknown>,
+		lane?: string,
+	): NodeSpec => ({
+		id,
+		kind: "agent",
+		config: { role: { name: "builder" }, lane: config },
+		literals: { prompt: "go" },
+		...(lane && { lane }),
+	});
+
+	test("the enrichment names the host directory of a minted session and of a resumed one", async () => {
+		const { host, requests } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				agent("w", { mode: "fresh" }),
+				agent("r", { mode: "extend", resume: true }, "w"),
+			],
+			"r",
+		);
+		const { instances } = await performed(host, ir, configOf(toyTarget()));
+		const dirOf = (node: string) =>
+			instances.find((i) => i.node === node)?.enrichment?.sessionDir;
+		const minted = requests[0]?.session;
+		expect(requests[1]?.session.id).toBe(minted?.id);
+		expect(dirOf("w")).toBe(minted?.dir);
+		expect(dirOf("r")).toBe(minted?.dir);
+		expect(minted?.dir).toEndWith(`sessions/${minted?.id}/home`);
+		expect(isAbsolute(minted?.dir ?? "")).toBe(true);
 	});
 });

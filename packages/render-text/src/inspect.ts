@@ -46,6 +46,8 @@ export type Kept = Recorded & {
 	outputs?: Readonly<Record<string, unknown>>;
 	inputs?: Readonly<Record<string, unknown>>;
 	enrichment?: Readonly<Record<string, unknown>>;
+	/** Where the instance's session lives, as its host says. */
+	where?: string;
 	artifacts: readonly { path: string; contentHash: string }[];
 };
 
@@ -210,6 +212,7 @@ function instanceSegs(
 		title,
 		labelled("context", [[flat(labelOf(graph, s))]]),
 		state,
+		...(k?.where === undefined ? [] : [labelled("session", [[flat(k.where)]])]),
 		...noteSegs(s),
 		...keptSegs(k),
 	];

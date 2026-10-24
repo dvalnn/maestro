@@ -155,6 +155,11 @@ export interface HostText {
 	 * of the host's progress events, and names an actor only for an event that announces one; undefined otherwise.
 	 */
 	actor?(enrichment: Enrichment): string | undefined;
+	/**
+	 * Where an instance's session lives, an absolute path, such as the directory its harness writes the transcript in.
+	 * Called on a settled instance's enrichment; undefined when it has none.
+	 */
+	where?(enrichment: Enrichment): string | undefined;
 }
 
 /** The disk a host holds for a concert. */

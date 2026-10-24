@@ -248,6 +248,15 @@ describe("inspectorLines", () => {
 		]);
 	});
 
+	test("shows a session line after the state line when the host says where, none without", () => {
+		const lines = (kept: Kept) =>
+			inspected("test-loop/repair@1", { instances: [kept] }).head;
+		const where = lines({ ...REPAIR, where: "/store/sessions/d916/home" });
+		const at = where.findIndex((l) => l.startsWith("  state "));
+		expect(where[at + 1]).toBe("  session     /store/sessions/d916/home");
+		expect(lines(REPAIR).some((l) => l.includes("session  "))).toBe(false);
+	});
+
 	test("leaves out the inputs block when the record has none", () => {
 		const { head } = inspected("test-loop/repair@1", { instances: [REPAIR] });
 		expect(head.join("\n")).not.toContain("inputs");

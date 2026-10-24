@@ -34,7 +34,7 @@ import {
 	textOf,
 	type Values,
 } from "./command";
-import { actorOf, annotated, hostTextOf } from "./host-text";
+import { actorOf, annotated, hostTextOf, whereOf } from "./host-text";
 import {
 	EXIT,
 	exitOf,
@@ -145,6 +145,7 @@ function drawingOf(
 			const instances = store.instances(row.id).map((i) => ({
 				...i,
 				actor: actorOf(i.enrichment, i.node, hostText),
+				where: whereOf(i.enrichment, i.node, hostText),
 			}));
 			return { view, agents: agentsOf(instances), instances };
 		},
