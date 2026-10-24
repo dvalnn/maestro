@@ -437,14 +437,14 @@ describe("browse", () => {
 
 	test("names the mode on the key line, drops f follow once the concert settled, and on a narrow terminal the last hints but q quit", () => {
 		expect(browsed(NAV).lines.at(-1)).toBe(
-			"● follow   j/k move  h/l fold  ⏎ inspect  f follow  [ ] round  e last failure  q quit",
+			"● follow   j/k move  h/l fold  ⏎ inspect  u/d page  f follow  [ ] round  e last failure  q quit",
 		);
 		expect(browsed(on("request@")).lines.at(-1)).toStartWith("○ browse ");
 		expect(browsed(NAV, { settled: true }).lines.at(-1)).toBe(
-			"■ settled   j/k move  h/l fold  ⏎ inspect  [ ] round  e last failure  q quit",
+			"■ settled   j/k move  h/l fold  ⏎ inspect  u/d page  [ ] round  e last failure  q quit",
 		);
 		expect(browsed(NAV, { columns: 80 }).lines.at(-1)).toBe(
-			"● follow   j/k move  h/l fold  ⏎ inspect  f follow  [ ] round  q quit",
+			"● follow   j/k move  h/l fold  ⏎ inspect  u/d page  f follow  [ ] round  q quit",
 		);
 		expect(browsed(NAV, { columns: 40 }).lines.at(-1)).toBe(
 			"● follow   j/k move  h/l fold  q quit",

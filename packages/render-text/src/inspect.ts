@@ -65,7 +65,13 @@ const RULE = "─";
 const INSPECTOR_BELOW = 2;
 /** The fewest summary lines kept however short the terminal: the title and one more. */
 const MIN_SUMMARY = 2;
-const INSPECTOR_HINTS = ["j/k scroll", "g/G top/tail", "esc/q back", "^C quit"];
+const INSPECTOR_HINTS = [
+	"j/k scroll",
+	"u/d page",
+	"g/G top/tail",
+	"esc/q back",
+	"^C quit",
+];
 
 /** The events of the instances the row keyed `key` stands for, in their order. */
 export const selected = <T extends NodeInstance>(

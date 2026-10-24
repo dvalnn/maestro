@@ -619,7 +619,7 @@ const REVERSE = { open: "\u001b[7m", close: "\u001b[27m" } as const;
 /** The column before each row of a viewport: the cursor row's mark, else blank. */
 const LEAD = { cursor: ">", other: " " } as const;
 /** The tree's key hints in order, `f follow` between them while running; a narrow key line drops the last first. */
-const KEY_HINTS = ["j/k move", "h/l fold", "⏎ inspect"];
+const KEY_HINTS = ["j/k move", "h/l fold", "⏎ inspect", "u/d page"];
 const MORE_HINTS = ["[ ] round", "e last failure"];
 const FOLLOW_HINT = "f follow";
 const QUIT_HINT = "q quit";
