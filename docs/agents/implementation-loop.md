@@ -21,7 +21,9 @@ wraps them.
    `maestro perform .maestro/slice.ts --profile <tier> --tier <tier> --request <brief>`, from a checkout at `main`. Its
    lane splits from `main` (`target.base`) by default; a slice that depends on work not yet on `main` forks from that
    work's change instead (`-c target.base=<commit>`). Start it detached from the conductor's session (`setsid -f`, as
-   the `maestro` skill's step 4 shows), never as a session background task: a rewind or a session end cancels it.
+   the `maestro` skill's step 4 shows), never as a session background task: a rewind or a session end cancels it. Put it
+   on its release's tour, `release.<channel>.<number>` such as `--tour release.beta.6`, so `ls` lists a release's slices
+   together.
 
 3. **Mechanical gate** (conductor). The conductor runs `just check` itself. Anything a linter can check stays in Biome,
    so review spends no tokens on it.
