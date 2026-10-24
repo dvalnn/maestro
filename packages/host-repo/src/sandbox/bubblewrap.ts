@@ -6,6 +6,8 @@ const ID_VAR = "MAESTRO_SANDBOX_ID";
 const STDERR_TAIL = 64 * 1024;
 /** Values shorter than this are not masked, so a short credential cannot garble the output it appears in. */
 const MIN_MASKED_LENGTH = 8;
+/** How long a kill waits for the sandbox's processes to go. */
+const KILL_WAIT_MS = 2500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Live processes whose environment carries the run id: bwrap, its init and every descendant, whatever their pgid. */
@@ -27,6 +29,12 @@ export function runProcesses(id: string): number[] {
 		} catch {} // exited while scanning, or not ours
 	}
 	return pids;
+}
+
+function killQuietly(pid: number) {
+	try {
+		process.kill(pid, "SIGKILL");
+	} catch {} // exited since it was listed
 }
 
 function redactor(values: readonly string[]) {
@@ -114,10 +122,11 @@ export const bubblewrap: SandboxBackend = {
 			exited,
 			async kill() {
 				child.kill("SIGKILL"); // --die-with-parent reaps the pid namespace, and with it the tree
-				await exited;
-				const end = performance.now() + 2500;
+				// A kill during bwrap's startup lands before die-with-parent is set, so what survives is killed by id.
+				const end = performance.now() + KILL_WAIT_MS;
 				let left = runProcesses(id);
 				while (left.length && performance.now() < end) {
+					for (const pid of left) killQuietly(pid);
 					await sleep(50);
 					left = runProcesses(id);
 				}
@@ -125,6 +134,7 @@ export const bubblewrap: SandboxBackend = {
 					throw new Error(
 						`sandbox processes survived the kill, pids ${left.join(", ")}`,
 					);
+				await exited;
 			},
 		};
 		return proc;
