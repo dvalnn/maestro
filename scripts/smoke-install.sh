@@ -58,7 +58,7 @@ if command -v dash >/dev/null; then
     || fail "install.sh under dash exited $?: $(cat "$scratch/install.err")"
 fi
 
-for package in ir sdk host-repo-sdk; do
+for package in ir sdk host-repo-sdk classics; do
   [ -f "$home/.local/share/maestro/sdk/maestro-$package.tgz" ] || fail "install.sh did not install the $package tarball"
 done
 if env -i PATH="$home/.local/bin:/usr/bin:/bin" sh -c 'command -v bun' >/dev/null; then
@@ -196,7 +196,7 @@ grep -q "concert $slow_id is running" "$scratch/install.err" || fail "install.sh
 grep -q "maestro kill $slow_id" "$scratch/install.err" || fail "install.sh did not hint maestro kill $slow_id"
 
 step "package tarballs"
-for package in ir sdk host-repo-sdk; do
+for package in ir sdk host-repo-sdk classics; do
   tgz=$dist/maestro-$package-$version.tgz
   ! tar -tzf "$tgz" | grep -q '\.test\.ts$' || fail "$tgz holds a test file"
   manifest=$(tar -xzOf "$tgz" package/package.json)
@@ -206,5 +206,23 @@ for package in ir sdk host-repo-sdk; do
   grep -q '"license": "UNLICENSED"' <<<"$manifest" || fail "$tgz is not UNLICENSED"
   ! grep -Eq '"@maestro/[a-z-]+": "(workspace:|\^|~)' <<<"$manifest" || fail "$tgz has an inexact @maestro dependency"
 done
+
+step "a composition builds on the classics package"
+author=$ws/author
+mkdir -p "$author"
+sdk=$home/.local/share/maestro/sdk
+deps=$(for package in ir sdk host-repo-sdk classics; do printf '"@maestro/%s": "file:%s/maestro-%s.tgz",' "$package" "$sdk" "$package"; done)
+printf '{"dependencies": {%s}, "overrides": {%s}}\n' "${deps%,}" "${deps%,}" > "$author/package.json"
+(cd "$author" && bun install --silent) || fail "bun install of the package tarballs exited $?"
+cat > "$author/flow.ts" <<'TS'
+import { builder } from "@maestro/classics";
+import { fresh } from "@maestro/host-repo-sdk";
+import { composition } from "@maestro/sdk";
+
+export const flow = composition("flow", { examples: [{}] }, () =>
+  builder({ label: "build", task: "nothing", lane: fresh() }),
+);
+TS
+maestro compose author/flow.ts --profile stub >/dev/null || fail "compose of a file importing @maestro/classics exited $?"
 
 step "passed"

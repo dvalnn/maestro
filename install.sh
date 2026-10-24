@@ -80,6 +80,10 @@ install_assets() {
   for package in ir sdk host-repo-sdk; do
     cp maestro-"$package"-[0-9]*.tgz "$data_dir/sdk/maestro-$package.tgz"
   done
+  # Releases before 0.1.0-beta.5 ship no classics package.
+  for tgz in maestro-classics-[0-9]*.tgz; do
+    [ ! -f "$tgz" ] || cp "$tgz" "$data_dir/sdk/maestro-classics.tgz"
+  done
 }
 
 main() {

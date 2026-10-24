@@ -27,8 +27,8 @@ release: check pack
       --asset "$build/embedded-sdk.js" --asset "$build/embedded-host-repo-sdk.js" \
       packages/cli/src/maestro.ts --outfile "$build/maestro"
     cp "$build/maestro" dist/maestro-linux-x64
-    for package in ir sdk host-repo-sdk; do
-      (cd "packages/$package" && bun pm pack --destination ../../dist --quiet >/dev/null)
+    for package in packages/ir packages/sdk packages/host-repo-sdk packs/classics; do
+      (cd "$package" && bun pm pack --destination ../../dist --quiet >/dev/null)
     done
     pack_version=$(bun -e 'console.log(require(process.argv[1]).version)' "$PWD/packs/classics/dist/maestro-pack.json")
     cp -r packs/classics/dist "$build/classics"

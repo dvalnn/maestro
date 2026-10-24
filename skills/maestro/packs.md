@@ -28,10 +28,11 @@ A directory, or a tarball of one, holding:
 
 ## Building the entry
 
-Set the project up as the release's INSTALL.md, section "Authoring packs", says: Bun, and the three `@maestro` package
-tarballs as `file:` dependencies. The source, `src/index.ts`, exports the pack's compositions and every function its
-code nodes use. A build script bundles it behind the SDK's `glue`, which adds the `describe` and `build` exports maestro
-loads the pack through, and writes the manifest with the SDK's own range:
+Set the project up as the release's INSTALL.md, section "Authoring packs", says: Bun, and the `@maestro` package
+tarballs as `file:` dependencies, `@maestro/classics` only to build on the classics pack's parts. The source,
+`src/index.ts`, exports the pack's compositions and every function its code nodes use. A build script bundles it behind
+the SDK's `glue`, which adds the `describe` and `build` exports maestro loads the pack through, and writes the manifest
+with the SDK's own range:
 
 ```ts
 // build.ts: `bun build.ts` writes the pack into dist/

@@ -15,5 +15,9 @@
 	},
 	"exports": {
 		".": "./src/index.ts"
-	}
+	},
+	"files": [
+		"src",
+		"!**/*.test.ts"
+	]
 }

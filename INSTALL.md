@@ -30,12 +30,12 @@ curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh |
 The script needs `curl` and `sha256sum`, checks every asset against `SHA256SUMS` before touching anything, and refuses
 while a concert is running: wait for it to settle, or `maestro kill <id>`.
 
-| Installed                                 | Where                                   |
-| ----------------------------------------- | --------------------------------------- |
-| The binary                                | `~/.local/bin/maestro`                  |
-| The classics pack                         | `$XDG_DATA_HOME/maestro/packs/classics` |
-| The maestro skill                         | `~/.claude/skills/maestro`              |
-| The three package tarballs, for authoring | `$XDG_DATA_HOME/maestro/sdk/`           |
+| Installed                                | Where                                   |
+| ---------------------------------------- | --------------------------------------- |
+| The binary                               | `~/.local/bin/maestro`                  |
+| The classics pack                        | `$XDG_DATA_HOME/maestro/packs/classics` |
+| The maestro skill                        | `~/.claude/skills/maestro`              |
+| The four package tarballs, for authoring | `$XDG_DATA_HOME/maestro/sdk/`           |
 
 `XDG_DATA_HOME` defaults to `~/.local/share`. The pack and skill directories and the package tarballs are replaced.
 `~/.local/bin` must be on `PATH`, and the script warns when it is not. If `maestro --version` prints something else,
@@ -57,7 +57,7 @@ mkdir -p "$data/packs" "$data/sdk" ~/.claude/skills
 tar -xzf classics-*.tar.gz -C "$data/packs"
 tar -xzf maestro-skill.tar.gz -C ~/.claude/skills
 rm -f "$data"/sdk/maestro-*.tgz
-for package in ir sdk host-repo-sdk; do cp maestro-"$package"-[0-9]*.tgz "$data/sdk/maestro-$package.tgz"; done
+for package in ir sdk host-repo-sdk classics; do cp maestro-"$package"-[0-9]*.tgz "$data/sdk/maestro-$package.tgz"; done
 ```
 
 A relative `XDG_DATA_HOME` is ignored, by the script and by maestro, which use `~/.local/share` instead.
@@ -142,7 +142,7 @@ with a new code hash makes a resumed concert rerun its code nodes.
 
 ## 6. Authoring packs (needs Bun)
 
-A `package.json` takes the three package tarballs as `file:` dependencies, and the same three under `overrides`, so no
+A `package.json` takes the package tarballs as `file:` dependencies, and the same ones under `overrides`, so no
 `@maestro/*` package is fetched from a registry. The paths are absolute, `~` is not expanded, and name the version-less
 tarballs the install put in `$XDG_DATA_HOME/maestro/sdk/`, which each upgrade replaces in place:
 
@@ -151,17 +151,20 @@ tarballs the install put in `$XDG_DATA_HOME/maestro/sdk/`, which each upgrade re
   "dependencies": {
     "@maestro/ir": "file:/home/me/.local/share/maestro/sdk/maestro-ir.tgz",
     "@maestro/sdk": "file:/home/me/.local/share/maestro/sdk/maestro-sdk.tgz",
-    "@maestro/host-repo-sdk": "file:/home/me/.local/share/maestro/sdk/maestro-host-repo-sdk.tgz"
+    "@maestro/host-repo-sdk": "file:/home/me/.local/share/maestro/sdk/maestro-host-repo-sdk.tgz",
+    "@maestro/classics": "file:/home/me/.local/share/maestro/sdk/maestro-classics.tgz"
   },
   "overrides": {
     "@maestro/ir": "file:/home/me/.local/share/maestro/sdk/maestro-ir.tgz",
     "@maestro/sdk": "file:/home/me/.local/share/maestro/sdk/maestro-sdk.tgz",
-    "@maestro/host-repo-sdk": "file:/home/me/.local/share/maestro/sdk/maestro-host-repo-sdk.tgz"
+    "@maestro/host-repo-sdk": "file:/home/me/.local/share/maestro/sdk/maestro-host-repo-sdk.tgz",
+    "@maestro/classics": "file:/home/me/.local/share/maestro/sdk/maestro-classics.tgz"
   }
 }
 ```
 
-Rerun `bun install` after an upgrade to pick up the new tarballs.
+`@maestro/classics` is needed only by a composition that builds on the classics pack's parts. Rerun `bun install` after
+an upgrade to pick up the new tarballs.
 
 Bundling a pack and writing its manifest are in the skill's `packs.md`.
 

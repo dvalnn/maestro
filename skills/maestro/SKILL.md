@@ -153,7 +153,8 @@ maestro's release ships one pack, `classics`:
 - `classics.v_model`: scouts, plans, builds and repairs, reviews each scouted risk, and traces acceptance to the plan.
 - `classics.repair_until_green`: the repair loop the others use; it is not performed alone.
 
-A composition outside the pack builds on its parts through `@maestro/classics`:
+A composition outside the pack builds on its parts through `@maestro/classics`, a package tarball set up as
+[packs.md](packs.md) says:
 
 - `panel`: the lens, skeptic and consolidator panel, as a function over a change.
 - The seats: `builder`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`, `documenter`.
