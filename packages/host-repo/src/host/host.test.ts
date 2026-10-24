@@ -389,6 +389,15 @@ describe("compose", () => {
 			toyTarget,
 		],
 		[
+			"a relative sandbox.path directory",
+			{ role: { name: "builder" }, lane: fresh },
+			"HOST.bind",
+			"Give an absolute path",
+			toyTarget,
+			{ sandbox: { path: ["tools"] } },
+			"sandbox.path",
+		],
+		[
 			"a target that is no git repository",
 			{ role: { name: "builder" }, lane: fresh },
 			"HOST.target",
@@ -402,9 +411,17 @@ describe("compose", () => {
 			"Set 'target.repo' relative to the file's workspace root, or the user config's directory",
 			() => join(tmp("gone"), "missing"),
 		],
-	])(
+	] as [
+		string,
+		Record<string, unknown>,
+		string,
+		string,
+		() => string,
+		Record<string, unknown>?,
+		string?,
+	][])(
 		"an agent naming %s is a HOST error",
-		async (_, config, code, hint, target) => {
+		async (_, config, code, hint, target, extra = {}, named = "") => {
 			const { host } = stubHost(() => [OK]);
 			const ir = irOf(
 				host,
@@ -413,7 +430,7 @@ describe("compose", () => {
 			);
 			const composed = await compose({
 				ir,
-				config: configOf(target()),
+				config: configOf(target(), extra),
 				core: CORE_CONFIG,
 				packs: {},
 				hosts: [host],
@@ -423,6 +440,9 @@ describe("compose", () => {
 			expect(
 				composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.hint]),
 			).toEqual([[code, hint]]);
+			expect(composed.ok ? "" : composed.diagnostics[0]?.message).toContain(
+				named,
+			);
 		},
 	);
 

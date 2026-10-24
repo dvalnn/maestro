@@ -325,14 +325,15 @@ export type RepoSetup = {
 	commandRoles: Record<string, Partial<Role>>;
 	/** The key paths `--profile` and `-c` replaced whole with `!replace`. */
 	commandReplaced: readonly KeyPath[];
+	/** The sandbox's read-only host paths: `sandbox.readOnly`, then the `sandbox.path` directories. */
 	readOnly: string[];
-	/** Absolute host directories, bound read-only, that lead every sandboxed process's PATH in order. */
-	path: string[];
+	/** The PATH of every sandboxed process: the `sandbox.path` directories in order, then the system's. */
+	path: string;
+	/** The `sandbox` keys as configured, for validation. */
+	sandbox: { readOnly: string[]; path: string[] };
 };
 
-/** The PATH of a sandboxed process: `dirs` in order, then the system's. */
-export const sandboxPath = (dirs: readonly string[]) =>
-	[...dirs, "/usr/bin:/bin"].join(":");
+const SYSTEM_PATH = "/usr/bin:/bin";
 
 const ajv = validator();
 
@@ -397,7 +398,8 @@ export function repoSetup(setup: HostSetup): RepoSetup {
 		const unset = value === undefined || isEmptyObject(value);
 		return unset ? undefined : parsed<T>(HOST_CONFIG[ns], value, ns);
 	};
-	const sandbox = namespace<RawSetup["sandbox"]>("sandbox");
+	const { readOnly = [], path = [] } =
+		namespace<RawSetup["sandbox"]>("sandbox") ?? {};
 	return {
 		store: setup.store,
 		target: targetOf(namespace<RawSetup["target"]>("target")),
@@ -408,8 +410,9 @@ export function repoSetup(setup: HostSetup): RepoSetup {
 			"roles",
 		),
 		commandReplaced: setup.commandLine.replaced,
-		readOnly: sandbox?.readOnly ?? [],
-		path: sandbox?.path ?? [],
+		readOnly: [...readOnly, ...path],
+		path: [...path, SYSTEM_PATH].join(":"),
+		sandbox: { readOnly, path },
 	};
 }
 

@@ -40,7 +40,6 @@ import {
 	repoSetup,
 	requireTarget,
 	resolveRole,
-	sandboxPath,
 	type Target,
 } from "./config";
 import { artifactInput, textInput } from "./inputs";
@@ -463,7 +462,7 @@ function extrasOf(
 	inputs: Inputs,
 	context: HostContext,
 	base: string,
-	path: readonly string[],
+	path: string,
 ): AgentChecks {
 	const attachments = Object.entries(config.attachments ?? {});
 	const checks = stageChecks(
@@ -545,16 +544,11 @@ async function execute(
 				prompt,
 				lane: lane.dir,
 				readOnly: [
-					...readOnlyBinds(
-						lane,
-						setup.readOnly,
-						setup.path,
-						config.readOnly ?? [],
-					),
+					...readOnlyBinds(lane, setup.readOnly, config.readOnly ?? []),
 					...extras.readOnly,
 				],
 				writable: extras.writable,
-				env: { PATH: sandboxPath(setup.path), ...extras.env },
+				env: { PATH: setup.path, ...extras.env },
 				identity: stage(staging.staged, prompt, identity),
 				outbox: staging.outbox,
 				outputs: Object.values(config.out ?? {}),

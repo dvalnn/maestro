@@ -93,15 +93,7 @@ async function prepare(
 	spec: CheckSpec,
 	run: InstanceRun,
 ) {
-	const s: Sandboxed = {
-		dir: lane.dir,
-		base: lane.base,
-		path: setup.path,
-		readOnly: readOnlyBinds(lane, setup.readOnly, setup.path),
-		writable: [],
-		live: run.live,
-		log: [],
-	};
+	const s = sandboxed(lane, setup, run.live);
 	const { outcome, reason } = await runLines(s, PREPARE, spec, {
 		start: (start) => run.emit({ kind: "prepare", ...start }),
 		end: ({ output, ...end }) =>
@@ -148,6 +140,21 @@ export const readOnlyBinds = (lane: Lane, ...paths: string[][]): Bind[] => [
 	...lane.readOnly,
 	...pathBinds(...paths),
 ];
+
+/** The sandbox the target's own lines run in: `lane`, the config's binds and PATH, and an empty log. */
+export const sandboxed = (
+	lane: Lane,
+	setup: RepoSetup,
+	live: Live,
+): Sandboxed => ({
+	dir: lane.dir,
+	base: lane.base,
+	path: setup.path,
+	readOnly: readOnlyBinds(lane, setup.readOnly),
+	writable: [],
+	live,
+	log: [],
+});
 
 const LANE = { [MAESTRO_TYPE]: LANE_TYPE, type: "string" };
 

@@ -21,9 +21,9 @@ import {
 	requireTarget,
 	type Target,
 } from "./config";
-import { lanePorts, laneVersion, readOnlyBinds, withLane } from "./lane-input";
+import { lanePorts, laneVersion, sandboxed, withLane } from "./lane-input";
 import { type Live, liveInstances } from "./live";
-import { runLines, type Sandboxed, type Verdict } from "./run-lines";
+import { runLines, type Verdict } from "./run-lines";
 import { carryWriter, openTarget } from "./store";
 
 /** The name an inline check goes by in reasons and logs. */
@@ -88,15 +88,7 @@ async function execute(
 		run,
 		async (open) => {
 			const { lane, read } = open;
-			const s: Sandboxed = {
-				dir: lane.dir,
-				base: lane.base,
-				path: setup.path,
-				readOnly: readOnlyBinds(lane, setup.readOnly, setup.path),
-				writable: [],
-				live,
-				log: [],
-			};
+			const s = sandboxed(lane, setup, live);
 			const verdicts: Verdict[] = [];
 			for (const [name, spec] of checks)
 				verdicts.push(await runLines(s, `check '${name}'`, spec));
