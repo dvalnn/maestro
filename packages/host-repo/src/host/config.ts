@@ -481,10 +481,15 @@ const own = <T>(record: Record<string, T>, key: string): T | undefined =>
 /** Where a role field comes from: the config file's role, the composition's inline fields, or the command line. */
 export type RoleTier = "file" | "composition" | "command";
 
+/** A role field's value and the tier that set it, with the origin of the tier it displaced, when one did. */
+export type RoleOrigin = {
+	value: string;
+	tier: RoleTier;
+	beneath?: { value: string; tier: RoleTier };
+};
+
 /** The fields a role resolves to, each with the tier that set it. */
-export type RoleOrigins = Partial<
-	Record<keyof Role, { value: string; tier: RoleTier }>
->;
+export type RoleOrigins = Partial<Record<keyof Role, RoleOrigin>>;
 
 /**
  * The fields `role` resolves to, each with its tier: the config file's role of its name, then its inline fields, then
@@ -504,10 +509,18 @@ export function roleOrigins(
 		["composition", replaced ? {} : pinned],
 		["command", own(setup.commandRoles, name)],
 	];
-	const origins: Record<string, { value: string; tier: RoleTier }> = {};
+	const origins: Record<string, RoleOrigin> = {};
 	for (const [tier, fields] of tiers)
-		for (const [field, value] of Object.entries(fields ?? {}))
-			origins[field] = { value, tier };
+		for (const [field, value] of Object.entries(fields ?? {})) {
+			const beneath = origins[field];
+			origins[field] = {
+				value,
+				tier,
+				...(beneath && {
+					beneath: { value: beneath.value, tier: beneath.tier },
+				}),
+			};
+		}
 	return origins;
 }
 

@@ -50,13 +50,22 @@ function agentsOf(deps: Deps, config: Composed, plan: Plan): AgentRole[] {
 
 const ROLE_FIELDS = ["harness", "model", "thinking"] as const;
 
-/** The `agents:` block: one row per agent, its node, role, the three fields, then the layer of each field set. */
+/** The `agents:` block: one row per agent, its node, role, the three fields, then the layer of each field set, and
+ * for a field a flag set, what the layers beneath the flag give it. */
 function agentLines(agents: readonly AgentRole[]): string {
 	const rows = agents.map((a) => [
 		a.node,
 		a.role,
 		...ROLE_FIELDS.map((f) => a[f]?.value ?? "-"),
-		ROLE_FIELDS.flatMap((f) => (a[f] ? [`${f}:${a[f].layer}`] : [])).join(" "),
+		ROLE_FIELDS.flatMap((f) => {
+			const r = a[f];
+			if (!r) return [];
+			const over =
+				r.under === undefined
+					? ""
+					: ` over ${r.under ? `${r.under.layer} ${r.under.value}` : "none"}`;
+			return [`${f}:${r.layer}${over}`];
+		}).join(" "),
 	]);
 	return `agents:\n${table(rows).replace(/^/gm, "  ")}`;
 }

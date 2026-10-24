@@ -10,23 +10,28 @@ maestro wait <concert> --timeout 15m
 
 ## Commands
 
-| Command                      | Alias | Does                                                                                                              |
-| ---------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------- |
-| `compose <composition>`      | `c`   | Builds and pre-flights a composition. `--plan` (with each agent's harness, model, thinking), `--graph`, `--out`.  |
-| `perform <composition>`      | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                  |
-| `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                            |
-| `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`. |
-| `wait <concert>`             | `wt`  | Waits for a concert to settle. `--timeout <duration>`.                                                            |
-| `watch <concert>`            | `w`   | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.             |
-| `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                               |
-| `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                   |
-| `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                      |
-| `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                          |
-| `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                |
-| `changeset show <concert>`   | `cs`  | Prints a concert's changeset as a diff on its base, the checkout untouched.[^changeset] `--stat`, `--summary`.    |
-| `changeset apply <concert>`  | `cs`  | Stages the changeset on the checkout's `HEAD` with `git apply --index --3way`, patch by patch. `--commit`.        |
-| `changeset drop`             | `cs`  | Resets the checkout's tracked files. It asks first unless given `--yes`.                                          |
-| `artifact <concert>`         | `art` | Lists a concert's artifacts, or prints an instance's files raw.[^artifact] `--path`.                              |
+| Command                      | Alias | Does                                                                                                                    |
+| ---------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
+| `compose <composition>`      | `c`   | Builds and pre-flights a composition. `--plan` (with each agent's harness, model, thinking[^plan]), `--graph`, `--out`. |
+| `perform <composition>`      | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                        |
+| `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                                  |
+| `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`.       |
+| `wait <concert>`             | `wt`  | Waits for a concert to settle. `--timeout <duration>`.                                                                  |
+| `watch <concert>`            | `w`   | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.                   |
+| `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                                     |
+| `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                         |
+| `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                            |
+| `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                                |
+| `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                      |
+| `changeset show <concert>`   | `cs`  | Prints a concert's changeset as a diff on its base, the checkout untouched.[^changeset] `--stat`, `--summary`.          |
+| `changeset apply <concert>`  | `cs`  | Stages the changeset on the checkout's `HEAD` with `git apply --index --3way`, patch by patch. `--commit`.              |
+| `changeset drop`             | `cs`  | Resets the checkout's tracked files. It asks first unless given `--yes`.                                                |
+| `artifact <concert>`         | `art` | Lists a concert's artifacts, or prints an instance's files raw.[^artifact] `--path`.                                    |
+
+[^plan]:
+    A field a `-c roles.…` flag set also shows what the layers beneath the flag give it:
+    `model:flag over profile claude-sonnet-5-5`, or `over none` when nothing sets it; `compose --json` carries it as
+    each field's `under`.
 
 [^watch]:
     On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls and thinking among

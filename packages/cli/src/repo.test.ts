@@ -370,7 +370,10 @@ describe("role precedence", () => {
 			},
 		]);
 		expect(await agents(mapped, "-c", "roles.smoke.model=big")).toMatchObject([
-			{ harness: layers("stub", "workspace"), model: layers("big", "flag") },
+			{
+				harness: layers("stub", "workspace"),
+				model: { ...layers("big", "flag"), under: layers("none", "workspace") },
+			},
 		]);
 		expect(await agents(inline)).toMatchObject([
 			{
@@ -388,11 +391,107 @@ describe("role precedence", () => {
 			"roles.smoke.model=big",
 		]);
 		expect(out).toMatch(
-			/agents:\n {2}a +smoke +stub +big +low +harness:workspace model:flag thinking:workspace$/,
+			/agents:\n {2}a +smoke +stub +big +low +harness:workspace model:flag over workspace none thinking:workspace$/,
 		);
 		expect((await w.call(["compose", inline, "--plan"])).out).toMatch(
 			/agents:\n {2}a +smoke +stub +pinned +low +harness:composition model:composition thinking:workspace$/,
 		);
+	});
+
+	test("compose --plan shows what a role flag overrides, and nothing without one", async () => {
+		const w = await repoWorld("roles:\n  smoke:\n    harness: stub\n");
+		await Bun.write(
+			join(w.cwd, ".maestro/profiles/real.yaml"),
+			"roles:\n  smoke:\n    model: claude-sonnet-5-5\n",
+		);
+		const file = await smokeFile();
+		const stub = [
+			"-c",
+			"roles.smoke.harness=stub",
+			"-c",
+			"roles.smoke.model=none",
+		];
+		const rows = (extra: string[]) =>
+			w.call(["compose", file, "--plan", ...extra]);
+
+		expect((await rows(["--profile", "real", ...stub])).out).toMatch(
+			/agents:\n {2}a +smoke +stub +none +- +harness:flag over workspace stub model:flag over profile claude-sonnet-5-5$/,
+		);
+		expect((await rows(stub)).out).toMatch(
+			/harness:flag over workspace stub model:flag over none$/,
+		);
+		const json = (extra: string[]) =>
+			w
+				.call(["compose", file, "--json", ...extra])
+				.then((r) => JSON.parse(r.out).agents);
+		expect(await json(["--profile", "real", ...stub])).toMatchObject([
+			{
+				harness: {
+					value: "stub",
+					layer: "flag",
+					under: { value: "stub", layer: "workspace" },
+				},
+				model: {
+					value: "none",
+					layer: "flag",
+					under: { value: "claude-sonnet-5-5", layer: "profile" },
+				},
+			},
+		]);
+		expect((await json(stub))[0].model.under).toBeNull();
+
+		expect(
+			(
+				await rows([
+					"--profile",
+					"real",
+					...stub,
+					"-c",
+					"roles.smoke.model=big",
+				])
+			).out,
+		).toMatch(/model:flag over profile claude-sonnet-5-5$/);
+		expect((await rows([...stub, "-c", "roles.smoke.model=big"])).out).toMatch(
+			/model:flag over none$/,
+		);
+
+		const plain = await rows(["--profile", "real"]);
+		expect(plain.out).toMatch(/harness:workspace model:profile$/);
+		expect(plain.out).not.toContain(" over ");
+		expect((await json(["--profile", "real"]))[0].model).not.toHaveProperty(
+			"under",
+		);
+	});
+
+	test("a plan's override of an inline role field names the profile over the inline value", async () => {
+		const w = await repoWorld(SMOKE_ROLE("stub"));
+		await Bun.write(
+			join(w.cwd, ".maestro/profiles/real.yaml"),
+			"roles:\n  smoke:\n    model: claude-sonnet-5-5\n",
+		);
+		const file = await pinned();
+		writeFileSync(file, readFileSync(file, "utf8").replace('"gone"', '"stub"'));
+		const { out } = await w.call([
+			"compose",
+			file,
+			"--plan",
+			"--profile",
+			"real",
+			"-c",
+			"roles.smoke.model=none",
+		]);
+		expect(out).toContain("model:flag over profile claude-sonnet-5-5");
+		expect(
+			(
+				await w.call([
+					"compose",
+					file,
+					"--plan",
+					"-c",
+					"roles.smoke.model=none",
+				])
+			).out,
+		).toContain("model:flag over composition pinned");
 	});
 
 	test("a resume reapplies the recorded profile over the inline role", async () => {

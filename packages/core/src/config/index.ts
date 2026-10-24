@@ -44,7 +44,7 @@ export type KeyPath = readonly string[];
 /** Layered config: its plain values, and the source of each value by key path. */
 export type Composed = {
 	values: Readonly<Record<string, unknown>>;
-	sources: readonly { path: KeyPath; source: Source }[];
+	sources: readonly { path: KeyPath; source: Source; under?: Under }[];
 	/** The mappings a `--profile` or `-c` layer replaced whole with `!replace`, which no layer above merged back into. */
 	replaced?: readonly KeyPath[];
 };
@@ -57,7 +57,9 @@ interface MapOf<T> {
 	replace: boolean;
 }
 type List = { kind: "list"; source: Source; items: Item[]; append: boolean };
-type Scalar = { kind: "scalar"; source: Source; value: unknown };
+/** The value a flag displaced, and the layer beneath the flags that gave it. */
+export type Under = { value: unknown; source: Source };
+type Scalar = { kind: "scalar"; source: Source; value: unknown; under?: Under };
 type Deletion = { kind: "delete"; source: Source };
 type Tagged = MapOf<Tagged> | List | Scalar | Deletion;
 type Merged = MapOf<Merged> | List | Scalar;
@@ -400,12 +402,22 @@ function mergedMap(
 	};
 }
 
+/** A scalar a flag set, with the value the layers beneath the flags gave it, when they did. */
+function flagged(beneath: Merged | undefined, top: Scalar): Scalar {
+	if (top.source.layer !== "flag" || beneath?.kind !== "scalar") return top;
+	const under =
+		beneath.source.layer === "flag"
+			? beneath.under
+			: { value: beneath.value, source: beneath.source };
+	return under ? { ...top, under } : top;
+}
+
 function merged(
 	beneath: Merged | undefined,
 	top: Exclude<Tagged, Deletion>,
 	path: KeyPath,
 ): Merged {
-	if (top.kind === "scalar") return top;
+	if (top.kind === "scalar") return flagged(beneath, top);
 	if (top.kind === "map") return mergedMap(beneath, top, path);
 	if (!top.append || beneath === undefined) return { ...top, append: false };
 	if (beneath.kind !== "list")
@@ -446,7 +458,14 @@ function plainOf(tree: Merged): unknown {
 }
 
 function sourcesOf(tree: Merged, path: KeyPath): Composed["sources"] {
-	if (tree.kind === "scalar") return [{ path, source: tree.source }];
+	if (tree.kind === "scalar")
+		return [
+			{
+				path,
+				source: tree.source,
+				...(tree.under && { under: tree.under }),
+			},
+		];
 	if (tree.kind === "list")
 		return [
 			{ path, source: tree.source },
@@ -535,6 +554,14 @@ export function sourceOf(
 		.filter((s) => within(s.path, path))
 		.toSorted((a, b) => b.path.length - a.path.length);
 	return (above[0] ?? sources.find((s) => within(path, s.path)))?.source;
+}
+
+/** What the layers beneath the flags gave the value at `path` a flag set, or undefined when none gave it. */
+export function underOf(
+	{ sources }: Composed,
+	path: KeyPath,
+): Under | undefined {
+	return sources.find((s) => s.path.join("\0") === path.join("\0"))?.under;
 }
 
 /** Where a value under check sits in the config, and how its diagnostics name it and the fix. */

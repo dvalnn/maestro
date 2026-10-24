@@ -1,4 +1,9 @@
-import { type Composed, type LayerName, sourceOf } from "@maestro/core/config";
+import {
+	type Composed,
+	type LayerName,
+	sourceOf,
+	underOf,
+} from "@maestro/core/config";
 import { type Bounds, type Host, hostSetup } from "@maestro/core/host";
 import type { IrNode } from "@maestro/ir";
 import type { Harness, Role } from "../harness/index";
@@ -39,7 +44,13 @@ export type RepoHostOptions = {
 };
 
 /** A role field's value, and the config layer, or `composition`, that set it. */
-type Resolved = { value: string; layer: LayerName | "composition" };
+type Origin = { value: string; layer: LayerName | "composition" };
+
+/**
+ * A role field's value and layer, and, when a flag set it, `under`: what the layers beneath the flag give it, or null
+ * when none does.
+ */
+type Resolved = Origin & { under?: Origin | null };
 
 /** An agent node, its role and the fields the role resolves to; a field nothing sets is absent. */
 export type AgentRole = { node: string; role: string } & Partial<
@@ -62,6 +73,26 @@ function layerOf(
 	return source.layer;
 }
 
+/**
+ * What the layers beneath a flag give a role field: the profile's, which beats the composition's inline field, which
+ * beats the config files', else null.
+ */
+function underRole(
+	config: Composed,
+	role: string,
+	field: string,
+	beneath: { value: string; tier: RoleTier } | undefined,
+): Origin | null {
+	const under = underOf(config, ["roles", role, field]);
+	if (under?.source.layer === "profile")
+		return { value: String(under.value), layer: "profile" };
+	if (beneath?.tier === "composition")
+		return { value: beneath.value, layer: "composition" };
+	return under
+		? { value: String(under.value), layer: under.source.layer }
+		: null;
+}
+
 /** The agent nodes among `nodes`, each with its role's name and the fields it resolves to under `config`, with layers. */
 export function agentRoles(
 	nodes: readonly IrNode[],
@@ -73,11 +104,13 @@ export function agentRoles(
 		if (n.kind !== AGENT_KIND) return [];
 		const { role } = agentConfig(n.config);
 		const fields = Object.entries(roleOrigins(role, repo)).map(
-			([field, { value, tier }]) =>
-				[
-					field,
-					{ value, layer: layerOf(config, role.name, field, tier) },
-				] as const,
+			([field, { value, tier, beneath }]) => {
+				const layer = layerOf(config, role.name, field, tier);
+				const resolved: Resolved = { value, layer };
+				if (layer === "flag")
+					resolved.under = underRole(config, role.name, field, beneath);
+				return [field, resolved] as const;
+			},
 		);
 		return [{ node: n.id, role: role.name, ...Object.fromEntries(fields) }];
 	});
