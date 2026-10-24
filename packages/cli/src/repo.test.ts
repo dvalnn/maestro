@@ -588,6 +588,40 @@ describe("changeset", () => {
 		});
 	});
 
+	test("a profile-performed concert's changeset reads from outside its workspace with -C, and without it names the workspace", async () => {
+		const w = await edited();
+		await Bun.write(join(w.cwd, ".maestro/profiles/free.yaml"), "{}\n");
+		const id = idOf(
+			await w.call(["perform", join(REPO, "edit.ts"), "--profile", "free"]),
+		);
+		const outside = { env: GIT_ENV, cwd: await scratch() };
+		const cs = (...args: string[]) =>
+			w.call(["cs", "show", id, ...args], outside);
+		expect(await cs("-C", w.target)).toMatchObject({
+			code: 0,
+			out: expect.stringContaining("+edited"),
+		});
+		expect(await cs("-c", `target.repo=${w.target}`)).toMatchObject({
+			code: 0,
+		});
+		const refused = await cs();
+		expect(refused.code).toBe(1);
+		expect(refused.err).toMatch(
+			/profile needs its workspace\nPass -C <repo>, or run from inside workspace 'ws'$/,
+		);
+		expect(refused.err).not.toContain("Resume");
+
+		const ambient = join(w.root, "config/maestro/config.yaml");
+		await Bun.write(ambient, `target:\n  repo: ${w.target}\n`);
+		expect(await cs()).toMatchObject({ code: 1, err: refused.err });
+		rmSync(ambient);
+
+		rmSync(join(w.cwd, ".maestro/profiles/free.yaml"));
+		const missing = await w.call(["cs", "show", id], { env: GIT_ENV });
+		expect(missing.err).toContain("Restore");
+		expect(missing.err).not.toContain("needs its workspace");
+	});
+
 	test("changeset takes the result's changeset, else the last ok one with a warning, and refuses an empty one", async () => {
 		const w = await edited("pick.ts");
 		expect((await w.cs("show", w.id)).out).toContain("+kept");

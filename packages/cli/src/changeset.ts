@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { ConfigError } from "@maestro/core/config";
 import type {
 	ConcertRecord,
 	InstanceRecord,
@@ -39,6 +40,7 @@ import {
 	openSession,
 	overridesOf,
 	recordedOf,
+	type Session,
 	type Stored,
 	withSession,
 } from "./session";
@@ -185,29 +187,63 @@ function chosen(store: Records, row: ConcertRecord, node?: string) {
 	return { instance, ref };
 }
 
+const repoOf = ({ config }: Session) => {
+	const target = config.composed.values.target;
+	const repo = isPlainObject(target) ? target.repo : undefined;
+	return typeof repo === "string" ? repo : undefined;
+};
+
+const NAMES_REPO = "target.repo=";
+
+/**
+ * The session for `layered` over `recorded`, a concert's `--profile` and `-c`, or over nothing when `recorded` does not
+ * load outside any workspace and `layered` names the checkout.
+ * @throws ConfigError, as `recorded` raised it, when the current directory is inside a workspace.
+ * @throws CliError when `recorded` does not load outside a workspace and `layered` names no checkout, naming the
+ * concert's `workspace`.
+ */
+async function sessionOf(
+	deps: Deps,
+	layered: Overrides,
+	recorded: Overrides,
+	workspace: string,
+): Promise<Session> {
+	try {
+		return await openSession(deps, recorded, layered);
+	} catch (error) {
+		if (!(error instanceof ConfigError)) throw error;
+		const own = await openSession(deps, layered);
+		if (own.config.workspace) throw error;
+		if (layered.config?.some((c) => c.startsWith(NAMES_REPO))) return own;
+		throw new CliError(
+			`concert ${recorded.recorded}'s profile needs its workspace\nPass -C <repo>${workspace && `, or run from inside workspace '${workspace}'`}`,
+		);
+	}
+}
+
 /**
  * The checkout `target.repo` names in the config files layered with `recorded`, a concert's `--profile` and `-c` when
  * given, then this command's own, `-C` last.
- * @throws CliError, a usage error, when `target.repo` is not set.
+ * @throws CliError, a usage error, when `target.repo` is not set; else as `sessionOf` does.
  */
 async function checkoutOf(
 	deps: Deps,
 	values: Values,
-	...recorded: Overrides[]
+	recorded?: Overrides,
+	workspace = "",
 ): Promise<Checkout> {
 	const own = overridesOf(values);
 	const repo = textOf(values, "repo");
 	const sugar =
 		repo === undefined
 			? []
-			: [`target.repo=${JSON.stringify(resolve(deps.cwd, repo))}`];
-	const { config } = await openSession(deps, ...recorded, {
-		...own,
-		config: [...(own.config ?? []), ...sugar],
-	});
-	const target = config.composed.values.target;
-	const found = isPlainObject(target) ? target.repo : undefined;
-	if (typeof found !== "string")
+			: [`${NAMES_REPO}${JSON.stringify(resolve(deps.cwd, repo))}`];
+	const layered = { ...own, config: [...(own.config ?? []), ...sugar] };
+	const session = recorded
+		? await sessionOf(deps, layered, recorded, workspace)
+		: await openSession(deps, layered);
+	const found = repoOf(session);
+	if (found === undefined)
 		throw usageError("config 'target.repo' is not set", "Pass -C <repo>");
 	return { repo: found, env: deps.env };
 }
@@ -242,7 +278,12 @@ async function picked(stored: Stored, prefix: string): Promise<Picked> {
 	const dir = join(artifactsOf(session, row.id), ref.path);
 	return {
 		...(await readChangeset(dir, short)),
-		checkout: await checkoutOf(session.deps, values, recordedOf(store, row)),
+		checkout: await checkoutOf(
+			session.deps,
+			values,
+			recordedOf(store, row),
+			row.workspace,
+		),
 		row,
 		short,
 		instance: instanceName(row.ir, instance),
