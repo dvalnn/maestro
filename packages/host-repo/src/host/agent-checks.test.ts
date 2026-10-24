@@ -20,6 +20,9 @@ import {
 
 afterEach(cleanup);
 
+/** The whole agent run: it waits out two 500ms check timeouts and a kill, each slower on a loaded machine. */
+const AGENT_RUN_TEST_MS = 60_000;
+
 const builder = { role: { name: "builder" } };
 type Dirs = { store: string; dataRoot: string; repo: string };
 const markdown = (file: string) => ({ file, format: "markdown" });
@@ -40,108 +43,112 @@ function configWith(checks: Record<string, unknown>) {
 }
 
 describe("agent-runnable checks and attachments", () => {
-	test("an agent reads an attachment at /in, runs `check` from its sandbox, and the staged prompt lists both", async () => {
-		const cache = tmp("cache");
-		const config = configWith({
-			lint: {
-				run: [
-					"echo linting $MODE",
-					"pwd",
-					"echo base=$MAESTRO_LANE_BASE",
-					`echo ran > ${cache}/lint-ran`,
-				],
-				env: { MODE: "ci", MAESTRO_LANE_BASE: "spoofed" },
-				writable: [cache],
-			},
-			red: ["true", "exit 1"],
-			slow: { run: "sleep 5", timeout: "500ms" },
-			stubborn: { run: "trap '' TERM; sleep 30", timeout: "500ms" },
-			crash: "kill -SEGV $$",
-			killed: "exit 137",
-		});
-		const { host, requests } = stubHost((req) =>
-			req.prompt.startsWith("write")
-				? [{ write: "/out/n.md", content: "the notes" }, OK]
-				: [
-						{ sh: "cat /in/notes > /out/ref.md" },
-						{
-							sh: `(cd /tmp; check lint; check red; check slow; check stubborn; check crash; check killed; check nope) > /out/check.md 2>&1; echo "env:\${MODE-unset}" >> /out/check.md`,
-						},
-						{ sh: `echo hi > ${cache}/agent.txt` },
-						{
-							sh: "(echo x > /in/notes) 2>/dev/null || echo readonly > /out/ro.md",
-						},
-						OK,
+	test(
+		"an agent reads an attachment at /in, runs `check` from its sandbox, and the staged prompt lists both",
+		async () => {
+			const cache = tmp("cache");
+			const config = configWith({
+				lint: {
+					run: [
+						"echo linting $MODE",
+						"pwd",
+						"echo base=$MAESTRO_LANE_BASE",
+						`echo ran > ${cache}/lint-ran`,
 					],
-		);
-		const specs: NodeSpec[] = [
-			{
-				id: "writer",
-				kind: "agent",
-				config: {
-					...builder,
-					lane: fresh,
-					out: { notes: markdown("n.md") },
+					env: { MODE: "ci", MAESTRO_LANE_BASE: "spoofed" },
+					writable: [cache],
 				},
-				literals: { prompt: "write" },
-			},
-			{
-				id: "reader",
-				kind: "agent",
-				config: {
-					...builder,
-					lane: fresh,
-					checks: ["lint", "red", "slow", "stubborn", "crash", "killed"],
-					attachments: {
-						notes: {
-							hint: "read when you need the notes",
-							type: "core.markdown",
+				red: ["true", "exit 1"],
+				slow: { run: "sleep 5", timeout: "500ms" },
+				stubborn: { run: "trap '' TERM; sleep 30", timeout: "500ms" },
+				crash: "kill -SEGV $$",
+				killed: "exit 137",
+			});
+			const { host, requests } = stubHost((req) =>
+				req.prompt.startsWith("write")
+					? [{ write: "/out/n.md", content: "the notes" }, OK]
+					: [
+							{ sh: "cat /in/notes > /out/ref.md" },
+							{
+								sh: `(cd /tmp; check lint; check red; check slow; check stubborn; check crash; check killed; check nope) > /out/check.md 2>&1; echo "env:\${MODE-unset}" >> /out/check.md`,
+							},
+							{ sh: `echo hi > ${cache}/agent.txt` },
+							{
+								sh: "(echo x > /in/notes) 2>/dev/null || echo readonly > /out/ro.md",
+							},
+							OK,
+						],
+			);
+			const specs: NodeSpec[] = [
+				{
+					id: "writer",
+					kind: "agent",
+					config: {
+						...builder,
+						lane: fresh,
+						out: { notes: markdown("n.md") },
+					},
+					literals: { prompt: "write" },
+				},
+				{
+					id: "reader",
+					kind: "agent",
+					config: {
+						...builder,
+						lane: fresh,
+						checks: ["lint", "red", "slow", "stubborn", "crash", "killed"],
+						attachments: {
+							notes: {
+								hint: "read when you need the notes",
+								type: "core.markdown",
+							},
+						},
+						out: {
+							ref: markdown("ref.md"),
+							check: markdown("check.md"),
+							ro: markdown("ro.md"),
 						},
 					},
-					out: {
-						ref: markdown("ref.md"),
-						check: markdown("check.md"),
-						ro: markdown("ro.md"),
-					},
+					literals: { prompt: "read" },
+					wires: { notes: "writer.notes" },
 				},
-				literals: { prompt: "read" },
-				wires: { notes: "writer.notes" },
-			},
-		];
-		const { result, artifact } = await performed(
-			host,
-			irOf(host, specs, "reader"),
-			config,
-		);
+			];
+			const { result, artifact } = await performed(
+				host,
+				irOf(host, specs, "reader"),
+				config,
+			);
 
-		expect(result).toMatchObject({ outcome: "ok", node: "reader" });
-		expect(readFileSync(artifact("reader", "ref"), "utf8")).toBe("the notes");
-		const log = readFileSync(artifact("reader", "check"), "utf8");
-		expect(log).toContain("$ echo linting $MODE\nlinting ci\n");
-		expect(log).toContain("\n/lane\n");
-		const main = Bun.spawnSync(["git", "rev-parse", "main"], {
-			cwd: config.values.target.repo,
-		});
-		expect(log).toContain(`\nbase=${main.stdout.toString().trim()}\n`);
-		expect(log).toContain("check 'lint': ok");
-		expect(log).toContain("[check red line 2 exited 1]");
-		expect(log).toContain("check 'red': rejected");
-		expect(log).toContain("check 'slow': failed");
-		expect(log).toContain("check 'stubborn': failed");
-		expect(log).toContain("check 'crash': rejected");
-		expect(log).toContain("check 'killed': failed");
-		expect(log).toContain(
-			"check: 'nope' is not one of: 'lint', 'red', 'slow', 'stubborn', 'crash', 'killed'",
-		);
-		expect(log).toContain("env:unset");
-		expect(readFileSync(artifact("reader", "ro"), "utf8")).toBe("readonly\n");
-		expect(readFileSync(join(cache, "agent.txt"), "utf8")).toBe("hi\n");
-		expect(readFileSync(join(cache, "lint-ran"), "utf8")).toBe("ran\n");
-		const prompt = requests[1]?.prompt ?? "";
-		expect(prompt).toContain("- /in/notes: read when you need the notes");
-		expect(prompt).toContain("`check <name>`, and do not write your own");
-		expect(prompt).toContain("- check red: true && exit 1");
-	});
+			expect(result).toMatchObject({ outcome: "ok", node: "reader" });
+			expect(readFileSync(artifact("reader", "ref"), "utf8")).toBe("the notes");
+			const log = readFileSync(artifact("reader", "check"), "utf8");
+			expect(log).toContain("$ echo linting $MODE\nlinting ci\n");
+			expect(log).toContain("\n/lane\n");
+			const main = Bun.spawnSync(["git", "rev-parse", "main"], {
+				cwd: config.values.target.repo,
+			});
+			expect(log).toContain(`\nbase=${main.stdout.toString().trim()}\n`);
+			expect(log).toContain("check 'lint': ok");
+			expect(log).toContain("[check red line 2 exited 1]");
+			expect(log).toContain("check 'red': rejected");
+			expect(log).toContain("check 'slow': failed");
+			expect(log).toContain("check 'stubborn': failed");
+			expect(log).toContain("check 'crash': rejected");
+			expect(log).toContain("check 'killed': failed");
+			expect(log).toContain(
+				"check: 'nope' is not one of: 'lint', 'red', 'slow', 'stubborn', 'crash', 'killed'",
+			);
+			expect(log).toContain("env:unset");
+			expect(readFileSync(artifact("reader", "ro"), "utf8")).toBe("readonly\n");
+			expect(readFileSync(join(cache, "agent.txt"), "utf8")).toBe("hi\n");
+			expect(readFileSync(join(cache, "lint-ran"), "utf8")).toBe("ran\n");
+			const prompt = requests[1]?.prompt ?? "";
+			expect(prompt).toContain("- /in/notes: read when you need the notes");
+			expect(prompt).toContain("`check <name>`, and do not write your own");
+			expect(prompt).toContain("- check red: true && exit 1");
+		},
+		AGENT_RUN_TEST_MS,
+	);
 
 	test("a check with no timeout has no deadline in its spec", () => {
 		const target = repoSetup({
