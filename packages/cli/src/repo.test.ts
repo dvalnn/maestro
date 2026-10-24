@@ -346,6 +346,55 @@ describe("role precedence", () => {
 		expect(await w.call(["perform", file])).toMatchObject({ code: 0 });
 	});
 
+	test("compose names what each agent runs on and the layer that set it, in text and JSON", async () => {
+		const w = await repoWorld(
+			"roles:\n  smoke:\n    harness: stub\n    model: none\n    thinking: low\n",
+		);
+		const mapped = await smokeFile();
+		const inline = await pinned();
+		writeFileSync(
+			inline,
+			readFileSync(inline, "utf8").replace('"gone"', '"stub"'),
+		);
+		const agents = async (file: string, ...flags: string[]) =>
+			json(await w.call(["compose", file, "--json", ...flags])).agents;
+		const layers = (v: string, layer: string) => ({ value: v, layer });
+
+		expect(await agents(mapped)).toEqual([
+			{
+				node: "a",
+				role: "smoke",
+				harness: layers("stub", "workspace"),
+				model: layers("none", "workspace"),
+				thinking: layers("low", "workspace"),
+			},
+		]);
+		expect(await agents(mapped, "-c", "roles.smoke.model=big")).toMatchObject([
+			{ harness: layers("stub", "workspace"), model: layers("big", "flag") },
+		]);
+		expect(await agents(inline)).toMatchObject([
+			{
+				harness: layers("stub", "composition"),
+				model: layers("pinned", "composition"),
+				thinking: layers("low", "workspace"),
+			},
+		]);
+
+		const { out } = await w.call([
+			"compose",
+			mapped,
+			"--plan",
+			"-c",
+			"roles.smoke.model=big",
+		]);
+		expect(out).toMatch(
+			/agents:\n {2}a +smoke +stub +big +low +harness:workspace model:flag thinking:workspace\n/,
+		);
+		expect((await w.call(["compose", inline, "--plan"])).out).toMatch(
+			/agents:\n {2}a +smoke +stub +pinned +low +harness:composition model:composition thinking:workspace\n/,
+		);
+	});
+
 	test("a resume reapplies the recorded profile over the inline role", async () => {
 		const w = await repoWorld(SMOKE_ROLE("gone"));
 		const gate = join(w.cwd, "gate");

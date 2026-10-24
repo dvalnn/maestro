@@ -20,7 +20,10 @@ unless given `--out`.
   perform will run. Perform never uses the example set.
 - Default output: one line, `<name>: <count> node instances, <count> repo.agent`, with `up to` where a group or loop
   bounds it. Warnings and diagnostics go to stderr.
-- `--plan` prints every node with its kind and count, and the bounds. `--graph` prints a Mermaid flowchart.
+- `--plan` prints every node with its kind and count, an `agents:` block with each agent's resolved harness, model and
+  thinking and the layer that set each (`default`, `user`, `workspace`, `profile`, `flag`, or `composition` for an
+  inline role field), and the bounds. `--json` adds the same as `agents` beside `plan`. `--graph` prints a Mermaid
+  flowchart.
 - `--out plan.json` saves the IR, with a bare file's code beside it as `plan.bundle.js`. `maestro perform plan.json`
   performs exactly that IR, taking no param flags.
 

@@ -3,7 +3,9 @@
 The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `Plan` in, a string out.
 
 - `summary(plan)`: one line, for example `fanout: up to 16 node instances`.
-- `listing(plan)`: each node with its kind and instance count and its expansions, then the bounds and any warnings.
+- `listing(plan, agents)`: each node with its kind and instance count and its expansions, then an `agents:` block when
+  `agents` is not empty (one row per agent: node, role, harness, model, thinking, and the layer of each field set), the
+  bounds and any warnings.
 - `render(plan)`: a Mermaid flowchart. Scopes and groups are subgraphs, and a node inside one is named by its id's last
   segment, and every subgraph's title is its path relative to its container. A code node shows its worker export only
   when it differs from that name. A group's header, inside the subgraph that names its id, shows its kind and its

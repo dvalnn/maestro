@@ -467,26 +467,47 @@ export const listed = (names: Iterable<string>) =>
 const own = <T>(record: Record<string, T>, key: string): T | undefined =>
 	Object.hasOwn(record, key) ? record[key] : undefined;
 
+/** Where a role field comes from: the config file's role, the composition's inline fields, or the command line. */
+export type RoleTier = "file" | "composition" | "command";
+
+/** The fields a role resolves to, each with the tier that set it. */
+export type RoleOrigins = Partial<
+	Record<keyof Role, { value: string; tier: RoleTier }>
+>;
+
 /**
- * The fields `role` resolves to: the config file's role of its name, then its inline fields, then the command line's
- * fields of that role. Each field comes from the highest of those that sets it, and a role the command line replaced
- * whole has no inline fields.
+ * The fields `role` resolves to, each with its tier: the config file's role of its name, then its inline fields, then
+ * the command line's fields of that role. Each field comes from the highest tier that sets it, and a role the command
+ * line replaced whole has no inline fields.
  */
-export const roleFields = (
+export function roleOrigins(
 	role: AgentConfig["role"],
 	setup: RepoSetup,
-): Partial<Role> => {
+): RoleOrigins {
 	const { name, ...pinned } = role;
 	const replaced = setup.commandReplaced.some(
 		(path) => path[0] === "roles" && (path.length === 1 || path[1] === name),
 	);
-	const inline = replaced ? {} : pinned;
-	return {
-		...own(setup.roles, name),
-		...inline,
-		...own(setup.commandRoles, name),
-	};
-};
+	const tiers: [RoleTier, Partial<Role> | undefined][] = [
+		["file", own(setup.roles, name)],
+		["composition", replaced ? {} : pinned],
+		["command", own(setup.commandRoles, name)],
+	];
+	const origins: Record<string, { value: string; tier: RoleTier }> = {};
+	for (const [tier, fields] of tiers)
+		for (const [field, value] of Object.entries(fields ?? {}))
+			origins[field] = { value, tier };
+	return origins;
+}
+
+/** The fields `role` resolves to, as `roleOrigins` says. */
+export const roleFields = (
+	role: AgentConfig["role"],
+	setup: RepoSetup,
+): Partial<Role> =>
+	Object.fromEntries(
+		Object.entries(roleOrigins(role, setup)).map(([k, o]) => [k, o.value]),
+	);
 
 /**
  * The role `config` names, resolved as `roleFields` says.

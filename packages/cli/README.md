@@ -12,7 +12,7 @@ maestro wait <concert> --timeout 15m
 
 | Command                      | Alias | Does                                                                                                              |
 | ---------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------- |
-| `compose <composition>`      | `c`   | Builds and pre-flights a composition. `--plan`, `--graph`, `--out <file>`.                                        |
+| `compose <composition>`      | `c`   | Builds and pre-flights a composition. `--plan` (with each agent's harness, model, thinking), `--graph`, `--out`.  |
 | `perform <composition>`      | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                  |
 | `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                            |
 | `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`. |

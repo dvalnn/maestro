@@ -1,7 +1,8 @@
 import { dirname, resolve } from "node:path";
 import type { Composed } from "@maestro/core/config";
+import { agentRoles, HOST_NAME } from "@maestro/host-repo";
 import { canonicalJson, isPlainObject, type Plan } from "@maestro/ir";
-import { listing, render, summary } from "@maestro/render-text";
+import { type AgentRole, listing, render, summary } from "@maestro/render-text";
 import {
 	COMMON,
 	type Command,
@@ -10,7 +11,6 @@ import {
 	isSet,
 	peek,
 	textOf,
-	type Values,
 } from "./command";
 import { EXIT, jsonOf, renderDiagnostic, table } from "./output";
 import {
@@ -42,13 +42,25 @@ async function save(prepared: Prepared, out: string) {
 	await Bun.write(file, `${canonicalJson(saved.ir)}\n`);
 }
 
+/** What each agent node of `plan` will run on, and the layer that set each field. */
+function agentsOf(deps: Deps, config: Composed, plan: Plan): AgentRole[] {
+	const host = deps.hosts.find((h) => h.name === HOST_NAME);
+	return host ? agentRoles(plan.ir.nodes, config, host) : [];
+}
+
 /** Prints the warnings on stderr, then the summary, or the plan in full with `--plan`, and the graph with `--graph`. */
-function print(deps: Deps, plan: Plan, values: Values): void {
+function print(deps: Deps, prepared: Prepared, plan: Plan): void {
+	const { values } = prepared;
 	const { err } = colorOf(deps, values);
 	for (const d of plan.diagnostics) deps.stderr(renderDiagnostic(d, err));
 	const full = isSet(values, "plan");
 	const graph = isSet(values, "graph");
-	if (full || !graph) deps.stdout(full ? listing(plan) : summary(plan));
+	if (full || !graph)
+		deps.stdout(
+			full
+				? listing(plan, agentsOf(deps, prepared.config, plan))
+				: summary(plan),
+		);
 	if (graph) deps.stdout(render(plan));
 }
 
@@ -65,10 +77,16 @@ export const compose: Command = {
 		const out = textOf(prepared.values, "out");
 		if (out) await save(prepared, out);
 		if (json) {
-			deps.stdout(jsonOf({ ok: true, plan }));
+			deps.stdout(
+				jsonOf({
+					ok: true,
+					plan,
+					agents: agentsOf(deps, prepared.config, plan),
+				}),
+			);
 			return EXIT.ok;
 		}
-		print(deps, plan, prepared.values);
+		print(deps, prepared, plan);
 		if (out) deps.stderr(`wrote ${out}`);
 		return EXIT.ok;
 	},
