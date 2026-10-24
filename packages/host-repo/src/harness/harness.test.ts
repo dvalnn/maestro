@@ -115,7 +115,7 @@ test("a fault kills the run and fails it with the reason", async () => {
 	});
 });
 
-test("a run that exits cleanly without settling fails", async () => {
+test("a run that exits cleanly without settling fails as transient", async () => {
 	const silent = subprocessHarness({
 		name: "silent",
 		spec: () => ({ argv: ["true"] }),
@@ -124,6 +124,7 @@ test("a run that exits cleanly without settling fails", async () => {
 	expect(await silent.run(request("x")).result).toMatchObject({
 		outcome: "failed",
 		reason: "harness ended without settling",
+		transient: true,
 	});
 });
 

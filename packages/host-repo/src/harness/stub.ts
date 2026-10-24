@@ -66,7 +66,11 @@ function eventOf(e: JsonObject): HarnessEvent {
 		case "settled":
 			return { kind: "settled" };
 		case "fault":
-			return { kind: "fault", reason: String(e.reason) };
+			return {
+				kind: "fault",
+				reason: String(e.reason),
+				...(e.transient === true && { transient: true }),
+			};
 		case "usage":
 			return {
 				kind: "usage",

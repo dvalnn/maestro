@@ -20,6 +20,7 @@ import {
 import {
 	type Harness,
 	type HarnessRequest,
+	type HarnessResult,
 	type Metrics,
 	OUTBOX,
 	type Output,
@@ -55,6 +56,11 @@ import {
 
 /** Turns that ask the agent again for an envelope, after its first final reply is not one. */
 const MAX_CORRECTIONS = 2;
+
+/** Retries of an agent's turn after a transient provider error, per node. */
+const MAX_RETRIES = 2;
+/** How long an agent waits before a retry. */
+const RETRY_WAIT_MS = 30_000;
 
 const TEXT = { type: "string" };
 
@@ -290,6 +296,20 @@ async function turn(
 	return run.result;
 }
 
+const CUT_OFF =
+	"Your last turn was cut off by a provider error. Carry on from where you were.";
+
+/** Waits `ms`, or until `live` is stopped. */
+function pause(ms: number, live: Live): Promise<void> {
+	return new Promise((resolve) => {
+		const timer = setTimeout(resolve, ms);
+		live.stop = async () => {
+			clearTimeout(timer);
+			resolve();
+		};
+	});
+}
+
 /** What follows an agent's final reply: how the run ends, or the correction to send. */
 type Next = { envelope: Envelope } | { failure: string } | { prompt: string };
 
@@ -303,7 +323,34 @@ function next(reply: string, spent: boolean, kind: ReplyKind): Next {
 		: { prompt: correction(envelope, kind) };
 }
 
-/** Runs the agent, then corrects it in the same session while its final reply is not an envelope. */
+/**
+ * Why a failed `result` ends the node, or `undefined` once the wait for a retry is over and the turn may run again. A
+ * transient failure with `retries` spent, or any other, ends it.
+ */
+async function recover(
+	result: HarnessResult,
+	retries: number,
+	live: Live,
+	emit: HostContext["emit"],
+): Promise<string | undefined> {
+	const reason = result.reason ?? "the harness failed";
+	if (!result.transient) return reason;
+	if (live.cancelled) return "cancelled";
+	if (retries === MAX_RETRIES)
+		return `${reason} (after ${retries + 1} attempts)`;
+	emit({
+		kind: "fault",
+		reason: `${reason}. Retry ${retries + 1} of ${MAX_RETRIES} in ${RETRY_WAIT_MS / 1000}s`,
+		transient: true,
+	});
+	await pause(RETRY_WAIT_MS, live);
+	return undefined;
+}
+
+/**
+ * Runs the agent, then corrects it in the same session while its final reply is not an envelope. A transient failure
+ * runs the turn again in the same session, after a wait, up to `MAX_RETRIES` times.
+ */
 async function converse(
 	harness: Harness,
 	req: HarnessRequest,
@@ -314,16 +361,24 @@ async function converse(
 ): Promise<Turns> {
 	const metrics: Metrics = {};
 	let prompt = req.prompt;
-	for (let corrections = 0; ; corrections++) {
+	let corrections = 0;
+	let retries = 0;
+	for (;;) {
 		if (live.cancelled) return { metrics, failure: "cancelled" };
 		const result = await turn(harness, { ...req, prompt }, live, context.emit);
 		addMetrics(metrics, result.metrics);
-		if (result.outcome === "failed")
-			return { metrics, failure: result.reason ?? "the harness failed" };
+		if (result.outcome === "failed") {
+			const failure = await recover(result, retries, live, context.emit);
+			if (failure !== undefined) return { metrics, failure };
+			retries++;
+			prompt = CUT_OFF;
+			continue;
+		}
 		const step = next(result.reply, corrections === MAX_CORRECTIONS, kind);
 		if (!("prompt" in step)) return { metrics, ...step };
 		prompt = step.prompt;
-		writeFileSync(join(staged, `correction-${corrections + 1}.md`), prompt);
+		corrections++;
+		writeFileSync(join(staged, `correction-${corrections}.md`), prompt);
 	}
 }
 

@@ -283,6 +283,25 @@ describe("stand-in claude", () => {
 		expect(result.reason).toContain("`claude setup-token`");
 	});
 
+	test.each([
+		[{ api_error_status: 408, result: "API Error: 408 request timeout" }, true],
+		[{ api_error_status: 401, result: "API Error: 401 unauthorized" }, false],
+	])(
+		"a result's transient mark follows its API error status",
+		async (extra, transient) => {
+			const line = JSON.stringify({
+				type: "result",
+				subtype: "success",
+				is_error: true,
+				...extra,
+			});
+			const result = await claudeHarness(standIn([line])).run(request("x"))
+				.result;
+			expect(result.outcome).toBe("failed");
+			expect(result.transient).toBe(transient || undefined);
+		},
+	);
+
 	test("a result that is not a success fails, naming its subtype", async () => {
 		const line = JSON.stringify({ type: "result", subtype: "error_max_turns" });
 		const result = await claudeHarness(standIn([line])).run(request("x"))

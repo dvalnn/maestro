@@ -66,8 +66,11 @@ export type HarnessEvent =
 	| { kind: "usage"; metrics: Metrics }
 	/** The harness finished all its work and will not continue on its own. A run without one is `failed`. */
 	| { kind: "settled" }
-	/** The harness cannot be trusted to continue: the run is killed and fails with `reason`. */
-	| { kind: "fault"; reason: string }
+	/**
+	 * The harness cannot be trusted to continue: the run is killed and fails with `reason`. `transient` says the
+	 * provider error behind it may pass, so the same session may try again.
+	 */
+	| { kind: "fault"; reason: string; transient?: boolean }
 	/** A well-formed harness event the adapter has no model for. */
 	| { kind: "raw"; data: unknown };
 
@@ -75,6 +78,8 @@ export type HarnessResult = {
 	/** `failed` covers the run not completing, including cancel (reason `cancelled`). */
 	outcome: "ok" | "failed";
 	reason?: string;
+	/** Whether the failure may pass on a retry in the same session: a transient fault, or a stream that ended early. */
+	transient?: boolean;
 	/** Text of the agent's last assistant message, `""` when there was none. */
 	reply: string;
 	metrics: Metrics;

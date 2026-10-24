@@ -40,6 +40,24 @@ export const isObject = (v: unknown): v is JsonObject =>
 export const finite = (v: unknown): number =>
 	typeof v === "number" && Number.isFinite(v) ? v : 0;
 
+/** Whether HTTP status `status` is one a provider error may pass with: a timeout, rate limit or server error. */
+const transientStatus = (status: number) =>
+	status === 408 || status === 429 || (status >= 500 && status <= 599);
+
+const TRANSIENT_TEXT = /overloaded|rate.?limit|timed?[ -]?out/i;
+const LEADING_STATUS = /^(?:API Error:?\s*)?(\d{3})\b/i;
+
+/** Whether a provider error with API status `status`, if known, and message `text` may pass. */
+export function isTransient(status: unknown, text: string): boolean {
+	const stated = typeof status === "number" ? status : undefined;
+	const leading = Number(LEADING_STATUS.exec(text.trim())?.[1]);
+	return (
+		(stated !== undefined && transientStatus(stated)) ||
+		transientStatus(leading) ||
+		TRANSIENT_TEXT.test(text)
+	);
+}
+
 function objectOf(line: string): JsonObject | undefined {
 	try {
 		const value: unknown = JSON.parse(line);
@@ -59,6 +77,7 @@ type Tally = {
 	reply: string;
 	settled: boolean;
 	fault?: string;
+	transient?: boolean;
 };
 
 /** A consumer that stops iterating `events` closes the stream, and the run carries on without it. */
@@ -72,7 +91,10 @@ function fold(tally: Tally, e: HarnessEvent) {
 	if (e.kind === "usage") addUsage(tally.metrics, e.metrics);
 	else if (e.kind === "text") tally.reply = e.text;
 	else if (e.kind === "settled") tally.settled = true;
-	else if (e.kind === "fault") tally.fault ??= e.reason;
+	else if (e.kind === "fault" && tally.fault === undefined) {
+		tally.fault = e.reason;
+		tally.transient = e.transient;
+	}
 }
 
 /**
@@ -119,14 +141,16 @@ function settle(
 	error: string | undefined,
 ): HarnessResult {
 	const { metrics, reply } = tally;
-	const fail = (reason: string): HarnessResult => ({
+	const fail = (reason: string, transient = false): HarnessResult => ({
 		outcome: "failed",
 		reason,
 		reply,
 		metrics,
+		...(transient && { transient }),
 	});
 	const failure = tally.fault ?? error;
-	if (failure) return fail(failure);
+	if (failure)
+		return fail(failure, tally.fault !== undefined && tally.transient);
 	if (exit.code !== 0) {
 		const how =
 			exit.code === null
@@ -136,7 +160,7 @@ function settle(
 			`${how}: ${exit.stderr.trim().split("\n").slice(-5).join(" | ")}`,
 		);
 	}
-	if (!tally.settled) return fail("harness ended without settling");
+	if (!tally.settled) return fail("harness ended without settling", true);
 	return { outcome: "ok", reply, metrics };
 }
 

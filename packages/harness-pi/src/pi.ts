@@ -8,6 +8,7 @@ import {
 	type HarnessRequest,
 	IDENTITY,
 	isObject,
+	isTransient,
 	type JsonObject,
 	METRIC,
 	type Metrics,
@@ -76,11 +77,15 @@ function assistantEvents(message: JsonObject): HarnessEvent[] {
 		{ kind: "text", text },
 	];
 	const stop = String(message.stopReason);
-	if (FAILED_STOPS.has(stop))
+	if (FAILED_STOPS.has(stop)) {
+		const reason = String(message.errorMessage ?? `pi stopped with ${stop}`);
 		events.push({
 			kind: "fault",
-			reason: String(message.errorMessage ?? `pi stopped with ${stop}`),
+			reason,
+			...(stop === "error" &&
+				isTransient(undefined, reason) && { transient: true }),
 		});
+	}
 	return events;
 }
 

@@ -7,6 +7,7 @@ export {
 export {
 	finite,
 	isObject,
+	isTransient,
 	type JsonObject,
 	type SubprocessAdapter,
 	subprocessHarness,

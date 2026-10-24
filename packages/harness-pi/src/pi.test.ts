@@ -180,6 +180,26 @@ describe("stand-in pi", () => {
 		expect(result.reason).toContain("401");
 	});
 
+	test.each([
+		["529: overloaded_error", true],
+		["401: Incorrect API key", false],
+	])(
+		"an error stop's transient mark follows its message: %s",
+		async (message, transient) => {
+			const joined = fixture("error-401")
+				.join("\n")
+				.replace(
+					/"errorMessage":"(?:[^"\\]|\\.)*"/g,
+					`"errorMessage":${JSON.stringify(message)}`,
+				);
+			const result = await piHarness(standIn(joined.split("\n"))).run(
+				request("x"),
+			).result;
+			expect(result.outcome).toBe("failed");
+			expect(result.transient).toBe(transient || undefined);
+		},
+	);
+
 	test("a message's thinking text is reported before its text", async () => {
 		const lines = fixture().map((l) =>
 			l.startsWith('{"type":"message_end"')

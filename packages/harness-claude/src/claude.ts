@@ -7,6 +7,7 @@ import {
 	type HarnessRequest,
 	IDENTITY,
 	isObject,
+	isTransient,
 	type JsonObject,
 	METRIC,
 	type Metrics,
@@ -130,6 +131,8 @@ function resultEvents(
 			? {
 					kind: "fault",
 					reason: authFailed ? `${reason}. ${TOKEN_HINT}` : reason,
+					...(!authFailed &&
+						isTransient(e.api_error_status, reply) && { transient: true }),
 				}
 			: { kind: "settled" },
 	];
