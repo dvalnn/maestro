@@ -355,7 +355,13 @@ claimed by an installed but unused registrant is ignored.
 - A concert whose process is gone while it is still `running` settles `failed`, by whichever reader finds it, so `wait`
   ends and resume can continue from it. Only `kill` checks that a live process is maestro, so a pid another program
   reused keeps the concert `running` until `kill` settles it.
-- Until the first release, a record store of another schema version is refused, not migrated.
+- An older record store is upgraded on open, one forward step per schema version in one transaction, and a step only
+  adds. A newer one, or one older than the first step, is refused.
+- A leaf instance's row keeps its **wired inputs** (`instances.inputs`, JSON) when it starts: each input port the node
+  does not hold in `literals`, with its resolved value, such as a fan-out item, a loop round's carried value or a
+  collected input. An artifact is its reference (path and content hash), never its content. A leaf with no wired ports
+  keeps `{}`. NULL means not recorded: an instance from before the upgrade, and every group, loop and scope row. A
+  resume that reuses an instance keeps the row. Literals stay readable through the IR and `art`.
 - **Metrics** (CORE-19, D-23) are named additive numbers per node instance. The engine sums each name per concert and
   attaches no meaning to a name. v1 reports token counts only.
 - **Events** are append-only, keyed by node id and expansion path, with the instance's state, timestamps, outcome and
@@ -382,8 +388,8 @@ A renderer needs only the IR (or plan) and events:
   the latest running instance, a `last` line the latest failed one. `[` and `]` step the cursor's loop, `map`, `find` or
   `fold` between its iterations. Past the terminal's height, settled rows hide from the top, then pending ones from the
   bottom, as count lines, and the running rows, the last failure and their ancestors stay. Edges are
-  `compose --graph`'s. Browsed on a terminal, a row opens an inspector on its part of the record: a summary, outputs,
-  artifacts and enrichment, and its events, tailing while it runs.
+  `compose --graph`'s. Browsed on a terminal, a row opens an inspector on its part of the record: a summary, inputs,
+  outputs, artifacts and enrichment, and its events, tailing while it runs.
 
 The first renderer targets text (ASCII or Mermaid) in the plan output; `maestro watch` draws the live form. A richer
 viewer is out of scope.

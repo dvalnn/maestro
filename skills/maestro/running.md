@@ -91,7 +91,9 @@ ambiguous ending is a usage error listing the matches.
 
 `maestro ls <id> --json` gives the concert's row (`id`, `short`, `pack`, `composition`, `status`, `pid`, `startedAt`,
 `settledAt`, `workspace`, `tour`, `title`, `metrics`, `elapsedMs`) and `instances`, each with `node`, `expansion`,
-`status`, `reason`, `outputs`, `metrics` (such as `tokens_in`), `artifacts` and `stale`.
+`status`, `reason`, `inputs` (the values a leaf was fed on its wired ports, never its literals, which are in the IR;
+left out for a group or an instance from an older store), `outputs`, `metrics` (such as `tokens_in`), `artifacts` and
+`stale`.
 
 The data root, `$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`) unless config's `dataRoot` moves it, holds:
 
@@ -100,6 +102,9 @@ The data root, `$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`) unles
 | `record.db`                      | The record of concerts, node instances and events (SQLite) |
 | `concerts/<id>/artifacts/<path>` | Each artifact, at the `path` its JSON shows                |
 | `hosts/repo/<target id>/`        | The repo host's lanes, versions and sessions, per target   |
+
+The record keeps each leaf instance's wired inputs beside its outputs, never the ports a node holds as literals (read
+those in the IR, or `art` for files). A group, or an instance from an older store, has none.
 
 What each node leaves, as outputs of its instance:
 

@@ -274,6 +274,31 @@ test("a parMap fans out, a reducer fans in over its settled members, a rejection
 	expect(Object.keys(instances)).toContain("refine/loop/step[1]");
 	expect(Object.keys(instances)).not.toContain("refine/loop/step[2]");
 	expect(instances["topics/draft[beta]"]?.status).toBe("rejected");
+	expect(instances["topics/draft[beta]"]?.inputs).toEqual({ prompt: "beta" });
+	expect(instances["refine/loop/step[1]"]?.inputs).toEqual({
+		prompt: "alpha draft+",
+	});
+	expect(instances.best?.inputs).toEqual({ results: drafts });
+	expect(instances.topics).not.toHaveProperty("inputs");
+});
+
+test("a literal port is left out of an instance's recorded inputs, and a wired one is kept", async () => {
+	const { record, concert } = await play(
+		graph(
+			[
+				code("src", "src", { out: { text: STRING } }),
+				code("use", "use", {
+					in: { text: STRING, tag: STRING },
+					literals: { tag: "fixed" },
+				}),
+			],
+			[data("src.text", "use.text")],
+			"use",
+		),
+		{ code: { src: () => ({ text: "hi" }), use: () => ({}) } },
+	);
+	const instances = byInstance(record.instances(concert));
+	expect(instances.use?.inputs).toEqual({ text: "hi" });
 });
 
 test("a loop that tolerates rejected carries a rejected iteration into one that is accepted", async () => {
@@ -2119,6 +2144,8 @@ test("a written file is moved into the artifact area, hashed, and its scratch di
 		producer: { node: "write", expansion: "" },
 	});
 	expect(instances.write?.artifacts).toEqual([ref]);
+	expect(instances.write?.inputs).toEqual({});
+	expect(instances.read?.inputs).toEqual({ file: ref });
 	expect(readFileSync(join(dir, concert, "artifacts", ref.path), "utf8")).toBe(
 		"hello",
 	);
@@ -2357,6 +2384,44 @@ test("a killed concert resumes without repeating an ok host node, and the record
 		"running",
 		undefined,
 	]);
+});
+
+test("a resume keeps the wired inputs of an instance it reuses", async () => {
+	const { dir } = await workspace();
+	const ir = graph(
+		[
+			task("a", { out: { text: STRING } }),
+			task("b", { in: { text: STRING }, out: { text: STRING } }),
+			task("c", { in: { text: STRING } }),
+		],
+		[data("a.text", "b.text"), data("b.text", "c.text")],
+		"c",
+	);
+	const first = await play(ir, {
+		dir,
+		script: {
+			steps: {
+				a: [{ outcome: "ok", outputs: { text: "A" } }],
+				b: [{ outcome: "ok", outputs: { text: "B" } }],
+				c: [{ outcome: "failed", reason: "boom" }],
+			},
+		},
+	});
+	const before = byInstance(first.record.instances(first.concert)).b;
+	expect(before?.inputs).toEqual({ text: "A" });
+	const again = await play(first.concert, {
+		dir,
+		script: { steps: { c: [{ outcome: "ok", outputs: {} }] } },
+	});
+	const after = byInstance(again.record.instances(first.concert));
+	expect(
+		again.record
+			.events(first.concert)
+			.filter((e) => e.node === "b")
+			.map((e) => e.type),
+	).toContain("reused");
+	expect(after.b?.inputs).toEqual({ text: "A" });
+	expect(after.a?.inputs).toEqual({});
 });
 
 test.each([

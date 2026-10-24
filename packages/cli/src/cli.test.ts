@@ -942,6 +942,20 @@ describe("the record", () => {
 		expect(await drafts()).toEqual(first);
 	});
 
+	test("ls --json gives an instance's wired inputs, and leaves the field out of a row that has none", async () => {
+		const w = await world();
+		const id = idOf(
+			await w.call(["perform", join(GOLDEN, "fanout-fanin-loop.json")]),
+		);
+		const instances = json(await w.call(["ls", id, "--json"])).instances;
+		const draft = instances.find(
+			(i: { node: string }) => i.node === "topics/draft",
+		);
+		expect(draft.inputs).toEqual({ prompt: expect.any(String) });
+		const group = instances.find((i: { node: string }) => i.node === "topics");
+		expect(group).not.toHaveProperty("inputs");
+	});
+
 	test("ls shows the disk a concert holds: its directory and what its hosts report", async () => {
 		const w = await world();
 		const host = hostOf(ECHO, { usage: () => 2048 });

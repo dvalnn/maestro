@@ -9,11 +9,17 @@ import type {
 	Outcome,
 } from "@maestro/ir";
 import type { HostNodeResult, Metrics } from "../host";
-import type { Outputs } from "../node";
+import type { Inputs, Outputs } from "../node";
 import { instanceKey, isRecord } from "../shared";
 
+/** The `user_version` of a file SQLite just created. */
+const NEW_STORE_VERSION = 0;
+/** The oldest schema version an upgrade starts from. */
+const OLDEST_UPGRADABLE_VERSION = 4;
+/** `UPGRADE_STEPS[i]` upgrades a record store from version `OLDEST_UPGRADABLE_VERSION + i` to the next. */
+const UPGRADE_STEPS = ["ALTER TABLE instances ADD COLUMN inputs TEXT"];
 /** The version of the schema below, kept in SQLite's `user_version`. */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = OLDEST_UPGRADABLE_VERSION + UPGRADE_STEPS.length;
 /** How long a write waits for another connection's lock before it fails, in milliseconds. */
 const BUSY_TIMEOUT_MS = 5000;
 /** How long opening retries switching a new file to WAL mode while another connection holds it, in milliseconds. */
@@ -37,12 +43,13 @@ export const PROCESS_EXITED = "process exited";
 /** The reason `finish` settles an instance still running with. */
 export const CONCERT_FINISHED = "the concert finished before it settled";
 
-// Timestamps are epoch milliseconds, and `expansion` is '' outside groups. `ir`, `outputs`, `enrichment`, `body` and a
-// concert's `config` hold JSON. `workspace` is '' outside any workspace, and `module_dir` is '' when the concert has
-// none. `reason` is set on every non-ok outcome. `result_node` is NULL while a concert is running, and after one that
-// failed before any node ran. `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an
-// earlier attempt, which a resume reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume
-// replaced, which still count as spend.
+// Timestamps are epoch milliseconds, and `expansion` is '' outside groups. `ir`, `outputs`, `inputs`, `enrichment`,
+// `body` and a concert's `config` hold JSON. `inputs` is a leaf instance's wired input ports, NULL when not recorded.
+// `workspace` is '' outside any workspace, and `module_dir` is '' when the concert has none. `reason` is set on every
+// non-ok outcome. `result_node` is NULL while a concert is running, and after one that failed before any node ran.
+// `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an earlier attempt, which a resume
+// reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume replaced, which still count as
+// spend.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -76,6 +83,7 @@ CREATE TABLE instances (
 	settled_at INTEGER,
 	key TEXT,
 	stale INTEGER NOT NULL DEFAULT 0,
+	inputs TEXT,
 	PRIMARY KEY (concert, node, expansion)
 ) STRICT;
 CREATE TABLE metrics (
@@ -178,6 +186,8 @@ export type InstanceRecord = NodeInstance & {
 	status: "running" | Outcome;
 	reason?: string;
 	outputs?: Outputs;
+	/** The values a leaf was fed on its wired ports, left out when not recorded. */
+	inputs?: Inputs;
 	enrichment?: Enrichment;
 	key?: string;
 	stale: boolean;
@@ -243,10 +253,15 @@ export interface RecordWriter {
 	resume(concert: { id: string; ir: Ir }): InstanceRecord[];
 	/**
 	 * Records that `instance` started, with its `running` event. A record from before a resume is replaced, its events
-	 * kept.
+	 * kept. `inputs` are a leaf's wired inputs, kept as given.
 	 * @throws Error when the concert has settled or the instance has a record.
 	 */
-	start(concert: string, instance: NodeInstance, at: number): void;
+	start(
+		concert: string,
+		instance: NodeInstance,
+		at: number,
+		inputs?: Inputs,
+	): void;
 	/**
 	 * Keeps `instance`'s `ok` record from before a resume, with a `reused` event.
 	 * @throws Error when the concert has settled or the instance has no `ok` record from before.
@@ -310,6 +325,7 @@ type InstanceRow = {
 	status: InstanceStatus;
 	reason: string | null;
 	outputs: string | null;
+	inputs: string | null;
 	enrichment: string | null;
 	started_at: number | null;
 	settled_at: number | null;
@@ -353,8 +369,8 @@ function openDatabase(path: string): Database {
 /**
  * Opens the record at `path` for reading, creating it with the current schema when it is new. WAL mode lets several
  * concerts, in this process or others, share the file (D-26). `alive` decides whether a running concert's process is
- * still performing it, by default whether the process exists.
- * @throws Error when the file holds another schema version.
+ * still performing it, by default whether the process exists. An older record store is upgraded first.
+ * @throws Error when the file holds a schema version this maestro neither reads nor upgrades.
  */
 export function openRecord(
 	path: string,
@@ -366,7 +382,7 @@ export function openRecord(
 
 /**
  * Opens the record at `path` for the writes of the process performing a concert, as `openRecord` opens it for reading.
- * @throws Error when the file holds another schema version.
+ * @throws Error when the file holds a schema version this maestro neither reads nor upgrades.
  */
 export function openWriter(path: string): RecordWriter {
 	const db = openDatabase(path);
@@ -397,17 +413,27 @@ const writing = <A extends unknown[], T>(
 	fn: (...args: A) => T,
 ): ((...args: A) => T) => db.transaction(fn).immediate;
 
+/**
+ * The SQL that brings a store at `version` to `SCHEMA_VERSION`: a new store's schema, else each step from `version`.
+ * @throws Error when `version` is newer than `SCHEMA_VERSION`, or older than the first step.
+ */
+function upgradeFrom(version: number, path: string): string[] {
+	if (version === NEW_STORE_VERSION) return [SCHEMA];
+	if (version < OLDEST_UPGRADABLE_VERSION || version > SCHEMA_VERSION)
+		throw new Error(
+			`record store '${path}' has schema version ${version}, and this maestro reads version ${SCHEMA_VERSION}. Use a record store this maestro made, or move '${path}' aside`,
+		);
+	return UPGRADE_STEPS.slice(version - OLDEST_UPGRADABLE_VERSION);
+}
+
+/** Brings the store to `SCHEMA_VERSION` in one transaction, so a failing step leaves it at its version. */
 function migrate(db: Database, path: string): void {
 	writing(db, () => {
 		const version =
 			db.query<{ user_version: number }, []>("PRAGMA user_version").get()
-				?.user_version ?? 0;
+				?.user_version ?? NEW_STORE_VERSION;
 		if (version === SCHEMA_VERSION) return;
-		if (version !== 0)
-			throw new Error(
-				`record store '${path}' has schema version ${version}, and this maestro reads version ${SCHEMA_VERSION}. Use a record store this maestro made, or move '${path}' aside`,
-			);
-		db.exec(SCHEMA);
+		for (const sql of upgradeFrom(version, path)) db.exec(sql);
 		db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 	})();
 }
@@ -724,15 +750,18 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 			);
 		},
 		resume: ({ id, ir }) => restart(id, ir),
-		start: writing(db, (id: string, instance: NodeInstance, at: number) => {
-			replaceStale(id, instance);
-			writable(id, instance, [null]);
-			db.exec(
-				"INSERT INTO instances (concert, node, expansion, status, started_at) VALUES (?, ?, ?, 'running', ?)",
-				[id, instance.node, instance.expansion, at],
-			);
-			insertEvent(db, id, instance, { type: "running" }, at);
-		}),
+		start: writing(
+			db,
+			(id: string, instance: NodeInstance, at: number, inputs?: Inputs) => {
+				replaceStale(id, instance);
+				writable(id, instance, [null]);
+				db.exec(
+					"INSERT INTO instances (concert, node, expansion, status, inputs, started_at) VALUES (?, ?, ?, 'running', ?, ?)",
+					[id, instance.node, instance.expansion, json(inputs), at],
+				);
+				insertEvent(db, id, instance, { type: "running" }, at);
+			},
+		),
 		reuse: writing(db, (id: string, instance: NodeInstance, at: number) => {
 			writable(id, instance, ["ok"]);
 			const { changes } = db.exec(
@@ -894,6 +923,7 @@ function instanceOf(
 	row: InstanceRow,
 ): Omit<InstanceRecord, "metrics" | "artifacts"> {
 	const outputs = parsed<Outputs>(row.outputs);
+	const inputs = parsed<Inputs>(row.inputs);
 	const enrichment = parsed<Enrichment>(row.enrichment);
 	return {
 		node: row.node,
@@ -901,6 +931,7 @@ function instanceOf(
 		status: row.status,
 		...(row.reason !== null && { reason: row.reason }),
 		...(outputs !== undefined && { outputs }),
+		...(inputs !== undefined && { inputs }),
 		...(enrichment !== undefined && { enrichment }),
 		...(row.key !== null && { key: row.key }),
 		stale: row.stale === 1,

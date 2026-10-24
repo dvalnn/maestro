@@ -235,14 +235,22 @@ describe("inspectorLines", () => {
 		expect(inspected(key, given).head).toEqual(head);
 	});
 
-	test("shows the outputs, artifacts and raw enrichment the record holds", () => {
-		const { head } = inspected("test-loop/repair@1", { instances: [REPAIR] });
+	test("shows the inputs, outputs, artifacts and raw enrichment the record holds", () => {
+		const { head } = inspected("test-loop/repair@1", {
+			instances: [{ ...REPAIR, inputs: { item: "src/a.ts" } }],
+		});
 		expect(head.slice(5)).toEqual([
+			'  inputs      item  "src/a.ts"',
 			'  outputs     value  {"fixed":true}',
 			'              note   "n1"',
 			"  artifacts   out/report.md  sha256:9f2c",
 			'  enrichment  {"session":"d916"}',
 		]);
+	});
+
+	test("leaves out the inputs block when the record has none", () => {
+		const { head } = inspected("test-loop/repair@1", { instances: [REPAIR] });
+		expect(head.join("\n")).not.toContain("inputs");
 	});
 
 	test("cuts each event line at one cell short of the terminal, and counts an event drawn on several lines once", () => {

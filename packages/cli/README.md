@@ -142,10 +142,11 @@ state, time and agent, then its reason or latest progress, and the last line the
 
 `Enter` replaces the tree with the row's part of the record, under the same header: a title, then for one instance its
 context, state, start and run time, tokens, actor, a `stale` mark when an earlier attempt left it, and its reason or
-latest progress, then its metrics by name, outputs, artifacts and raw enrichment when the record has them. A group,
-scope or fan-out row counts every instance under it in its round instead. Below come the events of what it shows, as
-`--events` words them, and new ones append while it runs. The inspector tails the newest until a scroll moves away; `G`
-or scrolling back to the end tails again.
+latest progress, then its metrics by name, wired inputs (a fan-out item, a loop round's carried value, a collected
+input; not literals), outputs, artifacts and raw enrichment when the record has them. A group, scope or fan-out row
+counts every instance under it in its round instead. Below come the events of what it shows, as `--events` words them,
+and new ones append while it runs. The inspector tails the newest until a scroll moves away; `G` or scrolling back to
+the end tails again.
 
 | Key                       | Does in the inspector   |
 | ------------------------- | ----------------------- |
@@ -168,7 +169,9 @@ the tree or `interrupt`. It needs no terminal and exits with the concert's code,
 `--help`, and its output may change.
 
 `ls <concert>` lists the node instances in graph order, every instance: subcompositions, groups and loop rounds nest,
-and one node's expansions keep the order they started in. `ls <concert> --json` lists `instances` in that order.
+and one node's expansions keep the order they started in. `ls <concert> --json` lists `instances` in that order, each
+with `inputs`, the values a leaf was fed on its wired ports, left out when the record has none (a group, or an instance
+from an older store).
 
 `ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
 

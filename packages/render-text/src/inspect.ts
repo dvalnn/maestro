@@ -44,6 +44,7 @@ import {
 /** An instance as the record holds it: its outputs, raw enrichment and artifacts beside what `Recorded` holds. */
 export type Kept = Recorded & {
 	outputs?: Readonly<Record<string, unknown>>;
+	inputs?: Readonly<Record<string, unknown>>;
 	enrichment?: Readonly<Record<string, unknown>>;
 	artifacts: readonly { path: string; contentHash: string }[];
 };
@@ -128,21 +129,25 @@ function noteSegs(s: InstanceState): Seg[][] {
 	return [];
 }
 
-/** The record's metrics by name, outputs, artifacts and raw enrichment of an instance, each left out when absent. */
+/** The lines of a block of port values, one per port, the port names padded to one width. */
+function portLines(values: Readonly<Record<string, unknown>> | undefined) {
+	const ports = Object.entries(values ?? {});
+	const portWidth = Math.max(
+		0,
+		...ports.map(([port]) => Bun.stringWidth(flat(port))),
+	);
+	return ports.map(([port, value]): Seg[] => [
+		[`${padCells(flat(port), portWidth)}${GAP}`, "bold"],
+		...valueSegs(flat(JSON.stringify(value))),
+	]);
+}
+
+/** An instance's recorded metrics by name, inputs, outputs, artifacts and raw enrichment, each left out when absent. */
 function keptSegs(k: Kept | undefined): Seg[][] {
 	if (k === undefined) return [];
 	const metrics = Object.entries(k.metrics).map(
 		([name, n]) => `${flat(name)} ${compact(n)}`,
 	);
-	const ports = Object.entries(k.outputs ?? {});
-	const portWidth = Math.max(
-		0,
-		...ports.map(([port]) => Bun.stringWidth(flat(port))),
-	);
-	const outputs = ports.map(([port, value]): Seg[] => [
-		[`${padCells(flat(port), portWidth)}${GAP}`, "bold"],
-		...valueSegs(flat(JSON.stringify(value))),
-	]);
 	const artifacts = k.artifacts.map((a): Seg[] => [
 		[`${flat(a.path)}${GAP}`],
 		[flat(a.contentHash), "dim"],
@@ -156,7 +161,8 @@ function keptSegs(k: Kept | undefined): Seg[][] {
 			"metrics",
 			metrics.length > 0 ? [[[metrics.join(NOTE_SEP)]]] : [],
 		),
-		...listed("outputs", outputs),
+		...listed("inputs", portLines(k.inputs)),
+		...listed("outputs", portLines(k.outputs)),
 		...listed("artifacts", artifacts),
 		...listed("enrichment", enrichment),
 	];

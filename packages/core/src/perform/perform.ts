@@ -396,8 +396,13 @@ function settle(c: Live, instance: NodeInstance, ending: Ending): State {
 	return { ...ending, ...instance, order: c.order++ };
 }
 
-function start(c: Live, instance: NodeInstance, at: number): void {
-	c.kit.record.start(c.id, instance, at);
+function start(
+	c: Live,
+	instance: NodeInstance,
+	at: number,
+	inputs?: Inputs,
+): void {
+	c.kit.record.start(c.id, instance, at, inputs);
 	c.started.add(instanceKey(instance));
 }
 
@@ -583,6 +588,13 @@ function gather(
 	return structuredClone(inputs);
 }
 
+/** `inputs` without the ports `node` holds in `literals`: the wired ones, which the record keeps. */
+function wiredInputs(node: IrNode, inputs: Inputs): Inputs {
+	return Object.fromEntries(
+		Object.entries(inputs).filter(([port]) => !(port in (node.literals ?? {}))),
+	);
+}
+
 /** A fan-in input: `value` as `Settled`. */
 function asSettled(state: State | undefined, value: unknown): Settled<unknown> {
 	if (!state) return { outcome: "ok", value };
@@ -638,7 +650,7 @@ async function settleLeaf(
 	if (node.kind !== "assert") return execute(c, node, frame, instance, inputs);
 	const late = haltOf(frame);
 	if (late) return late;
-	start(c, instance, Date.now());
+	start(c, instance, Date.now(), wiredInputs(node, inputs));
 	return asserted(node, inputs);
 }
 
@@ -684,7 +696,7 @@ async function executeIn(
 	scratch: string,
 ): Promise<Settling> {
 	const clock = Date.now();
-	start(c, instance, clock);
+	start(c, instance, clock, wiredInputs(node, inputs));
 	const call = callOf(c.kit, node, instance, inputs, {
 		scratch,
 		clock,
