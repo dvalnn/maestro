@@ -50,7 +50,7 @@ const SPEC = "the spec, each requirement met by the change, one by one";
 const TESTS =
 	"the tests, each new behaviour pinned by a test that fails without it";
 
-const ALL_LENSES = `Rule on the change through every lens: ${CORRECTNESS}; ${SPEC}; ${TESTS}. ${QUESTIONS} ${GROUNDS}`;
+const ALL_LENSES = `Rule on the change through every lens: ${CORRECTNESS}; ${SPEC}; ${TESTS}. ${QUESTIONS} ${GROUNDS} Run \`check check\` to see the tests run.`;
 
 /** The panel's lenses, by name, as each lens's task. */
 const PANEL = {
@@ -146,6 +146,7 @@ function review(tier: Tier, lane: Ref<string>, spec: Ref<ArtifactRef>) {
 		label: "reviewer",
 		task: ALL_LENSES,
 		lane: read(lane),
+		checks: ["check"],
 		attachments,
 	});
 	const findings = readJson(found.out.findings, { tolerate: "rejected" });
