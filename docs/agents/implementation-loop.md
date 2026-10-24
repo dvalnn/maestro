@@ -16,6 +16,13 @@ wraps them.
    - an ordinary slice: sonnet, medium effort, or opus, low effort;
    - a contract-setting or design-heavy slice: opus, medium effort;
    - a read-only review slice, such as an API review: high effort, as in step 4.
+
+   Or the slice runs as the slice composition:
+   `maestro perform .maestro/slice.ts --profile <tier> --tier <tier> --request <brief>`, from a checkout at `main`. Its
+   lane splits from `main` (`target.base`) by default; a slice that depends on work not yet on `main` forks from that
+   work's change instead (`-c target.base=<commit>`). Start it detached from the conductor's session (`setsid -f`, as
+   the `maestro` skill's step 4 shows), never as a session background task: a rewind or a session end cancels it.
+
 3. **Mechanical gate** (conductor). The conductor runs `just check` itself. Anything a linter can check stays in Biome,
    so review spends no tokens on it.
 4. **Review** (one fresh read-only subagent, the other model from the implementer, at high effort). Runs the
