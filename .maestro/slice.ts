@@ -39,7 +39,7 @@ const TIERS = ["small", "ordinary", "risky"] as const;
 type Tier = (typeof TIERS)[number];
 
 const GROUNDS =
-	"Standards are CODING_STANDARDS.md and CLAUDE.md; the spec is the request, its requirement IDs and the ADRs under docs/adr/. Every finding cites in its issue the rule, requirement or ADR it breaks, names its file:line in where, and states the failure. Drop any finding you cannot cite.";
+	"Standards are CODING_STANDARDS.md and CLAUDE.md; the spec is the request, its requirement IDs and the ADRs under docs/adr/. Every finding cites in its issue the rule, requirement or ADR it breaks, names its file:line in where, and states the failure. Drop any finding you cannot cite. A requirement the change leaves unmet, or meets with no test that fails without it, cannot be approved: that finding blocks.";
 
 const QUESTIONS =
 	"Ask of every changed file: a module, export or dependency that no requirement or plan item asks for? A duplicate of a helper or pattern the codebase already has? An interface wider than the spec needs? A decision taken in code with no ADR or owner ruling behind it?";
