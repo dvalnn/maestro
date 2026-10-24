@@ -9,6 +9,7 @@ export {
 	isObject,
 	isTransient,
 	type JsonObject,
+	resultBytes,
 	type SubprocessAdapter,
 	subprocessHarness,
 } from "./subprocess";

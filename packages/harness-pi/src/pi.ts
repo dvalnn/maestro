@@ -13,6 +13,7 @@ import {
 	METRIC,
 	type Metrics,
 	resolveBin,
+	resultBytes,
 	SESSION_DIR,
 	type SubprocessAdapter,
 	subprocessHarness,
@@ -37,7 +38,6 @@ const IGNORED = new Set([
 	"turn_start",
 	"turn_end",
 	"tool_execution_update",
-	"tool_execution_end",
 ]);
 
 /** pi usage keys and the metric each is summed into. */
@@ -99,12 +99,31 @@ function sessionEvents(e: JsonObject): HarnessEvent[] {
 	];
 }
 
+function toolEvent(e: JsonObject): HarnessEvent {
+	return {
+		kind: "tool",
+		name: String(e.toolName),
+		input: e.args,
+		...(typeof e.toolCallId === "string" && { id: e.toolCallId }),
+	};
+}
+
+function resultEvent(e: JsonObject): HarnessEvent {
+	return {
+		kind: "tool_result",
+		...(typeof e.toolCallId === "string" && { id: e.toolCallId }),
+		bytes: resultBytes(isObject(e.result) ? e.result.content : e.result),
+	};
+}
+
 function eventsOf(e: JsonObject): HarnessEvent[] {
 	switch (e.type) {
 		case "session":
 			return sessionEvents(e);
 		case "tool_execution_start":
-			return [{ kind: "tool", name: String(e.toolName), input: e.args }];
+			return [toolEvent(e)];
+		case "tool_execution_end":
+			return [resultEvent(e)];
 		case "message_end":
 			return isObject(e.message) && e.message.role === "assistant"
 				? assistantEvents(e.message)

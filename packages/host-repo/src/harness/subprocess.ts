@@ -36,6 +36,22 @@ export type JsonObject = Record<string, unknown>;
 export const isObject = (v: unknown): v is JsonObject =>
 	typeof v === "object" && v !== null && !Array.isArray(v);
 
+/**
+ * The UTF-8 length of a tool result's content as text: a string as is, text blocks joined, anything else as JSON. Only
+ * the size leaves, never the text.
+ */
+export function resultBytes(content: unknown): number {
+	const blocks = Array.isArray(content) ? content : [];
+	const text =
+		typeof content === "string"
+			? content
+			: blocks.length > 0 &&
+					blocks.every((b) => isObject(b) && b.type === "text")
+				? blocks.map((b) => String(b.text)).join("")
+				: JSON.stringify(content);
+	return Buffer.byteLength(text ?? "", "utf8");
+}
+
 /** `v` when it is a finite number, else 0. */
 export const finite = (v: unknown): number =>
 	typeof v === "number" && Number.isFinite(v) ? v : 0;

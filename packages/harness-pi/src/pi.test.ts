@@ -78,8 +78,14 @@ describe("stand-in pi", () => {
 				kind: "tool",
 				name: "write",
 				input: { path: "hello.txt", content: "hi" },
+				id: "call_1|opaque",
 			},
 		]);
+		const results = seen.filter((e) => e.kind === "tool_result");
+		expect(results).toEqual([
+			{ kind: "tool_result", id: "call_1|opaque", bytes: 31 },
+		]);
+		expect(JSON.stringify(results)).not.toContain("Successfully");
 		expect(seen.filter((e) => e.kind === "thinking")).toEqual([]);
 		expect(seen.at(-1)).toEqual({
 			kind: "raw",

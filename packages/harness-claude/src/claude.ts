@@ -12,6 +12,7 @@ import {
 	METRIC,
 	type Metrics,
 	resolveBin,
+	resultBytes,
 	SESSION_DIR,
 	type SubprocessAdapter,
 	subprocessHarness,
@@ -100,12 +101,36 @@ function growth(now: Metrics, before: Metrics): Metrics {
 	return out;
 }
 
+function resultEvent(block: JsonObject): HarnessEvent[] {
+	if (block.type !== "tool_result") return [];
+	return [
+		{
+			kind: "tool_result",
+			...(typeof block.tool_use_id === "string" && { id: block.tool_use_id }),
+			bytes: resultBytes(block.content),
+		},
+	];
+}
+
+function userEvents(message: unknown): HarnessEvent[] {
+	const blocks =
+		isObject(message) && Array.isArray(message.content) ? message.content : [];
+	return blocks.filter(isObject).flatMap(resultEvent);
+}
+
 function blockEvent(block: unknown): HarnessEvent[] {
 	if (!isObject(block)) return [];
 	if (block.type === "text")
 		return [{ kind: "text", text: String(block.text) }];
 	if (block.type === "tool_use")
-		return [{ kind: "tool", name: String(block.name), input: block.input }];
+		return [
+			{
+				kind: "tool",
+				name: String(block.name),
+				input: block.input,
+				...(typeof block.id === "string" && { id: block.id }),
+			},
+		];
 	if (block.type === "thinking" && block.thinking)
 		return [{ kind: "thinking", text: String(block.thinking) }];
 	return [];
@@ -175,7 +200,7 @@ function parser(): (e: JsonObject) => HarnessEvent[] {
 			case "result":
 				return resultEvents(e, authFailed, counted, lastText);
 			case "user":
-				return [];
+				return userEvents(e.message);
 			case "system":
 				return e.subtype === "init" ? [] : [{ kind: "raw", data: e }];
 			default:

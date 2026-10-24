@@ -33,6 +33,11 @@ describe("repoText.progress", () => {
 		],
 		[{ kind: "tool" }, undefined],
 		[
+			{ kind: "tool_result", id: "t1", bytes: 42 },
+			{ word: "result", detail: "42" },
+		],
+		[{ kind: "tool_result" }, undefined],
+		[
 			{
 				kind: "usage",
 				metrics: {

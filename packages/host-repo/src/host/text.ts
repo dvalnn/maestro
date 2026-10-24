@@ -46,6 +46,13 @@ function usageWording({ metrics }: HostEvent): Wording | undefined {
 	};
 }
 
+/** `result`, the tool result's size in bytes. */
+function resultWording({ bytes }: HostEvent): Wording | undefined {
+	return typeof bytes === "number"
+		? { word: "result", detail: String(bytes) }
+		: undefined;
+}
+
 /** The wording of each progress kind the host words, by kind. */
 const WORDINGS: ReadonlyMap<
 	unknown,
@@ -53,6 +60,7 @@ const WORDINGS: ReadonlyMap<
 > = new Map([
 	[PREPARE_KIND, prepareWording],
 	["tool", toolWording],
+	["tool_result", resultWording],
 	["usage", usageWording],
 ]);
 
@@ -71,5 +79,5 @@ function actor(enrichment: Enrichment): string | undefined {
 	].join(" · ");
 }
 
-/** How the repo host's prepare, tool and usage events and its agents read as text. */
+/** How the repo host's prepare, tool, result and usage events and its agents read as text. */
 export const repoText: HostText = { progress, actor };

@@ -60,7 +60,9 @@ export type HarnessRequest = {
 export type HarnessEvent =
 	| { kind: "text"; text: string }
 	/** A tool call, with its arguments as the harness gave them. */
-	| { kind: "tool"; name: string; input: unknown }
+	| { kind: "tool"; name: string; input: unknown; id?: string }
+	/** A tool result's size in bytes as the agent's context took it, paired with its call by `id`; never its text. */
+	| { kind: "tool_result"; id?: string; bytes: number }
 	| { kind: "thinking"; text: string }
 	/** Usage reported by the harness. The run's metrics are the sum of these. */
 	| { kind: "usage"; metrics: Metrics }

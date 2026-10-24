@@ -84,7 +84,15 @@ describe("stand-in claude", () => {
 			kind: "tool",
 			name: "Write",
 			input: { file_path: "/out/note.txt", content: "hello" },
+			id: "toolu_012fUsphfrA9PwMQjVNZYwyL",
 		});
+		expect(seen.filter((e) => e.kind === "tool_result")).toEqual([
+			{
+				kind: "tool_result",
+				id: "toolu_012fUsphfrA9PwMQjVNZYwyL",
+				bytes: expect.any(Number),
+			},
+		]);
 		expect(seen.at(-1)).toEqual({
 			kind: "raw",
 			data: { type: "future_event", extra: { a: 1 } },
@@ -92,6 +100,42 @@ describe("stand-in claude", () => {
 	});
 
 	test("an assistant message repeated per content block has its non-empty thinking reported once, and a result repeating the last text adds no text, while one that differs replaces it", async () => {
+		const results = claudeHarness(
+			standIn([
+				JSON.stringify({
+					type: "user",
+					message: {
+						content: [
+							{
+								type: "tool_result",
+								tool_use_id: "a",
+								content: "héllo SECRET",
+							},
+							{
+								type: "tool_result",
+								tool_use_id: "b",
+								content: [
+									{ type: "text", text: "ab" },
+									{ type: "text", text: "cd" },
+								],
+							},
+							{ type: "tool_result", tool_use_id: "c", content: [{ n: 1 }] },
+						],
+					},
+				}),
+				JSON.stringify({ type: "result", subtype: "success", result: "a" }),
+			]),
+		).run(request("x"));
+		const sizes = (await drain(results.events)).filter(
+			(e) => e.kind === "tool_result",
+		);
+		expect(sizes).toEqual([
+			{ kind: "tool_result", id: "a", bytes: 13 },
+			{ kind: "tool_result", id: "b", bytes: 4 },
+			{ kind: "tool_result", id: "c", bytes: 9 },
+		]);
+		expect(JSON.stringify(sizes)).not.toContain("SECRET");
+
 		const block = (type: string, extra: object) =>
 			JSON.stringify({
 				type: "assistant",

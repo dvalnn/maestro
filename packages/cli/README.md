@@ -34,14 +34,14 @@ maestro wait <concert> --timeout 15m
     each field's `under`.
 
 [^watch]:
-    On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls and thinking among
-    them: the time, the instance, a word for what happened and its detail, in aligned columns, a long detail wrapped
-    under its column and a multi-line one cut to its first line. Off a terminal `--events` prints the same lines
-    unwrapped and without color. The graph is a header (status, elapsed time and the short id), `now` and `last` lines
-    naming the latest running and failed instances, the composition as authored with each loop at its latest round and
-    each fan-out's items on one row, and a footer of counts and the concert's tokens. Rows that don't fit fold into
-    count lines, and the footer then points at `maestro ls`. Ctrl-C stops watching, not the concert. With stdin a
-    terminal too, the graph is a tree to browse: see [Browsing a concert](#browsing-a-concert).
+    On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls, result sizes and
+    thinking among them: the time, the instance, a word for what happened and its detail, in aligned columns, a long
+    detail wrapped under its column and a multi-line one cut to its first line. Off a terminal `--events` prints the
+    same lines unwrapped and without color. The graph is a header (status, elapsed time and the short id), `now` and
+    `last` lines naming the latest running and failed instances, the composition as authored with each loop at its
+    latest round and each fan-out's items on one row, and a footer of counts and the concert's tokens. Rows that don't
+    fit fold into count lines, and the footer then points at `maestro ls`. Ctrl-C stops watching, not the concert. With
+    stdin a terminal too, the graph is a tree to browse: see [Browsing a concert](#browsing-a-concert).
     `--events --instance <id>` keeps only that instance's events, `<id>` as `ls <concert>` prints it, such as
     `lens[risk]/skeptic`, or a unique ending of whole segments of a node or scope id, such as `skeptic`; a group, loop,
     fan-out or scope id, without keys for every iteration, takes everything under it. An id the concert has no node for

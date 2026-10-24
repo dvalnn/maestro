@@ -750,6 +750,7 @@ const WORD_STYLE: ReadonlyMap<string, Style> = new Map<string, Style>([
 	["tool", []],
 	["thinking", ["dim", "italic"]],
 	["text", []],
+	["result", "dim"],
 	["usage", "dim"],
 	["settled", "dim"],
 	["fault", []],
@@ -871,6 +872,7 @@ const DETAIL_SEGS: ReadonlyMap<string, (detail: string) => Seg[]> = new Map([
 	["failed", plainly("yellow")],
 	["skipped", plainly("dim")],
 	["thinking", plainly(["dim", "italic"])],
+	["result", plainly("dim")],
 	["usage", plainly("dim")],
 	["tool", headedSegs],
 ]);
