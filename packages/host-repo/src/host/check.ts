@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
 	HostContext,
@@ -28,6 +28,8 @@ import { carryWriter, openTarget } from "./store";
 
 /** The name an inline check goes by in reasons and logs. */
 const INLINE = "inline";
+/** The directory under a check node's scratch that its lines write to, kept as the `output` artifact. */
+const OUTPUT_DIR = "output";
 
 /** The checks `config` runs, by name. */
 function checksOf(config: CheckConfig, target: Target): [string, CheckSpec][] {
@@ -89,15 +91,21 @@ async function execute(
 		async (open) => {
 			const { lane, read } = open;
 			const s = sandboxed(lane, setup, live);
+			const output = join(context.scratch, OUTPUT_DIR);
+			mkdirSync(output);
+			s.output = output;
+			s.writable.push({ src: output });
 			const verdicts: Verdict[] = [];
 			for (const [name, spec] of checks)
 				verdicts.push(await runLines(s, `check '${name}'`, spec));
 			const logs = join(context.scratch, "check.log");
 			writeFileSync(logs, `${s.log.join("\n")}\n`);
 			const { outcome, reason = "" } = overall(verdicts);
-			if (outcome === "failed") return { outcome, reason, outputs: { logs } };
+			if (outcome === "failed")
+				return { outcome, reason, outputs: { logs, output } };
 			const outputs = {
 				logs,
+				output,
 				...(!read && {
 					[LANE_PORT]: await sealed(store.root, config, inputs, lane),
 				}),
@@ -119,7 +127,11 @@ export function checkKind(): NodeKind {
 			const lane = lanePorts(checkConfig(node.config).lane);
 			return {
 				in: lane.in,
-				out: { logs: { [MAESTRO_TYPE]: CORE_TYPES.file }, ...lane.out },
+				out: {
+					logs: { [MAESTRO_TYPE]: CORE_TYPES.file },
+					output: { [MAESTRO_TYPE]: CORE_TYPES.dir },
+					...lane.out,
+				},
 			};
 		},
 		execute: (instance, inputs, context) =>

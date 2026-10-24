@@ -77,20 +77,20 @@ or `allSettled` calls in one scope derive the same id: give one a `label`, or `S
 
 From `@maestro/host-repo-sdk`:
 
-| Name                                    | Gives                                                                       |
-| --------------------------------------- | --------------------------------------------------------------------------- |
-| `fresh(base?)`                          | A new lane cut at `base`, else `target.base`, else the target's `HEAD`      |
-| `fork(v)`                               | A copy of version `v`; any number of nodes may fork one version             |
-| `extend(v, { resume? })`                | The lane continued from `v`, at most once; `resume` continues its session   |
-| `read(v)`                               | `v` with writes discarded; the node outputs no lane                         |
-| `agent({ task, lane, role, ... })`      | A coding agent; outputs `report`, `staged`, `lane` and its declared outputs |
-| `seat({ role, identity, ... })`         | An agent's standing setup, called with `{ task, lane, ... }` per agent      |
-| `check(lane, which?)`                   | Every named check, the one named, or an inline `{ run, timeout, ... }`      |
-| `changeset(v, { message? })`            | `v` as a changeset, `message` its commit message; end a composition on one  |
-| `commits(revs)`                         | Target commits `revs` names as a version; fork or read it, never extend     |
-| `apply(lane, cs, { strategy })`         | Changeset `cs` applied to a lane; `"3way"` (default) or `"clean"`           |
-| `JsonOut(file, T)`, `MarkdownOut(file)` | A declared agent output, written in its outbox at `/out/<file>`             |
-| `Lane`                                  | The lane version type, and the lane ref param type                          |
+| Name                                    | Gives                                                                                                               |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `fresh(base?)`                          | A new lane cut at `base`, else `target.base`, else the target's `HEAD`                                              |
+| `fork(v)`                               | A copy of version `v`; any number of nodes may fork one version                                                     |
+| `extend(v, { resume? })`                | The lane continued from `v`, at most once; `resume` continues its session                                           |
+| `read(v)`                               | `v` with writes discarded; the node outputs no lane                                                                 |
+| `agent({ task, lane, role, ... })`      | A coding agent; outputs `report`, `staged`, `lane` and its declared outputs                                         |
+| `seat({ role, identity, ... })`         | An agent's standing setup, called with `{ task, lane, ... }` per agent                                              |
+| `check(lane, which?)`                   | Every named check, the one named, or an inline `{ run, timeout, ... }`; `$MAESTRO_CHECK_OUTPUT` is kept as `output` |
+| `changeset(v, { message? })`            | `v` as a changeset, `message` its commit message; end a composition on one                                          |
+| `commits(revs)`                         | Target commits `revs` names as a version; fork or read it, never extend                                             |
+| `apply(lane, cs, { strategy })`         | Changeset `cs` applied to a lane; `"3way"` (default) or `"clean"`                                                   |
+| `JsonOut(file, T)`, `MarkdownOut(file)` | A declared agent output, written in its outbox at `/out/<file>`                                                     |
+| `Lane`                                  | The lane version type, and the lane ref param type                                                                  |
 
 `agent` also takes `identity` (standing text appended to the harness's system prompt), `verdict` (`true` for an agent
 that rules on work, `ok` or `rejected`), `attachments` (`{ name: { artifact, hint } }`, each mounted read-only at

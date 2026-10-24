@@ -154,7 +154,10 @@ describe("lanes", () => {
 			literals: { lane: "c.lens/skeptic" },
 			config: { lane: { mode: "fork" } },
 		});
-		expect(nodeOf(ir, "look")?.out).toEqual({ logs: expect.anything() });
+		expect(nodeOf(ir, "look")?.out).toEqual({
+			logs: expect.anything(),
+			output: expect.anything(),
+		});
 		const { composeIt, requests } = repo();
 		expect(await composeIt(ir)).toMatchObject({ ok: true });
 		expect(requests).toEqual([]);

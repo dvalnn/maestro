@@ -28,11 +28,15 @@ export type AgentChecks = {
 	note: string;
 };
 
-/** The script of one check: its env and the lane's `base`, then each line echoed and run, the first that does not exit 0 ending it. */
+/** The variable the `check` command hands a run's output directory to the script in, which then names it to the lines. */
+const RUN_OUTPUT = "MAESTRO_RUN_OUTPUT";
+
+/** The script of one check: its env, the lane's `base` and the run's output directory, then each line echoed and run, the first that does not exit 0 ending it. */
 function body(name: string, spec: CheckSpec, base: string): string {
 	const env = Object.entries(checkEnv(spec, base)).map(
 		([k, v]) => `export ${k}=${quote(v)}`,
 	);
+	env.push(`export MAESTRO_CHECK_OUTPUT="$${RUN_OUTPUT}"`);
 	const lines = spec.lines.flatMap((line, i) => [
 		`printf '%s\\n' ${quote(`$ ${line}`)}`,
 		`sh -c ${quote(line)} || { c=$?; printf '[check %s line %s exited %s]\\n' ${quote(name)} ${i + 1} "$c"; exit "$c"; }`,
@@ -57,10 +61,12 @@ ${cases.join("\n")}
 esac
 cd ${LANE_DST} || exit ${USAGE_EXIT}
 log=$(mktemp) || exit ${USAGE_EXIT}
+${RUN_OUTPUT}=$(mktemp -d) || exit ${USAGE_EXIT}
+export ${RUN_OUTPUT}
 $run >"$log" 2>&1
 code=$?
 tail -n ${TAIL_LINES} "$log"
-rm -f "$log"
+rm -rf "$log" "$${RUN_OUTPUT}"
 case $code in
 0) verdict=ok;;
 ${FAILED_EXITS.join("|")}) verdict=failed;;

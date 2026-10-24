@@ -18,6 +18,8 @@ The rule is:
   input and not in the resume key. It is what the agent or check runs on: a toolchain, a cache, an SDK rebuilt in place,
   a lock file shared across lanes. `writable` is named by config or a check node, never by an agent node, and an agent
   that may run the check gets its binds (HOST-04, HOST-15).
+- **A check's output directory is writable while the check runs and kept as an artifact after.** It is made by the check
+  node under its scratch, outside the lane, named in `MAESTRO_CHECK_OUTPUT`, and is not a bind.
 - **Compose refuses a bind that is relative, missing or inside the lanes, and a writable one that also contains or lies
   inside the lanes or the target repository** (HOST-03, HOST-11). An attachment needs no such rule: the concert owns the
   artifact.

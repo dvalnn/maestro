@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
@@ -233,6 +239,106 @@ describe("agent-runnable checks and attachments", () => {
 		expect(readFileSync(join(cache, "base"), "utf8").trim()).toBe(
 			main.stdout.toString().trim(),
 		);
+	});
+
+	test.each([
+		["passes", "true", "ok"],
+		["fails", "exit 1", "rejected"],
+	])(
+		"a check that %s keeps what its lines wrote to $MAESTRO_CHECK_OUTPUT as `output`, whatever its env says",
+		async (_, last, outcome) => {
+			const config = configWith({
+				report: {
+					run: [
+						"echo found > $MAESTRO_CHECK_OUTPUT/report.txt",
+						"echo $MAESTRO_CHECK_OUTPUT > $MAESTRO_CHECK_OUTPUT/where",
+						"echo x > in-lane.txt",
+						last,
+					],
+					env: { MAESTRO_CHECK_OUTPUT: "/spoofed" },
+				},
+			});
+			const { host } = stubHost(() => [OK]);
+			const specs: NodeSpec[] = [
+				{
+					id: "report",
+					kind: "check",
+					config: { lane: fresh, check: "report" },
+				},
+			];
+			const { result, artifact } = await performed(
+				host,
+				irOf(host, specs, "report"),
+				config,
+			);
+
+			expect(result).toMatchObject({ outcome, node: "report" });
+			const out = artifact("report", "output");
+			expect(readFileSync(join(out, "report.txt"), "utf8")).toBe("found\n");
+			expect(readFileSync(join(out, "where"), "utf8").trim()).not.toBe(
+				"/spoofed",
+			);
+			expect(readdirSync(out).sort()).toEqual(["report.txt", "where"]);
+		},
+	);
+
+	test("a check that writes nothing has an empty `output`", async () => {
+		const config = configWith({ quiet: "true" });
+		const { host } = stubHost(() => [OK]);
+		const specs: NodeSpec[] = [
+			{ id: "quiet", kind: "check", config: { lane: fresh, check: "quiet" } },
+		];
+		const { artifact } = await performed(
+			host,
+			irOf(host, specs, "quiet"),
+			config,
+		);
+
+		expect(readdirSync(artifact("quiet", "output"))).toEqual([]);
+	});
+
+	test("an agent's `check` command sets a writable MAESTRO_CHECK_OUTPUT outside the lane", async () => {
+		const config = configWith({
+			probe: {
+				run: [
+					"echo hi > $MAESTRO_CHECK_OUTPUT/f",
+					"echo $MAESTRO_CHECK_OUTPUT > /tmp/probe-dir",
+				],
+				env: { MAESTRO_CHECK_OUTPUT: "/spoofed" },
+			},
+		});
+		const { host } = stubHost(() => [
+			{
+				sh: '(check probe; echo "$MAESTRO_CHECK_OUTPUT"; cat /tmp/probe-dir) > /out/c.md 2>&1',
+			},
+			OK,
+		]);
+		const specs: NodeSpec[] = [
+			{
+				id: "a",
+				kind: "agent",
+				config: {
+					...builder,
+					lane: fresh,
+					checks: ["probe"],
+					out: { c: markdown("c.md") },
+				},
+				literals: { prompt: "go" },
+			},
+		];
+		const { result, artifact } = await performed(
+			host,
+			irOf(host, specs, "a"),
+			config,
+		);
+
+		expect(result).toMatchObject({ outcome: "ok", node: "a" });
+		const log = readFileSync(artifact("a", "c"), "utf8");
+		expect(log).toContain("check 'probe': ok");
+		const dir = log.trim().split("\n").at(-1) ?? "";
+		expect(dir).toMatch(/^\/tmp\//);
+		expect(dir).not.toBe("/spoofed");
+		expect(existsSync(dir)).toBe(false);
 	});
 
 	test.each([

@@ -245,7 +245,7 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **HOST-08 (Deferred beyond v1).** A per-concert token cap enforced by the host's node runners. The id is kept so
   references stay valid.
 - **HOST-09 (Must).** A check node (D-22) runs deterministic commands in a lane and returns pass or fail (`rejected`)
-  with logs as artifacts.
+  with logs as artifacts, and a writable output directory (`MAESTRO_CHECK_OUTPUT`) kept as an artifact.
 - **HOST-10 (Must).** `kill` terminates agent process trees and the record stays consistent.
 - **HOST-11 (Must).** The host's compose-time hook enforces lane rules and bind validity.
 - **HOST-12 (Should).** The host owns the `target`, `roles` and `sandbox` config namespaces.

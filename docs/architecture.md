@@ -413,10 +413,12 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   failures reported), or an inline `{ run, timeout }`. Each line runs through `sh -c` in the sandbox, in order, and the
   first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are `failed`; any
   other non-zero exit is `rejected`, the reason naming the check and the line number. Every line sees
-  `MAESTRO_LANE_BASE`, the commit its lane was cut from, which overrides a configured `env` entry of that name. Logs,
-  holding each line and its output, are an artifact. It is its own host kind and not a code node, because it runs
-  untrusted target commands and needs the sandbox, lane staging, kill and logs. Code nodes are trusted and run in
-  process.
+  `MAESTRO_LANE_BASE`, the commit its lane was cut from, which overrides a configured `env` entry of that name. It also
+  makes an empty directory under its scratch, outside the lane, binds it writable into every line's sandbox and names it
+  in `MAESTRO_CHECK_OUTPUT`, which a configured `env` cannot override. The directory as the check left it, possibly
+  empty, is the `output` artifact, kept whether the check passed or failed (ADR 0011). Logs, holding each line and its
+  output, are an artifact. It is its own host kind and not a code node, because it runs untrusted target commands and
+  needs the sandbox, lane staging, kill and logs. Code nodes are trusted and run in process.
 - **Changeset node.** Takes one lane version and outputs its patch series as an artifact: a directory holding `base`,
   the target commit the lane chain was cut from, and the patches as `0001.patch`, `0002.patch` and on. It opens no lane
   and spends no extension.
@@ -438,7 +440,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   the resume key. A bind is not (ADR 0011).
 - An agent that names checks gets a `check <name>` command on its `PATH`, staged read-only; one that names none gets no
   `check` command. It runs the named check in `/lane` under the check's timeout, if any, and sets the check's `env`
-  inside that command alone, never in the rest of the agent's sandbox, prints the tail of the output, and ends `ok`,
+  inside that command alone, never in the rest of the agent's sandbox, sets `MAESTRO_CHECK_OUTPUT` to a fresh writable
+  directory outside the lane, discarded with the run like its log, prints the tail of the output, and ends `ok`,
   `rejected` or `failed` by the exit classification above. The staged prompt lists the checks and says to run them
   rather than write new ones (HOST-15). The agent's sandbox gets the read-only and writable binds of those checks, which
   bind paths cannot be scoped to one command.

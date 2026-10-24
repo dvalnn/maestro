@@ -318,6 +318,7 @@ export type InlineCheck = {
 
 export type CheckOut<M extends LaneMode = LaneMode> = {
 	logs: Type<ArtifactRef>;
+	output: Type<ArtifactRef>;
 } & LaneOut<M>;
 
 /**
@@ -335,7 +336,7 @@ export function check<M extends LaneMode>(
 	return hostNode("repo.check", {
 		...common,
 		in: ports.in,
-		out: { logs: File(), ...ports.out },
+		out: { logs: File(), output: Dir(), ...ports.out },
 		config: defined({
 			lane: ports.config,
 			check: typeof which === "object" ? defined(which) : which,

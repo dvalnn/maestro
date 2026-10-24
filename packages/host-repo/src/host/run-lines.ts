@@ -32,10 +32,17 @@ type Ended = { code: number } | { signal: string };
 /** The variable that names a lane's base to every line run in it. */
 const LANE_BASE_ENV = "MAESTRO_LANE_BASE";
 
-/** The environment a line of `spec` runs with: its own `env`, then the lane's `base`, which a config cannot override. */
-export const checkEnv = (spec: CheckSpec, base: string) => ({
+/** The variable that names a check's writable output directory to every line. */
+const CHECK_OUTPUT_ENV = "MAESTRO_CHECK_OUTPUT";
+
+/**
+ * The environment a line of `spec` runs with: its own `env`, then the lane's `base` and the check's `output`
+ * directory when it has one, which a config cannot override.
+ */
+export const checkEnv = (spec: CheckSpec, base: string, output?: string) => ({
 	...spec.env,
 	[LANE_BASE_ENV]: base,
+	...(output !== undefined && { [CHECK_OUTPUT_ENV]: output }),
 });
 
 /**
@@ -48,6 +55,8 @@ export type Sandboxed = {
 	path: string;
 	readOnly: Bind[];
 	writable: Bind[];
+	/** The writable directory a check's lines are told in `MAESTRO_CHECK_OUTPUT`, when it has one. */
+	output?: string;
 	live: Live;
 	log: string[];
 };
@@ -106,7 +115,7 @@ async function runLine(
 		lane: s.dir,
 		// Stderr joins stdout, so the output keeps the order it arrived in.
 		argv: ["sh", "-c", `exec 2>&1; ${line}`],
-		env: { PATH: s.path, ...checkEnv(spec, s.base) },
+		env: { PATH: s.path, ...checkEnv(spec, s.base, s.output) },
 		readOnly: [...s.readOnly, ...pathBinds(spec.readOnly)],
 		writable: [...s.writable, ...pathBinds(spec.writable)],
 	});

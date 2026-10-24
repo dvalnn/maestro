@@ -303,19 +303,19 @@ makes a plain value an input of a declared type, so a param read from its text c
 `@maestro/host-repo-sdk` builds the repo host's nodes (architecture 12). It imports only the SDK and the IR, since packs
 bundle it.
 
-| Export                                     | What it gives                                                                                                                           |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `Lane`                                     | The `repo.lane` type of a lane version, and the lane ref param type                                                                     |
-| `fresh(base?)`                             | A new lane cut at `base`, else `target.base`, else the target's `HEAD`                                                                  |
-| `fork(v)`, `read(v)`                       | A copy of version `v`, or `v` with its writes discarded; `v` is a lane output or a lane ref                                             |
-| `extend(v, { resume? })`                   | The lane continued from `v`, a lane output of this concert; with `resume`, an agent continues the session that wrote `v`                |
-| `JsonOut(file, type)`, `MarkdownOut(file)` | An agent output: a file in its outbox, arriving as a `core.json-file` or `core.markdown` artifact                                       |
-| `agent({ task, lane, role, ... })`         | A `repo.agent` node; outputs `report`, `staged`, `lane` unless it reads, and each declared output¹                                      |
-| `seat({ role, identity, ... })`            | A function of `{ task, lane, ... }` that emits a `repo.agent` node²                                                                     |
-| `check(lane, which?)`                      | A `repo.check` node: every named check, the one named, or an inline `{ run, timeout, ... }`; outputs `logs`, and `lane` unless it reads |
-| `changeset(v)`                             | A `repo.changeset` node: version `v` as a patch series, output `changeset`                                                              |
-| `commits(revs)`                            | A `repo.commits` node: the target commits git revisions `revs` name, as a version; output `lane`, which nothing extends                 |
-| `apply(lane, changeset, opts)`             | A `repo.apply` node: one changeset applied, on its `changeset` port; `opts.strategy` is `3way` or `clean`; output `lane`                |
+| Export                                     | What it gives                                                                                                                                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Lane`                                     | The `repo.lane` type of a lane version, and the lane ref param type                                                                                                                               |
+| `fresh(base?)`                             | A new lane cut at `base`, else `target.base`, else the target's `HEAD`                                                                                                                            |
+| `fork(v)`, `read(v)`                       | A copy of version `v`, or `v` with its writes discarded; `v` is a lane output or a lane ref                                                                                                       |
+| `extend(v, { resume? })`                   | The lane continued from `v`, a lane output of this concert; with `resume`, an agent continues the session that wrote `v`                                                                          |
+| `JsonOut(file, type)`, `MarkdownOut(file)` | An agent output: a file in its outbox, arriving as a `core.json-file` or `core.markdown` artifact                                                                                                 |
+| `agent({ task, lane, role, ... })`         | A `repo.agent` node; outputs `report`, `staged`, `lane` unless it reads, and each declared output¹                                                                                                |
+| `seat({ role, identity, ... })`            | A function of `{ task, lane, ... }` that emits a `repo.agent` node²                                                                                                                               |
+| `check(lane, which?)`                      | A `repo.check` node: every named check, the one named, or an inline `{ run, timeout, ... }`; outputs `logs`, `output` (the check's `$MAESTRO_CHECK_OUTPUT` directory), and `lane` unless it reads |
+| `changeset(v)`                             | A `repo.changeset` node: version `v` as a patch series, output `changeset`                                                                                                                        |
+| `commits(revs)`                            | A `repo.commits` node: the target commits git revisions `revs` name, as a version; output `lane`, which nothing extends                                                                           |
+| `apply(lane, changeset, opts)`             | A `repo.apply` node: one changeset applied, on its `changeset` port; `opts.strategy` is `3way` or `clean`; output `lane`                                                                          |
 
 ¹ `agent` also takes `identity`, `verdict`, `attachments` (each `{ artifact, hint }`), `out`, `checks`, `readOnly` and
 the common options. `verdict: true` marks a verdict agent, which may reject; any other agent finishes or is blocked
