@@ -176,8 +176,9 @@ as `claude-haiku-5.5`), the effort only when the role sets `thinking`, the total
 metrics but `tokens_reasoning`, which output tokens already count, as `999`, `15.5k` or `1.2M`, left out when 0. A
 running agent shows the harness, model and effort from the `agent` progress event it emits when it starts, then its
 latest note. Other instances leave the column blank. The `ls` list has a `tokens` column with the concert's total, `-`
-when it has none. In the `--json` documents of `ls` (each row), `wait` and `perform`, `metrics` holds each metric name's
-total over the concert.
+when it has none. In the `--json` documents of `ls` (each row, and `ls <concert>`), `wait` and `perform`, `metrics`
+holds each metric name's total over the concert. `ls --json` rows and `ls <concert> --json` also carry `elapsedMs`,
+`settledAt - startedAt`, or the time since `startedAt` while the concert runs.
 
 `perform` announces `concert <id>`, the full id, on stderr when it starts. `perform`, `wait` and `watch` on a terminal
 end with the closing block, its labels in one column:

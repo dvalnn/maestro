@@ -69,7 +69,11 @@ const LS_OPTIONS = {
 	},
 } as const satisfies Options;
 
-const concertColumns = ({ ir: _ir, ...row }: ConcertRecord) => row;
+/** The record's columns but its IR, and `elapsedMs`: the concert's run time, up to now while it runs. */
+const concertColumns = ({ ir: _ir, ...row }: ConcertRecord) => ({
+	...row,
+	elapsedMs: (row.settledAt ?? Date.now()) - row.startedAt,
+});
 
 const tokenCell = (metrics: Metrics) => {
 	const tokens = tokensOf(metrics);
@@ -183,6 +187,7 @@ async function instancesOf(
 			? jsonOf({
 					...concertColumns(row),
 					short: shortIds(store.ids()).label(row.id, false),
+					metrics: store.metrics(row.id),
 					instances,
 				})
 			: table([

@@ -1038,11 +1038,14 @@ describe("the record", () => {
 		expect(json(await w.call(["wait", id, "--json"])).metrics).toEqual(metrics);
 		expect((await w.call(["wait", id])).err).toMatch(/ · 15\.5k tokens$/m);
 		expect((await w.call(["wait", bare])).err).not.toContain("tokens");
-		expect(
-			json(await w.call(["ls", "--json"])).find(
-				(r: { id: string }) => r.id === id,
-			).metrics,
-		).toEqual(metrics);
+		const row = json(await w.call(["ls", "--json"])).find(
+			(r: { id: string }) => r.id === id,
+		);
+		expect(row.metrics).toEqual(metrics);
+		expect(row.elapsedMs).toBe(row.settledAt - row.startedAt);
+		const single = json(await w.call(["ls", id, "--json"]));
+		expect(single.metrics).toEqual(metrics);
+		expect(single.elapsedMs).toBe(row.elapsedMs);
 		const listed = (await w.call(["ls"])).out.split("\n");
 		expect(listed[0]).toMatch(/status +tokens +disk$/);
 		expect(listed.find((l) => l.startsWith(shortOf(id)))).toMatch(
