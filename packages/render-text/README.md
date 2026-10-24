@@ -60,9 +60,9 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 
 `@maestro/render-text/press` turns input into navigation, with no terminal:
 
-- `keysOf(chunk)`: the keys in a chunk of raw input: vi keys, arrows, paging, Home and End as terminals send them,
-  space, `[`, `]`, `e`, `f`, Enter as `enter`, a lone Esc as `esc`, `q` as `quit` and Ctrl-C as `interrupt`. Unbound
-  input is left out.
+- `keysOf(chunk)`: the keys in a chunk of raw input: vi keys, `u` and `d`, arrows, paging, Home and End as terminals
+  send them, space, `[`, `]`, `e`, `f`, Enter as `enter`, a lone Esc as `esc`, `q` as `quit` and Ctrl-C as `interrupt`.
+  Unbound input is left out.
 - `isInput(text)`: whether `text` names an input, such as `down` or `enter`.
 - `ends(input, nav)`: whether an input ends the view: `interrupt` always, `quit` on the tree.
 - `press(input, browsed)`: the navigation after an input on a browsed view, from the navigation it was drawn with;

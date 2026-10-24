@@ -64,7 +64,7 @@ export const isInput = (text: string): text is Input =>
 	(INPUTS as readonly string[]).includes(text);
 
 const ESC = "\u001b";
-/** Raw input bytes by key: vi keys, arrows, paging, Home and End as terminals send them, Enter, a lone Esc and Ctrl-C. */
+/** Raw input bytes by key: vi keys, `u` and `d`, arrows, paging, Home and End as terminals send them, Enter, a lone Esc and Ctrl-C. */
 const KEYS: ReadonlyMap<string, Input> = new Map([
 	["k", "up"],
 	[`${ESC}[A`, "up"],
@@ -79,7 +79,9 @@ const KEYS: ReadonlyMap<string, Input> = new Map([
 	[`${ESC}[C`, "right"],
 	[`${ESC}OC`, "right"],
 	[" ", "toggle"],
+	["u", "pageUp"],
 	[`${ESC}[5~`, "pageUp"],
+	["d", "pageDown"],
 	[`${ESC}[6~`, "pageDown"],
 	["g", "first"],
 	[`${ESC}[H`, "first"],

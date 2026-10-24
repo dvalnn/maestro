@@ -86,7 +86,7 @@ const located = ({ source }: Diagnostic) =>
 		? `${source.file}:${source.line}${source.column === undefined ? "" : `:${source.column}`}: `
 		: "";
 
-const paint = (
+export const paint = (
 	style: Parameters<typeof styled>[0],
 	text: string,
 	color: boolean,
@@ -124,14 +124,23 @@ export function staleCell({ stale }: { stale?: boolean }): string {
 	return stale ? "stale" : "";
 }
 
-/** Rows of cells in columns two spaces apart, without trailing spaces. A cell's width leaves out its color codes. */
-export function table(rows: readonly (readonly string[])[]): string {
-	const widths = rows.reduce<number[]>(
+/**
+ * Rows of cells in columns two spaces apart, without trailing spaces. A cell's width leaves out its color codes. With
+ * `bold` the first row is bold.
+ */
+export function table(
+	rows: readonly (readonly string[])[],
+	bold = false,
+): string {
+	const shown = rows.map((row, r) =>
+		bold && r === 0 ? row.map((cell) => paint("bold", cell, true)) : row,
+	);
+	const widths = shown.reduce<number[]>(
 		(w, row) =>
 			row.map((cell, i) => Math.max(w[i] ?? 0, Bun.stringWidth(cell))),
 		[],
 	);
-	return rows
+	return shown
 		.map((row) =>
 			row
 				.map((cell, i) => padCells(cell, widths[i] ?? 0))

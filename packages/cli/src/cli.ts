@@ -17,6 +17,7 @@ import {
 	EXIT,
 	hinted,
 	jsonOf,
+	paint,
 	renderDiagnostic,
 	table,
 	usageError,
@@ -106,11 +107,11 @@ const VERBS: readonly Verb[] = [
 const versionLine = () =>
 	`maestro ${pkg.version} (sdk ${SDK_VERSION}, ir ${IR_VERSION}, bun ${Bun.version})`;
 
-const rootHelp = () =>
+const rootHelp = (color: boolean) =>
 	[
-		"Usage: maestro <command> [flags]",
+		`${paint("bold", "Usage:", color)} maestro <command> [flags]`,
 		"",
-		"Commands:",
+		paint("bold", "Commands:", color),
 		table(
 			VERBS.map((v) => [
 				`  ${v.name}`,
@@ -119,9 +120,9 @@ const rootHelp = () =>
 			]),
 		),
 		"",
-		"Flags:",
-		"  --version  Print the maestro, SDK, IR and Bun versions",
-		"  --help     Show this help",
+		paint("bold", "Flags:", color),
+		`  ${paint("cyan", "--version", color)}  Print the maestro, SDK, IR and Bun versions`,
+		`  ${paint("cyan", "--help", color)}     Show this help`,
 		"",
 		"See 'maestro <command> --help' for a command's flags.",
 	].join("\n");
@@ -207,18 +208,21 @@ export async function main(
 	let options = COMMON;
 	try {
 		if (word === "--help" || word === "-h") {
-			deps.stdout(rootHelp());
+			deps.stdout(rootHelp(colorOf(deps, peek(COMMON, args)).out));
 			return EXIT.ok;
 		}
 		if (word === "--version") {
 			deps.stdout(versionLine());
 			return EXIT.ok;
 		}
-		if (word === undefined) throw usageError("no command given", rootHelp());
+		if (word === undefined)
+			throw usageError("no command given", rootHelp(false));
 		const command = await verbOf(word).load();
 		options = command.options;
-		if (isSet(peek(COMMON, args), "help")) {
-			deps.stdout(helpOf(command, await extraHelp(command, args, deps)));
+		const common = peek(COMMON, args);
+		if (isSet(common, "help")) {
+			const { out } = colorOf(deps, common);
+			deps.stdout(helpOf(command, await extraHelp(command, args, deps), out));
 			return EXIT.ok;
 		}
 		return await command.execute(args, deps);

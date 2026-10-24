@@ -1,7 +1,7 @@
 import { isPlainObject, type JsonSchema, MAESTRO_TYPE } from "@maestro/ir";
 import type { Described } from "@maestro/sdk/loader";
 import type { Options, Values } from "./command";
-import { table, usageError } from "./output";
+import { paint, table, usageError } from "./output";
 import { flagFor, flagName, flagOf } from "./params";
 
 /** The flags a composition's params add to a command, and the param each one sets. */
@@ -177,14 +177,20 @@ function fallback(p: ParamEntry): string {
 	return p.default === undefined ? "optional" : shownDefault(p.default);
 }
 
-/** The `Params` block of `composition`: per param its flag, its fallback and its description. */
-export function paramsBlock(composition: Described): string | undefined {
+/**
+ * The `Params` block of `composition`: per param its flag, its fallback and its description. With `color` the heading
+ * is bold and the flags cyan.
+ */
+export function paramsBlock(
+	composition: Described,
+	color = false,
+): string | undefined {
 	const params = paramEntries(composition);
 	if (!params.length) return undefined;
 	const rows = params.map((p) => [
-		`  ${flagUsage(p)}`,
+		`  ${paint("cyan", flagUsage(p), color)}`,
 		fallback(p),
 		p.description ?? "",
 	]);
-	return `Params\n${table(rows)}`;
+	return `${paint("bold", "Params", color)}\n${table(rows)}`;
 }

@@ -707,6 +707,23 @@ describe("usage errors", () => {
 		}
 	});
 
+	test("--help bolds headings and colors flags, and a table header is bold, only on a terminal with color on", async () => {
+		const w = await world();
+		const terminal = () => ({ columns: 80, rows: 24 });
+		for (const args of [["--help"], ["ls", "--help"]]) {
+			const on = (await w.call(args, { terminal })).out;
+			expect(on).toContain(`${ESC}[1mFlags:${ESC}[22m`);
+			expect(on).toContain(`--help${ESC}[39m`);
+			expect(on).toContain(`${ESC}[36m`);
+			const off = (await w.call([...args, "--no-color"], { terminal })).out;
+			expect(off).not.toContain(ESC);
+			expect(stripVTControlCharacters(on)).toBe(off);
+		}
+		const header = (await w.call(["ls"], { terminal })).out;
+		expect(header).toStartWith(`${ESC}[1mid${ESC}[22m`);
+		expect((await w.call(["ls"])).out).toStartWith("id ");
+	});
+
 	test("--help given a composition adds its params after the flags, and not without one", async () => {
 		const w = await world();
 		const PARAMS =
@@ -715,6 +732,12 @@ describe("usage errors", () => {
 			PARAMS,
 		);
 		expect((await w.call(["p", HELLO, "-h"])).out).toMatch(/\n\nParams\n/);
+		const colored = await w.call(["compose", "demo.greet", "--help"], {
+			terminal: () => ({ columns: 80, rows: 24 }),
+		});
+		expect(colored.out).toContain(
+			`${ESC}[1mParams${ESC}[22m\n  ${ESC}[36m--name <text>${ESC}[39m`,
+		);
 		expect((await w.call(["compose", "--help"])).out).not.toContain("Params");
 		expect(await w.call(["compose", "demo.nope", "--help"])).toMatchObject({
 			code: 0,

@@ -6,6 +6,7 @@ import { messageOf } from "@maestro/ir";
 import type { Environment } from "./config";
 import {
 	compositionOf,
+	paint,
 	parseTour,
 	renderWarning,
 	STATUSES,
@@ -212,8 +213,15 @@ export function only(
 	return first;
 }
 
-/** Help for `command`: its usage, then each flag with its description, then `extra` when given. */
-export function helpOf(command: Command, extra?: string): string {
+/**
+ * Help for `command`: its usage, then each flag with its description, then `extra` when given. With `color` the
+ * headings are bold and the flags cyan.
+ */
+export function helpOf(
+	command: Command,
+	extra?: string,
+	color = false,
+): string {
 	const flags = Object.entries(command.options)
 		.filter(([, o]) => !o.hidden)
 		.map(([name, o]) => [
@@ -221,10 +229,15 @@ export function helpOf(command: Command, extra?: string): string {
 			o.desc,
 		]);
 	return [
-		`Usage: maestro ${command.usage}`,
+		`${paint("bold", "Usage:", color)} maestro ${command.usage}`,
 		"",
-		"Flags:",
-		table(flags.map(([flag = "", desc = ""]) => [`  ${flag}`, desc])),
+		paint("bold", "Flags:", color),
+		table(
+			flags.map(([flag = "", desc = ""]) => [
+				`  ${flag.slice(0, flag.search(/\S/))}${paint("cyan", flag.trim(), color)}`,
+				desc,
+			]),
+		),
 		...(extra === undefined ? [] : ["", extra]),
 	].join("\n");
 }

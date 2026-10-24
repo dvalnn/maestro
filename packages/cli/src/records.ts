@@ -146,28 +146,31 @@ async function listed(stored: Stored, query: ConcertFilter) {
 			diskUse: await diskOf(stored, c.id),
 		})),
 	);
-	const text = table([
+	const text = table(
 		[
-			"id",
-			"title",
-			"tour",
-			"workspace",
-			"composition",
-			"status",
-			"tokens",
-			"disk",
+			[
+				"id",
+				"title",
+				"tour",
+				"workspace",
+				"composition",
+				"status",
+				"tokens",
+				"disk",
+			],
+			...rows.map((r) => [
+				r.short,
+				dash(r.title),
+				dash(r.tour),
+				dash(r.workspace),
+				`${r.pack}.${r.composition}`,
+				stateWord(r.status, color),
+				tokenCell(r.metrics),
+				formatBytes(r.diskUse),
+			]),
 		],
-		...rows.map((r) => [
-			r.short,
-			dash(r.title),
-			dash(r.tour),
-			dash(r.workspace),
-			`${r.pack}.${r.composition}`,
-			stateWord(r.status, color),
-			tokenCell(r.metrics),
-			formatBytes(r.diskUse),
-		]),
-	]);
+		color,
+	);
 	session.deps.stdout(
 		json ? jsonOf(rows) : color ? highlighted(short, rows, text) : text,
 	);
@@ -190,16 +193,19 @@ async function instancesOf(
 					metrics: store.metrics(row.id),
 					instances,
 				})
-			: table([
-					["instance", "status", "stale", "agent", "reason"],
-					...instances.map((i) => [
-						instanceName(row.ir, i),
-						stateWord(i.status, color),
-						staleCell(i),
-						agentText(actorOf(i.enrichment, i.node, hostText), i.metrics),
-						i.reason ?? "",
-					]),
-				]),
+			: table(
+					[
+						["instance", "status", "stale", "agent", "reason"],
+						...instances.map((i) => [
+							instanceName(row.ir, i),
+							stateWord(i.status, color),
+							staleCell(i),
+							agentText(actorOf(i.enrichment, i.node, hostText), i.metrics),
+							i.reason ?? "",
+						]),
+					],
+					color,
+				),
 	);
 	return EXIT.ok;
 }

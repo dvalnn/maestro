@@ -4,6 +4,7 @@ import type { ConcertRecord } from "@maestro/core/perform";
 import {
 	COMMON,
 	type Command,
+	colorOf,
 	type Deps,
 	isSet,
 	type Options,
@@ -134,10 +135,13 @@ function listed({ session, values, json }: Stored, artifacts: Listed[]) {
 		for (const a of artifacts) deps.stdout(a.path);
 	else
 		deps.stdout(
-			table([
-				["instance", "port", "stale", "path"],
-				...artifacts.map((a) => [a.instance, a.port, staleCell(a), a.path]),
-			]),
+			table(
+				[
+					["instance", "port", "stale", "path"],
+					...artifacts.map((a) => [a.instance, a.port, staleCell(a), a.path]),
+				],
+				colorOf(deps, values).out,
+			),
 		);
 	return EXIT.ok;
 }

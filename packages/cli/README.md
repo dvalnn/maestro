@@ -113,19 +113,19 @@ or once the concert settles on the last `failed` one, with the containers leadin
 round unless `[` or `]` pins another, marked `(history)`. Under the tree, a line names the cursor row's instance, kind,
 state, time and agent, then its reason or latest progress, and the last line the mode and keys.
 
-| Key                    | Does                                                                                         |
-| ---------------------- | -------------------------------------------------------------------------------------------- |
-| `j` `↓` / `k` `↑`      | Moves the cursor down or up[^off]                                                            |
-| `l` `→` / `h` `←`      | Opens a row, or steps to its first member / closes it, or steps to its container[^step]      |
-| `space`                | Opens or closes the row                                                                      |
-| `[` / `]`              | The previous or next iteration of the `loop`, `map`, `find` or `fold` the cursor is in[^off] |
-| `g` `Home` / `G` `End` | The first or last row[^off]                                                                  |
-| `PgUp` / `PgDn`        | One viewport up or down[^off]                                                                |
-| `e`                    | The last `failed` instance, its containers opened and its rounds shown[^off]                 |
-| `f`                    | Toggles follow; turning it on drops the pinned rounds and keeps the folds                    |
-| `Enter`                | Inspects the row                                                                             |
-| `q` `Ctrl-C`           | Quits                                                                                        |
-| `Ctrl-Z`               | Gives the terminal back and suspends; `fg` resumes                                           |
+| Key                     | Does                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| `j` `↓` / `k` `↑`       | Moves the cursor down or up[^off]                                                            |
+| `l` `→` / `h` `←`       | Opens a row, or steps to its first member / closes it, or steps to its container[^step]      |
+| `space`                 | Opens or closes the row                                                                      |
+| `[` / `]`               | The previous or next iteration of the `loop`, `map`, `find` or `fold` the cursor is in[^off] |
+| `g` `Home` / `G` `End`  | The first or last row[^off]                                                                  |
+| `PgUp` `u` / `PgDn` `d` | One viewport up or down[^off]                                                                |
+| `e`                     | The last `failed` instance, its containers opened and its rounds shown[^off]                 |
+| `f`                     | Toggles follow; turning it on drops the pinned rounds and keeps the folds                    |
+| `Enter`                 | Inspects the row                                                                             |
+| `q` `Ctrl-C`            | Quits                                                                                        |
+| `Ctrl-Z`                | Gives the terminal back and suspends; `fg` resumes                                           |
 
 [^off]: Turns follow off.
 
@@ -142,7 +142,7 @@ or scrolling back to the end tails again.
 | ------------------------- | ----------------------- |
 | `j` `↓` / `k` `↑`         | Scrolls one line        |
 | `g` `Home` / `G` `End`    | The first event / tails |
-| `PgUp` / `PgDn`           | One viewport up or down |
+| `PgUp` `u` / `PgDn` `d`   | One viewport up or down |
 | `Esc` `Enter` `q` `h` `←` | Back to the tree        |
 | `Ctrl-C`                  | Quits                   |
 

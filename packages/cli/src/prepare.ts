@@ -15,6 +15,7 @@ import {
 import { type Described, STDLIB_MODULE } from "@maestro/sdk/loader";
 import {
 	COMMON,
+	colorOf,
 	type Deps,
 	type Options,
 	parse,
@@ -323,7 +324,8 @@ export async function compositionHelp(
 	if (target === undefined || target.startsWith("-") || IR_FILE.test(target))
 		return undefined;
 	const session = await openSession(deps, overridesOf(peek(COMMON, args)));
-	return paramsBlock((await located(session, target)).composition);
+	const { composition } = await located(session, target);
+	return paramsBlock(composition, colorOf(deps, peek(COMMON, args)).out);
 }
 
 /**

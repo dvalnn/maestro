@@ -344,7 +344,11 @@ describe("keysOf", () => {
 			`${ESC}[A${ESC}[B${ESC}[D${ESC}[C${ESC}OA${ESC}OB${ESC}OD${ESC}OC`,
 			["up", "down", "left", "right", "up", "down", "left", "right"],
 		],
-		["paging", `${ESC}[5~${ESC}[6~`, ["pageUp", "pageDown"]],
+		[
+			"paging, as PgUp and PgDn or u and d",
+			`${ESC}[5~${ESC}[6~ud`,
+			["pageUp", "pageDown", "pageUp", "pageDown"],
+		],
 		[
 			"Home and End as terminals send them",
 			`${ESC}[H${ESC}[1~${ESC}[7~${ESC}OH${ESC}[F${ESC}[4~${ESC}[8~${ESC}OF`,
