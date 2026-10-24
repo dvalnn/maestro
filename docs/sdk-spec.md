@@ -74,18 +74,18 @@ All of these are Refs. A node accepts common options: `label`, `when` and `toler
 
 ### 4.1 Core node constructors
 
-| Constructor                             | Purpose                                                                        | Key arguments                                                   | Result                                           |
-| --------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------- | ------------------------------------------------ |
-| `code(fn, opts)`                        | Run the author's function over typed inputs.                                   | `in` ports, `out` schema, `timeout`                             | outputs per `out`                                |
-| `iter.parMap(items, body, opts)`        | Instantiate `body` once per item, all at once.                                 | `items`, body, `max`, `onError`, `key`                          | `Settled(M)[]` with static cardinality metadata  |
-| `iter.map(items, body, opts)`           | Instantiate `body` once per item, in order.                                    | `items`, body, `max`, `onError`                                 | `Settled(M)[]`                                   |
-| `iter.find(items, body, cond, opts)`    | Instantiate `body` per item in order, stop at the first result meeting `cond`. | `items`, body, `cond(result)`, `max`                            | the result meeting `cond`, or the last           |
-| `iter.parFind(items, body, cond, opts)` | Instantiate `body` once per item, all at once; the first to meet `cond` wins.  | `items`, body, `cond(result)`, `max`, `key`                     | the result meeting `cond`, or the last to settle |
-| `iter.fold(items, opts)`                | Fold the items into an accumulator, in order.                                  | `items`, `first(item)`, `step(acc, item, i)`, `max`, `tolerate` | the last accumulator                             |
-| `loop.while(cond, opts)`                | Bounded loop carrying typed state, testing the state before each step.         | `cond(state)`, `init`, `step(state, i)`, `max`, `tolerate`      | the last state                                   |
-| `loop.doWhile(cond, opts)`              | Bounded loop carrying typed state, testing each step's result.                 | `cond(result)`, `init`, `step(state, i)`, `max`, `tolerate`     | the last state                                   |
-| `assert(cond, message, opts?)`          | A policy or invariant.                                                         | a boolean, or a `Ref<Bool>` and `onFail`                        | none, or the assert node's handle for a Ref      |
-| `use(sub, ports, opts)`                 | Instantiate a subcomposition.                                                  | `ports` (Refs or plain values), `opts.params` overrides         | the subcomposition's declared outputs            |
+| Constructor                             | Purpose                                                                        | Key arguments                                                                             | Result                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `code(fn, opts)`                        | Run the author's function over typed inputs.                                   | `in` ports, `out` schema, `timeout`                                                       | outputs per `out`                                |
+| `iter.parMap(items, body, opts)`        | Instantiate `body` once per item, all at once.                                 | `items`, body, `max`, `onError`, `key`                                                    | `Settled(M)[]` with static cardinality metadata  |
+| `iter.map(items, body, opts)`           | Instantiate `body` once per item, in order.                                    | `items`, body, `max`, `onError`                                                           | `Settled(M)[]`                                   |
+| `iter.find(items, body, cond, opts)`    | Instantiate `body` per item in order, stop at the first result meeting `cond`. | `items`, body, `cond(result)`, `max`                                                      | the result meeting `cond`, or the last           |
+| `iter.parFind(items, body, cond, opts)` | Instantiate `body` once per item, all at once; the first to meet `cond` wins.  | `items`, body, `cond(result)`, `max`, `key`                                               | the result meeting `cond`, or the last to settle |
+| `iter.fold(items, opts)`                | Fold the items into an accumulator, in order.                                  | `items`, `first(item)`, `step(acc, item, i)`, `max`, `tolerate`                           | the last accumulator                             |
+| `loop.while(cond, opts)`                | Bounded loop carrying typed state, testing the state before each step.         | `cond(state)`, `init`, `step(state, i)`, `max`, `tolerate`                                | the last state                                   |
+| `loop.doWhile(cond, opts)`              | Bounded loop carrying typed state, testing each step's result.                 | `cond(result)`, `init`, `step(state, i)`, `max`, `tolerate`                               | the last state                                   |
+| `assert(cond, message, opts?)`          | A policy or invariant.                                                         | a boolean, or a `Ref<Bool>` and `onFail`                                                  | none, or the assert node's handle for a Ref      |
+| `use(sub, ports, opts)`                 | Instantiate a subcomposition.                                                  | `ports` (Refs or plain values; `Optional` ports may be left out), `opts.params` overrides | the subcomposition's declared outputs            |
 
 Semantics each constructor must honor:
 
@@ -231,6 +231,10 @@ A code node is the SDK's answer to "this needs real code".
   helper modules of the predecessor.
 - **Params.** A subcomposition owns its params. The use site may set them for that instance, and that wins over every
   other layer (D-17).
+- **Optional ports.** A port declared `Optional(type)` may be left out of a `use` feed, or fed `undefined`: its entry in
+  the body's ports is then `undefined` at build time, so the body skips what depends on it, and no node or edge is added
+  for it. A feed names every required port and any subset of the optional ones. A missing required port, a required port
+  fed `undefined` and an undeclared key are `TYPE.ports`.
 
 ## 9. Params and the CLI
 

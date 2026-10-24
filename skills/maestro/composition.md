@@ -53,11 +53,11 @@ From `@maestro/sdk`:
 | `composition(name, { doc, params, examples }, fn)`          | A composition; `fn(params)` returns its result node                                                                       |
 | `Text`, `Int`, `Float`, `Bool`                              | Value types, called with `{ default, description }`; no default means required                                            |
 | `Enum([...])`, `List(T)`, `Struct({ ... })`, `Json(schema)` | Choice and structured value types                                                                                         |
-| `Optional(T)`                                               | A param that may be absent: not required, `undefined` in the build                                                        |
+| `Optional(T)`                                               | A param or port that may be absent: not required, `undefined` in the build                                                |
 | `File()`, `Dir()`, `JsonFile(T)`, `Markdown()`              | Artifact types                                                                                                            |
 | `code(fn, { in, out, timeout })`                            | A code node; `fn` is an exported `(inputs, ctx) => outputs`; `timeout` is a duration                                      |
 | `reject(reason, outputs?)`                                  | A code node's `rejected` verdict, returned from `fn`                                                                      |
-| `use(sub, ports, { params })`                               | A subcomposition, in a scope of its own                                                                                   |
+| `use(sub, ports, { params })`                               | A subcomposition, in a scope of its own; leave out `Optional` ports                                                       |
 | `assert(cond, message)`                                     | A build-time check over plain values                                                                                      |
 | `assert(ref, message, { onFail })`                          | A perform-time check, settling `rejected` or `failed` when false                                                          |
 | `iter.map(items, body, { onError })`                        | `body(item)` per item, in order; the options and `onError` (`"stop"` or `"continue"`) are required                        |

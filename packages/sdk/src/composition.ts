@@ -29,11 +29,24 @@ import { schemas, type Type, type Types, type ValueOf } from "./types";
 
 export type Values<P extends Types> = { [K in keyof P]: ValueOf<P[K]> };
 
-export type PortRefs<Q extends Types> = { [K in keyof Q]: Ref<ValueOf<Q[K]>> };
+type OptionalPorts<Q extends Types> = {
+	[K in keyof Q]: undefined extends ValueOf<Q[K]> ? K : never;
+}[keyof Q];
+
+/** An optional port is `undefined` when the `use` site leaves it out. */
+export type PortRefs<Q extends Types> = {
+	[K in Exclude<keyof Q, OptionalPorts<Q>>]: Ref<ValueOf<Q[K]>>;
+} & {
+	[K in OptionalPorts<Q>]: Ref<Exclude<ValueOf<Q[K]>, undefined>> | undefined;
+};
 
 /** What a `use` site feeds a port: a Ref, or a plain value (D-16). */
 export type PortValues<Q extends Types> = {
-	[K in keyof Q]: Ref<ValueOf<Q[K]>> | ValueOf<Q[K]>;
+	[K in Exclude<keyof Q, OptionalPorts<Q>>]: Ref<ValueOf<Q[K]>> | ValueOf<Q[K]>;
+} & {
+	[K in OptionalPorts<Q>]?:
+		| Ref<Exclude<ValueOf<Q[K]>, undefined>>
+		| ValueOf<Q[K]>;
 };
 
 /** A composition with ports builds only through `use`, so only one without ports takes examples (D-16, D-19). */
@@ -148,7 +161,9 @@ export function use<P extends Types, Q extends Types, R>(
 	});
 	const refs = Object.fromEntries(
 		Object.entries(sub.ports).map(([name, type]) => {
-			const value: unknown = ports[name];
+			const value: unknown = (ports as Record<string, unknown>)[name];
+			if (value === undefined && type.optional === true)
+				return [name, undefined];
 			if (!(value instanceof RefImpl))
 				return [
 					name,
@@ -167,13 +182,29 @@ export function use<P extends Types, Q extends Types, R>(
 	return withFrame(innerFrame(id, false), () => sub.build(params, refs));
 }
 
-function checkPorts(sub: string, declared: object, ports: object): void {
-	const names = (o: object) => Object.keys(o).toSorted().join(", ");
-	if (names(ports) !== names(declared))
+function checkPorts(
+	sub: string,
+	declared: Types,
+	ports: Record<string, unknown>,
+): void {
+	const names = (keys: string[]) => keys.toSorted().join(", ");
+	const all = Object.keys(declared);
+	const required = all.filter((k) => declared[k]?.optional !== true);
+	const optional = all.filter((k) => declared[k]?.optional === true);
+	const given = Object.keys(ports).filter(
+		(k) => ports[k] !== undefined || declared[k]?.optional !== true,
+	);
+	const missing = required.some((k) => ports[k] === undefined);
+	const unknown = given.some((k) => !all.includes(k));
+	const may =
+		optional.length === 0
+			? ""
+			: ` and may feed the optional ports [${names(optional)}]`;
+	if (missing || unknown)
 		throw fail(
 			"TYPE.ports",
-			`use of '${sub}' must feed the ports [${names(declared)}], got [${names(ports)}]`,
-			`Feed exactly the ports '${sub}' declares`,
+			`use of '${sub}' must feed the required ports [${names(required)}]${may}, got [${names(given)}]`,
+			`Feed every required port of '${sub}' and only ports it declares`,
 		);
 }
 

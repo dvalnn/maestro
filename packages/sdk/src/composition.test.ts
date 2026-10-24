@@ -184,7 +184,59 @@ describe("use", () => {
 
 	test("ports that differ from the declared ones fail with TYPE.ports", () => {
 		const error = diagnose(() => buildOf(() => use(shout, {} as never)));
-		expect(error.code).toBe("TYPE.ports");
+		expect(error).toMatchObject({
+			code: "TYPE.ports",
+			message: "use of 'shout' must feed the required ports [text], got []",
+		});
+	});
+
+	describe("optional ports", () => {
+		let seen: unknown = "unset";
+		const withLog = composition(
+			"with-log",
+			{ ports: { diff: Text(), log: Optional(Text()) } },
+			(_, { diff, log }) => {
+				seen = log;
+				const checked: Ref<string> | undefined = log;
+				return task({ diff, ...(checked ? { log: checked } : {}) });
+			},
+		);
+
+		test("left out builds with undefined and adds no node or edge for it", () => {
+			const ir = buildOf(() => use(withLog, { diff: "d" }));
+			expect(seen).toBeUndefined();
+			expect(nodeOf(ir, "with-log/task").literals?.log).toBeUndefined();
+			expect(ir.edges).toHaveLength(0);
+		});
+
+		test("fed builds as a required port does", () => {
+			buildOf(() => use(withLog, { diff: "d", log: "l" }));
+			expect(seen).toBeDefined();
+		});
+
+		test("fed undefined counts as left out", () => {
+			buildOf(() => use(withLog, { diff: "d", log: undefined }));
+			expect(seen).toBeUndefined();
+		});
+
+		test("a required port missing, unknown or undefined is TYPE.ports", () => {
+			for (const feed of [
+				{ log: "l" },
+				{ diff: "d", extra: 1 },
+				{ diff: undefined },
+			])
+				expect(
+					diagnose(() => buildOf(() => use(withLog, feed as never))).code,
+				).toBe("TYPE.ports");
+		});
+
+		test("PortRefs types an optional port Ref<T> | undefined", () => {
+			composition("typed", { ports: { log: Optional(Text()) } }, (_, ports) => {
+				// @ts-expect-error an optional port may be undefined
+				const ref: Ref<string> = ports.log;
+				return ref;
+			});
+		});
 	});
 
 	test("the build context's configured params stand over the defaults, and the use site over them", () => {
