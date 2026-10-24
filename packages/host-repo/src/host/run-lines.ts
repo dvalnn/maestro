@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { type Bind, bubblewrap } from "../sandbox/index";
-import type { CheckSpec } from "./config";
+import { type CheckSpec, sandboxPath } from "./config";
 import type { Live } from "./live";
 
 /** A check's usage error. */
@@ -38,10 +38,14 @@ export const checkEnv = (spec: CheckSpec, base: string) => ({
 	[LANE_BASE_ENV]: base,
 });
 
-/** Where lines run: the lane at `dir`, cut from `base`, and the binds beside it, and the log their output goes to. */
+/**
+ * Where lines run: the lane at `dir`, cut from `base`, the directories that lead their PATH, the binds beside it, and
+ * the log their output goes to.
+ */
 export type Sandboxed = {
 	dir: string;
 	base: string;
+	path: string[];
 	readOnly: Bind[];
 	writable: Bind[];
 	live: Live;
@@ -102,7 +106,7 @@ async function runLine(
 		lane: s.dir,
 		// Stderr joins stdout, so the output keeps the order it arrived in.
 		argv: ["sh", "-c", `exec 2>&1; ${line}`],
-		env: checkEnv(spec, s.base),
+		env: { PATH: sandboxPath(s.path), ...checkEnv(spec, s.base) },
 		readOnly: [...s.readOnly, ...pathBinds(spec.readOnly)],
 		writable: [...s.writable, ...pathBinds(spec.writable)],
 	});

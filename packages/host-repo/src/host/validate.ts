@@ -512,6 +512,7 @@ export function validateRepo(
 		...targetProblems(setup),
 		...sparseProblems(setup),
 		...bindProblems(setup, setup.readOnly, "read-only bind"),
+		...bindProblems(setup, setup.path, "sandbox.path directory"),
 		...Object.entries(setup.target?.checks ?? {}).flatMap(([name, spec]) =>
 			checkBinds(setup, `check '${name}'`, spec),
 		),

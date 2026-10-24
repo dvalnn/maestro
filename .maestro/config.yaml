@@ -1,14 +1,7 @@
 target:
   repo: .
   base: main
-  # The sandbox PATH is /usr/bin:/bin, so bun and just come from mise's install tree, bound read-only below.
-  prepare:
-    run: bun install --frozen-lockfile
-    env: &tools { PATH: "/home/tiago/.local/share/mise/installs/bun/latest/bin:/home/tiago/.local/share/mise/installs/just/latest:/usr/bin:/bin" }
+  # bun and just come from the tool PATH the user config's `sandbox.path` sets, as their install paths are machine-specific.
+  prepare: bun install --frozen-lockfile
   checks:
-    check:
-      run: just check
-      env: *tools
-
-sandbox:
-  readOnly: [/home/tiago/.local/share/mise/installs]
+    check: just check

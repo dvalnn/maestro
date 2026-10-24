@@ -1,7 +1,25 @@
-import { expect, test } from "bun:test";
-import { type Layer, layered, parseLayer } from "@maestro/core/config";
+import { afterEach, expect, test } from "bun:test";
+import { compose } from "@maestro/core/compose";
+import {
+	CORE_CONFIG,
+	type Layer,
+	layered,
+	parseLayer,
+} from "@maestro/core/config";
 import { hostSetup } from "@maestro/core/host";
 import { repoSetup, resolveRole } from "./config";
+import {
+	cleanup,
+	configOf,
+	fresh,
+	irOf,
+	noCode,
+	OK,
+	stubHost,
+	toyTarget,
+} from "./test-support";
+
+afterEach(cleanup);
 
 const layer = (text: string, name: "workspace" | "flag" | "profile") =>
 	parseLayer(text, { file: "/w/c.yaml", layer: name });
@@ -50,3 +68,32 @@ test("a !replace in a config file leaves the inline fields in force", () => {
 		thinking: "max",
 	});
 });
+
+test.each([
+	["relative", "tools", "is not an absolute path. Give an absolute path"],
+	["missing", "/no/such/dir", "does not exist. Create it, or drop the bind"],
+])(
+	"a %s sandbox.path directory is refused, naming the key",
+	async (_, dir, why) => {
+		const { host } = stubHost(() => [OK]);
+		const repo = toyTarget();
+		const composed = await compose({
+			ir: irOf(
+				host,
+				[{ id: "x", kind: "check", config: { lane: fresh, check: "hello" } }],
+				"x",
+			),
+			config: configOf(repo, { sandbox: { path: [dir] } }),
+			core: CORE_CONFIG,
+			packs: {},
+			hosts: [host],
+			loadCode: noCode,
+			caps: {},
+		});
+		expect(
+			composed.ok
+				? []
+				: composed.diagnostics.map((d) => `${d.message}. ${d.hint}`),
+		).toEqual([`sandbox.path directory '${dir}' ${why}`]);
+	},
+);

@@ -50,6 +50,10 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
      that holds `.maestro/`) in a workspace file. A list replaces the lower layer's, so to add to the user file's packs
      write `packs: !append [<dir>]`.
 
+   - `sandbox.path`: the absolute directories of the tools checks, `target.prepare` and agents run (`bun`, `just`,
+     `cargo`). Every sandboxed process's PATH is those directories in order, then `/usr/bin:/bin`, and each is bound
+     read-only, so it needs no `sandbox.readOnly` entry. These paths are machine-specific, so set it in the user config,
+     not the workspace file. A check's or prepare's own `env.PATH` wins over it.
    - Optional: `caps`, `sandbox.readOnly`, `concurrency`, and composition params (see the example).
 
    Quote a YAML value that would read as another type or break the line: `"true"`, `"3"`, a line holding `: ` or ` #`.
@@ -92,6 +96,7 @@ caps:
 
 sandbox:
   readOnly: [/home/me/docs] # bound read-only into every agent and check
+  path: [/home/me/.cargo/bin] # put first on every sandboxed PATH, and bound read-only; belongs in the user config
 
 classics: # composition params, under <pack>: <composition>: <param>
   build_then_repair:

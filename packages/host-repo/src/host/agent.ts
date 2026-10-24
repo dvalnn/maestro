@@ -39,6 +39,7 @@ import {
 	repoSetup,
 	requireTarget,
 	resolveRole,
+	sandboxPath,
 	type Target,
 } from "./config";
 import { artifactInput, textInput } from "./inputs";
@@ -407,12 +408,14 @@ function extrasOf(
 	inputs: Inputs,
 	context: HostContext,
 	base: string,
+	path: readonly string[],
 ): AgentChecks {
 	const attachments = Object.entries(config.attachments ?? {});
 	const checks = stageChecks(
 		context.scratch,
 		(config.checks ?? []).map((name) => [name, namedCheck(target, name)]),
 		base,
+		path,
 	);
 	const mounts: Bind[] = attachments.map(([name]) => ({
 		src: artifactInput(inputs, context, name),
@@ -465,7 +468,14 @@ async function execute(
 			mkdirSync(staging.staged);
 			mkdirSync(staging.outbox);
 			context.emit({ kind: "agent", ...identityOf(role) });
-			const extras = extrasOf(config, target, inputs, context, lane.base);
+			const extras = extrasOf(
+				config,
+				target,
+				inputs,
+				context,
+				lane.base,
+				setup.path,
+			);
 			const kind = config.verdict ? VERDICT : WORK;
 			const prompt =
 				textInput(inputs, "prompt") +
@@ -480,11 +490,16 @@ async function execute(
 				prompt,
 				lane: lane.dir,
 				readOnly: [
-					...readOnlyBinds(lane, setup.readOnly, config.readOnly ?? []),
+					...readOnlyBinds(
+						lane,
+						setup.readOnly,
+						setup.path,
+						config.readOnly ?? [],
+					),
 					...extras.readOnly,
 				],
 				writable: extras.writable,
-				env: extras.env,
+				env: { PATH: sandboxPath(setup.path), ...extras.env },
 				identity: stage(staging.staged, prompt, identity),
 				outbox: staging.outbox,
 				outputs: Object.values(config.out ?? {}),

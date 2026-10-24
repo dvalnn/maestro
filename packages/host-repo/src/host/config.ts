@@ -98,7 +98,7 @@ export const HOST_CONFIG = {
 	sandbox: {
 		type: "object",
 		additionalProperties: false,
-		properties: { readOnly: PATHS },
+		properties: { readOnly: PATHS, path: PATHS },
 	},
 } as const satisfies Record<string, JsonSchema>;
 
@@ -303,7 +303,7 @@ type RawSetup = {
 		sparse?: Sparse;
 	};
 	roles?: Record<string, Role>;
-	sandbox?: { readOnly?: string[] };
+	sandbox?: { readOnly?: string[]; path?: string[] };
 };
 
 export type Target = {
@@ -326,7 +326,13 @@ export type RepoSetup = {
 	/** The key paths `--profile` and `-c` replaced whole with `!replace`. */
 	commandReplaced: readonly KeyPath[];
 	readOnly: string[];
+	/** Absolute host directories, bound read-only, that lead every sandboxed process's PATH in order. */
+	path: string[];
 };
+
+/** The PATH of a sandboxed process: `dirs` in order, then the system's. */
+export const sandboxPath = (dirs: readonly string[]) =>
+	[...dirs, "/usr/bin:/bin"].join(":");
 
 const ajv = validator();
 
@@ -391,6 +397,7 @@ export function repoSetup(setup: HostSetup): RepoSetup {
 		const unset = value === undefined || isEmptyObject(value);
 		return unset ? undefined : parsed<T>(HOST_CONFIG[ns], value, ns);
 	};
+	const sandbox = namespace<RawSetup["sandbox"]>("sandbox");
 	return {
 		store: setup.store,
 		target: targetOf(namespace<RawSetup["target"]>("target")),
@@ -401,7 +408,8 @@ export function repoSetup(setup: HostSetup): RepoSetup {
 			"roles",
 		),
 		commandReplaced: setup.commandLine.replaced,
-		readOnly: namespace<RawSetup["sandbox"]>("sandbox")?.readOnly ?? [],
+		readOnly: sandbox?.readOnly ?? [],
+		path: sandbox?.path ?? [],
 	};
 }
 

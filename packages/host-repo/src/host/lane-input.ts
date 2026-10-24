@@ -96,7 +96,8 @@ async function prepare(
 	const s: Sandboxed = {
 		dir: lane.dir,
 		base: lane.base,
-		readOnly: readOnlyBinds(lane, setup.readOnly),
+		path: setup.path,
+		readOnly: readOnlyBinds(lane, setup.readOnly, setup.path),
 		writable: [],
 		live: run.live,
 		log: [],

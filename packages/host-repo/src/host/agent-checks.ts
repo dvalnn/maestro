@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { MS_PER_UNIT } from "@maestro/ir";
 import { shellQuote as quote } from "../harness/stub";
 import { type Bind, LANE_DST } from "../sandbox/index";
-import { type CheckSpec, listed } from "./config";
+import { type CheckSpec, listed, sandboxPath } from "./config";
 import {
 	checkEnv,
 	FAILED_EXITS,
@@ -14,7 +14,6 @@ import {
 
 /** Where an agent's sandbox sees the staged checks, and so its `check` command on PATH. */
 const ROOT = "/maestro/checks";
-const SANDBOX_PATH = `${ROOT}/bin:/usr/bin:/bin`;
 const SCRIPT_MODE = 0o755;
 /** Seconds a line gets after `timeout(1)` asks it to stop, before it is killed. */
 const KILL_GRACE_S = 2;
@@ -86,13 +85,16 @@ const NONE: AgentChecks = { readOnly: [], writable: [], env: {}, note: "" };
 
 /**
  * Writes the `check` command and the scripts of `checks` under `dir/checks`, and the binds, environment and prompt
- * note an agent that runs them needs. The scripts hold the checks' env values, so `dir` is never an artifact. The command runs a check as the host's own check node would, with its timeout, if any,
- * and its exit classification, but in the agent's sandbox: the binds of every check apply to all of it.
+ * note an agent that runs them needs. Its PATH is the `check` command's directory, then `sandboxPath(path)`. The
+ * scripts hold the checks' env values, so `dir` is never an artifact. The command runs a check as the host's own check
+ * node would, with its timeout, if any, and its exit classification, but in the agent's sandbox: the binds of every
+ * check apply to all of it.
  */
 export function stageChecks(
 	dir: string,
 	checks: [string, CheckSpec][],
 	base: string,
+	path: readonly string[],
 ): AgentChecks {
 	if (!checks.length) return NONE;
 	const root = join(dir, "checks");
@@ -109,7 +111,7 @@ export function stageChecks(
 			...pathBinds(...specs.map((s) => s.readOnly)),
 		],
 		writable: pathBinds(...specs.map((s) => s.writable)),
-		env: { PATH: SANDBOX_PATH },
+		env: { PATH: sandboxPath([`${ROOT}/bin`, ...path]) },
 		note: note(checks),
 	};
 }

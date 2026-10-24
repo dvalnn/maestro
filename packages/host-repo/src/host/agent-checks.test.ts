@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
@@ -278,4 +278,109 @@ describe("agent-runnable checks and attachments", () => {
 			).toEqual([["HOST.bind", `check 'put' writable bind '${bind}' ${why}`]]);
 		},
 	);
+});
+
+describe("sandbox.path", () => {
+	/** A config whose `sandbox.path`, unless `set` is false, is a directory holding a `hello` tool, and the directory lines write their PATH to. */
+	function pathed(
+		target: (out: string) => Record<string, unknown>,
+		set = true,
+	) {
+		const tools = tmp("tools");
+		writeFileSync(join(tools, "hello"), "#!/bin/sh\necho hello\n", {
+			mode: 0o755,
+		});
+		const out = tmp("out");
+		const repo = toyTarget();
+		const config = configOf(repo, {
+			target: { repo, base: "main", ...target(out) },
+			...(set ? { sandbox: { path: [tools] } } : {}),
+		});
+		const read = (file: string) => readFileSync(join(out, file), "utf8");
+		return { tools, out, config, read };
+	}
+	const writes = (out: string, file: string) => ({
+		run: `echo "$PATH" > ${out}/${file}; hello > ${out}/${file}.tool`,
+		writable: [out],
+	});
+
+	test("leads the PATH of an agent, prepare, a check and an agent's `check` command, and binds its directories", async () => {
+		const { tools, out, config, read } = pathed((out) => ({
+			checks: { path: writes(out, "command") },
+			prepare: writes(out, "prepare"),
+		}));
+		const { host } = stubHost((req) => [
+			{
+				sh: req.prompt.startsWith("plain")
+					? `echo "$PATH" > /out/path.md; hello >> /out/path.md`
+					: `echo "$PATH" > ${out}/agent; hello > ${out}/agent.tool; check path`,
+			},
+			OK,
+		]);
+		const specs: NodeSpec[] = [
+			{
+				id: "p",
+				kind: "agent",
+				config: { ...builder, lane: fresh, out: { path: markdown("path.md") } },
+				literals: { prompt: "plain" },
+			},
+			{
+				id: "a",
+				kind: "agent",
+				config: { ...builder, lane: fresh, checks: ["path"] },
+				literals: { prompt: "go" },
+			},
+			{
+				id: "c",
+				kind: "check",
+				config: {
+					lane: fresh,
+					check: {
+						run: [`echo "$PATH" > ${out}/check`, `hello > ${out}/check.tool`],
+						writable: [out],
+					},
+				},
+			},
+		];
+		const plain: string[] = [];
+		for (const id of ["p", "a", "c"]) {
+			const run = await performed(host, irOf(host, specs, id), config);
+			expect(run.result).toMatchObject({ outcome: "ok" });
+			if (id === "p")
+				plain.push(readFileSync(run.artifact("p", "path"), "utf8"));
+		}
+
+		const path = `${tools}:/usr/bin:/bin\n`;
+		expect(plain).toEqual([`${path}hello\n`]);
+		expect(read("agent")).toBe(`/maestro/checks/bin:${path}`);
+		expect(read("prepare")).toBe(path);
+		expect(read("check")).toBe(path);
+		expect(read("command")).toBe(`/maestro/checks/bin:${path}`);
+		for (const ran of ["agent", "prepare", "check", "command"])
+			expect(read(`${ran}.tool`)).toBe("hello\n");
+	});
+
+	test.each([
+		["a check's own env.PATH wins over it", true, "/opt/own:/usr/bin:/bin"],
+		["unset, a check's PATH is the system's", false, undefined],
+	])("%s", async (_, set, own) => {
+		const { out, config, read } = pathed(() => ({}), set);
+		const { host } = stubHost(() => [OK]);
+		const check = {
+			run: `echo "$PATH" > ${out}/check`,
+			writable: [out],
+			...(own === undefined ? {} : { env: { PATH: own } }),
+		};
+		const { result } = await performed(
+			host,
+			irOf(
+				host,
+				[{ id: "c", kind: "check", config: { lane: fresh, check } }],
+				"c",
+			),
+			config,
+		);
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(read("check")).toBe(`${own ?? "/usr/bin:/bin"}\n`);
+	});
 });
