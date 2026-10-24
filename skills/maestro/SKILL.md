@@ -117,11 +117,13 @@ agent writes a placeholder for each output it declares, the smallest value that 
 text. A schema beyond those fails the agent, naming the output. So a concert runs past its agents and proves config,
 roles, lanes and checks: `classics.panel_review` ends `ok` with an unapproved verdict, and `classics.v_model` is always
 rejected: its checks stay red because nothing was built, and when they are green its final traceability step rejects it,
-since the stub review never approves. Use one to try a flow, or whenever the user asks for no spend. Map every role the
-composition names to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose and
-perform; a resume reapplies it. The profile wins over a role a composition pins inline. `MAESTRO_STUB_DELAY` (a duration
-such as `2s` or `500ms`) makes each stub agent turn wait that long, to rehearse a slow run. For the classics pack
-0.1.0-beta.4's six roles:
+since the stub review never approves. Use one to try a flow, or whenever the user asks for no spend. It also shows what
+each agent is told before any spend: its host stages the identity and prompt as for a real run, so
+`maestro art <id> <instance> staged/identity.md` and `staged/prompt.md` print them. Map every role the composition names
+to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose and perform; a resume
+reapplies it. The profile wins over a role a composition pins inline. `MAESTRO_STUB_DELAY` (a duration such as `2s` or
+`500ms`) makes each stub agent turn wait that long, to rehearse a slow run. For the classics pack 0.1.0-beta.4's six
+roles:
 
 ```yaml
 roles:

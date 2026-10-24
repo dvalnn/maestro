@@ -70,7 +70,8 @@ maestro wait <concert> --timeout 15m
     files (one a resume left from an earlier attempt) adds a `warning:` line on stderr. An instance is any name
     `ls <concert>` prints, or a unique ending of whole segments of one, such as `build` for `loop[0]/build`. An unknown
     or ambiguous instance or file, and `--json` with an instance or `--path`, are usage errors; an instance with no
-    artifacts yet, or an artifact gone from disk, exits 1.
+    artifacts yet, or an artifact gone from disk, exits 1. To read what an agent is told before any spend, perform a
+    stub concert (`--profile stub`) and read its instance's `staged/identity.md` and `staged/prompt.md`.
 
 [^rep]:
     `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,
