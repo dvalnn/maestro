@@ -2,6 +2,7 @@ import { changeset, check, extend, fresh, Lane } from "@maestro/host-repo-sdk";
 import {
 	code,
 	composition,
+	List,
 	loop,
 	Markdown,
 	not,
@@ -28,7 +29,14 @@ export const repairUntilGreen = composition(
 	{
 		doc: "Check a lane, then repair and check again while the target's checks are red, up to maxRepairs times.",
 		ports: { lane: Lane, spec: Markdown() },
-		params: { maxRepairs },
+		params: {
+			maxRepairs,
+			checks: List(Text(), {
+				default: [],
+				description:
+					"The target checks the repair agent may run on its repair, by name in target.checks",
+			}),
+		},
 	},
 	(params, { lane, spec }) =>
 		loop.while((s) => not(s.ok), {
@@ -38,6 +46,7 @@ export const repairUntilGreen = composition(
 					label: "repair",
 					task: REPAIR_TASK,
 					lane: extend(s.out.lane, { resume: true }),
+					checks: params.checks,
 					attachments: {
 						logs: { artifact: s.out.logs, hint: "first, to see what failed" },
 						spec: { artifact: spec, hint: "for what the change must do" },

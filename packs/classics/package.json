@@ -12,5 +12,8 @@
 		"@maestro/core": "workspace:*",
 		"@maestro/host-repo": "workspace:*",
 		"@maestro/testkit": "workspace:*"
+	},
+	"exports": {
+		".": "./src/index.ts"
 	}
 }

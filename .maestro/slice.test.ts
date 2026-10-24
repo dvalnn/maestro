@@ -76,3 +76,30 @@ test.each(cases)(
 		expect(upheld).toEqual(ids);
 	},
 );
+
+test("the gate's repair agent may run the target's check", async () => {
+	const root = join(import.meta.dir, "..");
+	const run = Bun.spawn(
+		[
+			process.execPath,
+			join(root, "packages/cli/src/maestro.ts"),
+			"compose",
+			".maestro/slice.ts",
+			"--profile",
+			"ordinary",
+			"--request",
+			"x",
+			"--tier",
+			"ordinary",
+			"--json",
+		],
+		{ cwd: root, env: process.env, stdout: "pipe", stderr: "pipe" },
+	);
+	const out = await new Response(run.stdout).text();
+	expect(await run.exited).toBe(0);
+	const repairs = JSON.parse(out).plan.ir.nodes.filter((n: { id: string }) =>
+		n.id.startsWith("gate/loop/repair"),
+	);
+	expect(repairs.length).toBeGreaterThan(0);
+	for (const n of repairs) expect(n.config.checks).toEqual(["check"]);
+});

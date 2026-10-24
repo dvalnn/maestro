@@ -147,6 +147,20 @@ describe("build_then_repair", () => {
 		);
 	});
 
+	test("gives the repair agent the checks configured for repair_until_green", async () => {
+		await configure({
+			classics: { repair_until_green: { checks: ["test"] } },
+		});
+		const { out, code } = await maestro("compose", ...BUILD, "--json");
+		await configure();
+		expect(code).toBe(0);
+		const { plan } = JSON.parse(out);
+		const repair = plan.ir.nodes.find((n: { id: string }) =>
+			n.id.endsWith("/loop/repair"),
+		);
+		expect(repair.config.checks).toEqual(["test"]);
+	});
+
 	test("graphs the loop's bound and its next edge", async () => {
 		const { out } = await maestro("compose", ...BUILD, "--graph");
 		for (const line of ['n3[["loop<br/>0 to 2"]]', 'n6 -.->|"next"| n3'])

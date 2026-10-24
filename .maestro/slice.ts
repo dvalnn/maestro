@@ -1,5 +1,19 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+	atLeastOne,
+	builder,
+	type Findings,
+	lens,
+	maxRepairs,
+	panel,
+	repairUntilGreen,
+	skeptic,
+	survivorsOf,
+	toMarkdown,
+	type Verdict,
+	type Verdicts,
+} from "@maestro/classics";
 import { changeset, extend, fresh, Lane, read } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
@@ -21,16 +35,6 @@ import {
 	use,
 	type ValueOf,
 } from "@maestro/sdk";
-import { survivorsOf, toMarkdown } from "../packs/classics/src/code";
-import { maxRepairs, repairUntilGreen } from "../packs/classics/src/repair";
-import { panel } from "../packs/classics/src/review";
-import { builder, lens, skeptic } from "../packs/classics/src/seats";
-import {
-	atLeastOne,
-	type Findings,
-	type Verdict,
-	type Verdicts,
-} from "../packs/classics/src/types";
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export { survivorsOf, toMarkdown };
@@ -202,7 +206,7 @@ export const slice = composition(
 			const green = use(
 				repairUntilGreen,
 				{ lane, spec },
-				{ params: { maxRepairs }, label: "gate" },
+				{ params: { maxRepairs, checks: ["check"] }, label: "gate" },
 			);
 			return review(tier, green.out.lane, spec);
 		};

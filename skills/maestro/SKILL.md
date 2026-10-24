@@ -146,6 +146,18 @@ maestro's release ships one pack, `classics`:
 - `classics.v_model`: scouts, plans, builds and repairs, reviews each scouted risk, and traces acceptance to the plan.
 - `classics.repair_until_green`: the repair loop the others use; it is not performed alone.
 
+A composition outside the pack builds on its parts through `@maestro/classics`:
+
+- `panel`: the lens, skeptic and consolidator panel, as a function over a change.
+- The seats: `builder`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`, `documenter`.
+- The compositions: `repairUntilGreen`, `panelReview`, `buildThenRepair`, `vModel`.
+- `maxRepairs`, the repair bound, and `atLeastOne`, the at-least-one integer param.
+- Code-node functions: `survivorsOf`, `toMarkdown`, `dossierOf`, `traceOf`, `riskKey`.
+- Types: `Findings`, `Verdict`, `Verdicts`.
+
+`repairUntilGreen` takes a `checks` param, the names in `target.checks` its repair agent may run with `check <name>`; it
+defaults to none, and its recheck runs every check of the target.
+
 Installed, it is `<packs dir>/classics`, and `maestro rep --json` gives each composition's doc, params and config
 entries; its `README.md` there says more. Missing: install it by [bootstrap.md](bootstrap.md), step 3.
 
