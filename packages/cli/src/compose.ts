@@ -1,8 +1,8 @@
 import { dirname, resolve } from "node:path";
 import type { Composed } from "@maestro/core/config";
-import { agentRoles, HOST_NAME } from "@maestro/host-repo";
+import { type AgentRole, agentRoles, HOST_NAME } from "@maestro/host-repo";
 import { canonicalJson, isPlainObject, type Plan } from "@maestro/ir";
-import { type AgentRole, listing, render, summary } from "@maestro/render-text";
+import { listing, render, summary } from "@maestro/render-text";
 import {
 	COMMON,
 	type Command,
@@ -48,6 +48,27 @@ function agentsOf(deps: Deps, config: Composed, plan: Plan): AgentRole[] {
 	return host ? agentRoles(plan.ir.nodes, config, host) : [];
 }
 
+const ROLE_FIELDS = ["harness", "model", "thinking"] as const;
+
+/** The `agents:` block: one row per agent, its node, role, the three fields, then the layer of each field set. */
+function agentLines(agents: readonly AgentRole[]): string {
+	const rows = agents.map((a) => [
+		a.node,
+		a.role,
+		...ROLE_FIELDS.map((f) => a[f]?.value ?? "-"),
+		ROLE_FIELDS.flatMap((f) => (a[f] ? [`${f}:${a[f].layer}`] : [])).join(" "),
+	]);
+	return `agents:\n${table(rows).replace(/^/gm, "  ")}`;
+}
+
+/** The plan in full, then its `agents:` block when it has agent nodes. */
+function planText(deps: Deps, config: Composed, plan: Plan): string {
+	const agents = agentsOf(deps, config, plan);
+	return agents.length
+		? `${listing(plan)}\n${agentLines(agents)}`
+		: listing(plan);
+}
+
 /** Prints the warnings on stderr, then the summary, or the plan in full with `--plan`, and the graph with `--graph`. */
 function print(deps: Deps, prepared: Prepared, plan: Plan): void {
 	const { values } = prepared;
@@ -56,11 +77,7 @@ function print(deps: Deps, prepared: Prepared, plan: Plan): void {
 	const full = isSet(values, "plan");
 	const graph = isSet(values, "graph");
 	if (full || !graph)
-		deps.stdout(
-			full
-				? listing(plan, agentsOf(deps, prepared.config, plan))
-				: summary(plan),
-		);
+		deps.stdout(full ? planText(deps, prepared.config, plan) : summary(plan));
 	if (graph) deps.stdout(render(plan));
 }
 

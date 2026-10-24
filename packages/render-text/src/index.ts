@@ -75,46 +75,14 @@ function nodeLines(plan: Plan, graph: GraphIndex): string[] {
 	]);
 }
 
-/** A resolved field of an agent's role, and the config layer, or `composition`, that set it. */
-type Resolved = { value: string; layer: string };
-
-/** An agent node, its role and the fields the role resolves to; a field nothing sets is absent. */
-export type AgentRole = {
-	node: string;
-	role: string;
-	harness?: Resolved;
-	model?: Resolved;
-	thinking?: Resolved;
-};
-
-const ROLE_FIELDS = ["harness", "model", "thinking"] as const;
-
-/** One row per agent: its node, role, the three fields, then the layer of each field that is set. */
-function agentLines(agents: readonly AgentRole[]): string[] {
-	return table(
-		agents.map((a) => [
-			a.node,
-			a.role,
-			...ROLE_FIELDS.map((f) => a[f]?.value ?? "-"),
-			ROLE_FIELDS.flatMap((f) => (a[f] ? [`${f}:${a[f].layer}`] : [])).join(
-				" ",
-			),
-		]),
-	);
-}
-
-/**
- * The plan in full: each node with its kind, instance count and expansions, the agents with their resolved role
- * fields, then bounds and warnings.
- */
-export function listing(plan: Plan, agents: readonly AgentRole[] = []): string {
+/** The plan in full: each node with its kind, instance count and expansions, then bounds and warnings. */
+export function listing(plan: Plan): string {
 	const graph = indexGraph(plan.ir);
 	const { bounds } = plan;
 	const lines = [
 		summary(plan),
 		"nodes:",
 		...nodeLines(plan, graph),
-		...(agents.length ? ["agents:", ...agentLines(agents)] : []),
 		"bounds:",
 		...table([
 			["instances", amount(bounds.instances)],

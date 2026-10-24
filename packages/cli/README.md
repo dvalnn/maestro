@@ -96,8 +96,9 @@ Primary output goes to stdout, messages to stderr.
 
 Each stream is colored only when it is a terminal: stdout by its own check, stderr by its own. Color is off under
 `NO_COLOR`, `TERM=dumb` or `--no-color`, and the `--json` document is never colored. It covers the `ls` status column,
-the closing block, the `watch` views, a diagnostic's code (red, yellow for a warning) and its dim hint line, and the dim
-hint line of an error.
+the bold table headers of `ls`, `ls <concert>` and `art`, the closing block, the `watch` views, a diagnostic's code
+(red, yellow for a warning) and its dim hint line, the dim hint line of an error, and `--help` (bold headings, cyan
+flags, the Params block included).
 
 `watch` replays from the concert's first event, then follows it. With `--json`, or off a terminal without `--events`, it
 prints a JSON Lines stream: one compact line per record event that changes an instance's state (`running`, `settled`,

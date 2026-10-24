@@ -388,10 +388,10 @@ describe("role precedence", () => {
 			"roles.smoke.model=big",
 		]);
 		expect(out).toMatch(
-			/agents:\n {2}a +smoke +stub +big +low +harness:workspace model:flag thinking:workspace\n/,
+			/agents:\n {2}a +smoke +stub +big +low +harness:workspace model:flag thinking:workspace$/,
 		);
 		expect((await w.call(["compose", inline, "--plan"])).out).toMatch(
-			/agents:\n {2}a +smoke +stub +pinned +low +harness:composition model:composition thinking:workspace\n/,
+			/agents:\n {2}a +smoke +stub +pinned +low +harness:composition model:composition thinking:workspace$/,
 		);
 	});
 

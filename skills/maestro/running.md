@@ -90,8 +90,8 @@ prints absolute paths instead. An instance with no artifacts yet exits 1.
 ambiguous ending is a usage error listing the matches.
 
 `maestro ls <id> --json` gives the concert's row (`id`, `short`, `pack`, `composition`, `status`, `pid`, `startedAt`,
-`settledAt`, `workspace`, `tour`, `title`) and `instances`, each with `node`, `expansion`, `status`, `reason`,
-`outputs`, `metrics` (such as `tokens_in`), `artifacts` and `stale`.
+`settledAt`, `workspace`, `tour`, `title`, `metrics`, `elapsedMs`) and `instances`, each with `node`, `expansion`,
+`status`, `reason`, `outputs`, `metrics` (such as `tokens_in`), `artifacts` and `stale`.
 
 The data root, `$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`) unless config's `dataRoot` moves it, holds:
 

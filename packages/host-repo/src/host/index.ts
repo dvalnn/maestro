@@ -1,4 +1,4 @@
-import { type Composed, sourceOf } from "@maestro/core/config";
+import { type Composed, type LayerName, sourceOf } from "@maestro/core/config";
 import { type Bounds, type Host, hostSetup } from "@maestro/core/host";
 import type { IrNode } from "@maestro/ir";
 import type { Harness, Role } from "../harness/index";
@@ -39,7 +39,12 @@ export type RepoHostOptions = {
 };
 
 /** A role field's value, and the config layer, or `composition`, that set it. */
-type Resolved = { value: string; layer: string };
+type Resolved = { value: string; layer: LayerName | "composition" };
+
+/** An agent node, its role and the fields the role resolves to; a field nothing sets is absent. */
+export type AgentRole = { node: string; role: string } & Partial<
+	Record<keyof Role, Resolved>
+>;
 
 /**
  * The layer of a role field: `composition` for an inline one, else the layer of the config source that set it.
@@ -50,7 +55,7 @@ function layerOf(
 	role: string,
 	field: string,
 	tier: RoleTier,
-): string {
+): Resolved["layer"] {
 	if (tier === "composition") return tier;
 	const source = sourceOf(config, ["roles", role, field]);
 	if (!source) throw new Error(`config 'roles.${role}.${field}' has no source`);
@@ -62,7 +67,7 @@ export function agentRoles(
 	nodes: readonly IrNode[],
 	config: Composed,
 	host: Host,
-): ({ node: string; role: string } & Partial<Record<keyof Role, Resolved>>)[] {
+): AgentRole[] {
 	const repo = repoSetup(hostSetup(host, config));
 	return nodes.flatMap((n) => {
 		if (n.kind !== AGENT_KIND) return [];
