@@ -265,6 +265,13 @@ reads no `.env` or `bunfig.toml` from the cwd, while a run through `bun` from th
 The `stub` harness waits `MAESTRO_STUB_DELAY` before each agent turn settles, a duration such as `2s` or `500ms`; unset,
 it answers at once.
 
+`MAESTRO_STUB_OUTPUTS=<dir>` scripts what a stub agent delivers, per node instance. For each declared output it copies
+`<dir>/<instance id>/<file>`, else `<dir>/<node id>/<file>`, else writes the placeholder; the instance id is as `ls`
+prints it (`loop[0]/review`), the node id is it without the `[n]` indices and serves every round. A verdict agent's
+outcome comes from a `verdict` file found the same way, holding `ok` or `rejected <reason>`; absent, `ok`. The host
+validates a scripted file like any output. A dir that does not exist, or a `verdict` file of any other text, fails the
+stub agent. Set it again on a resume.
+
 A pack is operator-trusted code: `maestro` loads and executes what `packs` lists, and every directory under
 `$XDG_DATA_HOME/maestro/packs/`, with the user's own permissions.
 

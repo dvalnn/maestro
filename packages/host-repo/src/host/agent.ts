@@ -554,6 +554,7 @@ async function execute(
 				outputs: Object.values(config.out ?? {}),
 				session: { dir: session.dir, id: session.id },
 				verdict: config.verdict,
+				instance: instance.id,
 			};
 			const turns = await converse(
 				harness,

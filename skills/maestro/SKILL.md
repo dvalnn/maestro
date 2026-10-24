@@ -122,8 +122,13 @@ each agent is told before any spend: its host stages the identity and prompt as 
 `maestro art <id> <instance> staged/identity.md` and `staged/prompt.md` print them. Map every role the composition names
 to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose and perform; a resume
 reapplies it. The profile wins over a role a composition pins inline. `MAESTRO_STUB_DELAY` (a duration such as `2s` or
-`500ms`) makes each stub agent turn wait that long, to rehearse a slow run. For the classics pack 0.1.0-beta.4's six
-roles:
+`500ms`) makes each stub agent turn wait that long, to rehearse a slow run. `MAESTRO_STUB_OUTPUTS=<dir>` scripts what
+agents deliver, to rehearse a branch that hangs on it, such as a fix loop: a stub agent takes each declared output from
+`<dir>/<instance id>/<file>` (the id as `maestro ls <id>` prints it, such as `loop[0]/review`), else from
+`<dir>/<node id>/<file>` (the id without `[n]` indices, serving every round), else the placeholder. A verdict agent's
+`verdict` file, found the same way, holds `ok` or `rejected <reason>`; without one it rules `ok`. Files are copied as is
+and validated like any output. A resume needs the variable set again; a missing dir fails the agent. For the classics
+pack 0.1.0-beta.4's six roles:
 
 ```yaml
 roles:

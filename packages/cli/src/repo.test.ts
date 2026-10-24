@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
 import { idOf, json, world } from "./fixtures/world";
 import { builtinHosts } from "./hosts";
@@ -762,5 +762,100 @@ describe("changeset", () => {
 		expect(shown.err).toMatch(
 			/^warning: concert \S+ is rejected; this is keptSet's changeset, not a delivered result$/m,
 		);
+	});
+});
+
+describe("MAESTRO_STUB_OUTPUTS", () => {
+	const STUB_ROLE = "roles:\n  smoke:\n    harness: stub\n    model: none\n";
+
+	/** A fixture dir holding `files`, each keyed by its path under it. */
+	async function fixtures(files: Record<string, string>) {
+		const dir = await scratch();
+		for (const [path, text] of Object.entries(files)) {
+			mkdirSync(dirname(join(dir, path)), { recursive: true });
+			writeFileSync(join(dir, path), text);
+		}
+		return dir;
+	}
+
+	const perform = async (dir: string | undefined, file: string) => {
+		const w = await repoWorld(
+			STUB_ROLE,
+			dir === undefined ? {} : { MAESTRO_STUB_OUTPUTS: dir },
+		);
+		const done = await w.call(["perform", file]);
+		const listing = (await w.call(["ls", idOf(done)])).out;
+		const instances = listing
+			.split("\n")
+			.map((l) => l.trim().split(/\s+/))
+			.filter(([id]) => id?.endsWith("review"))
+			.map(([id, status]) => ({ id: id ?? "", status: status ?? "" }));
+		return { w, done, instances };
+	};
+
+	const ROUNDS = join(REPO, "rounds.ts");
+
+	test("fixtures that reject round 0 and approve round 1 end a loop after two rounds", async () => {
+		const dir = await fixtures({
+			"review/verdict": "rejected missing a test\n",
+			"rounds[0]/review/verdict": "ok",
+		});
+		const { done, instances } = await perform(dir, ROUNDS);
+		expect(done).toMatchObject({ code: 0 });
+		expect(instances.map((i) => [i.id, i.status])).toEqual([
+			["review", "rejected"],
+			["rounds[0]/review", "ok"],
+		]);
+	});
+
+	test("a node id's fixture serves every round, and a node without one gets the placeholder", async () => {
+		const dir = await fixtures({
+			"review/verdict": "rejected never good enough",
+			"rounds/review/verdict": "rejected still not",
+		});
+		const { instances } = await perform(dir, ROUNDS);
+		expect(instances.map((i) => i.id)).toEqual([
+			"review",
+			"rounds[0]/review",
+			"rounds[1]/review",
+			"rounds[2]/review",
+		]);
+		const bare = await perform(await fixtures({ "x/y/z": "" }), ROUNDS);
+		expect(bare.instances.map((i) => i.status)).toEqual(["ok"]);
+	});
+
+	test("an instance id's fixture wins over its node id's", async () => {
+		const dir = await fixtures({
+			"review/verdict": "rejected first",
+			"rounds/review/verdict": "rejected every round",
+			"rounds[0]/review/verdict": "ok",
+		});
+		const { instances } = await perform(dir, ROUNDS);
+		expect(instances.map((i) => [i.id, i.status])).toEqual([
+			["review", "rejected"],
+			["rounds[0]/review", "ok"],
+		]);
+	});
+
+	test("a scripted output is copied as is, and one the schema refuses fails the node naming it", async () => {
+		const dir = await fixtures({ "a/rows.json": "not json" });
+		const { done } = await perform(dir, await smokeFile());
+		expect(done.code).not.toBe(0);
+		expect(done.out + done.err).toContain("rows.json");
+	});
+
+	test("a verdict file that is neither ok nor rejected with a reason fails the agent naming the file", async () => {
+		const dir = await fixtures({ "review/verdict": "maybe" });
+		const { done } = await perform(dir, ROUNDS);
+		expect(done.code).not.toBe(0);
+		expect(done.out + done.err).toContain("verdict");
+	});
+
+	test("a missing directory fails the stub agent naming the variable and the path", async () => {
+		const missing = join(await scratch(), "nowhere");
+		const { done } = await perform(missing, ROUNDS);
+		expect(done.code).not.toBe(0);
+		expect(done.out + done.err).toContain("MAESTRO_STUB_OUTPUTS");
+		expect(done.out + done.err).toContain(missing);
 	});
 });

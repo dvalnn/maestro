@@ -55,6 +55,8 @@ export type HarnessRequest = {
 	session: { dir: string; id: string };
 	/** Whether the agent is a verdict agent (GLOSSARY), whose envelope carries an outcome. Adapters need not read it. */
 	verdict?: boolean;
+	/** The agent's node instance id as `ls` prints it, such as `loop[0]/review`. Only the stub reads it. */
+	instance?: string;
 };
 
 export type HarnessEvent =
