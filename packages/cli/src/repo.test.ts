@@ -2,6 +2,8 @@ import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { repoHost } from "@maestro/host-repo";
+import { stubHarness } from "@maestro/host-repo/harness";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
 import { idOf, json, world } from "./fixtures/world";
 import { builtinHosts } from "./hosts";
@@ -761,6 +763,60 @@ describe("changeset", () => {
 		expect(shown.out).toContain("+kept");
 		expect(shown.err).toMatch(
 			/^warning: concert \S+ is rejected; this is keptSet's changeset, not a delivered result$/m,
+		);
+	});
+});
+
+describe("changeset --partial", () => {
+	const ROLE = "roles:\n  smoke:\n    harness: stub\n    model: none\n";
+	const failer = repoHost({
+		harnesses: [
+			stubHarness([
+				{ write: "a.txt", content: "lost\n" },
+				{ emit: { type: "fault", reason: "boom" } },
+			]),
+		],
+	});
+
+	async function failed() {
+		const w = await repoWorld(ROLE);
+		const done = await w.call(["perform", join(REPO, "failing.ts")], {
+			hosts: [failer],
+		});
+		expect(done).toMatchObject({ code: 1 });
+		const cs = (...args: string[]) => w.call(["cs", ...args], { env: GIT_ENV });
+		return { ...w, id: idOf(done), cs };
+	}
+
+	test("show and apply take the work a failed agent left", async () => {
+		const w = await failed();
+		expect(
+			await w.cs("show", w.id, "--node", "build", "--partial"),
+		).toMatchObject({ code: 0, out: expect.stringContaining("+lost") });
+		expect(await w.cs("show", w.id, "--node", "build")).toMatchObject({
+			code: 1,
+			err: expect.stringContaining("made no changeset"),
+		});
+		expect(
+			await w.cs("apply", w.id, "--node", "build", "--partial"),
+		).toMatchObject({ code: 0 });
+		expect(readFileSync(join(w.target, "a.txt"), "utf8")).toBe("lost\n");
+	});
+
+	test("--partial without --node is a usage error, and an instance with no partial is refused", async () => {
+		const w = await failed();
+		expect(await w.cs("show", w.id, "--partial")).toMatchObject({
+			code: 2,
+			err: expect.stringContaining("--partial needs --node"),
+		});
+		const ok = idOf(await w.call(["perform", join(REPO, "edit.ts")]));
+		expect(await w.cs("show", ok, "--node", "edit", "--partial")).toMatchObject(
+			{
+				code: 1,
+				err: expect.stringMatching(
+					/kept no partial work\nPick a failed agent from 'maestro ls \S+'$/,
+				),
+			},
 		);
 	});
 });

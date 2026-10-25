@@ -31,6 +31,11 @@ import {
 
 afterEach(cleanup);
 
+/** Waits until the lane directory `lane` is gone. */
+async function dropped(lane: string) {
+	for (let i = 0; i < 100 && existsSync(lane); i++) await Bun.sleep(20);
+}
+
 describe("compose", () => {
 	test("a double extension and a resume across harnesses are HOST errors, with no harness run", async () => {
 		const target = toyTarget();
@@ -927,9 +932,10 @@ describe("perform", () => {
 				setupOf(config).store,
 				config.values.target.repo,
 			);
-			expect(existsSync(join(root, "lanes", first.concert.id, "x"))).toBe(
-				false,
-			);
+			// A cancelled agent keeps its changes as a partial before its lane is dropped.
+			const lane = join(root, "lanes", first.concert.id, "x");
+			await dropped(lane);
+			expect(existsSync(lane)).toBe(false);
 			const { result } = await performed(host, ir, config, first.concert.id);
 			expect(result).toMatchObject({ outcome: "ok", node: "x" });
 			const series = await changed(

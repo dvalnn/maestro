@@ -79,6 +79,25 @@ const sessionsDir = (root: string) => join(root, SESSIONS);
 const writtenFile = (root: string, v: Version) =>
 	join(sessionsDir(root), WRITTEN, encodeURIComponent(v));
 
+const PARTIALS = "partials";
+
+/**
+ * Where the partial work of failed instance `v` is kept: a changeset directory under the target store, outside the
+ * lane chain.
+ */
+export const partialDir = (root: string, v: Version) =>
+	join(root, PARTIALS, encodeURIComponent(v));
+
+/** The partial directories of `concert` under `root`. */
+function concertPartials(root: string, concert: string): string[] {
+	const dir = join(root, PARTIALS);
+	return existsSync(dir)
+		? readdirSync(dir)
+				.filter((f) => decodeURIComponent(f).startsWith(`${concert}.`))
+				.map((f) => join(dir, f))
+		: [];
+}
+
 /** Starts a session of `harness` in `concert`. */
 export function mintSession(
 	root: string,
@@ -188,7 +207,8 @@ export async function concertUsage(
 	for (const root of targetRoots(store)) {
 		bytes += await lanesAt(root).diskUse(concert);
 		const sessions = concertSessions(root, concert);
-		for (const p of sessions.paths) bytes += bytesOnDisk(p);
+		for (const p of [...sessions.paths, ...concertPartials(root, concert)])
+			bytes += bytesOnDisk(p);
 		bad.push(...sessions.malformed);
 	}
 	if (bad.length)
@@ -202,7 +222,10 @@ export async function concertUsage(
 export async function releaseConcert(store: string, concert: string) {
 	for (const root of targetRoots(store)) {
 		await lanesAt(root).prune(concert);
-		for (const p of concertSessions(root, concert).paths)
+		for (const p of [
+			...concertSessions(root, concert).paths,
+			...concertPartials(root, concert),
+		])
 			rmSync(p, { recursive: true, force: true });
 	}
 }

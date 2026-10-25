@@ -1,4 +1,10 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type {
 	HostContext,
@@ -48,16 +54,17 @@ const MESSAGE_PORT = "message";
 const CHANGESET_DIR = "changeset";
 
 /**
- * Writes `changeset` into a new directory under `scratch`: its `base` file, and its patches as `0001.patch`, `0002.patch`
- * and on, which `git am` applies in name order, and a `message` file when it has a commit message. Returns the directory.
+ * Writes `changeset` into the directory `dir`, replacing what is there: its `base` file, and its patches as `0001.patch`,
+ * `0002.patch` and on, which `git am` applies in name order, and a `message` file when it has a commit message.
+ * Returns `dir`.
  */
-function writeChangeset(
-	scratch: string,
+export function writeChangeset(
+	dir: string,
 	changeset: Changeset,
 	message: string | undefined,
 ): string {
-	const dir = join(scratch, CHANGESET_DIR);
-	mkdirSync(dir);
+	rmSync(dir, { recursive: true, force: true });
+	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, BASE_FILE), `${changeset.base}\n`);
 	if (message !== undefined) writeFileSync(join(dir, MESSAGE_FILE), message);
 	for (const [i, patch] of changeset.patches.entries())
@@ -117,7 +124,11 @@ async function executeChangeset(
 	return {
 		outcome: "ok",
 		outputs: {
-			[CHANGESET_PORT]: writeChangeset(context.scratch, changeset, message),
+			[CHANGESET_PORT]: writeChangeset(
+				join(context.scratch, CHANGESET_DIR),
+				changeset,
+				message,
+			),
 		},
 	};
 }

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { isAbsolute } from "node:path";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import type { StubStep } from "../harness/index";
+import { concertUsage, releaseConcert } from "./store";
 import {
 	cleanup,
 	configOf,
@@ -8,6 +10,9 @@ import {
 	type NodeSpec,
 	OK,
 	performed,
+	reply,
+	sandboxed,
+	setupOf,
 	start,
 	stubHost,
 	toyTarget,
@@ -146,5 +151,118 @@ describe("agent session directory", () => {
 		expect(dirOf("r")).toBe(minted?.dir);
 		expect(minted?.dir).toEndWith(`sessions/${minted?.id}/home`);
 		expect(isAbsolute(minted?.dir ?? "")).toBe(true);
+	});
+});
+
+describe("agent partial work", () => {
+	const edit = (content: string): StubStep => ({
+		write: "a.txt",
+		content,
+	});
+
+	/** Runs the lone agent on `steps`, resuming concert `resume` when given. */
+	async function attempt(
+		steps: (n: number) => StubStep[],
+		config: ReturnType<typeof configOf>,
+		resume?: string,
+	) {
+		const { host, requests } = stubHost(() => steps(requests.length));
+		const done = await performed(host, lone(host), config, resume);
+		return { ...done, requests };
+	}
+
+	const partialOf = (instances: { enrichment?: Record<string, unknown> }[]) =>
+		instances[0]?.enrichment?.partial;
+
+	const patchesOf = (dir: unknown) =>
+		readdirSync(String(dir))
+			.filter((f) => f.endsWith(".patch"))
+			.map((f) => readFileSync(join(String(dir), f), "utf8"))
+			.join("");
+
+	test.each([
+		["a harness failure", [edit("lost\n"), fault(false)]],
+		[
+			"a blocked reply",
+			[edit("lost\n"), reply({ blocked: "no", report: "x" })],
+		],
+	])(
+		"%s keeps the lane's changes as a changeset outside the lane chain",
+		async (_, steps) => {
+			const config = configOf(toyTarget());
+			const { result, instances, id } = await attempt(() => steps, config);
+			expect(result).toMatchObject({ outcome: "failed" });
+			const partial = partialOf(instances);
+			expect(isAbsolute(String(partial))).toBe(true);
+			expect(String(partial)).toContain(setupOf(config).store);
+			expect(readFileSync(join(String(partial), "base"), "utf8")).toMatch(
+				/^[0-9a-f]{40}\n$/,
+			);
+			expect(existsSync(join(String(partial), "message"))).toBe(false);
+			expect(patchesOf(partial)).toContain("+lost");
+			expect(instances[0]?.outputs?.lane).toBeUndefined();
+			const store = setupOf(config).store;
+			const used = await concertUsage(store, id);
+			rmSync(String(partial), { recursive: true });
+			expect(await concertUsage(store, id)).toBeLessThan(used);
+		},
+	);
+
+	test("a cancel keeps the changes made so far", async () => {
+		const config = configOf(toyTarget());
+		const { host, requests } = stubHost(() => [edit("lost\n"), { hang: true }]);
+		const { concert, recordPath } = await start(host, lone(host), config);
+		const { openRecord } = await import("@maestro/core/perform");
+		const partial = () => {
+			const record = openRecord(recordPath);
+			const found = record.instances(concert.id)[0]?.enrichment?.partial;
+			record.close();
+			return found;
+		};
+		while (!requests.length) await Bun.sleep(20);
+		while (!sandboxed().length) await Bun.sleep(20);
+		await Bun.sleep(300);
+		await concert.cancel();
+		expect(await concert.done).toMatchObject({ outcome: "failed" });
+		expect(patchesOf(partial())).toContain("+lost");
+	});
+
+	test("an unchanged lane keeps nothing, and neither does an ok agent", async () => {
+		const config = configOf(toyTarget());
+		const failed = await attempt(() => [fault(false)], config);
+		expect(partialOf(failed.instances)).toBeUndefined();
+		const ok = await attempt(() => [edit("kept\n"), OK], configOf(toyTarget()));
+		expect(ok.result).toMatchObject({ outcome: "ok" });
+		expect(partialOf(ok.instances)).toBeUndefined();
+	});
+
+	test("a re-run starts from its input and leaves the partial, a later failed run replaces it, and prune removes it", async () => {
+		const config = configOf(toyTarget());
+		const first = await attempt(() => [edit("first\n"), fault(false)], config);
+		const partial = String(partialOf(first.instances));
+		const again = await attempt(
+			(n) =>
+				n === 1
+					? [
+							{ sh: "! grep -q first /lane/a.txt || touch /lane/leaked" },
+							fault(false),
+						]
+					: [OK],
+			config,
+			first.id,
+		);
+		expect(again.result).toMatchObject({ outcome: "failed" });
+		expect(patchesOf(partial)).toContain("+first");
+		expect(patchesOf(partial)).not.toContain("leaked");
+		const second = await attempt(
+			() => [edit("second\n"), fault(false)],
+			config,
+			first.id,
+		);
+		expect(partialOf(second.instances)).toBe(partial);
+		expect(patchesOf(partial)).toContain("+second");
+		expect(patchesOf(partial)).not.toContain("+first");
+		await releaseConcert(setupOf(config).store, first.id);
+		expect(existsSync(partial)).toBe(false);
 	});
 });

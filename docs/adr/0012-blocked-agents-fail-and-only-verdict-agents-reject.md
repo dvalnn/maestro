@@ -17,6 +17,8 @@ The rule is:
 - **Only a verdict agent gives a verdict**, `outcome: ok | rejected` with a `reason` when rejected. `verdict: true` on
   an agent or a seat marks one, and the host passes the mark to the harness. Any other agent is a work agent: its
   envelope has no `outcome`, so it finishes or is blocked.
+- **Unfinished work is never passed on.** A failed agent's changes are kept for manual recovery as a partial changeset,
+  outside the lane chain, which `maestro cs --partial` reads; no node, retry or resume takes it as a lane.
 - **A verdict agent gives exactly one of a verdict and blocked.** An envelope with both or neither, or a work agent's
   with an `outcome`, gets the usual correction turn.
 - **The contract states only the fields of the agent's kind**, and the bar for blocked in the same words for both.

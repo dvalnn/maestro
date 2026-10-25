@@ -26,8 +26,10 @@ import {
 	type Output,
 	type Role,
 } from "../harness/index";
+import type { Lane } from "../lane/index";
 import type { Bind } from "../sandbox/index";
 import { type AgentChecks, stageChecks } from "./agent-checks";
+import { writeChangeset } from "./apply";
 import {
 	AGENT_CONFIG,
 	AGENT_KIND,
@@ -43,11 +45,12 @@ import {
 	type Target,
 } from "./config";
 import { artifactInput, textInput } from "./inputs";
-import { lanePorts, readOnlyBinds, withLane } from "./lane-input";
+import { lanePorts, readOnlyBinds, versionAt, withLane } from "./lane-input";
 import { type Live, liveInstances } from "./live";
 import {
 	mintSession,
 	openTarget,
+	partialDir,
 	recordWriter,
 	type Session,
 	writerOf,
@@ -446,6 +449,21 @@ async function settle(
 		: { outcome, reason, outputs, metrics, enrichment };
 }
 
+/**
+ * `result`, and when it failed after changing `lane`, those changes kept as a changeset directory in the store and named
+ * as `partial` in its enrichment. The partial is no lane version, so nothing takes it as input.
+ */
+async function keepPartial(
+	result: HostNodeResult,
+	lane: Lane,
+	dir: string,
+): Promise<HostNodeResult> {
+	if (result.outcome !== "failed" || !(await lane.changes()).length)
+		return result;
+	const partial = writeChangeset(dir, await lane.changeset(), undefined);
+	return { ...result, enrichment: { ...result.enrichment, partial } };
+}
+
 /** The prompt text the attachments add, one line per attachment. */
 const attachmentNote = (attachments: [string, Attachment][]) =>
 	attachments.length
@@ -568,27 +586,48 @@ async function execute(
 				staging.staged,
 				kind,
 			);
-			return settle(staging, turns, async () => {
+			const settled = await settle(staging, turns, async () => {
 				if (read) return undefined;
 				const version = await lane.seal();
 				recordWriter(store.root, version, session);
 				return version;
 			});
+			return keepPartial(
+				settled,
+				lane,
+				partialDir(store.root, versionAt(context.concert, instance)),
+			);
 		},
 	);
 }
 
-/** The `repo.agent` kind, running each instance's role on the harness of that name among `harnesses`. */
+/**
+ * The `repo.agent` kind, running each instance's role on the harness of that name among `harnesses`. Its cancel returns
+ * once the instance has settled, so its kept partial reaches the record before the engine abandons the call.
+ */
 export function agentKind(harnesses: readonly Harness[]): NodeKind {
 	const live = liveInstances();
+	const settling = new Map<string, Promise<unknown>>();
 	return {
 		name: AGENT_KIND,
 		config: AGENT_CONFIG,
 		ports: agentPorts,
-		execute: (instance, inputs, context) =>
-			live.execute(instance, (state) =>
+		execute: (instance, inputs, context) => {
+			const run = live.execute(instance, (state) =>
 				execute(harnesses, instance, inputs, context, state),
-			),
-		cancel: (instance) => live.cancel(instance),
+			);
+			settling.set(
+				instance.id,
+				run.then(
+					() => {},
+					() => {},
+				),
+			);
+			return run;
+		},
+		cancel: async (instance) => {
+			await live.cancel(instance);
+			await settling.get(instance.id);
+		},
 	};
 }

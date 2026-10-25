@@ -68,6 +68,10 @@ const CHANGESET_OPTIONS = {
 		arg: "id",
 		desc: "show, apply: take this instance's changeset, as 'maestro ls <concert>' prints it, or a unique ending of its id",
 	},
+	partial: {
+		type: "boolean",
+		desc: "show, apply: with --node, take the work a failed agent left, not a changeset it made",
+	},
 	stat: { type: "boolean", desc: "show: print a diffstat, not the diff" },
 	summary: {
 		type: "boolean",
@@ -84,8 +88,8 @@ type Action = "show" | "apply" | "drop";
 
 /** The flags of this command each action takes; it refuses the others named here. */
 const ACTION_FLAGS: Readonly<Record<Action, readonly string[]>> = {
-	show: ["node", "stat", "summary"],
-	apply: ["node", "commit"],
+	show: ["node", "partial", "stat", "summary"],
+	apply: ["node", "partial", "commit"],
 	drop: ["yes"],
 };
 const OWN_FLAGS = [...new Set(Object.values(ACTION_FLAGS).flat())];
@@ -111,6 +115,11 @@ function actionOf(word: string | undefined, values: Values): Action {
 		throw usageError(
 			`changeset ${word} takes no --${refused}`,
 			`Drop --${refused}`,
+		);
+	if (isSet(values, "partial") && textOf(values, "node") === undefined)
+		throw usageError(
+			"--partial needs --node",
+			"Pass --node <instance>, a failed agent from 'maestro ls <concert>'",
 		);
 	if (isSet(values, "stat") && isSet(values, "summary"))
 		throw usageError(
@@ -163,25 +172,60 @@ const changesetOf = (ir: Ir, instance: InstanceRecord) =>
 		(r) => r.port === CHANGESET_PORT && r.pointer === "",
 	)?.ref;
 
+/** The directory of the partial work `instance` kept when it failed, if it did. */
+const partialOf = (instance: InstanceRecord) => {
+	const partial = instance.enrichment?.partial;
+	return typeof partial === "string" ? partial : undefined;
+};
+
+/**
+ * The instance of `row` that `node` names, with the directory of what to take from it: its kept partial work when
+ * `partial`, else its changeset artifact under `artifacts`.
+ * @throws CliError, a usage error for a `node` the concert has no instance of, else when the instance has none.
+ */
+function named(
+	store: Records,
+	row: ConcertRecord,
+	artifacts: string,
+	node: string,
+	partial: boolean,
+) {
+	const names = new Map(
+		store.instances(row.id).map((i) => [instanceName(row.ir, i), i]),
+	);
+	const name = nameOf(node, names.keys(), row.id);
+	const instance = names.get(name);
+	const kept = instance && partialOf(instance);
+	if (partial) {
+		if (!instance || !kept)
+			throw new CliError(
+				`instance '${name}' of concert ${row.id} kept no partial work\nPick a failed agent from 'maestro ls ${row.id}'`,
+			);
+		return { instance, dir: kept };
+	}
+	const ref = instance && changesetOf(row.ir, instance);
+	if (!instance || !ref)
+		throw new CliError(
+			`instance '${name}' of concert ${row.id} made no changeset\nName a changeset node from 'maestro ls ${row.id}'`,
+		);
+	return { instance, dir: join(artifacts, ref.path) };
+}
+
 /**
  * The instance whose changeset to take: `node` when given, else the result's instance when it made one, else the last
- * `ok` one that did.
+ * `ok` one that did. With `partial`, `node`'s kept partial work is taken in place of its changeset artifact.
  * @throws CliError, a usage error for a `node` the concert has no instance of, else when the instance made none.
  */
-function chosen(store: Records, row: ConcertRecord, node?: string) {
+function chosen(
+	store: Records,
+	row: ConcertRecord,
+	artifacts: string,
+	node?: string,
+	partial = false,
+) {
 	const instances = store.instances(row.id);
 	const made = (i: InstanceRecord) => changesetOf(row.ir, i);
-	if (node !== undefined) {
-		const names = new Map(instances.map((i) => [instanceName(row.ir, i), i]));
-		const name = nameOf(node, names.keys(), row.id);
-		const named = names.get(name);
-		const ref = named && made(named);
-		if (!named || !ref)
-			throw new CliError(
-				`instance '${name}' of concert ${row.id} made no changeset\nName a changeset node from 'maestro ls ${row.id}'`,
-			);
-		return { instance: named, ref };
-	}
+	if (node !== undefined) return named(store, row, artifacts, node, partial);
 	const result = store.result(row.id);
 	const ok = instances
 		.filter((i) => i.status === "ok" && made(i))
@@ -195,7 +239,7 @@ function chosen(store: Records, row: ConcertRecord, node?: string) {
 		throw new CliError(
 			`concert ${row.id} made no changeset\nPick a concert that ends in a changeset node, from 'maestro ls'`,
 		);
-	return { instance, ref };
+	return { instance, dir: join(artifacts, ref.path) };
 }
 
 const repoOf = ({ config }: Session) => {
@@ -288,9 +332,14 @@ async function readChangeset(dir: string, short: string) {
 async function picked(stored: Stored, prefix: string): Promise<Picked> {
 	const { session, store, values } = stored;
 	const row = concertOf(store, prefix);
-	const { instance, ref } = chosen(store, row, textOf(values, "node"));
+	const { instance, dir } = chosen(
+		store,
+		row,
+		artifactsOf(session, row.id),
+		textOf(values, "node"),
+		isSet(values, "partial"),
+	);
 	const short = shortIds(store.ids()).label(row.id, false);
-	const dir = join(artifactsOf(session, row.id), ref.path);
 	return {
 		...(await readChangeset(dir, short)),
 		checkout: await checkoutOf(

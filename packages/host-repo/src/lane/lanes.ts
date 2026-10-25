@@ -47,6 +47,8 @@ export interface Lane {
 	 * repository is refused. At most once.
 	 */
 	seal(): Promise<Version>;
+	/** The working copy's content as a changeset from the lane chain's base. Records no version and no ref. */
+	changeset(): Promise<Changeset>;
 	/**
 	 * Applies the changeset's patches in order to the working copy and returns the lane-relative files that conflict,
 	 * none when it applied. `3way` stops at the first conflicting patch with its markers left in place; `clean`
@@ -241,6 +243,7 @@ const LANES_NAMES: Names = {
 const laneNames = (at: Version): Names => ({
 	changes: () => `list the changes of lane ${at}`,
 	seal: () => `seal lane ${at}`,
+	changeset: () => `read the changeset of lane ${at}`,
 	apply: () => `apply a changeset to lane ${at}`,
 	discard: () => `discard lane ${at}`,
 });
@@ -604,6 +607,21 @@ export function openLanes(options: LanesOptions): Lanes {
 					);
 					point(commit);
 					return at;
+				},
+				async changeset() {
+					const { tree, changed } = await staged();
+					const commit = changed.length
+						? await value(G("commit-tree", tree, "-p", head, "-m", at))
+						: head;
+					const mbox = await git(
+						G(
+							"format-patch",
+							"--stdout",
+							"--no-signature",
+							`${base}..${commit}`,
+						),
+					);
+					return { base, patches: splitMbox(mbox) };
 				},
 				apply: (changeset, strategy = "3way") =>
 					applyChangeset(lg, changeset, strategy),

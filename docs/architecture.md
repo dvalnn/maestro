@@ -484,7 +484,11 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   outputs its lane version. A commits node's version has no working copy, so it is forked or read, never extended.
 - A lane belongs to its node instance. A failed or cancelled instance drops its lane, and when a resume runs the
   instance again it takes back whatever an earlier run left, its sealed version included. A retried extension re-opens
-  the version it extended, from that version's content.
+  the version it extended, from that version's content. An agent that fails, is blocked or is cancelled after changing
+  its lane first keeps those changes as a changeset directory (`base` and patches, no message) under `partials/` in the
+  target's store, named as `partial` in its enrichment: no version, output or lane ref, so nothing takes it as a lane
+  and a re-run starts from its input. A later failed run of the instance replaces it, and
+  `maestro cs show|apply --node <instance> --partial` reads it for manual recovery.
 - A concert leaves a **changeset** (a patch series) attached to the record only by ending in a changeset node.
   `maestro cs` takes the `result` node's changeset, else the last `ok` instance's changeset. Applying or committing it
   is a separate, operator-owned step: `maestro cs apply --commit` commits it with the changeset's `message`, when the
