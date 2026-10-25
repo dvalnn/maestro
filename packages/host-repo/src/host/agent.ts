@@ -657,6 +657,7 @@ async function execute(
 				recordWriter(store.root, version, session);
 				return version;
 			});
+			if (read) return settled;
 			return keepPartial(
 				settled,
 				lane,
@@ -683,10 +684,12 @@ export function agentKind(harnesses: readonly Harness[]): NodeKind {
 			);
 			settling.set(
 				instance.id,
-				run.then(
-					() => {},
-					() => {},
-				),
+				run
+					.then(
+						() => {},
+						() => {},
+					)
+					.finally(() => settling.delete(instance.id)),
 			);
 			return run;
 		},

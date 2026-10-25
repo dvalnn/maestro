@@ -173,9 +173,9 @@ A host is a package that the core loads. It is the only way node kinds beyond th
    `resources`, for a host that holds disk per concert, groups `release(concert, setup)`, which frees what it holds for
    a settled concert, and `usage(concert, setup)`, which reports its bytes on disk, for `prune` and `ls`. `text` groups
    `progress(event)`, which words one of the host's progress events, `actor(enrichment)`, which names who ran an
-   instance, and `where(enrichment)`, which gives the path its session lives at, as plain one-line text for `watch` and
-   `ls`; the renderer styles it. `needs(graph)` names the config entries the graph's host nodes read by name. ADR 0010
-   records the shape.
+   instance, and `where(enrichment)`, which gives the path its session lives at for `watch`, as plain one-line text; the
+   renderer styles it. `needs(graph)` names the config entries the graph's host nodes read by name. ADR 0010 records the
+   shape.
 
 The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
 hooks and records what they return.
@@ -491,10 +491,10 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   outputs its lane version. A commits node's version has no working copy, so it is forked or read, never extended.
 - A lane belongs to its node instance. A failed or cancelled instance drops its lane, and when a resume runs the
   instance again it takes back whatever an earlier run left, its sealed version included. A retried extension re-opens
-  the version it extended, from that version's content. An agent that fails, is blocked or is cancelled after changing
-  its lane first keeps those changes as a changeset directory (`base` and patches, no message) under `partials/` in the
-  target's store, named as `partial` in its enrichment: no version, output or lane ref, so nothing takes it as a lane
-  and a re-run starts from its input. A later failed run of the instance replaces it, and
+  the version it extended, from that version's content. An agent that fails, is blocked or is cancelled after changing a
+  lane it does not `read` first keeps those changes as a changeset directory (`base` and patches, no message) under
+  `partials/` in the target's store, named as `partial` in its enrichment: no version, output or lane ref, so nothing
+  takes it as a lane and a re-run starts from its input. A later failed run of the instance replaces it, and
   `maestro cs show|apply --node <instance> --partial` reads it for manual recovery.
 - A concert leaves a **changeset** (a patch series) attached to the record only by ending in a changeset node.
   `maestro cs` takes the `result` node's changeset, else the last `ok` instance's changeset. Applying or committing it

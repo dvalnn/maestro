@@ -97,11 +97,15 @@ left out for a group or an instance from an older store), `outputs`, `metrics` (
 
 The data root, `$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`) unless config's `dataRoot` moves it, holds:
 
-| Path                             | Holds                                                                                                                                                            |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `record.db`                      | The record of concerts, node instances and events (SQLite)                                                                                                       |
-| `concerts/<id>/artifacts/<path>` | Each artifact, at the `path` its JSON shows                                                                                                                      |
-| `hosts/repo/<target id>/`        | The repo host's lanes, versions, sessions (`sessions/<id>/home`) and a failed agent's partial work (`partials/<instance>`, read with `cs --partial`), per target |
+| Path                             | Holds                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------- |
+| `record.db`                      | The record of concerts, node instances and events (SQLite)                 |
+| `concerts/<id>/artifacts/<path>` | Each artifact, at the `path` its JSON shows                                |
+| `hosts/repo/<target id>/`        | The repo host's lanes, versions, sessions and partials, per target[^store] |
+
+[^store]:
+    An agent's session is `sessions/<id>/home`; a failed agent's partial work is `partials/<concert>.<instance>`,
+    URL-encoded, read with `cs --partial`.
 
 The record keeps each leaf instance's wired inputs beside its outputs, never the ports a node holds as literals (read
 those in the IR, or `art` for files). A group, or an instance from an older store, has none.
@@ -133,6 +137,8 @@ Applying it is the user's step, taken on their yes:
   when the checkout is not the config's `target.repo`.
 - The changeset is the `result` node's changeset, else the last `ok` instance's changeset; `--node <instance>` picks
   another. On a concert that is not `ok`, stderr warns that it is that instance's changeset, not a delivered result.
+- `--node <instance> --partial` takes the work a failed, blocked or cancelled agent kept instead, for `show` or `apply`;
+  an instance with none is refused.
 
 ## Lane refs
 

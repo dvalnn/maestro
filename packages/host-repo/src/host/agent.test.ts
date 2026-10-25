@@ -234,13 +234,43 @@ describe("agent partial work", () => {
 		expect(patchesOf(partial())).toContain("+lost");
 	});
 
-	test("an unchanged lane keeps nothing, and neither does an ok agent", async () => {
+	test("an unchanged lane keeps nothing, and neither does an ok agent or a read one", async () => {
 		const config = configOf(toyTarget());
 		const failed = await attempt(() => [fault(false)], config);
 		expect(partialOf(failed.instances)).toBeUndefined();
 		const ok = await attempt(() => [edit("kept\n"), OK], configOf(toyTarget()));
 		expect(ok.result).toMatchObject({ outcome: "ok" });
 		expect(partialOf(ok.instances)).toBeUndefined();
+
+		const { host, requests } = stubHost(() =>
+			requests.length === 1
+				? [edit("kept\n"), OK]
+				: [edit("lost\n"), fault(false)],
+		);
+		const builder = { name: "builder" };
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "build",
+					kind: "agent",
+					config: { role: builder, lane: { mode: "fresh" } },
+					literals: { prompt: "go" },
+				},
+				{
+					id: "look",
+					kind: "agent",
+					config: { role: builder, lane: { mode: "read" } },
+					literals: { prompt: "look" },
+					lane: "build",
+				},
+			],
+			"look",
+		);
+		const read = await performed(host, ir, configOf(toyTarget()));
+		const look = read.instances.filter((i) => i.node === "look");
+		expect(look[0]?.status).toBe("failed");
+		expect(partialOf(look)).toBeUndefined();
 	});
 
 	test("a re-run starts from its input and leaves the partial, a later failed run replaces it, and prune removes it", async () => {

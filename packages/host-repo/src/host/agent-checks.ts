@@ -5,6 +5,7 @@ import { shellQuote as quote } from "../harness/stub";
 import { type Bind, LANE_DST } from "../sandbox/index";
 import { type CheckSpec, listed } from "./config";
 import {
+	CHECK_OUTPUT_ENV,
 	checkEnv,
 	FAILED_EXITS,
 	pathBinds,
@@ -31,12 +32,15 @@ export type AgentChecks = {
 /** The variable the `check` command hands a run's output directory to the script in, which then names it to the lines. */
 const RUN_OUTPUT = "MAESTRO_RUN_OUTPUT";
 
-/** The script of one check: its env, the lane's `base` and the run's output directory, then each line echoed and run, the first that does not exit 0 ending it. */
+/**
+ * The script of one check: its env, the lane's `base` and the run's output directory, then each line echoed and run,
+ * the first that does not exit 0 ending it.
+ */
 function body(name: string, spec: CheckSpec, base: string): string {
 	const env = Object.entries(checkEnv(spec, base)).map(
 		([k, v]) => `export ${k}=${quote(v)}`,
 	);
-	env.push(`export MAESTRO_CHECK_OUTPUT="$${RUN_OUTPUT}"`);
+	env.push(`export ${CHECK_OUTPUT_ENV}="$${RUN_OUTPUT}"`);
 	const lines = spec.lines.flatMap((line, i) => [
 		`printf '%s\\n' ${quote(`$ ${line}`)}`,
 		`sh -c ${quote(line)} || { c=$?; printf '[check %s line %s exited %s]\\n' ${quote(name)} ${i + 1} "$c"; exit "$c"; }`,

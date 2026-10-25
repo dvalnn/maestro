@@ -191,6 +191,10 @@ as a dependency sync, in the sandbox before the node's work. A sparse checkout i
 **Changeset**: A lane version's patch series, held as an artifact. A concert leaves one only by ending in a changeset
 node. The target's checkout is never touched. _Avoid_: series
 
+**Partial**: The changes a failed, blocked or cancelled agent left in its lane, kept in the host store in a changeset's
+layout for manual recovery with `cs --partial`. It is no lane version, output or artifact, so nothing takes it as input.
+_Avoid_: salvage, leftover
+
 **Changeset node**: Takes one lane version and outputs its changeset. It opens no lane and spends no extension.
 
 **Commits node**: Takes git revisions of the target and outputs the commits they name as a lane version, resolved once.

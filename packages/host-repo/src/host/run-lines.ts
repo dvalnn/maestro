@@ -33,7 +33,7 @@ type Ended = { code: number } | { signal: string };
 const LANE_BASE_ENV = "MAESTRO_LANE_BASE";
 
 /** The variable that names a check's writable output directory to every line. */
-const CHECK_OUTPUT_ENV = "MAESTRO_CHECK_OUTPUT";
+export const CHECK_OUTPUT_ENV = "MAESTRO_CHECK_OUTPUT";
 
 /**
  * The environment a line of `spec` runs with: its own `env`, then the lane's `base` and the check's `output`
