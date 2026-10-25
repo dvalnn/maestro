@@ -461,6 +461,13 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   verdict agent's with neither, or one both blocked and giving a verdict, gets at most two correction turns in the same
   session, then `failed`. A blocked agent ends `failed` with the reason `blocked: <cause>` and no outputs, its declared
   files unread. A rejection with declared files missing or invalid ends `rejected` with its reason and no outputs.
+- An agent takes optional `limits: { timeout, tokens }`, none by default; a seat sets them as standing and a call
+  overrides them per field. `timeout` is a duration or whole milliseconds, counted as wall clock from the first turn's
+  start, retry waits included; `tokens` is a whole number of at least 1, the running total of the harness's usage events
+  as `tokensOf` sums them. Both cover every turn, correction and retry of the instance. A bad value is refused at
+  compose. Passing one cancels the agent through its cancel path and ends it `failed` with a reason naming the limit,
+  such as `passed its token limit of 20M (21.3M spent)` or `passed its timeout of 45m`, its partial kept as for any
+  failed agent.
 
 **Sessions**
 

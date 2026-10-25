@@ -1,5 +1,10 @@
 import type { ConcertRecord, Records } from "@maestro/core/perform";
-import { type ConcertEvent, indexGraph, parseInstance } from "@maestro/ir";
+import {
+	type ConcertEvent,
+	indexGraph,
+	parseInstance,
+	tokensOf,
+} from "@maestro/ir";
 import { navigated, selectedUnder } from "@maestro/render-text/inspect";
 import {
 	type Annotated,
@@ -9,7 +14,6 @@ import {
 	type Seen,
 	seen,
 	shortIds,
-	tokensOf,
 } from "@maestro/render-text/live";
 import {
 	type Browsed,

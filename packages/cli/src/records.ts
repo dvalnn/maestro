@@ -4,14 +4,12 @@ import {
 	type ConcertRecord,
 	openRecord,
 } from "@maestro/core/perform";
-import { DURATION_EXAMPLE, MS_PER_UNIT } from "@maestro/ir";
+import { compact, DURATION_EXAMPLE, MS_PER_UNIT, tokensOf } from "@maestro/ir";
 import {
 	agentText,
-	compact,
 	type ShortIds,
 	shortIds,
 	stateWord,
-	tokensOf,
 } from "@maestro/render-text/live";
 import {
 	COMMON,

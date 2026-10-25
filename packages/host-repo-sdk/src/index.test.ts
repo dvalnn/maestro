@@ -492,3 +492,74 @@ describe("examples", () => {
 		},
 	);
 });
+
+describe("agent limits", () => {
+	const built = (limits: Parameters<typeof agent>[0]["limits"]) =>
+		buildIr(
+			composition("limited", { examples: [{}] }, () =>
+				agent({
+					label: "worker",
+					task: "go",
+					lane: fresh(),
+					role: "b",
+					limits,
+				}),
+			),
+		);
+
+	const limitsOf = (ir: Ir, id: string) =>
+		(nodeOf(ir, id) as { config?: { limits?: unknown } }).config?.limits;
+
+	test("a duration or milliseconds becomes milliseconds in the config, and none leaves none", () => {
+		expect(limitsOf(built({ timeout: "45m", tokens: 1000 }), "worker")).toEqual(
+			{
+				timeout: 2_700_000,
+				tokens: 1000,
+			},
+		);
+		expect(limitsOf(built({ timeout: 5000 }), "worker")).toEqual({
+			timeout: 5000,
+		});
+		expect(limitsOf(built(undefined), "worker")).toBeUndefined();
+	});
+
+	test.each([
+		[{ timeout: "soon" }, "limits.timeout of agent 'worker'"],
+		[{ timeout: 0 }, "limits.timeout of agent 'worker'"],
+		[{ timeout: 1.5 }, "limits.timeout of agent 'worker'"],
+		[{ tokens: 0 }, "limits.tokens of agent 'worker'"],
+		[{ tokens: 2.5 }, "limits.tokens of agent 'worker'"],
+	])(
+		"%j is refused at compose, naming the agent and the field",
+		(limits, message) => {
+			expect(() => built(limits)).toThrow(message);
+		},
+	);
+
+	test("a seat call overrides the seat's limits per field", () => {
+		const worker = seat({
+			role: "b",
+			identity: "x",
+			limits: { timeout: "10m", tokens: 100 },
+		});
+		const ir = buildIr(
+			composition("seated", { examples: [{}] }, () => {
+				worker({ label: "plain", task: "go", lane: fresh() });
+				return worker({
+					label: "tight",
+					task: "go",
+					lane: fresh(),
+					limits: { tokens: 5 },
+				}).out.report;
+			}),
+		);
+		expect(limitsOf(ir, "plain")).toEqual({
+			timeout: 600_000,
+			tokens: 100,
+		});
+		expect(limitsOf(ir, "tight")).toEqual({
+			timeout: 600_000,
+			tokens: 5,
+		});
+	});
+});

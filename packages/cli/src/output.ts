@@ -21,6 +21,7 @@ import {
 	isPlainObject,
 	type NodeInstance,
 	replaceAt,
+	tokensOf,
 	withoutKeys,
 } from "@maestro/ir";
 import {
@@ -28,7 +29,6 @@ import {
 	padCells,
 	shortIds,
 	styled,
-	tokensOf,
 	type View,
 } from "@maestro/render-text/live";
 import type { Colors, Deps } from "./command";

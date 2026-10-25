@@ -111,7 +111,10 @@ export function code<I, O extends Types = NoOutputs>(
 				out: schemas(opts.out),
 				fields: {
 					worker: ref,
-					timeout: checkTimeout(opts.timeout, opts.label ?? ref.export),
+					timeout: timeoutMs(
+						opts.timeout,
+						`timeout of code node '${opts.label ?? ref.export}'`,
+					),
 				},
 			},
 			opts,
@@ -209,10 +212,10 @@ function checkMax(max: unknown, what: string): number {
 }
 
 /**
- * `timeout` in milliseconds.
+ * `timeout` in milliseconds, which `what` names in the error, such as `timeout of code node 'x'`.
  * @throws `BOUND.timeout` unless it is absent, a duration, or a whole number from 1 to `MAX_TIMEOUT`.
  */
-function checkTimeout(timeout: unknown, what: string): number | undefined {
+export function timeoutMs(timeout: unknown, what: string): number | undefined {
 	if (timeout === undefined) return undefined;
 	const ms = typeof timeout === "string" ? durationMs(timeout) : timeout;
 	if (
@@ -224,7 +227,7 @@ function checkTimeout(timeout: unknown, what: string): number | undefined {
 		return ms;
 	throw fail(
 		"BOUND.timeout",
-		`timeout of code node '${what}' must be a duration or a whole number of milliseconds from 1 to ${MAX_TIMEOUT}, got ${JSON.stringify(timeout)}`,
+		`${what} must be a duration or a whole number of milliseconds from 1 to ${MAX_TIMEOUT}, got ${JSON.stringify(timeout)}`,
 		`Write it as a duration such as ${DURATION_EXAMPLE}, or leave it out for no limit`,
 	);
 }

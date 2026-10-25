@@ -5,6 +5,7 @@ import {
 	DURATION_EXAMPLE,
 	durationMs,
 	type JsonSchema,
+	MAX_TIMEOUT,
 	validator,
 	violations,
 } from "@maestro/ir";
@@ -164,6 +165,14 @@ export const AGENT_CONFIG = {
 			properties: { name: NAME, harness: NAME, model: NAME, thinking: NAME },
 		},
 		lane: AGENT_LANE_INPUT,
+		limits: {
+			type: "object",
+			additionalProperties: false,
+			properties: {
+				timeout: { type: "integer", minimum: 1, maximum: MAX_TIMEOUT },
+				tokens: { type: "integer", minimum: 1 },
+			},
+		},
 		verdict: { type: "boolean" },
 		readOnly: PATHS,
 		checks: { type: "array", items: NAME, uniqueItems: true },
@@ -264,9 +273,13 @@ type AttachmentType = (typeof CORE_TYPES)[keyof typeof CORE_TYPES];
 /** A file or directory an agent reads at `/in/<name>`, and the hint that says when it should. */
 export type Attachment = { hint: string; type?: AttachmentType };
 
+/** What stops an agent that runs on: wall clock in milliseconds from its first turn, and tokens as `tokensOf` sums. */
+export type AgentLimits = { timeout?: number; tokens?: number };
+
 export type AgentConfig = {
 	role: { name: string } & Partial<Role>;
 	lane: LaneInput;
+	limits?: AgentLimits;
 	/** A verdict agent rules on work, `ok` or `rejected`; any other agent does the work. */
 	verdict?: boolean;
 	readOnly?: string[];

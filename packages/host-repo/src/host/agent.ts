@@ -9,11 +9,14 @@ import type {
 import type { Inputs } from "@maestro/core/node";
 import {
 	CORE_TYPES,
+	compact,
+	durationText,
 	type HostNode,
 	type JsonSchema,
 	MAESTRO_TYPE,
 	messageOf,
 	type Ports,
+	tokensOf,
 	validator,
 	violations,
 } from "@maestro/ir";
@@ -34,6 +37,7 @@ import {
 	AGENT_CONFIG,
 	AGENT_KIND,
 	type AgentConfig,
+	type AgentLimits,
 	type Attachment,
 	agentConfig,
 	LANE_PORT,
@@ -286,15 +290,54 @@ function addMetrics(sum: Metrics, add: Metrics) {
 	for (const [k, v] of Object.entries(add)) sum[k] = (sum[k] ?? 0) + v;
 }
 
+/**
+ * Enforces an agent instance's limits over all its turns: passing one records its reason in `live.limit` and stops the
+ * run.
+ */
+type Limiter = { usage: (metrics: Metrics) => void; end: () => void };
+
+/** Starts the wall clock of `limits.timeout` now. */
+function limiter(limits: AgentLimits, live: Live): Limiter {
+	const spent: Metrics = {};
+	const trip = (reason: string) => {
+		if (live.limit !== undefined) return;
+		live.limit = reason;
+		void live.stop?.();
+	};
+	const { timeout, tokens } = limits;
+	const timer =
+		timeout === undefined
+			? undefined
+			: setTimeout(
+					() => trip(`passed its timeout of ${durationText(timeout)}`),
+					timeout,
+				);
+	return {
+		usage(metrics) {
+			addMetrics(spent, metrics);
+			const total = tokensOf(spent);
+			if (tokens !== undefined && total > tokens)
+				trip(
+					`passed its token limit of ${compact(tokens)} (${compact(total)} spent)`,
+				);
+		},
+		end: () => clearTimeout(timer),
+	};
+}
+
 async function turn(
 	harness: Harness,
 	req: HarnessRequest,
 	live: Live,
 	emit: HostContext["emit"],
+	limits: Limiter,
 ) {
 	const run = harness.run(req);
 	live.stop = () => run.cancel();
-	for await (const e of run.events) if (e.kind !== "raw") emit(e);
+	for await (const e of run.events) {
+		if (e.kind === "usage") limits.usage(e.metrics);
+		if (e.kind !== "raw") emit(e);
+	}
 	return run.result;
 }
 
@@ -326,8 +369,8 @@ function next(reply: string, spent: boolean, kind: ReplyKind): Next {
 }
 
 /**
- * Why a failed `result` ends the node, or `undefined` once the wait for a retry is over and the turn may run again. A
- * transient failure with `retries` spent, or any other, ends it.
+ * Why a failed `result` ends the node, a passed limit first, or `undefined` once the wait for a retry is over and the
+ * turn may run again. A transient failure with `retries` spent, or any other, ends it.
  */
 async function recover(
 	result: HarnessResult,
@@ -335,6 +378,7 @@ async function recover(
 	live: Live,
 	emit: HostContext["emit"],
 ): Promise<string | undefined> {
+	if (live.limit) return live.limit;
 	const reason = result.reason ?? "the harness failed";
 	if (!result.transient) return reason;
 	if (live.cancelled) return "cancelled";
@@ -349,9 +393,27 @@ async function recover(
 	return undefined;
 }
 
+/** `body`'s result, run under `limits`, whose clock stops when it settles. */
+async function within<T>(
+	limits: AgentLimits,
+	live: Live,
+	body: (guard: Limiter) => Promise<T>,
+): Promise<T> {
+	const guard = limiter(limits, live);
+	try {
+		return await body(guard);
+	} finally {
+		guard.end();
+	}
+}
+
+/** Why the instance must stop before its next turn: the limit it passed, or its cancel. */
+const halted = (live: Live) =>
+	live.limit ?? (live.cancelled ? "cancelled" : undefined);
+
 /**
  * Runs the agent, then corrects it in the same session while its final reply is not an envelope. A transient failure
- * runs the turn again in the same session, after a wait, up to `MAX_RETRIES` times.
+ * runs the turn again in the same session, after a wait, up to `MAX_RETRIES` times. A limit `guard` passes ends it.
  */
 async function converse(
 	harness: Harness,
@@ -360,14 +422,22 @@ async function converse(
 	context: HostContext,
 	staged: string,
 	kind: ReplyKind,
+	guard: Limiter,
 ): Promise<Turns> {
 	const metrics: Metrics = {};
 	let prompt = req.prompt;
 	let corrections = 0;
 	let retries = 0;
 	for (;;) {
-		if (live.cancelled) return { metrics, failure: "cancelled" };
-		const result = await turn(harness, { ...req, prompt }, live, context.emit);
+		const halt = halted(live);
+		if (halt) return { metrics, failure: halt };
+		const result = await turn(
+			harness,
+			{ ...req, prompt },
+			live,
+			context.emit,
+			guard,
+		);
 		addMetrics(metrics, result.metrics);
 		if (result.outcome === "failed") {
 			const failure = await recover(result, retries, live, context.emit);
@@ -578,13 +648,8 @@ async function execute(
 				verdict: config.verdict,
 				instance: instance.id,
 			};
-			const turns = await converse(
-				harness,
-				req,
-				live,
-				context,
-				staging.staged,
-				kind,
+			const turns = await within(config.limits ?? {}, live, (guard) =>
+				converse(harness, req, live, context, staging.staged, kind, guard),
 			);
 			const settled = await settle(staging, turns, async () => {
 				if (read) return undefined;

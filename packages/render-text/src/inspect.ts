@@ -1,16 +1,17 @@
 import {
+	compact,
 	formatInstance,
 	type GraphIndex,
 	type Ir,
 	indexGraph,
 	MS_PER_UNIT,
 	type NodeInstance,
+	tokensOf,
 } from "@maestro/ir";
 import {
 	type Agents,
 	type Annotated,
 	browse,
-	compact,
 	duration,
 	eventLine,
 	flat,
@@ -24,7 +25,6 @@ import {
 	type Recorded,
 	type Seen,
 	type Seg,
-	tokensOf,
 	type View,
 	valueSegs,
 } from "./live";

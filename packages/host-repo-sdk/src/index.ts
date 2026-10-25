@@ -14,7 +14,7 @@ import {
 	type Type,
 	type Types,
 } from "@maestro/sdk";
-import { hostNode } from "@maestro/sdk/host";
+import { hostNode, timeoutMs } from "@maestro/sdk/host";
 
 /** A lane version, `<concert id>.<node instance id>`. As a param, it is a lane ref to a version of an earlier concert. */
 export const Lane: Type<string> = {
@@ -132,6 +132,17 @@ export type Attachment = { artifact: Ref<ArtifactRef>; hint: string };
 
 type Attachments = Readonly<Record<string, Attachment>>;
 
+/**
+ * What bounds an agent's whole run: every turn, correction and retry. None by default. Passing one cancels the agent,
+ * which settles `failed` with the limit as its reason and its partial kept.
+ */
+export type Limits = {
+	/** Wall clock from the first turn's start, retry waits included: milliseconds, or a duration such as `45m`. */
+	timeout?: number | string;
+	/** The most tokens the agent spends, as its usage events sum: a whole number of at least 1. */
+	tokens?: number;
+};
+
 export type AgentOptions<
 	O extends Outputs,
 	M extends LaneMode = LaneMode,
@@ -139,6 +150,7 @@ export type AgentOptions<
 	task: string | Ref<string>;
 	lane: AgentLane<M>;
 	role: string | Role;
+	limits?: Limits;
 	/** Appended to the harness's own system prompt. */
 	identity?: string | Ref<string>;
 	/** Marks a verdict agent, which rules `ok` or `rejected` on work; any other agent does the work. */
@@ -208,13 +220,39 @@ function checkNames(attachments: Attachments, out: Outputs): void {
 	}
 }
 
+/**
+ * `limits` as the config holds them: `timeout` in milliseconds.
+ * @throws `BOUND.timeout` or `BOUND.tokens` for a field out of range, naming agent `what`.
+ */
+function limitsConfig(limits: Limits | undefined, what: string) {
+	if (limits === undefined) return undefined;
+	const { timeout, tokens } = limits;
+	const ms = timeoutMs(timeout, `limits.timeout of agent '${what}'`);
+	if (tokens !== undefined && !(Number.isInteger(tokens) && tokens >= 1))
+		throw new BuildError({
+			code: "BOUND.tokens",
+			message: `limits.tokens of agent '${what}' must be a whole number of at least 1, got ${JSON.stringify(tokens)}`,
+			hint: "Set it to a count of tokens, or leave it out for no limit",
+		});
+	return nonEmpty(defined({ timeout: ms, tokens }));
+}
+
 /** A `repo.agent` node: a coding agent performing `task` in its lane (architecture 12). */
 export function agent<
 	O extends Outputs = Record<never, never>,
 	M extends LaneMode = LaneMode,
 >(opts: AgentOptions<O, M>): Result<AgentOut<O, M>> {
-	const { task, lane, role, identity, verdict, checks, readOnly, ...rest } =
-		opts;
+	const {
+		task,
+		lane,
+		role,
+		limits,
+		identity,
+		verdict,
+		checks,
+		readOnly,
+		...rest
+	} = opts;
 	const { attachments: given, out: givenOut, ...common } = rest;
 	const attachments: Attachments = given ?? {};
 	const out: Outputs = givenOut ?? {};
@@ -237,6 +275,7 @@ export function agent<
 		config: defined({
 			role: defined(roleOf(role)),
 			lane: ports.config,
+			limits: limitsConfig(limits, opts.label ?? roleOf(role).name),
 			verdict,
 			readOnly,
 			checks,
@@ -249,6 +288,8 @@ export function agent<
 /** What a seat bundles: an agent's standing setup. */
 export type SeatOptions<S extends Outputs> = {
 	role: string | Role;
+	/** The seat's limits, each field overridden by the call's. */
+	limits?: Limits;
 	/** The seat's standing text, appended to the harness's own system prompt. */
 	identity: string | Ref<string>;
 	/** Marks the seat's agents as verdict agents (`AgentOptions.verdict`). */
@@ -269,6 +310,7 @@ export type SeatCall<C extends Outputs, M extends LaneMode> = Common & {
 	task: string | Ref<string>;
 	lane: AgentLane<M>;
 	role?: Partial<Role>;
+	limits?: Limits;
 	attachments?: Attachments;
 	out?: C;
 	checks?: string[];
@@ -299,6 +341,7 @@ export function seat<S extends Outputs = Record<never, never>>(
 			...call,
 			identity: standing.identity,
 			verdict: standing.verdict,
+			limits: { ...standing.limits, ...defined(call.limits ?? {}) },
 			role: { ...roleOf(standing.role), ...defined(call.role ?? {}) },
 			attachments: { ...standing.attachments, ...call.attachments },
 			out: { ...standing.out, ...call.out } as Omit<S, keyof C> & C,

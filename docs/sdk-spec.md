@@ -317,16 +317,19 @@ bundle it.
 | `commits(revs)`                            | A `repo.commits` node: the target commits git revisions `revs` name, as a version; output `lane`, which nothing extends                                                                           |
 | `apply(lane, changeset, opts)`             | A `repo.apply` node: one changeset applied, on its `changeset` port; `opts.strategy` is `3way` or `clean`; output `lane`                                                                          |
 
-¹ `agent` also takes `identity`, `verdict`, `attachments` (each `{ artifact, hint }`), `out`, `checks`, `readOnly` and
-the common options. `verdict: true` marks a verdict agent, which may reject; any other agent finishes or is blocked
-(architecture 12). An attachment named `prompt`, `identity` or `lane`, or an output named `lane`, `report` or `staged`,
-is a build error: the host refuses the same names. `role` is a role name or `{ name, harness?, model?, thinking? }`; a
-`--profile` or `-c` role field beats an inline one.
+¹ `agent` also takes `identity`, `verdict`, `attachments` (each `{ artifact, hint }`), `out`, `checks`, `readOnly`,
+`limits` and the common options. `verdict: true` marks a verdict agent, which may reject; any other agent finishes or is
+blocked (architecture 12). An attachment named `prompt`, `identity` or `lane`, or an output named `lane`, `report` or
+`staged`, is a build error: the host refuses the same names. `role` is a role name or
+`{ name, harness?, model?, thinking? }`; a `--profile` or `-c` role field beats an inline one.
+`limits: { timeout?, tokens? }` bounds the agent's whole run, none by default: `timeout` is a duration or whole
+milliseconds of wall clock, `tokens` a whole number of at least 1. A bad value is a build error (`BOUND.timeout`,
+`BOUND.tokens`) naming the agent and the field; passing a limit ends the agent `failed` (architecture 12).
 
-² A seat takes `role`, `identity`, `verdict`, `attachments`, `out`, `checks` and `readOnly`. A call takes `task`, `lane`
-and the common options, and may override the role and add attachments, outputs, checks and read-only binds: its role
-fields override the seat's, attachments and outputs add with the call winning on a name, checks and binds are a union,
-and the result's outputs are typed by both.
+² A seat takes `role`, `identity`, `verdict`, `attachments`, `out`, `checks`, `readOnly` and `limits`. A call takes
+`task`, `lane` and the common options, and may override the role and add attachments, outputs, checks and read-only
+binds: its role fields override the seat's, attachments and outputs add with the call winning on a name, checks and
+binds are a union, its `limits` override the seat's per field, and the result's outputs are typed by both.
 
 A check with no `timeout` has none: it runs until it ends or the concert is killed.
 

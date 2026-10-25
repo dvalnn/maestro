@@ -14,7 +14,12 @@ export {
 	reject,
 	TS_RUNTIME,
 } from "./code-function";
-export { DURATION_EXAMPLE, durationMs, MS_PER_UNIT } from "./duration";
+export {
+	DURATION_EXAMPLE,
+	durationMs,
+	durationText,
+	MS_PER_UNIT,
+} from "./duration";
 export type {
 	ConcertEvent,
 	Enrichment,
@@ -92,6 +97,31 @@ const [MAJOR, MINOR] = IR_VERSION.split(".").map(Number) as [number, number];
 
 /** The longest code-node `timeout` in milliseconds: the largest delay a JavaScript timer holds. */
 export const MAX_TIMEOUT = 2_147_483_647;
+
+/** The prefix of the metrics that count tokens. */
+const TOKEN_METRIC = "tokens_";
+/** A subset of the output tokens, so a total leaves it out. */
+const REASONING_METRIC = "tokens_reasoning";
+
+/** The sum of the token metrics of `metrics`, but reasoning tokens, which output tokens already count. */
+export const tokensOf = (metrics: Readonly<Record<string, number>>) =>
+	Object.entries(metrics)
+		.filter(
+			([name]) => name.startsWith(TOKEN_METRIC) && name !== REASONING_METRIC,
+		)
+		.reduce((sum, [, value]) => sum + value, 0);
+
+const THOUSAND = 1_000;
+const MILLION = 1_000_000;
+
+/** `n` as `1.2M` from a million, `15.5k` from a thousand, else as it is. */
+export function compact(n: number): string {
+	if (n < THOUSAND) return String(n);
+	const thousands = (n / THOUSAND).toFixed(1);
+	return Number(thousands) < THOUSAND
+		? `${thousands}k`
+		: `${(n / MILLION).toFixed(1)}M`;
+}
 
 /** Checked before the shape, so IR of another major gets this error and not a pile of schema errors. */
 function checkVersion(value: unknown): Diagnostic | undefined {

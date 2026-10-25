@@ -1,7 +1,14 @@
 import type { HostInstance, HostNodeResult } from "@maestro/core/host";
 
-/** A running instance: whether it was cancelled, and how to stop what it runs now. */
-export type Live = { cancelled: boolean; stop?: () => Promise<unknown> };
+/**
+ * A running instance: whether it was cancelled, why it was stopped for passing a limit, and how to stop what it runs
+ * now.
+ */
+export type Live = {
+	cancelled: boolean;
+	limit?: string;
+	stop?: () => Promise<unknown>;
+};
 
 /** The running instances of one kind, so its `cancel` reaches what `execute` started. */
 export function liveInstances() {

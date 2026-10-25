@@ -50,3 +50,8 @@ place of a result cache across concerts, which V1 does not have. Its shape is se
 - **Each command reads and writes one record store**, the one `dataRoot` resolves to. `ls` has no `--all`, because
   listing other stores needs workspace discovery, which maestro does not do. A host-specific `ls` column, such as a
   target, would come through the host's hooks, never from `cli`.
+
+## Agents
+
+- **An agent may carry limits on its wall clock and tokens (HOST-08).** They bound one agent instance, not a concert, so
+  D-23's exclusion of cost and concert-wide budgets stands. Applies in `packages/host-repo/src/host/agent.ts`.

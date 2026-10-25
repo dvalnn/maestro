@@ -47,14 +47,21 @@ const fault = (transient: boolean): StubStep => ({
 	emit: { type: "fault", reason: "529 overloaded", transient },
 });
 
-const lone = (host: Parameters<typeof irOf>[0]) =>
+const lone = (
+	host: Parameters<typeof irOf>[0],
+	limits?: { timeout?: number; tokens?: number },
+) =>
 	irOf(
 		host,
 		[
 			{
 				id: "x",
 				kind: "agent",
-				config: { role: { name: "builder" }, lane: { mode: "fresh" } },
+				config: {
+					role: { name: "builder" },
+					lane: { mode: "fresh" },
+					...(limits && { limits }),
+				},
 				literals: { prompt: "go" },
 			},
 		],
@@ -264,5 +271,122 @@ describe("agent partial work", () => {
 		expect(patchesOf(partial)).not.toContain("+first");
 		await releaseConcert(setupOf(config).store, first.id);
 		expect(existsSync(partial)).toBe(false);
+	});
+});
+
+describe("agent limits", () => {
+	const edit: StubStep = { write: "a.txt", content: "lost\n" };
+	const hang: StubStep = { hang: true };
+	const prose: StubStep = { emit: { type: "text", text: "not json" } };
+
+	async function limited(
+		limits: { timeout?: number; tokens?: number },
+		steps: (n: number) => StubStep[],
+	) {
+		const { host, requests } = stubHost(() => steps(requests.length));
+		const done = await performed(
+			host,
+			lone(host, limits),
+			configOf(toyTarget()),
+		);
+		return { ...done, requests };
+	}
+
+	const partialOf = (instances: { enrichment?: Record<string, unknown> }[]) =>
+		String(instances[0]?.enrichment?.partial);
+
+	test("a token limit ends the agent failed with its reason and keeps the partial", async () => {
+		const { result, instances } = await limited({ tokens: 50 }, () => [
+			edit,
+			usage(100),
+			hang,
+		]);
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: "passed its token limit of 50 (101 spent)",
+		});
+		const patches = readdirSync(partialOf(instances))
+			.filter((f) => f.endsWith(".patch"))
+			.map((f) => readFileSync(join(partialOf(instances), f), "utf8"))
+			.join("");
+		expect(patches).toContain("+lost");
+	});
+
+	test("a timeout ends the agent failed with its reason and keeps the partial", async () => {
+		const { result, instances } = await limited({ timeout: 1000 }, () => [
+			edit,
+			hang,
+		]);
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: "passed its timeout of 1s",
+		});
+		expect(existsSync(partialOf(instances))).toBe(true);
+	});
+
+	test("tokens count across a correction", async () => {
+		const { result, requests } = await limited({ tokens: 50 }, (n) =>
+			n === 1 ? [usage(30), prose] : [usage(30), hang],
+		);
+		expect(requests).toHaveLength(2);
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: "passed its token limit of 50 (62 spent)",
+		});
+	});
+
+	test("tokens count across a transient retry", async () => {
+		const { result, requests } = await limited({ tokens: 50 }, (n) =>
+			n === 1 ? [usage(30), fault(true)] : [usage(30), hang],
+		);
+		expect(requests).toHaveLength(2);
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: "passed its token limit of 50 (62 spent)",
+		});
+	});
+
+	test("the timeout counts a retry wait", async () => {
+		held = [];
+		const { host, requests } = stubHost(() => [fault(true)]);
+		const { concert } = await start(
+			host,
+			lone(host, { timeout: 300 }),
+			configOf(toyTarget()),
+		);
+		expect(await concert.done).toMatchObject({
+			outcome: "failed",
+			reason: "passed its timeout of 300ms",
+		});
+		expect(requests).toHaveLength(1);
+	});
+
+	test("an agent within its limits settles as before", async () => {
+		const { result, metrics } = await run(() => [usage(5), OK]);
+		expect(result).toMatchObject({ outcome: "ok" });
+		const within = await limited({ tokens: 1000, timeout: 60_000 }, () => [
+			usage(5),
+			OK,
+		]);
+		expect(within.result).toMatchObject({ outcome: "ok" });
+		expect(within.instances[0]?.metrics).toEqual(metrics);
+	});
+
+	test("a concert cancel under limits names no limit", async () => {
+		const { host, requests } = stubHost(() => [hang]);
+		const { concert, recordPath } = await start(
+			host,
+			lone(host, { timeout: 60_000, tokens: 5 }),
+			configOf(toyTarget()),
+		);
+		while (!requests.length) await Bun.sleep(20);
+		await concert.cancel();
+		await concert.done;
+		const { openRecord } = await import("@maestro/core/perform");
+		const record = openRecord(recordPath);
+		const [settled] = record.instances(concert.id);
+		expect(settled?.status).toBe("failed");
+		expect(settled?.reason).not.toContain("passed its");
+		record.close();
 	});
 });

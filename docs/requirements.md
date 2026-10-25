@@ -62,7 +62,7 @@ Decisions ruled by the project owner during design. Anything not listed here is 
 | D-20 | Harness adapters drive coding agents as sandboxed subprocesses speaking each harness's JSON event stream. In-process SDK adapters are a later option for unsandboxed use. pi is the first adapter and Claude Code the second.                                                                                                                                                                                                                  | An in-process agent cannot be confined by the sandbox, because its tools would run inside the maestro process. See `adr/0001-sandboxed-subprocess-adapters.md`.                                               |
 | D-21 | The coding-agent host vocabulary is final: agent node, role, lane (`fresh`, `fork`, `extend`, `read`), target, changeset node, apply node, commits node, harness, check node, sandbox.                                                                                                                                                                                                                                                         | Settled by the project owner.                                                                                                                                                                                 |
 | D-22 | A check node is its own host node kind.                                                                                                                                                                                                                                                                                                                                                                                                        | It runs untrusted target commands and needs the sandbox, lane staging, process-tree kill and logs. Code nodes are trusted and in-process and provide none of that.                                            |
-| D-23 | The engine stores named additive numbers (metrics) per node instance and sums each name per concert. v1 reports token counts only. There is no cost, price table or budget in v1. Compose bounds are counts of node instances plus named counts a host reports, such as agent runs. A compaction mechanism per adapter may come later, outside the engine.                                                                                     | Cost is host policy that v1 does not need, and tokens are enough.                                                                                                                                             |
+| D-23 | The engine stores named additive numbers (metrics) per node instance and sums each name per concert. v1 reports token counts only. There is no cost, price table or concert-wide budget in v1; an agent's own limits are HOST-08. Compose bounds are counts of node instances plus named counts a host reports, such as agent runs. A compaction mechanism per adapter may come later, outside the engine.                                     | Cost is host policy that v1 does not need, and tokens are enough.                                                                                                                                             |
 | D-24 | An unclaimed config key fails compose with a did-you-mean hint only when no installed registrant claims it. A key claimed by an installed registrant that the concert does not use is ignored.                                                                                                                                                                                                                                                 | Typos are caught, and a shared workspace config does not break compositions that use only some of its keys.                                                                                                   |
 | D-25 | The initial port targets Linux x64 only. The sandbox backend sits behind an interface.                                                                                                                                                                                                                                                                                                                                                         | arm64 and macOS come later. Modern Linux is the baseline. See D-34.                                                                                                                                           |
 | D-26 | Several concerts may run in one workspace with no coordination beyond lane isolation. The record store is one SQLite file in WAL mode and the concurrency cap is per concert.                                                                                                                                                                                                                                                                  | Keeps the first version simple.                                                                                                                                                                               |
@@ -104,7 +104,7 @@ Non-goals for the initial port:
 - A hosted service, a web UI, or a replacement for the predecessor's viewer. The renderer contract is in scope. A GUI is
   not.
 - Node.js compatibility. Bun is the baseline (D-03).
-- Cost accounting, price tables and budget caps (D-23). Token counts are recorded.
+- Cost accounting, price tables and concert-wide budget caps (D-23). Token counts are recorded.
 - A secret param type (D-33).
 - Extending a lane across concerts (D-27). Forking and reading are supported.
 - macOS and arm64 (D-25).
@@ -174,7 +174,7 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   each value came from.
 - **CORE-19 (Must).** A node instance carries named additive numbers (metrics). The engine sums each name per concert
   and exposes the totals to the CLI. It attaches no meaning to a name (D-23). The host half of the totals arrives with
-  HOST-08.
+  HOST-07.
 
 ### 6.2 Configuration (CFG)
 
@@ -243,8 +243,9 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **HOST-06 (Must).** Prompts of any size reach the agent without hitting argument-length limits.
 - **HOST-07 (Must).** Adapters report token counts as metrics per node instance, and the engine sums them per concert
   (CORE-19). There is no cost or price table in v1 (D-23).
-- **HOST-08 (Deferred beyond v1).** A per-concert token cap enforced by the host's node runners. The id is kept so
-  references stay valid.
+- **HOST-08 (Must).** An agent may carry limits on its wall clock and its tokens, enforced by the host over its whole
+  run. Passing one cancels the agent, which ends `failed` naming the limit. A per-concert token cap stays deferred
+  beyond v1.
 - **HOST-09 (Must).** A check node (D-22) runs deterministic commands in a lane and returns pass or fail (`rejected`)
   with logs as artifacts, and a writable output directory (`MAESTRO_CHECK_OUTPUT`) kept as an artifact.
 - **HOST-10 (Must).** `kill` terminates agent process trees and the record stays consistent.
@@ -387,7 +388,7 @@ references in the companion docs stay valid.
 Deferred beyond v1, with no decision needed now:
 
 - A secret param type (D-33).
-- Cost, price tables, budget caps and per-adapter compaction (D-23).
+- Cost, price tables, concert-wide budget caps and per-adapter compaction (D-23).
 - Cross-concert extension (D-27).
 - In-process SDK adapters (D-20).
 - arm64 and macOS (D-25).

@@ -21,3 +21,10 @@ export function durationMs(text: string): number | undefined {
 	if (!amount || !unit) return undefined;
 	return Number(amount) * MS_PER_UNIT[unit as keyof typeof MS_PER_UNIT];
 }
+
+/** `ms` in the largest unit that holds it whole, such as `45m`. */
+export function durationText(ms: number): string {
+	const units = Object.entries(MS_PER_UNIT).reverse();
+	const [unit, per] = units.find(([, per]) => ms % per === 0) ?? ["ms", 1];
+	return `${ms / per}${unit}`;
+}

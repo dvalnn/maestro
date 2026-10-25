@@ -1,6 +1,7 @@
 import { styleText } from "node:util";
 import {
 	type ConcertEvent,
+	compact,
 	formatInstance,
 	type GraphIndex,
 	type HostEvent,
@@ -9,6 +10,7 @@ import {
 	MS_PER_UNIT,
 	type NodeInstance,
 	type Outcome,
+	tokensOf,
 } from "@maestro/ir";
 import { type Fitted, fitted } from "./fit";
 import { arranged, shapeOf } from "./layout";
@@ -103,12 +105,6 @@ const LOOK: Readonly<Record<Shown, Look>> = {
 };
 const RULE = "─";
 type Metrics = Readonly<Record<string, number>>;
-/** The prefix of the metrics that count tokens. */
-const TOKEN_METRIC = "tokens_";
-/** A subset of the output tokens, so a total leaves it out. */
-const REASONING_METRIC = "tokens_reasoning";
-const THOUSAND = 1_000;
-const MILLION = 1_000_000;
 const INDENT = "  ";
 const NEWLINE = /\r?\n/;
 /** A control character other than a newline. */
@@ -245,23 +241,6 @@ export type Recorded = NodeInstance & {
 	metrics: Metrics;
 	stale: boolean;
 };
-
-/** The sum of the token metrics of `metrics`, but reasoning tokens, which output tokens already count. */
-export const tokensOf = (metrics: Metrics) =>
-	Object.entries(metrics)
-		.filter(
-			([name]) => name.startsWith(TOKEN_METRIC) && name !== REASONING_METRIC,
-		)
-		.reduce((sum, [, value]) => sum + value, 0);
-
-/** `n` as `1.2M` from a million, `15.5k` from a thousand, else as it is. */
-export function compact(n: number): string {
-	if (n < THOUSAND) return String(n);
-	const thousands = (n / THOUSAND).toFixed(1);
-	return Number(thousands) < THOUSAND
-		? `${thousands}k`
-		: `${(n / MILLION).toFixed(1)}M`;
-}
 
 /** `actor` as the agent column shows it, then the total of `tokensOf` as `<total> tok`, left out when 0. Empty without an actor. */
 export function agentText(actor: string | undefined, metrics: Metrics): string {
