@@ -1,6 +1,7 @@
 # maestro: system requirements
 
-Status: draft 3, 2026-10-14. Companion docs: `GLOSSARY.md`, `architecture.md`, `sdk-spec.md`, `port-plan.md`.
+Status: living spec. The initial port shipped as `v0.1.0-beta.1`; D-10, the non-goals for the initial port and sections
+8 and 11 are kept as its record. Companion docs: `GLOSSARY.md`, `architecture.md`, `sdk-spec.md`.
 
 This document is self-contained. It assumes no access to the conversation, machine or workspace that produced it.
 Anything not decided is listed in section 9 and is not guessed.
@@ -97,7 +98,7 @@ Goals:
 Non-goals for the initial port:
 
 - Compatibility with sssf state, config or CLI. No migration tooling.
-- Porting every sssf command or chain. The slice is bounded by D-10 and `port-plan.md`.
+- Porting every sssf command or chain. The slice is bounded by D-10.
 - YAML compositions or an expression language. Code nodes cover what an expression language would.
 - Spreading one concert across machines. One machine per concert.
 - A hosted service, a web UI, or a replacement for the predecessor's viewer. The renderer contract is in scope. A GUI is
@@ -411,7 +412,7 @@ Deferred beyond v1, with no decision needed now:
 - **R-9.** The stage name and the authored-unit name share a stem (D-12). Without the naming rule, prose and diagnostics
   blur them.
 
-## 11. Legacy concept disposition (proposal)
+## 11. Legacy concept disposition (initial port)
 
 Maps the predecessor's concepts to maestro's. It is based on the predecessor's multi-agent workflows (twelve, see
 section 12) and the module descriptions of its 1.0.0b6 release. Items marked "unread" were identified from module

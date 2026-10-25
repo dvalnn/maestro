@@ -7,9 +7,10 @@ with new ideas.
 
 ## Mission Goals:
 
-1. Implement maestro V1 phase by phase, following the plan under `docs/` plus any ADR additions that come up during its
-   implementation. Scope must be kept contained. KISS and YAGNI first -- we don't chase convoluted edge cases nor
-   drive-by nice to haves without having a clear reason to do so.
+1. Ship maestro through its `v0.1.0-beta.<n>` releases toward a stable v0.1.0. Each release is a Forgejo milestone
+   triaged from real use, mostly maestro building maestro through `.maestro/slice.ts`. Scope must be kept contained.
+   KISS and YAGNI first -- we don't chase convoluted edge cases nor drive-by nice to haves without having a clear reason
+   to do so.
 2. Care about the codebase quality all throughout the implementation efforts. If in a weeks time we are chasing the same
    debt `sssf` faced then this mission goal was failed in retrospect. We don't blindly chase feature work and quick wins
    that are damaging to the system architecture or that are specified under muddy/unclear system requirements.

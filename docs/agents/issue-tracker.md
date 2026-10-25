@@ -12,8 +12,8 @@ Issues live on the forge, [`tiago/maestro`](https://git.amorimcasa.org/tiago/mae
   comment saying what changed and who agreed it.
 - **Labels.** One `kind/` and one `state/` label (`triage-labels.md`). Both scopes are exclusive, so adding a `state/`
   label replaces the old one.
-- **Milestone.** The port-plan slice that owns it (`S7`, `S8d`, `S8e`, `S9`, `S10`, `S11`), or none for backlog no slice
-  owns.
+- **Milestone.** The release that ships it (`v0.1.0-beta.<n>`), `Next release` when deferred to the release after, or
+  none for an indefinite deferral.
 - **Closing.** A commit on `main` whose description says `Closes #N` closes it when the owner pushes. A slice's report
   is the closing comment (below). Nothing else closes an issue.
 
@@ -27,7 +27,7 @@ fj issue view <n>                                    # title and body
 fj issue view <n> comments
 fj issue comment <n> --body-file <file>
 fj issue search [query] --labels state/ready-for-agent [--state all]
-forge.py api GET /milestones                         # ids for the slices
+forge.py api GET /milestones                         # ids for the releases
 forge.py api PATCH /issues/<n> '{"milestone": <id>}'
 forge.py api POST /issues/<n>/dependencies '{"owner": "tiago", "repo": "maestro", "index": <blocker>}'
 ```
@@ -36,7 +36,7 @@ forge.py api POST /issues/<n>/dependencies '{"owner": "tiago", "repo": "maestro"
 
 ## When a skill says "publish to the issue tracker"
 
-Create an issue with `fj issue create`, then set its labels and, if a slice owns it, its milestone.
+Create an issue with `fj issue create`, then set its labels and, if a release ships it, its milestone.
 
 ## When a skill says "fetch the relevant ticket"
 
@@ -44,8 +44,8 @@ Create an issue with `fj issue create`, then set its labels and, if a slice owns
 
 ## A slice brief and its report
 
-The brief is the issue body: the port plan's brief template (section 6) plus `Out of scope:`. Where a picture says it
-faster, add a **Summary**: the smallest view of the target shape, such as a `diff` of the call tree, file tree or API.
+The brief is the issue body, in the template of `implementation-loop.md`. Where a picture says it faster, add a
+**Summary**: the smallest view of the target shape, such as a `diff` of the call tree, file tree or API.
 
 The report is the closing comment, in this order:
 
