@@ -133,6 +133,11 @@ Semantics each constructor must honor:
   time, from a literal or a param. A `rejected` state ends it unless it tolerates one (4.2). A state port named `ok`,
   `reason` or `index` is a build error, since the loop's state holds those names.
 
+  A loop carries one node's outputs as its state. State of several values comes from one node that outputs them all,
+  usually the step's last node, which takes the other values in and passes them out beside its own. A loop that revises
+  a draft until a scorer accepts it ends `init` and each step in the scorer, whose outputs are the draft and `good`: the
+  loop runs `loop.while((s) => not(s.out.good), ...)`, and each step revises `s.out.draft`.
+
 - **`assert`.** Evaluated at build if the condition is a plain value, and at perform time otherwise. A failed build-time
   assert is a diagnostic error, and a plain condition takes no `onFail`. A perform-time assert is a node that settles
   `onFail`, `rejected` or `failed`, when its condition is false. It returns its Result handle, so a node can wait on it
