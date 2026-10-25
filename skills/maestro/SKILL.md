@@ -12,7 +12,7 @@ maestro builds a composition into a checked plan with `compose`, which spends no
 The concert's agents and checks work in lanes, isolated copies of the target repository, never in the user's checkout.
 Results leave as a changeset, a set of patches the user applies.
 
-This skill was checked against maestro 0.1.0-beta.5. When `maestro --version` names another release, trust
+This skill was checked against maestro 0.1.0-beta.6. When `maestro --version` names another release, trust
 `maestro <verb> --help` wherever the two differ.
 
 ## Words
@@ -128,7 +128,7 @@ agents deliver, to rehearse a branch that hangs on it, such as a fix loop: a stu
 `<dir>/<node id>/<file>` (the id without `[n]` indices, serving every round), else the placeholder. A verdict agent's
 `verdict` file, found the same way, holds `ok` or `rejected <reason>`; without one it rules `ok`. Files are copied as is
 and validated like any output. A resume needs the variable set again; a missing dir fails the agent. For the classics
-pack 0.1.0-beta.5's six roles:
+pack 0.1.0-beta.6's six roles:
 
 ```yaml
 roles:

@@ -24,7 +24,7 @@ The script installs the newest release, prereleases included, and the same comma
 a release, set `MAESTRO_VERSION` to its tag, `v` included, before `sh`:
 
 ```sh
-curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_VERSION=v0.1.0-beta.5 sh
+curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_VERSION=v0.1.0-beta.6 sh
 ```
 
 The script needs `curl` and `sha256sum`, checks every asset against `SHA256SUMS` before touching anything, and refuses
