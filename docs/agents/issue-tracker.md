@@ -56,3 +56,13 @@ The report is the closing comment, in this order:
 4. **Derived, not ruled**, **Review triage** and **Loop**: the tables `implementation-loop.md` requires.
 
 No file inventory and no walk through the diff; the diff is one click away.
+
+## Wayfinding operations
+
+- **Map.** One issue labelled `wayfinder:map`, with its own milestone.
+- **Ticket.** A child of the map: a `Map: #N` line opens its body, it sits on the map's milestone, and it carries a
+  `wayfinder:<type>` label beside its `kind/` and `state/` labels.
+- **Claim.** `forge.py api PATCH /issues/<n> '{"assignees": ["tiago"]}'`.
+- **Blocking.** Native dependencies, the `POST /issues/<n>/dependencies` line above.
+- **Frontier.** `fj issue search --labels wayfinder:<type>`, filtered to open, unassigned tickets whose blockers are
+  closed (`forge.py api GET /issues/<n>/dependencies`).
