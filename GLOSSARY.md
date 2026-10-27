@@ -24,6 +24,9 @@ kind's `execute` hook carries out one node instance.
 **Concert**: One run of the perform stage over a plan. It has an id, a record and a result. _Avoid_: run, execution,
 performance
 
+**Encore**: A new concert that performs an earlier concert's composition again, its agents continuing their
+counterparts' sessions and told what changed. _Avoid_: rerun, continue
+
 **Short id**: A concert's display id: the last 15 hex digits of its UUIDv7 written in jj's reverse-hex letters (`0` to
 `f` as `z` to `k`), shown 8 letters long. Commands take a prefix of it or of the full id; the record, paths, lane refs
 and `--json` hold the full id.
@@ -144,18 +147,41 @@ host.
 
 ### Coding-agent host
 
-**Agent node**: Runs one role against a prompt in a lane. _Avoid_: leg
+**Agent node**: Runs one profile against a prompt in a lane. _Avoid_: leg
 
-**Role**: The runtime an agent runs on: harness, model and thinking level.
+**Runtime**: What an agent runs on: its harness, and the model and thinking level in that harness's own terms. _Avoid_:
+role
 
-**Identity**: An agent's standing text, appended to its harness's own system prompt from a staged file. The task goes
-separately, as the user message.
+**Profile**: A named agent setup, the roster a seat draws on: its runtime, instructions, attachments, read-only binds,
+context policy and limits. Unowned and named bare, or a pack's and named `<pack id>/<name>`.
 
-**Seat**: An agent's standing setup, its role, identity, attachments, declared outputs, checks and read-only binds,
-bundled once and called with a task and a lane to emit an agent node. A call may override the role and add to the rest.
+**Agent environment**: What a harness loads for an agent: its tools, subagents, skills, MCP servers, hooks, context
+files and compaction. Declared by the profile and its adapter's clean baseline; observed from the harness's startup
+report. Not the host's environment.
+
+**Probe**: Starting a profile's harness as a concert would and stopping it at its startup report, to compare its
+observed agent environment against the declared one. A mismatch is a fault of inspection, never of a concert.
+
+**Instructions**: An agent's standing text, appended to its harness's own system prompt from a staged file. The task
+goes separately, as the user message. _Avoid_: identity
+
+**Context policy**: How an agent's run resets its context as it fills: by handoff or by its harness's compaction, at a
+set occupancy, a capped number of times. Without one, the harness compacts on its own terms.
+
+**Handoff**: A context reset within one agent node: the session stops at the policy's occupancy, writes a handoff note,
+and a fresh session takes over the same task in the same lane. _Avoid_: baton
+
+**Handoff note**: What an outgoing session leaves its successor: claims about the work so far, which the successor
+checks against the lane.
+
+**Seat**: A composition's slot for an agent: the profile it names, and the outputs, verdict and checks the graph expects
+of it. Called with a task and a lane to emit an agent node. Config may rebind it to another profile.
 
 **Envelope**: An agent's final reply. A work agent's is `{ report, blocked? }`. A verdict agent's is
 `{ report, outcome: ok | rejected, reason? }`, the reason required when rejected, or `{ report, blocked }`.
+
+**Lesson**: Something an agent learnt that the code does not show, listed in its report for whoever reads the run. The
+owner promotes one to standing text by hand.
 
 **Work agent**: An agent that does the work, such as a builder or a planner. It finishes `ok` or is blocked, and never
 rejects.
