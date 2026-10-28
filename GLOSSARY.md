@@ -155,6 +155,9 @@ role
 **Profile**: A named agent setup, the roster a seat draws on: its runtime, instructions, attachments, read-only binds,
 context policy and limits. Unowned and named bare, or a pack's and named `<pack id>/<name>`.
 
+**Shadow**: A workspace's or user's profile directory under a pack profile's name, used whole in place of the pack's.
+_Avoid_: fork
+
 **Agent environment**: What a harness loads for an agent: its tools, subagents, skills, MCP servers, hooks, context
 files and compaction. Declared by the profile and its adapter's clean baseline; observed from the harness's startup
 report. Not the host's environment.
