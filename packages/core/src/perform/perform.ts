@@ -53,6 +53,7 @@ import { instanceKey, kindLookup, loadFunction, sha256Hex } from "../shared";
 import {
 	type ConcertDirs,
 	concertDirs,
+	diskUseOf,
 	makeDirs,
 	type Staged,
 	scratchDir,
@@ -330,8 +331,35 @@ async function conduct(
 	}
 	// Instances remove their own scratch, except a failed code node's, which stays for inspection.
 	await rmdir(dirs.scratch).catch(() => undefined);
+	await keepDiskUse(options, [id, entered.encore]);
 	options.record.finish(id, result, Date.now());
 	return result;
+}
+
+/**
+ * Keeps in the record the disk each of `concerts` holds: the concert settling, and the concert it encores, whose
+ * sessions it continued. One a host cannot measure, or that is gone, keeps none, so a reader measures it instead.
+ */
+async function keepDiskUse(
+	options: Opened,
+	concerts: readonly (string | undefined)[],
+) {
+	const setup = (host: Host) => hostSetup(host, options.config, options.roots);
+	for (const concert of concerts) {
+		if (concert === undefined) continue;
+		const { bytes, failures } = await diskUseOf(
+			resolve(options.dir),
+			concert,
+			options.hosts,
+			setup,
+		);
+		if (failures.length > 0) continue;
+		try {
+			options.record.setDiskUse(concert, bytes);
+		} catch {
+			// The concert it encores was removed while it ran.
+		}
+	}
 }
 
 async function performed(

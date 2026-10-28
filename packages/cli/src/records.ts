@@ -271,7 +271,7 @@ async function listed(stored: Stored, query: ConcertFilter) {
 			...concertColumns(c),
 			short: short.label(c.id, false),
 			...spendOf(store, c.id),
-			diskUse: await diskOf(stored, c.id),
+			diskUse: await diskOf(stored, c),
 			notes: counts.get(c.id) ?? {},
 		})),
 	);

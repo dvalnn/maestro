@@ -25,6 +25,7 @@ const UPGRADE_STEPS = [
 	`ALTER TABLE concerts ADD COLUMN params TEXT; ALTER TABLE concerts ADD COLUMN encore_of TEXT;
 	ALTER TABLE concerts ADD COLUMN fingerprint TEXT`,
 	"ALTER TABLE concerts ADD COLUMN limits TEXT",
+	"ALTER TABLE concerts ADD COLUMN disk_use INTEGER",
 ];
 /** The version of the schema below, kept in SQLite's `user_version`. */
 const SCHEMA_VERSION = OLDEST_UPGRADABLE_VERSION + UPGRADE_STEPS.length;
@@ -64,7 +65,7 @@ export const CONCERT_FINISHED = "the concert finished before it settled";
 // spend. A concert's `profile` holds the names of the presets it was performed with (a JSON list, or one bare name in a
 // row written before presets repeated), `params` its root params as given (JSON), `encore_of` the concert it is an
 // encore of, `fingerprint` the digest `begin` was given, and `limits` the ceiling of its latest attempt (JSON), NULL
-// when it had none.
+// when it had none. `disk_use` is the bytes the concert holds on disk, measured when it settles, NULL until then.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -88,7 +89,8 @@ CREATE TABLE concerts (
 	params TEXT,
 	encore_of TEXT,
 	fingerprint TEXT,
-	limits TEXT
+	limits TEXT,
+	disk_use INTEGER
 ) STRICT;
 CREATE TABLE instances (
 	concert TEXT NOT NULL,
@@ -171,6 +173,8 @@ export type ConcertRecord = ConcertOrigin & {
 	status: ConcertStatus;
 	startedAt: number;
 	settledAt?: number;
+	/** The bytes it holds on disk, as last measured, left out when it was never measured. */
+	diskUse?: number;
 };
 
 /**
@@ -252,6 +256,8 @@ export interface Records {
 	concerts(filter?: ConcertFilter): ConcertRecord[];
 	/** Puts the concert on `tour`, or takes it off with `undefined`. */
 	setTour(concert: string, tour: string | undefined): void;
+	/** Keeps `bytes` as the disk the concert holds. */
+	setDiskUse(concert: string, bytes: number): void;
 	/**
 	 * Deletes the concert's rows: the concert, its instances, metrics, artifact references and events.
 	 * @throws Error when the concert is running.
@@ -343,6 +349,8 @@ export interface RecordWriter {
 	 * `failed` with `CONCERT_FINISHED`.
 	 */
 	finish(concert: string, result: ConcertResult, at: number): void;
+	/** Keeps `bytes` as the disk the concert holds, as `Records.setDiskUse` does. */
+	setDiskUse(concert: string, bytes: number): void;
 	/** The concert's metrics, as `Records.metrics` sums them. */
 	metrics(concert: string): Metrics;
 	close(): void;
@@ -371,6 +379,7 @@ type ConcertRow = {
 	encore_of: string | null;
 	fingerprint: string | null;
 	limits: string | null;
+	disk_use: number | null;
 };
 
 type InstanceStatus = InstanceRecord["status"];
@@ -554,6 +563,19 @@ function settleRow(
 }
 
 /** Settles a `running` concert whose process is gone, with its running instances. A second call does nothing. */
+/**
+ * Keeps `bytes` as the disk concert `id` holds.
+ * @throws Error when the record holds no concert `id`.
+ */
+function setDiskUse(db: Database, id: string, bytes: number) {
+	const updated = db
+		.query<{ id: string }, [number, string]>(
+			"UPDATE concerts SET disk_use = ? WHERE id = ? RETURNING id",
+		)
+		.get(bytes, id);
+	if (!updated) throw unknownConcert(id);
+}
+
 function settleRunning(db: Database, id: string, reason: string, at: number) {
 	const running = db
 		.query<NodeInstance, [string]>(
@@ -648,6 +670,7 @@ function readerOf(db: Database, look: Lookup): Records {
 			rowOf(id);
 			db.exec("UPDATE concerts SET tour = ? WHERE id = ?", [tour ?? null, id]);
 		},
+		setDiskUse: (id, bytes) => setDiskUse(db, id, bytes),
 		remove: writing(db, (id: string) => {
 			const row = rowOf(id);
 			if (row.status === "running")
@@ -880,6 +903,7 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 				],
 			);
 		}),
+		setDiskUse: (id, bytes) => setDiskUse(db, id, bytes),
 		close: () => db.close(),
 	};
 }
@@ -1004,6 +1028,7 @@ function concertOf(row: ConcertRow): ConcertRecord {
 		...(row.params !== null && { params: JSON.parse(row.params) }),
 		...(row.encore_of !== null && { encoreOf: row.encore_of }),
 		...(row.limits !== null && { limits: JSON.parse(row.limits) }),
+		...(row.disk_use !== null && { diskUse: row.disk_use }),
 	};
 }
 

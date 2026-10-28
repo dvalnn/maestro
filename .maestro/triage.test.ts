@@ -246,13 +246,15 @@ const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 ];
 
 test.each(verdicts)(
-	"a stub perform settles ok as %s, with a triage output of that shape, and a planner and a scout per group only when the triager plans",
+	"a stub perform settles ok as %s, with a triage output of that shape, a planner and a scout per group only when the triager plans, and the checker only on a ready proposal",
 	async (_, ruling, proposal, expected) => {
 		const { concert, statuses, artifact } = await performed(ruling, proposal);
 		expect(concert.status).toBe("ok");
 		expect(concert.outputs.triage).toEqual(expected);
 		const ran = proposal ? "ok" : "skipped";
 		expect([statuses("scouts"), statuses("planner")]).toEqual([[ran], [ran]]);
+		const checked = proposal?.verdict === "ready-for-agent" ? "ok" : "skipped";
+		expect(statuses("checker")).toEqual([checked]);
 		if (!proposal) return;
 		expect(statuses("scouts/scout")).toEqual(["ok", "ok"]);
 		const answers = artifact("answers", "answers");
@@ -263,8 +265,8 @@ test.each(verdicts)(
 	},
 );
 
-test("a stub perform leaves a failing check's findings in a ready spec, and runs the checker only on a ready proposal", async () => {
-	const { concert, statuses } = await performed(planning, ready, {
+test("a stub perform leaves a failing check's findings in a ready spec", async () => {
+	const { concert } = await performed(planning, ready, {
 		findings: [failed],
 	});
 	expect(concert.status).toBe("ok");
@@ -276,13 +278,6 @@ test("a stub perform leaves a failing check's findings in a ready spec, and runs
 		lead: "Open after the spec check",
 		points: [failed],
 	});
-	expect(statuses("checker")).toEqual(["ok"]);
-	const split = await performed(planning, {
-		verdict: "split",
-		...unspecified,
-		children,
-	});
-	expect(split.statuses("checker")).toEqual(["skipped"]);
 });
 
 /** The composed plan of the triage, with `--backlog`. */

@@ -1,8 +1,8 @@
 import type { ErrorObject } from "ajv";
-import Ajv2020 from "ajv/dist/2020";
 import irSchema from "../ir.schema.json";
 import { checkGraph, IR_VERSION, irError } from "./graph";
 import type { Diagnostic, Ir } from "./types";
+import { validator } from "./validator";
 
 export { type ArtifactRef, artifactRefSchema } from "./artifact-ref";
 export { canonicalJson, isPlainObject } from "./canonical-json";
@@ -88,11 +88,7 @@ export type ParseResult =
 	| { ok: true; ir: Ir }
 	| { ok: false; diagnostics: Diagnostic[] };
 
-// strictTypes off: the if/then sub-schemas apply only inside already-typed objects.
-const validateShape = new Ajv2020({
-	allErrors: true,
-	strictTypes: false,
-}).compile(irSchema);
+const validateShape = validator().compile(irSchema);
 
 const [MAJOR, MINOR] = IR_VERSION.split(".").map(Number) as [number, number];
 

@@ -256,7 +256,7 @@ function rehearsed(
 async function pruned(stored: Stored, selection: Selection) {
 	const { session, values, json } = stored;
 	const targets = selected(stored, selection);
-	const sizes = await Promise.all(targets.map((c) => diskOf(stored, c.id)));
+	const sizes = await Promise.all(targets.map((c) => diskOf(stored, c)));
 	const total = sizes.reduce((sum, size) => sum + size, 0);
 	if (isSet(values, "dry-run")) return rehearsed(stored, targets, sizes, total);
 	if (

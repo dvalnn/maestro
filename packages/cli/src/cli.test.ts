@@ -35,6 +35,14 @@ const CLASH_NO = join(FIXTURES, "clash-no.ts");
 const LOUD = join(FIXTURES, "loud.ts");
 const ESC = "\u001b";
 
+/** Forgets the disk use the record keeps for `ids`, as a store from before it kept any, so the next read measures it. */
+function unmeasured(w: Awaited<ReturnType<typeof world>>, ...ids: string[]) {
+	const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+	for (const id of ids)
+		db.run("UPDATE concerts SET disk_use = NULL WHERE id = ?", [id]);
+	db.close();
+}
+
 /** A code node writing two files and returning them beside plain values, and a stdlib node keyed on SDK 0.0.0. */
 const WRITE = `export async function write(_: object, ctx: { scratch: string }) {
 	for (const name of ["a.txt", "b.txt"]) await Bun.write(\`\${ctx.scratch}/\${name}\`, name);
@@ -1402,20 +1410,29 @@ describe("the record", () => {
 		expect(group).not.toHaveProperty("inputs");
 	});
 
-	test("ls shows the disk a concert holds: its directory and what its hosts report", async () => {
+	test("ls shows the disk a concert holds as it settled: its directory and what its hosts report", async () => {
 		const w = await world();
-		const host = hostOf(ECHO, { usage: () => 2048 });
+		let usage = 2048;
+		const host = hostOf(ECHO, { usage: () => usage });
 		const id = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
+		const diskUse = async () =>
+			json(await w.call(["ls", "--json"], { hosts: [host] }))[0].diskUse;
+		const settled = await diskUse();
+		expect(settled).toBeGreaterThanOrEqual(2048);
+		expect((await w.call(["ls"], { hosts: [host] })).out).toMatch(
+			/ok\s.*\s-\s+2\.\d KiB$/m,
+		);
 		await Bun.write(
 			join(w.env.XDG_DATA_HOME, "maestro/concerts", id, "artifacts/a.txt"),
 			"x".repeat(100),
 		);
-		expect(
-			json(await w.call(["ls", "--json"], { hosts: [host] }))[0].diskUse,
-		).toBe(2148);
-		expect((await w.call(["ls"], { hosts: [host] })).out).toMatch(
-			/ok\s.*\s-\s+2\.1 KiB$/m,
-		);
+		usage = 0;
+		expect(await diskUse()).toBe(settled);
+		unmeasured(w, id);
+		usage = 2048;
+		expect(await diskUse()).toBe(settled + 100);
+		usage = 0;
+		expect(await diskUse()).toBe(settled + 100);
 	});
 
 	test("a host that cannot measure a concert leaves ls and prune working, and ls says why", async () => {
@@ -1649,7 +1666,7 @@ describe("the record", () => {
 		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
 		for (const twin of twins)
 			db.run(
-				"INSERT INTO concerts SELECT ?, composition, pack, ir, pid, status, started_at, settled_at, result_node, result_expansion, reason, workspace, tour, title, module_dir, file, profile, config, params, encore_of, fingerprint, limits FROM concerts WHERE id = ?",
+				"INSERT INTO concerts SELECT ?, composition, pack, ir, pid, status, started_at, settled_at, result_node, result_expansion, reason, workspace, tour, title, module_dir, file, profile, config, params, encore_of, fingerprint, limits, disk_use FROM concerts WHERE id = ?",
 				[twin, ids[0] ?? ""],
 			);
 		db.close();
@@ -1714,6 +1731,7 @@ describe("prune", () => {
 		const [a, b] = [await perform(), await perform()];
 		const dir = join(w.env.XDG_DATA_HOME, "maestro/concerts", a);
 		await Bun.write(join(dir, "artifacts/a.txt"), "x".repeat(10));
+		unmeasured(w, a);
 		const asked: string[] = [];
 		const answer = (yes: boolean) => ({
 			hosts: [host],
@@ -1838,6 +1856,7 @@ describe("prune", () => {
 		const perform = async () =>
 			idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
 		const [a, b] = [await perform(), await perform()];
+		unmeasured(w, a, b);
 		flipped = a;
 		const pruned = await w.call(["prune", a, b, "--yes", "--json"], {
 			hosts: [host],
@@ -1894,6 +1913,7 @@ describe("prune --dry-run", () => {
 			join(w.env.XDG_DATA_HOME, "maestro/concerts", done, "artifacts/a.txt"),
 			"x".repeat(100),
 		);
+		unmeasured(w, done);
 		const dry = await w.call(["prune", "--status", "ok", "-n"]);
 		expect(dry.code).toBe(0);
 		expect(dry.out).toMatch(new RegExp(`^${done} +ok +\\S+ +100 B$`));

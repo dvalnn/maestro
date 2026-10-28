@@ -8,16 +8,23 @@ export const messageOf = (error: unknown) =>
 
 export type Validator = Ajv2020;
 
-/** A fresh schema validator. `format` is an annotation only: neither compose nor perform validates it. */
-export const validator = (): Validator =>
-	registerMaestroType(
-		new Ajv2020({
-			allErrors: true,
-			strictTypes: false,
-			strictTuples: false,
-			validateFormats: false,
-		}),
-	);
+/**
+ * The one schema validator of the process, as each instance compiles the draft 2020-12 meta-schema anew. It caches
+ * each schema it compiles, and registers none by `$id`, so two schemas with one `$id` do not clash. `format` is an
+ * annotation only: neither compose nor perform validates it.
+ */
+const shared = registerMaestroType(
+	new Ajv2020({
+		allErrors: true,
+		strictTypes: false,
+		strictTuples: false,
+		validateFormats: false,
+		addUsedSchema: false,
+	}),
+);
+
+/** The process's schema validator. */
+export const validator = (): Validator => shared;
 
 const unescapePointer = (s: string) =>
 	s.replaceAll("~1", "/").replaceAll("~0", "~");

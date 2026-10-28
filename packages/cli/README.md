@@ -169,7 +169,8 @@ limit leaves older concerts out, a dim line names the command that shows more, s
   instance's `tokens_*` metrics but `tokens_reasoning`, which output tokens already count. A running agent shows them
   from the `agent` progress event it emits when it starts, then its latest note.
 - **Concert list.** A `time` column after `status`, and a `tokens` column with the concert's total, `-` when it has
-  none.
+  none. The `disk` column, and the size `prune` frees, come from the record, measured as the concert settled; a running
+  concert, or one the record holds no size for, is measured as `ls` runs, and the size kept once it settled.
 - **Notes.** `ls` marks a concert whose instances have notes with `•` after its status, and its `--json` gives each
   concert's `notes` as a count by heading. Under its table, `ls <concert>` lists the notes its hosts give the current
   instances, such as an agent's `Obstacles` and `Lessons`, one `<instance>  <entry>` line each under its heading. On a

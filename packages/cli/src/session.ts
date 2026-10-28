@@ -1,5 +1,5 @@
 import { readFileSync, readlinkSync } from "node:fs";
-import { lstat, mkdir, readdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import { ConfigError } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
@@ -7,6 +7,7 @@ import { hostSetup } from "@maestro/core/host";
 import {
 	type ConcertRecord,
 	concertDirs,
+	diskUseOf,
 	openRecord,
 	type Records,
 } from "@maestro/core/perform";
@@ -228,47 +229,34 @@ export async function withStore<T>(
 	);
 }
 
-/** The bytes held under `dir`, 0 when it is not there. */
-async function sizeOf(dir: string): Promise<number> {
-	const names = await readdir(dir, { recursive: true }).catch(() => []);
-	const sizes = await Promise.all(
-		names.map((name) =>
-			lstat(join(dir, name)).then(
-				(entry) => (entry.isFile() ? entry.size : 0),
-				() => 0,
-			),
-		),
-	);
-	return sizes.reduce((sum, size) => sum + size, 0);
-}
-
 /** The setup core gives `host` under the session's config. */
 export const setupOf = (session: Session, host: Host) =>
 	hostSetup(host, session.config.composed, session.config.roots);
 
 /**
- * The bytes concert `id` holds: its directory under the data root, and what each host reports holding for it. A host
- * that cannot measure its share counts none, and why goes to stderr.
+ * The bytes `concert` holds: its directory under the data root, and what each host reports holding for it. A settled
+ * concert's comes from the record, measured once and kept there when the record holds none. A host that cannot measure
+ * its share counts none, why goes to stderr, and nothing is kept.
  */
 export async function diskOf(
-	{ session, values }: Stored,
-	id: string,
+	{ session, store, values }: Stored,
+	concert: ConcertRecord,
 ): Promise<number> {
-	const usage = async (host: Host) => {
-		try {
-			return (await host.resources?.usage(id, setupOf(session, host))) ?? 0;
-		} catch (error) {
-			warn(
-				session.deps,
-				values,
-				`host '${host.name}' cannot measure concert ${id}: ${messageOf(error)}`,
-			);
-			return 0;
-		}
-	};
-	const held = await Promise.all([
-		sizeOf(join(session.files.concerts, id)),
-		...session.deps.hosts.map(usage),
-	]);
-	return held.reduce((sum, bytes) => sum + bytes, 0);
+	const { id, status, diskUse } = concert;
+	if (status !== "running" && diskUse !== undefined) return diskUse;
+	const { bytes, failures } = await diskUseOf(
+		session.files.concerts,
+		id,
+		session.deps.hosts,
+		(host) => setupOf(session, host),
+	);
+	for (const { host, error } of failures)
+		warn(
+			session.deps,
+			values,
+			`host '${host}' cannot measure concert ${id}: ${messageOf(error)}`,
+		);
+	if (status !== "running" && failures.length === 0)
+		store.setDiskUse(id, bytes);
+	return bytes;
 }

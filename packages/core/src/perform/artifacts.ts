@@ -21,6 +21,7 @@ import {
 	type Ports,
 	replaceAt,
 } from "@maestro/ir";
+import type { Host, HostSetup } from "../host";
 import type { Outputs } from "../node";
 import { sha256Hex } from "../shared";
 
@@ -34,6 +35,49 @@ export const concertDirs = (root: string, concert: string): ConcertDirs => ({
 	artifacts: join(root, concert, "artifacts"),
 	scratch: join(root, concert, "scratch"),
 });
+
+/** The bytes held under `dir`, 0 when it is not there. */
+async function sizeOf(dir: string): Promise<number> {
+	const names = await readdir(dir, { recursive: true }).catch(() => []);
+	const sizes = await Promise.all(
+		names.map((name) =>
+			lstat(join(dir, name)).then(
+				(entry) => (entry.isFile() ? entry.size : 0),
+				() => 0,
+			),
+		),
+	);
+	return sizes.reduce((sum, size) => sum + size, 0);
+}
+
+/** What `diskUseOf` measured: the bytes, and each host that could not measure its share, which counts none. */
+export type DiskUse = {
+	bytes: number;
+	failures: { host: string; error: unknown }[];
+};
+
+/** The bytes concert `concert` holds: its directory under `root`, and what each of `hosts` reports holding for it. */
+export async function diskUseOf(
+	root: string,
+	concert: string,
+	hosts: readonly Host[],
+	setup: (host: Host) => HostSetup,
+): Promise<DiskUse> {
+	const failures: DiskUse["failures"] = [];
+	const usage = async (host: Host) => {
+		try {
+			return (await host.resources?.usage(concert, setup(host))) ?? 0;
+		} catch (error) {
+			failures.push({ host: host.name, error });
+			return 0;
+		}
+	};
+	const held = await Promise.all([
+		sizeOf(join(root, concert)),
+		...hosts.map(usage),
+	]);
+	return { bytes: held.reduce((sum, bytes) => sum + bytes, 0), failures };
+}
 
 export async function makeDirs(dirs: ConcertDirs): Promise<void> {
 	await mkdir(dirs.artifacts, { recursive: true });

@@ -182,7 +182,7 @@ members sit flat on the host; a `?` marks an optional one.
 | `environment(s)`      | Core, at perform start, once per concert.                              | Facts for code nodes' `env`.          |
 | `param?(type, text)`  | CLI: reads a param of one of the host's `types`.                       | A value, or diagnostics.              |
 | `resources?.release`  | CLI, for `prune`, on a settled concert.                                | Nothing.                              |
-| `resources?.usage`    | CLI, for `ls`, per concert.                                            | Bytes on disk.                        |
+| `resources?.usage`    | Core, as a concert settles, and its encore's; CLI, for `ls` otherwise. | Bytes on disk.                        |
 | `text?.*`             | CLI, for `watch`, `ls`, `ls --json`, `ls --help`.                      | Progress words, actor, notes, report. |
 
 [^validate]:
@@ -402,7 +402,8 @@ no coordination beyond lane isolation. It holds:
 
 - Concerts: the IR, the id of the performing process, where the code came from (workspace, module directory, file), tour
   and title, each `--preset` name in order, each `-c` as typed, the root's params the flags gave, the concert an encore
-  repeats and its fingerprint, and the `limits` of the latest attempt.
+  repeats and its fingerprint, the `limits` of the latest attempt, and the disk it holds, measured as it settles and
+  again when an encore of it settles.
 - Node instances: outcomes with reasons, durations, metrics, artifact references and each leaf's wired inputs.
 - Events.
 
