@@ -155,6 +155,9 @@ role
 **Profile**: A named agent setup, the roster a seat draws on: its runtime, instructions, attachments, read-only binds,
 context policy and limits. Unowned and named bare, or a pack's and named `<pack id>/<name>`.
 
+**Preset**: A named config layer switched per concert (`--preset risky`), above the config files and below `-c`. It
+tunes profiles and rebinds seats. _Avoid_: config profile
+
 **Shadow**: A workspace's or user's profile directory under a pack profile's name, used whole in place of the pack's.
 _Avoid_: fork
 
