@@ -317,6 +317,40 @@ The executable is `maestro`.
 - **DIST-05 (Must).** Distribution is internal (D-31): release artifacts (the `maestro` binary and package tarballs)
   served from a private forge. Nothing is published to a public registry.
 
+### 6.8 Agent tool (AT)
+
+The agent tool answers one question for any agent on any harness: what does its environment look like when it runs? A
+**profile** is the named setup behind an agent, and a **seat** is a composition's slot that names one. Each requirement
+names the decision ticket it comes from.
+
+- **AT-01 (Must).** An adapter loads its harness clean: base tools only, with no user skills, MCP servers, hooks,
+  context files, memory or agent profiles, and subagent tools off where the harness allows. The baseline is fixed in the
+  adapter, not a profile field. (#109, from the harness research of #102 to #105)
+- **AT-02 (Must).** Anything beyond the baseline is opt-in and owned by maestro, never read from the user's harness
+  directories. Skills ride as attachments. `skills` and `mcp` are reserved profile keys and the schema rejects them with
+  `profile <name>: <key> is reserved, not yet supported`. (#109)
+- **AT-03 (Must).** A profile is a named roster entry bound to one harness. Its fields are
+  `runtime { harness, model, thinking }`, `instructions` (one file, appended to the harness's system prompt),
+  `attachments`, `readOnly` binds, `limits { timeout, tokens }` and `context`. It has no tools or permissions field:
+  maestro's sandbox is the one permission boundary. A field its harness cannot honour is a pre-flight error naming the
+  profile, the field and the harness. (#109)
+- **AT-04 (Must).** A seat names one profile, and config may rebind it per composition, through `seats:` keyed
+  `<composition id>/<seat>`. There are no ad-hoc profiles. A call sets no runtime, limits or context. (#108)
+- **AT-05 (Must).** One command shows a profile's effective environment, declared and, on request and where the harness
+  reports it, observed. A mismatch is a fault of inspection, recorded in a concert and never enforced: no node instance
+  fails on it. (#110)
+- **AT-06 (Must).** Agent identity outside composition code has one config surface: a profile directory led by its
+  `profile.yaml`, tuned in YAML config under `profiles:`. Layers, later winning: the profile directory, user config,
+  workspace config, the preset, `-c`. The highest root wins a name whole: workspace, then user, then pack. (#107)
+- **AT-07 (Must).** A profile's `context` block picks one reset strategy, `handoff` or the harness's `compact`, a
+  trigger `at` and a total cap `max`, required for `handoff`. There is no chain between strategies. Without a block the
+  harness compacts on its own terms. (#111)
+- **AT-08 (Should).** The profile model, its resolution and its inspection sit in one module of `host-repo` free of repo
+  concerns. It is extracted with the harness seam and the sandbox when a second agent host lands. (#112)
+- **AT-09 (Must).** An agent may continue an earlier harness session instead of rediscovering. Within a concert an agent
+  node takes `session: x.out.session`. Across concerts `perform --encore <concert>` continues each matched agent. A
+  continued agent is told what changed since its last turn. (#113)
+
 ## 7. Non-functional requirements
 
 - **NFR-01 Determinism.** Build and compose are deterministic. Execution order within a concert may vary inside the

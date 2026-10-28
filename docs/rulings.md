@@ -12,14 +12,15 @@ when that is not obvious, and where it applies. A ruling that grows into a desig
   perform and code pinned by hash are its intended edges. Applies in `packages/cli/src/prepare.ts` (`resumable`) and
   `packages/core/src/perform/resume.ts`.
 
-## Roles
+## Profiles
 
-- **The command line has the last word on a role.** Per field, highest first: `--profile` and `-c`, the composition's
-  inline role fields, the config files' `roles`. So `--profile stub` always means no spend, an author can still pin a
-  model over the workspace default, and `-c roles.x.model=...` changes only the model. A resume applies the same order,
-  as it reapplies the recorded `--profile` and `-c`. Why: the person running the concert answers for the spend. Applies
-  in `packages/host-repo/src/host/config.ts` (`roleFields`) and `packages/core/src/config/index.ts` (`commandLineOf`). A
-  `!replace` of a role on the command line replaces it whole, inline fields included.
+- **The command line has the last word on a profile.** Per field, highest first: `-c`, the preset (`--preset`), the
+  workspace config's `profiles`, the user config's `profiles`, the profile directory's `profile.yaml`. So
+  `--preset stub` always means no spend, a workspace can still pin a model over a profile's default, and
+  `-c profiles.x.runtime.model=...` changes only the model. A composition sets none of a profile's fields, since a seat
+  only names it. A resume applies the same order, as it reapplies the recorded `--preset` and `-c`. Why: the person
+  running the concert answers for the spend. Applies to profile resolution in `host-repo`'s profile module (AT-04,
+  AT-06).
 
 ## Concert fork (deferred)
 
