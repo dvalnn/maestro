@@ -20,9 +20,10 @@ The shape is:
   bundle's manifest names the pack, so a bundle cannot ship another pack's profile. There is no fallback between the two
   forms.
 - **A seat names one profile and holds no defaults.** `seat("<name>", { out, verdict, checks })` defaults its profile to
-  its own name, resolved in the declaring pack. Runtime, limits and context belong to the profile and to config, so a
-  call sets none of them and the command line keeps the last word. A call that needs another budget uses another seat
-  bound to another profile.
+  its own bare name, and `{ profile }` names another. A pack's seat names its profile in full,
+  `seat("builder", { profile: "classics/builder" })`. Runtime, limits and context belong to the profile and to config,
+  so a call sets none of them and the command line keeps the last word. A call that needs another budget uses another
+  seat bound to another profile.
 - **Config tunes and rebinds, in YAML only.** `profiles: { <name>: { ...fields } }` tunes a profile by name, and
   `seats: { <composition id>/<seat>: <profile> }` rebinds a seat. Presets and `-c` use the same keys.
 - **Resolution happens at pre-flight**, and again on a resume, under the config as it stands. The IR holds the profile
@@ -37,6 +38,9 @@ The shape is:
   whole, and finer changes go through config tuning.
 - **A search across namespaces** (a bare name falling back to a pack's profile). Rejected: a name says which form it is,
   and there is no fallback between them.
+- **A seat's profile defaulting to its name in the declaring pack.** A build knows only its root composition's pack, so
+  a classics seat called from a workspace composition would resolve in the workspace's pack. Rejected: a pack's seat
+  names `<pack id>/<name>` itself.
 - **A reserved `global/` namespace for unowned profiles.** Rejected: a bare name is unowned, so the extra path segment
   added nothing.
 
