@@ -71,6 +71,8 @@ change, not degrade and accumulate tech debt. The codebase is a living system, a
 This repo is jj-colocated, and `.claude/hooks/deny-git-mutations.py` denies `git` where jj owns the operation, answering
 with the jj that does it. The conventions, and the jj behaviour that surprises, are the `jj` skill.
 
+Run `jj git fetch` before picking up new work, so a ticket's state and `main` are read as origin has them.
+
 ## Commit messages
 
 Every change description follows these rules, from human contributors and agents alike.
