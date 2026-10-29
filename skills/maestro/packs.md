@@ -88,9 +88,9 @@ shop:
     maxItems: 20
 ```
 
-Precedence, highest first: the CLI flag, the profile, the workspace file, the user file, and the param's default
-(compose also reads the example set, below config: [running.md](running.md), Compose). A key the pack does not claim
-fails compose with a did-you-mean.
+Precedence, highest first: the CLI flag, the preset, the workspace file, the user file, and the param's default (compose
+also reads the example set, below config: [running.md](running.md), Compose). A key the pack does not claim fails
+compose with a did-you-mean.
 
 ## Trust
 

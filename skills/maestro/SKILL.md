@@ -25,7 +25,9 @@ This skill was checked against maestro 0.1.0-beta.6. When `maestro --version` na
 - **Outcome**: how an instance or a concert ended: `ok`, `rejected`, `failed` or `skipped`.
 - **Lane**: an isolated, versioned working copy cut from the target. Each version is `<concert id>.<node instance>`.
 - **Changeset**: a lane version's patches, the only way results leave a concert.
-- **Role**: a name the composition uses for an agent, mapped in config to a harness, a model and a thinking level.
+- **Profile**: a named agent setup: its runtime (harness, model, thinking level), instructions and limits.
+- **Seat**: a composition's slot for an agent; it names a profile, and config may rebind it.
+- **Preset**: a named config layer switched per concert with `--preset`; it tunes profiles and rebinds seats.
 - **Check**: a named shell command from config (tests, lint, build) run in a lane; its exit code is its verdict.
 - **Pack**: an installed directory of compositions, under `$XDG_DATA_HOME/maestro/packs/` or listed in config under
   `packs`.
@@ -128,7 +130,8 @@ wait that long, to rehearse a slow run. `MAESTRO_STUB_OUTPUTS=<dir>` scripts wha
 that hangs on it, such as a fix loop: a stub agent takes each declared output from `<dir>/<instance id>/<file>` (the id
 as `maestro ls <id>` prints it, such as `loop[0]/review`), else from `<dir>/<node id>/<file>` (the id without `[n]`
 indices, serving every round), else the placeholder. A verdict agent's `verdict` file, found the same way, holds `ok` or
-`rejected <reason>`; without one it rules `ok`. Files are copied as is and validated like any output. A resume needs the
+`rejected <reason>`; without one it rules `ok`. An `events.jsonl` file found the same way holds the harness events the
+agent emits first, one JSON object per line. Files are copied as is and validated like any output. A resume needs the
 variable set again; a missing dir fails the agent. `MAESTRO_STUB_ENVIRONMENT` (a JSON object such as
 `{"mcp":["github"]}`) replaces parts of what the stub reports loading, to rehearse an environment fault. For the
 classics pack's seven profiles:

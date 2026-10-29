@@ -40,8 +40,8 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
 - `arranged(ir, instances)`: instances in the order `ls` lists them: a subcomposition's members under its name, a loop's
   by round, each round's in node order.
 - `agentText(actor, metrics)` and `agentsOf(records)`: the agent column, `<harness> · <model> · <effort>  <total> tok`,
-  with the model minus its provider prefix and the effort when the role sets one; and each current instance's actor and
-  total, which `frame` shows, a container row its instances' total.
+  with the model minus its provider prefix and the effort when the profile sets one; and each current instance's actor
+  and total, which `frame` shows, a container row its instances' total.
 - `tokensOf(metrics)` and `compact(n)`: the sum of the `tokens_*` metrics but `tokens_reasoning`, and a count as `999`,
   `15.5k` or `1.2M`.
 - `shortId(id)` and `shortIds(ids)`: a concert's short id, the UUID's last 15 hex digits in jj's reverse-hex letters

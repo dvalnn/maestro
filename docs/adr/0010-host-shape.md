@@ -35,11 +35,11 @@ The shape is:
   lowest layer, when the host asks, so every merge tag acts on the base as on any layer.
 - **A setup goes to `validate`, `environment`, `resources.release` and `resources.usage`**, and to `execute` through
   `HostContext.setup`. It holds the values of the config namespaces the host owns, as compose checked them, their
-  sources and the layers they merged from, each cut to those namespaces, the part of them the profile and `-c` layers
-  set (`commandLine`, at its key paths), and its store, `<data root>/hosts/<host name>`. The host creates its store on
-  first write, so core holds no host directory a host never uses. It also holds the roots the CLI builds, which core
-  never reads: the workspace's `.maestro`, `maestro` in the user's config directory, and each installed pack's directory
-  by pack id. A host keeps its own entries under them. The context also names, in `HostContext.encore`, the concert an
+  sources and the layers they merged from, each cut to those namespaces, the part of them the preset and `-c` layers set
+  (`commandLine`, at its key paths), and its store, `<data root>/hosts/<host name>`. The host creates its store on first
+  write, so core holds no host directory a host never uses. It also holds the roots the CLI builds, which core never
+  reads: the workspace's `.maestro`, `maestro` in the user's config directory, and each installed pack's directory by
+  pack id. A host keeps its own entries under them. The context also names, in `HostContext.encore`, the concert an
   encore repeats, and each instance gives in `HostInstance.groups` the kind of each group enclosing it, outermost first.
   Core reads nothing a host keeps of them: a host that continues work across concerts matches an instance to its
   counterpart from its own store, never from the record.
