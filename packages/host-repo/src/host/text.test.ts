@@ -47,7 +47,7 @@ describe("repoText.progress", () => {
 		[{ kind: "tool_result" }, undefined],
 		[
 			{ kind: "context", used: 19416, window: 200000 },
-			{ word: "context", detail: "19416" },
+			{ word: "context", detail: "19.4k" },
 		],
 		[{ kind: "context" }, undefined],
 		[
@@ -56,12 +56,12 @@ describe("repoText.progress", () => {
 				metrics: {
 					tokens_in: 120,
 					tokens_out: 40,
-					tokens_cache_read: 300,
-					tokens_cache_write: 5,
+					tokens_cache_read: 44_000,
+					tokens_cache_write: 697,
 					tokens_reasoning: 9,
 				},
 			},
-			{ word: "usage", detail: "in 120 · out 40 · cache 305" },
+			{ word: "usage", detail: "in 120 · out 40 · cache 44.7k" },
 		],
 		[
 			{ kind: "usage", metrics: { tokens_in: 1 } },

@@ -58,8 +58,10 @@ maestro wait <concert> --timeout 15m
     On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls, result sizes with `ok`
     or `error`, the agent's context total and thinking among them: the time, the instance, a word for what happened and
     its detail, in aligned columns, a long detail wrapped under its column and a multi-line one cut to its first line.
-    Off a terminal `--events` prints the same lines unwrapped and without color. The graph is a header (status, elapsed
-    time and the short id), `now` and `last` lines naming the latest running and failed instances, the composition as
+    Token counts read in `k` and `M`, and a model call's `usage` folds into the `context` line after it, as in
+    `context 44.7k · in 2 · out 683 · cache 44.7k`; a `usage` with no `context` after it stays a `usage` line. Off a
+    terminal `--events` prints the same lines unwrapped and without color. The graph is a header (status, elapsed time
+    and the short id), `now` and `last` lines naming the latest running and failed instances, the composition as
     authored with each loop at its latest round and each fan-out's items on one row, and a footer of counts and the
     concert's tokens. Rows that don't fit fold into count lines, and the footer then points at `maestro ls`. Ctrl-C
     stops watching, not the concert. With stdin a terminal too, the graph is a tree to browse: see

@@ -1,5 +1,5 @@
 import type { HostText } from "@maestro/core/host";
-import type { Enrichment, HostEvent } from "@maestro/ir";
+import { compact, type Enrichment, type HostEvent } from "@maestro/ir";
 import { METRIC } from "../harness/types";
 import type { Report } from "./frame";
 import { lastLine } from "./run-lines";
@@ -37,15 +37,18 @@ function toolWording({ name, input }: HostEvent): Wording | undefined {
 	return { word: "tool", detail };
 }
 
-/** `usage`, `in <n> · out <n> · cache <n>`, cache the tokens read from and written to it. */
+/** `usage`, `in <n> · out <n> · cache <n>` in `compact` form, cache the tokens read from and written to it. */
 function usageWording({ metrics }: HostEvent): Wording | undefined {
 	if (typeof metrics !== "object" || metrics === null) return undefined;
 	const counts = new Map(Object.entries(metrics));
-	const count = (name: string) => {
+	const amount = (name: string) => {
 		const value = counts.get(name);
 		return typeof value === "number" ? value : 0;
 	};
-	const cache = count(METRIC.tokensCacheRead) + count(METRIC.tokensCacheWrite);
+	const count = (name: string) => compact(amount(name));
+	const cache = compact(
+		amount(METRIC.tokensCacheRead) + amount(METRIC.tokensCacheWrite),
+	);
 	return {
 		word: "usage",
 		detail: [
@@ -66,10 +69,10 @@ function resultWording({ bytes, error }: HostEvent): Wording | undefined {
 	return { word: "result", detail: [String(bytes), ...code].join(SEP) };
 }
 
-/** `context`, the prompt size of the latest model call in tokens, which is the agent's running context total. */
+/** `context`, the prompt size of the latest model call in `compact` tokens: the agent's running context total. */
 function contextWording({ used }: HostEvent): Wording | undefined {
 	return typeof used === "number"
-		? { word: "context", detail: String(used) }
+		? { word: "context", detail: compact(used) }
 		: undefined;
 }
 

@@ -865,6 +865,9 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 			"review/events.jsonl": [
 				'{"type":"tool","id":"t1","name":"Bash","input":{"command":"ls"}}',
 				'{"type":"tool_result","id":"t1","bytes":120,"error":true}',
+				'{"type":"usage","tokens_in":2,"tokens_out":1500}',
+				'{"type":"context","used":44699}',
+				'{"type":"usage","tokens_in":3,"tokens_out":900}',
 				"",
 			].join("\n"),
 		});
@@ -872,6 +875,9 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 		const events = (await w.call(["watch", idOf(done), "--events"])).out;
 		expect(events).toMatch(/Bash.*ls/);
 		expect(events).toMatch(/result +120 · error/);
+		expect(events).toMatch(/context +44\.7k · in 2 · out 1\.5k · cache 0\n/);
+		expect(events).toMatch(/usage +in 3 · out 900 · cache 0\n/);
+		expect(events).not.toMatch(/usage +in 2 · out 1\.5k/);
 		const bad = await perform(
 			await fixtures({ "review/events.jsonl": "[1]\n" }),
 			ROUNDS,
