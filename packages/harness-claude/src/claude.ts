@@ -42,6 +42,9 @@ const UNMANAGED_OFF = [
 	"--no-chrome",
 ];
 
+/** Takes the subagent tool out of claude's context. `--bare` would drop more but also drops OAuth, which the token needs. */
+const BASELINE_DENY = ["--disallowedTools", "Agent"];
+
 /** Tells claude it already runs inside bubblewrap, which it requires to accept `bypassPermissions` as root. */
 const UNMANAGED_OFF_ENV = {
 	CLAUDE_CODE_BUBBLEWRAP: "1",
@@ -240,6 +243,7 @@ function claudeArgv(
 		"stream-json",
 		"--verbose",
 		...UNMANAGED_OFF,
+		...BASELINE_DENY,
 		"--permission-mode",
 		"bypassPermissions",
 		"--system-prompt-snapshot",

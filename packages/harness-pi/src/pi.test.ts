@@ -116,6 +116,8 @@ describe("stand-in pi", () => {
 			"--no-extensions",
 			"--no-prompt-templates",
 			"--no-context-files",
+			"--no-mcp",
+			"--no-approve",
 			"--append-system-prompt",
 			"/instructions.md",
 			"--session-dir",

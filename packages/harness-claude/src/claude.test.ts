@@ -194,6 +194,8 @@ describe("stand-in claude", () => {
 			"--strict-mcp-config",
 			"--disable-slash-commands",
 			"--no-chrome",
+			"--disallowedTools",
+			"Agent",
 			"--permission-mode",
 			"bypassPermissions",
 			"--system-prompt-snapshot",

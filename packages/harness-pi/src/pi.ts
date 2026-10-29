@@ -175,6 +175,8 @@ const UNMANAGED_OFF = [
 	"--no-extensions",
 	"--no-prompt-templates",
 	"--no-context-files",
+	"--no-mcp",
+	"--no-approve",
 ];
 
 /** The pi argv for a request. The prompt travels on stdin, the instructions in a file pi appends to its system prompt. */
