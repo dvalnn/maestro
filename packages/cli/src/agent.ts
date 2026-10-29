@@ -314,10 +314,8 @@ function environmentRows(
 	declared: AgentEnvironment,
 	harness: string,
 ): EnvironmentRow[] {
-	const { less } = declared.tools;
-	const tools = `${harness}'s defaults${less.length ? `, less ${names(less)}` : ""}`;
 	return [
-		{ part: "tools", key: "tools", value: tools },
+		{ part: "tools", key: "tools", value: names(declared.tools) },
 		{
 			part: "subagents",
 			key: "subagents",

@@ -323,9 +323,10 @@ The agent tool answers one question for any agent on any harness: what does its 
 **profile** is the named setup behind an agent, and a **seat** is a composition's slot that names one. Each requirement
 names the decision ticket it comes from.
 
-- **AT-01 (Must).** An adapter loads its harness clean: base tools only, with no user skills, MCP servers, hooks,
-  context files, memory or agent profiles, and subagent tools off where the harness allows. The baseline is fixed in the
-  adapter, not a profile field. (#109, from the harness research of #102 to #105)
+- **AT-01 (Must).** An adapter loads its harness clean: the built-in tools it names at launch and no others, whatever
+  the harness's defaults, with no user skills, MCP servers, hooks, context files, memory or agent profiles, and subagent
+  tools off where the harness allows. The baseline is fixed in the adapter, not a profile field. (#109, #123, from the
+  harness research of #102 to #105)
 - **AT-02 (Must).** Anything beyond the baseline is opt-in and owned by maestro, never read from the user's harness
   directories. Skills ride as attachments. `skills` and `mcp` are reserved profile keys and the schema rejects them with
   `profile <name>: <key> is reserved, not yet supported`. (#109)

@@ -242,17 +242,18 @@ function parser(): (e: JsonObject) => HarnessEvent[] {
 /** Extensions bring pi's subagents and hooks, if any. */
 const NO_EXTENSIONS = ["--no-extensions"];
 
-/** The parts of pi's environment maestro does not manage, each switched off. */
-const BASELINE = baselineOf(
-	{ base: "default", less: [] },
-	{
-		subagents: { declared: false, argv: NO_EXTENSIONS },
-		skills: { declared: [], argv: ["--no-skills"] },
-		mcp: { declared: [], argv: ["--no-mcp"] },
-		hooks: { declared: [], argv: NO_EXTENSIONS },
-		contextFiles: { declared: [], argv: ["--no-context-files"] },
-	},
-);
+/** pi's default tools today, named so a release's new defaults never reach an agent. */
+const TOOLS = ["read", "bash", "edit", "write"];
+
+/** The tools pi loads, and the parts of its environment maestro does not manage, each switched off. */
+const BASELINE = baselineOf({
+	tools: { declared: TOOLS, argv: ["--tools", TOOLS.join(",")] },
+	subagents: { declared: false, argv: NO_EXTENSIONS },
+	skills: { declared: [], argv: ["--no-skills"] },
+	mcp: { declared: [], argv: ["--no-mcp"] },
+	hooks: { declared: [], argv: NO_EXTENSIONS },
+	contextFiles: { declared: [], argv: ["--no-context-files"] },
+});
 
 /** The environment pi launches with. */
 export const declared = BASELINE.declared;

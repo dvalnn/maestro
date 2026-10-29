@@ -866,7 +866,7 @@ describe("agent show --concert", () => {
   model       none
 
 Environment   recorded stub
-✓ tools       stub's defaults
+✓ tools       none
 ✓ subagents   off
 ✗ skills      none
               deploy loaded, not declared
@@ -898,7 +898,7 @@ Environment   recorded stub
 		]);
 		expect(unreported).toMatchObject({ code: 0, err: "" });
 		expect(unreported.out).toEndWith(`Environment   recorded nothing from stub
-? tools       stub's defaults
+? tools       none
 ? subagents   off
 ? skills      none
 ? mcp         none

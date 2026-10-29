@@ -637,6 +637,9 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   adapter loads with `--extension` beside `--no-extensions`. The host records it with the agent's other events, and
   never enforces it. `maestro agent show --probe` starts a profile's agent as a concert would and stops it at that
   report, to check it against the adapter's declared baseline (GLOSSARY: Probe).
+- The baseline names an agent's tools: claude launches with `--tools Bash,Read,Write,Edit` and pi with
+  `--tools read,bash,edit,write`, so a tool a harness release adds to its defaults never reaches an agent. A probe
+  faults each tool loaded beyond that list and each one in it not loaded.
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
 **Host validation rules**

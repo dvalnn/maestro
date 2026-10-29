@@ -36,39 +36,40 @@ const AUTH_FAILED = "authentication_failed";
 /** Per-session config dir under the session dir, so transcripts and settings are the session's own. */
 const SESSION_CONFIG = "claude";
 
-const SUBAGENT_TOOL = "Agent";
 /** The subagent tool's names in a `system/init` tool list, which 2.1.302 gives by its former name `Task`. */
-const SUBAGENT_TOOLS = [SUBAGENT_TOOL, "Task"];
+const SUBAGENT_TOOLS = ["Agent", "Task"];
+
+/** The built-in tools an agent gets, named so a release's new default tools never reach it. */
+const TOOLS = ["Bash", "Read", "Write", "Edit"];
+const TOOLS_ARGV = ["--tools", TOOLS.join(",")];
 
 /**
- * The parts of claude's environment maestro does not manage, each switched off. `--bare` would drop more but also
- * drops OAuth, which the token needs.
+ * The tools claude loads, and the parts of its environment maestro does not manage, each switched off. `--bare` would
+ * drop more but also drops OAuth, which the token needs.
  */
-const BASELINE = baselineOf(
-	{ base: "default", less: [SUBAGENT_TOOL] },
-	{
-		subagents: { declared: false, argv: ["--disallowedTools", SUBAGENT_TOOL] },
-		skills: { declared: [], argv: ["--disable-slash-commands"] },
-		mcp: { declared: [], argv: ["--strict-mcp-config"] },
-		hooks: {
-			declared: [],
-			argv: [
-				"--setting-sources",
-				"",
-				"--settings",
-				JSON.stringify({ disableAllHooks: true }),
-			],
-		},
-		contextFiles: {
-			declared: [],
-			argv: [],
-			env: {
-				CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-				CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
-			},
+const BASELINE = baselineOf({
+	tools: { declared: TOOLS, argv: TOOLS_ARGV },
+	subagents: { declared: false, argv: TOOLS_ARGV },
+	skills: { declared: [], argv: ["--disable-slash-commands"] },
+	mcp: { declared: [], argv: ["--strict-mcp-config"] },
+	hooks: {
+		declared: [],
+		argv: [
+			"--setting-sources",
+			"",
+			"--settings",
+			JSON.stringify({ disableAllHooks: true }),
+		],
+	},
+	contextFiles: {
+		declared: [],
+		argv: [],
+		env: {
+			CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+			CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
 		},
 	},
-);
+});
 
 /** The environment claude launches with. */
 export const declared = BASELINE.declared;

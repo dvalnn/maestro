@@ -146,7 +146,7 @@ Context
   max         2
 
 Environment   declared only
-  tools       claude's defaults, less Agent
+  tools       Bash Read Write Edit
   subagents   off
   skills      none
   mcp         none
@@ -217,9 +217,10 @@ context:
 ---
 # environment, declared only
 tools:
-  base: default
-  less:
-    - Agent
+  - Bash
+  - Read
+  - Write
+  - Edit
 subagents: false
 skills: []
 mcp: []
@@ -294,7 +295,7 @@ Runtime
   model       gpt
 
 Environment   declared only
-  tools       pi's defaults
+  tools       read bash edit write
   subagents   off
   skills      none
   mcp         none
@@ -323,7 +324,7 @@ describe("agent show --probe", () => {
 		const probed = await w.call(["agent", "show", "demo/reviewer", "--probe"]);
 		expect(probed).toMatchObject({ code: 0, err: "probing stub…" });
 		expect(probed.out).toEndWith(`Environment   probed stub
-✓ tools       stub's defaults
+✓ tools       none
 ✓ subagents   off
 ✓ skills      none
 ✓ mcp         none

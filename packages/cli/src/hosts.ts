@@ -71,7 +71,7 @@ function scriptedVerdict(dir: string | undefined, req: HarnessRequest) {
 
 /** The stub loads nothing: it runs a shell script. */
 const STUB_DECLARED: AgentEnvironment = {
-	tools: { base: "default", less: [] },
+	tools: [],
 	subagents: false,
 	skills: [],
 	mcp: [],

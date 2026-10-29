@@ -120,12 +120,15 @@ describe("stand-in claude", () => {
 	});
 
 	test.each(["Task", "Agent"])(
-		"the recorded system/init line is the environment event: its %s tool is one fault on subagents off, an MCP server mcp none, skills are skills and slash commands, and hooks and files go unreported",
+		"the recorded system/init line is the environment event: its %s tool is one fault on subagents off, a tool beyond the named ones and a named one missing are faults, an MCP server mcp none, skills are skills and slash commands, and hooks and files go unreported",
 		async (subagent) => {
 			const lines = fixture().map((l) =>
 				l.includes('"subtype":"init"')
 					? l
-							.replace('"tools":["Task"', `"tools":["${subagent}"`)
+							.replace(
+								/"tools":\[[^\]]*\]/,
+								`"tools":["${subagent}","Bash","Read","Write","Workflow"]`,
+							)
 							.replace(
 								'"mcp_servers":[]',
 								'"mcp_servers":[{"name":"github","status":"connected"}]',
@@ -146,7 +149,7 @@ describe("stand-in claude", () => {
 					kind: "environment",
 					version: "2.1.302",
 					model: "claude-haiku-5-5",
-					tools: expect.arrayContaining([subagent, "Bash", "Write"]),
+					tools: [subagent, "Bash", "Read", "Write", "Workflow"],
 					subagents: [subagent],
 					skills: ["jj", "deploy", "review"],
 					mcp: ["github"],
@@ -156,6 +159,14 @@ describe("stand-in claude", () => {
 			expect(
 				environmentChecks(declared, observed).filter((c) => c.mark !== "✓"),
 			).toEqual([
+				{
+					part: "tools",
+					mark: "✗",
+					faults: [
+						"Workflow loaded, not declared",
+						"Edit declared, not loaded",
+					],
+				},
 				{
 					part: "subagents",
 					mark: "✗",
@@ -272,8 +283,8 @@ describe("stand-in claude", () => {
 			"--output-format",
 			"stream-json",
 			"--verbose",
-			"--disallowedTools",
-			"Agent",
+			"--tools",
+			"Bash,Read,Write,Edit",
 			"--disable-slash-commands",
 			"--strict-mcp-config",
 			"--setting-sources",
@@ -301,7 +312,7 @@ describe("stand-in claude", () => {
 		expect(env).toContain("CLAUDE_CODE_DISABLE_CLAUDE_MDS=1");
 		expect(env).toContain("CLAUDE_CODE_BUBBLEWRAP=1");
 		expect(declared).toMatchObject({
-			tools: { less: ["Agent"] },
+			tools: ["Bash", "Read", "Write", "Edit"],
 			subagents: false,
 			skills: [],
 			mcp: [],

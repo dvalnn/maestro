@@ -140,6 +140,8 @@ describe("stand-in pi", () => {
 			"-p",
 			"--mode",
 			"json",
+			"--tools",
+			"read,bash,edit,write",
 			"--no-extensions",
 			"--no-skills",
 			"--no-mcp",
@@ -161,7 +163,7 @@ describe("stand-in pi", () => {
 			"",
 		]);
 		expect(declared).toMatchObject({
-			tools: { less: [] },
+			tools: ["read", "bash", "edit", "write"],
 			subagents: false,
 			skills: [],
 			mcp: [],

@@ -6,8 +6,8 @@ export type Runtime = { harness: string; model: string; thinking?: string };
 
 /** What a harness loads for an agent as its adapter launches it (GLOSSARY: Agent environment), each list by name. */
 export type AgentEnvironment = {
-	/** The harness's own default built-in tools, less those in `less`. */
-	tools: { base: "default"; less: string[] };
+	/** The built-in tools the adapter names at launch, whatever the harness's defaults. */
+	tools: string[];
 	subagents: boolean;
 	skills: string[];
 	mcp: string[];
@@ -17,11 +17,17 @@ export type AgentEnvironment = {
 	compaction: "harness";
 };
 
-type Switched = "subagents" | "skills" | "mcp" | "hooks" | "contextFiles";
+type Switched =
+	| "tools"
+	| "subagents"
+	| "skills"
+	| "mcp"
+	| "hooks"
+	| "contextFiles";
 
 /**
- * Each part of an agent environment an adapter switches off, its declared value beside the flags and variables that
- * make it true. Parts switched by one flag share one `argv` array, which launches once.
+ * Each part of an agent environment an adapter pins, its declared value beside the flags and variables that make it
+ * true. Parts switched by one flag share one `argv` array, which launches once.
  */
 export type Baseline = {
 	[P in Switched]: {
@@ -31,16 +37,17 @@ export type Baseline = {
 	};
 };
 
-/** The environment `baseline` with built-in tools `tools` declares, and the argv and env that launch it. */
-export function baselineOf(
-	tools: AgentEnvironment["tools"],
-	baseline: Baseline,
-): { declared: AgentEnvironment; argv: string[]; env: Record<string, string> } {
-	const { subagents, skills, mcp, hooks, contextFiles } = baseline;
-	const switches = [subagents, skills, mcp, hooks, contextFiles];
+/** The environment `baseline` declares, and the argv and env that launch it. */
+export function baselineOf(baseline: Baseline): {
+	declared: AgentEnvironment;
+	argv: string[];
+	env: Record<string, string>;
+} {
+	const { tools, subagents, skills, mcp, hooks, contextFiles } = baseline;
+	const switches = [tools, subagents, skills, mcp, hooks, contextFiles];
 	return {
 		declared: {
-			tools,
+			tools: tools.declared,
 			subagents: subagents.declared,
 			skills: skills.declared,
 			mcp: mcp.declared,
@@ -112,7 +119,7 @@ const listFaults = (
 		.map((name) => `${name} declared, not loaded`),
 ];
 
-/** The faults of each reported part: a tool the declaration takes away, or a list that differs. A subagent tool is a fault of `subagents` only. */
+/** The faults of each reported part: a list that differs from the declared one. A subagent tool is a fault of `subagents` only. */
 function faultsOf(
 	part: Reported,
 	declared: AgentEnvironment,
@@ -120,11 +127,10 @@ function faultsOf(
 ) {
 	const seen = observed[part] ?? [];
 	if (part === "tools")
-		return declared.tools.less
-			.filter(
-				(name) => seen.includes(name) && !observed.subagents?.includes(name),
-			)
-			.map((name) => `${name} loaded, not declared`);
+		return listFaults(
+			declared.tools,
+			seen.filter((name) => !observed.subagents?.includes(name)),
+		);
 	if (part === "subagents")
 		return declared.subagents
 			? []
