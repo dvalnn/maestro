@@ -314,7 +314,10 @@ it answers at once.
 `MAESTRO_STUB_OUTPUTS=<dir>` scripts what a stub agent delivers, per node instance. For each declared output it copies
 `<dir>/<instance id>/<file>`, else `<dir>/<node id>/<file>`, else writes the placeholder; the instance id is as `ls`
 prints it (`loop[0]/review`), the node id is it without the `[n]` indices and serves every round. A verdict agent's
-outcome comes from a `verdict` file found the same way, holding `ok` or `rejected <reason>`; absent, `ok`. The host
+outcome comes from a `verdict` file found the same way, holding `ok` or `rejected <reason>`; absent, `ok`. An
+`events.jsonl` file found the same way holds harness events the agent emits first, one JSON object per line, each after
+`MAESTRO_STUB_DELAY`: `{"type":"tool","id":"t1","name":"Bash","input":{"command":"ls"}}`,
+`{"type":"tool_result","id":"t1","bytes":120,"error":false}`, `{"type":"context","used":18000}` and the like. The host
 validates a scripted file like any output. A dir that does not exist, or a `verdict` file of any other text, fails the
 stub agent. Set it again on a resume.
 

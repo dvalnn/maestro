@@ -860,6 +860,26 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 		expect(done.out + done.err).toContain("verdict");
 	});
 
+	test("an events file's tool calls and results reach watch, and a line that is not an object fails the agent", async () => {
+		const dir = await fixtures({
+			"review/events.jsonl": [
+				'{"type":"tool","id":"t1","name":"Bash","input":{"command":"ls"}}',
+				'{"type":"tool_result","id":"t1","bytes":120,"error":true}',
+				"",
+			].join("\n"),
+		});
+		const { w, done } = await perform(dir, ROUNDS);
+		const events = (await w.call(["watch", idOf(done), "--events"])).out;
+		expect(events).toMatch(/Bash.*ls/);
+		expect(events).toMatch(/result +120 · error/);
+		const bad = await perform(
+			await fixtures({ "review/events.jsonl": "[1]\n" }),
+			ROUNDS,
+		);
+		expect(bad.done.code).not.toBe(0);
+		expect(bad.done.out + bad.done.err).toContain("events.jsonl");
+	});
+
 	test("a missing directory fails the stub agent naming the variable and the path", async () => {
 		const missing = join(await scratch(), "nowhere");
 		const { done } = await perform(missing, ROUNDS);

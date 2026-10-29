@@ -70,7 +70,19 @@ function eventOf(e: JsonObject): HarnessEvent {
 		case "text":
 			return { kind: "text", text: String(e.text) };
 		case "tool":
-			return { kind: "tool", name: String(e.name), input: e.input };
+			return {
+				kind: "tool",
+				name: String(e.name),
+				input: e.input,
+				...(e.id !== undefined && { id: String(e.id) }),
+			};
+		case "tool_result":
+			return {
+				kind: "tool_result",
+				...(e.id !== undefined && { id: String(e.id) }),
+				bytes: Number(e.bytes ?? 0),
+				error: e.error === true,
+			};
 		case "settled":
 			return { kind: "settled" };
 		case "fault":

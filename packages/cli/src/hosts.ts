@@ -10,6 +10,7 @@ import { repoHost } from "@maestro/host-repo";
 import {
 	type AgentEnvironment,
 	type HarnessRequest,
+	isObject,
 	OUTBOX,
 	placeholderOutputs,
 	type StubStep,
@@ -22,6 +23,7 @@ const STUB_ENVIRONMENT = "MAESTRO_STUB_ENVIRONMENT";
 
 const STUB_OUTPUTS = "MAESTRO_STUB_OUTPUTS";
 const VERDICT_FILE = "verdict";
+const EVENTS_FILE = "events.jsonl";
 
 const STUB_REPORT = { summary: "stub" };
 const STUB_REPLY = JSON.stringify({ report: STUB_REPORT });
@@ -54,6 +56,30 @@ function scriptedOutputs(dir: string, req: HarnessRequest): StubStep[] {
 			? step
 			: { write: `${OUTBOX}/${file}`, content };
 	});
+}
+
+/** The events of `req`'s agent: one per line of the `events.jsonl` file of `dir` for it, each taking `delayMs`. */
+function scriptedEvents(
+	dir: string | undefined,
+	req: HarnessRequest,
+	delayMs: number | undefined,
+): StubStep[] {
+	const text = dir ? scripted(dir, req, EVENTS_FILE) : undefined;
+	return (text ?? "")
+		.split("\n")
+		.filter((line) => line.trim())
+		.map((line) => {
+			let emit: unknown;
+			try {
+				emit = JSON.parse(line);
+			} catch {}
+			if (!isObject(emit))
+				throw usageError(
+					`${STUB_OUTPUTS} file '${EVENTS_FILE}' holds '${line}', not a JSON object`,
+					"Write one JSON object per line",
+				);
+			return { emit, delayMs };
+		});
 }
 
 /** The reply text of a verdict agent: the `verdict` file of `dir` for `req`, else `ok`. */
@@ -123,7 +149,7 @@ export const DECLARED: ReadonlyMap<string, AgentEnvironment> = new Map([
  * The harnesses the CLI ships, their credentials read from `env`. The `stub` harness reports its environment, writes a
  * placeholder for each declared output, then replies an `ok` envelope, taking `MAESTRO_STUB_DELAY` per agent turn; a
  * stub turn fails when it is not a duration. With `MAESTRO_STUB_OUTPUTS=<dir>` it takes outputs and a verdict from
- * `<dir>/<instance id>/` or `<dir>/<node id>/`, and with `MAESTRO_STUB_ENVIRONMENT=<json>` the parts it reports loaded
+ * `<dir>/<instance id>/` or `<dir>/<node id>/`, and the events of its `events.jsonl` before them, and with `MAESTRO_STUB_ENVIRONMENT=<json>` the parts it reports loaded
  * and the model's `window`.
  */
 export const builtinHarnesses = (env: Record<string, string | undefined>) => [
@@ -134,6 +160,7 @@ export const builtinHarnesses = (env: Record<string, string | undefined>) => [
 		const outputs = env[STUB_OUTPUTS] || undefined;
 		return [
 			stubEnvironment(env[STUB_ENVIRONMENT]),
+			...scriptedEvents(outputs, req, delayMs),
 			...(outputs ? scriptedOutputs(outputs, req) : placeholderOutputs(req)),
 			{
 				emit: {
