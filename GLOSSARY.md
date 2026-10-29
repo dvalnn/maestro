@@ -184,7 +184,8 @@ checks against the lane.
 of it. Called with a task and a lane to emit an agent node. Config may rebind it to another profile.
 
 **Envelope**: An agent's final reply. A work agent's is `{ report, blocked? }`. A verdict agent's is
-`{ report, outcome: ok | rejected, reason? }`, the reason required when rejected, or `{ report, blocked }`.
+`{ report, outcome: ok | rejected, reason? }`, the reason required when rejected, or `{ report, blocked }`. The report
+is `{ summary, gaps?, obstacles?, lessons? }`.
 
 **Lesson**: Something an agent learnt that the code does not show, listed in its report for whoever reads the run. The
 owner promotes one to standing text by hand.

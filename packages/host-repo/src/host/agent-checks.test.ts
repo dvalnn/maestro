@@ -64,14 +64,19 @@ describe("agent-runnable checks and attachments", () => {
 					],
 					env: { MODE: "ci", MAESTRO_LANE_BASE: "spoofed" },
 					writable: [cache],
+					hint: "the linter",
 				},
-				red: ["true", "exit 1"],
-				slow: { run: "sleep 5", timeout: "500ms" },
-				stubborn: { run: "trap '' TERM; sleep 30", timeout: "500ms" },
-				crash: "kill -SEGV $$",
-				killed: "exit 137",
+				red: { run: ["true", "exit 1"], hint: "passes, then fails" },
+				slow: { run: "sleep 5", timeout: "500ms", hint: "slow" },
+				stubborn: {
+					run: "trap '' TERM; sleep 30",
+					timeout: "500ms",
+					hint: "stubborn",
+				},
+				crash: { run: "kill -SEGV $$", hint: "crashes" },
+				killed: { run: "exit 137", hint: "is killed" },
 			});
-			const { host, requests } = stubHost((req) =>
+			const { host } = stubHost((req) =>
 				req.prompt.startsWith("write")
 					? [{ write: "/out/n.md", content: "the notes" }, OK]
 					: [
@@ -149,10 +154,14 @@ describe("agent-runnable checks and attachments", () => {
 			expect(readFileSync(artifact("reader", "ro"), "utf8")).toBe("readonly\n");
 			expect(readFileSync(join(cache, "agent.txt"), "utf8")).toBe("hi\n");
 			expect(readFileSync(join(cache, "lint-ran"), "utf8")).toBe("ran\n");
-			const prompt = requests[1]?.prompt ?? "";
-			expect(prompt).toContain("- /in/notes: read when you need the notes");
-			expect(prompt).toContain("`check <name>`, and do not write your own");
-			expect(prompt).toContain("- check red: true && exit 1");
+			const framed = readFileSync(
+				join(artifact("reader", "staged"), "instructions.md"),
+				"utf8",
+			);
+			expect(framed).toContain("- `/in/notes`: read when you need the notes");
+			expect(framed).toContain("`check <name>`, and never write your own");
+			expect(framed).toContain("- `check red`: passes, then fails");
+			expect(framed).not.toContain("exit 1");
 		},
 		AGENT_RUN_TEST_MS,
 	);
@@ -309,6 +318,7 @@ describe("agent-runnable checks and attachments", () => {
 					"echo $MAESTRO_CHECK_OUTPUT > /tmp/probe-dir",
 				],
 				env: { MAESTRO_CHECK_OUTPUT: "/spoofed" },
+				hint: "probes",
 			},
 		});
 		const { host } = stubHost(() => [
@@ -424,7 +434,7 @@ describe("sandbox.path", () => {
 
 	test("leads the PATH of an agent, prepare, a check and an agent's `check` command, and binds its directories", async () => {
 		const { tools, out, config, read } = pathed((out) => ({
-			checks: { path: writes(out, "command") },
+			checks: { path: { ...writes(out, "command"), hint: "the PATH" } },
 			prepare: writes(out, "prepare"),
 		}));
 		const { host } = stubHost((req) => [

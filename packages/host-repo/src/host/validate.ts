@@ -43,6 +43,7 @@ import {
 	LANE_PORT,
 	LEGACY_ROLE,
 	listed,
+	noHint,
 	type RepoSetup,
 	ROLES,
 	repoSetup,
@@ -308,7 +309,23 @@ function checksNamed(r: RepoNode): string[] {
 	return [];
 }
 
-/** A check a node names that config does not have. */
+/** Each check config has that the agent `id` may run, but without the hint an agent reads it by. */
+function hintless(setup: RepoSetup, id: string, named: string[]): Finding[] {
+	const checks = setup.target?.checks ?? {};
+	return named
+		.filter((name) => Object.hasOwn(checks, name) && !checks[name]?.hint)
+		.map((name) => {
+			const { message, hint } = noHint(name);
+			return {
+				code: "HOST.check",
+				node: id,
+				message: `${id}: ${message}`,
+				hint,
+			};
+		});
+}
+
+/** A check a node names that config does not have, or that an agent may run but has no hint. */
 function names(setup: RepoSetup, r: RepoNode): Finding[] {
 	const id = r.node.id;
 	if (r.kind === "apply" || r.kind === "commits") return [];
@@ -320,13 +337,16 @@ function names(setup: RepoSetup, r: RepoNode): Finding[] {
 				"runs",
 				"Add it under 'target.checks', or give the node an inline check",
 			)
-		: checkNames(
-				setup,
-				id,
-				checksNamed(r),
-				"may run",
-				"Add it under 'target.checks'",
-			);
+		: [
+				...checkNames(
+					setup,
+					id,
+					checksNamed(r),
+					"may run",
+					"Add it under 'target.checks'",
+				),
+				...hintless(setup, id, checksNamed(r)),
+			];
 }
 
 /** The config entries the graph's repo nodes read by name: each check a node names. A profile needs no entry. */

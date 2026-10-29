@@ -54,7 +54,7 @@ const SPEC = "the spec, each requirement met by the change, one by one";
 const TESTS =
 	"the tests, each new behaviour pinned by a test that fails without it";
 
-const ALL_LENSES = `Rule on the change through every lens: ${CORRECTNESS}; ${SPEC}; ${TESTS}. ${QUESTIONS} ${GROUNDS} Run \`check check\` to see the tests run.`;
+const ALL_LENSES = `Rule on the change through every lens: ${CORRECTNESS}; ${SPEC}; ${TESTS}. ${QUESTIONS} ${GROUNDS} Run \`check all\` to see the tests run.`;
 
 /** The panel's lenses, by name, as each lens's task. */
 const PANEL = {
@@ -66,9 +66,8 @@ const PANEL = {
 const SKEPTIC_TASK =
 	"A lens ruled on this change. Challenge each of its findings against the code, and rule whether it holds. A finding that cites no rule, requirement or ADR does not hold.";
 
-const VERIFY = "Before you finish, run `check check` to verify your change.";
-
-const FIX_TASK = `A review upheld the attached findings on your change. Fix each one, keeping to what the spec asks. ${VERIFY}`;
+const FIX_TASK =
+	"A review upheld the attached findings on your change. Fix each one, keeping to what the spec asks.";
 
 type Found = ValueOf<typeof Findings>;
 
@@ -150,7 +149,7 @@ function review(tier: Tier, lane: Ref<string>, spec: Ref<ArtifactRef>) {
 		label: "reviewer",
 		task: ALL_LENSES,
 		lane: read(lane),
-		checks: ["check"],
+		checks: ["all"],
 		attachments,
 	});
 	const findings = readJson(found.out.findings, { tolerate: "rejected" });
@@ -206,15 +205,15 @@ export const slice = composition(
 			const green = use(
 				repairUntilGreen,
 				{ lane, spec },
-				{ params: { maxRepairs, checks: ["check"] }, label: "gate" },
+				{ params: { maxRepairs, checks: ["all"] }, label: "gate" },
 			);
 			return review(tier, green.out.lane, spec);
 		};
 		const built = builder({
 			label: "build",
-			task: `${request}\n\n${VERIFY}`,
+			task: request,
 			lane: fresh(),
-			checks: ["check"],
+			checks: ["all"],
 		});
 		const reviewed = loop.while((s) => not(s.out.clean), {
 			init: round(built.out.lane),
@@ -223,7 +222,7 @@ export const slice = composition(
 					label: "fix",
 					task: FIX_TASK,
 					lane: extend(s.out.lane, { resume: true }),
-					checks: ["check"],
+					checks: ["all"],
 					attachments: {
 						upheld: {
 							artifact: s.out.upheld,

@@ -1104,6 +1104,59 @@ describe("the record", () => {
 		);
 	});
 
+	test("ls <concert> lists its instances' notes under their headings, cut to a terminal's width, and ls marks and counts them", async () => {
+		const w = await world();
+		const lesson = `the lesson ${"is long ".repeat(10)}`.trim();
+		const notes = { Obstacles: ["no rg on PATH"], Lessons: [lesson] };
+		const host: Host = {
+			...hostOf({ ...ECHO, enrichment: { notes } }),
+			text: { notes: (e) => (e.notes ?? {}) as Record<string, string[]> },
+		};
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
+		const bare = idOf(
+			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
+		);
+		const sections = `\n\nObstacles\necho/echo  no rg on PATH\n\nLessons\necho/echo  ${lesson}`;
+		expect((await w.call(["ls", id], { hosts: [host] })).out).toEndWith(
+			sections,
+		);
+		const narrow = () => ({ columns: 40, rows: 24 });
+		const full = `Full text: maestro ls ${shortOf(id)} --json | jq '.instances[].notes'`;
+		const cut = (
+			await w.call(["ls", id], {
+				hosts: [host],
+				terminal: narrow,
+				env: { NO_COLOR: "1" },
+			})
+		).out.split("\n");
+		expect(
+			(await w.call(["ls", id], { hosts: [host], terminal: narrow })).out,
+		).toEndWith(`${ESC}[2m${full}${ESC}[22m`);
+		expect(cut.slice(-6)).toEqual([
+			"Obstacles",
+			"echo/echo  no rg on PATH",
+			"",
+			"Lessons",
+			`echo/echo  ${lesson.slice(0, 28)}…`,
+			full,
+		]);
+		const echo = json(
+			await w.call(["ls", id, "--json"], { hosts: [host] }),
+		).instances.find((i: { node: string }) => i.node === "echo/echo");
+		expect(echo.notes).toEqual(notes);
+		const rows = json(await w.call(["ls", "--json"], { hosts: [host] }));
+		expect(rows.map((r: { notes: object }) => r.notes)).toEqual([
+			{},
+			{ Obstacles: 1, Lessons: 1 },
+		]);
+		const listed = (await w.call(["ls"], { hosts: [host] })).out.split("\n");
+		expect(listed.find((l) => l.startsWith(shortOf(id)))).toContain(" ok • ");
+		expect(listed.find((l) => l.startsWith(shortOf(bare)))).not.toContain("•");
+		expect(
+			(await w.call(["ls"], { hosts: [host], terminal: narrow })).out,
+		).toContain(stateWord("ok", true, "ok •"));
+	});
+
 	test("an ambiguous prefix of the id or of the short id lists at most five short ids, then how many more", async () => {
 		const w = await world();
 		const ids: string[] = [];

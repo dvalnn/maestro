@@ -137,7 +137,7 @@ test.each(seated)(
 			n.id.startsWith("gate/loop/repair"),
 		);
 		expect(repairs.length).toBeGreaterThan(0);
-		for (const n of repairs) expect(n.config.checks).toEqual(["check"]);
+		for (const n of repairs) expect(n.config.checks).toEqual(["all"]);
 		type Agent = {
 			profile: string;
 			harness: string;

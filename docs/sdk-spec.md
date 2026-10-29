@@ -506,7 +506,7 @@ return consolidator({ label: "consolidator", task: merged.out.text, lane: fresh(
 
 ```ts
 const scout = seat("scout");
-const planner = seat("planner");
+const planner = seat("planner", { out: { plan: MarkdownOut("plan.md") } });
 
 const scouted = scout({ label: "scout", task: prompt, lane: fresh() });
 const plans = iter.parMap(ANGLES, (a) => planner({ label: "plan", task: a, lane: fork(scouted.out.lane) }), {
@@ -522,7 +522,7 @@ const synthesis = planner({
   lane: extend(scouted.out.lane),
   when: good.out.nonEmpty,
 });
-return firstOk([synthesis.out.report, firstOk(plans, { label: "best_plan" }).out.value.get("report")]);
+return firstOk([synthesis.out.plan, firstOk(plans, { label: "best_plan" }).out.value.get("plan")]);
 ```
 
 ## 15. Coverage of the predecessor's workflows

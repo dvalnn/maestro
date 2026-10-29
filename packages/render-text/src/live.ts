@@ -392,10 +392,10 @@ const line = (segs: readonly Seg[], color: boolean) =>
 export const lookOf = (state: string): Look | undefined =>
 	Object.entries(LOOK).find(([shown]) => shown === state)?.[1];
 
-/** `state`, an instance's or a concert's, in the style the views give it when `color`. */
-export const stateWord = (state: string, color: boolean) => {
+/** `text`, `state` by default, in the style the views give `state`, an instance's or a concert's, when `color`. */
+export const stateWord = (state: string, color: boolean, text = state) => {
 	const look = lookOf(state);
-	return color && look ? styled(look.style, state) : state;
+	return color && look ? styled(look.style, text) : text;
 };
 
 /** How many letters of a concert's short id are shown at least. */

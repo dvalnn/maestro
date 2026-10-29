@@ -18,8 +18,9 @@ const STUB_DELAY = "MAESTRO_STUB_DELAY";
 const STUB_OUTPUTS = "MAESTRO_STUB_OUTPUTS";
 const VERDICT_FILE = "verdict";
 
-const STUB_REPLY = JSON.stringify({ report: "stub" });
-const STUB_VERDICT = JSON.stringify({ outcome: "ok", report: "stub" });
+const STUB_REPORT = { summary: "stub" };
+const STUB_REPLY = JSON.stringify({ report: STUB_REPORT });
+const STUB_VERDICT = JSON.stringify({ outcome: "ok", report: STUB_REPORT });
 
 /** The scripted file `file` for `req`'s agent: under its instance id, else its node id, else none. */
 function scripted(dir: string, req: HarnessRequest, file: string) {
@@ -60,7 +61,7 @@ function scriptedVerdict(dir: string | undefined, req: HarnessRequest) {
 			`${STUB_OUTPUTS} file '${VERDICT_FILE}' holds '${text}', not 'ok' or 'rejected <reason>'`,
 			`Write it as 'ok' or 'rejected <reason>'`,
 		);
-	return JSON.stringify({ outcome: "rejected", reason, report: "stub" });
+	return JSON.stringify({ outcome: "rejected", reason, report: STUB_REPORT });
 }
 
 /**

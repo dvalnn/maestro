@@ -59,7 +59,11 @@ beforeAll(async () => {
 	const { target } = await setup("t1", root, RUNTIME);
 	config = {
 		packs: [await pack(join(import.meta.dir, ".."), join(root, "pack"))],
-		target: { repo: target, base: BASE, checks: { test: "sh test.sh" } },
+		target: {
+			repo: target,
+			base: BASE,
+			checks: { test: { run: "sh test.sh", hint: "the tests" } },
+		},
 		profiles: profilesOn(RUNTIME),
 	};
 	await configure();

@@ -35,6 +35,7 @@ export {
 	CHECK_KIND,
 	HOST_NAME,
 } from "./config";
+export { REPORT } from "./frame";
 
 /** `<concert id>.<node instance id>`: concert ids hold no `.`, and the instance part is not empty. */
 const LANE_REF = /^[^.]+\.[^\s]+$/;

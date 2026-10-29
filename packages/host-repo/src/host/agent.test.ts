@@ -7,6 +7,7 @@ import {
 	agentOn,
 	cleanup,
 	configOf,
+	DONE,
 	irOf,
 	type NodeSpec,
 	OK,
@@ -199,7 +200,7 @@ describe("agent profile", () => {
 		const config = configOf(toyTarget(), {
 			profiles: { [`${PACK}/builder`]: { readOnly: [packed] } },
 		});
-		const { result, instances } = await performed(host, ir, config);
+		const { result, instances, artifact } = await performed(host, ir, config);
 
 		expect(result).toMatchObject({ outcome: "ok" });
 		const [request] = requests;
@@ -209,8 +210,9 @@ describe("agent profile", () => {
 			src: join(dir, "kb"),
 			dst: "/in/kb",
 		});
-		expect(request?.prompt).toContain("/in/kb");
-		expect(request?.prompt).toContain("for the house style");
+		expect(
+			readFileSync(join(artifact("x", "staged"), "instructions.md"), "utf8"),
+		).toContain("- `/in/kb`: for the house style");
 		expect(instances[0]?.enrichment?.profile).toMatchObject({
 			name: `${PACK}/builder`,
 			dir,
@@ -265,7 +267,7 @@ describe("agent partial work", () => {
 		["a harness failure", [edit("lost\n"), fault(false)]],
 		[
 			"a blocked reply",
-			[edit("lost\n"), reply({ blocked: "no", report: "x" })],
+			[edit("lost\n"), reply({ blocked: "no", report: DONE })],
 		],
 	])(
 		"%s keeps the lane's changes as a changeset outside the lane chain",

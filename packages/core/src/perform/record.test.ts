@@ -448,3 +448,37 @@ test("a running concert is settled when the alive check says its process is gone
 	reader.close();
 	record.close();
 });
+
+test("enrichments reads the enriched current instances of the concerts named, none stale", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const record = openWriter(path);
+	const ir = await fixtureIr();
+	const b = { node: "b", expansion: "" };
+	for (const id of ["c", "d", "e"]) {
+		record.begin({ id, ir, startedAt: 1 });
+		record.start(id, A, 2);
+		record.settle(
+			id,
+			A,
+			{ outcome: "ok", outputs: {}, enrichment: { n: id } },
+			3,
+		);
+		record.start(id, b, 3);
+		record.settle(id, b, { outcome: "failed", reason: "x" }, 4);
+		record.finish(id, { outcome: "failed", reason: "x" }, 5);
+	}
+	record.resume({ id: "c", ir });
+	record.start("c", b, 6);
+	record.settle(
+		"c",
+		b,
+		{ outcome: "ok", outputs: {}, enrichment: { n: "c2" } },
+		7,
+	);
+	expect(openRecord(path).enrichments(["c", "d"])).toEqual([
+		{ concert: "c", node: "b", enrichment: { n: "c2" } },
+		{ concert: "d", node: "a", enrichment: { n: "d" } },
+	]);
+	record.close();
+});

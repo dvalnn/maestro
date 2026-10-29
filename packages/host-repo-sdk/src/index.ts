@@ -4,13 +4,13 @@ import {
 	type Common,
 	Dir,
 	File,
+	Json,
 	type JsonArtifact,
 	JsonFile,
 	literal,
 	Markdown,
 	type Ref,
 	type Result,
-	Text,
 	type Type,
 	type Types,
 } from "@maestro/sdk";
@@ -124,9 +124,28 @@ export type Attachment = { artifact: Ref<ArtifactRef>; hint: string };
 
 type Attachments = Readonly<Record<string, Attachment>>;
 
+/** An agent's report: a one-line summary, then only what the record cannot show. A list is left out when empty. */
+export type Report = {
+	summary: string;
+	gaps?: string[];
+	obstacles?: string[];
+	lessons?: string[];
+};
+
+const LINE = { type: "string", minLength: 1 } as const;
+const LINES = { type: "array", items: LINE } as const;
+
+/** The schema of an agent's report. Equal to the host's `REPORT`. */
+export const REPORT = {
+	type: "object",
+	required: ["summary"],
+	additionalProperties: false,
+	properties: { summary: LINE, gaps: LINES, obstacles: LINES, lessons: LINES },
+} as const;
+
 /** The outputs of an agent: its report, its staged prompt, its lane unless it reads one, and those `O` declares. */
 export type AgentOut<O extends Outputs, M extends LaneMode = LaneMode> = {
-	report: Type<string>;
+	report: Type<Report>;
 	staged: Type<ArtifactRef>;
 } & LaneOut<M> & { [K in keyof O]: O[K]["type"] };
 
@@ -239,7 +258,7 @@ export function seat<S extends Outputs = Record<never, never>>(
 				...ports.in,
 			},
 			out: {
-				report: Text(),
+				report: Json<Report>(REPORT),
 				staged: Dir(),
 				...ports.out,
 				...mapValues(out, (o) => o.type),

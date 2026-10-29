@@ -14,6 +14,7 @@ import {
 	cleanup,
 	commitTo,
 	configOf,
+	DONE,
 	fresh,
 	irOf,
 	type NodeSpec,
@@ -33,6 +34,8 @@ import {
 } from "./test-support";
 
 afterEach(cleanup);
+
+const TRIED = { summary: "tried" };
 
 /** Waits until the lane directory `lane` is gone. */
 async function dropped(lane: string) {
@@ -544,6 +547,15 @@ describe("compose", () => {
 			() => tmp("plain"),
 		],
 		[
+			"a check with no hint",
+			{ ...agentOn(fresh), checks: ["hello"] },
+			"HOST.check",
+			"Add target.checks.hello.hint, in the inline form { run, hint }",
+			toyTarget,
+			{},
+			"x: check 'hello' has no hint, and an agent cannot use a check without one",
+		],
+		[
 			"a target that does not exist",
 			agentOn(fresh),
 			"HOST.target",
@@ -799,15 +811,12 @@ describe("perform", () => {
 			JSON.parse(readFileSync(artifact("first", "notes"), "utf8")),
 		).toEqual({ n: 1 });
 		const staged = artifact("first", "staged");
-		expect(readFileSync(join(staged, "instructions.md"), "utf8")).toBe(
-			"You are careful.",
-		);
+		const instructions = readFileSync(join(staged, "instructions.md"), "utf8");
+		expect(instructions).toStartWith("You are careful.\n\n# Your run\n");
+		expect(instructions).toContain(`${OUTBOX}/notes.json`);
 		expect(first?.instructions).toEndWith("/staged/instructions.md");
-		expect(readFileSync(join(staged, "prompt.md"), "utf8")).toBe(
-			first?.prompt as string,
-		);
-		expect(first?.prompt).toStartWith("first task\n");
-		expect(first?.prompt).toContain(`${OUTBOX}/notes.json`);
+		expect(readFileSync(join(staged, "prompt.md"), "utf8")).toBe("first task");
+		expect(first?.prompt).toBe("first task");
 		expect(instances.find((i) => i.node === "first")?.metrics).toEqual({
 			tokens_in: 7,
 			tokens_out: 2,
@@ -847,7 +856,7 @@ describe("perform", () => {
 			expect(requests).toHaveLength(Math.min(bad + 1, 3));
 			expect(new Set(requests.map((r) => r.session.id)).size).toBe(1);
 			expect(requests[1]?.prompt).toStartWith(
-				"Your final reply is not the envelope: it is not a JSON object.",
+				"Your final reply is not the JSON object asked for: it is not a JSON object.",
 			);
 		},
 	);
@@ -943,14 +952,14 @@ describe("perform", () => {
 
 	test("a verdict agent that rejects is rejected with its reason and outputs", async () => {
 		const { host } = stubHost(() => [
-			reply({ outcome: "rejected", reason: "not doable", report: "tried" }),
+			reply({ outcome: "rejected", reason: "not doable", report: TRIED }),
 		]);
 		const ir = lone(host, { verdict: true });
 		const { result } = await performed(host, ir, configOf(toyTarget()));
 		expect(result).toMatchObject({
 			outcome: "rejected",
 			reason: "not doable",
-			outputs: { report: "tried" },
+			outputs: { report: TRIED },
 		});
 	});
 
@@ -958,30 +967,39 @@ describe("perform", () => {
 		[
 			"a verdict agent that rejects",
 			true,
-			{ outcome: "rejected", reason: "not doable", report: "tried" },
+			{ outcome: "rejected", reason: "not doable", report: TRIED },
 			{ outcome: "rejected", reason: "not doable" },
 		],
 		[
 			"a blocked agent",
 			false,
-			{ blocked: "no network", report: "tried" },
+			{
+				blocked: "no network",
+				report: { ...TRIED, gaps: [], obstacles: ["no network"] },
+			},
 			{ outcome: "failed", reason: "blocked: no network" },
 		],
 		[
 			"a blocked verdict agent",
 			true,
-			{ blocked: "no network", report: "tried" },
+			{ blocked: "no network", report: TRIED },
 			{ outcome: "failed", reason: "blocked: no network" },
 		],
 	])(
-		"%s that misses a declared output ends at once as it said, with no outputs",
+		"%s that misses a declared output ends at once as it said, with no outputs and its report recorded",
 		async (_, verdict, envelope, ended) => {
 			const { host, requests } = stubHost(() => [reply(envelope)]);
 			const ir = lone(host, { verdict, notes: true });
-			const { result } = await performed(host, ir, configOf(toyTarget()));
+			const { result, instances } = await performed(
+				host,
+				ir,
+				configOf(toyTarget()),
+			);
 			expect(requests).toHaveLength(1);
 			expect(result).toMatchObject(ended);
 			expect("outputs" in result).toBe(false);
+			const { gaps: _gaps, ...kept } = envelope.report as { gaps?: unknown };
+			expect(instances[0]?.enrichment?.report).toEqual(kept);
 		},
 	);
 
@@ -989,45 +1007,61 @@ describe("perform", () => {
 		[
 			"a work agent's outcome",
 			false,
-			{ outcome: "ok", report: "done" },
-			"envelope must NOT have additional properties ('outcome')",
-			'Add "blocked": "<the cause>" only when you cannot proceed',
+			{ outcome: "ok", report: DONE },
+			"reply must NOT have additional properties ('outcome')",
+			'- Add `"blocked": "<the cause>"` only when you cannot proceed',
 			'"outcome"',
 		],
 		[
 			"a verdict agent's missing outcome",
 			true,
-			{ report: "done" },
-			"envelope.outcome is required unless envelope.blocked is set",
-			'Set "outcome" to "rejected" when your verdict on the work is negative',
-			'Add "blocked"',
+			{ report: DONE },
+			"reply.outcome is required unless reply.blocked is set",
+			"- `outcome`: `ok` when the work passes your ruling",
+			"- Add `",
 		],
 		[
 			"a verdict agent's blocked beside its verdict",
 			true,
-			{ blocked: "no network", outcome: "rejected", reason: "x", report: "" },
-			"envelope.blocked excludes envelope.outcome and envelope.reason",
-			'Set "outcome" to "rejected" when your verdict on the work is negative',
-			'Add "blocked"',
+			{ blocked: "no network", outcome: "rejected", reason: "x", report: DONE },
+			"reply.blocked excludes reply.outcome and reply.reason",
+			"- `outcome`: `ok` when the work passes your ruling",
+			"- Add `",
+		],
+		[
+			"a report as text",
+			false,
+			{ report: "done" },
+			"reply.report must be object",
+			"- Leave a list out when it is empty.",
+			'"outcome"',
 		],
 	])(
-		"%s is corrected, and each prompt states only its kind's fields",
+		"%s is corrected, and the contract and the correction state only its kind's fields",
 		async (_, verdict, envelope, problem, line, absent) => {
 			const { host, requests } = stubHost(() =>
 				requests.length <= 1 ? [reply(envelope)] : [verdict ? APPROVED : OK],
 			);
 			const ir = lone(host, { verdict });
-			const { result } = await performed(host, ir, configOf(toyTarget()));
+			const { result, artifact } = await performed(
+				host,
+				ir,
+				configOf(toyTarget()),
+			);
 			expect(result).toMatchObject({ outcome: "ok" });
 			expect(requests).toHaveLength(2);
-			const [first, second] = requests.map((r) => r.prompt);
-			expect(second).toStartWith(
-				`Your final reply is not the envelope: ${problem}.\n`,
+			const second = requests[1];
+			const contract = readFileSync(
+				join(artifact("x", "staged"), "instructions.md"),
+				"utf8",
 			);
-			for (const prompt of [first, second]) {
-				expect(prompt).toContain(line);
-				expect(prompt).toContain("nothing later in this run will change it");
-				expect(prompt).not.toContain(absent);
+			expect(second?.prompt).toStartWith(
+				`Your final reply is not the JSON object asked for: ${problem}.\n`,
+			);
+			for (const text of [contract, second?.prompt]) {
+				expect(text).toContain(line);
+				expect(text).toContain("nothing later in this run will change it");
+				expect(text).not.toContain(absent);
 			}
 		},
 	);

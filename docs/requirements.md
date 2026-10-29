@@ -259,8 +259,9 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   where git can write them, for an agent to extend and resolve.
 - **HOST-15 (Should).** An agent can run the target's named checks. The `check` command in its sandbox runs a named
   check in the lane with the check's timeout, if any, and exit classification, prints the tail of its output, and ends
-  ok, rejected or failed. The staged prompt lists the checks and tells the agent to run them rather than write its own.
-  An agent gets the command only for the checks it names, and a check's env applies inside the command alone.
+  ok, rejected or failed. The agent's frame lists each check by name and hint and tells the agent to run them rather
+  than write its own. An agent gets the command only for the checks it names, and a check's env applies inside the
+  command alone.
 - **HOST-16 (Must).** A target can name `prepare`, shell lines in a check's shape, that run in the sandbox in every
   working copy the host checks out from a commit, before its node's work, on every kind: for a dependency sync and the
   like. A failing line fails the node, and so does a prepare that changes content a seal would record. A target can also

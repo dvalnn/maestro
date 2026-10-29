@@ -55,13 +55,13 @@ const RIGHT =
 const replying = (envelope: object): StubStep => ({
 	emit: { type: "text", text: JSON.stringify(envelope) },
 });
-const DONE = replying({ report: "done" });
-const APPROVED = replying({ outcome: "ok", report: "done" });
+const DONE = replying({ report: { summary: "done" } });
+const APPROVED = replying({ outcome: "ok", report: { summary: "done" } });
 /** The final reply that settles the agent of `req` ok, for its kind. */
 const done = (req: HarnessRequest) => (req.verdict ? APPROVED : DONE);
 const FIX: StubStep[] = [{ write: "greet.sh", content: RIGHT }, DONE];
 const BLOCKED = replying({
-	report: "tried",
+	report: { summary: "tried" },
 	blocked: "the checks ask for two greetings at once",
 });
 const RUNTIME = { harness: "stub", model: "none" };
@@ -96,12 +96,15 @@ async function stubbed(
 	const { target } = await setup(name, dir, RUNTIME);
 	const builds: HarnessRequest[] = [];
 	const repairs: HarnessRequest[] = [];
+	/** The system prompt of each repair, read as it was staged. */
+	const repairFrames: string[] = [];
 	const hosts = [
 		repoHost({
 			harnesses: [
 				stubHarness((req) => {
 					if (!req.prompt.startsWith(task.request)) {
 						repairs.push(req);
+						repairFrames.push(readFileSync(req.instructions ?? "", "utf8"));
 						return repair(req);
 					}
 					builds.push(req);
@@ -119,7 +122,7 @@ async function stubbed(
 		{ request: task.request, maxRepairs: task.maxRepairs },
 		{ toMarkdown },
 	);
-	return { dir, target, hosts, config, ir, builds, repairs };
+	return { dir, target, hosts, config, ir, builds, repairs, repairFrames };
 }
 
 /** Performs task `name` with stubbed agents, and its trace as `compare maestro` extracts it. */
@@ -150,10 +153,10 @@ describe("the stub runs match their expected traces", () => {
 			const expected = await Bun.file(
 				join(import.meta.dir, "expected", `${name}.json`),
 			).json();
-			const { trace, repairs } = await performedTask(name);
+			const { trace, repairFrames } = await performedTask(name);
 			expect(diff(trace, expected)).toEqual([]);
 			for (const attachment of ["/in/logs", "/in/spec"])
-				expect(repairs[0]?.prompt).toContain(attachment);
+				expect(repairFrames[0]).toContain(attachment);
 		});
 });
 
@@ -389,10 +392,11 @@ describe("v_model", () => {
 		],
 	});
 
-	/** The seat whose instructions the agent of `req` was given. */
-	function seatOf(req: HarnessRequest): Seat {
-		const instructions = readFileSync(req.instructions ?? "", "utf8");
-		const seat = SEATS.find((name) => INSTRUCTIONS[name] === instructions);
+	/** The seat whose instructions lead the system prompt `framed`. */
+	function seatOf(framed: string): Seat {
+		const seat = SEATS.find((name) =>
+			framed.startsWith(`${INSTRUCTIONS[name]?.trimEnd()}\n\n`),
+		);
 		if (!seat)
 			throw new Error("an agent has no instructions of the pack's seats");
 		return seat;
@@ -403,9 +407,11 @@ describe("v_model", () => {
 		const dir = tmp();
 		const { target } = await setup("t1", dir, RUNTIME);
 		const asked = new Map<Seat, HarnessRequest[]>();
+		const framed = new Map<HarnessRequest, string>();
 		const steps = seats(script);
 		const harness = stubHarness((req) => {
-			const seat = seatOf(req);
+			framed.set(req, readFileSync(req.instructions ?? "", "utf8"));
+			const seat = seatOf(framed.get(req) ?? "");
 			asked.set(seat, [...(asked.get(seat) ?? []), req]);
 			return [...steps[seat](req), done(req)];
 		});
@@ -428,7 +434,10 @@ describe("v_model", () => {
 		await run.close();
 		const prompts = (seat: Seat) =>
 			(asked.get(seat) ?? []).map((req) => req.prompt);
-		return { ...run, dir, asked, prompts, instances };
+		/** The system prompt each agent of `seat` was staged with. */
+		const frames = (seat: Seat) =>
+			(asked.get(seat) ?? []).map((req) => framed.get(req) ?? "");
+		return { ...run, dir, asked, prompts, frames, instances };
 	}
 
 	/** The content of attachment `name` as the agent of `req` was given it. */
@@ -440,22 +449,22 @@ describe("v_model", () => {
 	test("delivers the changeset when every level holds", async () => {
 		const run = await performed();
 		expect(run.result).toMatchObject({ outcome: "ok", node: "result" });
-		const [plan] = run.prompts("planner");
+		const [plan] = run.frames("planner");
 		for (const attachment of ["/in/request", "/in/dossier"])
 			expect(plan).toContain(attachment);
 		const [build, ...repairs] = run.prompts("builder");
 		expect(build).toStartWith(A1);
 		for (const attachment of ["/in/request", "/in/plan"])
-			expect(build).toContain(attachment);
+			expect(run.frames("builder")[0]).toContain(attachment);
 		expect(repairs).toEqual([]);
 		const lenses = run.instances.filter((i) => i.node === "lenses/lens");
 		expect(lenses.map((i) => i.expansion)).toEqual(["[R1]"]);
 		const [lens] = run.asked.get("lens") ?? [];
 		expect(lens?.prompt).toStartWith(RISK);
 		expect(attached(lens, "spec")).toBe(PLAN);
-		expect(run.prompts("consolidator")[0]).toContain("/in/design");
+		expect(run.frames("consolidator")[0]).toContain("/in/design");
 		for (const attachment of ["/in/design", "/in/review", "/in/patches"])
-			expect(run.prompts("documenter")[0]).toContain(attachment);
+			expect(run.frames("documenter")[0]).toContain(attachment);
 		const traced = run.instances.find((i) => i.node === "traceOf");
 		expect(traced?.status).toBe("ok");
 	});

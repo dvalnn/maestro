@@ -7,6 +7,8 @@ import {
 import { compact, DURATION_EXAMPLE, MS_PER_UNIT, tokensOf } from "@maestro/ir";
 import {
 	agentText,
+	flat,
+	painted,
 	type ShortIds,
 	shortIds,
 	stateWord,
@@ -23,7 +25,7 @@ import {
 	textOf,
 	type Values,
 } from "./command";
-import { actorOf, hostTextOf } from "./host-text";
+import { actorOf, hostTextOf, notesOf } from "./host-text";
 import {
 	CliError,
 	EXIT,
@@ -31,6 +33,7 @@ import {
 	formatBytes,
 	instanceName,
 	jsonOf,
+	paint,
 	parseCount,
 	parseDuration,
 	parseTour,
@@ -79,6 +82,82 @@ const tokenCell = (metrics: Metrics) => {
 };
 
 const dash = (text: string | undefined) => text || "-";
+
+/** What ends a note line cut to the terminal's width. */
+const CUT_MARK = "…";
+const CUT_MARK_CELLS = Bun.stringWidth(CUT_MARK);
+/** What follows a concert's status in `ls` when its instances have notes. */
+const NOTED_MARK = "•";
+
+/** An instance's name and its notes, by heading. */
+type Noted = { name: string; notes: Record<string, string[]> };
+
+/** The notes of `noted` under each heading, in the order first met, as `[instance, entry]` rows. */
+function noteSections(noted: readonly Noted[]): Map<string, string[][]> {
+	const sections = new Map<string, string[][]>();
+	for (const { name, notes } of noted)
+		for (const [heading, entries] of Object.entries(notes))
+			sections.set(heading, [
+				...(sections.get(heading) ?? []),
+				...entries.map((entry) => [name, flat(entry)]),
+			]);
+	return sections;
+}
+
+/**
+ * The lines of `noted`'s sections, each a blank line, its heading, then one `<instance>  <entry>` line each. A line
+ * wider than `columns` cells is cut with `…`, followed by a dim line saying how to read concert `id`'s full text.
+ */
+function notesLines(
+	noted: readonly Noted[],
+	id: string,
+	color: boolean,
+	columns?: number,
+): string[] {
+	const lines = [...noteSections(noted)].flatMap(([heading, rows]) => [
+		"",
+		paint("bold", heading, color),
+		...table(rows).split("\n"),
+	]);
+	if (columns === undefined) return lines;
+	const fits = (line: string) => Bun.stringWidth(line) <= columns;
+	if (lines.every(fits)) return lines;
+	return [
+		...lines.map((line) =>
+			fits(line)
+				? line
+				: `${painted([[line]], false, columns - CUT_MARK_CELLS)}${CUT_MARK}`,
+		),
+		paint(
+			"dim",
+			`Full text: maestro ls ${id} --json | jq '.instances[].notes'`,
+			color,
+		),
+	];
+}
+
+/** How many entries the notes of each of `concerts`' current instances hold, by concert id, then by heading. */
+function noteCounts(
+	{ store, session }: Stored,
+	concerts: readonly ConcertRecord[],
+): Map<string, Record<string, number>> {
+	const texts = new Map(
+		concerts.map((c) => [c.id, hostTextOf(session.deps.hosts, c.ir)]),
+	);
+	const counts = new Map(
+		concerts.map((c): [string, Record<string, number>] => [c.id, {}]),
+	);
+	for (const { concert, node, enrichment } of store.enrichments([
+		...texts.keys(),
+	])) {
+		const count = counts.get(concert) ?? {};
+		const hostText = texts.get(concert);
+		const notes = hostText ? notesOf(enrichment, node, hostText) : {};
+		for (const [heading, entries] of Object.entries(notes))
+			count[heading] = (count[heading] ?? 0) + entries.length;
+	}
+	return counts;
+}
 
 /**
  * The concert `ls` is to show, if any, and the filter and limit of the list.
@@ -136,12 +215,14 @@ async function listed(stored: Stored, query: ConcertFilter) {
 	const color = colorOf(session.deps, values).out;
 	const concerts = store.concerts(query);
 	const short = shortIds(store.ids());
+	const counts = noteCounts(stored, concerts);
 	const rows = await Promise.all(
 		concerts.map(async (c) => ({
 			...concertColumns(c),
 			short: short.label(c.id, false),
 			metrics: store.metrics(c.id),
 			diskUse: await diskOf(stored, c.id),
+			notes: counts.get(c.id) ?? {},
 		})),
 	);
 	const text = table(
@@ -162,7 +243,9 @@ async function listed(stored: Stored, query: ConcertFilter) {
 				dash(r.tour),
 				dash(r.workspace),
 				`${r.pack}.${r.composition}`,
-				stateWord(r.status, color),
+				Object.keys(r.notes).length
+					? stateWord(r.status, color, `${r.status} ${NOTED_MARK}`)
+					: stateWord(r.status, color),
 				tokenCell(r.metrics),
 				formatBytes(r.diskUse),
 			]),
@@ -181,30 +264,44 @@ async function instancesOf(
 ) {
 	const color = colorOf(session.deps, values).out;
 	const row = concertOf(store, prefix);
-	const instances = instancesInOrder(store, row);
 	const hostText = hostTextOf(session.deps.hosts, row.ir);
-	session.deps.stdout(
-		json
-			? jsonOf({
-					...concertColumns(row),
-					short: shortIds(store.ids()).label(row.id, false),
-					metrics: store.metrics(row.id),
-					instances,
-				})
-			: table(
-					[
-						["instance", "status", "stale", "agent", "reason"],
-						...instances.map((i) => [
-							instanceName(row.ir, i),
-							stateWord(i.status, color),
-							staleCell(i),
-							agentText(actorOf(i.enrichment, i.node, hostText), i.metrics),
-							i.reason ?? "",
-						]),
-					],
-					color,
-				),
+	const instances = instancesInOrder(store, row).map((i) => ({
+		...i,
+		notes: i.stale ? {} : notesOf(i.enrichment, i.node, hostText),
+	}));
+	const short = shortIds(store.ids()).label(row.id, false);
+	if (json) {
+		session.deps.stdout(
+			jsonOf({
+				...concertColumns(row),
+				short,
+				metrics: store.metrics(row.id),
+				instances,
+			}),
+		);
+		return EXIT.ok;
+	}
+	const named = instances.map((i) => ({ ...i, name: instanceName(row.ir, i) }));
+	const text = table(
+		[
+			["instance", "status", "stale", "agent", "reason"],
+			...named.map((i) => [
+				i.name,
+				stateWord(i.status, color),
+				staleCell(i),
+				agentText(actorOf(i.enrichment, i.node, hostText), i.metrics),
+				i.reason ?? "",
+			]),
+		],
+		color,
 	);
+	const notes = notesLines(
+		named,
+		short,
+		color,
+		session.deps.terminal?.().columns,
+	);
+	session.deps.stdout([text, ...notes].join("\n"));
 	return EXIT.ok;
 }
 

@@ -1,10 +1,4 @@
-import {
-	copyFileSync,
-	lstatSync,
-	mkdirSync,
-	readFileSync,
-	writeFileSync,
-} from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
 	HostContext,
@@ -18,7 +12,6 @@ import {
 	compact,
 	durationText,
 	type HostNode,
-	type JsonSchema,
 	MAESTRO_TYPE,
 	messageOf,
 	type Ports,
@@ -48,16 +41,30 @@ import { writeChangeset } from "./apply";
 import {
 	AGENT_CONFIG,
 	AGENT_KIND,
+	type AgentCheck,
 	type AgentConfig,
+	agentCheck,
 	agentConfig,
 	isLegacyAgent,
 	LANE_PORT,
 	listed,
-	namedCheck,
 	repoSetup,
 	requireTarget,
 	type Target,
 } from "./config";
+import {
+	attachmentPath,
+	CUT_OFF,
+	correction,
+	type Envelope,
+	envelopeOf,
+	frame,
+	REPORT,
+	type ReplyKind,
+	type Run,
+	VERDICT,
+	WORK,
+} from "./frame";
 import { artifactInput, textInput } from "./inputs";
 import { lanePorts, readOnlyBinds, versionAt, withLane } from "./lane-input";
 import { type Live, liveInstances } from "./live";
@@ -79,67 +86,6 @@ const MAX_RETRIES = 2;
 const RETRY_WAIT_MS = 30_000;
 
 const TEXT = { type: "string" };
-
-/** The directory where an agent's sandbox mounts its attachments. */
-const ATTACHMENT_DIR = "/in";
-/** Where the sandbox sees attachment `name`. */
-const attachmentPath = (name: string) => `${ATTACHMENT_DIR}/${name}`;
-
-/**
- * An agent's final reply (GLOSSARY: Envelope). A work agent's has no `outcome` or `reason`; a verdict agent's has an
- * `outcome` unless blocked.
- */
-type Envelope = {
-	report: string;
-	blocked?: string;
-	outcome?: "ok" | "rejected";
-	reason?: string;
-};
-
-const CAUSE = { type: "string", minLength: 1 };
-
-const envelopeSchema = (verdict: Record<string, JsonSchema>): JsonSchema => ({
-	type: "object",
-	required: ["report"],
-	additionalProperties: false,
-	properties: { report: { type: "string" }, blocked: CAUSE, ...verdict },
-});
-
-const BLOCKED_BAR =
-	"you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.";
-
-/** What a reply kind takes: its envelope's schema, the line that asks for the declared files, and how to reply. */
-type ReplyKind = { schema: JsonSchema; files: string; reply: string[] };
-
-const REPLY_LEAD =
-	"Your final reply must be only this JSON object, with no other text:";
-
-const WORK: ReplyKind = {
-	schema: envelopeSchema({}),
-	files: "Before your final reply, write every one of these files:",
-	reply: [
-		REPLY_LEAD,
-		'{"report": "<what you did>"}',
-		`Add "blocked": "<the cause>" only when ${BLOCKED_BAR}`,
-	],
-};
-
-const VERDICT: ReplyKind = {
-	schema: envelopeSchema({
-		outcome: { enum: ["ok", "rejected"] },
-		reason: CAUSE,
-	}),
-	files:
-		"Before your final reply, write every one of these files, even when you reject:",
-	reply: [
-		REPLY_LEAD,
-		'{"report": "<what you did>", "outcome": "ok" | "rejected", "reason": "<why, required when rejected>"}',
-		'Set "outcome" to "rejected" when your verdict on the work is negative, and say why in "reason".',
-		`Give "blocked": "<the cause>" in place of "outcome" and "reason" only when ${BLOCKED_BAR}`,
-	],
-};
-
-const FENCED = /^```(?:json)?\n([\s\S]*)\n```$/;
 
 const ajv = validator();
 
@@ -174,57 +120,12 @@ function agentPorts(node: HostNode): { in: Ports; out: Ports } {
 			...lane.in,
 		},
 		out: {
-			report: TEXT,
+			report: REPORT,
 			staged: { [MAESTRO_TYPE]: CORE_TYPES.dir },
 			...lane.out,
 			...Object.fromEntries(declared),
 		},
 	};
-}
-
-/** What the output contract appended to the task asks of an agent of reply kind `kind`. */
-function contract(out: Record<string, Output>, kind: ReplyKind): string {
-	const files = Object.values(out).map((o) =>
-		o.format === "json"
-			? `- ${OUTBOX}/${o.file}: JSON matching this JSON Schema: ${JSON.stringify(o.schema)}`
-			: `- ${OUTBOX}/${o.file}: Markdown`,
-	);
-	return [
-		"",
-		"---",
-		"",
-		...(files.length ? [kind.files, ...files, ""] : []),
-		...kind.reply,
-	].join("\n");
-}
-
-const correction = (problem: string, kind: ReplyKind) =>
-	[`Your final reply is not the envelope: ${problem}.`, ...kind.reply].join(
-		"\n",
-	);
-
-/** The envelope of reply kind `kind` that `reply` holds, bare or in one fenced block, or what is wrong with it. */
-function envelopeOf(reply: string, kind: ReplyKind): Envelope | string {
-	const trimmed = reply.trim();
-	let value: unknown;
-	try {
-		value = JSON.parse(FENCED.exec(trimmed)?.[1] ?? trimmed);
-	} catch {
-		return "it is not a JSON object";
-	}
-	const found = violations(ajv, kind.schema, value, (at) =>
-		["envelope", ...at].join("."),
-	);
-	if (found.length) return found.join("; ");
-	const envelope = value as Envelope;
-	const verdict = envelope.outcome ?? envelope.reason;
-	if (envelope.blocked !== undefined && verdict !== undefined)
-		return "envelope.blocked excludes envelope.outcome and envelope.reason";
-	if (kind === VERDICT && envelope.blocked === undefined && !envelope.outcome)
-		return "envelope.outcome is required unless envelope.blocked is set";
-	if (envelope.outcome === "rejected" && !envelope.reason)
-		return "envelope.reason is required when outcome is rejected";
-	return envelope;
 }
 
 /**
@@ -352,9 +253,6 @@ async function turn(
 	return run.result;
 }
 
-const CUT_OFF =
-	"Your last turn was cut off by a provider error. Carry on from where you were.";
-
 /** Waits `ms`, or until `live` is stopped. */
 function pause(ms: number, live: Live): Promise<void> {
 	return new Promise((resolve) => {
@@ -374,7 +272,7 @@ function next(reply: string, spent: boolean, kind: ReplyKind): Next {
 	if (typeof envelope !== "string") return { envelope };
 	return spent
 		? {
-				failure: `the final reply is not the envelope after ${MAX_CORRECTIONS} corrections: ${envelope}. Check the profile's model follows the output contract in staged/prompt.md`,
+				failure: `the final reply is not the JSON object asked for after ${MAX_CORRECTIONS} corrections: ${envelope}. Check the profile's model follows the reply contract in staged/instructions.md`,
 			}
 		: { prompt: correction(envelope, kind) };
 }
@@ -465,12 +363,22 @@ async function converse(
 	}
 }
 
-/** Stages the user message, and the instructions file when there is one, whose staged path it returns. */
-function stage(dir: string, prompt: string, instructions: string | undefined) {
+/**
+ * Stages the user message and the system-prompt file, the profile's `instructions` when it has any, then `framed`.
+ * Returns the system-prompt file's path.
+ */
+function stage(
+	dir: string,
+	prompt: string,
+	instructions: string | undefined,
+	framed: string,
+) {
 	writeFileSync(join(dir, "prompt.md"), prompt);
-	if (!instructions) return undefined;
+	const own = instructions
+		? `${readFileSync(instructions, "utf8").trimEnd()}\n\n`
+		: "";
 	const path = join(dir, "instructions.md");
-	copyFileSync(instructions, path);
+	writeFileSync(path, `${own}${framed}\n`);
 	return path;
 }
 
@@ -490,7 +398,10 @@ const runtimeOf = ({ harness, model, thinking }: Runtime) => ({
 	thinking,
 });
 
-/** The node result of `turns`. Once the agent gave an envelope that is not blocked, and readable outputs, `seal` seals its lane. */
+/**
+ * The node result of `turns`, its enrichment holding the report once there is one. Once the agent gave an envelope that
+ * is not blocked, and readable outputs, `seal` seals its lane.
+ */
 async function settle(
 	staging: Staging,
 	turns: Turns,
@@ -498,15 +409,22 @@ async function settle(
 ): Promise<HostNodeResult> {
 	const { profile, session } = staging;
 	const { metrics } = turns;
-	const enrichment = {
+	const ran = {
 		session: session.id,
 		sessionDir: session.dir,
 		...runtimeOf(profile.fields.runtime),
 		profile,
 	};
 	if ("failure" in turns)
-		return { outcome: "failed", reason: turns.failure, metrics, enrichment };
+		return {
+			outcome: "failed",
+			reason: turns.failure,
+			metrics,
+			enrichment: ran,
+		};
 	const { blocked, outcome = "ok", reason = "", report } = turns.envelope;
+	// The report rides the enrichment too, since a blocked or failed agent has no outputs.
+	const enrichment = { ...ran, report };
 	if (blocked !== undefined)
 		return {
 			outcome: "failed",
@@ -546,20 +464,10 @@ async function keepPartial(
 	return { ...result, enrichment: { ...result.enrichment, partial } };
 }
 
-/** The prompt text the attachments add, one line per attachment. */
-const attachmentNote = (attachments: [string, { hint: string }][]) =>
-	attachments.length
-		? [
-				"",
-				"",
-				"Read-only attachments in your sandbox:",
-				...attachments.map(
-					([name, a]) => `- ${attachmentPath(name)}: ${a.hint}`,
-				),
-			].join("\n")
-		: "";
+/** What an agent's sandbox adds for its checks and attachments, and those the frame lists, each with its hint. */
+type Extras = AgentChecks & Pick<Run, "checks" | "attachments">;
 
-/** What the graph's and the profile's attachments and the checks of `staging` add to an agent's sandbox and prompt. */
+/** What the graph's and the profile's attachments and the checks of `staging` add to an agent's sandbox and frame. */
 function extrasOf(
 	{ config, profile }: Staging,
 	target: Target,
@@ -567,15 +475,14 @@ function extrasOf(
 	context: HostContext,
 	base: string,
 	path: string,
-): AgentChecks {
+): Extras {
 	const graph = Object.entries(config.attachments ?? {});
 	const own = Object.entries(profile.fields.attachments);
-	const checks = stageChecks(
-		context.scratch,
-		(config.checks ?? []).map((name) => [name, namedCheck(target, name)]),
-		base,
-		path,
-	);
+	const named = (config.checks ?? []).map((name): [string, AgentCheck] => [
+		name,
+		agentCheck(target, name),
+	]);
+	const checks = stageChecks(context.scratch, named, base, path);
 	const mounts: Bind[] = [
 		...graph.map(([name]) => ({
 			src: artifactInput(inputs, context, name),
@@ -583,11 +490,11 @@ function extrasOf(
 		})),
 		...own.map(([name, a]) => ({ src: a.path, dst: attachmentPath(name) })),
 	];
-	const attachments = [...graph, ...own];
 	return {
 		...checks,
 		readOnly: [...mounts, ...checks.readOnly],
-		note: attachmentNote(attachments) + checks.note,
+		checks: named.map(([name, spec]) => [name, spec.hint]),
+		attachments: [...graph, ...own].map(([name, a]) => [name, a.hint]),
 	};
 }
 
@@ -641,10 +548,15 @@ async function execute(
 				setup.path,
 			);
 			const kind = config.verdict ? VERDICT : WORK;
-			const prompt =
-				textInput(inputs, "prompt") +
-				extras.note +
-				contract(config.out ?? {}, kind);
+			const prompt = textInput(inputs, "prompt");
+			const outputs = Object.values(config.out ?? {});
+			const framed = frame({
+				lane: config.lane.mode === "read" ? "read" : "write",
+				checks: extras.checks,
+				attachments: extras.attachments,
+				out: outputs,
+				kind,
+			});
 			const req: HarnessRequest = {
 				runtime,
 				prompt,
@@ -659,9 +571,10 @@ async function execute(
 					staging.staged,
 					prompt,
 					profile.fields.instructions,
+					framed,
 				),
 				outbox: staging.outbox,
-				outputs: Object.values(config.out ?? {}),
+				outputs,
 				session: { dir: session.dir, id: session.id },
 				verdict: config.verdict,
 				instance: instance.id,

@@ -4,4 +4,6 @@ target:
   # bun and just come from the tool PATH the user config's `sandbox.path` sets, as their install paths are machine-specific.
   prepare: bun install --frozen-lockfile
   checks:
-    check: just check
+    all:
+      run: just check
+      hint: format, lint, types and every test

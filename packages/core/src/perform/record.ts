@@ -210,6 +210,13 @@ export type Settling = (
 	key?: string;
 };
 
+/** An instance's node and enrichment, by concert. */
+export type EnrichedInstance = {
+	concert: string;
+	node: string;
+	enrichment: Enrichment;
+};
+
 /** The record outside a performance: its reads, and the operator's bookkeeping (tour, remove). */
 export interface Records {
 	/** The concert, or `undefined` for an id the record does not hold. */
@@ -227,6 +234,8 @@ export interface Records {
 	remove(concert: string): void;
 	/** A concert's node instances, in the order they started or settled without starting, read as one snapshot. */
 	instances(concert: string): InstanceRecord[];
+	/** The node and enrichment of each current instance of `concerts` that has an enrichment, read in one query. */
+	enrichments(concerts: readonly string[]): EnrichedInstance[];
 	/** The concert's result, `undefined` while it is running. */
 	result(concert: string): ConcertResult | undefined;
 	/** The concert's events after the cursor `after`, oldest first. */
@@ -606,6 +615,14 @@ function readerOf(db: Database, look: Lookup): Records {
 			rowOf(id);
 			return db.transaction(() => instancesOf(db, id))();
 		},
+		enrichments: (ids) =>
+			db
+				.query<{ concert: string; node: string; enrichment: string }, [string]>(
+					`SELECT concert, node, enrichment FROM instances
+					WHERE stale = 0 AND enrichment IS NOT NULL AND concert IN (SELECT value FROM json_each(?))`,
+				)
+				.all(JSON.stringify(ids))
+				.map((row) => ({ ...row, enrichment: JSON.parse(row.enrichment) })),
 		result(id) {
 			const row = rowOf(id);
 			if (row.status === "running") return undefined;

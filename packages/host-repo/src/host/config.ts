@@ -56,6 +56,7 @@ const INLINE_CHECK = {
 	additionalProperties: false,
 	properties: {
 		run: LINES,
+		hint: NAME,
 		timeout: NAME,
 		readOnly: PATHS,
 		writable: PATHS,
@@ -250,11 +251,13 @@ export type LaneInput =
 	| { mode: "extend"; resume?: boolean };
 
 /**
- * Shell lines run in order, and the milliseconds they may take together, none when unset. `readOnly` and `writable` are absolute host
- * paths bound at their own paths; `env` is set for the check alone.
+ * Shell lines run in order, and the milliseconds they may take together, none when unset. `readOnly` and `writable` are
+ * absolute host paths bound at their own paths; `env` is set for the check alone. `hint` tells an agent what the check
+ * covers, and an agent may run only a check that has one.
  */
 export type CheckSpec = {
 	lines: string[];
+	hint?: string;
 	timeout?: number;
 	readOnly: string[];
 	writable: string[];
@@ -288,6 +291,7 @@ export type ApplyConfig = {
 
 type RawLongCheck = {
 	run: string | string[];
+	hint?: string;
 	timeout?: string;
 	readOnly?: string[];
 	writable?: string[];
@@ -356,6 +360,7 @@ const longForm = (raw: RawCheck): RawLongCheck =>
 function checkSpec(raw: RawCheck, label = "check"): CheckSpec {
 	const {
 		run,
+		hint,
 		timeout,
 		readOnly = [],
 		writable = [],
@@ -366,7 +371,14 @@ function checkSpec(raw: RawCheck, label = "check"): CheckSpec {
 		throw new Error(
 			`${label} timeout '${timeout}' is not a duration. Write it as ${DURATION_EXAMPLE}`,
 		);
-	return { lines: [run].flat(), timeout: ms, readOnly, writable, env };
+	return {
+		lines: [run].flat(),
+		...(hint !== undefined && { hint }),
+		timeout: ms,
+		readOnly,
+		writable,
+		env,
+	};
 }
 
 function targetOf(raw: RawSetup["target"]): Target | undefined {
@@ -448,6 +460,28 @@ export function namedCheck(target: Target, name: string): CheckSpec {
 			`check '${name}' is not in config 'target.checks'. ${useOneOf(Object.keys(target.checks), "Add it under 'target.checks'")}`,
 		);
 	return spec;
+}
+
+/** Why check `name` cannot be given to an agent without a hint, and how to give it one. */
+export const noHint = (name: string) => ({
+	message: `check '${name}' has no hint, and an agent cannot use a check without one`,
+	hint: `Add target.checks.${name}.hint, in the inline form { run, hint }`,
+});
+
+/** A check an agent may run: one with the hint the agent reads it by. */
+export type AgentCheck = CheckSpec & { hint: string };
+
+/**
+ * The check `name` of `target`, for an agent to run.
+ * @throws Error as `namedCheck` does, or when the check has no hint.
+ */
+export function agentCheck(target: Target, name: string): AgentCheck {
+	const { hint, ...spec } = namedCheck(target, name);
+	if (hint === undefined) {
+		const why = noHint(name);
+		throw new Error(`${why.message}. ${why.hint}`);
+	}
+	return { ...spec, hint };
 }
 
 /**

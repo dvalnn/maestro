@@ -14,6 +14,7 @@ import { concertDirs } from "@maestro/core/perform";
 import {
 	AGENT_IN_PORTS as HOST_IN_PORTS,
 	AGENT_OUT_PORTS as HOST_OUT_PORTS,
+	REPORT as HOST_REPORT,
 	repoHost,
 } from "@maestro/host-repo";
 import { type HarnessRequest, stubHarness } from "@maestro/host-repo/harness";
@@ -34,6 +35,7 @@ import {
 	JsonOut,
 	Lane,
 	MarkdownOut,
+	REPORT,
 	read,
 	seat,
 } from "./index";
@@ -97,16 +99,24 @@ function profileRoots(): Roots {
 	return { workspace, user: "/nonexistent", packs: {} };
 }
 
-/** A repo host on a toy target whose stub harness writes the files `writes` gives each request, and the requests it got. */
+/**
+ * A repo host on a toy target whose stub harness writes the files `writes` gives each request, the requests it got, and
+ * the system prompt each was staged with.
+ */
 function repo(
 	writes: (req: HarnessRequest) => Record<string, string> = () => ({}),
-	checks: Record<string, string> = { test: "true", lint: "true" },
+	checks: Record<string, unknown> = {
+		test: { run: "true", hint: "the tests" },
+		lint: { run: "true", hint: "the linter" },
+	},
 ) {
 	const requests: HarnessRequest[] = [];
+	const framed = new Map<HarnessRequest, string>();
 	const host = repoHost({
 		harnesses: [
 			stubHarness((req) => {
 				requests.push(req);
+				framed.set(req, readFileSync(req.instructions ?? "", "utf8"));
 				return [
 					...Object.entries(writes(req)).map(([write, content]) => ({
 						write,
@@ -115,7 +125,7 @@ function repo(
 					{
 						emit: {
 							type: "text",
-							text: JSON.stringify({ report: "done" }),
+							text: JSON.stringify({ report: { summary: "done" } }),
 						},
 					},
 				];
@@ -142,7 +152,7 @@ function repo(
 	};
 	const roots = profileRoots();
 	const composeIt = (ir: Ir) => composeIr(ir, { hosts: [host], config, roots });
-	return { host, hostConfig, roots, requests, composeIt };
+	return { host, hostConfig, roots, requests, framed, composeIt };
 }
 
 const CODE = { byFinding };
@@ -268,6 +278,7 @@ test("every option of a seat call, check and apply composes against the repo hos
 test("the agent's own port names are the host's, and each is refused only on the side that has it", () => {
 	expect(AGENT_IN_PORTS).toEqual(HOST_IN_PORTS);
 	expect(AGENT_OUT_PORTS).toEqual(HOST_OUT_PORTS);
+	expect(REPORT).toEqual(HOST_REPORT);
 	const refused = (field: "attachments" | "out", name: string) => {
 		const clash = composition("clash", { examples: [{}] }, () => {
 			const first = builder({ task: "a", lane: fresh() });
@@ -303,7 +314,7 @@ test("changeset lowers a message, literal or ref, to a message input, and has no
 			changeset(built.out.lane, { label: "literal", message: "Fix it" });
 			return changeset(built.out.lane, {
 				label: "ref",
-				message: built.out.report,
+				message: built.out.report.get("summary"),
 			});
 		}),
 	);
@@ -435,7 +446,7 @@ describe("examples", () => {
 		const { host, hostConfig, roots, requests } = repo(
 			(req): Record<string, string> =>
 				req.prompt.startsWith("Make") ? { "fixed.txt": "x\n" } : {},
-			{ test: "test -f fixed.txt" },
+			{ test: { run: "test -f fixed.txt", hint: "fixed.txt exists" } },
 		);
 		const concert = await stubConcert(ir, {
 			hosts: [host],
@@ -494,7 +505,8 @@ describe("examples", () => {
 		"the fold builds, composes, and merges $tasks in a stub concert",
 		async ({ tasks, agents, added, resolved }) => {
 			const ir = buildIr(fold, { tasks }, CODE);
-			const { host, hostConfig, roots, composeIt, requests } = repo(implement);
+			const { host, hostConfig, roots, composeIt, requests, framed } =
+				repo(implement);
 			expect(await composeIt(ir)).toMatchObject({ ok: true });
 
 			const concert = await stubConcert(ir, {
@@ -511,7 +523,9 @@ describe("examples", () => {
 			const resolver = requests.find((r) => r.prompt.startsWith("Resolve"));
 			expect(resolver !== undefined).toBe(resolved);
 			if (resolver)
-				expect(resolver.prompt).toContain("- /in/incoming: Read when you need");
+				expect(framed.get(resolver)).toContain(
+					"- `/in/incoming`: Read when you need",
+				);
 			const series = joinPath(
 				concertDirs(concert.dir, concert.id).artifacts,
 				result.path,

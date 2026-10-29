@@ -191,6 +191,11 @@ export interface HostText {
 	 * Called on a settled instance's enrichment; undefined when it has none.
 	 */
 	where?(enrichment: Enrichment): string | undefined;
+	/**
+	 * An instance's notes as headed lists of one-line entries, such as `{ Obstacles: [...] }`, each list non-empty.
+	 * Called on a settled instance's enrichment; empty when it has none.
+	 */
+	notes?(enrichment: Enrichment): Record<string, string[]>;
 }
 
 /** The disk a host holds for a concert. */

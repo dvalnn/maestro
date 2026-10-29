@@ -1,0 +1,125 @@
+import { expect, test } from "bun:test";
+import { frame, type Run, VERDICT, WORK } from "./frame";
+
+const SHELL =
+	"Your shell is already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
+
+test("a write-lane builder's frame states its working copy, checks, attachments and reply, in that order", () => {
+	const run: Run = {
+		lane: "write",
+		checks: [["all", "format, lint, types and every test"]],
+		attachments: [
+			["upheld", "first, for the findings to fix"],
+			["spec", "for what the change must do"],
+		],
+		out: [
+			{ file: "notes.md", format: "markdown" },
+			{ file: "a.json", format: "json", schema: { type: "object" } },
+		],
+		kind: WORK,
+	};
+	expect(frame(run)).toBe(`# Your run
+
+## Working copy
+
+Your working copy is the current directory. Leave your changes uncommitted: the run records the working copy as a version when you finish.
+
+${SHELL}
+
+## Checks
+
+Run the target's checks with \`check <name>\`, and never write your own. Each prints the tail of its output, then ok, rejected or failed. Run them to verify your change before you finish.
+- \`check all\`: format, lint, types and every test
+
+## Attachments
+
+Read-only, in your sandbox:
+- \`/in/upheld\`: first, for the findings to fix
+- \`/in/spec\`: for what the change must do
+
+## Reply
+
+Before your final reply, write every one of these files:
+- \`/out/notes.md\`: Markdown
+- \`/out/a.json\`: JSON matching this JSON Schema:
+  \`\`\`json
+  {"type":"object"}
+  \`\`\`
+
+Your final reply is only this JSON object, with no other text:
+
+\`\`\`json
+{
+  "report": {
+    "summary": "<what you did, in one line>",
+    "gaps": ["<what your task asked that you left undone or did not verify>"],
+    "obstacles": ["<what in your environment got in your way>"],
+    "lessons": ["<what you learnt that the code does not show>"]
+  }
+}
+\`\`\`
+
+- Leave a list out when it is empty.
+- \`obstacles\` are such as a missing or empty attachment, or a tool not on your PATH.
+- Leave out what the run already records: your changes, the checks' results and the files you wrote.
+- Add \`"blocked": "<the cause>"\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`);
+});
+
+const VERDICT_REPLY = `Your final reply is only this JSON object, with no other text:
+
+\`\`\`json
+{
+  "report": {
+    "summary": "<your ruling, in one line>",
+    "gaps": ["<what your task asked that you left undone or did not verify>"],
+    "obstacles": ["<what in your environment got in your way>"],
+    "lessons": ["<what you learnt that the code does not show>"]
+  },
+  "outcome": "ok",
+  "reason": "<why, when rejected>"
+}
+\`\`\`
+
+- \`outcome\`: \`ok\` when the work passes your ruling, \`rejected\` when it does not.
+- \`reason\`: why you rejected; leave it out when \`ok\`.
+- Leave a list out when it is empty.
+- \`obstacles\` are such as a missing or empty attachment, or a tool not on your PATH.
+- Leave out what the run already records: the checks' results and the files you wrote.
+- Give \`"blocked": "<the cause>"\` in place of \`outcome\` and \`reason\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`;
+
+test.each([
+	[
+		"a read lane with a check and an output",
+		{
+			lane: "read",
+			checks: [["all", "every test"]],
+			out: [{ file: "findings.md", format: "markdown" }],
+		},
+		[
+			"## Working copy\n\nYour working copy is the current directory, and it is read-only: change nothing in it.",
+			"or failed.\n- `check all`: every test",
+			"## Reply\n\nBefore your final reply, write every one of these files, even when you reject:\n- `/out/findings.md`: Markdown\n\nYour final",
+		],
+		["Leave your changes uncommitted", "Run them to verify", "## Attachments"],
+	],
+	[
+		"no lane, check or attachment",
+		{},
+		[`# Your run\n\n## Working copy\n\n${SHELL}\n\n## Reply\n\n`],
+		["Your working copy is", "## Checks", "## Attachments", "write every one"],
+	],
+] as [string, Partial<Run>, string[], string[]][])(
+	"%s leaves out what it has nothing to say of",
+	(_, given, present, absent) => {
+		const text = frame({
+			checks: [],
+			attachments: [],
+			out: [],
+			kind: VERDICT,
+			...given,
+		});
+		for (const part of present) expect(text).toContain(part);
+		for (const part of absent) expect(text).not.toContain(part);
+		expect(text).toEndWith(VERDICT_REPLY);
+	},
+);

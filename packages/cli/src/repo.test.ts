@@ -240,7 +240,7 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 	expect(await raw("a", "notes.md", "--path")).toBe(`${notes}\n`);
 	const bStaged = listed.find((a) => a.instance === "parMap[x]/b")?.path ?? "";
 	expect(await raw("parMap[x]/b")).toBe(
-		`══ staged/instructions.md\nterse\n══ staged/prompt.md\n${readFileSync(join(bStaged, "prompt.md"), "utf8")}`,
+		`══ staged/instructions.md\n${readFileSync(join(bStaged, "instructions.md"), "utf8")}══ staged/prompt.md\n${readFileSync(join(bStaged, "prompt.md"), "utf8")}`,
 	);
 
 	expect(await w.call(["art", id, "parMap"])).toMatchObject({
@@ -473,14 +473,14 @@ for (const { gate, harness, model } of REAL_HARNESSES) {
 				`runtime: { harness: ${harness}, model: ${model}, thinking: low }\ninstructions: instructions.md\n`,
 				{
 					"instructions.md":
-						"You sign every report you give with the word kumquat at its end.",
+						"You end every report summary you give with the word kumquat.",
 				},
 			);
 			const done = await w.call(["perform", join(REPO, "write.ts")]);
 			expect(done).toMatchObject({ code: 0 });
 			const { instances } = json(await w.call(["ls", idOf(done), "--json"]));
 			const agent = instances.find((i: { node: string }) => i.node === "write");
-			expect(agent.outputs.report.toLowerCase()).toContain("kumquat");
+			expect(agent.outputs.report.summary.toLowerCase()).toContain("kumquat");
 			expect(agent.metrics.tokens_in).toBeGreaterThan(0);
 			const [instructions] = [
 				...new Bun.Glob("**/staged/instructions.md").scanSync({

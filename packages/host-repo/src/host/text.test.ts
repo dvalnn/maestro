@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { repoText } from "./text";
+import { reportOf, repoText } from "./text";
 
 const PREPARE = { kind: "prepare", line: 1, of: 2, run: "bun install" };
 
@@ -91,5 +91,37 @@ describe("repoText.actor", () => {
 		[{ kind: "prepare", line: 1, of: 2, run: "bun install" }, undefined],
 	])("names the agent of %j as %j", (enrichment, text) => {
 		expect(repoText.actor?.(enrichment)).toBe(text);
+	});
+});
+
+describe("repoText.notes", () => {
+	test.each([
+		[
+			{
+				report: {
+					summary: "s",
+					gaps: ["g"],
+					obstacles: ["no rg"],
+					lessons: ["l1", "l2"],
+				},
+			},
+			{ Obstacles: ["no rg"], Lessons: ["l1", "l2"] },
+		],
+		[{ report: { summary: "s", obstacles: [] } }, {}],
+		[{ report: "a report as text" }, {}],
+		[{ session: "s" }, {}],
+	])("notes of %j are %j", (enrichment, notes) => {
+		expect(repoText.notes?.(enrichment)).toEqual(notes);
+	});
+
+	test.each([
+		[{ report: "a report as text" }, { summary: "a report as text" }],
+		[
+			{ report: { summary: "s", lessons: ["l"] } },
+			{ summary: "s", lessons: ["l"] },
+		],
+		[{ session: "s" }, undefined],
+	])("the report of %j reads as %j", (enrichment, report) => {
+		expect(reportOf(enrichment)).toEqual(report);
 	});
 });

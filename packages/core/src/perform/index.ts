@@ -5,6 +5,7 @@ export {
 	type ConcertRecord,
 	type ConcertResult,
 	type ConcertStatus,
+	type EnrichedInstance,
 	type InstanceRecord,
 	openRecord,
 	type Records,

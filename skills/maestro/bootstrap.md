@@ -21,9 +21,10 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
    - `target.repo`: the repository's absolute path. `target.base`: a branch or commit, only when the user names one;
      lanes are cut from the target's `HEAD` otherwise.
    - `target.checks`: the project's own test, lint and build commands, found in its manifest (`package.json` scripts,
-     `Makefile`, `justfile`, `pyproject.toml`) or its CI file. Name them for what they do: `test`, `lint`, `build`.
-     Every line of a check, and of `target.prepare`, sees `MAESTRO_LANE_BASE` (overriding an `env` entry of that name),
-     the commit its lane was cut from, so a check judging only the change diffs against it, as
+     `Makefile`, `justfile`, `pyproject.toml`) or its CI file. Name them for what they do: `test`, `lint`, `build`. A
+     check an agent runs takes a `hint`, `{ run, hint }`: what it covers, in a few words; the agent sees the hint, never
+     the command. Every line of a check, and of `target.prepare`, sees `MAESTRO_LANE_BASE` (overriding an `env` entry of
+     that name), the commit its lane was cut from, so a check judging only the change diffs against it, as
      `git diff $MAESTRO_LANE_BASE`; `HEAD` is the lane's latest version. An agent running `check` mid-work has new files
      untracked (`git add` is denied in its sandbox), which that diff misses; list them with
      `git ls-files --others --exclude-standard`. A check's lines also see `MAESTRO_CHECK_OUTPUT`, an empty writable
@@ -83,6 +84,7 @@ target:
     lint: [bunx biome check ., bunx tsc --noEmit] # list form: lines in order, the first failing one stops
     build: # long form
       run: cargo build
+      hint: the release build # what an agent is told it covers; required for a check an agent runs
       timeout: 20m # a duration: ms, s, m, h or d; none means no limit
       writable: [/home/me/.cargo/registry] # absolute paths bound read-write: toolchain caches, shared locks
       readOnly: [/opt/sdk] # absolute paths bound read-only
@@ -164,6 +166,7 @@ The stub preset, every profile on the stub harness, is in SKILL.md, section Stub
 | `HOST.profile: profile 'r' is in no profile root`                  | Add the profile directory `r`, or set `profiles.r.runtime` where it exists    |
 | `HOST.harness: 'x' runs on harness 'h', which is not loaded`       | Use a harness the hint lists                                                  |
 | `HOST.check: 'x' runs check 'c', which config 'target.checks' ...` | Add `target.checks.c`                                                         |
+| `HOST.check: x: check 'c' has no hint, and an agent cannot ...`    | Add `target.checks.c.hint`, in the inline form `{ run, hint }`                |
 | `HOST.target: target repository '...' does not exist`              | Fix `target.repo`                                                             |
 | `CFG.schema: config 'target' must have required property 'repo'`   | Set `target.repo`, or `cd` into the workspace                                 |
 | `CFG.unclaimed: config key 'k' is claimed by no installed ...`     | Rename it as the did-you-mean hint says, or install its pack                  |

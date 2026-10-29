@@ -110,9 +110,10 @@ those in the IR, or `art` for files). A group, or an instance from an older stor
 
 What each node leaves, as outputs of its instance:
 
-- An agent: `report`, its final report text; `staged`, a directory holding the exact prompt it was given (`prompt.md`),
-  its instructions (`instructions.md`) when it has one and each correction turn's message (`correction-1.md` on);
-  `lane`, its version; and each declared output file.
+- An agent: `report`, its final report, `{ summary, gaps?, obstacles?, lessons? }`; `staged`, a directory holding the
+  task it was given (`prompt.md`), its system-prompt file (`instructions.md`: the profile's instructions, then the
+  host's frame of its run) and each correction turn's message (`correction-1.md` on); `lane`, its version; and each
+  declared output file.
 - A check: `logs`, each line it ran and its output; `lane`, unless it only read one.
 - A changeset node: `changeset`, a directory (next section).
 

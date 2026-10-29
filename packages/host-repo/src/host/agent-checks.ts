@@ -25,8 +25,6 @@ export type AgentChecks = {
 	writable: Bind[];
 	/** The agent's `PATH`, with the `check` command first. */
 	env: Record<string, string>;
-	/** What the staged prompt tells the agent about its checks. */
-	note: string;
 };
 
 /** The variable the `check` command hands a run's output directory to the script in, which then names it to the lines. */
@@ -81,23 +79,13 @@ printf "check '%s': %s\\n" "$1" "$verdict"
 `;
 }
 
-const note = (checks: [string, CheckSpec][]) =>
-	[
-		"",
-		"",
-		"Run the target's checks with `check <name>`, and do not write your own. Each prints the tail of its output, then ok, rejected or failed:",
-		...checks.map(
-			([name, spec]) => `- check ${name}: ${spec.lines.join(" && ")}`,
-		),
-	].join("\n");
-
-const NONE: AgentChecks = { readOnly: [], writable: [], env: {}, note: "" };
+const NONE: AgentChecks = { readOnly: [], writable: [], env: {} };
 
 /**
- * Writes the `check` command and the scripts of `checks` under `dir/checks`, and the binds, environment and prompt
- * note an agent that runs them needs. Its PATH is the `check` command's directory, then `path`. The scripts hold the checks' env values, so `dir` is never an artifact. The command runs a check as the host's own check
- * node would, with its timeout, if any, and its exit classification, but in the agent's sandbox: the binds of every
- * check apply to all of it.
+ * Writes the `check` command and the scripts of `checks` under `dir/checks`, and the binds and environment an agent that
+ * runs them needs. Its PATH is the `check` command's directory, then `path`. The scripts hold the checks' env values, so
+ * `dir` is never an artifact. The command runs a check as the host's own check node would, with its timeout, if any, and
+ * its exit classification, but in the agent's sandbox: the binds of every check apply to all of it.
  */
 export function stageChecks(
 	dir: string,
@@ -121,6 +109,5 @@ export function stageChecks(
 		],
 		writable: pathBinds(...specs.map((s) => s.writable)),
 		env: { PATH: `${ROOT}/bin:${path}` },
-		note: note(checks),
 	};
 }

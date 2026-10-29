@@ -173,9 +173,9 @@ A host is a package that the core loads. It is the only way node kinds beyond th
    `resources`, for a host that holds disk per concert, groups `release(concert, setup)`, which frees what it holds for
    a settled concert, and `usage(concert, setup)`, which reports its bytes on disk, for `prune` and `ls`. `text` groups
    `progress(event)`, which words one of the host's progress events, `actor(enrichment)`, which names who ran an
-   instance, and `where(enrichment)`, which gives the path its session lives at for `watch`, as plain one-line text; the
-   renderer styles it. `needs(graph)` names the config entries the graph's host nodes read by name. ADR 0010 records the
-   shape.
+   instance, `where(enrichment)`, which gives the path its session lives at for `watch`, as plain one-line text, and
+   `notes(enrichment)`, which gives an instance's notes as headed lists of one-line entries for `ls`; the renderer
+   styles it. `needs(graph)` names the config entries the graph's host nodes read by name. ADR 0010 records the shape.
 
 The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
 hooks and records what they return.
@@ -410,13 +410,13 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   named checks it may run. The profile gives the runtime (harness, model, thinking level), the instructions, the limits,
   the read-only binds and its own attachments, bound at `/in/<name>` (see Profiles). Its lane input may ask to `resume`
   the session that wrote the version it extends, and `verdict` marks a verdict agent. Outputs: the declared files as
-  typed artifacts, the report, outcome and reason from its envelope, metrics (token counts), the staged text as an
-  artifact, and the resulting lane version. `rejected` means a verdict agent's verdict is negative. `failed` means the
-  run did not complete, or the agent is blocked (ADR 0012).
+  typed artifacts, the report object, outcome and reason from its envelope, metrics (token counts), the staged text as
+  an artifact, and the resulting lane version. `rejected` means a verdict agent's verdict is negative. `failed` means
+  the run did not complete, or the agent is blocked (ADR 0012).
 - **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
-  failures reported), or an inline `{ run, timeout }`. Each line runs through `sh -c` in the sandbox, in order, and the
-  first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are `failed`; any
-  other non-zero exit is `rejected`, the reason naming the check and the line number. Every line sees
+  failures reported), or an inline `{ run, hint?, timeout }`. Each line runs through `sh -c` in the sandbox, in order,
+  and the first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are
+  `failed`; any other non-zero exit is `rejected`, the reason naming the check and the line number. Every line sees
   `MAESTRO_LANE_BASE`, the commit its lane was cut from, which overrides a configured `env` entry of that name. It also
   makes an empty directory under its scratch, outside the lane, binds it writable into every line's sandbox and names it
   in `MAESTRO_CHECK_OUTPUT`, which a configured `env` cannot override. The directory as the check left it, possibly
@@ -440,31 +440,38 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 **Attachments and agent-run checks**
 
 - An attachment is a named artifact input of an agent, each with a required `hint` that says when to read it. It is
-  mounted read-only at `/in/<name>` and listed in the staged prompt with its hint as written, and its content hash is in
-  the resume key. A bind is not (ADR 0011).
+  mounted read-only at `/in/<name>` and listed in the frame with its hint as written, and its content hash is in the
+  resume key. A bind is not (ADR 0011).
 - An agent that names checks gets a `check <name>` command on its `PATH`, staged read-only; one that names none gets no
   `check` command. It runs the named check in `/lane` under the check's timeout, if any, and sets the check's `env`
   inside that command alone, never in the rest of the agent's sandbox, sets `MAESTRO_CHECK_OUTPUT` to a fresh writable
   directory outside the lane, discarded with the run like its log, prints the tail of the output, and ends `ok`,
-  `rejected` or `failed` by the exit classification above. The staged prompt lists the checks and says to run them
-  rather than write new ones (HOST-15). The agent's sandbox gets the read-only and writable binds of those checks, which
-  bind paths cannot be scoped to one command.
+  `rejected` or `failed` by the exit classification above. The frame lists each as `check <name>` with the check's
+  `hint`, never its command, and says to run them rather than write new ones (HOST-15). Pre-flight refuses an agent
+  given a check with no `hint`; a check only check nodes run needs none. The agent's sandbox gets the read-only and
+  writable binds of those checks, which bind paths cannot be scoped to one command.
 
 **Staging, outbox and envelope**
 
-- The profile's instructions are appended to the harness's own system prompt from a staged file, never replacing it. The
-  task, with the host's output contract appended, goes as the user message on stdin. The exact staged text is the
-  `staged` output artifact, a directory holding `prompt.md` (the user message), `instructions.md` (when there is one)
-  and `correction-N.md` (each correction turn's message).
+- The staged system-prompt file holds the profile's instructions, when it has any, then the host's **frame**: a
+  `# Your run` heading and the sections `## Working copy`, `## Checks`, `## Attachments`, `## Context` and `## Reply`,
+  in that order, each left out when it has nothing to say. Working copy says a write lane is left uncommitted and a read
+  lane is changed in nothing, then how the shell is set up; Reply is the output contract. The file is appended to the
+  harness's own system prompt, never replacing it. A fresh start's user message is the task alone, on stdin. The exact
+  staged text is the `staged` output artifact, a directory holding `prompt.md` (the user message), `instructions.md`
+  (the system-prompt file) and `correction-N.md` (each correction turn's message).
 - Declared outputs are files the agent writes in its **outbox**, a per-instance directory at `/out` outside the lane.
   The host reads only regular files there and checks each against its schema. The contract tells the agent to write
   every declared file, a verdict agent even when it rejects. A missing file or a schema violation is `failed`.
 - The agent's final reply is its **envelope**. A work agent's is `{ report, blocked? }`. A verdict agent's is
   `{ report, outcome: ok | rejected, reason? }`, with the reason required when rejected, or `{ report, blocked }`. The
-  contract states only the fields of the agent's kind. A malformed envelope, such as a work agent's with an `outcome`, a
-  verdict agent's with neither, or one both blocked and giving a verdict, gets at most two correction turns in the same
-  session, then `failed`. A blocked agent ends `failed` with the reason `blocked: <cause>` and no outputs, its declared
-  files unread. A rejection with declared files missing or invalid ends `rejected` with its reason and no outputs.
+  report is `{ summary, gaps?, obstacles?, lessons? }`: a one-line summary, then only what the record cannot show, an
+  empty list left out. It is the `report` output and rides the enrichment too, so a blocked or failed agent keeps it.
+  The contract states only the fields of the agent's kind. A malformed envelope, such as a work agent's with an
+  `outcome`, a verdict agent's with neither, or one both blocked and giving a verdict, gets at most two correction turns
+  in the same session, then `failed`. A blocked agent ends `failed` with the reason `blocked: <cause>` and no outputs,
+  its declared files unread. A rejection with declared files missing or invalid ends `rejected` with its reason and no
+  outputs.
 - A profile takes optional `limits: { timeout, tokens }`, none by default; config tunes them per field. `timeout` is a
   duration or whole milliseconds, counted as wall clock from the first turn's start, retry waits included; `tokens` is a
   whole number of at least 1, the running total of the harness's usage events as `tokensOf` sums them. Both cover every
@@ -530,9 +537,10 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   config tunes it, and sets `readOnly`, which the file cannot. A seat names one profile, defaulting to its own name;
   resolution happens at pre-flight and again on a resume. A concert recorded before profiles is refused: perform it
   anew.
-- A check is a shell line or a list of them, or the long form `{ run, timeout, readOnly, writable, env }`: a duration
-  such as `10m`, absolute host paths bound read-only or read-write at their own paths, and environment variables for
-  that check. A check that needs a toolchain, a cache or a lock file shared across lanes names it there.
+- A check is a shell line or a list of them, or the long form `{ run, hint, timeout, readOnly, writable, env }`: what an
+  agent is told the check covers, a duration such as `10m`, absolute host paths bound read-only or read-write at their
+  own paths, and environment variables for that check. A check that needs a toolchain, a cache or a lock file shared
+  across lanes names it there.
 - A fresh lane takes its node's `base`, else `target.base`, else is cut from the target's `HEAD`. A check with no
   `timeout` has no limit and runs until it ends or the concert is killed, in the agent's `check` command as on the node.
 - `target.prepare` takes a check's shape and sets a lane up, with a dependency sync or the like (HOST-16). Its lines run

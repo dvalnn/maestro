@@ -1,6 +1,7 @@
 import type { HostText } from "@maestro/core/host";
 import type { Enrichment, HostEvent } from "@maestro/ir";
 import { METRIC } from "../harness/types";
+import type { Report } from "./frame";
 import { lastLine } from "./run-lines";
 
 /** The `kind` of the progress event a prepare line emits as it starts and ends. */
@@ -82,5 +83,29 @@ function actor(enrichment: Enrichment): string | undefined {
 /** The host directory of the session that ran an agent, where its harness writes the transcript. */
 const where = (enrichment: Enrichment) => stringOf(enrichment.sessionDir);
 
+/** The headings of the report lists an agent's notes show, by report field. */
+const NOTED = { obstacles: "Obstacles", lessons: "Lessons" } as const;
+
+/** The report an agent's enrichment holds, if any; a report as text, from an older record, reads as its `summary`. */
+export function reportOf({ report }: Enrichment): Report | undefined {
+	if (typeof report === "string") return { summary: report };
+	return typeof report === "object" && report !== null
+		? (report as Report)
+		: undefined;
+}
+
+/** An agent's report obstacles and lessons, each non-empty list under its heading. */
+function notes(enrichment: Enrichment): Record<string, string[]> {
+	const lists = new Map(Object.entries(reportOf(enrichment) ?? {}));
+	return Object.fromEntries(
+		Object.entries(NOTED).flatMap(([field, heading]) => {
+			const list = lists.get(field);
+			return Array.isArray(list) && list.length
+				? [[heading, list.map(String)]]
+				: [];
+		}),
+	);
+}
+
 /** How the repo host's prepare, tool, result and usage events and its agents read as text. */
-export const repoText: HostText = { progress, actor, where };
+export const repoText: HostText = { progress, actor, where, notes };
