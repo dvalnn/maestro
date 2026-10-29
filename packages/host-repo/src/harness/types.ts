@@ -151,13 +151,16 @@ export function environmentChecks(
 	return [...checks, { part: "compaction", mark: "?", faults: [] }];
 }
 
-/** When a context policy resets a session: at a prompt size in tokens, or at a share of the model's window. */
+/** A context policy's `at` as a profile gives it: a prompt size in tokens, or a share of the model's window. */
 export type ContextAt = { tokens: number } | { percent: number };
 
-/** How an agent's run resets its context as it fills (GLOSSARY: Context policy). `max` caps the resets. */
-export type ContextPolicy =
-	| { strategy: "handoff"; at: ContextAt; max: number }
-	| { strategy: "compact"; at: ContextAt; max?: number };
+/**
+ * How an agent's run resets its context as it fills (GLOSSARY: Context policy), once a prompt reaches `at`, by default
+ * in tokens. `max` caps the resets.
+ */
+export type ContextPolicy<At = number> =
+	| { strategy: "handoff"; at: At; max: number }
+	| { strategy: "compact"; at: At; max?: number };
 
 /** A profile field a harness cannot honour, why, and the fix. */
 export type RuntimeProblem = {
@@ -165,8 +168,12 @@ export type RuntimeProblem = {
 	field: `runtime.${keyof Runtime}` | `context.${"strategy" | "at" | "max"}`;
 	/** Leads with the harness's name, as in `claude has no thinking level 'turbo'`. */
 	reason: string;
+	/** `PROFILE_TOKEN` in it stands for the profile's name. */
 	fix: string;
 };
+
+/** What a `RuntimeProblem` fix writes for the name of the profile it concerns. */
+export const PROFILE_TOKEN = "<profile>";
 
 /** Named, additive numbers (GLOSSARY: Metric), e.g. `tokens_in`. */
 export type Metrics = Record<string, number>;
@@ -224,6 +231,8 @@ export type HarnessRequest = {
 	instance?: string;
 	/** The profile's context policy. Without one the harness compacts on its own terms. */
 	context?: ContextPolicy;
+	/** The model's context window in tokens as maestro last observed it, when it has. */
+	window?: number;
 };
 
 export type HarnessEvent =
@@ -238,11 +247,10 @@ export type HarnessEvent =
 	| { kind: "thinking"; text: string }
 	/** Usage reported by the harness. The run's metrics are the sum of these. */
 	| { kind: "usage"; metrics: Metrics }
-	/**
-	 * The prompt size of a model call in tokens, input and cache read and write together, and the model's context window
-	 * when the harness reports one.
-	 */
-	| { kind: "context"; used: number; window?: number }
+	/** The prompt size of a model call in tokens, input and cache read and write together. */
+	| { kind: "context"; used: number }
+	/** The model's context window in tokens, as the harness reports it. */
+	| { kind: "window"; tokens: number }
 	/** The harness compacted the session's context. */
 	| { kind: "compaction" }
 	/** What the harness reports it loaded, once at its startup. */
@@ -281,10 +289,14 @@ export interface Harness {
 	readonly name: string;
 	run(req: HarnessRequest): HarnessRun;
 	/**
-	 * Each field of `runtime` and `context`, one naming this harness, it cannot honour. A harness without it honours
-	 * every field.
+	 * Each field of `runtime` and `context`, one naming this harness, it cannot honour, given the model's context
+	 * `window` in tokens when one is known. A harness without it honours every field.
 	 */
-	runtimeProblems?(runtime: Runtime, context?: ContextPolicy): RuntimeProblem[];
+	runtimeProblems?(
+		runtime: Runtime,
+		context?: ContextPolicy,
+		window?: number,
+	): RuntimeProblem[];
 }
 
 /** The problem of a `thinking` level that is none of `levels`, the documented levels of harness `harness`. */
@@ -303,10 +315,14 @@ export const thinkingProblems = (
 				},
 			];
 
+/** A `window` event of `tokens`, none when it is not a whole number of at least 1. */
+export const windowEvents = (tokens: unknown): HarnessEvent[] =>
+	Number.isSafeInteger(tokens) && Number(tokens) > 0
+		? [{ kind: "window", tokens: Number(tokens) }]
+		: [];
+
 /** What a harness does under a context policy. */
 export type ContextSupport = {
-	/** Its context events carry the model's window. */
-	window: boolean;
 	/** It emits a compaction event when it compacts. */
 	compactions: boolean;
 	/** It sets its own compaction point from `at`. */
@@ -316,7 +332,6 @@ export type ContextSupport = {
 /**
  * The problems of `context` on harness `harness`, which supports `can`:
  * - `compact` on a harness whose compaction point maestro cannot set;
- * - a percentage `at` on one that reports no window;
  * - a capped `compact` on one that emits no compaction event.
  */
 export function contextProblems(
@@ -334,18 +349,13 @@ export function contextProblems(
 				fix: "Use strategy handoff",
 			},
 		];
-	const problems: RuntimeProblem[] = [];
-	if ("percent" in context.at && !can.window)
-		problems.push({
-			field: "context.at",
-			reason: `${harness} reports no context window, so it cannot take at '${context.at.percent}%'`,
-			fix: "Write at in tokens, such as 50000",
-		});
 	if (compact && context.max !== undefined && !can.compactions)
-		problems.push({
-			field: "context.max",
-			reason: `${harness} reports no compaction, so it cannot be capped`,
-			fix: "Drop context.max, or use strategy handoff",
-		});
-	return problems;
+		return [
+			{
+				field: "context.max",
+				reason: `${harness} reports no compaction, so it cannot be capped`,
+				fix: "Drop context.max, or use strategy handoff",
+			},
+		];
+	return [];
 }

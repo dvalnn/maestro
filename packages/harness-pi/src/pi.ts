@@ -11,6 +11,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
 	baselineOf,
+	type ContextPolicy,
 	type ContextSupport,
 	contextProblems,
 	finite,
@@ -24,12 +25,15 @@ import {
 	METRIC,
 	type Metrics,
 	observedOf,
+	PROFILE_TOKEN,
+	type RuntimeProblem,
 	resolveBin,
 	resultBytes,
 	SESSION_DIR,
 	type SubprocessAdapter,
 	subprocessHarness,
 	thinkingProblems,
+	windowEvents,
 } from "@maestro/host-repo/harness";
 import type { SandboxBackend } from "@maestro/host-repo/sandbox";
 
@@ -65,12 +69,46 @@ const IGNORED = new Set([
 	"tool_execution_update",
 ]);
 
-/** pi's stream reports no window, and maestro writes no compaction point into the agent dir it owns. */
 const CONTEXT_SUPPORT: ContextSupport = {
-	window: false,
 	compactions: true,
-	compact: false,
+	compact: true,
 };
+
+const SETTINGS_FILE = "settings.json";
+
+/**
+ * The owned agent dir's settings under `context`, given the model's `window`: under `compact`, pi's compaction on with
+ * the reserve that starts it at `at`, as pi compacts past its window less `reserveTokens` (pi docs/compaction.md).
+ * None otherwise, and when `at` is not below `window`, so pi keeps its defaults.
+ */
+function settingsOf(
+	context: ContextPolicy | undefined,
+	window: number | undefined,
+): JsonObject | undefined {
+	if (
+		context?.strategy !== "compact" ||
+		window === undefined ||
+		context.at >= window
+	)
+		return undefined;
+	return { compaction: { enabled: true, reserveTokens: window - context.at } };
+}
+
+/** A `compact` policy pi cannot take: its compaction point needs the model's window. */
+function compactProblems(
+	context: ContextPolicy | undefined,
+	window: number | undefined,
+	model: string,
+): RuntimeProblem[] {
+	if (context?.strategy !== "compact" || window !== undefined) return [];
+	return [
+		{
+			field: "context.strategy",
+			reason: `pi compacts at a reserve below the model's window, and no window is known for model '${model}'`,
+			fix: `Run maestro agent show ${PROFILE_TOKEN} --probe, or use strategy handoff`,
+		},
+	];
+}
 
 /** A compaction pi finished: neither aborted nor failed. */
 const compactionEvents = (e: JsonObject): HarnessEvent[] =>
@@ -169,14 +207,15 @@ const REPORTER_FILE = "maestro-environment.js";
 const REPORTER_PATH = `/${REPORTER_FILE}`;
 
 /**
- * A pi extension that, at the first run's start, appends what pi loaded as a custom entry, which `--mode json` streams
- * as `entry_appended`. `skills` follows pi's prompt-customizer example; `contextFiles` is read only when pi gives it.
+ * A pi extension that, at the first run's start, appends what pi loaded and the model's window as a custom entry, which
+ * `--mode json` streams as `entry_appended`. `skills` follows pi's prompt-customizer example, `window` its
+ * border-status-editor example; `contextFiles` is read only when pi gives it.
  */
 const REPORTER = `const names = (list, key) =>
 	Array.isArray(list) ? list.map((x) => (typeof x === "string" ? x : x?.[key])) : undefined;
 export default function (pi) {
 	let reported = false;
-	pi.on("before_agent_start", (event) => {
+	pi.on("before_agent_start", (event, ctx) => {
 		if (reported) return;
 		reported = true;
 		const options = event.systemPromptOptions ?? {};
@@ -184,17 +223,22 @@ export default function (pi) {
 			tools: pi.getActiveTools(),
 			skills: names(options.skills, "name"),
 			contextFiles: names(options.contextFiles, "path"),
+			window: ctx.model?.contextWindow,
 		});
 	});
 }
 `;
 
-/** The environment the reporter extension's entry carries; any other entry is no event. */
+/** The environment and window the reporter extension's entry carries; any other entry is no event. */
 function entryEvents(e: JsonObject): HarnessEvent[] {
 	const entry = isObject(e.entry) ? e.entry : {};
 	if (entry.type !== "custom" || entry.customType !== ENVIRONMENT_ENTRY)
 		return [];
-	return [{ kind: "environment", ...observedOf(entry.data) }];
+	const data = isObject(entry.data) ? entry.data : {};
+	return [
+		{ kind: "environment", ...observedOf(data) },
+		...windowEvents(data.window),
+	];
 }
 
 function eventsOf(e: JsonObject): HarnessEvent[] {
@@ -316,12 +360,20 @@ function credentials(agentDir: string): string[] {
 
 /**
  * Rebuilds `<owned>` from nothing, so a link the sandboxed agent planted in its place is unlinked, not followed, and
- * makes `<owned>/auth.json` a link to `auth`, or leaves it absent when `auth` is missing. Returns whether it linked.
- * pi writes `auth.json` in place, so a refresh writes through the link.
+ * fills it: `settings.json` when `settings` is given, and `auth.json` as a link to `auth`, left absent when `auth` is
+ * missing. Returns whether it linked. pi writes `auth.json` in place, so a refresh writes through the link.
  */
-function ownedDir(owned: string, auth: string): boolean {
+function ownedDir(
+	owned: string,
+	auth: string,
+	settings: JsonObject | undefined,
+): boolean {
 	rmSync(owned, { recursive: true, force: true });
 	mkdirSync(owned);
+	if (settings)
+		writeFileSync(join(owned, SETTINGS_FILE), JSON.stringify(settings), {
+			flag: "wx",
+		});
 	if (!existsSync(auth)) return false;
 	symlinkSync(auth, join(owned, AUTH_FILE));
 	return true;
@@ -355,7 +407,7 @@ export function piHarness(
 			bin ??= resolveBin(PI_BIN, options.bin);
 			reporter ??= stageReporter();
 			const owned = join(req.session.dir, SESSION_AGENT);
-			const linked = ownedDir(owned, auth);
+			const linked = ownedDir(owned, auth, settingsOf(req.context, req.window));
 			return {
 				argv: piArgv(bin, req),
 				stdin: req.prompt,
@@ -372,9 +424,10 @@ export function piHarness(
 	};
 	return {
 		...subprocessHarness(adapter, backend),
-		runtimeProblems: (runtime, context) => [
+		runtimeProblems: (runtime, context, window) => [
 			...thinkingProblems(adapter.name, THINKING_LEVELS, runtime),
 			...contextProblems(adapter.name, CONTEXT_SUPPORT, context),
+			...compactProblems(context, window, runtime.model),
 		],
 	};
 }

@@ -35,8 +35,10 @@ export {
 	OUTBOX,
 	type Output,
 	observedOf,
+	PROFILE_TOKEN,
 	type Runtime,
 	type RuntimeProblem,
 	SESSION_DIR,
 	thinkingProblems,
+	windowEvents,
 } from "./types";

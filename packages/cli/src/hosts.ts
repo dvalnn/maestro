@@ -123,7 +123,8 @@ export const DECLARED: ReadonlyMap<string, AgentEnvironment> = new Map([
  * The harnesses the CLI ships, their credentials read from `env`. The `stub` harness reports its environment, writes a
  * placeholder for each declared output, then replies an `ok` envelope, taking `MAESTRO_STUB_DELAY` per agent turn; a
  * stub turn fails when it is not a duration. With `MAESTRO_STUB_OUTPUTS=<dir>` it takes outputs and a verdict from
- * `<dir>/<instance id>/` or `<dir>/<node id>/`, and with `MAESTRO_STUB_ENVIRONMENT=<json>` the parts it reports loaded.
+ * `<dir>/<instance id>/` or `<dir>/<node id>/`, and with `MAESTRO_STUB_ENVIRONMENT=<json>` the parts it reports loaded
+ * and the model's `window`.
  */
 export const builtinHarnesses = (env: Record<string, string | undefined>) => [
 	...baselined(env).map(({ harness }) => harness),

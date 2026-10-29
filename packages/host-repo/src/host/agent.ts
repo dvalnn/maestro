@@ -27,7 +27,7 @@ import {
 	violations,
 } from "@maestro/ir";
 import {
-	type ContextAt,
+	type ContextPolicy,
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,
@@ -94,6 +94,7 @@ import {
 	type Session,
 } from "./store";
 import { continuation, digests, keepTurn, type Turn } from "./turn";
+import { contextIn, keepWindow } from "./windows";
 
 /** Between an instance id and a session's index in the id of a session a handoff starts, as in `<instance>#2`. */
 const SESSION_INDEX = "#";
@@ -265,7 +266,8 @@ export const sessionsOf = (max: number) => max + 1;
 
 /** A handoff policy, and what it takes to start the instance's next session. */
 type Handoff = {
-	at: ContextAt;
+	/** In tokens. */
+	at: number;
 	max: number;
 	/** The policy's config key, `profiles.<name>.context`. */
 	key: string;
@@ -286,29 +288,26 @@ type Talk = {
 	handoff?: Handoff;
 	/** What a compaction the harness reports does under the context policy. */
 	compacted: () => void;
+	/** Keeps the model's context window in tokens, as the harness reported it. */
+	window: (tokens: number) => void;
 };
 
-/** Whether a model call's prompt of `used` tokens, of a context `window` if known, reaches `at`. */
-const reaches = (
-	at: ContextAt,
-	{ used, window }: Extract<HarnessEvent, { kind: "context" }>,
-) =>
-	"tokens" in at
-		? used >= at.tokens
-		: window !== undefined && used * 100 >= at.percent * window;
-
-/** Feeds `e` to the limits and the context policy. Returns whether it shows the context reaching `at`. */
-function observe(talk: Talk, e: HarnessEvent, at: ContextAt | undefined) {
+/**
+ * Feeds `e` to the limits, the context policy and the kept windows. Returns whether it shows the context reaching `at`
+ * tokens.
+ */
+function observe(talk: Talk, e: HarnessEvent, at: number | undefined) {
 	if (e.kind === "usage") talk.guard.usage(e.metrics);
 	if (e.kind === "compaction") talk.compacted();
-	return e.kind === "context" && at !== undefined && reaches(at, e);
+	if (e.kind === "window") talk.window(e.tokens);
+	return e.kind === "context" && at !== undefined && e.used >= at;
 }
 
 /**
  * Runs one turn. Once a context event reaches `at`, the turn is cancelled, and reported `full` unless it settled with
  * its result first.
  */
-async function turn(talk: Talk, req: HarnessRequest, at?: ContextAt) {
+async function turn(talk: Talk, req: HarnessRequest, at?: number) {
 	const run = talk.harness.run(req);
 	talk.live.stop = () => run.cancel();
 	let full = false;
@@ -745,12 +744,12 @@ function toldOf({ config, profile }: Staging, extras: Extras): Run {
  */
 function policyOf(
 	profile: Profile,
+	context: ContextPolicy | undefined,
 	task: string,
 	mint: Handoff["mint"],
 	emit: HostContext["emit"],
 	guard: Limiter,
 ): Pick<Talk, "handoff" | "compacted"> {
-	const { context } = profile.fields;
 	const key = `${PROFILES}.${profile.name}.context`;
 	if (context?.strategy === "handoff")
 		return {
@@ -801,6 +800,8 @@ async function execute(
 		throw new Error(
 			`harness '${runtime.harness}' is not loaded. Set '${PROFILES}.${profile.name}.runtime.harness' to one of: ${listed(harnesses.map((h) => h.name))}`,
 		);
+	const policy = contextIn(profile, setup.store);
+	if ("message" in policy) throw new Error(`${policy.message}. ${policy.fix}`);
 	const target = requireTarget(setup);
 	const store = openTarget(setup.store, target.repo, target.sparse);
 	const seated = sessionOf(
@@ -878,7 +879,8 @@ async function execute(
 				session: { dir: session.dir, id: session.harnessId },
 				verdict: config.verdict,
 				instance: instance.id,
-				context: profile.fields.context,
+				context: policy.context,
+				window: policy.window,
 			};
 			const mint = (index: number) =>
 				mintSession(
@@ -896,7 +898,15 @@ async function execute(
 						staged: staging.staged,
 						kind,
 						guard,
-						...policyOf(profile, now.task, mint, context.emit, guard),
+						...policyOf(
+							profile,
+							policy.context,
+							now.task,
+							mint,
+							context.emit,
+							guard,
+						),
+						window: (tokens) => keepWindow(setup.store, runtime, tokens),
 					},
 					req,
 					session,

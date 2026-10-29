@@ -373,6 +373,21 @@ describe("agent show --probe", () => {
 		});
 	});
 
+	test("keeps the model's window the harness reports, which show then prints under Context and --json carries", async () => {
+		const w = await roster();
+		const shownJson = async () =>
+			json(await w.call(["agent", "show", "demo/reviewer", "--json"]));
+		expect((await shownJson()).window).toBeNull();
+		const silent = await w.call(["agent", "show", "demo/reviewer", "--probe"]);
+		expect(silent.out).toContain("\nContext\n? window      not reported\n");
+		const env = { MAESTRO_STUB_ENVIRONMENT: '{"window":200000}' };
+		const probed = await w.call(["agent", "show", "demo/reviewer", "--probe"], {
+			env,
+		});
+		expect(probed.out).toContain("\nContext\n  window      200000\n");
+		expect((await shownJson()).window).toBe(200_000);
+	});
+
 	test.each(["{not json", "[1]"])(
 		"a MAESTRO_STUB_ENVIRONMENT of %s is a usage error",
 		async (value) => {

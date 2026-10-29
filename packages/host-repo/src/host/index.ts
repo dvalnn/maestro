@@ -52,7 +52,8 @@ export {
 	HOST_NAME,
 } from "./config";
 export { REPORT } from "./frame";
-export { probe, probeRequest } from "./probe";
+export { type Probed, probe, probeRequest } from "./probe";
+export { keepWindow, windowOf } from "./windows";
 
 /** `<concert id>.<node instance id>`: concert ids hold no `.`, and the instance part is not empty. */
 const LANE_REF = /^[^.]+\.[^\s]+$/;

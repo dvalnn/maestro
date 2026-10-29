@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { HostSetup } from "@maestro/core/host";
 import type {
 	Harness,
+	HarnessEvent,
 	HarnessRequest,
 	ObservedEnvironment,
 } from "../harness/index";
@@ -11,13 +12,15 @@ import { sessionsOf, stage } from "./agent";
 import { repoSetup } from "./config";
 import { frame, type Run, WORK } from "./frame";
 import { pathBinds } from "./run-lines";
+import { contextIn } from "./windows";
 
 /** The user message of a probe. The harness reports its environment before the model answers it. */
 const PROBE_PROMPT = "Reply with ok.";
 
 /**
  * The request that starts `profile`'s agent as a concert would, under `scratch`, an empty directory: the same sandbox
- * binds, instructions and attachments, an empty lane, no checks and no outputs.
+ * binds, instructions and attachments, an empty lane, no checks and no outputs. A context policy that needs a window
+ * none is known for is left out, as the probe is what finds it.
  */
 export function probeRequest(
 	profile: Profile,
@@ -26,6 +29,7 @@ export function probeRequest(
 ): HarnessRequest {
 	const repo = repoSetup(setup);
 	const { runtime, instructions, readOnly, context } = profile.fields;
+	const policy = contextIn(profile, repo.store);
 	const attachments = Object.entries(profile.fields.attachments);
 	const made = (name: string) => {
 		const dir = join(scratch, name);
@@ -62,7 +66,7 @@ export function probeRequest(
 		outbox: made("out"),
 		outputs: [],
 		session: { dir: made("session"), id: crypto.randomUUID() },
-		context,
+		...(!("message" in policy) && policy),
 	};
 }
 
@@ -70,35 +74,49 @@ export function probeRequest(
 export const PROBE_TIMEOUT_MS = 60_000;
 const MS_PER_S = 1000;
 
+/** What a probe saw: the harness's environment report and the model's context window in tokens, each if reported. */
+export type Probed = { observed?: ObservedEnvironment; window?: number };
+
+/** Notes what `e` reports in `seen`. Returns whether `seen` then holds both the environment and the window. */
+function note(seen: Probed, e: HarnessEvent): boolean {
+	if (e.kind === "window") seen.window = e.tokens;
+	if (e.kind === "environment") {
+		const { kind: _, ...observed } = e;
+		seen.observed = observed;
+	}
+	return seen.observed !== undefined && seen.window !== undefined;
+}
+
 /**
- * Starts `harness` on `req` and kills it at its environment report, or once `timeoutMs` pass without one. Returns the
- * report, or nothing when the run ended without one.
- * @throws Error with the run's reason when it failed before it reported, or when the time ran out.
+ * Starts `harness` on `req` and kills it once it has reported both its environment and the model's window, or once
+ * `timeoutMs` pass. Returns what it reported, nothing when it reported neither before its run ended.
+ * @throws Error with the run's reason when it failed before it reported, or when the time ran out with no report.
  */
 export async function probe(
 	harness: Harness,
 	req: HarnessRequest,
 	timeoutMs = PROBE_TIMEOUT_MS,
-): Promise<ObservedEnvironment | undefined> {
+): Promise<Probed> {
 	const run = harness.run(req);
 	let late = false;
 	const timer = setTimeout(() => {
 		late = true;
 		void run.cancel();
 	}, timeoutMs);
+	const seen: Probed = {};
 	try {
-		for await (const e of run.events) {
-			if (e.kind !== "environment") continue;
-			await run.cancel();
-			const { kind: _, ...observed } = e;
-			return observed;
-		}
+		for await (const e of run.events)
+			if (note(seen, e)) {
+				await run.cancel();
+				return seen;
+			}
+		if (Object.keys(seen).length) return seen;
 		if (late)
 			throw new Error(`no startup report within ${timeoutMs / MS_PER_S}s`);
 		const result = await run.result;
 		if (result.outcome === "failed")
 			throw new Error(result.reason ?? "the harness failed");
-		return undefined;
+		return seen;
 	} finally {
 		clearTimeout(timer);
 	}

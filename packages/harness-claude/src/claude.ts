@@ -22,6 +22,7 @@ import {
 	type SubprocessAdapter,
 	subprocessHarness,
 	thinkingProblems,
+	windowEvents,
 } from "@maestro/host-repo/harness";
 import type { SandboxBackend } from "@maestro/host-repo/sandbox";
 
@@ -86,9 +87,7 @@ const UNMANAGED_OFF_ENV = {
 /** Turns claude's own compaction off, so a handoff resets the session first. */
 const COMPACTION_OFF_ENV = { DISABLE_AUTO_COMPACT: "1" };
 
-/** Claude reports its window only on the closing `result` line, too late for a turn's trigger. */
 const CONTEXT_SUPPORT: ContextSupport = {
-	window: false,
 	compactions: true,
 	compact: true,
 };
@@ -231,20 +230,47 @@ function systemEvents(e: JsonObject): HarnessEvent[] {
 }
 
 /**
+ * The window a result's `modelUsage` gives the run's `model`, as `system/init` named it, or the one model it lists when
+ * none is named after it.
+ */
+function resultWindow(
+	e: JsonObject,
+	model: string | undefined,
+): HarnessEvent[] {
+	const usage = isObject(e.modelUsage) ? e.modelUsage : {};
+	const models = Object.values(usage);
+	const entry =
+		model !== undefined && isObject(usage[model])
+			? usage[model]
+			: models.length === 1
+				? models[0]
+				: undefined;
+	return windowEvents(isObject(entry) ? entry.contextWindow : undefined);
+}
+
+/** What a run's final line reports, after what the run's messages reported. */
+type Ran = {
+	authFailed: boolean;
+	counted: Metrics;
+	lastText?: string;
+	/** The model `system/init` named. */
+	model?: string;
+};
+
+/**
  * One run's final line. `is_error` also rides on `subtype: "success"`, so both are checked. Its text is dropped when it
  * repeats the last assistant text.
  */
 function resultEvents(
 	e: JsonObject,
-	authFailed: boolean,
-	counted: Metrics,
-	lastText: string | undefined,
+	{ authFailed, counted, lastText, model }: Ran,
 ): HarnessEvent[] {
 	const failed = e.is_error === true || e.subtype !== "success";
 	const reply = typeof e.result === "string" ? e.result : "";
 	const reason = reply || `claude ended with ${String(e.subtype)}`;
 	return [
 		{ kind: "usage", metrics: growth(resultMetrics(e), counted) },
+		...resultWindow(e, model),
 		...(reply === lastText ? [] : [{ kind: "text" as const, text: reply }]),
 		failed
 			? {
@@ -260,15 +286,14 @@ function resultEvents(
 /**
  * Maps `claude -p --output-format stream-json` lines to events. An assistant message is repeated once per content
  * block, so its usage is counted once per message id, as growth, and its prompt size reported once. The closing
- * `result` line adds what the messages missed: subagents, side models and streamed output tokens. A run that ends
- * without one reports the messages' usage alone, which undercounts output. Unknown types pass through as raw, never
- * fail.
+ * `result` line adds what the messages missed: subagents, side models and streamed output tokens, and the model's
+ * window. A run that ends without one reports the messages' usage alone, which undercounts output. Unknown types pass
+ * through as raw, never fail.
  */
 function parser(): (e: JsonObject) => HarnessEvent[] {
 	const seen = new Map<string, Metrics>();
 	const counted: Metrics = {};
-	let authFailed = false;
-	let lastText: string | undefined;
+	const ran: Ran = { authFailed: false, counted };
 	const countUsage = (message: JsonObject): HarnessEvent[] => {
 		const id = String(message.id);
 		const now = sumUsage(
@@ -288,19 +313,21 @@ function parser(): (e: JsonObject) => HarnessEvent[] {
 	const assistantEvents = (message: JsonObject): HarnessEvent[] => {
 		const blocks = Array.isArray(message.content) ? message.content : [];
 		const events = blocks.flatMap(blockEvent);
-		for (const e of events) if (e.kind === "text") lastText = e.text;
+		for (const e of events) if (e.kind === "text") ran.lastText = e.text;
 		return [...countUsage(message), ...events];
 	};
 	const eventsOf = (e: JsonObject): HarnessEvent[] => {
 		switch (e.type) {
 			case "assistant":
-				authFailed ||= e.error === AUTH_FAILED;
+				ran.authFailed ||= e.error === AUTH_FAILED;
 				return isObject(e.message) ? assistantEvents(e.message) : [];
 			case "result":
-				return resultEvents(e, authFailed, counted, lastText);
+				return resultEvents(e, ran);
 			case "user":
 				return userEvents(e.message);
 			case "system":
+				if (e.subtype === "init" && typeof e.model === "string")
+					ran.model = e.model;
 				return systemEvents(e);
 			default:
 				return [{ kind: "raw", data: e }];
@@ -355,16 +382,14 @@ function claudeArgv(
 const AUTOCOMPACT_MIN = 100_000;
 const AUTOCOMPACT_MAX = 1_000_000;
 
-/** Under `compact`, `at` as claude's compaction window, which pre-flight keeps in tokens and in range. */
+/** Under `compact`, `at` as claude's compaction window, which pre-flight keeps in range. */
 const compactionWindow = (context: ContextPolicy | undefined): string[] =>
-	context?.strategy === "compact" && "tokens" in context.at
-		? ["--autocompact", String(context.at.tokens)]
-		: [];
+	context?.strategy === "compact" ? ["--autocompact", String(context.at)] : [];
 
 /** A `compact` window claude would not take. */
 function windowProblems(context: ContextPolicy | undefined): RuntimeProblem[] {
-	if (context?.strategy !== "compact" || !("tokens" in context.at)) return [];
-	const { tokens } = context.at;
+	if (context?.strategy !== "compact") return [];
+	const tokens = context.at;
 	if (tokens >= AUTOCOMPACT_MIN && tokens <= AUTOCOMPACT_MAX) return [];
 	return [
 		{

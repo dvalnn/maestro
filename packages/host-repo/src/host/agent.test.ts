@@ -32,6 +32,7 @@ import {
 	tmp,
 	toyTarget,
 } from "./test-support";
+import { keepWindow, windowOf } from "./windows";
 
 afterEach(cleanup);
 
@@ -525,7 +526,7 @@ describe("agent probe", () => {
 			req,
 		);
 
-		expect(observed).toEqual({ tools: ["sh"] });
+		expect(observed).toEqual({ observed: { tools: ["sh"] } });
 		expect(seen?.readOnly).toContainEqual({ src: shared });
 		expect(seen?.readOnly).toContainEqual({ src: bin });
 		expect(seen?.readOnly).toContainEqual({
@@ -815,9 +816,10 @@ describe("agent context", () => {
 		"compact-capped",
 		`${RUNTIME}context: { strategy: compact, at: 100, max: 1 }\n`,
 	);
-	const full = (used = 100, window?: number): StubStep => ({
-		emit: { type: "context", used, ...(window && { window }) },
+	const full = (used = 100): StubStep => ({
+		emit: { type: "context", used },
 	});
+	const STUB = { harness: "stub", model: "none" };
 	const note: StubStep = {
 		write: "/session/handoff.md",
 		content: "half done\n",
@@ -841,7 +843,8 @@ Change no other file. Your reply is not read.`;
 					? next
 					: first;
 
-	async function handed(name: string, script: Script) {
+	/** Runs profile `name` on `script`, with `window` kept for the stub's model when given. */
+	async function handed(name: string, script: Script, window?: number) {
 		const { host, requests } = stubHost(scripted(script));
 		const ir = irOf(
 			host,
@@ -856,6 +859,8 @@ Change no other file. Your reply is not read.`;
 			"x",
 		);
 		const config = configOf(toyTarget());
+		const { store } = setupOf(config);
+		if (window !== undefined) keepWindow(store, STUB, window);
 		const { concert, dir, recordPath } = await start(host, ir, config);
 		const result = await concert.done;
 		const { concertDirs, openRecord } = await import("@maestro/core/perform");
@@ -870,21 +875,27 @@ Change no other file. Your reply is not read.`;
 			const at = join(concertDirs(dir, concert.id).artifacts, ref.path, file);
 			return readFileSync(at, "utf8");
 		};
-		return { id: concert.id, result, instance, progress, requests, staged };
+		return {
+			id: concert.id,
+			result,
+			instance,
+			progress,
+			requests,
+			staged,
+			store,
+		};
 	}
 
-	test.each<[string, string, { used: number; window?: number }]>([
-		["a token trigger", "handoff-tokens", { used: 100 }],
-		["a percentage trigger", "handoff-percent", { used: 50, window: 200 }],
+	test.each<[string, string, number, number | undefined]>([
+		["a token trigger", "handoff-tokens", 100, undefined],
+		["a percentage trigger of the window kept", "handoff-percent", 50, 200],
 	])(
 		"%s hands the task to a fresh session through a note",
-		async (_, name, context) => {
+		async (_, name, used, window) => {
 			const { id, result, instance, progress, requests, staged } = await handed(
 				name,
-				{
-					first: [full(context.used, context.window), hang],
-					handoff: [full(1000), note],
-				},
+				{ first: [full(used), hang], handoff: [full(1000), note] },
+				window,
 			);
 			expect(result).toMatchObject({ outcome: "ok" });
 			const [first, handoff, fresh] = requests;
@@ -916,7 +927,7 @@ go`);
 			expect(
 				existsSync(join(fresh?.session.dir ?? "", "..", "turn.json")),
 			).toBe(true);
-			expect(progress).toContainEqual({ kind: "context", ...context });
+			expect(progress).toContainEqual({ kind: "context", used });
 			expect(progress.filter((e) => e.kind === "session")).toEqual([
 				{ kind: "session", id: `${id}.x`, index: 1, ended: "handoff" },
 				{ kind: "session", id: session, index: 2, ended: "settled" },
@@ -980,11 +991,49 @@ go`);
 		expect(requests[3]?.session).toEqual(requests[2]?.session);
 	});
 
-	test("a context below its trigger runs on in its session", async () => {
-		const { result, requests } = await handed("handoff-percent", {
-			first: [full(49, 200), OK],
-		});
+	test("a context below its trigger runs on in its session, given the window kept, and the window the run reports is kept", async () => {
+		const reported = { emit: { type: "environment", window: 400 } };
+		const { result, requests, store } = await handed(
+			"handoff-percent",
+			{ first: [full(49), reported, OK] },
+			200,
+		);
 		expect(result).toMatchObject({ outcome: "ok" });
+		expect(requests).toHaveLength(1);
+		expect(requests[0]).toMatchObject({
+			context: { strategy: "handoff", at: 50, max: 1 },
+			window: 200,
+		});
+		expect(windowOf(store, STUB)).toBe(400);
+	});
+
+	test("an agent whose trigger is not below the window an earlier run kept fails before it runs", async () => {
+		profile("windowed", RUNTIME);
+		const { host, requests } = stubHost(() => [
+			{ emit: { type: "environment", window: 100 } },
+			OK,
+		]);
+		const ir = irOf(
+			host,
+			["w", "r"].map((id) => ({
+				id,
+				kind: "agent" as const,
+				config: agentOn(
+					{ mode: "fresh" },
+					id === "w" ? "windowed" : "handoff-tokens",
+				),
+				literals: { prompt: "go" },
+				...(id === "r" && { session: "w" }),
+			})),
+			"r",
+		);
+		const { result } = await performed(host, ir, configOf(toyTarget()));
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: expect.stringContaining(
+				"profiles.handoff-tokens.context.at: at 100 tokens is at or past the stub model 'none' window of 100 tokens. Set at below 100",
+			),
+		});
 		expect(requests).toHaveLength(1);
 	});
 

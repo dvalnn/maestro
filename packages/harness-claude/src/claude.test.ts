@@ -69,7 +69,7 @@ const read = (req: HarnessRequest, file: string) =>
 	readFileSync(join(req.outbox, file), "utf8");
 
 describe("stand-in claude", () => {
-	test("the recorded 2.1.302 run is read into tools, usage, prompt sizes and a reply", async () => {
+	test("the recorded 2.1.302 run is read into tools, usage, prompt sizes, its model's window and a reply", async () => {
 		const req = request("write hello.txt");
 		const unknown = '{"type":"future_event","extra":{"a":1}}';
 		const compacted =
@@ -80,6 +80,11 @@ describe("stand-in claude", () => {
 		const block = JSON.parse(lines[first] as string);
 		block.message.content = [{ type: "text", text: "on it" }];
 		lines.splice(first + 1, 0, JSON.stringify(block));
+		// A side model beside the one system/init named, whose window is not the run's.
+		const last = lines.findIndex((l) => l.includes('"type":"result"'));
+		const closing = JSON.parse(lines[last] as string);
+		closing.modelUsage["claude-side"] = { contextWindow: 200_000 };
+		lines[last] = JSON.stringify(closing);
 		const run = claudeHarness(standIn([...lines, compacted, unknown])).run(req);
 		const seen = await drain(run.events);
 		const result = await run.result;
@@ -113,10 +118,28 @@ describe("stand-in claude", () => {
 			{ kind: "context", used: 19416 },
 			{ kind: "compaction" },
 		]);
+		expect(seen.filter((e) => e.kind === "window")).toEqual([
+			{ kind: "window", tokens: 1_000_000 },
+		]);
 		expect(seen.at(-1)).toEqual({
 			kind: "raw",
 			data: { type: "future_event", extra: { a: 1 } },
 		});
+	});
+
+	test("a result whose several modelUsage entries match no model init named reports no window", async () => {
+		const lines = fixture();
+		const last = lines.findIndex((l) => l.includes('"type":"result"'));
+		const closing = JSON.parse(lines[last] as string);
+		closing.modelUsage = {
+			"claude-side": { contextWindow: 200_000 },
+			"claude-other": { contextWindow: 300_000 },
+		};
+		lines[last] = JSON.stringify(closing);
+		const run = claudeHarness(standIn(lines)).run(request("x"));
+		expect((await drain(run.events)).some((e) => e.kind === "window")).toBe(
+			false,
+		);
 	});
 
 	test.each(["Task", "Agent"])(
@@ -322,7 +345,7 @@ describe("stand-in claude", () => {
 	});
 
 	test("a handoff policy turns claude's compaction off, and a compact one sets its window", async () => {
-		const at = { tokens: 150_000 };
+		const at = 150_000;
 		const handoff = request("x", {
 			context: { strategy: "handoff", at, max: 2 },
 		});
@@ -487,7 +510,7 @@ describe("stand-in claude", () => {
 	});
 });
 
-test("a runtime's thinking must be one of claude's effort levels, its model is not checked, and its context trigger is in tokens, a compact one in claude's window", () => {
+test("a runtime's thinking must be one of claude's effort levels, its model is not checked, and a compact trigger is in claude's window", () => {
 	const harness = claudeHarness();
 	const runtime = { harness: "claude", model: "anything" };
 	expect(harness.runtimeProblems?.({ ...runtime, thinking: "xhigh" })).toEqual(
@@ -504,28 +527,15 @@ test("a runtime's thinking must be one of claude's effort levels, its model is n
 	expect(
 		harness.runtimeProblems?.(runtime, {
 			strategy: "compact",
-			at: { tokens: 150_000 },
+			at: 150_000,
 			max: 3,
 		}),
 	).toEqual([]);
-	expect(
-		harness.runtimeProblems?.(runtime, {
-			strategy: "handoff",
-			at: { percent: 25 },
-			max: 2,
-		}),
-	).toEqual([
-		{
-			field: "context.at",
-			reason: "claude reports no context window, so it cannot take at '25%'",
-			fix: "Write at in tokens, such as 50000",
-		},
-	]);
 	for (const tokens of [99_999, 1_000_001])
 		expect(
 			harness.runtimeProblems?.(runtime, {
 				strategy: "compact",
-				at: { tokens },
+				at: tokens,
 			}),
 		).toEqual([
 			{
@@ -537,7 +547,7 @@ test("a runtime's thinking must be one of claude's effort levels, its model is n
 	expect(
 		harness.runtimeProblems?.(runtime, {
 			strategy: "handoff",
-			at: { tokens: 50_000 },
+			at: 50_000,
 			max: 2,
 		}),
 	).toEqual([]);

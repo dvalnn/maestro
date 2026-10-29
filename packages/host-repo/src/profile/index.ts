@@ -140,7 +140,7 @@ export type ProfileFields = {
 	readOnly: string[];
 	/** `timeout` in milliseconds. */
 	limits: { timeout?: number; tokens?: number };
-	context?: ContextPolicy;
+	context?: ContextPolicy<ContextAt>;
 };
 
 /** A profile as it resolved. */
@@ -503,7 +503,11 @@ const contextAt = (at: number | string): ContextAt =>
 		: { percent: Number(PERCENT.exec(at)?.[1]) };
 
 /** `context`, which passed `contextErrors`. */
-function contextOf({ strategy, at, max }: WrittenContext): ContextPolicy {
+function contextOf({
+	strategy,
+	at,
+	max,
+}: WrittenContext): ContextPolicy<ContextAt> {
 	if (strategy === "compact")
 		return { strategy, at: contextAt(at), ...(max !== undefined && { max }) };
 	if (max === undefined)

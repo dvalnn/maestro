@@ -165,8 +165,9 @@ _Avoid_: fork
 files and compaction. Declared by the profile and its adapter's clean baseline; observed from the harness's startup
 report. Not the host's environment.
 
-**Probe**: Starting a profile's harness as a concert would and stopping it at its startup report, to compare its
-observed agent environment against the declared one. A mismatch is a fault of inspection, never of a concert.
+**Probe**: Starting a profile's harness as a concert would and stopping it once it reports its startup environment and
+its model's context window, to compare the observed agent environment against the declared one and keep the window. A
+mismatch is a fault of inspection, never of a concert.
 
 **Instructions**: An agent's standing text, appended to its harness's own system prompt from a staged file. The task
 goes separately, as the user message. _Avoid_: identity

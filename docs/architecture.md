@@ -493,15 +493,21 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   agent.
 - A profile takes an optional context policy (AT-07), `context: { strategy, at, max }`: `strategy` is `handoff` or
   `compact`, `at` a prompt size in tokens or a `"<n>%"` share of the model's window, 1 to 99, and `max` a whole number
-  of at least 1, required for `handoff`. Without one the harness compacts on its own terms. Pre-flight refuses, naming
-  the profile, the field and the harness:
-  - a percentage on a harness that reports no window per model call, as neither claude nor pi does;
+  of at least 1, required for `handoff`. Without one the harness compacts on its own terms. Pre-flight turns a
+  percentage into tokens, rounded down, of the window kept for the profile's harness and model, and refuses, naming the
+  profile, the field and the harness:
+  - a percentage of a model whose window is not kept; the fix is `maestro agent show <profile> --probe`, or `at` in
+    tokens;
   - a capped `compact` on a harness that reports no compaction;
-  - `compact` on pi, whose compaction point is a setting of its agent dir, which maestro owns but writes no settings into; the fix is `handoff`;
-  - a `compact` `at` outside claude's compaction window of 100000 to 1000000 tokens.
+  - a `compact` `at` outside claude's compaction window of 100000 to 1000000 tokens;
+  - `compact` on pi of a model whose window is not kept;
+  - an `at` in tokens, or a percentage once turned into tokens, not below the window kept.
 
-  Each model call's prompt size, input and cache read and write together, reaches the record as a `context` progress
-  event `{ used, window? }`, and each compaction as a `compaction` event.
+  The window is kept per harness and model as the profile names it, in `windows.json` of the host store, outside the
+  record, which pre-flight cannot read. `agent show --probe` and every agent turn keep the window the harness reports:
+  claude's `result` line under `modelUsage`, pi's through its reporter extension. Pre-flight never probes, so it spends
+  nothing. Each model call's prompt size, input and cache read and write together, reaches the record as a `context`
+  progress event `{ used }`, the window as a `window` event `{ tokens }`, and each compaction as a `compaction` event.
 
 - Under `handoff`, a model call whose prompt reaches `at` cancels the turn, unless the turn settles with its result
   first, which then stands. One more turn in the same session asks for a handoff note at `/session/handoff.md`; `at`
@@ -513,8 +519,10 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   `ended` being `handoff`, `settled` or `failed` with its reason. The fresh session gets its own last turn, and an agent
   continuing a session counts only its own resets. Claude's compaction is off under `handoff`; pi's stays at its
   near-full default, so `at` must sit below it, and a compaction is recorded as a fault, never failing the agent.
-- Under `compact`, `at` sets the harness's compaction window (claude's `--autocompact`), and a compaction past `max`
-  fails the agent. Limits cover every session, handoff turn and compaction of the instance.
+- Under `compact`, `at` sets the harness's compaction point: claude's `--autocompact`, and on pi `compaction.enabled`
+  and a `compaction.reserveTokens` of the window less `at` in the `settings.json` of the agent dir maestro owns. A high
+  `at` leaves pi a small `reserveTokens`, which also bounds the summary of its compaction. A compaction past `max` fails
+  the agent. Limits cover every session, handoff turn and compaction of the instance.
 
 **Sessions**
 
@@ -635,17 +643,19 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - An adapter also streams the harness's startup report as an `environment` event: what it loaded, each part by name, a
   part it does not report left out. Claude's is its `system/init` line; pi's comes from a maestro-owned extension the
   adapter loads with `--extension` beside `--no-extensions`. The host records it with the agent's other events, and
-  never enforces it. `maestro agent show --probe` starts a profile's agent as a concert would and stops it at that
-  report, to check it against the adapter's declared baseline (GLOSSARY: Probe).
+  never enforces it. `maestro agent show --probe` starts a profile's agent as a concert would and stops it once it has
+  that report and the model's window, to check the report against the adapter's declared baseline (GLOSSARY: Probe) and
+  keep the window. Claude reports its window only when a turn ends, so its probe runs one short turn.
 - The baseline names an agent's tools: claude launches with `--tools Bash,Read,Write,Edit` and pi with
   `--tools read,bash,edit,write`, so a tool a harness release adds to its defaults never reaches an agent. A probe
   faults each tool loaded beyond that list and each one in it not loaded.
-- pi runs on an agent dir maestro owns, `sessions/<id>/harness/agent`, through `PI_CODING_AGENT_DIR`. It holds only
+- pi runs on an agent dir maestro owns, `sessions/<id>/harness/agent`, through `PI_CODING_AGENT_DIR`. It holds
   `auth.json`, a link to the user's (`$PI_CODING_AGENT_DIR/auth.json` when set, else `~/.pi/agent/auth.json`), bound
-  read-write in the sandbox so a token refresh writes through. Nothing else of the user's pi dir reaches an agent: no
-  `SYSTEM.md`, `APPEND_SYSTEM.md`, `settings.json` or `models.json`. Without a user `auth.json` pi starts and reports no
-  key. Each agent's owned dir holds its own `auth.json.lock`, so concurrent agents and the user's pi do not lock each
-  other when refreshing a token; a lost write means logging in again.
+  read-write in the sandbox so a token refresh writes through, and under a `compact` policy maestro's own
+  `settings.json`. Nothing else of the user's pi dir reaches an agent: no `SYSTEM.md`, `APPEND_SYSTEM.md`,
+  `settings.json` or `models.json`. Without a user `auth.json` pi starts and reports no key. Each agent's owned dir
+  holds its own `auth.json.lock`, so concurrent agents and the user's pi do not lock each other when refreshing a token;
+  a lost write means logging in again.
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
 **Host validation rules**

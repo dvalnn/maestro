@@ -176,7 +176,7 @@ describe("stand-in pi", () => {
 		});
 	});
 
-	test("the reporter extension is bound read-only outside the session dir, and its entry, as pi's json mode streams it, is the environment event; other entries are not", async () => {
+	test("the reporter extension is bound read-only outside the session dir, and its entry, as pi's json mode streams it, is the environment and window events; other entries are not", async () => {
 		const report = {
 			type: "entry_appended",
 			entry: {
@@ -185,7 +185,11 @@ describe("stand-in pi", () => {
 				parentId: null,
 				timestamp: "2026-10-29T00:00:00.000Z",
 				customType: "maestro-environment",
-				data: { tools: ["read", "bash", "edit", "write"], skills: [] },
+				data: {
+					tools: ["read", "bash", "edit", "write"],
+					skills: [],
+					window: 200_000,
+				},
 			},
 		};
 		const other = { ...report, entry: { ...report.entry, customType: "x" } };
@@ -197,19 +201,22 @@ describe("stand-in pi", () => {
 		symlinkSync(target, join(req.session.dir, "maestro-environment.js"));
 		const run = piHarness(standIn([...lines, ...rest])).run(req);
 		const seen = await drain(run.events);
-		expect(seen.filter((e) => e.kind === "environment")).toEqual([
+		expect(
+			seen.filter((e) => e.kind === "environment" || e.kind === "window"),
+		).toEqual([
 			{
 				kind: "environment",
 				tools: ["read", "bash", "edit", "write"],
 				skills: [],
 			},
+			{ kind: "window", tokens: 200_000 },
 		]);
 		expect(seen.filter((e) => e.kind === "raw")).toEqual([]);
 		expect(readFileSync(target, "utf8")).toBe("kept");
 		// The reporter as pi would load it, against a fake of the extension API.
 		const reporter = join(req.outbox, "reporter.js");
 		const appended: unknown[] = [];
-		let started: (event: unknown) => void = () => {};
+		let started: (event: unknown, ctx: unknown) => void = () => {};
 		(await import(reporter)).default({
 			on: (_: string, handler: typeof started) => {
 				started = handler;
@@ -221,8 +228,9 @@ describe("stand-in pi", () => {
 			skills: [{ name: "jj" }],
 			contextFiles: [{ path: "/agent/AGENTS.md" }],
 		};
-		started({ systemPromptOptions: options });
-		started({ systemPromptOptions: options });
+		const ctx = { model: { id: "m", contextWindow: 200_000 } };
+		started({ systemPromptOptions: options }, ctx);
+		started({ systemPromptOptions: options }, ctx);
 		expect(appended).toEqual([
 			[
 				"maestro-environment",
@@ -230,6 +238,7 @@ describe("stand-in pi", () => {
 					tools: ["read", "bash"],
 					skills: ["jj"],
 					contextFiles: ["/agent/AGENTS.md"],
+					window: 200_000,
 				},
 			],
 		]);
@@ -328,6 +337,64 @@ describe("stand-in pi", () => {
 		).toThrow(
 			`pi config dir does not exist: ${join(homedir(), ".maestro-no-such-pi-dir")}.`,
 		);
+	});
+
+	test("under compact, the owned agent dir's settings start pi's compaction at `at`, its window less a reserve; another policy leaves pi's defaults", async () => {
+		const { bin, agentDir } = standIn(
+			fixture(),
+			`cat "$PI_CODING_AGENT_DIR/settings.json" > /out/settings 2>/dev/null || true`,
+		);
+		const session = { dir: tmp("session"), id: crypto.randomUUID() };
+		const compact = request("x", {
+			session,
+			context: { strategy: "compact", at: 150_000 },
+			window: 200_000,
+		});
+		await piHarness({ bin, agentDir }).run(compact).result;
+		expect(
+			JSON.parse(readFileSync(join(compact.outbox, "settings"), "utf8")),
+		).toEqual({
+			compaction: { enabled: true, reserveTokens: 50_000 },
+		});
+
+		const handoff = request("x", {
+			session,
+			context: { strategy: "handoff", at: 150_000, max: 1 },
+			window: 200_000,
+		});
+		await piHarness({ bin, agentDir }).run(handoff).result;
+		expect(readFileSync(join(handoff.outbox, "settings"), "utf8")).toBe("");
+	});
+
+	test("settings are written to a fresh owned dir, through no link the agent planted, and not for an at below no window", async () => {
+		const user = tmp("user");
+		writeFileSync(join(user, "settings.json"), "{}");
+		const { bin, agentDir } = standIn(
+			fixture(),
+			`cat "$PI_CODING_AGENT_DIR/settings.json" > /out/settings 2>/dev/null || true`,
+		);
+		const session = { dir: tmp("session"), id: crypto.randomUUID() };
+		const owned = join(session.dir, "agent");
+		mkdirSync(owned);
+		symlinkSync(join(user, "settings.json"), join(owned, "settings.json"));
+		const compact = request("x", {
+			session,
+			context: { strategy: "compact", at: 150_000 },
+			window: 200_000,
+		});
+		await piHarness({ bin, agentDir }).run(compact).result;
+		expect(readFileSync(join(user, "settings.json"), "utf8")).toBe("{}");
+		expect(readFileSync(join(compact.outbox, "settings"), "utf8")).toContain(
+			"reserveTokens",
+		);
+
+		const past = request("x", {
+			session,
+			context: { strategy: "compact", at: 200_000 },
+			window: 200_000,
+		});
+		await piHarness({ bin, agentDir }).run(past).result;
+		expect(readFileSync(join(past.outbox, "settings"), "utf8")).toBe("");
 	});
 
 	test("a session version other than the pinned one fails the run, naming it", async () => {
@@ -438,7 +505,7 @@ describe("stand-in pi", () => {
 	});
 });
 
-test("a runtime's thinking must be one of pi's levels, its model is not checked, and its context policy is a handoff in tokens", () => {
+test("a runtime's thinking must be one of pi's levels, its model is not checked, and a compact policy needs the model's window", () => {
 	const harness = piHarness({ agentDir: tmpdir() });
 	const runtime = { harness: "pi", model: "any/model" };
 	expect(harness.runtimeProblems?.({ ...runtime, thinking: "off" })).toEqual(
@@ -451,34 +518,21 @@ test("a runtime's thinking must be one of pi's levels, its model is not checked,
 			fix: "Use one of: off, minimal, low, medium, high, xhigh, max",
 		},
 	]);
-	const tokens = { tokens: 50_000 };
 	expect(
 		harness.runtimeProblems?.(runtime, {
 			strategy: "handoff",
-			at: tokens,
+			at: 50_000,
 			max: 2,
 		}),
 	).toEqual([]);
-	expect(
-		harness.runtimeProblems?.(runtime, {
-			strategy: "handoff",
-			at: { percent: 25 },
-			max: 2,
-		}),
-	).toEqual([
-		{
-			field: "context.at",
-			reason: "pi reports no context window, so it cannot take at '25%'",
-			fix: "Write at in tokens, such as 50000",
-		},
-	]);
-	expect(
-		harness.runtimeProblems?.(runtime, { strategy: "compact", at: tokens }),
-	).toEqual([
+	const compact = { strategy: "compact", at: 50_000 } as const;
+	expect(harness.runtimeProblems?.(runtime, compact, 200_000)).toEqual([]);
+	expect(harness.runtimeProblems?.(runtime, compact)).toEqual([
 		{
 			field: "context.strategy",
-			reason: "pi takes no compaction point from maestro",
-			fix: "Use strategy handoff",
+			reason:
+				"pi compacts at a reserve below the model's window, and no window is known for model 'any/model'",
+			fix: "Run maestro agent show <profile> --probe, or use strategy handoff",
 		},
 	]);
 });

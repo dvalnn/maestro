@@ -25,6 +25,7 @@ import {
 	contextProblems,
 	type Harness,
 	type HarnessRequest,
+	PROFILE_TOKEN,
 	type StubStep,
 	stubHarness,
 	thinkingProblems,
@@ -100,10 +101,10 @@ const CHECKS = {
 	missing: "no-such-command",
 };
 
-/**
- * A harness named `other`, whose one thinking level is `low`, that reports neither a context window nor a compaction,
- * and must never be run.
- */
+/** The `at` in tokens that `other` refuses, with a fix naming the profile. */
+const NAMING_AT = 777;
+
+/** A harness named `other`, whose one thinking level is `low`, that reports no compaction, and must never be run. */
 const other: Harness = {
 	name: "other",
 	run: () => {
@@ -111,11 +112,16 @@ const other: Harness = {
 	},
 	runtimeProblems: (runtime, context) => [
 		...thinkingProblems("other", ["low"], runtime),
-		...contextProblems(
-			"other",
-			{ window: false, compactions: false, compact: true },
-			context,
-		),
+		...contextProblems("other", { compactions: false, compact: true }, context),
+		...(context?.strategy === "handoff" && context.at === NAMING_AT
+			? [
+					{
+						field: "context.at" as const,
+						reason: "other takes no such at",
+						fix: `Run maestro agent show ${PROFILE_TOKEN}`,
+					},
+				]
+			: []),
 	],
 };
 

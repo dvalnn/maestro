@@ -10,6 +10,7 @@ import {
 	heldNames,
 	type Inspection,
 	inspectProfile,
+	keepWindow,
 	type Profile,
 	type ProfileRoot,
 	probe,
@@ -18,6 +19,7 @@ import {
 	readablePath,
 	resolveProfile,
 	sourceWords,
+	windowOf,
 } from "@maestro/host-repo";
 import {
 	type AgentEnvironment,
@@ -293,10 +295,24 @@ function limitsLines(s: Inspection, look: Look): string[] {
 	return rows.length ? [paint("bold", "Limits", look.color), ...rows] : [];
 }
 
-function contextLines(s: Inspection, look: Look): string[] {
+/**
+ * The context policy's rows, then the model's window in tokens where one is known, or `? not reported` after a probe
+ * that kept none.
+ */
+function contextLines(
+	s: Inspection,
+	window: number | undefined,
+	look: Look,
+	probed: boolean,
+): string[] {
 	const rows = Object.entries(s.context ?? {}).map(([key, value]) =>
 		row(key, sourced(String(value), wordsAt(s, `context.${key}`), look), look),
 	);
+	if (window !== undefined) rows.push(row("window", String(window), look));
+	else if (probed)
+		rows.push(
+			`${paint("dim", "?", look.color)} ${row("window", "not reported", look).slice(INDENT.length)}`,
+		);
 	return rows.length ? [paint("bold", "Context", look.color), ...rows] : [];
 }
 
@@ -409,6 +425,7 @@ function environmentLines(
 /** `s` as sections with bold headers and dim keys, each value at column 15, a section with nothing left out. */
 async function showText(
 	s: Inspection,
+	window: number | undefined,
 	look: Look,
 	report?: Report,
 ): Promise<string> {
@@ -419,7 +436,7 @@ async function showText(
 		await attachmentLines(s, look),
 		readOnlyLines(s, look),
 		limitsLines(s, look),
-		contextLines(s, look),
+		contextLines(s, window, look, report?.how === "probed"),
 		environmentLines(s.environment.declared, s.runtime.harness, look, report),
 	];
 	return sections
@@ -551,31 +568,39 @@ async function ls(setup: Setup, deps: Deps, values: Values): Promise<number> {
 	return EXIT.ok;
 }
 
+/** The repo host's setup, none when the host is not loaded. */
+function repoSetupOf(session: Session) {
+	const host = session.deps.hosts.find((h) => h.name === HOST_NAME);
+	return host && setupOf(session, host);
+}
+
 /**
- * What the harness of `profile` reports when started as a concert would start it.
+ * What the harness of `profile` reports when started as a concert would start it. The model's window it reports is
+ * kept for pre-flight.
  * @throws CliError when the harness is not loaded, or its run fails or times out before it reports.
  */
 async function probed(profile: Profile, session: Session): Promise<Report> {
 	const { deps } = session;
-	const { harness: wanted } = profile.fields.runtime;
+	const { runtime } = profile.fields;
 	const harnesses = builtinHarnesses(deps.env);
-	const harness = harnesses.find((h) => h.name === wanted);
-	const host = deps.hosts.find((h) => h.name === HOST_NAME);
-	if (!harness || !host)
+	const harness = harnesses.find((h) => h.name === runtime.harness);
+	const setup = repoSetupOf(session);
+	if (!harness || !setup)
 		throw usageError(
-			`harness '${wanted}' is not loaded`,
+			`harness '${runtime.harness}' is not loaded`,
 			`Set 'profiles.${profile.name}.runtime.harness' to one of: ${harnesses.map((h) => h.name).join(", ")}`,
 		);
-	deps.stderr(`probing ${wanted}…`);
+	deps.stderr(`probing ${runtime.harness}…`);
 	const scratch = await mkdtemp(join(tmpdir(), "maestro-probe-"));
 	try {
-		const req = probeRequest(profile, setupOf(session, host), scratch);
-		const observed = await probe(harness, req);
+		const req = probeRequest(profile, setup, scratch);
+		const { observed, window } = await probe(harness, req);
+		if (window !== undefined) keepWindow(setup.store, runtime, window);
 		return { how: "probed", ...(observed && { observed }) };
 	} catch (error) {
 		if (error instanceof CliError) throw error;
 		throw new CliError(
-			`probe of ${profile.name} failed: ${messageOf(error)}\nRun the profile once, or check ${wanted}'s login`,
+			`probe of ${profile.name} failed: ${messageOf(error)}\nRun the profile once, or check ${runtime.harness}'s login`,
 		);
 	} finally {
 		await rm(scratch, { recursive: true, force: true });
@@ -607,17 +632,25 @@ async function show(
 	const profile = await resolveProfile(name, setup);
 	const s = inspectProfile(profile, setup.roots, DECLARED);
 	const report = probing ? await probed(profile, session) : undefined;
+	const store = repoSetupOf(session)?.store;
+	const window =
+		store === undefined ? undefined : windowOf(store, profile.fields.runtime);
 	const { declared } = s.environment;
 	const places = { roots: setup.roots, home: deps.env.HOME };
 	if (isSet(values, "json"))
 		deps.stdout(
-			jsonOf({ ...s, environment: environmentJson(declared, report) }),
+			jsonOf({
+				...s,
+				window: window ?? null,
+				environment: environmentJson(declared, report),
+			}),
 		);
 	else if (isSet(values, "yaml")) deps.stdout(showYaml(s, places));
 	else
 		deps.stdout(
 			await showText(
 				s,
+				window,
 				{ ...places, color: colorOf(deps, values).out },
 				report,
 			),

@@ -136,9 +136,13 @@ files it names, in `.maestro/profiles/<name>/` of the workspace, `$XDG_CONFIG_HO
 user, or a pack's `profiles/`, as `<pack>/<name>`. The highest of those holding the name wins it whole. `readOnly` is
 set only in config, as `profiles.<name>.readOnly`. `maestro agent ls` lists every profile with the root that wins it,
 and `maestro agent show <profile>` prints what one resolves to, naming the layer behind each value a config file, preset
-or `-c` set. `--probe` starts its harness as a concert would and stops it at its startup report, marking each part of
-the environment `✓`, `✗` or `?` (not reported), and exits 1 on a fault; it spends a startup, so with a real harness
-probe only on the user's go. `maestro agent show --concert <id> <node>` checks what an agent of a concert recorded.
+or `-c` set. `--probe` starts its harness as a concert would and stops it once it reports its environment and its
+model's context window, marking each part of the environment `✓`, `✗` or `?` (not reported), and exits 1 on a fault; it
+spends a startup, and on claude one short turn, so with a real harness probe only on the user's go. The window it finds
+is kept, and every agent turn refreshes it: a profile's `context.at` may then be a share of it, such as `"50%"`, which
+pre-flight turns into tokens. Pre-flight refuses a percentage, and pi's `compact`, for a model whose window is not kept;
+probe the profile once, or write `at` in tokens. `maestro agent show --concert <id> <node>` checks what an agent of a
+concert recorded.
 
 ### Layers
 

@@ -44,13 +44,15 @@ maestro wait <concert> --timeout 15m
     agent paths as trailing comments, then the environment as a second document; `--json` gives the same fields with
     absolute paths, and each value's source as its layer with its file and line or its `-c` flag, as `config --json`
     does. An unknown profile is a usage error naming the nearest one. `--probe` starts the harness as a concert would
-    (the same sandbox, flags, instructions and attachments, an empty scratch lane, no checks), stops it at its startup
-    report, failing after 60s without one, and checks each part: `✓` matched, `✗` a fault with its detail under the row,
-    `?` not reported. The fault count comes last; a fault exits 1. `--json` adds `environment.observed` and
-    `environment.checks`. Claude reports through its `system/init` line, pi through a maestro extension loaded with
-    `--extension` beside `--no-extensions`. Every agent session records its harness's report:
-    `agent show --concert <id> <node>` checks the node's latest one the same way, its faults marked `recorded`, and
-    exits 0.
+    (the same sandbox, flags, instructions and attachments, an empty scratch lane, no checks), stops it once it has
+    reported its environment and its model's context window, failing after 60s without a report, and checks each part:
+    `✓` matched, `✗` a fault with its detail under the row, `?` not reported. The fault count comes last, and a fault
+    exits 1. `--json` adds `environment.observed` and `environment.checks`. Claude reports its environment through its
+    `system/init` line and its window on its closing `result` line, so its probe runs one short turn; pi reports both
+    through a maestro extension loaded with `--extension` beside `--no-extensions`. The window is kept per harness and
+    model, and every agent turn refreshes it; Context shows it where known, and `--json` carries it as `window`. Every
+    agent session records its harness's report: `agent show --concert <id> <node>` checks the node's latest one the same
+    way, its faults marked `recorded`, and exits 0.
 
 [^watch]:
     On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls, result sizes with `ok`
@@ -318,7 +320,7 @@ stub agent. Set it again on a resume.
 
 The stub reports at startup that it loads nothing, as a real harness reports its environment. `MAESTRO_STUB_ENVIRONMENT`
 holds a JSON object whose parts replace that report, such as `{"mcp":["github"]}`, to rehearse a fault for
-`agent show --probe` or `--concert`; a part set to `null` goes unreported.
+`agent show --probe` or `--concert`; a part set to `null` goes unreported, and `window` reports a model's window.
 
 A pack is operator-trusted code: `maestro` loads and executes what `packs` lists, and every directory under
 `$XDG_DATA_HOME/maestro/packs/`, with the user's own permissions.
@@ -330,6 +332,7 @@ A pack is operator-trusted code: `maestro` loads and executes what `packs` lists
 | `record.db`               | The record of concerts, node instances and events (SQLite). |
 | `concerts/<id>/`          | One concert's artifact area and scratch directories.        |
 | `hosts/repo/<target id>/` | The repo host's lanes, versions and sessions, per target.   |
+| `hosts/repo/windows.json` | Each model's context window, by harness and model.          |
 
 `compose --out <file>` of a bare file writes its code as `<file stem>.bundle.js` beside the IR, so the IR loads on its
 own. A pack's modules are made relative to the IR.

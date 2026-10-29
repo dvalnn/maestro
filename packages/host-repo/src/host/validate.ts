@@ -18,7 +18,7 @@ import {
 	MAESTRO_TYPE,
 	type PortRef,
 } from "@maestro/ir";
-import type { Harness } from "../harness/index";
+import { type Harness, PROFILE_TOKEN } from "../harness/index";
 import {
 	PROFILES,
 	type Profile,
@@ -52,6 +52,7 @@ import {
 	SESSION_TYPE,
 	useOneOf,
 } from "./config";
+import { contextIn } from "./windows";
 
 /** The entry, a directory or a file, that makes a directory a git repository. */
 const GIT_ENTRY = ".git";
@@ -632,6 +633,39 @@ async function resolveAll(
 }
 
 /**
+ * What `profile` asks that `harness` cannot give, its context policy in tokens of the model's window kept under host
+ * store `store`; a percentage `at` with no window kept is refused alone.
+ */
+function harnessProblems(
+	profile: Profile,
+	harness: Harness,
+	store: string,
+): Diagnostic[] {
+	const at = (field: string) => sourceOf(profile, field.split("."));
+	const policy = contextIn(profile, store);
+	if ("message" in policy)
+		return [
+			configDiagnostic(
+				"HOST.runtime",
+				at("context.at"),
+				policy.message,
+				policy.fix,
+			),
+		];
+	const { runtime } = profile.fields;
+	const problems =
+		harness.runtimeProblems?.(runtime, policy.context, policy.window) ?? [];
+	return problems.map((p) =>
+		configDiagnostic(
+			"HOST.runtime",
+			at(p.field),
+			`${PROFILES}.${profile.name}.${p.field}: ${p.reason}`,
+			p.fix.replaceAll(PROFILE_TOKEN, profile.name),
+		),
+	);
+}
+
+/**
  * What `profile` asks that the loaded `harnesses` cannot give, and its read-only binds and attachments that
  * `bindProblems` refuses.
  */
@@ -641,28 +675,19 @@ function profileProblems(
 	setup: RepoSetup,
 ): Diagnostic[] {
 	const { name, fields } = profile;
-	const { runtime, context } = fields;
-	const key = (field: string) => `${PROFILES}.${name}.${field}`;
-	const at = (field: string) => sourceOf(profile, field.split("."));
+	const { runtime } = fields;
 	const harness = harnesses.find((h) => h.name === runtime.harness);
 	if (!harness)
 		return [
 			configDiagnostic(
 				"HOST.harness",
-				at("runtime.harness"),
+				sourceOf(profile, ["runtime", "harness"]),
 				`profile ${name} runs on harness '${runtime.harness}', which is not loaded`,
-				`Set '${key("runtime.harness")}' to one of: ${listed(harnesses.map((h) => h.name))}`,
+				`Set '${PROFILES}.${name}.runtime.harness' to one of: ${listed(harnesses.map((h) => h.name))}`,
 			),
 		];
 	return [
-		...(harness.runtimeProblems?.(runtime, context) ?? []).map((p) =>
-			configDiagnostic(
-				"HOST.runtime",
-				at(p.field),
-				`${key(p.field)}: ${p.reason}`,
-				p.fix,
-			),
-		),
+		...harnessProblems(profile, harness, setup.store),
 		...bindProblems(
 			setup,
 			fields.readOnly,

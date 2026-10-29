@@ -209,14 +209,21 @@ test("the stub writes each declared output to the outbox before it replies", asy
 	expect(readFileSync(join(req.outbox, "b.md"), "utf8")).toBe("stub\n");
 });
 
-test("a probe stops the harness at its environment report, finds none in a run that settles without one, and fails with a run that fails first or never reports", async () => {
+test("a probe stops the harness once it has reported its environment and window, keeps what it reported before its run ended, and fails with a run that fails first or never reports", async () => {
 	const report = { type: "environment", tools: ["sh"], extra: 1 };
 	const reported = await probe(
-		stubHarness([{ emit: report }, { hang: true }]),
+		stubHarness([{ emit: { ...report, window: 200_000 } }, { hang: true }]),
 		request("x"),
 	);
-	expect(reported).toEqual({ tools: ["sh"] });
-	expect(await probe(stubHarness([]), request("x"))).toBeUndefined();
+	expect(reported).toEqual({ observed: { tools: ["sh"] }, window: 200_000 });
+	expect(
+		await probe(
+			stubHarness([{ emit: report }, { hang: true }]),
+			request("x"),
+			50,
+		),
+	).toEqual({ observed: { tools: ["sh"] } });
+	expect(await probe(stubHarness([]), request("x"))).toEqual({});
 	const failing = stubHarness([
 		{ emit: { type: "fault", reason: "no token" } },
 	]);

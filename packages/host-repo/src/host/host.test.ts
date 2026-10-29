@@ -346,6 +346,10 @@ describe("compose", () => {
 		"runtime: { harness: other, model: none }\ncontext: { strategy: compact, at: 150000, max: 3 }\n",
 	);
 	profile(
+		"naming",
+		"runtime: { harness: other, model: none }\ncontext: { strategy: handoff, at: 777, max: 1 }\n",
+	);
+	profile(
 		"bound",
 		"runtime: { harness: stub, model: none }\nreadOnly: [/etc]\n",
 	);
@@ -395,13 +399,22 @@ describe("compose", () => {
 			"profiles.deep.runtime.thinking: other has no thinking level 'max'",
 		],
 		[
-			"a context trigger in percent on a harness that reports no window",
+			"a context trigger in percent of a model whose window is not known",
 			agentOn(fresh, "shared"),
 			"HOST.runtime",
-			"Write at in tokens, such as 50000",
+			"Run maestro agent show shared --probe, or write at in tokens",
 			toyTarget,
 			{},
-			"profiles.shared.context.at: other reports no context window, so it cannot take at '25%'",
+			"profiles.shared.context.at: no context window is known for other model 'none'",
+		],
+		[
+			"a problem whose fix names the profile",
+			agentOn(fresh, "naming"),
+			"HOST.runtime",
+			"Run maestro agent show naming",
+			toyTarget,
+			{},
+			"profiles.naming.context.at: other takes no such at",
 		],
 		[
 			"a capped compaction on a harness that reports none",

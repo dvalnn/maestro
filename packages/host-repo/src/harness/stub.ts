@@ -14,6 +14,7 @@ import {
 	METRIC,
 	OUTBOX,
 	observedOf,
+	windowEvents,
 } from "./types";
 
 /** The text of every placeholder string and Markdown file. */
@@ -58,7 +59,11 @@ function script(steps: StubStep[]) {
 	].join("\n");
 }
 
-const parse = (e: JsonObject): HarnessEvent[] => [eventOf(e)];
+/** An `environment` line also reports its `window`, as pi's reporter entry does. */
+const parse = (e: JsonObject): HarnessEvent[] => [
+	eventOf(e),
+	...(e.type === "environment" ? windowEvents(e.window) : []),
+];
 
 function eventOf(e: JsonObject): HarnessEvent {
 	switch (e.type) {
@@ -83,11 +88,7 @@ function eventOf(e: JsonObject): HarnessEvent {
 				},
 			};
 		case "context":
-			return {
-				kind: "context",
-				used: Number(e.used),
-				...(e.window !== undefined && { window: Number(e.window) }),
-			};
+			return { kind: "context", used: Number(e.used) };
 		case "compaction":
 			return { kind: "compaction" };
 		case "environment":
@@ -97,9 +98,8 @@ function eventOf(e: JsonObject): HarnessEvent {
 	}
 }
 
-/** The stub honours every context policy: its script steps fake the window and compactions. */
+/** The stub honours every context policy: its script steps fake compactions. */
 const CONTEXT_SUPPORT: ContextSupport = {
-	window: true,
 	compactions: true,
 	compact: true,
 };
