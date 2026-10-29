@@ -1,6 +1,7 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { closest } from "@maestro/core";
 import {
 	CORE_PATHS,
 	type Composed,
@@ -28,9 +29,11 @@ const APP = "maestro";
 /** The directory that makes its parent a workspace. */
 const WORKSPACE_DIR = ".maestro";
 const CONFIG_FILE = "config.yaml";
-/** The directory of config profiles in `.maestro/`. */
+/** The directory of presets in `.maestro/` and in the user config directory. */
+const PRESETS_DIR = "presets";
+/** The directory of profiles in `.maestro/`, where a preset file is refused and named for moving. */
 const PROFILES_DIR = "profiles";
-const PROFILE_EXTENSION = ".yaml";
+const PRESET_EXTENSION = ".yaml";
 /** The prefix of a name `ls -a` alone shows. */
 const HIDDEN = ".";
 /** The file of variables the CLI loads beside the user config file. */
@@ -59,9 +62,9 @@ export const deferredKeys = (hosts: readonly Host[]) =>
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
-/** A command's `--profile` name and each `-c` as given, in order. */
+/** A command's `--preset` name and each `-c` as given, in order. */
 export type Overrides = {
-	profile?: string;
+	preset?: string;
 	config?: readonly string[];
 	/** The short id of the concert they were recorded with, when a resume reapplies them. */
 	recorded?: string;
@@ -71,7 +74,7 @@ export type ConfigRequest = {
 	cwd: string;
 	env: Environment;
 	hosts: readonly Host[];
-	/** Layered above the config files in order, each as its profile, then each of its `-c` in order. */
+	/** Layered above the config files in order, each as its preset, then each of its `-c` in order. */
 	overrides?: readonly Overrides[];
 };
 
@@ -82,7 +85,7 @@ export type ConfigRequest = {
 export type PackDir = { dir: string; listedBy?: string };
 
 export type LoadedConfig = {
-	/** Every layer, lowest first: the default, then each config file found, profile and `-c`. */
+	/** Every layer, lowest first: the default, then each config file found, preset and `-c`. */
 	layers: readonly Layer[];
 	composed: Composed;
 	core: CoreConfig;
@@ -186,59 +189,94 @@ async function fileLayer(
 	return parseLayer(await found.text(), { file, base, layer, paths });
 }
 
-/** The code of a refused `--profile`. */
-const CFG_PROFILE = "CFG.profile";
+/** The code of a refused `--preset`. */
+const CFG_PRESET = "CFG.preset";
 /** The code of a refused `-c`. */
 const CFG_FLAG = "CFG.flag";
 const NEW_CONCERT = "perform the composition as a new concert";
-const NO_WORKSPACE = `needs a workspace, and no directory from here up holds ${WORKSPACE_DIR}/`;
 
 const refused = (code: string, message: string, hint: string) =>
 	new ConfigError([configDiagnostic(code, undefined, message, hint)]);
 
-/** The layer of profile `name`; `recorded` is the short id of the concert a resume reapplies it from. */
-async function profileLayer(
+/**
+ * A directory presets are looked up in, the base its presets' relative paths resolve against, and the directory whose
+ * `<name>.yaml` a missing preset's fix says to move into it.
+ */
+type PresetDir = { dir: string; base: string; moveFrom?: string };
+
+const lookedIn = (dirs: readonly PresetDir[]) =>
+	dirs.map(({ dir }) => dir).join(" or ");
+
+/** The names of the presets in `dirs`, a directory that cannot be read holding none. */
+async function presetNames(dirs: readonly PresetDir[]): Promise<string[]> {
+	const files = await Promise.all(
+		dirs.map(({ dir }) => readdir(dir).catch(() => [])),
+	);
+	return files
+		.flat()
+		.filter((file) => file.endsWith(PRESET_EXTENSION))
+		.map((file) => file.slice(0, -PRESET_EXTENSION.length));
+}
+
+/**
+ * The layer of preset `name`, from the first of `dirs` that holds `<name>.yaml`; `recorded` is the short id of the
+ * concert a resume reapplies it from.
+ * @throws ConfigError when `name` is a path, or no directory of `dirs` holds it.
+ */
+async function presetLayer(
 	name: string,
-	workspace: string | undefined,
+	dirs: readonly PresetDir[],
 	paths: readonly KeyPath[],
 	recorded?: string,
 ): Promise<Layer> {
-	const by =
-		recorded && `concert ${recorded} was performed with --profile ${name}`;
+	const file = `${name}${PRESET_EXTENSION}`;
+	const looked = lookedIn(dirs);
 	if (basename(name) !== name)
 		throw refused(
-			CFG_PROFILE,
-			`--profile takes a name, not a path: '${name}'`,
-			`Name a profile in ${WORKSPACE_DIR}/${PROFILES_DIR}/, without its ${PROFILE_EXTENSION}`,
+			CFG_PRESET,
+			`--preset takes a name, not a path: '${name}'`,
+			`Name a preset in ${looked}, without its ${PRESET_EXTENSION}`,
 		);
-	if (!workspace)
-		throw by
-			? refused(
-					CFG_PROFILE,
-					`${by}, which ${NO_WORKSPACE}`,
-					`Resume from inside its workspace, or ${NEW_CONCERT}`,
-				)
-			: refused(
-					CFG_PROFILE,
-					`--profile ${name} ${NO_WORKSPACE}`,
-					"Change to a directory inside a workspace, or drop --profile",
-				);
-	const dir = join(workspace, WORKSPACE_DIR, PROFILES_DIR);
-	const file = join(dir, `${name}${PROFILE_EXTENSION}`);
-	const found = await fileLayer(file, "profile", paths, workspace);
-	if (!found)
-		throw by
-			? refused(
-					CFG_PROFILE,
-					`${by}, and ${file} does not exist`,
-					`Restore ${file}, or ${NEW_CONCERT}`,
-				)
-			: refused(
-					CFG_PROFILE,
-					`--profile ${name} names no file: ${file} does not exist`,
-					`Create ${file}, or name a profile in ${dir}`,
-				);
-	return found;
+	for (const { dir, base } of dirs) {
+		const found = await fileLayer(join(dir, file), "preset", paths, base);
+		if (found) return found;
+	}
+	const moved = await moveFix(file, dirs);
+	if (recorded)
+		throw refused(
+			CFG_PRESET,
+			`concert ${recorded} was performed with --preset ${name}, and no ${file} is in ${looked}`,
+			moved ?? `Restore ${file}, or ${NEW_CONCERT}`,
+		);
+	throw refused(
+		CFG_PRESET,
+		`--preset ${name} names no file in ${looked}`,
+		moved ?? (await unknownFix(name, dirs)),
+	);
+}
+
+/** The fix that moves `file` into its preset directory, when one of `dirs` names a directory holding it. */
+async function moveFix(
+	file: string,
+	dirs: readonly PresetDir[],
+): Promise<string | undefined> {
+	for (const { dir, moveFrom } of dirs) {
+		const stale = moveFrom && join(moveFrom, file);
+		if (stale && (await Bun.file(stale).exists()))
+			return `Move ${stale} to ${dir}/`;
+	}
+	return undefined;
+}
+
+/** The fix for preset `name` that no directory of `dirs` holds: the nearest name there, else where to create it. */
+async function unknownFix(
+	name: string,
+	dirs: readonly PresetDir[],
+): Promise<string> {
+	const near = closest(name, await presetNames(dirs));
+	return near
+		? `Did you mean --preset ${near}?`
+		: `Create ${name}${PRESET_EXTENSION} in ${lookedIn(dirs)}`;
 }
 
 /** `<key>=<value>`, split at the first `=` outside double quotes. */
@@ -317,17 +355,17 @@ function overrideLayer(
 	});
 }
 
-/** The layers of `overrides` in order: each one's profile, then each of its `-c` in order. */
+/** The layers of `overrides` in order: each one's preset, then each of its `-c` in order. */
 async function overrideLayers(
 	overrides: readonly Overrides[],
-	workspace: string | undefined,
+	presetDirs: readonly PresetDir[],
 	base: string,
 	paths: readonly KeyPath[],
 ): Promise<Layer[]> {
 	const layers: Layer[] = [];
-	for (const { profile, config = [], recorded } of overrides) {
-		if (profile !== undefined)
-			layers.push(await profileLayer(profile, workspace, paths, recorded));
+	for (const { preset, config = [], recorded } of overrides) {
+		if (preset !== undefined)
+			layers.push(await presetLayer(preset, presetDirs, paths, recorded));
 		layers.push(
 			...config.map((arg) => overrideLayer(arg, base, paths, recorded)),
 		);
@@ -341,14 +379,14 @@ async function overrideLayers(
  * - the user file, `$XDG_CONFIG_HOME/maestro/config.yaml`, when it exists;
  * - the workspace file, `.maestro/config.yaml` in the nearest directory from the cwd up holding `.maestro/`, when it
  *   exists;
- * - for each of `overrides` in order, the profile its `--profile` names, `.maestro/profiles/<name>.yaml` in that
- *   workspace, then a layer per `-c <key>=<value>`, in order.
+ * - for each of `overrides` in order, the preset its `--preset` names, `<name>.yaml` in the workspace's
+ *   `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`, then a layer per `-c <key>=<value>`, in order.
  *
- * Relative paths in the user file resolve against its directory, those in the workspace file, a profile and a `-c`
- * against the workspace root, or the cwd outside a workspace. The installed packs are those `packs` lists, then each
- * directory under `$XDG_DATA_HOME/maestro/packs`, each once.
+ * Relative paths in the user file and a user preset resolve against the user config directory, those in the workspace
+ * file, a workspace preset and a `-c` against the workspace root, or the cwd outside a workspace. The installed packs
+ * are those `packs` lists, then each directory under `$XDG_DATA_HOME/maestro/packs`, each once.
  *
- * @throws ConfigError for a file or `-c` that cannot be parsed or layered, a missing profile, or core or CLI keys off
+ * @throws ConfigError for a file or `-c` that cannot be parsed or layered, a missing preset, or core or CLI keys off
  * their schemas.
  */
 export async function loadConfig({
@@ -362,6 +400,18 @@ export async function loadConfig({
 	const packsDir = join(dataRoot, PACKS_DIR);
 	const userDir = join(xdg(env, "XDG_CONFIG_HOME", ".config"), APP);
 	const paths = pathKeys(hosts);
+	const presetDirs = [
+		...(workspace
+			? [
+					{
+						dir: join(workspace, WORKSPACE_DIR, PRESETS_DIR),
+						base: workspace,
+						moveFrom: join(workspace, WORKSPACE_DIR, PROFILES_DIR),
+					},
+				]
+			: []),
+		{ dir: join(userDir, PRESETS_DIR), base: userDir },
+	];
 	const files = [
 		await fileLayer(join(userDir, CONFIG_FILE), "user", paths),
 		workspace &&
@@ -378,7 +428,7 @@ export async function loadConfig({
 		...files.filter((l): l is Layer => Boolean(l)),
 		...(await overrideLayers(
 			overrides,
-			workspace,
+			presetDirs,
 			workspace ?? resolve(cwd),
 			paths,
 		)),

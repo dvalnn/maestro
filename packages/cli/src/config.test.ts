@@ -25,7 +25,8 @@ async function tree(files: Record<string, string>) {
 
 const USER = "xdg/maestro/config.yaml";
 const WORKSPACE = "ws/.maestro/config.yaml";
-const PROFILE = "ws/.maestro/profiles/fast.yaml";
+const PRESET = "ws/.maestro/presets/fast.yaml";
+const USER_PRESET = "xdg/maestro/presets/fast.yaml";
 
 async function refusal(promise: Promise<unknown>) {
 	const error = await promise.catch((e: unknown) => e);
@@ -34,15 +35,16 @@ async function refusal(promise: Promise<unknown>) {
 }
 
 describe("config files", () => {
-	test("layer default, user, workspace, profile and -c, each value keeping its layer, and its file and line or flag", async () => {
+	test("layer default, user, workspace, preset and -c, the workspace preset taking its name whole over the user's, each value keeping its layer, and its file and line or flag", async () => {
 		const { root, request } = await tree({
 			[USER]: "concurrency: 2\ncaps:\n  instances: 10\npacks: [packs/a]\n",
 			[WORKSPACE]: "concurrency: 3\ncaps:\n  calls: 4\ntarget:\n  repo: app\n",
-			[PROFILE]: "\nconcurrency: 5\ndataRoot: data\n",
+			[PRESET]: "\nconcurrency: 5\ndataRoot: data\n",
+			[USER_PRESET]: "concurrency: 6\ncaps:\n  calls: 9\n",
 			"ws/sub/deeper/.keep": "",
 		});
 		const config = await loadConfig(
-			request({ overrides: [{ profile: "fast", config: ["concurrency=7"] }] }),
+			request({ overrides: [{ preset: "fast", config: ["concurrency=7"] }] }),
 		);
 		expect(config.core).toEqual({
 			concurrency: 7,
@@ -67,7 +69,7 @@ describe("config files", () => {
 			{ layer: "flag", flag: "-c concurrency=7" },
 			{ layer: "user", file: join(root, USER), line: 3 },
 			{ layer: "workspace", file: join(root, WORKSPACE), line: 3 },
-			{ layer: "profile", file: join(root, PROFILE), line: 3 },
+			{ layer: "preset", file: join(root, PRESET), line: 3 },
 		]);
 	});
 
@@ -113,31 +115,77 @@ describe("config files", () => {
 		});
 	});
 
+	test("outside a workspace, take a preset from the user's presets, its paths relative to the user config directory", async () => {
+		const { root, request } = await tree({
+			[USER_PRESET]: "concurrency: 6\ndataRoot: data\n",
+		});
+		const config = await loadConfig(
+			request({ cwd: root, overrides: [{ preset: "fast" }] }),
+		);
+		expect(config.core).toMatchObject({
+			concurrency: 6,
+			dataRoot: join(root, "xdg/maestro/data"),
+		});
+		expect(sourceOf(config.composed, ["concurrency"])).toEqual({
+			layer: "preset",
+			file: join(root, USER_PRESET),
+			line: 1,
+		});
+	});
+
 	test.each([
 		[
-			"a profile with no file",
-			"fast",
+			"a preset in neither directory, naming both",
+			"slow",
 			"ws/sub",
-			"--profile fast names no file",
+			"--preset slow names no file in WS or XDG",
+			"Create slow.yaml in WS or XDG",
 		],
 		[
-			"a profile name that is a path",
+			"a preset left in .maestro/profiles/, with where to move it",
+			"old",
+			"ws/sub",
+			"--preset old names no file in WS or XDG",
+			"Move WS/../profiles/old.yaml to WS/",
+		],
+		[
+			"a near preset name, with the name it is near",
+			"fats",
+			"ws/sub",
+			"--preset fats names no file in WS or XDG",
+			"Did you mean --preset fast?",
+		],
+		[
+			"a preset outside a workspace, naming the user's presets alone",
+			"slow",
+			"",
+			"--preset slow names no file in XDG",
+			"Create slow.yaml in XDG",
+		],
+		[
+			"a preset name that is a path",
 			"../config",
 			"ws/sub",
-			"--profile takes a name, not a path: '../config'",
+			"--preset takes a name, not a path: '../config'",
+			"Name a preset in WS or XDG, without its .yaml",
 		],
-		[
-			"a profile outside a workspace",
-			"fast",
-			"",
-			"--profile fast needs a workspace",
-		],
-	])("refuse %s", async (_, profile, cwd, message) => {
-		const { root, request } = await tree({ "ws/.maestro/.keep": "" });
-		const found = await refusal(
-			loadConfig(request({ overrides: [{ profile }], cwd: join(root, cwd) })),
-		);
-		expect(found).toEqual([["CFG.profile", expect.stringContaining(message)]]);
+	])("refuse %s", async (_, preset, cwd, message, hint) => {
+		const { root, request } = await tree({
+			"ws/.maestro/profiles/old.yaml": "{}\n",
+			[USER_PRESET]: "{}\n",
+		});
+		const dirs = (text: string) =>
+			text
+				.replaceAll("WS/../profiles", join(root, "ws/.maestro/profiles"))
+				.replaceAll("WS", join(root, "ws/.maestro/presets"))
+				.replaceAll("XDG", join(root, "xdg/maestro/presets"));
+		const error = await loadConfig(
+			request({ overrides: [{ preset }], cwd: join(root, cwd) }),
+		).catch((e: unknown) => e);
+		if (!(error instanceof ConfigError)) throw error;
+		expect(error.diagnostics.map((d) => [d.code, d.message, d.hint])).toEqual([
+			["CFG.preset", dirs(message), dirs(hint)],
+		]);
 	});
 
 	test("a -c reads its value as YAML at its key, merge tags and a quoted key holding '.' among them, a path relative to the workspace root, else the cwd", async () => {

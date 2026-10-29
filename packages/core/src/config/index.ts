@@ -26,7 +26,7 @@ export type LayerName =
 	| "directory"
 	| "user"
 	| "workspace"
-	| "profile"
+	| "preset"
 	| "flag";
 
 /** Where a config value came from: its layer, and the file and line when a file set it, or the flag as typed. */
@@ -46,7 +46,7 @@ export type KeyPath = readonly string[];
 export type Composed = {
 	values: Readonly<Record<string, unknown>>;
 	sources: readonly { path: KeyPath; source: Source; under?: Under }[];
-	/** The mappings a `--profile` or `-c` layer replaced whole with `!replace`, which no layer above merged back into. */
+	/** The mappings a `--preset` or `-c` layer replaced whole with `!replace`, which no layer above merged back into. */
 	replaced?: readonly KeyPath[];
 	/** The layers merged, lowest first. */
 	layers: readonly Layer[];
@@ -394,7 +394,7 @@ export const valuesLayer = (
 	source: Source,
 ): Layer => treeOfValue(values, source) as Layer;
 
-const COMMAND_LINE: readonly LayerName[] = ["profile", "flag"];
+const COMMAND_LINE: readonly LayerName[] = ["preset", "flag"];
 
 function mergedMap(
 	beneath: Merged | undefined,
@@ -590,7 +590,7 @@ function setAt(root: Record<string, unknown>, path: KeyPath, value: unknown) {
 	at[path[path.length - 1] as string] = value;
 }
 
-/** The part of a config the `--profile` and `-c` layers set. */
+/** The part of a config the `--preset` and `-c` layers set. */
 export type CommandLine = {
 	/** Their values at their key paths; a list comes whole, never by item. */
 	values: Record<string, unknown>;
@@ -598,7 +598,7 @@ export type CommandLine = {
 	replaced: readonly KeyPath[];
 };
 
-/** The part of `config` that the `--profile` and `-c` layers set, and nothing a file or default set. */
+/** The part of `config` that the `--preset` and `-c` layers set, and nothing a file or default set. */
 export function commandLineOf(config: Composed): CommandLine {
 	const values: Record<string, unknown> = {};
 	for (const { path, source } of config.sources) {

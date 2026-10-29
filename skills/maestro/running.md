@@ -2,7 +2,7 @@
 
 Reference for the verbs after bootstrap, grouped by verb, with what their output means. Every flag not named here is in
 `maestro <verb> --help`. Each verb but `cs` takes `--json` (one JSON document on stdout), and each takes
-`--profile <name>`, `-c <key>=<value>` (repeatable) and `--debug`.
+`--preset <name>`, `-c <key>=<value>` (repeatable) and `--debug`.
 
 Output is colored only on a terminal stream. `--no-color`, `NO_COLOR` or `TERM=dumb` turns it off, so a command you read
 is plain either way.
@@ -154,8 +154,8 @@ The versions before it are sealed in the host's own git store.
 
 What SKILL.md's Recover section leaves out:
 
-- **Resume**: it reapplies the `--profile` and `-c` the concert was performed with, over the config files as they are
-  now; a `--profile` or `-c` given to the resume goes on top. It finds the record store by today's `dataRoot`, so a
+- **Resume**: it reapplies the `--preset` and `-c` the concert was performed with, over the config files as they are
+  now; a `--preset` or `-c` given to the resume goes on top. It finds the record store by today's `dataRoot`, so a
   concert performed with `-c dataRoot=<dir>` resumes only with that `-c` given again. An error naming the concert's
   recorded flag is fixed with a `-c` on the resume (`-c <key>=!delete` drops a recorded key), or by performing anew. It
   takes no composition, `--tour` or `--title`: the concert keeps its own. It is refused for a concert still running

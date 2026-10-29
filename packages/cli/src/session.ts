@@ -74,9 +74,9 @@ export type Session = {
 export const artifactsOf = (session: Session, id: string) =>
 	concertDirs(resolve(session.files.concerts), id).artifacts;
 
-/** The `--profile` and each `-c` of `values`. */
+/** The `--preset` and each `-c` of `values`. */
 export const overridesOf = (values: Values): Overrides => ({
-	profile: textOf(values, "profile"),
+	preset: textOf(values, "preset"),
 	config: textsOf(values, "config"),
 });
 
@@ -159,9 +159,9 @@ export async function locating(deps: Deps, own: Overrides): Promise<Overrides> {
 	}
 }
 
-/** The `--profile` and `-c` concert `row` was performed with, to layer beneath a command's own, as a resume does. */
+/** The `--preset` and `-c` concert `row` was performed with, to layer beneath a command's own, as a resume does. */
 export const recordedOf = (store: Records, row: ConcertRecord): Overrides => ({
-	profile: row.profile,
+	preset: row.preset,
 	config: row.config,
 	recorded: shortIds(store.ids()).label(row.id, false),
 });

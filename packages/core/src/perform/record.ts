@@ -49,7 +49,7 @@ export const CONCERT_FINISHED = "the concert finished before it settled";
 // non-ok outcome. `result_node` is NULL while a concert is running, and after one that failed before any node ran.
 // `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an earlier attempt, which a resume
 // reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume replaced, which still count as
-// spend.
+// spend. A concert's `profile` holds the name of the preset it was performed with.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -123,8 +123,8 @@ export type ConcertStatus = "running" | Exclude<Outcome, "skipped">;
 
 /**
  * What a concert row keeps beside its IR. `moduleDir` is the directory its worker references' modules are found in,
- * and `file` the composition file in it that the IR was built from, when it was built from a bare file. `profile` and
- * `config` are the profile name and each config override, as given, it was performed with.
+ * and `file` the composition file in it that the IR was built from, when it was built from a bare file. `preset` and
+ * `config` are the preset name and each config override, as given, it was performed with.
  */
 export type ConcertOrigin = {
 	workspace: string;
@@ -132,7 +132,7 @@ export type ConcertOrigin = {
 	file?: string;
 	tour?: string;
 	title?: string;
-	profile?: string;
+	preset?: string;
 	config?: readonly string[];
 };
 
@@ -725,7 +725,7 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 			file,
 			tour,
 			title,
-			profile,
+			preset,
 			config,
 		}) {
 			db.exec(
@@ -744,7 +744,7 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 					title ?? null,
 					moduleDir ?? "",
 					file ?? null,
-					profile ?? null,
+					preset ?? null,
 					config?.length ? JSON.stringify(config) : null,
 				],
 			);
@@ -859,7 +859,7 @@ function concertOf(row: ConcertRow): ConcertRecord {
 		...(row.settled_at !== null && { settledAt: row.settled_at }),
 		...(row.tour !== null && { tour: row.tour }),
 		...(row.title !== null && { title: row.title }),
-		...(row.profile !== null && { profile: row.profile }),
+		...(row.profile !== null && { preset: row.profile }),
 		...(row.config !== null && { config: JSON.parse(row.config) }),
 	};
 }

@@ -131,15 +131,15 @@ export function filterOf(values: Values): ConcertFilter {
 /** The flags every command takes. */
 export const COMMON: Options = {
 	json: { type: "boolean", desc: "Print one JSON document on stdout" },
-	profile: {
+	preset: {
 		type: "string",
 		arg: "name",
-		desc: "Layer .maestro/profiles/<name>.yaml on the config",
+		desc: "Layer the preset .maestro/presets/<name>.yaml, else the user's, on the config",
 	},
 	config: {
 		type: "string",
 		arg: "key=value",
-		desc: "Set a config key to a YAML value, over the profile; repeatable",
+		desc: "Set a config key to a YAML value, over the preset; repeatable",
 		multiple: true,
 		short: "c",
 	},
@@ -159,6 +159,9 @@ const forParser = (options: Options) =>
 		]),
 	);
 
+/** Flags taken away, by the flag that took their place. */
+const RENAMED: ReadonlyMap<string, string> = new Map([["profile", "preset"]]);
+
 /**
  * `args` read against `options`.
  * @throws CliError, a usage error ending with `fix`, for a flag `options` lacks or one without its value.
@@ -175,7 +178,8 @@ export function parse(options: Options, args: readonly string[], fix: string) {
 	} catch (error) {
 		const [what = "unusable arguments"] = messageOf(error).split(". ");
 		const flag = /^Unknown option '--([^']+)'/.exec(what)?.[1];
-		const near = flag && closest(flag, Object.keys(options));
+		const near =
+			flag && (RENAMED.get(flag) ?? closest(flag, Object.keys(options)));
 		throw usageError(what, near ? `Did you mean --${near}?` : fix);
 	}
 }

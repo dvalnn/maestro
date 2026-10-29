@@ -25,7 +25,7 @@ run_installer() {
 }
 
 step "install.sh"
-mkdir -p "$ws/.maestro/profiles"
+mkdir -p "$ws/.maestro/presets"
 run_installer "$home" "$dist" >"$scratch/install.out" 2>"$scratch/install.err" \
   || fail "install.sh exited $?: $(cat "$scratch/install.err")"
 grep -q "^install.sh: warning: $home/.local/bin is not on PATH" "$scratch/install.err" || fail "install.sh did not warn about PATH"
@@ -127,7 +127,7 @@ YAML
   for seat in scout planner builder lens consolidator skeptic documenter; do
     echo "  classics/$seat: { runtime: !replace { harness: stub, model: none } }"
   done
-} > "$ws/.maestro/profiles/stub.yaml"
+} > "$ws/.maestro/presets/stub.yaml"
 cat > "$ws/smoke.ts" <<'TS'
 import { check, fresh, read, seat } from "@maestro/host-repo-sdk";
 import { composition } from "@maestro/sdk";
@@ -167,7 +167,7 @@ step "pack composes and performs"
 maestro compose classics.build_then_repair --request smoke >/dev/null || fail "compose classics.build_then_repair exited $?"
 maestro compose classics.panel_review --request smoke --change "$id.1" >/dev/null || fail "compose classics.panel_review exited $?"
 maestro compose classics.v_model >/dev/null || fail "compose classics.v_model exited $?"
-maestro perform classics.build_then_repair --request smoke --profile stub >/dev/null 2>"$scratch/perform.err" \
+maestro perform classics.build_then_repair --request smoke --preset stub >/dev/null 2>"$scratch/perform.err" \
   || fail "perform classics.build_then_repair exited $?: $(cat "$scratch/perform.err")"
 grep -qE '^concert +[k-z]+ +ok( |$)' "$scratch/perform.err" || fail "build_then_repair did not settle ok: $(cat "$scratch/perform.err")"
 [ -z "$(git -C "$target" status --porcelain)" ] || fail "the target checkout changed"
@@ -222,6 +222,6 @@ export const flow = composition("flow", { examples: [{}] }, () =>
   builder({ label: "build", task: "nothing", lane: fresh() }),
 );
 TS
-maestro compose author/flow.ts --profile stub >/dev/null || fail "compose of a file importing @maestro/classics exited $?"
+maestro compose author/flow.ts --preset stub >/dev/null || fail "compose of a file importing @maestro/classics exited $?"
 
 step "passed"

@@ -78,65 +78,79 @@ test.each(cases)(
 	},
 );
 
-test("the gate's repair agent may run the target's check, and each agent runs its tier's classics profile", async () => {
-	const root = join(import.meta.dir, "..");
-	const built = await pack(
-		join(root, "packs/classics"),
-		join(scratch, "classics"),
-	);
-	const run = Bun.spawn(
-		[
-			process.execPath,
-			join(root, "packages/cli/src/maestro.ts"),
-			"compose",
-			".maestro/slice.ts",
-			"--profile",
-			"ordinary",
-			"--request",
-			"x",
-			"--tier",
-			"ordinary",
-			"--json",
-			"-c",
-			`packs=[${built}]`,
-		],
+/** The runtime of each profile a tier seats, as `.maestro/presets/<tier>.yaml` sets it. */
+const seated: [string, Record<string, [string, string]>][] = [
+	[
+		"small",
 		{
-			cwd: root,
-			env: {
-				PATH: process.env.PATH,
-				XDG_DATA_HOME: join(scratch, "data"),
-				XDG_CONFIG_HOME: join(scratch, "config"),
-			},
-			stdout: "pipe",
-			stderr: "pipe",
+			"classics/builder": ["claude-sonnet-5-5", "low"],
+			"classics/lens": ["claude-opus-5-5", "medium"],
 		},
-	);
-	const out = await new Response(run.stdout).text();
-	expect(await run.exited).toBe(0);
-	const { plan, agents } = JSON.parse(out);
-	const repairs = plan.ir.nodes.filter((n: { id: string }) =>
-		n.id.startsWith("gate/loop/repair"),
-	);
-	expect(repairs.length).toBeGreaterThan(0);
-	for (const n of repairs) expect(n.config.checks).toEqual(["check"]);
-	/** The runtime of each profile in `.maestro/profiles/ordinary.yaml` that the ordinary tier seats. */
-	const ordinary: Record<string, [string, string]> = {
-		"classics/builder": ["claude-sonnet-5-5", "medium"],
-		"classics/lens": ["claude-opus-5-5", "medium"],
-		"classics/skeptic": ["claude-sonnet-5-5", "low"],
-	};
-	type Agent = {
-		profile: string;
-		harness: string;
-		model: string;
-		thinking: string;
-	};
-	for (const a of agents as Agent[])
-		expect([a.harness, a.model, a.thinking]).toEqual([
-			"claude",
-			...(ordinary[a.profile] ?? []),
-		]);
-	expect(new Set((agents as Agent[]).map((a) => a.profile))).toEqual(
-		new Set(Object.keys(ordinary)),
-	);
-});
+	],
+	[
+		"ordinary",
+		{
+			"classics/builder": ["claude-sonnet-5-5", "medium"],
+			"classics/lens": ["claude-opus-5-5", "medium"],
+			"classics/skeptic": ["claude-sonnet-5-5", "low"],
+		},
+	],
+];
+
+const root = join(import.meta.dir, "..");
+const built = pack(join(root, "packs/classics"), join(scratch, "classics"));
+
+test.each(seated)(
+	"under --preset %s, the gate's repair agent may run the target's check, and each agent runs its tier's classics profile",
+	async (tier, runtimes) => {
+		const run = Bun.spawn(
+			[
+				process.execPath,
+				join(root, "packages/cli/src/maestro.ts"),
+				"compose",
+				".maestro/slice.ts",
+				"--preset",
+				tier,
+				"--request",
+				"x",
+				"--tier",
+				tier,
+				"--json",
+				"-c",
+				`packs=[${await built}]`,
+			],
+			{
+				cwd: root,
+				env: {
+					PATH: process.env.PATH,
+					XDG_DATA_HOME: join(scratch, "data"),
+					XDG_CONFIG_HOME: join(scratch, "config"),
+				},
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		);
+		const out = await new Response(run.stdout).text();
+		expect(await run.exited).toBe(0);
+		const { plan, agents } = JSON.parse(out);
+		const repairs = plan.ir.nodes.filter((n: { id: string }) =>
+			n.id.startsWith("gate/loop/repair"),
+		);
+		expect(repairs.length).toBeGreaterThan(0);
+		for (const n of repairs) expect(n.config.checks).toEqual(["check"]);
+		type Agent = {
+			profile: string;
+			harness: string;
+			model: string;
+			thinking: string;
+		};
+		for (const a of agents as Agent[])
+			expect([a.harness, a.model, a.thinking]).toEqual([
+				"claude",
+				...(runtimes[a.profile] ?? []),
+			]);
+		expect(new Set((agents as Agent[]).map((a) => a.profile))).toEqual(
+			new Set(Object.keys(runtimes)),
+		);
+	},
+);

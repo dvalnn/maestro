@@ -347,7 +347,7 @@ test("finishing a concert settles its running instances, and a settled instance 
 	reader.close();
 });
 
-test("a concert keeps its origin, tour, title, profile and config, NULL when not given, and concerts filter by them, newest first, up to a limit", async () => {
+test("a concert keeps its origin, tour, title, preset and config, NULL when not given, and concerts filter by them, newest first, up to a limit", async () => {
 	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
 	const path = join(dir, "record.db");
 	const record = openWriter(path);
@@ -359,7 +359,7 @@ test("a concert keeps its origin, tour, title, profile and config, NULL when not
 		file: "f.ts",
 		tour: "t1",
 		title: "T",
-		profile: "stub",
+		preset: "stub",
 		config: ["a=1", "b=!delete"],
 	};
 	record.begin({ id: "a", ir, startedAt: 1, ...origin });

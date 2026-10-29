@@ -114,7 +114,7 @@ function resumeFlags(args: readonly string[]): Values {
 
 /**
  * The concert whose id starts with `prefix`, to resume, with its code as it stands now, and the config files as they
- * stand layered with its recorded `--profile` and `-c`, then the resume's own. Its record store and concert files stay
+ * stand layered with its recorded `--preset` and `-c`, then the resume's own. Its record store and concert files stay
  * those of `session`, where it was found, whatever `dataRoot` that config holds.
  * @throws CliError when core refuses to resume it or its code is gone.
  * @throws ConfigError as `openSession` does.

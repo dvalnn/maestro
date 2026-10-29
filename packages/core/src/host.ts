@@ -62,7 +62,7 @@ export type HostSetup = {
 	readonly sources: Composed["sources"];
 	/** The layers `config` merged from, lowest first, each cut to the host's namespaces. */
 	readonly layers: Composed["layers"];
-	/** The part of `config` the profile and `-c` layers set, at its key paths. */
+	/** The part of `config` the preset and `-c` layers set, at its key paths. */
 	readonly commandLine: CommandLine;
 	/** `<data root>/hosts/<host name>`: the host's own directory. Core never creates it, so the host does on first write. */
 	readonly store: string;
@@ -71,7 +71,7 @@ export type HostSetup = {
 
 /**
  * The setup of `host` under `config` and `roots`: its own config namespaces, their sources and layers, the part of them
- * the profile and `-c` layers set, and its store under the config's `dataRoot`, no other's.
+ * the preset and `-c` layers set, and its store under the config's `dataRoot`, no other's.
  * @throws Error when `config` has no `dataRoot`, which core config always sets.
  */
 export function hostSetup(
@@ -144,7 +144,8 @@ export interface Host {
 	readonly config: Readonly<Record<string, JsonSchema>>;
 	/**
 	 * The keys of `config` that hold file paths, namespace first, `*` matching any one key. A relative value in a config
-	 * file is relative to that file's directory, or to the workspace root for a workspace or profile file.
+	 * file is relative to the directory its config file anchors to: the workspace root for the workspace's files, the
+	 * user config directory for the user's.
 	 */
 	readonly paths?: readonly KeyPath[];
 	/**

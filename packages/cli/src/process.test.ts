@@ -273,10 +273,10 @@ export const work = composition("work", { examples: [{}] }, () => {
 		);
 	});
 
-	test("reapplies the concert's recorded --profile and -c, the resume's own -c on top", async () => {
+	test("reapplies the concert's recorded --preset and -c, the resume's own -c on top", async () => {
 		const w = await world();
 		await Bun.write(
-			join(w.cwd, ".maestro/profiles/stub.yaml"),
+			join(w.cwd, ".maestro/presets/stub.yaml"),
 			"mode:\n  from: stub\n  keep: stub\n",
 		);
 		const seen: unknown[] = [];
@@ -293,12 +293,12 @@ export const work = composition("work", { examples: [{}] }, () => {
 		};
 		const id = idOf(
 			await w.call(
-				["perform", ...GREET, "--profile", "stub", "-c", "mode.keep=perform"],
+				["perform", ...GREET, "--preset", "stub", "-c", "mode.keep=perform"],
 				{ hosts: [host] },
 			),
 		);
 		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
-			profile: "stub",
+			preset: "stub",
 			config: ["mode.keep=perform"],
 		});
 		await w.call(["perform", "--resume", id], { hosts: [host] });
@@ -312,10 +312,10 @@ export const work = composition("work", { examples: [{}] }, () => {
 		]);
 	});
 
-	test("names a recorded -c or --profile that no longer holds as the concert's, with a fix the resume can apply", async () => {
+	test("names a recorded -c or --preset that no longer holds as the concert's, with a fix the resume can apply", async () => {
 		const w = await world();
-		const profile = join(w.cwd, ".maestro/profiles/stub.yaml");
-		await Bun.write(profile, "mode:\n  from: stub\n");
+		const presets = join(w.cwd, ".maestro/presets");
+		await Bun.write(join(presets, "stub.yaml"), "mode:\n  from: stub\n");
 		const claiming = (namespaces: string[], over: object = {}): Host => ({
 			...fakeHost(over),
 			config: Object.fromEntries(namespaces.map((ns) => [ns, {}])),
@@ -325,7 +325,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 		});
 		const perform = async (...flags: string[]) =>
 			idOf(
-				await w.call(["perform", ...GREET, "--profile", "stub", ...flags], {
+				await w.call(["perform", ...GREET, "--preset", "stub", ...flags], {
 					hosts: [failFirst],
 				}),
 			);
@@ -345,10 +345,10 @@ export const work = composition("work", { examples: [{}] }, () => {
 		expect(await resume(id, "-c", "extra=!delete")).toMatchObject({ code: 0 });
 
 		const again = await perform();
-		await rm(profile);
+		await rm(join(presets, "stub.yaml"));
 		expect(await resume(again)).toMatchObject({
 			code: 2,
-			err: `CFG.profile: concert ${shortOf(again)} was performed with --profile stub, and ${profile} does not exist\n  Restore ${profile}, or perform the composition as a new concert`,
+			err: `CFG.preset: concert ${shortOf(again)} was performed with --preset stub, and no stub.yaml is in ${presets} or ${join(w.env.XDG_CONFIG_HOME, "maestro/presets")}\n  Restore stub.yaml, or perform the composition as a new concert`,
 		});
 
 		const plain = idOf(

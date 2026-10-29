@@ -17,15 +17,15 @@ afterEach(cleanup);
 
 const USER = "/home/u/.config/maestro/config.yaml";
 const WORKSPACE = "/w/.maestro/config.yaml";
-const PROFILE = "/w/.maestro/profiles/fast.yaml";
+const PRESET = "/w/.maestro/presets/fast.yaml";
 
 const demo = async () =>
 	openPack({ dir: await packOf(join(DEMO, "index.ts"), await scratch()) });
 
-const fileLayers = (user: string, workspace = "", profile = ""): Layer[] => [
+const fileLayers = (user: string, workspace = "", preset = ""): Layer[] => [
 	parseLayer(user, { file: USER, layer: "user" }),
 	parseLayer(workspace, { file: WORKSPACE, layer: "workspace" }),
-	parseLayer(profile, { file: PROFILE, layer: "profile" }),
+	parseLayer(preset, { file: PRESET, layer: "preset" }),
 ];
 
 function refusal(make: () => unknown) {
@@ -56,7 +56,7 @@ test("a param's flag is its name in kebab-case", () => {
 });
 
 describe("param values", () => {
-	test("resolve default, example set, user, workspace, profile and flag, each value keeping its source", async () => {
+	test("resolve default, example set, user, workspace, preset and flag, each value keeping its source", async () => {
 		const pack = await demo();
 		const request: ParamRequest = {
 			layers: fileLayers(
@@ -82,7 +82,7 @@ describe("param values", () => {
 		]).toEqual([
 			{ layer: "workspace", file: WORKSPACE, line: 3 },
 			{ layer: "flag" },
-			{ layer: "profile", file: PROFILE, line: 3 },
+			{ layer: "preset", file: PRESET, line: 3 },
 		]);
 		const ir = built(pack.build("greet", params.root, params.configured));
 		expect(literalOf(ir, "echo/echo", "times")).toBe(3);

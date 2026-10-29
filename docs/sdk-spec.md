@@ -267,8 +267,8 @@ A code node is the SDK's answer to "this needs real code".
 - Composed config reaches the build function. Values that bound groups (`max` on a `loop` and on an `iter` group) come
   from params and are therefore known at compose time.
 - Precedence, highest first (CFG-04, D-17): the use site for a subcomposition or the CLI flag for a root composition,
-  then profile, workspace and user YAML, then, for `compose`, the example set, then the default. YAML keys live under
-  the pack id and then the composition id.
+  then preset, workspace and user YAML, then, for `compose`, the example set, then the default. YAML keys live under the
+  pack id and then the composition id.
 - A key that no installed registrant claims fails compose with a did-you-mean hint. A key claimed by an installed but
   unused registrant is ignored (CFG-05, D-24). The composed config view reports value provenance (CFG-06).
 - Core config is not visible to compositions. They never read engine settings.

@@ -38,7 +38,7 @@ This skill was checked against maestro 0.1.0-beta.6. When `maestro --version` na
 
 1. **Find the workspace.** Look for `.maestro/config.yaml` from the cwd up. None, or a profile runtime, target or check
    missing: read [bootstrap.md](bootstrap.md) and follow it. Done when `maestro compose <c>` reports no `CFG.*` or
-   `HOST.*` diagnostic; a runtime set only in a layer file needs `--profile <name>` on that compose too.
+   `HOST.*` diagnostic; a runtime set only in a preset needs `--preset <name>` on that compose too.
 2. **Pick the composition.** `<pack>.<composition>` of an installed pack, or a file. `maestro rep --json` lists every
    installed composition with its doc, params, config entries and a `perform` line; `maestro rep <pack>.<composition>`
    shows one, such as `classics.panel_review`. Its params are kebab-case flags (`--max-repairs 3`, `--no-strict`). Done
@@ -104,7 +104,7 @@ Read [running.md](running.md) for compose and perform flags, the record, artifac
 - **Prune**: `maestro prune` deletes concerts with their records and lanes. Prune the concerts you started or the user
   names, by id or by `--tour`.
 
-Read [running.md](running.md), section Recover, for resume's refusals and the `--profile` and `-c` it reapplies, and how
+Read [running.md](running.md), section Recover, for resume's refusals and the `--preset` and `-c` it reapplies, and how
 prune selects.
 
 ## Stub concerts
@@ -120,7 +120,7 @@ always rejected: its checks stay red because nothing was built, and when they ar
 rejects it, since the stub review never approves. Use one to try a flow, or whenever the user asks for no spend. It also
 shows what each agent is told before any spend: its host stages the instructions and prompt as for a real run, so
 `maestro art <id> <instance> staged/instructions.md` and `staged/prompt.md` print them. Set every profile the
-composition's seats name to the stub harness in `.maestro/profiles/stub.yaml`, and pass `--profile stub` to compose and
+composition's seats name to the stub harness in `.maestro/presets/stub.yaml`, and pass `--preset stub` to compose and
 perform; a resume reapplies it. `MAESTRO_STUB_DELAY` (a duration such as `2s` or `500ms`) makes each stub agent turn
 wait that long, to rehearse a slow run. `MAESTRO_STUB_OUTPUTS=<dir>` scripts what agents deliver, to rehearse a branch
 that hangs on it, such as a fix loop: a stub agent takes each declared output from `<dir>/<instance id>/<file>` (the id

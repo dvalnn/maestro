@@ -153,9 +153,9 @@ describe("build_then_repair", () => {
 		);
 	});
 
-	test("performs on the stub harness under a --profile that sets the runtime of each seated profile by name", async () => {
+	test("performs on the stub harness under a --preset that sets the runtime of each seated profile by name", async () => {
 		await Bun.write(
-			join(root, ".maestro/profiles/stub.yaml"),
+			join(root, ".maestro/presets/stub.yaml"),
 			`profiles:\n${PROFILES.map((p) => `  ${p}: { runtime: !replace { harness: stub, model: none } }\n`).join("")}`,
 		);
 		const green = ["-c", 'target.checks=!replace {test: "true"}'];
@@ -163,7 +163,7 @@ describe("build_then_repair", () => {
 			"perform",
 			...BUILD,
 			...green,
-			"--profile",
+			"--preset",
 			"stub",
 		);
 		expect(code).toBe(0);

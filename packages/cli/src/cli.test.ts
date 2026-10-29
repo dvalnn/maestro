@@ -436,6 +436,16 @@ describe("usage errors", () => {
 			/^Unknown option '--titie'\nDid you mean --title\?$/,
 		],
 		[
+			"the --profile that --preset took the place of",
+			["perform", ...GREET, "--profile", "stub"],
+			/^Unknown option '--profile'\nDid you mean --preset\?$/,
+		],
+		[
+			"an unknown flag named like an Object member",
+			["perform", ...GREET, "--constructor", "x"],
+			/^Unknown option '--constructor'\nFlags are perform's/,
+		],
+		[
 			"an unknown flag with no near name",
 			["perform", ...GREET, "--zzzzzz", "x"],
 			/^Unknown option '--zzzzzz'\nFlags are perform's/,

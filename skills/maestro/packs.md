@@ -107,6 +107,6 @@ under `packs` in the user or workspace config. Then `maestro rep <id>` lists its
 ## Testing
 
 - Compose every composition: `maestro compose <id>.<composition>`.
-- Perform each as a stub concert with a `--profile` layer file setting each of the pack's profiles' `runtime` to
+- Perform each as a stub concert with a preset setting each of the pack's profiles' `runtime` to
   `{ harness: stub, model: none }`, in a toy repository whose checks pass, then in one whose checks fail, and read both
   records with `maestro ls <id>`.

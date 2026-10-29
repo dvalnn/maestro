@@ -163,7 +163,7 @@ describe("resolution", () => {
 			user: "profiles:\n  classics/builder:\n    runtime: { model: sonnet }\n",
 			workspace:
 				"profiles:\n  classics/builder:\n    runtime: { thinking: high }\n    readOnly: [/srv/docs]\n",
-			profile:
+			preset:
 				"profiles:\n  classics/builder:\n    limits: { timeout: 20m }\n    attachments:\n      more: { path: m.md, hint: more }\n",
 			flag: "profiles:\n  classics/builder:\n    limits: { tokens: 1000 }\n    attachments:\n      kb: { hint: read it twice }\n",
 		});
@@ -202,9 +202,9 @@ describe("resolution", () => {
 			"directory",
 			"directory",
 			"flag",
-			"profile",
+			"preset",
 			"workspace",
-			"profile",
+			"preset",
 			"flag",
 		]);
 		expect(sourceOf(profile, ["runtime", "harness"])).toEqual({

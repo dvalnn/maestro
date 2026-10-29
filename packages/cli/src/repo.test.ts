@@ -324,11 +324,11 @@ export const gated = composition("gated", { examples: [{}] }, () => {
 }
 
 describe("profiles", () => {
-	test("a runtime field on the command line or in a config profile beats the config file's", async () => {
+	test("a runtime field on the command line or in a preset beats the config file's", async () => {
 		const w = await repoWorld(SMOKE_RUNTIME("gone"));
 		const file = await gated();
 		await Bun.write(
-			join(w.cwd, ".maestro/profiles/free.yaml"),
+			join(w.cwd, ".maestro/presets/free.yaml"),
 			"profiles:\n  smoke:\n    runtime:\n      harness: stub\n",
 		);
 		const refused = await w.call(["perform", file]);
@@ -337,7 +337,7 @@ describe("profiles", () => {
 			"profile smoke runs on harness 'gone', which is not loaded",
 		);
 		for (const flags of [
-			["--profile", "free"],
+			["--preset", "free"],
 			["-c", "profiles.smoke.runtime.harness=stub"],
 		])
 			expect(await w.call(["perform", file, ...flags])).toMatchObject({
@@ -653,11 +653,11 @@ describe("changeset", () => {
 		});
 	});
 
-	test("a profile-performed concert's changeset reads from outside its workspace with -C, and without it names the workspace", async () => {
+	test("a preset-performed concert's changeset reads from outside its workspace with -C, and without it names the workspace", async () => {
 		const w = await edited();
-		await Bun.write(join(w.cwd, ".maestro/profiles/free.yaml"), "{}\n");
+		await Bun.write(join(w.cwd, ".maestro/presets/free.yaml"), "{}\n");
 		const id = idOf(
-			await w.call(["perform", join(REPO, "edit.ts"), "--profile", "free"]),
+			await w.call(["perform", join(REPO, "edit.ts"), "--preset", "free"]),
 		);
 		const outside = { env: GIT_ENV, cwd: await scratch() };
 		const cs = (...args: string[]) =>
@@ -672,7 +672,7 @@ describe("changeset", () => {
 		const refused = await cs();
 		expect(refused.code).toBe(1);
 		expect(refused.err).toMatch(
-			/profile needs its workspace\nPass -C <repo>, or run from inside workspace 'ws'$/,
+			/preset needs its workspace\nPass -C <repo>, or run from inside workspace 'ws'$/,
 		);
 		expect(refused.err).not.toContain("Resume");
 
@@ -681,7 +681,7 @@ describe("changeset", () => {
 		expect(await cs()).toMatchObject({ code: 1, err: refused.err });
 		rmSync(ambient);
 
-		rmSync(join(w.cwd, ".maestro/profiles/free.yaml"));
+		rmSync(join(w.cwd, ".maestro/presets/free.yaml"));
 		const missing = await w.call(["cs", "show", id], { env: GIT_ENV });
 		expect(missing.err).toContain("Restore");
 		expect(missing.err).not.toContain("needs its workspace");

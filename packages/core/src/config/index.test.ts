@@ -279,10 +279,10 @@ describe("provenance", () => {
 	});
 });
 
-test("the command-line values are the leaves a profile or -c set, a list whole, and no file's", () => {
+test("the command-line values are the leaves a preset or -c set, a list whole, and no file's", () => {
 	const config = layered([
 		parse("tools: {a: {harness: h, model: m}}\nlist: [1]\nkeep: 1"),
-		parse("tools: {a: {harness: stub}}\nlist: [2, 3]", USER, "profile"),
+		parse("tools: {a: {harness: stub}}\nlist: [2, 3]", USER, "preset"),
 		parse("tools: {b: {model: z}}", USER, "flag"),
 	]);
 	expect(commandLineOf(config).values).toEqual({

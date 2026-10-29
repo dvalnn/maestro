@@ -14,7 +14,7 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
    A setup whose profiles are all stub needs no harness. Done when each command answers.
 
 2. **Read the layers that exist.** Config layers, lowest first: the user file `$XDG_CONFIG_HOME/maestro/config.yaml`
-   (default `~/.config/maestro/config.yaml`), the workspace file `.maestro/config.yaml`, then a `--profile` layer file,
+   (default `~/.config/maestro/config.yaml`), the workspace file `.maestro/config.yaml`, then a preset `--preset` names,
    then each `-c <key>=<value>` flag. The user file often already lists `packs` and tunes `profiles`. Done when you know
    which packs, profiles and checks are already set.
 3. **Write `.maestro/config.yaml`** at the repository root, holding only what no lower layer sets:
@@ -126,8 +126,8 @@ Exits 3, 124 (a timeout), 127 (command not found) and 137 (killed) read as a bro
 | `stub`   | any string; `none` by convention                 | ignored                |
 
 maestro passes model and thinking through unchecked, so confirm an id with the harness's own CLI. A composition sets
-none of them: a seat names a profile. Per field, `-c` and `--profile` beat the config files' `profiles`, which beat the
-profile's own `profile.yaml`, so `--profile stub` always means no spend.
+none of them: a seat names a profile. Per field, `-c` and `--preset` beat the config files' `profiles`, which beat the
+profile's own `profile.yaml`, so `--preset stub` always means no spend.
 
 A profile is a directory with a `profile.yaml` (`runtime`, `instructions`, `limits`, `attachments`) and the files it
 names, in `.maestro/profiles/<name>/` of the workspace, `$XDG_CONFIG_HOME/maestro/profiles/<name>/` of the user, or a
@@ -136,25 +136,26 @@ config, as `profiles.<name>.readOnly`.
 
 ### Layers
 
-A layer file `.maestro/profiles/<name>.yaml` is applied by `--profile <name>` on any verb. Layers merge maps by key, and
-a list in a higher layer replaces the lower one. YAML tags change that:
+A preset, `<name>.yaml` in `.maestro/presets/` of the workspace or else `$XDG_CONFIG_HOME/maestro/presets/` of the user,
+is applied by `--preset <name>` on any verb; the workspace's wins the name whole. Layers merge maps by key, and a list
+in a higher layer replaces the lower one. YAML tags change that:
 
 - `!replace` on a map replaces the lower map instead of merging into it.
 - `!append` on a list appends to the lower list.
 - `!delete` on a key drops it.
 
 ```yaml
-# .maestro/profiles/cheap.yaml: the builder on a cheaper model; its harness and thinking merge from below
+# .maestro/presets/cheap.yaml: the builder on a cheaper model; its harness and thinking merge from below
 profiles:
   builder: { runtime: { model: haiku } }
 ```
 
-For a one-off change, `-c <key>=<value>` on any verb layers one key over the profile, its value YAML with the same tags:
+For a one-off change, `-c <key>=<value>` on any verb layers one key over the preset, its value YAML with the same tags:
 `-c profiles.builder.runtime.model=haiku`, `-c 'packs=!append [../b]'`, `-c target.checks.lint=!delete`. A key holding a
-`.` goes in double quotes. A resume reapplies the concert's `--profile` and `-c`, but finds the record store by today's
+`.` goes in double quotes. A resume reapplies the concert's `--preset` and `-c`, but finds the record store by today's
 `dataRoot`: pass a `-c dataRoot=` again. The record keeps each `-c` as typed, so keep secrets in the `.env`.
 
-The stub layer, every profile on the stub harness, is in SKILL.md, section Stub concerts.
+The stub preset, every profile on the stub harness, is in SKILL.md, section Stub concerts.
 
 ### Diagnostics a bootstrap meets
 

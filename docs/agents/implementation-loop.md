@@ -49,7 +49,7 @@ A slice run as the slice composition adds `Leave your changes uncommitted; maest
    - a read-only review slice, such as an API review: high effort, as in step 4.
 
    Or the slice runs as the slice composition:
-   `maestro perform .maestro/slice.ts --profile <tier> --tier <tier> --request <brief>`, from a checkout at `main`. Its
+   `maestro perform .maestro/slice.ts --preset <tier> --tier <tier> --request <brief>`, from a checkout at `main`. Its
    lane splits from `main` (`target.base`) by default; a slice that depends on work not yet on `main` forks from that
    work's change instead (`-c target.base=<commit>`). Start it detached from the conductor's session (`setsid -f`, as
    the `maestro` skill's step 4 shows), never as a session background task: a rewind or a session end cancels it. Put it

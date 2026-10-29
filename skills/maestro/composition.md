@@ -11,7 +11,7 @@ surface, and a worked example. Done when the file composes and a stub concert of
 3. **Compose it:** `maestro compose .maestro/<id>.ts`. For each diagnostic, read its code and hint, fix the file, and
    compose again. Done on exit 0, with the plan's node counts and `repo.agent` bound what you meant.
 4. **Rehearse it as a stub concert** (SKILL.md, Stub concerts):
-   `maestro perform .maestro/<id>.ts --profile stub [param flags]`. Done when the concert settles with the outcome you
+   `maestro perform .maestro/<id>.ts --preset stub [param flags]`. Done when the concert settles with the outcome you
    expected.
 5. **Hand it over.** Tell the user the file's path, its params, and the profiles it needs. Committing it is theirs.
 

@@ -47,7 +47,7 @@ maestro wait <concert> --timeout 15m
     is a usage error.
 
 [^changeset]:
-    The checkout is `target.repo` from the concert's config: the config files with its recorded `--profile` and `-c`, as
+    The checkout is `target.repo` from the concert's config: the config files with its recorded `--preset` and `-c`, as
     a resume layers them, then the command's own; `drop` takes no concert and uses the command's own config alone.
     `-C <repo>` is `-c target.repo=<repo>`, with a relative path taken from the current directory. The changeset is the
     result node's when it made one, else the last `ok` instance's that did; `--node <id>` names one, `<id>` as
@@ -71,7 +71,7 @@ maestro wait <concert> --timeout 15m
     `ls <concert>` prints, or a unique ending of whole segments of one, such as `build` for `loop[0]/build`. An unknown
     or ambiguous instance or file, and `--json` with an instance or `--path`, are usage errors; an instance with no
     artifacts yet, or an artifact gone from disk, exits 1. To read what an agent is told before any spend, perform a
-    stub concert (`--profile stub`) and read its instance's `staged/instructions.md` and `staged/prompt.md`.
+    stub concert (`--preset stub`) and read its instance's `staged/instructions.md` and `staged/prompt.md`.
 
 [^rep]:
     `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,
@@ -80,10 +80,10 @@ maestro wait <concert> --timeout 15m
     rest are listed, and the exit is 1.
 
 [^resume]:
-    It re-reads the config files, layers the concert's recorded `--profile` and `-c` on them, then the resume's own
-    `--profile` and `-c`. The record store is found by today's `dataRoot`: a recorded `-c dataRoot=` changes the config
+    It re-reads the config files, layers the concert's recorded `--preset` and `-c` on them, then the resume's own
+    `--preset` and `-c`. The record store is found by today's `dataRoot`: a recorded `-c dataRoot=` changes the config
     only, so pass it again to resume a concert in another store. An error from a recorded flag names the concert, and is
-    fixed by a `-c` or `--profile` on the resume, or by performing the composition as a new concert. It runs the graph
+    fixed by a `-c` or `--preset` on the resume, or by performing the composition as a new concert. It runs the graph
     recorded at first perform, so an edit adds or removes no node, but code nodes load from the file as it is now and
     their hash covers the whole bundle (ADR 0008): any edit to the composition file reruns every code node, and
     dependents rerun when their inputs changed. A changed code hash prints a warning on stderr and the resume goes on.
@@ -99,8 +99,8 @@ maestro wait <concert> --timeout 15m
 `maestro --version` prints one line, `maestro <version> (sdk <version>, ir <version>, bun <version>)`, and exits 0.
 
 Every command but `changeset` takes `--json` (one JSON document on stdout, and no `warning:` lines on stderr),
-`--profile <name>`, `-c, --config <key=value>` (repeatable), `--no-color`, `--debug` (stack traces) and `--help`.
-Primary output goes to stdout, messages to stderr.
+`--preset <name>`, `-c, --config <key=value>` (repeatable), `--no-color`, `--debug` (stack traces) and `--help`. Primary
+output goes to stdout, messages to stderr.
 
 Each stream is colored only when it is a terminal: stdout by its own check, stderr by its own. Color is off under
 `NO_COLOR`, `TERM=dumb` or `--no-color`, and the `--json` document is never colored. It covers the `ls` status column,
@@ -224,10 +224,14 @@ configures it; make it a pack for that.
 
 ## Config
 
-Layers, lowest first: the defaults, `$XDG_CONFIG_HOME/maestro/config.yaml`, the nearest `.maestro/config.yaml`, and
-`.maestro/profiles/<name>.yaml` for `--profile`, then each `-c` in order. Maps merge by key and a list is replaced by
-the layer above it. A tag changes that: `!replace` on a map, `!append` on a list, `!delete` to drop a key.
-`maestro config <composition>` shows where each value came from.
+Layers, lowest first: the defaults, `$XDG_CONFIG_HOME/maestro/config.yaml`, the nearest `.maestro/config.yaml`, the
+preset `--preset <name>` names, then each `-c` in order. Maps merge by key and a list is replaced by the layer above it.
+A tag changes that: `!replace` on a map, `!append` on a list, `!delete` to drop a key. `maestro config <composition>`
+shows where each value came from.
+
+A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`; the
+workspace's file wins the name whole. Relative paths in it resolve as in the config file beside it: the workspace root,
+or the user config directory.
 
 `-c <key>=<value>` sets one key, checked by the same schemas, and an error names the flag. The key is a dotted path,
 with a key holding a `.` in double quotes; the value is YAML, so `=true` is a boolean, `=[a, b]` a list, and the tags
@@ -238,12 +242,12 @@ maestro perform demo.greet --name x -c concurrency=2 -c 'packs=!append [../b]' -
 maestro perform demo.greet --name x -c 'profiles.reviewer.runtime=!replace {harness: stub, model: none}' -c 'target.checks."a.b"=x'
 ```
 
-A profile's fields resolve per field, highest first: `-c` and the `--profile` file, then the config files' `profiles`,
-then the profile directory's `profile.yaml`. So `--profile stub` always means no spend, while
+A profile's fields resolve per field, highest first: `-c` and the preset, then the config files' `profiles`, then the
+profile directory's `profile.yaml`. So `--preset stub` always means no spend, while
 `-c profiles.builder.runtime.model=haiku` changes only the model. A composition sets none of them. A resume applies the
 same order.
 
-A concert's record keeps its `--profile` and each `-c` as typed, and `ls <concert> --json` shows them as `profile` and
+A concert's record keeps its `--preset` and each `-c` as typed, and `ls <concert> --json` shows them as `preset` and
 `config`. Keep secrets out of `-c`: set them in `$XDG_CONFIG_HOME/maestro/.env`.
 
 | Key           | Meaning                                                                                                |
@@ -258,8 +262,8 @@ A concert's record keeps its `--profile` and each `-c` as typed, and `ls <concer
 | `sandbox`     | The repo host's `readOnly` paths, bound into every agent, check and prepare.                           |
 
 A relative `packs`, `dataRoot`, `target.repo` or other path key is relative to the workspace root, the directory that
-holds `.maestro/`, in a workspace or profile file and a `-c`, and to the user file's own directory in the user file. A
-`-c` outside a workspace is relative to the cwd.
+holds `.maestro/`, in the workspace file, a workspace preset and a `-c`, and to the user config directory in the user
+file and a user preset. A `-c` outside a workspace is relative to the cwd.
 
 The repo host's namespaces are set out in architecture.md section 12, Configuration. Its Claude Code harness reads the
 token from `CLAUDE_CODE_OAUTH_TOKEN`, set in the shell or in `$XDG_CONFIG_HOME/maestro/.env`; get one with

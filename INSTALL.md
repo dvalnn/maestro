@@ -68,13 +68,13 @@ Config keys are in [`packages/cli/README.md`](packages/cli/README.md).
 
 - The user file `~/.config/maestro/config.yaml` holds `profiles` and the pack's params, and `packs` for a pack kept
   outside the packs directory. `packs` may instead go in a workspace's `.maestro/config.yaml`. `~` is not expanded; a
-  relative path resolves against the directory of the user file, and in a workspace or profile file against the
-  workspace root, the directory that holds `.maestro/`.
+  relative path resolves against the directory of the user file, and in a workspace file or preset against the workspace
+  root, the directory that holds `.maestro/`.
 - A workspace file `.maestro/config.yaml` per target holds `target: { repo, base, checks }`, and optionally `prepare`
   (lines run on each checked-out lane, such as a dependency install) and `sparse` (directories, or `{ patterns }` of
   gitignore-style patterns, a lane checks out).
-- A layer file `.maestro/profiles/stub.yaml` moves the profiles' runtimes to the built-in `stub` harness, which writes a
-  placeholder for each declared output and replies ok. Run with `--profile stub` to spend nothing: `build_then_repair`
+- A preset `.maestro/presets/stub.yaml` moves the profiles' runtimes to the built-in `stub` harness, which writes a
+  placeholder for each declared output and replies ok. Run with `--preset stub` to spend nothing: `build_then_repair`
   and `panel_review` end ok, the latter with an unapproved verdict, while `v_model` is rejected at its repair loop or at
   `traceOf`.
 
@@ -119,7 +119,7 @@ target:
 ```
 
 ```yaml
-# .maestro/profiles/stub.yaml
+# .maestro/presets/stub.yaml
 profiles:
   classics/scout: { runtime: !replace { harness: stub, model: none } }
   classics/planner: { runtime: !replace { harness: stub, model: none } }

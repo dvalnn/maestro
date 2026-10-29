@@ -251,7 +251,7 @@ const repoOf = ({ config }: Session) => {
 const NAMES_REPO = "target.repo=";
 
 /**
- * The session for `layered` over `recorded`, a concert's `--profile` and `-c`, or over nothing when `recorded` does not
+ * The session for `layered` over `recorded`, a concert's `--preset` and `-c`, or over nothing when `recorded` does not
  * load outside any workspace and `layered` names the checkout.
  * @throws ConfigError, as `recorded` raised it, when the current directory is inside a workspace.
  * @throws CliError when `recorded` does not load outside a workspace and `layered` names no checkout, naming the
@@ -271,13 +271,13 @@ async function sessionOf(
 		if (own.config.workspace) throw error;
 		if (layered.config?.some((c) => c.startsWith(NAMES_REPO))) return own;
 		throw new CliError(
-			`concert ${recorded.recorded}'s profile needs its workspace\nPass -C <repo>${workspace && `, or run from inside workspace '${workspace}'`}`,
+			`concert ${recorded.recorded}'s preset needs its workspace\nPass -C <repo>${workspace && `, or run from inside workspace '${workspace}'`}`,
 		);
 	}
 }
 
 /**
- * The checkout `target.repo` names in the config files layered with `recorded`, a concert's `--profile` and `-c` when
+ * The checkout `target.repo` names in the config files layered with `recorded`, a concert's `--preset` and `-c` when
  * given, then this command's own, `-C` last.
  * @throws CliError, a usage error, when `target.repo` is not set; else as `sessionOf` does.
  */
