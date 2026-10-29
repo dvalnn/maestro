@@ -154,6 +154,7 @@ function resultEvent(e: JsonObject): HarnessEvent {
 		kind: "tool_result",
 		...(typeof e.toolCallId === "string" && { id: e.toolCallId }),
 		bytes: resultBytes(isObject(e.result) ? e.result.content : e.result),
+		error: e.isError === true,
 	};
 }
 

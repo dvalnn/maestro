@@ -103,6 +103,7 @@ describe("stand-in claude", () => {
 				kind: "tool_result",
 				id: "toolu_012fUsphfrA9PwMQjVNZYwyL",
 				bytes: expect.any(Number),
+				error: false,
 			},
 		]);
 		expect(
@@ -177,7 +178,7 @@ describe("stand-in claude", () => {
 		},
 	);
 
-	test("an assistant message repeated per content block has its non-empty thinking reported once, and a result repeating the last text adds no text, while one that differs replaces it", async () => {
+	test("tool results carry size and is_error; repeated thinking reports once; a result's text replaces the last only when it differs", async () => {
 		const results = claudeHarness(
 			standIn([
 				JSON.stringify({
@@ -197,7 +198,13 @@ describe("stand-in claude", () => {
 									{ type: "text", text: "cd" },
 								],
 							},
-							{ type: "tool_result", tool_use_id: "c", content: [{ n: 1 }] },
+							// Synthetic: the recorded run has no failed tool.
+							{
+								type: "tool_result",
+								tool_use_id: "c",
+								content: [{ n: 1 }],
+								is_error: true,
+							},
 						],
 					},
 				}),
@@ -208,9 +215,9 @@ describe("stand-in claude", () => {
 			(e) => e.kind === "tool_result",
 		);
 		expect(sizes).toEqual([
-			{ kind: "tool_result", id: "a", bytes: 13 },
-			{ kind: "tool_result", id: "b", bytes: 4 },
-			{ kind: "tool_result", id: "c", bytes: 9 },
+			{ kind: "tool_result", id: "a", bytes: 13, error: false },
+			{ kind: "tool_result", id: "b", bytes: 4, error: false },
+			{ kind: "tool_result", id: "c", bytes: 9, error: true },
 		]);
 		expect(JSON.stringify(sizes)).not.toContain("SECRET");
 

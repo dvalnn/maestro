@@ -40,7 +40,7 @@ export type InstanceState = NodeInstance & {
 	reason?: string;
 	startedAt?: number;
 	settledAt?: number;
-	/** Its latest progress event's word and detail, on one line. */
+	/** Its latest progress event's word and detail, on one line, a `NOT_LATEST` word's event aside. */
 	latest?: string;
 	/** The actor a progress event announced for it, as `agentText` shows it before any tokens. */
 	agent?: string;
@@ -153,7 +153,13 @@ function genericLine(event: HostEvent): string {
 	return (kind === undefined ? fields : [kind, ...fields]).join(" ");
 }
 
-/** `base` after progress `event`: its actor, and its latest line unless the event names an actor and no wording. */
+/** The words of the progress lines that follow a tool call and never stand as an instance's latest line. */
+const NOT_LATEST: ReadonlySet<string> = new Set(["result", "usage", "context"]);
+
+/**
+ * `base` after progress `event`: its actor, and its latest line unless the event names an actor and no wording, or its
+ * word is one of `NOT_LATEST`.
+ */
 function progressed(
 	base: InstanceState,
 	event: Annotated & { type: "progress" },
@@ -161,6 +167,7 @@ function progressed(
 	const named =
 		event.actor === undefined ? base : { ...base, agent: event.actor };
 	if (event.actor !== undefined && event.wording === undefined) return named;
+	if (event.wording && NOT_LATEST.has(event.wording.word)) return named;
 	const line = event.wording
 		? `${event.wording.word} ${event.wording.detail}`.trimEnd()
 		: genericLine(event.event);
@@ -731,6 +738,7 @@ const WORD_STYLE: ReadonlyMap<string, Style> = new Map<string, Style>([
 	["text", []],
 	["result", "dim"],
 	["usage", "dim"],
+	["context", "dim"],
 	["settled", "dim"],
 	["fault", []],
 ]);
@@ -853,6 +861,7 @@ const DETAIL_SEGS: ReadonlyMap<string, (detail: string) => Seg[]> = new Map([
 	["thinking", plainly(["dim", "italic"])],
 	["result", plainly("dim")],
 	["usage", plainly("dim")],
+	["context", plainly("dim")],
 	["tool", headedSegs],
 ]);
 

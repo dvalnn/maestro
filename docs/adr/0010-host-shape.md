@@ -19,9 +19,10 @@ The shape is:
   events, as a word and a detail, name who ran an instance, give the path its session lives at, and give an instance's
   notes as headed lists of one-line entries, such as an agent's obstacles and lessons, all as plain text. The CLI calls
   them and hands the strings to the renderer, which styles and cuts them and knows ir only, beside a closed table of
-  event-word styles; a word outside it shows unstyled. `actor` is called on a settled instance's enrichment and on each
-  of the host's progress events, and names an actor only for an event that announces one. A host that says nothing more
-  than the generic line omits `text`, or either member.
+  event words that carries their styles and which never stand as an instance's latest line; a word outside it shows
+  unstyled. `actor` is called on a settled instance's enrichment and on each of the host's progress events, and names an
+  actor only for an event that announces one. A host that says nothing more than the generic line omits `text`, or
+  either member.
 - **`needs` is optional and names the config entries a graph's host nodes read by name**, such as
   `target.checks.<name>`, as key paths. The CLI lists them for a composition built from its example set and reads no
   host node config itself. A host that reads nothing by name omits it.

@@ -206,17 +206,18 @@ describe("frame", () => {
 		);
 	});
 
-	test("shows a host's line as a running instance's note, on one line, in place of the generic one", () => {
+	test("shows a host's line as a running instance's note, on one line, never a result, usage or context line", () => {
 		const noted = (extra: object) => {
 			const events = eventsOf([
 				["best", "", 0, { type: "running" }],
+				["best", "", 5, { type: "progress", event: { kind: "tool" } }],
 				[
 					"best",
 					"",
 					10,
 					{ type: "progress", event: { kind: "text", text: "hi" } },
 				],
-			]).map((e) => (e.seq === 2 ? { ...e, ...extra } : e));
+			]).map((e) => (e.seq === 3 ? { ...e, ...extra } : e));
 			return frame(ir, seen(new Map(), events), VIEW, new Map())
 				.split("\n")[4]
 				?.split("  ")
@@ -226,6 +227,12 @@ describe("frame", () => {
 		expect(
 			noted({ wording: { word: "step", detail: "1/2:\nbun install" } }),
 		).toBe("step 1/2: bun install");
+		for (const [word, detail] of [
+			["result", "42 · error"],
+			["usage", "in 1 · out 0 · cache 0"],
+			["context", "19416"],
+		])
+			expect(noted({ wording: { word, detail } })).toBe("tool");
 	});
 
 	test("names the latest failed instance as `last`, and nothing yet before one", () => {
@@ -472,6 +479,14 @@ describe("eventLine", () => {
 			expect(painted(progress({ kind: "thinking", text: "hm" }))).toEndWith(
 				`${p(["dim", "italic"], "thinking")}  ${p(["dim", "italic"], "hm")}`,
 			);
+			expect(
+				painted(
+					progress(
+						{ kind: "context", used: 1 },
+						{ wording: { word: "context", detail: "1" } },
+					),
+				),
+			).toEndWith(`${p("dim", "context")}   ${p("dim", "1")}`);
 			expect(painted(EVENTS[9])).toEndWith(`log       ${grey("noise")}`);
 			expect(painted(progress({ kind: "agent" }, { actor: "pi" }))).toContain(
 				p("cyan", "agent"),

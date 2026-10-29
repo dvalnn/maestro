@@ -12,6 +12,11 @@ const stringOf = (value: unknown) =>
 
 type Wording = { word: string; detail: string };
 
+/** What separates the parts of a detail or an actor. */
+const SEP = " · ";
+/** A tool result's code: whether the tool reported an error. */
+const RETURN_CODE = { ok: "ok", error: "error" } as const;
+
 /** `prepare`, `<line>/<of>: <run>` while the line runs, and its last output line, else how it ended, once it ended. */
 function prepareWording(event: HostEvent): Wording | undefined {
 	const { line, of, run, ended, tail } = event;
@@ -43,14 +48,28 @@ function usageWording({ metrics }: HostEvent): Wording | undefined {
 	const cache = count(METRIC.tokensCacheRead) + count(METRIC.tokensCacheWrite);
 	return {
 		word: "usage",
-		detail: `in ${count(METRIC.tokensIn)} · out ${count(METRIC.tokensOut)} · cache ${cache}`,
+		detail: [
+			`in ${count(METRIC.tokensIn)}`,
+			`out ${count(METRIC.tokensOut)}`,
+			`cache ${cache}`,
+		].join(SEP),
 	};
 }
 
-/** `result`, the tool result's size in bytes. */
-function resultWording({ bytes }: HostEvent): Wording | undefined {
-	return typeof bytes === "number"
-		? { word: "result", detail: String(bytes) }
+/** `result`, the tool result's size in bytes, then `ok` or `error` when the event says which. */
+function resultWording({ bytes, error }: HostEvent): Wording | undefined {
+	if (typeof bytes !== "number") return undefined;
+	const code =
+		typeof error === "boolean"
+			? [error ? RETURN_CODE.error : RETURN_CODE.ok]
+			: [];
+	return { word: "result", detail: [String(bytes), ...code].join(SEP) };
+}
+
+/** `context`, the prompt size of the latest model call in tokens, which is the agent's running context total. */
+function contextWording({ used }: HostEvent): Wording | undefined {
+	return typeof used === "number"
+		? { word: "context", detail: String(used) }
 		: undefined;
 }
 
@@ -70,6 +89,7 @@ const WORDINGS: ReadonlyMap<
 	["tool", toolWording],
 	["tool_result", resultWording],
 	["usage", usageWording],
+	["context", contextWording],
 	["environment", environmentWording],
 ]);
 
@@ -85,7 +105,7 @@ function actor(enrichment: Enrichment): string | undefined {
 		harness,
 		model.slice(model.lastIndexOf("/") + 1),
 		...(thinking === undefined ? [] : [thinking]),
-	].join(" · ");
+	].join(SEP);
 }
 
 /** The host directory of the session that ran an agent, where its harness writes the transcript. */
@@ -115,5 +135,5 @@ function notes(enrichment: Enrichment): Record<string, string[]> {
 	);
 }
 
-/** How the repo host's prepare, tool, result and usage events and its agents read as text. */
+/** How the repo host's prepare, tool, result, usage, context and environment events and its agents read as text. */
 export const repoText: HostText = { progress, actor, where, notes };

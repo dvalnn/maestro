@@ -53,18 +53,18 @@ maestro wait <concert> --timeout 15m
     exits 0.
 
 [^watch]:
-    On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls, result sizes and
-    thinking among them: the time, the instance, a word for what happened and its detail, in aligned columns, a long
-    detail wrapped under its column and a multi-line one cut to its first line. Off a terminal `--events` prints the
-    same lines unwrapped and without color. The graph is a header (status, elapsed time and the short id), `now` and
-    `last` lines naming the latest running and failed instances, the composition as authored with each loop at its
-    latest round and each fan-out's items on one row, and a footer of counts and the concert's tokens. Rows that don't
-    fit fold into count lines, and the footer then points at `maestro ls`. Ctrl-C stops watching, not the concert. With
-    stdin a terminal too, the graph is a tree to browse: see [Browsing a concert](#browsing-a-concert).
-    `--events --instance <id>` keeps only that instance's events, `<id>` as `ls <concert>` prints it, such as
-    `lens[risk]/skeptic`, or a unique ending of whole segments of a node or scope id, such as `skeptic`; a group, loop,
-    fan-out or scope id, without keys for every iteration, takes everything under it. An id the concert has no node for
-    is a usage error.
+    On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls, result sizes with `ok`
+    or `error`, the agent's context total and thinking among them: the time, the instance, a word for what happened and
+    its detail, in aligned columns, a long detail wrapped under its column and a multi-line one cut to its first line.
+    Off a terminal `--events` prints the same lines unwrapped and without color. The graph is a header (status, elapsed
+    time and the short id), `now` and `last` lines naming the latest running and failed instances, the composition as
+    authored with each loop at its latest round and each fan-out's items on one row, and a footer of counts and the
+    concert's tokens. Rows that don't fit fold into count lines, and the footer then points at `maestro ls`. Ctrl-C
+    stops watching, not the concert. With stdin a terminal too, the graph is a tree to browse: see
+    [Browsing a concert](#browsing-a-concert). `--events --instance <id>` keeps only that instance's events, `<id>` as
+    `ls <concert>` prints it, such as `lens[risk]/skeptic`, or a unique ending of whole segments of a node or scope id,
+    such as `skeptic`; a group, loop, fan-out or scope id, without keys for every iteration, takes everything under it.
+    An id the concert has no node for is a usage error.
 
 [^changeset]:
     The checkout is `target.repo` from the concert's config: the config files with its recorded `--preset` and `-c`, as
@@ -149,7 +149,8 @@ When stdin and stdout are both terminals, `watch <concert>` without `--events` o
 and draws the graph as a tree to drive with keys. It follows by default: the cursor sits on the newest running instance,
 or once the concert settles on the last `failed` one, with the containers leading to it open. A loop shows its latest
 round unless `[` or `]` pins another, marked `(history)`. Under the tree, a line names the cursor row's instance, kind,
-state, time and agent, then its reason or latest progress, and the last line the mode and keys.
+state, time and agent, then its reason or latest progress, never a result, usage or context line, and the last line the
+mode and keys.
 
 | Key                     | Does                                                                                         |
 | ----------------------- | -------------------------------------------------------------------------------------------- |

@@ -60,7 +60,7 @@ async function drain(events: AsyncIterable<HarnessEvent>) {
 }
 
 describe("stand-in pi", () => {
-	test("the recorded 1.3.0 run is read into tools, usage, prompt sizes and a reply", async () => {
+	test("the recorded 1.3.0 run is read into tools, their result sizes and errors, usage, prompt sizes and a reply", async () => {
 		const req = request("write hello.txt");
 		const unknown = '{"type":"future_event","extra":{"a":1}}';
 		const compactions = [
@@ -68,9 +68,16 @@ describe("stand-in pi", () => {
 			'{"type":"compaction_end","aborted":true}',
 			'{"type":"compaction_end","aborted":false,"errorMessage":"summary failed"}',
 		];
-		const run = piHarness(standIn([...fixture(), ...compactions, unknown])).run(
-			req,
-		);
+		const lines = fixture();
+		const recorded = lines.find((l) => l.includes('"tool_execution_end"'));
+		if (recorded === undefined) throw new Error("no tool_execution_end line");
+		// Synthetic: the recorded run has no failed tool.
+		const failed = recorded
+			.replace('"call_1|opaque"', '"call_2"')
+			.replace('"isError":false', '"isError":true');
+		const run = piHarness(
+			standIn([...lines, failed, ...compactions, unknown]),
+		).run(req);
 		const seen = await drain(run.events);
 		const result = await run.result;
 
@@ -96,7 +103,8 @@ describe("stand-in pi", () => {
 		]);
 		const results = seen.filter((e) => e.kind === "tool_result");
 		expect(results).toEqual([
-			{ kind: "tool_result", id: "call_1|opaque", bytes: 31 },
+			{ kind: "tool_result", id: "call_1|opaque", bytes: 31, error: false },
+			{ kind: "tool_result", id: "call_2", bytes: 31, error: true },
 		]);
 		expect(JSON.stringify(results)).not.toContain("Successfully");
 		expect(seen.filter((e) => e.kind === "thinking")).toEqual([]);

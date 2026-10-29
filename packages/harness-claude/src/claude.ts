@@ -153,6 +153,7 @@ function resultEvent(block: JsonObject): HarnessEvent[] {
 			kind: "tool_result",
 			...(typeof block.tool_use_id === "string" && { id: block.tool_use_id }),
 			bytes: resultBytes(block.content),
+			error: block.is_error === true,
 		},
 	];
 }
