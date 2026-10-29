@@ -174,9 +174,10 @@ A host is a package that the core loads. It is the only way node kinds beyond th
    `resources`, for a host that holds disk per concert, groups `release(concert, setup)`, which frees what it holds for
    a settled concert, and `usage(concert, setup)`, which reports its bytes on disk, for `prune` and `ls`. `text` groups
    `progress(event)`, which words one of the host's progress events, `actor(enrichment)`, which names who ran an
-   instance, and `notes(enrichment)`, which gives an instance's notes as headed lists of one-line entries for `ls`; the
-   renderer styles it. `needs(graph)` names the config entries the graph's host nodes read by name. ADR 0010 records the
-   shape.
+   instance, `notes(enrichment)`, which gives an instance's notes as headed lists of one-line entries for `ls`,
+   `report(enrichment)`, which gives its full report as an opaque object for `ls --json`, and `reportFields`, which says
+   what that report's fields mean for `ls --help`; the renderer styles the text. `needs(graph)` names the config entries
+   the graph's host nodes read by name. ADR 0010 records the shape.
 
 The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
 hooks and records what they return.

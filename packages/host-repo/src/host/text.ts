@@ -1,7 +1,7 @@
 import type { HostText } from "@maestro/core/host";
 import { compact, type Enrichment, type HostEvent } from "@maestro/ir";
 import { METRIC } from "../harness/types";
-import type { Report } from "./frame";
+import { REPORT_FIELDS, type Report } from "./frame";
 import { lastLine } from "./run-lines";
 
 /** The `kind` of the progress event a prepare line emits as it starts and ends. */
@@ -115,7 +115,7 @@ function actor(enrichment: Enrichment): string | undefined {
 const NOTED = { obstacles: "Obstacles", lessons: "Lessons" } as const;
 
 /** The report an agent's enrichment holds, if any; a report as text, from an older record, reads as its `summary`. */
-export function reportOf({ report }: Enrichment): Report | undefined {
+function reportOf({ report }: Enrichment): Report | undefined {
 	if (typeof report === "string") return { summary: report };
 	return typeof report === "object" && report !== null
 		? (report as Report)
@@ -136,4 +136,10 @@ function notes(enrichment: Enrichment): Record<string, string[]> {
 }
 
 /** How the repo host's prepare, tool, result, usage, context and environment events and its agents read as text. */
-export const repoText: HostText = { progress, actor, notes };
+export const repoText: HostText = {
+	progress,
+	actor,
+	notes,
+	report: reportOf,
+	reportFields: REPORT_FIELDS,
+};

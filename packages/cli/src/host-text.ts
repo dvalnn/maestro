@@ -41,6 +41,14 @@ export const notesOf = (
 ): Record<string, string[]> =>
 	(enrichment && hostText(node)?.notes?.(enrichment)) ?? {};
 
+/** The full report its host gives the instance of `node` that settled with `enrichment`, if any. */
+export const reportOf = (
+	enrichment: Enrichment | undefined,
+	node: string,
+	hostText: ReturnType<typeof hostTextOf>,
+): Record<string, unknown> | undefined =>
+	enrichment && hostText(node)?.report?.(enrichment);
+
 /** Who its host says ran the instance of `node` that settled with `enrichment`. */
 export const actorOf = (
 	enrichment: Enrichment | undefined,

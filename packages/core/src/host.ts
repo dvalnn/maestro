@@ -198,6 +198,13 @@ export interface HostText {
 	 * Called on a settled instance's enrichment; empty when it has none.
 	 */
 	notes?(enrichment: Enrichment): Record<string, string[]>;
+	/**
+	 * An instance's full report as one opaque JSON object, for `ls --json`. Called on a current settled instance's
+	 * enrichment; undefined when it has none.
+	 */
+	report?(enrichment: Enrichment): Record<string, unknown> | undefined;
+	/** What each field of the objects `report` gives means, in one short line each, for `ls --help`. */
+	readonly reportFields?: Readonly<Record<string, string>>;
 }
 
 /** The disk a host holds for a concert. */

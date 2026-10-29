@@ -59,6 +59,14 @@ const LISTED = `    "gaps": ["<what your task asked that you left undone or did 
     "obstacles": ["<what in your environment got in your way>"],
     "lessons": ["<what you learnt that the code does not show>"]`;
 
+/** What each field of an agent's report means, as its reply template words it. */
+export const REPORT_FIELDS = {
+	summary: "what the agent did, in one line",
+	gaps: "what its task asked that it left undone or did not verify",
+	obstacles: "what in its environment got in its way",
+	lessons: "what it learnt that the code does not show",
+} as const;
+
 export const WORK: ReplyKind = {
 	schema: envelopeSchema({}),
 	files: "Before your final reply, write every one of these files:",

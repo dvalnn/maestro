@@ -1110,7 +1110,11 @@ describe("the record", () => {
 		const notes = { Obstacles: ["no rg on PATH"], Lessons: [lesson] };
 		const host: Host = {
 			...hostOf({ ...ECHO, enrichment: { notes } }),
-			text: { notes: (e) => (e.notes ?? {}) as Record<string, string[]> },
+			text: {
+				notes: (e) => (e.notes ?? {}) as Record<string, string[]>,
+				report: (e) => (e.notes ? { summary: "s", ...e } : undefined),
+				reportFields: { summary: "what it did" },
+			},
 		};
 		const id = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
 		const bare = idOf(
@@ -1121,7 +1125,7 @@ describe("the record", () => {
 			sections,
 		);
 		const narrow = () => ({ columns: 40, rows: 24 });
-		const full = `Full text: maestro ls ${shortOf(id)} --json | jq '.instances[].notes'`;
+		const full = `Full reports: maestro ls ${shortOf(id)} --json | jq .reports`;
 		const cut = (
 			await w.call(["ls", id], {
 				hosts: [host],
@@ -1140,10 +1144,15 @@ describe("the record", () => {
 			`echo/echo  ${lesson.slice(0, 28)}…`,
 			full,
 		]);
-		const echo = json(
-			await w.call(["ls", id, "--json"], { hosts: [host] }),
-		).instances.find((i: { node: string }) => i.node === "echo/echo");
-		expect(echo.notes).toEqual(notes);
+		const doc = json(await w.call(["ls", id, "--json"], { hosts: [host] }));
+		expect(doc.reports).toEqual({ "echo/echo": { summary: "s", notes } });
+		expect(doc.instances[0]).not.toHaveProperty("notes");
+		expect(
+			json(await w.call(["ls", id, "--json"], { hosts: [hostOf()] })).reports,
+		).toEqual({});
+		expect((await w.call(["ls", "--help"], { hosts: [host] })).out).toEndWith(
+			"Reports\n  --json | jq .reports\n  summary  what it did",
+		);
 		const rows = json(await w.call(["ls", "--json"], { hosts: [host] }));
 		expect(rows.map((r: { notes: object }) => r.notes)).toEqual([
 			{},
@@ -1155,6 +1164,12 @@ describe("the record", () => {
 		expect(
 			(await w.call(["ls"], { hosts: [host], terminal: narrow })).out,
 		).toContain(stateWord("ok", true, "ok •"));
+		const db = new Database(join(w.root, "data/maestro/record.db"));
+		db.run("UPDATE instances SET stale = 1");
+		db.close();
+		expect(
+			json(await w.call(["ls", id, "--json"], { hosts: [host] })).reports,
+		).toEqual({});
 	});
 
 	test("an ambiguous prefix of the id or of the short id lists at most five short ids, then how many more", async () => {

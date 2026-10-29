@@ -17,15 +17,17 @@ import {
 	COMMON,
 	type Command,
 	colorOf,
+	type Deps,
 	FILTER_OPTIONS,
 	filterOf,
 	isSet,
 	type Options,
 	only,
+	peek,
 	textOf,
 	type Values,
 } from "./command";
-import { actorOf, hostTextOf, notesOf } from "./host-text";
+import { actorOf, hostTextOf, notesOf, reportOf } from "./host-text";
 import {
 	CliError,
 	EXIT,
@@ -106,7 +108,7 @@ function noteSections(noted: readonly Noted[]): Map<string, string[][]> {
 
 /**
  * The lines of `noted`'s sections, each a blank line, its heading, then one `<instance>  <entry>` line each. A line
- * wider than `columns` cells is cut with `…`, followed by a dim line saying how to read concert `id`'s full text.
+ * wider than `columns` cells is cut with `…`, followed by a dim line saying how to read the full reports.
  */
 function notesLines(
 	noted: readonly Noted[],
@@ -128,11 +130,7 @@ function notesLines(
 				? line
 				: `${painted([[line]], false, columns - CUT_MARK_CELLS)}${CUT_MARK}`,
 		),
-		paint(
-			"dim",
-			`Full text: maestro ls ${id} --json | jq '.instances[].notes'`,
-			color,
-		),
+		paint("dim", `Full reports: maestro ls ${id} --json | jq .reports`, color),
 	];
 }
 
@@ -178,9 +176,21 @@ function lsChecked(values: Values, positionals: readonly string[]) {
 	return { id, query };
 }
 
+/** What `ls --help` adds: the fields of the reports `--json` gives, as the hosts word them. */
+async function reportHelp(args: readonly string[], deps: Deps) {
+	const fields = deps.hosts.flatMap((h) =>
+		Object.entries(h.text?.reportFields ?? {}),
+	);
+	if (!fields.length) return undefined;
+	const color = colorOf(deps, peek(COMMON, args)).out;
+	const rows = fields.map(([field, what]) => [`  ${field}`, what]);
+	return `${paint("bold", "Reports", color)}\n  --json | jq .reports\n${table(rows)}`;
+}
+
 export const ls: Command = {
 	usage: "ls [<concert>] [flags]",
 	options: LS_OPTIONS,
+	help: reportHelp,
 	execute: (args, deps) =>
 		withStore(
 			LS_OPTIONS,
@@ -265,9 +275,12 @@ async function instancesOf(
 	const color = colorOf(session.deps, values).out;
 	const row = concertOf(store, prefix);
 	const hostText = hostTextOf(session.deps.hosts, row.ir);
-	const instances = instancesInOrder(store, row).map((i) => ({
+	const instances = instancesInOrder(store, row);
+	const named = instances.map((i) => ({
 		...i,
+		name: instanceName(row.ir, i),
 		notes: i.stale ? {} : notesOf(i.enrichment, i.node, hostText),
+		report: i.stale ? undefined : reportOf(i.enrichment, i.node, hostText),
 	}));
 	const short = shortIds(store.ids()).label(row.id, false);
 	if (json) {
@@ -277,11 +290,13 @@ async function instancesOf(
 				short,
 				metrics: store.metrics(row.id),
 				instances,
+				reports: Object.fromEntries(
+					named.flatMap((i) => (i.report ? [[i.name, i.report]] : [])),
+				),
 			}),
 		);
 		return EXIT.ok;
 	}
-	const named = instances.map((i) => ({ ...i, name: instanceName(row.ir, i) }));
 	const text = table(
 		[
 			["instance", "status", "stale", "agent", "reason"],
