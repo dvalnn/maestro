@@ -10,7 +10,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HarnessEvent, HarnessRequest } from "@maestro/host-repo/harness";
 import type { SandboxBackend, SandboxSpec } from "@maestro/host-repo/sandbox";
-import { claudeHarness } from "./index";
+import { claudeHarness, declared } from "./index";
 
 const FIXTURES = join(import.meta.dir, "../fixtures/2.1.302");
 const TOKEN = "fake-setup-token";
@@ -175,7 +175,7 @@ describe("stand-in claude", () => {
 		expect((await differing.result).reply).toBe("bar");
 	});
 
-	test("the prompt goes on stdin, the instructions in an appended file, and the session has its own config dir", async () => {
+	test("the prompt goes on stdin, the instructions in an appended file, the session has its own config dir, and each part declared none is switched off", async () => {
 		const instructions = join(tmp("staged"), "instructions.md");
 		writeFileSync(instructions, "You are terse.");
 		const req = request("a secret prompt", { instructions });
@@ -187,15 +187,15 @@ describe("stand-in claude", () => {
 			"--output-format",
 			"stream-json",
 			"--verbose",
+			"--disallowedTools",
+			"Agent",
+			"--disable-slash-commands",
+			"--strict-mcp-config",
 			"--setting-sources",
 			"",
 			"--settings",
 			'{"disableAllHooks":true}',
-			"--strict-mcp-config",
-			"--disable-slash-commands",
 			"--no-chrome",
-			"--disallowedTools",
-			"Agent",
 			"--permission-mode",
 			"bypassPermissions",
 			"--system-prompt-snapshot",
@@ -215,6 +215,14 @@ describe("stand-in claude", () => {
 		expect(env).toContain("CLAUDE_CODE_DISABLE_AUTO_MEMORY=1");
 		expect(env).toContain("CLAUDE_CODE_DISABLE_CLAUDE_MDS=1");
 		expect(env).toContain("CLAUDE_CODE_BUBBLEWRAP=1");
+		expect(declared).toMatchObject({
+			tools: { less: ["Agent"] },
+			subagents: false,
+			skills: [],
+			mcp: [],
+			hooks: [],
+			contextFiles: [],
+		});
 	});
 
 	test("a session with a transcript resumes by id instead of starting", async () => {

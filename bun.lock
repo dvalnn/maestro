@@ -29,6 +29,7 @@
         "@maestro/ir": "workspace:*",
         "@maestro/render-text": "workspace:*",
         "@maestro/sdk": "workspace:*",
+        "yaml": "2.9.1",
       },
       "devDependencies": {
         "@maestro/testkit": "workspace:*",

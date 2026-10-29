@@ -74,6 +74,11 @@ const VERBS: readonly Verb[] = [
 		load: async () => (await import("./compose")).config,
 	},
 	{
+		name: "agent",
+		summary: "List agent profiles, or show one's environment",
+		load: async () => (await import("./agent")).agent,
+	},
+	{
 		name: "repertoire",
 		alias: "rep",
 		summary: "List installed packs and their compositions",

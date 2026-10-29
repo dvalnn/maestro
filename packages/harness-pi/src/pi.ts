@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+	baselineOf,
 	finite,
 	type Harness,
 	type HarnessEvent,
@@ -169,15 +170,26 @@ function parser(): (e: JsonObject) => HarnessEvent[] {
 	};
 }
 
-/** What pi would otherwise discover on its own, none of which maestro manages. */
-const UNMANAGED_OFF = [
-	"--no-skills",
-	"--no-extensions",
-	"--no-prompt-templates",
-	"--no-context-files",
-	"--no-mcp",
-	"--no-approve",
-];
+/** Extensions bring pi's subagents and hooks, if any. */
+const NO_EXTENSIONS = ["--no-extensions"];
+
+/** The parts of pi's environment maestro does not manage, each switched off. */
+const BASELINE = baselineOf(
+	{ base: "default", less: [] },
+	{
+		subagents: { declared: false, argv: NO_EXTENSIONS },
+		skills: { declared: [], argv: ["--no-skills"] },
+		mcp: { declared: [], argv: ["--no-mcp"] },
+		hooks: { declared: [], argv: NO_EXTENSIONS },
+		contextFiles: { declared: [], argv: ["--no-context-files"] },
+	},
+);
+
+/** The environment pi launches with. */
+export const declared = BASELINE.declared;
+
+/** What else pi would otherwise discover or ask, none of which maestro manages. */
+const UNMANAGED_OFF = ["--no-prompt-templates", "--no-approve"];
 
 /** The pi argv for a request. The prompt travels on stdin, the instructions in a file pi appends to its system prompt. */
 function piArgv(bin: string, req: HarnessRequest): string[] {
@@ -187,6 +199,7 @@ function piArgv(bin: string, req: HarnessRequest): string[] {
 		"-p",
 		"--mode",
 		"json",
+		...BASELINE.argv,
 		...UNMANAGED_OFF,
 		...(req.instructions ? ["--append-system-prompt", INSTRUCTIONS] : []),
 		"--session-dir",

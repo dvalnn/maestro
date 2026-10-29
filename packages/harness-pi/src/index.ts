@@ -1,1 +1,1 @@
-export { type PiOptions, piHarness } from "./pi";
+export { declared, type PiOptions, piHarness } from "./pi";

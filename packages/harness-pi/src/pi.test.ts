@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HarnessEvent, HarnessRequest } from "@maestro/host-repo/harness";
-import { piHarness } from "./index";
+import { declared, piHarness } from "./index";
 
 const FIXTURES = join(import.meta.dir, "../fixtures/1.3.0");
 const dirs: string[] = [];
@@ -97,7 +97,7 @@ describe("stand-in pi", () => {
 		expect(seen.filter((e) => e.kind === "raw")).toHaveLength(1);
 	});
 
-	test("the prompt goes on stdin, the instructions in an appended file, and the session is addressed by dir and id", async () => {
+	test("the prompt goes on stdin, the instructions in an appended file, the session is addressed by dir and id, and each part declared none is switched off", async () => {
 		const instructions = join(tmp("staged"), "instructions.md");
 		writeFileSync(instructions, "You are terse.");
 		const req = request("a secret prompt", { instructions });
@@ -112,11 +112,11 @@ describe("stand-in pi", () => {
 			"-p",
 			"--mode",
 			"json",
-			"--no-skills",
 			"--no-extensions",
-			"--no-prompt-templates",
-			"--no-context-files",
+			"--no-skills",
 			"--no-mcp",
+			"--no-context-files",
+			"--no-prompt-templates",
 			"--no-approve",
 			"--append-system-prompt",
 			"/instructions.md",
@@ -130,6 +130,14 @@ describe("stand-in pi", () => {
 			"low",
 			"",
 		]);
+		expect(declared).toMatchObject({
+			tools: { less: [] },
+			subagents: false,
+			skills: [],
+			mcp: [],
+			hooks: [],
+			contextFiles: [],
+		});
 	});
 
 	test("the credentials in auth.json are masked in what the sandbox returns and kept out of its environment, and nothing is masked without the file", async () => {

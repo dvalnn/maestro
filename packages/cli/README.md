@@ -19,6 +19,8 @@ maestro wait <concert> --timeout 15m
 | `wait <concert>`             | `wt`  | Waits for a concert to settle. `--timeout <duration>`.                                                                           |
 | `watch <concert>`            | `w`   | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.                            |
 | `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                                              |
+| `agent ls`                   |       | Lists the profiles the roots hold: name, harness, model, the winning root, a pack shadow.[^agent]                                |
+| `agent show <profile>`       |       | Shows a profile as it resolves, each value's source and its declared environment. `--yaml`, `--json`.                            |
 | `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                                  |
 | `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                                     |
 | `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                                         |
@@ -31,6 +33,16 @@ maestro wait <concert> --timeout 15m
 [^plan]:
     The `agents:` block lists each agent's node, profile, and the harness, model and thinking it resolves to, as
     `compose --json` does in `agents`.
+
+[^agent]:
+    A profile that does not resolve still lists, with its error under its row. `show` prints the profile's sections at
+    one column; a value names its layer in brackets (`[preset risky]`, `[-c]`, `[user config]`, `[workspace config]`)
+    only when a layer above its `profile.yaml` set it, and each attachment shows the host path and where the agent sees
+    it. The environment is what the profile's harness adapter launches with: tools, subagents, skills, MCP servers,
+    hooks, context files and compaction. `--yaml` prints the profile folded into one `profile.yaml`, the layers and
+    agent paths as trailing comments, then the environment as a second document; `--json` gives the same fields with
+    absolute paths, and each value's source as its layer with its file and line or its `-c` flag, as `config --json`
+    does. An unknown profile is a usage error naming the nearest one.
 
 [^watch]:
     On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls, result sizes and

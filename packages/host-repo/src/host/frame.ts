@@ -1,14 +1,11 @@
 import { type JsonSchema, validator, violations } from "@maestro/ir";
 import { OUTBOX, type Output } from "../harness/index";
+import { attachmentPath } from "../profile/index";
 import { PREVIOUS } from "./config";
 
-/** The directory where an agent's sandbox mounts its attachments. */
-const ATTACHMENT_DIR = "/in";
-/** Where the sandbox sees attachment `name`. */
-export const attachmentPath = (name: string) => `${ATTACHMENT_DIR}/${name}`;
 /** Where the sandbox of a continuing session sees the copy of attachment `name` its last turn had. */
 export const previousPath = (name: string) =>
-	`${ATTACHMENT_DIR}/${PREVIOUS}/${name}`;
+	attachmentPath(`${PREVIOUS}/${name}`);
 
 const LINE = { type: "string", minLength: 1 } as const;
 const LINES = { type: "array", items: LINE } as const;

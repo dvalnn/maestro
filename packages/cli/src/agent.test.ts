@@ -1,0 +1,327 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { cleanup } from "./fixtures/packs";
+import { json, world } from "./fixtures/world";
+import { builtinHosts } from "./hosts";
+
+afterEach(cleanup);
+
+const COLUMNS = 80;
+
+/**
+ * A world whose workspace forks the demo pack's `builder`, tuned by the workspace and user config files and by preset
+ * `risky`, and holds a profile with no model; the user holds a pi profile.
+ */
+async function roster() {
+	const w = await world();
+	const write = (path: string, text: string) => Bun.write(path, text);
+	const builder = join(w.cwd, ".maestro/profiles/demo/builder");
+	await mkdir(join(w.cwd, ".maestro/skills/jj"), { recursive: true });
+	await Promise.all([
+		write(
+			join(builder, "profile.yaml"),
+			"runtime: { harness: claude, model: sonnet, thinking: high }\ninstructions: instructions.md\nattachments:\n  style: { path: style.md, hint: for the house style }\nlimits: { timeout: 45m, tokens: 2000000 }\n",
+		),
+		write(join(builder, "instructions.md"), "Build it.\nTest it.\n"),
+		write(join(builder, "style.md"), "terse\n"),
+		write(
+			join(w.pack, "profiles/builder/profile.yaml"),
+			"limits: { tokens: 1 }\n",
+		),
+		write(
+			join(w.pack, "profiles/reviewer/profile.yaml"),
+			"runtime: { harness: stub, model: none }\n",
+		),
+		write(
+			join(w.cwd, ".maestro/profiles/broken/profile.yaml"),
+			"runtime: { harness: pi }\n",
+		),
+		write(
+			join(w.env.XDG_CONFIG_HOME, "maestro/profiles/scout/profile.yaml"),
+			"runtime: { harness: pi, model: gpt }\n",
+		),
+		write(
+			join(w.cwd, ".maestro/config.yaml"),
+			`packs: [${w.pack}]\nprofiles:\n  demo/builder:\n    attachments:\n      jj: { path: .maestro/skills/jj, hint: for jj }\n`,
+		),
+		write(
+			join(w.env.XDG_CONFIG_HOME, "maestro/config.yaml"),
+			"profiles:\n  demo/builder:\n    readOnly: [/srv/kb]\n",
+		),
+		write(
+			join(w.cwd, ".maestro/presets/risky.yaml"),
+			"profiles:\n  demo/builder:\n    runtime: { model: opus }\n",
+		),
+	]);
+	const hosts = builtinHosts({});
+	const call = (args: string[], over: Parameters<typeof w.call>[1] = {}) =>
+		w.call(args, { hosts, ...over });
+	return { ...w, call };
+}
+
+const TUNED = [
+	"--preset",
+	"risky",
+	"-c",
+	"profiles.demo/builder.limits.tokens=3000000",
+];
+
+describe("agent ls", () => {
+	test("lists each profile with its runtime and winning root, a pack shadow marked, a broken one with its error", async () => {
+		const w = await roster();
+		const listed = await w.call(["agent", "ls"]);
+		expect(listed).toMatchObject({ code: 0, err: "" });
+		expect(listed.out.split("\n")).toEqual([
+			"Profiles         harness  model   from",
+			"  broken         -        -       workspace",
+			"    profile broken: no model",
+			"  demo/builder   claude   sonnet  workspace  [shadows pack]",
+			"  demo/reviewer  stub     none    pack",
+			"  scout          pi       gpt     user",
+		]);
+	});
+
+	test("--json gives each row's fields, and an empty roster says where profiles go", async () => {
+		const w = await roster();
+		const { profiles } = json(await w.call(["agent", "ls", "--json"]));
+		expect(profiles).toEqual([
+			{
+				name: "broken",
+				root: "workspace",
+				dir: join(w.cwd, ".maestro/profiles/broken"),
+				shadowsPack: false,
+				error: "profile broken: no model",
+			},
+			{
+				name: "demo/builder",
+				root: "workspace",
+				dir: join(w.cwd, ".maestro/profiles/demo/builder"),
+				shadowsPack: true,
+				harness: "claude",
+				model: "sonnet",
+			},
+			expect.objectContaining({ name: "demo/reviewer", root: "pack" }),
+			expect.objectContaining({ name: "scout", root: "user" }),
+		]);
+		const empty = await (await world()).call(["agent", "ls"]);
+		expect(empty).toMatchObject({
+			code: 0,
+			out: "",
+			err: "no profile in any profile root\nCreate .maestro/profiles/<name>/profile.yaml, or install a pack that ships one",
+		});
+	});
+});
+
+describe("agent show", () => {
+	test("prints each section at column 15, a value's source only where a layer above the profile set it, uncoloured when piped", async () => {
+		const w = await roster();
+		const shown = await w.call(["agent", "show", "demo/builder", ...TUNED]);
+		expect(shown).toMatchObject({ code: 0, err: "" });
+		expect(shown.out).toBe(`demo/builder
+  from        .maestro/profiles/demo/builder/
+  shadows     demo pack: profiles/builder/
+
+Runtime
+  harness     claude
+  model       opus  [preset risky]
+  thinking    high
+
+Instructions  instructions.md, 2 lines
+
+Attachments   host                 agent
+  style       style.md             /in/style
+  jj          .maestro/skills/jj/  /in/jj  [workspace config]
+
+Read-only     host     agent
+              /srv/kb  /srv/kb  [user config]
+
+Limits
+  timeout     45m
+  tokens      3000000  [-c]
+
+Environment   declared only
+  tools       claude's defaults, less Agent
+  subagents   off
+  skills      none
+  mcp         none
+  hooks       none
+  files       none
+  compaction  claude's own`);
+		for (const line of shown.out.split("\n"))
+			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(COLUMNS);
+		const colored = await w.call(["agent", "show", "demo/builder", ...TUNED], {
+			terminal: () => ({ columns: COLUMNS, rows: 24 }),
+		});
+		expect(colored.out).not.toBe(shown.out);
+		expect(Bun.stripANSI(colored.out)).toBe(shown.out);
+	});
+
+	test("leaves out empty sections but Environment, which a harness without a baseline does not declare", async () => {
+		const w = await roster();
+		expect((await w.call(["agent", "show", "demo/reviewer"])).out).toBe(
+			`demo/reviewer
+  from        demo pack: profiles/reviewer/
+
+Runtime
+  harness     stub
+  model       none
+
+Environment   not declared by stub`,
+		);
+	});
+
+	test("--yaml folds the layers into one profile.yaml, each source and agent path a trailing comment", async () => {
+		const w = await roster();
+		const yaml = await w.call([
+			"agent",
+			"show",
+			"demo/builder",
+			"--yaml",
+			...TUNED,
+		]);
+		expect(yaml.out).toBe(`# demo/builder
+# from    .maestro/profiles/demo/builder/
+# shadows demo pack: profiles/builder/
+runtime:
+  harness: claude
+  model: opus # preset risky
+  thinking: high
+instructions: instructions.md
+attachments:
+  style:
+    path: style.md # agent sees /in/style
+    hint: for the house style
+  jj:
+    path: .maestro/skills/jj # workspace config; agent sees /in/jj
+    hint: for jj # workspace config
+readOnly:
+  - /srv/kb # user config
+limits:
+  timeout: 45m
+  tokens: 3000000 # -c
+---
+# environment, declared only
+tools:
+  base: default
+  less:
+    - Agent
+subagents: false
+skills: []
+mcp: []
+hooks: []
+contextFiles: []
+compaction: harness`);
+	});
+
+	test("--json gives the same fields, paths absolute", async () => {
+		const w = await roster();
+		const dir = join(w.cwd, ".maestro/profiles/demo/builder");
+		const shown = json(
+			await w.call(["agent", "show", "demo/builder", "--json", ...TUNED]),
+		);
+		expect(shown).toMatchObject({
+			name: "demo/builder",
+			root: "workspace",
+			dir,
+			shadows: [join(w.pack, "profiles/builder")],
+			runtime: { harness: "claude", model: "opus", thinking: "high" },
+			instructions: join(dir, "instructions.md"),
+			attachments: {
+				style: {
+					path: join(dir, "style.md"),
+					hint: "for the house style",
+					agent: "/in/style",
+				},
+				jj: { path: join(w.cwd, ".maestro/skills/jj"), agent: "/in/jj" },
+			},
+			readOnly: ["/srv/kb"],
+			limits: { timeout: "45m", tokens: 3000000 },
+			environment: { declared: { subagents: false, compaction: "harness" } },
+		});
+		const config = (file: string, line: number) => ({
+			file: join(file, "config.yaml"),
+			line,
+		});
+		expect(shown.sources).toMatchObject({
+			"runtime.harness": {
+				layer: "directory",
+				file: join(dir, "profile.yaml"),
+				line: 1,
+			},
+			"runtime.model": {
+				layer: "preset",
+				file: join(w.cwd, ".maestro/presets/risky.yaml"),
+				line: 3,
+			},
+			"limits.tokens": {
+				layer: "flag",
+				flag: "-c profiles.demo/builder.limits.tokens=3000000",
+			},
+			"attachments.jj.path": {
+				layer: "workspace",
+				...config(join(w.cwd, ".maestro"), 5),
+			},
+			"readOnly.0": {
+				layer: "user",
+				...config(join(w.env.XDG_CONFIG_HOME, "maestro"), 3),
+			},
+		});
+	});
+
+	test("pi's profile declares pi's baseline", async () => {
+		const w = await roster();
+		expect((await w.call(["agent", "show", "scout"])).out).toBe(`scout
+  from        ${join(w.env.XDG_CONFIG_HOME, "maestro/profiles/scout")}/
+
+Runtime
+  harness     pi
+  model       gpt
+
+Environment   declared only
+  tools       pi's defaults
+  subagents   off
+  skills      none
+  mcp         none
+  hooks       none
+  files       none
+  compaction  pi's own`);
+	});
+
+	test("an unknown profile is refused with the nearest name", async () => {
+		const w = await roster();
+		expect(await w.call(["agent", "show", "demo/bilder"])).toMatchObject({
+			code: 2,
+			err: "HOST.profile: profile demo/bilder is in no profile root\n  Did you mean 'demo/builder'?",
+		});
+	});
+});
+
+test.each([
+	[
+		["agent"],
+		"expected ls or show, got nothing\nRun 'maestro agent ls', or 'maestro agent show <profile>'",
+	],
+	[
+		["agent", "list"],
+		"expected ls or show, got 'list'\nRun 'maestro agent ls', or 'maestro agent show <profile>'",
+	],
+	[
+		["agent", "ls", "scout"],
+		"agent ls takes no profile, got 1\nRun 'maestro agent show <profile>' for one profile",
+	],
+	[["agent", "ls", "--yaml"], "agent ls takes no --yaml\nDrop --yaml"],
+	[
+		["agent", "show"],
+		"expected one profile, got 0\nName a profile, as 'maestro agent ls' lists it",
+	],
+	[
+		["agent", "show", "scout", "--yaml", "--json"],
+		"--yaml and --json both given\nPass one of them",
+	],
+])("agent %j is a usage error", async (args, err) => {
+	const w = await roster();
+	const refused = await w.call(args);
+	expect(refused.code).toBe(2);
+	expect(args.includes("--json") ? json(refused).error : refused.err).toBe(err);
+});

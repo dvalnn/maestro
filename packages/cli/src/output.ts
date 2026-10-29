@@ -220,7 +220,7 @@ export const viewOf = (
 });
 
 /** `path` with the home directory `home` at its start shown as `~`. */
-const tildeOf = (path: string, home: string | undefined) =>
+export const tildeOf = (path: string, home: string | undefined) =>
 	home && (path === home || path.startsWith(`${home}/`))
 		? `~${path.slice(home.length)}`
 		: path;

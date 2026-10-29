@@ -14,6 +14,9 @@ export {
 	subprocessHarness,
 } from "./subprocess";
 export {
+	type AgentEnvironment,
+	type Baseline,
+	baselineOf,
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,

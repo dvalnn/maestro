@@ -1,10 +1,14 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Host } from "@maestro/core/host";
-import { claudeHarness } from "@maestro/harness-claude";
-import { piHarness } from "@maestro/harness-pi";
+import {
+	declared as claudeDeclared,
+	claudeHarness,
+} from "@maestro/harness-claude";
+import { declared as piDeclared, piHarness } from "@maestro/harness-pi";
 import { repoHost } from "@maestro/host-repo";
 import {
+	type AgentEnvironment,
 	type HarnessRequest,
 	OUTBOX,
 	placeholderOutputs,
@@ -64,6 +68,20 @@ function scriptedVerdict(dir: string | undefined, req: HarnessRequest) {
 	return JSON.stringify({ outcome: "rejected", reason, report: STUB_REPORT });
 }
 
+/** The shipped harnesses with a clean baseline, each with the agent environment it launches with. */
+const baselined = (env: Record<string, string | undefined>) => [
+	{ harness: piHarness(), declared: piDeclared },
+	{
+		harness: claudeHarness({ token: env.CLAUDE_CODE_OAUTH_TOKEN }),
+		declared: claudeDeclared,
+	},
+];
+
+/** The agent environment each shipped harness with a clean baseline launches with, by harness name. */
+export const DECLARED: ReadonlyMap<string, AgentEnvironment> = new Map(
+	baselined({}).map(({ harness, declared }) => [harness.name, declared]),
+);
+
 /**
  * The hosts the CLI ships, their credentials read from `env`. The `stub` harness writes a placeholder for each declared output, then replies an `ok` envelope, taking `MAESTRO_STUB_DELAY` per agent turn; a stub turn fails when it is not a duration. With `MAESTRO_STUB_OUTPUTS=<dir>` it takes outputs and a verdict from `<dir>/<instance id>/` or `<dir>/<node id>/`.
  */
@@ -73,8 +91,7 @@ export const builtinHosts = (
 	return [
 		repoHost({
 			harnesses: [
-				piHarness(),
-				claudeHarness({ token: env.CLAUDE_CODE_OAUTH_TOKEN }),
+				...baselined(env).map(({ harness }) => harness),
 				stubHarness((req) => {
 					const delay = env[STUB_DELAY];
 					const delayMs = delay ? parseDuration(STUB_DELAY, delay) : undefined;

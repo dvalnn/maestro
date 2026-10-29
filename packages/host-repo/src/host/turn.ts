@@ -13,8 +13,9 @@ import {
 import { join } from "node:path";
 import { sha256Hex } from "@maestro/core";
 import { validator, violations } from "@maestro/ir";
+import { attachmentPath } from "../profile/index";
 import type { Bind } from "../sandbox/index";
-import { attachmentPath, previousPath } from "./frame";
+import { previousPath } from "./frame";
 import type { Session } from "./store";
 
 /** Under a session's home: its last settled turn, which names the directory of its attachments' copies. */

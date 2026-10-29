@@ -27,6 +27,18 @@ import { concertUsage, releaseConcert } from "./store";
 import { repoText } from "./text";
 import { needsRepo, validateRepo } from "./validate";
 
+export {
+	findProfile,
+	heldNames,
+	type Inspection,
+	inspectProfile,
+	type ProfileRoot,
+	profileRoot,
+	readablePath,
+	resolveProfile,
+	sourceWords,
+	type ValueSource,
+} from "../profile/index";
 export { BASE_FILE, MESSAGE_FILE, patchFiles } from "./apply";
 export {
 	AGENT_IN_PORTS,

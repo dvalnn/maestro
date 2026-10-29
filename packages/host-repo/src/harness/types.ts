@@ -4,6 +4,55 @@ import type { Bind } from "../sandbox/index";
 /** What an agent runs on: its harness, and the model and thinking level in that harness's own terms. */
 export type Runtime = { harness: string; model: string; thinking?: string };
 
+/** What a harness loads for an agent as its adapter launches it (GLOSSARY: Agent environment), each list by name. */
+export type AgentEnvironment = {
+	/** The harness's own default built-in tools, less those in `less`. */
+	tools: { base: "default"; less: string[] };
+	subagents: boolean;
+	skills: string[];
+	mcp: string[];
+	hooks: string[];
+	contextFiles: string[];
+	/** `harness`: the harness compacts on its own terms. */
+	compaction: "harness";
+};
+
+type Switched = "subagents" | "skills" | "mcp" | "hooks" | "contextFiles";
+
+/**
+ * Each part of an agent environment an adapter switches off, its declared value beside the flags and variables that
+ * make it true. Parts switched by one flag share one `argv` array, which launches once.
+ */
+export type Baseline = {
+	[P in Switched]: {
+		declared: AgentEnvironment[P];
+		argv: readonly string[];
+		env?: Readonly<Record<string, string>>;
+	};
+};
+
+/** The environment `baseline` with built-in tools `tools` declares, and the argv and env that launch it. */
+export function baselineOf(
+	tools: AgentEnvironment["tools"],
+	baseline: Baseline,
+): { declared: AgentEnvironment; argv: string[]; env: Record<string, string> } {
+	const { subagents, skills, mcp, hooks, contextFiles } = baseline;
+	const switches = [subagents, skills, mcp, hooks, contextFiles];
+	return {
+		declared: {
+			tools,
+			subagents: subagents.declared,
+			skills: skills.declared,
+			mcp: mcp.declared,
+			hooks: hooks.declared,
+			contextFiles: contextFiles.declared,
+			compaction: "harness",
+		},
+		argv: [...new Set(switches.map((s) => s.argv))].flat(),
+		env: Object.assign({}, ...switches.map((s) => s.env)),
+	};
+}
+
 /** A runtime field a harness cannot honour, why, and the fix. */
 export type RuntimeProblem = {
 	field: keyof Runtime;

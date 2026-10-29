@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
+	baselineOf,
 	finite,
 	type Harness,
 	type HarnessEvent,
@@ -31,25 +32,47 @@ const AUTH_FAILED = "authentication_failed";
 /** Per-session config dir under the session dir, so transcripts and settings are the session's own. */
 const SESSION_CONFIG = "claude";
 
-/** What claude would otherwise load on its own, none of which maestro manages. */
-const UNMANAGED_OFF = [
-	"--setting-sources",
-	"",
-	"--settings",
-	JSON.stringify({ disableAllHooks: true }),
-	"--strict-mcp-config",
-	"--disable-slash-commands",
-	"--no-chrome",
-];
+const SUBAGENT_TOOL = "Agent";
 
-/** Takes the subagent tool out of claude's context. `--bare` would drop more but also drops OAuth, which the token needs. */
-const BASELINE_DENY = ["--disallowedTools", "Agent"];
+/**
+ * The parts of claude's environment maestro does not manage, each switched off. `--bare` would drop more but also
+ * drops OAuth, which the token needs.
+ */
+const BASELINE = baselineOf(
+	{ base: "default", less: [SUBAGENT_TOOL] },
+	{
+		subagents: { declared: false, argv: ["--disallowedTools", SUBAGENT_TOOL] },
+		skills: { declared: [], argv: ["--disable-slash-commands"] },
+		mcp: { declared: [], argv: ["--strict-mcp-config"] },
+		hooks: {
+			declared: [],
+			argv: [
+				"--setting-sources",
+				"",
+				"--settings",
+				JSON.stringify({ disableAllHooks: true }),
+			],
+		},
+		contextFiles: {
+			declared: [],
+			argv: [],
+			env: {
+				CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+				CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
+			},
+		},
+	},
+);
+
+/** The environment claude launches with. */
+export const declared = BASELINE.declared;
+
+/** What else claude would otherwise load on its own, none of which maestro manages. */
+const UNMANAGED_OFF = ["--no-chrome"];
 
 /** Tells claude it already runs inside bubblewrap, which it requires to accept `bypassPermissions` as root. */
 const UNMANAGED_OFF_ENV = {
 	CLAUDE_CODE_BUBBLEWRAP: "1",
-	CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-	CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
 	CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
 };
 
@@ -242,8 +265,8 @@ function claudeArgv(
 		"--output-format",
 		"stream-json",
 		"--verbose",
+		...BASELINE.argv,
 		...UNMANAGED_OFF,
-		...BASELINE_DENY,
 		"--permission-mode",
 		"bypassPermissions",
 		"--system-prompt-snapshot",
@@ -275,6 +298,7 @@ export function claudeHarness(
 				argv: claudeArgv(bin, req, resuming),
 				stdin: req.prompt,
 				env: {
+					...BASELINE.env,
 					...UNMANAGED_OFF_ENV,
 					[CONFIG_DIR_VAR]: join(SESSION_DIR, SESSION_CONFIG),
 				},

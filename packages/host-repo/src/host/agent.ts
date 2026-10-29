@@ -31,6 +31,7 @@ import {
 } from "../harness/index";
 import type { Lane } from "../lane/index";
 import {
+	attachmentPath,
 	PROFILES,
 	type Profile,
 	type ProfileFields,
@@ -56,7 +57,6 @@ import {
 	type Target,
 } from "./config";
 import {
-	attachmentPath,
 	CUT_OFF,
 	correction,
 	type Envelope,

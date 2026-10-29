@@ -1,1 +1,1 @@
-export { type ClaudeOptions, claudeHarness } from "./claude";
+export { type ClaudeOptions, claudeHarness, declared } from "./claude";

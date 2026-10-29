@@ -1,5 +1,5 @@
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { basename, dirname, extname, join, relative, sep } from "node:path";
 import { closest, sha256Hex } from "@maestro/core";
 import {
 	type Composed,
@@ -19,13 +19,14 @@ import {
 	type Diagnostic,
 	DURATION_EXAMPLE,
 	durationMs,
+	durationText,
 	irSchema,
 	isPlainObject,
 	type JsonSchema,
 	MAX_TIMEOUT,
 	validator,
 } from "@maestro/ir";
-import type { Runtime } from "../harness/index";
+import type { AgentEnvironment, Runtime } from "../harness/index";
 
 /** The config namespace that tunes profiles by name. */
 export const PROFILES = "profiles";
@@ -39,6 +40,8 @@ const SEGMENT = irSchema.$defs.name.pattern.slice(1, -1);
 /** A bare name, or `<pack id>/<name>`, each segment a pack id. */
 export const PROFILE_NAME = new RegExp(`^${SEGMENT}(?:/${SEGMENT})?$`);
 const OWNER_SEPARATOR = "/";
+/** The directory where an agent's sandbox mounts its attachments. */
+const ATTACHMENT_DIR = "/in";
 
 /** The keys of a profile that hold file paths, relative to its directory in its file. `*` matches any one key. */
 export const PROFILE_PATHS: readonly KeyPath[] = [
@@ -127,6 +130,9 @@ export type Profile = {
 	files: Record<string, string>;
 };
 
+/** Where the sandbox sees attachment `name`. */
+export const attachmentPath = (name: string) => `${ATTACHMENT_DIR}/${name}`;
+
 /** Whether `name` is a bare name or `<pack id>/<name>`. */
 export const isProfileName = (name: string) => PROFILE_NAME.test(name);
 
@@ -173,6 +179,17 @@ export async function findProfile(
 	return dir === undefined ? undefined : { dir, shadows };
 }
 
+export type ProfileRoot = "workspace" | "user" | "pack";
+
+/** The root kind of `roots` that holds `dir`, a directory `findProfile` gave. */
+export function profileRoot(dir: string, roots: Roots): ProfileRoot {
+	const holds = (root: string) =>
+		dir.startsWith(join(root, PROFILES_DIR) + sep);
+	if (roots.workspace !== undefined && holds(roots.workspace))
+		return "workspace";
+	return holds(roots.user) ? "user" : "pack";
+}
+
 /** The entries of `dir`, none when it is missing or no directory. */
 const entries = (dir: string) => readdir(dir).catch((): string[] => []);
 
@@ -182,8 +199,8 @@ async function profilesAmong(root: string, names: string[]): Promise<string[]> {
 	return names.filter((_, i) => held[i]);
 }
 
-/** The profile names `roots` hold, each once: bare and two-level in the unowned roots, and each pack's. */
-async function heldNames(roots: Roots): Promise<string[]> {
+/** The profile names `roots` hold, each once and sorted: bare and two-level in the unowned roots, and each pack's. */
+export async function heldNames(roots: Roots): Promise<string[]> {
 	const inUnowned = async (root: string) => {
 		const tops = await entries(root);
 		const nested = await Promise.all(
@@ -493,5 +510,97 @@ export async function resolveProfile(
 		fields: fieldsOf(merged.values),
 		sources: merged.sources,
 		files: await fileHashes(found.dir),
+	};
+}
+
+export type ValueSource = Pick<Source, "layer" | "file" | "line" | "flag">;
+
+export type Inspection = {
+	name: string;
+	root: ProfileRoot;
+	dir: string;
+	shadows: string[];
+	runtime: Runtime;
+	instructions?: string;
+	attachments: Record<string, ProfileAttachment & { agent: string }>;
+	readOnly: string[];
+	limits: { timeout?: string; tokens?: number };
+	sources: Record<string, ValueSource>;
+	environment: { declared: AgentEnvironment | null };
+};
+
+/** How each layer above the profile's own file reads in a source's words; a preset names itself. */
+const LAYER_WORDS: Partial<Record<Source["layer"], string>> = {
+	user: "user config",
+	workspace: "workspace config",
+	flag: "-c",
+};
+
+/** `source` in words, such as `preset risky`; undefined for the profile's own file. */
+export function sourceWords(source: ValueSource): string | undefined {
+	const { layer, file } = source;
+	if (layer === "preset" && file !== undefined)
+		return `preset ${basename(file, extname(file))}`;
+	return LAYER_WORDS[layer];
+}
+
+const valueSource = ({ layer, file, line, flag }: Source): ValueSource => ({
+	layer,
+	...(file !== undefined && { file }),
+	...(line !== undefined && { line }),
+	...(flag !== undefined && { flag }),
+});
+
+const inside = (root: string | undefined, path: string) =>
+	root !== undefined && path.startsWith(root + sep);
+
+/** `path` relative to `base` when inside it, else to the workspace root of `roots` when inside that, else unchanged. */
+export function readablePath(
+	path: string,
+	base: string | undefined,
+	roots: Roots,
+): string {
+	const workspace = roots.workspace && dirname(roots.workspace);
+	const root = [base, workspace].find((r) => inside(r, path));
+	return root === undefined ? path : relative(root, path);
+}
+
+/**
+ * `profile`, found in `roots`, with each value's source by dotted key, its attachments' sandbox paths and the
+ * baseline `declared` gives its harness, null when none is declared. Paths are absolute.
+ */
+export function inspectProfile(
+	profile: Profile,
+	roots: Roots,
+	declared: ReadonlyMap<string, AgentEnvironment>,
+): Inspection {
+	const { runtime, instructions, attachments, readOnly, limits } =
+		profile.fields;
+	const { timeout, tokens } = limits;
+	return {
+		name: profile.name,
+		root: profileRoot(profile.dir, roots),
+		dir: profile.dir,
+		shadows: profile.shadows,
+		runtime,
+		...(instructions !== undefined && { instructions }),
+		attachments: Object.fromEntries(
+			Object.entries(attachments).map(([name, a]) => [
+				name,
+				{ ...a, agent: attachmentPath(name) },
+			]),
+		),
+		readOnly,
+		limits: {
+			...(timeout !== undefined && { timeout: durationText(timeout) }),
+			...(tokens !== undefined && { tokens }),
+		},
+		sources: Object.fromEntries(
+			profile.sources.map(({ path, source }) => [
+				path.join("."),
+				valueSource(source),
+			]),
+		),
+		environment: { declared: declared.get(runtime.harness) ?? null },
 	};
 }
