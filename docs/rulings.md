@@ -51,8 +51,15 @@ place of a result cache across concerts, which V1 does not have. Its shape is se
 - **Each command reads and writes one record store**, the one `dataRoot` resolves to. `ls` has no `--all`, because
   listing other stores needs workspace discovery, which maestro does not do. A host-specific `ls` column, such as a
   target, would come through the host's hooks, never from `cli`.
+- **A pack listed under `packs:` wins over an installed pack of the same id**, on every command that loads packs. Why:
+  the operator named it on purpose, and an installed copy of an older release must not shadow a pack under development.
+  Two installed packs of one id are still refused. Applies in `packages/cli/src/config.ts` (`packDirs`).
 
 ## Agents
 
 - **An agent may carry limits on its wall clock and tokens (HOST-08).** They bound one agent instance, not a concert, so
   D-23's exclusion of cost and concert-wide budgets stands. Applies in `packages/host-repo/src/host/agent.ts`.
+- **An agent gets a named tool list, never a harness's defaults.** claude runs with `Bash`, `Read`, `Write`, `Edit` and
+  pi with `read`, `bash`, `edit`, `write`; no profile adds tools until one needs them. Why: a harness's defaults change
+  between releases, and claude 2.1.302's include tools that spawn subagents, schedule work past the concert or reach
+  other sessions. Applies in each adapter's baseline (AT-01).
