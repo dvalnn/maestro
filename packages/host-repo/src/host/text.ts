@@ -108,9 +108,6 @@ function actor(enrichment: Enrichment): string | undefined {
 	].join(SEP);
 }
 
-/** The host directory of the session that ran an agent, where its harness writes the transcript. */
-const where = (enrichment: Enrichment) => stringOf(enrichment.sessionDir);
-
 /** The headings of the report lists an agent's notes show, by report field. */
 const NOTED = { obstacles: "Obstacles", lessons: "Lessons" } as const;
 
@@ -136,4 +133,4 @@ function notes(enrichment: Enrichment): Record<string, string[]> {
 }
 
 /** How the repo host's prepare, tool, result, usage, context and environment events and its agents read as text. */
-export const repoText: HostText = { progress, actor, where, notes };
+export const repoText: HostText = { progress, actor, notes };

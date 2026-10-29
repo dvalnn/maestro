@@ -78,10 +78,10 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
   row's one instance, any other row's instances at or under its node in its context.
 - `inspectorLines(ir, seen, view, key, held)`: the title and summary, then the event lines. One instance of the row's
   own node shows its context, state, times, tokens, actor, a `stale` mark, its reason or latest progress, then from the
-  record its metrics by name, outputs as JSON, artifacts with their content hash and raw enrichment on one line, each
-  left out when absent. More instances, or none, show their count by state, tokens and span. Each event is drawn as
-  `eventLine` draws it, cut at `columns - 1` cells. `held.events` is only appended to, and only the events new since the
-  last call are drawn.
+  record its metrics by name, left out when absent, and with artifacts a dim `files` line naming the `maestro art` that
+  serves them. More instances, or none, show their count by state, tokens and span. Each event is drawn as `eventLine`
+  draws it, cut at `columns - 1` cells. `held.events` is only appended to, and only the events new since the last call
+  are drawn.
 - `navigated(ir, seen, view, agents, nav, held)`: `browse`'s tree, or with `nav.inspect` the inspector: the header,
   `now` and `last`, the summary, a viewport of event lines that keeps the newest in view while tailing, a rule counting
   the events and the lines in view, and the key line.

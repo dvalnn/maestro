@@ -20,13 +20,13 @@ import {
 	keyLine,
 	lookOf,
 	MIN_BODY,
-	padCells,
 	painted,
 	type Recorded,
 	type Seen,
 	type Seg,
+	shellArg,
+	shownId,
 	type View,
-	valueSegs,
 } from "./live";
 import type { Browsed, Inspect, Nav } from "./press";
 import {
@@ -41,13 +41,8 @@ import {
 	WIDE_GAP,
 } from "./tree";
 
-/** An instance as the record holds it: its outputs, raw enrichment and artifacts beside what `Recorded` holds. */
+/** An instance as the record holds it: its artifacts beside what `Recorded` holds. */
 export type Kept = Recorded & {
-	outputs?: Readonly<Record<string, unknown>>;
-	inputs?: Readonly<Record<string, unknown>>;
-	enrichment?: Readonly<Record<string, unknown>>;
-	/** Where the instance's session lives, as its host says. */
-	where?: string;
 	artifacts: readonly { path: string; contentHash: string }[];
 };
 
@@ -61,8 +56,8 @@ export type Held = {
 };
 
 const INDENT = "  ";
-/** The summary's label column: wide enough for `enrichment`, and a gap. */
-const LABEL_WIDTH = "enrichment".length + GAP.length;
+/** The summary's label column: wide enough for `context`, and a gap. */
+const LABEL_WIDTH = "context".length + GAP.length;
 const RULE = "─";
 /** Lines the inspector holds below its events: the rule and the key line. */
 const INSPECTOR_BELOW = 2;
@@ -96,9 +91,6 @@ const labelled = (name: string, value: readonly Seg[]): Seg[] => [
 	...value,
 ];
 
-const listed = (name: string, items: readonly Seg[][]): Seg[][] =>
-	items.map((item, i) => labelled(i === 0 ? name : "", item));
-
 const titleSegs = (parts: readonly string[]): Seg[] => [
 	["◆ inspect  ", "magenta"],
 	[parts.filter(Boolean).map(flat).join(GAP), "bold"],
@@ -131,50 +123,36 @@ function noteSegs(s: InstanceState): Seg[][] {
 	return [];
 }
 
-/** The lines of a block of port values, one per port, the port names padded to one width. */
-function portLines(values: Readonly<Record<string, unknown>> | undefined) {
-	const ports = Object.entries(values ?? {});
-	const portWidth = Math.max(
-		0,
-		...ports.map(([port]) => Bun.stringWidth(flat(port))),
-	);
-	return ports.map(([port, value]): Seg[] => [
-		[`${padCells(flat(port), portWidth)}${GAP}`, "bold"],
-		...valueSegs(flat(JSON.stringify(value))),
-	]);
-}
-
-/** An instance's recorded metrics by name, inputs, outputs, artifacts and raw enrichment, each left out when absent. */
+/** An instance's recorded metrics by name, left out when absent. */
 function keptSegs(k: Kept | undefined): Seg[][] {
 	if (k === undefined) return [];
 	const metrics = Object.entries(k.metrics).map(
 		([name, n]) => `${flat(name)} ${compact(n)}`,
 	);
-	const artifacts = k.artifacts.map((a): Seg[] => [
-		[`${flat(a.path)}${GAP}`],
-		[flat(a.contentHash), "dim"],
-	]);
-	const enrichment =
-		k.enrichment && Object.keys(k.enrichment).length > 0
-			? [valueSegs(flat(JSON.stringify(k.enrichment)))]
-			: [];
-	return [
-		...listed(
-			"metrics",
-			metrics.length > 0 ? [[[metrics.join(NOTE_SEP)]]] : [],
-		),
-		...listed("inputs", portLines(k.inputs)),
-		...listed("outputs", portLines(k.outputs)),
-		...listed("artifacts", artifacts),
-		...listed("enrichment", enrichment),
-	];
+	return metrics.length > 0
+		? [labelled("metrics", [[metrics.join(NOTE_SEP)]])]
+		: [];
 }
+
+/** The hint to `maestro art` for an instance that has artifacts, none without. */
+const filesSegs = (view: View, name: string, k: Kept | undefined): Seg[][] =>
+	k && k.artifacts.length > 0
+		? [
+				labelled("files", [
+					[
+						`maestro art ${shownId(view.concert.id, view.concert.unique)} ${shellArg(flat(name))}`,
+						"dim",
+					],
+				]),
+			]
+		: [];
 
 /** One instance's title and `state` line: its state, a stale mark, times, tokens and actor. */
 function stateSegs(
 	graph: GraphIndex,
 	view: View,
 	s: InstanceState,
+	name: string,
 	k: Kept | undefined,
 ): { title: Seg[]; state: Seg[] } {
 	const actor = k?.actor ?? s.agent ?? "";
@@ -185,10 +163,7 @@ function stateSegs(
 			: duration((endOf(s) ?? view.now) - s.startedAt);
 	const times = s.reused ? "reused" : timesText(view, s.startedAt, endOf(s));
 	const stale: Seg[] = k?.stale ? [[`${WIDE_GAP}stale`, "yellow"]] : [];
-	const title = [
-		formatInstance(s, graph.groupsOf(s.node)),
-		kindOf(graph, s.node),
-	];
+	const title = [name, kindOf(graph, s.node)];
 	return {
 		title: titleSegs([...title, s.state, ran, actor, tokenText(tokens)]),
 		state: labelled("state", [
@@ -200,21 +175,22 @@ function stateSegs(
 	};
 }
 
-/** One instance: its title, context, state and times, reason or latest progress, then what the record keeps of it. */
+/** One instance: its title, context, state, reason or latest, metrics and `files` hint. */
 function instanceSegs(
 	graph: GraphIndex,
 	view: View,
 	s: InstanceState,
 	k: Kept | undefined,
 ): Seg[][] {
-	const { title, state } = stateSegs(graph, view, s, k);
+	const name = formatInstance(s, graph.groupsOf(s.node));
+	const { title, state } = stateSegs(graph, view, s, name, k);
 	return [
 		title,
 		labelled("context", [[flat(labelOf(graph, s))]]),
 		state,
-		...(k?.where === undefined ? [] : [labelled("session", [[flat(k.where)]])]),
 		...noteSegs(s),
 		...keptSegs(k),
+		...filesSegs(view, name, k),
 	];
 }
 

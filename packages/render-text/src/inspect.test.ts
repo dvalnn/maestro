@@ -36,8 +36,6 @@ const REPAIR: Kept = {
 	stale: false,
 	actor: "pi · haiku",
 	metrics: { tokens_in: 1_200, tokens_out: 30 },
-	outputs: { value: { fixed: true }, note: "n1" },
-	enrichment: { session: "d916" },
 	artifacts: [{ path: "out/report.md", contentHash: "sha256:9f2c" }],
 };
 
@@ -148,18 +146,16 @@ describe("inspectorLines", () => {
 				instances: [
 					{
 						...REPAIR,
-						outputs: undefined,
-						enrichment: undefined,
 						artifacts: [],
 					},
 				],
 			},
 			[
 				"◆ inspect  test-loop[1]/repair  fake.agent  running  10s  pi · haiku  1.2k tok",
-				"  context     test-loop ⟲2 › repair",
-				"  state       running   started +1m50s   ran 10s   tokens 1.2k   pi · haiku",
-				"  latest      tool",
-				"  metrics     tokens_in 1.2k · tokens_out 30",
+				"  context  test-loop ⟲2 › repair",
+				"  state    running   started +1m50s   ran 10s   tokens 1.2k   pi · haiku",
+				"  latest   tool",
+				"  metrics  tokens_in 1.2k · tokens_out 30",
 			],
 		],
 		[
@@ -168,8 +164,8 @@ describe("inspectorLines", () => {
 			{},
 			[
 				"◆ inspect  request  code  ok  1.0s",
-				"  context     request",
-				"  state       ok   started +0.0s   ran 1.0s",
+				"  context  request",
+				"  state    ok   started +0.0s   ran 1.0s",
 			],
 		],
 		[
@@ -178,9 +174,9 @@ describe("inspectorLines", () => {
 			{ settled: true },
 			[
 				"◆ inspect  panel/lenses[spec]/lens  fake.agent  failed  29s",
-				"  context     panel › lenses[spec] › lens",
-				"  state       failed   started +2m41s   ran 29s",
-				"  reason      harness exited 137: killed, out of memory",
+				"  context  panel › lenses[spec] › lens",
+				"  state    failed   started +2m41s   ran 29s",
+				"  reason   harness exited 137: killed, out of memory",
 			],
 		],
 		[
@@ -199,8 +195,8 @@ describe("inspectorLines", () => {
 			},
 			[
 				"◆ inspect  request  code  ok  1.0s",
-				"  context     request",
-				"  state       ok   stale   started +0.0s   ran 1.0s",
+				"  context  request",
+				"  state    ok   stale   started +0.0s   ran 1.0s",
 			],
 		],
 		[
@@ -209,9 +205,9 @@ describe("inspectorLines", () => {
 			{ instances: [REPAIR] },
 			[
 				"◆ inspect  test-loop  loop  2 running · 3 ok · 1 rejected",
-				"  context     6 instances",
-				"  states      2 running · 3 ok · 1 rejected   tokens 1.2k",
-				"  span        started +1m10s   ran 50s",
+				"  context  6 instances",
+				"  states   2 running · 3 ok · 1 rejected   tokens 1.2k",
+				"  span     started +1m10s   ran 50s",
 			],
 		],
 		[
@@ -220,46 +216,32 @@ describe("inspectorLines", () => {
 			{ at: 170, only: (e) => !e.node.startsWith("panel/lenses/") },
 			[
 				"◆ inspect  panel  scope  1 running",
-				"  context     1 instance",
-				"  states      1 running",
-				"  span        started +2m40s   ran 10s",
+				"  context  1 instance",
+				"  states   1 running",
+				"  span     started +2m40s   ran 10s",
 			],
 		],
 		[
 			"a row with no instance yet",
 			"ruling@",
 			{},
-			["◆ inspect  ruling  code", "  context     no instance yet"],
+			["◆ inspect  ruling  code", "  context  no instance yet"],
 		],
 	])("%s", (_what, key, given, head) => {
 		expect(inspected(key, given).head).toEqual(head);
 	});
 
-	test("shows the inputs, outputs, artifacts and raw enrichment the record holds", () => {
-		const { head } = inspected("test-loop/repair@1", {
-			instances: [{ ...REPAIR, inputs: { item: "src/a.ts" } }],
-		});
-		expect(head.slice(5)).toEqual([
-			'  inputs      item  "src/a.ts"',
-			'  outputs     value  {"fixed":true}',
-			'              note   "n1"',
-			"  artifacts   out/report.md  sha256:9f2c",
-			'  enrichment  {"session":"d916"}',
-		]);
-	});
-
-	test("shows a session line after the state line when the host says where, none without", () => {
+	test("hints at maestro art with the short concert id and instance when the instance has artifacts, none without", () => {
 		const lines = (kept: Kept) =>
 			inspected("test-loop/repair@1", { instances: [kept] }).head;
-		const where = lines({ ...REPAIR, where: "/store/sessions/d916/home" });
-		const at = where.findIndex((l) => l.startsWith("  state "));
-		expect(where[at + 1]).toBe("  session     /store/sessions/d916/home");
-		expect(lines(REPAIR).some((l) => l.includes("session  "))).toBe(false);
-	});
-
-	test("leaves out the inputs block when the record has none", () => {
-		const { head } = inspected("test-loop/repair@1", { instances: [REPAIR] });
-		expect(head.join("\n")).not.toContain("inputs");
+		expect(lines(REPAIR).at(-1)).toBe(
+			"  files    maestro art kswoykny 'test-loop[1]/repair'",
+		);
+		expect(
+			lines({ ...REPAIR, artifacts: [] }).some((l) =>
+				l.includes("maestro art"),
+			),
+		).toBe(false);
 	});
 
 	test("cuts each event line at one cell short of the terminal, and counts an event drawn on several lines once", () => {
@@ -318,21 +300,20 @@ describe("navigated", () => {
 		const f = navigated(
 			PANEL_IR,
 			seen(new Map(), events),
-			{ ...viewOf(false), rows: 14 },
+			{ ...viewOf(false), rows: 13 },
 			new Map(),
 			{ ...NAV, inspect: { key: "test-loop/repair@1", scroll: 0, tail: true } },
 			{ events, instances: [REPAIR] },
 		);
-		expect(f.lines.slice(3, 9)).toEqual([
+		expect(f.lines.slice(3, 8)).toEqual([
 			"◆ inspect  test-loop[1]/repair  fake.agent  running  10s  pi · haiku  1.2k tok",
-			"  context     test-loop ⟲2 › repair",
-			"  state       running   started +1m50s   ran 10s   tokens 1.2k   pi · haiku",
-			"  latest      tool",
-			"  metrics     tokens_in 1.2k · tokens_out 30",
-			"  … 4 more lines",
+			"  context  test-loop ⟲2 › repair",
+			"  state    running   started +1m50s   ran 10s   tokens 1.2k   pi · haiku",
+			"  latest   tool",
+			"  … 2 more lines",
 		]);
 		expect(f.body).toBe(3);
-		expect(f.lines.slice(9, 12)).toEqual([
+		expect(f.lines.slice(8, 11)).toEqual([
 			expect.stringMatching(/test-loop\[1\]\/repair +running$/),
 			expect.stringMatching(/test-loop\[1\]\/repair +tool$/),
 			"",

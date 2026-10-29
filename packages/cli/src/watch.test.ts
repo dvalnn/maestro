@@ -286,7 +286,7 @@ describe("watch --frames", () => {
 		const framed = await w.call(["watch", id, "--frames", "enter q enter esc"]);
 		const [, opened = "", ...rest] = framed.out.split(/^── (?=[a-z])/m);
 		expect(opened).toMatch(/^◆ inspect {2}echo\/echo +fake\.task +failed /m);
-		expect(opened).toMatch(/^ {2}metrics {5}tokens_in 1\.2k$/m);
+		expect(opened).toMatch(/^ {2}metrics {2}tokens_in 1\.2k$/m);
 		expect(opened).toMatch(/^ +\S+ {2}echo\/echo +failed +flaky$/m);
 		expect(rest.map((f) => f.split("\n")[0])).toEqual(["quit", "enter", "esc"]);
 		const [quit = "", again = "", back = ""] = rest;
@@ -410,7 +410,6 @@ describe("watch on a running concert", async () => {
 					? { word: "tool", detail: `ran ${e.name} ${DETAIL}` }
 					: undefined,
 			actor: (e) => (e.kind === "tool" ? "pi · haiku" : undefined),
-			where: (e) => `/store/${String(e.session)}/home`,
 		},
 	};
 	const announced = Promise.withResolvers<string>();
@@ -555,7 +554,6 @@ describe("watch on a running concert", async () => {
 		expect(first.some((l) => /echo\/echo +ok$/.test(l))).toBe(false);
 		const settled = draws.findIndex(echoSettled);
 		expect(settled).toBeGreaterThan(opened);
-		expect(draws[settled]).toContain("  session     /store/s1/home");
 		expect(draws[settled]?.at(-1)).toStartWith("◆ tail ");
 		const back = draws.slice(settled + 1).find((l) => !inspecting(l)) ?? [];
 		expect(back[cursorAt(back)]).toMatch(/^> +✓ echo /);

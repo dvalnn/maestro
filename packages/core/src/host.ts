@@ -194,11 +194,6 @@ export interface HostText {
 	 */
 	actor?(enrichment: Enrichment): string | undefined;
 	/**
-	 * Where an instance's session lives, an absolute path, such as the directory its harness writes the transcript in.
-	 * Called on a settled instance's enrichment; undefined when it has none.
-	 */
-	where?(enrichment: Enrichment): string | undefined;
-	/**
 	 * An instance's notes as headed lists of one-line entries, such as `{ Obstacles: [...] }`, each list non-empty.
 	 * Called on a settled instance's enrichment; empty when it has none.
 	 */

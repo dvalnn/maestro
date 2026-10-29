@@ -255,7 +255,7 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 	for (const [args, last] of [
 		[[], "Name the concert, as 'maestro ls' lists it"],
 		[[id, "nope"], `List them with 'maestro ls ${id}'`],
-		[[id, "a", "nope.md"], `List them with 'maestro art ${id} inner/a --path'`],
+		[[id, "a", "nope.md"], `List them with maestro art ${id} inner/a --path`],
 		[[id, "a", "--json"], "Drop --json to print the instance's files"],
 		[[id, "--json", "--path"], "Drop one of them"],
 	] as const) {

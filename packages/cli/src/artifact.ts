@@ -1,6 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import type { ConcertRecord } from "@maestro/core/perform";
+import { shellArg } from "@maestro/render-text/live";
 import {
 	COMMON,
 	type Command,
@@ -167,7 +168,7 @@ async function picked(
 	if (!named)
 		throw usageError(
 			`instance '${name}' of concert ${row.id} has no file '${file}'`,
-			`List them with 'maestro art ${row.id} ${name} --path'`,
+			`List them with maestro art ${row.id} ${shellArg(name)} --path`,
 		);
 	return [named];
 }

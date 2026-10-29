@@ -431,7 +431,13 @@ function shared(a: string, b: string): number {
 }
 
 /** Concert `id`'s short id as shown: its first `unique` letters, and at least 8. */
-const shownId = (id: string, unique: number) =>
+const SHELL_SAFE = /^[A-Za-z0-9_./:@%+=,-]+$/;
+
+/** An argument as a shell reads it back verbatim: single-quoted unless it holds only safe characters. */
+export const shellArg = (arg: string) =>
+	SHELL_SAFE.test(arg) ? arg : `'${arg.replaceAll("'", `'\\''`)}'`;
+
+export const shownId = (id: string, unique: number) =>
 	shortId(id).slice(0, Math.max(SHORT_ID_MIN, unique));
 
 /** Concert `id`'s short id as segments: its first `unique` letters bold, then dim up to at least 8 letters. */

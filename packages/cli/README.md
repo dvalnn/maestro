@@ -174,11 +174,10 @@ mode and keys.
 
 `Enter` replaces the tree with the row's part of the record, under the same header: a title, then for one instance its
 context, state, start and run time, tokens, actor, a `stale` mark when an earlier attempt left it, and its reason or
-latest progress, a `session` line with the path of an agent's session, where its harness writes the transcript, then its
-metrics by name, wired inputs (a fan-out item, a loop round's carried value, a collected input; not literals), outputs,
-artifacts and raw enrichment when the record has them. A group, scope or fan-out row counts every instance under it in
-its round instead. Below come the events of what it shows, as `--events` words them, and new ones append while it runs.
-The inspector tails the newest until a scroll moves away; `G` or scrolling back to the end tails again.
+latest progress, then its metrics by name and, when it has artifacts, a dim `files` line naming the `maestro art` that
+serves them. A group, scope or fan-out row counts every instance under it in its round instead. Below come the events of
+what it shows, as `--events` words them, and new ones append while it runs. The inspector tails the newest until a
+scroll moves away; `G` or scrolling back to the end tails again.
 
 | Key                       | Does in the inspector   |
 | ------------------------- | ----------------------- |
