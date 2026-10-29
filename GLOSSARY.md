@@ -174,6 +174,10 @@ goes separately, as the user message. _Avoid_: identity
 **Context policy**: How an agent's run resets its context as it fills: by handoff or by its harness's compaction, at a
 set occupancy, a capped number of times. Without one, the harness compacts on its own terms.
 
+**Session**: An agent's harness conversation, a `repo.session` value every agent outputs. An agent given one continues
+it in place and is told what changed since its last turn: the task, its attachments, its working copy and its reply
+contract. One runner at a time, on one harness.
+
 **Handoff**: A context reset within one agent node: the session stops at the policy's occupancy, writes a handoff note,
 and a fresh session takes over the same task in the same lane. _Avoid_: baton
 

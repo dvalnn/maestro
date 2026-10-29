@@ -408,11 +408,11 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - **Agent node.** Inputs: a task prompt (text, staged by the host, no argument-length limit), a profile by name and the
   seat it fills, a lane input, typed output declarations (a JSON file with a schema, or Markdown), `attachments` and the
   named checks it may run. The profile gives the runtime (harness, model, thinking level), the instructions, the limits,
-  the read-only binds and its own attachments, bound at `/in/<name>` (see Profiles). Its lane input may ask to `resume`
-  the session that wrote the version it extends, and `verdict` marks a verdict agent. Outputs: the declared files as
-  typed artifacts, the report object, outcome and reason from its envelope, metrics (token counts), the staged text as
-  an artifact, and the resulting lane version. `rejected` means a verdict agent's verdict is negative. `failed` means
-  the run did not complete, or the agent is blocked (ADR 0012).
+  the read-only binds and its own attachments, bound at `/in/<name>` (see Profiles). It may take a `session` to
+  continue, and `verdict` marks a verdict agent. Outputs: the declared files as typed artifacts, the report object,
+  outcome and reason from its envelope, metrics (token counts), the staged text as an artifact, its `session`, and the
+  resulting lane version. `rejected` means a verdict agent's verdict is negative. `failed` means the run did not
+  complete, or the agent is blocked (ADR 0012).
 - **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
   failures reported), or an inline `{ run, hint?, timeout }`. Each line runs through `sh -c` in the sandbox, in order,
   and the first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are
@@ -482,14 +482,27 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 **Sessions**
 
-- The host mints each agent's harness session, and records which session wrote each lane version under `sessions/` in
-  its store. An agent that extends a version with `resume` continues the session that wrote it. A check that extends a
-  version and seals a new one passes the extended version's session on to the new one, so build, check and a resumed
-  repair share a session. An apply records none.
-- An agent's enrichment carries `sessionDir`, the session's host directory `sessions/<id>/home`, where the harness
+- A session is a value of type `repo.session`: `<concert id>.<node instance id>` of the agent that started it. An agent
+  with no `session` input mints one under `sessions/` in the host store; one given a session continues it in place, and
+  outputs the id it was given.
+- Compose refuses a session that crosses harnesses, naming both nodes, profiles and harnesses, and one that two agents
+  continue, or that an agent inside a `parMap` or `parFind` body takes from outside it: a session has one runner at a
+  time. An agent a sequential `loop` or `fold` repeats may continue one, as its iterations run in order.
+- A continuing agent's user message opens with what changed since the session's last turn, then the task under `# Task`.
+  Each line is unchanged or says what changed:
+  - `Task`;
+  - `Attachments`, by content hash, each changed, new or dropped; a changed one's earlier copy is bound at
+    `/in/previous/<name>`;
+  - `Working copy`, the commits it stood on then and now, with the `git diff` between them;
+  - `Contract: changed`, present only when the frame's `## Reply` section differs.
+
+  The system prompt is staged anew for every turn. The host keeps the last turn in the session's home once it settles,
+  unless a cancel or a limit cut it short, so a resumed concert compares against the last completed one. No attachment,
+  of the graph or of a profile, may be named `previous`. A fresh session's message is the task alone.
+
+- An agent's enrichment carries `sessionDir`, the session's host directory `sessions/<id>/harness`, where the harness
   writes its transcript (claude under `claude/projects/`, pi directly in it). A session lasts until its concert is
-  pruned.
-- A session continues only within its concert and on its harness, so a warm session never crosses concerts.
+  pruned; continuing a pruned one fails the agent, naming the session and the node that started it.
 
 **Lanes**
 
@@ -579,8 +592,7 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 - Lane rule (HOST-02): no version extended twice, whether by two nodes or by one node once per group iteration, and no
   extension of a lane ref or of a commits node's version.
-- Resume only on an extension of an agent's version or of an extending check's, and not of any other writer (an apply, a
-  check on a fresh or forked lane), nor a version written on another harness or in another concert.
+- Session rule: one runner at a time and one harness per session (see Sessions).
 - Every profile, harness and check a node names exists, the message listing those that do.
 - Every bind, read-only or writable, is absolute, exists and is not inside a lane. A writable bind also neither contains
   nor lies inside the lanes or the target repository. An agent names only checks config has.

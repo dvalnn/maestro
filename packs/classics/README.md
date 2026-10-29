@@ -10,7 +10,7 @@ no models, so set each profile's `runtime` in config, as `profiles.classics/<nam
 | Composition          | What it does                                                                                      | Profiles                          |
 | -------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------- |
 | `build_then_repair`  | Builds the request in a fresh lane, repairs until the target's checks pass, leaves a patch series | `builder`                         |
-| `repair_until_green` | Checks a lane, then repairs and checks again while the checks are red; used by others, not alone  | `builder`                         |
+| `repair_until_green` | Checks a lane, then repairs in the builder's session while the checks are red; used by others     | `builder`                         |
 | `panel_review`       | Rules on a change through each lens, a skeptic over each lens's findings, then consolidates       | `lens`, `skeptic`, `consolidator` |
 | `v_model`            | Scouts, plans, builds and repairs, reviews each scouted risk, traces acceptance to the plan       | all seven¹                        |
 

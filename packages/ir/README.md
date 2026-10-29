@@ -417,7 +417,9 @@ The IR carries structure. These semantics belong to the slices that execute or v
 
 - **1.1**: the `repo.agent` node config is `{ profile, seat, lane, verdict?, checks?, attachments?, out? }`. It lost
   `role`, `limits` and `readOnly`, and the node lost its `identity` input port. A 1.0 agent node is refused at
-  pre-flight (ADR 0004, ADR 0013). Its `report` output became an object, `{ summary, gaps?, obstacles?, lessons? }`.
+  pre-flight (ADR 0004, ADR 0013). Its `report` output became an object, `{ summary, gaps?, obstacles?, lessons? }`. Its
+  lane input lost `resume`: the node outputs `session`, of the host type `repo.session`, and takes an optional `session`
+  input to continue one.
 - **1.0**: first version. Before release, code nodes took the optional `timeout` and lost `pure`, and the `params` and
   `config` blocks left the IR. The node field `tag` was removed. The `repeat` kind became `loop`: it lost `until`,
   gained a required `test`, and its inner ports carry `ok` and `reason`. The implicit output `outcome` was removed: `ok`

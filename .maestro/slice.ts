@@ -14,7 +14,14 @@ import {
 	type Verdict,
 	type Verdicts,
 } from "@maestro/classics";
-import { changeset, extend, fresh, Lane, read } from "@maestro/host-repo-sdk";
+import {
+	changeset,
+	extend,
+	fresh,
+	Lane,
+	read,
+	Session,
+} from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
 	allSettled,
@@ -56,6 +63,8 @@ const TESTS =
 
 const ALL_LENSES = `Rule on the change through every lens: ${CORRECTNESS}; ${SPEC}; ${TESTS}. ${QUESTIONS} ${GROUNDS} Run \`check all\` to see the tests run.`;
 
+const AGAIN = `The change was fixed after your last ruling. ${ALL_LENSES} The attached upheld findings are those of yours the last round upheld; anything else you raised was dismissed.`;
+
 /** The panel's lenses, by name, as each lens's task. */
 const PANEL = {
 	correctness: `Rule on the change through this lens only: ${CORRECTNESS}. ${GROUNDS}`,
@@ -76,7 +85,8 @@ type Ruled =
 	| { verdict: ValueOf<typeof Verdict> }
 	| { findings: Found; verdicts?: Settled<ValueOf<typeof Verdicts>>[] };
 
-type Rulings = { lane: string } & Ruled;
+/** One round's rulings, and what its state carries to the next: the reviewed lane, the builder's session and the lens's. */
+type Rulings = { lane: string; session: string; lens?: string } & Ruled;
 
 /**
  * The blocking findings the skeptic upheld: none when the lens was clean, every blocking one when no skeptic delivered
@@ -102,27 +112,60 @@ function upheldLines(rulings: Rulings): string[] {
 	);
 }
 
-/** The upheld blocking findings of one review round as Markdown, `clean` when there are none, and the reviewed lane. */
+/**
+ * The upheld blocking findings of one review round as Markdown, `clean` when there are none, and the lane and sessions
+ * it carries.
+ */
 export function upheldOf(
 	rulings: Rulings,
 	ctx: CodeContext,
-): { lane: string; clean: boolean; upheld: string } {
+): {
+	lane: string;
+	session: string;
+	lens?: string;
+	clean: boolean;
+	upheld: string;
+} {
 	const lines = upheldLines(rulings);
 	const upheld = join(ctx.scratch, "upheld.md");
 	const body = lines.length ? lines : ["None."];
 	writeFileSync(upheld, ["# Upheld findings", "", ...body, ""].join("\n"));
-	return { lane: rulings.lane, clean: lines.length === 0, upheld };
+	const { lane, session, lens } = rulings;
+	return {
+		lane,
+		session,
+		...(lens !== undefined && { lens }),
+		clean: lines.length === 0,
+		upheld,
+	};
 }
 
-const UPHELD = { lane: Lane, clean: Bool(), upheld: Markdown() };
+const UPHELD = {
+	lane: Lane,
+	session: Session,
+	clean: Bool(),
+	upheld: Markdown(),
+};
 
-/** The review of `tier` over the green lane version `lane`, ending in its upheld findings. */
-function review(tier: Tier, lane: Ref<string>, spec: Ref<ArtifactRef>) {
+/** The lens of the round before, which a later round's lens continues, and the findings that round upheld. */
+type Earlier = { lens: Ref<string>; upheld: Ref<ArtifactRef> };
+
+/**
+ * The review of `tier` over the green lane version `lane`, ending in its upheld findings and carrying the builder's
+ * `session`. Its lens continues the lens of `earlier` when given.
+ */
+function review(
+	tier: Tier,
+	lane: Ref<string>,
+	session: Ref<string>,
+	spec: Ref<ArtifactRef>,
+	earlier?: Earlier,
+) {
 	const patches = changeset(lane, { label: "patches" }).out.changeset;
-	const tally = (rulings: CodeInputs<Ruled>) =>
+	const tally = (rulings: CodeInputs<Ruled & { lens?: string }>) =>
 		code(upheldOf, {
-			in: { lane, ...rulings },
-			out: UPHELD,
+			in: { lane, session, ...rulings },
+			out: "lens" in rulings ? { ...UPHELD, lens: Session } : UPHELD,
 			label: "upheld",
 			tolerate: "rejected",
 		});
@@ -147,13 +190,23 @@ function review(tier: Tier, lane: Ref<string>, spec: Ref<ArtifactRef>) {
 	};
 	const found = lens({
 		label: "reviewer",
-		task: ALL_LENSES,
+		task: earlier ? AGAIN : ALL_LENSES,
 		lane: read(lane),
+		session: earlier?.lens,
 		checks: ["all"],
-		attachments,
+		attachments: {
+			...attachments,
+			...(earlier && {
+				upheld: {
+					artifact: earlier.upheld,
+					hint: "the findings upheld last round",
+				},
+			}),
+		},
 	});
 	const findings = readJson(found.out.findings, { tolerate: "rejected" });
-	if (tier === "small") return tally({ findings });
+	const lensSession = found.out.session;
+	if (tier === "small") return tally({ findings, lens: lensSession });
 	const challenged = skeptic({
 		label: "skeptic",
 		task: SKEPTIC_TASK,
@@ -169,6 +222,7 @@ function review(tier: Tier, lane: Ref<string>, spec: Ref<ArtifactRef>) {
 	});
 	return tally({
 		findings,
+		lens: lensSession,
 		verdicts: allSettled([
 			readJson(challenged.out.verdicts, { tolerate: "rejected" }),
 		]),
@@ -201,13 +255,17 @@ export const slice = composition(
 			out: { file: Markdown() },
 			label: "request",
 		}).out.file;
-		const round = (lane: Ref<string>) => {
+		const round = (
+			lane: Ref<string>,
+			session: Ref<string>,
+			earlier?: Earlier,
+		) => {
 			const green = use(
 				repairUntilGreen,
-				{ lane, spec },
+				{ lane, session, spec },
 				{ params: { maxRepairs, checks: ["all"] }, label: "gate" },
 			);
-			return review(tier, green.out.lane, spec);
+			return review(tier, green.out.lane, session, spec, earlier);
 		};
 		const built = builder({
 			label: "build",
@@ -216,12 +274,13 @@ export const slice = composition(
 			checks: ["all"],
 		});
 		const reviewed = loop.while((s) => not(s.out.clean), {
-			init: round(built.out.lane),
+			init: round(built.out.lane, built.out.session),
 			step: (s) => {
 				const fixed = builder({
 					label: "fix",
 					task: FIX_TASK,
-					lane: extend(s.out.lane, { resume: true }),
+					lane: extend(s.out.lane),
+					session: s.out.session,
 					checks: ["all"],
 					attachments: {
 						upheld: {
@@ -231,7 +290,13 @@ export const slice = composition(
 						spec: { artifact: spec, hint: "for what the change must do" },
 					},
 				});
-				return round(fixed.out.lane);
+				return round(
+					fixed.out.lane,
+					fixed.out.session,
+					"lens" in s.out
+						? { lens: s.out.lens, upheld: s.out.upheld }
+						: undefined,
+				);
 			},
 			max: maxFixes,
 			label: "fixes",

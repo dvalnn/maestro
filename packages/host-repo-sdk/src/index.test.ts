@@ -18,8 +18,23 @@ import {
 	repoHost,
 } from "@maestro/host-repo";
 import { type HarnessRequest, stubHarness } from "@maestro/host-repo/harness";
-import type { ArtifactRef, Ir, IrNode } from "@maestro/ir";
-import { BuildError, composition, type Ref, Text } from "@maestro/sdk";
+import {
+	type ArtifactRef,
+	type Ir,
+	type IrNode,
+	MAESTRO_TYPE,
+} from "@maestro/ir";
+import {
+	Bool,
+	BuildError,
+	code,
+	composition,
+	iter,
+	loop,
+	not,
+	type Ref,
+	Text,
+} from "@maestro/sdk";
 import * as stdlib from "@maestro/sdk/stdlib";
 import { buildIr, composeIr, stubConcert } from "@maestro/testkit";
 import { buildThenRepair, byFinding, fold, review } from "./fixtures/examples";
@@ -37,6 +52,7 @@ import {
 	MarkdownOut,
 	REPORT,
 	read,
+	Session,
 	seat,
 } from "./index";
 
@@ -85,15 +101,18 @@ const PROFILES = [
 	"acme/critic",
 ];
 
+/** A profile on harness `other`, which is loaded but never run. */
+const ELSEWHERE = "elsewhere";
+
 /** A workspace root holding each of `PROFILES` on the stub harness. */
 function profileRoots(): Roots {
 	const workspace = tmp();
-	for (const name of PROFILES) {
+	for (const name of [...PROFILES, ELSEWHERE]) {
 		const dir = joinPath(workspace, "profiles", name);
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(
 			joinPath(dir, "profile.yaml"),
-			"runtime: { harness: stub, model: none }\n",
+			`runtime: { harness: ${name === ELSEWHERE ? "other" : "stub"}, model: none }\n`,
 		);
 	}
 	return { workspace, user: "/nonexistent", packs: {} };
@@ -130,6 +149,12 @@ function repo(
 					},
 				];
 			}),
+			{
+				name: "other",
+				run: () => {
+					throw new Error("other was run");
+				},
+			},
 		],
 	});
 	const hostConfig = {
@@ -169,6 +194,14 @@ function buildCode(fn: () => unknown): string {
 
 const builder = seat("builder");
 
+/** A session carried through a code node, as loop state carries it. */
+export const carry = ({ session }: { session: string }) => ({
+	session,
+	done: true,
+});
+const carried = (session: Ref<string>) =>
+	code(carry, { in: { session }, out: { session: Session, done: Bool() } });
+
 const nodeOf = (ir: Ir, id: string): IrNode | undefined =>
 	ir.nodes.find((n) => n.id === id);
 
@@ -204,27 +237,87 @@ describe("lanes", () => {
 		expect(requests).toEqual([]);
 	});
 
-	test("one version extended twice fails compose with HOST.lane, with no spend", async () => {
-		const twice = composition("twice", { examples: [{}] }, () => {
-			const first = builder({ task: "a", lane: fresh() });
-			builder({
-				label: "x",
-				task: "b",
-				lane: extend(first.out.lane),
-			});
-			return builder({
-				label: "y",
-				task: "c",
-				lane: extend(first.out.lane),
-			});
-		});
-		const { composeIt, requests } = repo();
-		const composed = await composeIt(buildIr(twice));
-		expect(composed.ok).toBe(false);
-		if (!composed.ok)
-			expect(composed.diagnostics.map((d) => d.code)).toContain("HOST.lane");
-		expect(requests).toEqual([]);
-	});
+	test.each<[string, string, string, () => Ref<unknown> | object]>([
+		[
+			"one version extended twice",
+			"HOST.lane",
+			"'y' extends 'agent.lane', which 'x' extends too; a version is extended at most once",
+			() => {
+				const first = builder({ task: "a", lane: fresh() });
+				builder({ label: "x", task: "b", lane: extend(first.out.lane) });
+				return builder({ label: "y", task: "c", lane: extend(first.out.lane) });
+			},
+		],
+		[
+			"one session continued in a parMap body",
+			"HOST.session",
+			"'parMap/agent' continues the session of 'agent' from outside group 'parMap', whose iterations run side by side; a session has one runner at a time",
+			() => {
+				const first = builder({ task: "a", lane: fresh() });
+				return iter.parMap(
+					["b", "c"],
+					(task) =>
+						builder({ task, lane: fresh(), session: first.out.session }),
+					{ onError: "stop" },
+				);
+			},
+		],
+		[
+			"a session carried through a code node and loop state to another harness",
+			"HOST.session",
+			"'loop/agent' runs profile elsewhere on harness 'other' and continues the session of 'agent', profile builder on harness 'stub'; a session runs on one harness",
+			() => {
+				const first = builder({ task: "a", lane: fresh() });
+				return loop.while((s) => not(s.out.done), {
+					init: carried(first.out.session),
+					step: (s) =>
+						carried(
+							seat(ELSEWHERE)({
+								task: "b",
+								lane: fresh(),
+								session: s.out.session,
+							}).out.session,
+						),
+					max: 2,
+				});
+			},
+		],
+		[
+			"one session continued by two agents, once through an alias",
+			"HOST.session",
+			"'y' continues the session of 'agent', which 'x' continues too, neither after the other; a session has one runner at a time",
+			() => {
+				const first = builder({ task: "a", lane: fresh() });
+				const alias = carried(first.out.session);
+				builder({
+					label: "x",
+					task: "b",
+					lane: fresh(),
+					session: first.out.session,
+				});
+				return builder({
+					label: "y",
+					task: "c",
+					lane: fresh(),
+					session: alias.out.session,
+				});
+			},
+		],
+	])(
+		"%s fails compose with %s, with no spend",
+		async (_, want, message, body) => {
+			const { composeIt, requests } = repo();
+			const composed = await composeIt(
+				buildIr(composition("bad", { examples: [{}] }, body), {}, { carry }),
+			);
+			expect(composed.ok).toBe(false);
+			if (!composed.ok)
+				expect(composed.diagnostics.map((d) => [d.code, d.message])).toEqual([
+					[want, message],
+				]);
+			expect(requests).toEqual([]);
+		},
+	);
 });
 
 test("every option of a seat call, check and apply composes against the repo host", async () => {
@@ -239,7 +332,8 @@ test("every option of a seat call, check and apply composes against the repo hos
 		const resumed = builder({
 			label: "resumed",
 			task: "go on",
-			lane: extend(built.out.lane, { resume: true }),
+			lane: extend(built.out.lane),
+			session: built.out.session,
 		});
 		const checked = check(fork(resumed.out.lane), {
 			run: ["true", "true"],
@@ -263,7 +357,15 @@ test("every option of a seat call, check and apply composes against the repo hos
 	});
 	const ir = buildIr(everything);
 	expect(nodeOf(ir, "resumed")).toMatchObject({
-		config: { lane: { mode: "extend", resume: true } },
+		in: { session: { [MAESTRO_TYPE]: "repo.session" } },
+		out: { session: { [MAESTRO_TYPE]: "repo.session" } },
+		config: { lane: { mode: "extend" } },
+	});
+	expect(nodeOf(ir, "agent")?.in).toEqual({ prompt: expect.anything() });
+	expect(ir.edges).toContainEqual({
+		kind: "data",
+		from: { node: "agent", port: "session" },
+		to: { node: "resumed", port: "session" },
 	});
 	expect(nodeOf(ir, "apply")).toMatchObject({
 		in: { changeset: expect.anything() },
@@ -324,20 +426,27 @@ test("changeset lowers a message, literal or ref, to a message input, and has no
 	expect(nodeOf(ir, "ref")?.literals).not.toHaveProperty("message");
 });
 
-test("only a lane input resumes, only a seat call takes it, and apply takes one changeset", () => {
+test("only a seat call takes a session, extend refuses the removed resume, and apply takes one changeset", () => {
 	composition("types", { examples: [{}] }, () => {
 		const built = builder({ task: "a", lane: fresh() });
 		const cs = changeset(built.out.lane).out.changeset;
-		// @ts-expect-error resume belongs to the lane input, `extend(v, { resume })`
-		builder({ task: "b", lane: fresh(), resume: true });
-		// @ts-expect-error only a seat call resumes
-		check(extend(built.out.lane, { resume: true }));
-		// @ts-expect-error only a seat call resumes
-		apply(extend(built.out.lane, { resume: true }), cs);
+		// @ts-expect-error a session is the seat call's, not the lane input's
+		builder({ task: "b", lane: { ...fresh(), session: built.out.session } });
+		// @ts-expect-error only a seat call continues a session
+		check(fresh(), undefined, { session: built.out.session });
 		// @ts-expect-error apply takes one changeset, not a record of them
 		apply(fresh(), { a: cs, b: cs });
 		return built;
 	});
+	const resumed = composition("resumed", { examples: [{}] }, () => {
+		const built = builder({ task: "a", lane: fresh() });
+		return builder({
+			task: "b",
+			// @ts-expect-error resume was removed: a seat call takes session
+			lane: extend(built.out.lane, { resume: true }),
+		});
+	});
+	expect(buildCode(() => buildIr(resumed))).toBe("TYPE.options");
 });
 
 describe("seat", () => {
@@ -408,6 +517,7 @@ describe("seat", () => {
 			"plan",
 			"report",
 			"score",
+			"session",
 			"staged",
 		]);
 		const { composeIt } = repo();
@@ -445,7 +555,7 @@ describe("examples", () => {
 		const ir = buildIr(buildThenRepair);
 		const { host, hostConfig, roots, requests } = repo(
 			(req): Record<string, string> =>
-				req.prompt.startsWith("Make") ? { "fixed.txt": "x\n" } : {},
+				req.prompt.includes("Make check") ? { "fixed.txt": "x\n" } : {},
 			{ test: { run: "test -f fixed.txt", hint: "fixed.txt exists" } },
 		);
 		const concert = await stubConcert(ir, {

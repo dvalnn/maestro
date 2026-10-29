@@ -313,9 +313,10 @@ bundle it.
 | `Lane`                                     | The `repo.lane` type of a lane version, and the lane ref param type                                                                                                                               |
 | `fresh(base?)`                             | A new lane cut at `base`, else `target.base`, else the target's `HEAD`                                                                                                                            |
 | `fork(v)`, `read(v)`                       | A copy of version `v`, or `v` with its writes discarded; `v` is a lane output or a lane ref                                                                                                       |
-| `extend(v, { resume? })`                   | The lane continued from `v`, a lane output of this concert; with `resume`, an agent continues the session that wrote `v`                                                                          |
+| `extend(v)`                                | The lane continued from `v`, a lane output of this concert                                                                                                                                        |
+| `Session`                                  | The `repo.session` type of an agent's harness session                                                                                                                                             |
 | `JsonOut(file, type)`, `MarkdownOut(file)` | An agent output: a file in its outbox, arriving as a `core.json-file` or `core.markdown` artifact                                                                                                 |
-| `seat(name, { profile?, verdict?, ... })`  | A function of `{ task, lane, ... }` that emits a `repo.agent` node running the profile¹; outputs `report`, `staged`, `lane` unless it reads, and each declared output                             |
+| `seat(name, { profile?, verdict?, ... })`  | A function of `{ task, lane, ... }` that emits a `repo.agent` node running the profile¹; outputs `report`, `staged`, `session`, `lane` unless it reads, and each declared output                  |
 | `check(lane, which?)`                      | A `repo.check` node: every named check, the one named, or an inline `{ run, timeout, ... }`; outputs `logs`, `output` (the check's `$MAESTRO_CHECK_OUTPUT` directory), and `lane` unless it reads |
 | `changeset(v)`                             | A `repo.changeset` node: version `v` as a patch series, output `changeset`                                                                                                                        |
 | `commits(revs)`                            | A `repo.commits` node: the target commits git revisions `revs` name, as a version; output `lane`, which nothing extends                                                                           |
@@ -323,14 +324,15 @@ bundle it.
 
 ¹ A seat takes `profile` (a bare name or `<pack>/<name>`, the seat's own name by default, so a pack's seat names
 `classics/<seat>`), `verdict`, `out` and `checks`. `verdict: true` marks a verdict agent, which may reject; any other
-agent finishes or is blocked (architecture 12). A call takes `task`, `lane`, the common options, and may add
-`attachments` (each `{ artifact, hint }`), outputs and checks: outputs add with the call winning on a name, checks are a
-union, and the result's outputs are typed by both. An attachment named `prompt` or `lane`, or an output named `lane`,
-`report` or `staged`, is a build error: the host refuses the same names. The runtime, instructions, limits and read-only
-binds belong to the profile and to config, so a call sets none of them; an agent that needs another budget is another
-seat on another profile. A profile's `limits: { timeout?, tokens? }` bound the agent's whole run, none by default:
-`timeout` is a duration or whole milliseconds of wall clock, `tokens` a whole number of at least 1. A bad value is a
-pre-flight error naming the profile and the field; passing a limit ends the agent `failed` (architecture 12).
+agent finishes or is blocked (architecture 12). A call takes `task`, `lane`, the common options, and may add `session`
+(an agent's `out.session`, which it continues), `attachments` (each `{ artifact, hint }`), outputs and checks: outputs
+add with the call winning on a name, checks are a union, and the result's outputs are typed by both. An attachment named
+`prompt`, `lane` or `session`, or an output named `lane`, `report`, `staged` or `session`, is a build error: the host
+refuses the same names, and an attachment named `previous` too. The runtime, instructions, limits and read-only binds
+belong to the profile and to config, so a call sets none of them; an agent that needs another budget is another seat on
+another profile. A profile's `limits: { timeout?, tokens? }` bound the agent's whole run, none by default: `timeout` is
+a duration or whole milliseconds of wall clock, `tokens` a whole number of at least 1. A bad value is a pre-flight error
+naming the profile and the field; passing a limit ends the agent `failed` (architecture 12).
 
 A check with no `timeout` has none: it runs until it ends or the concert is killed.
 
@@ -416,10 +418,10 @@ const builder = seat("builder", { checks: ["test"] });
 export const fixUntilGreen = composition(
   "fix_until_green",
   {
-    ports: { build: Lane, prompt: Text() },
+    ports: { build: Lane, session: Session, prompt: Text() },
     params: { maxRepairs: Int({ default: 2 }) },
   },
-  (params, { build, prompt }) => {
+  (params, { build, session, prompt }) => {
     const verify = (lane: Ref<string>) => check(extend(lane), "test");
     return loop.while((checked) => not(checked.ok), {
       init: verify(build),
@@ -427,7 +429,8 @@ export const fixUntilGreen = composition(
         const repair = builder({
           label: "repair",
           task: prompt,
-          lane: extend(checked.out.lane, { resume: true }),
+          lane: extend(checked.out.lane),
+          session,
           attachments: {
             logs: { artifact: checked.out.logs, hint: "Read first, to see why the check failed" },
           },

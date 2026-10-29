@@ -77,25 +77,26 @@ or `allSettled` calls in one scope derive the same id: give one a `label`, or `S
 
 From `@maestro/host-repo-sdk`:
 
-| Name                                    | Gives                                                                                                               |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `fresh(base?)`                          | A new lane cut at `base`, else `target.base`, else the target's `HEAD`                                              |
-| `fork(v)`                               | A copy of version `v`; any number of nodes may fork one version                                                     |
-| `extend(v, { resume? })`                | The lane continued from `v`, at most once; `resume` continues its session                                           |
-| `read(v)`                               | `v` with writes discarded; the node outputs no lane                                                                 |
-| `seat(name, { profile?, ... })`         | A coding agent on a profile, called with `{ task, lane, ... }`; outputs `report`, `staged`, `lane`, declared ones   |
-| `check(lane, which?)`                   | Every named check, the one named, or an inline `{ run, timeout, ... }`; `$MAESTRO_CHECK_OUTPUT` is kept as `output` |
-| `changeset(v, { message? })`            | `v` as a changeset, `message` its commit message; end a composition on one                                          |
-| `commits(revs)`                         | Target commits `revs` names as a version; fork or read it, never extend                                             |
-| `apply(lane, cs, { strategy })`         | Changeset `cs` applied to a lane; `"3way"` (default) or `"clean"`                                                   |
-| `JsonOut(file, T)`, `MarkdownOut(file)` | A declared agent output, written in its outbox at `/out/<file>`                                                     |
-| `Lane`                                  | The lane version type, and the lane ref param type                                                                  |
+| Name                                    | Gives                                                                                                                        |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `fresh(base?)`                          | A new lane cut at `base`, else `target.base`, else the target's `HEAD`                                                       |
+| `fork(v)`                               | A copy of version `v`; any number of nodes may fork one version                                                              |
+| `extend(v)`                             | The lane continued from `v`, at most once                                                                                    |
+| `read(v)`                               | `v` with writes discarded; the node outputs no lane                                                                          |
+| `seat(name, { profile?, ... })`         | A coding agent on a profile, called with `{ task, lane, ... }`; outputs `report`, `staged`, `lane`, `session`, declared ones |
+| `check(lane, which?)`                   | Every named check, the one named, or an inline `{ run, timeout, ... }`; `$MAESTRO_CHECK_OUTPUT` is kept as `output`          |
+| `changeset(v, { message? })`            | `v` as a changeset, `message` its commit message; end a composition on one                                                   |
+| `commits(revs)`                         | Target commits `revs` names as a version; fork or read it, never extend                                                      |
+| `apply(lane, cs, { strategy })`         | Changeset `cs` applied to a lane; `"3way"` (default) or `"clean"`                                                            |
+| `JsonOut(file, T)`, `MarkdownOut(file)` | A declared agent output, written in its outbox at `/out/<file>`                                                              |
+| `Lane`                                  | The lane version type, and the lane ref param type                                                                           |
 
 A seat's `profile` is a bare name or `<pack>/<name>`, its own name by default; the profile is a directory in the
 workspace's `.maestro/profiles/` or the user's profiles, holding the runtime (harness, model, thinking), the
 instructions, the limits and the read-only binds. A seat also takes `verdict` (`true` for an agent that rules on work,
 `ok` or `rejected`), `out` (declared outputs) and `checks` (names from `target.checks` the agent may run with its
-`check <name>` command). A call takes `task`, `lane` and the common options, and may add `attachments`
+`check <name>` command). A call takes `task`, `lane` and the common options, and may add `session` (an agent's
+`out.session`: it continues that session in place, told what changed since its last turn), `attachments`
 (`{ name: { artifact, hint } }`, each mounted read-only at `/in/<name>`, `hint` saying when to read it), outputs and
 checks. A call sets no runtime, instructions or limits; an agent that needs another budget is another seat on another
 profile.
@@ -111,7 +112,7 @@ or `null`. A code node that settles `failed` keeps its scratch directory, and it
 
 ## Worked example
 
-An agent builds the task in a fresh lane; the `test` check verifies it; while the check is red, a repair agent resumes
+An agent builds the task in a fresh lane; the `test` check verifies it; while the check is red, a repair agent continues
 the builder's session with the check's logs attached; the result leaves as a changeset. It needs `target.checks.test`
 and a `builder` profile.
 
@@ -136,7 +137,8 @@ export const fix = composition(
         const repaired = builder({
           label: "repair",
           task: "The test check is red. Fix the code so it passes.",
-          lane: extend(c.out.lane, { resume: true }),
+          lane: extend(c.out.lane),
+          session: built.out.session,
           attachments: { logs: { artifact: c.out.logs, hint: "first, to see why the check failed" } },
         });
         return check(extend(repaired.out.lane), "test", { label: "test" });
@@ -155,13 +157,13 @@ Its plan: `fix: up to 10 node instances, up to 3 repo.agent`. Perform it with
 
 ## Diagnostics an author meets
 
-| Code           | Means                                                   | Fix                                                                                |
-| -------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `REF.value`    | A Ref used as a plain value while building              | Lift it as the hint says, or use a code node                                       |
-| `REF.bool`     | A guard or condition that is not a `Ref<Bool>`          | Pass a Bool output, such as `check.ok`                                             |
-| `SCOPE.export` | A function given to `code` is not a named export        | `export` it from the file and pass it by name                                      |
-| `CFG.examples` | No example set                                          | Add `examples: [{ ... }]`                                                          |
-| `HOST.lane`    | A version extended twice                                | `fork` it in all but one of them                                                   |
-| `HOST.resume`  | `resume` on a version no agent or extending check wrote | Drop `resume`, or extend the agent's version                                       |
-| `BOUND.max`    | A group over a Ref without `max`, or a bad `max`        | Set `max` from a literal or a param                                                |
-| `CFG.required` | A required param has no value                           | Pass its flag, or set it in config for a pack; the example set serves compose only |
+| Code           | Means                                                   | Fix                                                                                 |
+| -------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `REF.value`    | A Ref used as a plain value while building              | Lift it as the hint says, or use a code node                                        |
+| `REF.bool`     | A guard or condition that is not a `Ref<Bool>`          | Pass a Bool output, such as `check.ok`                                              |
+| `SCOPE.export` | A function given to `code` is not a named export        | `export` it from the file and pass it by name                                       |
+| `CFG.examples` | No example set                                          | Add `examples: [{ ... }]`                                                           |
+| `HOST.lane`    | A version extended twice                                | `fork` it in all but one of them                                                    |
+| `HOST.session` | A session on two harnesses, or with two runners at once | Give both the same harness; continue it in one node, or chain through `out.session` |
+| `BOUND.max`    | A group over a Ref without `max`, or a bad `max`        | Set `max` from a literal or a param                                                 |
+| `CFG.required` | A required param has no value                           | Pass its flag, or set it in config for a pack; the example set serves compose only  |

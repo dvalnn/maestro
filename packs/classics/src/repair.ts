@@ -1,4 +1,11 @@
-import { changeset, check, extend, fresh, Lane } from "@maestro/host-repo-sdk";
+import {
+	changeset,
+	check,
+	extend,
+	fresh,
+	Lane,
+	Session,
+} from "@maestro/host-repo-sdk";
 import {
 	code,
 	composition,
@@ -27,8 +34,8 @@ export const maxRepairs = atLeastOne(
 export const repairUntilGreen = composition(
 	"repair_until_green",
 	{
-		doc: "Check a lane, then repair and check again while the target's checks are red, up to maxRepairs times.",
-		ports: { lane: Lane, spec: Markdown() },
+		doc: "Check a lane, then repair and check again in the session that built it while the target's checks are red, up to maxRepairs times.",
+		ports: { lane: Lane, session: Session, spec: Markdown() },
 		params: {
 			maxRepairs,
 			checks: List(Text(), {
@@ -38,14 +45,15 @@ export const repairUntilGreen = composition(
 			}),
 		},
 	},
-	(params, { lane, spec }) =>
+	(params, { lane, session, spec }) =>
 		loop.while((s) => not(s.ok), {
 			init: check(extend(lane), undefined, { label: "check" }),
 			step: (s) => {
 				const repair = builder({
 					label: "repair",
 					task: REPAIR_TASK,
-					lane: extend(s.out.lane, { resume: true }),
+					lane: extend(s.out.lane),
+					session,
 					checks: params.checks,
 					attachments: {
 						logs: { artifact: s.out.logs, hint: "first, to see what failed" },
@@ -80,7 +88,7 @@ export const buildThenRepair = composition(
 		const built = builder({ label: "build", task: request, lane: fresh() });
 		const fixed = use(
 			repairUntilGreen,
-			{ lane: built.out.lane, spec: spec.out.file },
+			{ lane: built.out.lane, session: built.out.session, spec: spec.out.file },
 			{ params: { maxRepairs } },
 		);
 		return changeset(fixed.out.lane, { label: "result" });

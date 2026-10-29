@@ -138,6 +138,8 @@ export type NodeSpec = {
 	config: Record<string, unknown>;
 	literals?: Record<string, unknown>;
 	lane?: string;
+	/** The node whose session this agent continues, by an edge into its `session` port. */
+	session?: string;
 	/** Edges into input ports, from `<node>.<port>`. */
 	wires?: Record<string, string>;
 	/** A node whose rejection this one tolerates. */
@@ -155,7 +157,13 @@ function repoNode(
 		id: spec.id,
 		kind,
 		config: spec.config,
-		...(spec.message && { in: { message: { type: "string" } } }),
+		in: {
+			...(spec.message && { message: { type: "string" } }),
+			...((spec.session !== undefined ||
+				spec.literals?.session !== undefined) && {
+				session: { type: "string" },
+			}),
+		},
 	};
 	const ports = host.kinds.find((k) => k.name === kind)?.ports(draft);
 	const node = {
@@ -166,6 +174,7 @@ function repoNode(
 	};
 	const wires = {
 		...(spec.lane && { lane: `${spec.lane}.lane` }),
+		...(spec.session && { session: `${spec.session}.session` }),
 		...spec.wires,
 	};
 	const edges: IrEdge[] = Object.entries(wires).map(([port, from]) => {

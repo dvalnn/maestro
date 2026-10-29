@@ -134,7 +134,8 @@ export const buildThenRepair = composition(
 				const repair = builder({
 					label: "repair",
 					task: "Make check 'test' pass.",
-					lane: extend(checked.out.lane, { resume: true }),
+					lane: extend(checked.out.lane),
+					session: built.out.session,
 					attachments: {
 						logs: {
 							artifact: checked.out.logs,

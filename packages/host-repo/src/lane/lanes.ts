@@ -40,6 +40,8 @@ export interface Lane {
 	readonly checkedOut: boolean;
 	/** The target commit the lane chain was cut from. */
 	readonly base: string;
+	/** The commit the working copy stands on: the one it was opened at, or the one `seal` recorded. */
+	head(): string;
 	/** The lane-relative files `seal` would record a change to, as git spells them. */
 	changes(): Promise<string[]>;
 	/**
@@ -560,7 +562,9 @@ export function openLanes(options: LanesOptions): Lanes {
 	): Lane {
 		const { home, dir, gitdir } = paths(at);
 		const idx = { GIT_INDEX_FILE: join(gitdir, "index") };
+		let current = head;
 		const point = (commit: string) => {
+			current = commit;
 			writeFileSync(join(gitdir, "HEAD"), `${commit}\n`);
 			rmSync(join(dir, ".git"), { recursive: true, force: true });
 			writeFileSync(join(dir, ".git"), `gitdir: ${gitdir}\n`);
@@ -586,6 +590,7 @@ export function openLanes(options: LanesOptions): Lanes {
 				readOnly: [{ src: gitdir }, { src: join(store, "objects") }],
 				checkedOut,
 				base,
+				head: () => current,
 				changes: async () =>
 					(await staged()).changed.map((l) => l.slice(l.indexOf("\t") + 1)),
 				async seal() {

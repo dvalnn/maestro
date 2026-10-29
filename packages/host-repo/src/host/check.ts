@@ -8,7 +8,6 @@ import type {
 } from "@maestro/core/host";
 import type { Inputs } from "@maestro/core/node";
 import { CORE_TYPES, MAESTRO_TYPE } from "@maestro/ir";
-import type { Lane } from "../lane/index";
 import {
 	CHECK_CONFIG,
 	CHECK_KIND,
@@ -21,10 +20,10 @@ import {
 	requireTarget,
 	type Target,
 } from "./config";
-import { lanePorts, laneVersion, sandboxed, withLane } from "./lane-input";
+import { lanePorts, sandboxed, withLane } from "./lane-input";
 import { type Live, liveInstances } from "./live";
 import { runLines, type Verdict } from "./run-lines";
-import { carryWriter, openTarget } from "./store";
+import { openTarget } from "./store";
 
 /** The name an inline check goes by in reasons and logs. */
 const INLINE = "inline";
@@ -55,19 +54,6 @@ function overall(verdicts: Verdict[]): Verdict {
 	return outcome === "ok"
 		? { outcome }
 		: { outcome, reason: reasons.join("; ") };
-}
-
-/** Seals `lane`; an extend passes the writer of the version it extended on to the new one, so an agent can resume it. */
-async function sealed(
-	root: string,
-	config: CheckConfig,
-	inputs: Inputs,
-	lane: Lane,
-): Promise<string> {
-	const version = await lane.seal();
-	if (config.lane.mode === "extend")
-		carryWriter(root, laneVersion(inputs[LANE_PORT]), version);
-	return version;
 }
 
 async function execute(
@@ -106,9 +92,7 @@ async function execute(
 			const outputs = {
 				logs,
 				output,
-				...(!read && {
-					[LANE_PORT]: await sealed(store.root, config, inputs, lane),
-				}),
+				...(!read && { [LANE_PORT]: await lane.seal() }),
 			};
 			return outcome === "ok"
 				? { outcome, outputs }

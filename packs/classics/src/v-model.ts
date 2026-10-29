@@ -105,20 +105,23 @@ export const vModel = composition(
 
 		const built = iter.find(
 			design.get("approaches"),
-			(approach) =>
-				use(
+			(approach) => {
+				const build = builder({
+					label: "build",
+					task: approach.get("approach"),
+					lane: fork(base.out.lane),
+					attachments: { request, plan: planned },
+				});
+				return use(
 					repairUntilGreen,
 					{
-						lane: builder({
-							label: "build",
-							task: approach.get("approach"),
-							lane: fork(base.out.lane),
-							attachments: { request, plan: planned },
-						}).out.lane,
+						lane: build.out.lane,
+						session: build.out.session,
 						spec: plan.out.plan,
 					},
 					{ params: { maxRepairs: p.maxRepairs } },
-				),
+				);
+			},
 			(result) => result.ok,
 			{ max: p.maxApproaches, label: "approaches" },
 		);

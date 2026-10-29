@@ -11,11 +11,12 @@ import {
 	boundOf,
 	type Diagnostic,
 	type GraphIndex,
-	type GroupNode,
 	type HostNode,
 	type IrNode,
 	isGroup,
 	isPlainObject,
+	MAESTRO_TYPE,
+	type PortRef,
 } from "@maestro/ir";
 import type { Harness } from "../harness/index";
 import {
@@ -25,7 +26,6 @@ import {
 	untunable,
 } from "../profile/index";
 import {
-	AGENT_IN_PORTS,
 	AGENT_KIND,
 	type AgentConfig,
 	APPLY_KIND,
@@ -44,9 +44,12 @@ import {
 	LEGACY_ROLE,
 	listed,
 	noHint,
+	RESERVED_ATTACHMENTS,
 	type RepoSetup,
 	ROLES,
 	repoSetup,
+	SESSION_PORT,
+	SESSION_TYPE,
 	useOneOf,
 } from "./config";
 
@@ -65,8 +68,8 @@ type RepoNode =
 	| { node: HostNode; kind: "apply"; config: ApplyConfig }
 	| { node: HostNode; kind: "commits"; config: CommitsConfig };
 
-/** Where a node's lane input comes from: an edge from a node's port, or a literal, a lane ref of another concert. */
-type LaneSource = { node: string; port: string } | { literal: unknown };
+/** Where a node's input comes from: an edge from a node's port, or a literal, such as a lane ref of another concert. */
+type InputSource = { node: string; port: string } | { literal: unknown };
 
 const error = (f: Finding): Diagnostic => ({ ...f, severity: "error" });
 
@@ -88,14 +91,22 @@ function repoNodes(graph: GraphIndex): RepoNode[] {
 		});
 }
 
-function laneSource(graph: GraphIndex, node: HostNode): LaneSource | undefined {
-	if (node.literals && Object.hasOwn(node.literals, LANE_PORT))
-		return { literal: node.literals[LANE_PORT] };
+/** Where input `port` of `node` comes from, if anywhere. */
+function inputSource(
+	graph: GraphIndex,
+	node: IrNode,
+	port: string,
+): InputSource | undefined {
+	if (node.literals && Object.hasOwn(node.literals, port))
+		return { literal: node.literals[port] };
 	const edge = graph
 		.edgesInto(node.id)
-		.find((e) => e.kind === "data" && e.to.port === LANE_PORT);
+		.find((e) => e.kind === "data" && e.to.port === port);
 	return edge?.kind === "data" ? edge.from : undefined;
 }
+
+const laneSource = (graph: GraphIndex, node: HostNode) =>
+	inputSource(graph, node, LANE_PORT);
 
 /** The harness an agent runs on, when its profile resolved. */
 type HarnessOf = (config: AgentConfig) => string | undefined;
@@ -104,7 +115,7 @@ type HarnessOf = (config: AgentConfig) => string | undefined;
 function unextendable(
 	graph: GraphIndex,
 	node: HostNode,
-	source: LaneSource,
+	source: InputSource,
 ): Finding | undefined {
 	const id = node.id;
 	if ("literal" in source)
@@ -123,22 +134,35 @@ function unextendable(
 	};
 }
 
+/**
+ * The node that took `source` before `id` did, as `first` records each source port by the side of it read. A loop's
+ * state port is read inside its body and its output outside it, and the two never run together.
+ */
+function takenBy(
+	graph: GraphIndex,
+	id: string,
+	source: PortRef,
+	first: Map<string, string>,
+): string | undefined {
+	const side = graph.groupsOf(id).includes(source.node) ? "inner" : "out";
+	const key = `${source.node}.${source.port}:${side}`;
+	const other = first.get(key);
+	first.set(key, id);
+	return other;
+}
+
 /** The findings of one node extending `source`; `first` maps each extended output to its first extender. */
 function extensionFindings(
 	graph: GraphIndex,
 	node: HostNode,
-	source: LaneSource,
+	source: InputSource,
 	first: Map<string, string>,
 ): Finding[] {
 	const refused = unextendable(graph, node, source);
 	if (refused) return [refused];
 	if ("literal" in source) return [];
 	const from = `${source.node}.${source.port}`;
-	// A loop's state port is read inside its body and its output outside it; the two never write together.
-	const side = graph.groupsOf(node.id).includes(source.node) ? "inner" : "out";
-	const key = `${from}:${side}`;
-	const other = first.get(key);
-	first.set(key, node.id);
+	const other = takenBy(graph, node.id, source, first);
 	const found: Finding[] = [];
 	if (other !== undefined)
 		found.push({
@@ -147,7 +171,9 @@ function extensionFindings(
 			message: `'${node.id}' extends '${from}', which '${other}' extends too; a version is extended at most once`,
 			hint: `Fork '${from}' in one of '${other}' and '${node.id}'`,
 		});
-	const repeated = repeatedGroup(graph, node.id, source.node);
+	const repeated = enclosing(graph, node.id, source.node).find((g) =>
+		repeats(graph, g),
+	);
 	if (repeated)
 		found.push({
 			code: "HOST.lane",
@@ -161,7 +187,7 @@ function extensionFindings(
 /** Lane extensions that would extend one version twice: two nodes extending one output, or one node once per iteration. */
 function doubleExtends(
 	graph: GraphIndex,
-	chained: [RepoNode, LaneSource][],
+	chained: [RepoNode, InputSource][],
 ): Finding[] {
 	const first = new Map<string, string>();
 	return chained.flatMap(([{ node }, source]) =>
@@ -169,116 +195,184 @@ function doubleExtends(
 	);
 }
 
-/** The group around `id`, other than one holding `source`, that runs it more than once. */
-function repeatedGroup(graph: GraphIndex, id: string, source: string) {
-	return graph
+/** The groups around `id` that do not hold `source`, so run `id` once per iteration over one value of it. */
+const enclosing = (graph: GraphIndex, id: string, source: string) =>
+	graph
 		.groupsOf(id)
-		.find(
-			(g) => !(source === g || source.startsWith(`${g}/`)) && repeats(graph, g),
-		);
-}
+		.filter((g) => !(source === g || source.startsWith(`${g}/`)));
 
 function repeats(graph: GraphIndex, id: string): boolean {
 	const group = graph.nodes.get(id);
 	return isGroup(group) && boundOf(group.cardinality) > 1;
 }
 
-/** What writes a version: an agent node, or a description of the node that is not one. */
-type Writer = HostNode | string;
+/** The group kinds that run their body's iterations side by side. */
+const PARALLEL = ["parMap", "parFind"];
+
+const isSession = (schema: unknown) =>
+	isPlainObject(schema) && schema[MAESTRO_TYPE] === SESSION_TYPE;
+
+const inside = (id: string, group: string) => id.startsWith(`${group}/`);
 
 /**
- * The writers of the version at `port` of node `id`, followed through extending checks and loop state:
- * - an agent is its own writer, and an extending check has the writers of the version it extended
- * - a loop's state has the writers of its initial state and of its step's result
- * - any other node is described by a string, and one not known at compose has no writer listed
+ * The agents whose `out.session` reaches port `port` of node `id`. A group's port carries what feeds it and what its
+ * members leave at that port. A code node's session output carries its session input of the same name, else every
+ * session input it has.
  */
-function sessionWriters(
+function sessionProducers(
 	graph: GraphIndex,
 	id: string,
 	port: string,
 	seen = new Set<string>(),
-): Writer[] {
+): HostNode[] {
 	const key = `${id}.${port}`;
 	const node = graph.nodes.get(id);
 	if (!node || seen.has(key)) return [];
 	seen.add(key);
-	if (node.kind === "loop") return loopWriters(graph, node, port, seen);
-	if (!isHostNode(node)) return [];
-	if (node.kind === AGENT_KIND) return [node];
-	if (node.kind !== CHECK_KIND) return [`'${id}', a '${node.kind}' node`];
-	const { lane } = checkConfig(node.config);
-	if (lane.mode !== "extend")
-		return [`'${id}', a check on a '${lane.mode}' lane`];
-	const from = laneSource(graph, node);
-	return from && "node" in from
-		? sessionWriters(graph, from.node, from.port, seen)
-		: [];
+	if (node.kind === AGENT_KIND && isHostNode(node)) return [node];
+	const fed = (p: string) => {
+		const source = inputSource(graph, node, p);
+		return source && "node" in source
+			? sessionProducers(graph, source.node, source.port, seen)
+			: [];
+	};
+	if (isGroup(node))
+		return [
+			...fed(port),
+			...Object.values(node.members).flatMap((m) =>
+				sessionProducers(graph, m, port, seen),
+			),
+		];
+	if (isHostNode(node) || !isSession(node.out?.[port])) return [];
+	const inputs = Object.keys(node.in ?? {}).filter((p) =>
+		isSession(node.in?.[p]),
+	);
+	return (inputs.includes(port) ? [port] : inputs).flatMap(fed);
 }
 
-function loopWriters(
-	graph: GraphIndex,
-	loop: GroupNode,
-	port: string,
-	seen: Set<string>,
-): Writer[] {
-	const initial = graph
-		.edgesInto(loop.id)
-		.find((e) => e.kind === "data" && e.to.port === port);
-	return [
-		...(initial?.kind === "data"
-			? sessionWriters(graph, initial.from.node, initial.from.port, seen)
-			: []),
-		...Object.values(loop.members).flatMap((step) =>
-			sessionWriters(graph, step, port, seen),
-		),
-	];
+/** The nodes that run after `n` finishes: those its edges reach outside it, and the groups that hold it. */
+const nextOf = (graph: GraphIndex, n: string) => [
+	...graph.groupsOf(n),
+	...graph
+		.edgesFrom(n)
+		.map((e) => e.to.node)
+		.filter((to) => !inside(to, n)),
+];
+
+/** Whether `b` runs after `a`: downstream of it by edges, or inside a group entered downstream of it. */
+function runsAfter(graph: GraphIndex, a: string, b: string): boolean {
+	const seen = new Set<string>();
+	const queue = [a];
+	for (let n = queue.pop(); n !== undefined; n = queue.pop()) {
+		if (n === b || (inside(b, n) && !inside(a, n))) return true;
+		if (!seen.has(n)) queue.push(...nextOf(graph, n));
+		seen.add(n);
+	}
+	return false;
 }
 
-/** Why `r` cannot resume the session of the version it extends from `source`, when that is known at compose. */
-function resumeProblem(
-	graph: GraphIndex,
+/** A finding of `r` by the session rule its `message` breaks. */
+const sessionFinding = (r: AgentNode, message: string, hint: string) => ({
+	code: "HOST.session",
+	node: r.node.id,
+	message,
+	hint,
+});
+
+/** The producers of the session `r` continues that its profile runs on another harness. */
+function harnessClashes(
 	harnessOf: HarnessOf,
 	r: AgentNode,
-	source: LaneSource | undefined,
-): string | undefined {
-	if (!source) return undefined;
-	if ("literal" in source)
-		return `'${r.node.id}' resumes a version of another concert`;
+	producers: HostNode[],
+): Finding[] {
 	const own = harnessOf(r.config);
-	for (const writer of sessionWriters(graph, source.node, source.port)) {
-		if (typeof writer === "string")
-			return `'${r.node.id}' resumes '${source.node}', which carries ${writer} and no agent session`;
-		const wrote = harnessOf(agentConfig(writer.config));
-		if (wrote && own && wrote !== own)
-			return `'${r.node.id}' runs on harness '${own}' and resumes '${source.node}', written on harness '${wrote}'`;
-	}
-	return undefined;
+	const id = r.node.id;
+	return producers.flatMap((maker) => {
+		const config = agentConfig(maker.config);
+		const theirs = harnessOf(config);
+		if (!own || !theirs || own === theirs) return [];
+		return [
+			sessionFinding(
+				r,
+				`'${id}' runs profile ${r.config.profile} on harness '${own}' and continues the session of '${maker.id}', profile ${config.profile} on harness '${theirs}'; a session runs on one harness`,
+				`Give '${id}' a profile on harness '${theirs}', or drop its session`,
+			),
+		];
+	});
 }
 
-function resumes(
+/**
+ * The agents that continue a session of `producers` too, and that neither run after `r` nor before it. `consumers`
+ * maps each producer to its continuers so far, `r` added.
+ */
+function rivals(
+	graph: GraphIndex,
+	r: AgentNode,
+	producers: HostNode[],
+	consumers: Map<string, string[]>,
+): Finding[] {
+	const id = r.node.id;
+	const found = new Map<string, string>();
+	for (const maker of producers) {
+		const earlier = consumers.get(maker.id) ?? [];
+		for (const other of earlier)
+			if (!runsAfter(graph, other, id) && !runsAfter(graph, id, other))
+				found.set(other, maker.id);
+		consumers.set(maker.id, [...earlier, id]);
+	}
+	return [...found].map(([other, maker]) =>
+		sessionFinding(
+			r,
+			`'${id}' continues the session of '${maker}', which '${other}' continues too, neither after the other; a session has one runner at a time`,
+			`Continue it in one of '${other}' and '${id}', or chain them through '${other}.session'`,
+		),
+	);
+}
+
+/** The producer of the session `r` continues from outside a group around `r` whose iterations run side by side. */
+function parallelTakes(
+	graph: GraphIndex,
+	r: AgentNode,
+	producers: HostNode[],
+): Finding[] {
+	const id = r.node.id;
+	for (const maker of producers) {
+		const parallel = enclosing(graph, id, maker.id).find((g) =>
+			PARALLEL.includes(graph.nodes.get(g)?.kind ?? ""),
+		);
+		if (parallel !== undefined)
+			return [
+				sessionFinding(
+					r,
+					`'${id}' continues the session of '${maker.id}' from outside group '${parallel}', whose iterations run side by side; a session has one runner at a time`,
+					`Start the session inside '${parallel}', or continue it after '${parallel}'`,
+				),
+			];
+	}
+	return [];
+}
+
+/**
+ * The session rules over the agents that continue a session from another node: one runner at a time, and one
+ * harness per session.
+ */
+function sessionRules(
 	graph: GraphIndex,
 	harnessOf: HarnessOf,
 	agents: AgentNode[],
 ): Finding[] {
+	const consumers = new Map<string, string[]>();
 	return agents.flatMap((r) => {
-		const { lane } = r.config;
-		if (lane.mode !== "extend" || !lane.resume) return [];
-		const message = resumeProblem(
-			graph,
-			harnessOf,
-			r,
-			laneSource(graph, r.node),
+		const source = inputSource(graph, r.node, SESSION_PORT);
+		if (!source || !("node" in source)) return [];
+		const producers = sessionProducers(graph, source.node, source.port).filter(
+			(p) => p.id !== r.node.id,
 		);
-		return message
-			? [
-					{
-						code: "HOST.resume",
-						node: r.node.id,
-						message,
-						hint: `Drop resume from '${r.node.id}'`,
-					},
-				]
-			: [];
+		return [
+			...rivals(graph, r, producers, consumers),
+			...parallelTakes(graph, r, producers),
+			...harnessClashes(harnessOf, r, producers),
+		];
 	});
 }
 
@@ -584,18 +678,18 @@ function profileProblems(
 	];
 }
 
-/** Each attachment of `profile` whose name the agent `r` takes already, for a port of its own or from the graph. */
+/** Each attachment of `profile` whose name the agent `r` reserves or takes from the graph already. */
 function attachmentClashes(r: AgentNode, profile: Profile): Finding[] {
 	const id = r.node.id;
 	const graph = Object.keys(r.config.attachments ?? {});
 	return Object.keys(profile.fields.attachments).flatMap((name) => {
-		const own = AGENT_IN_PORTS.includes(name);
+		const own = RESERVED_ATTACHMENTS.includes(name);
 		if (!own && !graph.includes(name)) return [];
 		return [
 			{
 				code: "HOST.attachment",
 				node: id,
-				message: `profile ${profile.name} attaches '${name}', which '${id}' takes ${own ? "as its own port" : "from the graph"}`,
+				message: `profile ${profile.name} attaches '${name}', which '${id}' ${own ? "reserves" : "takes from the graph"}`,
 				hint: `Rename attachment '${name}' in profile ${profile.name}${own ? "" : ", or the graph's"}`,
 			},
 		];
@@ -657,8 +751,8 @@ async function profileFindings(
 }
 
 /**
- * The host's compose-time rules: agents built before profiles, the profiles agents run, the lane rules (HOST-02),
- * resume, names config must have, binds (HOST-11) and the target. A graph without repo nodes has none to break.
+ * The host's compose-time rules: agents built before profiles, the profiles agents run, the lane rules (HOST-02), the
+ * session rules, names config must have, binds (HOST-11) and the target. A graph without repo nodes has none to break.
  */
 export async function validateRepo(
 	graph: GraphIndex,
@@ -672,7 +766,7 @@ export async function validateRepo(
 	const setup = repoSetup(hostSetup);
 	const agents = nodes.filter((r): r is AgentNode => r.kind === "agent");
 	const profiled = await profileFindings(agents, hostSetup, harnesses);
-	const chained = nodes.flatMap((r): [RepoNode, LaneSource][] => {
+	const chained = nodes.flatMap((r): [RepoNode, InputSource][] => {
 		const source = laneSource(graph, r.node);
 		const extending = r.kind !== "commits" && r.config.lane.mode === "extend";
 		return extending && source ? [[r, source]] : [];
@@ -693,7 +787,7 @@ export async function validateRepo(
 				: []),
 			...nodes.flatMap((r) => [...names(setup, r), ...nodeBinds(setup, r)]),
 			...doubleExtends(graph, chained),
-			...resumes(graph, profiled.harnessOf, agents),
+			...sessionRules(graph, profiled.harnessOf, agents),
 		].map(error),
 	];
 }

@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { isAbsolute, join } from "node:path";
-import type { StubStep } from "../harness/index";
+import type { HarnessRequest, StubStep } from "../harness/index";
 import { concertUsage, releaseConcert } from "./store";
 import {
 	agentOn,
@@ -136,39 +142,201 @@ describe("agent retry", () => {
 	});
 });
 
-describe("agent session directory", () => {
-	const agent = (
-		id: string,
-		config: Record<string, unknown>,
-		lane?: string,
-	): NodeSpec => ({
+describe("agent session", () => {
+	profile(
+		"before",
+		"runtime: { harness: stub, model: none }\nattachments: { kb: { path: kb, hint: kb }, old: { path: old, hint: old } }\n",
+		{ kb: "a\n", old: "o\n" },
+	);
+	profile(
+		"after",
+		"runtime: { harness: stub, model: none }\nattachments: { kb: { path: kb, hint: kb }, new: { path: new, hint: new } }\n",
+		{ kb: "b\n", new: "n\n" },
+	);
+	const agent = (id: string, spec: Partial<NodeSpec> = {}): NodeSpec => ({
 		id,
 		kind: "agent",
-		config: { profile: "builder", seat: "builder", lane: config },
+		config: agentOn({ mode: "fresh" }),
 		literals: { prompt: "go" },
-		...(lane && { lane }),
+		...spec,
 	});
+	const extending: Partial<NodeSpec> = {
+		config: agentOn({ mode: "extend" }),
+		lane: "w",
+	};
+	const turnFile = (dir: string) => join(dir, "..", "turn.json");
+	const keptTask = (dir: string): string | undefined =>
+		existsSync(turnFile(dir))
+			? JSON.parse(readFileSync(turnFile(dir), "utf8")).task
+			: undefined;
+	const previousOf = (req: HarnessRequest) =>
+		(req.readOnly ?? [])
+			.filter((b) => b.dst?.startsWith("/in/previous/"))
+			.map((b) => readFileSync(b.src, "utf8"));
+	/** A row: the first agent's profile and whether it writes a file, the second agent, and its delta. */
+	type Row = [string, string, boolean, Partial<NodeSpec>, string | RegExp];
+	test.each<Row>([
+		[
+			"nothing changed",
+			"builder",
+			false,
+			extending,
+			"- Task: unchanged.\n- Attachments: unchanged.\n- Working copy: unchanged.",
+		],
+		[
+			"the task changed",
+			"builder",
+			false,
+			{ ...extending, literals: { prompt: "again" } },
+			"- Task: changed, the new text below.\n- Attachments: unchanged.\n- Working copy: unchanged.",
+		],
+		[
+			"the working copy moved",
+			"builder",
+			true,
+			{},
+			/^- Task: unchanged\.\n- Attachments: unchanged\.\n- Working copy: was `(\w{40})`, now `(?!\1)(\w{40})`; `git diff \1 \2` shows what changed\.$/,
+		],
+		[
+			"an attachment changed, one is new and one dropped",
+			"before",
+			false,
+			{ ...extending, config: agentOn({ mode: "extend" }, "after") },
+			"- Task: unchanged.\n- Attachments: `/in/kb` changed, the earlier copy at `/in/previous/kb`; `/in/new` new; `/in/old` dropped.\n- Working copy: unchanged.",
+		],
+	])(
+		"when %s, a continuation runs in the session it is given and is told so",
+		async (_, first, writes, second, delta) => {
+			let turn = 0;
+			/** The task of the session's last turn as each turn starts, and the earlier copies each turn is given. */
+			const kept: (string | undefined)[] = [];
+			const previous: string[] = [];
+			const { host, requests } = stubHost((req) => {
+				kept.push(keptTask(req.session.dir));
+				previous.push(...previousOf(req));
+				return writes && turn++ === 0
+					? [{ write: "w.txt", content: "w" }, OK]
+					: [OK];
+			});
+			const ir = irOf(
+				host,
+				[
+					agent("w", { config: agentOn({ mode: "fresh" }, first) }),
+					agent("r", { ...second, session: "w" }),
+				],
+				"r",
+			);
+			const { id, instances } = await performed(
+				host,
+				ir,
+				configOf(toyTarget()),
+			);
+			const [minted, continuing] = requests;
+			expect(minted?.prompt).toBe("go");
+			expect(continuing?.session).toEqual(minted?.session);
+			expect(minted?.session.dir).toEndWith(
+				`sessions/${encodeURIComponent(`${id}.w`)}/harness`,
+			);
+			for (const node of ["w", "r"]) {
+				const instance = instances.find((i) => i.node === node);
+				expect(instance?.outputs?.session).toBe(`${id}.w`);
+				expect(instance?.enrichment?.sessionDir).toBe(minted?.session.dir);
+			}
+			const [since = "", task] = (continuing?.prompt ?? "")
+				.replace("# Since your last turn\n\n", "")
+				.split("\n\n# Task\n\n");
+			expect(since).toMatch(delta);
+			expect(since.split("\n")).toHaveLength(3);
+			expect(task).toBe(String(second.literals?.prompt ?? "go"));
+			expect(previous).toEqual(first === "before" ? ["a\n"] : []);
+			kept.push(keptTask(minted?.session.dir ?? ""));
+			expect(kept).toEqual([undefined, "go", task]);
+		},
+	);
 
-	test("the enrichment names the host directory of a minted session and of a resumed one", async () => {
-		const { host, requests } = stubHost(() => [OK]);
+	test("a turn cut short keeps the earlier turn as the session's last", async () => {
+		const { host, requests } = stubHost(() =>
+			requests.length > 1 ? [{ hang: true }] : [OK],
+		);
 		const ir = irOf(
 			host,
-			[
-				agent("w", { mode: "fresh" }),
-				agent("r", { mode: "extend", resume: true }, "w"),
-			],
+			[agent("w"), agent("r", { literals: { prompt: "again" }, session: "w" })],
 			"r",
 		);
-		const { instances } = await performed(host, ir, configOf(toyTarget()));
-		const dirOf = (node: string) =>
-			instances.find((i) => i.node === node)?.enrichment?.sessionDir;
-		const minted = requests[0]?.session;
-		expect(requests[1]?.session.id).toBe(minted?.id);
-		expect(dirOf("w")).toBe(minted?.dir);
-		expect(dirOf("r")).toBe(minted?.dir);
-		expect(minted?.dir).toEndWith(`sessions/${minted?.id}/home`);
-		expect(isAbsolute(minted?.dir ?? "")).toBe(true);
+		const { concert } = await start(host, ir, configOf(toyTarget()));
+		while (requests.length < 2) await Bun.sleep(20);
+		await concert.cancel();
+		expect(await concert.done).toMatchObject({ outcome: "failed" });
+		expect(keptTask(requests[1]?.session.dir ?? "")).toBe("go");
 	});
+
+	/** A row: what is done to the first concert's session, the profile continuing it, and the reason it fails with. */
+	type Broken = [
+		string,
+		(home: string) => void,
+		string,
+		(session: string, home: string) => string,
+	];
+	test.each<Broken>([
+		[
+			"its concert was pruned",
+			(home) => rmSync(home, { recursive: true }),
+			"builder",
+			(session) =>
+				`session ${session} of node 'w' is not in the store: its concert was pruned. Perform the composition anew`,
+		],
+		[
+			"it runs on another harness",
+			() => {},
+			"other",
+			(session) =>
+				`'r' runs profile other on harness 'other' and continues session ${session}, of harness 'stub'. Give 'r' a profile on harness 'stub', or drop its session`,
+		],
+		[
+			"its last turn is missing",
+			(home) => rmSync(join(home, "turn.json")),
+			"builder",
+			(session, home) =>
+				`session ${session} has no readable last turn at '${join(home, "turn.json")}'. Perform the composition anew`,
+		],
+		[
+			"its last turn is malformed",
+			(home) => writeFileSync(join(home, "turn.json"), "{"),
+			"builder",
+			(session, home) =>
+				`session ${session} has no readable last turn at '${join(home, "turn.json")}'. Perform the composition anew`,
+		],
+	])(
+		"continuing a session when %s fails the agent",
+		async (_, broken, name, reason) => {
+			const { host, requests } = stubHost(() => [OK]);
+			const config = configOf(toyTarget());
+			const first = await performed(
+				host,
+				irOf(host, [agent("w")], "w"),
+				config,
+			);
+			const session = `${first.id}.w`;
+			const home = join(requests[0]?.session.dir ?? "", "..");
+			broken(home);
+			const ir = irOf(
+				host,
+				[
+					agent("r", {
+						config: agentOn({ mode: "fresh" }, name),
+						literals: { prompt: "go", session },
+					}),
+				],
+				"r",
+			);
+			const { result } = await performed(host, ir, config);
+			expect(result).toMatchObject({
+				outcome: "failed",
+				reason: reason(session, home),
+			});
+			expect(requests).toHaveLength(1);
+		},
+	);
 });
 
 describe("agent profile", () => {

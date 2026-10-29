@@ -1,5 +1,4 @@
 import {
-	copyFileSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -10,6 +9,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { sha256Hex } from "@maestro/core";
+import { isPlainObject } from "@maestro/ir";
 import {
 	bytesOnDisk,
 	type Lanes,
@@ -23,15 +23,13 @@ const TARGET_ID_LENGTH = 16;
 const TARGET_ID = new RegExp(`^[0-9a-f]{${TARGET_ID_LENGTH}}$`);
 
 const SESSIONS = "sessions";
-/** Under `SESSIONS`: one file per version an agent wrote, holding its session id. */
-const WRITTEN = "written";
 const SESSION_FILE = "session.json";
-/** The directory of a session that its harness keeps, bound at `SESSION_DIR`. */
-const SESSION_HOME = "home";
+/** Under a session's home: the directory its harness keeps, bound at `SESSION_DIR`. */
+const HARNESS_DIR = "harness";
 
 /**
- * The store of one target, `<host store>/<target id>/`: its lanes and versions (ADR 0005), and the harness sessions
- * that wrote them under `sessions/`.
+ * The store of one target, `<host store>/<target id>/`: its lanes and versions (ADR 0005), and its harness sessions
+ * under `sessions/`.
  */
 export type TargetStore = {
 	/** The target's realpath. */
@@ -40,13 +38,17 @@ export type TargetStore = {
 	lanes: Lanes;
 };
 
-/** A harness session, and what it may continue: versions of `concert` only, by `harness` only. */
+/** A harness session, run only by `harness`. */
 export type Session = {
+	/** `<concert id>.<node instance id>` of the instance that started it: the value of an agent's `session` port. */
 	id: string;
-	/** Host directory the harness keeps the session in. */
-	dir: string;
+	/** The UUID its harness knows it by. */
+	harnessId: string;
 	harness: string;
-	concert: string;
+	/** Its directory in the store. */
+	home: string;
+	/** The directory its harness keeps, under `home`. */
+	dir: string;
 };
 
 /**
@@ -76,8 +78,8 @@ const targetRoots = (store: string) =>
 const lanesAt = (root: string) => openLanes({ target: root, root });
 
 const sessionsDir = (root: string) => join(root, SESSIONS);
-const writtenFile = (root: string, v: Version) =>
-	join(sessionsDir(root), WRITTEN, encodeURIComponent(v));
+const homeOf = (root: string, id: string) =>
+	join(sessionsDir(root), encodeURIComponent(id));
 
 const PARTIALS = "partials";
 
@@ -98,123 +100,111 @@ function concertPartials(root: string, concert: string): string[] {
 		: [];
 }
 
-/** Starts a session of `harness` in `concert`. */
+/** Starts the session of `harness` that node instance `instance` of `concert` runs, over any an earlier run left. */
 export function mintSession(
 	root: string,
 	harness: string,
 	concert: string,
+	instance: string,
 ): Session {
-	const id = crypto.randomUUID();
-	const home = join(sessionsDir(root), id);
-	const dir = join(home, SESSION_HOME);
+	const id = `${concert}.${instance}`;
+	const home = homeOf(root, id);
+	rmSync(home, { recursive: true, force: true });
+	const dir = join(home, HARNESS_DIR);
 	mkdirSync(dir, { recursive: true });
-	writeFileSync(join(home, SESSION_FILE), JSON.stringify({ harness, concert }));
-	return { id, dir, harness, concert };
+	const harnessId = crypto.randomUUID();
+	writeFileSync(
+		join(home, SESSION_FILE),
+		JSON.stringify({ harness, concert, harnessId }),
+	);
+	return { id, harnessId, harness, home, dir };
 }
 
-/** Records that session `session` wrote version `v`. */
-export function recordWriter(root: string, v: Version, session: Session) {
-	const file = writtenFile(root, v);
-	mkdirSync(join(file, ".."), { recursive: true });
-	writeFileSync(file, session.id);
-}
+type Meta = { harness: string; concert: string; harnessId: string };
 
-/** Records that the session that wrote version `from`, if any agent did, is the writer of version `to` too. */
-export function carryWriter(root: string, from: Version, to: Version) {
-	const source = writtenFile(root, from);
-	if (existsSync(source)) copyFileSync(source, writtenFile(root, to));
-}
-
-const isMeta = (v: unknown): v is { harness: string; concert: string } =>
-	typeof v === "object" &&
-	v !== null &&
-	"harness" in v &&
+const isMeta = (v: unknown): v is Meta =>
+	isPlainObject(v) &&
 	typeof v.harness === "string" &&
-	"concert" in v &&
-	typeof v.concert === "string";
+	typeof v.concert === "string" &&
+	typeof v.harnessId === "string";
 
-type Meta = { harness: string; concert: string };
-
-/** The harness and concert the session at `home` belongs to, or `undefined` when its record is not readable. */
-function sessionMeta(home: string): Meta | undefined {
+/** The parsed record of the session at `home`, or `undefined` when it is missing or not JSON. */
+function recordAt(home: string): unknown {
 	try {
-		const meta: unknown = JSON.parse(
-			readFileSync(join(home, SESSION_FILE), "utf8"),
-		);
-		return isMeta(meta) ? meta : undefined;
+		return JSON.parse(readFileSync(join(home, SESSION_FILE), "utf8"));
 	} catch {
 		return undefined;
 	}
 }
 
-const malformed = (home: string) =>
-	`session record '${join(home, SESSION_FILE)}' is malformed`;
-
 /**
- * The session that wrote version `v`, or `undefined` when no agent did.
- * @throws Error when the session's record is not readable.
+ * Session `id` of `root`.
+ * @throws Error when it is not in the store, naming the node instance that started it, or its record is malformed.
  */
-export function writerOf(root: string, v: Version): Session | undefined {
-	const file = writtenFile(root, v);
-	if (!existsSync(file)) return undefined;
-	const id = readFileSync(file, "utf8");
-	const home = join(sessionsDir(root), id);
-	const meta = sessionMeta(home);
-	if (!meta)
+export function openSession(root: string, id: string): Session {
+	const home = homeOf(root, id);
+	if (!existsSync(home)) {
+		const node = id.slice(id.indexOf(".") + 1);
 		throw new Error(
-			`${malformed(home)}. Delete '${home}', and drop resume from the node that continues it`,
+			`session ${id} of node '${node}' is not in the store: its concert was pruned. Perform the composition anew`,
 		);
-	return { id, dir: join(home, SESSION_HOME), ...meta };
-}
-
-/**
- * The session directories of `concert` under `root` and its records of what they wrote, and the homes among them
- * whose record is malformed. A malformed session belongs to the concert whose record says it wrote a version.
- */
-function concertSessions(root: string, concert: string) {
-	const dir = sessionsDir(root);
-	const writtenDir = join(dir, WRITTEN);
-	const written = existsSync(writtenDir)
-		? readdirSync(writtenDir)
-				.filter((f) => decodeURIComponent(f).startsWith(`${concert}.`))
-				.map((f) => join(writtenDir, f))
-		: [];
-	const writers = new Set(written.map((f) => readFileSync(f, "utf8")));
-	const homes = existsSync(dir)
-		? readdirSync(dir).filter((id) => id !== WRITTEN)
-		: [];
-	const own: string[] = [];
-	const bad: string[] = [];
-	for (const id of homes) {
-		const home = join(dir, id);
-		const meta = sessionMeta(home);
-		if (meta?.concert === concert) own.push(home);
-		else if (!meta && writers.has(id)) bad.push(home);
 	}
-	return { paths: [...own, ...bad, ...written], malformed: bad };
+	const meta = recordAt(home);
+	if (!isMeta(meta))
+		throw new Error(
+			`session record '${join(home, SESSION_FILE)}' is malformed. Perform the composition anew`,
+		);
+	const { harness, harnessId } = meta;
+	return { id, harnessId, harness, home, dir: join(home, HARNESS_DIR) };
+}
+
+/** Under `SESSIONS` in an older store: one file per version an agent wrote, named by the version, holding its session id. */
+const LEGACY_WRITTEN = "written";
+
+/** The older store's files of `concert` under `LEGACY_WRITTEN` in `dir`. */
+function legacyPointers(dir: string, concert: string): string[] {
+	const written = join(dir, LEGACY_WRITTEN);
+	return existsSync(written)
+		? readdirSync(written)
+				.filter((f) => decodeURIComponent(f).startsWith(`${concert}.`))
+				.map((f) => join(written, f))
+		: [];
 }
 
 /**
- * The bytes the lanes and sessions of `concert` take, over every target in the host store `store`.
- * @throws Error naming each of its session records that is malformed, which `releaseConcert` still removes.
+ * The session homes of `concert` under `root`, and its older store's files under `LEGACY_WRITTEN`. A home is the
+ * concert's by its id, by its record, or, for an older one whose record is unreadable, by a file naming it.
  */
+function concertSessions(root: string, concert: string): string[] {
+	const dir = sessionsDir(root);
+	if (!existsSync(dir)) return [];
+	const pointers = legacyPointers(dir, concert);
+	const named = new Set(pointers.map((p) => readFileSync(p, "utf8")));
+	const own = (name: string) => {
+		if (decodeURIComponent(name).startsWith(`${concert}.`)) return true;
+		const meta = recordAt(join(dir, name));
+		return isPlainObject(meta) ? meta.concert === concert : named.has(name);
+	};
+	const homes = readdirSync(dir).filter(
+		(name) => name !== LEGACY_WRITTEN && own(name),
+	);
+	return [...homes.map((name) => join(dir, name)), ...pointers];
+}
+
+/** The bytes the lanes and sessions of `concert` take, over every target in the host store `store`. */
 export async function concertUsage(
 	store: string,
 	concert: string,
 ): Promise<number> {
 	let bytes = 0;
-	const bad: string[] = [];
 	for (const root of targetRoots(store)) {
 		bytes += await lanesAt(root).diskUse(concert);
-		const sessions = concertSessions(root, concert);
-		for (const p of [...sessions.paths, ...concertPartials(root, concert)])
+		for (const p of [
+			...concertSessions(root, concert),
+			...concertPartials(root, concert),
+		])
 			bytes += bytesOnDisk(p);
-		bad.push(...sessions.malformed);
 	}
-	if (bad.length)
-		throw new Error(
-			`${bad.map(malformed).join("; ")}. Prune concert ${concert} to remove it`,
-		);
 	return bytes;
 }
 
@@ -223,7 +213,7 @@ export async function releaseConcert(store: string, concert: string) {
 	for (const root of targetRoots(store)) {
 		await lanesAt(root).prune(concert);
 		for (const p of [
-			...concertSessions(root, concert).paths,
+			...concertSessions(root, concert),
 			...concertPartials(root, concert),
 		])
 			rmSync(p, { recursive: true, force: true });

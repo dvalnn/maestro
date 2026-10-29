@@ -25,11 +25,18 @@ export const CHANGESET_KIND = "repo.changeset";
 export const APPLY_KIND = "repo.apply";
 export const COMMITS_KIND = "repo.commits";
 export const LANE_TYPE = "repo.lane";
+export const SESSION_TYPE = "repo.session";
 
 /** The port a lane version travels on, in and out. */
 export const LANE_PORT = "lane";
-/** Input ports every agent has; an attachment takes none of these names. */
-export const AGENT_IN_PORTS = ["prompt", LANE_PORT];
+/** The port an agent's session travels on: out of every agent, into one that continues it. */
+export const SESSION_PORT = "session";
+/** Input ports an agent may have of its own. */
+export const AGENT_IN_PORTS = ["prompt", LANE_PORT, SESSION_PORT];
+/** The attachment directory holding a continuing agent's earlier copies of its changed attachments. */
+export const PREVIOUS = "previous";
+/** The names no attachment takes: the agent's own ports, and `PREVIOUS`. */
+export const RESERVED_ATTACHMENTS = [...AGENT_IN_PORTS, PREVIOUS];
 /** The port an apply node takes its changeset on. */
 export const CHANGESET_PORT = "changeset";
 /** The key of an agent node config built before profiles, which `validate` refuses by name. */
@@ -134,21 +141,8 @@ const laneInput = (others: readonly string[]) =>
 	}) as const;
 const LANE_INPUT = laneInput(["fork", "extend", "read"]);
 
-/** An agent's lane input: an `extend` may also resume the session that wrote the version it continues. */
-const AGENT_LANE_INPUT = {
-	oneOf: [
-		...laneInput(["fork", "read"]).oneOf,
-		{
-			type: "object",
-			required: ["mode"],
-			additionalProperties: false,
-			properties: { mode: { const: "extend" }, resume: { type: "boolean" } },
-		},
-	],
-} as const;
-
 /** Output ports every agent has; a declared output takes none of these names. */
-export const AGENT_OUT_PORTS = [LANE_PORT, "report", "staged"];
+export const AGENT_OUT_PORTS = [LANE_PORT, "report", "staged", SESSION_PORT];
 
 const OUTBOX_FILE = {
 	type: "string",
@@ -162,14 +156,14 @@ const CURRENT_AGENT_CONFIG = {
 	properties: {
 		profile: { type: "string", pattern: PROFILE_NAME.source },
 		seat: { type: "string", pattern: irSchema.$defs.name.pattern },
-		lane: AGENT_LANE_INPUT,
+		lane: LANE_INPUT,
 		verdict: { type: "boolean" },
 		checks: { type: "array", items: NAME, uniqueItems: true },
 		attachments: {
 			type: "object",
 			propertyNames: {
 				pattern: PORT_NAME,
-				not: { enum: AGENT_IN_PORTS },
+				not: { enum: RESERVED_ATTACHMENTS },
 			},
 			additionalProperties: {
 				type: "object",
@@ -247,8 +241,7 @@ export type CommitsConfig = { revs: string };
 
 export type LaneInput =
 	| { mode: "fresh"; base?: string }
-	| { mode: "fork" | "read" }
-	| { mode: "extend"; resume?: boolean };
+	| { mode: "fork" | "extend" | "read" };
 
 /**
  * Shell lines run in order, and the milliseconds they may take together, none when unset. `readOnly` and `writable` are

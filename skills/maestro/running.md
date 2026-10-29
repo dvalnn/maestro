@@ -102,8 +102,9 @@ The data root, `$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`) unles
 | `hosts/repo/<target id>/`        | The repo host's lanes, versions, sessions and partials, per target[^store] |
 
 [^store]:
-    An agent's session is `sessions/<id>/home`; a failed agent's partial work is `partials/<concert>.<instance>`,
-    URL-encoded, read with `cs --partial`.
+    An agent's session is `sessions/<concert>.<instance>/`, URL-encoded, its transcript under `harness/` and its last
+    turn in `turn.json`; a failed agent's partial work is `partials/<concert>.<instance>`, URL-encoded, read with
+    `cs --partial`.
 
 The record keeps each leaf instance's wired inputs beside its outputs, never the ports a node holds as literals (read
 those in the IR, or `art` for files). A group, or an instance from an older store, has none.

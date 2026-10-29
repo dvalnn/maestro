@@ -21,6 +21,11 @@ export const Lane: Type<string> = {
 	schema: { type: "string", [MAESTRO_TYPE]: "repo.lane" },
 };
 
+/** An agent's harness session, which a later agent on the same harness may continue. */
+export const Session: Type<string> = {
+	schema: { type: "string", [MAESTRO_TYPE]: "repo.session" },
+};
+
 type LaneMode = "fresh" | "fork" | "extend" | "read";
 
 /** Where a node's lane comes from, as `fresh`, `fork`, `extend` and `read` make it. */
@@ -28,17 +33,7 @@ export type LaneInput<M extends LaneMode = LaneMode> = {
 	readonly mode: M;
 	readonly base?: string;
 	readonly version?: Ref<string>;
-	readonly resume?: never;
 };
-
-/** An `extend` that continues the session that wrote its version. Only a seat's agent takes one. */
-export type ResumedLane<M extends LaneMode = "extend"> = Omit<
-	LaneInput<M>,
-	"resume"
-> & { readonly resume: true };
-
-/** A lane input a seat's agent takes: any, or an `extend` that resumes. */
-type AgentLane<M extends LaneMode> = LaneInput<M> | ResumedLane<M>;
 
 /** The lane output of a node whose lane mode is `M`: none when it may read. */
 export type LaneOut<M extends LaneMode> = "read" extends M
@@ -60,21 +55,21 @@ export const fork = (v: Ref<string> | string): LaneInput<"fork"> => ({
 });
 
 /**
- * The lane continued from version `v`, which at most one node extends. A lane ref is never extended. With `resume`, an
- * agent continues the session that wrote `v`.
+ * The lane continued from version `v`, which at most one node extends. A lane ref is never extended.
+ * @throws `TYPE.options` when given options, for a caller the types do not reach: an agent continues a session by its
+ * seat call's `session`.
  */
-export function extend(v: Ref<string>): LaneInput<"extend">;
 export function extend(
 	v: Ref<string>,
-	options: { resume: true },
-): ResumedLane<"extend">;
-export function extend(
-	v: Ref<string>,
-	options?: { resume: true },
-): LaneInput<"extend"> | ResumedLane<"extend"> {
-	return options
-		? { mode: "extend", version: v, resume: true }
-		: { mode: "extend", version: v };
+	...removed: never[]
+): LaneInput<"extend"> {
+	if (removed.length)
+		throw new BuildError({
+			code: "TYPE.options",
+			message: "extend takes no options: resume was removed",
+			hint: "Continue an agent's session with session: <agent>.out.session in the seat call",
+		});
+	return { mode: "extend", version: v };
 }
 
 /** Version `v` with its writes discarded: the node outputs no lane and spends no extension. */
@@ -84,13 +79,13 @@ export const read = (v: Ref<string> | string): LaneInput<"read"> => ({
 });
 
 /** A node's lane config, its lane input port and its lane output port. */
-function lanePorts({ mode, base, version, resume }: AgentLane<LaneMode>): {
-	config: Record<string, string | boolean>;
+function lanePorts({ mode, base, version }: LaneInput): {
+	config: Record<string, string>;
 	in: Record<string, Ref<string>>;
 	out: Types;
 } {
 	return {
-		config: defined({ mode, base, resume }) as Record<string, string | boolean>,
+		config: defined({ mode, base }) as Record<string, string>,
 		in: version === undefined ? {} : { lane: version },
 		out: mode === "read" ? {} : { lane: Lane },
 	};
@@ -143,10 +138,14 @@ export const REPORT = {
 	properties: { summary: LINE, gaps: LINES, obstacles: LINES, lessons: LINES },
 } as const;
 
-/** The outputs of an agent: its report, its staged prompt, its lane unless it reads one, and those `O` declares. */
+/**
+ * The outputs of an agent: its report, its staged prompt, its session, its lane unless it reads one, and those `O`
+ * declares.
+ */
 export type AgentOut<O extends Outputs, M extends LaneMode = LaneMode> = {
 	report: Type<Report>;
 	staged: Type<ArtifactRef>;
+	session: Type<string>;
 } & LaneOut<M> & { [K in keyof O]: O[K]["type"] };
 
 const mapValues = <V, W>(
@@ -172,10 +171,10 @@ function attachmentConfig({ artifact, hint }: Attachment) {
 }
 
 /** The input ports an agent has of its own, which no attachment may take. Equal to the host's `AGENT_IN_PORTS`. */
-export const AGENT_IN_PORTS = ["prompt", "lane"];
+export const AGENT_IN_PORTS = ["prompt", "lane", "session"];
 
 /** The output ports an agent has of its own, which no declared output may take. Equal to the host's `AGENT_OUT_PORTS`. */
-export const AGENT_OUT_PORTS = ["lane", "report", "staged"];
+export const AGENT_OUT_PORTS = ["lane", "report", "staged", "session"];
 
 /**
  * Refuses an attachment or output named after one of an agent's own ports.
@@ -208,10 +207,12 @@ export type SeatOptions<S extends Outputs> = {
 	checks?: string[];
 };
 
-/** What a call of a seat adds: the task and the lane, attachments and outputs, and further checks. */
+/** What a call of a seat adds: the task and the lane, the session it continues, attachments and outputs, and checks. */
 export type SeatCall<C extends Outputs, M extends LaneMode> = Common & {
 	task: string | Ref<string>;
-	lane: AgentLane<M>;
+	lane: LaneInput<M>;
+	/** An earlier agent's `out.session` on the same harness, continued in place; a fresh session when absent. */
+	session?: Ref<string>;
 	attachments?: Attachments;
 	out?: C;
 	/** Names of `target.checks` the agent may run, beside the seat's. */
@@ -242,6 +243,7 @@ export function seat<S extends Outputs = Record<never, never>>(
 		const {
 			task,
 			lane,
+			session,
 			attachments = {},
 			out: callOut,
 			checks,
@@ -256,10 +258,12 @@ export function seat<S extends Outputs = Record<never, never>>(
 				prompt: task,
 				...mapValues(attachments, (a) => a.artifact),
 				...ports.in,
+				...(session && { session }),
 			},
 			out: {
 				report: Json<Report>(REPORT),
 				staged: Dir(),
+				session: Session,
 				...ports.out,
 				...mapValues(out, (o) => o.type),
 			},

@@ -1,10 +1,14 @@
 import { type JsonSchema, validator, violations } from "@maestro/ir";
 import { OUTBOX, type Output } from "../harness/index";
+import { PREVIOUS } from "./config";
 
 /** The directory where an agent's sandbox mounts its attachments. */
 const ATTACHMENT_DIR = "/in";
 /** Where the sandbox sees attachment `name`. */
 export const attachmentPath = (name: string) => `${ATTACHMENT_DIR}/${name}`;
+/** Where the sandbox of a continuing session sees the copy of attachment `name` its last turn had. */
+export const previousPath = (name: string) =>
+	`${ATTACHMENT_DIR}/${PREVIOUS}/${name}`;
 
 const LINE = { type: "string", minLength: 1 } as const;
 const LINES = { type: "array", items: LINE } as const;
@@ -161,7 +165,8 @@ const fileLine = (o: Output) =>
 		? `- \`${OUTBOX}/${o.file}\`: JSON matching this JSON Schema:\n  \`\`\`json\n  ${JSON.stringify(o.schema)}\n  \`\`\``
 		: `- \`${OUTBOX}/${o.file}\`: Markdown`;
 
-function reply({ out, kind }: Run) {
+/** The frame's `## Reply` section: the files to write and the reply contract. */
+export function reply({ out, kind }: Run): string[] {
 	const files = out.length
 		? [[kind.files, ...out.map(fileLine)].join("\n")]
 		: [];

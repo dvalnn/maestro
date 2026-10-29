@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
 import { openRecord } from "@maestro/core/perform";
 import { type Ir, indexGraph } from "@maestro/ir";
 import { type HarnessRequest, OUTBOX, type StubStep } from "../harness/index";
-import { openTarget } from "./store";
+import { openSession, openTarget } from "./store";
 import {
 	APPROVED,
 	agentOn,
@@ -43,7 +49,7 @@ async function dropped(lane: string) {
 }
 
 describe("compose", () => {
-	test("a double extension and a resume across harnesses are HOST errors, with no harness run", async () => {
+	test("a double extension and a session crossing harnesses are HOST errors, with no harness run", async () => {
 		const target = toyTarget();
 		const { host, requests } = stubHost(() => [OK]);
 		const prompt = { prompt: "go" };
@@ -53,71 +59,29 @@ describe("compose", () => {
 				{
 					id: "a",
 					kind: "agent",
-					config: {
-						profile: "builder",
-						seat: "builder",
-						lane: { mode: "fresh" },
-					},
+					config: agentOn(fresh),
 					literals: prompt,
 				},
 				{
 					id: "b",
 					kind: "agent",
-					config: {
-						profile: "builder",
-						seat: "builder",
-						lane: { mode: "extend" },
-					},
+					config: agentOn({ mode: "extend" }),
 					literals: prompt,
 					lane: "a",
 				},
 				{
 					id: "c",
 					kind: "agent",
-					config: {
-						profile: "other",
-						seat: "other",
-						lane: { mode: "extend", resume: true },
-					},
+					config: agentOn({ mode: "extend" }, "other"),
 					literals: prompt,
 					lane: "a",
-				},
-				{
-					id: "e",
-					kind: "agent",
-					config: {
-						profile: "builder",
-						seat: "builder",
-						lane: { mode: "fresh" },
-					},
-					literals: prompt,
-				},
-				{
-					id: "k",
-					kind: "check",
-					config: { lane: { mode: "extend" }, check: "hello" },
-					lane: "e",
-				},
-				{
-					id: "d",
-					kind: "agent",
-					config: {
-						profile: "other",
-						seat: "other",
-						lane: { mode: "extend", resume: true },
-					},
-					literals: prompt,
-					lane: "k",
+					session: "a",
 				},
 				{ id: "m", kind: "commits", config: { revs: "main^!" } },
 				{
 					id: "f",
 					kind: "agent",
-					config: {
-						profile: "builder",
-						seat: "builder",
-						lane: { mode: "extend" },
-					},
+					config: agentOn({ mode: "extend" }),
 					literals: prompt,
 					lane: "m",
 				},
@@ -150,14 +114,9 @@ describe("compose", () => {
 				"'f' extends 'm.lane', a version of target commits, which only a fork or a read can take",
 			],
 			[
-				"HOST.resume",
+				"HOST.session",
 				"c",
-				"'c' runs on harness 'other' and resumes 'a', written on harness 'stub'",
-			],
-			[
-				"HOST.resume",
-				"d",
-				"'d' runs on harness 'other' and resumes 'k', written on harness 'stub'",
+				"'c' runs profile other on harness 'other' and continues the session of 'a', profile builder on harness 'stub'; a session runs on one harness",
 			],
 		]);
 		expect(requests).toEqual([]);
@@ -228,122 +187,66 @@ describe("compose", () => {
 	});
 
 	const task = { prompt: "go" };
-	const applied: NodeSpec = {
-		id: "ap",
-		kind: "apply",
-		config: { lane: { mode: "fork" } },
-		lane: "root",
-		wires: { changeset: "cs.changeset" },
-	};
 	const writer: NodeSpec = {
 		id: "w",
 		kind: "agent",
-		config: { profile: "builder", seat: "builder", lane: fresh },
+		config: agentOn(fresh),
 		literals: task,
 	};
-	/** An agent that resumes the version out of `from`. */
-	const resumer = (id: string, from: string, name = "builder"): NodeSpec => ({
+	/** An agent of profile `name` that continues the session out of `from`, in a fresh lane. */
+	const continuer = (id: string, from: string, name = "builder"): NodeSpec => ({
 		id,
 		kind: "agent",
-		config: {
-			profile: name,
-			seat: name,
-			lane: { mode: "extend", resume: true },
-		},
+		config: agentOn(fresh, name),
 		literals: task,
-		lane: from,
+		session: from,
 	});
-	const stepCheck = (lane: Record<string, unknown>): NodeSpec => ({
-		id: "lp/step",
-		kind: "check",
-		config: { lane, check: "hello" },
-		...(lane.mode === "extend" && { lane: "lp" }),
-	});
-	const checkOnFresh: NodeSpec = {
-		id: "w",
-		kind: "check",
-		config: { lane: fresh, check: "hello" },
-	};
-	/** A row: the nodes after `root` and its changeset, the result node, the loop `lp` and where its state starts. */
-	type Row = [string, NodeSpec[], string, string | undefined, string?];
+	/** A row: the nodes after `root`, the result node, where the loop `lp` starts if any, and the messages. */
+	type Row = [string, NodeSpec[], string, string | undefined, string[]];
 	test.each([
 		[
-			"an apply",
-			[{ ...applied, id: "w" }, resumer("r", "w")],
-			"r",
+			"two agents continue one session",
+			[continuer("a", "root"), continuer("b", "root")],
+			"b",
 			undefined,
-			"'r' resumes 'w', which carries 'w', a 'repo.apply' node and no agent session",
-		],
-		[
-			"a check on a fresh lane",
-			[checkOnFresh, resumer("r", "w")],
-			"r",
-			undefined,
-			"'r' resumes 'w', which carries 'w', a check on a 'fresh' lane and no agent session",
-		],
-		[
-			"a check extending an apply",
 			[
-				applied,
-				{
-					id: "w",
-					kind: "check",
-					config: { lane: { mode: "extend" }, check: "hello" },
-					lane: "ap",
-				},
-				resumer("r", "w"),
+				"'b' continues the session of 'root', which 'a' continues too, neither after the other; a session has one runner at a time",
 			],
-			"r",
+		],
+		[
+			"a chain continues one session, each from the one before",
+			[continuer("a", "root"), continuer("b", "a")],
+			"b",
 			undefined,
-			"'r' resumes 'w', which carries 'ap', a 'repo.apply' node and no agent session",
+			[],
 		],
 		[
-			"loop state started by an apply, resumed by the step",
-			[applied, resumer("lp/step", "lp")],
-			"lp",
-			"ap",
-			"'lp/step' resumes 'lp', which carries 'ap', a 'repo.apply' node and no agent session",
-		],
-		[
-			"loop state, resumed by a step on another harness than its starter",
-			[writer, resumer("lp/step", "lp", "other")],
+			"a loop's step continues a session from outside the loop, once per iteration in order",
+			[writer, continuer("lp/step", "root")],
 			"lp",
 			"w",
-			"'lp/step' runs on harness 'other' and resumes 'lp', written on harness 'stub'",
+			[],
 		],
 		[
-			"loop state whose step is a check on a fresh lane",
-			[writer, stepCheck(fresh), resumer("r", "lp")],
+			"an agent on another harness continues the session of a loop's step",
+			[writer, continuer("lp/step", "root"), continuer("r", "lp", "other")],
 			"r",
 			"w",
-			"'r' resumes 'lp', which carries 'lp/step', a check on a 'fresh' lane and no agent session",
-		],
-		[
-			"loop state whose step is a check extending it, started by an apply",
-			[applied, stepCheck({ mode: "extend" }), resumer("r", "lp")],
-			"r",
-			"ap",
-			"'r' resumes 'lp', which carries 'ap', a 'repo.apply' node and no agent session",
-		],
-		[
-			"loop state started by an agent on the same harness, resumed by the step",
-			[writer, resumer("lp/step", "lp")],
-			"lp",
-			"w",
-			undefined,
+			[
+				"'r' runs profile other on harness 'other' and continues the session of 'lp/step', profile builder on harness 'stub'; a session runs on one harness",
+			],
 		],
 	] as Row[])(
-		"a resume of the version of %s",
-		async (_, nodes, result, start, message) => {
+		"when %s, compose rules on the session",
+		async (_, nodes, result, start, messages) => {
 			const { host } = stubHost(() => [OK]);
 			const specs: NodeSpec[] = [
 				{
 					id: "root",
 					kind: "agent",
-					config: { profile: "builder", seat: "builder", lane: fresh },
+					config: agentOn(fresh),
 					literals: task,
 				},
-				{ id: "cs", kind: "changeset", config: {}, lane: "root" },
 				...nodes,
 			];
 			const composed = await compose({
@@ -358,14 +261,17 @@ describe("compose", () => {
 			});
 			expect(
 				composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.message]),
-			).toEqual(message ? [["HOST.resume", message]] : []);
+			).toEqual(messages.map((m) => ["HOST.session", m]));
 		},
 	);
 
-	/** An agent that extends the version out of `from`, without resuming. */
+	/** An agent that extends the version out of `from`. */
 	const extender = (id: string, from: string): NodeSpec => ({
-		...resumer(id, from),
-		config: { profile: "builder", seat: "builder", lane: { mode: "extend" } },
+		id,
+		kind: "agent",
+		config: agentOn({ mode: "extend" }),
+		literals: task,
+		lane: from,
 	});
 	const innerCheck: NodeSpec = {
 		id: "lp/chk",
@@ -440,6 +346,11 @@ describe("compose", () => {
 		"runtime: { harness: stub, model: none }\nattachments: { prompt: { path: kb, hint: x } }\n",
 		{ "kb/a.md": "a\n" },
 	);
+	profile(
+		"nested",
+		"runtime: { harness: stub, model: none }\nattachments: { previous: { path: kb, hint: x } }\n",
+		{ "kb/a.md": "a\n" },
+	);
 	test.each([
 		[
 			"a profile no root holds",
@@ -490,6 +401,15 @@ describe("compose", () => {
 			"HOST.attachment",
 			"Rename attachment 'prompt' in profile clash",
 			toyTarget,
+		],
+		[
+			"a profile attachment named after the directory of earlier copies",
+			agentOn(fresh, "nested"),
+			"HOST.attachment",
+			"Rename attachment 'previous' in profile nested",
+			toyTarget,
+			{},
+			"profile nested attaches 'previous', which 'x' reserves",
 		],
 		[
 			"a missing read-only bind of its profile",
@@ -743,7 +663,7 @@ describe("perform", () => {
 		expect(await environment({})).toMatchObject({ sparse: null });
 	});
 
-	test("fresh, agent, read check, then an agent extending with resume continues the first agent's session", async () => {
+	test("fresh, agent, read check, then an agent extending its version continues the first agent's session", async () => {
 		const target = toyTarget();
 		const before = snapshot(target);
 		const { host, requests } = stubHost((req) =>
@@ -779,13 +699,10 @@ describe("perform", () => {
 				{
 					id: "second",
 					kind: "agent",
-					config: {
-						profile: "builder",
-						seat: "builder",
-						lane: { mode: "extend", resume: true },
-					},
+					config: agentOn({ mode: "extend" }),
 					literals: { prompt: "second task" },
 					lane: "first",
+					session: "first",
 				},
 			],
 			"second",
@@ -802,6 +719,18 @@ describe("perform", () => {
 		const [first, second] = requests;
 		expect(second?.session).toEqual(
 			first?.session as HarnessRequest["session"],
+		);
+		const sessionOf = (node: string) =>
+			instances.find((i) => i.node === node)?.outputs?.session;
+		expect(sessionOf("first")).toBe(`${id}.first`);
+		expect(sessionOf("second")).toBe(`${id}.first`);
+		expect(second?.prompt).toBe(
+			[
+				"# Since your last turn",
+				"- Task: changed, the new text below.\n- Attachments: unchanged.\n- Working copy: unchanged.\n- Contract: changed.",
+				"# Task",
+				"second task",
+			].join("\n\n"),
 		);
 		const series = await changed(config, target, `${id}.second`);
 		expect(series).toContain("hello.txt");
@@ -1307,12 +1236,12 @@ describe("perform", () => {
 		await host.resources?.release(id, setup);
 		expect(await host.resources?.usage(id, setup)).toBe(0);
 		const root = openTarget(setup.store, config.values.target.repo).root;
-		expect(
-			readdirSync(join(root, "sessions")).filter((f) => f !== "written"),
-		).toEqual([]);
-		expect(readdirSync(join(root, "sessions", "written"))).toEqual([]);
+		expect(readdirSync(join(root, "sessions"))).toEqual([]);
+		expect(() => openSession(root, `${id}.x`)).toThrow(
+			`session ${id}.x of node 'x' is not in the store: its concert was pruned. Perform the composition anew`,
+		);
 	});
-	test("a malformed session record is named by usage, and release still frees the concert", async () => {
+	test("a malformed session record and an older store's session files are released with their concert", async () => {
 		const { host } = stubHost(() => [OK]);
 		const ir = irOf(
 			host,
@@ -1331,17 +1260,26 @@ describe("perform", () => {
 		expect(result.outcome).toBe("ok");
 		const setup = setupOf(config);
 		const root = openTarget(setup.store, config.values.target.repo).root;
-		const [session] = readdirSync(join(root, "sessions")).filter(
-			(f) => f !== "written",
-		);
-		const record = join(root, "sessions", session ?? "", "session.json");
-		writeFileSync(record, "{not json");
-		await expect(host.resources?.usage(id, setup)).rejects.toThrow(
-			`session record '${record}' is malformed. Prune concert ${id} to remove it`,
+		const sessions = join(root, "sessions");
+		const [session = ""] = readdirSync(sessions);
+		writeFileSync(join(sessions, session, "session.json"), "{not json");
+		const before = (await host.resources?.usage(id, setup)) ?? 0;
+		/** An older store's session `uuid` with an unreadable record, and its file naming version `v`. */
+		const legacy = (v: string, uuid: string) => {
+			mkdirSync(join(sessions, uuid), { recursive: true });
+			writeFileSync(join(sessions, uuid, "session.json"), "x".repeat(1024));
+			mkdirSync(join(sessions, "written"), { recursive: true });
+			writeFileSync(join(sessions, "written", encodeURIComponent(v)), uuid);
+		};
+		legacy(`${id}.x`, "old");
+		legacy("another.y", "foreign");
+		expect(await host.resources?.usage(id, setup)).toBeGreaterThan(
+			before + 1024,
 		);
 		await host.resources?.release(id, setup);
 		expect(await host.resources?.usage(id, setup)).toBe(0);
-		expect(readdirSync(join(root, "sessions"))).toEqual(["written"]);
+		expect(readdirSync(sessions).sort()).toEqual(["foreign", "written"]);
+		expect(readdirSync(join(sessions, "written"))).toEqual(["another.y"]);
 		expect(existsSync(join(root, "lanes", id))).toBe(false);
 	});
 });

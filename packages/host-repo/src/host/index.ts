@@ -21,6 +21,7 @@ import {
 	isLegacyAgent,
 	LANE_TYPE,
 	repoSetup,
+	SESSION_TYPE,
 } from "./config";
 import { concertUsage, releaseConcert } from "./store";
 import { repoText } from "./text";
@@ -80,7 +81,7 @@ export function repoHost({ harnesses }: RepoHostOptions): Host {
 			commitsKind(),
 			applyKind(),
 		],
-		types: [LANE_TYPE],
+		types: [LANE_TYPE, SESSION_TYPE],
 		config: HOST_CONFIG,
 		paths: HOST_PATHS,
 		deferred: HOST_DEFERRED,

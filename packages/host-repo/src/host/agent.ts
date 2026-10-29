@@ -1,5 +1,6 @@
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { sha256Hex } from "@maestro/core";
 import type {
 	HostContext,
 	HostInstance,
@@ -50,6 +51,8 @@ import {
 	listed,
 	repoSetup,
 	requireTarget,
+	SESSION_PORT,
+	SESSION_TYPE,
 	type Target,
 } from "./config";
 import {
@@ -62,6 +65,7 @@ import {
 	REPORT,
 	type ReplyKind,
 	type Run,
+	reply,
 	VERDICT,
 	WORK,
 } from "./frame";
@@ -70,12 +74,12 @@ import { lanePorts, readOnlyBinds, versionAt, withLane } from "./lane-input";
 import { type Live, liveInstances } from "./live";
 import {
 	mintSession,
+	openSession,
 	openTarget,
 	partialDir,
-	recordWriter,
 	type Session,
-	writerOf,
 } from "./store";
+import { continuation, digests, keepTurn, type Turn } from "./turn";
 
 /** Turns that ask the agent again for an envelope, after its first final reply is not one. */
 const MAX_CORRECTIONS = 2;
@@ -86,13 +90,17 @@ const MAX_RETRIES = 2;
 const RETRY_WAIT_MS = 30_000;
 
 const TEXT = { type: "string" };
+const SESSION = { type: "string", [MAESTRO_TYPE]: SESSION_TYPE };
 
 const ajv = validator();
 
 /** What an agent's limits bound: wall clock in milliseconds from its first turn, and tokens as `tokensOf` sums. */
 type AgentLimits = ProfileFields["limits"];
 
-/** The ports of an agent node; one built before profiles keeps its own, so that `validate` can refuse it by name. */
+/**
+ * The ports of an agent node; one built before profiles keeps its own, so that `validate` can refuse it by name. It
+ * takes a session when its IR gives it the port.
+ */
 function agentPorts(node: HostNode): { in: Ports; out: Ports } {
 	if (isLegacyAgent(node.config))
 		return { in: node.in ?? {}, out: node.out ?? {} };
@@ -118,10 +126,12 @@ function agentPorts(node: HostNode): { in: Ports; out: Ports } {
 			prompt: TEXT,
 			...Object.fromEntries(attachments),
 			...lane.in,
+			...(node.in?.[SESSION_PORT] && { [SESSION_PORT]: SESSION }),
 		},
 		out: {
 			report: REPORT,
 			staged: { [MAESTRO_TYPE]: CORE_TYPES.dir },
+			[SESSION_PORT]: SESSION,
 			...lane.out,
 			...Object.fromEntries(declared),
 		},
@@ -165,30 +175,21 @@ function readOutbox(
 }
 
 /**
- * The session an agent continues, the one that wrote the version it extends.
- * @throws Error when it extends no version, or one no agent of its harness and concert wrote.
+ * Session `id`, which node `node` continues on `harness`.
+ * @throws Error when it is not in the store, or another harness runs it.
  */
-function resumed(
+function continued(
 	root: string,
-	lane: unknown,
+	id: string,
 	harness: string,
-	concert: string,
+	node: string,
+	profile: string,
 ): Session {
-	if (typeof lane !== "string")
-		throw new Error(
-			"resume continues the session of an extended version. Extend a lane version, or drop resume",
-		);
-	const session = writerOf(root, lane);
-	if (!session)
-		throw new Error(
-			`no agent wrote version ${lane}, so it has no session to resume. Drop resume`,
-		);
+	const session = openSession(root, id);
 	if (session.harness !== harness)
 		throw new Error(
-			`version ${lane} was written by harness '${session.harness}', not '${harness}'. Drop resume, or run a profile on '${session.harness}'`,
+			`'${node}' runs profile ${profile} on harness '${harness}' and continues session ${id}, of harness '${session.harness}'. Give '${node}' a profile on harness '${session.harness}', or drop its session`,
 		);
-	if (session.concert !== concert)
-		throw new Error(`version ${lane} belongs to another concert. Drop resume`);
 	return session;
 }
 
@@ -441,6 +442,7 @@ async function settle(
 	const outputs = {
 		report,
 		staged: staging.staged,
+		[SESSION_PORT]: session.id,
 		...(version && { [LANE_PORT]: version }),
 		...read.outputs,
 	};
@@ -464,8 +466,12 @@ async function keepPartial(
 	return { ...result, enrichment: { ...result.enrichment, partial } };
 }
 
-/** What an agent's sandbox adds for its checks and attachments, and those the frame lists, each with its hint. */
-type Extras = AgentChecks & Pick<Run, "checks" | "attachments">;
+/**
+ * What an agent's sandbox adds for its checks and attachments, those the frame lists, each with its hint, and the host
+ * path of each attachment by name.
+ */
+type Extras = AgentChecks &
+	Pick<Run, "checks" | "attachments"> & { sources: Record<string, string> };
 
 /** What the graph's and the profile's attachments and the checks of `staging` add to an agent's sandbox and frame. */
 function extrasOf(
@@ -483,19 +489,59 @@ function extrasOf(
 		agentCheck(target, name),
 	]);
 	const checks = stageChecks(context.scratch, named, base, path);
-	const mounts: Bind[] = [
-		...graph.map(([name]) => ({
-			src: artifactInput(inputs, context, name),
-			dst: attachmentPath(name),
-		})),
-		...own.map(([name, a]) => ({ src: a.path, dst: attachmentPath(name) })),
-	];
+	const sources: Record<string, string> = Object.fromEntries([
+		...graph.map(([name]) => [name, artifactInput(inputs, context, name)]),
+		...own.map(([name, a]) => [name, a.path]),
+	]);
+	const mounts: Bind[] = Object.entries(sources).map(([name, src]) => ({
+		src,
+		dst: attachmentPath(name),
+	}));
 	return {
 		...checks,
+		sources,
 		readOnly: [...mounts, ...checks.readOnly],
 		checks: named.map(([name, spec]) => [name, spec.hint]),
 		attachments: [...graph, ...own].map(([name, a]) => [name, a.hint]),
 	};
+}
+
+/** The session an instance runs, and whether it `continues` it: the one at its `session` input, else one it starts. */
+function sessionOf(
+	root: string,
+	inputs: Inputs,
+	instance: HostInstance,
+	profile: Profile,
+	concert: string,
+): { session: Session; continues: boolean } {
+	const { harness } = profile.fields.runtime;
+	const given = inputs[SESSION_PORT];
+	return typeof given === "string"
+		? {
+				session: continued(
+					root,
+					given,
+					harness,
+					instance.node.id,
+					profile.name,
+				),
+				continues: true,
+			}
+		: {
+				session: mintSession(root, harness, concert, instance.id),
+				continues: false,
+			};
+}
+
+/** Keeps `turn` as the last turn of `session`, unless its run was cut short by a cancel or a limit. */
+function keepSettled(
+	live: Live,
+	session: Session,
+	turn: Turn,
+	sources: Record<string, string>,
+) {
+	if (live.cancelled || live.limit !== undefined) return;
+	keepTurn(session, turn, sources);
 }
 
 async function execute(
@@ -516,10 +562,13 @@ async function execute(
 		);
 	const target = requireTarget(setup);
 	const store = openTarget(setup.store, target.repo, target.sparse);
-	const session =
-		config.lane.mode === "extend" && config.lane.resume
-			? resumed(store.root, inputs[LANE_PORT], runtime.harness, context.concert)
-			: mintSession(store.root, runtime.harness, context.concert);
+	const { session, continues } = sessionOf(
+		store.root,
+		inputs,
+		instance,
+		profile,
+		context.concert,
+	);
 	const run = { concert: context.concert, instance, live, emit: context.emit };
 	return withLane(
 		store,
@@ -548,46 +597,58 @@ async function execute(
 				setup.path,
 			);
 			const kind = config.verdict ? VERDICT : WORK;
-			const prompt = textInput(inputs, "prompt");
 			const outputs = Object.values(config.out ?? {});
-			const framed = frame({
+			const told: Run = {
 				lane: config.lane.mode === "read" ? "read" : "write",
 				checks: extras.checks,
 				attachments: extras.attachments,
 				out: outputs,
 				kind,
-			});
+			};
+			const now: Turn = {
+				task: textInput(inputs, "prompt"),
+				attachments: digests(extras.sources),
+				commit: lane.head(),
+				reply: sha256Hex(reply(told).join("\n\n")),
+			};
+			const opening = continues
+				? continuation(session, now)
+				: { message: now.task, readOnly: [] };
 			const req: HarnessRequest = {
 				runtime,
-				prompt,
+				prompt: opening.message,
 				lane: lane.dir,
 				readOnly: [
 					...readOnlyBinds(lane, setup.readOnly, profile.fields.readOnly),
 					...extras.readOnly,
+					...opening.readOnly,
 				],
 				writable: extras.writable,
 				env: { PATH: setup.path, ...extras.env },
 				instructions: stage(
 					staging.staged,
-					prompt,
+					opening.message,
 					profile.fields.instructions,
-					framed,
+					frame(told),
 				),
 				outbox: staging.outbox,
 				outputs,
-				session: { dir: session.dir, id: session.id },
+				session: { dir: session.dir, id: session.harnessId },
 				verdict: config.verdict,
 				instance: instance.id,
 			};
 			const turns = await within(profile.fields.limits, live, (guard) =>
 				converse(harness, req, live, context, staging.staged, kind, guard),
 			);
-			const settled = await settle(staging, turns, async () => {
-				if (read) return undefined;
-				const version = await lane.seal();
-				recordWriter(store.root, version, session);
-				return version;
-			});
+			const settled = await settle(staging, turns, async () =>
+				read ? undefined : lane.seal(),
+			);
+			keepSettled(
+				live,
+				session,
+				{ ...now, commit: lane.head() },
+				extras.sources,
+			);
 			if (read) return settled;
 			return keepPartial(
 				settled,
