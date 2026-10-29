@@ -23,8 +23,10 @@ A directory, or a tarball of one, holding:
 - The entry: one pre-bundled JavaScript file holding every composition the pack exports, its code nodes, its prompts and
   its own copy of the SDK. maestro resolves nothing through `node_modules` for a pack, and refuses an entry that imports
   anything but builtins and `@maestro/sdk`.
-- A `README.md` stating each composition's purpose, params and the roles it needs; `maestro rep` lists the same from the
-  bundle.
+- A `README.md` stating each composition's purpose, params and the profiles it needs; `maestro rep` lists the same from
+  the bundle.
+- A `profiles/` directory, when the pack ships agents: one directory per profile, each a `profile.yaml` with the
+  instructions and attachments it names, copied into `dist/profiles/` by the build. A seat names one as `<id>/<name>`.
 
 ## Building the entry
 
@@ -58,28 +60,23 @@ await Bun.write("dist/maestro-pack.json", JSON.stringify(manifest, null, 2));
 Rebuild the entry whenever the SDK changes version. A code node's hash covers the whole bundle, so after a rebuild a
 resume performs every code node of the pack again.
 
-## Roles, never models
+## Profiles, never models
 
-A pack names roles (`builder`, `reviewer`, `skeptic`) and never a model or harness: the user maps roles to models in
-config, since a model is spend. A composition that needs a model policy, such as a skeptic from another model family
-than its lens, takes the models as params and checks them with a build-time `assert` over a helper of the pack's own,
-such as `familyOf`:
-
-```ts
-assert(familyOf(lensModel) !== familyOf(skepticModel), "the skeptic's model family must differ from the lens's");
-```
+A pack ships profiles (`builder`, `lens`, `skeptic`) and names no model or harness in them: the user sets each profile's
+`runtime` in config, as `profiles.<id>/<name>.runtime`, since a model is spend. A profile's `limits` may ship. Guidance
+such as a skeptic from another model family than its lens belongs in the pack's README.
 
 ## Prompts
 
-A prompt is a task, an identity and attachments:
+A prompt is a task and attachments; the agent's standing instructions are its profile's `instructions.md`:
 
-- The task and the identity are `.md` files imported as text
-  (`import task from "./prompts/build.md" with { type: "text" }`) and filled with build-time values by plain TypeScript.
-  Text built from Refs comes from a code node. For `tsc`, declare the import's type once:
-  `declare module "*.md" { const text: string; export default text; }`.
+- The task is a `.md` file imported as text (`import task from "./prompts/build.md" with { type: "text" }`) and filled
+  with build-time values by plain TypeScript. Text built from Refs comes from a code node. For `tsc`, declare the
+  import's type once: `declare module "*.md" { const text: string; export default text; }`.
 - What an agent reads at perform time reaches it as an attachment, mounted at `/in/<name>` with its `hint`.
-- A `seat({ role, identity, verdict, attachments, out, checks, readOnly })` bundles an agent's standing setup once; each
-  call adds the task and lane, may override the role, and adds to the rest.
+- A `seat("<name>", { profile, verdict, out, checks })` bundles an agent's standing setup once, with
+  `profile: "<id>/<name>"` for a pack's own profile; each call adds the task and lane, and adds attachments, outputs and
+  checks.
 
 ## Config
 
@@ -110,5 +107,6 @@ under `packs` in the user or workspace config. Then `maestro rep <id>` lists its
 ## Testing
 
 - Compose every composition: `maestro compose <id>.<composition>`.
-- Perform each as a stub concert with a profile mapping the pack's roles to `{ harness: stub, model: none }`, in a toy
-  repository whose checks pass, then in one whose checks fail, and read both records with `maestro ls <id>`.
+- Perform each as a stub concert with a `--profile` layer file setting each of the pack's profiles' `runtime` to
+  `{ harness: stub, model: none }`, in a toy repository whose checks pass, then in one whose checks fail, and read both
+  records with `maestro ls <id>`.

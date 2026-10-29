@@ -10,28 +10,27 @@ maestro wait <concert> --timeout 15m
 
 ## Commands
 
-| Command                      | Alias | Does                                                                                                                        |
-| ---------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------- |
-| `compose <composition>`      | `c`   | Builds and pre-flights a composition. `--plan` (with each agent's harness, model, thinking[^plan]), `--graph`, `--out`.     |
-| `perform <composition>`      | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                            |
-| `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                                      |
-| `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`.           |
-| `wait <concert>`             | `wt`  | Waits for a concert to settle. `--timeout <duration>`.                                                                      |
-| `watch <concert>`            | `w`   | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.                       |
-| `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                                         |
-| `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                             |
-| `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                                |
-| `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                                    |
-| `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                          |
-| `changeset show <concert>`   | `cs`  | Prints a concert's changeset as a diff on its base, the checkout untouched.[^changeset] `--stat`, `--summary`, `--partial`. |
-| `changeset apply <concert>`  | `cs`  | Stages the changeset on the checkout's `HEAD` with `git apply --index --3way`, patch by patch. `--commit`, `--partial`.     |
-| `changeset drop`             | `cs`  | Resets the checkout's tracked files. It asks first unless given `--yes`.                                                    |
-| `artifact <concert>`         | `art` | Lists a concert's artifacts, or prints an instance's files raw.[^artifact] `--path`.                                        |
+| Command                      | Alias | Does                                                                                                                             |
+| ---------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `compose <composition>`      | `c`   | Builds and pre-flights a composition. `--plan` (with each agent's profile, harness, model, thinking[^plan]), `--graph`, `--out`. |
+| `perform <composition>`      | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                                 |
+| `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                                           |
+| `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`.                |
+| `wait <concert>`             | `wt`  | Waits for a concert to settle. `--timeout <duration>`.                                                                           |
+| `watch <concert>`            | `w`   | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.                            |
+| `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                                              |
+| `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                                  |
+| `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                                     |
+| `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                                         |
+| `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                               |
+| `changeset show <concert>`   | `cs`  | Prints a concert's changeset as a diff on its base, the checkout untouched.[^changeset] `--stat`, `--summary`, `--partial`.      |
+| `changeset apply <concert>`  | `cs`  | Stages the changeset on the checkout's `HEAD` with `git apply --index --3way`, patch by patch. `--commit`, `--partial`.          |
+| `changeset drop`             | `cs`  | Resets the checkout's tracked files. It asks first unless given `--yes`.                                                         |
+| `artifact <concert>`         | `art` | Lists a concert's artifacts, or prints an instance's files raw.[^artifact] `--path`.                                             |
 
 [^plan]:
-    A field a `-c roles.…` flag set also shows what the layers beneath the flag give it:
-    `model:flag over profile claude-sonnet-5-5`, or `over none` when nothing sets it; `compose --json` carries it as
-    each field's `under`.
+    The `agents:` block lists each agent's node, profile, and the harness, model and thinking it resolves to, as
+    `compose --json` does in `agents`.
 
 [^watch]:
     On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls, result sizes and
@@ -72,7 +71,7 @@ maestro wait <concert> --timeout 15m
     `ls <concert>` prints, or a unique ending of whole segments of one, such as `build` for `loop[0]/build`. An unknown
     or ambiguous instance or file, and `--json` with an instance or `--path`, are usage errors; an instance with no
     artifacts yet, or an artifact gone from disk, exits 1. To read what an agent is told before any spend, perform a
-    stub concert (`--profile stub`) and read its instance's `staged/identity.md` and `staged/prompt.md`.
+    stub concert (`--profile stub`) and read its instance's `staged/instructions.md` and `staged/prompt.md`.
 
 [^rep]:
     `rep <pack>.<composition>` shows its doc, each param as the flag to type with its type and default or `required`,
@@ -185,7 +184,7 @@ naming their short ids. On a terminal a short id shows the letters that tell it 
 
 Spend shows beside the status. An agent instance, in `ls <concert>` and `watch`, has an agent column,
 `<harness> · <model> · <effort>  <total> tok`: the model without its provider (`github-copilot/claude-haiku-5.5` shows
-as `claude-haiku-5.5`), the effort only when the role sets `thinking`, the total the sum of the instance's `tokens_*`
+as `claude-haiku-5.5`), the effort only when the profile sets `thinking`, the total the sum of the instance's `tokens_*`
 metrics but `tokens_reasoning`, which output tokens already count, as `999`, `15.5k` or `1.2M`, left out when 0. A
 running agent shows the harness, model and effort from the `agent` progress event it emits when it starts, then its
 latest note. Other instances leave the column blank. The `ls` list has a `tokens` column with the concert's total, `-`
@@ -236,26 +235,27 @@ work:
 
 ```sh
 maestro perform demo.greet --name x -c concurrency=2 -c 'packs=!append [../b]' -c target.checks.lint=!delete
-maestro perform demo.greet --name x -c 'roles.reviewer=!replace {harness: stub, model: none}' -c 'target.checks."a.b"=x'
+maestro perform demo.greet --name x -c 'profiles.reviewer.runtime=!replace {harness: stub, model: none}' -c 'target.checks."a.b"=x'
 ```
 
-A role's fields resolve per field, highest first: `--profile` and `-c`, then the composition's inline role fields
-(`agent({ role: { name, harness, model } })`), then the config files' `roles`. So `--profile stub` always means no
-spend, while `-c roles.builder.model=haiku` changes only the model. A resume applies the same order.
+A profile's fields resolve per field, highest first: `-c` and the `--profile` file, then the config files' `profiles`,
+then the profile directory's `profile.yaml`. So `--profile stub` always means no spend, while
+`-c profiles.builder.runtime.model=haiku` changes only the model. A composition sets none of them. A resume applies the
+same order.
 
 A concert's record keeps its `--profile` and each `-c` as typed, and `ls <concert> --json` shows them as `profile` and
 `config`. Keep secrets out of `-c`: set them in `$XDG_CONFIG_HOME/maestro/.env`.
 
-| Key           | Meaning                                                                                              |
-| ------------- | ---------------------------------------------------------------------------------------------------- |
-| `packs`       | Directories of installed packs, beside each directory under `$XDG_DATA_HOME/maestro/packs/`.         |
-| `concurrency` | Most node instances at once in one concert. Defaults to the CPU count.                               |
-| `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                 |
-| `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`.  |
-| `caps`        | Caps by name: `instances` caps a concert's node instances, any other name the total of a host count. |
-| `target`      | The repo host's `repo`, default `base`, `checks`, and per checked-out copy `prepare` and `sparse`.   |
-| `roles`       | The repo host's roles: a `harness`, `model` and optional `thinking` each.                            |
-| `sandbox`     | The repo host's `readOnly` paths, bound into every agent, check and prepare.                         |
+| Key           | Meaning                                                                                                |
+| ------------- | ------------------------------------------------------------------------------------------------------ |
+| `packs`       | Directories of installed packs, beside each directory under `$XDG_DATA_HOME/maestro/packs/`.           |
+| `concurrency` | Most node instances at once in one concert. Defaults to the CPU count.                                 |
+| `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                   |
+| `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`.    |
+| `caps`        | Caps by name: `instances` caps a concert's node instances, any other name the total of a host count.   |
+| `target`      | The repo host's `repo`, default `base`, `checks`, and per checked-out copy `prepare` and `sparse`.     |
+| `profiles`    | The repo host's profiles by name: `runtime`, `limits`, `readOnly`, `attachments`, over `profile.yaml`. |
+| `sandbox`     | The repo host's `readOnly` paths, bound into every agent, check and prepare.                           |
 
 A relative `packs`, `dataRoot`, `target.repo` or other path key is relative to the workspace root, the directory that
 holds `.maestro/`, in a workspace or profile file and a `-c`, and to the user file's own directory in the user file. A

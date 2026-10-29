@@ -2,18 +2,22 @@
 
 Compositions for building and reviewing a change in a target repository, on the coding-agent host. Install the pack by
 listing this directory under `packs` in a workspace's `.maestro/config.yaml`. Params are flags in kebab-case, or config
-under `classics.<composition>.<param>`. Roles map to a harness and a model under `roles`; the pack names no models.
+under `classics.<composition>.<param>`. Its seats run the profiles under `profiles/`, `classics/<name>`; the pack names
+no models, so set each profile's `runtime` in config, as `profiles.classics/<name>.runtime`.
 
 ## Compositions
 
-| Composition          | What it does                                                                                      | Roles                 |
-| -------------------- | ------------------------------------------------------------------------------------------------- | --------------------- |
-| `build_then_repair`  | Builds the request in a fresh lane, repairs until the target's checks pass, leaves a patch series | `builder`             |
-| `repair_until_green` | Checks a lane, then repairs and checks again while the checks are red; used by others, not alone  | `builder`             |
-| `panel_review`       | Rules on a change through each lens, a skeptic over each lens's findings, then consolidates       | `reviewer`, `skeptic` |
-| `v_model`            | Scouts, plans, builds and repairs, reviews each scouted risk, traces acceptance to the plan       | all six¹              |
+| Composition          | What it does                                                                                      | Profiles                          |
+| -------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `build_then_repair`  | Builds the request in a fresh lane, repairs until the target's checks pass, leaves a patch series | `builder`                         |
+| `repair_until_green` | Checks a lane, then repairs and checks again while the checks are red; used by others, not alone  | `builder`                         |
+| `panel_review`       | Rules on a change through each lens, a skeptic over each lens's findings, then consolidates       | `lens`, `skeptic`, `consolidator` |
+| `v_model`            | Scouts, plans, builds and repairs, reviews each scouted risk, traces acceptance to the plan       | all seven¹                        |
 
-¹ `scout`, `planner`, `builder`, `reviewer`, `skeptic` and `documenter`.
+Each profile's `profile.yaml` sets its limits: `builder` 45 minutes and 30M tokens, `lens`, `skeptic` and `consolidator`
+20 minutes and 10M tokens, the others none.
+
+¹ `scout`, `planner`, `builder`, `lens`, `skeptic`, `consolidator` and `documenter`.
 
 ## Params
 
@@ -35,5 +39,5 @@ under `classics.<composition>.<param>`. Roles map to a harness and a model under
 ² Exactly one of `change` and `revs`. `revs` is resolved against the target once, as the concert starts: `B` alone runs
 from `target.base`, and the commits must be one linear series, with no merge.
 
-Lenses and consolidators run on the `reviewer` role's model, skeptics on the `skeptic` role's. Pick models of different
-families for the two: a skeptic of the lens's family tends to share its blind spots.
+Lenses run on the `lens` profile's model and skeptics on the `skeptic`'s. Pick models of different families for the two:
+a skeptic of the lens's family tends to share its blind spots.

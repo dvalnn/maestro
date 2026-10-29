@@ -155,7 +155,7 @@ A host is a package that the core loads. It is the only way node kinds beyond th
 2. **Types.** Named types the host's ports use (for example a lane handle), with a way to serialize them into the IR.
    Compose rejects a type name that neither core nor an installed host owns.
 3. **`validate(graph, setup)`.** A compose-time hook returning diagnostics. It sees the whole graph and its own kinds'
-   nodes. This is where host rules live (the lane extension rule, the roles and checks a node names, bind validity).
+   nodes. This is where host rules live (the lane extension rule, the profile and checks a node names, bind validity).
 4. **`bounds(node)`.** Bounds for a node instance as named counts, like metrics (CORE-19): core sums each name and
    config caps it by name, for the plan's size bound (D-23). The agent host counts agent runs under its own name.
 5. **Environment.** `environment(setup)` gives host facts visible to code nodes through a typed context (for example the
@@ -218,7 +218,8 @@ returns beyond the check named.
 The setup each hook gets, `HostSetup`, is item 6 above and ADR 0010.
 
 **Naming.** A host named `h` prefixes its node kinds (`h.agent`) and types (`h.lane`) with `h.`. Config namespaces are
-not prefixed (`target`, `roles`). Core refuses two hosts that register one kind, and a type name no installed host owns.
+not prefixed (`target`, `profiles`). Core refuses two hosts that register one kind, and a type name no installed host
+owns.
 
 **Logging.** A host writes no log of its own. It reports progress through `context.emit(event)`, a JSON object core
 stores by node id and expansion path as a `progress` event, opaquely.
@@ -252,9 +253,9 @@ stores by node id and expansion path as a `progress` event, opaquely.
     for `ls` and lane refs.
   - `map` instantiates its body once per item, one at a time in item order.
   - `find` instantiates the body per item in order and stops at the first member meeting the condition, else ends on the
-    last member. This covers escalation over items. Escalation over models, which are params, unrolls at build into
-    `use` tries guarded by `when`, ending in `firstOk`. `parFind` runs every item at once: the first member to settle
-    meeting the condition is the result and the others are cancelled as `skipped`, with the reason
+    last member. This covers escalation over items. Escalation over models unrolls at build into `use` tries, one seat
+    per profile, guarded by `when` and ending in `firstOk`. `parFind` runs every item at once: the first member to
+    settle meeting the condition is the result and the others are cancelled as `skipped`, with the reason
     `cancelled: <instance> met the condition`, else it ends on the last member to settle. In either, a member or
     condition node that fails fails the group.
   - `fold` seeds an accumulator from the first item, through the body nodes its `first` lists, and steps it with each
@@ -308,9 +309,9 @@ A resume runs every instance that is not a reusable `ok` again, from `pending`.
 
 Params and config resolve, highest precedence first (CFG-04, D-17): the use site for a subcomposition or the CLI flag
 for a root composition, then each `-c <key>=<value>` flag, last first, then profile, workspace and user YAML, then, for
-`compose`, the example set (D-19), then the declared default. A role's fields are the exception: the command line
-(`--profile`, `-c`) beats the composition's inline role fields, which beat the config files' `roles`, field by field
-(see `docs/rulings.md`). A composition's YAML keys live under its pack id and then its composition id. Hosts keep
+`compose`, the example set (D-19), then the declared default. A profile's fields are the exception: the command line
+(`--profile`, `-c`) beats the config files' `profiles`, which beat the profile directory's `profile.yaml`, field by
+field (see `docs/rulings.md`). A composition's YAML keys live under its pack id and then its composition id. Hosts keep
 pure-config namespaces. Files are YAML. A relative path value in a workspace or profile file or a `-c` is relative to
 the workspace root, the directory that holds `.maestro/`, and in the user file to its own directory. The core:
 
@@ -322,7 +323,7 @@ the workspace root, the directory that holds `.maestro/`, and in the user file t
 Who owns what:
 
 - **Core.** Concurrency, caps by name, the data root and the workspace's name.
-- **Host.** `target`, `roles` and other host namespaces (HOST-12).
+- **Host.** `target`, `profiles` and other host namespaces (HOST-12).
 - **Composition.** One param declaration in code covers CLI inputs and tunables, with defaults. For example a
   repair-loop subcomposition owns its maximum iteration count. The core has no limits concept.
 - **Pack.** Its id, holding its compositions' params, and no other namespace.
@@ -402,13 +403,14 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 **Node kinds**
 
-- **Agent node.** Inputs: a task prompt and an optional identity (both text, staged by the host, no argument-length
-  limits), a role by name with overrides (harness, model, thinking level), a lane input, optional read-only binds, typed
-  output declarations (a JSON file with a schema, or Markdown), `attachments` and the named checks it may run. Its lane
-  input may ask to `resume` the session that wrote the version it extends, and `verdict` marks a verdict agent. Outputs:
-  the declared files as typed artifacts, the report, outcome and reason from its envelope, metrics (token counts), the
-  staged text as an artifact, and the resulting lane version. `rejected` means a verdict agent's verdict is negative.
-  `failed` means the run did not complete, or the agent is blocked (ADR 0012).
+- **Agent node.** Inputs: a task prompt (text, staged by the host, no argument-length limit), a profile by name and the
+  seat it fills, a lane input, typed output declarations (a JSON file with a schema, or Markdown), `attachments` and the
+  named checks it may run. The profile gives the runtime (harness, model, thinking level), the instructions, the limits,
+  the read-only binds and its own attachments, bound at `/in/<name>` (see Profiles). Its lane input may ask to `resume`
+  the session that wrote the version it extends, and `verdict` marks a verdict agent. Outputs: the declared files as
+  typed artifacts, the report, outcome and reason from its envelope, metrics (token counts), the staged text as an
+  artifact, and the resulting lane version. `rejected` means a verdict agent's verdict is negative. `failed` means the
+  run did not complete, or the agent is blocked (ADR 0012).
 - **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
   failures reported), or an inline `{ run, timeout }`. Each line runs through `sh -c` in the sandbox, in order, and the
   first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are `failed`; any
@@ -448,10 +450,10 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 **Staging, outbox and envelope**
 
-- The identity is appended to the harness's own system prompt from a staged file, never replacing it. The task, with the
-  host's output contract appended, goes as the user message on stdin. The exact staged text is the `staged` output
-  artifact, a directory holding `prompt.md` (the user message), `identity.md` (when there is one) and `correction-N.md`
-  (each correction turn's message).
+- The profile's instructions are appended to the harness's own system prompt from a staged file, never replacing it. The
+  task, with the host's output contract appended, goes as the user message on stdin. The exact staged text is the
+  `staged` output artifact, a directory holding `prompt.md` (the user message), `instructions.md` (when there is one)
+  and `correction-N.md` (each correction turn's message).
 - Declared outputs are files the agent writes in its **outbox**, a per-instance directory at `/out` outside the lane.
   The host reads only regular files there and checks each against its schema. The contract tells the agent to write
   every declared file, a verdict agent even when it rejects. A missing file or a schema violation is `failed`.
@@ -461,13 +463,13 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   verdict agent's with neither, or one both blocked and giving a verdict, gets at most two correction turns in the same
   session, then `failed`. A blocked agent ends `failed` with the reason `blocked: <cause>` and no outputs, its declared
   files unread. A rejection with declared files missing or invalid ends `rejected` with its reason and no outputs.
-- An agent takes optional `limits: { timeout, tokens }`, none by default; a seat sets them as standing and a call
-  overrides them per field. `timeout` is a duration or whole milliseconds, counted as wall clock from the first turn's
-  start, retry waits included; `tokens` is a whole number of at least 1, the running total of the harness's usage events
-  as `tokensOf` sums them. Both cover every turn, correction and retry of the instance. A bad value is refused at
-  compose. Passing one cancels the agent through its cancel path and ends it `failed` with a reason naming the limit,
-  such as `passed its token limit of 20M (21.3M spent)` or `passed its timeout of 45m`, its partial kept as for any
-  failed agent.
+- A profile takes optional `limits: { timeout, tokens }`, none by default; config tunes them per field. `timeout` is a
+  duration or whole milliseconds, counted as wall clock from the first turn's start, retry waits included; `tokens` is a
+  whole number of at least 1, the running total of the harness's usage events as `tokensOf` sums them. Both cover every
+  turn, correction and retry of the instance. A bad value is refused at compose. Passing one cancels the agent through
+  its cancel path and ends it `failed` with a reason naming the limit, such as
+  `passed its token limit of 20M (21.3M spent)` or `passed its timeout of 45m`, its partial kept as for any failed
+  agent.
 
 **Sessions**
 
@@ -517,8 +519,15 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - A code node sees `target`, `base` and `sparse` as `env.repo`: `base` and `sparse` are `null` when unset, and
   `env.repo` is empty without a target.
 - The host owns three namespaces: `target` (`repo`, the default `base`, the named `checks`, `prepare` and `sparse`),
-  `roles` (each a `harness`, `model` and optional `thinking`) and `sandbox` (`readOnly` paths bound into every agent,
-  check and prepare).
+  `profiles` (a profile's name to the fields that tune it, below) and `sandbox` (`readOnly` paths bound into every
+  agent, check and prepare). `roles` is refused: profiles replace it.
+- A **profile** is a directory whose `profile.yaml` holds its `runtime` (`harness`, `model`, optional `thinking`),
+  `instructions` and `attachments` as paths inside the directory, and `limits`. It is found in the workspace's
+  `.maestro/profiles/`, the user's `$XDG_CONFIG_HOME/maestro/profiles/` and a pack bundle's `profiles/`, by a bare name
+  or `<pack>/<name>`. The highest root holding the name wins whole and the others are its shadows. `profiles.<name>` in
+  config tunes it, and sets `readOnly`, which the file cannot. A seat names one profile, defaulting to its own name;
+  resolution happens at pre-flight and again on a resume. A concert recorded before profiles is refused: perform it
+  anew.
 - A check is a shell line or a list of them, or the long form `{ run, timeout, readOnly, writable, env }`: a duration
   such as `10m`, absolute host paths bound read-only or read-write at their own paths, and environment variables for
   that check. A check that needs a toolchain, a cache or a lock file shared across lanes names it there.
@@ -546,7 +555,7 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 **Harness adapters**
 
-- An adapter starts an agent session for a role, feeds it the prompt, streams events (text, thinking, tool calls with
+- An adapter starts an agent session for a runtime, feeds it the prompt, streams events (text, thinking, tool calls with
   their input and call id, each tool result's size and call id, usage), reports the agent's final reply, and supports
   cancel. Tool results are streamed as sizes only, never their text. In the harness's output, secrets the sandbox is
   given are masked before the adapter parses it: Claude's token, and the credential values in pi's `auth.json`. The host
@@ -562,12 +571,12 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   extension of a lane ref or of a commits node's version.
 - Resume only on an extension of an agent's version or of an extending check's, and not of any other writer (an apply, a
   check on a fresh or forked lane), nor a version written on another harness or in another concert.
-- Every role, harness and check a node names exists, the message listing those that do.
+- Every profile, harness and check a node names exists, the message listing those that do.
 - Every bind, read-only or writable, is absolute, exists and is not inside a lane. A writable bind also neither contains
   nor lies inside the lanes or the target repository. An agent names only checks config has.
 
-The classics pack's review compositions take their models from the roles in config. Picking different model families for
-a lens and its skeptic is guidance in its README, not a check.
+The classics pack's review compositions take their models from the profiles in config. Picking different model families
+for a lens and its skeptic is guidance in its README, not a check.
 
 ## 13. Packs
 

@@ -20,10 +20,8 @@ unless given `--out`.
   perform will run. Perform never uses the example set.
 - Default output: one line, `<name>: <count> node instances, <count> repo.agent`, with `up to` where a group or loop
   bounds it. Warnings and diagnostics go to stderr.
-- `--plan` prints every node with its kind and count, an `agents:` block with each agent's resolved harness, model and
-  thinking and the layer that set each (`default`, `user`, `workspace`, `profile`, `flag`, or `composition` for an
-  inline role field), and the bounds. `--json` adds the same as `agents` beside `plan`. `--graph` prints a Mermaid
-  flowchart.
+- `--plan` prints every node with its kind and count, an `agents:` block of each agent's node, profile, harness, model
+  and thinking, and the bounds. `--json` adds the same as `agents` beside `plan`. `--graph` prints a Mermaid flowchart.
 - `--out plan.json` saves the IR, with a bare file's code beside it as `plan.bundle.js`. `maestro perform plan.json`
   performs exactly that IR, taking no param flags.
 
@@ -113,8 +111,8 @@ those in the IR, or `art` for files). A group, or an instance from an older stor
 What each node leaves, as outputs of its instance:
 
 - An agent: `report`, its final report text; `staged`, a directory holding the exact prompt it was given (`prompt.md`),
-  its identity (`identity.md`) when it has one and each correction turn's message (`correction-1.md` on); `lane`, its
-  version; and each declared output file.
+  its instructions (`instructions.md`) when it has one and each correction turn's message (`correction-1.md` on);
+  `lane`, its version; and each declared output file.
 - A check: `logs`, each line it ran and its output; `lane`, unless it only read one.
 - A changeset node: `changeset`, a directory (next section).
 

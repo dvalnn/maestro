@@ -315,26 +315,22 @@ bundle it.
 | `fork(v)`, `read(v)`                       | A copy of version `v`, or `v` with its writes discarded; `v` is a lane output or a lane ref                                                                                                       |
 | `extend(v, { resume? })`                   | The lane continued from `v`, a lane output of this concert; with `resume`, an agent continues the session that wrote `v`                                                                          |
 | `JsonOut(file, type)`, `MarkdownOut(file)` | An agent output: a file in its outbox, arriving as a `core.json-file` or `core.markdown` artifact                                                                                                 |
-| `agent({ task, lane, role, ... })`         | A `repo.agent` node; outputs `report`, `staged`, `lane` unless it reads, and each declared output¹                                                                                                |
-| `seat({ role, identity, ... })`            | A function of `{ task, lane, ... }` that emits a `repo.agent` node²                                                                                                                               |
+| `seat(name, { profile?, verdict?, ... })`  | A function of `{ task, lane, ... }` that emits a `repo.agent` node running the profile¹; outputs `report`, `staged`, `lane` unless it reads, and each declared output                             |
 | `check(lane, which?)`                      | A `repo.check` node: every named check, the one named, or an inline `{ run, timeout, ... }`; outputs `logs`, `output` (the check's `$MAESTRO_CHECK_OUTPUT` directory), and `lane` unless it reads |
 | `changeset(v)`                             | A `repo.changeset` node: version `v` as a patch series, output `changeset`                                                                                                                        |
 | `commits(revs)`                            | A `repo.commits` node: the target commits git revisions `revs` name, as a version; output `lane`, which nothing extends                                                                           |
 | `apply(lane, changeset, opts)`             | A `repo.apply` node: one changeset applied, on its `changeset` port; `opts.strategy` is `3way` or `clean`; output `lane`                                                                          |
 
-¹ `agent` also takes `identity`, `verdict`, `attachments` (each `{ artifact, hint }`), `out`, `checks`, `readOnly`,
-`limits` and the common options. `verdict: true` marks a verdict agent, which may reject; any other agent finishes or is
-blocked (architecture 12). An attachment named `prompt`, `identity` or `lane`, or an output named `lane`, `report` or
-`staged`, is a build error: the host refuses the same names. `role` is a role name or
-`{ name, harness?, model?, thinking? }`; a `--profile` or `-c` role field beats an inline one.
-`limits: { timeout?, tokens? }` bounds the agent's whole run, none by default: `timeout` is a duration or whole
-milliseconds of wall clock, `tokens` a whole number of at least 1. A bad value is a build error (`BOUND.timeout`,
-`BOUND.tokens`) naming the agent and the field; passing a limit ends the agent `failed` (architecture 12).
-
-² A seat takes `role`, `identity`, `verdict`, `attachments`, `out`, `checks`, `readOnly` and `limits`. A call takes
-`task`, `lane` and the common options, and may override the role and add attachments, outputs, checks and read-only
-binds: its role fields override the seat's, attachments and outputs add with the call winning on a name, checks and
-binds are a union, its `limits` override the seat's per field, and the result's outputs are typed by both.
+¹ A seat takes `profile` (a bare name or `<pack>/<name>`, the seat's own name by default, so a pack's seat names
+`classics/<seat>`), `verdict`, `out` and `checks`. `verdict: true` marks a verdict agent, which may reject; any other
+agent finishes or is blocked (architecture 12). A call takes `task`, `lane`, the common options, and may add
+`attachments` (each `{ artifact, hint }`), outputs and checks: outputs add with the call winning on a name, checks are a
+union, and the result's outputs are typed by both. An attachment named `prompt` or `lane`, or an output named `lane`,
+`report` or `staged`, is a build error: the host refuses the same names. The runtime, instructions, limits and read-only
+binds belong to the profile and to config, so a call sets none of them; an agent that needs another budget is another
+seat on another profile. A profile's `limits: { timeout?, tokens? }` bound the agent's whole run, none by default:
+`timeout` is a duration or whole milliseconds of wall clock, `tokens` a whole number of at least 1. A bad value is a
+pre-flight error naming the profile and the field; passing a limit ends the agent `failed` (architecture 12).
 
 A check with no `timeout` has none: it runs until it ends or the concert is killed.
 
@@ -408,29 +404,30 @@ scopes, edge kinds, cardinalities, expansions, and node-instance events keyed by
 
 These come from the legacy compositions that were read for this design. They show that the API is expressive enough.
 They type-check and build against the SDK and the repo host SDK, the lens round and build-then-repair as
-`packages/host-repo-sdk/src/fixtures/examples.ts` (`review`, `buildThenRepair`). A prompt is a task, an agent identity
-and attachments: the task is built in TS from plain values, and a run-time value reaches an agent as an attachment, a
-code node's output or the lane it continues.
+`packages/host-repo-sdk/src/fixtures/examples.ts` (`review`, `buildThenRepair`). A prompt is a task and attachments: the
+task is built in TS from plain values, and a run-time value reaches an agent as an attachment, a code node's output or
+the lane it continues.
 
 **Repair until green** (build, then repair while checks are red, bounded by the composition's own param):
 
 ```ts
+const builder = seat("builder", { checks: ["test"] });
+
 export const fixUntilGreen = composition(
   "fix_until_green",
   {
     ports: { build: Lane, prompt: Text() },
-    params: { maxRepairs: Int({ default: 2 }), model: Text() },
+    params: { maxRepairs: Int({ default: 2 }) },
   },
   (params, { build, prompt }) => {
     const verify = (lane: Ref<string>) => check(extend(lane), "test");
     return loop.while((checked) => not(checked.ok), {
       init: verify(build),
       step: (checked) => {
-        const repair = agent({
+        const repair = builder({
           label: "repair",
           task: prompt,
           lane: extend(checked.out.lane, { resume: true }),
-          role: { name: "builder", model: params.model },
           attachments: {
             logs: { artifact: checked.out.logs, hint: "Read first, to see why the check failed" },
           },
@@ -444,96 +441,85 @@ export const fixUntilGreen = composition(
 );
 ```
 
-**Escalate and fan out over models.** A model is a role field, plain config, so a group item cannot pick one. The tries
-unroll at build over the plain `models` param, each its own `use` with the model as a param:
+**Escalate and fan out over models.** A model belongs to a profile, plain config, so a group item cannot pick one. The
+tries unroll at build over one seat per profile, each its own `use`:
 
 ```ts
-const attempt = (model: string, i: number, prompt: Ref<string>, run: Ref<string>, when?: Ref<boolean>) => {
-  const build = agent({
-    label: `build_${i}`,
-    task: prompt,
-    lane: fork(run),
-    role: { name: "builder", model },
-    when,
-  });
-  return use(fixUntilGreen, { build: build.out.lane, prompt }, { params: { model }, label: `try_${i}` });
+const builders = [seat("build_fast"), seat("build_strong")];
+
+const attempt = (
+  build: (typeof builders)[number],
+  i: number,
+  prompt: Ref<string>,
+  run: Ref<string>,
+  when?: Ref<boolean>,
+) => {
+  const built = build({ label: `build_${i}`, task: prompt, lane: fork(run), when });
+  return use(fixUntilGreen, { build: built.out.lane, prompt }, { label: `try_${i}` });
 };
 
-const Params = {
-  params: { models: List(Text()) },
-  ports: { prompt: Text(), run: Lane },
-};
+const Params = { ports: { prompt: Text(), run: Lane } };
 
-escalate = composition("build_escalate", Params, ({ models }, { prompt, run }) => {
+escalate = composition("build_escalate", Params, (_, { prompt, run }) => {
   const tries: ReturnType<typeof attempt>[] = [];
-  models.forEach((model, i) => {
+  builders.forEach((build, i) => {
     const prev = tries[i - 1];
     const failed = prev && not(prev.ok, { label: `failed_${i - 1}` });
-    tries.push(attempt(model, i, prompt, run, failed));
+    tries.push(attempt(build, i, prompt, run, failed));
   });
   return firstOk(tries.map((t) => t.out.lane));
 });
-fanout = composition("build_fanout", Params, ({ models }, { prompt, run }) =>
-  firstOk(models.map((model, i) => attempt(model, i, prompt, run).out.lane)),
+fanout = composition("build_fanout", Params, (_, { prompt, run }) =>
+  firstOk(builders.map((build, i) => attempt(build, i, prompt, run).out.lane)),
 );
 ```
 
-A `--profile` or `-c` model for that role beats each try's model, so every try then runs on that model.
+A `-c profiles.build_fast.runtime.model=...` flag changes the model of every try on that profile.
 
-**Lens, skeptic, consolidator** (the shape shared by four legacy chains; the roles' models in config should come from
-different families):
+**Lens, skeptic, consolidator** (the shape shared by four legacy chains; the lens and skeptic profiles' models in config
+should come from different families):
 
 ```ts
+const lens = seat("lens", { out: { findings: JsonOut("findings.json", Findings) } });
+const skeptic = seat("skeptic", { out: { verdicts: JsonOut("verdicts.json", Verdicts) } });
+const consolidator = seat("consolidator", { out: { summary: MarkdownOut("review.md") } });
+
 const rounds = iter.parMap(
   LENSES,
-  (lens) => {
-    const found = agent({
-      label: "lens",
-      task: lens,
-      lane: fresh(),
-      role: "reviewer",
-      out: { findings: JsonOut("findings.json", Findings) },
-    });
-    const skeptic = agent({
+  (angle) => {
+    const found = lens({ label: "lens", task: angle, lane: fresh() });
+    const challenged = skeptic({
       label: "skeptic",
       task: "Challenge each finding: does it hold?",
       lane: fresh(),
-      role: "skeptic",
       attachments: { findings: { artifact: found.out.findings, hint: "Read before judging any finding" } },
-      out: { verdicts: JsonOut("verdicts.json", Verdicts) },
     });
-    return { lens: found, skeptic };
+    return { lens: found, skeptic: challenged };
   },
   { onError: "continue" },
 );
 const merged = code(byFinding, { in: { runs: rounds.out.results }, out: { text: Text() } });
-return agent({
-  label: "consolidator",
-  task: merged.out.text,
-  lane: fresh(),
-  role: "reviewer",
-  out: { summary: MarkdownOut("review.md") },
-});
+return consolidator({ label: "consolidator", task: merged.out.text, lane: fresh() });
 ```
 
 **Plan from several angles, then synthesize** (`fork` several, then `extend` the original):
 
 ```ts
-const scout = agent({ label: "scout", task: prompt, lane: fresh(), role: "scout" });
-const plans = iter.parMap(
-  ANGLES,
-  (a) => agent({ label: "plan", task: a, lane: fork(scout.out.lane), role: "planner" }),
-  { onError: "continue" },
-);
+const scout = seat("scout");
+const planner = seat("planner");
+
+const scouted = scout({ label: "scout", task: prompt, lane: fresh() });
+const plans = iter.parMap(ANGLES, (a) => planner({ label: "plan", task: a, lane: fork(scouted.out.lane) }), {
+  onError: "continue",
+});
 const good = code(renderOk, {
   in: { plans: plans.out.results },
   out: { text: Text(), nonEmpty: Bool() },
 });
-const synthesis = agent({
+const synthesis = planner({
   label: "synthesis",
   task: good.out.text,
-  lane: extend(scout.out.lane),
-  role: "planner",
+  lane: extend(scouted.out.lane),
   when: good.out.nonEmpty,
 });
 return firstOk([synthesis.out.report, firstOk(plans, { label: "best_plan" }).out.value.get("report")]);
@@ -543,8 +529,8 @@ return firstOk([synthesis.out.report, firstOk(plans, { label: "best_plan" }).out
 
 | Predecessor workflow                     | Constructs it needs                                                                                                                                                   |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| scout_plan, build_quality, review_panel  | `agent`, `check`, `use`, `iter.parMap`, reducers                                                                                                                      |
-| full                                     | `use` of two subcompositions, `agent` extending the result                                                                                                            |
+| scout_plan, build_quality, review_panel  | `seat`, `check`, `use`, `iter.parMap`, reducers                                                                                                                       |
+| full                                     | `use` of two subcompositions, `seat` extending the result                                                                                                             |
 | build_escalate                           | `use` per model, each guarded by `when` on the last try's failure, `firstOk`, `fork` of one source                                                                    |
 | build_fanout                             | `use` per model, `firstOk`                                                                                                                                            |
 | plan_panel                               | `fork` and `extend` of lane versions, `iter.parMap`, `Settled` fan-in, code node                                                                                      |
@@ -556,7 +542,7 @@ return firstOk([synthesis.out.report, firstOk(plans, { label: "best_plan" }).out
 
 Coverage was assessed by reading the workflows (four verification and review chains with their helpers, and eight
 general compositions). S9 ported and ran `build_then_repair`, `panel_review` and `v_model` in `packs/classics`. They
-exercise `agent`, `check`, `use`, `iter.parMap`, `loop` with `tolerate` on a rejected check, `when`, `assert` and code
+exercise `seat`, `check`, `use`, `iter.parMap`, `loop` with `tolerate` on a rejected check, `when`, `assert` and code
 nodes, so the scout_plan, build_quality, review_panel and verification round rows held, except that a code node folds
 each panel's results where a row names reducers. The other rows were not run: re-check each when its workflow is ported.
 

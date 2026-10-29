@@ -6,17 +6,17 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
 ## Steps
 
 1. **Prerequisites.** `maestro --help` prints its commands; `bwrap` (bubblewrap) and `git` 2.40 or newer are on `PATH`.
-   Each harness a role names needs its CLI on `PATH` and its credentials:
+   Each harness a profile names needs its CLI on `PATH` and its credentials:
    - `claude`: `CLAUDE_CODE_OAUTH_TOKEN` in the environment or in `$XDG_CONFIG_HOME/maestro/.env` (default
      `~/.config/maestro/.env`) as `CLAUDE_CODE_OAUTH_TOKEN=<token>`; made by `claude setup-token`.
    - `pi`: pi logged in, its config in `~/.pi/agent`; made by running `pi` once and logging in.
 
-   A setup whose roles are all stub needs no harness. Done when each command answers.
+   A setup whose profiles are all stub needs no harness. Done when each command answers.
 
 2. **Read the layers that exist.** Config layers, lowest first: the user file `$XDG_CONFIG_HOME/maestro/config.yaml`
-   (default `~/.config/maestro/config.yaml`), the workspace file `.maestro/config.yaml`, then a profile, then each
-   `-c <key>=<value>` flag. The user file often already lists `packs` and maps `roles`. Done when you know which packs,
-   roles and checks are already set.
+   (default `~/.config/maestro/config.yaml`), the workspace file `.maestro/config.yaml`, then a `--profile` layer file,
+   then each `-c <key>=<value>` flag. The user file often already lists `packs` and tunes `profiles`. Done when you know
+   which packs, profiles and checks are already set.
 3. **Write `.maestro/config.yaml`** at the repository root, holding only what no lower layer sets:
    - `target.repo`: the repository's absolute path. `target.base`: a branch or commit, only when the user names one;
      lanes are cut from the target's `HEAD` otherwise.
@@ -37,7 +37,8 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
      or `{ patterns: [...] }` of gitignore-style patterns when directories cannot say it, as `/*`, `!/docs/`,
      `/docs/api.md` for the root files and one file under `docs/`. Lanes check out only those, before prepare runs;
      checks and agents see nothing else.
-   - `roles`: every role the composition names. Compose lists each missing one. A role no layer maps is the user's call,
+   - `profiles`: every profile the composition's seats name needs a `runtime` (`harness` and `model`) from the profile's
+     own `profile.yaml` or from a layer. Compose lists each missing one. A runtime no layer sets is the user's call,
      since a model is spend: ask the user for its harness and model.
    - Packs: every directory under `$XDG_DATA_HOME/maestro/packs/` is installed, with no config. The release ships the
      classics pack as `classics-<version>.tar.gz` beside the binary; extracting it there is the whole install, and
@@ -59,7 +60,7 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
    - Optional: `caps`, `sandbox.readOnly`, `concurrency`, and composition params (see the example).
 
    Quote a YAML value that would read as another type or break the line: `"true"`, `"3"`, a line holding `: ` or ` #`.
-   Done when every role, check and pack the composition needs has a value in some layer.
+   Done when every profile, check and pack the composition needs has a value in some layer.
 
 4. **Ignore `.maestro/`.** The workspace directory sits inside the target repository and must not be committed. Ask the
    user whether to add `.maestro/` to the repository's `.gitignore` or to `.git/info/exclude` (local only), then add it.
@@ -87,9 +88,9 @@ target:
       readOnly: [/opt/sdk] # absolute paths bound read-only
       env: { CARGO_TERM_COLOR: never } # set for this check alone
 
-roles:
-  builder: { harness: claude, model: sonnet, thinking: high }
-  reviewer: { harness: pi, model: anthropic/claude-opus-4-1, thinking: medium }
+profiles: # tunes profiles by name, over each one's profile.yaml
+  builder: { runtime: { harness: claude, model: sonnet, thinking: high } }
+  classics/lens: { runtime: { harness: pi, model: anthropic/claude-opus-4-1, thinking: medium } }
 
 packs: [/home/me/packs/mine] # a pack outside the packs directory; absolute: paths are not expanded
 
@@ -116,7 +117,7 @@ line. A line's exit code is its verdict:
 
 Exits 3, 124 (a timeout), 127 (command not found) and 137 (killed) read as a broken check, not a verdict.
 
-### Roles and harnesses
+### Profiles and harnesses
 
 | Harness  | `model`                                          | `thinking`             |
 | -------- | ------------------------------------------------ | ---------------------- |
@@ -124,14 +125,19 @@ Exits 3, 124 (a timeout), 127 (command not found) and 137 (killed) read as a bro
 | `pi`     | `provider/model`, such as `anthropic/claude-...` | passed as `--thinking` |
 | `stub`   | any string; `none` by convention                 | ignored                |
 
-maestro passes model and thinking through unchecked, so confirm an id with the harness's own CLI. A composition may
-override a role's harness, model or thinking per agent. Per field, `--profile` and `-c` beat the composition's override,
-which beats the config file, so `--profile stub` always means no spend.
+maestro passes model and thinking through unchecked, so confirm an id with the harness's own CLI. A composition sets
+none of them: a seat names a profile. Per field, `-c` and `--profile` beat the config files' `profiles`, which beat the
+profile's own `profile.yaml`, so `--profile stub` always means no spend.
 
-### Profiles
+A profile is a directory with a `profile.yaml` (`runtime`, `instructions`, `limits`, `attachments`) and the files it
+names, in `.maestro/profiles/<name>/` of the workspace, `$XDG_CONFIG_HOME/maestro/profiles/<name>/` of the user, or a
+pack's `profiles/`, as `<pack>/<name>`. The highest of those holding the name wins it whole. `readOnly` is set only in
+config, as `profiles.<name>.readOnly`.
 
-A profile is `.maestro/profiles/<name>.yaml`, layered on top by `--profile <name>` on any verb. Layers merge maps by
-key, and a list in a higher layer replaces the lower one. YAML tags change that:
+### Layers
+
+A layer file `.maestro/profiles/<name>.yaml` is applied by `--profile <name>` on any verb. Layers merge maps by key, and
+a list in a higher layer replaces the lower one. YAML tags change that:
 
 - `!replace` on a map replaces the lower map instead of merging into it.
 - `!append` on a list appends to the lower list.
@@ -139,28 +145,28 @@ key, and a list in a higher layer replaces the lower one. YAML tags change that:
 
 ```yaml
 # .maestro/profiles/cheap.yaml: the builder on a cheaper model; its harness and thinking merge from below
-roles:
-  builder: { model: haiku }
+profiles:
+  builder: { runtime: { model: haiku } }
 ```
 
 For a one-off change, `-c <key>=<value>` on any verb layers one key over the profile, its value YAML with the same tags:
-`-c roles.builder.model=haiku`, `-c 'packs=!append [../b]'`, `-c target.checks.lint=!delete`. A key holding a `.` goes
-in double quotes. A resume reapplies the concert's `--profile` and `-c`, but finds the record store by today's
+`-c profiles.builder.runtime.model=haiku`, `-c 'packs=!append [../b]'`, `-c target.checks.lint=!delete`. A key holding a
+`.` goes in double quotes. A resume reapplies the concert's `--profile` and `-c`, but finds the record store by today's
 `dataRoot`: pass a `-c dataRoot=` again. The record keeps each `-c` as typed, so keep secrets in the `.env`.
 
-The stub profile, every role on the stub harness, is in SKILL.md, section Stub concerts.
+The stub layer, every profile on the stub harness, is in SKILL.md, section Stub concerts.
 
 ### Diagnostics a bootstrap meets
 
-| Diagnostic                                                          | Fix                                                                           |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `HOST.role: 'x' takes role 'r', which config 'roles' does not have` | Map `roles.r` (ask the user for harness and model)                            |
-| `HOST.harness: 'x' runs on harness 'h', which is not loaded`        | Use a harness the hint lists                                                  |
-| `HOST.check: 'x' runs check 'c', which config 'target.checks' ...`  | Add `target.checks.c`                                                         |
-| `HOST.target: target repository '...' does not exist`               | Fix `target.repo`                                                             |
-| `CFG.schema: config 'target' must have required property 'repo'`    | Set `target.repo`, or `cd` into the workspace                                 |
-| `CFG.unclaimed: config key 'k' is claimed by no installed ...`      | Rename it as the did-you-mean hint says, or install its pack                  |
-| `HOST.bind: read-only bind 'p' is not an absolute path`             | Give an absolute path that exists, outside the lanes                          |
-| `BOUND.cap: 'repo.agent' may reach at least N, over its cap of M`   | Lower the params that size the plan, or ask to raise the cap                  |
-| `CFG.required: param 'p' (--p) of 'pack.c' is required`             | Pass `--p`, or for a pack's composition set it under `<pack>: <composition>:` |
-| `no pack 'x' is installed`                                          | Extract it into the packs directory, or add its directory to `packs`          |
+| Diagnostic                                                         | Fix                                                                           |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `HOST.profile: profile 'r' is in no profile root`                  | Add the profile directory `r`, or set `profiles.r.runtime` where it exists    |
+| `HOST.harness: 'x' runs on harness 'h', which is not loaded`       | Use a harness the hint lists                                                  |
+| `HOST.check: 'x' runs check 'c', which config 'target.checks' ...` | Add `target.checks.c`                                                         |
+| `HOST.target: target repository '...' does not exist`              | Fix `target.repo`                                                             |
+| `CFG.schema: config 'target' must have required property 'repo'`   | Set `target.repo`, or `cd` into the workspace                                 |
+| `CFG.unclaimed: config key 'k' is claimed by no installed ...`     | Rename it as the did-you-mean hint says, or install its pack                  |
+| `HOST.bind: read-only bind 'p' is not an absolute path`            | Give an absolute path that exists, outside the lanes                          |
+| `BOUND.cap: 'repo.agent' may reach at least N, over its cap of M`  | Lower the params that size the plan, or ask to raise the cap                  |
+| `CFG.required: param 'p' (--p) of 'pack.c' is required`            | Pass `--p`, or for a pack's composition set it under `<pack>: <composition>:` |
+| `no pack 'x' is installed`                                         | Extract it into the packs directory, or add its directory to `packs`          |

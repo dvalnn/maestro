@@ -66,32 +66,34 @@ A relative `XDG_DATA_HOME` is ignored, by the script and by maestro, which use `
 
 Config keys are in [`packages/cli/README.md`](packages/cli/README.md).
 
-- The user file `~/.config/maestro/config.yaml` holds `roles` and the pack's params, and `packs` for a pack kept outside
-  the packs directory. `packs` may instead go in a workspace's `.maestro/config.yaml`. `~` is not expanded; a relative
-  path resolves against the directory of the user file, and in a workspace or profile file against the workspace root,
-  the directory that holds `.maestro/`.
+- The user file `~/.config/maestro/config.yaml` holds `profiles` and the pack's params, and `packs` for a pack kept
+  outside the packs directory. `packs` may instead go in a workspace's `.maestro/config.yaml`. `~` is not expanded; a
+  relative path resolves against the directory of the user file, and in a workspace or profile file against the
+  workspace root, the directory that holds `.maestro/`.
 - A workspace file `.maestro/config.yaml` per target holds `target: { repo, base, checks }`, and optionally `prepare`
   (lines run on each checked-out lane, such as a dependency install) and `sparse` (directories, or `{ patterns }` of
   gitignore-style patterns, a lane checks out).
-- A profile `.maestro/profiles/stub.yaml` moves the roles to the built-in `stub` harness, which writes a placeholder for
-  each declared output and replies ok. Run with `--profile stub` to spend nothing: `build_then_repair` and
-  `panel_review` end ok, the latter with an unapproved verdict, while `v_model` is rejected at its repair loop or at
+- A layer file `.maestro/profiles/stub.yaml` moves the profiles' runtimes to the built-in `stub` harness, which writes a
+  placeholder for each declared output and replies ok. Run with `--profile stub` to spend nothing: `build_then_repair`
+  and `panel_review` end ok, the latter with an unapproved verdict, while `v_model` is rejected at its repair loop or at
   `traceOf`.
 
-The classics pack names six roles and no models, and its [README](packs/classics/README.md) holds each composition's
-roles and params: `scout`, `planner`, `builder`, `reviewer`, `skeptic` and `documenter`. `build_then_repair` needs only
-`builder`, `panel_review` needs `reviewer` and `skeptic`, and `v_model` needs all six. Model ids below are placeholders;
-use your own.
+The classics pack ships seven profiles and no models, and its [README](packs/classics/README.md) holds each
+composition's profiles and params: `scout`, `planner`, `builder`, `lens`, `skeptic`, `consolidator` and `documenter`.
+`build_then_repair` needs only `builder`, `panel_review` needs `lens`, `skeptic` and `consolidator`, and `v_model` needs
+all seven. A profile holds its instructions and limits; config sets its `runtime`. Model ids below are placeholders; use
+your own.
 
 ```yaml
 # ~/.config/maestro/config.yaml
-roles:
-  scout: { harness: claude, model: <claude-model>, thinking: high }
-  planner: { harness: claude, model: <claude-model>, thinking: high }
-  builder: { harness: claude, model: <claude-model>, thinking: high }
-  reviewer: { harness: claude, model: <claude-model>, thinking: high }
-  skeptic: { harness: pi, model: <provider>/<model>, thinking: high }
-  documenter: { harness: claude, model: <claude-model>, thinking: high }
+profiles:
+  classics/scout: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
+  classics/planner: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
+  classics/builder: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
+  classics/lens: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
+  classics/skeptic: { runtime: { harness: pi, model: <provider>/<model>, thinking: high } }
+  classics/consolidator: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
+  classics/documenter: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
 classics:
   v_model:
     maxApproaches: 2
@@ -101,8 +103,9 @@ classics:
 
 - Claude: `harness: claude`, `model: sonnet` or `opus`, `thinking` as Claude's `--effort`.
 - pi: `harness: pi`, `model: <provider>/<model>` such as `github-copilot/gpt-5-mini`, `thinking` as pi's `--thinking`.
-- `panel_review` and `v_model` run lenses on the `reviewer` role's model and skeptics on the `skeptic` role's. Pick
-  models of different families for the two, since a skeptic of the lens's family tends to share its blind spots.
+- `panel_review` and `v_model` run lenses on the `classics/lens` profile's model and skeptics on the
+  `classics/skeptic`'s. Pick models of different families for the two, since a skeptic of the lens's family tends to
+  share its blind spots.
 - `v_model` also takes `maxApproaches` (default 2), `maxRisks` (default 4) and `maxRepairs` (default 2), each an integer
   of at least 1. Its `request` is a flag.
 
@@ -117,13 +120,14 @@ target:
 
 ```yaml
 # .maestro/profiles/stub.yaml
-roles:
-  scout: !replace { harness: stub, model: none }
-  planner: !replace { harness: stub, model: none }
-  builder: !replace { harness: stub, model: none }
-  reviewer: !replace { harness: stub, model: none }
-  skeptic: !replace { harness: stub, model: none }
-  documenter: !replace { harness: stub, model: none }
+profiles:
+  classics/scout: { runtime: !replace { harness: stub, model: none } }
+  classics/planner: { runtime: !replace { harness: stub, model: none } }
+  classics/builder: { runtime: !replace { harness: stub, model: none } }
+  classics/lens: { runtime: !replace { harness: stub, model: none } }
+  classics/skeptic: { runtime: !replace { harness: stub, model: none } }
+  classics/consolidator: { runtime: !replace { harness: stub, model: none } }
+  classics/documenter: { runtime: !replace { harness: stub, model: none } }
 ```
 
 Compose before performing, then perform:
@@ -136,6 +140,9 @@ maestro perform classics.build_then_repair --request "<what to build>"
 ## 5. Upgrade
 
 Run the install command again, after letting running concerts settle or stopping them with `maestro kill`. Config stays.
+
+An installed classics pack from before profiles must be reinstalled, by that command, to gain its `profiles/`; until
+then its seats find no profile. A concert recorded before profiles cannot be resumed: perform it anew.
 
 A record with a changed schema is refused with a message naming `record.db`: move it aside, as the message says. A pack
 with a new code hash makes a resumed concert rerun its code nodes.

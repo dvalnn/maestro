@@ -13,7 +13,7 @@ surface, and a worked example. Done when the file composes and a stub concert of
 4. **Rehearse it as a stub concert** (SKILL.md, Stub concerts):
    `maestro perform .maestro/<id>.ts --profile stub [param flags]`. Done when the concert settles with the outcome you
    expected.
-5. **Hand it over.** Tell the user the file's path, its params, and the roles it needs mapped. Committing it is theirs.
+5. **Hand it over.** Tell the user the file's path, its params, and the profiles it needs. Committing it is theirs.
 
 ## File rules
 
@@ -83,8 +83,7 @@ From `@maestro/host-repo-sdk`:
 | `fork(v)`                               | A copy of version `v`; any number of nodes may fork one version                                                     |
 | `extend(v, { resume? })`                | The lane continued from `v`, at most once; `resume` continues its session                                           |
 | `read(v)`                               | `v` with writes discarded; the node outputs no lane                                                                 |
-| `agent({ task, lane, role, ... })`      | A coding agent; outputs `report`, `staged`, `lane` and its declared outputs                                         |
-| `seat({ role, identity, ... })`         | An agent's standing setup, called with `{ task, lane, ... }` per agent                                              |
+| `seat(name, { profile?, ... })`         | A coding agent on a profile, called with `{ task, lane, ... }`; outputs `report`, `staged`, `lane`, declared ones   |
 | `check(lane, which?)`                   | Every named check, the one named, or an inline `{ run, timeout, ... }`; `$MAESTRO_CHECK_OUTPUT` is kept as `output` |
 | `changeset(v, { message? })`            | `v` as a changeset, `message` its commit message; end a composition on one                                          |
 | `commits(revs)`                         | Target commits `revs` names as a version; fork or read it, never extend                                             |
@@ -92,12 +91,14 @@ From `@maestro/host-repo-sdk`:
 | `JsonOut(file, T)`, `MarkdownOut(file)` | A declared agent output, written in its outbox at `/out/<file>`                                                     |
 | `Lane`                                  | The lane version type, and the lane ref param type                                                                  |
 
-`agent` also takes `identity` (standing text appended to the harness's system prompt), `verdict` (`true` for an agent
-that rules on work, `ok` or `rejected`), `attachments` (`{ name: { artifact, hint } }`, each mounted read-only at
-`/in/<name>`, `hint` saying when to read it), `out` (declared outputs), `checks` (names from `target.checks` the agent
-may run with its `check <name>` command), `readOnly` (absolute host paths) and `limits` (`{ timeout?, tokens? }`, none
-by default: passing one ends the agent `failed`; a seat's limits are overridden per field by the call). `role` is a role
-name, or `{ name, harness?, model?, thinking? }` to override it; a `--profile` or `-c` role field beats an inline one.
+A seat's `profile` is a bare name or `<pack>/<name>`, its own name by default; the profile is a directory in the
+workspace's `.maestro/profiles/` or the user's profiles, holding the runtime (harness, model, thinking), the
+instructions, the limits and the read-only binds. A seat also takes `verdict` (`true` for an agent that rules on work,
+`ok` or `rejected`), `out` (declared outputs) and `checks` (names from `target.checks` the agent may run with its
+`check <name>` command). A call takes `task`, `lane` and the common options, and may add `attachments`
+(`{ name: { artifact, hint } }`, each mounted read-only at `/in/<name>`, `hint` saying when to read it), outputs and
+checks. A call sets no runtime, instructions or limits; an agent that needs another budget is another seat on another
+profile.
 
 An agent ending `ok` must write every declared file, valid, or the instance fails. Only a verdict agent rejects, and one
 that rejects without its declared files ends `rejected` with no outputs. Any agent may report itself blocked: it ends
@@ -112,11 +113,13 @@ or `null`. A code node that settles `failed` keeps its scratch directory, and it
 
 An agent builds the task in a fresh lane; the `test` check verifies it; while the check is red, a repair agent resumes
 the builder's session with the check's logs attached; the result leaves as a changeset. It needs `target.checks.test`
-and a `builder` role.
+and a `builder` profile.
 
 ```ts
-import { agent, changeset, check, extend, fresh } from "@maestro/host-repo-sdk";
+import { changeset, check, extend, fresh, seat } from "@maestro/host-repo-sdk";
 import { composition, Int, loop, not, Text } from "@maestro/sdk";
+
+const builder = seat("builder", { checks: ["test"] });
 
 export const fix = composition(
   "fix",
@@ -126,16 +129,14 @@ export const fix = composition(
     examples: [{ task: "Make greet.sh print hello" }],
   },
   ({ task, repairs }) => {
-    const built = agent({ label: "build", task, lane: fresh(), role: "builder", checks: ["test"] });
+    const built = builder({ label: "build", task, lane: fresh() });
     const green = loop.while((c) => not(c.ok), {
       init: check(extend(built.out.lane), "test", { label: "test" }),
       step: (c) => {
-        const repaired = agent({
+        const repaired = builder({
           label: "repair",
           task: "The test check is red. Fix the code so it passes.",
           lane: extend(c.out.lane, { resume: true }),
-          role: "builder",
-          checks: ["test"],
           attachments: { logs: { artifact: c.out.logs, hint: "first, to see why the check failed" } },
         });
         return check(extend(repaired.out.lane), "test", { label: "test" });
