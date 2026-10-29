@@ -1,6 +1,12 @@
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
-import type { KeyPath } from "@maestro/core/config";
+import {
+	ConfigError,
+	configDiagnostic,
+	type KeyPath,
+	sourceOf,
+} from "@maestro/core/config";
+import type { HostSetup } from "@maestro/core/host";
 import {
 	boundOf,
 	type Diagnostic,
@@ -9,8 +15,17 @@ import {
 	type HostNode,
 	type IrNode,
 	isGroup,
+	isPlainObject,
 } from "@maestro/ir";
+import type { Harness } from "../harness/index";
 import {
+	PROFILES,
+	type Profile,
+	resolveProfile,
+	untunable,
+} from "../profile/index";
+import {
+	AGENT_IN_PORTS,
 	AGENT_KIND,
 	type AgentConfig,
 	APPLY_KIND,
@@ -24,10 +39,13 @@ import {
 	type CommitsConfig,
 	checkConfig,
 	commitsConfig,
+	isLegacyAgent,
 	LANE_PORT,
+	LEGACY_ROLE,
 	listed,
 	type RepoSetup,
-	roleFields,
+	ROLES,
+	repoSetup,
 	useOneOf,
 } from "./config";
 
@@ -36,9 +54,12 @@ const GIT_ENTRY = ".git";
 
 type Finding = Omit<Diagnostic, "severity">;
 
+/** An agent node and its config. */
+type AgentNode = { node: HostNode; kind: "agent"; config: AgentConfig };
+
 /** A repo node and the config of its kind. */
 type RepoNode =
-	| { node: HostNode; kind: "agent"; config: AgentConfig }
+	| AgentNode
 	| { node: HostNode; kind: "check"; config: CheckConfig }
 	| { node: HostNode; kind: "apply"; config: ApplyConfig }
 	| { node: HostNode; kind: "commits"; config: CommitsConfig };
@@ -75,9 +96,8 @@ function laneSource(graph: GraphIndex, node: HostNode): LaneSource | undefined {
 	return edge?.kind === "data" ? edge.from : undefined;
 }
 
-/** The harness the role of an agent node runs on, when config has that role. */
-const harnessOf = (r: RepoNode, setup: RepoSetup) =>
-	r.kind === "agent" ? roleFields(r.config.role, setup).harness : undefined;
+/** The harness an agent runs on, when its profile resolved. */
+type HarnessOf = (config: AgentConfig) => string | undefined;
 
 /** Why `node` cannot extend `source`, a lane ref or a commits node's version, which only a fork or a read can take. */
 function unextendable(
@@ -216,21 +236,18 @@ function loopWriters(
 /** Why `r` cannot resume the session of the version it extends from `source`, when that is known at compose. */
 function resumeProblem(
 	graph: GraphIndex,
-	setup: RepoSetup,
-	r: RepoNode,
+	harnessOf: HarnessOf,
+	r: AgentNode,
 	source: LaneSource | undefined,
 ): string | undefined {
 	if (!source) return undefined;
 	if ("literal" in source)
 		return `'${r.node.id}' resumes a version of another concert`;
-	const own = harnessOf(r, setup);
+	const own = harnessOf(r.config);
 	for (const writer of sessionWriters(graph, source.node, source.port)) {
 		if (typeof writer === "string")
 			return `'${r.node.id}' resumes '${source.node}', which carries ${writer} and no agent session`;
-		const wrote = harnessOf(
-			{ node: writer, kind: "agent", config: agentConfig(writer.config) },
-			setup,
-		);
+		const wrote = harnessOf(agentConfig(writer.config));
 		if (wrote && own && wrote !== own)
 			return `'${r.node.id}' runs on harness '${own}' and resumes '${source.node}', written on harness '${wrote}'`;
 	}
@@ -239,14 +256,18 @@ function resumeProblem(
 
 function resumes(
 	graph: GraphIndex,
-	setup: RepoSetup,
-	nodes: RepoNode[],
+	harnessOf: HarnessOf,
+	agents: AgentNode[],
 ): Finding[] {
-	return nodes.flatMap((r) => {
-		if (r.kind !== "agent") return [];
+	return agents.flatMap((r) => {
 		const { lane } = r.config;
 		if (lane.mode !== "extend" || !lane.resume) return [];
-		const message = resumeProblem(graph, setup, r, laneSource(graph, r.node));
+		const message = resumeProblem(
+			graph,
+			harnessOf,
+			r,
+			laneSource(graph, r.node),
+		);
 		return message
 			? [
 					{
@@ -279,41 +300,6 @@ function checkNames(
 		}));
 }
 
-/** The name of the role an agent node takes. */
-const roleOf = (r: RepoNode & { kind: "agent" }) => r.config.role.name;
-
-/** A role or harness an agent node names that config or the loaded harnesses do not have. */
-function roleNames(
-	setup: RepoSetup,
-	harnesses: readonly string[],
-	r: RepoNode & { kind: "agent" },
-): Finding[] {
-	const id = r.node.id;
-	const name = roleOf(r);
-	if (!Object.hasOwn(setup.roles, name))
-		return [
-			{
-				code: "HOST.role",
-				node: id,
-				message: `'${id}' takes role '${name}', which config 'roles' does not have`,
-				hint: useOneOf(
-					Object.keys(setup.roles),
-					`Add role '${name}' under 'roles'`,
-				),
-			},
-		];
-	const harness = harnessOf(r, setup) ?? "";
-	if (harnesses.includes(harness)) return [];
-	return [
-		{
-			code: "HOST.harness",
-			node: id,
-			message: `'${id}' runs on harness '${harness}', which is not loaded`,
-			hint: `Use one of: ${listed(harnesses)}`,
-		},
-	];
-}
-
 /** The checks a node runs or lets its agent run. */
 function checksNamed(r: RepoNode): string[] {
 	if (r.kind === "agent") return r.config.checks ?? [];
@@ -322,40 +308,33 @@ function checksNamed(r: RepoNode): string[] {
 	return [];
 }
 
-/** A role, harness or check a node names that config or the loaded harnesses do not have. */
-function names(
-	setup: RepoSetup,
-	harnesses: readonly string[],
-	r: RepoNode,
-): Finding[] {
+/** A check a node names that config does not have. */
+function names(setup: RepoSetup, r: RepoNode): Finding[] {
 	const id = r.node.id;
 	if (r.kind === "apply" || r.kind === "commits") return [];
-	if (r.kind === "check")
-		return checkNames(
-			setup,
-			id,
-			checksNamed(r),
-			"runs",
-			"Add it under 'target.checks', or give the node an inline check",
-		);
-	return [
-		...roleNames(setup, harnesses, r),
-		...checkNames(
-			setup,
-			id,
-			checksNamed(r),
-			"may run",
-			"Add it under 'target.checks'",
-		),
-	];
+	return r.kind === "check"
+		? checkNames(
+				setup,
+				id,
+				checksNamed(r),
+				"runs",
+				"Add it under 'target.checks', or give the node an inline check",
+			)
+		: checkNames(
+				setup,
+				id,
+				checksNamed(r),
+				"may run",
+				"Add it under 'target.checks'",
+			);
 }
 
-/** The config entries the graph's repo nodes read by name: each agent's role and each check a node names. */
+/** The config entries the graph's repo nodes read by name: each check a node names. A profile needs no entry. */
 export function needsRepo(graph: GraphIndex): KeyPath[] {
-	return repoNodes(graph).flatMap((r) => [
-		...(r.kind === "agent" ? [["roles", roleOf(r)]] : []),
-		...checksNamed(r).map((name) => ["target", "checks", name]),
-	]);
+	if (legacyAgents(graph).length) return [];
+	return repoNodes(graph).flatMap((r) =>
+		checksNamed(r).map((name) => ["target", "checks", name]),
+	);
 }
 
 const within = (inner: string, outer: string) =>
@@ -431,14 +410,11 @@ const checkBinds = (
 	...bindProblems(setup, spec.writable, `${label} writable bind`, node, true),
 ];
 
-/** The binds `r` declares: an agent's read-only paths, or the binds of a check node's inline check. */
+/** The binds of a check node's inline check. */
 function nodeBinds(setup: RepoSetup, r: RepoNode): Finding[] {
-	const id = r.node.id;
-	if (r.kind === "agent")
-		return bindProblems(setup, r.config.readOnly ?? [], "read-only bind", id);
-	if (r.kind === "check" && typeof r.config.check === "object")
-		return checkBinds(setup, "inline check", r.config.check, id);
-	return [];
+	return r.kind === "check" && typeof r.config.check === "object"
+		? checkBinds(setup, "inline check", r.config.check, r.node.id)
+		: [];
 }
 
 function targetProblems(setup: RepoSetup): Finding[] {
@@ -492,38 +468,212 @@ function sparseProblems(setup: RepoSetup): Finding[] {
 	});
 }
 
+/** The agent nodes of `graph` built before profiles, each refused by name. */
+function legacyAgents(graph: GraphIndex): Finding[] {
+	return [...graph.nodes.values()].flatMap((n) =>
+		n.kind === AGENT_KIND && isLegacyAgent(n.config)
+			? [
+					{
+						code: "HOST.legacy",
+						node: n.id,
+						message: `agent node '${n.id}' names a ${LEGACY_ROLE}: it was built before profiles replaced roles`,
+						hint: "Perform its composition anew with this maestro",
+					},
+				]
+			: [],
+	);
+}
+
+/** An error when config still sets `roles`, which profiles replace. */
+function rolesProblems(setup: HostSetup): Diagnostic[] {
+	const { roles } = setup.config;
+	const unset =
+		roles === undefined || (isPlainObject(roles) && !Object.keys(roles).length);
+	if (unset) return [];
+	return [
+		configDiagnostic(
+			"HOST.roles",
+			sourceOf(setup, [ROLES]),
+			`config '${ROLES}' is no longer read: profiles replace roles`,
+			`Move each role's fields under '${PROFILES}.<profile>.runtime', and drop '${ROLES}'`,
+		),
+	];
+}
+
+/** The profiles `names` resolve to under `setup`, and the errors of those that do not. */
+async function resolveAll(
+	names: readonly string[],
+	setup: HostSetup,
+): Promise<{ profiles: Map<string, Profile>; errors: Diagnostic[] }> {
+	const profiles = new Map<string, Profile>();
+	const errors: Diagnostic[] = [];
+	for (const name of new Set(names))
+		try {
+			profiles.set(name, await resolveProfile(name, setup));
+		} catch (e) {
+			if (!(e instanceof ConfigError)) throw e;
+			errors.push(...e.diagnostics);
+		}
+	return { profiles, errors };
+}
+
 /**
- * The host's compose-time rules: the lane rules (HOST-02), resume, names config must have, binds (HOST-11)
- * and the target. A graph without repo nodes has none to break.
+ * What `profile` asks that the loaded `harnesses` cannot give, and its read-only binds and attachments that
+ * `bindProblems` refuses.
  */
-export function validateRepo(
-	graph: GraphIndex,
+function profileProblems(
+	profile: Profile,
+	harnesses: readonly Harness[],
 	setup: RepoSetup,
-	harnesses: readonly string[],
 ): Diagnostic[] {
+	const { name, fields } = profile;
+	const { runtime } = fields;
+	const key = (field: string) => `${PROFILES}.${name}.runtime.${field}`;
+	const at = (field: string) => sourceOf(profile, ["runtime", field]);
+	const harness = harnesses.find((h) => h.name === runtime.harness);
+	if (!harness)
+		return [
+			configDiagnostic(
+				"HOST.harness",
+				at("harness"),
+				`profile ${name} runs on harness '${runtime.harness}', which is not loaded`,
+				`Set '${key("harness")}' to one of: ${listed(harnesses.map((h) => h.name))}`,
+			),
+		];
+	return [
+		...(harness.runtimeProblems?.(runtime) ?? []).map((p) =>
+			configDiagnostic(
+				"HOST.runtime",
+				at(p.field),
+				`${key(p.field)}: ${p.reason}`,
+				p.fix,
+			),
+		),
+		...bindProblems(
+			setup,
+			fields.readOnly,
+			`profile ${name} read-only bind`,
+		).map(error),
+		...Object.entries(fields.attachments).flatMap(([key, a]) =>
+			bindProblems(
+				setup,
+				[a.path],
+				`${PROFILES}.${name}.attachments.${key}.path`,
+			).map(error),
+		),
+	];
+}
+
+/** Each attachment of `profile` whose name the agent `r` takes already, for a port of its own or from the graph. */
+function attachmentClashes(r: AgentNode, profile: Profile): Finding[] {
+	const id = r.node.id;
+	const graph = Object.keys(r.config.attachments ?? {});
+	return Object.keys(profile.fields.attachments).flatMap((name) => {
+		const own = AGENT_IN_PORTS.includes(name);
+		if (!own && !graph.includes(name)) return [];
+		return [
+			{
+				code: "HOST.attachment",
+				node: id,
+				message: `profile ${profile.name} attaches '${name}', which '${id}' takes ${own ? "as its own port" : "from the graph"}`,
+				hint: `Rename attachment '${name}' in profile ${profile.name}${own ? "" : ", or the graph's"}`,
+			},
+		];
+	});
+}
+
+/** An agent in a seat whose name an earlier agent's seat of another profile or verdict holds. */
+function seatClashes(agents: readonly AgentNode[]): Finding[] {
+	const first = new Map<string, AgentNode>();
+	return agents.flatMap(({ node, config }) => {
+		const other = first.get(config.seat);
+		if (!other) first.set(config.seat, { node, kind: "agent", config });
+		const same =
+			!other ||
+			(other.config.profile === config.profile &&
+				Boolean(other.config.verdict) === Boolean(config.verdict));
+		return same
+			? []
+			: [
+					{
+						code: "HOST.seat",
+						node: node.id,
+						message: `'${other.node.id}' and '${node.id}' sit in two seats named '${config.seat}'`,
+						hint: "Give one of the two seats another name",
+					},
+				];
+	});
+}
+
+/**
+ * The profile rules: each seated profile resolves (ADR 0013) and its harness can run it, config tunes no profile that no
+ * root holds, profile attachments take no name the agent has, and a seat name means one seat.
+ */
+async function profileFindings(
+	agents: AgentNode[],
+	setup: HostSetup,
+	harnesses: readonly Harness[],
+): Promise<{ diagnostics: Diagnostic[]; harnessOf: HarnessOf }> {
+	const repo = repoSetup(setup);
+	const { profiles, errors } = await resolveAll(
+		agents.map((a) => a.config.profile),
+		setup,
+	);
+	const clashes = agents.flatMap((a) => {
+		const profile = profiles.get(a.config.profile);
+		return profile ? attachmentClashes(a, profile) : [];
+	});
+	return {
+		diagnostics: [
+			...errors,
+			...(await untunable(setup)),
+			...[...profiles.values()].flatMap((p) =>
+				profileProblems(p, harnesses, repo),
+			),
+			...[...clashes, ...seatClashes(agents)].map(error),
+		],
+		harnessOf: (config) => profiles.get(config.profile)?.fields.runtime.harness,
+	};
+}
+
+/**
+ * The host's compose-time rules: agents built before profiles, the profiles agents run, the lane rules (HOST-02),
+ * resume, names config must have, binds (HOST-11) and the target. A graph without repo nodes has none to break.
+ */
+export async function validateRepo(
+	graph: GraphIndex,
+	hostSetup: HostSetup,
+	harnesses: readonly Harness[],
+): Promise<Diagnostic[]> {
+	const legacy = legacyAgents(graph);
+	if (legacy.length) return legacy.map(error);
 	const nodes = repoNodes(graph);
 	if (!nodes.length) return [];
+	const setup = repoSetup(hostSetup);
+	const agents = nodes.filter((r): r is AgentNode => r.kind === "agent");
+	const profiled = await profileFindings(agents, hostSetup, harnesses);
 	const chained = nodes.flatMap((r): [RepoNode, LaneSource][] => {
 		const source = laneSource(graph, r.node);
 		const extending = r.kind !== "commits" && r.config.lane.mode === "extend";
 		return extending && source ? [[r, source]] : [];
 	});
 	return [
-		...targetProblems(setup),
-		...sparseProblems(setup),
-		...bindProblems(setup, setup.sandbox.readOnly, "read-only bind"),
-		...bindProblems(setup, setup.sandbox.path, "sandbox.path directory"),
-		...Object.entries(setup.target?.checks ?? {}).flatMap(([name, spec]) =>
-			checkBinds(setup, `check '${name}'`, spec),
-		),
-		...(setup.target?.prepare
-			? checkBinds(setup, "target.prepare", setup.target.prepare)
-			: []),
-		...nodes.flatMap((r) => [
-			...names(setup, harnesses, r),
-			...nodeBinds(setup, r),
-		]),
-		...doubleExtends(graph, chained),
-		...resumes(graph, setup, nodes),
-	].map(error);
+		...rolesProblems(hostSetup),
+		...profiled.diagnostics,
+		...[
+			...targetProblems(setup),
+			...sparseProblems(setup),
+			...bindProblems(setup, setup.sandbox.readOnly, "read-only bind"),
+			...bindProblems(setup, setup.sandbox.path, "sandbox.path directory"),
+			...Object.entries(setup.target?.checks ?? {}).flatMap(([name, spec]) =>
+				checkBinds(setup, `check '${name}'`, spec),
+			),
+			...(setup.target?.prepare
+				? checkBinds(setup, "target.prepare", setup.target.prepare)
+				: []),
+			...nodes.flatMap((r) => [...names(setup, r), ...nodeBinds(setup, r)]),
+			...doubleExtends(graph, chained),
+			...resumes(graph, profiled.harnessOf, agents),
+		].map(error),
+	];
 }

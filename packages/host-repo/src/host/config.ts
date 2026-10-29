@@ -4,14 +4,19 @@ import {
 	CORE_TYPES,
 	DURATION_EXAMPLE,
 	durationMs,
+	irSchema,
 	type JsonSchema,
-	MAX_TIMEOUT,
 	validator,
 	violations,
 } from "@maestro/ir";
-import type { Output, Runtime } from "../harness/index";
+import type { Output } from "../harness/index";
 import type { ApplyStrategy, Sparse } from "../lane/index";
-import { PROFILE_PATHS, PROFILES, PROFILES_CONFIG } from "../profile/index";
+import {
+	PROFILE_NAME,
+	PROFILE_PATHS,
+	PROFILES,
+	PROFILES_CONFIG,
+} from "../profile/index";
 
 export const HOST_NAME = "repo";
 export const AGENT_KIND = "repo.agent";
@@ -24,9 +29,13 @@ export const LANE_TYPE = "repo.lane";
 /** The port a lane version travels on, in and out. */
 export const LANE_PORT = "lane";
 /** Input ports every agent has; an attachment takes none of these names. */
-export const AGENT_IN_PORTS = ["prompt", "identity", LANE_PORT];
+export const AGENT_IN_PORTS = ["prompt", LANE_PORT];
 /** The port an apply node takes its changeset on. */
 export const CHANGESET_PORT = "changeset";
+/** The key of an agent node config built before profiles, which `validate` refuses by name. */
+export const LEGACY_ROLE = "role";
+/** The config namespace profiles replace, which `validate` refuses by name. */
+export const ROLES = "roles";
 
 const NAME = { type: "string", minLength: 1 } as const;
 const PATHS = { type: "array", items: NAME } as const;
@@ -94,15 +103,8 @@ export const HOST_CONFIG = {
 			},
 		},
 	},
-	roles: {
-		type: "object",
-		additionalProperties: {
-			type: "object",
-			required: ["harness", "model"],
-			additionalProperties: false,
-			properties: { harness: NAME, model: NAME, thinking: NAME },
-		},
-	},
+	/** Claimed so that `validate` refuses it by name: profiles replace roles. */
+	[ROLES]: {},
 	sandbox: {
 		type: "object",
 		additionalProperties: false,
@@ -110,15 +112,6 @@ export const HOST_CONFIG = {
 	},
 	[PROFILES]: PROFILES_CONFIG,
 } as const satisfies Record<string, JsonSchema>;
-
-/** The schema of the role fields the command line sets: those of `roles`, none required. */
-const COMMAND_ROLES = {
-	type: "object",
-	additionalProperties: {
-		...HOST_CONFIG.roles.additionalProperties,
-		required: [],
-	},
-} as const satisfies JsonSchema;
 
 /** The lane input schema for a node that may take the modes `others` beside `fresh`. */
 const laneInput = (others: readonly string[]) =>
@@ -161,28 +154,15 @@ const OUTBOX_FILE = {
 	pattern: "^[A-Za-z0-9_][A-Za-z0-9_.-]*$",
 };
 
-export const AGENT_CONFIG = {
+const CURRENT_AGENT_CONFIG = {
 	type: "object",
-	required: ["role", "lane"],
+	required: ["profile", "seat", "lane"],
 	additionalProperties: false,
 	properties: {
-		role: {
-			type: "object",
-			required: ["name"],
-			additionalProperties: false,
-			properties: { name: NAME, harness: NAME, model: NAME, thinking: NAME },
-		},
+		profile: { type: "string", pattern: PROFILE_NAME.source },
+		seat: { type: "string", pattern: irSchema.$defs.name.pattern },
 		lane: AGENT_LANE_INPUT,
-		limits: {
-			type: "object",
-			additionalProperties: false,
-			properties: {
-				timeout: { type: "integer", minimum: 1, maximum: MAX_TIMEOUT },
-				tokens: { type: "integer", minimum: 1 },
-			},
-		},
 		verdict: { type: "boolean" },
-		readOnly: PATHS,
 		checks: { type: "array", items: NAME, uniqueItems: true },
 		attachments: {
 			type: "object",
@@ -225,6 +205,12 @@ export const AGENT_CONFIG = {
 			},
 		},
 	},
+} as const;
+
+/** An agent node's config; one built before profiles passes here so that `validate` can refuse it by name. */
+export const AGENT_CONFIG = {
+	if: { type: "object", required: [LEGACY_ROLE] },
+	else: CURRENT_AGENT_CONFIG,
 } as const;
 
 export const CHECK_CONFIG = {
@@ -281,16 +267,14 @@ type AttachmentType = (typeof CORE_TYPES)[keyof typeof CORE_TYPES];
 /** A file or directory an agent reads at `/in/<name>`, and the hint that says when it should. */
 export type Attachment = { hint: string; type?: AttachmentType };
 
-/** What stops an agent that runs on: wall clock in milliseconds from its first turn, and tokens as `tokensOf` sums. */
-export type AgentLimits = { timeout?: number; tokens?: number };
-
 export type AgentConfig = {
-	role: { name: string } & Partial<Runtime>;
+	/** The profile the agent runs, resolved at pre-flight and again as it runs. */
+	profile: string;
+	/** The seat that emitted the node. */
+	seat: string;
 	lane: LaneInput;
-	limits?: AgentLimits;
 	/** A verdict agent rules on work, `ok` or `rejected`; any other agent does the work. */
 	verdict?: boolean;
-	readOnly?: string[];
 	checks?: string[];
 	attachments?: Record<string, Attachment>;
 	out?: Record<string, Output>;
@@ -323,7 +307,6 @@ type RawSetup = {
 		prepare?: RawCheck;
 		sparse?: Sparse;
 	};
-	roles?: Record<string, Runtime>;
 	sandbox?: { readOnly?: string[]; path?: string[] };
 };
 
@@ -341,11 +324,6 @@ export type Target = {
 export type RepoSetup = {
 	store: string;
 	target?: Target;
-	roles: Record<string, Runtime>;
-	/** The fields of `roles` that `--profile` and `-c` set, which outrank a composition's inline role fields. */
-	commandRoles: Record<string, Partial<Runtime>>;
-	/** The key paths `--profile` and `-c` replaced whole with `!replace`. */
-	commandReplaced: readonly KeyPath[];
 	/** The sandbox's read-only host paths: `sandbox.readOnly`, then the `sandbox.path` directories. */
 	readOnly: string[];
 	/** The PATH of every sandboxed process: the `sandbox.path` directories in order, then the system's. */
@@ -424,21 +402,20 @@ export function repoSetup(setup: HostSetup): RepoSetup {
 	return {
 		store: setup.store,
 		target: targetOf(namespace<RawSetup["target"]>("target")),
-		roles: namespace<RawSetup["roles"]>("roles") ?? {},
-		commandRoles: parsed(
-			COMMAND_ROLES,
-			setup.commandLine.values.roles ?? {},
-			"roles",
-		),
-		commandReplaced: setup.commandLine.replaced,
 		readOnly: [...readOnly, ...path],
 		path: [...path, SYSTEM_PATH].join(":"),
 		sandbox: { readOnly, path },
 	};
 }
 
+/** Whether `config`, an agent node's, was built before profiles. */
+export const isLegacyAgent = (config: unknown) =>
+	typeof config === "object" &&
+	config !== null &&
+	Object.hasOwn(config, LEGACY_ROLE);
+
 export const agentConfig = (config: unknown): AgentConfig =>
-	parsed(AGENT_CONFIG, config ?? {}, "config");
+	parsed(CURRENT_AGENT_CONFIG, config ?? {}, "config");
 
 export const applyConfig = (config: unknown): ApplyConfig =>
 	parsed(APPLY_CONFIG, config ?? {}, "config");
@@ -495,76 +472,3 @@ export const useOneOf = (names: string[], add: string) =>
 /** The names of `names`, quoted and comma-separated, or `none` when there are none. */
 export const listed = (names: Iterable<string>) =>
 	[...names].map((n) => `'${n}'`).join(", ") || "none";
-
-const own = <T>(record: Record<string, T>, key: string): T | undefined =>
-	Object.hasOwn(record, key) ? record[key] : undefined;
-
-/** Where a role field comes from: the config file's role, the composition's inline fields, or the command line. */
-export type RoleTier = "file" | "composition" | "command";
-
-/** A role field's value and the tier that set it, with the origin of the tier it displaced, when one did. */
-export type RoleOrigin = {
-	value: string;
-	tier: RoleTier;
-	beneath?: { value: string; tier: RoleTier };
-};
-
-/** The fields a role resolves to, each with the tier that set it. */
-export type RoleOrigins = Partial<Record<keyof Runtime, RoleOrigin>>;
-
-/**
- * The fields `role` resolves to, each with its tier: the config file's role of its name, then its inline fields, then
- * the command line's fields of that role. Each field comes from the highest tier that sets it, and a role the command
- * line replaced whole has no inline fields.
- */
-export function roleOrigins(
-	role: AgentConfig["role"],
-	setup: RepoSetup,
-): RoleOrigins {
-	const { name, ...pinned } = role;
-	const replaced = setup.commandReplaced.some(
-		(path) => path[0] === "roles" && (path.length === 1 || path[1] === name),
-	);
-	const tiers: [RoleTier, Partial<Runtime> | undefined][] = [
-		["file", own(setup.roles, name)],
-		["composition", replaced ? {} : pinned],
-		["command", own(setup.commandRoles, name)],
-	];
-	const origins: Record<string, RoleOrigin> = {};
-	for (const [tier, fields] of tiers)
-		for (const [field, value] of Object.entries(fields ?? {})) {
-			const beneath = origins[field];
-			origins[field] = {
-				value,
-				tier,
-				...(beneath && {
-					beneath: { value: beneath.value, tier: beneath.tier },
-				}),
-			};
-		}
-	return origins;
-}
-
-/** The fields `role` resolves to, as `roleOrigins` says. */
-export const roleFields = (
-	role: AgentConfig["role"],
-	setup: RepoSetup,
-): Partial<Runtime> =>
-	Object.fromEntries(
-		Object.entries(roleOrigins(role, setup)).map(([k, o]) => [k, o.value]),
-	);
-
-/**
- * The role `config` names, resolved as `roleFields` says.
- * @throws Error when `setup.roles` has no role of that name, listing those it has.
- */
-export function resolveRole(
-	config: AgentConfig["role"],
-	setup: RepoSetup,
-): Runtime {
-	if (!own(setup.roles, config.name))
-		throw new Error(
-			`role '${config.name}' is not in config 'roles'. ${useOneOf(Object.keys(setup.roles), "Add it under 'roles'")}`,
-		);
-	return roleFields(config, setup) as Runtime;
-}

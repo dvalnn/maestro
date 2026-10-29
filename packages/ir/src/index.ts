@@ -1,7 +1,7 @@
 import type { ErrorObject } from "ajv";
 import Ajv2020 from "ajv/dist/2020";
 import irSchema from "../ir.schema.json";
-import { checkGraph, irError } from "./graph";
+import { checkGraph, IR_VERSION, irError } from "./graph";
 import type { Diagnostic, Ir } from "./types";
 
 export { type ArtifactRef, artifactRefSchema } from "./artifact-ref";
@@ -42,6 +42,7 @@ export {
 	FOLD_STATE,
 	type GraphIndex,
 	IMPLICIT_OUT,
+	IR_VERSION,
 	indexGraph,
 	isGroup,
 	LOOP_STATE,
@@ -91,8 +92,6 @@ const validateShape = new Ajv2020({
 	strictTypes: false,
 }).compile(irSchema);
 
-/** The IR version this package emits and reads. See README.md for the compatibility policy. */
-export const IR_VERSION = "1.0";
 const [MAJOR, MINOR] = IR_VERSION.split(".").map(Number) as [number, number];
 
 /** The longest code-node `timeout` in milliseconds: the largest delay a JavaScript timer holds. */

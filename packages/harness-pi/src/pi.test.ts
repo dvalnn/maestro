@@ -20,7 +20,7 @@ const request = (
 	prompt: string,
 	over: Partial<HarnessRequest> = {},
 ): HarnessRequest => ({
-	role: { harness: "pi", model: "stand/in", thinking: "low" },
+	runtime: { harness: "pi", model: "stand/in", thinking: "low" },
 	prompt,
 	lane: tmp("lane"),
 	outbox: tmp("out"),
@@ -36,7 +36,7 @@ function standIn(lines: string[]) {
 	writeFileSync(join(home, "run.jsonl"), `${lines.join("\n")}\n`);
 	writeFileSync(
 		bin,
-		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\nenv > /out/env\n[ -f /identity.md ] && cp /identity.md /out/identity\ncat "$(dirname "$0")/run.jsonl"\n`,
+		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\nenv > /out/env\n[ -f /instructions.md ] && cp /instructions.md /out/instructions\ncat "$(dirname "$0")/run.jsonl"\n`,
 		{ mode: 0o755 },
 	);
 	return { bin, agentDir: tmp("agent") };
@@ -97,15 +97,15 @@ describe("stand-in pi", () => {
 		expect(seen.filter((e) => e.kind === "raw")).toHaveLength(1);
 	});
 
-	test("the prompt goes on stdin, the identity in an appended file, and the session is addressed by dir and id", async () => {
-		const identity = join(tmp("staged"), "identity.md");
-		writeFileSync(identity, "You are terse.");
-		const req = request("a secret prompt", { identity });
+	test("the prompt goes on stdin, the instructions in an appended file, and the session is addressed by dir and id", async () => {
+		const instructions = join(tmp("staged"), "instructions.md");
+		writeFileSync(instructions, "You are terse.");
+		const req = request("a secret prompt", { instructions });
 		await piHarness(standIn(fixture())).run(req).result;
 		expect(readFileSync(join(req.outbox, "stdin"), "utf8")).toBe(
 			"a secret prompt",
 		);
-		expect(readFileSync(join(req.outbox, "identity"), "utf8")).toBe(
+		expect(readFileSync(join(req.outbox, "instructions"), "utf8")).toBe(
 			"You are terse.",
 		);
 		expect(readFileSync(join(req.outbox, "argv"), "utf8").split("\n")).toEqual([
@@ -117,7 +117,7 @@ describe("stand-in pi", () => {
 			"--no-prompt-templates",
 			"--no-context-files",
 			"--append-system-prompt",
-			"/identity.md",
+			"/instructions.md",
 			"--session-dir",
 			"/session",
 			"--session-id",
@@ -301,7 +301,7 @@ describe.skipIf(!process.env.MAESTRO_PI)("real pi", () => {
 		harness().run({
 			...base,
 			prompt,
-			role: { harness: "pi", model, thinking: "low" },
+			runtime: { harness: "pi", model, thinking: "low" },
 		});
 
 	test("writes to /out, reports tokens, resumes its session", async () => {

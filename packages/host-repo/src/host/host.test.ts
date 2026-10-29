@@ -4,11 +4,12 @@ import { join } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
 import { openRecord } from "@maestro/core/perform";
-import { indexGraph } from "@maestro/ir";
+import { type Ir, indexGraph } from "@maestro/ir";
 import { type HarnessRequest, OUTBOX, type StubStep } from "../harness/index";
 import { openTarget } from "./store";
 import {
 	APPROVED,
+	agentOn,
 	changed,
 	cleanup,
 	commitTo,
@@ -19,6 +20,7 @@ import {
 	noCode,
 	OK,
 	performed,
+	profile,
 	ROOTS,
 	reply,
 	sandboxed,
@@ -48,13 +50,21 @@ describe("compose", () => {
 				{
 					id: "a",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: { mode: "fresh" } },
+					config: {
+						profile: "builder",
+						seat: "builder",
+						lane: { mode: "fresh" },
+					},
 					literals: prompt,
 				},
 				{
 					id: "b",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: { mode: "extend" } },
+					config: {
+						profile: "builder",
+						seat: "builder",
+						lane: { mode: "extend" },
+					},
 					literals: prompt,
 					lane: "a",
 				},
@@ -62,7 +72,8 @@ describe("compose", () => {
 					id: "c",
 					kind: "agent",
 					config: {
-						role: { name: "other" },
+						profile: "other",
+						seat: "other",
 						lane: { mode: "extend", resume: true },
 					},
 					literals: prompt,
@@ -71,7 +82,11 @@ describe("compose", () => {
 				{
 					id: "e",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: { mode: "fresh" } },
+					config: {
+						profile: "builder",
+						seat: "builder",
+						lane: { mode: "fresh" },
+					},
 					literals: prompt,
 				},
 				{
@@ -84,7 +99,8 @@ describe("compose", () => {
 					id: "d",
 					kind: "agent",
 					config: {
-						role: { name: "other" },
+						profile: "other",
+						seat: "other",
 						lane: { mode: "extend", resume: true },
 					},
 					literals: prompt,
@@ -94,7 +110,11 @@ describe("compose", () => {
 				{
 					id: "f",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: { mode: "extend" } },
+					config: {
+						profile: "builder",
+						seat: "builder",
+						lane: { mode: "extend" },
+					},
 					literals: prompt,
 					lane: "m",
 				},
@@ -148,7 +168,7 @@ describe("compose", () => {
 				{
 					id: "a",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: fresh },
+					config: { profile: "builder", seat: "builder", lane: fresh },
 					literals: { prompt: "go" },
 				},
 			],
@@ -173,7 +193,7 @@ describe("compose", () => {
 		]);
 	});
 
-	test("needs names the role of each agent and each check a node names", () => {
+	test("needs names each check a node names, and nothing for an agent's profile", () => {
 		const { host } = stubHost(() => [OK]);
 		const ir = irOf(
 			host,
@@ -182,7 +202,8 @@ describe("compose", () => {
 					id: "a",
 					kind: "agent",
 					config: {
-						role: { name: "builder" },
+						profile: "builder",
+						seat: "builder",
 						lane: { mode: "fresh" },
 						checks: ["lint"],
 					},
@@ -198,7 +219,6 @@ describe("compose", () => {
 			"k",
 		);
 		expect(host.needs?.(indexGraph(ir))).toEqual([
-			["roles", "builder"],
 			["target", "checks", "lint"],
 			["target", "checks", "hello"],
 		]);
@@ -215,14 +235,18 @@ describe("compose", () => {
 	const writer: NodeSpec = {
 		id: "w",
 		kind: "agent",
-		config: { role: { name: "builder" }, lane: fresh },
+		config: { profile: "builder", seat: "builder", lane: fresh },
 		literals: task,
 	};
 	/** An agent that resumes the version out of `from`. */
-	const resumer = (id: string, from: string, role = "builder"): NodeSpec => ({
+	const resumer = (id: string, from: string, name = "builder"): NodeSpec => ({
 		id,
 		kind: "agent",
-		config: { role: { name: role }, lane: { mode: "extend", resume: true } },
+		config: {
+			profile: name,
+			seat: name,
+			lane: { mode: "extend", resume: true },
+		},
 		literals: task,
 		lane: from,
 	});
@@ -313,7 +337,7 @@ describe("compose", () => {
 				{
 					id: "root",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: fresh },
+					config: { profile: "builder", seat: "builder", lane: fresh },
 					literals: task,
 				},
 				{ id: "cs", kind: "changeset", config: {}, lane: "root" },
@@ -338,7 +362,7 @@ describe("compose", () => {
 	/** An agent that extends the version out of `from`, without resuming. */
 	const extender = (id: string, from: string): NodeSpec => ({
 		...resumer(id, from),
-		config: { role: { name: "builder" }, lane: { mode: "extend" } },
+		config: { profile: "builder", seat: "builder", lane: { mode: "extend" } },
 	});
 	const innerCheck: NodeSpec = {
 		id: "lp/chk",
@@ -379,7 +403,7 @@ describe("compose", () => {
 				{
 					id: "root",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: fresh },
+					config: { profile: "builder", seat: "builder", lane: fresh },
 					literals: task,
 				},
 				...nodes,
@@ -401,38 +425,111 @@ describe("compose", () => {
 		},
 	);
 
+	profile("gone", "runtime: { harness: gone, model: none }\n");
+	profile("modelless", "runtime: { harness: stub }\n");
+	profile("deep", "runtime: { harness: other, model: none, thinking: max }\n");
+	profile(
+		"bound",
+		"runtime: { harness: stub, model: none }\nreadOnly: [/etc]\n",
+	);
+	profile(
+		"clash",
+		"runtime: { harness: stub, model: none }\nattachments: { prompt: { path: kb, hint: x } }\n",
+		{ "kb/a.md": "a\n" },
+	);
 	test.each([
 		[
-			"a role config lacks",
-			{ role: { name: "nobody" }, lane: fresh },
-			"HOST.role",
-			"Use one of: 'builder', 'other'",
+			"a profile no root holds",
+			agentOn(fresh, "nobody"),
+			"HOST.profile",
+			expect.stringMatching(
+				/^Create \/.+\/profiles\/nobody\/profile\.yaml, or name another profile$/,
+			),
 			toyTarget,
 		],
 		[
-			"a harness not loaded",
-			{ role: { name: "builder", harness: "gone" }, lane: fresh },
+			"a profile on a harness not loaded",
+			agentOn(fresh, "gone"),
 			"HOST.harness",
-			"Use one of: 'stub', 'other'",
+			"Set 'profiles.gone.runtime.harness' to one of: 'stub', 'other'",
+			toyTarget,
+			{},
+			"profile gone runs on harness 'gone', which is not loaded",
+		],
+		[
+			"a profile with no model",
+			agentOn(fresh, "modelless"),
+			"HOST.profile",
+			"Set profiles.modelless.runtime.model",
 			toyTarget,
 		],
 		[
-			"a missing read-only bind",
-			{ role: { name: "builder" }, lane: fresh, readOnly: ["/no/such/path"] },
+			"a profile its harness cannot honour",
+			agentOn(fresh, "deep"),
+			"HOST.runtime",
+			"Use one of: low",
+			toyTarget,
+			{},
+			"profiles.deep.runtime.thinking: other has no thinking level 'max'",
+		],
+		[
+			"a profile whose file binds host paths",
+			agentOn(fresh, "bound"),
+			"HOST.profile",
+			expect.stringMatching(
+				/and set it in config under 'profiles\.bound\.readOnly'$/,
+			),
+			toyTarget,
+		],
+		[
+			"a profile attachment named after the agent's own port",
+			agentOn(fresh, "clash"),
+			"HOST.attachment",
+			"Rename attachment 'prompt' in profile clash",
+			toyTarget,
+		],
+		[
+			"a missing read-only bind of its profile",
+			agentOn(fresh),
 			"HOST.bind",
 			"Create it, or drop the bind",
 			toyTarget,
+			{ profiles: { builder: { readOnly: ["/no/such/path"] } } },
+			"profile builder read-only bind",
 		],
 		[
-			"a relative read-only bind",
-			{ role: { name: "builder" }, lane: fresh, readOnly: ["notes"] },
+			"a profile attachment config points at a missing path",
+			agentOn(fresh),
 			"HOST.bind",
-			"Give an absolute path",
+			"Create it, or drop the bind",
 			toyTarget,
+			{
+				profiles: {
+					builder: { attachments: { kb: { path: "/no/such/kb", hint: "x" } } },
+				},
+			},
+			"profiles.builder.attachments.kb.path '/no/such/kb' does not exist",
+		],
+		[
+			"a profile config tunes that no root holds",
+			agentOn(fresh),
+			"HOST.profile",
+			"Did you mean 'builder'?",
+			toyTarget,
+			{ profiles: { buildr: {} } },
+			"config 'profiles.buildr' tunes profile 'buildr', which no profile root holds",
+		],
+		[
+			"config roles, which profiles replace",
+			agentOn(fresh),
+			"HOST.roles",
+			"Move each role's fields under 'profiles.<profile>.runtime', and drop 'roles'",
+			toyTarget,
+			{ roles: { builder: { harness: "stub", model: "none" } } },
 		],
 		[
 			"a relative sandbox.path directory",
-			{ role: { name: "builder" }, lane: fresh },
+			agentOn(fresh),
 			"HOST.bind",
 			"Give an absolute path",
 			toyTarget,
@@ -441,14 +538,14 @@ describe("compose", () => {
 		],
 		[
 			"a target that is no git repository",
-			{ role: { name: "builder" }, lane: fresh },
+			agentOn(fresh),
 			"HOST.target",
 			"Point 'target.repo' at a git repository",
 			() => tmp("plain"),
 		],
 		[
 			"a target that does not exist",
-			{ role: { name: "builder" }, lane: fresh },
+			agentOn(fresh),
 			"HOST.target",
 			"Set 'target.repo' relative to the file's workspace root, or the user config's directory",
 			() => join(tmp("gone"), "missing"),
@@ -457,7 +554,7 @@ describe("compose", () => {
 		string,
 		Record<string, unknown>,
 		string,
-		string,
+		unknown,
 		() => string,
 		Record<string, unknown>?,
 		string?,
@@ -482,10 +579,93 @@ describe("compose", () => {
 			});
 			expect(
 				composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.hint]),
-			).toEqual([[code, hint]]);
+			).toEqual([[code, hint as string]]);
 			expect(composed.ok ? "" : composed.diagnostics[0]?.message).toContain(
 				named,
 			);
+		},
+	);
+
+	profile(
+		"noted",
+		"runtime: { harness: stub, model: none }\nattachments: { notes: { path: kb, hint: x } }\n",
+		{ "kb/a.md": "a\n" },
+	);
+	const noting: NodeSpec = {
+		id: "w",
+		kind: "agent",
+		config: {
+			...agentOn(fresh),
+			out: { notes: { file: "n.md", format: "markdown" } },
+		},
+		literals: { prompt: "go" },
+	};
+	test.each([
+		[
+			"a profile attachment named after a graph attachment",
+			{
+				id: "x",
+				kind: "agent",
+				config: {
+					...agentOn(fresh, "noted"),
+					attachments: { notes: { hint: "y", type: "core.markdown" } },
+				},
+				literals: { prompt: "go" },
+				wires: { notes: "w.notes" },
+			},
+			"HOST.attachment",
+			"profile noted attaches 'notes', which 'x' takes from the graph",
+			undefined,
+		],
+		[
+			"one seat name holding two profiles",
+			{
+				id: "x",
+				kind: "agent",
+				config: { ...agentOn(fresh, "other"), seat: "builder" },
+				literals: { prompt: "go" },
+			},
+			"HOST.seat",
+			"'w' and 'x' sit in two seats named 'builder'",
+			undefined,
+		],
+		[
+			"a 1.0 agent node, built before profiles",
+			{
+				id: "x",
+				kind: "agent",
+				config: agentOn(fresh),
+				literals: { prompt: "go" },
+			},
+			"HOST.legacy",
+			"agent node 'x' names a role: it was built before profiles replaced roles",
+			(ir: Ir) => {
+				const node = ir.nodes.find((n) => n.id === "x");
+				Object.assign(ir, { irVersion: "1.0" });
+				Object.assign(node ?? {}, {
+					config: { role: { name: "builder" }, lane: fresh },
+				});
+			},
+		],
+	] as [string, NodeSpec, string, string, ((ir: Ir) => void)?][])(
+		"a graph with %s is a HOST error",
+		async (_, spec, code, message, edit) => {
+			const { host } = stubHost(() => [OK]);
+			const ir = irOf(host, [noting, spec], "x");
+			edit?.(ir);
+			const composed = await compose({
+				ir,
+				config: configOf(toyTarget()),
+				roots: ROOTS,
+				core: CORE_CONFIG,
+				packs: {},
+				hosts: [host],
+				loadCode: noCode,
+				caps: {},
+			});
+			expect(
+				composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.message]),
+			).toEqual([[code, message]]);
 		},
 	);
 
@@ -499,7 +679,12 @@ describe("compose", () => {
 			{
 				id: "x",
 				kind: "agent",
-				config: { role: { name: "builder" }, lane: fresh, checks: ["lint"] },
+				config: {
+					profile: "builder",
+					seat: "builder",
+					lane: fresh,
+					checks: ["lint"],
+				},
 				literals: { prompt: "go" },
 			},
 		],
@@ -526,6 +711,11 @@ describe("compose", () => {
 });
 
 describe("perform", () => {
+	profile(
+		"careful",
+		"runtime: { harness: stub, model: none }\ninstructions: instructions.md\n",
+		{ "instructions.md": "You are careful." },
+	);
 	test("environment gives code nodes the target, its base and its sparse patterns, null when unset", async () => {
 		const { host } = stubHost(() => []);
 		const environment = (extra: Record<string, unknown>) => {
@@ -565,13 +755,8 @@ describe("perform", () => {
 				{
 					id: "first",
 					kind: "agent",
-					config: {
-						role: { name: "builder" },
-						lane: { mode: "fresh" },
-						out: { notes },
-					},
-					literals: { prompt: "first task", identity: "You are careful." },
-					identity: true,
+					config: { ...agentOn({ mode: "fresh" }, "careful"), out: { notes } },
+					literals: { prompt: "first task" },
 				},
 				{
 					id: "look",
@@ -583,7 +768,8 @@ describe("perform", () => {
 					id: "second",
 					kind: "agent",
 					config: {
-						role: { name: "builder" },
+						profile: "builder",
+						seat: "builder",
 						lane: { mode: "extend", resume: true },
 					},
 					literals: { prompt: "second task" },
@@ -613,9 +799,10 @@ describe("perform", () => {
 			JSON.parse(readFileSync(artifact("first", "notes"), "utf8")),
 		).toEqual({ n: 1 });
 		const staged = artifact("first", "staged");
-		expect(readFileSync(join(staged, "identity.md"), "utf8")).toBe(
+		expect(readFileSync(join(staged, "instructions.md"), "utf8")).toBe(
 			"You are careful.",
 		);
+		expect(first?.instructions).toEndWith("/staged/instructions.md");
 		expect(readFileSync(join(staged, "prompt.md"), "utf8")).toBe(
 			first?.prompt as string,
 		);
@@ -645,7 +832,11 @@ describe("perform", () => {
 					{
 						id: "x",
 						kind: "agent",
-						config: { role: { name: "builder" }, lane: { mode: "fresh" } },
+						config: {
+							profile: "builder",
+							seat: "builder",
+							lane: { mode: "fresh" },
+						},
 						literals: { prompt: "go" },
 					},
 				],
@@ -736,7 +927,8 @@ describe("perform", () => {
 					id: "x",
 					kind: "agent",
 					config: {
-						role: { name: "builder" },
+						profile: "builder",
+						seat: "builder",
 						lane: { mode: "fresh" },
 						...(verdict && { verdict }),
 						...(notes && {
@@ -866,7 +1058,8 @@ describe("perform", () => {
 					id: "x",
 					kind: "agent",
 					config: {
-						role: { name: "builder" },
+						profile: "builder",
+						seat: "builder",
 						lane: { mode: "fresh" },
 						out: { notes },
 					},
@@ -887,7 +1080,11 @@ describe("perform", () => {
 				{
 					id: "x",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: { mode: "fresh" } },
+					config: {
+						profile: "builder",
+						seat: "builder",
+						lane: { mode: "fresh" },
+					},
 					literals: { prompt: "go" },
 				},
 			],
@@ -954,7 +1151,12 @@ describe("perform", () => {
 			const agent = {
 				id: "x",
 				kind: "agent" as const,
-				config: { role: { name: "builder" }, lane: { mode }, out: { watched } },
+				config: {
+					profile: "builder",
+					seat: "builder",
+					lane: { mode },
+					out: { watched },
+				},
 				literals: { prompt: "go" },
 				...(mode !== "fresh" && { lane: "base" }),
 			};
@@ -1053,7 +1255,11 @@ describe("perform", () => {
 				{
 					id: "x",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: { mode: "fresh" } },
+					config: {
+						profile: "builder",
+						seat: "builder",
+						lane: { mode: "fresh" },
+					},
 					literals: { prompt: "go" },
 				},
 			],
@@ -1080,7 +1286,7 @@ describe("perform", () => {
 				{
 					id: "x",
 					kind: "agent",
-					config: { role: { name: "builder" }, lane: fresh },
+					config: { profile: "builder", seat: "builder", lane: fresh },
 					literals: { prompt: "go" },
 				},
 			],
@@ -1117,7 +1323,7 @@ test("a commits version reads, forks and makes a changeset, and keeps its commit
 			...["read", "fork"].map((mode) => ({
 				id: mode,
 				kind: "agent" as const,
-				config: { role: { name: "builder" }, lane: { mode } },
+				config: { profile: "builder", seat: "builder", lane: { mode } },
 				literals: { prompt: "go" },
 				lane: "commits",
 			})),

@@ -66,7 +66,7 @@ const WORDINGS: ReadonlyMap<
 
 const progress = (event: HostEvent) => WORDINGS.get(event.kind)?.(event);
 
-/** `<harness> · <model without its provider> · <thinking>`, the thinking when the role sets one. */
+/** `<harness> · <model without its provider> · <thinking>`, the thinking when the runtime sets one. */
 function actor(enrichment: Enrichment): string | undefined {
 	const harness = stringOf(enrichment.harness);
 	const model = stringOf(enrichment.model);

@@ -68,8 +68,7 @@ type GroupBase = NodeBase & {
 	inner: Ports;
 	/**
 	 * Result name to body node id. A group with one member delivers that member's outputs, with several a record by
-	 * result name. `parMap` and `map` may have several, `fold` exactly `first` and `step`, and the others exactly one in
-	 * IR 1.0.
+	 * result name. `parMap` and `map` may have several, `fold` exactly `first` and `step`, and the others exactly one.
 	 */
 	members: Record<string, string>;
 	cardinality: Cardinality;

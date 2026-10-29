@@ -389,12 +389,13 @@ describe("resolution", () => {
 			"classic",
 			`Create ${join(W, "classic/profile.yaml")}, or name another profile`,
 		],
+		["auditor/kc", "Install pack 'auditor', or name another profile"],
 		[
-			"auditor/kc",
-			`Create ${join(W, "auditor/kc/profile.yaml")}, or name another profile`,
+			"classics/zzzzzz",
+			"Update pack 'classics' to a version with profile 'zzzzzz', or name another profile",
 		],
 	])(
-		"refuses %s, which no root holds, with a near profile or where to create it",
+		"refuses %s, which no root holds, with a near profile, the pack to install or update, or where to create it",
 		async (name, hint) => {
 			expect(await refusal(() => resolveProfile(name, setupOf({})))).toEqual([
 				[`profile ${name} is in no profile root`, hint, undefined],

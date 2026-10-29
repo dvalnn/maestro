@@ -143,7 +143,7 @@ describe("config files", () => {
 	test("a -c reads its value as YAML at its key, merge tags and a quoted key holding '.' among them, a path relative to the workspace root, else the cwd", async () => {
 		const { root, request } = await tree({
 			[WORKSPACE]:
-				"packs: [a]\ntarget:\n  checks:\n    lint: l\n    test: t\nroles:\n  reviewer:\n    harness: pi\n    thinking: high\n",
+				"packs: [a]\ntarget:\n  checks:\n    lint: l\n    test: t\nprofiles:\n  reviewer:\n    runtime:\n      harness: pi\n      thinking: high\n",
 		});
 		const config = await loadConfig(
 			request({
@@ -152,7 +152,7 @@ describe("config files", () => {
 						config: [
 							"packs=!append [b]",
 							"target.checks.lint=!delete",
-							"roles.reviewer=!replace {harness: claude, model: y}",
+							"profiles.reviewer.runtime=!replace {harness: claude, model: y}",
 							'target.checks."a.b"=x',
 							"target.repo=app",
 							"concurrency=4",
@@ -171,8 +171,8 @@ describe("config files", () => {
 			repo: join(root, "ws/app"),
 			note: "one\ntwo\n",
 		});
-		expect(config.composed.values.roles).toEqual({
-			reviewer: { harness: "claude", model: "y" },
+		expect(config.composed.values.profiles).toEqual({
+			reviewer: { runtime: { harness: "claude", model: "y" } },
 		});
 		expect(config.core.concurrency).toBe(4);
 		const outside = await loadConfig(

@@ -18,7 +18,6 @@ import {
 	Text,
 } from "@maestro/sdk";
 import {
-	agent,
 	apply,
 	changeset,
 	check,
@@ -34,9 +33,6 @@ const Findings = List(Struct({ file: Text(), issue: Text() }));
 const Verdicts = List(Struct({ issue: Text(), holds: Text() }));
 
 const LENSES = ["correctness", "security", "tests"];
-
-/** The pack's own model-family rule: the provider before the slash. */
-const family = (model: string) => model.split("/")[0];
 
 type Round = {
 	lens: { findings: ArtifactRef };
@@ -56,7 +52,23 @@ export function byFinding(
 	return { text: `Consolidate these verdicts:\n${verdicts.join("\n")}` };
 }
 
-/** A lens and its skeptic per lens, then a consolidator; the skeptic's model family must differ from the lens's. */
+/** The pack's own model-family rule: the provider before the slash. */
+const family = (model: string) => model.split("/")[0];
+
+const lens = seat("lens", {
+	out: { findings: JsonOut("findings.json", Findings) },
+});
+const skeptic = seat("skeptic", {
+	out: { verdicts: JsonOut("verdicts.json", Verdicts) },
+});
+const consolidator = seat("consolidator", {
+	out: { summary: MarkdownOut("review.md") },
+});
+
+/**
+ * A lens and its skeptic per lens, then a consolidator. `lensModel` and `skepticModel` are a build-time policy check,
+ * refusing a skeptic of the lens's model family; the agents' models come from their profiles.
+ */
 export const review = composition(
 	"review",
 	{
@@ -73,28 +85,20 @@ export const review = composition(
 		);
 		const rounds = iter.parMap(
 			LENSES,
-			(lens) => {
-				const found = agent({
-					label: "lens",
-					task: lens,
-					lane: fresh(),
-					role: { name: "reviewer", model: lensModel },
-					out: { findings: JsonOut("findings.json", Findings) },
-				});
-				const skeptic = agent({
+			(angle) => {
+				const found = lens({ label: "lens", task: angle, lane: fresh() });
+				const challenged = skeptic({
 					label: "skeptic",
 					task: "Challenge each finding: does it hold?",
 					lane: fresh(),
-					role: { name: "reviewer", model: skepticModel },
 					attachments: {
 						findings: {
 							artifact: found.out.findings,
 							hint: "Read before judging any finding",
 						},
 					},
-					out: { verdicts: JsonOut("verdicts.json", Verdicts) },
 				});
-				return { lens: found, skeptic };
+				return { lens: found, skeptic: challenged };
 			},
 			{ onError: "continue" },
 		);
@@ -102,21 +106,15 @@ export const review = composition(
 			in: { runs: rounds.out.results },
 			out: { text: Text() },
 		});
-		return agent({
+		return consolidator({
 			label: "consolidator",
 			task: merged.out.text,
 			lane: fresh(),
-			role: "reviewer",
-			out: { summary: MarkdownOut("review.md") },
 		});
 	},
 );
 
-const builder = seat({
-	role: "builder",
-	identity: "You build in small steps, and leave the tree compiling.",
-	checks: ["test"],
-});
+const builder = seat("builder", { checks: ["test"] });
 
 /** Build, then repair in the builder's session while check `test` is red, bounded by a param; the result is the patch. */
 export const buildThenRepair = composition(
@@ -153,10 +151,8 @@ export const buildThenRepair = composition(
 	},
 );
 
-const resolver = seat({
-	role: "resolver",
-	identity: "You resolve merge conflicts, keeping both sides' intent.",
-});
+const resolver = seat("resolver");
+const implementer = seat("implementer");
 
 /** The changeset of `item` applied to `lane`, and a resolver extending the result on a conflict: the merged version. */
 function merge(
@@ -197,8 +193,7 @@ export const fold = composition(
 	({ tasks }) => {
 		const implemented = iter.parMap(
 			tasks,
-			(task) =>
-				changeset(agent({ task, lane: fresh(), role: "implementer" }).out.lane),
+			(task) => changeset(implementer({ task, lane: fresh() }).out.lane),
 			{ onError: "stop" },
 		);
 		const merged = iter.fold(okOnly(implemented), {

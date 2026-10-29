@@ -21,7 +21,7 @@ const tmp = (name: string) => {
 };
 const lane = () => tmp("lane");
 const request = (prompt: string, l = lane()) => ({
-	role,
+	runtime,
 	prompt,
 	lane: l,
 	outbox: tmp("out"),
@@ -31,7 +31,7 @@ const request = (prompt: string, l = lane()) => ({
 afterEach(() => {
 	for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
-const role = { harness: "stub", model: "none" };
+const runtime = { harness: "stub", model: "none" };
 
 test("a 300 KB prompt reaches the stub intact", async () => {
 	const prompt = "line of prompt text ".repeat(16_000).slice(0, 300 * 1024);

@@ -1,46 +1,32 @@
 import { JsonOut, MarkdownOut, seat } from "@maestro/host-repo-sdk";
-import builderIdentity from "./prompts/builder.md" with { type: "text" };
-import consolidatorIdentity from "./prompts/consolidator.md" with {
-	type: "text",
-};
-import documenterIdentity from "./prompts/documenter.md" with { type: "text" };
-import lensIdentity from "./prompts/lens.md" with { type: "text" };
-import plannerIdentity from "./prompts/planner.md" with { type: "text" };
-import scoutIdentity from "./prompts/scout.md" with { type: "text" };
-import skepticIdentity from "./prompts/skeptic.md" with { type: "text" };
 import { Acceptance, Evidence, Findings, Verdict, Verdicts } from "./types";
 
-export const scout = seat({
-	role: "scout",
-	identity: scoutIdentity,
+export const scout = seat("scout", {
+	profile: "classics/scout",
 	out: { evidence: JsonOut("evidence.json", Evidence) },
 });
 
-export const planner = seat({
-	role: "planner",
-	identity: plannerIdentity,
+export const planner = seat("planner", {
+	profile: "classics/planner",
 	out: { plan: MarkdownOut("plan.md") },
 });
 
-export const builder = seat({ role: "builder", identity: builderIdentity });
+export const builder = seat("builder", { profile: "classics/builder" });
 
-export const lens = seat({
-	role: "reviewer",
-	identity: lensIdentity,
+export const lens = seat("lens", {
+	profile: "classics/lens",
 	verdict: true,
 	out: { findings: JsonOut("findings.json", Findings) },
 });
 
-export const skeptic = seat({
-	role: "skeptic",
-	identity: skepticIdentity,
+export const skeptic = seat("skeptic", {
+	profile: "classics/skeptic",
 	verdict: true,
 	out: { verdicts: JsonOut("verdicts.json", Verdicts) },
 });
 
-export const consolidator = seat({
-	role: "reviewer",
-	identity: consolidatorIdentity,
+export const consolidator = seat("consolidator", {
+	profile: "classics/consolidator",
 	verdict: true,
 	out: {
 		review: MarkdownOut("review.md"),
@@ -48,9 +34,8 @@ export const consolidator = seat({
 	},
 });
 
-export const documenter = seat({
-	role: "documenter",
-	identity: documenterIdentity,
+export const documenter = seat("documenter", {
+	profile: "classics/documenter",
 	out: {
 		notes: MarkdownOut("notes.md"),
 		acceptance: JsonOut("acceptance.json", Acceptance),

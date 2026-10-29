@@ -28,8 +28,8 @@ export const METRIC = {
 export const OUTBOX = "/out";
 /** Where an adapter's sandbox sees `HarnessRequest.session.dir`. */
 export const SESSION_DIR = "/session";
-/** Where an adapter's sandbox sees `HarnessRequest.identity`. */
-export const IDENTITY = "/identity.md";
+/** Where an adapter's sandbox sees `HarnessRequest.instructions`. */
+export const INSTRUCTIONS = "/instructions.md";
 
 /** A file the agent writes in the outbox: Markdown, or JSON valid against `schema`. */
 export type Output =
@@ -37,22 +37,22 @@ export type Output =
 	| { file: string; format: "markdown" };
 
 export type HarnessRequest = {
-	role: Runtime;
+	runtime: Runtime;
 	/** Any size: adapters stage it through stdin or a lane file, never argv. */
 	prompt: string;
 	/** Host directory of the lane the agent works in. */
 	lane: string;
-	/** Read-only binds from the node, config, attachments and the checks the agent may run. Cannot widen write access. */
+	/** Read-only binds from config, the profile, attachments and the checks the agent may run. Cannot widen write access. */
 	readOnly?: Bind[];
 	/** Read-write binds outside the lane, beside the outbox and session: those of the checks the agent may run. */
 	writable?: Bind[];
 	/** Environment of the agent process. The adapter's own variables win over these. */
 	env?: Record<string, string>;
 	/**
-	 * Host path of a file bound read-only at `IDENTITY`, whose text the adapter appends to the harness's own system
+	 * Host path of a file bound read-only at `INSTRUCTIONS`, whose text the adapter appends to the harness's own system
 	 * prompt, never replacing it. Without it the system prompt is unchanged.
 	 */
-	identity?: string;
+	instructions?: string;
 	/** Host directory bound read-write at `OUTBOX`, outside the lane. The agent writes declared outputs there. */
 	outbox: string;
 	/** The files the agent must write in the outbox. */

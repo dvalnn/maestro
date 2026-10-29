@@ -5,7 +5,7 @@ import {
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,
-	IDENTITY,
+	INSTRUCTIONS,
 	isObject,
 	isTransient,
 	type JsonObject,
@@ -223,16 +223,16 @@ function hasTranscript(session: HarnessRequest["session"]): boolean {
 }
 
 /**
- * The claude argv for a request. The prompt travels on stdin, the identity in a file claude appends to its system
+ * The claude argv for a request. The prompt travels on stdin, the instructions in a file claude appends to its system
  * prompt. The sandbox is the confinement, so claude's own permission prompts are off. The system prompt is not
- * snapshotted, or a resumed session would keep its first identity.
+ * snapshotted, or a resumed session would keep its first instructions.
  */
 function claudeArgv(
 	bin: string,
 	req: HarnessRequest,
 	resuming: boolean,
 ): string[] {
-	const { model, thinking } = req.role;
+	const { model, thinking } = req.runtime;
 	return [
 		bin,
 		"-p",
@@ -244,7 +244,7 @@ function claudeArgv(
 		"bypassPermissions",
 		"--system-prompt-snapshot",
 		"off",
-		...(req.identity ? ["--append-system-prompt-file", IDENTITY] : []),
+		...(req.instructions ? ["--append-system-prompt-file", INSTRUCTIONS] : []),
 		resuming ? "--resume" : "--session-id",
 		req.session.id,
 		"--model",

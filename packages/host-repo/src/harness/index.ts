@@ -19,7 +19,7 @@ export {
 	type HarnessRequest,
 	type HarnessResult,
 	type HarnessRun,
-	IDENTITY,
+	INSTRUCTIONS,
 	METRIC,
 	type Metrics,
 	OUTBOX,

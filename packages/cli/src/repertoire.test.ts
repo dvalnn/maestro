@@ -8,7 +8,7 @@ import { json, world } from "./fixtures/world";
 
 afterEach(cleanup);
 
-/** A composition whose one agent-like node names role `writer` in its config, the way the repo host's agents do. */
+/** A composition of one host node with a config. */
 const STAFFED = `import { composition, Optional, Text } from "@maestro/sdk";
 import { hostNode } from "@maestro/sdk/host";
 
@@ -23,17 +23,17 @@ export const draft = composition(
 		},
 		examples: [{ topic: "x" }],
 	},
-	() => hostNode("fake.task", { label: "write", config: { role: { name: "writer" } } }),
+	() => hostNode("fake.task", { label: "write", config: { seat: "writer" } }),
 );
 `;
 
-/** A host that names the config its nodes read, the way the repo host does: a role per node twice, and a check. */
+/** A host that names the config its nodes read: a key per node twice, and a check. */
 const needy = {
 	...fakeHost(),
 	needs: (graph: GraphIndex) => [
 		...[...graph.nodes.keys()].flatMap((id) => [
-			["roles", id],
-			["roles", id],
+			["seats", id],
+			["seats", id],
 		]),
 		["target", "checks", "test"],
 	],
@@ -92,7 +92,7 @@ describe("repertoire", () => {
 				"  --topic <text>  required  What the page is about",
 				"  --tags <text>   a",
 				"  --note <text>   optional",
-				"Config  roles.write, target.checks.test",
+				"Config  seats.write, target.checks.test",
 				"",
 				"  maestro perform staffed.draft --topic <text>",
 			].join("\n"),
@@ -138,7 +138,7 @@ describe("repertoire", () => {
 									required: false,
 								},
 							],
-							config: ["roles.write", "target.checks.test"],
+							config: ["seats.write", "target.checks.test"],
 							perform: "maestro perform staffed.draft --topic <text>",
 						},
 					],

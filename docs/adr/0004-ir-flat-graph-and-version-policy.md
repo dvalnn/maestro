@@ -6,11 +6,12 @@ status: accepted
 
 IR 1.0 (`packages/ir`, CORE-16, IR-01) fixes three things that every emitter and consumer builds on.
 
-1. **Versioning.** `irVersion` is `"<major>.<minor>"`. Minor versions are additive and optional. A reader at `M.n`
-   accepts `M.0` to `M.n`, and rejects another major or a newer minor with a clear error before any schema check. So a
-   1.1 IR cannot be read by a 1.0 engine. The usual cause is a pack that bundles a newer SDK than the `maestro` binary
-   (D-30), and the error tells the operator to upgrade maestro. The schema's `irVersion` enum and `IR_VERSION` are
-   bumped together.
+1. **Versioning.** `irVersion` is `"<major>.<minor>"`. Minor versions are additive and optional, save that a breaking
+   change to the node config of a host that ships with maestro also bumps the minor, and that host refuses a node of the
+   older shape by name. A reader at `M.n` accepts `M.0` to `M.n`, and rejects another major or a newer minor with a
+   clear error before any schema check. So a 1.1 IR cannot be read by a 1.0 engine. The usual cause is a pack that
+   bundles a newer SDK than the `maestro` binary (D-30), and the error tells the operator to upgrade maestro. The
+   schema's `irVersion` enum and `IR_VERSION` are bumped together.
 2. **Flat graph.** Nodes, scopes and edges are flat lists, and nodes and scopes share one id space. Nesting is the id
    itself: an id is a path, each proper prefix of it a declared scope or group node, and its last segment the node's
    name. Scopes are presentation and cache structure. Only groups change execution.

@@ -177,7 +177,7 @@ function undelivered(
 			`${angles[i] ?? `scout ${i + 1}`}: ${("reason" in s && s.reason) || s.outcome}`,
 	);
 	const listed = reasons.length ? `: ${reasons.join("; ")}` : "";
-	return `no scout delivered evidence${listed}. Check the 'scout' role's harness and model`;
+	return `no scout delivered evidence${listed}. Check the runtime of profile 'classics/scout'`;
 }
 
 /**

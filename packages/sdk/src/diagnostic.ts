@@ -9,8 +9,8 @@ import type { Diagnostic, SourceLocation } from "@maestro/ir";
  *   name (`SCOPE.export`), a bad name or label (`SCOPE.name`), a composition with ports built alone (`SCOPE.ports`),
  *   a constructor called outside a build (`SCOPE.build`).
  * - `BUILD`: an ambient read during build (`BUILD.ambient`), two builds that differ (`BUILD.unstable`).
- * - `BOUND`: a group bound that is missing or not a whole number of at least 1 (`BOUND.max`), an agent's token limit
- *   that is not (`BOUND.tokens`), a code node or agent timeout that is no duration or out of range (`BOUND.timeout`).
+ * - `BOUND`: a group bound that is missing or not a whole number of at least 1 (`BOUND.max`), a code node timeout that
+ *   is no duration or out of range (`BOUND.timeout`).
  * - `TYPE`: a literal that is not JSON, a body or step that returns the wrong thing, a build that returns no node
  *   (`TYPE.result`), a bad get path (`TYPE.path`), an `or` with a Ref fallback or over a group's results
  *   (`TYPE.or`), a string key into an array table (`TYPE.key`), a `readJson` of an artifact that is not a JSON file

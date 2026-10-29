@@ -56,7 +56,7 @@ const inline = (
 const agent = (id: string, mode: string, from?: string): NodeSpec => ({
 	id,
 	kind: "agent",
-	config: { role: { name: "builder" }, lane: { mode } },
+	config: { profile: "builder", seat: "builder", lane: { mode } },
 	literals: { prompt: id },
 	...(from && { lane: from }),
 });

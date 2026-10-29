@@ -66,10 +66,6 @@ const PANEL = {
 const SKEPTIC_TASK =
 	"A lens ruled on this change. Challenge each of its findings against the code, and rule whether it holds. A finding that cites no rule, requirement or ADR does not hold.";
 
-/** What bounds a build or fix agent, and a review agent. */
-const BUILD_LIMITS = { timeout: "45m", tokens: 30_000_000 };
-const REVIEW_LIMITS = { timeout: "20m", tokens: 10_000_000 };
-
 const VERIFY = "Before you finish, run `check check` to verify your change.";
 
 const FIX_TASK = `A review upheld the attached findings on your change. Fix each one, keeping to what the spec asks. ${VERIFY}`;
@@ -152,7 +148,6 @@ function review(tier: Tier, lane: Ref<string>, spec: Ref<ArtifactRef>) {
 	};
 	const found = lens({
 		label: "reviewer",
-		limits: REVIEW_LIMITS,
 		task: ALL_LENSES,
 		lane: read(lane),
 		checks: ["check"],
@@ -162,7 +157,6 @@ function review(tier: Tier, lane: Ref<string>, spec: Ref<ArtifactRef>) {
 	if (tier === "small") return tally({ findings });
 	const challenged = skeptic({
 		label: "skeptic",
-		limits: REVIEW_LIMITS,
 		task: SKEPTIC_TASK,
 		lane: read(lane),
 		when: not(findings.get("clean")),
@@ -218,7 +212,6 @@ export const slice = composition(
 		};
 		const built = builder({
 			label: "build",
-			limits: BUILD_LIMITS,
 			task: `${request}\n\n${VERIFY}`,
 			lane: fresh(),
 			checks: ["check"],
@@ -228,7 +221,6 @@ export const slice = composition(
 			step: (s) => {
 				const fixed = builder({
 					label: "fix",
-					limits: BUILD_LIMITS,
 					task: FIX_TASK,
 					lane: extend(s.out.lane, { resume: true }),
 					checks: ["check"],

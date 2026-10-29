@@ -9,6 +9,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { valuesLayer } from "@maestro/core/config";
+import type { Roots } from "@maestro/core/host";
 import type { CodeEntry } from "@maestro/core/node";
 import { concertDirs, openRecord, perform } from "@maestro/core/perform";
 import { repoHost } from "@maestro/host-repo";
@@ -29,21 +31,11 @@ import {
 	toMarkdown,
 	traceOf,
 } from "../src/code";
-import builderIdentity from "../src/prompts/builder.md" with { type: "text" };
-import consolidatorIdentity from "../src/prompts/consolidator.md" with {
-	type: "text",
-};
-import documenterIdentity from "../src/prompts/documenter.md" with {
-	type: "text",
-};
-import lensIdentity from "../src/prompts/lens.md" with { type: "text" };
-import plannerIdentity from "../src/prompts/planner.md" with { type: "text" };
-import scoutIdentity from "../src/prompts/scout.md" with { type: "text" };
 import { buildThenRepair } from "../src/repair";
 import { panelReview } from "../src/review";
 import { vModel } from "../src/v-model";
 import { diff, maestroTrace, sssfTrace } from "./compare";
-import { BASE, git, rolesOn, setup } from "./setup";
+import { BASE, git, profilesOn, setup } from "./setup";
 import { TASKS, type TaskName } from "./tasks";
 
 const dirs: string[] = [];
@@ -72,7 +64,10 @@ const BLOCKED = replying({
 	report: "tried",
 	blocked: "the checks ask for two greetings at once",
 });
-const ROLE = { harness: "stub", model: "none" };
+const RUNTIME = { harness: "stub", model: "none" };
+/** The pack's source tree, laid out as its bundle is. */
+const PACK = join(import.meta.dir, "..");
+const ROOTS: Roots = { user: "/nonexistent", packs: { classics: PACK } };
 const CODE: Readonly<
 	Record<string, (inputs: never, context: CodeContext) => unknown>
 > = {
@@ -98,7 +93,7 @@ async function stubbed(
 ) {
 	const task = TASKS[name];
 	const dir = tmp();
-	const { target } = await setup(name, dir, ROLE);
+	const { target } = await setup(name, dir, RUNTIME);
 	const builds: HarnessRequest[] = [];
 	const repairs: HarnessRequest[] = [];
 	const hosts = [
@@ -117,7 +112,7 @@ async function stubbed(
 	];
 	const config = {
 		target: { repo: target, base: BASE, checks: task.checks },
-		roles: rolesOn(ROLE),
+		profiles: profilesOn(RUNTIME),
 	};
 	const ir = buildIr(
 		buildThenRepair,
@@ -134,7 +129,13 @@ async function performedTask(
 ) {
 	const stub = await stubbed(name, repair);
 	const { dir, hosts, config, ir } = stub;
-	const run = await stubConcert(ir, { hosts, config, code: CODE, dir });
+	const run = await stubConcert(ir, {
+		hosts,
+		config,
+		code: CODE,
+		dir,
+		roots: ROOTS,
+	});
 	const lane = run.record
 		.instances(run.id)
 		.findLast((i) => typeof i.outputs?.lane === "string")?.outputs?.lane;
@@ -214,7 +215,7 @@ test("a review keeps the findings its skeptics upheld, and notes a lens that did
 		{ id: "F2", holds: false, why: "the code refutes it" },
 	]);
 	const reviewer = stubHarness((req) => [
-		...(req.role.model === SKEPTIC
+		...(req.runtime.model === SKEPTIC
 			? [verdicts]
 			: (replies.find(([task]) => req.prompt.includes(task))?.[1] ?? [])),
 		done(req),
@@ -228,8 +229,12 @@ test("a review keeps the findings its skeptics upheld, and notes a lens that did
 		hosts: [repoHost({ harnesses: [reviewer] })],
 		config: {
 			...config,
-			roles: { ...config.roles, skeptic: { ...ROLE, model: SKEPTIC } },
+			profiles: {
+				...config.profiles,
+				"classics/skeptic": { runtime: { ...RUNTIME, model: SKEPTIC } },
+			},
 		},
+		roots: ROOTS,
 		code: CODE,
 		dir,
 	});
@@ -259,8 +264,12 @@ test("a concert cancelled during its first repair resumes without rebuilding, an
 	const recordPath = join(dir, "record.db");
 	const concert = await perform({
 		ir,
-		config: { values: { ...config, dataRoot: dir }, sources: [], layers: [] },
-		roots: { user: join(dir, "roots"), packs: {} },
+		config: {
+			values: { ...config, dataRoot: dir },
+			sources: [],
+			layers: [valuesLayer(config, { layer: "workspace" })],
+		},
+		roots: ROOTS,
 		hosts,
 		loadCode: async (ref) => CODE[ref.export] as CodeEntry,
 		recordPath,
@@ -273,7 +282,13 @@ test("a concert cancelled during its first repair resumes without rebuilding, an
 	await concert.cancel();
 	expect((await concert.done).outcome).toBe("failed");
 
-	const run = await stubConcert(concert.id, { hosts, config, code: CODE, dir });
+	const run = await stubConcert(concert.id, {
+		hosts,
+		config,
+		code: CODE,
+		dir,
+		roots: ROOTS,
+	});
 	await run.close();
 	expect(run.result).toMatchObject({ outcome: "ok", node: "result" });
 	expect(builds).toHaveLength(1);
@@ -287,14 +302,6 @@ test("a concert cancelled during its first repair resumes without rebuilding, an
 });
 
 describe("v_model", () => {
-	const IDENTITIES = {
-		scout: scoutIdentity,
-		planner: plannerIdentity,
-		builder: builderIdentity,
-		lens: lensIdentity,
-		consolidator: consolidatorIdentity,
-		documenter: documenterIdentity,
-	};
 	const SEATS = [
 		"scout",
 		"planner",
@@ -304,6 +311,12 @@ describe("v_model", () => {
 		"documenter",
 	] as const;
 	type Seat = (typeof SEATS)[number];
+	const INSTRUCTIONS = Object.fromEntries(
+		SEATS.map((seat) => [
+			seat,
+			readFileSync(join(PACK, "profiles", seat, "instructions.md"), "utf8"),
+		]),
+	);
 	const A1 = "Read the name from the first argument.";
 	const A2 = "Default the name to the world.";
 	const A3 = "Rewrite greet.sh from scratch.";
@@ -376,18 +389,19 @@ describe("v_model", () => {
 		],
 	});
 
-	/** The seat whose identity the agent of `req` was given. */
+	/** The seat whose instructions the agent of `req` was given. */
 	function seatOf(req: HarnessRequest): Seat {
-		const identity = readFileSync(req.identity ?? "", "utf8");
-		const seat = SEATS.find((name) => IDENTITIES[name] === identity);
-		if (!seat) throw new Error("an agent has no identity of the pack's seats");
+		const instructions = readFileSync(req.instructions ?? "", "utf8");
+		const seat = SEATS.find((name) => INSTRUCTIONS[name] === instructions);
+		if (!seat)
+			throw new Error("an agent has no instructions of the pack's seats");
 		return seat;
 	}
 
 	/** Performs v_model on T1 with every seat stubbed by `script`, and each seat's requests in order. */
 	async function performed(script: Script = {}) {
 		const dir = tmp();
-		const { target } = await setup("t1", dir, ROLE);
+		const { target } = await setup("t1", dir, RUNTIME);
 		const asked = new Map<Seat, HarnessRequest[]>();
 		const steps = seats(script);
 		const harness = stubHarness((req) => {
@@ -404,10 +418,11 @@ describe("v_model", () => {
 			hosts: [repoHost({ harnesses: [harness] })],
 			config: {
 				target: { repo: target, base: BASE, checks: TASKS.t1.checks },
-				roles: rolesOn(ROLE),
+				profiles: profilesOn(RUNTIME),
 			},
 			code: CODE,
 			dir,
+			roots: ROOTS,
 		});
 		const instances = run.record.instances(run.id);
 		await run.close();
@@ -500,7 +515,7 @@ describe("compare", () => {
 
 	test("sssf: legs by stage, the last leg's outcome, the series' files", async () => {
 		const dir = tmp();
-		await setup("t1", dir, ROLE);
+		await setup("t1", dir, RUNTIME);
 		const series = join(dir, "series");
 		mkdirSync(series);
 		const patch = (file: string) =>

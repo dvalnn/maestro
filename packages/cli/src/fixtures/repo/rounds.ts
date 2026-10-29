@@ -1,17 +1,14 @@
 // A loop of verdict agents: the loop goes on while the latest one rejects, up to three steps.
 
-import { agent, fresh, MarkdownOut } from "@maestro/host-repo-sdk";
+import { fresh, MarkdownOut, seat } from "@maestro/host-repo-sdk";
 import { composition, loop, not } from "@maestro/sdk";
 
-const review = () =>
-	agent({
-		label: "review",
-		task: "rule",
-		lane: fresh(),
-		role: "smoke",
-		verdict: true,
-		out: { notes: MarkdownOut("notes.md") },
-	});
+const smoke = seat("smoke", {
+	verdict: true,
+	out: { notes: MarkdownOut("notes.md") },
+});
+
+const review = () => smoke({ label: "review", task: "rule", lane: fresh() });
 
 export const rounds = composition("rounds", { examples: [{}] }, () =>
 	loop.while((s) => not(s.ok), {

@@ -19,7 +19,7 @@ const SCRIPT_MODE = 0o755;
 /** Seconds a line gets after `timeout(1)` asks it to stop, before it is killed. */
 const KILL_GRACE_S = 2;
 
-/** What an agent that can run checks needs beyond its role. */
+/** What an agent that can run checks needs beyond its profile. */
 export type AgentChecks = {
 	readOnly: Bind[];
 	writable: Bind[];

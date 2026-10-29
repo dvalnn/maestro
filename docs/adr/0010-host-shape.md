@@ -21,9 +21,9 @@ The shape is:
   of event-word styles; a word outside it shows unstyled. `actor` is called on a settled instance's enrichment and on
   each of the host's progress events, and names an actor only for an event that announces one. A host that says nothing
   more than the generic line omits `text`, or either member.
-- **`needs` is optional and names the config entries a graph's host nodes read by name**, such as `roles.reviewer`, as
-  key paths. The CLI lists them for a composition built from its example set and reads no host node config itself. A
-  host that reads nothing by name omits it.
+- **`needs` is optional and names the config entries a graph's host nodes read by name**, such as
+  `target.checks.<name>`, as key paths. The CLI lists them for a composition built from its example set and reads no
+  host node config itself. A host that reads nothing by name omits it.
 - **`param` stays flat and optional.** It reads one of the host's types from text and has no partner member.
 - **`paths` is optional and lists the `config` keys that hold file paths**, namespace first, `*` matching any one key,
   which the CLI anchors to the workspace root, or to the user file's directory for a value in the user file.

@@ -13,13 +13,13 @@ import type {
 	HarnessRun,
 	Metrics,
 } from "./types";
-import { IDENTITY, OUTBOX, SESSION_DIR } from "./types";
+import { INSTRUCTIONS, OUTBOX, SESSION_DIR } from "./types";
 
 export interface SubprocessAdapter {
 	readonly name: string;
 	/**
-	 * The driver supplies `lane`, appends the request's `readOnly` and `writable` binds, binds its `identity` read-only
-	 * at `IDENTITY` and its `outbox` and `session.dir` read-write at `OUTBOX` and `SESSION_DIR`, and lays the spec's
+	 * The driver supplies `lane`, appends the request's `readOnly` and `writable` binds, binds its `instructions`
+	 * read-only at `INSTRUCTIONS` and its `outbox` and `session.dir` read-write at `OUTBOX` and `SESSION_DIR`, and lays the spec's
 	 * `env` over the request's.
 	 */
 	spec(req: HarnessRequest): Omit<SandboxSpec, "lane">;
@@ -188,8 +188,8 @@ export function subprocessHarness(
 		name: adapter.name,
 		run(req): HarnessRun {
 			const spec = adapter.spec(req);
-			const identity = req.identity
-				? [{ src: req.identity, dst: IDENTITY }]
+			const instructions = req.instructions
+				? [{ src: req.instructions, dst: INSTRUCTIONS }]
 				: [];
 			const proc = backend.start({
 				...spec,
@@ -198,7 +198,7 @@ export function subprocessHarness(
 				readOnly: [
 					...(spec.readOnly ?? []),
 					...(req.readOnly ?? []),
-					...identity,
+					...instructions,
 				],
 				writable: [
 					...(spec.writable ?? []),

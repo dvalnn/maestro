@@ -14,7 +14,7 @@ import {
 	type Type,
 	type Types,
 } from "@maestro/sdk";
-import { hostNode, timeoutMs } from "@maestro/sdk/host";
+import { hostNode } from "@maestro/sdk/host";
 
 /** A lane version, `<concert id>.<node instance id>`. As a param, it is a lane ref to a version of an earlier concert. */
 export const Lane: Type<string> = {
@@ -31,13 +31,13 @@ export type LaneInput<M extends LaneMode = LaneMode> = {
 	readonly resume?: never;
 };
 
-/** An `extend` that continues the session that wrote its version. Only an agent or a seat takes one. */
+/** An `extend` that continues the session that wrote its version. Only a seat's agent takes one. */
 export type ResumedLane<M extends LaneMode = "extend"> = Omit<
 	LaneInput<M>,
 	"resume"
 > & { readonly resume: true };
 
-/** A lane input an agent takes: any, or an `extend` that resumes. */
+/** A lane input a seat's agent takes: any, or an `extend` that resumes. */
 type AgentLane<M extends LaneMode> = LaneInput<M> | ResumedLane<M>;
 
 /** The lane output of a node whose lane mode is `M`: none when it may read. */
@@ -119,49 +119,10 @@ export const MarkdownOut = (file: string): Output => ({
 
 type Outputs = Readonly<Record<string, Output>>;
 
-/** A role from config by name, with any of its harness, model and thinking level overridden. */
-export type Role = {
-	name: string;
-	harness?: string;
-	model?: string;
-	thinking?: string;
-};
-
 /** An artifact mounted read-only at `/in/<name>`, and the hint that says when the agent should read it. */
 export type Attachment = { artifact: Ref<ArtifactRef>; hint: string };
 
 type Attachments = Readonly<Record<string, Attachment>>;
-
-/**
- * What bounds an agent's whole run: every turn, correction and retry. None by default. Passing one cancels the agent,
- * which settles `failed` with the limit as its reason and its partial kept.
- */
-export type Limits = {
-	/** Wall clock from the first turn's start, retry waits included: milliseconds, or a duration such as `45m`. */
-	timeout?: number | string;
-	/** The most tokens the agent spends, as its usage events sum: a whole number of at least 1. */
-	tokens?: number;
-};
-
-export type AgentOptions<
-	O extends Outputs,
-	M extends LaneMode = LaneMode,
-> = Common & {
-	task: string | Ref<string>;
-	lane: AgentLane<M>;
-	role: string | Role;
-	limits?: Limits;
-	/** Appended to the harness's own system prompt. */
-	identity?: string | Ref<string>;
-	/** Marks a verdict agent, which rules `ok` or `rejected` on work; any other agent does the work. */
-	verdict?: boolean;
-	attachments?: Attachments;
-	out?: O;
-	/** Names of `target.checks` the agent may run. */
-	checks?: string[];
-	/** Absolute host paths bound read-only at their own paths. */
-	readOnly?: string[];
-};
 
 /** The outputs of an agent: its report, its staged prompt, its lane unless it reads one, and those `O` declares. */
 export type AgentOut<O extends Outputs, M extends LaneMode = LaneMode> = {
@@ -184,9 +145,6 @@ const defined = <T extends object>(record: T) =>
 const nonEmpty = <V>(record: Readonly<Record<string, V>>) =>
 	Object.keys(record).length ? record : undefined;
 
-const roleOf = (role: string | Role): Role =>
-	typeof role === "string" ? { name: role } : role;
-
 /** An attachment's config: its `hint` and its artifact type. */
 function attachmentConfig({ artifact, hint }: Attachment) {
 	const schema: JsonSchema = artifact.type.schema;
@@ -195,7 +153,7 @@ function attachmentConfig({ artifact, hint }: Attachment) {
 }
 
 /** The input ports an agent has of its own, which no attachment may take. Equal to the host's `AGENT_IN_PORTS`. */
-export const AGENT_IN_PORTS = ["prompt", "identity", "lane"];
+export const AGENT_IN_PORTS = ["prompt", "lane"];
 
 /** The output ports an agent has of its own, which no declared output may take. Equal to the host's `AGENT_OUT_PORTS`. */
 export const AGENT_OUT_PORTS = ["lane", "report", "staged"];
@@ -220,101 +178,25 @@ function checkNames(attachments: Attachments, out: Outputs): void {
 	}
 }
 
-/**
- * `limits` as the config holds them: `timeout` in milliseconds.
- * @throws `BOUND.timeout` or `BOUND.tokens` for a field out of range, naming agent `what`.
- */
-function limitsConfig(limits: Limits | undefined, what: string) {
-	if (limits === undefined) return undefined;
-	const { timeout, tokens } = limits;
-	const ms = timeoutMs(timeout, `limits.timeout of agent '${what}'`);
-	if (tokens !== undefined && !(Number.isInteger(tokens) && tokens >= 1))
-		throw new BuildError({
-			code: "BOUND.tokens",
-			message: `limits.tokens of agent '${what}' must be a whole number of at least 1, got ${JSON.stringify(tokens)}`,
-			hint: "Set it to a count of tokens, or leave it out for no limit",
-		});
-	return nonEmpty(defined({ timeout: ms, tokens }));
-}
-
-/** A `repo.agent` node: a coding agent performing `task` in its lane (architecture 12). */
-export function agent<
-	O extends Outputs = Record<never, never>,
-	M extends LaneMode = LaneMode,
->(opts: AgentOptions<O, M>): Result<AgentOut<O, M>> {
-	const {
-		task,
-		lane,
-		role,
-		limits,
-		identity,
-		verdict,
-		checks,
-		readOnly,
-		...rest
-	} = opts;
-	const { attachments: given, out: givenOut, ...common } = rest;
-	const attachments: Attachments = given ?? {};
-	const out: Outputs = givenOut ?? {};
-	checkNames(attachments, out);
-	const ports = lanePorts(lane);
-	return hostNode("repo.agent", {
-		...common,
-		in: defined({
-			prompt: task,
-			identity,
-			...mapValues(attachments, (a) => a.artifact),
-			...ports.in,
-		}),
-		out: {
-			report: Text(),
-			staged: Dir(),
-			...ports.out,
-			...mapValues(out, (o) => o.type),
-		},
-		config: defined({
-			role: defined(roleOf(role)),
-			lane: ports.config,
-			limits: limitsConfig(limits, opts.label ?? roleOf(role).name),
-			verdict,
-			readOnly,
-			checks,
-			attachments: nonEmpty(mapValues(attachments, attachmentConfig)),
-			out: nonEmpty(mapValues(out, (o) => o.config)),
-		}),
-	}) as Result<AgentOut<O, M>>;
-}
-
-/** What a seat bundles: an agent's standing setup. */
+/** What a seat holds: the profile its agents run, and the outputs, verdict and checks the graph expects of them. */
 export type SeatOptions<S extends Outputs> = {
-	role: string | Role;
-	/** The seat's limits, each field overridden by the call's. */
-	limits?: Limits;
-	/** The seat's standing text, appended to the harness's own system prompt. */
-	identity: string | Ref<string>;
-	/** Marks the seat's agents as verdict agents (`AgentOptions.verdict`). */
+	/** The profile's name, bare or `<pack id>/<name>`; the seat's own name by default. */
+	profile?: string;
+	/** Marks the seat's agents as verdict agents, which rule `ok` or `rejected` on work; any other agent does the work. */
 	verdict?: boolean;
-	attachments?: Attachments;
 	out?: S;
 	/** Names of `target.checks` the agent may run. */
 	checks?: string[];
-	/** Absolute host paths bound read-only at their own paths. */
-	readOnly?: string[];
 };
 
-/**
- * What a call of a seat adds: the task and the lane, overrides of the seat's role, attachments and outputs, and
- * further checks and read-only binds.
- */
+/** What a call of a seat adds: the task and the lane, attachments and outputs, and further checks. */
 export type SeatCall<C extends Outputs, M extends LaneMode> = Common & {
 	task: string | Ref<string>;
 	lane: AgentLane<M>;
-	role?: Partial<Role>;
-	limits?: Limits;
 	attachments?: Attachments;
 	out?: C;
+	/** Names of `target.checks` the agent may run, beside the seat's. */
 	checks?: string[];
-	readOnly?: string[];
 };
 
 /** The names of `a` then those of `b` not in `a`, or nothing when there are none. */
@@ -324,30 +206,55 @@ function union(a: string[] = [], b: string[] = []): string[] | undefined {
 }
 
 /**
- * An agent's standing setup, as a function that emits a `repo.agent` node per call. A call's role fields override the
- * seat's; its attachments and outputs add to the seat's, the call's winning on a name; its checks and read-only binds add to
- * the seat's.
+ * Seat `name` (ADR 0013), as a function that emits a `repo.agent` node (architecture 12) per call: a coding agent
+ * running the seat's profile on `task` in its lane. A call's outputs add to the seat's, the call's winning on a name,
+ * and its checks add to the seat's.
  */
 export function seat<S extends Outputs = Record<never, never>>(
-	standing: SeatOptions<S>,
+	name: string,
+	standing: SeatOptions<S> = {},
 ) {
 	return <
 		C extends Outputs = Record<never, never>,
 		M extends LaneMode = LaneMode,
 	>(
 		call: SeatCall<C, M>,
-	): Result<AgentOut<Omit<S, keyof C> & C, M>> =>
-		agent({
-			...call,
-			identity: standing.identity,
-			verdict: standing.verdict,
-			limits: { ...standing.limits, ...defined(call.limits ?? {}) },
-			role: { ...roleOf(standing.role), ...defined(call.role ?? {}) },
-			attachments: { ...standing.attachments, ...call.attachments },
-			out: { ...standing.out, ...call.out } as Omit<S, keyof C> & C,
-			checks: union(standing.checks, call.checks),
-			readOnly: union(standing.readOnly, call.readOnly),
-		});
+	): Result<AgentOut<Omit<S, keyof C> & C, M>> => {
+		const {
+			task,
+			lane,
+			attachments = {},
+			out: callOut,
+			checks,
+			...common
+		} = call;
+		const out: Outputs = { ...standing.out, ...callOut };
+		checkNames(attachments, out);
+		const ports = lanePorts(lane);
+		return hostNode("repo.agent", {
+			...common,
+			in: {
+				prompt: task,
+				...mapValues(attachments, (a) => a.artifact),
+				...ports.in,
+			},
+			out: {
+				report: Text(),
+				staged: Dir(),
+				...ports.out,
+				...mapValues(out, (o) => o.type),
+			},
+			config: defined({
+				profile: standing.profile ?? name,
+				seat: name,
+				lane: ports.config,
+				verdict: standing.verdict,
+				checks: union(standing.checks, checks),
+				attachments: nonEmpty(mapValues(attachments, attachmentConfig)),
+				out: nonEmpty(mapValues(out, (o) => o.config)),
+			}),
+		}) as Result<AgentOut<Omit<S, keyof C> & C, M>>;
+	};
 }
 
 /** An inline check: shell lines run in order, with a duration such as `10m`, binds and environment. */

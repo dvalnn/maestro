@@ -10,11 +10,12 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { compose } from "@maestro/core/compose";
-import { CORE_CONFIG } from "@maestro/core/config";
+import { CORE_CONFIG, valuesLayer } from "@maestro/core/config";
 import type { Host, HostSetup, Roots } from "@maestro/core/host";
 import { concertDirs, openRecord, perform } from "@maestro/core/perform";
 import {
 	type HostNode,
+	IR_VERSION,
 	type Ir,
 	type IrEdge,
 	type IrNode,
@@ -25,6 +26,7 @@ import {
 	type HarnessRequest,
 	type StubStep,
 	stubHarness,
+	thinkingProblems,
 } from "../harness/index";
 import { runProcesses } from "../sandbox/bubblewrap";
 import { LANE_PORT } from "./config";
@@ -91,22 +93,19 @@ export function snapshot(dir: string): string[] {
 	return out;
 }
 
-const ROLES = {
-	builder: { harness: "stub", model: "none" },
-	other: { harness: "other", model: "none" },
-};
 const CHECKS = {
 	hello: "test -f hello.txt && touch from-check.txt",
 	red: ["true", "exit 1"],
 	missing: "no-such-command",
 };
 
-/** A harness named `other` that must never be run. */
+/** A harness named `other`, whose one thinking level is `low`, that must never be run. */
 const other: Harness = {
 	name: "other",
 	run: () => {
 		throw new Error("other was run");
 	},
+	runtimeProblems: (runtime) => thinkingProblems("other", ["low"], runtime),
 };
 
 /** A repo host whose stub harness replays what `steps` gives each request, and the requests it got. */
@@ -142,7 +141,6 @@ export type NodeSpec = {
 	wires?: Record<string, string>;
 	/** A node whose rejection this one tolerates. */
 	tolerates?: string;
-	identity?: boolean;
 	message?: boolean;
 };
 
@@ -156,12 +154,7 @@ function repoNode(
 		id: spec.id,
 		kind,
 		config: spec.config,
-		...((spec.identity || spec.message) && {
-			in: {
-				...(spec.identity && { identity: { type: "string" } }),
-				...(spec.message && { message: { type: "string" } }),
-			},
-		}),
+		...(spec.message && { in: { message: { type: "string" } } }),
 	};
 	const ports = host.kinds.find((k) => k.name === kind)?.ports(draft);
 	const node = {
@@ -245,7 +238,7 @@ export function irOf(
 		? loopOf(loop, built.find((b) => b.node.id === `${loop.id}/step`)?.node)
 		: undefined;
 	const parsed = parseIr({
-		irVersion: "1.0",
+		irVersion: IR_VERSION,
 		composition: { id: "toy", version: "0.1.0", pack: "test" },
 		emitter: { name: "hand", version: "0.1.0" },
 		scopes: [],
@@ -269,19 +262,62 @@ export function configOf(target: string, extra: Record<string, unknown> = {}) {
 			dataRoot,
 			workspace: "",
 			target: { repo: target, base: "main", checks: CHECKS },
-			roles: ROLES,
 			...extra,
 		},
 		sources: [],
-		layers: [],
+		layers: [valuesLayer(extra, { layer: "workspace" })],
 	};
 }
 
-/** The roots a test concert gives its hosts: a user root that does not exist, and no packs. */
-export const ROOTS: Roots = { user: "/nonexistent", packs: {} };
+const rootsDir = mkdtempSync(join(tmpdir(), "host-roots-"));
+process.once("exit", () => rmSync(rootsDir, { recursive: true, force: true }));
+
+/** The pack whose bundle `ROOTS` holds, empty until a test writes its profiles. */
+export const PACK = "acme";
+
+/**
+ * The roots a test concert gives its hosts: a workspace root holding the profiles `profile` writes, a user root that
+ * does not exist, and the bundle of `PACK`.
+ */
+export const ROOTS: Roots = {
+	workspace: rootsDir,
+	user: "/nonexistent",
+	packs: { [PACK]: join(rootsDir, PACK) },
+};
+
+/**
+ * Writes profile `name`, its `profile.yaml` and `files` beside it by path, in the workspace root of `ROOTS`, or in the
+ * bundle of `PACK` when `inPack`.
+ */
+export function profile(
+	name: string,
+	yaml: string,
+	files: Record<string, string> = {},
+	inPack = false,
+): string {
+	const dir = join(rootsDir, ...(inPack ? [PACK] : []), "profiles", name);
+	for (const [path, text] of Object.entries({
+		"profile.yaml": yaml,
+		...files,
+	})) {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	}
+	return dir;
+}
+
+profile("builder", "runtime: { harness: stub, model: none }\n");
+profile("other", "runtime: { harness: other, model: none }\n");
+
+/** The config of an agent node of seat and profile `name` on `lane`. */
+export const agentOn = (lane: Record<string, unknown>, name = "builder") => ({
+	profile: name,
+	seat: name,
+	lane,
+});
 
 export const setupOf = (config: ReturnType<typeof configOf>): HostSetup => ({
-	config: { target: config.values.target, roles: config.values.roles },
+	config: { target: config.values.target },
 	sources: [],
 	layers: [],
 	commandLine: { values: {}, replaced: [] },

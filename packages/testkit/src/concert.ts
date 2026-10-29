@@ -1,7 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Host } from "@maestro/core/host";
+import { valuesLayer } from "@maestro/core/config";
+import type { Host, Roots } from "@maestro/core/host";
 import type { CodeEntry, LoadCode } from "@maestro/core/node";
 import {
 	type ConcertResult,
@@ -39,7 +40,7 @@ type CodeOptions =
 /** What a stubbed concert takes. */
 export type StubOptions = HostsOptions &
 	CodeOptions & {
-		/** Config values by namespace, such as a host's, under the data root the concert is given. */
+		/** Config values by namespace, such as a host's, as one workspace layer, under the data root the concert is given. */
 		config?: Readonly<Record<string, unknown>>;
 		/** The directory holding the record store and the concert directories. A new temporary directory by default. */
 		dir?: string;
@@ -47,6 +48,8 @@ export type StubOptions = HostsOptions &
 		codeHash?: (ref: WorkerRef) => string;
 		/** The most instances executing at once. 4 by default. */
 		concurrency?: number;
+		/** The roots hosts resolve from. A user root under `dir`, and no packs, by default. */
+		roots?: Roots;
 	};
 
 /** A concert performed to its end. */
@@ -112,9 +115,9 @@ async function performIn(
 		config: {
 			values: { ...options.config, dataRoot: dir },
 			sources: [],
-			layers: [],
+			layers: [valuesLayer(options.config ?? {}, { layer: "workspace" })],
 		},
-		roots: { user: join(dir, "user"), packs: {} },
+		roots: options.roots ?? { user: join(dir, "user"), packs: {} },
 		hosts: options.hosts ?? [fakeHost(options.script)],
 		loadCode,
 		recordPath,

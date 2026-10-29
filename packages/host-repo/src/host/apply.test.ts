@@ -17,7 +17,7 @@ import {
 
 afterEach(cleanup);
 
-const builder = { role: { name: "builder" } };
+const builder = { profile: "builder", seat: "builder" };
 const forkRoot = { ...builder, lane: { mode: "fork" } };
 
 const writes = (files: Record<string, string>): StubStep[] =>

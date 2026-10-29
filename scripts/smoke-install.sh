@@ -70,7 +70,8 @@ line=$(maestro --version)
 
 step "pack and skill"
 pack=$home/.local/share/maestro/packs/classics
-for file in "$pack/maestro-pack.json" "$pack/README.md" "$home/.claude/skills/maestro/SKILL.md"; do
+for file in "$pack/maestro-pack.json" "$pack/README.md" "$pack/profiles/builder/profile.yaml" \
+  "$home/.claude/skills/maestro/SKILL.md"; do
   [ -f "$file" ] || fail "the tarballs did not install $file"
 done
 pack_version=$(bun -e 'console.log(require(process.argv[1]).version)' "$pack/maestro-pack.json")
@@ -105,36 +106,34 @@ target:
   base: main
   checks:
     smoke: "true"
-roles:
-  smoke:
-    harness: stub
-    model: none
+YAML
+mkdir -p "$ws/.maestro/profiles/smoke"
+cat > "$ws/.maestro/profiles/smoke/profile.yaml" <<YAML
+runtime: { harness: stub, model: none }
 YAML
 mkdir -p "$home/.config/maestro"
 cat > "$home/.config/maestro/config.yaml" <<YAML
-roles:
-  scout: { harness: claude, model: sonnet, thinking: high }
-  planner: { harness: claude, model: sonnet, thinking: high }
-  builder: { harness: claude, model: sonnet, thinking: high }
-  reviewer: { harness: claude, model: sonnet, thinking: high }
-  skeptic: { harness: pi, model: openai/gpt-model-id, thinking: high }
-  documenter: { harness: claude, model: sonnet, thinking: high }
+profiles:
+  classics/scout: { runtime: { harness: claude, model: sonnet, thinking: high } }
+  classics/planner: { runtime: { harness: claude, model: sonnet, thinking: high } }
+  classics/builder: { runtime: { harness: claude, model: sonnet, thinking: high } }
+  classics/lens: { runtime: { harness: claude, model: sonnet, thinking: high } }
+  classics/consolidator: { runtime: { harness: claude, model: sonnet, thinking: high } }
+  classics/skeptic: { runtime: { harness: pi, model: openai/gpt-model-id, thinking: high } }
+  classics/documenter: { runtime: { harness: claude, model: sonnet, thinking: high } }
 YAML
-cat > "$ws/.maestro/profiles/stub.yaml" <<YAML
-roles:
-  scout: !replace { harness: stub, model: none }
-  planner: !replace { harness: stub, model: none }
-  builder: !replace { harness: stub, model: none }
-  reviewer: !replace { harness: stub, model: none }
-  skeptic: !replace { harness: stub, model: none }
-  documenter: !replace { harness: stub, model: none }
-YAML
+{
+  echo "profiles:"
+  for seat in scout planner builder lens consolidator skeptic documenter; do
+    echo "  classics/$seat: { runtime: !replace { harness: stub, model: none } }"
+  done
+} > "$ws/.maestro/profiles/stub.yaml"
 cat > "$ws/smoke.ts" <<'TS'
-import { agent, check, fresh, read } from "@maestro/host-repo-sdk";
+import { check, fresh, read, seat } from "@maestro/host-repo-sdk";
 import { composition } from "@maestro/sdk";
 
 export const smoke = composition("smoke", { examples: [{}] }, () => {
-  const a = agent({ label: "a", task: "nothing", lane: fresh(), role: "smoke" });
+  const a = seat("smoke")({ label: "a", task: "nothing", lane: fresh() });
   return check(read(a.out.lane), "smoke", { label: "check" });
 });
 TS

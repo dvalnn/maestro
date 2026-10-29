@@ -9,19 +9,22 @@ import { isTaskName, TASKS, type TaskName } from "./tasks";
 export const EXIT = { ok: 0, mismatch: 1, trouble: 2 } as const;
 /** The branch each target is cut on. */
 export const BASE = "main";
-/** Every role the pack's seats name. */
-const ROLES = [
+/** The profile of each of the pack's seats. */
+export const PROFILES = [
 	"scout",
 	"planner",
 	"builder",
-	"reviewer",
+	"lens",
 	"skeptic",
+	"consolidator",
 	"documenter",
-] as const;
+].map((seat) => `classics/${seat}`);
 
-/** Each role of the pack on `role`, as the config's `roles`. */
-export const rolesOn = (role: { harness: string; model: string }) =>
-	Object.fromEntries(ROLES.map((name) => [name, role]));
+type Runtime = { harness: string; model: string };
+
+/** Each profile of the pack run on `runtime`, as the config's `profiles`. */
+export const profilesOn = (runtime: Runtime) =>
+	Object.fromEntries(PROFILES.map((name) => [name, { runtime }]));
 
 const GREETER = join(import.meta.dir, "greeter");
 const PACK = resolve(import.meta.dir, "../dist");
@@ -60,12 +63,12 @@ type Made = {
 
 /**
  * Makes the task's target in `<dir>/target` with one commit on `BASE`, records its refs in `<dir>/refs.txt`, and
- * writes the workspace config `<dir>/.maestro/config.yaml` with the pack, the target and the builder's role.
+ * writes the workspace config `<dir>/.maestro/config.yaml` with the pack, the target and the builder's runtime.
  */
 export async function setup(
 	name: TaskName,
 	dir: string,
-	role: { harness: string; model: string },
+	runtime: Runtime,
 ): Promise<Made> {
 	const task = TASKS[name];
 	const target = join(dir, "target");
@@ -78,7 +81,7 @@ export async function setup(
 	const config = {
 		packs: [PACK],
 		target: { repo: target, base: BASE, checks: task.checks },
-		roles: { builder: role },
+		profiles: { "classics/builder": { runtime } },
 	};
 	// JSON is YAML.
 	await Bun.write(

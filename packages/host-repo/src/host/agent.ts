@@ -1,4 +1,10 @@
-import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	copyFileSync,
+	lstatSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type {
 	HostContext,
@@ -30,6 +36,12 @@ import {
 	type Runtime,
 } from "../harness/index";
 import type { Lane } from "../lane/index";
+import {
+	PROFILES,
+	type Profile,
+	type ProfileFields,
+	resolveProfile,
+} from "../profile/index";
 import type { Bind } from "../sandbox/index";
 import { type AgentChecks, stageChecks } from "./agent-checks";
 import { writeChangeset } from "./apply";
@@ -37,15 +49,13 @@ import {
 	AGENT_CONFIG,
 	AGENT_KIND,
 	type AgentConfig,
-	type AgentLimits,
-	type Attachment,
 	agentConfig,
+	isLegacyAgent,
 	LANE_PORT,
 	listed,
 	namedCheck,
 	repoSetup,
 	requireTarget,
-	resolveRole,
 	type Target,
 } from "./config";
 import { artifactInput, textInput } from "./inputs";
@@ -133,13 +143,15 @@ const FENCED = /^```(?:json)?\n([\s\S]*)\n```$/;
 
 const ajv = validator();
 
-/** The ports of an agent node: its `identity` input only where the node declares one. */
+/** What an agent's limits bound: wall clock in milliseconds from its first turn, and tokens as `tokensOf` sums. */
+type AgentLimits = ProfileFields["limits"];
+
+/** The ports of an agent node; one built before profiles keeps its own, so that `validate` can refuse it by name. */
 function agentPorts(node: HostNode): { in: Ports; out: Ports } {
+	if (isLegacyAgent(node.config))
+		return { in: node.in ?? {}, out: node.out ?? {} };
 	const config = agentConfig(node.config);
 	const lane = lanePorts(config.lane);
-	const identity: Ports = Object.hasOwn(node.in ?? {}, "identity")
-		? { identity: TEXT }
-		: {};
 	const declared = Object.entries(config.out ?? {}).map(([port, o]) => [
 		port,
 		o.format === "json"
@@ -158,7 +170,6 @@ function agentPorts(node: HostNode): { in: Ports; out: Ports } {
 	return {
 		in: {
 			prompt: TEXT,
-			...identity,
 			...Object.fromEntries(attachments),
 			...lane.in,
 		},
@@ -273,7 +284,7 @@ function resumed(
 		);
 	if (session.harness !== harness)
 		throw new Error(
-			`version ${lane} was written by harness '${session.harness}', not '${harness}'. Drop resume, or use a role of '${session.harness}'`,
+			`version ${lane} was written by harness '${session.harness}', not '${harness}'. Drop resume, or run a profile on '${session.harness}'`,
 		);
 	if (session.concert !== concert)
 		throw new Error(`version ${lane} belongs to another concert. Drop resume`);
@@ -363,7 +374,7 @@ function next(reply: string, spent: boolean, kind: ReplyKind): Next {
 	if (typeof envelope !== "string") return { envelope };
 	return spent
 		? {
-				failure: `the final reply is not the envelope after ${MAX_CORRECTIONS} corrections: ${envelope}. Check the role's model follows the output contract in staged/prompt.md`,
+				failure: `the final reply is not the envelope after ${MAX_CORRECTIONS} corrections: ${envelope}. Check the profile's model follows the output contract in staged/prompt.md`,
 			}
 		: { prompt: correction(envelope, kind) };
 }
@@ -454,18 +465,18 @@ async function converse(
 	}
 }
 
-/** Writes the staged text: the user message, and the identity when there is one, whose path it returns. */
-function stage(dir: string, prompt: string, identity: string | undefined) {
+/** Stages the user message, and the instructions file when there is one, whose staged path it returns. */
+function stage(dir: string, prompt: string, instructions: string | undefined) {
 	writeFileSync(join(dir, "prompt.md"), prompt);
-	if (!identity) return undefined;
-	const path = join(dir, "identity.md");
-	writeFileSync(path, identity);
+	if (!instructions) return undefined;
+	const path = join(dir, "instructions.md");
+	copyFileSync(instructions, path);
 	return path;
 }
 
 /** What one instance stages and where. */
 type Staging = {
-	role: Runtime;
+	profile: Profile;
 	config: AgentConfig;
 	session: Session;
 	staged: string;
@@ -473,7 +484,7 @@ type Staging = {
 };
 
 /** The harness, model and effort an agent runs on, as its start event and its enrichment report them. */
-const identityOf = ({ harness, model, thinking }: Runtime) => ({
+const runtimeOf = ({ harness, model, thinking }: Runtime) => ({
 	harness,
 	model,
 	thinking,
@@ -485,12 +496,13 @@ async function settle(
 	turns: Turns,
 	seal: () => Promise<string | undefined>,
 ): Promise<HostNodeResult> {
-	const { role, session } = staging;
+	const { profile, session } = staging;
 	const { metrics } = turns;
 	const enrichment = {
 		session: session.id,
 		sessionDir: session.dir,
-		...identityOf(role),
+		...runtimeOf(profile.fields.runtime),
+		profile,
 	};
 	if ("failure" in turns)
 		return { outcome: "failed", reason: turns.failure, metrics, enrichment };
@@ -535,7 +547,7 @@ async function keepPartial(
 }
 
 /** The prompt text the attachments add, one line per attachment. */
-const attachmentNote = (attachments: [string, Attachment][]) =>
+const attachmentNote = (attachments: [string, { hint: string }][]) =>
 	attachments.length
 		? [
 				"",
@@ -547,26 +559,31 @@ const attachmentNote = (attachments: [string, Attachment][]) =>
 			].join("\n")
 		: "";
 
-/** What the attachments and checks of `config` add to an agent's sandbox and prompt. */
+/** What the graph's and the profile's attachments and the checks of `staging` add to an agent's sandbox and prompt. */
 function extrasOf(
-	config: AgentConfig,
+	{ config, profile }: Staging,
 	target: Target,
 	inputs: Inputs,
 	context: HostContext,
 	base: string,
 	path: string,
 ): AgentChecks {
-	const attachments = Object.entries(config.attachments ?? {});
+	const graph = Object.entries(config.attachments ?? {});
+	const own = Object.entries(profile.fields.attachments);
 	const checks = stageChecks(
 		context.scratch,
 		(config.checks ?? []).map((name) => [name, namedCheck(target, name)]),
 		base,
 		path,
 	);
-	const mounts: Bind[] = attachments.map(([name]) => ({
-		src: artifactInput(inputs, context, name),
-		dst: attachmentPath(name),
-	}));
+	const mounts: Bind[] = [
+		...graph.map(([name]) => ({
+			src: artifactInput(inputs, context, name),
+			dst: attachmentPath(name),
+		})),
+		...own.map(([name, a]) => ({ src: a.path, dst: attachmentPath(name) })),
+	];
+	const attachments = [...graph, ...own];
 	return {
 		...checks,
 		readOnly: [...mounts, ...checks.readOnly],
@@ -583,18 +600,19 @@ async function execute(
 ): Promise<HostNodeResult> {
 	const setup = repoSetup(context.setup);
 	const config = agentConfig(instance.node.config);
-	const role = resolveRole(config.role, setup);
-	const harness = harnesses.find((h) => h.name === role.harness);
+	const profile = await resolveProfile(config.profile, context.setup);
+	const { runtime } = profile.fields;
+	const harness = harnesses.find((h) => h.name === runtime.harness);
 	if (!harness)
 		throw new Error(
-			`harness '${role.harness}' is not loaded. Use one of: ${listed(harnesses.map((h) => h.name))}`,
+			`harness '${runtime.harness}' is not loaded. Set '${PROFILES}.${profile.name}.runtime.harness' to one of: ${listed(harnesses.map((h) => h.name))}`,
 		);
 	const target = requireTarget(setup);
 	const store = openTarget(setup.store, target.repo, target.sparse);
 	const session =
 		config.lane.mode === "extend" && config.lane.resume
-			? resumed(store.root, inputs[LANE_PORT], role.harness, context.concert)
-			: mintSession(store.root, role.harness, context.concert);
+			? resumed(store.root, inputs[LANE_PORT], runtime.harness, context.concert)
+			: mintSession(store.root, runtime.harness, context.concert);
 	const run = { concert: context.concert, instance, live, emit: context.emit };
 	return withLane(
 		store,
@@ -605,7 +623,7 @@ async function execute(
 		async (open) => {
 			const { lane, read } = open;
 			const staging: Staging = {
-				role,
+				profile,
 				config,
 				session,
 				staged: join(context.scratch, "staged"),
@@ -613,9 +631,9 @@ async function execute(
 			};
 			mkdirSync(staging.staged);
 			mkdirSync(staging.outbox);
-			context.emit({ kind: "agent", ...identityOf(role) });
+			context.emit({ kind: "agent", ...runtimeOf(runtime) });
 			const extras = extrasOf(
-				config,
+				staging,
 				target,
 				inputs,
 				context,
@@ -627,28 +645,28 @@ async function execute(
 				textInput(inputs, "prompt") +
 				extras.note +
 				contract(config.out ?? {}, kind);
-			const identity =
-				inputs.identity === undefined
-					? undefined
-					: textInput(inputs, "identity");
 			const req: HarnessRequest = {
-				role,
+				runtime,
 				prompt,
 				lane: lane.dir,
 				readOnly: [
-					...readOnlyBinds(lane, setup.readOnly, config.readOnly ?? []),
+					...readOnlyBinds(lane, setup.readOnly, profile.fields.readOnly),
 					...extras.readOnly,
 				],
 				writable: extras.writable,
 				env: { PATH: setup.path, ...extras.env },
-				identity: stage(staging.staged, prompt, identity),
+				instructions: stage(
+					staging.staged,
+					prompt,
+					profile.fields.instructions,
+				),
 				outbox: staging.outbox,
 				outputs: Object.values(config.out ?? {}),
 				session: { dir: session.dir, id: session.id },
 				verdict: config.verdict,
 				instance: instance.id,
 			};
-			const turns = await within(config.limits ?? {}, live, (guard) =>
+			const turns = await within(profile.fields.limits, live, (guard) =>
 				converse(harness, req, live, context, staging.staged, kind, guard),
 			);
 			const settled = await settle(staging, turns, async () => {
@@ -668,7 +686,7 @@ async function execute(
 }
 
 /**
- * The `repo.agent` kind, running each instance's role on the harness of that name among `harnesses`. Its cancel returns
+ * The `repo.agent` kind, running each instance's profile on the harness of that name among `harnesses`. Its cancel returns
  * once the instance has settled, so its kept partial reaches the record before the engine abandons the call.
  */
 export function agentKind(harnesses: readonly Harness[]): NodeKind {

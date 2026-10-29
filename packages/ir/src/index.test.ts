@@ -399,7 +399,7 @@ test.each<[string, Mutation, string, string, string, string]>([
 			}),
 		"IR.graph",
 		"/nodes/3",
-		"loop 'refine/loop' must have exactly one member in IR 1.0, got 2",
+		`loop 'refine/loop' must have exactly one member in IR ${IR_VERSION}, got 2`,
 		"Keep exactly one entry in members of 'refine/loop'",
 	],
 	[
@@ -653,10 +653,10 @@ test("a newer minor version than the reader knows is rejected", () => {
 	if (!result.ok) {
 		expect(result.diagnostics[0]?.code).toBe("IR.version");
 		expect(result.diagnostics[0]?.message).toBe(
-			"IR version 1.7 is newer than this maestro reads (1.0). It was emitted by a newer SDK, for example one bundled in a pack",
+			"IR version 1.7 is newer than this maestro reads (1.1). It was emitted by a newer SDK, for example one bundled in a pack",
 		);
 		expect(result.diagnostics[0]?.hint).toBe(
-			"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.0",
+			"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.1",
 		);
 	}
 });
@@ -679,7 +679,7 @@ test("a code node may carry a timeout of whole milliseconds", () => {
 	}
 });
 
-test("the schema accepts exactly the versions this reader reads", () => {
+test("the schema accepts exactly the versions this reader reads, 1.0 among them", () => {
 	// The schema pins accepted versions, so it and IR_VERSION are bumped together.
 	expect(irSchema.properties.irVersion.enum.at(-1)).toBe(IR_VERSION);
 	expect(parseIr(withVersion("1.0")).ok).toBe(true);

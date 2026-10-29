@@ -36,10 +36,11 @@ with a string `id` also names that node in `node`.
 
 ## Version and compatibility (CORE-16, ADR 0004)
 
-`irVersion` is `"<major>.<minor>"`. This package reads and emits `1.0`.
+`irVersion` is `"<major>.<minor>"`. This package reads `1.0` and `1.1`, and emits `1.1`.
 
 - **Minor** changes are additive and optional: a new optional field, or a new value where readers already reject the
-  unknown. IR written for `1.n` keeps its meaning under every later `1.m`.
+  unknown. IR written for `1.n` keeps its meaning under every later `1.m`. A breaking change to the node config of a
+  host that ships with maestro also bumps the minor, and that host refuses a node of the older shape by name.
 - **Major** changes are anything else: a removed or renamed field, a new required field, a changed meaning, a new node
   or edge kind.
 - A reader that supports `M.n` accepts `M.0` to `M.n`, and nothing else. It rejects another major, and a newer minor,
@@ -414,6 +415,9 @@ The IR carries structure. These semantics belong to the slices that execute or v
 
 ## Changelog
 
+- **1.1**: the `repo.agent` node config is `{ profile, seat, lane, verdict?, checks?, attachments?, out? }`. It lost
+  `role`, `limits` and `readOnly`, and the node lost its `identity` input port. A 1.0 agent node is refused at
+  pre-flight (ADR 0004, ADR 0013).
 - **1.0**: first version. Before release, code nodes took the optional `timeout` and lost `pure`, and the `params` and
   `config` blocks left the IR. The node field `tag` was removed. The `repeat` kind became `loop`: it lost `until`,
   gained a required `test`, and its inner ports carry `ok` and `reason`. The implicit output `outcome` was removed: `ok`

@@ -30,7 +30,7 @@ afterEach(cleanup);
 /** The whole agent run: it waits out two 500ms check timeouts and a kill, each slower on a loaded machine. */
 const AGENT_RUN_TEST_MS = 60_000;
 
-const builder = { role: { name: "builder" } };
+const builder = { profile: "builder", seat: "builder" };
 type Dirs = { store: string; dataRoot: string; repo: string };
 const markdown = (file: string) => ({ file, format: "markdown" });
 

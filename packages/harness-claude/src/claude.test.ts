@@ -28,7 +28,7 @@ const request = (
 	prompt: string,
 	over: Partial<HarnessRequest> = {},
 ): HarnessRequest => ({
-	role: { harness: "claude", model: "haiku", thinking: "low" },
+	runtime: { harness: "claude", model: "haiku", thinking: "low" },
 	prompt,
 	lane: tmp("lane"),
 	outbox: tmp("out"),
@@ -44,7 +44,7 @@ function standIn(lines: string[]) {
 	writeFileSync(join(home, "run.jsonl"), `${lines.join("\n")}\n`);
 	writeFileSync(
 		bin,
-		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\nenv > /out/env\nprintf '{"type":"leak","t":"%s"}\\n' "$CLAUDE_CODE_OAUTH_TOKEN"\n[ -f /identity.md ] && cp /identity.md /out/identity\ncat "$(dirname "$0")/run.jsonl"\n`,
+		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\nenv > /out/env\nprintf '{"type":"leak","t":"%s"}\\n' "$CLAUDE_CODE_OAUTH_TOKEN"\n[ -f /instructions.md ] && cp /instructions.md /out/instructions\ncat "$(dirname "$0")/run.jsonl"\n`,
 		{ mode: 0o755 },
 	);
 	return { bin, token: TOKEN };
@@ -175,13 +175,13 @@ describe("stand-in claude", () => {
 		expect((await differing.result).reply).toBe("bar");
 	});
 
-	test("the prompt goes on stdin, the identity in an appended file, and the session has its own config dir", async () => {
-		const identity = join(tmp("staged"), "identity.md");
-		writeFileSync(identity, "You are terse.");
-		const req = request("a secret prompt", { identity });
+	test("the prompt goes on stdin, the instructions in an appended file, and the session has its own config dir", async () => {
+		const instructions = join(tmp("staged"), "instructions.md");
+		writeFileSync(instructions, "You are terse.");
+		const req = request("a secret prompt", { instructions });
 		await claudeHarness(standIn(fixture())).run(req).result;
 		expect(read(req, "stdin")).toBe("a secret prompt");
-		expect(read(req, "identity")).toBe("You are terse.");
+		expect(read(req, "instructions")).toBe("You are terse.");
 		expect(read(req, "argv").split("\n")).toEqual([
 			"-p",
 			"--output-format",
@@ -199,7 +199,7 @@ describe("stand-in claude", () => {
 			"--system-prompt-snapshot",
 			"off",
 			"--append-system-prompt-file",
-			"/identity.md",
+			"/instructions.md",
 			"--session-id",
 			req.session.id,
 			"--model",
@@ -388,19 +388,19 @@ describe.skipIf(!process.env.MAESTRO_CLAUDE)("real claude", () => {
 		claudeHarness({ token: process.env.CLAUDE_CODE_OAUTH_TOKEN }).run({
 			...base,
 			prompt,
-			role: { harness: "claude", model, thinking: "low" },
+			runtime: { harness: "claude", model, thinking: "low" },
 		});
-	const identity = (text: string) => {
-		const file = join(tmp("staged"), "identity.md");
+	const instructions = (text: string) => {
+		const file = join(tmp("staged"), "instructions.md");
 		writeFileSync(file, text);
 		return file;
 	};
 
-	test("writes to /out, reports tokens, resumes its session under a changed identity", async () => {
+	test("writes to /out, reports tokens, resumes its session under changed instructions", async () => {
 		const base = request("");
 		const firstResult = await ask(
 			"Use the Write tool to write the word hello to /out/note.txt. Remember the word pumpernickel. Reply with ok.",
-			{ ...base, identity: identity("Your codeword is PELICAN.") },
+			{ ...base, instructions: instructions("Your codeword is PELICAN.") },
 		).result;
 		expect(firstResult.outcome).toBe("ok");
 		expect(readFileSync(join(base.outbox, "note.txt"), "utf8")).toContain(
@@ -411,7 +411,7 @@ describe.skipIf(!process.env.MAESTRO_CLAUDE)("real claude", () => {
 
 		const second = await ask(
 			"Which word did I ask you to remember, and what is your codeword? Reply with those two words only.",
-			{ ...base, identity: identity("Your codeword is WALRUS.") },
+			{ ...base, instructions: instructions("Your codeword is WALRUS.") },
 		).result;
 		expect(second.outcome).toBe("ok");
 		const reply = second.reply.toLowerCase();

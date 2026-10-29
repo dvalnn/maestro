@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join as joinPath } from "node:path";
+import type { Roots } from "@maestro/core/host";
 import { concertDirs } from "@maestro/core/perform";
 import {
 	AGENT_IN_PORTS as HOST_IN_PORTS,
@@ -17,7 +25,6 @@ import { buildThenRepair, byFinding, fold, review } from "./fixtures/examples";
 import {
 	AGENT_IN_PORTS,
 	AGENT_OUT_PORTS,
-	agent,
 	apply,
 	changeset,
 	check,
@@ -65,7 +72,30 @@ function toyTarget(): string {
 	return target;
 }
 
-const ROLES = ["builder", "implementer", "resolver", "reviewer"];
+const PROFILES = [
+	"builder",
+	"implementer",
+	"resolver",
+	"reviewer",
+	"lens",
+	"skeptic",
+	"consolidator",
+	"acme/critic",
+];
+
+/** A workspace root holding each of `PROFILES` on the stub harness. */
+function profileRoots(): Roots {
+	const workspace = tmp();
+	for (const name of PROFILES) {
+		const dir = joinPath(workspace, "profiles", name);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(
+			joinPath(dir, "profile.yaml"),
+			"runtime: { harness: stub, model: none }\n",
+		);
+	}
+	return { workspace, user: "/nonexistent", packs: {} };
+}
 
 /** A repo host on a toy target whose stub harness writes the files `writes` gives each request, and the requests it got. */
 function repo(
@@ -98,9 +128,6 @@ function repo(
 			base: "main",
 			checks,
 		},
-		roles: Object.fromEntries(
-			ROLES.map((r) => [r, { harness: "stub", model: "none" }]),
-		),
 	};
 	const config = {
 		values: {
@@ -113,14 +140,12 @@ function repo(
 		sources: [],
 		layers: [],
 	};
-	const composeIt = (ir: Ir) => composeIr(ir, { hosts: [host], config });
-	return { host, hostConfig, requests, composeIt };
+	const roots = profileRoots();
+	const composeIt = (ir: Ir) => composeIr(ir, { hosts: [host], config, roots });
+	return { host, hostConfig, roots, requests, composeIt };
 }
 
 const CODE = { byFinding };
-
-const nodeOf = (ir: Ir, id: string): IrNode | undefined =>
-	ir.nodes.find((n) => n.id === id);
 
 function buildCode(fn: () => unknown): string {
 	try {
@@ -132,13 +157,18 @@ function buildCode(fn: () => unknown): string {
 	throw new Error("expected a BuildError, and none was thrown");
 }
 
+const builder = seat("builder");
+
+const nodeOf = (ir: Ir, id: string): IrNode | undefined =>
+	ir.nodes.find((n) => n.id === id);
+
 describe("lanes", () => {
 	test("a lane ref param forked or read is a repo.lane literal, and composes", async () => {
 		const follow = composition(
 			"follow",
 			{ params: { from: Lane }, examples: [{ from: "c.lens/skeptic" }] },
 			({ from }) => {
-				const copied = agent({ task: "go", lane: fork(from), role: "builder" });
+				const copied = builder({ task: "go", lane: fork(from) });
 				const look = check(
 					read(copied.out.lane),
 					{ run: "true" },
@@ -166,18 +196,16 @@ describe("lanes", () => {
 
 	test("one version extended twice fails compose with HOST.lane, with no spend", async () => {
 		const twice = composition("twice", { examples: [{}] }, () => {
-			const first = agent({ task: "a", lane: fresh(), role: "builder" });
-			agent({
+			const first = builder({ task: "a", lane: fresh() });
+			builder({
 				label: "x",
 				task: "b",
 				lane: extend(first.out.lane),
-				role: "builder",
 			});
-			return agent({
+			return builder({
 				label: "y",
 				task: "c",
 				lane: extend(first.out.lane),
-				role: "builder",
 			});
 		});
 		const { composeIt, requests } = repo();
@@ -189,23 +217,19 @@ describe("lanes", () => {
 	});
 });
 
-test("every option of agent, check and apply composes against the repo host", async () => {
+test("every option of a seat call, check and apply composes against the repo host", async () => {
 	const shared = tmp();
 	const cache = tmp();
 	const everything = composition("everything", { examples: [{}] }, () => {
-		const built = agent({
+		const built = builder({
 			task: "build",
 			lane: fresh("main"),
-			role: { name: "builder", harness: "stub", model: "m", thinking: "low" },
-			identity: "You build.",
 			checks: ["test"],
-			readOnly: [shared],
 		});
-		const resumed = agent({
+		const resumed = builder({
 			label: "resumed",
 			task: "go on",
 			lane: extend(built.out.lane, { resume: true }),
-			role: "builder",
 		});
 		const checked = check(fork(resumed.out.lane), {
 			run: ["true", "true"],
@@ -246,11 +270,10 @@ test("the agent's own port names are the host's, and each is refused only on the
 	expect(AGENT_OUT_PORTS).toEqual(HOST_OUT_PORTS);
 	const refused = (field: "attachments" | "out", name: string) => {
 		const clash = composition("clash", { examples: [{}] }, () => {
-			const first = agent({ task: "a", lane: fresh(), role: "builder" });
-			return agent({
+			const first = builder({ task: "a", lane: fresh() });
+			return builder({
 				task: "b",
 				lane: fresh(),
-				role: "builder",
 				[field]:
 					field === "out"
 						? { [name]: MarkdownOut("x.md") }
@@ -266,7 +289,7 @@ test("the agent's own port names are the host's, and each is refused only on the
 			throw error;
 		}
 	};
-	for (const name of ["prompt", "identity", "lane", "report", "staged"]) {
+	for (const name of ["prompt", "lane", "report", "staged"]) {
 		expect(refused("attachments", name)).toBe(AGENT_IN_PORTS.includes(name));
 		expect(refused("out", name)).toBe(AGENT_OUT_PORTS.includes(name));
 	}
@@ -275,7 +298,7 @@ test("the agent's own port names are the host's, and each is refused only on the
 test("changeset lowers a message, literal or ref, to a message input, and has none otherwise", () => {
 	const ir = buildIr(
 		composition("messages", { examples: [{}] }, () => {
-			const built = agent({ task: "a", lane: fresh(), role: "builder" });
+			const built = builder({ task: "a", lane: fresh() });
 			changeset(built.out.lane, { label: "bare" });
 			changeset(built.out.lane, { label: "literal", message: "Fix it" });
 			return changeset(built.out.lane, {
@@ -290,15 +313,15 @@ test("changeset lowers a message, literal or ref, to a message input, and has no
 	expect(nodeOf(ir, "ref")?.literals).not.toHaveProperty("message");
 });
 
-test("only a lane input resumes, only an agent takes it, and apply takes one changeset", () => {
+test("only a lane input resumes, only a seat call takes it, and apply takes one changeset", () => {
 	composition("types", { examples: [{}] }, () => {
-		const built = agent({ task: "a", lane: fresh(), role: "builder" });
+		const built = builder({ task: "a", lane: fresh() });
 		const cs = changeset(built.out.lane).out.changeset;
 		// @ts-expect-error resume belongs to the lane input, `extend(v, { resume })`
-		agent({ task: "b", lane: fresh(), role: "builder", resume: true });
-		// @ts-expect-error only an agent or a seat resumes
+		builder({ task: "b", lane: fresh(), resume: true });
+		// @ts-expect-error only a seat call resumes
 		check(extend(built.out.lane, { resume: true }));
-		// @ts-expect-error only an agent or a seat resumes
+		// @ts-expect-error only a seat call resumes
 		apply(extend(built.out.lane, { resume: true }), cs);
 		// @ts-expect-error apply takes one changeset, not a record of them
 		apply(fresh(), { a: cs, b: cs });
@@ -307,9 +330,7 @@ test("only a lane input resumes, only an agent takes it, and apply takes one cha
 });
 
 describe("seat", () => {
-	const reviewer = seat({
-		role: { name: "reviewer", model: "a/one", thinking: "high" },
-		identity: "You review.",
+	const reviewer = seat("reviewer", {
 		verdict: true,
 		out: {
 			notes: MarkdownOut("notes.md"),
@@ -317,30 +338,31 @@ describe("seat", () => {
 		},
 		checks: ["test"],
 	});
+	const critic = seat("critic", { profile: "acme/critic" });
 
-	test("two calls emit verdict agents with the seat's identity, its role overridden where the call sets it, and its outputs and checks added to", async () => {
-		const twoCalls = composition("two_calls", { examples: [{}] }, () => {
+	test("calls emit agents running the seat's own profile, or the one it names, with its outputs and checks added to", async () => {
+		const calls = composition("calls", { examples: [{}] }, () => {
 			const first = reviewer({ label: "first", task: "look", lane: fresh() });
 			const second = reviewer({
 				label: "second",
 				task: "look again",
 				lane: fork(first.out.lane),
-				role: { model: "b/two", thinking: undefined },
 				attachments: {
 					earlier: { artifact: first.out.notes, hint: "first" },
 				},
 				out: { notes: MarkdownOut("more.md"), plan: MarkdownOut("plan.md") },
 				checks: ["lint", "test"],
 			});
+			critic({ label: "third", task: "judge", lane: read(first.out.lane) });
 			const carried: Ref<ArtifactRef>[] = [second.out.score, second.out.plan];
 			return carried[0];
 		});
-		const ir = buildIr(twoCalls);
-		const identity = { identity: "You review." };
+		const ir = buildIr(calls);
 		expect(nodeOf(ir, "first")).toMatchObject({
-			literals: { prompt: "look", ...identity },
+			literals: { prompt: "look" },
 			config: {
-				role: { name: "reviewer", model: "a/one", thinking: "high" },
+				profile: "reviewer",
+				seat: "reviewer",
 				lane: { mode: "fresh" },
 				verdict: true,
 				checks: ["test"],
@@ -351,9 +373,10 @@ describe("seat", () => {
 			},
 		});
 		expect(nodeOf(ir, "second")).toMatchObject({
-			literals: { prompt: "look again", ...identity },
+			literals: { prompt: "look again" },
 			config: {
-				role: { name: "reviewer", model: "b/two", thinking: "high" },
+				profile: "reviewer",
+				seat: "reviewer",
 				lane: { mode: "fork" },
 				verdict: true,
 				checks: ["test", "lint"],
@@ -364,6 +387,9 @@ describe("seat", () => {
 					plan: { file: "plan.md" },
 				},
 			},
+		});
+		expect(nodeOf(ir, "third")).toMatchObject({
+			config: { profile: "acme/critic", seat: "critic" },
 		});
 		expect(Object.keys(nodeOf(ir, "second")?.out ?? {}).sort()).toEqual([
 			"lane",
@@ -392,18 +418,21 @@ describe("examples", () => {
 	test("build-then-repair builds a seated build and repair, and composes", async () => {
 		const ir = buildIr(buildThenRepair);
 		expect(nodeOf(ir, "build")).toMatchObject({
-			literals: { identity: expect.any(String) },
+			config: { profile: "builder", seat: "builder" },
 		});
 		expect(nodeOf(ir, "loop/repair")).toMatchObject({
-			literals: { identity: expect.any(String) },
-			config: { attachments: { logs: { type: "core.file" } } },
+			config: {
+				profile: "builder",
+				seat: "builder",
+				attachments: { logs: { type: "core.file" } },
+			},
 		});
 		expect(await repo().composeIt(ir)).toMatchObject({ ok: true });
 	});
 
 	test("build-then-repair repairs a red check in the builder's session", async () => {
 		const ir = buildIr(buildThenRepair);
-		const { host, hostConfig, requests } = repo(
+		const { host, hostConfig, roots, requests } = repo(
 			(req): Record<string, string> =>
 				req.prompt.startsWith("Make") ? { "fixed.txt": "x\n" } : {},
 			{ test: "test -f fixed.txt" },
@@ -411,6 +440,7 @@ describe("examples", () => {
 		const concert = await stubConcert(ir, {
 			hosts: [host],
 			config: hostConfig,
+			roots,
 			code: stdlib,
 		});
 		await concert.close();
@@ -424,10 +454,11 @@ describe("examples", () => {
 
 	test("build-then-repair runs no repair on a green build", async () => {
 		const ir = buildIr(buildThenRepair);
-		const { host, hostConfig, requests } = repo();
+		const { host, hostConfig, roots, requests } = repo();
 		const concert = await stubConcert(ir, {
 			hosts: [host],
 			config: hostConfig,
+			roots,
 			code: stdlib,
 		});
 		await concert.close();
@@ -463,12 +494,13 @@ describe("examples", () => {
 		"the fold builds, composes, and merges $tasks in a stub concert",
 		async ({ tasks, agents, added, resolved }) => {
 			const ir = buildIr(fold, { tasks }, CODE);
-			const { host, hostConfig, composeIt, requests } = repo(implement);
+			const { host, hostConfig, roots, composeIt, requests } = repo(implement);
 			expect(await composeIt(ir)).toMatchObject({ ok: true });
 
 			const concert = await stubConcert(ir, {
 				hosts: [host],
 				config: hostConfig,
+				roots,
 				code: { ...stdlib, ...CODE },
 			});
 			const result = concert.record
@@ -492,75 +524,4 @@ describe("examples", () => {
 			for (const line of added) expect(patches).toContain(line);
 		},
 	);
-});
-
-describe("agent limits", () => {
-	const built = (limits: Parameters<typeof agent>[0]["limits"]) =>
-		buildIr(
-			composition("limited", { examples: [{}] }, () =>
-				agent({
-					label: "worker",
-					task: "go",
-					lane: fresh(),
-					role: "b",
-					limits,
-				}),
-			),
-		);
-
-	const limitsOf = (ir: Ir, id: string) =>
-		(nodeOf(ir, id) as { config?: { limits?: unknown } }).config?.limits;
-
-	test("a duration or milliseconds becomes milliseconds in the config, and none leaves none", () => {
-		expect(limitsOf(built({ timeout: "45m", tokens: 1000 }), "worker")).toEqual(
-			{
-				timeout: 2_700_000,
-				tokens: 1000,
-			},
-		);
-		expect(limitsOf(built({ timeout: 5000 }), "worker")).toEqual({
-			timeout: 5000,
-		});
-		expect(limitsOf(built(undefined), "worker")).toBeUndefined();
-	});
-
-	test.each([
-		[{ timeout: "soon" }, "limits.timeout of agent 'worker'"],
-		[{ timeout: 0 }, "limits.timeout of agent 'worker'"],
-		[{ timeout: 1.5 }, "limits.timeout of agent 'worker'"],
-		[{ tokens: 0 }, "limits.tokens of agent 'worker'"],
-		[{ tokens: 2.5 }, "limits.tokens of agent 'worker'"],
-	])(
-		"%j is refused at compose, naming the agent and the field",
-		(limits, message) => {
-			expect(() => built(limits)).toThrow(message);
-		},
-	);
-
-	test("a seat call overrides the seat's limits per field", () => {
-		const worker = seat({
-			role: "b",
-			identity: "x",
-			limits: { timeout: "10m", tokens: 100 },
-		});
-		const ir = buildIr(
-			composition("seated", { examples: [{}] }, () => {
-				worker({ label: "plain", task: "go", lane: fresh() });
-				return worker({
-					label: "tight",
-					task: "go",
-					lane: fresh(),
-					limits: { tokens: 5 },
-				}).out.report;
-			}),
-		);
-		expect(limitsOf(ir, "plain")).toEqual({
-			timeout: 600_000,
-			tokens: 100,
-		});
-		expect(limitsOf(ir, "tight")).toEqual({
-			timeout: 600_000,
-			tokens: 5,
-		});
-	});
 });

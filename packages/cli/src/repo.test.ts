@@ -35,7 +35,27 @@ async function toyTarget(): Promise<string> {
 	return target;
 }
 
-/** A world whose workspace config points the repo host at a toy target, with `extra` config lines. */
+/** Writes workspace profile `name` in `cwd`: its `profile.yaml`, and `files` beside it by path. */
+function profileIn(
+	cwd: string,
+	name: string,
+	yaml: string,
+	files: Record<string, string> = {},
+) {
+	const dir = join(cwd, ".maestro/profiles", name);
+	mkdirSync(dir, { recursive: true });
+	for (const [path, text] of Object.entries({ "profile.yaml": yaml, ...files }))
+		writeFileSync(join(dir, path), text);
+}
+
+/** Config lines that run profile `smoke` on `harness` and `model`. */
+const SMOKE_RUNTIME = (harness: string, model = "none") =>
+	`profiles:\n  smoke:\n    runtime:\n      harness: ${harness}\n      model: ${model}\n`;
+
+/**
+ * A world whose workspace config points the repo host at a toy target, with `extra` config lines, and whose workspace
+ * holds profile `smoke` with instructions and no runtime.
+ */
 async function repoWorld(extra = "", env: Record<string, string> = {}) {
 	const w = await world();
 	const target = await toyTarget();
@@ -43,6 +63,9 @@ async function repoWorld(extra = "", env: Record<string, string> = {}) {
 		join(w.cwd, ".maestro/config.yaml"),
 		`target:\n  repo: ${target}\n  base: main\n${extra}`,
 	);
+	profileIn(w.cwd, "smoke", "instructions: instructions.md\n", {
+		"instructions.md": "terse",
+	});
 	const stubbed = builtinHosts({ ...process.env, ...env });
 	const call = (args: string[], over: Parameters<typeof w.call>[1] = {}) =>
 		w.call(args, { hosts: stubbed, ...over });
@@ -88,17 +111,16 @@ async function smokeFile() {
 	const file = join(await scratch(), "smoke.ts");
 	writeFileSync(
 		file,
-		`import { agent, check, fresh, JsonOut, MarkdownOut, read } from "@maestro/host-repo-sdk";
+		`import { check, fresh, JsonOut, MarkdownOut, read, seat } from "@maestro/host-repo-sdk";
 import { composition, List, Struct, Text } from "@maestro/sdk";
 
 const Rows = Struct({ rows: List(Struct({ name: Text() })) });
 
 export const smoke = composition("smoke", { examples: [{}] }, () => {
-	const a = agent({
+	const a = seat("smoke")({
 		label: "a",
 		task: "nothing",
 		lane: fresh(),
-		role: "smoke",
 		out: { rows: JsonOut("rows.json", Rows), notes: MarkdownOut("notes.md") },
 	});
 	return check(read(a.out.lane), { run: "true" }, { label: "ok" });
@@ -112,10 +134,9 @@ const STUB_DELAY_MS = 700;
 
 test("the built-in stub harness, delayed per turn, performs an agent that declares outputs, and the check after it settles ok", async () => {
 	const file = await smokeFile();
-	const w = await repoWorld(
-		"roles:\n  smoke:\n    harness: stub\n    model: none\n",
-		{ MAESTRO_STUB_DELAY: `${STUB_DELAY_MS}ms` },
-	);
+	const w = await repoWorld(SMOKE_RUNTIME("stub"), {
+		MAESTRO_STUB_DELAY: `${STUB_DELAY_MS}ms`,
+	});
 	const began = Date.now();
 	const done = await w.call(["perform", file]);
 	expect(Date.now() - began).toBeGreaterThanOrEqual(STUB_DELAY_MS);
@@ -128,30 +149,29 @@ test("the built-in stub harness, delayed per turn, performs an agent that declar
 });
 
 test("a malformed MAESTRO_STUB_DELAY fails the stub agent, naming it", async () => {
-	const w = await repoWorld(
-		"roles:\n  smoke:\n    harness: stub\n    model: none\n",
-		{ MAESTRO_STUB_DELAY: "soon" },
-	);
+	const w = await repoWorld(SMOKE_RUNTIME("stub"), {
+		MAESTRO_STUB_DELAY: "soon",
+	});
 	const done = await w.call(["perform", await smokeFile()]);
 	expect(done.code).not.toBe(0);
 	expect(done.out + done.err).toContain("MAESTRO_STUB_DELAY");
 });
 
-/** A composition of a stub agent with an identity and a markdown output in a scope, and two more under a parMap. */
+/** A composition of a stub agent with a markdown output in a scope, and two more under a parMap. */
 async function artsFile() {
 	const file = join(await scratch(), "arts.ts");
 	writeFileSync(
 		file,
-		`import { agent, fresh, MarkdownOut } from "@maestro/host-repo-sdk";
+		`import { fresh, MarkdownOut, seat } from "@maestro/host-repo-sdk";
 import { composition, iter, use } from "@maestro/sdk";
 
+const smoke = seat("smoke");
+
 const inner = composition("inner", { examples: [{}] }, () =>
-	agent({
+	smoke({
 		label: "a",
 		task: "nothing",
-		identity: "terse",
 		lane: fresh(),
-		role: "smoke",
 		out: { notes: MarkdownOut("notes.md") },
 	}),
 );
@@ -159,7 +179,7 @@ const inner = composition("inner", { examples: [{}] }, () =>
 export const arts = composition("arts", { examples: [{}] }, () => {
 	use(inner, {});
 	return iter.parMap(["x", "y"], () =>
-		agent({ label: "b", task: "nothing", lane: fresh(), role: "smoke" }),
+		smoke({ label: "b", task: "nothing", lane: fresh() }),
 		{ onError: "stop" },
 	);
 });
@@ -169,7 +189,7 @@ export const arts = composition("arts", { examples: [{}] }, () => {
 }
 
 test("artifact lists a concert's artifacts, prints an instance's files by a unique ending, and refuses what names none", async () => {
-	const w = await repoWorld(SMOKE_ROLE("stub"));
+	const w = await repoWorld(SMOKE_RUNTIME("stub"));
 	const done = await w.call(["perform", await artsFile()]);
 	expect(done).toMatchObject({ code: 0 });
 	const id = idOf(done);
@@ -215,17 +235,12 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 	const ended = (text: string) =>
 		text === "" || text.endsWith("\n") ? text : `${text}\n`;
 	expect(await raw("inner/a")).toBe(
-		`══ notes.md\n${ended(readFileSync(notes, "utf8"))}══ staged/identity.md\n${ended(staged("identity.md"))}══ staged/prompt.md\n${prompt}`,
+		`══ notes.md\n${ended(readFileSync(notes, "utf8"))}══ staged/instructions.md\n${ended(staged("instructions.md"))}══ staged/prompt.md\n${prompt}`,
 	);
 	expect(await raw("a", "notes.md", "--path")).toBe(`${notes}\n`);
+	const bStaged = listed.find((a) => a.instance === "parMap[x]/b")?.path ?? "";
 	expect(await raw("parMap[x]/b")).toBe(
-		readFileSync(
-			join(
-				listed.find((a) => a.instance === "parMap[x]/b")?.path ?? "",
-				"prompt.md",
-			),
-			"utf8",
-		),
+		`══ staged/instructions.md\nterse\n══ staged/prompt.md\n${readFileSync(join(bStaged, "prompt.md"), "utf8")}`,
 	);
 
 	expect(await w.call(["art", id, "parMap"])).toMatchObject({
@@ -284,13 +299,13 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 	});
 });
 
-/** A composition whose agent pins an unloaded harness inline, after a code node that fails while `gate` is missing. */
-async function pinned(gate = "/"): Promise<string> {
-	const file = join(await scratch(), "pinned.ts");
+/** A composition of an agent of profile smoke, after a code node that fails while `gate` is missing. */
+async function gated(gate = "/"): Promise<string> {
+	const file = join(await scratch(), "gated.ts");
 	writeFileSync(
 		file,
 		`import { existsSync } from "node:fs";
-import { agent, check, fresh, read } from "@maestro/host-repo-sdk";
+import { check, fresh, read, seat } from "@maestro/host-repo-sdk";
 import { code, composition, Text } from "@maestro/sdk";
 
 export function opened() {
@@ -298,14 +313,9 @@ export function opened() {
 	return { text: "go" };
 }
 
-export const pinned = composition("pinned", { examples: [{}] }, () => {
+export const gated = composition("gated", { examples: [{}] }, () => {
 	const gate = code(opened, { in: {}, out: { text: Text() } });
-	const a = agent({
-		label: "a",
-		task: gate.out.text,
-		lane: fresh(),
-		role: { name: "smoke", harness: "gone", model: "pinned" },
-	});
+	const a = seat("smoke")({ label: "a", task: gate.out.text, lane: fresh() });
 	return check(read(a.out.lane), { run: "true" }, { label: "ok" });
 });
 `,
@@ -313,212 +323,132 @@ export const pinned = composition("pinned", { examples: [{}] }, () => {
 	return file;
 }
 
-const SMOKE_ROLE = (harness: string, model = "none") =>
-	`roles:\n  smoke:\n    harness: ${harness}\n    model: ${model}\n`;
-
-describe("role precedence", () => {
-	test("a role field on the command line beats the inline one, which beats the file's, per field", async () => {
-		const w = await repoWorld(SMOKE_ROLE("gone"));
-		const file = await pinned();
+describe("profiles", () => {
+	test("a runtime field on the command line or in a config profile beats the config file's", async () => {
+		const w = await repoWorld(SMOKE_RUNTIME("gone"));
+		const file = await gated();
 		await Bun.write(
 			join(w.cwd, ".maestro/profiles/free.yaml"),
-			"roles:\n  smoke:\n    harness: stub\n",
+			"profiles:\n  smoke:\n    runtime:\n      harness: stub\n",
 		);
-		const refused = await w.call([
-			"perform",
-			file,
-			"-c",
-			"roles.smoke.model=x",
-		]);
+		const refused = await w.call(["perform", file]);
 		expect(refused).toMatchObject({ code: 2 });
-		expect(refused.err).toContain("harness 'gone', which is not loaded");
+		expect(refused.err).toContain(
+			"profile smoke runs on harness 'gone', which is not loaded",
+		);
 		for (const flags of [
 			["--profile", "free"],
-			["-c", "roles.smoke.harness=stub"],
+			["-c", "profiles.smoke.runtime.harness=stub"],
 		])
 			expect(await w.call(["perform", file, ...flags])).toMatchObject({
 				code: 0,
 			});
 	});
 
-	test("an inline harness beats the config file's", async () => {
-		const w = await repoWorld(SMOKE_ROLE("gone"));
-		const file = await pinned();
-		writeFileSync(file, readFileSync(file, "utf8").replace('"gone"', '"stub"'));
-		expect(await w.call(["perform", file])).toMatchObject({ code: 0 });
-	});
-
-	test("compose names what each agent runs on and the layer that set it, in text and JSON", async () => {
+	test("compose lists each agent's node, profile, harness, model and thinking, in text and JSON", async () => {
 		const w = await repoWorld(
-			"roles:\n  smoke:\n    harness: stub\n    model: none\n    thinking: low\n",
-		);
-		const mapped = await smokeFile();
-		const inline = await pinned();
-		writeFileSync(
-			inline,
-			readFileSync(inline, "utf8").replace('"gone"', '"stub"'),
-		);
-		const agents = async (file: string, ...flags: string[]) =>
-			json(await w.call(["compose", file, "--json", ...flags])).agents;
-		const layers = (v: string, layer: string) => ({ value: v, layer });
-
-		expect(await agents(mapped)).toEqual([
-			{
-				node: "a",
-				role: "smoke",
-				harness: layers("stub", "workspace"),
-				model: layers("none", "workspace"),
-				thinking: layers("low", "workspace"),
-			},
-		]);
-		expect(await agents(mapped, "-c", "roles.smoke.model=big")).toMatchObject([
-			{
-				harness: layers("stub", "workspace"),
-				model: { ...layers("big", "flag"), under: layers("none", "workspace") },
-			},
-		]);
-		expect(await agents(inline)).toMatchObject([
-			{
-				harness: layers("stub", "composition"),
-				model: layers("pinned", "composition"),
-				thinking: layers("low", "workspace"),
-			},
-		]);
-
-		const { out } = await w.call([
-			"compose",
-			mapped,
-			"--plan",
-			"-c",
-			"roles.smoke.model=big",
-		]);
-		expect(out).toMatch(
-			/agents:\n {2}a +smoke +stub +big +low +harness:workspace model:flag over workspace none thinking:workspace$/,
-		);
-		expect((await w.call(["compose", inline, "--plan"])).out).toMatch(
-			/agents:\n {2}a +smoke +stub +pinned +low +harness:composition model:composition thinking:workspace$/,
-		);
-	});
-
-	test("compose --plan shows what a role flag overrides, and nothing without one", async () => {
-		const w = await repoWorld("roles:\n  smoke:\n    harness: stub\n");
-		await Bun.write(
-			join(w.cwd, ".maestro/profiles/real.yaml"),
-			"roles:\n  smoke:\n    model: claude-sonnet-5-5\n",
+			"profiles:\n  smoke:\n    runtime:\n      harness: stub\n      model: none\n      thinking: low\n",
 		);
 		const file = await smokeFile();
-		const stub = [
-			"-c",
-			"roles.smoke.harness=stub",
-			"-c",
-			"roles.smoke.model=none",
-		];
-		const rows = (extra: string[]) =>
-			w.call(["compose", file, "--plan", ...extra]);
-
-		expect((await rows(["--profile", "real", ...stub])).out).toMatch(
-			/agents:\n {2}a +smoke +stub +none +- +harness:flag over workspace stub model:flag over profile claude-sonnet-5-5$/,
-		);
-		expect((await rows(stub)).out).toMatch(
-			/harness:flag over workspace stub model:flag over none$/,
-		);
-		const json = (extra: string[]) =>
-			w
-				.call(["compose", file, "--json", ...extra])
-				.then((r) => JSON.parse(r.out).agents);
-		expect(await json(["--profile", "real", ...stub])).toMatchObject([
-			{
-				harness: {
-					value: "stub",
-					layer: "flag",
-					under: { value: "stub", layer: "workspace" },
-				},
-				model: {
-					value: "none",
-					layer: "flag",
-					under: { value: "claude-sonnet-5-5", layer: "profile" },
-				},
-			},
-		]);
-		expect((await json(stub))[0].model.under).toBeNull();
-
 		expect(
-			(
-				await rows([
-					"--profile",
-					"real",
-					...stub,
-					"-c",
-					"roles.smoke.model=big",
-				])
-			).out,
-		).toMatch(/model:flag over profile claude-sonnet-5-5$/);
-		expect((await rows([...stub, "-c", "roles.smoke.model=big"])).out).toMatch(
-			/model:flag over none$/,
-		);
-
-		const plain = await rows(["--profile", "real"]);
-		expect(plain.out).toMatch(/harness:workspace model:profile$/);
-		expect(plain.out).not.toContain(" over ");
-		expect((await json(["--profile", "real"]))[0].model).not.toHaveProperty(
-			"under",
-		);
-	});
-
-	test("a plan's override of an inline role field names the profile over the inline value", async () => {
-		const w = await repoWorld(SMOKE_ROLE("stub"));
-		await Bun.write(
-			join(w.cwd, ".maestro/profiles/real.yaml"),
-			"roles:\n  smoke:\n    model: claude-sonnet-5-5\n",
-		);
-		const file = await pinned();
-		writeFileSync(file, readFileSync(file, "utf8").replace('"gone"', '"stub"'));
-		const { out } = await w.call([
-			"compose",
-			file,
-			"--plan",
-			"--profile",
-			"real",
-			"-c",
-			"roles.smoke.model=none",
-		]);
-		expect(out).toContain("model:flag over profile claude-sonnet-5-5");
-		expect(
-			(
+			json(
 				await w.call([
 					"compose",
 					file,
-					"--plan",
+					"--json",
 					"-c",
-					"roles.smoke.model=none",
-				])
-			).out,
-		).toContain("model:flag over composition pinned");
+					"profiles.smoke.runtime.model=big",
+				]),
+			).agents,
+		).toEqual([
+			{
+				node: "a",
+				profile: "smoke",
+				harness: "stub",
+				model: "big",
+				thinking: "low",
+			},
+		]);
+		expect((await w.call(["compose", file, "--plan"])).out).toMatch(
+			/\nagents:\n {2}a +smoke +stub +none +low$/,
+		);
 	});
 
-	test("a resume reapplies the recorded profile over the inline role", async () => {
-		const w = await repoWorld(SMOKE_ROLE("gone"));
+	test("a resume resolves its profiles anew", async () => {
+		const w = await repoWorld();
 		const gate = join(w.cwd, "gate");
-		await Bun.write(
-			join(w.cwd, ".maestro/profiles/free.yaml"),
-			"roles:\n  smoke:\n    harness: stub\n",
-		);
-		const failed = await w.call([
-			"perform",
-			await pinned(gate),
-			"--profile",
-			"free",
-		]);
+		const runtime = (harness: string) =>
+			profileIn(
+				w.cwd,
+				"smoke",
+				`runtime: { harness: ${harness}, model: none }\n`,
+			);
+		runtime("stub");
+		const failed = await w.call(["perform", await gated(gate)]);
 		expect(failed).toMatchObject({ code: 1 });
 		expect(failed.err).toContain("gate closed");
 		writeFileSync(gate, "");
-		expect(await w.call(["perform", "--resume", idOf(failed)])).toMatchObject({
-			code: 0,
+		runtime("gone");
+		const resume = ["perform", "--resume", idOf(failed)];
+		expect(await w.call(resume)).toMatchObject({
+			code: 2,
+			err: expect.stringContaining("harness 'gone', which is not loaded"),
+		});
+		runtime("stub");
+		expect(await w.call(resume)).toMatchObject({ code: 0 });
+	});
+
+	test("a concert or an IR built before profiles is refused, to be performed anew", async () => {
+		const w = await repoWorld(SMOKE_RUNTIME("stub"));
+		const gate = join(w.cwd, "gate");
+		const file = await gated(gate);
+		const legacy = (ir: {
+			irVersion: string;
+			nodes: { id: string; config?: unknown }[];
+		}) => {
+			const agent = ir.nodes.find((n) => n.id === "a");
+			if (agent)
+				agent.config = { role: { name: "smoke" }, lane: { mode: "fresh" } };
+			return { ...ir, irVersion: "1.0" };
+		};
+		const refusal =
+			"agent node 'a' names a role: it was built before profiles replaced roles\n  Perform its composition anew with this maestro";
+
+		const irFile = join(w.cwd, "old.json");
+		writeFileSync(
+			irFile,
+			JSON.stringify(
+				legacy(
+					json(await w.call(["compose", await smokeFile(), "--json"])).plan.ir,
+				),
+			),
+		);
+		expect(await w.call(["perform", irFile])).toMatchObject({
+			code: 2,
+			err: expect.stringContaining(refusal),
+		});
+
+		const failed = await w.call(["perform", file]);
+		expect(failed).toMatchObject({ code: 1 });
+		const db = new Database(join(w.root, "data/maestro/record.db"));
+		const id = idOf(failed);
+		const { ir } = db.query("SELECT ir FROM concerts WHERE id = ?").get(id) as {
+			ir: string;
+		};
+		db.run("UPDATE concerts SET ir = ? WHERE id = ?", [
+			JSON.stringify(legacy(JSON.parse(ir))),
+			id,
+		]);
+		db.close();
+		writeFileSync(gate, "");
+		expect(await w.call(["perform", "--resume", id])).toMatchObject({
+			code: 2,
+			err: expect.stringContaining(refusal),
 		});
 	});
 });
 
-/** Each real harness behind its gate: the agent's identity and file, and the metrics it reports. */
+/** Each real harness behind its gate: the agent's instructions and file, and the metrics it reports. */
 const REAL_HARNESSES = [
 	{
 		gate: "MAESTRO_PI",
@@ -534,10 +464,17 @@ const REAL_HARNESSES = [
 
 for (const { gate, harness, model } of REAL_HARNESSES) {
 	test.skipIf(!process.env[gate])(
-		`${harness} performs an agent with an identity, and its file is in the version a check reads`,
+		`${harness} performs an agent with instructions, and its file is in the version a check reads`,
 		async () => {
-			const w = await repoWorld(
-				`roles:\n  writer:\n    harness: ${harness}\n    model: ${model}\n    thinking: low\n`,
+			const w = await repoWorld();
+			profileIn(
+				w.cwd,
+				"writer",
+				`runtime: { harness: ${harness}, model: ${model}, thinking: low }\ninstructions: instructions.md\n`,
+				{
+					"instructions.md":
+						"You sign every report you give with the word kumquat at its end.",
+				},
 			);
 			const done = await w.call(["perform", join(REPO, "write.ts")]);
 			expect(done).toMatchObject({ code: 0 });
@@ -545,13 +482,13 @@ for (const { gate, harness, model } of REAL_HARNESSES) {
 			const agent = instances.find((i: { node: string }) => i.node === "write");
 			expect(agent.outputs.report.toLowerCase()).toContain("kumquat");
 			expect(agent.metrics.tokens_in).toBeGreaterThan(0);
-			const [identity] = [
-				...new Bun.Glob("**/staged/identity.md").scanSync({
+			const [instructions] = [
+				...new Bun.Glob("**/staged/instructions.md").scanSync({
 					cwd: w.root,
 					absolute: true,
 				}),
 			];
-			expect(readFileSync(identity ?? "", "utf8")).toContain("kumquat");
+			expect(readFileSync(instructions ?? "", "utf8")).toContain("kumquat");
 		},
 		180_000,
 	);
@@ -768,7 +705,6 @@ describe("changeset", () => {
 });
 
 describe("changeset --partial", () => {
-	const ROLE = "roles:\n  smoke:\n    harness: stub\n    model: none\n";
 	const failer = repoHost({
 		harnesses: [
 			stubHarness([
@@ -779,7 +715,7 @@ describe("changeset --partial", () => {
 	});
 
 	async function failed() {
-		const w = await repoWorld(ROLE);
+		const w = await repoWorld(SMOKE_RUNTIME("stub"));
 		const done = await w.call(["perform", join(REPO, "failing.ts")], {
 			hosts: [failer],
 		});
@@ -822,8 +758,6 @@ describe("changeset --partial", () => {
 });
 
 describe("MAESTRO_STUB_OUTPUTS", () => {
-	const STUB_ROLE = "roles:\n  smoke:\n    harness: stub\n    model: none\n";
-
 	/** A fixture dir holding `files`, each keyed by its path under it. */
 	async function fixtures(files: Record<string, string>) {
 		const dir = await scratch();
@@ -836,7 +770,7 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 
 	const perform = async (dir: string | undefined, file: string) => {
 		const w = await repoWorld(
-			STUB_ROLE,
+			SMOKE_RUNTIME("stub"),
 			dir === undefined ? {} : { MAESTRO_STUB_OUTPUTS: dir },
 		);
 		const done = await w.call(["perform", file]);

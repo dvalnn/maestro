@@ -17,6 +17,9 @@ import type {
 	WorkerRef,
 } from "./types";
 
+/** The IR version this package emits and reads. See README.md for the compatibility policy. */
+export const IR_VERSION = "1.1";
+
 /** The outputs every node has beside its declared ones. */
 export const IMPLICIT_OUT = {
 	ok: { type: "boolean" },
@@ -489,7 +492,7 @@ function checkBody(g: GroupNode, path: string, graph: Graph) {
 		graph.report(
 			"IR.graph",
 			path,
-			`${g.kind} '${g.id}' must have exactly one member in IR 1.0, got ${members.length}`,
+			`${g.kind} '${g.id}' must have exactly one member in IR ${IR_VERSION}, got ${members.length}`,
 			`Keep exactly one entry in members of '${g.id}'`,
 		);
 	}

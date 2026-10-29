@@ -1,8 +1,6 @@
 import { addNode, type Common, checkPlain, type Result } from "./graph";
 import { type NoOutputs, typed } from "./nodes";
 
-export { timeoutMs } from "./nodes";
-
 import { schemas, type Types } from "./types";
 
 export type HostNodeOptions<O extends Types> = Common & {

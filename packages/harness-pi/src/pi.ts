@@ -6,7 +6,7 @@ import {
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,
-	IDENTITY,
+	INSTRUCTIONS,
 	isObject,
 	isTransient,
 	type JsonObject,
@@ -177,16 +177,16 @@ const UNMANAGED_OFF = [
 	"--no-context-files",
 ];
 
-/** The pi argv for a request. The prompt travels on stdin, the identity in a file pi appends to its system prompt. */
+/** The pi argv for a request. The prompt travels on stdin, the instructions in a file pi appends to its system prompt. */
 function piArgv(bin: string, req: HarnessRequest): string[] {
-	const { model, thinking } = req.role;
+	const { model, thinking } = req.runtime;
 	return [
 		bin,
 		"-p",
 		"--mode",
 		"json",
 		...UNMANAGED_OFF,
-		...(req.identity ? ["--append-system-prompt", IDENTITY] : []),
+		...(req.instructions ? ["--append-system-prompt", INSTRUCTIONS] : []),
 		"--session-dir",
 		SESSION_DIR,
 		"--session-id",

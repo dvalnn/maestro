@@ -4,12 +4,15 @@ import { isAbsolute, join } from "node:path";
 import type { StubStep } from "../harness/index";
 import { concertUsage, releaseConcert } from "./store";
 import {
+	agentOn,
 	cleanup,
 	configOf,
 	irOf,
 	type NodeSpec,
 	OK,
+	PACK,
 	performed,
+	profile,
 	reply,
 	sandboxed,
 	setupOf,
@@ -47,21 +50,27 @@ const fault = (transient: boolean): StubStep => ({
 	emit: { type: "fault", reason: "529 overloaded", transient },
 });
 
-const lone = (
-	host: Parameters<typeof irOf>[0],
-	limits?: { timeout?: number; tokens?: number },
-) =>
+type Limits = { timeout?: string; tokens?: number };
+
+/** The profile of `limits` on the stub harness, written once, or `builder` when there are none. */
+function limitedProfile(limits: Limits | undefined): string {
+	if (!limits) return "builder";
+	const name = `limited-${limits.timeout ?? "none"}-${limits.tokens ?? "none"}`;
+	profile(
+		name,
+		`runtime: { harness: stub, model: none }\nlimits: ${JSON.stringify(limits)}\n`,
+	);
+	return name;
+}
+
+const lone = (host: Parameters<typeof irOf>[0], limits?: Limits) =>
 	irOf(
 		host,
 		[
 			{
 				id: "x",
 				kind: "agent",
-				config: {
-					role: { name: "builder" },
-					lane: { mode: "fresh" },
-					...(limits && { limits }),
-				},
+				config: agentOn({ mode: "fresh" }, limitedProfile(limits)),
 				literals: { prompt: "go" },
 			},
 		],
@@ -134,7 +143,7 @@ describe("agent session directory", () => {
 	): NodeSpec => ({
 		id,
 		kind: "agent",
-		config: { role: { name: "builder" }, lane: config },
+		config: { profile: "builder", seat: "builder", lane: config },
 		literals: { prompt: "go" },
 		...(lane && { lane }),
 	});
@@ -158,6 +167,71 @@ describe("agent session directory", () => {
 		expect(dirOf("r")).toBe(minted?.dir);
 		expect(minted?.dir).toEndWith(`sessions/${minted?.id}/home`);
 		expect(isAbsolute(minted?.dir ?? "")).toBe(true);
+	});
+});
+
+describe("agent profile", () => {
+	test("an agent runs the workspace profile that shadows its pack's, with its binds and attachments, and records it", async () => {
+		const packed = profile(
+			"builder",
+			"runtime: { harness: stub, model: packed }\n",
+			{},
+			true,
+		);
+		const dir = profile(
+			`${PACK}/builder`,
+			"runtime: { harness: stub, model: none }\nattachments: { kb: { path: kb, hint: for the house style } }\n",
+			{ "kb/style.md": "terse\n" },
+		);
+		const { host, requests } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "x",
+					kind: "agent",
+					config: { ...agentOn({ mode: "fresh" }), profile: `${PACK}/builder` },
+					literals: { prompt: "go" },
+				},
+			],
+			"x",
+		);
+		const config = configOf(toyTarget(), {
+			profiles: { [`${PACK}/builder`]: { readOnly: [packed] } },
+		});
+		const { result, instances } = await performed(host, ir, config);
+
+		expect(result).toMatchObject({ outcome: "ok" });
+		const [request] = requests;
+		expect(request?.runtime).toEqual({ harness: "stub", model: "none" });
+		expect(request?.readOnly).toContainEqual({ src: packed });
+		expect(request?.readOnly).toContainEqual({
+			src: join(dir, "kb"),
+			dst: "/in/kb",
+		});
+		expect(request?.prompt).toContain("/in/kb");
+		expect(request?.prompt).toContain("for the house style");
+		expect(instances[0]?.enrichment?.profile).toMatchObject({
+			name: `${PACK}/builder`,
+			dir,
+			shadows: [packed],
+			fields: { readOnly: [packed] },
+			sources: expect.arrayContaining([
+				{
+					path: ["runtime", "model"],
+					source: {
+						layer: "directory",
+						file: join(dir, "profile.yaml"),
+						line: 1,
+					},
+				},
+				{ path: ["readOnly"], source: { layer: "workspace" } },
+			]),
+			files: {
+				"profile.yaml": expect.stringMatching(/^sha256:/),
+				"kb/style.md": expect.stringMatching(/^sha256:/),
+			},
+		});
 	});
 });
 
@@ -247,20 +321,19 @@ describe("agent partial work", () => {
 				? [edit("kept\n"), OK]
 				: [edit("lost\n"), fault(false)],
 		);
-		const builder = { name: "builder" };
 		const ir = irOf(
 			host,
 			[
 				{
 					id: "build",
 					kind: "agent",
-					config: { role: builder, lane: { mode: "fresh" } },
+					config: agentOn({ mode: "fresh" }),
 					literals: { prompt: "go" },
 				},
 				{
 					id: "look",
 					kind: "agent",
-					config: { role: builder, lane: { mode: "read" } },
+					config: agentOn({ mode: "read" }),
 					literals: { prompt: "look" },
 					lane: "build",
 				},
@@ -309,10 +382,7 @@ describe("agent limits", () => {
 	const hang: StubStep = { hang: true };
 	const prose: StubStep = { emit: { type: "text", text: "not json" } };
 
-	async function limited(
-		limits: { timeout?: number; tokens?: number },
-		steps: (n: number) => StubStep[],
-	) {
+	async function limited(limits: Limits, steps: (n: number) => StubStep[]) {
 		const { host, requests } = stubHost(() => steps(requests.length));
 		const done = await performed(
 			host,
@@ -343,7 +413,7 @@ describe("agent limits", () => {
 	});
 
 	test("a timeout ends the agent failed with its reason and keeps the partial", async () => {
-		const { result, instances } = await limited({ timeout: 1000 }, () => [
+		const { result, instances } = await limited({ timeout: "1s" }, () => [
 			edit,
 			hang,
 		]);
@@ -381,7 +451,7 @@ describe("agent limits", () => {
 		const { host, requests } = stubHost(() => [fault(true)]);
 		const { concert } = await start(
 			host,
-			lone(host, { timeout: 300 }),
+			lone(host, { timeout: "300ms" }),
 			configOf(toyTarget()),
 		);
 		expect(await concert.done).toMatchObject({
@@ -394,7 +464,7 @@ describe("agent limits", () => {
 	test("an agent within its limits settles as before", async () => {
 		const { result, metrics } = await run(() => [usage(5), OK]);
 		expect(result).toMatchObject({ outcome: "ok" });
-		const within = await limited({ tokens: 1000, timeout: 60_000 }, () => [
+		const within = await limited({ tokens: 1000, timeout: "60s" }, () => [
 			usage(5),
 			OK,
 		]);
@@ -406,7 +476,7 @@ describe("agent limits", () => {
 		const { host, requests } = stubHost(() => [hang]);
 		const { concert, recordPath } = await start(
 			host,
-			lone(host, { timeout: 60_000, tokens: 5 }),
+			lone(host, { timeout: "60s", tokens: 5 }),
 			configOf(toyTarget()),
 		);
 		while (!requests.length) await Bun.sleep(20);

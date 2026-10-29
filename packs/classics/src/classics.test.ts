@@ -10,12 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CodeContext, Settled } from "@maestro/sdk";
 import { pack } from "../../../scripts/pack";
-import { BASE, rolesOn, setup } from "../acceptance/setup";
+import { BASE, PROFILES, profilesOn, setup } from "../acceptance/setup";
 import { dossierOf, traceOf } from "./code";
 import { EXAMPLE_REQUEST } from "./repair";
 
 const MAESTRO = join(import.meta.dir, "../../../packages/cli/src/maestro.ts");
-const ROLE = { harness: "pi", model: "none" };
+const RUNTIME = { harness: "pi", model: "none" };
 const REVIEW = [
 	"classics.panel_review",
 	"--request",
@@ -56,11 +56,11 @@ async function maestro(...args: string[]) {
 
 beforeAll(async () => {
 	root = mkdtempSync(join(tmpdir(), "classics-cli-"));
-	const { target } = await setup("t1", root, ROLE);
+	const { target } = await setup("t1", root, RUNTIME);
 	config = {
 		packs: [await pack(join(import.meta.dir, ".."), join(root, "pack"))],
 		target: { repo: target, base: BASE, checks: { test: "sh test.sh" } },
-		roles: rolesOn(ROLE),
+		profiles: profilesOn(RUNTIME),
 	};
 	await configure();
 });
@@ -75,10 +75,10 @@ describe("panel_review", () => {
 			instances: { exact: 23 },
 			counts: { "repo.agent": { exact: 7 } },
 		});
-		const roleOf = (id: string) =>
-			plan.ir.nodes.find((n: { id: string }) => n.id === id)?.config.role;
-		expect(roleOf("lenses/lens")).toEqual({ name: "reviewer" });
-		expect(roleOf("lenses/skeptic")).toEqual({ name: "skeptic" });
+		const profileOf = (id: string) =>
+			plan.ir.nodes.find((n: { id: string }) => n.id === id)?.config.profile;
+		expect(profileOf("lenses/lens")).toBe("classics/lens");
+		expect(profileOf("lenses/skeptic")).toBe("classics/skeptic");
 	});
 
 	test("--revs reviews target commits through one commits node; both or neither of --change and --revs is refused", async () => {
@@ -139,12 +139,35 @@ describe("panel_review", () => {
 });
 
 describe("build_then_repair", () => {
-	test("plans its repairs as a loop of 0 to maxRepairs steps", async () => {
+	test("plans its repairs as a loop of 0 to maxRepairs steps, each agent on the bundle's builder profile", async () => {
 		const { out } = await maestro("compose", ...BUILD, "--plan");
 		expect(out).toContain("repair_until_green/loop expands to 0 to 2");
 		expect(out).toContain(
 			"build_then_repair: up to 11 node instances, up to 3 repo.agent",
 		);
+		expect(out).toMatch(
+			/\nagents:\n {2}build +classics\/builder +pi +none +-\n/,
+		);
+		expect(out).toMatch(
+			/ {2}repair_until_green\/loop\/repair +classics\/builder +pi +none +-\n/,
+		);
+	});
+
+	test("performs on the stub harness under a --profile that sets the runtime of each seated profile by name", async () => {
+		await Bun.write(
+			join(root, ".maestro/profiles/stub.yaml"),
+			`profiles:\n${PROFILES.map((p) => `  ${p}: { runtime: !replace { harness: stub, model: none } }\n`).join("")}`,
+		);
+		const green = ["-c", 'target.checks=!replace {test: "true"}'];
+		const { err, code } = await maestro(
+			"perform",
+			...BUILD,
+			...green,
+			"--profile",
+			"stub",
+		);
+		expect(code).toBe(0);
+		expect(err).toMatch(/^concert +\S+ +ok( |$)/m);
 	});
 
 	test("gives the repair agent the checks configured for repair_until_green", async () => {
@@ -197,7 +220,7 @@ describe("v_model", () => {
 		);
 	});
 
-	test("bounds every level by its own param, and runs lenses and skeptics on their roles", async () => {
+	test("bounds every level by its own param, and runs lenses and skeptics on their profiles", async () => {
 		const planned = await maestro("compose", ...BOUNDED, "--plan");
 		for (const line of [
 			"v_model: up to 56 node instances, up to 16 repo.agent",
@@ -215,8 +238,8 @@ describe("v_model", () => {
 		expect(plan.bounds.counts["repo.agent"]).toEqual({ upTo: 16 });
 		const node = (id: string) =>
 			plan.ir.nodes.find((n: { id: string }) => n.id === id);
-		expect(node("lenses/lens").config.role).toEqual({ name: "reviewer" });
-		expect(node("lenses/skeptic").config.role).toEqual({ name: "skeptic" });
+		expect(node("lenses/lens").config.profile).toBe("classics/lens");
+		expect(node("lenses/skeptic").config.profile).toBe("classics/skeptic");
 		expect(node("plan").literals.prompt).toContain("up to 3 approaches");
 		expect(
 			node("plan").config.out.design.schema.properties.approaches,
@@ -317,7 +340,7 @@ describe("dossierOf", () => {
 		expect(dossier).toContain("- R3, greet.sh:1: a third risk\n");
 	});
 
-	const FIX = ". Check the 'scout' role's harness and model";
+	const FIX = ". Check the runtime of profile 'classics/scout'";
 	test.each([
 		[
 			"each scout by its angle",

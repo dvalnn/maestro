@@ -281,12 +281,12 @@ describe("provenance", () => {
 
 test("the command-line values are the leaves a profile or -c set, a list whole, and no file's", () => {
 	const config = layered([
-		parse("roles: {a: {harness: h, model: m}}\nlist: [1]\nkeep: 1"),
-		parse("roles: {a: {harness: stub}}\nlist: [2, 3]", USER, "profile"),
-		parse("roles: {b: {model: z}}", USER, "flag"),
+		parse("tools: {a: {harness: h, model: m}}\nlist: [1]\nkeep: 1"),
+		parse("tools: {a: {harness: stub}}\nlist: [2, 3]", USER, "profile"),
+		parse("tools: {b: {model: z}}", USER, "flag"),
 	]);
 	expect(commandLineOf(config).values).toEqual({
-		roles: { a: { harness: "stub" }, b: { model: "z" } },
+		tools: { a: { harness: "stub" }, b: { model: "z" } },
 		list: [2, 3],
 	});
 });

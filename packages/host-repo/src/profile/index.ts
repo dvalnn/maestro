@@ -37,7 +37,7 @@ const CODE = "HOST.profile";
 
 const SEGMENT = irSchema.$defs.name.pattern.slice(1, -1);
 /** A bare name, or `<pack id>/<name>`, each segment a pack id. */
-const NAME = new RegExp(`^${SEGMENT}(?:/${SEGMENT})?$`);
+export const PROFILE_NAME = new RegExp(`^${SEGMENT}(?:/${SEGMENT})?$`);
 const OWNER_SEPARATOR = "/";
 
 /** The keys of a profile that hold file paths, relative to its directory in its file. `*` matches any one key. */
@@ -90,7 +90,7 @@ const fieldsSchema = (
 /** The schema of the `profiles` config namespace: each profile's fields by name, none required. */
 export const PROFILES_CONFIG: JsonSchema = {
 	type: "object",
-	propertyNames: { pattern: NAME.source },
+	propertyNames: { pattern: PROFILE_NAME.source },
 	additionalProperties: fieldsSchema(
 		[],
 		Object.fromEntries(RESERVED.map((k) => [k, {}])),
@@ -128,7 +128,7 @@ export type Profile = {
 };
 
 /** Whether `name` is a bare name or `<pack id>/<name>`. */
-export const isProfileName = (name: string) => NAME.test(name);
+export const isProfileName = (name: string) => PROFILE_NAME.test(name);
 
 /** Whether `dir` is a profile: a directory holding a `profile.yaml` file. */
 const isProfile = async (dir: string) =>
@@ -203,7 +203,12 @@ async function heldNames(roots: Roots): Promise<string[]> {
 	return [...new Set(all.flat())].filter(isProfileName).toSorted();
 }
 
-/** The fix for profile `name`, which no root holds: a name of `held` near it, else where to create it, else `otherwise`. */
+/**
+ * The fix for profile `name`, which no root holds, then `otherwise`. The first that applies:
+ * - a name of `held` near it;
+ * - for a pack's name, the pack to install or update;
+ * - where to create it.
+ */
 function missingFix(
 	name: string,
 	roots: Roots,
@@ -212,6 +217,11 @@ function missingFix(
 ) {
 	const near = closest(name, held);
 	if (near !== undefined) return `Did you mean '${near}'?`;
+	const [pack = "", own] = name.split(OWNER_SEPARATOR);
+	if (own !== undefined)
+		return Object.hasOwn(roots.packs, pack)
+			? `Update pack '${pack}' to a version with profile '${own}', or ${otherwise}`
+			: `Install pack '${pack}', or ${otherwise}`;
 	const [first] = candidates(name, roots);
 	return first === undefined
 		? otherwise

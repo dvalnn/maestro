@@ -1,0 +1,2 @@
+instructions: instructions.md
+limits: { timeout: 45m, tokens: 30000000 }
