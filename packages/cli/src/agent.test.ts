@@ -38,6 +38,10 @@ async function roster() {
 			"runtime: { harness: pi }\n",
 		),
 		write(
+			join(w.cwd, ".maestro/profiles/slow/profile.yaml"),
+			"runtime: { harness: pi }\nlimits: { timeout: soon }\n",
+		),
+		write(
 			join(w.env.XDG_CONFIG_HOME, "maestro/profiles/scout/profile.yaml"),
 			"runtime: { harness: pi, model: gpt }\n",
 		),
@@ -68,17 +72,22 @@ const TUNED = [
 ];
 
 describe("agent ls", () => {
-	test("lists each profile with its runtime and winning root, a pack shadow marked, a broken one with its error", async () => {
+	test("lists each profile with its runtime and winning root, a pack shadow marked, a broken row's other faults under it, the unset ones counted on stderr", async () => {
 		const w = await roster();
 		const listed = await w.call(["agent", "ls"]);
-		expect(listed).toMatchObject({ code: 0, err: "" });
+		expect(listed.err.split("\n")).toEqual([
+			"2 profiles have no harness or model",
+			"  Set them under profiles: in .maestro/config.yaml, or pass --preset",
+		]);
+		expect(listed.code).toBe(0);
 		expect(listed.out.split("\n")).toEqual([
 			"Profiles         harness  model   from",
 			"  broken         -        -       workspace",
-			"    profile broken: no model",
 			"  demo/builder   claude   sonnet  workspace  [shadows pack]",
 			"  demo/reviewer  stub     none    pack",
 			"  scout          pi       gpt     user",
+			"  slow           -        -       workspace",
+			"    limits.timeout 'soon' is not a duration",
 		]);
 	});
 
@@ -103,6 +112,11 @@ describe("agent ls", () => {
 			},
 			expect.objectContaining({ name: "demo/reviewer", root: "pack" }),
 			expect.objectContaining({ name: "scout", root: "user" }),
+			expect.objectContaining({
+				name: "slow",
+				error:
+					"profile slow: no model; profile slow: limits.timeout 'soon' is not a duration",
+			}),
 		]);
 		const empty = await (await world()).call(["agent", "ls"]);
 		expect(empty).toMatchObject({

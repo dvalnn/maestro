@@ -48,6 +48,7 @@ export {
 	readablePath,
 	resolveProfile,
 	sourceWords,
+	unsetMessage,
 	type ValueSource,
 } from "../profile/index";
 export { BASE_FILE, MESSAGE_FILE, patchFiles } from "./apply";

@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { compose } from "@maestro/core/compose";
-import { CORE_CONFIG } from "@maestro/core/config";
+import { CORE_CONFIG, valuesLayer } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
 import { openRecord } from "@maestro/core/perform";
 import { type Ir, indexGraph } from "@maestro/ir";
@@ -393,6 +393,52 @@ describe("compose", () => {
 			).toEqual(messages);
 		},
 	);
+
+	test("a context window refusal of a value -c set names its key once and ends with the flag, keeping its fix", async () => {
+		const { host } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "x",
+					kind: "agent",
+					config: agentOn(fresh, "shared"),
+					literals: { prompt: "go" },
+				},
+			],
+			"x",
+		);
+		const set = { profiles: { shared: { context: { at: "30%" } } } };
+		const base = configOf(toyTarget());
+		const composed = await compose({
+			ir,
+			config: {
+				...base,
+				layers: [
+					...base.layers,
+					valuesLayer(set, {
+						layer: "flag",
+						flag: "-c 'profiles.shared.context.at=30%'",
+						fix: "Set that key, or !delete it, with -c on the resume",
+					}),
+				],
+			},
+			roots: ROOTS,
+			core: CORE_CONFIG,
+			packs: {},
+			hosts: [host],
+			loadCode: noCode,
+			caps: {},
+		});
+		expect(
+			composed.ok ? [] : composed.diagnostics.map((d) => [d.message, d.hint]),
+		).toEqual([
+			[
+				"profiles.shared.context.at: no context window is known for other model 'none' (set by -c)",
+				"Set that key, or !delete it, with -c on the resume",
+			],
+		]);
+	});
 
 	profile("gone", "runtime: { harness: gone, model: none }\n");
 	profile("modelless", "runtime: { harness: stub }\n");

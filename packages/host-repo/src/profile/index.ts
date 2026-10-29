@@ -473,6 +473,10 @@ function reservedErrors(name: string, merged: Merged): Diagnostic[] {
 	});
 }
 
+/** The refusal message of profile `name` leaving required runtime field `field` unset. */
+export const unsetMessage = (name: string, field: "harness" | "model") =>
+	`profile ${name}: no ${field}`;
+
 /** The errors of `merged`, profile `name` with config layered over its file, as fields. */
 function fieldErrors(name: string, merged: Merged): Diagnostic[] {
 	const reserved = reservedErrors(name, merged);
@@ -489,7 +493,7 @@ function fieldErrors(name: string, merged: Merged): Diagnostic[] {
 		(f) =>
 			refusal(
 				undefined,
-				`profile ${name}: no ${f}`,
+				unsetMessage(name, f),
 				`Set ${PROFILES}.${name}.runtime.${f}`,
 			),
 	);

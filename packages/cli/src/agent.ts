@@ -23,6 +23,7 @@ import {
 	type SeatedAgent,
 	seatedAgents,
 	sourceWords,
+	unsetMessage,
 	windowOf,
 } from "@maestro/host-repo";
 import {
@@ -555,6 +556,8 @@ function showYaml(s: Inspection, places: Places): string {
 	return `${profile.toString(YAML_OPTIONS)}---\n${environment}`.trimEnd();
 }
 
+const FAULT_SEPARATOR = "; ";
+
 /** The row of profile `name`, which the roots of `setup` hold. */
 async function listedOf(name: string, setup: Setup): Promise<Listed[]> {
 	const found = await findProfile(name, setup.roots);
@@ -572,12 +575,33 @@ async function listedOf(name: string, setup: Setup): Promise<Listed[]> {
 		return [{ ...base, harness, model }];
 	} catch (error) {
 		if (!(error instanceof ConfigError)) throw error;
-		const message = error.diagnostics.map((d) => d.message).join("; ");
+		const message = error.diagnostics
+			.map((d) => d.message)
+			.join(FAULT_SEPARATOR);
 		return [{ ...base, error: message }];
 	}
 }
 
-/** The roster as a table: name, harness, model, the winning root and a pack shadow, a broken one's error under it. */
+/**
+ * The faults in a row's error, each without the `profile <name>: ` lead the row already shows: whether any is an unset
+ * harness or model, and the rest.
+ */
+function faultsOf({ name, error }: Listed) {
+	const lead = `profile ${name}: `;
+	const unsetFaults = [
+		unsetMessage(name, "harness"),
+		unsetMessage(name, "model"),
+	];
+	const all = error?.split(FAULT_SEPARATOR) ?? [];
+	return {
+		unset: all.some((m) => unsetFaults.includes(m)),
+		other: all
+			.filter((m) => !unsetFaults.includes(m))
+			.map((m) => (m.startsWith(lead) ? m.slice(lead.length) : m)),
+	};
+}
+
+/** The roster as a table: name, harness, model, the winning root and a pack shadow, other faults under a broken row. */
 function lsText(listed: readonly Listed[], color: boolean): string {
 	const header = ["Profiles", "harness", "model", "from"].map((h) =>
 		paint("bold", h, color),
@@ -593,12 +617,25 @@ function lsText(listed: readonly Listed[], color: boolean): string {
 	return [
 		top,
 		...lines.flatMap((line, i) => {
-			const error = listed[i]?.error;
-			return error === undefined
-				? [line]
-				: [line, `${INDENT}${INDENT}${paint("red", error, color)}`];
+			const other = listed[i] ? faultsOf(listed[i]).other : [];
+			return other.length
+				? [
+						line,
+						`${INDENT}${INDENT}${paint("red", other.join(FAULT_SEPARATOR), color)}`,
+					]
+				: [line];
 		}),
 	].join("\n");
+}
+
+/** The footer counting profiles with no harness or model, or none when every profile has both. */
+function unsetFooter(listed: readonly Listed[], color: boolean): string {
+	const count = listed.filter((l) => faultsOf(l).unset).length;
+	if (count === 0) return "";
+	const what = `${count} ${count === 1 ? "profile has" : "profiles have"} no harness or model`;
+	const fix =
+		"Set them under profiles: in .maestro/config.yaml, or pass --preset";
+	return `${what}\n${INDENT}${paint("dim", fix, color)}`;
 }
 
 async function ls(setup: Setup, deps: Deps, values: Values): Promise<number> {
@@ -607,9 +644,12 @@ async function ls(setup: Setup, deps: Deps, values: Values): Promise<number> {
 		await Promise.all(held.map((n) => listedOf(n, setup)))
 	).flat();
 	if (isSet(values, "json")) deps.stdout(jsonOf({ profiles: listed }));
-	else if (listed.length)
-		deps.stdout(lsText(listed, colorOf(deps, values).out));
-	else
+	else if (listed.length) {
+		const color = colorOf(deps, values);
+		deps.stdout(lsText(listed, color.out));
+		const footer = unsetFooter(listed, color.err);
+		if (footer) deps.stderr(footer);
+	} else
 		deps.stderr(
 			"no profile in any profile root\nCreate .maestro/profiles/<name>/profile.yaml, or install a pack that ships one",
 		);
