@@ -100,7 +100,10 @@ function stubEnvironment(text: string | undefined): StubStep {
 
 /** The shipped harnesses with a clean baseline, each with the agent environment it launches with. */
 const baselined = (env: Record<string, string | undefined>) => [
-	{ harness: piHarness(), declared: piDeclared },
+	{
+		harness: piHarness({ agentDir: env.PI_CODING_AGENT_DIR || undefined }),
+		declared: piDeclared,
+	},
 	{
 		harness: claudeHarness({ token: env.CLAUDE_CODE_OAUTH_TOKEN }),
 		declared: claudeDeclared,

@@ -497,7 +497,7 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   the profile, the field and the harness:
   - a percentage on a harness that reports no window per model call, as neither claude nor pi does;
   - a capped `compact` on a harness that reports no compaction;
-  - `compact` on pi, whose compaction point is a setting of an agent dir maestro does not own; the fix is `handoff`;
+  - `compact` on pi, whose compaction point is a setting of its agent dir, which maestro owns but writes no settings into; the fix is `handoff`;
   - a `compact` `at` outside claude's compaction window of 100000 to 1000000 tokens.
 
   Each model call's prompt size, input and cache read and write together, reaches the record as a `context` progress
@@ -619,7 +619,7 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   the initial port targets Linux x64 only (D-25).
 - Sandbox policy is host config. A node can add read-only binds. Config or a check node may name writable binds; an
   agent node never does (ADR 0011).
-- An agent can reach its own harness's credentials, such as Claude's token and pi's login directory.
+- An agent can reach its own harness's credentials, such as Claude's token and pi's `auth.json`.
 - Prepare runs in a check's sandbox. No sandbox can write a lane's git directory (ADR 0005).
 
 **Harness adapters**
@@ -640,6 +640,12 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - The baseline names an agent's tools: claude launches with `--tools Bash,Read,Write,Edit` and pi with
   `--tools read,bash,edit,write`, so a tool a harness release adds to its defaults never reaches an agent. A probe
   faults each tool loaded beyond that list and each one in it not loaded.
+- pi runs on an agent dir maestro owns, `sessions/<id>/harness/agent`, through `PI_CODING_AGENT_DIR`. It holds only
+  `auth.json`, a link to the user's (`$PI_CODING_AGENT_DIR/auth.json` when set, else `~/.pi/agent/auth.json`), bound
+  read-write in the sandbox so a token refresh writes through. Nothing else of the user's pi dir reaches an agent: no
+  `SYSTEM.md`, `APPEND_SYSTEM.md`, `settings.json` or `models.json`. Without a user `auth.json` pi starts and reports no
+  key. Each agent's owned dir holds its own `auth.json.lock`, so concurrent agents and the user's pi do not lock each
+  other when refreshing a token; a lost write means logging in again.
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
 **Host validation rules**

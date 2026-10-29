@@ -1,12 +1,14 @@
 import {
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
 	baselineOf,
 	type ContextSupport,
@@ -46,6 +48,8 @@ const THINKING_LEVELS = [
 	"max",
 ];
 const AUTH_FILE = "auth.json";
+/** The agent dir maestro owns, under the session dir, so nothing of the user's pi dir but `auth.json` reaches pi. */
+const SESSION_AGENT = "agent";
 /** The fields of a provider entry in pi's `auth.json` that hold a credential: an API key, an OAuth token pair. */
 const CREDENTIAL_FIELDS = ["key", "access", "refresh"];
 const FAILED_STOPS = new Set(["error", "aborted"]);
@@ -61,7 +65,7 @@ const IGNORED = new Set([
 	"tool_execution_update",
 ]);
 
-/** pi's stream reports no window, and its compaction point is a setting of an agent dir maestro does not own. */
+/** pi's stream reports no window, and maestro writes no compaction point into the agent dir it owns. */
 const CONTEXT_SUPPORT: ContextSupport = {
 	window: false,
 	compactions: true,
@@ -86,7 +90,7 @@ const USAGE_METRICS = {
 export type PiOptions = {
 	/** The pi executable. Defaults to `pi` on PATH, looked through a mise shim. */
 	bin?: string;
-	/** pi's config dir, bound read-write. Defaults to `~/.pi/agent`. */
+	/** The user's pi config dir, of which pi reads and writes `auth.json` alone. Defaults to `~/.pi/agent`. */
 	agentDir?: string;
 };
 
@@ -310,12 +314,35 @@ function credentials(agentDir: string): string[] {
 		.filter((v): v is string => typeof v === "string" && v !== "");
 }
 
+/**
+ * Rebuilds `<owned>` from nothing, so a link the sandboxed agent planted in its place is unlinked, not followed, and
+ * makes `<owned>/auth.json` a link to `auth`, or leaves it absent when `auth` is missing. Returns whether it linked.
+ * pi writes `auth.json` in place, so a refresh writes through the link.
+ */
+function ownedDir(owned: string, auth: string): boolean {
+	rmSync(owned, { recursive: true, force: true });
+	mkdirSync(owned);
+	if (!existsSync(auth)) return false;
+	symlinkSync(auth, join(owned, AUTH_FILE));
+	return true;
+}
+
+/** `path` with a leading `~` or `~/` taken as the home dir, as pi does, made absolute. */
+function expandHome(path: string): string {
+	const home = homedir();
+	if (path === "~") return home;
+	return resolve(path.startsWith("~/") ? join(home, path.slice(2)) : path);
+}
+
 /** pi, run as a sandboxed subprocess (ADR 0001). */
 export function piHarness(
 	options: PiOptions = {},
 	backend?: SandboxBackend,
 ): Harness {
-	const agentDir = options.agentDir ?? join(homedir(), ".pi", "agent");
+	const agentDir = expandHome(
+		options.agentDir ?? join(homedir(), ".pi", "agent"),
+	);
+	const auth = join(agentDir, AUTH_FILE);
 	let bin: string | undefined;
 	let reporter: string | undefined;
 	const adapter: SubprocessAdapter = {
@@ -327,16 +354,18 @@ export function piHarness(
 				);
 			bin ??= resolveBin(PI_BIN, options.bin);
 			reporter ??= stageReporter();
+			const owned = join(req.session.dir, SESSION_AGENT);
+			const linked = ownedDir(owned, auth);
 			return {
 				argv: piArgv(bin, req),
 				stdin: req.prompt,
-				env: { [AGENT_DIR_VAR]: agentDir },
-				masked: credentials(agentDir),
+				env: { [AGENT_DIR_VAR]: join(SESSION_DIR, SESSION_AGENT) },
+				masked: credentials(owned),
 				readOnly: [
 					{ src: dirname(bin) },
 					{ src: reporter, dst: REPORTER_PATH },
 				],
-				writable: [{ src: agentDir }],
+				writable: linked ? [{ src: auth }] : [],
 			};
 		},
 		parser,

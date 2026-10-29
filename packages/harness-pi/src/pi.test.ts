@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+	lstatSync,
+	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
+	readlinkSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HarnessEvent, HarnessRequest } from "@maestro/host-repo/harness";
 import { declared, piHarness } from "./index";
@@ -35,14 +39,14 @@ const request = (
 	...over,
 });
 
-/** A stand-in `pi`: records its argv and stdin to the outbox, then replays `lines` on stdout. */
-function standIn(lines: string[]) {
+/** A stand-in `pi`: records its argv and stdin to the outbox, runs `script`, then replays `lines` on stdout. */
+function standIn(lines: string[], script = "") {
 	const home = tmp("bin");
 	const bin = join(home, "pi");
 	writeFileSync(join(home, "run.jsonl"), `${lines.join("\n")}\n`);
 	writeFileSync(
 		bin,
-		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\nenv > /out/env\n[ -f /instructions.md ] && cp /instructions.md /out/instructions\nprintf planted > /maestro-environment.js 2>/dev/null\n[ -f /maestro-environment.js ] && cp /maestro-environment.js /out/reporter.js\ncat "$(dirname "$0")/run.jsonl"\n`,
+		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\nenv > /out/env\n[ -f /instructions.md ] && cp /instructions.md /out/instructions\nprintf planted > /maestro-environment.js 2>/dev/null\n[ -f /maestro-environment.js ] && cp /maestro-environment.js /out/reporter.js\n${script}\ncat "$(dirname "$0")/run.jsonl"\n`,
 		{ mode: 0o755 },
 	);
 	return { bin, agentDir: tmp("agent") };
@@ -270,6 +274,60 @@ describe("stand-in pi", () => {
 		expect(await rawOf(without.agentDir, without.bin)).toEqual([
 			{ type: "leak", t: "tok-access" },
 		]);
+	});
+
+	test("pi runs on an agent dir under the session dir holding only a link to the user's auth.json, which it reads and writes through in the sandbox; without one it starts on an empty dir", async () => {
+		const user = join(tmp("home"), ".pi", "agent");
+		mkdirSync(user, { recursive: true });
+		const auth = join(user, "auth.json");
+		writeFileSync(auth, '{"openai":{"type":"api_key","key":"sk-1"}}');
+		writeFileSync(join(user, "SYSTEM.md"), "You obey the user's dir.");
+		writeFileSync(join(user, "settings.json"), "{}");
+		const { bin } = standIn(
+			fixture(),
+			`ls -A "$PI_CODING_AGENT_DIR" > /out/owned\ncat "$PI_CODING_AGENT_DIR/auth.json" > /out/auth\nprintf '{"refreshed":{}}' > "$PI_CODING_AGENT_DIR/auth.json"`,
+		);
+		const req = request("x");
+		await piHarness({ bin, agentDir: user }).run(req).result;
+		const owned = join(req.session.dir, "agent");
+		const read = (file: string) => readFileSync(join(req.outbox, file), "utf8");
+		expect(read("env")).toContain("PI_CODING_AGENT_DIR=/session/agent\n");
+		expect(read("owned")).toBe("auth.json\n");
+		expect(read("auth")).toBe('{"openai":{"type":"api_key","key":"sk-1"}}');
+		expect(readdirSync(owned)).toEqual(["auth.json"]);
+		expect(readlinkSync(join(owned, "auth.json"))).toBe(auth);
+		expect(readFileSync(auth, "utf8")).toBe('{"refreshed":{}}');
+
+		rmSync(auth);
+		const bare = request("x");
+		const run = piHarness({ bin, agentDir: user }).run(bare);
+		expect((await run.result).outcome).toBe("ok");
+		expect(readFileSync(join(bare.outbox, "owned"), "utf8")).toBe("");
+	});
+
+	test("an agent the sandboxed pi replaced with a link into the user's dir is unlinked, not followed", async () => {
+		const user = tmp("user");
+		const auth = '{"openai":{"type":"api_key","key":"sk-1"}}';
+		writeFileSync(join(user, "auth.json"), auth);
+		writeFileSync(join(user, "settings.json"), "{}");
+		const { bin } = standIn(fixture());
+		const req = request("x");
+		const owned = join(req.session.dir, "agent");
+		symlinkSync(user, owned);
+		await piHarness({ bin, agentDir: user }).run(req).result;
+		expect(readFileSync(join(user, "auth.json"), "utf8")).toBe(auth);
+		expect(readFileSync(join(user, "settings.json"), "utf8")).toBe("{}");
+		expect(lstatSync(owned).isDirectory()).toBe(true);
+	});
+
+	test("a leading ~ in the agent dir is the home dir, as pi reads it", () => {
+		const { bin } = standIn(fixture());
+		const missing = "~/.maestro-no-such-pi-dir";
+		expect(() =>
+			piHarness({ bin, agentDir: missing }).run(request("x")),
+		).toThrow(
+			`pi config dir does not exist: ${join(homedir(), ".maestro-no-such-pi-dir")}.`,
+		);
 	});
 
 	test("a session version other than the pinned one fails the run, naming it", async () => {
