@@ -220,6 +220,13 @@ function limitsLines(s: Inspection, look: Look): string[] {
 	return rows.length ? [paint("bold", "Limits", look.color), ...rows] : [];
 }
 
+function contextLines(s: Inspection, look: Look): string[] {
+	const rows = Object.entries(s.context ?? {}).map(([key, value]) =>
+		row(key, sourced(String(value), wordsAt(s, `context.${key}`), look), look),
+	);
+	return rows.length ? [paint("bold", "Context", look.color), ...rows] : [];
+}
+
 const names = (list: readonly string[]) =>
 	list.length ? list.join(" ") : "none";
 
@@ -263,6 +270,7 @@ async function showText(s: Inspection, look: Look): Promise<string> {
 		await attachmentLines(s, look),
 		readOnlyLines(s, look),
 		limitsLines(s, look),
+		contextLines(s, look),
 		environmentLines(s, look),
 	];
 	return sections
@@ -273,7 +281,7 @@ async function showText(s: Inspection, look: Look): Promise<string> {
 
 /** The fields of `s` as its `profile.yaml` would hold them, paths read as `readable`, empty fields left out. */
 function profileValues(s: Inspection, places: Places): Record<string, unknown> {
-	const { runtime, instructions, attachments, readOnly, limits } = s;
+	const { runtime, instructions, attachments, readOnly, limits, context } = s;
 	const at = (path: string) => readable(path, s.dir, places);
 	const entries = Object.entries(attachments);
 	return {
@@ -286,6 +294,7 @@ function profileValues(s: Inspection, places: Places): Record<string, unknown> {
 		}),
 		...(readOnly.length && { readOnly }),
 		...(Object.keys(limits).length && { limits }),
+		...(context !== undefined && { context }),
 	};
 }
 

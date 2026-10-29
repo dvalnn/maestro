@@ -641,21 +641,21 @@ function profileProblems(
 	setup: RepoSetup,
 ): Diagnostic[] {
 	const { name, fields } = profile;
-	const { runtime } = fields;
-	const key = (field: string) => `${PROFILES}.${name}.runtime.${field}`;
-	const at = (field: string) => sourceOf(profile, ["runtime", field]);
+	const { runtime, context } = fields;
+	const key = (field: string) => `${PROFILES}.${name}.${field}`;
+	const at = (field: string) => sourceOf(profile, field.split("."));
 	const harness = harnesses.find((h) => h.name === runtime.harness);
 	if (!harness)
 		return [
 			configDiagnostic(
 				"HOST.harness",
-				at("harness"),
+				at("runtime.harness"),
 				`profile ${name} runs on harness '${runtime.harness}', which is not loaded`,
-				`Set '${key("harness")}' to one of: ${listed(harnesses.map((h) => h.name))}`,
+				`Set '${key("runtime.harness")}' to one of: ${listed(harnesses.map((h) => h.name))}`,
 			),
 		];
 	return [
-		...(harness.runtimeProblems?.(runtime) ?? []).map((p) =>
+		...(harness.runtimeProblems?.(runtime, context) ?? []).map((p) =>
 			configDiagnostic(
 				"HOST.runtime",
 				at(p.field),

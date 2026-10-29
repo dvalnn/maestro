@@ -106,10 +106,24 @@ test.each([
 		"no lane, check or attachment",
 		{},
 		[`# Your run\n\n## Working copy\n\n${SHELL}\n\n## Reply\n\n`],
-		["Your working copy is", "## Checks", "## Attachments", "write every one"],
+		[
+			"Your working copy is",
+			"## Checks",
+			"## Attachments",
+			"## Context",
+			"write every one",
+		],
+	],
+	[
+		"a handoff policy of three sessions",
+		{ sessions: 3 },
+		[
+			`${SHELL}\n\n## Context\n\nYour context is bounded. When it fills, this session stops, and in one more turn you write a handoff note for a fresh session that continues your task in this working copy. Work in steps that leave the working copy coherent, so a successor can pick up from it. This task allows up to 3 sessions.\n\n## Reply\n\n`,
+		],
+		["## Checks", "## Attachments"],
 	],
 ] as [string, Partial<Run>, string[], string[]][])(
-	"%s leaves out what it has nothing to say of",
+	"with %s, the frame holds only the sections it has something to say in",
 	(_, given, present, absent) => {
 		const text = frame({
 			checks: [],

@@ -1,5 +1,5 @@
 import { type JsonSchema, validator, violations } from "@maestro/ir";
-import { OUTBOX, type Output } from "../harness/index";
+import { OUTBOX, type Output, SESSION_DIR } from "../harness/index";
 import { attachmentPath } from "../profile/index";
 import { PREVIOUS } from "./config";
 
@@ -120,6 +120,8 @@ export type Run = {
 	/** The files it writes in the outbox. */
 	out: Output[];
 	kind: ReplyKind;
+	/** The most sessions a handoff policy allows it; absent without one. */
+	sessions?: number;
 };
 
 const LANE_TEXT = {
@@ -157,6 +159,13 @@ function attachments({ attachments }: Run) {
 	);
 }
 
+const contextSection = ({ sessions }: Run) =>
+	sessions === undefined
+		? []
+		: section("Context", [
+				`Your context is bounded. When it fills, this session stops, and in one more turn you write a handoff note for a fresh session that continues your task in this working copy. Work in steps that leave the working copy coherent, so a successor can pick up from it. This task allows up to ${sessions} sessions.`,
+			]);
+
 const fileLine = (o: Output) =>
 	o.format === "json"
 		? `- \`${OUTBOX}/${o.file}\`: JSON matching this JSON Schema:\n  \`\`\`json\n  ${JSON.stringify(o.schema)}\n  \`\`\``
@@ -172,7 +181,7 @@ export function reply({ out, kind }: Run): string[] {
 
 /**
  * The host's frame of an agent's run, appended to its profile's instructions: `# Your run`, then its working copy,
- * checks, attachments and reply, each section left out when it has nothing to say.
+ * checks, attachments, context and reply, each section left out when it has nothing to say.
  */
 export const frame = (run: Run): string =>
 	[
@@ -180,6 +189,7 @@ export const frame = (run: Run): string =>
 		...workingCopy(run.lane),
 		...checks(run),
 		...attachments(run),
+		...contextSection(run),
 		...reply(run),
 	].join("\n\n");
 
@@ -191,6 +201,32 @@ export const correction = (problem: string, kind: ReplyKind) =>
 
 export const CUT_OFF =
 	"Your last turn was cut off by a provider error. Carry on from where you were.";
+
+/** The file in a session's directory that its handoff turn writes the note to. */
+export const HANDOFF_NOTE = "handoff.md";
+
+/** The message of a session's last turn, once its context passed its policy's `at`. */
+export const HANDOFF_TURN = `Your context budget is spent, so this session ends after this turn. Write a handoff note to ${SESSION_DIR}/${HANDOFF_NOTE} for the session that continues your task in this working copy. It reads your note as claims and checks them against the working copy, so state:
+- what is done, and how you verified it;
+- what remains, in the order you would do it;
+- what you tried that failed, and why;
+- what you learnt that the code does not show.
+Change no other file. Your reply is not read.`;
+
+/** The user message that opens session `index` of up to `sessions` after a handoff: the outgoing `note`, then `task`. */
+export const handoffMessage = (
+	index: number,
+	sessions: number,
+	note: string,
+	task: string,
+) =>
+	[
+		"# Handoff",
+		`You are session ${index} of up to ${sessions} on this task. The previous session ran out of context and left the note below. Its claims are unverified, and your working copy holds its uncommitted changes: check them with \`git status\` and \`git diff\` before you build on them.`,
+		`<handoff-note>\n${note.trim()}\n</handoff-note>`,
+		"# Task",
+		task,
+	].join("\n\n");
 
 const FENCED = /^```(?:json)?\n([\s\S]*)\n```$/;
 

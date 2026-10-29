@@ -328,11 +328,13 @@ agent finishes or is blocked (architecture 12). A call takes `task`, `lane`, the
 (an agent's `out.session`, which it continues), `attachments` (each `{ artifact, hint }`), outputs and checks: outputs
 add with the call winning on a name, checks are a union, and the result's outputs are typed by both. An attachment named
 `prompt`, `lane` or `session`, or an output named `lane`, `report`, `staged` or `session`, is a build error: the host
-refuses the same names, and an attachment named `previous` too. The runtime, instructions, limits and read-only binds
-belong to the profile and to config, so a call sets none of them; an agent that needs another budget is another seat on
-another profile. A profile's `limits: { timeout?, tokens? }` bound the agent's whole run, none by default: `timeout` is
-a duration or whole milliseconds of wall clock, `tokens` a whole number of at least 1. A bad value is a pre-flight error
-naming the profile and the field; passing a limit ends the agent `failed` (architecture 12).
+refuses the same names, and an attachment named `previous` too. The runtime, instructions, limits, context policy and
+read-only binds belong to the profile and to config, so a call sets none of them; an agent that needs another budget is
+another seat on another profile. A profile's `limits: { timeout?, tokens? }` bound the agent's whole run, none by
+default: `timeout` is a duration or whole milliseconds of wall clock, `tokens` a whole number of at least 1. A bad value
+is a pre-flight error naming the profile and the field; passing a limit ends the agent `failed` (architecture 12). A
+profile's `context: { strategy, at, max? }` resets the agent's context as it fills, by a handoff to a fresh session or
+by its harness's compaction (architecture 12); its `out.session` is then the latest session.
 
 A check with no `timeout` has none: it runs until it ends or the concert is killed.
 

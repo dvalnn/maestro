@@ -93,13 +93,13 @@ From `@maestro/host-repo-sdk`:
 
 A seat's `profile` is a bare name or `<pack>/<name>`, its own name by default; the profile is a directory in the
 workspace's `.maestro/profiles/` or the user's profiles, holding the runtime (harness, model, thinking), the
-instructions, the limits and the read-only binds. A seat also takes `verdict` (`true` for an agent that rules on work,
-`ok` or `rejected`), `out` (declared outputs) and `checks` (names from `target.checks` the agent may run with its
-`check <name>` command). A call takes `task`, `lane` and the common options, and may add `session` (an agent's
-`out.session`: it continues that session in place, told what changed since its last turn), `attachments`
+instructions, the limits, the context policy and the read-only binds. A seat also takes `verdict` (`true` for an agent
+that rules on work, `ok` or `rejected`), `out` (declared outputs) and `checks` (names from `target.checks` the agent may
+run with its `check <name>` command). A call takes `task`, `lane` and the common options, and may add `session` (an
+agent's `out.session`: it continues that session in place, told what changed since its last turn), `attachments`
 (`{ name: { artifact, hint } }`, each mounted read-only at `/in/<name>`, `hint` saying when to read it), outputs and
-checks. A call sets no runtime, instructions or limits; an agent that needs another budget is another seat on another
-profile.
+checks. A call sets no runtime, instructions, limits or context; an agent that needs another budget is another seat on
+another profile.
 
 An agent ending `ok` must write every declared file, valid, or the instance fails. Only a verdict agent rejects, and one
 that rejects without its declared files ends `rejected` with no outputs. Any agent may report itself blocked: it ends

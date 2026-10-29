@@ -6,6 +6,8 @@ import {
 	subprocessHarness,
 } from "./subprocess";
 import {
+	type ContextSupport,
+	contextProblems,
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,
@@ -79,10 +81,25 @@ function eventOf(e: JsonObject): HarnessEvent {
 					[METRIC.tokensOut]: Number(e.tokens_out ?? 0),
 				},
 			};
+		case "context":
+			return {
+				kind: "context",
+				used: Number(e.used),
+				...(e.window !== undefined && { window: Number(e.window) }),
+			};
+		case "compaction":
+			return { kind: "compaction" };
 		default:
 			return { kind: "raw", data: e };
 	}
 }
+
+/** The stub honours every context policy: its script steps fake the window and compactions. */
+const CONTEXT_SUPPORT: ContextSupport = {
+	window: true,
+	compactions: true,
+	compact: true,
+};
 
 /**
  * Replays `steps`, or the steps it gives for a request, inside the real sandbox, then emits `{"type":"settled"}`. The
@@ -104,7 +121,11 @@ export function stubHarness(
 		}),
 		parser: () => parse,
 	};
-	return subprocessHarness(adapter, backend ?? bubblewrap);
+	return {
+		...subprocessHarness(adapter, backend ?? bubblewrap),
+		runtimeProblems: (_, context) =>
+			contextProblems(adapter.name, CONTEXT_SUPPORT, context),
+	};
 }
 
 const minimum = (bound: unknown) => (typeof bound === "number" ? bound : 0);

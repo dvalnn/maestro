@@ -338,6 +338,14 @@ describe("compose", () => {
 	profile("modelless", "runtime: { harness: stub }\n");
 	profile("deep", "runtime: { harness: other, model: none, thinking: max }\n");
 	profile(
+		"shared",
+		'runtime: { harness: other, model: none }\ncontext: { strategy: handoff, at: "25%", max: 2 }\n',
+	);
+	profile(
+		"capped",
+		"runtime: { harness: other, model: none }\ncontext: { strategy: compact, at: 150000, max: 3 }\n",
+	);
+	profile(
 		"bound",
 		"runtime: { harness: stub, model: none }\nreadOnly: [/etc]\n",
 	);
@@ -385,6 +393,24 @@ describe("compose", () => {
 			toyTarget,
 			{},
 			"profiles.deep.runtime.thinking: other has no thinking level 'max'",
+		],
+		[
+			"a context trigger in percent on a harness that reports no window",
+			agentOn(fresh, "shared"),
+			"HOST.runtime",
+			"Write at in tokens, such as 50000",
+			toyTarget,
+			{},
+			"profiles.shared.context.at: other reports no context window, so it cannot take at '25%'",
+		],
+		[
+			"a capped compaction on a harness that reports none",
+			agentOn(fresh, "capped"),
+			"HOST.runtime",
+			"Drop context.max, or use strategy handoff",
+			toyTarget,
+			{},
+			"profiles.capped.context.max: other reports no compaction, so it cannot be capped",
 		],
 		[
 			"a profile whose file binds host paths",

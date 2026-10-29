@@ -268,16 +268,16 @@ same order.
 A concert's record keeps its `--preset` and each `-c` as typed, and `ls <concert> --json` shows them as `preset` and
 `config`. Keep secrets out of `-c`: set them in `$XDG_CONFIG_HOME/maestro/.env`.
 
-| Key           | Meaning                                                                                                |
-| ------------- | ------------------------------------------------------------------------------------------------------ |
-| `packs`       | Directories of installed packs, beside each directory under `$XDG_DATA_HOME/maestro/packs/`.           |
-| `concurrency` | Most node instances at once in one concert. Defaults to the CPU count.                                 |
-| `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                   |
-| `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`.    |
-| `caps`        | Caps by name: `instances` caps a concert's node instances, any other name the total of a host count.   |
-| `target`      | The repo host's `repo`, default `base`, `checks`, and per checked-out copy `prepare` and `sparse`.     |
-| `profiles`    | The repo host's profiles by name: `runtime`, `limits`, `readOnly`, `attachments`, over `profile.yaml`. |
-| `sandbox`     | The repo host's `readOnly` paths, bound into every agent, check and prepare.                           |
+| Key           | Meaning                                                                                                           |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `packs`       | Directories of installed packs, beside each directory under `$XDG_DATA_HOME/maestro/packs/`.                      |
+| `concurrency` | Most node instances at once in one concert. Defaults to the CPU count.                                            |
+| `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                              |
+| `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`.               |
+| `caps`        | Caps by name: `instances` caps a concert's node instances, any other name the total of a host count.              |
+| `target`      | The repo host's `repo`, default `base`, `checks`, and per checked-out copy `prepare` and `sparse`.                |
+| `profiles`    | The repo host's profiles by name: `runtime`, `limits`, `context`, `readOnly`, `attachments`, over `profile.yaml`. |
+| `sandbox`     | The repo host's `readOnly` paths, bound into every agent, check and prepare.                                      |
 
 A relative `packs`, `dataRoot`, `target.repo` or other path key is relative to the workspace root, the directory that
 holds `.maestro/`, in the workspace file, a workspace preset and a `-c`, and to the user config directory in the user

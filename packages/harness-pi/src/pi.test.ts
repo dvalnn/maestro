@@ -54,10 +54,17 @@ async function drain(events: AsyncIterable<HarnessEvent>) {
 }
 
 describe("stand-in pi", () => {
-	test("the recorded 1.3.0 run is read into tools, usage and a reply", async () => {
+	test("the recorded 1.3.0 run is read into tools, usage, prompt sizes and a reply", async () => {
 		const req = request("write hello.txt");
 		const unknown = '{"type":"future_event","extra":{"a":1}}';
-		const run = piHarness(standIn([...fixture(), unknown])).run(req);
+		const compactions = [
+			'{"type":"compaction_end","aborted":false}',
+			'{"type":"compaction_end","aborted":true}',
+			'{"type":"compaction_end","aborted":false,"errorMessage":"summary failed"}',
+		];
+		const run = piHarness(standIn([...fixture(), ...compactions, unknown])).run(
+			req,
+		);
 		const seen = await drain(run.events);
 		const result = await run.result;
 
@@ -87,6 +94,13 @@ describe("stand-in pi", () => {
 		]);
 		expect(JSON.stringify(results)).not.toContain("Successfully");
 		expect(seen.filter((e) => e.kind === "thinking")).toEqual([]);
+		expect(
+			seen.filter((e) => e.kind === "context" || e.kind === "compaction"),
+		).toEqual([
+			{ kind: "context", used: 1172 },
+			{ kind: "context", used: 1237 },
+			{ kind: "compaction" },
+		]);
 		expect(seen.at(-1)).toEqual({
 			kind: "raw",
 			data: { type: "future_event", extra: { a: 1 } },
@@ -289,7 +303,7 @@ describe("stand-in pi", () => {
 	});
 });
 
-test("a runtime's thinking must be one of pi's levels, and its model is not checked", () => {
+test("a runtime's thinking must be one of pi's levels, its model is not checked, and its context policy is a handoff in tokens", () => {
 	const harness = piHarness({ agentDir: tmpdir() });
 	const runtime = { harness: "pi", model: "any/model" };
 	expect(harness.runtimeProblems?.({ ...runtime, thinking: "off" })).toEqual(
@@ -297,9 +311,39 @@ test("a runtime's thinking must be one of pi's levels, and its model is not chec
 	);
 	expect(harness.runtimeProblems?.({ ...runtime, thinking: "turbo" })).toEqual([
 		{
-			field: "thinking",
+			field: "runtime.thinking",
 			reason: "pi has no thinking level 'turbo'",
 			fix: "Use one of: off, minimal, low, medium, high, xhigh, max",
+		},
+	]);
+	const tokens = { tokens: 50_000 };
+	expect(
+		harness.runtimeProblems?.(runtime, {
+			strategy: "handoff",
+			at: tokens,
+			max: 2,
+		}),
+	).toEqual([]);
+	expect(
+		harness.runtimeProblems?.(runtime, {
+			strategy: "handoff",
+			at: { percent: 25 },
+			max: 2,
+		}),
+	).toEqual([
+		{
+			field: "context.at",
+			reason: "pi reports no context window, so it cannot take at '25%'",
+			fix: "Write at in tokens, such as 50000",
+		},
+	]);
+	expect(
+		harness.runtimeProblems?.(runtime, { strategy: "compact", at: tokens }),
+	).toEqual([
+		{
+			field: "context.strategy",
+			reason: "pi takes no compaction point from maestro",
+			fix: "Use strategy handoff",
 		},
 	]);
 });

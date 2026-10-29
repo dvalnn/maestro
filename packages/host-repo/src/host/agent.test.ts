@@ -660,3 +660,271 @@ describe("agent limits", () => {
 		record.close();
 	});
 });
+
+describe("agent context", () => {
+	const RUNTIME = "runtime: { harness: stub, model: none }\n";
+	profile(
+		"handoff-tokens",
+		`${RUNTIME}context: { strategy: handoff, at: 100, max: 1 }\n`,
+	);
+	profile(
+		"handoff-percent",
+		`${RUNTIME}context: { strategy: handoff, at: "25%", max: 1 }\n`,
+	);
+	profile(
+		"handoff-limited",
+		`${RUNTIME}context: { strategy: handoff, at: 100, max: 1 }\nlimits: { tokens: 50 }\n`,
+	);
+	profile(
+		"compact-capped",
+		`${RUNTIME}context: { strategy: compact, at: 100, max: 1 }\n`,
+	);
+	const full = (used = 100, window?: number): StubStep => ({
+		emit: { type: "context", used, ...(window && { window }) },
+	});
+	const note: StubStep = {
+		write: "/session/handoff.md",
+		content: "half done\n",
+	};
+	const hang: StubStep = { hang: true };
+	const HANDOFF_TURN = `Your context budget is spent, so this session ends after this turn. Write a handoff note to /session/handoff.md for the session that continues your task in this working copy. It reads your note as claims and checks them against the working copy, so state:
+- what is done, and how you verified it;
+- what remains, in the order you would do it;
+- what you tried that failed, and why;
+- what you learnt that the code does not show.
+Change no other file. Your reply is not read.`;
+
+	/** Steps by turn: a fresh session's first turn, the handoff turn, and a session opened by a handoff. */
+	type Script = { first: StubStep[]; handoff?: StubStep[]; next?: StubStep[] };
+	const scripted =
+		({ first, handoff = [note], next = [OK] }: Script) =>
+		(req: HarnessRequest) =>
+			req.prompt === HANDOFF_TURN
+				? handoff
+				: req.prompt.startsWith("# Handoff")
+					? next
+					: first;
+
+	async function handed(name: string, script: Script) {
+		const { host, requests } = stubHost(scripted(script));
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "x",
+					kind: "agent",
+					config: agentOn({ mode: "fresh" }, name),
+					literals: { prompt: "go" },
+				},
+			],
+			"x",
+		);
+		const config = configOf(toyTarget());
+		const { concert, dir, recordPath } = await start(host, ir, config);
+		const result = await concert.done;
+		const { concertDirs, openRecord } = await import("@maestro/core/perform");
+		const record = openRecord(recordPath);
+		const [instance] = record.instances(concert.id);
+		const progress = record
+			.events(concert.id)
+			.flatMap((e) => (e.type === "progress" ? [e.event] : []));
+		record.close();
+		const staged = (file: string) => {
+			const ref = instance?.outputs?.staged as { path: string };
+			const at = join(concertDirs(dir, concert.id).artifacts, ref.path, file);
+			return readFileSync(at, "utf8");
+		};
+		return { id: concert.id, result, instance, progress, requests, staged };
+	}
+
+	test.each<[string, string, { used: number; window?: number }]>([
+		["a token trigger", "handoff-tokens", { used: 100 }],
+		["a percentage trigger", "handoff-percent", { used: 50, window: 200 }],
+	])(
+		"%s hands the task to a fresh session through a note",
+		async (_, name, context) => {
+			const { id, result, instance, progress, requests, staged } = await handed(
+				name,
+				{
+					first: [full(context.used, context.window), hang],
+					handoff: [full(1000), note],
+				},
+			);
+			expect(result).toMatchObject({ outcome: "ok" });
+			const [first, handoff, fresh] = requests;
+			expect(requests).toHaveLength(3);
+			expect(handoff?.prompt).toBe(HANDOFF_TURN);
+			expect(handoff?.session).toEqual(first?.session);
+			expect(
+				readFileSync(join(first?.session.dir ?? "", "handoff.md"), "utf8"),
+			).toBe("half done\n");
+			expect(fresh?.session.id).not.toBe(first?.session.id);
+			expect(fresh?.prompt).toBe(`# Handoff
+
+You are session 2 of up to 2 on this task. The previous session ran out of context and left the note below. Its claims are unverified, and your working copy holds its uncommitted changes: check them with \`git status\` and \`git diff\` before you build on them.
+
+<handoff-note>
+half done
+</handoff-note>
+
+# Task
+
+go`);
+			expect(staged("session-2.md")).toBe(fresh?.prompt ?? "");
+			expect(staged("instructions.md")).toContain(
+				"This task allows up to 2 sessions.",
+			);
+			const session = `${id}.x#2`;
+			expect(instance?.outputs?.session).toBe(session);
+			expect(instance?.enrichment?.sessionDir).toBe(fresh?.session.dir);
+			expect(
+				existsSync(join(fresh?.session.dir ?? "", "..", "turn.json")),
+			).toBe(true);
+			expect(progress).toContainEqual({ kind: "context", ...context });
+			expect(progress.filter((e) => e.kind === "session")).toEqual([
+				{ kind: "session", id: `${id}.x`, index: 1, ended: "handoff" },
+				{ kind: "session", id: session, index: 2, ended: "settled" },
+			]);
+		},
+	);
+
+	test("an agent continuing a handed-off session continues the latest one, and counts its own handoffs", async () => {
+		const { host, requests } = stubHost(scripted({ first: [full(), hang] }));
+		const ir = irOf(
+			host,
+			["w", "r"].map((id) => ({
+				id,
+				kind: "agent" as const,
+				config: agentOn({ mode: "fresh" }, "handoff-tokens"),
+				literals: { prompt: "go" },
+				...(id === "r" && { session: "w" }),
+			})),
+			"r",
+		);
+		const { id, result, instances } = await performed(
+			host,
+			ir,
+			configOf(toyTarget()),
+		);
+		expect(result).toMatchObject({ outcome: "ok" });
+		const continuing = requests[3];
+		expect(continuing?.session).toEqual(requests[2]?.session);
+		expect(continuing?.prompt).toStartWith(
+			"# Since your last turn\n\n- Task: unchanged.",
+		);
+		expect(instances.find((i) => i.node === "r")?.outputs?.session).toBe(
+			`${id}.r#2`,
+		);
+	});
+
+	test("a context below its trigger runs on in its session", async () => {
+		const { result, requests } = await handed("handoff-percent", {
+			first: [full(49, 200), OK],
+		});
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(requests).toHaveLength(1);
+	});
+
+	test("a turn that settles before its trigger cuts it keeps its result, past the cap or not", async () => {
+		const settles: StubStep[] = [OK, { emit: { type: "settled" } }, full()];
+		const { id, result, instance, requests } = await handed("handoff-tokens", {
+			first: [full(), hang],
+			next: settles,
+		});
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(requests).toHaveLength(3);
+		expect(instance?.outputs?.session).toBe(`${id}.x#2`);
+	});
+
+	const NO_NOTE =
+		"context: no handoff note from session 1. Check the profile's model writes /session/handoff.md when asked";
+	test.each([
+		[
+			"a handoff turn that writes no note",
+			"handoff-tokens",
+			{ first: [full(), hang], handoff: [] },
+			NO_NOTE,
+			2,
+		],
+		[
+			"a note left before the handoff turn",
+			"handoff-tokens",
+			{ first: [note, full(), hang], handoff: [] },
+			NO_NOTE,
+			2,
+		],
+		[
+			"a handoff note that links elsewhere",
+			"handoff-tokens",
+			{
+				first: [full(), hang],
+				handoff: [
+					{ write: "notes.md", content: "half done\n" },
+					{ sh: "ln -s /lane/notes.md /session/handoff.md" },
+				],
+			},
+			NO_NOTE,
+			2,
+		],
+		[
+			"a handoff turn that fails",
+			"handoff-tokens",
+			{ first: [full(), hang], handoff: [note, fault(false)] },
+			"context: handoff turn failed: 529 overloaded",
+			2,
+		],
+		[
+			"one handoff past the cap",
+			"handoff-tokens",
+			{ first: [full(), hang], next: [full(), hang] },
+			"context: session 2 filled, past profiles.handoff-tokens.context.max of 1 handoffs. Raise profiles.handoff-tokens.context.max, or split the task",
+			3,
+		],
+		[
+			"a token limit passed over two sessions",
+			"handoff-limited",
+			{ first: [usage(30), full(), hang], next: [usage(30), hang] },
+			"passed its token limit of 50 (62 spent)",
+			3,
+		],
+		[
+			"a token limit passed by the call that fills the context",
+			"handoff-limited",
+			{ first: [usage(60), full(), hang] },
+			"passed its token limit of 50 (61 spent)",
+			1,
+		],
+		[
+			"a compaction past a compact cap",
+			"compact-capped",
+			{
+				first: [
+					{ emit: { type: "compaction" } },
+					{ emit: { type: "compaction" } },
+					hang,
+				],
+			},
+			"context: compacted 2 times, past profiles.compact-capped.context.max of 1. Raise profiles.compact-capped.context.max, or split the task",
+			1,
+		],
+	] as [string, string, Script, string, number][])(
+		"%s fails the agent",
+		async (_, name, script, reason, turns) => {
+			const { result, requests } = await handed(name, script);
+			expect(result).toMatchObject({ outcome: "failed", reason });
+			expect(requests).toHaveLength(turns);
+		},
+	);
+
+	test("a compaction under a handoff policy is recorded as a fault and the agent runs on", async () => {
+		const { result, progress } = await handed("handoff-tokens", {
+			first: [{ emit: { type: "compaction" } }, OK],
+		});
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(progress).toContainEqual({
+			kind: "fault",
+			reason:
+				"context: the harness compacted the session before its handoff. Lower profiles.handoff-tokens.context.at below its compaction point",
+		});
+	});
+});

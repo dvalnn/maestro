@@ -65,10 +65,18 @@ const read = (req: HarnessRequest, file: string) =>
 	readFileSync(join(req.outbox, file), "utf8");
 
 describe("stand-in claude", () => {
-	test("the recorded 2.1.302 run is read into tools, usage and a reply", async () => {
+	test("the recorded 2.1.302 run is read into tools, usage, prompt sizes and a reply", async () => {
 		const req = request("write hello.txt");
 		const unknown = '{"type":"future_event","extra":{"a":1}}';
-		const run = claudeHarness(standIn([...fixture(), unknown])).run(req);
+		const compacted =
+			'{"type":"system","subtype":"compact_boundary","compact_metadata":{"trigger":"auto","pre_tokens":1}}';
+		const lines = fixture();
+		const first = lines.findIndex((l) => l.includes('"type":"assistant"'));
+		// A second content block of the same message, which claude streams with that message's usage again.
+		const block = JSON.parse(lines[first] as string);
+		block.message.content = [{ type: "text", text: "on it" }];
+		lines.splice(first + 1, 0, JSON.stringify(block));
+		const run = claudeHarness(standIn([...lines, compacted, unknown])).run(req);
 		const seen = await drain(run.events);
 		const result = await run.result;
 
@@ -92,6 +100,13 @@ describe("stand-in claude", () => {
 				id: "toolu_012fUsphfrA9PwMQjVNZYwyL",
 				bytes: expect.any(Number),
 			},
+		]);
+		expect(
+			seen.filter((e) => e.kind === "context" || e.kind === "compaction"),
+		).toEqual([
+			{ kind: "context", used: 19280 },
+			{ kind: "context", used: 19416 },
+			{ kind: "compaction" },
 		]);
 		expect(seen.at(-1)).toEqual({
 			kind: "raw",
@@ -223,6 +238,21 @@ describe("stand-in claude", () => {
 			hooks: [],
 			contextFiles: [],
 		});
+	});
+
+	test("a handoff policy turns claude's compaction off, and a compact one sets its window", async () => {
+		const at = { tokens: 150_000 };
+		const handoff = request("x", {
+			context: { strategy: "handoff", at, max: 2 },
+		});
+		await claudeHarness(standIn(fixture())).run(handoff).result;
+		expect(read(handoff, "env")).toContain("DISABLE_AUTO_COMPACT=1");
+		expect(read(handoff, "argv")).not.toContain("--autocompact");
+
+		const compact = request("x", { context: { strategy: "compact", at } });
+		await claudeHarness(standIn(fixture())).run(compact).result;
+		expect(read(compact, "env")).not.toContain("DISABLE_AUTO_COMPACT");
+		expect(read(compact, "argv")).toEndWith("--autocompact\n150000\n");
 	});
 
 	test("a session with a transcript resumes by id instead of starting", async () => {
@@ -376,7 +406,7 @@ describe("stand-in claude", () => {
 	});
 });
 
-test("a runtime's thinking must be one of claude's effort levels, and its model is not checked", () => {
+test("a runtime's thinking must be one of claude's effort levels, its model is not checked, and its context trigger is in tokens, a compact one in claude's window", () => {
 	const harness = claudeHarness();
 	const runtime = { harness: "claude", model: "anything" };
 	expect(harness.runtimeProblems?.({ ...runtime, thinking: "xhigh" })).toEqual(
@@ -385,11 +415,51 @@ test("a runtime's thinking must be one of claude's effort levels, and its model 
 	expect(harness.runtimeProblems?.(runtime)).toEqual([]);
 	expect(harness.runtimeProblems?.({ ...runtime, thinking: "turbo" })).toEqual([
 		{
-			field: "thinking",
+			field: "runtime.thinking",
 			reason: "claude has no thinking level 'turbo'",
 			fix: "Use one of: low, medium, high, xhigh, max",
 		},
 	]);
+	expect(
+		harness.runtimeProblems?.(runtime, {
+			strategy: "compact",
+			at: { tokens: 150_000 },
+			max: 3,
+		}),
+	).toEqual([]);
+	expect(
+		harness.runtimeProblems?.(runtime, {
+			strategy: "handoff",
+			at: { percent: 25 },
+			max: 2,
+		}),
+	).toEqual([
+		{
+			field: "context.at",
+			reason: "claude reports no context window, so it cannot take at '25%'",
+			fix: "Write at in tokens, such as 50000",
+		},
+	]);
+	for (const tokens of [99_999, 1_000_001])
+		expect(
+			harness.runtimeProblems?.(runtime, {
+				strategy: "compact",
+				at: { tokens },
+			}),
+		).toEqual([
+			{
+				field: "context.at",
+				reason: `claude takes at ${tokens} outside its compaction window of 100000 to 1000000 tokens`,
+				fix: "Set at between 100000 and 1000000, or use strategy handoff",
+			},
+		]);
+	expect(
+		harness.runtimeProblems?.(runtime, {
+			strategy: "handoff",
+			at: { tokens: 50_000 },
+			max: 2,
+		}),
+	).toEqual([]);
 });
 
 describe.skipIf(!process.env.MAESTRO_CLAUDE)("real claude", () => {

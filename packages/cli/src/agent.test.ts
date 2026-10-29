@@ -21,7 +21,7 @@ async function roster() {
 	await Promise.all([
 		write(
 			join(builder, "profile.yaml"),
-			"runtime: { harness: claude, model: sonnet, thinking: high }\ninstructions: instructions.md\nattachments:\n  style: { path: style.md, hint: for the house style }\nlimits: { timeout: 45m, tokens: 2000000 }\n",
+			"runtime: { harness: claude, model: sonnet, thinking: high }\ninstructions: instructions.md\nattachments:\n  style: { path: style.md, hint: for the house style }\nlimits: { timeout: 45m, tokens: 2000000 }\ncontext: { strategy: handoff, at: 25%, max: 2 }\n",
 		),
 		write(join(builder, "instructions.md"), "Build it.\nTest it.\n"),
 		write(join(builder, "style.md"), "terse\n"),
@@ -140,6 +140,11 @@ Limits
   timeout     45m
   tokens      3000000  [-c]
 
+Context
+  strategy    handoff
+  at          25%
+  max         2
+
 Environment   declared only
   tools       claude's defaults, less Agent
   subagents   off
@@ -200,6 +205,10 @@ readOnly:
 limits:
   timeout: 45m
   tokens: 3000000 # -c
+context:
+  strategy: handoff
+  at: 25%
+  max: 2
 ---
 # environment, declared only
 tools:
@@ -237,6 +246,7 @@ compaction: harness`);
 			},
 			readOnly: ["/srv/kb"],
 			limits: { timeout: "45m", tokens: 3000000 },
+			context: { strategy: "handoff", at: "25%", max: 2 },
 			environment: { declared: { subagents: false, compaction: "harness" } },
 		});
 		const config = (file: string, line: number) => ({

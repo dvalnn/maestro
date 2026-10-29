@@ -408,11 +408,11 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - **Agent node.** Inputs: a task prompt (text, staged by the host, no argument-length limit), a profile by name and the
   seat it fills, a lane input, typed output declarations (a JSON file with a schema, or Markdown), `attachments` and the
   named checks it may run. The profile gives the runtime (harness, model, thinking level), the instructions, the limits,
-  the read-only binds and its own attachments, bound at `/in/<name>` (see Profiles). It may take a `session` to
-  continue, and `verdict` marks a verdict agent. Outputs: the declared files as typed artifacts, the report object,
-  outcome and reason from its envelope, metrics (token counts), the staged text as an artifact, its `session`, and the
-  resulting lane version. `rejected` means a verdict agent's verdict is negative. `failed` means the run did not
-  complete, or the agent is blocked (ADR 0012).
+  the context policy, the read-only binds and its own attachments, bound at `/in/<name>` (see Profiles). It may take a
+  `session` to continue, and `verdict` marks a verdict agent. Outputs: the declared files as typed artifacts, the report
+  object, outcome and reason from its envelope, metrics (token counts), the staged text as an artifact, its latest
+  `session`, and the resulting lane version. `rejected` means a verdict agent's verdict is negative. `failed` means the
+  run did not complete, or the agent is blocked (ADR 0012).
 - **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
   failures reported), or an inline `{ run, hint?, timeout }`. Each line runs through `sh -c` in the sandbox, in order,
   and the first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are
@@ -456,10 +456,12 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - The staged system-prompt file holds the profile's instructions, when it has any, then the host's **frame**: a
   `# Your run` heading and the sections `## Working copy`, `## Checks`, `## Attachments`, `## Context` and `## Reply`,
   in that order, each left out when it has nothing to say. Working copy says a write lane is left uncommitted and a read
-  lane is changed in nothing, then how the shell is set up; Reply is the output contract. The file is appended to the
-  harness's own system prompt, never replacing it. A fresh start's user message is the task alone, on stdin. The exact
-  staged text is the `staged` output artifact, a directory holding `prompt.md` (the user message), `instructions.md`
-  (the system-prompt file) and `correction-N.md` (each correction turn's message).
+  lane is changed in nothing, then how the shell is set up; Context, only under a `handoff` policy, says a full context
+  ends the session in a handoff and how many sessions the task allows; Reply is the output contract. The file is
+  appended to the harness's own system prompt, never replacing it. A fresh start's user message is the task alone, on
+  stdin. The exact staged text is the `staged` output artifact, a directory holding `prompt.md` (the user message),
+  `instructions.md` (the system-prompt file), `correction-N.md` (each correction turn's message) and `session-N.md` (the
+  message that opens session N after a handoff).
 - Declared outputs are files the agent writes in its **outbox**, a per-instance directory at `/out` outside the lane.
   The host reads only regular files there and checks each against its schema. The contract tells the agent to write
   every declared file, a verdict agent even when it rejects. A missing file or a schema violation is `failed`.
@@ -479,12 +481,37 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   its cancel path and ends it `failed` with a reason naming the limit, such as
   `passed its token limit of 20M (21.3M spent)` or `passed its timeout of 45m`, its partial kept as for any failed
   agent.
+- A profile takes an optional context policy (AT-07), `context: { strategy, at, max }`: `strategy` is `handoff` or
+  `compact`, `at` a prompt size in tokens or a `"<n>%"` share of the model's window, 1 to 99, and `max` a whole number
+  of at least 1, required for `handoff`. Without one the harness compacts on its own terms. Pre-flight refuses, naming
+  the profile, the field and the harness:
+  - a percentage on a harness that reports no window per model call, as neither claude nor pi does;
+  - a capped `compact` on a harness that reports no compaction;
+  - `compact` on pi, whose compaction point is a setting of an agent dir maestro does not own; the fix is `handoff`;
+  - a `compact` `at` outside claude's compaction window of 100000 to 1000000 tokens.
+
+  Each model call's prompt size, input and cache read and write together, reaches the record as a `context` progress
+  event `{ used, window? }`, and each compaction as a `compaction` event.
+
+- Under `handoff`, a model call whose prompt reaches `at` cancels the turn, unless the turn settles with its result
+  first, which then stands. One more turn in the same session asks for a handoff note at `/session/handoff.md`; `at`
+  does not apply to it, and a passed limit or a cancel ends the agent before it. A handoff turn that fails, or leaves no
+  note, fails the agent; a note there before the turn is removed, and one that is not a regular file is none. A fresh
+  session then takes the task, its user message `# Handoff` (session k of up to `max`+1, the note in `<handoff-note>`,
+  its claims to verify), then `# Task` and the task as first given. A reset past `max` fails the agent, naming
+  `profiles.<name>.context.max`. Each session's end is a `session` progress event `{ id, index, ended, reason? }`,
+  `ended` being `handoff`, `settled` or `failed` with its reason. The fresh session gets its own last turn, and an agent
+  continuing a session counts only its own resets. Claude's compaction is off under `handoff`; pi's stays at its
+  near-full default, so `at` must sit below it, and a compaction is recorded as a fault, never failing the agent.
+- Under `compact`, `at` sets the harness's compaction window (claude's `--autocompact`), and a compaction past `max`
+  fails the agent. Limits cover every session, handoff turn and compaction of the instance.
 
 **Sessions**
 
-- A session is a value of type `repo.session`: `<concert id>.<node instance id>` of the agent that started it. An agent
-  with no `session` input mints one under `sessions/` in the host store; one given a session continues it in place, and
-  outputs the id it was given.
+- A session is a value of type `repo.session`: `<concert id>.<node instance id>` of the agent that started it, with
+  `#<k>` after it for session k a handoff started. An agent with no `session` input mints one under `sessions/` in the
+  host store; one given a session continues it in place. Each outputs its latest session, the last a handoff started if
+  any.
 - Compose refuses a session that crosses harnesses, naming both nodes, profiles and harnesses, and one that two agents
   continue, or that an agent inside a `parMap` or `parFind` body takes from outside it: a session has one runner at a
   time. An agent a sequential `loop` or `fold` repeats may continue one, as its iterations run in order.

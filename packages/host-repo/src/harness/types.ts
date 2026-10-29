@@ -53,9 +53,18 @@ export function baselineOf(
 	};
 }
 
-/** A runtime field a harness cannot honour, why, and the fix. */
+/** When a context policy resets a session: at a prompt size in tokens, or at a share of the model's window. */
+export type ContextAt = { tokens: number } | { percent: number };
+
+/** How an agent's run resets its context as it fills (GLOSSARY: Context policy). `max` caps the resets. */
+export type ContextPolicy =
+	| { strategy: "handoff"; at: ContextAt; max: number }
+	| { strategy: "compact"; at: ContextAt; max?: number };
+
+/** A profile field a harness cannot honour, why, and the fix. */
 export type RuntimeProblem = {
-	field: keyof Runtime;
+	/** The key under the profile, as in `runtime.thinking`. */
+	field: `runtime.${keyof Runtime}` | `context.${"strategy" | "at" | "max"}`;
 	/** Leads with the harness's name, as in `claude has no thinking level 'turbo'`. */
 	reason: string;
 	fix: string;
@@ -115,6 +124,8 @@ export type HarnessRequest = {
 	verdict?: boolean;
 	/** The agent's node instance id as `ls` prints it, such as `loop[0]/review`. Only the stub reads it. */
 	instance?: string;
+	/** The profile's context policy. Without one the harness compacts on its own terms. */
+	context?: ContextPolicy;
 };
 
 export type HarnessEvent =
@@ -126,6 +137,13 @@ export type HarnessEvent =
 	| { kind: "thinking"; text: string }
 	/** Usage reported by the harness. The run's metrics are the sum of these. */
 	| { kind: "usage"; metrics: Metrics }
+	/**
+	 * The prompt size of a model call in tokens, input and cache read and write together, and the model's context window
+	 * when the harness reports one.
+	 */
+	| { kind: "context"; used: number; window?: number }
+	/** The harness compacted the session's context. */
+	| { kind: "compaction" }
 	/** The harness finished all its work and will not continue on its own. A run without one is `failed`. */
 	| { kind: "settled" }
 	/**
@@ -151,7 +169,7 @@ export interface HarnessRun {
 	/** Events as they happen. Buffered, so ignoring it never stalls the agent. */
 	readonly events: AsyncIterable<HarnessEvent>;
 	readonly result: Promise<HarnessResult>;
-	/** Kills the agent's process tree. `result` then resolves `failed`/`cancelled`. */
+	/** Kills the agent's process tree, unless it reported `settled` first. `result` then resolves `failed`/`cancelled`. */
 	cancel(): Promise<void>;
 }
 
@@ -159,8 +177,11 @@ export interface HarnessRun {
 export interface Harness {
 	readonly name: string;
 	run(req: HarnessRequest): HarnessRun;
-	/** Each field of `runtime`, one naming this harness, it cannot honour. A harness without it honours every field. */
-	runtimeProblems?(runtime: Runtime): RuntimeProblem[];
+	/**
+	 * Each field of `runtime` and `context`, one naming this harness, it cannot honour. A harness without it honours
+	 * every field.
+	 */
+	runtimeProblems?(runtime: Runtime, context?: ContextPolicy): RuntimeProblem[];
 }
 
 /** The problem of a `thinking` level that is none of `levels`, the documented levels of harness `harness`. */
@@ -173,8 +194,55 @@ export const thinkingProblems = (
 		? []
 		: [
 				{
-					field: "thinking",
+					field: "runtime.thinking",
 					reason: `${harness} has no thinking level '${thinking}'`,
 					fix: `Use one of: ${levels.join(", ")}`,
 				},
 			];
+
+/** What a harness does under a context policy. */
+export type ContextSupport = {
+	/** Its context events carry the model's window. */
+	window: boolean;
+	/** It emits a compaction event when it compacts. */
+	compactions: boolean;
+	/** It sets its own compaction point from `at`. */
+	compact: boolean;
+};
+
+/**
+ * The problems of `context` on harness `harness`, which supports `can`:
+ * - `compact` on a harness whose compaction point maestro cannot set;
+ * - a percentage `at` on one that reports no window;
+ * - a capped `compact` on one that emits no compaction event.
+ */
+export function contextProblems(
+	harness: string,
+	can: ContextSupport,
+	context: ContextPolicy | undefined,
+): RuntimeProblem[] {
+	if (!context) return [];
+	const compact = context.strategy === "compact";
+	if (compact && !can.compact)
+		return [
+			{
+				field: "context.strategy",
+				reason: `${harness} takes no compaction point from maestro`,
+				fix: "Use strategy handoff",
+			},
+		];
+	const problems: RuntimeProblem[] = [];
+	if ("percent" in context.at && !can.window)
+		problems.push({
+			field: "context.at",
+			reason: `${harness} reports no context window, so it cannot take at '${context.at.percent}%'`,
+			fix: "Write at in tokens, such as 50000",
+		});
+	if (compact && context.max !== undefined && !can.compactions)
+		problems.push({
+			field: "context.max",
+			reason: `${harness} reports no compaction, so it cannot be capped`,
+			fix: "Drop context.max, or use strategy handoff",
+		});
+	return problems;
+}

@@ -15,7 +15,8 @@ no models, so set each profile's `runtime` in config, as `profiles.classics/<nam
 | `v_model`            | Scouts, plans, builds and repairs, reviews each scouted risk, traces acceptance to the plan       | all seven¹                        |
 
 Each profile's `profile.yaml` sets its limits: `builder` 45 minutes and 30M tokens, `lens`, `skeptic` and `consolidator`
-20 minutes and 10M tokens, the others none.
+20 minutes and 10M tokens, the others none. None sets a `context` policy, so its harness compacts on its own terms; set
+one in config, as `profiles.classics/<name>.context`.
 
 ¹ `scout`, `planner`, `builder`, `lens`, `skeptic`, `consolidator` and `documenter`.
 

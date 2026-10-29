@@ -26,7 +26,12 @@ import {
 	MAX_TIMEOUT,
 	validator,
 } from "@maestro/ir";
-import type { AgentEnvironment, Runtime } from "../harness/index";
+import type {
+	AgentEnvironment,
+	ContextAt,
+	ContextPolicy,
+	Runtime,
+} from "../harness/index";
 
 /** The config namespace that tunes profiles by name. */
 export const PROFILES = "profiles";
@@ -55,10 +60,16 @@ const READ_ONLY = "readOnly";
 const REQUIRED_RUNTIME = ["harness", "model"] as const;
 
 const TEXT = { type: "string", minLength: 1 } as const;
+const COUNT = { type: "integer", minimum: 1 } as const;
+/** A context policy's `at` as a share of the window: a whole percentage from 1 to 99. */
+const PERCENT = /^([1-9][0-9]?)%$/;
 
-/** A profile's fields, and `extra`; an attachment requires `required` of its own. */
+/**
+ * A profile's fields, and `extra`. Once `resolved`, an attachment requires its path and hint, and a context block its
+ * strategy and trigger.
+ */
 const fieldsSchema = (
-	required: string[],
+	resolved: boolean,
 	extra: Record<string, JsonSchema> = {},
 ): JsonSchema => ({
 	type: "object",
@@ -75,16 +86,30 @@ const fieldsSchema = (
 			propertyNames: { pattern: irSchema.$defs.portName.pattern },
 			additionalProperties: {
 				type: "object",
-				required,
+				required: resolved ? ["path", "hint"] : [],
 				additionalProperties: false,
 				properties: { path: TEXT, hint: TEXT },
+			},
+		},
+		context: {
+			type: "object",
+			required: resolved ? ["strategy", "at"] : [],
+			additionalProperties: false,
+			properties: {
+				strategy: { enum: ["handoff", "compact"] },
+				at: {
+					type: ["integer", "string"],
+					minimum: 1,
+					pattern: PERCENT.source,
+				},
+				max: COUNT,
 			},
 		},
 		readOnly: { type: "array", items: { type: "string", pattern: "^/" } },
 		limits: {
 			type: "object",
 			additionalProperties: false,
-			properties: { timeout: TEXT, tokens: { type: "integer", minimum: 1 } },
+			properties: { timeout: TEXT, tokens: COUNT },
 		},
 		...extra,
 	},
@@ -95,12 +120,12 @@ export const PROFILES_CONFIG: JsonSchema = {
 	type: "object",
 	propertyNames: { pattern: PROFILE_NAME.source },
 	additionalProperties: fieldsSchema(
-		[],
+		false,
 		Object.fromEntries(RESERVED.map((k) => [k, {}])),
 	),
 };
 
-const RESOLVED_SCHEMA = fieldsSchema(["path", "hint"]);
+const RESOLVED_SCHEMA = fieldsSchema(true);
 
 /** A file or directory an agent reads, and the hint that says when it should. `path` is absolute. */
 export type ProfileAttachment = { path: string; hint: string };
@@ -114,6 +139,7 @@ export type ProfileFields = {
 	readOnly: string[];
 	/** `timeout` in milliseconds. */
 	limits: { timeout?: number; tokens?: number };
+	context?: ContextPolicy;
 };
 
 /** A profile as it resolved. */
@@ -434,15 +460,60 @@ function fieldErrors(name: string, merged: Merged): Diagnostic[] {
 				`Set ${PROFILES}.${name}.runtime.${f}`,
 			),
 	);
-	return [...unset, ...timeoutErrors(name, merged)];
+	return [
+		...unset,
+		...timeoutErrors(name, merged),
+		...contextErrors(name, merged),
+	];
+}
+
+/** A context block as config writes it. */
+type WrittenContext = Omit<ContextPolicy, "at" | "max"> & {
+	at: number | string;
+	max?: number;
+};
+
+/** A profile's values as config writes them, once they passed the schema. */
+type Written = Omit<ProfileFields, "limits" | "context"> & {
+	limits?: { timeout?: string; tokens?: number };
+	context?: WrittenContext;
+};
+
+const writtenOf = (values: Readonly<Record<string, unknown>>) =>
+	values as Written;
+
+/** The error of a `handoff` context block of `merged` with no `max`. */
+function contextErrors(name: string, merged: Merged): Diagnostic[] {
+	const { context } = writtenOf(merged.values);
+	if (context?.strategy !== "handoff" || context.max !== undefined) return [];
+	return [
+		refusal(
+			sourceOf(merged, ["context", "strategy"]),
+			`profile ${name}: context.max is required for strategy handoff`,
+			`Set ${PROFILES}.${name}.context.max, the most handoffs the agent may make`,
+		),
+	];
+}
+
+/** `at` as config writes it: tokens as a whole number, or a percentage such as `"25%"`. */
+const contextAt = (at: number | string): ContextAt =>
+	typeof at === "number"
+		? { tokens: at }
+		: { percent: Number(PERCENT.exec(at)?.[1]) };
+
+/** `context`, which passed `contextErrors`. */
+function contextOf({ strategy, at, max }: WrittenContext): ContextPolicy {
+	if (strategy === "compact")
+		return { strategy, at: contextAt(at), ...(max !== undefined && { max }) };
+	if (max === undefined)
+		throw new Error("context.max is required for strategy handoff");
+	return { strategy, at: contextAt(at), max };
 }
 
 /** The fields of `values`, which passed `fieldErrors`. */
 function fieldsOf(values: Readonly<Record<string, unknown>>): ProfileFields {
-	const { runtime, instructions, attachments, readOnly, limits } =
-		values as Omit<ProfileFields, "limits"> & {
-			limits?: { timeout?: string; tokens?: number };
-		};
+	const { runtime, instructions, attachments, readOnly, limits, context } =
+		writtenOf(values);
 	const { timeout, tokens } = limits ?? {};
 	return {
 		runtime,
@@ -453,6 +524,7 @@ function fieldsOf(values: Readonly<Record<string, unknown>>): ProfileFields {
 			...(timeout !== undefined && { timeout: durationMs(timeout) }),
 			...(tokens !== undefined && { tokens }),
 		},
+		...(context && { context: contextOf(context) }),
 	};
 }
 
@@ -525,6 +597,12 @@ export type Inspection = {
 	attachments: Record<string, ProfileAttachment & { agent: string }>;
 	readOnly: string[];
 	limits: { timeout?: string; tokens?: number };
+	/** As config writes it, `at` in tokens or as a percentage such as `"25%"`. */
+	context?: {
+		strategy: ContextPolicy["strategy"];
+		at: number | string;
+		max?: number;
+	};
 	sources: Record<string, ValueSource>;
 	environment: { declared: AgentEnvironment | null };
 };
@@ -574,7 +652,7 @@ export function inspectProfile(
 	roots: Roots,
 	declared: ReadonlyMap<string, AgentEnvironment>,
 ): Inspection {
-	const { runtime, instructions, attachments, readOnly, limits } =
+	const { runtime, instructions, attachments, readOnly, limits, context } =
 		profile.fields;
 	const { timeout, tokens } = limits;
 	return {
@@ -595,6 +673,13 @@ export function inspectProfile(
 			...(timeout !== undefined && { timeout: durationText(timeout) }),
 			...(tokens !== undefined && { tokens }),
 		},
+		...(context !== undefined && {
+			context: {
+				...context,
+				at:
+					"tokens" in context.at ? context.at.tokens : `${context.at.percent}%`,
+			},
+		}),
 		sources: Object.fromEntries(
 			profile.sources.map(({ path, source }) => [
 				path.join("."),

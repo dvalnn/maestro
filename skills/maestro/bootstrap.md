@@ -131,12 +131,12 @@ maestro passes model and thinking through unchecked, so confirm an id with the h
 none of them: a seat names a profile. Per field, `-c` and `--preset` beat the config files' `profiles`, which beat the
 profile's own `profile.yaml`, so `--preset stub` always means no spend.
 
-A profile is a directory with a `profile.yaml` (`runtime`, `instructions`, `limits`, `attachments`) and the files it
-names, in `.maestro/profiles/<name>/` of the workspace, `$XDG_CONFIG_HOME/maestro/profiles/<name>/` of the user, or a
-pack's `profiles/`, as `<pack>/<name>`. The highest of those holding the name wins it whole. `readOnly` is set only in
-config, as `profiles.<name>.readOnly`. `maestro agent ls` lists every profile with the root that wins it, and
-`maestro agent show <profile>` prints what one resolves to, naming the layer behind each value a config file, preset or
-`-c` set.
+A profile is a directory with a `profile.yaml` (`runtime`, `instructions`, `limits`, `context`, `attachments`) and the
+files it names, in `.maestro/profiles/<name>/` of the workspace, `$XDG_CONFIG_HOME/maestro/profiles/<name>/` of the
+user, or a pack's `profiles/`, as `<pack>/<name>`. The highest of those holding the name wins it whole. `readOnly` is
+set only in config, as `profiles.<name>.readOnly`. `maestro agent ls` lists every profile with the root that wins it,
+and `maestro agent show <profile>` prints what one resolves to, naming the layer behind each value a config file, preset
+or `-c` set.
 
 ### Layers
 

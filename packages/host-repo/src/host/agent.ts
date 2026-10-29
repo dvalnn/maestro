@@ -1,4 +1,10 @@
-import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	lstatSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { sha256Hex } from "@maestro/core";
 import type {
@@ -21,13 +27,16 @@ import {
 	violations,
 } from "@maestro/ir";
 import {
+	type ContextAt,
 	type Harness,
+	type HarnessEvent,
 	type HarnessRequest,
 	type HarnessResult,
 	type Metrics,
 	OUTBOX,
 	type Output,
 	type Runtime,
+	SESSION_DIR,
 } from "../harness/index";
 import type { Lane } from "../lane/index";
 import {
@@ -62,6 +71,9 @@ import {
 	type Envelope,
 	envelopeOf,
 	frame,
+	HANDOFF_NOTE,
+	HANDOFF_TURN,
+	handoffMessage,
 	REPORT,
 	type ReplyKind,
 	type Run,
@@ -80,6 +92,9 @@ import {
 	type Session,
 } from "./store";
 import { continuation, digests, keepTurn, type Turn } from "./turn";
+
+/** Between an instance id and a session's index in the id of a session a handoff starts, as in `<instance>#2`. */
+const SESSION_INDEX = "#";
 
 /** Turns that ask the agent again for an envelope, after its first final reply is not one. */
 const MAX_CORRECTIONS = 2;
@@ -193,21 +208,25 @@ function continued(
 	return session;
 }
 
-/** How the agent's turns ended: its envelope, or why there is none. */
-type Turns = { metrics: Metrics } & (
-	| { envelope: Envelope }
-	| { failure: string }
-);
+/** How the agent's turns end: its envelope, or why there is none. */
+type End = { envelope: Envelope } | { failure: string };
+
+/** How the agent's turns ended, and the session they ended in. */
+type Turns = { metrics: Metrics; session: Session } & End;
 
 function addMetrics(sum: Metrics, add: Metrics) {
 	for (const [k, v] of Object.entries(add)) sum[k] = (sum[k] ?? 0) + v;
 }
 
 /**
- * Enforces an agent instance's limits over all its turns: passing one records its reason in `live.limit` and stops the
- * run.
+ * Enforces an agent instance's limits over all its turns: passing one, or a `trip`, records its reason in `live.limit`
+ * and stops the run.
  */
-type Limiter = { usage: (metrics: Metrics) => void; end: () => void };
+type Limiter = {
+	usage: (metrics: Metrics) => void;
+	trip: (reason: string) => void;
+	end: () => void;
+};
 
 /** Starts the wall clock of `limits.timeout` now. */
 function limiter(limits: AgentLimits, live: Live): Limiter {
@@ -234,24 +253,73 @@ function limiter(limits: AgentLimits, live: Live): Limiter {
 					`passed its token limit of ${compact(tokens)} (${compact(total)} spent)`,
 				);
 		},
+		trip,
 		end: () => clearTimeout(timer),
 	};
 }
 
-async function turn(
-	harness: Harness,
-	req: HarnessRequest,
-	live: Live,
-	emit: HostContext["emit"],
-	limits: Limiter,
-) {
-	const run = harness.run(req);
-	live.stop = () => run.cancel();
+/** The most sessions a handoff policy of `max` handoffs gives an instance. */
+const sessionsOf = (max: number) => max + 1;
+
+/** A handoff policy, and what it takes to start the instance's next session. */
+type Handoff = {
+	at: ContextAt;
+	max: number;
+	/** The policy's config key, `profiles.<name>.context`. */
+	key: string;
+	/** The task as first given, which every fresh session is given again. */
+	task: string;
+	/** Starts the instance's session of 1-based `index`. */
+	mint: (index: number) => Session;
+};
+
+/** What an instance's turns share over every session it runs. */
+type Talk = {
+	harness: Harness;
+	live: Live;
+	emit: HostContext["emit"];
+	staged: string;
+	kind: ReplyKind;
+	guard: Limiter;
+	handoff?: Handoff;
+	/** What a compaction the harness reports does under the context policy. */
+	compacted: () => void;
+};
+
+/** Whether a model call's prompt of `used` tokens, of a context `window` if known, reaches `at`. */
+const reaches = (
+	at: ContextAt,
+	{ used, window }: Extract<HarnessEvent, { kind: "context" }>,
+) =>
+	"tokens" in at
+		? used >= at.tokens
+		: window !== undefined && used * 100 >= at.percent * window;
+
+/** Feeds `e` to the limits and the context policy. Returns whether it shows the context reaching `at`. */
+function observe(talk: Talk, e: HarnessEvent, at: ContextAt | undefined) {
+	if (e.kind === "usage") talk.guard.usage(e.metrics);
+	if (e.kind === "compaction") talk.compacted();
+	return e.kind === "context" && at !== undefined && reaches(at, e);
+}
+
+/**
+ * Runs one turn. Once a context event reaches `at`, the turn is cancelled, and reported `full` unless it settled with
+ * its result first.
+ */
+async function turn(talk: Talk, req: HarnessRequest, at?: ContextAt) {
+	const run = talk.harness.run(req);
+	talk.live.stop = () => run.cancel();
+	let full = false;
 	for await (const e of run.events) {
-		if (e.kind === "usage") limits.usage(e.metrics);
-		if (e.kind !== "raw") emit(e);
+		if (e.kind === "raw") continue;
+		talk.emit(e);
+		if (observe(talk, e, at) && !full) {
+			full = true;
+			void run.cancel();
+		}
 	}
-	return run.result;
+	const result = await run.result;
+	return { result, full: full && result.outcome === "failed" };
 }
 
 /** Waits `ms`, or until `live` is stopped. */
@@ -321,47 +389,152 @@ async function within<T>(
 const halted = (live: Live) =>
 	live.limit ?? (live.cancelled ? "cancelled" : undefined);
 
+/** Where an instance's turns stand: the request of its next turn, its session and that session's 1-based index. */
+type Talking = {
+	req: HarnessRequest;
+	session: Session;
+	index: number;
+	corrections: number;
+	retries: number;
+	metrics: Metrics;
+};
+
 /**
- * Runs the agent, then corrects it in the same session while its final reply is not an envelope. A transient failure
- * runs the turn again in the same session, after a wait, up to `MAX_RETRIES` times. A limit `guard` passes ends it.
+ * What follows a turn that ran to its end: how the run ends, or nothing once `state` holds the next turn. A transient
+ * failure runs the turn again after a wait, up to `MAX_RETRIES` times; a reply that is no envelope gets a correction.
+ */
+async function follow(
+	talk: Talk,
+	state: Talking,
+	result: HarnessResult,
+): Promise<End | undefined> {
+	if (result.outcome === "failed") {
+		const failure = await recover(result, state.retries, talk.live, talk.emit);
+		if (failure !== undefined) return { failure };
+		state.retries++;
+		state.req = { ...state.req, prompt: CUT_OFF };
+		return undefined;
+	}
+	const step = next(
+		result.reply,
+		state.corrections === MAX_CORRECTIONS,
+		talk.kind,
+	);
+	if (!("prompt" in step)) return step;
+	state.corrections++;
+	state.req = { ...state.req, prompt: step.prompt };
+	writeFileSync(
+		join(talk.staged, `correction-${state.corrections}.md`),
+		step.prompt,
+	);
+	return undefined;
+}
+
+/** The handoff note at `path`, when the agent wrote one: a regular file with text, so a link cannot reach outside. */
+function noteAt(path: string): string | undefined {
+	if (!lstatSync(path, { throwIfNoEntry: false })?.isFile()) return undefined;
+	return readFileSync(path, "utf8").trim() || undefined;
+}
+
+/**
+ * Ends the session of a turn cut short by a full context: runs its handoff turn, then puts the next session in `state`,
+ * its user message the note and the task. A halted instance, a session past `handoff.max` resets, a failed handoff turn
+ * or a missing note ends the run.
+ */
+async function handOff(
+	talk: Talk,
+	handoff: Handoff,
+	state: Talking,
+): Promise<End | undefined> {
+	const halt = halted(talk.live);
+	if (halt) return { failure: halt };
+	if (state.index > handoff.max)
+		return {
+			failure: `context: session ${state.index} filled, past ${handoff.key}.max of ${handoff.max} handoffs. Raise ${handoff.key}.max, or split the task`,
+		};
+	const note = join(state.session.dir, HANDOFF_NOTE);
+	rmSync(note, { force: true });
+	const { result } = await turn(talk, { ...state.req, prompt: HANDOFF_TURN });
+	addMetrics(state.metrics, result.metrics);
+	const stopped = halted(talk.live);
+	if (stopped) return { failure: stopped };
+	if (result.outcome === "failed")
+		return {
+			failure: `context: handoff turn failed: ${result.reason ?? "the harness failed"}`,
+		};
+	const text = noteAt(note);
+	if (text === undefined)
+		return {
+			failure: `context: no handoff note from session ${state.index}. Check the profile's model writes ${SESSION_DIR}/${HANDOFF_NOTE} when asked`,
+		};
+	talk.emit(sessionEvent(state, "handoff"));
+	state.index++;
+	state.session = handoff.mint(state.index);
+	const prompt = handoffMessage(
+		state.index,
+		sessionsOf(handoff.max),
+		text,
+		handoff.task,
+	);
+	writeFileSync(join(talk.staged, `session-${state.index}.md`), prompt);
+	state.req = {
+		...state.req,
+		prompt,
+		session: { dir: state.session.dir, id: state.session.harnessId },
+	};
+	return undefined;
+}
+
+/** Why a session ended: a handoff to the next, the agent's result, or the run's failure. */
+type Ended = "handoff" | "settled" | "failed";
+
+/** The record of a session's end: its id, its index in the instance, why it ended, and a failure's reason. */
+const sessionEvent = (state: Talking, ended: Ended, reason?: string) => ({
+	kind: "session",
+	id: state.session.id,
+	index: state.index,
+	ended,
+	...(reason !== undefined && { reason }),
+});
+
+/**
+ * Runs the agent from `req` in `session` until it gives an envelope or fails, over every session a handoff starts. Under
+ * a handoff policy each session's end is recorded.
  */
 async function converse(
-	harness: Harness,
+	talk: Talk,
 	req: HarnessRequest,
-	live: Live,
-	context: HostContext,
-	staged: string,
-	kind: ReplyKind,
-	guard: Limiter,
+	session: Session,
 ): Promise<Turns> {
-	const metrics: Metrics = {};
-	let prompt = req.prompt;
-	let corrections = 0;
-	let retries = 0;
-	for (;;) {
-		const halt = halted(live);
-		if (halt) return { metrics, failure: halt };
-		const result = await turn(
-			harness,
-			{ ...req, prompt },
-			live,
-			context.emit,
-			guard,
-		);
-		addMetrics(metrics, result.metrics);
-		if (result.outcome === "failed") {
-			const failure = await recover(result, retries, live, context.emit);
-			if (failure !== undefined) return { metrics, failure };
-			retries++;
-			prompt = CUT_OFF;
-			continue;
+	const state: Talking = {
+		req,
+		session,
+		index: 1,
+		corrections: 0,
+		retries: 0,
+		metrics: {},
+	};
+	let end: End | undefined;
+	while (end === undefined) {
+		const halt = halted(talk.live);
+		if (halt) {
+			end = { failure: halt };
+			break;
 		}
-		const step = next(result.reply, corrections === MAX_CORRECTIONS, kind);
-		if (!("prompt" in step)) return { metrics, ...step };
-		prompt = step.prompt;
-		corrections++;
-		writeFileSync(join(staged, `correction-${corrections}.md`), prompt);
+		const { result, full } = await turn(talk, state.req, talk.handoff?.at);
+		addMetrics(state.metrics, result.metrics);
+		end =
+			full && talk.handoff
+				? await handOff(talk, talk.handoff, state)
+				: await follow(talk, state, result);
 	}
+	if (talk.handoff)
+		talk.emit(
+			"failure" in end
+				? sessionEvent(state, "failed", end.failure)
+				: sessionEvent(state, "settled"),
+		);
+	return { metrics: state.metrics, session: state.session, ...end };
 }
 
 /**
@@ -387,7 +560,6 @@ function stage(
 type Staging = {
 	profile: Profile;
 	config: AgentConfig;
-	session: Session;
 	staged: string;
 	outbox: string;
 };
@@ -408,8 +580,8 @@ async function settle(
 	turns: Turns,
 	seal: () => Promise<string | undefined>,
 ): Promise<HostNodeResult> {
-	const { profile, session } = staging;
-	const { metrics } = turns;
+	const { profile } = staging;
+	const { metrics, session } = turns;
 	const ran = {
 		session: session.id,
 		sessionDir: session.dir,
@@ -533,6 +705,55 @@ function sessionOf(
 			};
 }
 
+/** What the frame tells the agent of `staging` about its run. */
+function toldOf({ config, profile }: Staging, extras: Extras): Run {
+	const { context } = profile.fields;
+	return {
+		lane: config.lane.mode === "read" ? "read" : "write",
+		checks: extras.checks,
+		attachments: extras.attachments,
+		out: Object.values(config.out ?? {}),
+		kind: config.verdict ? VERDICT : WORK,
+		sessions:
+			context?.strategy === "handoff" ? sessionsOf(context.max) : undefined,
+	};
+}
+
+/**
+ * The context policy's part in an instance's turns: a handoff policy's trigger and next sessions, and what a compaction
+ * does. Under `handoff` a compaction is recorded as a fault; under a capped `compact`, one past `max` ends the run.
+ */
+function policyOf(
+	profile: Profile,
+	task: string,
+	mint: Handoff["mint"],
+	emit: HostContext["emit"],
+	guard: Limiter,
+): Pick<Talk, "handoff" | "compacted"> {
+	const { context } = profile.fields;
+	const key = `${PROFILES}.${profile.name}.context`;
+	if (context?.strategy === "handoff")
+		return {
+			handoff: { at: context.at, max: context.max, key, task, mint },
+			compacted: () =>
+				emit({
+					kind: "fault",
+					reason: `context: the harness compacted the session before its handoff. Lower ${key}.at below its compaction point`,
+				}),
+		};
+	let count = 0;
+	return {
+		compacted() {
+			count++;
+			const max = context?.max;
+			if (max !== undefined && count > max)
+				guard.trip(
+					`context: compacted ${count} times, past ${key}.max of ${max}. Raise ${key}.max, or split the task`,
+				);
+		},
+	};
+}
+
 /** Keeps `turn` as the last turn of `session`, unless its run was cut short by a cancel or a limit. */
 function keepSettled(
 	live: Live,
@@ -581,7 +802,6 @@ async function execute(
 			const staging: Staging = {
 				profile,
 				config,
-				session,
 				staged: join(context.scratch, "staged"),
 				outbox: join(context.scratch, "out"),
 			};
@@ -596,15 +816,8 @@ async function execute(
 				lane.base,
 				setup.path,
 			);
-			const kind = config.verdict ? VERDICT : WORK;
-			const outputs = Object.values(config.out ?? {});
-			const told: Run = {
-				lane: config.lane.mode === "read" ? "read" : "write",
-				checks: extras.checks,
-				attachments: extras.attachments,
-				out: outputs,
-				kind,
-			};
+			const told = toldOf(staging, extras);
+			const { kind, out: outputs } = told;
 			const now: Turn = {
 				task: textInput(inputs, "prompt"),
 				attachments: digests(extras.sources),
@@ -636,16 +849,36 @@ async function execute(
 				session: { dir: session.dir, id: session.harnessId },
 				verdict: config.verdict,
 				instance: instance.id,
+				context: profile.fields.context,
 			};
+			const mint = (index: number) =>
+				mintSession(
+					store.root,
+					runtime.harness,
+					context.concert,
+					`${instance.id}${SESSION_INDEX}${index}`,
+				);
 			const turns = await within(profile.fields.limits, live, (guard) =>
-				converse(harness, req, live, context, staging.staged, kind, guard),
+				converse(
+					{
+						harness,
+						live,
+						emit: context.emit,
+						staged: staging.staged,
+						kind,
+						guard,
+						...policyOf(profile, now.task, mint, context.emit, guard),
+					},
+					req,
+					session,
+				),
 			);
 			const settled = await settle(staging, turns, async () =>
 				read ? undefined : lane.seal(),
 			);
 			keepSettled(
 				live,
-				session,
+				turns.session,
 				{ ...now, commit: lane.head() },
 				extras.sources,
 			);

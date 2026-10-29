@@ -22,6 +22,7 @@ import {
 	parseIr,
 } from "@maestro/ir";
 import {
+	contextProblems,
 	type Harness,
 	type HarnessRequest,
 	type StubStep,
@@ -99,13 +100,23 @@ const CHECKS = {
 	missing: "no-such-command",
 };
 
-/** A harness named `other`, whose one thinking level is `low`, that must never be run. */
+/**
+ * A harness named `other`, whose one thinking level is `low`, that reports neither a context window nor a compaction,
+ * and must never be run.
+ */
 const other: Harness = {
 	name: "other",
 	run: () => {
 		throw new Error("other was run");
 	},
-	runtimeProblems: (runtime) => thinkingProblems("other", ["low"], runtime),
+	runtimeProblems: (runtime, context) => [
+		...thinkingProblems("other", ["low"], runtime),
+		...contextProblems(
+			"other",
+			{ window: false, compactions: false, compact: true },
+			context,
+		),
+	],
 };
 
 /** A repo host whose stub harness replays what `steps` gives each request, and the requests it got. */

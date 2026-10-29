@@ -64,6 +64,14 @@ await Promise.all([
 		"ws/.maestro/profiles/slow/profile.yaml",
 		`${RUNTIME}limits: { timeout: soon }\n`,
 	),
+	write(
+		"ws/.maestro/profiles/uncapped/profile.yaml",
+		`${RUNTIME}context: { strategy: handoff, at: 50000 }\n`,
+	),
+	write(
+		"ws/.maestro/profiles/whole-window/profile.yaml",
+		`${RUNTIME}context: { strategy: compact, at: "100%" }\n`,
+	),
 	write("ws/.maestro/profiles/empty/.keep", ""),
 	write("ws/.maestro/profiles/auditor/kb/notes.md", "notes\n"),
 	write("ws/.maestro/profiles/dirinstr/profile.yaml", "instructions: kb\n"),
@@ -324,6 +332,30 @@ describe("resolution", () => {
 				[
 					"profile slow: limits.timeout 'soon' is not a duration",
 					"Write it as 500ms, 90s, 15m, 12h or 7d",
+					2,
+				],
+			],
+			"",
+		],
+		[
+			"a handoff with no cap",
+			"uncapped",
+			[
+				[
+					"profile uncapped: context.max is required for strategy handoff",
+					"Set profiles.uncapped.context.max, the most handoffs the agent may make",
+					2,
+				],
+			],
+			"",
+		],
+		[
+			"a context trigger of the whole window",
+			"whole-window",
+			[
+				[
+					"profile whole-window: 'context.at' must match pattern \"^([1-9][0-9]?)%$\"",
+					"Fix it where it is set",
 					2,
 				],
 			],

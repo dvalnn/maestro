@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	baselineOf,
+	type ContextSupport,
+	contextProblems,
 	finite,
 	type Harness,
 	type HarnessEvent,
@@ -52,6 +54,19 @@ const IGNORED = new Set([
 	"tool_execution_update",
 ]);
 
+/** pi's stream reports no window, and its compaction point is a setting of an agent dir maestro does not own. */
+const CONTEXT_SUPPORT: ContextSupport = {
+	window: false,
+	compactions: true,
+	compact: false,
+};
+
+/** A compaction pi finished: neither aborted nor failed. */
+const compactionEvents = (e: JsonObject): HarnessEvent[] =>
+	e.aborted === true || e.errorMessage !== undefined
+		? []
+		: [{ kind: "compaction" }];
+
 /** pi usage keys and the metric each is summed into. */
 const USAGE_METRICS = {
 	input: METRIC.tokensIn,
@@ -85,6 +100,13 @@ function assistantEvents(message: JsonObject): HarnessEvent[] {
 	);
 	const events: HarnessEvent[] = [
 		{ kind: "usage", metrics },
+		{
+			kind: "context",
+			used:
+				finite(usage.input) +
+				finite(usage.cacheRead) +
+				finite(usage.cacheWrite),
+		},
 		...thinking,
 		{ kind: "text", text },
 	];
@@ -140,6 +162,8 @@ function eventsOf(e: JsonObject): HarnessEvent[] {
 			return isObject(e.message) && e.message.role === "assistant"
 				? assistantEvents(e.message)
 				: [];
+		case "compaction_end":
+			return compactionEvents(e);
 		case "agent_settled":
 			return e.aborted === true
 				? [{ kind: "fault", reason: "pi settled aborted" }]
@@ -254,7 +278,9 @@ export function piHarness(
 	};
 	return {
 		...subprocessHarness(adapter, backend),
-		runtimeProblems: (runtime) =>
-			thinkingProblems(adapter.name, THINKING_LEVELS, runtime),
+		runtimeProblems: (runtime, context) => [
+			...thinkingProblems(adapter.name, THINKING_LEVELS, runtime),
+			...contextProblems(adapter.name, CONTEXT_SUPPORT, context),
+		],
 	};
 }

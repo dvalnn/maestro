@@ -2,6 +2,9 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
 	baselineOf,
+	type ContextPolicy,
+	type ContextSupport,
+	contextProblems,
 	finite,
 	type Harness,
 	type HarnessEvent,
@@ -12,6 +15,7 @@ import {
 	type JsonObject,
 	METRIC,
 	type Metrics,
+	type RuntimeProblem,
 	resolveBin,
 	resultBytes,
 	SESSION_DIR,
@@ -74,6 +78,16 @@ const UNMANAGED_OFF = ["--no-chrome"];
 const UNMANAGED_OFF_ENV = {
 	CLAUDE_CODE_BUBBLEWRAP: "1",
 	CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+};
+
+/** Turns claude's own compaction off, so a handoff resets the session first. */
+const COMPACTION_OFF_ENV = { DISABLE_AUTO_COMPACT: "1" };
+
+/** Claude reports its window only on the closing `result` line, too late for a turn's trigger. */
+const CONTEXT_SUPPORT: ContextSupport = {
+	window: false,
+	compactions: true,
+	compact: true,
 };
 
 /** The metric each key of a message's or a result's `usage` is summed into. */
@@ -165,6 +179,21 @@ function blockEvent(block: unknown): HarnessEvent[] {
 	return [];
 }
 
+/** A model call's prompt size from its usage, the input that missed the cache and the cache read and written. */
+const contextEvent = (usage: Metrics): HarnessEvent => ({
+	kind: "context",
+	used:
+		(usage[METRIC.tokensIn] ?? 0) +
+		(usage[METRIC.tokensCacheRead] ?? 0) +
+		(usage[METRIC.tokensCacheWrite] ?? 0),
+});
+
+function systemEvents(e: JsonObject): HarnessEvent[] {
+	if (e.subtype === "init") return [];
+	if (e.subtype === "compact_boundary") return [{ kind: "compaction" }];
+	return [{ kind: "raw", data: e }];
+}
+
 /**
  * One run's final line. `is_error` also rides on `subtype: "success"`, so both are checked. Its text is dropped when it
  * repeats the last assistant text.
@@ -194,32 +223,37 @@ function resultEvents(
 
 /**
  * Maps `claude -p --output-format stream-json` lines to events. An assistant message is repeated once per content
- * block, so its usage is counted once per message id, as growth. The closing `result` line adds what the messages
- * missed: subagents, side models and streamed output tokens. A run that ends without one reports the messages'
- * usage alone, which undercounts output. Unknown types pass through as raw, never fail.
+ * block, so its usage is counted once per message id, as growth, and its prompt size reported once. The closing
+ * `result` line adds what the messages missed: subagents, side models and streamed output tokens. A run that ends
+ * without one reports the messages' usage alone, which undercounts output. Unknown types pass through as raw, never
+ * fail.
  */
 function parser(): (e: JsonObject) => HarnessEvent[] {
 	const seen = new Map<string, Metrics>();
 	const counted: Metrics = {};
 	let authFailed = false;
 	let lastText: string | undefined;
-	const countUsage = (message: JsonObject): Metrics => {
+	const countUsage = (message: JsonObject): HarnessEvent[] => {
 		const id = String(message.id);
 		const now = sumUsage(
 			isObject(message.usage) ? [message.usage] : [],
 			USAGE_METRICS,
 		);
+		const first = !seen.has(id);
 		const added = growth(now, seen.get(id) ?? {});
 		seen.set(id, now);
 		for (const [k, v] of Object.entries(added))
 			counted[k] = (counted[k] ?? 0) + v;
-		return added;
+		return [
+			{ kind: "usage", metrics: added },
+			...(first ? [contextEvent(now)] : []),
+		];
 	};
 	const assistantEvents = (message: JsonObject): HarnessEvent[] => {
 		const blocks = Array.isArray(message.content) ? message.content : [];
 		const events = blocks.flatMap(blockEvent);
 		for (const e of events) if (e.kind === "text") lastText = e.text;
-		return [{ kind: "usage", metrics: countUsage(message) }, ...events];
+		return [...countUsage(message), ...events];
 	};
 	const eventsOf = (e: JsonObject): HarnessEvent[] => {
 		switch (e.type) {
@@ -231,7 +265,7 @@ function parser(): (e: JsonObject) => HarnessEvent[] {
 			case "user":
 				return userEvents(e.message);
 			case "system":
-				return e.subtype === "init" ? [] : [{ kind: "raw", data: e }];
+				return systemEvents(e);
 			default:
 				return [{ kind: "raw", data: e }];
 		}
@@ -277,6 +311,31 @@ function claudeArgv(
 		"--model",
 		model,
 		...(thinking ? ["--effort", thinking] : []),
+		...compactionWindow(req.context),
+	];
+}
+
+/** The `--autocompact` window claude takes, in tokens. */
+const AUTOCOMPACT_MIN = 100_000;
+const AUTOCOMPACT_MAX = 1_000_000;
+
+/** Under `compact`, `at` as claude's compaction window, which pre-flight keeps in tokens and in range. */
+const compactionWindow = (context: ContextPolicy | undefined): string[] =>
+	context?.strategy === "compact" && "tokens" in context.at
+		? ["--autocompact", String(context.at.tokens)]
+		: [];
+
+/** A `compact` window claude would not take. */
+function windowProblems(context: ContextPolicy | undefined): RuntimeProblem[] {
+	if (context?.strategy !== "compact" || !("tokens" in context.at)) return [];
+	const { tokens } = context.at;
+	if (tokens >= AUTOCOMPACT_MIN && tokens <= AUTOCOMPACT_MAX) return [];
+	return [
+		{
+			field: "context.at",
+			reason: `claude takes at ${tokens} outside its compaction window of ${AUTOCOMPACT_MIN} to ${AUTOCOMPACT_MAX} tokens`,
+			fix: `Set at between ${AUTOCOMPACT_MIN} and ${AUTOCOMPACT_MAX}, or use strategy handoff`,
+		},
 	];
 }
 
@@ -300,6 +359,7 @@ export function claudeHarness(
 				env: {
 					...BASELINE.env,
 					...UNMANAGED_OFF_ENV,
+					...(req.context?.strategy === "handoff" && COMPACTION_OFF_ENV),
 					[CONFIG_DIR_VAR]: join(SESSION_DIR, SESSION_CONFIG),
 				},
 				secrets: { [TOKEN_VAR]: token },
@@ -310,7 +370,10 @@ export function claudeHarness(
 	};
 	return {
 		...subprocessHarness(adapter, backend),
-		runtimeProblems: (runtime) =>
-			thinkingProblems(adapter.name, EFFORTS, runtime),
+		runtimeProblems: (runtime, context) => [
+			...thinkingProblems(adapter.name, EFFORTS, runtime),
+			...contextProblems(adapter.name, CONTEXT_SUPPORT, context),
+			...windowProblems(context),
+		],
 	};
 }

@@ -242,7 +242,7 @@ export function subprocessHarness(
 				events,
 				result,
 				async cancel() {
-					if (settled) return;
+					if (settled || tally.settled) return;
 					cancelled = true;
 					await proc.kill();
 				},
