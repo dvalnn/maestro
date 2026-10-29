@@ -1,0 +1,54 @@
+---
+name: release
+description:
+  Cut a maestro `v0.1.0-beta.<n>` release - release review, version bump, `just release`, push, the Forgejo release with
+  its assets and notes, closing the milestone. Use when the owner asks to cut, ship or issue a release.
+---
+
+# Release
+
+A release is the Forgejo milestone `v0.1.0-beta.<n>`. Cutting it needs the owner's go, which also covers its push and
+publish. Run every command from the repository root.
+
+## Steps
+
+1. **Ready.** `jj git fetch`. Every issue in the milestone is closed or moved to `Next release`; the milestone ids come
+   from `forge.py api GET /milestones` (the `forgejo` skill).
+2. **Release review.** Step 6 of `docs/agents/implementation-loop.md`: one opus read-only subagent over
+   `jj diff --from v0.1.0-beta.<n-1> --to main@origin`. Accepted findings become issues in the milestone and land as
+   their own changes before the cut. Done when no finding blocks the release.
+3. **Notes.** Draft them in the scratchpad in the previous release's structure and voice (read it with
+   `forge.py api GET '/releases?limit=1'`): a two-line lead naming the theme, `## Install or upgrade` with the pinned
+   version, `## Upgrade notes` for every breaking change a previous-beta user must act on, `## Added`, `## Changed`,
+   `## Fixed`, each bullet ending in its issue refs. Show the owner the notes and the review's findings before
+   publishing.
+4. **Bump.** One change, `chore(release): bump to 0.1.0-beta.<n>`, on top of `main`: the `version` of every
+   `packages/*/package.json` and `packs/classics/package.json`, the pinned version in `INSTALL.md`, and in
+   `skills/maestro/SKILL.md` the `checked against` line and the classics pack's version. `bun install` refreshes
+   `bun.lock`. `jj show v0.1.0-beta.<n-1>` is the previous bump to match; a `grep` for the old version finds no stray.
+5. **Build.** `mise exec -- just release` runs the gate, builds `dist/` and smoke-tests the install. It must end with
+   `smoke: passed`.
+6. **Push.** `jj bookmark set main -r <bump>`, `jj git push --bookmark main`.
+7. **Publish.** From `dist/`, so each asset keeps its file name:
+
+   ```sh
+   fj release create v0.1.0-beta.<n> --create-tag v0.1.0-beta.<n> --branch main --prerelease \
+     --body "$(cat <notes>)" -a SHA256SUMS -a install.sh -a maestro-linux-x64 -a maestro-skill.tar.gz \
+     -a classics-<v>.tar.gz -a maestro-classics-<v>.tgz -a maestro-ir-<v>.tgz -a maestro-sdk-<v>.tgz \
+     -a maestro-host-repo-sdk-<v>.tgz
+   ```
+
+   The assets are every file in `dist/`; `ls dist` against the list catches one the build added.
+
+8. **Verify.** Download one asset from the release and check it with `sha256sum -c` against the published `SHA256SUMS`.
+   `jj git fetch` brings the forge's tag home.
+9. **Close.** `forge.py api PATCH /milestones/<id> '{"state": "closed"}'`. Reinstall the owner's binary with
+   `MAESTRO_RELEASE_DIR=$PWD/dist sh install.sh`.
+
+## Gotchas
+
+- Forgejo does not close an issue from `Closes #N` in a pushed description; close each with `fj issue close N -w`.
+- An issue with an open dependency refuses to close (HTTP 412); close its blocker first.
+- `just release` runs the full gate, so a flaky test fails the build; rerun once, and file the flake if it repeats.
+- `fj` creates the tag on the forge, and jj creates none. The tag reaches the local repository only through
+  `jj git fetch`.
