@@ -82,6 +82,46 @@ const homeOf = (root: string, id: string) =>
 	join(sessionsDir(root), encodeURIComponent(id));
 
 const PARTIALS = "partials";
+/** Under a target store, per concert: each agent instance's latest session, one file per instance id. */
+const LATEST = "latest";
+
+/** An agent instance's latest session: its node, the keys of its expansion and the session's id. */
+export type Latest = { node: string; keys: string[]; session: string };
+
+const latestDir = (root: string, concert: string) =>
+	join(root, LATEST, encodeURIComponent(concert));
+
+/** Keeps `latest` as the latest session of the agent instance `instance` of `concert`, over any kept before. */
+export function keepLatest(
+	root: string,
+	concert: string,
+	instance: string,
+	latest: Latest,
+) {
+	const dir = latestDir(root, concert);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(
+		join(dir, encodeURIComponent(instance)),
+		JSON.stringify(latest),
+	);
+}
+
+const isLatest = (v: unknown): v is Latest =>
+	isPlainObject(v) &&
+	typeof v.node === "string" &&
+	typeof v.session === "string" &&
+	Array.isArray(v.keys) &&
+	v.keys.every((k) => typeof k === "string");
+
+/** The latest session of each agent instance of `concert` that has one kept, a malformed one left out. */
+export function latestOf(root: string, concert: string): Latest[] {
+	const dir = latestDir(root, concert);
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir).flatMap((name) => {
+		const value = recordAt(join(dir, name), "");
+		return isLatest(value) ? [value] : [];
+	});
+}
 
 /**
  * Where the partial work of failed instance `v` is kept: a changeset directory under the target store, outside the
@@ -128,13 +168,22 @@ const isMeta = (v: unknown): v is Meta =>
 	typeof v.concert === "string" &&
 	typeof v.harnessId === "string";
 
-/** The parsed record of the session at `home`, or `undefined` when it is missing or not JSON. */
-function recordAt(home: string): unknown {
+/** The parsed JSON of `file` under `dir`, by default a session's record, or `undefined` when it is missing or not JSON. */
+function recordAt(dir: string, file = SESSION_FILE): unknown {
 	try {
-		return JSON.parse(readFileSync(join(home, SESSION_FILE), "utf8"));
+		return JSON.parse(readFileSync(join(dir, file), "utf8"));
 	} catch {
 		return undefined;
 	}
+}
+
+/** Session `id` of `root`, or `undefined` when it is not in the store or its record is malformed. */
+export function findSession(root: string, id: string): Session | undefined {
+	const home = homeOf(root, id);
+	const meta = recordAt(home);
+	if (!isMeta(meta)) return undefined;
+	const { harness, harnessId } = meta;
+	return { id, harnessId, harness, home, dir: join(home, HARNESS_DIR) };
 }
 
 /**
@@ -149,13 +198,12 @@ export function openSession(root: string, id: string): Session {
 			`session ${id} of node '${node}' is not in the store: its concert was pruned. Perform the composition anew`,
 		);
 	}
-	const meta = recordAt(home);
-	if (!isMeta(meta))
+	const found = findSession(root, id);
+	if (!found)
 		throw new Error(
 			`session record '${join(home, SESSION_FILE)}' is malformed. Perform the composition anew`,
 		);
-	const { harness, harnessId } = meta;
-	return { id, harnessId, harness, home, dir: join(home, HARNESS_DIR) };
+	return found;
 }
 
 /** Under `SESSIONS` in an older store: one file per version an agent wrote, named by the version, holding its session id. */
@@ -191,6 +239,13 @@ function concertSessions(root: string, concert: string): string[] {
 	return [...homes.map((name) => join(dir, name)), ...pointers];
 }
 
+/** What `concert` keeps under `root` outside its lanes: its sessions, partials and latest sessions. */
+const concertFiles = (root: string, concert: string) => [
+	...concertSessions(root, concert),
+	...concertPartials(root, concert),
+	...[latestDir(root, concert)].filter((dir) => existsSync(dir)),
+];
+
 /** The bytes the lanes and sessions of `concert` take, over every target in the host store `store`. */
 export async function concertUsage(
 	store: string,
@@ -199,11 +254,7 @@ export async function concertUsage(
 	let bytes = 0;
 	for (const root of targetRoots(store)) {
 		bytes += await lanesAt(root).diskUse(concert);
-		for (const p of [
-			...concertSessions(root, concert),
-			...concertPartials(root, concert),
-		])
-			bytes += bytesOnDisk(p);
+		for (const p of concertFiles(root, concert)) bytes += bytesOnDisk(p);
 	}
 	return bytes;
 }
@@ -212,10 +263,7 @@ export async function concertUsage(
 export async function releaseConcert(store: string, concert: string) {
 	for (const root of targetRoots(store)) {
 		await lanesAt(root).prune(concert);
-		for (const p of [
-			...concertSessions(root, concert),
-			...concertPartials(root, concert),
-		])
+		for (const p of concertFiles(root, concert))
 			rmSync(p, { recursive: true, force: true });
 	}
 }

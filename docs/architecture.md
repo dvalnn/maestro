@@ -108,7 +108,8 @@ The lifecycle has two stages (D-12). **Compose** is steps 1 to 4, ending with pr
 6. **Record.** Events and results go to the record store as they happen. A final result is derived by the result rule
    (CORE-04).
 7. **Observe and resume.** `ls`, `wait`, `watch` and renderers read the record and events. `perform --resume` re-enters
-   a concert at node granularity (CORE-09).
+   a concert at node granularity (CORE-09). `perform --encore` performs a concert's composition again as a new concert,
+   linked to it (see Encore).
 
 ## 5. The IR (contract)
 
@@ -279,6 +280,15 @@ stores by node id and expansion path as a `progress` event, opaquely.
   code node, and dependents rerun when their inputs changed (ADR 0008); a resume whose recomputed code hashes differ
   from the recorded ones warns that the composition changed and goes on. Any other instance runs again. A concert whose
   process is still alive cannot be resumed. Nothing is reused across concerts.
+- **Encore.** `perform --encore <concert>` starts a new concert, its row recording `encoreOf`, that builds the earlier
+  concert's composition with the param flags it recorded, the encore's own overriding them, under the config files as
+  they stand, with the earlier `-c` and the encore's own on top and the encore's `--preset` in place of the earlier one.
+  A fingerprint of the IR, the config values and the host facts, which give the target revision and a digest of the
+  profiles, is recorded with each concert; an encore whose fingerprint equals its concert's, or of a concert still
+  running, is refused before it is recorded. Core passes `HostContext.encore` to each host instance and reads nothing of
+  it, and each `HostInstance` carries the kinds of the groups around it. A resumed encore stays one. Every instance runs
+  again: nothing is reused. Two encores of one concert performed at once continue the same sessions; nothing guards
+  against it.
 - **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in
   reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started has
   no record. A code node that runs past the timeout its author set settles `failed`. It has none by default.
@@ -352,9 +362,10 @@ claimed by an installed but unused registrant is ignored.
 - The **record store** is local and embedded. SQLite in WAL mode through `bun:sqlite` is the store (D-26). Concerts may
   run concurrently with no coordination beyond lane isolation, and the concurrency cap is per concert. The schema is new
   (D-02). It holds concerts with their IR, the id of the process performing them, where their code came from (workspace,
-  module directory, file), tour and title, and the `--preset` name and each `-c` as typed, which a resume reapplies;
-  node instances, outcomes with reasons, durations, metrics, artifact references and events. No other config is stored:
-  a resume re-reads the config files.
+  module directory, file), tour and title, the `--preset` name and each `-c` as typed, which a resume reapplies, the
+  root's params the flags gave, the concert an encore repeats and its fingerprint; node instances, outcomes with
+  reasons, durations, metrics, artifact references and events. No other config is stored: a resume re-reads the config
+  files.
 - A resume marks the concert's instance rows **stale**. Each one it reuses or replaces stops being stale, and the
   metrics of a replaced attempt still count towards the concert's.
 - A concert whose process is gone while it is still `running` settles `failed`, by whichever reader finds it, so `wait`
@@ -409,10 +420,10 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   seat it fills, a lane input, typed output declarations (a JSON file with a schema, or Markdown), `attachments` and the
   named checks it may run. The profile gives the runtime (harness, model, thinking level), the instructions, the limits,
   the context policy, the read-only binds and its own attachments, bound at `/in/<name>` (see Profiles). It may take a
-  `session` to continue, and `verdict` marks a verdict agent. Outputs: the declared files as typed artifacts, the report
-  object, outcome and reason from its envelope, metrics (token counts), the staged text as an artifact, its latest
-  `session`, and the resulting lane version. `rejected` means a verdict agent's verdict is negative. `failed` means the
-  run did not complete, or the agent is blocked (ADR 0012).
+  `session` to continue, `verdict` marks a verdict agent, and `encore: false` starts it fresh in an encore. Outputs: the
+  declared files as typed artifacts, the report object, outcome and reason from its envelope, metrics (token counts),
+  the staged text as an artifact, its latest `session`, and the resulting lane version. `rejected` means a verdict
+  agent's verdict is negative. `failed` means the run did not complete, or the agent is blocked (ADR 0012).
 - **Check node** (D-22). Runs deterministic commands in a lane: one named check of the target, every named check (all
   failures reported), or an inline `{ run, hint?, timeout }`. Each line runs through `sh -c` in the sandbox, in order,
   and the first failing line stops its check. Exit 0 is `ok`; 3, 124 (also a timeout), 127 and 137 (SIGKILL) are
@@ -530,6 +541,14 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - An agent's enrichment carries `sessionDir`, the session's host directory `sessions/<id>/harness`, where the harness
   writes its transcript (claude under `claude/projects/`, pi directly in it). A session lasts until its concert is
   pruned; continuing a pruned one fails the agent, naming the session and the node that started it.
+- The host keeps, per concert under `latest/` in the target store, each agent instance's latest session, after any
+  handoff, by instance id. In an encore an agent with no `session` input continues its counterpart's session from there:
+  the instance of the same node at the same keys in the concert the encore repeats, in a `loop` its last iteration, so
+  an item of any other group matches the one at its key, its position or `parMap` key, and an extra item has none. An
+  agent continues its own session input over any counterpart, and one whose seat says `encore: false` starts fresh. When
+  the counterpart's session is gone, was pruned, runs on another harness or has no settled turn, or no counterpart is
+  kept, the agent starts fresh and its enrichment's `encoreFresh` says why. An encore cuts fresh lanes: it continues
+  sessions, not lanes (D-27). `prune` frees a concert's `latest/` entry with it.
 
 **Lanes**
 
@@ -565,8 +584,9 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 
 **Configuration**
 
-- A code node sees `target`, `base` and `sparse` as `env.repo`: `base` and `sparse` are `null` when unset, and
-  `env.repo` is empty without a target.
+- A code node sees `target`, `base`, `sparse`, `revision` and `profiles` as `env.repo`: `base` and `sparse` are `null`
+  when unset, `revision` is the commit `base` names, `null` when unresolved, and `profiles` a digest over the files of
+  every profile the roots hold. `env.repo` is empty without a target.
 - The host owns three namespaces: `target` (`repo`, the default `base`, the named `checks`, `prepare` and `sparse`),
   `profiles` (a profile's name to the fields that tune it, below) and `sandbox` (`readOnly` paths bound into every
   agent, check and prepare). `roles` is refused: profiles replace it.

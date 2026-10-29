@@ -168,6 +168,23 @@ function ranAgainst(args: string[]) {
 		?.slice("--git-dir=".length);
 }
 
+/** The commit `base` names in the repository `target`, or `null` when git cannot resolve it there. */
+export async function revisionOf(
+	target: string,
+	base: string,
+): Promise<string | null> {
+	const { out, code } = await spawnGit([
+		"-C",
+		target,
+		"rev-parse",
+		"--verify",
+		"--quiet",
+		"--end-of-options",
+		`${base}^{commit}`,
+	]);
+	return code === 0 ? out.trim() : null;
+}
+
 async function git(...a: Parameters<typeof spawnGit>): Promise<string> {
 	const { out, err, code } = await spawnGit(...a);
 	const [args] = a;

@@ -2759,6 +2759,141 @@ test("a concert that finished ok is not resumed", async () => {
 	);
 });
 
+describe("an encore", () => {
+	const looped = graph(
+		[
+			{
+				id: "m",
+				kind: "parMap",
+				items: ["x"],
+				cardinality: { exact: 1 },
+				onError: "stop",
+				inner: { item: STRING },
+				out: { results: settledList },
+				members: { result: "m/l" },
+			},
+			{
+				id: "m/l",
+				kind: "loop",
+				cardinality: { upTo: 2 },
+				in: { more: BOOL },
+				literals: { more: true },
+				inner: { ...LOOP_INNER, more: BOOL },
+				out: { more: BOOL },
+				members: { result: "m/l/t" },
+				test: { at: "end", port: { node: "m/l/t", port: "more" } },
+			},
+			task("m/l/t", { out: { more: BOOL } }),
+		],
+		[],
+		"m",
+	);
+	const options = async (
+		steps: FakeScript["steps"],
+		facts: Record<string, unknown> = {},
+	) => ({
+		hosts: [{ ...fakeHost({ steps }), environment: () => facts }],
+		loadCode: loader({}),
+		dir: (await workspace()).dir,
+		concurrency: 1,
+	});
+
+	test("is linked to its concert, which its hosts are told with each instance's group kinds, a resume of it too", async () => {
+		const seen: unknown[] = [];
+		let fail = false;
+		const base = await options({
+			"m/l/t": ({ groups, expansion }, _, { encore }) => {
+				seen.push([encore, groups, expansion]);
+				return fail
+					? { outcome: "failed", reason: "flaked" }
+					: { outcome: "ok", outputs: { more: expansion.endsWith("[0]") } };
+			},
+		});
+		const first = await start({ ...base, ir: looped });
+		await first.done;
+		fail = true;
+		const config = {
+			values: { dataRoot: base.dir, round: 2 },
+			sources: [],
+			layers: [],
+		};
+		const encore = await start({
+			...base,
+			config,
+			ir: looped,
+			encore: first.id,
+		});
+		expect(await encore.done).toMatchObject({ outcome: "failed" });
+		fail = false;
+		const resumed = await start({
+			...base,
+			config,
+			ir: looped,
+			resume: encore.id,
+		});
+		expect(await resumed.done).toMatchObject({ outcome: "ok" });
+		const record = readerIn(base.dir);
+		expect(record.find(encore.id)?.encoreOf).toBe(first.id);
+		expect(record.find(first.id)).not.toHaveProperty("encoreOf");
+		const nested = ["parMap", "loop"];
+		expect(seen).toEqual([
+			[undefined, nested, "[x][0]"],
+			[undefined, nested, "[x][1]"],
+			[first.id, nested, "[x][0]"],
+			[first.id, nested, "[x][0]"],
+			[first.id, nested, "[x][1]"],
+		]);
+	});
+
+	test("is refused while its concert is live, or when IR, config and host facts all match it, and records nothing; another IR alone is not", async () => {
+		const started = Promise.withResolvers<void>();
+		const base = await options(
+			{
+				"m/l/t": () => {
+					started.resolve();
+					return pending();
+				},
+			},
+			{ revision: "a" },
+		);
+		const live = await start({ ...base, ir: looped });
+		await started.promise;
+		await expect(
+			start({ ...base, ir: looped, encore: live.id }),
+		).rejects.toThrow(
+			`concert '${live.id}' is still running in process ${process.pid}\nWait for it to settle, or kill it, then perform its encore`,
+		);
+		await live.cancel();
+		await live.done;
+		await expect(
+			start({ ...base, ir: looped, encore: live.id }),
+		).rejects.toThrow(
+			`concert '${live.id}' was performed from the same IR, config and host facts\nChange one of them, or resume it`,
+		);
+		expect(readerIn(base.dir).ids()).toEqual([live.id]);
+		const done = { outcome: "ok" as const, outputs: { more: false } };
+		const moved = {
+			...base,
+			hosts: [
+				{
+					...fakeHost({ steps: { "m/l/t": () => done, t: () => done } }),
+					environment: () => ({ revision: "b" }),
+				},
+			],
+		};
+		const encore = await start({ ...moved, ir: looped, encore: live.id });
+		expect(await encore.done).toMatchObject({ outcome: "ok" });
+		await expect(
+			start({ ...moved, ir: looped, encore: encore.id }),
+		).rejects.toMatchObject({
+			message: `concert '${encore.id}' was performed from the same IR, config and host facts\nChange one of them`,
+		});
+		const other = graph([task("t")], [], "t");
+		const reshaped = await start({ ...moved, ir: other, encore: encore.id });
+		expect(await reshaped.done).toMatchObject({ outcome: "ok" });
+	});
+});
+
 test("a resume marks the records it has not revisited stale, and keeps their spend", async () => {
 	const hosts = [
 		fakeHost({

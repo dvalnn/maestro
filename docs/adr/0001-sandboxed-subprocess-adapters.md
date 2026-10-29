@@ -20,4 +20,4 @@ and Claude Code the second.
 - Every adapter parses a JSON event stream, so event shapes are the adapter's contract with its harness and need
   fixtures.
 - Cancel is a process-tree kill, which slice 0 verifies (D-32, spike 4).
-- A warm harness session cannot be shared across concerts (D-27).
+- A warm harness session crosses concerts only through an encore, which continues sessions and cuts fresh lanes (D-27).

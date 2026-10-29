@@ -375,6 +375,108 @@ export const work = composition("work", { examples: [{}] }, () => {
 	});
 });
 
+describe("encore", () => {
+	test("performs a concert's composition again, linked to it, its params kept unless a flag overrides one, refusing one that changes nothing", async () => {
+		const w = await world();
+		const encore = (...args: string[]) =>
+			w.call(["perform", "--encore", ...args], { hosts: [hostOf()] });
+		const first = idOf(
+			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
+		);
+		expect(await encore(first)).toEqual({
+			code: 1,
+			out: "",
+			err: `nothing changed since concert ${first}: its params, config and target revision are the same\nChange a param, the config or the target`,
+		});
+		const flaky = idOf(
+			await w.call(["perform", "demo.greet", "--name", "z"], {
+				hosts: [
+					fakeHost({
+						steps: { first: [{ outcome: "failed", reason: "flaky" }] },
+					}),
+				],
+			}),
+		);
+		expect((await encore(flaky)).err).toEndWith(
+			`\nChange a param, the config or the target, or resume it with 'maestro perform --resume ${flaky}'`,
+		);
+		expect(await encore(first, "demo.greet")).toMatchObject({
+			code: 2,
+			err: expect.stringContaining(
+				"--encore takes no composition: it performs its concert's own",
+			),
+		});
+		const renamed = idOf(await encore(first, "--name", "y"));
+		const chained = idOf(await encore(renamed, "-c", "concurrency=2"));
+		expect((await encore(chained)).err).toStartWith(
+			`nothing changed since concert ${chained}`,
+		);
+		const stacked = idOf(await encore(chained, "-c", "concurrency=3"));
+		const recorded = async (id: string) => {
+			const { encoreOf, params, config } = json(
+				await w.call(["ls", id, "--json"]),
+			);
+			return { encoreOf, params, config };
+		};
+		expect(await recorded(first)).toEqual({
+			encoreOf: undefined,
+			params: { name: "x" },
+			config: undefined,
+		});
+		expect(await recorded(renamed)).toEqual({
+			encoreOf: first,
+			params: { name: "y" },
+			config: undefined,
+		});
+		expect(await recorded(chained)).toEqual({
+			encoreOf: renamed,
+			params: { name: "y" },
+			config: ["concurrency=2"],
+		});
+		expect(await recorded(stacked)).toMatchObject({
+			encoreOf: chained,
+			config: ["concurrency=2", "concurrency=3"],
+		});
+	});
+
+	test("the encore's --preset replaces the concert's, under the concert's -c", async () => {
+		const w = await world();
+		const presets = join(w.cwd, ".maestro/presets");
+		await Bun.write(join(presets, "a.yaml"), "mode:\n  from: a\n  keep: a\n");
+		await Bun.write(join(presets, "b.yaml"), "mode:\n  keep: b\n");
+		const seen: unknown[] = [];
+		const host: Host = {
+			...fakeHost({
+				steps: {
+					first: (_instance, _inputs, { setup }) => {
+						seen.push(setup.config.mode);
+						return FIRST;
+					},
+				},
+			}),
+			config: { mode: { type: "object" } },
+		};
+		const first = idOf(
+			await w.call(["perform", ...GREET, "--preset", "a", "-c", "mode.c=1"], {
+				hosts: [host],
+			}),
+		);
+		const encore = idOf(
+			await w.call(["perform", "--encore", first, "--preset", "b"], {
+				hosts: [host],
+			}),
+		);
+		expect(seen).toEqual([
+			{ from: "a", keep: "a", c: 1 },
+			{ keep: "b", c: 1 },
+		]);
+		expect(json(await w.call(["ls", encore, "--json"]))).toMatchObject({
+			preset: "b",
+			config: ["mode.c=1"],
+		});
+	});
+});
+
 describe("kill", () => {
 	test("never signals a live process that is not maestro, and settles its concert failed", async () => {
 		const w = await world();

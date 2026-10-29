@@ -17,7 +17,11 @@ const NEW_STORE_VERSION = 0;
 /** The oldest schema version an upgrade starts from. */
 const OLDEST_UPGRADABLE_VERSION = 4;
 /** `UPGRADE_STEPS[i]` upgrades a record store from version `OLDEST_UPGRADABLE_VERSION + i` to the next. */
-const UPGRADE_STEPS = ["ALTER TABLE instances ADD COLUMN inputs TEXT"];
+const UPGRADE_STEPS = [
+	"ALTER TABLE instances ADD COLUMN inputs TEXT",
+	`ALTER TABLE concerts ADD COLUMN params TEXT; ALTER TABLE concerts ADD COLUMN encore_of TEXT;
+	ALTER TABLE concerts ADD COLUMN fingerprint TEXT`,
+];
 /** The version of the schema below, kept in SQLite's `user_version`. */
 const SCHEMA_VERSION = OLDEST_UPGRADABLE_VERSION + UPGRADE_STEPS.length;
 /** How long a write waits for another connection's lock before it fails, in milliseconds. */
@@ -49,7 +53,8 @@ export const CONCERT_FINISHED = "the concert finished before it settled";
 // non-ok outcome. `result_node` is NULL while a concert is running, and after one that failed before any node ran.
 // `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an earlier attempt, which a resume
 // reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume replaced, which still count as
-// spend. A concert's `profile` holds the name of the preset it was performed with.
+// spend. A concert's `profile` holds the name of the preset it was performed with, `params` its root params as given
+// (JSON), `encore_of` the concert it is an encore of, and `fingerprint` the digest `begin` was given.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -69,7 +74,10 @@ CREATE TABLE concerts (
 	module_dir TEXT NOT NULL,
 	file TEXT,
 	profile TEXT,
-	config TEXT
+	config TEXT,
+	params TEXT,
+	encore_of TEXT,
+	fingerprint TEXT
 ) STRICT;
 CREATE TABLE instances (
 	concert TEXT NOT NULL,
@@ -124,7 +132,8 @@ export type ConcertStatus = "running" | Exclude<Outcome, "skipped">;
 /**
  * What a concert row keeps beside its IR. `moduleDir` is the directory its worker references' modules are found in,
  * and `file` the composition file in it that the IR was built from, when it was built from a bare file. `preset` and
- * `config` are the preset name and each config override, as given, it was performed with.
+ * `config` are the preset name and each config override, as given, it was performed with, and `params` its root
+ * composition's params as given, by name.
  */
 export type ConcertOrigin = {
 	workspace: string;
@@ -134,11 +143,14 @@ export type ConcertOrigin = {
 	title?: string;
 	preset?: string;
 	config?: readonly string[];
+	params?: Readonly<Record<string, unknown>>;
 };
 
 /** Timestamps are milliseconds since the Unix epoch. `pid` is the process performing the concert. */
 export type ConcertRecord = ConcertOrigin & {
 	id: string;
+	/** The concert this one is an encore of. */
+	encoreOf?: string;
 	composition: string;
 	pack: string;
 	ir: Ir;
@@ -249,17 +261,27 @@ export interface Records {
 
 /** The writes of the process performing a concert. Every write throws on an unknown concert id. */
 export interface RecordWriter {
-	/** Records a new concert as `running`, performed by this process. `workspace` and `moduleDir` default to ''. */
+	/**
+	 * Records a new concert as `running`, performed by this process. `workspace` and `moduleDir` default to ''.
+	 * `fingerprint` is a digest of what it is performed from, which an encore of it must not repeat.
+	 * @throws Unencorable when `encoreOf` names a running concert, or one recorded with `fingerprint`.
+	 * @throws Error when `encoreOf` names no concert.
+	 */
 	begin(
-		concert: { id: string; ir: Ir; startedAt: number } & Partial<ConcertOrigin>,
+		concert: { id: string; ir: Ir; startedAt: number } & Partial<
+			ConcertOrigin & { encoreOf: string; fingerprint: string }
+		>,
 	): void;
 	/**
 	 * Restarts a concert that failed or was rejected as `running`, performed by this process, with `ir` as its stored IR.
 	 * Its instance records and events stay. `reuse`, `start` and `settle` take over each instance record from before.
-	 * @returns the instance records from before.
+	 * @returns the concert, and its instance records from before.
 	 * @throws Unresumable when the concert is running, as its process is alive, or settled `ok`.
 	 */
-	resume(concert: { id: string; ir: Ir }): InstanceRecord[];
+	resume(concert: { id: string; ir: Ir }): {
+		concert: ConcertRecord;
+		instances: InstanceRecord[];
+	};
 	/**
 	 * Records that `instance` started, with its `running` event. A record from before a resume is replaced, its events
 	 * kept. `inputs` are a leaf's wired inputs, kept as given.
@@ -324,6 +346,9 @@ type ConcertRow = {
 	file: string | null;
 	profile: string | null;
 	config: string | null;
+	params: string | null;
+	encore_of: string | null;
+	fingerprint: string | null;
 };
 
 type InstanceStatus = InstanceRecord["status"];
@@ -729,43 +754,29 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 			[JSON.stringify(ir), process.pid, id],
 		);
 		db.exec("UPDATE instances SET stale = 1 WHERE concert = ?", [id]);
-		return instancesOf(db, id);
+		return {
+			concert: concertOf(look.rowOf(id)),
+			instances: instancesOf(db, id),
+		};
 	});
 
+	const begin: RecordWriter["begin"] = (concert) => {
+		const { encoreOf, fingerprint } = concert;
+		const refused =
+			encoreOf === undefined
+				? undefined
+				: unencorable(look.rowOf(encoreOf), fingerprint);
+		if (refused) throw refused;
+		db.exec(
+			`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, tour, title, module_dir,
+			file, profile, config, params, encore_of, fingerprint)
+			VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			beginRow(concert),
+		);
+	};
+
 	return {
-		begin({
-			id,
-			ir,
-			startedAt,
-			workspace,
-			moduleDir,
-			file,
-			tour,
-			title,
-			preset,
-			config,
-		}) {
-			db.exec(
-				`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, tour, title, module_dir,
-				file, profile, config)
-				VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?)`,
-				[
-					id,
-					ir.composition.id,
-					ir.composition.pack,
-					JSON.stringify(ir),
-					process.pid,
-					startedAt,
-					workspace ?? "",
-					tour ?? null,
-					title ?? null,
-					moduleDir ?? "",
-					file ?? null,
-					preset ?? null,
-					config?.length ? JSON.stringify(config) : null,
-				],
-			);
-		},
+		begin: writing(db, begin),
 		resume: ({ id, ir }) => restart(id, ir),
 		start: writing(
 			db,
@@ -850,6 +861,57 @@ export class Unresumable extends Error {
 	}
 }
 
+/** The refusal of an encore of a concert that is still running, or whose fingerprint the encore's repeats. */
+export class Unencorable extends Error {
+	override readonly name = "Unencorable";
+	readonly concert: { id: string; pid: number; status: ConcertStatus };
+
+	constructor(concert: Unencorable["concert"]) {
+		const { id, status, pid } = concert;
+		super(
+			status === "running"
+				? `concert '${id}' is still running in process ${pid}\nWait for it to settle, or kill it, then perform its encore`
+				: `concert '${id}' was performed from the same IR, config and host facts\nChange one of them${status === "ok" ? "" : ", or resume it"}`,
+		);
+		this.concert = concert;
+	}
+}
+
+/** The `concerts` row `begin` inserts, in its column order. */
+function beginRow(concert: Parameters<RecordWriter["begin"]>[0]) {
+	const { id, ir } = concert;
+	return [
+		id,
+		ir.composition.id,
+		ir.composition.pack,
+		JSON.stringify(ir),
+		process.pid,
+		concert.startedAt,
+		concert.workspace ?? "",
+		concert.tour ?? null,
+		concert.title ?? null,
+		concert.moduleDir ?? "",
+		concert.file ?? null,
+		concert.preset ?? null,
+		concert.config?.length ? JSON.stringify(concert.config) : null,
+		json(concert.params),
+		concert.encoreOf ?? null,
+		concert.fingerprint ?? null,
+	];
+}
+
+/** The refusal of an encore of `row` with `fingerprint`, unless `row` has settled with another fingerprint. */
+function unencorable(
+	row: ConcertRow,
+	fingerprint: string | undefined,
+): Unencorable | undefined {
+	const { id, status, pid } = row;
+	const same = fingerprint !== undefined && row.fingerprint === fingerprint;
+	return status === "running" || same
+		? new Unencorable({ id, status, pid })
+		: undefined;
+}
+
 /** The refusal to resume `concert`, unless it failed or was rejected. */
 export function unresumable({
 	id,
@@ -878,6 +940,8 @@ function concertOf(row: ConcertRow): ConcertRecord {
 		...(row.title !== null && { title: row.title }),
 		...(row.profile !== null && { preset: row.profile }),
 		...(row.config !== null && { config: JSON.parse(row.config) }),
+		...(row.params !== null && { params: JSON.parse(row.params) }),
+		...(row.encore_of !== null && { encoreOf: row.encore_of }),
 	};
 }
 

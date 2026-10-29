@@ -4,6 +4,7 @@ import {
 	type AssertNode,
 	boundOf,
 	type CodeNode,
+	canonicalJson,
 	type Facts,
 	type FindNode,
 	type FoldNode,
@@ -45,7 +46,7 @@ import {
 	type Roots,
 } from "../host";
 import type { Inputs, LoadCode } from "../node";
-import { instanceKey, kindLookup, loadFunction } from "../shared";
+import { instanceKey, kindLookup, loadFunction, sha256Hex } from "../shared";
 import {
 	type ConcertDirs,
 	concertDirs,
@@ -91,10 +92,16 @@ type PerformBase = {
  * `ir` passed `parseIr`, and each code reference in it carries its code's current `codeHash` (ADR 0008). The concert is
  * one of:
  * - a new one, without `resume`;
+ * - a new one with `encore`, an encore of the concert it names, whose hosts get that id in `HostContext.encore`;
  * - the one `resume` names, which failed or was rejected: it keeps its id, takes `ir` in place of its stored IR, and
- *   reuses each `ok` instance whose resume key still matches (architecture 7).
+ *   reuses each `ok` instance whose resume key still matches (architecture 7). It stays the encore its row records,
+ *   whatever `encore` says.
  */
-export type PerformOptions = PerformBase & { ir: Ir; resume?: string };
+export type PerformOptions = PerformBase & {
+	ir: Ir;
+	resume?: string;
+	encore?: string;
+};
 
 /** A concert being performed. */
 export type Concert = {
@@ -108,11 +115,15 @@ export type Concert = {
 	cancel(): Promise<void>;
 };
 
-/** `PerformOptions` once the record store is open for writing. */
+/** `PerformOptions` once the record store is open for writing, with each host's facts once known for a new concert. */
 type Opened = Omit<PerformOptions, "recordPath"> & {
 	record: RecordWriter;
 	kinds: Kit["kinds"];
+	env?: Promise<Record<string, Facts>>;
 };
+
+/** What a concert takes from its record as it starts: the instances a resume may reuse, and the concert it encores. */
+type Entered = { kept: Map<string, Kept>; encore?: string };
 
 /** What an abandoned call settles with, which its halt then replaces. */
 const ABANDONED: HostNodeResult = { outcome: "failed", reason: "abandoned" };
@@ -179,8 +190,9 @@ type Live = {
  * `loadCode`, host nodes through their host, and every instance and event goes to the record at `recordPath`, which
  * stays open until the concert settles. Every refusal rejects:
  * @throws RangeError when `concurrency` is not a positive integer.
- * @throws Error when two hosts register one node kind, or the concert to resume is unknown.
+ * @throws Error when two hosts register one node kind, or the concert to resume or encore is unknown.
  * @throws Unresumable when the concert to resume is running, or settled `ok`.
+ * @throws Unencorable when the concert to encore is running, or was performed from the same IR, config and host facts.
  */
 export async function perform(options: PerformOptions): Promise<Concert> {
 	const { concurrency, recordPath } = options;
@@ -190,11 +202,19 @@ export async function perform(options: PerformOptions): Promise<Concert> {
 		);
 	const kinds = kindLookup(options.hosts);
 	const id = options.resume ?? Bun.randomUUIDv7();
+	const env =
+		options.resume === undefined
+			? environments(options.hosts, (host) =>
+					hostSetup(host, options.config, options.roots),
+				)
+			: undefined;
+	// A host that cannot give its facts fails the concert once it is recorded, so the fingerprint goes without them.
+	const facts = await env?.catch(() => undefined);
 	const record = openWriter(recordPath);
-	const opened: Opened = { ...options, record, kinds };
-	let kept: Map<string, Kept>;
+	const opened: Opened = { ...options, record, kinds, env };
+	let entered: Entered;
 	try {
-		kept = enter(id, opened);
+		entered = enter(id, opened, facts);
 	} catch (error) {
 		record.close();
 		throw error;
@@ -203,21 +223,40 @@ export async function perform(options: PerformOptions): Promise<Concert> {
 	const running = new Set<Running>();
 	return {
 		id,
-		done: conduct(id, options.ir, kept, opened, root, running).finally(() =>
+		done: conduct(id, options.ir, entered, opened, root, running).finally(() =>
 			record.close(),
 		),
 		cancel: () => halt(running, root, CANCELLED),
 	};
 }
 
-/** Records the concert as running, and finds what a resume may reuse of it. */
-function enter(id: string, opened: Opened): Map<string, Kept> {
-	const { record, resume, ir } = opened;
-	if (resume === undefined) {
-		record.begin({ id, ir, startedAt: Date.now(), ...opened.origin });
-		return new Map();
+/** A digest of what a new concert is performed from: its IR, its config's values and each host's facts. */
+const fingerprintOf = (
+	ir: Ir,
+	config: Composed,
+	facts: Record<string, Facts>,
+) => sha256Hex(canonicalJson({ ir, config: config.values, facts }));
+
+/** Records the concert as running, and finds what a resume may reuse of it and the concert it encores. */
+function enter(
+	id: string,
+	opened: Opened,
+	facts: Record<string, Facts> | undefined,
+): Entered {
+	const { record, resume, encore, ir } = opened;
+	if (resume !== undefined) {
+		const { concert, instances } = record.resume({ id, ir });
+		return { kept: keptOf(instances), encore: concert.encoreOf };
 	}
-	return keptOf(record.resume({ id, ir }));
+	record.begin({
+		id,
+		ir,
+		startedAt: Date.now(),
+		...opened.origin,
+		encoreOf: encore,
+		fingerprint: facts && fingerprintOf(ir, opened.config, facts),
+	});
+	return { kept: new Map(), encore };
 }
 
 /**
@@ -227,7 +266,7 @@ function enter(id: string, opened: Opened): Map<string, Kept> {
 async function conduct(
 	id: string,
 	ir: Ir,
-	kept: ReadonlyMap<string, Kept>,
+	entered: Entered,
 	options: Opened,
 	root: Frame,
 	running: Set<Running>,
@@ -239,7 +278,7 @@ async function conduct(
 		result = await performed(
 			id,
 			ir,
-			kept,
+			entered,
 			options,
 			dirs,
 			root,
@@ -261,23 +300,24 @@ async function conduct(
 async function performed(
 	id: string,
 	ir: Ir,
-	kept: ReadonlyMap<string, Kept>,
+	{ kept, encore }: Entered,
 	options: Opened,
 	dirs: ConcertDirs,
 	root: Frame,
 	running: Set<Running>,
 	inflight: Set<Promise<void>>,
 ): Promise<ConcertResult> {
-	const { hosts, loadCode } = options;
+	const { loadCode } = options;
 	const setup = (host: Host) => hostSetup(host, options.config, options.roots);
 	const index = indexGraph(ir);
 	await makeDirs(dirs);
 	const check = portCheck(validator());
 	const kit: Kit = {
 		concert: id,
+		encore,
 		record: options.record,
 		dirs,
-		env: await environments(hosts, setup),
+		env: await (options.env ?? environments(options.hosts, setup)),
 		kinds: options.kinds,
 		setup,
 		workers: new Map([[TS_RUNTIME, tsWorker(loadCode, check)]]),
@@ -704,6 +744,11 @@ async function executeIn(
 		scratch,
 		clock,
 		id: shown(c, instance),
+		groups: c.index
+			.groupsOf(instance.node)
+			.map((g) => c.index.nodes.get(g))
+			.filter(isGroup)
+			.map((g) => g.kind),
 	});
 	const abandoned = Promise.withResolvers<HostNodeResult>();
 	const entry: Running = {

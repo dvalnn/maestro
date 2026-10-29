@@ -73,23 +73,36 @@ export const digests = (sources: Record<string, string>) =>
 		]),
 	);
 
+const turnFile = (session: Session) => join(session.home, TURN_FILE);
+
+/** The last settled turn of `session`, or `undefined` when the store holds none or it is malformed. */
+function keptTurn(session: Session): Kept | undefined {
+	const file = turnFile(session);
+	let value: unknown;
+	try {
+		value = JSON.parse(readFileSync(file, "utf8"));
+	} catch {
+		return undefined;
+	}
+	return violations(ajv, KEPT_SCHEMA, value, () => file).length
+		? undefined
+		: (value as Kept);
+}
+
+/** Whether `session` has a readable last settled turn to continue from. */
+export const hasTurn = (session: Session) => keptTurn(session) !== undefined;
+
 /**
  * The last settled turn of `session`.
  * @throws Error when the store holds none, or it is malformed.
  */
 function lastTurn(session: Session): Kept {
-	const file = join(session.home, TURN_FILE);
-	let value: unknown;
-	try {
-		value = JSON.parse(readFileSync(file, "utf8"));
-	} catch {
-		value = undefined;
-	}
-	if (violations(ajv, KEPT_SCHEMA, value, () => file).length)
+	const kept = keptTurn(session);
+	if (!kept)
 		throw new Error(
-			`session ${session.id} has no readable last turn at '${file}'. Perform the composition anew`,
+			`session ${session.id} has no readable last turn at '${turnFile(session)}'. Perform the composition anew`,
 		);
-	return value as Kept;
+	return kept;
 }
 
 /** The attachments line, and the earlier copies a changed attachment binds under `previousPath`. */

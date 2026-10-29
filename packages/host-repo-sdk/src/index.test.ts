@@ -458,7 +458,7 @@ describe("seat", () => {
 		},
 		checks: ["test"],
 	});
-	const critic = seat("critic", { profile: "acme/critic" });
+	const critic = seat("critic", { profile: "acme/critic", encore: false });
 
 	test("calls emit agents running the seat's own profile, or the one it names, with its outputs and checks added to", async () => {
 		const calls = composition("calls", { examples: [{}] }, () => {
@@ -509,7 +509,7 @@ describe("seat", () => {
 			},
 		});
 		expect(nodeOf(ir, "third")).toMatchObject({
-			config: { profile: "acme/critic", seat: "critic" },
+			config: { profile: "acme/critic", seat: "critic", encore: false },
 		});
 		expect(Object.keys(nodeOf(ir, "second")?.out ?? {}).sort()).toEqual([
 			"lane",

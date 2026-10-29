@@ -196,12 +196,17 @@ function checkNames(attachments: Attachments, out: Outputs): void {
 	}
 }
 
-/** What a seat holds: the profile its agents run, and the outputs, verdict and checks the graph expects of them. */
+/**
+ * What a seat holds: the profile its agents run, whether an encore continues them, and the outputs, verdict and checks
+ * the graph expects of them.
+ */
 export type SeatOptions<S extends Outputs> = {
 	/** The profile's name, bare or `<pack id>/<name>`; the seat's own name by default. */
 	profile?: string;
 	/** Marks the seat's agents as verdict agents, which rule `ok` or `rejected` on work; any other agent does the work. */
 	verdict?: boolean;
+	/** `false` starts the seat's agents fresh in an encore, rather than continuing their counterparts' sessions. */
+	encore?: boolean;
 	out?: S;
 	/** Names of `target.checks` the agent may run. */
 	checks?: string[];
@@ -272,6 +277,7 @@ export function seat<S extends Outputs = Record<never, never>>(
 				seat: name,
 				lane: ports.config,
 				verdict: standing.verdict,
+				encore: standing.encore,
 				checks: union(standing.checks, checks),
 				attachments: nonEmpty(mapValues(attachments, attachmentConfig)),
 				out: nonEmpty(mapValues(out, (o) => o.config)),

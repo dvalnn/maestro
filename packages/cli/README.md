@@ -15,6 +15,7 @@ maestro wait <concert> --timeout 15m
 | `compose <composition>`      | `c`   | Builds and pre-flights a composition. `--plan` (with each agent's profile, harness, model, thinking[^plan]), `--graph`, `--out`. |
 | `perform <composition>`      | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                                 |
 | `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                                           |
+| `perform --encore <concert>` | `p`   | Performs a concert's composition again as a new concert, its agents continuing their sessions.[^encore]                          |
 | `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`.                |
 | `wait <concert>`             | `wt`  | Waits for a concert to settle. `--timeout <duration>`.                                                                           |
 | `watch <concert>`            | `w`   | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.                            |
@@ -100,6 +101,15 @@ maestro wait <concert> --timeout 15m
     their hash covers the whole bundle (ADR 0008): any edit to the composition file reruns every code node, and
     dependents rerun when their inputs changed. A changed code hash prints a warning on stderr and the resume goes on.
     After editing a composition, perform a new concert.
+
+[^encore]:
+    It builds the concert's composition anew with the param flags it was performed with, the encore's own overriding
+    them, under the config files as they stand, the concert's recorded `-c` and the encore's own on top, and the
+    encore's `--preset` in place of the concert's. It takes `--tour` and `--title`, and no composition. Every node runs
+    again, and an agent continues its counterpart's session, unless its seat says `encore: false`; an agent that starts
+    fresh says why in its `encoreFresh`, shown by `ls <concert> --json`. An encore of an encore matches against the
+    encore. When the params, the config and the target revision all match the concert's, the encore is refused, naming
+    `perform --resume`.
 
 [^prune]:
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`,

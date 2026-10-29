@@ -6,6 +6,7 @@ import type {
 	ConcertResult,
 	ConcertStatus,
 	Records,
+	Unencorable,
 	Unresumable,
 } from "@maestro/core/perform";
 import {
@@ -375,6 +376,20 @@ export const resumeRefused = ({ concert }: Unresumable) =>
 		: new CliError(
 				`concert ${concert.id} finished ok, so it has nothing to resume\nPerform its composition as a new concert with 'maestro perform <composition>'`,
 			);
+
+/** The error of `perform --encore` for a concert core refuses an encore of; one that did not settle `ok` may resume. */
+export function encoreRefused({ concert }: Unencorable): CliError {
+	const { id, status, pid } = concert;
+	if (status === "running") return stillRunning(id, pid);
+	const change = "Change a param, the config or the target";
+	return new CliError(
+		`nothing changed since concert ${id}: its params, config and target revision are the same\n${
+			status === "ok"
+				? change
+				: `${change}, or resume it with 'maestro perform --resume ${id}'`
+		}`,
+	);
+}
 
 const TOUR_SEGMENT = "[a-z0-9]+(?:-[a-z0-9]+)*";
 const TOUR = new RegExp(`^${TOUR_SEGMENT}(?:\\.${TOUR_SEGMENT})*$`);

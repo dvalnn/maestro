@@ -103,8 +103,9 @@ The data root, `$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`) unles
 
 [^store]:
     An agent's session is `sessions/<concert>.<instance>/`, URL-encoded, and `<concert>.<instance>#<k>` for session k a
-    handoff started, its transcript under `harness/` and its last turn in `turn.json`; a failed agent's partial work is
-    `partials/<concert>.<instance>`, URL-encoded, read with `cs --partial`.
+    handoff started, its transcript under `harness/` and its last turn in `turn.json`; `latest/<concert>/<instance>`
+    names the latest session each agent instance ran, after any handoff, which an encore continues; a failed agent's
+    partial work is `partials/<concert>.<instance>`, URL-encoded, read with `cs --partial`.
 
 The record keeps each leaf instance's wired inputs beside its outputs, never the ports a node holds as literals (read
 those in the IR, or `art` for files). A group, or an instance from an older store, has none.
@@ -167,6 +168,13 @@ What SKILL.md's Recover section leaves out:
   bundle (ADR 0008), so any edit to the composition file reruns every code node, and dependents rerun when their inputs
   changed. A changed code hash prints a `warning:` line on stderr and the resume goes on. After editing a composition,
   perform a new concert.
+- **Encore**: `perform --encore <concert>` performs the concert's composition again as a new concert, linked to it, with
+  the param flags it was performed with (the encore's own override them) and its recorded `-c` under the encore's own.
+  Every node runs again; each agent continues the session of the same node at the same keys in that concert, a loop's
+  last iteration, unless its seat says `encore: false` or it takes a `session`. An agent whose counterpart's session is
+  gone or on another harness starts fresh, saying why in its `encoreFresh`, shown by `ls <concert> --json`. Lanes are
+  cut fresh. An encore whose params, config and target revision all match the concert's is refused: resume the concert
+  instead.
 - **Kill** waits up to 10 s for the concert to settle `failed` ("the concert was cancelled"). A concert whose process
   died without settling is marked `failed` ("process exited") when the record is next read.
 - **Prune** selects by id, or by the filters in `prune --help`. The lane refs into a pruned concert go with it. It asks

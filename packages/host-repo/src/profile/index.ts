@@ -16,6 +16,7 @@ import {
 } from "@maestro/core/config";
 import type { HostSetup, Roots } from "@maestro/core/host";
 import {
+	canonicalJson,
 	type Diagnostic,
 	DURATION_EXAMPLE,
 	durationMs,
@@ -539,6 +540,18 @@ async function fileHashes(dir: string): Promise<Record<string, string>> {
 		}),
 	);
 	return Object.fromEntries(hashed.flat());
+}
+
+/** `sha256:<hex>` over the files of every profile `roots` hold, each name's that wins: any edit to one changes it. */
+export async function profilesDigest(roots: Roots): Promise<string> {
+	const names = await heldNames(roots);
+	const held = await Promise.all(
+		names.map(async (name) => {
+			const found = await findProfile(name, roots);
+			return [name, found ? await fileHashes(found.dir) : null];
+		}),
+	);
+	return `sha256:${sha256Hex(canonicalJson(Object.fromEntries(held)))}`;
 }
 
 /**

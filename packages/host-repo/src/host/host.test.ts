@@ -674,19 +674,26 @@ describe("perform", () => {
 		"runtime: { harness: stub, model: none }\ninstructions: instructions.md\n",
 		{ "instructions.md": "You are careful." },
 	);
-	test("environment gives code nodes the target, its base and its sparse patterns, null when unset", async () => {
+	test("environment gives code nodes the target, its base, the revision it names, its sparse patterns, null when unset, and a digest of the profiles", async () => {
 		const { host } = stubHost(() => []);
-		const environment = (extra: Record<string, unknown>) => {
-			const config = configOf("/repo");
+		const environment = (repo: string, extra: Record<string, unknown>) => {
+			const config = configOf(repo);
 			const target = { ...config.values.target, ...extra };
 			return host.environment({ ...setupOf(config), config: { target } });
 		};
-		expect(await environment({ sparse: ["src"] })).toEqual({
+		expect(await environment("/repo", { sparse: ["src"] })).toEqual({
 			target: "/repo",
 			base: "main",
+			revision: null,
 			sparse: ["src"],
+			profiles: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
 		});
-		expect(await environment({})).toMatchObject({ sparse: null });
+		expect(await environment("/repo", {})).toMatchObject({ sparse: null });
+		const repo = toyTarget();
+		const head = Bun.spawnSync(["git", "rev-parse", "main"], { cwd: repo });
+		expect(await environment(repo, {})).toMatchObject({
+			revision: head.stdout.toString().trim(),
+		});
 	});
 
 	test("fresh, agent, read check, then an agent extending its version continues the first agent's session", async () => {
@@ -1166,7 +1173,9 @@ describe("perform", () => {
 			const lane = join(root, "lanes", first.concert.id, "x");
 			await dropped(lane);
 			expect(existsSync(lane)).toBe(false);
-			const { result } = await performed(host, ir, config, first.concert.id);
+			const { result } = await performed(host, ir, config, {
+				resume: first.concert.id,
+			});
 			expect(result).toMatchObject({ outcome: "ok", node: "x" });
 			const series = await changed(
 				config,
@@ -1200,7 +1209,7 @@ describe("perform", () => {
 		const first = await performed(host, ir, config);
 		expect(first.result).toMatchObject({ outcome: "rejected" });
 		writeFileSync(join(flags, "go"), "");
-		const again = await performed(host, ir, config, first.id);
+		const again = await performed(host, ir, config, { resume: first.id });
 		expect(again.result).toMatchObject({ outcome: "ok" });
 		expect(
 			await changed(config, config.values.target.repo, `${first.id}.x`),

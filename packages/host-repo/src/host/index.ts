@@ -7,7 +7,8 @@ import {
 } from "@maestro/core/host";
 import type { IrNode } from "@maestro/ir";
 import type { Harness, Runtime } from "../harness/index";
-import { resolveProfile } from "../profile/index";
+import { revisionOf } from "../lane/index";
+import { profilesDigest, resolveProfile } from "../profile/index";
 import { agentKind } from "./agent";
 import { applyKind, changesetKind, commitsKind } from "./apply";
 import { checkKind } from "./check";
@@ -23,6 +24,7 @@ import {
 	repoSetup,
 	SESSION_TYPE,
 } from "./config";
+import { baseOf } from "./lane-input";
 import { concertUsage, releaseConcert } from "./store";
 import { repoText } from "./text";
 import { needsRepo, validateRepo } from "./validate";
@@ -101,13 +103,16 @@ export function repoHost({ harnesses }: RepoHostOptions): Host {
 		needs: needsRepo,
 		bounds: (node): Bounds =>
 			node.kind === AGENT_KIND ? { [AGENT_KIND]: 1 } : {},
-		environment(setup) {
-			const { target } = repoSetup(setup);
+		async environment(setup) {
+			const repo = repoSetup(setup);
+			const { target } = repo;
 			return target
 				? {
 						target: target.repo,
 						base: target.base ?? null,
 						sparse: target.sparse ?? null,
+						revision: await revisionOf(target.repo, baseOf(repo)),
+						profiles: await profilesDigest(setup.roots),
 					}
 				: {};
 		},

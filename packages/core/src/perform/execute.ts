@@ -15,6 +15,7 @@ import type { ValidateFunction } from "ajv/dist/2020";
 import type {
 	Host,
 	HostContext,
+	HostInstance,
 	HostNodeResult,
 	HostSetup,
 	Metrics,
@@ -28,6 +29,8 @@ import type { Invocation, Worker } from "./ts-worker";
 /** What executing a concert's leaf instances needs. */
 export type Kit = {
 	concert: string;
+	/** The concert this one is an encore of. */
+	encore?: string;
 	record: RecordWriter;
 	dirs: ConcertDirs;
 	/** Each host's facts, by host name. */
@@ -54,13 +57,19 @@ export const asserted = (node: AssertNode, inputs: Inputs): Settling =>
 		? { outcome: "ok", outputs: {} }
 		: { outcome: node.onFail, reason: node.message };
 
+/** Where an instance executes, and how a host sees it. */
+type Placed = Pick<HostInstance, "id" | "groups"> & {
+	scratch: string;
+	clock: number;
+};
+
 /** The call of a code instance through its runtime's worker, or of a host instance through its kind. */
 export function callOf(
 	kit: Kit,
 	node: CodeNode | HostNode,
 	instance: NodeInstance,
 	inputs: Inputs,
-	context: { scratch: string; clock: number; id: string },
+	context: Placed,
 ): Call {
 	return node.kind === "code"
 		? codeCall(kit, node, instance, inputs, context)
@@ -106,16 +115,17 @@ function hostCall(
 	node: HostNode,
 	instance: NodeInstance,
 	inputs: Inputs,
-	{ scratch, clock, id }: { scratch: string; clock: number; id: string },
+	{ scratch, clock, id, groups }: Placed,
 ): Call {
 	const found = kit.kinds(node.kind);
 	if (!found)
 		return refused(
 			`no loaded host registers node kind '${node.kind}'. Load the host that registers it`,
 		);
-	const hostInstance = { node, expansion: instance.expansion, id };
+	const hostInstance = { node, expansion: instance.expansion, id, groups };
 	const context: HostContext = {
 		concert: kit.concert,
+		...(kit.encore !== undefined && { encore: kit.encore }),
 		clock,
 		scratch,
 		path: (ref) => join(kit.dirs.artifacts, ref.path),

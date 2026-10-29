@@ -53,6 +53,8 @@ export type Prepared = {
 	file?: string;
 	/** The flags the command was given. */
 	values: Values;
+	/** The root's params the flags gave, those recorded beneath them for an encore. */
+	params?: Readonly<Record<string, unknown>>;
 };
 
 /** The flags `compose` takes beyond the common ones. */
@@ -79,13 +81,26 @@ export const PERFORM_FLAGS = {
 		arg: "concert",
 		desc: "Resume this failed or rejected concert instead of starting one",
 	},
+	encore: {
+		type: "string",
+		arg: "concert",
+		desc: "Perform this concert's composition again, its agents continuing their sessions",
+	},
 } as const satisfies Options;
 
 /** Flags a param may not take, whichever command reads the composition, so it is valid for all of them or none. */
 const RESERVED: Options = { ...COMMON, ...COMPOSE_FLAGS, ...PERFORM_FLAGS };
 
-/** How a command reads its target: its name, its flags, and whether a composition's example set stands in for flags. */
-export type Reading = { verb: string; options: Options; examples: boolean };
+/**
+ * How a command reads its target: its name, its flags, whether a composition's example set stands in for flags, and,
+ * for an encore, the root's params its concert recorded, which the flags override.
+ */
+export type Reading = {
+	verb: string;
+	options: Options;
+	examples: boolean;
+	recorded?: Readonly<Record<string, unknown>>;
+};
 
 const FILE = /\.(?:ts|js)$/;
 const PACK_ID = new RegExp(irSchema.$defs.name.pattern);
@@ -212,7 +227,9 @@ async function loadIr(
 
 /**
  * Builds `composition` of `bundle` from the config `layers`, the example set when `reading` says so, and the flags in
- * `args`. The example set fills only the params no config file or flag gives, an optional one only when none of the root's optional params is given.
+ * `args` over the params `reading` recorded. The example set fills only the params no config file or flag gives, an
+ * optional one only when none of the root's optional params is given.
+ * @throws CliError, a usage error, for a composition in `args` when `reading` is an encore's.
  */
 async function build(
 	session: Session,
@@ -225,18 +242,27 @@ async function build(
 ): Promise<Omit<Prepared, "claims">> {
 	const label = `${bundle.pack.id}.${composition.name}`;
 	const flags = paramFlags(composition, RESERVED, label);
-	const { values } = parse(
+	const { values, positionals } = parse(
 		{ ...reading.options, ...flags.options },
 		args,
 		`Flags are ${reading.verb}'s and the params of '${label}', in kebab-case`,
 	);
+	if (reading.recorded && positionals.length)
+		throw usageError(
+			"--encore takes no composition: it performs its concert's own",
+			"Drop the composition, or perform it without --encore",
+		);
+	const given = {
+		...reading.recorded,
+		...flagValues(composition, flags, values),
+	};
 	const params = paramValues({
 		layers,
 		pack: bundle.pack.id,
 		compositions: bundle.compositions,
 		root: composition.name,
 		example: reading.examples ? composition.examples[0] : undefined,
-		flags: flagValues(composition, flags, values),
+		flags: given,
 		hosts: session.deps.hosts,
 		bare,
 	});
@@ -248,6 +274,7 @@ async function build(
 		moduleDir: bundle.dir,
 		config: params.composed,
 		values,
+		params: given,
 	};
 }
 

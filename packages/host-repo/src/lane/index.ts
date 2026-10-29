@@ -7,6 +7,7 @@ export {
 	type Lanes,
 	type LanesOptions,
 	openLanes,
+	revisionOf,
 	type Sparse,
 	type Version,
 } from "./lanes";

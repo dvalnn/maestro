@@ -14,6 +14,7 @@ import {
 	cleanup,
 	configOf,
 	DONE,
+	fresh,
 	irOf,
 	type NodeSpec,
 	OK,
@@ -339,6 +340,94 @@ describe("agent session", () => {
 	);
 });
 
+describe("agent encore", () => {
+	const agent = (id: string, spec: Partial<NodeSpec> = {}): NodeSpec => ({
+		id,
+		kind: "agent",
+		config: agentOn(fresh),
+		literals: { prompt: "go" },
+		...spec,
+	});
+	const optedOut = agent("x", { config: { ...agentOn(fresh), encore: false } });
+
+	test("an encore continues each counterpart's session, but at a session input, an opted-out seat or a released one", async () => {
+		const { host } = stubHost(() => [OK]);
+		const config = configOf(toyTarget());
+		const again = (n: number) => ({
+			...config,
+			values: { ...config.values, concurrency: n },
+		});
+		type Run = Awaited<ReturnType<typeof performed>>;
+		/** Each node's session, and why it started fresh in an encore, if it did. */
+		const seated = (run: Run) =>
+			Object.fromEntries(
+				run.instances.map((i) => [
+					i.node,
+					[i.outputs?.session, i.enrichment?.encoreFresh],
+				]),
+			);
+		const first = await performed(
+			host,
+			irOf(host, [agent("w"), agent("r"), optedOut], "w"),
+			config,
+		);
+		const ir = irOf(
+			host,
+			[agent("w"), agent("r", { session: "w" }), optedOut, agent("y")],
+			"w",
+		);
+		const second = await performed(host, ir, again(2), { encore: first.id });
+		const third = await performed(host, ir, again(1), { encore: second.id });
+		const { store } = setupOf(config);
+		await releaseConcert(store, first.id);
+		expect(await concertUsage(store, first.id)).toBe(0);
+		const last = await performed(host, ir, again(3), { encore: third.id });
+
+		const [a, b, c, d] = [first.id, second.id, third.id, last.id];
+		expect(seated(second)).toEqual({
+			w: [`${a}.w`, undefined],
+			r: [`${a}.w`, undefined],
+			x: [`${b}.x`, undefined],
+			y: [`${b}.y`, `concert ${a} kept no session of 'y'`],
+		});
+		expect(seated(third)).toEqual({
+			w: [`${a}.w`, undefined],
+			r: [`${a}.w`, undefined],
+			x: [`${c}.x`, undefined],
+			y: [`${b}.y`, undefined],
+		});
+		expect(seated(last)).toEqual({
+			w: [
+				`${d}.w`,
+				`session ${a}.w is gone from the store: its concert was pruned`,
+			],
+			r: [`${d}.w`, undefined],
+			x: [`${d}.x`, undefined],
+			y: [`${b}.y`, undefined],
+		});
+	});
+
+	test("an encore after only a profile file changed is not refused", async () => {
+		const dir = profile("edited", "runtime: { harness: stub, model: none }\n", {
+			"kb.md": "a\n",
+		});
+		const { host } = stubHost(() => [OK]);
+		const config = configOf(toyTarget());
+		const ir = irOf(
+			host,
+			[agent("w", { config: agentOn(fresh, "edited") })],
+			"w",
+		);
+		const first = await performed(host, ir, config);
+		writeFileSync(join(dir, "kb.md"), "b\n");
+		const second = await performed(host, ir, config, { encore: first.id });
+		expect(second.result).toMatchObject({ outcome: "ok" });
+		await expect(
+			performed(host, ir, config, { encore: second.id }),
+		).rejects.toThrow("was performed from the same IR, config and host facts");
+	});
+});
+
 describe("agent profile", () => {
 	test("an agent runs the workspace profile that shadows its pack's, with its binds and attachments, and records it", async () => {
 		const packed = profile(
@@ -418,7 +507,7 @@ describe("agent partial work", () => {
 		resume?: string,
 	) {
 		const { host, requests } = stubHost(() => steps(requests.length));
-		const done = await performed(host, lone(host), config, resume);
+		const done = await performed(host, lone(host), config, { resume });
 		return { ...done, requests };
 	}
 
@@ -815,6 +904,33 @@ go`);
 		expect(instances.find((i) => i.node === "r")?.outputs?.session).toBe(
 			`${id}.r#2`,
 		);
+	});
+
+	test("an encore of an agent that handed off continues its latest session", async () => {
+		const script = scripted({ first: [full(), hang] });
+		const { host, requests } = stubHost((req) =>
+			req.prompt.startsWith("# Since your last turn") ? [OK] : script(req),
+		);
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "w",
+					kind: "agent",
+					config: agentOn({ mode: "fresh" }, "handoff-tokens"),
+					literals: { prompt: "go" },
+				},
+			],
+			"w",
+		);
+		const config = configOf(toyTarget());
+		const first = await performed(host, ir, config);
+		const again = { ...config, values: { ...config.values, concurrency: 2 } };
+		const encore = await performed(host, ir, again, { encore: first.id });
+		expect(encore.result).toMatchObject({ outcome: "ok" });
+		expect(encore.instances[0]?.outputs?.session).toBe(`${first.id}.w#2`);
+		expect(requests).toHaveLength(4);
+		expect(requests[3]?.session).toEqual(requests[2]?.session);
 	});
 
 	test("a context below its trigger runs on in its session", async () => {

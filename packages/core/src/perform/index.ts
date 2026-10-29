@@ -9,6 +9,7 @@ export {
 	type InstanceRecord,
 	openRecord,
 	type Records,
+	Unencorable,
 	Unresumable,
 	unresumable,
 } from "./record";

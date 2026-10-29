@@ -158,6 +158,7 @@ const CURRENT_AGENT_CONFIG = {
 		seat: { type: "string", pattern: irSchema.$defs.name.pattern },
 		lane: LANE_INPUT,
 		verdict: { type: "boolean" },
+		encore: { type: "boolean" },
 		checks: { type: "array", items: NAME, uniqueItems: true },
 		attachments: {
 			type: "object",
@@ -271,6 +272,8 @@ export type AgentConfig = {
 	lane: LaneInput;
 	/** A verdict agent rules on work, `ok` or `rejected`; any other agent does the work. */
 	verdict?: boolean;
+	/** `false` starts the agent fresh in an encore, not continuing its counterpart's session. */
+	encore?: boolean;
 	checks?: string[];
 	attachments?: Record<string, Attachment>;
 	out?: Record<string, Output>;

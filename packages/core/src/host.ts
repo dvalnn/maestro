@@ -5,6 +5,7 @@ import type {
 	Enrichment,
 	Facts,
 	GraphIndex,
+	GroupNode,
 	HostEvent,
 	HostNode,
 	JsonSchema,
@@ -27,6 +28,8 @@ export type HostInstance = {
 	expansion: string;
 	/** The instance's id as `ls` shows it, such as `lens[risk]/skeptic`. */
 	id: string;
+	/** The kind of each group enclosing the instance, outermost first: one per key of `expansion`. */
+	groups: readonly GroupNode["kind"][];
 };
 
 /** Named additive numbers an instance reports (CORE-19). Core sums each name per concert and gives it no meaning. */
@@ -111,6 +114,8 @@ export type HostContext = Context & {
 	emit(event: HostEvent): void;
 	/** The setup of the host running the instance. */
 	readonly setup: HostSetup;
+	/** The id of the concert this one is an encore of, whose counterparts the host may continue; core reads none of it. */
+	readonly encore?: string;
 };
 
 /** A node kind a host registers (architecture 6). */

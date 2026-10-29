@@ -348,11 +348,14 @@ export const setupOf = (config: ReturnType<typeof configOf>): HostSetup => ({
 
 export const noCode = async () => () => ({});
 
+/** Which earlier concert a concert resumes, or is an encore of. */
+type Earlier = { resume?: string; encore?: string };
+
 export async function start(
 	host: Host,
 	ir: Ir,
 	config: ReturnType<typeof configOf>,
-	resume?: string,
+	earlier: Earlier = {},
 ) {
 	const composed = await compose({
 		ir,
@@ -376,7 +379,7 @@ export async function start(
 		recordPath,
 		dir,
 		concurrency: 4,
-		resume,
+		...earlier,
 	});
 	return { concert, dir, recordPath };
 }
@@ -385,9 +388,9 @@ export async function performed(
 	host: Host,
 	ir: Ir,
 	config: ReturnType<typeof configOf>,
-	resume?: string,
+	earlier: Earlier = {},
 ) {
-	const { concert, dir, recordPath } = await start(host, ir, config, resume);
+	const { concert, dir, recordPath } = await start(host, ir, config, earlier);
 	const result = await concert.done;
 	const record = openRecord(recordPath);
 	const instances = record.instances(concert.id);

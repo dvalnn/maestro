@@ -38,7 +38,10 @@ The shape is:
   set (`commandLine`, at its key paths), and its store, `<data root>/hosts/<host name>`. The host creates its store on
   first write, so core holds no host directory a host never uses. It also holds the roots the CLI builds, which core
   never reads: the workspace's `.maestro`, `maestro` in the user's config directory, and each installed pack's directory
-  by pack id. A host keeps its own entries under them.
+  by pack id. A host keeps its own entries under them. The context also names, in `HostContext.encore`, the concert an
+  encore repeats, and each instance gives in `HostInstance.groups` the kind of each group enclosing it, outermost first.
+  Core reads nothing a host keeps of them: a host that continues work across concerts matches an instance to its
+  counterpart from its own store, never from the record.
 - **No host version, and no host range in a pack manifest.** Hosts ship inside the binary, and the `sdk` range a pack
   declares pins them. The interface is frozen for V1 as an exercise, not as a promise to third parties.
 

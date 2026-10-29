@@ -140,7 +140,7 @@ describe("target.prepare", () => {
 		expect(first.result).toMatchObject({ outcome: "failed", node: "x" });
 		const log = () => readFileSync(join(runs, "log"), "utf8");
 		expect(log()).toBe("base\n");
-		const again = await performed(host, ir, config, first.id);
+		const again = await performed(host, ir, config, { resume: first.id });
 		expect(again.result).toMatchObject({ outcome: "ok" });
 		expect(log()).toBe("base\nx\n");
 	});

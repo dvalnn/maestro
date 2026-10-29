@@ -65,6 +65,7 @@ import {
 	SESSION_TYPE,
 	type Target,
 } from "./config";
+import { counterpartSession, keysOf } from "./encore";
 import {
 	CUT_OFF,
 	correction,
@@ -85,6 +86,7 @@ import { artifactInput, textInput } from "./inputs";
 import { lanePorts, readOnlyBinds, versionAt, withLane } from "./lane-input";
 import { type Live, liveInstances } from "./live";
 import {
+	keepLatest,
 	mintSession,
 	openSession,
 	openTarget,
@@ -556,8 +558,11 @@ function stage(
 	return path;
 }
 
+/** The session an instance runs, whether it `continues` it, and why an encore's agent starts it instead, if so. */
+type Seated = { session: Session; continues: boolean; fallback?: string };
+
 /** What one instance stages and where. */
-type Staging = {
+type Staging = Seated & {
 	profile: Profile;
 	config: AgentConfig;
 	staged: string;
@@ -580,13 +585,14 @@ async function settle(
 	turns: Turns,
 	seal: () => Promise<string | undefined>,
 ): Promise<HostNodeResult> {
-	const { profile } = staging;
+	const { profile, fallback } = staging;
 	const { metrics, session } = turns;
 	const ran = {
 		session: session.id,
 		sessionDir: session.dir,
 		...runtimeOf(profile.fields.runtime),
 		profile,
+		...(fallback !== undefined && { encoreFresh: fallback }),
 	};
 	if ("failure" in turns)
 		return {
@@ -678,31 +684,45 @@ function extrasOf(
 	};
 }
 
-/** The session an instance runs, and whether it `continues` it: the one at its `session` input, else one it starts. */
+/** Whether an encore's `instance` looks for its counterpart: its seat does not opt out, and its node takes no session. */
+const encoreMatches = (instance: HostInstance, config: AgentConfig) =>
+	config.encore !== false && !instance.node.in?.[SESSION_PORT];
+
+/**
+ * The session an instance runs:
+ * - the one at its `session` input, when its node takes one;
+ * - in an encore, its counterpart's (`counterpartSession`), unless its seat opts out with `encore: false`;
+ * - else one it starts, in an encore with why the counterpart's could not go on.
+ */
 function sessionOf(
 	root: string,
 	inputs: Inputs,
 	instance: HostInstance,
-	profile: Profile,
-	concert: string,
-): { session: Session; continues: boolean } {
+	staging: Pick<Staging, "profile" | "config">,
+	{ concert, encore }: HostContext,
+): Seated {
+	const { profile, config } = staging;
 	const { harness } = profile.fields.runtime;
 	const given = inputs[SESSION_PORT];
-	return typeof given === "string"
-		? {
-				session: continued(
-					root,
-					given,
+	if (typeof given === "string")
+		return {
+			session: continued(root, given, harness, instance.node.id, profile.name),
+			continues: true,
+		};
+	const matched =
+		encore === undefined || !encoreMatches(instance, config)
+			? undefined
+			: counterpartSession(root, encore, instance, {
 					harness,
-					instance.node.id,
-					profile.name,
-				),
-				continues: true,
-			}
-		: {
-				session: mintSession(root, harness, concert, instance.id),
-				continues: false,
-			};
+					profile: profile.name,
+				});
+	if (matched && "session" in matched)
+		return { session: matched.session, continues: true };
+	return {
+		session: mintSession(root, harness, concert, instance.id),
+		continues: false,
+		...(matched && { fallback: matched.fresh }),
+	};
 }
 
 /** What the frame tells the agent of `staging` about its run. */
@@ -783,13 +803,21 @@ async function execute(
 		);
 	const target = requireTarget(setup);
 	const store = openTarget(setup.store, target.repo, target.sparse);
-	const { session, continues } = sessionOf(
+	const seated = sessionOf(
 		store.root,
 		inputs,
 		instance,
-		profile,
-		context.concert,
+		{ profile, config },
+		context,
 	);
+	const { session, continues } = seated;
+	const keptLatest = (latest: Session) =>
+		keepLatest(store.root, context.concert, instance.id, {
+			node: instance.node.id,
+			keys: keysOf(instance),
+			session: latest.id,
+		});
+	keptLatest(session);
 	const run = { concert: context.concert, instance, live, emit: context.emit };
 	return withLane(
 		store,
@@ -800,6 +828,7 @@ async function execute(
 		async (open) => {
 			const { lane, read } = open;
 			const staging: Staging = {
+				...seated,
 				profile,
 				config,
 				staged: join(context.scratch, "staged"),
@@ -873,6 +902,7 @@ async function execute(
 					session,
 				),
 			);
+			keptLatest(turns.session);
 			const settled = await settle(staging, turns, async () =>
 				read ? undefined : lane.seal(),
 			);

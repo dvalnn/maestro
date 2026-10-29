@@ -99,13 +99,15 @@ Read [running.md](running.md) for compose and perform flags, the record, artifac
 
 - **Resume**: `maestro perform --resume <id>` after fixing what failed or rejected. `ok` instances whose inputs and code
   are unchanged are reused; the rest perform again, under the config as it stands now.
+- **Encore**: `maestro perform --encore <id>` performs a concert's composition again as a new concert, each agent
+  continuing its counterpart's session and told what changed; pass a param flag to change one.
 - **Kill**: `maestro kill <id>` stops a running concert, which settles `failed` and can be resumed.
 - A `perform` process that is interrupted or dies leaves its concert `failed`, and the concert resumes the same way.
 - **Prune**: `maestro prune` deletes concerts with their records and lanes. Prune the concerts you started or the user
   names, by id or by `--tour`.
 
-Read [running.md](running.md), section Recover, for resume's refusals and the `--preset` and `-c` it reapplies, and how
-prune selects.
+Read [running.md](running.md), section Recover, for resume's refusals and the `--preset` and `-c` it reapplies, how an
+encore matches agents, and how prune selects.
 
 ## Stub concerts
 

@@ -1,9 +1,11 @@
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import {
 	type Concert,
+	type ConcertRecord,
 	type ConcertResult,
 	perform as conduct,
 	type Records,
+	Unencorable,
 	unresumable,
 } from "@maestro/core/perform";
 import { mapWorkers } from "@maestro/ir";
@@ -20,7 +22,9 @@ import {
 	textOf,
 	type Values,
 } from "./command";
+import type { Overrides } from "./config";
 import {
+	encoreRefused,
 	exitOf,
 	jsonOf,
 	parseTour,
@@ -62,6 +66,10 @@ type Start = {
 	prepared: Prepared;
 	/** The id of the concert to resume. */
 	resume?: string;
+	/** The id of the concert a new one is an encore of. */
+	encore?: string;
+	/** The `--preset` and `-c` a new concert records. */
+	overrides?: Overrides;
 	tour?: string;
 	title?: string;
 };
@@ -73,14 +81,18 @@ const tourOf = (values: Values, env: Deps["env"]) => {
 	return variable ? parseTour(TOUR_VARIABLE, variable) : undefined;
 };
 
-/** A new concert from `args`, each stdlib reference keyed on the stdlib this engine embeds (ADR 0008). */
+/**
+ * A new concert from `args`, over the params `recorded` for an encore, each stdlib reference keyed on the stdlib this
+ * engine embeds (ADR 0008).
+ */
 async function begin(
 	session: Session,
 	args: readonly string[],
+	recorded?: Readonly<Record<string, unknown>>,
 ): Promise<Start> {
 	const prepared = await prepare(
 		session,
-		{ verb: "perform", options: PERFORM_OPTIONS, examples: false },
+		{ verb: "perform", options: PERFORM_OPTIONS, examples: false, recorded },
 		args,
 	);
 	const ir = mapWorkers(prepared.ir, (ref) =>
@@ -89,9 +101,59 @@ async function begin(
 	return {
 		session,
 		prepared: { ...prepared, ir },
+		overrides: overridesOf(prepared.values),
 		tour: tourOf(prepared.values, session.deps.env),
 		title: textOf(prepared.values, "title") || undefined,
 	};
+}
+
+/**
+ * The overrides an encore of `row` layers and records: its own `--preset` in place of the concert's, and its own `-c`
+ * after the concert's.
+ */
+function encoreOverrides(store: Records, row: ConcertRecord, own: Overrides) {
+	const { recorded } = recordedOf(store, row);
+	return {
+		layers: [
+			own.preset === undefined
+				? { preset: row.preset, recorded }
+				: { preset: own.preset },
+			{ config: row.config, recorded },
+			{ config: own.config },
+		],
+		kept: {
+			preset: own.preset ?? row.preset,
+			config: [...(row.config ?? []), ...(own.config ?? [])],
+		},
+	};
+}
+
+/**
+ * An encore of the concert whose id starts with `prefix`: its composition performed anew with the flags of `args` over
+ * its recorded params, under the config files as they stand layered with its `--preset` and `-c` and the encore's `own`.
+ * @throws CliError, a usage error, when `args` hold a composition.
+ * @throws ConfigError as `openSession` does.
+ */
+async function encored(
+	session: Session,
+	store: Records,
+	prefix: string,
+	own: Overrides,
+	args: readonly string[],
+): Promise<Start> {
+	const row = concertOf(store, prefix);
+	const { layers, kept } = encoreOverrides(store, row, own);
+	const { config } = await openSession(session.deps, ...layers);
+	const target =
+		row.file === undefined
+			? `${row.pack}.${row.composition}`
+			: join(row.moduleDir, row.file);
+	const start = await begin(
+		{ ...session, config },
+		[target, ...args],
+		row.params ?? {},
+	);
+	return { ...start, encore: row.id, overrides: kept };
 }
 
 /**
@@ -103,10 +165,11 @@ function resumeFlags(args: readonly string[]): Values {
 	if (
 		positionals.length > 0 ||
 		textOf(values, "tour") ||
-		textOf(values, "title")
+		textOf(values, "title") ||
+		textOf(values, "encore")
 	)
 		throw usageError(
-			"--resume takes no composition, --tour or --title: the concert keeps its own",
+			"--resume takes no composition, --encore, --tour or --title: the concert keeps its own",
 			"Drop them, or start a new concert without --resume",
 		);
 	return values;
@@ -201,16 +264,20 @@ async function conducted(
 		ir: prepared.ir,
 		...(start.resume === undefined
 			? {
+					encore: start.encore,
 					origin: {
 						workspace: session.config.core.workspace,
 						moduleDir: prepared.moduleDir,
 						file: prepared.file && basename(prepared.file),
 						tour: start.tour,
 						title: start.title,
-						...overridesOf(prepared.values),
+						params: prepared.params,
+						...start.overrides,
 					},
 				}
 			: { resume: start.resume }),
+	}).catch((error) => {
+		throw error instanceof Unencorable ? encoreRefused(error) : error;
 	});
 	deps.stderr(`concert ${concert.id}`);
 	const result = await settled(concert);
@@ -219,26 +286,32 @@ async function conducted(
 
 export const perform: Command = {
 	usage:
-		"perform <composition> [flags]  (alias: p)\n       maestro perform --resume <concert> [flags]",
+		"perform <composition> [flags]  (alias: p)\n       maestro perform --resume <concert> [flags]\n       maestro perform --encore <concert> [flags]",
 	options: PERFORM_OPTIONS,
 	help: compositionHelp,
 	async execute(args, deps) {
 		const early = peek(PERFORM_OPTIONS, args);
 		const resume = textOf(early, "resume");
+		const encore = textOf(early, "encore");
 		const own = overridesOf(early);
 		const json = isSet(early, "json");
-		if (resume === undefined) {
+		let started: (session: Session, store: Records) => Promise<Start>;
+		if (resume !== undefined) {
+			const values = resumeFlags(args);
+			started = (session, store) => restart(session, store, resume, values);
+		} else if (encore !== undefined)
+			started = (session, store) => encored(session, store, encore, own, args);
+		else {
 			const session = await openSession(deps, own);
 			const start = await begin(session, args);
 			await warned(start);
 			return withRecord(session, (store) => conducted(start, store, json));
 		}
-		const values = resumeFlags(args);
 		return withSession(
 			deps,
 			await locating(deps, own),
 			async (session, store) => {
-				const start = await restart(session, store, resume, values);
+				const start = await started(session, store);
 				await warned(start);
 				return conducted(start, store, json);
 			},

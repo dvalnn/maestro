@@ -22,7 +22,7 @@ const IR_FIXTURE = join(
 );
 const A = { node: "a", expansion: "" };
 const V4 = 4;
-const CURRENT_VERSION = 5;
+const CURRENT_VERSION = 6;
 /** The record store schema at version 4, the oldest one an upgrade starts from. */
 const V4_SCHEMA = `
 CREATE TABLE concerts (
@@ -235,7 +235,9 @@ test("a newer record store is refused", async () => {
 	const db = new Database(path);
 	db.exec(`PRAGMA user_version = ${CURRENT_VERSION + 1}`);
 	db.close();
-	expect(() => openRecord(path)).toThrow("this maestro reads version 5");
+	expect(() => openRecord(path)).toThrow(
+		`this maestro reads version ${CURRENT_VERSION}`,
+	);
 });
 
 test("several processes open one new, or one version-4, record store at once", async () => {
