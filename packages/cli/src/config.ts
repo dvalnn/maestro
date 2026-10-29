@@ -131,7 +131,10 @@ async function directoriesIn(root: string): Promise<PackDir[]> {
 	return dirs.filter((_, i) => kept[i]).map((dir) => ({ dir }));
 }
 
-/** The packs `composed` lists, with the file or flag listing each, then those in `root`, each real directory once. */
+/**
+ * The packs `composed` lists, with the file or flag listing each, then those in `root`, each real directory once. A pack
+ * in `root` whose id a listed pack has is dropped.
+ */
 async function packDirs(composed: Composed, root: string): Promise<PackDir[]> {
 	const listed = (composed.values[PACKS] as string[]).map((dir, i) => {
 		const source = sourceOf(composed, [PACKS, String(i)]);
@@ -141,7 +144,15 @@ async function packDirs(composed: Composed, root: string): Promise<PackDir[]> {
 	const keys = await Promise.all(
 		all.map(({ dir }) => realpath(dir).catch(() => resolve(dir))),
 	);
-	return all.filter((_, i) => keys.indexOf(keys[i] ?? "") === i);
+	const once = all.filter((_, i) => keys.indexOf(keys[i] ?? "") === i);
+	const ids = await Promise.all(once.map(({ dir }) => packIdOf(dir)));
+	const listedIds = new Set(
+		once.flatMap((p, i) => (p.listedBy !== undefined ? [ids[i]] : [])),
+	);
+	return once.filter((p, i) => {
+		const id = ids[i];
+		return p.listedBy !== undefined || id === undefined || !listedIds.has(id);
+	});
 }
 
 /** The real directory of each of `packs` by pack id, none for a pack whose manifest names no id. */

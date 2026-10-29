@@ -316,6 +316,32 @@ describe("config files", () => {
 		});
 	});
 
+	test("give a listed pack the root of an id over an installed one", async () => {
+		const manifest = JSON.stringify({
+			id: "one",
+			version: "1.0.0",
+			entry: "index.js",
+			sdk: "*",
+		});
+		const { root, request } = await tree({
+			[WORKSPACE]: "",
+			[USER]: "packs: [../../p/listed]\n",
+			"p/listed/maestro-pack.json": manifest,
+			"data/maestro/packs/a/maestro-pack.json": manifest,
+			"data/maestro/packs/z/maestro-pack.json": manifest,
+		});
+		const config = await loadConfig(
+			request({
+				env: {
+					HOME: join(root, "home"),
+					XDG_CONFIG_HOME: join(root, "xdg"),
+					XDG_DATA_HOME: join(root, "data"),
+				},
+			}),
+		);
+		expect(config.roots.packs).toEqual({ one: join(root, "p/listed") });
+	});
+
 	test("anchor a path under any profile to its file, and leave a tag pending under a profile", async () => {
 		const { root, request } = await tree({
 			[USER]:

@@ -183,15 +183,20 @@ describe("repertoire", () => {
 		);
 	});
 
-	test("two packs that share an id: rep names both and exits 1", async () => {
+	test("a listed pack wins over an installed copy of its id, and two installed copies are refused", async () => {
 		const w = await world();
 		const copy = join(w.env.XDG_DATA_HOME, "maestro/packs/copy");
 		await mkdir(copy, { recursive: true });
 		await packOf(join(DEMO, "index.ts"), copy);
-		const listed = await w.call(["rep"]);
-		expect(listed.code).toBe(1);
-		expect(listed.err).toStartWith(
-			`pack id 'demo' is taken twice, by ${w.pack} and by ${copy}\n`,
+		expect((await w.call(["rep"])).code).toBe(0);
+		const other = join(w.env.XDG_DATA_HOME, "maestro/packs/other");
+		await mkdir(other, { recursive: true });
+		await packOf(join(DEMO, "index.ts"), other);
+		await Bun.write(join(w.cwd, ".maestro/config.yaml"), "packs: []\n");
+		const twice = await w.call(["rep"]);
+		expect(twice.code).toBe(1);
+		expect(twice.err).toStartWith(
+			`pack id 'demo' is taken twice, by ${copy} and by ${other}\n`,
 		);
 	});
 });
