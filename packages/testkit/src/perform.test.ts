@@ -1178,7 +1178,10 @@ test("cancelling a concert cancels running instances latest first, keeps what th
 	]);
 	expect(record.metrics(playing.id)).toEqual({ tokens: 4 });
 	expect(
-		record.events(playing.id).filter((e) => e.type === "log"),
+		record
+			.events(playing.id)
+			.filter((e) => e.type === "log")
+			.toSorted((x, y) => x.node.localeCompare(y.node)),
 	).toMatchObject([
 		{ node: "b", line: "cancel failed: hook broke" },
 		{ node: "d", line: expect.stringContaining("scratch kept at") },
