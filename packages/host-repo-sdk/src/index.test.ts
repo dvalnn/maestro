@@ -526,9 +526,10 @@ describe("seat", () => {
 });
 
 describe("examples", () => {
-	test("a review whose skeptic shares its lens's model family fails the build with ASSERT, with no spend", async () => {
-		const pair = { lensModel: "openai/gpt-5", skepticModel: "openai/o3" };
-		expect(buildCode(() => buildIr(review, pair, CODE))).toBe("ASSERT.failed");
+	test("a review of no lenses fails the build with ASSERT, with no spend", async () => {
+		expect(buildCode(() => buildIr(review, { lenses: 0 }, CODE))).toBe(
+			"ASSERT.failed",
+		);
 		const { composeIt, requests } = repo();
 		expect(await composeIt(buildIr(review, {}, CODE))).toMatchObject({
 			ok: true,

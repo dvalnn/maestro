@@ -52,9 +52,6 @@ export function byFinding(
 	return { text: `Consolidate these verdicts:\n${verdicts.join("\n")}` };
 }
 
-/** The pack's own model-family rule: the provider before the slash. */
-const family = (model: string) => model.split("/")[0];
-
 const lens = seat("lens", {
 	out: { findings: JsonOut("findings.json", Findings) },
 });
@@ -66,25 +63,24 @@ const consolidator = seat("consolidator", {
 });
 
 /**
- * A lens and its skeptic per lens, then a consolidator. `lensModel` and `skepticModel` are a build-time policy check,
- * refusing a skeptic of the lens's model family; the agents' models come from their profiles.
+ * A lens and its skeptic per lens, then a consolidator. `lenses` is how many of the lenses to run, refused at build time
+ * unless it is between one and all of them.
  */
 export const review = composition(
 	"review",
 	{
 		params: {
-			lensModel: Text({ default: "openai/gpt-5" }),
-			skepticModel: Text({ default: "anthropic/opus" }),
+			lenses: Int({ default: LENSES.length }),
 		},
 		examples: [{}],
 	},
-	({ lensModel, skepticModel }) => {
+	({ lenses }) => {
 		assert(
-			family(lensModel) !== family(skepticModel),
-			`skeptic model '${skepticModel}' is of the family of lens model '${lensModel}'`,
+			lenses >= 1 && lenses <= LENSES.length,
+			`lenses is ${lenses}, and must be from 1 to ${LENSES.length}`,
 		);
 		const rounds = iter.parMap(
-			LENSES,
+			LENSES.slice(0, lenses),
 			(angle) => {
 				const found = lens({ label: "lens", task: angle, lane: fresh() });
 				const challenged = skeptic({

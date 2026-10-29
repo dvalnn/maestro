@@ -15,9 +15,8 @@ result as a patch series. Its chains are Python modules that mix orchestration, 
 
 What that costs, as observed in the predecessor's workflows:
 
-- A workflow's shape cannot be checked before money is spent. Errors such as a skeptic model of the same family as its
-  lens surface only when the chain's code reaches them; a build-time `assert` can refuse a model policy before any
-  spend.
+- A workflow's shape cannot be checked before money is spent. Errors such as a bad param value surface only when the
+  chain's code reaches them; a build-time `assert` can refuse a param before any spend.
 - The same shape (lenses, a skeptic per lens, a consolidator) is copied between chains. The leg-running helper is
   duplicated verbatim.
 - Data plumbing is hand-rolled in every chain: sidecar JSON parsed and `isinstance`-checked, files copied between run
@@ -376,8 +375,8 @@ names the decision ticket it comes from.
 - **AC-1.** The core test suite passes with no host and no domain words (CORE-12). Pinned by the compose test "composes
   the %s golden IR into its plan golden", over core-only fixtures, and the domain-words lint.
 - **AC-2.** Composing the ported verification composition (the lens, skeptic, consolidator shape) reports the exact
-  node-instance count and rejects an unclaimed config key. A composition can refuse a model policy at build time, before
-  any spend, carried by the host-repo-sdk example, whose test pins a same-family rejection.
+  node-instance count and rejects an unclaimed config key. A composition can refuse its params at build time, before any
+  spend, carried by the host-repo-sdk example, whose test pins a refused param.
 - **AC-3.** The ported build-then-repair composition shows its bounded unroll in the plan. With a stub host that rejects
   once then accepts, it performs to completion, and a killed concert resumes at node granularity without repeating an
   `ok` node.
