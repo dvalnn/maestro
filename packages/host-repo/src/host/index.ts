@@ -2,14 +2,21 @@ import type { Composed } from "@maestro/core/config";
 import {
 	type Bounds,
 	type Host,
+	type HostSetup,
 	hostSetup,
 	type Roots,
 } from "@maestro/core/host";
 import { type Ir, indexGraph } from "@maestro/ir";
 import type { Harness, Runtime } from "../harness/index";
 import { revisionOf } from "../lane/index";
-import { profilesDigest, resolveProfile, seatBinding } from "../profile/index";
-import { agentKind } from "./agent";
+import {
+	type Binding,
+	type Profile,
+	profilesDigest,
+	resolveProfile,
+	seatBinding,
+} from "../profile/index";
+import { agentKind, agentPrompt } from "./agent";
 import { applyKind, changesetKind, commitsKind } from "./apply";
 import { checkKind } from "./check";
 import {
@@ -30,6 +37,7 @@ import { repoText } from "./text";
 import { needsRepo, validateRepo } from "./validate";
 
 export {
+	type Binding,
 	findProfile,
 	heldNames,
 	type Inspection,
@@ -66,6 +74,33 @@ export type RepoHostOptions = {
 /** What an agent node runs: its profile, and the runtime the profile resolves to. */
 export type AgentRuntime = { node: string; profile: string } & Runtime;
 
+/** An agent node seated in a composition: where it sits, the profile it is bound to, and the prompt a profile gives it. */
+export type SeatedAgent = {
+	node: string;
+	/** `<composition id>/<seat>`, the key `seats` rebinds the seat by. */
+	key: string;
+	binding: Binding;
+	prompt: (profile: Profile) => string;
+};
+
+/** The agent nodes of `ir`, each with the profile its seat runs under `setup`. */
+export function seatedAgents(ir: Ir, setup: HostSetup): SeatedAgent[] {
+	const graph = indexGraph(ir);
+	return ir.nodes.flatMap((n): SeatedAgent[] => {
+		if (n.kind !== AGENT_KIND || isLegacyAgent(n.config)) return [];
+		const config = agentConfig(n.config);
+		const composition = graph.compositionOf(n.id);
+		return [
+			{
+				node: n.id,
+				key: `${composition}/${config.seat}`,
+				binding: seatBinding(setup, composition, config),
+				prompt: (profile) => agentPrompt(config, profile, setup),
+			},
+		];
+	});
+}
+
 /** The agent nodes of `ir`, each with the profile its seat runs under `config` and the runtime that resolves to. */
 export async function agentRuntimes(
 	ir: Ir,
@@ -74,25 +109,11 @@ export async function agentRuntimes(
 	roots: Roots,
 ): Promise<AgentRuntime[]> {
 	const setup = hostSetup(host, config, roots);
-	const graph = indexGraph(ir);
-	const agents = ir.nodes.flatMap((n) =>
-		n.kind === AGENT_KIND && !isLegacyAgent(n.config)
-			? [
-					{
-						node: n.id,
-						profile: seatBinding(
-							setup,
-							graph.compositionOf(n.id),
-							agentConfig(n.config),
-						).profile,
-					},
-				]
-			: [],
-	);
 	return Promise.all(
-		agents.map(async (a) => ({
-			...a,
-			...(await resolveProfile(a.profile, setup)).fields.runtime,
+		seatedAgents(ir, setup).map(async ({ node, binding }) => ({
+			node,
+			profile: binding.profile,
+			...(await resolveProfile(binding.profile, setup)).fields.runtime,
 		})),
 	);
 }

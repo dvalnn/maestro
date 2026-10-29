@@ -869,6 +869,77 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 	});
 });
 
+describe("agent show --seat", () => {
+	test("a seat shows the profile it is declared with, or the one config rebinds it to with its source", async () => {
+		const w = await repoWorld(SMOKE_RUNTIME("stub"));
+		profileIn(w.cwd, "flag", "runtime: { harness: stub, model: flag }\n");
+		const file = await smokeFile();
+		const seat = async (...flags: string[]) =>
+			(
+				await w.call(["agent", "show", "--seat", "smoke/smoke", file, ...flags])
+			).out
+				.split("\n")
+				.slice(0, 2);
+		expect(await seat()).toEqual(["smoke", "  seat        smoke/smoke"]);
+		const rebind = ["-c", "seats.smoke/smoke=flag"];
+		expect(await seat(...rebind)).toEqual([
+			"flag",
+			"  seat        smoke/smoke  [-c]",
+		]);
+		expect(
+			json(
+				await w.call([
+					"agent",
+					"show",
+					"--seat",
+					"smoke/smoke",
+					file,
+					"--json",
+					...rebind,
+				]),
+			),
+		).toMatchObject({
+			name: "flag",
+			seat: { key: "smoke/smoke", profile: "flag", source: { layer: "flag" } },
+		});
+		expect(
+			await w.call(["agent", "show", "--seat", "smoke/smok", file]),
+		).toMatchObject({
+			code: 2,
+			err: `${file} seats no agent at 'smoke/smok'\nDid you mean 'smoke/smoke'?`,
+		});
+	});
+
+	test("--prompt prints the system prompt the seat's agent is staged with", async () => {
+		const w = await repoWorld(SMOKE_RUNTIME("stub"));
+		const file = await smokeFile();
+		const id = idOf(await w.call(["perform", file]));
+		const staged = (await w.call(["art", id, "a", "staged/instructions.md"]))
+			.out;
+		expect(staged).toStartWith("terse\n\n# Your run");
+		const show = ["agent", "show", "--seat", "smoke/smoke", file, "--prompt"];
+		expect((await w.call(show)).out).toBe(staged);
+		expect(json(await w.call([...show, "--json"])).prompts).toEqual([
+			{ nodes: ["a"], prompt: staged },
+		]);
+	});
+
+	test("a seat shows without --prompt when its agent's prompt could not be built", async () => {
+		const w = await repoWorld(SMOKE_RUNTIME("stub"));
+		const file = (await smokeFile()).replace(".ts", "-checked.ts");
+		writeFileSync(
+			file,
+			readFileSync(await smokeFile(), "utf8").replace(
+				'task: "nothing",',
+				'task: "nothing", checks: ["absent"],',
+			),
+		);
+		const show = ["agent", "show", "--seat", "smoke/smoke", file];
+		expect(await w.call(show)).toMatchObject({ code: 0 });
+		expect((await w.call([...show, "--prompt"])).code).not.toBe(0);
+	});
+});
+
 describe("agent show --concert", () => {
 	test("checks the environment an agent recorded as --probe does, its faults marked recorded and never failing the command, and every part ? once none is recorded", async () => {
 		const w = await repoWorld(SMOKE_RUNTIME("stub"), {

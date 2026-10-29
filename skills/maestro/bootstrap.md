@@ -144,8 +144,9 @@ model's context window, marking each part of the environment `✓`, `✗` or `?`
 spends a startup, and on claude one short turn, so with a real harness probe only on the user's go. The window it finds
 is kept, and every agent turn refreshes it: a profile's `context.at` may then be a share of it, such as `"50%"`, which
 pre-flight turns into tokens. Pre-flight refuses a percentage, and pi's `compact`, for a model whose window is not kept;
-probe the profile once, or write `at` in tokens. `maestro agent show --concert <id> <node>` checks what an agent of a
-concert recorded.
+probe the profile once, or write `at` in tokens. `maestro agent show --seat <composition id>/<seat> <composition>` shows
+the profile a seat of that composition is bound to, `seats:` first, and `--prompt` prints the system prompt its agents
+are given. `maestro agent show --concert <id> <node>` checks what an agent of a concert recorded.
 
 ### Layers
 

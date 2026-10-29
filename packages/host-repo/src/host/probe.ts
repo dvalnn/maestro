@@ -10,7 +10,7 @@ import type {
 import { attachmentPath, type Profile } from "../profile/index";
 import { sessionsOf, stage } from "./agent";
 import { repoSetup } from "./config";
-import { frame, type Run, WORK } from "./frame";
+import { type Run, WORK } from "./frame";
 import { pathBinds } from "./run-lines";
 import { contextIn } from "./windows";
 
@@ -57,12 +57,7 @@ export function probeRequest(
 			})),
 		],
 		env: { PATH: repo.path },
-		instructions: stage(
-			made("staged"),
-			PROBE_PROMPT,
-			instructions,
-			frame(told),
-		),
+		instructions: stage(made("staged"), PROBE_PROMPT, instructions, told),
 		outbox: made("out"),
 		outputs: [],
 		session: { dir: made("session"), id: crypto.randomUUID() },

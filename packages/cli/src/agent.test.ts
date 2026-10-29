@@ -447,6 +447,14 @@ test.each([
 		"expected one profile, got 0\nName a profile, as 'maestro agent ls' lists it",
 	],
 	[
+		["agent", "show", "scout", "--prompt"],
+		"--prompt takes --seat: the prompt is a seat's\nAdd --seat <composition id>/<seat> and name its composition",
+	],
+	[
+		["agent", "show", "--seat", "smoke/smoke"],
+		"expected one composition, got 0\nName the composition the seat sits in: a file, or <pack>.<composition>",
+	],
+	[
 		["agent", "show", "scout", "--yaml", "--json"],
 		"--yaml and --json both given\nPass one of them",
 	],

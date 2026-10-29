@@ -287,7 +287,7 @@ const refusal = (source: Source | undefined, message: string, fix: string) =>
 	configDiagnostic(CODE, source, message, fix);
 
 /** The profile a seat runs, and where config rebound it, when it did. */
-export type Binding = { profile: string; source?: Source };
+export type Binding = { profile: string; source?: ValueSource };
 
 /**
  * The profile seat `seat.seat` of composition `composition` runs: the one `seats` in `setup` rebinds it to, keyed
@@ -302,9 +302,9 @@ export function seatBinding(
 	const seats = setup.config[SEATS];
 	const bound =
 		isPlainObject(seats) && Object.hasOwn(seats, key) ? seats[key] : undefined;
-	return typeof bound === "string"
-		? { profile: bound, source: sourceOf(setup, [SEATS, key]) }
-		: { profile: seat.profile };
+	if (typeof bound !== "string") return { profile: seat.profile };
+	const source = sourceOf(setup, [SEATS, key]);
+	return { profile: bound, ...(source && { source: valueSource(source) }) };
 }
 
 /**

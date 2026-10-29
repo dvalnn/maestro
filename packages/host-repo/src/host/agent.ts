@@ -11,6 +11,7 @@ import type {
 	HostContext,
 	HostInstance,
 	HostNodeResult,
+	HostSetup,
 	NodeKind,
 } from "@maestro/core/host";
 import type { Inputs } from "@maestro/core/node";
@@ -60,11 +61,11 @@ import {
 	isLegacyAgent,
 	LANE_PORT,
 	listed,
+	type RepoSetup,
 	repoSetup,
 	requireTarget,
 	SESSION_PORT,
 	SESSION_TYPE,
-	type Target,
 } from "./config";
 import { counterpartSession, keysOf } from "./encore";
 import {
@@ -539,22 +540,24 @@ async function converse(
 	return { metrics: state.metrics, session: state.session, ...end };
 }
 
-/**
- * Stages the user message and the system-prompt file, the profile's `instructions` when it has any, then `framed`.
- * Returns the system-prompt file's path.
- */
+/** The system prompt of `run`: the profile's `instructions` when it has any, then the host's frame of the run. */
+function systemPrompt(instructions: string | undefined, run: Run): string {
+	const own = instructions
+		? `${readFileSync(instructions, "utf8").trimEnd()}\n\n`
+		: "";
+	return `${own}${frame(run)}`;
+}
+
+/** Stages the user message and the system-prompt file of `run`. Returns the system-prompt file's path. */
 export function stage(
 	dir: string,
 	prompt: string,
 	instructions: string | undefined,
-	framed: string,
+	run: Run,
 ) {
 	writeFileSync(join(dir, "prompt.md"), prompt);
-	const own = instructions
-		? `${readFileSync(instructions, "utf8").trimEnd()}\n\n`
-		: "";
 	const path = join(dir, "instructions.md");
-	writeFileSync(path, `${own}${framed}\n`);
+	writeFileSync(path, `${systemPrompt(instructions, run)}\n`);
 	return path;
 }
 
@@ -644,17 +647,23 @@ async function keepPartial(
 	return { ...result, enrichment: { ...result.enrichment, partial } };
 }
 
-/**
- * What an agent's sandbox adds for its checks and attachments, those the frame lists, each with its hint, and the host
- * path of each attachment by name.
- */
-type Extras = AgentChecks &
-	Pick<Run, "checks" | "attachments"> & { sources: Record<string, string> };
+/** What an agent's sandbox adds for its checks and attachments, and the host path of each attachment by name. */
+type Extras = AgentChecks & { sources: Record<string, string> };
 
-/** What the graph's and the profile's attachments and the checks of `staging` add to an agent's sandbox and frame. */
+/**
+ * The checks of the target of `setup` an agent of `config` may run, by name.
+ * @throws Error when it names one and `setup` has no target, or as `agentCheck` does.
+ */
+const agentChecks = (config: AgentConfig, setup: RepoSetup) =>
+	(config.checks ?? []).map((name): [string, AgentCheck] => [
+		name,
+		agentCheck(requireTarget(setup), name),
+	]);
+
+/** What the graph's and the profile's attachments and the checks `named` add to an agent's sandbox. */
 function extrasOf(
 	{ config, profile }: Staging,
-	target: Target,
+	named: [string, AgentCheck][],
 	inputs: Inputs,
 	context: HostContext,
 	base: string,
@@ -662,10 +671,6 @@ function extrasOf(
 ): Extras {
 	const graph = Object.entries(config.attachments ?? {});
 	const own = Object.entries(profile.fields.attachments);
-	const named = (config.checks ?? []).map((name): [string, AgentCheck] => [
-		name,
-		agentCheck(target, name),
-	]);
 	const checks = stageChecks(context.scratch, named, base, path);
 	const sources: Record<string, string> = Object.fromEntries([
 		...graph.map(([name]) => [name, artifactInput(inputs, context, name)]),
@@ -679,8 +684,6 @@ function extrasOf(
 		...checks,
 		sources,
 		readOnly: [...mounts, ...checks.readOnly],
-		checks: named.map(([name, spec]) => [name, spec.hint]),
-		attachments: [...graph, ...own].map(([name, a]) => [name, a.hint]),
 	};
 }
 
@@ -725,19 +728,43 @@ function sessionOf(
 	};
 }
 
-/** What the frame tells the agent of `staging` about its run. */
-function toldOf({ config, profile }: Staging, extras: Extras): Run {
-	const { context } = profile.fields;
+/**
+ * What the frame tells an agent of `config` running `profile` about its run: its checks `named`, and its attachments,
+ * the graph's then the profile's, each with its hint.
+ */
+function toldOf(
+	config: AgentConfig,
+	profile: Profile,
+	named: [string, AgentCheck][],
+): Run {
+	const { context, attachments } = profile.fields;
 	return {
 		lane: config.lane.mode === "read" ? "read" : "write",
-		checks: extras.checks,
-		attachments: extras.attachments,
+		checks: named.map(([name, spec]) => [name, spec.hint]),
+		attachments: [
+			...Object.entries(config.attachments ?? {}),
+			...Object.entries(attachments),
+		].map(([name, a]) => [name, a.hint]),
 		out: Object.values(config.out ?? {}),
 		kind: config.verdict ? VERDICT : WORK,
 		sessions:
 			context?.strategy === "handoff" ? sessionsOf(context.max) : undefined,
 	};
 }
+
+/**
+ * The system prompt an agent node of `config` running `profile` is given under `setup`, as its run stages it.
+ * @throws Error as `agentChecks` does.
+ */
+export const agentPrompt = (
+	config: AgentConfig,
+	profile: Profile,
+	setup: HostSetup,
+) =>
+	systemPrompt(
+		profile.fields.instructions,
+		toldOf(config, profile, agentChecks(config, repoSetup(setup))),
+	);
 
 /**
  * The context policy's part in an instance's turns: a handoff policy's trigger and next sessions, and what a compaction
@@ -844,15 +871,16 @@ async function execute(
 			mkdirSync(staging.staged);
 			mkdirSync(staging.outbox);
 			context.emit({ kind: "agent", ...runtimeOf(runtime) });
+			const named = agentChecks(config, setup);
 			const extras = extrasOf(
 				staging,
-				target,
+				named,
 				inputs,
 				context,
 				lane.base,
 				setup.path,
 			);
-			const told = toldOf(staging, extras);
+			const told = toldOf(config, profile, named);
 			const { kind, out: outputs } = told;
 			const now: Turn = {
 				task: textInput(inputs, "prompt"),
@@ -878,7 +906,7 @@ async function execute(
 					staging.staged,
 					opening.message,
 					profile.fields.instructions,
-					frame(told),
+					told,
 				),
 				outbox: staging.outbox,
 				outputs,
