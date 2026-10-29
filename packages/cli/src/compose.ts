@@ -23,7 +23,7 @@ import {
 	prepare,
 	type Reading,
 } from "./prepare";
-import { openSession, overridesOf } from "./session";
+import { openSession, overridesOf, type Session } from "./session";
 
 const COMPOSE_OPTIONS = { ...COMMON, ...COMPOSE_FLAGS } as const;
 
@@ -33,7 +33,7 @@ async function composed(reading: Reading, args: readonly string[], deps: Deps) {
 	const session = await openSession(deps, overridesOf(early));
 	const prepared = await prepare(session, reading, args);
 	const plan = await preflight(session, prepared);
-	return { json: isSet(early, "json"), prepared, plan };
+	return { json: isSet(early, "json"), session, prepared, plan };
 }
 
 async function save(prepared: Prepared, out: string) {
@@ -43,9 +43,11 @@ async function save(prepared: Prepared, out: string) {
 }
 
 /** What each agent node of `plan` will run on, and the layer that set each field. */
-function agentsOf(deps: Deps, config: Composed, plan: Plan): AgentRole[] {
-	const host = deps.hosts.find((h) => h.name === HOST_NAME);
-	return host ? agentRoles(plan.ir.nodes, config, host) : [];
+function agentsOf(session: Session, config: Composed, plan: Plan): AgentRole[] {
+	const host = session.deps.hosts.find((h) => h.name === HOST_NAME);
+	return host
+		? agentRoles(plan.ir.nodes, config, host, session.config.roots)
+		: [];
 }
 
 const ROLE_FIELDS = ["harness", "model", "thinking"] as const;
@@ -71,22 +73,25 @@ function agentLines(agents: readonly AgentRole[]): string {
 }
 
 /** The plan in full, then its `agents:` block when it has agent nodes. */
-function planText(deps: Deps, config: Composed, plan: Plan): string {
-	const agents = agentsOf(deps, config, plan);
+function planText(session: Session, config: Composed, plan: Plan): string {
+	const agents = agentsOf(session, config, plan);
 	return agents.length
 		? `${listing(plan)}\n${agentLines(agents)}`
 		: listing(plan);
 }
 
 /** Prints the warnings on stderr, then the summary, or the plan in full with `--plan`, and the graph with `--graph`. */
-function print(deps: Deps, prepared: Prepared, plan: Plan): void {
+function print(session: Session, prepared: Prepared, plan: Plan): void {
+	const { deps } = session;
 	const { values } = prepared;
 	const { err } = colorOf(deps, values);
 	for (const d of plan.diagnostics) deps.stderr(renderDiagnostic(d, err));
 	const full = isSet(values, "plan");
 	const graph = isSet(values, "graph");
 	if (full || !graph)
-		deps.stdout(full ? planText(deps, prepared.config, plan) : summary(plan));
+		deps.stdout(
+			full ? planText(session, prepared.config, plan) : summary(plan),
+		);
 	if (graph) deps.stdout(render(plan));
 }
 
@@ -95,7 +100,7 @@ export const compose: Command = {
 	options: COMPOSE_OPTIONS,
 	help: compositionHelp,
 	async execute(args, deps) {
-		const { json, prepared, plan } = await composed(
+		const { json, session, prepared, plan } = await composed(
 			{ verb: "compose", options: COMPOSE_OPTIONS, examples: true },
 			args,
 			deps,
@@ -107,12 +112,12 @@ export const compose: Command = {
 				jsonOf({
 					ok: true,
 					plan,
-					agents: agentsOf(deps, prepared.config, plan),
+					agents: agentsOf(session, prepared.config, plan),
 				}),
 			);
 			return EXIT.ok;
 		}
-		print(deps, prepared, plan);
+		print(session, prepared, plan);
 		if (out) deps.stderr(`wrote ${out}`);
 		return EXIT.ok;
 	},

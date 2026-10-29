@@ -22,7 +22,10 @@ export const validator = (): Validator =>
 const unescapePointer = (s: string) =>
 	s.replaceAll("~1", "/").replaceAll("~0", "~");
 
-/** One message per way `data` violates `schema`, each led by `subject` of the offending position's path segments. */
+/**
+ * One message per way `data` violates `schema`, each led by `subject` of the offending position's path segments. A key
+ * off its `propertyNames` is named by its own path, once.
+ */
 export function violations(
 	ajv: Validator,
 	schema: JsonSchema,
@@ -38,10 +41,14 @@ export function violations(
 		];
 	}
 	if (validate(data)) return [];
-	return (validate.errors ?? []).map((e) => {
-		const segments = e.instancePath.split("/").slice(1).map(unescapePointer);
-		const extra = e.params.additionalProperty;
-		const detail = typeof extra === "string" ? ` ('${extra}')` : "";
-		return `${subject(segments)} ${e.message}${detail}`;
-	});
+	return (validate.errors ?? [])
+		.filter((e) => e.propertyName === undefined)
+		.map((e) => {
+			const segments = e.instancePath.split("/").slice(1).map(unescapePointer);
+			const { additionalProperty: extra, propertyName: key } = e.params;
+			if (typeof key === "string")
+				return `${subject([...segments, key])} is not an allowed name`;
+			const detail = typeof extra === "string" ? ` ('${extra}')` : "";
+			return `${subject(segments)} ${e.message}${detail}`;
+		});
 }

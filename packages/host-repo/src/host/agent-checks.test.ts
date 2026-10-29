@@ -19,6 +19,7 @@ import {
 	noCode,
 	OK,
 	performed,
+	ROOTS,
 	stubHost,
 	tmp,
 	toyTarget,
@@ -164,8 +165,11 @@ describe("agent-runnable checks and attachments", () => {
 					checks: { open: "true", capped: { run: "true", timeout: "2s" } },
 				},
 			},
+			sources: [],
+			layers: [],
 			commandLine: { values: {}, replaced: [] },
 			store: "",
+			roots: ROOTS,
 		}).target;
 		expect(target?.checks.open?.timeout).toBeUndefined();
 	});
@@ -379,6 +383,7 @@ describe("agent-runnable checks and attachments", () => {
 			const composed = await compose({
 				ir,
 				config,
+				roots: ROOTS,
 				core: CORE_CONFIG,
 				packs: {},
 				hosts: [host],

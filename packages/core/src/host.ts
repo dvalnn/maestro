@@ -44,22 +44,41 @@ export type HostNodeResult = NodeResult & {
 /** The directory of host stores under the data root. */
 const HOSTS_DIR = "hosts";
 
+/** The directories, built by the caller, a host may look its own entries up under. Core reads none of them. */
+export type Roots = {
+	/** The workspace's `.maestro`, when there is a workspace. */
+	readonly workspace?: string;
+	/** `maestro` in the user's config directory. */
+	readonly user: string;
+	/** Each installed pack's directory, by pack id. */
+	readonly packs: Readonly<Record<string, string>>;
+};
+
 /** What core gives a host in every hook that can use it. */
 export type HostSetup = {
 	/** The values of the namespaces the host declares in `Host.config`, as compose checked them. An unset one is `{}`. */
 	readonly config: Readonly<Record<string, unknown>>;
+	/** Where each value of `config` came from, at its key path from the namespace down. */
+	readonly sources: Composed["sources"];
+	/** The layers `config` merged from, lowest first, each cut to the host's namespaces. */
+	readonly layers: Composed["layers"];
 	/** The part of `config` the profile and `-c` layers set, at its key paths. */
 	readonly commandLine: CommandLine;
 	/** `<data root>/hosts/<host name>`: the host's own directory. Core never creates it, so the host does on first write. */
 	readonly store: string;
+	readonly roots: Roots;
 };
 
 /**
- * The setup of `host` under `config`: its own config namespaces, the part of them the profile and `-c` layers set, and
- * its store under the config's `dataRoot`, no other's.
+ * The setup of `host` under `config` and `roots`: its own config namespaces, their sources and layers, the part of them
+ * the profile and `-c` layers set, and its store under the config's `dataRoot`, no other's.
  * @throws Error when `config` has no `dataRoot`, which core config always sets.
  */
-export function hostSetup(host: Host, config: Composed): HostSetup {
+export function hostSetup(
+	host: Host,
+	config: Composed,
+	roots: Roots,
+): HostSetup {
 	const { dataRoot } = config.values;
 	if (typeof dataRoot !== "string")
 		throw new Error("the composed config has no 'dataRoot'");
@@ -68,17 +87,23 @@ export function hostSetup(host: Host, config: Composed): HostSetup {
 		Object.hasOwn(config.values, ns) ? config.values[ns] : {},
 	]);
 	const { values, replaced } = commandLineOf(config);
-	const owned = (path: KeyPath) =>
-		path[0] !== undefined && Object.hasOwn(host.config, path[0]);
+	const ownedNs = (ns: string) => Object.hasOwn(host.config, ns);
+	const owned = ([ns]: KeyPath) => ns !== undefined && ownedNs(ns);
 	return {
 		config: Object.fromEntries(namespaces),
+		sources: config.sources.filter(({ path }) => owned(path)),
+		layers: config.layers.map((layer) => ({
+			...layer,
+			entries: new Map([...layer.entries].filter(([ns]) => ownedNs(ns))),
+		})),
 		commandLine: {
 			values: Object.fromEntries(
-				Object.entries(values).filter(([ns]) => Object.hasOwn(host.config, ns)),
+				Object.entries(values).filter(([ns]) => ownedNs(ns)),
 			),
 			replaced: replaced.filter(owned),
 		},
 		store: join(dataRoot, HOSTS_DIR, host.name),
+		roots,
 	};
 }
 
@@ -118,10 +143,15 @@ export interface Host {
 	/** By config namespace. */
 	readonly config: Readonly<Record<string, JsonSchema>>;
 	/**
-	 * The keys of `config` that hold file paths, namespace first. A relative value in a config file is relative to that
-	 * file's directory, or to the workspace root for a workspace or profile file.
+	 * The keys of `config` that hold file paths, namespace first, `*` matching any one key. A relative value in a config
+	 * file is relative to that file's directory, or to the workspace root for a workspace or profile file.
 	 */
 	readonly paths?: readonly KeyPath[];
+	/**
+	 * The keys of `config` whose base the host gives later through `layeredOver`, namespace first, `*` matching any one
+	 * key. At or below them, a merge tag that finds nothing beneath stays pending until then.
+	 */
+	readonly deferred?: readonly KeyPath[];
 	/** Compose-time rules over the whole graph. */
 	validate(graph: GraphIndex, setup: HostSetup): Awaitable<Diagnostic[]>;
 	/** The config entries the graph's host nodes read by name. */

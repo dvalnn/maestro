@@ -366,6 +366,22 @@ describe("stand-in claude", () => {
 	});
 });
 
+test("a runtime's thinking must be one of claude's effort levels, and its model is not checked", () => {
+	const harness = claudeHarness();
+	const runtime = { harness: "claude", model: "anything" };
+	expect(harness.runtimeProblems?.({ ...runtime, thinking: "xhigh" })).toEqual(
+		[],
+	);
+	expect(harness.runtimeProblems?.(runtime)).toEqual([]);
+	expect(harness.runtimeProblems?.({ ...runtime, thinking: "turbo" })).toEqual([
+		{
+			field: "thinking",
+			reason: "claude has no thinking level 'turbo'",
+			fix: "Use one of: low, medium, high, xhigh, max",
+		},
+	]);
+});
+
 describe.skipIf(!process.env.MAESTRO_CLAUDE)("real claude", () => {
 	const model = process.env.MAESTRO_CLAUDE_MODEL ?? "haiku";
 	const ask = (prompt: string, base: HarnessRequest) =>

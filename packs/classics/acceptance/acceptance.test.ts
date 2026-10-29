@@ -259,7 +259,8 @@ test("a concert cancelled during its first repair resumes without rebuilding, an
 	const recordPath = join(dir, "record.db");
 	const concert = await perform({
 		ir,
-		config: { values: { ...config, dataRoot: dir }, sources: [] },
+		config: { values: { ...config, dataRoot: dir }, sources: [], layers: [] },
+		roots: { user: join(dir, "roots"), packs: {} },
 		hosts,
 		loadCode: async (ref) => CODE[ref.export] as CodeEntry,
 		recordPath,

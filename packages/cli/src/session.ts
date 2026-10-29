@@ -238,7 +238,7 @@ async function sizeOf(dir: string): Promise<number> {
 
 /** The setup core gives `host` under the session's config. */
 export const setupOf = (session: Session, host: Host) =>
-	hostSetup(host, session.config.composed);
+	hostSetup(host, session.config.composed, session.config.roots);
 
 /**
  * The bytes concert `id` holds: its directory under the data root, and what each host reports holding for it. A host

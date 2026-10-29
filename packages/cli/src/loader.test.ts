@@ -363,7 +363,8 @@ describe("resume", () => {
 		const hosts = [fakeHost({ steps: { first: step, "echo/echo": step } })];
 		const options = {
 			hosts,
-			config: { values: { dataRoot: dir }, sources: [] },
+			config: { values: { dataRoot: dir }, sources: [], layers: [] },
+			roots: { user: join(dir, "roots"), packs: {} },
 			recordPath: join(dir, "record.db"),
 			dir,
 			concurrency: 4,

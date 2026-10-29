@@ -132,7 +132,8 @@ async function touchedFiles(
 		};
 		const concert = await perform({
 			ir: buildIr(touched, { lane }),
-			config: { values, sources: [] },
+			config: { values, sources: [], layers: [] },
+			roots: { user: join(work, "roots"), packs: {} },
 			hosts: [repoHost({ harnesses: [] })],
 			loadCode: async (ref) => {
 				throw new Error(`touched runs no code, got '${ref.export}'`);

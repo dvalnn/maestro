@@ -18,15 +18,17 @@ import {
 	sourceOf,
 	valuesLayer,
 } from "@maestro/core/config";
-import type { Host } from "@maestro/core/host";
+import type { Host, Roots } from "@maestro/core/host";
 import type { JsonSchema } from "@maestro/ir";
 import { messageOf, validator } from "@maestro/ir";
+import { packIdOf } from "./loader";
 import { CliError } from "./output";
 
 const APP = "maestro";
 /** The directory that makes its parent a workspace. */
 const WORKSPACE_DIR = ".maestro";
 const CONFIG_FILE = "config.yaml";
+/** The directory of config profiles in `.maestro/`. */
 const PROFILES_DIR = "profiles";
 const PROFILE_EXTENSION = ".yaml";
 /** The prefix of a name `ls -a` alone shows. */
@@ -50,6 +52,10 @@ const pathKeys = (hosts: readonly Host[]) => [
 	...hosts.flatMap((h) => h.paths ?? []),
 	[PACKS],
 ];
+
+/** The key paths each host gives the base of later. */
+export const deferredKeys = (hosts: readonly Host[]) =>
+	hosts.flatMap((h) => h.deferred ?? []);
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -86,6 +92,8 @@ export type LoadedConfig = {
 	packsDir: string;
 	/** The directory that holds `.maestro/`, when the cwd is inside one. */
 	workspace?: string;
+	/** The host roots: `.maestro` in the workspace, `$XDG_CONFIG_HOME/maestro`, and each pack's directory. */
+	roots: Roots;
 };
 
 const isDirectory = async (path: string) =>
@@ -131,6 +139,22 @@ async function packDirs(composed: Composed, root: string): Promise<PackDir[]> {
 		all.map(({ dir }) => realpath(dir).catch(() => resolve(dir))),
 	);
 	return all.filter((_, i) => keys.indexOf(keys[i] ?? "") === i);
+}
+
+/** The real directory of each of `packs` by pack id, none for a pack whose manifest names no id. */
+async function packRoots(
+	packs: readonly PackDir[],
+): Promise<Record<string, string>> {
+	const reals = await Promise.all(
+		packs.map(({ dir }) => realpath(dir).catch(() => undefined)),
+	);
+	const ids = await Promise.all(reals.map((real) => real && packIdOf(real)));
+	return Object.fromEntries(
+		reals.flatMap((real, i) => {
+			const id = ids[i];
+			return real && id ? [[id, real]] : [];
+		}),
+	);
 }
 
 /**
@@ -336,13 +360,10 @@ export async function loadConfig({
 	const workspace = await workspaceOf(cwd);
 	const dataRoot = join(xdg(env, "XDG_DATA_HOME", ".local/share"), APP);
 	const packsDir = join(dataRoot, PACKS_DIR);
+	const userDir = join(xdg(env, "XDG_CONFIG_HOME", ".config"), APP);
 	const paths = pathKeys(hosts);
 	const files = [
-		await fileLayer(
-			join(xdg(env, "XDG_CONFIG_HOME", ".config"), APP, CONFIG_FILE),
-			"user",
-			paths,
-		),
+		await fileLayer(join(userDir, CONFIG_FILE), "user", paths),
 		workspace &&
 			(await fileLayer(
 				join(workspace, WORKSPACE_DIR, CONFIG_FILE),
@@ -362,10 +383,15 @@ export async function loadConfig({
 			paths,
 		)),
 	];
-	const composed = layered(layers);
+	const composed = layered(layers, deferredKeys(hosts));
 	const core = coreConfig(composed);
 	const errors = schemaErrors(validator(), CLI_CONFIG, composed);
 	if (errors.length) throw new ConfigError(errors);
 	const packs = await packDirs(composed, packsDir);
-	return { layers, composed, core, packs, packsDir, workspace };
+	const roots: Roots = {
+		...(workspace && { workspace: join(workspace, WORKSPACE_DIR) }),
+		user: userDir,
+		packs: await packRoots(packs),
+	};
+	return { layers, composed, core, packs, packsDir, workspace, roots };
 }

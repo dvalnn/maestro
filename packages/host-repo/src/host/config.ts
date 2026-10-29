@@ -9,8 +9,9 @@ import {
 	validator,
 	violations,
 } from "@maestro/ir";
-import type { Output, Role } from "../harness/index";
+import type { Output, Runtime } from "../harness/index";
 import type { ApplyStrategy, Sparse } from "../lane/index";
+import { PROFILE_PATHS, PROFILES, PROFILES_CONFIG } from "../profile/index";
 
 export const HOST_NAME = "repo";
 export const AGENT_KIND = "repo.agent";
@@ -55,7 +56,13 @@ const INLINE_CHECK = {
 const CHECK = { anyOf: [LINES, INLINE_CHECK] } as const;
 
 /** The host's config key paths that hold file paths. */
-export const HOST_PATHS: readonly KeyPath[] = [["target", "repo"]];
+export const HOST_PATHS: readonly KeyPath[] = [
+	["target", "repo"],
+	...PROFILE_PATHS.map((p) => [PROFILES, "*", ...p]),
+];
+
+/** The host's config key paths whose base a profile file gives at resolution. */
+export const HOST_DEFERRED: readonly KeyPath[] = [[PROFILES, "*"]];
 
 /** The config namespaces the host owns. */
 export const HOST_CONFIG = {
@@ -101,6 +108,7 @@ export const HOST_CONFIG = {
 		additionalProperties: false,
 		properties: { readOnly: PATHS, path: PATHS },
 	},
+	[PROFILES]: PROFILES_CONFIG,
 } as const satisfies Record<string, JsonSchema>;
 
 /** The schema of the role fields the command line sets: those of `roles`, none required. */
@@ -277,7 +285,7 @@ export type Attachment = { hint: string; type?: AttachmentType };
 export type AgentLimits = { timeout?: number; tokens?: number };
 
 export type AgentConfig = {
-	role: { name: string } & Partial<Role>;
+	role: { name: string } & Partial<Runtime>;
 	lane: LaneInput;
 	limits?: AgentLimits;
 	/** A verdict agent rules on work, `ok` or `rejected`; any other agent does the work. */
@@ -315,7 +323,7 @@ type RawSetup = {
 		prepare?: RawCheck;
 		sparse?: Sparse;
 	};
-	roles?: Record<string, Role>;
+	roles?: Record<string, Runtime>;
 	sandbox?: { readOnly?: string[]; path?: string[] };
 };
 
@@ -333,9 +341,9 @@ export type Target = {
 export type RepoSetup = {
 	store: string;
 	target?: Target;
-	roles: Record<string, Role>;
+	roles: Record<string, Runtime>;
 	/** The fields of `roles` that `--profile` and `-c` set, which outrank a composition's inline role fields. */
-	commandRoles: Record<string, Partial<Role>>;
+	commandRoles: Record<string, Partial<Runtime>>;
 	/** The key paths `--profile` and `-c` replaced whole with `!replace`. */
 	commandReplaced: readonly KeyPath[];
 	/** The sandbox's read-only host paths: `sandbox.readOnly`, then the `sandbox.path` directories. */
@@ -502,7 +510,7 @@ export type RoleOrigin = {
 };
 
 /** The fields a role resolves to, each with the tier that set it. */
-export type RoleOrigins = Partial<Record<keyof Role, RoleOrigin>>;
+export type RoleOrigins = Partial<Record<keyof Runtime, RoleOrigin>>;
 
 /**
  * The fields `role` resolves to, each with its tier: the config file's role of its name, then its inline fields, then
@@ -517,7 +525,7 @@ export function roleOrigins(
 	const replaced = setup.commandReplaced.some(
 		(path) => path[0] === "roles" && (path.length === 1 || path[1] === name),
 	);
-	const tiers: [RoleTier, Partial<Role> | undefined][] = [
+	const tiers: [RoleTier, Partial<Runtime> | undefined][] = [
 		["file", own(setup.roles, name)],
 		["composition", replaced ? {} : pinned],
 		["command", own(setup.commandRoles, name)],
@@ -541,7 +549,7 @@ export function roleOrigins(
 export const roleFields = (
 	role: AgentConfig["role"],
 	setup: RepoSetup,
-): Partial<Role> =>
+): Partial<Runtime> =>
 	Object.fromEntries(
 		Object.entries(roleOrigins(role, setup)).map(([k, o]) => [k, o.value]),
 	);
@@ -553,10 +561,10 @@ export const roleFields = (
 export function resolveRole(
 	config: AgentConfig["role"],
 	setup: RepoSetup,
-): Role {
+): Runtime {
 	if (!own(setup.roles, config.name))
 		throw new Error(
 			`role '${config.name}' is not in config 'roles'. ${useOneOf(Object.keys(setup.roles), "Add it under 'roles'")}`,
 		);
-	return roleFields(config, setup) as Role;
+	return roleFields(config, setup) as Runtime;
 }

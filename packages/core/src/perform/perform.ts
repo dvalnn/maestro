@@ -42,6 +42,7 @@ import {
 	type HostNodeResult,
 	type HostSetup,
 	hostSetup,
+	type Roots,
 } from "../host";
 import type { Inputs, LoadCode } from "../node";
 import { instanceKey, kindLookup, loadFunction } from "../shared";
@@ -73,6 +74,8 @@ type PerformBase = {
 	hosts: readonly Host[];
 	/** The composed config the concert was composed under, from which each host gets its own namespaces. */
 	config: Composed;
+	/** The directories each host's setup names. */
+	roots: Roots;
 	loadCode: LoadCode;
 	/** The file of the record store the concert is written to. */
 	recordPath: string;
@@ -266,7 +269,7 @@ async function performed(
 	inflight: Set<Promise<void>>,
 ): Promise<ConcertResult> {
 	const { hosts, loadCode } = options;
-	const setup = (host: Host) => hostSetup(host, options.config);
+	const setup = (host: Host) => hostSetup(host, options.config, options.roots);
 	const index = indexGraph(ir);
 	await makeDirs(dirs);
 	const check = portCheck(validator());

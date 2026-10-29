@@ -9,7 +9,7 @@ import {
 	validator,
 } from "@maestro/ir";
 import type { Composed } from "../config";
-import { type Bounds, type Host, hostSetup } from "../host";
+import { type Bounds, type Host, hostSetup, type Roots } from "../host";
 import type { LoadCode } from "../node";
 import { kindLookup } from "../shared";
 import { boundsOf, capErrors, type ExpansionOf, unexpanded } from "./bounds";
@@ -21,6 +21,8 @@ export type ComposeInput = {
 	ir: Ir;
 	/** The layered config. */
 	config: Composed;
+	/** The directories each host's setup names. */
+	roots: Roots;
 	/** The config schemas the engine owns, by top-level key (CFG-01). */
 	core: Readonly<Record<string, JsonSchema>>;
 	/** Each installed pack's claims: its id, then its compositions' ids, then each one's param names (D-17). */
@@ -48,11 +50,14 @@ export function stampHost(d: Diagnostic): Diagnostic {
 }
 
 /** Each host's `validate` findings, a throw or a rejection being a `HOST.validate` error that names the host. */
-async function validations({ hosts, config }: ComposeInput, graph: GraphIndex) {
+async function validations(
+	{ hosts, config, roots }: ComposeInput,
+	graph: GraphIndex,
+) {
 	const results = await Promise.all(
 		hosts.map(async (host): Promise<Diagnostic[]> => {
 			try {
-				return (await host.validate(graph, hostSetup(host, config))).map(
+				return (await host.validate(graph, hostSetup(host, config, roots))).map(
 					stampHost,
 				);
 			} catch (e) {

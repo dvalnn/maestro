@@ -114,13 +114,14 @@ const storage = async (options: { dir?: string }) =>
 
 /** `perform` under no config, with the data root and record store in `options.dir`. */
 const start = (
-	options: Omit<PerformOptions, "config" | "recordPath"> & {
+	options: Omit<PerformOptions, "config" | "recordPath" | "roots"> & {
 		dir: string;
 		config?: PerformOptions["config"];
 	},
 ) =>
 	perform({
-		config: { values: { dataRoot: options.dir }, sources: [] },
+		config: { values: { dataRoot: options.dir }, sources: [], layers: [] },
+		roots: { user: join(options.dir, "roots"), packs: {} },
 		recordPath: join(options.dir, "record.db"),
 		...options,
 	});
@@ -1058,7 +1059,8 @@ test("a parMap or parFind names duplicate keys and how to fix them, a key functi
 	const firstChar = (item: string) => item[0];
 	const composed = await compose({
 		ir: listed,
-		config: { values: { dataRoot: "/data" }, sources: [] },
+		config: { values: { dataRoot: "/data" }, sources: [], layers: [] },
+		roots: { user: "/nonexistent", packs: {} },
 		core: { dataRoot: { type: "string" } },
 		packs: {},
 		hosts: [fakeHost()],
@@ -1838,7 +1840,8 @@ test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", a
 	};
 	const composed = await compose({
 		ir,
-		config: { values: { dataRoot: "/data" }, sources: [] },
+		config: { values: { dataRoot: "/data" }, sources: [], layers: [] },
+		roots: { user: "/nonexistent", packs: {} },
 		core: { dataRoot: { type: "string" } },
 		packs: {},
 		hosts: [fakeHost(script)],
@@ -2342,7 +2345,7 @@ test("a killed concert resumes without repeating an ok host node, and the record
 		import { fakeHost } from ${JSON.stringify(join(import.meta.dir, "index.ts"))};
 		await perform({
 			ir: await Bun.file(${JSON.stringify(irFile)}).json(),
-			config: { values: { dataRoot: ${JSON.stringify(dir)} }, sources: [] },
+			config: { values: { dataRoot: ${JSON.stringify(dir)} }, sources: [], layers: [] },
 			hosts: [fakeHost({ steps: {
 				a: [{ outcome: "ok", outputs: { text: "A" } }],
 				b: (_, __, context) => { console.log(context.concert); return new Promise(() => {}); },
@@ -2673,6 +2676,7 @@ test("each host gets its own config namespaces and store in environment and exec
 				dataRoot: dir,
 			},
 			sources: [],
+			layers: [],
 		},
 		dir,
 		concurrency: 1,
@@ -2680,16 +2684,22 @@ test("each host gets its own config namespaces and store in environment and exec
 	await concert.done;
 	const fake = {
 		config: { fake: { retries: 2 } },
+		sources: [],
+		layers: [],
 		commandLine: { values: {}, replaced: [] },
 		store: join(dir, "hosts/fake"),
+		roots: { user: join(dir, "roots"), packs: {} },
 	};
 	expect(seen).toEqual({
 		fake,
 		execute: fake,
 		other: {
 			config: { other: { depth: 1 } },
+			sources: [],
+			layers: [],
 			commandLine: { values: {}, replaced: [] },
 			store: join(dir, "hosts/other"),
+			roots: { user: join(dir, "roots"), packs: {} },
 		},
 	});
 });

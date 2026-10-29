@@ -4,9 +4,14 @@ import {
 	sourceOf,
 	underOf,
 } from "@maestro/core/config";
-import { type Bounds, type Host, hostSetup } from "@maestro/core/host";
+import {
+	type Bounds,
+	type Host,
+	hostSetup,
+	type Roots,
+} from "@maestro/core/host";
 import type { IrNode } from "@maestro/ir";
-import type { Harness, Role } from "../harness/index";
+import type { Harness, Runtime } from "../harness/index";
 import { agentKind } from "./agent";
 import { applyKind, changesetKind, commitsKind } from "./apply";
 import { checkKind } from "./check";
@@ -14,6 +19,7 @@ import {
 	AGENT_KIND,
 	agentConfig,
 	HOST_CONFIG,
+	HOST_DEFERRED,
 	HOST_NAME,
 	HOST_PATHS,
 	LANE_TYPE,
@@ -54,7 +60,7 @@ type Resolved = Origin & { under?: Origin | null };
 
 /** An agent node, its role and the fields the role resolves to; a field nothing sets is absent. */
 export type AgentRole = { node: string; role: string } & Partial<
-	Record<keyof Role, Resolved>
+	Record<keyof Runtime, Resolved>
 >;
 
 /**
@@ -98,8 +104,9 @@ export function agentRoles(
 	nodes: readonly IrNode[],
 	config: Composed,
 	host: Host,
+	roots: Roots,
 ): AgentRole[] {
-	const repo = repoSetup(hostSetup(host, config));
+	const repo = repoSetup(hostSetup(host, config, roots));
 	return nodes.flatMap((n) => {
 		if (n.kind !== AGENT_KIND) return [];
 		const { role } = agentConfig(n.config);
@@ -130,6 +137,7 @@ export function repoHost({ harnesses }: RepoHostOptions): Host {
 		types: [LANE_TYPE],
 		config: HOST_CONFIG,
 		paths: HOST_PATHS,
+		deferred: HOST_DEFERRED,
 		validate: (graph, setup) =>
 			validateRepo(
 				graph,

@@ -409,6 +409,13 @@ const removal = (pack: PackDir, root: string) =>
 		? `remove ${root}`
 		: `remove '${pack.dir}' from packs in ${pack.listedBy}`;
 
+/** The id the manifest in `dir` names; undefined when it has none on its schema, which opening the pack reports. */
+export const packIdOf = (dir: string): Promise<string | undefined> =>
+	manifestOf(dir, "").then(
+		({ id }) => id,
+		() => undefined,
+	);
+
 async function manifestOf(dir: string, remove: string): Promise<Manifest> {
 	const file = join(dir, MANIFEST);
 	let value: unknown;

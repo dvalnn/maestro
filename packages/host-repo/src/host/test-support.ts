@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
-import type { Host, HostSetup } from "@maestro/core/host";
+import type { Host, HostSetup, Roots } from "@maestro/core/host";
 import { concertDirs, openRecord, perform } from "@maestro/core/perform";
 import {
 	type HostNode,
@@ -273,13 +273,20 @@ export function configOf(target: string, extra: Record<string, unknown> = {}) {
 			...extra,
 		},
 		sources: [],
+		layers: [],
 	};
 }
 
+/** The roots a test concert gives its hosts: a user root that does not exist, and no packs. */
+export const ROOTS: Roots = { user: "/nonexistent", packs: {} };
+
 export const setupOf = (config: ReturnType<typeof configOf>): HostSetup => ({
 	config: { target: config.values.target, roles: config.values.roles },
+	sources: [],
+	layers: [],
 	commandLine: { values: {}, replaced: [] },
 	store: join(config.values.dataRoot, "hosts", "repo"),
+	roots: ROOTS,
 });
 
 export const noCode = async () => () => ({});
@@ -293,6 +300,7 @@ export async function start(
 	const composed = await compose({
 		ir,
 		config,
+		roots: ROOTS,
 		core: CORE_CONFIG,
 		packs: {},
 		hosts: [host],
@@ -306,6 +314,7 @@ export async function start(
 		ir,
 		hosts: [host],
 		config,
+		roots: ROOTS,
 		loadCode: noCode,
 		recordPath,
 		dir,

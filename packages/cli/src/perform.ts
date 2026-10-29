@@ -193,6 +193,7 @@ async function conducted(
 	const concert = await conduct({
 		hosts: deps.hosts,
 		config: prepared.config,
+		roots: session.config.roots,
 		loadCode: prepared.loader.loadCode,
 		recordPath: session.files.record,
 		dir: session.files.concerts,

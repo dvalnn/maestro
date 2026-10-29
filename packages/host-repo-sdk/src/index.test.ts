@@ -111,6 +111,7 @@ function repo(
 			...hostConfig,
 		},
 		sources: [],
+		layers: [],
 	};
 	const composeIt = (ir: Ir) => composeIr(ir, { hosts: [host], config });
 	return { host, hostConfig, requests, composeIt };

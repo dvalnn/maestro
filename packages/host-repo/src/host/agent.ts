@@ -27,7 +27,7 @@ import {
 	type Metrics,
 	OUTBOX,
 	type Output,
-	type Role,
+	type Runtime,
 } from "../harness/index";
 import type { Lane } from "../lane/index";
 import type { Bind } from "../sandbox/index";
@@ -465,7 +465,7 @@ function stage(dir: string, prompt: string, identity: string | undefined) {
 
 /** What one instance stages and where. */
 type Staging = {
-	role: Role;
+	role: Runtime;
 	config: AgentConfig;
 	session: Session;
 	staged: string;
@@ -473,7 +473,7 @@ type Staging = {
 };
 
 /** The harness, model and effort an agent runs on, as its start event and its enrichment report them. */
-const identityOf = ({ harness, model, thinking }: Role) => ({
+const identityOf = ({ harness, model, thinking }: Runtime) => ({
 	harness,
 	model,
 	thinking,

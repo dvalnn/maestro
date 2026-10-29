@@ -279,6 +279,21 @@ describe("stand-in pi", () => {
 	});
 });
 
+test("a runtime's thinking must be one of pi's levels, and its model is not checked", () => {
+	const harness = piHarness({ agentDir: tmpdir() });
+	const runtime = { harness: "pi", model: "any/model" };
+	expect(harness.runtimeProblems?.({ ...runtime, thinking: "off" })).toEqual(
+		[],
+	);
+	expect(harness.runtimeProblems?.({ ...runtime, thinking: "turbo" })).toEqual([
+		{
+			field: "thinking",
+			reason: "pi has no thinking level 'turbo'",
+			fix: "Use one of: off, minimal, low, medium, high, xhigh, max",
+		},
+	]);
+});
+
 describe.skipIf(!process.env.MAESTRO_PI)("real pi", () => {
 	const model = process.env.MAESTRO_PI_MODEL ?? "github-copilot/gpt-5-mini";
 	const harness = () => piHarness();

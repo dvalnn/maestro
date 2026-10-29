@@ -23,6 +23,7 @@ import {
 	noCode,
 	OK,
 	performed,
+	ROOTS,
 	sandboxed,
 	setupOf,
 	start,
@@ -384,6 +385,7 @@ describe("target.prepare", () => {
 		const composed = await compose({
 			ir,
 			config,
+			roots: ROOTS,
 			core: CORE_CONFIG,
 			packs: {},
 			hosts: [host],

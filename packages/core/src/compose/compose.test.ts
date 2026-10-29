@@ -129,19 +129,26 @@ describe("compose", () => {
 					dataRoot: DATA_ROOT,
 				},
 				sources: [],
+				layers: [],
 			},
 		});
 		expect(result.ok).toBe(true);
 		expect(seen).toEqual({
 			fake: {
 				config: { fake: { retries: 2 } },
+				sources: [],
+				layers: [],
 				commandLine: { values: {}, replaced: [] },
 				store: `${DATA_ROOT}/hosts/fake`,
+				roots: { user: "/nonexistent", packs: {} },
 			},
 			other: {
 				config: { other: { depth: 1 } },
+				sources: [],
+				layers: [],
 				commandLine: { values: {}, replaced: [] },
 				store: `${DATA_ROOT}/hosts/other`,
+				roots: { user: "/nonexistent", packs: {} },
 			},
 		});
 	});

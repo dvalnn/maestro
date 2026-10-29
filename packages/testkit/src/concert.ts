@@ -109,7 +109,12 @@ async function performIn(
 			codeHash: options.codeHash?.(ref) ?? ref.codeHash,
 		})),
 		...(typeof source === "string" && { resume: source }),
-		config: { values: { ...options.config, dataRoot: dir }, sources: [] },
+		config: {
+			values: { ...options.config, dataRoot: dir },
+			sources: [],
+			layers: [],
+		},
+		roots: { user: join(dir, "user"), packs: {} },
 		hosts: options.hosts ?? [fakeHost(options.script)],
 		loadCode,
 		recordPath,

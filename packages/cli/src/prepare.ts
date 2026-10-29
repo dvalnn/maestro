@@ -379,6 +379,7 @@ export async function preflight(
 	const result = await compose({
 		ir,
 		config,
+		roots: session.config.roots,
 		core: { ...CORE_CONFIG, ...CLI_CONFIG },
 		packs: claims,
 		hosts: session.deps.hosts,

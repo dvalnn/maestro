@@ -19,6 +19,7 @@ import {
 	noCode,
 	OK,
 	performed,
+	ROOTS,
 	reply,
 	sandboxed,
 	setupOf,
@@ -103,6 +104,7 @@ describe("compose", () => {
 		const composed = await compose({
 			ir,
 			config: configOf(target),
+			roots: ROOTS,
 			core: CORE_CONFIG,
 			packs: {},
 			hosts: [host],
@@ -136,6 +138,39 @@ describe("compose", () => {
 			],
 		]);
 		expect(requests).toEqual([]);
+	});
+
+	test("a profile name in config that is neither bare nor <pack id>/<name> is refused at compose", async () => {
+		const { host } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "a",
+					kind: "agent",
+					config: { role: { name: "builder" }, lane: fresh },
+					literals: { prompt: "go" },
+				},
+			],
+			"a",
+		);
+		const profiles = { Foo: {}, "a/b/c": {}, "classics/builder": {} };
+		const composed = await compose({
+			ir,
+			config: configOf(toyTarget(), { profiles }),
+			roots: ROOTS,
+			core: CORE_CONFIG,
+			packs: {},
+			hosts: [host],
+			loadCode: noCode,
+			caps: {},
+		});
+		expect(
+			composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.message]),
+		).toEqual([
+			["CFG.schema", "config 'profiles.Foo' is not an allowed name"],
+			["CFG.schema", "config 'profiles.a/b/c' is not an allowed name"],
+		]);
 	});
 
 	test("needs names the role of each agent and each check a node names", () => {
@@ -287,6 +322,7 @@ describe("compose", () => {
 			const composed = await compose({
 				ir: irOf(host, specs, result, start ? { id: "lp", start } : undefined),
 				config: configOf(toyTarget()),
+				roots: ROOTS,
 				core: CORE_CONFIG,
 				packs: {},
 				hosts: [host],
@@ -352,6 +388,7 @@ describe("compose", () => {
 			const composed = await compose({
 				ir: irOf(host, specs, result, { id: "lp", start: "w" }),
 				config: configOf(toyTarget()),
+				roots: ROOTS,
 				core: CORE_CONFIG,
 				packs: {},
 				hosts: [host],
@@ -436,6 +473,7 @@ describe("compose", () => {
 			const composed = await compose({
 				ir,
 				config: configOf(target(), extra),
+				roots: ROOTS,
 				core: CORE_CONFIG,
 				packs: {},
 				hosts: [host],
@@ -473,6 +511,7 @@ describe("compose", () => {
 			const composed = await compose({
 				ir,
 				config: configOf(toyTarget()),
+				roots: ROOTS,
 				core: CORE_CONFIG,
 				packs: {},
 				hosts: [host],

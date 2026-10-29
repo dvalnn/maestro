@@ -24,6 +24,7 @@ import {
 	validator,
 } from "@maestro/ir";
 import type { ConfiguredParams, Described } from "@maestro/sdk/loader";
+import { deferredKeys } from "./config";
 
 const FLAG_PREFIX = "--";
 
@@ -267,15 +268,19 @@ export function paramValues(request: ParamRequest): Params {
 		values: Readonly<Record<string, unknown>>,
 	) => valuesLayer({ [pack]: { [root]: values } }, { layer });
 	const flagged = request.flags ? [rooted("flag", request.flags)] : [];
-	const set = sectionAt(layered([...request.layers, ...flagged]).values, [
-		pack,
-		root,
-	]);
-	const config = layered([
-		...request.layers,
-		...flagged,
-		rooted("example", exampleFill(request, set)),
-	]);
+	const deferred = deferredKeys(request.hosts);
+	const set = sectionAt(
+		layered([...request.layers, ...flagged], deferred).values,
+		[pack, root],
+	);
+	const config = layered(
+		[
+			...request.layers,
+			...flagged,
+			rooted("example", exampleFill(request, set)),
+		],
+		deferred,
+	);
 	const ajv = validator();
 	const configured: Record<string, Record<string, unknown>> = {};
 	const diagnostics: Diagnostic[] = [];

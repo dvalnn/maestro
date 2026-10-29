@@ -39,6 +39,7 @@ test("composeIr gives the plan's bounds, or the diagnostics that refused the gra
 				workspace: "",
 			},
 			sources: [],
+			layers: [],
 		},
 	});
 	expect(limited.ok).toBe(true);

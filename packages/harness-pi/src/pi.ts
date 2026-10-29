@@ -17,6 +17,7 @@ import {
 	SESSION_DIR,
 	type SubprocessAdapter,
 	subprocessHarness,
+	thinkingProblems,
 } from "@maestro/host-repo/harness";
 import type { SandboxBackend } from "@maestro/host-repo/sandbox";
 
@@ -24,6 +25,16 @@ import type { SandboxBackend } from "@maestro/host-repo/sandbox";
 const SESSION_VERSION = 3;
 const AGENT_DIR_VAR = "PI_CODING_AGENT_DIR";
 const PI_BIN = "pi";
+/** The levels pi's `--thinking` documents. */
+const THINKING_LEVELS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+];
 const AUTH_FILE = "auth.json";
 /** The fields of a provider entry in pi's `auth.json` that hold a credential: an API key, an OAuth token pair. */
 const CREDENTIAL_FIELDS = ["key", "access", "refresh"];
@@ -226,5 +237,9 @@ export function piHarness(
 		},
 		parser,
 	};
-	return subprocessHarness(adapter, backend);
+	return {
+		...subprocessHarness(adapter, backend),
+		runtimeProblems: (runtime) =>
+			thinkingProblems(adapter.name, THINKING_LEVELS, runtime),
+	};
 }

@@ -15,7 +15,7 @@ function resolved(layers: Layer[], inline: object) {
 	const host = { name: "repo", config: { roles: {} } } as never;
 	return resolveRole(
 		{ name: "x", ...inline },
-		repoSetup(hostSetup(host, config)),
+		repoSetup(hostSetup(host, config, { user: "/nonexistent", packs: {} })),
 	);
 }
 

@@ -87,7 +87,8 @@ export const sdkBuilt = async (name: string) =>
 export const composeWith = (ir: Ir, over: Partial<ComposeInput> = {}) =>
 	compose({
 		ir,
-		config: { values: { dataRoot: DATA_ROOT }, sources: [] },
+		config: { values: { dataRoot: DATA_ROOT }, sources: [], layers: [] },
+		roots: { user: "/nonexistent", packs: {} },
 		core: { dataRoot: { type: "string" } },
 		packs: {},
 		hosts: [fakeHost()],

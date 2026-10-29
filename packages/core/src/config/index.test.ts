@@ -7,6 +7,7 @@ import {
 	coreDefaults,
 	type LayerName,
 	layered,
+	layeredOver,
 	parseLayer,
 	sourceOf,
 	valuesLayer,
@@ -148,6 +149,94 @@ describe("merge tags", () => {
 	});
 });
 
+describe("a deferred path", () => {
+	const DEFERRED = [["tuned", "*"]];
+	const BASE = "/p/base.yaml";
+	const base = () =>
+		parseLayer("list: [a]\nmap:\n  x: 1\n  y: 2\ngone: 1\nfile: f.md\n", {
+			file: BASE,
+			layer: "directory",
+			paths: [["file"]],
+		});
+	const user = () =>
+		parse(
+			"tuned:\n  one:\n    list: !append [b]\n    map: !replace\n      z: 3\n    gone: !delete\n",
+			USER,
+			"user",
+		);
+
+	test("leaves a tag that finds nothing beneath pending, and still refuses one outside it", () => {
+		const composed = layered([user()], DEFERRED);
+		expect(composed.values).toEqual({
+			tuned: { one: { list: ["b"], map: { z: 3 } } },
+		});
+		expect(refusal(() => layered([user()]))).toEqual([
+			[
+				"CFG.tag",
+				`${USER}:6: !delete on 'tuned.one.gone', which nothing beneath sets`,
+				{ file: USER, line: 6 },
+			],
+		]);
+		expect(() => layered([parse("zz: !delete\n")], DEFERRED)).toThrow(
+			ConfigError,
+		);
+	});
+
+	test("layered over a base, applies each tag to it, crediting the base's values to its layer", () => {
+		const flag = parse("tuned:\n  one:\n    map:\n      w: 4\n", USER, "flag");
+		const composed = layered([user(), parse("other: 1\n"), flag], DEFERRED);
+		const over = layeredOver(composed, ["tuned", "one"], base());
+		expect(over.values).toEqual({
+			list: ["a", "b"],
+			map: { z: 3, w: 4 },
+			file: "/p/f.md",
+		});
+		expect(sourceOf(over, ["list", "0"])).toEqual({
+			layer: "directory",
+			file: BASE,
+			line: 1,
+		});
+		expect(sourceOf(over, ["map", "z"])).toMatchObject({ layer: "user" });
+		expect(sourceOf(over, ["map", "w"])).toMatchObject({ layer: "flag" });
+		expect(sourceOf(over, ["file"])).toMatchObject({ layer: "directory" });
+	});
+
+	test.each([
+		[
+			"nothing that tunes it",
+			"tuned:\n  two: { x: 1 }\n",
+			{ list: ["a"], map: { x: 1, y: 2 }, gone: 1, file: "/p/f.md" },
+		],
+		[
+			"a !replace above it",
+			"tuned: !replace\n  one:\n    map: { v: 5 }\n",
+			{ map: { v: 5 } },
+		],
+		["a !delete of it", "tuned:\n  one: !delete\n", {}],
+	])("layered over a base, is the base under %s", (_, text, expected) => {
+		const composed = layered([parse(text)], DEFERRED);
+		expect(layeredOver(composed, ["tuned", "one"], base()).values).toEqual(
+			expected,
+		);
+	});
+
+	test("layered over a base, refuses a tag that finds nothing there either", () => {
+		const composed = layered(
+			[parse("tuned:\n  one:\n    nothing: !delete\n")],
+			DEFERRED,
+		);
+		expect(
+			refusal(() => layeredOver(composed, ["tuned", "one"], base())),
+		).toEqual([
+			[
+				"CFG.tag",
+				`${WORKSPACE}:3: !delete on 'tuned.one.nothing', which nothing beneath sets`,
+				{ file: WORKSPACE, line: 3 },
+			],
+		]);
+	});
+});
+
 describe("provenance", () => {
 	test("a relative path is relative to the directory of the file that sets it", () => {
 		const composed = layered([
@@ -160,6 +249,22 @@ describe("provenance", () => {
 			dataRoot: "/w/.maestro/data",
 			packs: ["/home/u/.config/p", "/w/.maestro/q", "/abs"],
 			target: { repo: "/w/repo" },
+		});
+	});
+
+	test("a * in a path key matches any one key", () => {
+		const composed = layered([
+			parseLayer("t:\n  a:\n    p: x\n    q: x\n  b:\n    p: [y, /z]\n", {
+				file: WORKSPACE,
+				layer: "workspace",
+				paths: [["t", "*", "p"]],
+			}),
+		]);
+		expect(composed.values).toEqual({
+			t: {
+				a: { p: "/w/.maestro/x", q: "x" },
+				b: { p: ["/w/.maestro/y", "/z"] },
+			},
 		});
 	});
 

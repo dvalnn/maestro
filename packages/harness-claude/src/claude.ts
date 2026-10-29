@@ -16,10 +16,13 @@ import {
 	SESSION_DIR,
 	type SubprocessAdapter,
 	subprocessHarness,
+	thinkingProblems,
 } from "@maestro/host-repo/harness";
 import type { SandboxBackend } from "@maestro/host-repo/sandbox";
 
 const CLAUDE_BIN = "claude";
+/** The levels claude's `--effort` documents, which a runtime's `thinking` passes as. */
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const CONFIG_DIR_VAR = "CLAUDE_CONFIG_DIR";
 const TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN";
 const TOKEN_HINT = `Run \`claude setup-token\`, then set ${TOKEN_VAR} in your shell profile or in .env`;
@@ -277,5 +280,9 @@ export function claudeHarness(
 		},
 		parser,
 	};
-	return subprocessHarness(adapter, backend);
+	return {
+		...subprocessHarness(adapter, backend),
+		runtimeProblems: (runtime) =>
+			thinkingProblems(adapter.name, EFFORTS, runtime),
+	};
 }

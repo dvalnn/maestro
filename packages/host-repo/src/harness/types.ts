@@ -1,7 +1,16 @@
 import type { JsonSchema } from "@maestro/ir";
 import type { Bind } from "../sandbox/index";
 
-export type Role = { harness: string; model: string; thinking?: string };
+/** What an agent runs on: its harness, and the model and thinking level in that harness's own terms. */
+export type Runtime = { harness: string; model: string; thinking?: string };
+
+/** A runtime field a harness cannot honour, why, and the fix. */
+export type RuntimeProblem = {
+	field: keyof Runtime;
+	/** Leads with the harness's name, as in `claude has no thinking level 'turbo'`. */
+	reason: string;
+	fix: string;
+};
 
 /** Named, additive numbers (GLOSSARY: Metric), e.g. `tokens_in`. */
 export type Metrics = Record<string, number>;
@@ -28,7 +37,7 @@ export type Output =
 	| { file: string; format: "markdown" };
 
 export type HarnessRequest = {
-	role: Role;
+	role: Runtime;
 	/** Any size: adapters stage it through stdin or a lane file, never argv. */
 	prompt: string;
 	/** Host directory of the lane the agent works in. */
@@ -101,4 +110,22 @@ export interface HarnessRun {
 export interface Harness {
 	readonly name: string;
 	run(req: HarnessRequest): HarnessRun;
+	/** Each field of `runtime`, one naming this harness, it cannot honour. A harness without it honours every field. */
+	runtimeProblems?(runtime: Runtime): RuntimeProblem[];
 }
+
+/** The problem of a `thinking` level that is none of `levels`, the documented levels of harness `harness`. */
+export const thinkingProblems = (
+	harness: string,
+	levels: readonly string[],
+	{ thinking }: Runtime,
+): RuntimeProblem[] =>
+	thinking === undefined || levels.includes(thinking)
+		? []
+		: [
+				{
+					field: "thinking",
+					reason: `${harness} has no thinking level '${thinking}'`,
+					fix: `Use one of: ${levels.join(", ")}`,
+				},
+			];

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { parseLayer } from "./config/index";
 import type { Host, NodeKind } from "./host";
 import { hostSetup } from "./host";
 import { kindLookup } from "./shared";
@@ -25,24 +26,40 @@ const host = (
 	environment: () => ({}),
 });
 
-test("a host's setup holds its own config namespaces, their command-line part and store, and no other's", () => {
+test("a host's setup holds its own config namespaces, their sources, layers and command-line part, its store and the roots, and no other's", () => {
+	const a = { path: ["a", "n"], source: { layer: "workspace" as const } };
+	const b = { path: ["b", "n"], source: { layer: "flag" as const } };
 	const config = {
 		values: { a: { n: 1 }, b: { n: 2 }, dataRoot: "/data" },
-		sources: [
-			{ path: ["a", "n"], source: { layer: "workspace" as const } },
-			{ path: ["b", "n"], source: { layer: "flag" as const } },
-		],
+		sources: [a, b],
 		replaced: [["b"]],
+		layers: [
+			parseLayer("a: { n: 1 }\nb: { n: 2 }\n", {
+				file: "/w/config.yaml",
+				layer: "workspace",
+			}),
+		],
 	};
-	expect(hostSetup(host("a", ["a", "unset"]), config)).toEqual({
+	const roots = { workspace: "/w", user: "/u", packs: { p: "/p" } };
+	const setupOf = (h: Host) => {
+		const { layers, ...setup } = hostSetup(h, config, roots);
+		return { ...setup, layers: layers.map((l) => [...l.entries.keys()]) };
+	};
+	expect(setupOf(host("a", ["a", "unset"]))).toEqual({
 		config: { a: { n: 1 }, unset: {} },
+		sources: [a],
+		layers: [["a"]],
 		commandLine: { values: {}, replaced: [] },
 		store: "/data/hosts/a",
+		roots,
 	});
-	expect(hostSetup(host("b", ["b"]), config)).toEqual({
+	expect(setupOf(host("b", ["b"]))).toEqual({
 		config: { b: { n: 2 } },
+		sources: [b],
+		layers: [["b"]],
 		commandLine: { values: { b: { n: 2 } }, replaced: [["b"]] },
 		store: "/data/hosts/b",
+		roots,
 	});
 });
 

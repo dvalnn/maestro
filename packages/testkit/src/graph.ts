@@ -86,7 +86,8 @@ export function composeIr(
 	const noop: CodeEntry = () => ({});
 	return compose({
 		ir,
-		config: { values: TEST_CORE_VALUES, sources: [] },
+		config: { values: TEST_CORE_VALUES, sources: [], layers: [] },
+		roots: { user: "/nonexistent", packs: {} },
 		core: CORE_CONFIG,
 		packs: {},
 		hosts: [fakeHost()],

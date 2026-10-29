@@ -28,8 +28,11 @@ const node: HostNode = {
 };
 const setup: HostSetup = {
 	config: {},
+	sources: [],
+	layers: [],
 	commandLine: { values: {}, replaced: [] },
 	store: "/data/hosts/fake",
+	roots: { user: "/nonexistent", packs: {} },
 };
 const emitted: HostEvent[] = [];
 const context: HostContext = {

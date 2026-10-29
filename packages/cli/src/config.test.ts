@@ -242,6 +242,49 @@ describe("config files", () => {
 		expect(bare.packs).toEqual([]);
 	});
 
+	test("give the roots of the workspace, the user and each pack, by its manifest's id, at its real path", async () => {
+		const manifest = (id: string) =>
+			JSON.stringify({ id, version: "1.0.0", entry: "index.js", sdk: "*" });
+		const { root, request } = await tree({
+			[WORKSPACE]: "",
+			[USER]: "packs: [../../p/one, ../../p/link, ../../p/broken]\n",
+			"p/one/maestro-pack.json": manifest("one"),
+			"p/two/maestro-pack.json": manifest("two"),
+			"p/broken/maestro-pack.json": "{",
+		});
+		await symlink(join(root, "p/two"), join(root, "p/link"));
+		const config = await loadConfig(request());
+		expect(config.roots).toEqual({
+			workspace: join(root, "ws/.maestro"),
+			user: join(root, "xdg/maestro"),
+			packs: { one: join(root, "p/one"), two: join(root, "p/two") },
+		});
+		const outside = await loadConfig(
+			request({ cwd: root, env: { HOME: join(root, "home") } }),
+		);
+		expect(outside.roots).toEqual({
+			user: join(root, "home/.config/maestro"),
+			packs: {},
+		});
+	});
+
+	test("anchor a path under any profile to its file, and leave a tag pending under a profile", async () => {
+		const { root, request } = await tree({
+			[USER]:
+				"profiles:\n  a:\n    instructions: i.md\n    attachments:\n      kb: { path: kb, hint: h }\n",
+			[WORKSPACE]:
+				"profiles:\n  classics/b:\n    runtime:\n      thinking: !delete\n",
+		});
+		const config = await loadConfig(request());
+		expect(config.composed.values.profiles).toEqual({
+			a: {
+				instructions: join(root, "xdg/maestro/i.md"),
+				attachments: { kb: { path: join(root, "xdg/maestro/kb"), hint: "h" } },
+			},
+			"classics/b": { runtime: {} },
+		});
+	});
+
 	test("refuse packs off the CLI's schema", async () => {
 		const { request } = await tree({ [WORKSPACE]: "packs: ./a\n" });
 		expect(await refusal(loadConfig(request()))).toEqual([

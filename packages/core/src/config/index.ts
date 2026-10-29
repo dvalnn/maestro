@@ -18,11 +18,12 @@ import { isRecord } from "../shared";
 
 /**
  * The layers, lowest first. `example` marks a value taken from the composition's example set, which `compose` uses for
- * a param no file or flag gives.
+ * a param no file or flag gives. `directory` marks a base that `layeredOver` puts beneath a subtree of the config.
  */
 export type LayerName =
 	| "default"
 	| "example"
+	| "directory"
 	| "user"
 	| "workspace"
 	| "profile"
@@ -47,6 +48,8 @@ export type Composed = {
 	sources: readonly { path: KeyPath; source: Source; under?: Under }[];
 	/** The mappings a `--profile` or `-c` layer replaced whole with `!replace`, which no layer above merged back into. */
 	replaced?: readonly KeyPath[];
+	/** The layers merged, lowest first. */
+	layers: readonly Layer[];
 };
 
 type Item = { value: unknown; source: Source };
@@ -89,6 +92,16 @@ const locationOf = ({ file, line }: Source): SourceLocation | undefined =>
 const at = ({ file, line }: Source) => (file ? `${file}:${line}: ` : "");
 
 const spell = (path: KeyPath) => path.join(".");
+
+/** The key path segment that matches any one key. */
+const ANY = "*";
+
+/** Whether `path` is at or below one of `patterns`, `*` in a pattern matching any one key. */
+const deferredAt = (patterns: readonly KeyPath[], path: KeyPath) =>
+	patterns.some(
+		(p) =>
+			p.length <= path.length && p.every((k, i) => k === ANY || k === path[i]),
+	);
 
 /**
  * An error diagnostic, located at `source` when a file set it, its message led by the flag when a flag did, and its
@@ -243,7 +256,7 @@ function taggedOf(
 	);
 }
 
-/** `tree` with the value at `path` below it made relative to `dir`: a string, or a list of strings. */
+/** `tree` with each value at `path` below it, `*` matching any one key, passed through `anchor`. */
 function anchoredTree(
 	tree: Tagged,
 	[head, ...rest]: KeyPath,
@@ -258,12 +271,11 @@ function anchoredTree(
 			};
 		return tree;
 	}
-	const child = tree.kind === "map" ? tree.entries.get(head) : undefined;
-	if (tree.kind !== "map" || !child) return tree;
-	const entries = new Map(tree.entries).set(
-		head,
-		anchoredTree(child, rest, anchor),
-	);
+	if (tree.kind !== "map") return tree;
+	const entries = new Map(tree.entries);
+	for (const [key, child] of tree.entries)
+		if (head === ANY || key === head)
+			entries.set(key, anchoredTree(child, rest, anchor));
 	return { ...tree, entries };
 }
 
@@ -280,7 +292,7 @@ function anchored(layer: Layer, paths: readonly KeyPath[], dir: string): Layer {
 /** Where a layer's text came from, and how its values are read. */
 export type LayerText = {
 	layer: LayerName;
-	/** The key paths whose values are file paths: a string, or a list of strings. */
+	/** The key paths whose values are file paths: a string, or a list of strings. `*` matches any one key. */
 	paths?: readonly KeyPath[];
 } & (
 	| {
@@ -388,15 +400,17 @@ function mergedMap(
 	beneath: Merged | undefined,
 	top: MapOf<Tagged>,
 	path: KeyPath,
+	deferred: readonly KeyPath[],
 ): Merged {
-	const under = beneath?.kind === "map" ? beneath : undefined;
-	const replaced = top.replace || under?.replace === true;
+	const below = beneath?.kind === "map" ? beneath : undefined;
+	const replaced = top.replace || below?.replace === true;
 	return {
 		...top,
 		entries: mergedEntries(
-			under && !top.replace ? under.entries : new Map(),
+			below && !top.replace ? below.entries : new Map(),
 			top.entries,
 			path,
+			deferred,
 		),
 		replace: replaced && COMMAND_LINE.includes(top.source.layer),
 	};
@@ -416,9 +430,10 @@ function merged(
 	beneath: Merged | undefined,
 	top: Exclude<Tagged, Deletion>,
 	path: KeyPath,
+	deferred: readonly KeyPath[],
 ): Merged {
 	if (top.kind === "scalar") return flagged(beneath, top);
-	if (top.kind === "map") return mergedMap(beneath, top, path);
+	if (top.kind === "map") return mergedMap(beneath, top, path, deferred);
 	if (!top.append || beneath === undefined) return { ...top, append: false };
 	if (beneath.kind !== "list")
 		throw tagError(
@@ -429,17 +444,19 @@ function merged(
 	return { ...top, items: [...beneath.items, ...top.items], append: false };
 }
 
+/** `beneath` with `top` merged in; a `!delete` at or below a `deferred` path that finds nothing beneath is dropped. */
 function mergedEntries(
 	beneath: ReadonlyMap<string, Merged>,
 	top: ReadonlyMap<string, Tagged>,
 	path: KeyPath,
+	deferred: readonly KeyPath[],
 ): Map<string, Merged> {
 	const entries = new Map(beneath);
 	for (const [key, tree] of top) {
 		const at = [...path, key];
 		if (tree.kind !== "delete")
-			entries.set(key, merged(entries.get(key), tree, at));
-		else if (!entries.delete(key))
+			entries.set(key, merged(entries.get(key), tree, at, deferred));
+		else if (!entries.delete(key) && !deferredAt(deferred, at))
 			throw tagError(
 				tree.source,
 				`${DELETE} on '${spell(at)}', which nothing beneath sets`,
@@ -491,13 +508,18 @@ function replacedOf(tree: Merged, path: KeyPath): KeyPath[] {
 }
 
 /**
- * Merges `layers`, lowest first: mappings by key, any other value replaced whole, as the merge tags say.
+ * Merges `layers`, lowest first: mappings by key, any other value replaced whole, as the merge tags say. At or below a
+ * `deferred` key path, whose base `layeredOver` gives later, a `!delete` that finds nothing beneath is left pending.
+ * `*` in a deferred path matches any one key.
  * @throws ConfigError on a `!delete` of a key nothing beneath sets, or an `!append` over a value that is not a list.
  */
-export function layered(layers: readonly Layer[]): Composed {
+export function layered(
+	layers: readonly Layer[],
+	deferred: readonly KeyPath[] = [],
+): Composed {
 	let entries: ReadonlyMap<string, Merged> = new Map();
 	for (const layer of layers)
-		entries = mergedEntries(entries, layer.entries, []);
+		entries = mergedEntries(entries, layer.entries, [], deferred);
 	const root: Merged = {
 		kind: "map",
 		source: { layer: "default" },
@@ -508,6 +530,51 @@ export function layered(layers: readonly Layer[]): Composed {
 		values: plainOf(root) as Record<string, unknown>,
 		sources: entries.size ? sourcesOf(root, []) : [],
 		replaced: replacedOf(root, []),
+		layers,
+	};
+}
+
+/** `layer` cut down to the chain of mappings that leads to `path`, and what lies there. */
+function chainTo(layer: Layer, [head, ...rest]: KeyPath): Layer {
+	if (head === undefined) return layer;
+	const child = layer.entries.get(head);
+	const kept = child?.kind === "map" ? chainTo(child, rest) : child;
+	return { ...layer, entries: new Map(kept ? [[head, kept]] : []) };
+}
+
+/** `base` set at `path` in a layer of its own. */
+const nestedAt = (base: Layer, path: KeyPath): Layer =>
+	path.reduceRight<Layer>(
+		(inner, key) => ({
+			kind: "map",
+			source: base.source,
+			entries: new Map([[key, inner]]),
+			replace: false,
+		}),
+		base,
+	);
+
+/**
+ * The subtree at `path` of the config `layers` merge to, layered again with `base` as its lowest layer, every merge tag applying to it
+ * as to any layer beneath. Its values, sources and replaced mappings are relative to `path`.
+ * @throws ConfigError as `layered` does, with nothing deferred.
+ */
+export function layeredOver(
+	{ layers: above }: Pick<Composed, "layers">,
+	path: KeyPath,
+	base: Layer,
+): Omit<Composed, "layers"> {
+	const layers = [nestedAt(base, path), ...above.map((l) => chainTo(l, path))];
+	const whole = layered(layers);
+	const value = valueAt(whole.values, path);
+	const inside = <T extends { path: KeyPath }>(s: T) =>
+		within(path, s.path) ? [{ ...s, path: s.path.slice(path.length) }] : [];
+	return {
+		values: isRecord(value) ? value : {},
+		sources: whole.sources.flatMap(inside),
+		replaced: (whole.replaced ?? [])
+			.filter((p) => within(path, p))
+			.map((p) => p.slice(path.length)),
 	};
 }
 
@@ -547,7 +614,7 @@ const within = (outer: KeyPath, inner: KeyPath) =>
 
 /** The source of the value at `path`, or else of the nearest value above it, or else of the first value under it. */
 export function sourceOf(
-	{ sources }: Composed,
+	{ sources }: Pick<Composed, "sources">,
 	path: KeyPath,
 ): Source | undefined {
 	const above = sources
@@ -566,7 +633,7 @@ export function underOf(
 
 /** Where a value under check sits in the config, and how its diagnostics name it and the fix. */
 export type Placed = {
-	config: Composed;
+	config: Pick<Composed, "sources">;
 	path: KeyPath;
 	hint: string;
 	/** Names the offending key path. Defaults to `config '<a.b.c>'`. */

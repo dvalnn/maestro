@@ -24,6 +24,8 @@ export {
 	type Metrics,
 	OUTBOX,
 	type Output,
-	type Role,
+	type Runtime,
+	type RuntimeProblem,
 	SESSION_DIR,
+	thinkingProblems,
 } from "./types";
