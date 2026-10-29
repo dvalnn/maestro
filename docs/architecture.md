@@ -284,11 +284,10 @@ stores by node id and expansion path as a `progress` event, opaquely.
   concert's composition with the param flags it recorded, the encore's own overriding them, under the config files as
   they stand, with the earlier `-c` and the encore's own on top and the encore's `--preset` in place of the earlier one.
   A fingerprint of the IR, the config values and the host facts, which give the target revision and a digest of the
-  profiles, is recorded with each concert; an encore whose fingerprint equals its concert's, or of a concert still
-  running, is refused before it is recorded. Core passes `HostContext.encore` to each host instance and reads nothing of
-  it, and each `HostInstance` carries the kinds of the groups around it. A resumed encore stays one. Every instance runs
-  again: nothing is reused. Two encores of one concert performed at once continue the same sessions; nothing guards
-  against it.
+  profiles, is recorded with each concert; an encore whose fingerprint equals its concert's, or while its concert or
+  another in its encore chain is running, is refused before it is recorded. Core passes `HostContext.encore` to each
+  host instance and reads nothing of it, and each `HostInstance` carries the kinds of the groups around it. A resumed
+  encore stays one. Every instance runs again: nothing is reused.
 - **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in
   reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started has
   no record. A code node that runs past the timeout its author set settles `failed`. It has none by default.

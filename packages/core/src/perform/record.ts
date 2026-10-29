@@ -264,7 +264,8 @@ export interface RecordWriter {
 	/**
 	 * Records a new concert as `running`, performed by this process. `workspace` and `moduleDir` default to ''.
 	 * `fingerprint` is a digest of what it is performed from, which an encore of it must not repeat.
-	 * @throws Unencorable when `encoreOf` names a running concert, or one recorded with `fingerprint`.
+	 * @throws Unencorable when a concert in the encore chain of `encoreOf` is running, the chain being the root reached
+	 * by following `encoreOf` and every concert that reaches it, or when `encoreOf` was recorded with `fingerprint`.
 	 * @throws Error when `encoreOf` names no concert.
 	 */
 	begin(
@@ -760,12 +761,36 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 		};
 	});
 
+	/** The refusal for the first concert in the encore chain of `id` that is running with its process alive. */
+	const chainRunning = (id: string): Unencorable | undefined => {
+		const running = db
+			.query<ConcertRow, [string]>(
+				`WITH RECURSIVE up(id, parent) AS (
+					SELECT id, encore_of FROM concerts WHERE id = ?
+					UNION ALL SELECT c.id, c.encore_of FROM concerts c JOIN up ON c.id = up.parent
+				), chain(id) AS (
+					SELECT id FROM up WHERE parent IS NULL OR parent NOT IN (SELECT id FROM concerts)
+					UNION SELECT c.id FROM concerts c JOIN chain ON c.encore_of = chain.id
+				) SELECT * FROM concerts WHERE id IN (SELECT id FROM chain) AND status = 'running' ORDER BY started_at`,
+			)
+			.all(id)
+			.find((row) => !look.reaped(row));
+		return (
+			running &&
+			new Unencorable(
+				{ id: running.id, status: running.status, pid: running.pid },
+				id,
+			)
+		);
+	};
+
 	const begin: RecordWriter["begin"] = (concert) => {
 		const { encoreOf, fingerprint } = concert;
 		const refused =
 			encoreOf === undefined
 				? undefined
-				: unencorable(look.rowOf(encoreOf), fingerprint);
+				: (chainRunning(encoreOf) ??
+					unencorable(look.rowOf(encoreOf), fingerprint));
 		if (refused) throw refused;
 		db.exec(
 			`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, tour, title, module_dir,
@@ -861,16 +886,24 @@ export class Unresumable extends Error {
 	}
 }
 
-/** The refusal of an encore of a concert that is still running, or whose fingerprint the encore's repeats. */
+/**
+ * The refusal of an encore: a running concert in the encore chain of `of`, or the concert itself when `of` is omitted or
+ * is that concert, or a concert whose fingerprint the encore repeats.
+ */
 export class Unencorable extends Error {
 	override readonly name = "Unencorable";
 	readonly concert: { id: string; pid: number; status: ConcertStatus };
 
-	constructor(concert: Unencorable["concert"]) {
+	constructor(concert: Unencorable["concert"], of?: string) {
 		const { id, status, pid } = concert;
+		const fix = "Wait for it to settle, or kill it, then perform its encore";
+		const running =
+			of === undefined || of === id
+				? `concert '${id}' is still running in process ${pid}`
+				: `concert '${id}' in the encore chain of '${of}' is still running in process ${pid}`;
 		super(
 			status === "running"
-				? `concert '${id}' is still running in process ${pid}\nWait for it to settle, or kill it, then perform its encore`
+				? `${running}\n${fix}`
 				: `concert '${id}' was performed from the same IR, config and host facts\nChange one of them${status === "ok" ? "" : ", or resume it"}`,
 		);
 		this.concert = concert;
@@ -900,14 +933,13 @@ function beginRow(concert: Parameters<RecordWriter["begin"]>[0]) {
 	];
 }
 
-/** The refusal of an encore of `row` with `fingerprint`, unless `row` has settled with another fingerprint. */
+/** The refusal of an encore of `row` with `fingerprint`, when `row` was recorded with the same one. */
 function unencorable(
 	row: ConcertRow,
 	fingerprint: string | undefined,
 ): Unencorable | undefined {
 	const { id, status, pid } = row;
-	const same = fingerprint !== undefined && row.fingerprint === fingerprint;
-	return status === "running" || same
+	return fingerprint !== undefined && row.fingerprint === fingerprint
 		? new Unencorable({ id, status, pid })
 		: undefined;
 }

@@ -451,6 +451,39 @@ test("a running concert is settled when the alive check says its process is gone
 	record.close();
 });
 
+test("an encore is refused while any concert in its encore chain is live, and allowed once the chain settles", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const record = openWriter(path);
+	const reader = openRecord(path);
+	const ir = await fixtureIr();
+	const done = { ...A, outcome: "ok" as const, outputs: {} };
+	const fix = "Wait for it to settle, or kill it, then perform its encore";
+	const refusal = (id: string, of: string) =>
+		`concert '${id}' in the encore chain of '${of}' is still running in process ${process.pid}\n${fix}`;
+	record.begin({ id: "x", ir, startedAt: 1 });
+	record.finish("x", done, 2);
+	record.begin({ id: "e1", ir, startedAt: 3, encoreOf: "x" });
+	expect(() =>
+		record.begin({ id: "e2", ir, startedAt: 4, encoreOf: "x" }),
+	).toThrow(refusal("e1", "x"));
+	record.finish("e1", done, 5);
+	record.begin({ id: "e2", ir, startedAt: 6, encoreOf: "x" });
+	expect(() =>
+		record.begin({ id: "e3", ir, startedAt: 7, encoreOf: "e1" }),
+	).toThrow(refusal("e2", "e1"));
+	record.finish("e2", done, 8);
+	record.begin({ id: "e3", ir, startedAt: 9, encoreOf: "e1" });
+	record.finish("e3", done, 10);
+	reader.remove("x");
+	record.begin({ id: "e4", ir, startedAt: 11, encoreOf: "e1" });
+	expect(() =>
+		record.begin({ id: "e5", ir, startedAt: 12, encoreOf: "e1" }),
+	).toThrow(refusal("e4", "e1"));
+	reader.close();
+	record.close();
+});
+
 test("enrichments reads the enriched current instances of the concerts named, none stale", async () => {
 	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
 	const path = join(dir, "record.db");
