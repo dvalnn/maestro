@@ -374,6 +374,25 @@ describe("profiles", () => {
 		);
 	});
 
+	test("seats rebinds a seat by <composition>/<seat>: the preset over the workspace config, -c over the preset", async () => {
+		const w = await repoWorld("seats:\n  smoke/smoke: ws\n");
+		for (const name of ["ws", "pre", "flag"])
+			profileIn(w.cwd, name, `runtime: { harness: stub, model: ${name} }\n`);
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/p.yaml"),
+			"seats:\n  smoke/smoke: pre\n",
+		);
+		const file = await smokeFile();
+		const bound = async (...flags: string[]) =>
+			json(await w.call(["compose", file, "--json", ...flags])).agents[0]
+				.profile;
+		expect(await bound()).toBe("ws");
+		expect(await bound("--preset", "p")).toBe("pre");
+		expect(await bound("--preset", "p", "-c", "seats.smoke/smoke=flag")).toBe(
+			"flag",
+		);
+	});
+
 	test("a resume resolves its profiles anew", async () => {
 		const w = await repoWorld();
 		const gate = join(w.cwd, "gate");

@@ -36,6 +36,8 @@ import type {
 
 /** The config namespace that tunes profiles by name. */
 export const PROFILES = "profiles";
+/** The config namespace that rebinds seats to profiles. */
+export const SEATS = "seats";
 /** The directory under each root of `Roots` that holds its profiles. */
 const PROFILES_DIR = "profiles";
 /** The file that makes a directory a profile. */
@@ -45,6 +47,8 @@ const CODE = "HOST.profile";
 const SEGMENT = irSchema.$defs.name.pattern.slice(1, -1);
 /** A bare name, or `<pack id>/<name>`, each segment a pack id. */
 export const PROFILE_NAME = new RegExp(`^${SEGMENT}(?:/${SEGMENT})?$`);
+/** `<composition id>/<seat>`, the key `seats` rebinds a seat by (ADR 0013). */
+const SEAT_KEY = new RegExp(`^${SEGMENT}/${SEGMENT}$`);
 const OWNER_SEPARATOR = "/";
 /** The directory where an agent's sandbox mounts its attachments. */
 const ATTACHMENT_DIR = "/in";
@@ -127,6 +131,13 @@ export const PROFILES_CONFIG: JsonSchema = {
 };
 
 const RESOLVED_SCHEMA = fieldsSchema(true);
+
+/** The schema of the `seats` config namespace: a profile name by seat key. */
+export const SEATS_CONFIG: JsonSchema = {
+	type: "object",
+	propertyNames: { pattern: SEAT_KEY.source },
+	additionalProperties: { type: "string", pattern: PROFILE_NAME.source },
+};
 
 /** A file or directory an agent reads, and the hint that says when it should. `path` is absolute. */
 export type ProfileAttachment = { path: string; hint: string };
@@ -274,6 +285,27 @@ function missingFix(
 
 const refusal = (source: Source | undefined, message: string, fix: string) =>
 	configDiagnostic(CODE, source, message, fix);
+
+/** The profile a seat runs, and where config rebound it, when it did. */
+export type Binding = { profile: string; source?: Source };
+
+/**
+ * The profile seat `seat.seat` of composition `composition` runs: the one `seats` in `setup` rebinds it to, keyed
+ * `<composition>/<seat>`, else `seat.profile`, the one it declares.
+ */
+export function seatBinding(
+	setup: Pick<HostSetup, "config" | "sources">,
+	composition: string,
+	seat: { seat: string; profile: string },
+): Binding {
+	const key = `${composition}/${seat.seat}`;
+	const seats = setup.config[SEATS];
+	const bound =
+		isPlainObject(seats) && Object.hasOwn(seats, key) ? seats[key] : undefined;
+	return typeof bound === "string"
+		? { profile: bound, source: sourceOf(setup, [SEATS, key]) }
+		: { profile: seat.profile };
+}
 
 /**
  * An error for each profile `setup` tunes under `profiles` that no root of `setup` holds, located where config sets

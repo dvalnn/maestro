@@ -16,6 +16,8 @@ import {
 	PROFILE_PATHS,
 	PROFILES,
 	PROFILES_CONFIG,
+	SEATS,
+	SEATS_CONFIG,
 } from "../profile/index";
 
 export const HOST_NAME = "repo";
@@ -119,6 +121,7 @@ export const HOST_CONFIG = {
 		properties: { readOnly: PATHS, path: PATHS },
 	},
 	[PROFILES]: PROFILES_CONFIG,
+	[SEATS]: SEATS_CONFIG,
 } as const satisfies Record<string, JsonSchema>;
 
 /** The lane input schema for a node that may take the modes `others` beside `fresh`. */

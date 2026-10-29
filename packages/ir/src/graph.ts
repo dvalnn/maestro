@@ -120,6 +120,8 @@ export type GraphIndex = {
 	ancestors(id: string): string[];
 	/** Enclosing groups, outermost first. Scopes do not affect execution, so they are left out. */
 	groupsOf(id: string): string[];
+	/** The id of the innermost composition holding `id`: its nearest enclosing scope's, else the root's. */
+	compositionOf(id: string): string;
 	/** The nodes whose nearest enclosing group is `group`, in IR order. */
 	body(group: string): readonly IrNode[];
 	edgesInto(node: string): readonly IrEdge[];
@@ -134,6 +136,7 @@ const parentOf = (id: string) => {
 /** Indexes `ir`. Safe on IR whose references do not resolve. */
 export function indexGraph(ir: Ir): GraphIndex {
 	const nodes = new Map(ir.nodes.map((n) => [n.id, n]));
+	const scopes = new Map(ir.scopes.map((s) => [s.id, s]));
 	const ancestors = (id: string) => {
 		const chain: string[] = [];
 		for (let p = parentOf(id); p !== undefined; p = parentOf(p)) chain.push(p);
@@ -148,10 +151,13 @@ export function indexGraph(ir: Ir): GraphIndex {
 	const from = Map.groupBy(ir.edges, (e) => e.from.node);
 	return {
 		nodes,
-		scopes: new Map(ir.scopes.map((s) => [s.id, s])),
+		scopes,
 		parent: parentOf,
 		ancestors,
 		groupsOf,
+		compositionOf: (id) =>
+			ancestors(id).flatMap((a) => scopes.get(a)?.composition ?? [])[0] ??
+			ir.composition.id,
 		body: (group) => bodies.get(group) ?? [],
 		edgesInto: (node) => into.get(node) ?? [],
 		edgesFrom: (node) => from.get(node) ?? [],

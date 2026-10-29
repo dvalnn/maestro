@@ -45,6 +45,7 @@ import {
 	type Profile,
 	type ProfileFields,
 	resolveProfile,
+	seatBinding,
 } from "../profile/index";
 import type { Bind } from "../sandbox/index";
 import { type AgentChecks, stageChecks } from "./agent-checks";
@@ -793,7 +794,12 @@ async function execute(
 ): Promise<HostNodeResult> {
 	const setup = repoSetup(context.setup);
 	const config = agentConfig(instance.node.config);
-	const profile = await resolveProfile(config.profile, context.setup);
+	const { profile: name } = seatBinding(
+		context.setup,
+		instance.composition,
+		config,
+	);
+	const profile = await resolveProfile(name, context.setup);
 	const { runtime } = profile.fields;
 	const harness = harnesses.find((h) => h.name === runtime.harness);
 	if (!harness)

@@ -48,6 +48,7 @@ const at = (expansion: string): HostInstance => ({
 	expansion,
 	id: `${node.id}${expansion}`,
 	groups: [],
+	composition: "toy",
 });
 
 function fakeTask(script: FakeScript) {

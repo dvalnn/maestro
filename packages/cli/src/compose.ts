@@ -53,9 +53,7 @@ async function agentsOf(
 	plan: Plan,
 ): Promise<AgentRuntime[]> {
 	const host = session.deps.hosts.find((h) => h.name === HOST_NAME);
-	return host
-		? agentRuntimes(plan.ir.nodes, config, host, session.config.roots)
-		: [];
+	return host ? agentRuntimes(plan.ir, config, host, session.config.roots) : [];
 }
 
 /** The `agents:` block: one row per agent, its node, profile, harness, model and thinking. */

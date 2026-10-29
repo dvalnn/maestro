@@ -1,5 +1,6 @@
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
+import { closest } from "@maestro/core";
 import {
 	ConfigError,
 	configDiagnostic,
@@ -23,6 +24,8 @@ import {
 	PROFILES,
 	type Profile,
 	resolveProfile,
+	SEATS,
+	seatBinding,
 	untunable,
 } from "../profile/index";
 import {
@@ -109,8 +112,8 @@ function inputSource(
 const laneSource = (graph: GraphIndex, node: HostNode) =>
 	inputSource(graph, node, LANE_PORT);
 
-/** The harness an agent runs on, when its profile resolved. */
-type HarnessOf = (config: AgentConfig) => string | undefined;
+/** The profile an agent node's seat runs, when it resolved. */
+type SeatedOf = (node: HostNode) => Profile | undefined;
 
 /** Why `node` cannot extend `source`, a lane ref or a commits node's version, which only a fork or a read can take. */
 function unextendable(
@@ -282,21 +285,23 @@ const sessionFinding = (r: AgentNode, message: string, hint: string) => ({
 
 /** The producers of the session `r` continues that its profile runs on another harness. */
 function harnessClashes(
-	harnessOf: HarnessOf,
+	seatedOf: SeatedOf,
 	r: AgentNode,
 	producers: HostNode[],
 ): Finding[] {
-	const own = harnessOf(r.config);
+	const own = seatedOf(r.node);
 	const id = r.node.id;
 	return producers.flatMap((maker) => {
-		const config = agentConfig(maker.config);
-		const theirs = harnessOf(config);
-		if (!own || !theirs || own === theirs) return [];
+		const theirs = seatedOf(maker);
+		if (!own || !theirs) return [];
+		const mine = own.fields.runtime.harness;
+		const other = theirs.fields.runtime.harness;
+		if (mine === other) return [];
 		return [
 			sessionFinding(
 				r,
-				`'${id}' runs profile ${r.config.profile} on harness '${own}' and continues the session of '${maker.id}', profile ${config.profile} on harness '${theirs}'; a session runs on one harness`,
-				`Give '${id}' a profile on harness '${theirs}', or drop its session`,
+				`'${id}' runs profile ${own.name} on harness '${mine}' and continues the session of '${maker.id}', profile ${theirs.name} on harness '${other}'; a session runs on one harness`,
+				`Give '${id}' a profile on harness '${other}', or drop its session`,
 			),
 		];
 	});
@@ -359,7 +364,7 @@ function parallelTakes(
  */
 function sessionRules(
 	graph: GraphIndex,
-	harnessOf: HarnessOf,
+	seatedOf: SeatedOf,
 	agents: AgentNode[],
 ): Finding[] {
 	const consumers = new Map<string, string[]>();
@@ -372,7 +377,7 @@ function sessionRules(
 		return [
 			...rivals(graph, r, producers, consumers),
 			...parallelTakes(graph, r, producers),
-			...harnessClashes(harnessOf, r, producers),
+			...harnessClashes(seatedOf, r, producers),
 		];
 	});
 }
@@ -721,15 +726,20 @@ function attachmentClashes(r: AgentNode, profile: Profile): Finding[] {
 	});
 }
 
-/** An agent in a seat whose name an earlier agent's seat of another profile or verdict holds. */
-function seatClashes(agents: readonly AgentNode[]): Finding[] {
+/** An agent in a seat, keyed `<composition id>/<seat>`, that an earlier agent of the same key holds with another bound profile or verdict. */
+function seatClashes(
+	graph: GraphIndex,
+	agents: readonly AgentNode[],
+	bound: ReadonlyMap<string, string>,
+): Finding[] {
 	const first = new Map<string, AgentNode>();
 	return agents.flatMap(({ node, config }) => {
-		const other = first.get(config.seat);
-		if (!other) first.set(config.seat, { node, kind: "agent", config });
+		const key = `${graph.compositionOf(node.id)}/${config.seat}`;
+		const other = first.get(key);
+		if (!other) first.set(key, { node, kind: "agent", config });
 		const same =
 			!other ||
-			(other.config.profile === config.profile &&
+			(bound.get(other.node.id) === bound.get(node.id) &&
 				Boolean(other.config.verdict) === Boolean(config.verdict));
 		return same
 			? []
@@ -737,41 +747,77 @@ function seatClashes(agents: readonly AgentNode[]): Finding[] {
 					{
 						code: "HOST.seat",
 						node: node.id,
-						message: `'${other.node.id}' and '${node.id}' sit in two seats named '${config.seat}'`,
+						message: `'${other.node.id}' and '${node.id}' sit in two seats '${key}'`,
 						hint: "Give one of the two seats another name",
 					},
 				];
 	});
 }
 
+/** The seats `seats` rebinds in a composition that seats agents here but holds no such seat, each refused by name. */
+function unseated(
+	graph: GraphIndex,
+	agents: readonly AgentNode[],
+	setup: HostSetup,
+): Diagnostic[] {
+	const held = Map.groupBy(agents, (a) => graph.compositionOf(a.node.id));
+	const seats = setup.config[SEATS];
+	return Object.keys(isPlainObject(seats) ? seats : {}).flatMap((key) => {
+		const [composition = "", seat = ""] = key.split("/");
+		const names = [
+			...new Set(held.get(composition)?.map((a) => a.config.seat)),
+		];
+		if (!names.length || names.includes(seat)) return [];
+		const path = `${SEATS}.${key}`;
+		const near = closest(seat, names);
+		return [
+			configDiagnostic(
+				"HOST.seat",
+				sourceOf(setup, [SEATS, key]),
+				`config key '${path}' is claimed by no seat of composition '${composition}'`,
+				near === undefined
+					? `Remove '${path}' from the config, or name a seat of '${composition}': ${listed(names)}`
+					: `Did you mean '${SEATS}.${composition}/${near}'? Rename '${path}' to '${SEATS}.${composition}/${near}'`,
+			),
+		];
+	});
+}
+
 /**
- * The profile rules: each seated profile resolves (ADR 0013) and its harness can run it, config tunes no profile that no
- * root holds, profile attachments take no name the agent has, and a seat name means one seat.
+ * The profile rules: the profile each seat runs, as `seats` binds it, resolves (ADR 0013) and its harness can run it,
+ * config tunes no profile that no root holds and rebinds no seat a composition here lacks, profile attachments take no
+ * name the agent has, and a seat name means one seat.
  */
 async function profileFindings(
+	graph: GraphIndex,
 	agents: AgentNode[],
 	setup: HostSetup,
 	harnesses: readonly Harness[],
-): Promise<{ diagnostics: Diagnostic[]; harnessOf: HarnessOf }> {
+): Promise<{ diagnostics: Diagnostic[]; seatedOf: SeatedOf }> {
 	const repo = repoSetup(setup);
-	const { profiles, errors } = await resolveAll(
-		agents.map((a) => a.config.profile),
-		setup,
+	const bound = new Map(
+		agents.map((a) => [
+			a.node.id,
+			seatBinding(setup, graph.compositionOf(a.node.id), a.config).profile,
+		]),
 	);
+	const { profiles, errors } = await resolveAll([...bound.values()], setup);
+	const seatedOf: SeatedOf = (node) => profiles.get(bound.get(node.id) ?? "");
 	const clashes = agents.flatMap((a) => {
-		const profile = profiles.get(a.config.profile);
+		const profile = seatedOf(a.node);
 		return profile ? attachmentClashes(a, profile) : [];
 	});
 	return {
 		diagnostics: [
 			...errors,
 			...(await untunable(setup)),
+			...unseated(graph, agents, setup),
 			...[...profiles.values()].flatMap((p) =>
 				profileProblems(p, harnesses, repo),
 			),
-			...[...clashes, ...seatClashes(agents)].map(error),
+			...[...clashes, ...seatClashes(graph, agents, bound)].map(error),
 		],
-		harnessOf: (config) => profiles.get(config.profile)?.fields.runtime.harness,
+		seatedOf,
 	};
 }
 
@@ -790,7 +836,7 @@ export async function validateRepo(
 	if (!nodes.length) return [];
 	const setup = repoSetup(hostSetup);
 	const agents = nodes.filter((r): r is AgentNode => r.kind === "agent");
-	const profiled = await profileFindings(agents, hostSetup, harnesses);
+	const profiled = await profileFindings(graph, agents, hostSetup, harnesses);
 	const chained = nodes.flatMap((r): [RepoNode, InputSource][] => {
 		const source = laneSource(graph, r.node);
 		const extending = r.kind !== "commits" && r.config.lane.mode === "extend";
@@ -812,7 +858,7 @@ export async function validateRepo(
 				: []),
 			...nodes.flatMap((r) => [...names(setup, r), ...nodeBinds(setup, r)]),
 			...doubleExtends(graph, chained),
-			...sessionRules(graph, profiled.harnessOf, agents),
+			...sessionRules(graph, profiled.seatedOf, agents),
 		].map(error),
 	];
 }

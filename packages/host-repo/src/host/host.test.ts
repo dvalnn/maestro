@@ -9,6 +9,7 @@ import {
 import { join } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
+import type { Host } from "@maestro/core/host";
 import { openRecord } from "@maestro/core/perform";
 import { type Ir, indexGraph } from "@maestro/ir";
 import { type HarnessRequest, OUTBOX, type StubStep } from "../harness/index";
@@ -42,6 +43,30 @@ import {
 afterEach(cleanup);
 
 const TRIED = { summary: "tried" };
+
+/** Seat `builder` at the top level of composition `toy`, then in scope `gate` of composition `repair`, extending it. */
+const scoped = (host: Host) =>
+	irOf(
+		host,
+		[
+			{
+				id: "a",
+				kind: "agent",
+				config: agentOn(fresh),
+				literals: { prompt: "go" },
+			},
+			{
+				id: "gate/b",
+				kind: "agent",
+				config: agentOn({ mode: "extend" }),
+				literals: { prompt: "go" },
+				lane: "a",
+			},
+		],
+		"gate/b",
+		undefined,
+		[{ id: "gate", composition: "repair", ports: {} }],
+	);
 
 /** Waits until the lane directory `lane` is gone. */
 async function dropped(lane: string) {
@@ -152,6 +177,41 @@ describe("compose", () => {
 		).toEqual([
 			["CFG.schema", "config 'profiles.Foo' is not an allowed name"],
 			["CFG.schema", "config 'profiles.a/b/c' is not an allowed name"],
+		]);
+	});
+
+	test("seats binds a seat by its innermost composition's id, at pre-flight: a profile no root holds and a seat a composition here lacks are refused", async () => {
+		const { host } = stubHost(() => [OK]);
+		const seats = {
+			"toy/builder": "nope",
+			"repair/biulder": "builder",
+			"elsewhere/builder": "builder",
+		};
+		const composed = await compose({
+			ir: scoped(host),
+			config: configOf(toyTarget(), { seats }),
+			roots: ROOTS,
+			core: CORE_CONFIG,
+			packs: {},
+			hosts: [host],
+			loadCode: noCode,
+			caps: {},
+		});
+		expect(
+			composed.ok
+				? []
+				: composed.diagnostics.map((d) => [d.code, d.message, d.hint]),
+		).toEqual([
+			[
+				"HOST.profile",
+				"profile nope is in no profile root",
+				expect.stringContaining("name another profile"),
+			],
+			[
+				"HOST.seat",
+				"config key 'seats.repair/biulder' is claimed by no seat of composition 'repair'",
+				"Did you mean 'seats.repair/builder'? Rename 'seats.repair/biulder' to 'seats.repair/builder'",
+			],
 		]);
 	});
 
@@ -597,7 +657,7 @@ describe("compose", () => {
 				literals: { prompt: "go" },
 			},
 			"HOST.seat",
-			"'w' and 'x' sit in two seats named 'builder'",
+			"'w' and 'x' sit in two seats 'toy/builder'",
 			undefined,
 		],
 		[
@@ -924,6 +984,39 @@ describe("perform", () => {
 			],
 			"x",
 		);
+
+	test.each([
+		["one composition's seat of the name", { "repair/builder": "rebound" }],
+		["both seats of the name", { "toy/builder": "x", "repair/builder": "x" }],
+	] as [string, Record<string, string>][])(
+		"seats rebinding %s never clashes it with another composition's",
+		async (_, seats) => {
+			profile("rebound", "runtime: { harness: stub, model: rebound }\n");
+			profile("x", "runtime: { harness: stub, model: x }\n");
+			const { host } = stubHost(() => [OK]);
+			const composed = await compose({
+				ir: scoped(host),
+				config: configOf(toyTarget(), { seats }),
+				roots: ROOTS,
+				core: CORE_CONFIG,
+				packs: {},
+				hosts: [host],
+				loadCode: noCode,
+				caps: {},
+			});
+			expect(composed.ok ? [] : composed.diagnostics).toEqual([]);
+		},
+	);
+
+	test("an agent runs the profile seats binds its seat to, keyed by the composition of its scope", async () => {
+		profile("rebound", "runtime: { harness: stub, model: rebound }\n");
+		const { host, requests } = stubHost(() => [OK]);
+		const seats = { "repair/builder": "rebound" };
+		const config = configOf(toyTarget(), { seats });
+		const { result } = await performed(host, scoped(host), config);
+		expect(result.outcome).toBe("ok");
+		expect(requests.map((r) => r.runtime.model)).toEqual(["none", "rebound"]);
+	});
 
 	test("a verdict agent that rejects is rejected with its reason and outputs", async () => {
 		const { host } = stubHost(() => [

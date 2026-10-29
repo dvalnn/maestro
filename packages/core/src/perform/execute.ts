@@ -58,7 +58,7 @@ export const asserted = (node: AssertNode, inputs: Inputs): Settling =>
 		: { outcome: node.onFail, reason: node.message };
 
 /** Where an instance executes, and how a host sees it. */
-type Placed = Pick<HostInstance, "id" | "groups"> & {
+type Placed = Pick<HostInstance, "id" | "groups" | "composition"> & {
 	scratch: string;
 	clock: number;
 };
@@ -115,14 +115,20 @@ function hostCall(
 	node: HostNode,
 	instance: NodeInstance,
 	inputs: Inputs,
-	{ scratch, clock, id, groups }: Placed,
+	{ scratch, clock, id, groups, composition }: Placed,
 ): Call {
 	const found = kit.kinds(node.kind);
 	if (!found)
 		return refused(
 			`no loaded host registers node kind '${node.kind}'. Load the host that registers it`,
 		);
-	const hostInstance = { node, expansion: instance.expansion, id, groups };
+	const hostInstance = {
+		node,
+		expansion: instance.expansion,
+		id,
+		groups,
+		composition,
+	};
 	const context: HostContext = {
 		concert: kit.concert,
 		...(kit.encore !== undefined && { encore: kit.encore }),

@@ -20,6 +20,7 @@ import {
 	type IrEdge,
 	type IrNode,
 	parseIr,
+	type Scope,
 } from "@maestro/ir";
 import {
 	contextProblems,
@@ -259,6 +260,7 @@ export function irOf(
 	specs: NodeSpec[],
 	result: string,
 	loop?: LoopSpec,
+	scopes: Scope[] = [],
 ): Ir {
 	const built = specs.map((s) => repoNode(host, s));
 	const looped = loop
@@ -268,7 +270,7 @@ export function irOf(
 		irVersion: IR_VERSION,
 		composition: { id: "toy", version: "0.1.0", pack: "test" },
 		emitter: { name: "hand", version: "0.1.0" },
-		scopes: [],
+		scopes,
 		nodes: [...built.map((b) => b.node), ...(looped ? [looped.node] : [])],
 		edges: [
 			...built.flatMap((b) => b.edges),

@@ -30,6 +30,8 @@ export type HostInstance = {
 	id: string;
 	/** The kind of each group enclosing the instance, outermost first: one per key of `expansion`. */
 	groups: readonly GroupNode["kind"][];
+	/** The id of the innermost composition holding the instance's node. */
+	composition: string;
 };
 
 /** Named additive numbers an instance reports (CORE-19). Core sums each name per concert and gives it no meaning. */

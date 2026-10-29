@@ -286,8 +286,8 @@ stores by node id and expansion path as a `progress` event, opaquely.
   A fingerprint of the IR, the config values and the host facts, which give the target revision and a digest of the
   profiles, is recorded with each concert; an encore whose fingerprint equals its concert's, or while its concert or
   another in its encore chain is running, is refused before it is recorded. Core passes `HostContext.encore` to each
-  host instance and reads nothing of it, and each `HostInstance` carries the kinds of the groups around it. A resumed
-  encore stays one. Every instance runs again: nothing is reused.
+  host instance and reads nothing of it, and each `HostInstance` carries the kinds of the groups around it and the id of
+  its composition. A resumed encore stays one. Every instance runs again: nothing is reused.
 - **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in
   reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started has
   no record. A code node that runs past the timeout its author set settles `failed`. It has none by default.
@@ -594,16 +594,17 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - A code node sees `target`, `base`, `sparse`, `revision` and `profiles` as `env.repo`: `base` and `sparse` are `null`
   when unset, `revision` is the commit `base` names, `null` when unresolved, and `profiles` a digest over the files of
   every profile the roots hold. `env.repo` is empty without a target.
-- The host owns three namespaces: `target` (`repo`, the default `base`, the named `checks`, `prepare` and `sparse`),
-  `profiles` (a profile's name to the fields that tune it, below) and `sandbox` (`readOnly` paths bound into every
-  agent, check and prepare). `roles` is refused: profiles replace it.
+- The host owns four namespaces: `target` (`repo`, the default `base`, the named `checks`, `prepare` and `sparse`),
+  `profiles` (a profile's name to the fields that tune it, below), `seats` (a seat's key to the profile it runs, below)
+  and `sandbox` (`readOnly` paths bound into every agent, check and prepare). `roles` is refused: profiles replace it.
 - A **profile** is a directory whose `profile.yaml` holds its `runtime` (`harness`, `model`, optional `thinking`),
   `instructions` and `attachments` as paths inside the directory, and `limits`. It is found in the workspace's
   `.maestro/profiles/`, the user's `$XDG_CONFIG_HOME/maestro/profiles/` and a pack bundle's `profiles/`, by a bare name
   or `<pack>/<name>`. The highest root holding the name wins whole and the others are its shadows. `profiles.<name>` in
   config tunes it, and sets `readOnly`, which the file cannot. A seat names one profile, defaulting to its own name;
-  resolution happens at pre-flight and again on a resume. A concert recorded before profiles is refused: perform it
-  anew.
+  `seats.<composition id>/<seat>` in config rebinds it to another, by the id of the innermost composition holding the
+  seat; resolution happens at pre-flight and again on a resume. A concert recorded before profiles is refused: perform
+  it anew.
 - A check is a shell line or a list of them, or the long form `{ run, hint, timeout, readOnly, writable, env }`: what an
   agent is told the check covers, a duration such as `10m`, absolute host paths bound read-only or read-write at their
   own paths, and environment variables for that check. A check that needs a toolchain, a cache or a lock file shared

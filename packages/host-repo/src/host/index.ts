@@ -5,10 +5,10 @@ import {
 	hostSetup,
 	type Roots,
 } from "@maestro/core/host";
-import type { IrNode } from "@maestro/ir";
+import { type Ir, indexGraph } from "@maestro/ir";
 import type { Harness, Runtime } from "../harness/index";
 import { revisionOf } from "../lane/index";
-import { profilesDigest, resolveProfile } from "../profile/index";
+import { profilesDigest, resolveProfile, seatBinding } from "../profile/index";
 import { agentKind } from "./agent";
 import { applyKind, changesetKind, commitsKind } from "./apply";
 import { checkKind } from "./check";
@@ -66,17 +66,27 @@ export type RepoHostOptions = {
 /** What an agent node runs: its profile, and the runtime the profile resolves to. */
 export type AgentRuntime = { node: string; profile: string } & Runtime;
 
-/** The agent nodes among `nodes`, each with its profile and the runtime it resolves to under `config`. */
+/** The agent nodes of `ir`, each with the profile its seat runs under `config` and the runtime that resolves to. */
 export async function agentRuntimes(
-	nodes: readonly IrNode[],
+	ir: Ir,
 	config: Composed,
 	host: Host,
 	roots: Roots,
 ): Promise<AgentRuntime[]> {
 	const setup = hostSetup(host, config, roots);
-	const agents = nodes.flatMap((n) =>
+	const graph = indexGraph(ir);
+	const agents = ir.nodes.flatMap((n) =>
 		n.kind === AGENT_KIND && !isLegacyAgent(n.config)
-			? [{ node: n.id, profile: agentConfig(n.config).profile }]
+			? [
+					{
+						node: n.id,
+						profile: seatBinding(
+							setup,
+							graph.compositionOf(n.id),
+							agentConfig(n.config),
+						).profile,
+					},
+				]
 			: [],
 	);
 	return Promise.all(
