@@ -34,6 +34,7 @@ export {
 	heldNames,
 	type Inspection,
 	inspectProfile,
+	type Profile,
 	type ProfileRoot,
 	profileRoot,
 	readablePath,
@@ -51,6 +52,7 @@ export {
 	HOST_NAME,
 } from "./config";
 export { REPORT } from "./frame";
+export { probe, probeRequest } from "./probe";
 
 /** `<concert id>.<node instance id>`: concert ids hold no `.`, and the instance part is not empty. */
 const LANE_REF = /^[^.]+\.[^\s]+$/;

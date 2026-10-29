@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HarnessEvent, HarnessRequest } from "@maestro/host-repo/harness";
@@ -36,7 +42,7 @@ function standIn(lines: string[]) {
 	writeFileSync(join(home, "run.jsonl"), `${lines.join("\n")}\n`);
 	writeFileSync(
 		bin,
-		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\nenv > /out/env\n[ -f /instructions.md ] && cp /instructions.md /out/instructions\ncat "$(dirname "$0")/run.jsonl"\n`,
+		`#!/bin/sh\nprintf '%s\\n' "$@" > /out/argv\ncat > /out/stdin\nenv > /out/env\n[ -f /instructions.md ] && cp /instructions.md /out/instructions\nprintf planted > /maestro-environment.js 2>/dev/null\n[ -f /maestro-environment.js ] && cp /maestro-environment.js /out/reporter.js\ncat "$(dirname "$0")/run.jsonl"\n`,
 		{ mode: 0o755 },
 	);
 	return { bin, agentDir: tmp("agent") };
@@ -130,6 +136,8 @@ describe("stand-in pi", () => {
 			"--no-skills",
 			"--no-mcp",
 			"--no-context-files",
+			"--extension",
+			"/maestro-environment.js",
 			"--no-prompt-templates",
 			"--no-approve",
 			"--append-system-prompt",
@@ -152,6 +160,65 @@ describe("stand-in pi", () => {
 			hooks: [],
 			contextFiles: [],
 		});
+	});
+
+	test("the reporter extension is bound read-only outside the session dir, and its entry, as pi's json mode streams it, is the environment event; other entries are not", async () => {
+		const report = {
+			type: "entry_appended",
+			entry: {
+				type: "custom",
+				id: "a1",
+				parentId: null,
+				timestamp: "2026-10-29T00:00:00.000Z",
+				customType: "maestro-environment",
+				data: { tools: ["read", "bash", "edit", "write"], skills: [] },
+			},
+		};
+		const other = { ...report, entry: { ...report.entry, customType: "x" } };
+		const [header = "", ...rest] = fixture();
+		const lines = [header, JSON.stringify(report), JSON.stringify(other)];
+		const req = request("x");
+		const target = join(tmp("target"), "kept");
+		writeFileSync(target, "kept");
+		symlinkSync(target, join(req.session.dir, "maestro-environment.js"));
+		const run = piHarness(standIn([...lines, ...rest])).run(req);
+		const seen = await drain(run.events);
+		expect(seen.filter((e) => e.kind === "environment")).toEqual([
+			{
+				kind: "environment",
+				tools: ["read", "bash", "edit", "write"],
+				skills: [],
+			},
+		]);
+		expect(seen.filter((e) => e.kind === "raw")).toEqual([]);
+		expect(readFileSync(target, "utf8")).toBe("kept");
+		// The reporter as pi would load it, against a fake of the extension API.
+		const reporter = join(req.outbox, "reporter.js");
+		const appended: unknown[] = [];
+		let started: (event: unknown) => void = () => {};
+		(await import(reporter)).default({
+			on: (_: string, handler: typeof started) => {
+				started = handler;
+			},
+			getActiveTools: () => ["read", "bash"],
+			appendEntry: (type: string, data: unknown) => appended.push([type, data]),
+		});
+		const options = {
+			skills: [{ name: "jj" }],
+			contextFiles: [{ path: "/agent/AGENTS.md" }],
+		};
+		started({ systemPromptOptions: options });
+		started({ systemPromptOptions: options });
+		expect(appended).toEqual([
+			[
+				"maestro-environment",
+				{
+					tools: ["read", "bash"],
+					skills: ["jj"],
+					contextFiles: ["/agent/AGENTS.md"],
+				},
+			],
+		]);
 	});
 
 	test("the credentials in auth.json are masked in what the sandbox returns and kept out of its environment, and nothing is masked without the file", async () => {

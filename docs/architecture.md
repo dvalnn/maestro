@@ -633,6 +633,11 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   JSON event stream (D-20). An in-process SDK is deferred, because an in-process agent cannot be confined by bubblewrap.
   The first adapter is pi (`pi -p --mode json`) and the second is Claude Code. The built-in `stub` harness writes a
   placeholder for each declared output and replies with an ok envelope of the agent's kind.
+- An adapter also streams the harness's startup report as an `environment` event: what it loaded, each part by name, a
+  part it does not report left out. Claude's is its `system/init` line; pi's comes from a maestro-owned extension the
+  adapter loads with `--extension` beside `--no-extensions`. The host records it with the agent's other events, and
+  never enforces it. `maestro agent show --probe` starts a profile's agent as a concert would and stops it at that
+  report, to check it against the adapter's declared baseline (GLOSSARY: Probe).
 - Adapters report token usage to the host. The host reports it to the core as metrics on the node instance (D-23).
 
 **Host validation rules**

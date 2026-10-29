@@ -849,3 +849,74 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 		expect(done.out + done.err).toContain(missing);
 	});
 });
+
+describe("agent show --concert", () => {
+	test("checks the environment an agent recorded as --probe does, its faults marked recorded and never failing the command, and every part ? once none is recorded", async () => {
+		const w = await repoWorld(SMOKE_RUNTIME("stub"), {
+			MAESTRO_STUB_ENVIRONMENT: JSON.stringify({ skills: ["deploy"] }),
+		});
+		const done = await w.call(["perform", join(REPO, "rounds.ts")]);
+		expect(done).toMatchObject({ code: 0 });
+		const id = idOf(done);
+		const shown = await w.call(["agent", "show", "--concert", id, "review"]);
+		expect(shown).toMatchObject({ code: 0, err: "" });
+		expect(shown.out).toBe(`review
+  concert     ${id}
+  harness     stub
+  model       none
+
+Environment   recorded stub
+✓ tools       stub's defaults
+✓ subagents   off
+✗ skills      none
+              deploy loaded, not declared
+✓ mcp         none
+✓ hooks       none
+✓ files       none
+? compaction  stub's own
+
+1 fault recorded`);
+		const recorded = json(
+			await w.call(["agent", "show", "--concert", id, "review", "--json"]),
+		);
+		expect(recorded).toMatchObject({
+			concert: id,
+			instance: "review",
+			runtime: { harness: "stub", model: "none" },
+			environment: { observed: { skills: ["deploy"], mcp: [] } },
+		});
+
+		const db = new Database(join(w.root, "data/maestro/record.db"));
+		db.run('DELETE FROM events WHERE body LIKE \'%"kind":"environment"%\'');
+		db.close();
+		const unreported = await w.call([
+			"agent",
+			"show",
+			"--concert",
+			id,
+			"review",
+		]);
+		expect(unreported).toMatchObject({ code: 0, err: "" });
+		expect(unreported.out).toEndWith(`Environment   recorded nothing from stub
+? tools       stub's defaults
+? subagents   off
+? skills      none
+? mcp         none
+? hooks       none
+? files       none
+? compaction  stub's own
+
+0 faults recorded`);
+	});
+
+	test("an instance that ran no agent is refused, naming where to find one", async () => {
+		const w = await repoWorld(SMOKE_RUNTIME("stub"));
+		const id = idOf(await w.call(["perform", await smokeFile()]));
+		expect(
+			await w.call(["agent", "show", "--concert", id, "ok"]),
+		).toMatchObject({
+			code: 1,
+			err: `instance 'ok' of concert ${id} ran no agent\nName an agent node, as 'maestro ls ${id}' lists it`,
+		});
+	});
+});

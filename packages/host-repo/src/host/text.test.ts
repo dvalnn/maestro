@@ -55,6 +55,11 @@ describe("repoText.progress", () => {
 			{ word: "usage", detail: "in 1 · out 0 · cache 0" },
 		],
 		[{ kind: "usage" }, undefined],
+		[
+			{ kind: "environment", tools: ["read", "bash"], skills: [] },
+			{ word: "environment", detail: "2 tools" },
+		],
+		[{ kind: "environment", skills: [] }, undefined],
 		[{ kind: "text", text: "hi" }, undefined],
 		[{ kind: "constructor" }, undefined],
 	])("words %j as %j", (event, wording) => {

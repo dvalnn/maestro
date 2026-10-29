@@ -13,6 +13,7 @@ import {
 	type HarnessRequest,
 	METRIC,
 	OUTBOX,
+	observedOf,
 } from "./types";
 
 /** The text of every placeholder string and Markdown file. */
@@ -89,6 +90,8 @@ function eventOf(e: JsonObject): HarnessEvent {
 			};
 		case "compaction":
 			return { kind: "compaction" };
+		case "environment":
+			return { kind: "environment", ...observedOf(e) };
 		default:
 			return { kind: "raw", data: e };
 	}

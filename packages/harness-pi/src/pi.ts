@@ -1,5 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	baselineOf,
@@ -15,6 +21,7 @@ import {
 	type JsonObject,
 	METRIC,
 	type Metrics,
+	observedOf,
 	resolveBin,
 	resultBytes,
 	SESSION_DIR,
@@ -150,8 +157,45 @@ function resultEvent(e: JsonObject): HarnessEvent {
 	};
 }
 
+/** The `customType` of the session entry the reporter extension appends. */
+const ENVIRONMENT_ENTRY = "maestro-environment";
+const REPORTER_FILE = "maestro-environment.js";
+/** Where the sandbox sees the reporter extension, bound read-only. */
+const REPORTER_PATH = `/${REPORTER_FILE}`;
+
+/**
+ * A pi extension that, at the first run's start, appends what pi loaded as a custom entry, which `--mode json` streams
+ * as `entry_appended`. `skills` follows pi's prompt-customizer example; `contextFiles` is read only when pi gives it.
+ */
+const REPORTER = `const names = (list, key) =>
+	Array.isArray(list) ? list.map((x) => (typeof x === "string" ? x : x?.[key])) : undefined;
+export default function (pi) {
+	let reported = false;
+	pi.on("before_agent_start", (event) => {
+		if (reported) return;
+		reported = true;
+		const options = event.systemPromptOptions ?? {};
+		pi.appendEntry(${JSON.stringify(ENVIRONMENT_ENTRY)}, {
+			tools: pi.getActiveTools(),
+			skills: names(options.skills, "name"),
+			contextFiles: names(options.contextFiles, "path"),
+		});
+	});
+}
+`;
+
+/** The environment the reporter extension's entry carries; any other entry is no event. */
+function entryEvents(e: JsonObject): HarnessEvent[] {
+	const entry = isObject(e.entry) ? e.entry : {};
+	if (entry.type !== "custom" || entry.customType !== ENVIRONMENT_ENTRY)
+		return [];
+	return [{ kind: "environment", ...observedOf(entry.data) }];
+}
+
 function eventsOf(e: JsonObject): HarnessEvent[] {
 	switch (e.type) {
+		case "entry_appended":
+			return entryEvents(e);
 		case "session":
 			return sessionEvents(e);
 		case "tool_execution_start":
@@ -215,7 +259,10 @@ export const declared = BASELINE.declared;
 /** What else pi would otherwise discover or ask, none of which maestro manages. */
 const UNMANAGED_OFF = ["--no-prompt-templates", "--no-approve"];
 
-/** The pi argv for a request. The prompt travels on stdin, the instructions in a file pi appends to its system prompt. */
+/**
+ * The pi argv for a request. The prompt travels on stdin, the instructions in a file pi appends to its system prompt.
+ * pi loads an explicit `--extension` under `--no-extensions` (pi docs/cli.md), which is how the reporter loads.
+ */
 function piArgv(bin: string, req: HarnessRequest): string[] {
 	const { model, thinking } = req.runtime;
 	return [
@@ -224,6 +271,8 @@ function piArgv(bin: string, req: HarnessRequest): string[] {
 		"--mode",
 		"json",
 		...BASELINE.argv,
+		"--extension",
+		REPORTER_PATH,
 		...UNMANAGED_OFF,
 		...(req.instructions ? ["--append-system-prompt", INSTRUCTIONS] : []),
 		"--session-dir",
@@ -234,6 +283,15 @@ function piArgv(bin: string, req: HarnessRequest): string[] {
 		model,
 		...(thinking ? ["--thinking", thinking] : []),
 	];
+}
+
+/** Writes the reporter extension to a fresh host dir, removed when the process exits, and returns its path. */
+function stageReporter(): string {
+	const dir = mkdtempSync(join(tmpdir(), "maestro-pi-"));
+	process.once("exit", () => rmSync(dir, { recursive: true, force: true }));
+	const path = join(dir, REPORTER_FILE);
+	writeFileSync(path, REPORTER, { flag: "wx" });
+	return path;
 }
 
 /** The credential values in `<agentDir>/auth.json`: none when the file is missing, unreadable or not a JSON object. */
@@ -257,6 +315,7 @@ export function piHarness(
 ): Harness {
 	const agentDir = options.agentDir ?? join(homedir(), ".pi", "agent");
 	let bin: string | undefined;
+	let reporter: string | undefined;
 	const adapter: SubprocessAdapter = {
 		name: "pi",
 		spec(req) {
@@ -265,12 +324,16 @@ export function piHarness(
 					`pi config dir does not exist: ${agentDir}. Run pi once and log in`,
 				);
 			bin ??= resolveBin(PI_BIN, options.bin);
+			reporter ??= stageReporter();
 			return {
 				argv: piArgv(bin, req),
 				stdin: req.prompt,
 				env: { [AGENT_DIR_VAR]: agentDir },
 				masked: credentials(agentDir),
-				readOnly: [{ src: dirname(bin) }],
+				readOnly: [
+					{ src: dirname(bin) },
+					{ src: reporter, dst: REPORTER_PATH },
+				],
 				writable: [{ src: agentDir }],
 			};
 		},

@@ -37,6 +37,8 @@ const AUTH_FAILED = "authentication_failed";
 const SESSION_CONFIG = "claude";
 
 const SUBAGENT_TOOL = "Agent";
+/** The subagent tool's names in a `system/init` tool list, which 2.1.302 gives by its former name `Task`. */
+const SUBAGENT_TOOLS = [SUBAGENT_TOOL, "Task"];
 
 /**
  * The parts of claude's environment maestro does not manage, each switched off. `--bare` would drop more but also
@@ -188,8 +190,40 @@ const contextEvent = (usage: Metrics): HarnessEvent => ({
 		(usage[METRIC.tokensCacheWrite] ?? 0),
 });
 
+/** The names in a list of names or of objects with a `name`; any other entry is left out. */
+const namesOf = (v: unknown): string[] | undefined =>
+	Array.isArray(v)
+		? v.flatMap((x) => {
+				const name = isObject(x) ? x.name : x;
+				return typeof name === "string" ? [name] : [];
+			})
+		: undefined;
+
+/** What a `system/init` line reports: tools, the subagent tools among them, skills and slash commands, MCP servers. */
+function environmentEvent(e: JsonObject): HarnessEvent {
+	const tools = namesOf(e.tools);
+	const skills = namesOf(e.skills);
+	const commands = namesOf(e.slash_commands);
+	const mcp = namesOf(e.mcp_servers);
+	return {
+		kind: "environment",
+		...(typeof e.claude_code_version === "string" && {
+			version: e.claude_code_version,
+		}),
+		...(typeof e.model === "string" && { model: e.model }),
+		...(tools && {
+			tools,
+			subagents: tools.filter((t) => SUBAGENT_TOOLS.includes(t)),
+		}),
+		...((skills || commands) && {
+			skills: [...new Set([...(skills ?? []), ...(commands ?? [])])],
+		}),
+		...(mcp && { mcp }),
+	};
+}
+
 function systemEvents(e: JsonObject): HarnessEvent[] {
-	if (e.subtype === "init") return [];
+	if (e.subtype === "init") return [environmentEvent(e)];
 	if (e.subtype === "compact_boundary") return [{ kind: "compaction" }];
 	return [{ kind: "raw", data: e }];
 }

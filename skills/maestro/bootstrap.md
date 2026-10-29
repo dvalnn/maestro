@@ -136,7 +136,9 @@ files it names, in `.maestro/profiles/<name>/` of the workspace, `$XDG_CONFIG_HO
 user, or a pack's `profiles/`, as `<pack>/<name>`. The highest of those holding the name wins it whole. `readOnly` is
 set only in config, as `profiles.<name>.readOnly`. `maestro agent ls` lists every profile with the root that wins it,
 and `maestro agent show <profile>` prints what one resolves to, naming the layer behind each value a config file, preset
-or `-c` set.
+or `-c` set. `--probe` starts its harness as a concert would and stops it at its startup report, marking each part of
+the environment `✓`, `✗` or `?` (not reported), and exits 1 on a fault; it spends a startup, so with a real harness
+probe only on the user's go. `maestro agent show --concert <id> <node>` checks what an agent of a concert recorded.
 
 ### Layers
 

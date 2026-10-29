@@ -53,6 +53,98 @@ export function baselineOf(
 	};
 }
 
+/** The parts of an agent environment a harness can report loading, each a list of names. */
+const REPORTED = [
+	"tools",
+	"subagents",
+	"skills",
+	"mcp",
+	"hooks",
+	"contextFiles",
+] as const;
+
+type Reported = (typeof REPORTED)[number];
+
+/** What a harness reports it loaded at startup, each list by name. A part it does not report is absent. */
+export type ObservedEnvironment = {
+	/** The harness's own version. */
+	version?: string;
+	model?: string;
+} & Partial<Record<Reported, string[]>>;
+
+const strings = (v: unknown): string[] | undefined =>
+	Array.isArray(v) && v.every((s) => typeof s === "string") ? v : undefined;
+
+/** `value`, an environment report as JSON, parsed: anything not a string or a list of names is left out. */
+export function observedOf(value: unknown): ObservedEnvironment {
+	const v = new Map(
+		Object.entries(typeof value === "object" && value !== null ? value : {}),
+	);
+	const text = (key: string) => {
+		const s = v.get(key);
+		return typeof s === "string" ? { [key]: s } : {};
+	};
+	const lists = REPORTED.flatMap((part) => {
+		const list = strings(v.get(part));
+		return list ? [[part, list]] : [];
+	});
+	return { ...text("version"), ...text("model"), ...Object.fromEntries(lists) };
+}
+
+/** How a part of an agent environment stands against its report: `?` when the harness did not report it. */
+export type EnvironmentCheck = {
+	part: keyof AgentEnvironment;
+	mark: "✓" | "✗" | "?";
+	/** One line per way the report contradicts the declaration. */
+	faults: string[];
+};
+
+/** The faults of `observed` names against `declared` ones: each extra loaded, each declared one missing. */
+const listFaults = (
+	declared: readonly string[],
+	observed: readonly string[],
+) => [
+	...observed
+		.filter((name) => !declared.includes(name))
+		.map((name) => `${name} loaded, not declared`),
+	...declared
+		.filter((name) => !observed.includes(name))
+		.map((name) => `${name} declared, not loaded`),
+];
+
+/** The faults of each reported part: a tool the declaration takes away, or a list that differs. A subagent tool is a fault of `subagents` only. */
+function faultsOf(
+	part: Reported,
+	declared: AgentEnvironment,
+	observed: ObservedEnvironment,
+) {
+	const seen = observed[part] ?? [];
+	if (part === "tools")
+		return declared.tools.less
+			.filter(
+				(name) => seen.includes(name) && !observed.subagents?.includes(name),
+			)
+			.map((name) => `${name} loaded, not declared`);
+	if (part === "subagents")
+		return declared.subagents
+			? []
+			: seen.map((name) => `${name} loaded, subagents declared off`);
+	return listFaults(declared[part], seen);
+}
+
+/** Each part of `declared` checked against `observed`, in declaration order; compaction is never reported. */
+export function environmentChecks(
+	declared: AgentEnvironment,
+	observed: ObservedEnvironment,
+): EnvironmentCheck[] {
+	const checks = REPORTED.map((part): EnvironmentCheck => {
+		if (observed[part] === undefined) return { part, mark: "?", faults: [] };
+		const faults = faultsOf(part, declared, observed);
+		return { part, mark: faults.length ? "✗" : "✓", faults };
+	});
+	return [...checks, { part: "compaction", mark: "?", faults: [] }];
+}
+
 /** When a context policy resets a session: at a prompt size in tokens, or at a share of the model's window. */
 export type ContextAt = { tokens: number } | { percent: number };
 
@@ -144,6 +236,8 @@ export type HarnessEvent =
 	| { kind: "context"; used: number; window?: number }
 	/** The harness compacted the session's context. */
 	| { kind: "compaction" }
+	/** What the harness reports it loaded, once at its startup. */
+	| ({ kind: "environment" } & ObservedEnvironment)
 	/** The harness finished all its work and will not continue on its own. A run without one is `failed`. */
 	| { kind: "settled" }
 	/**

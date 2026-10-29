@@ -129,7 +129,9 @@ that hangs on it, such as a fix loop: a stub agent takes each declared output fr
 as `maestro ls <id>` prints it, such as `loop[0]/review`), else from `<dir>/<node id>/<file>` (the id without `[n]`
 indices, serving every round), else the placeholder. A verdict agent's `verdict` file, found the same way, holds `ok` or
 `rejected <reason>`; without one it rules `ok`. Files are copied as is and validated like any output. A resume needs the
-variable set again; a missing dir fails the agent. For the classics pack's seven profiles:
+variable set again; a missing dir fails the agent. `MAESTRO_STUB_ENVIRONMENT` (a JSON object such as
+`{"mcp":["github"]}`) replaces parts of what the stub reports loading, to rehearse an environment fault. For the
+classics pack's seven profiles:
 
 ```yaml
 profiles:

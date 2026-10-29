@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { settledSchema } from "@maestro/ir";
+import { probe } from "../host/probe";
 import {
 	type HarnessEvent,
 	OUTBOX,
@@ -206,4 +207,21 @@ test("the stub writes each declared output to the outbox before it replies", asy
 	expect((await run.result).outcome).toBe("ok");
 	expect(readFileSync(join(req.outbox, "a.json"), "utf8")).toBe("[]");
 	expect(readFileSync(join(req.outbox, "b.md"), "utf8")).toBe("stub\n");
+});
+
+test("a probe stops the harness at its environment report, finds none in a run that settles without one, and fails with a run that fails first or never reports", async () => {
+	const report = { type: "environment", tools: ["sh"], extra: 1 };
+	const reported = await probe(
+		stubHarness([{ emit: report }, { hang: true }]),
+		request("x"),
+	);
+	expect(reported).toEqual({ tools: ["sh"] });
+	expect(await probe(stubHarness([]), request("x"))).toBeUndefined();
+	const failing = stubHarness([
+		{ emit: { type: "fault", reason: "no token" } },
+	]);
+	await expect(probe(failing, request("x"))).rejects.toThrow("no token");
+	await expect(
+		probe(stubHarness([{ hang: true }]), request("x"), 50),
+	).rejects.toThrow("no startup report within 0.05s");
 });

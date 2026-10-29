@@ -261,7 +261,7 @@ function limiter(limits: AgentLimits, live: Live): Limiter {
 }
 
 /** The most sessions a handoff policy of `max` handoffs gives an instance. */
-const sessionsOf = (max: number) => max + 1;
+export const sessionsOf = (max: number) => max + 1;
 
 /** A handoff policy, and what it takes to start the instance's next session. */
 type Handoff = {
@@ -543,7 +543,7 @@ async function converse(
  * Stages the user message and the system-prompt file, the profile's `instructions` when it has any, then `framed`.
  * Returns the system-prompt file's path.
  */
-function stage(
+export function stage(
 	dir: string,
 	prompt: string,
 	instructions: string | undefined,

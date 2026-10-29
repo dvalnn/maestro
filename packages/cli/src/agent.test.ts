@@ -152,7 +152,8 @@ Environment   declared only
   mcp         none
   hooks       none
   files       none
-  compaction  claude's own`);
+  compaction  claude's own
+Add --probe to check it against claude`);
 		for (const line of shown.out.split("\n"))
 			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(COLUMNS);
 		const colored = await w.call(["agent", "show", "demo/builder", ...TUNED], {
@@ -164,15 +165,19 @@ Environment   declared only
 
 	test("leaves out empty sections but Environment, which a harness without a baseline does not declare", async () => {
 		const w = await roster();
-		expect((await w.call(["agent", "show", "demo/reviewer"])).out).toBe(
-			`demo/reviewer
-  from        demo pack: profiles/reviewer/
+		await Bun.write(
+			join(w.cwd, ".maestro/profiles/later/profile.yaml"),
+			"runtime: { harness: codex, model: gpt }\n",
+		);
+		expect((await w.call(["agent", "show", "later"])).out).toBe(
+			`later
+  from        .maestro/profiles/later/
 
 Runtime
-  harness     stub
-  model       none
+  harness     codex
+  model       gpt
 
-Environment   not declared by stub`,
+Environment   not declared by codex`,
 		);
 	});
 
@@ -295,7 +300,8 @@ Environment   declared only
   mcp         none
   hooks       none
   files       none
-  compaction  pi's own`);
+  compaction  pi's own
+Add --probe to check it against pi`);
 	});
 
 	test("an unknown profile is refused with the nearest name", async () => {
@@ -303,6 +309,92 @@ Environment   declared only
 		expect(await w.call(["agent", "show", "demo/bilder"])).toMatchObject({
 			code: 2,
 			err: "HOST.profile: profile demo/bilder is in no profile root\n  Did you mean 'demo/builder'?",
+		});
+	});
+});
+
+describe("agent show --probe", () => {
+	/** The stub's report, laid over its own: MCP servers it does not declare, one named long, and no word on hooks. */
+	const LONG = "internal-knowledge-base-search-for-the-whole-house";
+	const STRAY = JSON.stringify({ mcp: ["github", LONG], hooks: null });
+
+	test("starts the stub as a concert would, checks each part of its report, and exits 0 when nothing contradicts", async () => {
+		const w = await roster();
+		const probed = await w.call(["agent", "show", "demo/reviewer", "--probe"]);
+		expect(probed).toMatchObject({ code: 0, err: "probing stub…" });
+		expect(probed.out).toEndWith(`Environment   probed stub
+✓ tools       stub's defaults
+✓ subagents   off
+✓ skills      none
+✓ mcp         none
+✓ hooks       none
+✓ files       none
+? compaction  stub's own
+
+0 faults`);
+	});
+
+	test("a part the harness loads and the profile does not declare is a fault under its row, wrapped within 80 columns, which exits 1; an unreported part is ?", async () => {
+		const w = await roster();
+		const env = { MAESTRO_STUB_ENVIRONMENT: STRAY };
+		const probed = await w.call(["agent", "show", "demo/reviewer", "--probe"], {
+			env,
+		});
+		expect(probed.code).toBe(1);
+		expect(probed.out).toEndWith(`✗ mcp         none
+              github loaded, not declared
+              ${LONG} loaded, not
+              declared
+? hooks       none
+✓ files       none
+? compaction  stub's own
+
+2 faults`);
+		for (const line of probed.out.split("\n"))
+			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(COLUMNS);
+		const colored = await w.call(
+			["agent", "show", "demo/reviewer", "--probe"],
+			{ env, terminal: () => ({ columns: COLUMNS, rows: 24 }) },
+		);
+		expect(Bun.stripANSI(colored.out)).toBe(probed.out);
+
+		const { environment } = json(
+			await w.call(["agent", "show", "demo/reviewer", "--probe", "--json"], {
+				env,
+			}),
+		);
+		expect(environment.observed).toMatchObject({ mcp: ["github", LONG] });
+		expect(environment.observed).not.toHaveProperty("hooks");
+		expect(environment.checks).toContainEqual({
+			part: "mcp",
+			mark: "✗",
+			faults: ["github loaded, not declared", `${LONG} loaded, not declared`],
+		});
+	});
+
+	test.each(["{not json", "[1]"])(
+		"a MAESTRO_STUB_ENVIRONMENT of %s is a usage error",
+		async (value) => {
+			const w = await roster();
+			const env = { MAESTRO_STUB_ENVIRONMENT: value };
+			expect(
+				await w.call(["agent", "show", "demo/reviewer", "--probe"], { env }),
+			).toMatchObject({
+				code: 2,
+				err: `probing stub…\nMAESTRO_STUB_ENVIRONMENT holds '${value}', not a JSON object\nSet it to an object such as '{"mcp":["github"]}', or unset it`,
+			});
+		},
+	);
+
+	test("a harness no build ships is refused, naming the ones that are", async () => {
+		const w = await roster();
+		await Bun.write(
+			join(w.cwd, ".maestro/profiles/later/profile.yaml"),
+			"runtime: { harness: codex, model: gpt }\n",
+		);
+		expect(await w.call(["agent", "show", "later", "--probe"])).toMatchObject({
+			code: 2,
+			err: "harness 'codex' is not loaded\nSet 'profiles.later.runtime.harness' to one of: pi, claude, stub",
 		});
 	});
 });
@@ -321,6 +413,19 @@ test.each([
 		"agent ls takes no profile, got 1\nRun 'maestro agent show <profile>' for one profile",
 	],
 	[["agent", "ls", "--yaml"], "agent ls takes no --yaml\nDrop --yaml"],
+	[["agent", "ls", "--probe"], "agent ls takes no --probe\nDrop --probe"],
+	[
+		["agent", "show", "scout", "--probe", "--yaml"],
+		"--yaml and --probe both given\nPass one of them",
+	],
+	[
+		["agent", "show", "x", "--probe", "--concert", "c"],
+		"--probe and --concert both given\nPass one of them",
+	],
+	[
+		["agent", "show", "--concert", "c"],
+		"expected one node, got 0\nName a node, as 'maestro ls <concert>' lists it",
+	],
 	[
 		["agent", "show"],
 		"expected one profile, got 0\nName a profile, as 'maestro agent ls' lists it",

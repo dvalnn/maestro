@@ -18,6 +18,7 @@ import {
 import { parseDuration, usageError } from "./output";
 
 const STUB_DELAY = "MAESTRO_STUB_DELAY";
+const STUB_ENVIRONMENT = "MAESTRO_STUB_ENVIRONMENT";
 
 const STUB_OUTPUTS = "MAESTRO_STUB_OUTPUTS";
 const VERDICT_FILE = "verdict";
@@ -68,6 +69,35 @@ function scriptedVerdict(dir: string | undefined, req: HarnessRequest) {
 	return JSON.stringify({ outcome: "rejected", reason, report: STUB_REPORT });
 }
 
+/** The stub loads nothing: it runs a shell script. */
+const STUB_DECLARED: AgentEnvironment = {
+	tools: { base: "default", less: [] },
+	subagents: false,
+	skills: [],
+	mcp: [],
+	hooks: [],
+	contextFiles: [],
+	compaction: "harness",
+};
+
+/** The stub's startup report: what it declares, each part laid over by the JSON object `MAESTRO_STUB_ENVIRONMENT` holds. */
+function stubEnvironment(text: string | undefined): StubStep {
+	const { skills, mcp, hooks, contextFiles } = STUB_DECLARED;
+	const own = { tools: [], subagents: [], skills, mcp, hooks, contextFiles };
+	let over: unknown;
+	try {
+		over = text ? JSON.parse(text) : {};
+	} catch {
+		over = undefined;
+	}
+	if (typeof over !== "object" || over === null || Array.isArray(over))
+		throw usageError(
+			`${STUB_ENVIRONMENT} holds '${text}', not a JSON object`,
+			`Set it to an object such as '{"mcp":["github"]}', or unset it`,
+		);
+	return { emit: { type: "environment", ...own, ...over } };
+}
+
 /** The shipped harnesses with a clean baseline, each with the agent environment it launches with. */
 const baselined = (env: Record<string, string | undefined>) => [
 	{ harness: piHarness(), declared: piDeclared },
@@ -77,39 +107,42 @@ const baselined = (env: Record<string, string | undefined>) => [
 	},
 ];
 
-/** The agent environment each shipped harness with a clean baseline launches with, by harness name. */
-export const DECLARED: ReadonlyMap<string, AgentEnvironment> = new Map(
-	baselined({}).map(({ harness, declared }) => [harness.name, declared]),
-);
+/** The agent environment each shipped harness launches with, by harness name. */
+export const DECLARED: ReadonlyMap<string, AgentEnvironment> = new Map([
+	...baselined({}).map(({ harness, declared }): [string, AgentEnvironment] => [
+		harness.name,
+		declared,
+	]),
+	["stub", STUB_DECLARED],
+]);
 
 /**
- * The hosts the CLI ships, their credentials read from `env`. The `stub` harness writes a placeholder for each declared output, then replies an `ok` envelope, taking `MAESTRO_STUB_DELAY` per agent turn; a stub turn fails when it is not a duration. With `MAESTRO_STUB_OUTPUTS=<dir>` it takes outputs and a verdict from `<dir>/<instance id>/` or `<dir>/<node id>/`.
+ * The harnesses the CLI ships, their credentials read from `env`. The `stub` harness reports its environment, writes a
+ * placeholder for each declared output, then replies an `ok` envelope, taking `MAESTRO_STUB_DELAY` per agent turn; a
+ * stub turn fails when it is not a duration. With `MAESTRO_STUB_OUTPUTS=<dir>` it takes outputs and a verdict from
+ * `<dir>/<instance id>/` or `<dir>/<node id>/`, and with `MAESTRO_STUB_ENVIRONMENT=<json>` the parts it reports loaded.
  */
+export const builtinHarnesses = (env: Record<string, string | undefined>) => [
+	...baselined(env).map(({ harness }) => harness),
+	stubHarness((req) => {
+		const delay = env[STUB_DELAY];
+		const delayMs = delay ? parseDuration(STUB_DELAY, delay) : undefined;
+		const outputs = env[STUB_OUTPUTS] || undefined;
+		return [
+			stubEnvironment(env[STUB_ENVIRONMENT]),
+			...(outputs ? scriptedOutputs(outputs, req) : placeholderOutputs(req)),
+			{
+				emit: {
+					type: "text",
+					text: req.verdict ? scriptedVerdict(outputs, req) : STUB_REPLY,
+				},
+				delayMs,
+			},
+		];
+	}),
+];
+
+/** The hosts the CLI ships, on `builtinHarnesses(env)`. */
 export const builtinHosts = (
 	env: Record<string, string | undefined>,
-): Host[] => {
-	return [
-		repoHost({
-			harnesses: [
-				...baselined(env).map(({ harness }) => harness),
-				stubHarness((req) => {
-					const delay = env[STUB_DELAY];
-					const delayMs = delay ? parseDuration(STUB_DELAY, delay) : undefined;
-					const outputs = env[STUB_OUTPUTS] || undefined;
-					return [
-						...(outputs
-							? scriptedOutputs(outputs, req)
-							: placeholderOutputs(req)),
-						{
-							emit: {
-								type: "text",
-								text: req.verdict ? scriptedVerdict(outputs, req) : STUB_REPLY,
-							},
-							delayMs,
-						},
-					];
-				}),
-			],
-		}),
-	];
-};
+): Host[] => [repoHost({ harnesses: builtinHarnesses(env) })];

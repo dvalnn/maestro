@@ -8,7 +8,11 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HarnessEvent, HarnessRequest } from "@maestro/host-repo/harness";
+import {
+	environmentChecks,
+	type HarnessEvent,
+	type HarnessRequest,
+} from "@maestro/host-repo/harness";
 import type { SandboxBackend, SandboxSpec } from "@maestro/host-repo/sandbox";
 import { claudeHarness, declared } from "./index";
 
@@ -113,6 +117,65 @@ describe("stand-in claude", () => {
 			data: { type: "future_event", extra: { a: 1 } },
 		});
 	});
+
+	test.each(["Task", "Agent"])(
+		"the recorded system/init line is the environment event: its %s tool is one fault on subagents off, an MCP server mcp none, skills are skills and slash commands, and hooks and files go unreported",
+		async (subagent) => {
+			const lines = fixture().map((l) =>
+				l.includes('"subtype":"init"')
+					? l
+							.replace('"tools":["Task"', `"tools":["${subagent}"`)
+							.replace(
+								'"mcp_servers":[]',
+								'"mcp_servers":[{"name":"github","status":"connected"}]',
+							)
+							.replace('"skills":[]', '"skills":["jj",{"name":"deploy"},{}]')
+							.replace(
+								'"slash_commands":[]',
+								'"slash_commands":["jj","review"]',
+							)
+					: l,
+			);
+			const seen = await drain(
+				claudeHarness(standIn(lines)).run(request("x")).events,
+			);
+			const reported = seen.filter((e) => e.kind === "environment");
+			expect(reported).toEqual([
+				{
+					kind: "environment",
+					version: "2.1.302",
+					model: "claude-haiku-5-5",
+					tools: expect.arrayContaining([subagent, "Bash", "Write"]),
+					subagents: [subagent],
+					skills: ["jj", "deploy", "review"],
+					mcp: ["github"],
+				},
+			]);
+			const [observed = { kind: "environment" }] = reported;
+			expect(
+				environmentChecks(declared, observed).filter((c) => c.mark !== "✓"),
+			).toEqual([
+				{
+					part: "subagents",
+					mark: "✗",
+					faults: [`${subagent} loaded, subagents declared off`],
+				},
+				{
+					part: "skills",
+					mark: "✗",
+					faults: [
+						"jj loaded, not declared",
+						"deploy loaded, not declared",
+						"review loaded, not declared",
+					],
+				},
+				{ part: "mcp", mark: "✗", faults: ["github loaded, not declared"] },
+				{ part: "hooks", mark: "?", faults: [] },
+				{ part: "contextFiles", mark: "?", faults: [] },
+				{ part: "compaction", mark: "?", faults: [] },
+			]);
+		},
+	);
 
 	test("an assistant message repeated per content block has its non-empty thinking reported once, and a result repeating the last text adds no text, while one that differs replaces it", async () => {
 		const results = claudeHarness(

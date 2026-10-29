@@ -1,19 +1,32 @@
-import { readFile, stat } from "node:fs/promises";
-import { dirname, relative } from "node:path";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
 import { ConfigError } from "@maestro/core/config";
 import type { HostSetup, Roots } from "@maestro/core/host";
+import type { ConcertRecord, Records } from "@maestro/core/perform";
 import {
 	findProfile,
+	HOST_NAME,
 	heldNames,
 	type Inspection,
 	inspectProfile,
+	type Profile,
 	type ProfileRoot,
+	probe,
+	probeRequest,
 	profileRoot,
 	readablePath,
 	resolveProfile,
 	sourceWords,
 } from "@maestro/host-repo";
-import type { AgentEnvironment } from "@maestro/host-repo/harness";
+import {
+	type AgentEnvironment,
+	type EnvironmentCheck,
+	environmentChecks,
+	type ObservedEnvironment,
+	observedOf,
+} from "@maestro/host-repo/harness";
+import { messageOf } from "@maestro/ir";
 import { padCells } from "@maestro/render-text/live";
 import { Document, isScalar } from "yaml";
 import {
@@ -25,11 +38,30 @@ import {
 	type Options,
 	only,
 	parse,
+	textOf,
 	type Values,
 } from "./command";
-import { DECLARED } from "./hosts";
-import { EXIT, jsonOf, paint, table, tildeOf, usageError } from "./output";
-import { openSession, overridesOf } from "./session";
+import { builtinHarnesses, DECLARED } from "./hosts";
+import {
+	CliError,
+	EXIT,
+	instanceName,
+	jsonOf,
+	nameOf,
+	paint,
+	table,
+	tildeOf,
+	usageError,
+} from "./output";
+import {
+	concertOf,
+	instancesInOrder,
+	openSession,
+	overridesOf,
+	type Session,
+	setupOf,
+	withRecord,
+} from "./session";
 
 const AGENT_OPTIONS: Options = {
 	...COMMON,
@@ -37,18 +69,42 @@ const AGENT_OPTIONS: Options = {
 		type: "boolean",
 		desc: "show: print the profile as one folded profile.yaml",
 	},
+	probe: {
+		type: "boolean",
+		desc: "show: start the agent as a concert would, check what its harness loads, then stop it",
+	},
+	concert: {
+		type: "string",
+		arg: "id",
+		desc: "show: the environment a node of this concert recorded, the node named as 'maestro ls <id>' lists it",
+	},
 };
 
 const FIX = "Run 'maestro agent ls', or 'maestro agent show <profile>'";
 const NAME_PROFILE = "Name a profile, as 'maestro agent ls' lists it";
+const NAME_NODE = "Name a node, as 'maestro ls <concert>' lists it";
+/** The flags only `show` takes, and the pairs of them that exclude each other. */
+const SHOW_FLAGS = ["yaml", "probe", "concert"] as const;
+const EXCLUSIVE = [
+	["yaml", "json"],
+	["yaml", "probe"],
+	["yaml", "concert"],
+	["probe", "concert"],
+] as const;
+const MARK_STYLE = { "✓": "green", "✗": "red", "?": "dim" } as const;
 
 const INDENT = "  ";
 /** A row's key column, so its value starts at column 15 under a section header of the same width. */
 const KEY_WIDTH = 12;
 const HEAD_WIDTH = INDENT.length + KEY_WIDTH;
 const KEY_GAP = "  ";
+/** The width a fault's lines wrap at. */
+const LINE_WIDTH = 80;
 
-type Request = { action: "ls" } | { action: "show"; name: string };
+type Request =
+	| { action: "ls" }
+	| { action: "show"; name: string; probe: boolean }
+	| { action: "recorded"; concert: string; node: string };
 
 type Listed = {
 	name: string;
@@ -62,9 +118,14 @@ type Listed = {
 
 type Places = { roots: Roots; home?: string };
 
-type Look = Places & { color: boolean };
+type Colored = { color: boolean };
+
+type Look = Places & Colored;
 
 type Setup = Pick<HostSetup, "layers" | "roots">;
+
+const given = (values: Values, flag: string) =>
+	isSet(values, flag) || textOf(values, flag) !== undefined;
 
 function lsRequest(rest: readonly string[], values: Values): Request {
 	if (rest.length > 0)
@@ -72,16 +133,28 @@ function lsRequest(rest: readonly string[], values: Values): Request {
 			`agent ls takes no profile, got ${rest.length}`,
 			"Run 'maestro agent show <profile>' for one profile",
 		);
-	if (isSet(values, "yaml"))
-		throw usageError("agent ls takes no --yaml", "Drop --yaml");
+	const flag = SHOW_FLAGS.find((f) => given(values, f));
+	if (flag !== undefined)
+		throw usageError(`agent ls takes no --${flag}`, `Drop --${flag}`);
 	return { action: "ls" };
 }
 
 function showRequest(rest: readonly string[], values: Values): Request {
+	const pair = EXCLUSIVE.find((p) => p.every((f) => given(values, f)));
+	if (pair)
+		throw usageError(
+			`--${pair[0]} and --${pair[1]} both given`,
+			"Pass one of them",
+		);
+	const concert = textOf(values, "concert");
+	if (concert !== undefined)
+		return {
+			action: "recorded",
+			concert,
+			node: only(rest, "node", NAME_NODE),
+		};
 	const name = only(rest, "profile", NAME_PROFILE);
-	if (isSet(values, "yaml") && isSet(values, "json"))
-		throw usageError("--yaml and --json both given", "Pass one of them");
-	return { action: "show", name };
+	return { action: "show", name, probe: isSet(values, "probe") };
 }
 
 /** The request `positionals` and `values` make. @throws CliError, a usage error, for anything else. */
@@ -117,10 +190,10 @@ async function hostPath(path: string, s: Inspection, places: Places) {
 	return (await isDirectory(path)) ? `${shown}/` : shown;
 }
 
-const head = (title: string, value: string, look: Look) =>
+const head = (title: string, value: string, look: Colored) =>
 	`${paint("bold", title.padEnd(HEAD_WIDTH), look.color)}${value}`;
 
-const row = (key: string, value: string, look: Look) =>
+const row = (key: string, value: string, look: Colored) =>
 	`${INDENT}${paint("dim", `${key}${KEY_GAP}`.padEnd(KEY_WIDTH), look.color)}${value}`;
 
 /** The words of the source of the value at dotted `key`; none for the profile's own file. */
@@ -230,39 +303,117 @@ function contextLines(s: Inspection, look: Look): string[] {
 const names = (list: readonly string[]) =>
 	list.length ? list.join(" ") : "none";
 
+type EnvironmentRow = {
+	part: keyof AgentEnvironment;
+	key: string;
+	value: string;
+};
+
 /** The rows of `declared`, the environment harness `harness` launches with. */
 function environmentRows(
 	declared: AgentEnvironment,
 	harness: string,
-): [string, string][] {
+): EnvironmentRow[] {
 	const { less } = declared.tools;
+	const tools = `${harness}'s defaults${less.length ? `, less ${names(less)}` : ""}`;
 	return [
-		[
-			"tools",
-			`${harness}'s defaults${less.length ? `, less ${names(less)}` : ""}`,
-		],
-		["subagents", declared.subagents ? "on" : "off"],
-		["skills", names(declared.skills)],
-		["mcp", names(declared.mcp)],
-		["hooks", names(declared.hooks)],
-		["files", names(declared.contextFiles)],
-		["compaction", `${harness}'s own`],
+		{ part: "tools", key: "tools", value: tools },
+		{
+			part: "subagents",
+			key: "subagents",
+			value: declared.subagents ? "on" : "off",
+		},
+		{ part: "skills", key: "skills", value: names(declared.skills) },
+		{ part: "mcp", key: "mcp", value: names(declared.mcp) },
+		{ part: "hooks", key: "hooks", value: names(declared.hooks) },
+		{ part: "contextFiles", key: "files", value: names(declared.contextFiles) },
+		{ part: "compaction", key: "compaction", value: `${harness}'s own` },
 	];
 }
 
-function environmentLines(s: Inspection, look: Look): string[] {
-	const { declared } = s.environment;
-	const { harness } = s.runtime;
+/** `text` broken at spaces into lines of at most `width` cells; a longer word keeps a line of its own. */
+function wrapWords(text: string, width: number): string[] {
+	const lines: string[] = [];
+	for (const word of text.split(" ")) {
+		const joined = `${lines.at(-1)} ${word}`;
+		if (lines.length && Bun.stringWidth(joined) <= width)
+			lines[lines.length - 1] = joined;
+		else lines.push(word);
+	}
+	return lines;
+}
+
+/** What a harness reported it loaded: `probed` now, or `recorded` by a concert; `observed` absent when it reported nothing. */
+type Report = { how: "probed" | "recorded"; observed?: ObservedEnvironment };
+
+/** A row of the checklist: its mark, then the key and value as `row` lays them, each fault under it at column 15. */
+function checkedLines(
+	{ key, value }: EnvironmentRow,
+	check: EnvironmentCheck,
+	look: Colored,
+): string[] {
+	const mark = paint(MARK_STYLE[check.mark], check.mark, look.color);
+	const lines = check.faults.flatMap((f) =>
+		wrapWords(f, LINE_WIDTH - HEAD_WIDTH),
+	);
+	return [
+		`${mark} ${row(key, value, look).slice(INDENT.length)}`,
+		...lines.map(
+			(l) => `${" ".repeat(HEAD_WIDTH)}${paint("red", l, look.color)}`,
+		),
+	];
+}
+
+const faultCount = (checks: readonly EnvironmentCheck[]) =>
+	checks.reduce((n, c) => n + c.faults.length, 0);
+
+/** The checklist of `declared` against `report`, its header naming the harness, the fault count last. */
+function reportLines(
+	declared: AgentEnvironment,
+	harness: string,
+	report: Report,
+	look: Colored,
+): string[] {
+	const { observed } = report;
+	const checks = environmentChecks(declared, observed ?? {});
+	const version = observed?.version ? ` ${observed.version}` : "";
+	const said = observed ? `${harness}${version}` : `nothing from ${harness}`;
+	const faults = faultCount(checks);
+	const count = `${faults} ${faults === 1 ? "fault" : "faults"}${report.how === "recorded" ? " recorded" : ""}`;
+	return [
+		head("Environment", `${report.how} ${said}`, look),
+		...environmentRows(declared, harness).flatMap((r) => {
+			const check = checks.find((c) => c.part === r.part);
+			return check ? checkedLines(r, check, look) : [];
+		}),
+		"",
+		count,
+	];
+}
+
+/** The Environment section: declared only, with a dim pointer at `--probe`, or checked against `report`. */
+function environmentLines(
+	declared: AgentEnvironment | null,
+	harness: string,
+	look: Colored,
+	report?: Report,
+): string[] {
 	if (declared === null)
 		return [head("Environment", `not declared by ${harness}`, look)];
+	if (report) return reportLines(declared, harness, report, look);
 	return [
 		head("Environment", "declared only", look),
-		...environmentRows(declared, harness).map(([k, v]) => row(k, v, look)),
+		...environmentRows(declared, harness).map((r) => row(r.key, r.value, look)),
+		paint("dim", `Add --probe to check it against ${harness}`, look.color),
 	];
 }
 
 /** `s` as sections with bold headers and dim keys, each value at column 15, a section with nothing left out. */
-async function showText(s: Inspection, look: Look): Promise<string> {
+async function showText(
+	s: Inspection,
+	look: Look,
+	report?: Report,
+): Promise<string> {
 	const sections = [
 		headLines(s, look),
 		runtimeLines(s, look),
@@ -271,7 +422,7 @@ async function showText(s: Inspection, look: Look): Promise<string> {
 		readOnlyLines(s, look),
 		limitsLines(s, look),
 		contextLines(s, look),
-		environmentLines(s, look),
+		environmentLines(s.environment.declared, s.runtime.harness, look, report),
 	];
 	return sections
 		.filter((lines) => lines.length)
@@ -402,37 +553,160 @@ async function ls(setup: Setup, deps: Deps, values: Values): Promise<number> {
 	return EXIT.ok;
 }
 
+/**
+ * What the harness of `profile` reports when started as a concert would start it.
+ * @throws CliError when the harness is not loaded, or its run fails or times out before it reports.
+ */
+async function probed(profile: Profile, session: Session): Promise<Report> {
+	const { deps } = session;
+	const { harness: wanted } = profile.fields.runtime;
+	const harnesses = builtinHarnesses(deps.env);
+	const harness = harnesses.find((h) => h.name === wanted);
+	const host = deps.hosts.find((h) => h.name === HOST_NAME);
+	if (!harness || !host)
+		throw usageError(
+			`harness '${wanted}' is not loaded`,
+			`Set 'profiles.${profile.name}.runtime.harness' to one of: ${harnesses.map((h) => h.name).join(", ")}`,
+		);
+	deps.stderr(`probing ${wanted}…`);
+	const scratch = await mkdtemp(join(tmpdir(), "maestro-probe-"));
+	try {
+		const req = probeRequest(profile, setupOf(session, host), scratch);
+		const observed = await probe(harness, req);
+		return { how: "probed", ...(observed && { observed }) };
+	} catch (error) {
+		if (error instanceof CliError) throw error;
+		throw new CliError(
+			`probe of ${profile.name} failed: ${messageOf(error)}\nRun the profile once, or check ${wanted}'s login`,
+		);
+	} finally {
+		await rm(scratch, { recursive: true, force: true });
+	}
+}
+
+/** The checks of `report` against `declared`; none without both. */
+const checksOf = (declared: AgentEnvironment | null, report?: Report) =>
+	declared && report ? environmentChecks(declared, report.observed ?? {}) : [];
+
+/** The `environment` of `--json`: the declaration, and with a report what was observed and each part's check. */
+const environmentJson = (declared: AgentEnvironment | null, report?: Report) =>
+	report
+		? {
+				declared,
+				observed: report.observed ?? null,
+				checks: checksOf(declared, report),
+			}
+		: { declared };
+
 async function show(
 	name: string,
-	setup: Setup,
-	deps: Deps,
+	probing: boolean,
+	session: Session,
 	values: Values,
 ): Promise<number> {
-	const s = inspectProfile(
-		await resolveProfile(name, setup),
-		setup.roots,
-		DECLARED,
-	);
+	const { deps, config } = session;
+	const setup = { layers: config.layers, roots: config.roots };
+	const profile = await resolveProfile(name, setup);
+	const s = inspectProfile(profile, setup.roots, DECLARED);
+	const report = probing ? await probed(profile, session) : undefined;
+	const { declared } = s.environment;
 	const places = { roots: setup.roots, home: deps.env.HOME };
-	if (isSet(values, "json")) deps.stdout(jsonOf(s));
+	if (isSet(values, "json"))
+		deps.stdout(
+			jsonOf({ ...s, environment: environmentJson(declared, report) }),
+		);
 	else if (isSet(values, "yaml")) deps.stdout(showYaml(s, places));
 	else
 		deps.stdout(
-			await showText(s, { ...places, color: colorOf(deps, values).out }),
+			await showText(
+				s,
+				{ ...places, color: colorOf(deps, values).out },
+				report,
+			),
 		);
-	return EXIT.ok;
+	return faultCount(checksOf(declared, report)) ? EXIT.failed : EXIT.ok;
+}
+
+/** The progress events concert `row` recorded for instance `name`, in order. */
+const eventsOf = (store: Records, row: ConcertRecord, name: string) =>
+	store
+		.events(row.id)
+		.flatMap((e) =>
+			e.type === "progress" && instanceName(row.ir, e) === name
+				? [e.event]
+				: [],
+		);
+
+/** The runtime of the last agent start among `events` and the last environment reported; none without a start. */
+function recordedReport(events: readonly Record<string, unknown>[]) {
+	const ran = events.findLast((e) => e.kind === "agent");
+	if (typeof ran?.harness !== "string") return undefined;
+	const reported = events.findLast((e) => e.kind === "environment");
+	const report: Report = {
+		how: "recorded",
+		...(reported && { observed: observedOf(reported) }),
+	};
+	const model = typeof ran.model === "string" ? ran.model : "-";
+	return { harness: ran.harness, model, report };
+}
+
+/** The environment a node of a concert recorded, checked as `--probe` checks it; a fault never fails the command. */
+async function recorded(
+	{ concert, node }: { concert: string; node: string },
+	session: Session,
+	values: Values,
+): Promise<number> {
+	const { deps } = session;
+	return withRecord(session, async (store) => {
+		const record = concertOf(store, concert);
+		const names = instancesInOrder(store, record).map((i) =>
+			instanceName(record.ir, i),
+		);
+		const name = nameOf(node, names, record.id);
+		const ran = recordedReport(eventsOf(store, record, name));
+		if (!ran)
+			throw new CliError(
+				`instance '${name}' of concert ${record.id} ran no agent\nName an agent node, as 'maestro ls ${record.id}' lists it`,
+			);
+		const { harness, model, report } = ran;
+		const declared = DECLARED.get(harness) ?? null;
+		if (isSet(values, "json")) {
+			deps.stdout(
+				jsonOf({
+					concert: record.id,
+					instance: name,
+					runtime: { harness, model },
+					environment: environmentJson(declared, report),
+				}),
+			);
+			return EXIT.ok;
+		}
+		const look = { color: colorOf(deps, values).out };
+		const heading = [
+			paint("bold", name, look.color),
+			row("concert", record.id, look),
+			row("harness", harness, look),
+			row("model", model, look),
+		];
+		const env = environmentLines(declared, harness, look, report);
+		deps.stdout([...heading, "", ...env].join("\n"));
+		return EXIT.ok;
+	});
 }
 
 export const agent: Command = {
-	usage: "agent ls [flags]\n       maestro agent show <profile> [flags]",
+	usage:
+		"agent ls [flags]\n       maestro agent show <profile> [--probe] [flags]\n       maestro agent show --concert <id> <node> [flags]",
 	options: AGENT_OPTIONS,
 	async execute(args, deps) {
 		const { values, positionals } = parse(AGENT_OPTIONS, args, FIX);
 		const request = requestOf(values, positionals);
-		const { config } = await openSession(deps, overridesOf(values));
-		const setup = { layers: config.layers, roots: config.roots };
-		return request.action === "ls"
-			? ls(setup, deps, values)
-			: show(request.name, setup, deps, values);
+		const session = await openSession(deps, overridesOf(values));
+		if (request.action === "recorded")
+			return recorded(request, session, values);
+		if (request.action === "show")
+			return show(request.name, request.probe, session, values);
+		const { config } = session;
+		return ls({ layers: config.layers, roots: config.roots }, deps, values);
 	},
 };

@@ -8,6 +8,9 @@ import {
 } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { HarnessRequest, StubStep } from "../harness/index";
+import { stubHarness } from "../harness/index";
+import { resolveProfile } from "../profile/index";
+import { probe, probeRequest } from "./probe";
 import { concertUsage, releaseConcert } from "./store";
 import {
 	agentOn,
@@ -26,6 +29,7 @@ import {
 	setupOf,
 	start,
 	stubHost,
+	tmp,
 	toyTarget,
 } from "./test-support";
 
@@ -491,6 +495,49 @@ describe("agent profile", () => {
 				"kb/style.md": expect.stringMatching(/^sha256:/),
 			},
 		});
+	});
+});
+
+describe("agent probe", () => {
+	test("a probe starts the profile as a concert would: its binds and attachments read-only, its PATH, its framed instructions, no outputs and an empty lane", async () => {
+		const dir = profile(
+			"probed",
+			"runtime: { harness: stub, model: none }\ninstructions: own.md\nattachments: { kb: { path: kb, hint: for the house style } }\n",
+			{ "own.md": "Be terse.\n", "kb/style.md": "terse\n" },
+		);
+		const [shared, bin] = [tmp("shared"), tmp("bin")];
+		const base = setupOf(configOf(toyTarget()));
+		const setup = {
+			...base,
+			config: { ...base.config, sandbox: { readOnly: [shared], path: [bin] } },
+		};
+		const req = probeRequest(
+			await resolveProfile("probed", setup),
+			setup,
+			tmp("scratch"),
+		);
+		let seen: HarnessRequest | undefined;
+		const observed = await probe(
+			stubHarness((r) => {
+				seen = r;
+				return [{ emit: { type: "environment", tools: ["sh"] } }];
+			}),
+			req,
+		);
+
+		expect(observed).toEqual({ tools: ["sh"] });
+		expect(seen?.readOnly).toContainEqual({ src: shared });
+		expect(seen?.readOnly).toContainEqual({ src: bin });
+		expect(seen?.readOnly).toContainEqual({
+			src: join(dir, "kb"),
+			dst: "/in/kb",
+		});
+		expect(seen?.env?.PATH).toStartWith(`${bin}:`);
+		const instructions = readFileSync(seen?.instructions ?? "", "utf8");
+		expect(instructions).toStartWith("Be terse.\n\n");
+		expect(instructions).toContain("- `/in/kb`: for the house style");
+		expect(seen?.outputs).toEqual([]);
+		expect(readdirSync(seen?.lane ?? "")).toEqual([]);
 	});
 });
 

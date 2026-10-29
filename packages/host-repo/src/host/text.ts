@@ -54,6 +54,13 @@ function resultWording({ bytes }: HostEvent): Wording | undefined {
 		: undefined;
 }
 
+/** `environment`, the count of tools the harness reported loading. */
+function environmentWording({ tools }: HostEvent): Wording | undefined {
+	return Array.isArray(tools)
+		? { word: "environment", detail: `${tools.length} tools` }
+		: undefined;
+}
+
 /** The wording of each progress kind the host words, by kind. */
 const WORDINGS: ReadonlyMap<
 	unknown,
@@ -63,6 +70,7 @@ const WORDINGS: ReadonlyMap<
 	["tool", toolWording],
 	["tool_result", resultWording],
 	["usage", usageWording],
+	["environment", environmentWording],
 ]);
 
 const progress = (event: HostEvent) => WORDINGS.get(event.kind)?.(event);

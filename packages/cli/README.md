@@ -21,7 +21,7 @@ maestro wait <concert> --timeout 15m
 | `watch <concert>`            | `w`   | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.                            |
 | `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                                              |
 | `agent ls`                   |       | Lists the profiles the roots hold: name, harness, model, the winning root, a pack shadow.[^agent]                                |
-| `agent show <profile>`       |       | Shows a profile as it resolves, each value's source and its declared environment. `--yaml`, `--json`.                            |
+| `agent show <profile>`       |       | Shows a profile as it resolves, its sources and environment. `--probe`, `--concert <id>`, `--yaml`, `--json`.                    |
 | `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                                  |
 | `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                                     |
 | `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                                         |
@@ -43,7 +43,14 @@ maestro wait <concert> --timeout 15m
     hooks, context files and compaction. `--yaml` prints the profile folded into one `profile.yaml`, the layers and
     agent paths as trailing comments, then the environment as a second document; `--json` gives the same fields with
     absolute paths, and each value's source as its layer with its file and line or its `-c` flag, as `config --json`
-    does. An unknown profile is a usage error naming the nearest one.
+    does. An unknown profile is a usage error naming the nearest one. `--probe` starts the harness as a concert would
+    (the same sandbox, flags, instructions and attachments, an empty scratch lane, no checks), stops it at its startup
+    report, failing after 60s without one, and checks each part: `✓` matched, `✗` a fault with its detail under the row,
+    `?` not reported. The fault count comes last; a fault exits 1. `--json` adds `environment.observed` and
+    `environment.checks`. Claude reports through its `system/init` line, pi through a maestro extension loaded with
+    `--extension` beside `--no-extensions`. Every agent session records its harness's report:
+    `agent show --concert <id> <node>` checks the node's latest one the same way, its faults marked `recorded`, and
+    exits 0.
 
 [^watch]:
     On a terminal, the graph redrawn in place, or with `--events` one line per event, tool calls, result sizes and
@@ -307,6 +314,10 @@ prints it (`loop[0]/review`), the node id is it without the `[n]` indices and se
 outcome comes from a `verdict` file found the same way, holding `ok` or `rejected <reason>`; absent, `ok`. The host
 validates a scripted file like any output. A dir that does not exist, or a `verdict` file of any other text, fails the
 stub agent. Set it again on a resume.
+
+The stub reports at startup that it loads nothing, as a real harness reports its environment. `MAESTRO_STUB_ENVIRONMENT`
+holds a JSON object whose parts replace that report, such as `{"mcp":["github"]}`, to rehearse a fault for
+`agent show --probe` or `--concert`; a part set to `null` goes unreported.
 
 A pack is operator-trusted code: `maestro` loads and executes what `packs` lists, and every directory under
 `$XDG_DATA_HOME/maestro/packs/`, with the user's own permissions.
