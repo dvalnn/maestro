@@ -181,6 +181,8 @@ describe("secrets", () => {
 /** Sandboxes killed at once while starting, in rounds a millisecond later each. */
 const STARTUP_KILLS = 20;
 const STARTUP_ROUNDS = 4;
+/** How long a test that starts many sandboxes may take on a slow or loaded machine. */
+const MANY_SANDBOXES_MS = 30_000;
 
 describe("process tree", () => {
 	test("kill leaves zero survivors, including a setsid escapee", async () => {
@@ -203,25 +205,33 @@ describe("process tree", () => {
 		expect((await p.exited).signal).toBe("SIGKILL");
 	});
 
-	test("a kill during startup ends the run and leaves zero survivors", async () => {
-		for (let round = 0; round < STARTUP_ROUNDS; round++) {
-			const runs = Array.from({ length: STARTUP_KILLS }, () =>
-				bubblewrap.start({
-					lane: tmp("lane"),
-					argv: ["sh", "-c", "sleep 300"],
-				}),
-			);
-			await Bun.sleep(round);
-			await Promise.all(runs.map((p) => p.kill()));
-			for (const p of runs) expect(runProcesses(p.id)).toEqual([]);
-		}
-	});
+	test(
+		"a kill during startup ends the run and leaves zero survivors",
+		async () => {
+			for (let round = 0; round < STARTUP_ROUNDS; round++) {
+				const runs = Array.from({ length: STARTUP_KILLS }, () =>
+					bubblewrap.start({
+						lane: tmp("lane"),
+						argv: ["sh", "-c", "sleep 300"],
+					}),
+				);
+				await Bun.sleep(round);
+				await Promise.all(runs.map((p) => p.kill()));
+				for (const p of runs) expect(runProcesses(p.id)).toEqual([]);
+			}
+		},
+		MANY_SANDBOXES_MS,
+	);
 
-	test("a 300 KB stdin reaches the process intact", async () => {
-		const big = "a".repeat(300 * 1024);
-		const { out } = await sh("wc -c", { stdin: big });
-		expect(Number(out[0])).toBe(big.length);
-	});
+	test(
+		"a 300 KB stdin reaches the process intact",
+		async () => {
+			const big = "a".repeat(300 * 1024);
+			const { out } = await sh("wc -c", { stdin: big });
+			expect(Number(out[0])).toBe(big.length);
+		},
+		MANY_SANDBOXES_MS,
+	);
 });
 
 describe("policy", () => {

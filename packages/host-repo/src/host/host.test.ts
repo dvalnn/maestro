@@ -947,12 +947,12 @@ describe("perform", () => {
 		[
 			"missing",
 			"failed",
-			"check 'missing' line 1 exited 127: sh: line 1: no-such-command: command not found",
+			/check 'missing' line 1 exited 127: sh: .*no-such-command: .*not found$/,
 		],
 		[
 			undefined,
 			"failed",
-			"check 'hello' line 1 exited 1; check 'red' line 2 exited 1; check 'missing' line 1 exited 127: sh: line 1: no-such-command: command not found",
+			/check 'hello' line 1 exited 1; check 'red' line 2 exited 1; check 'missing' line 1 exited 127: sh: .*no-such-command: .*not found$/,
 		],
 		[
 			{ run: "sleep 5", timeout: "1s" },
@@ -1001,7 +1001,10 @@ describe("perform", () => {
 			configOf(toyTarget()),
 		);
 		expect(result).toMatchObject({ outcome });
-		expect(result.outcome === "ok" ? "" : result.reason).toEndWith(reason);
+		const got = result.outcome === "ok" ? "" : result.reason;
+		// The shell's not-found wording differs between bash and dash.
+		if (typeof reason === "string") expect(got).toEndWith(reason);
+		else expect(got).toMatch(reason);
 		expect(readFileSync(artifact("x", "logs"), "utf8")).toContain("$ ");
 	});
 

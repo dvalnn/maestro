@@ -164,12 +164,7 @@ describe("target.prepare", () => {
 
 	test.each([
 		["exit 1", undefined, 1, "45"],
-		[
-			"no-such-command",
-			undefined,
-			127,
-			"sh: line 1: no-such-command: command not found",
-		],
+		["no-such-command", undefined, 127, "sh: .*no-such-command: .*not found"],
 		["sleep 30", "1s", 124, "45"],
 	])(
 		"a line running '%s' fails the node with its exit and the last output line, drops the lane and never starts the node's work",
@@ -191,7 +186,9 @@ describe("target.prepare", () => {
 			const { concert, recordPath } = await start(host, ir, config);
 			expect(await concert.done).toMatchObject({
 				outcome: "failed",
-				reason: `target.prepare line 2 exited ${code}: ${last}`,
+				reason: expect.stringMatching(
+					new RegExp(`^target\\.prepare line 2 exited ${code}: ${last}$`),
+				),
 			});
 			expect(readdirSync(marks)).toEqual([]);
 			expect(existsSync(laneOf(config, concert.id, "x"))).toBe(false);

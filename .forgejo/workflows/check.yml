@@ -15,8 +15,6 @@ jobs:
     steps:
       - name: Install bubblewrap and python3
         run: apt-get update && apt-get install -y --no-install-recommends bubblewrap python3
-      - name: Check bubblewrap can sandbox here
-        run: bwrap --unshare-all --share-net --ro-bind / / --proc /proc --dev /dev true
       - uses: https://data.forgejo.org/actions/checkout@v4
       - name: Install bun and just
         run: |
@@ -25,5 +23,10 @@ jobs:
           "$mise" install bun just
           echo "$("$mise" where bun)/bin" >> "$GITHUB_PATH"
           "$mise" where just >> "$GITHUB_PATH"
-      - run: bun install --frozen-lockfile
-      - run: just check
+      # The tests assume a user without root's power to read any file, so they run as the image's `node` user.
+      - name: Hand the checkout and the bun cache to node
+        run: mkdir -p "$BUN_INSTALL_CACHE_DIR" && chown -R node:node . "$BUN_INSTALL_CACHE_DIR"
+      - name: Check bubblewrap can sandbox here
+        run: setpriv --reuid node --regid node --init-groups bwrap --unshare-all --share-net --ro-bind / / --proc /proc --dev /dev true
+      - run: setpriv --reuid node --regid node --init-groups env HOME=/home/node bun install --frozen-lockfile
+      - run: setpriv --reuid node --regid node --init-groups env HOME=/home/node just check
