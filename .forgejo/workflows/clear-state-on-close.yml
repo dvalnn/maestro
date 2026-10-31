@@ -8,7 +8,7 @@ jobs:
   clear:
     runs-on: docker
     steps:
-      - name: Drop every state label but wontfix
+      - name: Drop every state label but wontfix and duplicate
         env:
           API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}
           TOKEN: ${{ github.token }}
@@ -22,6 +22,6 @@ jobs:
             };
             const labels = await (await call("/labels")).json();
             for (const { id, name } of labels) {
-              if (name.startsWith("state/") && name !== "state/wontfix") await call(`/labels/${id}`, { method: "DELETE" });
+              if (name.startsWith("state/") && !["state/wontfix", "state/duplicate"].includes(name)) await call(`/labels/${id}`, { method: "DELETE" });
             }
           '

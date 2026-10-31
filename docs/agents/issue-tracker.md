@@ -8,15 +8,21 @@ Issues live on the forge, [`tiago/maestro`](https://git.amorimcasa.org/tiago/mae
 
 ## The issue
 
-- **Body.** The ask: a slice brief or a backlog item. It stops changing once work starts; an agreed scope change is a
-  comment saying what changed and who agreed it.
+- **Body.** The ask: a slice brief or a backlog item. Only the ask above the marker (below) stops changing once work
+  starts; an agreed scope change is a comment saying what changed and who agreed it.
 - **Labels.** One `kind/` and one `state/` label (`triage-labels.md`). Both scopes are exclusive, so adding a `state/`
   label replaces the old one.
+- **Factory block.** The ask sits above a `<!-- factory -->` marker and stops changing. Below it the block belongs to
+  the tick, which rewrites it: state, risk, the spec (or a split's child list) triage wrote, the next allowed
+  transitions, an epic's children, related issues (`Relates to #N`), the last slice concert and its PR link. See
+  `factory.md`.
 - **Milestone.** The release that ships it, named by its version (`v0.1.0`). Only the next release or two have one; an
   issue with none is icebox, an indefinite deferral. Planned but not ready is a milestone beside `state/needs-spec`.
   Pre-releases (`-rc.<n>`) have no milestone: they are cuts toward the one that does.
-- **Closing.** A commit on `main` whose description says `Closes #N` closes it when the owner pushes. A slice's report
-  is the closing comment (below). Nothing else closes an issue.
+- **Closing.** A commit on `main` whose description says `Closes #N` closes it when the owner pushes, or when a factory
+  PR carrying it merges (auto-merge included). A duplicate is closed at once with `state/duplicate` and a
+  back-reference. An epic closes when its last child does. A slice's report is the closing comment (below). Nothing else
+  closes an issue.
 
 ## Commands
 
