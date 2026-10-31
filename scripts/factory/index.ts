@@ -72,11 +72,26 @@ const message = (error: unknown) =>
 const isTriage = (c: Concert) =>
 	c.pack === TRIAGE.pack && c.composition === TRIAGE.composition;
 
-/** Files the halt issue (E17). */
-async function halt({ forge, say }: Deps, title: string, detail: string) {
+/** `text` in a code block whose fence no backtick run inside it can close. */
+const fenced = (text: string) => {
+	const runs = [...text.matchAll(/`+/g)].map((m) => m[0].length + 1);
+	const fence = "`".repeat(Math.max(3, ...runs));
+	return `${fence}text\n${text}\n${fence}`;
+};
+
+/** Files the halt issue (E17): `lead`, then `detail` verbatim in a code block, then what to do next. */
+async function halt(
+	{ forge, say }: Deps,
+	title: string,
+	lead: string,
+	detail: string,
+	next?: string,
+) {
 	const halted = await forge.file({
 		title: `Factory halted: ${title}`,
-		body: `${detail}\n\nClose this issue to lift the halt.`,
+		body: [lead, fenced(detail), next, "Close this issue to lift the halt."]
+			.filter(Boolean)
+			.join("\n\n"),
 		labels: [HALT],
 	});
 	say(`halted on #${halted}: ${title}`);
@@ -106,7 +121,9 @@ async function load(pass: Pass): Promise<Entry[] | undefined> {
 			await halt(
 				pass,
 				`#${issue.number} has a malformed factory-data line`,
-				`#${issue.number}: ${message(error)}. Fix the line or delete the factory block below the marker.`,
+				`The factory-data line of #${issue.number} cannot be read:`,
+				message(error),
+				"Fix the line, or delete the factory block below the marker.",
 			);
 			return undefined;
 		}
@@ -141,10 +158,13 @@ async function settle(pass: Pass, { issue, data }: Entry, id: string) {
 	const result = triageOf(await pass.maestro.result(id));
 	const state = stateOf(issue) ?? "needs-triage";
 	if (typeof result === "string") {
+		const [what, ...why] = result.split(": ");
 		await halt(
 			pass,
-			`triage of #${issue.number} ${result.split(":")[0]}`,
-			`The triage concert \`${id}\` of #${issue.number} ${result}\n\nRead it with \`maestro ls ${id}\`; the next tick triages #${issue.number} again.`,
+			`triage of #${issue.number} ${what}`,
+			`The triage concert \`${id}\` of #${issue.number} ${what}:`,
+			why.join(": "),
+			`Read it with \`maestro ls ${id}\`. The next tick triages #${issue.number} again.`,
 		);
 		await writeBlock(pass, issue.number, state, { ...data, concert: id });
 		return false;
@@ -274,7 +294,8 @@ async function triage(pass: Pass, entries: Entry[]) {
 		await halt(
 			pass,
 			`triage of #${issue.number} did not start`,
-			`Triage of #${issue.number} did not start: ${message(error)}`,
+			`Triage of #${issue.number} did not start:`,
+			message(error),
 		);
 	}
 	return true;

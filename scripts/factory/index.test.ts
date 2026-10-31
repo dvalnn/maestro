@@ -335,21 +335,23 @@ describe("a pass", () => {
 		]);
 	});
 
-	const faults: [string, Record<string, Result>, string][] = [
+	const faults: [string, Record<string, Result>, string, string][] = [
 		[
 			"a failed triage",
-			{ c1: { status: "failed", reason: "boom", outputs: {} } },
+			{ c1: { status: "failed", reason: "boom: ```x```", outputs: {} } },
 			"triage of #7 settled failed",
+			"The triage concert `c1` of #7 settled failed:\n\n````text\nboom: ```x```\n````\n\nRead it with `maestro ls c1`.",
 		],
 		[
 			"a malformed triage",
 			settled({ verdict: "maybe" }),
 			"triage of #7 gave a malformed triage",
+			"The triage concert `c1` of #7 gave a malformed triage:\n\n```text\n",
 		],
 	];
 	test.each(faults)(
 		"halts on %s, then does nothing while halted",
-		async (_, results, title) => {
+		async (_, results, title, body) => {
 			const t = setup(
 				[issue(7, "needs-triage")],
 				[triageConcert("c1", 7)],
@@ -360,6 +362,7 @@ describe("a pass", () => {
 				`file #100 Factory halted: ${title}: ${HALT}`,
 				"edit #7",
 			]);
+			expect(t.find(100).body).toStartWith(body);
 			expect(t.find(7).labels).toContain("state/needs-triage");
 			expect(dataOf(t.find(7).body).concert).toBe("c1");
 			await t.run();
@@ -386,7 +389,9 @@ describe("a pass", () => {
 		expect(t.writes).toEqual([
 			`file #100 Factory halted: triage of #7 did not start: ${HALT}`,
 		]);
-		expect(t.find(100).body).toContain("triage.ts does not compose");
+		expect(t.find(100).body).toBe(
+			"Triage of #7 did not start:\n\n```text\nmaestro perform: triage.ts does not compose\n```\n\nClose this issue to lift the halt.",
+		);
 	});
 
 	test("fails without a halt when the forge is unreachable or the milestone missing", async () => {

@@ -12,6 +12,7 @@ writeFileSync(
 case "$1 $2" in
 	"wait c1") echo '{"id":"c1","status":"failed","reason":"boom"}'; exit 1 ;;
 	"perform refused") echo "refused.ts does not compose" >&2; exit 2 ;;
+	"perform diagnosed") echo '{"ok":false,"diagnostics":[{"code":"CFG.preset","severity":"error","message":"--preset x names no file","hint":"Create x.yaml"},{"code":"HOST.profile","severity":"error","message":"profile p is in no profile root"}]}'; exit 2 ;;
 	"perform "*) echo "concert c9" >&2; sleep 1 ;;
 esac
 `,
@@ -31,8 +32,18 @@ test("a detached perform returns the concert it announces", async () => {
 	expect(await fake.start(["perform", "x.ts"], join(dir, "ok.log"))).toBe("c9");
 });
 
-test("a perform that exits before announcing a concert throws its output", async () => {
-	await expect(
-		fake.start(["perform", "refused"], join(dir, "no.log")),
-	).rejects.toThrow("maestro perform: refused.ts does not compose");
-});
+test.each([
+	["its output", "refused", "maestro perform:\nrefused.ts does not compose"],
+	[
+		"its diagnostics, one per line",
+		"diagnosed",
+		"maestro perform:\nCFG.preset: --preset x names no file\n  Create x.yaml\nHOST.profile: profile p is in no profile root",
+	],
+])(
+	"a perform that exits before announcing a concert throws %s",
+	async (_, arg, thrown) => {
+		await expect(
+			fake.start(["perform", arg], join(dir, `${arg}.log`)),
+		).rejects.toThrow(thrown);
+	},
+);

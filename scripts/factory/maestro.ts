@@ -62,7 +62,25 @@ function resultOf(doc: unknown): Result {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const tail = (log: string) => readFileSync(log, "utf8").slice(-LOG_TAIL).trim();
+/** What a perform that announced no concert printed: its refusal's diagnostics, one per line, else the log's tail. */
+function output(log: string): string {
+	const text = readFileSync(log, "utf8");
+	let doc: unknown;
+	try {
+		doc = JSON.parse(text);
+	} catch {
+		return text.slice(-LOG_TAIL).trim();
+	}
+	const diagnostics =
+		isJson(doc) && Array.isArray(doc.diagnostics) ? doc.diagnostics : [];
+	return diagnostics
+		.filter(isJson)
+		.map(
+			(d) =>
+				`${d.code}: ${d.message}${typeof d.hint === "string" ? `\n  ${d.hint}` : ""}`,
+		)
+		.join("\n");
+}
 
 /**
  * The `--json` document `bin <args>` prints, whatever its exit code, since `wait` exits with the concert's.
@@ -118,11 +136,13 @@ export function maestro(bin = "maestro"): Maestro {
 					child.unref();
 					return id;
 				}
-				if (done) throw new Error(`maestro ${args[0]}: ${tail(log)}`);
+				if (done) throw new Error(`maestro ${args[0]}:\n${output(log)}`);
 				await sleep(POLL_MS);
 			}
 			child.unref();
-			throw new Error(`maestro ${args[0]} announced no concert: ${tail(log)}`);
+			throw new Error(
+				`maestro ${args[0]} announced no concert:\n${output(log)}`,
+			);
 		},
 	};
 }
