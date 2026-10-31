@@ -21,6 +21,7 @@ import {
 	snapshot,
 	stateOf,
 	tierOf,
+	titleOf,
 	tourOf,
 } from "./pick";
 import {
@@ -459,6 +460,8 @@ async function startSlice(pass: Pass, { issue, data }: Entry) {
 				tier,
 				"--tour",
 				tourOf(pass.milestone, issue.number),
+				"--title",
+				titleOf(issue),
 			],
 			join(pass.dir, `i${issue.number}.log`),
 		);
@@ -517,6 +520,8 @@ async function triage(pass: Pass, entries: Entry[]) {
 				backlog,
 				"--tour",
 				tourOf(pass.milestone, issue.number),
+				"--title",
+				titleOf(issue),
 				...(pass.preset ? ["--preset", pass.preset] : []),
 			],
 			join(pass.dir, `i${issue.number}.log`),

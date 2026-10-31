@@ -6,6 +6,7 @@ import type { Forge, Issue, NewIssue, NewPull } from "./forge";
 import { HALT, lock, type Options, pass } from "./index";
 import type { Landing } from "./land";
 import type { Concert, Maestro, Report, Result } from "./maestro";
+import { titleOf } from "./pick";
 import { askOf, type Data, dataOf, type Triage, withBlock } from "./route";
 
 const MILESTONE = "v0.1.0";
@@ -382,6 +383,8 @@ describe("a pass", () => {
 				backlog,
 				"--tour",
 				"v0.1.0.i8",
+				"--title",
+				"factory: Greet by name",
 				"--preset",
 				"stub",
 			],
@@ -548,6 +551,8 @@ describe("a build", () => {
 				"ordinary",
 				"--tour",
 				"v0.1.0.i8",
+				"--title",
+				"factory: Greet by name",
 			],
 		]);
 		expect(t.find(8).labels).toEqual([
@@ -781,4 +786,12 @@ test("a lock is held until its process exits", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "factory-")), "lock");
 	expect(lock(path)).toBe(true);
 	expect(lock(path)).toBe(false);
+});
+
+test("a concert's title is its issue's, cut with an ellipsis past 60 characters", () => {
+	const titled = (title: string) =>
+		titleOf({ ...issue(1, "needs-triage"), title });
+	expect(titled("Greet by name")).toBe("factory: Greet by name");
+	expect(titled("x".repeat(60))).toBe(`factory: ${"x".repeat(60)}`);
+	expect(titled("x".repeat(61))).toBe(`factory: ${"x".repeat(59)}…`);
 });

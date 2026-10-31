@@ -46,9 +46,16 @@ export const buildable = <T extends { issue: Issue; data: Data }>(
 		)
 		.sort((a, b) => a.issue.number - b.issue.number);
 
-/** The tour of `issue`'s concerts in `milestone` (factory.md, Rules: Tour). */
+/** The tour of `issue`'s concerts in `milestone` (factory.md, Rules: Tour and title). */
 export const tourOf = (milestone: string, issue: number) =>
 	`${milestone}.i${issue}`;
+
+/** The longest issue title a concert's title carries whole. */
+const TITLE_CHARS = 60;
+
+/** The title of `issue`'s concerts: `factory: ` and the issue's title, cut with an ellipsis past `TITLE_CHARS`. */
+export const titleOf = ({ title }: Issue) =>
+	`factory: ${title.length > TITLE_CHARS ? `${title.slice(0, TITLE_CHARS - 1)}…` : title}`;
 
 /** What `--issue` takes: the number, title and ask. */
 export const issueText = (issue: Issue) =>

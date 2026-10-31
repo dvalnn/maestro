@@ -235,7 +235,8 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   moves the epic to `in-progress`. The epic closes when its last child does.
 - **Duplicates and related issues.** A duplicate is closed at once as `state/duplicate` with a back-reference. A related
   issue gets `Relates to #N` in the factory block and the PR body.
-- **Tour.** `<version>.i<n>`, such as `v0.1.0.i142`.
+- **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
+  `factory: <issue title>`, the title cut with an ellipsis past 60 characters.
 - **PRs.** One change per ticket, pushed by forge-bot over HTTPS as `factory/i<n>`, replacing what the branch held, with
   the subject from the spec and `Closes #N`. The PR to `main` is titled with the subject, and its body holds
   `Closes #N`, the concert, its tokens, `Relates to` links, the spec's acceptance and the review's upheld findings.
