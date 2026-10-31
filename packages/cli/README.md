@@ -263,7 +263,11 @@ in camelCase, with sizes in bytes.
 A composition is a `.ts` or `.js` file that exports exactly one composition, a `.json` IR file, or
 `<pack>.<composition>` of an installed pack. Its params are flags in kebab-case, layered over the config, and `compose`
 fills the params neither gives from the composition's example set, an optional param only when they give none of the
-optional ones; a boolean takes `--name` and `--no-name`. An IR file is already built and takes no param flags.
+optional ones; a boolean takes `--name` and `--no-name`. A root `File`, `Markdown` or `JsonFile` param takes a path: a
+flag's relative to the working directory, a config value's as other config paths are (see Config); a `JsonFile` that is
+not JSON is refused. The record keeps a flag's path absolute. A new concert stages a copy of the file, which its nodes
+read and a resume keeps, and an encore reads and hashes the file anew. An IR file is already built and takes no param
+flags, and one that holds a file param's file is refused by `perform`: perform its composition file instead.
 
 A file's stem is its pack id, so it must be one: lower case, starting with a letter, then letters, digits, `_` or `-`,
 and no installed pack's. A bare file takes params from its flags, its example set and its defaults only. No config key

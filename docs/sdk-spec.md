@@ -51,7 +51,10 @@ library. The type vocabulary is:
 - **Values.** `Text`, `Bool`, `Int`, `Float`, `Json(schema)`, `List(T)`, `Struct(fields)`, and enumerations.
 - **Artifacts.** `File`, `Dir`, and typed files such as `JsonFile(T)` and `Markdown`. An artifact has provenance and a
   content hash and is staged by whichever node needs it (CORE-15). Artifacts are values only in the sense that nodes
-  consume and produce them. Large payloads are always artifacts. An artifact param takes a description but no default.
+  consume and produce them. Large payloads are always artifacts. An artifact param takes a description but no default. A
+  root `File`, `Markdown` or `JsonFile` param takes the path of a file, and its build-time value is the `ArtifactRef` of
+  a copy that perform stages into the concert's artifact area, so build code sees the reference, never the content, and
+  the IR holds it as a literal. A `Dir` param is refused.
 - **Outcome and Settled.** `Outcome` is `ok | rejected | failed | skipped`. `Settled(T)` is what a group member
   produces: `{outcome: ok, value: T}`, `{outcome: rejected | failed, value?: T, reason: Text}` or
   `{outcome: skipped, value?: T, reason?: Text}` (ADR 0006). The SDK exports both as types, and `Settled(T)` as a type

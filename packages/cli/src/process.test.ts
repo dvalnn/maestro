@@ -22,6 +22,7 @@ import { isMaestro } from "./session";
 afterEach(cleanup);
 
 const CLI = join(import.meta.dir, "cli");
+const SPEC = join(import.meta.dir, "fixtures/spec.ts");
 const TESTKIT = join(import.meta.dir, "../../testkit/src/index");
 const WAIT_STEP_MS = 25;
 const WAIT_LIMIT_MS = 5000;
@@ -529,5 +530,70 @@ describe("kill", () => {
 		} finally {
 			other.kill();
 		}
+	});
+});
+
+describe("a file param", () => {
+	test("reaches a node as its staged copy, which a resume keeps and an encore reads anew", async () => {
+		const w = await world();
+		const spec = join(w.cwd, "spec.md");
+		const stop = join(w.root, "stop");
+		await Bun.write(spec, "v1");
+		await Bun.write(stop, "");
+		const id = idOf(
+			await w.call(["perform", SPEC, "--spec", "spec.md", "--stop", stop]),
+		);
+		const hex = new Bun.CryptoHasher("sha256").update("v1").digest("hex");
+		const area = join(w.env.XDG_DATA_HOME, "maestro/concerts", id, "artifacts");
+		expect(await Bun.file(join(area, hex, "spec.md")).text()).toBe("v1");
+		const { instances } = json(await w.call(["ls", id, "--json"]));
+		expect(
+			instances.find((i: { node: string }) => i.node === "read"),
+		).toMatchObject({ status: "ok", outputs: { text: "v1" } });
+
+		await Bun.write(spec, "v2");
+		await rm(stop);
+		const resumed = await w.call(["perform", "--resume", id, "--json"]);
+		expect(json(resumed)).toMatchObject({ outputs: { text: "v1|v1" } });
+		expect(json(await w.call(["ls", id, "--json"])).params).toEqual({
+			spec,
+			stop,
+		});
+		const elsewhere = { cwd: w.root };
+		const encore = await w.call(
+			["perform", "--encore", id, "--json"],
+			elsewhere,
+		);
+		expect(json(encore)).toMatchObject({ outputs: { text: "v2|v2" } });
+	});
+
+	test("held by a saved IR refuses to perform, sending the caller to the composition file", async () => {
+		const w = await world();
+		await Bun.write(join(w.cwd, "spec.md"), "v1");
+		const out = join(w.root, "spec.json");
+		await w.call(["compose", SPEC, "--spec", "spec.md", "--out", out]);
+		expect(await w.call(["perform", out])).toMatchObject({
+			code: 2,
+			err: expect.stringContaining(
+				`${out} feeds input 'spec' of node 'read' the file param 'spec.md', which an IR file cannot stage\nPerform the composition file instead, passing the file to its param`,
+			),
+		});
+	});
+
+	test("of JsonFile refuses a file that is not JSON at compose", async () => {
+		const w = await world();
+		await Bun.write(join(w.cwd, "items.json"), "[oops");
+		const composed = await w.call([
+			"compose",
+			SPEC,
+			"--spec",
+			"items.json",
+			"--items",
+			"items.json",
+		]);
+		expect(composed.code).toBe(2);
+		expect(composed.err).toContain(
+			`param 'items' (--items) of 'spec.spec' names '${join(w.cwd, "items.json")}', which is not JSON`,
+		);
 	});
 });

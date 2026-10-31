@@ -51,7 +51,9 @@ import {
 	type ConcertDirs,
 	concertDirs,
 	makeDirs,
+	type Staged,
 	scratchDir,
+	stage,
 } from "./artifacts";
 import {
 	asserted,
@@ -86,6 +88,8 @@ type PerformBase = {
 	dir: string;
 	/** The most node instances executing at once in this concert (D-26). A positive integer. */
 	concurrency: number;
+	/** Files from outside the concert, copied into its artifact area before any node starts. */
+	stage?: readonly Staged[];
 };
 
 /**
@@ -311,6 +315,7 @@ async function performed(
 	const setup = (host: Host) => hostSetup(host, options.config, options.roots);
 	const index = indexGraph(ir);
 	await makeDirs(dirs);
+	await stage(dirs.artifacts, options.stage ?? []);
 	const check = portCheck(validator());
 	const kit: Kit = {
 		concert: id,

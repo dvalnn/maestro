@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import { ConfigError } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
 import { type Ir, indexGraph, messageOf } from "@maestro/ir";
@@ -48,7 +48,7 @@ function needsOf(ir: Ir, hosts: readonly Host[]): string[] {
 function builtNeeds(
 	bundle: Bundle,
 	composition: Described,
-	hosts: readonly Host[],
+	{ hosts, cwd }: Deps,
 ): string[] | undefined {
 	let params: ReturnType<typeof paramValues>;
 	try {
@@ -59,6 +59,7 @@ function builtNeeds(
 			root: composition.name,
 			example: composition.examples[0],
 			hosts,
+			base: () => resolve(cwd),
 		});
 	} catch (error) {
 		if (error instanceof ConfigError) return undefined;
@@ -71,7 +72,7 @@ function builtNeeds(
 function compositionEntry(
 	bundle: Bundle,
 	composition: Described,
-	hosts: readonly Host[],
+	deps: Deps,
 ): CompositionEntry {
 	const id = `${bundle.pack.id}.${composition.name}`;
 	const params = paramEntries(composition);
@@ -81,15 +82,15 @@ function compositionEntry(
 		name: composition.name,
 		doc: composition.doc,
 		params,
-		config: builtNeeds(bundle, composition, hosts),
+		config: builtNeeds(bundle, composition, deps),
 		perform: `maestro perform ${id}${flags.join("")}`,
 	};
 }
 
-async function loaded(pack: PackDir, hosts: readonly Host[]): Promise<Loaded> {
+async function loaded(pack: PackDir, deps: Deps): Promise<Loaded> {
 	const bundle = await openPack(pack);
 	const compositions = bundle.compositions.map((c) =>
-		compositionEntry(bundle, c, hosts),
+		compositionEntry(bundle, c, deps),
 	);
 	const { id, version } = bundle.pack;
 	return {
@@ -118,9 +119,7 @@ async function loadAll(
 	dirs: readonly PackDir[],
 	deps: Deps,
 ): Promise<{ packs: Loaded[]; failed: string[]; ok: boolean }> {
-	const settled = await Promise.allSettled(
-		dirs.map((p) => loaded(p, deps.hosts)),
-	);
+	const settled = await Promise.allSettled(dirs.map((p) => loaded(p, deps)));
 	const packs: Loaded[] = [];
 	const failed: string[] = [];
 	settled.forEach((result, i) => {

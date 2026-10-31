@@ -1,14 +1,17 @@
 import type { Dirent } from "node:fs";
 import {
+	copyFile,
 	lstat,
 	mkdir,
 	mkdtemp,
 	readdir,
+	readFile,
 	readlink,
 	realpath,
 	rename,
+	rm,
 } from "node:fs/promises";
-import { basename, isAbsolute, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import {
 	ARTIFACT_TYPES,
 	type ArtifactRef,
@@ -19,6 +22,9 @@ import {
 	replaceAt,
 } from "@maestro/ir";
 import type { Outputs } from "../node";
+import { sha256Hex } from "../shared";
+
+const HASH_PREFIX = "sha256:";
 
 /** A concert's artifact area and the directory its instances' scratch directories go in, both absolute. */
 export type ConcertDirs = { artifacts: string; scratch: string };
@@ -104,9 +110,52 @@ async function moveInto(
 	await rename(path, target);
 	return {
 		path: `${basename(dir)}/${basename(path)}`,
-		contentHash: `sha256:${await digest(target)}`,
+		contentHash: HASH_PREFIX + (await digest(target)),
 		producer,
 	};
+}
+
+/**
+ * A file from outside the concert, the reference it is staged under in the concert's artifact area, and `from`, how an
+ * error names what gave it, such as a flag.
+ */
+export type Staged = { source: string; ref: ArtifactRef; from: string };
+
+/**
+ * The reference of a file of `bytes` staged as `name`, without a producer. Its directory is named by the file's digest,
+ * so the same content keeps the same reference, and no directory `collectArtifacts` makes shares its name.
+ */
+export function stagedRef(name: string, bytes: Uint8Array): ArtifactRef {
+	const hex = sha256Hex(bytes);
+	return { path: `${hex}/${name}`, contentHash: HASH_PREFIX + hex };
+}
+
+/**
+ * Copies each source of `staged` into `area` at its reference's path.
+ * @throws Error when a source is gone, or its content no longer matches its reference's hash, its copy then removed.
+ */
+export async function stage(
+	area: string,
+	staged: readonly Staged[],
+): Promise<void> {
+	for (const { source, ref, from } of staged) {
+		const target = join(area, ref.path);
+		await mkdir(dirname(target), { recursive: true });
+		const copied = await copyFile(source, target).then(
+			() => true,
+			() => false,
+		);
+		const bytes = copied ? await readFile(target) : undefined;
+		if (
+			bytes &&
+			stagedRef(basename(target), bytes).contentHash === ref.contentHash
+		)
+			continue;
+		await rm(target, { force: true });
+		throw new Error(
+			`${from} names '${source}', which ${copied ? "changed" : "is gone"} since the concert was composed. Perform it again`,
+		);
+	}
 }
 
 /**

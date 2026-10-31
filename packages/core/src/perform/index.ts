@@ -1,4 +1,4 @@
-export { concertDirs } from "./artifacts";
+export { concertDirs, type Staged, stagedRef } from "./artifacts";
 export { type Concert, type PerformOptions, perform } from "./perform";
 export {
 	type ConcertFilter,

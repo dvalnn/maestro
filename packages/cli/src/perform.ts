@@ -40,6 +40,7 @@ import {
 	type Prepared,
 	preflight,
 	prepare,
+	requireNoParamFiles,
 	resumable,
 } from "./prepare";
 import {
@@ -95,6 +96,8 @@ async function begin(
 		{ verb: "perform", options: PERFORM_OPTIONS, examples: false, recorded },
 		args,
 	);
+	if (prepared.staged === undefined)
+		requireNoParamFiles(prepared.ir, args[0] ?? "");
 	const ir = mapWorkers(prepared.ir, (ref) =>
 		ref.module === STDLIB_MODULE ? { ...ref, codeHash: STDLIB_HASH } : ref,
 	);
@@ -265,6 +268,7 @@ async function conducted(
 		...(start.resume === undefined
 			? {
 					encore: start.encore,
+					stage: prepared.staged,
 					origin: {
 						workspace: session.config.core.workspace,
 						moduleDir: prepared.moduleDir,

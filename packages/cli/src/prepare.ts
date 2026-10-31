@@ -3,10 +3,11 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { closest } from "@maestro/core";
 import { type ComposeInput, compose } from "@maestro/core/compose";
 import { CORE_CONFIG, type Composed, type Layer } from "@maestro/core/config";
-import type { ConcertRecord } from "@maestro/core/perform";
+import type { ConcertRecord, Staged } from "@maestro/core/perform";
 import {
 	type Ir,
 	irSchema,
+	isPlainObject,
 	mapWorkers,
 	messageOf,
 	type Plan,
@@ -23,7 +24,7 @@ import {
 	type Values,
 	warn,
 } from "./command";
-import { CLI_CONFIG } from "./config";
+import { baseOf, CLI_CONFIG } from "./config";
 import { flagValues, paramFlags, paramsBlock } from "./flags";
 import {
 	type Bundle,
@@ -55,6 +56,8 @@ export type Prepared = {
 	values: Values;
 	/** The root's params the flags gave, those recorded beneath them for an encore. */
 	params?: Readonly<Record<string, unknown>>;
+	/** The files the params name, to stage into a new concert; absent for a built IR, whose files are not known. */
+	staged?: readonly Staged[];
 };
 
 /** The flags `compose` takes beyond the common ones. */
@@ -254,7 +257,7 @@ async function build(
 		);
 	const given = {
 		...reading.recorded,
-		...flagValues(composition, flags, values),
+		...flagValues(composition, flags, values, session.deps.cwd),
 	};
 	const params = paramValues({
 		layers,
@@ -264,6 +267,7 @@ async function build(
 		example: reading.examples ? composition.examples[0] : undefined,
 		flags: given,
 		hosts: session.deps.hosts,
+		base: (source) => baseOf(session.config, session.deps.cwd, source),
 		bare,
 	});
 	const built = bundle.build(composition.name, params.root, params.configured);
@@ -275,6 +279,7 @@ async function build(
 		config: params.composed,
 		values,
 		params: given,
+		staged: params.staged,
 	};
 }
 
@@ -393,6 +398,32 @@ export async function prepare(
 	return file === undefined
 		? { ...built, claims }
 		: { ...built, config: session.config.composed, claims, file };
+}
+
+/** The path of each artifact reference without a producer in `value`, at any depth. */
+function outsidePaths(value: unknown): string[] {
+	if (Array.isArray(value)) return value.flatMap(outsidePaths);
+	if (!isPlainObject(value)) return [];
+	const { path, contentHash, producer } = value;
+	if (typeof path === "string" && typeof contentHash === "string")
+		return producer === undefined ? [path] : [];
+	return Object.values(value).flatMap(outsidePaths);
+}
+
+/**
+ * @throws CliError, a usage error, when `ir`, read from the IR file `target`, feeds a node a file a param staged when
+ * it was composed, which only performing its composition stages again.
+ */
+export function requireNoParamFiles(ir: Ir, target: string): void {
+	for (const node of ir.nodes)
+		for (const [port, value] of Object.entries(node.literals ?? {})) {
+			const [path] = outsidePaths(value);
+			if (path !== undefined)
+				throw usageError(
+					`${target} feeds input '${port}' of node '${node.id}' the file param '${basename(path)}', which an IR file cannot stage`,
+					"Perform the composition file instead, passing the file to its param",
+				);
+		}
 }
 
 /**

@@ -1,4 +1,10 @@
-import { isPlainObject, type JsonSchema, MAESTRO_TYPE } from "@maestro/ir";
+import { resolve } from "node:path";
+import {
+	ARTIFACT_TYPES,
+	isPlainObject,
+	type JsonSchema,
+	MAESTRO_TYPE,
+} from "@maestro/ir";
 import type { Described } from "@maestro/sdk/loader";
 import type { Options, Values } from "./command";
 import { paint, table, usageError } from "./output";
@@ -13,8 +19,12 @@ type ParamFlags = {
 
 const NEGATION = "no-";
 
+const isFile = (schema: JsonSchema) =>
+	isPlainObject(schema) && ARTIFACT_TYPES.has(String(schema[MAESTRO_TYPE]));
+
+// An artifact schema's `type` describes the file's content, not the path its flag takes.
 const typeOf = (schema: JsonSchema) =>
-	isPlainObject(schema) ? schema.type : undefined;
+	isPlainObject(schema) && !isFile(schema) ? schema.type : undefined;
 
 const itemsOf = (schema: JsonSchema): JsonSchema =>
 	isPlainObject(schema) && isPlainObject(schema.items) ? schema.items : true;
@@ -27,7 +37,7 @@ const takes = (taken: Options, key: string) =>
 
 /**
  * The flag of each param of `composition`, in kebab-case. A list takes its flag repeated, a boolean takes `--name` and
- * `--no-name`, anything else one value.
+ * `--no-name`, anything else, a file among them, one value.
  * @throws CliError, a usage error, when two params share a flag, or a param's flag is one of `taken`, the command's own.
  */
 export function paramFlags(
@@ -66,22 +76,34 @@ export function paramFlags(
 	return { options, params };
 }
 
-/** One flag value as the param's value: text stays text, a number is read, anything else is JSON. */
-function read(flag: string, schema: JsonSchema, value: string | boolean) {
+/** @throws CliError, a usage error naming `flag`, when `value` is not a number. */
+function numberOf(flag: string, value: string): number {
+	const number = Number(value);
+	if (value.trim() === "" || !Number.isFinite(number))
+		throw usageError(
+			`${flag} takes a number, not '${value}'`,
+			`Pass ${flag} a number`,
+		);
+	return number;
+}
+
+/**
+ * One flag value as the param's value: a file's path is resolved against `cwd`, text and a host type's value stay text,
+ * a number is read, anything else is JSON.
+ */
+function read(
+	flag: string,
+	schema: JsonSchema,
+	value: string | boolean,
+	cwd: string,
+) {
 	if (typeof value === "boolean") return value;
+	if (isFile(schema)) return resolve(cwd, value);
 	if (isPlainObject(schema) && Object.hasOwn(schema, MAESTRO_TYPE))
 		return value;
 	const type = typeOf(schema);
 	if (type === "string") return value;
-	if (type === "integer" || type === "number") {
-		const number = Number(value);
-		if (value.trim() === "" || !Number.isFinite(number))
-			throw usageError(
-				`${flag} takes a number, not '${value}'`,
-				`Pass ${flag} a number`,
-			);
-		return number;
-	}
+	if (type === "integer" || type === "number") return numberOf(flag, value);
 	try {
 		return JSON.parse(value);
 	} catch {
@@ -93,13 +115,14 @@ function read(flag: string, schema: JsonSchema, value: string | boolean) {
 }
 
 /**
- * The param values the flags in `values` set, by param name.
+ * The param values the flags in `values` set, by param name, a file's path absolute.
  * @throws CliError, a usage error naming the flag, for a value that does not read as its param's type.
  */
 export function flagValues(
 	composition: Described,
 	{ params }: ParamFlags,
 	values: Values,
+	cwd: string,
 ): Record<string, unknown> {
 	const given: Record<string, unknown> = {};
 	for (const [key, name] of params) {
@@ -108,8 +131,8 @@ export function flagValues(
 		const schema = composition.params.properties[name] ?? true;
 		const flag = flagFor(key);
 		given[name] = Array.isArray(value)
-			? value.map((v) => read(flag, itemsOf(schema), v))
-			: read(flag, schema, value);
+			? value.map((v) => read(flag, itemsOf(schema), v, cwd))
+			: read(flag, schema, value, cwd);
 	}
 	return given;
 }

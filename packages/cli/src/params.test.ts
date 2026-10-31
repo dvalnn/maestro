@@ -9,6 +9,7 @@ import {
 import type { Ir } from "@maestro/ir";
 import type { Described } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
+import { baseOf, loadConfig } from "./config";
 import { cleanup, DEMO, packOf, scratch } from "./fixtures/packs";
 import { openPack } from "./loader";
 import { flagOf, type ParamRequest, paramValues } from "./params";
@@ -18,6 +19,7 @@ afterEach(cleanup);
 const USER = "/home/u/.config/maestro/config.yaml";
 const WORKSPACE = "/w/.maestro/config.yaml";
 const PRESET = "/w/.maestro/presets/fast.yaml";
+const CWD = "/w";
 
 const demo = async () =>
 	openPack({ dir: await packOf(join(DEMO, "index.ts"), await scratch()) });
@@ -70,6 +72,7 @@ describe("param values", () => {
 			example: { name: "example", loud: 5 },
 			flags: { loud: 7 },
 			hosts: [fakeHost()],
+			base: () => CWD,
 		};
 		const params = paramValues(request);
 		expect(params.root).toEqual({ name: "workspace", loud: 7 });
@@ -134,6 +137,7 @@ describe("param values", () => {
 				root: "greet",
 				example: { name: "e", tags: ["e"], change: "e" },
 				hosts: [fakeHost()],
+				base: () => CWD,
 			}).root;
 		expect(root("demo:\n  greet:\n    tags: !append [c]\n")).toEqual({
 			name: "e",
@@ -156,6 +160,7 @@ describe("param values", () => {
 			compositions: pack.compositions,
 			root: "greet",
 			hosts: [fakeHost()],
+			base: () => CWD,
 		};
 		expect(refusal(() => paramValues(request))).toEqual([
 			[
@@ -196,6 +201,7 @@ describe("param values", () => {
 					root: "greet",
 					example: given ? { loud: 1 } : undefined,
 					hosts: [fakeHost()],
+					base: () => CWD,
 					bare,
 				}),
 			)[0]?.[2],
@@ -212,6 +218,7 @@ describe("a typed param", () => {
 		compositions: (await demo()).compositions,
 		root: "ticket",
 		hosts: [fakeHost()],
+		base: () => CWD,
 		...over,
 	});
 
@@ -236,34 +243,98 @@ describe("a typed param", () => {
 			],
 		]);
 	});
+});
 
-	test("refuses a core artifact type, naming the flag", () => {
-		const described: Described[] = [
-			{
-				name: "ticket",
-				params: {
-					type: "object",
-					properties: { doc: { "x-maestro-type": "core.file" } },
-					required: [],
-					additionalProperties: false,
-				},
-				examples: [],
+describe("a file param", () => {
+	const ticket = (type: string, name = "ticket"): Described[] => [
+		{
+			name,
+			params: {
+				type: "object",
+				properties: { doc: { "x-maestro-type": type } },
+				required: [],
+				additionalProperties: false,
 			},
-		];
+			examples: [],
+		},
+	];
+	const request = (over: Partial<ParamRequest>): ParamRequest => ({
+		layers: [],
+		pack: "demo",
+		compositions: ticket("core.markdown"),
+		root: "ticket",
+		hosts: [],
+		base: () => CWD,
+		...over,
+	});
+
+	test("takes a flag's path relative to the cwd, and a config file's as its other paths, as the reference its file is staged under", async () => {
+		const root = await scratch();
+		const workspace = join(root, "ws");
+		const cwd = join(workspace, "sub");
+		const user = join(root, "config");
+		const env = { XDG_CONFIG_HOME: user, XDG_DATA_HOME: join(root, "data") };
+		const userDir = join(user, "maestro");
+		for (const dir of [workspace, cwd, userDir])
+			await Bun.write(join(dir, "spec.md"), dir);
+		const staged = async (file: string, text: string, flag?: string) => {
+			await Bun.write(file, text);
+			const config = await loadConfig({ cwd, env, hosts: [] });
+			const read = paramValues(
+				request({
+					layers: config.layers,
+					flags: flag === undefined ? undefined : { doc: flag },
+					base: (source) => baseOf(config, cwd, source),
+				}),
+			);
+			const [one] = read.staged;
+			expect(read.root.doc).toEqual(one?.ref);
+			return one?.source;
+		};
+		const doc = "demo:\n  ticket:\n    doc: spec.md\n";
+		const userFile = join(userDir, "config.yaml");
+		const workspaceFile = join(workspace, ".maestro/config.yaml");
+		expect(await staged(userFile, doc)).toBe(join(userDir, "spec.md"));
+		expect(await staged(workspaceFile, doc)).toBe(join(workspace, "spec.md"));
+		expect(await staged(workspaceFile, doc, "spec.md")).toBe(
+			join(cwd, "spec.md"),
+		);
+		const hex = new Bun.CryptoHasher("sha256").update(cwd).digest("hex");
+		expect(
+			paramValues(request({ flags: { doc: join(cwd, "spec.md") } })).root,
+		).toEqual({
+			doc: { path: `${hex}/spec.md`, contentHash: `sha256:${hex}` },
+		});
+	});
+
+	test("refuses a file it cannot read, naming the flag and the path", () => {
 		const found = refusal(() =>
-			paramValues({
-				layers: [],
-				pack: "demo",
-				compositions: described,
-				root: "ticket",
-				hosts: [],
-			}),
+			paramValues(request({ flags: { doc: "gone.md" } })),
 		);
 		expect(found).toEqual([
 			[
 				"CFG.param",
-				"param 'doc' (--doc) of 'demo.ticket' takes core.file, an artifact, and a param cannot hold one",
-				expect.any(String),
+				"param 'doc' (--doc) of 'demo.ticket' names 'gone.md', which is not a readable file",
+				"Pass a valid --doc, or fix 'demo.ticket.doc' in the config",
+			],
+		]);
+	});
+
+	test("refuses a directory, and a file the config gives another composition", () => {
+		const layers = fileLayers("demo:\n  sub:\n    doc: spec.md\n");
+		const compositions = [...ticket("core.dir"), ...ticket("core.file", "sub")];
+		expect(
+			refusal(() => paramValues(request({ layers, compositions }))),
+		).toEqual([
+			[
+				"CFG.param",
+				"param 'doc' (--doc) of 'demo.ticket' takes core.dir, a directory, which a param cannot take",
+				"Declare 'doc' of 'demo.ticket' as File, Markdown or JsonFile, which take a file's path",
+			],
+			[
+				"CFG.param",
+				"config 'demo.sub.doc' takes core.file, a file, which only the root composition's params take",
+				"Remove it from the config, and feed the file to 'demo.sub' through a port of its use",
 			],
 		]);
 	});

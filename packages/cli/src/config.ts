@@ -15,6 +15,7 @@ import {
 	type LayerName,
 	layered,
 	parseLayer,
+	type Source,
 	schemaErrors,
 	sourceOf,
 	valuesLayer,
@@ -382,6 +383,23 @@ async function overrideLayers(
 		);
 	}
 	return layers;
+}
+
+/**
+ * The directory a relative path from `source` resolves against, as `loadConfig` resolves the config's path keys: the
+ * user config directory for the user file and a user preset, the workspace root for the workspace file, a workspace
+ * preset and a `-c`, else `cwd`, the outside of a workspace included.
+ */
+export function baseOf(
+	{ workspace, roots }: Pick<LoadedConfig, "workspace" | "roots">,
+	cwd: string,
+	source: Source | undefined,
+): string {
+	const { layer, file, flag } = source ?? {};
+	const userPreset = file?.startsWith(join(roots.user, PRESETS_DIR));
+	if (layer === "user" || (layer === "preset" && userPreset)) return roots.user;
+	const anchored = layer === "workspace" || layer === "preset" || flag;
+	return workspace && anchored ? workspace : resolve(cwd);
 }
 
 /**

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CORE_TYPES, MAESTRO_TYPE } from "@maestro/ir";
-import { collectArtifacts } from "./artifacts";
+import { collectArtifacts, stage, stagedRef } from "./artifacts";
 
 const producer = { node: "n", expansion: "" };
 const ports = {
@@ -66,4 +66,29 @@ test("an artifact path must resolve inside scratch to the kind of entry its type
 		`output 'file' is 't/sub/a.txt', not an absolute path. ${fix}`,
 	);
 	expect(existsSync(join(scratch, "t"))).toBe(true);
+});
+
+test("staging copies a file under its reference, and refuses one changed or gone since its reference was made", async () => {
+	root = await mkdtemp(join(tmpdir(), "maestro-artifacts-"));
+	const area = join(root, "area");
+	const source = join(root, "spec.md");
+	await writeFile(source, "v1");
+	const staged = {
+		source,
+		ref: stagedRef("spec.md", new TextEncoder().encode("v1")),
+		from: "--spec",
+	};
+	await stage(area, [staged]);
+	const copy = join(area, staged.ref.path);
+	expect(await Bun.file(copy).text()).toBe("v1");
+
+	await writeFile(source, "v2");
+	await expect(stage(area, [staged])).rejects.toThrow(
+		`--spec names '${source}', which changed since the concert was composed. Perform it again`,
+	);
+	expect(existsSync(copy)).toBe(false);
+	await rm(source);
+	await expect(stage(area, [staged])).rejects.toThrow(
+		`--spec names '${source}', which is gone since the concert was composed`,
+	);
 });
