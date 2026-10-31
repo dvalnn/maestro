@@ -1,0 +1,29 @@
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    # A runner whose containers allow the user namespaces bubblewrap needs, and whose image has git 2.40 or newer.
+    runs-on: maestro-ci
+    env:
+      MISE_DATA_DIR: /ci-cache/maestro/mise
+      BUN_INSTALL_CACHE_DIR: /ci-cache/maestro/bun
+    steps:
+      - name: Install bubblewrap and python3
+        run: apt-get update && apt-get install -y --no-install-recommends bubblewrap python3
+      - name: Check bubblewrap can sandbox here
+        run: bwrap --unshare-all --share-net --ro-bind / / --proc /proc --dev /dev true
+      - uses: https://data.forgejo.org/actions/checkout@v4
+      - name: Install bun and just
+        run: |
+          curl -fsSL https://mise.run | MISE_INSTALL_PATH=/ci-cache/maestro/bin/mise sh
+          mise=/ci-cache/maestro/bin/mise
+          "$mise" install bun just
+          echo "$("$mise" where bun)/bin" >> "$GITHUB_PATH"
+          "$mise" where just >> "$GITHUB_PATH"
+      - run: bun install --frozen-lockfile
+      - run: just check
