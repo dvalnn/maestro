@@ -9,9 +9,19 @@ jobs:
     runs-on: docker
     steps:
       - name: Drop every state label but wontfix
+        env:
+          API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}
+          TOKEN: ${{ github.token }}
         run: |
-          api=${{ github.server_url }}/api/v1/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}
-          auth="Authorization: token ${{ github.token }}"
-          curl -fsS -H "$auth" "$api/labels" |
-            jq -r '.[] | select(.name | startswith("state/") and . != "state/wontfix") | .id' |
-            while read -r id; do curl -fsS -X DELETE -H "$auth" "$api/labels/$id"; done
+          node --input-type=module -e '
+            const headers = { Authorization: `token ${process.env.TOKEN}` };
+            const call = async (path, init) => {
+              const response = await fetch(process.env.API + path, { headers, ...init });
+              if (!response.ok) throw new Error(`${response.status} ${path}`);
+              return response;
+            };
+            const labels = await (await call("/labels")).json();
+            for (const { id, name } of labels) {
+              if (name.startsWith("state/") && name !== "state/wontfix") await call(`/labels/${id}`, { method: "DELETE" });
+            }
+          '
