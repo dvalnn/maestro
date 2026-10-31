@@ -115,24 +115,26 @@ Each state is a `state/` label. A move replaces the label, since the scope is ex
 
 An edge in the diagrams names who causes the move; the tick sets the label unless the owner does it by hand.
 
-| State             | Meaning                                             | Moved in by                         | Next                                                                                |
-| ----------------- | --------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------- |
-| `needs-triage`    | Filed, not yet evaluated                            | owner, tick[^new], owner[^answer]   | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate`                      |
-| `needs-spec`      | Wanted, needs design before work                    | owner                               | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate`                      |
-| `needs-approval`  | Spec or split waits for the owner's go              | triage, harvest                     | `ready-for-agent`, `in-progress`[^epic], `needs-info`, `ready-for-human`, `wontfix` |
-| `ready-for-agent` | Specified and queued for a slice concert            | triage, owner[^approve], tick[^red] | `in-progress`                                                                       |
-| `in-progress`     | Being built: a slice concert, or an epic's children | tick, owner[^changes]               | `in-review`, `ready-for-agent`, `needs-info`, closed[^epic]                         |
-| `in-review`       | PR open, waiting on CI and review                   | tick                                | `in-progress`, closed                                                               |
-| `needs-info`      | Waiting on an answer                                | triage, slice, tick, owner          | `ready-for-agent`[^answer], `needs-triage`[^answer]                                 |
-| `ready-for-human` | Owner implements it, the factory never picks it up  | owner                               | closed                                                                              |
-| `wontfix`         | Will not be actioned                                | owner                               | closed                                                                              |
-| `duplicate`       | Repeats another issue, closed with a link           | triage                              | closed                                                                              |
+| State             | Meaning                                             | Moved in by                         | Next                                                           |
+| ----------------- | --------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------- |
+| `needs-triage`    | Filed, not yet evaluated                            | owner, tick[^new], owner[^answer]   | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate` |
+| `needs-spec`      | Wanted, needs design before work                    | owner                               | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate` |
+| `needs-approval`  | Spec or split waits for the owner's go              | triage, harvest                     | `ready-for-agent`, `needs-info`, `ready-for-human`, `wontfix`  |
+| `ready-for-agent` | Specified and queued for a slice concert            | triage, owner[^approve], tick[^red] | `in-progress`[^epic]                                           |
+| `in-progress`     | Being built: a slice concert, or an epic's children | tick, owner[^changes]               | `in-review`, `ready-for-agent`, `needs-info`, closed[^epic]    |
+| `in-review`       | PR open, waiting on CI and review                   | tick                                | `in-progress`, closed                                          |
+| `needs-info`      | Waiting on an answer                                | triage, slice, tick, owner          | `ready-for-agent`[^answer], `needs-triage`[^answer]            |
+| `ready-for-human` | Owner implements it, the factory never picks it up  | owner                               | closed                                                         |
+| `wontfix`         | Will not be actioned                                | owner                               | closed                                                         |
+| `duplicate`       | Repeats another issue, closed with a link           | triage                              | closed                                                         |
 
 [^new]: The tick files obstacles, gaps and an approved split's children as `needs-triage`.
 
 [^approve]: On approving a spec (`needs-approval`) or answering (`needs-info`).
 
-[^epic]: On a split's approval the tick files the children and moves the epic here. It closes when its last child does.
+[^epic]:
+    When the owner approves a split, moving it to `ready-for-agent`, the tick files the children and moves the epic
+    here. It closes when its last child does.
 
 [^red]: A red run with attempts left or an infra fault, or a closed obstacle (`needs-info`).
 
@@ -153,7 +155,7 @@ flowchart LR
     IN -->|"[triage] low, medium"| RA["ready-for-agent"]
     NA -->|"[owner] approve"| RA
     RA -->|"[tick] build"| IP["in-progress"]
-    NA -->|"[tick] split approved"| IP
+    RA -->|"[tick] split approved"| IP
     IP -->|"[tick] PR"| IR["in-review"]
     IR -->|"[owner, auto-merge] merge"| CL(["closed"])
     IP -->|"[tick] epic done"| CL
@@ -194,8 +196,11 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **One concert at a time.** Parallel waves wait for 10 to 15 good runs.
 - **Pick order.** Finish work first: an encore, then a build, then triage, then a harvest. A tick that routes a settle
   falls through and starts the next action.
-- **Factory block.** It records the ticket's last slice concert id. An answered `needs-info` or a closed blocking
-  obstacle sets the concert to continue, and a red retry clears it.
+- **Factory block.** Readable Markdown below the `<!-- factory -->` marker, ending in one `<!-- factory-data {...} -->`
+  JSON line, the tick's only state: `concert`, the last concert it routed; `triage`, the last ok triage, which a
+  re-triage continues; `result`, that triage's output; `pending`, set while the result's labels are not yet applied; and
+  `filed`, an approved split's children. A line the tick cannot read halts the factory. The slice concert to continue
+  joins it with the build: an answered `needs-info` or a closed blocking obstacle sets it, and a red retry clears it.
 - **Encore.** A PR with changes requested, or a `ready-for-agent` ticket whose block names a concert to continue, runs
   an encore of that concert. With no concert to continue the build is a fresh perform.
 - **Blockers.** A ticket is picked when every blocker (a forge dependency) is closed, or is `in-review`, in which case

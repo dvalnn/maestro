@@ -82,7 +82,7 @@ const CONTRACT_PATHS = [
 	"justfile",
 	"mise.toml",
 	".maestro/",
-	"scripts/factory.ts",
+	"scripts/factory/",
 ];
 /** File names that set a contract in any directory. */
 const MANIFESTS = ["package.json", "bun.lock"];

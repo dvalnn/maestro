@@ -82,6 +82,8 @@ def call(method: str, path: str, payload: object | None = None) -> object:
             body = response.read().decode()
     except urllib.error.HTTPError as error:
         sys.exit(f"{error.code} from {method} {path}: {error.read().decode()[:ERROR_PREVIEW]}")
+    except urllib.error.URLError as error:
+        sys.exit(f"cannot reach {request.full_url}: {error.reason}\ncheck the network, then retry")
     return cast(object, json.loads(body)) if body.strip() else None
 
 
