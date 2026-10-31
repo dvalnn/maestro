@@ -100,7 +100,7 @@ flowchart TD
     class HALT fault
 ```
 
-1. In a workspace: apply, check, describe, push `factory/i<n>`, open the PR, arm auto-merge on low risk.
+1. In a workspace: apply, describe, push `factory/i<n>`, open the PR, arm auto-merge on low risk.
 2. With the agent's question, blocked by its obstacle issue.
 3. File the obstacle and requeue the ticket; the attempt is kept.
 4. New obstacles and gaps, as `needs-triage`.
@@ -201,9 +201,11 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   falls through and starts the next action.
 - **Factory block.** Readable Markdown below the `<!-- factory -->` marker, ending in one `<!-- factory-data {...} -->`
   JSON line, the tick's only state: `concert`, the last concert it routed; `triage`, the last ok triage, which a
-  re-triage continues; `result`, that triage's output; `pending`, set while the result's labels are not yet applied; and
-  `filed`, an approved split's children. A line the tick cannot read halts the factory. The slice concert to continue
-  joins it with the build: an answered `needs-info` or a closed blocking obstacle sets it, and a red retry clears it.
+  re-triage continues; `result`, that triage's output; `pending`, set while the result's labels are not yet applied;
+  `filed`, an approved split's children; `slice`, the slice concert the last build started; `attempts`, the red runs
+  spent; and `failure`, the reason the last slice failed. A line the tick cannot read halts the factory. The slice
+  concert to continue joins it with the build: an answered `needs-info` or a closed blocking obstacle sets it, and a red
+  retry clears it.
 - **Answers.** The owner answers triage's questions by editing the ask above the marker, then moving the ticket to
   `needs-triage`. A re-triage reads the ask alone, never comments, and an encore with nothing changed is refused, which
   halts the factory.
@@ -211,6 +213,18 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   an encore of that concert. With no concert to continue the build is a fresh perform.
 - **Blockers.** A ticket is picked when every blocker (a forge dependency) is closed, or is `in-review`, in which case
   it stacks on that blocker's PR, two deep at most.
+- **Build.** A ready ticket is built when its triage left a spec and it is no split's epic: `.maestro/slice.ts` with the
+  spec and the ask as `--request`, and its risk's tier as `--tier` and `--preset`. The ticket moves to `in-progress` as
+  the perform starts.
+- **Landing.** An ok slice lands in a fresh jj workspace `factory-i<n>` on `main` as fetched from `origin`, at
+  `$XDG_CACHE_HOME/maestro-factory/i<n>`: `maestro cs apply`, then `jj describe` with the spec's subject and
+  `Closes #N`. It runs no check of its own: the slice's gate passed in its lane, and CI checks the PR against `main`.
+  Once the PR is open the ticket moves to `in-review` and the workspace is forgotten and removed. A landing that fails
+  halts the factory and keeps the workspace; closing the halt issue lands the slice again in a fresh one.
+- **Reports.** Each settled slice's obstacles and gaps are filed as `needs-triage` in the milestone, an obstacle as
+  `kind/bug` and a gap as `kind/enhancement`, with `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line: the
+  first 12 hex of SHA-256 over the text lower-cased, whitespace runs folded to one space and trimmed. A text whose line
+  an open issue carries is not filed again.
 - **Attempts.** A red run spends an attempt and is retried with a fresh perform. After 2 attempts the ticket goes to
   `needs-info`.
 - **Blocked.** A blocked agent moves its ticket to `needs-info` with its question and spends no attempt. An obstacle
@@ -222,7 +236,9 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **Duplicates and related issues.** A duplicate is closed at once as `state/duplicate` with a back-reference. A related
   issue gets `Relates to #N` in the factory block and the PR body.
 - **Tour.** `<version>.i<n>`, such as `v0.1.0.i142`.
-- **PRs.** One change per ticket, pushed by forge-bot as `factory/i<n>`, with the subject from the spec and `Closes #N`.
+- **PRs.** One change per ticket, pushed by forge-bot over HTTPS as `factory/i<n>`, replacing what the branch held, with
+  the subject from the spec and `Closes #N`. The PR to `main` is titled with the subject, and its body holds
+  `Closes #N`, the concert, its tokens, `Relates to` links, the spec's acceptance and the review's upheld findings.
 
 ## Setting up
 

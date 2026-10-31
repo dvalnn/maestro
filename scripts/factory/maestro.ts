@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { closeSync, openSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { isJson, type Json } from "./json";
 
 /** How many of a milestone's newest concerts the tick reads: one runs at a time, so the newest settle is among them. */
@@ -22,6 +22,16 @@ export type Result = {
 	reason?: string;
 	outputs: Record<string, unknown>;
 };
+/**
+ * What a settled concert's agents reported, and its spend: `tokens` totals its `tokens_*` metrics but
+ * `tokens_reasoning`, and `upheld` is the body of the last review round's upheld findings, if a review ran.
+ */
+export type Report = {
+	tokens: number;
+	obstacles: string[];
+	gaps: string[];
+	upheld?: string;
+};
 
 /** maestro as the tick sees it, through its `--json` documents. */
 export type Maestro = {
@@ -33,6 +43,12 @@ export type Maestro = {
 	 * @throws Error with the log's tail when it exits before announcing one, or does not announce one in time.
 	 */
 	start(args: string[], log: string): Promise<string>;
+	report(id: string): Promise<Report>;
+	/**
+	 * Applies concert `id`'s changeset to the checkout at `dir`, staged.
+	 * @throws Error with maestro's message when it does not apply.
+	 */
+	apply(id: string, dir: string): Promise<void>;
 };
 
 function str(o: Json, key: string): string {
@@ -61,6 +77,33 @@ function resultOf(doc: unknown): Result {
 	};
 }
 
+/** Output tokens already count reasoning tokens. */
+const tokensOf = (metrics: Json) =>
+	Object.entries(metrics)
+		.filter(([k]) => k.startsWith("tokens_") && k !== "tokens_reasoning")
+		.reduce((sum, [, v]) => sum + (typeof v === "number" ? v : 0), 0);
+
+const strings = (v: unknown) =>
+	Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
+
+/** Each report's `key` entries, over the `reports` of an `ls <concert> --json` document. */
+const entriesOf = (reports: unknown, key: string) =>
+	Object.values(isJson(reports) ? reports : {}).flatMap((r) =>
+		isJson(r) ? strings(r[key]) : [],
+	);
+
+/** The body of the `upheld` file the last fresh `upheld` port of an `art <concert> --json` list names. */
+function upheldOf(artifacts: unknown): string | undefined {
+	const last = (Array.isArray(artifacts) ? artifacts : [])
+		.filter(isJson)
+		.findLast((a) => a.port === "upheld" && a.stale !== true);
+	if (typeof last?.path !== "string" || !existsSync(last.path))
+		return undefined;
+	return readFileSync(last.path, "utf8")
+		.replace(/^# .*\n/, "")
+		.trim();
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** What a perform that announced no concert printed: its refusal's diagnostics, one per line, else the log's tail. */
 function output(log: string): string {
@@ -80,6 +123,22 @@ function output(log: string): string {
 				`${d.code}: ${d.message}${typeof d.hint === "string" ? `\n  ${d.hint}` : ""}`,
 		)
 		.join("\n");
+}
+
+/**
+ * Runs `bin <args>`.
+ * @throws Error with its stderr when it exits non-zero.
+ */
+async function run(bin: string, args: string[]) {
+	const child = Bun.spawn([bin, ...args], { stdout: "ignore", stderr: "pipe" });
+	const [err, code] = await Promise.all([
+		new Response(child.stderr).text(),
+		child.exited,
+	]);
+	if (code !== 0)
+		throw new Error(
+			`maestro ${args.slice(0, 2).join(" ")}: ${err.trim() || `exit ${code}`}`,
+		);
 }
 
 /**
@@ -117,6 +176,20 @@ export function maestro(bin = "maestro"): Maestro {
 			return rows.map(concertOf);
 		},
 		result: async (id) => resultOf(await json(bin, ["wait", id])),
+		report: async (id) => {
+			const [doc, artifacts] = await Promise.all([
+				json(bin, ["ls", id]),
+				json(bin, ["art", id]),
+			]);
+			if (!isJson(doc)) throw new Error("maestro ls: not an object");
+			return {
+				tokens: tokensOf(isJson(doc.metrics) ? doc.metrics : {}),
+				obstacles: entriesOf(doc.reports, "obstacles"),
+				gaps: entriesOf(doc.reports, "gaps"),
+				upheld: upheldOf(artifacts),
+			};
+		},
+		apply: (id, dir) => run(bin, ["cs", "apply", id, "-C", dir]),
 		start: async (args, log) => {
 			const fd = openSync(log, "w");
 			const child = spawn(bin, [...args, "--json"], {

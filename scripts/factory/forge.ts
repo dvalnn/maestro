@@ -1,10 +1,22 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { isJson, type Json } from "./json";
 
 const FORGE_PY = resolve(
 	import.meta.dir,
 	"../../.claude/skills/forgejo/scripts/forge.py",
 );
+/**
+ * Prints the `origin` forge's host, owner, repo and forge-bot token on one line, through forge.py's own lookup, so the
+ * token is read one way only.
+ */
+const CREDENTIALS = [
+	"import sys",
+	"sys.path.insert(0, sys.argv[1])",
+	"import forge",
+	"host, owner, repo = forge.origin()",
+	"print(host, owner, repo, forge.token(host))",
+].join("; ");
+const CREDENTIAL_FIELDS = 4;
 /** The forge's largest page. */
 const PAGE = 50;
 
@@ -19,10 +31,18 @@ export type Issue = {
 /** An open pull request and its diffstat. */
 export type Pull = {
 	number: number;
+	/** The branch it merges. */
+	head: string;
 	body: string;
 	additions: number;
 	deletions: number;
 	files: number;
+};
+export type NewPull = {
+	title: string;
+	body: string;
+	head: string;
+	base: string;
 };
 export type NewIssue = {
 	title: string;
@@ -51,30 +71,82 @@ export type Forge = {
 	file(issue: NewIssue): Promise<number>;
 	/** Marks `issue` blocked by `blocker`, unless it already is. */
 	depend(issue: number, blocker: number): Promise<void>;
+	/** The open issues `issue` depends on. */
+	blockers(issue: number): Promise<number[]>;
+	/** Pushes `commit` of the checkout at `dir` as `branch` over HTTPS, replacing what the branch held. */
+	push(dir: string, commit: string, branch: string): Promise<void>;
+	/** Opens a pull request and returns its number. */
+	openPull(pull: NewPull): Promise<number>;
 };
 
 /**
- * The decoded response of one forge.py call.
- * @throws Error with forge.py's message when the call fails.
+ * The stdout of `command`, run as forge-bot.
+ * @throws Error with its stderr when it fails.
  */
-async function api(method: string, path: string, body?: unknown) {
-	const child = Bun.spawn(
-		["python3", FORGE_PY, "api", method, path, ...(body ? ["-"] : [])],
-		{
-			stdin: body ? new TextEncoder().encode(JSON.stringify(body)) : "ignore",
-			stdout: "pipe",
-			stderr: "pipe",
-			env: { ...process.env, FJ_USE_BOT: "1" },
-		},
-	);
+async function run(
+	command: string[],
+	{
+		stdin,
+		cwd,
+		env,
+	}: { stdin?: string; cwd?: string; env?: Record<string, string> } = {},
+) {
+	const child = Bun.spawn(command, {
+		cwd,
+		stdin: stdin === undefined ? "ignore" : new TextEncoder().encode(stdin),
+		stdout: "pipe",
+		stderr: "pipe",
+		env: { ...process.env, FJ_USE_BOT: "1", ...env },
+	});
 	const [out, err, code] = await Promise.all([
 		new Response(child.stdout).text(),
 		new Response(child.stderr).text(),
 		child.exited,
 	]);
 	if (code !== 0) throw new Error(`forge: ${err.trim() || `exit ${code}`}`);
+	return out;
+}
+
+/**
+ * The decoded response of one forge.py call.
+ * @throws Error with forge.py's message when the call fails.
+ */
+async function api(method: string, path: string, body?: unknown) {
+	const out = await run(
+		["python3", FORGE_PY, "api", method, path, ...(body ? ["-"] : [])],
+		{ stdin: body ? JSON.stringify(body) : undefined },
+	);
 	const decoded: unknown = out.trim() ? JSON.parse(out) : undefined;
 	return decoded;
+}
+
+/**
+ * Pushes `refspec` from the checkout at `dir` to the `origin` forge over HTTPS as forge-bot.
+ * @throws Error with git's message when the push fails.
+ */
+async function push(dir: string, refspec: string) {
+	const fields = (
+		await run(["python3", "-I", "-c", CREDENTIALS, dirname(FORGE_PY)])
+	)
+		.trim()
+		.split(" ");
+	const [host, owner, repo, token] = fields;
+	if (fields.length !== CREDENTIAL_FIELDS || !token)
+		throw new Error("forge: forge.py gave no credentials for the push");
+	const basic = Buffer.from(`${token}:`).toString("base64");
+	// The header goes through git's environment, so the token reaches no argv, config file or remote URL.
+	await run(
+		["git", "push", `https://${host}/${owner}/${repo}.git`, `+${refspec}`],
+		{
+			cwd: dir,
+			env: {
+				GIT_TERMINAL_PROMPT: "0",
+				GIT_CONFIG_COUNT: "1",
+				GIT_CONFIG_KEY_0: "http.extraHeader",
+				GIT_CONFIG_VALUE_0: `Authorization: Basic ${basic}`,
+			},
+		},
+	);
 }
 
 function object(value: unknown, what: string): Json {
@@ -111,6 +183,7 @@ function issueOf(o: Json): Issue {
 
 const pullOf = (o: Json): Pull => ({
 	number: num(o, "number"),
+	head: text(object(o.head, "head"), "ref"),
 	body: text(o, "body"),
 	additions: num(o, "additions"),
 	deletions: num(o, "deletions"),
@@ -207,5 +280,14 @@ export function forge(): Forge {
 				index: blocker,
 			});
 		},
+		blockers: async (issue) => {
+			const path = `/issues/${issue}/dependencies`;
+			return objects(await api("GET", path), path)
+				.filter((b) => text(b, "state") === "open")
+				.map((b) => num(b, "number"));
+		},
+		push: (dir, commit, branch) => push(dir, `${commit}:refs/heads/${branch}`),
+		openPull: async (pull) =>
+			num(object(await api("POST", "/pulls", pull), "pull"), "number"),
 	};
 }

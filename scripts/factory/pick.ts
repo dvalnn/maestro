@@ -1,5 +1,5 @@
 import type { Issue, Pull } from "./forge";
-import { askOf } from "./route";
+import { askOf, type Data, RISKS, type Risk } from "./route";
 import { INTAKE, STATES, type State } from "./transitions";
 
 /** The states whose issues have a PR, or are building one. */
@@ -16,6 +16,35 @@ export const isIntake = (issue: Issue) => {
 /** The intake issue to triage next: the oldest. */
 export const pick = (issues: readonly Issue[]): Issue | undefined =>
 	issues.filter(isIntake).sort((a, b) => a.number - b.number)[0];
+
+/** The slice tier, and preset, of each risk (factory.md, Rules: Risk and tier). */
+const TIER: Record<Risk, string> = {
+	low: "small",
+	medium: "ordinary",
+	high: "risky",
+};
+
+/** The slice tier of `issue`: its `risk/` label's, else that of the risk triage gave it. */
+export const tierOf = (issue: Issue, triaged: Risk) =>
+	TIER[RISKS.find((r) => issue.labels.includes(`risk/${r}`)) ?? triaged];
+
+/**
+ * The `ready-for-agent` issues a build may take, oldest first: each with a spec, no split's epic among them. Their
+ * forge dependencies are left to the caller.
+ */
+export const buildable = <T extends { issue: Issue; data: Data }>(
+	entries: readonly T[],
+): T[] =>
+	entries
+		.filter(
+			({ issue, data }) =>
+				stateOf(issue) === "ready-for-agent" &&
+				!data.pending &&
+				data.result?.spec !== undefined &&
+				data.result.children === undefined &&
+				!issue.labels.includes("kind/epic"),
+		)
+		.sort((a, b) => a.issue.number - b.issue.number);
 
 /** The tour of `issue`'s concerts in `milestone` (factory.md, Rules: Tour). */
 export const tourOf = (milestone: string, issue: number) =>

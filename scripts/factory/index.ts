@@ -1,17 +1,40 @@
-// One pass of the factory (docs/agents/factory.md, zoom 1): it triages the milestone's intake issues.
+// One pass of the factory (docs/agents/factory.md, zoom 1): it routes settles, builds a ready ticket or triages one.
 import { dlopen, FFIType, read } from "bun:ffi";
 import { mkdirSync, openSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { type Forge, forge, type Issue } from "./forge";
-import { type Concert, type Maestro, maestro, type Result } from "./maestro";
-import { isIntake, issueText, pick, snapshot, stateOf, tourOf } from "./pick";
+import { type Forge, forge, type Issue, type NewPull } from "./forge";
+import { type Landing, landing } from "./land";
 import {
+	type Concert,
+	type Maestro,
+	maestro,
+	type Report,
+	type Result,
+} from "./maestro";
+import {
+	buildable,
+	isIntake,
+	issueText,
+	pick,
+	snapshot,
+	stateOf,
+	tierOf,
+	tourOf,
+} from "./pick";
+import {
+	ATTEMPTS,
 	type Child,
 	type Data,
 	dataOf,
+	fenced,
+	fingerprintLine,
 	parseTriage,
+	pullBody,
 	relabelled,
+	reportIssue,
+	requestOf,
 	type Triage,
 	triaged,
 	VERDICT_STATE,
@@ -26,21 +49,33 @@ const LOCK_NB = 4;
 /** Linux's EWOULDBLOCK, which is EAGAIN. */
 const EWOULDBLOCK = 11;
 export const HALT = "factory:halt";
-const TRIAGE_FILE = resolve(import.meta.dir, "../../.maestro/triage.ts");
+const REPO = resolve(import.meta.dir, "../..");
+const TRIAGE_FILE = join(REPO, ".maestro/triage.ts");
+const SLICE_FILE = join(REPO, ".maestro/slice.ts");
 /** A bare composition file's pack is its stem. */
 const TRIAGE = { pack: "triage", composition: "triage" };
+const SLICE = { pack: "slice", composition: "slice" };
+/** How a slice's agent reports it blocked (GLOSSARY.md, Blocked). */
+const BLOCKED = "blocked:";
+const BASE = "main";
+/** The states a slice's settle is routed in; an issue the owner moved elsewhere is left alone. */
+const BUILDING: readonly State[] = ["in-progress", "ready-for-agent"];
 /** How many closed issues the backlog snapshot lists. */
 const CLOSED = 20;
 
 export type Options = {
 	milestone: string;
+	/** The preset of each triage; a slice takes its tier's. */
 	preset?: string;
 	/** Where the pass keeps its snapshots and perform logs. */
 	dir: string;
+	/** Where the landing workspaces live. */
+	cache: string;
 };
 export type Deps = {
 	forge: Forge;
 	maestro: Maestro;
+	landing: Landing;
 	/** Takes the pass's lock, false when another pass holds it. */
 	lock: () => boolean;
 	say: (line: string) => void;
@@ -71,13 +106,9 @@ const message = (error: unknown) =>
 
 const isTriage = (c: Concert) =>
 	c.pack === TRIAGE.pack && c.composition === TRIAGE.composition;
-
-/** `text` in a code block whose fence no backtick run inside it can close. */
-const fenced = (text: string) => {
-	const runs = [...text.matchAll(/`+/g)].map((m) => m[0].length + 1);
-	const fence = "`".repeat(Math.max(3, ...runs));
-	return `${fence}text\n${text}\n${fence}`;
-};
+const isSlice = (c: Concert) =>
+	c.pack === SLICE.pack && c.composition === SLICE.composition;
+const branchOf = (issue: number) => `factory/i${issue}`;
 
 /** Files the halt issue: `lead`, then `detail` verbatim in a code block, then what to do next. */
 async function halt(
@@ -106,6 +137,15 @@ async function writeBlock(
 ) {
 	const { body } = await forge.issue(number);
 	await forge.edit(number, { body: withBlock(body, state, data) });
+}
+
+/** Moves issue `number` to `state`, keeping its other labels. */
+async function move({ forge }: Deps, number: number, state: State) {
+	const { labels } = await forge.issue(number);
+	await forge.setLabels(
+		number,
+		relabelled(labels, ["state"], [`state/${state}`]),
+	);
 }
 
 /** The milestone's open issues with their data, or undefined once it halted on data it cannot read. */
@@ -178,14 +218,160 @@ async function settle(pass: Pass, { issue, data }: Entry, id: string) {
 	return true;
 }
 
-/** Routes each intake issue's newest triage concert the tick has not routed yet; false when it halted. */
+/** Files each obstacle and gap of `report` as a `needs-triage` issue found by `issue`, unless an open issue carries it. */
+async function fileReports(pass: Pass, issue: Issue, report: Report) {
+	const bodies = (await pass.forge.open({})).map((i) => i.body);
+	const found = [
+		...report.obstacles.map((text) => ({ text, kind: "kind/bug" })),
+		...report.gaps.map((text) => ({ text, kind: "kind/enhancement" })),
+	];
+	for (const { text, kind } of found) {
+		const line = fingerprintLine(text);
+		if (bodies.some((b) => b.includes(line))) continue;
+		const filed = reportIssue(text, issue.number);
+		const number = await pass.forge.file({
+			...filed,
+			milestone: issue.milestone,
+			labels: ["state/needs-triage", kind],
+		});
+		bodies.push(filed.body);
+		pass.say(`filed #${number}, found by #${issue.number}`);
+	}
+}
+
+/** Routes failed slice `id` of `entry`: blocked to `needs-info`, else red, spending an attempt (factory.md, Rules). */
+async function fail(
+	pass: Pass,
+	{ issue, data }: Entry,
+	id: string,
+	reason: string,
+) {
+	const blocked = reason.startsWith(BLOCKED);
+	const attempts = (data.attempts ?? 0) + (blocked ? 0 : 1);
+	const state =
+		blocked || attempts >= ATTEMPTS ? "needs-info" : "ready-for-agent";
+	await move(pass, issue.number, state);
+	await writeBlock(pass, issue.number, state, {
+		...data,
+		concert: id,
+		attempts: attempts || undefined,
+		failure: reason,
+	});
+	pass.say(`routed #${issue.number}'s slice to ${state}: ${reason}`);
+}
+
+/** The open PR of `head`, else a new one of `pull`. */
+async function openPull(forge: Forge, pull: NewPull) {
+	const open = (await forge.pulls()).find((p) => p.head === pull.head);
+	return open?.number ?? forge.openPull(pull);
+}
+
+/** Forgets and removes a landed workspace; a failure is a warning, since the next landing replaces a leftover. */
+async function closeWorkspace(pass: Pass, dir: string, name: string) {
+	try {
+		await pass.landing.close(dir, name);
+	} catch (error) {
+		const [reason] = message(error).split("\n");
+		pass.say(`could not remove workspace ${name} at ${dir}: ${reason}`);
+	}
+}
+
+/**
+ * Lands ok slice `id` of `entry` in a fresh workspace and opens its PR, then moves the issue to `in-review`; false when
+ * it halted, keeping the workspace.
+ */
+async function land(
+	pass: Pass,
+	{ issue, data }: Entry,
+	id: string,
+	report: Report,
+) {
+	const name = `factory-i${issue.number}`;
+	const dir = join(pass.cache, `i${issue.number}`);
+	let pull: number;
+	try {
+		const result = data.result;
+		if (!result?.spec) throw new Error(`#${issue.number} holds no spec`);
+		await pass.landing.open(dir, name);
+		await pass.maestro.apply(id, dir);
+		const { subject } = result.spec;
+		const commit = await pass.landing.describe(
+			dir,
+			`${subject}\n\nCloses #${issue.number}\n`,
+		);
+		const head = branchOf(issue.number);
+		await pass.forge.push(dir, commit, head);
+		const body = pullBody({
+			issue: issue.number,
+			concert: id,
+			tokens: report.tokens,
+			upheld: report.upheld ?? "None.",
+			result,
+		});
+		pull = await openPull(pass.forge, {
+			title: subject,
+			body,
+			head,
+			base: BASE,
+		});
+	} catch (error) {
+		await halt(
+			pass,
+			`landing of #${issue.number} failed`,
+			`The slice concert \`${id}\` of #${issue.number} did not land from the workspace \`${dir}\`:`,
+			message(error),
+			"Look at the workspace first: closing this issue lets the next tick replace it with a fresh one.",
+		);
+		return false;
+	}
+	await move(pass, issue.number, "in-review");
+	await writeBlock(pass, issue.number, "in-review", {
+		...data,
+		concert: id,
+		failure: undefined,
+	});
+	await closeWorkspace(pass, dir, name);
+	pass.say(`landed #${issue.number} as PR #${pull}`);
+	return true;
+}
+
+/** Routes slice `id`'s settle onto `entry` (zoom 2), after filing its reports; false when it halted. */
+async function settleSlice(pass: Pass, entry: Entry, id: string) {
+	const [result, report] = await Promise.all([
+		pass.maestro.result(id),
+		pass.maestro.report(id),
+	]);
+	await fileReports(pass, entry.issue, report);
+	if (result.status === "ok") return land(pass, entry, id, report);
+	await fail(pass, entry, id, result.reason ?? `settled ${result.status}`);
+	return true;
+}
+
+/**
+ * The newest concert of `entry`'s tour the tick has yet to route: a slice while the issue is being built, or a triage
+ * of an intake issue.
+ */
+function unrouted(pass: Pass, { issue, data }: Entry) {
+	const tour = tourOf(pass.milestone, issue.number);
+	const state = stateOf(issue);
+	const building = state !== undefined && BUILDING.includes(state);
+	const concert = pass.concerts.find(
+		(c) =>
+			c.tour === tour &&
+			((isSlice(c) && building) || (isTriage(c) && isIntake(issue))),
+	);
+	return concert?.id === data.concert ? undefined : concert;
+}
+
+/** Routes each issue's newest concert the tick has not routed yet; false when it halted. */
 async function route(pass: Pass, entries: Entry[]) {
 	for (const entry of entries) {
-		if (!isIntake(entry.issue)) continue;
-		const tour = tourOf(pass.milestone, entry.issue.number);
-		const concert = pass.concerts.find((c) => c.tour === tour && isTriage(c));
-		if (!concert || concert.id === entry.data.concert) continue;
-		if (!(await settle(pass, entry, concert.id))) return false;
+		const concert = unrouted(pass, entry);
+		if (!concert) continue;
+		const go = isSlice(concert)
+			? await settleSlice(pass, entry, concert.id)
+			: await settle(pass, entry, concert.id);
+		if (!go) return false;
 	}
 	return true;
 }
@@ -254,6 +440,52 @@ async function sync(pass: Pass, entries: Entry[]) {
 	return true;
 }
 
+/** Starts a fresh slice of `entry`'s spec, at its risk's tier, and moves it to `in-progress`; halts on a refusal. */
+async function startSlice(pass: Pass, { issue, data }: Entry) {
+	const result = data.result;
+	if (!result?.spec) return;
+	const tier = tierOf(issue, result.risk);
+	let id: string;
+	try {
+		id = await pass.maestro.start(
+			[
+				"perform",
+				SLICE_FILE,
+				"--request",
+				requestOf(issue, result.spec),
+				"--tier",
+				tier,
+				"--preset",
+				tier,
+				"--tour",
+				tourOf(pass.milestone, issue.number),
+			],
+			join(pass.dir, `i${issue.number}.log`),
+		);
+	} catch (error) {
+		await halt(
+			pass,
+			`build of #${issue.number} did not start`,
+			`The build of #${issue.number} did not start:`,
+			message(error),
+		);
+		return;
+	}
+	await move(pass, issue.number, "in-progress");
+	await writeBlock(pass, issue.number, "in-progress", { ...data, slice: id });
+	pass.say(`building #${issue.number}: concert ${id}`);
+}
+
+/** Builds the oldest buildable issue whose dependencies are all closed; true when there was none. */
+async function build(pass: Pass, entries: Entry[]) {
+	for (const entry of buildable(entries)) {
+		if ((await pass.forge.blockers(entry.issue.number)).length) continue;
+		await startSlice(pass, entry);
+		return false;
+	}
+	return true;
+}
+
 /** Starts triage of the oldest intake issue, an encore of its last triage when it has one; halts on a refusal. */
 async function triage(pass: Pass, entries: Entry[]) {
 	const issue = pick(
@@ -303,7 +535,8 @@ async function triage(pass: Pass, entries: Entry[]) {
 
 /**
  * One pass: no action when another pass holds the lock, the factory is halted or a concert of the milestone runs;
- * else it routes settled triages, syncs, and starts one triage.
+ * else it routes settled concerts, syncs, and starts one build or else one triage. Each step returns whether the pass
+ * goes on.
  * @throws Error when the milestone does not exist, or the forge or maestro fails or answers what the tick cannot read.
  */
 export async function pass(deps: Deps, options: Options): Promise<void> {
@@ -320,7 +553,7 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 	const running = concerts.find((c) => c.status === "running");
 	if (running) return deps.say(`concert ${running.id} is still running`);
 	const pass: Pass = { ...deps, ...options, milestoneId, concerts };
-	for (const step of [route, sync, triage]) {
+	for (const step of [route, sync, build, triage]) {
 		const entries = await load(pass);
 		if (!entries || !(await step(pass, entries))) return;
 	}
@@ -342,6 +575,10 @@ if (import.meta.main) {
 			...values,
 			milestone: values.milestone,
 			dir: join(runtime, "maestro-factory"),
+			cache: join(
+				process.env.XDG_CACHE_HOME || join(homedir(), ".cache"),
+				"maestro-factory",
+			),
 		};
 	} catch (error) {
 		console.error(
@@ -355,6 +592,7 @@ if (import.meta.main) {
 			{
 				forge: forge(),
 				maestro: maestro(),
+				landing: landing(REPO, BASE),
 				lock: () => lock(join(options.dir, "lock")),
 				say: console.log,
 			},
