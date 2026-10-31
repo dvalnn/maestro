@@ -33,7 +33,7 @@ flowchart LR
     NI ==>|"answer ⁴"| Q
     NI ==>|"answer ⁴"| IN
 
-    classDef owner fill:#fff4d6,stroke:#c9a227
+    classDef owner stroke:#d4a72c,stroke-width:3px
     class GATE,NI owner
 ```
 
@@ -136,51 +136,45 @@ An edge in the diagrams names who causes the move; the tick sets the label unles
     answer by the owner, or the tick seeing its obstacle closed, sends it to `ready-for-agent` with the concert to
     continue.
 
-The owner may move any open issue to `ready-for-human` or `wontfix`; the diagram draws it from `needs-approval` only.
+Moves forward:
 
 ```mermaid
-stateDiagram-v2
-    direction TB
-    state "intake" as IN {
-        state "needs-triage" as NT
-        state "needs-spec" as NS
-    }
-    state "needs-approval" as NA
-    state "ready-for-agent" as RA
-    state "in-progress" as IP
-    state "in-review" as IR
-    state "needs-info" as NI
-    state "ready-for-human" as RH
-    state "wontfix" as WF
-    state "duplicate" as DU
-    state "closed" as CL
+flowchart LR
+    S(( )) -->|"[owner, tick] filed"| IN["intake ¹"]
+    S -->|"[harvest] lesson"| NA["needs-approval"]
+    IN -->|"[triage] high, split"| NA
+    IN -->|"[triage] low, medium"| RA["ready-for-agent"]
+    NA -->|"[owner] approve"| RA
+    RA -->|"[tick] build"| IP["in-progress"]
+    NA -->|"[tick] split approved"| IP
+    IP -->|"[tick] PR"| IR["in-review"]
+    IR -->|"[owner, auto-merge] merge"| CL(["closed"])
+    IP -->|"[tick] epic done"| CL
+    IN -->|"[triage] dup"| DU(["duplicate"])
+    NA -->|"[owner] take, drop"| OUT(["ready-for-human, wontfix ²"])
 
-    [*] --> NT: [owner] filed
-    [*] --> NT: [tick] filed
-    [*] --> NA: [harvest] lesson
-    IN --> RA: [triage] low, medium
-    IN --> NA: [triage] high, split
-    IN --> NI: [triage] no spec
-    IN --> DU: [triage] dup
-    NA --> RA: [owner] approve spec
-    NA --> IP: [tick] split approved
-    NA --> NI: [owner] ask
-    NA --> RH: [owner] take
-    NA --> WF: [owner] drop
-    RA --> IP: [tick] build
-    IP --> IR: [tick] PR
-    IP --> RA: [slice] red, infra
-    IP --> NI: [slice, tick] blocked
-    IP --> CL: [tick] epic done
-    IR --> IP: [owner] changes
-    IR --> CL: [owner, auto-merge] merge
-    NI --> RA: [owner] answer
-    NI --> RA: [tick] obstacle closed
-    NI --> NT: [owner] answer triage
-    CL --> [*]
-    WF --> [*]
-    DU --> [*]
+    classDef owner stroke:#d4a72c,stroke-width:3px
+    class NA owner
 ```
+
+Moves back:
+
+```mermaid
+flowchart LR
+    IN["intake ¹"] -->|"[triage] no spec"| NI["needs-info"]
+    NA["needs-approval"] -->|"[owner] ask"| NI
+    IP["in-progress"] -->|"[slice, tick] blocked"| NI
+    NI -->|"[owner] answer, [tick] obstacle closed"| RA["ready-for-agent"]
+    NI -.->|"[owner] answer triage"| IN
+    IP -->|"[slice] red, infra"| RA
+    IR["in-review"] -->|"[owner] changes"| IP
+
+    classDef owner stroke:#d4a72c,stroke-width:3px
+    class NA,NI owner
+```
+
+1. `needs-triage` or `needs-spec`.
+2. The owner may move any open issue here; the diagram draws it from `needs-approval` only.
 
 Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-labels.md`).
 
