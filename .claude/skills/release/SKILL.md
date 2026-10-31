@@ -10,8 +10,8 @@ description:
 
 Versions are semver: a patch bump for a change that breaks nothing, a minor bump for one that breaks (`0.y.z` until a
 1.0). A stable release `v<x.y.z>` is the Forgejo milestone of the same name. A pre-release `v<x.y.z>-rc.<n>` is an
-interim build of the release a milestone is gathering, for field testing before it is promoted; it has no milestone,
-and the promoted release is a new cut at `x.y.z`. Cutting either needs the owner's go, which also covers its push and
+interim build of the release a milestone is gathering, for field testing before it is promoted; it has no milestone, and
+the promoted release is a new cut at `x.y.z`. Cutting either needs the owner's go, which also covers its push and
 publish. Run every command from the repository root.
 
 `<version>` below is the version without its `v`, `<tag>` is `v<version>`, and `<prev>` is the tag of the last release
@@ -23,8 +23,8 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
    milestone, created if it does not exist; the milestone ids come from `forge.py api GET /milestones` (the `forgejo`
    skill). A pre-release has no gate: it cuts whatever `main` holds.
 2. **Release review.** Step 6 of `docs/agents/implementation-loop.md`: one opus read-only subagent over
-   `jj diff --from <prev> --to main@origin`. Accepted findings become issues in the milestone and land as
-   their own changes before the cut. Done when no finding blocks the release.
+   `jj diff --from <prev> --to main@origin`. Accepted findings become issues in the milestone and land as their own
+   changes before the cut. Done when no finding blocks the release.
 3. **Notes.** Draft them in the scratchpad in the previous release's structure and voice (read it with
    `forge.py api GET '/releases?limit=1'`): a two-line lead naming the theme, `## Install or upgrade` with the pinned
    version, `## Upgrade notes` for every breaking change a user of the previous release must act on, `## Added`,
