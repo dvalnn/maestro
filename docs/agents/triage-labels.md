@@ -16,7 +16,7 @@ keeps it to one.
 | `wontfix`         | `state/wontfix`         | Will not be actioned; close it too       |
 
 "Done" is the forge's closed state, not a label. A closed issue keeps its `kind/` label and drops its `state/` one,
-unless it is `state/wontfix`.
+unless it is `state/wontfix`; `.forgejo/workflows/clear-state-on-close.yml` does the dropping when an issue closes.
 
 A state says how ready an issue is, never when it ships: the milestone says that (`issue-tracker.md`). An open issue
 with no milestone is icebox; no label marks it.
