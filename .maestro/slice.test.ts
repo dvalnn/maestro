@@ -1,12 +1,17 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CodeContext } from "@maestro/sdk";
-import { pack } from "../scripts/pack";
 import { upheldOf } from "./slice";
+import {
+	classics,
+	maestro,
+	scratch,
+	stubbed,
+	stubOutputs,
+	targetRepo,
+} from "./stub";
 
-const scratch = mkdtempSync(join(tmpdir(), "slice-"));
 const ctx = { scratch } as CodeContext;
 
 const finding = (id: string, blocking: boolean) => ({
@@ -110,34 +115,6 @@ const seated: [string, Record<string, [string, string]>][] = [
 	],
 ];
 
-const root = join(import.meta.dir, "..");
-const built = pack(join(root, "packs/classics"), join(scratch, "classics"));
-
-/** Runs the CLI on `args` with `env`, its data under `data`, and returns its stdout once it exits 0. */
-async function maestro(
-	args: string[],
-	data = mkdtempSync(join(scratch, "data-")),
-	env: Record<string, string> = {},
-) {
-	const run = Bun.spawn(
-		[process.execPath, join(root, "packages/cli/src/maestro.ts"), ...args],
-		{
-			cwd: root,
-			env: {
-				PATH: process.env.PATH,
-				XDG_DATA_HOME: data,
-				XDG_CONFIG_HOME: join(scratch, "config"),
-				...env,
-			},
-			stdout: "pipe",
-			stderr: "pipe",
-		},
-	);
-	const out = await new Response(run.stdout).text();
-	expect(await run.exited).toBe(0);
-	return out;
-}
-
 /** The arguments that run `verb` on `.maestro/slice.ts` under `--preset tier` with the packed classics. */
 const slice = async (verb: string, tier: string) => [
 	verb,
@@ -150,7 +127,7 @@ const slice = async (verb: string, tier: string) => [
 	tier,
 	"--json",
 	"-c",
-	`packs=[${await built}]`,
+	`packs=[${await classics}]`,
 ];
 
 test.each(seated)(
@@ -183,40 +160,17 @@ test.each(seated)(
 test.each(seated)(
 	"a stub perform under --preset %s continues the builder and the lens in their sessions across review rounds",
 	async (tier, runtimes) => {
-		const target = mkdtempSync(join(scratch, "target-"));
-		const git = (...args: string[]) =>
-			Bun.spawnSync(["git", "-C", target, ...args], {
-				env: {
-					...process.env,
-					GIT_AUTHOR_NAME: "t",
-					GIT_AUTHOR_EMAIL: "t@t",
-					GIT_COMMITTER_NAME: "t",
-					GIT_COMMITTER_EMAIL: "t@t",
-				},
-			});
-		git("init", "-q", "-b", "main");
-		writeFileSync(join(target, "a.ts"), "a\n");
-		git("add", ".");
-		git("commit", "-qm", "init");
-		const outputs = mkdtempSync(join(scratch, "outputs-"));
+		const target = targetRepo();
 		const flagged = {
 			clean: false,
 			findings: [finding("F1", true)],
 		};
-		const scripted = {
+		const outputs = stubOutputs({
 			"reviewer/findings.json": flagged,
 			"fixes[0]/reviewer/findings.json": flagged,
 			"skeptic/verdicts.json": held("F1"),
 			"fixes/skeptic/verdicts.json": held("F1"),
-		};
-		for (const [path, value] of Object.entries(scripted)) {
-			mkdirSync(join(outputs, path, ".."), { recursive: true });
-			writeFileSync(join(outputs, path), JSON.stringify(value));
-		}
-		const stubbed = Object.keys(runtimes).flatMap((p) => [
-			"-c",
-			`profiles.${p}.runtime.harness=stub`,
-		]);
+		});
 		const data = mkdtempSync(join(scratch, "data-"));
 		const performed = JSON.parse(
 			await maestro(
@@ -228,7 +182,7 @@ test.each(seated)(
 					'target.prepare="true"',
 					"-c",
 					'target.checks.all={run: "true", hint: all}',
-					...stubbed,
+					...stubbed(Object.keys(runtimes)),
 				],
 				data,
 				{ MAESTRO_STUB_OUTPUTS: outputs },
