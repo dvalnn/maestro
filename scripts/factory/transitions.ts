@@ -100,8 +100,8 @@ export const TRANSITIONS: readonly Transition[] = [
 	{ from: "duplicate", to: "closed", actor: "tick", event: "close" },
 ];
 
-/** The moves out of `state`, each as `<to> (<actor>: <event>)`. */
-export const nextOf = (state: Node): string[] =>
-	TRANSITIONS.filter((t) => t.from === state).map(
-		(t) => `${t.to} (${t.actor}: ${t.event})`,
-	);
+/** The moves out of `state` for a split or any other issue, each as `<to> (<actor>: <event>)`. */
+export const nextOf = (state: Node, split: boolean): string[] =>
+	TRANSITIONS.filter(
+		(t) => t.from === state && t.event !== (split ? "build" : "split approved"),
+	).map((t) => `${t.to} (${t.actor}: ${t.event})`);

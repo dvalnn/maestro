@@ -231,7 +231,7 @@ export function withBlock(body: string, state: State, data: Data): string {
 		"",
 		`- State: \`${state}\``,
 		...resultLines(data.result, data.filed ?? []),
-		...section("Next", list(nextOf(state))),
+		...section("Next", list(nextOf(state, data.result?.verdict === "split"))),
 		...(data.concert ? [`Last concert: \`${data.concert}\``, ""] : []),
 		`<!-- factory-data ${json} -->`,
 		"",
