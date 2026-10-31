@@ -12,10 +12,13 @@ keeps it to one.
 | `needs-info`      | `state/needs-info`      | Waiting on reporter for more information |
 | `ready-for-agent` | `state/ready-for-agent` | Fully specified, ready for an AFK agent  |
 | `ready-for-human` | `state/ready-for-human` | Requires human implementation            |
-| `deferred`        | `state/deferred`        | Ruled out of this release; revisit later |
+| `needs-spec`      | `state/needs-spec`      | Wanted, but needs design before work     |
 | `wontfix`         | `state/wontfix`         | Will not be actioned; close it too       |
 
 "Done" is the forge's closed state, not a label. A closed issue keeps its `kind/` label and drops its `state/` one,
 unless it is `state/wontfix`.
+
+A state says how ready an issue is, never when it ships: the milestone says that (`issue-tracker.md`). An open issue
+with no milestone is icebox; no label marks it.
 
 Read the forge's list before using a name: `fj` refuses a label the repo does not have.

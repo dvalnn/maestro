@@ -7,7 +7,8 @@ with new ideas.
 
 ## Mission Goals:
 
-1. Ship maestro through its `v0.1.0-beta.<n>` releases toward a stable v0.1.0. Each release is a Forgejo milestone
+1. Ship maestro as `v0.1.0`, then by semver: a patch bump for a change that breaks nothing, a minor bump for one that
+   breaks, and a `-rc.<n>` pre-release before a minor for field testing. Each stable release is a Forgejo milestone
    triaged from real use, mostly maestro building maestro through `.maestro/slice.ts`. Scope must be kept contained.
    KISS and YAGNI first -- we don't chase convoluted edge cases nor drive-by nice to haves without having a clear reason
    to do so.

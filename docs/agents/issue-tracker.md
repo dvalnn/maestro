@@ -12,8 +12,9 @@ Issues live on the forge, [`tiago/maestro`](https://git.amorimcasa.org/tiago/mae
   comment saying what changed and who agreed it.
 - **Labels.** One `kind/` and one `state/` label (`triage-labels.md`). Both scopes are exclusive, so adding a `state/`
   label replaces the old one.
-- **Milestone.** The release that ships it (`v0.1.0-beta.<n>`), `Next release` when deferred to the release after, or
-  none for an indefinite deferral.
+- **Milestone.** The release that ships it, named by its version (`v0.1.0`). Only the next release or two have one; an
+  issue with none is icebox, an indefinite deferral. Planned but not ready is a milestone beside `state/needs-spec`.
+  Pre-releases (`-rc.<n>`) have no milestone: they are cuts toward the one that does.
 - **Closing.** A commit on `main` whose description says `Closes #N` closes it when the owner pushes. A slice's report
   is the closing comment (below). Nothing else closes an issue.
 

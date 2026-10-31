@@ -53,7 +53,7 @@ A slice run as the slice composition adds `Leave your changes uncommitted; maest
    lane splits from `main` (`target.base`) by default; a slice that depends on work not yet on `main` forks from that
    work's change instead (`-c target.base=<commit>`). Start it detached from the conductor's session (`setsid -f`, as
    the `maestro` skill's step 4 shows), never as a session background task: a rewind or a session end cancels it. Put it
-   on its release's tour, `release.<channel>.<number>` such as `--tour release.beta.6`, so `ls` lists a release's slices
+   on its release's tour, `release.<version>` such as `--tour release.0.1.0`, so `ls` lists a release's slices
    together.
 
 3. **Mechanical gate** (conductor). The conductor runs `just check` itself. Anything a linter can check stays in Biome,
