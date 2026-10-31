@@ -22,7 +22,7 @@ const IR_FIXTURE = join(
 );
 const A = { node: "a", expansion: "" };
 const V4 = 4;
-const CURRENT_VERSION = 6;
+const CURRENT_VERSION = 7;
 /** The record store schema at version 4, the oldest one an upgrade starts from. */
 const V4_SCHEMA = `
 CREATE TABLE concerts (
@@ -168,7 +168,7 @@ test("a record store of another schema version is refused, and one of this versi
 	const path = join(dir, "record.db");
 	openRecord(path).close();
 	openRecord(path).close();
-	for (const version of [1, 7]) {
+	for (const version of [1, 8]) {
 		const db = new Database(path);
 		db.exec(`PRAGMA user_version = ${version}`);
 		db.close();
@@ -185,7 +185,9 @@ test("a version-4 record store opens upgraded, with its rows kept, and reopens u
 	openRecord(fresh).close();
 	await v4Store(path);
 	const record = openRecord(path);
-	expect(record.find("c")).toMatchObject({ id: "c", status: "ok" });
+	const found = record.find("c");
+	expect(found).toMatchObject({ id: "c", status: "ok" });
+	expect(found).not.toHaveProperty("limits");
 	record.close();
 	expect(userVersion(path)).toBe(CURRENT_VERSION);
 	expect(columns(path)).toEqual(columns(fresh));

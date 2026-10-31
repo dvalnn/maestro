@@ -300,6 +300,7 @@ describe("core config", () => {
 			caps: {},
 			dataRoot: "/data",
 			workspace: "w",
+			limits: {},
 		});
 	});
 
@@ -318,6 +319,27 @@ describe("core config", () => {
 				"CFG.schema",
 				"config 'dataRoot' must NOT have fewer than 1 characters",
 				{ file: WORKSPACE, line: 4 },
+			],
+		]);
+	});
+
+	test("reads limits.timeout as milliseconds, and refuses one that is no duration or longer than a timer holds", () => {
+		const limits = (timeout: string) =>
+			coreConfig(layered([defaults, parse(`limits:\n  timeout: ${timeout}\n`)]))
+				.limits;
+		expect(limits("2h")).toEqual({ timeout: 7_200_000 });
+		expect(refusal(() => limits("2 hours"))).toEqual([
+			[
+				"CFG.schema",
+				"config 'limits.timeout' '2 hours' is not a duration",
+				{ file: WORKSPACE, line: 2 },
+			],
+		]);
+		expect(refusal(() => limits("30d"))).toEqual([
+			[
+				"CFG.schema",
+				"config 'limits.timeout' '30d' is longer than 2147483647ms",
+				{ file: WORKSPACE, line: 2 },
 			],
 		]);
 	});

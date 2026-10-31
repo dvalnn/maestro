@@ -308,9 +308,17 @@ A concert's record keeps its `--preset` and each `-c` as typed, and `ls <concert
 | `dataRoot`    | Where the record and the concerts' files live. Defaults to `$XDG_DATA_HOME/maestro`.                              |
 | `workspace`   | The workspace name a concert records. Defaults to the name of the directory that holds `.maestro/`.               |
 | `caps`        | Caps by name: `instances` caps a concert's node instances, any other name the total of a host count.              |
+| `limits`      | A concert's ceiling, none by default: a `timeout` per performance, and `tokens` summed over every attempt.        |
 | `target`      | The repo host's `repo`, default `base`, `checks`, and per checked-out copy `prepare` and `sparse`.                |
 | `profiles`    | The repo host's profiles by name: `runtime`, `limits`, `context`, `readOnly`, `attachments`, over `profile.yaml`. |
 | `sandbox`     | The repo host's `readOnly` paths, bound into every agent, check and prepare.                                      |
+
+Past a `limits` value the concert is cancelled as `kill` cancels it, and settles `failed` naming the limit, such as
+`passed limits.tokens (2000000): 2104331 tokens`. The token sum is checked as each node instance settles, so a long
+agent is bounded mid-run by its profile's own `limits`. `ls <concert> --json` shows the limits as `limits`, `timeout` in
+milliseconds. A resume reads them as the config stands, its recorded `-c` beneath its own. `timeout` restarts at each
+performance, while the token sum counts earlier attempts, so a resume already past `tokens` fails at its next settled
+instance unless `-c` raises it.
 
 A relative `packs`, `dataRoot`, `target.repo` or other path key is relative to the workspace root, the directory that
 holds `.maestro/`, in the workspace file, a workspace preset and a `-c`, and to the user config directory in the user

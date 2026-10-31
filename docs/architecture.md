@@ -333,10 +333,10 @@ and in a user file or preset to the user config directory. The core:
 
 Who owns what:
 
-- **Core.** Concurrency, caps by name, the data root and the workspace's name.
+- **Core.** Concurrency, caps by name, the data root, the workspace's name and the concert's `limits`.
 - **Host.** `target`, `profiles` and other host namespaces (HOST-12).
 - **Composition.** One param declaration in code covers CLI inputs and tunables, with defaults. For example a
-  repair-loop subcomposition owns its maximum iteration count. The core has no limits concept.
+  repair-loop subcomposition owns its maximum iteration count.
 - **Pack.** Its id, holding its compositions' params, and no other namespace.
 
 Unclaimed keys (D-24): a key that no installed registrant claims is a compose error with a did-you-mean hint. A key
@@ -362,9 +362,9 @@ claimed by an installed but unused registrant is ignored.
   run concurrently with no coordination beyond lane isolation, and the concurrency cap is per concert. The schema is new
   (D-02). It holds concerts with their IR, the id of the process performing them, where their code came from (workspace,
   module directory, file), tour and title, the `--preset` name and each `-c` as typed, which a resume reapplies, the
-  root's params the flags gave, the concert an encore repeats and its fingerprint; node instances, outcomes with
-  reasons, durations, metrics, artifact references and events. No other config is stored: a resume re-reads the config
-  files.
+  root's params the flags gave, the concert an encore repeats and its fingerprint, and the `limits` its latest
+  performance ran under; node instances, outcomes with reasons, durations, metrics, artifact references and events. No
+  config is kept for reuse: a resume re-reads the config files.
 - A resume marks the concert's instance rows **stale**. Each one it reuses or replaces stops being stale, and the
   metrics of a replaced attempt still count towards the concert's.
 - A concert whose process is gone while it is still `running` settles `failed`, by whichever reader finds it, so `wait`
@@ -378,7 +378,7 @@ claimed by an installed but unused registrant is ignored.
   keeps `{}`. NULL means not recorded: an instance from before the upgrade, and every group, loop and scope row. A
   resume that reuses an instance keeps the row. Literals stay readable through the IR and `art`.
 - **Metrics** (CORE-19, D-23) are named additive numbers per node instance. The engine sums each name per concert and
-  attaches no meaning to a name. v1 reports token counts only.
+  attaches no meaning to a name, except the token sum `limits.tokens` bounds. v1 reports token counts only.
 - **Events** are append-only, keyed by node id and expansion path, with the instance's state, timestamps, outcome and
   host enrichment. They are the single source for `watch` and renderers (NFR-07).
 - An instance's scratch directory is removed when it settles, except a failed code node's, which is kept and logged.
@@ -727,6 +727,6 @@ commit SHA) are inputs or round-folder data, never constants in a pack.
 ## 17. Open design points
 
 No open question blocks the initial port. `requirements.md` section 9 maps every earlier question to the decision that
-resolved it. Deferred: a secret param type (D-33), cost accounting and budgets, per-adapter compaction, extending a lane
+resolved it. Deferred: a secret param type (D-33), cost accounting and prices, per-adapter compaction, extending a lane
 across concerts, starting a concert from a finished one's results (`rulings.md` "Concert fork"), in-process SDK
 adapters, arm64 and macOS, and licensing.

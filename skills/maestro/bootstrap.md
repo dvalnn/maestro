@@ -58,7 +58,7 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
      `cargo`). Every sandboxed process's PATH is those directories in order, then `/usr/bin:/bin`, and each is bound
      read-only, so it needs no `sandbox.readOnly` entry. These paths are machine-specific, so set it in the user config,
      not the workspace file. A check's or prepare's own `env.PATH` wins over it.
-   - Optional: `caps`, `sandbox.readOnly`, `concurrency`, and composition params (see the example).
+   - Optional: `caps`, `limits`, `sandbox.readOnly`, `concurrency`, and composition params (see the example).
 
    Quote a YAML value that would read as another type or break the line: `"true"`, `"3"`, a line holding `: ` or ` #`.
    Done when every profile, check and pack the composition needs has a value in some layer.
@@ -101,6 +101,8 @@ packs: [/home/me/packs/mine] # a pack outside the packs directory; absolute: pat
 
 caps:
   repo.agent: 12 # compose refuses a plan that may start more than 12 agents: a spend guard
+
+# limits: { timeout: 2h, tokens: 2000000 } # the whole concert's ceiling, not a profile's: past one it settles failed
 
 sandbox:
   readOnly: [/home/me/docs] # bound read-only into every agent and check

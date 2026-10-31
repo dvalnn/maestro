@@ -51,6 +51,7 @@ describe("config files", () => {
 			caps: { instances: 10, calls: 4 },
 			dataRoot: join(root, "ws/data"),
 			workspace: "ws",
+			limits: {},
 		});
 		expect(config.workspace).toBe(join(root, "ws"));
 		expect(config.packs).toEqual([
@@ -101,6 +102,7 @@ describe("config files", () => {
 			caps: {},
 			dataRoot: "/data/maestro",
 			workspace: "",
+			limits: {},
 		});
 		expect(config.workspace).toBeUndefined();
 	});

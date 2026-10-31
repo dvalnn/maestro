@@ -8,6 +8,7 @@ import type {
 	NodeInstance,
 	Outcome,
 } from "@maestro/ir";
+import type { ConcertLimits } from "../config";
 import type { HostNodeResult, Metrics } from "../host";
 import type { Inputs, Outputs } from "../node";
 import { instanceKey, isRecord } from "../shared";
@@ -21,6 +22,7 @@ const UPGRADE_STEPS = [
 	"ALTER TABLE instances ADD COLUMN inputs TEXT",
 	`ALTER TABLE concerts ADD COLUMN params TEXT; ALTER TABLE concerts ADD COLUMN encore_of TEXT;
 	ALTER TABLE concerts ADD COLUMN fingerprint TEXT`,
+	"ALTER TABLE concerts ADD COLUMN limits TEXT",
 ];
 /** The version of the schema below, kept in SQLite's `user_version`. */
 const SCHEMA_VERSION = OLDEST_UPGRADABLE_VERSION + UPGRADE_STEPS.length;
@@ -54,7 +56,8 @@ export const CONCERT_FINISHED = "the concert finished before it settled";
 // `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an earlier attempt, which a resume
 // reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume replaced, which still count as
 // spend. A concert's `profile` holds the name of the preset it was performed with, `params` its root params as given
-// (JSON), `encore_of` the concert it is an encore of, and `fingerprint` the digest `begin` was given.
+// (JSON), `encore_of` the concert it is an encore of, `fingerprint` the digest `begin` was given, and `limits` the
+// ceiling of its latest performance (JSON), NULL when it had none.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -77,7 +80,8 @@ CREATE TABLE concerts (
 	config TEXT,
 	params TEXT,
 	encore_of TEXT,
-	fingerprint TEXT
+	fingerprint TEXT,
+	limits TEXT
 ) STRICT;
 CREATE TABLE instances (
 	concert TEXT NOT NULL,
@@ -151,6 +155,8 @@ export type ConcertRecord = ConcertOrigin & {
 	id: string;
 	/** The concert this one is an encore of. */
 	encoreOf?: string;
+	/** The ceiling of its latest performance, left out when it had none. */
+	limits?: ConcertLimits;
 	composition: string;
 	pack: string;
 	ir: Ir;
@@ -270,16 +276,21 @@ export interface RecordWriter {
 	 */
 	begin(
 		concert: { id: string; ir: Ir; startedAt: number } & Partial<
-			ConcertOrigin & { encoreOf: string; fingerprint: string }
+			ConcertOrigin & {
+				encoreOf: string;
+				fingerprint: string;
+				limits: ConcertLimits;
+			}
 		>,
 	): void;
 	/**
-	 * Restarts a concert that failed or was rejected as `running`, performed by this process, with `ir` as its stored IR.
-	 * Its instance records and events stay. `reuse`, `start` and `settle` take over each instance record from before.
+	 * Restarts a concert that failed or was rejected as `running`, performed by this process, with `ir` as its stored IR
+	 * and `limits` as its ceiling. Its instance records and events stay. `reuse`, `start` and `settle` take over each
+	 * instance record from before.
 	 * @returns the concert, and its instance records from before.
 	 * @throws Unresumable when the concert is running, as its process is alive, or settled `ok`.
 	 */
-	resume(concert: { id: string; ir: Ir }): {
+	resume(concert: { id: string; ir: Ir; limits?: ConcertLimits }): {
 		concert: ConcertRecord;
 		instances: InstanceRecord[];
 	};
@@ -325,6 +336,8 @@ export interface RecordWriter {
 	 * `failed` with `CONCERT_FINISHED`.
 	 */
 	finish(concert: string, result: ConcertResult, at: number): void;
+	/** The concert's metrics, as `Records.metrics` sums them. */
+	metrics(concert: string): Metrics;
 	close(): void;
 }
 
@@ -350,6 +363,7 @@ type ConcertRow = {
 	params: string | null;
 	encore_of: string | null;
 	fingerprint: string | null;
+	limits: string | null;
 };
 
 type InstanceStatus = InstanceRecord["status"];
@@ -680,15 +694,7 @@ function readerOf(db: Database, look: Lookup): Records {
 		},
 		metrics(id) {
 			rowOf(id);
-			const rows = db
-				.query<{ name: string; total: number }, [string]>(
-					`SELECT name, SUM(value) AS total FROM (
-						SELECT name, value FROM metrics WHERE concert = ?1
-						UNION ALL SELECT name, value FROM earlier_metrics WHERE concert = ?1
-					) GROUP BY name ORDER BY name`,
-				)
-				.all(id);
-			return Object.fromEntries(rows.map((r) => [r.name, r.total]));
+			return metricsOf(db, id);
 		},
 		async wait(id, timeoutMs = Number.POSITIVE_INFINITY) {
 			const deadline = Date.now() + timeoutMs;
@@ -746,13 +752,13 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 		db.exec(`DELETE FROM artifacts ${where}`, [id, node, expansion]);
 	};
 
-	const restart = writing(db, (id: string, ir: Ir) => {
+	const restart = writing(db, (id: string, ir: Ir, limits?: ConcertLimits) => {
 		const refused = unresumable(concertOf(look.rowOf(id)));
 		if (refused) throw refused;
 		db.exec(
 			`UPDATE concerts SET ir = ?, pid = ?, status = 'running', settled_at = NULL, result_node = NULL,
-			result_expansion = NULL, reason = NULL WHERE id = ?`,
-			[JSON.stringify(ir), process.pid, id],
+			result_expansion = NULL, reason = NULL, limits = ? WHERE id = ?`,
+			[JSON.stringify(ir), process.pid, limitsColumn(limits), id],
 		);
 		db.exec("UPDATE instances SET stale = 1 WHERE concert = ?", [id]);
 		return {
@@ -794,15 +800,16 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 		if (refused) throw refused;
 		db.exec(
 			`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, tour, title, module_dir,
-			file, profile, config, params, encore_of, fingerprint)
-			VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			file, profile, config, params, encore_of, fingerprint, limits)
+			VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			beginRow(concert),
 		);
 	};
 
 	return {
 		begin: writing(db, begin),
-		resume: ({ id, ir }) => restart(id, ir),
+		resume: ({ id, ir, limits }) => restart(id, ir, limits),
+		metrics: (id) => metricsOf(db, id),
 		start: writing(
 			db,
 			(id: string, instance: NodeInstance, at: number, inputs?: Inputs) => {
@@ -930,8 +937,13 @@ function beginRow(concert: Parameters<RecordWriter["begin"]>[0]) {
 		json(concert.params),
 		concert.encoreOf ?? null,
 		concert.fingerprint ?? null,
+		limitsColumn(concert.limits),
 	];
 }
+
+/** `limits` as the `limits` column holds them: JSON, or NULL when none is set. */
+const limitsColumn = (limits: ConcertLimits | undefined) =>
+	limits && Object.keys(limits).length > 0 ? JSON.stringify(limits) : null;
 
 /** The refusal of an encore of `row` with `fingerprint`, when `row` was recorded with the same one. */
 function unencorable(
@@ -974,6 +986,7 @@ function concertOf(row: ConcertRow): ConcertRecord {
 		...(row.config !== null && { config: JSON.parse(row.config) }),
 		...(row.params !== null && { params: JSON.parse(row.params) }),
 		...(row.encore_of !== null && { encoreOf: row.encore_of }),
+		...(row.limits !== null && { limits: JSON.parse(row.limits) }),
 	};
 }
 
@@ -989,6 +1002,19 @@ function failure(
 	const expansion = row.result_expansion ?? "";
 	const carried = outcome === "rejected" && outputs !== undefined;
 	return { node, expansion, outcome, reason, ...(carried && { outputs }) };
+}
+
+/** Each metric of `concert` summed over its instances and over the attempts a resume replaced. */
+function metricsOf(db: Database, concert: string): Metrics {
+	const rows = db
+		.query<{ name: string; total: number }, [string]>(
+			`SELECT name, SUM(value) AS total FROM (
+				SELECT name, value FROM metrics WHERE concert = ?1
+				UNION ALL SELECT name, value FROM earlier_metrics WHERE concert = ?1
+			) GROUP BY name ORDER BY name`,
+		)
+		.all(concert);
+	return Object.fromEntries(rows.map((r) => [r.name, r.total]));
 }
 
 function instancesOf(db: Database, concert: string): InstanceRecord[] {

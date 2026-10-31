@@ -313,6 +313,31 @@ export const work = composition("work", { examples: [{}] }, () => {
 		]);
 	});
 
+	test("limits a -c sets reach the concert and its record, and a resume reads them as the config stands", async () => {
+		const w = await world();
+		const spent = { tokens_input: 11 };
+		const host = hostOf(ECHO, {
+			steps: { first: [{ ...FIRST, metrics: spent }], "echo/echo": [ECHO] },
+		});
+		const limits = ["-c", "limits.tokens=10", "-c", "limits.timeout=2h"];
+		const performed = await w.call(["perform", ...GREET, ...limits], {
+			hosts: [host],
+		});
+		const id = idOf(performed);
+		expect(performed.code).toBe(1);
+		expect(performed.err).toContain("passed limits.tokens (10): 11 tokens");
+		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
+			limits: { timeout: 7_200_000, tokens: 10 },
+		});
+		const resumed = ["perform", "--resume", id, "-c", "limits.tokens=20"];
+		expect(await w.call(resumed, { hosts: [host] })).toMatchObject({
+			code: 0,
+		});
+		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
+			limits: { timeout: 7_200_000, tokens: 20 },
+		});
+	});
+
 	test("names a recorded -c or --preset that no longer holds as the concert's, with a fix the resume can apply", async () => {
 		const w = await world();
 		const presets = join(w.cwd, ".maestro/presets");

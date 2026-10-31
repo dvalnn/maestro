@@ -57,8 +57,8 @@ place of a result cache across concerts, which V1 does not have. Its shape is se
 
 ## Agents
 
-- **An agent may carry limits on its wall clock and tokens (HOST-08).** They bound one agent instance, not a concert, so
-  D-23's exclusion of cost and concert-wide budgets stands. Applies in `packages/host-repo/src/host/agent.ts`.
+- **An agent may carry limits on its wall clock and tokens (HOST-08).** They bound one agent instance; a concert's own
+  `limits` bound the concert. Applies in `packages/host-repo/src/host/agent.ts`.
 - **An agent gets a named tool list, never a harness's defaults.** claude runs with `Bash`, `Read`, `Write`, `Edit` and
   pi with `read`, `bash`, `edit`, `write`; no profile adds tools until one needs them. Why: a harness's defaults change
   between releases, and claude 2.1.302's include tools that spawn subagents, schedule work past the concert or reach

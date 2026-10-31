@@ -18,13 +18,12 @@ import type { HostSetup, Roots } from "@maestro/core/host";
 import {
 	canonicalJson,
 	type Diagnostic,
-	DURATION_EXAMPLE,
 	durationMs,
 	durationText,
 	irSchema,
 	isPlainObject,
 	type JsonSchema,
-	MAX_TIMEOUT,
+	timeoutProblem,
 	validator,
 } from "@maestro/ir";
 import type {
@@ -439,25 +438,15 @@ function timeoutErrors(name: string, merged: Merged): Diagnostic[] {
 	const timeout = (merged.values.limits as { timeout?: unknown } | undefined)
 		?.timeout;
 	if (typeof timeout !== "string") return [];
-	const ms = durationMs(timeout);
-	const source = sourceOf(merged, ["limits", "timeout"]);
-	if (ms === undefined)
-		return [
-			refusal(
-				source,
-				`profile ${name}: limits.timeout '${timeout}' is not a duration`,
-				`Write it as ${DURATION_EXAMPLE}`,
-			),
-		];
-	return ms > MAX_TIMEOUT
-		? [
-				refusal(
-					source,
-					`profile ${name}: limits.timeout '${timeout}' is longer than ${MAX_TIMEOUT}ms`,
-					"Shorten it",
-				),
-			]
-		: [];
+	const found = timeoutProblem(timeout);
+	if (!found) return [];
+	return [
+		refusal(
+			sourceOf(merged, ["limits", "timeout"]),
+			`profile ${name}: limits.timeout '${timeout}' ${found.problem}`,
+			found.fix,
+		),
+	];
 }
 
 /** An error for each reserved key config sets for profile `name`, naming where. */

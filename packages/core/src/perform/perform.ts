@@ -5,6 +5,7 @@ import {
 	boundOf,
 	type CodeNode,
 	canonicalJson,
+	durationText,
 	type Facts,
 	type FindNode,
 	type FoldNode,
@@ -22,6 +23,7 @@ import {
 	isGroup,
 	itemKey,
 	type LoopNode,
+	MAX_TIMEOUT,
 	type MapNode,
 	messageOf,
 	type NodeInstance,
@@ -32,12 +34,13 @@ import {
 	type PortRef,
 	type Settled,
 	TS_RUNTIME,
+	tokensOf,
 	tolerates,
 	upstreamIn,
 	validator,
 	worstOutcome,
 } from "@maestro/ir";
-import type { Composed } from "../config";
+import type { Composed, ConcertLimits } from "../config";
 import {
 	type Host,
 	type HostNodeResult,
@@ -90,6 +93,11 @@ type PerformBase = {
 	concurrency: number;
 	/** Files from outside the concert, copied into its artifact area before any node starts. */
 	stage?: readonly Staged[];
+	/**
+	 * The ceiling: past its wall clock from the concert's start, or once the concert's token sum passes its tokens as an
+	 * instance settles, the concert is cancelled and settles `failed` naming the limit. None by default.
+	 */
+	limits?: ConcertLimits;
 };
 
 /**
@@ -187,23 +195,26 @@ type Live = {
 	started: Set<string>;
 	inflight: Set<Promise<void>>;
 	order: number;
+	limits: ConcertLimits;
 };
 
 /**
  * Starts performing a concert, a new one or the one `options.resume` names. Code nodes execute in process through
  * `loadCode`, host nodes through their host, and every instance and event goes to the record at `recordPath`, which
  * stays open until the concert settles. Every refusal rejects:
- * @throws RangeError when `concurrency` is not a positive integer.
+ * @throws RangeError when `concurrency` is not a positive integer, `limits.timeout` is not a whole number of
+ * milliseconds from 1 to `MAX_TIMEOUT`, or `limits.tokens` is not a positive integer.
  * @throws Error when two hosts register one node kind, or the concert to resume or encore is unknown.
  * @throws Unresumable when the concert to resume is running, or settled `ok`.
  * @throws Unencorable when the concert to encore is running, or was performed from the same IR, config and host facts.
  */
 export async function perform(options: PerformOptions): Promise<Concert> {
 	const { concurrency, recordPath } = options;
-	if (!Number.isInteger(concurrency) || concurrency < 1)
+	if (!isCount(concurrency))
 		throw new RangeError(
 			`concurrency must be a positive integer, got ${concurrency}`,
 		);
+	checkLimits(options.limits ?? {});
 	const kinds = kindLookup(options.hosts);
 	const id = options.resume ?? Bun.randomUUIDv7();
 	const env =
@@ -234,6 +245,24 @@ export async function perform(options: PerformOptions): Promise<Concert> {
 	};
 }
 
+const isCount = (n: number) => Number.isInteger(n) && n >= 1;
+
+/**
+ * Refuses limits no timer or count holds.
+ * @throws RangeError when `timeout` is not a whole number of milliseconds from 1 to `MAX_TIMEOUT`, or `tokens` is not
+ * a positive integer.
+ */
+function checkLimits({ timeout, tokens }: ConcertLimits): void {
+	if (timeout !== undefined && !(isCount(timeout) && timeout <= MAX_TIMEOUT))
+		throw new RangeError(
+			`limits.timeout must be a whole number of milliseconds from 1 to ${MAX_TIMEOUT}, got ${timeout}`,
+		);
+	if (tokens !== undefined && !isCount(tokens))
+		throw new RangeError(
+			`limits.tokens must be a positive integer, got ${tokens}`,
+		);
+}
+
 /** A digest of what a new concert is performed from: its IR, its config's values and each host's facts. */
 const fingerprintOf = (
 	ir: Ir,
@@ -247,9 +276,9 @@ function enter(
 	opened: Opened,
 	facts: Record<string, Facts> | undefined,
 ): Entered {
-	const { record, resume, encore, ir } = opened;
+	const { record, resume, encore, ir, limits } = opened;
 	if (resume !== undefined) {
-		const { concert, instances } = record.resume({ id, ir });
+		const { concert, instances } = record.resume({ id, ir, limits });
 		return { kept: keptOf(instances), encore: concert.encoreOf };
 	}
 	record.begin({
@@ -259,6 +288,7 @@ function enter(
 		...opened.origin,
 		encoreOf: encore,
 		fingerprint: facts && fingerprintOf(ir, opened.config, facts),
+		limits,
 	});
 	return { kept: new Map(), encore };
 }
@@ -277,6 +307,7 @@ async function conduct(
 ): Promise<ConcertResult> {
 	const inflight = new Set<Promise<void>>();
 	const dirs = concertDirs(resolve(options.dir), id);
+	const clock = wallClock(options.limits?.timeout, running, root);
 	let result: ConcertResult;
 	try {
 		result = await performed(
@@ -294,6 +325,8 @@ async function conduct(
 		await halt(running, root, failed);
 		while (inflight.size > 0) await Promise.all(inflight);
 		result = failed;
+	} finally {
+		clearTimeout(clock);
 	}
 	// Instances remove their own scratch, except a failed code node's, which stays for inspection.
 	await rmdir(dirs.scratch).catch(() => undefined);
@@ -340,6 +373,7 @@ async function performed(
 		started: new Set(),
 		inflight,
 		order: 0,
+		limits: options.limits ?? {},
 	};
 	const top = ir.nodes.filter((n) => index.groupsOf(n.id).length === 0);
 	await startFrame(c, top, root);
@@ -436,12 +470,41 @@ async function settleNode(c: Live, node: IrNode, frame: Frame): Promise<State> {
 	return settle(c, instance, ending);
 }
 
-/** Records how `instance` settled, unless it was reused or never started in a halted concert (architecture 7). */
+/**
+ * Records how `instance` settled, unless it was reused or never started in a halted concert (architecture 7), and halts
+ * the concert once a recorded instance with metrics takes its token sum past `limits.tokens`.
+ */
 function settle(c: Live, instance: NodeInstance, ending: Ending): State {
 	const recorded = c.started.has(instanceKey(instance)) || !c.root.halt;
-	if (recorded && !ending.reused)
+	if (recorded && !ending.reused) {
 		c.kit.record.settle(c.id, instance, ending, Date.now());
+		if (ending.metrics) checkTokens(c);
+	}
 	return { ...ending, ...instance, order: c.order++ };
+}
+
+/** The timer that halts the concert once `timeout` milliseconds pass, none without one. */
+function wallClock(
+	timeout: number | undefined,
+	running: ReadonlySet<Running>,
+	root: Frame,
+): Timer | undefined {
+	if (timeout === undefined) return undefined;
+	const reason = `passed limits.timeout (${durationText(timeout)})`;
+	return setTimeout(
+		() => void halt(running, root, { outcome: "failed", reason }),
+		timeout,
+	);
+}
+
+/** Halts the concert once its token sum passes `limits.tokens`. */
+function checkTokens(c: Live): void {
+	const { tokens } = c.limits;
+	if (tokens === undefined || c.root.halt) return;
+	const spent = tokensOf(c.kit.record.metrics(c.id));
+	if (spent <= tokens) return;
+	const reason = `passed limits.tokens (${tokens}): ${spent} tokens`;
+	void halt(c.running, c.root, { outcome: "failed", reason });
 }
 
 function start(

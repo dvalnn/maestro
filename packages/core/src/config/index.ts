@@ -1,7 +1,13 @@
 import { availableParallelism } from "node:os";
 import { dirname, resolve } from "node:path";
 import type { Diagnostic, JsonSchema, SourceLocation } from "@maestro/ir";
-import { type Validator, validator, violations } from "@maestro/ir";
+import {
+	durationMs,
+	timeoutProblem,
+	type Validator,
+	validator,
+	violations,
+} from "@maestro/ir";
 import {
 	type Document,
 	isAlias,
@@ -694,6 +700,14 @@ export const CORE_CONFIG: Readonly<Record<string, JsonSchema>> = {
 	},
 	dataRoot: { type: "string", minLength: 1 },
 	workspace: { type: "string" },
+	limits: {
+		type: "object",
+		additionalProperties: false,
+		properties: {
+			timeout: { type: "string", minLength: 1 },
+			tokens: { type: "integer", minimum: 1 },
+		},
+	},
 };
 
 /** The core config keys whose values are file paths. */
@@ -708,12 +722,22 @@ export type CoreConfig = {
 	dataRoot: string;
 	/** The workspace's name, empty outside any workspace. */
 	workspace: string;
+	limits: ConcertLimits;
 };
+
+/** What a concert's ceiling bounds, each unset by default: `timeout` in milliseconds of wall clock, and tokens. */
+export type ConcertLimits = { timeout?: number; tokens?: number };
 
 /** The default layer of core config. */
 export const coreDefaults = (dataRoot: string, workspace: string): Layer =>
 	valuesLayer(
-		{ concurrency: DEFAULT_CONCURRENCY, caps: {}, dataRoot, workspace },
+		{
+			concurrency: DEFAULT_CONCURRENCY,
+			caps: {},
+			dataRoot,
+			workspace,
+			limits: {},
+		},
 		{ layer: "default" },
 	);
 
@@ -740,5 +764,36 @@ export function coreConfig(config: Composed): CoreConfig {
 	const errors = [...unset, ...schemaErrors(validator(), set, config)];
 	if (errors.length) throw new ConfigError(errors);
 	const { concurrency, caps, dataRoot, workspace } = config.values;
-	return { concurrency, caps, dataRoot, workspace } as CoreConfig;
+	return {
+		concurrency,
+		caps,
+		dataRoot,
+		workspace,
+		limits: limitsOf(config),
+	} as CoreConfig;
+}
+
+/**
+ * The `limits` of `config`, which passed its schema, with `timeout` in milliseconds.
+ * @throws ConfigError when `limits.timeout` is not a duration, or is longer than any timer holds.
+ */
+function limitsOf(config: Composed): ConcertLimits {
+	const { timeout, tokens } = config.values.limits as {
+		timeout?: string;
+		tokens?: number;
+	};
+	const found = timeout === undefined ? undefined : timeoutProblem(timeout);
+	if (found)
+		throw new ConfigError([
+			configDiagnostic(
+				"CFG.schema",
+				sourceOf(config, ["limits", "timeout"]),
+				`config 'limits.timeout' '${timeout}' ${found.problem}`,
+				found.fix,
+			),
+		]);
+	return {
+		...(timeout !== undefined && { timeout: durationMs(timeout) }),
+		...(tokens !== undefined && { tokens }),
+	};
 }

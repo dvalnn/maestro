@@ -18,7 +18,9 @@ export {
 	DURATION_EXAMPLE,
 	durationMs,
 	durationText,
+	MAX_TIMEOUT,
 	MS_PER_UNIT,
+	timeoutProblem,
 } from "./duration";
 export type {
 	ConcertEvent,
@@ -93,9 +95,6 @@ const validateShape = new Ajv2020({
 }).compile(irSchema);
 
 const [MAJOR, MINOR] = IR_VERSION.split(".").map(Number) as [number, number];
-
-/** The longest code-node `timeout` in milliseconds: the largest delay a JavaScript timer holds. */
-export const MAX_TIMEOUT = 2_147_483_647;
 
 /** The prefix of the metrics that count tokens. */
 const TOKEN_METRIC = "tokens_";

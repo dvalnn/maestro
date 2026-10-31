@@ -29,6 +29,7 @@ import {
 	type IrEdge,
 	type IrNode,
 	MAESTRO_TYPE,
+	MAX_TIMEOUT,
 	type Ports,
 	parseIr,
 	reject,
@@ -1227,6 +1228,180 @@ test("a cancelled host instance whose execute never settles is abandoned, and th
 	});
 	expect(record.instances(playing.id)).toMatchObject([
 		{ node: "t", status: "failed", reason: CANCELLED_CONCERT },
+	]);
+});
+
+const TOKENS_SPENT = 3;
+/** How long a spawned concert's `limits.timeout` would hold its process, in milliseconds. */
+const HELD_MS = 30_000;
+/** How long a spawned concert's process may take to exit once it settles, in milliseconds. */
+const EXIT_WITHIN_MS = 10_000;
+const spending: HostNodeResult = {
+	outcome: "ok",
+	outputs: {},
+	metrics: { tokens_input: TOKENS_SPENT - 1, tokens_output: 1 },
+};
+
+test("an instance settling past limits.tokens cancels its running siblings, and the concert settles failed naming the limit", async () => {
+	const sibling = Promise.withResolvers<void>();
+	const host = fakeHost({
+		steps: {
+			a: () => sibling.promise.then(() => spending),
+			b: () => {
+				sibling.resolve();
+				return pending();
+			},
+		},
+	});
+	const { dir, open } = await workspace();
+	const record = open();
+	const playing = await start({
+		ir: graph(
+			[task("a"), task("b"), task("c")],
+			[{ kind: "control", from: { node: "b" }, to: { node: "c" } }],
+			"c",
+		),
+		hosts: [host],
+		loadCode: loader({}),
+		dir,
+		concurrency: 2,
+		limits: { tokens: TOKENS_SPENT - 1 },
+	});
+	const reason = `passed limits.tokens (${TOKENS_SPENT - 1}): ${TOKENS_SPENT} tokens`;
+	expect(await playing.done).toEqual({ outcome: "failed", reason });
+	expect(
+		record.instances(playing.id).map((i) => [i.node, i.status, i.reason]),
+	).toEqual([
+		["a", "ok", undefined],
+		["b", "failed", reason],
+	]);
+	expect(recorded(record, playing.id).limits).toEqual({
+		tokens: TOKENS_SPENT - 1,
+	});
+});
+
+test.each([
+	["no limits", undefined],
+	["limits.tokens it reaches", { tokens: TOKENS_SPENT }],
+])(
+	"an instance settling under %s leaves the concert as it was",
+	async (_, limits) => {
+		const { dir, open } = await workspace();
+		const playing = await start({
+			ir: graph([task("a")], [], "a"),
+			hosts: [fakeHost({ steps: { a: [spending] } })],
+			loadCode: loader({}),
+			dir,
+			concurrency: 1,
+			limits,
+		});
+		expect(await playing.done).toMatchObject({ outcome: "ok" });
+		expect(recorded(open(), playing.id).limits).toEqual(limits);
+	},
+);
+
+test("a resume counts the tokens of earlier attempts towards limits.tokens", async () => {
+	const { dir, open } = await workspace();
+	const ir = graph(
+		[task("a"), task("b")],
+		[{ kind: "control", from: { node: "a" }, to: { node: "b" } }],
+		"b",
+	);
+	const failed = await start({
+		ir,
+		hosts: [
+			fakeHost({
+				steps: { a: [spending], b: [{ outcome: "failed", reason: "flaky" }] },
+			}),
+		],
+		loadCode: loader({}),
+		dir,
+		concurrency: 1,
+	});
+	expect(await failed.done).toMatchObject({ outcome: "failed" });
+	const resumed = await start({
+		ir,
+		resume: failed.id,
+		hosts: [fakeHost({ steps: { b: [spending] } })],
+		loadCode: loader({}),
+		dir,
+		concurrency: 1,
+		limits: { tokens: TOKENS_SPENT + 1 },
+	});
+	expect(await resumed.done).toEqual({
+		outcome: "failed",
+		reason: `passed limits.tokens (${TOKENS_SPENT + 1}): ${2 * TOKENS_SPENT} tokens`,
+	});
+	expect(recorded(open(), failed.id).limits).toEqual({
+		tokens: TOKENS_SPENT + 1,
+	});
+});
+
+test(
+	"a concert that settles under limits.timeout leaves no timer holding its process",
+	async () => {
+		const { dir } = await workspace();
+		const script = join(dir, "settled.ts");
+		await writeFile(
+			script,
+			`import { perform } from ${JSON.stringify(join(import.meta.dir, "../../core/src/perform/index.ts"))};
+		import { fakeHost } from ${JSON.stringify(join(import.meta.dir, "index.ts"))};
+		const concert = await perform({
+			ir: ${JSON.stringify(graph([task("a")], [], "a"))},
+			config: { values: { dataRoot: ${JSON.stringify(dir)} }, sources: [], layers: [] },
+			hosts: [fakeHost()],
+			loadCode: async () => { throw new Error("no code nodes"); },
+			recordPath: ${JSON.stringify(join(dir, "record.db"))},
+			dir: ${JSON.stringify(dir)},
+			concurrency: 1,
+			limits: { timeout: ${HELD_MS} },
+		});
+		await concert.done;`,
+		);
+		const child = Bun.spawn([process.execPath, script]);
+		const exited = await Promise.race([
+			child.exited,
+			Bun.sleep(EXIT_WITHIN_MS).then(() => "running"),
+		]);
+		child.kill();
+		expect(exited).toBe(0);
+	},
+	EXIT_WITHIN_MS + HELD_MS,
+);
+
+test("perform refuses limits no timer or count holds", async () => {
+	const { dir } = await workspace();
+	const limited = (limits: PerformOptions["limits"]) =>
+		start({
+			ir: graph([task("a")], [], "a"),
+			hosts: [fakeHost()],
+			loadCode: loader({}),
+			dir,
+			concurrency: 1,
+			limits,
+		});
+	for (const timeout of [0, 1.5, MAX_TIMEOUT + 1])
+		await expect(limited({ timeout })).rejects.toThrow(RangeError);
+	await expect(limited({ tokens: 0 })).rejects.toThrow(
+		"limits.tokens must be a positive integer, got 0",
+	);
+});
+
+test("a concert past limits.timeout cancels the instance that never settles, and settles failed naming the limit", async () => {
+	const { dir, open } = await workspace();
+	const timeout = 20;
+	const playing = await start({
+		ir: graph([code("stuck", "stuck")], [], "stuck"),
+		hosts: [],
+		loadCode: loader({ stuck: () => new Promise(() => {}) }),
+		dir,
+		concurrency: 1,
+		limits: { timeout },
+	});
+	const reason = `passed limits.timeout (${timeout}ms)`;
+	expect(await playing.done).toEqual({ outcome: "failed", reason });
+	expect(open().instances(playing.id)).toMatchObject([
+		{ node: "stuck", status: "failed", reason },
 	]);
 });
 

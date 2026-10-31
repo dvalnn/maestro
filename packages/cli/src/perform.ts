@@ -264,6 +264,7 @@ async function conducted(
 		recordPath: session.files.record,
 		dir: session.files.concerts,
 		concurrency: session.config.core.concurrency,
+		limits: session.config.core.limits,
 		ir: prepared.ir,
 		...(start.resume === undefined
 			? {
