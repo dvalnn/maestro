@@ -57,7 +57,7 @@ export const CONCERT_FINISHED = "the concert finished before it settled";
 // reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume replaced, which still count as
 // spend. A concert's `profile` holds the name of the preset it was performed with, `params` its root params as given
 // (JSON), `encore_of` the concert it is an encore of, `fingerprint` the digest `begin` was given, and `limits` the
-// ceiling of its latest performance (JSON), NULL when it had none.
+// ceiling of its latest attempt (JSON), NULL when it had none.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -155,7 +155,7 @@ export type ConcertRecord = ConcertOrigin & {
 	id: string;
 	/** The concert this one is an encore of. */
 	encoreOf?: string;
-	/** The ceiling of its latest performance, left out when it had none. */
+	/** The ceiling of its latest attempt, left out when it had none. */
 	limits?: ConcertLimits;
 	composition: string;
 	pack: string;
@@ -235,7 +235,7 @@ export type EnrichedInstance = {
 	enrichment: Enrichment;
 };
 
-/** The record outside a performance: its reads, and the operator's bookkeeping (tour, remove). */
+/** The record outside a concert's attempt: its reads, and the operator's bookkeeping (tour, remove). */
 export interface Records {
 	/** The concert, or `undefined` for an id the record does not hold. */
 	find(concert: string): ConcertRecord | undefined;

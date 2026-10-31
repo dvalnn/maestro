@@ -66,7 +66,7 @@ flowchart TD
     E & SL & TR & HV --> W["write back ⁴"] --> X
 ```
 
-1. Halted by an infra fault, until its obstacle closes.
+1. Halted by an infra fault or a failed triage, until its `factory:halt` issue closes.
 2. Merged PRs close issues, stacks rebase, closed blockers free tickets, an answer or a closed obstacle requeues a
    ticket, an approved split files its children, and an epic's last closed child closes it.
 3. First match wins, in the order of the arrows: a concert to continue, a ready ticket whose blockers allow it, an
@@ -85,6 +85,7 @@ flowchart TD
     V -->|"high, split"| NA["needs-approval"]
     V -->|dup| DU["duplicate"]
     V -->|"no spec"| NI1["needs-info"]
+    V -->|"failed ⁶"| HALT
     K -->|slice| O{"outcome"}
     O -->|ok| LAND["land ¹"] --> IR["in-review"]
     O -->|red| A{"attempts left?"}
@@ -104,6 +105,8 @@ flowchart TD
 3. File the obstacle and requeue the ticket; the attempt is kept.
 4. New obstacles and gaps, as `needs-triage`.
 5. One issue per lesson promotion.
+6. A triage that fails, does not start or gives a malformed output. The ticket keeps its state, and closing the halt
+   issue triages it again.
 
 ## Label reference
 
@@ -201,6 +204,9 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   re-triage continues; `result`, that triage's output; `pending`, set while the result's labels are not yet applied; and
   `filed`, an approved split's children. A line the tick cannot read halts the factory. The slice concert to continue
   joins it with the build: an answered `needs-info` or a closed blocking obstacle sets it, and a red retry clears it.
+- **Answers.** The owner answers triage's questions by editing the ask above the marker, then moving the ticket to
+  `needs-triage`. A re-triage reads the ask alone, never comments, and an encore with nothing changed is refused, which
+  halts the factory.
 - **Encore.** A PR with changes requested, or a `ready-for-agent` ticket whose block names a concert to continue, runs
   an encore of that concert. With no concert to continue the build is a fresh perform.
 - **Blockers.** A ticket is picked when every blocker (a forge dependency) is closed, or is `in-review`, in which case

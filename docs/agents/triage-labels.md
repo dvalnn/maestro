@@ -30,6 +30,9 @@ with no milestone is icebox; no label marks it.
 `state/ready-for-human` means the factory never picks the issue up. `state/needs-approval`, `state/in-progress` and
 `state/in-review` belong to the factory, whose state machine and label moves are in `factory.md`.
 
+`factory:halt` sits outside both families: it marks the open issue the factory files when it halts, and closing that
+issue lifts the halt.
+
 Two more exclusive scopes sit beside `kind/` and `state/`:
 
 | Scope   | Labels                                                              | Meaning                             |

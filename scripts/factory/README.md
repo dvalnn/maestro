@@ -4,6 +4,8 @@ One pass of the factory (`docs/agents/factory.md`): it routes a settled triage, 
 triage of the milestone's intake issues. It drives maestro through `--json` and the forge through `forge.py` as
 forge-bot.
 
+It needs maestro `v0.1.0-rc.1` or later on `PATH`: the triage composition takes a file param.
+
 ```sh
 bun scripts/factory/index.ts --milestone v0.1.0 [--preset triage]
 ```

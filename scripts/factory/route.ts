@@ -18,7 +18,7 @@ export type Spec = {
 	subject: string;
 };
 export type Child = { title: string; body: string; dependsOn: number[] };
-/** The `triage` output of `.maestro/triage.ts` (E15). `dependsOn` holds 0-based indexes of earlier children. */
+/** The `triage` output of `.maestro/triage.ts`. `dependsOn` holds 0-based indexes of earlier children. */
 export type Triage = {
 	verdict: Verdict;
 	risk: (typeof RISKS)[number];
@@ -31,7 +31,7 @@ export type Triage = {
 	related?: number[];
 };
 /**
- * The tick's state for one issue (E18): `concert` is the last settled concert it routed, `triage` the last ok triage
+ * The tick's state for one issue (factory.md, Rules: Factory block): `concert` is the last settled concert it routed, `triage` the last ok triage
  * concert, which a re-triage continues, `pending` marks a routed result whose labels are not yet set, and `filed`
  * holds an approved split's children.
  */

@@ -17,7 +17,7 @@ export const isIntake = (issue: Issue) => {
 export const pick = (issues: readonly Issue[]): Issue | undefined =>
 	issues.filter(isIntake).sort((a, b) => a.number - b.number)[0];
 
-/** The tour of `issue`'s concerts in `milestone` (D25). */
+/** The tour of `issue`'s concerts in `milestone` (factory.md, Rules: Tour). */
 export const tourOf = (milestone: string, issue: number) =>
 	`${milestone}.i${issue}`;
 
@@ -50,7 +50,7 @@ function openEntry(issue: Issue, pulls: readonly Pull[]): string[] {
 }
 
 /**
- * The backlog snapshot `--backlog` takes (D33): the milestone's open issues but `issue`, with their state and, while
+ * The backlog snapshot `--backlog` takes: the milestone's open issues but `issue`, with their state and, while
  * built or reviewed, their PR's diffstat, then the newest closed issues.
  */
 export function snapshot(

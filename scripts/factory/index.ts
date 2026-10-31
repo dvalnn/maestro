@@ -79,7 +79,7 @@ const fenced = (text: string) => {
 	return `${fence}text\n${text}\n${fence}`;
 };
 
-/** Files the halt issue (E17): `lead`, then `detail` verbatim in a code block, then what to do next. */
+/** Files the halt issue: `lead`, then `detail` verbatim in a code block, then what to do next. */
 async function halt(
 	{ forge, say }: Deps,
 	title: string,
@@ -254,7 +254,7 @@ async function sync(pass: Pass, entries: Entry[]) {
 	return true;
 }
 
-/** Starts triage of the oldest intake issue, an encore of its last triage when it has one (E18); halts on a refusal. */
+/** Starts triage of the oldest intake issue, an encore of its last triage when it has one; halts on a refusal. */
 async function triage(pass: Pass, entries: Entry[]) {
 	const issue = pick(
 		entries.filter((e) => !e.data.pending).map((e) => e.issue),

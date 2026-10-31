@@ -362,9 +362,9 @@ claimed by an installed but unused registrant is ignored.
   run concurrently with no coordination beyond lane isolation, and the concurrency cap is per concert. The schema is new
   (D-02). It holds concerts with their IR, the id of the process performing them, where their code came from (workspace,
   module directory, file), tour and title, the `--preset` name and each `-c` as typed, which a resume reapplies, the
-  root's params the flags gave, the concert an encore repeats and its fingerprint, and the `limits` its latest
-  performance ran under; node instances, outcomes with reasons, durations, metrics, artifact references and events. No
-  config is kept for reuse: a resume re-reads the config files.
+  root's params the flags gave, the concert an encore repeats and its fingerprint, and the `limits` its latest attempt
+  ran under; node instances, outcomes with reasons, durations, metrics, artifact references and events. No config is
+  kept for reuse: a resume re-reads the config files.
 - A resume marks the concert's instance rows **stale**. Each one it reuses or replaces stops being stale, and the
   metrics of a replaced attempt still count towards the concert's.
 - A concert whose process is gone while it is still `running` settles `failed`, by whichever reader finds it, so `wait`

@@ -1,4 +1,4 @@
-/** The factory's state machine (D16), mirrored by docs/agents/factory.md and checked against it by a drift test. */
+/** The factory's state machine, mirrored by docs/agents/factory.md and checked against it by a drift test. */
 
 export const STATES = [
 	"needs-triage",
