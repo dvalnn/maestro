@@ -6,7 +6,7 @@ whatever a finished concert left, and starts at most one next action. The states
 
 ## Overview
 
-A ticket's path. Bold edges are the owner's, shaded states wait on the owner.
+A ticket's path. Bold edges are the owner's moves, gold states wait on the owner, green is done.
 
 ```mermaid
 flowchart LR
@@ -34,7 +34,9 @@ flowchart LR
     NI ==>|"answer ⁴"| IN
 
     classDef owner stroke:#d4a72c,stroke-width:3px
+    classDef done stroke:#57ab5a,stroke-width:3px
     class GATE,NI owner
+    class D done
 ```
 
 1. With attempts left, or an infra fault.
@@ -73,6 +75,8 @@ flowchart TD
 
 ## Zoom 2: routing a settle
 
+Red marks the halt.
+
 ```mermaid
 flowchart TD
     S(["settled"]) --> K{"concert"}
@@ -90,6 +94,9 @@ flowchart TD
     O -->|infra| HALT["halt ³"]
     O -.->|any| REP["file reports ⁴"]
     K -->|harvest| PR["needs-approval ⁵"]
+
+    classDef fault stroke:#e5534b,stroke-width:3px
+    class HALT fault
 ```
 
 1. In a workspace: apply, check, describe, push `factory/i<n>`, open the PR, arm auto-merge on low risk.
@@ -136,7 +143,7 @@ An edge in the diagrams names who causes the move; the tick sets the label unles
     answer by the owner, or the tick seeing its obstacle closed, sends it to `ready-for-agent` with the concert to
     continue.
 
-Moves forward:
+Moves forward, then moves back. Gold states wait on the owner, green is done.
 
 ```mermaid
 flowchart LR
@@ -154,10 +161,10 @@ flowchart LR
     NA -->|"[owner] take, drop"| OUT(["ready-for-human, wontfix ²"])
 
     classDef owner stroke:#d4a72c,stroke-width:3px
+    classDef done stroke:#57ab5a,stroke-width:3px
     class NA owner
+    class CL done
 ```
-
-Moves back:
 
 ```mermaid
 flowchart LR
