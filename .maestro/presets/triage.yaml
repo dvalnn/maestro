@@ -1,4 +1,4 @@
 profiles:
   triager: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: medium } }
   classics/scout: { runtime: { harness: claude, model: claude-haiku-5-5, thinking: medium } }
-  classics/planner: { runtime: { harness: claude, model: claude-opus-5-5, thinking: medium } }
+  classics/planner: { runtime: { harness: claude, model: claude-opus-5-5, thinking: high } }

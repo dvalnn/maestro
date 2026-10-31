@@ -408,7 +408,7 @@ test.each(verdicts)(
 const composed = async () =>
 	JSON.parse(await maestro(await triage("compose", "--backlog", backlog)));
 
-test("compose seats the triager on sonnet, the scouts on haiku and the planner on opus, each at medium", async () => {
+test("compose seats the triager on sonnet, the scouts on haiku and the planner on opus at high, the rest at medium", async () => {
 	const { agents } = await composed();
 	const seated = (
 		agents as { profile: string; model: string; thinking: string }[]
@@ -416,7 +416,7 @@ test("compose seats the triager on sonnet, the scouts on haiku and the planner o
 		.map((a) => [a.profile, a.model, a.thinking])
 		.sort();
 	expect(seated).toEqual([
-		["classics/planner", "claude-opus-5-5", "medium"],
+		["classics/planner", "claude-opus-5-5", "high"],
 		["classics/scout", "claude-haiku-5-5", "medium"],
 		["triager", "claude-sonnet-5-5", "medium"],
 	]);
