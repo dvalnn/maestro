@@ -2,7 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Comment, Forge, Issue, NewIssue, NewPull, Pull } from "./forge";
+import type {
+	Comment,
+	Forge,
+	Issue,
+	NewIssue,
+	NewPull,
+	Pull,
+	Review,
+} from "./forge";
 import { HALT, lock, type Options, pass } from "./index";
 import type { Landing } from "./land";
 import type { Concert, Maestro, Report, Result } from "./maestro";
@@ -39,6 +47,7 @@ function fakeForge(issues: Stored[], cut?: string) {
 	const blocking: Record<number, number[]> = {};
 	const heads: Record<string, string> = {};
 	const closedPulls = new Set<number>();
+	const reviews: Record<number, Review[]> = {};
 	const pulls: Pull[] = [
 		{
 			number: 20,
@@ -118,8 +127,12 @@ function fakeForge(issues: Stored[], cut?: string) {
 			if (depends.has(`${n}<${blocker}`)) return;
 			write(`depend #${n} on #${blocker}`);
 			depends.add(`${n}<${blocker}`);
+			blocking[n] = [...(blocking[n] ?? []), blocker];
 		},
-		blockers: async (n) => blocking[n] ?? [],
+		blockers: async (n) =>
+			(blocking[n] ?? []).filter(
+				(b) => issues.find((i) => i.number === b)?.open ?? true,
+			),
 		push: async (dir, commit, branch) => {
 			write(`push ${commit} as ${branch} from ${dir}`);
 			heads[branch] = commit;
@@ -145,8 +158,18 @@ function fakeForge(issues: Stored[], cut?: string) {
 			if (pull) pull.base = base;
 		},
 		arm: async (n) => write(`arm #${n}`),
+		reviews: async (n) => reviews[n] ?? [],
 	};
-	return { forge, writes, find, opened, blocking, pulls, closedPulls };
+	return {
+		forge,
+		writes,
+		find,
+		opened,
+		blocking,
+		pulls,
+		closedPulls,
+		reviews,
+	};
 }
 
 const NO_REPORT: Report = { tokens: 0, obstacles: [], gaps: [] };
@@ -227,6 +250,11 @@ const issue = (
 	};
 };
 
+/** `stored` with a reply mentioning the tick, which an encore of a concert to continue would be fed. */
+const answeredOnce = (stored: Stored) => {
+	stored.comments.push({ id: 900, body: "@forge-bot go on", author: OWNER });
+	return stored;
+};
 const specAt = (issue: Stored) => specCommentOf(issue.comments);
 const questionsAt = (issue: Stored) =>
 	issue.comments.filter(isQuestion).map((c) => c.body);
@@ -570,6 +598,19 @@ describe("a pass", () => {
 		expect(t.writes.some((w) => w.startsWith("comment"))).toBe(false);
 	});
 
+	test("re-triages a blocked ticket without its concert to continue", async () => {
+		const blocked = specced(7, "needs-triage", {
+			slice: "s1",
+			concert: "s1",
+			encore: "s1",
+		});
+		const t = setup([blocked], [triageConcert("c1", 7)], settled(asking));
+		await t.run();
+		expect(t.find(7).labels).toContain("state/needs-info");
+		expect(dataAt(t.find(7))).toMatchObject({ concert: "c1", triage: "c1" });
+		expect(dataAt(t.find(7)).encore).toBeUndefined();
+	});
+
 	const faults: [string, Record<string, Result>, string, string][] = [
 		[
 			"a failed triage",
@@ -694,6 +735,20 @@ const failed = (reason: string): Result => ({
 	outputs: {},
 });
 const CACHED = "/cache/maestro-factory/i7";
+/** The `--request` of a build of issue `n`'s spec, before anything an encore is fed. */
+const requestFor = (n: number) =>
+	`# #${n} Greet by name\n\n#### What\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Steps\n\n1. Read the name\n\n#### Touches\n\n- \`greet.sh\`\n\n#### Acceptance\n\n- [ ] bun test\n\n## The ask\n\n${ASK}\n`;
+/** The flags a build of issue 7 at low risk takes after its `--request`. */
+const LOW_FLAGS = [
+	"--tier",
+	"small",
+	"--preset",
+	"small",
+	"--tour",
+	"v0.1.0.i7",
+	"--title",
+	"factory: Greet by name",
+];
 
 describe("a build", () => {
 	test("starts a slice of the oldest ready issue free of open blockers before any triage", async () => {
@@ -716,7 +771,7 @@ describe("a build", () => {
 				"perform",
 				expect.stringMatching(/\.maestro\/slice\.ts$/),
 				"--request",
-				`# #8 Greet by name\n\n#### What\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Steps\n\n1. Read the name\n\n#### Touches\n\n- \`greet.sh\`\n\n#### Acceptance\n\n- [ ] bun test\n\n## The ask\n\n${ASK}\n`,
+				requestFor(8),
 				"--tier",
 				"ordinary",
 				"--preset",
@@ -785,16 +840,17 @@ describe("a build", () => {
 	});
 
 	test.each([
-		["under", undefined, ["ready-for-agent", "in-progress"], 1],
-		["at", 1, ["needs-info"], 2],
+		["under", undefined, ["ready-for-agent", "in-progress"], 1, undefined],
+		["at", 1, ["needs-info"], 2, "s1"],
 	] as const)(
 		"routes a red slice %s the attempt limit, retrying it with a fresh perform while attempts are left",
-		async (_, attempts, states, spent) => {
-			const t = setup(
-				[specced(7, "in-progress", { slice: "s1", attempts })],
-				[sliceConcert("s1", 7, "failed")],
-				{ s1: failed("the slice changed nothing") },
+		async (_, attempts, states, spent, encore) => {
+			const red = answeredOnce(
+				specced(7, "in-progress", { slice: "s1", attempts, encore: "s0" }),
 			);
+			const t = setup([red], [sliceConcert("s1", 7, "failed")], {
+				s1: failed("the slice changed nothing"),
+			});
 			await t.run();
 			expect(
 				t.writes
@@ -807,7 +863,9 @@ describe("a build", () => {
 				spent,
 				"the slice changed nothing",
 			]);
+			expect(data.encore).toBe(encore);
 			expect(t.starts).toHaveLength(states.length - 1);
+			if (t.starts[0]) expect(t.starts[0][1]).toEndWith(".maestro/slice.ts");
 			expect([t.steps, t.applied]).toEqual([[], []]);
 			expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([]);
 			const writes = t.writes.length;
@@ -816,7 +874,7 @@ describe("a build", () => {
 		},
 	);
 
-	test("routes a blocked slice to needs-info with its cause, spending no attempt", async () => {
+	test("routes a blocked slice to needs-info asking its question with no dependency, then encores it fed the reply", async () => {
 		const t = setup(
 			[specced(7, "in-progress", { slice: "s1", attempts: 1 })],
 			[sliceConcert("s1", 7, "failed")],
@@ -825,15 +883,108 @@ describe("a build", () => {
 		await t.run();
 		const routed = t.find(7);
 		expect(routed.labels).toContain("state/needs-info");
-		expect(dataAt(routed).attempts).toBe(1);
+		expect(dataAt(routed)).toMatchObject({ attempts: 1, encore: "s1" });
 		expect(specAt(routed)?.body).toContain(
 			"#### Last failure\n\n```text\nblocked: the check contradicts the spec\n```",
+		);
+		expect(questionsAt(routed)).toEqual([
+			"<!-- maestro-tm-question -->\n\n### Maestro asks · 1 question\n\n---\n\n**Q1 · the check contradicts the spec**\n\n- **`ready-for-agent`**: continue with my answer\n- **`needs-triage`**: triage it again\n\n---\n\n<sub>Reply `@forge-bot Q1: …`, then label your choice.</sub>\n",
+		]);
+		expect(t.writes.some((w) => w.startsWith("depend"))).toBe(false);
+		expect(t.starts.filter((a) => a.includes("--request"))).toEqual([]);
+		routed.comments.push({ id: 900, body: "@forge-bot go on", author: OWNER });
+		routed.labels = ["kind/enhancement", "risk/low", "state/ready-for-agent"];
+		await t.run();
+		expect(t.starts.filter((a) => a.includes("--request"))).toEqual([
+			[
+				"perform",
+				"--encore",
+				"s1",
+				"--request",
+				`${requestFor(7)}\n## Reply by ${OWNER}\n\n@forge-bot go on\n`,
+				...LOW_FLAGS,
+			],
+		]);
+		expect(routed.labels).toContain("state/in-progress");
+	});
+
+	test("queues a ready ticket on its open dependencies once, then builds when they close", async () => {
+		const t = setup([
+			specced(7, "ready-for-agent", {}),
+			issue(12, "in-progress"),
+			issue(14, "in-progress"),
+		]);
+		t.blocking[7] = [14, 12];
+		await t.run();
+		const tail = (n: number) =>
+			specAt(t.find(n))?.body.split("\n").filter(Boolean).at(-2);
+		expect(tail(7)).toBe(
+			"**Tour manager's move: queued, waiting on #12, #14**",
 		);
 		expect(t.starts).toEqual([]);
 		const writes = t.writes.length;
 		await t.run();
 		expect(t.writes).toHaveLength(writes);
+		t.find(12).open = false;
+		await t.run();
+		expect(tail(7)).toBe("**Tour manager's move: queued, waiting on #14**");
+		t.find(14).open = false;
+		await t.run();
+		expect(t.starts).toHaveLength(1);
+		expect(t.find(7).labels).toContain("state/in-progress");
 	});
+
+	const replied: [string, Comment[], string | undefined, number][] = [
+		[
+			"encores the concert to continue fed the replies mentioning it newer than the last read, moving read on",
+			[
+				{ id: 700, body: "@forge-bot Q1: use bash\n", author: OWNER },
+				{ id: 710, body: "No mention here", author: OWNER },
+			],
+			`${requestFor(7)}\n## Reply by ${OWNER}\n\n@forge-bot Q1: use bash\n`,
+			710,
+		],
+		[
+			"builds fresh when nothing new mentions it, since an encore with nothing changed is refused",
+			[{ id: 710, body: "No mention here", author: OWNER }],
+			undefined,
+			600,
+		],
+	];
+	test.each(replied)(
+		"an answered ticket out of attempts %s",
+		async (_, comments, request, read) => {
+			const answered = specced(7, "ready-for-agent", {
+				slice: "s1",
+				encore: "s1",
+				attempts: 2,
+				read: 600,
+			});
+			answered.comments.push(
+				{ id: 600, body: "@forge-bot read before", author: OWNER },
+				{
+					id: 650,
+					body: "<!-- maestro-tm-question -->\n\n<sub>Reply `@forge-bot Q1: …`</sub>",
+					author: BOT,
+				},
+				...comments,
+			);
+			const t = setup([answered]);
+			await t.run();
+			expect(t.starts).toEqual([
+				[
+					"perform",
+					...(request
+						? ["--encore", "s1"]
+						: [expect.stringMatching(/\.maestro\/slice\.ts$/)]),
+					"--request",
+					request ?? requestFor(7),
+					...LOW_FLAGS,
+				],
+			]);
+			expect(dataAt(t.find(7))).toMatchObject({ read, attempts: 2 });
+		},
+	);
 
 	test("files each report once across two settles, and none an open issue carries", async () => {
 		const carried = issue(40, "needs-triage");
@@ -940,7 +1091,11 @@ describe("a build", () => {
 		"parks a slice that settles after the owner moved its issue, then the owner's %s routes it to %s",
 		async (choice, routed, starts) => {
 			const t = setup(
-				[specced(7, "needs-spec", { slice: "s1", version: 3 })],
+				[
+					answeredOnce(
+						specced(7, "needs-spec", { slice: "s1", version: 3, encore: "s0" }),
+					),
+				],
 				[sliceConcert("s1", 7)],
 				{ s1: { status: "ok", outputs: {} } },
 			);
@@ -951,7 +1106,7 @@ describe("a build", () => {
 			expect(dataAt(parked)).toMatchObject({ concert: "s1", parked: "s1" });
 			expect(questionsAt(parked)).toEqual([PARK_QUESTION]);
 			expect(specAt(parked)?.body).toContain(
-				"**Your move: answer the question in a reply mentioning `@forge-bot`, then label `ready-for-agent` to build again, or answer the question in a reply mentioning `@forge-bot`, then label `needs-triage` to re-triage, or label `in-progress` to apply the parked result**",
+				"**Your move: answer the question in a reply mentioning `@forge-bot`, then label `ready-for-agent` to build again with your answer, or answer the question in a reply mentioning `@forge-bot`, then label `needs-triage` to re-triage, or label `in-progress` to apply the parked result**",
 			);
 			expect(t.steps).toEqual([]);
 			let writes = t.writes.length;
@@ -965,6 +1120,7 @@ describe("a build", () => {
 			expect(dataAt(parked)).toMatchObject({ parked: undefined, version: 3 });
 			expect(parked.body).toContain("[spec v3]");
 			expect([t.opened.length, t.starts.length]).toEqual([1 - starts, starts]);
+			expect(t.starts.flat()).not.toContain("--encore");
 			writes = t.writes.length;
 			await t.run();
 			expect(t.writes).toHaveLength(writes);
@@ -1170,7 +1326,9 @@ describe("a merge and a stack", () => {
 		t.blocking[8] = [5];
 		t.blocking[9] = [8];
 		await t.run();
-		expect([t.starts, t.writes, t.steps]).toEqual([[], [], []]);
+		expect([t.starts, t.steps]).toEqual([[], []]);
+		expect(specAt(t.find(9))?.body).toContain("waiting on #8**");
+		expect(t.writes).toHaveLength(1);
 	});
 
 	const PUSHED = `push def456 as maestro-tm/i8 from ${CACHED_8}`;
@@ -1244,7 +1402,12 @@ describe("a merge and a stack", () => {
 
 	test("moves a stacked PR that conflicts restacking to needs-info, then a rebuild retargets and arms it", async () => {
 		const landing = fakeLanding(undefined, "", "src/a.ts    2-sided conflict");
-		const t = stackedOn("in-review", { slice: "s8", concert: "s8" }, landing);
+		const t = stackedOn(
+			"in-review",
+			{ slice: "s8", concert: "s8", encore: "s0" },
+			landing,
+		);
+		answeredOnce(t.find(8));
 		t.pulls.push(pullOf(31, 8, "maestro-tm/i5"));
 		await t.run();
 		const conflicted = t.find(8);
@@ -1266,6 +1429,7 @@ describe("a merge and a stack", () => {
 		);
 		await t.run();
 		expect(t.starts[0]).not.toContain("-c");
+		expect(t.starts[0]).not.toContain("--encore");
 		t.concerts.push(sliceConcert("started", 8));
 		t.results.started = { status: "ok", outputs: {} };
 		writes = t.writes.length;
@@ -1274,6 +1438,92 @@ describe("a merge and a stack", () => {
 			"retarget #31 to main",
 			"arm #31",
 		]);
+	});
+});
+
+/** Review `id` by `author` requesting changes, official and kept unless `over` says otherwise. */
+const review = (id: number, over: Partial<Review> = {}): Review => ({
+	id,
+	state: "REQUEST_CHANGES",
+	official: true,
+	dismissed: false,
+	author: "ann",
+	body: "Rename it.",
+	comments: [{ path: "greet.sh", line: 3, body: "use printf\nnot echo" }],
+	...over,
+});
+
+describe("a review", () => {
+	const reviews: [string, Review[], boolean][] = [
+		[
+			"encores the landed concert on an official review requesting changes newer than the last fed, feeding it alone",
+			[
+				review(3),
+				review(5),
+				review(6, { official: false }),
+				review(7, { state: "APPROVED" }),
+				review(8, { dismissed: true }),
+			],
+			true,
+		],
+		["ignores an unofficial review", [review(6, { official: false })], false],
+		["ignores a review older than the last fed", [review(3)], false],
+	];
+	test.each(reviews)("%s", async (_, given, encores) => {
+		const concerts: Concert[] = [sliceConcert("s1", 7)];
+		const results: Record<string, Result> = {};
+		const t = setup(
+			[specced(7, "in-review", { slice: "s1", concert: "s1", review: 3 })],
+			concerts,
+			results,
+		);
+		t.pulls.push(pullOf(31, 7));
+		t.reviews[31] = given;
+		await t.run();
+		if (!encores) {
+			expect([t.starts, t.writes]).toEqual([[], []]);
+			return;
+		}
+		expect(t.starts).toEqual([
+			[
+				"perform",
+				"--encore",
+				"s1",
+				"--request",
+				`${requestFor(7)}\n## Review by ann\n\nRename it.\n\n- \`greet.sh:3\`: use printf\n  not echo\n`,
+				...LOW_FLAGS,
+			],
+		]);
+		expect(t.find(7).labels).toContain("state/in-progress");
+		expect(dataAt(t.find(7)).review).toBe(5);
+		concerts.unshift(sliceConcert("started", 7));
+		results.started = { status: "ok", outputs: {} };
+		await t.run();
+		expect(t.writes).toContain(`push abc123 as maestro-tm/i7 from ${CACHED}`);
+		expect(merging(t.writes)).toEqual(["arm #31"]);
+		expect(t.find(7).labels).toContain("state/in-review");
+		const writes = t.writes.length;
+		await t.run();
+		expect(t.writes).toHaveLength(writes);
+		expect(t.starts).toHaveLength(1);
+	});
+
+	test("encores a stacked ticket's landed concert on its blocker's PR head", async () => {
+		const t = setup(
+			[
+				specced(5, "in-review"),
+				specced(8, "in-review", { slice: "s1", concert: "s1", review: 3 }),
+			],
+			[sliceConcert("s1", 8)],
+		);
+		t.pulls.push(pullOf(21, 5), pullOf(31, 8, "maestro-tm/i5"));
+		t.blocking[8] = [5];
+		t.reviews[31] = [review(5)];
+		await t.run();
+		expect(t.starts).toHaveLength(1);
+		expect(t.starts[0]?.slice(0, 3)).toEqual(["perform", "--encore", "s1"]);
+		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha5"]);
+		expect(dataAt(t.find(8))).toMatchObject({ review: 5, stack: STACK });
 	});
 });
 

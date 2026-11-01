@@ -57,3 +57,105 @@ test.each([
 		}
 	},
 );
+
+test("reviews read the inline comments of an official review requesting changes above the bound, on the old line when it has no new one, and name a deleted account Ghost", async () => {
+	const answering = mkdtempSync(join(tmpdir(), "factory-forge-"));
+	const reviews = JSON.stringify([
+		{
+			id: 4,
+			state: "REQUEST_CHANGES",
+			official: true,
+			body: "Older.",
+			user: { login: "ann" },
+		},
+		{
+			id: 5,
+			state: "REQUEST_CHANGES",
+			official: true,
+			body: "Rename it.",
+			user: { login: "ann" },
+		},
+		{
+			id: 6,
+			state: "APPROVED",
+			official: false,
+			dismissed: true,
+			body: "",
+			user: { login: "bo" },
+		},
+		{
+			id: 7,
+			state: "REQUEST_CHANGES",
+			official: false,
+			body: "Unofficial.",
+			user: null,
+		},
+	]);
+	const comments = JSON.stringify([
+		{ path: "a.ts", position: 3, original_position: 2, body: "wide" },
+		{ path: "b.ts", position: 0, original_position: 7, body: "gone" },
+		{ path: "c.ts", position: 0, original_position: 0, body: "loose" },
+	]);
+	const thread = JSON.stringify([
+		{ id: 1, body: "Gone.", user: null },
+		{ id: 2, body: "Here.", user: { login: "ann" } },
+	]);
+	writeFileSync(
+		join(answering, "python3"),
+		`#!/bin/sh\ncase "$4" in\n*/reviews/5/comments) echo '${comments}' ;;\n*/issues/9/comments) echo '${thread}' ;;\n*/reviews\\?*) echo '${reviews}' ;;\n*) exit 1 ;;\nesac\n`,
+	);
+	chmodSync(join(answering, "python3"), 0o755);
+	const path = process.env.PATH;
+	process.env.PATH = `${answering}:${path}`;
+	try {
+		const api = forge();
+		expect(await api.comments(9)).toEqual([
+			{ id: 1, body: "Gone.", author: "Ghost" },
+			{ id: 2, body: "Here.", author: "ann" },
+		]);
+		expect(await api.reviews(30, 4)).toEqual([
+			{
+				id: 4,
+				state: "REQUEST_CHANGES",
+				official: true,
+				dismissed: false,
+				author: "ann",
+				body: "Older.",
+				comments: [],
+			},
+			{
+				id: 5,
+				state: "REQUEST_CHANGES",
+				official: true,
+				dismissed: false,
+				author: "ann",
+				body: "Rename it.",
+				comments: [
+					{ path: "a.ts", line: 3, body: "wide" },
+					{ path: "b.ts", line: 7, body: "gone" },
+					{ path: "c.ts", body: "loose" },
+				],
+			},
+			{
+				id: 6,
+				state: "APPROVED",
+				official: false,
+				dismissed: true,
+				author: "bo",
+				body: "",
+				comments: [],
+			},
+			{
+				id: 7,
+				state: "REQUEST_CHANGES",
+				official: false,
+				dismissed: false,
+				author: "Ghost",
+				body: "Unofficial.",
+				comments: [],
+			},
+		]);
+	} finally {
+		process.env.PATH = path;
+	}
+});

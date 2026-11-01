@@ -47,6 +47,23 @@ export type Pull = {
 	deletions: number;
 	files: number;
 };
+/** An inline comment of a review, on `line` of `path` when it has one. */
+export type ReviewComment = { path: string; line?: number; body: string };
+/**
+ * A review of a pull request. `official` marks a reviewer whose review counts toward approval; `comments` holds its
+ * inline comments when it is official, not dismissed, requests changes and is newer than the `after` it was read with,
+ * else none.
+ */
+export type Review = {
+	id: number;
+	state: string;
+	official: boolean;
+	dismissed: boolean;
+	author: string;
+	body: string;
+	comments: ReviewComment[];
+};
+export const REQUEST_CHANGES = "REQUEST_CHANGES";
 export type NewPull = {
 	title: string;
 	body: string;
@@ -100,6 +117,8 @@ export type Forge = {
 	retarget(pull: number, base: string): Promise<void>;
 	/** Has the forge merge `pull` by rebase once its required checks pass, unless that is already armed. */
 	arm(pull: number): Promise<void>;
+	/** The reviews of `pull`, oldest first. */
+	reviews(pull: number, after: number): Promise<Review[]>;
 };
 
 /**
@@ -228,10 +247,16 @@ function issueOf(o: Json): Issue {
 	};
 }
 
+/** What Forgejo calls the author of a deleted account. */
+const GHOST = "Ghost";
+
+const authorOf = (o: Json) =>
+	o.user ? text(object(o.user, "user"), "login") : GHOST;
+
 const commentOf = (o: Json): Comment => ({
 	id: num(o, "id"),
 	body: text(o, "body"),
-	author: text(object(o.user, "user"), "login"),
+	author: authorOf(o),
 });
 
 const pullOf = (o: Json): Pull => ({
@@ -245,6 +270,35 @@ const pullOf = (o: Json): Pull => ({
 	deletions: num(o, "deletions"),
 	files: num(o, "changed_files"),
 });
+
+/** An inline comment on its `position`, else its `original_position`, none when it has neither. */
+function reviewCommentOf(o: Json): ReviewComment {
+	for (const line of [o.position, o.original_position])
+		if (typeof line === "number" && line > 0)
+			return { path: text(o, "path"), line, body: text(o, "body") };
+	return { path: text(o, "path"), body: text(o, "body") };
+}
+
+/** Review `o` of `pull`, with its inline comments read when it is official, not dismissed, requests changes and has an id above `after`. */
+async function reviewOf(pull: number, after: number, o: Json): Promise<Review> {
+	const id = num(o, "id");
+	const state = text(o, "state");
+	const official = o.official === true;
+	const dismissed = o.dismissed === true;
+	const path = `/pulls/${pull}/reviews/${id}/comments`;
+	const fed = official && !dismissed && state === REQUEST_CHANGES && id > after;
+	return {
+		id,
+		state,
+		official,
+		dismissed,
+		author: authorOf(o),
+		body: text(o, "body"),
+		comments: fed
+			? objects(await api("GET", path), path).map(reviewCommentOf)
+			: [],
+	};
+}
 
 const query = (params: Record<string, string | number | undefined>) =>
 	new URLSearchParams(
@@ -376,6 +430,10 @@ export function forge(): Forge {
 			} catch (error) {
 				if (!(error instanceof Error && ARMED.test(error.message))) throw error;
 			}
+		},
+		reviews: async (pull, after) => {
+			const reviews = await all(`/pulls/${pull}/reviews`, {});
+			return Promise.all(reviews.map((r) => reviewOf(pull, after, r)));
 		},
 	};
 }

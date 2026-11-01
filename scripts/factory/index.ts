@@ -11,6 +11,8 @@ import {
 	type Issue,
 	type NewPull,
 	type Pull,
+	REQUEST_CHANGES,
+	type Review,
 } from "./forge";
 import { type Landing, landing } from "./land";
 import {
@@ -34,13 +36,16 @@ import {
 } from "./pick";
 import {
 	ATTEMPTS,
+	type Change,
 	type Child,
 	commentOf,
 	type Data,
 	dataOf,
+	encoreRequest,
 	fenced,
 	fingerprintLine,
 	isFed,
+	isReply,
 	type Option,
 	parseTriage,
 	pullBody,
@@ -50,6 +55,7 @@ import {
 	replyHow,
 	reportIssue,
 	requestOf,
+	type Spec,
 	type Stack,
 	specCommentOf,
 	type Triage,
@@ -149,15 +155,17 @@ async function halt(
 
 /**
  * Writes `data` to the spec comment of issue `number` for `state`, creating it on the first write, then rewrites the
- * closing line of its body when the comment is new or its version changed.
+ * closing line of its body when the comment is new or its version changed. `waiting` lists the open dependencies a
+ * queued ticket waits on.
  */
 async function writeSpec(
 	{ forge, login }: Pass,
 	number: number,
 	state: State,
 	data: Data,
+	waiting: readonly number[] = [],
 ) {
-	const comment = commentOf(data, state, login);
+	const comment = commentOf(data, state, login, waiting);
 	const found = specCommentOf(await forge.comments(number));
 	if (found) await forge.editComment(found.id, comment);
 	const id = found?.id ?? (await forge.comment(number, comment));
@@ -271,6 +279,7 @@ async function settle(pass: Pass, { issue, data }: Entry, id: string) {
 	}
 	const routed: Data = {
 		...data,
+		...UNCONTINUED,
 		concert: id,
 		triage: id,
 		result,
@@ -305,7 +314,32 @@ async function fileReports(pass: Pass, issue: Issue, report: Report) {
 	}
 }
 
-/** Routes failed slice `id` of `entry`: blocked to `needs-info`, else red, spending an attempt (factory.md, Rules). */
+const RETRIAGE: Option = { label: "`needs-triage`", text: "triage it again" };
+const YOUR_CHOICE = "your choice";
+const BLOCKED_OPTIONS: Option[] = [
+	{ label: "`ready-for-agent`", text: "continue with my answer" },
+	RETRIAGE,
+];
+
+/** Asks the blocked agent's question `reason` on issue `number`, answered by a reply (factory.md, Rules: Blocked). */
+async function block(pass: Pass, number: number, reason: string) {
+	const questions = [
+		{
+			ask: reason.slice(BLOCKED.length).trim(),
+			options: BLOCKED_OPTIONS,
+			context: [],
+		},
+	];
+	await ask(
+		pass,
+		number,
+		questionOf(questions, replyHow(questions, pass.login, YOUR_CHOICE)),
+	);
+}
+
+/**
+ * Routes failed slice `id` of `entry`: blocked to `needs-info` asking its question, else red, spending an attempt (factory.md, Rules). One routed to `needs-info` is the concert to continue; a red retry is fresh.
+ */
 async function fail(
 	pass: Pass,
 	{ issue, data }: Entry,
@@ -314,14 +348,16 @@ async function fail(
 ) {
 	const blocked = reason.startsWith(BLOCKED);
 	const attempts = (data.attempts ?? 0) + (blocked ? 0 : 1);
-	const state =
-		blocked || attempts >= ATTEMPTS ? "needs-info" : "ready-for-agent";
+	const waits = blocked || attempts >= ATTEMPTS;
+	const state = waits ? "needs-info" : "ready-for-agent";
+	if (blocked) await block(pass, issue.number, reason);
 	await move(pass, issue.number, state);
 	await writeSpec(pass, issue.number, state, {
 		...data,
 		concert: id,
 		attempts: attempts || undefined,
 		failure: reason,
+		encore: waits ? id : undefined,
 	});
 	pass.say(`routed #${issue.number}'s slice to ${state}: ${reason}`);
 }
@@ -380,6 +416,9 @@ async function inWorkspace<T>(
 	await closeWorkspace(pass, dir, name);
 	return done;
 }
+
+/** The data of a ticket with no concert to continue. */
+const UNCONTINUED: Data = { encore: undefined };
 
 type PullText = Pick<NewPull, "title" | "body">;
 /** Where a landing or restack leaves its issue: in review with its PR, stacked while `stack` is set, else asking. */
@@ -454,11 +493,17 @@ async function record(
 	concert: string | undefined,
 	outcome: Outcome,
 ) {
-	const landed = { ...data, concert, failure: undefined, stack: undefined };
+	const landed = {
+		...data,
+		...UNCONTINUED,
+		concert,
+		failure: undefined,
+		stack: undefined,
+	};
 	if ("question" in outcome) {
 		const options = [
 			{ label: "`ready-for-agent`", text: `build it again on \`${BASE}\`` },
-			{ label: "`needs-triage`", text: "triage it again" },
+			RETRIAGE,
 		];
 		await ask(pass, issue.number, whichWay(outcome.question, options));
 		await move(pass, issue.number, "needs-info");
@@ -539,7 +584,8 @@ async function settleSlice(pass: Pass, entry: Entry, id: string) {
 	]);
 	await fileReports(pass, entry.issue, report);
 	if (result.status === "ok") return land(pass, entry, id, report);
-	await fail(pass, entry, id, result.reason ?? `settled ${result.status}`);
+	const reason = result.reason ?? `settled ${result.status}`;
+	await fail(pass, entry, id, reason);
 	return true;
 }
 
@@ -569,18 +615,18 @@ async function park(pass: Pass, { issue, data }: Entry, concert: Concert) {
 	const lead = slice
 		? `The slice concert \`${concert.id}\` settled after this ticket was moved, so its result is parked.`
 		: `Triage \`${concert.id}\` settled after this ticket was moved, so its verdict is not applied.`;
-	const retriage = { label: "`needs-triage`", text: "triage it again" };
 	const options = slice
 		? [
 				{ label: "`in-progress`", text: "apply the parked result" },
 				{ label: "`ready-for-agent`", text: "build it again" },
-				retriage,
+				RETRIAGE,
 			]
-		: [retriage];
+		: [RETRIAGE];
 	await ask(pass, issue.number, whichWay(lead, options));
 	await move(pass, issue.number, "needs-info");
 	await writeSpec(pass, issue.number, "needs-info", {
 		...data,
+		...UNCONTINUED,
 		concert: concert.id,
 		...(slice ? { parked: concert.id } : await dropped(pass, concert.id)),
 	});
@@ -742,22 +788,29 @@ async function sync(pass: Pass, entries: Entry[]) {
 	return true;
 }
 
+type Perform = { request: string; encore?: string; data: Data };
+
 /**
- * Starts a fresh slice of `entry`'s spec, at its risk's tier and on `stack`'s commit when it stacks, and moves it to
+ * Performs `perform` for `entry` at its risk's tier and on `stack`'s commit when it stacks, and moves it to
  * `in-progress`; halts on a refusal.
  */
-async function startSlice(pass: Pass, { issue, data }: Entry, stack?: Stack) {
+async function startSlice(
+	pass: Pass,
+	{ issue, data }: Entry,
+	stack: Stack | undefined,
+	perform: Perform,
+) {
 	const result = data.result;
-	if (!result?.spec) return;
+	if (!result) return;
 	const tier = tierOf(issue, result.risk);
 	let id: string;
 	try {
 		id = await pass.maestro.start(
 			[
 				"perform",
-				SLICE_FILE,
+				...(perform.encore ? ["--encore", perform.encore] : [SLICE_FILE]),
 				"--request",
-				requestOf(issue, result.spec),
+				perform.request,
 				"--tier",
 				tier,
 				"--preset",
@@ -781,7 +834,7 @@ async function startSlice(pass: Pass, { issue, data }: Entry, stack?: Stack) {
 	}
 	await move(pass, issue.number, "in-progress");
 	await writeSpec(pass, issue.number, "in-progress", {
-		...data,
+		...perform.data,
 		slice: id,
 		stack,
 	});
@@ -818,12 +871,124 @@ async function baseOf(
 	return newest && { stack: newest };
 }
 
-/** Builds the oldest buildable issue its blockers let build; true when there was none. */
+/**
+ * What a build of ready `entry` performs: an encore of its concert to continue, fed the replies mentioning the login
+ * newer than `read`, else a fresh slice, since an encore with nothing changed is refused
+ * (factory.md, Rules: Encore).
+ */
+async function performOf(
+	pass: Pass,
+	{ issue, comments, data }: Entry,
+	spec: Spec,
+): Promise<Perform> {
+	const request = requestOf(issue, spec);
+	if (!data.encore) return { request, data };
+	const considered = repliesOf(comments, data.read);
+	const changes = considered
+		.filter((c) => isReply(c, pass.login))
+		.map((c) => ({ heading: `Reply by ${c.author}`, body: c.body }));
+	if (!changes.length) return { request, data };
+	return {
+		request: encoreRequest(request, changes),
+		encore: data.encore,
+		data: { ...data, read: considered.at(-1)?.id ?? data.read },
+	};
+}
+
+/** The reviews among `reviews` an encore of `data` has yet to be fed: official, not dismissed, asking for changes. */
+const requested = (reviews: readonly Review[], { review = 0 }: Data) =>
+	reviews.filter(
+		(r) =>
+			r.official &&
+			!r.dismissed &&
+			r.state === REQUEST_CHANGES &&
+			r.id > review,
+	);
+
+/** Review `r` as an encore is fed it: its body, then each inline comment as a `path:line` item. */
+const reviewChange = (r: Review): Change => ({
+	heading: `Review by ${r.author}`,
+	body: [
+		r.body.trim(),
+		r.comments
+			.map(
+				(c) =>
+					`- \`${c.line ? `${c.path}:${c.line}` : c.path}\`: ${c.body.trim().replaceAll("\n", "\n  ")}`,
+			)
+			.join("\n"),
+	]
+		.filter(Boolean)
+		.join("\n\n"),
+});
+
+/** The encore of in-review `entry`'s landed concert its PR among `pulls` asks for with changes requested, if any. */
+async function revision(
+	pass: Pass,
+	{ issue, data }: Entry,
+	pulls: readonly Pull[],
+): Promise<Perform | undefined> {
+	const pull = pulls.find((p) => p.head === branchOf(issue.number));
+	const spec = data.result?.spec;
+	if (!pull || !spec || !data.concert) return undefined;
+	const reviews = requested(
+		await pass.forge.reviews(pull.number, data.review ?? 0),
+		data,
+	);
+	if (!reviews.length) return undefined;
+	return {
+		request: encoreRequest(requestOf(issue, spec), reviews.map(reviewChange)),
+		encore: data.concert,
+		data: { ...data, review: Math.max(...reviews.map((r) => r.id)) },
+	};
+}
+
+/** Starts the encore of the oldest in-review ticket with changes requested where a build would; true when it started none. */
+async function revise(pass: Pass, entries: Entry[]) {
+	const reviewed = entries
+		.filter((e) => stateOf(e.issue) === "in-review")
+		.sort((a, b) => a.issue.number - b.issue.number);
+	if (!reviewed.length) return true;
+	const pulls = await pass.forge.pulls();
+	for (const entry of reviewed) {
+		const perform = await revision(pass, entry, pulls);
+		const base = perform && (await baseOf(pass, entry.issue.number));
+		if (!perform || !base) continue;
+		await startSlice(pass, entry, base.stack, perform);
+		return false;
+	}
+	return true;
+}
+
+/** Says in the spec comment of ready `entry` which open dependencies it waits on, writing only when that changes it. */
+async function queue(pass: Pass, { issue, comments, data }: Entry) {
+	const waiting = (await pass.forge.blockers(issue.number)).sort(
+		(a, b) => a - b,
+	);
+	const comment = commentOf(data, "ready-for-agent", pass.login, waiting);
+	if (specCommentOf(comments)?.body.trim() === comment.trim()) return;
+	await writeSpec(pass, issue.number, "ready-for-agent", data, waiting);
+}
+
+/**
+ * Finishes work first: continues a ticket with changes requested, else builds the oldest buildable issue its blockers
+ * let build; true when it started none.
+ */
 async function build(pass: Pass, entries: Entry[]) {
+	if (!(await revise(pass, entries))) return false;
 	for (const entry of buildable(entries)) {
+		const spec = entry.data.result?.spec;
 		const base = await baseOf(pass, entry.issue.number);
-		if (!base) continue;
-		await startSlice(pass, entry, base.stack);
+		if (!spec) continue;
+		if (!base) {
+			await queue(pass, entry);
+			continue;
+		}
+		await startSlice(
+			pass,
+			entry,
+			base.stack,
+			await performOf(pass, entry, spec),
+		);
 		return false;
 	}
 	return true;

@@ -58,6 +58,9 @@ tag
 tickets, running each ticket's concerts on its own tour and speaking on the ticket only in comments. _Avoid_: factory
 (for who acts), bot
 
+**Dependency**: A forge "blocked by" link between issues that sets build order; a ticket waits until each is closed or
+in review.
+
 **Metric**: A named, additive number reported by a node instance, such as `tokens_in`. The engine sums each name per
 concert and attaches no meaning to it.
 
@@ -208,6 +211,9 @@ rejects.
 **Blocked**: An agent's report that it could not do its job: the cause is outside its reach and nothing later in the
 concert will change it. It settles the agent `failed` with the reason `blocked: <cause>`. A rejection, by contrast, is a
 verdict given after doing the job.
+
+**Obstacle**: What an agent's report says got in its way in its environment. It does not stop the run, unlike Blocked,
+and the tour manager files it as an issue that never blocks a ticket.
 
 **Outbox**: The per-instance directory at `/out`, outside the lane, where an agent writes its declared outputs for the
 host to read and check.

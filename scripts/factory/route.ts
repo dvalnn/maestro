@@ -58,6 +58,8 @@ export type Triage = {
  * holds an approved split's children, `slice` the slice concert its last build started, `attempts` the red slices it
  * spent, `failure` the reason its last slice failed, `parked` a slice concert routed but not applied and `stack` the
  * in-review blocker its last build stacked on, with its PR and that PR's head commit, until the restack onto `main`.
+ * `encore` is the slice concert a build continues and `review` the id of the newest review requesting changes an
+ * encore was fed.
  */
 export type Data = {
 	concert?: string;
@@ -72,6 +74,8 @@ export type Data = {
 	failure?: string;
 	parked?: string;
 	stack?: Stack;
+	encore?: string;
+	review?: number;
 };
 export type Stack = { blocker: number; commit: string; pull: number };
 
@@ -267,6 +271,10 @@ const mentions = (body: string, login: string) =>
 export const isFed = (comment: Comment, login: string) =>
 	isAsked(comment, login) || mentions(comment.body, login);
 
+/** Whether `comment` is a reply to `login`: one mentioning `@login` that is no question comment `login` posted. */
+export const isReply = (comment: Comment, login: string) =>
+	!isAsked(comment, login) && mentions(comment.body, login);
+
 /**
  * The tick's data in the spec comment `comment`, empty when it has none. The comment ends with its data line, so the
  * last match is the tick's.
@@ -292,6 +300,8 @@ export function dataOf(comment: string): Data {
 		failure: optional(data, "failure", isString, "a string"),
 		parked: optional(data, "parked", isString, "a concert id"),
 		stack: optional(data, "stack", isStack, "a stack"),
+		encore: optional(data, "encore", isString, "a concert id"),
+		review: optional(data, "review", isNumber, "a review id"),
 	};
 }
 
@@ -355,11 +365,19 @@ function buildLines({ attempts, failure, slice }: Data) {
 	];
 }
 
-/** What the tick runs or queues next in `state`, one it owns. */
-function tourMove(state: State, { result, slice, attempts, filed }: Data) {
+/** What the tick runs or queues next in `state`, one it owns, a queued build waiting on the open dependencies `waiting`. */
+function tourMove(
+	state: State,
+	{ result, slice, attempts, filed }: Data,
+	waiting: readonly number[],
+) {
 	if (INTAKE.includes(state)) return "triage queued";
-	if (state === "ready-for-agent")
-		return result?.children ? "filing the split's children" : "build queued";
+	if (state === "ready-for-agent") {
+		if (result?.children) return "filing the split's children";
+		return waiting.length
+			? `queued, waiting on ${refs(waiting)}`
+			: "build queued";
+	}
 	if (state === "in-progress")
 		return filed
 			? `building the children ${refs(filed)}`
@@ -376,15 +394,20 @@ function allows(t: Transition, { parked, result }: Data) {
 
 /**
  * The bold line naming whose move it is in `state`: the owner's moves `data` leaves open, `<login>` in them filled with
- * `login`, else the tick's.
+ * `login`, else the tick's, a queued build waiting on the open dependencies `waiting`.
  */
-export function moveLine(state: State, data: Data, login: string) {
+export function moveLine(
+	state: State,
+	data: Data,
+	login: string,
+	waiting: readonly number[] = [],
+) {
 	const yours = TRANSITIONS.filter(
 		(t) => t.from === state && t.actor === "owner" && allows(t, data),
 	).map((t) => t.how.replace(LOGIN, login));
 	return yours.length
 		? `**Your move: ${yours.join(", or ")}**`
-		: `**Tour manager's move: ${tourMove(state, data)}**`;
+		: `**Tour manager's move: ${tourMove(state, data, waiting)}**`;
 }
 
 /** The version of a spec no routed triage has written yet. */
@@ -395,7 +418,12 @@ const versionOf = ({ version }: Data) => version ?? FIRST_VERSION;
  * The spec comment for `data` in `state` (factory.md, Rules: Spec comment): the marker, then readable Markdown ending in
  * whose move it is, answered by mentioning `login`, then the one data line the tick reads back.
  */
-export function commentOf(data: Data, state: State, login: string): string {
+export function commentOf(
+	data: Data,
+	state: State,
+	login: string,
+	waiting: readonly number[] = [],
+): string {
 	// JSON keeps `>` only inside strings, so escaping it keeps a `-->` in the data from closing the comment.
 	const json = JSON.stringify(data).replaceAll(">", "\\u003e");
 	const shown = [
@@ -409,7 +437,7 @@ export function commentOf(data: Data, state: State, login: string): string {
 		`### Spec v${versionOf(data)}`,
 		"",
 		...shown,
-		moveLine(state, data, login),
+		moveLine(state, data, login, waiting),
 		"",
 		`<!-- maestro-tm-data ${json} -->`,
 		"",
@@ -486,9 +514,13 @@ export const questionOf = (questions: readonly Question[], how: string) =>
 		"",
 	].join("\n");
 
-/** How to answer `questions` of a triage: a reply mentioning `@login` that names each, then the label to re-triage. */
-export const replyHow = (questions: readonly Question[], login: string) =>
-	`Reply \`@${login} ${questions.map((_, i) => `Q${i + 1}: …`).join(", ")}\`, then label \`needs-triage\`.`;
+/** How to answer `questions`: a reply mentioning `@login` that names each, then `label`, re-triage's by default. */
+export const replyHow = (
+	questions: readonly Question[],
+	login: string,
+	label = "`needs-triage`",
+) =>
+	`Reply \`@${login} ${questions.map((_, i) => `Q${i + 1}: …`).join(", ")}\`, then label ${label}.`;
 
 /** What `--request` takes: the number and title, the spec, then the ask. */
 export const requestOf = (
@@ -503,6 +535,17 @@ export const requestOf = (
 		"",
 		askOf(body),
 		"",
+	].join("\n");
+
+export type Change = { heading: string; body?: string };
+
+/** `request` followed by each of `changes` under its `##` heading (factory.md, Rules: Encore). */
+export const encoreRequest = (request: string, changes: readonly Change[]) =>
+	[
+		request,
+		...changes.map(({ heading, body }) =>
+			body?.trim() ? `## ${heading}\n\n${body.trim()}\n` : `## ${heading}\n`,
+		),
 	].join("\n");
 
 /** What a landed slice's PR says, for an `upheld` Markdown list of the review's upheld findings. */

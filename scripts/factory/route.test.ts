@@ -183,13 +183,17 @@ test.each([
 		tours("slice `s1` running, attempt 2 of 2"),
 	],
 	["in-progress", { filed: [5, 6] }, tours("building the children #5, #6")],
-	["in-review", {}, yours("merge the PR", "request changes on the PR")],
+	[
+		"in-review",
+		{},
+		yours("merge the PR", "request changes in an official review of the PR"),
+	],
 	["needs-info", { result: result("needs-info", { spec }) }, yours(RETRIAGE)],
 	[
 		"needs-info",
 		{ result: ready },
 		yours(
-			"answer the question in a reply mentioning `@forge-bot`, then label `ready-for-agent` to build again",
+			"answer the question in a reply mentioning `@forge-bot`, then label `ready-for-agent` to build again with your answer",
 			RETRIAGE,
 		),
 	],
@@ -197,7 +201,7 @@ test.each([
 		"needs-info",
 		{ result: ready, parked: "s1" },
 		yours(
-			"answer the question in a reply mentioning `@forge-bot`, then label `ready-for-agent` to build again",
+			"answer the question in a reply mentioning `@forge-bot`, then label `ready-for-agent` to build again with your answer",
 			RETRIAGE,
 			"label `in-progress` to apply the parked result",
 		),

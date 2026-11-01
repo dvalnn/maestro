@@ -154,7 +154,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "ready-for-agent",
 		actor: "slice",
 		event: "red, infra",
-		how: "a red slice with attempts left, or an infra fault, requeues it",
+		how: "a red slice with attempts left, or an infra fault, requeues it for a fresh build",
 	},
 	{
 		from: "in-review",
@@ -182,21 +182,14 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "in-progress",
 		actor: "owner",
 		event: "changes",
-		how: "request changes on the PR",
+		how: "request changes in an official review of the PR",
 	},
 	{
 		from: "needs-info",
 		to: "ready-for-agent",
 		actor: "owner",
 		event: "answer",
-		how: "answer the question in a reply mentioning `@<login>`, then label `ready-for-agent` to build again",
-	},
-	{
-		from: "needs-info",
-		to: "ready-for-agent",
-		actor: "tick",
-		event: "obstacle closed",
-		how: "the tick requeues it once its obstacle closes",
+		how: "answer the question in a reply mentioning `@<login>`, then label `ready-for-agent` to build again with your answer",
 	},
 	{
 		from: "needs-info",
