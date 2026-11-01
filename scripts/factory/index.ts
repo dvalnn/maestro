@@ -41,11 +41,13 @@ import {
 	fenced,
 	fingerprintLine,
 	isFed,
+	type Option,
 	parseTriage,
 	pullBody,
 	questionOf,
 	relabelled,
 	repliesOf,
+	replyHow,
 	reportIssue,
 	requestOf,
 	type Stack,
@@ -164,6 +166,15 @@ async function writeSpec(
 	if (next !== body) await forge.edit(number, { body: next });
 }
 
+const WHICH_WAY = "Which way should this ticket go?";
+
+/** The tick's question comment: `lead` says what happened, and each of `options` names a label to choose by. */
+const whichWay = (lead: string, options: Option[]) =>
+	questionOf(
+		[{ ask: WHICH_WAY, lead, options, context: [] }],
+		"Label the ticket with your choice.",
+	);
+
 /** Posts question comment `body` on issue `number` unless one holds it already, so a repeated pass posts it once. */
 async function ask({ forge }: Deps, number: number, body: string) {
 	const comments = await forge.comments(number);
@@ -227,11 +238,7 @@ async function apply(pass: Pass, number: number, data: Data, result: Triage) {
 		await ask(
 			pass,
 			number,
-			questionOf(
-				`The tour manager asks, from triage \`${data.triage}\`:`,
-				result.questions,
-				`Answer in a reply mentioning \`@${pass.login}\`, such as \`@${pass.login} Q1: ...\`, then label \`needs-triage\`.`,
-			),
+			questionOf(result.questions, replyHow(result.questions, pass.login)),
 		);
 	const { labels } = await pass.forge.issue(number);
 	await pass.forge.setLabels(number, triaged(labels, result));
@@ -450,11 +457,10 @@ async function record(
 	const landed = { ...data, concert, failure: undefined, stack: undefined };
 	if ("question" in outcome) {
 		const options = [
-			`\`ready-for-agent\`: build it again on \`${BASE}\``,
-			"`needs-triage`: triage it again",
+			{ label: "`ready-for-agent`", text: `build it again on \`${BASE}\`` },
+			{ label: "`needs-triage`", text: "triage it again" },
 		];
-		const how = "Label the ticket with your choice.";
-		await ask(pass, issue.number, questionOf(outcome.question, options, how));
+		await ask(pass, issue.number, whichWay(outcome.question, options));
 		await move(pass, issue.number, "needs-info");
 		await writeSpec(pass, issue.number, "needs-info", landed);
 		pass.say(`asked on #${issue.number}: ${outcome.question.split("\n")[0]}`);
@@ -563,18 +569,15 @@ async function park(pass: Pass, { issue, data }: Entry, concert: Concert) {
 	const lead = slice
 		? `The slice concert \`${concert.id}\` settled after this ticket was moved, so its result is parked.`
 		: `Triage \`${concert.id}\` settled after this ticket was moved, so its verdict is not applied.`;
+	const retriage = { label: "`needs-triage`", text: "triage it again" };
 	const options = slice
 		? [
-				"`in-progress`: apply the parked result",
-				"`ready-for-agent`: build it again",
-				"`needs-triage`: triage it again",
+				{ label: "`in-progress`", text: "apply the parked result" },
+				{ label: "`ready-for-agent`", text: "build it again" },
+				retriage,
 			]
-		: ["`needs-triage`: triage it again"];
-	await ask(
-		pass,
-		issue.number,
-		questionOf(lead, options, "Label the ticket with your choice."),
-	);
+		: [retriage];
+	await ask(pass, issue.number, whichWay(lead, options));
 	await move(pass, issue.number, "needs-info");
 	await writeSpec(pass, issue.number, "needs-info", {
 		...data,

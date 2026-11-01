@@ -30,13 +30,22 @@ export type Spec = {
 	subject: string;
 };
 export type Child = { title: string; body: string; dependsOn: number[] };
+export type Option = { label: string; text: string };
+/** A question for the owner, whose `recommend.label` is one of its options' labels. */
+export type Question = {
+	ask: string;
+	lead?: string;
+	options: Option[];
+	recommend?: { label: string; why: string };
+	context: { topic: string; text: string }[];
+};
 /** The `triage` output of `.maestro/triage.ts`. `dependsOn` holds 0-based indexes of earlier children. */
 export type Triage = {
 	verdict: Verdict;
 	risk: Risk;
 	area?: string;
 	reasons: string[];
-	questions: string[];
+	questions: Question[];
 	spec?: Spec;
 	children?: Child[];
 	duplicateOf?: number;
@@ -132,6 +141,36 @@ const isChildren = (v: unknown): v is Child[] =>
 			c.dependsOn.every((d) => d >= 0 && d < i),
 	);
 
+const isPair =
+	<K extends string>(...keys: [K, K]) =>
+	(v: unknown): v is Record<K, string> =>
+		isJson(v) && keys.every((k) => isString(v[k]));
+const isOptions = (v: unknown): v is Option[] =>
+	Array.isArray(v) && v.every(isPair("label", "text"));
+const isContext = (v: unknown): v is Question["context"] =>
+	Array.isArray(v) && v.every(isPair("topic", "text"));
+const isRecommend = isPair("label", "why");
+
+/**
+ * `value` as a question; a string is an ask alone.
+ * @throws Error naming the first field that is missing or malformed, or a recommendation naming no option.
+ */
+function parseQuestion(value: unknown): Question {
+	if (isString(value)) return { ask: value, options: [], context: [] };
+	if (!isJson(value)) throw new Error("a question is not an object");
+	const question: Question = {
+		ask: field(value, "ask", isString, "a string"),
+		lead: optional(value, "lead", isString, "a string"),
+		options: field(value, "options", isOptions, "a list of options"),
+		recommend: optional(value, "recommend", isRecommend, "a recommendation"),
+		context: field(value, "context", isContext, "a list of topics"),
+	};
+	const label = question.recommend?.label;
+	if (label !== undefined && !question.options.some((o) => o.label === label))
+		throw new Error(`recommend names ${label}, which is no option`);
+	return question;
+}
+
 /** The field each verdict cannot settle without. */
 const NEEDS: Partial<Record<Verdict, keyof Triage>> = {
 	"ready-for-agent": "spec",
@@ -151,7 +190,9 @@ export function parseTriage(value: unknown): Triage {
 		risk: field(value, "risk", isOneOf(RISKS), "a risk"),
 		area: optional(value, "area", isString, "a string"),
 		reasons: field(value, "reasons", isStrings, "a list of strings"),
-		questions: field(value, "questions", isStrings, "a list of strings"),
+		questions: field(value, "questions", Array.isArray, "a list").map(
+			parseQuestion,
+		),
 		spec: optional(value, "spec", isSpec, "a spec"),
 		children: optional(value, "children", isChildren, "a list of children"),
 		duplicateOf: optional(value, "duplicateOf", isNumber, "an issue number"),
@@ -379,17 +420,75 @@ export function commentOf(data: Data, state: State, login: string): string {
 export const tracked = (body: string, comment: number, data: Data) =>
 	`${exactAsk(body)}${SEPARATOR}${MARKER}\nTracked by Maestro Tour Manager · [spec v${versionOf(data)}](#issuecomment-${comment})`;
 
+const RULE = "---";
+
+const asks = (count: number) =>
+	`### Maestro asks · ${count} question${count === 1 ? "" : "s"}`;
+
+/** `text` on one line, each run of whitespace one space, for a field set inside bold. */
+const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/** `text` continued under a list item or a quote opened by `prefix`. */
+const continued = (text: string, prefix: string) =>
+	text.replaceAll("\n", `\n${prefix}`);
+
+const tipLines = ({ label, why }: NonNullable<Question["recommend"]>) => [
+	"> [!TIP]",
+	`> **Recommended: ${oneLine(label)}**, ${continued(why, "> ")}`,
+	"",
+];
+
+const contextLines = (context: Question["context"]) => [
+	"<details>",
+	"<summary>Context</summary>",
+	"",
+	...context.map(
+		(c) => `- **${oneLine(c.topic)}.** ${continued(c.text, "  ")}`,
+	),
+	"",
+	"</details>",
+	"",
+];
+
+/** Question `q`, numbered `n`: its ask, then each of its lead, options, recommendation and context it has. */
+const questionLines = (q: Question, n: number) => [
+	`**Q${n} · ${oneLine(q.ask)}**`,
+	"",
+	...(q.lead ? [q.lead, ""] : []),
+	...(q.options.length
+		? [
+				...q.options.map(
+					(o) => `- **${oneLine(o.label)}**: ${continued(o.text, "  ")}`,
+				),
+				"",
+			]
+		: []),
+	...(q.recommend ? tipLines(q.recommend) : []),
+	...(q.context.length ? contextLines(q.context) : []),
+];
+
 /**
- * A question comment: the marker, `lead`, `items` numbered, then `how` to answer. Agent text in it is made inert.
+ * A question comment (factory.md, Rules: Question comments): the marker, the heading, `questions` between rules, then
+ * `how` to answer. Agent text in it is made inert.
  */
-export const questionOf = (
-	lead: string,
-	items: readonly string[],
-	how: string,
-) =>
-	[QUESTION, "", lead, "", ...numbered(items).map(inert), "", how, ""].join(
-		"\n",
-	);
+export const questionOf = (questions: readonly Question[], how: string) =>
+	[
+		QUESTION,
+		"",
+		...[
+			asks(questions.length),
+			"",
+			...questions.flatMap((q, i) => [RULE, "", ...questionLines(q, i + 1)]),
+			RULE,
+			"",
+			`<sub>${how}</sub>`,
+		].map(inert),
+		"",
+	].join("\n");
+
+/** How to answer `questions` of a triage: a reply mentioning `@login` that names each, then the label to re-triage. */
+export const replyHow = (questions: readonly Question[], login: string) =>
+	`Reply \`@${login} ${questions.map((_, i) => `Q${i + 1}: …`).join(", ")}\`, then label \`needs-triage\`.`;
 
 /** What `--request` takes: the number and title, the spec, then the ask. */
 export const requestOf = (

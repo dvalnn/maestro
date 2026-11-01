@@ -150,7 +150,7 @@ type Shaped<R extends Types, O extends Types> = {
 function shape<R extends Types, O extends Types>(
 	required: R,
 	optional: O,
-	rules: Rule[],
+	rules: Rule[] = [],
 ): Type<Shaped<R, O>> {
 	const properties = Object.fromEntries(
 		Object.entries({ ...required, ...optional }).map(([k, t]) => [k, t.schema]),
@@ -160,9 +160,21 @@ function shape<R extends Types, O extends Types>(
 		properties,
 		required: Object.keys(required),
 		additionalProperties: false,
-		allOf: rules,
+		// JSON Schema refuses an empty allOf.
+		...(rules.length > 0 && { allOf: rules }),
 	});
 }
+
+/** A question for the owner: the ask, a lead line, short options, the option recommended and the evidence by topic. */
+export const Question = shape(
+	{
+		ask: Text(),
+		options: List(Struct({ label: Text(), text: Text() })),
+		context: List(Struct({ topic: Text(), text: Text() })),
+	},
+	{ lead: Text(), recommend: Struct({ label: Text(), why: Text() }) },
+);
+export type Question = ValueOf<typeof Question>;
 
 /** The planner's proposal: `touches` whatever the verdict, and the part each verdict needs. */
 export const Proposal = shape(
@@ -170,7 +182,7 @@ export const Proposal = shape(
 		verdict: Enum(PROPOSED),
 		touches: List(Text()),
 		contract: Bool(),
-		questions: List(Text()),
+		questions: List(Question),
 	},
 	{
 		spec: SpecPart,
@@ -204,7 +216,7 @@ export const Ruling = (maxGroups: number) =>
 				items: Group.schema,
 				maxItems: maxGroups,
 			}),
-			questions: List(Text()),
+			questions: List(Question),
 		},
 		{ duplicateOf: Int(), related: List(Int()) },
 		[needs("duplicate", "duplicateOf"), ASKS],
@@ -220,7 +232,7 @@ export const Triage = shape(
 		verdict: Enum(VERDICTS),
 		risk: Enum(RISKS),
 		reasons: List(Text()),
-		questions: List(Text()),
+		questions: List(Question),
 	},
 	{
 		area: Enum(AREAS),
@@ -347,7 +359,7 @@ function gapsOf(proposal: Proposal): string[] {
 function verdictOf(
 	proposed: Verdict,
 	risk: Risk,
-	questions: string[],
+	questions: Question[],
 ): Verdict {
 	if (questions.length) return "needs-info";
 	if (proposed === "ready-for-agent" && risk === "high")
@@ -359,11 +371,13 @@ const SPECIFIED: readonly Verdict[] = ["ready-for-agent", "needs-approval"];
 
 const relatedOf = (related?: number[]) => (related?.length ? { related } : {});
 
+const askAlone = (ask: string): Question => ({ ask, options: [], context: [] });
+
 /** The triage of a planner's `proposal`. */
 function proposed(proposal: Proposal): Triage {
 	const { touches, contract, spec, children, related } = proposal;
 	const classified = classify(touches, contract);
-	const questions = [...proposal.questions, ...gapsOf(proposal)];
+	const questions = [...proposal.questions, ...gapsOf(proposal).map(askAlone)];
 	const verdict = verdictOf(proposal.verdict, classified.risk, questions);
 	return {
 		verdict,
@@ -392,6 +406,21 @@ function ruled(
 	};
 }
 
+/** `question` without a recommendation that names none of its options, a rule its schema cannot express. */
+function recommendable({ recommend, ...question }: Question): Question {
+	const named = question.options.some((o) => o.label === recommend?.label);
+	return named ? { ...question, recommend } : question;
+}
+
+/** The triage of `ruling`, or of the planner's proposal when the triager handed the issue on. */
+function triageOf(ruling: Ruling, proposal: Settled<Proposal>[]): Triage {
+	if (ruling.verdict !== "plan") return ruled(ruling, ruling.verdict);
+	const [planned] = proposal;
+	if (planned?.outcome !== "ok")
+		throw new Error("the planner gave no proposal");
+	return proposed(planned.value);
+}
+
 /**
  * The triage verdict: the triager's early ruling or the planner's proposal, which it only ever downgrades or gates,
  * never upgrades.
@@ -404,12 +433,10 @@ export function settle({
 	ruling: Ruling;
 	proposal: Settled<Proposal>[];
 }): { triage: Triage } {
-	if (ruling.verdict !== "plan")
-		return { triage: ruled(ruling, ruling.verdict) };
-	const [planned] = proposal;
-	if (planned?.outcome !== "ok")
-		throw new Error("the planner gave no proposal");
-	return { triage: proposed(planned.value) };
+	const triage = triageOf(ruling, proposal);
+	return {
+		triage: { ...triage, questions: triage.questions.map(recommendable) },
+	};
 }
 
 const Slot = Struct({ slot: Text(), group: Group });
@@ -475,6 +502,8 @@ const PLANS: Record<Ruled, boolean> = {
 	"needs-info": false,
 };
 
+const ASKING = `Each question is {"ask": "the question, one line", "lead": "a sentence of background", "options": [{"label": "A", "text": "one option, a line or two"}], "recommend": {"label": "A", "why": "the reason, read on from 'Recommended: A,'"}, "context": [{"topic": "Cost", "text": "one point of evidence, with its file:line"}]}. The owner reads it as a comment: keep the options short and put the evidence in context, one point per item under a one- or two-word topic such as Claiming, D-24 or Cost. Leave out lead when the ask says it all, options when the answer is open, and recommend unless you have a reason for one; recommend.label is the label of one of the options.`;
+
 const triageTask = (
 	maxGroups: number,
 ) => `Triage the attached issue against the attached backlog snapshot. ${GATE}
@@ -484,6 +513,7 @@ Then write ruling.json in exactly this shape, leaving out duplicateOf and relate
 - verdict: duplicate when a backlog issue already asks this one, with duplicateOf; needs-info when it cannot be planned without the owner's answer, with those questions; plan otherwise.
 - files: the repo-relative paths you expect the change to create or edit.
 - groups, for plan: at most ${maxGroups}, one per line of inquiry, the most decisive first, numbered G1 on, each of at most ${GROUP_SIZE} questions. Ask only what changes the plan, and settle yourself what one line settles; no group when nothing needs asking.
+- questions, for needs-info: ${ASKING}
 - related: the backlog issues it relates to.`;
 
 const SCOUT_TASK = `Answer each question of the attached group in answer.md. It replaces the evidence.json your instructions describe: write no summary, facts or risks.
@@ -498,7 +528,7 @@ Write plan.json in exactly this shape, leaving out spec, children and related wh
 - spec, for ready-for-agent: what to change in a short paragraph, the steps to make it in order, each short, the shell commands that prove it done, each starting with ${RUNNERS.join(", ")}, and the commit subject as <type>(<scope>): <summary>.
 - children, for split: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
 - related: the backlog issues it relates to.
-- questions: what only the owner can answer. Any question sends the issue to needs-info whatever the verdict, so settle yourself what the code settles.`;
+- questions: what only the owner can answer. Any question sends the issue to needs-info whatever the verdict, so settle yourself what the code settles. ${ASKING}`;
 
 const triager = seat("triager");
 

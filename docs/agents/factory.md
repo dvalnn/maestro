@@ -236,16 +236,22 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **Login.** Each pass reads the login of the account it acts as (forge-bot today) once, from `GET /user` with its
   token. No setting names it.
 - **Question comments.** Each routed triage with questions posts a new comment, `<!-- maestro-tm-question -->` on its
-  first line, then the questions numbered and how to answer: a reply mentioning `@<login>`. It is never edited, and the
-  thread keeps it. Only a comment by the login counts as one; the marker from anyone else is ordinary text.
+  first line, headed `### Maestro asks · N questions`, then each question after a rule: `**Qn · <ask>**`, its lead, its
+  options as bullets, its recommendation as a `> [!TIP]` callout, and its context folded under
+  `<details><summary>Context</summary>` as `- **<topic>.** <text>` bullets, each part only when the question has it. A
+  closing `<sub>` line says how to answer: a reply mentioning `@<login>`, such as `@forge-bot Q1: …`, then the
+  `needs-triage` label. The tick's own questions take the same heading and closing line, which asks for a label. Agent
+  text in it is made inert. It is never edited, and the thread keeps it. Only a comment by the login counts as one; the
+  marker from anyone else is ordinary text.
 - **Data.** The spec comment ends in one hidden `<!-- maestro-tm-data {...} -->` JSON line, the tick's only state:
   `concert`, the last concert it routed; `triage`, the last ok triage, which a re-triage continues; `read`, the id of
-  the newest comment a triage was fed; `version`, the spec's; `result`, that triage's output; `pending`, set while the
-  result's labels are not yet applied; `filed`, an approved split's children; `slice`, the slice concert the last build
-  started; `attempts`, the red runs spent; `failure`, the reason the last slice failed; `parked`, a slice concert routed
-  but not applied; and `stack`, the blocker the last build stacked on, its PR and that PR's head commit, until the
-  restack. A line the tick cannot read halts the tour manager. The slice concert to continue joins it with the build: an
-  answered `needs-info` or a closed blocking obstacle sets it, and a red retry clears it.
+  the newest comment a triage was fed; `version`, the spec's; `result`, that triage's output, where a question stored as
+  a string reads as an ask alone; `pending`, set while the result's labels are not yet applied; `filed`, an approved
+  split's children; `slice`, the slice concert the last build started; `attempts`, the red runs spent; `failure`, the
+  reason the last slice failed; `parked`, a slice concert routed but not applied; and `stack`, the blocker the last
+  build stacked on, its PR and that PR's head commit, until the restack. A line the tick cannot read halts the tour
+  manager. The slice concert to continue joins it with the build: an answered `needs-info` or a closed blocking obstacle
+  sets it, and a red retry clears it.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. The owner
   answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`, then moving
   the ticket to `needs-triage`; a waiting spec in `needs-approval` is answered or redirected the same way. A triage,

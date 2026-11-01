@@ -230,6 +230,9 @@ const issue = (
 const specAt = (issue: Stored) => specCommentOf(issue.comments);
 const questionsAt = (issue: Stored) =>
 	issue.comments.filter(isQuestion).map((c) => c.body);
+/** The tick's question comment after `lead`, offering `options`, its Markdown bullets. */
+const whichWay = (lead: string, options: string) =>
+	`<!-- maestro-tm-question -->\n\n### Maestro asks · 1 question\n\n---\n\n**Q1 · Which way should this ticket go?**\n\n${lead}\n\n${options}\n\n---\n\n<sub>Label the ticket with your choice.</sub>\n`;
 const dataAt = (issue: Stored) => dataOf(specAt(issue)?.body ?? "");
 
 const triageConcert = (id: string, n: number, status = "ok"): Concert => ({
@@ -335,12 +338,12 @@ describe("a pass", () => {
 				...base,
 				verdict: "needs-info",
 				risk: "medium",
-				questions: ["Who? <!--"],
+				questions: [{ ask: "Who? <!--", options: [], context: [] }],
 			},
 			["state/needs-info", "risk/medium"],
 			true,
 			"**Your move: answer the question in a reply mentioning `@forge-bot`, then label `needs-triage` to re-triage**",
-			"<!-- maestro-tm-question -->\n\nThe tour manager asks, from triage `c1`:\n\n1. Who? <! --\n\nAnswer in a reply mentioning `@forge-bot`, such as `@forge-bot Q1: ...`, then label `needs-triage`.\n",
+			"<!-- maestro-tm-question -->\n\n### Maestro asks · 1 question\n\n---\n\n**Q1 · Who? <! --**\n\n---\n\n<sub>Reply `@forge-bot Q1: …`, then label `needs-triage`.</sub>\n",
 		],
 		[
 			"split",
@@ -396,7 +399,7 @@ describe("a pass", () => {
 		...base,
 		verdict: "needs-info",
 		risk: "medium",
-		questions: ["Who?"],
+		questions: [{ ask: "Who?", options: [], context: [] }],
 	};
 	test.each([
 		["ready-for-agent", ready, true],
@@ -926,8 +929,10 @@ describe("a build", () => {
 		expect(t.writes.some((w) => w.startsWith("file"))).toBe(false);
 	});
 
-	const PARK_QUESTION =
-		"<!-- maestro-tm-question -->\n\nThe slice concert `s1` settled after this ticket was moved, so its result is parked.\n\n1. `in-progress`: apply the parked result\n2. `ready-for-agent`: build it again\n3. `needs-triage`: triage it again\n\nLabel the ticket with your choice.\n";
+	const PARK_QUESTION = whichWay(
+		"The slice concert `s1` settled after this ticket was moved, so its result is parked.",
+		"- **`in-progress`**: apply the parked result\n- **`ready-for-agent`**: build it again\n- **`needs-triage`**: triage it again",
+	);
 	test.each([
 		["in-progress", "in-review", 0],
 		["ready-for-agent", "in-progress", 1],
@@ -1004,7 +1009,10 @@ describe("a build", () => {
 				version: 2,
 			});
 			expect(questionsAt(moved)).toEqual([
-				"<!-- maestro-tm-question -->\n\nTriage `c1` settled after this ticket was moved, so its verdict is not applied.\n\n1. `needs-triage`: triage it again\n\nLabel the ticket with your choice.\n",
+				whichWay(
+					"Triage `c1` settled after this ticket was moved, so its verdict is not applied.",
+					"- **`needs-triage`**: triage it again",
+				),
 			]);
 			expect(specAt(moved)?.body).toStartWith(
 				"<!-- maestro-tm -->\n\n### Spec v2\n\nLast concert: `c1`\n\n**Your move: answer the question in a reply mentioning `@forge-bot`, then label `needs-triage` to re-triage**",
@@ -1063,7 +1071,7 @@ const RESTACKED = [
 	`close factory-i8 at ${CACHED_8}`,
 ];
 const OPTIONS =
-	"1. `ready-for-agent`: build it again on `main`\n2. `needs-triage`: triage it again\n\nLabel the ticket with your choice.\n";
+	"- **`ready-for-agent`**: build it again on `main`\n- **`needs-triage`**: triage it again";
 const merging = (writes: string[]) =>
 	writes.filter(
 		(w) =>
@@ -1202,7 +1210,10 @@ describe("a merge and a stack", () => {
 			},
 			["comment #8", "labels #8 kind/enhancement risk/low state/needs-info"],
 			undefined,
-			`<!-- maestro-tm-question -->\n\nBlocker #5 closed without merging its PR #21, so this ticket's change, stacked on it, was not rebased onto \`main\`.\n\n${OPTIONS}`,
+			whichWay(
+				"Blocker #5 closed without merging its PR #21, so this ticket's change, stacked on it, was not rebased onto `main`.",
+				OPTIONS,
+			),
 		],
 		[
 			"no PR while another blocker is open",
@@ -1239,7 +1250,10 @@ describe("a merge and a stack", () => {
 		const conflicted = t.find(8);
 		expect(conflicted.labels).toContain("state/needs-info");
 		expect(questionsAt(conflicted)).toEqual([
-			`<!-- maestro-tm-question -->\n\nThis ticket's change conflicts with \`main\` once rebased onto it:\n\n\`\`\`text\nsrc/a.ts    2-sided conflict\n\`\`\`\n\n${OPTIONS}`,
+			whichWay(
+				"This ticket's change conflicts with `main` once rebased onto it:\n\n```text\nsrc/a.ts    2-sided conflict\n```",
+				OPTIONS,
+			),
 		]);
 		expect(dataAt(conflicted).stack).toBeUndefined();
 		expect(t.writes.some((w) => w.startsWith("push"))).toBe(false);

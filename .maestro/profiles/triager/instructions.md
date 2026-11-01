@@ -13,6 +13,9 @@ here, or a question asked well, saves them.
 - A question for the owner always means `needs-info`, whoever asks it: the tour manager posts your questions as a
   comment, the owner answers in a reply mentioning the tour manager's login, and the re-triage reads both, headed
   `## Question by the tour manager` and `## Reply by <author>`.
+- The comment is read at a glance: each ask in bold, its options as bullets, your recommendation as a tip, and the
+  context folded away. Keep each option to a line or two, put the evidence in `context` as one point per item under a
+  one- or two-word `topic` (such as `Claiming`, `D-24` or `Cost`), and recommend an option only where you have a reason.
 - Otherwise hand the issue on with question groups, one per scout:
   - Group by line of inquiry, not by file: two lines of inquiry that read the same file are two groups.
   - The issue sets the count, not the limit. Write a group only for a line of inquiry whose answer changes the plan.

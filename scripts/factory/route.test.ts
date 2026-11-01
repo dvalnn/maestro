@@ -6,8 +6,10 @@ import {
 	dataOf,
 	moveLine,
 	parseTriage,
+	questionOf,
 	RISKS,
 	type Triage as Routed,
+	replyHow,
 	tracked,
 	VERDICTS,
 } from "./route";
@@ -35,6 +37,85 @@ test("a triage whose spec has no steps is malformed", () => {
 	expect(
 		parseTriage({ ...triage, spec: { ...spec, steps: ["x"] } }).spec?.steps,
 	).toEqual(["x"]);
+});
+
+const claiming = {
+	ask: "Where should a loose file's config live?",
+	lead: "A loose file has params.",
+	options: [
+		{ label: "A", text: "top-level keys" },
+		{ label: "B", text: "a `files.` namespace\nunder core" },
+	],
+	recommend: { label: "B", why: "it keeps D-24." },
+	context: [
+		{ topic: "Claiming", text: "Only the target claims keys -->." },
+		{ topic: "D-24", text: "A shared config breaks nothing." },
+	],
+};
+
+test("a question comment lays out each question between rules, an ask alone when it has nothing else, then how to reply", () => {
+	const questions = [
+		claiming,
+		{ ask: "Who\n  asks?", options: [], context: [] },
+	];
+	expect(questionOf(questions, replyHow(questions, "forge-bot"))).toBe(
+		[
+			"<!-- maestro-tm-question -->",
+			"",
+			"### Maestro asks · 2 questions",
+			"",
+			"---",
+			"",
+			"**Q1 · Where should a loose file's config live?**",
+			"",
+			"A loose file has params.",
+			"",
+			"- **A**: top-level keys",
+			"- **B**: a `files.` namespace",
+			"  under core",
+			"",
+			"> [!TIP]",
+			"> **Recommended: B**, it keeps D-24.",
+			"",
+			"<details>",
+			"<summary>Context</summary>",
+			"",
+			"- **Claiming.** Only the target claims keys -- >.",
+			"- **D-24.** A shared config breaks nothing.",
+			"",
+			"</details>",
+			"",
+			"---",
+			"",
+			"**Q2 · Who asks?**",
+			"",
+			"---",
+			"",
+			"<sub>Reply `@forge-bot Q1: …, Q2: …`, then label `needs-triage`.</sub>",
+			"",
+		].join("\n"),
+	);
+});
+
+const stored = {
+	verdict: "needs-info",
+	risk: "low",
+	reasons: [],
+	questions: ["Who?", claiming],
+};
+
+test("a stored result's string question parses as an ask alone", () => {
+	expect(parseTriage(stored).questions).toEqual([
+		{ ask: "Who?", options: [], context: [] },
+		claiming,
+	]);
+});
+
+test("a question recommending none of its options is malformed", () => {
+	const straying = { ...claiming, recommend: { label: "C", why: "w" } };
+	expect(() => parseTriage({ ...stored, questions: [straying] })).toThrow(
+		"recommend names C, which is no option",
+	);
 });
 
 test("the data line is the last in the comment, whatever text above it says", () => {

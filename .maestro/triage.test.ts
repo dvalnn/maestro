@@ -108,6 +108,8 @@ test.each(areas)("classify's area is %s", (_, touches, area) => {
 	expect(classify(touches, false).area).toBe(area);
 });
 
+const askAlone = (ask: string) => ({ ask, options: [], context: [] });
+
 const spec = {
 	what: "Make greet.sh greet by name.",
 	steps: ["Read the first argument", "Print it"],
@@ -149,7 +151,7 @@ const overrides: [string, Proposal, Triage][] = [
 			verdict: "needs-info",
 			risk: "medium",
 			reasons: [],
-			questions: ["Which paths does the change create or edit?"],
+			questions: [askAlone("Which paths does the change create or edit?")],
 		},
 	],
 	[
@@ -160,7 +162,9 @@ const overrides: [string, Proposal, Triage][] = [
 			risk: "medium",
 			reasons: [],
 			questions: [
-				"Which repo-relative paths does the change touch in place of ../x.ts, /etc/y?",
+				askAlone(
+					"Which repo-relative paths does the change touch in place of ../x.ts, /etc/y?",
+				),
 			],
 		},
 	],
@@ -171,7 +175,9 @@ const overrides: [string, Proposal, Triage][] = [
 			verdict: "needs-info",
 			...medium,
 			questions: [
-				"Which command proves the change done? Acceptance commands start with bun, bunx, just, mise.",
+				askAlone(
+					"Which command proves the change done? Acceptance commands start with bun, bunx, just, mise.",
+				),
 			],
 		},
 	],
@@ -201,8 +207,12 @@ const overrides: [string, Proposal, Triage][] = [
 			verdict: "needs-info",
 			...medium,
 			questions: [
-				'Child 0 ("a") depends on 1, which is not an earlier child: which child does it need?',
-				'Child 1 ("b") depends on 1, which is not an earlier child: which child does it need?',
+				askAlone(
+					'Child 0 ("a") depends on 1, which is not an earlier child: which child does it need?',
+				),
+				askAlone(
+					'Child 1 ("b") depends on 1, which is not an earlier child: which child does it need?',
+				),
 			],
 		},
 	],
@@ -220,21 +230,45 @@ test.each([
 	"settle sends a ready proposal with a question to needs-info at %s risk",
 	(risk, touches) => {
 		const { triage } = settle(
-			planned({ ...ready, touches, questions: ["Greet whom?"] }),
+			planned({ ...ready, touches, questions: [askAlone("Greet whom?")] }),
 		);
 		expect(triage).toMatchObject({
 			verdict: "needs-info",
 			risk,
-			questions: ["Greet whom?"],
+			questions: [askAlone("Greet whom?")],
 		});
 		expect(triage.spec).toBeUndefined();
 	},
 );
 
+const claiming: Proposal["questions"][number] = {
+	ask: "Where should a loose file's config live?",
+	lead: "A loose file has params.",
+	options: [
+		{ label: "A", text: "top-level keys" },
+		{ label: "B", text: "a files. namespace" },
+	],
+	recommend: { label: "B", why: "it keeps D-24." },
+	context: [{ topic: "D-24", text: "A shared config breaks nothing." }],
+};
+const straying = { ...claiming, recommend: { label: "C", why: "no reason" } };
+
 test("settle fails when the triager handed the issue on and the planner gave nothing", () => {
 	expect(() =>
 		settle({ ruling: planning, proposal: [{ outcome: "skipped" }] }),
 	).toThrow("the planner gave no proposal");
+});
+
+test("settle drops a recommendation naming none of its question's options, keeping the rest", () => {
+	const { recommend: _, ...kept } = straying;
+	const { triage } = settle(
+		planned({
+			...unspecified,
+			verdict: "needs-info",
+			questions: [straying, claiming],
+		}),
+	);
+	expect(triage.questions).toStrictEqual([kept, claiming]);
 });
 
 test("answersOf merges each group's answer in order, marking one whose scout failed unanswered", () => {
@@ -372,8 +406,12 @@ const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 	[
 		"needs-info from the planner",
 		planning,
-		{ ...unspecified, verdict: "needs-info", questions: ["Greet whom?"] },
-		{ verdict: "needs-info", ...medium, questions: ["Greet whom?"] },
+		{
+			...unspecified,
+			verdict: "needs-info",
+			questions: [askAlone("Greet whom?")],
+		},
+		{ verdict: "needs-info", ...medium, questions: [askAlone("Greet whom?")] },
 	],
 	[
 		"split",
@@ -393,11 +431,15 @@ const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 			...planning,
 			verdict: "duplicate",
 			groups: [],
-			questions: ["Is #7 the same?"],
+			questions: [askAlone("Is #7 the same?")],
 			duplicateOf: 7,
 		},
 		undefined,
-		{ verdict: "needs-info", ...medium, questions: ["Is #7 the same?"] },
+		{
+			verdict: "needs-info",
+			...medium,
+			questions: [askAlone("Is #7 the same?")],
+		},
 	],
 	[
 		"an early needs-info",
@@ -405,14 +447,14 @@ const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 			...planning,
 			verdict: "needs-info",
 			groups: [],
-			questions: ["Greet whom?"],
+			questions: [askAlone("Greet whom?")],
 			related: [7],
 		},
 		undefined,
 		{
 			verdict: "needs-info",
 			...medium,
-			questions: ["Greet whom?"],
+			questions: [askAlone("Greet whom?")],
 			related: [7],
 		},
 	],
@@ -480,6 +522,32 @@ test("the scouts and the planner are attached the triager's cut of the backlog, 
 const outputs: [string, Type<unknown>, object, boolean][] = [
 	["a ready proposal", Proposal, ready, true],
 	["a planning ruling", Ruling(4), planning, true],
+	[
+		"a needs-info proposal asking with options, a recommendation and context",
+		Proposal,
+		{
+			...unspecified,
+			verdict: "needs-info",
+			questions: [claiming, askAlone("Who?")],
+		},
+		true,
+	],
+	[
+		"a needs-info proposal asking a string",
+		Proposal,
+		{ ...unspecified, verdict: "needs-info", questions: ["Who?"] },
+		false,
+	],
+	[
+		"a needs-info ruling whose recommendation has no why",
+		Ruling(4),
+		{
+			...planning,
+			verdict: "needs-info",
+			questions: [{ ...claiming, recommend: { label: "B" } }],
+		},
+		false,
+	],
 	[
 		"a ready proposal whose spec has no steps",
 		Proposal,
