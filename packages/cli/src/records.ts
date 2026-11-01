@@ -7,12 +7,15 @@ import {
 import { compact, DURATION_EXAMPLE, MS_PER_UNIT, tokensOf } from "@maestro/ir";
 import {
 	agentText,
+	cutTo,
+	duration,
 	flat,
-	painted,
+	hintLine,
 	type ShortIds,
 	shortIds,
 	stateWord,
 } from "@maestro/render-text/live";
+import { changesOf } from "./changeset";
 import {
 	COMMON,
 	type Command,
@@ -85,9 +88,6 @@ const tokenCell = (metrics: Metrics) => {
 
 const dash = (text: string | undefined) => text || "-";
 
-/** What ends a note line cut to the terminal's width. */
-const CUT_MARK = "…";
-const CUT_MARK_CELLS = Bun.stringWidth(CUT_MARK);
 /** What follows a concert's status in `ls` when its instances have notes. */
 const NOTED_MARK = "•";
 
@@ -108,7 +108,7 @@ function noteSections(noted: readonly Noted[]): Map<string, string[][]> {
 
 /**
  * The lines of `noted`'s sections, each a blank line, its heading, then one `<instance>  <entry>` line each. A line
- * wider than `columns` cells is cut with `…`, followed by a dim line saying how to read the full reports.
+ * wider than `columns` cells is cut with `…`, followed by a dim hint line saying how to read the full reports.
  */
 function notesLines(
 	noted: readonly Noted[],
@@ -122,15 +122,11 @@ function notesLines(
 		...table(rows).split("\n"),
 	]);
 	if (columns === undefined) return lines;
-	const fits = (line: string) => Bun.stringWidth(line) <= columns;
-	if (lines.every(fits)) return lines;
+	const cut = lines.map((line) => cutTo(line, columns));
+	if (cut.every((line, i) => line === lines[i])) return lines;
 	return [
-		...lines.map((line) =>
-			fits(line)
-				? line
-				: `${painted([[line]], false, columns - CUT_MARK_CELLS)}${CUT_MARK}`,
-		),
-		paint("dim", `Full reports: maestro ls ${id} --json | jq .reports`, color),
+		...cut,
+		hintLine(`Full reports: maestro ls ${id} --json | jq .reports`, color),
 	];
 }
 
@@ -244,6 +240,7 @@ async function listed(stored: Stored, query: ConcertFilter) {
 				"workspace",
 				"composition",
 				"status",
+				"time",
 				"tokens",
 				"disk",
 			],
@@ -256,6 +253,7 @@ async function listed(stored: Stored, query: ConcertFilter) {
 				Object.keys(r.notes).length
 					? stateWord(r.status, color, `${r.status} ${NOTED_MARK}`)
 					: stateWord(r.status, color),
+				duration(r.elapsedMs),
 				tokenCell(r.metrics),
 				formatBytes(r.diskUse),
 			]),
@@ -361,6 +359,7 @@ async function waited(
 		printClosing(deps, store, concertOf(store, id), result, {
 			color: colorOf(deps, values),
 			artifacts: artifactsOf(session, id),
+			changes: await changesOf({ session, store, values }, id),
 		});
 	else
 		deps.stderr(

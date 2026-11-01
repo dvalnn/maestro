@@ -643,7 +643,7 @@ describe("closingBlock", () => {
 		"check 'test' line 1 exited 1, and the spec says nothing of it";
 
 	test.each([
-		["ok", 27_800, {}, ["concert    kswoykny  ok  8.2s · 27.8k tokens"]],
+		["ok", 27_800, {}, ["concert    kswoykny  ok  8.2s · 27.8k tok"]],
 		[
 			"rejected",
 			0,
@@ -735,6 +735,71 @@ describe("closingBlock", () => {
 		for (const row of rows)
 			expect(Bun.stringWidth(row)).toBeLessThanOrEqual(31);
 		expect(rows.map((row) => row.slice(11)).join(" ")).toBe(long);
+	});
+
+	test("with a summary, a value that is not one line or does not fit shows as its shape, and a path, short value or number stays", () => {
+		const long = "word ".repeat(20).trim();
+		const keys = Object.fromEntries(
+			Array.from({ length: 7 }, (_, i) => [`key${i}`, "x".repeat(9)]),
+		);
+		const { outputs } = closingBlock(settled("ok"), {
+			outputs: [
+				["report", "a\nb\nc"],
+				["words", long],
+				["verdict", keys],
+				["list", Array.from({ length: 12 }, (_, i) => `item ${i}`)],
+				["small", { a: 1 }],
+				["note", "done"],
+				["ready", "ready\n"],
+				["emoji", "👨‍👩‍👧".repeat(30)],
+				["count", 42],
+				["file", `/data/${"d/".repeat(40)}file`, true],
+			],
+			summary: {
+				columns: 60,
+				changes: { files: 3, added: 120, removed: 14 },
+				hint: "maestro ls kswoykny --json",
+			},
+		});
+		expect(outputs?.split("\n")).toEqual([
+			"report     text, 3 lines",
+			"words      text, 99 chars",
+			"verdict    object, 7 keys",
+			"list       list, 12 items",
+			'small      {"a":1}',
+			"note       done",
+			'ready      "ready\\n"',
+			"emoji      text, 150 chars",
+			"count      42",
+			`file       /data/${"d/".repeat(40)}file`,
+			"changes    3 files  +120 \u221214",
+			"maestro ls kswoykny --json",
+		]);
+	});
+
+	test("with a summary, the hint is dim and the changes colored, and a changeless concert has no changes row", () => {
+		const { outputs } = closingBlock(
+			settled("ok", { color: true }),
+			{
+				outputs: [],
+				summary: {
+					columns: 60,
+					changes: { files: 1, added: 2, removed: 0 },
+					hint: "maestro ls kswoykny --json",
+				},
+			},
+			true,
+		);
+		expect(outputs?.split("\n")).toEqual([
+			`${p("dim", "changes    ")}1 file  ${p("green", "+2")} ${p("red", "\u22120")}`,
+			p("dim", "maestro ls kswoykny --json"),
+		]);
+		expect(
+			closingBlock(settled("ok"), {
+				outputs: [],
+				summary: { columns: 60, hint: "h" },
+			}).outputs,
+		).toBe("h");
 	});
 
 	test("colors the head and the outputs each as its own stream allows", () => {

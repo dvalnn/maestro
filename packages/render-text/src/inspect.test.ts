@@ -153,7 +153,7 @@ describe("inspectorLines", () => {
 			[
 				"◆ inspect  test-loop[1]/repair  fake.agent  running  10s  pi · haiku  1.2k tok",
 				"  context  test-loop ⟲2 › repair",
-				"  state    running   started +1m50s   ran 10s   tokens 1.2k   pi · haiku",
+				"  state    running   started +1m50s   ran 10s   1.2k tok   pi · haiku",
 				"  latest   tool",
 				"  metrics  tokens_in 1.2k · tokens_out 30",
 			],
@@ -206,7 +206,7 @@ describe("inspectorLines", () => {
 			[
 				"◆ inspect  test-loop  loop  2 running · 3 ok · 1 rejected",
 				"  context  6 instances",
-				"  states   2 running · 3 ok · 1 rejected   tokens 1.2k",
+				"  states   2 running · 3 ok · 1 rejected   1.2k tok",
 				"  span     started +1m10s   ran 50s",
 			],
 		],
@@ -308,7 +308,7 @@ describe("navigated", () => {
 		expect(f.lines.slice(3, 8)).toEqual([
 			"◆ inspect  test-loop[1]/repair  fake.agent  running  10s  pi · haiku  1.2k tok",
 			"  context  test-loop ⟲2 › repair",
-			"  state    running   started +1m50s   ran 10s   tokens 1.2k   pi · haiku",
+			"  state    running   started +1m50s   ran 10s   1.2k tok   pi · haiku",
 			"  latest   tool",
 			"  … 2 more lines",
 		]);

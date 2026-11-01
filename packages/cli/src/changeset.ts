@@ -14,7 +14,7 @@ import {
 	patchFiles,
 } from "@maestro/host-repo";
 import { type Ir, isPlainObject } from "@maestro/ir";
-import { shortIds } from "@maestro/render-text/live";
+import { type Changes, shortIds } from "@maestro/render-text/live";
 import {
 	COMMON,
 	type Command,
@@ -397,6 +397,37 @@ async function treeOf({ checkout, base, patches }: Picked): Promise<string> {
 	}
 }
 
+const diffOf = (p: Picked, tree: string, flags: readonly string[]) =>
+	git(p.checkout, ["diff", ...flags, p.base, tree]);
+
+/**
+ * What the changeset `cs show` would show for concert `id` touches, as its diff counts it; `undefined` off a terminal
+ * stdout, or when the concert has no changeset or its diff cannot be read.
+ */
+export async function changesOf(
+	{ session, store, values }: Pick<Stored, "session" | "store" | "values">,
+	id: string,
+): Promise<Changes | undefined> {
+	if (!session.deps.terminal) return undefined;
+	try {
+		const p = await picked({ session, store, values, json: false }, id);
+		const rows = diffOf(p, await treeOf(p), ["--numstat"])
+			.split("\n")
+			.filter(Boolean)
+			.map((row) => row.split("\t"));
+		const count = (n: string | undefined) => Number(n) || 0;
+		return {
+			files: rows.length,
+			added: rows.reduce((sum, [added]) => sum + count(added), 0),
+			removed: rows.reduce((sum, [, removed]) => sum + count(removed), 0),
+		};
+	} catch (error) {
+		if (error instanceof CliError || error instanceof ConfigError)
+			return undefined;
+		throw error;
+	}
+}
+
 async function shown(stored: Stored, prefix: string) {
 	const { session, values } = stored;
 	const { deps } = session;
@@ -416,13 +447,10 @@ async function shown(stored: Stored, prefix: string) {
 				["title", p.row.title || "-"],
 			]),
 		);
-		print(
-			deps,
-			git(p.checkout, ["diff", color, "--name-status", p.base, tree]),
-		);
+		print(deps, diffOf(p, tree, [color, "--name-status"]));
 	} else {
 		const stat = isSet(values, "stat") ? ["--stat"] : [];
-		print(deps, git(p.checkout, ["diff", color, ...stat, p.base, tree]));
+		print(deps, diffOf(p, tree, [color, ...stat]));
 	}
 	return EXIT.ok;
 }

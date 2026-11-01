@@ -26,6 +26,7 @@ import {
 	type Nav,
 	press,
 } from "@maestro/render-text/press";
+import { changesOf } from "./changeset";
 import {
 	COMMON,
 	type Colors,
@@ -313,7 +314,7 @@ async function browsed(
 		frame(row.ir, state, { ...view, rows: EVERY_ROW }, agents),
 	);
 	if (row.status === "running") return EXIT.interrupted;
-	return closed(session, store, row, { color, ending: "block" });
+	return closed(session, store, values, row, { color, ending: "block" });
 }
 
 /**
@@ -422,16 +423,17 @@ async function watched(
 	if (deps.screen && deps.terminal && ending === "block")
 		return browsed(stored, deps.screen, row, deps.terminal);
 	const settled = await polled(store, row, show);
-	return closed(session, store, settled, {
+	return closed(session, store, values, settled, {
 		color: colorOf(deps, values),
 		ending,
 	});
 }
 
 /** Ends the watch of the settled `row` as `ending` says, colored on the streams `color` names, and gives its exit code. */
-function closed(
+async function closed(
 	session: Session,
 	store: Records,
+	values: Values,
 	row: ConcertRecord,
 	{ color, ending }: { color: Colors; ending: WatchEnd },
 ) {
@@ -443,6 +445,10 @@ function closed(
 		printClosing(session.deps, store, row, result, {
 			color,
 			artifacts: ending === "block" ? artifactsOf(session, row.id) : undefined,
+			changes:
+				ending === "block"
+					? await changesOf({ session, store, values }, row.id)
+					: undefined,
 		});
 	return exitOf(doc.status);
 }

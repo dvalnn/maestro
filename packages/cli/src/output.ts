@@ -26,6 +26,7 @@ import {
 	withoutKeys,
 } from "@maestro/ir";
 import {
+	type Changes,
 	closingBlock,
 	padCells,
 	shortIds,
@@ -228,9 +229,10 @@ export const tildeOf = (path: string, home: string | undefined) =>
 
 /**
  * How a closing block shows: colored on each stream `color` names. With `artifacts`, the concert's artifact area, it
- * holds where and why the concert ended and its outputs; without, its `concert` row alone.
+ * holds where and why the concert ended and its outputs; without, its `concert` row alone. `changes` is what the
+ * concert's changeset touches, shown on a terminal stdout.
  */
-type Closing = { color: Colors; artifacts?: string };
+type Closing = { color: Colors; artifacts?: string; changes?: Changes };
 
 /**
  * Prints how the settled concert `row` ended: its `concert` row, and where and why when not ok, on stderr, then the
@@ -242,14 +244,15 @@ export function printClosing(
 	store: Records,
 	row: ConcertRecord,
 	result: ConcertResult,
-	{ color, artifacts }: Closing,
+	{ color, artifacts, changes }: Closing,
 ) {
 	const { terminal, stderrTerminal } = deps;
+	const short = shortIds(store.ids());
 	const view = viewOf(row, color.err, {
 		rows: 0,
 		columns: stderrTerminal?.().columns ?? 0,
 		tokens: tokensOf(store.metrics(row.id)),
-		unique: shortIds(store.ids()).unique(row.id),
+		unique: short.unique(row.id),
 	});
 	const area =
 		terminal && artifacts !== undefined
@@ -263,6 +266,11 @@ export function printClosing(
 					at: atOf(row.ir, result),
 					reason: reasonOf(result),
 					outputs: outputRows(row.ir, area, result),
+					summary: terminal && {
+						columns: terminal().columns,
+						changes,
+						hint: `maestro ls ${short.label(row.id, false)} --json`,
+					},
 				},
 		color.out,
 	);
@@ -304,35 +312,15 @@ export const resultDoc = (
 export const isArtifactRef = (value: unknown): value is ArtifactRef =>
 	isPlainObject(value) && typeof value.path === "string";
 
-/** A control character, or a line or paragraph separator: anything that would break a string's line. */
-const BREAKING = /[\p{Cc}\u2028\u2029]/u;
-/** The separators `JSON.stringify` leaves as they are. */
-const SEPARATORS = /[\u2028\u2029]/g;
-
 /**
- * `value` on one line: a string without a control character or line separator, a number, a boolean or null as it is,
- * else compact JSON.
- */
-const oneLine = (value: unknown) =>
-	(typeof value === "string" && !BREAKING.test(value)) ||
-	typeof value === "number" ||
-	typeof value === "boolean" ||
-	value === null
-		? String(value)
-		: JSON.stringify(value).replace(
-				SEPARATORS,
-				(c) => `\\u${c.charCodeAt(0).toString(16)}`,
-			);
-
-/**
- * The outputs of `result` as a port and its value on one line, with each artifact in a value replaced by its path in
- * the artifact area `artifacts`.
+ * The outputs of `result` as a port and its value, with each artifact in a value replaced by its path in the artifact
+ * area `artifacts`, and whether the whole value is an artifact.
  */
 function outputRows(
 	ir: Ir,
 	artifacts: string,
 	result: ConcertResult,
-): [port: string, value: string][] {
+): [port: string, value: unknown, whole: boolean][] {
 	const outputs = result.outputs ?? {};
 	const refs = Map.groupBy(
 		artifactRefs(ir, result.node, outputs),
@@ -342,7 +330,11 @@ function outputRows(
 		let shown = structuredClone(value);
 		for (const { pointer, ref } of refs.get(port) ?? [])
 			shown = replaceAt(shown, pointer, join(artifacts, ref.path));
-		return [port, oneLine(shown)];
+		return [
+			port,
+			shown,
+			(refs.get(port) ?? []).some(({ pointer }) => pointer === ""),
+		];
 	});
 }
 

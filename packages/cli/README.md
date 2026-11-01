@@ -234,31 +234,49 @@ Spend shows beside the status. An agent instance, in `ls <concert>` and `watch`,
 as `claude-haiku-5.5`), the effort only when the profile sets `thinking`, the total the sum of the instance's `tokens_*`
 metrics but `tokens_reasoning`, which output tokens already count, as `999`, `15.5k` or `1.2M`, left out when 0. A
 running agent shows the harness, model and effort from the `agent` progress event it emits when it starts, then its
-latest note. Other instances leave the column blank. The `ls` list has a `tokens` column with the concert's total, `-`
-when it has none. In the `--json` documents of `ls` (each row, and `ls <concert>`), `wait` and `perform`, `metrics`
-holds each metric name's total over the concert. `ls --json` rows and `ls <concert> --json` also carry `elapsedMs`,
-`settledAt - startedAt`, or the time since `startedAt` while the concert runs.
+latest note. Other instances leave the column blank. The `ls` list has a `time` column after `status`, the run time as
+the closing block shows it, and a `tokens` column with the concert's total, `-` when it has none. The closing block and
+the inspector show tokens as `15.5k tok`, as `watch` does. In the `--json` documents of `ls` (each row, and
+`ls <concert>`), `wait` and `perform`, `metrics` holds each metric name's total over the concert. `ls --json` rows and
+`ls <concert> --json` also carry `elapsedMs`, `settledAt - startedAt`, or the time since `startedAt` while the concert
+runs.
 
 `perform` announces `concert <id>`, the full id, on stderr when it starts. `perform`, `wait` and `watch` on a terminal
 end with the closing block, its labels in one column:
 
 ```text
-concert    pwmqwmlu  failed  13s · 29.7k tokens
-at         repair_until_green/loop[0]/repair
-reason     blocked: the failing check contradicts the spec
-logs       ~/.local/share/maestro/concerts/01a154e0-0160-7590-ba3d-93de543f1059/artifacts/abuKV1B/check.log
+concert    pwmqwmlu  ok  4m12s · 182.4k tok
+verdict    object, 7 keys
+report     text, 312 lines
+status     ready
+changes    3 files  +120 −14
+maestro ls pwmqwmlu --json
 ```
 
 Stderr carries the `concert` row, with the outcome, the elapsed time and the concert's tokens when it has any, then for
-a concert that is not ok `at`, the instance it settled at, and `reason`, each control character shown as its escape.
-Stdout holds a `<port>  <value>` line per output port of the result node, and nothing else. Each stream is styled only
-when it is a terminal: on stderr the outcome is colored and the reason wraps under the value column, on stdout values
-are colored and a path in the home directory starts with `~`. Piped or redirected, a stream has no color or wrapping,
-values show as they are and paths are absolute. With `--json`, stdout holds the document instead, and the id of a
-`perform` stays on its stderr line. A one-line string, a number, a boolean or `null` prints as is, anything else as
-compact JSON, and an artifact as its path. A rejected concert shows its root cause's rejection outputs; a failed one has
-none. In the `--json` document they are as stored, under `outputs`, and its other field names are the record's columns
-in camelCase, with sizes in bytes.
+a concert that is not ok `at`, the instance it settled at, and `reason`, each control character shown as its escape. On
+a terminal the hint, and `changes` when there is one, follow even with no outputs:
+
+```text
+concert    pwmqwmlu  failed  13s · 29.7k tok
+at         repair_until_green/loop[0]/repair
+reason     blocked: the failing check contradicts the spec
+logs       ~/.local/share/maestro/concerts/01a154e0-0160-7590-ba3d-93de543f1059/artifacts/abuKV1B/check.log
+maestro ls pwmqwmlu --json
+```
+
+Stdout holds a row per output port of the result node. On a terminal a value shows when it is one line and fits the
+columns after the label; any other shows as its shape and size, `text, 312 lines` (`text, 80 chars` for one overlong
+line), `object, 7 keys` or `list, 12 items`, and an artifact stays its path. A `changes` row follows,
+`3 files  +120 −14` as `changeset show --stat` counts them, when the concert holds a changeset whose diff can be read,
+then a dim hint line, `maestro ls <concert> --json`, for the whole. Each stream is styled only when it is a terminal: on
+stderr the outcome is colored and the reason wraps under the value column, on stdout values are colored and a path in
+the home directory starts with `~`. Piped or redirected, stdout is a `<port>  <value>` line per output and nothing else,
+and a stream has no color or wrapping, values show as they are and paths are absolute. With `--json`, stdout holds the
+document instead, and the id of a `perform` stays on its stderr line. A one-line string, a number, a boolean or `null`
+prints as is, anything else as compact JSON, and an artifact as its path. A rejected concert shows its root cause's
+rejection outputs; a failed one has none. In the `--json` document they are as stored, under `outputs`, and its other
+field names are the record's columns in camelCase, with sizes in bytes.
 
 A composition is a `.ts` or `.js` file that exports exactly one composition, a `.json` IR file, or
 `<pack>.<composition>` of an installed pack. Its params are flags in kebab-case, layered over the config, and `compose`

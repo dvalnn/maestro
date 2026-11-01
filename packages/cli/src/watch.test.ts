@@ -14,6 +14,7 @@ import {
 	hostOf,
 	idOf,
 	type Outcome,
+	shortOf,
 	world,
 } from "./fixtures/world";
 
@@ -506,7 +507,7 @@ describe("watch on a running concert", async () => {
 			new RegExp(`^${closingOf(id, "ok").source}`),
 		);
 		expect(stripVTControlCharacters(drawn.writes.at(-1) ?? "")).toBe(
-			"text       done",
+			`text       done\nmaestro ls ${shortOf(id)} --json`,
 		);
 		expect(drawn.writes.slice(1).some((write) => REDRAW.test(write))).toBe(
 			true,

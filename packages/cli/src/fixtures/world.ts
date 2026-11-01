@@ -80,7 +80,7 @@ export const closingOf = (
 	...rows: (readonly [label: string, value: string])[]
 ) =>
 	new RegExp(
-		`(?:^|\n)concert {4}${shortOf(id)}  ${outcome}  \\S+(?: · \\S+ tokens)?${rows
+		`(?:^|\n)concert {4}${shortOf(id)}  ${outcome}  \\S+(?: · \\S+ tok)?${rows
 			.map(
 				([label, value]) => `\\n${RegExp.escape(label.padEnd(LABEL) + value)}`,
 			)

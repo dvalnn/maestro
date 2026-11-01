@@ -102,7 +102,7 @@ const kindOf = (graph: GraphIndex, node: string) =>
 const tokenText = (tokens: number) =>
 	tokens > 0 ? `${compact(tokens)} tok` : "";
 const tokensNote = (tokens: number) =>
-	tokens > 0 ? `${WIDE_GAP}tokens ${compact(tokens)}` : "";
+	tokens > 0 ? `${WIDE_GAP}${tokenText(tokens)}` : "";
 
 /** `started +31m33s   ran 1m26s`, from the concert's start; running until `to`, else until now. */
 function timesText(view: View, from?: number, to?: number): string {

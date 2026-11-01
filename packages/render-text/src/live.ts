@@ -999,15 +999,27 @@ export function eventLine(ir: Ir, event: Annotated, view: View): string {
 export type Ending = {
 	at?: string;
 	reason?: string;
-	outputs: readonly (readonly [port: string, value: string])[];
+	/** Each output's port and value; `whole` keeps the value as it is, however long, as a path is. */
+	outputs: readonly (readonly [
+		port: string,
+		value: unknown,
+		whole?: boolean,
+	])[];
+	/** Shown on a terminal: values that do not fit `columns` summarised, then `changes` and `hint`. */
+	summary?: Summary;
 };
+
+/** The lines a changeset touches, as its diff counts them. */
+export type Changes = { files: number; added: number; removed: number };
+
+type Summary = { columns: number; changes?: Changes; hint: string };
 
 /** The closing block's label column: wide enough for `changeset`, the stdlib results' longest port, and a gap. */
 const LABEL_WIDTH = "changeset".length + GAP.length;
 
 function concertSegs(view: View, label: Seg): Seg[] {
 	const { id, unique, status } = view.concert;
-	const tokens = view.tokens > 0 ? ` · ${compact(view.tokens)} tokens` : "";
+	const tokens = view.tokens > 0 ? ` · ${compact(view.tokens)} tok` : "";
 	return [
 		label,
 		...idSegs(id, unique),
@@ -1017,14 +1029,76 @@ function concertSegs(view: View, label: Seg): Seg[] {
 	];
 }
 
+const sized = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+/** `value`'s kind and size: `text, 312 lines` (`N chars` on one line), `object, 7 keys` or `list, 12 items`. */
+/** `text` without one newline at its end, as `wc -l` counts lines. */
+const withoutFinalNewline = (text: string) => text.replace(/\r?\n$/, "");
+
+function shapeText(value: string | object): string {
+	if (typeof value === "string") {
+		const lines = withoutFinalNewline(value).split(NEWLINE).length;
+		return `text, ${lines > 1 ? sized(lines, "line") : sized([...value].length, "char")}`;
+	}
+	return Array.isArray(value)
+		? `list, ${sized(value.length, "item")}`
+		: `object, ${sized(Object.keys(value).length, "key")}`;
+}
+
+/** A control character, or a line or paragraph separator: anything that would break a string's line. */
+const BREAKING = /[\p{Cc}\u2028\u2029]/u;
+/** The separators `JSON.stringify` leaves as they are. */
+const SEPARATORS = /[\u2028\u2029]/g;
+
+/** `value` on one line: a string without a control character or line separator, a number, a boolean or null as it is, else compact JSON. */
+const oneLine = (value: unknown) =>
+	(typeof value === "string" && !BREAKING.test(value)) ||
+	typeof value === "number" ||
+	typeof value === "boolean" ||
+	value === null
+		? String(value)
+		: JSON.stringify(value).replace(
+				SEPARATORS,
+				(c) => `\\u${c.charCodeAt(0).toString(16)}`,
+			);
+
+/** `value` as `oneLine` shows it, or its shape when it is text or JSON that spans lines or is wider than `room` cells. */
+function outputText(value: unknown, whole: boolean, room?: number): string {
+	const text = oneLine(value);
+	const shaped =
+		typeof value === "string" || (typeof value === "object" && value !== null);
+	if (whole || room === undefined || !shaped) return text;
+	const multiline =
+		typeof value === "string" && NEWLINE.test(withoutFinalNewline(value));
+	return multiline || Bun.stringWidth(text) > room ? shapeText(value) : text;
+}
+
+const changesSegs = ({ files, added, removed }: Changes): Seg[] => [
+	[sized(files, "file")],
+	[GAP],
+	[`+${added}`, "green"],
+	[" "],
+	[`\u2212${removed}`, "red"],
+];
+
+/** `text` cut with `…` to `columns` cells when wider. */
+export const cutTo = (text: string, columns: number) =>
+	Bun.stringWidth(text) <= columns
+		? text
+		: `${painted([[text]], false, columns - Bun.stringWidth(ELLIPSIS))}${ELLIPSIS}`;
+
+export const hintLine = (text: string, color: boolean) =>
+	line([[text, "dim"]], color);
+
 /**
  * How `view`'s settled concert ended, in one label column: `head`, its `concert` row then `ending`'s `at` and `reason`,
  * and `outputs`, a row per output when it has any, colored when `outputsColor`. With `view.columns` above 0 the reason
- * wraps under the value column; each value is otherwise shown as it is.
+ * wraps under the value column; each value is otherwise shown as it is. With `ending.summary`, a value too long for its
+ * row shows as its shape, and the outputs end with the `changes` row and the hint.
  */
 export function closingBlock(
 	view: View,
-	{ at, reason, outputs }: Ending = { outputs: [] },
+	{ at, reason, outputs, summary }: Ending = { outputs: [] },
 	outputsColor = view.color,
 ): { head: string; outputs?: string } {
 	const width = Math.max(
@@ -1041,9 +1115,16 @@ export function closingBlock(
 			? []
 			: [row("reason", [[flat(reason), "yellow"]], view.columns)]),
 	];
-	const rows = outputs.map(([port, value]) =>
-		hanging([label(port)], valueSegs(value), 0, outputsColor),
-	);
+	const room = summary && summary.columns - width;
+	const out = (name: string, value: readonly Seg[]) =>
+		hanging([label(name)], value, 0, outputsColor);
+	const rows = [
+		...outputs.map(([port, value, whole = false]) =>
+			out(port, valueSegs(outputText(value, whole, room))),
+		),
+		...(summary?.changes ? [out("changes", changesSegs(summary.changes))] : []),
+		...(summary ? [hintLine(summary.hint, outputsColor)] : []),
+	];
 	return {
 		head: head.join("\n"),
 		...(rows.length > 0 && { outputs: rows.join("\n") }),

@@ -585,6 +585,18 @@ describe("changeset", () => {
 		});
 	});
 
+	test("the closing block shows what the changeset touches on a terminal stdout only", async () => {
+		const w = await edited();
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const env = { ...GIT_ENV, NO_COLOR: "1" };
+		expect((await w.call(["wait", w.id], { terminal, env })).out).toMatch(
+			/\nchanges {4}1 file {2}\+1 \u22121\nmaestro ls \S+ --json$/,
+		);
+		expect((await w.call(["wait", w.id], { env })).out).not.toMatch(
+			/^changes /m,
+		);
+	});
+
 	test("a changeset's message is shown first, and apply --commit makes one commit with it, refusing a changeset without one", async () => {
 		const bare = await edited();
 		expect(await bare.cs("apply", bare.id, "--commit")).toMatchObject({

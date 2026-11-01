@@ -310,6 +310,21 @@ describe("perform", () => {
 			);
 	});
 
+	test("a terminal stdout summarises a long output and ends with a hint, piped it keeps the value whole and nothing else", async () => {
+		const w = await world();
+		const text = Array.from({ length: 312 }, (_, i) => `line ${i}`).join("\n");
+		const host = hostOf({ outcome: "ok", outputs: { text } });
+		const id = idOf(await w.call(["p", ...GREET], { hosts: [host] }));
+		const terminal = () => ({ columns: 40, rows: 24 });
+		const on = await w.call(["wait", id], { terminal, env: { NO_COLOR: "1" } });
+		expect(on.out).toBe(
+			`text       text, 312 lines\nmaestro ls ${shortOf(id)} --json`,
+		);
+		expect((await w.call(["wait", id])).out).toBe(
+			`text       ${JSON.stringify(text)}`,
+		);
+	});
+
 	test.each([
 		["ok", ECHO, 0, [], ["text       done"]],
 		[
@@ -978,7 +993,7 @@ describe("the record", () => {
 			json(await w.call(["ls", "--json"], { hosts: [host] }))[0].diskUse,
 		).toBe(2148);
 		expect((await w.call(["ls"], { hosts: [host] })).out).toMatch(
-			/ok\s+-\s+2\.1 KiB$/m,
+			/ok\s+\S+\s+-\s+2\.1 KiB$/m,
 		);
 	});
 
@@ -1083,8 +1098,8 @@ describe("the record", () => {
 			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
 		);
 		expect(json(await w.call(["wait", id, "--json"])).metrics).toEqual(metrics);
-		expect((await w.call(["wait", id])).err).toMatch(/ · 15\.5k tokens$/m);
-		expect((await w.call(["wait", bare])).err).not.toContain("tokens");
+		expect((await w.call(["wait", id])).err).toMatch(/ · 15\.5k tok$/m);
+		expect((await w.call(["wait", bare])).err).not.toContain("tok");
 		const row = json(await w.call(["ls", "--json"])).find(
 			(r: { id: string }) => r.id === id,
 		);
@@ -1094,11 +1109,13 @@ describe("the record", () => {
 		expect(single.metrics).toEqual(metrics);
 		expect(single.elapsedMs).toBe(row.elapsedMs);
 		const listed = (await w.call(["ls"])).out.split("\n");
-		expect(listed[0]).toMatch(/status +tokens +disk$/);
+		expect(listed[0]).toMatch(/status +time +tokens +disk$/);
 		expect(listed.find((l) => l.startsWith(shortOf(id)))).toMatch(
-			/ok +15\.5k +/,
+			/ok +\S+ +15\.5k +/,
 		);
-		expect(listed.find((l) => l.startsWith(shortOf(bare)))).toMatch(/ok +- +/);
+		expect(listed.find((l) => l.startsWith(shortOf(bare)))).toMatch(
+			/ok +\S+ +- +/,
+		);
 		expect((await w.call(["ls", id], { hosts: [host] })).out).toContain(
 			"pi · claude-haiku-5.5 · medium  15.5k tok",
 		);

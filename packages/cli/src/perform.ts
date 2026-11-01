@@ -10,6 +10,7 @@ import {
 } from "@maestro/core/perform";
 import { mapWorkers } from "@maestro/ir";
 import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk/loader";
+import { changesOf } from "./changeset";
 import {
 	COMMON,
 	type Colors,
@@ -220,14 +221,14 @@ async function settled(concert: Concert): Promise<ConcertResult> {
 }
 
 /** Prints how the concert ended and the outputs its result carries, and gives its exit code. */
-function report(
+async function report(
 	session: Session,
 	store: Records,
 	json: boolean,
-	color: Colors,
+	{ color, values }: { color: Colors; values: Values },
 	id: string,
 	result: ConcertResult,
-): number {
+): Promise<number> {
 	const { deps } = session;
 	if (json)
 		deps.stdout(
@@ -237,6 +238,7 @@ function report(
 		printClosing(deps, store, concertOf(store, id), result, {
 			color,
 			artifacts: artifactsOf(session, id),
+			changes: await changesOf({ session, store, values }, id),
 		});
 	return exitOf(result.outcome);
 }
@@ -286,7 +288,20 @@ async function conducted(
 	});
 	deps.stderr(`concert ${concert.id}`);
 	const result = await settled(concert);
-	return report(session, store, json, color, concert.id, result);
+	return report(
+		session,
+		store,
+		json,
+		{
+			color,
+			values: {
+				preset: prepared.values.preset,
+				config: prepared.values.config,
+			},
+		},
+		concert.id,
+		result,
+	);
 }
 
 export const perform: Command = {
