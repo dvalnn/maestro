@@ -22,7 +22,7 @@ export type Actor =
 	| "slice"
 	| "harvest"
 	| "auto-merge";
-/** A move of the state machine; `how` says in a line when and how it is taken. */
+/** A move of the state machine; `how` says in a line when and how it is taken, an owner's as an imperative clause. */
 export type Transition = {
 	from: Node;
 	to: Node;
@@ -32,6 +32,8 @@ export type Transition = {
 };
 
 export const INTAKE: readonly State[] = ["needs-triage", "needs-spec"];
+/** Stands in a `how` for the login the tick acts as, which only a pass knows. */
+export const LOGIN = "<login>";
 
 const fromIntake = (to: State, event: string, how: string): Transition[] =>
 	INTAKE.map((from) => ({ from, to, actor: "triage", event, how }));
@@ -82,7 +84,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "ready-for-agent",
 		actor: "owner",
 		event: "approve",
-		how: "move here to approve the spec or split",
+		how: "label `ready-for-agent` to approve the spec or split",
 	},
 	{
 		from: "ready-for-agent",
@@ -96,21 +98,21 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "needs-triage",
 		actor: "owner",
 		event: "answer",
-		how: "reply with an answer or a redirect, then move here to re-triage",
+		how: "reply mentioning `@<login>` with an answer or a redirect, then label `needs-triage` to re-triage",
 	},
 	{
 		from: "needs-approval",
 		to: "ready-for-human",
 		actor: "owner",
 		event: "take",
-		how: "move here to build it yourself",
+		how: "label `ready-for-human` to build it yourself",
 	},
 	{
 		from: "needs-approval",
 		to: "wontfix",
 		actor: "owner",
 		event: "drop",
-		how: "move here to drop it",
+		how: "label `wontfix` to drop it",
 	},
 	{
 		from: "ready-for-agent",
@@ -145,7 +147,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "needs-info",
 		actor: "tick",
 		event: "blocked",
-		how: "the tick parks it once out of attempts",
+		how: "the tick asks the owner once out of attempts",
 	},
 	{
 		from: "in-progress",
@@ -180,7 +182,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "ready-for-agent",
 		actor: "owner",
 		event: "answer",
-		how: "answer the slice's question, then move here to build again",
+		how: "answer the question in a reply mentioning `@<login>`, then label `ready-for-agent` to build again",
 	},
 	{
 		from: "needs-info",
@@ -194,7 +196,14 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "needs-triage",
 		actor: "owner",
 		event: "answer triage",
-		how: "reply to a question, then move here to re-triage",
+		how: "answer the question in a reply mentioning `@<login>`, then label `needs-triage` to re-triage",
+	},
+	{
+		from: "needs-info",
+		to: "in-progress",
+		actor: "owner",
+		event: "apply",
+		how: "label `in-progress` to apply the parked result",
 	},
 	{
 		from: "ready-for-human",
@@ -218,9 +227,3 @@ export const TRANSITIONS: readonly Transition[] = [
 		how: "the tick closes it",
 	},
 ];
-
-/** The moves out of `state` for a split or any other issue, each as `<to>: <how>`. */
-export const nextOf = (state: Node, split: boolean): string[] =>
-	TRANSITIONS.filter(
-		(t) => t.from === state && t.event !== (split ? "build" : "split approved"),
-	).map((t) => `${t.to}: ${t.how}`);

@@ -19,14 +19,14 @@ test("a push gives git the token through its environment config only", async () 
 	const path = process.env.PATH;
 	process.env.PATH = `${dir}:${path}`;
 	try {
-		await forge().push(dir, "abc123", "factory/i7");
+		await forge().push(dir, "abc123", "maestro-tm/i7");
 	} finally {
 		process.env.PATH = path;
 	}
 	const basic = Buffer.from(`${TOKEN}:`).toString("base64");
 	const args = readFileSync(argv, "utf8");
 	expect(args).toBe(
-		"push\nhttps://forge.example/owner/repo.git\n+abc123:refs/heads/factory/i7\n",
+		"push\nhttps://forge.example/owner/repo.git\n+abc123:refs/heads/maestro-tm/i7\n",
 	);
 	const holders = readFileSync(environment, "utf8")
 		.split("\n")

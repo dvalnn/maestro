@@ -12,15 +12,16 @@ Issues live on the forge, [`tiago/maestro`](https://git.amorimcasa.org/tiago/mae
   starts; an agreed scope change is a comment saying what changed and who agreed it.
 - **Labels.** One `kind/` and one `state/` label (`triage-labels.md`). Both scopes are exclusive, so adding a `state/`
   label replaces the old one.
-- **Factory block.** The ask sits above a `<!-- factory -->` marker and stops changing. Below it the tick writes the
-  state, risk and area, the next allowed transitions and a link to the factory comment. The factory comment belongs to
-  the tick, which edits it in place: the spec (or a split's child list) triage wrote, its questions, related issues
-  (`Relates to #N`), the last slice concert and its failure. The owner answers by replying. See `factory.md`.
+- **Tour manager.** The ask sits above a `<!-- maestro-tm -->` marker and stops changing. Below it the tour manager
+  keeps one line linking its spec comment, `Spec vN`, which it edits in place: the spec (or a split's child list) triage
+  wrote, related issues (`Relates to #N`), the last slice concert and its failure, and whose move it is. Its questions
+  are comments of their own that stay; the owner answers in a reply mentioning `@forge-bot`, the login it acts as; any
+  other comment is not read. See `factory.md`.
 - **Milestone.** The release that ships it, named by its version (`v0.1.0`). Only the next release or two have one; an
   issue with none is icebox, an indefinite deferral. Planned but not ready is a milestone beside `state/needs-spec`.
   Pre-releases (`-rc.<n>`) have no milestone: they are cuts toward the one that does.
-- **Closing.** A commit on `main` whose description says `Closes #N` closes it when the owner pushes, or when a factory
-  PR carrying it merges (auto-merge included). A duplicate is closed at once with `state/duplicate` and a
+- **Closing.** A commit on `main` whose description says `Closes #N` closes it when the owner pushes, or when a tour
+  manager PR carrying it merges (auto-merge included). A duplicate is closed at once with `state/duplicate` and a
   back-reference. An epic closes when its last child does. A slice's report is the closing comment (below). Nothing else
   closes an issue.
 

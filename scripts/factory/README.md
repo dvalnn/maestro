@@ -1,8 +1,10 @@
 # Factory tick
 
-One pass of the factory (`docs/agents/factory.md`): it routes a settled triage or slice, lands an ok slice as a PR,
+One pass of the tour manager (`docs/agents/factory.md`): it routes a settled triage or slice, lands an ok slice as a PR,
 files approved splits and reports, then starts one build of a ready issue or else one triage of an intake issue. It
-drives maestro through `--json` and the forge through `forge.py` as forge-bot, who also pushes the PR's branch.
+drives maestro through `--json` and the forge through `forge.py` as forge-bot, who also pushes the PR's branch. A triage
+reads only the tour manager's question comments and comments mentioning its login, which each pass reads from
+`GET /user`.
 
 It needs maestro `v0.1.0-rc.1` or later on `PATH`, since the triage composition takes a file param, and `jj`, `git`,
 `bun` and `just` to land a slice.
@@ -34,5 +36,5 @@ journalctl --user -u maestro-factory    # what each pass did
 ```
 
 To stop it, `systemctl --user disable --now maestro-factory.timer`. A failed or malformed triage, a triage or build that
-does not start, a slice that does not land, or factory data it cannot read halts the factory with an open `factory:halt`
+does not start, a slice that does not land, or data it cannot read halts the tour manager with an open `maestro-tm:halt`
 issue; close it to resume.

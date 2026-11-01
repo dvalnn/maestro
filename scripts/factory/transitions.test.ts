@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 import {
 	INTAKE,
 	type Node,
-	nextOf,
 	STATES,
 	TRANSITIONS,
 	type Transition,
@@ -144,27 +143,3 @@ test.each(cases)("the transition table %s", async (_, edit, extra, found) => {
 	const doc = edit(await Bun.file(DOC).text());
 	expect(drift(doc, [...TRANSITIONS, ...extra])).toEqual(found);
 });
-
-test.each([
-	["ready-for-agent", false, ["in-progress: the tick starts its build"]],
-	[
-		"ready-for-agent",
-		true,
-		["in-progress: the tick files the split's children"],
-	],
-	[
-		"needs-approval",
-		false,
-		[
-			"ready-for-agent: move here to approve the spec or split",
-			"needs-triage: reply with an answer or a redirect, then move here to re-triage",
-			"ready-for-human: move here to build it yourself",
-			"wontfix: move here to drop it",
-		],
-	],
-] as const)(
-	"the next moves of %s, when a split is %p, are %p",
-	(state, split, next) => {
-		expect(nextOf(state, split)).toEqual([...next]);
-	},
-);

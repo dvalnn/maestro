@@ -1,5 +1,5 @@
 import type { Comment, Issue, Pull } from "./forge";
-import { askOf, type Data, RISKS, type Risk } from "./route";
+import { askOf, type Data, isAsked, QUESTION, RISKS, type Risk } from "./route";
 import { INTAKE, STATES, type State } from "./transitions";
 
 /** The states whose issues have a PR, or are building one. */
@@ -57,18 +57,26 @@ const TITLE_CHARS = 60;
 export const titleOf = ({ title }: Issue) =>
 	`factory: ${title.length > TITLE_CHARS ? `${title.slice(0, TITLE_CHARS - 1)}…` : title}`;
 
-/** What `--issue` takes: the number, title and ask, then each of `replies` headed by its author. */
-export const issueText = (issue: Issue, replies: readonly Comment[]) =>
+/** `comment` as a triage reads it: a question comment `login` posted headed as the tour manager's, any other by its author. */
+const fed = (comment: Comment, login: string) =>
+	isAsked(comment, login)
+		? ["## Question by the tour manager", comment.body.replace(QUESTION, "")]
+		: [`## Reply by ${comment.author}`, comment.body];
+
+/** What `--issue` takes: the number, title and ask, then each of `replies` under its heading, `login` being the tick's. */
+export const issueText = (
+	issue: Issue,
+	replies: readonly Comment[],
+	login: string,
+) =>
 	[
 		`#${issue.number} ${issue.title}`,
 		"",
 		askOf(issue.body),
-		...replies.flatMap((r) => [
-			"",
-			`## Reply by ${r.author}`,
-			"",
-			r.body.trim(),
-		]),
+		...replies.flatMap((r) => {
+			const [heading, body] = fed(r, login);
+			return ["", heading, "", body?.trim()];
+		}),
 	].join("\n");
 
 const closes = (pull: Pull, issue: number) =>

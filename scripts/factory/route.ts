@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import type { Comment } from "./forge";
 import { isJson, type Json } from "./json";
-import { nextOf, type State } from "./transitions";
+import {
+	INTAKE,
+	LOGIN,
+	type State,
+	TRANSITIONS,
+	type Transition,
+} from "./transitions";
 
 export const VERDICTS = [
 	"ready-for-agent",
@@ -37,22 +43,24 @@ export type Triage = {
 	related?: number[];
 };
 /**
- * The tick's state for one issue (factory.md, Rules: Factory data): `concert` is the last settled concert it routed,
- * `triage` the last ok triage concert, which a re-triage continues, `read` the id of the newest comment a triage was
- * fed, `pending` marks a routed result whose labels are not yet set, `filed` holds an approved split's children, `slice`
- * the slice concert its last build started, `attempts` the red slices it spent and `failure` the reason its last slice
- * failed.
+ * The tick's state for one issue (factory.md, Rules: Data): `concert` is the last settled concert it routed, `triage`
+ * the last ok triage concert, which a re-triage continues, `read` the id of the newest comment a triage was fed,
+ * `version` the spec's, counting routed triages, `pending` marks a routed result whose labels are not yet set, `filed`
+ * holds an approved split's children, `slice` the slice concert its last build started, `attempts` the red slices it
+ * spent, `failure` the reason its last slice failed and `parked` a slice concert routed but not applied.
  */
 export type Data = {
 	concert?: string;
 	triage?: string;
 	read?: number;
+	version?: number;
 	result?: Triage;
 	pending?: true;
 	filed?: number[];
 	slice?: string;
 	attempts?: number;
 	failure?: string;
+	parked?: string;
 };
 
 export const VERDICT_STATE: Record<Verdict, State> = {
@@ -63,8 +71,11 @@ export const VERDICT_STATE: Record<Verdict, State> = {
 	duplicate: "duplicate",
 };
 
-export const MARKER = "<!-- factory -->";
-const DATA_LINE = /^<!-- factory-data (.*) -->$/gm;
+export const MARKER = "<!-- maestro-tm -->";
+export const QUESTION = "<!-- maestro-tm-question -->";
+const DATA_LINE = /^<!-- maestro-tm-data (.*) -->$/gm;
+/** What separates the ask from the marker in a body the tick wrote. */
+const SEPARATOR = "\n\n";
 
 function field<T>(
 	o: Json,
@@ -169,22 +180,49 @@ export const triaged = (labels: readonly string[], triage: Triage) =>
 		],
 	);
 
-/** The ask: the part of `body` above the factory marker. */
-export const askOf = (body: string) => body.split(MARKER)[0]?.trimEnd() ?? "";
+/** The ask as the owner wrote it: `body` above the marker, without the separator the tick put before it. */
+function exactAsk(body: string) {
+	const above = body.split(MARKER)[0] ?? "";
+	return body.includes(MARKER) && above.endsWith(SEPARATOR)
+		? above.slice(0, -SEPARATOR.length)
+		: above;
+}
 
-const isFactory = (comment: Comment) =>
-	comment.body.split("\n")[0]?.trimEnd() === MARKER;
+/** The ask: the part of `body` above the marker. */
+export const askOf = (body: string) => exactAsk(body).trimEnd();
 
-/** The factory comment among `comments`: the first whose first line is the marker. */
-export const factoryOf = (comments: readonly Comment[]) =>
+const opensWith = (marker: string) => (comment: Comment) =>
+	comment.body.split("\n")[0]?.trimEnd() === marker;
+const isFactory = opensWith(MARKER);
+export const isQuestion = opensWith(QUESTION);
+
+/** The spec comment among `comments`: the first whose first line is the marker. */
+export const specCommentOf = (comments: readonly Comment[]) =>
 	comments.find(isFactory);
 
-/** The comments but the factory's whose id is above `read`. */
+/** The comments but the spec comment whose id is above `read`, in id order: those a triage considers. */
 export const repliesOf = (comments: readonly Comment[], read = 0) =>
-	comments.filter((c) => !isFactory(c) && c.id > read);
+	comments
+		.filter((c) => !isFactory(c) && c.id > read)
+		.sort((a, b) => a.id - b.id);
+
+/** Whether `comment` is a question comment `login` posted. */
+export const isAsked = (comment: Comment, login: string) =>
+	isQuestion(comment) && comment.author === login;
+
+/** Whether `body` mentions `@login` as a whole word, in any case. */
+const mentions = (body: string, login: string) =>
+	new RegExp(
+		`(?<![\\w@])@${login.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`,
+		"i",
+	).test(body);
+
+/** Whether a triage is fed `comment`: a question comment `login` posted, or any comment mentioning `@login`. */
+export const isFed = (comment: Comment, login: string) =>
+	isAsked(comment, login) || mentions(comment.body, login);
 
 /**
- * The tick's data in the factory comment `comment`, empty when it has none. The comment ends with its data line, so the
+ * The tick's data in the spec comment `comment`, empty when it has none. The comment ends with its data line, so the
  * last match is the tick's.
  * @throws Error when the data line is not the JSON the tick wrote.
  */
@@ -193,17 +231,20 @@ export function dataOf(comment: string): Data {
 	const line = matches.at(-1)?.[1];
 	if (line === undefined) return {};
 	const data: unknown = JSON.parse(line);
-	if (!isJson(data)) throw new Error("the factory data is not an object");
+	if (!isJson(data))
+		throw new Error("the maestro-tm-data line is not an object");
 	return {
 		concert: optional(data, "concert", isString, "a concert id"),
 		triage: optional(data, "triage", isString, "a concert id"),
 		read: optional(data, "read", isNumber, "a comment id"),
+		version: optional(data, "version", isNumber, "a count"),
 		result: data.result === undefined ? undefined : parseTriage(data.result),
 		pending: data.pending === true || undefined,
 		filed: optional(data, "filed", isNumbers, "a list of issue numbers"),
 		slice: optional(data, "slice", isString, "a concert id"),
 		attempts: optional(data, "attempts", isNumber, "a count"),
 		failure: optional(data, "failure", isString, "a string"),
+		parked: optional(data, "parked", isString, "a concert id"),
 	};
 }
 
@@ -255,7 +296,6 @@ function proposalLines(result: Triage, filed: readonly number[]) {
 
 const resultLines = (result: Triage, filed: readonly number[]) => [
 	...proposalLines(result, filed),
-	...section("Questions", numbered(result.questions)),
 	...section("Reasons", list(result.reasons)),
 	...(result.related?.length ? [`Relates to ${refs(result.related)}`, ""] : []),
 ];
@@ -268,11 +308,47 @@ function buildLines({ attempts, failure, slice }: Data) {
 	];
 }
 
+/** What the tick runs or queues next in `state`, one it owns. */
+function tourMove(state: State, { result, slice, attempts, filed }: Data) {
+	if (INTAKE.includes(state)) return "triage queued";
+	if (state === "ready-for-agent")
+		return result?.children ? "filing the split's children" : "build queued";
+	if (state === "in-progress")
+		return filed
+			? `building the children ${refs(filed)}`
+			: `slice \`${slice}\` running, attempt ${(attempts ?? 0) + 1} of ${ATTEMPTS}`;
+	return "closing it";
+}
+
+/** Whether `data` leaves owner move `t` open: applying needs a parked concert, building again a spec to build. */
+function allows(t: Transition, { parked, result }: Data) {
+	if (t.event === "apply") return parked !== undefined;
+	if (t.from !== "needs-info" || t.to !== "ready-for-agent") return true;
+	return result?.spec !== undefined && result.verdict !== "needs-info";
+}
+
 /**
- * The factory comment for `data` (factory.md, Rules: Factory comment): the marker, then readable Markdown, then the one
- * data line the tick reads back.
+ * The bold line naming whose move it is in `state`: the owner's moves `data` leaves open, `<login>` in them filled with
+ * `login`, else the tick's.
  */
-export function commentOf(data: Data): string {
+export function moveLine(state: State, data: Data, login: string) {
+	const yours = TRANSITIONS.filter(
+		(t) => t.from === state && t.actor === "owner" && allows(t, data),
+	).map((t) => t.how.replace(LOGIN, login));
+	return yours.length
+		? `**Your move: ${yours.join(", or ")}**`
+		: `**Tour manager's move: ${tourMove(state, data)}**`;
+}
+
+/** The version of a spec no routed triage has written yet. */
+const FIRST_VERSION = 1;
+const versionOf = ({ version }: Data) => version ?? FIRST_VERSION;
+
+/**
+ * The spec comment for `data` in `state` (factory.md, Rules: Spec comment): the marker, then readable Markdown ending in
+ * whose move it is, answered by mentioning `login`, then the one data line the tick reads back.
+ */
+export function commentOf(data: Data, state: State, login: string): string {
 	// JSON keeps `>` only inside strings, so escaping it keeps a `-->` in the data from closing the comment.
 	const json = JSON.stringify(data).replaceAll(">", "\\u003e");
 	const shown = [
@@ -283,42 +359,31 @@ export function commentOf(data: Data): string {
 	return [
 		MARKER,
 		"",
-		"_The factory rewrites this comment: answer its questions in a reply._",
+		`### Spec v${versionOf(data)}`,
 		"",
 		...shown,
-		`<!-- factory-data ${json} -->`,
+		moveLine(state, data, login),
+		"",
+		`<!-- maestro-tm-data ${json} -->`,
 		"",
 	].join("\n");
 }
 
-/** `body` with its factory block rewritten for `state` and `result`, linking to the factory comment of id `comment`. */
-export function withBlock(
-	body: string,
-	state: State,
-	{ result }: Data,
-	comment: number,
-): string {
-	const labels = [
-		`State: \`${state}\``,
-		...(result ? [`Risk: \`${result.risk}\``] : []),
-		...(result?.area ? [`Area: \`${result.area}\``] : []),
-	];
-	const shown = [
-		`- ${labels.join(" · ")}`,
-		`- [Factory comment](#issuecomment-${comment})`,
-		"",
-		...section("Next", list(nextOf(state, result?.verdict === "split"))),
-	].map(inert);
-	return [
-		askOf(body),
-		"",
-		MARKER,
-		"",
-		"_The factory rewrites everything below the marker._",
-		"",
-		...shown,
-	].join("\n");
-}
+/** `body` as the ask the owner wrote, then the marker and the closing line linking spec comment `comment`. */
+export const tracked = (body: string, comment: number, data: Data) =>
+	`${exactAsk(body)}${SEPARATOR}${MARKER}\nTracked by Maestro Tour Manager · [spec v${versionOf(data)}](#issuecomment-${comment})`;
+
+/**
+ * A question comment: the marker, `lead`, `items` numbered, then `how` to answer. Agent text in it is made inert.
+ */
+export const questionOf = (
+	lead: string,
+	items: readonly string[],
+	how: string,
+) =>
+	[QUESTION, "", lead, "", ...numbered(items).map(inert), "", how, ""].join(
+		"\n",
+	);
 
 /** What `--request` takes: the number and title, the spec, then the ask. */
 export const requestOf = (

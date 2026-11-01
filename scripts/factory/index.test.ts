@@ -8,13 +8,13 @@ import type { Landing } from "./land";
 import type { Concert, Maestro, Report, Result } from "./maestro";
 import { titleOf } from "./pick";
 import {
-	askOf,
 	commentOf,
 	type Data,
 	dataOf,
-	factoryOf,
+	isQuestion,
+	specCommentOf,
 	type Triage,
-	withBlock,
+	tracked,
 } from "./route";
 
 const MILESTONE = "v0.1.0";
@@ -53,6 +53,7 @@ function fakeForge(issues: Stored[], cut?: string) {
 		return issue;
 	};
 	const forge: Forge = {
+		login: async () => BOT,
 		milestone: async (title) =>
 			title === MILESTONE ? MILESTONE_ID : undefined,
 		issue: async (n) => find(n),
@@ -63,7 +64,7 @@ function fakeForge(issues: Stored[], cut?: string) {
 		pulls: async () => [
 			{
 				number: 20,
-				head: "factory/i6",
+				head: "maestro-tm/i6",
 				body: "Closes #6",
 				additions: 3,
 				deletions: 1,
@@ -172,7 +173,7 @@ function fakeLanding(failAt?: keyof Landing, output = "") {
 	return { landing, steps, heal: () => (failing = undefined) };
 }
 
-/** Issue `number` in `state`, with a factory comment holding `data` when given. */
+/** Issue `number` in `state`, with a spec comment holding `data` when given. */
 const issue = (
 	number: number,
 	state: string,
@@ -183,16 +184,20 @@ const issue = (
 	return {
 		number,
 		title,
-		body: data ? withBlock(ASK, "needs-triage", data, id) : ASK,
+		body: data ? tracked(ASK, id, data) : ASK,
 		labels: ["kind/enhancement", `state/${state}`],
 		milestone: MILESTONE_ID,
 		open: true,
-		comments: data ? [{ id, body: commentOf(data), author: BOT }] : [],
+		comments: data
+			? [{ id, body: commentOf(data, "needs-triage", BOT), author: BOT }]
+			: [],
 	};
 };
 
-const factoryAt = (issue: Stored) => factoryOf(issue.comments);
-const dataAt = (issue: Stored) => dataOf(factoryAt(issue)?.body ?? "");
+const specAt = (issue: Stored) => specCommentOf(issue.comments);
+const questionsAt = (issue: Stored) =>
+	issue.comments.filter(isQuestion).map((c) => c.body);
+const dataAt = (issue: Stored) => dataOf(specAt(issue)?.body ?? "");
 
 const triageConcert = (id: string, n: number, status = "ok"): Concert => ({
 	id,
@@ -270,14 +275,18 @@ const duplicate: Triage = {
 };
 
 describe("a pass", () => {
-	/** Each verdict: its triage, the labels it leaves, whether the issue stays open, and what its comment shows. */
-	const verdicts: [string, Triage, string[], boolean, string][] = [
+	/**
+	 * Each verdict: its triage, the labels it leaves, whether the issue stays open, what its spec comment shows and the
+	 * question comment it posts.
+	 */
+	const verdicts: [string, Triage, string[], boolean, string, string][] = [
 		[
 			"ready-for-agent",
 			ready,
 			["state/ready-for-agent", "risk/low", "area/cli"],
 			true,
-			"#### What\n\nGreet the first argument.\n\nSubject: `feat: greet by name`\n\n#### Steps\n\n1. Read the name\n\n#### Touches\n\n- `greet.sh`\n\n#### Acceptance\n\n- [ ] bun test",
+			"### Spec v1\n\n#### What\n\nGreet the first argument.\n\nSubject: `feat: greet by name`\n\n#### Steps\n\n1. Read the name\n\n#### Touches\n\n- `greet.sh`\n\n#### Acceptance\n\n- [ ] bun test",
+			"",
 		],
 		[
 			"needs-approval, dropping a stale area",
@@ -285,13 +294,20 @@ describe("a pass", () => {
 			["state/needs-approval", "risk/high"],
 			true,
 			"#### Touches\n\n- `greet.sh`",
+			"",
 		],
 		[
 			"needs-info",
-			{ ...base, verdict: "needs-info", risk: "medium", questions: ["Who?"] },
+			{
+				...base,
+				verdict: "needs-info",
+				risk: "medium",
+				questions: ["Who? <!--"],
+			},
 			["state/needs-info", "risk/medium"],
 			true,
-			"#### Questions\n\n1. Who?",
+			"**Your move: answer the question in a reply mentioning `@forge-bot`, then label `needs-triage` to re-triage**",
+			"<!-- maestro-tm-question -->\n\nThe tour manager asks, from triage `c1`:\n\n1. Who? <! --\n\nAnswer in a reply mentioning `@forge-bot`, such as `@forge-bot Q1: ...`, then label `needs-triage`.\n",
 		],
 		[
 			"split",
@@ -299,6 +315,7 @@ describe("a pass", () => {
 			["state/needs-approval", "risk/medium"],
 			true,
 			"#### Children\n\n1. Parse the name\n2. Greet it (after 1)",
+			"",
 		],
 		[
 			"duplicate",
@@ -306,11 +323,12 @@ describe("a pass", () => {
 			["state/duplicate", "risk/low"],
 			false,
 			"Duplicate of #3",
+			"",
 		],
 	];
 	test.each(verdicts)(
 		"routes %s to its labels, block and comment, and a second pass does nothing",
-		async (_, triage, labels, open, shown) => {
+		async (_, triage, labels, open, shown, question) => {
 			const triaged = issue(7, "needs-triage");
 			triaged.labels.push("area/docs", "risk/low");
 			const t = setup([triaged], [triageConcert("c1", 7)], settled(triage));
@@ -319,27 +337,20 @@ describe("a pass", () => {
 			const routed = t.find(7);
 			expect(routed.labels).toEqual(["kind/enhancement", ...labels]);
 			expect(routed.open).toBe(open);
-			const comment = factoryAt(routed);
-			expect(t.writes.filter((w) => w.startsWith("comment"))).toEqual([
-				"comment #7",
-			]);
-			expect(askOf(routed.body)).toBe(ASK);
-			const [state, risk] = labels.map((l) => l.split("/")[1]);
-			expect(routed.body).toContain(
-				`- State: \`${state}\` · Risk: \`${risk}\``,
+			const comment = specAt(routed);
+			expect(routed.body).toBe(
+				`${ASK}\n\n<!-- maestro-tm -->\nTracked by Maestro Tour Manager · [spec v1](#issuecomment-${comment?.id})`,
 			);
-			expect(routed.body).toContain(
-				`- [Factory comment](#issuecomment-${comment?.id})`,
-			);
-			expect(routed.body).toContain("#### Next\n\n- ");
-			expect(routed.body).not.toContain("factory-data");
 			expect(comment?.body).toContain(shown);
+			expect(comment?.body).not.toContain("Questions");
+			expect(questionsAt(routed)).toEqual(question ? [question] : []);
 			const dataLine = comment?.body.trimEnd().split("\n").at(-1) ?? "";
 			expect(dataLine.match(/-->/g)).toHaveLength(1);
 			expect(dataAt(routed)).toEqual({
 				concert: "c1",
 				triage: "c1",
 				result: triage,
+				version: 1,
 			});
 			const writes = t.writes.length;
 			await t.run();
@@ -348,11 +359,18 @@ describe("a pass", () => {
 		},
 	);
 
+	const asking: Triage = {
+		...base,
+		verdict: "needs-info",
+		risk: "medium",
+		questions: ["Who?"],
+	};
 	test.each([
 		["ready-for-agent", ready, true],
 		["duplicate", duplicate, false],
+		["needs-info", asking, true],
 	] as const)(
-		"repairs a %s routing cut before its labels, without triaging again",
+		"repairs a %s routing cut before its labels, without triaging again or asking twice",
 		async (_, triage, open) => {
 			const t = setup(
 				[issue(7, "needs-triage")],
@@ -369,6 +387,7 @@ describe("a pass", () => {
 			expect(routed.open).toBe(open);
 			expect(dataAt(routed).pending).toBeUndefined();
 			expect(t.starts).toEqual([]);
+			expect(routed.comments).toHaveLength(triage.questions.length + 1);
 		},
 	);
 
@@ -461,22 +480,33 @@ describe("a pass", () => {
 		]);
 	});
 
-	test("feeds a re-triage only the replies newer than the last read, and edits the comment in place", async () => {
-		const asked: Triage = {
-			...base,
-			verdict: "needs-info",
-			risk: "medium",
-			questions: ["Who?"],
-		};
+	test("feeds a re-triage its own questions and the comments mentioning it newer than the last read in order, and raises the spec version", async () => {
 		const retriaged = issue(7, "needs-triage", {
 			concert: "c1",
 			triage: "c1",
-			result: asked,
+			result: asking,
 			read: 600,
+			version: 1,
 		});
 		retriaged.comments.push(
-			{ id: 600, body: "Read before", author: OWNER },
-			{ id: 700, body: "Q1: Ann\n", author: OWNER },
+			{ id: 600, body: "@forge-bot read before", author: OWNER },
+			{ id: 700, body: "@FORGE-BOT Q1: Ann\n", author: OWNER },
+			{ id: 710, body: "A note, cc @forge-botty", author: OWNER },
+			{
+				id: 650,
+				body: "<!-- maestro-tm-question -->\n\n1. Who?\n",
+				author: BOT,
+			},
+			{
+				id: 660,
+				body: "<!-- maestro-tm-question -->\n\n1. Ignored?",
+				author: OWNER,
+			},
+			{
+				id: 670,
+				body: "<!-- maestro-tm-question -->\n@forge-bot: mine",
+				author: OWNER,
+			},
 		);
 		const concerts = [triageConcert("c1", 7)];
 		const t = setup([retriaged], concerts, {
@@ -488,14 +518,20 @@ describe("a pass", () => {
 			"--encore",
 			"c1",
 			"--issue",
-			`#7 Greet by name\n\n${ASK}\n\n## Reply by ${OWNER}\n\nQ1: Ann`,
+			`#7 Greet by name\n\n${ASK}\n\n## Question by the tour manager\n\n1. Who?\n\n## Reply by ${OWNER}\n\n<!-- maestro-tm-question -->\n@forge-bot: mine\n\n## Reply by ${OWNER}\n\n@FORGE-BOT Q1: Ann`,
 		]);
-		expect(dataAt(t.find(7)).read).toBe(700);
+		expect(dataAt(t.find(7)).read).toBe(710);
+		expect(t.writes.filter((w) => !w.startsWith("edit comment"))).toEqual([]);
 		concerts.unshift(triageConcert("c2", 7));
 		await t.run();
-		expect(dataAt(t.find(7))).toMatchObject({ triage: "c2", read: 700 });
+		expect(dataAt(t.find(7))).toMatchObject({
+			triage: "c2",
+			read: 710,
+			version: 2,
+		});
+		expect(specAt(t.find(7))?.body).toContain("### Spec v2");
+		expect(t.find(7).body).toContain("[spec v2]");
 		expect(t.writes.some((w) => w.startsWith("comment"))).toBe(false);
-		expect(t.find(7).comments.filter((c) => c.author === BOT)).toHaveLength(1);
 	});
 
 	const faults: [string, Record<string, Result>, string, string][] = [
@@ -524,7 +560,7 @@ describe("a pass", () => {
 			expect(t.writes).toEqual([
 				"comment #7",
 				"edit #7",
-				`file #100 Factory halted: ${title}: ${HALT}`,
+				`file #100 Tour manager halted: ${title}: ${HALT}`,
 			]);
 			expect(t.find(100).body).toStartWith(body);
 			expect(t.find(7).labels).toContain("state/needs-triage");
@@ -535,19 +571,19 @@ describe("a pass", () => {
 		},
 	);
 
-	test("halts naming the issue whose factory data it cannot read", async () => {
+	test("halts naming the issue whose maestro-tm-data line it cannot read", async () => {
 		const broken = issue(7, "needs-triage");
 		broken.comments = [
 			{
 				id: 1,
-				body: "<!-- factory -->\n<!-- factory-data {nope -->\n",
+				body: "<!-- maestro-tm -->\n<!-- maestro-tm-data {nope -->\n",
 				author: BOT,
 			},
 		];
 		const t = setup([broken]);
 		await t.run();
 		expect(t.writes).toEqual([
-			`file #100 Factory halted: #7 has a malformed factory-data line: ${HALT}`,
+			`file #100 Tour manager halted: #7 has a malformed maestro-tm-data line: ${HALT}`,
 		]);
 		expect(t.starts).toEqual([]);
 	});
@@ -557,7 +593,7 @@ describe("a pass", () => {
 		t.refuse("maestro perform: triage.ts does not compose");
 		await t.run();
 		expect(t.writes).toEqual([
-			`file #100 Factory halted: triage of #7 did not start: ${HALT}`,
+			`file #100 Tour manager halted: triage of #7 did not start: ${HALT}`,
 		]);
 		expect(t.find(100).body).toBe(
 			"Triage of #7 did not start:\n\n```text\nmaestro perform: triage.ts does not compose\n```\n\nClose this issue to lift the halt.",
@@ -661,6 +697,11 @@ describe("a build", () => {
 			"state/in-progress",
 		]);
 		expect(dataAt(t.find(8)).slice).toBe("started");
+		expect(specAt(t.find(8))?.body).toContain("### Spec v1\n\n#### What");
+		expect(specAt(t.find(8))?.body).toContain(
+			"**Tour manager's move: slice `started` running, attempt 1 of 2**",
+		);
+		expect(t.writes).not.toContain("edit #8");
 		concerts.push(sliceConcert("started", 8, "running"));
 		const writes = t.writes.length;
 		await t.run();
@@ -693,8 +734,8 @@ describe("a build", () => {
 			`close factory-i7 at ${CACHED}`,
 		]);
 		expect(t.writes.filter((w) => !w.startsWith("edit"))).toEqual([
-			`push abc123 as factory/i7 from ${CACHED}`,
-			"pull factory/i7 to main: feat: greet by name",
+			`push abc123 as maestro-tm/i7 from ${CACHED}`,
+			"pull maestro-tm/i7 to main: feat: greet by name",
 			"labels #7 kind/enhancement risk/low state/in-review",
 		]);
 		expect(t.opened[0]?.body).toBe(
@@ -746,7 +787,7 @@ describe("a build", () => {
 		const routed = t.find(7);
 		expect(routed.labels).toContain("state/needs-info");
 		expect(dataAt(routed).attempts).toBe(1);
-		expect(factoryAt(routed)?.body).toContain(
+		expect(specAt(routed)?.body).toContain(
 			"#### Last failure\n\n```text\nblocked: the check contradicts the spec\n```",
 		);
 		expect(t.starts).toEqual([]);
@@ -800,7 +841,7 @@ describe("a build", () => {
 		);
 		await t.run();
 		expect(t.writes).toEqual([
-			`file #100 Factory halted: landing of #7 failed: ${HALT}`,
+			`file #100 Tour manager halted: landing of #7 failed: ${HALT}`,
 		]);
 		expect(t.find(100).body).toBe(
 			`The slice concert \`s1\` of #7 did not land from the workspace \`${CACHED}\`:\n\n\`\`\`text\njj describe exited 1:\nx\n\`\`\`\n\nLook at the workspace first: closing this issue lets the next tick replace it with a fresh one.\n\nClose this issue to lift the halt.`,
@@ -849,30 +890,105 @@ describe("a build", () => {
 		expect(t.writes.some((w) => w.startsWith("file"))).toBe(false);
 	});
 
-	test.each(["ready-for-human", "needs-approval", "wontfix"])(
-		"leaves a settled slice alone once the owner moved its issue to %s",
-		async (state) => {
+	const PARK_QUESTION =
+		"<!-- maestro-tm-question -->\n\nThe slice concert `s1` settled after this ticket was moved, so its result is parked.\n\n1. `in-progress`: apply the parked result\n2. `ready-for-agent`: build it again\n3. `needs-triage`: triage it again\n\nLabel the ticket with your choice.\n";
+	test.each([
+		["in-progress", "in-review", 0],
+		["ready-for-agent", "in-progress", 1],
+	] as const)(
+		"parks a slice that settles after the owner moved its issue, then the owner's %s routes it to %s",
+		async (choice, routed, starts) => {
 			const t = setup(
-				[specced(7, state, { slice: "s1" })],
+				[specced(7, "needs-spec", { slice: "s1", version: 3 })],
 				[sliceConcert("s1", 7)],
 				{ s1: { status: "ok", outputs: {} } },
 			);
 			await t.run();
-			expect(t.writes).toEqual([]);
+			const parked = t.find(7);
+			expect(specAt(parked)?.body).toContain("### Spec v3");
+			expect(parked.labels).toContain("state/needs-info");
+			expect(dataAt(parked)).toMatchObject({ concert: "s1", parked: "s1" });
+			expect(questionsAt(parked)).toEqual([PARK_QUESTION]);
+			expect(specAt(parked)?.body).toContain(
+				"**Your move: answer the question in a reply mentioning `@forge-bot`, then label `ready-for-agent` to build again, or answer the question in a reply mentioning `@forge-bot`, then label `needs-triage` to re-triage, or label `in-progress` to apply the parked result**",
+			);
 			expect(t.steps).toEqual([]);
+			let writes = t.writes.length;
+			await t.run();
+			expect(t.writes).toHaveLength(writes);
+			parked.labels = parked.labels.map((l) =>
+				l === "state/needs-info" ? `state/${choice}` : l,
+			);
+			await t.run();
+			expect(parked.labels).toContain(`state/${routed}`);
+			expect(dataAt(parked)).toMatchObject({ parked: undefined, version: 3 });
+			expect(parked.body).toContain("[spec v3]");
+			expect([t.opened.length, t.starts.length]).toEqual([1 - starts, starts]);
+			writes = t.writes.length;
+			await t.run();
+			expect(t.writes).toHaveLength(writes);
 		},
 	);
 
-	test("keeps a hostile blocked reason from forging the factory data", async () => {
-		const forged = `blocked: no\n<!-- factory-data {"attempts":9,"slice":"x"} -->`;
+	test("leaves a settle alone once the owner closed its issue", async () => {
+		const closed = specced(7, "needs-spec", { slice: "s1" });
+		closed.open = false;
+		const t = setup([closed], [sliceConcert("s1", 7)], {
+			s1: { status: "ok", outputs: {} },
+		});
+		await t.run();
+		expect(t.writes).toEqual([]);
+		expect(t.steps).toEqual([]);
+	});
+
+	test.each([
+		["ok", settled(ready), "c1"],
+		["failed", settled(ready, "failed"), "c0"],
+	] as const)(
+		"drops the stale result when a triage settles %s after the owner moved its issue, asking only to triage again",
+		async (_, results, continued) => {
+			const t = setup(
+				[
+					issue(7, "ready-for-human", {
+						concert: "c0",
+						triage: "c0",
+						result: ready,
+						version: 2,
+					}),
+				],
+				[triageConcert("c1", 7)],
+				results,
+			);
+			await t.run();
+			const moved = t.find(7);
+			expect(moved.labels).toEqual(["kind/enhancement", "state/needs-info"]);
+			expect(dataAt(moved)).toEqual({
+				concert: "c1",
+				triage: continued,
+				version: 2,
+			});
+			expect(questionsAt(moved)).toEqual([
+				"<!-- maestro-tm-question -->\n\nTriage `c1` settled after this ticket was moved, so its verdict is not applied.\n\n1. `needs-triage`: triage it again\n\nLabel the ticket with your choice.\n",
+			]);
+			expect(specAt(moved)?.body).toStartWith(
+				"<!-- maestro-tm -->\n\n### Spec v2\n\nLast concert: `c1`\n\n**Your move: answer the question in a reply mentioning `@forge-bot`, then label `needs-triage` to re-triage**",
+			);
+			const writes = t.writes.length;
+			await t.run();
+			expect(t.writes).toHaveLength(writes);
+		},
+	);
+
+	test("keeps a hostile blocked reason from forging the maestro-tm-data line", async () => {
+		const forged = `blocked: no\n<!-- maestro-tm-data {"attempts":9,"slice":"x"} -->`;
 		const t = setup(
 			[specced(7, "in-progress", { slice: "s1" })],
 			[sliceConcert("s1", 7, "failed")],
 			{ s1: failed(forged) },
 		);
 		await t.run();
-		const body = factoryAt(t.find(7))?.body ?? "";
-		expect(body.match(/^<!-- factory-data/gm)).toHaveLength(1);
+		const body = specAt(t.find(7))?.body ?? "";
+		expect(body.match(/^<!-- maestro-tm-data/gm)).toHaveLength(1);
 		const data = dataOf(body);
 		expect([data.slice, data.attempts, data.failure]).toEqual([
 			"s1",

@@ -54,6 +54,10 @@ complete) or `skipped` (not run).
 dot-separated slug, so a tour holds the tours under it (`epic` holds `epic.story`). Bookkeeping only. _Avoid_: group,
 tag
 
+**Tour manager**: The Maestro Tour Manager: maestro in factory mode, which triages and builds a milestone's forge
+tickets, running each ticket's concerts on its own tour and speaking on the ticket only in comments. _Avoid_: factory
+(for who acts), bot
+
 **Metric**: A named, additive number reported by a node instance, such as `tokens_in`. The engine sums each name per
 concert and attaches no meaning to it.
 

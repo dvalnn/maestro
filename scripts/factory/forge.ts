@@ -59,6 +59,8 @@ export type IssueQuery = { milestone?: string; label?: string };
 
 /** The forge as the tick sees it, every call made as forge-bot. Labels are named, never given by id. */
 export type Forge = {
+	/** The login of the account the tick acts as. */
+	login(): Promise<string>;
 	/** The id of the milestone titled `title`, if there is one. */
 	milestone(title: string): Promise<number | undefined>;
 	issue(number: number): Promise<Issue>;
@@ -127,18 +129,42 @@ async function api(method: string, path: string, body?: unknown) {
 }
 
 /**
- * Pushes `refspec` from the checkout at `dir` to the `origin` forge over HTTPS as forge-bot.
- * @throws Error with git's message when the push fails.
+ * The `origin` forge's host, owner, repo and forge-bot token.
+ * @throws Error when forge.py gives none.
  */
-async function push(dir: string, refspec: string) {
+async function credentials() {
 	const fields = (
 		await run(["python3", "-I", "-c", CREDENTIALS, dirname(FORGE_PY)])
 	)
 		.trim()
 		.split(" ");
-	const [host, owner, repo, token] = fields;
+	const [host = "", owner = "", repo = "", token] = fields;
 	if (fields.length !== CREDENTIAL_FIELDS || !token)
-		throw new Error("forge: forge.py gave no credentials for the push");
+		throw new Error("forge: forge.py gave no credentials");
+	return { host, owner, repo, token };
+}
+
+/**
+ * The login of the account the token belongs to, from `GET /user`, which forge.py's repo-scoped calls cannot reach.
+ * @throws Error naming the status when the forge refuses.
+ */
+async function login() {
+	const { host, token } = await credentials();
+	const response = await fetch(`https://${host}/api/v1/user`, {
+		headers: { Authorization: `token ${token}`, Accept: "application/json" },
+	});
+	if (!response.ok) throw new Error(`forge: ${response.status} from GET /user`);
+	const login = text(object(await response.json(), "user"), "login");
+	if (!login) throw new Error("forge: GET /user gave no login");
+	return login;
+}
+
+/**
+ * Pushes `refspec` from the checkout at `dir` to the `origin` forge over HTTPS as forge-bot.
+ * @throws Error with git's message when the push fails.
+ */
+async function push(dir: string, refspec: string) {
+	const { host, owner, repo, token } = await credentials();
 	const basic = Buffer.from(`${token}:`).toString("base64");
 	// The header goes through git's environment, so the token reaches no argv, config file or remote URL.
 	await run(
@@ -235,6 +261,7 @@ export function forge(): Forge {
 		return id;
 	};
 	return {
+		login,
 		milestone: async (title) => {
 			const found = await all("/milestones", { state: "all", name: title });
 			const milestone = found.find((m) => text(m, "title") === title);

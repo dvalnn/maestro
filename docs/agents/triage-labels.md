@@ -27,17 +27,17 @@ an issue closes.
 A state says how ready an issue is, never when it ships: the milestone says that (`issue-tracker.md`). An open issue
 with no milestone is icebox; no label marks it.
 
-`state/ready-for-human` means the factory never picks the issue up. `state/needs-approval`, `state/in-progress` and
-`state/in-review` belong to the factory, whose state machine and label moves are in `factory.md`.
+`state/ready-for-human` means the tour manager never takes the issue. `state/needs-approval`, `state/in-progress` and
+`state/in-review` belong to the tour manager, whose state machine and label moves are in `factory.md`.
 
-`factory:halt` sits outside both families: it marks the open issue the factory files when it halts, and closing that
-issue lifts the halt.
+`maestro-tm:halt` sits outside both families: it marks the open issue the tour manager files when it halts, and closing
+that issue lifts the halt.
 
 Two more exclusive scopes sit beside `kind/` and `state/`:
 
 | Scope   | Labels                                                              | Meaning                             |
 | ------- | ------------------------------------------------------------------- | ----------------------------------- |
-| `risk/` | `risk/low`, `risk/medium`, `risk/high`                              | How far the factory goes alone      |
+| `risk/` | `risk/low`, `risk/medium`, `risk/high`                              | How far the tour manager goes alone |
 | `area/` | `area/core`, `area/cli`, `area/host`, `area/packs`, `area/docs`[^a] | The part of the codebase it touches |
 
 [^a]:
