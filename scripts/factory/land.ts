@@ -4,12 +4,20 @@ import { dirname } from "node:path";
 /** How much of a failed command's output a landing error keeps. */
 const OUTPUT_TAIL = 2000;
 
-/** The jj workspace a slice lands in (factory.md, Rules: Landing). */
+/** A restacked commit, or the conflicts that kept it from restacking. */
+export type Restacked = { commit: string } | { conflict: string };
+
+/** The jj workspace a slice lands or restacks in (factory.md, Rules: Landing, Blockers). */
 export type Landing = {
-	/** Creates workspace `name` at `dir` on the fetched base, colocated with git, in place of any a failed landing left there. */
-	open(dir: string, name: string): Promise<void>;
+	/**
+	 * Creates workspace `name` at `dir` on revision `base` as fetched from `origin`, colocated with git, in place of any
+	 * a failed landing left there.
+	 */
+	open(dir: string, name: string, base: string): Promise<void>;
 	/** Describes the change of the workspace at `dir` as `message`, and returns its commit id. */
 	describe(dir: string, message: string): Promise<string>;
+	/** Copies `revision` alone, description and all, onto revision `onto` in the workspace at `dir`. */
+	restack(dir: string, revision: string, onto: string): Promise<Restacked>;
 	/** Forgets workspace `name` and removes `dir`. */
 	close(dir: string, name: string): Promise<void>;
 };
@@ -32,12 +40,12 @@ async function run(cwd: string, command: string[]) {
 	return out;
 }
 
-/** Landing workspaces of the jj repository at `repo`, each on the `base` bookmark as `origin` has it. */
-export function landing(repo: string, base: string): Landing {
+/** Landing workspaces of the jj repository at `repo`. */
+export function landing(repo: string): Landing {
 	const forget = (name: string) =>
 		run(repo, ["jj", "workspace", "forget", name]);
 	return {
-		open: async (dir, name) => {
+		open: async (dir, name, base) => {
 			await forget(name);
 			rmSync(dir, { recursive: true, force: true });
 			mkdirSync(dirname(dir), { recursive: true });
@@ -67,6 +75,26 @@ export function landing(repo: string, base: string): Landing {
 					"commit_id",
 				])
 			).trim();
+		},
+		restack: async (dir, revision, onto) => {
+			await run(dir, ["jj", "new", onto]);
+			await run(dir, ["jj", "duplicate", revision, "--insert-before", "@"]);
+			const [copy = "", conflict] = (
+				await run(dir, [
+					"jj",
+					"log",
+					"-r",
+					"@-",
+					"--no-graph",
+					"-T",
+					'commit_id ++ " " ++ conflict',
+				])
+			)
+				.trim()
+				.split(" ");
+			if (conflict !== "true") return { commit: copy };
+			const paths = await run(dir, ["jj", "resolve", "--list", "-r", "@-"]);
+			return { conflict: paths.trim() };
 		},
 		close: async (dir, name) => {
 			await forget(name);

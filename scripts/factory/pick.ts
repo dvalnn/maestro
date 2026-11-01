@@ -24,9 +24,13 @@ const TIER: Record<Risk, string> = {
 	high: "risky",
 };
 
-/** The slice tier of `issue`: its `risk/` label's, else that of the risk triage gave it. */
+/** The risk of `issue`: its `risk/` label's, else the one triage gave it. */
+export const riskOf = (issue: Issue, triaged: Risk) =>
+	RISKS.find((r) => issue.labels.includes(`risk/${r}`)) ?? triaged;
+
+/** The slice tier of `issue`, by its risk. */
 export const tierOf = (issue: Issue, triaged: Risk) =>
-	TIER[RISKS.find((r) => issue.labels.includes(`risk/${r}`)) ?? triaged];
+	TIER[riskOf(issue, triaged)];
 
 /**
  * The `ready-for-agent` issues a build may take, oldest first: each with a spec, no split's epic among them. Their

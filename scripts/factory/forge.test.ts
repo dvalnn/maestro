@@ -33,3 +33,27 @@ test("a push gives git the token through its environment config only", async () 
 		.filter((line) => line.includes(basic) || line.includes(TOKEN));
 	expect(holders).toEqual([`GIT_CONFIG_VALUE_0=Authorization: Basic ${basic}`]);
 });
+
+test.each([
+	["already armed", "Pull request is already scheduled to auto merge", true],
+	["refused otherwise", "merge failed because of conflict", false],
+])(
+	"arming a PR the forge answers 409 as %s throws only when not armed",
+	async (_, refusal, passes) => {
+		const refusing = mkdtempSync(join(tmpdir(), "factory-forge-"));
+		writeFileSync(
+			join(refusing, "python3"),
+			`#!/bin/sh\necho '409 from POST /pulls/30/merge: {"message":"${refusal}"}' >&2\nexit 1\n`,
+		);
+		chmodSync(join(refusing, "python3"), 0o755);
+		const path = process.env.PATH;
+		process.env.PATH = `${refusing}:${path}`;
+		try {
+			const armed = forge().arm(30);
+			if (passes) await armed;
+			else await expect(armed).rejects.toThrow(refusal);
+		} finally {
+			process.env.PATH = path;
+		}
+	},
+);

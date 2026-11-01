@@ -19,6 +19,9 @@ const CREDENTIALS = [
 const CREDENTIAL_FIELDS = 4;
 /** The forge's largest page. */
 const PAGE = 50;
+/** How the forge refuses to arm auto-merge on a PR that is already armed. */
+const ARMED = /^forge: 409 from .*already scheduled/is;
+const MERGE_STYLE = "rebase";
 
 export type Issue = {
 	number: number;
@@ -29,11 +32,16 @@ export type Issue = {
 	milestone?: number;
 };
 export type Comment = { id: number; body: string; author: string };
-/** An open pull request and its diffstat. */
+/** A pull request and its diffstat. */
 export type Pull = {
 	number: number;
 	/** The branch it merges. */
 	head: string;
+	/** The commit `head` points at. */
+	sha: string;
+	/** The branch it merges into. */
+	base: string;
+	merged: boolean;
 	body: string;
 	additions: number;
 	deletions: number;
@@ -67,7 +75,10 @@ export type Forge = {
 	open(query: IssueQuery): Promise<Issue[]>;
 	/** The `count` most recently updated closed issues. */
 	closed(count: number): Promise<Issue[]>;
+	/** The open pull requests. */
 	pulls(): Promise<Pull[]>;
+	/** Pull request `number`, open or not. */
+	pull(number: number): Promise<Pull>;
 	setLabels(issue: number, labels: string[]): Promise<void>;
 	edit(issue: number, change: { body?: string; closed?: true }): Promise<void>;
 	/** The comments on `issue`, oldest first. */
@@ -85,6 +96,10 @@ export type Forge = {
 	push(dir: string, commit: string, branch: string): Promise<void>;
 	/** Opens a pull request and returns its number. */
 	openPull(pull: NewPull): Promise<number>;
+	/** Changes the branch `pull` merges into to `base`. */
+	retarget(pull: number, base: string): Promise<void>;
+	/** Has the forge merge `pull` by rebase once its required checks pass, unless that is already armed. */
+	arm(pull: number): Promise<void>;
 };
 
 /**
@@ -222,6 +237,9 @@ const commentOf = (o: Json): Comment => ({
 const pullOf = (o: Json): Pull => ({
 	number: num(o, "number"),
 	head: text(object(o.head, "head"), "ref"),
+	sha: text(object(o.head, "head"), "sha"),
+	base: text(object(o.base, "base"), "ref"),
+	merged: o.merged === true,
 	body: text(o, "body"),
 	additions: num(o, "additions"),
 	deletions: num(o, "deletions"),
@@ -287,6 +305,8 @@ export function forge(): Forge {
 				"/issues",
 			).map(issueOf),
 		pulls: async () => (await all("/pulls", { state: "open" })).map(pullOf),
+		pull: async (number) =>
+			pullOf(object(await api("GET", `/pulls/${number}`), "pull")),
 		setLabels: async (issue, labels) => {
 			await api("PUT", `/issues/${issue}/labels`, { labels });
 		},
@@ -344,5 +364,18 @@ export function forge(): Forge {
 		push: (dir, commit, branch) => push(dir, `${commit}:refs/heads/${branch}`),
 		openPull: async (pull) =>
 			num(object(await api("POST", "/pulls", pull), "pull"), "number"),
+		retarget: async (pull, base) => {
+			await api("PATCH", `/pulls/${pull}`, { base });
+		},
+		arm: async (pull) => {
+			try {
+				await api("POST", `/pulls/${pull}/merge`, {
+					Do: MERGE_STYLE,
+					merge_when_checks_succeed: true,
+				});
+			} catch (error) {
+				if (!(error instanceof Error && ARMED.test(error.message))) throw error;
+			}
+		},
 	};
 }

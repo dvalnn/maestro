@@ -172,6 +172,13 @@ export const TRANSITIONS: readonly Transition[] = [
 	},
 	{
 		from: "in-review",
+		to: "needs-info",
+		actor: "tick",
+		event: "conflict",
+		how: "the tick asks the owner when a stacked PR conflicts with `main` restacking",
+	},
+	{
+		from: "in-review",
 		to: "in-progress",
 		actor: "owner",
 		event: "changes",

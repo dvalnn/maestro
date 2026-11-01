@@ -30,6 +30,7 @@ flowchart LR
     R ==>|"merge ²"| D
     R ==>|changes| B
     B -.->|"blocked ³"| NI
+    R -.->|conflict| NI
     IN -.->|"question ⁴"| NI
     NI ==>|"answer ⁵"| Q
     NI ==>|"answer ⁵"| IN
@@ -73,8 +74,9 @@ flowchart TD
 ```
 
 1. Halted by an infra fault or a failed triage, until its `maestro-tm:halt` issue closes.
-2. Merged PRs close issues, stacks rebase, closed blockers free tickets, an answer or a closed obstacle requeues a
-   ticket, an approved split files its children, and an epic's last closed child closes it.
+2. A merged PR closes its issue through its `Closes #N`, a stacked PR whose blocker merged restacks onto `main` (Rules:
+   Restack), closed blockers free tickets, an answer or a closed obstacle requeues a ticket, an approved split files its
+   children, and an epic's last closed child closes it.
 3. First match wins, in the order of the arrows: a concert to continue, a ready ticket whose blockers allow it, an
    intake issue, a harvest due.
 4. Set the labels, edit the spec comment, post any question comment, and rewrite the closing line on a new version.
@@ -108,7 +110,10 @@ flowchart TD
     class HALT fault
 ```
 
-1. In a workspace: apply, describe, push `maestro-tm/i<n>`, open the PR, arm auto-merge on low risk.
+1. In a workspace on `main`, or on the blocker's PR head when stacked: apply, describe, push `maestro-tm/i<n>`, open the
+   PR to `main` or, while a blocker is open, to the blocker's branch, and arm auto-merge on a low one to `main`. A
+   stacked slice whose blocker merged meanwhile restacks first; one that conflicts, or whose blocker closed unmerged,
+   goes to `needs-info` (Rules: Restack).
 2. With the agent's question, blocked by its obstacle issue.
 3. File the obstacle and requeue the ticket; the attempt is kept.
 4. New obstacles and gaps, as `needs-triage`.
@@ -136,7 +141,7 @@ An edge in the diagrams names who causes the move; the tick sets the label unles
 | `needs-approval`  | Spec or split waits for the owner's go              | triage, harvest                     | `ready-for-agent`, `needs-triage`[^answer], `ready-for-human`, `wontfix` |
 | `ready-for-agent` | Specified and queued for a slice concert            | triage, owner[^approve], tick[^red] | `in-progress`[^epic]                                                     |
 | `in-progress`     | Being built: a slice concert, or an epic's children | tick, owner[^changes]               | `in-review`, `ready-for-agent`, `needs-info`, closed[^epic]              |
-| `in-review`       | PR open, waiting on CI and review                   | tick                                | `in-progress`, closed                                                    |
+| `in-review`       | PR open, waiting on CI and review                   | tick                                | `in-progress`, `needs-info`, closed                                      |
 | `needs-info`      | Waiting on an answer                                | triage, slice, tick                 | `ready-for-agent`[^answer], `needs-triage`[^answer], `in-progress`[^app] |
 | `ready-for-human` | Owner builds it, the tour manager never takes it    | owner                               | closed                                                                   |
 | `wontfix`         | Will not be actioned                                | owner                               | closed                                                                   |
@@ -194,6 +199,7 @@ flowchart LR
     NI -->|"[owner] apply ³"| IP
     IP -->|"[slice] red, infra"| RA
     IR["in-review"] -->|"[owner] changes"| IP
+    IR -->|"[tick] conflict"| NI
 
     classDef owner stroke:#d4a72c,stroke-width:3px
     class NA,NI owner
@@ -208,9 +214,10 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 ## Rules
 
 - **Risk and tier.** `risk/low` is the `small` slice tier, `risk/medium` is `ordinary`, `risk/high` is `risky` (it sets
-  a contract). Low builds, opens a PR and merges on CI and the slice's panel. Medium builds and waits for the owner's PR
-  approval. High waits in `needs-approval` for the owner to approve the spec. Medium and high merge by rebase or
-  fast-forward.
+  a contract). Low builds, opens a PR and merges itself: once its PR to `main` is open, the tick arms the forge's
+  auto-merge on it, rebase style, which waits on the required `check` status; the slice settling ok is the panel's pass.
+  Medium builds and waits for the owner to merge its PR. High waits in `needs-approval` for the owner to approve the
+  spec, then merges as medium does. The owner merges by rebase or fast-forward.
 - **One concert at a time.** Parallel waves wait for 10 to 15 good runs.
 - **Pick order.** Finish work first: an encore, then a build, then triage, then a harvest. A tick that routes a settle
   falls through and starts the next action.
@@ -235,9 +242,10 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   `concert`, the last concert it routed; `triage`, the last ok triage, which a re-triage continues; `read`, the id of
   the newest comment a triage was fed; `version`, the spec's; `result`, that triage's output; `pending`, set while the
   result's labels are not yet applied; `filed`, an approved split's children; `slice`, the slice concert the last build
-  started; `attempts`, the red runs spent; `failure`, the reason the last slice failed; and `parked`, a slice concert
-  routed but not applied. A line the tick cannot read halts the tour manager. The slice concert to continue joins it
-  with the build: an answered `needs-info` or a closed blocking obstacle sets it, and a red retry clears it.
+  started; `attempts`, the red runs spent; `failure`, the reason the last slice failed; `parked`, a slice concert routed
+  but not applied; and `stack`, the blocker the last build stacked on, its PR and that PR's head commit, until the
+  restack. A line the tick cannot read halts the tour manager. The slice concert to continue joins it with the build: an
+  answered `needs-info` or a closed blocking obstacle sets it, and a red retry clears it.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. The owner
   answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`, then moving
   the ticket to `needs-triage`; a waiting spec in `needs-approval` is answered or redirected the same way. A triage,
@@ -260,16 +268,27 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
     `needs-triage`.
 - **Encore.** A PR with changes requested, or a `ready-for-agent` ticket whose data names a concert to continue, runs an
   encore of that concert. With no concert to continue the build is a fresh perform.
-- **Blockers.** A ticket is picked when every blocker (a forge dependency) is closed, or is `in-review`, in which case
-  it stacks on that blocker's PR, two deep at most.
+- **Blockers.** A ticket is picked when every blocker (a forge dependency) is closed, or when every open one is
+  `in-review` with its PR to `main`. It then stacks: its slice is cut at the head of the newest of those PRs
+  (`-c target.base=<commit>`), lands on that commit and opens its PR against that blocker's branch. Two deep at most: a
+  blocker whose PR is itself stacked keeps the ticket waiting. A stacked PR is not armed, since it would merge into the
+  blocker's branch.
+- **Restack.** Once no blocker of a stacked ticket is open and the blocker it stacked on merged its PR, the ticket's
+  commit alone is copied onto `main` in a fresh workspace, force-pushed as `maestro-tm/i<n>`, and its PR retargeted to
+  `main`, or opened anew when the forge closed it with its base branch, then armed when low. Sync does this for a ticket
+  in review; a landing does it straight away when the blocker merged during the build. A copy that conflicts, or a
+  blocker closed without merging, moves the ticket to `needs-info` with a question comment offering `ready-for-agent`
+  (build again on `main`) or `needs-triage`.
 - **Build.** A ready ticket is built when its triage left a spec and it is no split's epic: `.maestro/slice.ts` with the
   spec and the ask as `--request`, and its risk's tier as `--tier` and `--preset`. The ticket moves to `in-progress` as
   the perform starts.
-- **Landing.** An ok slice lands in a fresh jj workspace `factory-i<n>` on `main` as fetched from `origin`, at
-  `$XDG_CACHE_HOME/maestro-factory/i<n>`: `maestro cs apply`, then `jj describe` with the spec's subject and
-  `Closes #N`. It runs no check of its own: the slice's gate passed in its lane, and CI checks the PR against `main`.
-  Once the PR is open the ticket moves to `in-review` and the workspace is forgotten and removed. A landing that fails
-  halts the tour manager and keeps the workspace; closing the halt issue lands the slice again in a fresh one.
+- **Landing.** An ok slice lands in a fresh jj workspace `factory-i<n>` on `main` as fetched from `origin`, or on the
+  commit it stacked on, at `$XDG_CACHE_HOME/maestro-factory/i<n>`: `maestro cs apply`, then `jj describe` with the
+  spec's subject and `Closes #N`. It runs no check of its own: the slice's gate passed in its lane, and CI checks the PR
+  against its base. A stacked slice whose blocker merged during the build restacks in the same workspace (Rules:
+  Restack). Once the PR is open the ticket moves to `in-review` and the workspace is forgotten and removed. A landing
+  that fails halts the tour manager and keeps the workspace; closing the halt issue lands the slice again in a fresh
+  one.
 - **Reports.** Each settled slice's obstacles and gaps are filed as `needs-triage` in the milestone, an obstacle as
   `kind/bug` and a gap as `kind/enhancement`, with `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line: the
   first 12 hex of SHA-256 over the text lower-cased, whitespace runs folded to one space and trimmed. A text whose line
@@ -287,8 +306,10 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
   `factory: <issue title>`, the title cut with an ellipsis past 60 characters.
 - **PRs.** One change per ticket, pushed by forge-bot over HTTPS as `maestro-tm/i<n>`, replacing what the branch held,
-  with the subject from the spec and `Closes #N`. The PR to `main` is titled with the subject, and its body holds
-  `Closes #N`, the concert, its tokens, `Relates to` links, the spec's acceptance and the review's upheld findings.
+  with the subject from the spec and `Closes #N`. The PR, to `main` or to the blocker's branch while stacked, is titled
+  with the subject, and its body holds `Closes #N`, the concert, its tokens, `Relates to` links, the spec's acceptance
+  and the review's upheld findings. A restack force-pushes the branch and retargets the PR, or opens it again with the
+  same body when the forge closed it.
 
 ## Setting up
 

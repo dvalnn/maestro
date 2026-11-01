@@ -47,7 +47,8 @@ export type Triage = {
  * the last ok triage concert, which a re-triage continues, `read` the id of the newest comment a triage was fed,
  * `version` the spec's, counting routed triages, `pending` marks a routed result whose labels are not yet set, `filed`
  * holds an approved split's children, `slice` the slice concert its last build started, `attempts` the red slices it
- * spent, `failure` the reason its last slice failed and `parked` a slice concert routed but not applied.
+ * spent, `failure` the reason its last slice failed, `parked` a slice concert routed but not applied and `stack` the
+ * in-review blocker its last build stacked on, with its PR and that PR's head commit, until the restack onto `main`.
  */
 export type Data = {
 	concert?: string;
@@ -61,7 +62,9 @@ export type Data = {
 	attempts?: number;
 	failure?: string;
 	parked?: string;
+	stack?: Stack;
 };
+export type Stack = { blocker: number; commit: string; pull: number };
 
 export const VERDICT_STATE: Record<Verdict, State> = {
 	"ready-for-agent": "ready-for-agent",
@@ -102,6 +105,8 @@ const isStrings = (v: unknown): v is string[] =>
 	Array.isArray(v) && v.every(isString);
 const isNumbers = (v: unknown): v is number[] =>
 	Array.isArray(v) && v.every(isNumber);
+const isStack = (v: unknown): v is Stack =>
+	isJson(v) && isNumber(v.blocker) && isString(v.commit) && isNumber(v.pull);
 const isOneOf =
 	<T extends string>(values: readonly T[]) =>
 	(v: unknown): v is T =>
@@ -245,6 +250,7 @@ export function dataOf(comment: string): Data {
 		attempts: optional(data, "attempts", isNumber, "a count"),
 		failure: optional(data, "failure", isString, "a string"),
 		parked: optional(data, "parked", isString, "a concert id"),
+		stack: optional(data, "stack", isStack, "a stack"),
 	};
 }
 

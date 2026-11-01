@@ -10,6 +10,7 @@ import {
 	forge,
 	type Issue,
 	type NewPull,
+	type Pull,
 } from "./forge";
 import { type Landing, landing } from "./land";
 import {
@@ -24,6 +25,7 @@ import {
 	isIntake,
 	issueText,
 	pick,
+	riskOf,
 	snapshot,
 	stateOf,
 	tierOf,
@@ -46,6 +48,7 @@ import {
 	repliesOf,
 	reportIssue,
 	requestOf,
+	type Stack,
 	specCommentOf,
 	type Triage,
 	tracked,
@@ -171,6 +174,7 @@ async function ask({ forge }: Deps, number: number, body: string) {
 /** Moves issue `number` to `state`, keeping its other labels. */
 async function move({ forge }: Deps, number: number, state: State) {
 	const { labels } = await forge.issue(number);
+	if (labels.includes(`state/${state}`)) return;
 	await forge.setLabels(
 		number,
 		relabelled(labels, ["state"], [`state/${state}`]),
@@ -315,11 +319,17 @@ async function fail(
 	pass.say(`routed #${issue.number}'s slice to ${state}: ${reason}`);
 }
 
-/** The open PR of `head`, else a new one of `pull`. */
+/** The open PR of `pull.head`, retargeted to `pull.base` when it merges elsewhere, else a new one of `pull`. */
 async function openPull(forge: Forge, pull: NewPull) {
 	const open = (await forge.pulls()).find((p) => p.head === pull.head);
-	return open?.number ?? forge.openPull(pull);
+	if (!open) return forge.openPull(pull);
+	if (open.base !== pull.base) await forge.retarget(open.number, pull.base);
+	return open.number;
 }
+
+/** Whether `issue` is low risk, so its PR to `main` merges on its own (factory.md, Rules: Risk and tier). */
+const isLow = (issue: Issue, { result }: Data) =>
+	result !== undefined && riskOf(issue, result.risk) === "low";
 
 /** Forgets and removes a landed workspace; a failure is a warning, since the next landing replaces a leftover. */
 async function closeWorkspace(pass: Pass, dir: string, name: string) {
@@ -331,62 +341,187 @@ async function closeWorkspace(pass: Pass, dir: string, name: string) {
 	}
 }
 
+type Failure = { title: string; lead: string };
+
 /**
- * Lands ok slice `id` of `entry` in a fresh workspace and opens its PR, then moves the issue to `in-review`; false when
- * it halted, keeping the workspace.
+ * Runs `work` in a fresh workspace of issue `number` on revision `base`, then removes it; undefined when it halted on
+ * `failure`, keeping the workspace.
  */
-async function land(
+async function inWorkspace<T>(
 	pass: Pass,
-	{ issue, data }: Entry,
-	id: string,
-	report: Report,
-) {
-	const name = `factory-i${issue.number}`;
-	const dir = join(pass.cache, `i${issue.number}`);
-	let pull: number;
+	number: number,
+	base: string,
+	failure: Failure,
+	work: (dir: string) => Promise<T>,
+): Promise<T | undefined> {
+	const name = `factory-i${number}`;
+	const dir = join(pass.cache, `i${number}`);
+	let done: T;
 	try {
-		const result = data.result;
-		if (!result?.spec) throw new Error(`#${issue.number} holds no spec`);
-		await pass.landing.open(dir, name);
-		await pass.maestro.apply(id, dir);
-		const { subject } = result.spec;
-		const commit = await pass.landing.describe(
-			dir,
-			`${subject}\n\nCloses #${issue.number}\n`,
-		);
-		const head = branchOf(issue.number);
-		await pass.forge.push(dir, commit, head);
-		const body = pullBody({
-			issue: issue.number,
-			concert: id,
-			tokens: report.tokens,
-			upheld: report.upheld ?? "None.",
-			result,
-		});
-		pull = await openPull(pass.forge, {
-			title: subject,
-			body,
-			head,
-			base: BASE,
-		});
+		await pass.landing.open(dir, name, base);
+		done = await work(dir);
 	} catch (error) {
 		await halt(
 			pass,
-			`landing of #${issue.number} failed`,
-			`The slice concert \`${id}\` of #${issue.number} did not land from the workspace \`${dir}\`:`,
+			failure.title,
+			`${failure.lead} from the workspace \`${dir}\`:`,
 			message(error),
 			"Look at the workspace first: closing this issue lets the next tick replace it with a fresh one.",
 		);
-		return false;
+		return undefined;
+	}
+	await closeWorkspace(pass, dir, name);
+	return done;
+}
+
+type PullText = Pick<NewPull, "title" | "body">;
+/** Where a landing or restack leaves its issue: in review with its PR, stacked while `stack` is set, else asking. */
+type Outcome = { pull: number; stack?: Stack } | { question: string };
+
+/** The PR text of `issue`'s slice `concert`, with its `report` (factory.md, Rules: PRs). */
+function pullText(issue: Issue, data: Data, concert: string, report: Report) {
+	const result = data.result;
+	if (!result?.spec) throw new Error(`#${issue.number} holds no spec`);
+	const body = pullBody({
+		issue: issue.number,
+		concert,
+		tokens: report.tokens,
+		upheld: report.upheld ?? "None.",
+		result,
+	});
+	return { title: result.spec.subject, body };
+}
+
+/**
+ * Where `stack` stands for issue `number`: `open` while any blocker is open, else `merged` or `unmerged` by its
+ * blocker's PR.
+ */
+async function stackState(forge: Forge, number: number, stack: Stack) {
+	if ((await forge.blockers(number)).length) return "open";
+	return (await forge.pull(stack.pull)).merged ? "merged" : "unmerged";
+}
+
+const unmerged = ({ blocker, pull }: Stack) =>
+	`Blocker #${blocker} closed without merging its PR #${pull}, so this ticket's change, stacked on it, was not rebased onto \`${BASE}\`.`;
+
+/** Pushes `commit` from `dir` as `entry`'s branch and opens or retargets its PR into `base`, arming a low one to `main`. */
+async function publish(
+	pass: Pass,
+	entry: Entry,
+	dir: string,
+	commit: string,
+	pull: NewPull,
+) {
+	await pass.forge.push(dir, commit, pull.head);
+	const number = await openPull(pass.forge, pull);
+	if (pull.base === BASE && isLow(entry.issue, entry.data))
+		await pass.forge.arm(number);
+	return number;
+}
+
+/** Copies `revision` of `entry` alone onto `main` in the workspace at `dir` and publishes it there; a conflict asks. */
+async function restackIn(
+	pass: Pass,
+	entry: Entry,
+	dir: string,
+	revision: string,
+	text: PullText,
+): Promise<Outcome> {
+	const restacked = await pass.landing.restack(dir, revision, BASE);
+	if ("conflict" in restacked)
+		return {
+			question: `This ticket's change conflicts with \`${BASE}\` once rebased onto it:\n\n${fenced(restacked.conflict)}`,
+		};
+	const head = branchOf(entry.issue.number);
+	const pull = { ...text, head, base: BASE };
+	return { pull: await publish(pass, entry, dir, restacked.commit, pull) };
+}
+
+/**
+ * Writes `outcome` of `entry`'s landed slice `concert` back: `in-review` with its PR, else `needs-info` with a question
+ * comment asking which way.
+ */
+async function record(
+	pass: Pass,
+	{ issue, data }: Entry,
+	concert: string | undefined,
+	outcome: Outcome,
+) {
+	const landed = { ...data, concert, failure: undefined, stack: undefined };
+	if ("question" in outcome) {
+		const options = [
+			`\`ready-for-agent\`: build it again on \`${BASE}\``,
+			"`needs-triage`: triage it again",
+		];
+		const how = "Label the ticket with your choice.";
+		await ask(pass, issue.number, questionOf(outcome.question, options, how));
+		await move(pass, issue.number, "needs-info");
+		await writeSpec(pass, issue.number, "needs-info", landed);
+		pass.say(`asked on #${issue.number}: ${outcome.question.split("\n")[0]}`);
+		return;
 	}
 	await move(pass, issue.number, "in-review");
 	await writeSpec(pass, issue.number, "in-review", {
-		...data,
-		concert: id,
-		failure: undefined,
+		...landed,
+		stack: outcome.stack,
 	});
-	await closeWorkspace(pass, dir, name);
-	pass.say(`landed #${issue.number} as PR #${pull}`);
+	pass.say(`#${issue.number} is in review as PR #${outcome.pull}`);
+}
+
+/**
+ * Applies ok slice `id` of `entry` in the workspace at `dir` and publishes it: to `main`, to its blocker's branch while
+ * a blocker is open, else restacked onto `main` (factory.md, Rules: Blockers).
+ */
+async function landIn(
+	pass: Pass,
+	entry: Entry,
+	id: string,
+	report: Report,
+	dir: string,
+): Promise<Outcome> {
+	const { issue, data } = entry;
+	const text = pullText(issue, data, id, report);
+	await pass.maestro.apply(id, dir);
+	const commit = await pass.landing.describe(
+		dir,
+		`${text.title}\n\nCloses #${issue.number}\n`,
+	);
+	const head = branchOf(issue.number);
+	const { stack } = data;
+	if (!stack)
+		return {
+			pull: await publish(pass, entry, dir, commit, {
+				...text,
+				head,
+				base: BASE,
+			}),
+		};
+	const state = await stackState(pass.forge, issue.number, stack);
+	if (state === "unmerged") return { question: unmerged(stack) };
+	if (state === "merged") return restackIn(pass, entry, dir, commit, text);
+	const base = branchOf(stack.blocker);
+	const pull = { ...text, head, base };
+	return { pull: await publish(pass, entry, dir, commit, pull), stack };
+}
+
+/**
+ * Lands ok slice `id` of `entry` in a fresh workspace on its base, then records where it left the issue; false when it
+ * halted, keeping the workspace.
+ */
+async function land(pass: Pass, entry: Entry, id: string, report: Report) {
+	const { issue, data } = entry;
+	const outcome = await inWorkspace(
+		pass,
+		issue.number,
+		data.stack?.commit ?? BASE,
+		{
+			title: `landing of #${issue.number} failed`,
+			lead: `The slice concert \`${id}\` of #${issue.number} did not land`,
+		},
+		(dir) => landIn(pass, entry, id, report, dir),
+	);
+	if (!outcome) return false;
+	await record(pass, entry, id, outcome);
 	return true;
 }
 
@@ -543,20 +678,72 @@ async function fileSplit(pass: Pass, { issue, data }: Entry, entries: Entry[]) {
 	pass.say(`filed #${issue.number}'s children: ${filed.join(", ")}`);
 }
 
-/** Sets the labels of each routed result a cut pass left unset, and files each split the owner approved. */
-async function sync(pass: Pass, entries: Entry[]) {
-	for (const entry of entries) {
-		const { issue, data } = entry;
-		if (data.pending && data.result)
-			await apply(pass, issue.number, data, data.result);
-		else if (stateOf(issue) === "ready-for-agent" && data.result?.children)
-			await fileSplit(pass, entry, entries);
-	}
+/** Restacks `entry`'s pushed branch onto `main` in a fresh workspace, with its landed concert's PR text. */
+function restackBranch(pass: Pass, entry: Entry) {
+	const { issue, data } = entry;
+	const failure = {
+		title: `restack of #${issue.number} failed`,
+		lead: `The stacked change of #${issue.number} did not restack onto \`${BASE}\``,
+	};
+	return inWorkspace(pass, issue.number, BASE, failure, async (dir) => {
+		if (!data.concert)
+			throw new Error(`#${issue.number} holds no landed concert`);
+		const report = await pass.maestro.report(data.concert);
+		const text = pullText(issue, data, data.concert, report);
+		return restackIn(
+			pass,
+			entry,
+			dir,
+			`${branchOf(issue.number)}@origin`,
+			text,
+		);
+	});
+}
+
+/**
+ * Restacks `entry`'s PR onto `main` once no blocker is open and its blocker's PR merged, or asks when that PR closed
+ * unmerged (factory.md, Rules: Blockers); false when it halted.
+ */
+async function restack(pass: Pass, entry: Entry, stack: Stack) {
+	const state = await stackState(pass.forge, entry.issue.number, stack);
+	if (state === "open") return true;
+	const outcome =
+		state === "merged"
+			? await restackBranch(pass, entry)
+			: { question: unmerged(stack) };
+	if (!outcome) return false;
+	await record(pass, entry, entry.data.concert, outcome);
 	return true;
 }
 
-/** Starts a fresh slice of `entry`'s spec, at its risk's tier, and moves it to `in-progress`; halts on a refusal. */
-async function startSlice(pass: Pass, { issue, data }: Entry) {
+/**
+ * Sets the labels of a routed result a cut pass left unset, files a split the owner approved, or restacks a stacked PR
+ * whose blocker closed; false when it halted.
+ */
+async function syncOne(pass: Pass, entry: Entry, entries: Entry[]) {
+	const { issue, data } = entry;
+	const state = stateOf(issue);
+	if (data.pending && data.result)
+		await apply(pass, issue.number, data, data.result);
+	else if (state === "ready-for-agent" && data.result?.children)
+		await fileSplit(pass, entry, entries);
+	else if (state === "in-review" && data.stack)
+		return restack(pass, entry, data.stack);
+	return true;
+}
+
+/** Syncs each issue (zoom 1, note 2); false when it halted. */
+async function sync(pass: Pass, entries: Entry[]) {
+	for (const entry of entries)
+		if (!(await syncOne(pass, entry, entries))) return false;
+	return true;
+}
+
+/**
+ * Starts a fresh slice of `entry`'s spec, at its risk's tier and on `stack`'s commit when it stacks, and moves it to
+ * `in-progress`; halts on a refusal.
+ */
+async function startSlice(pass: Pass, { issue, data }: Entry, stack?: Stack) {
 	const result = data.result;
 	if (!result?.spec) return;
 	const tier = tierOf(issue, result.risk);
@@ -576,6 +763,7 @@ async function startSlice(pass: Pass, { issue, data }: Entry) {
 				tourOf(pass.milestone, issue.number),
 				"--title",
 				titleOf(issue),
+				...(stack ? ["-c", `target.base=${stack.commit}`] : []),
 			],
 			join(pass.dir, `i${issue.number}.log`),
 		);
@@ -589,15 +777,50 @@ async function startSlice(pass: Pass, { issue, data }: Entry) {
 		return;
 	}
 	await move(pass, issue.number, "in-progress");
-	await writeSpec(pass, issue.number, "in-progress", { ...data, slice: id });
+	await writeSpec(pass, issue.number, "in-progress", {
+		...data,
+		slice: id,
+		stack,
+	});
 	pass.say(`building #${issue.number}: concert ${id}`);
 }
 
-/** Builds the oldest buildable issue whose dependencies are all closed; true when there was none. */
+/** Blocker issue `blocker`'s PR among `pulls` when the issue is `in-review` and the PR merges into `main`. */
+async function reviewed(forge: Forge, blocker: number, pulls: Pull[]) {
+	const pull = pulls.find(
+		(p) => p.head === branchOf(blocker) && p.base === BASE,
+	);
+	if (!pull || stateOf(await forge.issue(blocker)) !== "in-review") return;
+	const stack: Stack = { blocker, commit: pull.sha, pull: pull.number };
+	return stack;
+}
+
+/**
+ * Where issue `number` builds (factory.md, Rules: Blockers): on `main` with no open blocker, stacked on the newest
+ * blocker PR's head when each blocker is in review on a PR to `main`, else undefined, as it waits.
+ */
+async function baseOf(
+	{ forge }: Pass,
+	number: number,
+): Promise<{ stack?: Stack } | undefined> {
+	const blockers = await forge.blockers(number);
+	if (!blockers.length) return {};
+	const pulls = await forge.pulls();
+	const found = await Promise.all(
+		blockers.map((b) => reviewed(forge, b, pulls)),
+	);
+	const stacks = found.filter((s) => s !== undefined);
+	if (stacks.length < blockers.length) return undefined;
+	const [newest] = stacks.sort((a, b) => b.pull - a.pull);
+	return newest && { stack: newest };
+}
+
+/** Builds the oldest buildable issue its blockers let build; true when there was none. */
 async function build(pass: Pass, entries: Entry[]) {
 	for (const entry of buildable(entries)) {
-		if ((await pass.forge.blockers(entry.issue.number)).length) continue;
-		await startSlice(pass, entry);
+		const base = await baseOf(pass, entry.issue.number);
+		if (!base) continue;
+		await startSlice(pass, entry, base.stack);
 		return false;
 	}
 	return true;
@@ -730,7 +953,7 @@ if (import.meta.main) {
 			{
 				forge: forge(),
 				maestro: maestro(),
-				landing: landing(REPO, BASE),
+				landing: landing(REPO),
 				lock: () => lock(join(options.dir, "lock")),
 				say: console.log,
 			},
