@@ -50,7 +50,6 @@ const RISKS = ["low", "medium", "high"] as const;
 /** The areas, in the order that breaks a tie (triage-labels.md). */
 const AREAS = ["core", "cli", "host", "packs", "docs"] as const;
 
-type Proposed = (typeof PROPOSED)[number];
 type Ruled = (typeof RULED)[number];
 type Verdict = (typeof VERDICTS)[number];
 type Risk = (typeof RISKS)[number];
@@ -104,12 +103,14 @@ const GATE =
 
 const SpecPart = Struct({
 	what: Text(),
+	steps: List(Text()),
 	acceptance: List(Text()),
 	subject: Text(),
 });
 const Spec = Struct({
 	touches: List(Text()),
 	what: Text(),
+	steps: List(Text()),
 	acceptance: List(Text()),
 	subject: Text(),
 });
@@ -342,9 +343,13 @@ function gapsOf(proposal: Proposal): string[] {
 	return gaps;
 }
 
-/** The verdict of `proposed`: downgraded to needs-info by any of its `gaps`, else gated when ready at high risk. */
-function verdictOf(proposed: Proposed, risk: Risk, gaps: string[]): Verdict {
-	if (gaps.length) return "needs-info";
+/** The verdict of `proposed`: needs-info when it asks any of `questions`, else gated when ready at high risk. */
+function verdictOf(
+	proposed: Verdict,
+	risk: Risk,
+	questions: string[],
+): Verdict {
+	if (questions.length) return "needs-info";
 	if (proposed === "ready-for-agent" && risk === "high")
 		return "needs-approval";
 	return proposed;
@@ -358,12 +363,12 @@ const relatedOf = (related?: number[]) => (related?.length ? { related } : {});
 function proposed(proposal: Proposal): Triage {
 	const { touches, contract, spec, children, related } = proposal;
 	const classified = classify(touches, contract);
-	const gaps = gapsOf(proposal);
-	const verdict = verdictOf(proposal.verdict, classified.risk, gaps);
+	const questions = [...proposal.questions, ...gapsOf(proposal)];
+	const verdict = verdictOf(proposal.verdict, classified.risk, questions);
 	return {
 		verdict,
 		...classified,
-		questions: [...proposal.questions, ...gaps],
+		questions,
 		...(SPECIFIED.includes(verdict) &&
 			spec && { spec: { touches: scopeOf(touches).paths, ...spec } }),
 		...(verdict === "split" && { children }),
@@ -374,11 +379,13 @@ function proposed(proposal: Proposal): Triage {
 /** The triage of a ruling the triager settled early as `verdict`. */
 function ruled(
 	{ files, questions, duplicateOf, related }: Ruling,
-	verdict: Exclude<Ruled, "plan">,
+	ruledAs: Exclude<Ruled, "plan">,
 ): Triage {
+	const classified = classify(files, false);
+	const verdict = verdictOf(ruledAs, classified.risk, questions);
 	return {
 		verdict,
-		...classify(files, false),
+		...classified,
 		questions,
 		...(verdict === "duplicate" && { duplicateOf }),
 		...relatedOf(related),
@@ -386,7 +393,7 @@ function ruled(
 }
 
 /**
- * The triage verdict: the triager's early ruling, or the planner's proposal, which it only ever downgrades or gates,
+ * The triage verdict: the triager's early ruling or the planner's proposal, which it only ever downgrades or gates,
  * never upgrades.
  * @throws Error when the triager handed the issue on and the planner gave no proposal.
  */
@@ -484,14 +491,14 @@ answer.md holds one section per question, in order, headed "## <the question>", 
 
 const PLAN_TASK = `Triage the attached issue: propose its verdict from the scouts' answers, the triager's ruling, the cut backlog and the target's code. ${GATE}
 Write plan.json in exactly this shape, leaving out spec, children and related where the verdict does not need them:
-{"verdict": "ready-for-agent", "touches": ["path/to/file.ts"], "contract": false, "questions": [], "spec": {"what": "the change to make", "acceptance": ["bun test path/to/file.test.ts"], "subject": "feat(scope): imperative summary"}, "children": [{"title": "a child issue's title", "body": "its ask", "dependsOn": [0]}], "related": [7]}
+{"verdict": "ready-for-agent", "touches": ["path/to/file.ts"], "contract": false, "questions": [], "spec": {"what": "the change to make", "steps": ["a short step"], "acceptance": ["bun test path/to/file.test.ts"], "subject": "feat(scope): imperative summary"}, "children": [{"title": "a child issue's title", "body": "its ask", "dependsOn": [0]}], "related": [7]}
 - verdict: ready-for-agent when one change builds the issue as asked, split when it needs several, needs-info when it cannot be specified without an answer.
 - touches: every repo-relative path the change creates or edits, whatever the verdict; empty when you cannot tell.
 - contract: true when the change sets or changes a contract: an IR field, a CLI flag, a config key, a file layout or a manifest.
-- spec, for ready-for-agent: what to change, the shell commands that prove it done, each starting with ${RUNNERS.join(", ")}, and the commit subject as <type>(<scope>): <summary>.
+- spec, for ready-for-agent: what to change in a short paragraph, the steps to make it in order, each short, the shell commands that prove it done, each starting with ${RUNNERS.join(", ")}, and the commit subject as <type>(<scope>): <summary>.
 - children, for split: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
 - related: the backlog issues it relates to.
-- questions: for needs-info, what the owner must answer; for any other verdict, any question left open.`;
+- questions: what only the owner can answer. Any question sends the issue to needs-info whatever the verdict, so settle yourself what the code settles.`;
 
 const triager = seat("triager");
 

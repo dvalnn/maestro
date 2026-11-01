@@ -4,7 +4,13 @@ import { mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { type Forge, forge, type Issue, type NewPull } from "./forge";
+import {
+	type Comment,
+	type Forge,
+	forge,
+	type Issue,
+	type NewPull,
+} from "./forge";
 import { type Landing, landing } from "./land";
 import {
 	type Concert,
@@ -27,13 +33,16 @@ import {
 import {
 	ATTEMPTS,
 	type Child,
+	commentOf,
 	type Data,
 	dataOf,
+	factoryOf,
 	fenced,
 	fingerprintLine,
 	parseTriage,
 	pullBody,
 	relabelled,
+	repliesOf,
 	reportIssue,
 	requestOf,
 	type Triage,
@@ -82,7 +91,7 @@ export type Deps = {
 	say: (line: string) => void;
 };
 
-type Entry = { issue: Issue; data: Data };
+type Entry = { issue: Issue; comments: Comment[]; data: Data };
 type Pass = Deps & Options & { milestoneId: number; concerts: Concert[] };
 
 /**
@@ -129,15 +138,22 @@ async function halt(
 	say(`halted on #${halted}: ${title}`);
 }
 
-/** Rewrites the factory block of issue `number` for `state` and `data`, over its body as it is now. */
+/**
+ * Writes `data` to the factory comment of issue `number`, creating it on the first write, then rewrites the factory
+ * block of its body as it is now for `state`.
+ */
 async function writeBlock(
 	{ forge }: Deps,
 	number: number,
 	state: State,
 	data: Data,
 ) {
+	const comment = commentOf(data);
+	const found = factoryOf(await forge.comments(number));
+	if (found) await forge.editComment(found.id, comment);
+	const id = found?.id ?? (await forge.comment(number, comment));
 	const { body } = await forge.issue(number);
-	await forge.edit(number, { body: withBlock(body, state, data) });
+	await forge.edit(number, { body: withBlock(body, state, data, id) });
 }
 
 /** Moves issue `number` to `state`, keeping its other labels. */
@@ -156,15 +172,17 @@ async function load(pass: Pass): Promise<Entry[] | undefined> {
 	);
 	const entries: Entry[] = [];
 	for (const issue of issues) {
+		const comments = await pass.forge.comments(issue.number);
 		try {
-			entries.push({ issue, data: dataOf(issue.body) });
+			const data = dataOf(factoryOf(comments)?.body ?? "");
+			entries.push({ issue, comments, data });
 		} catch (error) {
 			await halt(
 				pass,
 				`#${issue.number} has a malformed factory-data line`,
-				`The factory-data line of #${issue.number} cannot be read:`,
+				`The factory-data line of #${issue.number}'s factory comment cannot be read:`,
 				message(error),
-				"Fix the line, or delete the factory block below the marker.",
+				"Fix the line, or delete the factory comment.",
 			);
 			return undefined;
 		}
@@ -200,6 +218,12 @@ async function settle(pass: Pass, { issue, data }: Entry, id: string) {
 	const state = stateOf(issue) ?? "needs-triage";
 	if (typeof result === "string") {
 		const [what, ...why] = result.split(": ");
+		// The replies it was fed go to the next triage again, since an encore continues the last ok one.
+		await writeBlock(pass, issue.number, state, {
+			...data,
+			concert: id,
+			read: undefined,
+		});
 		await halt(
 			pass,
 			`triage of #${issue.number} ${what}`,
@@ -207,7 +231,6 @@ async function settle(pass: Pass, { issue, data }: Entry, id: string) {
 			why.join(": "),
 			`Read it with \`maestro ls ${id}\`. The next tick triages #${issue.number} again.`,
 		);
-		await writeBlock(pass, issue.number, state, { ...data, concert: id });
 		return false;
 	}
 	const routed: Data = { ...data, concert: id, triage: id, result };
@@ -489,52 +512,66 @@ async function build(pass: Pass, entries: Entry[]) {
 	return true;
 }
 
-/** Starts triage of the oldest intake issue, an encore of its last triage when it has one; halts on a refusal. */
+/**
+ * Starts triage of the oldest intake issue on its ask and the replies since the last triage read, an encore of its last
+ * triage when it has one, then records the newest reply it fed; halts on a refusal.
+ */
 async function triage(pass: Pass, entries: Entry[]) {
 	const issue = pick(
 		entries.filter((e) => !e.data.pending).map((e) => e.issue),
 	);
-	const last = entries.find((e) => e.issue === issue)?.data.triage;
-	if (!issue) {
+	const entry = entries.find((e) => e.issue === issue);
+	if (!entry) {
 		pass.say("nothing to triage");
 		return true;
 	}
+	const { data, comments } = entry;
+	const { number } = entry.issue;
+	const replies = repliesOf(comments, data.read);
 	const [closed, pulls] = await Promise.all([
 		pass.forge.closed(CLOSED),
 		pass.forge.pulls(),
 	]);
 	const issues = entries.map((e) => e.issue);
-	const backlog = join(pass.dir, `backlog-i${issue.number}.md`);
+	const backlog = join(pass.dir, `backlog-i${number}.md`);
 	await Bun.write(
 		backlog,
-		snapshot(pass.milestone, issue.number, issues, closed, pulls),
+		snapshot(pass.milestone, number, issues, closed, pulls),
 	);
+	let id: string;
 	try {
-		const id = await pass.maestro.start(
+		id = await pass.maestro.start(
 			[
 				"perform",
-				...(last ? ["--encore", last] : [TRIAGE_FILE]),
+				...(data.triage ? ["--encore", data.triage] : [TRIAGE_FILE]),
 				"--issue",
-				issueText(issue),
+				issueText(entry.issue, replies),
 				"--backlog",
 				backlog,
 				"--tour",
-				tourOf(pass.milestone, issue.number),
+				tourOf(pass.milestone, number),
 				"--title",
-				titleOf(issue),
+				titleOf(entry.issue),
 				...(pass.preset ? ["--preset", pass.preset] : []),
 			],
-			join(pass.dir, `i${issue.number}.log`),
+			join(pass.dir, `i${number}.log`),
 		);
-		pass.say(`triaging #${issue.number}: concert ${id}`);
 	} catch (error) {
 		await halt(
 			pass,
-			`triage of #${issue.number} did not start`,
-			`Triage of #${issue.number} did not start:`,
+			`triage of #${number} did not start`,
+			`Triage of #${number} did not start:`,
 			message(error),
 		);
+		return true;
 	}
+	pass.say(`triaging #${number}: concert ${id}`);
+	const read = replies.at(-1)?.id;
+	if (read !== undefined)
+		await writeBlock(pass, number, stateOf(entry.issue) ?? "needs-triage", {
+			...data,
+			read,
+		});
 	return true;
 }
 

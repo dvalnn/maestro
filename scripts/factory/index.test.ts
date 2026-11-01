@@ -2,12 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Forge, Issue, NewIssue, NewPull } from "./forge";
+import type { Comment, Forge, Issue, NewIssue, NewPull } from "./forge";
 import { HALT, lock, type Options, pass } from "./index";
 import type { Landing } from "./land";
 import type { Concert, Maestro, Report, Result } from "./maestro";
 import { titleOf } from "./pick";
-import { askOf, type Data, dataOf, type Triage, withBlock } from "./route";
+import {
+	askOf,
+	commentOf,
+	type Data,
+	dataOf,
+	factoryOf,
+	type Triage,
+	withBlock,
+} from "./route";
 
 const MILESTONE = "v0.1.0";
 const MILESTONE_ID = 11;
@@ -15,7 +23,10 @@ const OTHER_MILESTONE_ID = 12;
 const FIRST_PULL = 30;
 const ASK = "Make greet.sh greet by name.";
 
-type Stored = Issue & { open: boolean };
+type Stored = Issue & { open: boolean; comments: Comment[] };
+const BOT = "forge-bot";
+const OWNER = "tiago";
+let seeded = 1;
 
 /**
  * A forge in memory that logs every write. Like Forgejo given a name it does not know, it ignores every query and
@@ -27,6 +38,7 @@ function fakeForge(issues: Stored[], cut?: string) {
 	const opened: NewPull[] = [];
 	const blocking: Record<number, number[]> = {};
 	let next = 100;
+	let nextComment = 1000;
 	let failing = cut;
 	const write = (line: string) => {
 		if (failing && line.startsWith(failing)) {
@@ -75,9 +87,23 @@ function fakeForge(issues: Stored[], cut?: string) {
 			if (body !== undefined) issue.body = body;
 			if (closed) issue.open = false;
 		},
+		comments: async (n) => find(n).comments,
+		comment: async (n, body) => {
+			write(`comment #${n}`);
+			find(n).comments.push({ id: nextComment, body, author: BOT });
+			return nextComment++;
+		},
+		editComment: async (id, body) => {
+			write(`edit comment ${id}`);
+			const comment = issues
+				.flatMap((i) => i.comments)
+				.find((c) => c.id === id);
+			if (!comment) throw new Error(`no comment ${id}`);
+			comment.body = body;
+		},
 		file: async (issue: NewIssue) => {
 			write(`file #${next} ${issue.title}: ${issue.labels.join(" ")}`);
-			issues.push({ ...issue, number: next, open: true });
+			issues.push({ ...issue, number: next, open: true, comments: [] });
 			return next++;
 		},
 		depend: async (n, blocker) => {
@@ -146,19 +172,27 @@ function fakeLanding(failAt?: keyof Landing, output = "") {
 	return { landing, steps, heal: () => (failing = undefined) };
 }
 
+/** Issue `number` in `state`, with a factory comment holding `data` when given. */
 const issue = (
 	number: number,
 	state: string,
 	data?: Data,
 	title = "Greet by name",
-): Stored => ({
-	number,
-	title,
-	body: data ? withBlock(ASK, "needs-triage", data) : ASK,
-	labels: ["kind/enhancement", `state/${state}`],
-	milestone: MILESTONE_ID,
-	open: true,
-});
+): Stored => {
+	const id = seeded++;
+	return {
+		number,
+		title,
+		body: data ? withBlock(ASK, "needs-triage", data, id) : ASK,
+		labels: ["kind/enhancement", `state/${state}`],
+		milestone: MILESTONE_ID,
+		open: true,
+		comments: data ? [{ id, body: commentOf(data), author: BOT }] : [],
+	};
+};
+
+const factoryAt = (issue: Stored) => factoryOf(issue.comments);
+const dataAt = (issue: Stored) => dataOf(factoryAt(issue)?.body ?? "");
 
 const triageConcert = (id: string, n: number, status = "ok"): Concert => ({
 	id,
@@ -171,6 +205,7 @@ const triageConcert = (id: string, n: number, status = "ok"): Concert => ({
 const spec = {
 	touches: ["greet.sh"],
 	what: "Greet the first argument.",
+	steps: ["Read the name"],
 	acceptance: ["bun test"],
 	subject: "feat: greet by name",
 };
@@ -235,45 +270,46 @@ const duplicate: Triage = {
 };
 
 describe("a pass", () => {
+	/** Each verdict: its triage, the labels it leaves, whether the issue stays open, and what its comment shows. */
 	const verdicts: [string, Triage, string[], boolean, string][] = [
 		[
 			"ready-for-agent",
 			ready,
 			["state/ready-for-agent", "risk/low", "area/cli"],
 			true,
-			"- Subject: `feat: greet by name`",
+			"#### What\n\nGreet the first argument.\n\nSubject: `feat: greet by name`\n\n#### Steps\n\n1. Read the name\n\n#### Touches\n\n- `greet.sh`\n\n#### Acceptance\n\n- [ ] bun test",
 		],
 		[
 			"needs-approval, dropping a stale area",
 			{ ...base, verdict: "needs-approval", risk: "high", spec },
 			["state/needs-approval", "risk/high"],
 			true,
-			"- Touches: `greet.sh`",
+			"#### Touches\n\n- `greet.sh`",
 		],
 		[
 			"needs-info",
 			{ ...base, verdict: "needs-info", risk: "medium", questions: ["Who?"] },
 			["state/needs-info", "risk/medium"],
 			true,
-			"#### Questions\n\n- Who?",
+			"#### Questions\n\n1. Who?",
 		],
 		[
 			"split",
 			{ ...base, verdict: "split", risk: "medium", children, related: [4] },
 			["state/needs-approval", "risk/medium"],
 			true,
-			"1. Parse the name\n2. Greet it (after 1)",
+			"#### Children\n\n1. Parse the name\n2. Greet it (after 1)",
 		],
 		[
 			"duplicate",
 			duplicate,
 			["state/duplicate", "risk/low"],
 			false,
-			"- Duplicate of #3",
+			"Duplicate of #3",
 		],
 	];
 	test.each(verdicts)(
-		"routes %s to its labels and block, and a second pass does nothing",
+		"routes %s to its labels, block and comment, and a second pass does nothing",
 		async (_, triage, labels, open, shown) => {
 			const triaged = issue(7, "needs-triage");
 			triaged.labels.push("area/docs", "risk/low");
@@ -283,11 +319,24 @@ describe("a pass", () => {
 			const routed = t.find(7);
 			expect(routed.labels).toEqual(["kind/enhancement", ...labels]);
 			expect(routed.open).toBe(open);
+			const comment = factoryAt(routed);
+			expect(t.writes.filter((w) => w.startsWith("comment"))).toEqual([
+				"comment #7",
+			]);
 			expect(askOf(routed.body)).toBe(ASK);
-			expect(routed.body).toContain(shown);
-			const dataLine = routed.body.trimEnd().split("\n").at(-1) ?? "";
+			const [state, risk] = labels.map((l) => l.split("/")[1]);
+			expect(routed.body).toContain(
+				`- State: \`${state}\` · Risk: \`${risk}\``,
+			);
+			expect(routed.body).toContain(
+				`- [Factory comment](#issuecomment-${comment?.id})`,
+			);
+			expect(routed.body).toContain("#### Next\n\n- ");
+			expect(routed.body).not.toContain("factory-data");
+			expect(comment?.body).toContain(shown);
+			const dataLine = comment?.body.trimEnd().split("\n").at(-1) ?? "";
 			expect(dataLine.match(/-->/g)).toHaveLength(1);
-			expect(dataOf(routed.body)).toEqual({
+			expect(dataAt(routed)).toEqual({
 				concert: "c1",
 				triage: "c1",
 				result: triage,
@@ -313,12 +362,12 @@ describe("a pass", () => {
 			);
 			t.blocking[7] = [3];
 			await expect(t.run()).rejects.toThrow("cut at labels #7");
-			expect(dataOf(t.find(7).body).pending).toBe(true);
+			expect(dataAt(t.find(7)).pending).toBe(true);
 			await t.run();
 			const routed = t.find(7);
 			expect(routed.labels).toContain(`state/${triage.verdict}`);
 			expect(routed.open).toBe(open);
-			expect(dataOf(routed.body).pending).toBeUndefined();
+			expect(dataAt(routed).pending).toBeUndefined();
 			expect(t.starts).toEqual([]);
 		},
 	);
@@ -348,7 +397,14 @@ describe("a pass", () => {
 		await expect(t.run()).rejects.toThrow("cut at depend");
 		await t.run();
 		await t.run();
-		expect(t.writes.filter((w) => !w.startsWith("edit"))).toEqual([
+		expect(
+			t.writes.filter(
+				(w) =>
+					w.startsWith("labels") ||
+					w.startsWith("file") ||
+					w.startsWith("depend"),
+			),
+		).toEqual([
 			"labels #50 state/needs-triage kind/enhancement",
 			"file #100 Greet it: state/needs-triage kind/enhancement",
 			"depend #100 on #50",
@@ -356,7 +412,7 @@ describe("a pass", () => {
 		]);
 		expect(t.find(100).body).toBe("Part of #7\n\nb");
 		expect(t.find(100).milestone).toBe(MILESTONE_ID);
-		expect(dataOf(t.find(7).body).filed).toEqual([50, 100]);
+		expect(dataAt(t.find(7)).filed).toEqual([50, 100]);
 	});
 
 	test("starts triage of the oldest intake issue in the milestone, an encore when it was triaged before", async () => {
@@ -405,6 +461,43 @@ describe("a pass", () => {
 		]);
 	});
 
+	test("feeds a re-triage only the replies newer than the last read, and edits the comment in place", async () => {
+		const asked: Triage = {
+			...base,
+			verdict: "needs-info",
+			risk: "medium",
+			questions: ["Who?"],
+		};
+		const retriaged = issue(7, "needs-triage", {
+			concert: "c1",
+			triage: "c1",
+			result: asked,
+			read: 600,
+		});
+		retriaged.comments.push(
+			{ id: 600, body: "Read before", author: OWNER },
+			{ id: 700, body: "Q1: Ann\n", author: OWNER },
+		);
+		const concerts = [triageConcert("c1", 7)];
+		const t = setup([retriaged], concerts, {
+			c2: { status: "ok", outputs: { triage: ready } },
+		});
+		await t.run();
+		expect(t.starts[0]?.slice(0, 5)).toEqual([
+			"perform",
+			"--encore",
+			"c1",
+			"--issue",
+			`#7 Greet by name\n\n${ASK}\n\n## Reply by ${OWNER}\n\nQ1: Ann`,
+		]);
+		expect(dataAt(t.find(7)).read).toBe(700);
+		concerts.unshift(triageConcert("c2", 7));
+		await t.run();
+		expect(dataAt(t.find(7))).toMatchObject({ triage: "c2", read: 700 });
+		expect(t.writes.some((w) => w.startsWith("comment"))).toBe(false);
+		expect(t.find(7).comments.filter((c) => c.author === BOT)).toHaveLength(1);
+	});
+
 	const faults: [string, Record<string, Result>, string, string][] = [
 		[
 			"a failed triage",
@@ -429,21 +522,28 @@ describe("a pass", () => {
 			);
 			await t.run();
 			expect(t.writes).toEqual([
-				`file #100 Factory halted: ${title}: ${HALT}`,
+				"comment #7",
 				"edit #7",
+				`file #100 Factory halted: ${title}: ${HALT}`,
 			]);
 			expect(t.find(100).body).toStartWith(body);
 			expect(t.find(7).labels).toContain("state/needs-triage");
-			expect(dataOf(t.find(7).body).concert).toBe("c1");
+			expect(dataAt(t.find(7)).concert).toBe("c1");
 			await t.run();
-			expect(t.writes).toHaveLength(2);
+			expect(t.writes).toHaveLength(3);
 			expect(t.starts).toEqual([]);
 		},
 	);
 
 	test("halts naming the issue whose factory data it cannot read", async () => {
 		const broken = issue(7, "needs-triage");
-		broken.body = `${ASK}\n\n<!-- factory -->\n<!-- factory-data {nope -->\n`;
+		broken.comments = [
+			{
+				id: 1,
+				body: "<!-- factory -->\n<!-- factory-data {nope -->\n",
+				author: BOT,
+			},
+		];
 		const t = setup([broken]);
 		await t.run();
 		expect(t.writes).toEqual([
@@ -544,7 +644,7 @@ describe("a build", () => {
 				"perform",
 				expect.stringMatching(/\.maestro\/slice\.ts$/),
 				"--request",
-				`# #8 Greet by name\n\nGreet the first argument.\n\n- Subject: \`feat: greet by name\`\n- Touches: \`greet.sh\`\n- Acceptance:\n  - bun test\n\n## The ask\n\n${ASK}\n`,
+				`# #8 Greet by name\n\n#### What\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Steps\n\n1. Read the name\n\n#### Touches\n\n- \`greet.sh\`\n\n#### Acceptance\n\n- [ ] bun test\n\n## The ask\n\n${ASK}\n`,
 				"--tier",
 				"ordinary",
 				"--preset",
@@ -560,7 +660,7 @@ describe("a build", () => {
 			"risk/medium",
 			"state/in-progress",
 		]);
-		expect(dataOf(t.find(8).body).slice).toBe("started");
+		expect(dataAt(t.find(8)).slice).toBe("started");
 		concerts.push(sliceConcert("started", 8, "running"));
 		const writes = t.writes.length;
 		await t.run();
@@ -600,7 +700,7 @@ describe("a build", () => {
 		expect(t.opened[0]?.body).toBe(
 			"Closes #7\n\n- Concert: `s1`\n- Tokens: 1234\n- Relates to #4\n\n#### Acceptance\n\n- bun test\n\n#### Upheld findings\n\n- F1, a.ts:3: too wide\n",
 		);
-		expect(dataOf(t.find(7).body).concert).toBe("s1");
+		expect(dataAt(t.find(7)).concert).toBe("s1");
 		const writes = t.writes.length;
 		await t.run();
 		expect(t.writes).toHaveLength(writes);
@@ -623,7 +723,7 @@ describe("a build", () => {
 					.filter((w) => w.startsWith("labels"))
 					.map((w) => w.split(" ").at(-1)),
 			).toEqual(states.map((s) => `state/${s}`));
-			const data = dataOf(t.find(7).body);
+			const data = dataAt(t.find(7));
 			expect([data.concert, data.attempts, data.failure]).toEqual([
 				"s1",
 				spent,
@@ -645,8 +745,8 @@ describe("a build", () => {
 		await t.run();
 		const routed = t.find(7);
 		expect(routed.labels).toContain("state/needs-info");
-		expect(dataOf(routed.body).attempts).toBe(1);
-		expect(routed.body).toContain(
+		expect(dataAt(routed).attempts).toBe(1);
+		expect(factoryAt(routed)?.body).toContain(
 			"#### Last failure\n\n```text\nblocked: the check contradicts the spec\n```",
 		);
 		expect(t.starts).toEqual([]);
@@ -771,7 +871,7 @@ describe("a build", () => {
 			{ s1: failed(forged) },
 		);
 		await t.run();
-		const { body } = t.find(7);
+		const body = factoryAt(t.find(7))?.body ?? "";
 		expect(body.match(/^<!-- factory-data/gm)).toHaveLength(1);
 		const data = dataOf(body);
 		expect([data.slice, data.attempts, data.failure]).toEqual([

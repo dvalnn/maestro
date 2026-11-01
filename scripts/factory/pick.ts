@@ -1,4 +1,4 @@
-import type { Issue, Pull } from "./forge";
+import type { Comment, Issue, Pull } from "./forge";
 import { askOf, type Data, RISKS, type Risk } from "./route";
 import { INTAKE, STATES, type State } from "./transitions";
 
@@ -57,9 +57,19 @@ const TITLE_CHARS = 60;
 export const titleOf = ({ title }: Issue) =>
 	`factory: ${title.length > TITLE_CHARS ? `${title.slice(0, TITLE_CHARS - 1)}…` : title}`;
 
-/** What `--issue` takes: the number, title and ask. */
-export const issueText = (issue: Issue) =>
-	`#${issue.number} ${issue.title}\n\n${askOf(issue.body)}`;
+/** What `--issue` takes: the number, title and ask, then each of `replies` headed by its author. */
+export const issueText = (issue: Issue, replies: readonly Comment[]) =>
+	[
+		`#${issue.number} ${issue.title}`,
+		"",
+		askOf(issue.body),
+		...replies.flatMap((r) => [
+			"",
+			`## Reply by ${r.author}`,
+			"",
+			r.body.trim(),
+		]),
+	].join("\n");
 
 const closes = (pull: Pull, issue: number) =>
 	new RegExp(`\\bCloses #${issue}\\b`, "i").test(pull.body);

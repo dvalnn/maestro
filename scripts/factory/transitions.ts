@@ -22,86 +22,205 @@ export type Actor =
 	| "slice"
 	| "harvest"
 	| "auto-merge";
+/** A move of the state machine; `how` says in a line when and how it is taken. */
 export type Transition = {
 	from: Node;
 	to: Node;
 	actor: Actor;
 	event: string;
+	how: string;
 };
 
 export const INTAKE: readonly State[] = ["needs-triage", "needs-spec"];
 
-const fromIntake = (to: State, event: string): Transition[] =>
-	INTAKE.map((from) => ({ from, to, actor: "triage", event }));
+const fromIntake = (to: State, event: string, how: string): Transition[] =>
+	INTAKE.map((from) => ({ from, to, actor: "triage", event, how }));
 
 export const TRANSITIONS: readonly Transition[] = [
-	{ from: "new", to: "needs-triage", actor: "owner", event: "filed" },
-	{ from: "new", to: "needs-spec", actor: "owner", event: "filed" },
-	{ from: "new", to: "needs-triage", actor: "tick", event: "filed" },
-	{ from: "new", to: "needs-approval", actor: "harvest", event: "lesson" },
-	...fromIntake("ready-for-agent", "low, medium"),
-	...fromIntake("needs-approval", "high, split"),
-	...fromIntake("needs-info", "no spec"),
-	...fromIntake("duplicate", "dup"),
+	{
+		from: "new",
+		to: "needs-triage",
+		actor: "owner",
+		event: "filed",
+		how: "file it here to triage it",
+	},
+	{
+		from: "new",
+		to: "needs-spec",
+		actor: "owner",
+		event: "filed",
+		how: "file it here to design it first",
+	},
+	{
+		from: "new",
+		to: "needs-triage",
+		actor: "tick",
+		event: "filed",
+		how: "the tick files obstacles, gaps and children here",
+	},
+	{
+		from: "new",
+		to: "needs-approval",
+		actor: "harvest",
+		event: "lesson",
+		how: "harvest files a lesson here",
+	},
+	...fromIntake(
+		"ready-for-agent",
+		"low, medium",
+		"triage specs it at low or medium risk",
+	),
+	...fromIntake(
+		"needs-approval",
+		"high, split",
+		"triage specs it at high risk, or splits it",
+	),
+	...fromIntake("needs-info", "question", "triage asks the owner a question"),
+	...fromIntake("duplicate", "dup", "triage finds it repeats an open issue"),
 	{
 		from: "needs-approval",
 		to: "ready-for-agent",
 		actor: "owner",
 		event: "approve",
+		how: "move here to approve the spec or split",
 	},
 	{
 		from: "ready-for-agent",
 		to: "in-progress",
 		actor: "tick",
 		event: "split approved",
+		how: "the tick files the split's children",
 	},
-	{ from: "needs-approval", to: "needs-info", actor: "owner", event: "ask" },
+	{
+		from: "needs-approval",
+		to: "needs-triage",
+		actor: "owner",
+		event: "answer",
+		how: "reply with an answer or a redirect, then move here to re-triage",
+	},
 	{
 		from: "needs-approval",
 		to: "ready-for-human",
 		actor: "owner",
 		event: "take",
+		how: "move here to build it yourself",
 	},
-	{ from: "needs-approval", to: "wontfix", actor: "owner", event: "drop" },
-	{ from: "ready-for-agent", to: "in-progress", actor: "tick", event: "build" },
-	{ from: "in-progress", to: "in-review", actor: "tick", event: "PR" },
-	{ from: "in-progress", to: "closed", actor: "tick", event: "epic done" },
-	{ from: "in-progress", to: "needs-info", actor: "slice", event: "blocked" },
-	{ from: "in-progress", to: "needs-info", actor: "tick", event: "blocked" },
+	{
+		from: "needs-approval",
+		to: "wontfix",
+		actor: "owner",
+		event: "drop",
+		how: "move here to drop it",
+	},
+	{
+		from: "ready-for-agent",
+		to: "in-progress",
+		actor: "tick",
+		event: "build",
+		how: "the tick starts its build",
+	},
+	{
+		from: "in-progress",
+		to: "in-review",
+		actor: "tick",
+		event: "PR",
+		how: "the tick opens the PR of a green slice",
+	},
+	{
+		from: "in-progress",
+		to: "closed",
+		actor: "tick",
+		event: "epic done",
+		how: "the tick closes an epic once its last child closes",
+	},
+	{
+		from: "in-progress",
+		to: "needs-info",
+		actor: "slice",
+		event: "blocked",
+		how: "a blocked slice asks its question",
+	},
+	{
+		from: "in-progress",
+		to: "needs-info",
+		actor: "tick",
+		event: "blocked",
+		how: "the tick parks it once out of attempts",
+	},
 	{
 		from: "in-progress",
 		to: "ready-for-agent",
 		actor: "slice",
 		event: "red, infra",
+		how: "a red slice with attempts left, or an infra fault, requeues it",
 	},
-	{ from: "in-review", to: "closed", actor: "owner", event: "merge" },
-	{ from: "in-review", to: "closed", actor: "auto-merge", event: "merge" },
-	{ from: "in-review", to: "in-progress", actor: "owner", event: "changes" },
+	{
+		from: "in-review",
+		to: "closed",
+		actor: "owner",
+		event: "merge",
+		how: "merge the PR",
+	},
+	{
+		from: "in-review",
+		to: "closed",
+		actor: "auto-merge",
+		event: "merge",
+		how: "auto-merge lands a low-risk PR",
+	},
+	{
+		from: "in-review",
+		to: "in-progress",
+		actor: "owner",
+		event: "changes",
+		how: "request changes on the PR",
+	},
 	{
 		from: "needs-info",
 		to: "ready-for-agent",
 		actor: "owner",
 		event: "answer",
+		how: "answer the slice's question, then move here to build again",
 	},
 	{
 		from: "needs-info",
 		to: "ready-for-agent",
 		actor: "tick",
 		event: "obstacle closed",
+		how: "the tick requeues it once its obstacle closes",
 	},
 	{
 		from: "needs-info",
 		to: "needs-triage",
 		actor: "owner",
 		event: "answer triage",
+		how: "reply to a question, then move here to re-triage",
 	},
-	{ from: "ready-for-human", to: "closed", actor: "owner", event: "done" },
-	{ from: "wontfix", to: "closed", actor: "owner", event: "close" },
-	{ from: "duplicate", to: "closed", actor: "tick", event: "close" },
+	{
+		from: "ready-for-human",
+		to: "closed",
+		actor: "owner",
+		event: "done",
+		how: "close it once built",
+	},
+	{
+		from: "wontfix",
+		to: "closed",
+		actor: "owner",
+		event: "close",
+		how: "close it",
+	},
+	{
+		from: "duplicate",
+		to: "closed",
+		actor: "tick",
+		event: "close",
+		how: "the tick closes it",
+	},
 ];
 
-/** The moves out of `state` for a split or any other issue, each as `<to> (<actor>: <event>)`. */
+/** The moves out of `state` for a split or any other issue, each as `<to>: <how>`. */
 export const nextOf = (state: Node, split: boolean): string[] =>
 	TRANSITIONS.filter(
 		(t) => t.from === state && t.event !== (split ? "build" : "split approved"),
-	).map((t) => `${t.to} (${t.actor}: ${t.event})`);
+	).map((t) => `${t.to}: ${t.how}`);

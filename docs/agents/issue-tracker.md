@@ -12,10 +12,10 @@ Issues live on the forge, [`tiago/maestro`](https://git.amorimcasa.org/tiago/mae
   starts; an agreed scope change is a comment saying what changed and who agreed it.
 - **Labels.** One `kind/` and one `state/` label (`triage-labels.md`). Both scopes are exclusive, so adding a `state/`
   label replaces the old one.
-- **Factory block.** The ask sits above a `<!-- factory -->` marker and stops changing. Below it the block belongs to
-  the tick, which rewrites it: state, risk, the spec (or a split's child list) triage wrote, the next allowed
-  transitions, an epic's children, related issues (`Relates to #N`), the last slice concert and its PR link. See
-  `factory.md`.
+- **Factory block.** The ask sits above a `<!-- factory -->` marker and stops changing. Below it the tick writes the
+  state, risk and area, the next allowed transitions and a link to the factory comment. The factory comment belongs to
+  the tick, which edits it in place: the spec (or a split's child list) triage wrote, its questions, related issues
+  (`Relates to #N`), the last slice concert and its failure. The owner answers by replying. See `factory.md`.
 - **Milestone.** The release that ships it, named by its version (`v0.1.0`). Only the next release or two have one; an
   issue with none is icebox, an indefinite deferral. Planned but not ready is a milestone beside `state/needs-spec`.
   Pre-releases (`-rc.<n>`) have no milestone: they are cuts toward the one that does.

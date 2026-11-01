@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Comment } from "./forge";
 import { isJson, type Json } from "./json";
 import { nextOf, type State } from "./transitions";
 
@@ -18,6 +19,7 @@ export const ATTEMPTS = 2;
 export type Spec = {
 	touches: string[];
 	what: string;
+	steps: string[];
 	acceptance: string[];
 	subject: string;
 };
@@ -35,14 +37,16 @@ export type Triage = {
 	related?: number[];
 };
 /**
- * The tick's state for one issue (factory.md, Rules: Factory block): `concert` is the last settled concert it routed,
- * `triage` the last ok triage concert, which a re-triage continues, `pending` marks a routed result whose labels are not
- * yet set, `filed` holds an approved split's children, `slice` the slice concert its last build started, `attempts` the
- * red slices it spent and `failure` the reason its last slice failed.
+ * The tick's state for one issue (factory.md, Rules: Factory data): `concert` is the last settled concert it routed,
+ * `triage` the last ok triage concert, which a re-triage continues, `read` the id of the newest comment a triage was
+ * fed, `pending` marks a routed result whose labels are not yet set, `filed` holds an approved split's children, `slice`
+ * the slice concert its last build started, `attempts` the red slices it spent and `failure` the reason its last slice
+ * failed.
  */
 export type Data = {
 	concert?: string;
 	triage?: string;
+	read?: number;
 	result?: Triage;
 	pending?: true;
 	filed?: number[];
@@ -96,6 +100,7 @@ const isSpec = (v: unknown): v is Spec =>
 	isJson(v) &&
 	isStrings(v.touches) &&
 	isString(v.what) &&
+	isStrings(v.steps) &&
 	isStrings(v.acceptance) &&
 	isString(v.subject);
 
@@ -167,13 +172,24 @@ export const triaged = (labels: readonly string[], triage: Triage) =>
 /** The ask: the part of `body` above the factory marker. */
 export const askOf = (body: string) => body.split(MARKER)[0]?.trimEnd() ?? "";
 
+const isFactory = (comment: Comment) =>
+	comment.body.split("\n")[0]?.trimEnd() === MARKER;
+
+/** The factory comment among `comments`: the first whose first line is the marker. */
+export const factoryOf = (comments: readonly Comment[]) =>
+	comments.find(isFactory);
+
+/** The comments but the factory's whose id is above `read`. */
+export const repliesOf = (comments: readonly Comment[], read = 0) =>
+	comments.filter((c) => !isFactory(c) && c.id > read);
+
 /**
- * The tick's data in `body`'s factory block, empty when it has none. The block ends with its data line, so the last
- * match is the tick's.
+ * The tick's data in the factory comment `comment`, empty when it has none. The comment ends with its data line, so the
+ * last match is the tick's.
  * @throws Error when the data line is not the JSON the tick wrote.
  */
-export function dataOf(body: string): Data {
-	const matches = [...body.slice(askOf(body).length).matchAll(DATA_LINE)];
+export function dataOf(comment: string): Data {
+	const matches = [...comment.matchAll(DATA_LINE)];
 	const line = matches.at(-1)?.[1];
 	if (line === undefined) return {};
 	const data: unknown = JSON.parse(line);
@@ -181,6 +197,7 @@ export function dataOf(body: string): Data {
 	return {
 		concert: optional(data, "concert", isString, "a concert id"),
 		triage: optional(data, "triage", isString, "a concert id"),
+		read: optional(data, "read", isNumber, "a comment id"),
 		result: data.result === undefined ? undefined : parseTriage(data.result),
 		pending: data.pending === true || undefined,
 		filed: optional(data, "filed", isNumbers, "a list of issue numbers"),
@@ -202,19 +219,22 @@ export const fenced = (text: string) => {
 };
 
 const list = (items: readonly string[]) => items.map((i) => `- ${i}`);
+const numbered = (items: readonly string[]) =>
+	items.map((item, i) => `${i + 1}. ${item}`);
 const refs = (numbers: readonly number[]) =>
 	numbers.map((n) => `#${n}`).join(", ");
 
 const section = (heading: string, lines: string[]) =>
 	lines.length ? [`#### ${heading}`, "", ...lines, ""] : [];
 
-const specLines = ({ what, touches, acceptance, subject }: Spec) => [
-	what,
-	"",
-	`- Subject: \`${subject}\``,
-	`- Touches: ${touches.map((t) => `\`${t}\``).join(", ")}`,
-	"- Acceptance:",
-	...acceptance.map((a) => `  - ${a}`),
+const specLines = ({ what, steps, touches, acceptance, subject }: Spec) => [
+	...section("What", [what, "", `Subject: \`${subject}\``]),
+	...section("Steps", numbered(steps)),
+	...section("Touches", list(touches.map((t) => `\`${t}\``))),
+	...section(
+		"Acceptance",
+		acceptance.map((a) => `- [ ] ${a}`),
+	),
 ];
 
 const childLines = (children: readonly Child[], filed: readonly number[]) =>
@@ -225,19 +245,20 @@ const childLines = (children: readonly Child[], filed: readonly number[]) =>
 		return `${i + 1}. ${filed[i] ? `#${filed[i]} ` : ""}${c.title}${after}`;
 	});
 
-function resultLines(result: Triage | undefined, filed: readonly number[]) {
-	if (!result) return [];
-	return [
-		`- Risk: \`${result.risk}\`${result.area ? ` · Area: \`${result.area}\`` : ""}`,
-		...(result.duplicateOf ? [`- Duplicate of #${result.duplicateOf}`] : []),
-		...(result.related?.length ? [`- Relates to ${refs(result.related)}`] : []),
-		"",
-		...section("Spec", result.spec ? specLines(result.spec) : []),
-		...section("Children", childLines(result.children ?? [], filed)),
-		...section("Questions", list(result.questions)),
-		...section("Reasons", list(result.reasons)),
-	];
+/** What a result proposes: a split's children, a duplicate's original, else its spec. */
+function proposalLines(result: Triage, filed: readonly number[]) {
+	if (result.children)
+		return section("Children", childLines(result.children, filed));
+	if (result.duplicateOf) return [`Duplicate of #${result.duplicateOf}`, ""];
+	return result.spec ? specLines(result.spec) : [];
 }
+
+const resultLines = (result: Triage, filed: readonly number[]) => [
+	...proposalLines(result, filed),
+	...section("Questions", numbered(result.questions)),
+	...section("Reasons", list(result.reasons)),
+	...(result.related?.length ? [`Relates to ${refs(result.related)}`, ""] : []),
+];
 
 function buildLines({ attempts, failure, slice }: Data) {
 	return [
@@ -248,29 +269,54 @@ function buildLines({ attempts, failure, slice }: Data) {
 }
 
 /**
- * `body` with its factory block rewritten for `state` and `data`: readable Markdown, then the one data line the tick
- * reads back.
+ * The factory comment for `data` (factory.md, Rules: Factory comment): the marker, then readable Markdown, then the one
+ * data line the tick reads back.
  */
-export function withBlock(body: string, state: State, data: Data): string {
+export function commentOf(data: Data): string {
 	// JSON keeps `>` only inside strings, so escaping it keeps a `-->` in the data from closing the comment.
 	const json = JSON.stringify(data).replaceAll(">", "\\u003e");
 	const shown = [
-		`- State: \`${state}\``,
-		...resultLines(data.result, data.filed ?? []),
-		...section("Next", list(nextOf(state, data.result?.verdict === "split"))),
+		...(data.result ? resultLines(data.result, data.filed ?? []) : []),
 		...buildLines(data),
 		...(data.concert ? [`Last concert: \`${data.concert}\``, ""] : []),
+	].map(inert);
+	return [
+		MARKER,
+		"",
+		"_The factory rewrites this comment: answer its questions in a reply._",
+		"",
+		...shown,
+		`<!-- factory-data ${json} -->`,
+		"",
+	].join("\n");
+}
+
+/** `body` with its factory block rewritten for `state` and `result`, linking to the factory comment of id `comment`. */
+export function withBlock(
+	body: string,
+	state: State,
+	{ result }: Data,
+	comment: number,
+): string {
+	const labels = [
+		`State: \`${state}\``,
+		...(result ? [`Risk: \`${result.risk}\``] : []),
+		...(result?.area ? [`Area: \`${result.area}\``] : []),
+	];
+	const shown = [
+		`- ${labels.join(" · ")}`,
+		`- [Factory comment](#issuecomment-${comment})`,
+		"",
+		...section("Next", list(nextOf(state, result?.verdict === "split"))),
 	].map(inert);
 	return [
 		askOf(body),
 		"",
 		MARKER,
 		"",
-		"_The factory rewrites everything below the marker: edit the ask above it._",
+		"_The factory rewrites everything below the marker._",
 		"",
 		...shown,
-		`<!-- factory-data ${json} -->`,
-		"",
 	].join("\n");
 }
 
@@ -283,7 +329,6 @@ export const requestOf = (
 		`# #${number} ${title}`,
 		"",
 		...specLines(spec),
-		"",
 		"## The ask",
 		"",
 		askOf(body),

@@ -28,6 +28,7 @@ export type Issue = {
 	/** The milestone's id. */
 	milestone?: number;
 };
+export type Comment = { id: number; body: string; author: string };
 /** An open pull request and its diffstat. */
 export type Pull = {
 	number: number;
@@ -67,6 +68,11 @@ export type Forge = {
 	pulls(): Promise<Pull[]>;
 	setLabels(issue: number, labels: string[]): Promise<void>;
 	edit(issue: number, change: { body?: string; closed?: true }): Promise<void>;
+	/** The comments on `issue`, oldest first. */
+	comments(issue: number): Promise<Comment[]>;
+	/** Comments `body` on `issue`, and returns the comment's id. */
+	comment(issue: number, body: string): Promise<number>;
+	editComment(id: number, body: string): Promise<void>;
 	/** Files an issue with its labels and milestone in one call, and returns its number. */
 	file(issue: NewIssue): Promise<number>;
 	/** Marks `issue` blocked by `blocker`, unless it already is. */
@@ -181,6 +187,12 @@ function issueOf(o: Json): Issue {
 	};
 }
 
+const commentOf = (o: Json): Comment => ({
+	id: num(o, "id"),
+	body: text(o, "body"),
+	author: text(object(o.user, "user"), "login"),
+});
+
 const pullOf = (o: Json): Pull => ({
 	number: num(o, "number"),
 	head: text(object(o.head, "head"), "ref"),
@@ -256,6 +268,22 @@ export function forge(): Forge {
 				...(body !== undefined && { body }),
 				...(closed && { state: "closed" }),
 			});
+		},
+		comments: async (issue) => {
+			// The endpoint is not paged: it lists every comment at once.
+			const path = `/issues/${issue}/comments`;
+			return objects(await api("GET", path), path).map(commentOf);
+		},
+		comment: async (issue, body) =>
+			num(
+				object(
+					await api("POST", `/issues/${issue}/comments`, { body }),
+					"comment",
+				),
+				"id",
+			),
+		editComment: async (id, body) => {
+			await api("PATCH", `/issues/comments/${id}`, { body });
 		},
 		file: async ({ labels, ...issue }) =>
 			num(

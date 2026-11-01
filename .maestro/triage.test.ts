@@ -110,6 +110,7 @@ test.each(areas)("classify's area is %s", (_, touches, area) => {
 
 const spec = {
 	what: "Make greet.sh greet by name.",
+	steps: ["Read the first argument", "Print it"],
 	acceptance: ["bun test packages/cli/src/a.test.ts"],
 	subject: "feat(cli): greet by name",
 };
@@ -210,6 +211,25 @@ const overrides: [string, Proposal, Triage][] = [
 test.each(overrides)("settle turns %s", (_, proposal, triage) => {
 	expect(settle(planned(proposal))).toEqual({ triage });
 });
+
+test.each([
+	["low", ["docs/a.md"]],
+	["medium", ["packages/cli/src/a.ts"]],
+	["high", ["packages/ir/src/a.ts"]],
+])(
+	"settle sends a ready proposal with a question to needs-info at %s risk",
+	(risk, touches) => {
+		const { triage } = settle(
+			planned({ ...ready, touches, questions: ["Greet whom?"] }),
+		);
+		expect(triage).toMatchObject({
+			verdict: "needs-info",
+			risk,
+			questions: ["Greet whom?"],
+		});
+		expect(triage.spec).toBeUndefined();
+	},
+);
 
 test("settle fails when the triager handed the issue on and the planner gave nothing", () => {
 	expect(() =>
@@ -368,6 +388,18 @@ const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 		{ verdict: "duplicate", ...medium, questions: [], duplicateOf: 7 },
 	],
 	[
+		"needs-info from an early duplicate that asks a question",
+		{
+			...planning,
+			verdict: "duplicate",
+			groups: [],
+			questions: ["Is #7 the same?"],
+			duplicateOf: 7,
+		},
+		undefined,
+		{ verdict: "needs-info", ...medium, questions: ["Is #7 the same?"] },
+	],
+	[
 		"an early needs-info",
 		{
 			...planning,
@@ -448,6 +480,12 @@ test("the scouts and the planner are attached the triager's cut of the backlog, 
 const outputs: [string, Type<unknown>, object, boolean][] = [
 	["a ready proposal", Proposal, ready, true],
 	["a planning ruling", Ruling(4), planning, true],
+	[
+		"a ready proposal whose spec has no steps",
+		Proposal,
+		{ ...ready, spec: { ...spec, steps: undefined } },
+		false,
+	],
 	[
 		"a ready proposal with no spec",
 		Proposal,

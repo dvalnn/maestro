@@ -29,9 +29,10 @@ flowchart LR
     R ==>|"merge ²"| D
     R ==>|changes| B
     B -.->|"blocked ³"| NI
-    IN -.->|"no spec"| NI
-    NI ==>|"answer ⁴"| Q
-    NI ==>|"answer ⁴"| IN
+    IN -.->|"question ⁴"| NI
+    NI ==>|"answer ⁵"| Q
+    NI ==>|"answer ⁵"| IN
+    GATE ==>|"answer ⁵"| IN
 
     classDef owner stroke:#d4a72c,stroke-width:3px
     classDef done stroke:#57ab5a,stroke-width:3px
@@ -42,7 +43,9 @@ flowchart LR
 1. With attempts left, or an infra fault.
 2. By the owner, or by auto-merge on low risk.
 3. Or out of attempts.
-4. An answer to triage's questions goes back to intake; any other answer, or a closed obstacle, goes to the queue.
+4. Any verdict that asks the owner a question, whatever its risk.
+5. A reply to triage's questions, or to a waiting spec, goes back to intake; any other answer, or a closed obstacle,
+   goes to the queue.
 
 ## Zoom 1: one tick
 
@@ -71,7 +74,7 @@ flowchart TD
    ticket, an approved split files its children, and an epic's last closed child closes it.
 3. First match wins, in the order of the arrows: a concert to continue, a ready ticket whose blockers allow it, an
    intake issue, a harvest due.
-4. Set the labels, rewrite the factory block.
+4. Set the labels, rewrite the factory comment and the factory block.
 
 ## Zoom 2: routing a settle
 
@@ -84,7 +87,7 @@ flowchart TD
     V -->|"low, medium"| RA["ready-for-agent"]
     V -->|"high, split"| NA["needs-approval"]
     V -->|dup| DU["duplicate"]
-    V -->|"no spec"| NI1["needs-info"]
+    V -->|"question ⁷"| NI1["needs-info"]
     V -->|"failed ⁶"| HALT
     K -->|slice| O{"outcome"}
     O -->|ok| LAND["land ¹"] --> IR["in-review"]
@@ -107,6 +110,7 @@ flowchart TD
 5. One issue per lesson promotion.
 6. A triage that fails, does not start or gives a malformed output. The ticket keeps its state, and closing the halt
    issue triages it again.
+7. Any verdict with a question for the owner, whatever its risk.
 
 ## Label reference
 
@@ -118,18 +122,18 @@ Each state is a `state/` label. A move replaces the label, since the scope is ex
 
 An edge in the diagrams names who causes the move; the tick sets the label unless the owner does it by hand.
 
-| State             | Meaning                                             | Moved in by                         | Next                                                           |
-| ----------------- | --------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------- |
-| `needs-triage`    | Filed, not yet evaluated                            | owner, tick[^new], owner[^answer]   | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate` |
-| `needs-spec`      | Wanted, needs design before work                    | owner                               | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate` |
-| `needs-approval`  | Spec or split waits for the owner's go              | triage, harvest                     | `ready-for-agent`, `needs-info`, `ready-for-human`, `wontfix`  |
-| `ready-for-agent` | Specified and queued for a slice concert            | triage, owner[^approve], tick[^red] | `in-progress`[^epic]                                           |
-| `in-progress`     | Being built: a slice concert, or an epic's children | tick, owner[^changes]               | `in-review`, `ready-for-agent`, `needs-info`, closed[^epic]    |
-| `in-review`       | PR open, waiting on CI and review                   | tick                                | `in-progress`, closed                                          |
-| `needs-info`      | Waiting on an answer                                | triage, slice, tick, owner          | `ready-for-agent`[^answer], `needs-triage`[^answer]            |
-| `ready-for-human` | Owner implements it, the factory never picks it up  | owner                               | closed                                                         |
-| `wontfix`         | Will not be actioned                                | owner                               | closed                                                         |
-| `duplicate`       | Repeats another issue, closed with a link           | triage                              | closed                                                         |
+| State             | Meaning                                             | Moved in by                         | Next                                                                     |
+| ----------------- | --------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
+| `needs-triage`    | Filed, not yet evaluated                            | owner, tick[^new], owner[^answer]   | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate`           |
+| `needs-spec`      | Wanted, needs design before work                    | owner                               | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate`           |
+| `needs-approval`  | Spec or split waits for the owner's go              | triage, harvest                     | `ready-for-agent`, `needs-triage`[^answer], `ready-for-human`, `wontfix` |
+| `ready-for-agent` | Specified and queued for a slice concert            | triage, owner[^approve], tick[^red] | `in-progress`[^epic]                                                     |
+| `in-progress`     | Being built: a slice concert, or an epic's children | tick, owner[^changes]               | `in-review`, `ready-for-agent`, `needs-info`, closed[^epic]              |
+| `in-review`       | PR open, waiting on CI and review                   | tick                                | `in-progress`, closed                                                    |
+| `needs-info`      | Waiting on an answer                                | triage, slice, tick                 | `ready-for-agent`[^answer], `needs-triage`[^answer]                      |
+| `ready-for-human` | Owner implements it, the factory never picks it up  | owner                               | closed                                                                   |
+| `wontfix`         | Will not be actioned                                | owner                               | closed                                                                   |
+| `duplicate`       | Repeats another issue, closed with a link           | triage                              | closed                                                                   |
 
 [^new]: The tick files obstacles, gaps and an approved split's children as `needs-triage`.
 
@@ -144,9 +148,9 @@ An edge in the diagrams names who causes the move; the tick sets the label unles
 [^changes]: The owner requesting changes on the PR moves `in-review` back here. The tick then runs an encore.
 
 [^answer]:
-    The owner answering triage's questions sends the ticket to `needs-triage`, since no spec exists yet. Any other
-    answer by the owner, or the tick seeing its obstacle closed, sends it to `ready-for-agent` with the concert to
-    continue.
+    The owner replying to triage's questions (`needs-info`) or answering or redirecting a waiting spec
+    (`needs-approval`) sends the ticket to `needs-triage` to re-triage. Any other answer by the owner, or the tick
+    seeing its obstacle closed, sends it to `ready-for-agent` with the concert to continue.
 
 Moves forward, then moves back. Gold states wait on the owner, green is done.
 
@@ -173,8 +177,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    IN["intake ¹"] -->|"[triage] no spec"| NI["needs-info"]
-    NA["needs-approval"] -->|"[owner] ask"| NI
+    IN["intake ¹"] -->|"[triage] question"| NI["needs-info"]
+    NA["needs-approval"] -->|"[owner] answer"| IN
     IP["in-progress"] -->|"[slice, tick] blocked"| NI
     NI -->|"[owner] answer, [tick] obstacle closed"| RA["ready-for-agent"]
     NI -.->|"[owner] answer triage"| IN
@@ -199,18 +203,30 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **One concert at a time.** Parallel waves wait for 10 to 15 good runs.
 - **Pick order.** Finish work first: an encore, then a build, then triage, then a harvest. A tick that routes a settle
   falls through and starts the next action.
-- **Factory block.** Readable Markdown below the `<!-- factory -->` marker, ending in one `<!-- factory-data {...} -->`
-  JSON line, the tick's only state: `concert`, the last concert it routed; `triage`, the last ok triage, which a
-  re-triage continues; `result`, that triage's output; `pending`, set while the result's labels are not yet applied;
-  `filed`, an approved split's children; `slice`, the slice concert the last build started; `attempts`, the red runs
-  spent; and `failure`, the reason the last slice failed. A line the tick cannot read halts the factory. The slice
-  concert to continue joins it with the build: an answered `needs-info` or a closed blocking obstacle sets it, and a red
-  retry clears it.
-- **Answers.** The owner answers triage's questions by editing the ask above the marker, then moving the ticket to
-  `needs-triage`. A re-triage reads the ask alone, never comments, and an encore with nothing changed is refused, which
-  halts the factory.
-- **Encore.** A PR with changes requested, or a `ready-for-agent` ticket whose block names a concert to continue, runs
-  an encore of that concert. With no concert to continue the build is a fresh perform.
+- **Factory block.** The body keeps the ask above the `<!-- factory -->` marker. Below it the tick writes the state,
+  risk and area, a link to the factory comment, and the Next list: each move out of the state with a line on when and
+  how it is taken.
+- **Factory comment.** One comment per issue, found by the `<!-- factory -->` marker on its first line, created on the
+  tick's first write and edited in place after. It holds, in order: What (a short paragraph and the commit subject),
+  Steps (numbered), Touches, Acceptance (a checklist), Questions (numbered), Reasons and `Relates to` links, then the
+  build lines (attempts, last failure, slice concert) and the last concert. A split shows its children in place of the
+  spec, a duplicate its original. Agent text in it is made inert, so it can open or close no HTML comment. The tick
+  trusts the first comment opening with the marker, whoever wrote it, so only maintainers write that marker.
+- **Factory data.** The factory comment ends in one hidden `<!-- factory-data {...} -->` JSON line, the tick's only
+  state: `concert`, the last concert it routed; `triage`, the last ok triage, which a re-triage continues; `read`, the
+  id of the newest comment a triage was fed; `result`, that triage's output; `pending`, set while the result's labels
+  are not yet applied; `filed`, an approved split's children; `slice`, the slice concert the last build started;
+  `attempts`, the red runs spent; and `failure`, the reason the last slice failed. A line the tick cannot read halts the
+  factory. The slice concert to continue joins it with the build: an answered `needs-info` or a closed blocking obstacle
+  sets it, and a red retry clears it.
+- **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. The owner
+  answers by replying in a comment, such as `Q1: no, ok results only`, then moving the ticket to `needs-triage`; a
+  waiting spec in `needs-approval` is answered or redirected the same way. A triage, first or encore, takes as `--issue`
+  the ask, then each comment but the factory's whose id is above `read`, headed by its author, and records the newest as
+  `read`. A failed triage clears `read`, so the next one is fed those replies again. An encore with nothing changed is
+  refused, which halts the factory.
+- **Encore.** A PR with changes requested, or a `ready-for-agent` ticket whose factory data names a concert to continue,
+  runs an encore of that concert. With no concert to continue the build is a fresh perform.
 - **Blockers.** A ticket is picked when every blocker (a forge dependency) is closed, or is `in-review`, in which case
   it stacks on that blocker's PR, two deep at most.
 - **Build.** A ready ticket is built when its triage left a spec and it is no split's epic: `.maestro/slice.ts` with the
@@ -230,11 +246,11 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **Blocked.** A blocked agent moves its ticket to `needs-info` with its question and spends no attempt. An obstacle
   becomes a `needs-triage` issue that blocks the ticket, and its closing frees the ticket. An infra fault halts the
   factory until its obstacle closes.
-- **Splits.** Triage records its verdict in the factory block: a spec, or a split with its child list. On the owner's
+- **Splits.** Triage records its verdict in the factory comment: a spec, or a split with its child list. On the owner's
   approval of a split the tick files the children as `needs-triage`, in the epic's milestone with `Part of #N`, and
   moves the epic to `in-progress`. The epic closes when its last child does.
 - **Duplicates and related issues.** A duplicate is closed at once as `state/duplicate` with a back-reference. A related
-  issue gets `Relates to #N` in the factory block and the PR body.
+  issue gets `Relates to #N` in the factory comment and the PR body.
 - **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
   `factory: <issue title>`, the title cut with an ellipsis past 60 characters.
 - **PRs.** One change per ticket, pushed by forge-bot over HTTPS as `factory/i<n>`, replacing what the branch held, with
