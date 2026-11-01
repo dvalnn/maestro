@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CodeContext } from "@maestro/sdk";
-import { upheldOf } from "./slice";
+import { requirePatch, upheldOf } from "./slice";
 import {
+	call,
 	classics,
 	maestro,
 	scratch,
@@ -161,6 +162,7 @@ test.each(seated)(
 	"a stub perform under --preset %s continues the builder and the lens in their sessions across review rounds",
 	async (tier, runtimes) => {
 		const target = targetRepo();
+		const changes = tier === "ordinary";
 		const flagged = {
 			clean: false,
 			findings: [finding("F1", true)],
@@ -172,23 +174,28 @@ test.each(seated)(
 			"fixes/skeptic/verdicts.json": held("F1"),
 		});
 		const data = mkdtempSync(join(scratch, "data-"));
-		const performed = JSON.parse(
-			await maestro(
-				[
-					...(await slice("perform", tier)),
-					"-c",
-					`target.repo=${target}`,
-					"-c",
-					'target.prepare="true"',
-					"-c",
-					'target.checks.all={run: "true", hint: all}',
-					...stubbed(Object.keys(runtimes)),
-				],
-				data,
-				{ MAESTRO_STUB_OUTPUTS: outputs },
-			),
+		const ran = await call(
+			[
+				...(await slice("perform", tier)),
+				"-c",
+				`target.repo=${target}`,
+				"-c",
+				'target.prepare="true"',
+				"-c",
+				`target.checks.all={run: ${JSON.stringify(changes ? "echo x > b.ts" : "true")}, hint: all}`,
+				...stubbed(Object.keys(runtimes)),
+			],
+			data,
+			{ MAESTRO_STUB_OUTPUTS: outputs },
 		);
-		expect(performed.status).toBe("ok");
+		const performed = JSON.parse(ran.out);
+		expect([performed.status, performed.reason]).toEqual(
+			changes ? ["ok", undefined] : ["failed", "the slice changed nothing"],
+		);
+		if (changes)
+			expect(
+				await maestro(["cs", "show", performed.id, "-C", target], data),
+			).toContain("b.ts");
 		type Instance = {
 			node: string;
 			expansion: string;
@@ -212,3 +219,18 @@ test.each(seated)(
 		]);
 	},
 );
+
+test("requirePatch returns a changeset that holds a patch unchanged, and fails one that holds none", () => {
+	const made = (...files: string[]) => {
+		const dir = mkdtempSync(join(scratch, "changeset-"));
+		for (const f of files) writeFileSync(join(dir, f), "x");
+		return dir;
+	};
+	const ref = { path: "c", contentHash: "sha256:0" };
+	const run = (dir: string) =>
+		requirePatch({ changeset: ref }, {
+			path: () => dir,
+		} as unknown as CodeContext);
+	expect(run(made("base", "0001.patch"))).toEqual({ changeset: ref });
+	expect(() => run(made("base"))).toThrow("the slice changed nothing");
+});

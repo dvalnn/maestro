@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	atLeastOne,
@@ -30,6 +30,7 @@ import {
 	type CodeInputs,
 	code,
 	composition,
+	Dir,
 	Enum,
 	lookup,
 	loop,
@@ -45,6 +46,9 @@ import {
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export { survivorsOf, toMarkdown };
+
+const PATCH_EXT = ".patch";
+const NOTHING_CHANGED = "the slice changed nothing";
 
 const TIERS = ["small", "ordinary", "risky"] as const;
 type Tier = (typeof TIERS)[number];
@@ -140,6 +144,19 @@ export function upheldOf(
 	};
 }
 
+/**
+ * The changeset, unchanged, when it holds a patch.
+ * @throws Error when it holds none, so the node settles `failed`.
+ */
+export function requirePatch(
+	{ changeset }: { changeset: ArtifactRef },
+	ctx: CodeContext,
+): { changeset: ArtifactRef } {
+	if (!readdirSync(ctx.path(changeset)).some((f) => f.endsWith(PATCH_EXT)))
+		throw new Error(NOTHING_CHANGED);
+	return { changeset };
+}
+
 const UPHELD = {
 	lane: Lane,
 	session: Session,
@@ -232,7 +249,7 @@ function review(
 export const slice = composition(
 	"slice",
 	{
-		doc: "Build a request in a fresh lane, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset.",
+		doc: "Build a request in a fresh lane, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset, failing when it holds no patch.",
 		params: {
 			request: Text({ description: "The brief: what to build" }),
 			tier: Enum(TIERS, { description: "How deep the review goes" }),
@@ -301,6 +318,13 @@ export const slice = composition(
 			max: maxFixes,
 			label: "fixes",
 		});
-		return changeset(reviewed.out.lane, { label: "result" });
+		return code(requirePatch, {
+			in: {
+				changeset: changeset(reviewed.out.lane, { label: "changes" }).out
+					.changeset,
+			},
+			out: { changeset: Dir() },
+			label: "result",
+		});
 	},
 );

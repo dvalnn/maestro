@@ -95,7 +95,7 @@ flowchart TD
     V -->|"failed ⁶"| HALT
     K -->|slice| O{"outcome"}
     O -->|ok| LAND["land ¹"] --> IR["in-review"]
-    O -->|red| A{"attempts left?"}
+    O -->|"red ⁹"| A{"attempts left?"}
     A -->|yes| RA2["ready-for-agent"]
     A -->|no| NI2["needs-info"]
     O -->|blocked| NI3["needs-info ²"]
@@ -117,6 +117,7 @@ flowchart TD
    issue triages it again.
 7. Any verdict with a question for the owner, whatever its risk.
 8. The owner moved the ticket during the run: a slice is parked, a triage's verdict dropped (Rules: Moved during a run).
+9. A slice whose last reviewed lane holds no patch fails with `the slice changed nothing`.
 
 ## Label reference
 
@@ -273,8 +274,8 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   `kind/bug` and a gap as `kind/enhancement`, with `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line: the
   first 12 hex of SHA-256 over the text lower-cased, whitespace runs folded to one space and trimmed. A text whose line
   an open issue carries is not filed again.
-- **Attempts.** A red run spends an attempt and is retried with a fresh perform. After 2 attempts the ticket goes to
-  `needs-info`.
+- **Attempts.** A red run, an empty slice included, spends an attempt and is retried with a fresh perform. After 2
+  attempts the ticket goes to `needs-info`.
 - **Blocked.** A blocked agent moves its ticket to `needs-info` with its question and spends no attempt. An obstacle
   becomes a `needs-triage` issue that blocks the ticket, and its closing frees the ticket. An infra fault halts the tour
   manager until its obstacle closes.

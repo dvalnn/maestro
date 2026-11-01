@@ -756,7 +756,7 @@ describe("a build", () => {
 			const t = setup(
 				[specced(7, "in-progress", { slice: "s1", attempts })],
 				[sliceConcert("s1", 7, "failed")],
-				{ s1: failed("check all failed") },
+				{ s1: failed("the slice changed nothing") },
 			);
 			await t.run();
 			expect(
@@ -768,9 +768,11 @@ describe("a build", () => {
 			expect([data.concert, data.attempts, data.failure]).toEqual([
 				"s1",
 				spent,
-				"check all failed",
+				"the slice changed nothing",
 			]);
 			expect(t.starts).toHaveLength(states.length - 1);
+			expect([t.steps, t.applied]).toEqual([[], []]);
+			expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([]);
 			const writes = t.writes.length;
 			await t.run();
 			expect(t.writes).toHaveLength(writes);
