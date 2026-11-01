@@ -1269,8 +1269,12 @@ test("an instance settling past limits.tokens cancels its running siblings, and 
 	});
 	const reason = `passed limits.tokens (${TOKENS_SPENT - 1}): ${TOKENS_SPENT} tokens`;
 	expect(await playing.done).toEqual({ outcome: "failed", reason });
+	// a and b start together, so their start order is a race.
 	expect(
-		record.instances(playing.id).map((i) => [i.node, i.status, i.reason]),
+		record
+			.instances(playing.id)
+			.map((i) => [i.node, i.status, i.reason])
+			.sort(),
 	).toEqual([
 		["a", "ok", undefined],
 		["b", "failed", reason],
