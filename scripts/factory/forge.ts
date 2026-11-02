@@ -9,7 +9,7 @@ export const TOKEN_KEY = "MAESTRO_TM_TOKEN";
 const PAGE = 50;
 /** How the forge refuses to arm auto-merge on a PR that is already armed. */
 const ARMED = /^forge: 409 from .*already scheduled/is;
-const MERGE_STYLE = "rebase";
+const MERGE_STYLE = "fast-forward-only";
 
 export type Issue = {
 	number: number;
@@ -108,7 +108,7 @@ export type Forge = {
 	openPull(pull: NewPull): Promise<number>;
 	/** Changes the branch `pull` merges into to `base`. */
 	retarget(pull: number, base: string): Promise<void>;
-	/** Has the forge merge `pull` by rebase once its required checks pass, unless that is already armed. */
+	/** Has the forge fast-forward `main` to `pull` once its required checks pass, unless that is already armed. */
 	arm(pull: number): Promise<void>;
 	/** The reviews of `pull`, oldest first. */
 	reviews(pull: number, after: number): Promise<Review[]>;

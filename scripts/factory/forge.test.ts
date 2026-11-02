@@ -142,6 +142,12 @@ test("a token that is unset is refused by name", async () => {
 	).rejects.toThrow(/MAESTRO_TM_TOKEN.*\/home\/x\/\.config\/maestro\/\.env/s);
 });
 
+test("arming a PR asks the forge to fast-forward, so signed commits stay signed", async () => {
+	const { calls, send } = recording(() => [200, {}]);
+	await withShims(() => forge(signedIn, send).arm(30));
+	expect(JSON.parse(String(calls[0]?.init.body)).Do).toBe("fast-forward-only");
+});
+
 test.each([
 	["already armed", "Pull request is already scheduled to auto merge", true],
 	["refused otherwise", "merge failed because of conflict", false],

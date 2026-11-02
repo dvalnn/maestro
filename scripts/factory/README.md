@@ -9,9 +9,9 @@ PR's branch, and authors (and, with a key, signs) the commits it lands. A triage
 comments and comments mentioning its login, which each pass reads from `GET /user`.
 
 A ticket whose dependencies are all in review builds on the newest one's PR head, and its PR targets that dependency's
-branch until the restack moves it to `main`. On a low-risk PR to `main` the tick arms the forge's auto-merge, rebase
-style; it never merges by hand, so `main`'s branch protection must require the `check` status for the merge to wait on
-CI.
+branch until the restack moves it to `main`. On a low-risk PR to `main` the tick arms the forge's auto-merge,
+fast-forward only, so the commits keep their signature; it never merges by hand, so `main`'s branch protection must
+require the `check` status for the merge to wait on CI.
 
 It needs maestro `v0.1.0-rc.1` or later on `PATH`, since the triage composition takes a file param, and `jj`, `git`,
 `bun` and `just` to land a slice. It needs no python or `fj`.
@@ -29,8 +29,7 @@ lets it push branches, open PRs, comment, label, file issues and arm auto-merge;
 and email come from `GET /user` and author every commit the tick describes or restacks. The systemd unit needs no new
 `Environment=`, since the keys live in the `.env`.
 
-Requiring signed commits on `main` needs a fast-forward merge style: the tick arms a rebase merge, and the forge's
-rebase re-creates the commits unsigned.
+A low-risk PR whose base moved after it was pushed cannot fast-forward, and stays open for the owner to restack.
 
 ```sh
 bun scripts/factory/index.ts --milestone v0.1.0 [--preset triage]
