@@ -4,3 +4,4 @@ dist/
 *.bun-build
 .scratch/
 .env
+__pycache__/
