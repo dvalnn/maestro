@@ -214,14 +214,8 @@ Under its table, `ls <concert>` lists the notes its hosts give the current insta
 `Lessons`: each heading, then one `<instance>  <entry>` line per entry. On a terminal an entry wider than the screen is
 cut with `…`, and a dim line then says how to read the full reports; piped output is never cut. `ls <concert> --json`
 gives the full report of each current instance that has one as `reports`, by the instance's name as `ls` prints it:
-`maestro ls <concert> --json | jq .reports`. An agent's report has these fields, and `ls --help` lists them:
-
-- `summary`: what the agent did, in one line.
-- `gaps`: something its task asked that it left undone or unverified, which the reader would otherwise assume done.
-- `obstacles`: something outside its reach that stopped or slowed it, such as a missing attachment or a tool not on its
-  PATH; not a test that failed or a check that was red.
-- `lessons`: something that changes what the next agent in this repository should do, which the code and its docs do not
-  already say.
+`maestro ls <concert> --json | jq .reports`. An agent's report holds `summary`, `gaps`, `obstacles` and `lessons`;
+`maestro ls --help` says what each means.
 
 `ls` marks a concert whose instances have notes with `•` after its status, and its `--json` gives each concert's `notes`
 as a count by heading.

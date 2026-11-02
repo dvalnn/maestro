@@ -54,19 +54,20 @@ const BLOCKED_BAR =
 const LISTS = [
 	"- Most reports are the summary alone: give a list only for an item that clears its bar.",
 ];
-const LISTED = `    "gaps": ["<something your task asked that you left undone or unverified, which the reader would otherwise assume done>"],
-    "obstacles": ["<something outside your reach that stopped or slowed you, such as a missing attachment or a tool not on your PATH; not a test that failed or a check that was red>"],
-    "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"]`;
 
-/** What each field of an agent's report means, as its reply template words it. */
+/** What each field of an agent's report means, as its reply template and `ls --help` word it. */
 export const REPORT_FIELDS = {
 	summary: "what the agent did, in one line",
-	gaps: "something its task asked that it left undone or unverified, which the reader would otherwise assume done",
+	gaps: "something the task asked that was left undone or unverified, which the reader would otherwise assume done",
 	obstacles:
-		"something outside its reach that stopped or slowed it, such as a missing attachment or a tool not on its PATH; not a test that failed or a check that was red",
+		"something outside the agent's reach that stopped or slowed it, such as a missing attachment or a tool not on the PATH; not a test that failed or a check that was red",
 	lessons:
 		"something that changes what the next agent in this repository should do, which the code and its docs do not already say",
 } as const;
+
+const LISTED = (["gaps", "obstacles", "lessons"] as const)
+	.map((field) => `    "${field}": ["<${REPORT_FIELDS[field]}>"]`)
+	.join(",\n");
 
 export const WORK: ReplyKind = {
 	schema: envelopeSchema({}),

@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { frame, REPORT_FIELDS, type Run, VERDICT, WORK } from "./frame";
+import { frame, type Run, VERDICT, WORK } from "./frame";
+
+const LISTED = `    "gaps": ["<something the task asked that was left undone or unverified, which the reader would otherwise assume done>"],
+    "obstacles": ["<something outside the agent's reach that stopped or slowed it, such as a missing attachment or a tool not on the PATH; not a test that failed or a check that was red>"],
+    "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"]`;
 
 const SHELL =
 	"Your shell is already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
@@ -52,9 +56,7 @@ Your final reply is only this JSON object, with no other text:
 {
   "report": {
     "summary": "<what you did, in one line>",
-    "gaps": ["<something your task asked that you left undone or unverified, which the reader would otherwise assume done>"],
-    "obstacles": ["<something outside your reach that stopped or slowed you, such as a missing attachment or a tool not on your PATH; not a test that failed or a check that was red>"],
-    "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"]
+${LISTED}
   }
 }
 \`\`\`
@@ -70,9 +72,7 @@ const VERDICT_REPLY = `Your final reply is only this JSON object, with no other 
 {
   "report": {
     "summary": "<your ruling, in one line>",
-    "gaps": ["<something your task asked that you left undone or unverified, which the reader would otherwise assume done>"],
-    "obstacles": ["<something outside your reach that stopped or slowed you, such as a missing attachment or a tool not on your PATH; not a test that failed or a check that was red>"],
-    "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"]
+${LISTED}
   },
   "outcome": "ok",
   "reason": "<why, when rejected>"
@@ -135,15 +135,3 @@ test.each([
 		expect(text).toEndWith(VERDICT_REPLY);
 	},
 );
-
-test("REPORT_FIELDS gives each list its bar, as the reply template does", () => {
-	expect(REPORT_FIELDS.gaps).toContain(
-		"which the reader would otherwise assume done",
-	);
-	expect(REPORT_FIELDS.obstacles).toContain(
-		"not a test that failed or a check that was red",
-	);
-	expect(REPORT_FIELDS.lessons).toContain(
-		"which the code and its docs do not already say",
-	);
-});
