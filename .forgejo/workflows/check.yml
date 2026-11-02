@@ -13,16 +13,17 @@ jobs:
       MISE_DATA_DIR: /ci-cache/maestro/mise
       BUN_INSTALL_CACHE_DIR: /ci-cache/maestro/bun
     steps:
-      - name: Install bubblewrap and python3
-        run: apt-get update && apt-get install -y --no-install-recommends bubblewrap python3
+      - name: Install bubblewrap, python3 and ssh-keygen
+        run: apt-get update && apt-get install -y --no-install-recommends bubblewrap python3 openssh-client
       - uses: https://data.forgejo.org/actions/checkout@v4
-      - name: Install bun and just
+      - name: Install bun, just and jj
         run: |
           curl -fsSL https://mise.run | MISE_INSTALL_PATH=/ci-cache/maestro/bin/mise sh
           mise=/ci-cache/maestro/bin/mise
-          "$mise" install bun just
+          "$mise" install bun just jj@0.46.0
           echo "$("$mise" where bun)/bin" >> "$GITHUB_PATH"
           "$mise" where just >> "$GITHUB_PATH"
+          "$mise" where jj@0.46.0 >> "$GITHUB_PATH"
       # The tests assume a user without root's power to read any file, so they run as the image's `node` user.
       - name: Hand the checkout and the bun cache to node
         run: mkdir -p "$BUN_INSTALL_CACHE_DIR" && chown -R node:node . "$BUN_INSTALL_CACHE_DIR"
