@@ -77,8 +77,7 @@ const PANEL = {
 	tests: `Rule on the change through this lens only: ${TESTS}. ${GROUNDS}`,
 };
 
-const SKEPTIC_TASK =
-	"A lens ruled on this change. Challenge each of its findings against the code, and rule whether it holds. A finding that cites no rule, requirement or ADR does not hold.";
+const SKEPTIC_TASK = `A lens ruled on this change under these grounds: ${GROUNDS} Challenge each of its findings against the code and those grounds, and rule whether it holds. A finding holds when the code shows it and it breaks a rule, requirement or ADR the grounds name; one that cites none does not hold. To rule that a missing test is covered, name the test that fails without the behaviour; a shared code path or a claim of coverage by construction does not.`;
 
 const FIX_TASK =
 	"A review upheld the attached findings on your change. Fix each one, keeping to what the spec asks.";
