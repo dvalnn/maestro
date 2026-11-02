@@ -134,12 +134,13 @@ export const COMMON: Options = {
 	preset: {
 		type: "string",
 		arg: "name",
-		desc: "Layer the preset .maestro/presets/<name>.yaml, else the user's, on the config",
+		desc: "Layer the preset .maestro/presets/<name>.yaml, else the user's, on the config; repeatable, later ones winning",
+		multiple: true,
 	},
 	config: {
 		type: "string",
 		arg: "key=value",
-		desc: "Set a config key to a YAML value, over the preset; repeatable",
+		desc: "Set a config key to a YAML value, over the presets; repeatable",
 		multiple: true,
 		short: "c",
 	},

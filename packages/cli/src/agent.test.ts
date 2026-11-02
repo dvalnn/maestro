@@ -128,6 +128,24 @@ describe("agent ls", () => {
 });
 
 describe("agent show", () => {
+	test("names each preset layer by its own name, a later preset winning a key", async () => {
+		const w = await roster();
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/stub.yaml"),
+			"profiles:\n  demo/builder:\n    runtime: { thinking: low }\n",
+		);
+		const shown = await w.call([
+			"agent",
+			"show",
+			"demo/builder",
+			...["--preset", "risky", "--preset", "stub"],
+		]);
+		expect(shown).toMatchObject({ code: 0, err: "" });
+		expect(shown.out).toContain(
+			"  model       opus  [preset risky]\n  thinking    low  [preset stub]\n",
+		);
+	});
+
 	test("prints each section at column 15, a value's source only where a layer above the profile set it, uncoloured when piped", async () => {
 		const w = await roster();
 		const shown = await w.call(["agent", "show", "demo/builder", ...TUNED]);

@@ -22,7 +22,6 @@ import {
 	isSet,
 	type Options,
 	parse,
-	textOf,
 	textsOf,
 	type Values,
 	warn,
@@ -74,9 +73,9 @@ export type Session = {
 export const artifactsOf = (session: Session, id: string) =>
 	concertDirs(resolve(session.files.concerts), id).artifacts;
 
-/** The `--preset` and each `-c` of `values`. */
+/** Each `--preset` and each `-c` of `values`. */
 export const overridesOf = (values: Values): Overrides => ({
-	preset: textOf(values, "preset"),
+	presets: textsOf(values, "preset"),
 	config: textsOf(values, "config"),
 });
 
@@ -161,7 +160,7 @@ export async function locating(deps: Deps, own: Overrides): Promise<Overrides> {
 
 /** The `--preset` and `-c` concert `row` was performed with, to layer beneath a command's own, as a resume does. */
 export const recordedOf = (store: Records, row: ConcertRecord): Overrides => ({
-	preset: row.preset,
+	presets: row.presets,
 	config: row.config,
 	recorded: shortIds(store.ids()).label(row.id, false),
 });

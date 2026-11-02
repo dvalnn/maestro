@@ -274,11 +274,15 @@ export const work = composition("work", { examples: [{}] }, () => {
 		);
 	});
 
-	test("reapplies the concert's recorded --preset and -c, the resume's own -c on top", async () => {
+	test("reapplies the concert's recorded presets in order and -c, the resume's own -c on top", async () => {
 		const w = await world();
 		await Bun.write(
 			join(w.cwd, ".maestro/presets/stub.yaml"),
-			"mode:\n  from: stub\n  keep: stub\n",
+			"mode:\n  from: stub\n  keep: stub\n  only: stub\n",
+		);
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/risky.yaml"),
+			"mode:\n  from: risky\n  risky: true\n",
 		);
 		const seen: unknown[] = [];
 		const host: Host = {
@@ -294,12 +298,21 @@ export const work = composition("work", { examples: [{}] }, () => {
 		};
 		const id = idOf(
 			await w.call(
-				["perform", ...GREET, "--preset", "stub", "-c", "mode.keep=perform"],
+				[
+					"perform",
+					...GREET,
+					"--preset",
+					"stub",
+					"--preset",
+					"risky",
+					"-c",
+					"mode.keep=perform",
+				],
 				{ hosts: [host] },
 			),
 		);
 		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
-			preset: "stub",
+			presets: ["stub", "risky"],
 			config: ["mode.keep=perform"],
 		});
 		await w.call(["perform", "--resume", id], { hosts: [host] });
@@ -307,9 +320,9 @@ export const work = composition("work", { examples: [{}] }, () => {
 			hosts: [host],
 		});
 		expect(seen).toEqual([
-			{ from: "stub", keep: "perform" },
-			{ from: "stub", keep: "perform" },
-			{ from: "stub", keep: "resume" },
+			{ from: "risky", keep: "perform", only: "stub", risky: true },
+			{ from: "risky", keep: "perform", only: "stub", risky: true },
+			{ from: "risky", keep: "resume", only: "stub", risky: true },
 		]);
 	});
 
@@ -465,7 +478,7 @@ describe("encore", () => {
 		});
 	});
 
-	test("the encore's --preset replaces the concert's, under the concert's -c", async () => {
+	test("the encore's presets replace the concert's whole list, under the concert's -c, and none keeps the list", async () => {
 		const w = await world();
 		const presets = join(w.cwd, ".maestro/presets");
 		await Bun.write(join(presets, "a.yaml"), "mode:\n  from: a\n  keep: a\n");
@@ -483,22 +496,37 @@ describe("encore", () => {
 			config: { mode: { type: "object" } },
 		};
 		const first = idOf(
-			await w.call(["perform", ...GREET, "--preset", "a", "-c", "mode.c=1"], {
-				hosts: [host],
-			}),
+			await w.call(
+				[
+					"perform",
+					...GREET,
+					...["--preset", "a", "--preset", "b", "-c", "mode.c=1"],
+				],
+				{ hosts: [host] },
+			),
 		);
 		const encore = idOf(
 			await w.call(["perform", "--encore", first, "--preset", "b"], {
 				hosts: [host],
 			}),
 		);
+		const kept = idOf(
+			await w.call(["perform", "--encore", first, "-c", "mode.c=2"], {
+				hosts: [host],
+			}),
+		);
 		expect(seen).toEqual([
-			{ from: "a", keep: "a", c: 1 },
+			{ from: "a", keep: "b", c: 1 },
 			{ keep: "b", c: 1 },
+			{ from: "a", keep: "b", c: 2 },
 		]);
 		expect(json(await w.call(["ls", encore, "--json"]))).toMatchObject({
-			preset: "b",
+			presets: ["b"],
 			config: ["mode.c=1"],
+		});
+		expect(json(await w.call(["ls", kept, "--json"]))).toMatchObject({
+			presets: ["a", "b"],
+			config: ["mode.c=1", "mode.c=2"],
 		});
 	});
 });

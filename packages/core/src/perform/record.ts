@@ -55,9 +55,10 @@ export const CONCERT_FINISHED = "the concert finished before it settled";
 // non-ok outcome. `result_node` is NULL while a concert is running, and after one that failed before any node ran.
 // `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an earlier attempt, which a resume
 // reuses or replaces. `earlier_metrics` holds the metrics of the attempts a resume replaced, which still count as
-// spend. A concert's `profile` holds the name of the preset it was performed with, `params` its root params as given
-// (JSON), `encore_of` the concert it is an encore of, `fingerprint` the digest `begin` was given, and `limits` the
-// ceiling of its latest attempt (JSON), NULL when it had none.
+// spend. A concert's `profile` holds the names of the presets it was performed with (a JSON list, or one bare name in a
+// row written before presets repeated), `params` its root params as given (JSON), `encore_of` the concert it is an
+// encore of, `fingerprint` the digest `begin` was given, and `limits` the ceiling of its latest attempt (JSON), NULL
+// when it had none.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -135,9 +136,9 @@ export type ConcertStatus = "running" | Exclude<Outcome, "skipped">;
 
 /**
  * What a concert row keeps beside its IR. `moduleDir` is the directory its worker references' modules are found in,
- * and `file` the composition file in it that the IR was built from, when it was built from a bare file. `preset` and
- * `config` are the preset name and each config override, as given, it was performed with, and `params` its root
- * composition's params as given, by name.
+ * and `file` the composition file in it that the IR was built from, when it was built from a bare file. `presets` and
+ * `config` are each preset name and each config override, as given and in order, it was performed with, and `params`
+ * its root composition's params as given, by name.
  */
 export type ConcertOrigin = {
 	workspace: string;
@@ -145,7 +146,7 @@ export type ConcertOrigin = {
 	file?: string;
 	tour?: string;
 	title?: string;
-	preset?: string;
+	presets?: readonly string[];
 	config?: readonly string[];
 	params?: Readonly<Record<string, unknown>>;
 };
@@ -932,7 +933,7 @@ function beginRow(concert: Parameters<RecordWriter["begin"]>[0]) {
 		concert.title ?? null,
 		concert.moduleDir ?? "",
 		concert.file ?? null,
-		concert.preset ?? null,
+		concert.presets?.length ? JSON.stringify(concert.presets) : null,
 		concert.config?.length ? JSON.stringify(concert.config) : null,
 		json(concert.params),
 		concert.encoreOf ?? null,
@@ -967,6 +968,16 @@ export function unresumable({
 		: undefined;
 }
 
+/** The preset names a `profile` column holds: its JSON list, or the one bare name a row written before it held. */
+function presetsOf(profile: string): string[] {
+	try {
+		const names: unknown = JSON.parse(profile);
+		if (Array.isArray(names) && names.every((n) => typeof n === "string"))
+			return names;
+	} catch {}
+	return [profile];
+}
+
 function concertOf(row: ConcertRow): ConcertRecord {
 	return {
 		id: row.id,
@@ -982,7 +993,7 @@ function concertOf(row: ConcertRow): ConcertRecord {
 		...(row.settled_at !== null && { settledAt: row.settled_at }),
 		...(row.tour !== null && { tour: row.tour }),
 		...(row.title !== null && { title: row.title }),
-		...(row.profile !== null && { preset: row.profile }),
+		...(row.profile !== null && { presets: presetsOf(row.profile) }),
 		...(row.config !== null && { config: JSON.parse(row.config) }),
 		...(row.params !== null && { params: JSON.parse(row.params) }),
 		...(row.encore_of !== null && { encoreOf: row.encore_of }),

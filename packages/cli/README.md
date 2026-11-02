@@ -108,23 +108,23 @@ maestro wait <concert> --timeout 15m
     rest are listed, and the exit is 1.
 
 [^resume]:
-    It re-reads the config files, layers the concert's recorded `--preset` and `-c` on them, then the resume's own
-    `--preset` and `-c`. The record store is found by today's `dataRoot`: a recorded `-c dataRoot=` changes the config
-    only, so pass it again to resume a concert in another store. An error from a recorded flag names the concert, and is
-    fixed by a `-c` or `--preset` on the resume, or by performing the composition as a new concert. It runs the graph
-    recorded at first perform, so an edit adds or removes no node, but code nodes load from the file as it is now and
-    their hash covers the whole bundle (ADR 0008): any edit to the composition file reruns every code node, and
+    It re-reads the config files, layers the concert's recorded presets and `-c` on them, in order, then the resume's
+    own `--preset` and `-c`. The record store is found by today's `dataRoot`: a recorded `-c dataRoot=` changes the
+    config only, so pass it again to resume a concert in another store. An error from a recorded flag names the concert,
+    and is fixed by a `-c` or `--preset` on the resume, or by performing the composition as a new concert. It runs the
+    graph recorded at first perform, so an edit adds or removes no node, but code nodes load from the file as it is now
+    and their hash covers the whole bundle (ADR 0008): any edit to the composition file reruns every code node, and
     dependents rerun when their inputs changed. A changed code hash prints a warning on stderr and the resume goes on.
     After editing a composition, perform a new concert.
 
 [^encore]:
     It builds the concert's composition anew with the param flags it was performed with, the encore's own overriding
     them, under the config files as they stand, the concert's recorded `-c` and the encore's own on top, and the
-    encore's `--preset` in place of the concert's. It takes `--tour` and `--title`, and no composition. Every node runs
-    again, and an agent continues its counterpart's session, unless its seat says `encore: false`; an agent that starts
-    fresh says why in its `encoreFresh`, shown by `ls <concert> --json`. An encore of an encore matches against the
-    encore. When the params, the config and the target revision all match the concert's, the encore is refused, naming
-    `perform --resume`.
+    encore's presets in place of the concert's whole list when it gives any. It takes `--tour` and `--title`, and no
+    composition. Every node runs again, and an agent continues its counterpart's session, unless its seat says
+    `encore: false`; an agent that starts fresh says why in its `encoreFresh`, shown by `ls <concert> --json`. An encore
+    of an encore matches against the encore. When the params, the config and the target revision all match the
+    concert's, the encore is refused, naming `perform --resume`.
 
 [^prune]:
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`,
@@ -136,8 +136,8 @@ maestro wait <concert> --timeout 15m
 `maestro --version` prints one line, `maestro <version> (sdk <version>, ir <version>, bun <version>)`, and exits 0.
 
 Every command but `changeset` takes `--json` (one JSON document on stdout, and no `warning:` lines on stderr),
-`--preset <name>`, `-c, --config <key=value>` (repeatable), `--no-color`, `--debug` (stack traces) and `--help`. Primary
-output goes to stdout, messages to stderr.
+`--preset <name>` (repeatable), `-c, --config <key=value>` (repeatable), `--no-color`, `--debug` (stack traces) and
+`--help`. Primary output goes to stdout, messages to stderr.
 
 Each stream is colored only when it is a terminal: stdout by its own check, stderr by its own. Color is off under
 `NO_COLOR`, `TERM=dumb` or `--no-color`, and the `--json` document is never colored. It covers the `ls` status column,
@@ -300,9 +300,10 @@ configures it; make it a pack for that.
 ## Config
 
 Layers, lowest first: the defaults, `$XDG_CONFIG_HOME/maestro/config.yaml`, the nearest `.maestro/config.yaml`, the
-preset `--preset <name>` names, then each `-c` in order. Maps merge by key and a list is replaced by the layer above it.
-A tag changes that: `!replace` on a map, `!append` on a list, `!delete` to drop a key. `maestro config <composition>`
-shows where each value came from.
+preset each `--preset <name>` names, in order, then each `-c` in order. Maps merge by key and a list is replaced by the
+layer above it. A tag changes that: `!replace` on a map, `!append` on a list, `!delete` to drop a key.
+`maestro config <composition>` shows where each value came from, naming a preset layer by its name (`preset risky`).
+Presets combine without a merged file: `--preset risky --preset stub` layers `stub` over `risky`.
 
 A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`; the
 workspace's file wins the name whole. Relative paths in it resolve as in the config file beside it: the workspace root,
@@ -317,13 +318,13 @@ maestro perform demo.greet --name x -c concurrency=2 -c 'packs=!append [../b]' -
 maestro perform demo.greet --name x -c 'profiles.reviewer.runtime=!replace {harness: stub, model: none}' -c 'target.checks."a.b"=x'
 ```
 
-A profile's fields resolve per field, highest first: `-c` and the preset, then the config files' `profiles`, then the
+A profile's fields resolve per field, highest first: `-c` and the presets, then the config files' `profiles`, then the
 profile directory's `profile.yaml`. So `--preset stub` always means no spend, while
 `-c profiles.builder.runtime.model=haiku` changes only the model. A composition sets none of them. A resume applies the
 same order.
 
-A concert's record keeps its `--preset` and each `-c` as typed, and `ls <concert> --json` shows them as `preset` and
-`config`. Keep secrets out of `-c`: set them in `$XDG_CONFIG_HOME/maestro/.env`.
+A concert's record keeps each `--preset` and each `-c` as typed, in order, and `ls <concert> --json` shows them as
+`presets` and `config`. Keep secrets out of `-c`: set them in `$XDG_CONFIG_HOME/maestro/.env`.
 
 | Key           | Meaning                                                                                                           |
 | ------------- | ----------------------------------------------------------------------------------------------------------------- |

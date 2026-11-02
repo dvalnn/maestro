@@ -44,7 +44,9 @@ describe("config files", () => {
 			"ws/sub/deeper/.keep": "",
 		});
 		const config = await loadConfig(
-			request({ overrides: [{ preset: "fast", config: ["concurrency=7"] }] }),
+			request({
+				overrides: [{ presets: ["fast"], config: ["concurrency=7"] }],
+			}),
 		);
 		expect(config.core).toEqual({
 			concurrency: 7,
@@ -122,7 +124,7 @@ describe("config files", () => {
 			[USER_PRESET]: "concurrency: 6\ndataRoot: data\n",
 		});
 		const config = await loadConfig(
-			request({ cwd: root, overrides: [{ preset: "fast" }] }),
+			request({ cwd: root, overrides: [{ presets: ["fast"] }] }),
 		);
 		expect(config.core).toMatchObject({
 			concurrency: 6,
@@ -133,6 +135,49 @@ describe("config files", () => {
 			file: join(root, USER_PRESET),
 			line: 1,
 		});
+	});
+
+	test("layer several presets in order, a later one winning a key, each -c over them all", async () => {
+		const { root, request } = await tree({
+			[PRESET]: "concurrency: 5\ndataRoot: data\ncaps:\n  calls: 4\n",
+			"ws/.maestro/presets/stub.yaml":
+				"concurrency: 6\ncaps:\n  instances: 8\n",
+		});
+		const config = await loadConfig(
+			request({
+				overrides: [{ presets: ["fast", "stub"], config: ["caps.calls=9"] }],
+			}),
+		);
+		expect(config.core).toMatchObject({
+			concurrency: 6,
+			dataRoot: join(root, "ws/data"),
+			caps: { calls: 9, instances: 8 },
+		});
+		const source = (...path: string[]) => sourceOf(config.composed, path);
+		expect([
+			source("dataRoot"),
+			source("concurrency"),
+			source("caps", "calls"),
+		]).toEqual([
+			{ layer: "preset", file: join(root, PRESET), line: 2 },
+			{
+				layer: "preset",
+				file: join(root, "ws/.maestro/presets/stub.yaml"),
+				line: 1,
+			},
+			{ layer: "flag", flag: "-c caps.calls=9" },
+		]);
+	});
+
+	test("refuse a second preset that is missing, by its name", async () => {
+		const { request } = await tree({ [PRESET]: "concurrency: 5\n" });
+		expect(
+			await refusal(
+				loadConfig(request({ overrides: [{ presets: ["fast", "slow"] }] })),
+			),
+		).toEqual([
+			["CFG.preset", expect.stringContaining("--preset slow names no file")],
+		]);
 	});
 
 	test.each([
@@ -182,7 +227,7 @@ describe("config files", () => {
 				.replaceAll("WS", join(root, "ws/.maestro/presets"))
 				.replaceAll("XDG", join(root, "xdg/maestro/presets"));
 		const error = await loadConfig(
-			request({ overrides: [{ preset }], cwd: join(root, cwd) }),
+			request({ overrides: [{ presets: [preset] }], cwd: join(root, cwd) }),
 		).catch((e: unknown) => e);
 		if (!(error instanceof ConfigError)) throw error;
 		expect(error.diagnostics.map((d) => [d.code, d.message, d.hint])).toEqual([

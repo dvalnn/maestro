@@ -112,21 +112,20 @@ async function begin(
 }
 
 /**
- * The overrides an encore of `row` layers and records: its own `--preset` in place of the concert's, and its own `-c`
- * after the concert's.
+ * The overrides an encore of `row` layers and records: its own `--preset` list in place of the concert's whole list when
+ * it gives any, and its own `-c` after the concert's.
  */
 function encoreOverrides(store: Records, row: ConcertRecord, own: Overrides) {
 	const { recorded } = recordedOf(store, row);
+	const replaced = own.presets !== undefined && own.presets.length > 0;
 	return {
 		layers: [
-			own.preset === undefined
-				? { preset: row.preset, recorded }
-				: { preset: own.preset },
+			replaced ? { presets: own.presets } : { presets: row.presets, recorded },
 			{ config: row.config, recorded },
 			{ config: own.config },
 		],
 		kept: {
-			preset: own.preset ?? row.preset,
+			presets: replaced ? own.presets : row.presets,
 			config: [...(row.config ?? []), ...(own.config ?? [])],
 		},
 	};

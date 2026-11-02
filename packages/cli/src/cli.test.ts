@@ -169,6 +169,25 @@ describe("compose and config", () => {
 		expect(text).toMatch(/^concurrency +flag +3 +-c concurrency=3$/m);
 	});
 
+	test("config names each preset layer by its own name", async () => {
+		const w = await world();
+		const presets = join(w.cwd, ".maestro/presets");
+		await Bun.write(join(presets, "risky.yaml"), "concurrency: 4\n");
+		await Bun.write(join(presets, "stub.yaml"), "dataRoot: data\n");
+		const text = (
+			await w.call([
+				"config",
+				...GREET,
+				"--preset",
+				"risky",
+				"--preset",
+				"stub",
+			])
+		).out;
+		expect(text).toMatch(/^concurrency +preset risky +4 +.*risky\.yaml:1$/m);
+		expect(text).toMatch(/^dataRoot +preset stub +.*stub\.yaml:1$/m);
+	});
+
 	test("--out of a pack writes an IR that performs, and of a bare file writes its bundle beside it", async () => {
 		const w = await world();
 		const dir = join(w.root, "out");

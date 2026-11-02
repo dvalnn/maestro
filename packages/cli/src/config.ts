@@ -63,9 +63,9 @@ export const deferredKeys = (hosts: readonly Host[]) =>
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
-/** A command's `--preset` name and each `-c` as given, in order. */
+/** A command's `--preset` names and each `-c` as given, in order. */
 export type Overrides = {
-	preset?: string;
+	presets?: readonly string[];
 	config?: readonly string[];
 	/** The short id of the concert they were recorded with, when a resume reapplies them. */
 	recorded?: string;
@@ -75,7 +75,7 @@ export type ConfigRequest = {
 	cwd: string;
 	env: Environment;
 	hosts: readonly Host[];
-	/** Layered above the config files in order, each as its preset, then each of its `-c` in order. */
+	/** Layered above the config files in order, each as its presets, then each of its `-c`, in order. */
 	overrides?: readonly Overrides[];
 };
 
@@ -367,7 +367,7 @@ function overrideLayer(
 	});
 }
 
-/** The layers of `overrides` in order: each one's preset, then each of its `-c` in order. */
+/** The layers of `overrides` in order: each one's presets, then each of its `-c`, in order. */
 async function overrideLayers(
 	overrides: readonly Overrides[],
 	presetDirs: readonly PresetDir[],
@@ -375,8 +375,8 @@ async function overrideLayers(
 	paths: readonly KeyPath[],
 ): Promise<Layer[]> {
 	const layers: Layer[] = [];
-	for (const { preset, config = [], recorded } of overrides) {
-		if (preset !== undefined)
+	for (const { presets = [], config = [], recorded } of overrides) {
+		for (const preset of presets)
 			layers.push(await presetLayer(preset, presetDirs, paths, recorded));
 		layers.push(
 			...config.map((arg) => overrideLayer(arg, base, paths, recorded)),
@@ -408,8 +408,9 @@ export function baseOf(
  * - the user file, `$XDG_CONFIG_HOME/maestro/config.yaml`, when it exists;
  * - the workspace file, `.maestro/config.yaml` in the nearest directory from the cwd up holding `.maestro/`, when it
  *   exists;
- * - for each of `overrides` in order, the preset its `--preset` names, `<name>.yaml` in the workspace's
- *   `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`, then a layer per `-c <key>=<value>`, in order.
+ * - for each of `overrides` in order, the preset each of its `--preset` names in order, `<name>.yaml` in the
+ *   workspace's `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`, then a layer per
+ *   `-c <key>=<value>`, in order.
  *
  * Relative paths in the user file and a user preset resolve against the user config directory, those in the workspace
  * file, a workspace preset and a `-c` against the workspace root, or the cwd outside a workspace. The installed packs

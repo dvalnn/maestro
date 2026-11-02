@@ -1,4 +1,4 @@
-import { dirname, resolve } from "node:path";
+import { basename, dirname, extname, resolve } from "node:path";
 import type { Composed } from "@maestro/core/config";
 import {
 	type AgentRuntime,
@@ -155,6 +155,12 @@ function rowsOf({ values, sources }: Composed) {
 		}));
 }
 
+/** A row's layer as the table names it: a preset by its own name, such as `preset risky`. */
+const layerOf = ({ layer, file }: ReturnType<typeof rowsOf>[number]) =>
+	layer === "preset" && file
+		? `preset ${basename(file, extname(file))}`
+		: layer;
+
 export const config: Command = {
 	usage: "config <composition> [flags]  (alias: cfg)",
 	options: COMMON,
@@ -173,7 +179,7 @@ export const config: Command = {
 			table(
 				rows.map((r) => [
 					r.key,
-					r.layer,
+					layerOf(r),
 					JSON.stringify(r.value),
 					r.file ? `${r.file}:${r.line}` : (r.flag ?? ""),
 				]),

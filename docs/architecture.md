@@ -282,12 +282,13 @@ stores by node id and expansion path as a `progress` event, opaquely.
   process is still alive cannot be resumed. Nothing is reused across concerts.
 - **Encore.** `perform --encore <concert>` starts a new concert, its row recording `encoreOf`, that builds the earlier
   concert's composition with the param flags it recorded, the encore's own overriding them, under the config files as
-  they stand, with the earlier `-c` and the encore's own on top and the encore's `--preset` in place of the earlier one.
-  A fingerprint of the IR, the config values and the host facts, which give the target revision and a digest of the
-  profiles, is recorded with each concert; an encore whose fingerprint equals its concert's, or while its concert or
-  another in its encore chain is running, is refused before it is recorded. Core passes `HostContext.encore` to each
-  host instance and reads nothing of it, and each `HostInstance` carries the kinds of the groups around it and the id of
-  its composition. A resumed encore stays one. Every instance runs again: nothing is reused.
+  they stand, with the earlier `-c` and the encore's own on top and the encore's presets in place of the earlier
+  concert's whole list when it gives any, else the earlier list. A fingerprint of the IR, the config values and the host
+  facts, which give the target revision and a digest of the profiles, is recorded with each concert; an encore whose
+  fingerprint equals its concert's, or while its concert or another in its encore chain is running, is refused before it
+  is recorded. Core passes `HostContext.encore` to each host instance and reads nothing of it, and each `HostInstance`
+  carries the kinds of the groups around it and the id of its composition. A resumed encore stays one. Every instance
+  runs again: nothing is reused.
 - **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in
   reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started has
   no record. A code node that runs past the timeout its author set settles `failed`. It has none by default.
@@ -317,14 +318,15 @@ A resume runs every instance that is not a reusable `ok` again, from `pending`.
 ## 8. Configuration
 
 Params and config resolve, highest precedence first (CFG-04, D-17): the use site for a subcomposition or the CLI flag
-for a root composition, then each `-c <key>=<value>` flag, last first, then preset, workspace and user YAML, then, for
-`compose`, the example set (D-19), then the declared default. A profile's fields are the exception: the command line
-(`--preset`, `-c`) beats the config files' `profiles`, which beat the profile directory's `profile.yaml`, field by field
-(see `docs/rulings.md`). A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in
-`$XDG_CONFIG_HOME/maestro/presets/`, the workspace's winning the name whole. A composition's YAML keys live under its
-pack id and then its composition id. Hosts keep pure-config namespaces. Files are YAML. A relative path value in a
-workspace file, a workspace preset or a `-c` is relative to the workspace root, the directory that holds `.maestro/`,
-and in a user file or preset to the user config directory. The core:
+for a root composition, then each `-c <key>=<value>` flag, last first, then each preset, last first, workspace and user
+YAML, then, for `compose`, the example set (D-19), then the declared default. A profile's fields are the exception: the
+command line (`--preset`, `-c`) beats the config files' `profiles`, which beat the profile directory's `profile.yaml`,
+field by field (see `docs/rulings.md`). A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in
+`$XDG_CONFIG_HOME/maestro/presets/`, the workspace's winning the name whole. `--preset` repeats (#152):
+`--preset a --preset b` layers `a`, then `b`, then each `-c`, a later layer winning key by key. A composition's YAML
+keys live under its pack id and then its composition id. Hosts keep pure-config namespaces. Files are YAML. A relative
+path value in a workspace file, a workspace preset or a `-c` is relative to the workspace root, the directory that holds
+`.maestro/`, and in a user file or preset to the user config directory. The core:
 
 - parses and layers them,
 - validates the closed **core config** schema (CFG-01),
@@ -361,10 +363,11 @@ claimed by an installed but unused registrant is ignored.
 - The **record store** is local and embedded. SQLite in WAL mode through `bun:sqlite` is the store (D-26). Concerts may
   run concurrently with no coordination beyond lane isolation, and the concurrency cap is per concert. The schema is new
   (D-02). It holds concerts with their IR, the id of the process performing them, where their code came from (workspace,
-  module directory, file), tour and title, the `--preset` name and each `-c` as typed, which a resume reapplies, the
-  root's params the flags gave, the concert an encore repeats and its fingerprint, and the `limits` its latest attempt
-  ran under; node instances, outcomes with reasons, durations, metrics, artifact references and events. No config is
-  kept for reuse: a resume re-reads the config files.
+  module directory, file), tour and title, each `--preset` name in order (`presets`; a row from before presets repeated
+  holds one bare name, read as a list of it) and each `-c` as typed, which a resume reapplies, the root's params the
+  flags gave, the concert an encore repeats and its fingerprint, and the `limits` its latest attempt ran under; node
+  instances, outcomes with reasons, durations, metrics, artifact references and events. No config is kept for reuse: a
+  resume re-reads the config files.
 - A resume marks the concert's instance rows **stale**. Each one it reuses or replaces stops being stale, and the
   metrics of a replaced attempt still count towards the concert's.
 - A concert whose process is gone while it is still `running` settles `failed`, by whichever reader finds it, so `wait`
