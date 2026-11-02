@@ -40,7 +40,8 @@ forge.py api PATCH /issues/<n> '{"milestone": <id>}'
 forge.py api POST /issues/<n>/dependencies '{"owner": "tiago", "repo": "maestro", "index": <blocker>}'
 ```
 
-`forge.py` is `.claude/skills/forgejo/scripts/forge.py`.
+`forge.py` is `.claude/skills/forgejo/scripts/forge.py`, agent tooling run by agents and the owner. No repository script
+runs it: the tour manager calls the forge's REST API itself, in `scripts/factory/forge.ts`.
 
 ## When a skill says "publish to the issue tracker"
 
