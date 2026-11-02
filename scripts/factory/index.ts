@@ -89,8 +89,8 @@ const CLOSED = 20;
 
 export type Options = {
 	milestone: string;
-	/** The preset layered last on each triage and build. */
-	preset?: string;
+	/** The presets layered last, in order, on each triage and build. */
+	presets: string[];
 	/** Only route settled concerts and sync; start no build or triage. */
 	routeOnly?: boolean;
 	/** Where the pass keeps its snapshots and perform logs. */
@@ -859,7 +859,7 @@ async function startSlice(
 				"--preset",
 				tier,
 				...area,
-				...(pass.preset ? ["--preset", pass.preset] : []),
+				...pass.presets.flatMap((p) => ["--preset", p]),
 				"--tour",
 				tourOf(pass.milestone, issue.number),
 				"--title",
@@ -1085,7 +1085,7 @@ async function triage(pass: Pass, entries: Entry[]) {
 				tourOf(pass.milestone, number),
 				"--title",
 				titleOf(entry.issue),
-				...(pass.preset ? ["--preset", pass.preset] : []),
+				...pass.presets.flatMap((p) => ["--preset", p]),
 			],
 			join(pass.dir, `i${number}.log`),
 		);
@@ -1146,7 +1146,7 @@ if (import.meta.main) {
 		const { values } = parseArgs({
 			options: {
 				milestone: { type: "string" },
-				preset: { type: "string" },
+				preset: { type: "string", multiple: true },
 				"route-only": { type: "boolean" },
 			},
 		});
@@ -1157,7 +1157,7 @@ if (import.meta.main) {
 				"XDG_RUNTIME_DIR is not set\nRun the tick in a user session, such as under systemctl --user",
 			);
 		options = {
-			preset: values.preset,
+			presets: values.preset ?? [],
 			routeOnly: values["route-only"],
 			milestone: values.milestone,
 			dir: join(runtime, "maestro-factory"),
@@ -1168,7 +1168,7 @@ if (import.meta.main) {
 		};
 	} catch (error) {
 		console.error(
-			`${message(error)}\nusage: bun scripts/factory/index.ts --milestone <name> [--preset <name>] [--route-only]`,
+			`${message(error)}\nusage: bun scripts/factory/index.ts --milestone <name> [--preset <name>]... [--route-only]`,
 		);
 		process.exit(EXIT_USAGE);
 	}

@@ -311,7 +311,7 @@ function setup(
 	const files: string[] = [];
 	const options: Options = {
 		milestone: MILESTONE,
-		preset: "stub",
+		presets: ["stub"],
 		dir: mkdtempSync(join(tmpdir(), "factory-")),
 		cache: "/cache/maestro-factory",
 	};
@@ -793,8 +793,9 @@ describe("a build", () => {
 		expect(t.starts[0]).toContain("v0.1.0.i8");
 	});
 
-	test("adds the area preset between the tier's and the tick's when its file exists", async () => {
+	test("adds the area preset between the tier's and the tick's, each of the tick's in order", async () => {
 		const t = setup([specced(7, "ready-for-agent")]);
+		t.options.presets.push("xreview");
 		t.find(7).labels.push("area/cli");
 		t.files.push(".maestro/presets/area-cli.yaml");
 		await t.run();
@@ -806,13 +807,18 @@ describe("a build", () => {
 			"--preset",
 			"area-cli",
 		]);
-		expect(t.starts[0]?.slice(10, 12)).toEqual(["--preset", "stub"]);
+		expect(t.starts[0]?.slice(10, 14)).toEqual([
+			"--preset",
+			"stub",
+			"--preset",
+			"xreview",
+		]);
 	});
 
 	test("takes the tier alone when the area has no preset file", async () => {
 		const t = setup([specced(7, "ready-for-agent")]);
 		t.find(7).labels.push("area/cli");
-		t.options.preset = undefined;
+		t.options.presets = [];
 		await t.run();
 		expect(t.starts[0]).not.toContain("area-cli");
 		expect(t.starts[0]?.filter((a) => a === "--preset")).toHaveLength(1);

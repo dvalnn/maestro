@@ -32,17 +32,17 @@ and email come from `GET /user` and author every commit the tick describes or re
 A low-risk PR whose base moved after it was pushed cannot fast-forward, and stays open for the owner to restack.
 
 ```sh
-bun scripts/factory/index.ts --milestone v0.1.0 [--preset triage] [--route-only]
+bun scripts/factory/index.ts --milestone v0.1.0 [--preset triage]... [--route-only]
 ```
 
-| Flag           | Does                                                                   |
-| -------------- | ---------------------------------------------------------------------- |
-| `--milestone`  | The milestone whose issues it triages and builds                       |
-| `--preset`     | The preset each triage and build is performed with, such as `stub`[^p] |
-| `--route-only` | Routes settled concerts and syncs, then starts no build or triage      |
+| Flag           | Does                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| `--milestone`  | The milestone whose issues it triages and builds                                           |
+| `--preset`     | A preset each triage and build is performed with, such as `stub`; repeatable, in order[^p] |
+| `--route-only` | Routes settled concerts and syncs, then starts no build or triage                          |
 
 [^p]:
-    A build layers it last, after its tier's preset and its area's. An area preset is an optional file,
+    A build layers them last, after its tier's preset and its area's. An area preset is an optional file,
     `.maestro/presets/area-<area>.yaml`, whose content grows from the harvest.
 
 It exits 0 when it acted or had nothing to do, 1 when the forge or maestro failed or the milestone does not exist (the

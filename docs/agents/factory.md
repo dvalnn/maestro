@@ -308,7 +308,7 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **Build.** A ready ticket is built when its triage left a spec and it is no split's epic: `.maestro/slice.ts` with the
   spec and the ask as `--request`, and its risk's tier as `--tier` and `--preset`. Presets layer in order: the tier's,
   then `area-<area>` when the ticket has an `area/<area>` label and `.maestro/presets/area-<area>.yaml` exists, then the
-  tick's own `--preset`. The ticket moves to `in-progress` as the perform starts.
+  tick's own `--preset`s, in order. The ticket moves to `in-progress` as the perform starts.
 - **Landing.** An ok slice lands in a fresh jj workspace `factory-i<n>` on `main` as fetched from `origin`, or on the
   commit it stacked on, at `$XDG_CACHE_HOME/maestro-factory/i<n>`: `maestro cs apply`, then `jj describe` with the
   spec's subject and `Closes #N`. It runs no check of its own: the slice's gate passed in its lane, and CI checks the PR
