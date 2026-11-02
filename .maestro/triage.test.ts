@@ -49,7 +49,27 @@ const risks: [string, string[], boolean, string, string[]][] = [
 		"high",
 		["touches packs/classics/package.json, which set a contract"],
 	],
-	["8 paths", many(8), false, "high", ["touches 8 paths, 8 or more"]],
+	[
+		"8 paths",
+		many(8),
+		false,
+		"high",
+		["touches 8 paths besides docs and tests, 8 or more"],
+	],
+	[
+		"7 source paths and their tests",
+		[...many(7), "packages/cli/src/a.test.ts", "docs/a.md"],
+		false,
+		"medium",
+		[],
+	],
+	[
+		"a contract doc",
+		["docs/adr/0001-a.md"],
+		false,
+		"high",
+		["touches docs/adr/0001-a.md, which set a contract"],
+	],
 	[
 		"the planner's flag",
 		["packages/cli/src/a.ts"],
@@ -60,6 +80,13 @@ const risks: [string, string[], boolean, string, string[]][] = [
 	[
 		"3 docs and tests",
 		["docs/a.md", "docs/b.md", "packages/cli/src/a.test.ts"],
+		false,
+		"low",
+		[LOW],
+	],
+	[
+		"Markdown outside docs, under a contract directory too",
+		[".claude/skills/a/SKILL.md", "scripts/factory/README.md"],
 		false,
 		"low",
 		[LOW],

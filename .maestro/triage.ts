@@ -68,15 +68,18 @@ const AREA_PATHS: Record<Area, readonly string[]> = {
 	docs: ["docs/"],
 };
 
-/** Paths that set a contract: one ending in `/` is a directory holding every path under it, any other a file. */
-const CONTRACT_PATHS = [
-	"packages/ir/",
-	"packages/sdk/",
+/** Markdown that sets a contract: a path ending in `/` is a directory holding every path under it, any other a file. */
+const CONTRACT_DOCS = [
 	"docs/requirements.md",
 	"docs/architecture.md",
 	"docs/sdk-spec.md",
 	"docs/adr/",
 	"GLOSSARY.md",
+];
+/** Paths besides Markdown that set a contract, read as `CONTRACT_DOCS` is. */
+const CONTRACT_PATHS = [
+	"packages/ir/",
+	"packages/sdk/",
 	".forgejo/",
 	"justfile",
 	"mise.toml",
@@ -88,6 +91,7 @@ const MANIFESTS = ["package.json", "bun.lock"];
 const WIDE = 8;
 const NARROW = 3;
 const TEST_FILE = /\.test\.ts$/;
+const MARKDOWN = /\.md$/;
 /** The programs an acceptance command may start with to count as runnable. */
 const RUNNERS = ["bun", "bunx", "just", "mise"];
 
@@ -277,9 +281,12 @@ function scopeOf(touches: string[]): { paths: string[]; outside: string[] } {
 
 const sets = (path: string) =>
 	MANIFESTS.includes(basename(path)) ||
-	CONTRACT_PATHS.some((p) => (p.endsWith("/") ? under(path, p) : path === p));
+	(MARKDOWN.test(path) ? CONTRACT_DOCS : CONTRACT_PATHS).some((p) =>
+		p.endsWith("/") ? under(path, p) : path === p,
+	);
 
-const isLow = (path: string) => under(path, "docs/") || TEST_FILE.test(path);
+const isLow = (path: string) =>
+	under(path, "docs/") || MARKDOWN.test(path) || TEST_FILE.test(path);
 
 /** The risk of touching `touches`, and each rule that fired. */
 function riskOf(
@@ -290,8 +297,11 @@ function riskOf(
 	const setting = touches.filter(sets);
 	if (setting.length)
 		reasons.push(`touches ${setting.join(", ")}, which set a contract`);
-	if (touches.length >= WIDE)
-		reasons.push(`touches ${touches.length} paths, ${WIDE} or more`);
+	const code = touches.filter((t) => !isLow(t));
+	if (code.length >= WIDE)
+		reasons.push(
+			`touches ${code.length} paths besides docs and tests, ${WIDE} or more`,
+		);
 	if (contract) reasons.push("the planner flags a contract it sets");
 	if (reasons.length) return { risk: "high", reasons };
 	// An empty list proves nothing about its paths, so it is not low.
@@ -316,7 +326,7 @@ function areaOf(touches: string[]): { area?: Area } {
 /**
  * The risk and area of a change that touches `touches`, each normalised and those outside the repo left out, and each
  * risk rule that fired:
- * - high, when a path sets a contract, there are `WIDE` paths or more, or `contract` flags one;
+ * - high, when a path sets a contract, `WIDE` paths or more are neither docs nor tests, or `contract` flags one;
  * - low, when one to `NARROW` paths are all docs or tests;
  * - medium, otherwise.
  */
