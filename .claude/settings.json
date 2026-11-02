@@ -32,6 +32,10 @@
     ]
   },
   "permissions": {
+    "allow": [
+      "Bash(bun scripts/factory/index.ts:*)",
+      "Bash(mise exec -- bun scripts/factory/index.ts:*)"
+    ],
     "deny": [
       "Read(.env*)"
     ]
