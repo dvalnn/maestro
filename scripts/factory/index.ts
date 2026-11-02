@@ -298,21 +298,17 @@ async function settle(pass: Pass, { issue, data }: Entry, id: string) {
 	return true;
 }
 
-/** Files each obstacle and gap of `report` as a `needs-triage` issue found by `issue`, unless an open issue carries it. */
+/** Files each obstacle of `report` as a `needs-triage` bug found by `issue`, unless an open issue carries it. */
 async function fileReports(pass: Pass, issue: Issue, report: Report) {
 	const bodies = (await pass.forge.open({})).map((i) => i.body);
-	const found = [
-		...report.obstacles.map((text) => ({ text, kind: "kind/bug" })),
-		...report.gaps.map((text) => ({ text, kind: "kind/enhancement" })),
-	];
-	for (const { text, kind } of found) {
+	for (const text of report.obstacles) {
 		const line = fingerprintLine(text);
 		if (bodies.some((b) => b.includes(line))) continue;
 		const filed = reportIssue(text, issue.number);
 		const number = await pass.forge.file({
 			...filed,
 			milestone: issue.milestone,
-			labels: ["state/needs-triage", kind],
+			labels: ["state/needs-triage", "kind/bug"],
 		});
 		bodies.push(filed.body);
 		pass.say(`filed #${number}, found by #${issue.number}`);
@@ -470,6 +466,7 @@ function pullText(issue: Issue, data: Data, concert: string, report: Report) {
 		concert,
 		tokens: report.tokens,
 		upheld: report.upheld ?? "None.",
+		gaps: report.gaps,
 		result,
 	});
 	return { title: result.spec.subject, body };

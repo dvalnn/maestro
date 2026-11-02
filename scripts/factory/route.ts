@@ -657,17 +657,25 @@ export const encoreRequest = (request: string, changes: readonly Change[]) =>
 		),
 	].join("\n");
 
-/** What a landed slice's PR says, for an `upheld` Markdown list of the review's upheld findings. */
+/** What a landed slice's PR says, for an `upheld` Markdown list of the review's upheld findings and its agents' `gaps`. */
 export type Landed = {
 	issue: number;
 	concert: string;
 	tokens: number;
 	upheld: string;
+	gaps: readonly string[];
 	result: Triage;
 };
 
 /** The PR body of a landed slice (factory.md, Rules: PRs). */
-export function pullBody({ issue, concert, tokens, upheld, result }: Landed) {
+export function pullBody({
+	issue,
+	concert,
+	tokens,
+	upheld,
+	gaps,
+	result,
+}: Landed) {
 	return [
 		`Closes #${issue}`,
 		"",
@@ -677,6 +685,7 @@ export function pullBody({ issue, concert, tokens, upheld, result }: Landed) {
 		"",
 		...section("Acceptance", list(result.spec?.acceptance ?? [])),
 		...section("Upheld findings", [upheld]),
+		...section("Gaps", list(gaps)),
 	].join("\n");
 }
 

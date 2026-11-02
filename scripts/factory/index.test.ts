@@ -905,7 +905,7 @@ describe("a build", () => {
 					s1: {
 						tokens: 1234,
 						obstacles: [],
-						gaps: [],
+						gaps: ["Did not verify Windows"],
 						upheld: "- F1, a.ts:3: too wide",
 					},
 				},
@@ -925,7 +925,7 @@ describe("a build", () => {
 			"labels #7 kind/enhancement risk/low state/in-review",
 		]);
 		expect(t.opened[0]?.body).toBe(
-			"Closes #7\n\n- Concert: `s1`\n- Tokens: 1234\n- Relates to #4\n\n#### Acceptance\n\n- bun test\n\n#### Upheld findings\n\n- F1, a.ts:3: too wide\n",
+			"Closes #7\n\n- Concert: `s1`\n- Tokens: 1234\n- Relates to #4\n\n#### Acceptance\n\n- bun test\n\n#### Upheld findings\n\n- F1, a.ts:3: too wide\n\n#### Gaps\n\n- Did not verify Windows\n",
 		);
 		expect(dataAt(t.find(7)).concert).toBe("s1");
 		const writes = t.writes.length;
@@ -1104,7 +1104,7 @@ describe("a build", () => {
 		},
 	);
 
-	test("files each report once across two settles, and none an open issue carries", async () => {
+	test("files each obstacle once across two settles, none an open issue carries, and no gap", async () => {
 		const carried = issue(40, "needs-triage");
 		carried.body = "<!-- factory-fingerprint c1cac570f6de -->";
 		const concerts = [sliceConcert("s1", 7, "rejected")];
@@ -1129,7 +1129,6 @@ describe("a build", () => {
 		await t.run();
 		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([
 			"file #100 No  rg on PATH: state/needs-triage kind/bug",
-			"file #101 Did not verify Windows: state/needs-triage kind/enhancement",
 		]);
 		expect(t.find(100).body).toBe(
 			"Found by #7\n\nNo  rg on PATH\n\n<!-- factory-fingerprint d2473150ba7b -->",

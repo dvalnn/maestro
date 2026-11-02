@@ -115,7 +115,7 @@ flowchart TD
    closed unmerged, goes to `needs-info` (Rules: Restack).
 2. With the agent's question as a question comment (Rules: Blocked).
 3. File the obstacle and requeue the ticket; the attempt is kept.
-4. New obstacles and gaps, as `needs-triage`.
+4. New obstacles, as `needs-triage`.
 5. One issue per lesson promotion.
 6. A triage that fails, does not start or gives a malformed output. The ticket keeps its state, and closing the halt
    issue triages it again.
@@ -146,7 +146,7 @@ An edge in the diagrams names who causes the move; the tick sets the label unles
 | `wontfix`         | Will not be actioned                                | owner                                | closed                                                                   |
 | `duplicate`       | Repeats another issue, closed with a link           | triage                               | closed                                                                   |
 
-[^new]: The tick files obstacles, gaps and an approved split's children as `needs-triage`.
+[^new]: The tick files obstacles and an approved split's children as `needs-triage`.
 
 [^approve]: On approving a spec (`needs-approval`) or answering (`needs-info`).
 
@@ -319,10 +319,11 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   Restack). Once the PR is open the ticket moves to `in-review` and the workspace is forgotten and removed. A landing
   that fails halts the tour manager and keeps the workspace; closing the halt issue lands the slice again in a fresh
   one.
-- **Reports.** Each settled slice's obstacles and gaps are filed as `needs-triage` in the milestone, an obstacle as
-  `kind/bug` and a gap as `kind/enhancement`, with `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line: the
-  first 12 hex of SHA-256 over the text lower-cased, whitespace runs folded to one space and trimmed. A text whose line
-  an open issue carries is not filed again. An obstacle never carries a dependency.
+- **Reports.** Each settled slice's obstacles are filed as `needs-triage` `kind/bug` in the milestone, with
+  `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line: the first 12 hex of SHA-256 over the text lower-cased,
+  whitespace runs folded to one space and trimmed. A text whose line an open issue carries is not filed again. An
+  obstacle never carries a dependency. Gaps are not filed: a landed slice's PR lists them, for the reviewer to file the
+  ones worth a ticket.
 - **Attempts.** A `rejected` slice, an empty one included, spends an attempt and is retried with a fresh perform. After
   2 attempts the ticket goes to `needs-info`. An answer does not reset them: an answered ticket out of attempts gets one
   encore, and a rejected one goes back to `needs-info`.
@@ -342,8 +343,8 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
   held, with the subject from the spec and `Closes #N`. The PR, to `main` or to the dependency's branch while stacked,
   is titled with the subject, and its body holds `Closes #N`, the concert, its tokens, `Relates to` links, the spec's
-  acceptance and the review's upheld findings. A restack force-pushes the branch and retargets the PR, or opens it again
-  with the same body when the forge closed it.
+  acceptance, the review's upheld findings and the agents' gaps. A restack force-pushes the branch and retargets the PR,
+  or opens it again with the same body when the forge closed it.
 
 ## Setting up
 
