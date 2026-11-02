@@ -229,6 +229,7 @@ function review(
 		task: SKEPTIC_TASK,
 		lane: read(lane),
 		when: not(findings.get("clean")),
+		tolerate: "rejected",
 		attachments: {
 			findings: {
 				artifact: found.out.findings,

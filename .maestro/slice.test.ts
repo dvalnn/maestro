@@ -220,6 +220,72 @@ test.each(seated)(
 	},
 );
 
+/** Per tier, the stub outputs of a review whose lenses reject with F1, which their skeptics clear. */
+const rejecting: [string, string, string[], Record<string, unknown>][] = [
+	[
+		"ordinary",
+		"skeptic",
+		["classics/builder", "classics/lens", "classics/skeptic"],
+		{
+			"reviewer/findings.json": {
+				clean: false,
+				findings: [finding("F1", true)],
+			},
+			"reviewer/verdict": "rejected F1",
+			"skeptic/verdicts.json": held(),
+		},
+	],
+	[
+		"risky",
+		"lenses/skeptic",
+		[
+			"classics/builder",
+			"classics/lens",
+			"classics/skeptic",
+			"classics/consolidator",
+		],
+		{
+			"lenses/lens/findings.json": {
+				clean: false,
+				findings: [finding("F1", true)],
+			},
+			"lenses/lens/verdict": "rejected F1",
+			"lenses/skeptic/verdicts.json": held(),
+			"consolidator/verdict.json": verdict([]),
+		},
+	],
+];
+
+test.each(rejecting)(
+	"under --tier %s, a lens that rejects still meets its skeptic, whose cleared findings call for no fix",
+	async (tier, skeptic, profiles, scripted) => {
+		const data = mkdtempSync(join(scratch, "data-"));
+		const ran = await call(
+			[
+				...(await slice("perform", tier)),
+				"-c",
+				`target.repo=${targetRepo()}`,
+				"-c",
+				'target.prepare="true"',
+				"-c",
+				'target.checks.all={run: "echo x > b.ts", hint: all}',
+				...stubbed(profiles),
+			],
+			data,
+			{ MAESTRO_STUB_OUTPUTS: stubOutputs(scripted) },
+		);
+		const { id, status } = JSON.parse(ran.out);
+		expect(status).toBe("ok");
+		const { instances }: { instances: { node: string; status: string }[] } =
+			JSON.parse(await maestro(["ls", id, "--json"], data));
+		const statusOf = (node: string) =>
+			instances.filter((i) => i.node === node).map((i) => i.status);
+		expect(statusOf(skeptic).length).toBeGreaterThan(0);
+		expect(statusOf(skeptic).every((s) => s === "ok")).toBe(true);
+		expect(statusOf("fixes/fix")).toEqual([]);
+	},
+);
+
 test("requirePatch returns a changeset that holds a patch unchanged, and fails one that holds none", () => {
 	const made = (...files: string[]) => {
 		const dir = mkdtempSync(join(scratch, "changeset-"));

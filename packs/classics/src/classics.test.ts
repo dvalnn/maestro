@@ -135,7 +135,8 @@ describe("panel_review", () => {
 			'n9["survivorsOf<br/>code"]',
 			'n2 ==>|"collect"| n9',
 			'n8(["skeptic<br/>repo.agent"])',
-			'n7 -.->|"when value, else skip"| j8',
+			'f7 -.->|"when value, else skip"| j8',
+			'f4 -.->|"after, tolerates rejected"| j8',
 			"j8 --> n8",
 		])
 			expect(out).toContain(`  ${line}\n`);

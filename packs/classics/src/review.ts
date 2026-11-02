@@ -140,7 +140,10 @@ function round(
 		label: "skeptic",
 		task: SKEPTIC_TASK,
 		lane: read(change),
-		when: not(readJson(found.out.findings).get("clean")),
+		when: not(
+			readJson(found.out.findings, { tolerate: "rejected" }).get("clean"),
+		),
+		tolerate: "rejected",
 		attachments: {
 			findings: {
 				artifact: found.out.findings,
