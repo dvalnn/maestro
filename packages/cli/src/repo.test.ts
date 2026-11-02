@@ -521,10 +521,10 @@ describe("changeset", () => {
 		return p.stdout.toString().trim();
 	};
 
-	/** A concert of `file` whose changeset rewrites `a.txt` of the target, committed as `one` before it, and `cs`. */
-	async function edited(file = "edit.ts") {
+	/** A concert of `file` whose changeset rewrites `a.txt` of the target, committed as `base` before it, and `cs`. */
+	async function edited(file = "edit.ts", base = "one\n") {
 		const w = await repoWorld();
-		writeFileSync(join(w.target, "a.txt"), "one\n");
+		writeFileSync(join(w.target, "a.txt"), base);
 		git(w.target, "add", "a.txt");
 		git(w.target, "commit", "-q", "-m", "two");
 		const done = await w.call(["perform", join(REPO, file)]);
@@ -534,6 +534,17 @@ describe("changeset", () => {
 	}
 
 	const a = (repo: string) => readFileSync(join(repo, "a.txt"), "utf8");
+
+	test("show prints the diff byte for byte, so a patch ending on a blank context line applies", async () => {
+		const w = await edited("blank.ts", "one\n\n");
+		const shown = await w.cs("show", w.id);
+		expect(shown).toMatchObject({ code: 0 });
+		expect(shown.out.endsWith("+edited\n ")).toBe(true);
+		const patch = join(w.root, "shown.patch");
+		writeFileSync(patch, `${shown.out}\n`);
+		git(w.target, "apply", "--check", patch);
+		expect(a(w.target)).toBe("one\n\n");
+	});
 
 	test("show prints the diff on its base and leaves the checkout as it is; --node takes a named instance's", async () => {
 		const w = await edited();

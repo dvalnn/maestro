@@ -132,25 +132,30 @@ function actionOf(word: string | undefined, values: Values): Action {
 /** A checkout and the environment git runs in there: the user's own, so their git config applies. */
 type Checkout = { repo: string; env: Environment };
 
-type Ran = { code: number; out: string; err: string };
+type Ran = { code: number; out: Uint8Array; err: string };
 
 function run({ repo, env }: Checkout, args: readonly string[]): Ran {
 	const p = Bun.spawnSync(["git", "-C", repo, ...args], { env: { ...env } });
 	return {
 		code: p.exitCode,
-		out: p.stdout.toString().trimEnd(),
+		out: p.stdout,
 		err: p.stderr.toString().trim(),
 	};
 }
 
-/** The stdout of git `args` in `checkout`. @throws CliError naming the git command and its error when it fails. */
-function git(checkout: Checkout, args: readonly string[]): string {
+/** The stdout of git `args` in `checkout`, as git wrote it. @throws CliError naming the git command and its error when it fails. */
+function output(checkout: Checkout, args: readonly string[]): Uint8Array {
 	const ran = run(checkout, args);
 	if (ran.code !== 0)
 		throw new CliError(
 			`git ${args[0]} failed in ${checkout.repo}: ${ran.err}\nFix what git reports, then run it again`,
 		);
 	return ran.out;
+}
+
+/** The stdout of git `args` in `checkout`, trimmed. @throws CliError naming the git command and its error when it fails. */
+function git(checkout: Checkout, args: readonly string[]): string {
+	return new TextDecoder().decode(output(checkout, args)).trimEnd();
 }
 
 /** The changeset an instance made, and where it stands. */
@@ -377,8 +382,8 @@ function checked(
 const colorFlag = (deps: Deps, values: Values) =>
 	colorOf(deps, values).out ? "--color=always" : "--color=never";
 
-const print = (deps: Deps, text: string) => {
-	if (text !== "") deps.stdout(text);
+const print = (deps: Deps, bytes: Uint8Array) => {
+	if (bytes.length > 0) deps.stdoutBytes(bytes);
 };
 
 /** The tree of the changeset's patches applied to its base, built in a private index so the checkout stays as it is. */
@@ -398,7 +403,7 @@ async function treeOf({ checkout, base, patches }: Picked): Promise<string> {
 }
 
 const diffOf = (p: Picked, tree: string, flags: readonly string[]) =>
-	git(p.checkout, ["diff", ...flags, p.base, tree]);
+	output(p.checkout, ["diff", ...flags, p.base, tree]);
 
 /**
  * What the changeset `cs show` would show for concert `id` touches, as its diff counts it; `undefined` off a terminal
@@ -411,7 +416,8 @@ export async function changesOf(
 	if (!session.deps.terminal) return undefined;
 	try {
 		const p = await picked({ session, store, values, json: false }, id);
-		const rows = diffOf(p, await treeOf(p), ["--numstat"])
+		const rows = new TextDecoder()
+			.decode(diffOf(p, await treeOf(p), ["--numstat"]))
 			.split("\n")
 			.filter(Boolean)
 			.map((row) => row.split("\t"));
@@ -492,7 +498,7 @@ async function applied(stored: Stored, prefix: string) {
 		if (ran.code !== 0) refused(p, patch, ran, deps);
 	}
 	const color = colorFlag(deps, values);
-	print(deps, git(p.checkout, ["diff", color, "--cached", "--stat"]));
+	print(deps, output(p.checkout, ["diff", color, "--cached", "--stat"]));
 	if (commit) {
 		git(p.checkout, ["commit", "-q", "-m", p.message ?? ""]);
 		const made = git(p.checkout, ["rev-parse", "--short", "HEAD"]);
