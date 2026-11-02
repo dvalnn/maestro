@@ -24,6 +24,7 @@ import {
 } from "./fixtures/world";
 import { codeHashOf } from "./loader";
 import { renderDiagnostic, renderWarning } from "./output";
+import { olderHint } from "./records";
 
 const GOLDEN = join(FIXTURES, "../../../ir/fixtures");
 const HELLO = join(FIXTURES, "hello.ts");
@@ -333,6 +334,84 @@ describe("perform", () => {
 			);
 	});
 
+	test("ls on a terminal hints older concerts when the limit leaves some out, piped or --json never", async () => {
+		const w = await world();
+		for (let i = 0; i < 3; i++) await w.call(["p", ...GREET]);
+		const terminal = () => ({ columns: 200, rows: 24 });
+		const env = { NO_COLOR: "1" };
+		const cut = await w.call(["ls", "--limit", "2"], { terminal, env });
+		expect(cut.out).toEndWith("\nOlder concerts: maestro ls --limit 4");
+		expect(cut.out.split("\n")).toHaveLength(4);
+		const filtered = await w.call(
+			["ls", "--limit", "2", "--status", "failed"],
+			{
+				terminal,
+				env,
+			},
+		);
+		expect(filtered.out).toEndWith(
+			"Older concerts: maestro ls --status failed --limit 4",
+		);
+		const both = await w.call(
+			["ls", "--limit", "1", "--workspace", "ws", "--status", "failed"],
+			{ terminal, env },
+		);
+		expect(both.out).toEndWith(
+			"Older concerts: maestro ls --status failed --workspace ws --limit 2",
+		);
+		const all = await w.call(["ls", "--limit", "3"], { terminal, env });
+		expect(all.out).not.toContain("Older concerts");
+		const piped = await w.call(["ls", "--limit", "2"]);
+		expect(piped.out).not.toContain("Older concerts");
+		const json = await w.call(["ls", "--limit", "2", "--json"], {
+			terminal,
+			env,
+		});
+		expect(JSON.parse(json.out)).toHaveLength(2);
+		const colored = await w.call(["ls", "--limit", "2"], {
+			terminal,
+			env: { FORCE_COLOR: "1" },
+		});
+		expect(colored.out).toContain(
+			`${ESC}[2mOlder concerts: maestro ls --limit 4${ESC}[22m`,
+		);
+	});
+
+	test("the older-concerts hint carries the composition among the other filters", () => {
+		expect(
+			olderHint(
+				{ tour: "t", composition: "greet.hello", status: "failed" },
+				5,
+				false,
+			),
+		).toBe(
+			"Older concerts: maestro ls --status failed --composition greet.hello --tour t --limit 10",
+		);
+	});
+
+	test("ls on a terminal without --limit hints twice the default of 20", async () => {
+		const w = await world();
+		for (let i = 0; i < 21; i++) await w.call(["p", ...GREET]);
+		const out = await w.call(["ls"], {
+			terminal: () => ({ columns: 200, rows: 24 }),
+			env: { NO_COLOR: "1" },
+		});
+		expect(out.out).toEndWith("\nOlder concerts: maestro ls --limit 40");
+		expect(out.out.split("\n")).toHaveLength(22);
+	});
+
+	test("the older-concerts hint quotes a filter value for the shell", () => {
+		expect(
+			olderHint(
+				{ workspace: "it's a ws", status: "failed", tour: "plain-1" },
+				5,
+				false,
+			),
+		).toBe(
+			"Older concerts: maestro ls --status failed --tour plain-1 --workspace 'it'\\''s a ws' --limit 10",
+		);
+	});
+
 	test("a terminal stdout summarises a long output and ends with a hint, piped it keeps the value whole and nothing else", async () => {
 		const w = await world();
 		const text = Array.from({ length: 312 }, (_, i) => `line ${i}`).join("\n");
@@ -341,7 +420,7 @@ describe("perform", () => {
 		const terminal = () => ({ columns: 40, rows: 24 });
 		const on = await w.call(["wait", id], { terminal, env: { NO_COLOR: "1" } });
 		expect(on.out).toBe(
-			`text       text, 312 lines\nmaestro ls ${shortOf(id)} --json`,
+			`text       text, 312 lines\nFull outputs: maestro wait ${shortOf(id)} --json | jq .outputs`,
 		);
 		expect((await w.call(["wait", id])).out).toBe(
 			`text       ${JSON.stringify(text)}`,
@@ -1127,7 +1206,7 @@ describe("the record", () => {
 		);
 		expect(json(await w.call(["wait", id, "--json"])).metrics).toEqual(metrics);
 		expect((await w.call(["wait", id])).err).toMatch(/ · 15\.5k tok$/m);
-		expect((await w.call(["wait", bare])).err).not.toContain("tok");
+		expect((await w.call(["wait", bare])).err).not.toMatch(/ · [\d.]+k? tok$/m);
 		const row = json(await w.call(["ls", "--json"])).find(
 			(r: { id: string }) => r.id === id,
 		);

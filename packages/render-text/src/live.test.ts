@@ -98,6 +98,8 @@ const VIEW: View = {
 const drawn = (view: Partial<View> = {}) =>
 	frame(ir, seen(new Map(), EVENTS), { ...VIEW, ...view }, new Map());
 
+const CUT = "Full outputs: maestro wait kswoykny --json | jq .outputs";
+
 describe("frame", () => {
 	test("draws a header, `now` and `last`, the authored rows with a parMap body aggregated, and a footer of counts", () => {
 		const lines = drawn().split("\n");
@@ -759,6 +761,7 @@ describe("closingBlock", () => {
 				columns: 60,
 				changes: { files: 3, added: 120, removed: 14 },
 				hint: "maestro ls kswoykny --json",
+				cutHint: CUT,
 			},
 		});
 		expect(outputs?.split("\n")).toEqual([
@@ -773,8 +776,31 @@ describe("closingBlock", () => {
 			"count      42",
 			`file       /data/${"d/".repeat(40)}file`,
 			"changes    3 files  +120 \u221214",
-			"maestro ls kswoykny --json",
+			CUT,
 		]);
+	});
+
+	test("with a summary, a value shaped by width alone swaps in the cut hint, dim when colored", () => {
+		const summary = { columns: 60, hint: "h", cutHint: CUT };
+		const { outputs } = closingBlock(settled("ok"), {
+			outputs: [["words", "x".repeat(99)]],
+			summary,
+		});
+		expect(outputs?.split("\n")).toEqual(["words      text, 99 chars", CUT]);
+		const colored = closingBlock(
+			settled("ok", { color: true }),
+			{ outputs: [["words", "x".repeat(99)]], summary },
+			true,
+		);
+		expect(colored.outputs?.split("\n").at(-1)).toBe(p("dim", CUT));
+	});
+
+	test("with a summary, a hint stays as it is when every value fits", () => {
+		const { outputs } = closingBlock(settled("ok"), {
+			outputs: [["note", "done"]],
+			summary: { columns: 60, hint: "h", cutHint: CUT },
+		});
+		expect(outputs?.split("\n")).toEqual(["note       done", "h"]);
 	});
 
 	test("with a summary, the hint is dim and the changes colored, and a changeless concert has no changes row", () => {
@@ -786,6 +812,7 @@ describe("closingBlock", () => {
 					columns: 60,
 					changes: { files: 1, added: 2, removed: 0 },
 					hint: "maestro ls kswoykny --json",
+					cutHint: CUT,
 				},
 			},
 			true,
@@ -797,7 +824,7 @@ describe("closingBlock", () => {
 		expect(
 			closingBlock(settled("ok"), {
 				outputs: [],
-				summary: { columns: 60, hint: "h" },
+				summary: { columns: 60, hint: "h", cutHint: CUT },
 			}).outputs,
 		).toBe("h");
 	});

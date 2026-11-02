@@ -270,6 +270,7 @@ export function printClosing(
 						columns: terminal().columns,
 						changes,
 						hint: `maestro ls ${short.label(row.id, false)} --json`,
+						cutHint: `Full outputs: maestro wait ${short.label(row.id, false)} --json | jq .outputs`,
 					},
 				},
 		color.out,

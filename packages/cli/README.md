@@ -218,7 +218,9 @@ gives the full report of each current instance that has one as `reports`, by the
 `maestro ls --help` says what each means.
 
 `ls` marks a concert whose instances have notes with `•` after its status, and its `--json` gives each concert's `notes`
-as a count by heading.
+as a count by heading. `ls` lists the newest 20 by default; on a terminal, when the limit leaves older concerts out, a
+dim line names the command that shows more, such as `Older concerts: maestro ls --limit 40`, carrying the filters given;
+piped output never has it.
 
 `ls --composition` takes `<pack>.<composition>`, such as `greet.hello`, and the list shows compositions the same way.
 
@@ -250,7 +252,7 @@ verdict    object, 7 keys
 report     text, 312 lines
 status     ready
 changes    3 files  +120 −14
-maestro ls pwmqwmlu --json
+Full outputs: maestro wait pwmqwmlu --json | jq .outputs
 ```
 
 Stderr carries the `concert` row, with the outcome, the elapsed time and the concert's tokens when it has any, then for
@@ -269,14 +271,15 @@ Stdout holds a row per output port of the result node. On a terminal a value sho
 columns after the label; any other shows as its shape and size, `text, 312 lines` (`text, 80 chars` for one overlong
 line), `object, 7 keys` or `list, 12 items`, and an artifact stays its path. A `changes` row follows,
 `3 files  +120 −14` as `changeset show --stat` counts them, when the concert holds a changeset whose diff can be read,
-then a dim hint line, `maestro ls <concert> --json`, for the whole. Each stream is styled only when it is a terminal: on
-stderr the outcome is colored and the reason wraps under the value column, on stdout values are colored and a path in
-the home directory starts with `~`. Piped or redirected, stdout is a `<port>  <value>` line per output and nothing else,
-and a stream has no color or wrapping, values show as they are and paths are absolute. With `--json`, stdout holds the
-document instead, and the id of a `perform` stays on its stderr line. A one-line string, a number, a boolean or `null`
-prints as is, anything else as compact JSON, and an artifact as its path. A rejected concert shows its root cause's
-rejection outputs; a failed one has none. In the `--json` document they are as stored, under `outputs`, and its other
-field names are the record's columns in camelCase, with sizes in bytes.
+then a dim hint line, `maestro ls <concert> --json`, or `Full outputs: maestro wait <concert> --json | jq .outputs` when
+a value shows as its shape, for the whole. Each stream is styled only when it is a terminal: on stderr the outcome is
+colored and the reason wraps under the value column, on stdout values are colored and a path in the home directory
+starts with `~`. Piped or redirected, stdout is a `<port>  <value>` line per output and nothing else, and a stream has
+no color or wrapping, values show as they are and paths are absolute. With `--json`, stdout holds the document instead,
+and the id of a `perform` stays on its stderr line. A one-line string, a number, a boolean or `null` prints as is,
+anything else as compact JSON, and an artifact as its path. A rejected concert shows its root cause's rejection outputs;
+a failed one has none. In the `--json` document they are as stored, under `outputs`, and its other field names are the
+record's columns in camelCase, with sizes in bytes.
 
 A composition is a `.ts` or `.js` file that exports exactly one composition, a `.json` IR file, or
 `<pack>.<composition>` of an installed pack. Its params are flags in kebab-case, layered over the config, and `compose`

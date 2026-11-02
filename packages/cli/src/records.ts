@@ -219,7 +219,9 @@ function highlighted(
 async function listed(stored: Stored, query: ConcertFilter) {
 	const { session, store, values, json } = stored;
 	const color = colorOf(session.deps, values).out;
-	const concerts = store.concerts(query);
+	const limit = query.limit ?? LIST_LIMIT;
+	const fetched = store.concerts({ ...query, limit: limit + 1 });
+	const concerts = fetched.slice(0, limit);
 	const short = shortIds(store.ids());
 	const counts = noteCounts(stored, concerts);
 	const rows = await Promise.all(
@@ -260,10 +262,33 @@ async function listed(stored: Stored, query: ConcertFilter) {
 		],
 		color,
 	);
-	session.deps.stdout(
-		json ? jsonOf(rows) : color ? highlighted(short, rows, text) : text,
-	);
+	const shown = color ? highlighted(short, rows, text) : text;
+	const more =
+		!json && session.deps.terminal && fetched.length > limit
+			? `\n${olderHint(values, limit, color)}`
+			: "";
+	session.deps.stdout(json ? jsonOf(rows) : shown + more);
 	return EXIT.ok;
+}
+
+/** `value` as one shell word: as it is when plain, otherwise in single quotes. */
+const shellWord = (value: string) =>
+	/^[A-Za-z0-9._/:@-]+$/.test(value)
+		? value
+		: `'${value.replaceAll("'", "'\\''")}'`;
+
+/** The hint after a list the limit cut: `ls` with the filters given and twice the limit. */
+export function olderHint(values: Values, limit: number, color: boolean) {
+	const filters = ["status", "composition", "tour", "workspace"].flatMap(
+		(name) => {
+			const value = textOf(values, name);
+			return value === undefined ? [] : [` --${name} ${shellWord(value)}`];
+		},
+	);
+	return hintLine(
+		`Older concerts: maestro ls${filters.join("")} --limit ${limit * 2}`,
+		color,
+	);
 }
 
 async function instancesOf(

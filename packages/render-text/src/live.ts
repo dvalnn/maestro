@@ -1005,14 +1005,19 @@ export type Ending = {
 		value: unknown,
 		whole?: boolean,
 	])[];
-	/** Shown on a terminal: values that do not fit `columns` summarised, then `changes` and `hint`. */
+	/** Shown on a terminal: values that do not fit `columns` summarised, then `changes` and `hint`, or `cutHint` when a value shows as its shape. */
 	summary?: Summary;
 };
 
 /** The lines a changeset touches, as its diff counts them. */
 export type Changes = { files: number; added: number; removed: number };
 
-type Summary = { columns: number; changes?: Changes; hint: string };
+type Summary = {
+	columns: number;
+	changes?: Changes;
+	hint: string;
+	cutHint: string;
+};
 
 /** The closing block's label column: wide enough for `changeset`, the stdlib results' longest port, and a gap. */
 const LABEL_WIDTH = "changeset".length + GAP.length;
@@ -1094,7 +1099,7 @@ export const hintLine = (text: string, color: boolean) =>
  * How `view`'s settled concert ended, in one label column: `head`, its `concert` row then `ending`'s `at` and `reason`,
  * and `outputs`, a row per output when it has any, colored when `outputsColor`. With `view.columns` above 0 the reason
  * wraps under the value column; each value is otherwise shown as it is. With `ending.summary`, a value too long for its
- * row shows as its shape, and the outputs end with the `changes` row and the hint.
+ * row shows as its shape, and the outputs end with the `changes` row and the hint, which is `cutHint` when a value is shaped.
  */
 export function closingBlock(
 	view: View,
@@ -1118,12 +1123,18 @@ export function closingBlock(
 	const room = summary && summary.columns - width;
 	const out = (name: string, value: readonly Seg[]) =>
 		hanging([label(name)], value, 0, outputsColor);
+	let shaped = false;
+	const valueRows = outputs.map(([port, value, whole = false]) => {
+		const text = outputText(value, whole, room);
+		shaped ||= text !== oneLine(value);
+		return out(port, valueSegs(text));
+	});
 	const rows = [
-		...outputs.map(([port, value, whole = false]) =>
-			out(port, valueSegs(outputText(value, whole, room))),
-		),
+		...valueRows,
 		...(summary?.changes ? [out("changes", changesSegs(summary.changes))] : []),
-		...(summary ? [hintLine(summary.hint, outputsColor)] : []),
+		...(summary
+			? [hintLine(shaped ? summary.cutHint : summary.hint, outputsColor)]
+			: []),
 	];
 	return {
 		head: head.join("\n"),
