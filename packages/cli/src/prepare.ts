@@ -83,16 +83,6 @@ export const PERFORM_FLAGS = {
 		desc: "Put the concert on this tour (default: MAESTRO_TOUR)",
 	},
 	title: { type: "string", arg: "text", desc: "Give the concert a title" },
-	resume: {
-		type: "string",
-		arg: "concert",
-		desc: "Resume this failed or rejected concert instead of starting one",
-	},
-	encore: {
-		type: "string",
-		arg: "concert",
-		desc: "Perform this concert's composition again, its agents continuing their sessions",
-	},
 } as const satisfies Options;
 
 /** Flags a param may not take, whichever command reads the composition, so it is valid for all of them or none. */
@@ -256,8 +246,8 @@ async function build(
 	);
 	if (reading.recorded && positionals.length)
 		throw usageError(
-			"--encore takes no composition: it performs its concert's own",
-			"Drop the composition, or perform it without --encore",
+			"encore takes no composition: it performs its concert's own",
+			"Drop the composition, or perform it with 'maestro perform'",
 		);
 	const given = {
 		...reading.recorded,

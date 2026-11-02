@@ -361,7 +361,7 @@ export const stillRunning = (id: string, pid: number) =>
 		`concert ${id} is still running in process ${pid}\nWait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'`,
 	);
 
-/** The error of `perform --resume` for a concert core refuses to resume. */
+/** The error of `resume` for a concert core refuses to resume. */
 export const resumeRefused = ({ concert }: Unresumable) =>
 	concert.status === "running"
 		? stillRunning(concert.id, concert.pid)
@@ -369,7 +369,7 @@ export const resumeRefused = ({ concert }: Unresumable) =>
 				`concert ${concert.id} finished ok, so it has nothing to resume\nPerform its composition as a new concert with 'maestro perform <composition>'`,
 			);
 
-/** The error of `perform --encore` for a concert core refuses an encore of; one that did not settle `ok` may resume. */
+/** The error of `encore` for a concert core refuses an encore of; one that did not settle `ok` may resume. */
 export function encoreRefused({ concert }: Unencorable): CliError {
 	const { id, status, pid } = concert;
 	if (status === "running") return stillRunning(id, pid);
@@ -378,7 +378,7 @@ export function encoreRefused({ concert }: Unencorable): CliError {
 		`nothing changed since concert ${id}: its params, config and target revision are the same\n${
 			status === "ok"
 				? change
-				: `${change}, or resume it with 'maestro perform --resume ${id}'`
+				: `${change}, or resume it with 'maestro resume ${id}'`
 		}`,
 	);
 }

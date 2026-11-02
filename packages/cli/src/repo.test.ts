@@ -195,7 +195,7 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 	const id = idOf(done);
 	const area = join(w.root, "data/maestro/concerts", id, "artifacts");
 	const listed: { instance: string; port: string; path: string }[] = json(
-		await w.call(["art", id, "--json"]),
+		await w.call(["art", "ls", id, "--json"]),
 	);
 	expect(
 		listed
@@ -205,12 +205,12 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 		["notes", true],
 		["staged", true],
 	]);
-	const table = (await w.call(["artifact", id])).out.split("\n");
+	const table = (await w.call(["artifact", "ls", id])).out.split("\n");
 	expect(table[0]).toMatch(/^instance +port +stale +path$/);
 	expect(table).toContain(
 		`inner/a      notes          ${listed.find((a) => a.port === "notes")?.path}`,
 	);
-	expect((await w.call(["art", id, "--path"])).out).toBe(
+	expect((await w.call(["art", "ls", id, "--path"])).out).toBe(
 		listed.map((a) => a.path).join("\n"),
 	);
 
@@ -220,10 +220,10 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 			"utf8",
 		);
 	const notes = listed.find((a) => a.port === "notes")?.path ?? "";
-	/** Stdout of `art <id> ...args` exactly as written. */
+	/** Stdout of `art show <id> ...args` exactly as written. */
 	const raw = async (...args: string[]) => {
 		const written: string[] = [];
-		const done = await w.call(["art", id, ...args], {
+		const done = await w.call(["art", "show", id, ...args], {
 			stdout: (line) => written.push(`${line}\n`),
 			stdoutBytes: (bytes) => written.push(new TextDecoder().decode(bytes)),
 		});
@@ -243,29 +243,42 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 		`══ staged/instructions.md\n${readFileSync(join(bStaged, "instructions.md"), "utf8")}══ staged/prompt.md\n${readFileSync(join(bStaged, "prompt.md"), "utf8")}`,
 	);
 
-	expect(await w.call(["art", id, "parMap"])).toMatchObject({
+	expect(await w.call(["art", "show", id, "parMap"])).toMatchObject({
 		code: 1,
 		err: `instance 'parMap' of concert ${id} has no artifacts yet\nSee where it stands with 'maestro ls ${id}'`,
 	});
 	for (const ending of ["b", "parMap/b"])
-		expect(await w.call(["art", id, ending])).toMatchObject({
+		expect(await w.call(["art", "show", id, ending])).toMatchObject({
 			code: 2,
 			err: `'${ending}' ends 2 instances: parMap[x]/b, parMap[y]/b\nName one of them in full`,
 		});
+	const LS = "Write maestro artifact ls <concert>";
+	const SHOW = "Write maestro artifact show <concert> <instance> [<file>]";
+	const FIX =
+		"Run 'maestro artifact ls <concert>', or 'maestro artifact show <concert> <instance>'";
 	for (const [args, last] of [
-		[[], "Name the concert, as 'maestro ls' lists it"],
-		[[id, "nope"], `List them with 'maestro ls ${id}'`],
-		[[id, "a", "nope.md"], `List them with maestro art ${id} inner/a --path`],
-		[[id, "a", "--json"], "Drop --json to print the instance's files"],
-		[[id, "--json", "--path"], "Drop one of them"],
+		[["ls"], LS],
+		[["ls", id, "a"], LS],
+		[["show", id], SHOW],
+		[["show", id, "a", "b", "c"], SHOW],
+		[["show", id, "nope"], `List them with 'maestro ls ${id}'`],
+		[
+			["show", id, "a", "nope.md"],
+			`List them with maestro art show ${id} inner/a --path`,
+		],
+		[["show", id, "a", "--json"], "Drop --json to print the instance's files"],
+		[["ls", id, "--json", "--path"], "Drop one of them"],
+		[[id], FIX],
+		[[id, "a"], FIX],
+		[[], FIX],
 	] as const) {
 		const refused = await w.call(["art", ...args]);
 		expect(refused.code).toBe(2);
 		const text: string = refused.err || json(refused).error;
 		expect(text.split("\n").at(-1)).toBe(last);
 	}
-	expect((await w.call(["art"])).err).toStartWith(
-		"expected one concert, got 0",
+	expect((await w.call(["art", id])).err).toStartWith(
+		`expected ls or show, got '${id}'`,
 	);
 	const db = new Database(join(w.root, "data/maestro/record.db"));
 	db.run(
@@ -274,7 +287,7 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 	db.close();
 	const note = "warning: instance 'inner/a' is stale, from an earlier attempt";
 	const marked: { instance: string; stale?: true }[] = json(
-		await w.call(["art", id, "--json"]),
+		await w.call(["art", "ls", id, "--json"]),
 	);
 	expect(
 		marked.map((a) => [a.instance === "inner/a", "stale" in a, a.stale]),
@@ -284,16 +297,16 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 		),
 	);
 	expect(
-		(await w.call(["art", id])).out
+		(await w.call(["art", "ls", id])).out
 			.split("\n")
 			.filter((l) => /^\S+ +\S+ +stale +\//.test(l))
 			.map((l) => l.split(" ")[0]),
 	).toEqual(["inner/a", "inner/a"]);
 	for (const args of [["a"], ["a", "notes.md"], ["a", "--path"]])
-		expect((await w.call(["art", id, ...args])).err).toBe(note);
-	expect((await w.call(["art", id, "parMap[x]/b"])).err).toBe("");
+		expect((await w.call(["art", "show", id, ...args])).err).toBe(note);
+	expect((await w.call(["art", "show", id, "parMap[x]/b"])).err).toBe("");
 	rmSync(notes);
-	expect(await w.call(["art", id, "a", "notes.md"])).toMatchObject({
+	expect(await w.call(["art", "show", id, "a", "notes.md"])).toMatchObject({
 		code: 1,
 		err: `the artifact is not at ${notes}\nPerform the concert again, or pick another instance`,
 	});
@@ -408,7 +421,7 @@ describe("profiles", () => {
 		expect(failed.err).toContain("gate closed");
 		writeFileSync(gate, "");
 		runtime("gone");
-		const resume = ["perform", "--resume", idOf(failed)];
+		const resume = ["resume", idOf(failed)];
 		expect(await w.call(resume)).toMatchObject({
 			code: 2,
 			err: expect.stringContaining("harness 'gone', which is not loaded"),
@@ -460,7 +473,7 @@ describe("profiles", () => {
 		]);
 		db.close();
 		writeFileSync(gate, "");
-		expect(await w.call(["perform", "--resume", id])).toMatchObject({
+		expect(await w.call(["resume", id])).toMatchObject({
 			code: 2,
 			err: expect.stringContaining(refusal),
 		});
@@ -963,8 +976,9 @@ describe("agent show --seat", () => {
 		const w = await repoWorld(SMOKE_RUNTIME("stub"));
 		const file = await smokeFile();
 		const id = idOf(await w.call(["perform", file]));
-		const staged = (await w.call(["art", id, "a", "staged/instructions.md"]))
-			.out;
+		const staged = (
+			await w.call(["art", "show", id, "a", "staged/instructions.md"])
+		).out;
 		expect(staged).toStartWith("terse\n\n# Your run");
 		const show = ["agent", "show", "--seat", "smoke/smoke", file, "--prompt"];
 		expect((await w.call(show)).out).toBe(staged);

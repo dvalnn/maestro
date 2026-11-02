@@ -107,9 +107,9 @@ The lifecycle has two stages (D-12). **Compose** is steps 1 to 4, ending with pr
    tolerance, dispatches code nodes to workers and host nodes to their host, and writes events.
 6. **Record.** Events and results go to the record store as they happen. A final result is derived by the result rule
    (CORE-04).
-7. **Observe and resume.** `ls`, `wait`, `watch` and renderers read the record and events. `perform --resume` re-enters
-   a concert at node granularity (CORE-09). `perform --encore` performs a concert's composition again as a new concert,
-   linked to it (see Encore).
+7. **Observe and resume.** `ls`, `wait`, `watch` and renderers read the record and events. `resume` re-enters a concert
+   at node granularity (CORE-09). `encore` performs a concert's composition again as a new concert, linked to it (see
+   Encore).
 
 ## 5. The IR (contract)
 
@@ -280,13 +280,13 @@ stores by node id and expansion path as a `progress` event, opaquely.
   code node, and dependents rerun when their inputs changed (ADR 0008); a resume whose recomputed code hashes differ
   from the recorded ones warns that the composition changed and goes on. Any other instance runs again. A concert whose
   process is still alive cannot be resumed. Nothing is reused across concerts.
-- **Encore.** `perform --encore <concert>` starts a new concert, its row recording `encoreOf`, that builds the earlier
-  concert's composition with the param flags it recorded, the encore's own overriding them, under the config files as
-  they stand, with the earlier `-c` and the encore's own on top and the encore's presets in place of the earlier
-  concert's whole list when it gives any, else the earlier list. A fingerprint of the IR, the config values and the host
-  facts, which give the target revision and a digest of the profiles, is recorded with each concert; an encore whose
-  fingerprint equals its concert's, or while its concert or another in its encore chain is running, is refused before it
-  is recorded. Core passes `HostContext.encore` to each host instance and reads nothing of it, and each `HostInstance`
+- **Encore.** `encore <concert>` starts a new concert, its row recording `encoreOf`, that builds the earlier concert's
+  composition with the param flags it recorded, the encore's own overriding them, under the config files as they stand,
+  with the earlier `-c` and the encore's own on top and the encore's presets in place of the earlier concert's whole
+  list when it gives any, else the earlier list. A fingerprint of the IR, the config values and the host facts, which
+  give the target revision and a digest of the profiles, is recorded with each concert; an encore whose fingerprint
+  equals its concert's, or while its concert or another in its encore chain is running, is refused before it is
+  recorded. Core passes `HostContext.encore` to each host instance and reads nothing of it, and each `HostInstance`
   carries the kinds of the groups around it and the id of its composition. A resumed encore stays one. Every instance
   runs again: nothing is reused.
 - **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in

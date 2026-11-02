@@ -93,7 +93,7 @@ describe("a concert in another process", () => {
 			status: "running",
 			metrics: {},
 		});
-		expect(await w.call(["perform", "--resume", id])).toEqual({
+		expect(await w.call(["resume", id])).toEqual({
 			code: 1,
 			out: "",
 			err: `concert ${id} is still running in process ${child.pid}\nWait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'`,
@@ -140,7 +140,7 @@ describe("a concert in another process", () => {
 				},
 			},
 		});
-		const resumed = await w.call(["perform", "--resume", id], {
+		const resumed = await w.call(["resume", id], {
 			hosts: [host],
 		});
 		expect(resumed).toMatchObject({
@@ -161,7 +161,7 @@ describe("a concert in another process", () => {
 		]);
 
 		await rm(w.pack, { recursive: true });
-		expect(await w.call(["perform", "--resume", id])).toEqual({
+		expect(await w.call(["resume", id])).toEqual({
 			code: 1,
 			out: "",
 			err: `concert ${id} finished ok, so it has nothing to resume\nPerform its composition as a new concert with 'maestro perform <composition>'`,
@@ -229,7 +229,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 			started.push(node);
 			return { outcome: "ok", outputs } as const;
 		};
-		const resumed = await w.call(["perform", "--resume", id], {
+		const resumed = await w.call(["resume", id], {
 			hosts: [
 				fakeHost({
 					steps: {
@@ -257,19 +257,18 @@ export const work = composition("work", { examples: [{}] }, () => {
 
 		const again = idOf(await w.call(["perform", file], { hosts: [failAfter] }));
 		expect(
-			(await w.call(["perform", "--resume", again], { hosts: [failAfter] }))
-				.err,
+			(await w.call(["resume", again], { hosts: [failAfter] })).err,
 		).not.toContain("warning:");
 		await Bun.write(file, source.replace("v1", "v3"));
 		expect(
 			(
-				await w.call(["perform", "--resume", again, "--json"], {
+				await w.call(["resume", again, "--json"], {
 					hosts: [failAfter],
 				})
 			).err,
 		).not.toContain("warning:");
 		await rm(file);
-		expect((await w.call(["perform", "--resume", again])).err).toBe(
+		expect((await w.call(["resume", again])).err).toBe(
 			`the code of concert ${again} was in ${file}, which is gone\nRestore it, or perform its composition as a new concert`,
 		);
 	});
@@ -315,8 +314,8 @@ export const work = composition("work", { examples: [{}] }, () => {
 			presets: ["stub", "risky"],
 			config: ["mode.keep=perform"],
 		});
-		await w.call(["perform", "--resume", id], { hosts: [host] });
-		await w.call(["perform", "--resume", id, "-c", "mode.keep=resume"], {
+		await w.call(["resume", id], { hosts: [host] });
+		await w.call(["resume", id, "-c", "mode.keep=resume"], {
 			hosts: [host],
 		});
 		expect(seen).toEqual([
@@ -342,7 +341,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
 			limits: { timeout: 7_200_000, tokens: 10 },
 		});
-		const resumed = ["perform", "--resume", id, "-c", "limits.tokens=20"];
+		const resumed = ["resume", id, "-c", "limits.tokens=20"];
 		expect(await w.call(resumed, { hosts: [host] })).toMatchObject({
 			code: 0,
 		});
@@ -370,7 +369,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 			);
 		const id = await perform("-c", "extra.x=1");
 		const resume = (concert: string, ...flags: string[]) =>
-			w.call(["perform", "--resume", concert, ...flags], {
+			w.call(["resume", concert, ...flags], {
 				hosts: [
 					claiming(["mode"], {
 						steps: { first: [FIRST], "echo/echo": [ECHO] },
@@ -406,7 +405,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 			await w.call(["perform", ...GREET], { hosts: [failing("first")] }),
 		);
 		await rm(w.pack, { recursive: true });
-		const refused = await w.call(["perform", "--resume", id]);
+		const refused = await w.call(["resume", id]);
 		expect(refused.code).toBe(1);
 		expect(refused.err).toBe(
 			`the code of concert ${id} was in ${w.pack}, which is gone\nRestore it, or perform its composition as a new concert`,
@@ -418,7 +417,7 @@ describe("encore", () => {
 	test("performs a concert's composition again, linked to it, its params kept unless a flag overrides one, refusing one that changes nothing", async () => {
 		const w = await world();
 		const encore = (...args: string[]) =>
-			w.call(["perform", "--encore", ...args], { hosts: [hostOf()] });
+			w.call(["encore", ...args], { hosts: [hostOf()] });
 		const first = idOf(
 			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
 		);
@@ -437,16 +436,16 @@ describe("encore", () => {
 			}),
 		);
 		expect((await encore(flaky)).err).toEndWith(
-			`\nChange a param, the config or the target, or resume it with 'maestro perform --resume ${flaky}'`,
+			`\nChange a param, the config or the target, or resume it with 'maestro resume ${flaky}'`,
 		);
 		expect(await encore(first, "demo.greet")).toMatchObject({
 			code: 2,
 			err: expect.stringContaining(
-				"--encore takes no composition: it performs its concert's own",
+				"encore takes no composition: it performs its concert's own",
 			),
 		});
 		const renamed = idOf(await encore(first, "--name", "y"));
-		const chained = idOf(await encore(renamed, "-c", "concurrency=2"));
+		const chained = idOf(await encore("-c", "concurrency=2", renamed));
 		expect((await encore(chained)).err).toStartWith(
 			`nothing changed since concert ${chained}`,
 		);
@@ -506,12 +505,12 @@ describe("encore", () => {
 			),
 		);
 		const encore = idOf(
-			await w.call(["perform", "--encore", first, "--preset", "b"], {
+			await w.call(["encore", first, "--preset", "b"], {
 				hosts: [host],
 			}),
 		);
 		const kept = idOf(
-			await w.call(["perform", "--encore", first, "-c", "mode.c=2"], {
+			await w.call(["encore", first, "-c", "mode.c=2"], {
 				hosts: [host],
 			}),
 		);
@@ -564,7 +563,7 @@ describe("kill", () => {
 					),
 				),
 			});
-			expect(await w.call(["perform", "--resume", id])).toMatchObject({
+			expect(await w.call(["resume", id])).toMatchObject({
 				code: 0,
 			});
 			expect((await w.call(["prune", id, "--yes"])).code).toBe(0);
@@ -606,17 +605,14 @@ describe("a file param", () => {
 
 		await Bun.write(spec, "v2");
 		await rm(stop);
-		const resumed = await w.call(["perform", "--resume", id, "--json"]);
+		const resumed = await w.call(["resume", id, "--json"]);
 		expect(json(resumed)).toMatchObject({ outputs: { text: "v1|v1" } });
 		expect(json(await w.call(["ls", id, "--json"])).params).toEqual({
 			spec,
 			stop,
 		});
 		const elsewhere = { cwd: w.root };
-		const encore = await w.call(
-			["perform", "--encore", id, "--json"],
-			elsewhere,
-		);
+		const encore = await w.call(["encore", id, "--json"], elsewhere);
 		expect(json(encore)).toMatchObject({ outputs: { text: "v2|v2" } });
 	});
 

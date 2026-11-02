@@ -78,12 +78,13 @@ each concert's short id as `short`.
 - `stale` marks a row an earlier attempt of a resumed concert left, which the resume neither reused nor replaced.
 - The reason of the instance the closing block's `at` names is the concert's root cause.
 
-`maestro art <id>` lists the concert's artifacts: instance, port, absolute path (`--json` adds `contentHash`), with a
+`maestro art ls <id>` lists the concert's artifacts: instance, port, absolute path (`--json` adds `contentHash`), with a
 `stale` column for instances an earlier attempt left; printing one's files adds a `warning:` line on stderr.
-`maestro art <id> <instance>` prints the bytes of each file of an instance's artifacts as they are, after a `══ <file>`
-line when there are several, and `maestro art <id> <instance> <file>` prints one, so it pipes. A file is its artifact's
-basename plus any inner path: read an agent's prompt with `maestro art <id> <instance> staged/prompt.md`. `--path`
-prints absolute paths instead. An instance with no artifacts yet exits 1.
+`maestro art show <id> <instance>` prints the bytes of each file of an instance's artifacts as they are, after a
+`══ <file>` line when there are several, and `maestro art show <id> <instance> <file>` prints one, so it pipes. A file
+is its artifact's basename plus any inner path: read an agent's prompt with
+`maestro art show <id> <instance> staged/prompt.md`. `--path` prints absolute paths instead. An instance with no
+artifacts yet exits 1.
 
 `art` takes an instance as `ls <id>` prints it, or a unique ending of whole segments of one, such as `repair` for
 `loop[0]/repair`. `watch --instance` takes the same ending of a node or scope id, such as `repair` for `loop/repair`. An
@@ -170,12 +171,12 @@ What SKILL.md's Recover section leaves out:
   bundle (ADR 0008), so any edit to the composition file reruns every code node, and dependents rerun when their inputs
   changed. A changed code hash prints a `warning:` line on stderr and the resume goes on. After editing a composition,
   perform a new concert.
-- **Encore**: `perform --encore <concert>` performs the concert's composition again as a new concert, linked to it, with
-  the param flags it was performed with (the encore's own override them) and its recorded `-c` under the encore's own.
-  Every node runs again; each agent continues the session of the same node at the same keys in that concert, a loop's
-  last iteration, unless its seat says `encore: false` or it takes a `session`. An agent whose counterpart's session is
-  gone or on another harness starts fresh, saying why in its `encoreFresh`, shown by `ls <concert> --json`. Lanes are
-  cut fresh. An encore whose params, config and target revision all match the concert's is refused: resume the concert
+- **Encore**: `encore <concert>` performs the concert's composition again as a new concert, linked to it, with the param
+  flags it was performed with (the encore's own override them) and its recorded `-c` under the encore's own. Every node
+  runs again; each agent continues the session of the same node at the same keys in that concert, a loop's last
+  iteration, unless its seat says `encore: false` or it takes a `session`. An agent whose counterpart's session is gone
+  or on another harness starts fresh, saying why in its `encoreFresh`, shown by `ls <concert> --json`. Lanes are cut
+  fresh. An encore whose params, config and target revision all match the concert's is refused: resume the concert
   instead.
 - **Kill** waits up to 10 s for the concert to settle `failed` ("the concert was cancelled"). A concert whose process
   died without settling is marked `failed` ("process exited") when the record is next read.
@@ -185,6 +186,6 @@ What SKILL.md's Recover section leaves out:
 
 ## Tours
 
-`maestro tour <slug> <id>...` puts concerts on a tour; `maestro tour --clear <id>...` takes them off. Give the concerts
-of one task a tour at perform time, so `ls --tour <slug>` finds them (and the tours under it, `epic` matching
+`maestro tour set <slug> <id>...` puts concerts on a tour; `maestro tour clear <id>...` takes them off. Give the
+concerts of one task a tour at perform time, so `ls --tour <slug>` finds them (and the tours under it, `epic` matching
 `epic.story`) and `prune --tour <slug> --yes` clears them.

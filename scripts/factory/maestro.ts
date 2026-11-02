@@ -92,7 +92,7 @@ const entriesOf = (reports: unknown, key: string) =>
 		isJson(r) ? strings(r[key]) : [],
 	);
 
-/** The body of the `upheld` file the last fresh `upheld` port of an `art <concert> --json` list names. */
+/** The body of the `upheld` file the last fresh `upheld` port of an `art ls <concert> --json` list names. */
 function upheldOf(artifacts: unknown): string | undefined {
 	const last = (Array.isArray(artifacts) ? artifacts : [])
 		.filter(isJson)
@@ -183,7 +183,7 @@ export function maestro(bin = "maestro"): Maestro {
 		report: async (id) => {
 			const [doc, artifacts] = await Promise.all([
 				json(bin, ["ls", id]),
-				json(bin, ["art", id]),
+				json(bin, ["art", "ls", id]),
 			]);
 			if (!isJson(doc)) throw new Error("maestro ls: not an object");
 			return {

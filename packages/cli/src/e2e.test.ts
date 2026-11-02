@@ -45,7 +45,7 @@ test(
 		);
 
 		await rm(join(w.cwd, "dog"));
-		expect((await maestro(["perform", "--resume", brokeId])).code).toBe(0);
+		expect((await maestro(["resume", brokeId])).code).toBe(0);
 
 		const rows = json(await maestro(["ls", "--json"]));
 		expect(rows).toEqual(
@@ -55,7 +55,7 @@ test(
 			]),
 		);
 
-		expect((await maestro(["tour", TOUR, okId])).code).toBe(0);
+		expect((await maestro(["tour", "set", TOUR, okId])).code).toBe(0);
 		expect((await maestro(["prune", "--tour", TOUR, "--yes"])).code).toBe(0);
 		const left = json(await maestro(["ls", "--json"])).map(
 			(r: { id: string }) => r.id,

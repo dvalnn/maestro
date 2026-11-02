@@ -100,10 +100,10 @@ Read [running.md](running.md) for compose and perform flags, the record, artifac
 
 ## Recover
 
-- **Resume**: `maestro perform --resume <id>` after fixing what failed or rejected. `ok` instances whose inputs and code
-  are unchanged are reused; the rest perform again, under the config as it stands now.
-- **Encore**: `maestro perform --encore <id>` performs a concert's composition again as a new concert, each agent
-  continuing its counterpart's session and told what changed; pass a param flag to change one.
+- **Resume**: `maestro resume <id>` after fixing what failed or rejected. `ok` instances whose inputs and code are
+  unchanged are reused; the rest perform again, under the config as it stands now.
+- **Encore**: `maestro encore <id>` performs a concert's composition again as a new concert, each agent continuing its
+  counterpart's session and told what changed; pass a param flag to change one.
 - **Kill**: `maestro kill <id>` stops a running concert, which settles `failed` and can be resumed.
 - A `perform` process that is interrupted or dies leaves its concert `failed`, and the concert resumes the same way.
 - **Prune**: `maestro prune` deletes concerts with their records and lanes. Prune the concerts you started or the user
@@ -124,8 +124,8 @@ profiles, lanes and checks: `classics.panel_review` ends `ok` with an unapproved
 always rejected: its checks stay red because nothing was built, and when they are green its final traceability step
 rejects it, since the stub review never approves. Use one to try a flow, or whenever the user asks for no spend. It also
 shows what each agent is told before any spend: its host stages the instructions and prompt as for a real run, so
-`maestro art <id> <instance> staged/instructions.md` and `staged/prompt.md` print them. Stub every seat with a `"*"`
-profile, which applies to every profile the preset does not name, in `.maestro/presets/stub.yaml`, and pass
+`maestro art show <id> <instance> staged/instructions.md` and `staged/prompt.md` print them. Stub every seat with a
+`"*"` profile, which applies to every profile the preset does not name, in `.maestro/presets/stub.yaml`, and pass
 `--preset stub` to compose and perform; a resume reapplies it. `MAESTRO_STUB_DELAY` (a duration such as `2s` or `500ms`)
 makes each stub agent turn wait that long, to rehearse a slow run. `MAESTRO_STUB_OUTPUTS=<dir>` scripts what agents
 deliver, to rehearse a branch that hangs on it, such as a fix loop: a stub agent takes each declared output from

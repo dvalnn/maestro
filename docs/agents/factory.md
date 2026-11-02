@@ -285,8 +285,8 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   - A triage's verdict is dropped, since a triage is cheap and its verdict stale, and the question offers only
     `needs-triage`.
 - **Encore.** A ticket continues its last slice concert, so the builder keeps what it learned and is told only what
-  changed. Its build is `perform --encore <id>` with the presets, tour, title and base a fresh build takes, and a
-  `--request` of the spec and the ask followed by what changed, each part under its heading:
+  changed. Its build is `encore <id>` with the presets, tour, title and base a fresh build takes, and a `--request` of
+  the spec and the ask followed by what changed, each part under its heading:
   - a `ready-for-agent` ticket whose `encore` is set: each comment mentioning `@<login>` above `read` but a question
     comment, headed `## Reply by <author>` as triage feeds it; `read` moves to the newest comment it considered;
   - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`: its

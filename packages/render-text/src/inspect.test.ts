@@ -231,15 +231,15 @@ describe("inspectorLines", () => {
 		expect(inspected(key, given).head).toEqual(head);
 	});
 
-	test("hints at maestro art with the short concert id and instance when the instance has artifacts, none without", () => {
+	test("hints at maestro art show with the short concert id and instance when the instance has artifacts, none without", () => {
 		const lines = (kept: Kept) =>
 			inspected("test-loop/repair@1", { instances: [kept] }).head;
 		expect(lines(REPAIR).at(-1)).toBe(
-			"  files    maestro art kswoykny 'test-loop[1]/repair'",
+			"  files    maestro art show kswoykny 'test-loop[1]/repair'",
 		);
 		expect(
 			lines({ ...REPAIR, artifacts: [] }).some((l) =>
-				l.includes("maestro art"),
+				l.includes("maestro art show"),
 			),
 		).toBe(false);
 	});

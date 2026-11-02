@@ -41,8 +41,20 @@ const VERBS: readonly Verb[] = [
 	{
 		name: "perform",
 		alias: "p",
-		summary: "Perform a composition as a concert, or resume one",
+		summary: "Perform a composition as a concert",
 		load: async () => (await import("./perform")).perform,
+	},
+	{
+		name: "resume",
+		alias: "r",
+		summary: "Resume a failed or rejected concert",
+		load: async () => (await import("./perform")).resume,
+	},
+	{
+		name: "encore",
+		alias: "e",
+		summary: "Perform a concert's composition again as a new concert",
+		load: async () => (await import("./perform")).encore,
 	},
 	{
 		name: "ls",
@@ -75,6 +87,7 @@ const VERBS: readonly Verb[] = [
 	},
 	{
 		name: "agent",
+		alias: "ag",
 		summary: "List agent profiles, or show one's environment",
 		load: async () => (await import("./agent")).agent,
 	},
@@ -98,7 +111,7 @@ const VERBS: readonly Verb[] = [
 	{
 		name: "artifact",
 		alias: "art",
-		summary: "List a concert's artifacts, or print an instance's files",
+		summary: "List a concert's artifacts, or show an instance's files",
 		load: async () => (await import("./artifact")).artifact,
 	},
 	{

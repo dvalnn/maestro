@@ -23,7 +23,6 @@ import {
 	type Deps,
 	FILTER_OPTIONS,
 	filterOf,
-	isSet,
 	type Options,
 	only,
 	peek,
@@ -441,7 +440,7 @@ async function killed({ session, store, json }: Stored, prefix: string) {
 	if (!isMaestro(pid)) {
 		reap(session, id);
 		throw new CliError(
-			`the process ${pid} of concert ${id} is gone, and its pid now belongs to another program\nThe concert is marked failed: resume it with 'maestro perform --resume ${id}', or prune it`,
+			`the process ${pid} of concert ${id} is gone, and its pid now belongs to another program\nThe concert is marked failed: resume it with 'maestro resume ${id}', or prune it`,
 		);
 	}
 	signal(pid);
@@ -468,23 +467,27 @@ export const kill: Command = {
 		),
 };
 
-const TOUR_OPTIONS = {
-	...COMMON,
-	clear: { type: "boolean", desc: "Take the concerts off their tour" },
-} as const satisfies Options;
+const TOUR_FIX =
+	"Write maestro tour set <slug> <concert>..., or maestro tour clear <concert>...";
 
 /** The tour to set, or `undefined` to clear, and the concerts to set it on. */
-function tourAndConcerts(values: Values, positionals: readonly string[]) {
-	const [first, ...rest] = positionals;
-	const clear = isSet(values, "clear");
-	const ids = clear ? positionals : rest;
+function tourAndConcerts(_values: Values, positionals: readonly string[]) {
+	const [action, ...rest] = positionals;
+	if (action !== "set" && action !== "clear")
+		throw usageError(
+			`expected set or clear, got ${action === undefined ? "nothing" : `'${action}'`}`,
+			TOUR_FIX,
+		);
+	const [first, ...named] = rest;
+	const ids = action === "clear" ? rest : named;
 	if (ids.length === 0)
 		throw usageError(
-			"tour takes a slug and at least one concert",
-			"Write maestro tour <slug> <concert>..., or maestro tour --clear <concert>...",
+			`tour ${action} takes ${action === "set" ? "a slug and " : ""}at least one concert`,
+			TOUR_FIX,
 		);
 	return {
-		slug: clear ? undefined : parseTour("the tour slug", first ?? ""),
+		slug:
+			action === "clear" ? undefined : parseTour("the tour slug", first ?? ""),
 		ids,
 	};
 }
@@ -502,11 +505,11 @@ async function toured(
 
 export const tour: Command = {
 	usage:
-		"tour <slug> <concert>... [flags]  (alias: t)\n       maestro tour --clear <concert>... [flags]",
-	options: TOUR_OPTIONS,
+		"tour set <slug> <concert>... [flags]  (alias: t)\n       maestro tour clear <concert>... [flags]",
+	options: COMMON,
 	execute: (args, deps) =>
 		withStore(
-			TOUR_OPTIONS,
+			COMMON,
 			args,
 			deps,
 			"Flags are listed in 'maestro tour --help'",

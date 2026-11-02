@@ -160,9 +160,6 @@ const forParser = (options: Options) =>
 		]),
 	);
 
-/** Flags taken away, by the flag that took their place. */
-const RENAMED: ReadonlyMap<string, string> = new Map([["profile", "preset"]]);
-
 /**
  * `args` read against `options`.
  * @throws CliError, a usage error ending with `fix`, for a flag `options` lacks or one without its value.
@@ -179,8 +176,7 @@ export function parse(options: Options, args: readonly string[], fix: string) {
 	} catch (error) {
 		const [what = "unusable arguments"] = messageOf(error).split(". ");
 		const flag = /^Unknown option '--([^']+)'/.exec(what)?.[1];
-		const near =
-			flag && (RENAMED.get(flag) ?? closest(flag, Object.keys(options)));
+		const near = flag && closest(flag, Object.keys(options));
 		throw usageError(what, near ? `Did you mean --${near}?` : fix);
 	}
 }
@@ -194,6 +190,23 @@ export const peek = (options: Options, args: readonly string[]): Values =>
 		strict: false,
 		allowNegative: true,
 	}).values as Values;
+
+/** The first positional of `args` and the rest of them, with `options`' flags before it read as such. */
+export function splitFirst(options: Options, args: readonly string[]) {
+	const { tokens = [] } = parseArgs({
+		args: [...args],
+		options: forParser(options),
+		allowPositionals: true,
+		strict: false,
+		allowNegative: true,
+		tokens: true,
+	});
+	const at = tokens.find((t) => t.kind === "positional");
+	return {
+		first: at?.value,
+		rest: args.filter((_, i) => i !== at?.index),
+	};
+}
 
 export const textOf = (values: Values, name: string) => {
 	const value = values[name];

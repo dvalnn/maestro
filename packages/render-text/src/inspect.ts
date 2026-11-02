@@ -134,13 +134,13 @@ function keptSegs(k: Kept | undefined): Seg[][] {
 		: [];
 }
 
-/** The hint to `maestro art` for an instance that has artifacts, none without. */
+/** The hint to `maestro art show` for an instance that has artifacts, none without. */
 const filesSegs = (view: View, name: string, k: Kept | undefined): Seg[][] =>
 	k && k.artifacts.length > 0
 		? [
 				labelled("files", [
 					[
-						`maestro art ${shownId(view.concert.id, view.concert.unique)} ${shellArg(flat(name))}`,
+						`maestro art show ${shownId(view.concert.id, view.concert.unique)} ${shellArg(flat(name))}`,
 						"dim",
 					],
 				]),

@@ -10,7 +10,7 @@ import {
 } from "@maestro/core/perform";
 import { mapWorkers } from "@maestro/ir";
 import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk/loader";
-import { changesOf } from "./changeset";
+import { changesOf, NAME_CONCERT } from "./changeset";
 import {
 	COMMON,
 	type Colors,
@@ -18,8 +18,10 @@ import {
 	colorOf,
 	type Deps,
 	isSet,
+	only,
 	parse,
 	peek,
+	splitFirst,
 	textOf,
 	type Values,
 } from "./command";
@@ -33,7 +35,6 @@ import {
 	renderDiagnostic,
 	resultDoc,
 	resumeRefused,
-	usageError,
 } from "./output";
 import {
 	compositionHelp,
@@ -58,7 +59,6 @@ import {
 
 /** The environment variable that puts a new concert on a tour when `--tour` is not given. */
 const TOUR_VARIABLE = "MAESTRO_TOUR";
-const FIX = "Flags are listed in 'maestro perform --help'";
 
 const PERFORM_OPTIONS = { ...COMMON, ...PERFORM_FLAGS } as const;
 
@@ -94,7 +94,12 @@ async function begin(
 ): Promise<Start> {
 	const prepared = await prepare(
 		session,
-		{ verb: "perform", options: PERFORM_OPTIONS, examples: false, recorded },
+		{
+			verb: recorded ? "encore" : "perform",
+			options: PERFORM_OPTIONS,
+			examples: false,
+			recorded,
+		},
 		args,
 	);
 	if (prepared.staged === undefined)
@@ -157,25 +162,6 @@ async function encored(
 		row.params ?? {},
 	);
 	return { ...start, encore: row.id, overrides: kept };
-}
-
-/**
- * The flags of `args` for a resume.
- * @throws CliError, a usage error, when they hold a composition, `--tour` or `--title`.
- */
-function resumeFlags(args: readonly string[]): Values {
-	const { values, positionals } = parse(PERFORM_OPTIONS, args, FIX);
-	if (
-		positionals.length > 0 ||
-		textOf(values, "tour") ||
-		textOf(values, "title") ||
-		textOf(values, "encore")
-	)
-		throw usageError(
-			"--resume takes no composition, --encore, --tour or --title: the concert keeps its own",
-			"Drop them, or start a new concert without --resume",
-		);
-	return values;
 }
 
 /**
@@ -303,37 +289,72 @@ async function conducted(
 	);
 }
 
+/** Pre-flights and performs what `started` makes in the session `locating` finds, and gives the exit code. */
+async function inStore(
+	deps: Deps,
+	own: Overrides,
+	json: boolean,
+	started: (session: Session, store: Records) => Promise<Start>,
+) {
+	return withSession(
+		deps,
+		await locating(deps, own),
+		async (session, store) => {
+			const start = await started(session, store);
+			await warned(start);
+			return conducted(start, store, json);
+		},
+	);
+}
+
 export const perform: Command = {
-	usage:
-		"perform <composition> [flags]  (alias: p)\n       maestro perform --resume <concert> [flags]\n       maestro perform --encore <concert> [flags]",
+	usage: "perform <composition> [flags]  (alias: p)",
 	options: PERFORM_OPTIONS,
 	help: compositionHelp,
 	async execute(args, deps) {
 		const early = peek(PERFORM_OPTIONS, args);
-		const resume = textOf(early, "resume");
-		const encore = textOf(early, "encore");
-		const own = overridesOf(early);
-		const json = isSet(early, "json");
-		let started: (session: Session, store: Records) => Promise<Start>;
-		if (resume !== undefined) {
-			const values = resumeFlags(args);
-			started = (session, store) => restart(session, store, resume, values);
-		} else if (encore !== undefined)
-			started = (session, store) => encored(session, store, encore, own, args);
-		else {
-			const session = await openSession(deps, own);
-			const start = await begin(session, args);
-			await warned(start);
-			return withRecord(session, (store) => conducted(start, store, json));
-		}
-		return withSession(
+		const session = await openSession(deps, overridesOf(early));
+		const start = await begin(session, args);
+		await warned(start);
+		return withRecord(session, (store) =>
+			conducted(start, store, isSet(early, "json")),
+		);
+	},
+};
+
+export const resume: Command = {
+	usage: "resume <concert> [flags]",
+	options: COMMON,
+	async execute(args, deps) {
+		const { values, positionals } = parse(
+			COMMON,
+			args,
+			"Flags are listed in 'maestro resume --help'",
+		);
+		const prefix = only(positionals, "concert", NAME_CONCERT);
+		return inStore(
 			deps,
-			await locating(deps, own),
-			async (session, store) => {
-				const start = await started(session, store);
-				await warned(start);
-				return conducted(start, store, json);
-			},
+			overridesOf(values),
+			isSet(values, "json"),
+			(s, store) => restart(s, store, prefix, values),
+		);
+	},
+};
+
+export const encore: Command = {
+	usage: "encore <concert> [flags]",
+	options: PERFORM_OPTIONS,
+	async execute(args, deps) {
+		const { first, rest } = splitFirst(PERFORM_OPTIONS, args);
+		const prefix = only(
+			first === undefined ? [] : [first],
+			"concert",
+			NAME_CONCERT,
+		);
+		const early = peek(PERFORM_OPTIONS, rest);
+		const own = overridesOf(early);
+		return inStore(deps, own, isSet(early, "json"), (s, store) =>
+			encored(s, store, prefix, own, rest),
 		);
 	},
 };

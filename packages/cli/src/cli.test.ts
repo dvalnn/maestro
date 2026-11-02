@@ -553,9 +553,19 @@ describe("usage errors", () => {
 			/^Unknown option '--titie'\nDid you mean --title\?$/,
 		],
 		[
-			"the --profile that --preset took the place of",
+			"the --profile that --preset replaced",
 			["perform", ...GREET, "--profile", "stub"],
-			/^Unknown option '--profile'\nDid you mean --preset\?$/,
+			/^Unknown option '--profile'\nFlags are perform's/,
+		],
+		[
+			"perform --resume, now the resume verb",
+			["perform", ...GREET, "--resume", "x"],
+			/^Unknown option '--resume'/,
+		],
+		[
+			"resume with a tour",
+			["resume", "x", "--tour", "t"],
+			/^Unknown option '--tour'/,
 		],
 		[
 			"an unknown flag named like an Object member",
@@ -650,13 +660,28 @@ describe("usage errors", () => {
 		],
 		[
 			"tour with no concert",
-			["tour", "slug"],
-			/^tour takes a slug and at least one concert/,
+			["tour", "set", "slug"],
+			/^tour set takes a slug and at least one concert/,
+		],
+		[
+			"tour clear with no concert",
+			["tour", "clear"],
+			/^tour clear takes at least one concert/,
 		],
 		[
 			"tour with a bad slug",
-			["tour", "BAD", "x"],
+			["tour", "set", "BAD", "x"],
 			/^the tour slug takes a slug/,
+		],
+		[
+			"the old tour form",
+			["tour", "slug", "x"],
+			/^expected set or clear, got 'slug'\nWrite maestro tour set/,
+		],
+		[
+			"the old tour --clear",
+			["tour", "--clear", "x"],
+			/^Unknown option '--clear'/,
 		],
 		[
 			"ls with two concerts",
@@ -664,9 +689,14 @@ describe("usage errors", () => {
 			/^expected at most one concert, got 2/,
 		],
 		[
-			"artifact with too many arguments",
-			["art", "a", "b", "c", "d"],
-			/^expected a concert, an instance and a file at most, got 4 arguments/,
+			"artifact show with too many arguments",
+			["art", "show", "a", "b", "c", "d"],
+			/^artifact show takes a concert, an instance and at most a file, got 4 arguments/,
+		],
+		[
+			"the old artifact form",
+			["art", "a", "b"],
+			/^expected ls or show, got 'a'/,
 		],
 		[
 			"changeset with an unknown action",
@@ -695,15 +725,17 @@ describe("usage errors", () => {
 			/^--limit takes a positive whole number/,
 		],
 		[
-			"--resume with a composition",
-			["perform", "--resume", "x", "demo.greet"],
-			/^--resume takes no composition, --encore, --tour or --title/,
+			"resume with a composition",
+			["resume", "x", "demo.greet"],
+			/^expected one concert, got 2/,
 		],
+		["resume with no concert", ["resume"], /^expected one concert, got 0/],
 		[
-			"--resume of an unknown concert",
-			["perform", "--resume", "nope"],
-			/^no concert 'nope'/,
+			"encore with no concert",
+			["encore", "-c", "a=1"],
+			/^expected one concert, got 0/,
 		],
+		["resume of an unknown concert", ["resume", "nope"], /^no concert 'nope'/],
 		[
 			"a -c without '='",
 			["perform", ...GREET, "-c", "concurrency"],
@@ -790,7 +822,7 @@ describe("usage errors", () => {
 	const NEEDS_STORE = [
 		"an unknown concert",
 		"watch of an unknown concert",
-		"--resume of an unknown concert",
+		"resume of an unknown concert",
 	];
 
 	test.each(USAGE)(
@@ -828,6 +860,18 @@ describe("usage errors", () => {
 				err: "",
 			});
 		expect((await w.call(["--help"])).out).toMatch(/^ {2}watch +\(w\) +\S/m);
+		for (const [alias, verb] of [
+			["r", "resume"],
+			["e", "encore"],
+			["ag", "agent"],
+		] as const) {
+			expect((await w.call(["--help"])).out).toMatch(
+				new RegExp(`^ {2}${verb} +\\(${alias}\\) +\\S`, "m"),
+			);
+			expect((await w.call([alias, "--help"])).out).toBe(
+				(await w.call([verb, "--help"])).out,
+			);
+		}
 		const verbs = [
 			...(await w.call(["--help"])).out.matchAll(/^ {2}([a-z]+) /gm),
 		].map(([, verb = ""]) => verb);
@@ -920,13 +964,13 @@ describe("the record", () => {
 			workspace: "ws",
 		});
 
-		const moved = await w.call(["tour", "release-2", a, b]);
+		const moved = await w.call(["tour", "set", "release-2", a, b]);
 		expect(moved).toMatchObject({
 			out: "",
 			err: `release-2: ${a} ${b}`,
 		});
 		expect(await rows("--tour", "release-2")).toEqual([b, a]);
-		expect(json(await w.call(["t", "--clear", a, "--json"]))).toEqual({
+		expect(json(await w.call(["t", "clear", a, "--json"]))).toEqual({
 			tour: null,
 			concerts: [a],
 		});
@@ -1380,10 +1424,10 @@ describe("the record", () => {
 		expect(await w.call(["kill", prefix])).toMatchObject({
 			err: `concert ${a} is not running, it settled ok\nSee 'maestro ls ${a}'`,
 		});
-		expect(await w.call(["perform", "--resume", prefix])).toMatchObject({
+		expect(await w.call(["resume", prefix])).toMatchObject({
 			err: expect.stringContaining(`concert ${a} finished ok`),
 		});
-		expect(await w.call(["tour", "t1", prefix, a])).toMatchObject({
+		expect(await w.call(["tour", "set", "t1", prefix, a])).toMatchObject({
 			err: `t1: ${a}`,
 		});
 		expect(

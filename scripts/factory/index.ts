@@ -847,8 +847,9 @@ async function startSlice(
 	try {
 		id = await pass.maestro.start(
 			[
-				"perform",
-				...(perform.encore ? ["--encore", perform.encore] : [SLICE_FILE]),
+				...(perform.encore
+					? ["encore", perform.encore]
+					: ["perform", SLICE_FILE]),
 				"--request",
 				perform.request,
 				"--tier",
@@ -1068,8 +1069,7 @@ async function triage(pass: Pass, entries: Entry[]) {
 	try {
 		id = await pass.maestro.start(
 			[
-				"perform",
-				...(data.triage ? ["--encore", data.triage] : [TRIAGE_FILE]),
+				...(data.triage ? ["encore", data.triage] : ["perform", TRIAGE_FILE]),
 				"--issue",
 				issueText(
 					entry.issue,

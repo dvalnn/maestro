@@ -538,8 +538,7 @@ describe("a pass", () => {
 		const backlog = join(t.options.dir, "backlog-i8.md");
 		expect(t.starts).toEqual([
 			[
-				"perform",
-				"--encore",
+				"encore",
 				"c0",
 				"--issue",
 				`#8 Greet by name\n\n${ASK}`,
@@ -602,9 +601,8 @@ describe("a pass", () => {
 			c2: { status: "ok", outputs: { triage: ready } },
 		});
 		await t.run();
-		expect(t.starts[0]?.slice(0, 5)).toEqual([
-			"perform",
-			"--encore",
+		expect(t.starts[0]?.slice(0, 4)).toEqual([
+			"encore",
 			"c1",
 			"--issue",
 			`#7 Greet by name\n\n${ASK}\n\n## Question by the tour manager\n\n1. Who?\n\n## Reply by ${OWNER}\n\n<!-- maestro-tm-question -->\n@forge-bot: mine\n\n## Reply by ${OWNER}\n\n@FORGE-BOT Q1: Ann`,
@@ -1015,8 +1013,7 @@ describe("a build", () => {
 		await t.run();
 		expect(t.starts.filter((a) => a.includes("--request"))).toEqual([
 			[
-				"perform",
-				"--encore",
+				"encore",
 				"s1",
 				"--request",
 				`${requestFor(7)}\n## Reply by ${OWNER}\n\n@forge-bot go on\n`,
@@ -1091,10 +1088,9 @@ describe("a build", () => {
 			await t.run();
 			expect(t.starts).toEqual([
 				[
-					"perform",
 					...(request
-						? ["--encore", "s1"]
-						: [expect.stringMatching(/\.maestro\/slice\.ts$/)]),
+						? ["encore", "s1"]
+						: ["perform", expect.stringMatching(/\.maestro\/slice\.ts$/)]),
 					"--request",
 					request ?? requestFor(7),
 					...LOW_FLAGS,
@@ -1237,7 +1233,7 @@ describe("a build", () => {
 			expect(dataAt(parked)).toMatchObject({ parked: undefined, version: 3 });
 			expect(parked.body).toContain("[spec v3]");
 			expect([t.opened.length, t.starts.length]).toEqual([1 - starts, starts]);
-			expect(t.starts.flat()).not.toContain("--encore");
+			expect(t.starts.flat()).not.toContain("encore");
 			writes = t.writes.length;
 			await t.run();
 			expect(t.writes).toHaveLength(writes);
@@ -1546,7 +1542,7 @@ describe("a merge and a stack", () => {
 		);
 		await t.run();
 		expect(t.starts[0]).not.toContain("-c");
-		expect(t.starts[0]).not.toContain("--encore");
+		expect(t.starts[0]).not.toContain("encore");
 		t.concerts.push(sliceConcert("started", 8));
 		t.results.started = { status: "ok", outputs: {} };
 		writes = t.writes.length;
@@ -1603,8 +1599,7 @@ describe("a review", () => {
 		}
 		expect(t.starts).toEqual([
 			[
-				"perform",
-				"--encore",
+				"encore",
 				"s1",
 				"--request",
 				`${requestFor(7)}\n## Review by ann\n\nRename it.\n\n- \`greet.sh:3\`: use printf\n  not echo\n`,
@@ -1638,7 +1633,7 @@ describe("a review", () => {
 		t.reviews[31] = [review(5)];
 		await t.run();
 		expect(t.starts).toHaveLength(1);
-		expect(t.starts[0]?.slice(0, 3)).toEqual(["perform", "--encore", "s1"]);
+		expect(t.starts[0]?.slice(0, 2)).toEqual(["encore", "s1"]);
 		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha5"]);
 		expect(dataAt(t.find(8))).toMatchObject({ review: 5, stack: STACK });
 	});

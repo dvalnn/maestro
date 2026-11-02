@@ -540,7 +540,7 @@ async function dropped(deps: Deps, values: Values) {
 	return EXIT.ok;
 }
 
-const NAME_CONCERT = "Name the concert, as 'maestro ls' lists it";
+export const NAME_CONCERT = "Name the concert, as 'maestro ls' lists it";
 
 async function changesetRun(args: readonly string[], deps: Deps) {
 	const { values, positionals } = parse(CHANGESET_OPTIONS, args, FIX);

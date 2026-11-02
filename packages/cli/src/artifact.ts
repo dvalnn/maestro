@@ -100,32 +100,46 @@ async function filesOf(path: string): Promise<File[]> {
 }
 
 /**
- * The concert, and the instance and file within it, `positionals` name.
- * @throws CliError, a usage error, for a count of arguments other than one concert and at most an instance and a file,
- * or `--json` with `--path` or with an instance.
+ * Checks that `args`, the arguments after the sub-verb `action`, number what it takes.
+ * @throws CliError, a usage error, unless `ls` has one concert, or `show` a concert, an instance and at most a file.
+ */
+function arity(action: "ls" | "show", args: readonly string[]) {
+	if (action === "ls" && args.length !== 1)
+		throw usageError(
+			`artifact ls takes one concert, got ${args.length} arguments`,
+			"Write maestro artifact ls <concert>",
+		);
+	if (action === "show" && (args.length < 2 || args.length > 3))
+		throw usageError(
+			`artifact show takes a concert, an instance and at most a file, got ${args.length} arguments`,
+			"Write maestro artifact show <concert> <instance> [<file>]",
+		);
+}
+
+/**
+ * The concert, and the instance and file within it, `positionals` name after `ls` or `show`.
+ * @throws CliError, a usage error, for another sub-verb or a count of arguments it does not take, or `--json` with
+ * `--path` or with `show`.
  */
 function checked(values: Values, positionals: readonly string[]) {
-	const [prefix, instance, file, ...rest] = positionals;
-	if (rest.length > 0)
+	const [action, ...args] = positionals;
+	if (action !== "ls" && action !== "show")
 		throw usageError(
-			`expected a concert, an instance and a file at most, got ${positionals.length} arguments`,
-			"Write maestro artifact <concert> [<instance> [<file>]]",
+			`expected ls or show, got ${action === undefined ? "nothing" : `'${action}'`}`,
+			"Run 'maestro artifact ls <concert>', or 'maestro artifact show <concert> <instance>'",
 		);
-	if (prefix === undefined)
-		throw usageError(
-			"expected one concert, got 0",
-			"Name the concert, as 'maestro ls' lists it",
-		);
+	arity(action, args);
 	if (isSet(values, "json") && isSet(values, "path"))
 		throw usageError(
 			"--path and --json do not go together",
 			"Drop one of them",
 		);
-	if (isSet(values, "json") && instance !== undefined)
+	if (isSet(values, "json") && action === "show")
 		throw usageError(
-			"--json lists a concert's artifacts, so it takes no instance",
+			"--json lists a concert's artifacts, so only artifact ls takes it",
 			"Drop --json to print the instance's files",
 		);
+	const [prefix = "", instance, file] = args;
 	return { prefix, instance, file };
 }
 
@@ -168,7 +182,7 @@ async function picked(
 	if (!named)
 		throw usageError(
 			`instance '${name}' of concert ${row.id} has no file '${file}'`,
-			`List them with maestro art ${row.id} ${shellArg(name)} --path`,
+			`List them with maestro art show ${row.id} ${shellArg(name)} --path`,
 		);
 	return [named];
 }
@@ -207,7 +221,8 @@ async function artifacted(stored: Stored, { prefix, instance, file }: Named) {
 }
 
 export const artifact: Command = {
-	usage: "artifact <concert> [<instance> [<file>]] [flags]  (alias: art)",
+	usage:
+		"artifact ls <concert> [flags]  (alias: art)\n       maestro artifact show <concert> <instance> [<file>] [flags]",
 	options: ARTIFACT_OPTIONS,
 	execute: (args, deps) =>
 		withStore(ARTIFACT_OPTIONS, args, deps, FIX, checked, artifacted),
