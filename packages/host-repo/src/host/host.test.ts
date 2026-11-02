@@ -1150,7 +1150,7 @@ describe("perform", () => {
 			false,
 			{ report: "done" },
 			"reply.report must be object",
-			"- Leave a list out when it is empty.",
+			"- Most reports are the summary alone: give a list only for an item that clears its bar.",
 			'"outcome"',
 		],
 	])(

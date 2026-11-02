@@ -217,9 +217,11 @@ gives the full report of each current instance that has one as `reports`, by the
 `maestro ls <concert> --json | jq .reports`. An agent's report has these fields, and `ls --help` lists them:
 
 - `summary`: what the agent did, in one line.
-- `gaps`: what its task asked that it left undone or did not verify.
-- `obstacles`: what in its environment got in its way.
-- `lessons`: what it learnt that the code does not show.
+- `gaps`: something its task asked that it left undone or unverified, which the reader would otherwise assume done.
+- `obstacles`: something outside its reach that stopped or slowed it, such as a missing attachment or a tool not on its
+  PATH; not a test that failed or a check that was red.
+- `lessons`: something that changes what the next agent in this repository should do, which the code and its docs do not
+  already say.
 
 `ls` marks a concert whose instances have notes with `•` after its status, and its `--json` gives each concert's `notes`
 as a count by heading.

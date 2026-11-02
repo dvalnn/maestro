@@ -52,19 +52,20 @@ const REPLY_LEAD =
 const BLOCKED_BAR =
 	"only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.";
 const LISTS = [
-	"- Leave a list out when it is empty.",
-	"- `obstacles` are such as a missing or empty attachment, or a tool not on your PATH.",
+	"- Most reports are the summary alone: give a list only for an item that clears its bar.",
 ];
-const LISTED = `    "gaps": ["<what your task asked that you left undone or did not verify>"],
-    "obstacles": ["<what in your environment got in your way>"],
-    "lessons": ["<what you learnt that the code does not show>"]`;
+const LISTED = `    "gaps": ["<something your task asked that you left undone or unverified, which the reader would otherwise assume done>"],
+    "obstacles": ["<something outside your reach that stopped or slowed you, such as a missing attachment or a tool not on your PATH; not a test that failed or a check that was red>"],
+    "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"]`;
 
 /** What each field of an agent's report means, as its reply template words it. */
 export const REPORT_FIELDS = {
 	summary: "what the agent did, in one line",
-	gaps: "what its task asked that it left undone or did not verify",
-	obstacles: "what in its environment got in its way",
-	lessons: "what it learnt that the code does not show",
+	gaps: "something its task asked that it left undone or unverified, which the reader would otherwise assume done",
+	obstacles:
+		"something outside its reach that stopped or slowed it, such as a missing attachment or a tool not on its PATH; not a test that failed or a check that was red",
+	lessons:
+		"something that changes what the next agent in this repository should do, which the code and its docs do not already say",
 } as const;
 
 export const WORK: ReplyKind = {

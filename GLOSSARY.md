@@ -199,8 +199,8 @@ of it. Called with a task and a lane to emit an agent node. Config may rebind it
 `{ report, outcome: ok | rejected, reason? }`, the reason required when rejected, or `{ report, blocked }`. The report
 is `{ summary, gaps?, obstacles?, lessons? }`.
 
-**Lesson**: Something an agent learnt that the code does not show, listed in its report for whoever reads the run. The
-owner promotes one to standing text by hand.
+**Lesson**: Something that changes what the next agent in this repository should do, which the code and its docs do not
+already say, listed in its report. The owner promotes one to standing text by hand.
 
 **Work agent**: An agent that does the work, such as a builder or a planner. It finishes `ok` or is blocked, and never
 rejects.
@@ -212,8 +212,9 @@ rejects.
 concert will change it. It settles the agent `failed` with the reason `blocked: <cause>`. A rejection, by contrast, is a
 verdict given after doing the job.
 
-**Obstacle**: What an agent's report says got in its way in its environment. It does not stop the run, unlike Blocked,
-and the tour manager files it as an issue that never blocks a ticket.
+**Obstacle**: Something outside an agent's reach that stopped or slowed it, such as a missing attachment or a tool not
+on its PATH, listed in its report; a red check is not one. Unlike Blocked, it does not stop the run, and the tour
+manager files it as an issue that never blocks a ticket.
 
 **Outbox**: The per-instance directory at `/out`, outside the lane, where an agent writes its declared outputs for the
 host to read and check.

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { frame, type Run, VERDICT, WORK } from "./frame";
+import { frame, REPORT_FIELDS, type Run, VERDICT, WORK } from "./frame";
 
 const SHELL =
 	"Your shell is already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
@@ -52,15 +52,14 @@ Your final reply is only this JSON object, with no other text:
 {
   "report": {
     "summary": "<what you did, in one line>",
-    "gaps": ["<what your task asked that you left undone or did not verify>"],
-    "obstacles": ["<what in your environment got in your way>"],
-    "lessons": ["<what you learnt that the code does not show>"]
+    "gaps": ["<something your task asked that you left undone or unverified, which the reader would otherwise assume done>"],
+    "obstacles": ["<something outside your reach that stopped or slowed you, such as a missing attachment or a tool not on your PATH; not a test that failed or a check that was red>"],
+    "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"]
   }
 }
 \`\`\`
 
-- Leave a list out when it is empty.
-- \`obstacles\` are such as a missing or empty attachment, or a tool not on your PATH.
+- Most reports are the summary alone: give a list only for an item that clears its bar.
 - Leave out what the run already records: your changes, the checks' results and the files you wrote.
 - Add \`"blocked": "<the cause>"\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`);
 });
@@ -71,9 +70,9 @@ const VERDICT_REPLY = `Your final reply is only this JSON object, with no other 
 {
   "report": {
     "summary": "<your ruling, in one line>",
-    "gaps": ["<what your task asked that you left undone or did not verify>"],
-    "obstacles": ["<what in your environment got in your way>"],
-    "lessons": ["<what you learnt that the code does not show>"]
+    "gaps": ["<something your task asked that you left undone or unverified, which the reader would otherwise assume done>"],
+    "obstacles": ["<something outside your reach that stopped or slowed you, such as a missing attachment or a tool not on your PATH; not a test that failed or a check that was red>"],
+    "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"]
   },
   "outcome": "ok",
   "reason": "<why, when rejected>"
@@ -82,8 +81,7 @@ const VERDICT_REPLY = `Your final reply is only this JSON object, with no other 
 
 - \`outcome\`: \`ok\` when the work passes your ruling, \`rejected\` when it does not.
 - \`reason\`: why you rejected; leave it out when \`ok\`.
-- Leave a list out when it is empty.
-- \`obstacles\` are such as a missing or empty attachment, or a tool not on your PATH.
+- Most reports are the summary alone: give a list only for an item that clears its bar.
 - Leave out what the run already records: the checks' results and the files you wrote.
 - Give \`"blocked": "<the cause>"\` in place of \`outcome\` and \`reason\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`;
 
@@ -137,3 +135,15 @@ test.each([
 		expect(text).toEndWith(VERDICT_REPLY);
 	},
 );
+
+test("REPORT_FIELDS gives each list its bar, as the reply template does", () => {
+	expect(REPORT_FIELDS.gaps).toContain(
+		"which the reader would otherwise assume done",
+	);
+	expect(REPORT_FIELDS.obstacles).toContain(
+		"not a test that failed or a check that was red",
+	);
+	expect(REPORT_FIELDS.lessons).toContain(
+		"which the code and its docs do not already say",
+	);
+});
