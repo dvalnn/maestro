@@ -104,6 +104,7 @@ const seated: [string, Record<string, [string, string]>][] = [
 		{
 			"classics/builder": ["claude-sonnet-5-5", "low"],
 			"classics/lens": ["claude-opus-5-5", "medium"],
+			"classics/skeptic": ["claude-sonnet-5-5", "low"],
 		},
 	],
 	[
@@ -112,6 +113,7 @@ const seated: [string, Record<string, [string, string]>][] = [
 			"classics/builder": ["claude-sonnet-5-5", "medium"],
 			"classics/lens": ["claude-opus-5-5", "medium"],
 			"classics/skeptic": ["claude-sonnet-5-5", "low"],
+			"classics/consolidator": ["claude-opus-5-5", "medium"],
 		},
 	],
 ];
@@ -158,11 +160,14 @@ test.each(seated)(
 	},
 );
 
-test.each(seated)(
-	"a stub perform under --preset %s continues the builder and the lens in their sessions across review rounds",
-	async (tier, runtimes) => {
+test.each([
+	[true, "ok"],
+	[false, "rejected"],
+])(
+	"a stub perform under --preset small continues the builder and the lens in their sessions across review rounds, and changing files %s settles %s",
+	async (changes) => {
+		const tier = "small";
 		const target = targetRepo();
-		const changes = tier === "ordinary";
 		const flagged = {
 			clean: false,
 			findings: [finding("F1", true)],
@@ -183,7 +188,7 @@ test.each(seated)(
 				'target.prepare="true"',
 				"-c",
 				`target.checks.all={run: ${JSON.stringify(changes ? "echo x > b.ts" : "true")}, hint: all}`,
-				...stubbed(Object.keys(runtimes)),
+				...stubbed(Object.keys(new Map(seated).get(tier) ?? {})),
 			],
 			data,
 			{ MAESTRO_STUB_OUTPUTS: outputs },
@@ -223,7 +228,7 @@ test.each(seated)(
 /** Per tier, the stub outputs of a review whose lenses reject with F1, which their skeptics clear. */
 const rejecting: [string, string, string[], Record<string, unknown>][] = [
 	[
-		"ordinary",
+		"small",
 		"skeptic",
 		["classics/builder", "classics/lens", "classics/skeptic"],
 		{
@@ -235,25 +240,27 @@ const rejecting: [string, string, string[], Record<string, unknown>][] = [
 			"skeptic/verdicts.json": held(),
 		},
 	],
-	[
-		"risky",
-		"lenses/skeptic",
-		[
-			"classics/builder",
-			"classics/lens",
-			"classics/skeptic",
-			"classics/consolidator",
-		],
-		{
-			"lenses/lens/findings.json": {
-				clean: false,
-				findings: [finding("F1", true)],
+	...["ordinary", "risky"].map(
+		(tier): [string, string, string[], Record<string, unknown>] => [
+			tier,
+			"lenses/skeptic",
+			[
+				"classics/builder",
+				"classics/lens",
+				"classics/skeptic",
+				"classics/consolidator",
+			],
+			{
+				"lenses/lens/findings.json": {
+					clean: false,
+					findings: [finding("F1", true)],
+				},
+				"lenses/lens/verdict": "rejected F1",
+				"lenses/skeptic/verdicts.json": held(),
+				"consolidator/verdict.json": verdict([]),
 			},
-			"lenses/lens/verdict": "rejected F1",
-			"lenses/skeptic/verdicts.json": held(),
-			"consolidator/verdict.json": verdict([]),
-		},
-	],
+		],
+	),
 ];
 
 test.each(rejecting)(

@@ -70,11 +70,19 @@ const ALL_LENSES = `Rule on the change through every lens: ${CORRECTNESS}; ${SPE
 
 const AGAIN = `The change was fixed after your last ruling. ${ALL_LENSES} The attached upheld findings are those of yours the last round upheld; anything else you raised was dismissed.`;
 
-/** The panel's lenses, by name, as each lens's task. */
-const PANEL = {
-	correctness: `Rule on the change through this lens only: ${CORRECTNESS}. ${GROUNDS}`,
-	spec: `Rule on the change through this lens only: ${SPEC}. ${QUESTIONS} ${GROUNDS}`,
-	tests: `Rule on the change through this lens only: ${TESTS}. ${GROUNDS}`,
+const ONLY_CORRECTNESS = `Rule on the change through this lens only: ${CORRECTNESS}. ${GROUNDS}`;
+
+/** Each panel tier's lenses, by name, as each lens's task. */
+const PANELS = {
+	ordinary: {
+		correctness: ONLY_CORRECTNESS,
+		"spec-tests": `Rule on the change through these lenses only: ${SPEC}; ${TESTS}. ${QUESTIONS} ${GROUNDS}`,
+	},
+	risky: {
+		correctness: ONLY_CORRECTNESS,
+		spec: `Rule on the change through this lens only: ${SPEC}. ${QUESTIONS} ${GROUNDS}`,
+		tests: `Rule on the change through this lens only: ${TESTS}. ${GROUNDS}`,
+	},
 };
 
 const SKEPTIC_TASK = `A lens ruled on this change under these grounds: ${GROUNDS} Challenge each of its findings against the code and those grounds, and rule whether it holds. A finding holds when the code shows it and it breaks a rule, requirement or ADR the grounds name; one that cites none does not hold. To rule that a missing test is covered, name the test that fails without the behaviour; a shared code path or a claim of coverage by construction does not.`;
@@ -186,10 +194,11 @@ function review(
 			label: "upheld",
 			tolerate: "rejected",
 		});
-	if (tier === "risky") {
+	if (tier !== "small") {
+		const lenses = PANELS[tier];
 		const ruling = panel({
-			items: Object.keys(PANEL),
-			task: (name) => lookup(PANEL, name),
+			items: Object.keys(lenses),
+			task: (name) => lookup(lenses, name),
 			change: lane,
 			patches,
 			spec,
@@ -223,7 +232,6 @@ function review(
 	});
 	const findings = readJson(found.out.findings, { tolerate: "rejected" });
 	const lensSession = found.out.session;
-	if (tier === "small") return tally({ findings, lens: lensSession });
 	const challenged = skeptic({
 		label: "skeptic",
 		task: SKEPTIC_TASK,
