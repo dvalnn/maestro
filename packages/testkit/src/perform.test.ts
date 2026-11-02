@@ -1393,7 +1393,7 @@ test("perform refuses limits no timer or count holds", async () => {
 
 test("a concert past limits.timeout cancels the instance that never settles, and settles failed naming the limit", async () => {
 	const { dir, open } = await workspace();
-	const timeout = 20;
+	const timeout = 200;
 	const playing = await start({
 		ir: graph([code("stuck", "stuck")], [], "stuck"),
 		hosts: [],

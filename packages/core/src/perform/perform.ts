@@ -783,6 +783,8 @@ async function execute(
 	const scratch = await scratchDir(c.kit.dirs);
 	let keep = false;
 	try {
+		const late = haltOf(frame);
+		if (late) return late;
 		const settling = await executeIn(c, node, frame, instance, inputs, scratch);
 		keep = node.kind === "code" && settling.outcome === "failed";
 		if (keep)
