@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { CodeContext } from "@maestro/sdk";
+import { type CodeContext, reject } from "@maestro/sdk";
 import { requirePatch, upheldOf } from "./slice";
 import {
 	call,
@@ -190,7 +190,7 @@ test.each(seated)(
 		);
 		const performed = JSON.parse(ran.out);
 		expect([performed.status, performed.reason]).toEqual(
-			changes ? ["ok", undefined] : ["failed", "the slice changed nothing"],
+			changes ? ["ok", undefined] : ["rejected", "the slice changed nothing"],
 		);
 		if (changes)
 			expect(
@@ -286,7 +286,7 @@ test.each(rejecting)(
 	},
 );
 
-test("requirePatch returns a changeset that holds a patch unchanged, and fails one that holds none", () => {
+test("requirePatch returns a changeset that holds a patch unchanged, and rejects one that holds none", () => {
 	const made = (...files: string[]) => {
 		const dir = mkdtempSync(join(scratch, "changeset-"));
 		for (const f of files) writeFileSync(join(dir, f), "x");
@@ -298,7 +298,7 @@ test("requirePatch returns a changeset that holds a patch unchanged, and fails o
 			path: () => dir,
 		} as unknown as CodeContext);
 	expect(run(made("base", "0001.patch"))).toEqual({ changeset: ref });
-	expect(() => run(made("base"))).toThrow("the slice changed nothing");
+	expect(run(made("base"))).toEqual(reject("the slice changed nothing"));
 });
 
 test("a stub perform under --preset ordinary --preset stub stubs every seat the presets name", async () => {

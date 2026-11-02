@@ -339,15 +339,46 @@ async function block(pass: Pass, number: number, reason: string) {
 }
 
 /**
- * Routes failed slice `id` of `entry`: blocked to `needs-info` asking its question, else red, spending an attempt (factory.md, Rules). One routed to `needs-info` is the concert to continue; a red retry is fresh.
+ * Halts the tour manager on slice `id` of `entry` that failed to run, requeuing the ticket to `ready-for-agent` with its attempts kept (factory.md, Rules: Attempts).
  */
-async function fail(
+async function haltSlice(
 	pass: Pass,
 	{ issue, data }: Entry,
 	id: string,
 	reason: string,
 ) {
-	const blocked = reason.startsWith(BLOCKED);
+	await move(pass, issue.number, "ready-for-agent");
+	await writeSpec(pass, issue.number, "ready-for-agent", {
+		...data,
+		concert: id,
+		failure: reason,
+		encore: undefined,
+	});
+	await halt(
+		pass,
+		`slice of #${issue.number} could not run`,
+		`The slice concert \`${id}\` of #${issue.number} could not run:`,
+		reason,
+		`Read it with \`maestro ls ${id}\`. The ticket is back in \`ready-for-agent\` with its attempts kept.`,
+	);
+}
+
+/**
+ * Routes unlanded slice `id` of `entry` by its outcome (factory.md, Rules): `blocked:` to `needs-info` asking its question; any other `failed` halts the tour manager; `rejected` spends an attempt. One routed to `needs-info` is the concert to continue; a retry is fresh. Returns false when it halted.
+ */
+async function fail(
+	pass: Pass,
+	entry: Entry,
+	id: string,
+	status: string,
+	reason: string,
+) {
+	const { issue, data } = entry;
+	const blocked = status === "failed" && reason.startsWith(BLOCKED);
+	if (status === "failed" && !blocked) {
+		await haltSlice(pass, entry, id, reason);
+		return false;
+	}
 	const attempts = (data.attempts ?? 0) + (blocked ? 0 : 1);
 	const waits = blocked || attempts >= ATTEMPTS;
 	const state = waits ? "needs-info" : "ready-for-agent";
@@ -361,6 +392,7 @@ async function fail(
 		encore: waits ? id : undefined,
 	});
 	pass.say(`routed #${issue.number}'s slice to ${state}: ${reason}`);
+	return true;
 }
 
 /** The open PR of `pull.head`, retargeted to `pull.base` when it merges elsewhere, else a new one of `pull`. */
@@ -586,8 +618,7 @@ async function settleSlice(pass: Pass, entry: Entry, id: string) {
 	await fileReports(pass, entry.issue, report);
 	if (result.status === "ok") return land(pass, entry, id, report);
 	const reason = result.reason ?? `settled ${result.status}`;
-	await fail(pass, entry, id, reason);
-	return true;
+	return fail(pass, entry, id, result.status, reason);
 }
 
 /** The newest triage or slice of `entry`'s tour the tick has yet to route. */

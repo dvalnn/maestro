@@ -26,7 +26,7 @@ flowchart LR
     GATE ==>|approve| Q
     Q -->|build| B
     B -->|PR| R
-    B -->|"red ¹"| Q
+    B -->|"rejected ¹"| Q
     R ==>|"merge ²"| D
     R ==>|changes| B
     B -.->|"blocked ³"| NI
@@ -96,11 +96,11 @@ flowchart TD
     V -->|"failed ⁶"| HALT
     K -->|slice| O{"outcome"}
     O -->|ok| LAND["land ¹"] --> IR["in-review"]
-    O -->|"red ⁹"| A{"attempts left?"}
+    O -->|"rejected ⁹"| A{"attempts left?"}
     A -->|yes| RA2["ready-for-agent"]
     A -->|no| NI2["needs-info"]
     O -->|blocked| NI3["needs-info ²"]
-    O -->|infra| HALT["halt ³"]
+    O -->|"failed, not blocked"| HALT["halt ³"]
     O -.->|any| REP["file reports ⁴"]
     K -->|harvest| PR["needs-approval ⁵"]
     M -->|yes| PK["needs-info ⁸"]
@@ -121,7 +121,7 @@ flowchart TD
    issue triages it again.
 7. Any verdict with a question for the owner, whatever its risk.
 8. The owner moved the ticket during the run: a slice is parked, a triage's verdict dropped (Rules: Moved during a run).
-9. A slice whose last reviewed lane holds no patch fails with `the slice changed nothing`.
+9. A slice whose last reviewed lane holds no patch settles `rejected` with `the slice changed nothing`.
 
 ## Label reference
 
@@ -154,7 +154,7 @@ An edge in the diagrams names who causes the move; the tick sets the label unles
     When the owner approves a split, moving it to `ready-for-agent`, the tick files the children and moves the epic
     here. It closes when its last child does.
 
-[^red]: A red run with attempts left or an infra fault.
+[^red]: A rejected slice with attempts left, or a slice that failed to run.
 
 [^app]: The owner applying a parked slice's result (Rules: Moved during a run).
 
@@ -198,7 +198,7 @@ flowchart LR
     NI -->|"[owner] answer"| RA["ready-for-agent"]
     NI -.->|"[owner] answer triage"| IN
     NI -->|"[owner] apply ³"| IP
-    IP -->|"[slice] red, infra"| RA
+    IP -->|"[slice] rejected, failed"| RA
     IR["in-review"] -->|"[owner] changes"| IP
     IR -->|"[tick] conflict"| NI
 
@@ -248,11 +248,11 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   `concert`, the last concert it routed; `triage`, the last ok triage, which a re-triage continues; `read`, the id of
   the newest comment a triage was fed; `version`, the spec's; `result`, that triage's output, where a question stored as
   a string reads as an ask alone; `pending`, set while the result's labels are not yet applied; `filed`, an approved
-  split's children; `slice`, the slice concert the last build started; `attempts`, the red runs spent; `failure`, the
-  reason the last slice failed; `parked`, a slice concert routed but not applied; `stack`, the dependency the last build
-  stacked on, its PR and that PR's head commit, until the restack; `encore`, the slice concert to continue, which a
-  slice routed to `needs-info`, blocked or out of attempts, sets to itself and a red retry, a landing, a parked concert
-  or a re-triage clears; and `review`, the id of the newest review requesting changes an encore was fed. A line the tick
+  split's children; `slice`, the slice concert the last build started; `attempts`, the rejected slices spent; `failure`,
+  the reason the last slice failed; `parked`, a slice concert routed but not applied; `stack`, the dependency the last
+  build stacked on, its PR and that PR's head commit, until the restack; `encore`, the slice concert to continue, which
+  a slice routed to `needs-info`, blocked or out of attempts, sets to itself and a retry, a landing, a parked concert or
+  a re-triage clears; and `review`, the id of the newest review requesting changes an encore was fed. A line the tick
   cannot read halts the tour manager.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. The owner
   answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`, then moving
@@ -312,13 +312,15 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   `kind/bug` and a gap as `kind/enhancement`, with `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line: the
   first 12 hex of SHA-256 over the text lower-cased, whitespace runs folded to one space and trimmed. A text whose line
   an open issue carries is not filed again. An obstacle never carries a dependency.
-- **Attempts.** A red run, an empty slice included, spends an attempt and is retried with a fresh perform. After 2
-  attempts the ticket goes to `needs-info`. An answer does not reset them: an answered ticket out of attempts gets one
-  encore, and a red one goes back to `needs-info`.
+- **Attempts.** A `rejected` slice, an empty one included, spends an attempt and is retried with a fresh perform. After
+  2 attempts the ticket goes to `needs-info`. An answer does not reset them: an answered ticket out of attempts gets one
+  encore, and a rejected one goes back to `needs-info`.
 - **Blocked.** A blocked agent moves its ticket to `needs-info` with its question and spends no attempt. The question is
   posted as a question comment offering `ready-for-agent` (continue with my answer) or `needs-triage`, answered by a
   reply mentioning `@<login>` then the label; on `ready-for-agent` the slice continues as an encore. Obstacles never
-  block a ticket. An infra fault halts the tour manager until its halt issue closes.
+  block a ticket. A slice that settles `failed` without a `blocked:` reason is an infra fault: it halts the tour manager
+  with the reason and the concert id, requeues the ticket to `ready-for-agent` and spends no attempt, so closing the
+  halt issue builds it again.
 - **Splits.** Triage records its verdict in the spec comment: a spec, or a split with its child list. On the owner's
   approval of a split the tick files the children as `needs-triage`, in the epic's milestone with `Part of #N`, and
   moves the epic to `in-progress`. The epic closes when its last child does.

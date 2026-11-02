@@ -735,6 +735,11 @@ const failed = (reason: string): Result => ({
 	reason,
 	outputs: {},
 });
+const rejected = (reason: string): Result => ({
+	status: "rejected",
+	reason,
+	outputs: {},
+});
 const CACHED = "/cache/maestro-factory/i7";
 /** The `--request` of a build of issue `n`'s spec, before anything an encore is fed. */
 const requestFor = (n: number) =>
@@ -849,8 +854,8 @@ describe("a build", () => {
 			const red = answeredOnce(
 				specced(7, "in-progress", { slice: "s1", attempts, encore: "s0" }),
 			);
-			const t = setup([red], [sliceConcert("s1", 7, "failed")], {
-				s1: failed("the slice changed nothing"),
+			const t = setup([red], [sliceConcert("s1", 7, "rejected")], {
+				s1: rejected("the slice changed nothing"),
 			});
 			await t.run();
 			expect(
@@ -874,6 +879,30 @@ describe("a build", () => {
 			expect(t.writes).toHaveLength(writes);
 		},
 	);
+
+	test("halts on a slice that failed without a blocked reason, requeuing its ticket with the attempt kept", async () => {
+		const t = setup(
+			[specced(7, "in-progress", { slice: "s1", attempts: 1 })],
+			[sliceConcert("s1", 7, "failed")],
+			{ s1: failed("no workspace") },
+		);
+		await t.run();
+		const routed = t.find(7);
+		expect(routed.labels).toContain("state/ready-for-agent");
+		expect(dataAt(routed)).toMatchObject({
+			attempts: 1,
+			concert: "s1",
+			failure: "no workspace",
+		});
+		expect(dataAt(routed).encore).toBeUndefined();
+		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([
+			`file #100 Tour manager halted: slice of #7 could not run: ${HALT}`,
+		]);
+		expect(t.find(100).body).toStartWith(
+			"The slice concert `s1` of #7 could not run:\n\n```text\nno workspace\n```",
+		);
+		expect(t.starts).toEqual([]);
+	});
 
 	test("routes a blocked slice to needs-info asking its question with no dependency, then encores it fed the reply", async () => {
 		const t = setup(
@@ -990,11 +1019,11 @@ describe("a build", () => {
 	test("files each report once across two settles, and none an open issue carries", async () => {
 		const carried = issue(40, "needs-triage");
 		carried.body = "<!-- factory-fingerprint c1cac570f6de -->";
-		const concerts = [sliceConcert("s1", 7, "failed")];
+		const concerts = [sliceConcert("s1", 7, "rejected")];
 		const t = setup(
 			[specced(7, "in-progress", { slice: "s1" }), carried],
 			concerts,
-			{ s1: failed("red"), s2: failed("red") },
+			{ s1: rejected("red"), s2: rejected("red") },
 			undefined,
 			{
 				reports: {
@@ -1008,7 +1037,7 @@ describe("a build", () => {
 			},
 		);
 		await t.run();
-		concerts.unshift(sliceConcert("s2", 7, "failed"));
+		concerts.unshift(sliceConcert("s2", 7, "rejected"));
 		await t.run();
 		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([
 			"file #100 No  rg on PATH: state/needs-triage kind/bug",

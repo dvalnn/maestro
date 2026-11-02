@@ -38,6 +38,7 @@ import {
 	not,
 	type Ref,
 	readJson,
+	reject,
 	type Settled,
 	Text,
 	use,
@@ -146,14 +147,14 @@ export function upheldOf(
 
 /**
  * The changeset, unchanged, when it holds a patch.
- * @throws Error when it holds none, so the node settles `failed`.
+ * A rejection when it holds none, so the slice settles `rejected`.
  */
 export function requirePatch(
 	{ changeset }: { changeset: ArtifactRef },
 	ctx: CodeContext,
-): { changeset: ArtifactRef } {
+) {
 	if (!readdirSync(ctx.path(changeset)).some((f) => f.endsWith(PATCH_EXT)))
-		throw new Error(NOTHING_CHANGED);
+		return reject(NOTHING_CHANGED);
 	return { changeset };
 }
 

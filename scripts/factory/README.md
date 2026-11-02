@@ -58,5 +58,5 @@ journalctl --user -u maestro-factory    # what each pass did
 ```
 
 To stop it, `systemctl --user disable --now maestro-factory.timer`. A failed or malformed triage, a triage or build that
-does not start, a slice that does not land, or data it cannot read halts the tour manager with an open `maestro-tm:halt`
-issue; close it to resume.
+does not start, a slice that fails without a `blocked:` reason, a slice that does not land, or data it cannot read halts
+the tour manager with an open `maestro-tm:halt` issue; close it to resume.
