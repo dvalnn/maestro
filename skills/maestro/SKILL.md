@@ -12,7 +12,7 @@ maestro builds a composition into a checked plan with `compose`, which spends no
 The concert's agents and checks work in lanes, isolated copies of the target repository, never in the user's checkout.
 Results leave as a changeset, a set of patches the user applies.
 
-This skill was checked against maestro 0.1.0-rc.1. When `maestro --version` names another release, trust
+This skill was checked against maestro 0.1.0-rc.2. When `maestro --version` names another release, trust
 `maestro <verb> --help` wherever the two differ.
 
 ## Words
