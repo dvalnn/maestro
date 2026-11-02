@@ -26,11 +26,12 @@ import {
 	timeoutProblem,
 	validator,
 } from "@maestro/ir";
-import type {
-	AgentEnvironment,
-	ContextAt,
-	ContextPolicy,
-	Runtime,
+import {
+	type AgentEnvironment,
+	type ContextAt,
+	type ContextPolicy,
+	type Runtime,
+	STUB,
 } from "../harness/index";
 
 /** The config namespace that tunes profiles by name. */
@@ -46,6 +47,8 @@ const CODE = "HOST.profile";
 const SEGMENT = irSchema.$defs.name.pattern.slice(1, -1);
 /** A bare name, or `<pack id>/<name>`, each segment a pack id. */
 export const PROFILE_NAME = new RegExp(`^${SEGMENT}(?:/${SEGMENT})?$`);
+/** The `profiles` key whose entry applies to every profile its layer does not name, beneath the named entries. */
+export const ANY_PROFILE = "*";
 /** `<composition id>/<seat>`, the key `seats` rebinds a seat by (ADR 0013). */
 const SEAT_KEY = new RegExp(`^${SEGMENT}/${SEGMENT}$`);
 const OWNER_SEPARATOR = "/";
@@ -122,7 +125,9 @@ const fieldsSchema = (
 /** The schema of the `profiles` config namespace: each profile's fields by name, none required. */
 export const PROFILES_CONFIG: JsonSchema = {
 	type: "object",
-	propertyNames: { pattern: PROFILE_NAME.source },
+	propertyNames: {
+		pattern: `^(?:\\${ANY_PROFILE}|${PROFILE_NAME.source.slice(1, -1)})$`,
+	},
 	additionalProperties: fieldsSchema(
 		false,
 		Object.fromEntries(RESERVED.map((k) => [k, {}])),
@@ -312,7 +317,9 @@ export function seatBinding(
  */
 export async function untunable(setup: HostSetup): Promise<Diagnostic[]> {
 	const tuned = setup.config[PROFILES];
-	const names = isPlainObject(tuned) ? Object.keys(tuned) : [];
+	const names = isPlainObject(tuned)
+		? Object.keys(tuned).filter((n) => n !== ANY_PROFILE)
+		: [];
 	const found = await Promise.all(
 		names.map((n) => findProfile(n, setup.roots)),
 	);
@@ -478,13 +485,15 @@ function fieldErrors(name: string, merged: Merged): Diagnostic[] {
 	});
 	if (off.length) return off;
 	const runtime = (merged.values.runtime ?? {}) as Partial<Runtime>;
-	const unset = REQUIRED_RUNTIME.filter((f) => runtime[f] === undefined).map(
+	const unset = REQUIRED_RUNTIME.filter(
 		(f) =>
-			refusal(
-				undefined,
-				unsetMessage(name, f),
-				`Set ${PROFILES}.${name}.runtime.${f}`,
-			),
+			runtime[f] === undefined && !(f === "model" && runtime.harness === STUB),
+	).map((f) =>
+		refusal(
+			undefined,
+			unsetMessage(name, f),
+			`Set ${PROFILES}.${name}.runtime.${f}`,
+		),
 	);
 	return [
 		...unset,
@@ -500,7 +509,8 @@ type WrittenContext = Omit<ContextPolicy, "at" | "max"> & {
 };
 
 /** A profile's values as config writes them, once they passed the schema. */
-type Written = Omit<ProfileFields, "limits" | "context"> & {
+type Written = Omit<ProfileFields, "runtime" | "limits" | "context"> & {
+	runtime: Omit<Runtime, "model"> & { model?: string };
 	limits?: { timeout?: string; tokens?: number };
 	context?: WrittenContext;
 };
@@ -546,7 +556,8 @@ function fieldsOf(values: Readonly<Record<string, unknown>>): ProfileFields {
 		writtenOf(values);
 	const { timeout, tokens } = limits ?? {};
 	return {
-		runtime,
+		// The stub runs no model, so one left unset reads as the stub's own.
+		runtime: { ...runtime, model: runtime.model ?? STUB },
 		...(instructions !== undefined && { instructions }),
 		attachments: attachments ?? {},
 		readOnly: readOnly ?? [],
@@ -584,11 +595,34 @@ export async function profilesDigest(roots: Roots): Promise<string> {
 }
 
 /**
+ * `layer` as profile `name` sees it: its `profiles."*"` entry set as `name`'s in a layer of its own just beneath it, so
+ * the entry `layer` names `name` by merges over it. A `!replace` on `profiles` moves to that layer beneath.
+ */
+function anyProfileFor(name: string, layer: Layer): Layer[] {
+	const profiles = layer.entries.get(PROFILES);
+	if (profiles?.kind !== "map") return [layer];
+	const any = profiles.entries.get(ANY_PROFILE);
+	if (any === undefined) return [layer];
+	const at = (entries: typeof profiles.entries, replace: boolean): Layer => ({
+		...layer,
+		entries: new Map([
+			...layer.entries,
+			[PROFILES, { ...profiles, entries, replace }],
+		]),
+	});
+	return [
+		at(new Map([[name, any]]), profiles.replace),
+		at(profiles.entries, false),
+	];
+}
+
+/**
  * Resolves profile `name`: finds its directory in the roots of `setup`, reads its `profile.yaml` as the `directory`
- * layer, and layers the config layers of `setup` over it at `profiles.<name>` with every merge tag applying (ADR 0013).
+ * layer, and layers the config layers of `setup` over it at `profiles.<name>` with every merge tag applying (ADR 0013), each
+ * layer's `profiles."*"` beneath its `profiles.<name>`.
  * @throws ConfigError when the name is no profile name, no root holds it, its file cannot be read or sets a refused
  * key, a path in its file is wrong by `pathProblem`, or the fields set a reserved key, are off their schema or leave the
- * harness or model unset.
+ * harness unset, or the model unset on any harness but the stub.
  */
 export async function resolveProfile(
 	name: string,
@@ -615,7 +649,11 @@ export async function resolveProfile(
 	const layer = await fileLayer(name, found.dir);
 	const wrong = await pathErrors(name, found.dir, layer);
 	if (wrong.length) throw new ConfigError(wrong);
-	const merged = layeredOver(setup, [PROFILES, name], layer);
+	const merged = layeredOver(
+		{ layers: setup.layers.flatMap((l) => anyProfileFor(name, l)) },
+		[PROFILES, name],
+		layer,
+	);
 	const errors = fieldErrors(name, merged);
 	if (errors.length) throw new ConfigError(errors);
 	return {

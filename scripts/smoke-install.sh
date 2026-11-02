@@ -122,12 +122,10 @@ profiles:
   classics/skeptic: { runtime: { harness: pi, model: openai/gpt-model-id, thinking: high } }
   classics/documenter: { runtime: { harness: claude, model: sonnet, thinking: high } }
 YAML
-{
-  echo "profiles:"
-  for seat in scout planner builder lens consolidator skeptic documenter; do
-    echo "  classics/$seat: { runtime: !replace { harness: stub, model: none } }"
-  done
-} > "$ws/.maestro/presets/stub.yaml"
+cat > "$ws/.maestro/presets/stub.yaml" <<'YAML'
+profiles:
+  "*": { runtime: !replace { harness: stub } }
+YAML
 cat > "$ws/smoke.ts" <<'TS'
 import { check, fresh, read, seat } from "@maestro/host-repo-sdk";
 import { composition } from "@maestro/sdk";

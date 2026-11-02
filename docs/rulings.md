@@ -21,6 +21,9 @@ when that is not obvious, and where it applies. A ruling that grows into a desig
   only names it. A resume applies the same order, as it reapplies the recorded `--preset` and `-c`. Why: the person
   running the concert answers for the spend. Applies to profile resolution in `host-repo`'s profile module (AT-04,
   AT-06).
+- **`profiles."*"` reaches the seats a preset does not name.** A layer's `"*"` entry applies to every profile it does
+  not name, beneath its named entries, so `--preset stub` always means no spend even for a seat the preset never lists.
+  The stub needs no `model`, and is not held to a context window it lacks.
 
 ## Concert fork (deferred)
 

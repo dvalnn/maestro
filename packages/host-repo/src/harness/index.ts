@@ -1,6 +1,7 @@
 export { resolveBin } from "./bin";
 export {
 	placeholderOutputs,
+	STUB,
 	type StubStep,
 	stubHarness,
 } from "./stub";

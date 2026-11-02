@@ -441,7 +441,7 @@ describe("compose", () => {
 	});
 
 	profile("gone", "runtime: { harness: gone, model: none }\n");
-	profile("modelless", "runtime: { harness: stub }\n");
+	profile("modelless", "runtime: { harness: other }\n");
 	profile("deep", "runtime: { harness: other, model: none, thinking: max }\n");
 	profile(
 		"shared",
@@ -662,6 +662,41 @@ describe("compose", () => {
 			);
 		},
 	);
+
+	profile("stub-modelless", "runtime: { harness: stub }\n");
+	profile(
+		"stub-shared",
+		'runtime: { harness: stub }\ncontext: { strategy: handoff, at: "25%", max: 2 }\n',
+	);
+	test.each([
+		["with no model", "stub-modelless"],
+		["with a context trigger in percent and no window known", "stub-shared"],
+	])("an agent naming a stub profile %s composes", async (_, name) => {
+		const { host } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "x",
+					kind: "agent",
+					config: agentOn(fresh, name),
+					literals: { prompt: "go" },
+				},
+			],
+			"x",
+		);
+		const composed = await compose({
+			ir,
+			config: configOf(toyTarget()),
+			roots: ROOTS,
+			core: CORE_CONFIG,
+			packs: {},
+			hosts: [host],
+			loadCode: noCode,
+			caps: {},
+		});
+		expect(composed.ok ? [] : composed.diagnostics).toEqual([]);
+	});
 
 	profile(
 		"noted",

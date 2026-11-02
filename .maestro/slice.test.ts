@@ -300,3 +300,32 @@ test("requirePatch returns a changeset that holds a patch unchanged, and fails o
 	expect(run(made("base", "0001.patch"))).toEqual({ changeset: ref });
 	expect(() => run(made("base"))).toThrow("the slice changed nothing");
 });
+
+test("a stub perform under --preset ordinary --preset stub stubs every seat the presets name", async () => {
+	const args = (await slice("perform", "ordinary")).toSpliced(
+		4,
+		0,
+		"--preset",
+		"stub",
+	);
+	const composed = JSON.parse(await maestro(["compose", ...args.slice(1)]));
+	const harnesses = (composed.agents as { harness: string }[]).map(
+		(a) => a.harness,
+	);
+	expect(harnesses.length).toBeGreaterThan(0);
+	expect(new Set(harnesses)).toEqual(new Set(["stub"]));
+	const target = targetRepo();
+	const ran = await call(
+		[
+			...args,
+			"-c",
+			`target.repo=${target}`,
+			"-c",
+			'target.prepare="true"',
+			"-c",
+			'target.checks.all={run: "echo x > b.ts", hint: all}',
+		],
+		mkdtempSync(join(scratch, "data-")),
+	);
+	expect(JSON.parse(ran.out).status).toBe("ok");
+});

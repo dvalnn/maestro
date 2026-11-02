@@ -227,6 +227,56 @@ describe("resolution", () => {
 		});
 	});
 
+	test('a layer\'s profiles."*" reaches a profile only a lower layer names, its tags applying', async () => {
+		const setup = setupOf({
+			user: "profiles:\n  auditor:\n    runtime: { model: sonnet, thinking: high }\n",
+			preset: 'profiles:\n  "*":\n    runtime: !replace { harness: stub }\n',
+		});
+		const profile = await resolveProfile("auditor", setup);
+		expect(profile.fields.runtime).toEqual({ harness: "stub", model: "stub" });
+		expect(sourceOf(profile, ["runtime", "harness"])).toEqual({
+			layer: "preset",
+			file: join(root, "preset.yaml"),
+			line: 3,
+		});
+	});
+
+	test('a named entry beats profiles."*" in its own layer and above it, field by field', async () => {
+		const setup = setupOf({
+			user: 'profiles:\n  "*":\n    runtime: { model: any, thinking: low }\n',
+			workspace:
+				'profiles:\n  "*":\n    limits: { tokens: 5 }\n  auditor:\n    limits: { tokens: 7, timeout: 1m }\n    runtime: { model: named }\n',
+		});
+		const profile = await resolveProfile("auditor", setup);
+		expect(profile.fields).toMatchObject({
+			runtime: { harness: "claude", model: "named", thinking: "low" },
+			limits: { tokens: 7, timeout: 60_000 },
+		});
+		expect(sourceOf(profile, ["runtime", "thinking"])?.layer).toBe("user");
+	});
+
+	test('a !replace on profiles holding only "*" replaces every profile\'s fields beneath it', async () => {
+		const setup = setupOf({
+			user: "profiles:\n  auditor:\n    limits: { tokens: 3 }\n",
+			preset: 'profiles: !replace\n  "*":\n    runtime: { harness: stub }\n',
+		});
+		const profile = await resolveProfile("auditor", setup);
+		expect(profile.fields.runtime).toEqual({ harness: "stub", model: "stub" });
+		expect(profile.fields.limits).toEqual({});
+	});
+
+	test('a !delete under "*" drops the field a lower layer set', async () => {
+		const setup = setupOf({
+			user: "profiles:\n  auditor:\n    runtime: { thinking: high }\n",
+			preset: 'profiles:\n  "*":\n    runtime: { thinking: !delete }\n',
+		});
+		const profile = await resolveProfile("auditor", setup);
+		expect(profile.fields.runtime).toEqual({
+			harness: "claude",
+			model: "opus",
+		});
+	});
+
 	test("refuses a runtime config leaves without a harness or model, naming the key to set", async () => {
 		const deleted = setupOf({
 			flag: "profiles:\n  classics/builder:\n    runtime: { harness: !delete }\n",
@@ -455,4 +505,9 @@ test("an error for each profile config tunes that no root holds, where config se
 			5,
 		],
 	]);
+});
+
+test('profiles."*" tunes no profile by name', async () => {
+	const setup = setupOf({ workspace: 'profiles:\n  "*": {}\n' });
+	expect(await untunable(setup)).toEqual([]);
 });

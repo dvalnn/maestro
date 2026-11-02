@@ -1,0 +1,2 @@
+profiles:
+  "*": { runtime: !replace { harness: stub } }

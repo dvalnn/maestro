@@ -309,13 +309,24 @@ work:
 
 ```sh
 maestro perform demo.greet --name x -c concurrency=2 -c 'packs=!append [../b]' -c target.checks.lint=!delete
-maestro perform demo.greet --name x -c 'profiles.reviewer.runtime=!replace {harness: stub, model: none}' -c 'target.checks."a.b"=x'
+maestro perform demo.greet --name x -c 'profiles.reviewer.runtime=!replace {harness: stub}' -c 'target.checks."a.b"=x'
 ```
 
 A profile's fields resolve per field, highest first: `-c` and the presets, then the config files' `profiles`, then the
 profile directory's `profile.yaml`. So `--preset stub` always means no spend, while
 `-c profiles.builder.runtime.model=haiku` changes only the model. A composition sets none of them. A resume applies the
 same order.
+
+A layer's `profiles."*"` entry applies to every profile that layer does not name, at that layer's precedence, and its
+named entries win over it field by field; the tags work on it as on a named entry, and `maestro config` lists it as
+`profiles.*`. A profile on the `stub` harness needs no `model`, and a percentage `context.at` it cannot put in tokens is
+dropped rather than refused. So `.maestro/presets/stub.yaml` stubs every seat, whatever profiles the config files or a
+pack bring:
+
+```yaml
+profiles:
+  "*": { runtime: !replace { harness: stub } }
+```
 
 A concert's record keeps each `--preset` and each `-c` as typed, in order, and `ls <concert> --json` shows them as
 `presets` and `config`. Keep secrets out of `-c`: set them in `$XDG_CONFIG_HOME/maestro/.env`.

@@ -17,6 +17,9 @@ import {
 	windowEvents,
 } from "./types";
 
+/** The stub harness's name. It runs no model, so a profile on it needs neither a model nor a context window. */
+export const STUB = "stub";
+
 /** The text of every placeholder string and Markdown file. */
 const PLACEHOLDER_TEXT = "stub";
 
@@ -125,7 +128,7 @@ export function stubHarness(
 	backend?: SandboxBackend,
 ): Harness {
 	const adapter: SubprocessAdapter = {
-		name: "stub",
+		name: STUB,
 		spec: (req) => ({
 			argv: [
 				"sh",

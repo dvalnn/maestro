@@ -1,7 +1,12 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isPlainObject } from "@maestro/ir";
-import type { ContextAt, ContextPolicy, Runtime } from "../harness/index";
+import {
+	type ContextAt,
+	type ContextPolicy,
+	type Runtime,
+	STUB,
+} from "../harness/index";
 import { PROFILES, type Profile } from "../profile/index";
 
 /** Under the host store: the context window of each model in tokens, by harness, then by model as profiles name it. */
@@ -73,13 +78,17 @@ export type ContextIn =
 	| { context?: ContextPolicy; window?: number }
 	| { message: string; fix: string };
 
-/** `profile`'s context policy with `at` in tokens, and its model's window, as kept under host store `store`. */
+/**
+ * `profile`'s context policy with `at` in tokens, and its model's window, as kept under host store `store`. A stub
+ * profile's policy that no window known puts in tokens is dropped, not refused: the stub runs no model.
+ */
 export function contextIn(profile: Profile, store: string): ContextIn {
 	const { runtime, context } = profile.fields;
 	const window = windowOf(store, runtime);
 	const known = window === undefined ? {} : { window };
 	if (context === undefined) return known;
 	const at = tokensOf(context.at, window);
+	if (at === undefined && runtime.harness === STUB) return known;
 	if (at === undefined)
 		return {
 			message: `${PROFILES}.${profile.name}.context.at: no context window is known for ${runtime.harness} model '${runtime.model}'`,

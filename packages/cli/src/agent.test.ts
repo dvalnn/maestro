@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanup } from "./fixtures/packs";
-import { json, world } from "./fixtures/world";
+import { GREET, hostOf, json, world } from "./fixtures/world";
 import { builtinHosts } from "./hosts";
 
 afterEach(cleanup);
@@ -143,6 +143,27 @@ describe("agent show", () => {
 		expect(shown).toMatchObject({ code: 0, err: "" });
 		expect(shown.out).toContain(
 			"  model       opus  [preset risky]\n  thinking    low  [preset stub]\n",
+		);
+	});
+
+	test('a preset\'s profiles."*" stubs a profile only the config files name, show and config naming the preset', async () => {
+		const w = await roster();
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/stub.yaml"),
+			'profiles:\n  "*": { runtime: !replace { harness: stub } }\n',
+		);
+		const stub = ["--preset", "risky", "--preset", "stub"];
+		const shown = await w.call(["agent", "show", "demo/builder", ...stub]);
+		expect(shown).toMatchObject({ code: 0, err: "" });
+		expect(shown.out).toContain(
+			"  harness     stub  [preset stub]\n  model       stub\n",
+		);
+		const config = await w.call(["config", ...GREET, ...stub], {
+			hosts: [...builtinHosts({}), hostOf()],
+		});
+		expect(config).toMatchObject({ code: 0, err: "" });
+		expect(config.out).toMatch(
+			/^profiles\.\*\.runtime\.harness +preset stub +"stub" +.*stub\.yaml:2$/m,
 		);
 	});
 
