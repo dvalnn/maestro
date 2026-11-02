@@ -105,7 +105,10 @@ function upheldOf(artifacts: unknown): string | undefined {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-/** What a perform that announced no concert printed: its refusal's diagnostics, one per line, else the log's tail. */
+/**
+ * What a perform that announced no concert printed: its refusal's diagnostics, one per line, else its error, else the
+ * log's tail.
+ */
 function output(log: string): string {
 	const text = readFileSync(log, "utf8");
 	let doc: unknown;
@@ -114,6 +117,7 @@ function output(log: string): string {
 	} catch {
 		return text.slice(-LOG_TAIL).trim();
 	}
+	if (isJson(doc) && typeof doc.error === "string") return doc.error;
 	const diagnostics =
 		isJson(doc) && Array.isArray(doc.diagnostics) ? doc.diagnostics : [];
 	return diagnostics
