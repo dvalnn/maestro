@@ -9,12 +9,13 @@ import {
 	type Forge,
 	forge,
 	type Issue,
+	loadEnvFile,
 	type NewPull,
 	type Pull,
 	REQUEST_CHANGES,
 	type Review,
 } from "./forge";
-import { type Landing, landing } from "./land";
+import { type Landing, landing, SIGNING_KEY } from "./land";
 import {
 	type Concert,
 	type Maestro,
@@ -1117,11 +1118,14 @@ if (import.meta.main) {
 	}
 	mkdirSync(options.dir, { recursive: true });
 	try {
+		loadEnvFile();
+		const tm = forge();
+		const account = await tm.account();
 		await pass(
 			{
-				forge: forge(),
+				forge: tm,
 				maestro: maestro(),
-				landing: landing(REPO),
+				landing: landing(REPO, account, process.env[SIGNING_KEY] || undefined),
 				lock: () => lock(join(options.dir, "lock")),
 				say: console.log,
 			},

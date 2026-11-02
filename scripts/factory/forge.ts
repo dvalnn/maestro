@@ -1,22 +1,10 @@
-import { dirname, resolve } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import { isJson, type Json } from "./json";
 
-const FORGE_PY = resolve(
-	import.meta.dir,
-	"../../.claude/skills/forgejo/scripts/forge.py",
-);
-/**
- * Prints the `origin` forge's host, owner, repo and forge-bot token on one line, through forge.py's own lookup, so the
- * token is read one way only.
- */
-const CREDENTIALS = [
-	"import sys",
-	"sys.path.insert(0, sys.argv[1])",
-	"import forge",
-	"host, owner, repo = forge.origin()",
-	"print(host, owner, repo, forge.token(host))",
-].join("; ");
-const CREDENTIAL_FIELDS = 4;
+const REPO = resolve(import.meta.dir, "../..");
+const DOTENV = "maestro/.env";
+export const TOKEN_KEY = "MAESTRO_TM_TOKEN";
 /** The forge's largest page. */
 const PAGE = 50;
 /** How the forge refuses to arm auto-merge on a PR that is already armed. */
@@ -82,9 +70,14 @@ export type NewIssue = {
  */
 export type IssueQuery = { milestone?: string; label?: string };
 
-/** The forge as the tick sees it, every call made as forge-bot. Labels are named, never given by id. */
+/** The forge account the tick acts as, whose name and email every commit it makes carries. */
+export type Account = { login: string; name: string; email: string };
+
+/** The forge as the tick sees it, every call made as the tick's own account. Labels are named, never given by id. */
 export type Forge = {
-	/** The login of the account the tick acts as. */
+	/** The account the tick acts as, read once from `GET /user`. */
+	account(): Promise<Account>;
+	/** The login of that account. */
 	login(): Promise<string>;
 	/** The id of the milestone titled `title`, if there is one. */
 	milestone(title: string): Promise<number | undefined>;
@@ -121,24 +114,47 @@ export type Forge = {
 	reviews(pull: number, after: number): Promise<Review[]>;
 };
 
+/** Sends one HTTP request; the forge's seam for tests. */
+export type Send = (url: string, init: RequestInit) => Promise<Response>;
+
+/** The file `loadEnvFile` reads, `$XDG_CONFIG_HOME/maestro/.env` as maestro reads it. */
+export function dotenvPath(env: NodeJS.ProcessEnv) {
+	const set = env.XDG_CONFIG_HOME;
+	const config =
+		set && isAbsolute(set) ? set : join(env.HOME || homedir(), ".config");
+	return join(config, DOTENV);
+}
+
 /**
- * The stdout of `command`, run as forge-bot.
+ * Loads `dotenvPath` into the process environment when it exists, never overriding a variable already set.
+ * @throws Error naming the file when it exists and cannot be read.
+ */
+export function loadEnvFile(env: NodeJS.ProcessEnv = process.env) {
+	const file = dotenvPath(env);
+	try {
+		process.loadEnvFile(file);
+	} catch (error) {
+		if ((error as { code?: string }).code === "ENOENT") return;
+		throw new Error(
+			`cannot read ${file}: ${error instanceof Error ? error.message : String(error)}\nMake it readable, or remove it`,
+		);
+	}
+}
+
+/**
+ * The stdout of `command`.
  * @throws Error with its stderr when it fails.
  */
 async function run(
 	command: string[],
-	{
-		stdin,
-		cwd,
-		env,
-	}: { stdin?: string; cwd?: string; env?: Record<string, string> } = {},
+	{ cwd, env }: { cwd?: string; env?: Record<string, string> } = {},
 ) {
 	const child = Bun.spawn(command, {
 		cwd,
-		stdin: stdin === undefined ? "ignore" : new TextEncoder().encode(stdin),
+		stdin: "ignore",
 		stdout: "pipe",
 		stderr: "pipe",
-		env: { ...process.env, FJ_USE_BOT: "1", ...env },
+		env: { ...process.env, ...env },
 	});
 	const [out, err, code] = await Promise.all([
 		new Response(child.stdout).text(),
@@ -149,56 +165,78 @@ async function run(
 	return out;
 }
 
-/**
- * The decoded response of one forge.py call.
- * @throws Error with forge.py's message when the call fails.
- */
-async function api(method: string, path: string, body?: unknown) {
-	const out = await run(
-		["python3", FORGE_PY, "api", method, path, ...(body ? ["-"] : [])],
-		{ stdin: body ? JSON.stringify(body) : undefined },
-	);
-	const decoded: unknown = out.trim() ? JSON.parse(out) : undefined;
-	return decoded;
-}
+/** The host, owner and repo of an ssh or https remote URL, `.git` or not. */
+const REMOTE =
+	/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?(?<host>[^:/]+)(?::\d*)?[:/](?<owner>[^/]+)\/(?<repo>[^/]+?)(?:\.git)?\/?$/i;
 
 /**
- * The `origin` forge's host, owner, repo and forge-bot token.
- * @throws Error when forge.py gives none.
+ * The `origin` forge's host, owner and repo, and the tick's token.
+ * @throws Error naming `MAESTRO_TM_TOKEN` and its file when the token is unset, or the remote when it is unreadable.
  */
-async function credentials() {
-	const fields = (
-		await run(["python3", "-I", "-c", CREDENTIALS, dirname(FORGE_PY)])
-	)
-		.trim()
-		.split(" ");
-	const [host = "", owner = "", repo = "", token] = fields;
-	if (fields.length !== CREDENTIAL_FIELDS || !token)
-		throw new Error("forge: forge.py gave no credentials");
+async function credentials(env: NodeJS.ProcessEnv) {
+	const token = env[TOKEN_KEY];
+	if (!token)
+		throw new Error(
+			`forge: ${TOKEN_KEY} is not set\nSet it in ${dotenvPath(env)}`,
+		);
+	const url = (
+		await run(["git", "remote", "get-url", "origin"], { cwd: REPO })
+	).trim();
+	const { host, owner, repo } = REMOTE.exec(url)?.groups ?? {};
+	if (!host || !owner || !repo)
+		throw new Error(
+			`forge: cannot read a forge from the origin remote ${url}\nSet origin to the forge's ssh or https URL`,
+		);
 	return { host, owner, repo, token };
 }
 
+type Credentials = Awaited<ReturnType<typeof credentials>>;
+
 /**
- * The login of the account the token belongs to, from `GET /user`, which forge.py's repo-scoped calls cannot reach.
- * @throws Error naming the status when the forge refuses.
+ * The decoded response of one call to the origin repo's REST API, or to `GET /user` when `repoScoped` is false.
+ * @throws Error naming the status, method and path when the forge refuses.
  */
-async function login() {
-	const { host, token } = await credentials();
-	const response = await fetch(`https://${host}/api/v1/user`, {
-		headers: { Authorization: `token ${token}`, Accept: "application/json" },
-	});
-	if (!response.ok) throw new Error(`forge: ${response.status} from GET /user`);
-	const login = text(object(await response.json(), "user"), "login");
-	if (!login) throw new Error("forge: GET /user gave no login");
-	return login;
+async function call(
+	creds: () => Promise<Credentials>,
+	send: Send,
+	method: string,
+	path: string,
+	body?: unknown,
+	repoScoped = true,
+) {
+	const { host, owner, repo, token } = await creds();
+	const base = `https://${host}/api/v1`;
+	const response = await send(
+		`${base}${repoScoped ? `/repos/${owner}/${repo}` : ""}${path}`,
+		{
+			method,
+			headers: {
+				Authorization: `token ${token}`,
+				Accept: "application/json",
+				...(body ? { "Content-Type": "application/json" } : {}),
+			},
+			body: body ? JSON.stringify(body) : undefined,
+		},
+	);
+	const out = await response.text();
+	if (!response.ok)
+		throw new Error(
+			`forge: ${response.status} from ${method} ${path}: ${out.trim()}`,
+		);
+	const decoded: unknown = out.trim() ? JSON.parse(out) : undefined;
+	return { decoded, host };
 }
 
 /**
- * Pushes `refspec` from the checkout at `dir` to the `origin` forge over HTTPS as forge-bot.
+ * Pushes `refspec` from the checkout at `dir` to the `origin` forge over HTTPS as the tick's account.
  * @throws Error with git's message when the push fails.
  */
-async function push(dir: string, refspec: string) {
-	const { host, owner, repo, token } = await credentials();
+async function push(
+	creds: () => Promise<Credentials>,
+	dir: string,
+	refspec: string,
+) {
+	const { host, owner, repo, token } = await creds();
 	const basic = Buffer.from(`${token}:`).toString("base64");
 	// The header goes through git's environment, so the token reaches no argv, config file or remote URL.
 	await run(
@@ -271,6 +309,8 @@ const pullOf = (o: Json): Pull => ({
 	files: num(o, "changed_files"),
 });
 
+type Api = (method: string, path: string, body?: unknown) => Promise<unknown>;
+
 /** An inline comment on its `position`, else its `original_position`, none when it has neither. */
 function reviewCommentOf(o: Json): ReviewComment {
 	for (const line of [o.position, o.original_position])
@@ -280,7 +320,12 @@ function reviewCommentOf(o: Json): ReviewComment {
 }
 
 /** Review `o` of `pull`, with its inline comments read when it is official, not dismissed, requests changes and has an id above `after`. */
-async function reviewOf(pull: number, after: number, o: Json): Promise<Review> {
+async function reviewOf(
+	api: Api,
+	pull: number,
+	after: number,
+	o: Json,
+): Promise<Review> {
 	const id = num(o, "id");
 	const state = text(o, "state");
 	const official = o.official === true;
@@ -307,7 +352,11 @@ const query = (params: Record<string, string | number | undefined>) =>
 		),
 	).toString();
 
-async function all(path: string, params: Record<string, string | undefined>) {
+async function all(
+	api: Api,
+	path: string,
+	params: Record<string, string | undefined>,
+) {
 	const items: Json[] = [];
 	for (let page = 1; ; page++) {
 		const got = objects(
@@ -319,12 +368,44 @@ async function all(path: string, params: Record<string, string | undefined>) {
 	}
 }
 
-/** The forge of the `origin` remote, through forge.py. */
-export function forge(): Forge {
+/**
+ * The forge of the `origin` remote, called directly with the token `env` holds as `MAESTRO_TM_TOKEN`; `send` is
+ * `fetch` unless a test replaces it.
+ */
+export function forge(
+	env: NodeJS.ProcessEnv = process.env,
+	send: Send = fetch,
+): Forge {
+	let credentialsOnce: Promise<Credentials> | undefined;
+	const creds = () => {
+		credentialsOnce ??= credentials(env);
+		return credentialsOnce;
+	};
+	const api: Api = async (method, path, body) =>
+		(await call(creds, send, method, path, body)).decoded;
+	let account: Promise<Account> | undefined;
+	const whoami = async (): Promise<Account> => {
+		const { decoded, host } = await call(
+			creds,
+			send,
+			"GET",
+			"/user",
+			undefined,
+			false,
+		);
+		const user = object(decoded, "user");
+		const login = text(user, "login");
+		if (!login) throw new Error("forge: GET /user gave no login");
+		return {
+			login,
+			name: text(user, "full_name") || login,
+			email: text(user, "email") || `${login}@noreply.${host}`,
+		};
+	};
 	let repo: Promise<Json> | undefined;
 	let labelIds: Promise<Map<string, number>> | undefined;
 	const idOf = async (name: string) => {
-		labelIds ??= all("/labels", {}).then(
+		labelIds ??= all(api, "/labels", {}).then(
 			(ls) => new Map(ls.map((l) => [text(l, "name"), num(l, "id")])),
 		);
 		const id = (await labelIds).get(name);
@@ -332,10 +413,18 @@ export function forge(): Forge {
 			throw new Error(`forge: no label ${name}\nCreate it on the forge`);
 		return id;
 	};
+	const cached = () => {
+		account ??= whoami();
+		return account;
+	};
 	return {
-		login,
+		account: cached,
+		login: async () => (await cached()).login,
 		milestone: async (title) => {
-			const found = await all("/milestones", { state: "all", name: title });
+			const found = await all(api, "/milestones", {
+				state: "all",
+				name: title,
+			});
 			const milestone = found.find((m) => text(m, "title") === title);
 			return milestone ? num(milestone, "id") : undefined;
 		},
@@ -343,7 +432,7 @@ export function forge(): Forge {
 			issueOf(object(await api("GET", `/issues/${number}`), "issue")),
 		open: async ({ milestone, label }) =>
 			(
-				await all("/issues", {
+				await all(api, "/issues", {
 					state: "open",
 					type: "issues",
 					milestones: milestone,
@@ -358,7 +447,8 @@ export function forge(): Forge {
 				),
 				"/issues",
 			).map(issueOf),
-		pulls: async () => (await all("/pulls", { state: "open" })).map(pullOf),
+		pulls: async () =>
+			(await all(api, "/pulls", { state: "open" })).map(pullOf),
 		pull: async (number) =>
 			pullOf(object(await api("GET", `/pulls/${number}`), "pull")),
 		setLabels: async (issue, labels) => {
@@ -415,7 +505,8 @@ export function forge(): Forge {
 				.filter((b) => text(b, "state") === "open")
 				.map((b) => num(b, "number"));
 		},
-		push: (dir, commit, branch) => push(dir, `${commit}:refs/heads/${branch}`),
+		push: (dir, commit, branch) =>
+			push(creds, dir, `${commit}:refs/heads/${branch}`),
 		openPull: async (pull) =>
 			num(object(await api("POST", "/pulls", pull), "pull"), "number"),
 		retarget: async (pull, base) => {
@@ -432,8 +523,8 @@ export function forge(): Forge {
 			}
 		},
 		reviews: async (pull, after) => {
-			const reviews = await all(`/pulls/${pull}/reviews`, {});
-			return Promise.all(reviews.map((r) => reviewOf(pull, after, r)));
+			const reviews = await all(api, `/pulls/${pull}/reviews`, {});
+			return Promise.all(reviews.map((r) => reviewOf(api, pull, after, r)));
 		},
 	};
 }

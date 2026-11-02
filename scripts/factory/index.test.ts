@@ -77,6 +77,7 @@ function fakeForge(issues: Stored[], cut?: string) {
 		return issue;
 	};
 	const forge: Forge = {
+		account: async () => ({ login: BOT, name: BOT, email: `${BOT}@x` }),
 		login: async () => BOT,
 		milestone: async (title) =>
 			title === MILESTONE ? MILESTONE_ID : undefined,

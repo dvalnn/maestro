@@ -1,5 +1,6 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
+import type { Account } from "./forge";
 
 /** How much of a failed command's output a landing error keeps. */
 const OUTPUT_TAIL = 2000;
@@ -40,8 +41,42 @@ async function run(cwd: string, command: string[]) {
 	return out;
 }
 
-/** Landing workspaces of the jj repository at `repo`. */
-export function landing(repo: string): Landing {
+/** The environment variable naming the SSH key that signs the commits the tick makes. */
+export const SIGNING_KEY = "MAESTRO_TM_SIGNING_KEY";
+
+/**
+ * The jj config that makes `account` author and committer of what jj writes, and signs it with the SSH key at
+ * `signingKey` when there is one. It rides each command's `--config`, so no jj config file changes.
+ */
+function identity(account: Account, signingKey?: string) {
+	const settings = [
+		`user.name=${JSON.stringify(account.name)}`,
+		`user.email=${JSON.stringify(account.email)}`,
+		...(signingKey
+			? [
+					'signing.behavior="own"',
+					'signing.backend="ssh"',
+					`signing.key=${JSON.stringify(signingKey)}`,
+				]
+			: []),
+	];
+	return settings.flatMap((setting) => ["--config", setting]);
+}
+
+/**
+ * Landing workspaces of the jj repository at `repo`, whose commits `account` authors and, given `signingKey`, signs.
+ * @throws Error naming `MAESTRO_TM_SIGNING_KEY` and the path when `signingKey` is a file that does not exist.
+ */
+export function landing(
+	repo: string,
+	account: Account,
+	signingKey?: string,
+): Landing {
+	if (signingKey && !existsSync(signingKey))
+		throw new Error(
+			`${SIGNING_KEY} names no file: ${signingKey}\nPoint it at the SSH key, or unset it to leave commits unsigned`,
+		);
+	const as = identity(account, signingKey);
 	const forget = (name: string) =>
 		run(repo, ["jj", "workspace", "forget", name]);
 	return {
@@ -63,7 +98,8 @@ export function landing(repo: string): Landing {
 			]);
 		},
 		describe: async (dir, message) => {
-			await run(dir, ["jj", "describe", "-m", message]);
+			await run(dir, ["jj", ...as, "describe", "-m", message]);
+			await run(dir, ["jj", ...as, "metaedit", "--update-author", "-r", "@"]);
 			return (
 				await run(dir, [
 					"jj",
@@ -77,8 +113,17 @@ export function landing(repo: string): Landing {
 			).trim();
 		},
 		restack: async (dir, revision, onto) => {
-			await run(dir, ["jj", "new", onto]);
-			await run(dir, ["jj", "duplicate", revision, "--insert-before", "@"]);
+			await run(dir, ["jj", ...as, "new", onto]);
+			await run(dir, [
+				"jj",
+				...as,
+				"duplicate",
+				revision,
+				"--insert-before",
+				"@",
+			]);
+			// A duplicate keeps its author and is not signed; metaedit rewrites it as the account's, signed.
+			await run(dir, ["jj", ...as, "metaedit", "--update-author", "-r", "@-"]);
 			const [copy = "", conflict] = (
 				await run(dir, [
 					"jj",

@@ -128,7 +128,7 @@ flowchart TD
 Each state is a `state/` label. A move replaces the label, since the scope is exclusive. The actors:
 
 - **owner**: the human, or forge-bot acting for them.
-- **tick**: the script, through forge-bot.
+- **tick**: the script, as its own account `maestro-tm`, apart from forge-bot, the sessions' account.
 - **triage**, **slice**, **harvest**: the concerts the tick performs. The tick routes their outcome.
 
 An edge in the diagrams names who causes the move; the tick sets the label unless the owner does it by hand.
@@ -234,8 +234,8 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   the tick owns the next transition, else `Your move: <how>`, each owner move out of the state the data leaves open.
   Agent text in it is made inert, so it can open or close no HTML comment. The tick trusts the first comment opening
   with the marker, whoever wrote it, so only maintainers write that marker.
-- **Login.** Each pass reads the login of the account it acts as (forge-bot today) once, from `GET /user` with its
-  token. No setting names it.
+- **Login.** Each pass reads the login of the account it acts as (`maestro-tm`) once, from `GET /user` with its token.
+  No setting names it.
 - **Question comments.** Each routed triage with questions posts a new comment, `<!-- maestro-tm-question -->` on its
   first line, headed `### Maestro asks · N questions`, then each question after a rule: `**Qn · <ask>**`, its lead, its
   options as bullets, its recommendation as a `> [!TIP]` callout, and its context folded under
@@ -326,9 +326,9 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   issue gets `Relates to #N` in the spec comment and the PR body.
 - **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
   `factory: <issue title>`, the title cut with an ellipsis past 60 characters.
-- **PRs.** One change per ticket, pushed by forge-bot over HTTPS as `maestro-tm/i<n>`, replacing what the branch held,
-  with the subject from the spec and `Closes #N`. The PR, to `main` or to the dependency's branch while stacked, is
-  titled with the subject, and its body holds `Closes #N`, the concert, its tokens, `Relates to` links, the spec's
+- **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
+  held, with the subject from the spec and `Closes #N`. The PR, to `main` or to the dependency's branch while stacked,
+  is titled with the subject, and its body holds `Closes #N`, the concert, its tokens, `Relates to` links, the spec's
   acceptance and the review's upheld findings. A restack force-pushes the branch and retargets the PR, or opens it again
   with the same body when the forge closed it.
 

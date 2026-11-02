@@ -1,8 +1,14 @@
 import { expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { forge } from "./forge";
+import { forge, loadEnvFile, type Send } from "./forge";
 
 const TOKEN = "s3cret-token";
 const dir = mkdtempSync(join(tmpdir(), "factory-forge-"));
@@ -12,17 +18,39 @@ const shim = (name: string, body: string) => {
 	writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`);
 	chmodSync(join(dir, name), 0o755);
 };
-shim("python3", `echo "forge.example owner repo ${TOKEN}"`);
-shim("git", `printf '%s\\n' "$@" > ${argv}\nenv > ${environment}`);
+const remote = join(dir, "remote");
+const setRemote = (url: string) => writeFileSync(remote, `${url}\n`);
+setRemote("git@forge.example:owner/repo.git");
+shim(
+	"git",
+	`if [ "$1" = remote ]; then cat ${remote}; exit 0; fi\nprintf '%s\\n' "$@" > ${argv}\nenv > ${environment}`,
+);
 
-test("a push gives git the token through its environment config only", async () => {
+const withShims = async <T>(run: () => Promise<T>) => {
 	const path = process.env.PATH;
 	process.env.PATH = `${dir}:${path}`;
 	try {
-		await forge().push(dir, "abc123", "maestro-tm/i7");
+		return await run();
 	} finally {
 		process.env.PATH = path;
 	}
+};
+
+type Call = { url: string; init: RequestInit };
+/** A `send` that records its calls and answers each with the `answer` of its path. */
+const recording = (answer: (url: string) => [number, unknown]) => {
+	const calls: Call[] = [];
+	const send: Send = async (url, init) => {
+		calls.push({ url, init });
+		const [status, body] = answer(url);
+		return new Response(JSON.stringify(body), { status });
+	};
+	return { calls, send };
+};
+const signedIn = { MAESTRO_TM_TOKEN: TOKEN };
+
+test("a push gives git the token through its environment config only", async () => {
+	await withShims(() => forge(signedIn).push(dir, "abc123", "maestro-tm/i7"));
 	const basic = Buffer.from(`${TOKEN}:`).toString("base64");
 	const args = readFileSync(argv, "utf8");
 	expect(args).toBe(
@@ -34,32 +62,100 @@ test("a push gives git the token through its environment config only", async () 
 	expect(holders).toEqual([`GIT_CONFIG_VALUE_0=Authorization: Basic ${basic}`]);
 });
 
+test("an API call carries the token in its header and reaches the origin's host and repo", async () => {
+	const { calls, send } = recording(() => [200, { id: 5 }]);
+	const id = await withShims(() => forge(signedIn, send).comment(9, "hi"));
+	expect(id).toBe(5);
+	expect(calls).toHaveLength(1);
+	expect(calls[0]?.url).toBe(
+		"https://forge.example/api/v1/repos/owner/repo/issues/9/comments",
+	);
+	expect(calls[0]?.init.method).toBe("POST");
+	expect(calls[0]?.init.headers).toMatchObject({
+		Authorization: `token ${TOKEN}`,
+	});
+});
+
+test("the account comes from one GET /user, with a fallback name and email", async () => {
+	const { calls, send } = recording(() => [200, { login: "maestro-tm" }]);
+	const api = forge(signedIn, send);
+	const account = await withShims(async () => {
+		await api.login();
+		return api.account();
+	});
+	expect(account).toEqual({
+		login: "maestro-tm",
+		name: "maestro-tm",
+		email: "maestro-tm@noreply.forge.example",
+	});
+	expect(calls.map((c) => c.url)).toEqual([
+		"https://forge.example/api/v1/user",
+	]);
+});
+
+test.each([
+	"git@forge.example:owner/repo.git",
+	"ssh://git@forge.example:2222/owner/repo.git",
+	"https://forge.example/owner/repo.git",
+	"https://forge.example/owner/repo",
+])("the origin %s gives the forge's host, owner and repo", async (url) => {
+	setRemote(url);
+	const { calls, send } = recording(() => [200, { id: 5 }]);
+	try {
+		await withShims(() => forge(signedIn, send).comment(9, "hi"));
+	} finally {
+		setRemote("git@forge.example:owner/repo.git");
+	}
+	expect(calls[0]?.url).toBe(
+		"https://forge.example/api/v1/repos/owner/repo/issues/9/comments",
+	);
+});
+
+test("the .env under XDG_CONFIG_HOME is loaded, and a variable already set wins", () => {
+	const config = mkdtempSync(join(tmpdir(), "factory-config-"));
+	mkdirSync(join(config, "maestro"));
+	writeFileSync(
+		join(config, "maestro", ".env"),
+		"FACTORY_TEST_LOADED=from-file\nFACTORY_TEST_SET=from-file\n",
+	);
+	process.env.FACTORY_TEST_SET = "from-env";
+	try {
+		loadEnvFile({ XDG_CONFIG_HOME: config });
+		expect(process.env.FACTORY_TEST_LOADED).toBe("from-file");
+		expect(process.env.FACTORY_TEST_SET).toBe("from-env");
+	} finally {
+		delete process.env.FACTORY_TEST_LOADED;
+		delete process.env.FACTORY_TEST_SET;
+	}
+});
+
+test("a missing .env is no error", () => {
+	expect(() =>
+		loadEnvFile({ XDG_CONFIG_HOME: join(tmpdir(), "factory-no-config") }),
+	).not.toThrow();
+});
+
+test("a token that is unset is refused by name", async () => {
+	const { send } = recording(() => [200, {}]);
+	await expect(
+		withShims(() => forge({ HOME: "/home/x" }, send).login()),
+	).rejects.toThrow(/MAESTRO_TM_TOKEN.*\/home\/x\/\.config\/maestro\/\.env/s);
+});
+
 test.each([
 	["already armed", "Pull request is already scheduled to auto merge", true],
 	["refused otherwise", "merge failed because of conflict", false],
 ])(
 	"arming a PR the forge answers 409 as %s throws only when not armed",
 	async (_, refusal, passes) => {
-		const refusing = mkdtempSync(join(tmpdir(), "factory-forge-"));
-		writeFileSync(
-			join(refusing, "python3"),
-			`#!/bin/sh\necho '409 from POST /pulls/30/merge: {"message":"${refusal}"}' >&2\nexit 1\n`,
-		);
-		chmodSync(join(refusing, "python3"), 0o755);
-		const path = process.env.PATH;
-		process.env.PATH = `${refusing}:${path}`;
-		try {
-			const armed = forge().arm(30);
-			if (passes) await armed;
-			else await expect(armed).rejects.toThrow(refusal);
-		} finally {
-			process.env.PATH = path;
-		}
+		const { send } = recording(() => [409, { message: refusal }]);
+		const armed = withShims(() => forge(signedIn, send).arm(30));
+		if (passes) await armed;
+		else await expect(armed).rejects.toThrow(refusal);
 	},
 );
 
 test("reviews read the inline comments of an official review requesting changes above the bound, on the old line when it has no new one, and name a deleted account Ghost", async () => {
-	const answering = mkdtempSync(join(tmpdir(), "factory-forge-"));
 	const reviews = JSON.stringify([
 		{
 			id: 4,
@@ -100,15 +196,16 @@ test("reviews read the inline comments of an official review requesting changes 
 		{ id: 1, body: "Gone.", user: null },
 		{ id: 2, body: "Here.", user: { login: "ann" } },
 	]);
-	writeFileSync(
-		join(answering, "python3"),
-		`#!/bin/sh\ncase "$4" in\n*/reviews/5/comments) echo '${comments}' ;;\n*/issues/9/comments) echo '${thread}' ;;\n*/reviews\\?*) echo '${reviews}' ;;\n*) exit 1 ;;\nesac\n`,
-	);
-	chmodSync(join(answering, "python3"), 0o755);
+	const { send } = recording((url) => {
+		if (url.includes("/reviews/5/comments")) return [200, JSON.parse(comments)];
+		if (url.includes("/issues/9/comments")) return [200, JSON.parse(thread)];
+		if (url.includes("/reviews?")) return [200, JSON.parse(reviews)];
+		return [404, {}];
+	});
 	const path = process.env.PATH;
-	process.env.PATH = `${answering}:${path}`;
+	process.env.PATH = `${dir}:${path}`;
 	try {
-		const api = forge();
+		const api = forge(signedIn, send);
 		expect(await api.comments(9)).toEqual([
 			{ id: 1, body: "Gone.", author: "Ghost" },
 			{ id: 2, body: "Here.", author: "ann" },
