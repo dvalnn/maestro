@@ -1,6 +1,6 @@
 // One pass of the tour manager (docs/agents/factory.md, zoom 1): it routes settles, builds a ready ticket or triages one.
 import { dlopen, FFIType, read } from "bun:ffi";
-import { mkdirSync, openSync } from "node:fs";
+import { existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -89,7 +89,7 @@ const CLOSED = 20;
 
 export type Options = {
 	milestone: string;
-	/** The preset of each triage; a slice takes its tier's. */
+	/** The preset layered last on each triage and build. */
 	preset?: string;
 	/** Only route settled concerts and sync; start no build or triage. */
 	routeOnly?: boolean;
@@ -105,6 +105,8 @@ export type Deps = {
 	/** Takes the pass's lock, false when another pass holds it. */
 	lock: () => boolean;
 	say: (line: string) => void;
+	/** Whether the repo has a file at `path`, relative to its root. */
+	has: (path: string) => boolean;
 };
 
 type Entry = { issue: Issue; comments: Comment[]; data: Data };
@@ -837,6 +839,13 @@ async function startSlice(
 	const result = data.result;
 	if (!result) return;
 	const tier = tierOf(issue, result.risk);
+	const name = issue.labels
+		.find((l) => l.startsWith("area/"))
+		?.slice("area/".length);
+	const area =
+		name && pass.has(`.maestro/presets/area-${name}.yaml`)
+			? ["--preset", `area-${name}`]
+			: [];
 	let id: string;
 	try {
 		id = await pass.maestro.start(
@@ -849,6 +858,8 @@ async function startSlice(
 				tier,
 				"--preset",
 				tier,
+				...area,
+				...(pass.preset ? ["--preset", pass.preset] : []),
 				"--tour",
 				tourOf(pass.milestone, issue.number),
 				"--title",
@@ -1173,6 +1184,7 @@ if (import.meta.main) {
 				landing: landing(REPO, account, process.env[SIGNING_KEY] || undefined),
 				lock: () => lock(join(options.dir, "lock")),
 				say: console.log,
+				has: (path) => existsSync(join(REPO, path)),
 			},
 			options,
 		);

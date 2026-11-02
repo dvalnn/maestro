@@ -304,6 +304,7 @@ function setup(
 	const forge = fakeForge(issues, cut);
 	const maestro = fakeMaestro(concerts, results, reports);
 	const said: string[] = [];
+	const files: string[] = [];
 	const options: Options = {
 		milestone: MILESTONE,
 		preset: "stub",
@@ -318,10 +319,19 @@ function setup(
 				landing: landing.landing,
 				lock: () => locked,
 				say: (l) => said.push(l),
+				has: (path) => files.includes(path),
 			},
 			options,
 		);
-	return { ...forge, ...maestro, steps: landing.steps, said, options, run };
+	return {
+		...forge,
+		...maestro,
+		steps: landing.steps,
+		said,
+		files,
+		options,
+		run,
+	};
 }
 
 const settled = (triage: unknown, status = "ok"): Record<string, Result> => ({
@@ -760,6 +770,8 @@ const LOW_FLAGS = [
 	"small",
 	"--preset",
 	"small",
+	"--preset",
+	"stub",
 	"--tour",
 	"v0.1.0.i7",
 	"--title",
@@ -775,6 +787,31 @@ describe("a build", () => {
 		t.pins.push(8);
 		await t.run();
 		expect(t.starts[0]).toContain("v0.1.0.i8");
+	});
+
+	test("adds the area preset between the tier's and the tick's when its file exists", async () => {
+		const t = setup([specced(7, "ready-for-agent")]);
+		t.find(7).labels.push("area/cli");
+		t.files.push(".maestro/presets/area-cli.yaml");
+		await t.run();
+		expect(t.starts[0]?.slice(4, 10)).toEqual([
+			"--tier",
+			"small",
+			"--preset",
+			"small",
+			"--preset",
+			"area-cli",
+		]);
+		expect(t.starts[0]?.slice(10, 12)).toEqual(["--preset", "stub"]);
+	});
+
+	test("takes the tier alone when the area has no preset file", async () => {
+		const t = setup([specced(7, "ready-for-agent")]);
+		t.find(7).labels.push("area/cli");
+		t.options.preset = undefined;
+		await t.run();
+		expect(t.starts[0]).not.toContain("area-cli");
+		expect(t.starts[0]?.filter((a) => a === "--preset")).toHaveLength(1);
 	});
 
 	test("route-only routes a settle and starts no build or triage", async () => {
@@ -819,6 +856,8 @@ describe("a build", () => {
 				"ordinary",
 				"--preset",
 				"ordinary",
+				"--preset",
+				"stub",
 				"--tour",
 				"v0.1.0.i8",
 				"--title",

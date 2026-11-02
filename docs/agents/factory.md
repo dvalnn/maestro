@@ -277,7 +277,7 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   - A triage's verdict is dropped, since a triage is cheap and its verdict stale, and the question offers only
     `needs-triage`.
 - **Encore.** A ticket continues its last slice concert, so the builder keeps what it learned and is told only what
-  changed. Its build is `perform --encore <id>` with the tier, preset, tour, title and base a fresh build takes, and a
+  changed. Its build is `perform --encore <id>` with the presets, tour, title and base a fresh build takes, and a
   `--request` of the spec and the ask followed by what changed, each part under its heading:
   - a `ready-for-agent` ticket whose `encore` is set: each comment mentioning `@<login>` above `read` but a question
     comment, headed `## Reply by <author>` as triage feeds it; `read` moves to the newest comment it considered;
@@ -301,8 +301,9 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   dependency closed without merging, moves the ticket to `needs-info` with a question comment offering `ready-for-agent`
   (build again on `main`) or `needs-triage`.
 - **Build.** A ready ticket is built when its triage left a spec and it is no split's epic: `.maestro/slice.ts` with the
-  spec and the ask as `--request`, and its risk's tier as `--tier` and `--preset`. The ticket moves to `in-progress` as
-  the perform starts.
+  spec and the ask as `--request`, and its risk's tier as `--tier` and `--preset`. Presets layer in order: the tier's,
+  then `area-<area>` when the ticket has an `area/<area>` label and `.maestro/presets/area-<area>.yaml` exists, then the
+  tick's own `--preset`. The ticket moves to `in-progress` as the perform starts.
 - **Landing.** An ok slice lands in a fresh jj workspace `factory-i<n>` on `main` as fetched from `origin`, or on the
   commit it stacked on, at `$XDG_CACHE_HOME/maestro-factory/i<n>`: `maestro cs apply`, then `jj describe` with the
   spec's subject and `Closes #N`. It runs no check of its own: the slice's gate passed in its lane, and CI checks the PR
