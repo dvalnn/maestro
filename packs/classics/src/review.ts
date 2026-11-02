@@ -43,11 +43,21 @@ const LENSES = {
 const LENS_NAMES = ["correctness", "spec", "tests"] as const;
 type LensName = (typeof LENS_NAMES)[number];
 
-const SKEPTIC_TASK =
-	"A lens ruled on this change. Challenge each of its findings against the code, and rule whether it holds.";
+/** The task of a skeptic over a lens's findings, ruling by `grounds` when given. */
+export function skepticTask(grounds?: string): string {
+	if (grounds === undefined)
+		return "A lens ruled on this change. Challenge each of its findings against the code, and rule whether it holds.";
+	return `A lens ruled on this change under these grounds: ${grounds} Challenge each of its findings against the code and those grounds, and rule whether it holds. A finding holds when the code shows it and it breaks a rule, requirement or ADR the grounds name; one that cites none does not hold.`;
+}
 
 const CONSOLIDATE_TASK =
 	"Independent lenses ruled on this change, and skeptics kept the findings the code shows. Rule on the change against the spec. Write the ruling for a reader in review.md and as data in verdict.json.";
+
+/** The task of the consolidator, ruling by `grounds` when given. */
+const consolidateTask = (grounds?: string) =>
+	grounds === undefined
+		? CONSOLIDATE_TASK
+		: `${CONSOLIDATE_TASK} Rule by these grounds: ${grounds} A blocking finding a skeptic upheld under them blocks approval, whether or not the spec's steps name it.`;
 
 /** An item a panel puts a lens on: a lens name, or a risk. */
 type Item = string | ValueOf<typeof Risk>;
@@ -61,6 +71,8 @@ type Panel<T extends Item> = {
 	spec: Ref<ArtifactRef>;
 	/** The criteria the consolidator rules on, in place of its own. */
 	design?: Ref<ArtifactRef>;
+	/** The rules a finding must cite, which the skeptics and the consolidator rule by. */
+	grounds?: string;
 };
 
 /** Items a node delivers, keyed by `key`, an exported function, and at most `max` of them. */
@@ -104,7 +116,7 @@ export function panel(
 	});
 	return consolidator({
 		label: "consolidator",
-		task: CONSOLIDATE_TASK,
+		task: consolidateTask(p.grounds),
 		lane: read(p.change),
 		attachments: {
 			survivors: {
@@ -126,7 +138,7 @@ export function panel(
 
 /** A lens over one item on `task`, and a skeptic over its findings unless it is clean. */
 function round(
-	{ change }: Panel<Item>,
+	{ change, grounds }: Panel<Item>,
 	task: string | Ref<string>,
 	attached: { patches: Attachment; spec: Attachment },
 ) {
@@ -138,7 +150,7 @@ function round(
 	});
 	const challenged = skeptic({
 		label: "skeptic",
-		task: SKEPTIC_TASK,
+		task: skepticTask(grounds),
 		lane: read(change),
 		when: not(
 			readJson(found.out.findings, { tolerate: "rejected" }).get("clean"),

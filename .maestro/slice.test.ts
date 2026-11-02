@@ -225,6 +225,21 @@ test.each([
 	},
 );
 
+test.each(["small", "ordinary", "risky"])(
+	"under --tier %s, every skeptic and the consolidator rule by the slice's grounds",
+	async (tier) => {
+		const { plan } = JSON.parse(await maestro(await slice("compose", tier)));
+		const judges = (plan.ir.nodes as { id: string }[]).filter((n) =>
+			/(^|\/)(skeptic|consolidator)$/.test(n.id),
+		);
+		expect(judges.length).toBeGreaterThan(0);
+		for (const n of judges)
+			expect(JSON.stringify(n)).toContain(
+				"meets with no test that fails without it, cannot be approved",
+			);
+	},
+);
+
 /** Per tier, the stub outputs of a review whose lenses reject with F1, which their skeptics clear. */
 const rejecting: [string, string, string[], Record<string, unknown>][] = [
 	[

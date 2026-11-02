@@ -6,7 +6,7 @@ export {
 	traceOf,
 } from "./code";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";
-export { panel, panelReview } from "./review";
+export { panel, panelReview, skepticTask } from "./review";
 export {
 	builder,
 	consolidator,
