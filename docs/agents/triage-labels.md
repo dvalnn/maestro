@@ -12,7 +12,6 @@ keeps it to one.
 | `needs-info`      | `state/needs-info`      | Waiting on reporter for more information           |
 | `ready-for-agent` | `state/ready-for-agent` | Fully specified, ready for an AFK agent            |
 | `ready-for-human` | `state/ready-for-human` | Requires human implementation                      |
-| `needs-spec`      | `state/needs-spec`      | Wanted, but needs design before work               |
 | `wontfix`         | `state/wontfix`         | Will not be actioned; close it too                 |
 | `needs-approval`  | `state/needs-approval`  | Spec or split waits for the owner's go             |
 | `in-progress`     | `state/in-progress`     | Being built: a slice concert or an epic's children |

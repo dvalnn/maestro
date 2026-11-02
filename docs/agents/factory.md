@@ -136,7 +136,6 @@ An edge in the diagrams names who causes the move; the tick sets the label unles
 | State             | Meaning                                             | Moved in by                          | Next                                                                     |
 | ----------------- | --------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
 | `needs-triage`    | Filed, not yet evaluated                            | owner, tick[^new], owner[^answer]    | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate`           |
-| `needs-spec`      | Wanted, needs design before work                    | owner                                | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate`           |
 | `needs-approval`  | Spec or split waits for the owner's go              | triage, harvest                      | `ready-for-agent`, `needs-triage`[^answer], `ready-for-human`, `wontfix` |
 | `ready-for-agent` | Specified and queued for a slice concert            | triage, owner[^approve], slice[^red] | `in-progress`[^epic]                                                     |
 | `in-progress`     | Being built: a slice concert, or an epic's children | tick, owner[^changes]                | `in-review`, `ready-for-agent`, `needs-info`, closed[^epic]              |
@@ -206,7 +205,7 @@ flowchart LR
     class NA,NI owner
 ```
 
-1. `needs-triage` or `needs-spec`.
+1. `needs-triage`.
 2. The owner may move any open issue here; the diagram draws it from `needs-approval` only.
 3. A parked slice's result, applied.
 

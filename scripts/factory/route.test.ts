@@ -182,7 +182,6 @@ const tours = (move: string) => `**Tour manager's turn · ${move}**\n`;
 
 test.each([
 	["needs-triage", {}, tours("triage queued")],
-	["needs-spec", {}, tours("triage queued")],
 	[
 		"needs-approval",
 		{ result: ready },

@@ -23,7 +23,7 @@ const ANY: Node[] = [...STATES, "new", "closed"];
 /** A thick edge is the owner's move. */
 const OWNER_EDGE = "==>";
 
-/** The label's states: `intake` is either intake state, a blank label an issue not yet filed. */
+/** The label's states: `intake` is the intake state, a blank label an issue not yet filed. */
 function statesOf(label: string): Node[] {
 	const name = label.replace(FOOTNOTE, "").trim();
 	if (name === "") return ["new"];

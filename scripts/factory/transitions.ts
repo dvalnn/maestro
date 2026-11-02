@@ -2,7 +2,6 @@
 
 export const STATES = [
 	"needs-triage",
-	"needs-spec",
 	"needs-approval",
 	"ready-for-agent",
 	"in-progress",
@@ -34,7 +33,7 @@ export type Transition = {
 	turn?: { label: string; text: string };
 };
 
-export const INTAKE: readonly State[] = ["needs-triage", "needs-spec"];
+export const INTAKE: readonly State[] = ["needs-triage"];
 
 const fromIntake = (to: State, event: string): Transition[] =>
 	INTAKE.map((from) => ({ from, to, actor: "triage", event }));
@@ -43,12 +42,6 @@ export const TRANSITIONS: readonly Transition[] = [
 	{
 		from: "new",
 		to: "needs-triage",
-		actor: "owner",
-		event: "filed",
-	},
-	{
-		from: "new",
-		to: "needs-spec",
 		actor: "owner",
 		event: "filed",
 	},

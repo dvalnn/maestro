@@ -18,7 +18,7 @@ Issues live on the forge, [`tiago/maestro`](https://git.amorimcasa.org/tiago/mae
   are comments of their own that stay; the owner answers in a reply mentioning `@forge-bot`, the login it acts as; any
   other comment is not read. See `factory.md`.
 - **Milestone.** The release that ships it, named by its version (`v0.1.0`). Only the next release or two have one; an
-  issue with none is icebox, an indefinite deferral. Planned but not ready is a milestone beside `state/needs-spec`.
+  issue with none is icebox, an indefinite deferral. Planned but not ready is a milestone beside `state/needs-triage`.
   Pre-releases (`-rc.<n>`) have no milestone: they are cuts toward the one that does.
 - **Closing.** A commit on `main` whose description says `Closes #N` closes it when the owner pushes, or when a tour
   manager PR carrying it merges (auto-merge included). A duplicate is closed at once with `state/duplicate` and a

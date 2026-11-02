@@ -530,7 +530,7 @@ describe("a pass", () => {
 		};
 		const t = setup([
 			outside,
-			issue(9, "needs-spec"),
+			issue(9, "needs-triage"),
 			issue(8, "needs-triage", { concert: "c0", triage: "c0" }),
 			issue(6, "in-progress"),
 		]);
@@ -553,7 +553,7 @@ describe("a pass", () => {
 			],
 		]);
 		const snapshot = readFileSync(backlog, "utf8");
-		expect(snapshot).toContain("### #9 Greet by name\n\nState: `needs-spec`");
+		expect(snapshot).toContain("### #9 Greet by name\n\nState: `needs-triage`");
 		expect(snapshot).toContain(
 			"### #6 Greet by name\n\nState: `in-progress`\nPR #20: +3 -1 in 2 files",
 		);
@@ -1206,7 +1206,11 @@ describe("a build", () => {
 			const t = setup(
 				[
 					answeredOnce(
-						specced(7, "needs-spec", { slice: "s1", version: 3, encore: "s0" }),
+						specced(7, "needs-triage", {
+							slice: "s1",
+							version: 3,
+							encore: "s0",
+						}),
 					),
 				],
 				[sliceConcert("s1", 7)],
@@ -1241,7 +1245,7 @@ describe("a build", () => {
 	);
 
 	test("leaves a settle alone once the owner closed its issue", async () => {
-		const closed = specced(7, "needs-spec", { slice: "s1" });
+		const closed = specced(7, "needs-triage", { slice: "s1" });
 		closed.open = false;
 		const t = setup([closed], [sliceConcert("s1", 7)], {
 			s1: { status: "ok", outputs: {} },
