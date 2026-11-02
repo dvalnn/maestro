@@ -69,6 +69,10 @@ export const COMPOSE_FLAGS = {
 	},
 	plan: { type: "boolean", desc: "Print the plan in full" },
 	graph: { type: "boolean", desc: "Print the graph as a Mermaid flowchart" },
+	flow: {
+		type: "boolean",
+		desc: "With --graph, draw the authored flow in place of every data path (experimental)",
+	},
 } as const satisfies Options;
 
 /** The flags `perform` takes beyond the common ones. */

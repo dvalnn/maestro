@@ -11,6 +11,8 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
   its steps: `0 to N` when it tests the state first, `1 to N` when it tests each step's result. `start` points at each
   top-level node that waits on nothing outside it (a group waits on what feeds its body), and the result node points at
   `stop`, drawn `end`.
+- `flow(plan)`: a Mermaid flowchart of the authored flow, the steps in the order they were written rather than every
+  data path, as "Flow drawing rules" below draws it (experimental).
 
 `@maestro/render-text/live` draws a concert as it goes, from the IR and the record's events:
 
@@ -113,3 +115,26 @@ same without it. A control character in shown text appears as its escape.
 Every edge counts toward the bars, guards and ordering edges included, except a group's reads of its own body and the
 dashed `next`, `test` and member edges, which are drawn direct. Each bar is declared inside its node's subgraph. Bars
 need Mermaid 11.3 or later. A key list is cut at 40 characters. The plans the tests draw are ir's `fixtures/plans`.
+
+## Flow drawing rules
+
+`flow(plan)` draws less than `render`, so a composition reads at a glance:
+
+- Each `maestro:stdlib` code node is contracted away, its in-edges joined to its out-edges, each joined edge drawn as
+  its out-edge is.
+- An edge into or out of a scope's or group's body is drawn between the entries at the level where its ends are
+  siblings; an edge between a group and its own body is dropped.
+- At each level a plain edge, `data` or ordering, goes when a longer path implies it or a guard or `collect` edge joins
+  the same pair. Guards and `collect` edges always stay. No edge names its ports.
+- A guard is dashed (`-.->`) and labelled with the condition the contracted helpers compute: a `get` reads a path
+  (`ruling.verdict`), a `not` prefixes `not`, a `lookup` says `is` and the keys that map to `true`, and a guard with no
+  helper behind it says its port (`ok`). A `collect` edge is thick (`==>`), any other `-->`.
+- `start` points at each top-level entry no edge enters, and the result's top-level entry points at `end`.
+- A fork or join bar stands where two or more non-guard edges leave or enter an entry. Guards are alternatives and go
+  direct.
+- A scope or group is a subgraph titled by its name, a group adding its kind and size: `scouts · parMap ×3`, `≤N` when
+  its count is a bound, `×N..M` across its paths, and `fixes · loop ≤2 rounds`, the name left out when it is the kind. A
+  loop or fold has one dashed back edge from its body's last sink to its first root, a loop's labelled
+  `next while <test>`, a fold's `next`.
+- A node shows its name over the last segment of its kind (`draft` over `agent` for a node `draft` of kind `h.agent`);
+  an assert is a decision (`{ }`).

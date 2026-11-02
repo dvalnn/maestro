@@ -102,6 +102,10 @@ describe("compose and config", () => {
 		expect((await w.call(["compose", ...GREET, "--graph"])).out).toContain(
 			"flowchart",
 		);
+		const drawn = await w.call(["compose", ...GREET, "--graph", "--flow"]);
+		expect(drawn.code).toBe(0);
+		expect(drawn.out).toContain("flowchart TD\n  start((start))\n");
+		expect(drawn.out).toContain("<br/><small>");
 		expect(json(await w.call(["compose", ...GREET, "--json"]))).toMatchObject({
 			ok: true,
 			plan: { bounds: { instances: { exact: 4 } } },
@@ -466,6 +470,11 @@ describe("usage errors", () => {
 			/^Unknown option '--zzzzzz'\nFlags are perform's/,
 		],
 		[
+			"--flow without --graph",
+			["compose", ...GREET, "--flow"],
+			/^--flow draws the graph, and --graph is not set\nPass both: maestro compose <composition> --graph --flow$/,
+		],
+		[
 			"a tour that is not a slug",
 			["perform", ...GREET, "--tour", "Bad Slug"],
 			/^--tour takes a slug of at most 64 characters, not 'Bad Slug'/,
@@ -767,7 +776,7 @@ describe("usage errors", () => {
 		expect(await w.call(["compose", "demo.nope", "--help"])).toMatchObject({
 			code: 0,
 			out: expect.stringMatching(
-				/^Usage: maestro compose[\s\S]*--graph +\S[^\n]*$/,
+				/^Usage: maestro compose[\s\S]*--graph +\S[^\n]*\n +--flow +\S[^\n]*\(experimental\)$/,
 			),
 			err: "params not shown: pack 'demo' has no composition 'nope'",
 		});

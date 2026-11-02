@@ -11,6 +11,9 @@ import {
 	isGroup,
 	type Plan,
 } from "@maestro/ir";
+import { label, START, STOP } from "./mermaid";
+
+export { flow } from "./flow";
 
 /** Longest value or key list a text form shows before it cuts with an ellipsis. */
 const MAX_SHOWN = 40;
@@ -96,22 +99,6 @@ export function listing(plan: Plan): string {
 		);
 	return lines.join("\n");
 }
-
-/** Mermaid ids of the start and end markers. `end` is a Mermaid keyword, so it cannot name a node. */
-const START = "start";
-const STOP = "stop";
-
-/** A Mermaid label: quoted, with the characters Mermaid reads as markup or entities escaped. */
-const label = (...lines: string[]) =>
-	`"${lines
-		.map((l) =>
-			l
-				.replaceAll("#", "#35;")
-				.replaceAll('"', "#quot;")
-				.replaceAll("<", "#lt;")
-				.replaceAll(">", "#gt;"),
-		)
-		.join("<br/>")}"`;
 
 /** A group header's label: its kind, then its expansion alone for one path or `<path>: <expansion>` per path. */
 function groupLabel(plan: Plan, g: GroupNode): string {

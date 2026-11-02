@@ -6,7 +6,7 @@ import {
 	HOST_NAME,
 } from "@maestro/host-repo";
 import { canonicalJson, isPlainObject, type Plan } from "@maestro/ir";
-import { listing, render, summary } from "@maestro/render-text";
+import { flow, listing, render, summary } from "@maestro/render-text";
 import {
 	COMMON,
 	type Command,
@@ -16,7 +16,7 @@ import {
 	peek,
 	textOf,
 } from "./command";
-import { EXIT, jsonOf, renderDiagnostic, table } from "./output";
+import { EXIT, jsonOf, renderDiagnostic, table, usageError } from "./output";
 import {
 	bundleName,
 	COMPOSE_FLAGS,
@@ -80,7 +80,10 @@ async function planText(
 		: listing(plan);
 }
 
-/** Prints the warnings on stderr, then the summary, or the plan in full with `--plan`, and the graph with `--graph`. */
+/**
+ * Prints the warnings on stderr, then the summary, or the plan in full with `--plan`, and the graph with `--graph`,
+ * its authored flow with `--flow`.
+ */
 async function print(
 	session: Session,
 	prepared: Prepared,
@@ -96,7 +99,7 @@ async function print(
 		deps.stdout(
 			full ? await planText(session, prepared.config, plan) : summary(plan),
 		);
-	if (graph) deps.stdout(render(plan));
+	if (graph) deps.stdout(isSet(values, "flow") ? flow(plan) : render(plan));
 }
 
 export const compose: Command = {
@@ -104,6 +107,12 @@ export const compose: Command = {
 	options: COMPOSE_OPTIONS,
 	help: compositionHelp,
 	async execute(args, deps) {
+		const early = peek(COMPOSE_OPTIONS, args);
+		if (isSet(early, "flow") && !isSet(early, "graph"))
+			throw usageError(
+				"--flow draws the graph, and --graph is not set",
+				"Pass both: maestro compose <composition> --graph --flow",
+			);
 		const { json, session, prepared, plan } = await composed(
 			{ verb: "compose", options: COMPOSE_OPTIONS, examples: true },
 			args,

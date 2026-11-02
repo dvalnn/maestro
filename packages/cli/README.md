@@ -10,30 +10,34 @@ maestro wait <concert> --timeout 15m
 
 ## Commands
 
-| Command                      | Alias | Does                                                                                                                                      |
-| ---------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `compose <composition>`      | `c`   | Builds and pre-flights a composition. `--plan` (with each agent's profile, harness, model, thinking[^plan]), `--graph`, `--out`.          |
-| `perform <composition>`      | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                                          |
-| `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                                                    |
-| `perform --encore <concert>` | `p`   | Performs a concert's composition again as a new concert, its agents continuing their sessions.[^encore]                                   |
-| `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`.                         |
-| `wait <concert>`             | `wt`  | Waits for a concert to settle. `--timeout <duration>`.                                                                                    |
-| `watch <concert>`            | `w`   | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.                                     |
-| `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                                                       |
-| `agent ls`                   |       | Lists the profiles the roots hold: name, harness, model, the winning root, a pack shadow.[^agent]                                         |
-| `agent show <profile>`       |       | Shows a profile as it resolves, its sources and environment. `--probe`, `--concert <id>`, `--seat <key>`, `--prompt`, `--yaml`, `--json`. |
-| `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                                           |
-| `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                                              |
-| `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                                                  |
-| `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                                        |
-| `changeset show <concert>`   | `cs`  | Prints a concert's changeset as a diff on its base, the checkout untouched.[^changeset] `--stat`, `--summary`, `--partial`.               |
-| `changeset apply <concert>`  | `cs`  | Stages the changeset on the checkout's `HEAD` with `git apply --index --3way`, patch by patch. `--commit`, `--partial`.                   |
-| `changeset drop`             | `cs`  | Resets the checkout's tracked files. It asks first unless given `--yes`.                                                                  |
-| `artifact <concert>`         | `art` | Lists a concert's artifacts, or prints an instance's files raw.[^artifact] `--path`.                                                      |
+| Command                      | Alias | Does                                                                                                                                                      |
+| ---------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compose <composition>`      | `c`   | Builds and pre-flights a composition. `--plan` (with each agent's profile, harness, model, thinking[^plan]), `--graph`, `--graph --flow`[^flow], `--out`. |
+| `perform <composition>`      | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                                                          |
+| `perform --resume <concert>` | `p`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                                                                    |
+| `perform --encore <concert>` | `p`   | Performs a concert's composition again as a new concert, its agents continuing their sessions.[^encore]                                                   |
+| `ls [<concert>]`             |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`.                                         |
+| `wait <concert>`             | `wt`  | Waits for a concert to settle. `--timeout <duration>`.                                                                                                    |
+| `watch <concert>`            | `w`   | Shows a concert's node instances live; on a terminal, a tree to browse until `q`.[^watch] `--events`.                                                     |
+| `kill <concert>`             | `k`   | Stops a running concert and waits for it to settle.                                                                                                       |
+| `agent ls`                   |       | Lists the profiles the roots hold: name, harness, model, the winning root, a pack shadow.[^agent]                                                         |
+| `agent show <profile>`       |       | Shows a profile as it resolves, its sources and environment. `--probe`, `--concert <id>`, `--seat <key>`, `--prompt`, `--yaml`, `--json`.                 |
+| `repertoire [<pack>]`        | `rep` | Lists installed packs and their compositions, or one composition in full.[^rep]                                                                           |
+| `config <composition>`       | `cfg` | Shows the composed config, each value with its layer, file and line or `-c`.                                                                              |
+| `prune [<concert>...]`       |       | Deletes settled concerts, their files and what their hosts hold.[^prune]                                                                                  |
+| `tour <slug> <concert>...`   | `t`   | Puts concerts on a tour. `--clear` takes them off.                                                                                                        |
+| `changeset show <concert>`   | `cs`  | Prints a concert's changeset as a diff on its base, the checkout untouched.[^changeset] `--stat`, `--summary`, `--partial`.                               |
+| `changeset apply <concert>`  | `cs`  | Stages the changeset on the checkout's `HEAD` with `git apply --index --3way`, patch by patch. `--commit`, `--partial`.                                   |
+| `changeset drop`             | `cs`  | Resets the checkout's tracked files. It asks first unless given `--yes`.                                                                                  |
+| `artifact <concert>`         | `art` | Lists a concert's artifacts, or prints an instance's files raw.[^artifact] `--path`.                                                                      |
 
 [^plan]:
     The `agents:` block lists each agent's node, profile, and the harness, model and thinking it resolves to, as
     `compose --json` does in `agents`.
+
+[^flow]:
+    Experimental. The graph as the composition's authored flow, the steps in the order they were written, in place of
+    every data path; render-text's README holds its drawing rules.
 
 [^agent]:
     A profile that does not resolve still lists, with its error under its row. `show` prints the profile's sections at
