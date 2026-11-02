@@ -235,7 +235,7 @@ test.each(["small", "ordinary", "risky"])(
 		expect(judges.length).toBeGreaterThan(0);
 		for (const n of judges)
 			expect(JSON.stringify(n)).toContain(
-				"meets with no test that fails without it, cannot be approved",
+				"its subject and closing line are out of review",
 			);
 	},
 );

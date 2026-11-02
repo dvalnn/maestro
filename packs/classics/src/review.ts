@@ -47,7 +47,7 @@ type LensName = (typeof LENS_NAMES)[number];
 export function skepticTask(grounds?: string): string {
 	if (grounds === undefined)
 		return "A lens ruled on this change. Challenge each of its findings against the code, and rule whether it holds.";
-	return `A lens ruled on this change under these grounds: ${grounds} Challenge each of its findings against the code and those grounds, and rule whether it holds. A finding holds when the code shows it and it breaks a rule, requirement or ADR the grounds name; one that cites none does not hold.`;
+	return `A lens ruled on this change under these grounds: ${grounds} Challenge each of its findings against the code and those grounds, and rule whether it holds. A finding holds when the code shows it and it breaks a rule, requirement or ADR the grounds name; one that cites none does not hold. Uphold a finding only with its evidence in why: the file:line that shows it, or the output of a check you ran; a finding you could not verify does not hold. For a missing test, name in why the line whose removal no test catches, and the tests you read.`;
 }
 
 const CONSOLIDATE_TASK =
@@ -57,7 +57,7 @@ const CONSOLIDATE_TASK =
 const consolidateTask = (grounds?: string) =>
 	grounds === undefined
 		? CONSOLIDATE_TASK
-		: `${CONSOLIDATE_TASK} Rule by these grounds: ${grounds} A blocking finding a skeptic upheld under them blocks approval, whether or not the spec's steps name it.`;
+		: `${CONSOLIDATE_TASK} Rule by these grounds: ${grounds} A blocking finding a skeptic upheld blocks approval, unless you dismiss it by naming the ground that excludes it: out of review, or advisory as the grounds rank it. That the spec's steps or acceptance leave a test out is no ground. In review.md, list each finding you dismiss with its ground. Report each finding you dismiss as advisory as one gap, and none you dismiss as out of review.`;
 
 /** An item a panel puts a lens on: a lens name, or a risk. */
 type Item = string | ValueOf<typeof Risk>;
