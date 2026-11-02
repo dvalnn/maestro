@@ -3,7 +3,7 @@ import type { Comment } from "./forge";
 import { isJson, type Json } from "./json";
 import {
 	INTAKE,
-	LOGIN,
+	STATES,
 	type State,
 	TRANSITIONS,
 	type Transition,
@@ -22,9 +22,14 @@ export type Risk = (typeof RISKS)[number];
 /** How many red slices a ticket spends before it goes to `needs-info` (factory.md, Rules: Attempts). */
 export const ATTEMPTS = 2;
 
+/** A decision or exclusion of a spec: `lead` titles it, each of `points` holds one fact. */
+export type Point = { lead: string; points: string[] };
+/** A triage spec; `decisions` and `excluded` read as empty from a spec stored without them. */
 export type Spec = {
 	touches: string[];
 	what: string;
+	decisions: Point[];
+	excluded: Point[];
 	steps: string[];
 	acceptance: string[];
 	subject: string;
@@ -125,13 +130,26 @@ const isOneOf =
 	(v: unknown): v is T =>
 		values.includes(v as T);
 
-const isSpec = (v: unknown): v is Spec =>
-	isJson(v) &&
-	isStrings(v.touches) &&
-	isString(v.what) &&
-	isStrings(v.steps) &&
-	isStrings(v.acceptance) &&
-	isString(v.subject);
+const isPoints = (v: unknown): v is Point[] =>
+	Array.isArray(v) &&
+	v.every((p) => isJson(p) && isString(p.lead) && isStrings(p.points));
+
+/**
+ * `value` as a spec, its absent `decisions` and `excluded` empty.
+ * @throws Error naming the first field that is missing or malformed.
+ */
+function parseSpec(value: unknown): Spec {
+	if (!isJson(value)) throw new Error("spec is not an object");
+	return {
+		touches: field(value, "touches", isStrings, "a list of strings"),
+		what: field(value, "what", isString, "a string"),
+		decisions: optional(value, "decisions", isPoints, "a list of points") ?? [],
+		excluded: optional(value, "excluded", isPoints, "a list of points") ?? [],
+		steps: field(value, "steps", isStrings, "a list of strings"),
+		acceptance: field(value, "acceptance", isStrings, "a list of strings"),
+		subject: field(value, "subject", isString, "a string"),
+	};
+}
 
 const isChildren = (v: unknown): v is Child[] =>
 	Array.isArray(v) &&
@@ -197,7 +215,7 @@ export function parseTriage(value: unknown): Triage {
 		questions: field(value, "questions", Array.isArray, "a list").map(
 			parseQuestion,
 		),
-		spec: optional(value, "spec", isSpec, "a spec"),
+		spec: value.spec === undefined ? undefined : parseSpec(value.spec),
 		children: optional(value, "children", isChildren, "a list of children"),
 		duplicateOf: optional(value, "duplicateOf", isNumber, "an issue number"),
 		related: optional(value, "related", isNumbers, "a list of issue numbers"),
@@ -325,14 +343,61 @@ const refs = (numbers: readonly number[]) =>
 const section = (heading: string, lines: string[]) =>
 	lines.length ? [`#### ${heading}`, "", ...lines, ""] : [];
 
-const specLines = ({ what, steps, touches, acceptance, subject }: Spec) => [
-	...section("What", [what, "", `Subject: \`${subject}\``]),
-	...section("Steps", numbered(steps)),
-	...section("Touches", list(touches.map((t) => `\`${t}\``))),
-	...section(
+/** Each of `items` as a bold lead, its points as sub-bullets. */
+const pointLines = (items: readonly Point[]) =>
+	items.flatMap(({ lead, points }) => [
+		`- **${oneLine(lead)}**`,
+		...points.map((p) => `  - ${continued(p, "    ")}`),
+	]);
+
+const whatLines = ({ what, subject }: Spec) =>
+	section("What", [what, "", `Subject: \`${subject}\``]);
+
+const pointSections = ({ decisions, excluded }: Spec) => [
+	...section("Decisions", pointLines(decisions)),
+	...section("Left out", pointLines(excluded)),
+];
+
+const touchLines = (touches: readonly string[]) =>
+	list(touches.map((t) => `\`${t}\``));
+
+const acceptanceLines = (acceptance: readonly string[]) =>
+	section(
 		"Acceptance",
 		acceptance.map((a) => `- [ ] ${a}`),
-	),
+	);
+
+/** `lines` folded under a summary of `heading` and their `count`, left out when there are none. */
+const folded = (heading: string, count: string, lines: string[]) =>
+	lines.length
+		? [
+				`<details><summary><b>${heading}</b> · ${count}</summary>`,
+				"",
+				...lines,
+				"",
+				"</details>",
+				"",
+			]
+		: [];
+
+const files = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
+
+/** A spec as its comment shows it (factory.md, Rules: Spec comment): what the owner approves open, the rest folded. */
+const specLines = (spec: Spec) => [
+	...whatLines(spec),
+	...pointSections(spec),
+	...acceptanceLines(spec.acceptance),
+	...folded("Steps", `${spec.steps.length}`, numbered(spec.steps)),
+	...folded("Touches", files(spec.touches.length), touchLines(spec.touches)),
+];
+
+/** A spec as a build's request carries it: every section open, word for word. */
+const requestedLines = (spec: Spec) => [
+	...whatLines(spec),
+	...pointSections(spec),
+	...section("Steps", numbered(spec.steps)),
+	...section("Touches", touchLines(spec.touches)),
+	...acceptanceLines(spec.acceptance),
 ];
 
 const childLines = (children: readonly Child[], filed: readonly number[]) =>
@@ -351,11 +416,17 @@ function proposalLines(result: Triage, filed: readonly number[]) {
 	return result.spec ? specLines(result.spec) : [];
 }
 
-const resultLines = (result: Triage, filed: readonly number[]) => [
-	...proposalLines(result, filed),
-	...section("Reasons", list(result.reasons)),
-	...(result.related?.length ? [`Relates to ${refs(result.related)}`, ""] : []),
-];
+/** The reasons, related issues and last concert of `data`, each it has, on one line. */
+function footLines({ result, concert }: Data) {
+	const parts = [
+		...(result?.reasons.length
+			? [`Reasons: ${result.reasons.map(oneLine).join("; ")}`]
+			: []),
+		...(result?.related?.length ? [`Relates to ${refs(result.related)}`] : []),
+		...(concert ? [`Last concert: \`${concert}\``] : []),
+	];
+	return parts.length ? [parts.join(" · "), ""] : [];
+}
 
 function buildLines({ attempts, failure, slice }: Data) {
 	return [
@@ -392,27 +463,68 @@ function allows(t: Transition, { parked, result }: Data) {
 	return result?.spec !== undefined && result.verdict !== "needs-info";
 }
 
+/** What waits on the maintainer in `state`, one where the owner moves. */
+function waitsOn(state: State, data: Data) {
+	if (state === "needs-approval")
+		return data.result?.children
+			? "the split awaits approval"
+			: `spec v${versionOf(data)} awaits approval`;
+	if (state === "in-review") return "the PR awaits review";
+	if (state === "needs-info") return "the question awaits an answer";
+	if (state === "ready-for-human") return "the build by hand awaits";
+	return "closing awaits";
+}
+
+const isState = (label: string) => STATES.some((s) => s === label);
+
+/** How to take one of `moves`: on the forge, else by label, after a reply mentioning `@login` where a move follows one. */
+const turnHow = (moves: readonly Option[], login: string) =>
+	moves.every((m) => isState(m.label))
+		? `Label the issue with the choice. Where it follows a reply, first reply \`@${login} …\` with the answer or a redirect.`
+		: "Take the choice on the forge.";
+
 /**
- * The bold line naming whose move it is in `state`: the owner's moves `data` leaves open, `<login>` in them filled with
- * `login`, else the tick's, a queued build waiting on the open dependencies `waiting`.
+ * Whose turn it is in `state`: the owner's moves `data` leaves open as bullets after a rule, closed by how to take
+ * one, answered by mentioning `login`; else one bold line of the tick's move, a queued build waiting on the open
+ * dependencies `waiting`.
  */
-export function moveLine(
+export function turnLines(
 	state: State,
 	data: Data,
 	login: string,
 	waiting: readonly number[] = [],
 ) {
-	const yours = TRANSITIONS.filter(
+	const moves = TRANSITIONS.filter(
 		(t) => t.from === state && t.actor === "owner" && allows(t, data),
-	).map((t) => t.how.replace(LOGIN, login));
-	return yours.length
-		? `**Your move: ${yours.join(", or ")}**`
-		: `**Tour manager's move: ${tourMove(state, data, waiting)}**`;
+	).flatMap((t) => (t.turn ? [t.turn] : []));
+	if (!moves.length)
+		return [`**Tour manager's turn · ${tourMove(state, data, waiting)}**`, ""];
+	return [
+		RULE,
+		"",
+		`**Maintainer's turn · ${waitsOn(state, data)}**`,
+		"",
+		...moves.map(({ label, text }) =>
+			optionLine({ label: `\`${label}\``, text }),
+		),
+		"",
+		...closingLines(turnHow(moves, login)),
+		"",
+	];
 }
 
 /** The version of a spec no routed triage has written yet. */
 const FIRST_VERSION = 1;
 const versionOf = ({ version }: Data) => version ?? FIRST_VERSION;
+
+/** The spec comment's heading: its version, then the risk and any area of its result. */
+function headingOf(data: Data) {
+	const { result } = data;
+	const labels = result
+		? [`risk ${result.risk}`, ...(result.area ? [`area ${result.area}`] : [])]
+		: [];
+	return [`### Spec v${versionOf(data)}`, ...labels].join(" · ");
+}
 
 /**
  * The spec comment for `data` in `state` (factory.md, Rules: Spec comment): the marker, then readable Markdown ending in
@@ -427,18 +539,17 @@ export function commentOf(
 	// JSON keeps `>` only inside strings, so escaping it keeps a `-->` in the data from closing the comment.
 	const json = JSON.stringify(data).replaceAll(">", "\\u003e");
 	const shown = [
-		...(data.result ? resultLines(data.result, data.filed ?? []) : []),
+		...(data.result ? proposalLines(data.result, data.filed ?? []) : []),
 		...buildLines(data),
-		...(data.concert ? [`Last concert: \`${data.concert}\``, ""] : []),
+		...footLines(data),
 	].map(inert);
 	return [
 		MARKER,
 		"",
-		`### Spec v${versionOf(data)}`,
+		headingOf(data),
 		"",
 		...shown,
-		moveLine(state, data, login, waiting),
-		"",
+		...turnLines(state, data, login, waiting),
 		`<!-- maestro-tm-data ${json} -->`,
 		"",
 	].join("\n");
@@ -478,19 +589,19 @@ const contextLines = (context: Question["context"]) => [
 	"",
 ];
 
+/** Option `o` as a bullet: its label in bold, then its text. */
+const optionLine = (o: Option) =>
+	`- **${oneLine(o.label)}**: ${continued(o.text, "  ")}`;
+
+/** The rule and the `<sub>` line saying `how` to answer, which close a question comment and the maintainer's turn. */
+const closingLines = (how: string) => [RULE, "", `<sub>${how}</sub>`];
+
 /** Question `q`, numbered `n`: its ask, then each of its lead, options, recommendation and context it has. */
 const questionLines = (q: Question, n: number) => [
 	`**Q${n} · ${oneLine(q.ask)}**`,
 	"",
 	...(q.lead ? [q.lead, ""] : []),
-	...(q.options.length
-		? [
-				...q.options.map(
-					(o) => `- **${oneLine(o.label)}**: ${continued(o.text, "  ")}`,
-				),
-				"",
-			]
-		: []),
+	...(q.options.length ? [...q.options.map(optionLine), ""] : []),
 	...(q.recommend ? tipLines(q.recommend) : []),
 	...(q.context.length ? contextLines(q.context) : []),
 ];
@@ -507,9 +618,7 @@ export const questionOf = (questions: readonly Question[], how: string) =>
 			asks(questions.length),
 			"",
 			...questions.flatMap((q, i) => [RULE, "", ...questionLines(q, i + 1)]),
-			RULE,
-			"",
-			`<sub>${how}</sub>`,
+			...closingLines(how),
 		].map(inert),
 		"",
 	].join("\n");
@@ -530,7 +639,7 @@ export const requestOf = (
 	[
 		`# #${number} ${title}`,
 		"",
-		...specLines(spec),
+		...requestedLines(spec),
 		"## The ask",
 		"",
 		askOf(body),

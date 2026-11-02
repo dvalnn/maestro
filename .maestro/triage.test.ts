@@ -112,6 +112,10 @@ const askAlone = (ask: string) => ({ ask, options: [], context: [] });
 
 const spec = {
 	what: "Make greet.sh greet by name.",
+	decisions: [
+		{ lead: "Name source", points: ["The first argument", "In greet.sh"] },
+	],
+	excluded: [{ lead: "Flags", points: [] }],
 	steps: ["Read the first argument", "Print it"],
 	acceptance: ["bun test packages/cli/src/a.test.ts"],
 	subject: "feat(cli): greet by name",
@@ -518,9 +522,51 @@ test("the scouts and the planner are attached the triager's cut of the backlog, 
 	}
 });
 
+/** The task the composed plan gives the planner. */
+async function plannerTask() {
+	const { plan } = await composed();
+	const planner = (plan.ir.nodes as { id: string }[]).find(
+		(n) => n.id === "planner",
+	);
+	const strings: string[] = [];
+	JSON.stringify(planner, (_, v) => {
+		if (typeof v === "string") strings.push(v);
+		return v;
+	});
+	return strings.find((v) => v.includes("Write plan.json")) ?? "";
+}
+
+test("the planner's prompt names a spec's decisions and exclusions, a lead titling its points and a reference as the last point", async () => {
+	const task = await plannerTask();
+	expect(task).toContain('"decisions": [{"lead"');
+	expect(task).toContain('"excluded": [{"lead"');
+	expect(task).toContain("The lead only titles its points");
+	expect(task).toContain('a reference is a plain last point "In <path>"');
+});
+
+test("the planner's prompt asks for no shorter spec", async () => {
+	const task = await plannerTask();
+	const asks = task.slice(0, task.indexOf("- children,"));
+	expect(asks).not.toMatch(
+		/\b(short|shorter|shorten|brief|concise|terse|succinct)\b/i,
+	);
+});
+
 /** A JSON output per conditional rule of the schemas, and whether the engine's readJson takes it. */
 const outputs: [string, Type<unknown>, object, boolean][] = [
 	["a ready proposal", Proposal, ready, true],
+	[
+		"a ready proposal whose spec has no decisions",
+		Proposal,
+		{ ...ready, spec: { ...spec, decisions: undefined } },
+		false,
+	],
+	[
+		"a ready proposal whose decision has no points",
+		Proposal,
+		{ ...ready, spec: { ...spec, decisions: [{ lead: "Name source" }] } },
+		false,
+	],
 	["a planning ruling", Ruling(4), planning, true],
 	[
 		"a needs-info proposal asking with options, a recommendation and context",

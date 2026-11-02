@@ -22,13 +22,17 @@ export type Actor =
 	| "slice"
 	| "harvest"
 	| "auto-merge";
-/** A move of the state machine; `how` says in a line when and how it is taken, an owner's as an imperative clause. */
+/**
+ * A move of the state machine; `how` says in a line when and how it is taken, an owner's as an imperative clause. An
+ * owner's move has a `turn`: the label or action that takes it and, as an imperative, what it does.
+ */
 export type Transition = {
 	from: Node;
 	to: Node;
 	actor: Actor;
 	event: string;
 	how: string;
+	turn?: { label: string; text: string };
 };
 
 export const INTAKE: readonly State[] = ["needs-triage", "needs-spec"];
@@ -45,6 +49,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "filed",
 		how: "file it here to triage it",
+		turn: { label: "needs-triage", text: "triage it." },
 	},
 	{
 		from: "new",
@@ -52,6 +57,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "filed",
 		how: "file it here to design it first",
+		turn: { label: "needs-spec", text: "design it first." },
 	},
 	{
 		from: "new",
@@ -85,6 +91,10 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "approve",
 		how: "label `ready-for-agent` to approve the spec or split",
+		turn: {
+			label: "ready-for-agent",
+			text: "approve it, and the tour manager builds the spec or files the split.",
+		},
 	},
 	{
 		from: "ready-for-agent",
@@ -99,13 +109,21 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "answer",
 		how: "reply mentioning `@<login>` with an answer or a redirect, then label `needs-triage` to re-triage",
+		turn: {
+			label: "needs-triage",
+			text: "re-triage it, after a reply with an answer or a redirect.",
+		},
 	},
 	{
 		from: "needs-approval",
 		to: "ready-for-human",
 		actor: "owner",
 		event: "take",
-		how: "label `ready-for-human` to build it yourself",
+		how: "label `ready-for-human` to build it by hand",
+		turn: {
+			label: "ready-for-human",
+			text: "build it by hand.",
+		},
 	},
 	{
 		from: "needs-approval",
@@ -113,6 +131,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "drop",
 		how: "label `wontfix` to drop it",
+		turn: { label: "wontfix", text: "drop it." },
 	},
 	{
 		from: "ready-for-agent",
@@ -162,6 +181,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "merge",
 		how: "merge the PR",
+		turn: { label: "merge", text: "land the PR." },
 	},
 	{
 		from: "in-review",
@@ -183,13 +203,21 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "changes",
 		how: "request changes in an official review of the PR",
+		turn: {
+			label: "request changes",
+			text: "send the PR back for an encore, in an official review.",
+		},
 	},
 	{
 		from: "needs-info",
 		to: "ready-for-agent",
 		actor: "owner",
 		event: "answer",
-		how: "answer the question in a reply mentioning `@<login>`, then label `ready-for-agent` to build again with your answer",
+		how: "answer the question in a reply mentioning `@<login>`, then label `ready-for-agent` to build again with the answer",
+		turn: {
+			label: "ready-for-agent",
+			text: "build it again, after a reply with the answer.",
+		},
 	},
 	{
 		from: "needs-info",
@@ -197,6 +225,10 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "answer triage",
 		how: "answer the question in a reply mentioning `@<login>`, then label `needs-triage` to re-triage",
+		turn: {
+			label: "needs-triage",
+			text: "re-triage it, after a reply with the answer.",
+		},
 	},
 	{
 		from: "needs-info",
@@ -204,6 +236,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "apply",
 		how: "label `in-progress` to apply the parked result",
+		turn: { label: "in-progress", text: "apply the parked result." },
 	},
 	{
 		from: "ready-for-human",
@@ -211,6 +244,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "done",
 		how: "close it once built",
+		turn: { label: "close", text: "close it once built." },
 	},
 	{
 		from: "wontfix",
@@ -218,6 +252,7 @@ export const TRANSITIONS: readonly Transition[] = [
 		actor: "owner",
 		event: "close",
 		how: "close it",
+		turn: { label: "close", text: "close it." },
 	},
 	{
 		from: "duplicate",

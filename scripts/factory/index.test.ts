@@ -278,6 +278,10 @@ const triageConcert = (id: string, n: number, status = "ok"): Concert => ({
 const spec = {
 	touches: ["greet.sh"],
 	what: "Greet the first argument.",
+	decisions: [
+		{ lead: "Name source", points: ["The first argument", "In greet.sh"] },
+	],
+	excluded: [{ lead: "Flags", points: ["No --loud flag"] }],
 	steps: ["Read the name"],
 	acceptance: ["bun test"],
 	subject: "feat: greet by name",
@@ -363,7 +367,7 @@ describe("a pass", () => {
 			ready,
 			["state/ready-for-agent", "risk/low", "area/cli"],
 			true,
-			"### Spec v1\n\n#### What\n\nGreet the first argument.\n\nSubject: `feat: greet by name`\n\n#### Steps\n\n1. Read the name\n\n#### Touches\n\n- `greet.sh`\n\n#### Acceptance\n\n- [ ] bun test",
+			"### Spec v1 · risk low · area cli\n\n#### What\n\nGreet the first argument.\n\nSubject: `feat: greet by name`\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Acceptance\n\n- [ ] bun test\n\n<details><summary><b>Steps</b> · 1</summary>\n\n1. Read the name\n\n</details>\n\n<details><summary><b>Touches</b> · 1 file</summary>\n\n- `greet.sh`\n\n</details>\n\nReasons: one script -- > two",
 			"",
 		],
 		[
@@ -371,7 +375,7 @@ describe("a pass", () => {
 			{ ...base, verdict: "needs-approval", risk: "high", spec },
 			["state/needs-approval", "risk/high"],
 			true,
-			"#### Touches\n\n- `greet.sh`",
+			"### Spec v1 · risk high\n",
 			"",
 		],
 		[
@@ -384,7 +388,7 @@ describe("a pass", () => {
 			},
 			["state/needs-info", "risk/medium"],
 			true,
-			"**Your move: answer the question in a reply mentioning `@forge-bot`, then label `needs-triage` to re-triage**",
+			"---\n\n**Maintainer's turn · the question awaits an answer**\n\n- **`needs-triage`**: re-triage it, after a reply with the answer.\n\n---\n\n<sub>Label the issue with the choice. Where it follows a reply, first reply `@forge-bot …` with the answer or a redirect.</sub>",
 			"<!-- maestro-tm-question -->\n\n### Maestro asks · 1 question\n\n---\n\n**Q1 · Who? <! --**\n\n---\n\n<sub>Reply `@forge-bot Q1: …`, then label `needs-triage`.</sub>\n",
 		],
 		[
@@ -763,7 +767,7 @@ const rejected = (reason: string): Result => ({
 const CACHED = "/cache/maestro-factory/i7";
 /** The `--request` of a build of issue `n`'s spec, before anything an encore is fed. */
 const requestFor = (n: number) =>
-	`# #${n} Greet by name\n\n#### What\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Steps\n\n1. Read the name\n\n#### Touches\n\n- \`greet.sh\`\n\n#### Acceptance\n\n- [ ] bun test\n\n## The ask\n\n${ASK}\n`;
+	`# #${n} Greet by name\n\n#### What\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Steps\n\n1. Read the name\n\n#### Touches\n\n- \`greet.sh\`\n\n#### Acceptance\n\n- [ ] bun test\n\n## The ask\n\n${ASK}\n`;
 /** The flags a build of issue 7 at low risk takes after its `--request`. */
 const LOW_FLAGS = [
 	"--tier",
@@ -870,9 +874,11 @@ describe("a build", () => {
 			"state/in-progress",
 		]);
 		expect(dataAt(t.find(8)).slice).toBe("started");
-		expect(specAt(t.find(8))?.body).toContain("### Spec v1\n\n#### What");
 		expect(specAt(t.find(8))?.body).toContain(
-			"**Tour manager's move: slice `started` running, attempt 1 of 2**",
+			"### Spec v1 · risk low · area cli\n\n#### What",
+		);
+		expect(specAt(t.find(8))?.body).toContain(
+			"**Tour manager's turn · slice `started` running, attempt 1 of 2**",
 		);
 		expect(t.writes).not.toContain("edit #8");
 		concerts.push(sliceConcert("started", 8, "running"));
@@ -1025,7 +1031,7 @@ describe("a build", () => {
 		const tail = (n: number) =>
 			specAt(t.find(n))?.body.split("\n").filter(Boolean).at(-2);
 		expect(tail(7)).toBe(
-			"**Tour manager's move: queued, waiting on #12, #14**",
+			"**Tour manager's turn · queued, waiting on #12, #14**",
 		);
 		expect(t.starts).toEqual([]);
 		const writes = t.writes.length;
@@ -1033,7 +1039,7 @@ describe("a build", () => {
 		expect(t.writes).toHaveLength(writes);
 		t.find(12).open = false;
 		await t.run();
-		expect(tail(7)).toBe("**Tour manager's move: queued, waiting on #14**");
+		expect(tail(7)).toBe("**Tour manager's turn · queued, waiting on #14**");
 		t.find(14).open = false;
 		await t.run();
 		expect(t.starts).toHaveLength(1);
@@ -1212,7 +1218,7 @@ describe("a build", () => {
 			expect(dataAt(parked)).toMatchObject({ concert: "s1", parked: "s1" });
 			expect(questionsAt(parked)).toEqual([PARK_QUESTION]);
 			expect(specAt(parked)?.body).toContain(
-				"**Your move: answer the question in a reply mentioning `@forge-bot`, then label `ready-for-agent` to build again with your answer, or answer the question in a reply mentioning `@forge-bot`, then label `needs-triage` to re-triage, or label `in-progress` to apply the parked result**",
+				"**Maintainer's turn · the question awaits an answer**\n\n- **`ready-for-agent`**: build it again, after a reply with the answer.\n- **`needs-triage`**: re-triage it, after a reply with the answer.\n- **`in-progress`**: apply the parked result.\n",
 			);
 			expect(t.steps).toEqual([]);
 			let writes = t.writes.length;
@@ -1277,7 +1283,7 @@ describe("a build", () => {
 				),
 			]);
 			expect(specAt(moved)?.body).toStartWith(
-				"<!-- maestro-tm -->\n\n### Spec v2\n\nLast concert: `c1`\n\n**Your move: answer the question in a reply mentioning `@forge-bot`, then label `needs-triage` to re-triage**",
+				"<!-- maestro-tm -->\n\n### Spec v2\n\nLast concert: `c1`\n\n---\n\n**Maintainer's turn · the question awaits an answer**\n\n- **`needs-triage`**: re-triage it, after a reply with the answer.\n",
 			);
 			const writes = t.writes.length;
 			await t.run();

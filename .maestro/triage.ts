@@ -101,8 +101,12 @@ const GROUP_SIZE = 3;
 const GATE =
 	"A build must pass `just check`, which runs format, lint, types and every test, and keep to CODING_STANDARDS.md.";
 
+/** A decision or exclusion: `lead` only titles it, each of `points` holds one fact. */
+const Point = Struct({ lead: Text(), points: List(Text()) });
 const SpecPart = Struct({
 	what: Text(),
+	decisions: List(Point),
+	excluded: List(Point),
 	steps: List(Text()),
 	acceptance: List(Text()),
 	subject: Text(),
@@ -110,6 +114,8 @@ const SpecPart = Struct({
 const Spec = Struct({
 	touches: List(Text()),
 	what: Text(),
+	decisions: List(Point),
+	excluded: List(Point),
 	steps: List(Text()),
 	acceptance: List(Text()),
 	subject: Text(),
@@ -521,11 +527,12 @@ answer.md holds one section per question, in order, headed "## <the question>", 
 
 const PLAN_TASK = `Triage the attached issue: propose its verdict from the scouts' answers, the triager's ruling, the cut backlog and the target's code. ${GATE}
 Write plan.json in exactly this shape, leaving out spec, children and related where the verdict does not need them:
-{"verdict": "ready-for-agent", "touches": ["path/to/file.ts"], "contract": false, "questions": [], "spec": {"what": "the change to make", "steps": ["a short step"], "acceptance": ["bun test path/to/file.test.ts"], "subject": "feat(scope): imperative summary"}, "children": [{"title": "a child issue's title", "body": "its ask", "dependsOn": [0]}], "related": [7]}
+{"verdict": "ready-for-agent", "touches": ["path/to/file.ts"], "contract": false, "questions": [], "spec": {"what": "the change to make", "decisions": [{"lead": "a title", "points": ["one fact", "In path/to/file.ts"]}], "excluded": [{"lead": "a title", "points": ["one fact"]}], "steps": ["a step"], "acceptance": ["bun test path/to/file.test.ts"], "subject": "feat(scope): imperative summary"}, "children": [{"title": "a child issue's title", "body": "its ask", "dependsOn": [0]}], "related": [7]}
 - verdict: ready-for-agent when one change builds the issue as asked, split when it needs several, needs-info when it cannot be specified without an answer.
 - touches: every repo-relative path the change creates or edits, whatever the verdict; empty when you cannot tell.
 - contract: true when the change sets or changes a contract: an IR field, a CLI flag, a config key, a file layout or a manifest.
-- spec, for ready-for-agent: what to change in a short paragraph, the steps to make it in order, each short, the shell commands that prove it done, each starting with ${RUNNERS.join(", ")}, and the commit subject as <type>(<scope>): <summary>.
+- spec, for ready-for-agent: what to change in one paragraph, the decisions the change makes, what it leaves out, the steps to make it in order, the shell commands that prove it done, each starting with ${RUNNERS.join(", ")}, and the commit subject as <type>(<scope>): <summary>. The owner approves the spec from its decisions and what it leaves out, so give them in full detail.
+- decisions and excluded: each item a lead and its points. The lead only titles its points; every fact, reference and reason belongs in a point, one fact each, and a reference is a plain last point "In <path>". what names the change, and the facts behind it go in the decisions. Either list may be empty.
 - children, for split: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
 - related: the backlog issues it relates to.
 - questions: what only the owner can answer. Any question sends the issue to needs-info whatever the verdict, so settle yourself what the code settles. ${ASKING}`;
