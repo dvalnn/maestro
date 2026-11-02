@@ -23,24 +23,21 @@ export type Actor =
 	| "harvest"
 	| "auto-merge";
 /**
- * A move of the state machine; `how` says in a line when and how it is taken, an owner's as an imperative clause. An
- * owner's move has a `turn`: the label or action that takes it and, as an imperative, what it does.
+ * A move of the state machine. An owner's move out of a state has a `turn`: the label or action that takes it and, as
+ * an imperative, what it does.
  */
 export type Transition = {
 	from: Node;
 	to: Node;
 	actor: Actor;
 	event: string;
-	how: string;
 	turn?: { label: string; text: string };
 };
 
 export const INTAKE: readonly State[] = ["needs-triage", "needs-spec"];
-/** Stands in a `how` for the login the tick acts as, which only a pass knows. */
-export const LOGIN = "<login>";
 
-const fromIntake = (to: State, event: string, how: string): Transition[] =>
-	INTAKE.map((from) => ({ from, to, actor: "triage", event, how }));
+const fromIntake = (to: State, event: string): Transition[] =>
+	INTAKE.map((from) => ({ from, to, actor: "triage", event }));
 
 export const TRANSITIONS: readonly Transition[] = [
 	{
@@ -48,49 +45,34 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "needs-triage",
 		actor: "owner",
 		event: "filed",
-		how: "file it here to triage it",
-		turn: { label: "needs-triage", text: "triage it." },
 	},
 	{
 		from: "new",
 		to: "needs-spec",
 		actor: "owner",
 		event: "filed",
-		how: "file it here to design it first",
-		turn: { label: "needs-spec", text: "design it first." },
 	},
 	{
 		from: "new",
 		to: "needs-triage",
 		actor: "tick",
 		event: "filed",
-		how: "the tick files obstacles, gaps and children here",
 	},
 	{
 		from: "new",
 		to: "needs-approval",
 		actor: "harvest",
 		event: "lesson",
-		how: "harvest files a lesson here",
 	},
-	...fromIntake(
-		"ready-for-agent",
-		"low, medium",
-		"triage specs it at low or medium risk",
-	),
-	...fromIntake(
-		"needs-approval",
-		"high, split",
-		"triage specs it at high risk, or splits it",
-	),
-	...fromIntake("needs-info", "question", "triage asks the owner a question"),
-	...fromIntake("duplicate", "dup", "triage finds it repeats an open issue"),
+	...fromIntake("ready-for-agent", "low, medium"),
+	...fromIntake("needs-approval", "high, split"),
+	...fromIntake("needs-info", "question"),
+	...fromIntake("duplicate", "dup"),
 	{
 		from: "needs-approval",
 		to: "ready-for-agent",
 		actor: "owner",
 		event: "approve",
-		how: "label `ready-for-agent` to approve the spec or split",
 		turn: {
 			label: "ready-for-agent",
 			text: "approve it, and the tour manager builds the spec or files the split.",
@@ -101,14 +83,12 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "in-progress",
 		actor: "tick",
 		event: "split approved",
-		how: "the tick files the split's children",
 	},
 	{
 		from: "needs-approval",
 		to: "needs-triage",
 		actor: "owner",
 		event: "answer",
-		how: "reply mentioning `@<login>` with an answer or a redirect, then label `needs-triage` to re-triage",
 		turn: {
 			label: "needs-triage",
 			text: "re-triage it, after a reply with an answer or a redirect.",
@@ -119,7 +99,6 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "ready-for-human",
 		actor: "owner",
 		event: "take",
-		how: "label `ready-for-human` to build it by hand",
 		turn: {
 			label: "ready-for-human",
 			text: "build it by hand.",
@@ -130,7 +109,6 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "wontfix",
 		actor: "owner",
 		event: "drop",
-		how: "label `wontfix` to drop it",
 		turn: { label: "wontfix", text: "drop it." },
 	},
 	{
@@ -138,49 +116,42 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "in-progress",
 		actor: "tick",
 		event: "build",
-		how: "the tick starts its build",
 	},
 	{
 		from: "in-progress",
 		to: "in-review",
 		actor: "tick",
 		event: "PR",
-		how: "the tick opens the PR of a green slice",
 	},
 	{
 		from: "in-progress",
 		to: "closed",
 		actor: "tick",
 		event: "epic done",
-		how: "the tick closes an epic once its last child closes",
 	},
 	{
 		from: "in-progress",
 		to: "needs-info",
 		actor: "slice",
 		event: "blocked",
-		how: "a blocked slice asks its question",
 	},
 	{
 		from: "in-progress",
 		to: "needs-info",
 		actor: "tick",
 		event: "blocked",
-		how: "the tick asks the owner once out of attempts",
 	},
 	{
 		from: "in-progress",
 		to: "ready-for-agent",
 		actor: "slice",
 		event: "red, infra",
-		how: "a red slice with attempts left, or an infra fault, requeues it for a fresh build",
 	},
 	{
 		from: "in-review",
 		to: "closed",
 		actor: "owner",
 		event: "merge",
-		how: "merge the PR",
 		turn: { label: "merge", text: "land the PR." },
 	},
 	{
@@ -188,21 +159,18 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "closed",
 		actor: "auto-merge",
 		event: "merge",
-		how: "auto-merge lands a low-risk PR",
 	},
 	{
 		from: "in-review",
 		to: "needs-info",
 		actor: "tick",
 		event: "conflict",
-		how: "the tick asks the owner when a stacked PR conflicts with `main` restacking",
 	},
 	{
 		from: "in-review",
 		to: "in-progress",
 		actor: "owner",
 		event: "changes",
-		how: "request changes in an official review of the PR",
 		turn: {
 			label: "request changes",
 			text: "send the PR back for an encore, in an official review.",
@@ -213,7 +181,6 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "ready-for-agent",
 		actor: "owner",
 		event: "answer",
-		how: "answer the question in a reply mentioning `@<login>`, then label `ready-for-agent` to build again with the answer",
 		turn: {
 			label: "ready-for-agent",
 			text: "build it again, after a reply with the answer.",
@@ -224,7 +191,6 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "needs-triage",
 		actor: "owner",
 		event: "answer triage",
-		how: "answer the question in a reply mentioning `@<login>`, then label `needs-triage` to re-triage",
 		turn: {
 			label: "needs-triage",
 			text: "re-triage it, after a reply with the answer.",
@@ -235,7 +201,6 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "in-progress",
 		actor: "owner",
 		event: "apply",
-		how: "label `in-progress` to apply the parked result",
 		turn: { label: "in-progress", text: "apply the parked result." },
 	},
 	{
@@ -243,7 +208,6 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "closed",
 		actor: "owner",
 		event: "done",
-		how: "close it once built",
 		turn: { label: "close", text: "close it once built." },
 	},
 	{
@@ -251,7 +215,6 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "closed",
 		actor: "owner",
 		event: "close",
-		how: "close it",
 		turn: { label: "close", text: "close it." },
 	},
 	{
@@ -259,6 +222,5 @@ export const TRANSITIONS: readonly Transition[] = [
 		to: "closed",
 		actor: "tick",
 		event: "close",
-		how: "the tick closes it",
 	},
 ];

@@ -132,7 +132,6 @@ const cases: [string, (doc: string) => string, Transition[], string[]][] = [
 				to: "in-review",
 				actor: "slice",
 				event: "x",
-				how: "y",
 			},
 		],
 		["table: wontfix -> in-review [slice]"],
