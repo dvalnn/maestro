@@ -13,9 +13,23 @@ export const isIntake = (issue: Issue) => {
 	return state !== undefined && INTAKE.includes(state);
 };
 
-/** The intake issue to triage next: the oldest. */
-export const pick = (issues: readonly Issue[]): Issue | undefined =>
-	issues.filter(isIntake).sort((a, b) => a.number - b.number)[0];
+/** Orders issue numbers `pinned` first, in pinned order, then the rest oldest first. */
+const pinnedFirst = (pinned: readonly number[]) => {
+	const rank = (n: number) => {
+		const at = pinned.indexOf(n);
+		return at < 0 ? pinned.length : at;
+	};
+	return (a: number, b: number) => rank(a) - rank(b) || a - b;
+};
+
+/** The intake issue to triage next: a pinned one first, in pinned order, else the oldest. */
+export const pick = (
+	issues: readonly Issue[],
+	pinned: readonly number[] = [],
+): Issue | undefined =>
+	issues
+		.filter(isIntake)
+		.sort((a, b) => pinnedFirst(pinned)(a.number, b.number))[0];
 
 /** The slice tier, and preset, of each risk (factory.md, Rules: Risk and tier). */
 const TIER: Record<Risk, string> = {
@@ -33,11 +47,12 @@ export const tierOf = (issue: Issue, triaged: Risk) =>
 	TIER[riskOf(issue, triaged)];
 
 /**
- * The `ready-for-agent` issues a build may take, oldest first: each with a spec, no split's epic among them. Their
- * forge dependencies are left to the caller.
+ * The `ready-for-agent` issues a build may take, pinned ones first in pinned order, then oldest first: each with a
+ * spec, no split's epic among them. Their forge dependencies are left to the caller.
  */
 export const buildable = <T extends { issue: Issue; data: Data }>(
 	entries: readonly T[],
+	pinned: readonly number[] = [],
 ): T[] =>
 	entries
 		.filter(
@@ -48,7 +63,7 @@ export const buildable = <T extends { issue: Issue; data: Data }>(
 				data.result.children === undefined &&
 				!issue.labels.includes("kind/epic"),
 		)
-		.sort((a, b) => a.issue.number - b.issue.number);
+		.sort((a, b) => pinnedFirst(pinned)(a.issue.number, b.issue.number));
 
 /** The tour of `issue`'s concerts in `milestone` (factory.md, Rules: Tour and title). */
 export const tourOf = (milestone: string, issue: number) =>

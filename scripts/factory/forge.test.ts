@@ -262,3 +262,14 @@ test("reviews read the inline comments of an official review requesting changes 
 		process.env.PATH = path;
 	}
 });
+
+test("pinned reads the numbers in the order the API lists them", async () => {
+	const { calls, send } = recording(() => [
+		200,
+		[{ number: 9 }, { number: 3 }, { number: 5 }],
+	]);
+	expect(await withShims(() => forge(signedIn, send).pinned())).toEqual([
+		9, 3, 5,
+	]);
+	expect(calls[0]?.url).toEndWith("/issues/pinned");
+});

@@ -77,7 +77,7 @@ flowchart TD
    (Rules: Restack), closed dependencies free tickets, an approved split files its children, and an epic's last closed
    child closes it.
 3. First match wins, in the order of the arrows: a PR with changes requested, a ready ticket whose dependencies allow
-   it, an intake issue, a harvest due.
+   it, an intake issue, a harvest due. Among tickets, a pinned one comes first, in pinned order.
 4. Set the labels, edit the spec comment, post any question comment, and rewrite the closing line on a new version.
 
 ## Zoom 2: routing a settle
@@ -221,7 +221,9 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   the spec, then merges as medium does. The owner merges by fast-forward, as `main` takes signed commits only.
 - **One concert at a time.** Parallel waves wait for 10 to 15 good runs.
 - **Pick order.** Finish work first: an encore of a PR with changes requested, then a build, then triage, then a
-  harvest. A tick that routes a settle falls through and starts the next action.
+  harvest. A tick that routes a settle falls through and starts the next action. Within builds and within triage, an
+  eligible issue the owner pinned on the forge comes first, in pinned order, then the rest oldest first; the forge pins
+  at most 3, so no other priority is needed. `--route-only` routes and syncs but starts nothing.
 - **Closing line.** The tour manager never edits the ask. Below it the body holds the `<!-- maestro-tm -->` marker and
   one line, `Tracked by Maestro Tour Manager · [spec vN](#issuecomment-<id>)`, written when the spec comment is created
   or its version changes. State, risk and area stay in the labels.

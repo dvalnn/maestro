@@ -46,6 +46,7 @@ function fakeForge(issues: Stored[], cut?: string) {
 	const opened: NewPull[] = [];
 	const blocking: Record<number, number[]> = {};
 	const heads: Record<string, string> = {};
+	const pins: number[] = [];
 	const closedPulls = new Set<number>();
 	const reviews: Record<number, Review[]> = {};
 	const pulls: Pull[] = [
@@ -86,6 +87,7 @@ function fakeForge(issues: Stored[], cut?: string) {
 		closed: async () => [
 			{ number: 1, title: "An old one", body: "", labels: [] },
 		],
+		pinned: async () => pins,
 		pulls: async () =>
 			pulls
 				.filter((p) => !closedPulls.has(p.number))
@@ -167,6 +169,7 @@ function fakeForge(issues: Stored[], cut?: string) {
 		find,
 		opened,
 		blocking,
+		pins,
 		pulls,
 		closedPulls,
 		reviews,
@@ -499,6 +502,13 @@ describe("a pass", () => {
 		expect(dataAt(t.find(7)).filed).toEqual([50, 100]);
 	});
 
+	test("starts triage of a pinned intake issue before an older one", async () => {
+		const t = setup([issue(2, "needs-triage"), issue(9, "needs-triage")]);
+		t.pins.push(9);
+		await t.run();
+		expect(t.starts[0]).toContain("v0.1.0.i9");
+	});
+
 	test("starts triage of the oldest intake issue in the milestone, an encore when it was triaged before", async () => {
 		const outside = {
 			...issue(2, "needs-triage"),
@@ -757,6 +767,33 @@ const LOW_FLAGS = [
 ];
 
 describe("a build", () => {
+	test("starts a slice of a pinned ready issue before an older one", async () => {
+		const t = setup([
+			specced(5, "ready-for-agent"),
+			specced(8, "ready-for-agent"),
+		]);
+		t.pins.push(8);
+		await t.run();
+		expect(t.starts[0]).toContain("v0.1.0.i8");
+	});
+
+	test("route-only routes a settle and starts no build or triage", async () => {
+		const triaged = issue(7, "needs-triage");
+		triaged.labels.push("area/docs", "risk/low");
+		const t = setup(
+			[triaged, issue(2, "needs-triage"), specced(8, "ready-for-agent")],
+			[triageConcert("c1", 7)],
+			settled({ ...base, verdict: "needs-info", risk: "medium" }),
+		);
+		t.options.routeOnly = true;
+		await t.run();
+		expect(dataAt(t.find(7)).concert).toBe("c1");
+		expect(t.starts).toEqual([]);
+		expect(t.said.at(-1)).toBe(
+			"route-only: routed and synced, started nothing",
+		);
+	});
+
 	test("starts a slice of the oldest ready issue free of open blockers before any triage", async () => {
 		const blocked = specced(5, "ready-for-agent");
 		const epic = specced(6, "ready-for-agent");

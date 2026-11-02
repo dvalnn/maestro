@@ -91,6 +91,8 @@ export type Options = {
 	milestone: string;
 	/** The preset of each triage; a slice takes its tier's. */
 	preset?: string;
+	/** Only route settled concerts and sync; start no build or triage. */
+	routeOnly?: boolean;
 	/** Where the pass keeps its snapshots and perform logs. */
 	dir: string;
 	/** Where the landing workspaces live. */
@@ -1002,12 +1004,12 @@ async function queue(pass: Pass, { issue, comments, data }: Entry) {
 }
 
 /**
- * Finishes work first: continues a ticket with changes requested, else builds the oldest buildable issue its blockers
- * let build; true when it started none.
+ * Finishes work first: continues a ticket with changes requested, else builds the first buildable issue, pinned ones
+ * first, that its blockers let build; true when it started none.
  */
 async function build(pass: Pass, entries: Entry[]) {
 	if (!(await revise(pass, entries))) return false;
-	for (const entry of buildable(entries)) {
+	for (const entry of buildable(entries, await pass.forge.pinned())) {
 		const spec = entry.data.result?.spec;
 		const base = await baseOf(pass, entry.issue.number);
 		if (!spec) continue;
@@ -1027,12 +1029,14 @@ async function build(pass: Pass, entries: Entry[]) {
 }
 
 /**
- * Starts triage of the oldest intake issue on its ask and the comments since the last triage read that it is fed, an
- * encore of its last triage when it has one, then records the newest comment it considered; halts on a refusal.
+ * Starts triage of the first intake issue, pinned ones first, on its ask and the comments since the last triage read
+ * that it is fed, an encore of its last triage when it has one, then records the newest comment it considered; halts on
+ * a refusal.
  */
 async function triage(pass: Pass, entries: Entry[]) {
 	const issue = pick(
 		entries.filter((e) => !e.data.pending).map((e) => e.issue),
+		await pass.forge.pinned(),
 	);
 	const entry = entries.find((e) => e.issue === issue);
 	if (!entry) {
@@ -1095,8 +1099,8 @@ async function triage(pass: Pass, entries: Entry[]) {
 
 /**
  * One pass: no action when another pass holds the lock, the tour manager is halted or a concert of the milestone runs;
- * else it routes settled concerts, syncs, and starts one build or else one triage. Each step returns whether the pass
- * goes on.
+ * else it routes settled concerts, syncs, and starts one build or else one triage, or none under `routeOnly`. Each step
+ * returns whether the pass goes on.
  * @throws Error when the milestone does not exist, or the forge or maestro fails or answers what the tick cannot read.
  */
 export async function pass(deps: Deps, options: Options): Promise<void> {
@@ -1114,17 +1118,26 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 	if (running) return deps.say(`concert ${running.id} is still running`);
 	const login = await deps.forge.login();
 	const pass: Pass = { ...deps, ...options, milestoneId, concerts, login };
-	for (const step of [route, sync, build, triage]) {
+	const steps = options.routeOnly
+		? [route, sync]
+		: [route, sync, build, triage];
+	for (const step of steps) {
 		const entries = await load(pass);
 		if (!entries || !(await step(pass, entries))) return;
 	}
+	if (options.routeOnly)
+		pass.say("route-only: routed and synced, started nothing");
 }
 
 if (import.meta.main) {
 	let options: Options;
 	try {
 		const { values } = parseArgs({
-			options: { milestone: { type: "string" }, preset: { type: "string" } },
+			options: {
+				milestone: { type: "string" },
+				preset: { type: "string" },
+				"route-only": { type: "boolean" },
+			},
 		});
 		if (!values.milestone) throw new Error("--milestone is required");
 		const runtime = process.env.XDG_RUNTIME_DIR;
@@ -1133,7 +1146,8 @@ if (import.meta.main) {
 				"XDG_RUNTIME_DIR is not set\nRun the tick in a user session, such as under systemctl --user",
 			);
 		options = {
-			...values,
+			preset: values.preset,
+			routeOnly: values["route-only"],
 			milestone: values.milestone,
 			dir: join(runtime, "maestro-factory"),
 			cache: join(
@@ -1143,7 +1157,7 @@ if (import.meta.main) {
 		};
 	} catch (error) {
 		console.error(
-			`${message(error)}\nusage: bun scripts/factory/index.ts --milestone <name> [--preset <name>]`,
+			`${message(error)}\nusage: bun scripts/factory/index.ts --milestone <name> [--preset <name>] [--route-only]`,
 		);
 		process.exit(EXIT_USAGE);
 	}

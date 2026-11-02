@@ -85,6 +85,8 @@ export type Forge = {
 	open(query: IssueQuery): Promise<Issue[]>;
 	/** The `count` most recently updated closed issues. */
 	closed(count: number): Promise<Issue[]>;
+	/** The numbers of the repo's pinned issues, in pinned order. */
+	pinned(): Promise<number[]>;
 	/** The open pull requests. */
 	pulls(): Promise<Pull[]>;
 	/** Pull request `number`, open or not. */
@@ -447,6 +449,10 @@ export function forge(
 				),
 				"/issues",
 			).map(issueOf),
+		pinned: async () =>
+			objects(await api("GET", "/issues/pinned"), "/issues/pinned").map((i) =>
+				num(i, "number"),
+			),
 		pulls: async () =>
 			(await all(api, "/pulls", { state: "open" })).map(pullOf),
 		pull: async (number) =>

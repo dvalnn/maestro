@@ -32,13 +32,14 @@ and email come from `GET /user` and author every commit the tick describes or re
 A low-risk PR whose base moved after it was pushed cannot fast-forward, and stays open for the owner to restack.
 
 ```sh
-bun scripts/factory/index.ts --milestone v0.1.0 [--preset triage]
+bun scripts/factory/index.ts --milestone v0.1.0 [--preset triage] [--route-only]
 ```
 
-| Flag          | Does                                                                 |
-| ------------- | -------------------------------------------------------------------- |
-| `--milestone` | The milestone whose issues it triages and builds                     |
-| `--preset`    | The preset each triage concert is performed with, such as `stub`[^p] |
+| Flag           | Does                                                                 |
+| -------------- | -------------------------------------------------------------------- |
+| `--milestone`  | The milestone whose issues it triages and builds                     |
+| `--preset`     | The preset each triage concert is performed with, such as `stub`[^p] |
+| `--route-only` | Routes settled concerts and syncs, then starts no build or triage    |
 
 [^p]: A slice concert takes its tier's preset instead.
 
