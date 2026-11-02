@@ -121,13 +121,7 @@ target:
 ```yaml
 # .maestro/presets/stub.yaml
 profiles:
-  classics/scout: { runtime: !replace { harness: stub, model: none } }
-  classics/planner: { runtime: !replace { harness: stub, model: none } }
-  classics/builder: { runtime: !replace { harness: stub, model: none } }
-  classics/lens: { runtime: !replace { harness: stub, model: none } }
-  classics/skeptic: { runtime: !replace { harness: stub, model: none } }
-  classics/consolidator: { runtime: !replace { harness: stub, model: none } }
-  classics/documenter: { runtime: !replace { harness: stub, model: none } }
+  "*": { runtime: !replace { harness: stub } }
 ```
 
 Compose before performing, then perform:

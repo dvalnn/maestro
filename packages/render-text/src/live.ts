@@ -1031,10 +1031,10 @@ function concertSegs(view: View, label: Seg): Seg[] {
 
 const sized = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
-/** `value`'s kind and size: `text, 312 lines` (`N chars` on one line), `object, 7 keys` or `list, 12 items`. */
 /** `text` without one newline at its end, as `wc -l` counts lines. */
 const withoutFinalNewline = (text: string) => text.replace(/\r?\n$/, "");
 
+/** `value`'s kind and size: `text, 312 lines` (`N chars` on one line), `object, 7 keys` or `list, 12 items`. */
 function shapeText(value: string | object): string {
 	if (typeof value === "string") {
 		const lines = withoutFinalNewline(value).split(NEWLINE).length;

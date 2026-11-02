@@ -123,28 +123,22 @@ profiles, lanes and checks: `classics.panel_review` ends `ok` with an unapproved
 always rejected: its checks stay red because nothing was built, and when they are green its final traceability step
 rejects it, since the stub review never approves. Use one to try a flow, or whenever the user asks for no spend. It also
 shows what each agent is told before any spend: its host stages the instructions and prompt as for a real run, so
-`maestro art <id> <instance> staged/instructions.md` and `staged/prompt.md` print them. Set every profile the
-composition's seats name to the stub harness in `.maestro/presets/stub.yaml`, and pass `--preset stub` to compose and
-perform; a resume reapplies it. `MAESTRO_STUB_DELAY` (a duration such as `2s` or `500ms`) makes each stub agent turn
-wait that long, to rehearse a slow run. `MAESTRO_STUB_OUTPUTS=<dir>` scripts what agents deliver, to rehearse a branch
-that hangs on it, such as a fix loop: a stub agent takes each declared output from `<dir>/<instance id>/<file>` (the id
-as `maestro ls <id>` prints it, such as `loop[0]/review`), else from `<dir>/<node id>/<file>` (the id without `[n]`
-indices, serving every round), else the placeholder. A verdict agent's `verdict` file, found the same way, holds `ok` or
-`rejected <reason>`; without one it rules `ok`. An `events.jsonl` file found the same way holds the harness events the
-agent emits first, one JSON object per line. Files are copied as is and validated like any output. A resume needs the
-variable set again; a missing dir fails the agent. `MAESTRO_STUB_ENVIRONMENT` (a JSON object such as
-`{"mcp":["github"]}`) replaces parts of what the stub reports loading, to rehearse an environment fault. For the
-classics pack's seven profiles:
+`maestro art <id> <instance> staged/instructions.md` and `staged/prompt.md` print them. Stub every seat with a `"*"`
+profile, which applies to every profile the preset does not name, in `.maestro/presets/stub.yaml`, and pass
+`--preset stub` to compose and perform; a resume reapplies it. `MAESTRO_STUB_DELAY` (a duration such as `2s` or `500ms`)
+makes each stub agent turn wait that long, to rehearse a slow run. `MAESTRO_STUB_OUTPUTS=<dir>` scripts what agents
+deliver, to rehearse a branch that hangs on it, such as a fix loop: a stub agent takes each declared output from
+`<dir>/<instance id>/<file>` (the id as `maestro ls <id>` prints it, such as `loop[0]/review`), else from
+`<dir>/<node id>/<file>` (the id without `[n]` indices, serving every round), else the placeholder. A verdict agent's
+`verdict` file, found the same way, holds `ok` or `rejected <reason>`; without one it rules `ok`. An `events.jsonl` file
+found the same way holds the harness events the agent emits first, one JSON object per line. Files are copied as is and
+validated like any output. A resume needs the variable set again; a missing dir fails the agent.
+`MAESTRO_STUB_ENVIRONMENT` (a JSON object such as `{"mcp":["github"]}`) replaces parts of what the stub reports loading,
+to rehearse an environment fault. The preset:
 
 ```yaml
 profiles:
-  classics/scout: { runtime: !replace { harness: stub, model: none } }
-  classics/planner: { runtime: !replace { harness: stub, model: none } }
-  classics/builder: { runtime: !replace { harness: stub, model: none } }
-  classics/lens: { runtime: !replace { harness: stub, model: none } }
-  classics/skeptic: { runtime: !replace { harness: stub, model: none } }
-  classics/consolidator: { runtime: !replace { harness: stub, model: none } }
-  classics/documenter: { runtime: !replace { harness: stub, model: none } }
+  "*": { runtime: !replace { harness: stub } }
 ```
 
 ## The classics pack

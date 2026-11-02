@@ -14,9 +14,9 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
    A setup whose profiles are all stub needs no harness. Done when each command answers.
 
 2. **Read the layers that exist.** Config layers, lowest first: the user file `$XDG_CONFIG_HOME/maestro/config.yaml`
-   (default `~/.config/maestro/config.yaml`), the workspace file `.maestro/config.yaml`, then a preset `--preset` names,
-   then each `-c <key>=<value>` flag. The user file often already lists `packs` and tunes `profiles`. Done when you know
-   which packs, profiles and checks are already set.
+   (default `~/.config/maestro/config.yaml`), the workspace file `.maestro/config.yaml`, then each preset a `--preset`
+   names, in order, then each `-c <key>=<value>` flag. The user file often already lists `packs` and tunes `profiles`.
+   Done when you know which packs, profiles and checks are already set.
 3. **Write `.maestro/config.yaml`** at the repository root, holding only what no lower layer sets:
    - `target.repo`: the repository's absolute path. `target.base`: a branch or commit, only when the user names one;
      lanes are cut from the target's `HEAD` otherwise.

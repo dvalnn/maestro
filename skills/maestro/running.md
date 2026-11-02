@@ -34,11 +34,13 @@ A diagnostic prints as `<code>: <message>` then its hint, indented. The hint is 
 - It runs in the foreground until the concert settles. SIGINT or SIGTERM cancels the concert, which settles `failed`.
 - Start it detached, as SKILL.md's loop step 4 shows, and read the id from its stderr file.
 - Stderr: `concert <id>`, the full id, once the concert starts, then, when it settles, the closing block: a
-  `concert <short id>  <outcome>  <elapsed>[ · <tokens> tokens]` row, then `at <instance>` and `reason <reason>` lines
-  when not `ok`. Pre-flight diagnostics come before the first line.
-- Stdout: one `<port>  <value>` line per output of the result, its labels in the closing block's column. A string,
-  number, boolean or `null` prints as is, any other value as compact JSON, and an artifact as its absolute path. A
-  `rejected` concert shows its root cause's outputs, such as a check's `logs` and `lane`; a `failed` one shows none.
+  `concert <short id>  <outcome>  <elapsed>[ · <tokens> tok]` row, then `at <instance>` and `reason <reason>` lines when
+  not `ok`. Pre-flight diagnostics come before the first line.
+- Stdout: one `<port>  <value>` line per output of the result, its labels in the closing block's column. On a terminal a
+  value that is not one short line shows as its shape and size, such as `text, 312 lines`, then a `changes` row and a
+  `maestro ls <concert> --json` hint follow; piped, each value prints whole. A string, number, boolean or `null` prints
+  as is, any other value as compact JSON, and an artifact as its absolute path. A `rejected` concert shows its root
+  cause's outputs, such as a check's `logs` and `lane`; a `failed` one shows none.
 - `--json`: stdout holds `{ id, status, resultNode, resultExpansion, reason, outputs }`; an artifact there is
   `{ path, contentHash, producer }`, its `path` relative to the concert's artifact directory (see Records). The id still
   comes first on stderr.
