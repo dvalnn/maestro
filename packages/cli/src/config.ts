@@ -304,12 +304,14 @@ const SHELL_SAFE = /^[\w.=/:,@+-]*$/;
 const typed = (arg: string) =>
 	`-c ${SHELL_SAFE.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`}`;
 
-/** How a `-c` is named and fixed: as typed, or as recorded with concert `recorded`, which a resume reapplies. */
-const flagOrigin = (arg: string, recorded: string | undefined) =>
+/** How a `-c` is named and fixed: as typed, and with concert `recorded` when a resume reapplies it. */
+const flagOrigin = (arg: string, key: string, recorded: string | undefined) =>
 	recorded === undefined
-		? { flag: typed(arg) }
+		? { flag: typed(arg), key }
 		: {
-				flag: `concert ${recorded} was performed with ${typed(arg)}`,
+				flag: typed(arg),
+				key,
+				concert: recorded,
 				fix: `Set that key, or !delete it, with -c on the resume, or ${NEW_CONCERT}`,
 			};
 
@@ -360,7 +362,7 @@ function overrideLayer(
 		.join("\n");
 	const indented = value.replaceAll("\n", `\n${INDENT.repeat(path.length)}`);
 	return parseLayer(`${nested} ${indented}\n`, {
-		...flagOrigin(arg, recorded),
+		...flagOrigin(arg, key, recorded),
 		base,
 		layer: "flag",
 		paths,

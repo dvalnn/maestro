@@ -3,6 +3,7 @@ import { availableParallelism } from "node:os";
 import {
 	ConfigError,
 	commandLineOf,
+	configDiagnostic,
 	coreConfig,
 	coreDefaults,
 	type LayerName,
@@ -125,26 +126,27 @@ describe("merge tags", () => {
 			const make = () =>
 				stage === "merge" ? layered([user(), parse(text)]) : parse(text);
 			expect(refusal(make)).toEqual([
-				[
-					"CFG.tag",
-					`${WORKSPACE}:${line}: ${message}`,
-					{ file: WORKSPACE, line },
-				],
+				["CFG.tag", message, { file: WORKSPACE, line }],
 			]);
 		},
 	);
 
+	test("refuses a file holding a list, saying what it holds", () => {
+		expect(refusal(() => parse("- a\n"))).toEqual([
+			[
+				"CFG.yaml",
+				"the file holds a list, not a mapping of config keys",
+				{ file: WORKSPACE, line: 1 },
+			],
+		]);
+	});
+
 	test.each([
 		["invalid YAML", "a: [1\n", 2],
-		["a file that is not a mapping", "- a\n", 1],
 		["a YAML merge key", "base: &b\n  x: 1\nc:\n  <<: *b\n", 4],
 	])("refuses %s, naming the file and line", (_, text, line) => {
 		expect(refusal(() => parse(text))).toEqual([
-			[
-				"CFG.yaml",
-				expect.stringContaining(WORKSPACE),
-				{ file: WORKSPACE, line },
-			],
+			["CFG.yaml", expect.any(String), { file: WORKSPACE, line }],
 		]);
 	});
 });
@@ -173,7 +175,7 @@ describe("a deferred path", () => {
 		expect(refusal(() => layered([user()]))).toEqual([
 			[
 				"CFG.tag",
-				`${USER}:6: !delete on 'tuned.one.gone', which nothing beneath sets`,
+				`!delete on 'tuned.one.gone', which nothing beneath sets`,
 				{ file: USER, line: 6 },
 			],
 		]);
@@ -230,7 +232,7 @@ describe("a deferred path", () => {
 		).toEqual([
 			[
 				"CFG.tag",
-				`${WORKSPACE}:3: !delete on 'tuned.one.nothing', which nothing beneath sets`,
+				`!delete on 'tuned.one.nothing', which nothing beneath sets`,
 				{ file: WORKSPACE, line: 3 },
 			],
 		]);
@@ -352,4 +354,28 @@ describe("core config", () => {
 		expect(sourceOf(composed, ["concurrency"])).toEqual({ layer: "flag" });
 		expect(coreConfig(composed).concurrency).toBe(2);
 	});
+});
+
+describe("a file's YAML error", () => {
+	test("is located by its source alone, the message leaving out the file", () => {
+		const [d] = refusal(() => parse("a: [1\n"));
+		expect(d?.[1]).not.toContain(WORKSPACE);
+		expect(d?.[2]).toMatchObject({ file: WORKSPACE });
+	});
+});
+
+describe("configDiagnostic", () => {
+	const flag = { layer: "flag", flag: "-c a=1", key: "a" } as const;
+	test.each([
+		["a file", { layer: "workspace", file: WORKSPACE, line: 3 }, "m"],
+		["a flag", flag, "m (from -c a)"],
+		[
+			"a resumed flag",
+			{ ...flag, concert: "7f3c2a" },
+			"m (from -c a of concert 7f3c2a)",
+		],
+		["no source", undefined, "m"],
+	] as const)("words the message for %s", (_, source, message) =>
+		expect(configDiagnostic("X.y", source, "m", "h").message).toBe(message),
+	);
 });

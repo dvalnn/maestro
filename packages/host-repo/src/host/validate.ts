@@ -26,7 +26,6 @@ import {
 	resolveProfile,
 	SEATS,
 	seatBinding,
-	sourceWords,
 	untunable,
 } from "../profile/index";
 import {
@@ -650,16 +649,11 @@ function harnessProblems(
 	const at = (field: string) => sourceOf(profile, field.split("."));
 	const policy = contextIn(profile, store);
 	if ("message" in policy) {
-		// A flag's own text would echo the whole `-c` value, and the message names its key already.
-		const source = at("context.at");
-		const byFlag = source?.flag !== undefined;
 		return [
 			configDiagnostic(
 				"HOST.runtime",
-				byFlag ? { ...source, flag: undefined } : source,
-				byFlag
-					? `${policy.message} (set by ${sourceWords(source)})`
-					: policy.message,
+				at("context.at"),
+				policy.message,
 				policy.fix,
 			),
 		];

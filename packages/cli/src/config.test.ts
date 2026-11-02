@@ -69,7 +69,7 @@ describe("config files", () => {
 			source("caps", "calls"),
 			source("dataRoot"),
 		]).toEqual([
-			{ layer: "flag", flag: "-c concurrency=7" },
+			{ layer: "flag", flag: "-c concurrency=7", key: "concurrency" },
 			{ layer: "user", file: join(root, USER), line: 3 },
 			{ layer: "workspace", file: join(root, WORKSPACE), line: 3 },
 			{ layer: "preset", file: join(root, PRESET), line: 3 },
@@ -165,7 +165,7 @@ describe("config files", () => {
 				file: join(root, "ws/.maestro/presets/stub.yaml"),
 				line: 1,
 			},
-			{ layer: "flag", flag: "-c caps.calls=9" },
+			{ layer: "flag", flag: "-c caps.calls=9", key: "caps.calls" },
 		]);
 	});
 
@@ -235,6 +235,16 @@ describe("config files", () => {
 		]);
 	});
 
+	test("a -c with a quote in its value is named as a shell would have it typed", async () => {
+		const { request } = await tree({});
+		const { composed } = await loadConfig(
+			request({ overrides: [{ config: ["target.note=it's"] }] }),
+		);
+		expect(sourceOf(composed, ["target", "note"])?.flag).toBe(
+			"-c 'target.note=it'\\''s'",
+		);
+	});
+
 	test("a -c reads its value as YAML at its key, merge tags and a quoted key holding '.' among them, a path relative to the workspace root, else the cwd", async () => {
 		const { root, request } = await tree({
 			[WORKSPACE]:
@@ -283,29 +293,28 @@ describe("config files", () => {
 			"a value off its key's schema",
 			"concurrency=x",
 			"CFG.schema",
-			"-c concurrency=x: config 'concurrency' must be integer",
+			"config 'concurrency' must be integer (from -c concurrency)",
 		],
-		["a value that is not YAML", "caps=[1", "CFG.yaml", "-c 'caps=[1': "],
 		[
-			"a value holding a quote",
-			"caps=[it's",
+			"a value that is not YAML",
+			"caps=[1",
 			"CFG.yaml",
-			"-c 'caps=[it'\\''s': ",
+			"Flow sequence in block collection must be sufficiently indented and end with a ] (from -c caps)",
 		],
 		[
 			"a tag on the wrong shape",
 			"packs=!append x",
 			"CFG.tag",
-			"-c 'packs=!append x': !append tags a scalar",
+			"!append tags a scalar, and only a list appends (from -c packs)",
 		],
 	])(
-		"refuse a -c with %s, naming it as typed",
+		"refuse a -c with %s, saying it came from -c",
 		async (_, arg, code, message) => {
 			const { request } = await tree({});
 			const found = await refusal(
 				loadConfig(request({ overrides: [{ config: [arg] }] })),
 			);
-			expect(found).toEqual([[code, expect.stringContaining(message)]]);
+			expect(found).toEqual([[code, message]]);
 		},
 	);
 

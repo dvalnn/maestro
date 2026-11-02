@@ -419,6 +419,7 @@ describe("compose", () => {
 					valuesLayer(set, {
 						layer: "flag",
 						flag: "-c 'profiles.shared.context.at=30%'",
+						key: "profiles.shared.context.at",
 						fix: "Set that key, or !delete it, with -c on the resume",
 					}),
 				],
@@ -434,7 +435,7 @@ describe("compose", () => {
 			composed.ok ? [] : composed.diagnostics.map((d) => [d.message, d.hint]),
 		).toEqual([
 			[
-				"profiles.shared.context.at: no context window is known for other model 'none' (set by -c)",
+				"profiles.shared.context.at: no context window is known for other model 'none' (from -c profiles.shared.context.at)",
 				"Set that key, or !delete it, with -c on the resume",
 			],
 		]);

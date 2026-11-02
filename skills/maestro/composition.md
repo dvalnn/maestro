@@ -8,7 +8,7 @@ surface, and a worked example. Done when the file composes and a stub concert of
 1. **Check the classics pack first.** A shape it already has is a param set away; a new file is for a shape it lacks.
 2. **Write the file** at `.maestro/<id>.ts` in the workspace, by the file rules below, starting from the worked example.
    Done when it holds one exported composition with an example set.
-3. **Compose it:** `maestro compose .maestro/<id>.ts`. For each diagnostic, read its code and hint, fix the file, and
+3. **Compose it:** `maestro compose .maestro/<id>.ts`. For each diagnostic, read its message and hint, fix the file, and
    compose again. Done on exit 0, with the plan's node counts and `repo.agent` bound what you meant.
 4. **Rehearse it as a stub concert** (SKILL.md, Stub concerts):
    `maestro perform .maestro/<id>.ts --preset stub [param flags]`. Done when the concert settles with the outcome you
@@ -24,8 +24,9 @@ surface, and a worked example. Done when the file composes and a stub concert of
   ([packs.md](packs.md)) to configure it.
 - Import `@maestro/sdk`, `@maestro/host-repo-sdk`, `node:` builtins and relative files. The `maestro` binary resolves
   the two SDK imports to its own copies, so the file needs no install step.
-- A code node's function must be exported by the composition file itself, or `SCOPE.export` fails it. To run one from a
-  relative file, import it and export it beside the import: `import { tally } from "./lib/util"; export { tally };`.
+- A code node's function must be exported by the composition file itself, or compose fails it (`SCOPE.export` under
+  `--json`). To run one from a relative file, import it and export it beside the import:
+  `import { tally } from "./lib/util"; export { tally };`.
 
 ## The build model
 
@@ -73,7 +74,8 @@ From `@maestro/sdk`:
 | `not(ref)`                                                  | A negated `Ref<Bool>`                                                                                                     |
 
 `items` is a written list or a Ref; over a Ref, `max` is required. `max` of a loop is a literal or a param. Two `loop`
-or `allSettled` calls in one scope derive the same id: give one a `label`, or `SCOPE.duplicate` fails the second.
+or `allSettled` calls in one scope derive the same id: give one a `label`, or compose fails the second
+(`SCOPE.duplicate` under `--json`).
 
 From `@maestro/host-repo-sdk`:
 
@@ -159,6 +161,8 @@ Its plan: `fix: up to 10 node instances, up to 3 repo.agent`. Perform it with
 `rejected` at the loop's last `test`, its reason the check's, and no changeset is made.
 
 ## Diagnostics an author meets
+
+Codes show under `--json`; human output leads with `error:` and the message.
 
 | Code           | Means                                                   | Fix                                                                                 |
 | -------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------- |

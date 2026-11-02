@@ -175,16 +175,18 @@ The stub preset, every profile on the stub harness, is in SKILL.md, section Stub
 
 ### Diagnostics a bootstrap meets
 
-| Diagnostic                                                         | Fix                                                                           |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `HOST.profile: profile 'r' is in no profile root`                  | Add the profile directory `r`, or set `profiles.r.runtime` where it exists    |
-| `HOST.harness: 'x' runs on harness 'h', which is not loaded`       | Use a harness the hint lists                                                  |
-| `HOST.check: 'x' runs check 'c', which config 'target.checks' ...` | Add `target.checks.c`                                                         |
-| `HOST.check: x: check 'c' has no hint, and an agent cannot ...`    | Add `target.checks.c.hint`, in the inline form `{ run, hint }`                |
-| `HOST.target: target repository '...' does not exist`              | Fix `target.repo`                                                             |
-| `CFG.schema: config 'target' must have required property 'repo'`   | Set `target.repo`, or `cd` into the workspace                                 |
-| `CFG.unclaimed: config key 'k' is claimed by no installed ...`     | Rename it as the did-you-mean hint says, or install its pack                  |
-| `HOST.bind: read-only bind 'p' is not an absolute path`            | Give an absolute path that exists, outside the lanes                          |
-| `BOUND.cap: 'repo.agent' may reach at least N, over its cap of M`  | Lower the params that size the plan, or ask to raise the cap                  |
-| `CFG.required: param 'p' (--p) of 'pack.c' is required`            | Pass `--p`, or for a pack's composition set it under `<pack>: <composition>:` |
-| `no pack 'x' is installed`                                         | Extract it into the packs directory, or add its directory to `packs`          |
+Human output reads `error: <message>`; the code, such as `HOST.profile`, shows only under `--json`.
+
+| Message                                                       | Fix                                                                           |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `error: profile 'r' is in no profile root`                    | Add the profile directory `r`, or set `profiles.r.runtime` where it exists    |
+| `error: 'x' runs on harness 'h', which is not loaded`         | Use a harness the hint lists                                                  |
+| `error: 'x' runs check 'c', which config 'target.checks' ...` | Add `target.checks.c`                                                         |
+| `error: x: check 'c' has no hint, and an agent cannot ...`    | Add `target.checks.c.hint`, in the inline form `{ run, hint }`                |
+| `error: target repository '...' does not exist`               | Fix `target.repo`                                                             |
+| `error: config 'target' must have required property 'repo'`   | Set `target.repo`, or `cd` into the workspace                                 |
+| `error: config key 'k' is claimed by no installed ...`        | Rename it as the did-you-mean hint says, or install its pack                  |
+| `error: read-only bind 'p' is not an absolute path`           | Give an absolute path that exists, outside the lanes                          |
+| `error: 'repo.agent' may reach at least N, over its cap of M` | Lower the params that size the plan, or ask to raise the cap                  |
+| `error: param 'p' (--p) of 'pack.c' is required`              | Pass `--p`, or for a pack's composition set it under `<pack>: <composition>:` |
+| `no pack 'x' is installed`                                    | Extract it into the packs directory, or add its directory to `packs`          |

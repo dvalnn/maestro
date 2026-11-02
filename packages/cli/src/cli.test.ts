@@ -118,7 +118,7 @@ describe("compose and config", () => {
 		const file = join(FIXTURES, "twice.ts");
 		const human = await w.call(["compose", file]);
 		expect(human.code).toBe(2);
-		expect(human.err).toMatch(/^SCOPE\.export: /);
+		expect(human.err).toMatch(/^error: /);
 		const document = json(await w.call(["compose", file, "--json"]));
 		expect(document.ok).toBe(false);
 		expect(document.diagnostics.length).toBeGreaterThan(0);
@@ -138,7 +138,7 @@ describe("compose and config", () => {
 			expect(await w.call(["compose", ...target])).toMatchObject({
 				code: 2,
 				err: expect.stringContaining(
-					"CFG.unclaimed: config key 'hello' is claimed by no installed host, pack or core\n  Remove 'hello' from the config, or install the pack or host that claims it. To configure a composition file, make it a pack",
+					"error: config key 'hello' is claimed by no installed host, pack or core\n  Remove 'hello' from the config, or install the pack or host that claims it. To configure a composition file, make it a pack",
 				),
 			});
 		},
@@ -707,22 +707,22 @@ describe("usage errors", () => {
 		[
 			"a -c without '='",
 			["perform", ...GREET, "-c", "concurrency"],
-			/^CFG\.flag: -c concurrency takes <key>=<value>\n {2}Write it as -c <key>=<value>/,
+			/^error: -c concurrency takes <key>=<value>\n {2}Write it as -c <key>=<value>/,
 		],
 		[
 			"a -c with an empty key",
 			["ls", "--config", "=4"],
-			/^CFG\.flag: -c =4: '' is not a key path\n/,
+			/^error: -c =4: '' is not a key path\n/,
 		],
 		[
 			"a -c key nothing claims",
 			["perform", ...GREET, "-c", "nope.x=1"],
-			/^CFG\.unclaimed: -c nope\.x=1: config key 'nope' /,
+			/^error: config key 'nope' .* \(from -c nope\.x\)\n/,
 		],
 		[
 			"a -c value off its key's schema",
 			["compose", ...GREET, "-c", "concurrency=x"],
-			/^CFG\.schema: -c concurrency=x: config 'concurrency' must be integer\n/,
+			/^error: config 'concurrency' must be integer \(from -c concurrency\)\n/,
 		],
 		[
 			"param flags on an IR file",
@@ -762,7 +762,7 @@ describe("usage errors", () => {
 		[
 			"a composition file that declares no example input set",
 			["compose", join(FIXTURES, "bare.ts")],
-			/^CFG\.examples: composition 'bare' declares no example input set\n/,
+			/^error: composition 'bare' declares no example input set\n/,
 		],
 		[
 			"a composition file that is not there",
@@ -777,12 +777,12 @@ describe("usage errors", () => {
 		[
 			"a missing required param",
 			["perform", "demo.ticket"],
-			/^CFG\.required: param 'handle' \(--handle\)/,
+			/^error: param 'handle' \(--handle\)/,
 		],
 		[
 			"a malformed typed param",
 			["perform", "demo.ticket", "--handle", "nonsense"],
-			/^HOST\.param: param 'handle' \(--handle\) of 'demo\.ticket': 'nonsense'/,
+			/^error: param 'handle' \(--handle\) of 'demo\.ticket': 'nonsense'/,
 		],
 	];
 
@@ -1013,10 +1013,10 @@ describe("the record", () => {
 		);
 	});
 
-	test("an error on a terminal stderr colors the code of a diagnostic and dims the hint, off a terminal or with color off it is plain", async () => {
+	test("an error on a terminal stderr colors the severity of a diagnostic and dims the hint, off a terminal or with color off it is plain", async () => {
 		const w = await world();
 		const terminal = () => ({ columns: 80, rows: 24 });
-		const code = `${ESC}[31mCFG.unclaimed${ESC}[39m`;
+		const code = `${ESC}[31merror${ESC}[39m`;
 		const hint = (text: string) => `${ESC}[2m${text}${ESC}[22m`;
 		const diagnosed = ["perform", ...GREET, "-c", "nope.x=1"];
 		const bad = await w.call(diagnosed, { stderrTerminal: terminal });
@@ -1049,8 +1049,36 @@ describe("the record", () => {
 				{ code: "X.y", severity: "warning", message: "m", hint: "h" },
 				true,
 			),
-		).toBe(`${ESC}[33mwarning X.y${ESC}[39m: m\n  ${hint("h")}`);
+		).toBe(`${ESC}[33mwarning${ESC}[39m: m\n  ${hint("h")}`);
 		expect(renderWarning("m", true)).toBe(`${ESC}[33mwarning${ESC}[39m: m`);
+	});
+
+	test("a diagnostic renders as its severity word and message, led by its file location, then the hint", () => {
+		const d = { code: "X.y", message: "m", hint: "h" } as const;
+		expect(renderDiagnostic({ ...d, severity: "error" }, false)).toBe(
+			"error: m\n  h",
+		);
+		expect(renderDiagnostic({ ...d, severity: "warning" }, false)).toBe(
+			"warning: m\n  h",
+		);
+		expect(
+			renderDiagnostic(
+				{ ...d, severity: "error", source: { file: "c.yaml", line: 12 } },
+				false,
+			),
+		).toBe("c.yaml:12: error: m\n  h");
+		expect(
+			renderDiagnostic(
+				{
+					code: "CFG.yaml",
+					severity: "error",
+					message: "bad yaml",
+					hint: "h",
+					source: { file: "/w/c.yaml", line: 3 },
+				},
+				false,
+			),
+		).toBe("/w/c.yaml:3: error: bad yaml\n  h");
 	});
 
 	test("ls lists a concert's node instances in graph order, one node's expansions by their first event, whatever order the record holds them", async () => {

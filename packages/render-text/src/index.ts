@@ -95,7 +95,7 @@ export function listing(plan: Plan): string {
 	if (plan.diagnostics.length)
 		lines.push(
 			"warnings:",
-			...table(plan.diagnostics.map((d) => [d.code, d.message])),
+			...plan.diagnostics.map((d) => `  ${d.severity}: ${d.message}`),
 		);
 	return lines.join("\n");
 }

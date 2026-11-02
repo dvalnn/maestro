@@ -56,6 +56,14 @@ describe("text forms", () => {
 		);
 	});
 
+	test("listing: a diagnostic by its severity word, indented", async () => {
+		const warned = await plan("minimal");
+		warned.diagnostics = [
+			{ code: "x", severity: "warning", message: "m", hint: "h" },
+		];
+		expect(listing(warned)).toEndWith("warnings:\n  warning: m");
+	});
+
 	test("listing: each node's count and expansions, then bounds", async () => {
 		expect(listing(await plan("minimal"))).toBe(
 			[

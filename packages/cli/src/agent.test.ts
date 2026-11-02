@@ -362,7 +362,7 @@ Add --probe to check it against pi`);
 		const w = await roster();
 		expect(await w.call(["agent", "show", "demo/bilder"])).toMatchObject({
 			code: 2,
-			err: "HOST.profile: profile demo/bilder is in no profile root\n  Did you mean 'demo/builder'?",
+			err: "error: profile demo/bilder is in no profile root\n  Did you mean 'demo/builder'?",
 		});
 	});
 });

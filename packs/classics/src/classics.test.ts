@@ -106,12 +106,12 @@ describe("panel_review", () => {
 		]);
 		expect(await maestro("compose", ...REVIEW, ...revs)).toMatchObject({
 			code: 2,
-			err: "CFG.param: classics.panel_review takes --change or --revs, not both\n  Drop one of --change and --revs\n",
+			err: "error: classics.panel_review takes --change or --revs, not both\n  Drop one of --change and --revs\n",
 		});
 		// perform takes no example set, so it alone can give neither.
 		expect(await maestro("perform", ...REVIEW.slice(0, 3))).toMatchObject({
 			code: 2,
-			err: "CFG.param: classics.panel_review needs --change or --revs\n  Pass --revs main..feature, or --change <concert id>.<node instance id>\n",
+			err: "error: classics.panel_review needs --change or --revs\n  Pass --revs main..feature, or --change <concert id>.<node instance id>\n",
 		});
 	});
 
@@ -121,9 +121,7 @@ describe("panel_review", () => {
 			configure(),
 		);
 		expect(code).toBe(2);
-		expect(err).toContain(
-			"CFG.unclaimed: config key 'classics.panel_review.lense'",
-		);
+		expect(err).toContain("error: config key 'classics.panel_review.lense'");
 		expect(err).toContain("Did you mean 'classics.panel_review.lenses'?");
 	});
 
@@ -469,5 +467,5 @@ test.each([
 ])("an out-of-range %s is refused by its name", async (param, args) => {
 	const { err, code } = await maestro("compose", ...args);
 	expect(code).toBe(2);
-	expect(err).toContain(`CFG.schema: param '${param}'`);
+	expect(err).toContain(`error: param '${param}'`);
 });

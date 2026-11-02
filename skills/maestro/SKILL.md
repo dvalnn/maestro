@@ -40,7 +40,8 @@ This skill was checked against maestro 0.1.0-rc.2. When `maestro --version` name
 
 1. **Find the workspace.** Look for `.maestro/config.yaml` from the cwd up. None, or a profile runtime, target or check
    missing: read [bootstrap.md](bootstrap.md) and follow it. Done when `maestro compose <c>` reports no `CFG.*` or
-   `HOST.*` diagnostic; a runtime set only in a preset needs `--preset <name>` on that compose too.
+   `HOST.*` diagnostic (codes show under `--json`); a runtime set only in a preset needs `--preset <name>` on that
+   compose too.
 2. **Pick the composition.** `<pack>.<composition>` of an installed pack, or a file. `maestro rep --json` lists every
    installed composition with its doc, params, config entries and a `perform` line; `maestro rep <pack>.<composition>`
    shows one, such as `classics.panel_review`. Its params are kebab-case flags (`--max-repairs 3`, `--no-strict`). Done
@@ -85,7 +86,7 @@ Read [running.md](running.md) for compose and perform flags, the record, artifac
 | ---- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | 0    | Done, or the concert settled `ok`                                      | Report the outputs and the changeset                                    |
 | 1    | The concert settled `failed`, or the command could not do what it said | Read the message; for a `failed` concert, fix the root cause and resume |
-| 2    | Usage error, or the composition does not compose                       | Read each diagnostic's code and hint; fix, compose again                |
+| 2    | Usage error, or the composition does not compose                       | Read each diagnostic's message and hint; fix, compose again             |
 | 3    | The concert settled `rejected`                                         | Report the verdict: the root cause instance and its reason              |
 | 124  | `wait --timeout` passed, the concert still running                     | Wait again, or `maestro kill <id>` when the user says to                |
 

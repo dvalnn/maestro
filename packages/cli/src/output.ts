@@ -95,18 +95,17 @@ export const paint = (
 ) => (color ? styled(style, text) : text);
 
 /**
- * A diagnostic as two lines: the source location when known, the code and message, then the hint. With `color` the code
- * is red, or yellow for a warning, and the hint dim.
+ * A diagnostic as two lines: the source location when known, `error:` or `warning:` and the message, then the hint.
+ * With `color` the severity word is red, or yellow for a warning, and the hint dim.
  */
 export function renderDiagnostic(d: Diagnostic, color: boolean): string {
 	const warning = d.severity === "warning";
 	const label = paint(
 		warning ? "yellow" : "red",
-		warning ? `warning ${d.code}` : d.code,
+		warning ? "warning" : "error",
 		color,
 	);
-	const where = d.message.startsWith(located(d)) ? "" : located(d);
-	return `${where}${label}: ${d.message}\n  ${paint("dim", d.hint, color)}`;
+	return `${located(d)}${label}: ${d.message}\n  ${paint("dim", d.hint, color)}`;
 }
 
 /** A warning on one line, `warning: <text>`, with `warning` yellow when `color`. */

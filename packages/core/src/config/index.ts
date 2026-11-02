@@ -41,6 +41,10 @@ export type Source = {
 	file?: string;
 	line?: number;
 	flag?: string;
+	/** The key the flag sets, as typed. */
+	key?: string;
+	/** The short id of the concert a resume reapplies the flag from. */
+	concert?: string;
 	/** The fix a diagnostic on a value it set gives, in place of its own. */
 	fix?: string;
 };
@@ -95,8 +99,6 @@ const YAML_TAG = "tag:yaml.org,2002:";
 const locationOf = ({ file, line }: Source): SourceLocation | undefined =>
 	file !== undefined && line !== undefined ? { file, line } : undefined;
 
-const at = ({ file, line }: Source) => (file ? `${file}:${line}: ` : "");
-
 const spell = (path: KeyPath) => path.join(".");
 
 /** The key path segment that matches any one key. */
@@ -109,9 +111,13 @@ const deferredAt = (patterns: readonly KeyPath[], path: KeyPath) =>
 			p.length <= path.length && p.every((k, i) => k === ANY || k === path[i]),
 	);
 
+const origin = ({ key, concert }: Source) =>
+	`(from -c ${key}${concert === undefined ? "" : ` of concert ${concert}`})`;
+
 /**
- * An error diagnostic, located at `source` when a file set it, its message led by the flag when a flag did, and its
- * hint the source's fix when it has one.
+ * An error diagnostic, located at `source` when a file set it, its message ending `(from -c <key>)` when a flag did, or
+ * `(from -c <key> of concert <id>)` when a resumed concert was performed with it, and its hint the source's fix when it has
+ * one.
  */
 export function configDiagnostic(
 	code: string,
@@ -124,16 +130,14 @@ export function configDiagnostic(
 		code,
 		severity: "error",
 		message:
-			source?.flag === undefined ? message : `${source.flag}: ${message}`,
+			source?.flag === undefined ? message : `${message} ${origin(source)}`,
 		hint: source?.fix ?? hint,
 		...(location && { source: location }),
 	};
 }
 
 const tagError = (source: Source, message: string, hint: string) =>
-	new ConfigError([
-		configDiagnostic("CFG.tag", source, at(source) + message, hint),
-	]);
+	new ConfigError([configDiagnostic("CFG.tag", source, message, hint)]);
 
 type Reading = { doc: Document; sourceAt: (offset: number) => Source };
 
@@ -188,7 +192,7 @@ function keyOf(key: unknown, source: Source): string {
 		configDiagnostic(
 			"CFG.yaml",
 			source,
-			`${at(source)}the merge key '${MERGE_KEY}' is not supported`,
+			`the merge key '${MERGE_KEY}' is not supported`,
 			`Write the keys out, or merge across files with ${REPLACE}, ${APPEND} or ${DELETE}`,
 		),
 	]);
@@ -310,6 +314,10 @@ export type LayerText = {
 	| {
 			/** The flag the text was given in, as diagnostics name it. Its values have no line. */
 			flag: string;
+			/** The key the flag sets, as typed. */
+			key: string;
+			/** The short id of the concert a resume reapplies the flag from. */
+			concert?: string;
 			/** The fix a diagnostic on one of its values gives, in place of its own. */
 			fix?: string;
 			/** The directory the flag's relative paths resolve against. */
@@ -325,7 +333,13 @@ const originOf = (text: LayerText): { source: Source; base: string } =>
 				base: text.base ?? dirname(text.file),
 			}
 		: {
-				source: { layer: text.layer, flag: text.flag, fix: text.fix },
+				source: {
+					layer: text.layer,
+					flag: text.flag,
+					key: text.key,
+					concert: text.concert,
+					fix: text.fix,
+				},
 				base: text.base,
 			};
 
@@ -351,7 +365,7 @@ export function parseLayer(text: string, from: LayerText): Layer {
 			configDiagnostic(
 				"CFG.yaml",
 				source,
-				`${at(source)}${error.message}`,
+				error.message,
 				origin.file === undefined
 					? "Fix the value's YAML"
 					: "Fix the YAML at that line",
@@ -367,7 +381,7 @@ export function parseLayer(text: string, from: LayerText): Layer {
 			configDiagnostic(
 				"CFG.yaml",
 				source,
-				`${origin.file ?? origin.flag} holds a ${tagOf(root) ?? shapeOf(root)}, not a mapping of config keys`,
+				`the file holds a ${tagOf(root) ?? shapeOf(root)}, not a mapping of config keys`,
 				"Write the file as untagged 'key: value' lines",
 			),
 		]);
