@@ -635,7 +635,7 @@ describe("examples", () => {
 			expect(resolver !== undefined).toBe(resolved);
 			if (resolver)
 				expect(framed.get(resolver)).toContain(
-					"- `/in/incoming`: Read when you need",
+					"- `/in/incoming` (directory): Read when you need",
 				);
 			const series = joinPath(
 				concertDirs(concert.dir, concert.id).artifacts,

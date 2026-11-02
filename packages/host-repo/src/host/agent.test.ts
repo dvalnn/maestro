@@ -4,12 +4,14 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { HarnessRequest, StubStep } from "../harness/index";
 import { stubHarness } from "../harness/index";
 import { resolveProfile } from "../profile/index";
+import { profileAttached } from "./agent";
 import { probe, probeRequest } from "./probe";
 import { concertUsage, releaseConcert } from "./store";
 import {
@@ -474,7 +476,7 @@ describe("agent profile", () => {
 		});
 		expect(
 			readFileSync(join(artifact("x", "staged"), "instructions.md"), "utf8"),
-		).toContain("- `/in/kb`: for the house style");
+		).toContain("- `/in/kb` (directory): for the house style");
 		expect(instances[0]?.enrichment?.profile).toMatchObject({
 			name: `${PACK}/builder`,
 			dir,
@@ -496,6 +498,40 @@ describe("agent profile", () => {
 				"kb/style.md": expect.stringMatching(/^sha256:/),
 			},
 		});
+	});
+});
+
+describe("profileAttached", () => {
+	test("a profile attachment is a directory when its path, followed through a symlink, is one, and a file otherwise or when missing", async () => {
+		const dir = profile(
+			"kinds",
+			"runtime: { harness: stub, model: none }\nattachments: { style: { path: style.md, hint: for the style } }\n",
+			{ "style.md": "terse\n", "kb/style.md": "terse\n" },
+		);
+		symlinkSync(join(dir, "kb"), join(dir, "linked"));
+		const resolved = await resolveProfile(
+			"kinds",
+			setupOf(configOf(toyTarget())),
+		);
+		const hint = "h";
+
+		expect(
+			profileAttached({
+				...resolved,
+				fields: {
+					...resolved.fields,
+					attachments: {
+						...resolved.fields.attachments,
+						linked: { path: join(dir, "linked"), hint },
+						gone: { path: join(dir, "gone"), hint },
+					},
+				},
+			}),
+		).toEqual([
+			["style", "for the style", "file"],
+			["linked", hint, "directory"],
+			["gone", hint, "file"],
+		]);
 	});
 });
 
@@ -536,7 +572,9 @@ describe("agent probe", () => {
 		expect(seen?.env?.PATH).toStartWith(`${bin}:`);
 		const instructions = readFileSync(seen?.instructions ?? "", "utf8");
 		expect(instructions).toStartWith("Be terse.\n\n");
-		expect(instructions).toContain("- `/in/kb`: for the house style");
+		expect(instructions).toContain(
+			"- `/in/kb` (directory): for the house style",
+		);
 		expect(seen?.outputs).toEqual([]);
 		expect(readdirSync(seen?.lane ?? "")).toEqual([]);
 	});

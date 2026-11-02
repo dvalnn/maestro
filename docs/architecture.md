@@ -453,8 +453,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 **Attachments and agent-run checks**
 
 - An attachment is a named artifact input of an agent, each with a required `hint` that says when to read it. It is
-  mounted read-only at `/in/<name>` and listed in the frame with its hint as written, and its content hash is in the
-  resume key. A bind is not (ADR 0011).
+  mounted read-only at `/in/<name>` and listed in the frame as a file or a directory, with its hint as written, and its
+  content hash is in the resume key. A bind is not (ADR 0011).
 - An agent that names checks gets a `check <name>` command on its `PATH`, staged read-only; one that names none gets no
   `check` command. It runs the named check in `/lane` under the check's timeout, if any, and sets the check's `env`
   inside that command alone, never in the rest of the agent's sandbox, sets `MAESTRO_CHECK_OUTPUT` to a fresh writable

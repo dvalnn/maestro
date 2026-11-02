@@ -13,8 +13,8 @@ test("a write-lane builder's frame states its working copy, checks, attachments 
 		lane: "write",
 		checks: [["all", "format, lint, types and every test"]],
 		attachments: [
-			["upheld", "first, for the findings to fix"],
-			["spec", "for what the change must do"],
+			["upheld", "first, for the findings to fix", "file"],
+			["spec", "for what the change must do", "directory"],
 		],
 		out: [
 			{ file: "notes.md", format: "markdown" },
@@ -38,8 +38,8 @@ Run the target's checks with \`check <name>\`, and never write your own. Each pr
 ## Attachments
 
 Read-only, in your sandbox:
-- \`/in/upheld\`: first, for the findings to fix
-- \`/in/spec\`: for what the change must do
+- \`/in/upheld\` (file): first, for the findings to fix
+- \`/in/spec\` (directory): for what the change must do
 
 ## Reply
 

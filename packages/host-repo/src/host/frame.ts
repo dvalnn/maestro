@@ -119,14 +119,17 @@ ${LISTED}
 	],
 };
 
+/** Whether an attachment mounts as a file or a directory. */
+export type AttachmentKind = "file" | "directory";
+
 /** What the frame says of an agent's run. */
 export type Run = {
 	/** `write` for a lane the agent changes, `read` for one it reads; absent with no lane. */
 	lane?: "write" | "read";
 	/** The checks it may run, by name, each with its hint. */
 	checks: [name: string, hint: string][];
-	/** Its attachments, by name, each with its hint. */
-	attachments: [name: string, hint: string][];
+	/** Its attachments, by name, each with its hint and kind. */
+	attachments: [name: string, hint: string, kind: AttachmentKind][];
 	/** The files it writes in the outbox. */
 	out: Output[];
 	kind: ReplyKind;
@@ -161,7 +164,7 @@ function checks({ checks, lane }: Run) {
 
 function attachments({ attachments }: Run) {
 	const lines = attachments.map(
-		([name, hint]) => `- \`${attachmentPath(name)}\`: ${hint}`,
+		([name, hint, kind]) => `- \`${attachmentPath(name)}\` (${kind}): ${hint}`,
 	);
 	return section(
 		"Attachments",

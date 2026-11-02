@@ -158,7 +158,9 @@ describe("agent-runnable checks and attachments", () => {
 				join(artifact("reader", "staged"), "instructions.md"),
 				"utf8",
 			);
-			expect(framed).toContain("- `/in/notes`: read when you need the notes");
+			expect(framed).toContain(
+				"- `/in/notes` (file): read when you need the notes",
+			);
 			expect(framed).toContain("`check <name>`, and never write your own");
 			expect(framed).toContain("- `check red`: passes, then fails");
 			expect(framed).not.toContain("exit 1");

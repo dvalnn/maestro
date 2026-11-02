@@ -8,7 +8,7 @@ import type {
 	ObservedEnvironment,
 } from "../harness/index";
 import { attachmentPath, type Profile } from "../profile/index";
-import { sessionsOf, stage } from "./agent";
+import { profileAttached, sessionsOf, stage } from "./agent";
 import { repoSetup } from "./config";
 import { type Run, WORK } from "./frame";
 import { pathBinds } from "./run-lines";
@@ -39,7 +39,7 @@ export function probeRequest(
 	const told: Run = {
 		lane: "write",
 		checks: [],
-		attachments: attachments.map(([name, a]) => [name, a.hint]),
+		attachments: profileAttached(profile),
 		out: [],
 		kind: WORK,
 		sessions:

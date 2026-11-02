@@ -3,6 +3,7 @@ import {
 	mkdirSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -728,23 +729,39 @@ function sessionOf(
 	};
 }
 
+/** The attachments of `profile`, by name, each with its hint and whether its path is a file or a directory. */
+export const profileAttached = (profile: Profile): Run["attachments"] =>
+	Object.entries(profile.fields.attachments).map(([name, a]) => [
+		name,
+		a.hint,
+		statSync(a.path, { throwIfNoEntry: false })?.isDirectory()
+			? "directory"
+			: "file",
+	]);
+
 /**
  * What the frame tells an agent of `config` running `profile` about its run: its checks `named`, and its attachments,
- * the graph's then the profile's, each with its hint.
+ * the graph's then the profile's, each with its hint and kind.
  */
 function toldOf(
 	config: AgentConfig,
 	profile: Profile,
 	named: [string, AgentCheck][],
 ): Run {
-	const { context, attachments } = profile.fields;
+	const { context } = profile.fields;
 	return {
 		lane: config.lane.mode === "read" ? "read" : "write",
 		checks: named.map(([name, spec]) => [name, spec.hint]),
 		attachments: [
-			...Object.entries(config.attachments ?? {}),
-			...Object.entries(attachments),
-		].map(([name, a]) => [name, a.hint]),
+			...Object.entries(config.attachments ?? {}).map(
+				([name, a]): Run["attachments"][number] => [
+					name,
+					a.hint,
+					a.type === CORE_TYPES.dir ? "directory" : "file",
+				],
+			),
+			...profileAttached(profile),
+		],
 		out: Object.values(config.out ?? {}),
 		kind: config.verdict ? VERDICT : WORK,
 		sessions:

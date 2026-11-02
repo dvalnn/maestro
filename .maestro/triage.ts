@@ -513,7 +513,7 @@ const ASKING = `Each question is {"ask": "the question, one line", "lead": "a se
 const triageTask = (
 	maxGroups: number,
 ) => `Triage the attached issue against the attached backlog snapshot. ${GATE}
-First write backlog.md: only the backlog issues that matter to this one, each with its number, title and why, or "None.".
+First write backlog.md: only the backlog issues that matter to this one, open or recently closed, each with its number, title and why, or "None.". A closed issue matters when this one builds on it, links it or reworks what it changed; the snapshot lists those under "Recently closed" by title alone.
 Then write ruling.json in exactly this shape, leaving out duplicateOf and related where the verdict does not need them:
 {"verdict": "plan", "files": ["path/to/file.ts"], "groups": [{"id": "G1", "area": "the line of inquiry", "questions": ["a question the target's code answers"]}], "questions": [], "duplicateOf": 12, "related": [7]}
 - verdict: duplicate when a backlog issue already asks this one, with duplicateOf; needs-info when it cannot be planned without the owner's answer, with those questions; plan otherwise.
@@ -549,7 +549,7 @@ export const triage = composition(
 			}),
 			backlog: Markdown({
 				description:
-					"The backlog snapshot: the open issues to check it against",
+					"The backlog snapshot: the open and recently closed issues to check it against",
 			}),
 			maxGroups: atLeastOne(
 				4,
@@ -582,7 +582,7 @@ export const triage = composition(
 				issue: issued,
 				backlog: {
 					artifact: literal(backlog, Markdown()),
-					hint: "for every open issue, to cut down to those that matter",
+					hint: "for the open and recently closed issues, to cut down to those that matter",
 				},
 			},
 			out: {
