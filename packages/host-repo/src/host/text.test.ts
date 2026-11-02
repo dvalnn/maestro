@@ -50,6 +50,19 @@ describe("repoText.progress", () => {
 			{ kind: "context", used: 19416, window: 200000 },
 			{ word: "context", detail: "19.4k" },
 		],
+		[
+			{
+				kind: "context",
+				used: 44_700,
+				metrics: {
+					tokens_in: 2,
+					tokens_out: 683,
+					tokens_cache_read: 44_000,
+					tokens_cache_write: 697,
+				},
+			},
+			{ word: "context", detail: "44.7k · in 2 · out 683 · cache 44.7k" },
+		],
 		[{ kind: "context" }, undefined],
 		[
 			{

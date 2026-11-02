@@ -20,6 +20,7 @@ import {
 	CORE_TYPES,
 	compact,
 	durationText,
+	type HostEvent,
 	type HostNode,
 	MAESTRO_TYPE,
 	messageOf,
@@ -306,6 +307,23 @@ function observe(talk: Talk, e: HarnessEvent, at: number | undefined) {
 	return e.kind === "context" && at !== undefined && e.used >= at;
 }
 
+/** A `usage` harness event, held until the event after it shows whether it pairs with a `context`. */
+type Usage = Extract<HarnessEvent, { kind: "usage" }>;
+
+/**
+ * One event per model call: a `usage` and the `context` after it become one `context` event carrying both. Returns
+ * what `e` releases to the record, and the usage held in its place.
+ */
+function paired(
+	held: Usage | undefined,
+	e: HarnessEvent,
+): [out: HostEvent[], held: Usage | undefined] {
+	if (e.kind === "context" && held !== undefined)
+		return [[{ ...e, metrics: held.metrics }], undefined];
+	const out = held === undefined ? [] : [held];
+	return e.kind === "usage" ? [out, e] : [[...out, e], undefined];
+}
+
 /**
  * Runs one turn. Once a context event reaches `at`, the turn is cancelled, and reported `full` unless it settled with
  * its result first.
@@ -314,14 +332,18 @@ async function turn(talk: Talk, req: HarnessRequest, at?: number) {
 	const run = talk.harness.run(req);
 	talk.live.stop = () => run.cancel();
 	let full = false;
+	let held: Usage | undefined;
 	for await (const e of run.events) {
 		if (e.kind === "raw") continue;
-		talk.emit(e);
+		const [out, next] = paired(held, e);
+		held = next;
+		for (const event of out) talk.emit(event);
 		if (observe(talk, e, at) && !full) {
 			full = true;
 			void run.cancel();
 		}
 	}
+	if (held !== undefined) talk.emit(held);
 	const result = await run.result;
 	return { result, full: full && result.outcome === "failed" };
 }

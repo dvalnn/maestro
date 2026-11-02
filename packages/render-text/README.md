@@ -55,8 +55,6 @@ The text forms of a plan (architecture 11). It imports `@maestro/ir` alone: a `P
   `view.columns`, and a row per output, colored when `outputsColor`. A value not wrapped shows as it is. Without
   `ending`, the `concert` row alone.
 - `flat(text)`: text on one line, control characters shown as escapes.
-- `usageFolder()`: a folder that merges each `usage` event with the `context` event right after it for the same instance
-  into one `context` event, holding a trailing `usage` until the next call or `final`.
 - `eventLine(ir, event, view)`: one event as its offset from the concert's start, instance name and what happened. A
   progress event shows its `kind`, then each other field; a multi-line string continues indented.
 

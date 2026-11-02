@@ -69,11 +69,21 @@ function resultWording({ bytes, error }: HostEvent): Wording | undefined {
 	return { word: "result", detail: [String(bytes), ...code].join(SEP) };
 }
 
-/** `context`, the prompt size of the latest model call in `compact` tokens: the agent's running context total. */
-function contextWording({ used }: HostEvent): Wording | undefined {
-	return typeof used === "number"
-		? { word: "context", detail: compact(used) }
-		: undefined;
+/**
+ * `context`, the prompt size of the latest model call in `compact` tokens: the agent's running context total. When the
+ * event carries the call's usage `metrics`, the usage detail follows it.
+ */
+function contextWording(event: HostEvent): Wording | undefined {
+	const { used } = event;
+	if (typeof used !== "number") return undefined;
+	const usage = usageWording(event);
+	return {
+		word: "context",
+		detail:
+			usage === undefined
+				? compact(used)
+				: [compact(used), usage.detail].join(SEP),
+	};
 }
 
 /** `environment`, the count of tools the harness reported loading. */

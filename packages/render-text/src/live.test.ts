@@ -3,7 +3,6 @@ import { styleText } from "node:util";
 import type { ConcertEvent, EventBody, Ir } from "@maestro/ir";
 import { END_S, MID_S, PANEL_IR, panelEvents } from "./fixtures/panel";
 import {
-	type Annotated,
 	agentsOf,
 	agentText,
 	closingBlock,
@@ -14,7 +13,6 @@ import {
 	shortId,
 	shortIds,
 	stateWord,
-	usageFolder,
 	type View,
 } from "./live";
 import { WIDE_GAP } from "./tree";
@@ -536,72 +534,6 @@ describe("eventLine", () => {
 			);
 			expect(detailOf(progress({ kind: "text", text: "42" }))).toBe(grey("42"));
 		});
-	});
-});
-
-describe("usageFolder", () => {
-	const wording = (word: string, detail: string) => ({ word, detail });
-	const at = (
-		node: string,
-		word: string,
-		detail: string,
-		expansion = "",
-	): Annotated =>
-		({
-			...eventsOf([
-				[node, expansion, 0, { type: "progress", event: { kind: word } }],
-			])[0],
-			wording: wording(word, detail),
-		}) as Annotated;
-	const USAGE = "in 2 · out 683 · cache 44.7k";
-	const shown = (events: Annotated[]) =>
-		events.map((e) => (e.type === "progress" ? e.wording : e.type));
-
-	test("folds a usage and the context after it for the same instance into one context line, context first", () => {
-		const fold = usageFolder();
-		const out = fold(
-			[
-				at("a", "usage", USAGE),
-				at("a", "context", "44.7k"),
-				at("a", "tool", "x"),
-			],
-			true,
-		);
-		expect(shown(out)).toEqual([
-			wording("context", `44.7k · ${USAGE}`),
-			wording("tool", "x"),
-		]);
-	});
-
-	test("leaves a usage no context follows, a context no usage precedes, and another instance's context as they are", () => {
-		const out = usageFolder()(
-			[
-				at("a", "context", "1k"),
-				at("a", "usage", USAGE),
-				at("b", "context", "2k"),
-				at("a", "usage", "in 1 · out 1 · cache 0"),
-				at("a", "context", "3k", "x"),
-			],
-			true,
-		);
-		expect(shown(out)).toEqual([
-			wording("context", "1k"),
-			wording("usage", USAGE),
-			wording("context", "2k"),
-			wording("usage", "in 1 · out 1 · cache 0"),
-			wording("context", "3k"),
-		]);
-	});
-
-	test("holds a trailing usage across calls until the next event or `final`, keeping every event in order", () => {
-		const fold = usageFolder();
-		expect(fold([at("a", "usage", USAGE)], false)).toEqual([]);
-		expect(shown(fold([at("a", "context", "44.7k")], false))).toEqual([
-			wording("context", `44.7k · ${USAGE}`),
-		]);
-		expect(fold([at("a", "usage", USAGE)], false)).toEqual([]);
-		expect(shown(fold([], true))).toEqual([wording("usage", USAGE)]);
-		expect(fold([], true)).toEqual([]);
 	});
 });
 

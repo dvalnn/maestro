@@ -911,62 +911,6 @@ function wrapped(segs: readonly Seg[], width: number): Seg[][] {
 	return rows;
 }
 
-const detailOf = (event: Annotated) =>
-	event.type === "progress" ? (event.wording?.detail ?? "") : "";
-
-const isWord = (event: Annotated, word: string) =>
-	event.type === "progress" && event.wording?.word === word;
-
-/** Whether `next` is a `context` event of the instance that emitted `usage`. */
-const completes = (usage: Annotated, next: Annotated) =>
-	isWord(next, "context") &&
-	usage.node === next.node &&
-	usage.expansion === next.expansion;
-
-/** `usage` and the `context` completing it as one `context` event: the context's detail, then the usage's. */
-const merged = (usage: Annotated, context: Annotated): Annotated => ({
-	...context,
-	wording: {
-		word: "context",
-		detail: [context, usage].map(detailOf).join(" · "),
-	},
-});
-
-/** The events `event` releases when the `usage` event `held` precedes it, and the `usage` still held after it. */
-function usageStep(
-	held: Annotated | undefined,
-	event: Annotated,
-): [out: Annotated[], held: Annotated | undefined] {
-	if (held && completes(held, event)) return [[merged(held, event)], undefined];
-	const before = held ? [held] : [];
-	return isWord(event, "usage")
-		? [before, event]
-		: [[...before, event], undefined];
-}
-
-/**
- * Folds each `usage` event with the `context` event right after it for the same instance into one `context` event,
- * as a view shows them; the record keeps both. A `usage` is held until the next event decides, so a call may leave
- * its last `usage` held; `final` gives it as it is.
- */
-export function usageFolder(): (
-	events: readonly Annotated[],
-	final: boolean,
-) => Annotated[] {
-	let held: Annotated | undefined;
-	return (events, final) => {
-		const out: Annotated[] = [];
-		for (const event of events) {
-			const [emit, next] = usageStep(held, event);
-			out.push(...emit);
-			held = next;
-		}
-		if (final && held) out.push(held);
-		if (final) held = undefined;
-		return out;
-	};
-}
-
 /** The width of the node column: the longest node path of `ir` with room for a two-digit key per group. */
 const nodeWidthOf = (ir: Ir, graph: GraphIndex) =>
 	Math.max(

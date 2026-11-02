@@ -510,7 +510,8 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   record, which pre-flight cannot read. `agent show --probe` and every agent turn keep the window the harness reports:
   claude's `result` line under `modelUsage`, pi's through its reporter extension. Pre-flight never probes, so it spends
   nothing. Each model call's prompt size, input and cache read and write together, reaches the record as a `context`
-  progress event `{ used }`, the window as a `window` event `{ tokens }`, and each compaction as a `compaction` event.
+  progress event `{ used }`, with the `metrics` of the usage the harness reported for that call when there was one, the
+  window as a `window` event `{ tokens }`, and each compaction as a `compaction` event.
 
 - Under `handoff`, a model call whose prompt reaches `at` cancels the turn, unless the turn settles with its result
   first, which then stands. One more turn in the same session asks for a handoff note at `/session/handoff.md`; `at`

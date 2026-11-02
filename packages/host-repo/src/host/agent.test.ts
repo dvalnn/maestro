@@ -924,6 +924,91 @@ Change no other file. Your reply is not read.`;
 		};
 	}
 
+	test("a model call's usage and the context after it reach the record as one context event", async () => {
+		const { result, progress } = await handed("handoff-tokens", {
+			first: [
+				{ emit: { type: "usage", tokens_in: 5, tokens_out: 1 } },
+				{ emit: { type: "context", used: 7 } },
+				{ emit: { type: "usage", tokens_in: 3, tokens_out: 1 } },
+				OK,
+			],
+		});
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(progress).toContainEqual({
+			kind: "context",
+			used: 7,
+			metrics: { tokens_in: 5, tokens_out: 1 },
+		});
+		const usages = progress.filter((e) => e.kind === "usage");
+		expect(usages).toEqual([
+			{ kind: "usage", metrics: { tokens_in: 3, tokens_out: 1 } },
+		]);
+	});
+
+	test("a usage another usage follows stays a usage event, and the second pairs with the context after it", async () => {
+		const { progress } = await handed("handoff-tokens", {
+			first: [
+				{ emit: { type: "usage", tokens_in: 5, tokens_out: 1 } },
+				{ emit: { type: "usage", tokens_in: 3, tokens_out: 2 } },
+				{ emit: { type: "context", used: 7 } },
+				OK,
+			],
+		});
+		expect(progress.filter((e) => e.kind === "usage")).toEqual([
+			{ kind: "usage", metrics: { tokens_in: 5, tokens_out: 1 } },
+		]);
+		expect(progress).toContainEqual({
+			kind: "context",
+			used: 7,
+			metrics: { tokens_in: 3, tokens_out: 2 },
+		});
+	});
+
+	test("a usage the next event releases reaches the record before it", async () => {
+		const { progress } = await handed("handoff-tokens", {
+			first: [
+				{ emit: { type: "usage", tokens_in: 5, tokens_out: 1 } },
+				{ emit: { type: "tool", name: "bash", input: {} } },
+				OK,
+			],
+		});
+		expect(
+			progress.flatMap((e) =>
+				e.kind === "usage" || e.kind === "tool" ? [e.kind] : [],
+			),
+		).toEqual(["usage", "tool"]);
+	});
+
+	test("a raw event between a usage and its context leaves them paired", async () => {
+		const { progress } = await handed("handoff-tokens", {
+			first: [
+				{ emit: { type: "usage", tokens_in: 5, tokens_out: 1 } },
+				{ emit: { type: "unmodelled" } },
+				{ emit: { type: "context", used: 7 } },
+				OK,
+			],
+		});
+		expect(progress).toContainEqual({
+			kind: "context",
+			used: 7,
+			metrics: { tokens_in: 5, tokens_out: 1 },
+		});
+		expect(progress.filter((e) => e.kind === "usage")).toEqual([]);
+	});
+
+	test("a usage that ends the harness's stream still reaches the record", async () => {
+		const { progress } = await handed("handoff-tokens", {
+			first: [
+				{ emit: { type: "usage", tokens_in: 5, tokens_out: 1 } },
+				{ sh: "kill -9 $$" },
+			],
+		});
+		expect(progress).toContainEqual({
+			kind: "usage",
+			metrics: { tokens_in: 5, tokens_out: 1 },
+		});
+	});
+
 	test.each<[string, string, number, number | undefined]>([
 		["a token trigger", "handoff-tokens", 100, undefined],
 		["a percentage trigger of the window kept", "handoff-percent", 50, 200],

@@ -14,7 +14,6 @@ import {
 	type Seen,
 	seen,
 	shortIds,
-	usageFolder,
 } from "@maestro/render-text/live";
 import {
 	type Browsed,
@@ -110,15 +109,13 @@ const jsonLines =
 	};
 
 /** A text line per event: wrapped at the terminal's width on one, else one line each. */
-const eventLines = (deps: Deps, color: boolean, terminal?: Terminal): Show => {
-	const fold = usageFolder();
-	return (events, row) => {
+const eventLines =
+	(deps: Deps, color: boolean, terminal?: Terminal): Show =>
+	(events, row) => {
 		const view = viewOf(row, color, terminal && { ...UNFRAMED, ...terminal() });
-		const read = annotated(events, hostTextOf(deps.hosts, row.ir));
-		for (const e of fold(read, row.status !== "running" || read.length === 0))
+		for (const e of annotated(events, hostTextOf(deps.hosts, row.ir)))
 			deps.stdout(eventLine(row.ir, e, view));
 	};
-};
 
 /** What a graph view folds in and draws of a concert, read afresh from the record on each call. */
 function drawingOf(
@@ -129,20 +126,15 @@ function drawingOf(
 ) {
 	let state: Seen = new Map();
 	const short = shortIds(store.ids());
-	const foldUsage = usageFolder();
 	return {
-		/**
-		 * The instance states with `events` folded in, each annotated event also added to `sink` when given, a usage and
-		 * its context as one; a trailing usage waits for the next call unless `final`, or the call brings no events.
-		 */
+		/** The instance states with `events` folded in, each annotated event also added to `sink` when given. */
 		fold(
 			events: readonly ConcertEvent[],
 			row: ConcertRecord,
 			sink?: Annotated[],
-			final = row.status !== "running" || events.length === 0,
 		): Seen {
 			const read = annotated(events, hostTextOf(deps.hosts, row.ir));
-			if (sink) sink.push(...foldUsage(read, final));
+			if (sink) sink.push(...read);
 			state = seen(state, read);
 			return state;
 		},
@@ -348,7 +340,7 @@ function framed(
 	const terminal = deps.terminal ?? (() => FRAMES_TERMINAL);
 	const drawing = drawingOf(deps, store, terminal, colorOf(deps, values).out);
 	const kept: Annotated[] = [];
-	const state = drawing.fold(store.events(row.id, 0), row, kept, true);
+	const state = drawing.fold(store.events(row.id, 0), row, kept);
 	const { view, agents, instances } = drawing.read(row);
 	const render: Render = (nav) =>
 		navigated(row.ir, state, view, agents, nav, { events: kept, instances });
