@@ -528,10 +528,16 @@ describe("a pass", () => {
 			...issue(2, "needs-triage"),
 			milestone: OTHER_MILESTONE_ID,
 		};
+		const retriaged = issue(8, "needs-triage", { concert: "c0", triage: "c0" });
+		retriaged.comments.push({
+			id: 5,
+			body: "@forge-bot Q1: Ann",
+			author: OWNER,
+		});
 		const t = setup([
 			outside,
 			issue(9, "needs-triage"),
-			issue(8, "needs-triage", { concert: "c0", triage: "c0" }),
+			retriaged,
 			issue(6, "in-progress"),
 		]);
 		await t.run();
@@ -541,7 +547,7 @@ describe("a pass", () => {
 				"encore",
 				"c0",
 				"--issue",
-				`#8 Greet by name\n\n${ASK}`,
+				`#8 Greet by name\n\n${ASK}\n\n## Reply by ${OWNER}\n\n@forge-bot Q1: Ann`,
 				"--backlog",
 				backlog,
 				"--tour",
@@ -619,6 +625,49 @@ describe("a pass", () => {
 		expect(specAt(t.find(7))?.body).toContain("### Spec v2");
 		expect(t.find(7).body).toContain("[spec v2]");
 		expect(t.writes.some((w) => w.startsWith("comment"))).toBe(false);
+	});
+
+	const unfed: [string, Comment[], boolean][] = [
+		[
+			"asks for a reply when nothing above read mentions the login, moving read past its ask",
+			[
+				{ id: 700, body: "@forge-botty Q1: Ann", author: OWNER },
+				{ id: 710, body: "No mention", author: OWNER },
+			],
+			false,
+		],
+		[
+			"re-triages on the tick's own question alone, a label-only answer",
+			[
+				{
+					id: 700,
+					body: "<!-- maestro-tm-question -->\n\nWhich way?",
+					author: BOT,
+				},
+			],
+			true,
+		],
+	];
+	test.each(unfed)("a re-triage %s", async (_, comments, starts) => {
+		const retriaged = issue(7, "needs-triage", {
+			concert: "c1",
+			triage: "c1",
+			result: asking,
+			read: 600,
+			version: 1,
+		});
+		retriaged.comments.push(...comments);
+		const t = setup([retriaged], [triageConcert("c1", 7)]);
+		await t.run();
+		expect(t.starts.length).toBe(starts ? 1 : 0);
+		if (starts) return;
+		expect(t.find(7).labels).toContain("state/needs-info");
+		expect(t.writes.filter((w) => w.startsWith("comment"))).toEqual([
+			"comment #7",
+		]);
+		const asked = t.find(7).comments.find((c) => isQuestion(c));
+		expect(asked?.body).toContain("Reply `@forge-bot …`, then label");
+		expect(dataAt(t.find(7)).read).toBe(asked?.id);
 	});
 
 	test("re-triages a blocked ticket without its concert to continue", async () => {

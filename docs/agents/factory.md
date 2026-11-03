@@ -273,7 +273,8 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 
   It records the newest comment it considered as `read`, so a comment it ignored is never fed later. A failed triage
   clears `read`, so the next one considers those comments again. An encore with nothing changed is refused, which halts
-  the tour manager.
+  the tour manager. A re-triage with nothing new to feed starts nothing: the tick asks for a reply mentioning
+  `@<login>`, moves the ticket to `needs-info` and moves `read` past its ask.
 
 - **Moved during a run.** A settle whose ticket is no longer where the run expects it (`in-progress` or
   `ready-for-agent` for a slice, intake for a triage) is not applied. A closed ticket is left alone. Otherwise the

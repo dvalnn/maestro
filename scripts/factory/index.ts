@@ -1039,10 +1039,31 @@ async function build(pass: Pass, entries: Entry[]) {
 	return true;
 }
 
+/** Asks for the reply a re-triage of `entry` needs, then moves it to `needs-info` with `read` past that question. */
+async function askReply(pass: Pass, { issue, data }: Entry) {
+	const questions = [
+		{
+			ask: `No reply mentions \`@${pass.login}\` since the last triage.`,
+			options: [],
+			context: [],
+		},
+	];
+	const how = `Reply \`@${pass.login} …\`, then label \`needs-triage\`.`;
+	const read = await pass.forge.comment(
+		issue.number,
+		questionOf(questions, how),
+	);
+	await move(pass, issue.number, "needs-info");
+	await writeSpec(pass, issue.number, "needs-info", { ...data, read });
+	pass.say(
+		`#${issue.number} has nothing new to re-triage on: moved to needs-info`,
+	);
+}
+
 /**
  * Starts triage of the first intake issue, pinned ones first, on its ask and the comments since the last triage read
  * that it is fed, an encore of its last triage when it has one, then records the newest comment it considered; halts on
- * a refusal.
+ * a refusal. A re-triage with nothing new to feed asks for a reply instead.
  */
 async function triage(pass: Pass, entries: Entry[]) {
 	const issue = pick(
@@ -1057,6 +1078,10 @@ async function triage(pass: Pass, entries: Entry[]) {
 	const { data, comments } = entry;
 	const { number } = entry.issue;
 	const considered = repliesOf(comments, data.read);
+	if (data.triage && !considered.some((c) => isFed(c, pass.login))) {
+		await askReply(pass, entry);
+		return true;
+	}
 	const [closed, pulls] = await Promise.all([
 		pass.forge.closed(CLOSED),
 		pass.forge.pulls(),
