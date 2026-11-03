@@ -173,6 +173,11 @@ const areas: [string, string[], Triage["area"]][] = [
 		["packages/core/a.ts", "docs/a.md", "docs/b.md"],
 		"docs",
 	],
+	[
+		"factory, holding most paths",
+		["scripts/factory/a.ts", ".maestro/b.ts", "docs/a.md"],
+		"factory",
+	],
 	["absent, when no path is in an area", ["README.md"], undefined],
 ];
 

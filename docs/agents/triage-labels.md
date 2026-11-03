@@ -34,13 +34,13 @@ that issue lifts the halt.
 
 Two more exclusive scopes sit beside `kind/` and `state/`:
 
-| Scope   | Labels                                                              | Meaning                             |
-| ------- | ------------------------------------------------------------------- | ----------------------------------- |
-| `risk/` | `risk/low`, `risk/medium`, `risk/high`                              | How far the tour manager goes alone |
-| `area/` | `area/core`, `area/cli`, `area/host`, `area/packs`, `area/docs`[^a] | The part of the codebase it touches |
+| Scope   | Labels                                                                              | Meaning                             |
+| ------- | ----------------------------------------------------------------------------------- | ----------------------------------- |
+| `risk/` | `risk/low`, `risk/medium`, `risk/high`                                              | How far the tour manager goes alone |
+| `area/` | `area/core`, `area/cli`, `area/host`, `area/packs`, `area/docs`, `area/factory`[^a] | The part of the codebase it touches |
 
 [^a]:
     `core` covers `ir`, `core`, `sdk` and `testkit`; `cli` covers `cli` and `render-text`; `host` covers `host-repo`,
-    `host-repo-sdk` and the harnesses.
+    `host-repo-sdk` and the harnesses; `factory` covers `scripts/factory/` and `.maestro/`.
 
 Read the forge's list before using a name: `fj` refuses a label the repo does not have.

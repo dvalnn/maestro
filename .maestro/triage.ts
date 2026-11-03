@@ -48,7 +48,7 @@ const VERDICTS = [
 const RISKS = ["low", "medium", "high"] as const;
 const TIERS = ["small", "ordinary", "risky"] as const;
 /** The areas, in the order that breaks a tie (triage-labels.md). */
-const AREAS = ["core", "cli", "host", "packs", "docs"] as const;
+const AREAS = ["core", "cli", "host", "packs", "docs", "factory"] as const;
 
 type Ruled = (typeof RULED)[number];
 type Verdict = (typeof VERDICTS)[number];
@@ -67,6 +67,7 @@ const AREA_PATHS: Record<Area, readonly string[]> = {
 	host: ["packages/host-repo/", "packages/host-repo-sdk/", "packages/harness-"],
 	packs: ["packs/"],
 	docs: ["docs/"],
+	factory: ["scripts/factory/", ".maestro/"],
 };
 
 /** Markdown that sets a contract: a path ending in `/` is a directory holding every path under it, any other a file. */
