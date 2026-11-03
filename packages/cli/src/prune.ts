@@ -50,7 +50,7 @@ const PRUNE_OPTIONS = {
 	"dry-run": {
 		type: "boolean",
 		short: "n",
-		desc: "List the concerts it would prune, and prune nothing",
+		desc: "List the concerts it would prune, and prune nothing; one per line, full id first, no header",
 	},
 } as const satisfies Options;
 
@@ -277,6 +277,13 @@ export const prune: Command = {
 	usage: "prune <concert>... | <filter>... [flags]",
 	arguments: [["<concert>", "A settled concert, as 'maestro ls' lists it"]],
 	options: PRUNE_OPTIONS,
+	examples: [
+		[
+			"See what pruning week-old concerts would free",
+			"maestro prune --before 7d -n",
+		],
+		["Prune them", "maestro prune --before 7d"],
+	],
 	execute: (args, deps) =>
 		withStore(
 			PRUNE_OPTIONS,

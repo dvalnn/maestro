@@ -134,11 +134,12 @@ const versionLine = () =>
 const EXIT_MEANINGS: Readonly<Record<keyof typeof EXIT, string>> = {
 	ok: "Done, or the concert settled ok",
 	failed:
-		"The concert settled failed, or the command could not do what it said, such as a composition that does not compose",
+		"The concert settled failed, a composition or config does not build, or the command could not do what it said",
 	usage: "Usage error: bad arguments",
-	rejected: "The concert settled rejected",
+	rejected: "The concert settled rejected, or cs apply left conflicts",
 	timeout: "wait --timeout passed, the concert still running",
 	interrupted: "Stopped by Ctrl-C",
+	terminated: "Stopped by SIGTERM",
 };
 
 const ENVIRONMENT: readonly (readonly [string, string])[] = [

@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import type { ConcertRecord } from "@maestro/core/perform";
-import { shellArg } from "@maestro/render-text/live";
+import { shellArg, shortIds } from "@maestro/render-text/live";
 import {
 	COMMON,
 	type Command,
@@ -153,16 +153,17 @@ function checked(values: Values, positionals: readonly string[]) {
 }
 
 function listed(
-	{ session, values, json }: Stored,
+	{ session, store, values, json }: Stored,
 	row: ConcertRecord,
 	artifacts: Listed[],
 ) {
 	const { deps } = session;
 	if (json) deps.stdout(jsonOf(artifacts));
 	else if (artifacts.length === 0) {
-		deps.stderr(`no artifacts in concert ${row.id}`);
+		const id = shortIds(store.ids()).label(row.id, false);
+		deps.stderr(`no artifacts in concert ${id}`);
 		deps.stderr(
-			`Its instances wrote no files; 'maestro ls ${row.id}' shows what ran`,
+			`Its instances wrote no files; 'maestro ls ${id}' shows what ran`,
 		);
 	} else if (isSet(values, "path"))
 		for (const a of artifacts) deps.stdout(a.path);

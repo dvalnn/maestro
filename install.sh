@@ -11,7 +11,7 @@ REPO=tiago/maestro
 REQUIRED_ASSETS="maestro-linux-x64 maestro-skill.tar.gz"
 
 fail() {
-  printf 'install.sh: %s\n' "$1" >&2
+  printf 'install.sh: error: %s\n' "$1" >&2
   [ $# -lt 2 ] || printf '%s\n' "$2" >&2
   exit "$FAILURE"
 }

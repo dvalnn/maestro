@@ -234,10 +234,13 @@ function highlighted(
 		.join("\n");
 }
 
-/** The empty list: `[]` under `--json`, else `no concerts` and what to do about it on stderr. */
-function none({ session: { deps }, json }: Stored) {
+/** The empty list: `[]` under `--json`, else what matched nothing and what to do about it on stderr. */
+function none({ session: { deps }, json }: Stored, filtered: boolean) {
 	if (json) deps.stdout(jsonOf([]));
-	else {
+	else if (filtered) {
+		deps.stderr("no concerts match");
+		deps.stderr("Drop a filter, or run 'maestro ls' for all");
+	} else {
 		deps.stderr("no concerts");
 		deps.stderr("Perform one with 'maestro perform <pack>.<composition>'");
 	}
@@ -251,7 +254,13 @@ async function listed(stored: Stored, query: ConcertFilter) {
 	const fetched = store.concerts({ ...query, limit: limit + 1 });
 	const concerts = fetched.slice(0, limit);
 	const marked = session.deps.terminal !== undefined;
-	if (concerts.length === 0) return none(stored);
+	if (concerts.length === 0) {
+		const { limit: _, ...filter } = query;
+		return none(
+			stored,
+			Object.values(filter).some((v) => v !== undefined),
+		);
+	}
 	const short = shortIds(store.ids());
 	const counts = noteCounts(stored, concerts);
 	const rows = await Promise.all(

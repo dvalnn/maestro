@@ -1043,7 +1043,7 @@ async function build(pass: Pass, entries: Entry[]) {
 async function askReply(pass: Pass, { issue, data }: Entry) {
 	const questions = [
 		{
-			ask: `No reply mentions \`@${pass.login}\` since the last triage.`,
+			ask: `What changed since the last triage? No reply mentions \`@${pass.login}\` yet.`,
 			options: [],
 			context: [],
 		},
@@ -1056,7 +1056,7 @@ async function askReply(pass: Pass, { issue, data }: Entry) {
 	await move(pass, issue.number, "needs-info");
 	await writeSpec(pass, issue.number, "needs-info", { ...data, read });
 	pass.say(
-		`#${issue.number} has nothing new to re-triage on: moved to needs-info`,
+		`#${issue.number}: no reply since the last triage, moved to needs-info`,
 	);
 }
 
@@ -1146,7 +1146,7 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 	const milestoneId = await deps.forge.milestone(options.milestone);
 	if (milestoneId === undefined)
 		throw new Error(
-			`no milestone ${options.milestone} on the forge\nCreate it, or set ${MILESTONE_KEY} to an existing one`,
+			`no milestone ${options.milestone} upstream\nCreate it, or set ${MILESTONE_KEY} or --milestone to an existing one`,
 		);
 	const concerts = await deps.maestro.concerts(options.milestone);
 	const running = concerts.find((c) => c.status === "running");
@@ -1187,15 +1187,23 @@ if (import.meta.main) {
 		console.error(`tour manager: ${message(error)}`);
 		process.exit(EXIT_FAILED);
 	}
-	let options: Options;
+	let values: { milestone?: string; preset?: string[]; "route-only"?: boolean };
 	try {
-		const { values } = parseArgs({
+		({ values } = parseArgs({
 			options: {
 				milestone: { type: "string" },
 				preset: { type: "string", multiple: true },
 				"route-only": { type: "boolean" },
 			},
-		});
+		}));
+	} catch (error) {
+		console.error(
+			`${message(error)}\nusage: bun scripts/factory/index.ts [--milestone <name>] [--preset <name>]... [--route-only]`,
+		);
+		process.exit(EXIT_USAGE);
+	}
+	let options: Options;
+	try {
 		const runtime = process.env.XDG_RUNTIME_DIR;
 		if (!runtime)
 			throw new Error(
@@ -1212,10 +1220,8 @@ if (import.meta.main) {
 			),
 		};
 	} catch (error) {
-		console.error(
-			`${message(error)}\nusage: bun scripts/factory/index.ts [--milestone <name>] [--preset <name>]... [--route-only]`,
-		);
-		process.exit(EXIT_USAGE);
+		console.error(`tour manager: ${message(error)}`);
+		process.exit(EXIT_FAILED);
 	}
 	mkdirSync(options.dir, { recursive: true });
 	try {

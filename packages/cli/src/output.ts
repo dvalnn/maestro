@@ -47,6 +47,8 @@ export const EXIT = {
 	timeout: 124,
 	/** The signal exit of SIGINT, as Ctrl-C ends a process. */
 	interrupted: SIGNAL_EXIT_BASE + constants.signals.SIGINT,
+	/** The signal exit of SIGTERM. */
+	terminated: SIGNAL_EXIT_BASE + constants.signals.SIGTERM,
 } as const;
 
 /** An error to print as it is, with the exit code it ends the command with. */

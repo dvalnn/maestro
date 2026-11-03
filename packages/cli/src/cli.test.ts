@@ -1965,7 +1965,7 @@ describe("exit codes and error states", () => {
 		);
 	});
 
-	test("a perform cancelled by Ctrl-C exits 130 and hints maestro resume, and SIGTERM stays 1", async () => {
+	test("a perform cancelled by Ctrl-C exits 130 and hints maestro resume, and SIGTERM exits 143", async () => {
 		const w = await world();
 		const stopped = (signal: "SIGINT" | "SIGTERM") =>
 			w.call(["perform", ...GREET], {
@@ -1986,7 +1986,7 @@ describe("exit codes and error states", () => {
 			`\nResume it: maestro resume ${shortOf(idOf(interrupted))}`,
 		);
 		const terminated = await stopped("SIGTERM");
-		expect(terminated.code).toBe(1);
+		expect(terminated.code).toBe(143);
 		expect(terminated.err).not.toContain("Resume it");
 		const quiet = await w.call(["perform", ...GREET, "--json"], {
 			hosts: [
@@ -2011,6 +2011,11 @@ describe("exit codes and error states", () => {
 			out: "",
 			err: "no concerts\nPerform one with 'maestro perform <pack>.<composition>'",
 		});
+		expect(await w.call(["ls", "--status", "failed"])).toEqual({
+			code: 0,
+			out: "",
+			err: "no concerts match\nDrop a filter, or run 'maestro ls' for all",
+		});
 		expect(await w.call(["ls", "--json"])).toEqual({
 			code: 0,
 			out: "[]",
@@ -2024,7 +2029,7 @@ describe("exit codes and error states", () => {
 		expect(await w.call(["artifact", "ls", id])).toEqual({
 			code: 0,
 			out: "",
-			err: `no artifacts in concert ${id}\nIts instances wrote no files; 'maestro ls ${id}' shows what ran`,
+			err: `no artifacts in concert ${shortOf(id)}\nIts instances wrote no files; 'maestro ls ${shortOf(id)}' shows what ran`,
 		});
 		expect(await w.call(["artifact", "ls", id, "--json"])).toEqual({
 			code: 0,

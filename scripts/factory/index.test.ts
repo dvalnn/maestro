@@ -757,7 +757,7 @@ describe("a pass", () => {
 		await expect(t.run()).rejects.toThrow("cannot reach");
 		const missing = setup([issue(7, "needs-triage")]);
 		missing.options.milestone = "v9";
-		await expect(missing.run()).rejects.toThrow("no milestone v9 on the forge");
+		await expect(missing.run()).rejects.toThrow("no milestone v9 upstream");
 		expect([...t.writes, ...missing.writes]).toEqual([]);
 	});
 

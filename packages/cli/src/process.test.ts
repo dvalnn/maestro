@@ -111,7 +111,7 @@ describe("a concert in another process", () => {
 			status: "failed",
 			reason: "the concert was cancelled",
 		});
-		expect(await child.exited).toBe(1);
+		expect(await child.exited).toBe(143);
 		expect(await w.call(["wait", id])).toMatchObject({
 			code: 1,
 			out: "",

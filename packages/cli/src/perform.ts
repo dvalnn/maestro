@@ -196,22 +196,27 @@ async function restart(
 	};
 }
 
-/** Cancels `concert` on SIGINT or SIGTERM, until it settles; `interrupted` is whether SIGINT did. */
+const SIGNAL_EXITS = {
+	SIGINT: EXIT.interrupted,
+	SIGTERM: EXIT.terminated,
+} as const;
+
+/** Cancels `concert` on SIGINT or SIGTERM, until it settles; `stopped` is the exit code of the first signal. */
 async function settled(
 	concert: Concert,
-): Promise<{ result: ConcertResult; interrupted: boolean }> {
+): Promise<{ result: ConcertResult; stopped?: number }> {
 	const signals = ["SIGINT", "SIGTERM"] as const;
-	let interrupted = false;
+	let stopped: number | undefined;
 	const stops = signals.map((signal) => {
 		const stop = () => {
-			interrupted ||= signal === "SIGINT";
+			stopped ??= SIGNAL_EXITS[signal];
 			void concert.cancel();
 		};
 		process.once(signal, stop);
 		return [signal, stop] as const;
 	});
 	try {
-		return { result: await concert.done, interrupted };
+		return { result: await concert.done, stopped };
 	} finally {
 		for (const [signal, stop] of stops) process.off(signal, stop);
 	}
@@ -224,7 +229,7 @@ async function report(
 	json: boolean,
 	{ color, values }: { color: Colors; values: Values },
 	id: string,
-	{ result, interrupted }: { result: ConcertResult; interrupted: boolean },
+	{ result, stopped }: { result: ConcertResult; stopped?: number },
 ): Promise<number> {
 	const { deps } = session;
 	if (json)
@@ -237,12 +242,12 @@ async function report(
 			artifacts: artifactsOf(session, id),
 			changes: await changesOf({ session, store, values }, id),
 		});
-	if (!interrupted) return exitOf(result.outcome);
-	if (!json)
+	if (stopped === undefined) return exitOf(result.outcome);
+	if (stopped === EXIT.interrupted && !json)
 		deps.stderr(
 			`Resume it: maestro resume ${shortIds(store.ids()).label(id, false)}`,
 		);
-	return EXIT.interrupted;
+	return stopped;
 }
 
 /** Pre-flights `start`, printing what it warns of. */
