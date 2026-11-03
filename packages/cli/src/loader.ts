@@ -39,7 +39,7 @@ import {
 } from "@maestro/sdk/loader";
 import * as stdlib from "@maestro/sdk/stdlib";
 import type { PackDir } from "./config";
-import { Diagnosed, usageError } from "./output";
+import { Diagnosed, failure } from "./output";
 
 /** The `codeHash` of the code a worker reference names as it is now (ADR 0008). */
 export type CodeHash = (ref: WorkerRef) => Promise<string>;
@@ -512,7 +512,7 @@ export async function bundled(file: string): Promise<string> {
 	try {
 		return await bundle(entry, { [entry]: glue(`./${basename(file)}`) });
 	} catch (error) {
-		throw usageError(
+		throw failure(
 			`cannot bundle ${file}: ${messageOf(error)}`,
 			"Fix the file or its imports",
 		);

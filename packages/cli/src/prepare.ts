@@ -38,7 +38,13 @@ import {
 	rewriteModules,
 	withCurrentHashes,
 } from "./loader";
-import { ArgumentError, CliError, Diagnosed, usageError } from "./output";
+import {
+	ArgumentError,
+	CliError,
+	Diagnosed,
+	failure,
+	usageError,
+} from "./output";
 import { paramValues } from "./params";
 import { openSession, overridesOf, type Session } from "./session";
 
@@ -145,7 +151,7 @@ export function chosen(
 			compositions.map((c) => c.name),
 			`Name one of: ${namesOf(compositions)}`,
 		);
-	throw usageError(
+	throw failure(
 		`${what} exports ${compositions.length} compositions, not one`,
 		compositions.length
 			? `Move all but one of ${namesOf(compositions)} to another file`
@@ -200,7 +206,7 @@ async function loadIr(
 	const value: unknown = await Bun.file(file)
 		.json()
 		.catch((error) => {
-			throw usageError(
+			throw failure(
 				`${target} is not JSON: ${messageOf(error)}`,
 				"Fix the file, or compose it again from its composition",
 			);
@@ -289,13 +295,13 @@ function fileBundle(
 	const file = resolve(session.deps.cwd, target);
 	const id = basename(file, extname(file));
 	if (!PACK_ID.test(id))
-		throw usageError(
+		throw failure(
 			`composition file ${target} is named '${id}', which is not a pack id`,
 			"Rename it in lower case, starting with a letter, then letters, digits, '_' or '-'",
 		);
 	const taken = packs.find((p) => p.pack.id === id);
 	if (taken)
-		throw usageError(
+		throw failure(
 			`composition file ${target} is named '${id}', the id of the pack at ${taken.dir}`,
 			"Rename the file",
 		);

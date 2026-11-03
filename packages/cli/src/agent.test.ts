@@ -442,14 +442,14 @@ describe("agent show --probe", () => {
 	});
 
 	test.each(["{not json", "[1]"])(
-		"a MAESTRO_STUB_ENVIRONMENT of %s is a usage error",
+		"a MAESTRO_STUB_ENVIRONMENT of %s is a failure",
 		async (value) => {
 			const w = await roster();
 			const env = { MAESTRO_STUB_ENVIRONMENT: value };
 			expect(
 				await w.call(["agent", "show", "demo/reviewer", "--probe"], { env }),
 			).toMatchObject({
-				code: 2,
+				code: 1,
 				err: `probing stub…\nerror: MAESTRO_STUB_ENVIRONMENT holds '${value}', not a JSON object\n  Set it to an object such as '{"mcp":["github"]}', or unset it`,
 			});
 		},

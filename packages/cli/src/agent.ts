@@ -879,7 +879,7 @@ async function recorded(
 
 export const agent: Command = {
 	usage:
-		"agent ls [flags]\n       maestro agent show <profile> [--probe] [flags]\n       maestro agent show --seat <composition id>/<seat> <composition> [--prompt] [flags]\n       maestro agent show --concert <id> <node> [flags]",
+		"agent ls [flags]  (alias: ag)\n       maestro agent show <profile> [--probe] [flags]\n       maestro agent show --seat <composition id>/<seat> <composition> [--prompt] [flags]\n       maestro agent show --concert <id> <node> [flags]",
 	arguments: [
 		["<profile>", "A profile, as 'maestro agent ls' lists it"],
 		[

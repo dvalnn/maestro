@@ -82,13 +82,15 @@ Read [running.md](running.md) for compose and perform flags, the record, artifac
 
 ## Exit codes
 
-| Code | Means                                                                  | Next                                                                    |
-| ---- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| 0    | Done, or the concert settled `ok`                                      | Report the outputs and the changeset                                    |
-| 1    | The concert settled `failed`, or the command could not do what it said | Read the message; for a `failed` concert, fix the root cause and resume |
-| 2    | Usage error, or the composition does not compose                       | Read each diagnostic's message and hint; fix, compose again             |
-| 3    | The concert settled `rejected`                                         | Report the verdict: the root cause instance and its reason              |
-| 124  | `wait --timeout` passed, the concert still running                     | Wait again, or `maestro kill <id>` when the user says to                |
+| Code | Means                                                                                                          | Next                                                                                                          |
+| ---- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 0    | Done, or the concert settled `ok`                                                                              | Report the outputs and the changeset                                                                          |
+| 1    | The concert settled `failed`, a composition or config does not build, or the command could not do what it said | Read the message or each diagnostic's message and hint; for a `failed` concert, fix the root cause and resume |
+| 2    | Usage error: bad arguments on the command line                                                                 | Read the message; fix the command and run it again                                                            |
+| 3    | The concert settled `rejected`, or `cs apply` left conflicts                                                   | Report the verdict: the root cause instance and its reason                                                    |
+| 124  | `wait --timeout` passed, the concert still running                                                             | Wait again, or `maestro kill <id>` when the user says to                                                      |
+| 130  | `perform`, `resume` or `encore` was stopped by Ctrl-C                                                          | `maestro resume <id>`                                                                                         |
+| 143  | `perform`, `resume` or `encore` was stopped by SIGTERM                                                         | `maestro resume <id>`                                                                                         |
 
 ## Outcomes
 

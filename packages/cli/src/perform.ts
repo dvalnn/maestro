@@ -369,7 +369,7 @@ export const perform: Command = {
 };
 
 export const resume: Command = {
-	usage: "resume <concert> [flags]",
+	usage: "resume <concert> [flags]  (alias: r)",
 	arguments: [["<concert>", "A concert, as 'maestro ls' lists it"]],
 	examples: [
 		[
@@ -399,7 +399,7 @@ export const resume: Command = {
 };
 
 export const encore: Command = {
-	usage: "encore <concert> [flags]",
+	usage: "encore <concert> [flags]  (alias: e)",
 	arguments: [["<concert>", "A concert, as 'maestro ls' lists it"]],
 	examples: [
 		[

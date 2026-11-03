@@ -847,7 +847,11 @@ describe("usage errors", () => {
 	];
 
 	/** The rows that are diagnostics of a build or the config, which exit 1; the rest are bad arguments, which exit 2. */
-	const DIAGNOSED = ["a composition file that declares no example input set"];
+	const DIAGNOSED = [
+		"a composition file that declares no example input set",
+		"a composition file whose name is not a pack id",
+		"a composition file named as an installed pack",
+	];
 	const exitOfRow = (what: string) => (DIAGNOSED.includes(what) ? 1 : 2);
 
 	test.each(USAGE)(

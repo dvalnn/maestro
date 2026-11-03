@@ -142,15 +142,15 @@ command, as in `maestro --preset stub compose <composition>`. A mistyped command
 `Did you mean '<name>'?`.
 
 Every command but `changeset` takes `--json` (one JSON document on stdout, and no `warning:` lines on stderr),
-`--preset <name>` (repeatable), `-c, --config <key=value>` (repeatable), `--no-color`, `--debug` (stack traces) and
-`--help`. Primary output goes to stdout, messages to stderr.
+`--preset <name>` (repeatable), `-c, --config <key=value>` (repeatable), `--color`, `--no-color`, `--debug` (stack
+traces) and `--help`. Primary output goes to stdout, messages to stderr.
 
 Each stream is colored when it is a terminal: stdout by its own check, stderr by its own. `--color`, or a non-empty
 `FORCE_COLOR`, colors both streams even when they are not terminals. Color is off under `NO_COLOR`, `TERM=dumb` or
 `--no-color`, which win over both, and the `--json` document is never colored. It covers the `ls` status column, the
-bold table headers of `ls`, `ls <concert>` and `art`, the closing block, the `watch` views, a diagnostic's code (red,
-yellow for a warning) and its dim hint line, the dim hint line of an error, and `--help` (bold headings, cyan flags, the
-Params block included).
+bold table headers of `ls`, `ls <concert>` and `art`, the closing block, the `watch` views, a diagnostic's `error:` or
+`warning:` label (red, yellow for a warning; a code shows only under `--json`) and its dim hint line, the dim hint line
+of an error, and `--help` (bold headings, cyan flags, the Params block included).
 
 `watch` replays from the concert's first event, then follows it. With `--json`, or off a terminal without `--events`, it
 prints a JSON Lines stream: one compact line per record event that changes an instance's state (`running`, `settled`,
@@ -250,8 +250,9 @@ the inspector show tokens as `15.5k tok`, as `watch` does. In the `--json` docum
 `ls <concert> --json` also carry `elapsedMs`, `settledAt - startedAt`, or the time since `startedAt` while the concert
 runs.
 
-`perform` announces `concert <id>`, the full id, on stderr when it starts. `perform`, `wait` and `watch` on a terminal
-end with the closing block, its labels in one column:
+`perform` announces `concert <id>`, the full id, on stderr when it starts, and on a terminal adds
+`Follow it: maestro watch <id>`. `perform`, `wait` and `watch` on a terminal end with the closing block, its labels in
+one column:
 
 ```text
 concert    pwmqwmlu  ok  4m12s · 182.4k tok

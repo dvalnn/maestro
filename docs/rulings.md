@@ -5,11 +5,11 @@ when that is not obvious, and where it applies. A ruling that grows into a desig
 
 ## Resume
 
-- **Resume runs under the config as it stands.** `perform --resume` re-runs pre-flight under the current config and
-  hosts, then performs the stored IR with its code hashes recomputed. The record keeps `--preset` and `-c` as typed, and
-  a resume reapplies them over the config files as they stand. The resume key holds no config beyond a host node's own,
-  so a changed profile or preset alone reruns no `ok` instance. Why: the IR is the build's snapshot, and config resolved
-  at perform and code pinned by hash are its intended edges. Applies in `packages/cli/src/prepare.ts` (`resumable`) and
+- **Resume runs under the config as it stands.** `resume` re-runs pre-flight under the current config and hosts, then
+  performs the stored IR with its code hashes recomputed. The record keeps `--preset` and `-c` as typed, and a resume
+  reapplies them over the config files as they stand. The resume key holds no config beyond a host node's own, so a
+  changed profile or preset alone reruns no `ok` instance. Why: the IR is the build's snapshot, and config resolved at
+  perform and code pinned by hash are its intended edges. Applies in `packages/cli/src/prepare.ts` (`resumable`) and
   `packages/core/src/perform/resume.ts`.
 
 ## Profiles

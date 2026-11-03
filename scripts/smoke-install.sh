@@ -156,10 +156,10 @@ maestro compose smoke.ts --out "$scratch/ir/smoke.json" >/dev/null || fail "comp
 maestro perform "$scratch/ir/smoke.json" >/dev/null 2>"$scratch/perform.err" \
   || fail "perform smoke.json exited $?: $(cat "$scratch/perform.err")"
 
-step "a file that does not bundle exits 2"
+step "a file that does not bundle exits 1"
 code=0
 maestro compose broken.ts >/dev/null 2>&1 || code=$?
-[ "$code" -eq 2 ] || fail "compose broken.ts exited $code, not 2"
+[ "$code" -eq 1 ] || fail "compose broken.ts exited $code, not 1"
 
 step "pack composes and performs"
 maestro compose classics.build_then_repair --request smoke >/dev/null || fail "compose classics.build_then_repair exited $?"

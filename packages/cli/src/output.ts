@@ -66,6 +66,10 @@ export class CliError extends Error {
 export const usageError = (what: string, fix: string) =>
 	new CliError(`${what}\n${fix}`, EXIT.usage);
 
+/** A fault that stops the command with exit 1: `what` went wrong, and `fix` is what to do next. */
+export const failure = (what: string, fix: string) =>
+	new CliError(`${what}\n${fix}`, EXIT.failed);
+
 /** The hint of a command that needs a concert. */
 export const NAME_CONCERT = "Name one as 'maestro ls' lists it";
 

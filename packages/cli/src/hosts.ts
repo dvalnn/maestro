@@ -16,7 +16,7 @@ import {
 	type StubStep,
 	stubHarness,
 } from "@maestro/host-repo/harness";
-import { parseDuration, usageError } from "./output";
+import { failure, parseDuration } from "./output";
 
 const STUB_DELAY = "MAESTRO_STUB_DELAY";
 const STUB_ENVIRONMENT = "MAESTRO_STUB_ENVIRONMENT";
@@ -45,7 +45,7 @@ function scripted(dir: string, req: HarnessRequest, file: string) {
 /** The outputs of `req` taken from `dir` where it holds them, else the placeholder. */
 function scriptedOutputs(dir: string, req: HarnessRequest): StubStep[] {
 	if (!existsSync(dir) || !statSync(dir).isDirectory())
-		throw usageError(
+		throw failure(
 			`${STUB_OUTPUTS} names '${dir}', which is not a directory`,
 			`Create it, or unset ${STUB_OUTPUTS}`,
 		);
@@ -74,7 +74,7 @@ function scriptedEvents(
 				emit = JSON.parse(line);
 			} catch {}
 			if (!isObject(emit))
-				throw usageError(
+				throw failure(
 					`${STUB_OUTPUTS} file '${EVENTS_FILE}' holds '${line}', not a JSON object`,
 					"Write one JSON object per line",
 				);
@@ -88,7 +88,7 @@ function scriptedVerdict(dir: string | undefined, req: HarnessRequest) {
 	if (text === undefined || text === "ok") return STUB_VERDICT;
 	const reason = /^rejected\s+(\S[\s\S]*)$/.exec(text)?.[1];
 	if (reason === undefined)
-		throw usageError(
+		throw failure(
 			`${STUB_OUTPUTS} file '${VERDICT_FILE}' holds '${text}', not 'ok' or 'rejected <reason>'`,
 			`Write it as 'ok' or 'rejected <reason>'`,
 		);
@@ -117,7 +117,7 @@ function stubEnvironment(text: string | undefined): StubStep {
 		over = undefined;
 	}
 	if (typeof over !== "object" || over === null || Array.isArray(over))
-		throw usageError(
+		throw failure(
 			`${STUB_ENVIRONMENT} holds '${text}', not a JSON object`,
 			`Set it to an object such as '{"mcp":["github"]}', or unset it`,
 		);

@@ -200,7 +200,7 @@ describe("a bare file", () => {
 		expect(error.message).toBe(
 			`cannot bundle ${file}: ${file}:1:15: Could not resolve: "./nope"\nFix the file or its imports`,
 		);
-		expect(error.exit).toBe(EXIT.usage);
+		expect(error.exit).toBe(EXIT.failed);
 	});
 
 	test("fails a function exported under two names, naming both, with no location inside its bundle", async () => {

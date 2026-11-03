@@ -716,7 +716,7 @@ commit SHA) are inputs or round-folder data, never constants in a pack.
 
 ## 16. Failure modes
 
-- **Compose error.** No agent starts. The CLI prints diagnostics and exits with a usage-category code.
+- **Compose error.** No agent starts. The CLI prints diagnostics and exits 1, a build fault.
 - **Node `failed`.** Dependents `skipped` unless a settling group or a fan-in node received it as `Settled`. The concert
   result follows the result rule.
 - **Node `rejected`.** Follows edge tolerance. This is the normal path for a red check or a negative review.
