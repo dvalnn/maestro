@@ -13,7 +13,7 @@ import type {
 } from "./forge";
 import { HALT, lock, milestoneOf, type Options, pass } from "./index";
 import type { Landing } from "./land";
-import type { Concert, Maestro, Report, Result } from "./maestro";
+import type { Concert, Maestro, Report, Result, Spend } from "./maestro";
 import { titleOf } from "./pick";
 import {
 	commentOf,
@@ -155,10 +155,10 @@ function fakeForge(issues: Stored[], cut?: string) {
 			});
 			return number;
 		},
-		retarget: async (n, base) => {
-			write(`retarget #${n} to ${base}`);
+		editPull: async (n, { body, base }) => {
+			write(base ? `retarget #${n} to ${base}` : `rewrite #${n}`);
 			const pull = pulls.find((p) => p.number === n);
-			if (pull) pull.base = base;
+			if (pull) Object.assign(pull, { body, ...(base && { base }) });
 		},
 		arm: async (n) => write(`arm #${n}`),
 		reviews: async (n) => reviews[n] ?? [],
@@ -176,7 +176,18 @@ function fakeForge(issues: Stored[], cut?: string) {
 	};
 }
 
-const NO_REPORT: Report = { tokens: 0, obstacles: [], gaps: [] };
+const NO_REPORT: Report = { obstacles: [], gaps: [] };
+/** The slice concerts that continue another. */
+const ENCORES = ["s2"];
+const spendOf = (short: string): Spend => ({
+	short,
+	encore: ENCORES.includes(short),
+	elapsedMs: 720_000,
+	input: 100,
+	output: 14_000,
+	cacheRead: 812_000,
+	cacheWrite: 131_000,
+});
 
 function fakeMaestro(
 	concerts: Concert[],
@@ -199,6 +210,7 @@ function fakeMaestro(
 			return "started";
 		},
 		report: async (id) => reports[id] ?? NO_REPORT,
+		spend: async (id) => spendOf(id),
 		apply: async (id, dir) => {
 			applied.push(`${id} in ${dir}`);
 		},
@@ -957,7 +969,6 @@ describe("a build", () => {
 			{
 				reports: {
 					s1: {
-						tokens: 1234,
 						obstacles: [],
 						gaps: ["Did not verify Windows"],
 						upheld: "- F1, a.ts:3: too wide",
@@ -979,12 +990,65 @@ describe("a build", () => {
 			"labels #7 kind/enhancement risk/low state/in-review",
 		]);
 		expect(t.opened[0]?.body).toBe(
-			"Closes #7\n\n- Concert: `s1`\n- Tokens: 1234\n- Relates to #4\n\n#### Acceptance\n\n- bun test\n\n#### Upheld findings\n\n- F1, a.ts:3: too wide\n\n#### Gaps\n\n- Did not verify Windows\n",
+			[
+				"Closes #7 · relates to #4",
+				"",
+				"## Summary",
+				"",
+				"feat: greet by name",
+				"",
+				"- Name source",
+				"",
+				"## Evidence",
+				"",
+				"- Gate: `bun test` green",
+				"- Review: small review, upheld 1",
+				"  - F1, a.ts:3: too wide",
+				"",
+				"<details><summary>Gaps (1)</summary>",
+				"",
+				"- Did not verify Windows",
+				"",
+				"</details>",
+				"",
+				"## Merge Danger",
+				"",
+				"**Risk:** low · **Area:** cli",
+				"",
+				"## Spend",
+				"",
+				"| Concert | Time | Tokens | In | Cache r/w | Out |",
+				"| ------- | ---- | ------ | -- | --------- | --- |",
+				"| `s1` build | 12m | 957k | 100 | 812k / 131k | 14k |",
+				"| **Total** | 12m | 957k |  |  |  |",
+				"",
+			].join("\n"),
 		);
 		expect(dataAt(t.find(7)).concert).toBe("s1");
 		const writes = t.writes.length;
 		await t.run();
 		expect(t.writes).toHaveLength(writes);
+	});
+
+	test("rewrites the body of the open PR when an encore lands, with a spend row for each slice concert", async () => {
+		const t = setup(
+			[specced(6, "in-progress", { slice: "s2", encore: "s1" })],
+			[sliceConcert("s2", 6), sliceConcert("s1", 6)],
+			{ s2: { status: "ok", outputs: {} } },
+		);
+		await t.run();
+		expect(t.writes.filter((w) => w.startsWith("pull"))).toEqual([]);
+		expect(t.writes).toContain("rewrite #20");
+		const body = t.pulls.find((p) => p.number === 20)?.body ?? "";
+		expect(
+			body
+				.split("\n")
+				.filter((l) => l.includes("build") || l.includes("encore")),
+		).toEqual([
+			"| `s1` build | 12m | 957k | 100 | 812k / 131k | 14k |",
+			"| `s2` encore | 12m | 957k | 100 | 812k / 131k | 14k |",
+		]);
+		expect(body).toContain("| **Total** | 24m | 1.91M |");
 	});
 
 	test.each([
@@ -1168,11 +1232,10 @@ describe("a build", () => {
 			{
 				reports: {
 					s1: {
-						tokens: 0,
 						obstacles: ["No  rg on PATH", "Already filed"],
 						gaps: ["Did not verify Windows"],
 					},
-					s2: { tokens: 0, obstacles: ["no rg\non path"], gaps: [] },
+					s2: { obstacles: ["no rg\non path"], gaps: [] },
 				},
 			},
 		);

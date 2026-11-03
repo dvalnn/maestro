@@ -5,11 +5,14 @@ import {
 	commentOf,
 	type Data,
 	dataOf,
+	elapsed,
 	parseTriage,
+	pullBody,
 	questionOf,
 	RISKS,
 	type Triage as Routed,
 	replyHow,
+	shorthand,
 	tracked,
 	turnLines,
 	VERDICTS,
@@ -370,4 +373,85 @@ test("a spec comment leaves out a Touches with no items, fold and all", () => {
 	expect(shown).not.toContain("<details>");
 	expect(shown).not.toContain("<summary>");
 	expect(shown).toContain("- [ ] bun test\n\n---");
+});
+
+test.each([
+	[0, "0"],
+	[999, "999"],
+	[1_000, "1k"],
+	[1_500, "1.5k"],
+	[957_100, "957k"],
+	[999_499, "999k"],
+	[999_500, "1M"],
+	[1_370_000, "1.37M"],
+	[12_345_678, "12.3M"],
+])("shows %d tokens as %s", (n, shown) => {
+	expect(shorthand(n)).toBe(shown);
+});
+
+test.each([
+	[0, "0s"],
+	[45_000, "45s"],
+	[59_600, "1m"],
+	[720_000, "12m"],
+	[3_900_000, "1h5m"],
+])("shows %d ms as %s", (ms, shown) => {
+	expect(elapsed(ms)).toBe(shown);
+});
+
+const SPENT = {
+	short: "01a1",
+	elapsedMs: 60_000,
+	input: 1,
+	output: 2,
+	cacheRead: 3,
+	cacheWrite: 4,
+	encore: false,
+};
+
+test("a PR body with nothing to add holds no relates-to, gaps or door, and says the review upheld none", () => {
+	const body = pullBody({
+		issue: 5,
+		spend: [SPENT],
+		tier: "ordinary",
+		risk: "medium",
+		gaps: [],
+		result: ready,
+	});
+	expect(body).toStartWith("Closes #5\n\n## Summary\n\ns\n\n## Evidence");
+	expect(body).toContain(
+		"- Gate: green\n- Review: ordinary review, upheld 0\n  - None.\n",
+	);
+	expect(body).toContain("## Merge Danger\n\n**Risk:** medium\n\n## Spend");
+	expect(body).not.toContain("Gaps");
+});
+
+test("a PR body labels a spend row an encore only when its concert was one", () => {
+	const body = pullBody({
+		issue: 5,
+		spend: [
+			SPENT,
+			{ ...SPENT, short: "02b2" },
+			{ ...SPENT, short: "03c3", encore: true },
+		],
+		tier: "small",
+		risk: "low",
+		gaps: [],
+		result: ready,
+	});
+	expect(body).toContain("`01a1` build");
+	expect(body).toContain("`02b2` build");
+	expect(body).toContain("`03c3` encore");
+});
+
+test("a PR body names the planner's contract as the one-way door", () => {
+	const body = pullBody({
+		issue: 5,
+		spend: [SPENT],
+		tier: "risky",
+		risk: "high",
+		gaps: [],
+		result: { ...ready, contract: "the --json flag" },
+	});
+	expect(body).toContain("**Risk:** high\n\n**One-way door:** the --json flag");
 });

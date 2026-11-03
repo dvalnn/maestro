@@ -10,7 +10,7 @@ writeFileSync(
 	bin,
 	`#!/bin/sh
 case "$1 $2" in
-	"ls c2"|"ls c3") echo '{"tokens":120,"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"]}}}' ;;
+	"ls c2"|"ls c3") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"]}}}' ;;
 	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"}}}' ;;
 	"wait c3") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"}}}' ;;
 	"wait c1") echo '{"id":"c1","status":"failed","reason":"boom"}'; exit 1 ;;
@@ -36,12 +36,23 @@ test("reads a settled concert's result whatever wait exits with", async () => {
 	});
 });
 
-test("reads a concert's report: its tokens, each agent's obstacles and gaps, the upheld findings it returned", async () => {
+test("reads a concert's report: each agent's obstacles and gaps, the upheld findings it returned", async () => {
 	expect(await fake.report("c2")).toEqual({
-		tokens: 120,
 		obstacles: ["no rg"],
 		gaps: ["no Windows run"],
 		upheld: "- F1, a.ts:3: too wide",
+	});
+});
+
+test("reads a concert's spend: its time and tokens by kind", async () => {
+	expect(await fake.spend("c2")).toEqual({
+		short: "c2",
+		elapsedMs: 90_000,
+		input: 100,
+		output: 20,
+		cacheRead: 5_000,
+		cacheWrite: 300,
+		encore: true,
 	});
 });
 

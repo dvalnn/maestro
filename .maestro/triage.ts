@@ -238,7 +238,7 @@ export type Ruling = ValueOf<ReturnType<typeof Ruling>>;
 
 /**
  * The triage verdict the tick acts on: the part each verdict needs, `area` only when a path falls in one, and `related`
- * only when there are any.
+ * and `contract` only when there are any.
  */
 export const Triage = shape(
 	{
@@ -254,6 +254,7 @@ export const Triage = shape(
 		children: Children,
 		duplicateOf: Int(),
 		related: List(Int()),
+		contract: Text(),
 	},
 	[
 		needs("ready-for-agent", "spec"),
@@ -420,6 +421,7 @@ function proposed(proposal: Proposal, { failures, unchecked }: Checks): Triage {
 			spec && { spec: { touches: scopeOf(touches).paths, ...spec } }),
 		...(verdict === "split" && { children }),
 		...relatedOf(related),
+		...(contract && { contract }),
 	};
 }
 

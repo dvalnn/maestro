@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Comment } from "./forge";
 import { isJson, type Json } from "./json";
+import type { Spend } from "./maestro";
 import {
 	INTAKE,
 	STATES,
@@ -58,6 +59,8 @@ export type Triage = {
 	children?: Child[];
 	duplicateOf?: number;
 	related?: number[];
+	/** The one-way door the planner named, absent when it named none. */
+	contract?: string;
 };
 /**
  * The tick's state for one issue (factory.md, Rules: Data): `concert` is the last settled concert it routed, `triage`
@@ -222,6 +225,7 @@ export function parseTriage(value: unknown): Triage {
 		children: optional(value, "children", isChildren, "a list of children"),
 		duplicateOf: optional(value, "duplicateOf", isNumber, "an issue number"),
 		related: optional(value, "related", isNumbers, "a list of issue numbers"),
+		contract: optional(value, "contract", isString, "a string"),
 	};
 	const needed = NEEDS[triage.verdict];
 	if (needed && triage[needed] === undefined)
@@ -663,35 +667,146 @@ export const encoreRequest = (request: string, changes: readonly Change[]) =>
 		),
 	].join("\n");
 
-/** What a landed slice's PR says, for an `upheld` Markdown list of the review's upheld findings and its agents' `gaps`. */
+/**
+ * What a landed slice's PR says: `spend` holds each slice concert of the issue, oldest first, and `upheld` the review's
+ * upheld findings as a Markdown list.
+ */
 export type Landed = {
 	issue: number;
-	concert: string;
-	tokens: number;
-	upheld: string;
+	spend: readonly Spend[];
+	tier: Tier;
+	risk: Risk;
+	upheld?: string;
 	gaps: readonly string[];
 	result: Triage;
 };
 
-/** The PR body of a landed slice (factory.md, Rules: PRs). */
-export function pullBody({
-	issue,
-	concert,
-	tokens,
-	upheld,
-	gaps,
-	result,
-}: Landed) {
+const THOUSAND = 1_000;
+const MILLION = 1_000_000;
+const SIGNIFICANT = 3;
+const MS_PER_SECOND = 1_000;
+const SECONDS_PER_MINUTE = 60;
+const MINUTES_PER_HOUR = 60;
+
+const round = (n: number) => `${Number(n.toPrecision(SIGNIFICANT))}`;
+
+/**
+ * `n` tokens to three significant digits, as `999`, `1k`, `957k` or `1.37M`: not `compact` of `@maestro/ir`, which
+ * rounds otherwise, since the factory imports no workspace packages.
+ */
+export function shorthand(n: number) {
+	if (n < THOUSAND) return `${n}`;
+	const thousands = round(n / THOUSAND);
+	return Number(thousands) < THOUSAND
+		? `${thousands}k`
+		: `${round(n / MILLION)}M`;
+}
+
+/** `ms` as `45s`, `12m` or `1h5m`, rounded to the second, minute or minute. */
+export function elapsed(ms: number) {
+	const seconds = Math.round(ms / MS_PER_SECOND);
+	if (seconds < SECONDS_PER_MINUTE) return `${seconds}s`;
+	const minutes = Math.round(seconds / SECONDS_PER_MINUTE);
+	return minutes < MINUTES_PER_HOUR
+		? `${minutes}m`
+		: `${Math.floor(minutes / MINUTES_PER_HOUR)}h${minutes % MINUTES_PER_HOUR}m`;
+}
+
+const tokenTotal = (s: Spend) =>
+	s.input + s.output + s.cacheRead + s.cacheWrite;
+const sum = (rows: readonly Spend[], by: (s: Spend) => number) =>
+	rows.reduce((total, s) => total + by(s), 0);
+
+const FINDING = /^- /gm;
+
+function evidenceLines({ upheld, tier, result }: Landed) {
+	const gate = (result.spec?.acceptance ?? [])
+		.map((a) => `\`${oneLine(a)}\``)
+		.join(", ");
+	const found = upheld?.trim();
+	const findings = found ? found.split("\n") : ["- None."];
 	return [
-		`Closes #${issue}`,
+		`- Gate: ${gate ? `${gate} ` : ""}green`,
+		`- Review: ${tier} review, upheld ${found?.match(FINDING)?.length ?? 0}`,
+		...findings.map((f) => `  ${f}`),
+	];
+}
+
+function gapLines(gaps: readonly string[]) {
+	return gaps.length
+		? [
+				`<details><summary>Gaps (${gaps.length})</summary>`,
+				"",
+				...list(gaps),
+				"",
+				"</details>",
+				"",
+			]
+		: [];
+}
+
+function dangerLine({ risk, result }: Landed) {
+	const area = result.area ? ` · **Area:** ${result.area}` : "";
+	const door = result.contract;
+	return [
+		`**Risk:** ${risk}${area}`,
+		...(door ? ["", `**One-way door:** ${oneLine(door)}`] : []),
+	];
+}
+
+function spendLines(spend: readonly Spend[]) {
+	const row = (cells: readonly string[]) => `| ${cells.join(" | ")} |`;
+	return [
+		row(["Concert", "Time", "Tokens", "In", "Cache r/w", "Out"]),
+		row(["-------", "----", "------", "--", "---------", "---"]),
+		...spend.map((s) =>
+			row([
+				`\`${s.short}\` ${s.encore ? "encore" : "build"}`,
+				elapsed(s.elapsedMs),
+				shorthand(tokenTotal(s)),
+				shorthand(s.input),
+				`${shorthand(s.cacheRead)} / ${shorthand(s.cacheWrite)}`,
+				shorthand(s.output),
+			]),
+		),
+		row([
+			"**Total**",
+			elapsed(sum(spend, (s) => s.elapsedMs)),
+			shorthand(sum(spend, tokenTotal)),
+			"",
+			"",
+			"",
+		]),
+	];
+}
+
+const block = (heading: string, lines: readonly string[]) => [
+	`## ${heading}`,
+	"",
+	...lines,
+	"",
+];
+
+/** The PR body of a landed slice (factory.md, Rules: PRs). */
+export function pullBody(landed: Landed) {
+	const { issue, spend, gaps, result } = landed;
+	const related = result.related?.length
+		? ` · relates to ${refs(result.related)}`
+		: "";
+	const decisions = list(
+		(result.spec?.decisions ?? []).map((d) => oneLine(d.lead)),
+	);
+	return [
+		`Closes #${issue}${related}`,
 		"",
-		`- Concert: \`${concert}\``,
-		`- Tokens: ${tokens}`,
-		...(result.related?.length ? [`- Relates to ${refs(result.related)}`] : []),
-		"",
-		...section("Acceptance", list(result.spec?.acceptance ?? [])),
-		...section("Upheld findings", [upheld]),
-		...section("Gaps", list(gaps)),
+		...block("Summary", [
+			result.spec?.subject ?? "",
+			...(decisions.length ? ["", ...decisions] : []),
+		]),
+		...block("Evidence", evidenceLines(landed)),
+		...gapLines(gaps),
+		...block("Merge Danger", dangerLine(landed)),
+		...block("Spend", spendLines(spend)),
 	].join("\n");
 }
 

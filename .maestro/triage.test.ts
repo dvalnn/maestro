@@ -270,6 +270,7 @@ const overrides: [string, Proposal, Triage][] = [
 			tier: "ordinary",
 			area: "cli",
 			reasons: ["the planner names a contract: the --json flag"],
+			contract: "the --json flag",
 			questions: [],
 			spec: { touches: ready.touches, ...spec },
 		},

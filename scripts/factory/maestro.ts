@@ -18,11 +18,20 @@ export type Result = {
 	outputs: Record<string, unknown>;
 };
 /**
- * What a settled concert's agents reported, and its token total: `upheld` is the body of the upheld findings the
- * concert returned, if any.
+ * What one slice concert spent: its run time and tokens by kind, reasoning tokens counted in `output`, and whether it
+ * was an encore of another concert.
  */
+export type Spend = {
+	short: string;
+	elapsedMs: number;
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	encore: boolean;
+};
+/** What a settled concert's agents reported: `upheld` is the body of the upheld findings the concert returned, if any. */
 export type Report = {
-	tokens: number;
 	obstacles: string[];
 	gaps: string[];
 	upheld?: string;
@@ -39,6 +48,8 @@ export type Maestro = {
 	 */
 	start(args: string[]): Promise<string>;
 	report(id: string): Promise<Report>;
+	/** What concert `id` spent. */
+	spend(id: string): Promise<Spend>;
 	/**
 	 * Applies concert `id`'s changeset to the checkout at `dir`, staged.
 	 * @throws Error with maestro's message when it does not apply.
@@ -80,6 +91,25 @@ const entriesOf = (reports: unknown, key: string) =>
 	Object.values(isJson(reports) ? reports : {}).flatMap((r) =>
 		isJson(r) ? strings(r[key]) : [],
 	);
+
+const metric = (metrics: unknown, name: string) => {
+	const value = isJson(metrics) ? metrics[name] : undefined;
+	return typeof value === "number" ? value : 0;
+};
+
+/** The spend of an `ls <concert> --json` document. */
+function spendOf(doc: unknown): Spend {
+	if (!isJson(doc)) throw new Error("maestro ls: not an object");
+	return {
+		short: str(doc, "short"),
+		elapsedMs: typeof doc.elapsedMs === "number" ? doc.elapsedMs : 0,
+		input: metric(doc.metrics, "tokens_in"),
+		output: metric(doc.metrics, "tokens_out"),
+		cacheRead: metric(doc.metrics, "tokens_cache_read"),
+		cacheWrite: metric(doc.metrics, "tokens_cache_write"),
+		encore: typeof doc.encoreOf === "string",
+	};
+}
 
 /** The body of the `upheld` output of a `wait <concert> --json` document, under the concert's `artifacts`. */
 function upheldOf(doc: unknown): string | undefined {
@@ -165,12 +195,12 @@ export function maestro(bin = "maestro"): Maestro {
 			]);
 			if (!isJson(doc)) throw new Error("maestro ls: not an object");
 			return {
-				tokens: typeof doc.tokens === "number" ? doc.tokens : 0,
 				obstacles: entriesOf(doc.reports, "obstacles"),
 				gaps: entriesOf(doc.reports, "gaps"),
 				upheld: upheldOf(result),
 			};
 		},
+		spend: async (id) => spendOf(await json(bin, ["ls", id])),
 		apply: (id, dir) => run(bin, ["cs", "apply", id, "-C", dir]),
 		start: async (args) => {
 			const doc = await json(bin, [...args, "--detach"]);

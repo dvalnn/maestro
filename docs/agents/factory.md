@@ -355,9 +355,13 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   `factory: <issue title>`, the title cut with an ellipsis past 60 characters.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
   held, with the subject from the spec and `Closes #N`. The PR, to `main` or to the dependency's branch while stacked,
-  is titled with the subject, and its body holds `Closes #N`, the concert, its tokens, `Relates to` links, the spec's
-  acceptance, the review's upheld findings and the agents' gaps. A restack force-pushes the branch and retargets the PR,
-  or opens it again with the same body when the forge closed it.
+  is titled with the subject. Its body is built from the tick's data alone: `Closes #N` with the `Relates to` links;
+  Summary (the subject and each decision's lead); Evidence (the acceptance commands as the gate, the review's tier and
+  upheld findings, and the agents' gaps folded under `<details>`); Merge Danger (risk, area and the planner's contract
+  as the one-way door); Spend (a row per slice concert of the ticket's tour, a build or an encore as its record says,
+  with time and tokens in k/M shorthand, then a total). Every landing, an encore's included, rewrites the body of the PR
+  already open on the branch. A restack force-pushes the branch and retargets the PR, or opens it again with the same
+  body when the forge closed it.
 
 ## Setting up
 

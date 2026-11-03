@@ -23,6 +23,7 @@ import {
 	maestro,
 	type Report,
 	type Result,
+	type Spend,
 } from "./maestro";
 import {
 	buildable,
@@ -397,11 +398,14 @@ async function fail(
 	return true;
 }
 
-/** The open PR of `pull.head`, retargeted to `pull.base` when it merges elsewhere, else a new one of `pull`. */
+/** The open PR of `pull.head` with `pull`'s body, retargeted to `pull.base` when it merges elsewhere, else a new one. */
 async function openPull(forge: Forge, pull: NewPull) {
 	const open = (await forge.pulls()).find((p) => p.head === pull.head);
 	if (!open) return forge.openPull(pull);
-	if (open.base !== pull.base) await forge.retarget(open.number, pull.base);
+	await forge.editPull(open.number, {
+		body: pull.body,
+		...(open.base !== pull.base && { base: pull.base }),
+	});
 	return open.number;
 }
 
@@ -459,15 +463,30 @@ type PullText = Pick<NewPull, "title" | "body">;
 /** Where a landing or restack leaves its issue: in review with its PR, stacked while `stack` is set, else asking. */
 type Outcome = { pull: number; stack?: Stack } | { question: string };
 
-/** The PR text of `issue`'s slice `concert`, with its `report` (factory.md, Rules: PRs). */
-function pullText(issue: Issue, data: Data, concert: string, report: Report) {
+/** What each slice concert of `issue`'s tour spent, oldest first, the one still running left out. */
+async function spendOf(pass: Pass, issue: Issue) {
+	const tour = await pass.maestro.concerts(
+		tourOf(pass.milestone, issue.number),
+	);
+	const slices = tour.filter((c) => isSlice(c) && c.status !== "running");
+	return Promise.all(slices.reverse().map((c) => pass.maestro.spend(c.id)));
+}
+
+/** The PR text of `issue`'s slice, with its `report` and the `spend` of its concerts (factory.md, Rules: PRs). */
+function pullText(
+	issue: Issue,
+	data: Data,
+	report: Report,
+	spend: readonly Spend[],
+) {
 	const result = data.result;
 	if (!result?.spec) throw new Error(`#${issue.number} holds no spec`);
 	const body = pullBody({
 		issue: issue.number,
-		concert,
-		tokens: report.tokens,
-		upheld: report.upheld ?? "None.",
+		spend,
+		tier: tierOf(issue, result),
+		risk: riskOf(issue, result.risk),
+		upheld: report.upheld,
 		gaps: report.gaps,
 		result,
 	});
@@ -567,7 +586,7 @@ async function landIn(
 	dir: string,
 ): Promise<Outcome> {
 	const { issue, data } = entry;
-	const text = pullText(issue, data, id, report);
+	const text = pullText(issue, data, report, await spendOf(pass, issue));
 	await pass.maestro.apply(id, dir);
 	const commit = await pass.landing.describe(
 		dir,
@@ -773,7 +792,7 @@ function restackBranch(pass: Pass, entry: Entry) {
 		if (!data.concert)
 			throw new Error(`#${issue.number} holds no landed concert`);
 		const report = await pass.maestro.report(data.concert);
-		const text = pullText(issue, data, data.concert, report);
+		const text = pullText(issue, data, report, await spendOf(pass, issue));
 		return restackIn(
 			pass,
 			entry,
