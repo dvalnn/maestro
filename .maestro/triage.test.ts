@@ -103,18 +103,10 @@ const risks: [string, string[], string, string, string, string[]][] = [
 	[
 		"the planner's contract",
 		["packages/cli/src/a.ts"],
-		" the --json flag ",
+		"the --json flag",
 		"high",
 		"ordinary",
 		["the planner names a contract: the --json flag"],
-	],
-	[
-		"a blank contract",
-		["packages/cli/src/a.ts"],
-		"  ",
-		"medium",
-		"ordinary",
-		[],
 	],
 	[
 		"3 docs and tests",
@@ -268,7 +260,7 @@ const overrides: [string, Proposal, Triage][] = [
 	],
 	[
 		"a high-risk ready into needs-approval",
-		{ ...ready, contract: "the --json flag" },
+		{ ...ready, contract: " the --json flag " },
 		{
 			verdict: "needs-approval",
 			risk: "high",

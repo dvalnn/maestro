@@ -310,8 +310,7 @@ function riskOf(
 		reasons.push(
 			`touches ${code.length} paths besides docs and tests, ${WIDE} or more`,
 		);
-	if (contract.trim())
-		reasons.push(`the planner names a contract: ${contract.trim()}`);
+	if (contract) reasons.push(`the planner names a contract: ${contract}`);
 	if (reasons.length)
 		return { risk: "high", tier: wide ? "risky" : "ordinary", reasons };
 	// An empty list proves nothing about its paths, so it is not low.
@@ -337,8 +336,8 @@ function areaOf(touches: string[]): { area?: Area } {
 /**
  * The risk, review tier and area of a change that touches `touches`, each normalised and those outside the repo left
  * out, and each risk rule that fired:
- * - high, when a path other than a test sets a contract, `WIDE` paths or more are neither docs nor tests, or `contract`
- *   names one; its tier is `risky` when that width fired, else `ordinary`;
+ * - high, when a path other than a test sets a contract, `WIDE` paths or more are neither docs nor tests, or the trimmed
+ *   `contract` is not empty; its tier is `risky` when that width fired, else `ordinary`;
  * - low, when one to `NARROW` paths are all docs or tests, at tier `small`;
  * - medium, otherwise, at tier `ordinary`.
  */
@@ -406,7 +405,8 @@ const askAlone = (ask: string): Question => ({ ask, options: [], context: [] });
  * the check never ran on stays in the result, for the owner to approve as it is.
  */
 function proposed(proposal: Proposal, { failures, unchecked }: Checks): Triage {
-	const { touches, contract, spec, children, related } = proposal;
+	const { touches, spec, children, related } = proposal;
+	const contract = proposal.contract.trim();
 	const classified = classify(touches, contract);
 	const questions = [
 		...proposal.questions,

@@ -60,8 +60,8 @@ The report is the closing comment, in this order:
 
 1. **Summary**, only where what landed differs from the brief's.
 2. **Evidence**: the acceptance table, each item and the test that pins it, and the `just check` result.
-3. **Door**: one-way (a contract: IR field, CLI flag, config key, file layout, manifest) or two-way, then the **blast
-   radius** in a few words.
+3. **Door**: one-way (a contract: IR field, public CLI flag or exit code, config key, an id or path format users type,
+   pack manifest) or two-way, then the **blast radius** in a few words.
 4. **Derived, not ruled**, **Review triage** and **Loop**: the tables `implementation-loop.md` requires.
 
 No file inventory and no walk through the diff; the diff is one click away.

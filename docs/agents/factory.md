@@ -325,9 +325,10 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   dependency closed without merging, moves the ticket to `needs-info` with a question comment offering `ready-for-agent`
   (build again on `main`) or `needs-triage`.
 - **Build.** A ready ticket is built when its triage left a spec and it is no split's epic: `.maestro/slice.ts` with the
-  spec and the ask as `--request`, and its risk's tier as `--tier` and `--preset`. Presets layer in order: the tier's,
-  then `area-<area>` when the ticket has an `area/<area>` label and `.maestro/presets/area-<area>.yaml` exists, then the
-  tick's own `--preset`s, in order. The ticket moves to `in-progress` as the perform starts.
+  spec and the ask as `--request`, and its tier (Rules: Risk and tier) as `--tier` and `--preset`. Presets layer in
+  order: the tier's, then `area-<area>` when the ticket has an `area/<area>` label and
+  `.maestro/presets/area-<area>.yaml` exists, then the tick's own `--preset`s, in order. The ticket moves to
+  `in-progress` as the perform starts.
 - **Stale spec.** A fresh build of a ready ticket first compares its spec's `touches` with those of every other ticket
   whose spec was approved after its own: one in `ready-for-agent`, `in-progress` or `in-review` whose `specAt` is later,
   or one closed as completed (not `state/wontfix` or `state/duplicate`) after this spec's `specAt`. A routed triage
