@@ -91,6 +91,9 @@ const FIX_TASK =
 
 type Found = ValueOf<typeof Findings>;
 
+/** A blocking finding and the skeptic's why for upholding it, absent when no skeptic ruled on it. */
+type Upheld = Found["findings"][number] & { why?: string };
+
 /** What one review round ruled: a consolidator's verdict, or a lens's findings and its skeptic's verdicts, if any. */
 type Ruled =
 	| { verdict: ValueOf<typeof Verdict> }
@@ -100,26 +103,35 @@ type Ruled =
 type Rulings = { lane: string; session: string; lens?: string } & Ruled;
 
 /**
- * The blocking findings the skeptic upheld: none when the lens was clean, every blocking one when no skeptic delivered
- * verdicts.
+ * The blocking findings the skeptic upheld, each with its why: none when the lens was clean, every blocking one
+ * without a why when no skeptic delivered verdicts.
  */
 function upheldFindings(
 	{ clean, findings }: Found,
 	verdicts?: Settled<ValueOf<typeof Verdicts>>[],
-): Found["findings"] {
+): Upheld[] {
 	if (clean) return [];
 	const blocking = findings.filter((f) => f.blocking);
 	const held = verdicts?.[0]?.value;
 	if (held === undefined) return blocking;
-	return blocking.filter((f) => held.some((v) => v.id === f.id && v.holds));
+	return blocking.flatMap((f) => {
+		const verdict = held.find((v) => v.id === f.id && v.holds);
+		return verdict ? [{ ...f, why: verdict.why }] : [];
+	});
 }
 
-/** Each upheld blocking finding of `rulings` as a Markdown list item. */
+/** The line under an upheld finding: the skeptic's why, or a mark that no skeptic ruled on it. */
+const ruling = (why?: string) =>
+	why === undefined
+		? "  Unverified: no skeptic ruled on it"
+		: `  Upheld: ${why}`;
+
+/** Each upheld blocking finding of `rulings` as a Markdown list item, carrying the skeptic's why or marked unverified. */
 function upheldLines(rulings: Rulings): string[] {
 	if ("verdict" in rulings)
 		return rulings.verdict.blocking.map((b) => `- ${b}`);
 	return upheldFindings(rulings.findings, rulings.verdicts).map(
-		(f) => `- ${f.id}, ${f.where}: ${f.issue}`,
+		(f) => `- ${f.id}, ${f.where}: ${f.issue}\n${ruling(f.why)}`,
 	);
 }
 

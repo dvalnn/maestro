@@ -97,6 +97,42 @@ test.each(cases)(
 	},
 );
 
+test("upheldOf hands the fixer the skeptic's why under each upheld finding", () => {
+	const verdicts = held("F2").map((v) =>
+		v.holds ? { ...v, why: "a.ts:1 returns before the write" } : v,
+	);
+	const out = upheldOf(
+		{
+			lane,
+			session,
+			findings: found,
+			verdicts: [{ outcome: "ok", value: verdicts }],
+		},
+		ctx,
+	);
+	expect(readFileSync(out.upheld, "utf8")).toContain(
+		"- F2, a.ts:1: breaks CODING_STANDARDS.md Shape\n  Upheld: a.ts:1 returns before the write",
+	);
+});
+
+test("upheldOf marks each finding unverified when no skeptic ruled on it", () => {
+	const out = upheldOf(
+		{
+			lane,
+			session,
+			findings: found,
+			verdicts: [{ outcome: "failed", reason: "x" }],
+		},
+		ctx,
+	);
+	const upheld = readFileSync(out.upheld, "utf8");
+	for (const id of ["F1", "F2"])
+		expect(upheld).toContain(
+			`- ${id}, a.ts:1: breaks CODING_STANDARDS.md Shape\n  Unverified: no skeptic ruled on it`,
+		);
+	expect(upheld).not.toContain("Upheld:");
+});
+
 /** The runtime of each profile a tier seats, as `.maestro/presets/<tier>.yaml` sets it. */
 const seated: [string, Record<string, [string, string]>][] = [
 	[
