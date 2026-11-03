@@ -193,6 +193,24 @@ describe("a bare file", () => {
 		expect(await hash()).not.toBe(before);
 	});
 
+	test("inlines a Markdown text import into the IR", async () => {
+		const dir = await scratch();
+		await Bun.write(join(dir, "prompt.md"), "# Task\n\nMarkdown marker.\n");
+		const file = join(dir, "texted.ts");
+		await Bun.write(
+			file,
+			`import { code, composition, Text } from "@maestro/sdk";
+import TEXT from "./prompt.md" with { type: "text" };
+export const same = (i: { text: string }) => i;
+export const texted = composition("texted", { examples: [{}] }, () =>
+	code(same, { in: { text: TEXT }, out: { text: Text() } }),
+);
+`,
+		);
+		const ir = built((await openFile(file)).build("texted", {}));
+		expect(JSON.stringify(ir)).toContain("# Task\\n\\nMarkdown marker.");
+	});
+
 	test("refuses a file whose import does not resolve, naming the import and where it sits", async () => {
 		const file = join(await scratch(), "lost.ts");
 		await Bun.write(file, 'import x from "./nope";\nexport const y = x;\n');

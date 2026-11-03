@@ -152,6 +152,20 @@ done
 [ -z "$(git -C "$target" status --porcelain)" ] || fail "the target checkout changed"
 [ "$(git -C "$target" rev-parse HEAD)" = "$head" ] || fail "the target HEAD moved"
 
+step "a Markdown text import reaches the IR"
+printf 'Markdown prompt marker.\n' > "$ws/texted.md"
+cat > "$ws/texted.ts" <<'TS'
+import { check, fresh, read, seat } from "@maestro/host-repo-sdk";
+import { composition } from "@maestro/sdk";
+import TEXT from "./texted.md" with { type: "text" };
+
+export const texted = composition("texted", { examples: [{}] }, () => {
+  const a = seat("smoke")({ label: "a", task: TEXT, lane: fresh() });
+  return check(read(a.out.lane), "smoke", { label: "check" });
+});
+TS
+grep -q "Markdown prompt marker." <<<"$(maestro compose texted.ts --json)" || fail "compose texted.ts did not carry the .md text"
+
 step "IR file performs"
 mkdir "$scratch/ir"
 maestro compose smoke.ts --out "$scratch/ir/smoke.json" >/dev/null || fail "compose --out exited $?"

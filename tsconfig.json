@@ -11,7 +11,8 @@
 		"types": ["bun"]
 	},
 	"include": [
-		".maestro/*.ts",
+		".maestro/**/*.ts",
+		"md.d.ts",
 		"packages/*/src",
 		"packs/*/src",
 		"packs/*/acceptance",
