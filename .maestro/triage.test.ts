@@ -228,6 +228,7 @@ const overrides: [string, Proposal, Triage][] = [
 			tier: "ordinary",
 			reasons: [],
 			questions: [askAlone("Which paths does the change create or edit?")],
+			spec: { touches: [], ...spec },
 		},
 	],
 	[
@@ -243,6 +244,7 @@ const overrides: [string, Proposal, Triage][] = [
 					"Which repo-relative paths does the change touch in place of ../x.ts, /etc/y?",
 				),
 			],
+			spec: { touches: [], ...spec },
 		},
 	],
 	[
@@ -256,6 +258,11 @@ const overrides: [string, Proposal, Triage][] = [
 					"Which command proves the change done? Acceptance commands start with bun, bunx, just, mise.",
 				),
 			],
+			spec: {
+				touches: ready.touches,
+				...spec,
+				acceptance: ["greet.sh greets by name"],
+			},
 		},
 	],
 	[
@@ -316,7 +323,7 @@ test.each([
 			risk,
 			questions: [askAlone("Greet whom?")],
 		});
-		expect(triage.spec).toBeUndefined();
+		expect(triage.spec).toEqual({ touches, ...spec });
 	},
 );
 
@@ -340,7 +347,7 @@ test("settle turns a failing spec check into questions, sending the spec to need
 	];
 	const { triage } = settle(planned(ready, check));
 	expect(triage).toMatchObject({ verdict: "needs-info", questions: [failed] });
-	expect(triage.spec).toBeUndefined();
+	expect(triage.spec).toEqual({ touches: ready.touches, ...spec });
 });
 
 test.each([
@@ -619,7 +626,10 @@ test("a stub perform sends a spec whose check fails to needs-info with its quest
 		verdict: "needs-info",
 		questions: [failed],
 	});
-	expect(concert.outputs.triage.spec).toBeUndefined();
+	expect(concert.outputs.triage.spec).toEqual({
+		touches: ready.touches,
+		...spec,
+	});
 	expect(statuses("checker")).toEqual(["ok"]);
 	const split = await performed(planning, {
 		verdict: "split",

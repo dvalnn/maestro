@@ -272,10 +272,10 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   `pi`, low effort, `.maestro/presets/triage.yaml`) checks it against the scouts' answers and the code. Every claim the
   spec makes about the base must hold, and the spec must miss no place the change touches, such as the uninstall path
   beside an install. Each failure becomes a question, so the issue goes to `needs-info` as any other question does
-  (Rules: Answers); with none, the triage is unchanged. A split or a needs-info proposal is not checked. A check that
-  fails to run asks one question, `The spec check did not run: <reason>. Approve the spec as is, or re-triage.`, and the
-  spec stays in the result for the owner to approve by moving the ticket to `ready-for-agent`; the failure halts
-  nothing.
+  (Rules: Answers); with none, the triage is unchanged. A split or a needs-info proposal is not checked. A ready
+  proposal's spec stays in the result whatever question sends it to `needs-info`, so a re-triage's planner is given it
+  and the owner may approve it by moving the ticket to `ready-for-agent`. A check that fails to run asks one question,
+  `The spec check did not run: <reason>. Approve the spec as is, or re-triage.`; the failure halts nothing.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. The owner
   answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`, then moving
   the ticket to `needs-triage`; a waiting spec in `needs-approval` is answered or redirected the same way. A triage,

@@ -394,17 +394,15 @@ function verdictOf(
 	return proposed;
 }
 
-const SPECIFIED: readonly Verdict[] = ["ready-for-agent", "needs-approval"];
-
 const relatedOf = (related?: number[]) => (related?.length ? { related } : {});
 
 const askAlone = (ask: string): Question => ({ ask, options: [], context: [] });
 
 /**
- * The triage of a planner's `proposal`, the spec check's `failures` asked of the owner besides its own questions. A spec
- * the check never ran on stays in the result, for the owner to approve as it is.
+ * The triage of a planner's `proposal`, the spec check's `failures` asked of the owner besides its own questions. A
+ * ready proposal's spec stays in the result whatever the verdict, for a re-triage to continue and the owner to approve.
  */
-function proposed(proposal: Proposal, { failures, unchecked }: Checks): Triage {
+function proposed(proposal: Proposal, failures: Question[]): Triage {
 	const { touches, spec, children, related } = proposal;
 	const contract = proposal.contract.trim();
 	const classified = classify(touches, contract);
@@ -418,7 +416,7 @@ function proposed(proposal: Proposal, { failures, unchecked }: Checks): Triage {
 		verdict,
 		...classified,
 		questions,
-		...((unchecked || SPECIFIED.includes(verdict)) &&
+		...(proposal.verdict === "ready-for-agent" &&
 			spec && { spec: { touches: scopeOf(touches).paths, ...spec } }),
 		...(verdict === "split" && { children }),
 		...relatedOf(related),
@@ -448,18 +446,16 @@ function recommendable({ recommend, ...question }: Question): Question {
 	return named ? { ...question, recommend } : question;
 }
 
-/** The questions the spec check asks, and whether it failed to run, which leaves the owner to approve the spec. */
-type Checks = { failures: Question[]; unchecked: boolean };
-
 /** The spec check's questions: those it found, none when it was skipped, or the one asking about a check that failed to run. */
-function failuresOf(check: Settled<Checked>[]): Checks {
+function failuresOf(check: Settled<Checked>[]): Question[] {
 	const [checked] = check;
-	if (checked?.outcome === "ok")
-		return { failures: checked.value.questions, unchecked: false };
-	if (!checked || checked.outcome === "skipped")
-		return { failures: [], unchecked: false };
-	const ask = `The spec check did not run: ${checked.reason}. Approve the spec as is, or re-triage.`;
-	return { failures: [askAlone(ask)], unchecked: true };
+	if (checked?.outcome === "ok") return checked.value.questions;
+	if (!checked || checked.outcome === "skipped") return [];
+	return [
+		askAlone(
+			`The spec check did not run: ${checked.reason}. Approve the spec as is, or re-triage.`,
+		),
+	];
 }
 
 /** The triage of `ruling`, or of the planner's proposal when the triager handed the issue on. */
