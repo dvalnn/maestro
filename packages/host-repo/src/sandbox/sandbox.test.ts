@@ -112,10 +112,13 @@ describe("confinement", () => {
 		expect(readFileSync(join(cfg, "a"), "utf8")).toBe("x\n");
 	});
 
-	test("the host environment is not inherited, the explicit one is", async () => {
+	test("the host environment is not inherited, the explicit one is, and the shell is pinned to bash", async () => {
 		process.env.HOST_ONLY_VAR = "leak";
-		const { out } = await sh("env | sort", { env: { FOO: "bar" } });
+		const { out } = await sh("env | sort", {
+			env: { FOO: "bar", SHELL: "/bin/zsh" },
+		});
 		delete process.env.HOST_ONLY_VAR;
+		expect(out).toContain("SHELL=/bin/bash");
 		expect(out.some((l) => l.startsWith("HOST_ONLY_VAR"))).toBe(false);
 		expect(out).toContain("FOO=bar");
 	});

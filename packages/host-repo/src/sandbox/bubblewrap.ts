@@ -3,6 +3,8 @@ import { bwrapArgs, mountPlan } from "./plan";
 import type { ExitStatus, SandboxBackend, SandboxedProcess } from "./types";
 
 const ID_VAR = "MAESTRO_SANDBOX_ID";
+/** The shell every agent runs under. Claude Code picks its shell from `SHELL`, and without it prefers zsh. */
+const SANDBOX_SHELL = "/bin/bash";
 const STDERR_TAIL = 64 * 1024;
 /** Values shorter than this are not masked, so a short credential cannot garble the output it appears in. */
 const MIN_MASKED_LENGTH = 8;
@@ -86,6 +88,7 @@ export const bubblewrap: SandboxBackend = {
 			HOME: "/tmp",
 			...spec.env,
 			...spec.secrets,
+			SHELL: SANDBOX_SHELL,
 			[ID_VAR]: id,
 		};
 		const child = Bun.spawn([bwrap, ...args], {

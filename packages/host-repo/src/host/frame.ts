@@ -143,7 +143,7 @@ const LANE_TEXT = {
 	read: "Your working copy is the current directory, and it is read-only: change nothing in it.",
 };
 const SHELL =
-	"Your shell is already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
+	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
 const CHECKS =
 	"Run the target's checks with `check <name>`, and never write your own. Each prints the tail of its output, then ok, rejected or failed.";
 const VERIFY = "Run them to verify your change before you finish.";

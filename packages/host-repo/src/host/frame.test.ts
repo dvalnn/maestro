@@ -6,7 +6,7 @@ const LISTED = `    "gaps": ["<something the task asked that was left undone or 
     "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"]`;
 
 const SHELL =
-	"Your shell is already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
+	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
 
 test("a write-lane builder's frame states its working copy, checks, attachments and reply, in that order", () => {
 	const run: Run = {
