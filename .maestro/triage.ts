@@ -36,6 +36,7 @@ import {
 	Checked,
 	GROUP_SIZE,
 	Group,
+	NARROW,
 	type PROPOSED,
 	Proposal,
 	RUNNERS,
@@ -53,14 +54,14 @@ const task = (...parts: string[]) => parts.join("\n\n");
 /** Each call's task: its own prompt file, then the shared fragments it rules by. */
 const TASKS = {
 	triager: (maxGroups: number) =>
-		task(fill(TRIAGER, { maxGroups, groupSize: GROUP_SIZE }), GATE, QUESTIONS),
+		task(
+			fill(TRIAGER, { maxGroups, groupSize: GROUP_SIZE, narrow: NARROW }),
+			GATE,
+			QUESTIONS,
+		),
 	scout: task(SCOUT),
-	planner: task(
-		fill(PLANNER, { runners: RUNNERS.join(", ") }),
-		GATE,
-		QUESTIONS,
-	),
-	checker: task(CHECKER, GATE, QUESTIONS),
+	planner: task(fill(PLANNER, { runners: RUNNERS.join(", ") }), GATE),
+	checker: task(CHECKER, GATE),
 };
 
 const Slot = Struct({ slot: Text(), group: Group });
@@ -121,6 +122,7 @@ export function answersOf(
 }
 
 const PLANS: Record<Ruled, boolean> = {
+	direct: false,
 	plan: true,
 	duplicate: false,
 	"needs-info": false,
@@ -130,7 +132,6 @@ const PLANS: Record<Ruled, boolean> = {
 const CHECKS: Record<(typeof PROPOSED)[number], boolean> = {
 	"ready-for-agent": true,
 	split: false,
-	"needs-info": false,
 };
 
 const triager = seat("triager");
@@ -143,7 +144,7 @@ const checker = seat("checker", { encore: false });
 export const triage = composition(
 	"triage",
 	{
-		doc: "Triage an issue against the backlog: a triager cuts the backlog and rules early or asks groups of questions, a scout answers each group, a planner proposes a verdict, a checker checks a ready spec against the code, and settle classifies its risk, review tier and area and gates the verdict. Read-only: it leaves no changeset.",
+		doc: "Triage an issue against the backlog: a triager cuts the backlog and rules early, sends a small clear ask straight to the build, or asks groups of questions; a scout answers each group, a planner proposes a verdict, a checker checks a ready spec against the code, and settle classifies its risk, review tier and area and gates the verdict. Only the triager asks the owner. Read-only: it leaves no changeset.",
 		params: {
 			issue: Text({
 				description: "The issue to triage: its number, title and body",

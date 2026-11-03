@@ -1,4 +1,4 @@
-import type { Proposal, Ruling, Triage } from "./verdict";
+import type { Proposal, Question, Ruling, Triage } from "./verdict";
 
 export const CONTRACT = "touches packages/ir/src/a.ts, which set a contract";
 
@@ -16,7 +16,6 @@ export const spec = {
 export const unspecified = {
 	touches: ["packages/cli/src/a.ts"],
 	contract: "",
-	questions: [],
 };
 export const ready: Proposal = {
 	verdict: "ready-for-agent",
@@ -41,7 +40,7 @@ export const planning: Ruling = {
 	questions: [],
 };
 
-export const claiming: Proposal["questions"][number] = {
+export const claiming: Question = {
 	ask: "Where should a loose file's config live?",
 	lead: "A loose file has params.",
 	options: [
@@ -52,4 +51,5 @@ export const claiming: Proposal["questions"][number] = {
 	context: [{ topic: "D-24", text: "A shared config breaks nothing." }],
 };
 
-export const failed = askAlone("Does uninstall remove the new file too?");
+export const failed =
+	"The spec misses uninstall, which removes the file (install.ts:12).";

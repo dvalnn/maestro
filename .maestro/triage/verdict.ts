@@ -12,9 +12,9 @@ import {
 	type ValueOf,
 } from "@maestro/sdk";
 
-export const PROPOSED = ["ready-for-agent", "split", "needs-info"] as const;
+export const PROPOSED = ["ready-for-agent", "split"] as const;
 /** What the triager rules: `plan` hands the issue on to the scouts and the planner, any other settles it early. */
-const RULED = ["plan", "duplicate", "needs-info"] as const;
+const RULED = ["direct", "plan", "duplicate", "needs-info"] as const;
 const VERDICTS = [
 	"ready-for-agent",
 	"needs-approval",
@@ -68,12 +68,16 @@ const CONTRACT_PATHS = [
 /** File names that set a contract in any directory. */
 const MANIFESTS = ["package.json", "bun.lock"];
 const WIDE = 8;
-const NARROW = 3;
+export const NARROW = 3;
 const TEST_FILE = /\.test\.ts$/;
 const MARKDOWN = /\.md$/;
 /** The programs an acceptance command may start with to count as runnable. */
 export const RUNNERS = ["bun", "bunx", "just", "mise"];
 
+/** The acceptance of a direct build: the target's whole gate. */
+const GATE_COMMAND = "just check";
+/** The lead of what the spec check found, left in the spec for the build and the review. */
+const CHECKED = "Open after the spec check";
 const NO_TOUCHES = "Which paths does the change create or edit?";
 const NO_ACCEPTANCE = `Which command proves the change done? Acceptance commands start with ${RUNNERS.join(", ")}.`;
 const outsideRepo = (paths: string[]) =>
@@ -90,6 +94,7 @@ const SpecPart = Struct({
 	acceptance: List(Text()),
 	subject: Text(),
 });
+type SpecPart = ValueOf<typeof SpecPart>;
 const Spec = Struct({
 	touches: List(Text()),
 	what: Text(),
@@ -124,6 +129,11 @@ const needs = (verdict: Verdict | Ruled, field: string) =>
 /** A rule that a needs-info verdict asks at least one question. */
 const ASKS = forVerdict("needs-info", {
 	properties: { questions: { minItems: 1 } },
+});
+
+/** A rule that a direct ruling names one to `NARROW` files. */
+const NARROWS = forVerdict("direct", {
+	properties: { files: { minItems: 1, maxItems: NARROW } },
 });
 
 type Shaped<R extends Types, O extends Types> = {
@@ -166,14 +176,13 @@ export const Proposal = shape(
 		verdict: Enum(PROPOSED),
 		touches: List(Text()),
 		contract: Text(),
-		questions: List(Question),
 	},
 	{
 		spec: SpecPart,
 		children: Children,
 		related: List(Int()),
 	},
-	[needs("ready-for-agent", "spec"), needs("split", "children"), ASKS],
+	[needs("ready-for-agent", "spec"), needs("split", "children")],
 );
 export type Proposal = ValueOf<typeof Proposal>;
 
@@ -189,11 +198,14 @@ export const Group = Struct({
 });
 export type Group = ValueOf<typeof Group>;
 
-/** The spec check's questions: one per failure of the spec against the code, none when it holds. */
-export const Checked = shape({ questions: List(Question) }, {});
+/** The spec check's findings: one per failure of the spec against the code, none when it holds. */
+export const Checked = shape({ findings: List(Text()) }, {});
 export type Checked = ValueOf<typeof Checked>;
 
-/** The triager's ruling: an early verdict, or at most `maxGroups` groups of questions for the scouts and the planner. */
+/**
+ * The triager's ruling: an early verdict, a direct brief of `what` and `subject`, or at most `maxGroups` groups of
+ * questions for the scouts and the planner.
+ */
 export const Ruling = (maxGroups: number) =>
 	shape(
 		{
@@ -206,8 +218,19 @@ export const Ruling = (maxGroups: number) =>
 			}),
 			questions: List(Question),
 		},
-		{ duplicateOf: Int(), related: List(Int()) },
-		[needs("duplicate", "duplicateOf"), ASKS],
+		{
+			what: Text(),
+			subject: Text(),
+			duplicateOf: Int(),
+			related: List(Int()),
+		},
+		[
+			needs("duplicate", "duplicateOf"),
+			needs("direct", "what"),
+			needs("direct", "subject"),
+			NARROWS,
+			ASKS,
+		],
 	);
 export type Ruling = ValueOf<ReturnType<typeof Ruling>>;
 
@@ -372,43 +395,65 @@ const relatedOf = (related?: number[]) => (related?.length ? { related } : {});
 
 const askAlone = (ask: string): Question => ({ ask, options: [], context: [] });
 
+/** `spec` with the spec check's `findings`, when it has any, as the last of what it leaves out. */
+function withFindings(spec: SpecPart, findings: string[]): SpecPart {
+	if (!findings.length) return spec;
+	const open = { lead: CHECKED, points: findings };
+	return { ...spec, excluded: [...spec.excluded, open] };
+}
+
 /**
- * The triage of a planner's `proposal`, the spec check's `failures` asked of the owner besides its own questions. A
+ * The triage of a planner's `proposal`, its gaps asked of the owner and the spec check's `findings` left in its spec. A
  * ready proposal's spec stays in the result whatever the verdict, for a re-triage to continue and the owner to approve.
  */
-function proposed(proposal: Proposal, failures: Question[]): Triage {
+function proposed(proposal: Proposal, findings: string[]): Triage {
 	const { touches, spec, children, related } = proposal;
 	const contract = proposal.contract.trim();
 	const classified = classify(touches, contract);
-	const questions = [
-		...proposal.questions,
-		...gapsOf(proposal).map(askAlone),
-		...failures,
-	];
+	const questions = gapsOf(proposal).map(askAlone);
 	const verdict = verdictOf(proposal.verdict, classified.risk, questions);
 	return {
 		verdict,
 		...classified,
 		questions,
 		...(proposal.verdict === "ready-for-agent" &&
-			spec && { spec: { touches: scopeOf(touches).paths, ...spec } }),
+			spec && {
+				spec: {
+					touches: scopeOf(touches).paths,
+					...withFindings(spec, findings),
+				},
+			}),
 		...(verdict === "split" && { children }),
 		...relatedOf(related),
 		...(contract && { contract }),
 	};
 }
 
-/** The triage of a ruling the triager settled early as `verdict`. */
-function ruled(
-	{ files, questions, duplicateOf, related }: Ruling,
-	ruledAs: Exclude<Ruled, "plan">,
-): Triage {
+/** The spec of a direct ruling: its brief, built under the gate alone. */
+const directSpec = ({ files, what = "", subject = "" }: Ruling) => ({
+	touches: scopeOf(files).paths,
+	what,
+	decisions: [],
+	excluded: [],
+	acceptance: [GATE_COMMAND],
+	subject,
+});
+
+/** The triage of a ruling the triager settled early as `verdict`, `direct` building at once on its brief. */
+function ruled(ruling: Ruling, ruledAs: Exclude<Ruled, "plan">): Triage {
+	const { files, questions, duplicateOf, related } = ruling;
+	const direct = ruledAs === "direct";
 	const classified = classify(files, "");
-	const verdict = verdictOf(ruledAs, classified.risk, questions);
+	const verdict = verdictOf(
+		direct ? "ready-for-agent" : ruledAs,
+		classified.risk,
+		questions,
+	);
 	return {
 		verdict,
 		...classified,
 		questions,
+		...(direct && { spec: directSpec(ruling) }),
 		...(verdict === "duplicate" && { duplicateOf }),
 		...relatedOf(related),
 	};
@@ -420,16 +465,12 @@ function recommendable({ recommend, ...question }: Question): Question {
 	return named ? { ...question, recommend } : question;
 }
 
-/** The spec check's questions: those it found, none when it was skipped, or the one asking about a check that failed to run. */
-function failuresOf(check: Settled<Checked>[]): Question[] {
+/** The spec check's findings: those it found, none when it was skipped, or the one saying it failed to run. */
+function findingsOf(check: Settled<Checked>[]): string[] {
 	const [checked] = check;
-	if (checked?.outcome === "ok") return checked.value.questions;
+	if (checked?.outcome === "ok") return checked.value.findings;
 	if (!checked || checked.outcome === "skipped") return [];
-	return [
-		askAlone(
-			`The spec check did not run: ${checked.reason}. Approve the spec as is, or re-triage.`,
-		),
-	];
+	return [`The spec check did not run: ${checked.reason}.`];
 }
 
 /** The triage of `ruling`, or of the planner's proposal when the triager handed the issue on. */
@@ -442,12 +483,12 @@ function triageOf(
 	const [planned] = proposal;
 	if (planned?.outcome !== "ok")
 		throw new Error("the planner gave no proposal");
-	return proposed(planned.value, failuresOf(check));
+	return proposed(planned.value, findingsOf(check));
 }
 
 /**
  * The triage verdict: the triager's early ruling or the planner's proposal, which it only ever downgrades or gates,
- * never upgrades. A failure the spec check found, or a check that failed to run, is a question to the owner.
+ * never upgrades. A failure the spec check found, or a check that failed to run, is left in the spec for the build.
  * @throws Error when the triager handed the issue on and the planner gave no proposal.
  */
 export function settle({

@@ -173,7 +173,7 @@ test.each(areas)("classify's area is %s", (_, touches, area) => {
 	expect(classify(touches, "").area).toBe(area);
 });
 
-const clean: Settled<Checked>[] = [{ outcome: "ok", value: { questions: [] } }];
+const clean: Settled<Checked>[] = [{ outcome: "ok", value: { findings: [] } }];
 const planned = (proposal: Proposal, check = clean) => ({
 	ruling: planning,
 	proposal: [{ outcome: "ok" as const, value: proposal }],
@@ -271,33 +271,54 @@ test.each(overrides)("settle turns %s", (_, proposal, triage) => {
 });
 
 test.each([
-	["low", ["docs/a.md"]],
-	["medium", ["packages/cli/src/a.ts"]],
-	["high", ["packages/ir/src/a.ts"]],
+	["low", ["docs/a.md"], "ready-for-agent"],
+	["medium", ["packages/cli/src/a.ts"], "ready-for-agent"],
+	["high", ["packages/ir/src/a.ts"], "needs-approval"],
 ])(
-	"settle sends a ready proposal with a question to needs-info at %s risk",
-	(risk, touches) => {
-		const { triage } = settle(
-			planned({ ...ready, touches, questions: [askAlone("Greet whom?")] }),
-		);
-		expect(triage).toMatchObject({
-			verdict: "needs-info",
-			risk,
-			questions: [askAlone("Greet whom?")],
+	"settle builds a direct ruling at %s risk on its brief under the gate alone, as %s",
+	(risk, files, verdict) => {
+		const { triage } = settle({
+			ruling: {
+				...planning,
+				verdict: "direct",
+				files,
+				groups: [],
+				what: spec.what,
+				subject: spec.subject,
+			},
+			proposal: [{ outcome: "skipped" }],
+			check: [],
 		});
-		expect(triage.spec).toEqual({ touches, ...spec });
+		expect(triage).toMatchObject({ verdict, risk, questions: [] });
+		expect(triage.spec).toEqual({
+			touches: files,
+			what: spec.what,
+			decisions: [],
+			excluded: [],
+			acceptance: ["just check"],
+			subject: spec.subject,
+		});
 	},
 );
 
 const straying = { ...claiming, recommend: { label: "C", why: "no reason" } };
 
-test("settle turns a failing spec check into questions, sending the spec to needs-info", () => {
+const open = (finding: string) => ({
+	touches: ready.touches,
+	...spec,
+	excluded: [
+		...spec.excluded,
+		{ lead: "Open after the spec check", points: [finding] },
+	],
+});
+
+test("settle leaves a failing spec check's findings in the spec, asking the owner nothing", () => {
 	const check: Settled<Checked>[] = [
-		{ outcome: "ok", value: { questions: [failed] } },
+		{ outcome: "ok", value: { findings: [failed] } },
 	];
 	const { triage } = settle(planned(ready, check));
-	expect(triage).toMatchObject({ verdict: "needs-info", questions: [failed] });
-	expect(triage.spec).toEqual({ touches: ready.touches, ...spec });
+	expect(triage).toMatchObject({ verdict: "ready-for-agent", questions: [] });
+	expect(triage.spec).toEqual(open(failed));
 });
 
 test.each([
@@ -309,19 +330,14 @@ test.each([
 });
 
 test.each(["failed", "rejected"] as const)(
-	"settle asks the owner, keeping the spec, when the spec check %s to run",
+	"settle notes in the spec, keeping it ready, when the spec check %s to run",
 	(outcome) => {
 		const check: Settled<Checked>[] = [{ outcome, reason: "pi exited 1" }];
 		const { triage } = settle(planned(ready, check));
-		expect(triage).toMatchObject({
-			verdict: "needs-info",
-			questions: [
-				askAlone(
-					"The spec check did not run: pi exited 1. Approve the spec as is, or re-triage.",
-				),
-			],
-		});
-		expect(triage.spec).toMatchObject({ subject: ready.spec?.subject });
+		expect(triage.verdict).toBe("ready-for-agent");
+		expect(triage.spec).toEqual(
+			open("The spec check did not run: pi exited 1."),
+		);
 	},
 );
 
@@ -337,12 +353,15 @@ test("settle fails when the triager handed the issue on and the planner gave not
 
 test("settle drops a recommendation naming none of its question's options, keeping the rest", () => {
 	const { recommend: _, ...kept } = straying;
-	const { triage } = settle(
-		planned({
-			...unspecified,
+	const { triage } = settle({
+		ruling: {
+			...planning,
 			verdict: "needs-info",
+			groups: [],
 			questions: [straying, claiming],
-		}),
-	);
+		},
+		proposal: [{ outcome: "skipped" }],
+		check: [],
+	});
 	expect(triage.questions).toStrictEqual([kept, claiming]);
 });

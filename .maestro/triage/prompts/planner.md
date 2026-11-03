@@ -9,7 +9,6 @@ them:
   "verdict": "ready-for-agent",
   "touches": ["path/to/file.ts"],
   "contract": "",
-  "questions": [],
   "spec": {
     "what": "the change to make",
     "decisions": [{ "lead": "a title", "points": ["one fact", "In path/to/file.ts"] }],
@@ -24,8 +23,7 @@ them:
 
 ## Fields
 
-- `verdict`: `ready-for-agent` when one change builds the issue as asked, `split` when it needs several, `needs-info`
-  when it cannot be specified without an answer.
+- `verdict`: `ready-for-agent` when one change builds the issue as asked, `split` when it needs several.
 - `touches`: every repo-relative path the change creates or edits, whatever the verdict; empty when you cannot tell.
 - `contract`: the one-way door the change sets or changes, named in a few words, or "" when it sets none. A one-way door
   cannot change after release without breaking a user: an IR field, a public CLI flag or exit code, a key of the user's
@@ -43,9 +41,9 @@ them:
 - `children`, for `split`: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split
   only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
 - `related`: the backlog issues it relates to.
-- `questions`: what only the owner can answer. Any question sends the issue to `needs-info` whatever the verdict, so
-  settle yourself what the code settles. Ask only what hangs on no other question asked now; a dependent question waits
-  for the re-triage. Each is as under Questions for the owner.
+
+You do not ask the owner: the triager has. Settle what the ask, the replies and the code leave open with the simplest
+option that meets the ask, and record it as a decision the owner approves or redirects.
 
 ## Design
 
@@ -53,11 +51,11 @@ them:
   `CODING_STANDARDS.md` for the packages the change touches. `what` names the module that owns the change; the change
   extends what is there, never a parallel path.
 - When the ask can only be met by a shortcut, such as a special case in a shared module, a flag threaded through calls,
-  a second route around an existing seam or domain logic in a domain-free package, do not decide it: `split`, the first
-  part the refactor the feature needs, when that refactor is clear; `needs-info`, a question naming the clean option and
-  its cost, when it is the owner's choice.
+  a second route around an existing seam or domain logic in a domain-free package, do not take it: `split`, the first
+  part the refactor the feature needs; or, when that refactor is not clear, take the clean option and name its cost in a
+  decision.
 
 ## Re-triage
 
 - When the issue carries the spec the last triage proposed, start from it: change what the replies below it ask, and
-  keep the rest.
+  keep the rest. A reply is final: do not widen the spec past it.

@@ -269,22 +269,25 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   a slice routed to `needs-info`, blocked or out of attempts, sets to itself and a retry, a landing, a parked concert or
   a re-triage clears; and `review`, the id of the newest review requesting changes an encore was fed. A line the tick
   cannot read halts the tour manager.
+- **Routes.** The triager runs first and rules alone. A duplicate settles there. `needs-info` asks the owner, and only
+  the triager does: it grills for the intent before any spec exists. `direct` takes a small diff, a simple task on one
+  to three files whose intent is clear, straight to the build, at low or medium risk without approval: its spec is the
+  triager's `what` and `subject` with `just check` as acceptance, and the PR review is its check. `plan` hands the issue
+  to the scouts, the planner and the spec checker. Either spec is gated by risk as any other.
 - **Spec check.** After the planner proposes a ready spec, a checker on another model family (`gpt-6.1-terra` through
   `pi`, medium effort, `.maestro/presets/triage.yaml`) checks it against the scouts' answers and the code. Every claim
   the spec makes about the base must hold, and the spec must miss no place the change touches, such as the uninstall
   path beside an install. It must also fit the architecture: no duplicate helper, needless module or flag, wider
-  interface, crossed package boundary or unruled lasting decision. Each failure becomes a question, so the issue goes to
-  `needs-info` as any other question does (Rules: Answers); with none, the triage is unchanged. A split or a needs-info
-  proposal is not checked. A ready proposal's spec stays in the result whatever question sends it to `needs-info`, so a
-  re-triage's planner is given it and the owner may approve it by moving the ticket to `ready-for-agent`. A check that
-  fails to run asks one question, `The spec check did not run: <reason>. Approve the spec as is, or re-triage.`; the
-  failure halts nothing.
-- **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. The owner
-  answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`, then moving
-  the ticket to `needs-triage`; a waiting spec in `needs-approval` is answered or redirected the same way. A triage,
-  first or encore, considers each comment but the spec comment whose id is above `read`, in id order, and is fed as
-  `--issue` the ask, then on an encore the spec the last triage proposed, under `## The spec the last triage proposed`,
-  then only these:
+  interface, crossed package boundary or unruled lasting decision. Its findings, or a line saying it failed to run, go
+  into the spec's Left out under `Open after the spec check`, for the builder and the PR review; they ask the owner
+  nothing. A split is not checked. The planner asks the owner nothing either: it settles what is open as a decision.
+- **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. A reply is
+  final: a re-triage does not ask again what it settled, and rules `direct` when it leaves the change small and clear.
+  The owner answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`,
+  then moving the ticket to `needs-triage`; a waiting spec in `needs-approval` is answered or redirected the same way. A
+  triage, first or encore, considers each comment but the spec comment whose id is above `read`, in id order, and is fed
+  as `--issue` the ask, then on an encore the spec the last triage proposed, under
+  `## The spec the last triage proposed`, then only these:
   - a question comment, headed `## Question by the tour manager`;
   - any other comment mentioning `@<login>` as a whole word in any case, headed `## Reply by <author>`.
 

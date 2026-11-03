@@ -99,7 +99,7 @@ type Instance = {
 async function performed(
 	ruling: Ruling,
 	proposal?: Proposal,
-	check: Checked = { questions: [] },
+	check: Checked = { findings: [] },
 ) {
 	const outputs = stubOutputs({
 		"triager/ruling.json": ruling,
@@ -144,6 +144,14 @@ async function performed(
 	return { concert, statuses, artifact };
 }
 
+const direct: Ruling = {
+	...planning,
+	verdict: "direct",
+	groups: [],
+	what: spec.what,
+	subject: spec.subject,
+};
+
 /** Each verdict a stub perform settles: the triager's ruling, the planner's proposal if it plans, and the output. */
 const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 	[
@@ -173,14 +181,22 @@ const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 		},
 	],
 	[
-		"needs-info from the planner",
-		planning,
+		"ready-for-agent from a direct ruling",
+		direct,
+		undefined,
 		{
-			...unspecified,
-			verdict: "needs-info",
-			questions: [askAlone("Greet whom?")],
+			verdict: "ready-for-agent",
+			...medium,
+			questions: [],
+			spec: {
+				touches: direct.files,
+				what: spec.what,
+				decisions: [],
+				excluded: [],
+				acceptance: ["just check"],
+				subject: spec.subject,
+			},
 		},
-		{ verdict: "needs-info", ...medium, questions: [askAlone("Greet whom?")] },
 	],
 	[
 		"split",
@@ -247,18 +263,18 @@ test.each(verdicts)(
 	},
 );
 
-test("a stub perform sends a spec whose check fails to needs-info with its questions, and runs the checker only on a ready proposal", async () => {
+test("a stub perform leaves a failing check's findings in a ready spec, and runs the checker only on a ready proposal", async () => {
 	const { concert, statuses } = await performed(planning, ready, {
-		questions: [failed],
+		findings: [failed],
 	});
 	expect(concert.status).toBe("ok");
 	expect(concert.outputs.triage).toMatchObject({
-		verdict: "needs-info",
-		questions: [failed],
+		verdict: "ready-for-agent",
+		questions: [],
 	});
-	expect(concert.outputs.triage.spec).toEqual({
-		touches: ready.touches,
-		...spec,
+	expect(concert.outputs.triage.spec.excluded).toContainEqual({
+		lead: "Open after the spec check",
+		points: [failed],
 	});
 	expect(statuses("checker")).toEqual(["ok"]);
 	const split = await performed(planning, {
@@ -288,14 +304,15 @@ test("compose seats the triager on sonnet, the scouts on haiku, the planner on o
 	]);
 });
 
-test("each seat that asks the owner is given the question format", async () => {
+test("only the triager is given the question format", async () => {
 	const { plan } = await composed();
 	const task = (id: string) =>
 		JSON.stringify(
 			(plan.ir.nodes as { id: string }[]).find((n) => n.id === id),
 		);
-	for (const id of ["triager", "planner", "checker"])
-		expect(task(id)).toContain("## Questions for the owner");
+	expect(task("triager")).toContain("## Questions for the owner");
+	for (const id of ["planner", "checker"])
+		expect(task(id)).not.toContain("## Questions for the owner");
 });
 
 test("the scouts and the planner are attached the triager's cut of the backlog, never the snapshot", async () => {
@@ -349,19 +366,33 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 	],
 	["a planning ruling", Ruling(4), planning, true],
 	[
-		"a needs-info proposal asking with options, a recommendation and context",
-		Proposal,
+		"a needs-info ruling asking with options, a recommendation and context",
+		Ruling(4),
 		{
-			...unspecified,
+			...planning,
 			verdict: "needs-info",
 			questions: [claiming, askAlone("Who?")],
 		},
 		true,
 	],
 	[
-		"a needs-info proposal asking a string",
-		Proposal,
-		{ ...unspecified, verdict: "needs-info", questions: ["Who?"] },
+		"a needs-info ruling asking a string",
+		Ruling(4),
+		{ ...planning, verdict: "needs-info", questions: ["Who?"] },
+		false,
+	],
+	["a direct ruling", Ruling(4), direct, true],
+	[
+		"a direct ruling with no subject",
+		Ruling(4),
+		{ ...direct, subject: undefined },
+		false,
+	],
+	["a direct ruling with no files", Ruling(4), { ...direct, files: [] }, false],
+	[
+		"a direct ruling with more files than a direct build takes",
+		Ruling(4),
+		{ ...direct, files: ["a.ts", "b.ts", "c.ts", "d.ts"] },
 		false,
 	],
 	[
@@ -399,7 +430,7 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 		false,
 	],
 	[
-		"a needs-info proposal with no question",
+		"a needs-info proposal",
 		Proposal,
 		{ ...unspecified, verdict: "needs-info" },
 		false,
