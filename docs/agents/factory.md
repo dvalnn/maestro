@@ -349,8 +349,10 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **Splits.** Triage records its verdict in the spec comment: a spec, or a split with its child list. On the owner's
   approval of a split the tick files the children as `needs-triage`, in the epic's milestone with `Part of #N`, and
   moves the epic to `in-progress`. The epic closes when its last child does.
-- **Duplicates and related issues.** A duplicate is closed at once as `state/duplicate` with a back-reference. A related
-  issue gets `Relates to #N` in the spec comment and the PR body.
+- **Duplicates and related issues.** A duplicate is closed at once as `state/duplicate` with a back-reference, when its
+  original is open or closed as completed; one closed as `state/wontfix` or `state/duplicate` tracks nothing, so the
+  ticket goes to `needs-info` with a question instead. A related issue gets `Relates to #N` in the spec comment and the
+  PR body.
 - **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
   `factory: <issue title>`, the title cut with an ellipsis past 60 characters.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch

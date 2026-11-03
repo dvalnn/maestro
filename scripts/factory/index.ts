@@ -244,6 +244,27 @@ function triageOf(result: Result): Triage | string {
 	}
 }
 
+/** The labels of an issue closed without being done: a duplicate's original must not carry one while closed. */
+const NOT_DONE = ["state/wontfix", "state/duplicate"];
+
+/**
+ * `result`, or a `needs-info` asking the owner where the request lives when it is a duplicate of an issue that is
+ * closed as `wontfix` or `duplicate`, which tracks nothing.
+ */
+async function liveOriginal(pass: Pass, number: number, result: Triage) {
+	const { duplicateOf: original, ...rest } = result;
+	if (result.verdict !== "duplicate" || original === undefined) return result;
+	const { labels } = await pass.forge.issue(original);
+	const why = NOT_DONE.find((l) => labels.includes(l));
+	if (!why || (await pass.forge.open({})).some((i) => i.number === original))
+		return result;
+	const ask =
+		`Triage found #${number} a duplicate of #${original}, which is closed as \`${why}\`, so nothing live tracks it. ` +
+		`Reopen #${original}, or say what to do with #${number}.`;
+	const question = { ask, options: [], context: [] };
+	return { ...rest, verdict: "needs-info" as const, questions: [question] };
+}
+
 /**
  * Posts the questions of `data`'s routed result on `number`, sets its labels, closes a duplicate, then clears
  * `pending`.
@@ -266,7 +287,11 @@ async function apply(pass: Pass, number: number, data: Data, result: Triage) {
 
 /** Routes concert `id`'s settle onto `issue` (zoom 2), and returns false when it halted the tour manager. */
 async function settle(pass: Pass, { issue, data }: Entry, id: string) {
-	const result = triageOf(await pass.maestro.result(id));
+	const triaged = triageOf(await pass.maestro.result(id));
+	const result =
+		typeof triaged === "string"
+			? triaged
+			: await liveOriginal(pass, issue.number, triaged);
 	const state = stateOf(issue) ?? "needs-triage";
 	if (typeof result === "string") {
 		const [what, ...why] = result.split(": ");

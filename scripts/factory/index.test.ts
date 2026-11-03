@@ -360,11 +360,17 @@ const ready: Triage = {
 	area: "cli",
 	spec,
 };
+/** Issue 5, the original of `duplicate`: closed as completed, so it carries no `state/` label. */
+const done = (): Stored => ({
+	...issue(5, "x"),
+	labels: ["kind/bug"],
+	open: false,
+});
 const duplicate: Triage = {
 	...base,
 	verdict: "duplicate",
 	risk: "low",
-	duplicateOf: 3,
+	duplicateOf: 5,
 };
 
 describe("a pass", () => {
@@ -415,7 +421,7 @@ describe("a pass", () => {
 			duplicate,
 			["state/duplicate", "risk/low"],
 			false,
-			"Duplicate of #3",
+			"Duplicate of #5",
 			"",
 		],
 	];
@@ -424,7 +430,11 @@ describe("a pass", () => {
 		async (_, triage, labels, open, shown, question) => {
 			const triaged = issue(7, "needs-triage");
 			triaged.labels.push("area/docs", "risk/low");
-			const t = setup([triaged], [triageConcert("c1", 7)], settled(triage));
+			const t = setup(
+				[triaged, done()],
+				[triageConcert("c1", 7)],
+				settled(triage),
+			);
 			t.blocking[7] = [3];
 			await t.run();
 			const routed = t.find(7);
@@ -466,7 +476,7 @@ describe("a pass", () => {
 		"repairs a %s routing cut before its labels, without triaging again or asking twice",
 		async (_, triage, open) => {
 			const t = setup(
-				[issue(7, "needs-triage")],
+				[issue(7, "needs-triage"), done()],
 				[triageConcert("c1", 7)],
 				settled(triage),
 				"labels #7",
@@ -481,6 +491,38 @@ describe("a pass", () => {
 			expect(dataAt(routed).pending).toBeUndefined();
 			expect(t.starts).toEqual([]);
 			expect(routed.comments).toHaveLength(triage.questions.length + 1);
+		},
+	);
+
+	test.each([
+		["closed as wontfix", "state/wontfix", false, "needs-info", true],
+		["closed as duplicate", "state/duplicate", false, "needs-info", true],
+		[
+			"reopened with its old label",
+			"state/duplicate",
+			true,
+			"duplicate",
+			false,
+		],
+	])(
+		"a duplicate whose original is %s closes only if the original is live",
+		async (_, label, open, state, stays) => {
+			const original = { ...done(), labels: ["kind/bug", label], open };
+			const t = setup(
+				[issue(7, "needs-triage"), original],
+				[triageConcert("c1", 7)],
+				settled(duplicate),
+			);
+			await t.run();
+			const routed = t.find(7);
+			expect(routed.labels).toContain(`state/${state}`);
+			expect(routed.open).toBe(stays);
+			if (!stays) return;
+			expect(questionsAt(routed)).toHaveLength(1);
+			expect(questionsAt(routed)[0]).toContain(
+				`#5, which is closed as \`${label}\``,
+			);
+			expect(dataAt(routed).result?.duplicateOf).toBeUndefined();
 		},
 	);
 
