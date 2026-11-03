@@ -2,7 +2,6 @@ import { afterAll, describe, expect, test } from "bun:test";
 import {
 	mkdirSync,
 	mkdtempSync,
-	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -24,16 +23,9 @@ import {
 import type { CodeContext } from "@maestro/sdk";
 import * as stdlib from "@maestro/sdk/stdlib";
 import { buildIr, stubConcert } from "@maestro/testkit";
-import {
-	dossierOf,
-	riskKey,
-	survivorsOf,
-	toMarkdown,
-	traceOf,
-} from "../src/code";
+import { survivorsOf, toMarkdown } from "../src/code";
 import { buildThenRepair } from "../src/repair";
 import { panelReview } from "../src/review";
-import { vModel } from "../src/v-model";
 import { diff, maestroTrace, sssfTrace } from "./compare";
 import { BASE, git, profilesOn, setup } from "./setup";
 import { TASKS, type TaskName } from "./tasks";
@@ -74,9 +66,6 @@ const CODE: Readonly<
 	...stdlib,
 	toMarkdown,
 	survivorsOf,
-	dossierOf,
-	traceOf,
-	riskKey,
 };
 const POLL_MS = 20;
 
@@ -302,214 +291,6 @@ test("a concert cancelled during its first repair resumes without rebuilding, an
 		.map((e) => e.node);
 	record.close();
 	expect(reused).toContain("build");
-});
-
-describe("v_model", () => {
-	const SEATS = [
-		"scout",
-		"planner",
-		"builder",
-		"lens",
-		"consolidator",
-		"documenter",
-	] as const;
-	type Seat = (typeof SEATS)[number];
-	const INSTRUCTIONS = Object.fromEntries(
-		SEATS.map((seat) => [
-			seat,
-			readFileSync(join(PACK, "profiles", seat, "instructions.md"), "utf8"),
-		]),
-	);
-	const A1 = "Read the name from the first argument.";
-	const A2 = "Default the name to the world.";
-	const A3 = "Rewrite greet.sh from scratch.";
-	const PLAN = "Greet the first argument, else the world.\n";
-	const RISK = "greet.sh ignores its argument";
-	const out = (file: string, value: unknown): StubStep => ({
-		write: `${OUTBOX}/${file}`,
-		content: typeof value === "string" ? value : JSON.stringify(value),
-	});
-	const met = (id: string) => ({
-		id,
-		met: true,
-		evidence: "sh test.sh passes",
-	});
-
-	type Script = {
-		/** The approaches the planner gives. */
-		approaches?: string[];
-		/** The greet.sh the build of `approach` writes. */
-		build?: (approach: string) => string;
-		/** The criteria the documenter rules on. */
-		accepted?: string[];
-	};
-
-	/** The steps of each seat. */
-	const seats = ({
-		approaches = [A1, A2],
-		build = () => RIGHT,
-		accepted = ["C1", "C2"],
-	}: Script): Record<Seat, (req: HarnessRequest) => StubStep[]> => ({
-		scout: () => [
-			out("evidence.json", {
-				summary: "greet.sh prints a fixed greeting",
-				facts: [{ where: "greet.sh:2", note: "echoes a fixed string" }],
-				risks: [{ risk: RISK, where: "greet.sh:2" }],
-			}),
-		],
-		planner: () => [
-			out("plan.md", PLAN),
-			out("design.json", {
-				criteria: ["C1", "C2"].map((id) => ({
-					id,
-					criterion: id,
-					proof: "sh test.sh",
-				})),
-				approaches: approaches.map((approach, i) => ({
-					id: `A${i + 1}`,
-					approach,
-				})),
-			}),
-		],
-		builder: (req) => {
-			const approach = approaches.find((a) => req.prompt.startsWith(a));
-			return approach === undefined
-				? []
-				: [{ write: "greet.sh", content: build(approach) }];
-		},
-		lens: () => [out("findings.json", { clean: true, findings: [] })],
-		consolidator: () => [
-			out("review.md", "Approved.\n"),
-			out("verdict.json", {
-				approved: true,
-				criteria: [met("C1"), met("C2")],
-				blocking: [],
-			}),
-		],
-		documenter: () => [
-			out("notes.md", "greet.sh greets its argument.\n"),
-			out("acceptance.json", accepted.map(met)),
-		],
-	});
-
-	/** The seat whose instructions lead the system prompt `framed`. */
-	function seatOf(framed: string): Seat {
-		const seat = SEATS.find((name) =>
-			framed.startsWith(`${INSTRUCTIONS[name]?.trimEnd()}\n\n`),
-		);
-		if (!seat)
-			throw new Error("an agent has no instructions of the pack's seats");
-		return seat;
-	}
-
-	/** Performs v_model on T1 with every seat stubbed by `script`, and each seat's requests in order. */
-	async function performed(script: Script = {}) {
-		const dir = tmp();
-		const { target } = await setup("t1", dir, RUNTIME);
-		const asked = new Map<Seat, HarnessRequest[]>();
-		const framed = new Map<HarnessRequest, string>();
-		const steps = seats(script);
-		const harness = stubHarness((req) => {
-			framed.set(req, readFileSync(req.instructions ?? "", "utf8"));
-			const seat = seatOf(framed.get(req) ?? "");
-			asked.set(seat, [...(asked.get(seat) ?? []), req]);
-			return [...steps[seat](req), done(req)];
-		});
-		const ir = buildIr(
-			vModel,
-			{ request: TASKS.t1.request },
-			{ toMarkdown, dossierOf, survivorsOf, traceOf, riskKey },
-		);
-		const run = await stubConcert(ir, {
-			hosts: [repoHost({ harnesses: [harness] })],
-			config: {
-				target: { repo: target, base: BASE, checks: TASKS.t1.checks },
-				profiles: profilesOn(RUNTIME),
-			},
-			code: CODE,
-			dir,
-			roots: ROOTS,
-		});
-		const instances = run.record.instances(run.id);
-		await run.close();
-		const prompts = (seat: Seat) =>
-			(asked.get(seat) ?? []).map((req) => req.prompt);
-		/** The system prompt each agent of `seat` was staged with. */
-		const frames = (seat: Seat) =>
-			(asked.get(seat) ?? []).map((req) => framed.get(req) ?? "");
-		return { ...run, dir, asked, prompts, frames, instances };
-	}
-
-	/** The content of attachment `name` as the agent of `req` was given it. */
-	const attached = (req: HarnessRequest | undefined, name: string) => {
-		const bind = req?.readOnly?.find((b) => b.dst === `/in/${name}`);
-		return bind && readFileSync(bind.src, "utf8");
-	};
-
-	test("delivers the changeset when every level holds", async () => {
-		const run = await performed();
-		expect(run.result).toMatchObject({ outcome: "ok", node: "result" });
-		const [plan] = run.frames("planner");
-		for (const attachment of ["/in/request", "/in/dossier"])
-			expect(plan).toContain(attachment);
-		const [build, ...repairs] = run.prompts("builder");
-		expect(build).toStartWith(A1);
-		for (const attachment of ["/in/request", "/in/plan"])
-			expect(run.frames("builder")[0]).toContain(attachment);
-		expect(repairs).toEqual([]);
-		const lenses = run.instances.filter((i) => i.node === "lenses/lens");
-		expect(lenses.map((i) => i.expansion)).toEqual(["[R1]"]);
-		const [lens] = run.asked.get("lens") ?? [];
-		expect(lens?.prompt).toStartWith(RISK);
-		expect(attached(lens, "spec")).toBe(PLAN);
-		expect(run.frames("consolidator")[0]).toContain("/in/design");
-		for (const attachment of ["/in/design", "/in/review", "/in/patches"])
-			expect(run.frames("documenter")[0]).toContain(attachment);
-		const traced = run.instances.find((i) => i.node === "traceOf");
-		expect(traced?.status).toBe("ok");
-	});
-
-	test("is rejected at the trace when the documenter leaves a criterion out", async () => {
-		const run = await performed({ accepted: ["C1"] });
-		expect(run.result).toMatchObject({
-			outcome: "rejected",
-			node: "traceOf",
-			reason: expect.stringContaining(
-				"trace gaps: C2 has no acceptance ruling (trace.md has the matrix).",
-			),
-		});
-	});
-
-	test("takes the second approach when the first stays red after its repairs", async () => {
-		const run = await performed({
-			build: (approach) => (approach === A1 ? WRONG : RIGHT),
-		});
-		expect(run.result).toMatchObject({ outcome: "ok", node: "result" });
-		const built = run
-			.prompts("builder")
-			.flatMap((p) => [A1, A2].filter((a) => p.startsWith(a)));
-		expect(built).toEqual([A1, A2]);
-		const repairs = run.instances.filter(
-			(i) => i.node === "approaches/repair_until_green/loop/repair",
-		);
-		expect(repairs).toHaveLength(TASKS.t1.maxRepairs);
-		const series = String(Object(run.result.outputs?.changeset).path);
-		const patches = join(concertDirs(run.dir, run.id).artifacts, series);
-		const text = readdirSync(patches)
-			.map((f) => readFileSync(join(patches, f), "utf8"))
-			.join("");
-		expect(text).toContain("name=world");
-	});
-
-	test("fails at the planner, before any build, when it gives more approaches than maxApproaches", async () => {
-		const run = await performed({ approaches: [A1, A2, A3] });
-		expect(run.result).toMatchObject({
-			outcome: "failed",
-			node: "plan",
-			reason: expect.stringContaining("/out/design.json"),
-		});
-		expect(run.asked.get("builder")).toBeUndefined();
-	});
 });
 
 describe("compare", () => {

@@ -483,12 +483,12 @@ export function groupOf(
 	return { file };
 }
 
-type Answered = { evidence: ArtifactRef };
+type Answered = { answer: ArtifactRef };
 
 /** The body of a group's section: its scout's answer, or why it has none. */
 function answerOf(scout: Settled<Answered> | undefined, ctx: CodeContext) {
 	if (scout?.outcome === "ok")
-		return readFileSync(ctx.path(scout.value.evidence), "utf8").trim();
+		return readFileSync(ctx.path(scout.value.answer), "utf8").trim();
 	const why = scout && "reason" in scout ? scout.reason : undefined;
 	return `Unanswered: the scout ${scout?.outcome ?? "did not run"}${why ? `: ${why}` : ""}.`;
 }
@@ -532,7 +532,7 @@ Then write ruling.json in exactly this shape, leaving out duplicateOf and relate
 - questions, for needs-info: ${ASKING}
 - related: the backlog issues it relates to.`;
 
-const SCOUT_TASK = `Answer each question of the attached group in answer.md. It replaces the evidence.json your instructions describe: write no summary, facts or risks.
+const SCOUT_TASK = `Answer each question of the attached group in answer.md.
 answer.md holds one section per question, in order, headed "## <the question>", its answer below, every claim with its file:line. Where the target holds no answer, say so.`;
 
 const PLAN_TASK = `Triage the attached issue: propose its verdict from the scouts' answers, the triager's ruling, the cut backlog and the target's code. ${GATE}
@@ -632,7 +632,6 @@ export const triage = composition(
 						issue: issued,
 						backlog: cut,
 					},
-					out: { evidence: MarkdownOut("answer.md") },
 				});
 			},
 			{

@@ -1,10 +1,4 @@
-export {
-	dossierOf,
-	riskKey,
-	survivorsOf,
-	toMarkdown,
-	traceOf,
-} from "./code";
+export { survivorsOf, toMarkdown } from "./code";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";
 export { panel, panelReview, skepticTask } from "./review";
 export {
@@ -18,4 +12,3 @@ export {
 } from "./seats";
 export type { Findings, Verdict, Verdicts } from "./types";
 export { atLeastOne } from "./types";
-export { vModel } from "./v-model";

@@ -164,7 +164,6 @@ maestro compose broken.ts >/dev/null 2>&1 || code=$?
 step "pack composes and performs"
 maestro compose classics.build_then_repair --request smoke >/dev/null || fail "compose classics.build_then_repair exited $?"
 maestro compose classics.panel_review --request smoke --change "$id.1" >/dev/null || fail "compose classics.panel_review exited $?"
-maestro compose classics.v_model >/dev/null || fail "compose classics.v_model exited $?"
 maestro perform classics.build_then_repair --request smoke --preset stub >/dev/null 2>"$scratch/perform.err" \
   || fail "perform classics.build_then_repair exited $?: $(cat "$scratch/perform.err")"
 grep -qE '^concert +[k-z]+ +ok( |$)' "$scratch/perform.err" || fail "build_then_repair did not settle ok: $(cat "$scratch/perform.err")"

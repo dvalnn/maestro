@@ -315,7 +315,7 @@ test("answersOf merges each group's answer in order, marking one whose scout fai
 		{
 			groups,
 			scouts: [
-				{ outcome: "ok", value: { evidence: answer } },
+				{ outcome: "ok", value: { answer } },
 				{ outcome: "failed", reason: "timed out" },
 			],
 		},

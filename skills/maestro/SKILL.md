@@ -122,22 +122,20 @@ composition such as `classics.build_then_repair` ends `ok` with an empty changes
 agent writes a placeholder for each output it declares, the smallest value that satisfies the schema keywords it reads
 (`required`, `properties`, `items`, `minItems`, `enum`, `const`, `minLength`, `minimum`, `anyOf`, `oneOf`), `"stub"` for
 text. A schema beyond those fails the agent, naming the output. So a concert runs past its agents and proves config,
-profiles, lanes and checks: `classics.panel_review` ends `ok` with an unapproved verdict, and `classics.v_model` is
-always rejected: its checks stay red because nothing was built, and when they are green its final traceability step
-rejects it, since the stub review never approves. Use one to try a flow, or whenever the user asks for no spend. It also
-shows what each agent is told before any spend: its host stages the instructions and prompt as for a real run, so
-`maestro art show <id> <instance> staged/instructions.md` and `staged/prompt.md` print them. Stub every seat with a
-`"*"` profile, which applies to every profile the preset does not name, in `.maestro/presets/stub.yaml`, and pass
-`--preset stub` to compose and perform; a resume reapplies it. `MAESTRO_STUB_DELAY` (a duration such as `2s` or `500ms`)
-makes each stub agent turn wait that long, to rehearse a slow run. `MAESTRO_STUB_OUTPUTS=<dir>` scripts what agents
-deliver, to rehearse a branch that hangs on it, such as a fix loop: a stub agent takes each declared output from
-`<dir>/<instance id>/<file>` (the id as `maestro ls <id>` prints it, such as `loop[0]/review`), else from
-`<dir>/<node id>/<file>` (the id without `[n]` indices, serving every round), else the placeholder. A verdict agent's
-`verdict` file, found the same way, holds `ok` or `rejected <reason>`; without one it rules `ok`. An `events.jsonl` file
-found the same way holds the harness events the agent emits first, one JSON object per line. Files are copied as is and
-validated like any output. A resume needs the variable set again; a missing dir fails the agent.
-`MAESTRO_STUB_ENVIRONMENT` (a JSON object such as `{"mcp":["github"]}`) replaces parts of what the stub reports loading,
-to rehearse an environment fault. The preset:
+profiles, lanes and checks: `classics.panel_review` ends `ok` with an unapproved verdict. Use one to try a flow, or
+whenever the user asks for no spend. It also shows what each agent is told before any spend: its host stages the
+instructions and prompt as for a real run, so `maestro art show <id> <instance> staged/instructions.md` and
+`staged/prompt.md` print them. Stub every seat with a `"*"` profile, which applies to every profile the preset does not
+name, in `.maestro/presets/stub.yaml`, and pass `--preset stub` to compose and perform; a resume reapplies it.
+`MAESTRO_STUB_DELAY` (a duration such as `2s` or `500ms`) makes each stub agent turn wait that long, to rehearse a slow
+run. `MAESTRO_STUB_OUTPUTS=<dir>` scripts what agents deliver, to rehearse a branch that hangs on it, such as a fix
+loop: a stub agent takes each declared output from `<dir>/<instance id>/<file>` (the id as `maestro ls <id>` prints it,
+such as `loop[0]/review`), else from `<dir>/<node id>/<file>` (the id without `[n]` indices, serving every round), else
+the placeholder. A verdict agent's `verdict` file, found the same way, holds `ok` or `rejected <reason>`; without one it
+rules `ok`. An `events.jsonl` file found the same way holds the harness events the agent emits first, one JSON object
+per line. Files are copied as is and validated like any output. A resume needs the variable set again; a missing dir
+fails the agent. `MAESTRO_STUB_ENVIRONMENT` (a JSON object such as `{"mcp":["github"]}`) replaces parts of what the stub
+reports loading, to rehearse an environment fault. The preset:
 
 ```yaml
 profiles:
@@ -154,7 +152,6 @@ maestro's release ships one pack, `classics`:
   lens, a skeptic weighing each lens's findings, then consolidates. Lenses run on the `classics/lens` profile's model
   and skeptics on the `classics/skeptic`'s: pick models of different families for the two, since a skeptic of the lens's
   family tends to share its blind spots.
-- `classics.v_model`: scouts, plans, builds and repairs, reviews each scouted risk, and traces acceptance to the plan.
 - `classics.repair_until_green`: the repair loop the others use; it is not performed alone.
 
 A composition outside the pack builds on its parts through `@maestro/classics`, a package tarball set up as
@@ -164,9 +161,9 @@ A composition outside the pack builds on its parts through `@maestro/classics`, 
   must cite, its skeptics and consolidator rule by them. `skepticTask(grounds)` is that skeptic task, for a lone
   skeptic.
 - The seats: `builder`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`, `documenter`.
-- The compositions: `repairUntilGreen`, `panelReview`, `buildThenRepair`, `vModel`.
+- The compositions: `repairUntilGreen`, `panelReview`, `buildThenRepair`.
 - `maxRepairs`, the repair bound, and `atLeastOne`, the at-least-one integer param.
-- Code-node functions: `survivorsOf`, `toMarkdown`, `dossierOf`, `traceOf`, `riskKey`.
+- Code-node functions: `survivorsOf`, `toMarkdown`.
 - Types: `Findings`, `Verdict`, `Verdicts`.
 
 `repairUntilGreen` takes a `checks` param, the names in `target.checks` its repair agent may run with `check <name>`; it

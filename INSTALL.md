@@ -81,14 +81,13 @@ Config keys are in [`packages/cli/README.md`](packages/cli/README.md).
   gitignore-style patterns, a lane checks out).
 - A preset `.maestro/presets/stub.yaml` moves the profiles' runtimes to the built-in `stub` harness, which writes a
   placeholder for each declared output and replies ok. Run with `--preset stub` to spend nothing: `build_then_repair`
-  and `panel_review` end ok, the latter with an unapproved verdict, while `v_model` is rejected at its repair loop or at
-  `traceOf`.
+  and `panel_review` end ok, the latter with an unapproved verdict.
 
 The classics pack ships seven profiles and no models, and its [README](packs/classics/README.md) holds each
 composition's profiles and params: `scout`, `planner`, `builder`, `lens`, `skeptic`, `consolidator` and `documenter`.
-`build_then_repair` needs only `builder`, `panel_review` needs `lens`, `skeptic` and `consolidator`, and `v_model` needs
-all seven. A profile holds its instructions and limits; config sets its `runtime`. Model ids below are placeholders; use
-your own.
+`build_then_repair` needs only `builder`, `panel_review` needs `lens`, `skeptic` and `consolidator`, and `scout`,
+`planner` and `documenter` serve compositions that build on the pack's seats. A profile holds its instructions and
+limits; config sets its `runtime`. Model ids below are placeholders; use your own.
 
 ```yaml
 # ~/.config/maestro/config.yaml
@@ -100,20 +99,12 @@ profiles:
   classics/skeptic: { runtime: { harness: pi, model: <provider>/<model>, thinking: high } }
   classics/consolidator: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
   classics/documenter: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
-classics:
-  v_model:
-    maxApproaches: 2
-    maxRisks: 4
-    maxRepairs: 2
 ```
 
 - Claude: `harness: claude`, `model: sonnet` or `opus`, `thinking` as Claude's `--effort`.
 - pi: `harness: pi`, `model: <provider>/<model>` such as `github-copilot/gpt-5-mini`, `thinking` as pi's `--thinking`.
-- `panel_review` and `v_model` run lenses on the `classics/lens` profile's model and skeptics on the
-  `classics/skeptic`'s. Pick models of different families for the two, since a skeptic of the lens's family tends to
-  share its blind spots.
-- `v_model` also takes `maxApproaches` (default 2), `maxRisks` (default 4) and `maxRepairs` (default 2), each an integer
-  of at least 1. Its `request` is a flag.
+- `panel_review` alone runs lenses on the `classics/lens` profile's model and skeptics on the `classics/skeptic`'s. Pick
+  models of different families for the two, since a skeptic of the lens's family tends to share its blind spots.
 
 ```yaml
 # .maestro/config.yaml, in the target repository

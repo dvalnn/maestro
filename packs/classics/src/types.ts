@@ -1,12 +1,4 @@
-import {
-	Bool,
-	Json,
-	List,
-	Struct,
-	Text,
-	type Type,
-	type ValueOf,
-} from "@maestro/sdk";
+import { Bool, Json, List, Struct, Text } from "@maestro/sdk";
 
 /** An integer param of at least 1, `value` by default. */
 export const atLeastOne = (value: number, description: string) =>
@@ -34,35 +26,6 @@ export const Verdict = Struct({
 	criteria: List(Struct({ id: Text(), met: Bool(), evidence: Text() })),
 	blocking: List(Text()),
 });
-
-/** What a scout found: each fact and each risk at a `file:line`. */
-export const Evidence = Struct({
-	summary: Text(),
-	facts: List(Struct({ where: Text(), note: Text() })),
-	risks: List(Struct({ risk: Text(), where: Text() })),
-});
-
-/** A risk the scouts raised, numbered `R1` on. */
-export const Risk = Struct({ id: Text(), risk: Text() });
-
-/** A list of `item` holding one to `max` items. */
-const Bounded = <T>(item: Type<T>, max: number) =>
-	Json<T[]>({ type: "array", items: item.schema, minItems: 1, maxItems: max });
-
-/**
- * A plan's criteria, numbered `C1` on, each with its proof, and one to `maxApproaches` approaches, numbered `A1` on,
- * the preferred first.
- */
-export const Design = (maxApproaches: number) =>
-	Struct({
-		criteria: List(Struct({ id: Text(), criterion: Text(), proof: Text() })),
-		approaches: Bounded(
-			Struct({ id: Text(), approach: Text() }),
-			maxApproaches,
-		),
-	});
-
-export type DesignValue = ValueOf<ReturnType<typeof Design>>;
 
 /** A documenter's ruling on each criterion of the design, by its id. */
 export const Acceptance = List(

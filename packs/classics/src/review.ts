@@ -20,12 +20,10 @@ import {
 	type Ref,
 	readJson,
 	Text,
-	type ValueOf,
 } from "@maestro/sdk";
 import { survivorsOf, toMarkdown } from "./code";
 import { EXAMPLE_REQUEST } from "./repair";
 import { consolidator, lens, skeptic } from "./seats";
-import type { Risk } from "./types";
 
 type Consolidated = ReturnType<
 	typeof consolidator<Record<never, never>, "read">
@@ -59,27 +57,15 @@ const consolidateTask = (grounds?: string) =>
 		? CONSOLIDATE_TASK
 		: `${CONSOLIDATE_TASK} Rule by these grounds: ${grounds} A blocking finding a skeptic upheld blocks approval, unless you dismiss it by naming the ground that excludes it: out of review, or advisory as the grounds rank it. That the spec's steps or acceptance leave a test out is no ground. In review.md, list each finding you dismiss with its ground. Report each finding you dismiss as advisory as one gap, and none you dismiss as out of review.`;
 
-/** An item a panel puts a lens on: a lens name, or a risk. */
-type Item = string | ValueOf<typeof Risk>;
-
-type Panel<T extends Item> = {
+type Panel<T extends string> = {
 	/** The task of the lens over `item`. */
 	task: (item: Ref<T>) => string | Ref<string>;
 	/** The lane version under review. */
 	change: Ref<string> | string;
 	patches: Ref<ArtifactRef>;
 	spec: Ref<ArtifactRef>;
-	/** The criteria the consolidator rules on, in place of its own. */
-	design?: Ref<ArtifactRef>;
 	/** The rules a finding must cite, which the skeptics and the consolidator rule by. */
 	grounds?: string;
-};
-
-/** Items a node delivers, keyed by `key`, an exported function, and at most `max` of them. */
-type Delivered<T extends Item> = {
-	items: Ref<T[]>;
-	key: (item: T) => string;
-	max: number;
 };
 
 /**
@@ -88,10 +74,6 @@ type Delivered<T extends Item> = {
  */
 export function panel<T extends string>(
 	p: Panel<T> & { items: readonly T[] },
-): Consolidated;
-export function panel<T extends Item>(p: Panel<T> & Delivered<T>): Consolidated;
-export function panel(
-	p: Panel<Item> & ({ items: readonly Item[] } | Delivered<Item>),
 ): Consolidated {
 	const attached = {
 		patches: {
@@ -100,16 +82,11 @@ export function panel(
 		},
 		spec: { artifact: p.spec, hint: "for what the change must do" },
 	};
-	const body = (item: Ref<Item>) => round(p, p.task(item), attached);
-	const rounds =
-		"key" in p
-			? iter.parMap(p.items, body, {
-					onError: "continue",
-					label: "lenses",
-					key: p.key,
-					max: p.max,
-				})
-			: iter.parMap(p.items, body, { onError: "continue", label: "lenses" });
+	const body = (item: Ref<T>) => round(p, p.task(item), attached);
+	const rounds = iter.parMap(p.items, body, {
+		onError: "continue",
+		label: "lenses",
+	});
 	const kept = code(survivorsOf, {
 		in: { rounds: rounds.out.results, items: p.items },
 		out: { survivors: Markdown() },
@@ -124,21 +101,13 @@ export function panel(
 				hint: "first, for the findings the skeptics upheld",
 			},
 			...attached,
-			...(p.design === undefined
-				? {}
-				: {
-						design: {
-							artifact: p.design,
-							hint: "for the criteria to rule on by their ids, in place of your own",
-						},
-					}),
 		},
 	});
 }
 
 /** A lens over one item on `task`, and a skeptic over its findings unless it is clean. */
 function round(
-	{ change, grounds }: Panel<Item>,
+	{ change, grounds }: Pick<Panel<string>, "change" | "grounds">,
 	task: string | Ref<string>,
 	attached: { patches: Attachment; spec: Attachment },
 ) {
