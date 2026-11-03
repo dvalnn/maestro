@@ -132,6 +132,7 @@ maestro wait <concert> --timeout 15m
     Names concerts, or picks settled concerts by `--before <duration>` (settled longer ago than that), `--tour <slug>`,
     `--workspace <name>`, `--status <status>` and `--composition <pack.name>`, as `ls` takes them; without `--before`
     there is no age cutoff, and `--status running` is refused. It asks before deleting unless given `--yes`.
+    `-n`/`--dry-run` lists what it would prune, with each status, time and size, and prunes nothing.
 
 `compose <composition> --help` and `perform <composition> --help` add the composition's params, as `rep` shows them.
 
@@ -409,13 +410,14 @@ is a positive whole number and one unit of `ms`, `s`, `m`, `h` or `d`, such as `
 
 ## Exit codes
 
-| Code | Meaning                                                                                       |
-| ---- | --------------------------------------------------------------------------------------------- |
-| 0    | Done, or the concert settled `ok`.                                                            |
-| 1    | The concert settled `failed`, a command could not do what it was asked, or an internal error. |
-| 2    | Usage error, or a composition that does not compose.                                          |
-| 3    | The concert settled `rejected`, or a patch of `cs apply` left conflicts.                      |
-| 124  | `wait --timeout` passed with the concert still running.                                       |
+| Code | Meaning                                                                                                                                                                         |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Done, or the concert settled `ok`.                                                                                                                                              |
+| 1    | The concert settled `failed`, a composition or config does not build, or a command could not do what it was asked. An unexpected error prints `error: unexpected:` and exits 1. |
+| 2    | Usage error: bad arguments.                                                                                                                                                     |
+| 3    | The concert settled `rejected`, or a patch of `cs apply` left conflicts.                                                                                                        |
+| 124  | `wait --timeout` passed with the concert still running.                                                                                                                         |
+| 130  | `perform`, `resume` or `encore` was stopped by Ctrl-C; the concert can be resumed.                                                                                              |
 
 `watch` exits as `wait` does, except that browsing a concert quit before it settled exits 130 (Ctrl-C), 129 (hang-up) or
 143 (SIGTERM).

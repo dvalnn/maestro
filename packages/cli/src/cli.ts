@@ -18,6 +18,7 @@ import {
 import {
 	ArgumentError,
 	CliError,
+	diagnosedExit,
 	diagnosticsOf,
 	EXIT,
 	hinted,
@@ -133,8 +134,8 @@ const versionLine = () =>
 const EXIT_MEANINGS: Readonly<Record<keyof typeof EXIT, string>> = {
 	ok: "Done, or the concert settled ok",
 	failed:
-		"The concert settled failed, or the command could not do what it said",
-	usage: "Usage error, or the composition does not compose",
+		"The concert settled failed, or the command could not do what it said, such as a composition that does not compose",
+	usage: "Usage error: bad arguments",
 	rejected: "The concert settled rejected",
 	timeout: "wait --timeout passed, the concert still running",
 	interrupted: "Stopped by Ctrl-C",
@@ -215,10 +216,15 @@ function plain(error: unknown, debug: boolean, at?: At): string {
 		: messageOf(error);
 }
 
+/** `message` of an error nobody anticipated, on one line, with the hint to report it. */
+const unexpected = (message: string) =>
+	`unexpected: ${message.replace(/\s*\n\s*/g, " ")}\nThis is a bug in maestro. Rerun with --debug and report it upstream with the output`;
+
 /** The text of `error` for the terminal: a CliError leads with `error:` and its hint is dim, an argument error adds the usage. */
 const describe = (error: unknown, debug: boolean, color: boolean, at?: At) => {
 	const message = plain(error, debug, at);
-	if (debug || !(error instanceof CliError)) return message;
+	if (debug) return message;
+	if (!(error instanceof CliError)) return hinted(unexpected(message), color);
 	return hinted(
 		message,
 		color,
@@ -254,7 +260,7 @@ function report(
 	const diagnostics = diagnosticsOf(error);
 	if (diagnostics) {
 		printDiagnostics(diagnostics, deps, json, color);
-		return EXIT.usage;
+		return diagnosedExit(diagnostics);
 	}
 	const exit = error instanceof CliError ? error.exit : EXIT.failed;
 	const debug = isSet(early, "debug");

@@ -120,7 +120,7 @@ describe("panel_review", () => {
 		const { err, code } = await maestro("compose", ...REVIEW).finally(() =>
 			configure(),
 		);
-		expect(code).toBe(2);
+		expect(code).toBe(1);
 		expect(err).toContain("error: config key 'classics.panel_review.lense'");
 		expect(err).toContain("Did you mean 'classics.panel_review.lenses'?");
 	});

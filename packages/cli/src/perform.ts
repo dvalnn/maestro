@@ -9,6 +9,7 @@ import {
 	unresumable,
 } from "@maestro/core/perform";
 import { mapWorkers } from "@maestro/ir";
+import { shortIds } from "@maestro/render-text/live";
 import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk/loader";
 import { changesOf } from "./changeset";
 import {
@@ -27,6 +28,7 @@ import {
 } from "./command";
 import type { Overrides } from "./config";
 import {
+	EXIT,
 	encoreRefused,
 	exitOf,
 	jsonOf,
@@ -194,15 +196,24 @@ async function restart(
 	};
 }
 
-/** Cancels `concert` on SIGINT or SIGTERM, until it settles. */
-async function settled(concert: Concert): Promise<ConcertResult> {
+/** Cancels `concert` on SIGINT or SIGTERM, until it settles; `interrupted` is whether SIGINT did. */
+async function settled(
+	concert: Concert,
+): Promise<{ result: ConcertResult; interrupted: boolean }> {
 	const signals = ["SIGINT", "SIGTERM"] as const;
-	const stop = () => void concert.cancel();
-	for (const signal of signals) process.once(signal, stop);
+	let interrupted = false;
+	const stops = signals.map((signal) => {
+		const stop = () => {
+			interrupted ||= signal === "SIGINT";
+			void concert.cancel();
+		};
+		process.once(signal, stop);
+		return [signal, stop] as const;
+	});
 	try {
-		return await concert.done;
+		return { result: await concert.done, interrupted };
 	} finally {
-		for (const signal of signals) process.off(signal, stop);
+		for (const [signal, stop] of stops) process.off(signal, stop);
 	}
 }
 
@@ -213,7 +224,7 @@ async function report(
 	json: boolean,
 	{ color, values }: { color: Colors; values: Values },
 	id: string,
-	result: ConcertResult,
+	{ result, interrupted }: { result: ConcertResult; interrupted: boolean },
 ): Promise<number> {
 	const { deps } = session;
 	if (json)
@@ -226,7 +237,12 @@ async function report(
 			artifacts: artifactsOf(session, id),
 			changes: await changesOf({ session, store, values }, id),
 		});
-	return exitOf(result.outcome);
+	if (!interrupted) return exitOf(result.outcome);
+	if (!json)
+		deps.stderr(
+			`Resume it: maestro resume ${shortIds(store.ids()).label(id, false)}`,
+		);
+	return EXIT.interrupted;
 }
 
 /** Pre-flights `start`, printing what it warns of. */
@@ -273,7 +289,11 @@ async function conducted(
 		throw error instanceof Unencorable ? encoreRefused(error) : error;
 	});
 	deps.stderr(`concert ${concert.id}`);
-	const result = await settled(concert);
+	if (deps.stderrTerminal && !json)
+		deps.stderr(
+			`Follow it: maestro watch ${shortIds(store.ids()).label(concert.id, false)}`,
+		);
+	const settledConcert = await settled(concert);
 	return report(
 		session,
 		store,
@@ -286,7 +306,7 @@ async function conducted(
 			},
 		},
 		concert.id,
-		result,
+		settledConcert,
 	);
 }
 

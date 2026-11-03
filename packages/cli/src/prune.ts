@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { ConcertFilter, ConcertRecord } from "@maestro/core/perform";
 import { DURATION_EXAMPLE, messageOf } from "@maestro/ir";
+import { duration } from "@maestro/render-text/live";
 import {
 	COMMON,
 	type Command,
@@ -19,6 +20,7 @@ import {
 	parseDuration,
 	STATUSES,
 	stillRunning,
+	table,
 	usageError,
 } from "./output";
 import {
@@ -45,6 +47,11 @@ const PRUNE_OPTIONS = {
 		desc: `Only concerts that are ${SETTLED.join(", ")}`,
 	},
 	yes: { type: "boolean", desc: "Do not ask before deleting" },
+	"dry-run": {
+		type: "boolean",
+		short: "n",
+		desc: "List the concerts it would prune, and prune nothing",
+	},
 } as const satisfies Options;
 
 /** A concert that stays, and why. */
@@ -168,7 +175,7 @@ async function confirmed(
 			"Pass --yes",
 		);
 	return session.deps.confirm(
-		`Prune ${count} concert${count === 1 ? "" : "s"}, freeing ${formatBytes(bytes)}?`,
+		`Prune ${concertsWord(count)}, freeing ${formatBytes(bytes)}?`,
 	);
 }
 
@@ -207,11 +214,51 @@ function report({ session: { deps }, json }: Stored, outcome: Outcome) {
 		);
 }
 
+const concertsWord = (count: number) =>
+	`${count} concert${count === 1 ? "" : "s"}`;
+
+/** Lists `targets`, each with its status, time and size, and what pruning them would free, and prunes nothing. */
+function rehearsed(
+	{ session: { deps }, json }: Stored,
+	targets: readonly ConcertRecord[],
+	sizes: readonly number[],
+	total: number,
+) {
+	if (json)
+		deps.stdout(
+			jsonOf({
+				pruned: [],
+				wouldPrune: targets.map((c, i) => ({ id: c.id, bytes: sizes[i] })),
+				freed: 0,
+				wouldFree: total,
+				failures: [],
+			}),
+		);
+	else {
+		if (targets.length > 0)
+			deps.stdout(
+				table(
+					targets.map((c, i) => [
+						c.id,
+						c.status,
+						duration((c.settledAt ?? Date.now()) - c.startedAt),
+						formatBytes(sizes[i] ?? 0),
+					]),
+				),
+			);
+		deps.stderr(
+			`would prune ${concertsWord(targets.length)}, freeing ${formatBytes(total)}`,
+		);
+	}
+	return EXIT.ok;
+}
+
 async function pruned(stored: Stored, selection: Selection) {
 	const { session, values, json } = stored;
 	const targets = selected(stored, selection);
 	const sizes = await Promise.all(targets.map((c) => diskOf(stored, c.id)));
 	const total = sizes.reduce((sum, size) => sum + size, 0);
+	if (isSet(values, "dry-run")) return rehearsed(stored, targets, sizes, total);
 	if (
 		targets.length > 0 &&
 		!(await confirmed(session, isSet(values, "yes"), targets.length, total))

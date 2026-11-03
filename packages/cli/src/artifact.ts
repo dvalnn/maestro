@@ -152,10 +152,19 @@ function checked(values: Values, positionals: readonly string[]) {
 	return { prefix, instance, file };
 }
 
-function listed({ session, values, json }: Stored, artifacts: Listed[]) {
+function listed(
+	{ session, values, json }: Stored,
+	row: ConcertRecord,
+	artifacts: Listed[],
+) {
 	const { deps } = session;
 	if (json) deps.stdout(jsonOf(artifacts));
-	else if (isSet(values, "path"))
+	else if (artifacts.length === 0) {
+		deps.stderr(`no artifacts in concert ${row.id}`);
+		deps.stderr(
+			`Its instances wrote no files; 'maestro ls ${row.id}' shows what ran`,
+		);
+	} else if (isSet(values, "path"))
 		for (const a of artifacts) deps.stdout(a.path);
 	else
 		deps.stdout(
@@ -215,7 +224,7 @@ async function artifacted(stored: Stored, { prefix, instance, file }: Named) {
 	const { values, store, session } = stored;
 	const row = concertOf(store, prefix);
 	const { names, artifacts } = recorded(stored, row);
-	if (instance === undefined) return listed(stored, artifacts);
+	if (instance === undefined) return listed(stored, row, artifacts);
 	const name = nameOf(instance, names, row.id);
 	const files = await picked(row, name, artifacts, file);
 	if (artifacts.some((a) => a.instance === name && a.stale))

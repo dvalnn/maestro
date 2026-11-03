@@ -361,7 +361,7 @@ Add --probe to check it against pi`);
 	test("an unknown profile is refused with the nearest name", async () => {
 		const w = await roster();
 		expect(await w.call(["agent", "show", "demo/bilder"])).toMatchObject({
-			code: 2,
+			code: 1,
 			err: "error: profile demo/bilder is in no profile root\n  Did you mean 'demo/builder'?",
 		});
 	});

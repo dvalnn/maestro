@@ -377,7 +377,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 				],
 			});
 		expect(await resume(id)).toMatchObject({
-			code: 2,
+			code: 1,
 			err: `error: config key 'extra' is claimed by no installed host, pack or core (from -c extra.x of concert ${shortOf(id)})\n  Set that key, or !delete it, with -c on the resume, or perform the composition as a new concert`,
 		});
 		expect(await resume(id, "-c", "extra=!delete")).toMatchObject({ code: 0 });
@@ -385,7 +385,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 		const again = await perform();
 		await rm(join(presets, "stub.yaml"));
 		expect(await resume(again)).toMatchObject({
-			code: 2,
+			code: 1,
 			err: `error: concert ${shortOf(again)} was performed with --preset stub, and no stub.yaml is in ${presets} or ${join(w.env.XDG_CONFIG_HOME, "maestro/presets")}\n  Restore stub.yaml, or perform the composition as a new concert`,
 		});
 

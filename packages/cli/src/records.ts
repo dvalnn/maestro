@@ -92,6 +92,9 @@ const dash = (text: string | undefined) => text || "-";
 /** What follows a concert's status in `ls` when its instances have notes. */
 const NOTED_MARK = "•";
 
+/** What `ls --help` says of the mark. */
+const NOTED_HELP = `${NOTED_MARK} after a status: its instances left notes ('maestro ls <concert>' shows them)`;
+
 /** An instance's name and its notes, by heading. */
 type Noted = { name: string; notes: Record<string, string[]> };
 
@@ -173,15 +176,15 @@ function lsChecked(values: Values, positionals: readonly string[]) {
 	return { id, query };
 }
 
-/** What `ls --help` adds: the fields of the reports `--json` gives, as the hosts word them. */
+/** What `ls --help` adds: the mark, and the fields of the reports `--json` gives, as the hosts word them. */
 async function reportHelp(args: readonly string[], deps: Deps) {
 	const fields = deps.hosts.flatMap((h) =>
 		Object.entries(h.text?.reportFields ?? {}),
 	);
-	if (!fields.length) return undefined;
+	if (!fields.length) return NOTED_HELP;
 	const color = colorOf(deps, peek(COMMON, args)).out;
 	const rows = fields.map(([field, what]) => [`  ${field}`, what]);
-	return `${paint("bold", "Reports", color)}\n  --json | jq .reports\n${table(rows)}`;
+	return `${NOTED_HELP}\n\n${paint("bold", "Reports", color)}\n  --json | jq .reports\n${table(rows)}`;
 }
 
 export const ls: Command = {
@@ -231,12 +234,24 @@ function highlighted(
 		.join("\n");
 }
 
+/** The empty list: `[]` under `--json`, else `no concerts` and what to do about it on stderr. */
+function none({ session: { deps }, json }: Stored) {
+	if (json) deps.stdout(jsonOf([]));
+	else {
+		deps.stderr("no concerts");
+		deps.stderr("Perform one with 'maestro perform <pack>.<composition>'");
+	}
+	return EXIT.ok;
+}
+
 async function listed(stored: Stored, query: ConcertFilter) {
 	const { session, store, values, json } = stored;
 	const color = colorOf(session.deps, values).out;
 	const limit = query.limit ?? LIST_LIMIT;
 	const fetched = store.concerts({ ...query, limit: limit + 1 });
 	const concerts = fetched.slice(0, limit);
+	const marked = session.deps.terminal !== undefined;
+	if (concerts.length === 0) return none(stored);
 	const short = shortIds(store.ids());
 	const counts = noteCounts(stored, concerts);
 	const rows = await Promise.all(
@@ -252,25 +267,25 @@ async function listed(stored: Stored, query: ConcertFilter) {
 		[
 			[
 				"id",
+				"status",
+				"time",
 				"title",
 				"tour",
 				"workspace",
 				"composition",
-				"status",
-				"time",
 				"tokens",
 				"disk",
 			],
 			...rows.map((r) => [
 				r.short,
+				marked && Object.keys(r.notes).length
+					? stateWord(r.status, color, `${r.status} ${NOTED_MARK}`)
+					: stateWord(r.status, color),
+				duration(r.elapsedMs),
 				dash(r.title),
 				dash(r.tour),
 				dash(r.workspace),
 				`${r.pack}.${r.composition}`,
-				Object.keys(r.notes).length
-					? stateWord(r.status, color, `${r.status} ${NOTED_MARK}`)
-					: stateWord(r.status, color),
-				duration(r.elapsedMs),
 				tokenCell(r.metrics),
 				formatBytes(r.diskUse),
 			]),

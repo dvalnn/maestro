@@ -141,7 +141,20 @@ then its seats find no profile. A concert recorded before profiles cannot be res
 A record with a changed schema is refused with a message naming `record.db`: move it aside, as the message says. A pack
 with a new code hash makes a resumed concert rerun its code nodes.
 
-## 6. Authoring packs (needs Bun)
+## 6. Uninstall
+
+Settle or `maestro kill` any running concert, then remove each path the script wrote:
+
+```sh
+data="${XDG_DATA_HOME:-$HOME/.local/share}/maestro"
+rm -f ~/.local/bin/maestro
+rm -rf "$data/packs/classics" "$data/sdk" ~/.claude/skills/maestro
+```
+
+Left in place, since they are yours and not written by the script: concerts and their record under `$data`, other packs
+in `$data/packs`, and the config in `~/.config/maestro`. Remove `$data` and that directory too to forget them.
+
+## 7. Authoring packs (needs Bun)
 
 A `package.json` takes the package tarballs as `file:` dependencies, and the same ones under `overrides`, so no
 `@maestro/*` package is fetched from a registry. The paths are absolute, `~` is not expanded, and name the version-less
@@ -169,7 +182,7 @@ an upgrade to pick up the new tarballs.
 
 Bundling a pack and writing its manifest are in the skill's `packs.md`.
 
-## 7. Known limits
+## 8. Known limits
 
 - Linux x64 only.
 - Packs are operator-trusted code.

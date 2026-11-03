@@ -113,12 +113,13 @@ describe("compose and config", () => {
 		});
 	});
 
-	test("a composition that cannot be built exits 2 with its diagnostics, no location inside its bundle, or one document with --json", async () => {
+	test("a composition that cannot be built exits 1 with its diagnostics, no location inside its bundle, or one document with --json", async () => {
 		const w = await world();
 		const file = join(FIXTURES, "twice.ts");
 		const human = await w.call(["compose", file]);
-		expect(human.code).toBe(2);
+		expect(human.code).toBe(1);
 		expect(human.err).toMatch(/^error: /);
+		expect((await w.call(["compose", file, "--json"])).code).toBe(1);
 		const document = json(await w.call(["compose", file, "--json"]));
 		expect(document.ok).toBe(false);
 		expect(document.diagnostics.length).toBeGreaterThan(0);
@@ -136,7 +137,7 @@ describe("compose and config", () => {
 				`packs:\n  - ${w.pack}\nhello:\n  hello:\n    name: yaml\n`,
 			);
 			expect(await w.call(["compose", ...target])).toMatchObject({
-				code: 2,
+				code: 1,
 				err: expect.stringContaining(
 					"error: config key 'hello' is claimed by no installed host, pack or core\n  Remove 'hello' from the config, or install the pack or host that claims it. To configure a composition file, make it a pack",
 				),
@@ -496,7 +497,7 @@ describe("perform", () => {
 		const performed = await w.call(["perform", join(FIXTURES, "twice.ts")], {
 			hosts: [host],
 		});
-		expect(performed.code).toBe(2);
+		expect(performed.code).toBe(1);
 		expect(started).toEqual([]);
 		expect(json(await w.call(["ls", "--json"]))).toEqual([]);
 	});
@@ -845,14 +846,18 @@ describe("usage errors", () => {
 		"resume of an unknown concert",
 	];
 
+	/** The rows that are diagnostics of a build or the config, which exit 1; the rest are bad arguments, which exit 2. */
+	const DIAGNOSED = ["a composition file that declares no example input set"];
+	const exitOfRow = (what: string) => (DIAGNOSED.includes(what) ? 1 : 2);
+
 	test.each(USAGE)(
-		"%s exits 2 and says what to do",
+		"%s exits 1 for a build diagnostic and 2 for bad arguments, and says what to do",
 		async (_what, args, message) => {
 			const w = await world();
 			const outcome = await w.call(args);
 			expect(outcome.out).toBe("");
 			expect(outcome.err).toMatch(message);
-			expect(outcome.code).toBe(2);
+			expect(outcome.code).toBe(exitOfRow(_what));
 			if (!NEEDS_STORE.includes(_what))
 				expect(existsSync(w.env.XDG_DATA_HOME)).toBe(false);
 		},
@@ -864,7 +869,7 @@ describe("usage errors", () => {
 			const w = await world();
 			const outcome = await w.call([...args, "--json"]);
 			expect(outcome.err).toBe("");
-			expect(outcome.code).toBe(2);
+			expect(outcome.code).toBe(exitOfRow(_what));
 			const doc = json(outcome);
 			expect(doc.ok).toBe(false);
 			expect(doc.error ?? doc.diagnostics).toBeDefined();
@@ -920,6 +925,7 @@ describe("usage errors", () => {
 			expect(off).not.toContain(ESC);
 			expect(stripVTControlCharacters(on)).toBe(off);
 		}
+		await w.call(["perform", ...GREET]);
 		const header = (await w.call(["ls"], { terminal })).out;
 		expect(header).toStartWith(`${ESC}[1mid${ESC}[22m`);
 		expect((await w.call(["ls"])).out).toStartWith("id ");
@@ -1226,7 +1232,7 @@ describe("the record", () => {
 			code: 2,
 			err: "error: --composition takes <pack>.<composition>, not 'greet'\n  Write it as greet.hello",
 		});
-		expect((await w.call(["ls"])).out).toMatch(/\sdemo\.greet\s+failed\s/);
+		expect((await w.call(["ls"])).out).toMatch(/\sfailed\s.*\sdemo\.greet\s/);
 		expect(await rows("--limit", "1")).toEqual([broke]);
 		const short = shortIds([done, broke]);
 		expect(
@@ -1401,7 +1407,7 @@ describe("the record", () => {
 			json(await w.call(["ls", "--json"], { hosts: [host] }))[0].diskUse,
 		).toBe(2148);
 		expect((await w.call(["ls"], { hosts: [host] })).out).toMatch(
-			/ok\s+\S+\s+-\s+2\.1 KiB$/m,
+			/ok\s.*\s-\s+2\.1 KiB$/m,
 		);
 	});
 
@@ -1517,9 +1523,11 @@ describe("the record", () => {
 		expect(single.metrics).toEqual(metrics);
 		expect(single.elapsedMs).toBe(row.elapsedMs);
 		const listed = (await w.call(["ls"])).out.split("\n");
-		expect(listed[0]).toMatch(/status +time +tokens +disk$/);
+		expect(listed[0]).toMatch(
+			/^id +status +time +title +tour +workspace +composition +tokens +disk$/,
+		);
 		expect(listed.find((l) => l.startsWith(shortOf(id)))).toMatch(
-			/ok +\S+ +15\.5k +/,
+			/ok .* 15\.5k +/,
 		);
 		expect(listed.find((l) => l.startsWith(shortOf(bare)))).toMatch(
 			/ok +\S+ +- +/,
@@ -1583,12 +1591,23 @@ describe("the record", () => {
 			{},
 			{ Obstacles: 1, Lessons: 1 },
 		]);
-		const listed = (await w.call(["ls"], { hosts: [host] })).out.split("\n");
+		const piped = (await w.call(["ls"], { hosts: [host] })).out;
+		expect(piped).not.toContain("•");
+		const listed = (
+			await w.call(["ls"], {
+				hosts: [host],
+				terminal: narrow,
+				env: { NO_COLOR: "1" },
+			})
+		).out.split("\n");
 		expect(listed.find((l) => l.startsWith(shortOf(id)))).toContain(" ok • ");
 		expect(listed.find((l) => l.startsWith(shortOf(bare)))).not.toContain("•");
 		expect(
 			(await w.call(["ls"], { hosts: [host], terminal: narrow })).out,
 		).toContain(stateWord("ok", true, "ok •"));
+		expect((await w.call(["ls", "--help"], { hosts: [host] })).out).toContain(
+			"• after a status: its instances left notes ('maestro ls <concert>' shows them)",
+		);
 		const db = new Database(join(w.root, "data/maestro/record.db"));
 		db.run("UPDATE instances SET stale = 1");
 		db.close();
@@ -1845,5 +1864,188 @@ describe("prune", () => {
 			"could not release it: cannot prune\nCheck x, then retry",
 		);
 		expect(pruned.err).not.toContain("Fix that");
+	});
+});
+
+describe("prune --dry-run", () => {
+	test("lists each concert it would prune with its status, time and size, then the total, and prunes nothing", async () => {
+		const w = await world();
+		const done = idOf(
+			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
+		);
+		const broke = idOf(
+			await w.call(["perform", ...GREET], {
+				hosts: [hostOf({ outcome: "failed", reason: "flaky" })],
+			}),
+		);
+		await Bun.write(
+			join(w.env.XDG_DATA_HOME, "maestro/concerts", done, "artifacts/a.txt"),
+			"x".repeat(100),
+		);
+		const dry = await w.call(["prune", "--status", "ok", "-n"]);
+		expect(dry.code).toBe(0);
+		expect(dry.out).toMatch(new RegExp(`^${done} +ok +\\S+ +100 B$`));
+		expect(dry.err).toBe("would prune 1 concert, freeing 100 B");
+		const both = await w.call(["prune", done, broke, "--dry-run"]);
+		expect(both.out.split("\n")).toHaveLength(2);
+		expect(both.out).toMatch(new RegExp(`^${broke}|\\n${broke} +failed `));
+		expect(both.err).toStartWith("would prune 2 concerts, freeing ");
+		expect(
+			json(await w.call(["ls", "--json"])).map((r: { id: string }) => r.id),
+		).toHaveLength(2);
+		expect(
+			existsSync(join(w.env.XDG_DATA_HOME, "maestro/concerts", done)),
+		).toBe(true);
+	});
+});
+
+describe("prune --dry-run edges", () => {
+	test("--json gives wouldPrune and wouldFree with pruned empty, and prunes nothing", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET]));
+		const doc = json(await w.call(["prune", id, "-n", "--json"]));
+		expect(doc).toMatchObject({
+			pruned: [],
+			wouldPrune: [{ id, bytes: expect.any(Number) }],
+			freed: 0,
+			wouldFree: expect.any(Number),
+			failures: [],
+		});
+		expect(json(await w.call(["ls", "--json"]))).toHaveLength(1);
+	});
+
+	test("selecting nothing prints nothing on stdout and would prune 0 concerts", async () => {
+		const w = await world();
+		await w.call(["perform", ...GREET]);
+		expect(await w.call(["prune", "--status", "rejected", "-n"])).toEqual({
+			code: 0,
+			out: "",
+			err: "would prune 0 concerts, freeing 0 B",
+		});
+	});
+});
+
+describe("diagnostics by who set the value", () => {
+	test("a param a config file or a deleted core key leaves bad exits 1, and the same fault on the command line exits 2", async () => {
+		const w = await world();
+		const config = join(w.cwd, ".maestro/config.yaml");
+		const base = await Bun.file(config).text();
+		const missing = await w.call(["perform", "demo.ticket"]);
+		expect(missing.code).toBe(2);
+		await Bun.write(config, `${base}workspace: !delete\n`);
+		const deleted = await w.call(["perform", ...GREET]);
+		expect(deleted.code).toBe(1);
+		await Bun.write(config, `${base}demo:\n  ticket:\n    handle: nonsense\n`);
+		const set = await w.call(["perform", "demo.ticket"]);
+		expect(set.code).toBe(1);
+		expect(set.err).toContain("config.yaml");
+		await Bun.write(config, base);
+		expect(
+			(await w.call(["perform", "demo.ticket", "--handle", "nonsense"])).code,
+		).toBe(2);
+	});
+});
+
+describe("exit codes and error states", () => {
+	test("an error that is neither a CliError nor a diagnostic is reported as a bug and exits 1, with its stack under --debug", async () => {
+		const w = await world();
+		await w.call(["perform", ...GREET]);
+		const boom = {
+			stdout: () => {
+				throw new Error("boom\nsecond line");
+			},
+		};
+		const outcome = await w.call(["ls"], boom);
+		expect(outcome.code).toBe(1);
+		expect(outcome.err).toBe(
+			"error: unexpected: boom second line\n  This is a bug in maestro. Rerun with --debug and report it upstream with the output",
+		);
+		expect((await w.call(["ls", "--debug"], boom)).err).toContain(
+			"Error: boom",
+		);
+	});
+
+	test("a perform cancelled by Ctrl-C exits 130 and hints maestro resume, and SIGTERM stays 1", async () => {
+		const w = await world();
+		const stopped = (signal: "SIGINT" | "SIGTERM") =>
+			w.call(["perform", ...GREET], {
+				hosts: [
+					hostOf(ECHO, {
+						steps: {
+							first: () => {
+								setTimeout(() => process.emit(signal), 20);
+								return new Promise<never>(() => {});
+							},
+						},
+					}),
+				],
+			});
+		const interrupted = await stopped("SIGINT");
+		expect(interrupted.code).toBe(130);
+		expect(interrupted.err).toEndWith(
+			`\nResume it: maestro resume ${shortOf(idOf(interrupted))}`,
+		);
+		const terminated = await stopped("SIGTERM");
+		expect(terminated.code).toBe(1);
+		expect(terminated.err).not.toContain("Resume it");
+		const quiet = await w.call(["perform", ...GREET, "--json"], {
+			hosts: [
+				hostOf(ECHO, {
+					steps: {
+						first: () => {
+							setTimeout(() => process.emit("SIGINT"), 20);
+							return new Promise<never>(() => {});
+						},
+					},
+				}),
+			],
+		});
+		expect(quiet.code).toBe(130);
+		expect(quiet.err).toBe("concert " + json(quiet).id);
+	});
+
+	test("ls with no concerts says so on stderr with what to do, and under --json prints [] and nothing on stderr", async () => {
+		const w = await world();
+		expect(await w.call(["ls"])).toEqual({
+			code: 0,
+			out: "",
+			err: "no concerts\nPerform one with 'maestro perform <pack>.<composition>'",
+		});
+		expect(await w.call(["ls", "--json"])).toEqual({
+			code: 0,
+			out: "[]",
+			err: "",
+		});
+	});
+
+	test("artifact ls with no artifacts says so on stderr with what to do, and under --json prints [] and nothing on stderr", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET]));
+		expect(await w.call(["artifact", "ls", id])).toEqual({
+			code: 0,
+			out: "",
+			err: `no artifacts in concert ${id}\nIts instances wrote no files; 'maestro ls ${id}' shows what ran`,
+		});
+		expect(await w.call(["artifact", "ls", id, "--json"])).toEqual({
+			code: 0,
+			out: "[]",
+			err: "",
+		});
+	});
+
+	test("perform on a terminal stderr prints how to follow the concert under its id line, not piped and not under --json", async () => {
+		const w = await world();
+		const stderrTerminal = () => ({ columns: 80 });
+		const on = await w.call(["perform", ...GREET], { stderrTerminal });
+		expect(on.err.split("\n").slice(0, 2)).toEqual([
+			`concert ${idOf(on)}`,
+			`Follow it: maestro watch ${shortOf(idOf(on))}`,
+		]);
+		expect((await w.call(["perform", ...GREET])).err).not.toContain(
+			"Follow it",
+		);
+		expect(
+			(await w.call(["perform", ...GREET, "--json"], { stderrTerminal })).err,
+		).not.toContain("Follow it");
 	});
 });

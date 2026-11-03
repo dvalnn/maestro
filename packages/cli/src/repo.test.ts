@@ -347,7 +347,7 @@ describe("profiles", () => {
 			"profiles:\n  smoke:\n    runtime:\n      harness: stub\n",
 		);
 		const refused = await w.call(["perform", file]);
-		expect(refused).toMatchObject({ code: 2 });
+		expect(refused).toMatchObject({ code: 1 });
 		expect(refused.err).toContain(
 			"profile smoke runs on harness 'gone', which is not loaded",
 		);
@@ -425,7 +425,7 @@ describe("profiles", () => {
 		runtime("gone");
 		const resume = ["resume", idOf(failed)];
 		expect(await w.call(resume)).toMatchObject({
-			code: 2,
+			code: 1,
 			err: expect.stringContaining("harness 'gone', which is not loaded"),
 		});
 		runtime("stub");
@@ -458,7 +458,7 @@ describe("profiles", () => {
 			),
 		);
 		expect(await w.call(["perform", irFile])).toMatchObject({
-			code: 2,
+			code: 1,
 			err: expect.stringContaining(refusal),
 		});
 
@@ -476,7 +476,7 @@ describe("profiles", () => {
 		db.close();
 		writeFileSync(gate, "");
 		expect(await w.call(["resume", id])).toMatchObject({
-			code: 2,
+			code: 1,
 			err: expect.stringContaining(refusal),
 		});
 	});
