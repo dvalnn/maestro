@@ -10,6 +10,8 @@ Issues live on the forge, [`tiago/maestro`](https://git.amorimcasa.org/tiago/mae
 
 - **Body.** The ask: a slice brief or a backlog item. Only the ask above the marker (below) stops changing once work
   starts; an agreed scope change is a comment saying what changed and who agreed it.
+- **Citations.** An issue or brief cites only ids the repo or tracker holds (requirement IDs, ADRs, issue numbers),
+  never a call tag from a chat session (`D26`, `E118`).
 - **Labels.** One `kind/` and one `state/` label (`triage-labels.md`). Both scopes are exclusive, so adding a `state/`
   label replaces the old one.
 - **Tour manager.** The ask sits above a `<!-- maestro-tm -->` marker and stops changing. Below it the tour manager

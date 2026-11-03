@@ -98,4 +98,9 @@ export const hostOf = (echo: object = ECHO, over: object = {}): Host =>
 		...over,
 	});
 
+/**
+ * Arguments performing the demo pack's `greet`. With no host given, `world().call` uses `fakeHost()`, whose nodes have
+ * no scripted steps, so `perform GREET` settles `failed`. A test that overrides `hosts` to read profiles, as with
+ * `builtinHosts`, needs `hostOf()` beside it to register the nodes' `fake.task` kind.
+ */
 export const GREET = ["demo.greet", "--name", "x"];

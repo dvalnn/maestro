@@ -314,6 +314,12 @@ const children = [
 	{ title: "Greet it", body: "b", dependsOn: [0] },
 ];
 
+/**
+ * A pass over `issues`, `concerts` and `results`, on fakes. `Options.presets` is `["stub"]`, so each start carries
+ * `--preset stub`. The fake forge holds each issue by reference: its `body` and `comments` are the stored ones, and
+ * writes edit them in place. `pins` is the list `pinned()` returns, so a test pins an issue by pushing its number. The
+ * fake maestro records the argument list of each `start` in `starts` and `<id> in <dir>` of each `apply` in `applied`.
+ */
 function setup(
 	issues: Stored[],
 	concerts: Concert[] = [],
