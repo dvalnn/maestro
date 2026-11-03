@@ -265,6 +265,14 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   a slice routed to `needs-info`, blocked or out of attempts, sets to itself and a retry, a landing, a parked concert or
   a re-triage clears; and `review`, the id of the newest review requesting changes an encore was fed. A line the tick
   cannot read halts the tour manager.
+- **Spec check.** After the planner proposes a ready spec, a checker on another model family (`gpt-6.1-terra` through
+  `pi`, low effort, `.maestro/presets/triage.yaml`) checks it against the scouts' answers and the code. Every claim the
+  spec makes about the base must hold, and the spec must miss no place the change touches, such as the uninstall path
+  beside an install. Each failure becomes a question, so the issue goes to `needs-info` as any other question does
+  (Rules: Answers); with none, the triage is unchanged. A split or a needs-info proposal is not checked. A check that
+  fails to run asks one question, `The spec check did not run: <reason>. Approve the spec as is, or re-triage.`, and the
+  spec stays in the result for the owner to approve by moving the ticket to `ready-for-agent`; the failure halts
+  nothing.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. The owner
   answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`, then moving
   the ticket to `needs-triage`; a waiting spec in `needs-approval` is answered or redirected the same way. A triage,
@@ -274,12 +282,12 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   - a question comment, headed `## Question by the tour manager`;
   - any other comment mentioning `@<login>` as a whole word in any case, headed `## Reply by <author>`.
 
-  An encore continues the triager's and scouts' sessions but starts the planner fresh, so a re-triage pays for the last
-  spec rather than the planner's whole earlier session. It records the newest comment it considered as `read`, so a
-  comment it ignored is never fed later. A failed triage clears `read`, so the next one considers those comments again.
-  An encore with nothing changed is refused, which halts the tour manager. A re-triage with nothing new to feed starts
-  nothing: the tick asks for a reply mentioning `@<login>`, moves the ticket to `needs-info` and moves `read` past its
-  ask.
+  An encore continues the triager's and scouts' sessions but starts the planner and the spec checker fresh, so a
+  re-triage pays for the last spec rather than the planner's whole earlier session. It records the newest comment it
+  considered as `read`, so a comment it ignored is never fed later. A failed triage clears `read`, so the next one
+  considers those comments again. An encore with nothing changed is refused, which halts the tour manager. A re-triage
+  with nothing new to feed starts nothing: the tick asks for a reply mentioning `@<login>`, moves the ticket to
+  `needs-info` and moves `read` past its ask.
 
 - **Moved during a run.** A settle whose ticket is no longer where the run expects it (`in-progress` or
   `ready-for-agent` for a slice, intake for a triage) is not applied. A closed ticket is left alone. Otherwise the

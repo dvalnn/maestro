@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ArtifactRef, CodeContext, Type } from "@maestro/sdk";
+import type { ArtifactRef, CodeContext, Settled, Type } from "@maestro/sdk";
 import { readJson } from "@maestro/sdk/stdlib";
 import {
 	call,
@@ -14,6 +14,7 @@ import {
 } from "./stub";
 import {
 	answersOf,
+	type Checked,
 	classify,
 	Proposal,
 	Ruling,
@@ -213,9 +214,11 @@ const planning: Ruling = {
 	groups,
 	questions: [],
 };
-const planned = (proposal: Proposal) => ({
+const clean: Settled<Checked>[] = [{ outcome: "ok", value: { questions: [] } }];
+const planned = (proposal: Proposal, check = clean) => ({
 	ruling: planning,
 	proposal: [{ outcome: "ok" as const, value: proposal }],
+	check,
 });
 
 const overrides: [string, Proposal, Triage][] = [
@@ -331,9 +334,49 @@ const claiming: Proposal["questions"][number] = {
 };
 const straying = { ...claiming, recommend: { label: "C", why: "no reason" } };
 
+const failed = askAlone("Does uninstall remove the new file too?");
+
+test("settle turns a failing spec check into questions, sending the spec to needs-info", () => {
+	const check: Settled<Checked>[] = [
+		{ outcome: "ok", value: { questions: [failed] } },
+	];
+	const { triage } = settle(planned(ready, check));
+	expect(triage).toMatchObject({ verdict: "needs-info", questions: [failed] });
+	expect(triage.spec).toBeUndefined();
+});
+
+test.each([
+	["a clean check", clean],
+	["a skipped check", [{ outcome: "skipped" }] as Settled<Checked>[]],
+])("settle leaves the triage as it is with %s", (_, check) => {
+	expect(settle(planned(ready, check))).toEqual(settle(planned(ready, [])));
+	expect(settle(planned(ready, check)).triage.verdict).toBe("ready-for-agent");
+});
+
+test.each(["failed", "rejected"] as const)(
+	"settle asks the owner, keeping the spec, when the spec check %s to run",
+	(outcome) => {
+		const check: Settled<Checked>[] = [{ outcome, reason: "pi exited 1" }];
+		const { triage } = settle(planned(ready, check));
+		expect(triage).toMatchObject({
+			verdict: "needs-info",
+			questions: [
+				askAlone(
+					"The spec check did not run: pi exited 1. Approve the spec as is, or re-triage.",
+				),
+			],
+		});
+		expect(triage.spec).toMatchObject({ subject: ready.spec?.subject });
+	},
+);
+
 test("settle fails when the triager handed the issue on and the planner gave nothing", () => {
 	expect(() =>
-		settle({ ruling: planning, proposal: [{ outcome: "skipped" }] }),
+		settle({
+			ruling: planning,
+			proposal: [{ outcome: "skipped" }],
+			check: [],
+		}),
 	).toThrow("the planner gave no proposal");
 });
 
@@ -418,13 +461,20 @@ type Instance = {
 };
 
 /** A stub perform of the triage, the triager ruling `ruling` and the planner proposing `proposal`. */
-async function performed(ruling: Ruling, proposal?: Proposal) {
+async function performed(
+	ruling: Ruling,
+	proposal?: Proposal,
+	check: Checked = { questions: [] },
+) {
 	const outputs = stubOutputs({
 		"triager/ruling.json": ruling,
 		"triager/backlog.md": "- #7 Greet: it greets too\n",
 		"scouts[G1]/scout/answer.md": "G1: in flags.ts:12.\n",
 		"scouts[G2]/scout/answer.md": "G2: in greet.test.ts:3.\n",
-		...(proposal && { "planner/plan.json": proposal }),
+		...(proposal && {
+			"planner/plan.json": proposal,
+			"checker/check.json": check,
+		}),
 	});
 	const data = mkdtempSync(join(scratch, "data-"));
 	const concert = JSON.parse(
@@ -435,7 +485,12 @@ async function performed(ruling: Ruling, proposal?: Proposal) {
 				`target.repo=${targetRepo()}`,
 				"-c",
 				'target.prepare="true"',
-				...stubbed(["triager", "classics/scout", "classics/planner"]),
+				...stubbed([
+					"triager",
+					"classics/scout",
+					"classics/planner",
+					"checker",
+				]),
 			],
 			data,
 			{ MAESTRO_STUB_OUTPUTS: outputs },
@@ -557,11 +612,30 @@ test.each(verdicts)(
 	},
 );
 
+test("a stub perform sends a spec whose check fails to needs-info with its questions, and runs the checker only on a ready proposal", async () => {
+	const { concert, statuses } = await performed(planning, ready, {
+		questions: [failed],
+	});
+	expect(concert.status).toBe("ok");
+	expect(concert.outputs.triage).toMatchObject({
+		verdict: "needs-info",
+		questions: [failed],
+	});
+	expect(concert.outputs.triage.spec).toBeUndefined();
+	expect(statuses("checker")).toEqual(["ok"]);
+	const split = await performed(planning, {
+		verdict: "split",
+		...unspecified,
+		children,
+	});
+	expect(split.statuses("checker")).toEqual(["skipped"]);
+});
+
 /** The composed plan of the triage, with `--backlog`. */
 const composed = async () =>
 	JSON.parse(await maestro(await triage("compose", "--backlog", backlog)));
 
-test("compose seats the triager on sonnet, the scouts on haiku and the planner on opus at high, the rest at medium", async () => {
+test("compose seats the triager on sonnet, the scouts on haiku, the planner on opus at high and the spec checker on terra at low", async () => {
 	const { agents } = await composed();
 	const seated = (
 		agents as { profile: string; model: string; thinking: string }[]
@@ -569,6 +643,7 @@ test("compose seats the triager on sonnet, the scouts on haiku and the planner o
 		.map((a) => [a.profile, a.model, a.thinking])
 		.sort();
 	expect(seated).toEqual([
+		["checker", "github-copilot/gpt-6.1-terra", "low"],
 		["classics/planner", "claude-opus-5-5", "high"],
 		["classics/scout", "claude-haiku-5-5", "medium"],
 		["triager", "claude-sonnet-5-5", "medium"],
@@ -626,13 +701,14 @@ test("the planner's prompt keeps a decision to a live choice, and neither it nor
 	expect(JSON.stringify(Proposal.schema)).not.toContain("steps");
 });
 
-test("an encore starts the planner fresh, and continues the triager and scouts", async () => {
+test("an encore starts the planner and the checker fresh, and continues the triager and scouts", async () => {
 	const { plan } = await composed();
 	const encoreOf = (id: string) =>
 		(plan.ir.nodes as { id: string; config?: { encore?: boolean } }[]).find(
 			(n) => n.id === id,
 		)?.config?.encore;
 	expect(encoreOf("planner")).toBe(false);
+	expect(encoreOf("checker")).toBe(false);
 	expect(encoreOf("triager")).toBeUndefined();
 	expect(encoreOf("scouts/scout")).toBeUndefined();
 });

@@ -214,6 +214,10 @@ const Group = Struct({
 });
 type Group = ValueOf<typeof Group>;
 
+/** The spec check's questions: one per failure of the spec against the code, none when it holds. */
+export const Checked = shape({ questions: List(Question) }, {});
+export type Checked = ValueOf<typeof Checked>;
+
 /** The triager's ruling: an early verdict, or at most `maxGroups` groups of questions for the scouts and the planner. */
 export const Ruling = (maxGroups: number) =>
 	shape(
@@ -395,17 +399,24 @@ const relatedOf = (related?: number[]) => (related?.length ? { related } : {});
 
 const askAlone = (ask: string): Question => ({ ask, options: [], context: [] });
 
-/** The triage of a planner's `proposal`. */
-function proposed(proposal: Proposal): Triage {
+/**
+ * The triage of a planner's `proposal`, the spec check's `failures` asked of the owner besides its own questions. A spec
+ * the check never ran on stays in the result, for the owner to approve as it is.
+ */
+function proposed(proposal: Proposal, { failures, unchecked }: Checks): Triage {
 	const { touches, contract, spec, children, related } = proposal;
 	const classified = classify(touches, contract);
-	const questions = [...proposal.questions, ...gapsOf(proposal).map(askAlone)];
+	const questions = [
+		...proposal.questions,
+		...gapsOf(proposal).map(askAlone),
+		...failures,
+	];
 	const verdict = verdictOf(proposal.verdict, classified.risk, questions);
 	return {
 		verdict,
 		...classified,
 		questions,
-		...(SPECIFIED.includes(verdict) &&
+		...((unchecked || SPECIFIED.includes(verdict)) &&
 			spec && { spec: { touches: scopeOf(touches).paths, ...spec } }),
 		...(verdict === "split" && { children }),
 		...relatedOf(related),
@@ -434,28 +445,48 @@ function recommendable({ recommend, ...question }: Question): Question {
 	return named ? { ...question, recommend } : question;
 }
 
+/** The questions the spec check asks, and whether it failed to run, which leaves the owner to approve the spec. */
+type Checks = { failures: Question[]; unchecked: boolean };
+
+/** The spec check's questions: those it found, none when it was skipped, or the one asking about a check that failed to run. */
+function failuresOf(check: Settled<Checked>[]): Checks {
+	const [checked] = check;
+	if (checked?.outcome === "ok")
+		return { failures: checked.value.questions, unchecked: false };
+	if (!checked || checked.outcome === "skipped")
+		return { failures: [], unchecked: false };
+	const ask = `The spec check did not run: ${checked.reason}. Approve the spec as is, or re-triage.`;
+	return { failures: [askAlone(ask)], unchecked: true };
+}
+
 /** The triage of `ruling`, or of the planner's proposal when the triager handed the issue on. */
-function triageOf(ruling: Ruling, proposal: Settled<Proposal>[]): Triage {
+function triageOf(
+	ruling: Ruling,
+	proposal: Settled<Proposal>[],
+	check: Settled<Checked>[],
+): Triage {
 	if (ruling.verdict !== "plan") return ruled(ruling, ruling.verdict);
 	const [planned] = proposal;
 	if (planned?.outcome !== "ok")
 		throw new Error("the planner gave no proposal");
-	return proposed(planned.value);
+	return proposed(planned.value, failuresOf(check));
 }
 
 /**
  * The triage verdict: the triager's early ruling or the planner's proposal, which it only ever downgrades or gates,
- * never upgrades.
+ * never upgrades. A failure the spec check found, or a check that failed to run, is a question to the owner.
  * @throws Error when the triager handed the issue on and the planner gave no proposal.
  */
 export function settle({
 	ruling,
 	proposal,
+	check,
 }: {
 	ruling: Ruling;
 	proposal: Settled<Proposal>[];
+	check: Settled<Checked>[];
 }): { triage: Triage } {
-	const triage = triageOf(ruling, proposal);
+	const triage = triageOf(ruling, proposal, check);
 	return {
 		triage: { ...triage, questions: triage.questions.map(recommendable) },
 	};
@@ -526,6 +557,13 @@ const PLANS: Record<Ruled, boolean> = {
 
 const ASKING = `Each question is {"ask": "the question, one line", "lead": "a sentence of background", "options": [{"label": "A", "text": "one option, a line or two"}], "recommend": {"label": "A", "why": "the reason, read on from 'Recommended: A,'"}, "context": [{"topic": "Cost", "text": "one point of evidence, with its file:line"}]}. The owner reads it as a comment: keep the options short and put the evidence in context, one point per item under a one- or two-word topic such as Claiming, D-24 or Cost. Leave out lead when the ask says it all, options when the answer is open, and recommend unless you have a reason for one; recommend.label is the label of one of the options.`;
 
+/** The proposals whose spec the checker checks. */
+const CHECKS: Record<(typeof PROPOSED)[number], boolean> = {
+	"ready-for-agent": true,
+	split: false,
+	"needs-info": false,
+};
+
 const triageTask = (
 	maxGroups: number,
 ) => `Triage the attached issue against the attached backlog snapshot. ${GATE}
@@ -554,14 +592,25 @@ Write plan.json in exactly this shape, leaving out spec, children and related wh
 - When the issue carries the spec the last triage proposed, start from it: change what the replies below it ask, and keep the rest.
 - questions: what only the owner can answer. Any question sends the issue to needs-info whatever the verdict, so settle yourself what the code settles. ${ASKING}`;
 
+const CHECK_TASK = `Check the attached spec against the code. Its spec is in the attached plan.json.
+Write check.json in exactly this shape:
+{"questions": [{"ask": "the failure and what the owner should say about it, one line", "options": [], "context": [{"topic": "Claim", "text": "what the spec says and what the code shows, with its file:line"}]}]}
+- A claim the spec makes about the base holds: every function, file, flag, behaviour and call site it names exists and behaves as stated, and so does everything it says a change must also update.
+- The spec misses no place the change must touch: the uninstall path beside an install, each other caller of a changed function, each test or doc that states the old behaviour.
+- questions: one per failure, never one for a claim that holds or for a choice the spec makes. Write "questions": [] when nothing fails.
+Use the scouts' answers as leads, and read the code behind each claim yourself.`;
+
 const triager = seat("triager");
 /** The classics planner, fresh in an encore: a re-triage hands it the last spec rather than its grown session. */
 const planner = seat("planner", { profile: "classics/planner", encore: false });
 
+/** The checker, fresh in an encore: a re-triage rewrites the spec it checks. */
+const checker = seat("checker", { encore: false });
+
 export const triage = composition(
 	"triage",
 	{
-		doc: "Triage an issue against the backlog: a triager cuts the backlog and rules early or asks groups of questions, a scout answers each group, a planner proposes a verdict, and settle classifies its risk, review tier and area and gates the verdict. Read-only: it leaves no changeset.",
+		doc: "Triage an issue against the backlog: a triager cuts the backlog and rules early or asks groups of questions, a scout answers each group, a planner proposes a verdict, a checker checks a ready spec against the code, and settle classifies its risk, review tier and area and gates the verdict. Read-only: it leaves no changeset.",
 		params: {
 			issue: Text({
 				description: "The issue to triage: its number, title and body",
@@ -675,8 +724,31 @@ export const triage = composition(
 			out: { plan: JsonOut("plan.json", Proposal) },
 			when: plans,
 		});
+		const plan = readJson(planned.out.plan);
+		const checked = checker({
+			label: "checker",
+			task: CHECK_TASK,
+			lane: read(base.out.lane),
+			attachments: {
+				plan: {
+					artifact: planned.out.plan,
+					hint: "first, for the spec to check",
+				},
+				issue: issued,
+				answers: {
+					artifact: answers.out.answers,
+					hint: "for what the scouts found",
+				},
+			},
+			out: { check: JsonOut("check.json", Checked) },
+			when: lookup(CHECKS, plan.get("verdict")),
+		});
 		return code(settle, {
-			in: { ruling, proposal: allSettled([readJson(planned.out.plan)]) },
+			in: {
+				ruling,
+				proposal: allSettled([plan], { label: "proposal" }),
+				check: allSettled([readJson(checked.out.check)], { label: "check" }),
+			},
 			out: { triage: Triage },
 			label: "settle",
 		});
