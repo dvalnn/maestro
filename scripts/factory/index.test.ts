@@ -14,7 +14,7 @@ import type {
 import { HALT, lock, milestoneOf, type Options, pass } from "./index";
 import type { Landing } from "./land";
 import type { Concert, Maestro, Report, Result, Spend } from "./maestro";
-import { titleOf } from "./pick";
+import { stateOf, titleOf } from "./pick";
 import {
 	commentOf,
 	type Data,
@@ -86,6 +86,7 @@ function fakeForge(issues: Stored[], cut?: string) {
 		open: async () => issues.filter((i) => i.open),
 		closed: async () => [
 			{ number: 1, title: "An old one", body: "", labels: [] },
+			...issues.filter((i) => !i.open && i.closed !== undefined),
 		],
 		pinned: async () => pins,
 		pulls: async () =>
@@ -261,14 +262,24 @@ const issue = (
 		milestone: MILESTONE_ID,
 		open: true,
 		comments: data
-			? [{ id, body: commentOf(data, "needs-triage", BOT), author: BOT }]
+			? [
+					{
+						id,
+						body: commentOf(data, "needs-triage", BOT),
+						author: BOT,
+					},
+				]
 			: [],
 	};
 };
 
 /** `stored` with a reply mentioning the tick, which an encore of a concert to continue would be fed. */
 const answeredOnce = (stored: Stored) => {
-	stored.comments.push({ id: 900, body: "@forge-bot go on", author: OWNER });
+	stored.comments.push({
+		id: 900,
+		body: "@forge-bot go on",
+		author: OWNER,
+	});
 	return stored;
 };
 const specAt = (issue: Stored) => specCommentOf(issue.comments);
@@ -365,6 +376,7 @@ const done = (): Stored => ({
 	...issue(5, "x"),
 	labels: ["kind/bug"],
 	open: false,
+	closed: 1,
 });
 const duplicate: Triage = {
 	...base,
@@ -454,6 +466,7 @@ describe("a pass", () => {
 				triage: "c1",
 				result: triage,
 				version: 1,
+				specAt: expect.any(Number),
 			});
 			const writes = t.writes.length;
 			await t.run();
@@ -507,7 +520,12 @@ describe("a pass", () => {
 	])(
 		"a duplicate whose original is %s closes only if the original is live",
 		async (_, label, open, state, stays) => {
-			const original = { ...done(), labels: ["kind/bug", label], open };
+			const original = {
+				...done(),
+				labels: ["kind/bug", label],
+				open,
+				closed: open ? undefined : 1,
+			};
 			const t = setup(
 				[issue(7, "needs-triage"), original],
 				[triageConcert("c1", 7)],
@@ -525,6 +543,19 @@ describe("a pass", () => {
 			expect(dataAt(routed).result?.duplicateOf).toBeUndefined();
 		},
 	);
+
+	test("a duplicate of an issue that does not exist asks for the original, and halts nothing", async () => {
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[triageConcert("c1", 7)],
+			settled(duplicate),
+		);
+		await t.run();
+		expect(t.find(7).labels).toContain("state/needs-info");
+		expect(t.find(7).open).toBe(true);
+		expect(questionsAt(t.find(7))[0]).toContain("#5, which does not exist");
+		expect(t.writes.some((w) => w.startsWith("file"))).toBe(false);
+	});
 
 	test("files an approved split's children once across a cut pass, ensuring a reused child's labels", async () => {
 		const result: Triage = {
@@ -890,6 +921,147 @@ const LOW_FLAGS = [
 	"factory: Greet by name",
 ];
 
+/** `stored` with its spec written at `at`, and touching `touches` when given. */
+const written = (stored: Stored, at: number, touches?: string[]) => {
+	const data = dataAt(stored);
+	const result = data.result;
+	const comment = specAt(stored);
+	if (!result?.spec || !comment) throw new Error("no spec to rewrite");
+	const spec = { ...result.spec, touches: touches ?? result.spec.touches };
+	comment.body = commentOf(
+		{ ...data, specAt: at, result: { ...result, spec } },
+		stateOf(stored) ?? "needs-triage",
+		BOT,
+	);
+	return stored;
+};
+const slicesOf = (t: { starts: string[][] }) =>
+	t.starts.filter((a) => a[1]?.endsWith("slice.ts"));
+const STALE =
+	"The spec predates #8's, which also touches `greet.sh`. Re-triaging against current main.";
+
+describe("a stale spec", () => {
+	test("re-triages a ready ticket whose spec predates an approved one touching the same file, then triages it as an encore", async () => {
+		const t = setup([
+			written(specced(7, "ready-for-agent"), 100),
+			written(specced(8, "in-progress"), 200),
+		]);
+		await t.run();
+		expect(slicesOf(t)).toEqual([]);
+		expect(t.find(7).labels).toContain("state/needs-triage");
+		expect(questionsAt(t.find(7))).toHaveLength(1);
+		expect(questionsAt(t.find(7))[0]).toContain(STALE);
+		expect(t.starts[0]?.slice(0, 2)).toEqual(["encore", "c0"]);
+		expect(t.starts[0]?.join(" ")).toContain("## Question by the tour manager");
+	});
+
+	test.each([
+		["no shared file", 200, ["other.sh"]],
+		["an older spec", 50, ["greet.sh"]],
+		["a spec written at the same moment", 100, ["greet.sh"]],
+	])(
+		"builds a ready ticket whose spec shares no file with a later one, or is the newer: %s",
+		async (_, at, touches) => {
+			const t = setup([
+				written(specced(7, "ready-for-agent"), 100),
+				written(specced(8, "ready-for-agent"), at, touches),
+			]);
+			await t.run();
+			expect(slicesOf(t)).toHaveLength(1);
+			expect(t.find(7).labels).toContain("state/in-progress");
+		},
+	);
+
+	test("builds a ready ticket after an overlapping one lands, since rewriting its spec comment does not date its spec anew", async () => {
+		const t = setup(
+			[
+				written(specced(7, "in-progress", { slice: "s1" }), 100),
+				written(specced(9, "ready-for-agent"), 200),
+			],
+			[sliceConcert("s1", 7)],
+			{ s1: { status: "ok", outputs: {} } },
+		);
+		await t.run();
+		expect(t.find(7).labels).toContain("state/in-review");
+		expect(slicesOf(t)).toHaveLength(1);
+		expect(t.find(9).labels).toContain("state/in-progress");
+	});
+
+	test("builds a ready ticket, or one whose overlap source is undated, when its stored data predates specAt", async () => {
+		const undated = specced(7, "ready-for-agent");
+		const t = setup([undated, written(specced(8, "in-progress"), 200)]);
+		await t.run();
+		expect(slicesOf(t)).toHaveLength(1);
+		expect(t.find(7).labels).toContain("state/in-progress");
+
+		const u = setup([
+			written(specced(7, "ready-for-agent"), 100),
+			specced(8, "in-progress"),
+		]);
+		await u.run();
+		expect(slicesOf(u)).toHaveLength(1);
+	});
+
+	test("posts a second bounce for the same overlap once the first was read, instead of stranding the ticket", async () => {
+		const t = setup([
+			written(specced(7, "ready-for-agent"), 100),
+			written(specced(8, "in-progress"), 200),
+		]);
+		await t.run();
+		const ready = t.find(7);
+		ready.labels = ready.labels.map((l) =>
+			l === "state/needs-triage" ? "state/ready-for-agent" : l,
+		);
+		await t.run();
+		expect(questionsAt(t.find(7))).toHaveLength(2);
+		expect(t.find(7).labels).toContain("state/needs-triage");
+		expect(t.starts.map((a) => a.slice(0, 2))).toEqual([
+			["encore", "c0"],
+			["encore", "c0"],
+		]);
+	});
+
+	test("names every overlapping ticket, and a ticket closed as completed after the spec but not one closed undone", async () => {
+		const done = written(specced(9, "in-review"), 10);
+		done.open = false;
+		done.closed = 300;
+		const dropped = written(specced(10, "wontfix"), 10, ["greet.sh"]);
+		dropped.open = false;
+		dropped.closed = 300;
+		dropped.labels.push("state/wontfix");
+		const t = setup([
+			written(specced(7, "ready-for-agent"), 100),
+			written(specced(8, "in-progress"), 200, ["greet.sh", "a.ts"]),
+			done,
+			dropped,
+		]);
+		await t.run();
+		expect(questionsAt(t.find(7))[0]).toContain(
+			"The spec predates #8's, which also touches `greet.sh` and #9's, which also touches `greet.sh`. Re-triaging",
+		);
+		expect(questionsAt(t.find(7))[0]).not.toContain("#10");
+	});
+
+	test("builds the next ready ticket in the same pass, and encores a continued build without comparing", async () => {
+		const t = setup([
+			written(specced(7, "ready-for-agent"), 100),
+			written(specced(8, "in-progress"), 200),
+			written(specced(9, "ready-for-agent"), 300, ["other.sh"]),
+		]);
+		await t.run();
+		expect(t.find(7).labels).toContain("state/needs-triage");
+		expect(slicesOf(t)).toHaveLength(1);
+		expect(t.find(9).labels).toContain("state/in-progress");
+
+		const encored = answeredOnce(
+			written(specced(7, "ready-for-agent", { encore: "c1" }), 100),
+		);
+		const u = setup([encored, written(specced(8, "in-progress"), 200)]);
+		await u.run();
+		expect(u.starts[0]?.slice(0, 2)).toEqual(["encore", "c1"]);
+	});
+});
+
 describe("a build", () => {
 	test("starts a slice of a pinned ready issue before an older one", async () => {
 		const t = setup([
@@ -1170,7 +1342,11 @@ describe("a build", () => {
 		]);
 		expect(t.writes.some((w) => w.startsWith("depend"))).toBe(false);
 		expect(t.starts.filter((a) => a.includes("--request"))).toEqual([]);
-		routed.comments.push({ id: 900, body: "@forge-bot go on", author: OWNER });
+		routed.comments.push({
+			id: 900,
+			body: "@forge-bot go on",
+			author: OWNER,
+		});
 		routed.labels = ["kind/enhancement", "risk/low", "state/ready-for-agent"];
 		await t.run();
 		expect(t.starts.filter((a) => a.includes("--request"))).toEqual([
@@ -1215,7 +1391,11 @@ describe("a build", () => {
 		[
 			"encores the concert to continue fed the replies mentioning it newer than the last read, moving read on",
 			[
-				{ id: 700, body: "@forge-bot Q1: use bash\n", author: OWNER },
+				{
+					id: 700,
+					body: "@forge-bot Q1: use bash\n",
+					author: OWNER,
+				},
 				{ id: 710, body: "No mention here", author: OWNER },
 			],
 			`${requestFor(7)}\n## Reply by ${OWNER}\n\n@forge-bot Q1: use bash\n`,

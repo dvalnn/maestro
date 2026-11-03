@@ -26,9 +26,11 @@ import {
 	type Spend,
 } from "./maestro";
 import {
+	type Approval,
 	buildable,
 	isIntake,
 	issueText,
+	overlaps,
 	pick,
 	riskOf,
 	snapshot,
@@ -115,7 +117,13 @@ export type Deps = {
 type Entry = { issue: Issue; comments: Comment[]; data: Data };
 /** One pass's view: `login` is the account the tick acts as on the forge. */
 type Pass = Deps &
-	Options & { milestoneId: number; concerts: Concert[]; login: string };
+	Options & {
+		milestoneId: number;
+		concerts: Concert[];
+		login: string;
+		/** The newest closed issues, read once per pass. */
+		closed: () => Promise<Issue[]>;
+	};
 
 /**
  * Takes an exclusive `flock` on `path`, false when another holder has it. The descriptor stays open, holding the
@@ -191,10 +199,14 @@ const whichWay = (lead: string, options: Option[]) =>
 		"Label the ticket with your choice.",
 	);
 
-/** Posts question comment `body` on issue `number` unless one holds it already, so a repeated pass posts it once. */
-async function ask({ forge }: Deps, number: number, body: string) {
+/**
+ * Posts question comment `body` on issue `number` unless one above comment id `after` holds it already, so a repeated
+ * pass posts it once and a repeat of an answered question is posted again.
+ */
+async function ask({ forge }: Deps, number: number, body: string, after = 0) {
 	const comments = await forge.comments(number);
-	if (comments.some((c) => c.body.trim() === body.trim())) return;
+	if (comments.some((c) => c.id > after && c.body.trim() === body.trim()))
+		return;
 	await forge.comment(number, body);
 }
 
@@ -244,23 +256,34 @@ function triageOf(result: Result): Triage | string {
 	}
 }
 
-/** The labels of an issue closed without being done: a duplicate's original must not carry one while closed. */
+/** The labels of an issue closed without being done. */
 const NOT_DONE = ["state/wontfix", "state/duplicate"];
 
+/** The ask of a `needs-info` for duplicate `number` whose `original` tracks nothing, undefined when it tracks it. */
+function untracked(number: number, original: number, found?: Issue) {
+	const head = `Triage found #${number} a duplicate of #${original}, which`;
+	const tail = `so nothing live tracks it.`;
+	if (!found)
+		return `${head} does not exist, ${tail} Name the original, or say what to do with #${number}.`;
+	const label =
+		found.closed !== undefined &&
+		NOT_DONE.find((l) => found.labels.includes(l));
+	return (
+		label &&
+		`${head} is closed as \`${label}\`, ${tail} Reopen #${original}, or say what to do with #${number}.`
+	);
+}
+
 /**
- * `result`, or a `needs-info` asking the owner where the request lives when it is a duplicate of an issue that is
- * closed as `wontfix` or `duplicate`, which tracks nothing.
+ * `result`, or a `needs-info` asking the owner where the request lives when it is a duplicate of an issue that does
+ * not exist or is closed as `wontfix` or `duplicate`, which tracks nothing.
  */
 async function liveOriginal(pass: Pass, number: number, result: Triage) {
 	const { duplicateOf: original, ...rest } = result;
 	if (result.verdict !== "duplicate" || original === undefined) return result;
-	const { labels } = await pass.forge.issue(original);
-	const why = NOT_DONE.find((l) => labels.includes(l));
-	if (!why || (await pass.forge.open({})).some((i) => i.number === original))
-		return result;
-	const ask =
-		`Triage found #${number} a duplicate of #${original}, which is closed as \`${why}\`, so nothing live tracks it. ` +
-		`Reopen #${original}, or say what to do with #${number}.`;
+	const found = await pass.forge.issue(original).catch(() => undefined);
+	const ask = untracked(number, original, found);
+	if (!ask) return result;
 	const question = { ask, options: [], context: [] };
 	return { ...rest, verdict: "needs-info" as const, questions: [question] };
 }
@@ -317,6 +340,7 @@ async function settle(pass: Pass, { issue, data }: Entry, id: string) {
 		triage: id,
 		result,
 		version: (data.version ?? 0) + 1,
+		specAt: Date.now(),
 	};
 	await writeSpec(pass, issue.number, VERDICT_STATE[result.verdict], {
 		...routed,
@@ -1055,12 +1079,100 @@ async function queue(pass: Pass, { issue, comments, data }: Entry) {
 	await writeSpec(pass, issue.number, "ready-for-agent", data, waiting);
 }
 
+/** The states whose tickets hold a spec the owner approved. */
+const APPROVED: readonly State[] = [
+	"ready-for-agent",
+	"in-progress",
+	"in-review",
+];
+
+/** Closed issue `issue` as an approval at its close, undefined when it closed undone or its spec cannot be read. */
+async function closedApproval(
+	{ forge }: Pass,
+	issue: Issue,
+): Promise<Approval | undefined> {
+	if (
+		issue.closed === undefined ||
+		NOT_DONE.some((l) => issue.labels.includes(l))
+	)
+		return undefined;
+	const comment = specCommentOf(await forge.comments(issue.number));
+	try {
+		const touches = dataOf(comment?.body ?? "").result?.spec?.touches;
+		return touches && { number: issue.number, at: issue.closed, touches };
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Every ticket whose spec the owner approved or that closed as completed, with when its spec was written (`specAt`)
+ * or it closed (factory.md, Rules: Stale spec). A ticket whose data holds no `specAt` is left out.
+ */
+async function approvals(pass: Pass, entries: Entry[]): Promise<Approval[]> {
+	const open = entries.flatMap(({ issue, data }) => {
+		const state = stateOf(issue);
+		const touches = data.result?.spec?.touches;
+		return state &&
+			APPROVED.includes(state) &&
+			touches &&
+			data.specAt !== undefined
+			? [{ number: issue.number, at: data.specAt, touches }]
+			: [];
+	});
+	const closed = await Promise.all(
+		(await pass.closed()).map((i) => closedApproval(pass, i)),
+	);
+	return [...open, ...closed.filter((a) => a !== undefined)];
+}
+
+/** The lead of the comment saying a spec predates the `found` approvals that share files with it. */
+const staleLead = (found: ReturnType<typeof overlaps>) =>
+	`The spec predates ${found
+		.map(
+			(o) =>
+				`#${o.number}'s, which also touches ${o.files.map((f) => `\`${f}\``).join(", ")}`,
+		)
+		.join(" and ")}. Re-triaging against current main.`;
+
+/**
+ * Moves ready `entry` to `needs-triage` with a question comment naming the tickets approved or closed after its spec
+ * that touch the same files, and returns true; false when it shares none, or holds no `specAt`, and builds
+ * (factory.md, Rules: Stale spec).
+ */
+async function retriage(
+	pass: Pass,
+	{ issue, data }: Entry,
+	spec: Spec,
+	approved: () => Promise<Approval[]>,
+) {
+	if (data.specAt === undefined) return false;
+	const others = (await approved()).filter((a) => a.number !== issue.number);
+	const found = overlaps(spec.touches, data.specAt, others);
+	if (!found.length) return false;
+	await ask(
+		pass,
+		issue.number,
+		questionOf(
+			[{ ask: staleLead(found), options: [], context: [] }],
+			"No reply needed: the next tick triages it again.",
+		),
+		data.read,
+	);
+	await move(pass, issue.number, "needs-triage");
+	await writeSpec(pass, issue.number, "needs-triage", data);
+	pass.say(`#${issue.number}: spec is stale, moved to needs-triage`);
+	return true;
+}
+
 /**
  * Finishes work first: continues a ticket with changes requested, else builds the first buildable issue, pinned ones
- * first, that its blockers let build; true when it started none.
+ * first, that its blockers let build and whose spec is not stale; true when it started none.
  */
 async function build(pass: Pass, entries: Entry[]) {
 	if (!(await revise(pass, entries))) return false;
+	let approved: Promise<Approval[]> | undefined;
+	const approvedOnce = () => (approved ??= approvals(pass, entries));
 	for (const entry of buildable(entries, await pass.forge.pinned())) {
 		const spec = entry.data.result?.spec;
 		const base = await baseOf(pass, entry.issue.number);
@@ -1069,12 +1181,10 @@ async function build(pass: Pass, entries: Entry[]) {
 			await queue(pass, entry);
 			continue;
 		}
-		await startSlice(
-			pass,
-			entry,
-			base.stack,
-			await performOf(pass, entry, spec),
-		);
+		const perform = await performOf(pass, entry, spec);
+		if (!perform.encore && (await retriage(pass, entry, spec, approvedOnce)))
+			continue;
+		await startSlice(pass, entry, base.stack, perform);
 		return false;
 	}
 	return true;
@@ -1124,7 +1234,7 @@ async function triage(pass: Pass, entries: Entry[]) {
 		return true;
 	}
 	const [closed, pulls] = await Promise.all([
-		pass.forge.closed(CLOSED),
+		pass.closed(),
 		pass.forge.pulls(),
 	]);
 	const issues = entries.map((e) => e.issue);
@@ -1191,7 +1301,15 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 	const running = concerts.find((c) => c.status === "running");
 	if (running) return deps.say(`concert ${running.id} is still running`);
 	const login = await deps.forge.login();
-	const pass: Pass = { ...deps, ...options, milestoneId, concerts, login };
+	let closed: Promise<Issue[]> | undefined;
+	const pass: Pass = {
+		...deps,
+		...options,
+		milestoneId,
+		concerts,
+		login,
+		closed: () => (closed ??= deps.forge.closed(CLOSED)),
+	};
 	const steps = options.routeOnly
 		? [route, sync]
 		: [route, sync, build, triage];

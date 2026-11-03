@@ -273,3 +273,18 @@ test("pinned reads the numbers in the order the API lists them", async () => {
 	]);
 	expect(calls[0]?.url).toEndWith("/issues/pinned");
 });
+
+test("closed reads when each issue closed, none for an open one", async () => {
+	const { send } = recording(() => [
+		200,
+		[
+			{ number: 4, closed_at: "2026-11-03T11:00:00Z" },
+			{ number: 5, closed_at: null },
+		],
+	]);
+	const issues = await withShims(() => forge(signedIn, send).closed(2));
+	expect(issues.map((i) => i.closed)).toEqual([
+		Date.parse("2026-11-03T11:00:00Z"),
+		undefined,
+	]);
+});

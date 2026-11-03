@@ -137,7 +137,7 @@ An edge in the diagrams names who causes the move; the tick sets the label unles
 | ----------------- | --------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
 | `needs-triage`    | Filed, not yet evaluated                            | owner, tick[^new], owner[^answer]    | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate`           |
 | `needs-approval`  | Spec or split waits for the owner's go              | triage, harvest                      | `ready-for-agent`, `needs-triage`[^answer], `ready-for-human`, `wontfix` |
-| `ready-for-agent` | Specified and queued for a slice concert            | triage, owner[^approve], slice[^red] | `in-progress`[^epic]                                                     |
+| `ready-for-agent` | Specified and queued for a slice concert            | triage, owner[^approve], slice[^red] | `in-progress`[^epic], `needs-triage`[^new]                               |
 | `in-progress`     | Being built: a slice concert, or an epic's children | tick, owner[^changes]                | `in-review`, `ready-for-agent`, `needs-info`, closed[^epic]              |
 | `in-review`       | PR open, waiting on CI and review                   | tick                                 | `in-progress`, `needs-info`, closed                                      |
 | `needs-info`      | Waiting on an answer                                | triage, slice, tick                  | `ready-for-agent`[^answer], `needs-triage`[^answer], `in-progress`[^app] |
@@ -145,7 +145,9 @@ An edge in the diagrams names who causes the move; the tick sets the label unles
 | `wontfix`         | Will not be actioned                                | owner                                | closed                                                                   |
 | `duplicate`       | Repeats another issue, closed with a link           | triage                               | closed                                                                   |
 
-[^new]: The tick files obstacles and an approved split's children as `needs-triage`.
+[^new]:
+    The tick files obstacles and an approved split's children as `needs-triage`, and sends a ready ticket there when its
+    spec went stale (Rules: Stale spec).
 
 [^approve]: On approving a spec (`needs-approval`) or answering (`needs-info`).
 
@@ -192,6 +194,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     IN["intake ¹"] -->|"[triage] question"| NI["needs-info"]
+    RA -->|"[tick] stale"| IN
     NA["needs-approval"] -->|"[owner] answer"| IN
     IP["in-progress"] -->|"[slice, tick] blocked"| NI
     NI -->|"[owner] answer"| RA["ready-for-agent"]
@@ -257,14 +260,14 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   thread keeps it. Only a comment by the login counts as one; the marker from anyone else is ordinary text.
 - **Data.** The spec comment ends in one hidden `<!-- maestro-tm-data {...} -->` JSON line, the tick's only state:
   `concert`, the last concert it routed; `triage`, the last ok triage, which a re-triage continues; `read`, the id of
-  the newest comment a triage was fed; `version`, the spec's; `result`, that triage's output, where a question stored as
-  a string reads as an ask alone; `pending`, set while the result's labels are not yet applied; `filed`, an approved
-  split's children; `slice`, the slice concert the last build started; `attempts`, the rejected slices spent; `failure`,
-  the reason the last slice failed; `parked`, a slice concert routed but not applied; `stack`, the dependency the last
-  build stacked on, its PR and that PR's head commit, until the restack; `encore`, the slice concert to continue, which
-  a slice routed to `needs-info`, blocked or out of attempts, sets to itself and a retry, a landing, a parked concert or
-  a re-triage clears; and `review`, the id of the newest review requesting changes an encore was fed. A line the tick
-  cannot read halts the tour manager.
+  the newest comment a triage was fed; `version`, the spec's; `specAt`, when a routed triage wrote it, in ms; `result`,
+  that triage's output, where a question stored as a string reads as an ask alone; `pending`, set while the result's
+  labels are not yet applied; `filed`, an approved split's children; `slice`, the slice concert the last build started;
+  `attempts`, the rejected slices spent; `failure`, the reason the last slice failed; `parked`, a slice concert routed
+  but not applied; `stack`, the dependency the last build stacked on, its PR and that PR's head commit, until the
+  restack; `encore`, the slice concert to continue, which a slice routed to `needs-info`, blocked or out of attempts,
+  sets to itself and a retry, a landing, a parked concert or a re-triage clears; and `review`, the id of the newest
+  review requesting changes an encore was fed. A line the tick cannot read halts the tour manager.
 - **Spec check.** After the planner proposes a ready spec, a checker on another model family (`gpt-6.1-terra` through
   `pi`, low effort, `.maestro/presets/triage.yaml`) checks it against the scouts' answers and the code. Every claim the
   spec makes about the base must hold, and the spec must miss no place the change touches, such as the uninstall path
@@ -325,6 +328,17 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   spec and the ask as `--request`, and its risk's tier as `--tier` and `--preset`. Presets layer in order: the tier's,
   then `area-<area>` when the ticket has an `area/<area>` label and `.maestro/presets/area-<area>.yaml` exists, then the
   tick's own `--preset`s, in order. The ticket moves to `in-progress` as the perform starts.
+- **Stale spec.** A fresh build of a ready ticket first compares its spec's `touches` with those of every other ticket
+  whose spec was approved after its own: one in `ready-for-agent`, `in-progress` or `in-review` whose `specAt` is later,
+  or one closed as completed (not `state/wontfix` or `state/duplicate`) after this spec's `specAt`. A routed triage
+  stamps `specAt` with the tick's clock; rewriting the spec comment for a landing or a queue change does not, and the
+  forge's `closed_at` times a closure, so a tie is not newer. A ticket whose data holds no `specAt` is never bounced and
+  is no overlap source. On a shared file the ticket is not built: the tick posts a question comment,
+  ``The spec predates #N's, which also touches `<file>`. Re-triaging against current main.``, naming each such ticket
+  and its shared files, unless one above `read` holds it already, and moves the ticket to `needs-triage`. The pass goes
+  on to the next buildable ticket, then to triage, which re-triages the ticket as an encore (Rules: Answers) and writes
+  a spec newer than those it overlapped, so it builds. An encore of a running or landed build is not compared: the
+  builder has its context.
 - **Landing.** An ok slice lands in a fresh jj workspace `factory-i<n>` on `main` as fetched from `origin`, or on the
   commit it stacked on, at `$XDG_CACHE_HOME/maestro-factory/i<n>`: `maestro cs apply`, then `jj describe` with the
   spec's subject and `Closes #N`. It runs no check of its own: the slice's gate passed in its lane, and CI checks the PR
@@ -350,9 +364,9 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   approval of a split the tick files the children as `needs-triage`, in the epic's milestone with `Part of #N`, and
   moves the epic to `in-progress`. The epic closes when its last child does.
 - **Duplicates and related issues.** A duplicate is closed at once as `state/duplicate` with a back-reference, when its
-  original is open or closed as completed; one closed as `state/wontfix` or `state/duplicate` tracks nothing, so the
-  ticket goes to `needs-info` with a question instead. A related issue gets `Relates to #N` in the spec comment and the
-  PR body.
+  original is open or closed as completed; one that does not exist, or is closed as `state/wontfix` or
+  `state/duplicate`, tracks nothing, so the ticket goes to `needs-info` with a question instead. A related issue gets
+  `Relates to #N` in the spec comment and the PR body.
 - **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
   `factory: <issue title>`, the title cut with an ellipsis past 60 characters.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch

@@ -111,6 +111,12 @@ export const TRANSITIONS: readonly Transition[] = [
 		event: "build",
 	},
 	{
+		from: "ready-for-agent",
+		to: "needs-triage",
+		actor: "tick",
+		event: "stale",
+	},
+	{
 		from: "in-progress",
 		to: "in-review",
 		actor: "tick",

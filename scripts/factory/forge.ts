@@ -18,6 +18,8 @@ export type Issue = {
 	labels: string[];
 	/** The milestone's id. */
 	milestone?: number;
+	/** When it closed, in ms since the epoch; absent while open. */
+	closed?: number;
 };
 export type Comment = { id: number; body: string; author: string };
 /** A pull request and its diffstat. */
@@ -278,6 +280,15 @@ function num(o: Json, key: string): number {
 const text = (o: Json, key: string) =>
 	typeof o[key] === "string" ? o[key] : "";
 
+/** The time `o[key]` holds, in ms since the epoch, when it holds one. */
+function time(o: Json, key: string): number | undefined {
+	const v = o[key];
+	if (typeof v !== "string") return undefined;
+	const at = Date.parse(v);
+	if (Number.isNaN(at)) throw new Error(`forge: ${key} is not a time`);
+	return at;
+}
+
 function issueOf(o: Json): Issue {
 	const labels = objects(o.labels ?? [], "labels").map((l) => text(l, "name"));
 	const milestone = o.milestone ? object(o.milestone, "milestone") : undefined;
@@ -287,6 +298,7 @@ function issueOf(o: Json): Issue {
 		body: text(o, "body"),
 		labels,
 		milestone: milestone ? num(milestone, "id") : undefined,
+		closed: time(o, "closed_at"),
 	};
 }
 
