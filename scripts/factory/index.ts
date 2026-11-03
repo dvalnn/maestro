@@ -847,27 +847,24 @@ async function startSlice(
 			: [];
 	let id: string;
 	try {
-		id = await pass.maestro.start(
-			[
-				...(perform.encore
-					? ["encore", perform.encore]
-					: ["perform", SLICE_FILE]),
-				"--request",
-				perform.request,
-				"--tier",
-				tier,
-				"--preset",
-				tier,
-				...area,
-				...pass.presets.flatMap((p) => ["--preset", p]),
-				"--tour",
-				tourOf(pass.milestone, issue.number),
-				"--title",
-				titleOf(issue),
-				...(stack ? ["-c", `target.base=${stack.commit}`] : []),
-			],
-			join(pass.dir, `i${issue.number}.log`),
-		);
+		id = await pass.maestro.start([
+			...(perform.encore
+				? ["encore", perform.encore]
+				: ["perform", SLICE_FILE]),
+			"--request",
+			perform.request,
+			"--tier",
+			tier,
+			"--preset",
+			tier,
+			...area,
+			...pass.presets.flatMap((p) => ["--preset", p]),
+			"--tour",
+			tourOf(pass.milestone, issue.number),
+			"--title",
+			titleOf(issue),
+			...(stack ? ["-c", `target.base=${stack.commit}`] : []),
+		]);
 	} catch (error) {
 		await halt(
 			pass,
@@ -1094,25 +1091,22 @@ async function triage(pass: Pass, entries: Entry[]) {
 	);
 	let id: string;
 	try {
-		id = await pass.maestro.start(
-			[
-				...(data.triage ? ["encore", data.triage] : ["perform", TRIAGE_FILE]),
-				"--issue",
-				issueText(
-					entry.issue,
-					considered.filter((c) => isFed(c, pass.login)),
-					pass.login,
-				),
-				"--backlog",
-				backlog,
-				"--tour",
-				tourOf(pass.milestone, number),
-				"--title",
-				titleOf(entry.issue),
-				...pass.presets.flatMap((p) => ["--preset", p]),
-			],
-			join(pass.dir, `i${number}.log`),
-		);
+		id = await pass.maestro.start([
+			...(data.triage ? ["encore", data.triage] : ["perform", TRIAGE_FILE]),
+			"--issue",
+			issueText(
+				entry.issue,
+				considered.filter((c) => isFed(c, pass.login)),
+				pass.login,
+			),
+			"--backlog",
+			backlog,
+			"--tour",
+			tourOf(pass.milestone, number),
+			"--title",
+			titleOf(entry.issue),
+			...pass.presets.flatMap((p) => ["--preset", p]),
+		]);
 	} catch (error) {
 		await halt(
 			pass,

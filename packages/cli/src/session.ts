@@ -57,6 +57,13 @@ export function isMaestro(pid: number, self = process.execPath): boolean {
 	}
 }
 
+/** The command that runs this program: the executable, then the script when the executable is the runtime. */
+export const selfOf = (
+	executable = process.execPath,
+	script = process.argv[1],
+): string[] =>
+	stem(executable) === RUNTIME && script ? [executable, script] : [executable];
+
 /** The config a command resolved, and where the data root keeps what a command reads and writes. */
 export type Session = {
 	deps: Deps;

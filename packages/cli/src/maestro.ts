@@ -8,6 +8,7 @@ import { loadDotenv } from "./config";
 import { builtinHosts } from "./hosts";
 import { EXIT } from "./output";
 import { fullScreen } from "./screen";
+import { selfOf } from "./session";
 
 const STDIN_FD = 0;
 /** Synchronous writes: `process.exit` drops what an async write to a slow pipe has not yet flushed. */
@@ -78,5 +79,6 @@ process.exit(
 						stderr: (line) => emit(STDERR_FD, `${line}\n`),
 					})
 				: undefined,
+		self: selfOf(),
 	}),
 );

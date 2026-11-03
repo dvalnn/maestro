@@ -51,21 +51,13 @@ This skill was checked against maestro 0.1.0-rc.3. When `maestro --version` name
 3. **Pre-flight.** `maestro compose <c> [flags]`, with the flags perform will get. Done on exit 0. Before a perform on a
    paid harness, give the user the `repo.agent` bound from `maestro compose <c> [flags]` as the spend ceiling.
 4. **Perform in its own session.** `perform` holds its terminal until the concert settles, and a signal to its process
-   group cancels the concert. Start it detached, its output in a fresh directory outside the checkout; echo the
-   directory, since shell state does not carry between tool calls:
+   group cancels the concert. Start it with `--detach`, which runs it in a session of its own and prints its id:
 
    ```sh
-   log=$(mktemp -d) && echo "$log"
-   setsid -f maestro perform <c> [flags] --tour <slug> --title "<what for>" >"$log/out" 2>"$log/err"
+   maestro perform <c> [flags] --tour <slug> --title "<what for>" --detach
    ```
 
-   Poll for the id, bounded, then read it:
-
-   ```sh
-   for _ in $(seq 60); do grep -q '^concert ' "$log/err" && break; sleep 0.5; done; cat "$log/err"
-   ```
-
-   Done when `$log/err` holds a `concert <id>` line. A perform that exits before that line printed why in its place.
+   Done when it exits 0 with the concert's id on stdout. A perform that refuses prints why and exits non-zero.
 
 5. **Follow.** `maestro wait <id> --timeout 90s` in a loop, the timeout shorter than your tool call's own limit, which
    would otherwise cut it off before exit 124: exit 124 means still running, so wait again. Done on any exit but 124. A

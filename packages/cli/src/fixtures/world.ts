@@ -37,6 +37,7 @@ export async function world() {
 			stdout: (line) => out.push(`${line}\n`),
 			stdoutBytes: (bytes) => out.push(new TextDecoder().decode(bytes)),
 			stderr: (line) => err.push(line),
+			self: [process.execPath, MAESTRO],
 			...over,
 			env: { ...env, ...over.env },
 		});

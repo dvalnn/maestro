@@ -1,15 +1,9 @@
-import { spawn } from "node:child_process";
-import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isJson, type Json } from "./json";
 
 /** How many of a milestone's newest concerts the tick reads: one runs at a time, so the newest settle is among them. */
 const WINDOW = 20;
-/** How long a detached perform has to announce its concert. */
-const START_TIMEOUT_MS = 120_000;
-const POLL_MS = 200;
-const ANNOUNCE = /^concert (\S+)$/m;
-const LOG_TAIL = 600;
 
 export type Concert = {
 	id: string;
@@ -40,10 +34,10 @@ export type Maestro = {
 	concerts(tour: string): Promise<Concert[]>;
 	result(id: string): Promise<Result>;
 	/**
-	 * Starts `maestro <args>` detached, its output written to `log`, and returns the concert id it announces.
-	 * @throws Error with the log's tail when it exits before announcing one, or does not announce one in time.
+	 * Starts `maestro <args>` in the background and returns its concert's id.
+	 * @throws Error with maestro's refusal when it does not start.
 	 */
-	start(args: string[], log: string): Promise<string>;
+	start(args: string[]): Promise<string>;
 	report(id: string): Promise<Report>;
 	/**
 	 * Applies concert `id`'s changeset to the checkout at `dir`, staged.
@@ -99,19 +93,8 @@ function upheldOf(doc: unknown): string | undefined {
 		.trim();
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-/**
- * What a perform that announced no concert printed: its refusal's diagnostics, one per line, else its error, else the
- * log's tail.
- */
-function output(log: string): string {
-	const text = readFileSync(log, "utf8");
-	let doc: unknown;
-	try {
-		doc = JSON.parse(text);
-	} catch {
-		return text.slice(-LOG_TAIL).trim();
-	}
+/** What a perform that started no concert printed: its error, else its refusal's diagnostics, one per line. */
+function refusal(doc: unknown): string {
 	if (isJson(doc) && typeof doc.error === "string") return doc.error;
 	const diagnostics =
 		isJson(doc) && Array.isArray(doc.diagnostics) ? doc.diagnostics : [];
@@ -189,32 +172,10 @@ export function maestro(bin = "maestro"): Maestro {
 			};
 		},
 		apply: (id, dir) => run(bin, ["cs", "apply", id, "-C", dir]),
-		start: async (args, log) => {
-			const fd = openSync(log, "w");
-			const child = spawn(bin, [...args, "--json"], {
-				detached: true,
-				stdio: ["ignore", fd, fd],
-			});
-			closeSync(fd);
-			let exited = false;
-			child.on("exit", () => {
-				exited = true;
-			});
-			for (let waited = 0; waited < START_TIMEOUT_MS; waited += POLL_MS) {
-				// Read after taking `exited`, so a perform that announced and exited is never taken for a refusal.
-				const done = exited;
-				const id = ANNOUNCE.exec(readFileSync(log, "utf8"))?.[1];
-				if (id) {
-					child.unref();
-					return id;
-				}
-				if (done) throw new Error(`maestro ${args[0]}:\n${output(log)}`);
-				await sleep(POLL_MS);
-			}
-			child.unref();
-			throw new Error(
-				`maestro ${args[0]} announced no concert:\n${output(log)}`,
-			);
+		start: async (args) => {
+			const doc = await json(bin, [...args, "--detach"]);
+			if (isJson(doc) && typeof doc.id === "string") return doc.id;
+			throw new Error(`maestro ${args[0]}:\n${refusal(doc)}`);
 		},
 	};
 }

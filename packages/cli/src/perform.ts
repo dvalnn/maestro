@@ -1,3 +1,12 @@
+import { spawn } from "node:child_process";
+import {
+	closeSync,
+	mkdtempSync,
+	openSync,
+	readFileSync,
+	rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
 	type Concert,
@@ -8,7 +17,7 @@ import {
 	Unencorable,
 	unresumable,
 } from "@maestro/core/perform";
-import { mapWorkers } from "@maestro/ir";
+import { MS_PER_UNIT, mapWorkers } from "@maestro/ir";
 import { shortIds } from "@maestro/render-text/live";
 import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk/loader";
 import { changesOf } from "./changeset";
@@ -32,11 +41,13 @@ import {
 	EXIT,
 	encoreRefused,
 	exitOf,
+	failure,
 	jsonOf,
 	NAME_CONCERT,
 	parseTour,
 	printClosing,
 	renderDiagnostic,
+	resultDoc,
 	resumeRefused,
 } from "./output";
 import {
@@ -64,6 +75,110 @@ import {
 const TOUR_VARIABLE = "MAESTRO_TOUR";
 
 const PERFORM_OPTIONS = { ...COMMON, ...PERFORM_FLAGS } as const;
+const RESUME_OPTIONS = { ...COMMON, detach: PERFORM_FLAGS.detach } as const;
+
+const DETACH = "--detach";
+/** The line a perform announces its concert with on stderr. */
+const ANNOUNCED = /^concert (\S+)$/m;
+/** How often a detaching perform looks for the concert its run announces. */
+const DETACH_POLL_MS = 50;
+/** How long a detaching perform waits for its run to announce a concert. */
+const DETACH_TIMEOUT_MS = 2 * MS_PER_UNIT.m;
+
+/** Starts `argv` as a process in its own session, its stdout written to `out` and its stderr to `err`. */
+function spawnSession(
+	deps: Deps,
+	argv: readonly string[],
+	out: string,
+	err: string,
+) {
+	const fds = [openSync(out, "w"), openSync(err, "w")] as const;
+	const [executable = "", ...rest] = argv;
+	try {
+		return spawn(executable, rest, {
+			cwd: deps.cwd,
+			env: deps.env,
+			detached: true,
+			stdio: ["ignore", ...fds],
+		});
+	} finally {
+		for (const fd of fds) closeSync(fd);
+	}
+}
+
+/**
+ * Runs `command` with `args` again as a process in its own session, without `--detach`: the concert it announces, or
+ * its exit code and output when it exits before announcing one.
+ * @throws CliError, after stopping it, when it announces none within `DETACH_TIMEOUT_MS`.
+ * @throws Error when the process does not start.
+ */
+async function detached(
+	deps: Deps,
+	command: string,
+	args: readonly string[],
+): Promise<{ id: string } | { exit: number; out: string; err: string }> {
+	const dir = mkdtempSync(join(tmpdir(), "maestro-detach-"));
+	const out = join(dir, "out");
+	const err = join(dir, "err");
+	try {
+		const argv = [...deps.self, command, ...args.filter((a) => a !== DETACH)];
+		const run = spawnSession(deps, argv, out, err);
+		let exit: number | undefined;
+		let failed: Error | undefined;
+		run.once("exit", (code) => {
+			exit = code ?? EXIT.failed;
+		});
+		run.once("error", (error) => {
+			failed = error;
+		});
+		for (let waited = 0; waited < DETACH_TIMEOUT_MS; waited += DETACH_POLL_MS) {
+			// Taken before reading, so a run that announced and exited is never taken for one that refused.
+			const ended = exit;
+			if (failed) throw failed;
+			const id = ANNOUNCED.exec(readFileSync(err, "utf8"))?.[1];
+			if (id) {
+				run.unref();
+				return { id };
+			}
+			if (ended !== undefined)
+				return {
+					exit: ended,
+					out: readFileSync(out, "utf8"),
+					err: readFileSync(err, "utf8"),
+				};
+			await Bun.sleep(DETACH_POLL_MS);
+		}
+		run.kill();
+		throw failure(
+			`${command} started no concert within ${DETACH_TIMEOUT_MS / MS_PER_UNIT.m}m, so it was stopped`,
+			"Run it without --detach to see where it stops",
+		);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Starts `command` with `args` in the background: prints the concert's id, or its running document under `json`, and
+ * gives 0; passes through the output and exit code of a run that refuses.
+ */
+async function detach(
+	deps: Deps,
+	command: string,
+	args: readonly string[],
+	json: boolean,
+): Promise<number> {
+	const started = await detached(deps, command, args);
+	if ("exit" in started) {
+		if (started.out) deps.stdoutBytes(Buffer.from(started.out));
+		if (started.err) deps.stderr(started.err.trimEnd());
+		return started.exit;
+	}
+	deps.stdout(json ? jsonOf(resultDoc(started.id, undefined)) : started.id);
+	if (deps.stderrTerminal && !json)
+		deps.stderr(`Follow it: maestro watch ${started.id}`);
+	return EXIT.ok;
+}
 
 /** A prepared concert: the session it is performed in, what to perform, and how it is recorded. */
 type Start = {
@@ -354,11 +469,17 @@ export const perform: Command = {
 			"Put the concert on a tour, with a title",
 			'maestro perform classics.build_then_repair --request "Add a --verbose flag" --tour epic.story --title "Verbose flag"',
 		],
+		[
+			"Start it in the background, then wait for it",
+			'id=$(maestro perform classics.build_then_repair --request "Add a --verbose flag" --detach) && maestro wait "$id"',
+		],
 	],
 	options: PERFORM_OPTIONS,
 	help: compositionHelp,
 	async execute(args, deps) {
 		const early = peek(PERFORM_OPTIONS, args);
+		if (isSet(early, "detach"))
+			return detach(deps, "perform", args, isSet(early, "json"));
 		const session = await openSession(deps, overridesOf(early));
 		const start = await begin(session, args);
 		await warned(start);
@@ -381,14 +502,16 @@ export const resume: Command = {
 			"maestro resume 7f3c2a -c concurrency=2",
 		],
 	],
-	options: COMMON,
+	options: RESUME_OPTIONS,
 	async execute(args, deps) {
 		const { values, positionals } = parse(
-			COMMON,
+			RESUME_OPTIONS,
 			args,
 			"Flags are listed in 'maestro resume --help'",
 		);
 		const prefix = only(positionals, "concert", NAME_CONCERT);
+		if (isSet(values, "detach"))
+			return detach(deps, "resume", args, isSet(values, "json"));
 		return inStore(
 			deps,
 			overridesOf(values),
@@ -420,6 +543,8 @@ export const encore: Command = {
 			NAME_CONCERT,
 		);
 		const early = peek(PERFORM_OPTIONS, rest);
+		if (isSet(early, "detach"))
+			return detach(deps, "encore", args, isSet(early, "json"));
 		const own = overridesOf(early);
 		return inStore(deps, own, isSet(early, "json"), (s, store) =>
 			encored(s, store, prefix, own, rest),

@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Host } from "@maestro/core/host";
@@ -56,6 +56,12 @@ process.exit(
 	return file;
 }
 
+/** The session id of process `pid`, the sixth field of its `/proc/<pid>/stat`. */
+function sessionOf(pid: number) {
+	const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+	return Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[3]);
+}
+
 async function until(done: () => Promise<boolean>) {
 	for (let waited = 0; waited < WAIT_LIMIT_MS; waited += WAIT_STEP_MS) {
 		if (await done()) return;
@@ -65,6 +71,31 @@ async function until(done: () => Promise<boolean>) {
 }
 
 describe("a concert in another process", () => {
+	test("--detach prints the id of a concert it leaves running in its own session, or its document under --json, for perform and resume, and passes a refusal through", async () => {
+		const w = await world();
+		const self = [process.execPath, await hanging()];
+		const started = await w.call(["perform", ...GREET, "--detach"], { self });
+		expect(started.code).toBe(0);
+		const id = started.out;
+		const row = json(await w.call(["ls", id, "--json"]));
+		expect(row.status).toBe("running");
+		expect(sessionOf(row.pid)).toBe(row.pid);
+		expect((await w.call(["kill", id])).code).toBe(0);
+		const resumed = await w.call(["resume", id, "--detach", "--json"], {
+			self,
+		});
+		expect([resumed.code, json(resumed)]).toEqual([
+			0,
+			{ id, status: "running" },
+		]);
+		expect((await w.call(["kill", id])).code).toBe(0);
+		expect(await w.call(["perform", "nope.ts", "--detach"], { self })).toEqual({
+			code: 2,
+			out: "",
+			err: "error: no such file: nope.ts\n  Check the path",
+		});
+	});
+
 	test("is waited on, refused a resume and a prune while running, killed, then resumed from the changed pack without redoing settled nodes", async () => {
 		const w = await world();
 		const child = w.spawn(["perform", ...GREET], await hanging());

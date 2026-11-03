@@ -17,7 +17,7 @@ case "$1 $2" in
 	"perform refused") echo "refused.ts does not compose" >&2; exit 2 ;;
 	"perform diagnosed") echo '{"ok":false,"diagnostics":[{"code":"CFG.preset","severity":"error","message":"--preset x names no file","hint":"Create x.yaml"},{"code":"HOST.profile","severity":"error","message":"profile p is in no profile root"}]}'; exit 2 ;;
 	"perform errored") printf '%s\n' '{"ok":false,"error":"no such file: x.ts\\nCheck the path","exit":2}'; exit 2 ;;
-	"perform "*) echo "concert c9" >&2; sleep 1 ;;
+	"perform "*) echo '{"id":"c9","status":"running"}' ;;
 esac
 `,
 );
@@ -49,12 +49,12 @@ test("a report whose upheld file is gone has no upheld findings", async () => {
 	expect((await fake.report("c3")).upheld).toBeUndefined();
 });
 
-test("a detached perform returns the concert it announces", async () => {
-	expect(await fake.start(["perform", "x.ts"], join(dir, "ok.log"))).toBe("c9");
+test("a perform started in the background returns its concert", async () => {
+	expect(await fake.start(["perform", "x.ts"])).toBe("c9");
 });
 
 test.each([
-	["its output", "refused", "maestro perform:\nrefused.ts does not compose"],
+	["its stderr", "refused", "maestro perform: refused.ts does not compose"],
 	[
 		"its diagnostics, one per line",
 		"diagnosed",
@@ -65,11 +65,6 @@ test.each([
 		"errored",
 		"maestro perform:\nno such file: x.ts\nCheck the path",
 	],
-])(
-	"a perform that exits before announcing a concert throws %s",
-	async (_, arg, thrown) => {
-		await expect(
-			fake.start(["perform", arg], join(dir, `${arg}.log`)),
-		).rejects.toThrow(thrown);
-	},
-);
+])("a perform that starts no concert throws %s", async (_, arg, thrown) => {
+	await expect(fake.start(["perform", arg])).rejects.toThrow(thrown);
+});

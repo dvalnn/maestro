@@ -89,6 +89,10 @@ export const PERFORM_FLAGS = {
 		desc: "Put the concert on this tour (default: MAESTRO_TOUR)",
 	},
 	title: { type: "string", arg: "text", desc: "Give the concert a title" },
+	detach: {
+		type: "boolean",
+		desc: "Run the concert in the background: print its id once it starts, then exit",
+	},
 } as const satisfies Options;
 
 /** Flags a param may not take, whichever command reads the composition, so it is valid for all of them or none. */

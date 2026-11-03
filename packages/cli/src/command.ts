@@ -35,6 +35,8 @@ export type Deps = {
 	stderrTerminal?(): { columns: number };
 	/** The terminal as a screen a view drives by keys. Absent unless stdin and stdout are both terminals. */
 	screen?: Screen;
+	/** The command that runs this program, executable first, to run it again. */
+	self: readonly string[];
 };
 
 /** A terminal taken over whole, from `enter` until `leave`. */

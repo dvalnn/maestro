@@ -13,7 +13,7 @@ maestro wait <concert> --timeout 15m
 | Command                                       | Alias | Does                                                                                                                                                      |
 | --------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `compose <composition>`                       | `c`   | Builds and pre-flights a composition. `--plan` (with each agent's profile, harness, model, thinking[^plan]), `--graph`, `--graph --flow`[^flow], `--out`. |
-| `perform <composition>`                       | `p`   | Performs it as a concert in the foreground. `--tour`, `--title`.                                                                                          |
+| `perform <composition>`                       | `p`   | Performs it as a concert in the foreground, or in the background with `--detach`. `--tour`, `--title`.                                                    |
 | `resume <concert>`                            | `r`   | Resumes a failed or rejected concert, reusing each `ok` instance still valid.[^resume]                                                                    |
 | `encore <concert>`                            | `e`   | Performs a concert's composition again as a new concert, its agents continuing their sessions.[^encore]                                                   |
 | `ls [<concert>]`                              |       | Lists concerts, or one concert's node instances. `--status`, `--composition`, `--tour`, `--workspace`, `--limit`.                                         |
@@ -251,8 +251,10 @@ concert's total as the `tokens` column counts it. `ls --json` rows and `ls <conc
 `settledAt - startedAt`, or the time since `startedAt` while the concert runs.
 
 `perform` announces `concert <id>`, the full id, on stderr when it starts, and on a terminal adds
-`Follow it: maestro watch <id>`. `perform`, `wait` and `watch` on a terminal end with the closing block, its labels in
-one column:
+`Follow it: maestro watch <id>`. With `--detach`, `perform`, `encore` and `resume` run the concert in a process of its
+own session and exit 0 once it starts, printing its id on stdout, or under `--json` `{"id": <id>, "status": "running"}`,
+and stops a run that starts no concert within 2 minutes; a run that refuses passes its output and exit code through.
+`perform`, `wait` and `watch` on a terminal end with the closing block, its labels in one column:
 
 ```text
 concert    pwmqwmlu  ok  4m12s · 182.4k tok
