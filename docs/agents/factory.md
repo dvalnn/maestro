@@ -269,13 +269,15 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   sets to itself and a retry, a landing, a parked concert or a re-triage clears; and `review`, the id of the newest
   review requesting changes an encore was fed. A line the tick cannot read halts the tour manager.
 - **Spec check.** After the planner proposes a ready spec, a checker on another model family (`gpt-6.1-terra` through
-  `pi`, low effort, `.maestro/presets/triage.yaml`) checks it against the scouts' answers and the code. Every claim the
-  spec makes about the base must hold, and the spec must miss no place the change touches, such as the uninstall path
-  beside an install. Each failure becomes a question, so the issue goes to `needs-info` as any other question does
-  (Rules: Answers); with none, the triage is unchanged. A split or a needs-info proposal is not checked. A ready
-  proposal's spec stays in the result whatever question sends it to `needs-info`, so a re-triage's planner is given it
-  and the owner may approve it by moving the ticket to `ready-for-agent`. A check that fails to run asks one question,
-  `The spec check did not run: <reason>. Approve the spec as is, or re-triage.`; the failure halts nothing.
+  `pi`, medium effort, `.maestro/presets/triage.yaml`) checks it against the scouts' answers and the code. Every claim
+  the spec makes about the base must hold, and the spec must miss no place the change touches, such as the uninstall
+  path beside an install. It must also fit the architecture: no duplicate helper, needless module or flag, wider
+  interface, crossed package boundary or unruled lasting decision. Each failure becomes a question, so the issue goes to
+  `needs-info` as any other question does (Rules: Answers); with none, the triage is unchanged. A split or a needs-info
+  proposal is not checked. A ready proposal's spec stays in the result whatever question sends it to `needs-info`, so a
+  re-triage's planner is given it and the owner may approve it by moving the ticket to `ready-for-agent`. A check that
+  fails to run asks one question, `The spec check did not run: <reason>. Approve the spec as is, or re-triage.`; the
+  failure halts nothing.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. The owner
   answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`, then moving
   the ticket to `needs-triage`; a waiting spec in `needs-approval` is answered or redirected the same way. A triage,

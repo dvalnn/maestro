@@ -588,6 +588,8 @@ Write plan.json in exactly this shape, leaving out spec, children and related wh
 - decisions and excluded: each item a lead and its points. The lead only titles its points; every fact, reference and reason belongs in a point, one fact each, and a reference is a plain last point "In <path>". what names the change, and the facts behind it go in the decisions. A decision is a choice where another option was live, or a fact the owner has to approve; leave out calls, statement order and shell lines, which the builder works out. Either list may be empty.
 - children, for split: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
 - related: the backlog issues it relates to.
+- Codebase health comes before the feature. Before deciding, read the parts of docs/architecture.md and CODING_STANDARDS.md for the packages the change touches. what names the module that owns the change; the change extends what is there, never a parallel path.
+- When the ask can only be met by a shortcut, such as a special case in a shared module, a flag threaded through calls, a second route around an existing seam or domain logic in a domain-free package, do not decide it: split, the first part the refactor the feature needs, when that refactor is clear; needs-info, a question naming the clean option and its cost, when it is the owner's choice.
 - When the issue carries the spec the last triage proposed, start from it: change what the replies below it ask, and keep the rest.
 - questions: what only the owner can answer. Any question sends the issue to needs-info whatever the verdict, so settle yourself what the code settles. ${ASKING}`;
 
@@ -596,7 +598,8 @@ Write check.json in exactly this shape:
 {"questions": [{"ask": "the failure and what the owner should say about it, one line", "options": [], "context": [{"topic": "Claim", "text": "what the spec says and what the code shows, with its file:line"}]}]}
 - A claim the spec makes about the base holds: every function, file, flag, behaviour and call site it names exists and behaves as stated, and so does everything it says a change must also update.
 - The spec misses no place the change must touch: the uninstall path beside an install, each other caller of a changed function, each test or doc that states the old behaviour.
-- questions: one per failure, never one for a claim that holds or for a choice the spec makes. Write "questions": [] when nothing fails.
+- The spec fits the architecture. Ask a question, with its file:line, for each of: a duplicate of a helper or pattern the codebase already has (grep for one); a module, abstraction or flag nothing in the ask needs; a public interface wider than the ask; a package boundary crossed, such as domain words in a domain-free package; a decision with lasting weight and no ADR or owner ruling behind it.
+- questions: one per failure, never one for a claim that holds, or for a choice between options that each fit, which is the owner's. Write "questions": [] when nothing fails.
 Use the scouts' answers as leads, and read the code behind each claim yourself.`;
 
 const triager = seat("triager");
