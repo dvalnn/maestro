@@ -405,6 +405,7 @@ async function haltSlice(
 		concert: id,
 		failure: reason,
 		encore: undefined,
+		revisionBase: undefined,
 	});
 	await halt(
 		pass,
@@ -441,7 +442,7 @@ async function fail(
 		concert: id,
 		attempts: attempts || undefined,
 		failure: reason,
-		encore: waits ? id : undefined,
+		...(waits ? { encore: id } : UNCONTINUED),
 	});
 	pass.say(`routed #${issue.number}'s slice to ${state}: ${reason}`);
 	return true;
@@ -506,7 +507,7 @@ async function inWorkspace<T>(
 }
 
 /** The data of a ticket with no concert to continue. */
-const UNCONTINUED: Data = { encore: undefined };
+const UNCONTINUED: Data = { encore: undefined, revisionBase: undefined };
 
 type PullText = Pick<NewPull, "title" | "body">;
 /** Where a landing or restack leaves its issue: in review with its PR, stacked while `stack` is set, else asking. */
@@ -569,15 +570,23 @@ async function publish(
 	return number;
 }
 
-/** Copies `revision` of `entry` alone onto `main` in the workspace at `dir` and publishes it there; a conflict asks. */
+/**
+ * Copies the commits `stack.commit..revision` of `entry` onto `main` in the workspace at `dir` and publishes them there;
+ * a conflict asks.
+ */
 async function restackIn(
 	pass: Pass,
 	entry: Entry,
 	dir: string,
+	stack: Stack,
 	revision: string,
 	text: PullText,
 ): Promise<Outcome> {
-	const restacked = await pass.landing.restack(dir, revision, BASE);
+	const restacked = await pass.landing.restack(
+		dir,
+		`${stack.commit}..${revision}`,
+		BASE,
+	);
 	if ("conflict" in restacked)
 		return {
 			question: `This ticket's change conflicts with \`${BASE}\` once rebased onto it:\n\n${fenced(restacked.conflict)}`,
@@ -653,7 +662,8 @@ async function landIn(
 		};
 	const state = await stackState(pass.forge, issue.number, stack);
 	if (state === "unmerged") return { question: unmerged(stack) };
-	if (state === "merged") return restackIn(pass, entry, dir, commit, text);
+	if (state === "merged")
+		return restackIn(pass, entry, dir, stack, commit, text);
 	const base = branchOf(stack.blocker);
 	const pull = { ...text, head, base };
 	return { pull: await publish(pass, entry, dir, commit, pull), stack };
@@ -668,7 +678,7 @@ async function land(pass: Pass, entry: Entry, id: string, report: Report) {
 	const outcome = await inWorkspace(
 		pass,
 		issue.number,
-		data.stack?.commit ?? BASE,
+		data.revisionBase ?? data.stack?.commit ?? BASE,
 		{
 			title: `landing of #${issue.number} failed`,
 			lead: `The slice concert \`${id}\` of #${issue.number} did not land`,
@@ -729,7 +739,7 @@ async function park(pass: Pass, { issue, data }: Entry, concert: Concert) {
 	await move(pass, issue.number, "needs-info");
 	await writeSpec(pass, issue.number, "needs-info", {
 		...data,
-		...UNCONTINUED,
+		encore: undefined,
 		concert: concert.id,
 		...(slice ? { parked: concert.id } : await dropped(pass, concert.id)),
 	});
@@ -831,7 +841,7 @@ async function fileSplit(pass: Pass, { issue, data }: Entry, entries: Entry[]) {
 }
 
 /** Restacks `entry`'s pushed branch onto `main` in a fresh workspace, with its landed concert's PR text. */
-function restackBranch(pass: Pass, entry: Entry) {
+function restackBranch(pass: Pass, entry: Entry, stack: Stack) {
 	const { issue, data } = entry;
 	const failure = {
 		title: `restack of #${issue.number} failed`,
@@ -846,6 +856,7 @@ function restackBranch(pass: Pass, entry: Entry) {
 			pass,
 			entry,
 			dir,
+			stack,
 			`${branchOf(issue.number)}@origin`,
 			text,
 		);
@@ -861,7 +872,7 @@ async function restack(pass: Pass, entry: Entry, stack: Stack) {
 	if (state === "open") return true;
 	const outcome =
 		state === "merged"
-			? await restackBranch(pass, entry)
+			? await restackBranch(pass, entry, stack)
 			: { question: unmerged(stack) };
 	if (!outcome) return false;
 	await record(pass, entry, entry.data.concert, outcome);
@@ -894,8 +905,8 @@ async function sync(pass: Pass, entries: Entry[]) {
 type Perform = { request: string; encore?: string; data: Data };
 
 /**
- * Performs `perform` for `entry` at its risk's tier and on `stack`'s commit when it stacks, and moves it to
- * `in-progress`; halts on a refusal.
+ * Performs `perform` for `entry` at its risk's tier, cut at its PR's head when it revises, else on `stack`'s commit
+ * when it stacks, and moves it to `in-progress`; halts on a refusal.
  */
 async function startSlice(
 	pass: Pass,
@@ -906,6 +917,7 @@ async function startSlice(
 	const result = data.result;
 	if (!result) return;
 	const tier = tierOf(issue, result);
+	const cut = perform.data.revisionBase ?? stack?.commit;
 	const name = issue.labels
 		.find((l) => l.startsWith("area/"))
 		?.slice("area/".length);
@@ -931,7 +943,7 @@ async function startSlice(
 			tourOf(pass.milestone, issue.number),
 			"--title",
 			titleOf(issue),
-			...(stack ? ["-c", `target.base=${stack.commit}`] : []),
+			...(cut ? ["-c", `target.base=${cut}`] : []),
 		]);
 	} catch (error) {
 		await halt(
@@ -992,12 +1004,13 @@ async function performOf(
 	spec: Spec,
 ): Promise<Perform> {
 	const request = requestOf(issue, spec);
-	if (!data.encore) return { request, data };
+	const fresh = { request, data: { ...data, revisionBase: undefined } };
+	if (!data.encore) return fresh;
 	const considered = repliesOf(comments, data.read);
 	const changes = considered
 		.filter((c) => isReply(c, pass.login))
 		.map((c) => ({ heading: `Reply by ${c.author}`, body: c.body }));
-	if (!changes.length) return { request, data };
+	if (!changes.length) return fresh;
 	return {
 		request: encoreRequest(request, changes),
 		encore: data.encore,
@@ -1048,7 +1061,11 @@ async function revision(
 	return {
 		request: encoreRequest(requestOf(issue, spec), reviews.map(reviewChange)),
 		encore: data.concert,
-		data: { ...data, review: Math.max(...reviews.map((r) => r.id)) },
+		data: {
+			...data,
+			review: Math.max(...reviews.map((r) => r.id)),
+			revisionBase: pull.sha,
+		},
 	};
 }
 
@@ -1063,7 +1080,7 @@ async function revise(pass: Pass, entries: Entry[]) {
 		const perform = await revision(pass, entry, pulls);
 		const base = perform && (await baseOf(pass, entry.issue.number));
 		if (!perform || !base) continue;
-		await startSlice(pass, entry, base.stack, perform);
+		await startSlice(pass, entry, entry.data.stack, perform);
 		return false;
 	}
 	return true;

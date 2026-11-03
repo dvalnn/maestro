@@ -71,7 +71,7 @@ export type Triage = {
  * spent, `failure` the reason its last slice failed, `parked` a slice concert routed but not applied and `stack` the
  * in-review blocker its last build stacked on, with its PR and that PR's head commit, until the restack onto `main`.
  * `encore` is the slice concert a build continues and `review` the id of the newest review requesting changes an
- * encore was fed.
+ * encore was fed. `revisionBase` is the head of the PR a revision is cut at and lands on, until it lands.
  */
 export type Data = {
 	concert?: string;
@@ -89,6 +89,7 @@ export type Data = {
 	stack?: Stack;
 	encore?: string;
 	review?: number;
+	revisionBase?: string;
 };
 export type Stack = { blocker: number; commit: string; pull: number };
 
@@ -330,6 +331,7 @@ export function dataOf(comment: string): Data {
 		stack: optional(data, "stack", isStack, "a stack"),
 		encore: optional(data, "encore", isString, "a concert id"),
 		review: optional(data, "review", isNumber, "a review id"),
+		revisionBase: optional(data, "revisionBase", isString, "a commit"),
 	};
 }
 

@@ -17,8 +17,8 @@ export type Landing = {
 	open(dir: string, name: string, base: string): Promise<void>;
 	/** Describes the change of the workspace at `dir` as `message`, and returns its commit id. */
 	describe(dir: string, message: string): Promise<string>;
-	/** Copies `revision` alone, description and all, onto revision `onto` in the workspace at `dir`. */
-	restack(dir: string, revision: string, onto: string): Promise<Restacked>;
+	/** Copies the commits of revset `revisions`, descriptions and all, onto revision `onto` in the workspace at `dir`. */
+	restack(dir: string, revisions: string, onto: string): Promise<Restacked>;
 	/** Forgets workspace `name` and removes `dir`. */
 	close(dir: string, name: string): Promise<void>;
 };
@@ -112,18 +112,25 @@ export function landing(
 				])
 			).trim();
 		},
-		restack: async (dir, revision, onto) => {
+		restack: async (dir, revisions, onto) => {
 			await run(dir, ["jj", ...as, "new", onto]);
 			await run(dir, [
 				"jj",
 				...as,
 				"duplicate",
-				revision,
+				revisions,
 				"--insert-before",
 				"@",
 			]);
-			// A duplicate keeps its author and is not signed; metaedit rewrites it as the account's, signed.
-			await run(dir, ["jj", ...as, "metaedit", "--update-author", "-r", "@-"]);
+			// A duplicate keeps its author and is not signed; metaedit rewrites each as the account's, signed.
+			await run(dir, [
+				"jj",
+				...as,
+				"metaedit",
+				"--update-author",
+				"-r",
+				`${onto}..@-`,
+			]);
 			const [copy = "", conflict] = (
 				await run(dir, [
 					"jj",

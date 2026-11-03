@@ -265,9 +265,10 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   labels are not yet applied; `filed`, an approved split's children; `slice`, the slice concert the last build started;
   `attempts`, the rejected slices spent; `failure`, the reason the last slice failed; `parked`, a slice concert routed
   but not applied; `stack`, the dependency the last build stacked on, its PR and that PR's head commit, until the
-  restack; `encore`, the slice concert to continue, which a slice routed to `needs-info`, blocked or out of attempts,
-  sets to itself and a retry, a landing, a parked concert or a re-triage clears; and `review`, the id of the newest
-  review requesting changes an encore was fed. A line the tick cannot read halts the tour manager.
+  restack; `revisionBase`, the PR head a revision is cut at and lands on; `encore`, the slice concert to continue, which
+  a slice routed to `needs-info`, blocked or out of attempts, sets to itself and a retry, a landing, a parked concert or
+  a re-triage clears; and `review`, the id of the newest review requesting changes an encore was fed. A line the tick
+  cannot read halts the tour manager.
 - **Spec check.** After the planner proposes a ready spec, a checker on another model family (`gpt-6.1-terra` through
   `pi`, medium effort, `.maestro/presets/triage.yaml`) checks it against the scouts' answers and the code. Every claim
   the spec makes about the base must hold, and the spec must miss no place the change touches, such as the uninstall
@@ -309,8 +310,11 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
     comment, headed `## Reply by <author>` as triage feeds it; `read` moves to the newest comment it considered;
   - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`: its
     landed concert, fed each such review headed `## Review by <author>`, its body then its inline comments as
-    `path:line` items. The ticket moves to `in-progress`, `review` moves to the newest, and the settle lands as any
-    other, force-pushing `maestro-tm/i<n>` onto the open PR.
+    `path:line` items. The ticket moves to `in-progress`, `review` moves to the newest, and `revisionBase` records the
+    PR's head. The build is cut at that commit (`-c target.base=<commit>`, over a stack's) and lands on it, so the PR
+    gains a fix commit on top of its own and keeps its base. The settle lands as any other, force-pushing
+    `maestro-tm/i<n>` onto the open PR. A landing, a fresh build and a re-triage clear `revisionBase`; a parked concert,
+    or one blocked or out of attempts, keeps it, so the encore that follows is cut there.
 
   With nothing changed the build is a fresh perform, since an encore with nothing changed is refused.
 
@@ -321,11 +325,11 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   is not armed, since it would merge into the dependency's branch. A ready ticket waiting on open dependencies says so
   in its spec comment's last line, as `queued, waiting on #12, #14`, rewritten only when that set changes.
 - **Restack.** Once no dependency of a stacked ticket is open and the one it stacked on merged its PR, the ticket's
-  commit alone is copied onto `main` in a fresh workspace, force-pushed as `maestro-tm/i<n>`, and its PR retargeted to
-  `main`, or opened anew when the forge closed it with its base branch, then armed when low. Sync does this for a ticket
-  in review; a landing does it straight away when the dependency merged during the build. A copy that conflicts, or a
-  dependency closed without merging, moves the ticket to `needs-info` with a question comment offering `ready-for-agent`
-  (build again on `main`) or `needs-triage`.
+  commits above the one it stacked on are copied onto `main` in a fresh workspace, force-pushed as `maestro-tm/i<n>`,
+  and its PR retargeted to `main`, or opened anew when the forge closed it with its base branch, then armed when low.
+  Sync does this for a ticket in review; a landing does it straight away when the dependency merged during the build. A
+  copy that conflicts, or a dependency closed without merging, moves the ticket to `needs-info` with a question comment
+  offering `ready-for-agent` (build again on `main`) or `needs-triage`.
 - **Build.** A ready ticket is built when its triage left a spec and it is no split's epic: `.maestro/slice.ts` with the
   spec and the ask as `--request`, and its tier (Rules: Risk and tier) as `--tier` and `--preset`. Presets layer in
   order: the tier's, then `area-<area>` when the ticket has an `area/<area>` label and

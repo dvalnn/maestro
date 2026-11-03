@@ -237,8 +237,8 @@ function fakeLanding(failAt?: keyof Landing, output = "", conflict?: string) {
 			step("describe", `describe ${dir}: ${message}`);
 			return "abc123";
 		},
-		restack: async (dir, revision, onto) => {
-			step("restack", `restack ${revision} onto ${onto} in ${dir}`);
+		restack: async (dir, revisions, onto) => {
+			step("restack", `restack ${revisions} onto ${onto} in ${dir}`);
 			return conflict ? { conflict } : { commit: "def456" };
 		},
 		close: async (dir, name) => step("close", `close ${name} at ${dir}`),
@@ -1332,14 +1332,24 @@ describe("a build", () => {
 
 	test("routes a blocked slice to needs-info asking its question with no dependency, then encores it fed the reply", async () => {
 		const t = setup(
-			[specced(7, "in-progress", { slice: "s1", attempts: 1 })],
+			[
+				specced(7, "in-progress", {
+					slice: "s1",
+					attempts: 1,
+					revisionBase: "sha7",
+				}),
+			],
 			[sliceConcert("s1", 7, "failed")],
 			{ s1: failed("blocked: the check contradicts the spec") },
 		);
 		await t.run();
 		const routed = t.find(7);
 		expect(routed.labels).toContain("state/needs-info");
-		expect(dataAt(routed)).toMatchObject({ attempts: 1, encore: "s1" });
+		expect(dataAt(routed)).toMatchObject({
+			attempts: 1,
+			encore: "s1",
+			revisionBase: "sha7",
+		});
 		expect(specAt(routed)?.body).toContain(
 			"#### Last failure\n\n```text\nblocked: the check contradicts the spec\n```",
 		);
@@ -1362,6 +1372,8 @@ describe("a build", () => {
 				"--request",
 				`${requestFor(7)}\n## Reply by ${OWNER}\n\n@forge-bot go on\n`,
 				...LOW_FLAGS,
+				"-c",
+				"target.base=sha7",
 			],
 		]);
 		expect(routed.labels).toContain("state/in-progress");
@@ -1557,6 +1569,7 @@ describe("a build", () => {
 							slice: "s1",
 							version: 3,
 							encore: "s0",
+							revisionBase: "sha7",
 						}),
 					),
 				],
@@ -1567,7 +1580,11 @@ describe("a build", () => {
 			const parked = t.find(7);
 			expect(specAt(parked)?.body).toContain("### Spec v3");
 			expect(parked.labels).toContain("state/needs-info");
-			expect(dataAt(parked)).toMatchObject({ concert: "s1", parked: "s1" });
+			expect(dataAt(parked)).toMatchObject({
+				concert: "s1",
+				parked: "s1",
+				revisionBase: "sha7",
+			});
 			expect(questionsAt(parked)).toEqual([PARK_QUESTION]);
 			expect(specAt(parked)?.body).toContain(
 				"**Maintainer's turn · the question awaits an answer**\n\n- **`ready-for-agent`**: build it again, after a reply with the answer.\n- **`needs-triage`**: re-triage it, after a reply with the answer.\n- **`in-progress`**: apply the parked result.\n",
@@ -1585,6 +1602,10 @@ describe("a build", () => {
 			expect(parked.body).toContain("[spec v3]");
 			expect([t.opened.length, t.starts.length]).toEqual([1 - starts, starts]);
 			expect(t.starts.flat()).not.toContain("encore");
+			expect(t.starts.flat()).not.toContain("target.base=sha7");
+			if (!starts)
+				expect(t.steps[0]).toBe(`open factory-i7 at ${CACHED} on sha7`);
+			expect(dataAt(parked).revisionBase).toBeUndefined();
 			writes = t.writes.length;
 			await t.run();
 			expect(t.writes).toHaveLength(writes);
@@ -1687,7 +1708,7 @@ const STACK = { blocker: 5, commit: "sha5", pull: 21 };
 const CACHED_8 = "/cache/maestro-factory/i8";
 const RESTACKED = [
 	`open factory-i8 at ${CACHED_8} on main`,
-	`restack maestro-tm/i8@origin onto main in ${CACHED_8}`,
+	`restack sha5..maestro-tm/i8@origin onto main in ${CACHED_8}`,
 	`close factory-i8 at ${CACHED_8}`,
 ];
 const OPTIONS =
@@ -1766,7 +1787,7 @@ describe("a merge and a stack", () => {
 		expect(t.steps).toEqual([
 			`open factory-i8 at ${CACHED_8} on sha5`,
 			`describe ${CACHED_8}: feat: greet by name\n\nCloses #8\n`,
-			`restack abc123 onto main in ${CACHED_8}`,
+			`restack sha5..abc123 onto main in ${CACHED_8}`,
 			`close factory-i8 at ${CACHED_8}`,
 		]);
 		expect(merging(t.writes)).toEqual([
@@ -1955,15 +1976,22 @@ describe("a review", () => {
 				"--request",
 				`${requestFor(7)}\n## Review by ann\n\nRename it.\n\n- \`greet.sh:3\`: use printf\n  not echo\n`,
 				...LOW_FLAGS,
+				"-c",
+				"target.base=sha7",
 			],
 		]);
 		expect(t.find(7).labels).toContain("state/in-progress");
-		expect(dataAt(t.find(7)).review).toBe(5);
+		expect(dataAt(t.find(7))).toMatchObject({
+			review: 5,
+			revisionBase: "sha7",
+		});
 		concerts.unshift(sliceConcert("started", 7));
 		results.started = { status: "ok", outputs: {} };
 		await t.run();
+		expect(t.steps[0]).toBe(`open factory-i7 at ${CACHED} on sha7`);
 		expect(t.writes).toContain(`push abc123 as maestro-tm/i7 from ${CACHED}`);
 		expect(merging(t.writes)).toEqual(["arm #31"]);
+		expect(dataAt(t.find(7)).revisionBase).toBeUndefined();
 		expect(t.find(7).labels).toContain("state/in-review");
 		const writes = t.writes.length;
 		await t.run();
@@ -1971,11 +1999,16 @@ describe("a review", () => {
 		expect(t.starts).toHaveLength(1);
 	});
 
-	test("encores a stacked ticket's landed concert on its blocker's PR head", async () => {
+	test("encores a stacked ticket's landed concert at its own PR head, which sits on its blocker's", async () => {
 		const t = setup(
 			[
 				specced(5, "in-review"),
-				specced(8, "in-review", { slice: "s1", concert: "s1", review: 3 }),
+				specced(8, "in-review", {
+					slice: "s1",
+					concert: "s1",
+					review: 3,
+					stack: STACK,
+				}),
 			],
 			[sliceConcert("s1", 8)],
 		);
@@ -1985,8 +2018,12 @@ describe("a review", () => {
 		await t.run();
 		expect(t.starts).toHaveLength(1);
 		expect(t.starts[0]?.slice(0, 2)).toEqual(["encore", "s1"]);
-		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha5"]);
-		expect(dataAt(t.find(8))).toMatchObject({ review: 5, stack: STACK });
+		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha8"]);
+		expect(dataAt(t.find(8))).toMatchObject({
+			review: 5,
+			revisionBase: "sha8",
+			stack: STACK,
+		});
 	});
 });
 

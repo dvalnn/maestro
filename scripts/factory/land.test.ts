@@ -25,7 +25,7 @@ const jj = (cwd: string, ...args: string[]) => {
 	return run.stdout.toString().trim();
 };
 
-/** A jj repository whose commit `feat` is an owner's, with `main` beside it. */
+/** A jj repository whose commits `feat` and, on it, `top` are an owner's, with `main` beneath them. */
 function repository() {
 	const dir = mkdtempSync(join(tmpdir(), "factory-land-"));
 	jj(dir, "git", "init");
@@ -34,8 +34,10 @@ function repository() {
 	jj(dir, "bookmark", "create", "main", "-r", "@-");
 	writeFileSync(join(dir, "b"), "b\n");
 	jj(dir, "commit", "-m", "feat");
-	const feat = jj(dir, "log", "-r", "@-", "--no-graph", "-T", "commit_id");
-	return { dir, feat };
+	writeFileSync(join(dir, "c"), "c\n");
+	jj(dir, "commit", "-m", "fix");
+	const top = jj(dir, "log", "-r", "@-", "--no-graph", "-T", "commit_id");
+	return { dir, top };
 }
 
 const who = (dir: string, revision: string) =>
@@ -59,24 +61,24 @@ function keyFile() {
 }
 
 test("a described and a restacked commit carry the account as author and committer, unsigned without a key", async () => {
-	const { dir, feat } = repository();
+	const { dir, top } = repository();
 	const lands = landing(dir, account);
 	const described = await lands.describe(dir, "feat: x");
 	expect(who(dir, described)).toBe(`${WHO}|unsigned`);
-	const restacked = await lands.restack(dir, feat, "main");
+	const restacked = await lands.restack(dir, `main..${top}`, "main");
 	if (!("commit" in restacked)) throw new Error("conflict");
-	expect(who(dir, restacked.commit)).toBe(`${WHO}|unsigned`);
-	expect(who(dir, feat)).toStartWith("Owner|owner@example.com|Owner");
+	expect(who(dir, "main..@-")).toBe(`${WHO}|unsigned`.repeat(2));
+	expect(who(dir, top)).toStartWith("Owner|owner@example.com|Owner");
 });
 
 test("with a signing key set, described and restacked commits are signed", async () => {
-	const { dir, feat } = repository();
+	const { dir, top } = repository();
 	const lands = landing(dir, account, keyFile());
 	const described = await lands.describe(dir, "feat: x");
 	expect(who(dir, described)).toBe(`${WHO}|signed`);
-	const restacked = await lands.restack(dir, feat, "main");
+	const restacked = await lands.restack(dir, `main..${top}`, "main");
 	if (!("commit" in restacked)) throw new Error("conflict");
-	expect(who(dir, restacked.commit)).toBe(`${WHO}|signed`);
+	expect(who(dir, "main..@-")).toBe(`${WHO}|signed`.repeat(2));
 });
 
 test("a signing key at a missing path is refused by name", () => {
