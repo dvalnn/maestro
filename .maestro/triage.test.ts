@@ -691,13 +691,13 @@ async function plannerTask() {
 		if (typeof v === "string") strings.push(v);
 		return v;
 	});
-	return strings.find((v) => v.includes("Write plan.json")) ?? "";
+	return strings.find((v) => v.includes("Write `plan.json`")) ?? "";
 }
 
 test("the planner's prompt names a spec's decisions and exclusions, a lead titling its points and a reference as the last point", async () => {
 	const task = await plannerTask();
-	expect(task).toContain('"decisions": [{"lead"');
-	expect(task).toContain('"excluded": [{"lead"');
+	expect(task).toContain('"decisions": [{ "lead"');
+	expect(task).toContain('"excluded": [{ "lead"');
 	expect(task).toContain("The lead only titles its points");
 	expect(task).toContain('a reference is a plain last point "In <path>"');
 });

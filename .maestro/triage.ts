@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, join, posix } from "node:path";
-import { atLeastOne, scout, toMarkdown } from "@maestro/classics";
+import { atLeastOne, fill, scout, toMarkdown } from "@maestro/classics";
 import {
 	check,
 	fresh,
@@ -31,6 +31,12 @@ import {
 	type Types,
 	type ValueOf,
 } from "@maestro/sdk";
+import GATE from "./triage/prompts/_gate.md" with { type: "text" };
+import QUESTIONS from "./triage/prompts/_questions.md" with { type: "text" };
+import CHECKER from "./triage/prompts/checker.md" with { type: "text" };
+import PLANNER from "./triage/prompts/planner.md" with { type: "text" };
+import SCOUT from "./triage/prompts/scout.md" with { type: "text" };
+import TRIAGER from "./triage/prompts/triager.md" with { type: "text" };
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export { toMarkdown };
@@ -104,8 +110,20 @@ const outsideRepo = (paths: string[]) =>
 /** The most questions in one group, one scout's run. */
 const GROUP_SIZE = 3;
 
-const GATE =
-	"A build must pass `just check`, which runs format, lint, types and every test, and keep to CODING_STANDARDS.md.";
+const task = (...parts: string[]) => parts.join("\n\n");
+
+/** Each call's task: its own prompt file, then the shared fragments it rules by. */
+const TASKS = {
+	triager: (maxGroups: number) =>
+		task(fill(TRIAGER, { maxGroups, groupSize: GROUP_SIZE }), GATE, QUESTIONS),
+	scout: task(SCOUT),
+	planner: task(
+		fill(PLANNER, { runners: RUNNERS.join(", ") }),
+		GATE,
+		QUESTIONS,
+	),
+	checker: task(CHECKER),
+};
 
 /** A decision or exclusion: `lead` only titles it, each of `points` holds one fact. */
 const Point = Struct({ lead: Text(), points: List(Text()) });
@@ -554,52 +572,12 @@ const PLANS: Record<Ruled, boolean> = {
 	"needs-info": false,
 };
 
-const ASKING = `Each question is {"ask": "the question, one line", "lead": "a sentence of background", "options": [{"label": "A", "text": "one option, a line or two"}], "recommend": {"label": "A", "why": "the reason, read on from 'Recommended: A,'"}, "context": [{"topic": "Cost", "text": "one point of evidence, with its file:line"}]}. The owner reads it as a comment: keep the options short and put the evidence in context, one point per item under a one- or two-word topic such as Claiming, D-24 or Cost. Leave out lead when the ask says it all, options when the answer is open, and recommend unless you have a reason for one; recommend.label is the label of one of the options.`;
-
 /** The proposals whose spec the checker checks. */
 const CHECKS: Record<(typeof PROPOSED)[number], boolean> = {
 	"ready-for-agent": true,
 	split: false,
 	"needs-info": false,
 };
-
-const triageTask = (
-	maxGroups: number,
-) => `Triage the attached issue against the attached backlog snapshot. ${GATE}
-First write backlog.md: only the backlog issues that matter to this one, open or recently closed, each with its number, title and why, or "None.". A closed issue matters when this one builds on it, links it or reworks what it changed; the snapshot lists those under "Recently closed" by title alone.
-Then write ruling.json in exactly this shape, leaving out duplicateOf and related where the verdict does not need them:
-{"verdict": "plan", "files": ["path/to/file.ts"], "groups": [{"id": "G1", "area": "the line of inquiry", "questions": ["a question the target's code answers"]}], "questions": [], "duplicateOf": 12, "related": [7]}
-- verdict: duplicate when a backlog issue already asks this one, with duplicateOf; needs-info when it cannot be planned without the owner's answer, with those questions; plan otherwise.
-- files: the repo-relative paths you expect the change to create or edit.
-- groups, for plan: at most ${maxGroups}, one per line of inquiry, the most decisive first, numbered G1 on, each of at most ${GROUP_SIZE} questions. Ask only what changes the plan, and settle yourself what one line settles; no group when nothing needs asking.
-- questions, for needs-info: ${ASKING}
-- related: the backlog issues it relates to.`;
-
-const SCOUT_TASK = `Answer each question of the attached group in answer.md.
-answer.md holds one section per question, in order, headed "## <the question>", its answer below, every claim with its file:line. Where the target holds no answer, say so.`;
-
-const PLAN_TASK = `Triage the attached issue: propose its verdict from the scouts' answers, the triager's ruling, the cut backlog and the target's code. ${GATE}
-Write plan.json in exactly this shape, leaving out spec, children and related where the verdict does not need them:
-{"verdict": "ready-for-agent", "touches": ["path/to/file.ts"], "contract": "", "questions": [], "spec": {"what": "the change to make", "decisions": [{"lead": "a title", "points": ["one fact", "In path/to/file.ts"]}], "excluded": [{"lead": "a title", "points": ["one fact"]}], "acceptance": ["bun test path/to/file.test.ts"], "subject": "feat(scope): imperative summary"}, "children": [{"title": "a child issue's title", "body": "its ask", "dependsOn": [0]}], "related": [7]}
-- verdict: ready-for-agent when one change builds the issue as asked, split when it needs several, needs-info when it cannot be specified without an answer.
-- touches: every repo-relative path the change creates or edits, whatever the verdict; empty when you cannot tell.
-- contract: the one-way door the change sets or changes, named in a few words, or "" when it sets none. A one-way door cannot change after release without breaking a user: an IR field, a public CLI flag or exit code, a key of the user's config, an id or path format users type, or the pack manifest. Internal tooling, an environment variable only the tour manager reads and a new standalone composition are not.
-- spec, for ready-for-agent: what to change in one paragraph, the decisions the change makes, what it leaves out, the shell commands that prove it done, each starting with ${RUNNERS.join(", ")}, and the commit subject as <type>(<scope>): <summary>. The owner approves the spec from its decisions and what it leaves out. Hold the spec to about 3,000 to 5,000 characters.
-- decisions and excluded: each item a lead and its points. The lead only titles its points; every fact, reference and reason belongs in a point, one fact each, and a reference is a plain last point "In <path>". what names the change, and the facts behind it go in the decisions. A decision is a choice where another option was live, or a fact the owner has to approve; leave out calls, statement order and shell lines, which the builder works out. Either list may be empty.
-- children, for split: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
-- related: the backlog issues it relates to.
-- Codebase health comes before the feature. Before deciding, read the parts of docs/architecture.md and CODING_STANDARDS.md for the packages the change touches. what names the module that owns the change; the change extends what is there, never a parallel path.
-- When the ask can only be met by a shortcut, such as a special case in a shared module, a flag threaded through calls, a second route around an existing seam or domain logic in a domain-free package, do not decide it: split, the first part the refactor the feature needs, when that refactor is clear; needs-info, a question naming the clean option and its cost, when it is the owner's choice.
-- When the issue carries the spec the last triage proposed, start from it: change what the replies below it ask, and keep the rest.
-- questions: what only the owner can answer. Any question sends the issue to needs-info whatever the verdict, so settle yourself what the code settles. Ask only what hangs on no other question asked now; a dependent question waits for the re-triage. ${ASKING}`;
-
-const CHECK_TASK = `Check the attached spec against the code. Its spec is in the attached plan.json.
-Write check.json in exactly this shape:
-{"questions": [{"ask": "the failure and what the owner should say about it, one line", "options": [], "context": [{"topic": "Claim", "text": "what the spec says and what the code shows, with its file:line"}]}]}
-- A claim the spec makes about the base holds: every function, file, flag, behaviour and call site it names exists and behaves as stated, and so does everything it says a change must also update.
-- The spec misses no place the change must touch: the uninstall path beside an install, each other caller of a changed function, each test or doc that states the old behaviour.
-- The spec fits the architecture. Ask a question, with its file:line, for each of: a duplicate of a helper or pattern the codebase already has (grep for one); a module, abstraction or flag nothing in the ask needs; a public interface wider than the ask; a package boundary crossed, such as domain words in a domain-free package; a decision with lasting weight and no ADR or owner ruling behind it.
-- questions: one per failure. Write "questions": [] when nothing fails.`;
 
 const triager = seat("triager");
 /** The classics planner, fresh in an encore: a re-triage hands it the last spec rather than its grown session. */
@@ -645,7 +623,7 @@ export const triage = composition(
 		const base = check(fresh(), { run: "true" }, { label: "base" });
 		const triaged = triager({
 			label: "triager",
-			task: triageTask(maxGroups),
+			task: TASKS.triager(maxGroups),
 			lane: read(base.out.lane),
 			attachments: {
 				issue: issued,
@@ -681,7 +659,7 @@ export const triage = composition(
 				});
 				return scout({
 					label: "scout",
-					task: SCOUT_TASK,
+					task: TASKS.scout,
 					lane: read(base.out.lane),
 					attachments: {
 						group: {
@@ -708,7 +686,7 @@ export const triage = composition(
 		});
 		const planned = planner({
 			label: "planner",
-			task: PLAN_TASK,
+			task: TASKS.planner,
 			lane: read(base.out.lane),
 			attachments: {
 				issue: issued,
@@ -728,7 +706,7 @@ export const triage = composition(
 		const plan = readJson(planned.out.plan);
 		const checked = checker({
 			label: "checker",
-			task: CHECK_TASK,
+			task: TASKS.checker,
 			lane: read(base.out.lane),
 			attachments: {
 				plan: {
