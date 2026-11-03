@@ -68,11 +68,25 @@ such as a skeptic from another model family than its lens belongs in the pack's 
 
 ## Prompts
 
-A prompt is a task and attachments; the agent's standing instructions are its profile's `instructions.md`:
+An agent reads five layers, in this order, each with one home; no layer restates another's text:
 
-- The task is a `.md` file imported as text (`import task from "./prompts/build.md" with { type: "text" }`) and filled
-  with build-time values by plain TypeScript. Text built from Refs comes from a code node. For `tsc`, declare the
-  import's type once: `declare module "*.md" { const text: string; export default text; }`.
+1. **Frame**, from the host: working copy, checks, attachment list, output schema. Never restated.
+2. **Profile**, `profiles/<name>/instructions.md`: who the agent is and how it works, true in every call.
+3. **Area**, a preset's profile `attachments`: what is true of one part of the target.
+4. **Task**, `src/prompts/<call>.md` and its fragments: what this call asks, its inputs by name, its outputs, its bar.
+5. **Attachments**, written by code nodes: the run's data, never instructions.
+
+The task layer:
+
+- Name a task file for its call's `label`. A composition file keeps one `TASKS` table near its top, each call's task as
+  its file then the fragments it rules by, so one read shows everything a seat is told.
+- The task is a `.md` file in the pack's `src/prompts/`, one per call, imported as text
+  (`import task from "./prompts/build.md" with { type: "text" }`; the attribute is mandatory, or Bun imports Markdown as
+  HTML). A text shared by several tasks is a `_`-prefixed file joined after each as a paragraph. Build-time one-line
+  values fill `{name}` placeholders; `fill` in `@maestro/classics` does it and throws on an unmatched name or value.
+  Text built from Refs comes from a code node. For `tsc`, declare the import's type once:
+  `declare module "*.md" { const text: string; export default text; }`.
+- Keep a JSON shape example in a fenced `json` block, and its field rules as prose under it.
 - What an agent reads at perform time reaches it as an attachment, mounted at `/in/<name>` with its `hint`.
 - A `seat("<name>", { profile, verdict, out, checks })` bundles an agent's standing setup once, with
   `profile: "<id>/<name>"` for a pack's own profile; each call adds the task and lane, and adds attachments, outputs and

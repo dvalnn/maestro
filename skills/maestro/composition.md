@@ -24,6 +24,9 @@ surface, and a worked example. Done when the file composes and a stub concert of
   ([packs.md](packs.md)) to configure it.
 - Import `@maestro/sdk`, `@maestro/host-repo-sdk`, `node:` builtins and relative files. The `maestro` binary resolves
   the two SDK imports to its own copies, so the file needs no install step.
+- A prompt longer than a line is a Markdown file in `.maestro/<id>/prompts/`, named for its call's label and imported
+  with `import task from "./<id>/prompts/<label>.md" with { type: "text" }`; the entry file stays `.maestro/<id>.ts`.
+  List each call's task in one `TASKS` table near the top.
 - A code node's function must be exported by the composition file itself, or compose fails it (`SCOPE.export` under
   `--json`). To run one from a relative file, import it and export it beside the import:
   `import { tally } from "./lib/util"; export { tally };`.

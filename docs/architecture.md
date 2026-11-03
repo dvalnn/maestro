@@ -68,7 +68,7 @@ A monorepo of separately versioned packages (DIST-03). Package names are workspa
 | Repo host        | `host-repo`      | Agent and check node kinds, lanes, sandbox, harness adapter interface, host config namespaces.                         | `core`, `ir`                                                               |
 | Repo host SDK    | `host-repo-sdk`  | Typed constructors for the repo node kinds and lanes, output declarations, `seat()`.                                   | `sdk`, `ir`                                                                |
 | Harness adapters | `harness-<name>` | One adapter per coding-agent runtime.                                                                                  | `host-repo`                                                                |
-| Packs            | `packs/<id>`     | Compositions, prompts, schemas, code nodes, params.                                                                    | `sdk`, `host-repo-sdk`                                                     |
+| Packs            | `packs/<id>`     | Compositions, Markdown prompts, schemas, code nodes, params.                                                           | `sdk`, `host-repo-sdk`                                                     |
 | Renderers        | `render-<form>`  | Static graph render, live view.                                                                                        | `ir`                                                                       |
 
 Dependency rule: arrows only point down the table. `core` and `ir` never import a host, a pack or an adapter. CORE-12
