@@ -34,7 +34,7 @@ release: check pack
     cp -r packs/classics/dist "$build/classics"
     tar -czf "dist/classics-$pack_version.tar.gz" --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 \
       -C "$build" classics
-    tar -czf dist/maestro-skill.tar.gz --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C skills maestro
+    tar -czf dist/maestro-skill.tar.gz --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C skills $(ls skills)
     (cd dist && sha256sum * > SHA256SUMS)
     cp install.sh dist/install.sh
     scripts/smoke-install.sh dist

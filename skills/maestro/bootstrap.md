@@ -171,7 +171,7 @@ For a one-off change, `-c <key>=<value>` on any verb layers one key over the pre
 `.` goes in double quotes. A resume reapplies the concert's `--preset` and `-c`, but finds the record store by today's
 `dataRoot`: pass a `-c dataRoot=` again. The record keeps each `-c` as typed, so keep secrets in the `.env`.
 
-The stub preset, every profile on the stub harness, is in SKILL.md, section Stub concerts.
+The stub preset, every profile on the stub harness, is in [running.md](running.md), section Stub concerts.
 
 ### Diagnostics a bootstrap meets
 

@@ -82,9 +82,14 @@ install_assets() {
   rm -rf "$data_dir/packs/classics"
   tar -xzf classics-*.tar.gz -C "$data_dir/packs"
   # Codex and pi both read user skills from ~/.agents/skills.
+  skills=$(tar -tzf maestro-skill.tar.gz | sed -e 's,^\./,,' -e 's,/.*,,' | sort -u)
+  [ -n "$skills" ] || fail "maestro-skill.tar.gz lists no skill" "Download the release again"
   for skill_dir in "$claude_skills" "$agents_skills"; do
     mkdir -p "$skill_dir"
-    rm -rf "$skill_dir/maestro"
+    for skill in $skills; do
+      case $skill in .|..) continue ;; esac
+      rm -rf "${skill_dir:?}/$skill"
+    done
     tar -xzf maestro-skill.tar.gz -C "$skill_dir"
   done
   rm -f "$data_dir"/sdk/maestro-*-[0-9]*.tgz

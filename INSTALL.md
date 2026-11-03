@@ -1,6 +1,6 @@
 # Install
 
-maestro ships from the private forge as a standalone Linux binary, package tarballs for authoring, a pack and a skill
+maestro ships from the private forge as a standalone Linux binary, package tarballs for authoring, a pack and two skills
 for Claude Code, Codex and pi. Nothing is published to a public registry.
 
 ## 1. Requirements
@@ -36,14 +36,16 @@ curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh |
 The script needs `curl` and `sha256sum`, checks every asset against `SHA256SUMS` before touching anything, and refuses
 while a concert is running: wait for it to settle, or `maestro kill <id>`.
 
-| Installed                                | Where                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------ |
-| The binary                               | `~/.local/bin/maestro`                                                                     |
-| The classics pack                        | `$XDG_DATA_HOME/maestro/packs/classics`                                                    |
-| The maestro skill                        | `~/.claude/skills/maestro` and `~/.agents/skills/maestro`, the directory Codex and pi read |
-| The four package tarballs, for authoring | `$XDG_DATA_HOME/maestro/sdk/`                                                              |
+| Installed                                | Where                                                                                   |
+| ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| The binary                               | `~/.local/bin/maestro`                                                                  |
+| The classics pack                        | `$XDG_DATA_HOME/maestro/packs/classics`                                                 |
+| The skills                               | `maestro` and `maestro-ultracode` in `~/.claude/skills` and `~/.agents/skills`[^agents] |
+| The four package tarballs, for authoring | `$XDG_DATA_HOME/maestro/sdk/`                                                           |
 
-`XDG_DATA_HOME` defaults to `~/.local/share`. The pack and skill directories and the package tarballs are replaced.
+[^agents]: `~/.agents/skills` is the directory Codex and pi read.
+
+`XDG_DATA_HOME` defaults to `~/.local/share`. The pack, each skill directory and the package tarballs are replaced.
 `~/.local/bin` must be on `PATH`, and the script warns when it is not. If `maestro --version` prints something else,
 another `maestro` comes first.
 
@@ -58,7 +60,8 @@ The fallback when the script cannot run. Download the assets of a release into o
 sha256sum -c SHA256SUMS
 install -D -m 755 maestro-linux-x64 ~/.local/bin/maestro
 data="${XDG_DATA_HOME:-$HOME/.local/share}/maestro"
-rm -rf "$data/packs/classics" ~/.claude/skills/maestro ~/.agents/skills/maestro
+for root in ~/.claude/skills ~/.agents/skills; do rm -rf "$root/maestro" "$root/maestro-ultracode"; done
+rm -rf "$data/packs/classics"
 mkdir -p "$data/packs" "$data/sdk" ~/.claude/skills ~/.agents/skills
 tar -xzf classics-*.tar.gz -C "$data/packs"
 tar -xzf maestro-skill.tar.gz -C ~/.claude/skills
@@ -146,7 +149,8 @@ Settle or `maestro kill` any running concert, then remove each path the script w
 ```sh
 data="${XDG_DATA_HOME:-$HOME/.local/share}/maestro"
 rm -f ~/.local/bin/maestro
-rm -rf "$data/packs/classics" "$data/sdk" ~/.claude/skills/maestro ~/.agents/skills/maestro
+rm -rf "$data/packs/classics" "$data/sdk"
+for root in ~/.claude/skills ~/.agents/skills; do rm -rf "$root/maestro" "$root/maestro-ultracode"; done
 ```
 
 Left in place, since they are yours and not written by the script: concerts and their record under `$data`, other packs
@@ -178,7 +182,7 @@ tarballs the install put in `$XDG_DATA_HOME/maestro/sdk/`, which each upgrade re
 `@maestro/classics` is needed only by a composition that builds on the classics pack's parts. Rerun `bun install` after
 an upgrade to pick up the new tarballs.
 
-Bundling a pack and writing its manifest are in the skill's `packs.md`.
+Bundling a pack and writing its manifest are in the maestro skill's `packs.md`.
 
 ## 8. Known limits
 

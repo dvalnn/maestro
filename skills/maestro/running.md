@@ -1,11 +1,85 @@
 # Running: compose, perform, follow, read, recover
 
-Reference for the verbs after bootstrap, grouped by verb, with what their output means. Every flag not named here is in
-`maestro <verb> --help`. Each verb but `cs` takes `--json` (one JSON document on stdout), and each takes
-`--preset <name>`, `-c <key>=<value>` (repeatable) and `--debug`.
+The loop that performs a composition, how to rehearse one as a stub concert, then reference for the verbs after
+bootstrap, grouped by verb, with what their output means. Every flag not named here is in `maestro <verb> --help`. Each
+verb but `cs` takes `--json` (one JSON document on stdout), and each takes `--preset <name>`, `-c <key>=<value>`
+(repeatable) and `--debug`.
 
 Output is colored on a terminal stream, and on any stream under `--color` or a non-empty `FORCE_COLOR`. `--no-color`,
 `NO_COLOR` or `TERM=dumb` turns it off and wins, so a command you read is plain unless you force color.
+
+## The loop
+
+1. **Find the workspace.** Look for `.maestro/config.yaml` from the cwd up. None, or a profile runtime, target or check
+   missing: read [bootstrap.md](bootstrap.md) and follow it. Done when `maestro compose <c>` reports no `CFG.*` or
+   `HOST.*` diagnostic (codes show under `--json`); a runtime set only in a preset needs `--preset <name>` on that
+   compose too.
+2. **Pick the composition.** `<pack>.<composition>` of an installed pack, or a file. `maestro rep --json` lists every
+   installed composition with its doc, params, config entries and a `perform` line; `maestro rep <pack>.<composition>`
+   shows one, such as `classics.panel_review`. Its params are kebab-case flags (`--max-repairs 3`, `--no-strict`). Done
+   when every required param has a value from a flag or the config. `compose` also fills a missing required root param
+   from the composition's example set; `perform` never does, and refuses with `CFG.required`, so pass the flag or set it
+   in config (section Compose).
+3. **Pre-flight.** `maestro compose <c> [flags]`, with the flags perform will get. Done on exit 0. Before a perform on a
+   paid harness, give the user the `repo.agent` bound from `maestro compose <c> [flags]` as the spend ceiling.
+4. **Perform in its own session.** `perform` holds its terminal until the concert settles, and a signal to its process
+   group cancels the concert. Start it with `--detach`, which runs it in a session of its own and prints its id:
+
+   ```sh
+   maestro perform <c> [flags] --tour <slug> --title "<what for>" --detach
+   ```
+
+   Done when it exits 0 with the concert's id on stdout. A perform that refuses prints why and exits non-zero.
+
+5. **Follow.** `maestro wait <id> --timeout 90s` in a loop, the timeout shorter than your tool call's own limit, which
+   would otherwise cut it off before exit 124: exit 124 means still running, so wait again. Done on any exit but 124. A
+   user who wants to see the concert live runs `maestro watch <id>` in their own terminal, where it stays open after
+   settle until `q`; piped, it ends at settle.
+6. **Read the result.** The exit code ([SKILL.md](SKILL.md), section Exit codes), the closing block on stderr (a
+   `concert <short id>  <outcome>  <elapsed>` row, then `at <instance>` and `reason <reason>` when not `ok`) and the
+   result's outputs on stdout (`<port>  <value>` lines, an artifact as its path). On a `rejected` concert the outputs
+   are the root cause's: `logs`, the failing check's log file, and `lane`, a lane ref to the version the concert stopped
+   at. Read the `logs` file next, then report the root cause. Done when the user has the outcome, the root cause
+   instance and its reason when not `ok`, and the changeset's path.
+
+## Stub concerts
+
+A stub concert rehearses a composition for free: it proves config, profiles, lanes and checks before any agent spends.
+Use one to try a flow, or whenever the user asks for no spend. Stub every seat with a `"*"` profile, which applies to
+every profile the preset does not name, in `.maestro/presets/stub.yaml`, and pass `--preset stub` to compose and
+perform; a resume reapplies it:
+
+```yaml
+profiles:
+  "*": { runtime: !replace { harness: stub } }
+```
+
+What it does:
+
+- Stub agents change nothing and reply `ok`, while checks run for real, so a check that depends on an agent's change
+  stays red. A check already green on the untouched target passes, so a build composition such as
+  `classics.build_then_repair` ends `ok` with an empty changeset, holding only its `base`.
+- A stub agent writes a placeholder for each output it declares, the smallest value that satisfies the schema keywords
+  it reads (`required`, `properties`, `items`, `minItems`, `enum`, `const`, `minLength`, `minimum`, `anyOf`, `oneOf`),
+  `"stub"` for text. A schema beyond those fails the agent, naming the output. So a concert runs past its agents:
+  `classics.panel_review` ends `ok` with an unapproved verdict.
+- Its host stages each agent's instructions and prompt as for a real run, so
+  `maestro art show <id> <instance> staged/instructions.md` and `staged/prompt.md` show what each agent is told before
+  any spend.
+
+Environment variables rehearse a branch a placeholder never takes:
+
+- `MAESTRO_STUB_DELAY` (a duration such as `2s` or `500ms`) makes each stub agent turn wait that long, to rehearse a
+  slow run.
+- `MAESTRO_STUB_OUTPUTS=<dir>` scripts what agents deliver, to rehearse a branch that hangs on it, such as a fix loop. A
+  stub agent takes each declared output from `<dir>/<instance id>/<file>` (the id as `maestro ls <id>` prints it, such
+  as `loop[0]/review`), else from `<dir>/<node id>/<file>` (the id without `[n]` indices, serving every round), else the
+  placeholder. A verdict agent's `verdict` file, found the same way, holds `ok` or `rejected <reason>`; without one it
+  rules `ok`. An `events.jsonl` file found the same way holds the harness events the agent emits first, one JSON object
+  per line. Files are copied as is and validated like any output. A resume needs the variable set again; a missing dir
+  fails the agent.
+- `MAESTRO_STUB_ENVIRONMENT` (a JSON object such as `{"mcp":["github"]}`) replaces parts of what the stub reports
+  loading, to rehearse an environment fault.
 
 ## Compose
 
@@ -32,7 +106,7 @@ A diagnostic prints as `<code>: <message>` then its hint, indented. The hint is 
 `maestro perform <c> [param flags] [--tour <slug>] [--title <text>]` pre-flights, then performs the plan as a concert.
 
 - It runs in the foreground until the concert settles. SIGINT or SIGTERM cancels the concert, which settles `failed`.
-- Start it with `--detach`, as SKILL.md's loop step 4 shows; the id prints on stdout.
+- Start it with `--detach`, as The loop's step 4 shows; the id prints on stdout.
 - Stderr: `concert <id>`, the full id, once the concert starts, then, when it settles, the closing block: a
   `concert <short id>  <outcome>  <elapsed>[ · <tokens> tok]` row, then `at <instance>` and `reason <reason>` lines when
   not `ok`. Pre-flight diagnostics come before the first line.
@@ -158,7 +232,7 @@ The versions before it are sealed in the host's own git store.
 
 ## Recover
 
-What SKILL.md's Recover section leaves out:
+What [SKILL.md](SKILL.md), section Recover, leaves out:
 
 - **Resume**: it reapplies the `--preset` and `-c` the concert was performed with, over the config files as they are
   now; a `--preset` or `-c` given to the resume goes on top. It finds the record store by today's `dataRoot`, so a

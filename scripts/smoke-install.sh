@@ -32,13 +32,26 @@ grep -q "^install.sh: warning: $home/.local/bin is not on PATH" "$scratch/instal
 grep -q '^maestro ' "$scratch/install.out" || fail "install.sh did not print the version on stdout"
 
 step "install.sh replaces stale files"
-mkdir -p "$home/.claude/skills/maestro" "$home/.agents/skills/maestro" "$home/.local/share/maestro/packs/classics"
-touch "$home/.claude/skills/maestro/stale" "$home/.agents/skills/maestro/stale" "$home/.local/share/maestro/packs/classics/stale" \
+skills=$(tar -tzf "$dist/maestro-skill.tar.gz" | sed 's,/.*,,' | sort -u)
+mkdir -p "$home/.local/share/maestro/packs/classics"
+touch "$home/.local/share/maestro/packs/classics/stale" \
   "$home/.local/share/maestro/sdk/maestro-ir-0.0.0.tgz" "$home/.local/share/maestro/sdk/maestro-host-repo-sdk-0.0.0.tgz"
+for root in "$home/.claude/skills" "$home/.agents/skills"; do
+  mkdir -p "$root/mine"
+  touch "$root/mine/SKILL.md"
+  for skill in $skills; do
+    mkdir -p "$root/$skill"
+    touch "$root/$skill/stale"
+  done
+done
 run_installer "$home" "$dist" >/dev/null 2>"$scratch/install.err" \
   || fail "install.sh over an install exited $?: $(cat "$scratch/install.err")"
-[ ! -e "$home/.claude/skills/maestro/stale" ] || fail "install.sh left a stale skill file"
-[ ! -e "$home/.agents/skills/maestro/stale" ] || fail "install.sh left a stale skill file in ~/.agents/skills"
+for root in "$home/.claude/skills" "$home/.agents/skills"; do
+  [ -f "$root/mine/SKILL.md" ] || fail "install.sh removed $root/mine, a skill not in the release"
+  for skill in $skills; do
+    [ ! -e "$root/$skill/stale" ] || fail "install.sh left a stale file in $root/$skill"
+  done
+done
 [ ! -e "$home/.local/share/maestro/packs/classics/stale" ] || fail "install.sh left a stale pack file"
 for old in maestro-ir-0.0.0.tgz maestro-host-repo-sdk-0.0.0.tgz; do
   [ ! -e "$home/.local/share/maestro/sdk/$old" ] || fail "install.sh left the old sdk tarball $old"
@@ -72,9 +85,13 @@ line=$(maestro --version)
 
 step "pack and skill"
 pack=$home/.local/share/maestro/packs/classics
-for file in "$pack/maestro-pack.json" "$pack/README.md" "$pack/profiles/builder/profile.yaml" \
-  "$home/.claude/skills/maestro/SKILL.md" "$home/.agents/skills/maestro/SKILL.md"; do
+for file in "$pack/maestro-pack.json" "$pack/README.md" "$pack/profiles/builder/profile.yaml"; do
   [ -f "$file" ] || fail "the tarballs did not install $file"
+done
+for skill in maestro maestro-ultracode; do
+  for root in "$home/.claude/skills" "$home/.agents/skills"; do
+    [ -f "$root/$skill/SKILL.md" ] || fail "the tarballs did not install $root/$skill/SKILL.md"
+  done
 done
 pack_version=$(bun -e 'console.log(require(process.argv[1]).version)' "$pack/maestro-pack.json")
 [ -f "$dist/classics-$pack_version.tar.gz" ] || fail "no classics tarball is named for the manifest's version $pack_version"

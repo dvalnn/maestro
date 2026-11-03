@@ -60,6 +60,22 @@ await Bun.write("dist/maestro-pack.json", JSON.stringify(manifest, null, 2));
 Rebuild the entry whenever the SDK changes version. A code node's hash covers the whole bundle, so after a rebuild a
 resume performs every code node of the pack again.
 
+## Building on the classics
+
+`@maestro/classics`, set up as Building the entry says, exports the classics pack's parts:
+
+- `panel`: the lens, skeptic and consolidator panel, as a function over a change; given `grounds`, the rules a finding
+  must cite, its skeptics and consolidator rule by them. `skepticTask(grounds)` is that skeptic task, for a lone
+  skeptic.
+- The seats: `builder`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`, `documenter`.
+- The compositions: `repairUntilGreen`, `panelReview`, `buildThenRepair`.
+- `maxRepairs`, the repair bound, and `atLeastOne`, the at-least-one integer param.
+- Code-node functions: `survivorsOf`, `toMarkdown`.
+- Types: `Findings`, `Verdict`, `Verdicts`.
+
+`repairUntilGreen` takes a `checks` param, the names in `target.checks` its repair agent may run with `check <name>`; it
+defaults to none, and its recheck runs every check of the target.
+
 ## Profiles, never models
 
 A pack ships profiles (`builder`, `lens`, `skeptic`) and names no model or harness in them: the user sets each profile's
