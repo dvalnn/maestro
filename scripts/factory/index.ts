@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
 	type Comment,
+	dotenvPath,
 	type Forge,
 	forge,
 	type Issue,
@@ -73,6 +74,7 @@ const LOCK_NB = 4;
 /** Linux's EWOULDBLOCK, which is EAGAIN. */
 const EWOULDBLOCK = 11;
 export const HALT = "maestro-tm:halt";
+export const MILESTONE_KEY = "MAESTRO_TM_MILESTONE";
 const REPO = resolve(import.meta.dir, "../..");
 const TRIAGE_FILE = join(REPO, ".maestro/triage.ts");
 const SLICE_FILE = join(REPO, ".maestro/slice.ts");
@@ -1119,7 +1121,7 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 	const milestoneId = await deps.forge.milestone(options.milestone);
 	if (milestoneId === undefined)
 		throw new Error(
-			`no milestone ${options.milestone} on the forge\nCreate it, or pass an existing one to --milestone`,
+			`no milestone ${options.milestone} on the forge\nCreate it, or set ${MILESTONE_KEY} to an existing one`,
 		);
 	const concerts = await deps.maestro.concerts(options.milestone);
 	const running = concerts.find((c) => c.status === "running");
@@ -1137,7 +1139,29 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 		pass.say("route-only: routed and synced, started nothing");
 }
 
+/**
+ * The milestone a pass serves: `flag` when non-empty, else `MAESTRO_TM_MILESTONE` from `env` when non-empty.
+ * @throws Error naming `MAESTRO_TM_MILESTONE` and its file when neither is set.
+ */
+export function milestoneOf(
+	flag: string | undefined,
+	env: NodeJS.ProcessEnv,
+): string {
+	if (flag) return flag;
+	const milestone = env[MILESTONE_KEY];
+	if (milestone) return milestone;
+	throw new Error(
+		`${MILESTONE_KEY} is not set\nSet it in ${dotenvPath(env)}, or pass --milestone <name>`,
+	);
+}
+
 if (import.meta.main) {
+	try {
+		loadEnvFile();
+	} catch (error) {
+		console.error(`tour manager: ${message(error)}`);
+		process.exit(EXIT_FAILED);
+	}
 	let options: Options;
 	try {
 		const { values } = parseArgs({
@@ -1147,7 +1171,6 @@ if (import.meta.main) {
 				"route-only": { type: "boolean" },
 			},
 		});
-		if (!values.milestone) throw new Error("--milestone is required");
 		const runtime = process.env.XDG_RUNTIME_DIR;
 		if (!runtime)
 			throw new Error(
@@ -1156,7 +1179,7 @@ if (import.meta.main) {
 		options = {
 			presets: values.preset ?? [],
 			routeOnly: values["route-only"],
-			milestone: values.milestone,
+			milestone: milestoneOf(values.milestone, process.env),
 			dir: join(runtime, "maestro-factory"),
 			cache: join(
 				process.env.XDG_CACHE_HOME || join(homedir(), ".cache"),
@@ -1165,13 +1188,12 @@ if (import.meta.main) {
 		};
 	} catch (error) {
 		console.error(
-			`${message(error)}\nusage: bun scripts/factory/index.ts --milestone <name> [--preset <name>]... [--route-only]`,
+			`${message(error)}\nusage: bun scripts/factory/index.ts [--milestone <name>] [--preset <name>]... [--route-only]`,
 		);
 		process.exit(EXIT_USAGE);
 	}
 	mkdirSync(options.dir, { recursive: true });
 	try {
-		loadEnvFile();
 		const tm = forge();
 		const account = await tm.account();
 		await pass(

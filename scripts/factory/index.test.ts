@@ -11,7 +11,7 @@ import type {
 	Pull,
 	Review,
 } from "./forge";
-import { HALT, lock, type Options, pass } from "./index";
+import { HALT, lock, milestoneOf, type Options, pass } from "./index";
 import type { Landing } from "./land";
 import type { Concert, Maestro, Report, Result } from "./maestro";
 import { titleOf } from "./pick";
@@ -1655,4 +1655,33 @@ test("a concert's title is its issue's, cut with an ellipsis past 60 characters"
 	expect(titled("Greet by name")).toBe("factory: Greet by name");
 	expect(titled("x".repeat(60))).toBe(`factory: ${"x".repeat(60)}`);
 	expect(titled("x".repeat(61))).toBe(`factory: ${"x".repeat(59)}…`);
+});
+
+describe("the milestone", () => {
+	const env = { MAESTRO_TM_MILESTONE: "v0.2.0" };
+
+	test("is MAESTRO_TM_MILESTONE when no flag is passed", () => {
+		expect(milestoneOf(undefined, env)).toBe("v0.2.0");
+	});
+
+	test("is the flag over MAESTRO_TM_MILESTONE", () => {
+		expect(milestoneOf("v0.3.0", env)).toBe("v0.3.0");
+	});
+
+	test("falls back to MAESTRO_TM_MILESTONE on an empty flag", () => {
+		expect(milestoneOf("", env)).toBe("v0.2.0");
+	});
+
+	test("unset names MAESTRO_TM_MILESTONE and --milestone", () => {
+		const unset = () =>
+			milestoneOf(undefined, { HOME: "/home/x", MAESTRO_TM_MILESTONE: "" });
+		expect(unset).toThrow("MAESTRO_TM_MILESTONE is not set");
+		expect(unset).toThrow("--milestone");
+	});
+
+	test("absent names MAESTRO_TM_MILESTONE and --milestone", () => {
+		const absent = () => milestoneOf(undefined, {});
+		expect(absent).toThrow("MAESTRO_TM_MILESTONE is not set");
+		expect(absent).toThrow("--milestone");
+	});
 });

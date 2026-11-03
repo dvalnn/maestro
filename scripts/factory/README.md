@@ -19,10 +19,11 @@ It needs maestro `v0.1.0-rc.2` or later on `PATH`, since a build layers its pres
 It reads `$XDG_CONFIG_HOME/maestro/.env` (`~/.config` by default) when that exists, as maestro does, and a variable
 already set wins over the file:
 
-| Key                      | Does                                                                                          |
-| ------------------------ | --------------------------------------------------------------------------------------------- |
-| `MAESTRO_TM_TOKEN`       | The `maestro-tm` account's API token; required, else it exits 1 naming it                     |
-| `MAESTRO_TM_SIGNING_KEY` | Path of an SSH key that signs its commits; unset leaves them unsigned, a missing file exits 1 |
+| Key                      | Does                                                                                                                                                                   |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MAESTRO_TM_TOKEN`       | The `maestro-tm` account's API token; required, else it exits 1 naming it                                                                                              |
+| `MAESTRO_TM_SIGNING_KEY` | Path of an SSH key that signs its commits; unset leaves them unsigned, a missing file exits 1                                                                          |
+| `MAESTRO_TM_MILESTONE`   | The milestone whose issues it triages and builds; required unless `--milestone` is passed, else it exits 2 naming it; moving to the next release is editing this value |
 
 The host, owner and repo come from the `origin` remote (ssh or https). The account needs write access to the repo, which
 lets it push branches, open PRs, comment, label, file issues and arm auto-merge; give it no admin right. Its login, name
@@ -32,26 +33,27 @@ and email come from `GET /user` and author every commit the tick describes or re
 A low-risk PR whose base moved after it was pushed cannot fast-forward, and stays open for the owner to restack.
 
 ```sh
-bun scripts/factory/index.ts --milestone v0.1.0 [--preset triage]... [--route-only]
+bun scripts/factory/index.ts [--milestone v0.1.0] [--preset triage]... [--route-only]
 ```
 
-| Flag           | Does                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------ |
-| `--milestone`  | The milestone whose issues it triages and builds                                           |
-| `--preset`     | A preset each triage and build is performed with, such as `stub`; repeatable, in order[^p] |
-| `--route-only` | Routes settled concerts and syncs, then starts no build or triage                          |
+| Flag           | Does                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------ |
+| `--milestone`  | The milestone whose issues it triages and builds; overrides `MAESTRO_TM_MILESTONE` for that pass |
+| `--preset`     | A preset each triage and build is performed with, such as `stub`; repeatable, in order[^p]       |
+| `--route-only` | Routes settled concerts and syncs, then starts no build or triage                                |
 
 [^p]:
     A build layers them last, after its tier's preset and its area's. An area preset is an optional file,
     `.maestro/presets/area-<area>.yaml`, whose content grows from the harvest.
 
 It exits 0 when it acted or had nothing to do, 1 when the forge or maestro failed or the milestone does not exist (the
-next pass retries) and 2 on a bad flag. It keeps its lock, backlog snapshots and perform logs in
+next pass retries) and 2 on a bad flag or a missing milestone. It keeps its lock, backlog snapshots and perform logs in
 `$XDG_RUNTIME_DIR/maestro-factory/`, and lands each slice in a jj workspace under `$XDG_CACHE_HOME/maestro-factory/`.
 
 ## Install
 
-The units run a pass every 5 minutes. Edit `WorkingDirectory`, `PATH` and the flags in the service to suit the machine.
+The units run a pass every 5 minutes. Edit `WorkingDirectory`, `PATH` and the flags in the service to suit the machine;
+the milestone is set in the `.env`, not the unit.
 
 ```sh
 cp scripts/factory/maestro-factory.{service,timer} ~/.config/systemd/user/
