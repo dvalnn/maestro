@@ -523,12 +523,16 @@ describe("a pass", () => {
 		expect(t.starts[0]).toContain("v0.1.0.i9");
 	});
 
-	test("starts triage of the oldest intake issue in the milestone, an encore when it was triaged before", async () => {
+	test("starts triage of the oldest intake issue in the milestone, an encore with the last spec when it was triaged before", async () => {
 		const outside = {
 			...issue(2, "needs-triage"),
 			milestone: OTHER_MILESTONE_ID,
 		};
-		const retriaged = issue(8, "needs-triage", { concert: "c0", triage: "c0" });
+		const retriaged = issue(8, "needs-triage", {
+			concert: "c0",
+			triage: "c0",
+			result: ready,
+		});
 		retriaged.comments.push({
 			id: 5,
 			body: "@forge-bot Q1: Ann",
@@ -547,7 +551,11 @@ describe("a pass", () => {
 				"encore",
 				"c0",
 				"--issue",
-				`#8 Greet by name\n\n${ASK}\n\n## Reply by ${OWNER}\n\n@forge-bot Q1: Ann`,
+				expect.stringMatching(
+					new RegExp(
+						`^#8 Greet by name\n\n${ASK}\n\n## The spec the last triage proposed\n\n#### What\n[^]*\n## Reply by ${OWNER}\n\n@forge-bot Q1: Ann$`,
+					),
+				),
 				"--backlog",
 				backlog,
 				"--tour",

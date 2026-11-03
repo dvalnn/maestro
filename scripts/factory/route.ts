@@ -405,6 +405,13 @@ const requestedLines = (spec: Spec) => [
 	...acceptanceLines(spec.acceptance),
 ];
 
+/** The spec a re-triage starts from, every section open, under its own heading. */
+export const lastSpecLines = (spec: Spec) => [
+	"## The spec the last triage proposed",
+	"",
+	...requestedLines(spec),
+];
+
 const childLines = (children: readonly Child[], filed: readonly number[]) =>
 	children.map((c, i) => {
 		const after = c.dependsOn.length

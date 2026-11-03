@@ -268,14 +268,17 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`, then moving
   the ticket to `needs-triage`; a waiting spec in `needs-approval` is answered or redirected the same way. A triage,
   first or encore, considers each comment but the spec comment whose id is above `read`, in id order, and is fed as
-  `--issue` the ask, then only these:
+  `--issue` the ask, then on an encore the spec the last triage proposed, under `## The spec the last triage proposed`,
+  then only these:
   - a question comment, headed `## Question by the tour manager`;
   - any other comment mentioning `@<login>` as a whole word in any case, headed `## Reply by <author>`.
 
-  It records the newest comment it considered as `read`, so a comment it ignored is never fed later. A failed triage
-  clears `read`, so the next one considers those comments again. An encore with nothing changed is refused, which halts
-  the tour manager. A re-triage with nothing new to feed starts nothing: the tick asks for a reply mentioning
-  `@<login>`, moves the ticket to `needs-info` and moves `read` past its ask.
+  An encore continues the triager's and scouts' sessions but starts the planner fresh, so a re-triage pays for the last
+  spec rather than the planner's whole earlier session. It records the newest comment it considered as `read`, so a
+  comment it ignored is never fed later. A failed triage clears `read`, so the next one considers those comments again.
+  An encore with nothing changed is refused, which halts the tour manager. A re-triage with nothing new to feed starts
+  nothing: the tick asks for a reply mentioning `@<login>`, moves the ticket to `needs-info` and moves `read` past its
+  ask.
 
 - **Moved during a run.** A settle whose ticket is no longer where the run expects it (`in-progress` or
   `ready-for-agent` for a slice, intake for a triage) is not applied. A closed ticket is left alone. Otherwise the

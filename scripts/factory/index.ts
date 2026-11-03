@@ -1098,6 +1098,7 @@ async function triage(pass: Pass, entries: Entry[]) {
 				entry.issue,
 				considered.filter((c) => isFed(c, pass.login)),
 				pass.login,
+				data.triage ? data.result?.spec : undefined,
 			),
 			"--backlog",
 			backlog,

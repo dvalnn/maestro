@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, join, posix } from "node:path";
-import { atLeastOne, planner, scout, toMarkdown } from "@maestro/classics";
+import { atLeastOne, scout, toMarkdown } from "@maestro/classics";
 import {
 	check,
 	fresh,
@@ -553,9 +553,12 @@ Write plan.json in exactly this shape, leaving out spec, children and related wh
 - decisions and excluded: each item a lead and its points. The lead only titles its points; every fact, reference and reason belongs in a point, one fact each, and a reference is a plain last point "In <path>". what names the change, and the facts behind it go in the decisions. Either list may be empty.
 - children, for split: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
 - related: the backlog issues it relates to.
+- When the issue carries the spec the last triage proposed, start from it: change what the replies below it ask, and keep the rest.
 - questions: what only the owner can answer. Any question sends the issue to needs-info whatever the verdict, so settle yourself what the code settles. ${ASKING}`;
 
 const triager = seat("triager");
+/** The classics planner, fresh in an encore: a re-triage hands it the last spec rather than its grown session. */
+const planner = seat("planner", { profile: "classics/planner", encore: false });
 
 export const triage = composition(
 	"triage",

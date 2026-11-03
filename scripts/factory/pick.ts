@@ -3,9 +3,11 @@ import {
 	askOf,
 	type Data,
 	isAsked,
+	lastSpecLines,
 	QUESTION,
 	RISKS,
 	type Risk,
+	type Spec,
 	type Tier,
 	type Triage,
 } from "./route";
@@ -93,16 +95,21 @@ const fed = (comment: Comment, login: string) =>
 		? ["## Question by the tour manager", comment.body.replace(QUESTION, "")]
 		: [`## Reply by ${comment.author}`, comment.body];
 
-/** What `--issue` takes: the number, title and ask, then each of `replies` under its heading, `login` being the tick's. */
+/**
+ * What `--issue` takes: the number, title and ask, the `last` spec a re-triage starts from, then each of `replies` under
+ * its heading, `login` being the tick's.
+ */
 export const issueText = (
 	issue: Issue,
 	replies: readonly Comment[],
 	login: string,
+	last?: Spec,
 ) =>
 	[
 		`#${issue.number} ${issue.title}`,
 		"",
 		askOf(issue.body),
+		...(last ? ["", ...lastSpecLines(last)] : []),
 		...replies.flatMap((r) => {
 			const [heading, body] = fed(r, login);
 			return ["", heading, "", body?.trim()];

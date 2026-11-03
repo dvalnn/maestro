@@ -628,6 +628,17 @@ test("the planner's prompt asks for no shorter spec", async () => {
 	);
 });
 
+test("an encore starts the planner fresh, and continues the triager and scouts", async () => {
+	const { plan } = await composed();
+	const encoreOf = (id: string) =>
+		(plan.ir.nodes as { id: string; config?: { encore?: boolean } }[]).find(
+			(n) => n.id === id,
+		)?.config?.encore;
+	expect(encoreOf("planner")).toBe(false);
+	expect(encoreOf("triager")).toBeUndefined();
+	expect(encoreOf("scouts/scout")).toBeUndefined();
+});
+
 /** A JSON output per conditional rule of the schemas, and whether the engine's readJson takes it. */
 const outputs: [string, Type<unknown>, object, boolean][] = [
 	["a ready proposal", Proposal, ready, true],
