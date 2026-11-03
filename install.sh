@@ -78,10 +78,15 @@ install_assets() {
   install -D -m 755 maestro-linux-x64 "$bin_dir/.maestro.new"
   mv -f "$bin_dir/.maestro.new" "$bin_dir/maestro"
 
-  mkdir -p "$data_dir/packs" "$data_dir/sdk" "$skill_dir"
-  rm -rf "$data_dir/packs/classics" "$skill_dir/maestro"
+  mkdir -p "$data_dir/packs" "$data_dir/sdk"
+  rm -rf "$data_dir/packs/classics"
   tar -xzf classics-*.tar.gz -C "$data_dir/packs"
-  tar -xzf maestro-skill.tar.gz -C "$skill_dir"
+  # Codex and pi both read user skills from ~/.agents/skills.
+  for skill_dir in "$claude_skills" "$agents_skills"; do
+    mkdir -p "$skill_dir"
+    rm -rf "$skill_dir/maestro"
+    tar -xzf maestro-skill.tar.gz -C "$skill_dir"
+  done
   rm -f "$data_dir"/sdk/maestro-*-[0-9]*.tgz
   for package in ir sdk host-repo-sdk; do
     cp maestro-"$package"-[0-9]*.tgz "$data_dir/sdk/maestro-$package.tgz"
@@ -94,7 +99,8 @@ install_assets() {
 
 main() {
   bin_dir=$HOME/.local/bin
-  skill_dir=$HOME/.claude/skills
+  claude_skills=$HOME/.claude/skills
+  agents_skills=$HOME/.agents/skills
   # A relative XDG_DATA_HOME is ignored, as maestro ignores it.
   case ${XDG_DATA_HOME:-} in
     /*) data_dir=$XDG_DATA_HOME/maestro ;;

@@ -32,12 +32,13 @@ grep -q "^install.sh: warning: $home/.local/bin is not on PATH" "$scratch/instal
 grep -q '^maestro ' "$scratch/install.out" || fail "install.sh did not print the version on stdout"
 
 step "install.sh replaces stale files"
-mkdir -p "$home/.claude/skills/maestro" "$home/.local/share/maestro/packs/classics"
-touch "$home/.claude/skills/maestro/stale" "$home/.local/share/maestro/packs/classics/stale" \
+mkdir -p "$home/.claude/skills/maestro" "$home/.agents/skills/maestro" "$home/.local/share/maestro/packs/classics"
+touch "$home/.claude/skills/maestro/stale" "$home/.agents/skills/maestro/stale" "$home/.local/share/maestro/packs/classics/stale" \
   "$home/.local/share/maestro/sdk/maestro-ir-0.0.0.tgz" "$home/.local/share/maestro/sdk/maestro-host-repo-sdk-0.0.0.tgz"
 run_installer "$home" "$dist" >/dev/null 2>"$scratch/install.err" \
   || fail "install.sh over an install exited $?: $(cat "$scratch/install.err")"
 [ ! -e "$home/.claude/skills/maestro/stale" ] || fail "install.sh left a stale skill file"
+[ ! -e "$home/.agents/skills/maestro/stale" ] || fail "install.sh left a stale skill file in ~/.agents/skills"
 [ ! -e "$home/.local/share/maestro/packs/classics/stale" ] || fail "install.sh left a stale pack file"
 for old in maestro-ir-0.0.0.tgz maestro-host-repo-sdk-0.0.0.tgz; do
   [ ! -e "$home/.local/share/maestro/sdk/$old" ] || fail "install.sh left the old sdk tarball $old"
@@ -51,6 +52,7 @@ run_installer "$scratch/bad-home" "$scratch/bad" >/dev/null 2>"$scratch/install.
 [ "$code" -ne 0 ] || fail "install.sh accepted a corrupted asset"
 grep -q 'FAILED' "$scratch/install.err" || fail "install.sh hid the failed checksum: $(cat "$scratch/install.err")"
 [ ! -e "$scratch/bad-home/.local" ] || fail "install.sh installed from a corrupted release"
+[ ! -e "$scratch/bad-home/.agents" ] || fail "install.sh installed a skill from a corrupted release"
 
 if command -v dash >/dev/null; then
   step "install.sh under dash"
@@ -71,7 +73,7 @@ line=$(maestro --version)
 step "pack and skill"
 pack=$home/.local/share/maestro/packs/classics
 for file in "$pack/maestro-pack.json" "$pack/README.md" "$pack/profiles/builder/profile.yaml" \
-  "$home/.claude/skills/maestro/SKILL.md"; do
+  "$home/.claude/skills/maestro/SKILL.md" "$home/.agents/skills/maestro/SKILL.md"; do
   [ -f "$file" ] || fail "the tarballs did not install $file"
 done
 pack_version=$(bun -e 'console.log(require(process.argv[1]).version)' "$pack/maestro-pack.json")

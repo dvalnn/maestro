@@ -1,7 +1,7 @@
 # Install
 
-maestro ships from the private forge as a standalone Linux binary, package tarballs for authoring, a pack and a skill.
-Nothing is published to a public registry.
+maestro ships from the private forge as a standalone Linux binary, package tarballs for authoring, a pack and a skill
+for Claude Code, Codex and pi. Nothing is published to a public registry.
 
 ## 1. Requirements
 
@@ -36,12 +36,12 @@ curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh |
 The script needs `curl` and `sha256sum`, checks every asset against `SHA256SUMS` before touching anything, and refuses
 while a concert is running: wait for it to settle, or `maestro kill <id>`.
 
-| Installed                                | Where                                   |
-| ---------------------------------------- | --------------------------------------- |
-| The binary                               | `~/.local/bin/maestro`                  |
-| The classics pack                        | `$XDG_DATA_HOME/maestro/packs/classics` |
-| The maestro skill                        | `~/.claude/skills/maestro`              |
-| The four package tarballs, for authoring | `$XDG_DATA_HOME/maestro/sdk/`           |
+| Installed                                | Where                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------ |
+| The binary                               | `~/.local/bin/maestro`                                                                     |
+| The classics pack                        | `$XDG_DATA_HOME/maestro/packs/classics`                                                    |
+| The maestro skill                        | `~/.claude/skills/maestro` and `~/.agents/skills/maestro`, the directory Codex and pi read |
+| The four package tarballs, for authoring | `$XDG_DATA_HOME/maestro/sdk/`                                                              |
 
 `XDG_DATA_HOME` defaults to `~/.local/share`. The pack and skill directories and the package tarballs are replaced.
 `~/.local/bin` must be on `PATH`, and the script warns when it is not. If `maestro --version` prints something else,
@@ -58,10 +58,11 @@ The fallback when the script cannot run. Download the assets of a release into o
 sha256sum -c SHA256SUMS
 install -D -m 755 maestro-linux-x64 ~/.local/bin/maestro
 data="${XDG_DATA_HOME:-$HOME/.local/share}/maestro"
-rm -rf "$data/packs/classics" ~/.claude/skills/maestro
-mkdir -p "$data/packs" "$data/sdk" ~/.claude/skills
+rm -rf "$data/packs/classics" ~/.claude/skills/maestro ~/.agents/skills/maestro
+mkdir -p "$data/packs" "$data/sdk" ~/.claude/skills ~/.agents/skills
 tar -xzf classics-*.tar.gz -C "$data/packs"
 tar -xzf maestro-skill.tar.gz -C ~/.claude/skills
+tar -xzf maestro-skill.tar.gz -C ~/.agents/skills
 rm -f "$data"/sdk/maestro-*.tgz
 for package in ir sdk host-repo-sdk classics; do cp maestro-"$package"-[0-9]*.tgz "$data/sdk/maestro-$package.tgz"; done
 ```
@@ -145,7 +146,7 @@ Settle or `maestro kill` any running concert, then remove each path the script w
 ```sh
 data="${XDG_DATA_HOME:-$HOME/.local/share}/maestro"
 rm -f ~/.local/bin/maestro
-rm -rf "$data/packs/classics" "$data/sdk" ~/.claude/skills/maestro
+rm -rf "$data/packs/classics" "$data/sdk" ~/.claude/skills/maestro ~/.agents/skills/maestro
 ```
 
 Left in place, since they are yours and not written by the script: concerts and their record under `$data`, other packs
