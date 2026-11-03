@@ -13,8 +13,8 @@ branch until the restack moves it to `main`. On a low-risk PR to `main` the tick
 fast-forward only, so the commits keep their signature; it never merges by hand, so `main`'s branch protection must
 require the `check` status for the merge to wait on CI.
 
-It needs maestro `v0.1.0-rc.3` or later on `PATH`, since it calls `encore` and `artifact ls`, and `jj`, `git`, `bun` and
-`just` to land a slice. It needs no python or `fj`.
+It needs maestro `v0.1.0-rc.4` or later on `PATH`, since it calls `encore`, `artifact ls` and `--detach`, and `jj`,
+`git`, `bun` and `just` to land a slice. It needs no python or `fj`.
 
 It reads `$XDG_CONFIG_HOME/maestro/.env` (`~/.config` by default) when that exists, as maestro does, and a variable
 already set wins over the file:
