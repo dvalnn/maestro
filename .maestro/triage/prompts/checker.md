@@ -1,18 +1,8 @@
 Check the attached spec against the code. Its spec is in the attached `plan.json`.
 
-Write `check.json` in exactly this shape:
-
-```json
-{
-  "questions": [
-    {
-      "ask": "the failure and what the owner should say about it, one line",
-      "options": [],
-      "context": [{ "topic": "Claim", "text": "what the spec says and what the code shows, with its file:line" }]
-    }
-  ]
-}
-```
+Write `check.json` as `{ "questions": [...] }`, each question as under Questions for the owner: the `ask` names the
+failure and what the owner should rule on it, the `options` are the ways to resolve it, and `context` holds a `Claim`
+item, what the spec says against what the code shows with its file:line.
 
 - A claim the spec makes about the base holds: every function, file, flag, behaviour and call site it names exists and
   behaves as stated, and so does everything it says a change must also update.

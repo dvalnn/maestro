@@ -288,6 +288,16 @@ test("compose seats the triager on sonnet, the scouts on haiku, the planner on o
 	]);
 });
 
+test("each seat that asks the owner is given the question format", async () => {
+	const { plan } = await composed();
+	const task = (id: string) =>
+		JSON.stringify(
+			(plan.ir.nodes as { id: string }[]).find((n) => n.id === id),
+		);
+	for (const id of ["triager", "planner", "checker"])
+		expect(task(id)).toContain("## Questions for the owner");
+});
+
 test("the scouts and the planner are attached the triager's cut of the backlog, never the snapshot", async () => {
 	const { plan } = await composed();
 	type Node = { id: string; literals?: Record<string, unknown> };
