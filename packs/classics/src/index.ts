@@ -1,4 +1,5 @@
 export { rulingLine, survivorsOf, toMarkdown } from "./code";
+export { fill } from "./prompt";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";
 export { panel, panelReview, skepticTask } from "./review";
 export {

@@ -22,6 +22,21 @@ import {
 	Text,
 } from "@maestro/sdk";
 import { survivorsOf, toMarkdown } from "./code";
+import { fill } from "./prompt";
+import CONSOLIDATOR_GROUNDS from "./prompts/_consolidator-grounds.md" with {
+	type: "text",
+};
+import CONSOLIDATOR from "./prompts/consolidator.md" with { type: "text" };
+import CONSOLIDATOR_SKEPTICS from "./prompts/consolidator-skeptics.md" with {
+	type: "text",
+};
+import CORRECTNESS from "./prompts/correctness.md" with { type: "text" };
+import SKEPTIC from "./prompts/skeptic.md" with { type: "text" };
+import SKEPTIC_GROUNDS from "./prompts/skeptic-grounds.md" with {
+	type: "text",
+};
+import SPEC from "./prompts/spec.md" with { type: "text" };
+import TESTS from "./prompts/tests.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
 import { consolidator, lens, skeptic } from "./seats";
 
@@ -30,35 +45,23 @@ type Consolidated = ReturnType<
 >;
 
 /** Each lens a review can rule through, by name, as the task of its lens. */
-const LENSES = {
-	correctness:
-		"Rule on the change through this lens only: correctness, every changed path doing what it claims, its error paths included.",
-	spec: "Rule on the change through this lens only: the spec, each acceptance item met by the change, one by one, and nothing built that it leaves out or does not ask for.",
-	tests:
-		"Rule on the change through this lens only: the tests, each new behaviour pinned by a test that fails without it.",
-};
+const LENSES = { correctness: CORRECTNESS, spec: SPEC, tests: TESTS };
 
 const LENS_NAMES = ["correctness", "spec", "tests"] as const;
 type LensName = (typeof LENS_NAMES)[number];
 
 /** The task of a skeptic over a lens's findings, ruling by `grounds` when given. */
 export function skepticTask(grounds?: string): string {
-	if (grounds === undefined)
-		return "A lens ruled on this change. Challenge each of its findings against the code, and rule whether it holds.";
-	return `A lens ruled on this change under these grounds: ${grounds} Challenge each of its findings against the code and those grounds, and rule whether it holds. A finding holds only when it also breaks a rule, requirement or ADR the grounds name; one that cites none does not hold. Uphold a finding only with its evidence in why: the file:line that shows it, or the output of a check you ran; a finding you could not verify does not hold. For a missing test, name in why the line whose removal no test catches, and the tests you read.`;
+	if (grounds === undefined) return SKEPTIC;
+	return [SKEPTIC_GROUNDS, grounds].join("\n\n");
 }
-
-const CONSOLIDATE_TASK =
-	"Rule on the change against the spec. Write the ruling for a reader in review.md and as data in verdict.json.";
 
 /** The task of the consolidator over the findings of lenses, kept by skeptics when `skeptics`, ruling by `grounds` when given. */
 const consolidateTask = (skeptics: boolean, grounds?: string) => {
-	const lead = skeptics
-		? "Independent lenses ruled on this change, and skeptics kept the findings the code shows."
-		: "Independent lenses ruled on this change.";
-	if (grounds === undefined) return `${lead} ${CONSOLIDATE_TASK}`;
-	const blocking = skeptics ? "a skeptic upheld" : "a lens raised";
-	return `${lead} ${CONSOLIDATE_TASK} Rule by these grounds: ${grounds} A blocking finding ${blocking} blocks approval, unless you dismiss it by naming the ground that excludes it: out of review, or advisory as the grounds rank it. That the spec's acceptance leaves a test out is no ground. In review.md, list each finding you dismiss with its ground. Report each finding you dismiss as advisory as one gap, and none you dismiss as out of review.`;
+	const task = skeptics ? CONSOLIDATOR_SKEPTICS : CONSOLIDATOR;
+	if (grounds === undefined) return task;
+	const raised = skeptics ? "a skeptic upheld" : "a lens raised";
+	return [task, fill(CONSOLIDATOR_GROUNDS, { raised }), grounds].join("\n\n");
 };
 
 type Panel<T extends string> = {
