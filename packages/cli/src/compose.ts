@@ -103,6 +103,7 @@ async function print(
 }
 
 export const compose: Command = {
+	pages: (args) => !textOf(peek(COMPOSE_OPTIONS, args), "out"),
 	usage: "compose <composition> [flags]  (alias: c)",
 	arguments: [
 		[
@@ -168,6 +169,7 @@ const layerOf = ({ layer, file }: ReturnType<typeof rowsOf>[number]) =>
 		: layer;
 
 export const config: Command = {
+	pages: true,
 	usage: "config <composition> [flags]  (alias: cfg)",
 	arguments: [
 		[

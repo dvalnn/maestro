@@ -190,6 +190,7 @@ async function reportHelp(args: readonly string[], deps: Deps) {
 }
 
 export const ls: Command = {
+	pages: true,
 	usage: "ls [<concert>] [flags]",
 	arguments: [
 		[

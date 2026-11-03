@@ -28,6 +28,7 @@ import {
 	table,
 	usageError,
 } from "./output";
+import { withPager } from "./pager";
 
 /** A verb is loaded when it is named, so a command pays only for the code it uses. */
 type Verb = {
@@ -146,6 +147,10 @@ const ENVIRONMENT: readonly (readonly [string, string])[] = [
 	["NO_COLOR", "Turn color off, when not empty"],
 	["FORCE_COLOR", "Color output even when not a terminal, when not empty"],
 	["TERM", "dumb turns color off"],
+	[
+		"PAGER",
+		"The pager for a finished document on a terminal (default less -FRX); empty or cat turns paging off",
+	],
 	["MAESTRO_TOUR", "The tour a new concert joins when --tour is not given"],
 	[
 		"XDG_CONFIG_HOME",
@@ -308,11 +313,14 @@ function verbOf(word: string): Verb {
  * What `maestro` with no command word does: prints the version or the help it asks for, else refuses.
  * @throws CliError, a usage error, for a flag the common ones lack, or when it asks for neither.
  */
-function bare(argv: readonly string[], deps: Deps): number {
+async function bare(argv: readonly string[], deps: Deps): Promise<number> {
 	const common = peek(COMMON, argv);
 	if (argv.includes("--version")) deps.stdout(versionLine());
 	else if (isSet(common, "help"))
-		deps.stdout(rootHelp(colorOf(deps, common).out));
+		return withPager(deps, true, (out) => {
+			out.stdout(rootHelp(colorOf(deps, common).out));
+			return EXIT.ok;
+		});
 	else {
 		parse(COMMON, argv, "Flags are listed in 'maestro --help'");
 		throw usageError(
@@ -331,6 +339,9 @@ function helpArgs(args: readonly string[]): string[] {
 	return first === undefined ? ["--help", ...rest] : [first, ...rest, "--help"];
 }
 
+const pagesFor = ({ pages }: Command, args: readonly string[]) =>
+	typeof pages === "function" ? pages(args) : pages === true;
+
 /**
  * Reads `argv`, the arguments after the executable, and carries out the command it names. The common flags may come
  * before the command.
@@ -345,7 +356,7 @@ export async function main(
 	let options = COMMON;
 	let at: At | undefined;
 	try {
-		if (word === undefined) return bare(argv, deps);
+		if (word === undefined) return await bare(argv, deps);
 		if (word === "help") return await main(helpArgs(args), deps);
 		const verb = verbOf(word);
 		const command = await verb.load();
@@ -359,10 +370,16 @@ export async function main(
 		if (isSet(common, "help")) {
 			const { out } = colorOf(deps, common);
 			const extra = await extraHelp(command, args, deps);
-			deps.stdout(helpOf(command, verb.summary, extra, out));
-			return EXIT.ok;
+			return await withPager(deps, true, (paged) => {
+				paged.stdout(helpOf(command, verb.summary, extra, out));
+				return EXIT.ok;
+			});
 		}
-		return await command.execute(args, deps);
+		return await withPager(
+			deps,
+			pagesFor(command, args) && !isSet(common, "json"),
+			(paged) => command.execute(args, paged),
+		);
 	} catch (error) {
 		return report(error, deps, args, options, at);
 	}

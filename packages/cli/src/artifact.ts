@@ -240,6 +240,7 @@ async function artifacted(stored: Stored, { prefix, instance, file }: Named) {
 }
 
 export const artifact: Command = {
+	pages: true,
 	usage:
 		"artifact ls <concert> [flags]  (alias: art)\n       maestro artifact show <concert> <instance> [<file>] [flags]",
 	arguments: [

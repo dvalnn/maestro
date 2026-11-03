@@ -7,6 +7,7 @@ import { main } from "./cli";
 import { loadDotenv } from "./config";
 import { builtinHosts } from "./hosts";
 import { EXIT } from "./output";
+import { startPager } from "./pager";
 import { fullScreen } from "./screen";
 import { selfOf } from "./session";
 
@@ -79,6 +80,7 @@ process.exit(
 						stderr: (line) => emit(STDERR_FD, `${line}\n`),
 					})
 				: undefined,
+		startPager,
 		self: selfOf(),
 	}),
 );

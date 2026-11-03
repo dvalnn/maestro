@@ -33,10 +33,19 @@ export type Deps = {
 	terminal?(): { columns: number; rows: number };
 	/** The width of the terminal stderr writes to. Absent when stderr is not a terminal. */
 	stderrTerminal?(): { columns: number };
+	/** Starts the shell command `command` as a pager with the environment `env`; throws when it cannot start. */
+	startPager?(command: string, env: Readonly<Record<string, string>>): Pager;
 	/** The terminal as a screen a view drives by keys. Absent unless stdin and stdout are both terminals. */
 	screen?: Screen;
 	/** The command that runs this program, executable first, to run it again. */
 	self: readonly string[];
+};
+
+/** A pager process stdout is piped to. */
+export type Pager = {
+	write(bytes: Uint8Array): void;
+	/** Ends its input, waits for it to exit and gives its exit code. */
+	close(): Promise<number>;
 };
 
 /** A terminal taken over whole, from `enter` until `leave`. */
@@ -102,6 +111,11 @@ export type Command = {
 	/** Each positional of the usage with what it is and where to find one. */
 	arguments?: readonly (readonly [name: string, what: string])[];
 	options: Options;
+	/**
+	 * Whether stdout, on a terminal and without `--json`, goes through the pager, for the `args` given: it prints a
+	 * finished document and nothing on stderr after it.
+	 */
+	pages?: boolean | ((args: readonly string[]) => boolean);
 	examples?: readonly Example[];
 	execute(args: readonly string[], deps: Deps): Promise<number>;
 	/** What `--help` adds after the flags for `args`, such as the params of the composition they name. */

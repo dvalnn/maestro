@@ -195,6 +195,7 @@ function printed(deps: Deps, { entries, composition }: Selection): void {
 }
 
 export const repertoire: Command = {
+	pages: true,
 	usage: "repertoire [<pack>[.<composition>]] [flags]  (alias: rep)",
 	arguments: [
 		[

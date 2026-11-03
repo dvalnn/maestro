@@ -93,7 +93,7 @@ maestro wait <concert> --timeout 15m
 [^artifact]:
     `ls` prints a table of each artifact's instance, port, `stale` mark and absolute path (`--json`: a list of
     `{instance, port, path, contentHash}`, plus `stale: true` on a stale instance's). `art show <concert> <instance>`
-    prints the bytes of each file of the instance's artifacts as they are, each after a `══ <file>` line when there are
+    prints the bytes of each file of the instance's artifacts as they are each after a `══ <file>` line when there are
     several; `art show <concert> <instance> <file>` prints one, so it pipes, such as
     `maestro art show <concert> request request.md | glow -p`. A file is named by its artifact's basename plus any inner
     path, such as `staged/prompt.md`. `--path` prints absolute paths, one per line, instead. Printing a stale instance's
@@ -151,6 +151,17 @@ Each stream is colored when it is a terminal: stdout by its own check, stderr by
 bold table headers of `ls`, `ls <concert>` and `art`, the closing block, the `watch` views, a diagnostic's `error:` or
 `warning:` label (red, yellow for a warning; a code shows only under `--json`) and its dim hint line, the dim hint line
 of an error, and `--help` (bold headings, cyan flags, the Params block included).
+
+When stdout is a terminal and `TERM` is set and not `dumb`, a command that prints a finished document and nothing after
+it pages it, as `git` does: `--help`, `ls`, `compose` without `--out`, `config`, `agent show`, `repertoire`, `artifact`
+and `changeset show`, but not under `--json`, and never `perform`, `resume`, `encore`, `wait`, `watch`, `kill`, `prune`,
+`tour`, `agent ls` or `changeset apply` and `drop`, which stream progress, ask, or print a line after their output. The
+pager is `$PAGER` run as a shell command, as `git` does, `less -FRX` when unset, which quits at once when the output
+fits a screen and keeps color; `LESS` is set to `FRX` for the pager when you have not set it. `PAGER=` (empty) or
+`PAGER=cat` turns paging off, and output goes straight through when the pager cannot start. When the shell cannot find
+the pager (exit 127), maestro names `PAGER` on stderr and prints the output as it is; the exit code stays the command's,
+as `git`'s does. A pipe is never paged, so `maestro art show <concert> <instance> review.md | glow -p` works. While the
+pager is open Ctrl-C goes to it.
 
 `watch` replays from the concert's first event, then follows it. With `--json`, or off a terminal without `--events`, it
 prints a JSON Lines stream: one compact line per record event that changes an instance's state (`running`, `settled`,

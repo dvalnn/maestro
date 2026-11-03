@@ -24,6 +24,7 @@ import {
 	only,
 	parse,
 	SHARED,
+	splitFirst,
 	textOf,
 	type Values,
 	warn,
@@ -560,6 +561,7 @@ async function changesetRun(args: readonly string[], deps: Deps) {
 }
 
 export const changeset: Command = {
+	pages: (args) => splitFirst(CHANGESET_OPTIONS, args).first === "show",
 	usage:
 		"changeset show|apply <concert> [flags]  (alias: cs)\n       maestro changeset drop [flags]",
 	arguments: [["<concert>", "A concert, as 'maestro ls' lists it"]],

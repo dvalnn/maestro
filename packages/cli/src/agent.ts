@@ -45,6 +45,7 @@ import {
 	type Options,
 	only,
 	parse,
+	splitFirst,
 	textOf,
 	type Values,
 } from "./command";
@@ -878,6 +879,7 @@ async function recorded(
 }
 
 export const agent: Command = {
+	pages: (args) => splitFirst(AGENT_OPTIONS, args).first === "show",
 	usage:
 		"agent ls [flags]  (alias: ag)\n       maestro agent show <profile> [--probe] [flags]\n       maestro agent show --seat <composition id>/<seat> <composition> [--prompt] [flags]\n       maestro agent show --concert <id> <node> [flags]",
 	arguments: [

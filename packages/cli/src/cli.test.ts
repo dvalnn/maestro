@@ -24,6 +24,7 @@ import {
 } from "./fixtures/world";
 import { codeHashOf } from "./loader";
 import { renderDiagnostic, renderWarning } from "./output";
+import { startPager } from "./pager";
 import { olderHint } from "./records";
 
 const GOLDEN = join(FIXTURES, "../../../ir/fixtures");
@@ -2063,5 +2064,134 @@ describe("exit codes and error states", () => {
 		expect(
 			(await w.call(["perform", ...GREET, "--json"], { stderrTerminal })).err,
 		).not.toContain("Follow it");
+	});
+
+	describe("paging", () => {
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const env = { TERM: "xterm" };
+		/** A pager that keeps what it is given, and the command and `LESS` it was started with, and exits with `code`. */
+		const fakePager = (code = 0) => {
+			const seen = {
+				started: [] as string[],
+				less: [] as string[],
+				text: "",
+				closed: 0,
+			};
+			const startPager = (
+				command: string,
+				pagerEnv: Readonly<Record<string, string>>,
+			) => {
+				seen.started.push(command);
+				seen.less.push(pagerEnv.LESS ?? "");
+				return {
+					write: (bytes: Uint8Array) => {
+						seen.text += new TextDecoder().decode(bytes);
+					},
+					close: async () => {
+						seen.closed++;
+						return code;
+					},
+				};
+			};
+			return { seen, startPager };
+		};
+
+		test("a finished document goes whole to the pager, `less -FRX` by default and `PAGER` as a shell command, with LESS set only when unset", async () => {
+			const w = await world();
+			const piped = await w.call(["repertoire"]);
+			const a = fakePager();
+			const out = await w.call(["repertoire"], { terminal, env, ...a });
+			expect(out).toEqual({ code: 0, out: "", err: "" });
+			expect(a.seen.text.trimEnd()).toBe(piped.out);
+			expect(a.seen).toMatchObject({
+				started: ["less -FRX"],
+				less: ["FRX"],
+				closed: 1,
+			});
+			const b = fakePager();
+			await w.call(["repertoire"], {
+				terminal,
+				...b,
+				env: { ...env, PAGER: "cat | bat -p", LESS: "-i" },
+			});
+			expect(b.seen).toMatchObject({ started: ["cat | bat -p"], less: ["-i"] });
+			const help = fakePager();
+			await w.call(["--help"], { terminal, env, ...help });
+			expect(help.seen.text).toContain("Commands:");
+		});
+
+		test("nothing pages off a terminal, under --json, for a streaming command, for PAGER empty or cat, for TERM unset or dumb, or for a command that prints nothing", async () => {
+			const w = await world();
+			const a = fakePager();
+			await w.call(["repertoire"], { env, ...a });
+			await w.call(["repertoire", "--json"], { terminal, env, ...a });
+			await w.call(["perform", ...GREET], { terminal, env, ...a });
+			const offs: Record<string, string>[] = [
+				{ PAGER: "" },
+				{ PAGER: "cat" },
+				{ TERM: "dumb" },
+				{ TERM: "" },
+			];
+			for (const over of offs)
+				await w.call(["repertoire"], {
+					terminal,
+					...a,
+					env: { ...env, ...over },
+				});
+			await w.call(["artifact", "ls", "0"], { terminal, env, ...a });
+			expect(a.seen.started).toEqual([]);
+		});
+
+		test("only the commands that print a finished document and nothing after it page", async () => {
+			const w = await world();
+			const a = fakePager();
+			const call = (args: string[]) => w.call(args, { terminal, env, ...a });
+			await call(["compose", "demo.greet", "--out", join(w.root, "out.json")]);
+			await call(["changeset", "apply", "0"]);
+			await call(["agent", "ls"]);
+			expect(a.seen.started).toEqual([]);
+			await call(["compose", "demo.greet"]);
+			await call(["agent", "show", "nothing"]);
+			expect(a.seen.started.length).toBeGreaterThan(0);
+		});
+
+		test("output goes straight through when the pager cannot start", async () => {
+			const w = await world();
+			const piped = await w.call(["repertoire"]);
+			const startPager = () => {
+				throw new Error("ENOENT");
+			};
+			expect(
+				await w.call(["repertoire"], { terminal, env, startPager }),
+			).toEqual(piped);
+		});
+
+		test("a pager the shell cannot find is named on stderr and the output is printed as it is", async () => {
+			const w = await world();
+			const piped = await w.call(["repertoire"]);
+			const missing = fakePager(127);
+			const out = await w.call(["repertoire"], {
+				terminal,
+				...missing,
+				env: { ...env, PAGER: "nonexistent" },
+			});
+			expect(out.out).toBe(piped.out);
+			expect(out.code).toBe(0);
+			expect(out.err).toContain("PAGER=nonexistent: command not found");
+			expect(out.err.trimEnd().split("\n").at(-1)).toContain("Set PAGER");
+		});
+
+		test("the real pager gets the output on its stdin and is waited for", async () => {
+			const w = await world();
+			const sink = join(w.root, "paged.txt");
+			const piped = await w.call(["repertoire"]);
+			const out = await w.call(["repertoire"], {
+				terminal,
+				startPager,
+				env: { ...env, PAGER: `cat | dd status=none of=${sink}` },
+			});
+			expect(out.out).toBe("");
+			expect(await Bun.file(sink).text()).toBe(`${piped.out}\n`);
+		});
 	});
 });
