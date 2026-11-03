@@ -13,11 +13,13 @@ import {
 	warn,
 } from "./command";
 import {
+	ArgumentError,
 	artifactRefs,
 	CliError,
 	EXIT,
 	instanceName,
 	jsonOf,
+	NAME_CONCERT,
 	nameOf,
 	staleCell,
 	table,
@@ -101,18 +103,25 @@ async function filesOf(path: string): Promise<File[]> {
 
 /**
  * Checks that `args`, the arguments after the sub-verb `action`, number what it takes.
- * @throws CliError, a usage error, unless `ls` has one concert, or `show` a concert, an instance and at most a file.
+ * @throws ArgumentError unless `ls` has one concert, or `show` a concert, an instance and at most a file.
  */
 function arity(action: "ls" | "show", args: readonly string[]) {
-	if (action === "ls" && args.length !== 1)
-		throw usageError(
-			`artifact ls takes one concert, got ${args.length} arguments`,
-			"Write maestro artifact ls <concert>",
+	if (args.length === 0)
+		throw new ArgumentError(`${action} needs a concert`, NAME_CONCERT);
+	if (action === "ls" && args.length > 1)
+		throw new ArgumentError(
+			`ls takes one concert, got ${args.length}`,
+			NAME_CONCERT,
 		);
-	if (action === "show" && (args.length < 2 || args.length > 3))
-		throw usageError(
-			`artifact show takes a concert, an instance and at most a file, got ${args.length} arguments`,
-			"Write maestro artifact show <concert> <instance> [<file>]",
+	if (action === "show" && args.length === 1)
+		throw new ArgumentError(
+			"show needs an instance",
+			"Name one as 'maestro artifact ls <concert>' lists it",
+		);
+	if (action === "show" && args.length > 3)
+		throw new ArgumentError(
+			`show takes a concert, an instance and at most a file, got ${args.length}`,
+			"Name a file by its name, or leave it out to print every file",
 		);
 }
 
@@ -223,7 +232,32 @@ async function artifacted(stored: Stored, { prefix, instance, file }: Named) {
 export const artifact: Command = {
 	usage:
 		"artifact ls <concert> [flags]  (alias: art)\n       maestro artifact show <concert> <instance> [<file>] [flags]",
+	arguments: [
+		["<concert>", "A concert, as 'maestro ls' lists it"],
+		[
+			"<instance>",
+			"One of its node instances, as 'maestro ls <concert>' lists it, or a unique ending of its id",
+		],
+		[
+			"<file>",
+			"One file of that instance, by name; without it, every file prints in turn",
+		],
+	],
 	options: ARTIFACT_OPTIONS,
+	examples: [
+		[
+			"What did the concert leave, instance by instance?",
+			"maestro artifact ls 7f3c2a",
+		],
+		[
+			"Read the review the consolidator wrote",
+			"maestro artifact show 7f3c2a consolidator review.md",
+		],
+		[
+			"Open an instance's files in your editor",
+			"$EDITOR $(maestro artifact show 7f3c2a consolidator --path)",
+		],
+	],
 	execute: (args, deps) =>
 		withStore(ARTIFACT_OPTIONS, args, deps, FIX, checked, artifacted),
 };

@@ -7,7 +7,7 @@ import { COMMON, type Command, type Deps, isSet, parse } from "./command";
 import type { PackDir } from "./config";
 import { flagUsage, type ParamEntry, paramEntries, paramsBlock } from "./flags";
 import { type Bundle, claimsOf, openPack } from "./loader";
-import { EXIT, jsonOf, table, usageError } from "./output";
+import { ArgumentError, EXIT, jsonOf, table } from "./output";
 import { paramValues } from "./params";
 import { chosen, installedPack } from "./prepare";
 import { openSession, overridesOf } from "./session";
@@ -196,13 +196,19 @@ function printed(deps: Deps, { entries, composition }: Selection): void {
 
 export const repertoire: Command = {
 	usage: "repertoire [<pack>[.<composition>]] [flags]  (alias: rep)",
+	arguments: [
+		[
+			"<pack>",
+			"An installed pack, or <pack>.<composition> for one of its compositions; without it, every pack is listed",
+		],
+	],
 	options: COMMON,
 	async execute(args, deps) {
 		const { values, positionals } = parse(COMMON, args, FIX);
 		if (positionals.length > 1)
-			throw usageError(
-				`expected at most one pack or composition, got ${positionals.length}`,
-				FIX,
+			throw new ArgumentError(
+				`takes at most one pack or composition, got ${positionals.length}`,
+				"Name one pack, or none to list every pack",
 			);
 		const session = await openSession(deps, overridesOf(values));
 		const { packs: dirs, packsDir } = session.config;

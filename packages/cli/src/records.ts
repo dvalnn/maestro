@@ -31,12 +31,14 @@ import {
 } from "./command";
 import { actorOf, hostTextOf, notesOf, reportOf } from "./host-text";
 import {
+	ArgumentError,
 	CliError,
 	EXIT,
 	exitOf,
 	formatBytes,
 	instanceName,
 	jsonOf,
+	NAME_CONCERT,
 	paint,
 	parseCount,
 	parseDuration,
@@ -154,13 +156,13 @@ function noteCounts(
 
 /**
  * The concert `ls` is to show, if any, and the filter and limit of the list.
- * @throws CliError, a usage error, for more than one concert, or a bad filter or limit.
+ * @throws ArgumentError for more than one concert, and CliError, a usage error, for a bad filter or limit.
  */
 function lsChecked(values: Values, positionals: readonly string[]) {
 	const [id, ...rest] = positionals;
 	if (rest.length > 0)
-		throw usageError(
-			`expected at most one concert, got ${positionals.length}`,
+		throw new ArgumentError(
+			`takes at most one concert, got ${positionals.length}`,
 			"Name one concert, or none to list them all",
 		);
 	const limit = textOf(values, "limit");
@@ -184,7 +186,21 @@ async function reportHelp(args: readonly string[], deps: Deps) {
 
 export const ls: Command = {
 	usage: "ls [<concert>] [flags]",
+	arguments: [
+		[
+			"<concert>",
+			"A concert, as 'maestro ls' lists it; without it, the concerts are listed",
+		],
+	],
 	options: LS_OPTIONS,
+	examples: [
+		["Which concerts failed?", "maestro ls --status failed"],
+		[
+			"Every concert on the epic tour and the tours under it, such as epic.story",
+			"maestro ls --tour epic",
+		],
+		["One concert's node instances", "maestro ls 7f3c2a"],
+	],
 	help: reportHelp,
 	execute: (args, deps) =>
 		withStore(
@@ -351,8 +367,6 @@ const WAIT_OPTIONS = {
 	},
 } as const satisfies Options;
 
-const NAME_TO_WAIT = "Name the concert to wait for";
-
 /**
  * The concert to wait for, and the limit to wait for it, if any.
  * @throws CliError, a usage error, for other than one concert, or a bad `--timeout`.
@@ -360,7 +374,7 @@ const NAME_TO_WAIT = "Name the concert to wait for";
 function waitChecked(values: Values, positionals: readonly string[]) {
 	const timeout = textOf(values, "timeout");
 	return {
-		prefix: only(positionals, "concert", NAME_TO_WAIT),
+		prefix: only(positionals, "concert", NAME_CONCERT),
 		limit:
 			timeout === undefined ? undefined : parseDuration("--timeout", timeout),
 	};
@@ -394,6 +408,7 @@ async function waited(
 
 export const wait: Command = {
 	usage: "wait <concert> [flags]  (alias: wt)",
+	arguments: [["<concert>", "A concert, as 'maestro ls' lists it"]],
 	options: WAIT_OPTIONS,
 	execute: (args, deps) =>
 		withStore(
@@ -428,8 +443,6 @@ function signal(pid: number) {
 	}
 }
 
-const NAME_TO_STOP = "Name the concert to stop";
-
 async function killed({ session, store, json }: Stored, prefix: string) {
 	const { deps } = session;
 	const { id, status, pid } = concertOf(store, prefix);
@@ -455,6 +468,7 @@ async function killed({ session, store, json }: Stored, prefix: string) {
 
 export const kill: Command = {
 	usage: "kill <concert> [flags]  (alias: k)",
+	arguments: [["<concert>", "A running concert, as 'maestro ls' lists it"]],
 	options: COMMON,
 	execute: (args, deps) =>
 		withStore(
@@ -462,7 +476,7 @@ export const kill: Command = {
 			args,
 			deps,
 			"Flags are listed in 'maestro kill --help'",
-			(_values, positionals) => only(positionals, "concert", NAME_TO_STOP),
+			(_values, positionals) => only(positionals, "concert", NAME_CONCERT),
 			killed,
 		),
 };
@@ -481,8 +495,8 @@ function tourAndConcerts(_values: Values, positionals: readonly string[]) {
 	const [first, ...named] = rest;
 	const ids = action === "clear" ? rest : named;
 	if (ids.length === 0)
-		throw usageError(
-			`tour ${action} takes ${action === "set" ? "a slug and " : ""}at least one concert`,
+		throw new ArgumentError(
+			`${action} needs ${action === "set" ? "a slug and " : ""}at least one concert`,
 			TOUR_FIX,
 		);
 	return {
@@ -506,7 +520,15 @@ async function toured(
 export const tour: Command = {
 	usage:
 		"tour set <slug> <concert>... [flags]  (alias: t)\n       maestro tour clear <concert>... [flags]",
+	arguments: [
+		["<slug>", "The tour, such as epic or epic.story"],
+		["<concert>", "A concert, as 'maestro ls' lists it"],
+	],
 	options: COMMON,
+	examples: [
+		["Put two concerts on a tour", "maestro tour set epic.story 7f3c2a 9b1d04"],
+		["Take a concert off its tour", "maestro tour clear 7f3c2a"],
+	],
 	execute: (args, deps) =>
 		withStore(
 			COMMON,

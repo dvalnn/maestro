@@ -104,6 +104,12 @@ async function print(
 
 export const compose: Command = {
 	usage: "compose <composition> [flags]  (alias: c)",
+	arguments: [
+		[
+			"<composition>",
+			"A .ts, .js or .json file, or <pack>.<composition> as 'maestro repertoire' lists it",
+		],
+	],
 	options: COMPOSE_OPTIONS,
 	help: compositionHelp,
 	async execute(args, deps) {
@@ -163,6 +169,22 @@ const layerOf = ({ layer, file }: ReturnType<typeof rowsOf>[number]) =>
 
 export const config: Command = {
 	usage: "config <composition> [flags]  (alias: cfg)",
+	arguments: [
+		[
+			"<composition>",
+			"A .ts, .js or .json file, or <pack>.<composition> as 'maestro repertoire' lists it",
+		],
+	],
+	examples: [
+		[
+			"Where does each key of the config come from?",
+			'maestro config classics.build_then_repair --request "Add a --verbose flag"',
+		],
+		[
+			"See a -c override take the top layer",
+			'maestro config classics.build_then_repair --request "Add a --verbose flag" -c target.repo=../app',
+		],
+	],
 	options: COMMON,
 	async execute(args, deps) {
 		const { json, prepared } = await composed(

@@ -10,7 +10,7 @@ import {
 } from "@maestro/core/perform";
 import { mapWorkers } from "@maestro/ir";
 import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk/loader";
-import { changesOf, NAME_CONCERT } from "./changeset";
+import { changesOf } from "./changeset";
 import {
 	COMMON,
 	type Colors,
@@ -30,6 +30,7 @@ import {
 	encoreRefused,
 	exitOf,
 	jsonOf,
+	NAME_CONCERT,
 	parseTour,
 	printClosing,
 	renderDiagnostic,
@@ -309,6 +310,26 @@ async function inStore(
 
 export const perform: Command = {
 	usage: "perform <composition> [flags]  (alias: p)",
+	arguments: [
+		[
+			"<composition>",
+			"A .ts, .js or .json file, or <pack>.<composition> as 'maestro repertoire' lists it",
+		],
+	],
+	examples: [
+		[
+			"Perform a pack's composition with one of its params",
+			'maestro perform classics.build_then_repair --request "Add a --verbose flag"',
+		],
+		[
+			"Rehearse with the stub preset, which spends nothing",
+			'maestro perform .maestro/slice.ts --preset stub --request "Add a --verbose flag" --tier small',
+		],
+		[
+			"Put the concert on a tour, with a title",
+			'maestro perform classics.build_then_repair --request "Add a --verbose flag" --tour epic.story --title "Verbose flag"',
+		],
+	],
 	options: PERFORM_OPTIONS,
 	help: compositionHelp,
 	async execute(args, deps) {
@@ -324,6 +345,17 @@ export const perform: Command = {
 
 export const resume: Command = {
 	usage: "resume <concert> [flags]",
+	arguments: [["<concert>", "A concert, as 'maestro ls' lists it"]],
+	examples: [
+		[
+			"Resume a failed concert after fixing what failed",
+			"maestro resume 7f3c2a",
+		],
+		[
+			"Resume with a config value changed",
+			"maestro resume 7f3c2a -c concurrency=2",
+		],
+	],
 	options: COMMON,
 	async execute(args, deps) {
 		const { values, positionals } = parse(
@@ -343,6 +375,17 @@ export const resume: Command = {
 
 export const encore: Command = {
 	usage: "encore <concert> [flags]",
+	arguments: [["<concert>", "A concert, as 'maestro ls' lists it"]],
+	examples: [
+		[
+			"Perform a concert's composition again as a new concert",
+			"maestro encore 7f3c2a",
+		],
+		[
+			"Change one of its params",
+			'maestro encore 7f3c2a --request "Add a --quiet flag"',
+		],
+	],
 	options: PERFORM_OPTIONS,
 	async execute(args, deps) {
 		const { first, rest } = splitFirst(PERFORM_OPTIONS, args);

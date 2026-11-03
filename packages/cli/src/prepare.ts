@@ -38,7 +38,7 @@ import {
 	rewriteModules,
 	withCurrentHashes,
 } from "./loader";
-import { CliError, Diagnosed, usageError } from "./output";
+import { ArgumentError, CliError, Diagnosed, usageError } from "./output";
 import { paramValues } from "./params";
 import { openSession, overridesOf, type Session } from "./session";
 
@@ -368,9 +368,9 @@ export async function prepare(
 ): Promise<Prepared> {
 	const [target, ...rest] = args;
 	if (target === undefined || target.startsWith("-"))
-		throw usageError(
-			`${reading.verb} takes a composition first`,
-			`Name a file, or <pack>.<composition>, before its flags`,
+		throw new ArgumentError(
+			"needs a composition",
+			"Name a file or <pack>.<composition>, before its flags",
 		);
 	if (IR_FILE.test(target)) {
 		await requireFile(session, target);

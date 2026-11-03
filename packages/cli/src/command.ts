@@ -5,6 +5,7 @@ import type { ConcertFilter } from "@maestro/core/perform";
 import { messageOf } from "@maestro/ir";
 import type { Environment } from "./config";
 import {
+	ArgumentError,
 	compositionOf,
 	paint,
 	parseTour,
@@ -51,15 +52,19 @@ export type Screen = {
 
 export type Colors = { out: boolean; err: boolean };
 
-/** Which streams color: each one that is a terminal, unless `--no-color` in `values`, `NO_COLOR` or `TERM=dumb` say no. */
+/**
+ * Which streams color: each one that is a terminal, or every one under `--color` or a non-empty `FORCE_COLOR`, unless
+ * `--no-color` in `values`, `NO_COLOR` or `TERM=dumb` say no.
+ */
 export const colorOf = (
 	{ env, terminal, stderrTerminal }: Deps,
 	values: Values,
 ): Colors => {
 	const on = values.color !== false && !env.NO_COLOR && env.TERM !== "dumb";
+	const forced = values.color === true || !!env.FORCE_COLOR;
 	return {
-		out: on && terminal !== undefined,
-		err: on && stderrTerminal !== undefined,
+		out: on && (forced || terminal !== undefined),
+		err: on && (forced || stderrTerminal !== undefined),
 	};
 };
 
@@ -86,10 +91,16 @@ export type Values = Readonly<
 	Record<string, string | boolean | (string | boolean)[] | undefined>
 >;
 
+/** An example: a comment saying what the command does, and the command. */
+type Example = readonly [comment: string, command: string];
+
 /** One verb: what it takes, and what it does with its arguments. */
 export type Command = {
 	usage: string;
+	/** Each positional of the usage with what it is and where to find one. */
+	arguments?: readonly (readonly [name: string, what: string])[];
 	options: Options;
+	examples?: readonly Example[];
 	execute(args: readonly string[], deps: Deps): Promise<number>;
 	/** What `--help` adds after the flags for `args`, such as the params of the composition they name. */
 	help?(args: readonly string[], deps: Deps): Promise<string | undefined>;
@@ -146,7 +157,7 @@ export const COMMON: Options = {
 	},
 	color: {
 		type: "boolean",
-		desc: "Color output on a terminal (default); --no-color turns it off",
+		desc: "Color output even when not a terminal; --no-color turns it off",
 	},
 	debug: { type: "boolean", desc: "Show stack traces" },
 	help: { type: "boolean", short: "h", desc: "Show this help" },
@@ -159,6 +170,28 @@ const forParser = (options: Options) =>
 			{ type, ...(multiple && { multiple }), ...(short && { short }) },
 		]),
 	);
+
+const PARSER_FLAG = /'(?:-\w, )?(-{1,2}[^' ]+)/;
+
+/** The usage error for `error`, the parser's, ending with `fix`, or a did-you-mean for a long flag `options` nearly has. */
+function parserError(error: unknown, options: Options, fix: string) {
+	const [what = "unusable arguments"] = messageOf(error).split(/\. |\n/);
+	const flag = PARSER_FLAG.exec(what)?.[1];
+	if (flag === undefined) return usageError(what, fix);
+	if ((error as NodeJS.ErrnoException).code !== "ERR_PARSE_ARGS_UNKNOWN_OPTION")
+		return usageError(
+			what.includes("does not take")
+				? `${flag} takes no value`
+				: `${flag} needs a value`,
+			fix,
+		);
+	const near =
+		flag.startsWith("--") && closest(flag.slice(2), Object.keys(options));
+	return usageError(
+		`unknown flag ${flag}`,
+		near ? `Did you mean --${near}?` : fix,
+	);
+}
 
 /**
  * `args` read against `options`.
@@ -174,10 +207,7 @@ export function parse(options: Options, args: readonly string[], fix: string) {
 		});
 		return { values: values as Values, positionals };
 	} catch (error) {
-		const [what = "unusable arguments"] = messageOf(error).split(". ");
-		const flag = /^Unknown option '--([^']+)'/.exec(what)?.[1];
-		const near = flag && closest(flag, Object.keys(options));
-		throw usageError(what, near ? `Did you mean --${near}?` : fix);
+		throw parserError(error, options, fix);
 	}
 }
 
@@ -204,6 +234,8 @@ export function splitFirst(options: Options, args: readonly string[]) {
 	const at = tokens.find((t) => t.kind === "positional");
 	return {
 		first: at?.value,
+		/** What came before the first positional. */
+		lead: args.slice(0, at?.index ?? args.length),
 		rest: args.filter((_, i) => i !== at?.index),
 	};
 }
@@ -219,43 +251,88 @@ export const textsOf = (values: Values, name: string) =>
 
 export const isSet = (values: Values, name: string) => values[name] === true;
 
-/** The one positional of `positionals`. @throws CliError, a usage error ending with `fix`, for none or several. */
+/**
+ * The one positional of `positionals`, `what` the command's argument is. `verb` is the sub-verb it belongs to, if any.
+ * @throws ArgumentError ending with `fix`, for none or several.
+ */
 export function only(
 	positionals: readonly string[],
 	what: string,
 	fix: string,
+	verb?: string,
 ): string {
 	const [first, ...rest] = positionals;
-	if (first === undefined || rest.length > 0)
-		throw usageError(`expected one ${what}, got ${positionals.length}`, fix);
+	const lead = verb === undefined ? "" : `${verb} `;
+	if (first === undefined)
+		throw new ArgumentError(`${lead}needs a ${what}`, fix);
+	if (rest.length > 0)
+		throw new ArgumentError(
+			`${lead}takes one ${what}, got ${positionals.length}`,
+			fix,
+		);
 	return first;
 }
 
+/** The flags every command takes but `--json`, which a command may leave out. */
+export const SHARED: Options = Object.fromEntries(
+	Object.entries(COMMON).filter(([name]) => name !== "json"),
+);
+
+const flagName = (name: string, o: OptionSpec) =>
+	`${o.short ? `-${o.short}, ` : "    "}--${name}${o.arg ? ` <${o.arg}>` : ""}`;
+
+/** `--preset, -c/--config, --color, --debug, -h/--help`: the shared flags, by name. */
+const sharedNames = () =>
+	Object.entries(SHARED)
+		.map(([name, { short }]) => `${short ? `-${short}/` : ""}--${name}`)
+		.join(", ");
+
+/** The shared flags as help rows: each with its placeholder and description, the flag cyan when `color`. */
+export function sharedFlags(color: boolean): string {
+	return flagRows(Object.entries(SHARED), color);
+}
+
+/** Flags as an indented table: each name with its placeholder, then its description. */
+function flagRows(
+	entries: readonly (readonly [string, OptionSpec | undefined])[],
+	color: boolean,
+): string {
+	const rows = entries.flatMap(([name, o]) =>
+		o ? [[flagName(name, o), o.desc]] : [],
+	);
+	return table(
+		rows.map(([flag = "", desc = ""]) => [
+			`  ${flag.slice(0, flag.search(/\S/))}${paint("cyan", flag.trim(), color)}`,
+			desc,
+		]),
+	);
+}
+
 /**
- * Help for `command`: its usage, then each flag with its description, then `extra` when given. With `color` the
+ * Help for `command`, which `summary` describes: the summary, its usage, its arguments, each flag but the shared ones
+ * with its description, `extra` when given, its examples, and a line naming the shared flags. With `color` the
  * headings are bold and the flags cyan.
  */
 export function helpOf(
 	command: Command,
+	summary: string,
 	extra?: string,
 	color = false,
 ): string {
-	const flags = Object.entries(command.options)
-		.filter(([, o]) => !o.hidden)
-		.map(([name, o]) => [
-			`${o.short ? `-${o.short}, ` : "    "}--${name}${o.arg ? ` <${o.arg}>` : ""}`,
-			o.desc,
-		]);
-	return [
-		`${paint("bold", "Usage:", color)} maestro ${command.usage}`,
-		"",
-		paint("bold", "Flags:", color),
-		table(
-			flags.map(([flag = "", desc = ""]) => [
-				`  ${flag.slice(0, flag.search(/\S/))}${paint("cyan", flag.trim(), color)}`,
-				desc,
-			]),
-		),
-		...(extra === undefined ? [] : ["", extra]),
-	].join("\n");
+	const heading = (text: string) => paint("bold", text, color);
+	const own = Object.entries(command.options).filter(
+		([name, o]) => !o.hidden && !Object.hasOwn(SHARED, name),
+	);
+	const sections = [
+		summary,
+		`${heading("Usage:")} maestro ${command.usage}`,
+		command.arguments &&
+			`${heading("Arguments:")}\n${table(command.arguments.map(([name, what]) => [`  ${name}`, what]))}`,
+		`${heading("Flags:")}\n${flagRows(own, color)}`,
+		extra,
+		command.examples &&
+			`${heading("Examples:")}\n${command.examples.map(([comment, run]) => `  # ${comment}\n  ${run}`).join("\n")}`,
+		`Common flags: ${sharedNames()} (see 'maestro --help')`,
+	];
+	return sections.filter((section) => section !== undefined).join("\n\n");
 }

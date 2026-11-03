@@ -228,6 +228,7 @@ async function pruned(stored: Stored, selection: Selection) {
 
 export const prune: Command = {
 	usage: "prune <concert>... | <filter>... [flags]",
+	arguments: [["<concert>", "A settled concert, as 'maestro ls' lists it"]],
 	options: PRUNE_OPTIONS,
 	execute: (args, deps) =>
 		withStore(

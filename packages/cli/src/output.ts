@@ -64,6 +64,19 @@ export class CliError extends Error {
 export const usageError = (what: string, fix: string) =>
 	new CliError(`${what}\n${fix}`, EXIT.usage);
 
+/** The hint of a command that needs a concert. */
+export const NAME_CONCERT = "Name one as 'maestro ls' lists it";
+
+/**
+ * A usage error of a command's positionals. `what` follows the command's name, such as `needs a concert`, and the
+ * command's usage line is printed after it.
+ */
+export class ArgumentError extends CliError {
+	constructor(what: string, fix: string) {
+		super(`${what}\n${fix}`, EXIT.usage);
+	}
+}
+
 /** Diagnostics that stop a command, from building a composition or reading an IR file. */
 export class Diagnosed extends Error {
 	override readonly name = "Diagnosed";
@@ -112,12 +125,21 @@ export function renderDiagnostic(d: Diagnostic, color: boolean): string {
 export const renderWarning = (text: string, color: boolean) =>
 	`${paint("yellow", "warning", color)}: ${text}`;
 
-/** `message` with its second line dim when `color`, if it is two lines: a hint, not a longer text. */
-export function hinted(message: string, color: boolean): string {
+/**
+ * `message` as an error: `error:` before its first line, and when it is two lines the second a dim, indented hint, with
+ * `usage` between them when given.
+ */
+export function hinted(
+	message: string,
+	color: boolean,
+	usage?: string,
+): string {
 	const [what, fix, ...more] = message.split("\n");
-	return fix === undefined || more.length > 0
-		? message
-		: `${what}\n${paint("dim", fix, color)}`;
+	const head = `${paint("red", "error", color)}: ${what}`;
+	if (fix === undefined) return head;
+	if (more.length > 0) return `${head}\n${[fix, ...more].join("\n")}`;
+	const hint = `  ${paint("dim", fix, color)}`;
+	return [head, usage, hint].filter((line) => line !== undefined).join("\n");
 }
 
 /** The `stale` cell of an instance or one of its artifacts: `stale` when an earlier attempt left it, else empty. */

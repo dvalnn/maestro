@@ -515,227 +515,247 @@ describe("perform", () => {
 
 describe("usage errors", () => {
 	const USAGE: [string, string[], RegExp][] = [
-		["no command", [], /^no command given\nUsage: maestro/],
+		["no command", [], /^error: no command given\nUsage: maestro/],
 		[
 			"an unknown command",
 			["frobnicate"],
-			/^unknown command 'frobnicate'\nPick one of the commands in 'maestro --help'$/,
+			/^error: unknown command 'frobnicate'\n {2}Pick one of the commands in 'maestro --help'$/,
 		],
-		["no composition", ["perform"], /^perform takes a composition first/],
+		[
+			"no composition",
+			["perform"],
+			/^error: maestro perform needs a composition\nUsage: maestro perform <composition>\n {2}Name a file or <pack>.<composition>, before its flags, or see 'maestro perform --help' for examples$/,
+		],
 		[
 			"an unknown composition",
 			["perform", "demo.nope"],
-			/^pack 'demo' has no composition 'nope'\nName one of: echo, greet, ticket$/,
+			/^error: pack 'demo' has no composition 'nope'\n {2}Name one of: echo, greet, ticket$/,
 		],
 		[
 			"a mistyped composition",
 			["rep", "demo.gret"],
-			/^pack 'demo' has no composition 'gret'\nDid you mean 'greet'\?$/,
+			/^error: pack 'demo' has no composition 'gret'\n {2}Did you mean 'greet'\?$/,
 		],
 		[
 			"a mistyped pack",
 			["perform", "dmeo.greet"],
-			/^no pack 'dmeo' is installed\nDid you mean 'demo'\?$/,
+			/^error: no pack 'dmeo' is installed\n {2}Did you mean 'demo'\?$/,
 		],
 		[
 			"an uninstalled pack",
 			["perform", "other.greet"],
-			/^no pack 'other' is installed/,
+			/^error: no pack 'other' is installed/,
 		],
 		[
 			"an unknown flag",
 			["perform", ...GREET, "--nmae", "x"],
-			/^Unknown option '--nmae'\nDid you mean --name\?$/,
+			/^error: unknown flag --nmae\n {2}Did you mean --name\?$/,
 		],
 		[
 			"a mistyped verb flag",
 			["perform", ...GREET, "--titie", "x"],
-			/^Unknown option '--titie'\nDid you mean --title\?$/,
+			/^error: unknown flag --titie\n {2}Did you mean --title\?$/,
 		],
 		[
 			"the --profile that --preset replaced",
 			["perform", ...GREET, "--profile", "stub"],
-			/^Unknown option '--profile'\nFlags are perform's/,
+			/^error: unknown flag --profile\n {2}Flags are perform's/,
 		],
 		[
 			"perform --resume, now the resume verb",
 			["perform", ...GREET, "--resume", "x"],
-			/^Unknown option '--resume'/,
+			/^error: unknown flag --resume/,
 		],
 		[
 			"resume with a tour",
 			["resume", "x", "--tour", "t"],
-			/^Unknown option '--tour'/,
+			/^error: unknown flag --tour/,
 		],
 		[
 			"an unknown flag named like an Object member",
 			["perform", ...GREET, "--constructor", "x"],
-			/^Unknown option '--constructor'\nFlags are perform's/,
+			/^error: unknown flag --constructor\n {2}Flags are perform's/,
 		],
 		[
 			"an unknown flag with no near name",
 			["perform", ...GREET, "--zzzzzz", "x"],
-			/^Unknown option '--zzzzzz'\nFlags are perform's/,
+			/^error: unknown flag --zzzzzz\n {2}Flags are perform's/,
 		],
 		[
 			"--flow without --graph",
 			["compose", ...GREET, "--flow"],
-			/^--flow draws the graph, and --graph is not set\nPass both: maestro compose <composition> --graph --flow$/,
+			/^error: --flow draws the graph, and --graph is not set\n {2}Pass both: maestro compose <composition> --graph --flow$/,
 		],
 		[
 			"a tour that is not a slug",
 			["perform", ...GREET, "--tour", "Bad Slug"],
-			/^--tour takes a slug of at most 64 characters, not 'Bad Slug'/,
+			/^error: --tour takes a slug of at most 64 characters, not 'Bad Slug'/,
 		],
 		[
 			"a tour with an empty segment",
 			["perform", ...GREET, "--tour", "epic..story"],
-			/^--tour takes a slug of at most 64 characters, not 'epic..story'\nWrite it as lower-case words joined by hyphens, in non-empty segments joined by dots/,
+			/^error: --tour takes a slug of at most 64 characters, not 'epic..story'\n {2}Write it as lower-case words joined by hyphens, in non-empty segments joined by dots/,
 		],
 		[
 			"a tour with a leading dot",
 			["perform", ...GREET, "--tour", ".epic"],
-			/^--tour takes a slug/,
+			/^error: --tour takes a slug/,
 		],
 		[
 			"a tour with a trailing dot",
 			["perform", ...GREET, "--tour", "epic."],
-			/^--tour takes a slug/,
+			/^error: --tour takes a slug/,
 		],
 		[
 			"a tour too long",
 			["perform", ...GREET, "--tour", "a".repeat(65)],
-			/^--tour takes a slug/,
+			/^error: --tour takes a slug/,
 		],
 		[
 			"a bad duration",
 			["wait", "nope", "--timeout", "5x"],
-			/^--timeout takes a positive whole number and one unit, not '5x'\nWrite it as 500ms, 90s, 15m, 12h or 7d$/,
+			/^error: --timeout takes a positive whole number and one unit, not '5x'\n {2}Write it as 500ms, 90s, 15m, 12h or 7d$/,
 		],
 		[
 			"an unknown concert",
 			["wait", "nope"],
-			/^no concert 'nope' in the record\nCheck the id with 'maestro ls'$/,
+			/^error: no concert 'nope' in the record\n {2}Check the id with 'maestro ls'$/,
 		],
-		["kill without a concert", ["kill"], /^expected one concert, got 0/],
+		[
+			"kill without a concert",
+			["kill"],
+			/^error: maestro kill needs a concert\nUsage: maestro kill <concert>\n/,
+		],
 		[
 			"watch without a concert",
 			["watch"],
-			/^expected one concert, got 0\nName the concert to watch$/,
+			/^error: maestro watch needs a concert\nUsage: maestro watch <concert>\n {2}Name one as 'maestro ls' lists it$/,
 		],
 		[
 			"watch of an unknown concert",
 			["w", "nope"],
-			/^no concert 'nope' in the record\nCheck the id with 'maestro ls'$/,
+			/^error: no concert 'nope' in the record\n {2}Check the id with 'maestro ls'$/,
 		],
 		[
 			"prune with no selection",
 			["prune"],
-			/^prune needs concert ids, --before, --tour, --workspace, --status or --composition\nName concerts, or pick them with a filter from 'maestro prune --help'$/,
+			/^error: prune needs concert ids, --before, --tour, --workspace, --status or --composition\n {2}Name concerts, or pick them with a filter from 'maestro prune --help'$/,
 		],
 		[
 			"prune with ids and --before",
 			["prune", "a", "--before", "1d"],
-			/^prune takes concert ids or filters, not both/,
+			/^error: prune takes concert ids or filters, not both/,
 		],
 		[
 			"prune with ids and --status",
 			["prune", "a", "--status", "ok"],
-			/^prune takes concert ids or filters, not both/,
+			/^error: prune takes concert ids or filters, not both/,
 		],
 		[
 			"prune --status running",
 			["prune", "--status", "running"],
-			/^--status running cannot be pruned.*\nPick another status, or stop the concert with 'maestro kill <concert>' first$/,
+			/^error: --status running cannot be pruned.*\n {2}Pick another status, or stop the concert with 'maestro kill <concert>' first$/,
 		],
 		[
 			"a bad prune --composition",
 			["prune", "--composition", "greet"],
-			/^--composition takes <pack>.<composition>, not 'greet'/,
+			/^error: --composition takes <pack>.<composition>, not 'greet'/,
 		],
 		[
 			"a bad --before",
 			["prune", "--before", "1x"],
-			/^--before takes a positive whole number/,
+			/^error: --before takes a positive whole number/,
 		],
 		[
 			"tour with no concert",
 			["tour", "set", "slug"],
-			/^tour set takes a slug and at least one concert/,
+			/^error: maestro tour set needs a slug and at least one concert\nUsage: maestro tour set <slug> <concert>\.\.\.\n/,
 		],
 		[
 			"tour clear with no concert",
 			["tour", "clear"],
-			/^tour clear takes at least one concert/,
+			/^error: maestro tour clear needs at least one concert/,
 		],
 		[
 			"tour with a bad slug",
 			["tour", "set", "BAD", "x"],
-			/^the tour slug takes a slug/,
+			/^error: the tour slug takes a slug/,
 		],
 		[
 			"the old tour form",
 			["tour", "slug", "x"],
-			/^expected set or clear, got 'slug'\nWrite maestro tour set/,
+			/^error: expected set or clear, got 'slug'\n {2}Write maestro tour set/,
 		],
 		[
 			"the old tour --clear",
 			["tour", "--clear", "x"],
-			/^Unknown option '--clear'/,
+			/^error: unknown flag --clear/,
 		],
 		[
 			"ls with two concerts",
 			["ls", "a", "b"],
-			/^expected at most one concert, got 2/,
+			/^error: maestro ls takes at most one concert, got 2\nUsage: maestro ls \[<concert>\]\n/,
 		],
 		[
 			"artifact show with too many arguments",
 			["art", "show", "a", "b", "c", "d"],
-			/^artifact show takes a concert, an instance and at most a file, got 4 arguments/,
+			/^error: maestro artifact show takes a concert, an instance and at most a file, got 4\nUsage: maestro artifact ls <concert>\n {7}maestro artifact show <concert> <instance> \[<file>\]\n/,
 		],
 		[
 			"the old artifact form",
 			["art", "a", "b"],
-			/^expected ls or show, got 'a'/,
+			/^error: expected ls or show, got 'a'/,
 		],
 		[
 			"changeset with an unknown action",
 			["cs", "frob"],
-			/^expected show, apply or drop, got 'frob'/,
+			/^error: expected show, apply or drop, got 'frob'/,
 		],
 		[
 			"changeset with --json, which it does not take",
 			["cs", "show", "a", "--json"],
-			/^Unknown option '--json'/,
+			/^error: unknown flag --json/,
 		],
 		[
 			"watch with a key --frames does not name",
 			["watch", "nope", "--frames", "zz"],
-			/^--frames names no key: 'zz'/,
+			/^error: --frames names no key: 'zz'/,
 		],
 		[
 			"a status that is none",
 			["ls", "--status", "bogus"],
-			/^--status takes one of running, ok, failed, rejected, not 'bogus'/,
+			/^error: --status takes one of running, ok, failed, rejected, not 'bogus'/,
 		],
-		["a tour that is none", ["ls", "--tour", "BAD"], /^--tour takes a slug/],
+		[
+			"a tour that is none",
+			["ls", "--tour", "BAD"],
+			/^error: --tour takes a slug/,
+		],
 		[
 			"a limit of zero",
 			["ls", "--limit", "0"],
-			/^--limit takes a positive whole number/,
+			/^error: --limit takes a positive whole number/,
 		],
 		[
 			"resume with a composition",
 			["resume", "x", "demo.greet"],
-			/^expected one concert, got 2/,
+			/^error: maestro resume takes one concert, got 2\nUsage: maestro resume <concert>\n/,
 		],
-		["resume with no concert", ["resume"], /^expected one concert, got 0/],
+		[
+			"resume with no concert",
+			["resume"],
+			/^error: maestro resume needs a concert\n/,
+		],
 		[
 			"encore with no concert",
 			["encore", "-c", "a=1"],
-			/^expected one concert, got 0/,
+			/^error: maestro encore needs a concert\n/,
 		],
-		["resume of an unknown concert", ["resume", "nope"], /^no concert 'nope'/],
+		[
+			"resume of an unknown concert",
+			["resume", "nope"],
+			/^error: no concert 'nope'/,
+		],
 		[
 			"a -c without '='",
 			["perform", ...GREET, "-c", "concurrency"],
@@ -759,37 +779,37 @@ describe("usage errors", () => {
 		[
 			"param flags on an IR file",
 			["compose", join(GOLDEN, "minimal.json"), "--name", "x"],
-			/^Unknown option '--name'\nAn IR file is already built/,
+			/^error: unknown flag --name\n {2}An IR file is already built/,
 		],
 		[
 			"a param whose flag is a command's",
 			["perform", CLASH],
-			/^param 'tour' of 'clash\.clash' takes --tour, which the command takes too\nRename/,
+			/^error: param 'tour' of 'clash\.clash' takes --tour, which the command takes too\n {2}Rename/,
 		],
 		[
 			"a param whose flag is one of compose's, for compose",
 			["compose", CLASH_OUT],
-			/^param 'out' of 'clash-out\.clash-out' takes --out, which the command takes too\nRename/,
+			/^error: param 'out' of 'clash-out\.clash-out' takes --out, which the command takes too\n {2}Rename/,
 		],
 		[
 			"a boolean param whose --no- flag negates a common flag",
 			["perform", CLASH_NO],
-			/^param 'noColor' of 'clash-no\.clash-no' takes --no-color, which the command takes too\nRename/,
+			/^error: param 'noColor' of 'clash-no\.clash-no' takes --no-color, which the command takes too\n {2}Rename/,
 		],
 		[
 			"a param whose flag is one of perform's, for compose",
 			["compose", CLASH],
-			/^param 'tour' of 'clash\.clash' takes --tour, which the command takes too\nRename/,
+			/^error: param 'tour' of 'clash\.clash' takes --tour, which the command takes too\n {2}Rename/,
 		],
 		[
 			"a composition file whose name is not a pack id",
 			["compose", join(FIXTURES, "Shout.ts")],
-			/^composition file \S+\/Shout\.ts is named 'Shout', which is not a pack id\nRename it/,
+			/^error: composition file \S+\/Shout\.ts is named 'Shout', which is not a pack id\n {2}Rename it/,
 		],
 		[
 			"a composition file named as an installed pack",
 			["perform", join(FIXTURES, "demo.ts")],
-			/^composition file \S+\/demo\.ts is named 'demo', the id of the pack at \S+\nRename the file$/,
+			/^error: composition file \S+\/demo\.ts is named 'demo', the id of the pack at \S+\n {2}Rename the file$/,
 		],
 		[
 			"a composition file that declares no example input set",
@@ -799,12 +819,12 @@ describe("usage errors", () => {
 		[
 			"a composition file that is not there",
 			["compose", "missing.ts"],
-			/^no such file: missing\.ts\nCheck the path$/,
+			/^error: no such file: missing\.ts\n {2}Check the path$/,
 		],
 		[
 			"an IR file that is not there",
 			["perform", "missing.json"],
-			/^no such file: missing\.json\nCheck the path$/,
+			/^error: no such file: missing\.json\n {2}Check the path$/,
 		],
 		[
 			"a missing required param",
@@ -878,9 +898,14 @@ describe("usage errors", () => {
 		expect(verbs).toContain("tour");
 		for (const verb of verbs) {
 			const { out } = await w.call([verb, "--help"]);
-			expect(out).toMatch(/^ {2}-c, --config <key=value> +\S/m);
-			expect(out).toMatch(/^ {6}--color +.*--no-color turns it off/m);
+			expect(out).toEndWith(
+				"\n\nCommon flags: --preset, -c/--config, --color, --debug, -h/--help (see 'maestro --help')",
+			);
+			expect(out).not.toContain("--config <key=value>");
 		}
+		const { out: root } = await w.call(["--help"]);
+		expect(root).toMatch(/^ {2}-c, --config <key=value> +\S/m);
+		expect(root).toMatch(/^ {6}--color +.*--no-color turns it off/m);
 	});
 
 	test("--help bolds headings and colors flags, and a table header is bold, only on a terminal with color on", async () => {
@@ -889,7 +914,7 @@ describe("usage errors", () => {
 		for (const args of [["--help"], ["ls", "--help"]]) {
 			const on = (await w.call(args, { terminal })).out;
 			expect(on).toContain(`${ESC}[1mFlags:${ESC}[22m`);
-			expect(on).toContain(`--help${ESC}[39m`);
+			expect(on).toContain(`${ESC}[36m--`);
 			expect(on).toContain(`${ESC}[36m`);
 			const off = (await w.call([...args, "--no-color"], { terminal })).out;
 			expect(off).not.toContain(ESC);
@@ -903,7 +928,7 @@ describe("usage errors", () => {
 	test("--help given a composition adds its params after the flags, and not without one", async () => {
 		const w = await world();
 		const PARAMS =
-			/\n\nParams\n {2}--name <text> +required\n {2}--loud <integer> +0$/;
+			/\n\nParams\n {2}--name <text> +required\n {2}--loud <integer> +0\n\n/;
 		expect((await w.call(["compose", "demo.greet", "--help"])).out).toMatch(
 			PARAMS,
 		);
@@ -918,10 +943,212 @@ describe("usage errors", () => {
 		expect(await w.call(["compose", "demo.nope", "--help"])).toMatchObject({
 			code: 0,
 			out: expect.stringMatching(
-				/^Usage: maestro compose[\s\S]*--graph +\S[^\n]*\n +--flow +\S[^\n]*\(experimental\)$/,
+				/^Build a composition[\s\S]*--graph +\S[^\n]*\n +--flow +\S[^\n]*\(experimental\)\n\nCommon flags: /,
 			),
 			err: "params not shown: pack 'demo' has no composition 'nope'",
 		});
+	});
+});
+
+describe("help and color", () => {
+	const TERMINAL = () => ({ columns: 80, rows: 24 });
+	const COMMON_LINE =
+		"Common flags: --preset, -c/--config, --color, --debug, -h/--help (see 'maestro --help')";
+
+	test("a command's help is its summary, usage, arguments, flags, examples and the common flags, in that order", async () => {
+		const { out } = await (await world()).call(["artifact", "--help"]);
+		const at = [
+			"List a concert's artifacts",
+			"Usage: maestro artifact",
+			"Arguments:",
+			"  <concert>   A concert, as 'maestro ls' lists it",
+			"Flags:",
+			"Examples:",
+			"  # Read the review the consolidator wrote\n  maestro artifact show 7f3c2a consolidator review.md",
+		].map((part) => out.indexOf(part));
+		expect(at.every((i) => i >= 0)).toBe(true);
+		expect(at).toEqual(at.toSorted((a, b) => a - b));
+		expect(out).toEndWith(`\n\n${COMMON_LINE}`);
+	});
+
+	test("a command without examples has no Examples section", async () => {
+		const { out } = await (await world()).call(["kill", "--help"]);
+		expect(out).toStartWith(
+			"Stop a running concert\n\nUsage: maestro kill <concert>",
+		);
+		expect(out).toContain("Arguments:\n  <concert>  A running concert");
+		expect(out).not.toContain("Examples:");
+		expect(out).toEndWith(COMMON_LINE);
+	});
+
+	test("maestro --help lists the common flags, the exit codes and the environment", async () => {
+		const { out } = await (await world()).call(["--help"]);
+		expect(out).toContain("Common flags (every command):");
+		expect(out).toMatch(/Exit codes:\n {2}0 {4}Done/);
+		expect(out).toMatch(/\n {2}124 {2}wait --timeout/);
+		for (const name of [
+			"NO_COLOR",
+			"FORCE_COLOR",
+			"TERM",
+			"MAESTRO_TOUR",
+			"XDG_CONFIG_HOME",
+			"XDG_DATA_HOME",
+		])
+			expect(out).toMatch(new RegExp(`^ {2}${name} `, "m"));
+		expect(out).not.toContain("MAESTRO_STUB");
+	});
+
+	test("help and help <command> show the root help and that command's", async () => {
+		const w = await world();
+		expect((await w.call(["help"])).out).toBe((await w.call(["--help"])).out);
+		expect((await w.call(["help", "kill"])).out).toBe(
+			(await w.call(["kill", "--help"])).out,
+		);
+		expect((await w.call(["help", "nope"])).err).toStartWith(
+			"error: unknown command 'nope'",
+		);
+	});
+
+	test("the common flags come before the command", async () => {
+		const w = await world();
+		const colored = await w.call(["--color", "kill", "--help"]);
+		expect(colored.out).toContain(ESC);
+		expect(
+			(await w.call(["--no-color", "ls"], { terminal: TERMINAL })).out,
+		).not.toContain(ESC);
+		const refused = await w.call(["--debug", "kill"]);
+		expect(refused).toMatchObject({
+			code: 2,
+			err: expect.stringContaining("at only"),
+		});
+	});
+
+	test("leading common flags reach every command as trailing ones would", async () => {
+		const w = await world();
+		const trailing = json(await w.call(["compose", ...GREET, "--json"]));
+		expect(json(await w.call(["--json", "compose", ...GREET]))).toEqual(
+			trailing,
+		);
+		expect(
+			json(await w.call(["--json", "-c", "concurrency=2", "config", ...GREET])),
+		).toHaveProperty("values");
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		expect(json(await w.call(["--json", "art", "ls", id]))).toEqual([]);
+	});
+
+	test("an unknown leading flag is named with its did-you-mean, and a bare maestro or --json lists no help", async () => {
+		const w = await world();
+		expect((await w.call(["--frobnicate"])).err).toBe(
+			"error: unknown flag --frobnicate\n  Flags are listed in 'maestro --help'",
+		);
+		expect((await w.call(["--colr"])).err).toBe(
+			"error: unknown flag --colr\n  Did you mean --color?",
+		);
+		expect(json(await w.call(["--json"])).error).toBe(
+			"no command given\nSee 'maestro --help' for the commands",
+		);
+		expect((await w.call([])).err).toContain("Commands:");
+	});
+
+	test("help <command> <args> adds that command's params, as --help does", async () => {
+		const w = await world();
+		const asked = await w.call(["help", "compose", "demo.greet"]);
+		expect(asked.out).toBe(
+			(await w.call(["compose", "demo.greet", "--help"])).out,
+		);
+		expect(asked.out).toContain("Params");
+	});
+
+	test("a mistyped alias is met with its verb", async () => {
+		expect((await (await world()).call(["arr"])).err).toBe(
+			"error: unknown command 'arr'\n  Did you mean 'artifact'?",
+		);
+	});
+
+	test("a flag given no value because another flag follows is not one that takes none", async () => {
+		const w = await world();
+		expect((await w.call(["ls", "--limit", "--json"])).err).toStartWith(
+			"error: --limit needs a value\n",
+		);
+		expect((await w.call(["ls", "-c"])).err).toStartWith(
+			"error: --config needs a value\n",
+		);
+	});
+
+	test("an argument error points to the help for examples only when the command has some", async () => {
+		const w = await world();
+		expect((await w.call(["kill"])).err).not.toContain("--help' for examples");
+		expect((await w.call(["encore"])).err).toContain(
+			"or see 'maestro encore --help' for examples",
+		);
+	});
+
+	test("a mistyped command or alias is met with the verb it is near", async () => {
+		const w = await world();
+		for (const [typed, verb] of [
+			["perfrom", "perform"],
+			["repertoir", "repertoire"],
+			["wach", "watch"],
+		])
+			expect((await w.call([typed ?? ""])).err).toBe(
+				`error: unknown command '${typed}'\n  Did you mean '${verb}'?`,
+			);
+	});
+
+	test("the parser's errors read as maestro's", async () => {
+		const w = await world();
+		expect((await w.call(["ls", "-x"])).err).toBe(
+			"error: unknown flag -x\n  Flags are listed in 'maestro ls --help'",
+		);
+		expect((await w.call(["ls", "--limit"])).err).toBe(
+			"error: --limit needs a value\n  Flags are listed in 'maestro ls --help'",
+		);
+		expect((await w.call(["ls", "--json=1"])).err).toStartWith(
+			"error: --json takes no value",
+		);
+	});
+
+	test("an argument error names the command, shows its usage line and points to its help", async () => {
+		const refused = await (await world()).call(["artifact", "show"]);
+		expect(refused).toMatchObject({ code: 2, out: "" });
+		expect(refused.err).toBe(
+			"error: maestro artifact show needs a concert\nUsage: maestro artifact ls <concert>\n       maestro artifact show <concert> <instance> [<file>]\n  Name one as 'maestro ls' lists it, or see 'maestro artifact --help' for examples",
+		);
+	});
+
+	test.each([
+		["off a terminal by default", [], {}, false],
+		["off a terminal with --color", ["--color"], {}, true],
+		["off a terminal with FORCE_COLOR", [], { FORCE_COLOR: "1" }, true],
+		["with an empty FORCE_COLOR, not", [], { FORCE_COLOR: "" }, false],
+		["--no-color over --color", ["--color", "--no-color"], {}, false],
+		[
+			"--no-color over FORCE_COLOR",
+			["--no-color"],
+			{ FORCE_COLOR: "1" },
+			false,
+		],
+		["NO_COLOR over --color", ["--color"], { NO_COLOR: "1" }, false],
+		[
+			"NO_COLOR over FORCE_COLOR",
+			[],
+			{ NO_COLOR: "1", FORCE_COLOR: "1" },
+			false,
+		],
+		[
+			"TERM=dumb over FORCE_COLOR",
+			[],
+			{ TERM: "dumb", FORCE_COLOR: "1" },
+			false,
+		],
+	])("color %s", async (_what, flags, env, colored) => {
+		const w = await world();
+		const { out, err } = await w.call(["kill", "--help", ...flags], { env });
+		expect(out.includes(ESC)).toBe(colored);
+		expect(
+			(await w.call(["kill", "nope", ...flags], { env })).err.includes(ESC),
+		).toBe(colored);
+		expect(err).toBe("");
 	});
 });
 
@@ -997,7 +1224,7 @@ describe("the record", () => {
 		expect(await rows("--composition", "other.greet")).toEqual([]);
 		expect(await w.call(["ls", "--composition", "greet"])).toMatchObject({
 			code: 2,
-			err: "--composition takes <pack>.<composition>, not 'greet'\nWrite it as greet.hello",
+			err: "error: --composition takes <pack>.<composition>, not 'greet'\n  Write it as greet.hello",
 		});
 		expect((await w.call(["ls"])).out).toMatch(/\sdemo\.greet\s+failed\s/);
 		expect(await rows("--limit", "1")).toEqual([broke]);
@@ -1070,10 +1297,12 @@ describe("the record", () => {
 			stderrTerminal: terminal,
 		});
 		expect(usage.err).toBe(
-			`--status takes one of running, ok, failed, rejected, not 'bogus'\n${hint("Pick one of those")}`,
+			`${ESC}[31merror${ESC}[39m: --status takes one of running, ok, failed, rejected, not 'bogus'\n  ${hint("Pick one of those")}`,
 		);
 		const both = { terminal, stderrTerminal: terminal };
-		expect((await w.call([], both)).err).not.toContain(ESC);
+		expect((await w.call([], both)).err).toStartWith(
+			`${code}: no command given`,
+		);
 		for (const off of [
 			[...diagnosed, "--no-color"],
 			[...diagnosed, "--json"],
@@ -1346,8 +1575,8 @@ describe("the record", () => {
 		expect(
 			json(await w.call(["ls", id, "--json"], { hosts: [hostOf()] })).reports,
 		).toEqual({});
-		expect((await w.call(["ls", "--help"], { hosts: [host] })).out).toEndWith(
-			"Reports\n  --json | jq .reports\n  summary  what it did",
+		expect((await w.call(["ls", "--help"], { hosts: [host] })).out).toContain(
+			"\n\nReports\n  --json | jq .reports\n  summary  what it did\n\nExamples:",
 		);
 		const rows = json(await w.call(["ls", "--json"], { hosts: [host] }));
 		expect(rows.map((r: { notes: object }) => r.notes)).toEqual([
@@ -1378,8 +1607,8 @@ describe("the record", () => {
 		const { code, err } = await w.call(["wait", "0"]);
 		expect(code).toBe(2);
 		expect(err.split("\n")).toEqual([
-			`'0' starts 7 concerts: ${ids.slice(0, 5).map(shortOf).join(", ")} and 2 more`,
-			"Give more characters of the id",
+			`error: '0' starts 7 concerts: ${ids.slice(0, 5).map(shortOf).join(", ")} and 2 more`,
+			"  Give more characters of the id",
 		]);
 		// Copies of a performed concert under ids whose short ids share all but their last letter.
 		const twins = [
@@ -1394,8 +1623,8 @@ describe("the record", () => {
 			);
 		db.close();
 		expect((await w.call(["wait", "zzzz"])).err.split("\n")).toEqual([
-			`'zzzz' starts 2 concerts: ${twins.map(shortId).join(", ")}`,
-			"Give more characters of the id",
+			`error: 'zzzz' starts 2 concerts: ${twins.map(shortId).join(", ")}`,
+			"  Give more characters of the id",
 		]);
 		expect(twins.map(shortId)).toEqual(["zzzzzzzzzzzzzzy", "zzzzzzzzzzzzzzx"]);
 	});
@@ -1409,11 +1638,11 @@ describe("the record", () => {
 		expect(await w.call(["wait", ambiguous])).toEqual({
 			code: 2,
 			out: "",
-			err: `'${ambiguous}' starts 2 concerts: ${shortOf(a)}, ${shortOf(b)}\nGive more characters of the id`,
+			err: `error: '${ambiguous}' starts 2 concerts: ${shortOf(a)}, ${shortOf(b)}\n  Give more characters of the id`,
 		});
 		expect(await w.call(["wait", "nope"])).toMatchObject({
 			code: 2,
-			err: "no concert 'nope' in the record\nCheck the id with 'maestro ls'",
+			err: "error: no concert 'nope' in the record\n  Check the id with 'maestro ls'",
 		});
 		const prefix = a.slice(0, shared + 1);
 		expect(json(await w.call(["wait", prefix, "--json"])).id).toBe(a);
@@ -1422,7 +1651,7 @@ describe("the record", () => {
 		expect(json(await w.call(["ls", shortId(a), "--json"])).id).toBe(a);
 		expect((await w.call(["watch", prefix])).code).toBe(0);
 		expect(await w.call(["kill", prefix])).toMatchObject({
-			err: `concert ${a} is not running, it settled ok\nSee 'maestro ls ${a}'`,
+			err: `error: concert ${a} is not running, it settled ok\n  See 'maestro ls ${a}'`,
 		});
 		expect(await w.call(["resume", prefix])).toMatchObject({
 			err: expect.stringContaining(`concert ${a} finished ok`),
@@ -1465,7 +1694,7 @@ describe("prune", () => {
 
 		expect(await w.call(["prune", a], { hosts: [host] })).toMatchObject({
 			code: 2,
-			err: "prune asks before it deletes, and there is no terminal to ask on\nPass --yes",
+			err: "error: prune asks before it deletes, and there is no terminal to ask on\n  Pass --yes",
 		});
 		expect(await w.call(["prune", a], answer(false))).toMatchObject({
 			code: 0,
@@ -1535,7 +1764,7 @@ describe("prune", () => {
 		const [x, y] = [await perform("t1"), await perform("t2")];
 		expect(await w.call(["prune", "--tour", "t1"])).toMatchObject({
 			code: 2,
-			err: "prune asks before it deletes, and there is no terminal to ask on\nPass --yes",
+			err: "error: prune asks before it deletes, and there is no terminal to ask on\n  Pass --yes",
 		});
 		expect(
 			json(await w.call(["prune", "--tour", "t1", "--yes", "--json"])),

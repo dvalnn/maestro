@@ -1,3 +1,4 @@
+import { closest } from "@maestro/core";
 import { type Diagnostic, IR_VERSION, messageOf } from "@maestro/ir";
 import { SDK_VERSION } from "@maestro/sdk/loader";
 import pkg from "../package.json";
@@ -9,9 +10,13 @@ import {
 	helpOf,
 	isSet,
 	type Options,
+	parse,
 	peek,
+	sharedFlags,
+	splitFirst,
 } from "./command";
 import {
+	ArgumentError,
 	CliError,
 	diagnosticsOf,
 	EXIT,
@@ -125,11 +130,37 @@ const VERBS: readonly Verb[] = [
 const versionLine = () =>
 	`maestro ${pkg.version} (sdk ${SDK_VERSION}, ir ${IR_VERSION}, bun ${Bun.version})`;
 
-const rootHelp = (color: boolean) =>
+const EXIT_MEANINGS: Readonly<Record<keyof typeof EXIT, string>> = {
+	ok: "Done, or the concert settled ok",
+	failed:
+		"The concert settled failed, or the command could not do what it said",
+	usage: "Usage error, or the composition does not compose",
+	rejected: "The concert settled rejected",
+	timeout: "wait --timeout passed, the concert still running",
+	interrupted: "Stopped by Ctrl-C",
+};
+
+const ENVIRONMENT: readonly (readonly [string, string])[] = [
+	["NO_COLOR", "Turn color off, when not empty"],
+	["FORCE_COLOR", "Color output even when not a terminal, when not empty"],
+	["TERM", "dumb turns color off"],
+	["MAESTRO_TOUR", "The tour a new concert joins when --tour is not given"],
 	[
-		`${paint("bold", "Usage:", color)} maestro <command> [flags]`,
+		"XDG_CONFIG_HOME",
+		"Where maestro/ holds the user config, presets and .env (default ~/.config)",
+	],
+	[
+		"XDG_DATA_HOME",
+		"Where maestro/ holds concerts and installed packs (default ~/.local/share)",
+	],
+];
+
+const rootHelp = (color: boolean) => {
+	const heading = (text: string) => paint("bold", text, color);
+	return [
+		`${heading("Usage:")} maestro <command> [flags]`,
 		"",
-		paint("bold", "Commands:", color),
+		heading("Commands:"),
 		table(
 			VERBS.map((v) => [
 				`  ${v.name}`,
@@ -138,18 +169,61 @@ const rootHelp = (color: boolean) =>
 			]),
 		),
 		"",
-		paint("bold", "Flags:", color),
+		heading("Flags:"),
 		`  ${paint("cyan", "--version", color)}  Print the maestro, SDK, IR and Bun versions`,
 		`  ${paint("cyan", "--help", color)}     Show this help`,
 		"",
-		"See 'maestro <command> --help' for a command's flags.",
+		heading("Common flags (every command):"),
+		sharedFlags(color),
+		"",
+		heading("Exit codes:"),
+		table(
+			Object.entries(EXIT).map(([name, code]) => [
+				`  ${code}`,
+				EXIT_MEANINGS[name as keyof typeof EXIT],
+			]),
+		),
+		"",
+		heading("Environment:"),
+		table(ENVIRONMENT.map(([name, what]) => [`  ${name}`, what])),
+		"",
+		"See 'maestro <command> --help', or 'maestro help <command>', for a command's flags.",
 	].join("\n");
+};
 
-/** The text of `error`: its stack under `debug`, else its message, with the hint of a CliError dim when `color`. */
-const describe = (error: unknown, debug: boolean, color: boolean) => {
+/** The command a message is about: its name, as `maestro <name>`, its usage, and whether its help has examples. */
+type At = { name: string; usage: string; examples: boolean };
+
+/** `error` as it reads after `maestro <command>`, the hint pointing to the command's examples when it has any. */
+function argumentText(error: ArgumentError, at: At): string {
+	const [what, fix] = error.message.split("\n");
+	const see = at.examples
+		? `, or see 'maestro ${at.name} --help' for examples`
+		: "";
+	return `maestro ${at.name} ${what}\n${fix}${see}`;
+}
+
+/** The usage lines of `at` as typed, without the flags and alias. */
+const usageLine = (at: At) =>
+	`Usage: maestro ${at.usage.replace(/ +\[flags\]| +\(alias: \w+\)/g, "")}`;
+
+/** The message of `error`, plain: its stack under `debug`, else what it says. */
+function plain(error: unknown, debug: boolean, at?: At): string {
 	if (debug && error instanceof Error && error.stack) return error.stack;
-	const message = messageOf(error);
-	return error instanceof CliError ? hinted(message, color) : message;
+	return error instanceof ArgumentError && at
+		? argumentText(error, at)
+		: messageOf(error);
+}
+
+/** The text of `error` for the terminal: a CliError leads with `error:` and its hint is dim, an argument error adds the usage. */
+const describe = (error: unknown, debug: boolean, color: boolean, at?: At) => {
+	const message = plain(error, debug, at);
+	if (debug || !(error instanceof CliError)) return message;
+	return hinted(
+		message,
+		color,
+		error instanceof ArgumentError && at ? usageLine(at) : undefined,
+	);
 };
 
 /** Prints `diagnostics` on stderr, or as one document on stdout under `--json`. */
@@ -165,13 +239,14 @@ function printDiagnostics(
 
 /**
  * Prints what stopped a command, on stderr, or as one document on stdout under `--json` when `options`, the command's,
- * take it, and gives its exit code.
+ * take it, and gives its exit code. `at` is the command, once it is known.
  */
 function report(
 	error: unknown,
 	deps: Deps,
 	args: readonly string[],
 	options: Options,
+	at?: At,
 ): number {
 	const early = peek(options, args);
 	const json = Object.hasOwn(options, "json") && isSet(early, "json");
@@ -182,9 +257,10 @@ function report(
 		return EXIT.usage;
 	}
 	const exit = error instanceof CliError ? error.exit : EXIT.failed;
-	const message = describe(error, isSet(early, "debug"), color && !json);
-	if (json) deps.stdout(jsonOf({ ok: false, error: message, exit }));
-	else deps.stderr(message);
+	const debug = isSet(early, "debug");
+	if (json)
+		deps.stdout(jsonOf({ ok: false, error: plain(error, debug, at), exit }));
+	else deps.stderr(describe(error, debug, color, at));
 	return exit;
 }
 
@@ -206,45 +282,81 @@ async function extraHelp(
 /** The verb `word` names, by its name or its alias. */
 function verbOf(word: string): Verb {
 	const verb = VERBS.find((v) => v.name === word || v.alias === word);
-	if (!verb)
-		throw usageError(
-			`unknown command '${word}'`,
-			"Pick one of the commands in 'maestro --help'",
-		);
-	return verb;
+	if (verb) return verb;
+	const near = closest(
+		word,
+		VERBS.flatMap((v) => (v.alias ? [v.name, v.alias] : [v.name])),
+	);
+	const nearest =
+		near && VERBS.find((v) => v.name === near || v.alias === near);
+	throw usageError(
+		`unknown command '${word}'`,
+		nearest
+			? `Did you mean '${nearest.name}'?`
+			: "Pick one of the commands in 'maestro --help'",
+	);
 }
 
 /**
- * Reads `argv`, the arguments after the executable, and carries out the command it names.
+ * What `maestro` with no command word does: prints the version or the help it asks for, else refuses.
+ * @throws CliError, a usage error, for a flag the common ones lack, or when it asks for neither.
+ */
+function bare(argv: readonly string[], deps: Deps): number {
+	const common = peek(COMMON, argv);
+	if (argv.includes("--version")) deps.stdout(versionLine());
+	else if (isSet(common, "help"))
+		deps.stdout(rootHelp(colorOf(deps, common).out));
+	else {
+		parse(COMMON, argv, "Flags are listed in 'maestro --help'");
+		throw usageError(
+			"no command given",
+			argv.length === 0
+				? rootHelp(false)
+				: "See 'maestro --help' for the commands",
+		);
+	}
+	return EXIT.ok;
+}
+
+/** The arguments that ask for the help of what `maestro help` was given: a command, or none for the root's. */
+function helpArgs(args: readonly string[]): string[] {
+	const { first, rest } = splitFirst(COMMON, args);
+	return first === undefined ? ["--help", ...rest] : [first, ...rest, "--help"];
+}
+
+/**
+ * Reads `argv`, the arguments after the executable, and carries out the command it names. The common flags may come
+ * before the command.
  * @returns the exit code.
  */
 export async function main(
 	argv: readonly string[],
 	deps: Deps,
 ): Promise<number> {
-	const [word, ...args] = argv;
+	const { first: word, lead, rest } = splitFirst(COMMON, argv);
+	const args = [...rest.slice(lead.length), ...lead];
 	let options = COMMON;
+	let at: At | undefined;
 	try {
-		if (word === "--help" || word === "-h") {
-			deps.stdout(rootHelp(colorOf(deps, peek(COMMON, args)).out));
-			return EXIT.ok;
-		}
-		if (word === "--version") {
-			deps.stdout(versionLine());
-			return EXIT.ok;
-		}
-		if (word === undefined)
-			throw usageError("no command given", rootHelp(false));
-		const command = await verbOf(word).load();
+		if (word === undefined) return bare(argv, deps);
+		if (word === "help") return await main(helpArgs(args), deps);
+		const verb = verbOf(word);
+		const command = await verb.load();
 		options = command.options;
-		const common = peek(COMMON, args);
+		at = {
+			name: verb.name,
+			usage: command.usage,
+			examples: command.examples !== undefined,
+		};
+		const common = peek(COMMON, argv);
 		if (isSet(common, "help")) {
 			const { out } = colorOf(deps, common);
-			deps.stdout(helpOf(command, await extraHelp(command, args, deps), out));
+			const extra = await extraHelp(command, args, deps);
+			deps.stdout(helpOf(command, verb.summary, extra, out));
 			return EXIT.ok;
 		}
 		return await command.execute(args, deps);
 	} catch (error) {
-		return report(error, deps, args, options);
+		return report(error, deps, args, options, at);
 	}
 }

@@ -272,7 +272,7 @@ describe("watch --frames", () => {
 		]);
 		const unknown = await w.call(["watch", id, "--frames", "zz"]);
 		expect(unknown.code).toBe(2);
-		expect(unknown.err).toStartWith("--frames names no key: 'zz'");
+		expect(unknown.err).toStartWith("error: --frames names no key: 'zz'");
 		expect((await w.call(["watch", "--help"])).out).not.toContain("--frames");
 	});
 

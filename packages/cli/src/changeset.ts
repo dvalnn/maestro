@@ -16,7 +16,6 @@ import {
 import { type Ir, isPlainObject } from "@maestro/ir";
 import { type Changes, shortIds } from "@maestro/render-text/live";
 import {
-	COMMON,
 	type Command,
 	colorOf,
 	type Deps,
@@ -24,6 +23,7 @@ import {
 	type Options,
 	only,
 	parse,
+	SHARED,
 	textOf,
 	type Values,
 	warn,
@@ -34,6 +34,7 @@ import {
 	CliError,
 	EXIT,
 	instanceName,
+	NAME_CONCERT,
 	nameOf,
 	table,
 	usageError,
@@ -53,8 +54,6 @@ import {
 const FIX = "Flags are listed in 'maestro changeset --help'";
 
 // Its output is the diff itself, so it takes no --json.
-const { json: _json, ...SHARED } = COMMON;
-
 const CHANGESET_OPTIONS = {
 	...SHARED,
 	repo: {
@@ -540,8 +539,6 @@ async function dropped(deps: Deps, values: Values) {
 	return EXIT.ok;
 }
 
-export const NAME_CONCERT = "Name the concert, as 'maestro ls' lists it";
-
 async function changesetRun(args: readonly string[], deps: Deps) {
 	const { values, positionals } = parse(CHANGESET_OPTIONS, args, FIX);
 	const [word, ...rest] = positionals;
@@ -554,7 +551,7 @@ async function changesetRun(args: readonly string[], deps: Deps) {
 			);
 		return dropped(deps, values);
 	}
-	const prefix = only(rest, "concert", NAME_CONCERT);
+	const prefix = only(rest, "concert", NAME_CONCERT, action);
 	const own = overridesOf(values);
 	return withSession(deps, await locating(deps, own), (session, store) => {
 		const stored = { session, store, values, json: false };
@@ -565,6 +562,19 @@ async function changesetRun(args: readonly string[], deps: Deps) {
 export const changeset: Command = {
 	usage:
 		"changeset show|apply <concert> [flags]  (alias: cs)\n       maestro changeset drop [flags]",
+	arguments: [["<concert>", "A concert, as 'maestro ls' lists it"]],
 	options: CHANGESET_OPTIONS,
+	examples: [
+		["What did the concert change?", "maestro changeset show 7f3c2a --stat"],
+		[
+			"Stage the concert's changeset in a checkout",
+			"maestro changeset apply 7f3c2a -C ../app",
+		],
+		[
+			"Take what a failed agent left, from one node instance",
+			"maestro changeset apply 7f3c2a --node build --partial",
+		],
+		["Reset the checkout's uncommitted changes", "maestro changeset drop"],
+	],
 	execute: changesetRun,
 };

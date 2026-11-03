@@ -245,22 +245,24 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 
 	expect(await w.call(["art", "show", id, "parMap"])).toMatchObject({
 		code: 1,
-		err: `instance 'parMap' of concert ${id} has no artifacts yet\nSee where it stands with 'maestro ls ${id}'`,
+		err: `error: instance 'parMap' of concert ${id} has no artifacts yet\n  See where it stands with 'maestro ls ${id}'`,
 	});
 	for (const ending of ["b", "parMap/b"])
 		expect(await w.call(["art", "show", id, ending])).toMatchObject({
 			code: 2,
-			err: `'${ending}' ends 2 instances: parMap[x]/b, parMap[y]/b\nName one of them in full`,
+			err: `error: '${ending}' ends 2 instances: parMap[x]/b, parMap[y]/b\n  Name one of them in full`,
 		});
-	const LS = "Write maestro artifact ls <concert>";
-	const SHOW = "Write maestro artifact show <concert> <instance> [<file>]";
+	const HELP = "or see 'maestro artifact --help' for examples";
+	const LS = `Name one as 'maestro ls' lists it, ${HELP}`;
+	const SHOW = `Name one as 'maestro artifact ls <concert>' lists it, ${HELP}`;
+	const MANY = `Name a file by its name, or leave it out to print every file, ${HELP}`;
 	const FIX =
 		"Run 'maestro artifact ls <concert>', or 'maestro artifact show <concert> <instance>'";
 	for (const [args, last] of [
 		[["ls"], LS],
 		[["ls", id, "a"], LS],
 		[["show", id], SHOW],
-		[["show", id, "a", "b", "c"], SHOW],
+		[["show", id, "a", "b", "c"], MANY],
 		[["show", id, "nope"], `List them with 'maestro ls ${id}'`],
 		[
 			["show", id, "a", "nope.md"],
@@ -275,10 +277,10 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 		const refused = await w.call(["art", ...args]);
 		expect(refused.code).toBe(2);
 		const text: string = refused.err || json(refused).error;
-		expect(text.split("\n").at(-1)).toBe(last);
+		expect(text.split("\n").at(-1)?.trim()).toBe(last);
 	}
 	expect((await w.call(["art", id])).err).toStartWith(
-		`expected ls or show, got '${id}'`,
+		`error: expected ls or show, got '${id}'`,
 	);
 	const db = new Database(join(w.root, "data/maestro/record.db"));
 	db.run(
@@ -308,7 +310,7 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 	rmSync(notes);
 	expect(await w.call(["art", "show", id, "a", "notes.md"])).toMatchObject({
 		code: 1,
-		err: `the artifact is not at ${notes}\nPerform the concert again, or pick another instance`,
+		err: `error: the artifact is not at ${notes}\n  Perform the concert again, or pick another instance`,
 	});
 });
 
@@ -594,7 +596,7 @@ describe("changeset", () => {
 		);
 		expect(await w.cs("show", fan, "--node", "set")).toMatchObject({
 			code: 2,
-			err: "'set' ends 2 instances: parMap[x]/set, parMap[y]/set\nName one of them in full",
+			err: "error: 'set' ends 2 instances: parMap[x]/set, parMap[y]/set\n  Name one of them in full",
 		});
 
 		const checked = await w.call([
@@ -661,7 +663,7 @@ describe("changeset", () => {
 		expect(git(w.target, "diff", "--cached", "--name-only")).toBe("a.txt");
 		expect(await w.cs("apply", w.id)).toMatchObject({
 			code: 1,
-			err: `${w.target} has uncommitted changes\nCommit or stash them first`,
+			err: `error: ${w.target} has uncommitted changes\n  Commit or stash them first`,
 		});
 		for (const refused of [
 			["apply", w.id, "--stat"],
@@ -704,7 +706,7 @@ describe("changeset", () => {
 		const base = git(w.target, "rev-parse", "HEAD");
 		expect(await w.cs("show", w.id, "-C", other)).toMatchObject({
 			code: 1,
-			err: `base ${base} is not in ${other}\nFetch it first`,
+			err: `error: base ${base} is not in ${other}\n  Fetch it first`,
 		});
 	});
 
@@ -727,7 +729,7 @@ describe("changeset", () => {
 		const refused = await cs();
 		expect(refused.code).toBe(1);
 		expect(refused.err).toMatch(
-			/preset needs its workspace\nPass -C <repo>, or run from inside workspace 'ws'$/,
+			/preset needs its workspace\n {2}Pass -C <repo>, or run from inside workspace 'ws'$/,
 		);
 		expect(refused.err).not.toContain("Resume");
 
@@ -747,7 +749,7 @@ describe("changeset", () => {
 		expect((await w.cs("show", w.id)).out).toContain("+kept");
 		expect(await w.cs("show", w.id, "--node", "emptySet")).toMatchObject({
 			code: 1,
-			err: expect.stringContaining("is empty\nPick another node with --node"),
+			err: expect.stringContaining("is empty\n  Pick another node with --node"),
 		});
 		const failed = await w.call(["perform", join(REPO, "reject.ts")]);
 		expect(failed).toMatchObject({ code: 3 });
@@ -805,7 +807,7 @@ describe("changeset --partial", () => {
 			{
 				code: 1,
 				err: expect.stringMatching(
-					/kept no partial work\nPick a failed agent from 'maestro ls \S+'$/,
+					/kept no partial work\n {2}Pick a failed agent from 'maestro ls \S+'$/,
 				),
 			},
 		);
@@ -968,7 +970,7 @@ describe("agent show --seat", () => {
 			await w.call(["agent", "show", "--seat", "smoke/smok", file]),
 		).toMatchObject({
 			code: 2,
-			err: `${file} seats no agent at 'smoke/smok'\nDid you mean 'smoke/smoke'?`,
+			err: `error: ${file} seats no agent at 'smoke/smok'\n  Did you mean 'smoke/smoke'?`,
 		});
 	});
 
@@ -1069,7 +1071,7 @@ Environment   recorded stub
 			await w.call(["agent", "show", "--concert", id, "ok"]),
 		).toMatchObject({
 			code: 1,
-			err: `instance 'ok' of concert ${id} ran no agent\nName an agent node, as 'maestro ls ${id}' lists it`,
+			err: `error: instance 'ok' of concert ${id} ran no agent\n  Name an agent node, as 'maestro ls ${id}' lists it`,
 		});
 	});
 });

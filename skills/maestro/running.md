@@ -4,8 +4,8 @@ Reference for the verbs after bootstrap, grouped by verb, with what their output
 `maestro <verb> --help`. Each verb but `cs` takes `--json` (one JSON document on stdout), and each takes
 `--preset <name>`, `-c <key>=<value>` (repeatable) and `--debug`.
 
-Output is colored only on a terminal stream. `--no-color`, `NO_COLOR` or `TERM=dumb` turns it off, so a command you read
-is plain either way.
+Output is colored on a terminal stream, and on any stream under `--color` or a non-empty `FORCE_COLOR`. `--no-color`,
+`NO_COLOR` or `TERM=dumb` turns it off and wins, so a command you read is plain unless you force color.
 
 ## Compose
 

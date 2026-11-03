@@ -450,7 +450,7 @@ describe("agent show --probe", () => {
 				await w.call(["agent", "show", "demo/reviewer", "--probe"], { env }),
 			).toMatchObject({
 				code: 2,
-				err: `probing stub…\nMAESTRO_STUB_ENVIRONMENT holds '${value}', not a JSON object\nSet it to an object such as '{"mcp":["github"]}', or unset it`,
+				err: `probing stub…\nerror: MAESTRO_STUB_ENVIRONMENT holds '${value}', not a JSON object\n  Set it to an object such as '{"mcp":["github"]}', or unset it`,
 			});
 		},
 	);
@@ -463,7 +463,7 @@ describe("agent show --probe", () => {
 		);
 		expect(await w.call(["agent", "show", "later", "--probe"])).toMatchObject({
 			code: 2,
-			err: "harness 'codex' is not loaded\nSet 'profiles.later.runtime.harness' to one of: pi, claude, stub",
+			err: "error: harness 'codex' is not loaded\n  Set 'profiles.later.runtime.harness' to one of: pi, claude, stub",
 		});
 	});
 });
@@ -493,11 +493,11 @@ test.each([
 	],
 	[
 		["agent", "show", "--concert", "c"],
-		"expected one node, got 0\nName a node, as 'maestro ls <concert>' lists it",
+		"maestro agent show needs a node\nName one as 'maestro ls <concert>' lists it",
 	],
 	[
 		["agent", "show"],
-		"expected one profile, got 0\nName a profile, as 'maestro agent ls' lists it",
+		"maestro agent show needs a profile\nName one as 'maestro agent ls' lists it",
 	],
 	[
 		["agent", "show", "scout", "--prompt"],
@@ -505,7 +505,7 @@ test.each([
 	],
 	[
 		["agent", "show", "--seat", "smoke/smoke"],
-		"expected one composition, got 0\nName the composition the seat sits in: a file, or <pack>.<composition>",
+		"maestro agent show needs a composition\nName it by file path or <pack>.<composition>",
 	],
 	[
 		["agent", "show", "scout", "--yaml", "--json"],
@@ -515,5 +515,8 @@ test.each([
 	const w = await roster();
 	const refused = await w.call(args);
 	expect(refused.code).toBe(2);
-	expect(args.includes("--json") ? json(refused).error : refused.err).toBe(err);
+	if (args.includes("--json")) return expect(json(refused).error).toBe(err);
+	const [what = "", ...fix] = err.split("\n");
+	expect(refused.err).toStartWith(`error: ${what}\n`);
+	expect(refused.err).toEndWith(`\n  ${fix.join("\n")}`);
 });

@@ -96,13 +96,13 @@ describe("a concert in another process", () => {
 		expect(await w.call(["resume", id])).toEqual({
 			code: 1,
 			out: "",
-			err: `concert ${id} is still running in process ${child.pid}\nWait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'`,
+			err: `error: concert ${id} is still running in process ${child.pid}\n  Wait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'`,
 		});
 		const pruned = await w.call(["prune", id, "--yes"]);
 		expect(pruned.code).toBe(1);
 		expect(pruned.err).toMatch(
 			new RegExp(
-				`^concert ${id} is still running.*\nWait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'$`,
+				`^error: concert ${id} is still running.*\n {2}Wait for it with 'maestro wait ${id}', or stop it with 'maestro kill ${id}'$`,
 			),
 		);
 
@@ -164,7 +164,7 @@ describe("a concert in another process", () => {
 		expect(await w.call(["resume", id])).toEqual({
 			code: 1,
 			out: "",
-			err: `concert ${id} finished ok, so it has nothing to resume\nPerform its composition as a new concert with 'maestro perform <composition>'`,
+			err: `error: concert ${id} finished ok, so it has nothing to resume\n  Perform its composition as a new concert with 'maestro perform <composition>'`,
 		});
 	}, 30_000);
 });
@@ -269,7 +269,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 		).not.toContain("warning:");
 		await rm(file);
 		expect((await w.call(["resume", again])).err).toBe(
-			`the code of concert ${again} was in ${file}, which is gone\nRestore it, or perform its composition as a new concert`,
+			`error: the code of concert ${again} was in ${file}, which is gone\n  Restore it, or perform its composition as a new concert`,
 		);
 	});
 
@@ -408,7 +408,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 		const refused = await w.call(["resume", id]);
 		expect(refused.code).toBe(1);
 		expect(refused.err).toBe(
-			`the code of concert ${id} was in ${w.pack}, which is gone\nRestore it, or perform its composition as a new concert`,
+			`error: the code of concert ${id} was in ${w.pack}, which is gone\n  Restore it, or perform its composition as a new concert`,
 		);
 	});
 });
@@ -424,7 +424,7 @@ describe("encore", () => {
 		expect(await encore(first)).toEqual({
 			code: 1,
 			out: "",
-			err: `nothing changed since concert ${first}: its params, config and target revision are the same\nChange a param, the config or the target`,
+			err: `error: nothing changed since concert ${first}: its params, config and target revision are the same\n  Change a param, the config or the target`,
 		});
 		const flaky = idOf(
 			await w.call(["perform", "demo.greet", "--name", "z"], {
@@ -436,7 +436,7 @@ describe("encore", () => {
 			}),
 		);
 		expect((await encore(flaky)).err).toEndWith(
-			`\nChange a param, the config or the target, or resume it with 'maestro resume ${flaky}'`,
+			`\n  Change a param, the config or the target, or resume it with 'maestro resume ${flaky}'`,
 		);
 		expect(await encore(first, "demo.greet")).toMatchObject({
 			code: 2,
@@ -447,7 +447,7 @@ describe("encore", () => {
 		const renamed = idOf(await encore(first, "--name", "y"));
 		const chained = idOf(await encore("-c", "concurrency=2", renamed));
 		expect((await encore(chained)).err).toStartWith(
-			`nothing changed since concert ${chained}`,
+			`error: nothing changed since concert ${chained}`,
 		);
 		const stacked = idOf(await encore(chained, "-c", "concurrency=3"));
 		const recorded = async (id: string) => {
@@ -547,7 +547,7 @@ describe("kill", () => {
 			expect(killed.code).toBe(1);
 			expect(killed.err).toMatch(
 				new RegExp(
-					`^the process ${other.pid} of concert ${id} is gone, and its pid now belongs to another program\n`,
+					`^error: the process ${other.pid} of concert ${id} is gone, and its pid now belongs to another program\n {2}`,
 				),
 			);
 			expect(() => process.kill(other.pid, 0)).not.toThrow();
@@ -624,7 +624,7 @@ describe("a file param", () => {
 		expect(await w.call(["perform", out])).toMatchObject({
 			code: 2,
 			err: expect.stringContaining(
-				`${out} feeds input 'spec' of node 'read' the file param 'spec.md', which an IR file cannot stage\nPerform the composition file instead, passing the file to its param`,
+				`${out} feeds input 'spec' of node 'read' the file param 'spec.md', which an IR file cannot stage\n  Perform the composition file instead, passing the file to its param`,
 			),
 		});
 	});

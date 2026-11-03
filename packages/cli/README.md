@@ -136,16 +136,20 @@ maestro wait <concert> --timeout 15m
 `compose <composition> --help` and `perform <composition> --help` add the composition's params, as `rep` shows them.
 
 `maestro --version` prints one line, `maestro <version> (sdk <version>, ir <version>, bun <version>)`, and exits 0.
+`maestro help` and `maestro help <command>` show the same help as `--help`. The common flags may come before the
+command, as in `maestro --preset stub compose <composition>`. A mistyped command or flag is met with
+`Did you mean '<name>'?`.
 
 Every command but `changeset` takes `--json` (one JSON document on stdout, and no `warning:` lines on stderr),
 `--preset <name>` (repeatable), `-c, --config <key=value>` (repeatable), `--no-color`, `--debug` (stack traces) and
 `--help`. Primary output goes to stdout, messages to stderr.
 
-Each stream is colored only when it is a terminal: stdout by its own check, stderr by its own. Color is off under
-`NO_COLOR`, `TERM=dumb` or `--no-color`, and the `--json` document is never colored. It covers the `ls` status column,
-the bold table headers of `ls`, `ls <concert>` and `art`, the closing block, the `watch` views, a diagnostic's code
-(red, yellow for a warning) and its dim hint line, the dim hint line of an error, and `--help` (bold headings, cyan
-flags, the Params block included).
+Each stream is colored when it is a terminal: stdout by its own check, stderr by its own. `--color`, or a non-empty
+`FORCE_COLOR`, colors both streams even when they are not terminals. Color is off under `NO_COLOR`, `TERM=dumb` or
+`--no-color`, which win over both, and the `--json` document is never colored. It covers the `ls` status column, the
+bold table headers of `ls`, `ls <concert>` and `art`, the closing block, the `watch` views, a diagnostic's code (red,
+yellow for a warning) and its dim hint line, the dim hint line of an error, and `--help` (bold headings, cyan flags, the
+Params block included).
 
 `watch` replays from the concert's first event, then follows it. With `--json`, or off a terminal without `--events`, it
 prints a JSON Lines stream: one compact line per record event that changes an instance's state (`running`, `settled`,

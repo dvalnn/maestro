@@ -43,6 +43,7 @@ import { actorOf, annotated, hostTextOf } from "./host-text";
 import {
 	EXIT,
 	exitOf,
+	NAME_CONCERT,
 	nameOf,
 	printClosing,
 	resultDoc,
@@ -379,8 +380,6 @@ function narrowed(show: Show, row: ConcertRecord, id: string): Show {
 	return (events, read) => show(selectedUnder(graph, node, keys, events), read);
 }
 
-const NAME_TO_WATCH = "Name the concert to watch";
-
 /**
  * The concert to watch, and the inputs `--frames` names, if given.
  * @throws CliError, a usage error, for `--instance` without `--events`, other than one concert, or a key `--frames`
@@ -392,7 +391,7 @@ function watchChecked(values: Values, positionals: readonly string[]) {
 			"--instance needs --events",
 			"Add --events, as in 'maestro watch <concert> --events --instance <id>'",
 		);
-	const prefix = only(positionals, "concert", NAME_TO_WATCH);
+	const prefix = only(positionals, "concert", NAME_CONCERT);
 	const keys = textOf(values, "frames");
 	return { prefix, inputs: keys === undefined ? undefined : inputsOf(keys) };
 }
@@ -447,6 +446,7 @@ async function closed(
 
 export const watch: Command = {
 	usage: "watch <concert> [flags]  (alias: w)",
+	arguments: [["<concert>", "A concert, as 'maestro ls' lists it"]],
 	options: WATCH_OPTIONS,
 	execute: (args, deps) =>
 		withStore(

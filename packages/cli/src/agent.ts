@@ -98,10 +98,9 @@ const AGENT_OPTIONS: Options = {
 };
 
 const FIX = "Run 'maestro agent ls', or 'maestro agent show <profile>'";
-const NAME_PROFILE = "Name a profile, as 'maestro agent ls' lists it";
-const NAME_NODE = "Name a node, as 'maestro ls <concert>' lists it";
-const NAME_COMPOSITION =
-	"Name the composition the seat sits in: a file, or <pack>.<composition>";
+const NAME_PROFILE = "Name one as 'maestro agent ls' lists it";
+const NAME_NODE = "Name one as 'maestro ls <concert>' lists it";
+const NAME_COMPOSITION = "Name it by file path or <pack>.<composition>";
 /** The flags only `show` takes, and the pairs of them that exclude each other. */
 const SHOW_FLAGS = ["yaml", "probe", "concert", "seat", "prompt"] as const;
 const EXCLUSIVE = [
@@ -179,13 +178,13 @@ function showRequest(rest: readonly string[], values: Values): Request {
 		return {
 			action: "recorded",
 			concert,
-			node: only(rest, "node", NAME_NODE),
+			node: only(rest, "node", NAME_NODE, "show"),
 		};
 	const probe = isSet(values, "probe");
 	const prompt = isSet(values, "prompt");
 	const key = textOf(values, "seat");
 	if (key !== undefined) {
-		const target = only(rest, "composition", NAME_COMPOSITION);
+		const target = only(rest, "composition", NAME_COMPOSITION, "show");
 		return { action: "seat", key, target, probe, prompt };
 	}
 	if (prompt)
@@ -193,7 +192,11 @@ function showRequest(rest: readonly string[], values: Values): Request {
 			"--prompt takes --seat: the prompt is a seat's",
 			"Add --seat <composition id>/<seat> and name its composition",
 		);
-	return { action: "show", name: only(rest, "profile", NAME_PROFILE), probe };
+	return {
+		action: "show",
+		name: only(rest, "profile", NAME_PROFILE, "show"),
+		probe,
+	};
 }
 
 /** The request `positionals` and `values` make. @throws CliError, a usage error, for anything else. */
@@ -877,6 +880,17 @@ async function recorded(
 export const agent: Command = {
 	usage:
 		"agent ls [flags]\n       maestro agent show <profile> [--probe] [flags]\n       maestro agent show --seat <composition id>/<seat> <composition> [--prompt] [flags]\n       maestro agent show --concert <id> <node> [flags]",
+	arguments: [
+		["<profile>", "A profile, as 'maestro agent ls' lists it"],
+		[
+			"<composition>",
+			"With --seat, the composition the seat sits in: a file, or <pack>.<composition>",
+		],
+		[
+			"<node>",
+			"With --concert, a node of that concert, as 'maestro ls <concert>' lists it",
+		],
+	],
 	options: AGENT_OPTIONS,
 	async execute(args, deps) {
 		const { values, positionals } = parse(AGENT_OPTIONS, args, FIX);
