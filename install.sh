@@ -1,6 +1,7 @@
 #!/bin/sh
-# Installs or updates maestro from a forge release. MAESTRO_VERSION=<tag> pins a release, MAESTRO_RELEASE_DIR=<dir>
-# installs from a directory of release assets instead of the forge.
+# Installs or updates maestro from a forge release: the newest stable one, or with MAESTRO_CHANNEL=rc the newest one,
+# pre-releases included. MAESTRO_VERSION=<tag> pins a release, MAESTRO_RELEASE_DIR=<dir> installs from a directory of
+# release assets instead of the forge.
 set -eu
 
 FAILURE=1
@@ -30,8 +31,13 @@ fetch() {
   fi
 }
 
+# Prints the newest release tag on channel $1: stable skips pre-releases, rc takes the newest release of any kind.
 latest_tag() {
-  curl -fsL "$FORGE/api/v1/repos/$REPO/releases?limit=1" |
+  case $1 in
+    stable) filter='&pre-release=false' ;;
+    rc) filter= ;;
+  esac
+  curl -fsL "$FORGE/api/v1/repos/$REPO/releases?limit=1$filter" |
     sed -n 's/.*"tag_name":"\([^"]*\)".*/\1/p' | head -n 1
 }
 
@@ -95,6 +101,12 @@ main() {
     *) data_dir=$HOME/.local/share/maestro ;;
   esac
 
+  channel=${MAESTRO_CHANNEL:-stable}
+  case $channel in
+    stable | rc) ;;
+    *) fail "MAESTRO_CHANNEL is '$channel', which is not a channel" "Set MAESTRO_CHANNEL to stable or rc" ;;
+  esac
+
   need sha256sum
   [ -n "${MAESTRO_RELEASE_DIR:-}" ] || need curl
   need tar
@@ -109,8 +121,12 @@ main() {
 
   tag=${MAESTRO_VERSION:-}
   if [ -z "${MAESTRO_RELEASE_DIR:-}" ] && [ -z "$tag" ]; then
-    tag=$(latest_tag) || tag=
-    [ -n "$tag" ] || fail "cannot find the newest maestro release" "Check the network, or pin one with MAESTRO_VERSION=<tag>"
+    tag=$(latest_tag "$channel") || tag=
+    if [ -z "$tag" ]; then
+      [ "$channel" = rc ] ||
+        fail "cannot find a stable maestro release" "Check the network, or install the newest pre-release with MAESTRO_CHANNEL=rc"
+      fail "cannot find the newest maestro release" "Check the network, or pin one with MAESTRO_VERSION=<tag>"
+    fi
   fi
 
   fetch_assets

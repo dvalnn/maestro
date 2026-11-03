@@ -20,8 +20,14 @@ Running maestro needs no Bun.
 curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | sh
 ```
 
-The script installs the newest release, prereleases included, and the same command updates an installed maestro. To pin
-a release, set `MAESTRO_VERSION` to its tag, `v` included, before `sh`:
+The script installs the newest stable release, and the same command updates an installed maestro. To install the newest
+release, pre-releases (`-rc.<n>` release candidates) included, set `MAESTRO_CHANNEL=rc` before `sh`:
+
+```sh
+curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_CHANNEL=rc sh
+```
+
+To pin a release, set `MAESTRO_VERSION` to its tag, `v` included, before `sh`. A pin wins over the channel:
 
 ```sh
 curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_VERSION=v0.1.0-rc.2 sh
