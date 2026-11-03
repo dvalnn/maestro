@@ -141,12 +141,12 @@ function openEntry(issue: Issue, pulls: readonly Pull[]): string[] {
 }
 
 /**
- * The backlog snapshot `--backlog` takes: the milestone's open issues but `issue`, with their state and, while
- * built or reviewed, their PR's diffstat, then the newest closed issues.
+ * The backlog snapshot `--backlog` takes: the milestone's open issues but `issue`, when given, with their state and,
+ * while built or reviewed, their PR's diffstat, then the newest closed issues.
  */
 export function snapshot(
 	milestone: string,
-	issue: number,
+	issue: number | undefined,
 	open: readonly Issue[],
 	closed: readonly Issue[],
 	pulls: readonly Pull[],

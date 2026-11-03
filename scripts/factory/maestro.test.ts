@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { maestro } from "./maestro";
@@ -10,7 +10,8 @@ writeFileSync(
 	bin,
 	`#!/bin/sh
 case "$1 $2" in
-	"ls c2"|"ls c3") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"]}}}' ;;
+	"ls c2"|"ls c3") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"],"lessons":["run just fmt first"]}}}' ;;
+	"ls --tour") echo '[{"id":"l'"$5"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1"}]' ;;
 	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"pr":{"path":"pr.md"}}}' ;;
 	"wait c3") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"}}}' ;;
 	"wait c1") echo '{"id":"c1","status":"failed","reason":"boom"}'; exit 1 ;;
@@ -38,10 +39,11 @@ test("reads a settled concert's result whatever wait exits with", async () => {
 	});
 });
 
-test("reads a concert's report: each agent's obstacles and gaps, the upheld findings and the PR body it returned", async () => {
+test("reads a concert's report: each agent's obstacles, gaps and lessons, the upheld findings and the PR body it returned", async () => {
 	expect(await fake.report("c2")).toEqual({
 		obstacles: ["no rg"],
 		gaps: ["no Windows run"],
+		lessons: ["run just fmt first"],
 		upheld: "- F1, a.ts:3: too wide",
 		pr: "## Summary\n\nx",
 	});
@@ -59,6 +61,19 @@ test("reads a concert's spend: its time and tokens by kind", async () => {
 	});
 });
 
+test("lists a tour's concerts up to the limit, the tick's window by default", async () => {
+	expect(await fake.concerts("v", 200)).toEqual([
+		{
+			id: "l200",
+			status: "ok",
+			pack: "slice",
+			composition: "slice",
+			tour: "v.i1",
+		},
+	]);
+	expect((await fake.concerts("v")).map((c) => c.id)).toEqual(["l20"]);
+});
+
 test("a report whose upheld file is gone has no upheld findings, and one whose PR body is empty has none", async () => {
 	const report = await fake.report("c3");
 	expect([report.upheld, report.pr]).toEqual([undefined, undefined]);
@@ -66,6 +81,12 @@ test("a report whose upheld file is gone has no upheld findings, and one whose P
 
 test("a perform started in the background returns its concert", async () => {
 	expect(await fake.start(["perform", "x.ts"])).toBe("c9");
+});
+
+test("a perform started with a log writes what it printed there", async () => {
+	const log = join(dir, "perform.log");
+	await expect(fake.start(["perform", "refused"], log)).rejects.toThrow();
+	expect(readFileSync(log, "utf8")).toBe("refused.ts does not compose\n");
 });
 
 test.each([

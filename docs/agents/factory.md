@@ -116,7 +116,10 @@ flowchart TD
 2. With the agent's question as a question comment (Rules: Blocked).
 3. File the obstacle and requeue the ticket; the attempt is kept.
 4. New obstacles, as `needs-triage`.
-5. One issue per lesson promotion.
+5. One `needs-approval` + `kind/enhancement` issue per proposal, routed only while the harvest is the newest concert. It
+   is deduplicated by a fingerprint over target, title and body against open issues and the 20 newest closed ones. A
+   non-ok or malformed harvest is reported and does not halt. The owner labels `needs-triage` to specify and build a
+   proposal, or `wontfix` to drop it.
 6. A triage that fails, does not start or gives a malformed output. The ticket keeps its state, and closing the halt
    issue triages it again.
 7. Any verdict with a question for the owner, whatever its risk.
@@ -231,6 +234,12 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   harvest. A tick that routes a settle falls through and starts the next action. Within builds and within triage, an
   eligible issue the owner pinned on the forge comes first, in pinned order, then the rest oldest first; the forge pins
   at most 3, so no other priority is needed. `--route-only` routes and syncs but starts nothing.
+- **Harvest.** A harvest runs on tour `<milestone>.harvest`, titled `factory: harvest lessons`. It is due when the
+  newest concert is not a harvest and at least 10 settled slice or triage concerts on `<milestone>.i<n>` tours are newer
+  than the watermark, within the milestone's newest 200 concerts. It performs `.maestro/harvest.ts` with `--lessons`,
+  the lessons of those concerts oldest first, each lesson once per concert, with those of settled slices on the
+  `release` and `trial` tours that started after the watermark, which are read but not counted, and `--backlog`, the
+  backlog snapshot. A failed harvest is retried only after another factory run settles.
 - **Closing line.** The tour manager never edits the ask. Below it the body holds the `<!-- maestro-tm -->` marker and
   one line, `Tracked by Maestro Tour Manager · [spec vN](#issuecomment-<id>)`, written when the spec comment is created
   or its version changes. State, risk and area stay in the labels.
@@ -281,6 +290,10 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   interface, crossed package boundary or unruled lasting decision. Its findings, or a line saying it failed to run, go
   into the spec's Left out under `Open after the spec check`, for the builder and the PR review; they ask the owner
   nothing. A split is not checked. The planner asks the owner nothing either: it settles what is open as a decision.
+- **Harvest watermark.** The watermark is the newest ok harvest concert in maestro's record, not state the tick keeps;
+  the Data line stays the per-issue state. Pruning any other concert leaves it intact. Pruning the watermark harvest
+  makes the older one, or none, the watermark: its lessons are read again, and the backlog drops promotions already
+  filed. A pruned factory concert's lessons are gone.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. A reply is
   final: a re-triage does not ask again what it settled, and rules `direct` when it leaves the change small and clear.
   The owner answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`,
@@ -378,7 +391,8 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   `state/duplicate`, tracks nothing, so the ticket goes to `needs-info` with a question instead. A related issue gets
   `Relates to #N` in the spec comment and the PR body.
 - **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
-  `factory: <issue title>`, the title cut with an ellipsis past 60 characters.
+  `factory: <issue title>`, the title cut with an ellipsis past 60 characters. A harvest runs on tour
+  `<version>.harvest`, such as `v0.1.0.harvest`, titled `factory: harvest lessons`.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
   held, with the subject from the spec and `Closes #N`. The PR, to `main` or to the dependency's branch while stacked,
   is titled with the subject. The slice's last seat, a writer on a cheap model, reads the spec, the patches and the

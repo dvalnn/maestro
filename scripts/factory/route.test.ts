@@ -6,7 +6,10 @@ import {
 	type Data,
 	dataOf,
 	elapsed,
+	parseHarvest,
 	parseTriage,
+	proposalIssue,
+	proposalLine,
 	pullBody,
 	questionOf,
 	RISKS,
@@ -474,4 +477,56 @@ test("a PR body from the writer keeps its sections, then the gaps, risk and revi
 	);
 	expect(body).toEndWith("</details>\n\nCloses #5 · relates to #7");
 	expect(body).not.toContain("## Evidence");
+});
+
+const PROPOSAL = {
+	target: "docs/agents/factory.md",
+	title: "Say to run just fmt first",
+	body: "Add a line to the Rules.\n",
+	lessons: ["run just fmt first", "format before the checks"],
+};
+
+test("a harvest output parses, an empty list of proposals too", () => {
+	expect(parseHarvest({ proposals: [PROPOSAL] })).toEqual({
+		proposals: [PROPOSAL],
+	});
+	expect(parseHarvest({ proposals: [] })).toEqual({ proposals: [] });
+});
+
+test("a harvest output that is not an object is malformed", () => {
+	expect(() => parseHarvest("proposals")).toThrow(
+		"the harvest output is not an object",
+	);
+});
+
+test.each([
+	["missing its lessons", { ...PROPOSAL, lessons: undefined }],
+	["with a target that is no string", { ...PROPOSAL, target: 3 }],
+])("a harvest with a proposal %s is malformed", (_, proposal) => {
+	expect(() => parseHarvest({ proposals: [proposal] })).toThrow("proposals");
+});
+
+test("a proposal's issue holds its target, body, lessons and the owner's moves, and ends in its fingerprint", () => {
+	const { title, body } = proposalIssue(PROPOSAL);
+	expect(title).toBe(PROPOSAL.title);
+	expect(body).toContain("Target: `docs/agents/factory.md`");
+	expect(body).toContain("Add a line to the Rules.");
+	expect(body).toContain("- run just fmt first\n- format before the checks");
+	expect(body).toContain(
+		"Label `needs-triage` to specify and build it, `wontfix` to drop it.",
+	);
+	expect(body.endsWith(proposalLine(PROPOSAL))).toBe(true);
+});
+
+test("a proposal's fingerprint changes with its title and ignores case and folded whitespace", () => {
+	expect(proposalLine({ ...PROPOSAL, title: "Other" })).not.toBe(
+		proposalLine(PROPOSAL),
+	);
+	expect(
+		proposalLine({
+			...PROPOSAL,
+			title: "say  to RUN just fmt first",
+			body: "Add a line   to the Rules.",
+		}),
+	).toBe(proposalLine(PROPOSAL));
 });

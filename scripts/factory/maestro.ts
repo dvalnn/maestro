@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isJson, type Json } from "./json";
 
@@ -11,6 +11,8 @@ export type Concert = {
 	pack: string;
 	composition: string;
 	tour?: string;
+	/** When it started, in milliseconds. */
+	startedAt?: number;
 };
 export type Result = {
 	status: string;
@@ -30,10 +32,14 @@ export type Spend = {
 	cacheWrite: number;
 	encore: boolean;
 };
-/** What a settled concert's agents reported: `upheld` is the body of the upheld findings the concert returned, if any. */
+/**
+ * What a settled concert's agents reported, their obstacles, gaps and lessons: `upheld` is the body of the upheld
+ * findings the concert returned, if any.
+ */
 export type Report = {
 	obstacles: string[];
 	gaps: string[];
+	lessons: string[];
 	upheld?: string;
 	/** The PR body the slice's writer wrote. */
 	pr?: string;
@@ -41,14 +47,15 @@ export type Report = {
 
 /** maestro as the tick sees it, through its `--json` documents. */
 export type Maestro = {
-	/** The newest concerts on `tour` and the tours under it, newest first. */
-	concerts(tour: string): Promise<Concert[]>;
+	/** The newest `limit` concerts on `tour` and the tours under it, newest first; `limit` defaults to the tick's window. */
+	concerts(tour: string, limit?: number): Promise<Concert[]>;
 	result(id: string): Promise<Result>;
 	/**
-	 * Starts `maestro <args>` in the background and returns its concert's id.
+	 * Starts `maestro <args>` in the background and returns its concert's id; what it printed is written to `log`,
+	 * when given.
 	 * @throws Error with maestro's refusal when it does not start.
 	 */
-	start(args: string[]): Promise<string>;
+	start(args: string[], log?: string): Promise<string>;
 	report(id: string): Promise<Report>;
 	/** What concert `id` spent. */
 	spend(id: string): Promise<Spend>;
@@ -73,6 +80,7 @@ const concertOf = (o: unknown): Concert => {
 		pack: str(o, "pack"),
 		composition: str(o, "composition"),
 		tour: typeof o.tour === "string" ? o.tour : undefined,
+		startedAt: typeof o.startedAt === "number" ? o.startedAt : undefined,
 	};
 };
 
@@ -162,10 +170,15 @@ async function run(bin: string, args: string[]) {
 }
 
 /**
- * The `--json` document `bin <args>` prints, whatever its exit code, since `wait` exits with the concert's.
+ * The `--json` document `bin <args>` prints, whatever its exit code, since `wait` exits with the concert's; its
+ * stdout, then its stderr, are written to `log` when given.
  * @throws Error with its stderr when it prints none.
  */
-async function json(bin: string, args: string[]): Promise<unknown> {
+async function json(
+	bin: string,
+	args: string[],
+	log?: string,
+): Promise<unknown> {
 	const child = Bun.spawn([bin, ...args, "--json"], {
 		stdout: "pipe",
 		stderr: "pipe",
@@ -175,6 +188,7 @@ async function json(bin: string, args: string[]): Promise<unknown> {
 		new Response(child.stderr).text(),
 		child.exited,
 	]);
+	if (log) writeFileSync(log, out + err);
 	try {
 		return JSON.parse(out);
 	} catch {
@@ -184,13 +198,13 @@ async function json(bin: string, args: string[]): Promise<unknown> {
 
 export function maestro(bin = "maestro"): Maestro {
 	return {
-		concerts: async (tour) => {
+		concerts: async (tour, limit = WINDOW) => {
 			const rows = await json(bin, [
 				"ls",
 				"--tour",
 				tour,
 				"--limit",
-				`${WINDOW}`,
+				`${limit}`,
 			]);
 			if (!Array.isArray(rows)) throw new Error("maestro ls: not a list");
 			return rows.map(concertOf);
@@ -205,14 +219,15 @@ export function maestro(bin = "maestro"): Maestro {
 			return {
 				obstacles: entriesOf(doc.reports, "obstacles"),
 				gaps: entriesOf(doc.reports, "gaps"),
+				lessons: entriesOf(doc.reports, "lessons"),
 				upheld: upheldOf(result),
 				pr: prOf(result),
 			};
 		},
 		spend: async (id) => spendOf(await json(bin, ["ls", id])),
 		apply: (id, dir) => run(bin, ["cs", "apply", id, "-C", dir]),
-		start: async (args) => {
-			const doc = await json(bin, [...args, "--detach"]);
+		start: async (args, log) => {
+			const doc = await json(bin, [...args, "--detach"], log);
 			if (isJson(doc) && typeof doc.id === "string") return doc.id;
 			throw new Error(`maestro ${args[0]}:\n${refusal(doc)}`);
 		},

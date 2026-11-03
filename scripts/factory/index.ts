@@ -1,4 +1,4 @@
-// One pass of the tour manager (docs/agents/factory.md, zoom 1): it routes settles, builds a ready ticket or triages one.
+// One pass of the tour manager (docs/agents/factory.md, zoom 1): it routes settles, builds a ready ticket, triages one or harvests lessons.
 import { dlopen, FFIType, read } from "bun:ffi";
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
@@ -49,10 +49,14 @@ import {
 	encoreRequest,
 	fenced,
 	fingerprintLine,
+	type Harvest,
 	isFed,
 	isReply,
 	type Option,
+	parseHarvest,
 	parseTriage,
+	proposalIssue,
+	proposalLine,
 	pullBody,
 	questionOf,
 	relabelled,
@@ -81,9 +85,18 @@ export const MILESTONE_KEY = "MAESTRO_TM_MILESTONE";
 const REPO = resolve(import.meta.dir, "../..");
 const TRIAGE_FILE = join(REPO, ".maestro/triage.ts");
 const SLICE_FILE = join(REPO, ".maestro/slice.ts");
+const HARVEST_FILE = join(REPO, ".maestro/harvest.ts");
 /** A bare composition file's pack is its stem. */
 const TRIAGE = { pack: "triage", composition: "triage" };
 const SLICE = { pack: "slice", composition: "slice" };
+const HARVEST = { pack: "harvest", composition: "harvest" };
+/** How many settled factory runs newer than the last harvest make the next one due. */
+const HARVEST_EVERY = 10;
+/**
+ * How many of a milestone's newest concerts the harvest step reads: a harvest comes last in pick order and may starve
+ * while there is other work, so it reads further back than the pass's window.
+ */
+const HARVEST_WINDOW = 200;
 /** How a slice's agent reports it blocked (GLOSSARY.md, Blocked). */
 const BLOCKED = "blocked:";
 const BASE = "main";
@@ -96,7 +109,7 @@ export type Options = {
 	milestone: string;
 	/** The presets layered last, in order, on each triage and build. */
 	presets: string[];
-	/** Only route settled concerts and sync; start no build or triage. */
+	/** Only route settled concerts and sync; start no build, triage or harvest. */
 	routeOnly?: boolean;
 	/** Where the pass keeps its snapshots and perform logs. */
 	dir: string;
@@ -149,6 +162,19 @@ const isTriage = (c: Concert) =>
 	c.pack === TRIAGE.pack && c.composition === TRIAGE.composition;
 const isSlice = (c: Concert) =>
 	c.pack === SLICE.pack && c.composition === SLICE.composition;
+const harvestTour = (milestone: string) => `${milestone}.harvest`;
+const isHarvest = (c: Concert, milestone: string) =>
+	c.pack === HARVEST.pack &&
+	c.composition === HARVEST.composition &&
+	c.tour === harvestTour(milestone);
+/** Whether `c` is a settled slice or triage of an issue's tour in `milestone`. */
+function isFactoryRun(c: Concert, milestone: string) {
+	const prefix = `${milestone}.i`;
+	if (!(isSlice(c) || isTriage(c)) || c.status === "running") return false;
+	return (
+		!!c.tour?.startsWith(prefix) && /^\d+$/.test(c.tour.slice(prefix.length))
+	);
+}
 const branchOf = (issue: number) => `maestro-tm/i${issue}`;
 
 /** Files the halt issue: `lead`, then `detail` verbatim in a code block, then what to do next. */
@@ -784,9 +810,55 @@ async function routeOne(pass: Pass, entry: Entry) {
 		: settle(pass, entry, concert.id);
 }
 
-/** Routes each issue's settles; false when it halted. */
+/** The settled harvest, or what went wrong with it. */
+function harvestOf(result: Result): Harvest | string {
+	if (result.status !== "ok")
+		return `settled ${result.status}: ${result.reason ?? "no reason given"}`;
+	try {
+		return parseHarvest(result.outputs.harvest);
+	} catch (error) {
+		return `gave a malformed harvest: ${message(error)}`;
+	}
+}
+
+/**
+ * Files each proposal of harvest `id` as a `needs-approval` enhancement, unless an open issue or one of the newest
+ * closed ones carries its fingerprint.
+ */
+async function fileProposals(pass: Pass, id: string, harvest: Harvest) {
+	const [open, closed] = await Promise.all([
+		pass.forge.open({}),
+		pass.forge.closed(CLOSED),
+	]);
+	const bodies = [...open, ...closed].map((i) => i.body);
+	for (const proposal of harvest.proposals) {
+		const line = proposalLine(proposal);
+		if (bodies.some((b) => b.includes(line))) continue;
+		const filed = proposalIssue(proposal);
+		const number = await pass.forge.file({
+			...filed,
+			milestone: pass.milestoneId,
+			labels: ["state/needs-approval", "kind/enhancement"],
+		});
+		bodies.push(filed.body);
+		pass.say(`filed #${number}, proposed by harvest ${id}`);
+	}
+}
+
+/** Routes the newest concert when it is a harvest; one that settled wrong is said, not halted on. */
+async function routeHarvest(pass: Pass) {
+	const newest = pass.concerts[0];
+	if (!newest || !isHarvest(newest, pass.milestone)) return;
+	const harvest = harvestOf(await pass.maestro.result(newest.id));
+	if (typeof harvest === "string")
+		return pass.say(`harvest ${newest.id} ${harvest}`);
+	await fileProposals(pass, newest.id, harvest);
+}
+
+/** Routes each issue's settles, then the newest concert when it is a harvest; false when it halted. */
 async function route(pass: Pass, entries: Entry[]) {
 	for (const entry of entries) if (!(await routeOne(pass, entry))) return false;
+	await routeHarvest(pass);
 	return true;
 }
 
@@ -1233,7 +1305,8 @@ async function askReply(pass: Pass, { issue, data }: Entry) {
 /**
  * Starts triage of the first intake issue, pinned ones first, on its ask and the comments since the last triage read
  * that it is fed, an encore of its last triage when it has one, then records the newest comment it considered; halts on
- * a refusal. A re-triage with nothing new to feed asks for a reply instead.
+ * a refusal. A re-triage with nothing new to feed asks for a reply instead. True only when it started nothing, so a
+ * harvest may follow.
  */
 async function triage(pass: Pass, entries: Entry[]) {
 	const issue = pick(
@@ -1288,7 +1361,7 @@ async function triage(pass: Pass, entries: Entry[]) {
 			`Triage of #${number} did not start:`,
 			message(error),
 		);
-		return true;
+		return false;
 	}
 	pass.say(`triaging #${number}: concert ${id}`);
 	const read = considered.at(-1)?.id;
@@ -1297,13 +1370,158 @@ async function triage(pass: Pass, entries: Entry[]) {
 			...data,
 			read,
 		});
-	return true;
+	return false;
+}
+
+/** The index of the watermark in `concerts`, newest first: the newest ok harvest; -1 without one. */
+const markOf = (concerts: readonly Concert[], milestone: string) =>
+	concerts.findIndex((c) => isHarvest(c, milestone) && c.status === "ok");
+
+/** The tours of hand-run slices whose lessons a harvest reads beside the factory runs'. */
+const HAND_TOURS = ["release", "trial"];
+
+/**
+ * The settled slices of `tours` that started after the watermark of `concerts`, or all of them without one, newest
+ * first. They are read but never counted toward `HARVEST_EVERY`.
+ */
+function handRuns(
+	tours: readonly (readonly Concert[])[],
+	concerts: readonly Concert[],
+	milestone: string,
+): Concert[] {
+	const mark = concerts[markOf(concerts, milestone)];
+	return tours
+		.flat()
+		.filter(
+			(c) =>
+				isSlice(c) &&
+				c.status !== "running" &&
+				(!mark || (c.startedAt ?? 0) > (mark.startedAt ?? 0)),
+		)
+		.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+}
+
+/**
+ * The factory runs among `concerts`, newest first, that no harvest has read: those newer than the newest ok harvest,
+ * the watermark, or all of them without one (factory.md, Rules: Harvest watermark). Undefined when no harvest is due:
+ * the newest concert is a harvest, or fewer than `HARVEST_EVERY` runs are unharvested.
+ */
+function unharvested(
+	concerts: readonly Concert[],
+	milestone: string,
+): Concert[] | undefined {
+	const [newest] = concerts;
+	if (!newest || isHarvest(newest, milestone)) return undefined;
+	const mark = markOf(concerts, milestone);
+	const runs = (mark < 0 ? concerts : concerts.slice(0, mark)).filter((c) =>
+		isFactoryRun(c, milestone),
+	);
+	return runs.length >= HARVEST_EVERY ? runs : undefined;
+}
+
+/** What `--lessons` takes: each of `reports`' concerts with lessons, under its id and tour. */
+function lessonsText(reports: readonly { concert: Concert; report: Report }[]) {
+	return [
+		"# Lessons since the last harvest",
+		"",
+		...reports
+			.filter(({ report }) => report.lessons.some((l) => l.trim()))
+			.flatMap(({ concert, report }) => [
+				`## ${concert.id} · ${concert.tour}`,
+				"",
+				...[...new Set(report.lessons.map((l) => l.trim()))].map(
+					(l) => `- ${l.replaceAll("\n", "\n  ")}`,
+				),
+				"",
+			]),
+	].join("\n");
+}
+
+/** Performs the harvest on the `lessons` and `backlog` files; halts on a refusal. */
+async function startHarvest(
+	pass: Pass,
+	lessons: string,
+	backlog: string,
+	runs: number,
+) {
+	let id: string;
+	try {
+		id = await pass.maestro.start(
+			[
+				"perform",
+				HARVEST_FILE,
+				"--lessons",
+				lessons,
+				"--backlog",
+				backlog,
+				"--tour",
+				harvestTour(pass.milestone),
+				"--title",
+				"factory: harvest lessons",
+				...pass.presets.flatMap((p) => ["--preset", p]),
+			],
+			join(pass.dir, "harvest.log"),
+		);
+	} catch (error) {
+		await halt(
+			pass,
+			"harvest did not start",
+			"The harvest did not start:",
+			message(error),
+		);
+		return;
+	}
+	pass.say(`harvesting the lessons of ${runs} concerts: concert ${id}`);
+}
+
+/**
+ * Starts a harvest of the lessons of the factory runs since the last one, once `HARVEST_EVERY` settled, with the
+ * backlog snapshot; true when it started none.
+ */
+async function harvest(pass: Pass, entries: Entry[]) {
+	const listed = await pass.maestro.concerts(pass.milestone, HARVEST_WINDOW);
+	const counted = unharvested(listed, pass.milestone);
+	if (!counted) return true;
+	const hand = handRuns(
+		await Promise.all(
+			HAND_TOURS.map((t) => pass.maestro.concerts(t, HARVEST_WINDOW)),
+		),
+		listed,
+		pass.milestone,
+	);
+	const runs = hand.length
+		? [...counted, ...hand].sort(
+				(a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0),
+			)
+		: counted;
+	const reports = [];
+	for (const concert of runs.toReversed())
+		reports.push({ concert, report: await pass.maestro.report(concert.id) });
+	const lessons = join(pass.dir, "harvest-lessons.md");
+	await Bun.write(lessons, lessonsText(reports));
+	const [closed, pulls] = await Promise.all([
+		pass.forge.closed(CLOSED),
+		pass.forge.pulls(),
+	]);
+	const backlog = join(pass.dir, "backlog-harvest.md");
+	await Bun.write(
+		backlog,
+		snapshot(
+			pass.milestone,
+			undefined,
+			entries.map((e) => e.issue),
+			closed,
+			pulls,
+		),
+	);
+	await startHarvest(pass, lessons, backlog, runs.length);
+	return false;
 }
 
 /**
  * One pass: no action when another pass holds the lock, the tour manager is halted or a concert of the milestone runs;
- * else it routes settled concerts, syncs, and starts one build or else one triage, or none under `routeOnly`. Each step
- * returns whether the pass goes on.
+ * else it routes settled concerts and a settled harvest, syncs, and starts one build, else one triage, else a harvest
+ * once due, or none under `routeOnly`. Each step returns whether the pass goes on.
  * @throws Error when the milestone does not exist, or the forge or maestro fails or answers what the tick cannot read.
  */
 export async function pass(deps: Deps, options: Options): Promise<void> {
@@ -1331,7 +1549,7 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 	};
 	const steps = options.routeOnly
 		? [route, sync]
-		: [route, sync, build, triage];
+		: [route, sync, build, triage, harvest];
 	for (const step of steps) {
 		const entries = await load(pass);
 		if (!entries || !(await step(pass, entries))) return;

@@ -2,11 +2,13 @@
 
 One pass of the tour manager (`docs/agents/factory.md`): it routes a settled triage or slice, lands an ok slice as a PR,
 files approved splits and reports, restacks a stacked PR whose dependency merged, then starts one encore of a PR an
-official review requested changes on, else one build of a ready issue, else one triage of an intake issue. A build
-continues the issue's last slice concert when it has a reply to feed it. It drives maestro through `--json` and calls
-the forge's REST API directly as its own account, `maestro-tm`, which also pushes, and on a restack force-pushes, the
-PR's branch, and authors (and, with a key, signs) the commits it lands. A triage reads only the tour manager's question
-comments and comments mentioning its login, which each pass reads from `GET /user`.
+official review requested changes on, else one build of a ready issue, else one triage of an intake issue, else a
+harvest of the lessons once 10 factory runs settled since the last; it routes a settled harvest by filing its proposals
+as `needs-approval` issues. A build continues the issue's last slice concert when it has a reply to feed it. It drives
+maestro through `--json` and calls the forge's REST API directly as its own account, `maestro-tm`, which also pushes,
+and on a restack force-pushes, the PR's branch, and authors (and, with a key, signs) the commits it lands. A triage
+reads only the tour manager's question comments and comments mentioning its login, which each pass reads from
+`GET /user`.
 
 A ticket whose dependencies are all in review builds on the newest one's PR head, and its PR targets that dependency's
 branch until the restack moves it to `main`. On a low-risk PR to `main` the tick arms the forge's auto-merge,
@@ -42,7 +44,7 @@ bun scripts/factory/index.ts [--milestone v0.1.0] [--preset triage]... [--route-
 | -------------- | ------------------------------------------------------------------------------------------------ |
 | `--milestone`  | The milestone whose issues it triages and builds; overrides `MAESTRO_TM_MILESTONE` for that pass |
 | `--preset`     | A preset each triage and build is performed with, such as `stub`; repeatable, in order[^p]       |
-| `--route-only` | Routes settled concerts and syncs, then starts no build or triage                                |
+| `--route-only` | Routes settled concerts and syncs, then starts no build, triage or harvest                       |
 
 [^p]:
     A build layers them last, after its tier's preset and its area's. An area preset is an optional file,

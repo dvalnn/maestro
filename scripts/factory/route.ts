@@ -863,3 +863,56 @@ export function reportIssue(text: string, found: number) {
 	];
 	return { title, body: body.join("\n") };
 }
+
+/** A change to the standing text a harvest proposes, with the lessons it merges. */
+export type Proposal = {
+	target: string;
+	title: string;
+	body: string;
+	lessons: string[];
+};
+export type Harvest = { proposals: Proposal[] };
+
+const isProposals = (v: unknown): v is Proposal[] =>
+	Array.isArray(v) &&
+	v.every(
+		(p) =>
+			isJson(p) &&
+			isString(p.target) &&
+			isString(p.title) &&
+			isString(p.body) &&
+			isStrings(p.lessons),
+	);
+
+/**
+ * `value` as a harvest output.
+ * @throws Error naming the field that is missing or malformed.
+ */
+export function parseHarvest(value: unknown): Harvest {
+	if (!isJson(value)) throw new Error("the harvest output is not an object");
+	return {
+		proposals: field(value, "proposals", isProposals, "a list of proposals"),
+	};
+}
+
+/** The line that marks a filed proposal, over its target, title and body. */
+export const proposalLine = (p: Proposal) =>
+	fingerprintLine(`${p.target}\n${p.title}\n${p.body}`);
+
+/** The title and body of the issue proposal `p` is filed as. */
+export function proposalIssue(p: Proposal) {
+	const body = [
+		`Target: \`${p.target}\``,
+		"",
+		p.body.trim(),
+		"",
+		"## Lessons",
+		"",
+		...p.lessons.map((l) => `- ${l}`),
+		"",
+		"Label `needs-triage` to specify and build it, `wontfix` to drop it.",
+		"",
+		proposalLine(p),
+	];
+	return { title: p.title, body: body.join("\n") };
+}
