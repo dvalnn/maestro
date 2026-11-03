@@ -32,7 +32,7 @@ A diagnostic prints as `<code>: <message>` then its hint, indented. The hint is 
 `maestro perform <c> [param flags] [--tour <slug>] [--title <text>]` pre-flights, then performs the plan as a concert.
 
 - It runs in the foreground until the concert settles. SIGINT or SIGTERM cancels the concert, which settles `failed`.
-- Start it detached, as SKILL.md's loop step 4 shows, and read the id from its stderr file.
+- Start it with `--detach`, as SKILL.md's loop step 4 shows; the id prints on stdout.
 - Stderr: `concert <id>`, the full id, once the concert starts, then, when it settles, the closing block: a
   `concert <short id>  <outcome>  <elapsed>[ · <tokens> tok]` row, then `at <instance>` and `reason <reason>` lines when
   not `ok`. Pre-flight diagnostics come before the first line.
@@ -41,9 +41,9 @@ A diagnostic prints as `<code>: <message>` then its hint, indented. The hint is 
   `maestro ls <concert> --json` hint follow; piped, each value prints whole. A string, number, boolean or `null` prints
   as is, any other value as compact JSON, and an artifact as its absolute path. A `rejected` concert shows its root
   cause's outputs, such as a check's `logs` and `lane`; a `failed` one shows none.
-- `--json`: stdout holds `{ id, status, resultNode, resultExpansion, reason, outputs }`; an artifact there is
-  `{ path, contentHash, producer }`, its `path` relative to the concert's artifact directory (see Records). The id still
-  comes first on stderr.
+- `--json`: stdout holds `{ id, status, resultNode, resultExpansion, reason, outputs, metrics, tokens, artifacts }`;
+  `artifacts` is the concert's artifact directory, and an artifact in `outputs` is `{ path, contentHash, producer }`,
+  its `path` relative to that directory (see Records). The id still comes first on stderr.
 - `--tour <slug>` puts the concert on a tour (dot-separated segments of lower-case words joined by hyphens, such as
   `epic.story`, at most 64 characters), else `MAESTRO_TOUR` does. `--title <text>` labels it in `ls`.
 
