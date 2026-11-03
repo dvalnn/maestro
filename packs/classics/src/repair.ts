@@ -17,9 +17,12 @@ import {
 	use,
 } from "@maestro/sdk";
 import { toMarkdown } from "./code";
-import REPAIR_TASK from "./prompts/repair.md" with { type: "text" };
+import REPAIR from "./prompts/repair.md" with { type: "text" };
 import { builder } from "./seats";
 import { atLeastOne } from "./types";
+
+/** Each call's task: its prompt file. */
+const TASKS = { repair: REPAIR };
 
 export const EXAMPLE_REQUEST =
 	"Make greet.sh greet the name given as its first argument, and the world when none is given.";
@@ -49,7 +52,7 @@ export const repairUntilGreen = composition(
 			step: (s) => {
 				const repair = builder({
 					label: "repair",
-					task: REPAIR_TASK,
+					task: TASKS.repair,
 					lane: extend(s.out.lane),
 					session,
 					checks: params.checks,

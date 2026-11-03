@@ -22,11 +22,10 @@ import {
 	Text,
 } from "@maestro/sdk";
 import { survivorsOf, toMarkdown } from "./code";
-import { fill } from "./prompt";
-import CONSOLIDATOR_GROUNDS from "./prompts/_consolidator-grounds.md" with {
+import CONSOLIDATOR from "./prompts/consolidator.md" with { type: "text" };
+import CONSOLIDATOR_GROUNDS from "./prompts/consolidator-grounds.md" with {
 	type: "text",
 };
-import CONSOLIDATOR from "./prompts/consolidator.md" with { type: "text" };
 import CONSOLIDATOR_SKEPTICS from "./prompts/consolidator-skeptics.md" with {
 	type: "text",
 };
@@ -44,25 +43,29 @@ type Consolidated = ReturnType<
 	typeof consolidator<Record<never, never>, "read">
 >;
 
+const task = (...parts: string[]) => parts.join("\n\n");
+
+/** Each call's task: its own prompt file, then the fragments it rules by, which a flag or a param can add. */
+const TASKS = {
+	lens: { correctness: CORRECTNESS, spec: SPEC, tests: TESTS },
+	skeptic: (grounds?: string) =>
+		grounds === undefined ? SKEPTIC : task(SKEPTIC_GROUNDS, grounds),
+	consolidator: (skeptics: boolean, grounds?: string) => {
+		const own = skeptics ? CONSOLIDATOR_SKEPTICS : CONSOLIDATOR;
+		return grounds === undefined
+			? own
+			: task(own, CONSOLIDATOR_GROUNDS, grounds);
+	},
+};
+
 /** Each lens a review can rule through, by name, as the task of its lens. */
-export const LENSES = { correctness: CORRECTNESS, spec: SPEC, tests: TESTS };
+export const LENSES = TASKS.lens;
+
+/** The task of a skeptic over a lens's findings, ruling by `grounds` when given. */
+export const skepticTask = TASKS.skeptic;
 
 const LENS_NAMES = ["correctness", "spec", "tests"] as const;
 type LensName = (typeof LENS_NAMES)[number];
-
-/** The task of a skeptic over a lens's findings, ruling by `grounds` when given. */
-export function skepticTask(grounds?: string): string {
-	if (grounds === undefined) return SKEPTIC;
-	return [SKEPTIC_GROUNDS, grounds].join("\n\n");
-}
-
-/** The task of the consolidator over the findings of lenses, kept by skeptics when `skeptics`, ruling by `grounds` when given. */
-const consolidateTask = (skeptics: boolean, grounds?: string) => {
-	const task = skeptics ? CONSOLIDATOR_SKEPTICS : CONSOLIDATOR;
-	if (grounds === undefined) return task;
-	const raised = skeptics ? "a skeptic upheld" : "a lens raised";
-	return [task, fill(CONSOLIDATOR_GROUNDS, { raised }), grounds].join("\n\n");
-};
 
 type Panel<T extends string> = {
 	/** The task of the lens over `item`. */
@@ -103,7 +106,7 @@ export function panel<T extends string>(
 	});
 	return consolidator({
 		label: "consolidator",
-		task: consolidateTask(skeptics, p.grounds),
+		task: TASKS.consolidator(skeptics, p.grounds),
 		lane: read(p.change),
 		attachments: {
 			survivors: {
@@ -131,7 +134,7 @@ function round(
 	if (!skeptics) return found;
 	const challenged = skeptic({
 		label: "skeptic",
-		task: skepticTask(grounds),
+		task: TASKS.skeptic(grounds),
 		lane: read(change),
 		when: not(
 			readJson(found.out.findings, { tolerate: "rejected" }).get("clean"),
