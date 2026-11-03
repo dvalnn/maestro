@@ -164,16 +164,16 @@ export function upheldOf(
 }
 
 /**
- * The changeset, unchanged, when it holds a patch.
+ * The changeset and the last round's upheld findings, unchanged, when the changeset holds a patch.
  * A rejection when it holds none, so the slice settles `rejected`.
  */
 export function requirePatch(
-	{ changeset }: { changeset: ArtifactRef },
+	{ changeset, upheld }: { changeset: ArtifactRef; upheld: ArtifactRef },
 	ctx: CodeContext,
 ) {
 	if (!readdirSync(ctx.path(changeset)).some((f) => f.endsWith(PATCH_EXT)))
 		return reject(NOTHING_CHANGED);
-	return { changeset };
+	return { changeset, upheld };
 }
 
 const UPHELD = {
@@ -270,7 +270,7 @@ function review(
 export const slice = composition(
 	"slice",
 	{
-		doc: "Build a request in a fresh lane, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset, failing when it holds no patch.",
+		doc: "Build a request in a fresh lane, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset beside the findings its review upheld, failing when it holds no patch.",
 		params: {
 			request: Text({ description: "The brief: what to build" }),
 			tier: Enum(TIERS, { description: "How deep the review goes" }),
@@ -343,8 +343,9 @@ export const slice = composition(
 			in: {
 				changeset: changeset(reviewed.out.lane, { label: "changes" }).out
 					.changeset,
+				upheld: reviewed.out.upheld,
 			},
-			out: { changeset: Dir() },
+			out: { changeset: Dir(), upheld: Markdown() },
 			label: "result",
 		});
 	},

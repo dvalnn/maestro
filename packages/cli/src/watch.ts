@@ -41,12 +41,12 @@ import {
 } from "./command";
 import { actorOf, annotated, hostTextOf } from "./host-text";
 import {
+	concertDoc,
 	EXIT,
 	exitOf,
 	NAME_CONCERT,
 	nameOf,
 	printClosing,
-	resultDoc,
 	UNFRAMED,
 	usageError,
 	viewOf,
@@ -429,7 +429,7 @@ async function closed(
 	{ color, ending }: { color: Colors; ending: WatchEnd },
 ) {
 	const result = store.result(row.id);
-	const doc = resultDoc(row.id, result);
+	const doc = concertDoc(store, row.id, result, artifactsOf(session, row.id));
 	if (ending === "json")
 		session.deps.stdout(JSON.stringify({ type: "concert", ...doc }));
 	else if (result)

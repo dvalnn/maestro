@@ -33,6 +33,7 @@ import { actorOf, hostTextOf, notesOf, reportOf } from "./host-text";
 import {
 	ArgumentError,
 	CliError,
+	concertDoc,
 	EXIT,
 	exitOf,
 	formatBytes,
@@ -416,7 +417,7 @@ async function waited(
 	const { status } = resultDoc(id, result);
 	if (json)
 		deps.stdout(
-			jsonOf({ ...resultDoc(id, result), ...spendOf(store, id) }),
+			jsonOf(concertDoc(store, id, result, artifactsOf(session, id))),
 		);
 	else if (result)
 		printClosing(deps, store, concertOf(store, id), result, {

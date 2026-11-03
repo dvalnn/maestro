@@ -366,6 +366,14 @@ export const resultDoc = (
 	outputs: result?.outputs,
 });
 
+/** The `--json` document `perform`, `wait` and `watch` end with: concert `id`'s `result`, spend and artifact area. */
+export const concertDoc = (
+	store: Records,
+	id: string,
+	result: ConcertResult | undefined,
+	artifacts: string,
+) => ({ ...resultDoc(id, result), ...spendOf(store, id), artifacts });
+
 export const isArtifactRef = (value: unknown): value is ArtifactRef =>
 	isPlainObject(value) && typeof value.path === "string";
 

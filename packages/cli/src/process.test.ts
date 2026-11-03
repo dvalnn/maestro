@@ -93,6 +93,7 @@ describe("a concert in another process", () => {
 			status: "running",
 			metrics: {},
 			tokens: 0,
+			artifacts: join(w.env.XDG_DATA_HOME, "maestro/concerts", id, "artifacts"),
 		});
 		expect(await w.call(["resume", id])).toEqual({
 			code: 1,

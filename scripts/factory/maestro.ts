@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { isJson, type Json } from "./json";
 
 /** How many of a milestone's newest concerts the tick reads: one runs at a time, so the newest settle is among them. */
@@ -23,8 +24,8 @@ export type Result = {
 	outputs: Record<string, unknown>;
 };
 /**
- * What a settled concert's agents reported, and its token total: `upheld` is the body of the last review round's upheld
- * findings, if a review ran.
+ * What a settled concert's agents reported, and its token total: `upheld` is the body of the upheld findings the
+ * concert returned, if any.
  */
 export type Report = {
 	tokens: number;
@@ -86,14 +87,14 @@ const entriesOf = (reports: unknown, key: string) =>
 		isJson(r) ? strings(r[key]) : [],
 	);
 
-/** The body of the `upheld` file the last fresh `upheld` port of an `art ls <concert> --json` list names. */
-function upheldOf(artifacts: unknown): string | undefined {
-	const last = (Array.isArray(artifacts) ? artifacts : [])
-		.filter(isJson)
-		.findLast((a) => a.port === "upheld" && a.stale !== true);
-	if (typeof last?.path !== "string" || !existsSync(last.path))
-		return undefined;
-	return readFileSync(last.path, "utf8")
+/** The body of the `upheld` output of a `wait <concert> --json` document, under the concert's `artifacts`. */
+function upheldOf(doc: unknown): string | undefined {
+	if (!isJson(doc) || typeof doc.artifacts !== "string") return undefined;
+	const upheld = isJson(doc.outputs) ? doc.outputs.upheld : undefined;
+	if (!isJson(upheld) || typeof upheld.path !== "string") return undefined;
+	const path = join(doc.artifacts, upheld.path);
+	if (!existsSync(path)) return undefined;
+	return readFileSync(path, "utf8")
 		.replace(/^# .*\n/, "")
 		.trim();
 }
@@ -175,16 +176,16 @@ export function maestro(bin = "maestro"): Maestro {
 		},
 		result: async (id) => resultOf(await json(bin, ["wait", id])),
 		report: async (id) => {
-			const [doc, artifacts] = await Promise.all([
+			const [doc, result] = await Promise.all([
 				json(bin, ["ls", id]),
-				json(bin, ["art", "ls", id]),
+				json(bin, ["wait", id]),
 			]);
 			if (!isJson(doc)) throw new Error("maestro ls: not an object");
 			return {
 				tokens: typeof doc.tokens === "number" ? doc.tokens : 0,
 				obstacles: entriesOf(doc.reports, "obstacles"),
 				gaps: entriesOf(doc.reports, "gaps"),
-				upheld: upheldOf(artifacts),
+				upheld: upheldOf(result),
 			};
 		},
 		apply: (id, dir) => run(bin, ["cs", "apply", id, "-C", dir]),

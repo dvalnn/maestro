@@ -286,8 +286,9 @@ starts with `~`. Piped or redirected, stdout is a `<port>  <value>` line per out
 no color or wrapping, values show as they are and paths are absolute. With `--json`, stdout holds the document instead,
 and the id of a `perform` stays on its stderr line. A one-line string, a number, a boolean or `null` prints as is,
 anything else as compact JSON, and an artifact as its path. A rejected concert shows its root cause's rejection outputs;
-a failed one has none. In the `--json` document they are as stored, under `outputs`, and its other field names are the
-record's columns in camelCase, with sizes in bytes.
+a failed one has none. In the `--json` document they are as stored, under `outputs`, an artifact's `path` relative to
+`artifacts`, the concert's artifact area; its other field names are the record's columns in camelCase, with sizes in
+bytes.
 
 A composition is a `.ts` or `.js` file that exports exactly one composition, a `.json` IR file, or
 `<pack>.<composition>` of an installed pack. Its params are flags in kebab-case, layered over the config, and `compose`

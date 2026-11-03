@@ -234,7 +234,7 @@ describe("perform", () => {
 		}
 	});
 
-	test("prints each output on a line, an artifact as its absolute path when piped, and keys a stdlib node on this engine's stdlib", async () => {
+	test("prints each output on a line, an artifact as its absolute path when piped or under --json's artifacts, and keys a stdlib node on this engine's stdlib", async () => {
 		const w = await world();
 		await Bun.write(join(w.root, "write.ts"), WRITE);
 		const file = join(w.root, "write.json");
@@ -242,8 +242,10 @@ describe("perform", () => {
 		const performed = await w.call(["perform", file]);
 		expect(performed.code).toBe(0);
 		const id = idOf(performed);
-		const { outputs } = json(await w.call(["wait", id, "--json"]));
-		const area = join(w.root, "data/maestro/concerts", id, "artifacts");
+		const { outputs, artifacts: area } = json(
+			await w.call(["wait", id, "--json"]),
+		);
+		expect(area).toBe(join(w.root, "data/maestro/concerts", id, "artifacts"));
 		const a = join(area, outputs.file.path);
 		const b = join(area, outputs.nested.files[0].path);
 		expect(await Bun.file(a).text()).toBe("a.txt");
@@ -1486,6 +1488,7 @@ describe("the record", () => {
 			outputs: { text: "draft" },
 			metrics: {},
 			tokens: 0,
+			artifacts: join(w.root, "data/maestro/concerts", refused, "artifacts"),
 		});
 	});
 

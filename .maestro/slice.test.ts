@@ -200,7 +200,7 @@ test.each([
 	[true, "ok"],
 	[false, "rejected"],
 ])(
-	"a stub perform under --preset small continues the builder and the lens in their sessions across review rounds, and changing files %s settles %s",
+	"a stub perform under --preset small continues the builder and the lens in their sessions across review rounds, and changing files %s settles %s, returning the last round's upheld findings",
 	async (changes) => {
 		const tier = "small";
 		const target = targetRepo();
@@ -233,10 +233,13 @@ test.each([
 		expect([performed.status, performed.reason]).toEqual(
 			changes ? ["ok", undefined] : ["rejected", "the slice changed nothing"],
 		);
-		if (changes)
+		if (changes) {
 			expect(
 				await maestro(["cs", "show", performed.id, "-C", target], data),
 			).toContain("b.ts");
+			const upheld = join(performed.artifacts, performed.outputs.upheld.path);
+			expect(readFileSync(upheld, "utf8")).toContain("None.");
+		}
 		type Instance = {
 			node: string;
 			expansion: string;
@@ -344,18 +347,19 @@ test.each(rejecting)(
 	},
 );
 
-test("requirePatch returns a changeset that holds a patch unchanged, and rejects one that holds none", () => {
+test("requirePatch returns a changeset that holds a patch and the upheld findings unchanged, and rejects one that holds none", () => {
 	const made = (...files: string[]) => {
 		const dir = mkdtempSync(join(scratch, "changeset-"));
 		for (const f of files) writeFileSync(join(dir, f), "x");
 		return dir;
 	};
 	const ref = { path: "c", contentHash: "sha256:0" };
+	const upheld = { path: "u", contentHash: "sha256:1" };
 	const run = (dir: string) =>
-		requirePatch({ changeset: ref }, {
+		requirePatch({ changeset: ref, upheld }, {
 			path: () => dir,
 		} as unknown as CodeContext);
-	expect(run(made("base", "0001.patch"))).toEqual({ changeset: ref });
+	expect(run(made("base", "0001.patch"))).toEqual({ changeset: ref, upheld });
 	expect(run(made("base"))).toEqual(reject("the slice changed nothing"));
 });
 

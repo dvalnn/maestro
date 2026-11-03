@@ -28,6 +28,7 @@ import {
 } from "./command";
 import type { Overrides } from "./config";
 import {
+	concertDoc,
 	EXIT,
 	encoreRefused,
 	exitOf,
@@ -36,8 +37,6 @@ import {
 	parseTour,
 	printClosing,
 	renderDiagnostic,
-	resultDoc,
-	spendOf,
 	resumeRefused,
 } from "./output";
 import {
@@ -235,7 +234,7 @@ async function report(
 	const { deps } = session;
 	if (json)
 		deps.stdout(
-			jsonOf({ ...resultDoc(id, result), ...spendOf(store, id) }),
+			jsonOf(concertDoc(store, id, result, artifactsOf(session, id))),
 		);
 	else
 		printClosing(deps, store, concertOf(store, id), result, {

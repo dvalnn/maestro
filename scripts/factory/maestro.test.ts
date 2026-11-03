@@ -11,7 +11,8 @@ writeFileSync(
 	`#!/bin/sh
 case "$1 $2" in
 	"ls c2"|"ls c3") echo '{"tokens":120,"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"]}}}' ;;
-	"art ls") case "$3" in c2) echo '[{"instance":"upheld","port":"upheld","path":"${dir}/old.md"},{"instance":"fixes/loop[0]/upheld","port":"upheld","path":"${dir}/new.md"},{"instance":"fixes/loop[1]/upheld","port":"upheld","path":"${dir}/stale.md","stale":true}]' ;; *) echo '[{"instance":"upheld","port":"upheld","path":"${dir}/missing.md"}]' ;; esac ;;
+	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"}}}' ;;
+	"wait c3") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"}}}' ;;
 	"wait c1") echo '{"id":"c1","status":"failed","reason":"boom"}'; exit 1 ;;
 	"perform refused") echo "refused.ts does not compose" >&2; exit 2 ;;
 	"perform diagnosed") echo '{"ok":false,"diagnostics":[{"code":"CFG.preset","severity":"error","message":"--preset x names no file","hint":"Create x.yaml"},{"code":"HOST.profile","severity":"error","message":"profile p is in no profile root"}]}'; exit 2 ;;
@@ -22,7 +23,7 @@ esac
 );
 chmodSync(bin, 0o755);
 writeFileSync(
-	join(dir, "new.md"),
+	join(dir, "upheld.md"),
 	"# Upheld findings\n\n- F1, a.ts:3: too wide\n",
 );
 const fake = maestro(bin);
@@ -35,7 +36,7 @@ test("reads a settled concert's result whatever wait exits with", async () => {
 	});
 });
 
-test("reads a concert's report: its tokens, each agent's obstacles and gaps, the last fresh upheld findings", async () => {
+test("reads a concert's report: its tokens, each agent's obstacles and gaps, the upheld findings it returned", async () => {
 	expect(await fake.report("c2")).toEqual({
 		tokens: 120,
 		obstacles: ["no rg"],
