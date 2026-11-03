@@ -26,85 +26,129 @@ const LOW = "touches only docs and tests, 3 paths or fewer";
 const many = (n: number) =>
 	Array.from({ length: n }, (_, i) => `packages/cli/src/f${i}.ts`);
 
-const risks: [string, string[], boolean, string, string[]][] = [
-	["a contract path", ["packages/ir/src/a.ts"], false, "high", [CONTRACT]],
+const risks: [string, string[], string, string, string, string[]][] = [
+	[
+		"a contract path",
+		["packages/ir/src/a.ts"],
+		"",
+		"high",
+		"ordinary",
+		[CONTRACT],
+	],
 	[
 		"a contract path given as ./",
 		["./packages/ir/src/a.ts"],
-		false,
+		"",
 		"high",
+		"ordinary",
 		[CONTRACT],
 	],
 	[
 		"a contract directory given bare",
 		["packages/ir"],
-		false,
+		"",
 		"high",
+		"ordinary",
 		["touches packages/ir, which set a contract"],
 	],
 	[
 		"a manifest",
 		["packs/classics/package.json"],
-		false,
+		"",
 		"high",
+		"ordinary",
 		["touches packs/classics/package.json, which set a contract"],
+	],
+	[
+		"a test under a contract directory",
+		["packages/ir/src/a.test.ts", "packages/cli/src/a.ts"],
+		"",
+		"medium",
+		"ordinary",
+		[],
+	],
+	[
+		"the tour manager's code beside its labels",
+		["scripts/factory/index.ts", ".maestro/slice.ts"],
+		"",
+		"medium",
+		"ordinary",
+		[],
 	],
 	[
 		"8 paths",
 		many(8),
-		false,
+		"",
 		"high",
+		"risky",
 		["touches 8 paths besides docs and tests, 8 or more"],
 	],
 	[
 		"7 source paths and their tests",
 		[...many(7), "packages/cli/src/a.test.ts", "docs/a.md"],
-		false,
+		"",
 		"medium",
+		"ordinary",
 		[],
 	],
 	[
 		"a contract doc",
 		["docs/adr/0001-a.md"],
-		false,
+		"",
 		"high",
+		"ordinary",
 		["touches docs/adr/0001-a.md, which set a contract"],
 	],
 	[
-		"the planner's flag",
+		"the planner's contract",
 		["packages/cli/src/a.ts"],
-		true,
+		" the --json flag ",
 		"high",
-		["the planner flags a contract it sets"],
+		"ordinary",
+		["the planner names a contract: the --json flag"],
+	],
+	[
+		"a blank contract",
+		["packages/cli/src/a.ts"],
+		"  ",
+		"medium",
+		"ordinary",
+		[],
 	],
 	[
 		"3 docs and tests",
-		["docs/a.md", "docs/b.md", "packages/cli/src/a.test.ts"],
-		false,
+		["docs/a.md", "docs/architecture.md", "packages/cli/src/a.test.ts"],
+		"",
 		"low",
+		"small",
 		[LOW],
 	],
 	[
 		"Markdown outside docs, under a contract directory too",
-		[".claude/skills/a/SKILL.md", "scripts/factory/README.md"],
-		false,
+		[".claude/skills/a/SKILL.md", ".maestro/presets/README.md"],
+		"",
 		"low",
+		"small",
 		[LOW],
 	],
 	[
 		"4 docs",
 		["docs/a.md", "docs/b.md", "docs/c.md", "docs/d.md"],
-		false,
+		"",
 		"medium",
+		"ordinary",
 		[],
 	],
-	["a source file", ["packages/cli/src/a.ts"], false, "medium", []],
-	["no paths", [], false, "medium", []],
+	["a source file", ["packages/cli/src/a.ts"], "", "medium", "ordinary", []],
+	["no paths", [], "", "medium", "ordinary", []],
 ];
 
-test.each(risks)("classify rules %s", (_, touches, contract, risk, reasons) => {
-	expect(classify(touches, contract)).toMatchObject({ risk, reasons });
-});
+test.each(risks)(
+	"classify rules %s",
+	(_, touches, contract, risk, tier, reasons) => {
+		expect(classify(touches, contract)).toMatchObject({ risk, tier, reasons });
+	},
+);
 
 const areas: [string, string[], Triage["area"]][] = [
 	[
@@ -132,7 +176,7 @@ const areas: [string, string[], Triage["area"]][] = [
 ];
 
 test.each(areas)("classify's area is %s", (_, touches, area) => {
-	expect(classify(touches, false).area).toBe(area);
+	expect(classify(touches, "").area).toBe(area);
 });
 
 const askAlone = (ask: string) => ({ ask, options: [], context: [] });
@@ -149,12 +193,13 @@ const spec = {
 };
 const unspecified = {
 	touches: ["packages/cli/src/a.ts"],
-	contract: false,
+	contract: "",
 	questions: [],
 };
 const ready: Proposal = { verdict: "ready-for-agent", ...unspecified, spec };
-const medium: Pick<Triage, "risk" | "area" | "reasons"> = {
+const medium: Pick<Triage, "risk" | "tier" | "area" | "reasons"> = {
 	risk: "medium",
+	tier: "ordinary",
 	area: "cli",
 	reasons: [],
 };
@@ -181,6 +226,7 @@ const overrides: [string, Proposal, Triage][] = [
 		{
 			verdict: "needs-info",
 			risk: "medium",
+			tier: "ordinary",
 			reasons: [],
 			questions: [askAlone("Which paths does the change create or edit?")],
 		},
@@ -191,6 +237,7 @@ const overrides: [string, Proposal, Triage][] = [
 		{
 			verdict: "needs-info",
 			risk: "medium",
+			tier: "ordinary",
 			reasons: [],
 			questions: [
 				askAlone(
@@ -214,12 +261,13 @@ const overrides: [string, Proposal, Triage][] = [
 	],
 	[
 		"a high-risk ready into needs-approval",
-		{ ...ready, contract: true },
+		{ ...ready, contract: "the --json flag" },
 		{
 			verdict: "needs-approval",
 			risk: "high",
+			tier: "ordinary",
 			area: "cli",
-			reasons: ["the planner flags a contract it sets"],
+			reasons: ["the planner names a contract: the --json flag"],
 			questions: [],
 			spec: { touches: ready.touches, ...spec },
 		},
@@ -428,6 +476,7 @@ const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 		{
 			verdict: "needs-approval",
 			risk: "high",
+			tier: "ordinary",
 			area: "core",
 			reasons: [CONTRACT],
 			questions: [],

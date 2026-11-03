@@ -19,6 +19,8 @@ export const VERDICTS = [
 export const RISKS = ["low", "medium", "high"] as const;
 type Verdict = (typeof VERDICTS)[number];
 export type Risk = (typeof RISKS)[number];
+const TIERS = ["small", "ordinary", "risky"] as const;
+export type Tier = (typeof TIERS)[number];
 /** How many red slices a ticket spends before it goes to `needs-info` (factory.md, Rules: Attempts). */
 export const ATTEMPTS = 2;
 
@@ -48,6 +50,8 @@ export type Question = {
 export type Triage = {
 	verdict: Verdict;
 	risk: Risk;
+	/** The review tier triage gave; absent from a result triaged before it gave one. */
+	tier?: Tier;
 	area?: string;
 	reasons: string[];
 	questions: Question[];
@@ -210,6 +214,7 @@ export function parseTriage(value: unknown): Triage {
 	const triage: Triage = {
 		verdict: field(value, "verdict", isOneOf(VERDICTS), "a verdict"),
 		risk: field(value, "risk", isOneOf(RISKS), "a risk"),
+		tier: optional(value, "tier", isOneOf(TIERS), "a tier"),
 		area: optional(value, "area", isString, "a string"),
 		reasons: field(value, "reasons", isStrings, "a list of strings"),
 		questions: field(value, "questions", Array.isArray, "a list").map(

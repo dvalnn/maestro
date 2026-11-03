@@ -837,7 +837,7 @@ async function startSlice(
 ) {
 	const result = data.result;
 	if (!result) return;
-	const tier = tierOf(issue, result.risk);
+	const tier = tierOf(issue, result);
 	const name = issue.labels
 		.find((l) => l.startsWith("area/"))
 		?.slice("area/".length);

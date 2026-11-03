@@ -12,7 +12,6 @@ import {
 import {
 	type ArtifactRef,
 	allSettled,
-	Bool,
 	type CodeContext,
 	code,
 	composition,
@@ -47,12 +46,14 @@ const VERDICTS = [
 	"duplicate",
 ] as const;
 const RISKS = ["low", "medium", "high"] as const;
+const TIERS = ["small", "ordinary", "risky"] as const;
 /** The areas, in the order that breaks a tie (triage-labels.md). */
 const AREAS = ["core", "cli", "host", "packs", "docs"] as const;
 
 type Ruled = (typeof RULED)[number];
 type Verdict = (typeof VERDICTS)[number];
 type Risk = (typeof RISKS)[number];
+type Tier = (typeof TIERS)[number];
 type Area = (typeof AREAS)[number];
 
 const AREA_PATHS: Record<Area, readonly string[]> = {
@@ -71,7 +72,6 @@ const AREA_PATHS: Record<Area, readonly string[]> = {
 /** Markdown that sets a contract: a path ending in `/` is a directory holding every path under it, any other a file. */
 const CONTRACT_DOCS = [
 	"docs/requirements.md",
-	"docs/architecture.md",
 	"docs/sdk-spec.md",
 	"docs/adr/",
 	"GLOSSARY.md",
@@ -83,8 +83,9 @@ const CONTRACT_PATHS = [
 	".forgejo/",
 	"justfile",
 	"mise.toml",
-	".maestro/",
-	"scripts/factory/",
+	".maestro/config.yaml",
+	".maestro/presets/",
+	"scripts/factory/transitions.ts",
 ];
 /** File names that set a contract in any directory. */
 const MANIFESTS = ["package.json", "bun.lock"];
@@ -191,7 +192,7 @@ export const Proposal = shape(
 	{
 		verdict: Enum(PROPOSED),
 		touches: List(Text()),
-		contract: Bool(),
+		contract: Text(),
 		questions: List(Question),
 	},
 	{
@@ -241,6 +242,7 @@ export const Triage = shape(
 	{
 		verdict: Enum(VERDICTS),
 		risk: Enum(RISKS),
+		tier: Enum(TIERS),
 		reasons: List(Text()),
 		questions: List(Question),
 	},
@@ -280,37 +282,42 @@ function scopeOf(touches: string[]): { paths: string[]; outside: string[] } {
 }
 
 const sets = (path: string) =>
-	MANIFESTS.includes(basename(path)) ||
-	(MARKDOWN.test(path) ? CONTRACT_DOCS : CONTRACT_PATHS).some((p) =>
-		p.endsWith("/") ? under(path, p) : path === p,
-	);
+	!TEST_FILE.test(path) &&
+	(MANIFESTS.includes(basename(path)) ||
+		(MARKDOWN.test(path) ? CONTRACT_DOCS : CONTRACT_PATHS).some((p) =>
+			p.endsWith("/") ? under(path, p) : path === p,
+		));
 
 const isLow = (path: string) =>
 	under(path, "docs/") || MARKDOWN.test(path) || TEST_FILE.test(path);
 
-/** The risk of touching `touches`, and each rule that fired. */
+/** The risk and review tier of touching `touches`, and each rule that fired. */
 function riskOf(
 	touches: string[],
-	contract: boolean,
-): { risk: Risk; reasons: string[] } {
+	contract: string,
+): { risk: Risk; tier: Tier; reasons: string[] } {
 	const reasons: string[] = [];
 	const setting = touches.filter(sets);
 	if (setting.length)
 		reasons.push(`touches ${setting.join(", ")}, which set a contract`);
 	const code = touches.filter((t) => !isLow(t));
-	if (code.length >= WIDE)
+	const wide = code.length >= WIDE;
+	if (wide)
 		reasons.push(
 			`touches ${code.length} paths besides docs and tests, ${WIDE} or more`,
 		);
-	if (contract) reasons.push("the planner flags a contract it sets");
-	if (reasons.length) return { risk: "high", reasons };
+	if (contract.trim())
+		reasons.push(`the planner names a contract: ${contract.trim()}`);
+	if (reasons.length)
+		return { risk: "high", tier: wide ? "risky" : "ordinary", reasons };
 	// An empty list proves nothing about its paths, so it is not low.
 	if (touches.length && touches.length <= NARROW && touches.every(isLow))
 		return {
 			risk: "low",
+			tier: "small",
 			reasons: [`touches only docs and tests, ${NARROW} paths or fewer`],
 		};
-	return { risk: "medium", reasons };
+	return { risk: "medium", tier: "ordinary", reasons };
 }
 
 /** The area holding most of `touches`, a tie going to the area first in `AREAS`, or none when no path is in one. */
@@ -324,16 +331,17 @@ function areaOf(touches: string[]): { area?: Area } {
 }
 
 /**
- * The risk and area of a change that touches `touches`, each normalised and those outside the repo left out, and each
- * risk rule that fired:
- * - high, when a path sets a contract, `WIDE` paths or more are neither docs nor tests, or `contract` flags one;
- * - low, when one to `NARROW` paths are all docs or tests;
- * - medium, otherwise.
+ * The risk, review tier and area of a change that touches `touches`, each normalised and those outside the repo left
+ * out, and each risk rule that fired:
+ * - high, when a path other than a test sets a contract, `WIDE` paths or more are neither docs nor tests, or `contract`
+ *   names one; its tier is `risky` when that width fired, else `ordinary`;
+ * - low, when one to `NARROW` paths are all docs or tests, at tier `small`;
+ * - medium, otherwise, at tier `ordinary`.
  */
 export function classify(
 	touches: string[],
-	contract: boolean,
-): { risk: Risk; area?: Area; reasons: string[] } {
+	contract: string,
+): { risk: Risk; tier: Tier; area?: Area; reasons: string[] } {
 	const { paths } = scopeOf(touches);
 	return { ...riskOf(paths, contract), ...areaOf(paths) };
 }
@@ -411,7 +419,7 @@ function ruled(
 	{ files, questions, duplicateOf, related }: Ruling,
 	ruledAs: Exclude<Ruled, "plan">,
 ): Triage {
-	const classified = classify(files, false);
+	const classified = classify(files, "");
 	const verdict = verdictOf(ruledAs, classified.risk, questions);
 	return {
 		verdict,
@@ -537,10 +545,10 @@ answer.md holds one section per question, in order, headed "## <the question>", 
 
 const PLAN_TASK = `Triage the attached issue: propose its verdict from the scouts' answers, the triager's ruling, the cut backlog and the target's code. ${GATE}
 Write plan.json in exactly this shape, leaving out spec, children and related where the verdict does not need them:
-{"verdict": "ready-for-agent", "touches": ["path/to/file.ts"], "contract": false, "questions": [], "spec": {"what": "the change to make", "decisions": [{"lead": "a title", "points": ["one fact", "In path/to/file.ts"]}], "excluded": [{"lead": "a title", "points": ["one fact"]}], "steps": ["a step"], "acceptance": ["bun test path/to/file.test.ts"], "subject": "feat(scope): imperative summary"}, "children": [{"title": "a child issue's title", "body": "its ask", "dependsOn": [0]}], "related": [7]}
+{"verdict": "ready-for-agent", "touches": ["path/to/file.ts"], "contract": "", "questions": [], "spec": {"what": "the change to make", "decisions": [{"lead": "a title", "points": ["one fact", "In path/to/file.ts"]}], "excluded": [{"lead": "a title", "points": ["one fact"]}], "steps": ["a step"], "acceptance": ["bun test path/to/file.test.ts"], "subject": "feat(scope): imperative summary"}, "children": [{"title": "a child issue's title", "body": "its ask", "dependsOn": [0]}], "related": [7]}
 - verdict: ready-for-agent when one change builds the issue as asked, split when it needs several, needs-info when it cannot be specified without an answer.
 - touches: every repo-relative path the change creates or edits, whatever the verdict; empty when you cannot tell.
-- contract: true when the change sets or changes a contract: an IR field, a CLI flag, a config key, a file layout or a manifest.
+- contract: the one-way door the change sets or changes, named in a few words, or "" when it sets none. A one-way door cannot change after release without breaking a user: an IR field, a public CLI flag or exit code, a key of the user's config, an id or path format users type, or the pack manifest. Internal tooling, an environment variable only the tour manager reads and a new standalone composition are not.
 - spec, for ready-for-agent: what to change in one paragraph, the decisions the change makes, what it leaves out, the steps to make it in order, the shell commands that prove it done, each starting with ${RUNNERS.join(", ")}, and the commit subject as <type>(<scope>): <summary>. The owner approves the spec from its decisions and what it leaves out, so give them in full detail.
 - decisions and excluded: each item a lead and its points. The lead only titles its points; every fact, reference and reason belongs in a point, one fact each, and a reference is a plain last point "In <path>". what names the change, and the facts behind it go in the decisions. Either list may be empty.
 - children, for split: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
@@ -552,7 +560,7 @@ const triager = seat("triager");
 export const triage = composition(
 	"triage",
 	{
-		doc: "Triage an issue against the backlog: a triager cuts the backlog and rules early or asks groups of questions, a scout answers each group, a planner proposes a verdict, and settle classifies its risk and area and gates the verdict. Read-only: it leaves no changeset.",
+		doc: "Triage an issue against the backlog: a triager cuts the backlog and rules early or asks groups of questions, a scout answers each group, a planner proposes a verdict, and settle classifies its risk, review tier and area and gates the verdict. Read-only: it leaves no changeset.",
 		params: {
 			issue: Text({
 				description: "The issue to triage: its number, title and body",
