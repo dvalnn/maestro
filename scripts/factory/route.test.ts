@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Triage } from "../../.maestro/triage";
+import { Triage } from "../../.maestro/triage/verdict";
 import {
 	askOf,
 	commentOf,
