@@ -23,7 +23,7 @@ import {
 	world,
 } from "./fixtures/world";
 import { codeHashOf } from "./loader";
-import { renderDiagnostic, renderWarning } from "./output";
+import { diffColored, renderDiagnostic, renderWarning } from "./output";
 import { startPager } from "./pager";
 import { olderHint } from "./records";
 
@@ -2193,5 +2193,49 @@ describe("exit codes and error states", () => {
 			expect(out.out).toBe("");
 			expect(await Bun.file(sink).text()).toBe(`${piped.out}\n`);
 		});
+	});
+
+	test("diffColored colors a patch's headers, hunk lines and hunks, and leaves its mail header and context", () => {
+		const patch =
+			"Subject: x\n---\n+not a hunk line\ndiff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n ctx\n--- gone\n-old\n+new\n\\ No newline\n";
+		const lines = diffColored(patch).split("\n");
+		expect(lines.map((l) => stripVTControlCharacters(l)).join("\n")).toBe(
+			patch,
+		);
+		expect(lines.map((l) => l.startsWith(ESC))).toEqual([
+			false,
+			false,
+			false,
+			true,
+			true,
+			true,
+			true,
+			false,
+			true,
+			true,
+			true,
+			false,
+			false,
+		]);
+		expect(lines[4]).toBe(`${ESC}[1m--- a/f${ESC}[22m`);
+		expect(lines[6]).toBe(`${ESC}[36m@@ -1,2 +1,2 @@${ESC}[39m`);
+		expect(lines[8]).toBe(`${ESC}[31m--- gone${ESC}[39m`);
+		expect(lines[10]).toBe(`${ESC}[32m+new${ESC}[39m`);
+	});
+
+	test("diffColored colors a plain diff -u, and a mail start in a series ends the hunks before it", () => {
+		const plain = diffColored("--- a.txt\n+++ b.txt\n@@ -1 +1 @@\n-x\n+y\n");
+		expect(plain.split("\n").map((l) => l.startsWith(ESC))).toEqual([
+			true,
+			true,
+			true,
+			true,
+			true,
+			false,
+		]);
+		const from = `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001`;
+		const series = `${from}\nSubject: one\n---\ndiff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-x\n+y\n-- \n2.0\n\n${from}\nSubject: two\n\n- not removed\n+ not added\n---\n`;
+		const second = diffColored(series).split("\n").slice(12);
+		expect(second.some((l) => l.startsWith(ESC))).toBe(false);
 	});
 });

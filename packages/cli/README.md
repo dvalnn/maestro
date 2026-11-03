@@ -93,8 +93,9 @@ maestro wait <concert> --timeout 15m
 [^artifact]:
     `ls` prints a table of each artifact's instance, port, `stale` mark and absolute path (`--json`: a list of
     `{instance, port, path, contentHash}`, plus `stale: true` on a stale instance's). `art show <concert> <instance>`
-    prints the bytes of each file of the instance's artifacts as they are each after a `══ <file>` line when there are
-    several; `art show <concert> <instance> <file>` prints one, so it pipes, such as
+    prints the bytes of each file of the instance's artifacts as they are (a `.patch` or `.diff` file colored like
+    `git diff` when color is on), each after a `══ <file>` line when there are several;
+    `art show <concert> <instance> <file>` prints one, so it pipes, such as
     `maestro art show <concert> request request.md | glow -p`. A file is named by its artifact's basename plus any inner
     path, such as `staged/prompt.md`. `--path` prints absolute paths, one per line, instead. Printing a stale instance's
     files (one a resume left from an earlier attempt) adds a `warning:` line on stderr. An instance is any name

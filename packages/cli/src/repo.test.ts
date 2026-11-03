@@ -7,6 +7,7 @@ import { stubHarness } from "@maestro/host-repo/harness";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
 import { idOf, json, world } from "./fixtures/world";
 import { builtinHosts } from "./hosts";
+import { diffColored } from "./output";
 
 afterEach(cleanup);
 
@@ -230,6 +231,34 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 		expect(done.code).toBe(0);
 		return written.join("");
 	};
+	const patch =
+		"diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new\n";
+	writeFileSync(
+		join(listed.find((a) => a.port === "staged")?.path ?? "", "x.patch"),
+		patch,
+	);
+	expect(await raw("a", "staged/x.patch")).toBe(patch);
+	expect(await raw("a", "staged/x.patch", "--color")).toBe(diffColored(patch));
+	expect(await raw("a", "staged/x.patch", "--color", "--no-color")).toBe(patch);
+	expect(await raw("a", "staged/prompt.md", "--color")).toBe(
+		staged("prompt.md"),
+	);
+	const latin1 = Buffer.from(
+		"diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-caf\xe9\n+na\xefve\n",
+		"latin1",
+	);
+	writeFileSync(
+		join(listed.find((a) => a.port === "staged")?.path ?? "", "x.patch"),
+		latin1,
+	);
+	const bytes: Buffer[] = [];
+	await w.call(["art", "show", id, "a", "staged/x.patch", "--color"], {
+		stdoutBytes: (b) => bytes.push(Buffer.from(b)),
+	});
+	expect(Buffer.concat(bytes).includes(Buffer.from("caf\xe9", "latin1"))).toBe(
+		true,
+	);
+	rmSync(join(listed.find((a) => a.port === "staged")?.path ?? "", "x.patch"));
 	const prompt = staged("prompt.md");
 	expect(await raw("a", "staged/prompt.md")).toBe(prompt);
 	const ended = (text: string) =>

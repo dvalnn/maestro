@@ -16,6 +16,7 @@ import {
 	ArgumentError,
 	artifactRefs,
 	CliError,
+	diffColored,
 	EXIT,
 	instanceName,
 	jsonOf,
@@ -206,8 +207,20 @@ async function picked(
 	return [named];
 }
 
-/** Prints each file's bytes as they are, after a `══ <file>` line of its own when there are several. */
-async function printed(deps: Deps, files: readonly File[]) {
+const DIFF_FILE = /\.(patch|diff)$/;
+
+/** The bytes of `file`: a diff colored over its bytes, whatever the encoding, when `color`, else as they are. */
+function shownBytes(file: File, bytes: Uint8Array, color: boolean) {
+	return color && DIFF_FILE.test(file.name)
+		? Buffer.from(diffColored(Buffer.from(bytes).toString("latin1")), "latin1")
+		: bytes;
+}
+
+/**
+ * Prints each file's bytes as they are, after a `══ <file>` line of its own when there are several. A `.patch` or
+ * `.diff` file is colored when `color`.
+ */
+async function printed(deps: Deps, files: readonly File[], color: boolean) {
 	let open = false;
 	for (const f of files) {
 		if (files.length > 1) {
@@ -215,7 +228,7 @@ async function printed(deps: Deps, files: readonly File[]) {
 			deps.stdout(`${FILE_RULE} ${f.name}`);
 		}
 		const bytes = await onDisk(f.path, () => Bun.file(f.path).bytes());
-		deps.stdoutBytes(bytes);
+		deps.stdoutBytes(shownBytes(f, bytes, color));
 		open = bytes.length > 0 && bytes.at(-1) !== NEWLINE;
 	}
 	return EXIT.ok;
@@ -234,7 +247,8 @@ async function artifacted(stored: Stored, { prefix, instance, file }: Named) {
 			values,
 			`instance '${name}' is stale, from an earlier attempt`,
 		);
-	if (!isSet(values, "path")) return printed(session.deps, files);
+	if (!isSet(values, "path"))
+		return printed(session.deps, files, colorOf(session.deps, values).out);
 	for (const f of files) session.deps.stdout(f.path);
 	return EXIT.ok;
 }

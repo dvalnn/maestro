@@ -231,6 +231,43 @@ export function parseDuration(flag: string, text: string): number {
 	return ms;
 }
 
+type DiffPart = "mail" | "header" | "hunk";
+
+const HUNK_STYLES: Readonly<Record<string, Parameters<typeof paint>[0]>> = {
+	"@": "cyan",
+	"+": "green",
+	"-": "red",
+};
+
+const MAIL_START = /^From [0-9a-f]{40} /;
+
+/**
+ * The part of a patch `line` is in, after `part`: file headers run from a `diff` line, or from a `--- ` line in the
+ * mail part, to the first `@@`, and a `git format-patch` mail start returns to the mail part.
+ */
+const partAt = (part: DiffPart, line: string): DiffPart => {
+	if (MAIL_START.test(line)) return "mail";
+	if (line.startsWith("diff ") || (part === "mail" && line.startsWith("--- ")))
+		return "header";
+	return part === "header" && line.startsWith("@@") ? "hunk" : part;
+};
+
+/**
+ * Unified diff `text` with its file headers bold, hunk headers cyan, and added lines green and removed ones red, as
+ * `git diff` colors it. Text before the first `diff` or `--- ` line, such as a patch's mail header, is left as it is.
+ */
+export function diffColored(text: string): string {
+	let part: DiffPart = "mail";
+	return text
+		.split("\n")
+		.map((line) => {
+			part = partAt(part, line);
+			const style = part === "header" ? "bold" : HUNK_STYLES[line[0] ?? ""];
+			return style && part !== "mail" ? paint(style, line, true) : line;
+		})
+		.join("\n");
+}
+
 /** `value` as the one JSON document a command prints with `--json`. */
 export const jsonOf = (value: unknown) => JSON.stringify(value, null, 2);
 
