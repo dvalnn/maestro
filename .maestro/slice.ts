@@ -4,6 +4,7 @@ import {
 	atLeastOne,
 	builder,
 	type Findings,
+	LENSES,
 	lens,
 	maxRepairs,
 	panel,
@@ -49,14 +50,9 @@ import {
 import GROUNDS from "./slice/prompts/_grounds.md" with { type: "text" };
 import QUESTIONS from "./slice/prompts/_questions.md" with { type: "text" };
 import FIX from "./slice/prompts/fix.md" with { type: "text" };
-import LENS_CORRECTNESS from "./slice/prompts/lens-correctness.md" with {
-	type: "text",
-};
-import LENS_SPEC from "./slice/prompts/lens-spec.md" with { type: "text" };
 import LENS_SPEC_TESTS from "./slice/prompts/lens-spec-tests.md" with {
 	type: "text",
 };
-import LENS_TESTS from "./slice/prompts/lens-tests.md" with { type: "text" };
 import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
 import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
 	type: "text",
@@ -82,13 +78,13 @@ const TASKS = {
 	/** Each panel tier's lenses, by name, as each lens's task; the consolidator rules by `GROUNDS`. */
 	lenses: {
 		ordinary: {
-			correctness: task(LENS_CORRECTNESS, GROUNDS),
+			correctness: task(LENSES.correctness, GROUNDS),
 			"spec-tests": task(LENS_SPEC_TESTS, QUESTIONS, GROUNDS),
 		},
 		risky: {
-			correctness: task(LENS_CORRECTNESS, GROUNDS),
-			spec: task(LENS_SPEC, QUESTIONS, GROUNDS),
-			tests: task(LENS_TESTS, GROUNDS),
+			correctness: task(LENSES.correctness, GROUNDS),
+			spec: task(LENSES.spec, QUESTIONS, GROUNDS),
+			tests: task(LENSES.tests, GROUNDS),
 		},
 	},
 };

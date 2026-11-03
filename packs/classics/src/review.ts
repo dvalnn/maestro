@@ -45,7 +45,7 @@ type Consolidated = ReturnType<
 >;
 
 /** Each lens a review can rule through, by name, as the task of its lens. */
-const LENSES = { correctness: CORRECTNESS, spec: SPEC, tests: TESTS };
+export const LENSES = { correctness: CORRECTNESS, spec: SPEC, tests: TESTS };
 
 const LENS_NAMES = ["correctness", "spec", "tests"] as const;
 type LensName = (typeof LENS_NAMES)[number];

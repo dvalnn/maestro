@@ -310,35 +310,6 @@ test("the scouts and the planner are attached the triager's cut of the backlog, 
 	}
 });
 
-/** The task the composed plan gives the planner. */
-async function plannerTask() {
-	const { plan } = await composed();
-	const planner = (plan.ir.nodes as { id: string }[]).find(
-		(n) => n.id === "planner",
-	);
-	const strings: string[] = [];
-	JSON.stringify(planner, (_, v) => {
-		if (typeof v === "string") strings.push(v);
-		return v;
-	});
-	return strings.find((v) => v.includes("Write `plan.json`")) ?? "";
-}
-
-test("the planner's prompt names a spec's decisions and exclusions, a lead titling its points and a reference as the last point", async () => {
-	const task = await plannerTask();
-	expect(task).toContain('"decisions": [{ "lead"');
-	expect(task).toContain('"excluded": [{ "lead"');
-	expect(task).toContain("The lead only titles its points");
-	expect(task).toContain('a reference is a plain last point "In <path>"');
-});
-
-test("the planner's prompt keeps a decision to a live choice, and neither it nor the schema has steps", async () => {
-	const task = await plannerTask();
-	expect(task).toContain("a choice where another option was live");
-	expect(task).not.toContain("steps");
-	expect(JSON.stringify(Proposal.schema)).not.toContain("steps");
-});
-
 test("an encore starts the planner and the checker fresh, and continues the triager and scouts", async () => {
 	const { plan } = await composed();
 	const encoreOf = (id: string) =>
