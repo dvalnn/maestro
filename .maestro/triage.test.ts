@@ -187,7 +187,6 @@ const spec = {
 		{ lead: "Name source", points: ["The first argument", "In greet.sh"] },
 	],
 	excluded: [{ lead: "Flags", points: [] }],
-	steps: ["Read the first argument", "Print it"],
 	acceptance: ["bun test packages/cli/src/a.test.ts"],
 	subject: "feat(cli): greet by name",
 };
@@ -620,12 +619,11 @@ test("the planner's prompt names a spec's decisions and exclusions, a lead titli
 	expect(task).toContain('a reference is a plain last point "In <path>"');
 });
 
-test("the planner's prompt asks for no shorter spec", async () => {
+test("the planner's prompt keeps a decision to a live choice, and neither it nor the schema has steps", async () => {
 	const task = await plannerTask();
-	const asks = task.slice(0, task.indexOf("- children,"));
-	expect(asks).not.toMatch(
-		/\b(short|shorter|shorten|brief|concise|terse|succinct)\b/i,
-	);
+	expect(task).toContain("a choice where another option was live");
+	expect(task).not.toContain("steps");
+	expect(JSON.stringify(Proposal.schema)).not.toContain("steps");
 });
 
 test("an encore starts the planner fresh, and continues the triager and scouts", async () => {
@@ -682,9 +680,9 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 		false,
 	],
 	[
-		"a ready proposal whose spec has no steps",
+		"a ready proposal whose spec carries steps",
 		Proposal,
-		{ ...ready, spec: { ...spec, steps: undefined } },
+		{ ...ready, spec: { ...spec, steps: ["Print it"] } },
 		false,
 	],
 	[

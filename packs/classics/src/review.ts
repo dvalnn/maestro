@@ -58,7 +58,7 @@ const consolidateTask = (skeptics: boolean, grounds?: string) => {
 		: "Independent lenses ruled on this change.";
 	if (grounds === undefined) return `${lead} ${CONSOLIDATE_TASK}`;
 	const blocking = skeptics ? "a skeptic upheld" : "a lens raised";
-	return `${lead} ${CONSOLIDATE_TASK} Rule by these grounds: ${grounds} A blocking finding ${blocking} blocks approval, unless you dismiss it by naming the ground that excludes it: out of review, or advisory as the grounds rank it. That the spec's steps or acceptance leave a test out is no ground. In review.md, list each finding you dismiss with its ground. Report each finding you dismiss as advisory as one gap, and none you dismiss as out of review.`;
+	return `${lead} ${CONSOLIDATE_TASK} Rule by these grounds: ${grounds} A blocking finding ${blocking} blocks approval, unless you dismiss it by naming the ground that excludes it: out of review, or advisory as the grounds rank it. That the spec's acceptance leaves a test out is no ground. In review.md, list each finding you dismiss with its ground. Report each finding you dismiss as advisory as one gap, and none you dismiss as out of review.`;
 };
 
 type Panel<T extends string> = {

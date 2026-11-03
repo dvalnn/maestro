@@ -26,20 +26,21 @@ test("the verdicts and risks are the triage composition's", () => {
 	]);
 });
 
-test("a triage whose spec has no steps is malformed", () => {
-	const spec = { touches: ["a.ts"], what: "w", acceptance: [], subject: "s" };
+test("a stored spec that carries steps parses without them", () => {
+	const spec = {
+		touches: ["a.ts"],
+		what: "w",
+		steps: ["x"],
+		acceptance: [],
+		subject: "s",
+	};
 	const triage = {
 		verdict: "ready-for-agent",
 		risk: "low",
 		reasons: [],
 		questions: [],
 	};
-	expect(() => parseTriage({ ...triage, spec })).toThrow(
-		"steps is not a list of strings",
-	);
-	expect(
-		parseTriage({ ...triage, spec: { ...spec, steps: ["x"] } }).spec?.steps,
-	).toEqual(["x"]);
+	expect(parseTriage({ ...triage, spec }).spec).not.toHaveProperty("steps");
 });
 
 const claiming = {
@@ -146,7 +147,6 @@ const spec = {
 	what: "w",
 	decisions: [],
 	excluded: [],
-	steps: [],
 	acceptance: [],
 	subject: "s",
 };
@@ -286,12 +286,11 @@ const reviewed = {
 	excluded: [
 		{ lead: "Others", points: ["No greeting by title", "In greet.sh"] },
 	],
-	steps: ["Read it", "Print it", "Test it"],
 	acceptance: ["bun test"],
 	subject: "feat: greet",
 };
 
-test("a spec comment reads in mock B4's order: heading, What, Decisions, Acceptance, folded Steps and Touches, one foot line, then the turn", () => {
+test("a spec comment reads in mock B4's order: heading, What, Decisions, Acceptance, folded Touches, one foot line, then the turn", () => {
 	const data: Data = {
 		concert: "c1",
 		version: 2,
@@ -333,14 +332,6 @@ test("a spec comment reads in mock B4's order: heading, What, Decisions, Accepta
 			"",
 			"- [ ] bun test",
 			"",
-			"<details><summary><b>Steps</b> · 3</summary>",
-			"",
-			"1. Read it",
-			"2. Print it",
-			"3. Test it",
-			"",
-			"</details>",
-			"",
 			"<details><summary><b>Touches</b> · 2 files</summary>",
 			"",
 			"- `a.ts`",
@@ -372,8 +363,8 @@ test("a spec stored without decisions or exclusions reads them as empty, renders
 	expect(dataOf(shown)).toEqual(data);
 });
 
-test("a spec comment leaves out a Steps or Touches with no items, fold and all", () => {
-	const bare = { ...reviewed, steps: [], touches: [] };
+test("a spec comment leaves out a Touches with no items, fold and all", () => {
+	const bare = { ...reviewed, touches: [] };
 	const data: Data = { result: result("needs-approval", { spec: bare }) };
 	const shown = commentOf(data, "needs-approval", "forge-bot");
 	expect(shown).not.toContain("<details>");

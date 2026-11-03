@@ -32,7 +32,6 @@ export type Spec = {
 	what: string;
 	decisions: Point[];
 	excluded: Point[];
-	steps: string[];
 	acceptance: string[];
 	subject: string;
 };
@@ -149,7 +148,6 @@ function parseSpec(value: unknown): Spec {
 		what: field(value, "what", isString, "a string"),
 		decisions: optional(value, "decisions", isPoints, "a list of points") ?? [],
 		excluded: optional(value, "excluded", isPoints, "a list of points") ?? [],
-		steps: field(value, "steps", isStrings, "a list of strings"),
 		acceptance: field(value, "acceptance", isStrings, "a list of strings"),
 		subject: field(value, "subject", isString, "a string"),
 	};
@@ -340,8 +338,6 @@ export const fenced = (text: string) => {
 };
 
 const list = (items: readonly string[]) => items.map((i) => `- ${i}`);
-const numbered = (items: readonly string[]) =>
-	items.map((item, i) => `${i + 1}. ${item}`);
 const refs = (numbers: readonly number[]) =>
 	numbers.map((n) => `#${n}`).join(", ");
 
@@ -392,7 +388,6 @@ const specLines = (spec: Spec) => [
 	...whatLines(spec),
 	...pointSections(spec),
 	...acceptanceLines(spec.acceptance),
-	...folded("Steps", `${spec.steps.length}`, numbered(spec.steps)),
 	...folded("Touches", files(spec.touches.length), touchLines(spec.touches)),
 ];
 
@@ -400,7 +395,6 @@ const specLines = (spec: Spec) => [
 const requestedLines = (spec: Spec) => [
 	...whatLines(spec),
 	...pointSections(spec),
-	...section("Steps", numbered(spec.steps)),
 	...section("Touches", touchLines(spec.touches)),
 	...acceptanceLines(spec.acceptance),
 ];

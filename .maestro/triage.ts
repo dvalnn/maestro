@@ -112,7 +112,6 @@ const SpecPart = Struct({
 	what: Text(),
 	decisions: List(Point),
 	excluded: List(Point),
-	steps: List(Text()),
 	acceptance: List(Text()),
 	subject: Text(),
 });
@@ -121,7 +120,6 @@ const Spec = Struct({
 	what: Text(),
 	decisions: List(Point),
 	excluded: List(Point),
-	steps: List(Text()),
 	acceptance: List(Text()),
 	subject: Text(),
 });
@@ -545,12 +543,12 @@ answer.md holds one section per question, in order, headed "## <the question>", 
 
 const PLAN_TASK = `Triage the attached issue: propose its verdict from the scouts' answers, the triager's ruling, the cut backlog and the target's code. ${GATE}
 Write plan.json in exactly this shape, leaving out spec, children and related where the verdict does not need them:
-{"verdict": "ready-for-agent", "touches": ["path/to/file.ts"], "contract": "", "questions": [], "spec": {"what": "the change to make", "decisions": [{"lead": "a title", "points": ["one fact", "In path/to/file.ts"]}], "excluded": [{"lead": "a title", "points": ["one fact"]}], "steps": ["a step"], "acceptance": ["bun test path/to/file.test.ts"], "subject": "feat(scope): imperative summary"}, "children": [{"title": "a child issue's title", "body": "its ask", "dependsOn": [0]}], "related": [7]}
+{"verdict": "ready-for-agent", "touches": ["path/to/file.ts"], "contract": "", "questions": [], "spec": {"what": "the change to make", "decisions": [{"lead": "a title", "points": ["one fact", "In path/to/file.ts"]}], "excluded": [{"lead": "a title", "points": ["one fact"]}], "acceptance": ["bun test path/to/file.test.ts"], "subject": "feat(scope): imperative summary"}, "children": [{"title": "a child issue's title", "body": "its ask", "dependsOn": [0]}], "related": [7]}
 - verdict: ready-for-agent when one change builds the issue as asked, split when it needs several, needs-info when it cannot be specified without an answer.
 - touches: every repo-relative path the change creates or edits, whatever the verdict; empty when you cannot tell.
 - contract: the one-way door the change sets or changes, named in a few words, or "" when it sets none. A one-way door cannot change after release without breaking a user: an IR field, a public CLI flag or exit code, a key of the user's config, an id or path format users type, or the pack manifest. Internal tooling, an environment variable only the tour manager reads and a new standalone composition are not.
-- spec, for ready-for-agent: what to change in one paragraph, the decisions the change makes, what it leaves out, the steps to make it in order, the shell commands that prove it done, each starting with ${RUNNERS.join(", ")}, and the commit subject as <type>(<scope>): <summary>. The owner approves the spec from its decisions and what it leaves out, so give them in full detail.
-- decisions and excluded: each item a lead and its points. The lead only titles its points; every fact, reference and reason belongs in a point, one fact each, and a reference is a plain last point "In <path>". what names the change, and the facts behind it go in the decisions. Either list may be empty.
+- spec, for ready-for-agent: what to change in one paragraph, the decisions the change makes, what it leaves out, the shell commands that prove it done, each starting with ${RUNNERS.join(", ")}, and the commit subject as <type>(<scope>): <summary>. The owner approves the spec from its decisions and what it leaves out. Hold the spec to about 3,000 to 5,000 characters.
+- decisions and excluded: each item a lead and its points. The lead only titles its points; every fact, reference and reason belongs in a point, one fact each, and a reference is a plain last point "In <path>". what names the change, and the facts behind it go in the decisions. A decision is a choice where another option was live, or a fact the owner has to approve; leave out calls, statement order and shell lines, which the builder works out. Either list may be empty.
 - children, for split: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
 - related: the backlog issues it relates to.
 - When the issue carries the spec the last triage proposed, start from it: change what the replies below it ask, and keep the rest.

@@ -235,11 +235,11 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   tick's first write and edited in place after; the forge's edit history keeps the earlier versions. Headed
   `Spec vN · risk <risk> · area <area>`, N starting at 1 and rising with each routed triage, the area only when triage
   gave one, it holds, in order: What (a short paragraph and the commit subject); Decisions and Left out, each item a
-  bold lead with its points as sub-bullets; Acceptance (a checklist); then Steps (numbered) and Touches, each folded
-  under `<details><summary><b>Steps</b> · <n></summary>`, Touches counting its files, word for word. A section with no
-  items is left out. The build lines (attempts, last failure, slice concert) follow, then one line joining the Reasons,
-  the `Relates to` links and the last concert. A split shows its children in place of the spec, a duplicate its
-  original. It ends with whose turn it is, in neutral wording: while the tick owns the next transition, one bold line,
+  bold lead with its points as sub-bullets; Acceptance (a checklist); then Touches, folded under
+  `<details><summary><b>Touches</b> · <n> files</summary>`, counting its files, word for word. A section with no items
+  is left out. The build lines (attempts, last failure, slice concert) follow, then one line joining the Reasons, the
+  `Relates to` links and the last concert. A split shows its children in place of the spec, a duplicate its original. It
+  ends with whose turn it is, in neutral wording: while the tick owns the next transition, one bold line,
   `Tour manager's turn · <what runs or is queued>`; else, after a rule, `Maintainer's turn · <what waits>` in bold, each
   owner move out of the state the data leaves open as a ``- **`<label>`**: <what it does>`` bullet, a rule, and a
   `<sub>` line saying how to take one, as a question comment ends. A spec stored without Decisions or Left out reads
