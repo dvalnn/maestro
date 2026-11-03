@@ -21,7 +21,7 @@ import { builder } from "./seats";
 import { atLeastOne } from "./types";
 
 const REPAIR_TASK =
-	"The target's checks failed on your change. Repair every failure they report, keeping to what the spec asks.";
+	"The target's checks failed on your change. Repair every failure they report, keeping to what the spec asks. Change a test only where the spec changes what it pins.";
 
 export const EXAMPLE_REQUEST =
 	"Make greet.sh greet the name given as its first argument, and the world when none is given.";

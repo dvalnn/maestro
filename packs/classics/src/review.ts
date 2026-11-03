@@ -33,7 +33,7 @@ type Consolidated = ReturnType<
 const LENSES = {
 	correctness:
 		"Rule on the change through this lens only: correctness, every changed path doing what it claims, its error paths included.",
-	spec: "Rule on the change through this lens only: the spec, each requirement met by the change, one by one.",
+	spec: "Rule on the change through this lens only: the spec, each acceptance item met by the change, one by one, and nothing built that it leaves out or does not ask for.",
 	tests:
 		"Rule on the change through this lens only: the tests, each new behaviour pinned by a test that fails without it.",
 };
@@ -45,7 +45,7 @@ type LensName = (typeof LENS_NAMES)[number];
 export function skepticTask(grounds?: string): string {
 	if (grounds === undefined)
 		return "A lens ruled on this change. Challenge each of its findings against the code, and rule whether it holds.";
-	return `A lens ruled on this change under these grounds: ${grounds} Challenge each of its findings against the code and those grounds, and rule whether it holds. A finding holds when the code shows it and it breaks a rule, requirement or ADR the grounds name; one that cites none does not hold. Uphold a finding only with its evidence in why: the file:line that shows it, or the output of a check you ran; a finding you could not verify does not hold. For a missing test, name in why the line whose removal no test catches, and the tests you read.`;
+	return `A lens ruled on this change under these grounds: ${grounds} Challenge each of its findings against the code and those grounds, and rule whether it holds. A finding holds only when it also breaks a rule, requirement or ADR the grounds name; one that cites none does not hold. Uphold a finding only with its evidence in why: the file:line that shows it, or the output of a check you ran; a finding you could not verify does not hold. For a missing test, name in why the line whose removal no test catches, and the tests you read.`;
 }
 
 const CONSOLIDATE_TASK =
