@@ -5,6 +5,8 @@ const LISTED = `    "gaps": ["<something the task asked that was left undone or 
     "obstacles": ["<something outside the agent's reach that stopped or slowed it, such as a missing attachment or a tool not on the PATH; not a test that failed or a check that was red>"],
     "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"]`;
 
+const GIT =
+	"Git reads such as `status`, `diff` and `log` work here, and every git write fails by design. Try a git mutation in a fresh `git init` under `/tmp`.";
 const SHELL =
 	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
 
@@ -26,7 +28,7 @@ test("a write-lane builder's frame states its working copy, checks, attachments 
 
 ## Working copy
 
-Your working copy is the current directory. Leave your changes uncommitted: the run records the working copy as a version when you finish.
+Your working copy is the current directory. Leave your changes uncommitted: the run records the working copy as a version when you finish. ${GIT}
 
 ${SHELL}
 
@@ -94,7 +96,7 @@ test.each([
 			out: [{ file: "findings.md", format: "markdown" }],
 		},
 		[
-			"## Working copy\n\nYour working copy is the current directory, and it is read-only: change nothing in it.",
+			`## Working copy\n\nYour working copy is the current directory, and it is read-only: change nothing in it. ${GIT}`,
 			"or failed.\n- `check all`: every test",
 			"## Reply\n\nBefore your final reply, write every one of these files, even when you reject:\n- `/out/findings.md`: Markdown\n\nYour final",
 		],
@@ -106,6 +108,7 @@ test.each([
 		[`# Your run\n\n## Working copy\n\n${SHELL}\n\n## Reply\n\n`],
 		[
 			"Your working copy is",
+			"Git reads",
 			"## Checks",
 			"## Attachments",
 			"## Context",

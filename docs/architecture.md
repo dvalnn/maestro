@@ -469,12 +469,12 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
 - The staged system-prompt file holds the profile's instructions, when it has any, then the host's **frame**: a
   `# Your run` heading and the sections `## Working copy`, `## Checks`, `## Attachments`, `## Context` and `## Reply`,
   in that order, each left out when it has nothing to say. Working copy says a write lane is left uncommitted and a read
-  lane is changed in nothing, then how the shell is set up; Context, only under a `handoff` policy, says a full context
-  ends the session in a handoff and how many sessions the task allows; Reply is the output contract. The file is
-  appended to the harness's own system prompt, never replacing it. A fresh start's user message is the task alone, on
-  stdin. The exact staged text is the `staged` output artifact, a directory holding `prompt.md` (the user message),
-  `instructions.md` (the system-prompt file), `correction-N.md` (each correction turn's message) and `session-N.md` (the
-  message that opens session N after a handoff).
+  lane is changed in nothing, and for either that git writes fail by design, then how the shell is set up; Context, only
+  under a `handoff` policy, says a full context ends the session in a handoff and how many sessions the task allows;
+  Reply is the output contract. The file is appended to the harness's own system prompt, never replacing it. A fresh
+  start's user message is the task alone, on stdin. The exact staged text is the `staged` output artifact, a directory
+  holding `prompt.md` (the user message), `instructions.md` (the system-prompt file), `correction-N.md` (each correction
+  turn's message) and `session-N.md` (the message that opens session N after a handoff).
 - Declared outputs are files the agent writes in its **outbox**, a per-instance directory at `/out` outside the lane.
   The host reads only regular files there and checks each against its schema. The contract tells the agent to write
   every declared file, a verdict agent even when it rejects. A missing file or a schema violation is `failed`.

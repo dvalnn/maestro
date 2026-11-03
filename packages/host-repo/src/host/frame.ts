@@ -142,6 +142,8 @@ const LANE_TEXT = {
 		"Your working copy is the current directory. Leave your changes uncommitted: the run records the working copy as a version when you finish.",
 	read: "Your working copy is the current directory, and it is read-only: change nothing in it.",
 };
+const GIT =
+	"Git reads such as `status`, `diff` and `log` work here, and every git write fails by design. Try a git mutation in a fresh `git init` under `/tmp`.";
 const SHELL =
 	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
 const CHECKS =
@@ -153,7 +155,10 @@ const section = (heading: string, paragraphs: string[]) =>
 	paragraphs.length ? [`## ${heading}`, ...paragraphs] : [];
 
 const workingCopy = (lane: Run["lane"]) =>
-	section("Working copy", [...(lane ? [LANE_TEXT[lane]] : []), SHELL]);
+	section("Working copy", [
+		...(lane ? [`${LANE_TEXT[lane]} ${GIT}`] : []),
+		SHELL,
+	]);
 
 function checks({ checks, lane }: Run) {
 	if (!checks.length) return [];
