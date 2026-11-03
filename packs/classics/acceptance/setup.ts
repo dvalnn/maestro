@@ -17,7 +17,6 @@ export const PROFILES = [
 	"lens",
 	"skeptic",
 	"consolidator",
-	"documenter",
 ].map((seat) => `classics/${seat}`);
 
 type Runtime = { harness: string; model: string };

@@ -7,3 +7,10 @@ target:
     all:
       run: just check
       hint: format, lint, types and every test
+profiles:
+  classics/builder:
+    attachments:
+      diagrams: { path: .claude/skills/forge-diagrams, hint: "before drawing any Mermaid diagram: SKILL.md" }
+  classics/lens:
+    attachments:
+      diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }

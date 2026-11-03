@@ -188,6 +188,24 @@ describe("build_then_repair", () => {
 	});
 });
 
+test("the builder writes and the lens judges by the same writing guide", async () => {
+	const guides = await Promise.all(
+		["builder", "lens"].map(async (name) => {
+			const { out } = await maestro(
+				"agent",
+				"show",
+				`classics/${name}`,
+				"--json",
+			);
+			const dir: string = JSON.parse(out).attachments.writing.path;
+			return ["writing.md", "writing-skills.md", "LICENSE"].map((f) =>
+				readFileSync(join(dir, f), "utf8"),
+			);
+		}),
+	);
+	expect(guides[1]).toEqual(guides[0]);
+});
+
 test.each([
 	["maxRepairs", [...BUILD, "--max-repairs", "0"]],
 	["lenses", [...REVIEW, "--lenses", "spec", "--lenses", "spec"]],

@@ -67,7 +67,7 @@ resume performs every code node of the pack again.
 - `panel`: the lens, skeptic and consolidator panel, as a function over a change; given `grounds`, the rules a finding
   must cite, its skeptics and consolidator rule by them. `skepticTask(grounds)` is that skeptic task, for a lone
   skeptic.
-- The seats: `builder`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`, `documenter`.
+- The seats: `builder`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`.
 - The compositions: `repairUntilGreen`, `panelReview`, `buildThenRepair`.
 - `maxRepairs`, the repair bound, and `atLeastOne`, the at-least-one integer param.
 - Code-node functions: `survivorsOf`, `toMarkdown`.

@@ -26,8 +26,3 @@ export const Verdict = Struct({
 	criteria: List(Struct({ id: Text(), met: Bool(), evidence: Text() })),
 	blocking: List(Text()),
 });
-
-/** A documenter's ruling on each criterion of the design, by its id. */
-export const Acceptance = List(
-	Struct({ id: Text(), met: Bool(), evidence: Text() }),
-);

@@ -13,8 +13,11 @@ no models, so set each profile's `runtime` in config, as `profiles.classics/<nam
 | `repair_until_green` | Checks a lane, then repairs in the builder's session while the checks are red; used by others     | `builder`                         |
 | `panel_review`       | Rules on a change through each lens, a skeptic over each lens's findings, then consolidates       | `lens`, `skeptic`, `consolidator` |
 
-`scout`, `planner` and `documenter` serve no composition of the pack and are seats for compositions built on it. A
-`scout` answers the questions it is asked in `answer.md`, as a triage asks them.
+`scout` and `planner` serve no composition of the pack and are seats for compositions built on it. A `scout` answers the
+questions it is asked in `answer.md`, as a triage asks them.
+
+`builder` and `lens` attach `writing/`, the guide they write and judge Markdown by, adapted from Matt Pocock's
+`writing-for-agents` under the MIT license beside it.
 
 Each profile's `profile.yaml` sets its limits: `builder` 45 minutes and 30M tokens, `lens`, `skeptic` and `consolidator`
 20 minutes and 10M tokens, the others none. None sets a `context` policy, so its harness compacts on its own terms; set

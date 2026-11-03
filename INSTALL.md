@@ -87,11 +87,11 @@ Config keys are in [`packages/cli/README.md`](packages/cli/README.md).
   placeholder for each declared output and replies ok. Run with `--preset stub` to spend nothing: `build_then_repair`
   and `panel_review` end ok, the latter with an unapproved verdict.
 
-The classics pack ships seven profiles and no models, and its [README](packs/classics/README.md) holds each
-composition's profiles and params: `scout`, `planner`, `builder`, `lens`, `skeptic`, `consolidator` and `documenter`.
-`build_then_repair` needs only `builder`, `panel_review` needs `lens`, `skeptic` and `consolidator`, and `scout`,
-`planner` and `documenter` serve compositions that build on the pack's seats. A profile holds its instructions and
-limits; config sets its `runtime`. Model ids below are placeholders; use your own.
+The classics pack ships six profiles and no models, and its [README](packs/classics/README.md) holds each composition's
+profiles and params: `scout`, `planner`, `builder`, `lens`, `skeptic` and `consolidator`. `build_then_repair` needs only
+`builder`, `panel_review` needs `lens`, `skeptic` and `consolidator`, and `scout` and `planner` serve compositions that
+build on the pack's seats. A profile holds its instructions and limits; config sets its `runtime`. Model ids below are
+placeholders; use your own.
 
 ```yaml
 # ~/.config/maestro/config.yaml
@@ -102,7 +102,6 @@ profiles:
   classics/lens: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
   classics/skeptic: { runtime: { harness: pi, model: <provider>/<model>, thinking: high } }
   classics/consolidator: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
-  classics/documenter: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
 ```
 
 - Claude: `harness: claude`, `model: sonnet` or `opus`, `thinking` as Claude's `--effort`.

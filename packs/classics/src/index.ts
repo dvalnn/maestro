@@ -5,7 +5,6 @@ export { LENSES, panel, panelReview, skepticTask } from "./review";
 export {
 	builder,
 	consolidator,
-	documenter,
 	lens,
 	planner,
 	scout,

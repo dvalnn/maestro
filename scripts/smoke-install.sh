@@ -139,7 +139,6 @@ profiles:
   classics/lens: { runtime: { harness: claude, model: sonnet, thinking: high } }
   classics/consolidator: { runtime: { harness: claude, model: sonnet, thinking: high } }
   classics/skeptic: { runtime: { harness: pi, model: openai/gpt-model-id, thinking: high } }
-  classics/documenter: { runtime: { harness: claude, model: sonnet, thinking: high } }
 YAML
 cat > "$ws/.maestro/presets/stub.yaml" <<'YAML'
 profiles:

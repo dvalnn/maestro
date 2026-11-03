@@ -1,5 +1,5 @@
 import { JsonOut, MarkdownOut, seat } from "@maestro/host-repo-sdk";
-import { Acceptance, Findings, Verdict, Verdicts } from "./types";
+import { Findings, Verdict, Verdicts } from "./types";
 
 export const scout = seat("scout", {
 	profile: "classics/scout",
@@ -31,13 +31,5 @@ export const consolidator = seat("consolidator", {
 	out: {
 		review: MarkdownOut("review.md"),
 		verdict: JsonOut("verdict.json", Verdict),
-	},
-});
-
-export const documenter = seat("documenter", {
-	profile: "classics/documenter",
-	out: {
-		notes: MarkdownOut("notes.md"),
-		acceptance: JsonOut("acceptance.json", Acceptance),
 	},
 });

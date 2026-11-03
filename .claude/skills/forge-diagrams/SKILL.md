@@ -52,8 +52,8 @@ Stroke colours that read on the forge's dark and light themes. Use only the role
 ## Check
 
 ```
-.claude/skills/forge-diagrams/scripts/render.sh <file.md> <scratch-dir>
+scripts/render.sh <file.md> <scratch-dir>
 ```
 
-It renders every block in both themes and prints the PNG paths. Read each PNG: a block that fails to render, a label
-that overlaps an edge, or a tangle is fixed before pushing. After pushing, open the file on the forge and look again.
+`scripts/render.sh`, beside this file, renders every block in both themes and prints the PNG paths. Read each PNG: a
+block that fails to render, a label that overlaps an edge, or a tangle is fixed before finishing.
