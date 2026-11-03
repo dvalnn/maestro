@@ -60,7 +60,7 @@ const TASKS = {
 		GATE,
 		QUESTIONS,
 	),
-	checker: task(CHECKER),
+	checker: task(CHECKER, GATE),
 };
 
 const Slot = Struct({ slot: Text(), group: Group });

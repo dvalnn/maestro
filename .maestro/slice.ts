@@ -48,7 +48,9 @@ import {
 	type ValueOf,
 } from "@maestro/sdk";
 import GROUNDS from "./slice/prompts/_grounds.md" with { type: "text" };
-import QUESTIONS from "./slice/prompts/_questions.md" with { type: "text" };
+import QUESTIONS from "./slice/prompts/_review-questions.md" with {
+	type: "text",
+};
 import FIX from "./slice/prompts/fix.md" with { type: "text" };
 import LENS_SPEC_TESTS from "./slice/prompts/lens-spec-tests.md" with {
 	type: "text",
