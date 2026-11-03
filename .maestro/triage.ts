@@ -591,7 +591,7 @@ Write plan.json in exactly this shape, leaving out spec, children and related wh
 - Codebase health comes before the feature. Before deciding, read the parts of docs/architecture.md and CODING_STANDARDS.md for the packages the change touches. what names the module that owns the change; the change extends what is there, never a parallel path.
 - When the ask can only be met by a shortcut, such as a special case in a shared module, a flag threaded through calls, a second route around an existing seam or domain logic in a domain-free package, do not decide it: split, the first part the refactor the feature needs, when that refactor is clear; needs-info, a question naming the clean option and its cost, when it is the owner's choice.
 - When the issue carries the spec the last triage proposed, start from it: change what the replies below it ask, and keep the rest.
-- questions: what only the owner can answer. Any question sends the issue to needs-info whatever the verdict, so settle yourself what the code settles. ${ASKING}`;
+- questions: what only the owner can answer. Any question sends the issue to needs-info whatever the verdict, so settle yourself what the code settles. Ask only what hangs on no other question asked now; a dependent question waits for the re-triage. ${ASKING}`;
 
 const CHECK_TASK = `Check the attached spec against the code. Its spec is in the attached plan.json.
 Write check.json in exactly this shape:
@@ -599,8 +599,7 @@ Write check.json in exactly this shape:
 - A claim the spec makes about the base holds: every function, file, flag, behaviour and call site it names exists and behaves as stated, and so does everything it says a change must also update.
 - The spec misses no place the change must touch: the uninstall path beside an install, each other caller of a changed function, each test or doc that states the old behaviour.
 - The spec fits the architecture. Ask a question, with its file:line, for each of: a duplicate of a helper or pattern the codebase already has (grep for one); a module, abstraction or flag nothing in the ask needs; a public interface wider than the ask; a package boundary crossed, such as domain words in a domain-free package; a decision with lasting weight and no ADR or owner ruling behind it.
-- questions: one per failure, never one for a claim that holds, or for a choice between options that each fit, which is the owner's. Write "questions": [] when nothing fails.
-Use the scouts' answers as leads, and read the code behind each claim yourself.`;
+- questions: one per failure. Write "questions": [] when nothing fails.`;
 
 const triager = seat("triager");
 /** The classics planner, fresh in an encore: a re-triage hands it the last spec rather than its grown session. */
