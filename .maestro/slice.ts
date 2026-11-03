@@ -46,6 +46,21 @@ import {
 	use,
 	type ValueOf,
 } from "@maestro/sdk";
+import GROUNDS from "./slice/prompts/_grounds.md" with { type: "text" };
+import QUESTIONS from "./slice/prompts/_questions.md" with { type: "text" };
+import FIX from "./slice/prompts/fix.md" with { type: "text" };
+import LENS_CORRECTNESS from "./slice/prompts/lens-correctness.md" with {
+	type: "text",
+};
+import LENS_SPEC from "./slice/prompts/lens-spec.md" with { type: "text" };
+import LENS_SPEC_TESTS from "./slice/prompts/lens-spec-tests.md" with {
+	type: "text",
+};
+import LENS_TESTS from "./slice/prompts/lens-tests.md" with { type: "text" };
+import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
+import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
+	type: "text",
+};
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export { survivorsOf, toMarkdown };
@@ -56,53 +71,27 @@ const NOTHING_CHANGED = "the slice changed nothing";
 const TIERS = ["small", "ordinary", "risky"] as const;
 type Tier = (typeof TIERS)[number];
 
-const GROUNDS = [
-	"Standards are CODING_STANDARDS.md and CLAUDE.md; the spec is the request, its requirement IDs and the ADRs under docs/adr/.",
-	"Every finding cites in its issue the rule, requirement or ADR it breaks, names its file:line in where, and states the failure.",
-	"Drop any finding you cannot cite.",
-	"An acceptance item the change leaves unmet blocks.",
-	"The lane's commit message is a placeholder the tour manager replaces on landing: its subject and closing line are out of review.",
-	"Judge only the change's tests; a test the change leaves alone is out of review.",
-	"A test must pull weight.",
-	"Logic the change adds that reading it does not settle at a glance, such as a branch, a computation, a fixed bug or a behaviour the issue's ask, the spec's What or an acceptance item names, needs a test that fails when that logic is removed or broken: judge it as a mutation would, naming the line whose removal or change no test catches.",
-	"Trivial logic, a one-liner whose effect the code shows plainly, needs no test, and one test over a list's shape covers its entries.",
-	"Logic with edges, such as a limit, an empty input or one past the end, is tested at them.",
-	"A missing test for such logic or its edges blocks.",
-	"A spec decision's implementation detail is guidance: a missing test for it is advisory, unless user input reaches that code or the finding names the concrete failure the missing test lets through.",
-	"Advisory, not blocking: a missing test for trivial logic, for a spec decision's implementation detail, or for a case neither the issue nor the spec names; a test that duplicates another's coverage, to drop or merge; a test that still passes with its logic removed, or only restates the implementation; a test that restates wording, such as an error message or a prompt, unless the text is a contract: piped stdout, --json output, or a line something parses.",
-].join(" ");
+const task = (...parts: string[]) => parts.join("\n\n");
 
-const QUESTIONS =
-	"Ask of every changed file: a module, export or dependency that no requirement or plan item asks for? A duplicate of a helper or pattern the codebase already has? An interface wider than the spec needs? A decision taken in code with no ADR or owner ruling behind it? A function, module or wrapper whose deletion removes no complexity? A special case or flag threaded through a shared module, where the module that owns the behaviour should change?";
-
-const CORRECTNESS =
-	"correctness, every changed path doing what it claims, its error paths included";
-const SPEC =
-	"the spec, each acceptance item met by the change, one by one, and nothing built that it leaves out or does not ask for";
-const TESTS =
-	"the tests, each new behaviour pinned by a test that fails without it";
-
-const ALL_LENSES = `Rule on the change through every lens: ${CORRECTNESS}; ${SPEC}; ${TESTS}. ${QUESTIONS} ${GROUNDS} Run \`check all\` to see the tests run.`;
-
-const AGAIN = `The change was fixed after your last ruling. ${ALL_LENSES} The attached upheld findings are those of yours the last round upheld; anything else you raised was dismissed.`;
-
-const ONLY_CORRECTNESS = `Rule on the change through this lens only: ${CORRECTNESS}. ${GROUNDS}`;
-
-/** Each panel tier's lenses, by name, as each lens's task. */
-const PANELS = {
-	ordinary: {
-		correctness: ONLY_CORRECTNESS,
-		"spec-tests": `Rule on the change through these lenses only: ${SPEC}; ${TESTS}. ${QUESTIONS} ${GROUNDS}`,
-	},
-	risky: {
-		correctness: ONLY_CORRECTNESS,
-		spec: `Rule on the change through this lens only: ${SPEC}. ${QUESTIONS} ${GROUNDS}`,
-		tests: `Rule on the change through this lens only: ${TESTS}. ${GROUNDS}`,
+/** Each call's task: its own prompt file, then the shared fragments it rules by. */
+const TASKS = {
+	reviewer: task(REVIEWER, QUESTIONS, GROUNDS),
+	reviewerAgain: task(REVIEWER_AGAIN, REVIEWER, QUESTIONS, GROUNDS),
+	skeptic: skepticTask(GROUNDS),
+	fix: task(FIX),
+	/** Each panel tier's lenses, by name, as each lens's task; the consolidator rules by `GROUNDS`. */
+	lenses: {
+		ordinary: {
+			correctness: task(LENS_CORRECTNESS, GROUNDS),
+			"spec-tests": task(LENS_SPEC_TESTS, QUESTIONS, GROUNDS),
+		},
+		risky: {
+			correctness: task(LENS_CORRECTNESS, GROUNDS),
+			spec: task(LENS_SPEC, QUESTIONS, GROUNDS),
+			tests: task(LENS_TESTS, GROUNDS),
+		},
 	},
 };
-
-const FIX_TASK =
-	"A review upheld the attached findings on your change. Fix each one, keeping to what the spec asks. Change a test only where the spec changes what it pins.";
 
 type Found = ValueOf<typeof Findings>;
 
@@ -215,7 +204,7 @@ function review(
 			tolerate: "rejected",
 		});
 	if (tier !== "small") {
-		const lenses = PANELS[tier];
+		const lenses = TASKS.lenses[tier];
 		const ruling = panel({
 			items: Object.keys(lenses),
 			task: (name) => lookup(lenses, name),
@@ -238,7 +227,7 @@ function review(
 	};
 	const found = lens({
 		label: "reviewer",
-		task: earlier ? AGAIN : ALL_LENSES,
+		task: earlier ? TASKS.reviewerAgain : TASKS.reviewer,
 		lane: read(lane),
 		session: earlier?.lens,
 		checks: ["all"],
@@ -256,7 +245,7 @@ function review(
 	const lensSession = found.out.session;
 	const challenged = skeptic({
 		label: "skeptic",
-		task: skepticTask(GROUNDS),
+		task: TASKS.skeptic,
 		lane: read(lane),
 		when: not(findings.get("clean")),
 		tolerate: "rejected",
@@ -326,7 +315,7 @@ export const slice = composition(
 			step: (s) => {
 				const fixed = builder({
 					label: "fix",
-					task: FIX_TASK,
+					task: TASKS.fix,
 					lane: extend(s.out.lane),
 					session: s.out.session,
 					checks: ["all"],

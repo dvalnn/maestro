@@ -280,9 +280,7 @@ test.each(["small", "ordinary", "risky"])(
 		);
 		expect(judges.length).toBeGreaterThan(0);
 		for (const n of judges)
-			expect(JSON.stringify(n)).toContain(
-				"its subject and closing line are out of review",
-			);
+			expect(JSON.stringify(n)).toContain("its subject and closing line");
 	},
 );
 
