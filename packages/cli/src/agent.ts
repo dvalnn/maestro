@@ -20,6 +20,7 @@ import {
 	profileRoot,
 	readablePath,
 	resolveProfile,
+	SandboxUnavailable,
 	type SeatedAgent,
 	seatedAgents,
 	sourceWords,
@@ -691,6 +692,8 @@ async function probed(profile: Profile, session: Session): Promise<Report> {
 		return { how: "probed", ...(observed && { observed }) };
 	} catch (error) {
 		if (error instanceof CliError) throw error;
+		if (error instanceof SandboxUnavailable)
+			throw new CliError(`probe of ${profile.name} failed: ${error.message}`);
 		throw new CliError(
 			`probe of ${profile.name} failed: ${messageOf(error)}\nRun the profile once, or check ${runtime.harness}'s login`,
 		);

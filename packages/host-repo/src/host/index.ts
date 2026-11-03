@@ -51,6 +51,7 @@ export {
 	unsetMessage,
 	type ValueSource,
 } from "../profile/index";
+export { SandboxUnavailable } from "../sandbox/index";
 export { BASE_FILE, MESSAGE_FILE, patchFiles } from "./apply";
 export {
 	AGENT_IN_PORTS,

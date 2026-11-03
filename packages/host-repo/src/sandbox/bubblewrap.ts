@@ -1,6 +1,17 @@
-import { readdirSync, readFileSync } from "node:fs";
+import {
+	accessSync,
+	constants,
+	readdirSync,
+	readFileSync,
+	statSync,
+} from "node:fs";
 import { bwrapArgs, mountPlan } from "./plan";
-import type { ExitStatus, SandboxBackend, SandboxedProcess } from "./types";
+import {
+	type ExitStatus,
+	type SandboxBackend,
+	type SandboxedProcess,
+	SandboxUnavailable,
+} from "./types";
 
 const ID_VAR = "MAESTRO_SANDBOX_ID";
 /** The shell every agent runs under. Claude Code picks its shell from `SHELL`, and without it prefers zsh. */
@@ -31,6 +42,16 @@ export function runProcesses(id: string): number[] {
 		} catch {} // exited while scanning, or not ours
 	}
 	return pids;
+}
+
+/** Whether `path` is an executable regular file on the host. */
+export function isExecutable(path: string): boolean {
+	try {
+		accessSync(path, constants.X_OK);
+		return statSync(path).isFile();
+	} catch {
+		return false;
+	}
 }
 
 function killQuietly(pid: number) {
@@ -73,7 +94,13 @@ export const bubblewrap: SandboxBackend = {
 	start(spec) {
 		const bwrap = Bun.which("bwrap");
 		if (!bwrap)
-			throw new Error("bubblewrap (bwrap) is not on PATH. Install bubblewrap");
+			throw new SandboxUnavailable(
+				"bubblewrap (bwrap) is not on PATH. Install bubblewrap",
+			);
+		if (!isExecutable(SANDBOX_SHELL))
+			throw new SandboxUnavailable(
+				`${SANDBOX_SHELL} is missing or not executable, and every sandbox runs under it. Install bash at ${SANDBOX_SHELL}`,
+			);
 		const args = bwrapArgs(mountPlan(spec), spec.argv); // validates the mount policy before anything runs
 
 		const id = crypto.randomUUID();

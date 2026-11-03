@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
 import {
+	chmodSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -9,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bubblewrap, runProcesses } from "./bubblewrap";
+import { bubblewrap, isExecutable, runProcesses } from "./bubblewrap";
 import { mountPlan, type SandboxSpec } from "./index";
 import { bwrapArgs } from "./plan";
 
@@ -121,6 +123,33 @@ describe("confinement", () => {
 		expect(out).toContain("SHELL=/bin/bash");
 		expect(out.some((l) => l.startsWith("HOST_ONLY_VAR"))).toBe(false);
 		expect(out).toContain("FOO=bar");
+	});
+});
+
+describe("the shell", () => {
+	test("only an executable regular file passes", () => {
+		const d = tmp("shell");
+		const plain = join(d, "plain");
+		const exec = join(d, "exec");
+		writeFileSync(plain, "");
+		writeFileSync(exec, "");
+		chmodSync(exec, 0o755);
+		expect(isExecutable(exec)).toBe(true);
+		for (const p of [plain, d, join(d, "missing")])
+			expect(isExecutable(p)).toBe(false);
+	});
+
+	test("a sandbox does not start without bash, and says how to fix it", () => {
+		const access = spyOn(fs, "accessSync").mockImplementation(() => {
+			throw new Error("ENOENT");
+		});
+		try {
+			expect(() =>
+				bubblewrap.start({ lane: tmp("lane"), argv: ["true"] }),
+			).toThrow(/Install bash at \/bin\/bash$/);
+		} finally {
+			access.mockRestore();
+		}
 	});
 });
 

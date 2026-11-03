@@ -8,3 +8,4 @@ export type {
 	SandboxedProcess,
 	SandboxSpec,
 } from "./types";
+export { SandboxUnavailable } from "./types";

@@ -7,6 +7,7 @@ for Claude Code, Codex and pi. Nothing is published to a public registry.
 
 - Linux x64 with glibc. Hosts of RHEL 8 class are best-effort.
 - bubblewrap, with unprivileged user namespaces enabled.
+- bash at `/bin/bash`. Every sandbox runs under it, and none starts without it.
 - git 2.40 or newer.
 - A harness: pi 1.3.0 logged in (`~/.pi/agent`), or Claude Code 2.1.302 with `CLAUDE_CODE_OAUTH_TOKEN` from
   `claude setup-token`, exported in the shell or set in `~/.config/maestro/.env` (`$XDG_CONFIG_HOME/maestro/.env`) as

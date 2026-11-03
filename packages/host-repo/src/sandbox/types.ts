@@ -1,3 +1,8 @@
+/** The host cannot start a sandbox: a tool it needs is missing. The message ends with the fix. */
+export class SandboxUnavailable extends Error {
+	override readonly name = "SandboxUnavailable";
+}
+
 /** A host path made visible inside the sandbox. `dst` defaults to `src`. */
 export type Bind = { src: string; dst?: string };
 

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanup } from "./fixtures/packs";
@@ -424,6 +425,25 @@ describe("agent show --probe", () => {
 			mark: "✗",
 			faults: ["github loaded, not declared", `${LONG} loaded, not declared`],
 		});
+	});
+
+	test("a host that cannot start a sandbox fails the probe with the sandbox's fix last, not a login hint", async () => {
+		const w = await roster();
+		const access = spyOn(fs, "accessSync").mockImplementation(() => {
+			throw new Error("ENOENT");
+		});
+		try {
+			const probed = await w.call([
+				"agent",
+				"show",
+				"demo/reviewer",
+				"--probe",
+			]);
+			expect(probed.code).toBe(1);
+			expect(probed.err).toEndWith("Install bash at /bin/bash");
+		} finally {
+			access.mockRestore();
+		}
 	});
 
 	test("keeps the model's window the harness reports, which show then prints under Context and --json carries", async () => {
