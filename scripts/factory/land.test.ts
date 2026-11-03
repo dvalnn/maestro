@@ -71,6 +71,26 @@ test("a described and a restacked commit carry the account as author and committ
 	expect(who(dir, top)).toStartWith("Owner|owner@example.com|Owner");
 });
 
+test("a squash folds the change into its parent, described anew and the account's", async () => {
+	const { dir, top } = repository();
+	writeFileSync(join(dir, "d"), "d\n");
+	const squashed = await landing(dir, account).squash(dir, "feat: y");
+	expect(
+		jj(
+			dir,
+			"log",
+			"-r",
+			"main..@-",
+			"--no-graph",
+			"-T",
+			'description.first_line() ++ "\n"',
+		),
+	).toBe("feat: y\nfeat");
+	expect(jj(dir, "file", "list", "-r", squashed)).toBe("a\nb\nc\nd");
+	expect(who(dir, squashed)).toBe(`${WHO}|unsigned`);
+	expect(squashed).not.toBe(top);
+});
+
 test("with a signing key set, described and restacked commits are signed", async () => {
 	const { dir, top } = repository();
 	const lands = landing(dir, account, keyFile());

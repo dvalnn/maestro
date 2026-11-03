@@ -17,6 +17,8 @@ export type Landing = {
 	open(dir: string, name: string, base: string): Promise<void>;
 	/** Describes the change of the workspace at `dir` as `message`, and returns its commit id. */
 	describe(dir: string, message: string): Promise<string>;
+	/** Folds the change of the workspace at `dir` into its parent, described as `message`, and returns its commit id. */
+	squash(dir: string, message: string): Promise<string>;
 	/** Copies the commits of revset `revisions`, descriptions and all, onto revision `onto` in the workspace at `dir`. */
 	restack(dir: string, revisions: string, onto: string): Promise<Restacked>;
 	/** Forgets workspace `name` and removes `dir`. */
@@ -79,6 +81,28 @@ export function landing(
 	const as = identity(account, signingKey);
 	const forget = (name: string) =>
 		run(repo, ["jj", "workspace", "forget", name]);
+	/** Makes the account author of `revision` in the workspace at `dir`, and returns its commit id. */
+	const claim = async (dir: string, revision: string) => {
+		await run(dir, [
+			"jj",
+			...as,
+			"metaedit",
+			"--update-author",
+			"-r",
+			revision,
+		]);
+		return (
+			await run(dir, [
+				"jj",
+				"log",
+				"-r",
+				revision,
+				"--no-graph",
+				"-T",
+				"commit_id",
+			])
+		).trim();
+	};
 	return {
 		open: async (dir, name, base) => {
 			await forget(name);
@@ -99,18 +123,11 @@ export function landing(
 		},
 		describe: async (dir, message) => {
 			await run(dir, ["jj", ...as, "describe", "-m", message]);
-			await run(dir, ["jj", ...as, "metaedit", "--update-author", "-r", "@"]);
-			return (
-				await run(dir, [
-					"jj",
-					"log",
-					"-r",
-					"@",
-					"--no-graph",
-					"-T",
-					"commit_id",
-				])
-			).trim();
+			return claim(dir, "@");
+		},
+		squash: async (dir, message) => {
+			await run(dir, ["jj", ...as, "squash", "-m", message]);
+			return claim(dir, "@-");
 		},
 		restack: async (dir, revisions, onto) => {
 			await run(dir, ["jj", ...as, "new", onto]);

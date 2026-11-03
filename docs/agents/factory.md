@@ -311,10 +311,10 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`: its
     landed concert, fed each such review headed `## Review by <author>`, its body then its inline comments as
     `path:line` items. The ticket moves to `in-progress`, `review` moves to the newest, and `revisionBase` records the
-    PR's head. The build is cut at that commit (`-c target.base=<commit>`, over a stack's) and lands on it, so the PR
-    gains a fix commit on top of its own and keeps its base. The settle lands as any other, force-pushing
-    `maestro-tm/i<n>` onto the open PR. A landing, a fresh build and a re-triage clear `revisionBase`; a parked concert,
-    or one blocked or out of attempts, keeps it, so the encore that follows is cut there.
+    PR's head. The build is cut at that commit (`-c target.base=<commit>`, over a stack's) and lands folded into it, so
+    the PR keeps one commit per ticket and its base. The settle lands as any other, force-pushing `maestro-tm/i<n>` onto
+    the open PR. A landing, a fresh build and a re-triage clear `revisionBase`; a parked concert, or one blocked or out
+    of attempts, keeps it, so the encore that follows is cut there.
 
   With nothing changed the build is a fresh perform, since an encore with nothing changed is refused.
 
@@ -348,11 +348,11 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   builder has its context.
 - **Landing.** An ok slice lands in a fresh jj workspace `factory-i<n>` on `main` as fetched from `origin`, or on the
   commit it stacked on, at `$XDG_CACHE_HOME/maestro-factory/i<n>`: `maestro cs apply`, then `jj describe` with the
-  spec's subject and `Closes #N`. It runs no check of its own: the slice's gate passed in its lane, and CI checks the PR
-  against its base. A stacked slice whose dependency merged during the build restacks in the same workspace (Rules:
-  Restack). Once the PR is open the ticket moves to `in-review` and the workspace is forgotten and removed. A landing
-  that fails halts the tour manager and keeps the workspace; closing the halt issue lands the slice again in a fresh
-  one.
+  spec's subject and `Closes #N`, or for a revision `jj squash` into the PR head with that description. It runs no check
+  of its own: the slice's gate passed in its lane, and CI checks the PR against its base. A stacked slice whose
+  dependency merged during the build restacks in the same workspace (Rules: Restack). Once the PR is open the ticket
+  moves to `in-review` and the workspace is forgotten and removed. A landing that fails halts the tour manager and keeps
+  the workspace; closing the halt issue lands the slice again in a fresh one.
 - **Reports.** Each settled slice's obstacles are filed as `needs-triage` `kind/bug` in the milestone, with
   `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line: the first 12 hex of SHA-256 over the text lower-cased,
   whitespace runs folded to one space and trimmed. A text whose line an open issue carries is not filed again. An

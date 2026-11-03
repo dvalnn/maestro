@@ -633,8 +633,9 @@ async function record(
 }
 
 /**
- * Applies ok slice `id` of `entry` in the workspace at `dir` and publishes it: to `main`, to its blocker's branch while
- * a blocker is open, else restacked onto `main` (factory.md, Rules: Blockers).
+ * Applies ok slice `id` of `entry` in the workspace at `dir`, folded into the PR head a revision is cut at, and
+ * publishes it: to `main`, to its blocker's branch while a blocker is open, else restacked onto `main` (factory.md,
+ * Rules: Blockers).
  */
 async function landIn(
 	pass: Pass,
@@ -646,10 +647,10 @@ async function landIn(
 	const { issue, data } = entry;
 	const text = pullText(issue, data, report, await spendOf(pass, issue));
 	await pass.maestro.apply(id, dir);
-	const commit = await pass.landing.describe(
-		dir,
-		`${text.title}\n\nCloses #${issue.number}\n`,
-	);
+	const message = `${text.title}\n\nCloses #${issue.number}\n`;
+	const commit = data.revisionBase
+		? await pass.landing.squash(dir, message)
+		: await pass.landing.describe(dir, message);
 	const head = branchOf(issue.number);
 	const { stack } = data;
 	if (!stack)

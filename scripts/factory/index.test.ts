@@ -237,6 +237,10 @@ function fakeLanding(failAt?: keyof Landing, output = "", conflict?: string) {
 			step("describe", `describe ${dir}: ${message}`);
 			return "abc123";
 		},
+		squash: async (dir, message) => {
+			step("squash", `squash ${dir}: ${message}`);
+			return "abc123";
+		},
 		restack: async (dir, revisions, onto) => {
 			step("restack", `restack ${revisions} onto ${onto} in ${dir}`);
 			return conflict ? { conflict } : { commit: "def456" };
@@ -1604,7 +1608,10 @@ describe("a build", () => {
 			expect(t.starts.flat()).not.toContain("encore");
 			expect(t.starts.flat()).not.toContain("target.base=sha7");
 			if (!starts)
-				expect(t.steps[0]).toBe(`open factory-i7 at ${CACHED} on sha7`);
+				expect(t.steps.slice(0, 2)).toEqual([
+					`open factory-i7 at ${CACHED} on sha7`,
+					`squash ${CACHED}: feat: greet by name\n\nCloses #7\n`,
+				]);
 			expect(dataAt(parked).revisionBase).toBeUndefined();
 			writes = t.writes.length;
 			await t.run();
@@ -1988,7 +1995,10 @@ describe("a review", () => {
 		concerts.unshift(sliceConcert("started", 7));
 		results.started = { status: "ok", outputs: {} };
 		await t.run();
-		expect(t.steps[0]).toBe(`open factory-i7 at ${CACHED} on sha7`);
+		expect(t.steps.slice(0, 2)).toEqual([
+			`open factory-i7 at ${CACHED} on sha7`,
+			`squash ${CACHED}: feat: greet by name\n\nCloses #7\n`,
+		]);
 		expect(t.writes).toContain(`push abc123 as maestro-tm/i7 from ${CACHED}`);
 		expect(merging(t.writes)).toEqual(["arm #31"]);
 		expect(dataAt(t.find(7)).revisionBase).toBeUndefined();
