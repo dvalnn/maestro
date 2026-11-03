@@ -8,6 +8,7 @@ import {
 	maxRepairs,
 	panel,
 	repairUntilGreen,
+	rulingLine,
 	skeptic,
 	skepticTask,
 	survivorsOf,
@@ -120,18 +121,12 @@ function upheldFindings(
 	});
 }
 
-/** The line under an upheld finding: the skeptic's why, or a mark that no skeptic ruled on it. */
-const ruling = (why?: string) =>
-	why === undefined
-		? "  Unverified: no skeptic ruled on it"
-		: `  Upheld: ${why}`;
-
 /** Each upheld blocking finding of `rulings` as a Markdown list item, carrying the skeptic's why or marked unverified. */
 function upheldLines(rulings: Rulings): string[] {
 	if ("verdict" in rulings)
 		return rulings.verdict.blocking.map((b) => `- ${b}`);
 	return upheldFindings(rulings.findings, rulings.verdicts).map(
-		(f) => `- ${f.id}, ${f.where}: ${f.issue}\n${ruling(f.why)}`,
+		(f) => `- ${f.id}, ${f.where}: ${f.issue}\n  ${rulingLine(f.why)}`,
 	);
 }
 
@@ -214,6 +209,7 @@ function review(
 			patches,
 			spec,
 			grounds: GROUNDS,
+			skeptics: false,
 		});
 		return tally({
 			verdict: readJson(ruling.out.verdict, { tolerate: "rejected" }),

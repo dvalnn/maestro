@@ -219,9 +219,10 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
   forge's auto-merge on it, fast-forward only, which waits on the required `check` status; the slice settling ok is the
   review's pass. Medium builds and waits for the owner to merge its PR. High waits in `needs-approval` for the owner to
   approve the spec, then merges as medium does. The owner merges by fast-forward, as `main` takes signed commits only.
-- **Review depth.** Each lens's findings meet a skeptic. `small` reviews through one lens covering correctness, spec and
-  tests; `ordinary` through a correctness lens and a spec-and-tests lens, then a consolidator; `risky` through
-  correctness, spec and tests lenses, then a consolidator.
+- **Review depth.** `small` reviews through one lens covering correctness, spec and tests, and a skeptic over its
+  findings; `ordinary` through a correctness lens and a spec-and-tests lens, then a consolidator on Opus; `risky`
+  through correctness, spec and tests lenses, then a consolidator on Opus. The two panel tiers run no skeptic: the
+  consolidator rules on every finding, each marked unverified.
 - **One concert at a time.** Parallel waves wait for 10 to 15 good runs.
 - **Pick order.** Finish work first: an encore of a PR with changes requested, then a build, then triage, then a
   harvest. A tick that routes a settle falls through and starts the next action. Within builds and within triage, an

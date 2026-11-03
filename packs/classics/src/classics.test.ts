@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Settled } from "@maestro/sdk";
 import { pack } from "../../../scripts/pack";
 import { BASE, PROFILES, profilesOn, setup } from "../acceptance/setup";
+import { survivorsOf } from "./code";
 import { EXAMPLE_REQUEST } from "./repair";
 
 const MAESTRO = join(import.meta.dir, "../../../packages/cli/src/maestro.ts");
@@ -193,4 +195,30 @@ test.each([
 	const { err, code } = await maestro("compose", ...args);
 	expect(code).toBe(2);
 	expect(err).toContain(`error: param '${param}'`);
+});
+
+test("survivorsOf keeps every finding of a round without a skeptic, marked unverified", () => {
+	const dir = mkdtempSync(join(tmpdir(), "survivors-"));
+	const ref = { path: "findings.json", contentHash: "sha256:0" };
+	writeFileSync(
+		join(dir, ref.path),
+		JSON.stringify({
+			clean: false,
+			findings: [
+				{ id: "F1", where: "a.ts:1", issue: "first", blocking: true },
+				{ id: "F2", where: "a.ts:2", issue: "second", blocking: false },
+			],
+		}),
+	);
+	const round: Settled<{ findings: typeof ref }> = {
+		outcome: "ok",
+		value: { findings: ref },
+	};
+	const { survivors } = survivorsOf(
+		{ rounds: [round], items: ["correctness"] },
+		{ scratch: dir, path: () => join(dir, ref.path) },
+	);
+	expect(readFileSync(survivors, "utf8")).toContain(
+		"## correctness\n\n- F1, a.ts:1 (blocking): first\n  Unverified: no skeptic ruled on it\n- F2, a.ts:2 (advisory): second\n  Unverified: no skeptic ruled on it",
+	);
 });

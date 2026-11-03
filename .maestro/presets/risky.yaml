@@ -1,5 +1,4 @@
 profiles:
   classics/builder: { runtime: { harness: claude, model: claude-opus-5-5, thinking: medium } }
   classics/lens: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: high } }
-  classics/consolidator: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: high } }
-  classics/skeptic: { runtime: { harness: claude, model: claude-opus-5-5, thinking: low } }
+  classics/consolidator: { runtime: { harness: claude, model: claude-opus-5-5, thinking: high } }

@@ -148,8 +148,15 @@ const seated: [string, Record<string, [string, string]>][] = [
 		{
 			"classics/builder": ["claude-sonnet-5-5", "medium"],
 			"classics/lens": ["claude-opus-5-5", "medium"],
-			"classics/skeptic": ["claude-sonnet-5-5", "low"],
 			"classics/consolidator": ["claude-opus-5-5", "medium"],
+		},
+	],
+	[
+		"risky",
+		{
+			"classics/builder": ["claude-opus-5-5", "medium"],
+			"classics/lens": ["claude-sonnet-5-5", "high"],
+			"classics/consolidator": ["claude-opus-5-5", "high"],
 		},
 	],
 ];
@@ -279,8 +286,13 @@ test.each(["small", "ordinary", "risky"])(
 	},
 );
 
-/** Per tier, the stub outputs of a review whose lenses reject with F1, which their skeptics clear. */
-const rejecting: [string, string, string[], Record<string, unknown>][] = [
+/** Per tier, the stub outputs of a review whose lenses reject with F1, and the node of the skeptic that clears it, if the tier has one. */
+const rejecting: [
+	string,
+	string | undefined,
+	string[],
+	Record<string, unknown>,
+][] = [
 	[
 		"small",
 		"skeptic",
@@ -295,22 +307,16 @@ const rejecting: [string, string, string[], Record<string, unknown>][] = [
 		},
 	],
 	...["ordinary", "risky"].map(
-		(tier): [string, string, string[], Record<string, unknown>] => [
+		(tier): [string, undefined, string[], Record<string, unknown>] => [
 			tier,
-			"lenses/skeptic",
-			[
-				"classics/builder",
-				"classics/lens",
-				"classics/skeptic",
-				"classics/consolidator",
-			],
+			undefined,
+			["classics/builder", "classics/lens", "classics/consolidator"],
 			{
 				"lenses/lens/findings.json": {
 					clean: false,
 					findings: [finding("F1", true)],
 				},
 				"lenses/lens/verdict": "rejected F1",
-				"lenses/skeptic/verdicts.json": held(),
 				"consolidator/verdict.json": verdict([]),
 			},
 		],
@@ -318,7 +324,7 @@ const rejecting: [string, string, string[], Record<string, unknown>][] = [
 ];
 
 test.each(rejecting)(
-	"under --tier %s, a lens that rejects still meets its skeptic, whose cleared findings call for no fix",
+	"under --tier %s, a lens that rejects meets a skeptic only where the tier seats one, and a cleared or dismissed finding calls for no fix",
 	async (tier, skeptic, profiles, scripted) => {
 		const data = mkdtempSync(join(scratch, "data-"));
 		const ran = await call(
@@ -341,8 +347,10 @@ test.each(rejecting)(
 			JSON.parse(await maestro(["ls", id, "--json"], data));
 		const statusOf = (node: string) =>
 			instances.filter((i) => i.node === node).map((i) => i.status);
-		expect(statusOf(skeptic).length).toBeGreaterThan(0);
-		expect(statusOf(skeptic).every((s) => s === "ok")).toBe(true);
+		if (skeptic) expect(statusOf(skeptic)).not.toEqual([]);
+		const seated = instances.filter((i) => i.node.endsWith("skeptic"));
+		expect(seated.filter((i) => i.node !== skeptic)).toEqual([]);
+		expect(seated.every((i) => i.status === "ok")).toBe(true);
 		expect(statusOf("fixes/fix")).toEqual([]);
 	},
 );

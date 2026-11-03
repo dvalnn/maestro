@@ -37,4 +37,6 @@ one in config, as `profiles.classics/<name>.context`.
 from `target.base`, and the commits must be one linear series, with no merge.
 
 Lenses run on the `lens` profile's model and skeptics on the `skeptic`'s. Pick models of different families for the two:
-a skeptic of the lens's family tends to share its blind spots.
+a skeptic of the lens's family tends to share its blind spots. `panel_review` always runs them; the exported `panel`,
+which compositions built on the pack call, takes `skeptics: false`, and then no skeptic runs: every finding passes on
+unverified, and the consolidator rules on each.

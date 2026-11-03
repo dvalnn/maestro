@@ -49,13 +49,17 @@ export function skepticTask(grounds?: string): string {
 }
 
 const CONSOLIDATE_TASK =
-	"Independent lenses ruled on this change, and skeptics kept the findings the code shows. Rule on the change against the spec. Write the ruling for a reader in review.md and as data in verdict.json.";
+	"Rule on the change against the spec. Write the ruling for a reader in review.md and as data in verdict.json.";
 
-/** The task of the consolidator, ruling by `grounds` when given. */
-const consolidateTask = (grounds?: string) =>
-	grounds === undefined
-		? CONSOLIDATE_TASK
-		: `${CONSOLIDATE_TASK} Rule by these grounds: ${grounds} A blocking finding a skeptic upheld blocks approval, unless you dismiss it by naming the ground that excludes it: out of review, or advisory as the grounds rank it. That the spec's steps or acceptance leave a test out is no ground. In review.md, list each finding you dismiss with its ground. Report each finding you dismiss as advisory as one gap, and none you dismiss as out of review.`;
+/** The task of the consolidator over the findings of lenses, kept by skeptics when `skeptics`, ruling by `grounds` when given. */
+const consolidateTask = (skeptics: boolean, grounds?: string) => {
+	const lead = skeptics
+		? "Independent lenses ruled on this change, and skeptics kept the findings the code shows."
+		: "Independent lenses ruled on this change.";
+	if (grounds === undefined) return `${lead} ${CONSOLIDATE_TASK}`;
+	const blocking = skeptics ? "a skeptic upheld" : "a lens raised";
+	return `${lead} ${CONSOLIDATE_TASK} Rule by these grounds: ${grounds} A blocking finding ${blocking} blocks approval, unless you dismiss it by naming the ground that excludes it: out of review, or advisory as the grounds rank it. That the spec's steps or acceptance leave a test out is no ground. In review.md, list each finding you dismiss with its ground. Report each finding you dismiss as advisory as one gap, and none you dismiss as out of review.`;
+};
 
 type Panel<T extends string> = {
 	/** The task of the lens over `item`. */
@@ -66,11 +70,13 @@ type Panel<T extends string> = {
 	spec: Ref<ArtifactRef>;
 	/** The rules a finding must cite, which the skeptics and the consolidator rule by. */
 	grounds?: string;
+	/** Whether a skeptic rules over each lens's findings; without one, every finding counts as upheld. Default true. */
+	skeptics?: boolean;
 };
 
 /**
- * A lens per item, a skeptic over each lens that found anything, and a consolidator ruling on the findings the
- * skeptics upheld.
+ * A lens per item, a skeptic over each lens that found anything unless `skeptics` is false, and a consolidator ruling
+ * on the upheld findings.
  */
 export function panel<T extends string>(
 	p: Panel<T> & { items: readonly T[] },
@@ -82,7 +88,8 @@ export function panel<T extends string>(
 		},
 		spec: { artifact: p.spec, hint: "for what the change must do" },
 	};
-	const body = (item: Ref<T>) => round(p, p.task(item), attached);
+	const skeptics = p.skeptics ?? true;
+	const body = (item: Ref<T>) => round(p, p.task(item), attached, skeptics);
 	const rounds = iter.parMap(p.items, body, {
 		onError: "continue",
 		label: "lenses",
@@ -93,23 +100,24 @@ export function panel<T extends string>(
 	});
 	return consolidator({
 		label: "consolidator",
-		task: consolidateTask(p.grounds),
+		task: consolidateTask(skeptics, p.grounds),
 		lane: read(p.change),
 		attachments: {
 			survivors: {
 				artifact: kept.out.survivors,
-				hint: "first, for the findings the skeptics upheld",
+				hint: "first, for the upheld findings",
 			},
 			...attached,
 		},
 	});
 }
 
-/** A lens over one item on `task`, and a skeptic over its findings unless it is clean. */
+/** A lens over one item on `task`, and when `skeptics`, a skeptic over its findings unless it is clean. */
 function round(
 	{ change, grounds }: Pick<Panel<string>, "change" | "grounds">,
 	task: string | Ref<string>,
 	attached: { patches: Attachment; spec: Attachment },
+	skeptics: boolean,
 ) {
 	const found = lens({
 		label: "lens",
@@ -117,6 +125,7 @@ function round(
 		lane: read(change),
 		attachments: attached,
 	});
+	if (!skeptics) return found;
 	const challenged = skeptic({
 		label: "skeptic",
 		task: skepticTask(grounds),
