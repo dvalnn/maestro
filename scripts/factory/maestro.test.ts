@@ -10,7 +10,7 @@ writeFileSync(
 	bin,
 	`#!/bin/sh
 case "$1 $2" in
-	"ls c2"|"ls c3") echo '{"metrics":{"tokens_input":100,"tokens_output":20,"tokens_reasoning":5,"cost":3},"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"]}}}' ;;
+	"ls c2"|"ls c3") echo '{"tokens":120,"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"]}}}' ;;
 	"art ls") case "$3" in c2) echo '[{"instance":"upheld","port":"upheld","path":"${dir}/old.md"},{"instance":"fixes/loop[0]/upheld","port":"upheld","path":"${dir}/new.md"},{"instance":"fixes/loop[1]/upheld","port":"upheld","path":"${dir}/stale.md","stale":true}]' ;; *) echo '[{"instance":"upheld","port":"upheld","path":"${dir}/missing.md"}]' ;; esac ;;
 	"wait c1") echo '{"id":"c1","status":"failed","reason":"boom"}'; exit 1 ;;
 	"perform refused") echo "refused.ts does not compose" >&2; exit 2 ;;
@@ -35,7 +35,7 @@ test("reads a settled concert's result whatever wait exits with", async () => {
 	});
 });
 
-test("reads a concert's report: tokens but reasoning, each agent's obstacles and gaps, the last fresh upheld findings", async () => {
+test("reads a concert's report: its tokens, each agent's obstacles and gaps, the last fresh upheld findings", async () => {
 	expect(await fake.report("c2")).toEqual({
 		tokens: 120,
 		obstacles: ["no rg"],

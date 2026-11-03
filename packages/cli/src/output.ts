@@ -337,6 +337,12 @@ const atOf = (ir: Ir, result: ConcertResult) =>
 		? undefined
 		: instanceName(ir, { node: result.node, expansion: result.expansion });
 
+/** Concert `id`'s metrics and their `tokensOf` total, as its `--json` documents carry them. */
+export const spendOf = (store: Records, id: string) => {
+	const metrics = store.metrics(id);
+	return { metrics, tokens: tokensOf(metrics) };
+};
+
 /**
  * The JSON document of concert `id` and its `result`, `undefined` while it is running: the record's columns, in
  * camelCase.

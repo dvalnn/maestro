@@ -45,6 +45,7 @@ import {
 	parseTour,
 	printClosing,
 	resultDoc,
+	spendOf,
 	staleCell,
 	table,
 	usageError,
@@ -267,7 +268,7 @@ async function listed(stored: Stored, query: ConcertFilter) {
 		concerts.map(async (c) => ({
 			...concertColumns(c),
 			short: short.label(c.id, false),
-			metrics: store.metrics(c.id),
+			...spendOf(store, c.id),
 			diskUse: await diskOf(stored, c.id),
 			notes: counts.get(c.id) ?? {},
 		})),
@@ -350,7 +351,7 @@ async function instancesOf(
 			jsonOf({
 				...concertColumns(row),
 				short,
-				metrics: store.metrics(row.id),
+				...spendOf(store, row.id),
 				instances,
 				reports: Object.fromEntries(
 					named.flatMap((i) => (i.report ? [[i.name, i.report]] : [])),
@@ -415,7 +416,7 @@ async function waited(
 	const { status } = resultDoc(id, result);
 	if (json)
 		deps.stdout(
-			jsonOf({ ...resultDoc(id, result), metrics: store.metrics(id) }),
+			jsonOf({ ...resultDoc(id, result), ...spendOf(store, id) }),
 		);
 	else if (result)
 		printClosing(deps, store, concertOf(store, id), result, {

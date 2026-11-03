@@ -23,8 +23,8 @@ export type Result = {
 	outputs: Record<string, unknown>;
 };
 /**
- * What a settled concert's agents reported, and its spend: `tokens` totals its `tokens_*` metrics but
- * `tokens_reasoning`, and `upheld` is the body of the last review round's upheld findings, if a review ran.
+ * What a settled concert's agents reported, and its token total: `upheld` is the body of the last review round's upheld
+ * findings, if a review ran.
  */
 export type Report = {
 	tokens: number;
@@ -76,12 +76,6 @@ function resultOf(doc: unknown): Result {
 		outputs: isJson(doc.outputs) ? doc.outputs : {},
 	};
 }
-
-/** Output tokens already count reasoning tokens. */
-const tokensOf = (metrics: Json) =>
-	Object.entries(metrics)
-		.filter(([k]) => k.startsWith("tokens_") && k !== "tokens_reasoning")
-		.reduce((sum, [, v]) => sum + (typeof v === "number" ? v : 0), 0);
 
 const strings = (v: unknown) =>
 	Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
@@ -187,7 +181,7 @@ export function maestro(bin = "maestro"): Maestro {
 			]);
 			if (!isJson(doc)) throw new Error("maestro ls: not an object");
 			return {
-				tokens: tokensOf(isJson(doc.metrics) ? doc.metrics : {}),
+				tokens: typeof doc.tokens === "number" ? doc.tokens : 0,
 				obstacles: entriesOf(doc.reports, "obstacles"),
 				gaps: entriesOf(doc.reports, "gaps"),
 				upheld: upheldOf(artifacts),

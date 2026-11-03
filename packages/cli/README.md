@@ -246,9 +246,9 @@ running agent shows the harness, model and effort from the `agent` progress even
 latest note. Other instances leave the column blank. The `ls` list has a `time` column after `status`, the run time as
 the closing block shows it, and a `tokens` column with the concert's total, `-` when it has none. The closing block and
 the inspector show tokens as `15.5k tok`, as `watch` does. In the `--json` documents of `ls` (each row, and
-`ls <concert>`), `wait` and `perform`, `metrics` holds each metric name's total over the concert. `ls --json` rows and
-`ls <concert> --json` also carry `elapsedMs`, `settledAt - startedAt`, or the time since `startedAt` while the concert
-runs.
+`ls <concert>`), `wait` and `perform`, `metrics` holds each metric name's total over the concert, and `tokens` the
+concert's total as the `tokens` column counts it. `ls --json` rows and `ls <concert> --json` also carry `elapsedMs`,
+`settledAt - startedAt`, or the time since `startedAt` while the concert runs.
 
 `perform` announces `concert <id>`, the full id, on stderr when it starts, and on a terminal adds
 `Follow it: maestro watch <id>`. `perform`, `wait` and `watch` on a terminal end with the closing block, its labels in

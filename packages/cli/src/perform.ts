@@ -37,6 +37,7 @@ import {
 	printClosing,
 	renderDiagnostic,
 	resultDoc,
+	spendOf,
 	resumeRefused,
 } from "./output";
 import {
@@ -234,7 +235,7 @@ async function report(
 	const { deps } = session;
 	if (json)
 		deps.stdout(
-			jsonOf({ ...resultDoc(id, result), metrics: store.metrics(id) }),
+			jsonOf({ ...resultDoc(id, result), ...spendOf(store, id) }),
 		);
 	else
 		printClosing(deps, store, concertOf(store, id), result, {

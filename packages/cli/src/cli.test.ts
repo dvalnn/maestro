@@ -1485,10 +1485,11 @@ describe("the record", () => {
 			reason: "no",
 			outputs: { text: "draft" },
 			metrics: {},
+			tokens: 0,
 		});
 	});
 
-	test("spend: ls and ls <concert> show the agent and its tokens, ls the concert's total, and the --json documents the metrics", async () => {
+	test("spend: ls and ls <concert> show the agent and its tokens, ls the concert's total, and the --json documents the metrics and their total", async () => {
 		const w = await world();
 		const agent = {
 			...ECHO,
@@ -1510,21 +1511,24 @@ describe("the record", () => {
 			hosts: [host],
 		});
 		const metrics = { cost: 7, tokens_in: 12_000, tokens_out: 3_500 };
-		expect(json(spent).metrics).toEqual(metrics);
+		expect(json(spent)).toMatchObject({ metrics, tokens: 15_500 });
 		const id = json(spent).id;
 		const bare = idOf(
 			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
 		);
-		expect(json(await w.call(["wait", id, "--json"])).metrics).toEqual(metrics);
+		expect(json(await w.call(["wait", id, "--json"]))).toMatchObject({
+			metrics,
+			tokens: 15_500,
+		});
 		expect((await w.call(["wait", id])).err).toMatch(/ · 15\.5k tok$/m);
 		expect((await w.call(["wait", bare])).err).not.toMatch(/ · [\d.]+k? tok$/m);
 		const row = json(await w.call(["ls", "--json"])).find(
 			(r: { id: string }) => r.id === id,
 		);
-		expect(row.metrics).toEqual(metrics);
+		expect(row).toMatchObject({ metrics, tokens: 15_500 });
 		expect(row.elapsedMs).toBe(row.settledAt - row.startedAt);
 		const single = json(await w.call(["ls", id, "--json"]));
-		expect(single.metrics).toEqual(metrics);
+		expect(single).toMatchObject({ metrics, tokens: 15_500 });
 		expect(single.elapsedMs).toBe(row.elapsedMs);
 		const listed = (await w.call(["ls"])).out.split("\n");
 		expect(listed[0]).toMatch(
