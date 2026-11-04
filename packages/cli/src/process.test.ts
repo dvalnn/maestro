@@ -96,6 +96,28 @@ describe("a concert in another process", () => {
 		});
 	});
 
+	test("--detach hints the short id on a terminal, and nothing piped or under --json", async () => {
+		const w = await world();
+		const self = [process.execPath, await hanging()];
+		const stderrTerminal = () => ({ columns: 80 });
+		const shown = await w.call(["perform", ...GREET, "--detach"], {
+			self,
+			stderrTerminal,
+		});
+		const id = shown.out;
+		expect(shown.err).toContain(`Follow it: maestro watch ${shortOf(id)}`);
+		expect(id).toHaveLength(id.trim().length);
+		const piped = await w.call(["perform", ...GREET, "--detach"], { self });
+		const doc = await w.call(["perform", ...GREET, "--detach", "--json"], {
+			self,
+			stderrTerminal,
+		});
+		expect(piped.err).not.toContain("Follow it");
+		expect(doc.err).not.toContain("Follow it");
+		for (const out of [id, piped.out, json(doc).id])
+			expect((await w.call(["kill", out])).code).toBe(0);
+	});
+
 	test("is waited on, refused a resume and a prune while running, killed, then resumed from the changed pack without redoing settled nodes", async () => {
 		const w = await world();
 		const child = w.spawn(["perform", ...GREET], await hanging());

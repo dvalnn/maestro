@@ -167,6 +167,7 @@ async function detach(
 	command: string,
 	args: readonly string[],
 	json: boolean,
+	own: Overrides,
 ): Promise<number> {
 	const started = await detached(deps, command, args);
 	if ("exit" in started) {
@@ -175,9 +176,21 @@ async function detach(
 		return started.exit;
 	}
 	deps.stdout(json ? jsonOf(resultDoc(started.id, undefined)) : started.id);
-	if (deps.stderrTerminal && !json)
-		deps.stderr(`Follow it: maestro watch ${started.id}`);
+	if (deps.stderrTerminal && !json) await followHint(deps, own, started.id);
 	return EXIT.ok;
+}
+
+/** Prints how to follow the concert `id`, by the short id the foreground path hints. */
+async function followHint(deps: Deps, own: Overrides, id: string) {
+	await withSession(
+		deps,
+		await locating(deps, own),
+		async (_session, store) => {
+			deps.stderr(
+				`Follow it: maestro watch ${shortIds(store.ids()).label(id, false)}`,
+			);
+		},
+	);
 }
 
 /** A prepared concert: the session it is performed in, what to perform, and how it is recorded. */
@@ -479,7 +492,13 @@ export const perform: Command = {
 	async execute(args, deps) {
 		const early = peek(PERFORM_OPTIONS, args);
 		if (isSet(early, "detach"))
-			return detach(deps, "perform", args, isSet(early, "json"));
+			return detach(
+				deps,
+				"perform",
+				args,
+				isSet(early, "json"),
+				overridesOf(early),
+			);
 		const session = await openSession(deps, overridesOf(early));
 		const start = await begin(session, args);
 		await warned(start);
@@ -511,7 +530,13 @@ export const resume: Command = {
 		);
 		const prefix = only(positionals, "concert", NAME_CONCERT);
 		if (isSet(values, "detach"))
-			return detach(deps, "resume", args, isSet(values, "json"));
+			return detach(
+				deps,
+				"resume",
+				args,
+				isSet(values, "json"),
+				overridesOf(values),
+			);
 		return inStore(
 			deps,
 			overridesOf(values),
@@ -543,9 +568,9 @@ export const encore: Command = {
 			NAME_CONCERT,
 		);
 		const early = peek(PERFORM_OPTIONS, rest);
-		if (isSet(early, "detach"))
-			return detach(deps, "encore", args, isSet(early, "json"));
 		const own = overridesOf(early);
+		if (isSet(early, "detach"))
+			return detach(deps, "encore", args, isSet(early, "json"), own);
 		return inStore(deps, own, isSet(early, "json"), (s, store) =>
 			encored(s, store, prefix, own, rest),
 		);
