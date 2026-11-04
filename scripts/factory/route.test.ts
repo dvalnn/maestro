@@ -455,3 +455,23 @@ test("a PR body names the planner's contract as the one-way door", () => {
 	});
 	expect(body).toContain("**Risk:** high\n\n**One-way door:** the --json flag");
 });
+
+test("a PR body from the writer keeps its sections, then the gaps, risk and review, the spend folded, and closes last", () => {
+	const body = pullBody({
+		issue: 5,
+		spend: [SPENT],
+		tier: "small",
+		risk: "low",
+		gaps: ["no Windows run"],
+		result: { ...ready, related: [7] },
+		pr: "## Summary\n\nx",
+	});
+	expect(body).toStartWith(
+		"## Summary\n\nx\n\n<details><summary>Gaps (1)</summary>",
+	);
+	expect(body).toContain(
+		"**Risk:** low · **Review:** small\n\n<details><summary>Spend: 1m, 10 tokens</summary>",
+	);
+	expect(body).toEndWith("</details>\n\nCloses #5 · relates to #7");
+	expect(body).not.toContain("## Evidence");
+});

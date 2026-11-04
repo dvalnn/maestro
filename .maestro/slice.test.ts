@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type CodeContext, reject } from "@maestro/sdk";
+import {
+	type ArtifactRef,
+	type CodeContext,
+	reject,
+	type Settled,
+} from "@maestro/sdk";
 import { requirePatch, upheldOf } from "./slice";
 import {
 	call,
@@ -133,7 +138,7 @@ test("upheldOf marks each finding unverified when no skeptic ruled on it", () =>
 	expect(upheld).not.toContain("Upheld:");
 });
 
-/** The runtime of each profile a tier seats, as `.maestro/presets/<tier>.yaml` sets it. */
+/** The runtime of each profile a tier seats, as `.maestro/presets/<tier>.yaml` sets it, and the writer's profile. */
 const seated: [string, Record<string, [string, string]>][] = [
 	[
 		"small",
@@ -141,6 +146,7 @@ const seated: [string, Record<string, [string, string]>][] = [
 			"classics/builder": ["claude-sonnet-5-5", "low"],
 			"classics/lens": ["claude-opus-5-5", "medium"],
 			"classics/skeptic": ["claude-sonnet-5-5", "low"],
+			writer: ["claude-haiku-5-5", "high"],
 		},
 	],
 	[
@@ -149,6 +155,7 @@ const seated: [string, Record<string, [string, string]>][] = [
 			"classics/builder": ["claude-sonnet-5-5", "medium"],
 			"classics/lens": ["claude-opus-5-5", "medium"],
 			"classics/consolidator": ["claude-opus-5-5", "medium"],
+			writer: ["claude-haiku-5-5", "high"],
 		},
 	],
 	[
@@ -157,6 +164,7 @@ const seated: [string, Record<string, [string, string]>][] = [
 			"classics/builder": ["claude-opus-5-5", "medium"],
 			"classics/lens": ["claude-sonnet-5-5", "high"],
 			"classics/consolidator": ["claude-opus-5-5", "high"],
+			writer: ["claude-haiku-5-5", "high"],
 		},
 	],
 ];
@@ -294,7 +302,7 @@ const rejecting: [
 	[
 		"small",
 		"skeptic",
-		["classics/builder", "classics/lens", "classics/skeptic"],
+		["classics/builder", "classics/lens", "classics/skeptic", "writer"],
 		{
 			"reviewer/findings.json": {
 				clean: false,
@@ -308,7 +316,7 @@ const rejecting: [
 		(tier): [string, undefined, string[], Record<string, unknown>] => [
 			tier,
 			undefined,
-			["classics/builder", "classics/lens", "classics/consolidator"],
+			["classics/builder", "classics/lens", "classics/consolidator", "writer"],
 			{
 				"lenses/lens/findings.json": {
 					clean: false,
@@ -353,7 +361,7 @@ test.each(rejecting)(
 	},
 );
 
-test("requirePatch returns a changeset that holds a patch and the upheld findings unchanged, and rejects one that holds none", () => {
+test("requirePatch returns a changeset that holds a patch, the upheld findings and the writer's body unchanged, an empty body when the writer failed, and rejects one that holds none", () => {
 	const made = (...files: string[]) => {
 		const dir = mkdtempSync(join(scratch, "changeset-"));
 		for (const f of files) writeFileSync(join(dir, f), "x");
@@ -361,12 +369,23 @@ test("requirePatch returns a changeset that holds a patch and the upheld finding
 	};
 	const ref = { path: "c", contentHash: "sha256:0" };
 	const upheld = { path: "u", contentHash: "sha256:1" };
-	const run = (dir: string) =>
-		requirePatch({ changeset: ref, upheld }, {
+	const pr = { path: "p", contentHash: "sha256:2" };
+	const ctx = mkdtempSync(join(scratch, "result-"));
+	const run = (dir: string, written: Settled<ArtifactRef>[]) =>
+		requirePatch({ changeset: ref, upheld, written }, {
 			path: () => dir,
+			scratch: ctx,
 		} as unknown as CodeContext);
-	expect(run(made("base", "0001.patch"))).toEqual({ changeset: ref, upheld });
-	expect(run(made("base"))).toEqual(reject("the slice changed nothing"));
+	const patched = made("base", "0001.patch");
+	expect(run(patched, [{ outcome: "ok", value: pr }])).toEqual({
+		changeset: ref,
+		upheld,
+		pr,
+	});
+	const failed = run(patched, [{ outcome: "failed", reason: "x" }]);
+	expect(failed).toEqual({ changeset: ref, upheld, pr: join(ctx, "pr.md") });
+	expect(readFileSync(join(ctx, "pr.md"), "utf8")).toBe("");
+	expect(run(made("base"), [])).toEqual(reject("the slice changed nothing"));
 });
 
 test("a stub perform under --preset ordinary --preset stub stubs every seat the presets name", async () => {

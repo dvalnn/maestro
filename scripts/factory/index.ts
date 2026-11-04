@@ -539,6 +539,7 @@ function pullText(
 		upheld: report.upheld,
 		gaps: report.gaps,
 		result,
+		pr: report.pr,
 	});
 	return { title: result.spec.subject, body };
 }

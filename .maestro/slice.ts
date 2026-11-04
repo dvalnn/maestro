@@ -22,8 +22,10 @@ import {
 	extend,
 	fresh,
 	Lane,
+	MarkdownOut,
 	read,
 	Session,
+	seat,
 } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
@@ -59,6 +61,7 @@ import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
 import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
 	type: "text",
 };
+import WRITER from "./slice/prompts/writer.md" with { type: "text" };
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export { survivorsOf, toMarkdown };
@@ -77,6 +80,7 @@ const TASKS = {
 	reviewerAgain: task(REVIEWER_AGAIN, REVIEWER, QUESTIONS, GROUNDS),
 	skeptic: skepticTask(GROUNDS),
 	fix: task(FIX),
+	writer: task(WRITER),
 	/** Each panel tier's lenses, by name, as each lens's task; the consolidator rules by `GROUNDS`. */
 	lenses: {
 		ordinary: {
@@ -160,16 +164,29 @@ export function upheldOf(
 }
 
 /**
- * The changeset and the last round's upheld findings, unchanged, when the changeset holds a patch.
- * A rejection when it holds none, so the slice settles `rejected`.
+ * The changeset, the last round's upheld findings and the writer's PR body, unchanged, when the changeset holds a
+ * patch; the body is empty when the writer delivered none. A rejection when the changeset holds no patch, so the slice
+ * settles `rejected`.
  */
 export function requirePatch(
-	{ changeset, upheld }: { changeset: ArtifactRef; upheld: ArtifactRef },
+	{
+		changeset,
+		upheld,
+		written,
+	}: {
+		changeset: ArtifactRef;
+		upheld: ArtifactRef;
+		written: Settled<ArtifactRef>[];
+	},
 	ctx: CodeContext,
 ) {
 	if (!readdirSync(ctx.path(changeset)).some((f) => f.endsWith(PATCH_EXT)))
 		return reject(NOTHING_CHANGED);
-	return { changeset, upheld };
+	const body = written[0];
+	if (body?.outcome === "ok") return { changeset, upheld, pr: body.value };
+	const pr = join(ctx.scratch, "pr.md");
+	writeFileSync(pr, "");
+	return { changeset, upheld, pr };
 }
 
 const UPHELD = {
@@ -178,6 +195,9 @@ const UPHELD = {
 	clean: Bool(),
 	upheld: Markdown(),
 };
+
+/** The PR body's writer: a cheap seat that only reads the finished change. */
+const writer = seat("writer");
 
 /** The lens of the round before, which a later round's lens continues, and the findings that round upheld. */
 type Earlier = { lens: Ref<string>; upheld: Ref<ArtifactRef> };
@@ -267,7 +287,7 @@ function review(
 export const slice = composition(
 	"slice",
 	{
-		doc: "Build a request in a fresh lane, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset beside the findings its review upheld, failing when it holds no patch.",
+		doc: "Build a request in a fresh lane, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset beside the findings its review upheld and a writer's PR body, empty when the writer failed, failing when it holds no patch.",
 		params: {
 			request: Text({ description: "The brief: what to build" }),
 			tier: Enum(TIERS, { description: "How deep the review goes" }),
@@ -336,13 +356,32 @@ export const slice = composition(
 			max: maxFixes,
 			label: "fixes",
 		});
+		const changes = changeset(reviewed.out.lane, { label: "changes" }).out
+			.changeset;
+		const written = writer({
+			label: "writer",
+			task: TASKS.writer,
+			lane: read(reviewed.out.lane),
+			attachments: {
+				spec: { artifact: spec, hint: "first, for what the change had to do" },
+				patches: {
+					artifact: changes,
+					hint: "for what the change did, patch by patch",
+				},
+				upheld: {
+					artifact: reviewed.out.upheld,
+					hint: "for the findings the review left upheld",
+				},
+			},
+			out: { pr: MarkdownOut("pr.md") },
+		});
 		return code(requirePatch, {
 			in: {
-				changeset: changeset(reviewed.out.lane, { label: "changes" }).out
-					.changeset,
+				changeset: changes,
 				upheld: reviewed.out.upheld,
+				written: allSettled([written.out.pr], { label: "written" }),
 			},
-			out: { changeset: Dir(), upheld: Markdown() },
+			out: { changeset: Dir(), upheld: Markdown(), pr: Markdown() },
 			label: "result",
 		});
 	},

@@ -673,8 +673,8 @@ export const encoreRequest = (request: string, changes: readonly Change[]) =>
 	].join("\n");
 
 /**
- * What a landed slice's PR says: `spend` holds each slice concert of the issue, oldest first, and `upheld` the review's
- * upheld findings as a Markdown list.
+ * What a landed slice's PR says: `spend` holds each slice concert of the issue, oldest first, `upheld` the review's
+ * upheld findings as a Markdown list, and `pr` the body the slice's writer wrote.
  */
 export type Landed = {
 	issue: number;
@@ -684,6 +684,7 @@ export type Landed = {
 	upheld?: string;
 	gaps: readonly string[];
 	result: Triage;
+	pr?: string;
 };
 
 const THOUSAND = 1_000;
@@ -792,17 +793,40 @@ const block = (heading: string, lines: readonly string[]) => [
 	"",
 ];
 
-/** The PR body of a landed slice (factory.md, Rules: PRs). */
+const closing = ({ issue, result }: Landed) =>
+	`Closes #${issue}${result.related?.length ? ` · relates to ${refs(result.related)}` : ""}`;
+
+/** The writer's `pr`, then the gaps, the risk and review, the spend folded, and the closing line last. */
+function writtenBody(landed: Landed, pr: string) {
+	const { spend, gaps, tier } = landed;
+	const [risk, ...door] = dangerLine(landed);
+	const riskLines = [`${risk} · **Review:** ${tier}`, ...door];
+	const total = `${elapsed(sum(spend, (s) => s.elapsedMs))}, ${shorthand(sum(spend, tokenTotal))} tokens`;
+	return [
+		pr,
+		"",
+		...gapLines(gaps),
+		...riskLines,
+		"",
+		`<details><summary>Spend: ${total}</summary>`,
+		"",
+		...spendLines(spend),
+		"",
+		"</details>",
+		"",
+		closing(landed),
+	].join("\n");
+}
+
+/** The PR body of a landed slice: the writer's when it wrote one, else one built from the tick's data (factory.md, Rules: PRs). */
 export function pullBody(landed: Landed) {
-	const { issue, spend, gaps, result } = landed;
-	const related = result.related?.length
-		? ` · relates to ${refs(result.related)}`
-		: "";
+	if (landed.pr) return writtenBody(landed, landed.pr);
+	const { spend, gaps, result } = landed;
 	const decisions = list(
 		(result.spec?.decisions ?? []).map((d) => oneLine(d.lead)),
 	);
 	return [
-		`Closes #${issue}${related}`,
+		closing(landed),
 		"",
 		...block("Summary", [
 			result.spec?.subject ?? "",

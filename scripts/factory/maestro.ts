@@ -35,6 +35,8 @@ export type Report = {
 	obstacles: string[];
 	gaps: string[];
 	upheld?: string;
+	/** The PR body the slice's writer wrote. */
+	pr?: string;
 };
 
 /** maestro as the tick sees it, through its `--json` documents. */
@@ -111,17 +113,23 @@ function spendOf(doc: unknown): Spend {
 	};
 }
 
-/** The body of the `upheld` output of a `wait <concert> --json` document, under the concert's `artifacts`. */
-function upheldOf(doc: unknown): string | undefined {
+/** The text of output `name` of a `wait <concert> --json` document, under the concert's `artifacts`, trimmed. */
+function outputText(doc: unknown, name: string): string | undefined {
 	if (!isJson(doc) || typeof doc.artifacts !== "string") return undefined;
-	const upheld = isJson(doc.outputs) ? doc.outputs.upheld : undefined;
-	if (!isJson(upheld) || typeof upheld.path !== "string") return undefined;
-	const path = join(doc.artifacts, upheld.path);
-	if (!existsSync(path)) return undefined;
-	return readFileSync(path, "utf8")
-		.replace(/^# .*\n/, "")
-		.trim();
+	const output = isJson(doc.outputs) ? doc.outputs[name] : undefined;
+	if (!isJson(output) || typeof output.path !== "string") return undefined;
+	const path = join(doc.artifacts, output.path);
+	return existsSync(path) ? readFileSync(path, "utf8").trim() : undefined;
 }
+
+/** The body of the `upheld` output of a `wait <concert> --json` document, under its heading. */
+const upheldOf = (doc: unknown) =>
+	outputText(doc, "upheld")
+		?.replace(/^# .*\n/, "")
+		.trim();
+
+/** The writer's PR body in the `pr` output of a `wait <concert> --json` document, when it wrote one. */
+const prOf = (doc: unknown) => outputText(doc, "pr") || undefined;
 
 /** What a perform that started no concert printed: its error, else its refusal's diagnostics, one per line. */
 function refusal(doc: unknown): string {
@@ -198,6 +206,7 @@ export function maestro(bin = "maestro"): Maestro {
 				obstacles: entriesOf(doc.reports, "obstacles"),
 				gaps: entriesOf(doc.reports, "gaps"),
 				upheld: upheldOf(result),
+				pr: prOf(result),
 			};
 		},
 		spend: async (id) => spendOf(await json(bin, ["ls", id])),

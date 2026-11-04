@@ -1,0 +1,2 @@
+runtime: { harness: claude, model: claude-haiku-5-5, thinking: high }
+limits: { timeout: 15m, tokens: 3000000 }
