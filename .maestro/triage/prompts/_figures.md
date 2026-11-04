@@ -1,7 +1,7 @@
 ## Figures
 
 A figure draws the change's shape. Its notes are the design calls it shows, each pointed at by a superscript (`¹`, `²`)
-in a label. Draw first, then write: a call a figure shows is a note on it, not a decision beside it. The owner reads the
+in a label. Draw first, then write: a call a figure shows is a note on it, not prose beside it. The owner reads the
 rendered figure; agents read its source and notes as text, so a figure says in a few lines what a paragraph would.
 
 Pick the kind by what the change does to the system. Most changes need one figure or none, and none needs more than two.
@@ -12,21 +12,20 @@ Pick the kind by what the change does to the system. Most changes need one figur
 | `sequence`    | `sequenceDiagram` | a flow across seams is new or changes order                               |
 | `state`       | `flowchart`       | a lifecycle gains or changes a state or a move                            |
 | `interface`   | `classDiagram`    | a module's public interface grows or shrinks: its depth, before and after |
-| `contract`    | `classDiagram`    | the change sets the one-way door it names in `contract`: its shape after  |
+| `contract`    | `classDiagram`    | the change sets or changes a one-way door: its shape after                |
 | `composition` | `flowchart`       | a concert gains, drops or rewires a seat                                  |
 | `call-tree`   | `diff`            | no template fits, and the point is a call added, dropped or moved         |
 | `file-tree`   | `diff`            | no template fits, and the point is files added, moved or split            |
 | `pseudocode`  | `diff`            | no template fits, and the point is logic in one place                     |
 
-When no sketch says it faster than a sentence, draw nothing. Never write Mermaid outside these skeletons. A split's
-order is drawn from `dependsOn` for you.
+When no sketch says it faster than a sentence, draw nothing. Never write Mermaid outside these skeletons.
 
 ### Figure rules
 
 1. **Text stays complete.** Every fact a figure shows is in a label or a note, so the spec reads whole unrendered.
-   Colour, bold and dotted lines never carry a fact alone; the `caption` says what each styling means, or is "".
+   Colour, bold and dotted lines never carry a fact alone; the caption says what each styling means, or is empty.
 2. **Labels are tags.** A node is a name (`route.ts`), an edge one to three words (`[tick] PR`). Detail goes in a note.
-3. **Notes.** Superscripts run `¹` on in source order; `notes` holds the note of each, in order, one fact each, a
+3. **Notes.** Superscripts run `¹` on in source order; the notes give each its note, in order, one fact each, a
    reference as a plain last note "In <path>".
 4. **One idea per figure,** a dozen nodes at most. Draw only the modules, calls and states the change touches.
 5. **Parse-safe labels.** Quote any flowchart label with spaces or punctuation; a `classDiagram` relation label stays

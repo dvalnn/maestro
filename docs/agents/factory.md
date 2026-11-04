@@ -399,15 +399,18 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
   held, with the subject from the spec and `Closes #N`. The PR, to `main` or to the dependency's branch while stacked,
   is titled with the subject. The slice's last seat, a writer on a cheap model, reads the spec, the patches and the
-  upheld findings and writes Summary (a sketch of the change), Evidence (before and after) and Merge Danger (door and
-  blast radius). Below it the tick adds the agents' gaps folded under `<details>`; one line of risk, area and review
-  tier, with the planner's contract as the one-way door; the spend folded under `<details>` (a row per slice concert of
-  the ticket's tour, a build or an encore as its record says, with time and tokens in k/M shorthand, then a total); and
-  `Closes #N` with the `Relates to` links last. A writer that fails costs the build nothing: the tick then builds the
-  body from its data alone, with the subject and each decision's lead as Summary, and the acceptance commands as the
-  gate with the review's upheld findings as Evidence. Every landing, an encore's included, rewrites the body of the PR
-  already open on the branch. A restack force-pushes the branch and retargets the PR, or opens it again with the same
-  body when the forge closed it.
+  upheld findings and writes the body in the form the spec picks, drawing with the planner's figure kinds. A direct
+  spec, with no requirements, gets Context, Shape (a figure footnoted with the builder's calls), Evidence (before and
+  after) and Merge Danger (door and blast radius); a specced one gets Summary (built to spec, shape unchanged or not),
+  Evidence (a row per requirement to the test that pins it), Off spec (a line per drift) and Merge Danger. Below it the
+  tick adds the agents' gaps folded under `<details>`; one line of risk, area and review tier, with the planner's
+  contract as the one-way door; the spend folded under `<details>` (a row per slice concert of the ticket's tour, a
+  build or an encore as its record says, with time and tokens in k/M shorthand, then a total); and `Closes #N` with the
+  `Relates to` links last. A writer that fails costs the build nothing: the tick then builds the body from its data
+  alone, with the subject and each decision's lead as Summary, and the acceptance commands as the gate with the review's
+  upheld findings as Evidence. Every landing, an encore's included, rewrites the body of the PR already open on the
+  branch. A restack force-pushes the branch and retargets the PR, or opens it again with the same body when the forge
+  closed it.
 
 ## Setting up
 

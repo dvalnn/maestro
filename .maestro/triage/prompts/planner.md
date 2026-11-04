@@ -59,7 +59,8 @@ them:
   choice where another option was live, or a fact the owner has to approve, that no figure's note already states; leave
   out calls, statement order and shell lines, which the builder works out. Either list may be empty.
 - `children`, for `split`: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split
-  only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
+  only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long. Their
+  order is drawn from `dependsOn` for you.
 - `related`: the backlog issues it relates to.
 
 You do not ask the owner: the triager has. Settle what the ask, the replies and the code leave open with the simplest
