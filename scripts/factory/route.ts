@@ -864,7 +864,7 @@ export function reportIssue(text: string, found: number) {
 	return { title, body: body.join("\n") };
 }
 
-/** A change to the standing text a harvest proposes, with the lessons it merges. */
+/** A change a harvest proposes to the factory's standing text or code, with the lessons it merges. */
 export type Proposal = {
 	target: string;
 	title: string;

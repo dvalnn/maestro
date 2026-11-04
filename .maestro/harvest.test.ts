@@ -78,22 +78,23 @@ const one = {
 const proposing = (...proposals: object[]) => ({ proposals });
 
 const outputs: [string, object, boolean][] = [
-	["CLAUDE.md", proposing({ ...one, target: "CLAUDE.md" }), true],
 	["CODING_STANDARDS.md", proposing(one), true],
 	[
-		"a profile's instructions",
-		proposing({ ...one, target: ".maestro/profiles/triager/instructions.md" }),
+		"a prompt",
+		proposing({ ...one, target: ".maestro/slice/prompts/_grounds.md" }),
+		true,
+	],
+	[
+		"the tick's code",
+		proposing({ ...one, target: "scripts/factory/route.ts" }),
 		true,
 	],
 	["a new ADR", proposing({ ...one, target: "docs/adr/" }), true],
 	["no proposals", proposing(), true],
 	["README.md", proposing({ ...one, target: "README.md" }), false],
 	["a named ADR", proposing({ ...one, target: "docs/adr/0020-x.md" }), false],
-	[
-		"a nested profile path",
-		proposing({ ...one, target: ".maestro/profiles/a/b/instructions.md" }),
-		false,
-	],
+	["CLAUDE.md", proposing({ ...one, target: "CLAUDE.md" }), false],
+	["another script", proposing({ ...one, target: "scripts/pack.ts" }), false],
 	["no lessons", proposing({ ...one, lessons: [] }), false],
 	["no body", proposing({ ...one, body: undefined }), false],
 	["an extra field", proposing({ ...one, extra: 1 }), false],
