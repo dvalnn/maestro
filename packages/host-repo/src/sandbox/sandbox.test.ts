@@ -11,8 +11,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bubblewrap, isExecutable, runProcesses } from "./bubblewrap";
-import { mountPlan, type SandboxSpec } from "./index";
+import {
+	bubblewrap,
+	canOverlay,
+	isExecutable,
+	runProcesses,
+} from "./bubblewrap";
+import { type Bind, mountPlan, type SandboxSpec } from "./index";
 import { bwrapArgs } from "./plan";
 
 const dirs: string[] = [];
@@ -86,7 +91,7 @@ describe("confinement", () => {
 			).toThrow(/inside the lane/);
 	});
 
-	test("the mount plan names every writable mount, adapter paths included", () => {
+	test("the mount plan names every writable mount, adapter paths and overlays included", () => {
 		const lane = tmp("lane");
 		const cfg = tmp("cfg");
 		const plan = mountPlan({
@@ -94,15 +99,94 @@ describe("confinement", () => {
 			argv: [],
 			readOnly: [{ src: "/usr/share" }],
 			writable: [{ src: cfg, dst: "/cfg" }],
+			overlays: [{ src: tmp("cache"), dst: "/cache" }],
 		});
 		const writable = plan
-			.filter((m) => m.kind === "bind" || m.kind === "tmpfs")
+			.filter((m) => ["bind", "tmpfs", "overlay"].includes(m.kind))
 			.map((m) => `${m.origin}:${m.dst}`);
-		expect(writable).toEqual(["system:/tmp", "adapter:/cfg", "lane:/lane"]);
+		expect(writable).toEqual([
+			"system:/tmp",
+			"declared:/cache",
+			"adapter:/cfg",
+			"lane:/lane",
+		]);
 		expect(plan.find((m) => m.dst === "/usr/share")).toMatchObject({
 			kind: "ro-bind",
 			origin: "declared",
 		});
+	});
+
+	test("an overlay is readable and writable inside, and its source is unchanged after the run", async () => {
+		const src = tmp("cache");
+		writeFileSync(join(src, "f.txt"), "hello");
+		const { out, exit } = await sh(
+			"cat /cache/f.txt; echo; echo x > /cache/f.txt && echo y > /cache/new && cat /cache/f.txt /cache/new",
+			{ overlays: [{ src, dst: "/cache" }] },
+		);
+		expect(exit.code).toBe(0);
+		expect(out).toEqual(["hello", "x", "y"]);
+		expect(fs.readdirSync(src)).toEqual(["f.txt"]);
+		expect(readFileSync(join(src, "f.txt"), "utf8")).toBe("hello");
+	});
+
+	test("an overlay whose source is missing, inside the lane, or whose destination is in the lane is rejected", () => {
+		const lane = tmp("lane");
+		mkdirSync(join(lane, "sub"));
+		const cases: [Bind, RegExp][] = [
+			[{ src: "/no/such/dir", dst: "/cache" }, /does not exist/],
+			[{ src: join(lane, "sub"), dst: "/cache" }, /inside the lane/],
+			[{ src: tmp("cache"), dst: "/lane/c" }, /lane's area/],
+		];
+		for (const [overlay, error] of cases)
+			expect(() => mountPlan({ lane, argv: [], overlays: [overlay] })).toThrow(
+				error,
+			);
+	});
+
+	test("the installed bwrap can overlay", () => {
+		expect(canOverlay()).toBe(true);
+	});
+
+	/** What `script` prints, run in a fresh process (the probe caches) whose PATH holds only `bin`. */
+	const withPath = (bin: string, script: string) =>
+		Bun.spawnSync(
+			[
+				process.execPath,
+				"-e",
+				`import { bubblewrap, canOverlay } from ${JSON.stringify(join(import.meta.dir, "bubblewrap.ts"))};\n${script}`,
+			],
+			{ env: { PATH: bin }, cwd: tmp("cwd") },
+		)
+			.stdout.toString()
+			.trim();
+
+	/** A directory holding a bwrap whose help, as bwrap before 0.10's, names no `--overlay-src`. */
+	const oldBwrap = () => {
+		const bin = tmp("bin");
+		writeFileSync(
+			join(bin, "bwrap"),
+			"#!/bin/sh\necho 'usage: bwrap [OPTIONS...] [--] COMMAND [ARGS...]'\n",
+		);
+		chmodSync(join(bin, "bwrap"), 0o755);
+		return bin;
+	};
+
+	test.each([
+		["bwrap's help names no --overlay-src", oldBwrap],
+		["bwrap is not on PATH", () => tmp("bin")],
+	])("canOverlay() is false when %s", (_, bin) => {
+		expect(withPath(bin(), "console.log(canOverlay());")).toBe("false");
+	});
+
+	test("a sandbox with overlays does not start when bwrap cannot overlay, and says how to fix it", () => {
+		const lane = tmp("lane");
+		const src = tmp("cache");
+		const out = withPath(
+			oldBwrap(),
+			`try { bubblewrap.start(${JSON.stringify({ lane, argv: ["true"], overlays: [{ src, dst: "/cache" }] })}); console.log("started"); } catch (e) { console.log(e.name, e.message); }`,
+		);
+		expect(out).toStartWith("SandboxUnavailable ");
+		expect(out).toEndWith("Upgrade bubblewrap to 0.10 or later");
 	});
 
 	test("an adapter-declared writable path outside the lane is writable", async () => {
@@ -285,6 +369,25 @@ describe("policy", () => {
 			"/lane",
 			"--",
 			"true",
+		]);
+	});
+
+	test("an overlay maps to an overlay source and a tmpfs overlay at its destination", () => {
+		const src = tmp("cache");
+		const args = bwrapArgs(
+			mountPlan({
+				lane: tmp("lane"),
+				argv: [],
+				overlays: [{ src, dst: "/cache" }],
+			}),
+			["true"],
+		);
+		const at = args.indexOf("--overlay-src");
+		expect(args.slice(at, at + 4)).toEqual([
+			"--overlay-src",
+			src,
+			"--tmp-overlay",
+			"/cache",
 		]);
 	});
 

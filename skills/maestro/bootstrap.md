@@ -33,7 +33,10 @@ bootstrap meets. Done when `maestro compose <c>` exits 0 for the composition the
    - `target.prepare`: the commands a fresh checkout needs before those commands work, such as a dependency install
      (`bun install`, `uv sync`), in a check's forms. It runs in the sandbox, network included, in every lane checked out
      from a commit, before the node's work. What it makes must be ignored by the repository's `.gitignore`; any other
-     change, or a non-zero exit, fails the node.
+     change, or a non-zero exit, fails the node. Its long form may take `cache: { path, at, env }`, a host package cache
+     (`path`, absolute or `~/`) the lines read at `at` through an overlay whose writes die with the lane's sandbox,
+     `env` naming `at` to them, as `BUN_INSTALL_CACHE_DIR`; without `path` or bwrap 0.10+ prepare runs without it. Lanes
+     trust what the cache holds.
    - `target.sparse`: in a monorepo, the directories the work needs, relative to the repository root (git's cone mode),
      or `{ patterns: [...] }` of gitignore-style patterns when directories cannot say it, as `/*`, `!/docs/`,
      `/docs/api.md` for the root files and one file under `docs/`. Lanes check out only those, before prepare runs;
@@ -78,7 +81,9 @@ target:
   repo: /home/me/src/shop # absolute path of the repository lanes are cut from
   base: main # optional; else the target's HEAD
   sparse: [packages/shop, packages/ui] # optional: lanes check out only these directories, or { patterns: [...] }
-  prepare: bun install --frozen-lockfile # optional: runs in every new lane, in any form a check takes
+  prepare: # optional: runs in every new lane, in any form a check takes
+    run: bun install --frozen-lockfile
+    cache: { path: ~/.bun/install/cache, at: /cache, env: BUN_INSTALL_CACHE_DIR } # optional: a host cache, overlaid
   checks:
     test: bun test # short form: one shell line
     lint: [bunx biome check ., bunx tsc --noEmit] # list form: lines in order, the first failing one stops

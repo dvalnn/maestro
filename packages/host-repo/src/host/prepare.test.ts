@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import {
 	existsSync,
 	mkdirSync,
@@ -6,11 +6,14 @@ import {
 	readFileSync,
 	writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG } from "@maestro/core/config";
 import { openRecord } from "@maestro/core/perform";
 import { OUTBOX } from "../harness/index";
+import * as sandbox from "../sandbox/index";
+import { repoSetup } from "./config";
 import { TAIL_LINES } from "./run-lines";
 import { openTarget } from "./store";
 import {
@@ -162,6 +165,87 @@ describe("target.prepare", () => {
 		expect(await changed(config, target, `${id}.e`)).toBe("");
 	});
 
+	test("a cache at an existing host path is read and written at its variable in prepare alone, and the host directory gains no file", async () => {
+		const cache = tmp("cache");
+		writeFileSync(join(cache, "pkg"), "cached\n");
+		const marks = tmp("marks");
+		const { host } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				inline("x", fresh, {
+					run: `echo "\${C_DIR-unset}" > ${marks}/check`,
+					writable: [marks],
+				}),
+			],
+			"x",
+		);
+		const config = prepared(toyTarget(), {
+			run: [`cat "$C_DIR/pkg" > ${marks}/read`, `touch "$C_DIR/new"`],
+			writable: [marks],
+			cache: { path: cache, at: "/c", env: "C_DIR" },
+		});
+		const { result } = await performed(host, ir, config);
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(readFileSync(join(marks, "read"), "utf8")).toBe("cached\n");
+		expect(readdirSync(cache)).toEqual(["pkg"]);
+		expect(readFileSync(join(marks, "check"), "utf8")).toBe("unset\n");
+	});
+
+	test("a cache whose host path does not exist is skipped: prepare succeeds with its variable unset", async () => {
+		const marks = tmp("marks");
+		const { host } = stubHost(() => [OK]);
+		const ir = irOf(host, [inline("x", fresh, "true")], "x");
+		const config = prepared(toyTarget(), {
+			run: `echo "\${C_DIR-unset}" > ${marks}/seen`,
+			writable: [marks],
+			cache: { path: join(tmp("gone"), "missing"), at: "/c", env: "C_DIR" },
+		});
+		const { result } = await performed(host, ir, config);
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(readFileSync(join(marks, "seen"), "utf8")).toBe("unset\n");
+	});
+
+	test("a cache is skipped when bwrap cannot overlay: prepare succeeds with its variable unset", async () => {
+		const marks = tmp("marks");
+		const { host } = stubHost(() => [OK]);
+		const ir = irOf(host, [inline("x", fresh, "true")], "x");
+		const config = prepared(toyTarget(), {
+			run: `echo "\${C_DIR-unset}" > ${marks}/seen`,
+			writable: [marks],
+			cache: { path: tmp("cache"), at: "/c", env: "C_DIR" },
+		});
+		const probe = spyOn(sandbox, "canOverlay").mockReturnValue(false);
+		try {
+			const { result } = await performed(host, ir, config);
+			expect(result).toMatchObject({ outcome: "ok" });
+		} finally {
+			probe.mockRestore();
+		}
+		expect(readFileSync(join(marks, "seen"), "utf8")).toBe("unset\n");
+	});
+
+	test.each(["/lanes", "/lane-cache"])(
+		"a cache at %s, beside the lane, parses",
+		(at) => {
+			const cache = { path: "/tmp", at, env: "C_DIR" };
+			const config = prepared(toyTarget(), { run: "true", cache });
+			expect(repoSetup(setupOf(config)).target?.prepare?.cache).toEqual(cache);
+		},
+	);
+
+	test("a cache path under ~/ is the host user's home", () => {
+		const config = prepared(toyTarget(), {
+			run: "true",
+			cache: { path: "~/x", at: "/c", env: "C_DIR" },
+		});
+		expect(repoSetup(setupOf(config)).target?.prepare?.cache).toEqual({
+			path: join(homedir(), "x"),
+			at: "/c",
+			env: "C_DIR",
+		});
+	});
+
 	test.each([
 		["exit 1", undefined, 1, "45"],
 		["no-such-command", undefined, 127, "sh: .*no-such-command: .*not found"],
@@ -304,6 +388,30 @@ describe("target.prepare", () => {
 			"a bad prepare shape",
 			() => ({ prepare: { run: [] } }),
 			{ code: "CFG.schema", message: "config 'target.prepare" },
+		],
+		...(
+			[
+				["at the root", { path: "/tmp", at: "/", env: "C" }],
+				["at the lane", { path: "/tmp", at: "/lane", env: "C" }],
+				["in the lane", { path: "/tmp", at: "/lane/c", env: "C" }],
+				["with a relative path", { path: "rel", at: "/c", env: "C" }],
+			] as const
+		).map(
+			([what, cache]) =>
+				[
+					`a prepare cache ${what}`,
+					() => ({ prepare: { run: "true", cache } }),
+					{ code: "CFG.schema", message: "config 'target.prepare" },
+				] as const,
+		),
+		[
+			"a cache on a check",
+			() => ({
+				checks: {
+					c: { run: "true", cache: { path: "/tmp", at: "/c", env: "C" } },
+				},
+			}),
+			{ code: "CFG.schema", message: "config 'target.checks" },
 		],
 		[
 			"a bad prepare timeout",

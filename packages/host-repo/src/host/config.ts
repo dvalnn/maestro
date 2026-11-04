@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { KeyPath } from "@maestro/core/config";
 import type { HostSetup } from "@maestro/core/host";
 import {
@@ -73,6 +75,28 @@ const INLINE_CHECK = {
 	},
 } as const;
 const CHECK = { anyOf: [LINES, INLINE_CHECK] } as const;
+/** The target's prepare: a check that may also overlay a host cache. */
+const PREPARE = {
+	anyOf: [
+		LINES,
+		{
+			...INLINE_CHECK,
+			properties: {
+				...INLINE_CHECK.properties,
+				cache: {
+					type: "object",
+					required: ["path", "at", "env"],
+					additionalProperties: false,
+					properties: {
+						path: { type: "string", pattern: "^(/|~/)" },
+						at: { type: "string", pattern: "^/(?!lane(/|$))[^\\n]+$" },
+						env: { type: "string", pattern: ENV_NAME },
+					},
+				},
+			},
+		},
+	],
+} as const;
 
 /** The host's config key paths that hold file paths. */
 export const HOST_PATHS: readonly KeyPath[] = [
@@ -93,7 +117,7 @@ export const HOST_CONFIG = {
 			repo: NAME,
 			base: NAME,
 			checks: { type: "object", additionalProperties: CHECK },
-			prepare: CHECK,
+			prepare: PREPARE,
 			sparse: {
 				anyOf: [
 					{ type: "array", items: NAME, minItems: 1, uniqueItems: true },
@@ -299,6 +323,8 @@ type RawLongCheck = {
 
 type RawCheck = string | string[] | RawLongCheck;
 
+type RawPrepare = RawCheck | (RawLongCheck & { cache?: PrepareCache });
+
 /** A check node's config, its inline check parsed. */
 export type CheckConfig = { lane: LaneInput; check?: string | CheckSpec };
 
@@ -307,18 +333,27 @@ type RawSetup = {
 		repo: string;
 		base?: string;
 		checks?: Record<string, RawCheck>;
-		prepare?: RawCheck;
+		prepare?: RawPrepare;
 		sparse?: Sparse;
 	};
 	sandbox?: { readOnly?: string[]; path?: string[] };
 };
+
+/**
+ * A host directory, absolute, overlaid at `at` for the target's prepare, whose lines are told `at` in `env`. Writes
+ * to it die with the sandbox.
+ */
+export type PrepareCache = { path: string; at: string; env: string };
+
+/** The target's prepare: a check, and the host cache it may overlay. */
+export type PrepareSpec = CheckSpec & { cache?: PrepareCache };
 
 export type Target = {
 	repo: string;
 	base?: string;
 	checks: Record<string, CheckSpec>;
 	/** Run in every lane checked out from a commit, before its node's own work. */
-	prepare?: CheckSpec;
+	prepare?: PrepareSpec;
 	/** Cone-mode directories, relative to the repository root, or `patterns`, that every checked-out lane is narrowed to. */
 	sparse?: Sparse;
 };
@@ -380,6 +415,19 @@ function checkSpec(raw: RawCheck, label = "check"): CheckSpec {
 	};
 }
 
+/** The prepare `raw` gives, a leading `~/` of its cache path expanded to the host user's home. */
+function prepareSpec(raw: RawPrepare): PrepareSpec {
+	const spec = checkSpec(raw, "target.prepare");
+	if (typeof raw !== "object" || Array.isArray(raw) || !("cache" in raw))
+		return spec;
+	const { cache } = raw;
+	if (!cache) return spec;
+	const path = cache.path.startsWith("~/")
+		? join(homedir(), cache.path.slice(2))
+		: cache.path;
+	return { ...spec, cache: { ...cache, path } };
+}
+
 function targetOf(raw: RawSetup["target"]): Target | undefined {
 	if (!raw) return undefined;
 	const { prepare, ...rest } = raw;
@@ -390,7 +438,7 @@ function targetOf(raw: RawSetup["target"]): Target | undefined {
 		...rest,
 		checks: Object.fromEntries(checks),
 		...(prepare !== undefined && {
-			prepare: checkSpec(prepare, "target.prepare"),
+			prepare: prepareSpec(prepare),
 		}),
 	};
 }

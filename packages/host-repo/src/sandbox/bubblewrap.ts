@@ -54,6 +54,21 @@ export function isExecutable(path: string): boolean {
 	}
 }
 
+let overlays: boolean | undefined;
+
+/** Whether the installed bwrap can mount overlays (bwrap 0.10+), probed once by its help naming `--overlay-src`. */
+export function canOverlay(): boolean {
+	if (overlays === undefined) {
+		const bwrap = Bun.which("bwrap");
+		overlays =
+			bwrap !== null &&
+			Bun.spawnSync([bwrap, "--help"])
+				.stdout.toString()
+				.includes("--overlay-src");
+	}
+	return overlays;
+}
+
 function killQuietly(pid: number) {
 	try {
 		process.kill(pid, "SIGKILL");
@@ -100,6 +115,10 @@ export const bubblewrap: SandboxBackend = {
 		if (!isExecutable(SANDBOX_SHELL))
 			throw new SandboxUnavailable(
 				`${SANDBOX_SHELL} is missing or not executable, and every sandbox runs under it. Install bash at ${SANDBOX_SHELL}`,
+			);
+		if (spec.overlays?.length && !canOverlay())
+			throw new SandboxUnavailable(
+				"bubblewrap (bwrap) cannot mount overlays. Upgrade bubblewrap to 0.10 or later",
 			);
 		const args = bwrapArgs(mountPlan(spec), spec.argv); // validates the mount policy before anything runs
 

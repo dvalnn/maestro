@@ -622,7 +622,11 @@ This host carries the concepts that sssf entangled with its engine. The vocabula
   `target.prepare line 1 exited 7: registry unreachable`; a check line's reason does the same. Its lines see
   `MAESTRO_LANE_BASE` as a check's do, overriding a configured `env` entry of that name. Any line that does not exit 0
   fails the node, never rejects it. Prepare is environment, not input, so neither it nor its binds enter the resume key
-  (ADR 0011).
+  (ADR 0011). Its long form alone takes `cache: { path, at, env }`: the host directory `path` (absolute, or `~/` for the
+  host user's home), overlaid at `at` (not in `/lane`) through a layer whose writes die with the sandbox, with `env` set
+  to `at` for its lines, overriding a configured `env` entry of that name. It is mounted only when `path` exists and the
+  installed bwrap can overlay (0.10 or later); otherwise prepare runs without it or its variable. The cache is trusted
+  as it stands, because a package manager may not re-verify its entries.
 
 **Sandbox**
 

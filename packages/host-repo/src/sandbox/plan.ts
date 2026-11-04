@@ -36,9 +36,10 @@ function resolveBind(b: Bind, what: string): { src: string; dst: string } {
 }
 
 /**
- * The full set of mounts for a spec, in the order they are applied. This is the whole confinement policy: the
- * writable mounts are exactly the `bind` and `tmpfs` entries.
- * @throws if a bind path is relative, missing or lands at `/` or in the lane, or a read-only source is inside the lane.
+ * The full set of mounts for a spec, in the order they are applied. This is the whole confinement policy: the `bind`
+ * entries are the only host paths a sandbox can write; writes to `tmpfs` and `overlay` entries die with it.
+ * @throws if a bind path is relative, missing or lands at `/` or in the lane, or a read-only or overlay source is
+ * inside the lane.
  */
 export function mountPlan(spec: SandboxSpec): Mount[] {
 	const plan: Mount[] = [
@@ -51,15 +52,27 @@ export function mountPlan(spec: SandboxSpec): Mount[] {
 			plan.push({ kind: "ro-bind", src: p, dst: p, origin: "system" });
 	}
 	const laneReal = realpathSync(spec.lane);
-	for (const b of spec.readOnly ?? []) {
-		const bind = resolveBind(b, "read-only");
+	const outsideLane = (b: Bind, what: string) => {
+		const bind = resolveBind(b, what);
 		const real = realpathSync(bind.src); // follows symlinks, so a link into the lane is caught too
 		if (real === laneReal || real.startsWith(`${laneReal}/`))
 			throw new Error(
-				`read-only bind source is inside the lane: ${b.src}. Bind a path outside the lane`,
+				`${what} bind source is inside the lane: ${b.src}. Bind a path outside the lane`,
 			);
-		plan.push({ kind: "ro-bind", ...bind, origin: "declared" });
-	}
+		return bind;
+	};
+	for (const b of spec.readOnly ?? [])
+		plan.push({
+			kind: "ro-bind",
+			...outsideLane(b, "read-only"),
+			origin: "declared",
+		});
+	for (const b of spec.overlays ?? [])
+		plan.push({
+			kind: "overlay",
+			...outsideLane(b, "overlay"),
+			origin: "declared",
+		});
 	for (const b of spec.writable ?? [])
 		plan.push({
 			kind: "bind",
@@ -81,6 +94,8 @@ export function bwrapArgs(plan: Mount[], argv: string[]): string[] {
 	for (const m of plan) {
 		if (m.kind === "ro-bind") a.push("--ro-bind", m.src as string, m.dst);
 		else if (m.kind === "bind") a.push("--bind", m.src as string, m.dst);
+		else if (m.kind === "overlay")
+			a.push("--overlay-src", m.src as string, "--tmp-overlay", m.dst);
 		else a.push(`--${m.kind}`, m.dst);
 	}
 	// The root is a tmpfs bwrap builds, writable by default. Only after the last bind: binds keep their own flags.

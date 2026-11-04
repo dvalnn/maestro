@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type {
 	HostContext,
 	HostInstance,
@@ -5,12 +6,12 @@ import type {
 } from "@maestro/core/host";
 import { MAESTRO_TYPE, type Ports } from "@maestro/ir";
 import { DEFAULT_BASE, type Lane, type Version } from "../lane/index";
-import type { Bind } from "../sandbox/index";
+import { type Bind, canOverlay } from "../sandbox/index";
 import {
-	type CheckSpec,
 	LANE_PORT,
 	LANE_TYPE,
 	type LaneInput,
+	type PrepareSpec,
 	type RepoSetup,
 } from "./config";
 import type { Live } from "./live";
@@ -85,15 +86,21 @@ function changeList(files: string[]): string {
 
 /**
  * Runs `spec`, the target's prepare, in `lane`'s sandbox as a check runs, emitting an event as each line starts and ends.
+ * Its cache is overlaid and named in its variable only when the host path exists and bwrap can overlay; else the
+ * lines run without it.
  * @throws Error when a line does not exit 0, or the lines changed content `seal` would record.
  */
 async function prepare(
 	lane: Lane,
 	setup: RepoSetup,
-	spec: CheckSpec,
+	{ cache, ...spec }: PrepareSpec,
 	run: InstanceRun,
 ) {
 	const s = sandboxed(lane, setup, run.live);
+	if (cache && existsSync(cache.path) && canOverlay()) {
+		s.overlays = [{ src: cache.path, dst: cache.at }];
+		spec.env = { ...spec.env, [cache.env]: cache.at };
+	}
 	const { outcome, reason } = await runLines(s, PREPARE, spec, {
 		start: (start) => run.emit({ kind: "prepare", ...start }),
 		end: ({ output, ...end }) =>
@@ -152,6 +159,7 @@ export const sandboxed = (
 	path: setup.path,
 	readOnly: readOnlyBinds(lane, setup.readOnly),
 	writable: [],
+	overlays: [],
 	live,
 	log: [],
 });

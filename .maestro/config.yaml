@@ -2,7 +2,9 @@ target:
   repo: .
   base: main
   # bun and just come from the tool PATH the user config's `sandbox.path` sets, as their install paths are machine-specific.
-  prepare: bun install --frozen-lockfile
+  prepare:
+    run: bun install --frozen-lockfile
+    cache: { path: ~/.bun/install/cache, at: /cache, env: BUN_INSTALL_CACHE_DIR }
   checks:
     all:
       run: just check

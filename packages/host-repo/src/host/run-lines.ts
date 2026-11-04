@@ -46,7 +46,7 @@ export const checkEnv = (spec: CheckSpec, base: string, output?: string) => ({
 });
 
 /**
- * Where lines run: the lane at `dir`, cut from `base`, their PATH, the binds beside it, and
+ * Where lines run: the lane at `dir`, cut from `base`, their PATH, the binds and overlays beside it, and
  * the log their output goes to.
  */
 export type Sandboxed = {
@@ -55,6 +55,8 @@ export type Sandboxed = {
 	path: string;
 	readOnly: Bind[];
 	writable: Bind[];
+	/** Host directories seen through a layer whose writes die with the sandbox. */
+	overlays: Bind[];
 	/** The writable directory a check's lines are told in `MAESTRO_CHECK_OUTPUT`, when it has one. */
 	output?: string;
 	live: Live;
@@ -118,6 +120,7 @@ async function runLine(
 		env: { PATH: s.path, ...checkEnv(spec, s.base, s.output) },
 		readOnly: [...s.readOnly, ...pathBinds(spec.readOnly)],
 		writable: [...s.writable, ...pathBinds(spec.writable)],
+		overlays: s.overlays,
 	});
 	s.live.stop = () => proc.kill();
 	let late = false;

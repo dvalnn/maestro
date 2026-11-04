@@ -1,4 +1,4 @@
-export { bubblewrap } from "./bubblewrap";
+export { bubblewrap, canOverlay } from "./bubblewrap";
 export { LANE_DST, mountPlan } from "./plan";
 export type {
 	Bind,
