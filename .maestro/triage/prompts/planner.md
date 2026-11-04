@@ -13,7 +13,7 @@ them:
     "what": "the change to make",
     "decisions": [{ "lead": "a title", "points": ["one fact", "In path/to/file.ts"] }],
     "excluded": [{ "lead": "a title", "points": ["one fact"] }],
-    "acceptance": ["bun test path/to/file.test.ts"],
+    "acceptance": ["bun test ./path/to/file.test.ts"],
     "subject": "feat(scope): imperative summary"
   },
   "children": [{ "title": "a child issue's title", "body": "its ask", "dependsOn": [0] }],
@@ -31,7 +31,8 @@ them:
   manager reads and a new standalone composition are not.
 - `spec`, for `ready-for-agent`: what to change in one paragraph, the decisions the change makes, what it leaves out,
   the shell commands that prove it done, each starting with {runners}, and the commit subject as <type>(<scope>):
-  <summary>. The owner approves the spec from its decisions and what it leaves out. Hold the spec to about 3,000 to
+  <summary>. A `bun test` path starts with `./`: without it bun reads a name filter, which skips dot directories such
+  as `.maestro`. The owner approves the spec from its decisions and what it leaves out. Hold the spec to about 3,000 to
   5,000 characters.
 - `decisions` and `excluded`: each item a lead and its points. The lead only titles its points; every fact, reference
   and reason belongs in a point, one fact each, and a reference is a plain last point "In <path>". `what` names the
