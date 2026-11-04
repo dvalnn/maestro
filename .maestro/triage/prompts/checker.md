@@ -5,6 +5,9 @@ with its file:line. The findings go into the spec for the builder and the PR rev
 
 - A claim the spec makes about the base holds: every function, file, flag, behaviour and call site it names exists and
   behaves as stated, and so does everything it says a change must also update.
+- Each figure holds as a decision does: every module, dependency, call, state and member it draws as it is before the
+  change exists as drawn, and its notes say what its labels point at.
+- Every requirement (`R1` on, by position) is proved by an acceptance item that names it after a `#`.
 - The spec misses no place the change must touch: the uninstall path beside an install, each other caller of a changed
   function, each test or doc that states the old behaviour.
 - The spec fits the architecture. Write a finding, with its file:line, for each of: a duplicate of a helper or pattern

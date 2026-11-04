@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
-import { Triage } from "../../.maestro/triage/verdict";
+import { FIGURES as PLANNED, Triage } from "../../.maestro/triage/verdict";
 import {
 	askOf,
 	commentOf,
 	type Data,
 	dataOf,
 	elapsed,
+	FIGURES,
 	parseHarvest,
 	parseTriage,
 	proposalIssue,
@@ -22,13 +23,14 @@ import {
 } from "./route";
 import type { State } from "./transitions";
 
-test("the verdicts and risks are the triage composition's", () => {
+test("the verdicts, risks and figure kinds are the triage composition's", () => {
 	const { properties } = Triage.schema as {
 		properties: Record<string, { enum: unknown }>;
 	};
-	expect([properties.verdict?.enum, properties.risk?.enum]).toEqual([
+	expect([properties.verdict?.enum, properties.risk?.enum, PLANNED]).toEqual([
 		[...VERDICTS],
 		[...RISKS],
+		FIGURES,
 	]);
 });
 
@@ -90,7 +92,7 @@ test("a question comment lays out each question between rules, an ask alone when
 			"<details>",
 			"<summary>Context</summary>",
 			"",
-			"- **Claiming.** Only the target claims keys -- >.",
+			"- **Claiming.** Only the target claims keys -->.",
 			"- **D-24.** A shared config breaks nothing.",
 			"",
 			"</details>",
@@ -285,6 +287,22 @@ test.each([
 const reviewed = {
 	touches: ["a.ts", "b.ts"],
 	what: "Greet by name.",
+	requirements: ["When given a name, greet.sh shall greet it.", "Bare\nstays."],
+	figures: [
+		{
+			kind: "seams" as const,
+			caption: "Green: an edge it adds.",
+			source: 'flowchart LR\n  a["greet.sh"] -->|"name ¹"| b["args"]',
+			notes: ["The first argument", "In greet.sh"],
+		},
+		{
+			kind: "pseudocode" as const,
+			caption: "",
+			source: "+ greet(name)",
+			notes: [],
+		},
+	],
+	consequences: "Callers may pass a name.",
 	decisions: [
 		{ lead: "Source", points: ["The first argument", "In greet.sh"] },
 		{ lead: "Bare", points: [] },
@@ -296,7 +314,7 @@ const reviewed = {
 	subject: "feat: greet",
 };
 
-test("a spec comment reads in mock B4's order: heading, What, Decisions, Acceptance, folded Touches, one foot line, then the turn", () => {
+test("a spec comment reads in order: heading, Context, Requirements, Shape, Decisions, Consequences, Left out, Acceptance, folded Touches, one foot line, then the turn", () => {
 	const data: Data = {
 		concert: "c1",
 		version: 2,
@@ -315,11 +333,32 @@ test("a spec comment reads in mock B4's order: heading, What, Decisions, Accepta
 			"",
 			"### Spec v2 · risk high · area cli",
 			"",
-			"#### What",
+			"#### Context",
 			"",
 			"Greet by name.",
 			"",
 			"Subject: `feat: greet`",
+			"",
+			"#### Requirements",
+			"",
+			"- **R1** When given a name, greet.sh shall greet it.",
+			"- **R2** Bare",
+			"  stays.",
+			"",
+			"#### Shape",
+			"",
+			"Green: an edge it adds.",
+			"",
+			"```mermaid",
+			'flowchart LR\n  a["greet.sh"] -->|"name ¹"| b["args"]',
+			"```",
+			"",
+			"1. The first argument",
+			"2. In greet.sh",
+			"",
+			"```diff",
+			"+ greet(name)",
+			"```",
 			"",
 			"#### Decisions",
 			"",
@@ -327,6 +366,10 @@ test("a spec comment reads in mock B4's order: heading, What, Decisions, Accepta
 			"  - The first argument",
 			"  - In greet.sh",
 			"- **Bare**",
+			"",
+			"#### Consequences",
+			"",
+			"Callers may pass a name.",
 			"",
 			"#### Left out",
 			"",
@@ -363,10 +406,42 @@ test("a spec stored without decisions or exclusions reads them as empty, renders
 	const data = dataOf(body);
 	expect(data.result?.spec).toEqual({ ...old, decisions: [], excluded: [] });
 	const shown = commentOf(data, "needs-approval", "forge-bot");
-	expect(shown).toContain("### Spec v1 · risk low\n\n#### What");
+	expect(shown).toContain("### Spec v1 · risk low\n\n#### Context");
 	expect(shown).not.toContain("#### Decisions");
 	expect(shown).not.toContain("#### Left out");
 	expect(dataOf(shown)).toEqual(data);
+});
+
+test("a split's spec comment draws its children's order, quotes in a title as entities", () => {
+	const children = [
+		{ title: 'Say "hi"', body: "b", dependsOn: [] },
+		{ title: "Two", body: "b", dependsOn: [0] },
+	];
+	const data: Data = { result: result("split", { children }) };
+	expect(commentOf(data, "needs-approval", "forge-bot")).toContain(
+		[
+			"#### Children",
+			"",
+			'1. Say "hi"',
+			"2. Two (after 1)",
+			"",
+			"```mermaid",
+			"flowchart LR",
+			'  c1["1 · Say #quot;hi#quot;"]',
+			'  c2["2 · Two"]',
+			"  c1 --> c2",
+			"```",
+			"",
+		].join("\n"),
+	);
+	const apart = {
+		result: result("split", {
+			children: [children[0], { ...children[1], dependsOn: [] }],
+		}),
+	};
+	expect(commentOf(apart, "needs-approval", "forge-bot")).not.toContain(
+		"mermaid",
+	);
 });
 
 test("a spec comment leaves out a Touches with no items, fold and all", () => {

@@ -10,10 +10,15 @@ them:
   "touches": ["path/to/file.ts"],
   "contract": "",
   "spec": {
-    "what": "the change to make",
+    "what": "the problem, why now and the change that meets it",
+    "requirements": ["When <trigger>, the <system> shall <response>."],
+    "figures": [
+      { "kind": "seams", "caption": "Red: an edge that goes.", "source": "flowchart LR ...", "notes": ["one fact"] }
+    ],
     "decisions": [{ "lead": "a title", "points": ["one fact", "In path/to/file.ts"] }],
+    "consequences": "what the change makes easier or harder, and its cost",
     "excluded": [{ "lead": "a title", "points": ["one fact"] }],
-    "acceptance": ["bun test ./path/to/file.test.ts"],
+    "acceptance": ["bun test ./path/to/file.test.ts # R1"],
     "subject": "feat(scope): imperative summary"
   },
   "children": [{ "title": "a child issue's title", "body": "its ask", "dependsOn": [0] }],
@@ -29,16 +34,30 @@ them:
   cannot change after release without breaking a user: an IR field, a public CLI flag or exit code, a key of the user's
   config, an id or path format users type, or the pack manifest. Internal tooling, an environment variable only the tour
   manager reads and a new standalone composition are not.
-- `spec`, for `ready-for-agent`: what to change in one paragraph, the decisions the change makes, what it leaves out,
-  the shell commands that prove it done, each starting with {runners}, and the commit subject as <type>(<scope>):
-  <summary>. A `bun test` path starts with `./`: without it bun reads a name filter, which skips dot directories such
-  as `.maestro`. The owner approves the spec from its decisions and what it leaves out. Hold the spec to about 3,000 to
-  5,000 characters.
+- `spec`, for `ready-for-agent`: an engineering doc the owner approves, read by the builder and the reviewers after. It
+  sets the idea and the intent; how to build it and its corner cases are theirs. Size each part to the change: a small
+  one gets a sentence or two of context, a requirement or two, a note per design call and a line of consequences. Its
+  prose stays within about 3,000 characters, 5,000 at most, figure source aside.
+- `what`: the context, a short paragraph or two: the problem, why now, and the change that meets it, naming the module
+  that owns it.
+- `requirements`: what the change must do, at the level of intent, each one sentence in an EARS pattern, numbered `R1`
+  on by position. Cite a `docs/requirements.md` id only where the change touches that requirement.
+  - Ubiquitous: `The <system> shall <response>.`
+  - Event: `When <trigger>, the <system> shall <response>.`
+  - State: `While <state>, the <system> shall <response>.`
+  - Unwanted: `If <condition>, then the <system> shall <response>.`
+  - Optional: `Where <feature>, the <system> shall <response>.`
+- `figures`: the change's shape, drawn before the decisions are written, by Figures below. Leave it out when nothing
+  fits.
+- `consequences`: a short paragraph or a line: what the change makes easier or harder, and its cost.
+- `acceptance`: the shell commands that prove it done, each starting with {runners} and ending in a shell comment naming
+  the requirements it proves (`# R1, R2`); every requirement is proved by one. A `bun test` path starts with `./`:
+  without it bun reads a name filter, which skips dot directories such as `.maestro`.
+- `subject`: the commit subject as <type>(<scope>): <summary>.
 - `decisions` and `excluded`: each item a lead and its points. The lead only titles its points; every fact, reference
-  and reason belongs in a point, one fact each, and a reference is a plain last point "In <path>". `what` names the
-  change, and the facts behind it go in the decisions. A decision is a choice where another option was live, or a fact
-  the owner has to approve; leave out calls, statement order and shell lines, which the builder works out. Either list
-  may be empty.
+  and reason belongs in a point, one fact each, and a reference is a plain last point "In <path>". A decision is a
+  choice where another option was live, or a fact the owner has to approve, that no figure's note already states; leave
+  out calls, statement order and shell lines, which the builder works out. Either list may be empty.
 - `children`, for `split`: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split
   only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long.
 - `related`: the backlog issues it relates to.

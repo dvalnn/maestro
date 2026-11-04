@@ -27,11 +27,38 @@ export const ATTEMPTS = 2;
 
 /** A decision or exclusion of a spec: `lead` titles it, each of `points` holds one fact. */
 export type Point = { lead: string; points: string[] };
-/** A triage spec; `decisions` and `excluded` read as empty from a spec stored without them. */
+/** Each figure kind of `.maestro/triage/prompts/_figures.md` and the fence its source is shown in. */
+const FIGURE_FENCE = {
+	seams: "mermaid",
+	sequence: "mermaid",
+	state: "mermaid",
+	interface: "mermaid",
+	contract: "mermaid",
+	composition: "mermaid",
+	"call-tree": "diff",
+	"file-tree": "diff",
+	pseudocode: "diff",
+} as const;
+export const FIGURES = Object.keys(FIGURE_FENCE) as FigureKind[];
+type FigureKind = keyof typeof FIGURE_FENCE;
+/** A figure of a spec: `notes` holds what each superscript in `source` points at, in order. */
+export type Figure = {
+	kind: FigureKind;
+	caption: string;
+	source: string;
+	notes: string[];
+};
+/**
+ * A triage spec; `decisions` and `excluded` read as empty from a spec stored without them. A planner's spec has
+ * `requirements`, numbered R1 on, and `consequences`; a direct ruling's has neither.
+ */
 export type Spec = {
 	touches: string[];
 	what: string;
+	requirements?: string[];
+	figures?: Figure[];
 	decisions: Point[];
+	consequences?: string;
 	excluded: Point[];
 	acceptance: string[];
 	subject: string;
@@ -143,6 +170,17 @@ const isPoints = (v: unknown): v is Point[] =>
 	Array.isArray(v) &&
 	v.every((p) => isJson(p) && isString(p.lead) && isStrings(p.points));
 
+const isFigures = (v: unknown): v is Figure[] =>
+	Array.isArray(v) &&
+	v.every(
+		(f) =>
+			isJson(f) &&
+			isOneOf(FIGURES)(f.kind) &&
+			isString(f.caption) &&
+			isString(f.source) &&
+			isStrings(f.notes),
+	);
+
 /**
  * `value` as a spec, its absent `decisions` and `excluded` empty.
  * @throws Error naming the first field that is missing or malformed.
@@ -152,7 +190,15 @@ function parseSpec(value: unknown): Spec {
 	return {
 		touches: field(value, "touches", isStrings, "a list of strings"),
 		what: field(value, "what", isString, "a string"),
+		requirements: optional(
+			value,
+			"requirements",
+			isStrings,
+			"a list of strings",
+		),
+		figures: optional(value, "figures", isFigures, "a list of figures"),
 		decisions: optional(value, "decisions", isPoints, "a list of points") ?? [],
+		consequences: optional(value, "consequences", isString, "a string"),
 		excluded: optional(value, "excluded", isPoints, "a list of points") ?? [],
 		acceptance: field(value, "acceptance", isStrings, "a list of strings"),
 		subject: field(value, "subject", isString, "a string"),
@@ -335,15 +381,17 @@ export function dataOf(comment: string): Data {
 	};
 }
 
-/** `text` with its comment delimiters broken, so agent-written text cannot open or close the block's comments. */
-const inert = (text: string) =>
-	text.replaceAll("<!--", "<! --").replaceAll("-->", "-- >");
+/**
+ * `text` with each comment opener broken, so agent-written text opens no comment. A `-->` with none open is plain text,
+ * and stays whole for Mermaid's edges.
+ */
+const inert = (text: string) => text.replaceAll("<!--", "<! --");
 
-/** `text` in a code block whose fence no backtick run inside it can close. */
-export const fenced = (text: string) => {
+/** `text` in a code block of `language` whose fence no backtick run inside it can close. */
+export const fenced = (text: string, language = "text") => {
 	const runs = [...text.matchAll(/`+/g)].map((m) => m[0].length + 1);
 	const fence = "`".repeat(Math.max(3, ...runs));
-	return `${fence}text\n${text}\n${fence}`;
+	return `${fence}${language}\n${text}\n${fence}`;
 };
 
 const list = (items: readonly string[]) => items.map((i) => `- ${i}`);
@@ -360,12 +408,30 @@ const pointLines = (items: readonly Point[]) =>
 		...points.map((p) => `  - ${continued(p, "    ")}`),
 	]);
 
-const whatLines = ({ what, subject }: Spec) =>
-	section("What", [what, "", `Subject: \`${subject}\``]);
+const contextSection = ({ what, subject }: Spec) =>
+	section("Context", [what, "", `Subject: \`${subject}\``]);
 
-const pointSections = ({ decisions, excluded }: Spec) => [
-	...section("Decisions", pointLines(decisions)),
-	...section("Left out", pointLines(excluded)),
+const requirementLines = (requirements: readonly string[]) =>
+	requirements.map((r, i) => `- **R${i + 1}** ${continued(r, "  ")}`);
+
+/** A figure: its caption, its source fenced, then its notes numbered as its superscripts are. */
+const figureLines = ({ kind, caption, source, notes }: Figure) => [
+	...(caption ? [caption, ""] : []),
+	fenced(source, FIGURE_FENCE[kind]),
+	...(notes.length ? [""] : []),
+	...notes.map((n, i) => `${i + 1}. ${continued(n, "   ")}`),
+];
+
+const shapeLines = (figures: readonly Figure[]) =>
+	figures.flatMap((f, i) => [...(i ? [""] : []), ...figureLines(f)]);
+
+/** The sections the owner approves a spec by, each it has: requirements, shape, decisions, consequences, left out. */
+const designSections = (spec: Spec) => [
+	...section("Requirements", requirementLines(spec.requirements ?? [])),
+	...section("Shape", shapeLines(spec.figures ?? [])),
+	...section("Decisions", pointLines(spec.decisions)),
+	...section("Consequences", spec.consequences ? [spec.consequences] : []),
+	...section("Left out", pointLines(spec.excluded)),
 ];
 
 const touchLines = (touches: readonly string[]) =>
@@ -394,16 +460,16 @@ const files = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
 
 /** A spec as its comment shows it (factory.md, Rules: Spec comment): what the owner approves open, the rest folded. */
 const specLines = (spec: Spec) => [
-	...whatLines(spec),
-	...pointSections(spec),
+	...contextSection(spec),
+	...designSections(spec),
 	...acceptanceLines(spec.acceptance),
 	...folded("Touches", files(spec.touches.length), touchLines(spec.touches)),
 ];
 
 /** A spec as a build's request carries it: every section open, word for word. */
 const requestedLines = (spec: Spec) => [
-	...whatLines(spec),
-	...pointSections(spec),
+	...contextSection(spec),
+	...designSections(spec),
 	...section("Touches", touchLines(spec.touches)),
 	...acceptanceLines(spec.acceptance),
 ];
@@ -423,10 +489,30 @@ const childLines = (children: readonly Child[], filed: readonly number[]) =>
 		return `${i + 1}. ${filed[i] ? `#${filed[i]} ` : ""}${c.title}${after}`;
 	});
 
-/** What a result proposes: a split's children, a duplicate's original, else its spec. */
+/** `text` as a quoted Mermaid label, its quotes as entities so no text breaks the parse. */
+const mermaidLabel = (text: string) =>
+	`"${oneLine(text).replaceAll('"', "#quot;")}"`;
+
+/** The order of `children` drawn from each child to those that depend on it, none when no child depends on another. */
+function splitGraph(children: readonly Child[]) {
+	if (!children.some((c) => c.dependsOn.length)) return [];
+	const nodes = children.map(
+		(c, i) => `  c${i + 1}[${mermaidLabel(`${i + 1} · ${c.title}`)}]`,
+	);
+	const edges = children.flatMap((c, i) =>
+		c.dependsOn.map((d) => `  c${d + 1} --> c${i + 1}`),
+	);
+	const graph = ["flowchart LR", ...nodes, ...edges].join("\n");
+	return ["", fenced(graph, "mermaid")];
+}
+
+/** What a result proposes: a split's children and their order, a duplicate's original, else its spec. */
 function proposalLines(result: Triage, filed: readonly number[]) {
 	if (result.children)
-		return section("Children", childLines(result.children, filed));
+		return section("Children", [
+			...childLines(result.children, filed),
+			...splitGraph(result.children),
+		]);
 	if (result.duplicateOf) return [`Duplicate of #${result.duplicateOf}`, ""];
 	return result.spec ? specLines(result.spec) : [];
 }

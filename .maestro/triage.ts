@@ -26,6 +26,7 @@ import {
 	Text,
 	type ValueOf,
 } from "@maestro/sdk";
+import FIGURES from "./triage/prompts/_figures.md" with { type: "text" };
 import GATE from "./triage/prompts/_gate.md" with { type: "text" };
 import QUESTIONS from "./triage/prompts/_questions.md" with { type: "text" };
 import CHECKER from "./triage/prompts/checker.md" with { type: "text" };
@@ -60,7 +61,7 @@ const TASKS = {
 			QUESTIONS,
 		),
 	scout: task(SCOUT),
-	planner: task(fill(PLANNER, { runners: RUNNERS.join(", ") }), GATE),
+	planner: task(fill(PLANNER, { runners: RUNNERS.join(", ") }), FIGURES, GATE),
 	checker: task(CHECKER, GATE),
 };
 

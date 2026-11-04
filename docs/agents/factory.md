@@ -246,17 +246,20 @@ Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-
 - **Spec comment.** One comment per issue, found by the `<!-- maestro-tm -->` marker on its first line, created on the
   tick's first write and edited in place after; the forge's edit history keeps the earlier versions. Headed
   `Spec vN · risk <risk> · area <area>`, N starting at 1 and rising with each routed triage, the area only when triage
-  gave one, it holds, in order: What (a short paragraph and the commit subject); Decisions and Left out, each item a
-  bold lead with its points as sub-bullets; Acceptance (a checklist); then Touches, folded under
+  gave one, it holds, in order: Context (a short paragraph or two and the commit subject); Requirements, in EARS, as
+  `R1` on; Shape, each figure's caption, its source in a `mermaid` or `diff` fence and its numbered notes; Decisions,
+  each item a bold lead with its points as sub-bullets; Consequences; Left out, as Decisions; Acceptance (a checklist,
+  each item naming the requirements it proves); then Touches, folded under
   `<details><summary><b>Touches</b> · <n> files</summary>`, counting its files, word for word. A section with no items
   is left out. The build lines (attempts, last failure, slice concert) follow, then one line joining the Reasons, the
-  `Relates to` links and the last concert. A split shows its children in place of the spec, a duplicate its original. It
-  ends with whose turn it is, in neutral wording: while the tick owns the next transition, one bold line,
-  `Tour manager's turn · <what runs or is queued>`; else, after a rule, `Maintainer's turn · <what waits>` in bold, each
-  owner move out of the state the data leaves open as a ``- **`<label>`**: <what it does>`` bullet, a rule, and a
-  `<sub>` line saying how to take one, as a question comment ends. A spec stored without Decisions or Left out reads
-  them as empty. Agent text in it is made inert, so it can open or close no HTML comment. The tick trusts the first
-  comment opening with the marker, whoever wrote it, so only maintainers write that marker.
+  `Relates to` links and the last concert. A split shows its children in place of the spec, with their order as a
+  `mermaid` flowchart when one depends on another; a duplicate its original. It ends with whose turn it is, in neutral
+  wording: while the tick owns the next transition, one bold line, `Tour manager's turn · <what runs or is queued>`;
+  else, after a rule, `Maintainer's turn · <what waits>` in bold, each owner move out of the state the data leaves open
+  as a ``- **`<label>`**: <what it does>`` bullet, a rule, and a `<sub>` line saying how to take one, as a question
+  comment ends. A spec stored without Decisions or Left out reads them as empty. Agent text in it is made inert, every
+  `<!--` broken, so it opens no HTML comment and a Mermaid `-->` stays whole. The tick trusts the first comment opening
+  with the marker, whoever wrote it, so only maintainers write that marker.
 - **Login.** Each pass reads the login of the account it acts as (`maestro-tm`) once, from `GET /user` with its token.
   No setting names it.
 - **Question comments.** Each routed triage with questions posts a new comment, `<!-- maestro-tm-question -->` on its

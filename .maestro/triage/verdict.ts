@@ -87,22 +87,49 @@ export const GROUP_SIZE = 3;
 
 /** A decision or exclusion: `lead` only titles it, each of `points` holds one fact. */
 const Point = Struct({ lead: Text(), points: List(Text()) });
-const SpecPart = Struct({
+/** The figure kinds of `_figures.md`: Mermaid templates, then `diff` sketches for a change no template fits. */
+export const FIGURES = [
+	"seams",
+	"sequence",
+	"state",
+	"interface",
+	"contract",
+	"composition",
+	"call-tree",
+	"file-tree",
+	"pseudocode",
+] as const;
+const MAX_FIGURES = 2;
+/** A figure: `caption` says what its styling means, `notes` what each superscript in `source` points at, in order. */
+const Figure = Struct({
+	kind: Enum(FIGURES),
+	caption: Text(),
+	source: Text(),
+	notes: List(Text()),
+});
+const Figures = Json<ValueOf<typeof Figure>[]>({
+	type: "array",
+	items: Figure.schema,
+	maxItems: MAX_FIGURES,
+});
+const SPEC_FIELDS = {
 	what: Text(),
 	decisions: List(Point),
 	excluded: List(Point),
 	acceptance: List(Text()),
 	subject: Text(),
-});
+};
+/** The planner's spec: `requirements` in EARS, numbered R1 on by position. */
+const SpecPart = shape(
+	{ ...SPEC_FIELDS, requirements: List(Text()), consequences: Text() },
+	{ figures: Figures },
+);
 type SpecPart = ValueOf<typeof SpecPart>;
-const Spec = Struct({
-	touches: List(Text()),
-	what: Text(),
-	decisions: List(Point),
-	excluded: List(Point),
-	acceptance: List(Text()),
-	subject: Text(),
-});
+/** A triage spec; a direct ruling's has no requirements, figures or consequences. */
+const Spec = shape(
+	{ touches: List(Text()), ...SPEC_FIELDS },
+	{ requirements: List(Text()), figures: Figures, consequences: Text() },
+);
 const Child = Struct({
 	title: Text(),
 	body: Text(),

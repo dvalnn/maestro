@@ -423,7 +423,7 @@ describe("a pass", () => {
 			ready,
 			["state/ready-for-agent", "risk/low", "area/cli"],
 			true,
-			"### Spec v1 · risk low · area cli\n\n#### What\n\nGreet the first argument.\n\nSubject: `feat: greet by name`\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Acceptance\n\n- [ ] bun test\n\n<details><summary><b>Touches</b> · 1 file</summary>\n\n- `greet.sh`\n\n</details>\n\nReasons: one script -- > two",
+			"### Spec v1 · risk low · area cli\n\n#### Context\n\nGreet the first argument.\n\nSubject: `feat: greet by name`\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Acceptance\n\n- [ ] bun test\n\n<details><summary><b>Touches</b> · 1 file</summary>\n\n- `greet.sh`\n\n</details>\n\nReasons: one script --> two",
 			"",
 		],
 		[
@@ -664,7 +664,7 @@ describe("a pass", () => {
 				"--issue",
 				expect.stringMatching(
 					new RegExp(
-						`^#8 Greet by name\n\n${ASK}\n\n## The spec the last triage proposed\n\n#### What\n[^]*\n## Reply by ${OWNER}\n\n@forge-bot Q1: Ann$`,
+						`^#8 Greet by name\n\n${ASK}\n\n## The spec the last triage proposed\n\n#### Context\n[^]*\n## Reply by ${OWNER}\n\n@forge-bot Q1: Ann$`,
 					),
 				),
 				"--backlog",
@@ -941,7 +941,7 @@ const rejected = (reason: string): Result => ({
 const CACHED = "/cache/maestro-factory/i7";
 /** The `--request` of a build of issue `n`'s spec, before anything an encore is fed. */
 const requestFor = (n: number) =>
-	`# #${n} Greet by name\n\n#### What\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Touches\n\n- \`greet.sh\`\n\n#### Acceptance\n\n- [ ] bun test\n\n## The ask\n\n${ASK}\n`;
+	`# #${n} Greet by name\n\n#### Context\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Touches\n\n- \`greet.sh\`\n\n#### Acceptance\n\n- [ ] bun test\n\n## The ask\n\n${ASK}\n`;
 /** The flags a build of issue 7 at low risk takes after its `--request`. */
 const LOW_FLAGS = [
 	"--tier",
@@ -1196,7 +1196,7 @@ describe("a build", () => {
 		]);
 		expect(dataAt(t.find(8)).slice).toBe("started");
 		expect(specAt(t.find(8))?.body).toContain(
-			"### Spec v1 · risk low · area cli\n\n#### What",
+			"### Spec v1 · risk low · area cli\n\n#### Context",
 		);
 		expect(specAt(t.find(8))?.body).toContain(
 			"**Tour manager's turn · slice `started` running, attempt 1 of 2**",
