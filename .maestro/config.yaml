@@ -13,9 +13,11 @@ profiles:
   classics/builder:
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before drawing any Mermaid diagram: SKILL.md" }
+      docs: { path: docs/README.md, hint: "before adding to or editing any doc: each topic's home and the doc conventions" }
   classics/lens:
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
+      docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
   writer:
     attachments:
       writing: { path: packs/classics/profiles/builder/writing, hint: "before writing the body: writing.md" }
