@@ -19,7 +19,7 @@ export type Actor =
 	| "tick"
 	| "triage"
 	| "slice"
-	| "harvest"
+	| "masterclass"
 	| "auto-merge";
 /**
  * A move of the state machine. An owner's move out of a state has a `turn`: the label or action that takes it and, as
@@ -54,7 +54,7 @@ export const TRANSITIONS: readonly Transition[] = [
 	{
 		from: "new",
 		to: "needs-approval",
-		actor: "harvest",
+		actor: "masterclass",
 		event: "lesson",
 	},
 	...fromIntake("ready-for-agent", "low, medium"),

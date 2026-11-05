@@ -27,8 +27,8 @@ A state says how ready an issue is, never when it ships: the milestone says that
 `state/needs-approval`, `state/in-progress` and `state/in-review` belong to the tour manager. Its state machine and what
 each label makes it do are in `factory.md`.
 
-`maestro-tm:halt` and `maestro-tm:harvest` sit outside both families. The first marks the issue the tour manager files
-when it halts; closing it lifts the halt. The second marks an issue a harvest filed.
+`maestro-tm:halt` and `maestro-tm:masterclass` sit outside both families. The first marks the issue the tour manager
+files when it halts; closing it lifts the halt. The second marks an issue a masterclass filed.
 
 Two more exclusive scopes sit beside `kind/` and `state/`:
 

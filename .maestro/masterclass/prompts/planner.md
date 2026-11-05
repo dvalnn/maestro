@@ -8,9 +8,9 @@ per lesson. Then:
   compositions and config under .maestro/) or an open or recently closed backlog issue already covers, or that only one
   run would ever need.
 
-Dropping what the backlog already proposes also covers lessons read again after a pruned harvest concert.
+Dropping what the backlog already proposes also covers lessons read again after a pruned masterclass concert.
 
-Write `harvest.json` in exactly this shape:
+Write `masterclass.json` in exactly this shape:
 
 ```json
 {

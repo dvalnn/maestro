@@ -5,7 +5,7 @@ For the owner and agents looking up how the tour manager moves a ticket and what
 The Maestro Tour Manager ("tour manager") is maestro in factory mode, and the name it signs on a ticket. A **tick**, one
 run of `scripts/factory` (install and flags in its `README.md`), reads the forge, routes whatever a finished concert
 left, and starts at most one next action. A concert that has finished and awaits routing is a **settle**. A **slice** is
-the concert that builds one ticket's change (`.maestro/slice.ts`); a **harvest** is the concert that gathers lessons
+the concert that builds one ticket's change (`.maestro/slice.ts`); a **masterclass** is the concert that gathers lessons
 from settled concerts.
 
 ## State machine
@@ -16,7 +16,7 @@ The actors:
 
 - **owner**: the human, or forge-bot acting for them.
 - **tick**: the script, as its own account `maestro-tm`, apart from forge-bot, the sessions' account.
-- **triage**, **slice**, **harvest**: the concerts the tick performs; the tick routes their outcome.
+- **triage**, **slice**, **masterclass**: the concerts the tick performs; the tick routes their outcome.
 - **auto-merge**: the forge, on a low-risk PR the tick armed.
 
 Bold edges are the owner's moves, dashed ones park a ticket for an answer, gold states wait on the owner, green is done.
@@ -38,7 +38,7 @@ flowchart LR
     CL(["closed"])
 
     S -->|"[owner, tick] filed"| NT
-    S -->|"[harvest] lesson"| NA
+    S -->|"[masterclass] lesson"| NA
     NT -->|"[triage] low, medium"| RA
     NT -->|"[triage] high, split"| NA
     NT -.->|"[triage] question"| NI
@@ -107,9 +107,9 @@ flowchart TD
     P --> E["encore"]
     P --> SL["build"]
     P --> TR["triage"]
-    P --> HV["harvest"]
+    P --> MC["masterclass"]
     P -->|nothing| X
-    E & SL & TR & HV --> W["write back ⁴"] --> X
+    E & SL & TR & MC --> W["write back ⁴"] --> X
 ```
 
 1. Until the `maestro-tm:halt` issue closes (Rules, Policy: Halt).
@@ -143,7 +143,7 @@ flowchart TD
     O -->|"blocked ⁴"| NI3["needs-info"]
     O -->|"failed, not blocked"| HALT["halt"]
     O -.->|any| REP["file reports ⁵"]
-    K -->|harvest| PR["needs-approval ⁶"]
+    K -->|masterclass| PR["needs-approval ⁶"]
     M -->|yes| PK["needs-info"]
 
     classDef fault stroke:#e5534b,stroke-width:3px
@@ -157,7 +157,7 @@ flowchart TD
    Attempts).
 4. Rules, Build: Blocked.
 5. New obstacles, filed as `needs-triage` (Rules, Build: Reports).
-6. One issue per proposal (Rules, Harvest).
+6. One issue per proposal (Rules, Masterclass).
 
 ## Rules
 
@@ -172,19 +172,19 @@ flowchart TD
   commits only.
 - **One concert at a time.** The tick starts no second one while a concert of the milestone runs.
 - **Pick order.** Finish work first: an encore of a PR with changes requested, then a build, then triage, then a
-  harvest. A tick that routes a settle falls through and starts the next action. Within builds and within triage, an
+  masterclass. A tick that routes a settle falls through and starts the next action. Within builds and within triage, an
   issue the owner pinned on the forge comes first, in pinned order, then the rest oldest first.
 - **Halt.** These stop the tick with an open `maestro-tm:halt` issue naming the cause; closing it resumes:
   - a triage that fails, does not start or gives a malformed output: the ticket keeps its state and is triaged again;
-  - a build or a harvest that does not start;
+  - a build or a masterclass that does not start;
   - a slice that settles `failed` without a `blocked:` reason, an infra fault: the issue names the concert, and the
     ticket is requeued to `ready-for-agent` with its attempts kept, and builds again;
   - a landing or a restack that fails: the workspace is kept, and the work is redone in a fresh one;
   - an encore with nothing changed, which is refused;
   - a spec comment's data line the tick cannot read.
 - **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
-  `factory: <issue title>`, cut with an ellipsis past 60 characters. A harvest runs on tour `<version>.harvest`, titled
-  `factory: harvest lessons`.
+  `factory: <issue title>`, cut with an ellipsis past 60 characters. A masterclass runs on tour `<version>.masterclass`,
+  titled `factory: masterclass`.
 
 ### Triage
 
@@ -299,18 +299,19 @@ flowchart TD
   last. A writer that fails costs the build nothing: the tick builds the body from its data alone. Every landing, an
   encore's included, rewrites the body of the PR already open on the branch.
 
-### Harvest
+### Masterclass
 
-A harvest is due when the newest concert is not a harvest and at least 10 settled slice or triage concerts on
+A masterclass is due when the newest concert is not a masterclass and at least 10 settled slice or triage concerts on
 `<milestone>.i<n>` tours are newer than the watermark, within the milestone's newest 200 concerts. It performs
-`.maestro/harvest.ts` with `--lessons`, the lessons of those concerts oldest first and of settled slices on the
+`.maestro/masterclass.ts` with `--lessons`, the lessons of those concerts oldest first and of settled slices on the
 `release` and `trial` tours since the watermark, which are read but not counted, and `--backlog`, the backlog snapshot.
-The **watermark** is the newest ok harvest concert in maestro's record, not state the tick keeps. A failed harvest is
-retried only after another factory run settles; a non-ok or malformed one is reported and does not halt.
+The **watermark** is the newest ok masterclass concert in maestro's record, not state the tick keeps. A failed
+masterclass is retried only after another factory run settles; a non-ok or malformed one is reported and does not halt.
 
-A settled harvest files one `needs-approval` + `kind/enhancement` + `maestro-tm:harvest` issue per proposal, only while
-the harvest is the newest concert, deduplicated by a fingerprint over target, title and body against open issues and the
-20 newest closed ones. The planner writes each proposal by `_plain.md`. Forge surfaces: Proposal issue shows the issue.
+A settled masterclass files one `needs-approval` + `kind/enhancement` + `maestro-tm:masterclass` issue per proposal,
+only while the masterclass is the newest concert, deduplicated by a fingerprint over target, title and body against open
+issues and the 20 newest closed ones. The planner writes each proposal by `_plain.md`. Forge surfaces: Proposal issue
+shows the issue.
 
 ## Forge surfaces
 
@@ -333,8 +334,8 @@ Tracked by Maestro Tour Manager · [spec v<N>](#issuecomment-<id>)
 
 ### Proposal issue
 
-A settled harvest files one per proposal. The ask holds the target, the body, the lessons and the fingerprint, which
-sits last so a later harvest finds it; a triage replaces everything below the marker with the closing line.
+A settled masterclass files one per proposal. The ask holds the target, the body, the lessons and the fingerprint, which
+sits last so a later masterclass finds it; a triage replaces everything below the marker with the closing line.
 
 ```markdown
 Target: `<target>`

@@ -909,12 +909,12 @@ const sliceConcert = (id: string, n: number, status = "ok"): Concert => ({
 	tour: `${MILESTONE}.i${n}`,
 });
 
-const harvestConcert = (id: string, status = "ok"): Concert => ({
+const masterclassConcert = (id: string, status = "ok"): Concert => ({
 	id,
 	status,
-	pack: "harvest",
-	composition: "harvest",
-	tour: `${MILESTONE}.harvest`,
+	pack: "masterclass",
+	composition: "masterclass",
+	tour: `${MILESTONE}.masterclass`,
 });
 
 /** Issue `n` in `state` with a ready spec and `risk/low`, as triage left it, then `data`. */
@@ -2083,7 +2083,7 @@ test("a concert's title is its issue's, cut with an ellipsis past 60 characters"
 	expect(titled("x".repeat(61))).toBe(`factory: ${"x".repeat(59)}…`);
 });
 
-describe("harvest", () => {
+describe("masterclass", () => {
 	/** `count` settled factory runs on issues `from` and up, newest first, slices and triages in turn. */
 	const runs = (from: number, count: number) =>
 		Array.from({ length: count }, (_, i) => {
@@ -2103,7 +2103,7 @@ describe("harvest", () => {
 	/** The `--lessons` file of runs on issues `from` and up, oldest first. */
 	const lessonsOf = (from: number, count: number) =>
 		[
-			"# Lessons since the last harvest",
+			"# Lessons since the last masterclass",
 			"",
 			...Array.from({ length: count }, (_, i) => [
 				`## r${from + i} · ${MILESTONE}.i${from + i}`,
@@ -2115,9 +2115,9 @@ describe("harvest", () => {
 	const argAfter = (args: string[], flag: string) =>
 		args[args.indexOf(flag) + 1] ?? "";
 
-	test("starts once ten factory runs settled since the last ok harvest, on their lessons oldest first", async () => {
+	test("starts once ten factory runs settled since the last ok masterclass, on their lessons oldest first", async () => {
 		const ten = runs(50, 10);
-		const t = setup([], [...ten, harvestConcert("h0")], {}, undefined, {
+		const t = setup([], [...ten, masterclassConcert("m0")], {}, undefined, {
 			reports: {
 				...lessoned(ten),
 				r50: { ...NO_REPORT, lessons: ["lesson 50\nover two lines"] },
@@ -2128,10 +2128,10 @@ describe("harvest", () => {
 		expect(t.starts.length).toBe(1);
 		const [args = []] = t.starts;
 		expect(args[0]).toBe("perform");
-		expect(args[1]?.endsWith(".maestro/harvest.ts")).toBe(true);
+		expect(args[1]?.endsWith(".maestro/masterclass.ts")).toBe(true);
 		expect(args[2]).toBe("--lessons");
-		expect(argAfter(args, "--tour")).toBe("v0.1.0.harvest");
-		expect(argAfter(args, "--title")).toBe("factory: harvest lessons");
+		expect(argAfter(args, "--tour")).toBe("v0.1.0.masterclass");
+		expect(argAfter(args, "--title")).toBe("factory: masterclass");
 		expect(argAfter(args, "--preset")).toBe("stub");
 		expect(readFileSync(argAfter(args, "--lessons"), "utf8")).toBe(
 			lessonsOf(50, 10)
@@ -2139,15 +2139,15 @@ describe("harvest", () => {
 				.replace("## r51 · v0.1.0.i51\n\n- lesson 51\n\n", ""),
 		);
 		expect(argAfter(args, "--backlog")).toBe(
-			join(t.options.dir, "backlog-harvest.md"),
+			join(t.options.dir, "backlog-masterclass.md"),
 		);
 		expect(readFileSync(argAfter(args, "--backlog"), "utf8")).toContain(
 			"# Backlog of v0.1.0",
 		);
 		expect(t.said.at(-1)).toBe(
-			"harvesting the lessons of 10 concerts: concert started",
+			"holding a masterclass on the lessons of 10 concerts: concert started",
 		);
-		expect(t.logs).toEqual([join(t.options.dir, "harvest.log")]);
+		expect(t.logs).toEqual([join(t.options.dir, "masterclass.log")]);
 	});
 
 	test("a lesson a concert reports twice reaches the file once", async () => {
@@ -2171,7 +2171,7 @@ describe("harvest", () => {
 		});
 		const stamp = (c: Concert, i: number) => ({ ...c, startedAt: 1000 + i });
 		const nine = runs(50, 9).map((c, i) => stamp(c, 9 - i));
-		const mark = { ...harvestConcert("h0"), startedAt: 500 };
+		const mark = { ...masterclassConcert("m0"), startedAt: 500 };
 		const extras = [
 			hand("m1", "release.rc1", 1004.5),
 			hand("m2", "trial", 1006),
@@ -2208,7 +2208,7 @@ describe("harvest", () => {
 		expect(text.indexOf("## m1")).toBeLessThan(text.indexOf("## r54"));
 	});
 
-	test("with no ok harvest, reads every settled hand slice", async () => {
+	test("with no ok masterclass, reads every settled hand slice", async () => {
 		const ten = runs(50, 10);
 		const hand = {
 			...sliceConcert("m1", 1),
@@ -2225,7 +2225,7 @@ describe("harvest", () => {
 
 	test("starts none on nine factory runs", async () => {
 		const nine = runs(50, 9);
-		const t = setup([], [...nine, harvestConcert("h0")]);
+		const t = setup([], [...nine, masterclassConcert("m0")]);
 		await t.run();
 		expect(t.starts).toEqual([]);
 	});
@@ -2247,7 +2247,7 @@ describe("harvest", () => {
 		expect(t.starts[0]?.[1]?.endsWith(file)).toBe(true);
 	});
 
-	test("starts no harvest after a triage that does not start halts", async () => {
+	test("starts no masterclass after a triage that does not start halts", async () => {
 		const t = setup([issue(7, "needs-triage")], runs(50, 10));
 		t.refuse("maestro perform: triage.ts does not compose");
 		await t.run();
@@ -2257,30 +2257,30 @@ describe("harvest", () => {
 		]);
 	});
 
-	test("halts when the harvest does not start", async () => {
+	test("halts when the masterclass does not start", async () => {
 		const t = setup([], runs(50, 10));
-		t.refuse("maestro perform: harvest.ts does not compose");
+		t.refuse("maestro perform: masterclass.ts does not compose");
 		await t.run();
-		expect(t.said.at(-1)).toBe("halted on #100: harvest did not start");
+		expect(t.said.at(-1)).toBe("halted on #100: masterclass did not start");
 	});
 
-	test("a failed harvest newest is said, not halted on, and not retried before another run", async () => {
-		const t = setup([], [harvestConcert("h1", "failed"), ...runs(50, 10)], {
-			h1: failed("boom"),
+	test("a failed masterclass newest is said, not halted on, and not retried before another run", async () => {
+		const t = setup([], [masterclassConcert("m1", "failed"), ...runs(50, 10)], {
+			m1: failed("boom"),
 		});
 		await t.run();
 		expect(t.starts).toEqual([]);
-		expect(t.said).toContain("harvest h1 settled failed: boom");
+		expect(t.said).toContain("masterclass m1 settled failed: boom");
 		expect(t.writes).toEqual([]);
 	});
 
-	test("a malformed harvest newest is said, files nothing and does not halt", async () => {
-		const t = setup([], [harvestConcert("h1")], {
-			h1: { status: "ok", outputs: { harvest: "x" } },
+	test("a malformed masterclass newest is said, files nothing and does not halt", async () => {
+		const t = setup([], [masterclassConcert("m1")], {
+			m1: { status: "ok", outputs: { masterclass: "x" } },
 		});
 		await t.run();
 		expect(t.said).toContain(
-			"harvest h1 gave a malformed harvest: the harvest output is not an object",
+			"masterclass m1 gave a malformed output: the masterclass output is not an object",
 		);
 		expect(t.writes).toEqual([]);
 	});
@@ -2292,18 +2292,18 @@ describe("harvest", () => {
 		lessons: [`lesson on ${title}`],
 	});
 
-	test("an ok harvest newest files each proposal in needs-approval once", async () => {
+	test("an ok masterclass newest files each proposal in needs-approval once", async () => {
 		const proposals = [proposal("one"), proposal("two")];
-		const t = setup([], [harvestConcert("h1"), ...runs(50, 10)], {
-			h1: { status: "ok", outputs: { harvest: { proposals } } },
+		const t = setup([], [masterclassConcert("m1"), ...runs(50, 10)], {
+			m1: { status: "ok", outputs: { masterclass: { proposals } } },
 		});
 		await t.run();
 		expect(t.writes).toEqual([
-			"file #100 one: state/needs-approval kind/enhancement maestro-tm:harvest",
-			"file #101 two: state/needs-approval kind/enhancement maestro-tm:harvest",
+			"file #100 one: state/needs-approval kind/enhancement maestro-tm:masterclass",
+			"file #101 two: state/needs-approval kind/enhancement maestro-tm:masterclass",
 		]);
 		expect(t.find(100).milestone).toBe(MILESTONE_ID);
-		expect(t.said).toContain("filed #100, proposed by harvest h1");
+		expect(t.said).toContain("filed #100, proposed by masterclass m1");
 		await t.run();
 		expect(t.writes.length).toBe(2);
 		expect(t.starts).toEqual([]);
@@ -2311,8 +2311,8 @@ describe("harvest", () => {
 
 	test("a proposal a recently closed issue holds is not filed again", async () => {
 		const proposals = [proposal("one"), proposal("two")];
-		const t = setup([], [harvestConcert("h1")], {
-			h1: { status: "ok", outputs: { harvest: { proposals } } },
+		const t = setup([], [masterclassConcert("m1")], {
+			m1: { status: "ok", outputs: { masterclass: { proposals } } },
 		});
 		t.closed.push({
 			number: 2,
@@ -2322,7 +2322,7 @@ describe("harvest", () => {
 		});
 		await t.run();
 		expect(t.writes).toEqual([
-			"file #100 one: state/needs-approval kind/enhancement maestro-tm:harvest",
+			"file #100 one: state/needs-approval kind/enhancement maestro-tm:masterclass",
 		]);
 	});
 
@@ -2333,19 +2333,19 @@ describe("harvest", () => {
 				tour: `${MILESTONE}.i${i}x`,
 			})),
 			{ ...sliceConcert("o1", 1), pack: "other", composition: "other" },
-			{ ...sliceConcert("o2", 2), tour: "v0.1.0.harvest" },
+			{ ...sliceConcert("o2", 2), tour: "v0.1.0.masterclass" },
 			{ ...sliceConcert("o3", 3), tour: "v0.1.0-i3" },
 		];
 		// Past the pass's window of 20, so the pass does not wait on it.
 		const running = sliceConcert("u1", 3, "running");
-		const nine = [...runs(50, 9), ...noise, running, harvestConcert("h0")];
+		const nine = [...runs(50, 9), ...noise, running, masterclassConcert("m0")];
 		const t = setup([], nine);
 		await t.run();
 		expect(t.starts).toEqual([]);
 		const ten = runs(50, 10);
 		const u = setup(
 			[],
-			[...ten, ...noise, running, harvestConcert("h0")],
+			[...ten, ...noise, running, masterclassConcert("m0")],
 			{},
 			undefined,
 			{
@@ -2358,23 +2358,23 @@ describe("harvest", () => {
 		expect(readFileSync(lessons, "utf8")).toBe(lessonsOf(50, 10));
 	});
 
-	test("a failed harvest below the newest concert is no watermark, and is neither counted nor read", async () => {
+	test("a failed masterclass below the newest concert is no watermark, and is neither counted nor read", async () => {
 		const newer = runs(60, 10);
 		const older = runs(40, 10);
 		const t = setup(
 			[],
 			[
 				...newer,
-				harvestConcert("h1", "failed"),
+				masterclassConcert("m1", "failed"),
 				...older,
-				harvestConcert("h0"),
+				masterclassConcert("m0"),
 			],
 			{},
 			undefined,
 			{
 				reports: {
 					...lessoned([...newer, ...older]),
-					h1: { ...NO_REPORT, lessons: ["from the failed harvest"] },
+					m1: { ...NO_REPORT, lessons: ["from the failed masterclass"] },
 				},
 			},
 		);
@@ -2386,20 +2386,20 @@ describe("harvest", () => {
 		);
 	});
 
-	test("counts only the runs newer than the newest ok harvest", async () => {
+	test("counts only the runs newer than the newest ok masterclass", async () => {
 		const t = setup(
 			[],
-			[...runs(65, 5), harvestConcert("h1"), ...runs(55, 10)],
+			[...runs(65, 5), masterclassConcert("m1"), ...runs(55, 10)],
 		);
 		await t.run();
 		expect(t.starts).toEqual([]);
 	});
 
-	test("with the watermark harvest pruned, counts from the older one", async () => {
+	test("with the watermark masterclass pruned, counts from the older one", async () => {
 		const fifteen = runs(50, 15);
 		const t = setup(
 			[],
-			[...fifteen, harvestConcert("h0"), ...runs(40, 10)],
+			[...fifteen, masterclassConcert("m0"), ...runs(40, 10)],
 			{},
 			undefined,
 			{ reports: lessoned(fifteen) },

@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CodeContext } from "@maestro/sdk";
 import { readJson } from "@maestro/sdk/stdlib";
-import { Harvest } from "./harvest";
+import { Masterclass } from "./masterclass";
 import { classics, maestro, scratch, stubOutputs, targetRepo } from "./stub";
 
 const lessons = join(scratch, "lessons.md");
@@ -11,14 +11,14 @@ writeFileSync(lessons, "## c1 · t1\n\n- a lesson\n");
 const backlog = join(scratch, "backlog.md");
 writeFileSync(backlog, "# Backlog\n\n- #7 Greet\n");
 
-/** A stub perform of the harvest, the planner writing `harvest`. */
-async function performed(harvest: unknown) {
+/** A stub perform of the masterclass, the planner writing `masterclass`. */
+async function performed(masterclass: unknown) {
 	const data = mkdtempSync(join(scratch, "data-"));
 	return JSON.parse(
 		await maestro(
 			[
 				"perform",
-				".maestro/harvest.ts",
+				".maestro/masterclass.ts",
 				"--preset",
 				"stub",
 				"--lessons",
@@ -35,13 +35,15 @@ async function performed(harvest: unknown) {
 			],
 			data,
 			{
-				MAESTRO_STUB_OUTPUTS: stubOutputs({ "planner/harvest.json": harvest }),
+				MAESTRO_STUB_OUTPUTS: stubOutputs({
+					"planner/masterclass.json": masterclass,
+				}),
 			},
 		),
 	);
 }
 
-test("a stub perform returns the planner's proposals as the harvest output", async () => {
+test("a stub perform returns the planner's proposals as the masterclass output", async () => {
 	const scripted = {
 		proposals: [
 			{
@@ -60,13 +62,13 @@ test("a stub perform returns the planner's proposals as the harvest output", asy
 	};
 	const concert = await performed(scripted);
 	expect(concert.status).toBe("ok");
-	expect(concert.outputs.harvest).toEqual(scripted);
+	expect(concert.outputs.masterclass).toEqual(scripted);
 });
 
 test("a stub perform settles ok on no proposals", async () => {
 	const concert = await performed({ proposals: [] });
 	expect(concert.status).toBe("ok");
-	expect(concert.outputs.harvest).toEqual({ proposals: [] });
+	expect(concert.outputs.masterclass).toEqual({ proposals: [] });
 });
 
 const one = {
@@ -105,7 +107,10 @@ test.each(outputs)("readJson of %s takes it: %p", async (_, value, ok) => {
 	const file = join(mkdtempSync(join(scratch, "off-")), "off.json");
 	writeFileSync(file, JSON.stringify(value));
 	const read = await readJson(
-		{ file: { path: file, contentHash: "sha256:0" }, schema: Harvest.schema },
+		{
+			file: { path: file, contentHash: "sha256:0" },
+			schema: Masterclass.schema,
+		},
 		{ path: (ref) => ref.path } as CodeContext,
 	);
 	expect("value" in read).toBe(ok);
@@ -115,7 +120,7 @@ test("compose seats the planner with the lessons and the backlog attached, the l
 	const { plan } = JSON.parse(
 		await maestro([
 			"compose",
-			".maestro/harvest.ts",
+			".maestro/masterclass.ts",
 			"--preset",
 			"stub",
 			"--lessons",

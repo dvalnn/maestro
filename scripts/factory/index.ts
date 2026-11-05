@@ -1,5 +1,5 @@
 // One pass of the tour manager (docs/agents/factory.md, One tick): it routes settles, builds a ready ticket, triages
-// one or harvests lessons.
+// one or holds a masterclass.
 import { dlopen, FFIType, read } from "bun:ffi";
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
@@ -50,11 +50,11 @@ import {
 	encoreRequest,
 	fenced,
 	fingerprintLine,
-	type Harvest,
 	isFed,
 	isReply,
+	type Masterclass,
 	type Option,
-	parseHarvest,
+	parseMasterclass,
 	parseTriage,
 	proposalIssue,
 	proposalLine,
@@ -82,23 +82,23 @@ const LOCK_NB = 4;
 /** Linux's EWOULDBLOCK, which is EAGAIN. */
 const EWOULDBLOCK = 11;
 export const HALT = "maestro-tm:halt";
-const HARVEST_LABEL = "maestro-tm:harvest";
+const MASTERCLASS_LABEL = "maestro-tm:masterclass";
 export const MILESTONE_KEY = "MAESTRO_TM_MILESTONE";
 const REPO = resolve(import.meta.dir, "../..");
 const TRIAGE_FILE = join(REPO, ".maestro/triage.ts");
 const SLICE_FILE = join(REPO, ".maestro/slice.ts");
-const HARVEST_FILE = join(REPO, ".maestro/harvest.ts");
+const MASTERCLASS_FILE = join(REPO, ".maestro/masterclass.ts");
 /** A bare composition file's pack is its stem. */
 const TRIAGE = { pack: "triage", composition: "triage" };
 const SLICE = { pack: "slice", composition: "slice" };
-const HARVEST = { pack: "harvest", composition: "harvest" };
-/** How many settled factory runs newer than the last harvest make the next one due. */
-const HARVEST_EVERY = 10;
+const MASTERCLASS = { pack: "masterclass", composition: "masterclass" };
+/** How many settled factory runs newer than the last masterclass make the next one due. */
+const MASTERCLASS_EVERY = 10;
 /**
- * How many of a milestone's newest concerts the harvest step reads: a harvest comes last in pick order and may starve
- * while there is other work, so it reads further back than the pass's window.
+ * How many of a milestone's newest concerts the masterclass step reads: a masterclass comes last in pick order and may
+ * starve while there is other work, so it reads further back than the pass's window.
  */
-const HARVEST_WINDOW = 200;
+const MASTERCLASS_WINDOW = 200;
 /** How a slice's agent reports it blocked (GLOSSARY.md, Blocked). */
 const BLOCKED = "blocked:";
 const BASE = "main";
@@ -111,7 +111,7 @@ export type Options = {
 	milestone: string;
 	/** The presets layered last, in order, on each triage and build. */
 	presets: string[];
-	/** Only route settled concerts and sync; start no build, triage or harvest. */
+	/** Only route settled concerts and sync; start no build, triage or masterclass. */
 	routeOnly?: boolean;
 	/** Where the pass keeps its snapshots and perform logs. */
 	dir: string;
@@ -164,11 +164,11 @@ const isTriage = (c: Concert) =>
 	c.pack === TRIAGE.pack && c.composition === TRIAGE.composition;
 const isSlice = (c: Concert) =>
 	c.pack === SLICE.pack && c.composition === SLICE.composition;
-const harvestTour = (milestone: string) => `${milestone}.harvest`;
-const isHarvest = (c: Concert, milestone: string) =>
-	c.pack === HARVEST.pack &&
-	c.composition === HARVEST.composition &&
-	c.tour === harvestTour(milestone);
+const masterclassTour = (milestone: string) => `${milestone}.masterclass`;
+const isMasterclass = (c: Concert, milestone: string) =>
+	c.pack === MASTERCLASS.pack &&
+	c.composition === MASTERCLASS.composition &&
+	c.tour === masterclassTour(milestone);
 /** Whether `c` is a settled slice or triage of an issue's tour in `milestone`. */
 function isFactoryRun(c: Concert, milestone: string) {
 	const prefix = `${milestone}.i`;
@@ -827,55 +827,55 @@ async function routeOne(pass: Pass, entry: Entry) {
 		: settle(pass, entry, concert.id);
 }
 
-/** The settled harvest, or what went wrong with it. */
-function harvestOf(result: Result): Harvest | string {
+/** The settled masterclass, or what went wrong with it. */
+function masterclassOf(result: Result): Masterclass | string {
 	if (result.status !== "ok")
 		return `settled ${result.status}: ${result.reason ?? "no reason given"}`;
 	try {
-		return parseHarvest(result.outputs.harvest);
+		return parseMasterclass(result.outputs.masterclass);
 	} catch (error) {
-		return `gave a malformed harvest: ${message(error)}`;
+		return `gave a malformed output: ${message(error)}`;
 	}
 }
 
 /**
- * Files each proposal of harvest `id` as a `needs-approval` enhancement labelled `maestro-tm:harvest`, unless an
- * open issue or one of the newest closed ones carries its fingerprint.
+ * Files each proposal of masterclass `id` as a `needs-approval` enhancement labelled `maestro-tm:masterclass`, unless
+ * an open issue or one of the newest closed ones carries its fingerprint.
  */
-async function fileProposals(pass: Pass, id: string, harvest: Harvest) {
+async function fileProposals(pass: Pass, id: string, masterclass: Masterclass) {
 	const [open, closed] = await Promise.all([
 		pass.forge.open({}),
 		pass.forge.closed(CLOSED),
 	]);
 	const bodies = [...open, ...closed].map((i) => i.body);
-	for (const proposal of harvest.proposals) {
+	for (const proposal of masterclass.proposals) {
 		const line = proposalLine(proposal);
 		if (bodies.some((b) => b.includes(line))) continue;
 		const filed = proposalIssue(proposal);
 		const number = await pass.forge.file({
 			...filed,
 			milestone: pass.milestoneId,
-			labels: ["state/needs-approval", "kind/enhancement", HARVEST_LABEL],
+			labels: ["state/needs-approval", "kind/enhancement", MASTERCLASS_LABEL],
 		});
 		bodies.push(filed.body);
-		pass.say(`filed #${number}, proposed by harvest ${id}`);
+		pass.say(`filed #${number}, proposed by masterclass ${id}`);
 	}
 }
 
-/** Routes the newest concert when it is a harvest; one that settled wrong is said, not halted on. */
-async function routeHarvest(pass: Pass) {
+/** Routes the newest concert when it is a masterclass; one that settled wrong is said, not halted on. */
+async function routeMasterclass(pass: Pass) {
 	const newest = pass.concerts[0];
-	if (!newest || !isHarvest(newest, pass.milestone)) return;
-	const harvest = harvestOf(await pass.maestro.result(newest.id));
-	if (typeof harvest === "string")
-		return pass.say(`harvest ${newest.id} ${harvest}`);
-	await fileProposals(pass, newest.id, harvest);
+	if (!newest || !isMasterclass(newest, pass.milestone)) return;
+	const masterclass = masterclassOf(await pass.maestro.result(newest.id));
+	if (typeof masterclass === "string")
+		return pass.say(`masterclass ${newest.id} ${masterclass}`);
+	await fileProposals(pass, newest.id, masterclass);
 }
 
-/** Routes each issue's settles, then the newest concert when it is a harvest; false when it halted. */
+/** Routes each issue's settles, then the newest concert when it is a masterclass; false when it halted. */
 async function route(pass: Pass, entries: Entry[]) {
 	for (const entry of entries) if (!(await routeOne(pass, entry))) return false;
-	await routeHarvest(pass);
+	await routeMasterclass(pass);
 	return true;
 }
 
@@ -1334,7 +1334,7 @@ async function askReply(pass: Pass, { issue, data }: Entry) {
  * Starts triage of the first intake issue, pinned ones first, on its ask and the comments since the last triage read
  * that it is fed, an encore of its last triage when it has one, then records the newest comment it considered; halts on
  * a refusal. A re-triage with nothing new to feed asks for a reply instead. True only when it started nothing, so a
- * harvest may follow.
+ * masterclass may follow.
  */
 async function triage(pass: Pass, entries: Entry[]) {
 	const issue = pick(
@@ -1401,16 +1401,16 @@ async function triage(pass: Pass, entries: Entry[]) {
 	return false;
 }
 
-/** The index of the watermark in `concerts`, newest first: the newest ok harvest; -1 without one. */
+/** The index of the watermark in `concerts`, newest first: the newest ok masterclass; -1 without one. */
 const markOf = (concerts: readonly Concert[], milestone: string) =>
-	concerts.findIndex((c) => isHarvest(c, milestone) && c.status === "ok");
+	concerts.findIndex((c) => isMasterclass(c, milestone) && c.status === "ok");
 
-/** The tours of hand-run slices whose lessons a harvest reads beside the factory runs'. */
+/** The tours of hand-run slices whose lessons a masterclass reads beside the factory runs'. */
 const HAND_TOURS = ["release", "trial"];
 
 /**
  * The settled slices of `tours` that started after the watermark of `concerts`, or all of them without one, newest
- * first. They are read but never counted toward `HARVEST_EVERY`.
+ * first. They are read but never counted toward `MASTERCLASS_EVERY`.
  */
 function handRuns(
 	tours: readonly (readonly Concert[])[],
@@ -1430,29 +1430,29 @@ function handRuns(
 }
 
 /**
- * The factory runs among `concerts`, newest first, that no harvest has read: those newer than the newest ok harvest,
- * the watermark, or all of them without one (factory.md, Rules, Harvest). The watermark is read from the record, not
- * kept by the tick: pruning any other concert leaves it intact, and pruning it makes the older harvest, or none, the
- * watermark, so its lessons are read again. Undefined when no harvest is due: the newest concert is a harvest, or fewer
- * than `HARVEST_EVERY` runs are unharvested.
+ * The factory runs among `concerts`, newest first, that no masterclass has read: those newer than the newest ok
+ * masterclass, the watermark, or all of them without one (factory.md, Rules, Masterclass). The watermark is read from
+ * the record, not kept by the tick: pruning any other concert leaves it intact, and pruning it makes the older
+ * masterclass, or none, the watermark, so its lessons are read again. Undefined when no masterclass is due: the newest
+ * concert is a masterclass, or fewer than `MASTERCLASS_EVERY` runs are past the watermark.
  */
-function unharvested(
+function sinceWatermark(
 	concerts: readonly Concert[],
 	milestone: string,
 ): Concert[] | undefined {
 	const [newest] = concerts;
-	if (!newest || isHarvest(newest, milestone)) return undefined;
+	if (!newest || isMasterclass(newest, milestone)) return undefined;
 	const mark = markOf(concerts, milestone);
 	const runs = (mark < 0 ? concerts : concerts.slice(0, mark)).filter((c) =>
 		isFactoryRun(c, milestone),
 	);
-	return runs.length >= HARVEST_EVERY ? runs : undefined;
+	return runs.length >= MASTERCLASS_EVERY ? runs : undefined;
 }
 
 /** What `--lessons` takes: each of `reports`' concerts with lessons, under its id and tour. */
 function lessonsText(reports: readonly { concert: Concert; report: Report }[]) {
 	return [
-		"# Lessons since the last harvest",
+		"# Lessons since the last masterclass",
 		"",
 		...reports
 			.filter(({ report }) => report.lessons.some((l) => l.trim()))
@@ -1467,8 +1467,8 @@ function lessonsText(reports: readonly { concert: Concert; report: Report }[]) {
 	].join("\n");
 }
 
-/** Performs the harvest on the `lessons` and `backlog` files; halts on a refusal. */
-async function startHarvest(
+/** Performs the masterclass on the `lessons` and `backlog` files; halts on a refusal. */
+async function startMasterclass(
 	pass: Pass,
 	lessons: string,
 	backlog: string,
@@ -1479,42 +1479,47 @@ async function startHarvest(
 		id = await pass.maestro.start(
 			[
 				"perform",
-				HARVEST_FILE,
+				MASTERCLASS_FILE,
 				"--lessons",
 				lessons,
 				"--backlog",
 				backlog,
 				"--tour",
-				harvestTour(pass.milestone),
+				masterclassTour(pass.milestone),
 				"--title",
-				"factory: harvest lessons",
+				"factory: masterclass",
 				...pass.presets.flatMap((p) => ["--preset", p]),
 			],
-			join(pass.dir, "harvest.log"),
+			join(pass.dir, "masterclass.log"),
 		);
 	} catch (error) {
 		await halt(
 			pass,
-			"harvest did not start",
-			"The harvest did not start:",
+			"masterclass did not start",
+			"The masterclass did not start:",
 			message(error),
 		);
 		return;
 	}
-	pass.say(`harvesting the lessons of ${runs} concerts: concert ${id}`);
+	pass.say(
+		`holding a masterclass on the lessons of ${runs} concerts: concert ${id}`,
+	);
 }
 
 /**
- * Starts a harvest of the lessons of the factory runs since the last one, once `HARVEST_EVERY` settled, with the
- * backlog snapshot; true when it started none.
+ * Starts a masterclass on the lessons of the factory runs since the last one, once `MASTERCLASS_EVERY` settled, with
+ * the backlog snapshot; true when it started none.
  */
-async function harvest(pass: Pass, entries: Entry[]) {
-	const listed = await pass.maestro.concerts(pass.milestone, HARVEST_WINDOW);
-	const counted = unharvested(listed, pass.milestone);
+async function masterclass(pass: Pass, entries: Entry[]) {
+	const listed = await pass.maestro.concerts(
+		pass.milestone,
+		MASTERCLASS_WINDOW,
+	);
+	const counted = sinceWatermark(listed, pass.milestone);
 	if (!counted) return true;
 	const hand = handRuns(
 		await Promise.all(
-			HAND_TOURS.map((t) => pass.maestro.concerts(t, HARVEST_WINDOW)),
+			HAND_TOURS.map((t) => pass.maestro.concerts(t, MASTERCLASS_WINDOW)),
 		),
 		listed,
 		pass.milestone,
@@ -1527,13 +1532,13 @@ async function harvest(pass: Pass, entries: Entry[]) {
 	const reports = [];
 	for (const concert of runs.toReversed())
 		reports.push({ concert, report: await pass.maestro.report(concert.id) });
-	const lessons = join(pass.dir, "harvest-lessons.md");
+	const lessons = join(pass.dir, "masterclass-lessons.md");
 	await Bun.write(lessons, lessonsText(reports));
 	const [closed, pulls] = await Promise.all([
 		pass.forge.closed(CLOSED),
 		pass.forge.pulls(),
 	]);
-	const backlog = join(pass.dir, "backlog-harvest.md");
+	const backlog = join(pass.dir, "backlog-masterclass.md");
 	await Bun.write(
 		backlog,
 		snapshot(
@@ -1544,14 +1549,14 @@ async function harvest(pass: Pass, entries: Entry[]) {
 			pulls,
 		),
 	);
-	await startHarvest(pass, lessons, backlog, runs.length);
+	await startMasterclass(pass, lessons, backlog, runs.length);
 	return false;
 }
 
 /**
  * One pass: no action when another pass holds the lock, the tour manager is halted or a concert of the milestone runs;
- * else it routes settled concerts and a settled harvest, syncs, and starts one build, else one triage, else a harvest
- * once due, or none under `routeOnly`. Each step returns whether the pass goes on.
+ * else it routes settled concerts and a settled masterclass, syncs, and starts one build, else one triage, else a
+ * masterclass once due, or none under `routeOnly`. Each step returns whether the pass goes on.
  * @throws Error when the milestone does not exist, or the forge or maestro fails or answers what the tick cannot read.
  */
 export async function pass(deps: Deps, options: Options): Promise<void> {
@@ -1579,7 +1584,7 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 	};
 	const steps = options.routeOnly
 		? [route, sync]
-		: [route, sync, build, triage, harvest];
+		: [route, sync, build, triage, masterclass];
 	for (const step of steps) {
 		const entries = await load(pass);
 		if (!entries || !(await step(pass, entries))) return;

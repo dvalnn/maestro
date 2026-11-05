@@ -8,7 +8,7 @@ import {
 	elapsed,
 	FIGURES,
 	MARKER,
-	parseHarvest,
+	parseMasterclass,
 	parseTriage,
 	proposalIssue,
 	proposalLine,
@@ -589,24 +589,26 @@ const PROPOSAL = {
 	lessons: ["run just fmt first", "format before the checks"],
 };
 
-test("a harvest output parses, an empty list of proposals too", () => {
-	expect(parseHarvest({ proposals: [PROPOSAL] })).toEqual({
+test("a masterclass output parses, an empty list of proposals too", () => {
+	expect(parseMasterclass({ proposals: [PROPOSAL] })).toEqual({
 		proposals: [PROPOSAL],
 	});
-	expect(parseHarvest({ proposals: [] })).toEqual({ proposals: [] });
+	expect(parseMasterclass({ proposals: [] })).toEqual({ proposals: [] });
 });
 
-test("a harvest output that is not an object is malformed", () => {
-	expect(() => parseHarvest("proposals")).toThrow(
-		"the harvest output is not an object",
+test("a masterclass output that is not an object is malformed", () => {
+	expect(() => parseMasterclass("proposals")).toThrow(
+		"the masterclass output is not an object",
 	);
 });
 
 test.each([
 	["missing its lessons", { ...PROPOSAL, lessons: undefined }],
 	["with a target that is no string", { ...PROPOSAL, target: 3 }],
-])("a harvest with a proposal %s is malformed", (_, proposal) => {
-	expect(() => parseHarvest({ proposals: [proposal] })).toThrow("proposals");
+])("a masterclass with a proposal %s is malformed", (_, proposal) => {
+	expect(() => parseMasterclass({ proposals: [proposal] })).toThrow(
+		"proposals",
+	);
 });
 
 test("a proposal's issue asks its target, body, lessons and fingerprint, then gives the maintainer's turn", () => {

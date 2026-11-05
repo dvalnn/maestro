@@ -12,7 +12,7 @@ import {
 	Text,
 	type ValueOf,
 } from "@maestro/sdk";
-import PLANNER from "./harvest/prompts/planner.md" with { type: "text" };
+import PLANNER from "./masterclass/prompts/planner.md" with { type: "text" };
 import PLAIN from "./triage/prompts/_plain.md" with { type: "text" };
 
 /** What a promotion changes: a path, or `docs/adr/` for a new ADR. */
@@ -30,24 +30,24 @@ export const Promotion = Struct({
 });
 export type Promotion = ValueOf<typeof Promotion>;
 
-export const Harvest = Struct({ proposals: List(Promotion) });
-export type Harvest = ValueOf<typeof Harvest>;
+export const Masterclass = Struct({ proposals: List(Promotion) });
+export type Masterclass = ValueOf<typeof Masterclass>;
 
 // ADR 0008: a code node's function must be exported by its composition file.
-export function harvested({ harvest }: { harvest: Harvest }): {
-	harvest: Harvest;
+export function settle({ masterclass }: { masterclass: Masterclass }): {
+	masterclass: Masterclass;
 } {
-	return { harvest };
+	return { masterclass };
 }
 
-export const harvest = composition(
-	"harvest",
+export const masterclass = composition(
+	"masterclass",
 	{
 		doc: "Merge many concerts' lessons into proposals for the factory's prompts, standards, compositions, config, checks and code: a planner clusters the lessons, drops what those or the backlog already covers, and proposes a target, title and wording for each. Read-only: it leaves no changeset.",
 		params: {
 			lessons: Markdown({
 				description:
-					"The lessons to harvest: one `## <concert id> · <tour>` heading per concert, oldest first, with one bullet per lesson",
+					"The lessons to merge: one `## <concert id> · <tour>` heading per concert, oldest first, with one bullet per lesson",
 			}),
 			backlog: Markdown({
 				description:
@@ -66,18 +66,18 @@ export const harvest = composition(
 			attachments: {
 				lessons: {
 					artifact: literal(lessons, Markdown()),
-					hint: "first, for the lessons to harvest, one heading per concert, oldest first",
+					hint: "first, for the lessons to merge, one heading per concert, oldest first",
 				},
 				backlog: {
 					artifact: literal(backlog, Markdown()),
 					hint: "for the open and recently closed issues, to drop a promotion one already proposes",
 				},
 			},
-			out: { plan: JsonOut("harvest.json", Harvest) },
+			out: { plan: JsonOut("masterclass.json", Masterclass) },
 		});
-		return code(harvested, {
-			in: { harvest: readJson(planned.out.plan) },
-			out: { harvest: Harvest },
+		return code(settle, {
+			in: { masterclass: readJson(planned.out.plan) },
+			out: { masterclass: Masterclass },
 			label: "settle",
 		});
 	},

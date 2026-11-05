@@ -974,14 +974,14 @@ export function reportIssue(text: string, found: number) {
 	return { title, body: body.join("\n") };
 }
 
-/** A change a harvest proposes to the factory's standing text or code, with the lessons it merges. */
+/** A change a masterclass proposes to the factory's standing text or code, with the lessons it merges. */
 export type Proposal = {
 	target: string;
 	title: string;
 	body: string;
 	lessons: string[];
 };
-export type Harvest = { proposals: Proposal[] };
+export type Masterclass = { proposals: Proposal[] };
 
 const isProposals = (v: unknown): v is Proposal[] =>
 	Array.isArray(v) &&
@@ -995,11 +995,12 @@ const isProposals = (v: unknown): v is Proposal[] =>
 	);
 
 /**
- * `value` as a harvest output.
+ * `value` as a masterclass output.
  * @throws Error naming the field that is missing or malformed.
  */
-export function parseHarvest(value: unknown): Harvest {
-	if (!isJson(value)) throw new Error("the harvest output is not an object");
+export function parseMasterclass(value: unknown): Masterclass {
+	if (!isJson(value))
+		throw new Error("the masterclass output is not an object");
 	return {
 		proposals: field(value, "proposals", isProposals, "a list of proposals"),
 	};

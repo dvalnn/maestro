@@ -78,11 +78,11 @@ next action. [Home](docs/agents/factory.md)
 
 **Slice**: The concert that builds one ticket's change (`.maestro/slice.ts`). [Home](docs/agents/factory.md#build)
 
-**Harvest**: The concert that gathers lessons from settled concerts into proposals.
-[Home](docs/agents/factory.md#harvest)
+**Masterclass**: The concert that gathers lessons from settled concerts into proposals. _Avoid_: harvest.
+[Home](docs/agents/factory.md#masterclass)
 
-**Watermark**: The newest ok harvest concert in the record; settled slice and triage concerts on milestone tours after
-it count toward the next harvest. [Home](docs/agents/factory.md#harvest)
+**Watermark**: The newest ok masterclass concert in the record; settled slice and triage concerts on milestone tours
+after it count toward the next masterclass. [Home](docs/agents/factory.md#masterclass)
 
 **Dependency**: A forge "blocked by" link between issues that sets build order. [Home](docs/agents/factory.md)
 
