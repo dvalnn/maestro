@@ -42,7 +42,7 @@ const hasError = (diagnostics: readonly Diagnostic[]) =>
 
 const HOST = "HOST";
 
-/** Gives a host's diagnostic the `HOST` prefix (sdk-spec 13.3), unless it has it. */
+/** Gives a host's diagnostic the `HOST` prefix (sdk-spec: Diagnostics catalogue), unless it has it. */
 export function stampHost(d: Diagnostic): Diagnostic {
 	return d.code === HOST || d.code.startsWith(`${HOST}.`)
 		? d

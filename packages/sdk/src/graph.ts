@@ -89,7 +89,7 @@ export type Refs<O extends Types> = {
 	readonly [K in keyof O]: Ref<ValueOf<O[K]>>;
 };
 
-/** What every node constructor returns (sdk-spec 4). */
+/** What every node constructor returns (sdk-spec: Nodes and their results). */
 export interface Result<O extends Types = Types> {
 	readonly ok: Ref<boolean>;
 	/** Present when the node settled `rejected` or `failed`. */
@@ -101,7 +101,7 @@ export interface Result<O extends Types = Types> {
 export type Common = {
 	/** The last segment of the node id. Defaults to the constructor's name. */
 	label?: string;
-	/** The node is skipped unless this is true (sdk-spec 4.2). */
+	/** The node is skipped unless this is true (sdk-spec: Guards and tolerance). */
 	when?: Ref<boolean>;
 	/** Performs the node after a `rejected` upstream too. */
 	tolerate?: Tolerate;
@@ -225,7 +225,10 @@ function idOf(segment: string): string {
 	return path ? `${path}/${safe}` : safe;
 }
 
-/** Claims a node or scope id in the current frame: its path, then `label` or else `derived` (IR-01, sdk-spec 13.3). */
+/**
+ * Claims a node or scope id in the current frame: its path, then `label` or else `derived` (IR-01, sdk-spec:
+ * Diagnostics catalogue).
+ */
 export function claimId(label: string | undefined, derived: string): string {
 	const s = current();
 	if (label !== undefined && !LABEL.test(label))
@@ -606,7 +609,9 @@ const described = (value: unknown) =>
 		: { literal: value };
 
 /**
- * A stdlib node with one output, `value`, returned as a Ref. Its id is `derived` unless a label is given (sdk-spec 5).
+ * A stdlib node with one output, `value`, returned as a Ref. Its id is `derived` unless a label is given (sdk-spec:
+ * Refs and mapping between nodes). A lift's id names its source and what it does: `x.or(d)` is `x_or`, and
+ * `readJson(planner.out.plan)` is `planner_plan_json`, so two JSON outputs of one node need no labels.
  * @throws `SCOPE.duplicate` that says to reuse the earlier Ref when an identical lift already holds the id.
  */
 export function lift(

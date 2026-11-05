@@ -77,8 +77,7 @@ flowchart TD
 
 ## Diagnostics
 
-The prefixes are catalogued in
-[sdk-spec 13.3 Diagnostics catalogue](../../../../docs/sdk-spec.md#133-diagnostics-catalogue-core-17).
+The prefixes are catalogued in [sdk-spec: Diagnostics catalogue](../../../../docs/sdk-spec.md#diagnostics-catalogue).
 
 | Code            | Step           | When                                                                                       |
 | --------------- | -------------- | ------------------------------------------------------------------------------------------ |

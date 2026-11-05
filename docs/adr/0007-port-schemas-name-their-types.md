@@ -21,7 +21,8 @@ A JSON Schema annotation names the type, on any subschema of a port, param or sc
   `core.dir`, `core.json-file` and `core.markdown`. Each host owns its own namespace.
 - A marked type matches only the same name. A `core.json-file` also compares its content schema. Unmarked values match
   by schema.
-- An artifact never feeds a value port. A reader node turns it into a value, visible in the graph (sdk-spec section 5).
+- An artifact never feeds a value port. A reader node turns it into a value, visible in the graph (sdk-spec: Refs and
+  mapping between nodes).
 - An artifact port's schema describes the file's content. The runtime value is the reference, `ArtifactRef` in
   `packages/ir`: the SDK types artifact ports with it, and the SDK shares only `ir` with core. So `ir` holds the IR plus
   whatever the SDK and core must both see, and depends on nothing beyond Ajv.

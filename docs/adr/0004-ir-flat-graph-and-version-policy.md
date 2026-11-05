@@ -20,7 +20,7 @@ IR 1.0 (`packages/ir`, CORE-16, IR-01) fixes three things that every emitter and
    `find`, `parFind`, `fold` or `loop` mirrors). It names its `members` (result name to body node, several for a
    `parMap` or `map` body that returns several results; a `fold` names `first` and `step`) and a `loop` its `test`.
    Edges never leave a body except through the group's `out`. Fan-in is a `collect` edge from a `parMap` or `map`'s
-   `results`. Guards and tolerance are `control` edges, as architecture section 5 says.
+   `results`. Guards and tolerance are `control` edges, as the [IR README](../../packages/ir/README.md#edges) says.
 
 ## Considered options
 
@@ -30,11 +30,11 @@ IR 1.0 (`packages/ir`, CORE-16, IR-01) fixes three things that every emitter and
 - **Readers accept newer minors and ignore unknown fields.** Forward compatible, but a closed schema could no longer
   catch typos in hand-written IR, and an older engine would silently drop a field whose meaning matters. Rejected. An
   older maestro tells the operator to upgrade instead.
-- **`tolerate` on data edges.** Fewer edges, but it contradicts architecture section 5, which puts tolerance on control
-  edges. Kept as the architecture says.
+- **`tolerate` on data edges.** Fewer edges, but it contradicts the [IR README](../../packages/ir/README.md#edges),
+  which puts tolerance on control edges. Kept as it says.
 - **Selecting a mirrored member's result field by a field-read code node.** Uniform, but a Result handle's ports are
-  structure, not data (sdk-spec section 5). A host value such as a handle that may be consumed only once would then pass
-  through a code node. Rejected for mirrored ports.
+  structure, not data (sdk-spec: Refs and mapping between nodes). A host value such as a handle that may be consumed
+  only once would then pass through a code node. Rejected for mirrored ports.
 
 ## Consequences
 

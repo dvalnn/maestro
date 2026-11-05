@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { buildValid, nodeOf } from "./fixtures/context";
 import { escalate, fanout, planPanel } from "./fixtures/examples";
 
-// sdk-spec 14, with the fake host kind standing in for host nodes.
+// sdk-spec: Worked examples, with the fake host kind standing in for host nodes.
 describe("worked examples", () => {
 	test("escalate is a find over models that stops at the first green", () => {
 		const ir = buildValid(escalate);

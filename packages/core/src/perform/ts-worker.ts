@@ -36,7 +36,10 @@ export type Invocation = {
 	context: Omit<CodeContext, "path" | "log" | "signal"> & { artifacts: string };
 };
 
-/** Executes the code nodes of one runtime (sdk-spec 13.2). It gets each function through `LoadCode`. */
+/**
+ * Executes the code nodes of one runtime (architecture 9, worker protocol). It gets each function through
+ * `LoadCode`.
+ */
 export interface Worker {
 	readonly handshake: Handshake;
 	/** `log` takes the instance's log lines, which core stores in the record, until `invoke` settles. */

@@ -82,7 +82,10 @@ export type Composition<P extends Types, Q extends Types, R> = {
 
 const NAME = /^[a-z][a-z0-9_-]*$/;
 
-/** Declares a composition (sdk-spec 2). @throws `SCOPE.name` or `CFG.examples` for a bad declaration. */
+/**
+ * Declares a composition (sdk-spec: Writing a composition).
+ * @throws `SCOPE.name` or `CFG.examples` for a bad declaration.
+ */
 export function composition<P extends Types, Q extends Types, R>(
 	name: string,
 	declaration: Declaration<P, Q>,
@@ -135,8 +138,8 @@ const withDefaults = <P extends Types>(
 	}) as Values<P>;
 
 /**
- * Instantiates `sub` in a scope of its own (sdk-spec 8). Use-site params win over its configured params in the build
- * context, and those over the defaults.
+ * Instantiates `sub` in a scope of its own (sdk-spec: Subcompositions). Use-site params win over its configured params
+ * in the build context, and those over the defaults.
  * @throws `REF.param` when a param gets a Ref.
  */
 export function use<P extends Types, Q extends Types, R>(

@@ -230,7 +230,8 @@ const isMetrics = (value: unknown): value is Metrics =>
 
 /**
  * `result` with its written artifacts moved into the area (ADR 0007), and its outputs checked against the node's
- * `out` ports when it settled `ok` or `rejected` (sdk-spec 7, ADR 0008). A failed move or check settles `failed`.
+ * `out` ports when it settled `ok` or `rejected` (sdk-spec: Code nodes, ADR 0008). A failed move or check settles
+ * `failed`.
  */
 export async function finish(
 	kit: Kit,

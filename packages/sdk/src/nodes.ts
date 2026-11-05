@@ -122,7 +122,10 @@ export function code<I, O extends Types = NoOutputs>(
 	);
 }
 
-/** `value` as an input of declared `type`, so a plain value can feed a port of a host type (sdk-spec 9). */
+/**
+ * `value` as an input of declared `type`, so a plain value can feed a port of a host type (sdk-spec: Host SDK
+ * contract).
+ */
 export const literal = <T>(value: T, type: Type<T>): Ref<T> =>
 	literalRef(value, type, "literal") as Ref<T>;
 
@@ -319,7 +322,7 @@ const MEMBER_HINT =
 
 /**
  * The Bool port `read` returns inside the body of `group`, which must belong to a node of that body, or to the state
- * of `group` when `state` (sdk-spec 4.1).
+ * of `group` when `state` (sdk-spec: Node constructors).
  */
 function bodyBool(
 	group: string,
@@ -565,7 +568,7 @@ function fold<I extends Items<unknown>, O extends Types>(
 	return typed(new ResultImpl(group.id));
 }
 
-/** Iteration over a list known up front (sdk-spec 4.1). */
+/** Iteration over a list known up front (sdk-spec: Node constructors). */
 export const iter = { parMap, map, find, parFind, fold };
 
 /**
@@ -667,7 +670,7 @@ function doWhile<O extends Types>(
 	return typed(new ResultImpl(group.id));
 }
 
-/** Bounded loops over typed state, told apart by when they read their condition (sdk-spec 4.1). */
+/** Bounded loops over typed state, told apart by when they read their condition (sdk-spec: Node constructors). */
 export const loop = { while: whileLoop, doWhile };
 
 /** The loop group fed by `opts.init`, and the state its body reads. */

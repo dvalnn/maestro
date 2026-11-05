@@ -5,9 +5,9 @@ import type { Outcome } from "./outcome";
 export type Severity = "error" | "warning";
 
 /**
- * A finding about a graph (CORE-17), from ir, the SDK or core. `code` is stable, with a prefix from sdk-spec 13.3, and
- * any `error` stops compose. `hint` is the next step. Without `node`, `scope`, `source` and `path` it is about the
- * whole IR.
+ * A finding about a graph (CORE-17), from ir, the SDK or core. `code` is stable, with a prefix from the sdk-spec
+ * Diagnostics catalogue, and any `error` stops compose. `hint` is the next step. Without `node`, `scope`, `source` and
+ * `path` it is about the whole IR.
  */
 export type Diagnostic = {
 	code: string;

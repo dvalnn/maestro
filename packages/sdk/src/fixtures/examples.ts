@@ -1,4 +1,4 @@
-// The worked examples of sdk-spec 14 that need no host, with the fake host kind standing in for host nodes.
+// Worked examples from sdk-spec that need no host.
 
 import { hostNode } from "../host";
 import {

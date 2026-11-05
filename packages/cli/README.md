@@ -313,9 +313,7 @@ not JSON is refused. The record keeps a flag's path absolute. A new concert stag
 read and a resume keeps, and an encore reads and hashes the file anew. An IR file is already built and takes no param
 flags, and one that holds a file param's file is refused by `perform`: perform its composition file instead.
 
-A file's stem is its pack id, so it must be one: lower case, starting with a letter, then letters, digits, `_` or `-`,
-and no installed pack's. A bare file takes params from its flags, its example set and its defaults only. No config key
-configures it; make it a pack for that.
+The file rules (stem, bare-file params, imports) are in [SDK spec: File rules](../../docs/sdk-spec.md#file-rules).
 
 ## Config
 
