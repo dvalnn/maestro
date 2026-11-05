@@ -1,4 +1,5 @@
-// One pass of the tour manager (docs/agents/factory.md, zoom 1): it routes settles, builds a ready ticket, triages one or harvests lessons.
+// One pass of the tour manager (docs/agents/factory.md, One tick): it routes settles, builds a ready ticket, triages
+// one or harvests lessons.
 import { dlopen, FFIType, read } from "bun:ffi";
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
@@ -334,7 +335,7 @@ async function apply(pass: Pass, number: number, data: Data, result: Triage) {
 	pass.say(`routed #${number} to ${state}`);
 }
 
-/** Routes concert `id`'s settle onto `issue` (zoom 2), and returns false when it halted the tour manager. */
+/** Routes triage `id`'s settle onto `issue` (factory.md, Routing a settle), and returns false when it halted. */
 async function settle(pass: Pass, { issue, data }: Entry, id: string) {
 	const triaged = triageOf(await pass.maestro.result(id));
 	const result =
@@ -400,7 +401,10 @@ const BLOCKED_OPTIONS: Option[] = [
 	RETRIAGE,
 ];
 
-/** Asks the blocked agent's question `reason` on issue `number`, answered by a reply (factory.md, Rules: Blocked). */
+/**
+ * Asks the blocked agent's question `reason` on issue `number`, answered by a reply (factory.md, Rules, Build:
+ * Blocked).
+ */
 async function block(pass: Pass, number: number, reason: string) {
 	const questions = [
 		{
@@ -417,7 +421,8 @@ async function block(pass: Pass, number: number, reason: string) {
 }
 
 /**
- * Halts the tour manager on slice `id` of `entry` that failed to run, requeuing the ticket to `ready-for-agent` with its attempts kept (factory.md, Rules: Attempts).
+ * Halts the tour manager on slice `id` of `entry` that failed to run, requeuing the ticket to `ready-for-agent` with
+ * its attempts kept and no concert to continue (factory.md, Rules, Policy: Halt).
  */
 async function haltSlice(
 	pass: Pass,
@@ -443,7 +448,9 @@ async function haltSlice(
 }
 
 /**
- * Routes unlanded slice `id` of `entry` by its outcome (factory.md, Rules): `blocked:` to `needs-info` asking its question; any other `failed` halts the tour manager; `rejected` spends an attempt. One routed to `needs-info` is the concert to continue; a retry is fresh. Returns false when it halted.
+ * Routes unlanded slice `id` of `entry` by its outcome (factory.md, Rules, Build): `blocked:` to `needs-info` asking
+ * its question; any other `failed` halts the tour manager; `rejected` spends an attempt. One routed to `needs-info` is
+ * the concert to continue; a retry is fresh. Returns false when it halted.
  */
 async function fail(
 	pass: Pass,
@@ -474,7 +481,9 @@ async function fail(
 	return true;
 }
 
-/** The open PR of `pull.head` with `pull`'s body, retargeted to `pull.base` when it merges elsewhere, else a new one. */
+/**
+ * The open PR of `pull.head` with `pull`'s body, retargeted to `pull.base` when it merges elsewhere, else a new one.
+ */
 async function openPull(forge: Forge, pull: NewPull) {
 	const open = (await forge.pulls()).find((p) => p.head === pull.head);
 	if (!open) return forge.openPull(pull);
@@ -485,7 +494,7 @@ async function openPull(forge: Forge, pull: NewPull) {
 	return open.number;
 }
 
-/** Whether `issue` is low risk, so its PR to `main` merges on its own (factory.md, Rules: Risk and tier). */
+/** Whether `issue` is low risk, so its PR to `main` merges on its own (factory.md, Rules, Policy: Risk and tier). */
 const isLow = (issue: Issue, { result }: Data) =>
 	result !== undefined && riskOf(issue, result.risk) === "low";
 
@@ -502,8 +511,9 @@ async function closeWorkspace(pass: Pass, dir: string, name: string) {
 type Failure = { title: string; lead: string };
 
 /**
- * Runs `work` in a fresh workspace of issue `number` on revision `base`, then removes it; undefined when it halted on
- * `failure`, keeping the workspace.
+ * Runs `work` in a fresh jj workspace `factory-i<number>` of issue `number`, at
+ * `$XDG_CACHE_HOME/maestro-factory/i<number>`, on revision `base`, then forgets and removes it; undefined when it
+ * halted on `failure`, keeping the workspace for the next tick to replace once the halt closes.
  */
 async function inWorkspace<T>(
 	pass: Pass,
@@ -548,7 +558,10 @@ async function spendOf(pass: Pass, issue: Issue) {
 	return Promise.all(slices.reverse().map((c) => pass.maestro.spend(c.id)));
 }
 
-/** The PR text of `issue`'s slice, with its `report` and the `spend` of its concerts (factory.md, Rules: PRs). */
+/**
+ * The PR text of `issue`'s slice, with its `report` and the `spend` of its concerts (factory.md, Rules, Landing and
+ * PRs: PRs).
+ */
 function pullText(
 	issue: Issue,
 	data: Data,
@@ -582,7 +595,10 @@ async function stackState(forge: Forge, number: number, stack: Stack) {
 const unmerged = ({ blocker, pull }: Stack) =>
 	`Blocker #${blocker} closed without merging its PR #${pull}, so this ticket's change, stacked on it, was not rebased onto \`${BASE}\`.`;
 
-/** Pushes `commit` from `dir` as `entry`'s branch and opens or retargets its PR into `base`, arming a low one to `main`. */
+/**
+ * Pushes `commit` from `dir` as `entry`'s branch and opens or retargets its PR into `base`, arming a low one to
+ * `main`.
+ */
 async function publish(
 	pass: Pass,
 	entry: Entry,
@@ -598,8 +614,8 @@ async function publish(
 }
 
 /**
- * Copies the commits `stack.commit..revision` of `entry` onto `main` in the workspace at `dir` and publishes them there;
- * a conflict asks.
+ * Copies the commits `stack.commit..revision` of `entry` onto `main` in the workspace at `dir` and publishes them
+ * there; a conflict asks.
  */
 async function restackIn(
 	pass: Pass,
@@ -660,9 +676,9 @@ async function record(
 }
 
 /**
- * Applies ok slice `id` of `entry` in the workspace at `dir`, folded into the PR head a revision is cut at, and
- * publishes it: to `main`, to its blocker's branch while a blocker is open, else restacked onto `main` (factory.md,
- * Rules: Blockers).
+ * Applies ok slice `id` of `entry` in the workspace at `dir`, squashed into `revisionBase` when it revises, and
+ * publishes it, force-pushing the branch onto the open PR: to `main`, to its blocker's branch while a blocker is open,
+ * else restacked onto `main` (factory.md, Rules, Build: Restack).
  */
 async function landIn(
 	pass: Pass,
@@ -718,7 +734,10 @@ async function land(pass: Pass, entry: Entry, id: string, report: Report) {
 	return true;
 }
 
-/** Routes slice `id`'s settle onto `entry` (zoom 2), after filing its reports; false when it halted. */
+/**
+ * Routes slice `id`'s settle onto `entry` (factory.md, Routing a settle), after filing its reports; false when it
+ * halted.
+ */
 async function settleSlice(pass: Pass, entry: Entry, id: string) {
 	const [result, report] = await Promise.all([
 		pass.maestro.result(id),
@@ -865,7 +884,9 @@ async function route(pass: Pass, entries: Entry[]) {
 const firstLine = (body: string) => body.split("\n")[0]?.trimEnd();
 const scopeOf = (label: string) => label.split("/")[0];
 
-/** Files child `child` of `epic` unless `entries` hold it, else gives it any label scope it lacks; returns its number. */
+/**
+ * Files child `child` of `epic` unless `entries` hold it, else gives it any label scope it lacks; returns its number.
+ */
 async function fileChild(
 	{ forge }: Pass,
 	epic: Issue,
@@ -939,7 +960,7 @@ function restackBranch(pass: Pass, entry: Entry, stack: Stack) {
 
 /**
  * Restacks `entry`'s PR onto `main` once no blocker is open and its blocker's PR merged, or asks when that PR closed
- * unmerged (factory.md, Rules: Blockers); false when it halted.
+ * unmerged (factory.md, Rules, Build: Restack); false when it halted.
  */
 async function restack(pass: Pass, entry: Entry, stack: Stack) {
 	const state = await stackState(pass.forge, entry.issue.number, stack);
@@ -969,7 +990,7 @@ async function syncOne(pass: Pass, entry: Entry, entries: Entry[]) {
 	return true;
 }
 
-/** Syncs each issue (zoom 1, note 2); false when it halted. */
+/** Syncs each issue (factory.md, One tick: sync); false when it halted. */
 async function sync(pass: Pass, entries: Entry[]) {
 	for (const entry of entries)
 		if (!(await syncOne(pass, entry, entries))) return false;
@@ -1048,8 +1069,8 @@ async function reviewed(forge: Forge, blocker: number, pulls: Pull[]) {
 }
 
 /**
- * Where issue `number` builds (factory.md, Rules: Blockers): on `main` with no open blocker, stacked on the newest
- * blocker PR's head when each blocker is in review on a PR to `main`, else undefined, as it waits.
+ * Where issue `number` builds (factory.md, Rules, Build: Dependencies): on `main` with no open blocker, stacked on the
+ * newest blocker PR's head when each blocker is in review on a PR to `main`, else undefined, as it waits.
  */
 async function baseOf(
 	{ forge }: Pass,
@@ -1070,7 +1091,7 @@ async function baseOf(
 /**
  * What a build of ready `entry` performs: an encore of its concert to continue, fed the replies mentioning the login
  * newer than `read`, else a fresh slice, since an encore with nothing changed is refused
- * (factory.md, Rules: Encore).
+ * (factory.md, Rules, Build: Encore).
  */
 async function performOf(
 	pass: Pass,
@@ -1118,7 +1139,12 @@ const reviewChange = (r: Review): Change => ({
 		.join("\n\n"),
 });
 
-/** The encore of in-review `entry`'s landed concert its PR among `pulls` asks for with changes requested, if any. */
+/**
+ * The encore of in-review `entry`'s landed concert its PR among `pulls` asks for with changes requested, if any. It is
+ * fed each review above `review`, moves `review` to the newest, and records the PR's head as `revisionBase`: the
+ * commit the build is cut at, over a stack's, and lands folded into, so the PR keeps one commit per ticket and its
+ * base.
+ */
 async function revision(
 	pass: Pass,
 	{ issue, data }: Entry,
@@ -1143,7 +1169,10 @@ async function revision(
 	};
 }
 
-/** Starts the encore of the oldest in-review ticket with changes requested where a build would; true when it started none. */
+/**
+ * Starts the encore of the oldest in-review ticket with changes requested where a build would; true when it started
+ * none.
+ */
 async function revise(pass: Pass, entries: Entry[]) {
 	const reviewed = entries
 		.filter((e) => stateOf(e.issue) === "in-review")
@@ -1198,7 +1227,8 @@ async function closedApproval(
 
 /**
  * Every ticket whose spec the owner approved or that closed as completed, with when its spec was written (`specAt`)
- * or it closed (factory.md, Rules: Stale spec). A ticket whose data holds no `specAt` is left out.
+ * or the forge's `closed_at` says it closed (factory.md, Rules, Build: Stale spec). A routed triage stamps `specAt`
+ * with the tick's clock; rewriting the spec comment does not. A ticket whose data holds no `specAt` is left out.
  */
 async function approvals(pass: Pass, entries: Entry[]): Promise<Approval[]> {
 	const open = entries.flatMap(({ issue, data }) => {
@@ -1229,7 +1259,7 @@ const staleLead = (found: ReturnType<typeof overlaps>) =>
 /**
  * Moves ready `entry` to `needs-triage` with a question comment naming the tickets approved or closed after its spec
  * that touch the same files, and returns true; false when it shares none, or holds no `specAt`, and builds
- * (factory.md, Rules: Stale spec).
+ * (factory.md, Rules, Build: Stale spec).
  */
 async function retriage(
 	pass: Pass,
@@ -1403,8 +1433,10 @@ function handRuns(
 
 /**
  * The factory runs among `concerts`, newest first, that no harvest has read: those newer than the newest ok harvest,
- * the watermark, or all of them without one (factory.md, Rules: Harvest watermark). Undefined when no harvest is due:
- * the newest concert is a harvest, or fewer than `HARVEST_EVERY` runs are unharvested.
+ * the watermark, or all of them without one (factory.md, Rules, Harvest). The watermark is read from the record, not
+ * kept by the tick: pruning any other concert leaves it intact, and pruning it makes the older harvest, or none, the
+ * watermark, so its lessons are read again. Undefined when no harvest is due: the newest concert is a harvest, or fewer
+ * than `HARVEST_EVERY` runs are unharvested.
  */
 function unharvested(
 	concerts: readonly Concert[],

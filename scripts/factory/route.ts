@@ -22,7 +22,7 @@ type Verdict = (typeof VERDICTS)[number];
 export type Risk = (typeof RISKS)[number];
 const TIERS = ["small", "ordinary", "risky"] as const;
 export type Tier = (typeof TIERS)[number];
-/** How many red slices a ticket spends before it goes to `needs-info` (factory.md, Rules: Attempts). */
+/** How many red slices a ticket spends before it goes to `needs-info` (factory.md, Rules, Build: Attempts). */
 export const ATTEMPTS = 2;
 
 /** A decision or exclusion of a spec: `lead` titles it, each of `points` holds one fact. */
@@ -90,15 +90,15 @@ export type Triage = {
 	contract?: string;
 };
 /**
- * The tick's state for one issue (factory.md, Rules: Data): `concert` is the last settled concert it routed, `triage`
- * the last ok triage concert, which a re-triage continues, `read` the id of the newest comment a triage was fed,
- * `version` the spec's, counting routed triages, `specAt` when the last routed triage wrote it (ms since the epoch),
- * `pending` marks a routed result whose labels are not yet set, `filed`
- * holds an approved split's children, `slice` the slice concert its last build started, `attempts` the red slices it
- * spent, `failure` the reason its last slice failed, `parked` a slice concert routed but not applied and `stack` the
- * in-review blocker its last build stacked on, with its PR and that PR's head commit, until the restack onto `main`.
- * `encore` is the slice concert a build continues and `review` the id of the newest review requesting changes an
- * encore was fed. `revisionBase` is the head of the PR a revision is cut at and lands on, until it lands.
+ * The tick's state for one issue (factory.md, Forge surfaces: Data): `concert` is the last settled concert it routed,
+ * `triage` the last ok triage concert, which a re-triage continues, `read` the id of the newest comment a triage was
+ * fed, `version` the spec's, counting routed triages, `specAt` when the last routed triage wrote it (ms since the
+ * epoch), `pending` marks a routed result whose labels are not yet set, `filed` holds an approved split's children,
+ * `slice` the slice concert its last build started, `attempts` the red slices it spent, `failure` the reason its last
+ * slice failed, `parked` a slice concert routed but not applied and `stack` the in-review blocker its last build
+ * stacked on, with its PR and that PR's head commit, until the restack onto `main`. `encore` is the slice concert a
+ * build continues and `review` the id of the newest review requesting changes an encore was fed. `revisionBase` is the
+ * head of the PR a revision is cut at and lands on, until it lands.
  */
 export type Data = {
 	concert?: string;
@@ -458,7 +458,10 @@ const folded = (heading: string, count: string, lines: string[]) =>
 
 const files = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
 
-/** A spec as its comment shows it (factory.md, Rules: Spec comment): what the owner approves open, the rest folded. */
+/**
+ * A spec as its comment shows it (factory.md, Forge surfaces: Spec comment): what the owner approves open, the rest
+ * folded.
+ */
 const specLines = (spec: Spec) => [
 	...contextSection(spec),
 	...designSections(spec),
@@ -537,7 +540,9 @@ function buildLines({ attempts, failure, slice }: Data) {
 	];
 }
 
-/** What the tick runs or queues next in `state`, one it owns, a queued build waiting on the open dependencies `waiting`. */
+/**
+ * What the tick runs or queues next in `state`, one it owns, a queued build waiting on the open dependencies `waiting`.
+ */
 function tourMove(
 	state: State,
 	{ result, slice, attempts, filed }: Data,
@@ -578,7 +583,9 @@ function waitsOn(state: State, data: Data) {
 
 const isState = (label: string) => STATES.some((s) => s === label);
 
-/** How to take one of `moves`: on the forge, else by label, after a reply mentioning `@login` where a move follows one. */
+/**
+ * How to take one of `moves`: on the forge, else by label, after a reply mentioning `@login` where a move follows one.
+ */
 const turnHow = (moves: readonly Option[], login: string) =>
 	moves.every((m) => isState(m.label))
 		? `Label the issue with the choice. Where it follows a reply, first reply \`@${login} …\` with the answer or a redirect.`
@@ -628,8 +635,8 @@ function headingOf(data: Data) {
 }
 
 /**
- * The spec comment for `data` in `state` (factory.md, Rules: Spec comment): the marker, then readable Markdown ending in
- * whose move it is, answered by mentioning `login`, then the one data line the tick reads back.
+ * The spec comment for `data` in `state` (factory.md, Forge surfaces: Spec comment): the marker, then readable Markdown
+ * ending in whose move it is, answered by mentioning `login`, then the one data line the tick reads back.
  */
 export function commentOf(
 	data: Data,
@@ -708,8 +715,8 @@ const questionLines = (q: Question, n: number) => [
 ];
 
 /**
- * A question comment (factory.md, Rules: Question comments): the marker, the heading, `questions` between rules, then
- * `how` to answer. Agent text in it is made inert.
+ * A question comment (factory.md, Forge surfaces: Question comments): the marker, the heading, `questions` between
+ * rules, then `how` to answer. Agent text in it is made inert.
  */
 export const questionOf = (questions: readonly Question[], how: string) =>
 	[
@@ -749,7 +756,7 @@ export const requestOf = (
 
 export type Change = { heading: string; body?: string };
 
-/** `request` followed by each of `changes` under its `##` heading (factory.md, Rules: Encore). */
+/** `request` followed by each of `changes` under its `##` heading (factory.md, Rules, Build: Encore). */
 export const encoreRequest = (request: string, changes: readonly Change[]) =>
 	[
 		request,
@@ -846,6 +853,7 @@ function dangerLine({ risk, result }: Landed) {
 	];
 }
 
+/** The spend table: a row per concert, a build or an encore as its record says, then the total. */
 function spendLines(spend: readonly Spend[]) {
 	const row = (cells: readonly string[]) => `| ${cells.join(" | ")} |`;
 	return [
@@ -882,7 +890,10 @@ const block = (heading: string, lines: readonly string[]) => [
 const closing = ({ issue, result }: Landed) =>
 	`Closes #${issue}${result.related?.length ? ` · relates to ${refs(result.related)}` : ""}`;
 
-/** The writer's `pr`, then the gaps, the risk and review, the spend folded, and the closing line last. */
+/**
+ * The writer's `pr`, then the gaps folded, one line of risk, area and review tier with the planner's contract as the
+ * one-way door, the spend folded under its total, and the closing line last.
+ */
 function writtenBody(landed: Landed, pr: string) {
 	const { spend, gaps, tier } = landed;
 	const [risk, ...door] = dangerLine(landed);
@@ -904,7 +915,11 @@ function writtenBody(landed: Landed, pr: string) {
 	].join("\n");
 }
 
-/** The PR body of a landed slice: the writer's when it wrote one, else one built from the tick's data (factory.md, Rules: PRs). */
+/**
+ * The PR body of a landed slice (factory.md, Rules, Landing and PRs: PRs): the writer's followed by the tick's
+ * sections, else one built from the tick's data alone, with the subject and each decision's lead as Summary, the
+ * acceptance commands as the gate with the review's upheld findings as Evidence, then the gaps, risk and spend.
+ */
 export function pullBody(landed: Landed) {
 	if (landed.pr) return writtenBody(landed, landed.pr);
 	const { spend, gaps, result } = landed;
@@ -928,7 +943,10 @@ export function pullBody(landed: Landed) {
 const FINGERPRINT_HEX = 12;
 const TITLE_MAX = 80;
 
-/** The line that marks a filed report: the first hex of SHA-256 over its text lower-cased with whitespace folded. */
+/**
+ * The line that marks a filed report: the first 12 hex of SHA-256 over its text lower-cased, whitespace runs folded to
+ * one space and trimmed.
+ */
 export function fingerprintLine(text: string) {
 	const folded = text.toLowerCase().replace(/\s+/g, " ").trim();
 	const hex = createHash("sha256").update(folded).digest("hex");

@@ -67,6 +67,8 @@ systemctl --user enable --now maestro-factory.timer
 journalctl --user -u maestro-factory    # what each pass did
 ```
 
-To stop it, `systemctl --user disable --now maestro-factory.timer`. A failed or malformed triage, a triage or build that
-does not start, a slice that fails without a `blocked:` reason, a slice that does not land, or data it cannot read halts
-the tour manager with an open `maestro-tm:halt` issue; close it to resume.
+To stop it, `systemctl --user disable --now maestro-factory.timer`. A failure the tick cannot route halts it with an
+open `maestro-tm:halt` issue; close it to resume (`docs/agents/factory.md`, Policy: Halt).
+
+A new environment starts with manual shakedown runs, each watched by hand: first with the stub harness
+(`--preset stub`), then with a cheap model. The tick does not enforce them.

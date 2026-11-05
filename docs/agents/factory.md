@@ -1,56 +1,96 @@
-# Factory
+# Tour manager
 
-How the tour manager takes a ticket from the forge to a merged PR. The Maestro Tour Manager ("tour manager") is maestro
-in factory mode, and the name it signs on a ticket. A tick script drives it: each run reads the forge, routes whatever a
-finished concert left, and starts at most one next action. The states are `state/` labels (`triage-labels.md`), and the
-tick's transition table holds the same machine as data.
+For the owner and agents looking up how the tour manager moves a ticket and what it writes on the forge.
 
-## Overview
+The Maestro Tour Manager ("tour manager") is maestro in factory mode, and the name it signs on a ticket. A **tick**, one
+run of `scripts/factory` (install and flags in its `README.md`), reads the forge, routes whatever a finished concert
+left, and starts at most one next action. A concert that has finished and awaits routing is a **settle**. A **slice** is
+the concert that builds one ticket's change (`.maestro/slice.ts`); a **harvest** is the concert that gathers lessons
+from settled concerts.
 
-A ticket's path. Bold edges are the owner's moves, gold states wait on the owner, green is done.
+## State machine
+
+A ticket's state is its `state/` label (meanings in `triage-labels.md`); a move replaces it, since the scope is
+exclusive. An edge names the actor that causes the move, and the tick sets the label unless the owner does it by hand.
+The actors:
+
+- **owner**: the human, or forge-bot acting for them.
+- **tick**: the script, as its own account `maestro-tm`, apart from forge-bot, the sessions' account.
+- **triage**, **slice**, **harvest**: the concerts the tick performs; the tick routes their outcome.
+- **auto-merge**: the forge, on a low-risk PR the tick armed.
+
+Bold edges are the owner's moves, dashed ones park a ticket for an answer, gold states wait on the owner, green is done.
+The transition table in `scripts/factory/transitions.ts` holds the same machine, and a test checks these diagrams
+against it. Forward moves:
 
 ```mermaid
 flowchart LR
-    IN["intake"]
-    GATE["needs-approval"]
-    Q["ready-for-agent"]
-    B["in-progress"]
-    R["in-review"]
-    D(["closed"])
-    DUP(["duplicate"])
+    S(( ))
+    NT["needs-triage"]
+    NA["needs-approval"]
+    RA["ready-for-agent"]
+    IP["in-progress"]
+    IR["in-review"]
     NI["needs-info"]
+    RH["ready-for-human"]
+    WF["wontfix"]
+    DU["duplicate"]
+    CL(["closed"])
 
-    IN -->|"low, medium"| Q
-    IN -->|"high, split"| GATE
-    IN -->|dup| DUP
-    GATE ==>|approve| Q
-    Q -->|build| B
-    B -->|PR| R
-    B -->|"rejected ¹"| Q
-    R ==>|"merge ²"| D
-    R ==>|changes| B
-    B -.->|"blocked ³"| NI
-    R -.->|conflict| NI
-    IN -.->|"question ⁴"| NI
-    NI ==>|"answer ⁵"| Q
-    NI ==>|"answer ⁵"| IN
-    NI ==>|"apply ⁶"| B
-    GATE ==>|"answer ⁵"| IN
+    S -->|"[owner, tick] filed"| NT
+    S -->|"[harvest] lesson"| NA
+    NT -->|"[triage] low, medium"| RA
+    NT -->|"[triage] high, split"| NA
+    NT -.->|"[triage] question"| NI
+    NT -->|"[triage] dup"| DU
+    NA ==>|"[owner] approve"| RA
+    NA ==>|"[owner] take"| RH
+    NA ==>|"[owner] drop"| WF
+    RA -->|"[tick] build, split approved"| IP
+    IP -->|"[tick] PR"| IR
+    IP -->|"[tick] epic done"| CL
+    IR ==>|"[owner, auto-merge] merge"| CL
+    RH ==>|"[owner] done"| CL
+    WF ==>|"[owner] close"| CL
+    DU -->|"[tick] close"| CL
 
     classDef owner stroke:#d4a72c,stroke-width:3px
     classDef done stroke:#57ab5a,stroke-width:3px
-    class GATE,NI owner
-    class D done
+    class NA,NI owner
+    class CL done
 ```
 
-1. With attempts left, or an infra fault.
-2. By the owner, or by auto-merge on low risk.
-3. Or out of attempts.
-4. Any verdict that asks the owner a question, whatever its risk.
-5. A reply to triage's questions, or to a waiting spec, goes back to intake; any other answer goes to the queue.
-6. A parked slice's result, applied (Rules: Moved during a run).
+Moves back, to an earlier state or aside to wait for an answer:
 
-## Zoom 1: one tick
+```mermaid
+flowchart LR
+    NT["needs-triage"]
+    NA["needs-approval"]
+    RA["ready-for-agent"]
+    IP["in-progress"]
+    IR["in-review"]
+    NI["needs-info"]
+
+    NA ==>|"[owner] answer"| NT
+    RA -->|"[tick] stale"| NT
+    IP -.->|"[slice, tick] blocked"| NI
+    IP -->|"[slice] red, infra"| RA
+    IR ==>|"[owner] changes"| IP
+    IR -.->|"[tick] conflict"| NI
+    NI ==>|"[owner] answer"| RA
+    NI ==>|"[owner] answer triage"| NT
+    NI ==>|"[owner] apply"| IP
+
+    classDef owner stroke:#d4a72c,stroke-width:3px
+    class NA,NI owner
+```
+
+The owner may move any open issue to `ready-for-human` or `wontfix`; the diagram draws it from `needs-approval` only. A
+closed issue is no label: the forge's closed state.
+
+## One tick
+
+The double-bordered step is detailed under Routing a settle.
 
 ```mermaid
 flowchart TD
@@ -60,7 +100,7 @@ flowchart TD
     H -->|yes| X
     H -->|no| C{"concert?"}
     C -->|running| X
-    C -->|settled| S[["route (zoom 2)"]]
+    C -->|settled| S[["route"]]
     C -->|none| SY
     S --> SY["sync ²"]
     SY --> P{"pick ³"}
@@ -72,347 +112,380 @@ flowchart TD
     E & SL & TR & HV --> W["write back ⁴"] --> X
 ```
 
-1. Halted by an infra fault or a failed triage, until its `maestro-tm:halt` issue closes.
-2. A merged PR closes its issue through its `Closes #N`, a stacked PR whose dependency merged restacks onto `main`
-   (Rules: Restack), closed dependencies free tickets, an approved split files its children, and an epic's last closed
-   child closes it.
-3. First match wins, in the order of the arrows: a PR with changes requested, a ready ticket whose dependencies allow
-   it, an intake issue, a harvest due. Among tickets, a pinned one comes first, in pinned order.
-4. Set the labels, edit the spec comment, post any question comment, and rewrite the closing line on a new version.
+1. Until the `maestro-tm:halt` issue closes (Rules, Policy: Halt).
+2. A merged PR closes its issue through its `Closes #N`; a stacked PR whose dependency merged restacks onto `main`
+   (Rules, Build: Restack); closed dependencies free tickets; an approved split files its children (Rules, Triage:
+   Splits) and its last closed child closes the epic.
+3. First match wins, in the order of the arrows (Rules, Policy: Pick order). `--route-only` routes and syncs but starts
+   nothing.
+4. Set the labels, edit the spec comment, post any question comment, and rewrite the closing line on a new version
+   (Forge surfaces).
 
-## Zoom 2: routing a settle
+## Routing a settle
 
 Red marks the halt.
 
 ```mermaid
 flowchart TD
-    S(["settled"]) --> M{"moved? ⁸"}
+    S(["settled"]) --> M{"moved? ¹"}
     M -->|no| K{"concert"}
     K -->|triage| V{"verdict"}
     V -->|"low, medium"| RA["ready-for-agent"]
     V -->|"high, split"| NA["needs-approval"]
     V -->|dup| DU["duplicate"]
-    V -->|"question ⁷"| NI1["needs-info"]
-    V -->|"failed ⁶"| HALT
+    V -->|question| NI1["needs-info"]
+    V -->|failed| HALT
     K -->|slice| O{"outcome"}
-    O -->|ok| LAND["land ¹"] --> IR["in-review"]
-    O -->|"rejected ⁹"| A{"attempts left?"}
+    O -->|ok| LAND["land ²"] --> IR["in-review"]
+    O -->|"rejected ³"| A{"attempts left?"}
     A -->|yes| RA2["ready-for-agent"]
     A -->|no| NI2["needs-info"]
-    O -->|blocked| NI3["needs-info ²"]
-    O -->|"failed, not blocked"| HALT["halt ³"]
-    O -.->|any| REP["file reports ⁴"]
-    K -->|harvest| PR["needs-approval ⁵"]
-    M -->|yes| PK["needs-info ⁸"]
+    O -->|"blocked ⁴"| NI3["needs-info"]
+    O -->|"failed, not blocked"| HALT["halt"]
+    O -.->|any| REP["file reports ⁵"]
+    K -->|harvest| PR["needs-approval ⁶"]
+    M -->|yes| PK["needs-info"]
 
     classDef fault stroke:#e5534b,stroke-width:3px
     class HALT fault
 ```
 
-1. In a workspace on `main`, or on the dependency's PR head when stacked: apply, describe, push `maestro-tm/i<n>`, open
-   the PR to `main` or, while a dependency is open, to the dependency's branch, and arm auto-merge on a low one to
-   `main`. A stacked slice whose dependency merged meanwhile restacks first; one that conflicts, or whose dependency
-   closed unmerged, goes to `needs-info` (Rules: Restack).
-2. With the agent's question as a question comment (Rules: Blocked).
-3. File the obstacle and requeue the ticket; the attempt is kept.
-4. New obstacles, as `needs-triage`.
-5. One `needs-approval` + `kind/enhancement` issue per proposal, routed only while the harvest is the newest concert. It
-   is deduplicated by a fingerprint over target, title and body against open issues and the 20 newest closed ones. A
-   non-ok or malformed harvest is reported and does not halt. The owner labels `needs-triage` to specify and build a
-   proposal, or `wontfix` to drop it.
-6. A triage that fails, does not start or gives a malformed output. The ticket keeps its state, and closing the halt
-   issue triages it again.
-7. Any verdict with a question for the owner, whatever its risk.
-8. The owner moved the ticket during the run: a slice is parked, a triage's verdict dropped (Rules: Moved during a run).
-9. A slice whose last reviewed lane holds no patch settles `rejected` with `the slice changed nothing`.
-
-## Label reference
-
-Each state is a `state/` label. A move replaces the label, since the scope is exclusive. The actors:
-
-- **owner**: the human, or forge-bot acting for them.
-- **tick**: the script, as its own account `maestro-tm`, apart from forge-bot, the sessions' account.
-- **triage**, **slice**, **harvest**: the concerts the tick performs. The tick routes their outcome.
-
-An edge in the diagrams names who causes the move; the tick sets the label unless the owner does it by hand.
-
-| State             | Meaning                                             | Moved in by                          | Next                                                                     |
-| ----------------- | --------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
-| `needs-triage`    | Filed, not yet evaluated                            | owner, tick[^new], owner[^answer]    | `ready-for-agent`, `needs-approval`, `needs-info`, `duplicate`           |
-| `needs-approval`  | Spec or split waits for the owner's go              | triage, harvest                      | `ready-for-agent`, `needs-triage`[^answer], `ready-for-human`, `wontfix` |
-| `ready-for-agent` | Specified and queued for a slice concert            | triage, owner[^approve], slice[^red] | `in-progress`[^epic], `needs-triage`[^new]                               |
-| `in-progress`     | Being built: a slice concert, or an epic's children | tick, owner[^changes]                | `in-review`, `ready-for-agent`, `needs-info`, closed[^epic]              |
-| `in-review`       | PR open, waiting on CI and review                   | tick                                 | `in-progress`, `needs-info`, closed                                      |
-| `needs-info`      | Waiting on an answer                                | triage, slice, tick                  | `ready-for-agent`[^answer], `needs-triage`[^answer], `in-progress`[^app] |
-| `ready-for-human` | Owner builds it, the tour manager never takes it    | owner                                | closed                                                                   |
-| `wontfix`         | Will not be actioned                                | owner                                | closed                                                                   |
-| `duplicate`       | Repeats another issue, closed with a link           | triage                               | closed                                                                   |
-
-[^new]:
-    The tick files obstacles and an approved split's children as `needs-triage`, and sends a ready ticket there when its
-    spec went stale (Rules: Stale spec).
-
-[^approve]: On approving a spec (`needs-approval`) or answering (`needs-info`).
-
-[^epic]:
-    When the owner approves a split, moving it to `ready-for-agent`, the tick files the children and moves the epic
-    here. It closes when its last child does.
-
-[^red]: A rejected slice with attempts left, or a slice that failed to run.
-
-[^app]: The owner applying a parked slice's result (Rules: Moved during a run).
-
-[^changes]:
-    The owner requesting changes in an official review of the PR moves `in-review` back here, as the tick starts its
-    encore (Rules: Encore).
-
-[^answer]:
-    The owner replying to triage's questions (`needs-info`) or answering or redirecting a waiting spec
-    (`needs-approval`) sends the ticket to `needs-triage` to re-triage. Any other answer by the owner sends it to
-    `ready-for-agent` with the concert to continue.
-
-Moves forward, then moves back. Gold states wait on the owner, green is done.
-
-```mermaid
-flowchart LR
-    S(( )) -->|"[owner, tick] filed"| IN["intake ¹"]
-    S -->|"[harvest] lesson"| NA["needs-approval"]
-    IN -->|"[triage] high, split"| NA
-    IN -->|"[triage] low, medium"| RA["ready-for-agent"]
-    NA -->|"[owner] approve"| RA
-    RA -->|"[tick] build"| IP["in-progress"]
-    RA -->|"[tick] split approved"| IP
-    IP -->|"[tick] PR"| IR["in-review"]
-    IR -->|"[owner, auto-merge] merge"| CL(["closed"])
-    IP -->|"[tick] epic done"| CL
-    IN -->|"[triage] dup"| DU(["duplicate"])
-    NA -->|"[owner] take, drop"| OUT(["ready-for-human, wontfix ²"])
-
-    classDef owner stroke:#d4a72c,stroke-width:3px
-    classDef done stroke:#57ab5a,stroke-width:3px
-    class NA owner
-    class CL done
-```
-
-```mermaid
-flowchart LR
-    IN["intake ¹"] -->|"[triage] question"| NI["needs-info"]
-    RA -->|"[tick] stale"| IN
-    NA["needs-approval"] -->|"[owner] answer"| IN
-    IP["in-progress"] -->|"[slice, tick] blocked"| NI
-    NI -->|"[owner] answer"| RA["ready-for-agent"]
-    NI -.->|"[owner] answer triage"| IN
-    NI -->|"[owner] apply ³"| IP
-    IP -->|"[slice] rejected, failed"| RA
-    IR["in-review"] -->|"[owner] changes"| IP
-    IR -->|"[tick] conflict"| NI
-
-    classDef owner stroke:#d4a72c,stroke-width:3px
-    class NA,NI owner
-```
-
-1. `needs-triage`.
-2. The owner may move any open issue here; the diagram draws it from `needs-approval` only.
-3. A parked slice's result, applied.
-
-Beside the state, an issue carries `kind/`, `risk/` and `area/` labels (`triage-labels.md`).
+1. The owner moved the ticket during the run: a slice is parked, a triage's verdict dropped (Rules, Triage: Moved during
+   a run).
+2. Rules, Landing and PRs: Landing.
+3. A slice whose last reviewed lane holds no patch settles `rejected` with `the slice changed nothing` (Rules, Build:
+   Attempts).
+4. Rules, Build: Blocked.
+5. New obstacles, filed as `needs-triage` (Rules, Build: Reports).
+6. One issue per proposal (Rules, Harvest).
 
 ## Rules
 
-- **Risk and tier.** `risk/low` is the `small` slice tier and `risk/medium` is `ordinary`. `risk/high` (it sets a
-  contract or is wide) is `risky` when triage found it wide, else `ordinary`: risk gates the owner's approval, width
-  sets the review's depth. Low builds, opens a PR and merges itself: once its PR to `main` is open, the tick arms the
-  forge's auto-merge on it, fast-forward only, which waits on the required `check` status; the slice settling ok is the
-  review's pass. Medium builds and waits for the owner to merge its PR. High waits in `needs-approval` for the owner to
-  approve the spec, then merges as medium does. The owner merges by fast-forward, as `main` takes signed commits only.
-- **Review depth.** `small` reviews through one lens covering correctness, spec and tests, and a skeptic over its
-  findings; `ordinary` through a correctness lens and a spec-and-tests lens, then a consolidator on Opus; `risky`
-  through correctness, spec and tests lenses, then a consolidator on Opus. The two panel tiers run no skeptic: the
-  consolidator rules on every finding, each marked unverified.
-- **One concert at a time.** Parallel waves wait for 10 to 15 good runs.
+### Policy
+
+- **Risk and tier.** `risk/low` is the `small` slice tier and `risk/medium` is `ordinary`; `risk/high` is `risky` when
+  triage found it wide, else `ordinary`. Risk gates the owner's approval, width sets the review's depth, which
+  `.maestro/slice.ts` and `.maestro/presets/{small,ordinary,risky}.yaml` define. Low builds, opens a PR and merges
+  itself: once its PR to `main` is open, the tick arms the forge's auto-merge on it, fast-forward only, which waits on
+  the required `check` status. Medium builds and waits for the owner to merge its PR. High waits in `needs-approval` for
+  the owner to approve the spec, then merges as medium does. The owner merges by fast-forward, as `main` takes signed
+  commits only.
+- **One concert at a time.** The tick starts no second one while a concert of the milestone runs.
 - **Pick order.** Finish work first: an encore of a PR with changes requested, then a build, then triage, then a
   harvest. A tick that routes a settle falls through and starts the next action. Within builds and within triage, an
-  eligible issue the owner pinned on the forge comes first, in pinned order, then the rest oldest first; the forge pins
-  at most 3, so no other priority is needed. `--route-only` routes and syncs but starts nothing.
-- **Harvest.** A harvest runs on tour `<milestone>.harvest`, titled `factory: harvest lessons`. It is due when the
-  newest concert is not a harvest and at least 10 settled slice or triage concerts on `<milestone>.i<n>` tours are newer
-  than the watermark, within the milestone's newest 200 concerts. It performs `.maestro/harvest.ts` with `--lessons`,
-  the lessons of those concerts oldest first, each lesson once per concert, with those of settled slices on the
-  `release` and `trial` tours that started after the watermark, which are read but not counted, and `--backlog`, the
-  backlog snapshot. A failed harvest is retried only after another factory run settles.
-- **Closing line.** The tour manager never edits the ask. Below it the body holds the `<!-- maestro-tm -->` marker and
-  one line, `Tracked by Maestro Tour Manager · [spec vN](#issuecomment-<id>)`, written when the spec comment is created
-  or its version changes. State, risk and area stay in the labels.
-- **Spec comment.** One comment per issue, found by the `<!-- maestro-tm -->` marker on its first line, created on the
-  tick's first write and edited in place after; the forge's edit history keeps the earlier versions. Headed
-  `Spec vN · risk <risk> · area <area>`, N starting at 1 and rising with each routed triage, the area only when triage
-  gave one, it holds, in order: Context (a short paragraph or two and the commit subject); Requirements, in EARS, as
-  `R1` on; Shape, each figure's caption, its source in a `mermaid` or `diff` fence and its numbered notes; Decisions,
-  each item a bold lead with its points as sub-bullets; Consequences; Left out, as Decisions; Acceptance (a checklist,
-  each item naming the requirements it proves); then Touches, folded under
-  `<details><summary><b>Touches</b> · <n> files</summary>`, counting its files, word for word. A section with no items
-  is left out. The build lines (attempts, last failure, slice concert) follow, then one line joining the Reasons, the
-  `Relates to` links and the last concert. A split shows its children in place of the spec, with their order as a
-  `mermaid` flowchart when one depends on another; a duplicate its original. It ends with whose turn it is, in neutral
-  wording: while the tick owns the next transition, one bold line, `Tour manager's turn · <what runs or is queued>`;
-  else, after a rule, `Maintainer's turn · <what waits>` in bold, each owner move out of the state the data leaves open
-  as a ``- **`<label>`**: <what it does>`` bullet, a rule, and a `<sub>` line saying how to take one, as a question
-  comment ends. A spec stored without Decisions or Left out reads them as empty. Agent text in it is made inert, every
-  `<!--` broken, so it opens no HTML comment and a Mermaid `-->` stays whole. The tick trusts the first comment opening
-  with the marker, whoever wrote it, so only maintainers write that marker.
-- **Login.** Each pass reads the login of the account it acts as (`maestro-tm`) once, from `GET /user` with its token.
-  No setting names it.
-- **Question comments.** Each routed triage with questions posts a new comment, `<!-- maestro-tm-question -->` on its
-  first line, headed `### Maestro asks · N questions`, then each question after a rule: `**Qn · <ask>**`, its lead, its
-  options as bullets, its recommendation as a `> [!TIP]` callout, and its context folded under
-  `<details><summary>Context</summary>` as `- **<topic>.** <text>` bullets, each part only when the question has it. A
-  closing `<sub>` line says how to answer: a reply mentioning `@<login>`, such as `@forge-bot Q1: …`, then the
-  `needs-triage` label. The tick's own questions take the same heading and closing line, which asks for a label, and a
-  blocked slice's for a reply then the label of your choice. Agent text in it is made inert. It is never edited, and the
-  thread keeps it. Only a comment by the login counts as one; the marker from anyone else is ordinary text.
-- **Data.** The spec comment ends in one hidden `<!-- maestro-tm-data {...} -->` JSON line, the tick's only state:
-  `concert`, the last concert it routed; `triage`, the last ok triage, which a re-triage continues; `read`, the id of
-  the newest comment a triage was fed; `version`, the spec's; `specAt`, when a routed triage wrote it, in ms; `result`,
-  that triage's output, where a question stored as a string reads as an ask alone; `pending`, set while the result's
-  labels are not yet applied; `filed`, an approved split's children; `slice`, the slice concert the last build started;
-  `attempts`, the rejected slices spent; `failure`, the reason the last slice failed; `parked`, a slice concert routed
-  but not applied; `stack`, the dependency the last build stacked on, its PR and that PR's head commit, until the
-  restack; `revisionBase`, the PR head a revision is cut at and lands on; `encore`, the slice concert to continue, which
-  a slice routed to `needs-info`, blocked or out of attempts, sets to itself and a retry, a landing, a parked concert or
-  a re-triage clears; and `review`, the id of the newest review requesting changes an encore was fed. A line the tick
-  cannot read halts the tour manager.
-- **Routes.** The triager runs first and rules alone. A duplicate settles there. `needs-info` asks the owner, and only
-  the triager does: it grills for the intent before any spec exists. `direct` takes a small diff, a simple task on one
-  to three files whose intent is clear, straight to the build, at low or medium risk without approval: its spec is the
-  triager's `what` and `subject` with `just check` as acceptance, and the PR review is its check. `plan` hands the issue
-  to the scouts, the planner and the spec checker. Either spec is gated by risk as any other.
-- **Spec check.** After the planner proposes a ready spec, a checker on another model family (`gpt-6.1-terra` through
-  `pi`, medium effort, `.maestro/presets/triage.yaml`) checks it against the scouts' answers and the code. Every claim
-  the spec makes about the base must hold, and the spec must miss no place the change touches, such as the uninstall
-  path beside an install. It must also fit the architecture: no duplicate helper, needless module or flag, wider
-  interface, crossed package boundary or unruled lasting decision. Its findings, or a line saying it failed to run, go
-  into the spec's Left out under `Open after the spec check`, for the builder and the PR review; they ask the owner
-  nothing. A split is not checked. The planner asks the owner nothing either: it settles what is open as a decision.
-- **Harvest watermark.** The watermark is the newest ok harvest concert in maestro's record, not state the tick keeps;
-  the Data line stays the per-issue state. Pruning any other concert leaves it intact. Pruning the watermark harvest
-  makes the older one, or none, the watermark: its lessons are read again, and the backlog drops promotions already
-  filed. A pruned factory concert's lessons are gone.
-- **Answers.** Any verdict that asks the owner a question goes to `needs-info`, never `needs-approval`. A reply is
-  final: a re-triage does not ask again what it settled, and rules `direct` when it leaves the change small and clear.
-  The owner answers by replying in a comment that mentions `@<login>`, such as `@forge-bot Q1: no, ok results only`,
-  then moving the ticket to `needs-triage`; a waiting spec in `needs-approval` is answered or redirected the same way. A
-  triage, first or encore, considers each comment but the spec comment whose id is above `read`, in id order, and is fed
-  as `--issue` the ask, then on an encore the spec the last triage proposed, under
-  `## The spec the last triage proposed`, then only these:
+  issue the owner pinned on the forge comes first, in pinned order, then the rest oldest first.
+- **Halt.** These stop the tick with an open `maestro-tm:halt` issue naming the cause; closing it resumes:
+  - a triage that fails, does not start or gives a malformed output: the ticket keeps its state and is triaged again;
+  - a build or a harvest that does not start;
+  - a slice that settles `failed` without a `blocked:` reason, an infra fault: the issue names the concert, and the
+    ticket is requeued to `ready-for-agent` with its attempts kept, and builds again;
+  - a landing or a restack that fails: the workspace is kept, and the work is redone in a fresh one;
+  - an encore with nothing changed, which is refused;
+  - a spec comment's data line the tick cannot read.
+- **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
+  `factory: <issue title>`, cut with an ellipsis past 60 characters. A harvest runs on tour `<version>.harvest`, titled
+  `factory: harvest lessons`.
+
+### Triage
+
+Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `planner.md`, `checker.md`).
+
+- **Routes.** The triager runs first and rules alone: a duplicate settles there, and it alone asks the owner, with a
+  `needs-info` verdict. A `direct` ticket goes straight to the build, its spec the triager's `what` and `subject` with
+  `just check` as acceptance; a `plan` ticket goes on to the scouts, the planner and the spec checker. Either spec is
+  gated by risk as any other.
+- **Spec check.** The checker's findings, or a line saying it failed to run, go into the spec's Left out under
+  `Open after the spec check`, for the builder and the PR review; they ask the owner nothing, and neither does the
+  planner. A split is not checked.
+- **Answers.** Any verdict that asks the owner a question goes to `needs-info`, whatever its risk, never to
+  `needs-approval`. The owner answers by replying in a comment that mentions `@<login>`, such as
+  `@forge-bot Q1: no, ok results only`, then moving the ticket to `needs-triage` (to `ready-for-agent` to continue a
+  blocked build). A waiting spec in `needs-approval` is answered or redirected the same way. A reply is final: a
+  re-triage does not ask again what it settled, and rules `direct` when it leaves the change small and clear.
+- **Feeding comments.** A triage, first or encore, considers each comment but the spec comment whose id is above `read`,
+  in id order. It is fed as `--issue` the ask, then on an encore the spec under the heading
+  `The spec the last triage proposed`, then only these:
   - a question comment, headed `## Question by the tour manager`;
   - any other comment mentioning `@<login>` as a whole word in any case, headed `## Reply by <author>`.
 
-  An encore continues the triager's and scouts' sessions but starts the planner and the spec checker fresh, so a
-  re-triage pays for the last spec rather than the planner's whole earlier session. It records the newest comment it
-  considered as `read`, so a comment it ignored is never fed later. A failed triage clears `read`, so the next one
-  considers those comments again. An encore with nothing changed is refused, which halts the tour manager. A re-triage
-  with nothing new to feed starts nothing: the tick asks for a reply mentioning `@<login>`, moves the ticket to
-  `needs-info` and moves `read` past its ask.
+  An encore continues the triager's and scouts' sessions but starts the planner and the spec checker fresh. It records
+  the newest comment it considered as `read`, so a comment it ignored is never fed later; a failed triage clears `read`.
+  A re-triage with nothing new to feed starts nothing: the tick asks for a reply mentioning `@<login>`, moves the ticket
+  to `needs-info` and moves `read` past its ask.
 
-- **Moved during a run.** A settle whose ticket is no longer where the run expects it (`in-progress` or
-  `ready-for-agent` for a slice, intake for a triage) is not applied. A closed ticket is left alone. Otherwise the
-  ticket moves to `needs-info`, the concert is marked routed, and a question comment asks the owner which way:
-  - A slice is kept as `parked`, and the question offers `in-progress` (apply the parked result), `ready-for-agent`
-    (build again) or `needs-triage` (re-triage). The next pass that finds the ticket in `in-progress` routes the parked
-    concert as its settle; any other move clears `parked`.
-  - A triage's verdict is dropped, since a triage is cheap and its verdict stale, and the question offers only
-    `needs-triage`.
-- **Encore.** A ticket continues its last slice concert, so the builder keeps what it learned and is told only what
-  changed. Its build is `encore <id>` with the presets, tour, title and base a fresh build takes, and a `--request` of
-  the spec and the ask followed by what changed, each part under its heading:
-  - a `ready-for-agent` ticket whose `encore` is set: each comment mentioning `@<login>` above `read` but a question
-    comment, headed `## Reply by <author>` as triage feeds it; `read` moves to the newest comment it considered;
-  - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`: its
-    landed concert, fed each such review headed `## Review by <author>`, its body then its inline comments as
-    `path:line` items. The ticket moves to `in-progress`, `review` moves to the newest, and `revisionBase` records the
-    PR's head. The build is cut at that commit (`-c target.base=<commit>`, over a stack's) and lands folded into it, so
-    the PR keeps one commit per ticket and its base. The settle lands as any other, force-pushing `maestro-tm/i<n>` onto
-    the open PR. A landing, a fresh build and a re-triage clear `revisionBase`; a parked concert, or one blocked or out
-    of attempts, keeps it, so the encore that follows is cut there.
-
-  With nothing changed the build is a fresh perform, since an encore with nothing changed is refused.
-
-- **Dependencies.** A dependency is a forge "blocked by" link that sets build order. A ticket is picked when every
-  dependency is closed, or when every open one is `in-review` with its PR to `main`. It then stacks: its slice is cut at
-  the head of the newest of those PRs (`-c target.base=<commit>`), lands on that commit and opens its PR against that
-  dependency's branch. Two deep at most: a dependency whose PR is itself stacked keeps the ticket waiting. A stacked PR
-  is not armed, since it would merge into the dependency's branch. A ready ticket waiting on open dependencies says so
-  in its spec comment's last line, as `queued, waiting on #12, #14`, rewritten only when that set changes.
-- **Restack.** Once no dependency of a stacked ticket is open and the one it stacked on merged its PR, the ticket's
-  commits above the one it stacked on are copied onto `main` in a fresh workspace, force-pushed as `maestro-tm/i<n>`,
-  and its PR retargeted to `main`, or opened anew when the forge closed it with its base branch, then armed when low.
-  Sync does this for a ticket in review; a landing does it straight away when the dependency merged during the build. A
-  copy that conflicts, or a dependency closed without merging, moves the ticket to `needs-info` with a question comment
-  offering `ready-for-agent` (build again on `main`) or `needs-triage`.
-- **Build.** A ready ticket is built when its triage left a spec and it is no split's epic: `.maestro/slice.ts` with the
-  spec and the ask as `--request`, and its tier (Rules: Risk and tier) as `--tier` and `--preset`. Presets layer in
-  order: the tier's, then `area-<area>` when the ticket has an `area/<area>` label and
-  `.maestro/presets/area-<area>.yaml` exists, then the tick's own `--preset`s, in order. The ticket moves to
-  `in-progress` as the perform starts.
-- **Stale spec.** A fresh build of a ready ticket first compares its spec's `touches` with those of every other ticket
-  whose spec was approved after its own: one in `ready-for-agent`, `in-progress` or `in-review` whose `specAt` is later,
-  or one closed as completed (not `state/wontfix` or `state/duplicate`) after this spec's `specAt`. A routed triage
-  stamps `specAt` with the tick's clock; rewriting the spec comment for a landing or a queue change does not, and the
-  forge's `closed_at` times a closure, so a tie is not newer. A ticket whose data holds no `specAt` is never bounced and
-  is no overlap source. On a shared file the ticket is not built: the tick posts a question comment,
-  ``The spec predates #N's, which also touches `<file>`. Re-triaging against current main.``, naming each such ticket
-  and its shared files, unless one above `read` holds it already, and moves the ticket to `needs-triage`. The pass goes
-  on to the next buildable ticket, then to triage, which re-triages the ticket as an encore (Rules: Answers) and writes
-  a spec newer than those it overlapped, so it builds. An encore of a running or landed build is not compared: the
-  builder has its context.
-- **Landing.** An ok slice lands in a fresh jj workspace `factory-i<n>` on `main` as fetched from `origin`, or on the
-  commit it stacked on, at `$XDG_CACHE_HOME/maestro-factory/i<n>`: `maestro cs apply`, then `jj describe` with the
-  spec's subject and `Closes #N`, or for a revision `jj squash` into the PR head with that description. It runs no check
-  of its own: the slice's gate passed in its lane, and CI checks the PR against its base. A stacked slice whose
-  dependency merged during the build restacks in the same workspace (Rules: Restack). Once the PR is open the ticket
-  moves to `in-review` and the workspace is forgotten and removed. A landing that fails halts the tour manager and keeps
-  the workspace; closing the halt issue lands the slice again in a fresh one.
-- **Reports.** Each settled slice's obstacles are filed as `needs-triage` `kind/bug` in the milestone, with
-  `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line: the first 12 hex of SHA-256 over the text lower-cased,
-  whitespace runs folded to one space and trimmed. A text whose line an open issue carries is not filed again. An
-  obstacle never carries a dependency. Gaps are not filed: a landed slice's PR lists them, for the reviewer to file the
-  ones worth a ticket.
-- **Attempts.** A `rejected` slice, an empty one included, spends an attempt and is retried with a fresh perform. After
-  2 attempts the ticket goes to `needs-info`. An answer does not reset them: an answered ticket out of attempts gets one
-  encore, and a rejected one goes back to `needs-info`.
-- **Blocked.** A blocked agent moves its ticket to `needs-info` with its question and spends no attempt. The question is
-  posted as a question comment offering `ready-for-agent` (continue with my answer) or `needs-triage`, answered by a
-  reply mentioning `@<login>` then the label; on `ready-for-agent` the slice continues as an encore. Obstacles never
-  block a ticket. A slice that settles `failed` without a `blocked:` reason is an infra fault: it halts the tour manager
-  with the reason and the concert id, requeues the ticket to `ready-for-agent` and spends no attempt, so closing the
-  halt issue builds it again.
 - **Splits.** Triage records its verdict in the spec comment: a spec, or a split with its child list. On the owner's
   approval of a split the tick files the children as `needs-triage`, in the epic's milestone with `Part of #N`, and
   moves the epic to `in-progress`. The epic closes when its last child does.
 - **Duplicates and related issues.** A duplicate is closed at once as `state/duplicate` with a back-reference, when its
-  original is open or closed as completed; one that does not exist, or is closed as `state/wontfix` or
-  `state/duplicate`, tracks nothing, so the ticket goes to `needs-info` with a question instead. A related issue gets
+  original is open or closed as completed; an original that does not exist, or is closed as `state/wontfix` or
+  `state/duplicate`, tracks nothing, so the ticket goes to `needs-info` with a question. A related issue gets
   `Relates to #N` in the spec comment and the PR body.
-- **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
-  `factory: <issue title>`, the title cut with an ellipsis past 60 characters. A harvest runs on tour
-  `<version>.harvest`, such as `v0.1.0.harvest`, titled `factory: harvest lessons`.
+- **Moved during a run.** A settle whose ticket is no longer where the run expects it (`in-progress` or
+  `ready-for-agent` for a slice, `needs-triage` for a triage) is not applied. A closed ticket is left alone. Otherwise
+  the ticket moves to `needs-info`, the concert is marked routed, and a question comment asks which way:
+  - A slice is kept as `parked`; the question offers `in-progress` (apply the parked result), `ready-for-agent` (build
+    again) or `needs-triage`. The next pass that finds the ticket in `in-progress` routes it as its settle; any other
+    move clears `parked`.
+  - A triage's verdict is dropped as stale, and the question offers only `needs-triage`.
+
+### Build
+
+- **Build.** A ready ticket is built when its triage left a spec and it is no split's epic: `.maestro/slice.ts` with the
+  spec and the ask as `--request`, and its tier (Rules, Policy: Risk and tier) as `--tier` and `--preset`, then the
+  preset `area-<area>` when the ticket has an `area/<area>` label and `.maestro/presets/area-<area>.yaml` exists, then
+  the tick's own `--preset`s. The ticket moves to `in-progress` as the perform starts.
+- **Dependencies.** A dependency is a forge "blocked by" link that sets build order.
+
+```mermaid
+flowchart TD
+    D{"dependencies"} -->|"all closed"| M["build on main"]
+    D -->|"open ones all in-review, PR to main"| S["stack: cut at the newest PR head, PR to its branch"]
+    D -->|"a dependency is itself stacked"| W(["wait"])
+    S --> N{"none open, stacked-on PR merged?"}
+    N -->|yes| R["restack: copy commits onto main, force-push, retarget the PR"]
+    N -->|"copy conflicts, or closed unmerged"| NI["needs-info, question comment"]
+```
+
+- **Restack.** A stacked slice's PR opens against the dependency's branch, unarmed. Sync restacks a ticket in review,
+  and a landing restacks straight away when the dependency merged during the build; the PR is opened anew when the forge
+  closed it with its base branch, then armed when low. The question comment on a conflict offers `ready-for-agent`
+  (build again on `main`) or `needs-triage`. A ready ticket waiting on open dependencies says so in its spec comment's
+  last line, as `queued, waiting on #12, #14`, rewritten only when that set changes.
+- **Stale spec.** A fresh build of a ready ticket first compares its spec's `touches` with those of every other ticket
+  whose spec was approved after its own: one in `ready-for-agent`, `in-progress` or `in-review` whose `specAt` is later,
+  or one closed as completed (not `state/wontfix` or `state/duplicate`) after this spec's `specAt`, by the forge's
+  `closed_at`. A ticket whose data holds no `specAt` is never bounced and is no overlap source. On a shared file the
+  ticket is not built: the tick posts a question comment,
+  ``The spec predates #N's, which also touches `<file>`. Re-triaging against current main.``, naming each such ticket
+  and its shared files (unless one above `read` holds it already), moves the ticket to `needs-triage`, and goes on to
+  the next buildable ticket. Triage then re-triages it as an encore and writes a spec newer than those it overlapped. An
+  encore of a running or landed build is not compared.
+- **Encore.** A ticket continues its last slice concert, so the builder keeps what it learned and is told only what
+  changed: `encore <id>` with a fresh build's presets, tour, title and base, and a `--request` of the spec and the ask
+  followed by what changed, each part under its heading:
+  - a `ready-for-agent` ticket whose `encore` is set: each comment mentioning `@<login>` above `read`, a question
+    comment excepted, headed `## Reply by <author>`; `read` moves to the newest comment it considered;
+  - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`: its
+    landed concert, fed each such review headed `## Review by <author>`, its body then its inline comments as
+    `path:line` items. The ticket moves to `in-progress`, `review` moves to the newest, and the settle lands folded into
+    the PR's head, so the PR keeps one commit per ticket.
+
+  With nothing changed the build is a fresh perform, since an encore with nothing changed is refused.
+
+- **Attempts.** A `rejected` slice, an empty one included, spends an attempt and is retried with a fresh perform. After
+  2 attempts the ticket goes to `needs-info`. An answer does not reset them: an answered ticket out of attempts gets one
+  encore, and a rejected one goes back to `needs-info`.
+- **Blocked.** A blocked agent moves its ticket to `needs-info` with its question and spends no attempt. The question is
+  posted as a question comment offering `ready-for-agent` (continue with my answer) or `needs-triage`, answered as under
+  Triage: Answers; on `ready-for-agent` the slice continues as an encore. Obstacles never block a ticket.
+- **Reports.** Each settled slice's obstacles are filed as `needs-triage` `kind/bug` in the milestone, with
+  `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line, a fingerprint of the text; a text whose line an open
+  issue carries is not filed again. An obstacle never carries a dependency. Gaps are not filed: a landed slice's PR
+  lists them, for the reviewer to file the ones worth a ticket.
+
+### Landing and PRs
+
+- **Landing.** An ok slice lands in a fresh jj workspace on `main` as fetched from `origin`, or on the commit it stacked
+  on: `maestro cs apply`, then `jj describe` with the spec's subject and `Closes #N`, or for a revision `jj squash` into
+  the PR head with that description. It runs no check of its own: the slice's gate passed in its lane, and CI checks the
+  PR against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
-  held, with the subject from the spec and `Closes #N`. The PR, to `main` or to the dependency's branch while stacked,
-  is titled with the subject. The slice's last seat, a writer on a cheap model, reads the spec, the patches and the
-  upheld findings and writes the body in the form the spec picks, drawing with the planner's figure kinds. A direct
-  spec, with no requirements, gets Context, Shape (a figure footnoted with the builder's calls), Evidence (before and
-  after) and Merge Danger (door and blast radius); a specced one gets Summary (built to spec, shape unchanged or not),
-  Evidence (a row per requirement to the test that pins it), Off spec (a line per drift) and Merge Danger. Below it the
-  tick adds the agents' gaps folded under `<details>`; one line of risk, area and review tier, with the planner's
-  contract as the one-way door; the spend folded under `<details>` (a row per slice concert of the ticket's tour, a
-  build or an encore as its record says, with time and tokens in k/M shorthand, then a total); and `Closes #N` with the
-  `Relates to` links last. A writer that fails costs the build nothing: the tick then builds the body from its data
-  alone, with the subject and each decision's lead as Summary, and the acceptance commands as the gate with the review's
-  upheld findings as Evidence. Every landing, an encore's included, rewrites the body of the PR already open on the
-  branch. A restack force-pushes the branch and retargets the PR, or opens it again with the same body when the forge
-  closed it.
+  held, titled with the spec's subject, to `main` or to the dependency's branch while stacked. The slice's writer writes
+  the body in the form `.maestro/slice/prompts/writer.md` gives; below it the tick adds the agents' gaps, one line of
+  risk, area and review tier with the planner's contract as the one-way door, the spend (a row per slice concert of the
+  ticket's tour, a build or an encore as its record says, then a total) and `Closes #N` with the `Relates to` links
+  last. A writer that fails costs the build nothing: the tick builds the body from its data alone. Every landing, an
+  encore's included, rewrites the body of the PR already open on the branch.
 
-## Setting up
+### Harvest
 
-A new environment starts with manual shakedown runs: first with the stub harness, then with a cheap model, each watched
-by hand. The tick does not enforce them.
+A harvest is due when the newest concert is not a harvest and at least 10 settled slice or triage concerts on
+`<milestone>.i<n>` tours are newer than the watermark, within the milestone's newest 200 concerts. It performs
+`.maestro/harvest.ts` with `--lessons`, the lessons of those concerts oldest first and of settled slices on the
+`release` and `trial` tours since the watermark, which are read but not counted, and `--backlog`, the backlog snapshot.
+The **watermark** is the newest ok harvest concert in maestro's record, not state the tick keeps. A failed harvest is
+retried only after another factory run settles; a non-ok or malformed one is reported and does not halt.
+
+A settled harvest files one `needs-approval` + `kind/enhancement` issue per proposal, only while the harvest is the
+newest concert, deduplicated by a fingerprint over target, title and body against open issues and the 20 newest closed
+ones. The owner labels `needs-triage` to specify and build a proposal, or `wontfix` to drop it.
+
+## Forge surfaces
+
+What the tick writes on an issue. `<login>` is the account it acts as (`maestro-tm`), read once per pass from
+`GET /user`. Agent text in any of them is made inert: every `<!--` is broken, so it opens no HTML comment, and a Mermaid
+`-->` stays whole.
+
+### Closing line
+
+The tour manager never edits the ask. Below it the issue body holds the marker and one line, written when the spec
+comment is created or its version changes.
+
+```markdown
+<ask>
+
+<!-- maestro-tm -->
+
+Tracked by Maestro Tour Manager · [spec v<N>](#issuecomment-<id>)
+```
+
+### Spec comment
+
+One comment per issue, found by the `<!-- maestro-tm -->` marker on its first line, created on the tick's first write
+and edited in place after. `N` starts at 1 and rises with each routed triage. The area is left out when triage gave
+none, and so is any section with no items. With no result the heading is `### Spec v<N>`, with no risk either. The tick
+trusts the first comment opening with the marker, whoever wrote it, so only maintainers write that marker.
+
+````markdown
+<!-- maestro-tm -->
+
+### Spec v<N> · risk <risk> · area <area>
+
+#### Context
+
+<what>
+
+Subject: `<subject>`
+
+#### Requirements
+
+- **R<n>** <requirement, in EARS>
+
+#### Shape
+
+<caption>
+
+```<mermaid or diff>
+<source>
+```
+
+1. <note>
+
+#### Decisions
+
+- **<lead>**
+  - <point>
+
+#### Consequences
+
+<consequences>
+
+#### Left out
+
+- **<lead>**
+  - <point>
+
+#### Acceptance
+
+- [ ] <item naming the requirements it proves>
+
+<details><summary><b>Touches</b> · <n> files</summary>
+
+- `<path>`
+
+</details>
+
+- Attempts: <n> of <max>
+
+#### Last failure
+
+```text
+<failure>
+```
+
+Slice concert: `<concert id>`
+
+Reasons: <reason>; <reason> · Relates to #<n> · Last concert: `<concert id>`
+
+<turn>
+
+<!-- maestro-tm-data <data> -->
+````
+
+- A split shows `#### Children`, a numbered list with a `mermaid` flowchart of their order when one depends on another,
+  in place of the sections from Context to Touches; a duplicate shows `Duplicate of #<n>` there.
+- `<turn>` is whose turn it is. While the tick owns the next transition, one bold line, with `<what>` the build or
+  triage running or queued:
+
+  ```markdown
+  **Tour manager's turn · <what>**
+  ```
+
+  Else the owner's moves out of the state, each one the data leaves open:
+
+  ```markdown
+  ---
+  
+  **Maintainer's turn · <what waits>**
+  
+  - **`<label>`**: <what it does>
+  
+  ---
+
+  <sub><how to take one></sub>
+  ```
+
+### Data
+
+The `<data>` line is one JSON object, the tick's only state. The `read`, `review` and `revisionBase` fields are
+positions a later pass resumes from. A line the tick cannot read halts the tour manager.
+
+| Field          | Holds                                              | Set by                             | Cleared by                                                   |
+| -------------- | -------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------ |
+| `concert`      | The last concert the tick routed                   | a routed settle                    | not cleared                                                  |
+| `triage`       | The last ok triage, which a re-triage continues    | a routed or dropped ok triage      | not cleared                                                  |
+| `read`         | Id of the newest comment a triage was fed          | a triage or encore, a reply ask    | a failed triage                                              |
+| `version`      | The spec's version                                 | a routed triage                    | not cleared                                                  |
+| `specAt`       | When a routed triage wrote the spec, in ms         | a routed triage                    | not cleared                                                  |
+| `result`       | That triage's output; a string is a question's ask | a routed triage                    | the owner moving the ticket in its triage                    |
+| `pending`      | A result whose labels are not yet applied          | a routed triage                    | the labels applied                                           |
+| `filed`        | An approved split's children                       | the split's approval               | not cleared                                                  |
+| `slice`        | The slice concert the last build started           | a build                            | not cleared                                                  |
+| `attempts`     | The rejected slices spent                          | a rejected slice                   | not cleared                                                  |
+| `failure`      | The reason the last slice failed                   | a slice that does not land         | a landing                                                    |
+| `parked`       | A slice concert routed but not applied             | a settle moved during its run      | routing it, or any other move                                |
+| `stack`        | The dependency the last build stacked on           | a stacked build                    | a restack, conflicting or not; an unstacked build            |
+| `revisionBase` | The PR head a revision is cut at and lands on      | an encore of a reviewed PR         | a landing, a fresh build, a re-triage, an infra halt         |
+| `encore`       | The slice concert to continue                      | a slice blocked or out of attempts | a retry, a landing, a parked one, a re-triage, an infra halt |
+| `review`       | Id of the newest review an encore was fed          | an encore of a reviewed PR         | not cleared                                                  |
+
+### Question comments
+
+A new comment per routed triage with questions, and per question the tick itself asks. It is never edited, and the
+thread keeps it. Only a comment by `<login>` counts as one; the marker from anyone else is ordinary text. Each part
+after the ask is left out when the question has none.
+
+```markdown
+<!-- maestro-tm-question -->
+
+### Maestro asks · <N> questions
+
+---
+
+**Q<n> · <ask>**
+
+<lead>
+
+- **<option>**: <what it does>
+
+> [!TIP] **Recommended: <option>**, <why>
+
+<details>
+<summary>Context</summary>
+
+- **<topic>.** <text>
+
+</details>
+
+---
+
+<sub><how to answer></sub>
+```
+
+`<how to answer>` is, by question comment:
+
+- triage's questions: ``Reply `@<login> Q1: …`, then label `needs-triage`.``;
+- a blocked slice's: the same, then label your choice;
+- a re-triage with nothing to feed: ``Reply `@<login> …`, then label `needs-triage`.``;
+- a moved ticket's, or a restack's on a conflict or a dependency closed unmerged: `Label the ticket with your choice.`;
+- a stale spec's: `No reply needed: the next tick triages it again.`

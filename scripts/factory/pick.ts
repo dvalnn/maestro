@@ -42,7 +42,10 @@ export const pick = (
 		.filter(isIntake)
 		.sort((a, b) => pinnedFirst(pinned)(a.number, b.number))[0];
 
-/** The slice tier, and preset, of each risk but high, whose tier triage gives (factory.md, Rules: Risk and tier). */
+/**
+ * The slice tier, and preset, of each risk but high, whose tier triage gives (factory.md, Rules, Policy: Risk and
+ * tier).
+ */
 const TIER: Record<Exclude<Risk, "high">, Tier> = {
 	low: "small",
 	medium: "ordinary",
@@ -78,7 +81,7 @@ export const buildable = <T extends { issue: Issue; data: Data }>(
 		)
 		.sort((a, b) => pinnedFirst(pinned)(a.issue.number, b.issue.number));
 
-/** The tour of `issue`'s concerts in `milestone` (factory.md, Rules: Tour and title). */
+/** The tour of `issue`'s concerts in `milestone` (factory.md, Rules, Policy: Tour and title). */
 export const tourOf = (milestone: string, issue: number) =>
 	`${milestone}.i${issue}`;
 
@@ -89,15 +92,18 @@ const TITLE_CHARS = 60;
 export const titleOf = ({ title }: Issue) =>
 	`factory: ${title.length > TITLE_CHARS ? `${title.slice(0, TITLE_CHARS - 1)}…` : title}`;
 
-/** `comment` as a triage reads it: a question comment `login` posted headed as the tour manager's, any other by its author. */
+/**
+ * `comment` as a triage reads it: a question comment `login` posted headed as the tour manager's, any other by its
+ * author.
+ */
 const fed = (comment: Comment, login: string) =>
 	isAsked(comment, login)
 		? ["## Question by the tour manager", comment.body.replace(QUESTION, "")]
 		: [`## Reply by ${comment.author}`, comment.body];
 
 /**
- * What `--issue` takes: the number, title and ask, the `last` spec a re-triage starts from, then each of `replies` under
- * its heading, `login` being the tick's.
+ * What `--issue` takes: the number, title and ask, the `last` spec a re-triage starts from, then each of `replies`
+ * under its heading, `login` being the tick's.
  */
 export const issueText = (
 	issue: Issue,
@@ -166,14 +172,20 @@ export function snapshot(
 	].join("\n");
 }
 
-/** A ticket whose spec was approved, or that closed as completed, at `at` (ms since the epoch), and the files it touches. */
+/**
+ * A ticket whose spec was approved, or that closed as completed, at `at` (ms since the epoch), and the files it
+ * touches.
+ */
 export type Approval = {
 	number: number;
 	at: number;
 	touches: readonly string[];
 };
 
-/** Each of `approvals` after `since` whose files include one of `touches`, with the files they share. */
+/**
+ * Each of `approvals` strictly after `since`, so a tie is not newer, whose files include one of `touches`, with the
+ * files they share.
+ */
 export const overlaps = (
 	touches: readonly string[],
 	since: number,

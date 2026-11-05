@@ -8,7 +8,7 @@ const OUTPUT_TAIL = 2000;
 /** A restacked commit, or the conflicts that kept it from restacking. */
 export type Restacked = { commit: string } | { conflict: string };
 
-/** The jj workspace a slice lands or restacks in (factory.md, Rules: Landing, Blockers). */
+/** The jj workspace a slice lands or restacks in (factory.md, Rules, Landing and PRs). */
 export type Landing = {
 	/**
 	 * Creates workspace `name` at `dir` on revision `base` as fetched from `origin`, colocated with git, in place of any

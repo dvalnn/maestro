@@ -1,12 +1,6 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
-import {
-	INTAKE,
-	type Node,
-	STATES,
-	TRANSITIONS,
-	type Transition,
-} from "./transitions";
+import { INTAKE, type Node, TRANSITIONS, type Transition } from "./transitions";
 
 const DOC = resolve(import.meta.dir, "../../docs/agents/factory.md");
 /** The state diagrams; the tick's own flowcharts are top-down. */
@@ -18,8 +12,7 @@ const EDGE = new RegExp(
 	String.raw`^\s*${ENDPOINT}\s*(-->|-\.->|==>)\|"?([^|"]*)"?\|\s*${ENDPOINT}`,
 );
 const ACTORS = /\[([^\]]+)\]/g;
-const FOOTNOTE = /[¹²³⁴⁵]|\[\^\w+\]|`/g;
-const ANY: Node[] = [...STATES, "new", "closed"];
+const FOOTNOTE = /[¹²³⁴⁵]|`/g;
 /** A thick edge is the owner's move. */
 const OWNER_EDGE = "==>";
 
@@ -67,53 +60,27 @@ const covers = (table: readonly Transition[], edge: Edge) =>
 		),
 	);
 
-/** Each move the label reference table states, as an edge: a `Moved in by` actor, or a `Next` state. */
-function referenceEdges(doc: string): Edge[] {
-	const rows = doc
-		.split("\n")
-		.filter((l) => /^\| `[a-z-]+` /.test(l))
-		.map((l) => l.split("|").map((c) => c.replace(FOOTNOTE, "").trim()));
-	return rows.flatMap(([, state = "", , movedBy = "", next = ""]) => {
-		const self = statesOf(state);
-		return [
-			...movedBy.split(/,\s*/).map((actor) => ({
-				line: state,
-				from: ANY,
-				to: self,
-				actors: [actor],
-			})),
-			...next
-				.split(/,\s*/)
-				.map((n) => ({ line: state, from: self, to: statesOf(n), actors: [] })),
-		];
-	});
-}
-
 const shown = (t: Transition, e: Edge) =>
 	e.from.includes(t.from) &&
 	e.to.includes(t.to) &&
 	(!e.actors.length || e.actors.includes(t.actor));
 
-/** The diagram edges and label reference moves of `doc` that `table` lacks, then the rows of `table` `doc` lacks. */
+/** The diagram edges of `doc` that `table` lacks, then the rows of `table` `doc` lacks. */
 function drift(doc: string, table: readonly Transition[]): string[] {
 	const edges = [
 		...[...doc.matchAll(STATE_DIAGRAM)].flatMap(([, d = ""]) => edgesOf(d)),
-		...referenceEdges(doc),
 	];
 	return [
 		...edges
 			.filter((e) => !covers(table, e))
-			.map(
-				(e) =>
-					`${e.line}: ${e.from === ANY ? "any" : e.from} -> ${e.to} [${e.actors}]`,
-			),
+			.map((e) => `${e.line}: ${e.from} -> ${e.to} [${e.actors}]`),
 		...table
 			.filter((t) => !edges.some((e) => shown(t, e)))
 			.map((t) => `table: ${t.from} -> ${t.to} [${t.actor}]`),
 	];
 }
 
-const APPROVE = '    NA -->|"[owner] approve"| RA\n';
+const APPROVE = '    NA ==>|"[owner] approve"| RA\n';
 const EXTRA_EDGE = '    RA -->|"[owner] drop"| IR\n';
 const cases: [string, (doc: string) => string, Transition[], string[]][] = [
 	["matches factory.md", (doc) => doc, [], []],
@@ -124,7 +91,7 @@ const cases: [string, (doc: string) => string, Transition[], string[]][] = [
 		['RA -->|"[owner] drop"| IR: ready-for-agent -> in-review [owner]'],
 	],
 	[
-		"drifts on a table row no diagram or reference shows",
+		"drifts on a table row no diagram shows",
 		(doc) => doc,
 		[
 			{
