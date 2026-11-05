@@ -42,40 +42,28 @@ CLI output, errors, prompts and confirmations follow [clig.dev](https://clig.dev
 
 ## Compositions and prompts
 
-An agent reads five layers, in this order. Each has one home, and no layer restates another's text.
+An agent reads five layers, in this order, each with one home; no layer restates another's text. Layers are defined
+under [Prompts](packages/host-repo/README.md#prompts). Review each home against what it never holds:
 
-| Layer         | Home                                                   | Holds                                                  | Never holds                             |
-| ------------- | ------------------------------------------------------ | ------------------------------------------------------ | --------------------------------------- |
-| 1 Frame       | host `frame.ts`                                        | working copy, checks, attachment list, output schema   | a task, a rule of one composition       |
-| 2 Profile     | `profiles/<seat>/instructions.md`                      | who the agent is, its method, what it never does       | an attachment name, an output shape     |
-| 3 Area        | a preset's `attachments`, e.g. `.maestro/areas/<a>.md` | what is true of one area or run, added to a profile    | the call's task                         |
-| 4 Task        | `prompts/<call>.md` and its `_` fragments              | this call: inputs by attachment name, outputs, the bar | who the agent is, what the frame states |
-| 5 Attachments | data a code node writes for the call                   | the run's own facts: the issue, the findings           | instructions                            |
+| Layer         | Home in this repo                                      | Never holds                             |
+| ------------- | ------------------------------------------------------ | --------------------------------------- |
+| 1 Frame       | host `frame.ts`                                        | a task, a rule of one composition       |
+| 2 Profile     | `profiles/<seat>/instructions.md`                      | an attachment name, an output shape     |
+| 3 Area        | a preset's `attachments`, e.g. `.maestro/areas/<a>.md` | the call's task                         |
+| 4 Task        | `prompts/<call>.md` and its `_` fragments              | who the agent is, what the frame states |
+| 5 Attachments | data a code node writes for the call                   | instructions                            |
 
 Layout:
 
 - The entry stays where the loader looks: `.maestro/<id>.ts`, a pack's `src/index.ts`. A composition's parts live in a
   directory beside it named for it (`.maestro/triage/`, `.maestro/slice/`). A pack stays flat by kind, with one
   `src/prompts/`.
-- All prompt text is Markdown in `prompts/`. A task file is named for its call's `label` (`checker.md`); where a call
-  picks between texts, each is the label plus a plain suffix (`reviewer-again.md`). A fragment shared by several tasks
-  starts with `_` (`_gate.md`, `_questions.md`).
-- Only one-line attachment hints, labels, `doc` strings, param descriptions and the owner questions code generates stay
-  in TypeScript, at the call.
-- Import a prompt with `import X from "./triage/prompts/x.md" with { type: "text" }`. Without the attribute Bun imports
-  Markdown as HTML. `md.d.ts` types the import.
-- A JSON shape example is a fenced `json` block; its field rules are prose under it. Prettier reflows prompt files to
-  120 columns, so unfenced JSON would be wrapped.
+- All prompt text is Markdown in `prompts/`, named and imported as [Prompts](packages/host-repo/README.md#prompts) says;
+  `md.d.ts` types the import. Only one-line attachment hints, labels, `doc` strings, param descriptions and the owner
+  questions code generates stay in TypeScript, at the call.
+- Prettier reflows prompt files to 120 columns, so a JSON example is a fenced `json` block.
 
-Assembly:
-
-- A composition file has one `TASKS` table near its top: each call's task as its prompt file, then the fragments it
-  rules by. A fragment joins as a whole paragraph, never spliced into a sentence; a bullet that needs one points to its
-  section instead.
-- `fill(text, values)` from `@maestro/classics` replaces each `{name}` with a one-line value, and throws when a `{name}`
-  has no value or a value has no `{name}`. A branch on a flag stays TypeScript choosing which files to join.
-
-Tests:
+Review and tests, under [File rules](docs/sdk-spec.md#file-rules):
 
 - Prompt wording is reviewed as Markdown in the diff, never pinned by substring, unless a parser reads the text.
 - Every composition composes, which runs each import and each `fill`; a missing or extra placeholder fails there.

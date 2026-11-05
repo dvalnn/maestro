@@ -48,6 +48,10 @@ with ports runs only through `use` and declares no examples.
   two SDK imports to its own copies, so there is no install step.
 - A prompt longer than a line is a Markdown file beside the composition, by
   [Prompts](../packages/host-repo/README.md#prompts).
+- A composition with several prompt texts keeps one `TASKS` table near its top: each call's task file, then the
+  fragments it rules by. A fragment joins as a whole paragraph, never spliced into a sentence. `fill(text, values)` from
+  `@maestro/classics` replaces each `{name}` with a one-line value and throws on a `{name}` without a value or a value
+  without a `{name}`. A branch on a flag stays TypeScript choosing which files to join.
 - A code node's function is exported by the composition file itself, or compose refuses it with `SCOPE.export`. A
   function from a relative file is re-exported: `import { tally } from "./lib/util"; export { tally };`.
 

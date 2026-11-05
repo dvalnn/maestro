@@ -370,13 +370,13 @@ compose. Passing one cancels the agent and ends it `failed` with a reason naming
 
 An agent reads five layers, in this order, each with one home; no layer restates another's text.
 
-| Layer       | From                              | Holds                                                         |
-| ----------- | --------------------------------- | ------------------------------------------------------------- |
-| Frame       | the host                          | working copy, checks, attachment list, output schema          |
-| Profile     | `profiles/<name>/instructions.md` | who the agent is and how it works, true in every call         |
-| Area        | a preset's profile `attachments`  | what is true of one part of the target                        |
-| Task        | one Markdown file per call        | what this call asks, its inputs by name, its outputs, its bar |
-| Attachments | code nodes                        | the run's data, never instructions                            |
+| Layer       | From                              | Holds                                                                     |
+| ----------- | --------------------------------- | ------------------------------------------------------------------------- |
+| Frame       | the host                          | working copy, checks, attachment list, output schema                      |
+| Profile     | `profiles/<name>/instructions.md` | who the agent is, how it works and what it never does, true in every call |
+| Area        | a preset's profile `attachments`  | what is true of one area or run, added to a profile                       |
+| Task        | one Markdown file per call        | what this call asks, its inputs by name, its outputs, its bar             |
+| Attachments | code nodes                        | the run's data, never instructions                                        |
 
 `maestro art show <id> <instance> staged/prompt.md` shows what an agent was told.
 
@@ -384,6 +384,10 @@ A task file is one `.md` file per call, named for its `label`, in `.maestro/<id>
 `src/prompts/` in a pack. Import it as text: `import task from "./prompts/build.md" with { type: "text" }`. The
 attribute is mandatory, or Bun imports Markdown as HTML. For `tsc`, declare the type once:
 `declare module "*.md" { const text: string; export default text; }`.
+
+A fragment shared by several tasks starts with `_` (`_gate.md`); where a call picks between texts, each is the label
+plus a plain suffix (`reviewer-again.md`). A JSON shape example is a fenced `json` block with its field rules as prose
+under it, so a formatter does not reflow it.
 
 ## Configuration
 
@@ -517,9 +521,9 @@ An adapter also streams the harness's startup report as an `environment` event: 
 host records it and never enforces it.
 
 `maestro agent show --probe` starts a profile's agent as a concert would and stops it once it has that report and the
-model's window, to check the report against the adapter's declared baseline (GLOSSARY: Probe) and keep the window. It
-marks each part `✓`, `✗` or `?` (not reported) and exits 1 on a fault. It spends a startup, and on claude one short
-turn.
+model's window, to check the report against the adapter's declared baseline and keep the window. A mismatch is a fault
+of inspection, never of a concert. It marks each part `✓`, `✗` or `?` (not reported) and exits 1 on a fault. It spends a
+startup, and on claude one short turn.
 
 The baseline pins the tools an agent gets, so a tool a harness release adds never reaches one. A probe faults each tool
 loaded beyond it and each one in it not loaded.
@@ -553,8 +557,9 @@ Environment variables rehearse a branch a placeholder never takes. A resume need
     writes the placeholder. The instance id is as `maestro ls <id>` prints it, such as `loop[0]/review`; the node id
     drops the `[n]` indices and serves every round. A `verdict` file found the same way holds `ok` or
     `rejected <reason>`, absent `ok`. An `events.jsonl` found the same way holds harness events emitted first, one JSON
-    object per line. The host validates a scripted file like any output; a missing directory or other text fails the
-    stub agent.
+    object per line, such as `{"type":"tool","id":"t1","name":"Bash","input":{"command":"ls"}}`,
+    `{"type":"tool_result","id":"t1","bytes":120,"error":false}` or `{"type":"context","used":18000}`. The host
+    validates a scripted file like any output; a missing directory or other text fails the stub agent.
 
 [^delay]: A duration such as `2s` or `500ms`; unset, it answers at once. It applies to scripted events too.
 
