@@ -166,6 +166,9 @@ const result = (verdict: Routed["verdict"], more = {}): Routed => ({
 	...more,
 });
 const ready = result("ready-for-agent", { spec });
+const specced = result("ready-for-agent", {
+	spec: { ...spec, requirements: ["The script shall greet."] },
+});
 const AFTER_REPLY =
 	"Label the issue with the choice. Where it follows a reply, first reply `@forge-bot …` with the answer or a redirect.";
 const ON_FORGE = "Take the choice on the forge.";
@@ -193,6 +196,18 @@ test.each([
 	[
 		"needs-approval",
 		{ result: ready },
+		maintainers(
+			"brief v1 awaits approval",
+			AFTER_REPLY,
+			"- **`ready-for-agent`**: approve it, and the tour manager builds the spec or files the split.",
+			"- **`needs-triage`**: re-triage it, after a reply with an answer or a redirect.",
+			"- **`ready-for-human`**: build it by hand.",
+			"- **`wontfix`**: drop it.",
+		),
+	],
+	[
+		"needs-approval",
+		{ result: specced },
 		maintainers(
 			"spec v1 awaits approval",
 			AFTER_REPLY,
@@ -395,6 +410,18 @@ test("a spec comment reads in order: heading, Context, Requirements, Shape, Deci
 	);
 	expect(dataOf(shown)).toEqual(data);
 });
+
+test.each([
+	["a direct ruling's", ready, "Brief", "brief"],
+	["a planner's", specced, "Spec", "spec"],
+])(
+	"%s spec heads its comment and its link by its kind",
+	(_, result, heading, link) => {
+		const shown = commentOf({ result }, "needs-approval", "forge-bot");
+		expect(shown).toContain(`### ${heading} v1 · risk low`);
+		expect(tracked("Greet.", 9, { result })).toContain(`[${link} v1]`);
+	},
+);
 
 test("a spec stored without decisions or exclusions reads them as empty, renders and round-trips", () => {
 	const { decisions, excluded, ...old } = reviewed;

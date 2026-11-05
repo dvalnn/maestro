@@ -31,8 +31,9 @@ verdict does not need them:
     Prefer it whenever scouting and a spec would cost more than the review;
   - `plan` otherwise.
 - `files`: the repo-relative paths you expect the change to create or edit.
-- `what`, for `direct`: the change in one paragraph, folding in every answer the owner gave, for a builder that reads
-  nothing else of the thread.
+- `what`, for `direct`: the brief, a short paragraph by Plain English below. The builder reads the ask beside it, so the
+  brief holds only what the ask leaves open: the module that owns the change, each answer the owner gave and each call
+  you settled. It never restates the ask or the gate, and leaves how to the builder.
 - `subject`, for `direct`: the commit subject, as `<type>(<scope>): <summary>`.
 - `groups`, for `plan`: at most {maxGroups}, one per line of inquiry, the most decisive first, numbered G1 on, each of
   at most {groupSize} questions. Ask only what changes the plan, and settle yourself what one line settles; no group

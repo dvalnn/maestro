@@ -62,6 +62,7 @@ const TASKS = {
 	triager: (maxGroups: number) =>
 		task(
 			fill(TRIAGER, { maxGroups, groupSize: GROUP_SIZE, narrow: NARROW }),
+			PLAIN,
 			GATE,
 			QUESTIONS,
 		),

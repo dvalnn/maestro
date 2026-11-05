@@ -565,7 +565,7 @@ function waitsOn(state: State, data: Data) {
 	if (state === "needs-approval")
 		return data.result?.children
 			? "the split awaits approval"
-			: `spec v${versionOf(data)} awaits approval`;
+			: `${nameOf(data)} awaits approval`;
 	if (state === "in-review") return "the PR awaits review";
 	if (state === "needs-info") return "the question awaits an answer";
 	if (state === "ready-for-human") return "the build by hand awaits";
@@ -615,14 +615,20 @@ export function turnLines(
 /** The version of a spec no routed triage has written yet. */
 const FIRST_VERSION = 1;
 const versionOf = ({ version }: Data) => version ?? FIRST_VERSION;
+/** What the spec comment calls `data`'s spec: a brief for a direct ruling's, which has no requirements. */
+const kindOf = ({ result }: Data) =>
+	result?.spec && !result.spec.requirements ? "Brief" : "Spec";
+/** `data`'s spec by kind and version, as a sentence names it. */
+const nameOf = (data: Data) =>
+	`${kindOf(data).toLowerCase()} v${versionOf(data)}`;
 
-/** The spec comment's heading: its version, then the risk and any area of its result. */
+/** The spec comment's heading: its kind and version, then the risk and any area of its result. */
 function headingOf(data: Data) {
 	const { result } = data;
 	const labels = result
 		? [`risk ${result.risk}`, ...(result.area ? [`area ${result.area}`] : [])]
 		: [];
-	return [`### Spec v${versionOf(data)}`, ...labels].join(" · ");
+	return [`### ${kindOf(data)} v${versionOf(data)}`, ...labels].join(" · ");
 }
 
 /**
@@ -656,7 +662,7 @@ export function commentOf(
 
 /** `body` as the ask the owner wrote, then the marker and the closing line linking spec comment `comment`. */
 export const tracked = (body: string, comment: number, data: Data) =>
-	`${exactAsk(body)}${SEPARATOR}${MARKER}\nTracked by Maestro Tour Manager · [spec v${versionOf(data)}](#issuecomment-${comment})`;
+	`${exactAsk(body)}${SEPARATOR}${MARKER}\nTracked by Maestro Tour Manager · [${nameOf(data)}](#issuecomment-${comment})`;
 
 const RULE = "---";
 
