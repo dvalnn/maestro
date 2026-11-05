@@ -2,8 +2,8 @@
 
 For anyone changing how a plan or a running concert is drawn as text, and for readers of `maestro watch` or
 `compose --graph` output. A `Plan`, or the IR and the record's events, goes in and a string comes out; the package
-imports `@maestro/ir` alone and needs no terminal. Architecture's [Rendering](../../docs/architecture.md) summarises
-both forms.
+imports `@maestro/ir` alone and needs no terminal. Architecture's [Rendering](../../docs/architecture.md#11-rendering)
+summarises both forms.
 
 | Entry point                    | Gives                                                                     |
 | ------------------------------ | ------------------------------------------------------------------------- |

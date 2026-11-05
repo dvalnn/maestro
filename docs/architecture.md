@@ -1,8 +1,9 @@
 # maestro: architecture and system view
 
-Status: draft 2, 2026-10-14. Read `requirements.md` first for goals, glossary and decisions (D-xx, CORE-xx and so on are
-defined there). This document is a system-level view. It fixes responsibilities, boundaries and flows, and leaves module
-internals to the implementation.
+For engine contributors and host authors: how the packages fit, how a concert runs and is recorded, and how config
+resolves. Read `requirements.md` for goals and ids (CORE-xx and so on), `rulings.md` for D-nn and R-nn, and
+`GLOSSARY.md` for terms. It fixes responsibilities, boundaries and flows, and leaves module internals to the code and
+the package READMEs.
 
 ## 1. Overview
 
@@ -12,14 +13,29 @@ resumes graphs and knows nothing about what the nodes do. A **host** teaches the
 host adds nodes that run coding agents in isolated working copies. **Packs** carry compositions, prompts and code nodes
 for a domain.
 
-```
- author time                         compose stage                         perform stage
- -----------                         -------------                         -------------
- composition.ts  --build-->  IR  --validate/expand/bound-->  plan  --perform-->  record + events
-      ^                      ^                 ^                                |
-      |                      |                 |                                v
-   SDK (+ host SDKs)   other-language     host.validate/bounds            workers (code nodes)
-                       emitters (later)                                   host runtime (agent nodes)
+```mermaid
+flowchart LR
+  subgraph author["author time"]
+    comp["composition.ts"]
+    emit["other-language emitters (later)"]
+  end
+  subgraph compose["compose stage"]
+    ir(["IR"])
+    plan(["plan"])
+    hooks["host validate and bounds"]
+  end
+  subgraph perform["perform stage"]
+    rec(["record and events"])
+    workers["workers: code nodes"]
+    hostrt["host runtime: agent nodes"]
+  end
+  comp -->|build| ir
+  emit --> ir
+  ir -->|"validate, expand, bound"| plan
+  hooks --> plan
+  plan -->|perform| rec
+  plan --> workers
+  plan --> hostrt
 ```
 
 Three properties drive the design:
@@ -33,384 +49,404 @@ Three properties drive the design:
 
 ## 2. System context
 
-Actors and external systems:
-
-- The **operator** (a person or a conductor agent) drives the CLI.
-- **Harnesses** (coding-agent runtimes such as pi and Claude Code) are driven by the coding-agent host through adapters.
-- **Model providers** are reached only through harnesses.
-- A **target repository** is read by the host to cut lanes. It is never written by a concert (HOST-03).
-- The **filesystem** holds config, the record store, lanes and artifacts.
-- **Renderers** consume the IR and the event stream.
-
-```
- operator --CLI--> maestro CLI --> core engine --+--> workers (code nodes)
-                                      |          +--> host: agent / check nodes --> harness adapters --> agents
-                                      |                         |                              |
-                                      v                         v                              v
-                                record store + events     lanes (worktrees), sandbox     model providers
-                                      |
-                                      v
-                                  renderers
-```
+The **operator** is a person or a **conductor**, an agent session that drives the CLI. **Harnesses** (pi, Claude Code)
+are reached through the host's adapters, and model providers only through harnesses. The host reads a **target
+repository** to cut lanes and a concert never writes to it (HOST-03). The filesystem holds config, the record store,
+lanes and artifacts. Renderers consume the IR and events.
 
 ## 3. Layers and packages
 
-A monorepo of separately versioned packages (DIST-03). Package names are workspace names that are never published
-(D-31).
+A monorepo of separately versioned packages. Package names are workspace names and are never published.
 
-| Layer            | Package          | Responsibility                                                                                                         | Knows about                                                                |
-| ---------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| IR               | `ir`             | The IR and the data formats maestro emits: schema, version, validators, plan and event shapes. No runtime.             | nothing                                                                    |
-| Core             | `core`           | Graph model, compose checks, executor, resume, record store, events, config layering, worker protocol, host interface. | `ir`                                                                       |
-| SDK              | `sdk`            | Authoring API: compositions, node constructors, Refs, types, subcompositions, stdlib. Emits IR.                        | `ir`                                                                       |
-| Test kit         | `testkit`        | Fake host, build and compose-time assertions, stub concert.                                                            | `core`, `sdk`, `ir`                                                        |
-| CLI              | `cli`            | Commands, derived input flags, output formats, exit codes, host and pack loading.                                      | `core`, `sdk`, `ir`, `render-*`, `host-repo`, `host-repo-sdk`, `harness-*` |
-| Repo host        | `host-repo`      | Agent and check node kinds, lanes, sandbox, harness adapter interface, host config namespaces.                         | `core`, `ir`                                                               |
-| Repo host SDK    | `host-repo-sdk`  | Typed constructors for the repo node kinds and lanes, output declarations, `seat()`.                                   | `sdk`, `ir`                                                                |
-| Harness adapters | `harness-<name>` | One adapter per coding-agent runtime.                                                                                  | `host-repo`                                                                |
-| Packs            | `packs/<id>`     | Compositions, Markdown prompts, schemas, code nodes, params.                                                           | `sdk`, `host-repo-sdk`                                                     |
-| Renderers        | `render-<form>`  | Static graph render, live view.                                                                                        | `ir`                                                                       |
+| Layer            | Package          | Responsibility                                                                                                   |
+| ---------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| IR               | `ir`             | The IR and the formats maestro emits: schema, version, validators, plan and event shapes. No runtime.            |
+| Core             | `core`           | Graph model, compose checks, executor, resume, record, config layering, events, worker protocol, host interface. |
+| SDK              | `sdk`            | Authoring API: node constructors, Refs, types, subcompositions, stdlib.                                          |
+| Test kit         | `testkit`        | Fake host, build and compose-time assertions, stub concert.                                                      |
+| CLI              | `cli`            | Commands, derived input flags, output formats, exit codes, host and pack loading.                                |
+| Repo host        | `host-repo`      | Agent and check node kinds, lanes, sandbox, harness adapter interface.                                           |
+| Repo host SDK    | `host-repo-sdk`  | Typed constructors for the repo node kinds and lanes, output declarations, `seat()`.                             |
+| Harness adapters | `harness-<name>` | One adapter per coding-agent runtime.                                                                            |
+| Packs            | `packs/<id>`     | Compositions, Markdown prompts, schemas, code nodes, params.                                                     |
+| Renderers        | `render-<form>`  | Static graph render, live view.                                                                                  |
 
-Dependency rule: arrows only point down the table. `core` and `ir` never import a host, a pack or an adapter. CORE-12
-and the graph are enforced by lints in `just check`: Biome import restrictions and a domain-word scan.
+Each package imports only what it sits above in the graph. `core` and `ir` never import a host, a pack or an adapter.
+Biome import restrictions and a domain-word scan enforce this in `just check`.
+
+```mermaid
+flowchart TD
+  cli["cli"] --> core["core"]
+  cli --> sdk["sdk"]
+  cli --> rend["render-*"]
+  cli --> host["host-repo"]
+  cli --> hsdk["host-repo-sdk"]
+  cli --> harness["harness-*"]
+  testkit["testkit"] --> core
+  testkit --> sdk
+  packs["packs/*"] --> sdk
+  packs --> hsdk
+  harness --> host
+  host --> core
+  hsdk --> sdk
+  core --> ir["ir"]
+  sdk --> ir
+  rend --> ir
+```
+
+Every package but `harness-*` and `packs/*` may also import `ir`; those edges are omitted.
+
+Refs: DIST-03, D-31, CORE-12.
 
 ## 4. Lifecycle of a concert
 
-The lifecycle has two stages (D-12). **Compose** is steps 1 to 4, ending with pre-flight, and spends nothing.
-**Perform** is steps 5 to 7 and starts a concert.
+**Compose** is steps 1 to 4 and spends nothing; **Perform** is steps 5 to 7 and starts a concert.
 
-- `compose <composition>` stops after step 4. By default it is an explicit validation step reporting diagnostics. It can
-  save the IR to a file (D-13). With no params it uses the first example input set (D-19).
-- `perform <composition>` runs compose first and continues only if pre-flight produced no error diagnostic.
-- `perform <IR file>` skips the build (step 3), loads the IR, and still runs pre-flight before any node instance starts
-  (NFR-02).
+```mermaid
+flowchart TD
+  cc(["compose"]) --> resolve
+  pc(["perform composition"]) --> resolve
+  pi(["perform IR file"]) --> resolve
+  subgraph compose["Compose"]
+    resolve["1 Resolve"] --> params["2 Params"] --> build["3 Build"] --> pre["4 Pre-flight"]
+    resolve -->|"IR file"| pre
+  end
+  pre -->|"no error diagnostic"| plan(["plan"])
+  pre -.->|"error diagnostic"| halt(["stop, nothing started"])
+  plan -->|"perform only"| exec
+  subgraph perform["Perform"]
+    exec["5 Perform"] --> rec["6 Record"] --> obs["7 Observe and resume"]
+  end
+```
 
 1. **Resolve.** The CLI loads layered config, every host the binary embeds (config has no `hosts` key), and the pack
    that owns the composition.
-2. **Params.** A composition's declared params become CLI flags and are validated before build (D-17). They are plain
-   values at build time. Node outputs and file contents are Refs, and a Ref never feeds a param (D-16).
-3. **Build.** The composition's build function runs once with symbolic Refs and produces the graph. It is deterministic
-   and side-effect free (CORE-06). Ambient state (environment, clock, randomness) is frozen (SDK-11). The loader builds
-   twice and compares the IR (SDK-12).
-4. **Pre-flight.**
-   1. Serialize to IR and validate against the IR schema.
-   2. Type-check every edge (CORE-02).
-   3. Resolve config: each namespace goes to its owner's schema (CFG-02, CFG-05).
-   4. Expand bounded groups whose cardinality is known from plain values. A group whose size depends on a node result
-      stays as a bounded region. Compose runs no author code (ADR 0009).
-   5. Run host `validate(graph, setup)` hooks (for example the lane double-extension rule).
-   6. Compute bounds with host `bounds(node)`: maximum node instances and the hosts' named counts (such as agent runs)
-      (D-23). There is no cost bound in v1.
-   7. Emit the **plan**: diagnostics, counts, bounds and a renderable graph. Diagnostics of severity error stop here
-      (NFR-02).
-5. **Perform.** The executor instantiates node instances, schedules them by dependency, applies outcomes and edge
-   tolerance, dispatches code nodes to workers and host nodes to their host, and writes events.
-6. **Record.** Events and results go to the record store as they happen. A final result is derived by the result rule
-   (CORE-04).
-7. **Observe and resume.** `ls`, `wait`, `watch` and renderers read the record and events. `resume` re-enters a concert
-   at node granularity (CORE-09). `encore` performs a concert's composition again as a new concert, linked to it (see
-   Encore).
+2. **Params.** A composition's declared params become CLI flags, validated before build. They are plain values; a Ref
+   never feeds a param.
+3. **Build.** The build function runs once with symbolic Refs and produces the graph. It is deterministic and
+   side-effect free, with ambient state (environment, clock, randomness) frozen. The loader builds twice and compares
+   the IR.
+4. **Pre-flight.** Checks, code loading, expansion of groups sized by plain values, host `validate` and `bounds`, then
+   the **plan**: diagnostics, counts, bounds and a renderable graph. The steps and their order are in the
+   [compose README](../packages/core/src/compose/README.md#steps). Compose runs no author code.
+5. **Perform.** The executor schedules node instances ([Execution model](#7-execution-model)), dispatching code nodes to
+   workers and host nodes to their host.
+6. **Record.** Events and results go to the record store as they happen, and the concert's result follows the
+   [result rule](#result-rule).
+7. **Observe and resume.** `ls`, `wait`, `watch` and renderers read the record and events. `resume` and `encore` are in
+   [Resume and encore](#resume-and-encore).
+
+Refs: D-12, D-13, D-16, D-17, D-19, CORE-06, CORE-09, SDK-11, SDK-12, NFR-02, ADR 0009.
 
 ## 5. The IR (contract)
 
-The IR is the contract between authors and the engine (D-09). It is JSON, versioned, and self-describing enough that a
-renderer needs nothing else.
-
-Contents, at the level of what it must carry:
-
-- **Header.** IR version, composition id and version, pack id, build metadata (SDK version, source hash).
-- **Scopes.** Named subgraphs created by subcomposition use, with their ports, so renderers can collapse them.
-- **Nodes.** For each node: stable id (a path whose prefixes are its scopes and groups), kind, source location, typed
-  ports (schemas), guard, kind-specific configuration (host kinds), and for code nodes a worker reference
-  `{runtime, module, export, code hash}`.
-- **Groups.** For `parMap`, `map`, `find`, `parFind`, `fold`, `loop`: the body subgraph (a template), the cardinality
-  (`exact` or `up to N`), the source of its items or iteration state, the stop condition reference, and the members
-  whose results the group delivers.
-- **Edges.** From port to port, with kind `data`, `collect` or `control`, and for `control` the tolerance (`ok` only, or
-  `ok` and `rejected`).
-- **Result.** The node the composition returns, from which the result rule derives the concert result.
-- **Provenance.** Optional compose-time additions: expansion and bounds. A plan is an IR plus these.
+The IR is the contract between authors and the engine: JSON, versioned, and self-describing enough that a renderer needs
+nothing else. Its contents and wire format are in the [`@maestro/ir` README](../packages/ir/README.md#format).
 
 Properties:
 
-- **Fan-in is explicit** (D-08): a `collect` edge from a group's member-result port into a downstream node, or a reducer
-  node marked `fanin`. A node with several distinct upstreams is a barrier and shows as a multi-edge join.
+- **Fan-in is explicit**: a `collect` edge from a group's member-result port into a downstream node, or a reducer node
+  marked `fanin`. A node with several distinct upstreams is a **barrier** and shows as a multi-edge join.
 - **Lanes are not fan-in.** A host node takes exactly one lane. Results from several lanes reach the next node as
   values.
-- **Stable ids.** Node ids are derived from scope path and label so that renders, events and resume stay stable across
-  builds of the same composition.
-- **Byte-stable.** Same params, composed config and code give the same IR (CORE-06).
+- **Stable ids.** Node ids derive from scope path and label, so renders, events and resume stay stable across builds of
+  the same composition.
+- **Byte-stable.** Same params, composed config and code give the same IR.
 - **Language-neutral.** Nothing in the IR assumes TypeScript. A worker reference names a runtime, and v1 implements
   `ts`.
 
+Refs: D-08, D-09, CORE-06.
+
 ## 6. Host interface
 
-A host is a package that the core loads. It is the only way node kinds beyond the core's set exist. A host supplies:
+A host is a package the core loads, and the only way node kinds beyond the core's set exist. The core never inspects a
+host's types or rules: it calls the hooks below and records what they return. ADR 0010 holds why.
 
-1. **Node kinds.** For each kind: name, configuration schema, input and output port schemas (possibly generic over the
-   node's configuration), and `execute(instance, inputs, context)` returning outputs and an outcome. The instance holds
-   its node, its expansion path and its id as `ls` shows it, such as `lens[risk]/skeptic`. Compose checks a node's
-   configuration and its ports in the IR against its kind, and perform checks the outputs against the ports. Core never
-   says run or build (CORE-12): the SDK builds, core composes and executes. A kind can declare its outputs include
-   artifacts.
-2. **Types.** Named types the host's ports use (for example a lane handle), with a way to serialize them into the IR.
-   Compose rejects a type name that neither core nor an installed host owns.
-3. **`validate(graph, setup)`.** A compose-time hook returning diagnostics. It sees the whole graph and its own kinds'
-   nodes. This is where host rules live (the lane extension rule, the profile and checks a node names, bind validity).
-4. **`bounds(node)`.** Bounds for a node instance as named counts, like metrics (CORE-19): core sums each name and
-   config caps it by name, for the plan's size bound (D-23). The agent host counts agent runs under its own name.
-5. **Environment.** `environment(setup)` gives host facts visible to code nodes through a typed context (for example the
-   current target). The core's own context holds only the concert id, a clock value and the instance's scratch directory
-   (ADR 0007).
-6. **Config namespaces.** Schemas for the namespaces the host owns. A **setup** goes to `validate`, `environment`,
-   `resources.release` and `resources.usage`, and to `execute` as `context.setup`. It holds the values of the host's own
-   namespaces as compose checked them, the part of them the preset and `-c` layers set (`commandLine`, at its key
-   paths), and its store, `<data root>/hosts/<host name>`, which the host creates on first write.
-7. **Event enrichment.** Extra fields added to events and the record for its node kinds, when an instance settles, and
-   progress events emitted while it executes, such as an agent's tool calls and thinking (CORE-10). The core stores them
-   opaquely.
-8. **Cancellation.** A way to cancel a running node instance and release resources (kill the process tree).
-9. **Optional seams.** `param(type, text)` reads a param of one of its types from the text a flag or YAML gave it.
-   `resources`, for a host that holds disk per concert, groups `release(concert, setup)`, which frees what it holds for
-   a settled concert, and `usage(concert, setup)`, which reports its bytes on disk, for `prune` and `ls`. `text` groups
-   `progress(event)`, which words one of the host's progress events, `actor(enrichment)`, which names who ran an
-   instance, `notes(enrichment)`, which gives an instance's notes as headed lists of one-line entries for `ls`,
-   `report(enrichment)`, which gives its full report as an opaque object for `ls --json`, and `reportFields`, which says
-   what that report's fields mean for `ls --help`; the renderer styles the text. `needs(graph)` names the config entries
-   the graph's host nodes read by name. ADR 0010 records the shape.
+The exports, from `@maestro/core/host`, `@maestro/core/node` and `@maestro/ir`, are listed in the `Host` TSDoc. Required
+members sit flat on the host; a `?` marks an optional one.
 
-The core never inspects a host's types or rules beyond checking that each type name has an owner. It only calls these
-hooks and records what they return.
+| Member                | Called by                                                              | Gives                                 |
+| --------------------- | ---------------------------------------------------------------------- | ------------------------------------- |
+| `name`                | Core, always: it namespaces kinds, types, facts.                       |                                       |
+| `kinds`, `types`      | Core, at compose and perform start.                                    |                                       |
+| `config`              | Core, at config compose: a schema per namespace.                       |                                       |
+| `paths?`, `deferred?` | CLI, for config paths and late bases.                                  | Key paths.                            |
+| `needs?(graph)`       | CLI, for `rep`, from the example set.                                  | Config entries its nodes read.        |
+| `kind.name`           | Core, at compose.                                                      |                                       |
+| `kind.config`         | Core, at compose.                                                      | `HOST.config` diagnostics.            |
+| `kind.ports(node)`    | Core, at compose, per node.                                            | The node's `in` and `out`.            |
+| `kind.execute(...)`   | Core, per instance, when its inputs are ready.                         | `HostNodeResult`.                     |
+| `kind.cancel(i)`      | Core, on cancel or halt: releases resources, killing the process tree. | Nothing; `execute` then settles.      |
+| `validate(graph, s)`  | Core, at compose, once per graph, after core's checks.[^validate]      | `HOST.`-prefixed diagnostics.         |
+| `bounds(node)`        | Core, at compose, per node of the host's kinds.                        | Named counts per instance.            |
+| `environment(s)`      | Core, at perform start, once per concert.                              | Facts for code nodes' `env`.          |
+| `param?(type, text)`  | CLI: reads a param of one of the host's `types`.                       | A value, or diagnostics.              |
+| `resources?.release`  | CLI, for `prune`, on a settled concert.                                | Nothing.                              |
+| `resources?.usage`    | CLI, for `ls`, per concert.                                            | Bytes on disk.                        |
+| `text?.*`             | CLI, for `watch`, `ls`, `ls --json`, `ls --help`.                      | Progress words, actor, notes, report. |
 
-### Host reference
+[^validate]:
+    It sees the whole graph, where host rules live: the lane extension rule, the profile and checks a node names, bind
+    validity.
 
-What a host author writes against. ADR 0010 records why the shape is this one.
+**Setup, enrichment and naming.** `HostSetup`, the host's context and the naming rule are in the `Host`, `HostSetup` and
+`HostContext` TSDoc. A host adds fields to the events and record of its node kinds, reports progress through
+`context.emit`, and writes no log of its own: core stores both opaquely, keyed by node id and expansion path, progress
+as a `progress` event.
 
-**Imports.** The contract spans three entry points and nothing else:
-
-| Import               | Gives                                                                                                                               |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `@maestro/core/host` | `Host`, `NodeKind`, `HostInstance`, `HostSetup`, `HostContext`, `HostResources`, `HostText`, `HostNodeResult`, `Metrics`, `Bounds`. |
-| `@maestro/core/node` | `Inputs`, `Outputs`, `NodeResult`: what a node takes and gives back.                                                                |
-| `@maestro/ir`        | `HostNode`, `Ports`, `JsonSchema`, `Diagnostic`, `GraphIndex`, `Facts`, `HostEvent`, `Enrichment`, `Context`, `ArtifactRef`.        |
-
-**Host members.** Required members sit flat on the host. Core calls each at a fixed stage and never inspects what it
-returns beyond the check named.
-
-| Member               | When core calls it                                                      | Returns                          |
-| -------------------- | ----------------------------------------------------------------------- | -------------------------------- |
-| `name`               | Always: it namespaces kinds, types and facts.                           |                                  |
-| `kinds`, `types`     | At compose and at perform start: core reads the kind and type owners.   |                                  |
-| `kind.name`          | At compose: the `<host>.<kind>` a node's `kind` names.                  |                                  |
-| `kind.config`        | At compose: the schema a node's `config` is checked against.            | `HOST.config` diagnostics.       |
-| `config`             | At config compose: one schema per namespace the host owns.              |                                  |
-| `validate(graph, s)` | At compose, once per graph, after core's own checks.                    | Diagnostics, `HOST.`-prefixed.   |
-| `bounds(node)`       | At compose, per node of one of the host's kinds.                        | Named counts per instance.       |
-| `environment(s)`     | At perform start, once per concert.                                     | Facts for code nodes' `env`.     |
-| `kind.ports(node)`   | At compose, per node.                                                   | The node's `in` and `out`.       |
-| `kind.execute(...)`  | Per node instance, when its inputs are ready.                           | `HostNodeResult`.                |
-| `kind.cancel(i)`     | When the concert is cancelled or a halt stops a running instance.       | Nothing; `execute` then settles. |
-| `param?(type, text)` | The CLI only, to read a param of one of the host's `types` from text.   | A value, or diagnostics.         |
-| `resources?.release` | The CLI only, for `prune`, on a settled concert.                        | Nothing.                         |
-| `resources?.usage`   | The CLI only, for `ls`, per concert.                                    | Bytes on disk.                   |
-| `text?.progress(e)`  | The CLI only, for `watch`, per progress event of the host's kinds.      | A word and detail, or generic.   |
-| `text?.actor(e)`     | The CLI only, for `watch` and `ls`, on enrichment or an event's fields. | Who ran the instance, or none.   |
-
-The setup each hook gets, `HostSetup`, is item 6 above and ADR 0010.
-
-**Naming.** A host named `h` prefixes its node kinds (`h.agent`) and types (`h.lane`) with `h.`. Config namespaces are
-not prefixed (`target`, `profiles`). Core refuses two hosts that register one kind, and a type name no installed host
-owns.
-
-**Logging.** A host writes no log of its own. It reports progress through `context.emit(event)`, a JSON object core
-stores by node id and expansion path as a `progress` event, opaquely.
+Refs: CORE-10, CORE-12, CORE-19, D-23, ADR 0007.
 
 ## 7. Execution model
 
-- **Node instances.** A node instance is a node id plus an expansion path: one `[key]` per enclosing group, outermost
-  first, where a `parMap` or `parFind` contributes its item key and the other groups their iteration index (`[risk]`,
-  `[risk][2]`, or empty outside groups). It is shown merged into the id, as `parMap[risk]/skeptic`. Events and records
-  use this identity.
-- **Scheduling.** A node instance is ready when all `data` and `collect` inputs are settled and its `control` edges
-  allow it. The executor runs ready instances up to the concurrency cap.
-- **Outcomes.** `ok`, `rejected`, `failed`, `skipped`.
-  - A dependent over an `ok` edge runs only after `ok`. A dependent over a tolerant edge, or one that reads only status
-    ports (`ok` or `reason`) of that upstream, also runs after `rejected` and receives the reason.
-  - `failed` and `skipped` are not tolerable. The dependent is `skipped` and its own dependents follow the same rule.
-  - A declared output an upstream did not produce, as when it rejected without outputs, is never a crash. A data read of
-    it skips the reader, with that upstream as its cause, and a condition (a guard, a `cond` or a loop test) reading it
-    reads not true. `failed` stays for crashes and broken contracts.
-  - A `parMap` or `map` declares `onError`. With `continue`, a non-ok member becomes a `Settled` value and the group is
-    `ok`. With `stop`, the worst member outcome becomes the group's, running members are cancelled and a `map` starts no
-    further item (ADR 0006). `find`, `parFind`, `fold` and `loop` end on their condition, their last member or their
-    bound.
-- **Groups.**
-  - A group's member value is the outputs of its body's one result, or a record of them by result name when the body
-    returns several.
-  - `parMap` instantiates its body once per item, in parallel up to the cap. An item with a primitive value is keyed by
-    value and any other item by index, or by an author-supplied key function. Duplicate primitive or index keys of a
-    list known at build are a compose error. Duplicates a key function gives fail the group at perform, since the
-    function runs only there (D-18, SDK-13). `parFind` keys its items the same way. Keys give readable node instance ids
-    for `ls` and lane refs.
-  - `map` instantiates its body once per item, one at a time in item order.
-  - `find` instantiates the body per item in order and stops at the first member meeting the condition, else ends on the
-    last member. This covers escalation over items. Escalation over models unrolls at build into `use` tries, one seat
-    per profile, guarded by `when` and ending in `firstOk`. `parFind` runs every item at once: the first member to
-    settle meeting the condition is the result and the others are cancelled as `skipped`, with the reason
-    `cancelled: <instance> met the condition`, else it ends on the last member to settle. In either, a member or
-    condition node that fails fails the group.
-  - `fold` seeds an accumulator from the first item, through the body nodes its `first` lists, and steps it with each
-    next item through the others, in order. The accumulator has the shape of a node's result, as a loop's state does.
-    The fold ends on its last accumulator, and over no items it is `skipped`.
-  - `loop` carries typed state: an initial value, a step producing the next state, a test and a maximum. The state holds
-    the previous node's outputs, `ok` and `reason`, the shape of a node's result. The loop goes on while its test reads
-    true, read at `start` before each step (`0 to N` steps) or at `end` on each step's result (`1 to N`). A test node
-    that fails fails the loop. Whatever else stops it, its test or its maximum, it ends with its last state's outcome,
-    reason and outputs. This covers fix-until-green and review-revise loops.
-- **Guards.** A `when` guard that is false makes the node `skipped`. Compose resolves guards that depend only on known
-  values.
-- **Result.** The result rule starts at the returned node. An `ok` node is the result. Otherwise it follows the node's
-  non-`ok` inputs, and a group's result member, that the graph does not tolerate (a tolerated rejection or a `Settled`
-  input), the first to settle when several did, to a node with no such input: the root cause, with its outcome and
-  reason. A node skipped by its own false guard is the result, and counts as rejected, unless the guard reads the status
-  port of a node that is not `ok`: the rule follows that node.
-- **Resume.** Re-entering a concert keeps its id and runs its stored IR. A recorded `ok` instance is reused when its key
-  still matches: a hash of the node definition, its code hash recomputed from the current code, and its input values
-  with artifact content hashes. The code hash covers the whole bundle, so any edit to the composition file reruns every
-  code node, and dependents rerun when their inputs changed (ADR 0008); a resume whose recomputed code hashes differ
-  from the recorded ones warns that the composition changed and goes on. Any other instance runs again. A concert whose
-  process is still alive cannot be resumed. Nothing is reused across concerts.
-- **Encore.** `encore <concert>` starts a new concert, its row recording `encoreOf`, that builds the earlier concert's
-  composition with the param flags it recorded, the encore's own overriding them, under the config files as they stand,
-  with the earlier `-c` and the encore's own on top and the encore's presets in place of the earlier concert's whole
-  list when it gives any, else the earlier list. A fingerprint of the IR, the config values and the host facts, which
-  give the target revision and a digest of the profiles, is recorded with each concert; an encore whose fingerprint
-  equals its concert's, or while its concert or another in its encore chain is running, is refused before it is
-  recorded. Core passes `HostContext.encore` to each host instance and reads nothing of it, and each `HostInstance`
-  carries the kinds of the groups around it and the id of its composition. A resumed encore stays one. Every instance
-  runs again: nothing is reused.
-- **Cancellation and timeouts.** Cancelling a concert cancels running instances through their kinds' cancel hook, in
-  reverse dependency order, and settles them as `failed` with a cancellation reason. An instance that never started has
-  no record. A code node that runs past the timeout its author set settles `failed`. It has none by default.
+### Node instances and outcomes
+
+A node instance is a node id plus an expansion path: one `[key]` per enclosing group, outermost first, where a `parMap`
+or `parFind` contributes its item key and the other groups their iteration index (`[risk]`, `[risk][2]`, or empty
+outside groups). It is shown merged into the id, as `parMap[risk]/skeptic`. Events and records use this identity.
+
+A node instance is ready when all `data` and `collect` inputs are settled and its `control` edges allow it, and runs up
+to the concurrency cap. A false `when` guard makes it `skipped`; compose resolves guards that depend only on known
+values.
+
+The outcomes are `ok`, `rejected`, `failed` and `skipped`:
+
+- A dependent over an `ok` edge runs only after `ok`. A dependent over a tolerant edge, or one that reads only status
+  ports (`ok` or `reason`) of that upstream, also runs after `rejected` and receives the reason, and its outputs when
+  the rejection carried them. On a `loop` or `fold`, `tolerate` carries a `rejected` state or accumulator, `init`'s or
+  `first`'s included, into the next step; without it the group ends on that one.
+- `failed` and `skipped` are not tolerable. The dependent is `skipped` and its own dependents follow the same rule.
+- A declared output an upstream did not produce, as when it rejected without outputs, is never a crash. A data read of
+  it skips the reader, with that upstream as its cause, and a condition (a guard, a `cond` or a loop test) reading it
+  reads not true. `failed` stays for crashes and broken contracts.
+
+Refs: CORE-04, ADR 0006.
+
+### Groups
+
+A group's member value is the outputs of its body's one result, or a record of them by result name when the body returns
+several.
+
+- `parMap` instantiates its body once per item, in parallel up to the cap.
+- `map` instantiates its body once per item, one at a time in item order.
+- `find` instantiates the body per item in order and stops at the first member meeting the condition, else ends on the
+  last member. This covers escalation over items. Escalation over models unrolls at build into `use` tries, one seat per
+  profile, guarded by `when` and ending in `firstOk`.
+- `parFind` runs every item at once. The first member to settle meeting the condition is the result and the others are
+  cancelled as `skipped`, with the reason `cancelled: <instance> met the condition`; else it ends on the last member to
+  settle.
+- `fold` seeds an accumulator from the first item, through the body nodes its `first` lists, and steps it with each next
+  item through the others, in order. The accumulator has the shape of a node's result. The fold ends on its last
+  accumulator, and over no items it is `skipped`.
+- `loop` carries typed state: an initial value, a step producing the next state, a test and a maximum. The state holds
+  the previous node's outputs, `ok` and `reason`. The loop goes on while its test reads true, read at `start` before
+  each step (`0 to N` steps) or at `end` on each step's result (`1 to N`). However it stops, by test or maximum, it ends
+  with its last state's outcome, reason and outputs. This covers fix-until-green and review-revise loops.
+
+In `find` and `parFind` a member or condition node that fails fails the group, as a failed test node fails a `loop`.
+
+**Keying.** A `parMap` or `parFind` item with a primitive value is keyed by value and any other item by index, or by an
+author-supplied key function. A duplicate key is a compose error when the list is known at build, and fails the group at
+perform when the list is known only there, key function or not. Keys give readable instance ids for `ls` and lane refs.
+
+**`onError`.** A `parMap` or `map` declares it. With `continue`, a non-ok member becomes a `Settled` value and the group
+is `ok`. With `stop`, the worst member outcome becomes the group's, running members are cancelled and a `map` starts no
+further item, so `results` hold the members that ran. `find`, `parFind`, `fold` and `loop` end on their condition, their
+last member or their bound.
+
+Refs: D-18, SDK-13, ADR 0006.
+
+### Result rule
+
+The result rule derives a concert's result from the node the composition returns, by this walk:
+
+```mermaid
+flowchart TD
+  start(["returned node"]) --> ok{"ok?"}
+  ok -->|yes| done(["it is the result"])
+  ok -->|no| guard{"skipped by its own false guard?"}
+  guard -->|yes| status{"guard reads status port of a non-ok node?"}
+  status -->|yes| follow["follow that node"]
+  status -->|no| rej(["it is the result, counted rejected"])
+  guard -->|no| cause{"non-ok input or result member not tolerated?"}
+  cause -->|yes| first["follow the first to settle"]
+  cause -->|no| root(["root cause: its outcome and reason"])
+  follow --> guard
+  first --> guard
+```
+
+A tolerated rejection and a `Settled` input are tolerated. The root cause is the node with no such input. A concert that
+fails before any node runs, is cancelled, or loses its process has a result with no node.
+
+### Resume and encore
+
+**Resume** keeps the concert's id and runs its stored IR. A recorded `ok` instance is reused when its key still matches:
+a hash of the node definition, its code hash recomputed from the current code, and its input values with artifact
+content hashes.
+
+- The code hash covers the whole bundle, so any edit to the composition file reruns every code node, and each dependent
+  reruns when its inputs changed. A resume whose recomputed code hashes differ from the recorded ones warns that the
+  composition changed and goes on.
+- Any other instance runs again, from `pending`. Nothing is reused across concerts.
+- A concert whose process is still alive cannot be resumed.
+
+**Encore** (`encore <concert>`) starts a new concert, its row recording `encoreOf`, that performs the earlier concert's
+composition again. Every instance runs again and nothing is reused, and a resumed encore stays one.
+
+- Params: the flags the earlier concert recorded, the encore's own overriding them.
+- Config: the config files as they stand, then the earlier `-c`, then the encore's own. The encore's presets replace the
+  earlier list whole when it gives any, else the earlier list stands.
+- Refusal: each concert records a **fingerprint**, a digest of its IR, its config values and the host facts (the target
+  revision and a digest of the profiles). An encore is refused before it is recorded when its fingerprint equals its
+  concert's, or while its concert or another in its encore chain is running.
+- Hosts: core passes `HostContext.encore` to each host instance and reads nothing of it.
+
+Refs: CORE-09, ADR 0008, `rulings.md` "Resume".
 
 ### Lifecycle of a node instance
 
 ```mermaid
 stateDiagram-v2
   [*] --> pending
-  pending --> skipped: false guard, intolerable input or a sibling's halt
+  pending --> skipped: guard, input or halt
   pending --> failed: input type mismatch
   pending --> ok: resume reuses the record
   pending --> running
   running --> ok
   running --> rejected
-  running --> failed
-  running --> failed: cancelled
-  running --> skipped: halted by a stopping group, or an empty find, parFind, fold or loop
+  running --> failed: failed or cancelled
+  running --> skipped: halted or empty
   ok --> [*]
   rejected --> [*]
   failed --> [*]
   skipped --> [*]
 ```
 
-A resume runs every instance that is not a reusable `ok` again, from `pending`.
+Cancelling a concert cancels running instances through their kinds' cancel hook, in reverse dependency order, and
+settles them as `failed` with a cancellation reason. A code node that runs past the timeout its author set settles
+`failed`. It has none by default.
 
 ## 8. Configuration
 
-Params and config resolve, highest precedence first (CFG-04, D-17): the use site for a subcomposition or the CLI flag
-for a root composition, then each `-c <key>=<value>` flag, last first, then each preset, last first, workspace and user
-YAML, then, for `compose`, the example set (D-19), then the declared default. A profile's fields are the exception: the
-command line (`--preset`, `-c`) beats the config files' `profiles`, which beat the profile directory's `profile.yaml`,
-field by field (see `docs/rulings.md`). A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in
-`$XDG_CONFIG_HOME/maestro/presets/`, the workspace's winning the name whole. `--preset` repeats (#152):
-`--preset a --preset b` layers `a`, then `b`, then each `-c`, a later layer winning key by key. A composition's YAML
-keys live under its pack id and then its composition id. Hosts keep pure-config namespaces. Files are YAML. A relative
-path value in a workspace file, a workspace preset or a `-c` is relative to the workspace root, the directory that holds
-`.maestro/`, and in a user file or preset to the user config directory. The core:
+Params and config resolve by one ladder, highest precedence first:
 
-- parses and layers them,
-- validates the closed **core config** schema (CFG-01),
-- hands each other top-level namespace to the registrant that owns it for validation at compose time (CFG-02),
-- reports each value's source layer in the composed config view (CFG-06).
+1. The use site, for a subcomposition, or the CLI flag, for a root composition.
+2. Each `-c <key>=<value>`, last first.
+3. Each `--preset`, last first.
+4. The workspace file, `.maestro/config.yaml`.
+5. The user file, `$XDG_CONFIG_HOME/maestro/config.yaml`.
+6. The example set, for `compose` only.
+7. The declared default.
 
-Who owns what:
+A profile's fields are the exception: per field, the command line (`--preset`, `-c`) beats the config files' `profiles`,
+which beat the profile directory's `profile.yaml` (`rulings.md` "Profiles"). A resume applies the same order.
 
-- **Core.** Concurrency, caps by name, the data root, the workspace's name and the concert's `limits`.
-- **Host.** `target`, `profiles` and other host namespaces (HOST-12).
-- **Composition.** One param declaration in code covers CLI inputs and tunables, with defaults. For example a
-  repair-loop subcomposition owns its maximum iteration count.
+### Layers, presets and `-c`
+
+Files are YAML; merge tags, presets and `-c` syntax are in the [CLI README](../packages/cli/README.md#config). A
+composition's keys live under its pack id and then its composition id, and hosts keep pure-config namespaces.
+
+- The record keeps each `--preset` and `-c` as typed, so keep secrets out of `-c`; put them in `.env`. A resume
+  reapplies them but finds the record store by today's `dataRoot`, so a moved data root needs `-c dataRoot=` again.
+- A relative path is relative to the workspace root, the directory holding `.maestro/`, in a workspace file, preset and
+  `-c`, and to the user config directory in a user file and preset. A `-c` outside a workspace is relative to the cwd.
+
+### Core keys
+
+The core validates a closed schema for `concurrency`, `dataRoot`, `workspace`, `caps` and `limits`, each described in
+`CoreConfig` and `ConcertLimits` in `packages/core/src/config/index.ts`; the CLI adds `packs` ([Packs](#13-packs)). The
+host's namespaces (`target`, `profiles`, `seats`, `sandbox`) are in the
+[host-repo README](../packages/host-repo/README.md#configuration).
+
+### Who owns what
+
+The core parses and layers config, validates the core keys and hands each other top-level namespace to the
+**registrant** that owns it, a host or a pack, for validation at compose time. The schema that checks a key is always
+the one of the code that runs.
+
+- **Core.** The core keys, and **CLI.** `packs`.
+- **Host.** `target`, `profiles` and its other namespaces.
+- **Composition.** One param declaration in code covers CLI inputs and tunables, with defaults. A repair-loop
+  subcomposition owns its maximum iteration count.
 - **Pack.** Its id, holding its compositions' params, and no other namespace.
 
-Unclaimed keys (D-24): a key that no installed registrant claims is a compose error with a did-you-mean hint. A key
-claimed by an installed but unused registrant is ignored.
+A key that no installed registrant claims is a compose error with a did-you-mean hint. A key claimed by an installed but
+unused registrant is ignored.
+
+Refs: CFG-01, CFG-02, CFG-04, CFG-05, CFG-06, D-17, D-19, D-24, HOST-12.
 
 ## 9. Workers and code nodes
 
-- A **code node** is the author's function, with typed inputs and typed outputs. It runs at perform, in a **worker** of
-  its declared runtime.
-- v1 provides an **in-process TypeScript worker**. The **worker protocol** is specified so other runtimes and
-  out-of-process workers can follow: a node invocation carries node id, expansion path, input values and their port
-  schemas (`in`), artifact references and context. The reply carries outputs and an outcome (`ok`, or `rejected` with a
-  reason and optional outputs), or an error. Workers support cancellation and timeouts. The in-process worker cannot
-  stop a running function: cancel and timeout abort `ctx.signal`, and a cancelled or timed-out invocation settles at
-  once and its function is abandoned. A synchronous function that never returns blocks the process. Long work belongs in
-  a host.
-- **No compose-time evaluation.** Compose runs no author code (ADR 0009). Every code node may read the clock and the
-  concert id from its context.
+A **code node** is the author's function, with typed inputs and typed outputs. It runs at perform, in a **worker** of
+its declared runtime. v1 provides an in-process TypeScript worker. The **worker protocol** is specified so other
+runtimes and out-of-process workers can follow:
+
+- **Handshake.** Runtime name and version, supported IR version.
+- **Invoke.** Node id, expansion path, input values and their port schemas, artifact references and context. The reply
+  carries outputs and an outcome (`ok`, or `rejected` with a reason and optional outputs), or an error.
+- **Cancel and timeout.** A worker must stop work and reply promptly. A code function gets `ctx.signal`, an
+  `AbortSignal` aborted on cancel or timeout, to pass to `Bun.spawn({ signal })` or `fetch`. A process the function
+  spawned without it outlives the node.
+- **Logs.** A worker can emit log lines tagged with the node instance, stored in the record. A code function writes one
+  with `ctx.log(line)`.
+- **Isolation.** A worker is operator-trusted and not sandboxed by the core.
+
+The in-process worker cannot stop a running function: a cancelled or timed-out invocation settles at once and its
+function is abandoned. A synchronous function that never returns blocks the process, so long work belongs in a host.
+
+Refs: CORE-14, NFR-05, ADR 0009.
 
 ## 10. Record and events
 
-- The **record store** is local and embedded. SQLite in WAL mode through `bun:sqlite` is the store (D-26). Concerts may
-  run concurrently with no coordination beyond lane isolation, and the concurrency cap is per concert. The schema is new
-  (D-02). It holds concerts with their IR, the id of the process performing them, where their code came from (workspace,
-  module directory, file), tour and title, each `--preset` name in order (`presets`; a row from before presets repeated
-  holds one bare name, read as a list of it) and each `-c` as typed, which a resume reapplies, the root's params the
-  flags gave, the concert an encore repeats and its fingerprint, and the `limits` its latest attempt ran under; node
-  instances, outcomes with reasons, durations, metrics, artifact references and events. No config is kept for reuse: a
-  resume re-reads the config files.
-- A resume marks the concert's instance rows **stale**. Each one it reuses or replaces stops being stale, and the
-  metrics of a replaced attempt still count towards the concert's.
-- A concert whose process is gone while it is still `running` settles `failed`, by whichever reader finds it, so `wait`
-  ends and resume can continue from it. Only `kill` checks that a live process is maestro, so a pid another program
-  reused keeps the concert `running` until `kill` settles it.
-- An older record store is upgraded on open, one forward step per schema version in one transaction, and a step only
-  adds. A newer one, or one older than the first step, is refused.
-- A leaf instance's row keeps its **wired inputs** (`instances.inputs`, JSON) when it starts: each input port the node
-  does not hold in `literals`, with its resolved value, such as a fan-out item, a loop round's carried value or a
-  collected input. An artifact is its reference (path and content hash), never its content. A leaf with no wired ports
-  keeps `{}`. NULL means not recorded: an instance from before the upgrade, and every group, loop and scope row. A
-  resume that reuses an instance keeps the row. Literals stay readable through the IR and `art`.
-- **Metrics** (CORE-19, D-23) are named additive numbers per node instance. The engine sums each name per concert and
-  attaches no meaning to a name, except the token sum `limits.tokens` bounds. v1 reports token counts only.
+The **record store** is local and embedded: SQLite in WAL mode through `bun:sqlite`. Concerts may run concurrently with
+no coordination beyond lane isolation. It holds:
+
+- Concerts: the IR, the id of the performing process, where the code came from (workspace, module directory, file), tour
+  and title, each `--preset` name in order, each `-c` as typed, the root's params the flags gave, the concert an encore
+  repeats and its fingerprint, and the `limits` of the latest attempt.
+- Node instances: outcomes with reasons, durations, metrics, artifact references and each leaf's wired inputs.
+- Events.
+
+No config is kept for reuse: a resume re-reads the config files.
+
+- **Stale rows.** A resume marks the concert's instance rows **stale**. Each one it reuses or replaces stops being
+  stale, and the metrics of a replaced attempt still count towards the concert's.
+- **Dead process.** A concert whose process is gone while still `running` settles `failed`, by whichever reader finds
+  it, so `wait` ends and resume can continue. Only `kill` checks that a live process is maestro, so a pid another
+  program reused keeps the concert `running` until `kill` settles it.
+- **Metrics** are named additive numbers per node instance. The engine sums each name per concert and attaches no
+  meaning to a name, except the token sum `limits.tokens` bounds. v1 reports token counts only.
 - **Events** are append-only, keyed by node id and expansion path, with the instance's state, timestamps, outcome and
-  host enrichment. They are the single source for `watch` and renderers (NFR-07).
-- An instance's scratch directory is removed when it settles, except a failed code node's, which is kept and logged.
-  What lasts is in artifacts, lanes and events.
-- **Artifacts** are files on disk under the concert's area, referenced by content hash and provenance (which node
-  instance produced them). Large values are artifacts, not inline.
-- **Queries** needed by the CLI: list concerts with filters, find a concert by id, list node instances of a concert,
-  wait for a terminal state, read the concert result, set a concert's tour, resume a concert and remove one.
+  host enrichment. They are the single source for `watch` and renderers.
+- **Scratch.** An instance's scratch directory is removed when it settles, except a failed code node's, which is kept
+  and logged. What lasts is in artifacts, lanes and events.
+- **Queries** the CLI needs: list concerts with filters, find one by id, list a concert's node instances, wait for a
+  terminal state, read the result, set a tour, resume and remove.
+- **Artifacts** are files under the concert's area, referenced by content hash and provenance (the node instance that
+  produced them). Large values are artifacts, not inline.
+
+### Data root
+
+`$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`), unless config's `dataRoot` moves it.
+
+| Path                 | Holds                                                                    |
+| -------------------- | ------------------------------------------------------------------------ |
+| `record.db`          | The record of concerts, node instances and events.                       |
+| `concerts/<id>/`     | One concert's artifacts, at `artifacts/<path>`, and scratch directories. |
+| `hosts/<host name>/` | A host's store, which the host creates on first write.                   |
+
+Refs: CORE-19, D-23, D-26, NFR-07.
 
 ## 11. Rendering
 
-A renderer needs only the IR (or plan) and events:
+A renderer needs only the IR (or plan) and events. [`@maestro/render-text`](../packages/render-text/README.md) holds
+both forms.
 
-- **Static.** Nodes by kind, scopes collapsible, `data` edges solid, `control` edges dashed, `collect` edges drawn as
-  barriers with the fan-in reducer shown. Groups show their cardinality (`3`, `up to 14`) and, when compose expanded
-  them, the expansion.
-- **Live.** The authored shape with node-instance state folded from events: each node once, nested by scope and group in
-  IR order. A loop shows its latest round with a strip of each round's state, a `parMap` or `parFind` body node one row
-  for all its items with a strip of theirs, a fan-out its items against its cardinality. A container is open while it
-  holds running work or, once settled, the last failure. A node that never started is `pending`, and `not reached` once
-  its round, group or concert is done; a stdlib helper shows only while running, rejected or failed. A `now` line names
-  the latest running instance, a `last` line the latest failed one. `[` and `]` step the cursor's loop, `map`, `find` or
-  `fold` between its iterations. Past the terminal's height, settled rows hide from the top, then pending ones from the
-  bottom, as count lines, and the running rows, the last failure and their ancestors stay. Edges are
-  `compose --graph`'s. Browsed on a terminal, a row opens an inspector on its part of the record: a summary (context,
-  state, metrics and, with artifacts, a `maestro art` hint) and its events, tailing while it runs.
+- **Static.** `compose --graph` prints the plan as a Mermaid flowchart. Scopes and groups are plain subgraphs, not
+  collapsible.
+- **Live.** `maestro watch` folds the record's events into the authored shape, each node once, and a terminal browse
+  opens a row's part of the record. Only the live view folds.
 
-The first renderer targets text (ASCII or Mermaid) in the plan output; `maestro watch` draws the live form. A richer
-viewer is out of scope.
+A richer viewer is out of scope.
 
 ## 12. The coding-agent host
 
@@ -431,60 +467,91 @@ and enforces its [validation rules](../packages/host-repo/README.md#validation-r
 
 ## 13. Packs
 
-A pack is a directory or release tarball with a `maestro-pack.json` manifest and one pre-bundled entry file that
-includes its own SDK copy (D-30). The config lists packs by path, every directory under `$XDG_DATA_HOME/maestro/packs/`
-is one too, and nothing is resolved through `node_modules`. Compose consumes only IR JSON, so a second SDK copy is
-harmless as long as nothing relies on `instanceof` across copies. A pack contributes compositions, prompts, schemas,
-code nodes and params. Everything domain-specific lives here: for example the Gerrit comment parser and renderer, a
-catalogue of review lenses, a knowledge directory. Hard-coded environment facts (a repository path, a change number, a
-commit SHA) are inputs or round-folder data, never constants in a pack.
+A pack is a directory, or a release tarball whose top directory is the pack id, holding a manifest and one pre-bundled
+entry file that includes its own SDK copy. A pack contributes compositions (named `<id>.<name>`), prompts, schemas, code
+nodes and params, and everything domain-specific lives here, such as the Gerrit comment parser and renderer, a catalogue
+of review lenses or a knowledge directory. Hard-coded environment facts (a repository path, a change number, a commit
+SHA) are inputs or round-folder data, never constants in a pack.
+
+**Manifest.** `maestro-pack.json`:
+
+| Field     | Holds                                                                                           |
+| --------- | ----------------------------------------------------------------------------------------------- |
+| `id`      | Lower case, a letter first, then letters, digits, `_` or `-`. Also the pack's config namespace. |
+| `version` | The pack's version.                                                                             |
+| `entry`   | The bundle file inside the pack directory.                                                      |
+| `sdk`     | A semver range. A maestro whose SDK is outside it refuses the pack and says to rebuild.         |
+
+The entry imports nothing but builtins and `@maestro/sdk`, and maestro refuses one that does. Nothing is resolved
+through `node_modules`. Compose consumes only IR JSON, so a second SDK copy is harmless as long as nothing relies on
+`instanceof` across copies.
+
+**Discovery.** Every directory under `$XDG_DATA_HOME/maestro/packs/` is installed with no config, and the `packs` config
+key lists others by path.
+
+**Trust.** A pack is operator-trusted code: its code nodes run in maestro's process with the user's permissions, outside
+the sandbox that confines agents and checks.
+
+Refs: D-30, ADR 0002.
 
 ## 14. Distribution
 
-- Bun is the runtime baseline (D-03). Distribution is internal (D-31): the binary `maestro` and package tarballs are
-  released from a private forge, nothing is published to a public registry, and the license is `UNLICENSED`.
+- Bun is the runtime baseline. Distribution is internal: the binary `maestro` and package tarballs are released from a
+  private forge, nothing is published to a public registry, and the license is `UNLICENSED`.
 - The executable is built with `bun build --compile`, embeds core, SDK, CLI and the agent host, and runs on Linux x64
-  (glibc only), on modern Linux (D-34). Packs load as external bundles (section 13), which keeps the binary generic.
+  (glibc only), on modern Linux. Packs load as external bundles ([Packs](#13-packs)), which keeps the binary generic.
 - The release embeds the SDK and host SDK bundles as assets, and the loader serves a bare composition file's
   `@maestro/sdk*` and `@maestro/host-repo-sdk` imports from them, so no `node_modules` is read.
-- Slice 0 checks five things (D-32): the compiled binary runs on modern Linux, `bun:sqlite` WAL works inside it, it
-  loads an external pack bundle and calls its code node, Bun spawns bubblewrap plus pi and streams the JSON events, and
-  a binary built on a modern host runs on RHEL 8 as a best-effort probe. The first four gate the port. The fifth does
-  not gate, and releases build on a modern host (D-34).
-- The IR carries a version so a newer core can still read older IR within the compatibility policy (CORE-16).
+- The IR carries a version so a newer core can still read older IR within the compatibility policy.
+
+Refs: D-03, D-31, D-34, CORE-16, ADR 0003.
 
 ## 15. Key design decisions and alternatives
 
-| Decision          | Chosen                                                | Alternatives considered                             | Why                                                                                                                                                                                                                                                              |
-| ----------------- | ----------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Authoring surface | Code SDK that builds a graph, symbolically            | YAML DSL with expressions; imperative scripts       | YAML needs an expression language the moment data plumbing appears, and creeps. Imperative scripts cannot be checked before spend. Code plus symbolic build gives typed plumbing and a checkable graph (D-04, D-05).                                             |
-| Engine language   | TypeScript on Bun                                     | Rust engine with out-of-process chains; keep Python | Code nodes in TS make the engine and the author share a language and process, with strong generics for typed refs. The harness SDK ecosystem is TypeScript. A Rust binary would still need Node or Python for code nodes, losing its packaging advantage (D-03). |
-| Graph shape       | Static skeleton plus bounded regions                  | Fully dynamic graphs built at perform time          | Compose needs bounds. Perform-time-shaped regions are allowed only with a declared maximum.                                                                                                                                                                      |
-| Lanes             | Versioned handles checked by a host hook              | Program order implies correctness                   | Symbolic graphs have no program order. Versions put order in the data.                                                                                                                                                                                           |
-| Core and agents   | Core is generic, agents are a host                    | Agents in the core                                  | Keeps the core testable alone, and lets other hosts exist (D-06).                                                                                                                                                                                                |
-| Outcomes          | Four states with per-edge tolerance                   | Pass and fail only                                  | Rejection by a gate differs from infrastructure failure, and a red check is useful input to a repair (CORE-04).                                                                                                                                                  |
-| Config            | Namespaced pass-through, composition-declared schemas | One global schema                                   | Core must not grow with every composition's needs (D-07).                                                                                                                                                                                                        |
-| Adapters          | Sandboxed subprocess over each harness's JSON events  | In-process harness SDKs                             | An in-process agent cannot be confined by bubblewrap, and the subprocess contract is the same for every harness (D-20).                                                                                                                                          |
-| Packs             | Pre-bundled directory or tarball, listed by path      | npm packages resolved through `node_modules`        | The compiled binary cannot resolve `node_modules`, and compose only consumes IR JSON, so a bundled SDK copy is harmless (D-30).                                                                                                                                  |
-| Resume            | Content-hashed node instances                         | File-presence reuse; a result cache across concerts | Correct under code or input change. A cross-concert cache would hit only code nodes upstream of every agent node, since agent nodes are never reused. Concert fork replaces it (`rulings.md`).                                                                   |     |
+- **Authoring surface**: a code SDK that builds a graph, symbolically. Why: YAML needs an expression language the moment
+  data plumbing appears, and creeps; imperative scripts cannot be checked before spend; code plus symbolic build gives
+  typed plumbing and a checkable graph. Rejected: a YAML DSL with expressions, imperative scripts. Record: D-04, D-05.
+- **Engine language**: TypeScript on Bun. Why: code nodes in TS make the engine and the author share a language and
+  process, with strong generics for typed refs, and the harness SDK ecosystem is TypeScript. Rejected: a Rust engine
+  with out-of-process chains, which would still need Node or Python for code nodes and lose its packaging advantage;
+  keeping Python. Record: D-03.
+- **Graph shape**: a static skeleton plus bounded regions. Why: compose needs bounds, so perform-time-shaped regions
+  need a declared maximum. Rejected: fully dynamic graphs built at perform time. Record: CORE-05, D-23.
+- **Lanes**: versioned handles checked by a host hook. Why: symbolic graphs have no program order, so versions put order
+  in the data. Rejected: program order implying correctness. Record: HOST-02, HOST-11.
+- **Core and agents**: the core is generic and agents are a host. Why: the core stays testable alone and other hosts can
+  exist. Rejected: agents in the core. Record: D-06.
+- **Outcomes**: four states with per-edge tolerance. Why: a gate's rejection differs from an infrastructure failure, and
+  a red check is useful input to a repair. Rejected: pass and fail only. Record: CORE-04,
+  [ADR 0006](adr/0006-outcomes-aggregate-by-one-rule.md).
+- **Config**: namespaced pass-through with composition-declared schemas. Why: the core must not grow with every
+  composition's needs. Rejected: one global schema. Record: D-07.
+- **Adapters**: a sandboxed subprocess over each harness's JSON events. Why: an in-process agent cannot be confined by
+  bubblewrap, and the subprocess contract is the same for every harness. Rejected: in-process harness SDKs. Record:
+  D-20, [ADR 0001](adr/0001-sandboxed-subprocess-adapters.md).
+- **Packs**: a pre-bundled directory or tarball, listed by path. Why: the compiled binary cannot resolve `node_modules`,
+  and compose only consumes IR JSON, so a bundled SDK copy is harmless. Rejected: npm packages resolved through
+  `node_modules`. Record: D-30, [ADR 0002](adr/0002-pack-bundles.md).
+- **Resume**: content-hashed node instances. Why: correct under code or input change. Rejected: file-presence reuse; a
+  result cache across concerts, which would hit only code nodes upstream of every agent node, since agent nodes are
+  never reused. Record: [ADR 0008](adr/0008-code-nodes-name-exported-functions.md), `rulings.md` "Resume",
+  [ADR 0015](adr/0015-concert-fork.md).
+
+`docs/rulings.md` is the decision register.
 
 ## 16. Failure modes
 
-- **Compose error.** No agent starts. The CLI prints diagnostics and exits 1, a build fault.
-- **Node `failed`.** Dependents `skipped` unless a settling group or a fan-in node received it as `Settled`. The concert
-  result follows the result rule.
-- **Node `rejected`.** Follows edge tolerance. This is the normal path for a red check or a negative review.
-- **Host crash or kill.** The record is consistent as of the last event. `resume` continues. Agent process trees are
-  killed by the host's cancel hook.
-- **Worker error.** A code node that throws settles as `failed` with the error. A timeout is `failed`.
-- **Disk full.** Hosts with a small system partition are common. The record store, artifacts and lane stores live under
-  a configurable data root, by default in the user's XDG data home.
-- **Stale reuse.** Resume recomputes each code hash from the current code, which covers the whole bundle: any edit to
-  the composition file reruns every code node, and so does each dependent whose inputs changed.
+| Mode               | Outcome                                                                                  | Recovery                                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Compose error      | No agent starts. The CLI prints diagnostics and exits 1, a build fault.                  | Fix what the diagnostics name.                                                                      |
+| Node `failed`      | Dependents `skipped` unless a settling group or fan-in node got it as `Settled`.         | `resume` runs it again.                                                                             |
+| Node `rejected`    | Follows edge tolerance: the normal path for a red check or a negative review.            | None when tolerated, else change the input or the code, then `resume`; a plain `resume` repeats it. |
+| Host crash or kill | The record is consistent as of the last event. The host's cancel hook kills agent trees. | `resume` continues.                                                                                 |
+| Worker error       | A code node that throws, or times out, settles `failed` with the error.                  | Fix the code, then `resume`.                                                                        |
+| Disk full          | The record store, artifacts and lane stores share the data root.                         | Free disk, or move `dataRoot`.                                                                      |
 
 ## 17. Open design points
 
-No open question blocks the initial port. `requirements.md` section 9 maps every earlier question to the decision that
-resolved it. Deferred: a secret param type (D-33), cost accounting and prices, per-adapter compaction, extending a lane
-across concerts, starting a concert from a finished one's results (`rulings.md` "Concert fork"), in-process SDK
+Deferred: a secret param type (D-33), cost accounting and prices, per-adapter compaction, extending a lane across
+concerts, starting a concert from a finished one's results ([ADR 0015](adr/0015-concert-fork.md)), in-process SDK
 adapters, arm64 and macOS, and licensing.

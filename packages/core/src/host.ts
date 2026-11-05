@@ -113,6 +113,7 @@ export function hostSetup(
 }
 
 export type HostContext = Context & {
+	/** Reports a progress event, such as an agent's tool call, which core stores opaquely as a `progress` event. */
 	emit(event: HostEvent): void;
 	/** The setup of the host running the instance. */
 	readonly setup: HostSetup;
@@ -122,13 +123,13 @@ export type HostContext = Context & {
 
 /** A node kind a host registers (architecture 6). */
 export interface NodeKind {
-	/** `<host>.<kind>`, as a node's `kind` in the IR. */
+	/** `<host>.<kind>`, as a node's `kind` in the IR. Compose checks a node's `config` and ports against its kind, and perform its outputs against the ports. */
 	readonly name: string;
 	/** The schema a node's `config` matches. */
 	readonly config: JsonSchema;
 	/**
 	 * The ports a node of this kind has, which may depend on its `config`: its `in` and `out` in the IR, and the shape of
-	 * the outputs it settles with. Artifact ports carry a type marker.
+	 * the outputs it settles with. Artifact ports carry a type marker, which declares that the outputs include artifacts.
 	 */
 	ports(node: HostNode): { in: Ports; out: Ports };
 	execute(
@@ -136,16 +137,34 @@ export interface NodeKind {
 		inputs: Inputs,
 		context: HostContext,
 	): Promise<HostNodeResult>;
-	/** Stops a running instance and releases what it holds. Its pending `execute` then settles promptly. */
+	/** Stops a running instance and releases what it holds, such as killing its process tree. Its pending `execute` then settles promptly. */
 	cancel(instance: HostInstance): Promise<void>;
 }
 
-/** A plugin that gives core node kinds beyond its own (CORE-13). Core calls its hooks and never inspects its types. */
+/**
+ * A plugin that gives core node kinds beyond its own (CORE-13). Core calls its hooks and never inspects its types.
+ *
+ * The contract spans three entry points and nothing else:
+ * - `@maestro/core/host`: `Host`, `NodeKind`, `HostInstance`, `HostSetup`, `HostContext`, `HostResources`, `HostText`,
+ *   `HostNodeResult`, `Metrics`, `Bounds`.
+ * - `@maestro/core/node`: `Inputs`, `Outputs`, `NodeResult`.
+ * - `@maestro/ir`: `HostNode`, `Ports`, `JsonSchema`, `Diagnostic`, `GraphIndex`, `Facts`, `HostEvent`, `Enrichment`,
+ *   `Context`, `ArtifactRef`.
+ *
+ * The required members sit flat on the host.
+ */
 export interface Host {
-	/** The namespace of the host's kind and type names. Also keys its facts in `CodeContext.env`. */
+	/**
+	 * The namespace of the host's kind and type names: a host `h` names them `h.<kind>` and `h.<type>`, while its config
+	 * namespaces are not prefixed. Also keys its facts in `CodeContext.env`. Core refuses two hosts that register one kind.
+	 */
 	readonly name: string;
 	readonly kinds: readonly NodeKind[];
-	/** The `x-maestro-type` names the host owns, qualified like its kinds (ADR 0007). */
+	/**
+	 * The `x-maestro-type` names the host owns, qualified like its kinds (ADR 0007). Compose rejects a type name that
+	 * neither core nor an installed host owns, and a node whose kind no host registers. A value of such a type
+	 * serializes into the IR.
+	 */
 	readonly types: readonly string[];
 	/** By config namespace. */
 	readonly config: Readonly<Record<string, JsonSchema>>;
@@ -160,12 +179,19 @@ export interface Host {
 	 * key. At or below them, a merge tag that finds nothing beneath stays pending until then.
 	 */
 	readonly deferred?: readonly KeyPath[];
-	/** Compose-time rules over the whole graph. */
+	/**
+	 * Compose-time rules over the whole graph, such as ordering rules between its nodes, the
+	 * resources a node names, and bind validity.
+	 */
 	validate(graph: GraphIndex, setup: HostSetup): Awaitable<Diagnostic[]>;
 	/** The config entries the graph's host nodes read by name. */
 	needs?(graph: GraphIndex): KeyPath[];
-	/** Bounds one instance of `node`, a node of one of the host's kinds. */
+	/** Bounds one instance of `node`, a node of one of the host's kinds. There is no cost bound. */
 	bounds(node: HostNode): Bounds;
+	/**
+	 * The host's facts, such as the current target, which reach code nodes through a typed context. Core's own context
+	 * holds only the concert id, a clock value and the instance's scratch directory.
+	 */
 	environment(setup: HostSetup): Awaitable<Facts>;
 	/**
 	 * Parses `text`, a param value given as a flag or in YAML, into a value of `type`, one of the host's `types`. It

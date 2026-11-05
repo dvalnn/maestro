@@ -728,18 +728,26 @@ export const CORE_CONFIG: Readonly<Record<string, JsonSchema>> = {
 export const CORE_PATHS: readonly KeyPath[] = [["dataRoot"]];
 
 export type CoreConfig = {
-	/** The most node instances in flight at once. */
+	/** The most node instances in flight at once in one concert. Defaults to the CPU count. */
 	concurrency: number;
-	/** Caps by name, as compose takes them (D-23). */
+	/** Caps by name, as compose takes them (D-23): `instances` caps a concert's node instances, any other name the total of a host count. */
 	caps: Bounds;
-	/** The directory holding the record store, concert areas and node scratch. */
+	/** The directory holding the record store, concert areas and node scratch. Defaults to `$XDG_DATA_HOME/maestro`. */
 	dataRoot: string;
-	/** The workspace's name, empty outside any workspace. */
+	/** The workspace name a concert records: the name of the directory holding `.maestro/`, empty outside any workspace. */
 	workspace: string;
+	/** A concert's ceiling, none by default. */
 	limits: ConcertLimits;
 };
 
-/** What a concert's ceiling bounds, each unset by default: `timeout` in milliseconds of wall clock, and tokens. */
+/**
+ * What a concert's ceiling bounds, each unset by default: `timeout` in milliseconds of wall clock, and tokens.
+ * - Past a value the concert is cancelled as `kill` cancels it and settles `failed` naming the limit.
+ * - The token sum is checked as each node instance settles.
+ * - `timeout` restarts at each attempt, while the token sum counts earlier attempts, so a resume already past `tokens`
+ *   fails at its next settled instance unless `-c` raises it.
+ * - A resume reads the limits as the config stands, its recorded `-c` beneath its own.
+ */
 export type ConcertLimits = { timeout?: number; tokens?: number };
 
 /** The default layer of core config. */

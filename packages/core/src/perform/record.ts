@@ -17,7 +17,9 @@ import { instanceKey, isRecord } from "../shared";
 const NEW_STORE_VERSION = 0;
 /** The oldest schema version an upgrade starts from. */
 const OLDEST_UPGRADABLE_VERSION = 4;
-/** `UPGRADE_STEPS[i]` upgrades a record store from version `OLDEST_UPGRADABLE_VERSION + i` to the next. */
+/**
+ * `UPGRADE_STEPS[i]` upgrades a record store from version `OLDEST_UPGRADABLE_VERSION + i` to the next. A step only adds.
+ */
 const UPGRADE_STEPS = [
 	"ALTER TABLE instances ADD COLUMN inputs TEXT",
 	`ALTER TABLE concerts ADD COLUMN params TEXT; ALTER TABLE concerts ADD COLUMN encore_of TEXT;
@@ -50,7 +52,11 @@ export const PROCESS_EXITED = "process exited";
 export const CONCERT_FINISHED = "the concert finished before it settled";
 
 // Timestamps are epoch milliseconds, and `expansion` is '' outside groups. `ir`, `outputs`, `inputs`, `enrichment`,
-// `body` and a concert's `config` hold JSON. `inputs` is a leaf instance's wired input ports, NULL when not recorded.
+// `body` and a concert's `config` hold JSON. `inputs` is a leaf instance's wired input ports: each port the node does
+// not hold in `literals`, with its resolved value (a fan-out item, a loop round's carried value, a collected input), an
+// artifact as its reference and never its content. A leaf with no wired ports keeps `{}`; NULL means not recorded: an
+// instance recorded before the upgrade, and every group, loop and scope row. A resume that reuses an instance keeps its
+// row. Literals stay readable through the IR and `art`.
 // `workspace` is '' outside any workspace, and `module_dir` is '' when the concert has none. `reason` is set on every
 // non-ok outcome. `result_node` is NULL while a concert is running, and after one that failed before any node ran.
 // `key` is the resume key of an `ok` instance. `stale` marks an instance row left by an earlier attempt, which a resume
