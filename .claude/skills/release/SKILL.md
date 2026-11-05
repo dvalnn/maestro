@@ -41,7 +41,7 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
 
    ```sh
    fj release create <tag> --create-tag <tag> --branch main [--prerelease] \
-     --body "$(cat <notes>)" -a SHA256SUMS -a install.sh -a maestro-linux-x64 -a maestro-skill.tar.gz \
+     --body "$(cat <notes>)" -a SHA256SUMS -a install.sh -a maestro-linux-x64.gz -a maestro-skill.tar.gz \
      -a classics-<v>.tar.gz -a maestro-classics-<v>.tgz -a maestro-ir-<v>.tgz -a maestro-sdk-<v>.tgz \
      -a maestro-host-repo-sdk-<v>.tgz
    ```

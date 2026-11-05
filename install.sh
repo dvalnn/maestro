@@ -9,7 +9,9 @@ INTERRUPTED=130
 TERMINATED=143
 FORGE=https://git.amorimcasa.org
 REPO=tiago/maestro
-REQUIRED_ASSETS="maestro-linux-x64 maestro-skill.tar.gz"
+REQUIRED_ASSETS="maestro-skill.tar.gz"
+# The binary, gzipped since 0.1.0-rc.5 to fit the forge's upload limit; a release before ships it as it is.
+BINARY=maestro-linux-x64
 
 fail() {
   printf 'install.sh: error: %s\n' "$1" >&2
@@ -54,9 +56,13 @@ fetch_assets() {
   for asset in $REQUIRED_ASSETS; do
     [ -f "$asset" ] || fail "SHA256SUMS does not list $asset" "Pin a release that has it with MAESTRO_VERSION=<tag>"
   done
+  [ -f "$BINARY.gz" ] || [ -f "$BINARY" ] ||
+    fail "SHA256SUMS does not list $BINARY.gz" "Pin a release that has it with MAESTRO_VERSION=<tag>"
   ls classics-*.tar.gz maestro-ir-[0-9]*.tgz maestro-sdk-[0-9]*.tgz maestro-host-repo-sdk-[0-9]*.tgz >/dev/null 2>&1 ||
     fail "SHA256SUMS does not list the classics pack or the sdk tarballs" "Pin a release that has them with MAESTRO_VERSION=<tag>"
   sha256sum -c --quiet SHA256SUMS >&2 || fail "the downloaded assets do not match SHA256SUMS" "Run this again, and report it if it persists"
+  [ ! -f "$BINARY.gz" ] || gzip -dc "$BINARY.gz" >"$BINARY" ||
+    fail "cannot unpack $BINARY.gz" "Run this again, and report it if it persists"
 }
 
 # Fails when the installed maestro, if any, lists a running concert or cannot list concerts.
@@ -75,7 +81,7 @@ refuse_while_running() {
 }
 
 install_assets() {
-  install -D -m 755 maestro-linux-x64 "$bin_dir/.maestro.new"
+  install -D -m 755 "$BINARY" "$bin_dir/.maestro.new"
   mv -f "$bin_dir/.maestro.new" "$bin_dir/maestro"
 
   mkdir -p "$data_dir/packs" "$data_dir/sdk"
@@ -121,6 +127,7 @@ main() {
   need sha256sum
   [ -n "${MAESTRO_RELEASE_DIR:-}" ] || need curl
   need tar
+  need gzip
   need install
 
   start_dir=$PWD

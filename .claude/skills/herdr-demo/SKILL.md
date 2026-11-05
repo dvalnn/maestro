@@ -23,7 +23,7 @@ one-line error and fix on failure.
 
 ## Steps
 
-The release binary `dist/maestro-linux-x64` must exist; if `setup.sh` says it is missing, run `just release`.
+The release binary `dist/maestro-linux-x64.gz` must exist; if `setup.sh` says it is missing, run `just release`.
 
 1. `scripts/toy.sh <t1|t2> <name> [--harness <h> --model <m>]` makes `<root>/<name>` and prints the perform line.
 2. `scripts/setup.sh <name>` links `<root>/bin/maestro` to the release binary, makes or reuses the herdr workspace

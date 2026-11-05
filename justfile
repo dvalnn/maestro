@@ -26,7 +26,7 @@ release: check pack
     bun build --compile --target=bun-linux-x64 --no-compile-autoload-dotenv --no-compile-autoload-bunfig --sourcemap \
       --asset "$build/embedded-sdk.js" --asset "$build/embedded-host-repo-sdk.js" \
       packages/cli/src/maestro.ts --outfile "$build/maestro"
-    cp "$build/maestro" dist/maestro-linux-x64
+    gzip -9 -n -c "$build/maestro" > dist/maestro-linux-x64.gz
     for package in packages/ir packages/sdk packages/host-repo-sdk packs/classics; do
       (cd "$package" && bun pm pack --destination ../../dist --quiet >/dev/null)
     done

@@ -67,6 +67,14 @@ grep -q 'FAILED' "$scratch/install.err" || fail "install.sh hid the failed check
 [ ! -e "$scratch/bad-home/.local" ] || fail "install.sh installed from a corrupted release"
 [ ! -e "$scratch/bad-home/.agents" ] || fail "install.sh installed a skill from a corrupted release"
 
+step "install.sh installs a release whose binary is not gzipped"
+cp -r "$dist" "$scratch/plain"
+gzip -d "$scratch/plain/maestro-linux-x64.gz"
+(cd "$scratch/plain" && rm SHA256SUMS && sha256sum -- * > "$scratch/sums" && mv "$scratch/sums" SHA256SUMS)
+run_installer "$scratch/plain-home" "$scratch/plain" >"$scratch/install.out" 2>"$scratch/install.err" \
+  || fail "install.sh exited $? on a plain binary: $(cat "$scratch/install.err")"
+"$scratch/plain-home/.local/bin/maestro" --version >/dev/null || fail "install.sh installed a plain binary that does not run"
+
 if command -v dash >/dev/null; then
   step "install.sh under dash"
   run_installer "$scratch/dash-home" "$dist" dash >/dev/null 2>"$scratch/install.err" \

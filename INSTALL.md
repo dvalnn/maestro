@@ -60,6 +60,7 @@ The fallback when the script cannot run. Download the assets of a release into o
 
 ```sh
 sha256sum -c SHA256SUMS
+gzip -dc maestro-linux-x64.gz > maestro-linux-x64
 install -D -m 755 maestro-linux-x64 ~/.local/bin/maestro
 data="${XDG_DATA_HOME:-$HOME/.local/share}/maestro"
 for root in ~/.claude/skills ~/.agents/skills; do rm -rf "$root/maestro" "$root/maestro-ultracode"; done

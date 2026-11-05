@@ -5,7 +5,7 @@ set -euo pipefail
 
 root=${MAESTRO_DEMO_ROOT:-$HOME/Projects/maestro-ac}
 repo=$(cd "$(dirname "$0")/../../../.." && pwd)
-release=$repo/dist/maestro-linux-x64
+release=$repo/dist/maestro-linux-x64.gz
 
 die() { echo "setup.sh: $1" >&2; exit 1; }
 
@@ -14,10 +14,11 @@ name=$1
 dir=$root/$name
 label=maestro-$name
 [[ -d $dir ]] || die "no demo dir $dir; run scripts/toy.sh <t1|t2> $name first"
-[[ -x $release ]] || die "no release binary at $release; run 'just release'"
+[[ -f $release ]] || die "no release binary at $release; run 'just release'"
 
 mkdir -p "$root/bin"
-ln -sf "$release" "$root/bin/maestro"
+gzip -dc "$release" > "$root/bin/maestro"
+chmod +x "$root/bin/maestro"
 path=$root/bin:$PATH
 
 ws=$(herdr workspace list | jq -r --arg l "$label" '.result.workspaces[] | select(.label == $l) | .workspace_id' | head -1)
