@@ -1,5 +1,7 @@
 # Install
 
+For whoever installs maestro on a Linux machine: install, first run, upgrade, uninstall.
+
 maestro ships from the private forge as a standalone Linux binary, package tarballs for authoring, a pack and two skills
 for Claude Code, Codex and pi. Nothing is published to a public registry.
 
@@ -21,21 +23,21 @@ Running maestro needs no Bun.
 curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | sh
 ```
 
-The script installs the newest stable release, and the same command updates an installed maestro. To install the newest
-release, pre-releases (`-rc.<n>` release candidates) included, set `MAESTRO_CHANNEL=rc` before `sh`:
+The script installs the newest stable release, and the same command updates an installed maestro. Set
+`MAESTRO_CHANNEL=rc` before `sh` for the newest release, `-rc.<n>` pre-releases included:
 
 ```sh
 curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_CHANNEL=rc sh
 ```
 
-To pin a release, set `MAESTRO_VERSION` to its tag, `v` included, before `sh`. A pin wins over the channel:
+Set `MAESTRO_VERSION` to a tag, `v` included, to pin a release. A pin wins over the channel:
 
 ```sh
 curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_VERSION=v0.1.0-rc.4 sh
 ```
 
 The script needs `curl` and `sha256sum`, checks every asset against `SHA256SUMS` before touching anything, and refuses
-while a concert is running: wait for it to settle, or `maestro kill <id>`.
+while a concert is running.
 
 | Installed                                | Where                                                                                   |
 | ---------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -46,12 +48,11 @@ while a concert is running: wait for it to settle, or `maestro kill <id>`.
 
 [^agents]: `~/.agents/skills` is the directory Codex and pi read.
 
-`XDG_DATA_HOME` defaults to `~/.local/share`. The pack, each skill directory and the package tarballs are replaced.
-`~/.local/bin` must be on `PATH`, and the script warns when it is not. If `maestro --version` prints something else,
-another `maestro` comes first.
+`XDG_DATA_HOME` defaults to `~/.local/share`; a relative value is ignored. The pack, each skill directory and the
+package tarballs are replaced. `~/.local/bin` must be on `PATH`, and the script warns when it is not; if
+`maestro --version` prints something else, another `maestro` comes first.
 
-Every directory in `$XDG_DATA_HOME/maestro/packs` is a pack, and no `packs` entry in config is needed. `maestro rep`
-lists the installed packs and their compositions.
+Every directory in `$XDG_DATA_HOME/maestro/packs` is a pack, with no `packs` entry in config. `maestro rep` lists them.
 
 ## 3. Install by hand
 
@@ -71,28 +72,16 @@ rm -f "$data"/sdk/maestro-*.tgz
 for package in ir sdk host-repo-sdk classics; do cp maestro-"$package"-[0-9]*.tgz "$data/sdk/maestro-$package.tgz"; done
 ```
 
-A relative `XDG_DATA_HOME` is ignored, by the script and by maestro, which use `~/.local/share` instead.
-
 ## 4. Configure
 
-Config keys are in [`packages/cli/README.md`](packages/cli/README.md).
+Config layers, keys and presets are in [`packages/cli/README.md`](packages/cli/README.md); the `target` (with
+`target.prepare` and `target.sparse`) and `profiles` keys are in the
+[host-repo README](packages/host-repo/README.md#configuration), and a profile's `model` and `thinking` in its
+[Fields](packages/host-repo/README.md#fields). Two files cover a first run:
 
-- The user file `~/.config/maestro/config.yaml` holds `profiles` and the pack's params, and `packs` for a pack kept
-  outside the packs directory. `packs` may instead go in a workspace's `.maestro/config.yaml`. `~` is not expanded; a
-  relative path resolves against the directory of the user file, and in a workspace file or preset against the workspace
-  root, the directory that holds `.maestro/`.
-- A workspace file `.maestro/config.yaml` per target holds `target: { repo, base, checks }`, and optionally `prepare`
-  (lines run on each checked-out lane, such as a dependency install) and `sparse` (directories, or `{ patterns }` of
-  gitignore-style patterns, a lane checks out).
-- A preset `.maestro/presets/stub.yaml` moves the profiles' runtimes to the built-in `stub` harness, which writes a
-  placeholder for each declared output and replies ok. Run with `--preset stub` to spend nothing: `build_then_repair`
-  and `panel_review` end ok, the latter with an unapproved verdict.
-
-The classics pack ships six profiles and no models, and its [README](packs/classics/README.md) holds each composition's
-profiles and params: `scout`, `planner`, `builder`, `lens`, `skeptic` and `consolidator`. `build_then_repair` needs only
-`builder`, `panel_review` needs `lens`, `skeptic` and `consolidator`, and `scout` and `planner` serve compositions that
-build on the pack's seats. A profile holds its instructions and limits; config sets its `runtime`. Model ids below are
-placeholders; use your own.
+- `~/.config/maestro/config.yaml` sets each profile's `runtime`. The classics pack ships six profiles and no models; its
+  [README](packs/classics/README.md) says which composition uses which. Model ids below are placeholders.
+- `.maestro/config.yaml` in the target repository names the repo, its base and its checks.
 
 ```yaml
 # ~/.config/maestro/config.yaml
@@ -105,11 +94,6 @@ profiles:
   classics/consolidator: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
 ```
 
-- Claude: `harness: claude`, `model: sonnet` or `opus`, `thinking` as Claude's `--effort`.
-- pi: `harness: pi`, `model: <provider>/<model>` such as `github-copilot/gpt-5-mini`, `thinking` as pi's `--thinking`.
-- `panel_review` alone runs lenses on the `classics/lens` profile's model and skeptics on the `classics/skeptic`'s. Pick
-  models of different families for the two, since a skeptic of the lens's family tends to share its blind spots.
-
 ```yaml
 # .maestro/config.yaml, in the target repository
 target:
@@ -119,13 +103,16 @@ target:
     test: "bun test"
 ```
 
+To spend nothing first, add a preset that moves every profile to the built-in `stub` harness, then run with
+`--preset stub`; `build_then_repair` and `panel_review` end ok, the second with an unapproved verdict:
+
 ```yaml
 # .maestro/presets/stub.yaml
 profiles:
   "*": { runtime: !replace { harness: stub } }
 ```
 
-Compose before performing, then perform:
+Compose to check the composition, then perform:
 
 ```sh
 maestro compose classics.build_then_repair --request "<what to build>"
@@ -135,9 +122,6 @@ maestro perform classics.build_then_repair --request "<what to build>"
 ## 5. Upgrade
 
 Run the install command again, after letting running concerts settle or stopping them with `maestro kill`. Config stays.
-
-An installed classics pack from before profiles must be reinstalled, by that command, to gain its `profiles/`; until
-then its seats find no profile. A concert recorded before profiles cannot be resumed: perform it anew.
 
 A record with a changed schema is refused with a message naming `record.db`: move it aside, as the message says. A pack
 with a new code hash makes a resumed concert rerun its code nodes.
@@ -153,14 +137,13 @@ rm -rf "$data/packs/classics" "$data/sdk"
 for root in ~/.claude/skills ~/.agents/skills; do rm -rf "$root/maestro" "$root/maestro-ultracode"; done
 ```
 
-Left in place, since they are yours and not written by the script: concerts and their record under `$data`, other packs
-in `$data/packs`, and the config in `~/.config/maestro`. Remove `$data` and that directory too to forget them.
+Left in place: concerts and their record under `$data`, other packs in `$data/packs`, and the config in
+`~/.config/maestro`. Remove those too to forget them.
 
 ## 7. Authoring packs (needs Bun)
 
-A `package.json` takes the package tarballs as `file:` dependencies, and the same ones under `overrides`, so no
-`@maestro/*` package is fetched from a registry. The paths are absolute, `~` is not expanded, and name the version-less
-tarballs the install put in `$XDG_DATA_HOME/maestro/sdk/`, which each upgrade replaces in place:
+A `package.json` takes the tarballs in `$XDG_DATA_HOME/maestro/sdk/` as `file:` dependencies and again under
+`overrides`, so no `@maestro/*` package is fetched from a registry. Paths are absolute; `~` is not expanded:
 
 ```json
 {
@@ -179,12 +162,7 @@ tarballs the install put in `$XDG_DATA_HOME/maestro/sdk/`, which each upgrade re
 }
 ```
 
-`@maestro/classics` is needed only by a composition that builds on the classics pack's parts. Rerun `bun install` after
-an upgrade to pick up the new tarballs.
+`@maestro/classics` is needed only by a composition built on the classics pack's parts. Rerun `bun install` after an
+upgrade.
 
 Bundling a pack and writing its manifest are in the maestro skill's `packs.md`.
-
-## 8. Known limits
-
-- Linux x64 only.
-- Packs are operator-trusted code.
