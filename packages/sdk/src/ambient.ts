@@ -41,7 +41,7 @@ const clock = () => {
 	});
 };
 
-// The reads SDK-11 freezes: environment, clock and randomness. Detection is best effort (R-2): `Bun.env` and
+// The reads SDK-11 freezes: environment, clock and randomness. Detection is best effort (RISK-2): `Bun.env` and
 // `import.meta.env` are the same object as `process.env` but cannot be replaced, so only `process.env` throws.
 const FROZEN: [owner: object, key: string, stand: () => unknown][] = [
 	[process, "env", env],

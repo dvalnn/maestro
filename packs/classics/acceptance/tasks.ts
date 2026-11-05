@@ -1,4 +1,4 @@
-// The two toy tasks of the comparison against the predecessor (D-28), both on the greeter tree.
+// The two toy acceptance tasks, t1 (fixable) and t2 (unfixable by construction), both on the greeter tree.
 
 type Task = {
 	request: string;

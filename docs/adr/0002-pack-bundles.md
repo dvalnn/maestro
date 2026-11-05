@@ -31,4 +31,4 @@ what a resume replays. A shared-package model cannot work in a single-binary dis
 - Authors export compositions plainly. Whatever bundles them adds an entry exporting the bundle's own SDK `describe()`
   and `build()`, imported from `@maestro/sdk/loader`, so the CLI builds through that copy and reads each composition's
   params and examples without building.
-- Slice 0 verifies that the binary loads an external bundle and calls its code node (D-32, spike 3).
+- Slice 0 verifies that the binary loads an external bundle and calls its code node (spike 3).

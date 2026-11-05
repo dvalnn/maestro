@@ -1,107 +1,43 @@
 # maestro: system requirements
 
-Status: living spec. The initial port shipped as `v0.1.0-beta.1`; D-10, the non-goals for the initial port and sections
-8 and 11 are kept as its record. Companion docs: `GLOSSARY.md`, `architecture.md`, `sdk-spec.md`.
+For anyone checking what maestro must do and why. Code and docs cite requirements by id. Companion docs: `GLOSSARY.md`,
+`architecture.md`, `sdk-spec.md`.
 
-This document is self-contained. It assumes no access to the conversation, machine or workspace that produced it.
-Anything not decided is listed in section 9 and is not guessed.
+## Purpose and context
 
-## 1. Purpose and context
+maestro composes and performs multi-agent coding compositions by symbolic node-graph execution. A composition is code
+that builds a graph. The graph is data, checked and bounded before any spend, and carried out by a core that knows
+nothing about coding agents. Everything about coding agents lives in a host. Everything about a specific domain (Gerrit,
+a verification suite) lives in packs.
 
-maestro is the v2, spiritual successor of sssf (the "Super Simple Software Factory", version 1.0.0b6 at the time of
-writing). sssf runs multi-agent coding workflows: it launches coding-agent sessions in isolated git worktrees, chains
-stages (scout, plan, build, quality checks, review) into workflows called chains, records every run, and delivers the
-result as a patch series. Its chains are Python modules that mix orchestration, data plumbing, prompts and policy.
+maestro works in two lifecycle stages, compose and perform, and nothing is spent before compose succeeds. See
+[Lifecycle of a concert](architecture.md#4-lifecycle-of-a-concert).
 
-What that costs, as observed in the predecessor's workflows:
+## Decisions
 
-- A workflow's shape cannot be checked before money is spent. Errors such as a bad param value surface only when the
-  chain's code reaches them; a build-time `assert` can refuse a param before any spend.
-- The same shape (lenses, a skeptic per lens, a consolidator) is copied between chains. The leg-running helper is
-  duplicated verbatim.
-- Data plumbing is hand-rolled in every chain: sidecar JSON parsed and `isinstance`-checked, files copied between run
-  directories, a shell-sourced `vars` file, regex templating, reuse of earlier outputs by file presence, and degraded
-  runs reported on stderr.
-- Orchestration concepts have accreted: stages, chains in three tiers, performances, runs and legs, and a set of
-  join/from/base/group/tag flags.
+The owner's decisions are in [rulings.md](rulings.md) as D-nn. Requirements cite them by id.
 
-maestro replaces this with symbolic node-graph execution. A composition is code that builds a graph. The graph is data,
-checked and bounded before any spend, and carried out by a core that knows nothing about coding agents. Everything about
-coding agents lives in a host plugin. Everything about a specific domain (Gerrit, a verification suite) lives in packs.
-
-maestro works in two lifecycle stages. **Compose** turns config and composition code into a checked plan and ends with
-pre-flight, the full validation. **Perform** starts a concert, one carrying out of a plan. Nothing is spent before
-compose succeeds.
-
-## 2. Decision log
-
-Decisions ruled by the project owner during design. Anything not listed here is proposed or open (section 9).
-
-| ID   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                             | Why                                                                                                                                                                                                           |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D-01 | The system is named **maestro**, the v2 spiritual successor of sssf.                                                                                                                                                                                                                                                                                                                                                                 | A fresh identity for a clean break.                                                                                                                                                                           |
-| D-02 | Clean break from sssf: no compatibility with its on-disk formats, config files, CLI contract or concepts. A fresh glossary. Legacy over-engineered concepts are dropped in favor of symbolic node-graph execution.                                                                                                                                                                                                                   | The accreted concepts are unnecessary once the graph is data.                                                                                                                                                 |
-| D-03 | TypeScript on Bun. Distributable, and tied to no particular workspace, machine or checkout.                                                                                                                                                                                                                                                                                                                                          | Code nodes written in the authoring language tip the balance to TypeScript. A Rust core would still need a TypeScript runtime for them.                                                                       |
-| D-04 | Compositions are written as code in a lean SDK that builds a graph. They are not YAML. YAML is used for configuration only.                                                                                                                                                                                                                                                                                                          | The leanest API that can express the DAG lets the whole workflow be checked before spend, while code handles domain-specific plumbing.                                                                        |
-| D-05 | Code stages are a first-class node type, and I/O between nodes is typed.                                                                                                                                                                                                                                                                                                                                                             | Hand-rolled data plumbing was the largest source of per-chain code.                                                                                                                                           |
-| D-06 | The core is domain-free. Core tests run real graphs with only code nodes and a fake host node kind, and the core never mentions lane, seat, leg, run, review or build.                                                                                                                                                                                                                                                               | Keeps the core extendable to other domains.                                                                                                                                                                   |
-| D-07 | Core config is decoupled from composition config. A composition declares its own typed config. The core checks YAML syntax and otherwise passes values through to the owner's validation at compose time.                                                                                                                                                                                                                            | The core should not need to know any composition's settings.                                                                                                                                                  |
-| D-08 | Fan-in is first-class in the IR so a renderer can draw a composition's graph before it is performed.                                                                                                                                                                                                                                                                                                                                 | Upfront visualization needs fan-in to be explicit.                                                                                                                                                            |
-| D-09 | The IR is language-neutral and versioned. Other languages may emit it later.                                                                                                                                                                                                                                                                                                                                                         | Future authoring languages can feed the same core.                                                                                                                                                            |
-| D-10 | The initial port is: core, SDK, and a coding-agent host vertical slice. The CLI is limited to `compose`, `perform`, `ls`, `wait`, `kill`, `config` and `prune`, with graph rendering part of `compose`.                                                                                                                                                                                                                              | The smallest slice that proves the design end to end.                                                                                                                                                         |
-| D-11 | Implementation happens where a checkout of the predecessor may be available. It is a behavioral reference, never a format or structure contract.                                                                                                                                                                                                                                                                                     | Behavior questions get an authoritative answer without binding the new design.                                                                                                                                |
-| D-12 | The lifecycle has two stages. **Compose** parses config and composition code, produces the IR, and ends with **pre-flight**, the full validation. **Perform** starts a **concert**, one run of a plan. These replace "launch" and "execution" as stage and run terms.                                                                                                                                                                | Two stages with a hard boundary at which spend begins.                                                                                                                                                        |
-| D-13 | The CLI verbs are `maestro compose` and `maestro perform`. `compose` is by default an explicit validation step (the full pre-flight) and can optionally save the IR to a file. `perform` starts a concert. Given a composition file it runs it through compose first.                                                                                                                                                                | The command names mirror the lifecycle stages, and validation stays usable on its own.                                                                                                                        |
-| D-14 | Every CLI verb has a built-in short alias, except `prune`, which has none.                                                                                                                                                                                                                                                                                                                                                           | Long expressive verbs stay readable in scripts, short forms stay quick to type.                                                                                                                               |
-| D-15 | A run is a **concert**. "Performance" keeps its plain meaning, execution speed.                                                                                                                                                                                                                                                                                                                                                      | Leaves "performance" for speed, which is how engineers read it, and completes the theme.                                                                                                                      |
-| D-16 | Build-time values: composition params and composed config are plain values during build, so build code may loop, branch and compute bounds on them. Node outputs and file contents are Refs. A subcomposition takes plain params and Ref ports. A plain value may feed a port, and a Ref never feeds a param.                                                                                                                        | The graph stays a deterministic function of params and composed config, and everything else stays checkable before spend.                                                                                     |
-| D-17 | A composition declares one set of typed params, covering CLI inputs and tunables alike. A param's value comes from, highest first: the use site (subcomposition) or the CLI flag (root), then the presets (the last given first), workspace and user YAML, then the default. YAML keys live under the pack id and the composition id. Hosts keep pure-config namespaces.                                                             | One declaration instead of separate inputs and config. Keeps D-07, since a composition still declares its own typed settings in code.                                                                         |
-| D-18 | `parMap` and `parFind` items with primitive values are keyed by that value. Other items are keyed by index unless the author gives a `parMap` or `parFind` a key function. Duplicate keys are a compose error, or a failed group when a key function or a list known only at perform time gives them.                                                                                                                                | Readable, stable ids in events, `ls` and lane refs.                                                                                                                                                           |
-| D-19 | Every composition without ports declares at least one example input set, and one with ports declares none. `compose` uses the first for the params no YAML layer or flag gives, an optional param only when they give none of the root's optional params. `perform` never uses examples.                                                                                                                                             | `compose` can validate a bare composition file.                                                                                                                                                               |
-| D-20 | Harness adapters drive coding agents as sandboxed subprocesses speaking each harness's JSON event stream. In-process SDK adapters are a later option for unsandboxed use. pi is the first adapter and Claude Code the second.                                                                                                                                                                                                        | An in-process agent cannot be confined by the sandbox, because its tools would run inside the maestro process. See `adr/0001-sandboxed-subprocess-adapters.md`.                                               |
-| D-21 | The coding-agent host vocabulary is final: agent node, profile, seat, lane (`fresh`, `fork`, `extend`, `read`), target, changeset node, apply node, commits node, harness, check node, sandbox.                                                                                                                                                                                                                                      | Settled by the project owner.                                                                                                                                                                                 |
-| D-22 | A check node is its own host node kind.                                                                                                                                                                                                                                                                                                                                                                                              | It runs untrusted target commands and needs the sandbox, lane staging, process-tree kill and logs. Code nodes are trusted and in-process and provide none of that.                                            |
-| D-23 | The engine stores named additive numbers (metrics) per node instance and sums each name per concert. v1 reports token counts only. No cost or price table in v1. Agents have limits (HOST-08), and a concert its own `limits` on time and tokens. Compose bounds are counts of node instances plus named counts a host reports, such as agent runs. A compaction mechanism per adapter may come later, outside the engine.           | Cost is host policy that v1 does not need, and tokens are enough.                                                                                                                                             |
-| D-24 | An unclaimed config key fails compose with a did-you-mean hint only when no installed registrant claims it. A key claimed by an installed registrant that the concert does not use is ignored.                                                                                                                                                                                                                                       | Typos are caught, and a shared workspace config does not break compositions that use only some of its keys.                                                                                                   |
-| D-25 | The initial port targets Linux x64 only. The sandbox backend sits behind an interface.                                                                                                                                                                                                                                                                                                                                               | arm64 and macOS come later. Modern Linux is the baseline. See D-34.                                                                                                                                           |
-| D-26 | Several concerts may run in one workspace with no coordination beyond lane isolation. The record store is one SQLite file in WAL mode and the concurrency cap is per concert.                                                                                                                                                                                                                                                        | Keeps the first version simple.                                                                                                                                                                               |
-| D-27 | Cross-concert lanes are forked, read or made into a changeset only, through a lane ref param written `<concert id>.<node instance id>`. There is no cross-concert extension. Lanes stay on disk until `prune` removes them.                                                                                                                                                                                                          | Earlier concerts stay immutable and extend-at-most-once never needs cross-concert tracking. Lanes do not extend across concerts; an encore continues sessions, not lanes (#113).                              |
-| D-28 | Acceptance against the predecessor is semantic, on two toy tasks: T1 (fixable) and T2 (unfixable by construction). Compared: the sequence of agent and check runs by kind, the final outcome class, the files touched, and a clean target checkout. Not compared: patch text, tokens, wall time.                                                                                                                                     | The clean break (D-02) removes byte-level comparison.                                                                                                                                                         |
-| D-29 | CLI details. Every verb but `ls` and `prune` has a short alias, listed in the footnote, and help shows each one beside its own verb.[^aliases] `compose --out <file>` saves the IR. `compose` prints diagnostics and a one-line plan summary by default, with `--graph` and `--plan` for more. Resume is `resume <concert id>`. `perform` tells a composition file from an IR file by its extension (`.ts` or `.js` versus `.json`). | `prune` is typed in full by decision.                                                                                                                                                                         |
-| D-30 | A pack is a directory or release tarball with a `maestro-pack.json` manifest and one pre-bundled entry file that includes its own SDK copy. Config lists packs by path; each directory in `$XDG_DATA_HOME/maestro/packs/` is one. There is no `node_modules` resolution.                                                                                                                                                             | A compiled binary cannot share its embedded SDK with external files. Compose consumes only IR, so a second SDK copy is harmless if nothing relies on cross-copy `instanceof`. See `adr/0002-pack-bundles.md`. |
-| D-31 | Distribution is internal. Package names are workspace names (`@maestro/*`, with `maestro-ai` as the fallback), releases (binary and tarballs) are served from a private forge, the license is `UNLICENSED`, and the binary is `maestro`. Nothing is published to a public registry.                                                                                                                                                  | Licensing is decided later.                                                                                                                                                                                   |
-| D-32 | Slice 0 proves five things: a compiled binary runs on modern Linux, `bun:sqlite` in WAL mode works inside it, the binary loads an external pack bundle and calls its code node, Bun spawns bubblewrap plus pi and streams the JSON events, and a binary built on a modern host runs on RHEL 8 as a best-effort probe. The first four gate the port. The fifth does not gate and does not pick the build host (D-34).                 | Cheapest way to retire the platform risks first.                                                                                                                                                              |
-| D-33 | A secret param type is out of v1. Secrets are never params. A design where the host resolves secret handles at perform time is deferred.                                                                                                                                                                                                                                                                                             | YAGNI.                                                                                                                                                                                                        |
-| D-34 | Maestro targets modern Linux x64 and is built with current tooling on a modern host. The host floor is Bun's documented platform minimum, with no stricter floor. RHEL 8 class hosts are best-effort, and a failure there is a known limitation with a user workaround.                                                                                                                                                              | RHEL 8 must not constrain tooling or the build host. See `adr/0003-modern-linux-baseline.md`.                                                                                                                 |
-
-[^aliases]:
-    `c` compose, `p` perform, `r` resume, `e` encore, `cfg` config, `wt` wait, `k` kill, `w` watch, `ag` agent, `t`
-    tour, `rep` repertoire, `cs` changeset, `art` artifact; `ls` is short already, and `prune` has no alias.
-
-## 3. Goals and non-goals
+## Goals and non-goals
 
 Goals:
 
 - **G1.** Pre-flight: a whole composition is validated and its size bounded (node instances and agent runs) before any
   model spend.
-- **G2.** A lean authoring API that expresses multi-agent DAG workflows (fan-out, fan-in, bounded loops, escalation,
+- **G2.** A lean authoring API that expresses multi-agent graphs (fan-out, fan-in, bounded loops, escalation,
   conditionals) with code stages for the data plumbing that genuinely needs code.
 - **G3.** A domain-free core. Hosts add node kinds, and packs add compositions.
 - **G4.** A language-neutral, versioned IR as the contract between authors and the engine.
 - **G5.** The graph can be rendered after compose and before any spend, and observed live during a concert.
 - **G6.** Distributable on Bun, installable by others, ideally as a single executable.
-- **G7.** Integration with coding-agent harnesses as sandboxed subprocesses over their JSON event streams. In-process
-  SDK adapters are a later option for unsandboxed use (D-20).
+- **G7.** Coding-agent harnesses integrate as sandboxed subprocesses (D-20,
+  [ADR 0001](adr/0001-sandboxed-subprocess-adapters.md)).
 - **G8.** Operable by agents: machine-readable CLI output, stable exit-code categories, actionable diagnostics.
 
-Non-goals for the initial port:
+Non-goals:
 
-- Compatibility with sssf state, config or CLI. No migration tooling.
-- Porting every sssf command or chain. The slice is bounded by D-10.
 - YAML compositions or an expression language. Code nodes cover what an expression language would.
 - Spreading one concert across machines. One machine per concert.
-- A hosted service, a web UI, or a replacement for the predecessor's viewer. The renderer contract is in scope. A GUI is
-  not.
+- A hosted service or a web UI. The renderer contract is in scope. A GUI is not.
 - Node.js compatibility. Bun is the baseline (D-03).
 - Cost accounting and price tables (D-23). Token counts are recorded.
 - A secret param type (D-33).
@@ -110,31 +46,31 @@ Non-goals for the initial port:
 - Publishing to a public package registry (D-31).
 - SDKs in languages other than TypeScript. The IR allows them (D-09), and none is built.
 
-## 4. Actors
+## Actors
 
 - **Operator.** A person, or a conductor agent session, who composes and performs through the CLI and observes the
   result.
 - **Composition author.** Writes compositions and packs. Often an agent, so diagnostics must serve agents.
-- **Host implementer.** Writes a plugin that gives the core new node kinds. The first host is the coding-agent host.
+- **Host implementer.** Writes a host that gives the core new node kinds. The first host is the coding-agent host.
 - **Core and SDK maintainers.**
 - **Renderer author.** Consumes the IR and the event stream to draw graphs.
 
-## 5. Glossary
+## Glossary
 
 The glossary is `GLOSSARY.md`, beside this document. It is the single source for terms and for the words to avoid.
 Coding-agent host terms in it are final (D-21).
 
-## 6. Functional requirements
+## Functional requirements
 
-Priority: **Must** is required for the initial port. **Should** is wanted and may slip. **May** is optional.
+Priority: **Must** is required. **Should** is wanted and may slip. **May** is optional.
 
-### 6.1 Core: graph and engine (CORE)
+### Core: graph and engine (CORE)
 
 - **CORE-01 (Must).** The graph model has node kinds `code`, `parMap`, `map`, `find`, `parFind`, `fold`, `loop`,
   `assert` and host kinds, with `when` guards and subcomposition scopes.
 - **CORE-02 (Must).** Ports are typed with schemas that serialize to JSON Schema. Compose type-checks every edge.
 - **CORE-03 (Must).** The IR distinguishes edge kinds `data`, `collect` and `control`. Fan-in is an explicit `collect`
-  edge or a reducer node, never inferred.
+  edge or a reducer node, never inferred (D-08).
 - **CORE-04 (Must).** Outcomes are `ok`, `rejected`, `failed`, `skipped`. By default a dependent runs only after `ok`
   upstreams. An edge can tolerate `rejected`, and a dependent that reads only status ports (`ok` or `reason`) of an
   upstream needs no tolerance. The concert result is the node the composition returns when it is `ok`, else the root
@@ -143,9 +79,9 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
 - **CORE-05 (Must).** Every group declares its cardinality, `exact` or `up to N`, so compose can bound node instances.
 - **CORE-06 (Must).** Building is symbolic, deterministic and side-effect free. It never reads a node's value. The same
   inputs and config yield byte-identical IR.
-- **CORE-07 (Must).** The compose stage is: build, emit the IR, then pre-flight. Pre-flight performs schema and type
-  checks, expansion of bounded groups, host validation hooks, bounds on node instances and agent runs, and diagnostics.
-  Compose writes nothing outside a scratch area and spends nothing.
+- **CORE-07 (Must).** Compose builds, emits the IR, then runs pre-flight. It writes nothing outside a scratch area and
+  spends nothing. See [Lifecycle of a concert](architecture.md#4-lifecycle-of-a-concert) and the
+  [pre-flight steps](../packages/core/src/compose/README.md).
 - **CORE-08 (Must).** The executor schedules node instances by dependency with a configurable concurrency cap, supports
   cancellation, and propagates outcomes per CORE-04.
 - **CORE-09 (Must).** A failed or killed concert resumes at node granularity. A recorded `ok` node instance is reused
@@ -154,44 +90,46 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   emit progress events for an instance it is executing, such as an agent's tool calls and thinking, under the same keys.
   Events are durable.
 - **CORE-11 (Must).** A record store holds concerts, node instances, outcomes, durations, metrics, artifacts and events,
-  and supports the CLI queries in 6.6.
-- **CORE-12 (Must).** Core has no domain words. A lint enforces it, and the core's own suite runs real graphs with only
-  code nodes plus a fake host kind. The lint rejects the words lane, seat, leg, run, review, build and quality in the
-  core packages (`ir`, `core`, `sdk`, `testkit`, `cli` and the renderers), except that `build` is allowed in `sdk` and
-  `cli`, which drive the build phase, and in `testkit`, which tests it.
-- **CORE-13 (Must).** A host interface lets a host register node kinds, types, a `validate(graph, setup)` hook, an
-  `bounds(node)` hook and an environment, per `architecture.md` section 6.
+  and supports the queries of the [CLI](#cli-cli).
+- **CORE-12 (Must).** Core has no domain words (D-06). A lint and the core's own suite enforce it.
+  - The suite runs real graphs with only code nodes plus a fake host kind.
+  - The lint rejects the words lane, seat, leg, run, review, build and quality in the core packages (`ir`, `core`,
+    `sdk`, `testkit`, `cli` and the renderers).
+  - `build` is allowed in `sdk` and `cli`, which drive the build phase, and in `testkit`, which tests it.
+- **CORE-13 (Must).** A host interface lets a host register node kinds, types, a `validate(graph, setup)` hook, a
+  `bounds(node)` hook and an environment, per [Host interface](architecture.md#6-host-interface).
 - **CORE-14 (Must).** The worker protocol is defined for code nodes. The TypeScript runtime provides an in-process
-  worker in the initial port. Out-of-process workers are specified and not required.
+  worker. Out-of-process workers are specified and not required.
 - **CORE-15 (Must).** Artifacts are first-class: typed file, directory and text, with provenance, optional values (a
   record field left out of `required`), and staging by whichever host node needs them.
 - **CORE-16 (Must).** The IR carries a version and an explicit compatibility policy. A consumer rejects an unknown major
   version with a clear error.
 - **CORE-17 (Should).** Diagnostics carry stable codes, the node id, the source location in the composition, and a
   suggested next step.
-- **CORE-18 (Should).** Config is layered and validated per namespace per 6.2, and the composed config reports the layer
-  each value came from.
+- **CORE-18 (Should).** Config is layered and validated per namespace per [Configuration](#configuration-cfg), and the
+  composed config reports the layer each value came from.
 - **CORE-19 (Must).** A node instance carries named additive numbers (metrics). The engine sums each name per concert
   and exposes the totals to the CLI. It attaches no meaning to a name (D-23), except the token sum `limits.tokens`
   bounds. The host half of the totals arrives with HOST-07.
 
-### 6.2 Configuration (CFG)
+### Configuration (CFG)
 
 - **CFG-01 (Must).** Core config is a small closed schema of engine concerns only: concurrency cap, caps by name, the
   data root (by default under the user's XDG data home), the workspace's name and the concert's `limits`.
 - **CFG-02 (Must).** Every other top-level config key belongs to a namespace owned by a registrant. The core checks YAML
-  syntax, layers the files, and hands each namespace to its owner's schema at compose time.
+  syntax, layers the files, and hands each namespace to its owner's schema at compose time (D-07).
 - **CFG-03 (Must).** A composition declares typed params with defaults in code (D-17). Params live in the SDK and the
   CLI; the IR holds what they built. Subcompositions declare params and ports. A param value can end up in the IR as a
   literal, so secrets belong in config or the environment, never in params.
-- **CFG-04 (Must).** Precedence, lowest to highest: param default, then, for `compose`, the example set, then user-level
-  YAML, workspace-level YAML, preset YAML, then the CLI flag (root composition) or the use site (subcomposition). YAML
-  keys live under the pack id and the composition id (D-17).
+- **CFG-04 (Must).** A param's value resolves by the ladder in [Configuration](architecture.md#8-configuration): the CLI
+  flag (root composition) or the use site (subcomposition) highest, the declared default lowest, with `-c`, presets,
+  workspace and user YAML and, for `compose`, the example set between. YAML keys live under the pack id and the
+  composition id (D-17).
 - **CFG-05 (Should).** A config key that no installed registrant claims fails compose with a did-you-mean hint. A key
   claimed by an installed registrant that the concert does not use is ignored (D-24).
 - **CFG-06 (Must).** The `config` command prints the composed config and validates it for a given composition.
 
-### 6.3 SDK (SDK)
+### SDK (SDK)
 
 - **SDK-01 (Must).** A TypeScript SDK declares compositions: name, doc, typed params with CLI hints and defaults, and,
   without ports, at least one example input set (D-19).
@@ -218,27 +156,27 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   otherwise, or an author-supplied key function. Duplicate keys are a compose error, or a failed group when a key
   function or a list known only at perform time gives them (D-18).
 
-### 6.4 IR emitters (IR)
+### IR emitters (IR)
 
 - **IR-01 (Must).** The IR schema is published and independent of the TypeScript SDK. A hand-written IR file is
   performed with no SDK. This proves language neutrality (acceptance AC-8).
 
-### 6.5 Coding-agent host (HOST)
+### Coding-agent host (HOST)
 
 - **HOST-01 (Must).** An agent node runs one profile against a prompt in a lane of a target. It produces typed outputs
   (declared files), its envelope (a report, and either the cause it is blocked by or, from a verdict agent, an outcome
   with a reason when rejected), metrics (token counts), and a lane handle.
-- **HOST-02 (Must).** Lanes are versioned handles. `fresh(base)` cuts a new lane. `fork(handle)` copies the state at
-  that version. `extend(handle)` continues it. `read(handle)` sees it with writes discarded, yields no version and
-  spends no extension. A version may be extended at most once, forked or read any number of times, and a node takes
-  exactly one lane input. A host `validate` hook enforces this.
+- **HOST-02 (Must).** Lanes are versioned handles, taken as `fresh(base)`, `fork(handle)`, `extend(handle)` or
+  `read(handle)`. A read spends no extension. A version may be extended at most once and forked or read any number of
+  times, and a node takes exactly one lane input. A host `validate` hook enforces this. The mechanism is in
+  [Lanes](../packages/host-repo/README.md#lanes).
 - **HOST-03 (Must).** A concert writes only its own lanes. The target's checkout, refs and commits are untouched.
   Results leave only as a changeset node's output.
 - **HOST-04 (Must).** An agent runs sandboxed: writable only in its lane, its outbox, its session directory and the
   writable binds of the checks it may run; read-only binds declared by the node, config or those checks, and the
   artifacts it reads as attachments; secrets never written to logs, events or records.
-- **HOST-05 (Must).** A harness adapter interface exists. An adapter drives its harness as a sandboxed subprocess over
-  the harness's JSON event stream (D-20). The slice implements pi. A Claude Code adapter is a Should.
+- **HOST-05 (Must).** A harness adapter interface exists. An adapter drives its harness as a sandboxed subprocess (D-20,
+  [ADR 0001](adr/0001-sandboxed-subprocess-adapters.md)). pi is the first adapter. A Claude Code adapter is a Should.
 - **HOST-06 (Must).** Prompts of any size reach the agent without hitting argument-length limits.
 - **HOST-07 (Must).** Adapters report token counts as metrics per node instance, and the engine sums them per concert
   (CORE-19). There is no cost or price table in v1 (D-23).
@@ -258,18 +196,19 @@ Priority: **Must** is required for the initial port. **Should** is wanted and ma
   where git can write them, for an agent to extend and resolve.
 - **HOST-15 (Should).** An agent can run the target's named checks. The `check` command in its sandbox runs a named
   check in the lane with the check's timeout, if any, and exit classification, prints the tail of its output, and ends
-  ok, rejected or failed. The agent's frame lists each check by name and hint and tells the agent to run them rather
-  than write its own. An agent gets the command only for the checks it names, and a check's env applies inside the
-  command alone.
-- **HOST-16 (Must).** A target can name `prepare`, shell lines in a check's shape, that run in the sandbox in every
-  working copy the host checks out from a commit, before its node's work, on every kind: for a dependency sync and the
-  like. A failing line fails the node, and so does a prepare that changes content a seal would record. A target can also
-  name `sparse` directories, or non-cone `{ patterns }`, which the host narrows each such working copy to before prepare
-  runs.
+  ok, rejected or failed. An agent gets the command only for the checks it names, and its frame lists each by name and
+  hint and tells it to run them rather than write its own. A check's env applies inside the command alone.
+- **HOST-16 (Must).** A target can name `prepare` and `sparse`, both applied to every working copy the host checks out
+  from a commit.
+  - `prepare` is shell lines in a check's shape, run in the sandbox before the node's work, on every kind: for a
+    dependency sync and the like. A failing line fails the node, and so does a prepare that changes content a seal would
+    record.
+  - `sparse` is directories, or non-cone `{ patterns }`, which the host narrows each working copy to before prepare
+    runs.
 
-### 6.6 CLI (CLI)
+### CLI (CLI)
 
-The executable is `maestro`.
+The executable is `maestro`. Commands, flags, aliases and exit codes are in `maestro --help`.
 
 - **CLI-01 (Must).** `compose <composition>` takes a composition (a file, or a pack's composition by name) and its
   params, derived from the param schema, and runs the full compose stage including pre-flight. By default it is an
@@ -289,205 +228,117 @@ The executable is `maestro`.
   error and wait timeout.
 - **CLI-05 (Must).** `watch` draws the live graph.
 - **CLI-06 (Must).** An error names what the operator or agent should do next.
-- **CLI-07 (Must).** Every verb except `prune` has a built-in short alias, shown in help. Aliases are explicit and not
-  inferred from unambiguous prefixes, so adding a verb never changes the meaning of an existing alias. Aliases are
-  unique and stable across versions. The set is in D-29.
-- **CLI-08 (Must).** `repertoire` lists each installed pack, with its version, its directory and the config file that
-  lists it, and each composition with the first line of its doc. Given `<pack>.<composition>` it shows the full doc,
-  each param as its kebab-case flag with its type, default or `required` and description, the config entries its host
-  nodes read by name and a `perform` line with the required flags. A pack that fails to load is named on stderr, the
-  rest are listed, and the exit is non-zero. `compose --help` and `perform --help` given a composition add the same
-  params block.
+- **CLI-07 (Must).** Every verb except `ls` and `prune` has a built-in short alias, shown in `--help`. Aliases are
+  explicit and not inferred from unambiguous prefixes, so adding a verb never changes the meaning of an existing alias.
+  Aliases are unique and stable across versions.
+- **CLI-08 (Must).** `repertoire` lists installed packs and their compositions, and shows one composition in full.
+  - With no argument it lists each pack with its version, its directory and the config file that lists it, and each
+    composition with the first line of its doc.
+  - Given `<pack>.<composition>` it shows the full doc, each param as its kebab-case flag with its type, default or
+    `required` and description, the config entries its host nodes read by name and a `perform` line with the required
+    flags.
+  - A pack that fails to load is named on stderr, the rest are listed, and the exit is non-zero.
+  - `compose --help` and `perform --help` given a composition add the same params block.
 - **CLI-09 (Must).** The CLI loads `$XDG_CONFIG_HOME/maestro/.env` when it exists, a variable already set in the
   environment winning. The release binary loads no `.env` or `bunfig.toml` from the cwd.
 
-### 6.7 Packs and distribution (PACK, DIST)
+### Packs and distribution (PACK, DIST)
 
-- **PACK-01 (Must).** A pack is a directory or release tarball with a `maestro-pack.json` manifest and one pre-bundled
-  entry file that includes its own SDK copy. Config lists packs by path, every directory under
-  `$XDG_DATA_HOME/maestro/packs/` is one too, and a pack in both loads once. Nothing is resolved through `node_modules`
-  (D-30). A pack contributes compositions, prompts, schemas, code nodes and params.
+- **PACK-01 (Must).** A pack is a pre-bundled directory or release tarball (D-30, [ADR 0002](adr/0002-pack-bundles.md)).
+  Config lists packs by path, every directory under `$XDG_DATA_HOME/maestro/packs/` is one too, and a pack in both loads
+  once. A pack contributes compositions, prompts, schemas, code nodes and params.
 - **PACK-02 (Must).** A pack declares a semver range on the SDK it uses. Ranges on host packages wait until hosts carry
   versions.
 - **PACK-03 (Must).** Domain concepts never leak into core or host packages. Packs may be domain-specific.
-- **DIST-01 (Must).** The baseline runtime is Bun. The floor version is fixed during the first slice.
-- **DIST-02 (Should).** A single executable via `bun build --compile`, verified in slice 0 on modern Linux (D-32, D-34).
+- **DIST-01 (Must).** The baseline runtime is Bun.
+- **DIST-02 (Should).** A single executable via `bun build --compile`, on modern Linux (D-34).
 - **DIST-03 (Must).** The repository is a monorepo of separately versioned packages with an independently versioned IR.
 - **DIST-04 (Must).** No network use beyond harness and model traffic and explicit installs.
 - **DIST-05 (Must).** Distribution is internal (D-31): release artifacts (the `maestro` binary and package tarballs)
   served from a private forge. Nothing is published to a public registry.
 
-### 6.8 Agent tool (AT)
+### Agent tool (AT)
 
 The agent tool answers one question for any agent on any harness: what does its environment look like when it runs? A
-**profile** is the named setup behind an agent, and a **seat** is a composition's slot that names one. Each requirement
-names the decision ticket it comes from.
+**profile** is the named setup behind an agent, and a **seat** is a composition's slot that names one.
 
 - **AT-01 (Must).** An adapter loads its harness clean: the built-in tools it names at launch and no others, whatever
   the harness's defaults, with no user skills, MCP servers, hooks, context files, memory or agent profiles, and subagent
-  tools off where the harness allows. The baseline is fixed in the adapter, not a profile field. (#109, #123, from the
-  harness research of #102 to #105)
+  tools off where the harness allows. The baseline is fixed in the adapter, not a profile field.
 - **AT-02 (Must).** Anything beyond the baseline is opt-in and owned by maestro, never read from the user's harness
   directories. Skills ride as attachments. `skills` and `mcp` are reserved profile keys and the schema rejects them with
-  `profile <name>: <key> is reserved, not yet supported`. (#109)
+  `profile <name>: <key> is reserved, not yet supported`.
 - **AT-03 (Must).** A profile is a named roster entry bound to one harness. Its fields are
   `runtime { harness, model, thinking }`, `instructions` (one file, appended to the harness's system prompt),
   `attachments`, `readOnly` binds, `limits { timeout, tokens }` and `context`. It has no tools or permissions field:
   maestro's sandbox is the one permission boundary. A field its harness cannot honour is a pre-flight error naming the
-  profile, the field and the harness. (#109)
+  profile, the field and the harness.
 - **AT-04 (Must).** A seat names one profile, and config may rebind it per composition, through `seats:` keyed
-  `<composition id>/<seat>`. There are no ad-hoc profiles. A call sets no runtime, limits or context. (#108)
+  `<composition id>/<seat>`. There are no ad-hoc profiles. A call sets no runtime, limits or context.
 - **AT-05 (Must).** One command shows a profile's effective environment, declared and, on request and where the harness
   reports it, observed. A mismatch is a fault of inspection, recorded in a concert and never enforced: no node instance
-  fails on it. (#110)
+  fails on it.
 - **AT-06 (Must).** Agent identity outside composition code has one config surface: a profile directory led by its
   `profile.yaml`, tuned in YAML config under `profiles:`. Layers, later winning: the profile directory, user config,
   workspace config, each preset in the order given, `-c`. The highest root wins a name whole: workspace, then user, then
-  pack. (#107, #152)
+  pack.
 - **AT-07 (Must).** A profile's `context` block picks one reset strategy, `handoff` or the harness's `compact`, a
   trigger `at` and a total cap `max`, required for `handoff`. There is no chain between strategies. Without a block the
-  harness compacts on its own terms. (#111)
-- **AT-08 (Should).** The profile model, its resolution and its inspection sit in one module of `host-repo` free of repo
-  concerns. It is extracted with the harness seam and the sandbox when a second agent host lands. (#112)
+  harness compacts on its own terms.
 - **AT-09 (Must).** An agent may continue an earlier harness session instead of rediscovering. Within a concert an agent
   node takes `session: x.out.session`. Across concerts `encore <concert>` continues each matched agent. A continued
-  agent is told what changed since its last turn. (#113)
+  agent is told what changed since its last turn.
 
-## 7. Non-functional requirements
+## Non-functional requirements
 
 - **NFR-01 Determinism.** Build and compose are deterministic. Execution order within a concert may vary inside the
   dependency partial order, and results must not depend on it.
 - **NFR-02 No spend before validation.** A composition that fails compose starts no agent node.
-- **NFR-03 Responsiveness (proposed targets, validate in the first slice).** Compose of a 200-node graph under 1 s. Cold
-  start of `ls` under 150 ms.
+- **NFR-03 Responsiveness (proposed targets).** Compose of a 200-node graph under 1 s. Cold start of `ls` under 150 ms.
 - **NFR-04 Reliability.** A crash or kill leaves a record that resume can continue from. Code nodes time out and cancel.
 - **NFR-05 Security.** Sandbox by default. Secrets are not logged. Packs run operator-trusted code, and this is
   documented.
 - **NFR-06 Testability.** The core runs without a host. A host runs without real agents (stub harness).
 - **NFR-07 Observability.** Every node instance is traceable from the CLI by id. The event stream is the single source
   for live views.
-- **NFR-08 Portability.** Linux x64 is the baseline and the only initial platform (D-25). The host floor is Bun's own
-  documented platform minimum (kernel 3.10 or newer, 5.6 or newer recommended). RHEL 8 class hosts are best-effort, a
-  known limitation with a user workaround (D-34).
+- **NFR-08 Portability.** Linux x64 is the only platform (D-25). The baseline and the RHEL 8 stance are
+  [ADR 0003](adr/0003-modern-linux-baseline.md).
 - **NFR-09 Leanness.** Each new node kind, edge kind or SDK primitive needs a written justification. The default answer
   is a code node or a stdlib helper.
 
-## 8. Acceptance criteria for the initial port
+## Acceptance criteria
 
 - **AC-1.** The core test suite passes with no host and no domain words (CORE-12). Pinned by the compose test "composes
   the %s golden IR into its plan golden", over core-only fixtures, and the domain-words lint.
-- **AC-2.** Composing the ported verification composition (the lens, skeptic, consolidator shape) reports the exact
-  node-instance count and rejects an unclaimed config key. A composition can refuse its params at build time, before any
-  spend, carried by the host-repo-sdk example, whose test pins a refused param.
-- **AC-3.** The ported build-then-repair composition shows its bounded unroll in the plan. With a stub host that rejects
-  once then accepts, it performs to completion, and a killed concert resumes at node granularity without repeating an
-  `ok` node.
-- **AC-4.** With one real harness, the build-then-repair composition is performed on a toy target. It leaves a changeset
-  and the target's checkout is untouched.
+- **AC-2.** Composing `panel_review` (the lens, skeptic, consolidator shape) reports the exact node-instance count and
+  rejects an unclaimed config key. A composition can refuse its params at build time, before any spend, carried by the
+  host-repo-sdk example, whose test pins a refused param.
+- **AC-3.** `build_then_repair` shows its bounded unroll in the plan. With a stub host that rejects once then accepts,
+  it performs to completion, and a killed concert resumes at node granularity without repeating an `ok` node.
+- **AC-4.** With one real harness, `build_then_repair` is performed on a toy target. It leaves a changeset and the
+  target's checkout is untouched.
 - **AC-5.** Compose renders both compositions as a graph showing fan-out, fan-in, loop bounds and conditionals.
 - **AC-6.** `compose`, `perform`, `ls`, `wait`, `kill` and `config` work with JSON output, the documented exit codes and
   their short aliases.
 - **AC-7.** The package installs and runs on a modern Linux host, as `bunx` or as a single binary.
 - **AC-8.** A hand-written IR file is performed without the SDK. Pinned by the CLI test "a golden IR file performs
   through the CLI".
-- **AC-9.** Against the predecessor, tasks T1 (fixable) and T2 (unfixable by construction) match on the sequence of
-  agent and check runs by kind, the final outcome class, the files touched, and a clean target checkout (D-28).
 - **AC-10.** Two lanes forked from one version, each changing a different file, merge by apply into one version holding
   both changes. When both change the same lines the apply is rejected naming the file, and an agent extending its
   version can resolve it.
 
-## 9. Open questions
+## Risks
 
-None blocks the initial port. The questions raised during design were resolved in a review session. Ids are kept so
-references in the companion docs stay valid.
-
-| Question | Topic                                    | Resolved by                      |
-| -------- | ---------------------------------------- | -------------------------------- |
-| OQ-1     | Host vocabulary                          | D-21                             |
-| OQ-2     | First harness adapter                    | D-20                             |
-| OQ-3     | Config keying and use-site overrides     | D-17                             |
-| OQ-4     | Unclaimed config keys                    | D-24                             |
-| OQ-5     | Name of the pre-flight command           | D-12, D-13                       |
-| OQ-6     | Pack discovery                           | D-30                             |
-| OQ-7     | Single-binary feasibility                | D-32                             |
-| OQ-8     | Platform matrix                          | D-25                             |
-| OQ-9     | Check nodes                              | D-22                             |
-| OQ-10    | Cost accumulator in the core or the host | D-23                             |
-| OQ-11    | Use of the predecessor as a reference    | D-28                             |
-| OQ-12    | Package naming and licensing             | D-31                             |
-| OQ-13    | Concurrent concerts                      | D-26                             |
-| OQ-14    | Cross-concert lanes                      | D-27                             |
-| OQ-15    | What is known at build time              | D-16, D-18, D-19                 |
-| OQ-16    | "Composition" versus "compose"           | The naming rule in `GLOSSARY.md` |
-| OQ-17    | CLI surface details                      | D-29                             |
-
-Deferred beyond v1, with no decision needed now:
-
-- A secret param type (D-33).
-- Cost, price tables and per-adapter compaction (D-23).
-- Cross-concert extension (D-27).
-- In-process SDK adapters (D-20).
-- arm64 and macOS (D-25).
-- Licensing (D-31).
-
-## 10. Risks
-
-- **R-1.** Symbolic build ergonomics: authors cannot branch on a Ref. Mitigation: lifting combinators, examples, a quick
-  feedback loop with compose.
-- **R-2.** Compose strength is bounded by schemas. Code node bodies are opaque, so their typed ports are all compose can
-  check.
-- **R-3.** Graphs whose shape depends on a model's output (a planner choosing lenses) are bounded, not exact.
-- **R-4.** The JSON event streams of pi and Claude Code are assumed stable and sufficient. Slice 0 checks pi's (D-32).
-- **R-5.** Single binary on modern Linux: a minimal binary is known to run. SQLite and external pack loading are checked
-  in slice 0 (D-32). RHEL 8 is a best-effort probe (D-34).
-- **R-6.** Scope creep from porting legacy features. The slice boundary (D-10) and the legacy disposition table below
-  are the guard.
-- **R-7.** Lane semantics are the heaviest piece to rebuild (isolated worktrees, fork and extend, applying changesets,
+- **RISK-1.** Symbolic build ergonomics: authors cannot branch on a Ref. Mitigation: lifting combinators, examples, a
+  quick feedback loop with compose.
+- **RISK-2.** Compose strength is bounded by schemas. Code node bodies are opaque, so their typed ports are all compose
+  can check.
+- **RISK-3.** Graphs whose shape depends on a model's output (a planner choosing lenses) are bounded, not exact.
+- **RISK-4.** The JSON event streams of pi and Claude Code are assumed stable and sufficient.
+- **RISK-5.** Single binary on modern Linux: SQLite in WAL mode and external pack loading must work inside it. RHEL 8 is
+  best-effort (D-34).
+- **RISK-6.** Scope creep. The non-goals are the guard.
+- **RISK-7.** Lane semantics are the heaviest piece to build (isolated worktrees, fork and extend, applying changesets,
   keeping rejected output). They live in the host and not in the core.
-- **R-8.** The clean break removes byte-level comparison with the predecessor. Behavioral comparison is weaker, so the
-  reference must be used deliberately (D-28).
-- **R-9.** The stage name and the authored-unit name share a stem (D-12). Without the naming rule, prose and diagnostics
-  blur them.
-
-## 11. Legacy concept disposition (initial port)
-
-Maps the predecessor's concepts to maestro's. It is based on the predecessor's multi-agent workflows (twelve, see
-section 12) and the module descriptions of its 1.0.0b6 release. Items marked "unread" were identified from module
-descriptions only and need a closer look during the slice.
-
-| sssf concept                                                | maestro disposition                                                           |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| chain, three tiers (factory, workspace, pack)               | Composition. One resolution order, no tiers.                                  |
-| stage vs composition                                        | Dissolves. A stage is a composition or a preset agent node shipped in a pack. |
-| performance, run, leg                                       | Concert and node instance. Lane is a host resource.                           |
-| `--join`, `--from`, `--base`, `--group`, `--label`, `--tag` | Lane inputs on agent nodes, and concert metadata.                             |
-| `WorkflowSpec` (required agents, runs quality)              | Derived from the graph.                                                       |
-| `vars` file, `.in` templates, shell-sourced values          | Typed inputs and plain prompt files.                                          |
-| sidecar JSON and `isinstance` checks                        | Typed outputs validated by the engine.                                        |
-| `limits.fix_loops`                                          | A composition param (D-17).                                                   |
-| "reuse output if the json exists"                           | Resume.                                                                       |
-| `seat()` copied between chains, `_` helper modules          | Typed subcompositions.                                                        |
-| stderr degraded-run logging                                 | `Settled` results and outcomes in the record.                                 |
-| `obs` viewer (deprecated)                                   | Renderer contract on the IR and event stream.                                 |
-| tool call and thinking events, streamed as each completes   | Host progress events on the node instance (CORE-10).                          |
-| `seams` (pick up a previous run's record)                   | Superseded by resume and lane versions (unread).                              |
-| `resolution` (what one run resolved to)                     | The plan (unread).                                                            |
-| `gates` (verify an envelope's claims)                       | Re-evaluate in the host slice (unread).                                       |
-| profiles and rosters (`extends:`)                           | Re-evaluate: host namespace and layered config (unread).                      |
-| `safety` (what a run may bind and change)                   | Host sandbox and lane rules.                                                  |
-| `quality` (target checks as code steps)                     | Check node (D-22).                                                            |
-
-## 12. Using the predecessor as a behavioral reference (D-11)
-
-When a checkout of the predecessor is available, it answers "what should this behavior be". Rules:
-
-- Consult it for behavior, never for structure. Do not mirror its modules, flags or file formats.
-- Areas worth consulting, by module name in the 1.0.0b6 release (locate the equivalents in the checkout): lane and
-  worktree handling and series delivery (`runtime`, `repository`), the sandbox mount plan (`sandbox`, `safety`), the
-  harness interface and its two adapters (`harness`, `sssf_claude`, `sssf_pi`), quality checks (`quality`), join and
-  resume (`seams`), and budgets (`runtime`, cost deferred per D-23).
-- Acceptance comparisons are semantic (D-28).
-- The worked examples in `sdk-spec.md` derive from twelve of the predecessor's workflows: four verification and review
-  chains (a verification round, a rework-then-review gate, a triage over a cross product, a review of a locking change)
-  and eight general compositions (stage pipelines, build-then-repair, build with review, escalation over models, fan-out
-  over models, plan panel, review panel, and the full pipeline).
+- **RISK-8.** The stage name and the authored-unit name share a stem (D-12). Without the naming rule, prose and
+  diagnostics blur them.

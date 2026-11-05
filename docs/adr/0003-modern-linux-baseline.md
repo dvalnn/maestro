@@ -11,12 +11,12 @@ with a user workaround. It is not a blocker and not a reason to constrain toolin
 
 ## Considered options
 
-- **RHEL 8 as the minimum supported host.** The old NFR-08. Rejected because it would hold the toolchain and the build
-  host back for a legacy platform.
+- **RHEL 8 as the minimum supported host.** NFR-08. Rejected because it would hold the toolchain and the build host back
+  for a legacy platform.
 
 ## Consequences
 
-- Spike 1 is judged on modern Linux, and its RHEL 8 run is a compatibility probe (D-32).
+- Spike 1 is judged on modern Linux, and its RHEL 8 run is a compatibility probe.
 - Spike 5 no longer decides the release build host, since releases build on a modern host.
 - AC-7 drops RHEL 8.
 - Spikes 1 and 5 found that compiled binaries need glibc 2.17 at most, whatever the build host's glibc, and run in a
