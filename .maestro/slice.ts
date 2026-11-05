@@ -63,6 +63,7 @@ import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
 };
 import WRITER from "./slice/prompts/writer.md" with { type: "text" };
 import FIGURES from "./triage/prompts/_figures.md" with { type: "text" };
+import PLAIN from "./triage/prompts/_plain.md" with { type: "text" };
 import { TIERS, type Tier } from "./triage/verdict";
 
 // ADR 0008: a code node's function must be exported by its composition file.
@@ -78,7 +79,7 @@ const TASKS = {
 	reviewer: task(REVIEWER, QUESTIONS, GROUNDS),
 	reviewerAgain: task(REVIEWER_AGAIN, REVIEWER, QUESTIONS, GROUNDS),
 	fix: task(FIX),
-	writer: task(WRITER, FIGURES),
+	writer: task(WRITER, PLAIN, FIGURES),
 	/** Each panel tier's lenses, by name, as each lens's task; the consolidator rules by `GROUNDS`. */
 	lenses: {
 		ordinary: {

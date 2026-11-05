@@ -29,6 +29,7 @@ import {
 } from "@maestro/sdk";
 import FIGURES from "./triage/prompts/_figures.md" with { type: "text" };
 import GATE from "./triage/prompts/_gate.md" with { type: "text" };
+import PLAIN from "./triage/prompts/_plain.md" with { type: "text" };
 import QUESTIONS from "./triage/prompts/_questions.md" with { type: "text" };
 import CHECKER from "./triage/prompts/checker.md" with { type: "text" };
 import PLANNER from "./triage/prompts/planner.md" with { type: "text" };
@@ -37,21 +38,22 @@ import SCOUT from "./triage/prompts/scout.md" with { type: "text" };
 import TRIAGER from "./triage/prompts/triager.md" with { type: "text" };
 import {
 	Checked,
+	findingsOf,
 	GROUP_SIZE,
 	Group,
+	MAX_REQUIREMENT_WORDS,
 	NARROW,
 	type PROPOSED,
 	Proposal,
 	RUNNERS,
 	type Ruled,
 	Ruling,
-	revisable,
 	settle,
 	Triage,
 } from "./triage/verdict";
 
 // ADR 0008: a code node's function must be exported by its composition file.
-export { revisable, settle, toMarkdown };
+export { settle, toMarkdown };
 
 const task = (...parts: string[]) => parts.join("\n\n");
 
@@ -64,7 +66,15 @@ const TASKS = {
 			QUESTIONS,
 		),
 	scout: task(SCOUT),
-	planner: task(fill(PLANNER, { runners: RUNNERS.join(", ") }), FIGURES, GATE),
+	planner: task(
+		fill(PLANNER, {
+			runners: RUNNERS.join(", "),
+			maxWords: MAX_REQUIREMENT_WORDS,
+		}),
+		PLAIN,
+		FIGURES,
+		GATE,
+	),
 	checker: task(CHECKER, GATE),
 	revise: task(REVISE, QUESTIONS),
 };
@@ -126,6 +136,21 @@ export function answersOf(
 	return { answers };
 }
 
+/** The findings the planner revises its plan by, as one Markdown file, and whether there are any. */
+export function revisable(
+	planned: Parameters<typeof findingsOf>[0],
+	ctx: CodeContext,
+): { findings: string; revise: boolean } {
+	const found = findingsOf(planned);
+	const findings = join(ctx.scratch, "findings.md");
+	const lines = found.map((f) => `- ${f}`);
+	writeFileSync(
+		findings,
+		["# The spec's findings", "", ...lines, ""].join("\n"),
+	);
+	return { findings, revise: found.length > 0 };
+}
+
 const PLANS: Record<Ruled, boolean> = {
 	direct: false,
 	plan: true,
@@ -141,7 +166,11 @@ const CHECKS: Record<(typeof PROPOSED)[number], boolean> = {
 
 const triager = seat("triager");
 /** The classics planner, fresh in an encore: a re-triage hands it the last spec rather than its grown session. */
-const planner = seat("planner", { profile: "classics/planner", encore: false });
+const planner = seat("planner", {
+	profile: "classics/planner",
+	encore: false,
+	checks: ["ears"],
+});
 
 /** The checker, fresh in an encore: a re-triage rewrites the spec it checks. */
 const checker = seat("checker", { encore: false });
@@ -264,6 +293,7 @@ export const triage = composition(
 			when: plans,
 		});
 		const plan = readJson(planned.out.plan);
+		const proposal = allSettled([plan], { label: "proposal" });
 		const checked = checker({
 			label: "checker",
 			task: TASKS.checker,
@@ -285,29 +315,29 @@ export const triage = composition(
 		const findings = allSettled([readJson(checked.out.check)], {
 			label: "check",
 		});
-		const revise = code(revisable, {
-			in: { check: findings },
-			out: { revise: Bool() },
+		const found = code(revisable, {
+			in: { proposal, check: findings },
+			out: { findings: Markdown(), revise: Bool() },
 			label: "revisable",
-		}).out.revise;
+		}).out;
 		const revised = planner({
 			label: "revise",
 			task: TASKS.revise,
 			lane: read(base.out.lane),
 			session: planned.out.session,
 			attachments: {
-				check: {
-					artifact: checked.out.check,
+				findings: {
+					artifact: found.findings,
 					hint: "first, for the findings to settle",
 				},
 			},
 			out: { plan: JsonOut("plan.json", Proposal) },
-			when: revise,
+			when: found.revise,
 		});
 		return code(settle, {
 			in: {
 				ruling,
-				proposal: allSettled([plan], { label: "proposal" }),
+				proposal,
 				check: findings,
 				revision: allSettled([readJson(revised.out.plan)], {
 					label: "revision",

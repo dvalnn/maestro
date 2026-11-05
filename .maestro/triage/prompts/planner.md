@@ -1,8 +1,8 @@
 Triage the attached issue: propose its verdict from the scouts' answers, the triager's ruling, the cut backlog and the
 target's code.
 
-Write `plan.json` in exactly this shape, leaving out `spec`, `children` and `related` where the verdict does not need
-them:
+Write `plan.json` in exactly this shape: `spec` only for `ready-for-agent`, `children` only for `split`, and `related`
+only when the backlog holds a related issue:
 
 ```json
 {
@@ -36,16 +36,18 @@ them:
   manager reads and a new standalone composition are not.
 - `spec`, for `ready-for-agent`: the doc the owner aligns on and approves, by Altitude below: the need, how the system
   must behave and the architecture it takes. Size each part to the change: a small one gets a sentence or two of
-  context, a requirement or two, a note per design call and a line of consequences. Its prose, figure notes included,
-  stays within about 3,000 characters, 5,000 at most.
-- `what`: the context, a short paragraph or two. It opens with the need as one line, "A <who> needs <what> so that
-  <why>.", then why now and the change that meets it, naming the module that owns it. Prose only: a config, code or
-  command example goes in a fenced block. The comment's heading carries the spec's version, so `what` never recounts an
-  earlier one.
-- `requirements`: how the system must behave, each one sentence in an EARS pattern, numbered `R1` on by position. A
-  requirement states behaviour a user or operator can observe: config accepted or refused, what is staged or run, what a
-  command prints, what is masked. It never names a function, a constant, a file or a call order. Cite a
-  `docs/requirements.md` id only where the change touches that requirement.
+  context, a note per design call and a line of consequences. Its prose, figure notes included, stays within about 3,000
+  characters, 5,000 at most, written by Plain English below.
+- `what`: the context, a short paragraph or two. It opens with the need as one line, "A `<who>` needs `<what>` so that
+  `<why>`.", then why now and the change that meets it, naming the module that owns it. Prose only: a config, code or
+  command example goes in a fenced block. The builder reads the ask beside the spec, so `what` never restates it. The
+  comment's heading carries the spec's version, so `what` never recounts an earlier one.
+- `requirements`: how the system must behave, numbered `R1` on by position. Each holds one behaviour in one EARS
+  sentence of at most {maxWords} words, with one `shall` and no condition after it. Write as many as the behaviour
+  needs: more short requirements beat fewer long ones. Once `plan.json` is written, run `check ears` and settle each
+  requirement it names. A requirement states behaviour a user or operator can observe: config accepted or refused, what
+  is staged or run, what a command prints, what is masked. It never names a function, a constant, a file or a call
+  order. Cite a `docs/requirements.md` id only where the change touches that requirement.
   - Ubiquitous: `The <system> shall <response>.`
   - Event: `When <trigger>, the <system> shall <response>.`
   - State: `While <state>, the <system> shall <response>.`
@@ -57,9 +59,9 @@ them:
 - `acceptance`: the shell commands that prove it done, each starting with {runners} and ending in a shell comment naming
   the requirements it proves (`# R1, R2`); every requirement is proved by one. A `bun test` path starts with `./`:
   without it bun reads a name filter, which skips dot directories such as `.maestro`.
-- `subject`: the commit subject as <type>(<scope>): <summary>.
+- `subject`: the commit subject as `<type>(<scope>): <summary>.`.
 - `decisions` and `excluded`: each item a lead and its points. The lead only titles its points; every fact and reason
-  belongs in a point, one fact each, and a reference is a plain last point "In <module>". A decision is a choice of
+  belongs in a point, one fact each, and a reference is a plain last point "In `<module>`". A decision is a choice of
   behaviour, architecture or style the owner rules on, where another option was live, that no figure's note already
   states. `excluded` holds only what is out of scope. Either list may be empty.
 - `children`, for `split`: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split

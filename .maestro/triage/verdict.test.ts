@@ -14,8 +14,8 @@ import {
 import {
 	type Checked,
 	classify,
+	findingsOf,
 	type Proposal,
-	revisable,
 	settle,
 	type Triage,
 } from "./verdict";
@@ -354,18 +354,55 @@ test.each(["failed", "rejected"] as const)(
 	},
 );
 
+const proposing = (requirements: string[]): Settled<Proposal>[] => [
+	{ outcome: "ok", value: { ...ready, spec: { ...spec, requirements } } },
+];
+
 test.each([
-	["findings", findings, true],
-	["a clean check", clean, false],
-	["a skipped check", [{ outcome: "skipped" }] as Settled<Checked>[], false],
+	["a failing check", findings, [failed]],
+	["a clean check", clean, []],
+	["a skipped check", [{ outcome: "skipped" }] as Settled<Checked>[], []],
 	[
 		"a failed check",
 		[{ outcome: "failed", reason: "x" }] as Settled<Checked>[],
-		false,
+		[],
 	],
-])("revisable revises on %s: %p", (_, check, revise) => {
-	expect(revisable({ check })).toEqual({ revise });
+])("findingsOf a plain EARS spec and %s: %p", (_, check, expected) => {
+	expect(findingsOf({ proposal: proposing(spec.requirements), check })).toEqual(
+		expected,
+	);
 });
+
+const breaks = (faults: string) =>
+	`R1 breaks the EARS shape: ${faults}. Rewrite it as one behaviour per requirement.`;
+
+test.each([
+	["While the tier is small, when a round ends, the slice shall stop.", []],
+	["The CLI shall accept `when` and `--if-missing` as flags.", []],
+	[
+		"Greet.sh shall greet the name.",
+		[breaks('it opens with "Greet.sh", not The, When, While, If, Where')],
+	],
+	[
+		"The CLI shall print the id and shall exit 0.",
+		[breaks('it has 2 "shall", not one')],
+	],
+	[
+		"The slice shall hand the fixer every finding, or none when the reviewer reports clean.",
+		[breaks('it has a condition after "shall"')],
+	],
+	[
+		`The CLI shall print ${"word ".repeat(27).trim()}.`,
+		[breaks("it runs 31 words, over 30")],
+	],
+])(
+	"findingsOf flags a requirement off the EARS shape: %p",
+	(requirement, expected) => {
+		expect(
+			findingsOf({ proposal: proposing([requirement]), check: clean }),
+		).toEqual(expected);
+	},
+);
 
 test("settle fails when the triager handed the issue on and the planner gave nothing", () => {
 	expect(() =>

@@ -195,8 +195,9 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   `just check` as acceptance; a `plan` ticket goes on to the scouts, the planner and the spec checker. Either spec is
   gated by risk as any other.
 - **Spec check.** On findings, the planner revises its spec once in the same session; the revised spec is not checked
-  again. A finding only the owner can rule on becomes a question, as does a check or revision that failed to run. The
-  builder never sees the findings. A split is not checked.
+  again. A requirement off the EARS shape is a finding too, found by code beside the checker's; the planner can run the
+  same rule as `check ears` before it finishes. A finding only the owner can rule on becomes a question, as does a check
+  or revision that failed to run. The builder never sees the findings. A split is not checked.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, whatever its risk, never to
   `needs-approval`. The owner answers by replying in a comment that mentions `@<login>`, such as
   `@forge-bot Q1: no, ok results only`, then moving the ticket to `needs-triage` (to `ready-for-agent` to continue a

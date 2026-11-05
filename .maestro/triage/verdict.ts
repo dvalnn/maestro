@@ -74,6 +74,15 @@ const MARKDOWN = /\.md$/;
 /** The programs an acceptance command may start with to count as runnable. */
 export const RUNNERS = ["bun", "bunx", "just", "mise"];
 
+/** The most words in one requirement. */
+export const MAX_REQUIREMENT_WORDS = 30;
+/** The words an EARS requirement opens with, one per pattern. */
+const EARS_OPENERS = ["The", "When", "While", "If", "Where"];
+const SHALL = /\bshall\b/gi;
+/** A word that starts a condition, which belongs before the `shall`. */
+const CONDITION = /\b(when|if|unless)\b/i;
+const CODE_SPAN = /`[^`]*`/g;
+
 /** The acceptance of a direct build: the target's whole gate. */
 const GATE_COMMAND = "just check";
 const NO_TOUCHES = "Which paths does the change create or edit?";
@@ -150,6 +159,10 @@ const forVerdict = (verdict: Verdict | Ruled, rule: Rule): Rule => ({
 const needs = (verdict: Verdict | Ruled, field: string) =>
 	forVerdict(verdict, { required: [field] });
 
+/** A rule that `field` is absent when the verdict is `verdict`. */
+const omits = (verdict: Verdict | Ruled, field: string) =>
+	forVerdict(verdict, { not: { required: [field] } });
+
 /** A rule that a needs-info verdict asks at least one question. */
 const ASKS = forVerdict("needs-info", {
 	properties: { questions: { minItems: 1 } },
@@ -210,7 +223,12 @@ export const Proposal = shape(
 		related: List(Int()),
 		questions: List(Question),
 	},
-	[needs("ready-for-agent", "spec"), needs("split", "children")],
+	[
+		needs("ready-for-agent", "spec"),
+		needs("split", "children"),
+		omits("ready-for-agent", "children"),
+		omits("split", "spec"),
+	],
 );
 export type Proposal = ValueOf<typeof Proposal>;
 
@@ -490,14 +508,56 @@ function recommendable({ recommend, ...question }: Question): Question {
 	return named ? { ...question, recommend } : question;
 }
 
-/** Whether the planner revises its plan: the spec check ran and found the spec failing. */
-export function revisable({ check }: { check: Settled<Checked>[] }): {
-	revise: boolean;
-} {
-	const [checked] = check;
-	return {
-		revise: checked?.outcome === "ok" && checked.value.findings.length > 0,
-	};
+/** Each way `requirement` breaks the EARS shape: its opening word, one `shall`, no condition after it, its length. */
+function earsFaults(requirement: string): string[] {
+	const words = requirement.trim().split(/\s+/);
+	const [opener = ""] = words;
+	const shalls = requirement.match(SHALL)?.length ?? 0;
+	const afterShall = requirement
+		.replace(CODE_SPAN, "")
+		.split(SHALL)
+		.slice(1)
+		.join(" ");
+	const faults: string[] = [];
+	if (!EARS_OPENERS.includes(opener))
+		faults.push(`it opens with "${opener}", not ${EARS_OPENERS.join(", ")}`);
+	if (shalls !== 1) faults.push(`it has ${shalls} "shall", not one`);
+	if (CONDITION.test(afterShall))
+		faults.push('it has a condition after "shall"');
+	if (words.length > MAX_REQUIREMENT_WORDS)
+		faults.push(`it runs ${words.length} words, over ${MAX_REQUIREMENT_WORDS}`);
+	return faults;
+}
+
+/** A finding for each of `requirements` that breaks the EARS shape, naming it `R1` on by position. */
+export const earsFindings = (requirements: string[]) =>
+	requirements.flatMap((requirement, i) => {
+		const faults = earsFaults(requirement);
+		return faults.length
+			? [
+					`R${i + 1} breaks the EARS shape: ${faults.join("; ")}. Rewrite it as one behaviour per requirement.`,
+				]
+			: [];
+	});
+
+/**
+ * The findings the planner revises its plan by:
+ * - the spec check's, when it ran;
+ * - one per requirement of the plan that breaks the EARS shape.
+ */
+export function findingsOf({
+	proposal: [planned],
+	check: [checked],
+}: {
+	proposal: Settled<Proposal>[];
+	check: Settled<Checked>[];
+}): string[] {
+	return [
+		...(checked?.outcome === "ok" ? checked.value.findings : []),
+		...(planned?.outcome === "ok"
+			? earsFindings(planned.value.spec?.requirements ?? [])
+			: []),
+	];
 }
 
 /** The question saying `step` failed to run, none when it ran or was skipped. */

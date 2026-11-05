@@ -268,22 +268,36 @@ test.each(verdicts)(
 	},
 );
 
-test("a stub perform has the planner revise a ready spec by a failing check's findings, asking its questions", async () => {
-	const revised = { ...ready, spec: { ...spec, what: "revised" } };
-	const { concert, statuses } = await performed(
-		planning,
-		ready,
-		{ findings: [failed] },
-		{ ...revised, questions: [claiming] },
-	);
-	expect(concert.status).toBe("ok");
-	expect(statuses("revise")).toEqual(["ok"]);
-	expect(concert.outputs.triage).toMatchObject({
-		verdict: "needs-info",
-		questions: [claiming],
-	});
-	expect(concert.outputs.triage.spec.what).toBe("revised");
-});
+const offShape = "Greet.sh shall greet the name.";
+
+test.each([
+	["a failing check's findings", ready, [failed], failed],
+	[
+		"a requirement off the EARS shape",
+		{ ...ready, spec: { ...spec, requirements: [offShape] } },
+		[],
+		"R1 breaks the EARS shape",
+	],
+])(
+	"a stub perform has the planner revise a ready spec by %s, asking its questions",
+	async (_, proposal, findings, finding) => {
+		const revised = { ...ready, spec: { ...spec, what: "revised" } };
+		const { concert, statuses, artifact } = await performed(
+			planning,
+			proposal,
+			{ findings },
+			{ ...revised, questions: [claiming] },
+		);
+		expect(concert.status).toBe("ok");
+		expect(statuses("revise")).toEqual(["ok"]);
+		expect(artifact("revisable", "findings")).toContain(finding);
+		expect(concert.outputs.triage).toMatchObject({
+			verdict: "needs-info",
+			questions: [claiming],
+		});
+		expect(concert.outputs.triage.spec.what).toBe("revised");
+	},
+);
 
 /** The composed plan of the triage, with `--backlog`. */
 const composed = async () =>
@@ -363,6 +377,23 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 		"a ready proposal whose decision has no points",
 		Proposal,
 		{ ...ready, spec: { ...spec, decisions: [{ lead: "Name source" }] } },
+		false,
+	],
+	[
+		"a split proposal with a spec",
+		Proposal,
+		{
+			...unspecified,
+			verdict: "split",
+			children: [{ title: "a", body: "b", dependsOn: [] }],
+			spec,
+		},
+		false,
+	],
+	[
+		"a ready proposal with children",
+		Proposal,
+		{ ...ready, children: [{ title: "a", body: "b", dependsOn: [] }] },
 		false,
 	],
 	["a planning ruling", Ruling(4), planning, true],
