@@ -44,8 +44,8 @@ home; no repo doc links into them for its facts.
 
 | Topic                                      | Home                           | Links in from                   |
 | ------------------------------------------ | ------------------------------ | ------------------------------- |
-| Precedence ladder, layers, merge tags      | architecture: Configuration    | requirements, rulings, sdk-spec |
-| Presets and `-c`                           | architecture: Configuration    | CLI README, INSTALL             |
+| Precedence ladder, layers                  | architecture: Configuration    | requirements, rulings, sdk-spec |
+| Merge tags, presets and `-c` syntax        | CLI README: Config             | architecture, INSTALL           |
 | Core config keys                           | architecture: Configuration    | CLI README                      |
 | Host config keys (`target`, `profiles`, …) | `packages/host-repo/README.md` | CLI README, INSTALL             |
 
