@@ -18,7 +18,7 @@ import {
 	type Version,
 } from "../lane/index";
 
-/** The hex digits of a target's realpath digest that name its directory in the store. */
+/** The leading hex digits of a target's realpath SHA-256 that name its directory under `<data root>/hosts/repo`. */
 const TARGET_ID_LENGTH = 16;
 const TARGET_ID = new RegExp(`^[0-9a-f]{${TARGET_ID_LENGTH}}$`);
 
@@ -82,7 +82,10 @@ const homeOf = (root: string, id: string) =>
 	join(sessionsDir(root), encodeURIComponent(id));
 
 const PARTIALS = "partials";
-/** Under a target store, per concert: each agent instance's latest session, one file per instance id. */
+/**
+ * Under a target store, per concert: each agent instance's latest session, after any handoff, one file per instance id.
+ * `prune` frees it with its concert.
+ */
 const LATEST = "latest";
 
 /** An agent instance's latest session: its node, the keys of its expansion and the session's id. */

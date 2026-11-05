@@ -27,7 +27,10 @@ import { openTarget } from "./store";
 
 /** The name an inline check goes by in reasons and logs. */
 const INLINE = "inline";
-/** The directory under a check node's scratch that its lines write to, kept as the `output` artifact. */
+/**
+ * The empty directory made under a check node's scratch, outside the lane, bound writable into every line's sandbox
+ * and named in `MAESTRO_CHECK_OUTPUT`. As the check left it, passed or failed, it is the `output` artifact.
+ */
 const OUTPUT_DIR = "output";
 
 /** The checks `config` runs, by name. */

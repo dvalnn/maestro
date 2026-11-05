@@ -120,7 +120,7 @@ export async function agentRuntimes(
 	);
 }
 
-/** The repo host (architecture 12): agent and check nodes in lanes cut from a target repository. */
+/** The repo host (see `packages/host-repo/README.md`): agent and check nodes in lanes cut from a target repository. */
 export function repoHost({ harnesses }: RepoHostOptions): Host {
 	return {
 		name: HOST_NAME,

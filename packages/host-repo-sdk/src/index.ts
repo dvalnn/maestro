@@ -231,9 +231,9 @@ function union(a: string[] = [], b: string[] = []): string[] | undefined {
 }
 
 /**
- * Seat `name` (ADR 0013), as a function that emits a `repo.agent` node (architecture 12) per call: a coding agent
- * running the seat's profile on `task` in its lane. A call's outputs add to the seat's, the call's winning on a name,
- * and its checks add to the seat's.
+ * Seat `name` (ADR 0013), as a function that emits a `repo.agent` node (see the host-repo README) per call: a coding
+ * agent running the seat's profile on `task` in its lane. A call's outputs add to the seat's, the call's winning on a
+ * name, and its checks add to the seat's.
  */
 export function seat<S extends Outputs = Record<never, never>>(
 	name: string,

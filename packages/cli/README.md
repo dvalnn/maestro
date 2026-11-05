@@ -380,10 +380,10 @@ A relative `packs`, `dataRoot`, `target.repo` or other path key is relative to t
 holds `.maestro/`, in the workspace file, a workspace preset and a `-c`, and to the user config directory in the user
 file and a user preset. A `-c` outside a workspace is relative to the cwd.
 
-The repo host's namespaces are set out in architecture.md section 12, Configuration. Its Claude Code harness reads the
-token from `CLAUDE_CODE_OAUTH_TOKEN`, set in the shell or in `$XDG_CONFIG_HOME/maestro/.env`; get one with
-`claude setup-token`. maestro loads that `.env` when it exists, a variable the shell sets winning; the release binary
-reads no `.env` or `bunfig.toml` from the cwd, while a run through `bun` from the repository still does.
+The repo host's namespaces are set out in the [host-repo README](../host-repo/README.md#configuration). Its Claude Code
+harness reads the token from `CLAUDE_CODE_OAUTH_TOKEN`, set in the shell or in `$XDG_CONFIG_HOME/maestro/.env`; get one
+with `claude setup-token`. maestro loads that `.env` when it exists, a variable the shell sets winning; the release
+binary reads no `.env` or `bunfig.toml` from the cwd, while a run through `bun` from the repository still does.
 
 The `stub` harness waits `MAESTRO_STUB_DELAY` before each agent turn settles, a duration such as `2s` or `500ms`; unset,
 it answers at once.

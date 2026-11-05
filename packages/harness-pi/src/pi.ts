@@ -52,7 +52,13 @@ const THINKING_LEVELS = [
 	"max",
 ];
 const AUTH_FILE = "auth.json";
-/** The agent dir maestro owns, under the session dir, so nothing of the user's pi dir but `auth.json` reaches pi. */
+/**
+ * The agent dir maestro owns under the session dir, as `PI_CODING_AGENT_DIR`, so nothing of the user's pi dir but
+ * `auth.json` reaches pi: no `SYSTEM.md`, `APPEND_SYSTEM.md`, `settings.json` or `models.json`. It holds `auth.json`, a
+ * link to the user's, bound read-write in the sandbox so a token refresh writes through, and under a `compact` policy
+ * maestro's own `settings.json`. Without a user `auth.json` pi starts and reports no key. Its own `auth.json.lock`
+ * keeps concurrent agents and the user's pi from locking each other on a refresh; a lost write means logging in again.
+ */
 const SESSION_AGENT = "agent";
 /** The fields of a provider entry in pi's `auth.json` that hold a credential: an API key, an OAuth token pair. */
 const CREDENTIAL_FIELDS = ["key", "access", "refresh"];

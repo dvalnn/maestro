@@ -10,7 +10,10 @@ const LOOP = "loop";
 export const keysOf = (instance: HostInstance) =>
 	parseExpansion(instance.expansion) ?? [];
 
-/** Whether `latest` sits where `instance` does: the same node, the same key in each group but a loop. */
+/**
+ * Whether `latest` sits where `instance` does: the same node, the same key in each group but a loop. A key is an item's
+ * position or `parMap` key, so an extra item with none kept matches nothing.
+ */
 function matches(latest: Latest, instance: HostInstance, keys: string[]) {
 	return (
 		latest.node === instance.node.id &&

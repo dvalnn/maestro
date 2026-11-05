@@ -231,7 +231,7 @@ function systemEvents(e: JsonObject): HarnessEvent[] {
 
 /**
  * The window a result's `modelUsage` gives the run's `model`, as `system/init` named it, or the one model it lists when
- * none is named after it.
+ * none is named after it. A result is the only place claude reports a window, so a probe runs one short turn.
  */
 function resultWindow(
 	e: JsonObject,

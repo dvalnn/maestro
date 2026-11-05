@@ -9,7 +9,11 @@ import {
 } from "../harness/index";
 import { PROFILES, type Profile } from "../profile/index";
 
-/** Under the host store: the context window of each model in tokens, by harness, then by model as profiles name it. */
+/**
+ * Under the host store, outside the record, which pre-flight cannot read: the context window of each model in tokens,
+ * by harness, then by model as profiles name it. `agent show --probe` and every agent turn keep what the harness
+ * reports.
+ */
 const WINDOWS_FILE = "windows.json";
 const PERCENT = 100;
 
