@@ -15,6 +15,7 @@ import {
 	type Checked,
 	classify,
 	type Proposal,
+	revisable,
 	settle,
 	type Triage,
 } from "./verdict";
@@ -174,10 +175,12 @@ test.each(areas)("classify's area is %s", (_, touches, area) => {
 });
 
 const clean: Settled<Checked>[] = [{ outcome: "ok", value: { findings: [] } }];
-const planned = (proposal: Proposal, check = clean) => ({
+const unrevised: Settled<Proposal>[] = [{ outcome: "skipped" }];
+const planned = (proposal: Proposal, check = clean, revision = unrevised) => ({
 	ruling: planning,
 	proposal: [{ outcome: "ok" as const, value: proposal }],
 	check,
+	revision,
 });
 
 const overrides: [string, Proposal, Triage][] = [
@@ -288,6 +291,7 @@ test.each([
 			},
 			proposal: [{ outcome: "skipped" }],
 			check: [],
+			revision: [],
 		});
 		expect(triage).toMatchObject({ verdict, risk, questions: [] });
 		expect(triage.spec).toEqual({
@@ -303,22 +307,27 @@ test.each([
 
 const straying = { ...claiming, recommend: { label: "C", why: "no reason" } };
 
-const open = (finding: string) => ({
-	touches: ready.touches,
-	...spec,
-	excluded: [
-		...spec.excluded,
-		{ lead: "Open after the spec check", points: [finding] },
-	],
+const findings: Settled<Checked>[] = [
+	{ outcome: "ok", value: { findings: [failed] } },
+];
+
+test("settle takes the planner's revision over its first plan, asking the owner its questions", () => {
+	const revised = { ...ready, spec: { ...spec, what: "revised" } };
+	const revision: Settled<Proposal>[] = [
+		{ outcome: "ok", value: { ...revised, questions: [claiming] } },
+	];
+	const { triage } = settle(planned(ready, findings, revision));
+	expect(triage).toMatchObject({
+		verdict: "needs-info",
+		questions: [claiming],
+	});
+	expect(triage.spec).toEqual({ touches: ready.touches, ...revised.spec });
 });
 
-test("settle leaves a failing spec check's findings in the spec, asking the owner nothing", () => {
-	const check: Settled<Checked>[] = [
-		{ outcome: "ok", value: { findings: [failed] } },
-	];
-	const { triage } = settle(planned(ready, check));
+test("settle keeps the first plan as it is when the planner revised nothing", () => {
+	const { triage } = settle(planned(ready, findings));
 	expect(triage).toMatchObject({ verdict: "ready-for-agent", questions: [] });
-	expect(triage.spec).toEqual(open(failed));
+	expect(triage.spec).toEqual({ touches: ready.touches, ...spec });
 });
 
 test.each([
@@ -330,16 +339,33 @@ test.each([
 });
 
 test.each(["failed", "rejected"] as const)(
-	"settle notes in the spec, keeping it ready, when the spec check %s to run",
+	"settle asks the owner when the spec check or the revision %s to run",
 	(outcome) => {
-		const check: Settled<Checked>[] = [{ outcome, reason: "pi exited 1" }];
-		const { triage } = settle(planned(ready, check));
-		expect(triage.verdict).toBe("ready-for-agent");
-		expect(triage.spec).toEqual(
-			open("The spec check did not run: pi exited 1."),
-		);
+		const unrun = [{ outcome, reason: "pi exited 1" }];
+		const { triage } = settle(planned(ready, unrun, unrun));
+		expect(triage).toMatchObject({
+			verdict: "needs-info",
+			questions: [
+				askAlone("The spec check did not run: pi exited 1."),
+				askAlone("The planner's revision did not run: pi exited 1."),
+			],
+		});
+		expect(triage.spec).toEqual({ touches: ready.touches, ...spec });
 	},
 );
+
+test.each([
+	["findings", findings, true],
+	["a clean check", clean, false],
+	["a skipped check", [{ outcome: "skipped" }] as Settled<Checked>[], false],
+	[
+		"a failed check",
+		[{ outcome: "failed", reason: "x" }] as Settled<Checked>[],
+		false,
+	],
+])("revisable revises on %s: %p", (_, check, revise) => {
+	expect(revisable({ check })).toEqual({ revise });
+});
 
 test("settle fails when the triager handed the issue on and the planner gave nothing", () => {
 	expect(() =>
@@ -347,21 +373,38 @@ test("settle fails when the triager handed the issue on and the planner gave not
 			ruling: planning,
 			proposal: [{ outcome: "skipped" }],
 			check: [],
+			revision: [],
 		}),
 	).toThrow("the planner gave no proposal");
 });
 
-test("settle drops a recommendation naming none of its question's options, keeping the rest", () => {
-	const { recommend: _, ...kept } = straying;
-	const { triage } = settle({
-		ruling: {
-			...planning,
-			verdict: "needs-info",
-			groups: [],
-			questions: [straying, claiming],
+const asking = [straying, claiming];
+
+test.each([
+	[
+		"the triager",
+		{
+			ruling: {
+				...planning,
+				verdict: "needs-info",
+				groups: [],
+				questions: asking,
+			},
+			proposal: [{ outcome: "skipped" }],
+			check: [],
+			revision: [],
 		},
-		proposal: [{ outcome: "skipped" }],
-		check: [],
-	});
-	expect(triage.questions).toStrictEqual([kept, claiming]);
-});
+	],
+	[
+		"the planner's revision",
+		planned(ready, findings, [
+			{ outcome: "ok", value: { ...ready, questions: asking } },
+		]),
+	],
+] as [string, Parameters<typeof settle>[0]][])(
+	"settle drops a recommendation naming none of its question's options, keeping the rest, from %s",
+	(_, input) => {
+		const { recommend: _r, ...kept } = straying;
+		expect(settle(input).triage.questions).toStrictEqual([kept, claiming]);
+	},
+);

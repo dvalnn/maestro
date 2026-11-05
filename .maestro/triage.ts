@@ -12,6 +12,7 @@ import {
 import {
 	type ArtifactRef,
 	allSettled,
+	Bool,
 	type CodeContext,
 	code,
 	composition,
@@ -31,6 +32,7 @@ import GATE from "./triage/prompts/_gate.md" with { type: "text" };
 import QUESTIONS from "./triage/prompts/_questions.md" with { type: "text" };
 import CHECKER from "./triage/prompts/checker.md" with { type: "text" };
 import PLANNER from "./triage/prompts/planner.md" with { type: "text" };
+import REVISE from "./triage/prompts/revise.md" with { type: "text" };
 import SCOUT from "./triage/prompts/scout.md" with { type: "text" };
 import TRIAGER from "./triage/prompts/triager.md" with { type: "text" };
 import {
@@ -43,12 +45,13 @@ import {
 	RUNNERS,
 	type Ruled,
 	Ruling,
+	revisable,
 	settle,
 	Triage,
 } from "./triage/verdict";
 
 // ADR 0008: a code node's function must be exported by its composition file.
-export { settle, toMarkdown };
+export { revisable, settle, toMarkdown };
 
 const task = (...parts: string[]) => parts.join("\n\n");
 
@@ -63,6 +66,7 @@ const TASKS = {
 	scout: task(SCOUT),
 	planner: task(fill(PLANNER, { runners: RUNNERS.join(", ") }), FIGURES, GATE),
 	checker: task(CHECKER, GATE),
+	revise: task(REVISE, QUESTIONS),
 };
 
 const Slot = Struct({ slot: Text(), group: Group });
@@ -145,7 +149,7 @@ const checker = seat("checker", { encore: false });
 export const triage = composition(
 	"triage",
 	{
-		doc: "Triage an issue against the backlog: a triager cuts the backlog and rules early, sends a small clear ask straight to the build, or asks groups of questions; a scout answers each group, a planner proposes a verdict, a checker checks a ready spec against the code, and settle classifies its risk, review tier and area and gates the verdict. Only the triager asks the owner. Read-only: it leaves no changeset.",
+		doc: "Triage an issue against the backlog: a triager rules early, sends a small ask straight to the build or asks the owner; scouts answer its questions, a planner proposes a verdict, a checker checks a ready spec against the code and the planner revises it once by the findings, then settle gates the verdict. Read-only: it leaves no changeset.",
 		params: {
 			issue: Text({
 				description: "The issue to triage: its number, title and body",
@@ -278,11 +282,36 @@ export const triage = composition(
 			out: { check: JsonOut("check.json", Checked) },
 			when: lookup(CHECKS, plan.get("verdict")),
 		});
+		const findings = allSettled([readJson(checked.out.check)], {
+			label: "check",
+		});
+		const revise = code(revisable, {
+			in: { check: findings },
+			out: { revise: Bool() },
+			label: "revisable",
+		}).out.revise;
+		const revised = planner({
+			label: "revise",
+			task: TASKS.revise,
+			lane: read(base.out.lane),
+			session: planned.out.session,
+			attachments: {
+				check: {
+					artifact: checked.out.check,
+					hint: "first, for the findings to settle",
+				},
+			},
+			out: { plan: JsonOut("plan.json", Proposal) },
+			when: revise,
+		});
 		return code(settle, {
 			in: {
 				ruling,
 				proposal: allSettled([plan], { label: "proposal" }),
-				check: allSettled([readJson(checked.out.check)], { label: "check" }),
+				check: findings,
+				revision: allSettled([readJson(revised.out.plan)], {
+					label: "revision",
+				}),
 			},
 			out: { triage: Triage },
 			label: "settle",

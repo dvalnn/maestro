@@ -401,17 +401,14 @@ const BLOCKED_OPTIONS: Option[] = [
 	RETRIAGE,
 ];
 
-/**
- * Asks the blocked agent's question `reason` on issue `number`, answered by a reply (factory.md, Rules, Build:
- * Blocked).
- */
-async function block(pass: Pass, number: number, reason: string) {
+/** The blocked agent's question: its reason is shown once, under the spec comment's Last failure. */
+const BLOCKED_ASK =
+	"The build stopped on the reason under Last failure in the spec comment. How should it go on?";
+
+/** Asks the owner about issue `number`'s blocked build, answered by a reply (factory.md, Rules, Build: Blocked). */
+async function block(pass: Pass, number: number) {
 	const questions = [
-		{
-			ask: reason.slice(BLOCKED.length).trim(),
-			options: BLOCKED_OPTIONS,
-			context: [],
-		},
+		{ ask: BLOCKED_ASK, options: BLOCKED_OPTIONS, context: [] },
 	];
 	await ask(
 		pass,
@@ -468,7 +465,7 @@ async function fail(
 	const attempts = (data.attempts ?? 0) + (blocked ? 0 : 1);
 	const waits = blocked || attempts >= ATTEMPTS;
 	const state = waits ? "needs-info" : "ready-for-agent";
-	if (blocked) await block(pass, issue.number, reason);
+	if (blocked) await block(pass, issue.number);
 	await move(pass, issue.number, state);
 	await writeSpec(pass, issue.number, state, {
 		...data,

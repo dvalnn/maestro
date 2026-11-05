@@ -1,7 +1,7 @@
 Check the attached spec against the code. Its spec is in the attached `plan.json`.
 
 Write `check.json` as `{ "findings": [...] }`, each finding one line: what the spec says against what the code shows,
-with its file:line. The findings go into the spec for the builder and the PR review; nobody is asked to rule on them.
+with its file:line. The planner revises the spec by them once, and asks the owner what only the owner can rule on.
 
 - A claim the spec makes about the base holds: every function, file, flag, behaviour and call site it names exists and
   behaves as stated, and so does everything it says a change must also update.

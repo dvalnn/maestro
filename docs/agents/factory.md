@@ -188,15 +188,15 @@ flowchart TD
 
 ### Triage
 
-Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `planner.md`, `checker.md`).
+Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `planner.md`, `checker.md`, `revise.md`).
 
-- **Routes.** The triager runs first and rules alone: a duplicate settles there, and it alone asks the owner, with a
+- **Routes.** The triager runs first and rules alone: a duplicate settles there, and it asks the owner, with a
   `needs-info` verdict. A `direct` ticket goes straight to the build, its spec the triager's `what` and `subject` with
   `just check` as acceptance; a `plan` ticket goes on to the scouts, the planner and the spec checker. Either spec is
   gated by risk as any other.
-- **Spec check.** The checker's findings, or a line saying it failed to run, go into the spec's Left out under
-  `Open after the spec check`, for the builder and the PR review; they ask the owner nothing, and neither does the
-  planner. A split is not checked.
+- **Spec check.** On findings, the planner revises its spec once in the same session; the revised spec is not checked
+  again. A finding only the owner can rule on becomes a question, as does a check or revision that failed to run. The
+  builder never sees the findings. A split is not checked.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, whatever its risk, never to
   `needs-approval`. The owner answers by replying in a comment that mentions `@<login>`, such as
   `@forge-bot Q1: no, ok results only`, then moving the ticket to `needs-triage` (to `ready-for-agent` to continue a
@@ -275,9 +275,10 @@ flowchart TD
 - **Attempts.** A `rejected` slice, an empty one included, spends an attempt and is retried with a fresh perform. After
   2 attempts the ticket goes to `needs-info`. An answer does not reset them: an answered ticket out of attempts gets one
   encore, and a rejected one goes back to `needs-info`.
-- **Blocked.** A blocked agent moves its ticket to `needs-info` with its question and spends no attempt. The question is
-  posted as a question comment offering `ready-for-agent` (continue with my answer) or `needs-triage`, answered as under
-  Triage: Answers; on `ready-for-agent` the slice continues as an encore. Obstacles never block a ticket.
+- **Blocked.** A blocked agent moves its ticket to `needs-info` and spends no attempt. Its reason shows once, under the
+  spec comment's Last failure, and a question comment asks how to go on, offering `ready-for-agent` (continue with my
+  answer) or `needs-triage`, answered as under Triage: Answers; on `ready-for-agent` the slice continues as an encore.
+  Obstacles never block a ticket.
 - **Reports.** Each settled slice's obstacles are filed as `needs-triage` `kind/bug` in the milestone, with
   `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line, a fingerprint of the text; a text whose line an open
   issue carries is not filed again. An obstacle never carries a dependency. Gaps are not filed: a landed slice's PR

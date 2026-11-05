@@ -42,7 +42,7 @@ verdict does not need them:
 
 ## Asking the owner
 
-You are the only seat that asks the owner, and the cheapest place to. Grill for a shared understanding of the intent
+You are the seat that asks the owner about intent, and the cheapest place to. Grill for a shared understanding of it
 before anyone writes a spec: what the change is for, what it must and must not do, and which of the live approaches the
 owner wants. Leave to the scouts and the planner what the code answers, and to the PR review the details of how.
 

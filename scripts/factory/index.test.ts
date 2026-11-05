@@ -1384,7 +1384,7 @@ describe("a build", () => {
 			"#### Last failure\n\n```text\nblocked: the check contradicts the spec\n```",
 		);
 		expect(questionsAt(routed)).toEqual([
-			"<!-- maestro-tm-question -->\n\n### Maestro asks · 1 question\n\n---\n\n**Q1 · the check contradicts the spec**\n\n- **`ready-for-agent`**: continue with my answer\n- **`needs-triage`**: triage it again\n\n---\n\n<sub>Reply `@forge-bot Q1: …`, then label your choice.</sub>\n",
+			"<!-- maestro-tm-question -->\n\n### Maestro asks · 1 question\n\n---\n\n**Q1 · The build stopped on the reason under Last failure in the spec comment. How should it go on?**\n\n- **`ready-for-agent`**: continue with my answer\n- **`needs-triage`**: triage it again\n\n---\n\n<sub>Reply `@forge-bot Q1: …`, then label your choice.</sub>\n",
 		]);
 		expect(t.writes.some((w) => w.startsWith("depend"))).toBe(false);
 		expect(t.starts.filter((a) => a.includes("--request"))).toEqual([]);

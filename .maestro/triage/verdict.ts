@@ -76,8 +76,6 @@ export const RUNNERS = ["bun", "bunx", "just", "mise"];
 
 /** The acceptance of a direct build: the target's whole gate. */
 const GATE_COMMAND = "just check";
-/** The lead of what the spec check found, left in the spec for the build and the review. */
-const CHECKED = "Open after the spec check";
 const NO_TOUCHES = "Which paths does the change create or edit?";
 const NO_ACCEPTANCE = `Which command proves the change done? Acceptance commands start with ${RUNNERS.join(", ")}.`;
 const outsideRepo = (paths: string[]) =>
@@ -124,7 +122,6 @@ const SpecPart = shape(
 	{ ...SPEC_FIELDS, requirements: List(Text()), consequences: Text() },
 	{ figures: Figures },
 );
-type SpecPart = ValueOf<typeof SpecPart>;
 /** A triage spec; a direct ruling's has no requirements, figures or consequences. */
 const Spec = shape(
 	{ touches: List(Text()), ...SPEC_FIELDS },
@@ -197,7 +194,10 @@ export const Question = shape(
 );
 export type Question = ValueOf<typeof Question>;
 
-/** The planner's proposal: `touches` whatever the verdict, and the part each verdict needs. */
+/**
+ * The planner's proposal: `touches` whatever the verdict, and the part each verdict needs. A revision adds the
+ * `questions` its spec check left for the owner.
+ */
 export const Proposal = shape(
 	{
 		verdict: Enum(PROPOSED),
@@ -208,6 +208,7 @@ export const Proposal = shape(
 		spec: SpecPart,
 		children: Children,
 		related: List(Int()),
+		questions: List(Question),
 	},
 	[needs("ready-for-agent", "spec"), needs("split", "children")],
 );
@@ -422,22 +423,19 @@ const relatedOf = (related?: number[]) => (related?.length ? { related } : {});
 
 const askAlone = (ask: string): Question => ({ ask, options: [], context: [] });
 
-/** `spec` with the spec check's `findings`, when it has any, as the last of what it leaves out. */
-function withFindings(spec: SpecPart, findings: string[]): SpecPart {
-	if (!findings.length) return spec;
-	const open = { lead: CHECKED, points: findings };
-	return { ...spec, excluded: [...spec.excluded, open] };
-}
-
 /**
- * The triage of a planner's `proposal`, its gaps asked of the owner and the spec check's `findings` left in its spec. A
- * ready proposal's spec stays in the result whatever the verdict, for a re-triage to continue and the owner to approve.
+ * The triage of a planner's `proposal`, asking the owner its gaps, its own questions and `unrun`. A ready proposal's
+ * spec stays in the result whatever the verdict, for a re-triage to continue and the owner to approve.
  */
-function proposed(proposal: Proposal, findings: string[]): Triage {
+function proposed(proposal: Proposal, unrun: string[]): Triage {
 	const { touches, spec, children, related } = proposal;
 	const contract = proposal.contract.trim();
 	const classified = classify(touches, contract);
-	const questions = gapsOf(proposal).map(askAlone);
+	const questions = [
+		...gapsOf(proposal).map(askAlone),
+		...(proposal.questions ?? []),
+		...unrun.map(askAlone),
+	];
 	const verdict = verdictOf(proposal.verdict, classified.risk, questions);
 	return {
 		verdict,
@@ -447,7 +445,7 @@ function proposed(proposal: Proposal, findings: string[]): Triage {
 			spec && {
 				spec: {
 					touches: scopeOf(touches).paths,
-					...withFindings(spec, findings),
+					...spec,
 				},
 			}),
 		...(verdict === "split" && { children }),
@@ -492,42 +490,56 @@ function recommendable({ recommend, ...question }: Question): Question {
 	return named ? { ...question, recommend } : question;
 }
 
-/** The spec check's findings: those it found, none when it was skipped, or the one saying it failed to run. */
-function findingsOf(check: Settled<Checked>[]): string[] {
+/** Whether the planner revises its plan: the spec check ran and found the spec failing. */
+export function revisable({ check }: { check: Settled<Checked>[] }): {
+	revise: boolean;
+} {
 	const [checked] = check;
-	if (checked?.outcome === "ok") return checked.value.findings;
-	if (!checked || checked.outcome === "skipped") return [];
-	return [`The spec check did not run: ${checked.reason}.`];
+	return {
+		revise: checked?.outcome === "ok" && checked.value.findings.length > 0,
+	};
 }
 
-/** The triage of `ruling`, or of the planner's proposal when the triager handed the issue on. */
-function triageOf(
-	ruling: Ruling,
-	proposal: Settled<Proposal>[],
-	check: Settled<Checked>[],
-): Triage {
+/** The question saying `step` failed to run, none when it ran or was skipped. */
+function unrunOf(step: string, [settled]: Settled<unknown>[]): string[] {
+	if (!settled || settled.outcome === "ok" || settled.outcome === "skipped")
+		return [];
+	return [`The ${step} did not run: ${settled.reason}.`];
+}
+
+type Planned = {
+	proposal: Settled<Proposal>[];
+	check: Settled<Checked>[];
+	revision: Settled<Proposal>[];
+};
+
+/**
+ * The triage of `ruling`, or of the planner's proposal when the triager handed the issue on: its `revision` when the
+ * planner revised it by the spec `check`, asking the owner when either failed to run.
+ */
+function triageOf(ruling: Ruling, { proposal, check, revision }: Planned) {
 	if (ruling.verdict !== "plan") return ruled(ruling, ruling.verdict);
 	const [planned] = proposal;
 	if (planned?.outcome !== "ok")
 		throw new Error("the planner gave no proposal");
-	return proposed(planned.value, findingsOf(check));
+	const [revised] = revision;
+	const final = revised?.outcome === "ok" ? revised.value : planned.value;
+	const unrun = [
+		...unrunOf("spec check", check),
+		...unrunOf("planner's revision", revision),
+	];
+	return proposed(final, unrun);
 }
 
 /**
  * The triage verdict: the triager's early ruling or the planner's proposal, which it only ever downgrades or gates,
- * never upgrades. A failure the spec check found, or a check that failed to run, is left in the spec for the build.
+ * never upgrades. A spec check or revision that failed to run is asked of the owner.
  * @throws Error when the triager handed the issue on and the planner gave no proposal.
  */
-export function settle({
-	ruling,
-	proposal,
-	check,
-}: {
-	ruling: Ruling;
-	proposal: Settled<Proposal>[];
-	check: Settled<Checked>[];
-}): { triage: Triage } {
-	const triage = triageOf(ruling, proposal, check);
+export function settle({ ruling, ...planned }: { ruling: Ruling } & Planned): {
+	triage: Triage;
+} {
+	const triage = triageOf(ruling, planned);
 	return {
 		triage: { ...triage, questions: triage.questions.map(recommendable) },
 	};

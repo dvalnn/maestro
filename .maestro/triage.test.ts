@@ -100,6 +100,7 @@ async function performed(
 	ruling: Ruling,
 	proposal?: Proposal,
 	check: Checked = { findings: [] },
+	revision?: Proposal,
 ) {
 	const outputs = stubOutputs({
 		"triager/ruling.json": ruling,
@@ -110,6 +111,7 @@ async function performed(
 			"planner/plan.json": proposal,
 			"checker/check.json": check,
 		}),
+		...(revision && { "revise/plan.json": revision }),
 	});
 	const data = mkdtempSync(join(scratch, "data-"));
 	const concert = JSON.parse(
@@ -255,6 +257,7 @@ test.each(verdicts)(
 		expect([statuses("scouts"), statuses("planner")]).toEqual([[ran], [ran]]);
 		const checked = proposal?.verdict === "ready-for-agent" ? "ok" : "skipped";
 		expect(statuses("checker")).toEqual([checked]);
+		expect(statuses("revise")).toEqual(["skipped"]);
 		if (!proposal) return;
 		expect(statuses("scouts/scout")).toEqual(["ok", "ok"]);
 		const answers = artifact("answers", "answers");
@@ -265,26 +268,28 @@ test.each(verdicts)(
 	},
 );
 
-test("a stub perform leaves a failing check's findings in a ready spec", async () => {
-	const { concert } = await performed(planning, ready, {
-		findings: [failed],
-	});
+test("a stub perform has the planner revise a ready spec by a failing check's findings, asking its questions", async () => {
+	const revised = { ...ready, spec: { ...spec, what: "revised" } };
+	const { concert, statuses } = await performed(
+		planning,
+		ready,
+		{ findings: [failed] },
+		{ ...revised, questions: [claiming] },
+	);
 	expect(concert.status).toBe("ok");
+	expect(statuses("revise")).toEqual(["ok"]);
 	expect(concert.outputs.triage).toMatchObject({
-		verdict: "ready-for-agent",
-		questions: [],
+		verdict: "needs-info",
+		questions: [claiming],
 	});
-	expect(concert.outputs.triage.spec.excluded).toContainEqual({
-		lead: "Open after the spec check",
-		points: [failed],
-	});
+	expect(concert.outputs.triage.spec.what).toBe("revised");
 });
 
 /** The composed plan of the triage, with `--backlog`. */
 const composed = async () =>
 	JSON.parse(await maestro(await triage("compose", "--backlog", backlog)));
 
-test("compose seats the triager on sonnet, the scouts on haiku, the planner on opus at high and the spec checker on terra at medium", async () => {
+test("compose seats the triager on sonnet, the scouts on haiku, the planner and its revision on opus at high and the spec checker on terra at medium", async () => {
 	const { agents } = await composed();
 	const seated = (
 		agents as { profile: string; model: string; thinking: string }[]
@@ -293,6 +298,7 @@ test("compose seats the triager on sonnet, the scouts on haiku, the planner on o
 		.sort();
 	expect(seated).toEqual([
 		["checker", "github-copilot/gpt-6.1-terra", "medium"],
+		["classics/planner", "claude-opus-5-5", "high"],
 		["classics/planner", "claude-opus-5-5", "high"],
 		["classics/scout", "claude-haiku-5-5", "medium"],
 		["triager", "claude-sonnet-5-5", "medium"],
