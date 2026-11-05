@@ -60,6 +60,7 @@ export const INPUTS = [
 ] as const;
 export type Input = (typeof INPUTS)[number];
 
+/** Whether `text` names an input, such as `down` or `enter`. */
 export const isInput = (text: string): text is Input =>
 	(INPUTS as readonly string[]).includes(text);
 

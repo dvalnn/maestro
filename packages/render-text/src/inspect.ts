@@ -71,7 +71,10 @@ const INSPECTOR_HINTS = [
 	"^C quit",
 ];
 
-/** The events of the instances the row keyed `key` stands for, in their order. */
+/**
+ * The events of the instances the row keyed `key` stands for, in their order: an item row's one instance, any other
+ * row's instances at or under its node in its context.
+ */
 export const selected = <T extends NodeInstance>(
 	graph: GraphIndex,
 	key: string,
@@ -261,7 +264,10 @@ function drawnOf(
 
 /**
  * The inspector on the row keyed `key`: its title and summary, the lines of its events as `eventLine` draws them, and
- * their count. One instance of the row's own node is summarised in full, any other row counts the instances under it.
+ * their count. One instance of the row's own node is summarised in full: its context, state, times, tokens, actor, a
+ * `stale` mark, its reason or latest progress, its metrics by name when recorded, and a `files` line naming the
+ * `maestro art` that serves its artifacts. Any other row counts the instances under it by state, with tokens and span.
+ * `held.events` only grows, so only the events new since the last call are drawn.
  */
 export function inspectorLines(
 	ir: Ir,

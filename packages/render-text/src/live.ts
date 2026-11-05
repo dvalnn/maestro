@@ -690,7 +690,9 @@ function keySegs(nav: Nav, settled: boolean, limit: number): Seg[] {
 /**
  * The live graph to browse, in `view.rows` lines within `columns - 1` cells: the header, `now` and `last`, a viewport
  * of the rows of `rowsOf` folded as `prior` says, a rule of counts with the rows in view, the cursor row's detail, and
- * the key line. Following, the cursor goes to the follow target. `agents` says what executes each agent instance and its
+ * the key line. A row opened or closed by hand stays so and the rows above the cursor open; a pinned round shows in
+ * place of the latest, marked `(history)`. Following, the cursor goes to the follow target, the latest started running
+ * instance (its aggregated row under a fan-out), and once the concert settled the last failure. `agents` says what executes each agent instance and its
  * tokens.
  */
 export function browse(
