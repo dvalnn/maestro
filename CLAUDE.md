@@ -60,6 +60,11 @@ one runnable check behind. Trivial one-liners need no test.
 `CODING_STANDARDS.md` holds the standards code is reviewed against: function shape, types, comments and user-facing
 output. Read it before writing or reviewing code.
 
+## Docs
+
+`docs/README.md` maps each topic to its one home doc, and holds the doc conventions. Read it before adding to or editing
+any doc.
+
 ## Codebase Architecture:
 
 Invoke and follow the `codebase-design` skill when the task at hand impacts the overall project structure. Care for the
