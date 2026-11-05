@@ -1,57 +1,55 @@
 # Issue tracker: Forgejo
 
-Issues live on the forge, [`tiago/maestro`](https://git.amorimcasa.org/tiago/maestro/issues), driven by `fj` as
-`forge-bot` (`FJ_USE_BOT=1`, set in `.claude/settings.json`). Never `gh` or `glab`. What `fj` cannot do goes through the
+For agents and the owner: where issues live, their shape, and how a slice reports. Issues live on the forge,
+[`tiago/maestro`](https://git.amorimcasa.org/tiago/maestro/issues), driven by `fj` as `forge-bot` (`FJ_USE_BOT=1`, set
+in `.claude/settings.json`). Never `gh` or `glab`; `fj --help` lists the commands. What `fj` cannot do goes through the
 `forgejo` skill's `forge.py api`.
 
-`.scratch/` is untracked working space for drafts and the session handoff. Nothing in it is an issue.
+`.scratch/` is untracked working space for drafts and the session handoff; nothing in it is an issue.
 
 ## The issue
 
-- **Body.** The ask: a slice brief or a backlog item. Only the ask above the marker (below) stops changing once work
-  starts; an agreed scope change is a comment saying what changed and who agreed it.
+- **Body.** The ask: a slice brief or a backlog item. Once work starts, the ask stops changing; an agreed scope change
+  is a comment saying what changed and who agreed it.
 - **Citations.** An issue or brief cites only ids the repo or tracker holds (requirement IDs, ADRs, issue numbers),
   never a call tag from a chat session (`D26`, `E118`).
 - **Labels.** One `kind/` and one `state/` label (`triage-labels.md`). Both scopes are exclusive, so adding a `state/`
   label replaces the old one.
-- **Tour manager.** The ask sits above a `<!-- maestro-tm -->` marker and stops changing. Below it the tour manager
-  keeps one line linking its spec comment, `Spec vN`, which it edits in place: the spec (or a split's child list) triage
-  wrote, related issues (`Relates to #N`), the last slice concert and its failure, and whose move it is. Its questions
-  are comments of their own that stay; the owner answers in a reply mentioning `@forge-bot`, the login it acts as; any
-  other comment is not read. See `factory.md`.
+- **Tour manager.** The ask sits above a `<!-- maestro-tm -->` marker and stops changing; below it the tour manager
+  keeps one line linking its spec comment. The owner answers its questions in a reply mentioning `@forge-bot`, the login
+  it acts as; any other comment is not read. Surfaces and rules: `factory.md`.
 - **Milestone.** The release that ships it, named by its version (`v0.1.0`). Only the next release or two have one; an
   issue with none is icebox, an indefinite deferral. Planned but not ready is a milestone beside `state/needs-triage`.
   Pre-releases (`-rc.<n>`) have no milestone: they are cuts toward the one that does.
 - **Closing.** A commit on `main` whose description says `Closes #N` closes it when the owner pushes, or when a tour
   manager PR carrying it merges (auto-merge included). A duplicate is closed at once with `state/duplicate` and a
-  back-reference. An epic closes when its last child does. A slice's report is the closing comment (below). Nothing else
-  closes an issue.
+  back-reference. An epic closes when its last child does. Nothing else closes an issue.
 
 ## Commands
 
+`fj` has a verb for issues, labels, comments and search. Two things its help cannot say:
+
+- `fj issue edit <n> body` opens an editor; prefer a comment once work has started.
+- `fj issue search --labels` filters by label, and `--state all` includes closed issues.
+
+The rest goes through `forge.py`:
+
 ```
-fj issue create "<title>" --body-file <file>         # prints the new issue's number
-fj issue edit <n> labels --add kind/enhancement --add state/needs-triage
-fj issue edit <n> body                               # opens an editor; prefer a comment once work has started
-fj issue view <n>                                    # title and body
-fj issue view <n> comments
-fj issue comment <n> --body-file <file>
-fj issue search [query] --labels state/ready-for-agent [--state all]
 forge.py api GET /milestones                         # ids for the releases
 forge.py api PATCH /issues/<n> '{"milestone": <id>}'
 forge.py api POST /issues/<n>/dependencies '{"owner": "tiago", "repo": "maestro", "index": <blocker>}'
 ```
 
-`forge.py` is `.claude/skills/forgejo/scripts/forge.py`, agent tooling run by agents and the owner. No repository script
-runs it: the tour manager calls the forge's REST API itself, in `scripts/factory/forge.ts`.
+`forge.py` is `.claude/skills/forgejo/scripts/forge.py`, agent tooling; the tour manager calls the REST API itself, in
+`scripts/factory/forge.ts`.
 
 ## When a skill says "publish to the issue tracker"
 
-Create an issue with `fj issue create`, then set its labels and, if a release ships it, its milestone.
+Create the issue, then set its labels and, if a release ships it, its milestone.
 
 ## When a skill says "fetch the relevant ticket"
 
-`fj issue view <n>` and `fj issue view <n> comments`. The user normally passes the number.
+View the issue and its comments. The user normally passes the number.
 
 ## A slice brief and its report
 

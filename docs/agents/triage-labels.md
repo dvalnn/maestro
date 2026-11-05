@@ -1,36 +1,34 @@
 # Triage labels
 
-The skills speak of canonical roles: a **category** saying what kind of request it is, and a **state** saying where it
-sits. A triaged issue carries exactly one of each. Each family is an exclusive label scope on the forge, so the forge
-keeps it to one.
+For agents and the owner: the label set and what each label means. Skills speak of roles: a **category** (what kind of
+request) and a **state** (where it sits). A triaged issue carries one of each; each is an exclusive label scope, so the
+forge keeps it to one.
 
-| Role              | Label                   | Meaning                                            |
-| ----------------- | ----------------------- | -------------------------------------------------- |
-| `bug`             | `kind/bug`              | Something is broken                                |
-| `enhancement`     | `kind/enhancement`      | New feature or improvement                         |
-| `needs-triage`    | `state/needs-triage`    | Maintainer needs to evaluate this issue            |
-| `needs-info`      | `state/needs-info`      | Waiting on reporter for more information           |
-| `ready-for-agent` | `state/ready-for-agent` | Fully specified, ready for an AFK agent            |
-| `ready-for-human` | `state/ready-for-human` | Requires human implementation                      |
-| `wontfix`         | `state/wontfix`         | Will not be actioned; close it too                 |
-| `needs-approval`  | `state/needs-approval`  | Spec or split waits for the owner's go             |
-| `in-progress`     | `state/in-progress`     | Being built: a slice concert or an epic's children |
-| `in-review`       | `state/in-review`       | PR open, waiting on CI and review                  |
-| `duplicate`       | `state/duplicate`       | Repeats another issue; close it too                |
-| `epic`            | `kind/epic`             | An ask split into child issues                     |
+| Role              | Label                   | Meaning                                              |
+| ----------------- | ----------------------- | ---------------------------------------------------- |
+| `bug`             | `kind/bug`              | Something is broken                                  |
+| `enhancement`     | `kind/enhancement`      | New feature or improvement                           |
+| `needs-triage`    | `state/needs-triage`    | Filed or sent back; waits for triage                 |
+| `needs-info`      | `state/needs-info`      | Waiting on the owner's answer to a question          |
+| `ready-for-agent` | `state/ready-for-agent` | Triaged and specified; the tick builds it            |
+| `ready-for-human` | `state/ready-for-human` | The owner builds it; the tour manager never takes it |
+| `wontfix`         | `state/wontfix`         | Will not be actioned; close it too                   |
+| `needs-approval`  | `state/needs-approval`  | Spec or split waits for the owner's go               |
+| `in-progress`     | `state/in-progress`     | Being built: a slice concert or an epic's children   |
+| `in-review`       | `state/in-review`       | PR open, waiting on CI and review                    |
+| `duplicate`       | `state/duplicate`       | Repeats another issue; close it too                  |
+| `epic`            | `kind/epic`             | An ask split into child issues                       |
 
-"Done" is the forge's closed state, not a label. A closed issue keeps its `kind/` label and drops its `state/` one,
-unless it is `state/wontfix` or `state/duplicate`; `.forgejo/workflows/clear-state-on-close.yml` does the dropping when
-an issue closes.
+"Done" is the forge's closed state, not a label. On close, `.forgejo/workflows/clear-state-on-close.yml` drops the
+`state/` label, unless it is `state/wontfix` or `state/duplicate`; the `kind/` label stays.
 
-A state says how ready an issue is, never when it ships: the milestone says that (`issue-tracker.md`). An open issue
-with no milestone is icebox; no label marks it.
+A state says how ready an issue is, never when it ships: the milestone says that (`issue-tracker.md`).
 
-`state/ready-for-human` means the tour manager never takes the issue. `state/needs-approval`, `state/in-progress` and
-`state/in-review` belong to the tour manager, whose state machine and label moves are in `factory.md`.
+`state/needs-approval`, `state/in-progress` and `state/in-review` belong to the tour manager. Its state machine and what
+each label makes it do are in `factory.md`.
 
-`maestro-tm:halt` sits outside both families: it marks the open issue the tour manager files when it halts, and closing
-that issue lifts the halt.
+`maestro-tm:halt` sits outside both families: it marks the issue the tour manager files when it halts; closing it lifts
+the halt.
 
 Two more exclusive scopes sit beside `kind/` and `state/`:
 
@@ -43,4 +41,4 @@ Two more exclusive scopes sit beside `kind/` and `state/`:
     `core` covers `ir`, `core`, `sdk` and `testkit`; `cli` covers `cli` and `render-text`; `host` covers `host-repo`,
     `host-repo-sdk` and the harnesses; `factory` covers `scripts/factory/` and `.maestro/`.
 
-Read the forge's list before using a name: `fj` refuses a label the repo does not have.
+`fj` refuses a label the repo does not have; read the forge's list first.

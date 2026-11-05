@@ -5,7 +5,7 @@ This is maestro. An agentic orchestration engine, cli and software factory enabl
 inheriting its strengths and lessons learned while dropping tech debt and providing a clutter free way of moving forward
 with new ideas.
 
-## Mission Goals:
+## Mission goals
 
 1. Ship maestro as `v0.1.0`, then by semver: a patch bump for a change that breaks nothing, a minor bump for one that
    breaks, and a `-rc.<n>` pre-release before a minor for field testing. Each stable release is a Forgejo milestone
@@ -18,7 +18,7 @@ with new ideas.
 
 ## Default coding disposition
 
-Per mission goal #2, avoid overengineering and unnecessary complexity. Ask: "Would a senior engineer say this is
+Per mission goal 2, avoid overengineering and unnecessary complexity. Ask: "Would a senior engineer say this is
 overcomplicated?" If yes, simplify.
 
 Before writing any code, stop at the first rung that holds:
@@ -65,7 +65,7 @@ output. Read it before writing or reviewing code.
 `docs/README.md` maps each topic to its one home doc, and holds the doc conventions. Read it before adding to or editing
 any doc.
 
-## Codebase Architecture:
+## Codebase architecture
 
 Invoke and follow the `codebase-design` skill when the task at hand impacts the overall project structure. Care for the
 codebase. A well built, maintainable system is more important and mission critical, than a system that 'just works'.
