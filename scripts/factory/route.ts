@@ -574,12 +574,14 @@ function waitsOn(state: State, data: Data) {
 
 const isState = (label: string) => STATES.some((s) => s === label);
 
+const LABEL_HOW = "Label the issue with the choice.";
+
 /**
  * How to take one of `moves`: on the forge, else by label, after a reply mentioning `@login` where a move follows one.
  */
 const turnHow = (moves: readonly Option[], login: string) =>
 	moves.every((m) => isState(m.label))
-		? `Label the issue with the choice. Where it follows a reply, first reply \`@${login} …\` with the answer or a redirect.`
+		? `${LABEL_HOW} Where it follows a reply, first reply \`@${login} …\` with the answer or a redirect.`
 		: "Take the choice on the forge.";
 
 /**
@@ -598,19 +600,26 @@ export function turnLines(
 	).flatMap((t) => (t.turn ? [t.turn] : []));
 	if (!moves.length)
 		return [`**Tour manager's turn · ${tourMove(state, data, waiting)}**`, ""];
-	return [
-		RULE,
-		"",
-		`**Maintainer's turn · ${waitsOn(state, data)}**`,
-		"",
-		...moves.map(({ label, text }) =>
-			optionLine({ label: `\`${label}\``, text }),
-		),
-		"",
-		...closingLines(turnHow(moves, login)),
-		"",
-	];
+	return maintainerLines(waitsOn(state, data), moves, turnHow(moves, login));
 }
+
+/** The maintainer's turn after a rule: what `waits`, `moves` as bullets, then `how` to take one. */
+const maintainerLines = (
+	waits: string,
+	moves: readonly Option[],
+	how: string,
+) => [
+	RULE,
+	"",
+	`**Maintainer's turn · ${waits}**`,
+	"",
+	...moves.map(({ label, text }) =>
+		optionLine({ label: `\`${label}\``, text }),
+	),
+	"",
+	...closingLines(how),
+	"",
+];
 
 /** The version of a spec no routed triage has written yet. */
 const FIRST_VERSION = 1;
@@ -1000,9 +1009,17 @@ export function parseHarvest(value: unknown): Harvest {
 export const proposalLine = (p: Proposal) =>
 	fingerprintLine(`${p.target}\n${p.title}\n${p.body}`);
 
-/** The title and body of the issue proposal `p` is filed as. */
+const PROPOSAL_MOVES: readonly Option[] = [
+	{ label: "needs-triage", text: "specify and build it." },
+	{ label: "wontfix", text: "drop it." },
+];
+
+/**
+ * The title and body of the issue proposal `p` is filed as: the ask, its agent text made inert and its fingerprint
+ * last, then the marker and the maintainer's turn.
+ */
 export function proposalIssue(p: Proposal) {
-	const body = [
+	const ask = [
 		`Target: \`${p.target}\``,
 		"",
 		p.body.trim(),
@@ -1010,10 +1027,16 @@ export function proposalIssue(p: Proposal) {
 		"## Lessons",
 		"",
 		...p.lessons.map((l) => `- ${l}`),
-		"",
-		"Label `needs-triage` to specify and build it, `wontfix` to drop it.",
-		"",
-		proposalLine(p),
-	];
-	return { title: p.title, body: body.join("\n") };
+	].map(inert);
+	const turn = maintainerLines(
+		"the proposal awaits approval",
+		PROPOSAL_MOVES,
+		LABEL_HOW,
+	);
+	return {
+		title: inert(p.title),
+		body: [[...ask, "", proposalLine(p)].join("\n"), MARKER, turn.join("\n")]
+			.join(SEPARATOR)
+			.trimEnd(),
+	};
 }

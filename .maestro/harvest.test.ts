@@ -90,6 +90,7 @@ const outputs: [string, object, boolean][] = [
 		true,
 	],
 	["a new ADR", proposing({ ...one, target: "docs/adr/" }), true],
+	["the checks' recipes", proposing({ ...one, target: "justfile" }), true],
 	["no proposals", proposing(), true],
 	["README.md", proposing({ ...one, target: "README.md" }), false],
 	["a named ADR", proposing({ ...one, target: "docs/adr/0020-x.md" }), false],

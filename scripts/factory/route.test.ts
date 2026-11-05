@@ -7,6 +7,7 @@ import {
 	dataOf,
 	elapsed,
 	FIGURES,
+	MARKER,
 	parseHarvest,
 	parseTriage,
 	proposalIssue,
@@ -608,16 +609,36 @@ test.each([
 	expect(() => parseHarvest({ proposals: [proposal] })).toThrow("proposals");
 });
 
-test("a proposal's issue holds its target, body, lessons and the owner's moves, and ends in its fingerprint", () => {
-	const { title, body } = proposalIssue(PROPOSAL);
-	expect(title).toBe(PROPOSAL.title);
-	expect(body).toContain("Target: `docs/agents/factory.md`");
-	expect(body).toContain("Add a line to the Rules.");
-	expect(body).toContain("- run just fmt first\n- format before the checks");
-	expect(body).toContain(
-		"Label `needs-triage` to specify and build it, `wontfix` to drop it.",
+test("a proposal's issue asks its target, body, lessons and fingerprint, then gives the maintainer's turn", () => {
+	const proposal = {
+		...PROPOSAL,
+		title: "Format <!-- first",
+		body: "Add <!-- this --> to the Rules.",
+	};
+	const { title, body } = proposalIssue(proposal);
+	expect(title).toBe("Format <! -- first");
+	const ask = askOf(body);
+	expect(ask).toStartWith(
+		"Target: `docs/agents/factory.md`\n\nAdd <! -- this --> to the Rules.",
 	);
-	expect(body.endsWith(proposalLine(PROPOSAL))).toBe(true);
+	expect(ask).toContain("- run just fmt first\n- format before the checks");
+	expect(ask).toEndWith(proposalLine(proposal));
+	expect(body).toEndWith(
+		[
+			MARKER,
+			"",
+			"---",
+			"",
+			"**Maintainer's turn · the proposal awaits approval**",
+			"",
+			"- **`needs-triage`**: specify and build it.",
+			"- **`wontfix`**: drop it.",
+			"",
+			"---",
+			"",
+			"<sub>Label the issue with the choice.</sub>",
+		].join("\n"),
+	);
 });
 
 test("a proposal's fingerprint changes with its title and ignores case and folded whitespace", () => {

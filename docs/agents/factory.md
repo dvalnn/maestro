@@ -308,9 +308,9 @@ A harvest is due when the newest concert is not a harvest and at least 10 settle
 The **watermark** is the newest ok harvest concert in maestro's record, not state the tick keeps. A failed harvest is
 retried only after another factory run settles; a non-ok or malformed one is reported and does not halt.
 
-A settled harvest files one `needs-approval` + `kind/enhancement` issue per proposal, only while the harvest is the
-newest concert, deduplicated by a fingerprint over target, title and body against open issues and the 20 newest closed
-ones. The owner labels `needs-triage` to specify and build a proposal, or `wontfix` to drop it.
+A settled harvest files one `needs-approval` + `kind/enhancement` + `maestro-tm:harvest` issue per proposal, only while
+the harvest is the newest concert, deduplicated by a fingerprint over target, title and body against open issues and the
+20 newest closed ones. The planner writes each proposal by `_plain.md`. Forge surfaces: Proposal issue shows the issue.
 
 ## Forge surfaces
 
@@ -329,6 +329,36 @@ comment is created or its version changes.
 <!-- maestro-tm -->
 
 Tracked by Maestro Tour Manager · [spec v<N>](#issuecomment-<id>)
+```
+
+### Proposal issue
+
+A settled harvest files one per proposal. The ask holds the target, the body, the lessons and the fingerprint, which
+sits last so a later harvest finds it; a triage replaces everything below the marker with the closing line.
+
+```markdown
+Target: `<target>`
+
+<body>
+
+## Lessons
+
+- <lesson>
+
+<!-- factory-fingerprint <hash> -->
+
+<!-- maestro-tm -->
+
+---
+
+**Maintainer's turn · the proposal awaits approval**
+
+- **`needs-triage`**: specify and build it.
+- **`wontfix`**: drop it.
+
+---
+
+<sub>Label the issue with the choice.</sub>
 ```
 
 ### Spec comment

@@ -82,6 +82,7 @@ const LOCK_NB = 4;
 /** Linux's EWOULDBLOCK, which is EAGAIN. */
 const EWOULDBLOCK = 11;
 export const HALT = "maestro-tm:halt";
+const HARVEST_LABEL = "maestro-tm:harvest";
 export const MILESTONE_KEY = "MAESTRO_TM_MILESTONE";
 const REPO = resolve(import.meta.dir, "../..");
 const TRIAGE_FILE = join(REPO, ".maestro/triage.ts");
@@ -838,8 +839,8 @@ function harvestOf(result: Result): Harvest | string {
 }
 
 /**
- * Files each proposal of harvest `id` as a `needs-approval` enhancement, unless an open issue or one of the newest
- * closed ones carries its fingerprint.
+ * Files each proposal of harvest `id` as a `needs-approval` enhancement labelled `maestro-tm:harvest`, unless an
+ * open issue or one of the newest closed ones carries its fingerprint.
  */
 async function fileProposals(pass: Pass, id: string, harvest: Harvest) {
 	const [open, closed] = await Promise.all([
@@ -854,7 +855,7 @@ async function fileProposals(pass: Pass, id: string, harvest: Harvest) {
 		const number = await pass.forge.file({
 			...filed,
 			milestone: pass.milestoneId,
-			labels: ["state/needs-approval", "kind/enhancement"],
+			labels: ["state/needs-approval", "kind/enhancement", HARVEST_LABEL],
 		});
 		bodies.push(filed.body);
 		pass.say(`filed #${number}, proposed by harvest ${id}`);

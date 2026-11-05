@@ -13,9 +13,10 @@ import {
 	type ValueOf,
 } from "@maestro/sdk";
 import PLANNER from "./harvest/prompts/planner.md" with { type: "text" };
+import PLAIN from "./triage/prompts/_plain.md" with { type: "text" };
 
-/** What a promotion changes, the factory's agents' standing text or its own code: a path, or `docs/adr/` for a new ADR. */
-export const TARGET = String.raw`^(CODING_STANDARDS\.md|docs/adr/|\.maestro/\S+|scripts/factory/\S+)$`;
+/** What a promotion changes: a path, or `docs/adr/` for a new ADR. */
+export const TARGET = String.raw`^(CODING_STANDARDS\.md|docs/adr/|justfile|\.maestro/\S+|scripts/factory/\S+)$`;
 
 export const Promotion = Struct({
 	target: Json<string>({ type: "string", pattern: TARGET }),
@@ -42,7 +43,7 @@ export function harvested({ harvest }: { harvest: Harvest }): {
 export const harvest = composition(
 	"harvest",
 	{
-		doc: "Merge many concerts' lessons into proposals for the factory's prompts, standards and code: a planner clusters the lessons, drops what those or the backlog already covers, and proposes a target, title and wording for each. Read-only: it leaves no changeset.",
+		doc: "Merge many concerts' lessons into proposals for the factory's prompts, standards, compositions, config, checks and code: a planner clusters the lessons, drops what those or the backlog already covers, and proposes a target, title and wording for each. Read-only: it leaves no changeset.",
 		params: {
 			lessons: Markdown({
 				description:
@@ -60,7 +61,7 @@ export const harvest = composition(
 		const base = check(fresh(), { run: "true" }, { label: "base" });
 		const planned = planner({
 			label: "planner",
-			task: PLANNER,
+			task: [PLANNER, PLAIN].join("\n\n"),
 			lane: read(base.out.lane),
 			attachments: {
 				lessons: {

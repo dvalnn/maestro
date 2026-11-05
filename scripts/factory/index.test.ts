@@ -2299,8 +2299,8 @@ describe("harvest", () => {
 		});
 		await t.run();
 		expect(t.writes).toEqual([
-			"file #100 one: state/needs-approval kind/enhancement",
-			"file #101 two: state/needs-approval kind/enhancement",
+			"file #100 one: state/needs-approval kind/enhancement maestro-tm:harvest",
+			"file #101 two: state/needs-approval kind/enhancement maestro-tm:harvest",
 		]);
 		expect(t.find(100).milestone).toBe(MILESTONE_ID);
 		expect(t.said).toContain("filed #100, proposed by harvest h1");
@@ -2322,7 +2322,7 @@ describe("harvest", () => {
 		});
 		await t.run();
 		expect(t.writes).toEqual([
-			"file #100 one: state/needs-approval kind/enhancement",
+			"file #100 one: state/needs-approval kind/enhancement maestro-tm:harvest",
 		]);
 	});
 
