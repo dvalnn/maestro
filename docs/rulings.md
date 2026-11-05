@@ -120,6 +120,16 @@ A decision sets direction; a ruling settles a question the requirements left ope
 - **R-07 A pack listed under `packs:` wins over an installed pack of the same id**, on every command that loads packs.
   Why: the operator named it on purpose, and an installed copy of an older release must not shadow a pack under
   development. Two installed packs of one id are still refused. Applies in `cli`'s `config` module (`packDirs`).
+- **R-09 A command that only reads shows what it can; one that spends or writes refuses on any gap.** A reading view,
+  such as `compose --graph`, `config` or `agent show`, prints what the gaps leave it, then reports each gap on stderr;
+  an error-severity gap still exits non-zero ([CLI-01](requirements.md#cli-cli)). `perform`, `resume`, `encore` and
+  `changeset apply` keep refusing before they start. Why: a view is how the operator finds a gap, so refusing it hides
+  the very thing they came to see.
+- **R-10 `cli` speaks a host's words only where it wires the built-in hosts and in their commands.** Its `hosts` module
+  wires them, and `agent` and `changeset` are the repo host's commands. What a host's view holds, such as a profile's
+  sections, is the host package's to say, and `cli` renders it as `HostText` is rendered. The rest of `cli` is
+  domain-free ([CORE-12](requirements.md#core-graph-and-engine-core)). Why: there is one host, and a `Host` hook for
+  commands would add a core contract no second host uses yet.
 
 ### Agents
 
