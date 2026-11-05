@@ -2,7 +2,7 @@ import irSchema from "../ir.schema.json";
 import { EXPANSION_PATTERN } from "./expansion";
 import type { JsonSchema } from "./types";
 
-/** The runtime value of an artifact port (ADR 0007). Its rules are in README.md, "Type markers". */
+/** The runtime value of an artifact port (ADR 0007). Its rules are in README.md, "Type markers and ArtifactRef". */
 export type ArtifactRef = {
 	path: string;
 	contentHash: string;

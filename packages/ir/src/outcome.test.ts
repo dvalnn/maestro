@@ -78,7 +78,7 @@ test.each(readdirSync(fixturesDir).filter((f) => f.endsWith(".json")))(
 	async (file) => {
 		const ir: Ir = await Bun.file(`${fixturesDir}/${file}`).json();
 		const lists = settledLists(ir);
-		// The fixtures' member result is a record, so T is { type: "object" } (README, Outcomes).
+		// The fixtures' member result is a record, so T is { type: "object" } (README, Outcomes and Settled).
 		const settledList = {
 			type: "array",
 			items: settledSchema({ type: "object" }),
