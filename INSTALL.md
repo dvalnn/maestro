@@ -33,7 +33,7 @@ curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh |
 Set `MAESTRO_VERSION` to a tag, `v` included, to pin a release. A pin wins over the channel:
 
 ```sh
-curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_VERSION=v0.1.0-rc.4 sh
+curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_VERSION=v0.1.0-rc.5 sh
 ```
 
 The script needs `curl` and `sha256sum`, checks every asset against `SHA256SUMS` before touching anything, and refuses
