@@ -61,8 +61,10 @@ every code node of the pack.
 `@maestro/classics` exports the classics pack's parts:
 
 - `panel`: the lens, skeptic and consolidator panel, as a function over a change; given `grounds`, the rules a finding
-  must cite, its skeptics and consolidator rule by them. `skepticTask(grounds)` is that skeptic task, for a lone
-  skeptic.
+  must cite, its skeptics and consolidator rule by them.
+- `round`: the lens, and a skeptic unless clean, that `panel` runs per item, for one lens alone; it takes a lens label,
+  session, checks and extra lens attachments. `upheld(findings, verdicts)` matches findings to the verdicts that held
+  them.
 - Seats: `builder`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`.
 - Compositions: `repairUntilGreen`, `panelReview`, `buildThenRepair`. `repairUntilGreen`'s `checks` param names the
   checks its repair agent may run, none by default; its recheck runs every check.

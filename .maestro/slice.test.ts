@@ -279,6 +279,39 @@ test.each([
 	},
 );
 
+test("under --tier small, the reviewer may run every check, and a later round's reviewer is attached the findings upheld before", async () => {
+	const out = await maestro(await slice("compose", "small"));
+	type Edge = {
+		from: { node: string; port?: string };
+		to: { node: string; port?: string };
+	};
+	type Node = {
+		id: string;
+		config: { checks?: string[]; attachments: Record<string, unknown> };
+	};
+	const { nodes, edges }: { nodes: Node[]; edges: Edge[] } =
+		JSON.parse(out).plan.ir;
+	const into = (node: string, port: string) =>
+		edges.filter((e) => e.to.node === node && e.to.port === port);
+	const reviewers = nodes.filter((n) => /(^|\/)reviewer$/.test(n.id));
+	expect(reviewers.length).toBeGreaterThan(1);
+	for (const n of reviewers) expect(n.config.checks).toEqual(["all"]);
+	const first = reviewers.find((n) => n.id === "reviewer");
+	const later = reviewers.find((n) => n.id === "fixes/reviewer");
+	expect(Object.keys(first?.config.attachments ?? {}).sort()).toEqual([
+		"patches",
+		"spec",
+	]);
+	expect(Object.keys(later?.config.attachments ?? {}).sort()).toEqual([
+		"patches",
+		"spec",
+		"upheld",
+	]);
+	expect(into("fixes/reviewer", "upheld").map((e) => e.from)).toEqual([
+		{ node: "fixes", port: "upheld" },
+	]);
+});
+
 test.each(["small", "ordinary", "risky"])(
 	"under --tier %s, every skeptic and the consolidator rule by the slice's grounds",
 	async (tier) => {

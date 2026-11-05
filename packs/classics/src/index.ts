@@ -1,7 +1,13 @@
-export { rulingLine, survivorsOf, toMarkdown } from "./code";
+export {
+	rulingLine,
+	survivorsOf,
+	toMarkdown,
+	type Upheld,
+	upheld,
+} from "./code";
 export { fill } from "./prompt";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";
-export { LENSES, panel, panelReview, skepticTask } from "./review";
+export { LENSES, panel, panelReview, round } from "./review";
 export {
 	builder,
 	consolidator,

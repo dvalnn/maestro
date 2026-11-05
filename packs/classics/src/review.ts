@@ -61,9 +61,6 @@ const TASKS = {
 /** Each lens a review can rule through, by name, as the task of its lens. */
 export const LENSES = TASKS.lens;
 
-/** The task of a skeptic over a lens's findings, ruling by `grounds` when given. */
-export const skepticTask = TASKS.skeptic;
-
 const LENS_NAMES = ["correctness", "spec", "tests"] as const;
 type LensName = (typeof LENS_NAMES)[number];
 
@@ -95,7 +92,14 @@ export function panel<T extends string>(
 		spec: { artifact: p.spec, hint: "for what the change must do" },
 	};
 	const skeptics = p.skeptics ?? true;
-	const body = (item: Ref<T>) => round(p, p.task(item), attached, skeptics);
+	const body = (item: Ref<T>) =>
+		round({
+			change: p.change,
+			task: p.task(item),
+			attached,
+			grounds: p.grounds,
+			skeptics,
+		});
 	const rounds = iter.parMap(p.items, body, {
 		onError: "continue",
 		label: "lenses",
@@ -118,21 +122,66 @@ export function panel<T extends string>(
 	});
 }
 
-/** A lens over one item on `task`, and when `skeptics`, a skeptic over its findings unless it is clean. */
-function round(
-	{ change, grounds }: Pick<Panel<string>, "change" | "grounds">,
-	task: string | Ref<string>,
-	attached: { patches: Attachment; spec: Attachment },
-	skeptics: boolean,
-) {
-	const found = lens({
-		label: "lens",
+type RoundOptions = {
+	change: Ref<string> | string;
+	/** The task of the lens. */
+	task: string | Ref<string>;
+	/** What the lens and the skeptic both read. */
+	attached: { patches: Attachment; spec: Attachment };
+	grounds?: string;
+	/** Whether a skeptic sits over the lens's findings. */
+	skeptics: boolean;
+	/** The lens's node label. Default `lens`. */
+	label?: string;
+	/** The session the lens continues. */
+	session?: Ref<string>;
+	/** Names of `target.checks` the lens may run. */
+	checks?: string[];
+	/** Attachments for the lens only. */
+	extra?: Record<string, Attachment>;
+};
+
+/**
+ * A lens over one item on `task`, and when `skeptics`, a skeptic over its findings unless it is clean. Without a
+ * skeptic it returns the lens alone.
+ */
+export function round(options: RoundOptions & { skeptics: true }): {
+	lens: Lens;
+	skeptic: Skeptic;
+};
+export function round(options: RoundOptions & { skeptics: false }): Lens;
+export function round(
+	options: RoundOptions,
+): Lens | { lens: Lens; skeptic: Skeptic };
+export function round(options: RoundOptions) {
+	const found = lensOf(options);
+	if (!options.skeptics) return found;
+	return { lens: found, skeptic: skepticOf(options, found) };
+}
+
+function lensOf({
+	change,
+	task,
+	attached,
+	label = "lens",
+	session,
+	checks,
+	extra,
+}: RoundOptions) {
+	return lens({
+		label,
 		task,
 		lane: read(change),
-		attachments: attached,
+		session,
+		checks,
+		attachments: { ...attached, ...extra },
 	});
-	if (!skeptics) return found;
-	const challenged = skeptic({
+}
+
+type Lens = ReturnType<typeof lensOf>;
+
+function skepticOf({ change, grounds, attached }: RoundOptions, found: Lens) {
+	return skeptic({
 		label: "skeptic",
 		task: TASKS.skeptic(grounds),
 		lane: read(change),
@@ -148,8 +197,9 @@ function round(
 			...attached,
 		},
 	});
-	return { lens: found, skeptic: challenged };
 }
+
+type Skeptic = ReturnType<typeof skepticOf>;
 
 /**
  * The lane version under review: `change`, or the target commits `revs` names.

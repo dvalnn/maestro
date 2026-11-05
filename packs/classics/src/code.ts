@@ -1,6 +1,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ArtifactRef, CodeContext, Settled, Type } from "@maestro/sdk";
+import type {
+	ArtifactRef,
+	CodeContext,
+	Settled,
+	Type,
+	ValueOf,
+} from "@maestro/sdk";
 import { Findings, Verdicts } from "./types";
 
 /** The part of a code function's context that reads and writes files. */
@@ -62,6 +68,23 @@ function readOutput<T>(ctx: Files, ref: ArtifactRef, type: Type<T>): T {
 export const rulingLine = (why?: string) =>
 	why === undefined ? "Unverified: no skeptic ruled on it" : `Upheld: ${why}`;
 
+/** A finding the skeptic held and the skeptic's why, absent when no skeptic ruled on it. */
+export type Upheld = ValueOf<typeof Findings>["findings"][number] & {
+	why?: string;
+};
+
+/** The `findings` the skeptic held, each with its why; every one without a why when there are no `verdicts`. */
+export function upheld(
+	findings: ValueOf<typeof Findings>["findings"],
+	verdicts?: ValueOf<typeof Verdicts>,
+): Upheld[] {
+	if (!verdicts) return findings;
+	return findings.flatMap((f) => {
+		const verdict = verdicts.find((v) => v.id === f.id && v.holds);
+		return verdict ? [{ ...f, why: verdict.why }] : [];
+	});
+}
+
 /**
  * The lines of `item`'s section: none for a clean lens or none upheld, a note for a member that did not settle `ok`.
  * A member without a skeptic upholds every finding, each marked unverified.
@@ -78,18 +101,14 @@ function sectionOf(item: string, round: Settled<Round>, ctx: Files): string[] {
 	);
 	const verdicts =
 		"skeptic" in value && readOutput(ctx, value.skeptic.verdicts, Verdicts);
-	const upheld = findings.flatMap((f) => {
-		if (!verdicts) return [{ ...f, why: rulingLine() }];
-		const verdict = verdicts.find((v) => v.id === f.id && v.holds);
-		return verdict ? [{ ...f, why: rulingLine(verdict.why) }] : [];
-	});
-	if (!upheld.length) return [];
+	const kept = upheld(findings, verdicts || undefined);
+	if (!kept.length) return [];
 	return [
 		`## ${item}`,
 		"",
-		...upheld.map(
+		...kept.map(
 			(f) =>
-				`- ${f.id}, ${f.where} (${f.blocking ? "blocking" : "advisory"}): ${f.issue}\n  ${f.why}`,
+				`- ${f.id}, ${f.where} (${f.blocking ? "blocking" : "advisory"}): ${f.issue}\n  ${rulingLine(f.why)}`,
 		),
 		"",
 	];

@@ -5,15 +5,15 @@ import {
 	builder,
 	type Findings,
 	LENSES,
-	lens,
 	maxRepairs,
 	panel,
 	repairUntilGreen,
+	round,
 	rulingLine,
-	skeptic,
-	skepticTask,
 	survivorsOf,
 	toMarkdown,
+	type Upheld,
+	upheld,
 	type Verdict,
 	type Verdicts,
 } from "@maestro/classics";
@@ -79,7 +79,6 @@ const task = (...parts: string[]) => parts.join("\n\n");
 const TASKS = {
 	reviewer: task(REVIEWER, QUESTIONS, GROUNDS),
 	reviewerAgain: task(REVIEWER_AGAIN, REVIEWER, QUESTIONS, GROUNDS),
-	skeptic: skepticTask(GROUNDS),
 	fix: task(FIX),
 	writer: task(WRITER, FIGURES),
 	/** Each panel tier's lenses, by name, as each lens's task; the consolidator rules by `GROUNDS`. */
@@ -98,9 +97,6 @@ const TASKS = {
 
 type Found = ValueOf<typeof Findings>;
 
-/** A blocking finding and the skeptic's why for upholding it, absent when no skeptic ruled on it. */
-type Upheld = Found["findings"][number] & { why?: string };
-
 /** What one review round ruled: a consolidator's verdict, or a lens's findings and its skeptic's verdicts, if any. */
 type Ruled =
 	| { verdict: ValueOf<typeof Verdict> }
@@ -118,13 +114,10 @@ function upheldFindings(
 	verdicts?: Settled<ValueOf<typeof Verdicts>>[],
 ): Upheld[] {
 	if (clean) return [];
-	const blocking = findings.filter((f) => f.blocking);
-	const held = verdicts?.[0]?.value;
-	if (held === undefined) return blocking;
-	return blocking.flatMap((f) => {
-		const verdict = held.find((v) => v.id === f.id && v.holds);
-		return verdict ? [{ ...f, why: verdict.why }] : [];
-	});
+	return upheld(
+		findings.filter((f) => f.blocking),
+		verdicts?.[0]?.value,
+	);
 }
 
 /** Each upheld blocking finding of `rulings` as a Markdown list item, carrying the skeptic's why or marked unverified. */
@@ -237,45 +230,34 @@ function review(
 			verdict: readJson(ruling.out.verdict, { tolerate: "rejected" }),
 		});
 	}
-	const attachments = {
+	const attached = {
 		patches: {
 			artifact: patches,
 			hint: "for what the change did, patch by patch",
 		},
 		spec: { artifact: spec, hint: "for what the change must do" },
 	};
-	const found = lens({
+	const { lens: found, skeptic: challenged } = round({
 		label: "reviewer",
 		task: earlier ? TASKS.reviewerAgain : TASKS.reviewer,
-		lane: read(lane),
+		change: lane,
+		attached,
+		grounds: GROUNDS,
+		skeptics: true,
 		session: earlier?.lens,
 		checks: ["all"],
-		attachments: {
-			...attachments,
-			...(earlier && {
-				upheld: {
-					artifact: earlier.upheld,
-					hint: "the findings upheld last round",
-				},
-			}),
-		},
-	});
-	const findings = readJson(found.out.findings, { tolerate: "rejected" });
-	const lensSession = found.out.session;
-	const challenged = skeptic({
-		label: "skeptic",
-		task: TASKS.skeptic,
-		lane: read(lane),
-		when: not(findings.get("clean")),
-		tolerate: "rejected",
-		attachments: {
-			findings: {
-				artifact: found.out.findings,
-				hint: "first, for the findings to challenge",
+		extra: earlier && {
+			upheld: {
+				artifact: earlier.upheld,
+				hint: "the findings upheld last round",
 			},
-			...attachments,
 		},
 	});
+	const findings = readJson(found.out.findings, {
+		tolerate: "rejected",
+		label: "findings",
+	});
+	const lensSession = found.out.session;
 	return tally({
 		findings,
 		lens: lensSession,
