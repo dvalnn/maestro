@@ -23,14 +23,14 @@ const VERDICTS = [
 	"duplicate",
 ] as const;
 const RISKS = ["low", "medium", "high"] as const;
-const TIERS = ["small", "ordinary", "risky"] as const;
+export const TIERS = ["small", "ordinary", "risky"] as const;
 /** The areas, in the order that breaks a tie (triage-labels.md). */
 const AREAS = ["core", "cli", "host", "packs", "docs", "factory"] as const;
 
 export type Ruled = (typeof RULED)[number];
 type Verdict = (typeof VERDICTS)[number];
 type Risk = (typeof RISKS)[number];
-type Tier = (typeof TIERS)[number];
+export type Tier = (typeof TIERS)[number];
 type Area = (typeof AREAS)[number];
 
 const AREA_PATHS: Record<Area, readonly string[]> = {

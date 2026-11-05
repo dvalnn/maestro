@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { type Question, TIERS, type Tier } from "../../.maestro/triage/verdict";
 import type { Comment } from "./forge";
 import { isJson, type Json } from "./json";
 import type { Spend } from "./maestro";
@@ -20,8 +21,6 @@ export const VERDICTS = [
 export const RISKS = ["low", "medium", "high"] as const;
 type Verdict = (typeof VERDICTS)[number];
 export type Risk = (typeof RISKS)[number];
-const TIERS = ["small", "ordinary", "risky"] as const;
-export type Tier = (typeof TIERS)[number];
 /** How many red slices a ticket spends before it goes to `needs-info` (factory.md, Rules, Build: Attempts). */
 export const ATTEMPTS = 2;
 
@@ -64,15 +63,7 @@ export type Spec = {
 	subject: string;
 };
 export type Child = { title: string; body: string; dependsOn: number[] };
-export type Option = { label: string; text: string };
-/** A question for the owner, whose `recommend.label` is one of its options' labels. */
-export type Question = {
-	ask: string;
-	lead?: string;
-	options: Option[];
-	recommend?: { label: string; why: string };
-	context: { topic: string; text: string }[];
-};
+export type Option = Question["options"][number];
 /** The `triage` output of `.maestro/triage.ts`. `dependsOn` holds 0-based indexes of earlier children. */
 export type Triage = {
 	verdict: Verdict;

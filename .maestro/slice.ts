@@ -63,15 +63,13 @@ import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
 };
 import WRITER from "./slice/prompts/writer.md" with { type: "text" };
 import FIGURES from "./triage/prompts/_figures.md" with { type: "text" };
+import { TIERS, type Tier } from "./triage/verdict";
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export { survivorsOf, toMarkdown };
 
 const PATCH_EXT = ".patch";
 const NOTHING_CHANGED = "the slice changed nothing";
-
-const TIERS = ["small", "ordinary", "risky"] as const;
-type Tier = (typeof TIERS)[number];
 
 const task = (...parts: string[]) => parts.join("\n\n");
 

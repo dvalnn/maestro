@@ -1,3 +1,4 @@
+import type { Tier } from "../../.maestro/triage/verdict";
 import type { Comment, Issue, Pull } from "./forge";
 import {
 	askOf,
@@ -8,7 +9,6 @@ import {
 	RISKS,
 	type Risk,
 	type Spec,
-	type Tier,
 	type Triage,
 } from "./route";
 import { INTAKE, STATES, type State } from "./transitions";
