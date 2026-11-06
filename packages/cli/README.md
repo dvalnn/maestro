@@ -36,8 +36,8 @@ optional ones. A boolean takes `--name` and `--no-name`.
 - `compose --out <file>` of a bare file writes its code as `<file stem>.bundle.js` beside the IR, so the IR loads on its
   own. A pack's modules are made relative to the IR.
 - `compose --plan` lists each agent's node, profile and the harness, model and thinking it resolves to, as
-  `compose --json` does in `agents`. [render-text](../render-text/README.md) holds the drawing rules of
-  `--graph --flow`.
+  `compose --json` does in `agents`. [render-text](../render-text/README.md) holds the drawing rules of `--flow`, which
+  sets `--graph`.
 
 The file rules (stem, bare-file params, imports) are in [SDK spec: File rules](../../docs/sdk-spec.md#file-rules).
 

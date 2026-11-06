@@ -83,7 +83,7 @@ export const COMPOSE_FLAGS = {
 	graph: { type: "boolean", desc: "Print the graph as a Mermaid flowchart" },
 	flow: {
 		type: "boolean",
-		desc: "With --graph, draw the authored flow in place of every data path (experimental)",
+		desc: "Draw the authored flow in place of every data path, and set --graph (experimental)",
 	},
 } as const satisfies Options;
 

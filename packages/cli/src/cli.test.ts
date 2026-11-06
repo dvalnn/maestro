@@ -116,6 +116,9 @@ describe("compose and config", () => {
 		expect(drawn.code).toBe(0);
 		expect(drawn.out).toContain("flowchart TD\n  start((start))\n");
 		expect(drawn.out).toContain("<br/><small>");
+		const alone = await w.call(["compose", ...GREET, "--flow"]);
+		expect(alone.code).toBe(0);
+		expect(alone.out).toBe(drawn.out);
 		expect(json(await w.call(["compose", ...GREET, "--json"]))).toMatchObject({
 			ok: true,
 			plan: { bounds: { instances: { exact: 4 } } },
@@ -623,11 +626,6 @@ describe("usage errors", () => {
 			/^error: unknown flag --zzzzzz\n {2}Flags are perform's/,
 		],
 		[
-			"--flow without --graph",
-			["compose", ...GREET, "--flow"],
-			/^error: --flow draws the graph, and --graph is not set\n {2}Pass both: maestro compose <composition> --graph --flow$/,
-		],
-		[
 			"a tour that is not a slug",
 			["perform", ...GREET, "--tour", "Bad Slug"],
 			/^error: --tour takes a slug of at most 64 characters, not 'Bad Slug'/,
@@ -734,8 +732,8 @@ describe("usage errors", () => {
 		],
 		[
 			"ls with two concerts",
-			["ls", "a", "b"],
-			/^error: maestro ls takes at most one concert, got 2\nUsage: maestro ls \[<concert>\]\n/,
+			["ls", "a", "b", "c"],
+			/^error: maestro ls takes at most a concert and an instance, got 3\nUsage: maestro ls \[<concert> \[<instance>\]\]\n/,
 		],
 		[
 			"artifact show with too many arguments",
@@ -1615,6 +1613,17 @@ describe("the record", () => {
 		expect((await w.call(["ls", id], { hosts: [host] })).out).toEndWith(
 			sections,
 		);
+		const one = await w.call(["ls", id, "echo"], { hosts: [host] });
+		expect(one.code).toBe(0);
+		expect(one.out).toEndWith(sections);
+		expect(one.out.split("\n")[0]).toMatch(/^instance +status/);
+		expect(
+			json(await w.call(["ls", id, "echo", "--json"], { hosts: [host] }))
+				.instances,
+		).toHaveLength(1);
+		const missing = await w.call(["ls", id, "zzz"], { hosts: [host] });
+		expect(missing.code).toBe(2);
+		expect(missing.err).toContain(`no instance 'zzz' in concert ${id}`);
 		const narrow = () => ({ columns: 40, rows: 24 });
 		const full = `Full reports: maestro ls ${shortOf(id)} --json | jq .reports`;
 		const cut = (
@@ -1728,7 +1737,8 @@ describe("the record", () => {
 		expect(json(await w.call(["ls", shortId(a), "--json"])).id).toBe(a);
 		expect((await w.call(["watch", prefix])).code).toBe(0);
 		expect(await w.call(["kill", prefix])).toMatchObject({
-			err: `error: concert ${a} is not running, it settled ok\n  See 'maestro ls ${a}'`,
+			code: 0,
+			err: `concert ${a} already settled ok`,
 		});
 		expect(await w.call(["resume", prefix])).toMatchObject({
 			err: expect.stringContaining(`concert ${a} finished ok`),

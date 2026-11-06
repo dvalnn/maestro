@@ -174,9 +174,10 @@ describe("a concert in another process", () => {
 				closingOf(id, "failed", ["reason", "the concert was cancelled"]),
 			),
 		});
-		expect((await w.call(["kill", id])).err).toMatch(
-			/is not running, it settled failed/,
-		);
+		expect(await w.call(["kill", id])).toMatchObject({
+			code: 0,
+			err: `concert ${id} already settled failed`,
+		});
 
 		await packOf(
 			join(await demoSource((t) => t.replace('"v1"', '"v2"')), "index.ts"),

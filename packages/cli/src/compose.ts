@@ -28,7 +28,6 @@ import {
 	jsonOf,
 	renderDiagnostic,
 	table,
-	usageError,
 } from "./output";
 import {
 	bundleName,
@@ -97,7 +96,10 @@ async function planText(
 		: listing(plan);
 }
 
-/** Prints the summary, or the plan in full with `--plan`, and the graph with `--graph`, its authored flow with `--flow`. */
+/**
+ * Prints the summary, or the plan in full with `--plan`, and the graph with `--graph`, its authored flow with `--flow`,
+ * which sets `--graph`.
+ */
 async function print(
 	session: Session,
 	prepared: Prepared,
@@ -106,7 +108,7 @@ async function print(
 	const { deps } = session;
 	const { values } = prepared;
 	const full = isSet(values, "plan");
-	const graph = isSet(values, "graph");
+	const graph = isSet(values, "graph") || isSet(values, "flow");
 	if (full || !graph)
 		deps.stdout(
 			full ? await planText(session, prepared.config, plan) : summary(plan),
@@ -137,12 +139,6 @@ export const compose: Command = {
 	options: COMPOSE_OPTIONS,
 	help: compositionHelp,
 	async execute(args, deps) {
-		const early = peek(COMPOSE_OPTIONS, args);
-		if (isSet(early, "flow") && !isSet(early, "graph"))
-			throw usageError(
-				"--flow draws the graph, and --graph is not set",
-				"Pass both: maestro compose <composition> --graph --flow",
-			);
 		const {
 			json,
 			session,

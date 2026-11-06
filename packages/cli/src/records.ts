@@ -40,6 +40,7 @@ import {
 	instanceName,
 	jsonOf,
 	NAME_CONCERT,
+	nameOf,
 	paint,
 	parseCount,
 	parseDuration,
@@ -164,18 +165,20 @@ function noteCounts(
  * @throws ArgumentError for more than one concert, and CliError, a usage error, for a bad filter or limit.
  */
 function lsChecked(values: Values, positionals: readonly string[]) {
-	const [id, ...rest] = positionals;
+	const [id, instance, ...rest] = positionals;
 	if (rest.length > 0)
 		throw new ArgumentError(
-			`takes at most one concert, got ${positionals.length}`,
-			"Name one concert, or none to list them all",
+			`takes at most a concert and an instance, got ${positionals.length}`,
+			"Name one concert, and one of its instances, or none to list the concerts",
 		);
+	if (id === undefined && instance !== undefined)
+		throw new ArgumentError("takes an instance after a concert", NAME_CONCERT);
 	const limit = textOf(values, "limit");
 	const query = {
 		...filterOf(values),
 		limit: limit === undefined ? LIST_LIMIT : parseCount("--limit", limit),
 	};
-	return { id, query };
+	return { id, instance, query };
 }
 
 /** What `ls --help` adds: the mark, and the fields of the reports `--json` gives, as the hosts word them. */
@@ -191,11 +194,15 @@ async function reportHelp(args: readonly string[], deps: Deps) {
 
 export const ls: Command = {
 	pages: true,
-	usage: "ls [<concert>] [flags]",
+	usage: "ls [<concert> [<instance>]] [flags]",
 	arguments: [
 		[
 			"<concert>",
 			"A concert, as 'maestro ls' lists it; without it, the concerts are listed",
+		],
+		[
+			"<instance>",
+			"One of the concert's instances, as 'maestro ls <concert>' lists it, or a unique ending of its name; its row and notes alone",
 		],
 	],
 	options: LS_OPTIONS,
@@ -206,6 +213,7 @@ export const ls: Command = {
 			"maestro ls --tour epic",
 		],
 		["One concert's node instances", "maestro ls 7f3c2a"],
+		["One instance's row and notes", "maestro ls 7f3c2a build"],
 	],
 	help: reportHelp,
 	execute: (args, deps) =>
@@ -215,8 +223,10 @@ export const ls: Command = {
 			deps,
 			"Flags are listed in 'maestro ls --help'",
 			lsChecked,
-			async (stored, { id, query }) =>
-				id === undefined ? listed(stored, query) : instancesOf(stored, id),
+			async (stored, { id, instance, query }) =>
+				id === undefined
+					? listed(stored, query)
+					: instancesOf(stored, id, instance),
 		),
 };
 
@@ -336,11 +346,23 @@ export function olderHint(values: Values, limit: number, color: boolean) {
 async function instancesOf(
 	{ session, store, values, json }: Stored,
 	prefix: string,
+	which?: string,
 ) {
 	const color = colorOf(session.deps, values).out;
 	const row = concertOf(store, prefix);
 	const hostText = hostTextOf(session.deps.hosts, row.ir);
-	const instances = instancesInOrder(store, row);
+	const every = instancesInOrder(store, row);
+	const chosen =
+		which === undefined
+			? undefined
+			: nameOf(
+					which,
+					every.map((i) => instanceName(row.ir, i)),
+					row.id,
+				);
+	const instances = every.filter(
+		(i) => chosen === undefined || instanceName(row.ir, i) === chosen,
+	);
 	const named = instances.map((i) => ({
 		...i,
 		name: instanceName(row.ir, i),
@@ -473,10 +495,10 @@ function signal(pid: number) {
 async function killed({ session, store, json }: Stored, prefix: string) {
 	const { deps } = session;
 	const { id, status, pid } = concertOf(store, prefix);
-	if (status !== "running")
-		throw new CliError(
-			`concert ${id} is not running, it settled ${status}\nSee 'maestro ls ${id}'`,
-		);
+	if (status !== "running") {
+		deps.stderr(`concert ${id} already settled ${status}`);
+		return EXIT.ok;
+	}
 	if (!isMaestro(pid)) {
 		reap(session, id);
 		throw new CliError(
@@ -495,7 +517,12 @@ async function killed({ session, store, json }: Stored, prefix: string) {
 
 export const kill: Command = {
 	usage: "kill <concert> [flags]  (alias: k)",
-	arguments: [["<concert>", "A running concert, as 'maestro ls' lists it"]],
+	arguments: [
+		[
+			"<concert>",
+			"A running concert, as 'maestro ls' lists it; a settled one exits 0 and says so",
+		],
+	],
 	options: COMMON,
 	execute: (args, deps) =>
 		withStore(

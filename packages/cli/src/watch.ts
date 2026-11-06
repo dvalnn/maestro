@@ -89,7 +89,7 @@ const WATCH_OPTIONS = {
 	instance: {
 		type: "string",
 		arg: "id",
-		desc: "With --events, show only this instance's events, or a unique ending of its id; a group or scope id takes all under it",
+		desc: "Show only this instance's events, or a unique ending of its id; a group or scope id takes all under it; sets --events",
 	},
 	frames: {
 		type: "string",
@@ -195,7 +195,8 @@ function showOf(
 	values: Values,
 	json: boolean,
 ): { show: Show; live: boolean; ending: WatchEnd } {
-	const all = isSet(values, "events");
+	const all =
+		isSet(values, "events") || textOf(values, "instance") !== undefined;
 	const terminal = json ? undefined : deps.terminal;
 	const live = terminal !== undefined;
 	const color = live && colorOf(deps, values).out;
@@ -382,15 +383,10 @@ function narrowed(show: Show, row: ConcertRecord, id: string): Show {
 
 /**
  * The concert to watch, and the inputs `--frames` names, if given.
- * @throws CliError, a usage error, for `--instance` without `--events`, other than one concert, or a key `--frames`
+ * @throws CliError, a usage error, other than one concert, or a key `--frames`
  * names none of.
  */
 function watchChecked(values: Values, positionals: readonly string[]) {
-	if (textOf(values, "instance") !== undefined && !isSet(values, "events"))
-		throw usageError(
-			"--instance needs --events",
-			"Add --events, as in 'maestro watch <concert> --events --instance <id>'",
-		);
 	const prefix = only(positionals, "concert", NAME_CONCERT);
 	const keys = textOf(values, "frames");
 	return { prefix, inputs: keys === undefined ? undefined : inputsOf(keys) };

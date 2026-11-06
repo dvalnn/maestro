@@ -239,9 +239,21 @@ export const nested = composition("nested", { examples: [{}] }, () => use(outer,
 		expect(unknown.err.trimEnd().split("\n").at(-1)).toContain(
 			`maestro ls ${id}`,
 		);
+	});
+
+	test("--instance alone sets --events", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf()] }));
+		const events = await w.call([
+			"watch",
+			id,
+			"--events",
+			"--instance",
+			"echo",
+		]);
 		const bare = await w.call(["watch", id, "--instance", "echo"]);
-		expect(bare.code).toBe(2);
-		expect(bare.err).toContain("--instance needs --events");
+		expect(bare.code).toBe(0);
+		expect(bare.out).toBe(events.out);
 	});
 });
 
