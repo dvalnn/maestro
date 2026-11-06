@@ -15,21 +15,21 @@ import {
 export const PROPOSED = ["ready-for-agent", "split"] as const;
 /** What the triager rules: `plan` hands the issue on to the scouts and the planner, any other settles it early. */
 const RULED = ["direct", "plan", "duplicate", "needs-info"] as const;
-const VERDICTS = [
+export const VERDICTS = [
 	"ready-for-agent",
 	"needs-approval",
 	"needs-info",
 	"split",
 	"duplicate",
 ] as const;
-const RISKS = ["low", "medium", "high"] as const;
+export const RISKS = ["low", "medium", "high"] as const;
 export const TIERS = ["small", "ordinary", "risky"] as const;
 /** The areas, in the order that breaks a tie (triage-labels.md). */
 const AREAS = ["core", "cli", "host", "packs", "docs", "factory"] as const;
 
 export type Ruled = (typeof RULED)[number];
-type Verdict = (typeof VERDICTS)[number];
-type Risk = (typeof RISKS)[number];
+export type Verdict = (typeof VERDICTS)[number];
+export type Risk = (typeof RISKS)[number];
 export type Tier = (typeof TIERS)[number];
 type Area = (typeof AREAS)[number];
 

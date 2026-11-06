@@ -1,5 +1,17 @@
 import { createHash } from "node:crypto";
-import { type Question, TIERS, type Tier } from "../../.maestro/triage/verdict";
+import type {
+	Masterclass,
+	Promotion as Proposal,
+} from "../../.maestro/masterclass";
+import {
+	type Question,
+	RISKS,
+	type Risk,
+	TIERS,
+	type Tier,
+	VERDICTS,
+	type Verdict,
+} from "../../.maestro/triage/verdict";
 import type { Comment } from "./forge";
 import { isJson, type Json } from "./json";
 import type { Spend } from "./maestro";
@@ -11,16 +23,7 @@ import {
 	type Transition,
 } from "./transitions";
 
-export const VERDICTS = [
-	"ready-for-agent",
-	"needs-approval",
-	"needs-info",
-	"split",
-	"duplicate",
-] as const;
-export const RISKS = ["low", "medium", "high"] as const;
-type Verdict = (typeof VERDICTS)[number];
-export type Risk = (typeof RISKS)[number];
+export type { Masterclass, Proposal };
 /** How many red slices a ticket spends before it goes to `needs-info` (factory.md, Rules, Build: Attempts). */
 export const ATTEMPTS = 2;
 
@@ -973,15 +976,6 @@ export function reportIssue(text: string, found: number) {
 	];
 	return { title, body: body.join("\n") };
 }
-
-/** A change a masterclass proposes to the factory's standing text or code, with the lessons it merges. */
-export type Proposal = {
-	target: string;
-	title: string;
-	body: string;
-	lessons: string[];
-};
-export type Masterclass = { proposals: Proposal[] };
 
 const isProposals = (v: unknown): v is Proposal[] =>
 	Array.isArray(v) &&

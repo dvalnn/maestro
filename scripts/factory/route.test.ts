@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { FIGURES as PLANNED, Triage } from "../../.maestro/triage/verdict";
+import { FIGURES as PLANNED } from "../../.maestro/triage/verdict";
 import {
 	askOf,
 	commentOf,
@@ -14,25 +14,16 @@ import {
 	proposalLine,
 	pullBody,
 	questionOf,
-	RISKS,
 	type Triage as Routed,
 	replyHow,
 	shorthand,
 	tracked,
 	turnLines,
-	VERDICTS,
 } from "./route";
 import type { State } from "./transitions";
 
-test("the verdicts, risks and figure kinds are the triage composition's", () => {
-	const { properties } = Triage.schema as {
-		properties: Record<string, { enum: unknown }>;
-	};
-	expect([properties.verdict?.enum, properties.risk?.enum, PLANNED]).toEqual([
-		[...VERDICTS],
-		[...RISKS],
-		FIGURES,
-	]);
+test("the figure kinds are the triage composition's", () => {
+	expect([...PLANNED]).toEqual(FIGURES);
 });
 
 test("a stored spec that carries steps parses without them", () => {
