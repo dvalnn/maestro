@@ -29,6 +29,11 @@ format, ownership or lifetime, security assumption, or a pointer to a decision (
 - History, slices and tickets live in jj and the ADRs, so comments describe the code as it is.
 - A behaviour change updates or deletes its comment in the same change.
 
+## Docs
+
+A behaviour change updates, in the same change, each doc that states the old behaviour. The topic's home in
+`docs/README.md` comes first, such as a package README.
+
 ## User-facing output
 
 CLI output, errors, prompts and confirmations follow [clig.dev](https://clig.dev):
