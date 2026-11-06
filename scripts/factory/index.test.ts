@@ -675,6 +675,8 @@ describe("a pass", () => {
 				"--title",
 				"factory: Greet by name",
 				"--preset",
+				"triage",
+				"--preset",
 				"stub",
 			],
 		]);
@@ -2132,7 +2134,10 @@ describe("masterclass", () => {
 		expect(args[2]).toBe("--lessons");
 		expect(argAfter(args, "--tour")).toBe("v0.1.0.masterclass");
 		expect(argAfter(args, "--title")).toBe("factory: masterclass");
-		expect(argAfter(args, "--preset")).toBe("stub");
+		expect(args.filter((_, i) => args[i - 1] === "--preset")).toEqual([
+			"triage",
+			"stub",
+		]);
 		expect(readFileSync(argAfter(args, "--lessons"), "utf8")).toBe(
 			lessonsOf(50, 10)
 				.replace("- lesson 50", "- lesson 50\n  over two lines")

@@ -88,6 +88,8 @@ const REPO = resolve(import.meta.dir, "../..");
 const TRIAGE_FILE = join(REPO, ".maestro/triage.ts");
 const SLICE_FILE = join(REPO, ".maestro/slice.ts");
 const MASTERCLASS_FILE = join(REPO, ".maestro/masterclass.ts");
+/** The preset a triage and a masterclass perform with, ahead of the pass's own. */
+const TRIAGE_PRESET = "triage";
 /** A bare composition file's pack is its stem. */
 const TRIAGE = { pack: "triage", composition: "triage" };
 const SLICE = { pack: "slice", composition: "slice" };
@@ -109,7 +111,7 @@ const CLOSED = 20;
 
 export type Options = {
 	milestone: string;
-	/** The presets layered last, in order, on each triage and build. */
+	/** The presets layered last, in order, on each triage, build and masterclass. */
 	presets: string[];
 	/** Only route settled concerts and sync; start no build, triage or masterclass. */
 	routeOnly?: boolean;
@@ -1380,6 +1382,8 @@ async function triage(pass: Pass, entries: Entry[]) {
 			tourOf(pass.milestone, number),
 			"--title",
 			titleOf(entry.issue),
+			"--preset",
+			TRIAGE_PRESET,
 			...pass.presets.flatMap((p) => ["--preset", p]),
 		]);
 	} catch (error) {
@@ -1488,6 +1492,8 @@ async function startMasterclass(
 				masterclassTour(pass.milestone),
 				"--title",
 				"factory: masterclass",
+				"--preset",
+				TRIAGE_PRESET,
 				...pass.presets.flatMap((p) => ["--preset", p]),
 			],
 			join(pass.dir, "masterclass.log"),

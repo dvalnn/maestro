@@ -5,6 +5,6 @@ Description=One pass of the maestro factory
 Type=oneshot
 WorkingDirectory=%h/Projects/maestro
 Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin
-ExecStart=/usr/bin/env mise exec -- bun scripts/factory/index.ts --preset triage --preset xreview --preset xscout
+ExecStart=/usr/bin/env mise exec -- bun scripts/factory/index.ts --preset xreview --preset xscout
 # The triage concert a pass starts is detached and must outlive the pass.
 KillMode=process
