@@ -4,9 +4,7 @@ import { dirname, join, relative } from "node:path";
 import { closest } from "@maestro/core";
 import { ConfigError } from "@maestro/core/config";
 import { type HostSetup, hostSetup, type Roots } from "@maestro/core/host";
-import type { ConcertRecord, Records } from "@maestro/core/perform";
 import {
-	type Binding,
 	findProfile,
 	HOST_NAME,
 	heldNames,
@@ -36,7 +34,6 @@ import {
 	type EnvironmentCheck,
 	environmentChecks,
 	type ObservedEnvironment,
-	observedOf,
 } from "@maestro/host-repo/harness";
 import { messageOf } from "@maestro/ir";
 import { padCells } from "@maestro/render-text/live";
@@ -50,61 +47,29 @@ import {
 	only,
 	parse,
 	splitFirst,
-	textOf,
 	type Values,
 } from "./command";
 import { builtinHarnesses, DECLARED } from "./hosts";
 import {
 	CliError,
 	EXIT,
-	instanceName,
 	jsonOf,
-	nameOf,
 	paint,
 	table,
 	tildeOf,
 	usageError,
 } from "./output";
 import { prepare } from "./prepare";
-import {
-	concertOf,
-	instancesInOrder,
-	openSession,
-	overridesOf,
-	type Session,
-	setupOf,
-	withRecord,
-} from "./session";
+import { openSession, overridesOf, type Session, setupOf } from "./session";
 
-const AGENT_OPTIONS: Options = {
-	...COMMON,
-	concert: {
-		type: "string",
-		arg: "id",
-		desc: "show: the environment a node of this concert recorded, the node named as 'maestro ls <id>' lists it",
-	},
-	seat: {
-		type: "string",
-		arg: "key",
-		desc: "show: the profile seat <composition id>/<seat> of the composition named, as config binds it",
-	},
-	prompt: {
-		type: "boolean",
-		desc: "show: with --seat, print the system prompt each agent in the seat is given",
-	},
-};
+const AGENT_OPTIONS: Options = COMMON;
 
 const FIX =
 	"Run 'maestro agent ls', 'maestro agent show <profile>', or 'maestro agent probe <profile>'";
 const NAME_PROFILE = "Name one as 'maestro agent ls' lists it";
-const NAME_NODE = "Name one as 'maestro ls <concert>' lists it";
+const NAME_AGENT_NODE =
+	"Name an agent node, as 'maestro compose <composition>' lists them";
 const NAME_COMPOSITION = "Name it by file path or <pack>.<composition>";
-/** The flags only `show` takes, and the pairs of them that exclude each other. */
-const SHOW_FLAGS = ["concert", "seat", "prompt"] as const;
-const EXCLUSIVE = [
-	["seat", "concert"],
-	["prompt", "concert"],
-] as const;
 const MARK_STYLE = { "✓": "green", "✗": "red", "?": "dim" } as const;
 
 const INDENT = "  ";
@@ -115,15 +80,11 @@ const KEY_GAP = "  ";
 /** The width a fault's lines wrap at. */
 const LINE_WIDTH = 80;
 
-/** A seat by its key, `<composition id>/<seat>`, in the composition `target` names as `compose` takes it. */
-type SeatRequest = { key: string; target: string; prompt: boolean };
-
 type Request =
 	| { action: "ls" }
 	| { action: "show"; name: string }
 	| { action: "probe"; name: string }
-	| ({ action: "seat" } & SeatRequest)
-	| { action: "recorded"; concert: string; node: string };
+	| { action: "prompt"; target: string; node: string };
 
 type Listed = {
 	name: string;
@@ -143,70 +104,55 @@ type Look = Places & Colored;
 
 type Setup = Pick<HostSetup, "layers" | "roots">;
 
-const given = (values: Values, flag: string) =>
-	isSet(values, flag) || textOf(values, flag) !== undefined;
-
-function lsRequest(rest: readonly string[], values: Values): Request {
+function lsRequest(rest: readonly string[]): Request {
 	if (rest.length > 0)
 		throw usageError(
 			`agent ls takes no profile, got ${rest.length}`,
 			"Run 'maestro agent show <profile>' for one profile",
 		);
-	const flag = SHOW_FLAGS.find((f) => given(values, f));
-	if (flag !== undefined)
-		throw usageError(`agent ls takes no --${flag}`, `Drop --${flag}`);
 	return { action: "ls" };
 }
 
-function showRequest(rest: readonly string[], values: Values): Request {
-	const pair = EXCLUSIVE.find((p) => p.every((f) => given(values, f)));
-	if (pair)
-		throw usageError(
-			`--${pair[0]} and --${pair[1]} both given`,
-			"Pass one of them",
-		);
-	const concert = textOf(values, "concert");
-	if (concert !== undefined)
-		return {
-			action: "recorded",
-			concert,
-			node: only(rest, "node", NAME_NODE, "show"),
-		};
-	const prompt = isSet(values, "prompt");
-	const key = textOf(values, "seat");
-	if (key !== undefined) {
-		const target = only(rest, "composition", NAME_COMPOSITION, "show");
-		return { action: "seat", key, target, prompt };
-	}
-	if (prompt)
-		throw usageError(
-			"--prompt takes --seat: the prompt is a seat's",
-			"Add --seat <composition id>/<seat> and name its composition",
-		);
+function showRequest(rest: readonly string[]): Request {
 	return {
 		action: "show",
 		name: only(rest, "profile", NAME_PROFILE, "show"),
 	};
 }
 
-function probeRequestOf(rest: readonly string[], values: Values): Request {
-	const flag = SHOW_FLAGS.find((f) => given(values, f));
-	if (flag !== undefined)
-		throw usageError(`agent probe takes no --${flag}`, `Drop --${flag}`);
+function probeRequestOf(rest: readonly string[]): Request {
 	return {
 		action: "probe",
 		name: only(rest, "profile", NAME_PROFILE, "probe"),
 	};
 }
 
-/** The request `positionals` and `values` make. @throws CliError, a usage error, for anything else. */
-function requestOf(values: Values, positionals: readonly string[]): Request {
+function promptRequest(rest: readonly string[]): Request {
+	const [target, node, ...more] = rest;
+	if (target === undefined)
+		throw usageError(
+			"maestro agent prompt needs a composition",
+			NAME_COMPOSITION,
+		);
+	if (node === undefined)
+		throw usageError("maestro agent prompt needs a node", NAME_AGENT_NODE);
+	if (more.length)
+		throw usageError(
+			`agent prompt takes a composition and a node, got ${rest.length} arguments`,
+			NAME_AGENT_NODE,
+		);
+	return { action: "prompt", target, node };
+}
+
+/** The request `positionals` makes. @throws CliError, a usage error, for anything else. */
+function requestOf(positionals: readonly string[]): Request {
 	const [action, ...rest] = positionals;
-	if (action === "ls") return lsRequest(rest, values);
-	if (action === "show") return showRequest(rest, values);
-	if (action === "probe") return probeRequestOf(rest, values);
+	if (action === "ls") return lsRequest(rest);
+	if (action === "show") return showRequest(rest);
+	if (action === "probe") return probeRequestOf(rest);
+	if (action === "prompt") return promptRequest(rest);
 	throw usageError(
-		`expected ls, show or probe, got ${action === undefined ? "nothing" : `'${action}'`}`,
+		`expected ls, show, probe or prompt, got ${action === undefined ? "nothing" : `'${action}'`}`,
 		FIX,
 	);
 }
@@ -246,25 +192,14 @@ function wordsAt(s: Inspection, key: string): string | undefined {
 }
 
 /** `value`, then the dim `[words]` of its source when a layer other than the profile's own file set it. */
-const sourced = (value: string, words: string | undefined, look: Look) =>
+const sourced = (value: string, words: string | undefined, look: Colored) =>
 	words === undefined
 		? value
 		: `${value}  ${paint("dim", `[${words}]`, look.color)}`;
 
-/** The system prompt the agents of `nodes` are given, which is the same for each of them. */
-type Prompted = { nodes: string[]; prompt: string };
-
-/** A seat, by its key, the profile it is bound to, and its agents' system prompts when asked for. */
-type Seated = { key: string; binding: Binding; prompts?: Prompted[] };
-
-function headLines(s: Inspection, look: Look, seated?: Seated): string[] {
-	const { key, binding } = seated ?? {};
-	const words = binding?.source && sourceWords(binding.source);
+function headLines(s: Inspection, look: Look): string[] {
 	return [
 		paint("bold", s.name, look.color),
-		...(key === undefined
-			? []
-			: [row("seat", sourced(key, words, look), look)]),
 		row("from", placeOf(s.dir, s.name, look), look),
 		...s.shadows.map((dir, i) =>
 			row(i === 0 ? "shadows" : "", placeOf(dir, s.name, look), look),
@@ -413,8 +348,8 @@ function wrapWords(text: string, width: number): string[] {
 	return lines;
 }
 
-/** What a harness reported it loaded: `probed` now, or `recorded` by a concert; `observed` absent when it reported nothing. */
-type Report = { how: "probed" | "recorded"; observed?: ObservedEnvironment };
+/** What a harness reported it loaded when probed; `observed` absent when it reported nothing. */
+type Report = { how: "probed"; observed?: ObservedEnvironment };
 
 /** A row of the checklist: its mark, then the key and value as `row` lays them, each fault under it at column 15. */
 function checkedLines(
@@ -449,7 +384,7 @@ function reportLines(
 	const version = observed?.version ? ` ${observed.version}` : "";
 	const said = observed ? `${harness}${version}` : `nothing from ${harness}`;
 	const faults = faultCount(checks);
-	const count = `${faults} ${faults === 1 ? "fault" : "faults"}${report.how === "recorded" ? " recorded" : ""}`;
+	const count = `${faults} ${faults === 1 ? "fault" : "faults"}`;
 	return [
 		head("Environment", `${report.how} ${said}`, look),
 		...environmentRows(declared, harness).flatMap((r) => {
@@ -489,11 +424,10 @@ async function showText(
 	window: number | undefined,
 	look: Look,
 	report?: Report,
-	seated?: Seated,
 	probeCommand?: string,
 ): Promise<string> {
 	const sections = [
-		headLines(s, look, seated),
+		headLines(s, look),
 		runtimeLines(s, look),
 		await instructionsLines(s, look),
 		await attachmentLines(s, look),
@@ -652,18 +586,6 @@ const environmentJson = (declared: AgentEnvironment | null, report?: Report) =>
 			}
 		: { declared };
 
-/** Each prompt alone when there is one, else each led by the nodes given it. */
-function promptText(prompts: readonly Prompted[], color: boolean): string {
-	const [only, ...more] = prompts;
-	if (only && !more.length) return only.prompt;
-	return prompts
-		.map(
-			(p) =>
-				`${paint("bold", `nodes ${p.nodes.join(", ")}`, color)}\n\n${p.prompt}`,
-		)
-		.join("\n\n");
-}
-
 /** `fields` as words, such as `harness and model`. */
 const fieldWords = (fields: readonly string[]) => fields.join(" and ");
 
@@ -692,7 +614,6 @@ async function show(
 	report: Report | undefined,
 	session: Session,
 	values: Values,
-	seated?: Seated,
 ): Promise<number> {
 	const { deps, config } = session;
 	const s = inspectProfile(profile, config.roots, DECLARED);
@@ -710,14 +631,9 @@ async function show(
 			jsonOf({
 				...s,
 				window: window ?? null,
-				...(seated && {
-					seat: { key: seated.key, ...seated.binding },
-					...(seated.prompts && { prompts: seated.prompts }),
-				}),
 				environment: environmentJson(declared, report),
 			}),
 		);
-	else if (seated?.prompts) deps.stdout(promptText(seated.prompts, color));
 	else
 		deps.stdout(
 			await showText(
@@ -725,7 +641,6 @@ async function show(
 				window,
 				{ ...places, color },
 				report,
-				seated,
 				probeCommand(profile.name, values),
 			),
 		);
@@ -757,144 +672,74 @@ async function probeProfile(
 }
 
 /**
- * The agents of `ir` that sit in seat `key` of `target`.
- * @throws CliError, a usage error, when none does, with the nearest seat key it has.
+ * The agent of `agents` at node `node` of `target`.
+ * @throws CliError, a usage error, when none is, with the nearest agent node it has.
  */
-function seatAgents(
-	agents: SeatedAgent[],
-	{ key, target }: SeatRequest,
-): [SeatedAgent, ...SeatedAgent[]] {
-	const [first, ...rest] = agents.filter((a) => a.key === key);
-	if (first) return [first, ...rest];
-	const keys = [...new Set(agents.map((a) => a.key))];
-	const near = closest(key, keys);
+function agentAt(agents: SeatedAgent[], node: string, target: string) {
+	const found = agents.find((a) => a.node === node);
+	if (found) return found;
+	const nodes = agents.map((a) => a.node);
+	const near = closest(node, nodes);
 	throw usageError(
-		`${target} seats no agent at '${key}'`,
+		`${target} has no agent node '${node}'`,
 		near === undefined
-			? `Name one of: ${keys.join(", ") || "none"}`
+			? `Name one of: ${nodes.join(", ") || "none"}`
 			: `Did you mean '${near}'?`,
 	);
 }
 
-/** Shows the profile seat `request.key` is bound to, or with `request.prompt` the system prompts of its agents. */
-async function showSeat(
-	request: SeatRequest,
-	session: Session,
-	values: Values,
-): Promise<number> {
-	const host = session.deps.hosts.find((h) => h.name === HOST_NAME);
-	if (!host)
-		throw new CliError(
-			`seats belong to host '${HOST_NAME}', which is not loaded`,
-		);
-	const reading = { verb: "agent show", options: COMMON, examples: true };
-	const prepared = await prepare(session, reading, [request.target]);
-	const setup = hostSetup(host, prepared.config, session.config.roots);
-	const agents = seatAgents(seatedAgents(prepared.ir, setup), request);
-	const [{ binding }] = agents;
-	const profile = await resolveProfile(binding.profile, setup);
-	const prompts = request.prompt
-		? [...Map.groupBy(agents, (a) => a.prompt(profile))].map(
-				([prompt, group]) => ({ nodes: group.map((a) => a.node), prompt }),
-			)
-		: undefined;
-	return show(profile, undefined, session, values, {
-		key: request.key,
-		binding,
-		...(prompts && { prompts }),
-	});
-}
-
-/** The progress events concert `row` recorded for instance `name`, in order. */
-const eventsOf = (store: Records, row: ConcertRecord, name: string) =>
-	store
-		.events(row.id)
-		.flatMap((e) =>
-			e.type === "progress" && instanceName(row.ir, e) === name
-				? [e.event]
-				: [],
-		);
-
-/** The runtime of the last agent start among `events` and the last environment reported; none without a start. */
-function recordedReport(events: readonly Record<string, unknown>[]) {
-	const ran = events.findLast((e) => e.kind === "agent");
-	if (typeof ran?.harness !== "string") return undefined;
-	const reported = events.findLast((e) => e.kind === "environment");
-	const report: Report = {
-		how: "recorded",
-		...(reported && { observed: observedOf(reported) }),
-	};
-	const model = typeof ran.model === "string" ? ran.model : "-";
-	return { harness: ran.harness, model, report };
-}
-
-/** The environment a node of a concert recorded, checked as `agent probe` checks it; a fault never fails the command. */
-async function recorded(
-	{ concert, node }: { concert: string; node: string },
+/** Prints the system prompt of agent node `request.node`, and on stderr the seat and profile it is bound to. */
+async function promptOf(
+	request: { target: string; node: string },
 	session: Session,
 	values: Values,
 ): Promise<number> {
 	const { deps } = session;
-	return withRecord(session, async (store) => {
-		const record = concertOf(store, concert);
-		const names = instancesInOrder(store, record).map((i) =>
-			instanceName(record.ir, i),
+	const host = deps.hosts.find((h) => h.name === HOST_NAME);
+	if (!host)
+		throw new CliError(
+			`agent nodes belong to host '${HOST_NAME}', which is not loaded`,
 		);
-		const name = nameOf(node, names, record.id);
-		const ran = recordedReport(eventsOf(store, record, name));
-		if (!ran)
-			throw new CliError(
-				`instance '${name}' of concert ${record.id} ran no agent\nName an agent node, as 'maestro ls ${record.id}' lists it`,
-			);
-		const { harness, model, report } = ran;
-		const declared = DECLARED.get(harness) ?? null;
-		if (isSet(values, "json")) {
-			deps.stdout(
-				jsonOf({
-					concert: record.id,
-					instance: name,
-					runtime: { harness, model },
-					environment: environmentJson(declared, report),
-				}),
-			);
-			return EXIT.ok;
-		}
-		const look = { color: colorOf(deps, values).out };
-		const heading = [
-			paint("bold", name, look.color),
-			row("concert", record.id, look),
-			row("harness", harness, look),
-			row("model", model, look),
-		];
-		const env = environmentLines(declared, harness, look, report);
-		deps.stdout([...heading, "", ...env].join("\n"));
+	const reading = { verb: "agent prompt", options: COMMON, examples: true };
+	const prepared = await prepare(session, reading, [request.target]);
+	const setup = hostSetup(host, prepared.config, session.config.roots);
+	const { node, key, binding, prompt } = agentAt(
+		seatedAgents(prepared.ir, setup),
+		request.node,
+		request.target,
+	);
+	const text = prompt(await resolveUnsettled(binding.profile, setup));
+	if (isSet(values, "json")) {
+		deps.stdout(jsonOf({ node, seat: { key, ...binding }, prompt: text }));
 		return EXIT.ok;
-	});
+	}
+	const words = binding.source && sourceWords(binding.source);
+	const color = colorOf(deps, values).err;
+	deps.stderr(
+		`${paint("bold", node, color)} · seat ${key} · ${binding.profile}${words === undefined ? "" : ` ${paint("dim", `[${words}]`, color)}`}`,
+	);
+	deps.stdout(text);
+	return EXIT.ok;
 }
 
 export const agent: Command = {
 	pages: (args) => splitFirst(AGENT_OPTIONS, args).first === "show",
 	usage:
-		"agent ls [flags]  (alias: ag)\n       maestro agent show <profile> [flags]\n       maestro agent probe <profile> [flags]\n       maestro agent show --seat <composition id>/<seat> <composition> [--prompt] [flags]\n       maestro agent show --concert <id> <node> [flags]",
+		"agent ls [flags]  (alias: ag)\n       maestro agent show <profile> [flags]\n       maestro agent probe <profile> [flags]\n       maestro agent prompt <composition> <node> [flags]",
 	arguments: [
 		["<profile>", "A profile, as 'maestro agent ls' lists it"],
 		[
 			"<composition>",
-			"With --seat, the composition the seat sits in: a file, or <pack>.<composition>",
+			"With prompt, the composition the node sits in: a file, or <pack>.<composition>",
 		],
-		[
-			"<node>",
-			"With --concert, a node of that concert, as 'maestro ls <concert>' lists it",
-		],
+		["<node>", "With prompt, an agent node, as 'maestro compose' lists it"],
 	],
 	options: AGENT_OPTIONS,
 	async execute(args, deps) {
 		const { values, positionals } = parse(AGENT_OPTIONS, args, FIX);
-		const request = requestOf(values, positionals);
+		const request = requestOf(positionals);
 		const session = await openSession(deps, overridesOf(values));
-		if (request.action === "recorded")
-			return recorded(request, session, values);
-		if (request.action === "seat") return showSeat(request, session, values);
+		if (request.action === "prompt") return promptOf(request, session, values);
 		const { config } = session;
 		const setup = { layers: config.layers, roots: config.roots };
 		if (request.action === "probe")

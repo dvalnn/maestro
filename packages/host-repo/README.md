@@ -564,8 +564,8 @@ Environment variables rehearse a branch a placeholder never takes. A resume need
 [^delay]: A duration such as `2s` or `500ms`; unset, it answers at once. It applies to scripted events too.
 
 [^environment]:
-    Such as `{"mcp":["github"]}`, to rehearse a fault for `agent probe` or `agent show --concert`; `null` leaves a part
-    unreported, and `window` reports a model's window.
+    Such as `{"mcp":["github"]}`, to rehearse a fault for `agent probe` or the `Environment` notes of `ls`; `null`
+    leaves a part unreported, and `window` reports a model's window.
 
 ## Validation rules
 

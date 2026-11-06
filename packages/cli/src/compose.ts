@@ -72,16 +72,18 @@ async function agentsOf(
 	return host ? agentRuntimes(plan.ir, config, host, session.config.roots) : [];
 }
 
-/** The `agents:` block: one row per agent, its node, profile, harness, model and thinking. */
+/** The `agents:` block: a header and one row per agent, its node, seat, profile, harness, model and thinking. */
 function agentLines(agents: readonly AgentRuntime[]): string {
+	const header = ["node", "seat", "profile", "harness", "model", "thinking"];
 	const rows = agents.map((a) => [
 		a.node,
+		a.seat,
 		a.profile,
 		a.harness,
 		a.model,
 		a.thinking ?? "-",
 	]);
-	return `agents:\n${table(rows).replace(/^/gm, "  ")}`;
+	return `agents:\n${table([header, ...rows]).replace(/^/gm, "  ")}`;
 }
 
 /** The plan in full, then its `agents:` block when it has agent nodes. */

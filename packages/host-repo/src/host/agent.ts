@@ -30,12 +30,15 @@ import {
 	violations,
 } from "@maestro/ir";
 import {
+	type AgentEnvironment,
 	type ContextPolicy,
+	environmentChecks,
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,
 	type HarnessResult,
 	type Metrics,
+	type ObservedEnvironment,
 	OUTBOX,
 	type Output,
 	type Runtime,
@@ -49,6 +52,7 @@ import {
 	type ProfileFields,
 	resolveProfile,
 	seatBinding,
+	type Unsettled,
 } from "../profile/index";
 import type { Bind } from "../sandbox/index";
 import { type AgentChecks, stageChecks } from "./agent-checks";
@@ -294,6 +298,8 @@ type Talk = {
 	compacted: () => void;
 	/** Keeps the model's context window in tokens, as the harness reported it. */
 	window: (tokens: number) => void;
+	/** Keeps the environment the harness reported loading; the latest one stands. */
+	environment: (observed: ObservedEnvironment) => void;
 };
 
 /**
@@ -304,6 +310,10 @@ function observe(talk: Talk, e: HarnessEvent, at: number | undefined) {
 	if (e.kind === "usage") talk.guard.usage(e.metrics);
 	if (e.kind === "compaction") talk.compacted();
 	if (e.kind === "window") talk.window(e.tokens);
+	if (e.kind === "environment") {
+		const { kind: _, ...observed } = e;
+		talk.environment(observed);
+	}
 	return e.kind === "context" && at !== undefined && e.used >= at;
 }
 
@@ -655,6 +665,22 @@ async function settle(
 		: { outcome, reason, outputs, metrics, enrichment };
 }
 
+/** `result` with the checks of `observed` against `declared` in its enrichment, when the harness reported an environment. */
+function withEnvironment(
+	result: HostNodeResult,
+	declared: AgentEnvironment | undefined,
+	observed: ObservedEnvironment | undefined,
+): HostNodeResult {
+	if (!declared || !observed) return result;
+	return {
+		...result,
+		enrichment: {
+			...result.enrichment,
+			environment: environmentChecks(declared, observed),
+		},
+	};
+}
+
 /**
  * `result`, and when it failed after changing `lane`, those changes kept as a changeset directory in the store and named
  * as `partial` in its enrichment. The partial is no lane version, so nothing takes it as input.
@@ -752,7 +778,7 @@ function sessionOf(
 }
 
 /** The attachments of `profile`, by name, each with its hint and whether its path is a file or a directory. */
-export const profileAttached = (profile: Profile): Run["attachments"] =>
+export const profileAttached = (profile: Unsettled): Run["attachments"] =>
 	Object.entries(profile.fields.attachments).map(([name, a]) => [
 		name,
 		a.hint,
@@ -767,7 +793,7 @@ export const profileAttached = (profile: Profile): Run["attachments"] =>
  */
 function toldOf(
 	config: AgentConfig,
-	profile: Profile,
+	profile: Unsettled,
 	named: [string, AgentCheck][],
 ): Run {
 	const { context } = profile.fields;
@@ -797,7 +823,7 @@ function toldOf(
  */
 export const agentPrompt = (
 	config: AgentConfig,
-	profile: Profile,
+	profile: Unsettled,
 	setup: HostSetup,
 ) =>
 	systemPrompt(
@@ -962,6 +988,7 @@ async function execute(
 					context.concert,
 					`${instance.id}${SESSION_INDEX}${index}`,
 				);
+			let observed: ObservedEnvironment | undefined;
 			const turns = await within(profile.fields.limits, live, (guard) =>
 				converse(
 					{
@@ -980,14 +1007,21 @@ async function execute(
 							guard,
 						),
 						window: (tokens) => keepWindow(setup.store, runtime, tokens),
+						environment: (o) => {
+							observed = o;
+						},
 					},
 					req,
 					session,
 				),
 			);
 			keptLatest(turns.session);
-			const settled = await settle(staging, turns, async () =>
-				read ? undefined : lane.seal(),
+			const settled = withEnvironment(
+				await settle(staging, turns, async () =>
+					read ? undefined : lane.seal(),
+				),
+				harness.environment,
+				observed,
 			);
 			keepSettled(
 				live,

@@ -31,9 +31,9 @@ names, in one of these roots, highest first; the highest holding the name wins i
 - `maestro agent ls`: every profile and the root that wins it.
 - `maestro agent show <profile>`: what it resolves to, naming the layer behind each configured value.
 - `maestro agent probe <profile>`: starts its harness and checks what it loads; see Probe below.
-- `maestro agent show --seat <composition id>/<seat> <composition>`: the profile a seat is bound to, `seats:` first;
-  `--prompt` prints the system prompt its agents get.
-- `maestro agent show --concert <id> <node>`: what an agent of a concert recorded.
+- `maestro agent prompt <composition> <node>`: the system prompt the node gets, and on stderr the seat and profile it is
+  bound to; `compose` lists each agent's seat.
+- `maestro ls <concert>`: the faults an agent's environment report recorded, under `Environment`.
 
 ## Probe
 

@@ -118,14 +118,29 @@ describe("repoText.report", () => {
 		[{ report: { summary: "s", gaps: ["g"] } }, { summary: "s", gaps: ["g"] }],
 		[{ report: "as text" }, { summary: "as text" }],
 		[{ session: "s" }, undefined],
+		[
+			{
+				report: { summary: "s" },
+				environment: [
+					{ part: "mcp", mark: "✗", faults: ["x loaded, not declared"] },
+				],
+			},
+			{
+				summary: "s",
+				environment: [
+					{ part: "mcp", mark: "✗", faults: ["x loaded, not declared"] },
+				],
+			},
+		],
 	])("report of %j is %j", (enrichment, report) => {
 		expect(repoText.report?.(enrichment)).toEqual(report);
 	});
 
 	test("reportFields names each field of a report", () => {
-		expect(Object.keys(repoText.reportFields ?? {})).toEqual(
-			Object.keys(REPORT.properties),
-		);
+		expect(Object.keys(repoText.reportFields ?? {})).toEqual([
+			...Object.keys(REPORT.properties),
+			"environment",
+		]);
 	});
 });
 
@@ -143,6 +158,30 @@ describe("repoText.notes", () => {
 			{ Obstacles: ["no rg"], Lessons: ["l1", "l2"] },
 		],
 		[{ report: { summary: "s", obstacles: [] } }, {}],
+		[
+			{
+				harness: "pi",
+				environment: [
+					{ part: "tools", mark: "✓", faults: [] },
+					{ part: "mcp", mark: "✗", faults: ["github loaded, not declared"] },
+					{
+						part: "skills",
+						mark: "✗",
+						faults: ["deploy declared, not loaded"],
+					},
+				],
+			},
+			{
+				Environment: [
+					"mcp: pi loaded github, which the profile does not declare",
+					"skills: pi did not load deploy, which the profile declares",
+				],
+			},
+		],
+		[
+			{ harness: "pi", environment: [{ part: "mcp", mark: "✓", faults: [] }] },
+			{},
+		],
 		[{ report: "a report as text" }, {}],
 		[{ session: "s" }, {}],
 	])("notes of %j are %j", (enrichment, notes) => {

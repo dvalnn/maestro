@@ -431,6 +431,7 @@ export function claudeHarness(
 	};
 	return {
 		...subprocessHarness(adapter, backend),
+		environment: declared,
 		runtimeProblems: (runtime, context) => [
 			...thinkingProblems(adapter.name, EFFORTS, runtime),
 			...contextProblems(adapter.name, CONTEXT_SUPPORT, context),

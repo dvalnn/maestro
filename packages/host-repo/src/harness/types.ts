@@ -287,6 +287,8 @@ export interface HarnessRun {
 /** The seam to a coding-agent runtime (D-20). */
 export interface Harness {
 	readonly name: string;
+	/** The agent environment it launches with, which its environment report is checked against. */
+	readonly environment?: AgentEnvironment;
 	run(req: HarnessRequest): HarnessRun;
 	/**
 	 * Each field of `runtime` and `context`, one naming this harness, it cannot honour, given the model's context

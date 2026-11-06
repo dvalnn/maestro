@@ -538,7 +538,7 @@ describe("profiles", () => {
 			});
 	});
 
-	test("compose lists each agent's node, profile, harness, model and thinking, in text and JSON", async () => {
+	test("compose lists each agent's node, seat, profile, harness, model and thinking, in text and JSON", async () => {
 		const w = await repoWorld(
 			"profiles:\n  smoke:\n    runtime:\n      harness: stub\n      model: none\n      thinking: low\n",
 		);
@@ -556,6 +556,7 @@ describe("profiles", () => {
 		).toEqual([
 			{
 				node: "a",
+				seat: "smoke/smoke",
 				profile: "smoke",
 				harness: "stub",
 				model: "big",
@@ -563,7 +564,7 @@ describe("profiles", () => {
 			},
 		]);
 		expect((await w.call(["compose", file, "--plan"])).out).toMatch(
-			/\nagents:\n {2}a +smoke +stub +none +low$/,
+			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}a +smoke\/smoke +smoke +stub +none +low$/,
 		);
 	});
 
@@ -1102,6 +1103,27 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 		expect(bad.done.out + bad.done.err).toContain("events.jsonl");
 	});
 
+	test("ls shows the faults of an instance's latest environment report only", async () => {
+		const dir = await fixtures({
+			"review/events.jsonl": [
+				'{"type":"environment","mcp":["github"]}',
+				'{"type":"environment","skills":["deploy"]}',
+				"",
+			].join("\n"),
+		});
+		const { w, done } = await perform(dir, ROUNDS);
+		const id = idOf(done);
+		const listed = (await w.call(["ls", id])).out;
+		expect(listed).toContain(
+			"\nEnvironment\nreview  skills: stub loaded deploy, which the profile does not declare",
+		);
+		expect(listed).not.toContain("github");
+		const { review } = json(await w.call(["ls", id, "--json"])).reports;
+		expect(
+			review.environment.flatMap((c: { faults: string[] }) => c.faults),
+		).toEqual(["deploy loaded, not declared"]);
+	});
+
 	test("a missing directory fails the stub agent naming the variable and the path", async () => {
 		const missing = join(await scratch(), "nowhere");
 		const { done } = await perform(missing, ROUNDS);
@@ -1111,63 +1133,60 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 	});
 });
 
-describe("agent show --seat", () => {
-	test("a seat shows the profile it is declared with, or the one config rebinds it to with its source", async () => {
+describe("agent prompt", () => {
+	test("prints the node's system prompt on stdout and its seat binding on stderr, with --json carrying both", async () => {
 		const w = await repoWorld(SMOKE_RUNTIME("stub"));
 		profileIn(w.cwd, "flag", "runtime: { harness: stub, model: flag }\n");
-		const file = await smokeFile();
-		const seat = async (...flags: string[]) =>
-			(
-				await w.call(["agent", "show", "--seat", "smoke/smoke", file, ...flags])
-			).out
-				.split("\n")
-				.slice(0, 2);
-		expect(await seat()).toEqual(["smoke", "  seat        smoke/smoke"]);
-		const rebind = ["-c", "seats.smoke/smoke=flag"];
-		expect(await seat(...rebind)).toEqual([
-			"flag",
-			"  seat        smoke/smoke  [-c]",
-		]);
-		expect(
-			json(
-				await w.call([
-					"agent",
-					"show",
-					"--seat",
-					"smoke/smoke",
-					file,
-					"--json",
-					...rebind,
-				]),
-			),
-		).toMatchObject({
-			name: "flag",
-			seat: { key: "smoke/smoke", profile: "flag", source: { layer: "flag" } },
-		});
-		expect(
-			await w.call(["agent", "show", "--seat", "smoke/smok", file]),
-		).toMatchObject({
-			code: 2,
-			err: `error: ${file} seats no agent at 'smoke/smok'\n  Did you mean 'smoke/smoke'?`,
-		});
-	});
-
-	test("--prompt prints the system prompt the seat's agent is staged with", async () => {
-		const w = await repoWorld(SMOKE_RUNTIME("stub"));
 		const file = await smokeFile();
 		const id = idOf(await w.call(["perform", file]));
 		const staged = (
 			await w.call(["art", "show", id, "a", "staged/instructions.md"])
 		).out;
 		expect(staged).toStartWith("terse\n\n# Your run");
-		const show = ["agent", "show", "--seat", "smoke/smoke", file, "--prompt"];
-		expect((await w.call(show)).out).toBe(staged);
-		expect(json(await w.call([...show, "--json"])).prompts).toEqual([
-			{ nodes: ["a"], prompt: staged },
+		const shown = await w.call(["agent", "prompt", file, "a"]);
+		expect(shown).toMatchObject({
+			code: 0,
+			out: staged,
+			err: "a · seat smoke/smoke · smoke",
+		});
+		const rebound = await w.call([
+			"agent",
+			"prompt",
+			file,
+			"a",
+			"-c",
+			"seats.smoke/smoke=flag",
 		]);
+		expect(rebound.err).toBe("a · seat smoke/smoke · flag [-c]");
+		expect(
+			json(await w.call(["agent", "prompt", file, "a", "--json"])),
+		).toEqual({
+			node: "a",
+			seat: { key: "smoke/smoke", profile: "smoke" },
+			prompt: staged,
+		});
 	});
 
-	test("a seat shows without --prompt when its agent's prompt could not be built", async () => {
+	test("an unknown node is a usage error naming the nearest one", async () => {
+		const w = await repoWorld(SMOKE_RUNTIME("stub"));
+		const file = join(REPO, "rounds.ts");
+		expect(await w.call(["agent", "prompt", file, "reviw"])).toMatchObject({
+			code: 2,
+			err: `error: ${file} has no agent node 'reviw'\n  Did you mean 'review'?`,
+		});
+	});
+
+	test("a profile with no runtime still gives its node's prompt", async () => {
+		const w = await repoWorld();
+		const shown = await w.call(["agent", "prompt", await smokeFile(), "a"]);
+		expect(shown).toMatchObject({
+			code: 0,
+			err: "a · seat smoke/smoke · smoke",
+		});
+		expect(shown.out).toContain("# Your run");
+	});
+
+	test("a node whose prompt could not be built fails", async () => {
 		const w = await repoWorld(SMOKE_RUNTIME("stub"));
 		const file = (await smokeFile()).replace(".ts", "-checked.ts");
 		writeFileSync(
@@ -1177,79 +1196,32 @@ describe("agent show --seat", () => {
 				'task: "nothing", checks: ["absent"],',
 			),
 		);
-		const show = ["agent", "show", "--seat", "smoke/smoke", file];
-		expect(await w.call(show)).toMatchObject({ code: 0 });
-		expect((await w.call([...show, "--prompt"])).code).not.toBe(0);
+		expect((await w.call(["agent", "prompt", file, "a"])).code).not.toBe(0);
 	});
 });
 
-describe("agent show --concert", () => {
-	test("checks the environment an agent recorded as --probe does, its faults marked recorded and never failing the command, and every part ? once none is recorded", async () => {
-		const w = await repoWorld(SMOKE_RUNTIME("stub"), {
-			MAESTRO_STUB_ENVIRONMENT: JSON.stringify({ skills: ["deploy"] }),
+describe("ls Environment notes", () => {
+	test("lists the faults of an agent's environment report, one line each, and none for a clean one; --json carries the checks", async () => {
+		const faulty = await repoWorld(SMOKE_RUNTIME("stub"), {
+			MAESTRO_STUB_ENVIRONMENT: JSON.stringify({ mcp: ["github"] }),
 		});
-		const done = await w.call(["perform", join(REPO, "rounds.ts")]);
+		const file = join(REPO, "rounds.ts");
+		const done = await faulty.call(["perform", file]);
 		expect(done).toMatchObject({ code: 0 });
 		const id = idOf(done);
-		const shown = await w.call(["agent", "show", "--concert", id, "review"]);
-		expect(shown).toMatchObject({ code: 0, err: "" });
-		expect(shown.out).toBe(`review
-  concert     ${id}
-  harness     stub
-  model       none
-
-Environment   recorded stub
-✓ tools       none
-✓ subagents   off
-✗ skills      none
-              deploy loaded, not declared
-✓ mcp         none
-✓ hooks       none
-✓ files       none
-? compaction  stub's own
-
-1 fault recorded`);
-		const recorded = json(
-			await w.call(["agent", "show", "--concert", id, "review", "--json"]),
+		const listed = await faulty.call(["ls", id]);
+		expect(listed.out).toContain(
+			"\nEnvironment\nreview  mcp: stub loaded github, which the profile does not declare",
 		);
-		expect(recorded).toMatchObject({
-			concert: id,
-			instance: "review",
-			runtime: { harness: "stub", model: "none" },
-			environment: { observed: { skills: ["deploy"], mcp: [] } },
+		const reports = json(await faulty.call(["ls", id, "--json"])).reports;
+		expect(reports.review.environment).toContainEqual({
+			part: "mcp",
+			mark: "✗",
+			faults: ["github loaded, not declared"],
 		});
 
-		const db = new Database(join(w.root, "data/maestro/record.db"));
-		db.run('DELETE FROM events WHERE body LIKE \'%"kind":"environment"%\'');
-		db.close();
-		const unreported = await w.call([
-			"agent",
-			"show",
-			"--concert",
-			id,
-			"review",
-		]);
-		expect(unreported).toMatchObject({ code: 0, err: "" });
-		expect(unreported.out).toEndWith(`Environment   recorded nothing from stub
-? tools       none
-? subagents   off
-? skills      none
-? mcp         none
-? hooks       none
-? files       none
-? compaction  stub's own
-
-0 faults recorded`);
-	});
-
-	test("an instance that ran no agent is refused, naming where to find one", async () => {
-		const w = await repoWorld(SMOKE_RUNTIME("stub"));
-		const id = idOf(await w.call(["perform", await smokeFile()]));
-		expect(
-			await w.call(["agent", "show", "--concert", id, "ok"]),
-		).toMatchObject({
-			code: 1,
-			err: `error: instance 'ok' of concert ${id} ran no agent\n  Name an agent node, as 'maestro ls ${id}' lists it`,
-		});
+		const clean = await repoWorld(SMOKE_RUNTIME("stub"));
+		const ok = idOf(await clean.call(["perform", file]));
+		expect((await clean.call(["ls", ok])).out).not.toContain("Environment");
 	});
 });

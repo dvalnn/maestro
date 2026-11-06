@@ -321,8 +321,9 @@ for each, says its Environment has `no harness to declare one`, ends with the fi
   probe runs one short turn; pi reports both through a maestro extension loaded with `--extension` beside
   `--no-extensions`. The window is kept per harness and model, and every agent turn refreshes it; Context shows it where
   known, and `--json` carries it as `window`.
-- Every agent session records its harness's report: `agent show --concert <id> <node>` checks the node's latest one the
-  same way, its faults marked `recorded`, and exits 0.
+- Every agent session records its harness's report: `ls <concert>` lists the faults of an agent's latest one, as the
+  profile declares its environment, under an `Environment` heading, and `ls --json` carries the checks in the instance's
+  report.
 
 ### Repertoire
 

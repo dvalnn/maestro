@@ -15,6 +15,7 @@ import {
 	profilesDigest,
 	resolveProfile,
 	seatBinding,
+	type Unsettled,
 } from "../profile/index";
 import { agentKind, agentPrompt } from "./agent";
 import { applyKind, changesetKind, commitsKind } from "./apply";
@@ -79,7 +80,12 @@ export type RepoHostOptions = {
 };
 
 /** What an agent node runs: its profile, and the runtime the profile resolves to. */
-export type AgentRuntime = { node: string; profile: string } & Runtime;
+export type AgentRuntime = {
+	node: string;
+	/** `<composition id>/<seat>`. */
+	seat: string;
+	profile: string;
+} & Runtime;
 
 /** An agent node seated in a composition: where it sits, the profile it is bound to, and the prompt a profile gives it. */
 export type SeatedAgent = {
@@ -87,7 +93,7 @@ export type SeatedAgent = {
 	/** `<composition id>/<seat>`, the key `seats` rebinds the seat by. */
 	key: string;
 	binding: Binding;
-	prompt: (profile: Profile) => string;
+	prompt: (profile: Unsettled) => string;
 };
 
 /** The agent nodes of `ir`, each with the profile its seat runs under `setup`. */
@@ -117,8 +123,9 @@ export async function agentRuntimes(
 ): Promise<AgentRuntime[]> {
 	const setup = hostSetup(host, config, roots);
 	return Promise.all(
-		seatedAgents(ir, setup).map(async ({ node, binding }) => ({
+		seatedAgents(ir, setup).map(async ({ node, key, binding }) => ({
 			node,
+			seat: key,
 			profile: binding.profile,
 			...(await resolveProfile(binding.profile, setup)).fields.runtime,
 		})),

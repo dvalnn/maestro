@@ -497,20 +497,15 @@ describe("agent probe", () => {
 test.each([
 	[
 		["agent"],
-		"expected ls, show or probe, got nothing\nRun 'maestro agent ls', 'maestro agent show <profile>', or 'maestro agent probe <profile>'",
+		"expected ls, show, probe or prompt, got nothing\nRun 'maestro agent ls', 'maestro agent show <profile>', or 'maestro agent probe <profile>'",
 	],
 	[
 		["agent", "list"],
-		"expected ls, show or probe, got 'list'\nRun 'maestro agent ls', 'maestro agent show <profile>', or 'maestro agent probe <profile>'",
+		"expected ls, show, probe or prompt, got 'list'\nRun 'maestro agent ls', 'maestro agent show <profile>', or 'maestro agent probe <profile>'",
 	],
 	[
 		["agent", "ls", "scout"],
 		"agent ls takes no profile, got 1\nRun 'maestro agent show <profile>' for one profile",
-	],
-	[["agent", "ls", "--seat", "a/b"], "agent ls takes no --seat\nDrop --seat"],
-	[
-		["agent", "probe", "scout", "--seat", "a/b"],
-		"agent probe takes no --seat\nDrop --seat",
 	],
 	[
 		["agent", "probe"],
@@ -525,20 +520,20 @@ test.each([
 		"unknown flag --probe\nRun 'maestro agent ls', 'maestro agent show <profile>', or 'maestro agent probe <profile>'",
 	],
 	[
-		["agent", "show", "--concert", "c"],
-		"maestro agent show needs a node\nName one as 'maestro ls <concert>' lists it",
-	],
-	[
 		["agent", "show"],
 		"maestro agent show needs a profile\nName one as 'maestro agent ls' lists it",
 	],
 	[
-		["agent", "show", "scout", "--prompt"],
-		"--prompt takes --seat: the prompt is a seat's\nAdd --seat <composition id>/<seat> and name its composition",
+		["agent", "prompt"],
+		"maestro agent prompt needs a composition\nName it by file path or <pack>.<composition>",
 	],
 	[
-		["agent", "show", "--seat", "smoke/smoke"],
-		"maestro agent show needs a composition\nName it by file path or <pack>.<composition>",
+		["agent", "prompt", "smoke"],
+		"maestro agent prompt needs a node\nName an agent node, as 'maestro compose <composition>' lists them",
+	],
+	[
+		["agent", "show", "scout", "--seat", "a/b"],
+		"unknown flag --seat\nRun 'maestro agent ls', 'maestro agent show <profile>', or 'maestro agent probe <profile>'",
 	],
 ])("agent %j is a usage error", async (args, err) => {
 	const w = await roster();

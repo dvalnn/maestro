@@ -1,6 +1,6 @@
 import type { HostText } from "@maestro/core/host";
 import { compact, type Enrichment, type HostEvent } from "@maestro/ir";
-import { METRIC } from "../harness/types";
+import { type EnvironmentCheck, METRIC } from "../harness/types";
 import { REPORT_FIELDS, type Report } from "./frame";
 import { lastLine } from "./run-lines";
 
@@ -124,25 +124,54 @@ function actor(enrichment: Enrichment): string | undefined {
 /** The headings of the report lists an agent's notes show, by report field. */
 const NOTED = { obstacles: "Obstacles", lessons: "Lessons" } as const;
 
+/** The checks of an agent's latest environment report its enrichment holds; none for an older record. */
+const checksOf = ({ environment }: Enrichment): EnvironmentCheck[] =>
+	Array.isArray(environment) ? (environment as EnvironmentCheck[]) : [];
+
 /** The report an agent's enrichment holds, if any; a report as text, from an older record, reads as its `summary`. */
-function reportOf({ report }: Enrichment): Report | undefined {
+function envelopeOf({ report }: Enrichment): Report | undefined {
 	if (typeof report === "string") return { summary: report };
 	return typeof report === "object" && report !== null
 		? (report as Report)
 		: undefined;
 }
 
-/** An agent's report obstacles and lessons, each non-empty list under its heading. */
+/** The envelope's report, with the checks of the latest environment report when it held any. */
+function reportOf(enrichment: Enrichment): Record<string, unknown> | undefined {
+	const report = envelopeOf(enrichment);
+	const checks = checksOf(enrichment);
+	if (!checks.length) return report;
+	return { ...report, environment: checks };
+}
+
+/** What a fault of an environment check says in a note, as the profile and `harness` are named in it. */
+function faultNote(harness: string, { part, faults }: EnvironmentCheck) {
+	return faults.map((fault) => {
+		const extra = /^(.+) loaded, not declared$/.exec(fault)?.[1];
+		if (extra !== undefined)
+			return `${part}: ${harness} loaded ${extra}, which the profile does not declare`;
+		const missing = /^(.+) declared, not loaded$/.exec(fault)?.[1];
+		if (missing !== undefined)
+			return `${part}: ${harness} did not load ${missing}, which the profile declares`;
+		return `${part}: ${harness} ${fault}`;
+	});
+}
+
+/** An agent's report obstacles and lessons, then the faults of its environment report, each non-empty list under its heading. */
 function notes(enrichment: Enrichment): Record<string, string[]> {
-	const lists = new Map(Object.entries(reportOf(enrichment) ?? {}));
-	return Object.fromEntries(
-		Object.entries(NOTED).flatMap(([field, heading]) => {
+	const lists = new Map(Object.entries(envelopeOf(enrichment) ?? {}));
+	const faults = checksOf(enrichment).flatMap((check) =>
+		faultNote(stringOf(enrichment.harness) ?? "the harness", check),
+	);
+	return Object.fromEntries([
+		...Object.entries(NOTED).flatMap(([field, heading]) => {
 			const list = lists.get(field);
 			return Array.isArray(list) && list.length
 				? [[heading, list.map(String)]]
 				: [];
 		}),
-	);
+		...(faults.length ? [["Environment", faults]] : []),
+	]);
 }
 
 /** How the repo host's prepare, tool, result, usage, context and environment events and its agents read as text. */
@@ -151,5 +180,9 @@ export const repoText: HostText = {
 	actor,
 	notes,
 	report: reportOf,
-	reportFields: REPORT_FIELDS,
+	reportFields: {
+		...REPORT_FIELDS,
+		environment:
+			"each part of the agent's environment checked against what its harness reported loading, with its faults",
+	},
 };

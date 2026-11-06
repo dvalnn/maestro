@@ -154,23 +154,26 @@ export const DECLARED: ReadonlyMap<string, AgentEnvironment> = new Map([
  */
 export const builtinHarnesses = (env: Record<string, string | undefined>) => [
 	...baselined(env).map(({ harness }) => harness),
-	stubHarness((req) => {
-		const delay = env[STUB_DELAY];
-		const delayMs = delay ? parseDuration(STUB_DELAY, delay) : undefined;
-		const outputs = env[STUB_OUTPUTS] || undefined;
-		return [
-			stubEnvironment(env[STUB_ENVIRONMENT]),
-			...scriptedEvents(outputs, req, delayMs),
-			...(outputs ? scriptedOutputs(outputs, req) : placeholderOutputs(req)),
-			{
-				emit: {
-					type: "text",
-					text: req.verdict ? scriptedVerdict(outputs, req) : STUB_REPLY,
+	{
+		...stubHarness((req) => {
+			const delay = env[STUB_DELAY];
+			const delayMs = delay ? parseDuration(STUB_DELAY, delay) : undefined;
+			const outputs = env[STUB_OUTPUTS] || undefined;
+			return [
+				stubEnvironment(env[STUB_ENVIRONMENT]),
+				...scriptedEvents(outputs, req, delayMs),
+				...(outputs ? scriptedOutputs(outputs, req) : placeholderOutputs(req)),
+				{
+					emit: {
+						type: "text",
+						text: req.verdict ? scriptedVerdict(outputs, req) : STUB_REPLY,
+					},
+					delayMs,
 				},
-				delayMs,
-			},
-		];
-	}),
+			];
+		}),
+		environment: STUB_DECLARED,
+	},
 ];
 
 /** The hosts the CLI ships, on `builtinHarnesses(env)`. */

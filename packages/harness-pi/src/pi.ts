@@ -430,6 +430,7 @@ export function piHarness(
 	};
 	return {
 		...subprocessHarness(adapter, backend),
+		environment: declared,
 		runtimeProblems: (runtime, context, window) => [
 			...thinkingProblems(adapter.name, THINKING_LEVELS, runtime),
 			...contextProblems(adapter.name, CONTEXT_SUPPORT, context),
