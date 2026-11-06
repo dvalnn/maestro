@@ -1,0 +1,26 @@
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [next]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      # Ubuntu 24.04 confines unprivileged user namespaces with AppArmor, and bubblewrap needs them.
+      - name: Let bubblewrap sandbox here
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap
+          bwrap --unshare-all --share-net --ro-bind / / --proc /proc --dev /dev true
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: bun just jj
+      - run: bun install --frozen-lockfile
+      - run: just check
