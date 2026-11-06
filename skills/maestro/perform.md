@@ -44,7 +44,7 @@ verb but `cs` takes `--json`, `--preset <name>`, `-c <key>=<value>` (repeatable)
   required param with `CFG.required`.
 - Output: `<name>: <count> node instances, <count> repo.agent`, with `up to` where a group or loop bounds it.
   Diagnostics go to stderr as `<code>: <message>`, then the hint, which is the fix.
-- `--plan` adds every node with its kind and count, and each agent's node, profile, harness, model and thinking;
+- `--plan` adds every node with its kind and count, and each agent's node, seat, profile, harness, model and thinking;
   `--json` carries the same as `agents`. `--graph` prints a Mermaid flowchart.
 - `--out plan.json` saves the IR, a bare file's code beside it as `plan.bundle.js`. `maestro perform plan.json` performs
   exactly that IR, taking no param flags.

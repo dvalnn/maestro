@@ -33,7 +33,7 @@ encore's own. Every node runs again on fresh lanes.
 
 `maestro kill <id>` stops a running concert and waits up to 10 s for it to settle `failed` ("the concert was
 cancelled"). A concert whose `perform` process died settles `failed` ("process exited") when the record is next read.
-Either resumes.
+Either resumes. A concert that already settled exits 0 and says so on stderr.
 
 ## Prune and tours
 

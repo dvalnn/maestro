@@ -13,7 +13,7 @@ REPO=tiago/maestro
 REQUIRED_ASSETS="maestro-skill.tar.gz"
 # The binary, gzipped since 0.1.0-rc.5 to fit the forge's upload limit; a release before ships it as it is.
 BINARY=maestro-linux-x64
-# The harness versions a release supports, one `<tool> <version>` per line; releases before 0.1.0 ship none.
+# The harness versions a release supports, one `<tool> <version>` per line; releases before 0.1.0-rc.6 ship none.
 HARNESSES=harnesses
 MIN_GIT=2.40
 MISE_URL=https://mise.jdx.dev/getting-started.html

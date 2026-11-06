@@ -6,6 +6,8 @@ How to read what a concert left: its instances, their outputs and artifacts, and
 
 `maestro ls <id>` lists the concert's node instances in graph order: instance, status, `stale`, reason.
 
+- `maestro ls <id> <instance>` lists one instance alone: name it as `ls <id>` does, or by a unique ending of whole
+  segments, such as `repair`.
 - An instance name shows its place: `loop[0]/repair` is a loop's first repair, `parMap[risk]/skeptic` the skeptic of
   item `risk`.
 - `stale` marks a row an earlier attempt of a resumed concert left, neither reused nor replaced.

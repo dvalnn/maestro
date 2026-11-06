@@ -35,9 +35,9 @@ optional ones. A boolean takes `--name` and `--no-name`.
   its composition file instead.
 - `compose --out <file>` of a bare file writes its code as `<file stem>.bundle.js` beside the IR, so the IR loads on its
   own. A pack's modules are made relative to the IR.
-- `compose --plan` lists each agent's node, profile and the harness, model and thinking it resolves to, as
-  `compose --json` does in `agents`. [render-text](../render-text/README.md) holds the drawing rules of `--flow`, which
-  sets `--graph`.
+- `compose --plan` lists each agent in an `agents:` table: its node, its `seat` (`<composition>/<seat>`, the key a
+  `seats` entry rebinds), its profile and the harness, model and thinking it resolves to, as `compose --json` does in
+  `agents`. [render-text](../render-text/README.md) holds the drawing rules of `--flow`, which sets `--graph`.
 
 The file rules (stem, bare-file params, imports) are in [SDK spec: File rules](../../docs/sdk-spec.md#file-rules).
 
@@ -85,7 +85,9 @@ prints the output as it is, the exit code staying the command's. A pipe is never
 With `--detach`, `perform`, `encore` and `resume` run the concert in a process of its own session and exit 0 once it
 starts, printing its id on stdout, or under `--json` `{"id": <id>, "status": "running"}`. A run that starts no concert
 within 2 minutes is stopped; a run that refuses passes its output and exit code through. A concert stopped by Ctrl-C
-(130) or SIGTERM (143) can be resumed. `kill` stops a running concert and waits for it to settle.
+(130) or SIGTERM (143) can be resumed. `kill` stops a running concert and waits for it to settle. `kill` of a concert
+that already settled exits 0 and says `concert <id> already settled <status>` on stderr; `--json` prints the concert's
+result document, as it does for one just stopped.
 
 ### The closing block
 
@@ -176,6 +178,10 @@ limit leaves older concerts out, a dim line names the command that shows more, s
   instances, such as an agent's `Obstacles` and `Lessons`, one `<instance>  <entry>` line each under its heading. On a
   terminal an entry wider than the screen is cut with `…` and a dim line says how to read the full reports; piped output
   is never cut.
+
+`ls <concert> <instance>` lists that instance alone, its row and notes. Name it as `ls <concert>` lists it, or by a
+unique ending of whole segments, such as `build` for `loop[0]/build`; a name that matches none, or several, is a usage
+error. With `--json`, `instances` and `reports` hold that instance alone.
 
 In the `--json` documents:
 
@@ -303,7 +309,8 @@ takes no concert and uses the command's own config alone. `show` leaves the chec
 model. An unknown profile is a usage error naming the nearest one.
 
 `agent show <profile>` prints the profile's sections at one column. A profile whose harness or model is unset shows `-`
-for each, says its Environment has `no harness to declare one`, ends with the fix on stderr, and exits 0.
+for each, says its Environment has `no harness to declare one`, ends with the fix on stderr, naming the presets that set
+them when any does, and exits 0.
 
 - A value names its layer in brackets (`[preset risky]`, `[-c]`, `[user config]`, `[workspace config]`) only when a
   layer above its `profile.yaml` set it, and each attachment shows the host path and where the agent sees it.
@@ -311,6 +318,10 @@ for each, says its Environment has `no harness to declare one`, ends with the fi
   context files and compaction.
 - `--json` gives the same fields with absolute paths, each value's source as its layer with its file and line or its
   `-c` flag, as `config --json` does.
+- `agent prompt <composition> <node>` prints the system prompt of an agent node as the agent reads it, without
+  performing: the same text as the instance's `staged/instructions.md`. The seat and profile the node is bound to go on
+  stderr, with the layer that rebound the seat, if any. With `--json` it prints `{node, seat, prompt}`. A node that is
+  no agent node is a usage error naming the nearest one. A profile with no harness or model still gives its prompt.
 - `agent probe <profile>` starts the harness as a concert would (the same sandbox, flags, instructions and attachments,
   an empty scratch lane, no checks), stops it once it has reported its environment and its model's context window,
   failing after 60s without a report, and checks each part: `✓` matched, `✗` a fault with its detail under the row, `?`
@@ -344,12 +355,13 @@ preset each `--preset <name>` names, in order, then each `-c` in order. The full
 [architecture: Configuration](../../docs/architecture.md#8-configuration). Maps merge by key and a list is replaced by
 the layer above it. A tag changes that: `!replace` on a map, `!append` on a list, `!delete` to drop a key.
 `maestro config <composition>` shows where each value came from, naming a preset layer by its name (`preset risky`),
-each value with its layer, file and line or `-c`. Presets combine without a merged file: `--preset risky --preset stub`
-layers `stub` over `risky`.
+each value with its layer, file and line or `-c`. A required param of the composition that no layer gives shows as an
+`unset` row, and in `--json` as `layer: "unset"` with `value: null`; `config` runs no pre-flight, so it exits 0. Presets
+combine without a merged file: `--preset risky --preset stub` layers `stub` over `risky`.
 
 A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`; the
-workspace's file wins the name whole. A compose error that a missing setting raised, such as a profile with no harness
-or a check config lacks, gets the hint `Pass --preset <name>` when presets set it, each one named.
+workspace's file wins the name whole. A compose or perform error that a missing setting raised, such as a profile with
+no harness or a check config lacks, gets the hint `Pass --preset <name>` when presets set it, each one named.
 
 `-c <key>=<value>` sets one key, checked by the same schemas, and an error names the flag. The key is a dotted path,
 with a key holding a `.` in double quotes; the value is YAML, so `=true` is a boolean, `=[a, b]` a list, and the tags

@@ -165,6 +165,10 @@ the user's. Each concert records its workspace's name. [Home](docs/architecture.
 
 **Composed config**: The config layers merged, with each value's source layer.
 
+**Gap**: A setting or param a command needs and no config layer gives, such as a profile with no harness; compose marks
+it with its `unset` keys, and a reading view shows it in place or reports it. Not a report's `gaps`, which lists what an
+agent left undone or unverified. [Home](docs/rulings.md#cli)
+
 ### Hosts
 
 **Host**: A plugin that registers node kinds, types, validation and bounds hooks and an environment.

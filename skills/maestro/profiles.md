@@ -29,7 +29,8 @@ names, in one of these roots, highest first; the highest holding the name wins i
 ## Inspect
 
 - `maestro agent ls`: every profile and the root that wins it.
-- `maestro agent show <profile>`: what it resolves to, naming the layer behind each configured value.
+- `maestro agent show <profile>`: what it resolves to, naming the layer behind each configured value. A harness or model
+  nothing sets shows `-`, with the fix on stderr, and exits 0.
 - `maestro agent probe <profile>`: starts its harness and checks what it loads; see Probe below.
 - `maestro agent prompt <composition> <node>`: the system prompt the node gets, and on stderr the seat and profile it is
   bound to; `compose` lists each agent's seat.

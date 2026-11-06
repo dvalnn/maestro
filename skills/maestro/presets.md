@@ -7,7 +7,8 @@ Config layers, lowest first:
 3. Each preset a `--preset <name>` names, in order.
 4. Each `-c <key>=<value>` flag.
 
-`maestro config <c> [param flags]` shows each value with its layer, file and line.
+`maestro config <c> [param flags]` shows each value with its layer, file and line. A required param no layer gives shows
+as `unset`; `config` checks nothing else and exits 0.
 
 ## Merging
 
