@@ -10,9 +10,9 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
-      # Ubuntu 24.04 confines unprivileged user namespaces with AppArmor, and bubblewrap needs them.
+      # Ubuntu confines unprivileged user namespaces with AppArmor, and bubblewrap needs them.
       - name: Let bubblewrap sandbox here
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
