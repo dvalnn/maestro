@@ -77,6 +77,7 @@ home; no repo doc links into them for its facts.
 
 | Topic                                       | Home                     | Links in from                |
 | ------------------------------------------- | ------------------------ | ---------------------------- |
+| What maestro is, at a glance                | `README.md`              |                              |
 | Install, first run, upgrade, uninstall      | `INSTALL.md`             | CLI README                   |
 | Perform, detach, closing block              | `packages/cli/README.md` | implementation-loop          |
 | Watch, ls, artifact, changeset, agent show  | `packages/cli/README.md` | render-text README           |
