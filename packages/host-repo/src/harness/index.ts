@@ -31,6 +31,7 @@ export {
 	type HarnessResult,
 	type HarnessRun,
 	INSTRUCTIONS,
+	type Mark,
 	METRIC,
 	type Metrics,
 	type ObservedEnvironment,

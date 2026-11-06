@@ -98,10 +98,18 @@ export function observedOf(value: unknown): ObservedEnvironment {
 	return { ...text("version"), ...text("model"), ...Object.fromEntries(lists) };
 }
 
+const MARKS = ["✓", "✗", "?"] as const;
+
+/** A check's verdict: `✓` it holds, `✗` it fails, `?` there was nothing to check it against. */
+export type Mark = (typeof MARKS)[number];
+
+export const isMark = (value: unknown): value is Mark =>
+	MARKS.some((mark) => mark === value);
+
 /** How a part of an agent environment stands against its report: `?` when the harness did not report it. */
 export type EnvironmentCheck = {
 	part: keyof AgentEnvironment;
-	mark: "✓" | "✗" | "?";
+	mark: Mark;
 	/** One line per way the report contradicts the declaration. */
 	faults: string[];
 };

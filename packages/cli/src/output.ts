@@ -1,5 +1,6 @@
 import { constants } from "node:os";
 import { join } from "node:path";
+import { tildeOf } from "@maestro/core";
 import { ConfigError } from "@maestro/core/config";
 import type {
 	ConcertRecord,
@@ -321,12 +322,6 @@ export const viewOf = (
 	color,
 	...size,
 });
-
-/** `path` with the home directory `home` at its start shown as `~`. */
-export const tildeOf = (path: string, home: string | undefined) =>
-	home && (path === home || path.startsWith(`${home}/`))
-		? `~${path.slice(home.length)}`
-		: path;
 
 /**
  * How a closing block shows: colored on each stream `color` names. With `artifacts`, the concert's artifact area, it

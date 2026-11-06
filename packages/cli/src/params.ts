@@ -12,6 +12,7 @@ import {
 	offSchema,
 	type Source,
 	sourceOf,
+	valueAt,
 	valuesLayer,
 } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
@@ -300,10 +301,7 @@ function sectionAt(
 	values: Readonly<Record<string, unknown>>,
 	path: KeyPath,
 ): Readonly<Record<string, unknown>> {
-	const section = path.reduce<unknown>(
-		(at, key) => (isPlainObject(at) ? at[key] : undefined),
-		values,
-	);
+	const section = valueAt(values, path);
 	return isPlainObject(section) ? section : {};
 }
 

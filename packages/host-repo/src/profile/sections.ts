@@ -1,10 +1,12 @@
 import { readFile, stat } from "node:fs/promises";
 import { dirname, relative } from "node:path";
+import { tildeOf } from "@maestro/core";
 import type { Roots } from "@maestro/core/host";
 import {
 	type AgentEnvironment,
 	environmentChecks,
 	faultCount,
+	type Mark,
 	type ObservedEnvironment,
 } from "../harness/index";
 import {
@@ -13,8 +15,6 @@ import {
 	readablePath,
 	sourceWords,
 } from "./index";
-
-export type Mark = "✓" | "✗" | "?";
 
 /** A row of a section: a key and its value, the words of the source that set it, a check mark and its faults. */
 export type SectionRow = {
@@ -50,11 +50,6 @@ export type SectionsView = {
 };
 
 type Places = Pick<SectionsView, "roots" | "home">;
-
-const tildeOf = (path: string, home: string | undefined) =>
-	home && (path === home || path.startsWith(`${home}/`))
-		? `~${path.slice(home.length)}`
-		: path;
 
 /** `path` relative inside `base` or the workspace, else from `~` under home. */
 const readable = (path: string, base: string | undefined, places: Places) =>

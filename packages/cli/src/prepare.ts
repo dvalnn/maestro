@@ -6,7 +6,12 @@ import {
 	type ComposeResult,
 	compose,
 } from "@maestro/core/compose";
-import { CORE_CONFIG, type Composed, type Layer } from "@maestro/core/config";
+import {
+	CORE_CONFIG,
+	type Composed,
+	type Layer,
+	valueAt,
+} from "@maestro/core/config";
 import type { ConcertRecord, Staged } from "@maestro/core/perform";
 import {
 	type Diagnostic,
@@ -469,10 +474,7 @@ export async function configured(
 		true,
 	);
 	const key = [bundle.pack.id, composition.name];
-	const given = key.reduce<unknown>(
-		(at, k) => (isPlainObject(at) ? at[k] : undefined),
-		params.composed.values,
-	);
+	const given = valueAt(params.composed.values, key);
 	return {
 		config: file === undefined ? params.composed : session.config.composed,
 		unset: composition.params.required

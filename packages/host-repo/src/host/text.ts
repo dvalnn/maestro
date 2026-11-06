@@ -5,7 +5,7 @@ import {
 	type HostEvent,
 	isPlainObject,
 } from "@maestro/ir";
-import { METRIC } from "../harness/types";
+import { type EnvironmentCheck, isMark, METRIC } from "../harness/types";
 import { REPORT_FIELDS, type Report } from "./frame";
 import { lastLine } from "./run-lines";
 
@@ -129,13 +129,13 @@ function actor(enrichment: Enrichment): string | undefined {
 /** The headings of the report lists an agent's notes show, by report field. */
 const NOTED = { obstacles: "Obstacles", lessons: "Lessons" } as const;
 
-/** An environment check as a record holds it. */
-type StoredCheck = { part: string; mark: string; faults: string[] };
+/** An environment check as a record holds it, its part not yet known to be one. */
+type StoredCheck = Omit<EnvironmentCheck, "part"> & { part: string };
 
 const storedCheck = (value: unknown): StoredCheck[] =>
 	isPlainObject(value) &&
 	typeof value.part === "string" &&
-	typeof value.mark === "string" &&
+	isMark(value.mark) &&
 	Array.isArray(value.faults) &&
 	value.faults.every((f) => typeof f === "string")
 		? [{ part: value.part, mark: value.mark, faults: value.faults }]

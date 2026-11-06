@@ -6,6 +6,12 @@ import type { LoadCode, Outputs } from "./node";
 export const sha256Hex = (data: string | Uint8Array) =>
 	new Bun.CryptoHasher("sha256").update(data).digest("hex");
 
+/** `path` with the home directory `home` at its start shown as `~`. */
+export const tildeOf = (path: string, home: string | undefined) =>
+	home && (path === home || path.startsWith(`${home}/`))
+		? `~${path.slice(home.length)}`
+		: path;
+
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 
