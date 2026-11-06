@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { dirname, relative } from "node:path";
+import { dirname, relative, sep } from "node:path";
 import { tildeOf } from "@maestro/core";
 import type { Roots } from "@maestro/core/host";
 import {
@@ -67,9 +67,11 @@ function placeOf(dir: string, name: string, places: Places): string {
 const isDirectory = async (path: string) =>
 	(await stat(path).catch(() => undefined))?.isDirectory() ?? false;
 
-/** `path` as `readable` within the profile directory, with a trailing `/` for a directory. */
+/** `path` as `readable` within the profile directory, or relative to it within its namespace directory, with a trailing `/` for a directory. */
 async function hostPath(path: string, s: Inspection, places: Places) {
-	const shown = readable(path, s.dir, places);
+	const shown = path.startsWith(dirname(s.dir) + sep)
+		? relative(s.dir, path)
+		: readable(path, s.dir, places);
 	return (await isDirectory(path)) ? `${shown}/` : shown;
 }
 

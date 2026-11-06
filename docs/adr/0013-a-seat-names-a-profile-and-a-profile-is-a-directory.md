@@ -11,7 +11,8 @@ way to be defined. An agent's setup is now one named thing, a profile, and a com
 The shape is:
 
 - **A profile is a directory** whose `profile.yaml` is its manifest. It names its instructions and attachments by paths
-  relative to itself, and every such path stays inside the directory. Nothing is discovered from the layout.
+  relative to itself, and every such path stays inside the profile's namespace directory, the directory that holds it,
+  so profiles of one level may share a file. Nothing is discovered from the layout.
 - **Roots, highest first:** the workspace's `.maestro/profiles/`, the user's `$XDG_CONFIG_HOME/maestro/profiles/`, then
   the pack bundle's `profiles/`. The highest root holding a name wins it whole. Copying a pack's directory to a higher
   root is a deliberate shadow of it.

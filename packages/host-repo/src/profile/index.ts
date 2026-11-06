@@ -392,9 +392,12 @@ function pathsIn(
 	return found.filter((f): f is [KeyPath, string] => typeof f[1] === "string");
 }
 
+/** The namespace directory of profile directory `dir`: the directory holding it, which bounds the paths its file names. */
+const namespaceOf = (dir: string) => dirname(dir);
+
 /**
  * What is wrong with the path at `key` in profile `name`'s file, given its real path, and the fix; undefined when it
- * is a file or directory inside the profile, and a file for `instructions`.
+ * is a file or directory inside the profile's namespace directory, and a file for `instructions`.
  */
 async function pathProblem(
 	name: string,
@@ -402,21 +405,28 @@ async function pathProblem(
 	key: KeyPath,
 	real: string | undefined,
 ): Promise<readonly [string, string] | undefined> {
-	const root = await realpath(dir);
+	const space = namespaceOf(dir);
 	if (real === undefined)
-		return ["which does not exist", `Create it in ${dir}`];
-	if (real === root)
+		return ["which does not exist", `Create it in ${space}`];
+	const own = await realpath(dir);
+	const root = await realpath(space);
+	if (real === own)
 		return [
 			"which is the profile directory itself",
-			`Point it at a file or directory inside ${dir}`,
+			`Point it at a file or directory inside ${space}`,
+		];
+	if (real === root)
+		return [
+			"which is the namespace directory itself",
+			`Point it at a file or directory inside ${space}`,
 		];
 	if (!real.startsWith(root + sep))
 		return [
-			"which is outside the profile",
-			`Keep it inside ${dir}, or set it in config under '${PROFILES}.${name}.${key.join(".")}'`,
+			`which is outside the namespace directory ${space}`,
+			`Keep it inside ${space}, or set it in config under '${PROFILES}.${name}.${key.join(".")}'`,
 		];
 	if (key[0] === "instructions" && !(await stat(real)).isFile())
-		return ["which is not a file", `Point it at a file inside ${dir}`];
+		return ["which is not a file", `Point it at a file inside ${space}`];
 	return undefined;
 }
 
@@ -435,6 +445,43 @@ async function pathErrors(
 		return [refusal(sourceOf(file, key), `${at}, ${problem}`, fix)];
 	});
 	return (await Promise.all(checked)).flat();
+}
+
+/** The real paths profile `name`'s file names outside its directory; none when the file or any of its paths is wrong. */
+async function sharedPaths(name: string, dir: string): Promise<string[]> {
+	try {
+		const layer = await fileLayer(name, dir);
+		const own = await realpath(dir);
+		const found = await Promise.all(
+			pathsIn(layered([layer]).values).map(async ([key, path]) => {
+				const real = await realpath(path).catch(() => undefined);
+				if (await pathProblem(name, dir, key, real)) throw new Error("refused");
+				return real?.startsWith(own + sep) ? [] : [real as string];
+			}),
+		);
+		return found.flat().toSorted();
+	} catch {
+		return [];
+	}
+}
+
+/** `sha256:<hex>` of each regular file at or under the real `paths`, by path. */
+async function sharedHashes(paths: string[]): Promise<Record<string, string>> {
+	const hashed = await Promise.all(
+		paths.map(async (path) =>
+			(await stat(path)).isDirectory()
+				? Object.entries(await fileHashes(path)).map(
+						([n, h]) => [join(path, n), h] as [string, string],
+					)
+				: (await stat(path)).isFile()
+					? ([[path, `sha256:${sha256Hex(await readFile(path))}`]] as [
+							string,
+							string,
+						][])
+					: [],
+		),
+	);
+	return Object.fromEntries(hashed.flat());
 }
 
 /** Profile `name` with config layered over its file. */
@@ -608,7 +655,15 @@ export async function profilesDigest(roots: Roots): Promise<string> {
 	const held = await Promise.all(
 		names.map(async (name) => {
 			const found = await findProfile(name, roots);
-			return [name, found ? await fileHashes(found.dir) : null];
+			if (!found) return [name, null];
+			const shared = await sharedPaths(name, found.dir);
+			return [
+				name,
+				{
+					files: await fileHashes(found.dir),
+					shared: await sharedHashes(shared),
+				},
+			];
 		}),
 	);
 	return `sha256:${sha256Hex(canonicalJson(Object.fromEntries(held)))}`;

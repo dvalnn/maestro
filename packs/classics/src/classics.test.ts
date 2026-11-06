@@ -188,8 +188,8 @@ describe("build_then_repair", () => {
 	});
 });
 
-test("the builder writes and the lens judges by the same writing guide", async () => {
-	const guides = await Promise.all(
+test("the builder writes and the lens judges by one shared writing guide", async () => {
+	const dirs = await Promise.all(
 		["builder", "lens"].map(async (name) => {
 			const { out } = await maestro(
 				"agent",
@@ -198,12 +198,13 @@ test("the builder writes and the lens judges by the same writing guide", async (
 				"--json",
 			);
 			const dir: string = JSON.parse(out).attachments.writing.path;
-			return ["writing.md", "writing-skills.md", "LICENSE"].map((f) =>
-				readFileSync(join(dir, f), "utf8"),
-			);
+			for (const f of ["writing.md", "writing-skills.md", "LICENSE"])
+				expect(readFileSync(join(dir, f), "utf8")).not.toBe("");
+			return dir;
 		}),
 	);
-	expect(guides[1]).toEqual(guides[0]);
+	expect(dirs[1]).toBe(dirs[0]);
+	expect(dirs[0]).toEndWith(join("pack", "profiles", "writing"));
 });
 
 test.each([

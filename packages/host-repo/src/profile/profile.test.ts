@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { once } from "node:events";
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256Hex } from "@maestro/core";
@@ -13,7 +15,13 @@ import {
 import { type HostSetup, hostSetup, type Roots } from "@maestro/core/host";
 import { HOST_DEFERRED, HOST_PATHS } from "../host/config";
 import { repoHost } from "../host/index";
-import { findProfile, isProfileName, resolveProfile, untunable } from "./index";
+import {
+	findProfile,
+	isProfileName,
+	profilesDigest,
+	resolveProfile,
+	untunable,
+} from "./index";
 
 const root = mkdtempSync(join(tmpdir(), "maestro-profile-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -48,6 +56,33 @@ await Promise.all([
 	write("packs/classics/profiles/builder/profile.yaml", RUNTIME),
 	write("packs/acme/profiles/builder/profile.yaml", RUNTIME),
 	write("outside.md", "secret\n"),
+	write("ws/.maestro/profiles/shared/guide.md", "guide\n"),
+	write(
+		"ws/.maestro/profiles/sharer/profile.yaml",
+		`${RUNTIME}instructions: ../shared/guide.md\nattachments:\n  all: { path: ../shared, hint: shared }\n`,
+	),
+	write(
+		"ws/.maestro/profiles/spaced/profile.yaml",
+		"attachments:\n  all: { path: .., hint: all }\n",
+	),
+	write(
+		"ws/.maestro/profiles/ownself/profile.yaml",
+		`${RUNTIME}attachments:\n  all: { path: ../ownself, hint: self }\n`,
+	),
+	write("xdg/maestro/profiles/classics/shared/note.md", "note\n"),
+	write(
+		"xdg/maestro/profiles/classics/lens/profile.yaml",
+		`${RUNTIME}attachments:\n  all: { path: ../shared, hint: shared }\n`,
+	),
+	write(
+		"xdg/maestro/profiles/classics/reach/profile.yaml",
+		`${RUNTIME}attachments:\n  all: { path: ../../auditor, hint: other level }\n`,
+	),
+	write("packs/acme/profiles/shared/x.md", "x\n"),
+	write(
+		"packs/acme/profiles/user/profile.yaml",
+		`${RUNTIME}attachments:\n  all: { path: ../shared, hint: shared }\n`,
+	),
 	write(
 		"ws/.maestro/profiles/reserved/profile.yaml",
 		`${RUNTIME}mcp: {}\nskills: []\n`,
@@ -55,7 +90,7 @@ await Promise.all([
 	write("ws/.maestro/profiles/bound/profile.yaml", "readOnly: [/etc]\n"),
 	write(
 		"ws/.maestro/profiles/dotdot/profile.yaml",
-		"instructions: ../auditor/profile.yaml\n",
+		"instructions: ../../../../outside.md\n",
 	),
 	write("ws/.maestro/profiles/linked/profile.yaml", "instructions: link.md\n"),
 	write("ws/.maestro/profiles/missing/profile.yaml", "instructions: gone.md\n"),
@@ -160,6 +195,92 @@ describe("lookup", () => {
 			dir: join(U, "auditor"),
 			shadows: [],
 		});
+	});
+});
+
+describe("shared paths", () => {
+	test("a path out of the profile directory resolves inside its namespace directory", async () => {
+		const profile = await resolveProfile("sharer", setupOf({}));
+		expect(profile.fields).toMatchObject({
+			instructions: join(W, "shared/guide.md"),
+			attachments: { all: { path: join(W, "shared") } },
+		});
+	});
+
+	test("a profile's own directory by a path out and back is the profile directory", async () => {
+		expect(
+			(await refusal(() => resolveProfile("ownself", setupOf({})))).map(
+				(r) => r[0],
+			),
+		).toEqual([
+			"profile ownself: 'attachments.all.path' is ., which is the profile directory itself",
+		]);
+	});
+
+	test.each([
+		["a shadow", "classics/lens", join(U, "classics/shared")],
+		["a pack's own profile", "acme/user", join(ACME, "shared")],
+	])(
+		"%s resolves a path in its own namespace directory",
+		async (_, name, dir) => {
+			const profile = await resolveProfile(name, setupOf({}));
+			expect(profile.fields.attachments).toMatchObject({ all: { path: dir } });
+		},
+	);
+
+	test("the digest changes when a shared file changes, and not when none a profile names does", async () => {
+		const before = await profilesDigest(ROOTS);
+		await write("ws/.maestro/profiles/shared/guide.md", "edited\n");
+		const after = await profilesDigest(ROOTS);
+		await write("ws/.maestro/profiles/shared/guide.md", "guide\n");
+		expect(after).not.toBe(before);
+		expect(await profilesDigest(ROOTS)).toBe(before);
+	});
+});
+
+describe("the digest of shared paths", () => {
+	test("skips a named path that is no regular file or directory", async () => {
+		const sock = join(W, "shared/sock");
+		const server = createServer().listen(sock);
+		await once(server, "listening");
+		await write(
+			"ws/.maestro/profiles/socky/profile.yaml",
+			`${RUNTIME}attachments:\n  s: { path: ../shared/sock, hint: s }\n`,
+		);
+		try {
+			expect(await profilesDigest(ROOTS)).toStartWith("sha256:");
+		} finally {
+			server.close();
+			rmSync(join(W, "socky"), { recursive: true, force: true });
+			rmSync(sock, { force: true });
+		}
+	});
+
+	test("adds no shared file of a profile file with a refused path", async () => {
+		await write(
+			"ws/.maestro/profiles/halfbad/profile.yaml",
+			`${RUNTIME}instructions: ../shared/guide.md\nattachments:\n  o: { path: ../../../../outside.md, hint: o }\n`,
+		);
+		try {
+			const before = await profilesDigest(ROOTS);
+			await write("ws/.maestro/profiles/shared/guide.md", "edited\n");
+			const edited = await profilesDigest(ROOTS);
+			await write("ws/.maestro/profiles/shared/guide.md", "guide\n");
+			// `sharer` names the guide too, so the digest moves; drop it to see halfbad alone.
+			expect(edited).not.toBe(before);
+			rmSync(join(W, "sharer"), { recursive: true, force: true });
+			const alone = await profilesDigest(ROOTS);
+			await write("ws/.maestro/profiles/shared/guide.md", "edited\n");
+			const aloneEdited = await profilesDigest(ROOTS);
+			expect(aloneEdited).toBe(alone);
+			await write(
+				"ws/.maestro/profiles/sharer/profile.yaml",
+				`${RUNTIME}instructions: ../shared/guide.md\nattachments:\n  all: { path: ../shared, hint: shared }\n`,
+			);
+		} finally {
+			await write("ws/.maestro/profiles/shared/guide.md", "guide\n");
+			rmSync(join(W, "halfbad"), { recursive: true, force: true });
+		}
 	});
 });
 
@@ -327,8 +448,8 @@ describe("resolution", () => {
 			"dotdot",
 			[
 				[
-					"profile dotdot: 'instructions' is ../auditor/profile.yaml, which is outside the profile",
-					`Keep it inside ${join(W, "dotdot")}, or set it in config under 'profiles.dotdot.instructions'`,
+					`profile dotdot: 'instructions' is ../../../../outside.md, which is outside the namespace directory ${W}`,
+					`Keep it inside ${W}, or set it in config under 'profiles.dotdot.instructions'`,
 					1,
 				],
 			],
@@ -339,9 +460,33 @@ describe("resolution", () => {
 			"linked",
 			[
 				[
-					"profile linked: 'instructions' is link.md, which is outside the profile",
-					`Keep it inside ${join(W, "linked")}, or set it in config under 'profiles.linked.instructions'`,
+					`profile linked: 'instructions' is link.md, which is outside the namespace directory ${W}`,
+					`Keep it inside ${W}, or set it in config under 'profiles.linked.instructions'`,
 					1,
+				],
+			],
+			"",
+		],
+		[
+			"an attachment that is the namespace directory",
+			"spaced",
+			[
+				[
+					"profile spaced: 'attachments.all.path' is .., which is the namespace directory itself",
+					`Point it at a file or directory inside ${W}`,
+					2,
+				],
+			],
+			"",
+		],
+		[
+			"a shadow's path that reaches another level",
+			"classics/reach",
+			[
+				[
+					`profile classics/reach: 'attachments.all.path' is ../../auditor, which is outside the namespace directory ${join(U, "classics")}`,
+					`Keep it inside ${join(U, "classics")}, or set it in config under 'profiles.classics/reach.attachments.all.path'`,
+					3,
 				],
 			],
 			"",
@@ -352,7 +497,7 @@ describe("resolution", () => {
 			[
 				[
 					"profile missing: 'instructions' is gone.md, which does not exist",
-					`Create it in ${join(W, "missing")}`,
+					`Create it in ${W}`,
 					1,
 				],
 			],
@@ -412,7 +557,7 @@ describe("resolution", () => {
 			[
 				[
 					"profile dirinstr: 'instructions' is kb, which is not a file",
-					`Point it at a file inside ${join(W, "dirinstr")}`,
+					`Point it at a file inside ${W}`,
 					1,
 				],
 			],
@@ -424,7 +569,7 @@ describe("resolution", () => {
 			[
 				[
 					"profile whole: 'attachments.all.path' is ., which is the profile directory itself",
-					`Point it at a file or directory inside ${join(W, "whole")}`,
+					`Point it at a file or directory inside ${W}`,
 					2,
 				],
 			],

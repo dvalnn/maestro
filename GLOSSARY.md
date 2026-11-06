@@ -198,6 +198,10 @@ named `<pack id>/<name>`. [Home](packages/host-repo/README.md#profiles-and-promp
 **Preset**: A named config layer switched per concert (`--preset risky`), above config files and below `-c`; it tunes
 profiles and rebinds seats. _Avoid_: config profile. [Home](docs/architecture.md#layers-presets-and--c)
 
+**Namespace directory**: The directory that holds a profile's directory, such as `<root>/profiles/`; the bound for every
+path its `profile.yaml` names, so profiles of one level share files. _Avoid_: profile root.
+[Home](packages/host-repo/README.md#fields)
+
 **Shadow**: A workspace's or user's profile directory used whole in place of a pack profile of the same name. _Avoid_:
 fork. [Home](packages/host-repo/README.md#lookup)
 

@@ -136,6 +136,22 @@ describe("agent ls", () => {
 });
 
 describe("agent show", () => {
+	test("shows a path in the namespace directory relative to the profile directory", async () => {
+		const w = await roster();
+		const dir = join(w.cwd, ".maestro/profiles/demo");
+		await Promise.all([
+			Bun.write(join(dir, "shared/guide.md"), "guide\n"),
+			Bun.write(
+				join(dir, "sharer/profile.yaml"),
+				"runtime: { harness: stub, model: none }\ninstructions: ../shared/guide.md\nattachments:\n  all: { path: ../shared, hint: shared }\n",
+			),
+		]);
+		const shown = await w.call(["agent", "show", "demo/sharer"]);
+		expect(shown).toMatchObject({ code: 0, err: "" });
+		expect(shown.out).toContain("../shared/guide.md, 1 line");
+		expect(shown.out).toMatch(/^\s*all\s+\.\.\/shared\/\s/m);
+	});
+
 	test("names each preset layer by its own name, a later preset winning a key", async () => {
 		const w = await roster();
 		await Bun.write(

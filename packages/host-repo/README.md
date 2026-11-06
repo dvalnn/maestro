@@ -322,13 +322,19 @@ config gives the profile its runtime (ADR 0013).
 
 A profile is a directory whose `profile.yaml` holds:
 
-| Field          | Holds                                              |
-| -------------- | -------------------------------------------------- |
-| `runtime`      | `harness`, `model`, optional `thinking`            |
-| `instructions` | a path inside the directory                        |
-| `attachments`  | paths inside the directory, attached to every call |
-| `limits`       | `{ timeout, tokens }`                              |
-| `context`      | the context policy above                           |
+| Field          | Holds                                                        |
+| -------------- | ------------------------------------------------------------ |
+| `runtime`      | `harness`, `model`, optional `thinking`                      |
+| `instructions` | a path inside the namespace directory                        |
+| `attachments`  | paths inside the namespace directory, attached to every call |
+| `limits`       | `{ timeout, tokens }`                                        |
+| `context`      | the context policy above                                     |
+
+A path may leave the profile directory but not its **namespace directory**, the directory that holds it:
+`<root>/profiles/` for a bare name, `<root>/profiles/<pack id>/` for a pack's name in the workspace or user root, the
+bundle's `profiles/` for a pack's own. So profiles of one level share a file, and a shadow made by copying a pack's
+`profiles/` keeps its paths. A link cannot escape the bound, and neither the profile directory nor the namespace
+directory is a valid path. The profiles digest covers the shared files a winning profile names.
 
 `readOnly` paths are set only in config, as `profiles.<name>.readOnly`, never in the file.
 

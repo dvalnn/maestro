@@ -24,6 +24,10 @@ names, in one of these roots, highest first; the highest holding the name wins i
 - the user's `$XDG_CONFIG_HOME/maestro/profiles/<name>/`
 - a pack's `profiles/`, named `<pack>/<name>`
 
+A profile's paths may leave its directory but stay inside its namespace directory, the directory holding it
+(`<root>/profiles/`, or `<root>/profiles/<pack>/` for a pack's name shadowed in a root), so profiles of one level can
+share a file such as an attachment. Copy a pack's whole `profiles/` to shadow it and its paths keep working.
+
 `readOnly` is set only in config, as `profiles.<name>.readOnly`.
 
 ## Inspect
