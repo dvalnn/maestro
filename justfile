@@ -35,6 +35,8 @@ release: check pack
     tar -czf "dist/classics-$pack_version.tar.gz" --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 \
       -C "$build" classics
     tar -czf dist/maestro-skill.tar.gz --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C skills $(ls skills)
+    sed -n 's/^\(pi\|claude\) = "\(.*\)"$/\1 \2/p' mise.toml > dist/harnesses
+    [ "$(wc -l < dist/harnesses)" -eq 2 ] || { echo "mise.toml does not pin both pi and claude" >&2; exit 1; }
     (cd dist && sha256sum * > SHA256SUMS)
     cp install.sh dist/install.sh
     scripts/smoke-install.sh dist

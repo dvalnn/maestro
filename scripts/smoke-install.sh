@@ -31,6 +31,17 @@ run_installer "$home" "$dist" >"$scratch/install.out" 2>"$scratch/install.err" \
 grep -q "^install.sh: warning: $home/.local/bin is not on PATH" "$scratch/install.err" || fail "install.sh did not warn about PATH"
 grep -q '^maestro ' "$scratch/install.out" || fail "install.sh did not print the version on stdout"
 
+step "install.sh warns of a harness at another version, and logs what it ran"
+mkdir -p "$scratch/fakes"
+printf '#!/bin/sh\necho 0.0.1\n' > "$scratch/fakes/pi"
+chmod +x "$scratch/fakes/pi"
+pin=$(sed -n 's/^pi //p' "$dist/harnesses")
+env -i HOME="$scratch/pi-home" PATH="$scratch/fakes:/usr/bin:/bin" MAESTRO_RELEASE_DIR="$dist" sh < "$installer" \
+  >/dev/null 2>"$scratch/install.err" || fail "install.sh exited $?: $(cat "$scratch/install.err")"
+grep -q "pi is 0.0.1, and this maestro supports pi $pin" "$scratch/install.err" || fail "install.sh did not warn about pi 0.0.1"
+grep -q "mise use -g pi@$pin" "$scratch/install.err" || fail "install.sh did not give the mise pin"
+grep -q 'install -D -m 755' "$scratch/pi-home/.local/state/maestro/install.log" || fail "install.sh did not log what it ran"
+
 step "install.sh replaces stale files"
 skills=$(tar -tzf "$dist/maestro-skill.tar.gz" | sed 's,/.*,,' | sort -u)
 mkdir -p "$home/.local/share/maestro/packs/classics"

@@ -11,9 +11,11 @@ for Claude Code, Codex and pi. Nothing is published to a public registry.
 - bubblewrap, with unprivileged user namespaces enabled.
 - bash at `/bin/bash`. Every sandbox runs under it, and none starts without it.
 - git 2.40 or newer.
-- A harness: pi 1.3.0 logged in (`~/.pi/agent`), or Claude Code 2.1.302 with `CLAUDE_CODE_OAUTH_TOKEN` from
-  `claude setup-token`, exported in the shell or set in `~/.config/maestro/.env` (`$XDG_CONFIG_HOME/maestro/.env`) as
-  `CLAUDE_CODE_OAUTH_TOKEN=<token>`. The shell's value wins over the file's.
+- A harness at the version the release supports, which the install script names: pi logged in (`~/.pi/agent`), or Claude
+  Code with `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`, exported in the shell or set in
+  `~/.config/maestro/.env` (`$XDG_CONFIG_HOME/maestro/.env`) as `CLAUDE_CODE_OAUTH_TOKEN=<token>`. The shell's value
+  wins over the file's. Another version may emit runs maestro misreads; [mise](https://mise.jdx.dev) pins one per user
+  or per project, as in `mise use -g pi@<version>`.
 
 Running maestro needs no Bun.
 
@@ -37,7 +39,9 @@ curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh |
 ```
 
 The script needs `curl` and `sha256sum`, checks every asset against `SHA256SUMS` before touching anything, and refuses
-while a concert is running.
+while a concert is running. It then warns about each missing requirement and each harness at another version than the
+release supports, and on a terminal offers to pin those harnesses with `mise use -g`. Every command that changes the
+machine is appended to `$XDG_STATE_HOME/maestro/install.log`, `~/.local/state/maestro/install.log` by default.
 
 | Installed                                | Where                                                                                   |
 | ---------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -138,8 +142,8 @@ rm -rf "$data/packs/classics" "$data/sdk"
 for root in ~/.claude/skills ~/.agents/skills; do rm -rf "$root/maestro" "$root/maestro-ultracode"; done
 ```
 
-Left in place: concerts and their record under `$data`, other packs in `$data/packs`, and the config in
-`~/.config/maestro`. Remove those too to forget them.
+Left in place: concerts and their record under `$data`, other packs in `$data/packs`, the config in `~/.config/maestro`,
+and the install log in `~/.local/state/maestro`. Remove those too to forget them.
 
 ## 7. Authoring packs (needs Bun)
 
