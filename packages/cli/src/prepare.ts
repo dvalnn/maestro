@@ -507,12 +507,15 @@ export function requireNoParamFiles(ir: Ir, target: string): void {
 		}
 }
 
-/** Pre-flight of `prepared` under the session's config and hosts: its plan, or the errors with the plan so far. */
-export function compared(
+/**
+ * Pre-flight of `prepared` under the session's config and hosts: its plan, or the errors with the plan so far, each gap
+ * naming the presets that fill it.
+ */
+export async function compared(
 	session: Session,
 	{ ir, loader, config, claims }: Prepared,
 ): Promise<ComposeResult> {
-	return compose({
+	const result = await compose({
 		ir,
 		config,
 		roots: session.config.roots,
@@ -522,6 +525,12 @@ export function compared(
 		loadCode: loader.loadCode,
 		caps: session.config.core.caps,
 	});
+	return result.ok
+		? result
+		: {
+				...result,
+				diagnostics: await withPresetFixes(session, result.diagnostics),
+			};
 }
 
 /**
@@ -540,33 +549,43 @@ export async function preflight(
 const flagsOf = (presets: readonly string[]) =>
 	presets.map((p) => `--preset ${p}`).join(" or ");
 
+const fillersOf = (session: Session, unset: Diagnostic["unset"]) =>
+	presetsSetting(session.config, session.deps.hosts, unset ?? []);
+
+/** `Pass --preset <name>` for each preset that sets all of `unset`, or undefined when none does. */
+export async function presetHint(
+	session: Session,
+	unset: Diagnostic["unset"],
+): Promise<string | undefined> {
+	const presets = await fillersOf(session, unset);
+	return presets.length ? `Pass ${flagsOf(presets)}` : undefined;
+}
+
 /**
  * `diagnostics` with the fix of passing a preset where presets set what config left out. When several diagnostics left
- * settings out and some preset sets them all, those go last with their hints cleared but the final one's, which names
- * the presets; otherwise each is given the presets that set its own.
+ * settings out and some preset sets them all, those go last, each with the hint that names the presets; otherwise each is given the presets that set its own.
  */
 export async function withPresetFixes(
 	session: Session,
 	diagnostics: readonly Diagnostic[],
 ): Promise<Diagnostic[]> {
-	const fillers = (unset: Diagnostic["unset"]) =>
-		presetsSetting(session.config, session.deps.hosts, unset ?? []);
 	const gaps = diagnostics.filter((d) => d.unset);
 	const all =
-		gaps.length > 1 ? await fillers(gaps.flatMap((d) => d.unset ?? [])) : [];
+		gaps.length > 1
+			? await fillersOf(
+					session,
+					gaps.flatMap((d) => d.unset ?? []),
+				)
+			: [];
 	if (all.length) {
 		const rest = diagnostics.filter((d) => !d.unset);
-		const last = gaps.length - 1;
 		const closing = `Pass ${flagsOf(all)}, which ${all.length > 1 ? "each set" : "sets"} all of these`;
-		return [
-			...rest,
-			...gaps.map((d, i) => ({ ...d, hint: i === last ? closing : "" })),
-		];
+		return [...rest, ...gaps.map((d) => ({ ...d, hint: closing }))];
 	}
 	return Promise.all(
 		diagnostics.map(async (d) => {
-			const presets = d.unset ? await fillers(d.unset) : [];
-			return presets.length ? { ...d, hint: `Pass ${flagsOf(presets)}` } : d;
+			const hint = d.unset && (await presetHint(session, d.unset));
+			return hint ? { ...d, hint } : d;
 		}),
 	);
 }

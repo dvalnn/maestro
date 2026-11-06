@@ -51,6 +51,7 @@ export {
 	resolveUnsettled,
 	sourceWords,
 	type Unsettled,
+	unsetKeys,
 	unsetOf,
 	type ValueSource,
 } from "../profile/index";

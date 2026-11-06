@@ -152,6 +152,18 @@ export function renderDiagnostic(d: Diagnostic, color: boolean): string {
 	return d.hint === "" ? head : `${head}\n  ${paint("dim", d.hint, color)}`;
 }
 
+/** `diagnostics` rendered one each, a run of identical hints printed once, under the last of the run. */
+export const renderDiagnostics = (
+	diagnostics: readonly Diagnostic[],
+	color: boolean,
+): string[] =>
+	diagnostics.map((d, i) =>
+		renderDiagnostic(
+			d.hint === diagnostics[i + 1]?.hint ? { ...d, hint: "" } : d,
+			color,
+		),
+	);
+
 /** A warning on one line, `warning: <text>`, with `warning` yellow when `color`. */
 export const renderWarning = (text: string, color: boolean) =>
 	`${paint("yellow", "warning", color)}: ${text}`;

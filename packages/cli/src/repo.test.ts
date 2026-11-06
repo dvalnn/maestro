@@ -427,6 +427,16 @@ describe("profiles with no runtime", () => {
 			"error: profile third: no harness or model",
 			"  Pass --preset alpha or --preset beta, which each set all of these",
 		]);
+		const closing =
+			"Pass --preset alpha or --preset beta, which each set all of these";
+		const { diagnostics } = json(
+			await w.call(["compose", await trioFile(), "--json"]),
+		);
+		expect(diagnostics.map((d: { hint: string }) => d.hint)).toEqual([
+			closing,
+			closing,
+			closing,
+		]);
 	});
 
 	test("with no preset setting every gap, each gap gets the presets that set it, else the config fix", async () => {
@@ -501,6 +511,20 @@ describe("profiles with no runtime", () => {
 		expect(composed.err.split("\n")).toEqual([
 			"error: profile smoke: no harness or model",
 			"  Set profiles.smoke.runtime.harness and profiles.smoke.runtime.model",
+		]);
+	});
+
+	test("perform refuses a gap naming the preset that fills it", async () => {
+		const w = await repoWorld();
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/all.yaml"),
+			"profiles:\n  '*':\n    runtime: { harness: stub, model: none }\n",
+		);
+		const refused = await w.call(["perform", await smokeFile()]);
+		expect(refused.code).toBe(1);
+		expect(refused.err.split("\n")).toEqual([
+			"error: profile smoke: no harness or model",
+			"  Pass --preset all",
 		]);
 	});
 

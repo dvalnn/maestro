@@ -365,7 +365,14 @@ Limits
 
 Environment   no harness to declare one`);
 		expect(shown.err).toBe(
-			"harness and model unset\n  Pass --preset, or set profiles.bare.runtime in .maestro/config.yaml",
+			"harness and model unset\n  Set profiles.bare.runtime in .maestro/config.yaml",
+		);
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/stubbed.yaml"),
+			"profiles:\n  '*':\n    runtime: { harness: stub, model: none }\n",
+		);
+		expect((await w.call(["agent", "show", "bare"])).err).toBe(
+			"harness and model unset\n  Pass --preset stubbed",
 		);
 	});
 
@@ -376,7 +383,7 @@ Environment   no harness to declare one`);
 		expect(shown.out).toContain("  harness     pi\n  model       -\n");
 		expect(shown.out).toContain("Environment   declared only");
 		expect(shown.err).toBe(
-			"model unset\n  Pass --preset, or set profiles.broken.runtime.model in .maestro/config.yaml",
+			"model unset\n  Set profiles.broken.runtime.model in .maestro/config.yaml",
 		);
 	});
 });
@@ -516,8 +523,15 @@ describe("agent probe", () => {
 		);
 		expect(await w.call(["agent", "probe", "bare"])).toMatchObject({
 			code: 2,
-			err: "error: profile bare leaves harness and model unset, so there is nothing to probe\n  Pass --preset, or set profiles.bare.runtime in .maestro/config.yaml",
+			err: "error: profile bare leaves harness and model unset, so there is nothing to probe\n  Set profiles.bare.runtime in .maestro/config.yaml",
 		});
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/stubbed.yaml"),
+			"profiles:\n  bare:\n    runtime: { harness: stub, model: none }\n",
+		);
+		expect((await w.call(["agent", "probe", "bare"])).err).toContain(
+			"\n  Pass --preset stubbed",
+		);
 	});
 
 	test("a harness no build ships is refused, naming the ones that are", async () => {

@@ -22,7 +22,7 @@ import {
 	diagnosedExit,
 	EXIT,
 	jsonOf,
-	renderDiagnostic,
+	renderDiagnostics,
 	table,
 } from "./output";
 import {
@@ -35,7 +35,6 @@ import {
 	persist,
 	prepare,
 	type Reading,
-	withPresetFixes,
 } from "./prepare";
 import { openSession, overridesOf, type Session } from "./session";
 
@@ -113,7 +112,7 @@ function printDiagnostics(
 ): void {
 	const { deps } = session;
 	const { err } = colorOf(deps, prepared.values);
-	for (const d of diagnostics) deps.stderr(renderDiagnostic(d, err));
+	for (const line of renderDiagnostics(diagnostics, err)) deps.stderr(line);
 }
 
 export const compose: Command = {
@@ -141,11 +140,7 @@ export const compose: Command = {
 		if (!result.ok) {
 			if (json || !result.plan) throw new Diagnosed(result.diagnostics);
 			await print(session, target, result.plan);
-			printDiagnostics(
-				session,
-				target,
-				await withPresetFixes(session, result.diagnostics),
-			);
+			printDiagnostics(session, target, result.diagnostics);
 			return diagnosedExit(result.diagnostics);
 		}
 		const { plan } = result;

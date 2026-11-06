@@ -24,7 +24,7 @@ import {
 	hinted,
 	jsonOf,
 	paint,
-	renderDiagnostic,
+	renderDiagnostics,
 	table,
 	usageError,
 } from "./output";
@@ -246,7 +246,8 @@ function printDiagnostics(
 	color: boolean,
 ) {
 	if (json) deps.stdout(jsonOf({ ok: false, diagnostics }));
-	else for (const d of diagnostics) deps.stderr(renderDiagnostic(d, color));
+	else
+		for (const line of renderDiagnostics(diagnostics, color)) deps.stderr(line);
 }
 
 /**

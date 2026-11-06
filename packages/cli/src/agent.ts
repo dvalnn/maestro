@@ -27,6 +27,7 @@ import {
 	seatedAgents,
 	sourceWords,
 	type Unsettled,
+	unsetKeys,
 	unsetOf,
 	windowOf,
 } from "@maestro/host-repo";
@@ -51,7 +52,7 @@ import {
 } from "./command";
 import { builtinHarnesses } from "./hosts";
 import { CliError, EXIT, jsonOf, paint, table, usageError } from "./output";
-import { prepare } from "./prepare";
+import { prepare, presetHint } from "./prepare";
 import { sectionsText } from "./sections";
 import { openSession, overridesOf, type Session, setupOf } from "./session";
 
@@ -288,9 +289,17 @@ const environmentJson = (
 /** `fields` as words, such as `harness and model`. */
 const fieldWords = (fields: readonly string[]) => fields.join(" and ");
 
-/** Where to set `fields` of profile `name`, or pass them. */
-const unsetFix = (name: string, fields: readonly string[]) =>
-	`Pass --preset, or set profiles.${name}.runtime${fields.length === 1 ? `.${fields[0]}` : ""} in .maestro/config.yaml`;
+/** The fix for `fields` of profile `name` left unset: the presets that set them, else where to set them. */
+async function unsetFix(
+	session: Session,
+	name: string,
+	fields: readonly string[],
+): Promise<string> {
+	return (
+		(await presetHint(session, unsetKeys(name, fields))) ??
+		`Set profiles.${name}.runtime${fields.length === 1 ? `.${fields[0]}` : ""} in .maestro/config.yaml`
+	);
+}
 
 const SHELL_SAFE = /^[\w@%+=:,./-]+$/;
 const quoted = (text: string) =>
@@ -359,7 +368,7 @@ async function show(
 	const unset = unsetOf(profile);
 	if (unset.length)
 		deps.stderr(
-			`${fieldWords(unset)} unset\n${INDENT}${paint("dim", unsetFix(profile.name, unset), errColor)}`,
+			`${fieldWords(unset)} unset\n${INDENT}${paint("dim", await unsetFix(session, profile.name, unset), errColor)}`,
 		);
 	return faultCount(checks) ? EXIT.failed : EXIT.ok;
 }
@@ -378,7 +387,7 @@ async function probeProfile(
 	if (!isSettled(profile))
 		throw usageError(
 			`profile ${name} leaves ${fieldWords(unsetOf(profile))} unset, so there is nothing to probe`,
-			unsetFix(name, unsetOf(profile)),
+			await unsetFix(session, name, unsetOf(profile)),
 		);
 	return show(profile, await probed(profile, session), session, values);
 }

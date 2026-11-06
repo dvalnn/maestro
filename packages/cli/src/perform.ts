@@ -46,7 +46,7 @@ import {
 	NAME_CONCERT,
 	parseTour,
 	printClosing,
-	renderDiagnostic,
+	renderDiagnostics,
 	resultDoc,
 	resumeRefused,
 } from "./output";
@@ -381,8 +381,11 @@ async function report(
 /** Pre-flights `start`, printing what it warns of. */
 async function warned({ session, prepared }: Start): Promise<void> {
 	const color = colorOf(session.deps, prepared.values);
-	for (const d of (await preflight(session, prepared)).diagnostics)
-		session.deps.stderr(renderDiagnostic(d, color.err));
+	for (const line of renderDiagnostics(
+		(await preflight(session, prepared)).diagnostics,
+		color.err,
+	))
+		session.deps.stderr(line);
 }
 
 /** Performs `start`, once pre-flown, in its session, and reports how it ended. */

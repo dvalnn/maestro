@@ -476,6 +476,16 @@ const unsetFields = (runtime: Partial<Runtime>) =>
 			runtime[f] === undefined && !(f === "model" && runtime.harness === STUB),
 	);
 
+/** The config keys that set each of `fields` of profile `name`'s runtime, the profile's own or any profile's. */
+export const unsetKeys = (
+	name: string,
+	fields: readonly string[],
+): KeyPath[][] =>
+	fields.map((f) => [
+		[PROFILES, name, "runtime", f],
+		[PROFILES, ANY_PROFILE, "runtime", f],
+	]);
+
 /** The errors of `merged`, profile `name` with config layered over its file, as fields. */
 function fieldErrors(
 	name: string,
@@ -501,10 +511,7 @@ function fieldErrors(
 						`profile ${name}: no ${missing.join(" or ")}`,
 						`Set ${missing.map((f) => `${PROFILES}.${name}.runtime.${f}`).join(" and ")}`,
 					),
-					unset: missing.map((f) => [
-						[PROFILES, name, "runtime", f],
-						[PROFILES, ANY_PROFILE, "runtime", f],
-					]),
+					unset: unsetKeys(name, missing),
 				},
 			]
 		: [];
