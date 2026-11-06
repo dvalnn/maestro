@@ -1,5 +1,5 @@
-// One pass of the tour manager (docs/agents/factory.md, One tick): it routes settles, builds a ready ticket, triages
-// one or holds a masterclass.
+// One pass of the tour manager (docs/agents/factory.md, One tick): it routes settles, reviews an epic's stack, builds a
+// ready ticket, triages one or holds a masterclass.
 import { dlopen, FFIType, read } from "bun:ffi";
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
@@ -65,6 +65,8 @@ import {
 	replyHow,
 	reportIssue,
 	requestOf,
+	reviewComment,
+	reviewRequest,
 	type Spec,
 	type Stack,
 	specCommentOf,
@@ -88,12 +90,16 @@ const REPO = resolve(import.meta.dir, "../..");
 const TRIAGE_FILE = join(REPO, ".maestro/triage.ts");
 const SLICE_FILE = join(REPO, ".maestro/slice.ts");
 const MASTERCLASS_FILE = join(REPO, ".maestro/masterclass.ts");
+const REVIEW_FILE = join(REPO, ".maestro/review.ts");
 /** The preset a triage and a masterclass perform with, ahead of the pass's own. */
 const TRIAGE_PRESET = "triage";
 /** A bare composition file's pack is its stem. */
 const TRIAGE = { pack: "triage", composition: "triage" };
 const SLICE = { pack: "slice", composition: "slice" };
 const MASTERCLASS = { pack: "masterclass", composition: "masterclass" };
+const STACK_REVIEW = { pack: "review", composition: "review" };
+/** The review tier a stack review rules at. */
+const STACK_REVIEW_PRESET = "risky";
 /** How many settled factory runs newer than the last masterclass make the next one due. */
 const MASTERCLASS_EVERY = 10;
 /**
@@ -166,6 +172,8 @@ const isTriage = (c: Concert) =>
 	c.pack === TRIAGE.pack && c.composition === TRIAGE.composition;
 const isSlice = (c: Concert) =>
 	c.pack === SLICE.pack && c.composition === SLICE.composition;
+const isStackReview = (c: Concert) =>
+	c.pack === STACK_REVIEW.pack && c.composition === STACK_REVIEW.composition;
 const masterclassTour = (milestone: string) => `${milestone}.masterclass`;
 const isMasterclass = (c: Concert, milestone: string) =>
 	c.pack === MASTERCLASS.pack &&
@@ -180,6 +188,9 @@ function isFactoryRun(c: Concert, milestone: string) {
 	);
 }
 const branchOf = (issue: number) => `maestro-tm/i${issue}`;
+const firstLine = (body: string) => body.split("\n")[0]?.trimEnd();
+/** The first line of a child of epic `epic`. */
+const partOf = (epic: number) => `Part of #${epic}`;
 
 /** Files the halt issue: `lead`, then `detail` verbatim in a code block, then what to do next. */
 async function halt(
@@ -230,8 +241,8 @@ const whichWay = (lead: string, options: Option[]) =>
 	);
 
 /**
- * Posts question comment `body` on issue `number` unless one above comment id `after` holds it already, so a repeated
- * pass posts it once and a repeat of an answered question is posted again.
+ * Posts comment `body` on issue `number` unless one above comment id `after` holds it already, so a repeated pass
+ * posts it once and a repeat of an answered question is posted again.
  */
 async function ask({ forge }: Deps, number: number, body: string, after = 0) {
 	const comments = await forge.comments(number);
@@ -380,10 +391,10 @@ async function settle(pass: Pass, { issue, data }: Entry, id: string) {
 	return true;
 }
 
-/** Files each obstacle of `report` as a `needs-triage` bug found by `issue`, unless an open issue carries it. */
-async function fileReports(pass: Pass, issue: Issue, report: Report) {
+/** Files each of `texts` as a `needs-triage` bug found by `issue`, unless an open issue carries it. */
+async function fileReports(pass: Pass, issue: Issue, texts: readonly string[]) {
 	const bodies = (await pass.forge.open({})).map((i) => i.body);
-	for (const text of report.obstacles) {
+	for (const text of texts) {
 		const line = fingerprintLine(text);
 		if (bodies.some((b) => b.includes(line))) continue;
 		const filed = reportIssue(text, issue.number);
@@ -595,6 +606,34 @@ async function stackState(forge: Forge, number: number, stack: Stack) {
 const unmerged = ({ blocker, pull }: Stack) =>
 	`Blocker #${blocker} closed without merging its PR #${pull}, so this ticket's change, stacked on it, was not rebased onto \`${BASE}\`.`;
 
+/** The epic issue `issue` is a child of, by its `Part of #N` first line. */
+function epicOf(issue: Issue) {
+	const found = /^#(\d+)$/.exec(
+		firstLine(issue.body)?.replace(partOf(0).slice(0, -2), "") ?? "",
+	);
+	return found ? Number(found[1]) : undefined;
+}
+
+/**
+ * Whether `entry` is the last open child of an epic whose stack review has yet to clear it: none ran, or its findings
+ * await an encore (factory.md, Rules, Build: Stack review).
+ */
+async function awaitsStackReview(pass: Pass, { issue, data }: Entry) {
+	const epic = epicOf(issue);
+	if (epic === undefined) return false;
+	const epicData = dataOf(
+		specCommentOf(await pass.forge.comments(epic))?.body ?? "",
+	);
+	if (!epicData.base) return false;
+	const siblings = (epicData.filed ?? []).filter((n) => n !== issue.number);
+	for (const n of siblings)
+		if ((await pass.forge.issue(n)).closed === undefined) return false;
+	const routed =
+		epicData.stackReview !== undefined &&
+		epicData.stackReview === epicData.concert;
+	return !routed || data.findings !== undefined;
+}
+
 /**
  * Pushes `commit` from `dir` as `entry`'s branch and opens or retargets its PR into `base`, arming a low one to
  * `main`.
@@ -608,7 +647,11 @@ async function publish(
 ) {
 	await pass.forge.push(dir, commit, pull.head);
 	const number = await openPull(pass.forge, pull);
-	if (pull.base === BASE && isLow(entry.issue, entry.data))
+	if (
+		pull.base === BASE &&
+		isLow(entry.issue, entry.data) &&
+		!(await awaitsStackReview(pass, entry))
+	)
 		await pass.forge.arm(number);
 	return number;
 }
@@ -743,17 +786,17 @@ async function settleSlice(pass: Pass, entry: Entry, id: string) {
 		pass.maestro.result(id),
 		pass.maestro.report(id),
 	]);
-	await fileReports(pass, entry.issue, report);
+	await fileReports(pass, entry.issue, report.obstacles);
 	if (result.status === "ok") return land(pass, entry, id, report);
 	const reason = result.reason ?? `settled ${result.status}`;
 	return fail(pass, entry, id, result.status, reason);
 }
 
-/** The newest triage or slice of `entry`'s tour the tick has yet to route. */
+/** The newest triage, slice or stack review of `entry`'s tour the tick has yet to route. */
 function unrouted(pass: Pass, { issue, data }: Entry) {
 	const tour = tourOf(pass.milestone, issue.number);
 	const concert = pass.concerts.find(
-		(c) => c.tour === tour && (isSlice(c) || isTriage(c)),
+		(c) => c.tour === tour && (isSlice(c) || isTriage(c) || isStackReview(c)),
 	);
 	return concert?.id === data.concert ? undefined : concert;
 }
@@ -815,11 +858,113 @@ async function unpark(pass: Pass, entry: Entry, parked: string) {
 	return true;
 }
 
+/** The one child of epic `data` still open among `entries`, once every other is closed. */
+function lastChild(data: Data, entries: readonly Entry[]) {
+	const open = entries.filter((e) => data.filed?.includes(e.issue.number));
+	return open.length === 1 ? open[0] : undefined;
+}
+
+/** The PR of issue `number` to `main` among `pulls`. */
+const pullToMain = (pulls: readonly Pull[], number: number) =>
+	pulls.find((p) => p.head === branchOf(number) && p.base === BASE);
+
+/** A stack review's findings as Markdown: its consolidator's review, else the findings its verdict blocks on. */
+const findingsText = ({ review, blocking = [] }: Report) =>
+	review ?? blocking.map((b) => `- ${b}`).join("\n");
+
+/**
+ * Records the findings of stack review `id` on `epic`, then feeds them to the encore of its `last` child, or files each
+ * as a report when no one child is open.
+ */
+async function routeFindings(
+	pass: Pass,
+	epic: Issue,
+	id: string,
+	last: Entry | undefined,
+) {
+	const report = await pass.maestro.report(id);
+	const review = findingsText(report);
+	if (!last) {
+		await ask(
+			pass,
+			epic.number,
+			reviewComment(
+				id,
+				review,
+				"No one child is open to take them, so each finding is filed as an issue.",
+			),
+		);
+		return fileReports(pass, epic, report.blocking ?? []);
+	}
+	const { issue, data } = last;
+	await ask(
+		pass,
+		epic.number,
+		reviewComment(
+			id,
+			review,
+			`Its findings go to the next encore of #${issue.number}.`,
+		),
+	);
+	await writeSpec(pass, issue.number, stateOf(issue) ?? "in-review", {
+		...data,
+		findings: id,
+	});
+}
+
+/**
+ * Routes stack review `id` of epic `entry` (factory.md, Routing a settle): an ok one arms the last child when low, a
+ * rejected one routes its findings, any other halts and runs again once the halt closes. Returns false when it halted.
+ */
+async function settleReview(
+	pass: Pass,
+	{ issue, data }: Entry,
+	id: string,
+	entries: Entry[],
+) {
+	const state = stateOf(issue) ?? "in-progress";
+	const result = await pass.maestro.result(id);
+	if (result.status !== "ok" && result.status !== "rejected") {
+		await writeSpec(pass, issue.number, state, {
+			...data,
+			concert: id,
+			stackReview: undefined,
+		});
+		await halt(
+			pass,
+			`stack review of #${issue.number} failed`,
+			`The stack review \`${id}\` of #${issue.number} settled ${result.status}:`,
+			result.reason ?? "no reason given",
+			`Read it with \`maestro ls ${id}\`. Closing this issue runs the review again.`,
+		);
+		return false;
+	}
+	const last = lastChild(data, entries);
+	if (result.status === "rejected") await routeFindings(pass, issue, id, last);
+	else if (
+		last &&
+		stateOf(last.issue) === "in-review" &&
+		isLow(last.issue, last.data)
+	) {
+		const pull = pullToMain(await pass.forge.pulls(), last.issue.number);
+		if (pull) await pass.forge.arm(pull.number);
+	}
+	await writeSpec(pass, issue.number, state, {
+		...data,
+		concert: id,
+		stackReview: id,
+	});
+	pass.say(`routed #${issue.number}'s stack review ${id}: ${result.status}`);
+	return true;
+}
+
 /** Routes one issue's newest concert the tick has not routed yet, or its parked one; false when it halted. */
-async function routeOne(pass: Pass, entry: Entry) {
+async function routeOne(pass: Pass, entry: Entry, entries: Entry[]) {
 	if (entry.data.parked) return unpark(pass, entry, entry.data.parked);
 	const concert = unrouted(pass, entry);
 	if (!concert) return true;
+	if (isStackReview(concert))
+		return settleReview(pass, entry, concert.id, entries);
 	if (!expected(concert, entry.issue)) {
 		await park(pass, entry, concert);
 		return true;
@@ -876,12 +1021,12 @@ async function routeMasterclass(pass: Pass) {
 
 /** Routes each issue's settles, then the newest concert when it is a masterclass; false when it halted. */
 async function route(pass: Pass, entries: Entry[]) {
-	for (const entry of entries) if (!(await routeOne(pass, entry))) return false;
+	for (const entry of entries)
+		if (!(await routeOne(pass, entry, entries))) return false;
 	await routeMasterclass(pass);
 	return true;
 }
 
-const firstLine = (body: string) => body.split("\n")[0]?.trimEnd();
 const scopeOf = (label: string) => label.split("/")[0];
 
 /**
@@ -893,19 +1038,19 @@ async function fileChild(
 	child: Child,
 	entries: Entry[],
 ) {
-	const partOf = `Part of #${epic.number}`;
+	const head = partOf(epic.number);
 	const kinds = epic.labels.filter(
 		(l) => l.startsWith("kind/") && l !== "kind/epic",
 	);
 	const labels = ["state/needs-triage", ...kinds];
 	const open = entries.find(
 		({ issue }) =>
-			issue.title === child.title && firstLine(issue.body) === partOf,
+			issue.title === child.title && firstLine(issue.body) === head,
 	)?.issue;
 	if (!open)
 		return forge.file({
 			title: child.title,
-			body: `${partOf}\n\n${child.body}`,
+			body: `${head}\n\n${child.body}`,
 			milestone: epic.milestone,
 			labels,
 		});
@@ -926,7 +1071,11 @@ async function fileSplit(pass: Pass, { issue, data }: Entry, entries: Entry[]) {
 			if (blocker !== undefined) await pass.forge.depend(number, blocker);
 		filed.push(number);
 	}
-	await writeSpec(pass, issue.number, "in-progress", { ...data, filed });
+	await writeSpec(pass, issue.number, "in-progress", {
+		...data,
+		filed,
+		base: data.base ?? (await pass.forge.head(BASE)),
+	});
 	const { labels } = await pass.forge.issue(issue.number);
 	await pass.forge.setLabels(
 		issue.number,
@@ -1076,9 +1225,7 @@ async function startSlice(
 
 /** Blocker issue `blocker`'s PR among `pulls` when the issue is `in-review` and the PR merges into `main`. */
 async function reviewed(forge: Forge, blocker: number, pulls: Pull[]) {
-	const pull = pulls.find(
-		(p) => p.head === branchOf(blocker) && p.base === BASE,
-	);
+	const pull = pullToMain(pulls, blocker);
 	if (!pull || stateOf(await forge.issue(blocker)) !== "in-review") return;
 	const stack: Stack = { blocker, commit: pull.sha, pull: pull.number };
 	return stack;
@@ -1156,10 +1303,10 @@ const reviewChange = (r: Review): Change => ({
 });
 
 /**
- * The encore of in-review `entry`'s landed concert its PR among `pulls` asks for with changes requested, if any. It is
- * fed each review above `review`, moves `review` to the newest, and records the PR's head as `revisionBase`: the
- * commit the build is cut at, over a stack's, and lands folded into, so the PR keeps one commit per ticket and its
- * base.
+ * The encore of in-review `entry`'s landed concert its PR among `pulls` asks for with changes requested, or its stack
+ * review's `findings` ask for, if any. It is fed each review above `review` and the findings, moves `review` to the
+ * newest, clears `findings`, and records the PR's head as `revisionBase`: the commit the build is cut at, over a
+ * stack's, and lands folded into, so the PR keeps one commit per ticket and its base.
  */
 async function revision(
 	pass: Pass,
@@ -1173,13 +1320,22 @@ async function revision(
 		await pass.forge.reviews(pull.number, data.review ?? 0),
 		data,
 	);
-	if (!reviews.length) return undefined;
+	const changes = reviews.map(reviewChange);
+	if (data.findings)
+		changes.push({
+			heading: "Stack review",
+			body: findingsText(await pass.maestro.report(data.findings)),
+		});
+	if (!changes.length) return undefined;
 	return {
-		request: encoreRequest(requestOf(issue, spec), reviews.map(reviewChange)),
+		request: encoreRequest(requestOf(issue, spec), changes),
 		encore: data.concert,
 		data: {
 			...data,
-			review: Math.max(...reviews.map((r) => r.id)),
+			review: reviews.length
+				? Math.max(...reviews.map((r) => r.id))
+				: data.review,
+			findings: undefined,
 			revisionBase: pull.sha,
 		},
 	};
@@ -1203,6 +1359,70 @@ async function revise(pass: Pass, entries: Entry[]) {
 		return false;
 	}
 	return true;
+}
+
+/** The PR of in-progress epic `entry`'s last child, once that child is in review on it and no stack review ran yet. */
+async function reviewDue(
+	{ issue, data }: Entry,
+	entries: readonly Entry[],
+	pulls: () => Promise<Pull[]>,
+) {
+	if (stateOf(issue) !== "in-progress" || !data.base || data.stackReview)
+		return undefined;
+	const last = lastChild(data, entries);
+	if (!last || stateOf(last.issue) !== "in-review") return undefined;
+	return pullToMain(await pulls(), last.issue.number);
+}
+
+/**
+ * Starts the stack review of the first epic whose last child is in review (factory.md, Rules, Build: Stack review),
+ * over `main`'s commits from its `base` to that child's PR head; halts on a refusal. True when it started none.
+ */
+async function stackReview(pass: Pass, entries: Entry[]) {
+	let found: Promise<Pull[]> | undefined;
+	const pulls = () => (found ??= pass.forge.pulls());
+	for (const entry of entries) {
+		const pull = await reviewDue(entry, entries, pulls);
+		if (!pull) continue;
+		await startReview(pass, entry, `${entry.data.base}..${pull.sha}`);
+		return false;
+	}
+	return true;
+}
+
+/** Performs the stack review of epic `entry` over the commits `revs` names, and records it; halts on a refusal. */
+async function startReview(pass: Pass, { issue, data }: Entry, revs: string) {
+	let id: string;
+	try {
+		id = await pass.maestro.start([
+			"perform",
+			REVIEW_FILE,
+			"--request",
+			reviewRequest(issue, data.result?.children ?? [], data.filed ?? []),
+			"--revs",
+			revs,
+			"--preset",
+			STACK_REVIEW_PRESET,
+			...pass.presets.flatMap((p) => ["--preset", p]),
+			"--tour",
+			tourOf(pass.milestone, issue.number),
+			"--title",
+			titleOf(issue),
+		]);
+	} catch (error) {
+		await halt(
+			pass,
+			`stack review of #${issue.number} did not start`,
+			`The stack review of #${issue.number} did not start:`,
+			message(error),
+		);
+		return;
+	}
+	await writeSpec(pass, issue.number, "in-progress", {
+		...data,
+		stackReview: id,
+	});
+	pass.say(`reviewing #${issue.number}'s stack: concert ${id}`);
 }
 
 /** Says in the spec comment of ready `entry` which open dependencies it waits on, writing only when that changes it. */
@@ -1577,8 +1797,8 @@ async function masterclass(pass: Pass, entries: Entry[]) {
 
 /**
  * One pass: no action when another pass holds the lock, the tour manager is halted or a concert of the milestone runs;
- * else it routes settled concerts and a settled masterclass, syncs, and starts one build, else one triage, else a
- * masterclass once due, or none under `routeOnly`. Each step returns whether the pass goes on.
+ * else it routes settled concerts and a settled masterclass, syncs, and starts one stack review, else one build, else
+ * one triage, else a masterclass once due, or none under `routeOnly`. Each step returns whether the pass goes on.
  * @throws Error when the milestone does not exist, or the forge or maestro fails or answers what the tick cannot read.
  */
 export async function pass(deps: Deps, options: Options): Promise<void> {
@@ -1606,7 +1826,7 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 	};
 	const steps = options.routeOnly
 		? [route, sync]
-		: [route, sync, build, triage, masterclass];
+		: [route, sync, stackReview, build, triage, masterclass];
 	for (const step of steps) {
 		const entries = await load(pass);
 		if (!entries || !(await step(pass, entries))) return;

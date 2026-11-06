@@ -92,7 +92,9 @@ export type Triage = {
  * slice failed, `parked` a slice concert routed but not applied and `stack` the in-review blocker its last build
  * stacked on, with its PR and that PR's head commit, until the restack onto `main`. `encore` is the slice concert a
  * build continues and `review` the id of the newest review requesting changes an encore was fed. `revisionBase` is the
- * head of the PR a revision is cut at and lands on, until it lands.
+ * head of the PR a revision is cut at and lands on, until it lands. On an epic, `base` is `main`'s head when its
+ * children were filed and `stackReview` the stack review it started; on its child, `findings` is the stack review whose
+ * findings an encore has yet to be fed.
  */
 export type Data = {
 	concert?: string;
@@ -111,6 +113,9 @@ export type Data = {
 	encore?: string;
 	review?: number;
 	revisionBase?: string;
+	base?: string;
+	stackReview?: string;
+	findings?: string;
 };
 export type Stack = { blocker: number; commit: string; pull: number };
 
@@ -372,6 +377,9 @@ export function dataOf(comment: string): Data {
 		encore: optional(data, "encore", isString, "a concert id"),
 		review: optional(data, "review", isNumber, "a review id"),
 		revisionBase: optional(data, "revisionBase", isString, "a commit"),
+		base: optional(data, "base", isString, "a commit"),
+		stackReview: optional(data, "stackReview", isString, "a concert id"),
+		findings: optional(data, "findings", isString, "a concert id"),
 	};
 }
 
@@ -534,25 +542,27 @@ function buildLines({ attempts, failure, slice }: Data) {
 	];
 }
 
+/** What runs in `in-progress`: an epic's stack review until routed, else the children it builds, else its slice. */
+function running({ slice, attempts, filed, concert, stackReview }: Data) {
+	if (stackReview && stackReview !== concert)
+		return `stack review \`${stackReview}\` running`;
+	return filed
+		? `building the children ${refs(filed)}`
+		: `slice \`${slice}\` running, attempt ${(attempts ?? 0) + 1} of ${ATTEMPTS}`;
+}
+
 /**
  * What the tick runs or queues next in `state`, one it owns, a queued build waiting on the open dependencies `waiting`.
  */
-function tourMove(
-	state: State,
-	{ result, slice, attempts, filed }: Data,
-	waiting: readonly number[],
-) {
+function tourMove(state: State, data: Data, waiting: readonly number[]) {
 	if (INTAKE.includes(state)) return "triage queued";
 	if (state === "ready-for-agent") {
-		if (result?.children) return "filing the split's children";
+		if (data.result?.children) return "filing the split's children";
 		return waiting.length
 			? `queued, waiting on ${refs(waiting)}`
 			: "build queued";
 	}
-	if (state === "in-progress")
-		return filed
-			? `building the children ${refs(filed)}`
-			: `slice \`${slice}\` running, attempt ${(attempts ?? 0) + 1} of ${ATTEMPTS}`;
+	if (state === "in-progress") return running(data);
 	return "closing it";
 }
 
@@ -762,6 +772,34 @@ export const requestOf = (
 		askOf(body),
 		"",
 	].join("\n");
+
+/**
+ * What a stack review's `--request` takes: the epic's number, title and ask, then its children, each child's commits
+ * named by their `Refs: #N` line.
+ */
+export const reviewRequest = (
+	{ number, title, body }: { number: number; title: string; body: string },
+	children: readonly Child[],
+	filed: readonly number[],
+) =>
+	[
+		`# #${number} ${title}`,
+		"",
+		askOf(body),
+		"",
+		"## Children",
+		"",
+		...childLines(children, filed),
+		"",
+		`The epic's commits end with ${filed.map((n) => `\`Refs: #${n}\``).join(", ")}. The range's other commits are other tickets', there as context only.`,
+		"",
+	].join("\n");
+
+/** The comment recording stack review `id`'s `review` on its epic, then `outcome`, what became of its findings. */
+export const reviewComment = (id: string, review: string, outcome: string) =>
+	[`### Stack review · \`${id}\``, "", review.trim(), "", outcome, ""]
+		.map(inert)
+		.join("\n");
 
 export type Change = { heading: string; body?: string };
 

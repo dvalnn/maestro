@@ -274,6 +274,17 @@ test("pinned reads the numbers in the order the API lists them", async () => {
 	expect(calls[0]?.url).toEndWith("/issues/pinned");
 });
 
+test("head reads the commit a branch points at", async () => {
+	const { calls, send } = recording(() => [
+		200,
+		{ name: "main", commit: { id: "abc123" } },
+	]);
+	expect(await withShims(() => forge(signedIn, send).head("main"))).toBe(
+		"abc123",
+	);
+	expect(calls[0]?.url).toEndWith("/branches/main");
+});
+
 test("closed reads when each issue closed, none for an open one", async () => {
 	const { send } = recording(() => [
 		200,

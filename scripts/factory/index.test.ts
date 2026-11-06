@@ -168,6 +168,7 @@ function fakeForge(issues: Stored[], cut?: string) {
 		},
 		arm: async (n) => write(`arm #${n}`),
 		reviews: async (n) => reviews[n] ?? [],
+		head: async (branch) => heads[branch] ?? `sha-${branch}`,
 	};
 	return {
 		forge,
@@ -625,7 +626,10 @@ describe("a pass", () => {
 		]);
 		expect(t.find(100).body).toBe("Part of #7\n\nb");
 		expect(t.find(100).milestone).toBe(MILESTONE_ID);
-		expect(dataAt(t.find(7)).filed).toEqual([50, 100]);
+		expect(dataAt(t.find(7))).toMatchObject({
+			filed: [50, 100],
+			base: "sha-main",
+		});
 	});
 
 	test("closes an in-progress epic once its last filed child closes", async () => {
@@ -2093,6 +2097,238 @@ describe("a review", () => {
 			revisionBase: "sha8",
 			stack: STACK,
 		});
+	});
+});
+
+const reviewConcert = (id: string, status = "ok"): Concert => ({
+	id,
+	status,
+	pack: "review",
+	composition: "review",
+	tour: `${MILESTONE}.i9`,
+});
+const FINDINGS: Report = {
+	...NO_REPORT,
+	review: "# Review\n\nA seam breaks.",
+	blocking: ["A seam breaks", "A caller is left behind"],
+};
+
+/**
+ * Epic 9, its children filed from `base0` as #5, closed, and #7, the last, its slice `s1` landed as low-risk PR #31
+ * to `main`, in `state`; `epic` and `child` add to their data, and `cut` names a write that fails once.
+ */
+function epicWith(
+	state: string,
+	epic: Data = {},
+	child: Data = {},
+	cut?: string,
+) {
+	const concerts: Concert[] = [];
+	const results: Record<string, Result> = {};
+	const reports: Record<string, Report> = {};
+	const last = specced(7, state, { slice: "s1", concert: "s1", ...child });
+	last.body = `Part of #9\n\n${last.body}`;
+	const parent = issue(
+		9,
+		"in-progress",
+		{
+			concert: "c0",
+			triage: "c0",
+			result: { ...base, verdict: "split", risk: "medium", children },
+			filed: [5, 7],
+			base: "base0",
+			...epic,
+		},
+		"Greet in two steps",
+	);
+	parent.labels = ["kind/epic", "state/in-progress"];
+	const first = { ...issue(5, "in-review"), open: false, closed: 1 };
+	const t = setup([parent, first, last], concerts, results, cut, {
+		reports,
+	});
+	t.pulls.push(pullOf(31, 7));
+	return { ...t, concerts, results, reports };
+}
+
+const reviewsOf = (t: { starts: string[][] }) =>
+	t.starts.filter((a) => a[1]?.endsWith("review.ts"));
+
+describe("a stack review", () => {
+	test("starts once the epic's last child is in review, over main from the epic's base to its PR head", async () => {
+		const t = epicWith("in-review");
+		await t.run();
+		expect(t.starts).toHaveLength(1);
+		const [args = []] = reviewsOf(t);
+		expect(args[0]).toBe("perform");
+		expect(args.slice(4)).toEqual([
+			"--revs",
+			"base0..sha7",
+			"--preset",
+			"risky",
+			"--preset",
+			"stub",
+			"--tour",
+			"v0.1.0.i9",
+			"--title",
+			"factory: Greet in two steps",
+		]);
+		expect(args[3]).toBe(
+			`# #9 Greet in two steps\n\n${ASK}\n\n## Children\n\n1. #5 Parse the name\n2. #7 Greet it (after 5)\n\nThe epic's commits end with \`Refs: #5\`, \`Refs: #7\`. The range's other commits are other tickets', there as context only.\n`,
+		);
+		expect(dataAt(t.find(9)).stackReview).toBe("started");
+		expect(specAt(t.find(9))?.body).toContain(
+			"**Tour manager's turn · stack review `started` running**",
+		);
+	});
+
+	const idle: [string, Data, string][] = [
+		["one ran already", { stackReview: "r0" }, "in-review"],
+		[
+			"the epic predates stack reviews, with no base",
+			{ base: undefined },
+			"in-review",
+		],
+		["its last child is still building", {}, "in-progress"],
+	];
+	test.each(idle)("starts none when %s", async (_, epic, state) => {
+		const t = epicWith(state, epic);
+		await t.run();
+		expect(reviewsOf(t)).toEqual([]);
+	});
+
+	test("starts none while another child is open", async () => {
+		const t = epicWith("in-review");
+		const first = t.find(5);
+		first.open = true;
+		first.closed = undefined;
+		await t.run();
+		expect(reviewsOf(t)).toEqual([]);
+	});
+
+	test("holds a low last child's PR unarmed until its stack review settles clean", async () => {
+		const t = epicWith("in-progress");
+		t.pulls.length = 1;
+		t.concerts.push(sliceConcert("s2", 7));
+		t.results.s2 = { status: "ok", outputs: {} };
+		await t.run();
+		expect(merging(t.writes)).toEqual([
+			"pull maestro-tm/i7 to main: feat: greet by name",
+		]);
+		expect(reviewsOf(t)[0]).toContain(`base0..abc123`);
+		t.concerts.unshift(reviewConcert("started"));
+		t.results.started = { status: "ok", outputs: {} };
+		await t.run();
+		expect(merging(t.writes).at(-1)).toBe(`arm #${FIRST_PULL}`);
+		expect(dataAt(t.find(9)).concert).toBe("started");
+		expect(reviewsOf(t)).toHaveLength(1);
+	});
+
+	test("runs once across a pass cut before it recorded the review it started", async () => {
+		const t = epicWith("in-review", {}, {}, "edit comment");
+		await expect(t.run()).rejects.toThrow("cut at edit comment");
+		t.concerts.unshift(reviewConcert("started"));
+		t.results.started = { status: "ok", outputs: {} };
+		await t.run();
+		await t.run();
+		expect(reviewsOf(t)).toHaveLength(1);
+		expect(merging(t.writes)).toEqual(["arm #31"]);
+	});
+
+	const landings: [string, Data, string[]][] = [
+		[
+			"arms a last child's landing its routed stack review cleared",
+			{},
+			["arm #31"],
+		],
+		[
+			"holds a last child's landing whose stack review findings await an encore",
+			{ findings: "r1" },
+			[],
+		],
+	];
+	test.each(landings)("%s", async (_, child, armed) => {
+		const t = epicWith(
+			"in-progress",
+			{ stackReview: "r1", concert: "r1" },
+			child,
+		);
+		t.concerts.push(sliceConcert("s2", 7));
+		t.results.s2 = { status: "ok", outputs: {} };
+		await t.run();
+		expect(merging(t.writes)).toEqual(armed);
+	});
+
+	test("records rejected findings on the epic, feeds them to the last child's encore, then arms its PR once that lands", async () => {
+		const t = epicWith("in-review", { stackReview: "r1" }, { review: 3 });
+		t.concerts.push(reviewConcert("r1", "rejected"));
+		t.results.r1 = rejected("the consolidator blocked");
+		t.reports.r1 = FINDINGS;
+		await t.run();
+		expect(t.find(9).comments.at(-1)?.body).toBe(
+			"### Stack review · `r1`\n\n# Review\n\nA seam breaks.\n\nIts findings go to the next encore of #7.\n",
+		);
+		expect(t.starts).toEqual([
+			[
+				"encore",
+				"s1",
+				"--request",
+				`${requestFor(7).replace(`${ASK}\n`, `Part of #9\n\n${ASK}\n`)}\n## Stack review\n\n# Review\n\nA seam breaks.\n`,
+				...LOW_FLAGS,
+				"-c",
+				"target.base=sha7",
+			],
+		]);
+		expect(dataAt(t.find(7)).findings).toBeUndefined();
+		expect(dataAt(t.find(7)).review).toBe(3);
+		expect(merging(t.writes)).toEqual([]);
+		t.concerts.unshift(sliceConcert("s3", 7));
+		t.results.s3 = { status: "ok", outputs: {} };
+		await t.run();
+		expect(merging(t.writes)).toEqual(["arm #31"]);
+		expect(reviewsOf(t)).toEqual([]);
+	});
+
+	test("files each blocking finding as an issue found by the epic when no child is open, listing them without a review", async () => {
+		const t = epicWith("in-review", { stackReview: "r1" });
+		t.find(7).open = false;
+		t.concerts.push(reviewConcert("r1", "rejected"));
+		t.results.r1 = rejected("the consolidator blocked");
+		t.reports.r1 = { ...FINDINGS, review: undefined };
+		await t.run();
+		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([
+			"file #100 A seam breaks: state/needs-triage kind/bug",
+			"file #101 A caller is left behind: state/needs-triage kind/bug",
+		]);
+		expect(t.find(100).body).toStartWith("Found by #9");
+		expect(t.find(9).comments.at(-1)?.body).toBe(
+			"### Stack review · `r1`\n\n- A seam breaks\n- A caller is left behind\n\nNo one child is open to take them, so each finding is filed as an issue.\n",
+		);
+	});
+
+	test("halts on a review that fails, and runs it again once the halt closes", async () => {
+		const t = epicWith("in-review", { stackReview: "r1" });
+		t.concerts.push(reviewConcert("r1", "failed"));
+		t.results.r1 = failed("harness down");
+		await t.run();
+		const halt = t.writes.find((w) => w.startsWith("file"));
+		expect(halt).toBe(
+			`file #100 Tour manager halted: stack review of #9 failed: ${HALT}`,
+		);
+		expect(dataAt(t.find(9))).toMatchObject({ concert: "r1" });
+		expect(dataAt(t.find(9)).stackReview).toBeUndefined();
+		t.find(100).open = false;
+		await t.run();
+		expect(reviewsOf(t)).toHaveLength(1);
+	});
+
+	test("halts when the review does not start", async () => {
+		const t = epicWith("in-review");
+		t.refuse("review.ts does not compose");
+		await t.run();
+		expect(t.writes.find((w) => w.startsWith("file"))).toBe(
+			`file #100 Tour manager halted: stack review of #9 did not start: ${HALT}`,
+		);
+		expect(dataAt(t.find(9)).stackReview).toBeUndefined();
 	});
 });
 

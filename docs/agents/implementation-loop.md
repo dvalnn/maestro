@@ -75,7 +75,7 @@ A slice run as the slice composition adds `Leave your changes uncommitted; maest
    `maestro perform .maestro/review.ts --preset risky --request <epic brief> --revs <base>..<tip> --detach` over the
    whole stack, for what no slice's review can show: a seam between two slices, a caller one slice changed and another
    left behind, one concept two slices each define. Findings follow steps 4 and 5, and each fix lands on the slice that
-   owns its code.
+   owns its code. The tour manager runs its own on a factory epic (`factory.md`, Rules, Build: Stack review).
 7. **Release review** (one opus read-only subagent, once all of a release's slices are on `main`, before the release is
    cut). Reads the release's combined diff against `architecture.md` and the ADRs for what no single slice can show: one
    concept defined twice, drift at the seams between slices, a decision buried in code. Findings follow steps 4 and 5.

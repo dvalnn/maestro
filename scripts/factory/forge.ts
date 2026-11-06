@@ -119,6 +119,8 @@ export type Forge = {
 	arm(pull: number): Promise<void>;
 	/** The reviews of `pull`, oldest first. */
 	reviews(pull: number, after: number): Promise<Review[]>;
+	/** The commit `branch` points at. */
+	head(branch: string): Promise<string>;
 };
 
 /** Sends one HTTP request; the forge's seam for tests. */
@@ -546,6 +548,10 @@ export function forge(
 		reviews: async (pull, after) => {
 			const reviews = await all(api, `/pulls/${pull}/reviews`, {});
 			return Promise.all(reviews.map((r) => reviewOf(api, pull, after, r)));
+		},
+		head: async (branch) => {
+			const found = object(await api("GET", `/branches/${branch}`), "branch");
+			return text(object(found.commit, "commit"), "id");
 		},
 	};
 }

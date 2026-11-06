@@ -43,6 +43,9 @@ export type Report = {
 	upheld?: string;
 	/** The PR body the slice's writer wrote. */
 	pr?: string;
+	/** A consolidator's review, and the findings its verdict blocks on. */
+	review?: string;
+	blocking?: string[];
 };
 
 /** maestro as the tick sees it, through its `--json` documents. */
@@ -139,6 +142,18 @@ const upheldOf = (doc: unknown) =>
 /** The writer's PR body in the `pr` output of a `wait <concert> --json` document, when it wrote one. */
 const prOf = (doc: unknown) => outputText(doc, "pr") || undefined;
 
+/** The findings the `verdict` output of a `wait <concert> --json` document blocks on, none when it is not JSON. */
+function blockingOf(doc: unknown) {
+	const text = outputText(doc, "verdict");
+	if (!text) return undefined;
+	try {
+		const verdict: unknown = JSON.parse(text);
+		return isJson(verdict) ? strings(verdict.blocking) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 /** What a perform that started no concert printed: its error, else its refusal's diagnostics, one per line. */
 function refusal(doc: unknown): string {
 	if (isJson(doc) && typeof doc.error === "string") return doc.error;
@@ -222,6 +237,8 @@ export function maestro(bin = "maestro"): Maestro {
 				lessons: entriesOf(doc.reports, "lessons"),
 				upheld: upheldOf(result),
 				pr: prOf(result),
+				review: outputText(result, "review"),
+				blocking: blockingOf(result),
 			};
 		},
 		spend: async (id) => spendOf(await json(bin, ["ls", id])),

@@ -12,7 +12,7 @@ writeFileSync(
 case "$1 $2" in
 	"ls c2"|"ls c3") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"],"lessons":["run just fmt first"]}}}' ;;
 	"ls --tour") echo '[{"id":"l'"$5"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1"}]' ;;
-	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"pr":{"path":"pr.md"}}}' ;;
+	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"pr":{"path":"pr.md"},"review":{"path":"review.md"},"verdict":{"path":"verdict.json"}}}' ;;
 	"wait c3") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"}}}' ;;
 	"wait c1") echo '{"id":"c1","status":"failed","reason":"boom"}'; exit 1 ;;
 	"perform refused") echo "refused.ts does not compose" >&2; exit 2 ;;
@@ -28,6 +28,11 @@ writeFileSync(
 	"# Upheld findings\n\n- F1, a.ts:3: too wide\n",
 );
 writeFileSync(join(dir, "pr.md"), "## Summary\n\nx\n");
+writeFileSync(join(dir, "review.md"), "# Review\n\nA seam breaks.\n");
+writeFileSync(
+	join(dir, "verdict.json"),
+	'{"approved":false,"criteria":[],"blocking":["A seam breaks"]}',
+);
 writeFileSync(join(dir, "empty.md"), "");
 const fake = maestro(bin);
 
@@ -39,13 +44,15 @@ test("reads a settled concert's result whatever wait exits with", async () => {
 	});
 });
 
-test("reads a concert's report: each agent's obstacles, gaps and lessons, the upheld findings and the PR body it returned", async () => {
+test("reads a concert's report: each agent's obstacles, gaps and lessons, the upheld findings, the PR body, and a consolidator's review and blocking findings", async () => {
 	expect(await fake.report("c2")).toEqual({
 		obstacles: ["no rg"],
 		gaps: ["no Windows run"],
 		lessons: ["run just fmt first"],
 		upheld: "- F1, a.ts:3: too wide",
 		pr: "## Summary\n\nx",
+		review: "# Review\n\nA seam breaks.",
+		blocking: ["A seam breaks"],
 	});
 });
 

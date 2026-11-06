@@ -78,6 +78,9 @@ next action. [Home](docs/agents/factory.md)
 
 **Slice**: The concert that builds one ticket's change (`.maestro/slice.ts`). [Home](docs/agents/factory.md#build)
 
+**Stack review**: The concert that reviews a split epic's children as one change, for the seams no slice's review can
+show (`.maestro/review.ts`). [Home](docs/agents/factory.md#build)
+
 **Masterclass**: The concert that gathers lessons from settled concerts into proposals. _Avoid_: harvest.
 [Home](docs/agents/factory.md#masterclass)
 

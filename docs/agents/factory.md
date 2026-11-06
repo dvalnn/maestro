@@ -5,8 +5,8 @@ For the owner and agents looking up how the tour manager moves a ticket and what
 The Maestro Tour Manager ("tour manager") is maestro in factory mode, and the name it signs on a ticket. A **tick**, one
 run of `scripts/factory` (install and flags in its `README.md`), reads the forge, routes whatever a finished concert
 left, and starts at most one next action. A concert that has finished and awaits routing is a **settle**. A **slice** is
-the concert that builds one ticket's change (`.maestro/slice.ts`); a **masterclass** is the concert that gathers lessons
-from settled concerts.
+the concert that builds one ticket's change (`.maestro/slice.ts`); a **stack review** reviews a split epic's children as
+one change (`.maestro/review.ts`); a **masterclass** is the concert that gathers lessons from settled concerts.
 
 ## State machine
 
@@ -104,12 +104,13 @@ flowchart TD
     C -->|none| SY
     S --> SY["sync ²"]
     SY --> P{"pick ³"}
+    P --> SR["stack review"]
     P --> E["encore"]
     P --> SL["build"]
     P --> TR["triage"]
     P --> MC["masterclass"]
     P -->|nothing| X
-    E & SL & TR & MC --> W["write back ⁴"] --> X
+    SR & E & SL & TR & MC --> W["write back ⁴"] --> X
 ```
 
 1. Until the `maestro-tm:halt` issue closes (Rules, Policy: Halt).
@@ -144,6 +145,10 @@ flowchart TD
     O -->|"failed, not blocked"| HALT["halt"]
     O -.->|any| REP["file reports ⁵"]
     K -->|masterclass| PR["needs-approval ⁶"]
+    K -->|"stack review"| SV{"outcome"}
+    SV -->|ok| ARM["arm the last child"]
+    SV -->|"rejected ⁷"| FD["the last child's encore"]
+    SV -->|failed| HALT
     M -->|yes| PK["needs-info"]
 
     classDef fault stroke:#e5534b,stroke-width:3px
@@ -158,6 +163,7 @@ flowchart TD
 4. Rules, Build: Blocked.
 5. New obstacles, filed as `needs-triage` (Rules, Build: Reports).
 6. One issue per proposal (Rules, Masterclass).
+7. Rules, Build: Stack review.
 
 ## Rules
 
@@ -169,14 +175,15 @@ flowchart TD
   itself: once its PR to `main` is open, the tick arms the forge's auto-merge on it, fast-forward only, which waits on
   the required `check` status. Medium builds and waits for the owner to merge its PR. High waits in `needs-approval` for
   the owner to approve the spec, then merges as medium does. The owner merges by fast-forward, as `main` takes signed
-  commits only.
+  commits only. An epic's last child arms only once its stack review clears it (Rules, Build: Stack review).
 - **One concert at a time.** The tick starts no second one while a concert of the milestone runs.
-- **Pick order.** Finish work first: an encore of a PR with changes requested, then a build, then triage, then a
-  masterclass. A tick that routes a settle falls through and starts the next action. Within builds and within triage, an
-  issue the owner pinned on the forge comes first, in pinned order, then the rest oldest first.
+- **Pick order.** Finish work first: a stack review, then an encore of a PR with changes requested, then a build, then
+  triage, then a masterclass. A tick that routes a settle falls through and starts the next action. Within builds and
+  within triage, an issue the owner pinned on the forge comes first, in pinned order, then the rest oldest first.
 - **Halt.** These stop the tick with an open `maestro-tm:halt` issue naming the cause; closing it resumes:
   - a triage that fails, does not start or gives a malformed output: the ticket keeps its state and is triaged again;
-  - a build or a masterclass that does not start;
+  - a build, a stack review or a masterclass that does not start;
+  - a stack review that settles neither `ok` nor `rejected`: the review runs again once the halt closes;
   - a slice that settles `failed` without a `blocked:` reason, an infra fault: the issue names the concert, and the
     ticket is requeued to `ready-for-agent` with its attempts kept, and builds again;
   - a landing or a restack that fails: the workspace is kept, and the work is redone in a fresh one;
@@ -266,13 +273,25 @@ flowchart TD
   followed by what changed, each part under its heading:
   - a `ready-for-agent` ticket whose `encore` is set: each comment mentioning `@<login>` above `read`, a question
     comment excepted, headed `## Reply by <author>`; `read` moves to the newest comment it considered;
-  - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`: its
-    landed concert, fed each such review headed `## Review by <author>`, its body then its inline comments as
-    `path:line` items. The ticket moves to `in-progress`, `review` moves to the newest, and the settle lands folded into
-    the PR's head, so the PR keeps one commit per ticket.
+  - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`, or whose
+    `findings` name a stack review: its landed concert, fed each such review headed `## Review by <author>`, its body
+    then its inline comments as `path:line` items, then the stack review's under `## Stack review`. The ticket moves to
+    `in-progress`, `review` moves to the newest, and the settle lands folded into the PR's head, so the PR keeps one
+    commit per ticket.
 
   With nothing changed the build is a fresh perform, since an encore with nothing changed is refused.
 
+- **Stack review.** An epic's children are reviewed as one change once every child but its last is closed and the last
+  is `in-review` on a PR to `main`, so the range is linear whatever the stack's shape. Earlier children land as usual;
+  the review catches the seams between them before the epic closes.
+  - It performs `.maestro/review.ts` once per epic, on the epic's tour and title, with `--preset risky`, then the tick's
+    own `--preset`s, `--revs <base>..<last PR head>`, `base` being `main`'s head when the split's children were filed,
+    and a `--request` of the epic's ask and children, naming their commits by `Refs: #N`. Other tickets' commits in the
+    range are context only. An epic filed before stack reviews holds no `base` and gets none.
+  - An `ok` review arms the last child when low. A `rejected` one posts its review on the epic as a stack review comment
+    and feeds it to the last child's next encore, as a review requesting changes is; the child arms once that encore
+    lands. With no one child open by then, each blocking finding is filed as under Reports, `Found by` the epic.
+  - The encore's own slice review covers the fix; the stack review does not run again.
 - **Attempts.** A `rejected` slice, an empty one included, spends an attempt and is retried with a fresh perform. After
   2 attempts the ticket goes to `needs-info`. An answer does not reset them: an answered ticket out of attempts gets one
   encore, and a rejected one goes back to `needs-info`.
@@ -438,8 +457,8 @@ Reasons: <reason>; <reason> · Relates to #<n> · Last concert: `<concert id>`
 
 - A split shows `#### Children`, a numbered list with a `mermaid` flowchart of their order when one depends on another,
   in place of the sections from Context to Touches; a duplicate shows `Duplicate of #<n>` there.
-- `<turn>` is whose turn it is. While the tick owns the next transition, one bold line, with `<what>` the build or
-  triage running or queued:
+- `<turn>` is whose turn it is. While the tick owns the next transition, one bold line, with `<what>` the build, triage
+  or stack review running or queued:
 
   ```markdown
   **Tour manager's turn · <what>**
@@ -482,6 +501,21 @@ positions a later pass resumes from. A line the tick cannot read halts the tour 
 | `revisionBase` | The PR head a revision is cut at and lands on      | an encore of a reviewed PR         | a landing, a fresh build, a re-triage, an infra halt         |
 | `encore`       | The slice concert to continue                      | a slice blocked or out of attempts | a retry, a landing, a parked one, a re-triage, an infra halt |
 | `review`       | Id of the newest review an encore was fed          | an encore of a reviewed PR         | not cleared                                                  |
+| `base`         | An epic's `main` head when its children were filed | an approved split's filing         | not cleared                                                  |
+| `stackReview`  | The stack review an epic started                   | a stack review                     | a stack review that failed                                   |
+| `findings`     | The stack review whose findings a child awaits     | a rejected stack review            | the encore fed them                                          |
+
+### Stack review comment
+
+A new comment per rejected stack review on its epic, never edited. Agent text in it is made inert.
+
+```markdown
+### Stack review · `<concert id>`
+
+<review>
+
+<what became of its findings>
+```
 
 ### Question comments
 
