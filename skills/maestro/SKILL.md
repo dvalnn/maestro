@@ -11,7 +11,7 @@ description:
 maestro builds a composition into a checked plan with `compose`, which spends nothing, then `perform`s it as a concert.
 Its agents and checks work in lanes, never in the user's checkout; results leave as a changeset the user applies.
 
-Checked against maestro 0.1.0-rc.5. Where `maestro --version` names another release, trust `maestro <verb> --help`.
+Checked against maestro 0.1.0-rc.6. Where `maestro --version` names another release, trust `maestro <verb> --help`.
 
 ## Words
 
