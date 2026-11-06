@@ -1756,6 +1756,10 @@ describe("the record", () => {
 			code: 0,
 			err: `concert ${a} already settled ok`,
 		});
+		expect(json(await w.call(["kill", prefix, "--json"]))).toMatchObject({
+			id: a,
+			status: "ok",
+		});
 		expect(await w.call(["resume", prefix])).toMatchObject({
 			err: expect.stringContaining(`concert ${a} finished ok`),
 		});

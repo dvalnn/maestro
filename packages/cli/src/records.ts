@@ -497,6 +497,7 @@ async function killed({ session, store, json }: Stored, prefix: string) {
 	const { id, status, pid } = concertOf(store, prefix);
 	if (status !== "running") {
 		deps.stderr(`concert ${id} already settled ${status}`);
+		if (json) deps.stdout(jsonOf(resultDoc(id, store.result(id))));
 		return EXIT.ok;
 	}
 	if (!isMaestro(pid)) {
