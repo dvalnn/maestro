@@ -250,7 +250,7 @@ for package in ir sdk host-repo-sdk classics; do
   grep -q '/fixtures/' <<<"$manifest" \
     || ! tar -tzf "$tgz" | grep -q '^package/\(src/\)\?fixtures/' || fail "$tgz holds fixtures its exports do not name"
   grep -q "\"version\": \"$version\"" <<<"$manifest" || fail "$tgz is not version $version"
-  grep -q '"license": "UNLICENSED"' <<<"$manifest" || fail "$tgz is not UNLICENSED"
+  grep -q '"license": "MIT"' <<<"$manifest" || fail "$tgz is not MIT-licensed"
   ! grep -Eq '"@maestro/[a-z-]+": "(workspace:|\^|~)' <<<"$manifest" || fail "$tgz has an inexact @maestro dependency"
 done
 

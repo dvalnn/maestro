@@ -256,8 +256,8 @@ The executable is `maestro`. Commands, flags, aliases and exit codes are in `mae
 - **DIST-02 (Should).** A single executable via `bun build --compile`, on modern Linux (D-34).
 - **DIST-03 (Must).** The repository is a monorepo of separately versioned packages with an independently versioned IR.
 - **DIST-04 (Must).** No network use beyond harness and model traffic and explicit installs.
-- **DIST-05 (Must).** Distribution is internal (D-31): release artifacts (the `maestro` binary and package tarballs)
-  served from a private forge. Nothing is published to a public registry.
+- **DIST-05 (Must).** Distribution is public (D-31): release artifacts (the `maestro` binary and package tarballs)
+  served as releases of the public GitHub repository. Nothing is published to a public registry.
 
 ### Agent tool (AT)
 

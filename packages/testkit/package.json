@@ -1,7 +1,7 @@
 {
 	"name": "@maestro/testkit",
 	"version": "0.1.0-rc.6",
-	"license": "UNLICENSED",
+	"license": "MIT",
 	"private": true,
 	"type": "module",
 	"exports": "./src/index.ts",

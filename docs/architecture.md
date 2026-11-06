@@ -497,8 +497,8 @@ Refs: D-30, ADR 0002.
 
 ## 14. Distribution
 
-- Bun is the runtime baseline. Distribution is internal: the binary `maestro` and package tarballs are released from a
-  private forge, nothing is published to a public registry, and the license is `UNLICENSED`.
+- Bun is the runtime baseline. Distribution is public: the binary `maestro` and package tarballs are released on GitHub,
+  nothing is published to a public registry, and the license is MIT.
 - The executable is built with `bun build --compile`, embeds core, SDK, CLI and the agent host, and runs on Linux x64
   (glibc only), on modern Linux. Packs load as external bundles ([Packs](#13-packs)), which keeps the binary generic.
 - The release embeds the SDK and host SDK bundles as assets, and the loader serves a bare composition file's

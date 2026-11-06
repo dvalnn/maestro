@@ -75,9 +75,10 @@ A decision sets direction; a ruling settles a question the requirements left ope
   file by extension, and resume is `resume <concert id>` ([CLI-01, CLI-02, CLI-07](requirements.md#cli-cli)).
 - **D-30** A pack is a pre-bundled directory, not an npm package: [ADR 0002](adr/0002-pack-bundles.md)
   ([PACK-01](requirements.md#packs-and-distribution-pack-dist)).
-- **D-31** Distribution is internal: package names are workspace names (`@maestro/*`, with `maestro-ai` as the
-  fallback), the license is `UNLICENSED` and the binary is `maestro`
-  ([DIST-05](requirements.md#packs-and-distribution-pack-dist)). Why: licensing is decided later.
+- **D-31** Distribution is public and registry-free: package names are workspace names (`@maestro/*`, with `maestro-ai`
+  as the fallback), the license is MIT and the binary is `maestro`
+  ([DIST-05](requirements.md#packs-and-distribution-pack-dist)). Why: users install from GitHub releases and outside
+  contributors send PRs there, and a release needs no registry.
 - **D-33** A secret param type is out of v1, and secrets are never params; a design where the host resolves secret
   handles at perform time is deferred. Why: YAGNI.
 - **D-34** Maestro targets modern Linux x64, and RHEL 8 is best-effort: [ADR 0003](adr/0003-modern-linux-baseline.md).
