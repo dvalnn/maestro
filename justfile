@@ -1,9 +1,21 @@
-# format check, lint, typecheck, test
-check:
+# format check, lint, typecheck, test, in that order
+check: format lint types test
+
+# check formatting
+format:
     bunx biome check .
-    bun scripts/domain-words.ts
     bunx prettier --check "**/*.md"
+
+# check the domain words
+lint:
+    bun scripts/domain-words.ts
+
+# typecheck
+types:
     bunx tsc --noEmit
+
+# run every test
+test:
     bun test
     bun test ./.maestro
 

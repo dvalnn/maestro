@@ -6,9 +6,21 @@ target:
     run: bun install --frozen-lockfile
     cache: { path: ~/.bun/install/cache, at: /cache, env: BUN_INSTALL_CACHE_DIR }
   checks:
+    format:
+      run: just format
+      hint: biome and prettier format checks; fix with just fmt
+    lint:
+      run: just lint
+      hint: the domain words script
+    types:
+      run: just types
+      hint: tsc typecheck
+    test:
+      run: just test
+      hint: every bun test, including .maestro
     all:
       run: just check
-      hint: format, lint, types and every test
+      hint: format, lint, types and every test, stopping at the first failure, so run the granular checks first
 profiles:
   classics/builder:
     attachments:

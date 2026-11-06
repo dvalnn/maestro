@@ -90,6 +90,11 @@ const cases: [string, Parameters<typeof upheldOf>[0], string[]][] = [
 	["an approving consolidator", { lane, session, verdict: verdict([]) }, []],
 ];
 
+const granular = ["format", "lint", "types", "test"].flatMap((name) => [
+	"-c",
+	`target.checks.${name}={run: "true", hint: ${name}}`,
+]);
+
 test.each(cases)(
 	"upheldOf keeps the upheld blocking findings after %s, and carries the lane and sessions",
 	(_, rulings, ids) => {
@@ -239,6 +244,7 @@ test.each([
 				'target.prepare="true"',
 				"-c",
 				`target.checks.all={run: ${JSON.stringify(changes ? "echo x > b.ts" : "true")}, hint: all}`,
+				...granular,
 				...stubbed(Object.keys(new Map(seated).get(tier) ?? {})),
 			],
 			data,
@@ -375,6 +381,8 @@ test.each(rejecting)(
 				'target.prepare="true"',
 				"-c",
 				'target.checks.all={run: "echo x > b.ts", hint: all}',
+				...granular,
+				...granular,
 				...stubbed(profiles),
 			],
 			data,
@@ -444,6 +452,7 @@ test("a stub perform under --preset ordinary --preset stub stubs every seat the 
 			'target.prepare="true"',
 			"-c",
 			'target.checks.all={run: "echo x > b.ts", hint: all}',
+			...granular,
 		],
 		mkdtempSync(join(scratch, "data-")),
 	);
