@@ -35,7 +35,7 @@ export type ComposeInput = {
 
 export type ComposeResult =
 	| { ok: true; plan: Plan }
-	| { ok: false; diagnostics: Diagnostic[] };
+	| { ok: false; diagnostics: Diagnostic[]; plan?: Plan };
 
 const hasError = (diagnostics: readonly Diagnostic[]) =>
 	diagnostics.some((d) => d.severity === "error");
@@ -78,7 +78,8 @@ async function validations(
 /**
  * Pre-flight (architecture 4): checks types, config and host nodes, loads every function the IR names, expands the
  * groups whose items are plain values, calls the hosts' `validate` hooks, and bounds the plan against the caps. It
- * calls no author code, writes nothing and starts no host node (NFR-02, ADR 0009).
+ * calls no author code, writes nothing and starts no host node (NFR-02, ADR 0009). An error from expansion, a host's
+ * `validate` or the bounds comes with the plan so far; one from the checks or the loading comes with none.
  * @throws Error when two hosts register one node kind, as `perform` does.
  */
 export async function compose(input: ComposeInput): Promise<ComposeResult> {
@@ -111,9 +112,13 @@ export async function compose(input: ComposeInput): Promise<ComposeResult> {
 	const bounds = boundsOf(ir, graph, expansionOf, lookup);
 	if (!hasError(diagnostics))
 		diagnostics.push(...capErrors(bounds, input.caps));
-	if (hasError(diagnostics)) return { ok: false, diagnostics };
-	return {
-		ok: true,
-		plan: { ir, expansion: expanded.expansion, bounds, diagnostics },
+	const plan: Plan = {
+		ir,
+		expansion: expanded.expansion,
+		bounds,
+		diagnostics,
 	};
+	return hasError(diagnostics)
+		? { ok: false, diagnostics, plan }
+		: { ok: true, plan };
 }

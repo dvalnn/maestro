@@ -180,6 +180,35 @@ describe("compose and config", () => {
 		expect(text).toMatch(/^concurrency +flag +3 +-c concurrency=3$/m);
 	});
 
+	test("config lists a composition whose required param nothing gives, that param unset", async () => {
+		const w = await world();
+		const listed = await w.call(["config", "demo.greet"]);
+		expect(listed.code).toBe(0);
+		expect(listed.out).toMatch(/^demo\.greet\.name +unset +unset$/m);
+		expect(
+			json(await w.call(["config", "demo.greet", "--json"])).values,
+		).toContainEqual({ key: "demo.greet.name", layer: "unset" });
+	});
+
+	test("config on a bare file lists the session's values and its required param unset", async () => {
+		const w = await world();
+		const file = join(FIXTURES, "named.ts");
+		const text = (await w.call(["config", file, "-c", "concurrency=3"])).out;
+		expect(text).toMatch(/^concurrency +flag +3 +-c concurrency=3$/m);
+		expect(text).toMatch(/^named\.named\.name +unset +unset$/m);
+	});
+
+	test("config leaves a required param that is given off the unset rows", async () => {
+		const w = await world();
+		const rows = json(await w.call(["config", ...GREET, "--json"])).values;
+		expect(rows).not.toContainEqual(
+			expect.objectContaining({ key: "demo.greet.name", layer: "unset" }),
+		);
+		expect(rows).toContainEqual(
+			expect.objectContaining({ key: "demo.greet.name", value: "x" }),
+		);
+	});
+
 	test("config names each preset layer by its own name", async () => {
 		const w = await world();
 		const presets = join(w.cwd, ".maestro/presets");

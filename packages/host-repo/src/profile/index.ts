@@ -469,9 +469,31 @@ function reservedErrors(name: string, merged: Merged): Diagnostic[] {
 	});
 }
 
-/** The refusal message of profile `name` leaving required runtime field `field` unset. */
-export const unsetMessage = (name: string, field: "harness" | "model") =>
-	`profile ${name}: no ${field}`;
+/** The refusal message of profile `name` leaving required runtime `field` unset, `field` naming both when neither is set. */
+export const unsetMessage = (
+	name: string,
+	field: "harness" | "model" | "harness or model",
+) => `profile ${name}: no ${field}`;
+
+const UNSET = /^profile (\S+): no (harness or model|harness|model)$/;
+
+/** Each profile whose refusal in `diagnostics` leaves the harness, the model or both unset, with the fields left unset. */
+export const unsetProfiles = (
+	diagnostics: readonly Diagnostic[],
+): { name: string; fields: ("harness" | "model")[] }[] =>
+	diagnostics.flatMap((d) => {
+		const [, name, what] = UNSET.exec(d.message) ?? [];
+		if (name === undefined) return [];
+		return [
+			{
+				name,
+				fields:
+					what === "harness or model"
+						? [...REQUIRED_RUNTIME]
+						: [what as "harness" | "model"],
+			},
+		];
+	});
 
 /** The errors of `merged`, profile `name` with config layered over its file, as fields. */
 function fieldErrors(name: string, merged: Merged): Diagnostic[] {
@@ -485,16 +507,20 @@ function fieldErrors(name: string, merged: Merged): Diagnostic[] {
 	});
 	if (off.length) return off;
 	const runtime = (merged.values.runtime ?? {}) as Partial<Runtime>;
-	const unset = REQUIRED_RUNTIME.filter(
+	const missing = REQUIRED_RUNTIME.filter(
 		(f) =>
 			runtime[f] === undefined && !(f === "model" && runtime.harness === STUB),
-	).map((f) =>
-		refusal(
-			undefined,
-			unsetMessage(name, f),
-			`Set ${PROFILES}.${name}.runtime.${f}`,
-		),
 	);
+	const [first, second] = missing;
+	const unset = first
+		? [
+				refusal(
+					undefined,
+					unsetMessage(name, second ? "harness or model" : first),
+					`Set ${missing.map((f) => `${PROFILES}.${name}.runtime.${f}`).join(" and ")}`,
+				),
+			]
+		: [];
 	return [
 		...unset,
 		...timeoutErrors(name, merged),

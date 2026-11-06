@@ -285,13 +285,8 @@ describe("resolution", () => {
 			await refusal(() => resolveProfile("classics/builder", deleted)),
 		).toEqual([
 			[
-				"profile classics/builder: no harness",
-				"Set profiles.classics/builder.runtime.harness",
-				undefined,
-			],
-			[
-				"profile classics/builder: no model",
-				"Set profiles.classics/builder.runtime.model",
+				"profile classics/builder: no harness or model",
+				"Set profiles.classics/builder.runtime.harness and profiles.classics/builder.runtime.model",
 				undefined,
 			],
 		]);

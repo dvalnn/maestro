@@ -367,6 +367,155 @@ export const gated = composition("gated", { examples: [{}] }, () => {
 	return file;
 }
 
+/** A composition of two stub agents, of profiles smoke and other. */
+async function pairFile() {
+	const file = join(await scratch(), "pair.ts");
+	writeFileSync(
+		file,
+		`import { fresh, seat } from "@maestro/host-repo-sdk";
+import { composition } from "@maestro/sdk";
+
+export const pair = composition("pair", { examples: [{}] }, () => {
+	seat("smoke")({ label: "a", task: "nothing", lane: fresh() });
+	return seat("other")({ label: "b", task: "nothing", lane: fresh() });
+});
+`,
+	);
+	return file;
+}
+
+/** A composition of three stub agents, of profiles smoke, other and third. */
+async function trioFile() {
+	const file = join(await scratch(), "trio.ts");
+	writeFileSync(
+		file,
+		`import { fresh, seat } from "@maestro/host-repo-sdk";
+import { composition } from "@maestro/sdk";
+
+export const trio = composition("trio", { examples: [{}] }, () => {
+	seat("smoke")({ label: "a", task: "nothing", lane: fresh() });
+	seat("other")({ label: "b", task: "nothing", lane: fresh() });
+	return seat("third")({ label: "c", task: "nothing", lane: fresh() });
+});
+`,
+	);
+	return file;
+}
+
+describe("profiles with no runtime", () => {
+	test("--json on a gapped composition gives one JSON document", async () => {
+		const w = await repoWorld();
+		const composed = await w.call(["compose", await smokeFile(), "--json"]);
+		expect(composed.code).toBe(1);
+		expect(json(composed)).toMatchObject({ ok: false });
+	});
+
+	test("the hint says all three, and names every preset that covers them, each set", async () => {
+		const w = await repoWorld();
+		for (const name of ["other", "third"])
+			profileIn(w.cwd, name, "instructions: instructions.md\n", {
+				"instructions.md": "terse",
+			});
+		const both =
+			"profiles:\n  '*':\n    runtime: { harness: stub, model: none }\n";
+		await Bun.write(join(w.cwd, ".maestro/presets/alpha.yaml"), both);
+		await Bun.write(join(w.cwd, ".maestro/presets/beta.yaml"), both);
+		const composed = await w.call(["compose", await trioFile()]);
+		expect(composed.err.split("\n")).toEqual([
+			"error: 3 profiles have no harness or model: smoke, other, third",
+			"  Pass --preset alpha or --preset beta, which each set all three",
+		]);
+	});
+
+	test("with no preset setting both fields for every profile, the hint falls back to config", async () => {
+		const w = await repoWorld();
+		profileIn(w.cwd, "other", "instructions: instructions.md\n", {
+			"instructions.md": "terse",
+		});
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/harness.yaml"),
+			"profiles:\n  '*':\n    runtime: { harness: stub }\n",
+		);
+		const composed = await w.call(["compose", await pairFile()]);
+		expect(composed.err.split("\n")).toEqual([
+			"error: 2 profiles have no harness or model: smoke, other",
+			"  Set them under profiles: in .maestro/config.yaml, or pass --preset",
+		]);
+	});
+
+	test("compose prints the graph on stdout, one gap naming every profile and the preset that covers them on stderr, and exits 1", async () => {
+		const w = await repoWorld();
+		profileIn(w.cwd, "other", "instructions: instructions.md\n", {
+			"instructions.md": "terse",
+		});
+		const both =
+			"profiles:\n  '*':\n    runtime: { harness: stub, model: none }\n";
+		await Bun.write(join(w.cwd, ".maestro/presets/all.yaml"), both);
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/some.yaml"),
+			"profiles:\n  smoke:\n    runtime: { harness: stub, model: none }\n",
+		);
+		const file = await pairFile();
+		const out = join(await scratch(), "saved.json");
+		const composed = await w.call(["compose", file, "--graph", "--out", out]);
+		expect(composed.code).toBe(1);
+		expect(composed.out).toContain("flowchart");
+		expect(composed.err.split("\n")).toEqual([
+			"error: 2 profiles have no harness or model: smoke, other",
+			"  Pass --preset all, which sets both",
+		]);
+		expect(await Bun.file(out).exists()).toBe(false);
+		expect(
+			(await w.call(["compose", file, "--graph", "--preset", "all"])).code,
+		).toBe(0);
+	});
+
+	test("the hint names a preset that sets each profile by name, and none that misses one", async () => {
+		const w = await repoWorld();
+		profileIn(w.cwd, "other", "instructions: instructions.md\n", {
+			"instructions.md": "terse",
+		});
+		const set = "runtime: { harness: stub, model: none }";
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/named.yaml"),
+			`profiles:\n  smoke:\n    ${set}\n  other:\n    ${set}\n`,
+		);
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/half.yaml"),
+			`profiles:\n  smoke:\n    ${set}\n`,
+		);
+		const composed = await w.call(["compose", await pairFile()]);
+		expect(composed.err.split("\n")[1]).toBe(
+			"  Pass --preset named, which sets both",
+		);
+	});
+
+	test("a refusal from a -c exits as --json does", async () => {
+		const w = await repoWorld();
+		const args = [
+			"compose",
+			await smokeFile(),
+			"-c",
+			"profiles.smoke.runtime.harness=gone",
+			"-c",
+			"profiles.smoke.runtime.model=none",
+		];
+		const text = await w.call(args);
+		expect(text.code).toBe((await w.call([...args, "--json"])).code);
+	});
+
+	test("one profile with neither is one error", async () => {
+		const w = await repoWorld();
+		const composed = await w.call(["compose", await smokeFile()]);
+		expect(composed.code).toBe(1);
+		expect(composed.out).toContain("instances");
+		expect(composed.err.split("\n")).toEqual([
+			"error: profile smoke: no harness or model",
+			"  Set profiles.smoke.runtime.harness and profiles.smoke.runtime.model",
+		]);
+	});
+});
+
 describe("profiles", () => {
 	test("a runtime field on the command line or in a preset beats the config file's", async () => {
 		const w = await repoWorld(SMOKE_RUNTIME("gone"));

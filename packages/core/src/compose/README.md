@@ -6,7 +6,8 @@ For engine contributors: what `compose(input)` checks, in which order, and which
 ([architecture: Lifecycle of a concert](../../../../docs/architecture.md#4-lifecycle-of-a-concert), CORE-07). It spends
 nothing: it checks an IR against its config and hosts, expands the groups whose items are plain values and bounds the
 result. It calls no author code, writes nothing and starts no host node (NFR-02, ADR 0009). It returns
-`{ ok: true, plan }`, or `{ ok: false, diagnostics }` when any check gives an error. The plan is `Plan` of
+`{ ok: true, plan }`, or `{ ok: false, diagnostics }` when any check gives an error; an error from step 3, 4 or 5 comes
+with the `plan` as far as it got, so a caller can show a composition's gaps beside its graph. The plan is `Plan` of
 `@maestro/ir`, described in its [README](../../../ir/README.md#plan). Two hosts that register one node kind make
 `compose` throw before step 1, as `perform` does.
 

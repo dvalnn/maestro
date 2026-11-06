@@ -1,10 +1,16 @@
 import { mkdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { closest } from "@maestro/core";
-import { type ComposeInput, compose } from "@maestro/core/compose";
+import {
+	type ComposeInput,
+	type ComposeResult,
+	compose,
+} from "@maestro/core/compose";
 import { CORE_CONFIG, type Composed, type Layer } from "@maestro/core/config";
 import type { ConcertRecord, Staged } from "@maestro/core/perform";
+import { unsetProfiles } from "@maestro/host-repo";
 import {
+	type Diagnostic,
 	type Ir,
 	irSchema,
 	isPlainObject,
@@ -24,7 +30,7 @@ import {
 	type Values,
 	warn,
 } from "./command";
-import { baseOf, CLI_CONFIG } from "./config";
+import { baseOf, CLI_CONFIG, presetsSetting } from "./config";
 import { flagValues, paramFlags, paramsBlock } from "./flags";
 import {
 	type Bundle,
@@ -233,20 +239,22 @@ async function loadIr(
 }
 
 /**
- * Builds `composition` of `bundle` from the config `layers`, the example set when `reading` says so, and the flags in
- * `args` over the params `reading` recorded. The example set fills only the params no config file or flag gives, an
- * optional one only when none of the root's optional params is given.
+ * The params `composition` of `bundle` takes from the config `layers`, the example set when `reading` says so, and the
+ * flags in `args` over the params `reading` recorded. The example set fills only the params no config file or flag
+ * gives, an optional one only when none of the root's optional params is given. With `lax` a required param nothing
+ * gives is left unset.
  * @throws CliError, a usage error, for a composition in `args` when `reading` is an encore's.
  */
-async function build(
+function paramsOf(
 	session: Session,
 	reading: Reading,
 	bundle: Bundle,
 	composition: Described,
 	args: readonly string[],
 	layers: readonly Layer[],
-	bare = false,
-): Promise<Omit<Prepared, "claims">> {
+	bare: boolean,
+	lax = false,
+) {
 	const label = `${bundle.pack.id}.${composition.name}`;
 	const flags = paramFlags(composition, RESERVED, label);
 	const { values, positionals } = parse(
@@ -273,7 +281,33 @@ async function build(
 		hosts: session.deps.hosts,
 		base: (source) => baseOf(session.config, session.deps.cwd, source),
 		bare,
+		lax,
 	});
+	return { values, given, params };
+}
+
+/**
+ * Builds `composition` of `bundle` from its params, as `paramsOf` reads them.
+ * @throws CliError, a usage error, for a composition in `args` when `reading` is an encore's.
+ */
+async function build(
+	session: Session,
+	reading: Reading,
+	bundle: Bundle,
+	composition: Described,
+	args: readonly string[],
+	layers: readonly Layer[],
+	bare = false,
+): Promise<Omit<Prepared, "claims">> {
+	const { values, given, params } = paramsOf(
+		session,
+		reading,
+		bundle,
+		composition,
+		args,
+		layers,
+		bare,
+	);
 	const built = bundle.build(composition.name, params.root, params.configured);
 	if (!built.ok) throw new Diagnosed(built.diagnostics);
 	return {
@@ -404,6 +438,49 @@ export async function prepare(
 		: { ...built, config: session.config.composed, claims, file };
 }
 
+/** The config a command reads without building its composition, and the required params of its root that nothing gives. */
+export type Configured = { config: Composed; unset: string[] };
+
+/**
+ * The config `args` name, as `prepare` composes it but with the composition left unbuilt: a required param nothing
+ * gives is listed in `unset`, not refused.
+ * @throws as `prepare` does, but for a missing param.
+ */
+export async function configured(
+	session: Session,
+	reading: Reading,
+	args: readonly string[],
+): Promise<Configured> {
+	const [target] = args;
+	if (target === undefined || target.startsWith("-") || IR_FILE.test(target))
+		return {
+			config: (await prepare(session, reading, args)).config,
+			unset: [],
+		};
+	const { bundle, composition, file } = await located(session, target);
+	const { params } = paramsOf(
+		session,
+		reading,
+		bundle,
+		composition,
+		args.slice(1),
+		file === undefined ? session.config.layers : [],
+		file !== undefined,
+		true,
+	);
+	const key = [bundle.pack.id, composition.name];
+	const given = key.reduce<unknown>(
+		(at, k) => (isPlainObject(at) ? at[k] : undefined),
+		params.composed.values,
+	);
+	return {
+		config: file === undefined ? params.composed : session.config.composed,
+		unset: composition.params.required
+			.filter((name) => !isPlainObject(given) || !Object.hasOwn(given, name))
+			.map((name) => [...key, name].join(".")),
+	};
+}
+
 /** The path of each artifact reference without a producer in `value`, at any depth. */
 function outsidePaths(value: unknown): string[] {
 	if (Array.isArray(value)) return value.flatMap(outsidePaths);
@@ -430,15 +507,26 @@ export function requireNoParamFiles(ir: Ir, target: string): void {
 		}
 }
 
-/**
- * Pre-flight of `prepared` under the session's config and hosts.
- * @throws Diagnosed when composing fails.
- */
-export async function preflight(
+const COUNTS = [
+	"zero",
+	"one",
+	"two",
+	"three",
+	"four",
+	"five",
+	"six",
+	"seven",
+	"eight",
+	"nine",
+	"ten",
+];
+
+/** Pre-flight of `prepared` under the session's config and hosts: its plan, or the errors with the plan so far. */
+export function compared(
 	session: Session,
 	{ ir, loader, config, claims }: Prepared,
-): Promise<Plan> {
-	const result = await compose({
+): Promise<ComposeResult> {
+	return compose({
 		ir,
 		config,
 		roots: session.config.roots,
@@ -448,8 +536,48 @@ export async function preflight(
 		loadCode: loader.loadCode,
 		caps: session.config.core.caps,
 	});
+}
+
+/**
+ * Pre-flight of `prepared` under the session's config and hosts.
+ * @throws Diagnosed when composing fails.
+ */
+export async function preflight(
+	session: Session,
+	prepared: Prepared,
+): Promise<Plan> {
+	const result = await compared(session, prepared);
 	if (!result.ok) throw new Diagnosed(result.diagnostics);
 	return result.plan;
+}
+
+/**
+ * `diagnostics` with the refusals of several profiles left without a harness or model made one error that names them
+ * all, and, when presets set both for every one of them, the fix of passing one.
+ */
+export async function gathered(
+	session: Session,
+	diagnostics: readonly Diagnostic[],
+): Promise<Diagnostic[]> {
+	const unset = unsetProfiles(diagnostics);
+	const [first] = diagnostics.filter((d) => unsetProfiles([d]).length);
+	if (unset.length < 2 || !first) return [...diagnostics];
+	const presets = await presetsSetting(
+		session.config,
+		session.deps.hosts,
+		unset,
+	);
+	const all =
+		unset.length === 2 ? "both" : `all ${COUNTS[unset.length] ?? unset.length}`;
+	const fix = presets.length
+		? `Pass ${presets.map((p) => `--preset ${p}`).join(" or ")}, which ${presets.length > 1 ? "each set" : "sets"} ${all}`
+		: "Set them under profiles: in .maestro/config.yaml, or pass --preset";
+	const merged: Diagnostic = {
+		...first,
+		message: `${unset.length} profiles have no harness or model: ${unset.map((u) => u.name).join(", ")}`,
+		hint: fix,
+	};
+	return [...diagnostics.filter((d) => !unsetProfiles([d]).length), merged];
 }
 
 /**

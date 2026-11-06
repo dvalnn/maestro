@@ -92,6 +92,20 @@ describe("agent ls", () => {
 		]);
 	});
 
+	test("a profile with neither harness nor model counts in the footer and shows no other fault", async () => {
+		const w = await roster();
+		await Bun.write(
+			join(w.cwd, ".maestro/profiles/bare/profile.yaml"),
+			"runtime: {}\n",
+		);
+		const listed = await w.call(["agent", "ls"]);
+		expect(listed.err.split("\n")[0]).toBe(
+			"3 profiles have no harness or model",
+		);
+		expect(listed.out).toMatch(/^ {2}bare +- +- +workspace$/m);
+		expect(listed.out).not.toContain("no harness or model");
+	});
+
 	test("--json gives each row's fields, and an empty roster says where profiles go", async () => {
 		const w = await roster();
 		const { profiles } = json(await w.call(["agent", "ls", "--json"]));

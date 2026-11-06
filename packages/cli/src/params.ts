@@ -65,6 +65,8 @@ export type ParamRequest = {
 	base: (source: Source | undefined) => string;
 	/** The composition comes from a bare file, which no config key can reach. */
 	bare?: boolean;
+	/** A required root param no layer or flag gives is left unset, not refused: a verb that builds nothing reads this. */
+	lax?: boolean;
 };
 
 type Params = {
@@ -89,6 +91,7 @@ type Reading = {
 	root: boolean;
 	bare: boolean;
 	examples: boolean;
+	lax: boolean;
 };
 
 /** A param's name in a diagnostic: with its flag for the root, else by its config key. */
@@ -273,7 +276,12 @@ function declarationErrors(
 ): Diagnostic[] {
 	const refused = artifactError(r, name, given);
 	if (refused) return [refused];
-	if (r.root && !given && r.composition.params.required.includes(name))
+	if (
+		r.root &&
+		!r.lax &&
+		!given &&
+		r.composition.params.required.includes(name)
+	)
 		return [
 			configDiagnostic(
 				"CFG.required",
@@ -413,6 +421,7 @@ export function paramValues(request: ParamRequest): Params {
 			root: composition.name === root,
 			bare: request.bare ?? false,
 			examples: request.example !== undefined,
+			lax: request.lax ?? false,
 		});
 		if ("diagnostics" in read) diagnostics.push(...read.diagnostics);
 		else {

@@ -49,6 +49,7 @@ export {
 	resolveProfile,
 	sourceWords,
 	unsetMessage,
+	unsetProfiles,
 	type ValueSource,
 } from "../profile/index";
 export { SandboxUnavailable } from "../sandbox/index";

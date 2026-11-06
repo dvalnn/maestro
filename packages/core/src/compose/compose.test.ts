@@ -71,7 +71,7 @@ describe("compose", () => {
 		expect(result.ok && result.plan).not.toHaveProperty("params");
 	});
 
-	test("an error from a host's validate stops compose before the plan", async () => {
+	test("an error from a host's validate fails compose, with the plan beside its diagnostics", async () => {
 		const host = fakeHost({
 			validate: (graph) => [
 				{
@@ -84,12 +84,25 @@ describe("compose", () => {
 		const result = await composeWith(await golden("fanout-fanin-loop.json"), {
 			hosts: [host],
 		});
+		const diagnostics = [
+			{ ...warning("HOST.cap"), severity: "error" as const, node: "topics" },
+		];
 		expect(result).toEqual({
 			ok: false,
-			diagnostics: [
-				{ ...warning("HOST.cap"), severity: "error", node: "topics" },
-			],
+			diagnostics,
+			plan: expect.objectContaining({ diagnostics }),
 		});
+		expect(!result.ok && result.plan?.bounds.instances).toEqual({ upTo: 13 });
+	});
+
+	test("an error from the checks of step 1 comes with no plan", async () => {
+		const ir = await golden("minimal.json");
+		const result = await composeWith(
+			{ ...ir, nodes: [{ id: "a", kind: "other.task" }] },
+			{},
+		);
+		expect(!result.ok && result.diagnostics[0]?.code).toBe("HOST.kind");
+		expect(!result.ok && result.plan).toBeUndefined();
 	});
 
 	test("a host whose validate() throws stops compose with a HOST error naming it", async () => {

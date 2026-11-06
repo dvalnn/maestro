@@ -596,6 +596,7 @@ function faultsOf({ name, error }: Listed) {
 	const unsetFaults = [
 		unsetMessage(name, "harness"),
 		unsetMessage(name, "model"),
+		unsetMessage(name, "harness or model"),
 	];
 	const all = error?.split(FAULT_SEPARATOR) ?? [];
 	return {

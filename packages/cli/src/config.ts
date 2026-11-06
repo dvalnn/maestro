@@ -21,8 +21,12 @@ import {
 	valuesLayer,
 } from "@maestro/core/config";
 import type { Host, Roots } from "@maestro/core/host";
-import type { JsonSchema } from "@maestro/ir";
-import { messageOf, validator } from "@maestro/ir";
+import {
+	isPlainObject,
+	type JsonSchema,
+	messageOf,
+	validator,
+} from "@maestro/ir";
 import { packIdOf } from "./loader";
 import { CliError } from "./output";
 
@@ -96,6 +100,8 @@ export type LoadedConfig = {
 	packsDir: string;
 	/** The directory that holds `.maestro/`, when the cwd is inside one. */
 	workspace?: string;
+	/** The directories presets are looked up in. */
+	presets: readonly PresetDir[];
 	/** The host roots: `.maestro` in the workspace, `$XDG_CONFIG_HOME/maestro`, and each pack's directory. */
 	roots: Roots;
 };
@@ -291,6 +297,38 @@ async function unknownFix(
 		: `Create ${name}${PRESET_EXTENSION} in ${lookedIn(dirs)}`;
 }
 
+/**
+ * The presets, by name, that set every one of `wanted`, a profile's name and its runtime fields, whether under the
+ * profile's name or under `*`. A preset that cannot be read is no candidate.
+ */
+export async function presetsSetting(
+	config: Pick<LoadedConfig, "presets">,
+	hosts: readonly Host[],
+	wanted: readonly { name: string; fields: readonly string[] }[],
+): Promise<string[]> {
+	const names = [...new Set(await presetNames(config.presets))].toSorted();
+	const paths = pathKeys(hosts);
+	const sets = (profiles: unknown, name: string, field: string) =>
+		[name, "*"].some((key) => {
+			const runtime = isPlainObject(profiles)
+				? (profiles[key] as { runtime?: Record<string, unknown> } | undefined)
+						?.runtime
+				: undefined;
+			return runtime?.[field] != null;
+		});
+	const found: string[] = [];
+	for (const name of names) {
+		const layer = await presetLayer(name, config.presets, paths).catch(
+			() => undefined,
+		);
+		if (!layer) continue;
+		const { profiles } = layered([layer]).values;
+		if (wanted.every((w) => w.fields.every((f) => sets(profiles, w.name, f))))
+			found.push(name);
+	}
+	return found;
+}
+
 /** `<key>=<value>`, split at the first `=` outside double quotes. */
 const OVERRIDE = /^((?:"[^"]*"|[^"=])*)=(.*)$/s;
 /** One key of a key path: in double quotes, or up to the next `.`. */
@@ -475,5 +513,14 @@ export async function loadConfig({
 		user: userDir,
 		packs: await packRoots(packs),
 	};
-	return { layers, composed, core, packs, packsDir, workspace, roots };
+	return {
+		layers,
+		composed,
+		core,
+		packs,
+		packsDir,
+		workspace,
+		presets: presetDirs,
+		roots,
+	};
 }
