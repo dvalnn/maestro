@@ -23,7 +23,7 @@ const HOST_MODULES = new Set([
 /** Host modules, and `cli`'s own tests and fixtures, which use a host's words to drive it. */
 const exempt = (file: string) =>
 	HOST_MODULES.has(file) ||
-	(file.startsWith("cli/src/") &&
+	(file.startsWith(CLI_SOURCE) &&
 		(file.endsWith(".test.ts") || file.includes("/fixtures/")));
 
 // Splits at anything not a letter and at a lower-to-upper case change, so `runNode` and `run_node` yield `run`,
@@ -41,14 +41,26 @@ const banned = (word: string, allowed: readonly string[]) => {
 	return stem !== undefined && !allowed.includes(stem);
 };
 
-/** The domain words found under `packagesDir`, each as `packages/<file>: <word>`. */
+/** An import of `@maestro/host-repo` or one of its subpaths, not of `@maestro/host-repo-sdk`. */
+const HOST_IMPORT =
+	/\b(?:from|import)\s*\(?\s*["']@maestro\/host-repo(?:\/[^"']*)?["']/;
+const CLI_SOURCE = "cli/src/";
+
+/**
+ * The violations found under `packagesDir`, each as `packages/<file>: <word>` for a domain word, or
+ * `packages/<file>: imports @maestro/host-repo` for a `cli` file outside its host modules, tests and fixtures.
+ */
 export async function scan(packagesDir: string): Promise<string[]> {
 	const found: string[] = [];
 	for (const [pkg, allowed] of Object.entries(SCANNED))
 		for (const file of files(pkg, packagesDir)) {
-			const text = `${file}\n${await Bun.file(resolve(packagesDir, file)).text()}`;
-			for (const word of words(text).filter((w) => banned(w, allowed)))
+			const source = await Bun.file(resolve(packagesDir, file)).text();
+			for (const word of words(`${file}\n${source}`).filter((w) =>
+				banned(w, allowed),
+			))
 				found.push(`packages/${file}: ${word}`);
+			if (file.startsWith(CLI_SOURCE) && HOST_IMPORT.test(source))
+				found.push(`packages/${file}: imports @maestro/host-repo`);
 		}
 	return found;
 }
@@ -57,8 +69,8 @@ if (import.meta.main) {
 	const found = await scan(resolve(import.meta.dir, "../packages"));
 	if (found.length) {
 		console.error(
-			`domain words in domain-free packages:\n${found.map((f) => `  ${f}`).join("\n")}\n` +
-				"Rename them, or allow the word for its package in scripts/domain-words.ts",
+			`domain words or host imports in domain-free code:\n${found.map((f) => `  ${f}`).join("\n")}\n` +
+				"Rename a word, or allow it for its package in scripts/domain-words.ts; move a host import into a host module",
 		);
 		process.exit(EXIT_FOUND);
 	}

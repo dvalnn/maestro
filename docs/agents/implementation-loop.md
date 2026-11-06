@@ -9,7 +9,8 @@ step for a slice where it cannot pay off, and says why in one line of the slice 
    `architecture.md`, `sdk-spec.md`. `GLOSSARY.md` is authoritative for terms.
 2. **Domain-free core (CORE-12).** No domain words in `ir`, `core`, `sdk`, `testkit` or `render-text`, which the lint in
    `just check` enforces, nor in `cli` outside its host modules `hosts`, `agent` and `changeset`, and its own tests and
-   fixtures (R-10). `cli` may say `run` and `build`.
+   fixtures (R-10). `cli` may say `run` and `build`. The same lint refuses an import of `@maestro/host-repo` in `cli`
+   outside those host modules and its tests and fixtures.
 3. **Lean (NFR-09).** A new node kind, edge kind or SDK primitive needs a written justification in the slice report. The
    default is a code node or a stdlib helper.
 4. **Do not guess.** A question the docs settle is derived; anything else goes to the owner ("Owner calls" below). A

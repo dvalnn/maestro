@@ -35,3 +35,18 @@ test("a test in a core package still fails", async () => {
 	const dir = packages({ "core/src/graph.test.ts": "// lane\n" });
 	expect(await scan(dir)).toEqual(["packages/core/src/graph.test.ts: lane"]);
 });
+
+test("a cli file outside its host modules fails on a host-repo import, subpath included, but not host-repo-sdk", async () => {
+	const dir = packages({
+		"cli/src/prune.ts": 'import { x } from "@maestro/host-repo";\n',
+		"cli/src/output.ts":
+			'import type { y } from "@maestro/host-repo/harness";\n',
+		"cli/src/loader.ts": 'import { v } from "@maestro/host-repo-sdk";\n',
+		"cli/src/agent.ts": 'import { z } from "@maestro/host-repo";\n',
+		"cli/src/repo.test.ts": 'import { w } from "@maestro/host-repo";\n',
+	});
+	expect((await scan(dir)).toSorted()).toEqual([
+		"packages/cli/src/output.ts: imports @maestro/host-repo",
+		"packages/cli/src/prune.ts: imports @maestro/host-repo",
+	]);
+});

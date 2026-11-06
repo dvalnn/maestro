@@ -1,11 +1,5 @@
 import { basename, dirname, extname, resolve } from "node:path";
 import { type Composed, valueAt } from "@maestro/core/config";
-import {
-	type AgentRuntime,
-	agentRuntimes,
-	agentTable,
-	HOST_NAME,
-} from "@maestro/host-repo";
 import { canonicalJson, type Diagnostic, type Plan } from "@maestro/ir";
 import { flow, listing, render, summary } from "@maestro/render-text";
 import {
@@ -17,6 +11,7 @@ import {
 	peek,
 	textOf,
 } from "./command";
+import { agentLines, agentsOf } from "./hosts";
 import {
 	Diagnosed,
 	diagnosedExit,
@@ -55,21 +50,6 @@ async function save(prepared: Prepared, out: string) {
 	const file = resolve(out);
 	const saved = await persist(prepared, dirname(file), bundleName(file));
 	await Bun.write(file, `${canonicalJson(saved.ir)}\n`);
-}
-
-/** What each agent node of `plan` will run: its profile and the runtime that resolves to. */
-async function agentsOf(
-	session: Session,
-	config: Composed,
-	plan: Plan,
-): Promise<AgentRuntime[]> {
-	const host = session.deps.hosts.find((h) => h.name === HOST_NAME);
-	return host ? agentRuntimes(plan.ir, config, host, session.config.roots) : [];
-}
-
-/** The `agents:` block: the table the host gives, indented. */
-function agentLines(agents: readonly AgentRuntime[]): string {
-	return `agents:\n${table(agentTable(agents)).replace(/^/gm, "  ")}`;
 }
 
 /** The plan in full, then its `agents:` block when it has agent nodes. */
