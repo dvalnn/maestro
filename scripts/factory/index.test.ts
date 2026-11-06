@@ -628,6 +628,31 @@ describe("a pass", () => {
 		expect(dataAt(t.find(7)).filed).toEqual([50, 100]);
 	});
 
+	test("closes an in-progress epic once its last filed child closes", async () => {
+		const result: Triage = {
+			...base,
+			verdict: "split",
+			risk: "medium",
+			children,
+		};
+		const epic = issue(7, "in-progress", {
+			concert: "c1",
+			triage: "c1",
+			result,
+			filed: [50, 51],
+		});
+		const done = issue(50, "in-review", undefined, "Parse the name");
+		Object.assign(done, { open: false, closed: 1 });
+		const last = issue(51, "in-review", undefined, "Greet it");
+		const t = setup([epic, done, last]);
+		await t.run();
+		expect(t.find(7).open).toBe(true);
+		Object.assign(last, { open: false, closed: 2 });
+		await t.run();
+		expect(t.writes).toContain("edit #7 closed");
+		expect(t.find(7).open).toBe(false);
+	});
+
 	test("starts triage of a pinned intake issue before an older one", async () => {
 		const t = setup([issue(2, "needs-triage"), issue(9, "needs-triage")]);
 		t.pins.push(9);

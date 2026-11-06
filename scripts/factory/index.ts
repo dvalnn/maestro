@@ -974,9 +974,23 @@ async function restack(pass: Pass, entry: Entry, stack: Stack) {
 	return true;
 }
 
+/** Closes epic `issue` once every child in `filed` has closed (factory.md, Rules, Triage: Splits). */
+async function closeEpic(
+	pass: Pass,
+	issue: Issue,
+	filed: number[],
+	entries: Entry[],
+) {
+	if (entries.some((e) => filed.includes(e.issue.number))) return;
+	const children = await Promise.all(filed.map((n) => pass.forge.issue(n)));
+	if (children.some((c) => c.closed === undefined)) return;
+	await pass.forge.edit(issue.number, { closed: true });
+	pass.say(`closed epic #${issue.number}, its children all closed`);
+}
+
 /**
- * Sets the labels of a routed result a cut pass left unset, files a split the owner approved, or restacks a stacked PR
- * whose blocker closed; false when it halted.
+ * Sets the labels of a routed result a cut pass left unset, files a split the owner approved, closes an epic whose
+ * children all closed, or restacks a stacked PR whose blocker closed; false when it halted.
  */
 async function syncOne(pass: Pass, entry: Entry, entries: Entry[]) {
 	const { issue, data } = entry;
@@ -985,6 +999,8 @@ async function syncOne(pass: Pass, entry: Entry, entries: Entry[]) {
 		await apply(pass, issue.number, data, data.result);
 	else if (state === "ready-for-agent" && data.result?.children)
 		await fileSplit(pass, entry, entries);
+	else if (state === "in-progress" && data.filed)
+		await closeEpic(pass, issue, data.filed, entries);
 	else if (state === "in-review" && data.stack)
 		return restack(pass, entry, data.stack);
 	return true;
