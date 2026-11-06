@@ -37,7 +37,7 @@ const AUTH_FAILED = "authentication_failed";
 /** Per-session config dir under the session dir, so transcripts and settings are the session's own. */
 const SESSION_CONFIG = "claude";
 
-/** The subagent tool's names in a `system/init` tool list, which 2.1.302 gives by its former name `Task`. */
+/** The subagent tool's names in a `system/init` tool list, which 2.1.318 gives by its former name `Task`. */
 const SUBAGENT_TOOLS = ["Agent", "Task"];
 
 /** The built-in tools an agent gets, named so a release's new default tools never reach it. */

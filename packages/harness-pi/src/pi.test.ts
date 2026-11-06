@@ -15,7 +15,7 @@ import { join } from "node:path";
 import type { HarnessEvent, HarnessRequest } from "@maestro/host-repo/harness";
 import { declared, piHarness } from "./index";
 
-const FIXTURES = join(import.meta.dir, "../fixtures/1.3.0");
+const FIXTURES = join(import.meta.dir, "../fixtures/1.5.0");
 const dirs: string[] = [];
 const tmp = (name: string) => {
 	const d = mkdtempSync(join(tmpdir(), `pi-${name}-`));
@@ -64,7 +64,7 @@ async function drain(events: AsyncIterable<HarnessEvent>) {
 }
 
 describe("stand-in pi", () => {
-	test("the recorded 1.3.0 run is read into tools, their result sizes and errors, usage, prompt sizes and a reply", async () => {
+	test("the recorded 1.5.0 run is read into tools, their result sizes and errors, usage, prompt sizes and a reply", async () => {
 		const req = request("write hello.txt");
 		const unknown = '{"type":"future_event","extra":{"a":1}}';
 		const compactions = [
@@ -77,7 +77,7 @@ describe("stand-in pi", () => {
 		if (recorded === undefined) throw new Error("no tool_execution_end line");
 		// Synthetic: the recorded run has no failed tool.
 		const failed = recorded
-			.replace('"call_1|opaque"', '"call_2"')
+			.replace('"call_1"', '"call_2"')
 			.replace('"isError":false', '"isError":true');
 		const run = piHarness(
 			standIn([...lines, failed, ...compactions, unknown]),
@@ -89,11 +89,11 @@ describe("stand-in pi", () => {
 			outcome: "ok",
 			reply: "done",
 			metrics: {
-				tokens_in: 1257,
-				tokens_out: 58,
-				tokens_cache_read: 1152,
+				tokens_in: 4305,
+				tokens_out: 157,
+				tokens_cache_read: 0,
 				tokens_cache_write: 0,
-				tokens_reasoning: 0,
+				tokens_reasoning: 79,
 			},
 		});
 		expect(seen.filter((e) => e.kind === "raw")).toHaveLength(1);
@@ -102,12 +102,12 @@ describe("stand-in pi", () => {
 				kind: "tool",
 				name: "write",
 				input: { path: "hello.txt", content: "hi" },
-				id: "call_1|opaque",
+				id: "call_1",
 			},
 		]);
 		const results = seen.filter((e) => e.kind === "tool_result");
 		expect(results).toEqual([
-			{ kind: "tool_result", id: "call_1|opaque", bytes: 31, error: false },
+			{ kind: "tool_result", id: "call_1", bytes: 31, error: false },
 			{ kind: "tool_result", id: "call_2", bytes: 31, error: true },
 		]);
 		expect(JSON.stringify(results)).not.toContain("Successfully");
@@ -115,8 +115,8 @@ describe("stand-in pi", () => {
 		expect(
 			seen.filter((e) => e.kind === "context" || e.kind === "compaction"),
 		).toEqual([
-			{ kind: "context", used: 1172 },
-			{ kind: "context", used: 1237 },
+			{ kind: "context", used: 2075 },
+			{ kind: "context", used: 2230 },
 			{ kind: "compaction" },
 		]);
 		expect(seen.at(-1)).toEqual({
@@ -177,29 +177,15 @@ describe("stand-in pi", () => {
 	});
 
 	test("the reporter extension is bound read-only outside the session dir, and its entry, as pi's json mode streams it, is the environment and window events; other entries are not", async () => {
-		const report = {
-			type: "entry_appended",
-			entry: {
-				type: "custom",
-				id: "a1",
-				parentId: null,
-				timestamp: "2026-10-29T00:00:00.000Z",
-				customType: "maestro-environment",
-				data: {
-					tools: ["read", "bash", "edit", "write"],
-					skills: [],
-					window: 200_000,
-				},
-			},
-		};
-		const other = { ...report, entry: { ...report.entry, customType: "x" } };
-		const [header = "", ...rest] = fixture();
-		const lines = [header, JSON.stringify(report), JSON.stringify(other)];
+		const lines = fixture();
+		const recorded = lines.find((l) => l.includes('"entry_appended"'));
+		if (recorded === undefined) throw new Error("no entry_appended line");
+		const other = recorded.replace('"maestro-environment"', '"x"');
 		const req = request("x");
 		const target = join(tmp("target"), "kept");
 		writeFileSync(target, "kept");
 		symlinkSync(target, join(req.session.dir, "maestro-environment.js"));
-		const run = piHarness(standIn([...lines, ...rest])).run(req);
+		const run = piHarness(standIn([...lines, other])).run(req);
 		const seen = await drain(run.events);
 		expect(
 			seen.filter((e) => e.kind === "environment" || e.kind === "window"),
@@ -208,6 +194,7 @@ describe("stand-in pi", () => {
 				kind: "environment",
 				tools: ["read", "bash", "edit", "write"],
 				skills: [],
+				contextFiles: [],
 			},
 			{ kind: "window", tokens: 200_000 },
 		]);
@@ -433,11 +420,12 @@ describe("stand-in pi", () => {
 	);
 
 	test("a message's thinking text is reported before its text", async () => {
-		const lines = fixture().map((l) =>
-			l.startsWith('{"type":"message_end"')
-				? l.replace('"thinking":""', '"thinking":"Write the file."')
-				: l,
-		);
+		let named = false;
+		const lines = fixture().map((l) => {
+			if (named || !l.startsWith('{"type":"message_end"')) return l;
+			named = l.includes('"thinking":""');
+			return l.replace('"thinking":""', '"thinking":"Write the file."');
+		});
 		const seen = await drain(
 			piHarness(standIn(lines)).run(request("x")).events,
 		);
@@ -449,13 +437,14 @@ describe("stand-in pi", () => {
 	});
 
 	test("reply is the last assistant message's text, empty when it has none", async () => {
-		const lines = fixture().map((l) => {
+		const assistantEnd = (l: string) =>
+			l.startsWith('{"type":"message_end"') && l.includes('"role":"assistant"');
+		const source = fixture();
+		const last = source.findLastIndex(assistantEnd);
+		const lines = source.map((l, i) => {
+			if (!assistantEnd(l)) return l;
 			const e = JSON.parse(l);
-			if (e.type !== "message_end" || e.message.role !== "assistant") return l;
-			const early = e.message.content.some(
-				(p: { type: string }) => p.type === "toolCall" || p.type === "thinking",
-			);
-			e.message.content = early ? [{ type: "text", text: "early" }] : [];
+			e.message.content = i === last ? [] : [{ type: "text", text: "early" }];
 			return JSON.stringify(e);
 		});
 		const result = await piHarness(standIn(lines)).run(request("x")).result;

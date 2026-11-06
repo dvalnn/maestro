@@ -135,5 +135,5 @@ A decision sets direction; a ruling settles a question the requirements left ope
 
 - **R-08 An agent gets a named tool list, never a harness's defaults.** claude runs with `Bash`, `Read`, `Write`, `Edit`
   and pi with `read`, `bash`, `edit`, `write`; no profile adds tools until one needs them. Why: a harness's defaults
-  change between releases, and claude 2.1.302's include tools that spawn subagents, schedule work past the concert or
+  change between releases, and claude 2.1.318's include tools that spawn subagents, schedule work past the concert or
   reach other sessions. Applies in each adapter's baseline ([AT-01](requirements.md#agent-tool-at)).
