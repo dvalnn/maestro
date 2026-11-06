@@ -60,6 +60,7 @@ function builtNeeds(
 			example: composition.examples[0],
 			hosts,
 			base: () => resolve(cwd),
+			exampleDir: bundle.dir,
 		});
 	} catch (error) {
 		if (error instanceof ConfigError) return undefined;

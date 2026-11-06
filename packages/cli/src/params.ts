@@ -63,6 +63,8 @@ export type ParamRequest = {
 	hosts: readonly Host[];
 	/** The directory a file param's relative path from `source` resolves against. */
 	base: (source: Source | undefined) => string;
+	/** The directory a file param's relative path in the example set resolves against: the composition file's, or the pack's. */
+	exampleDir: string;
 	/** The composition comes from a bare file, which no config key can reach. */
 	bare?: boolean;
 	/** A required root param no layer or flag gives is left unset, not refused: a verb that builds nothing reads this. */
@@ -381,7 +383,7 @@ function exampleFill(
  * an optional one only when the rest give none of the root's optional params, and no merge tag acts on it. Every
  * composition of the pack is read, so a subcomposition's configured params reach its `use` through the build context;
  * only the root's must hold every required param. Declared defaults are left to the build. A root file param's value
- * is the path of a file, resolved against `base` of its source, and becomes the reference that file is staged under.
+ * is the path of a file, resolved against `base` of its source, or `exampleDir` for the example set, and becomes the reference that file is staged under.
  * @throws ConfigError for a missing required root param, a value off its schema, a typed param no host reads or that
  * does not parse, a file param whose file cannot be read or, for `core.json-file`, is not JSON, a root param that takes
  * a directory, or another composition's param the config gives a file.
@@ -415,7 +417,8 @@ export function paramValues(request: ParamRequest): Params {
 			ajv,
 			config,
 			hosts: request.hosts,
-			base: request.base,
+			base: (source) =>
+				source?.layer === "example" ? request.exampleDir : request.base(source),
 			composition,
 			path: [pack, composition.name],
 			root: composition.name === root,

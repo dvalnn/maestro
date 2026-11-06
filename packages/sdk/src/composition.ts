@@ -1,4 +1,5 @@
 import {
+	type ArtifactRef,
 	canonicalJson,
 	type Diagnostic,
 	IR_VERSION,
@@ -28,6 +29,13 @@ import {
 import { schemas, type Type, type Types, type ValueOf } from "./types";
 
 export type Values<P extends Types> = { [K in keyof P]: ValueOf<P[K]> };
+
+/** An example set's values: a file param's is the path of a sample file, not its reference (D-19). */
+export type ExampleValues<P extends Types> = {
+	[K in keyof P]: [Exclude<ValueOf<P[K]>, undefined>] extends [ArtifactRef]
+		? string
+		: ValueOf<P[K]>;
+};
 
 type OptionalPorts<Q extends Types> = {
 	[K in keyof Q]: undefined extends ValueOf<Q[K]> ? K : never;
@@ -61,7 +69,7 @@ export type Declaration<P extends Types, Q extends Types> = {
 	| {
 			ports?: never;
 			/** Param sets for `compose` without flags; at least one. */
-			examples: Partial<Values<P>>[];
+			examples: Partial<ExampleValues<P>>[];
 	  }
 	| {
 			/** Ref-typed inputs fed by the `use` site. */
@@ -75,7 +83,7 @@ export type Composition<P extends Types, Q extends Types, R> = {
 	readonly doc?: string;
 	readonly params: P;
 	readonly ports: Q;
-	readonly examples: Partial<Values<P>>[];
+	readonly examples: Partial<ExampleValues<P>>[];
 	/** Synchronous, and a pure function of its params and composed config (CORE-06). */
 	readonly build: (params: Values<P>, ports: PortRefs<Q>) => R;
 };

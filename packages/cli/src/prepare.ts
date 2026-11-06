@@ -280,6 +280,7 @@ function paramsOf(
 		flags: given,
 		hosts: session.deps.hosts,
 		base: (source) => baseOf(session.config, session.deps.cwd, source),
+		exampleDir: bundle.dir,
 		bare,
 		lax,
 	});

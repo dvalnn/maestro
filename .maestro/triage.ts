@@ -197,6 +197,7 @@ export const triage = composition(
 			{
 				issue:
 					"#1 Greet by name\n\nMake greet.sh greet the name given as its first argument.",
+				backlog: "triage/backlog.md",
 			},
 		],
 	},

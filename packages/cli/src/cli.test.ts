@@ -11,7 +11,7 @@ import { shortId, shortIds, stateWord } from "@maestro/render-text/live";
 import { SDK_VERSION, STDLIB_HASH } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
 import pkg from "../package.json";
-import { cleanup, FIXTURES } from "./fixtures/packs";
+import { cleanup, FIXTURES, packOf, scratch } from "./fixtures/packs";
 import {
 	closingOf,
 	ECHO,
@@ -123,6 +123,22 @@ describe("compose and config", () => {
 			ok: true,
 			plan: { bounds: { instances: { exact: 4 } } },
 		});
+	});
+
+	test("an example set's file resolves against the composition file's directory, or the pack's, not the cwd", async () => {
+		const bare = await world();
+		const out = await bare.call(["compose", join(FIXTURES, "sample.ts")]);
+		expect(out.err).toBe("");
+		expect(out.code).toBe(0);
+		const packed = await world();
+		const dir = await scratch();
+		await packOf(join(FIXTURES, "sample.ts"), dir, { id: "sample" });
+		await Bun.write(join(dir, "sample.md"), "A sample.\n");
+		await Bun.write(
+			join(packed.cwd, ".maestro/config.yaml"),
+			`packs:\n  - ${dir}\n`,
+		);
+		expect((await packed.call(["compose", "sample.sample"])).code).toBe(0);
 	});
 
 	test("a composition that cannot be built exits 1 with its diagnostics, no location inside its bundle, or one document with --json", async () => {

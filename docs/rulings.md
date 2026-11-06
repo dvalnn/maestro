@@ -42,9 +42,10 @@ A decision sets direction; a ruling settles a question the requirements left ope
   `ls` and lane refs.
 - **D-19** Every composition without ports declares at least one example input set, and one with ports declares none
   ([SDK-01](requirements.md#sdk-sdk), [CLI-01](requirements.md#cli-cli)). `compose` fills the params no YAML layer or
-  flag gives from the first example, and an optional param only when they give none of the root's optional params. See
-  [Writing a composition](sdk-spec.md#writing-a-composition). `perform` never uses examples. Why: `compose` can validate
-  a bare composition file.
+  flag gives from the first example, and an optional param only when they give none of the root's optional params. A
+  file param's path in an example resolves against the composition file's directory for a bare file, and the pack's
+  directory for a pack's composition, not the cwd. See [Writing a composition](sdk-spec.md#writing-a-composition).
+  `perform` never uses examples. Why: `compose` can validate a bare composition file.
 - **D-20** Harness adapters are sandboxed subprocesses, not in-process SDKs:
   [ADR 0001](adr/0001-sandboxed-subprocess-adapters.md).
 - **D-21** The coding-agent host vocabulary is final: agent node, profile, seat, lane (`fresh`, `fork`, `extend`,

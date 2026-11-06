@@ -496,11 +496,16 @@ test.each(outputs)(
 	},
 );
 
-test("compose refuses a missing --backlog", async () => {
-	const args = (await triage("compose")).filter((a) => a !== "--json");
-	const { code, err } = await call(args);
-	expect(code).toBe(2);
-	expect(err).toContain(
-		"param 'backlog' (--backlog) of 'triage.triage' is required",
+test("compose needs no --backlog from another directory: the example set names a sample beside the composition", async () => {
+	const args = (await triage("compose")).map((a) =>
+		a === ".maestro/triage.ts" ? join(import.meta.dir, "triage.ts") : a,
 	);
+	const { code, err } = await call(
+		args,
+		undefined,
+		{},
+		join(import.meta.dir, "../packages"),
+	);
+	expect(err).toBe("");
+	expect(code).toBe(0);
 });

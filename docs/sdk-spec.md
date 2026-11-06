@@ -32,7 +32,9 @@ A **composition** has:
 
 The build function runs once per compose, as the first step of the stage, and is a pure function of params and composed
 config. An example set serves `compose` only: it gives the params that no YAML layer or flag gives, an optional param's
-only when they give none of the root's optional params, and `perform` never uses it (D-19).
+only when they give none of the root's optional params, and `perform` never uses it (D-19). A file param's path in an
+example set resolves against the composition file's directory for a bare file, and the pack's directory for a pack's
+composition, so a sample file ships beside it.
 
 A **subcomposition** is a composition that also declares typed **ports**. One constructor declares both. Params are
 plain values known at build time; ports are Ref-typed arguments fed by upstream node outputs (D-16), so a composition

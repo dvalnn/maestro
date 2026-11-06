@@ -20,11 +20,12 @@ export async function call(
 	args: string[],
 	data = mkdtempSync(join(scratch, "data-")),
 	env: Record<string, string> = {},
+	cwd = root,
 ): Promise<Ran> {
 	const run = Bun.spawn(
 		[process.execPath, join(root, "packages/cli/src/maestro.ts"), ...args],
 		{
-			cwd: root,
+			cwd,
 			env: {
 				PATH: process.env.PATH,
 				XDG_DATA_HOME: data,

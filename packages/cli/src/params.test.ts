@@ -73,6 +73,7 @@ describe("param values", () => {
 			flags: { loud: 7 },
 			hosts: [fakeHost()],
 			base: () => CWD,
+			exampleDir: CWD,
 		};
 		const params = paramValues(request);
 		expect(params.root).toEqual({ name: "workspace", loud: 7 });
@@ -138,6 +139,7 @@ describe("param values", () => {
 				example: { name: "e", tags: ["e"], change: "e" },
 				hosts: [fakeHost()],
 				base: () => CWD,
+				exampleDir: CWD,
 			}).root;
 		expect(root("demo:\n  greet:\n    tags: !append [c]\n")).toEqual({
 			name: "e",
@@ -161,6 +163,7 @@ describe("param values", () => {
 			root: "greet",
 			hosts: [fakeHost()],
 			base: () => CWD,
+			exampleDir: CWD,
 		};
 		expect(refusal(() => paramValues(request))).toEqual([
 			[
@@ -202,6 +205,7 @@ describe("param values", () => {
 					example: given ? { loud: 1 } : undefined,
 					hosts: [fakeHost()],
 					base: () => CWD,
+					exampleDir: CWD,
 					bare,
 				}),
 			)[0]?.[2],
@@ -219,6 +223,7 @@ describe("a typed param", () => {
 		root: "ticket",
 		hosts: [fakeHost()],
 		base: () => CWD,
+		exampleDir: CWD,
 		...over,
 	});
 
@@ -265,6 +270,7 @@ describe("a file param", () => {
 		root: "ticket",
 		hosts: [],
 		base: () => CWD,
+		exampleDir: CWD,
 		...over,
 	});
 
@@ -305,6 +311,15 @@ describe("a file param", () => {
 		).toEqual({
 			doc: { path: `${hex}/spec.md`, contentHash: `sha256:${hex}` },
 		});
+	});
+
+	test("takes an example set's path relative to the example directory, not the base", async () => {
+		const dir = await scratch();
+		await Bun.write(join(dir, "spec.md"), "x");
+		const read = paramValues(
+			request({ example: { doc: "spec.md" }, exampleDir: dir }),
+		);
+		expect(read.staged.map((s) => s.source)).toEqual([join(dir, "spec.md")]);
 	});
 
 	test("refuses a file it cannot read, naming the flag and the path", () => {
