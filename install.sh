@@ -1,15 +1,16 @@
 #!/bin/sh
-# Installs or updates maestro from a forge release: the newest stable one, or with MAESTRO_CHANNEL=rc the newest one,
+# Installs or updates maestro from a GitHub release: the newest stable one, or with MAESTRO_CHANNEL=rc the newest one,
 # pre-releases included. MAESTRO_VERSION=<tag> pins a release, MAESTRO_RELEASE_DIR=<dir> installs from a directory of
-# release assets instead of the forge. Every command that changes the machine is appended to install.log in
+# release assets instead of GitHub. Every command that changes the machine is appended to install.log in
 # $XDG_STATE_HOME/maestro.
 set -eu
 
 FAILURE=1
 INTERRUPTED=130
 TERMINATED=143
-FORGE=https://git.amorimcasa.org
-REPO=tiago/maestro
+GITHUB=https://github.com
+GITHUB_API=https://api.github.com
+REPO=dvalnn/maestro
 REQUIRED_ASSETS="maestro-skill.tar.gz"
 # The binary, gzipped since 0.1.0-rc.5 to fit the forge's upload limit; a release before ships it as it is.
 BINARY=maestro-linux-x64
@@ -49,7 +50,7 @@ fetch() {
     cp "$MAESTRO_RELEASE_DIR/$1" "$1" || fail "cannot read $MAESTRO_RELEASE_DIR/$1" "Check MAESTRO_RELEASE_DIR"
   else
     say "downloading $1"
-    curl -fL "$progress" -o "$1" "$FORGE/$REPO/releases/download/$tag/$1" ||
+    curl -fL "$progress" -o "$1" "$GITHUB/$REPO/releases/download/$tag/$1" ||
       fail "cannot download $1 from release $tag" "Check the network and MAESTRO_VERSION"
   fi
 }
@@ -57,11 +58,11 @@ fetch() {
 # Prints the newest release tag on channel $1: stable skips pre-releases, rc takes the newest release of any kind.
 latest_tag() {
   case $1 in
-    stable) filter='&pre-release=false' ;;
-    rc) filter= ;;
+    stable) query=/latest ;;
+    rc) query='?per_page=1' ;;
   esac
-  curl -fsL "$FORGE/api/v1/repos/$REPO/releases?limit=1$filter" |
-    sed -n 's/.*"tag_name":"\([^"]*\)".*/\1/p' | head -n 1
+  curl -fsL "$GITHUB_API/repos/$REPO/releases$query" |
+    sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1
 }
 
 # Fetches every asset SHA256SUMS lists, then checks them against it.

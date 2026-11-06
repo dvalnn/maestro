@@ -2,8 +2,8 @@
 
 For whoever installs maestro on a Linux machine: install, first run, upgrade, uninstall.
 
-maestro ships from the private forge as a standalone Linux binary, package tarballs for authoring, a pack and two skills
-for Claude Code, Codex and pi. Nothing is published to a public registry.
+maestro ships from [GitHub releases](https://github.com/dvalnn/maestro/releases) as a standalone Linux binary, package
+tarballs for authoring, a pack and two skills for Claude Code, Codex and pi. Nothing is published to a public registry.
 
 ## 1. Requirements
 
@@ -22,20 +22,20 @@ Running maestro needs no Bun.
 ## 2. Install
 
 ```sh
-curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/dvalnn/maestro/next/install.sh | sh
 ```
 
 The script installs the newest stable release, and the same command updates an installed maestro. Set
 `MAESTRO_CHANNEL=rc` before `sh` for the newest release, `-rc.<n>` pre-releases included:
 
 ```sh
-curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_CHANNEL=rc sh
+curl -fsSL https://raw.githubusercontent.com/dvalnn/maestro/next/install.sh | MAESTRO_CHANNEL=rc sh
 ```
 
 Set `MAESTRO_VERSION` to a tag, `v` included, to pin a release. A pin wins over the channel:
 
 ```sh
-curl -fsSL https://git.amorimcasa.org/tiago/maestro/raw/branch/main/install.sh | MAESTRO_VERSION=v0.1.0-rc.6 sh
+curl -fsSL https://raw.githubusercontent.com/dvalnn/maestro/next/install.sh | MAESTRO_VERSION=v0.1.0-rc.6 sh
 ```
 
 The script needs `curl` and `sha256sum`, checks every asset against `SHA256SUMS` before touching anything, and refuses
