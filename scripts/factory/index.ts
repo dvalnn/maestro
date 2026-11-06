@@ -29,6 +29,7 @@ import {
 import {
 	type Approval,
 	buildable,
+	citedIn,
 	isIntake,
 	issueText,
 	overlaps,
@@ -1568,6 +1569,24 @@ async function askReply(pass: Pass, { issue, data }: Entry) {
 	);
 }
 
+/** How the forge answers for an issue number it does not have. */
+const MISSING = /^forge: 404 /;
+
+/** The closed issues `text` cites but `issue`; a number the forge does not have is skipped. */
+async function closedCited(pass: Pass, issue: number, text: string) {
+	const cited = await Promise.all(
+		citedIn(text)
+			.filter((n) => n !== issue)
+			.map((n) =>
+				pass.forge.issue(n).catch((error: unknown) => {
+					if (MISSING.test(message(error))) return undefined;
+					throw error;
+				}),
+			),
+	);
+	return cited.filter((i): i is Issue => i?.closed !== undefined);
+}
+
 /**
  * Starts triage of the first intake issue, pinned ones first, on its ask and the comments since the last triage read
  * that it is fed, an encore of its last triage when it has one, then records the newest comment it considered; halts on
@@ -1591,27 +1610,29 @@ async function triage(pass: Pass, entries: Entry[]) {
 		await askReply(pass, entry);
 		return true;
 	}
-	const [closed, pulls] = await Promise.all([
+	const text = issueText(
+		entry.issue,
+		considered.filter((c) => isFed(c, pass.login)),
+		pass.login,
+		data.triage ? data.result?.spec : undefined,
+	);
+	const [closed, pulls, cited] = await Promise.all([
 		pass.closed(),
 		pass.forge.pulls(),
+		closedCited(pass, number, text),
 	]);
 	const issues = entries.map((e) => e.issue);
 	const backlog = join(pass.dir, `backlog-i${number}.md`);
 	await Bun.write(
 		backlog,
-		snapshot(pass.milestone, number, issues, closed, pulls),
+		snapshot(pass.milestone, number, issues, closed, pulls, cited),
 	);
 	let id: string;
 	try {
 		id = await pass.maestro.start([
 			...(data.triage ? ["encore", data.triage] : ["perform", TRIAGE_FILE]),
 			"--issue",
-			issueText(
-				entry.issue,
-				considered.filter((c) => isFed(c, pass.login)),
-				pass.login,
-				data.triage ? data.result?.spec : undefined,
-			),
+			text,
 			"--backlog",
 			backlog,
 			"--tour",

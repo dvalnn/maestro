@@ -87,7 +87,11 @@ function fakeForge(issues: Stored[], cut?: string) {
 		login: async () => BOT,
 		milestone: async (title) =>
 			title === MILESTONE ? MILESTONE_ID : undefined,
-		issue: async (n) => find(n),
+		issue: async (n) => {
+			const issue = issues.find((i) => i.number === n);
+			if (!issue) throw new Error(`forge: 404 from GET /issues/${n}: {}`);
+			return issue;
+		},
 		open: async () => issues.filter((i) => i.open),
 		closed: async () => [
 			...closed,
@@ -676,11 +680,14 @@ describe("a pass", () => {
 		});
 		retriaged.comments.push({
 			id: 5,
-			body: "@forge-bot Q1: Ann",
+			body: "@forge-bot Q1: Ann, as #3 settled; see #9 and #404",
 			author: OWNER,
 		});
+		const spike = issue(3, "in-review", undefined, "Spike the greeting");
+		Object.assign(spike, { open: false, closed: 1 });
 		const t = setup([
 			outside,
+			spike,
 			issue(9, "needs-triage"),
 			retriaged,
 			issue(6, "in-progress"),
@@ -694,7 +701,7 @@ describe("a pass", () => {
 				"--issue",
 				expect.stringMatching(
 					new RegExp(
-						`^#8 Greet by name\n\n${ASK}\n\n## The spec the last triage proposed\n\n#### Context\n[^]*\n## Reply by ${OWNER}\n\n@forge-bot Q1: Ann$`,
+						`^#8 Greet by name\n\n${ASK}\n\n## The spec the last triage proposed\n\n#### Context\n[^]*\n## Reply by ${OWNER}\n\n@forge-bot Q1: Ann, as #3 settled; see #9 and #404$`,
 					),
 				),
 				"--backlog",
@@ -717,6 +724,9 @@ describe("a pass", () => {
 		expect(snapshot).not.toContain("#8 ");
 		expect(snapshot).not.toContain("#2 ");
 		expect(snapshot).toContain("- #1 An old one");
+		expect(snapshot).toMatch(
+			new RegExp(`## Cited\n\n### #3 Spike the greeting\n\n${ASK}\n$`),
+		);
 		t.find(8).open = false;
 		await t.run();
 		expect(t.starts[1]?.slice(0, 2)).toEqual([

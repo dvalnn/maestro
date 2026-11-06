@@ -144,9 +144,17 @@ function openEntry(issue: Issue, pulls: readonly Pull[]): string[] {
 	];
 }
 
+/** An issue reference `#N`, not an HTML entity such as `&#39;`. */
+const CITE = /(?<![&\w])#(\d+)\b/g;
+
+/** The issue numbers `text` cites, each once, in the order first cited. */
+export const citedIn = (text: string) => [
+	...new Set(Array.from(text.matchAll(CITE), (m) => Number(m[1]))),
+];
+
 /**
  * The backlog snapshot `--backlog` takes: the milestone's open issues but `issue`, when given, with their state and,
- * while built or reviewed, their PR's diffstat, then the newest closed issues.
+ * while built or reviewed, their PR's diffstat, then the newest closed issues, then the `cited` issues with their ask.
  */
 export function snapshot(
 	milestone: string,
@@ -154,6 +162,7 @@ export function snapshot(
 	open: readonly Issue[],
 	closed: readonly Issue[],
 	pulls: readonly Pull[],
+	cited: readonly Issue[] = [],
 ): string {
 	return [
 		`# Backlog of ${milestone}`,
@@ -167,6 +176,18 @@ export function snapshot(
 		"",
 		...closed.map((i) => `- #${i.number} ${i.title}`),
 		"",
+		...(cited.length
+			? [
+					"## Cited",
+					"",
+					...cited.flatMap((i) => [
+						`### #${i.number} ${i.title}`,
+						"",
+						askOf(i.body),
+						"",
+					]),
+				]
+			: []),
 	].join("\n");
 }
 

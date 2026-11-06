@@ -2,7 +2,8 @@ Triage the attached issue against the attached backlog snapshot.
 
 First write `backlog.md`: only the backlog issues that matter to this one, open or recently closed, each with its
 number, title and why, or "None.". A closed issue matters when this one builds on it, links it or reworks what it
-changed; the snapshot lists those under "Recently closed" by title alone.
+changed; the snapshot lists those under "Recently closed" by title alone. Read each issue under "Cited" in full: the
+issue or a reply cites it, often as the source of truth.
 
 Then write `ruling.json` in exactly this shape, leaving out `what`, `subject`, `duplicateOf` and `related` where the
 verdict does not need them:
