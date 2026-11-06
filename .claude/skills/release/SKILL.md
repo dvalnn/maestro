@@ -42,12 +42,12 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
    ```sh
    fj release create <tag> --create-tag <tag> --branch main [--prerelease] \
      --body "$(cat <notes>)" -a SHA256SUMS -a install.sh -a maestro-linux-x64.gz -a maestro-skill.tar.gz \
-     -a classics-<v>.tar.gz -a maestro-classics-<v>.tgz -a maestro-ir-<v>.tgz -a maestro-sdk-<v>.tgz \
+     -a classics-<v>.tar.gz -a maestro-classics-<v>.tgz -a maestro-ir-<v>.tgz -a maestro-sdk-<v>.tgz -a harnesses \
      -a maestro-host-repo-sdk-<v>.tgz
    ```
 
-   `--prerelease` is for an `-rc.<n>` only. The assets are every file in `dist/`; `ls dist` against the list catches one
-   the build added.
+   `--prerelease` is for an `-rc.<n>` only. The assets are every file in `dist/`, and `install.sh` fails on any that
+   `SHA256SUMS` names but the release lacks; `ls dist` against the list catches one the build added.
 
 8. **Verify.** Download one asset from the release and check it with `sha256sum -c` against the published `SHA256SUMS`.
    `jj git fetch` brings the forge's tag home.
