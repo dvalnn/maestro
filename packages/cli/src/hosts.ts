@@ -1,11 +1,8 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Host } from "@maestro/core/host";
-import {
-	declared as claudeDeclared,
-	claudeHarness,
-} from "@maestro/harness-claude";
-import { declared as piDeclared, piHarness } from "@maestro/harness-pi";
+import { claudeHarness } from "@maestro/harness-claude";
+import { piHarness } from "@maestro/harness-pi";
 import { repoHost } from "@maestro/host-repo";
 import {
 	type AgentEnvironment,
@@ -124,27 +121,6 @@ function stubEnvironment(text: string | undefined): StubStep {
 	return { emit: { type: "environment", ...own, ...over } };
 }
 
-/** The shipped harnesses with a clean baseline, each with the agent environment it launches with. */
-const baselined = (env: Record<string, string | undefined>) => [
-	{
-		harness: piHarness({ agentDir: env.PI_CODING_AGENT_DIR || undefined }),
-		declared: piDeclared,
-	},
-	{
-		harness: claudeHarness({ token: env.CLAUDE_CODE_OAUTH_TOKEN }),
-		declared: claudeDeclared,
-	},
-];
-
-/** The agent environment each shipped harness launches with, by harness name. */
-export const DECLARED: ReadonlyMap<string, AgentEnvironment> = new Map([
-	...baselined({}).map(({ harness, declared }): [string, AgentEnvironment] => [
-		harness.name,
-		declared,
-	]),
-	["stub", STUB_DECLARED],
-]);
-
 /**
  * The harnesses the CLI ships, their credentials read from `env`. The `stub` harness reports its environment, writes a
  * placeholder for each declared output, then replies an `ok` envelope, taking `MAESTRO_STUB_DELAY` per agent turn; a
@@ -153,7 +129,8 @@ export const DECLARED: ReadonlyMap<string, AgentEnvironment> = new Map([
  * and the model's `window`.
  */
 export const builtinHarnesses = (env: Record<string, string | undefined>) => [
-	...baselined(env).map(({ harness }) => harness),
+	piHarness({ agentDir: env.PI_CODING_AGENT_DIR || undefined }),
+	claudeHarness({ token: env.CLAUDE_CODE_OAUTH_TOKEN }),
 	{
 		...stubHarness((req) => {
 			const delay = env[STUB_DELAY];

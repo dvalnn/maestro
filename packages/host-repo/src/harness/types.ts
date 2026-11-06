@@ -151,6 +151,10 @@ export function environmentChecks(
 	return [...checks, { part: "compaction", mark: "?", faults: [] }];
 }
 
+/** The faults across `checks`. */
+export const faultCount = (checks: readonly EnvironmentCheck[]) =>
+	checks.reduce((n, c) => n + c.faults.length, 0);
+
 /** A context policy's `at` as a profile gives it: a prompt size in tokens, or a share of the model's window. */
 export type ContextAt = { tokens: number } | { percent: number };
 

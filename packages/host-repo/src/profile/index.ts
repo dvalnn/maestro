@@ -469,32 +469,6 @@ function reservedErrors(name: string, merged: Merged): Diagnostic[] {
 	});
 }
 
-/** The refusal message of profile `name` leaving required runtime `field` unset, `field` naming both when neither is set. */
-export const unsetMessage = (
-	name: string,
-	field: "harness" | "model" | "harness or model",
-) => `profile ${name}: no ${field}`;
-
-const UNSET = /^profile (\S+): no (harness or model|harness|model)$/;
-
-/** Each profile whose refusal in `diagnostics` leaves the harness, the model or both unset, with the fields left unset. */
-export const unsetProfiles = (
-	diagnostics: readonly Diagnostic[],
-): { name: string; fields: ("harness" | "model")[] }[] =>
-	diagnostics.flatMap((d) => {
-		const [, name, what] = UNSET.exec(d.message) ?? [];
-		if (name === undefined) return [];
-		return [
-			{
-				name,
-				fields:
-					what === "harness or model"
-						? [...REQUIRED_RUNTIME]
-						: [what as "harness" | "model"],
-			},
-		];
-	});
-
 /** The required fields of `runtime` it leaves unset: the model is none on the stub, which runs no model. */
 const unsetFields = (runtime: Partial<Runtime>) =>
 	REQUIRED_RUNTIME.filter(
@@ -519,14 +493,19 @@ function fieldErrors(
 	if (off.length) return off;
 	const runtime = (merged.values.runtime ?? {}) as Partial<Runtime>;
 	const missing = tolerateUnset ? [] : unsetFields(runtime);
-	const [first, second] = missing;
-	const unset = first
+	const unset = missing.length
 		? [
-				refusal(
-					undefined,
-					unsetMessage(name, second ? "harness or model" : first),
-					`Set ${missing.map((f) => `${PROFILES}.${name}.runtime.${f}`).join(" and ")}`,
-				),
+				{
+					...refusal(
+						undefined,
+						`profile ${name}: no ${missing.join(" or ")}`,
+						`Set ${missing.map((f) => `${PROFILES}.${name}.runtime.${f}`).join(" and ")}`,
+					),
+					unset: missing.map((f) => [
+						[PROFILES, name, "runtime", f],
+						[PROFILES, ANY_PROFILE, "runtime", f],
+					]),
+				},
 			]
 		: [];
 	return [
@@ -603,18 +582,6 @@ function restOf(
 	};
 }
 
-/** The fields of `values`, which passed `fieldErrors`. */
-const fieldsOf = (
-	values: Readonly<Record<string, unknown>>,
-): ProfileFields => ({
-	// The stub runs no model, so one left unset reads as the stub's own.
-	runtime: {
-		...writtenOf(values).runtime,
-		model: writtenOf(values).runtime.model ?? STUB,
-	},
-	...restOf(values),
-});
-
 /** `sha256:<hex>` of each regular file under `dir`, by its path relative to `dir`, in path order. */
 async function fileHashes(dir: string): Promise<Record<string, string>> {
 	const names = (await readdir(dir, { recursive: true })).toSorted();
@@ -687,7 +654,10 @@ export async function resolveProfile(
 	name: string,
 	setup: Pick<HostSetup, "layers" | "roots">,
 ): Promise<Profile> {
-	return (await resolve(name, setup, false)) as Profile;
+	const profile = await resolve(name, setup, false);
+	if (!isSettled(profile))
+		throw new Error(`profile ${name} left its runtime unset`);
+	return profile;
 }
 
 /** `resolveProfile`, but a harness or model left unset is no error: `unsetOf` names what is. */
@@ -733,15 +703,14 @@ async function resolve(
 	return {
 		name,
 		...found,
-		fields: tolerateUnset
-			? {
-					runtime: {
-						...runtime,
-						...(runtime.harness === STUB && { model: runtime.model ?? STUB }),
-					},
-					...restOf(merged.values),
-				}
-			: fieldsOf(merged.values),
+		fields: {
+			// The stub runs no model, so one left unset reads as the stub's own.
+			runtime: {
+				...runtime,
+				...(runtime.harness === STUB && { model: runtime.model ?? STUB }),
+			},
+			...restOf(merged.values),
+		},
 		sources: merged.sources,
 		files: await fileHashes(found.dir),
 	};

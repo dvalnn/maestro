@@ -173,14 +173,30 @@ describe("repoText.notes", () => {
 			},
 			{
 				Environment: [
-					"mcp: pi loaded github, which the profile does not declare",
-					"skills: pi did not load deploy, which the profile declares",
+					"mcp: github loaded, not declared",
+					"skills: deploy declared, not loaded",
 				],
 			},
 		],
 		[
 			{ harness: "pi", environment: [{ part: "mcp", mark: "✓", faults: [] }] },
 			{},
+		],
+		[
+			{
+				environment: [
+					null,
+					"mcp",
+					{ part: "mcp", mark: "✗", faults: [1] },
+					{ part: "mcp", faults: ["x"] },
+					{
+						part: "skills",
+						mark: "✗",
+						faults: ["deploy declared, not loaded"],
+					},
+				],
+			},
+			{ Environment: ["skills: deploy declared, not loaded"] },
 		],
 		[{ report: "a report as text" }, {}],
 		[{ session: "s" }, {}],

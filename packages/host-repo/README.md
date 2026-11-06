@@ -518,7 +518,8 @@ bubblewrap.
 ### Environment report and probe
 
 An adapter also streams the harness's startup report as an `environment` event: what it loaded, each part by name. The
-host records it and never enforces it.
+host records it and never enforces it. It checks each agent's report against the declared environment and stores the
+checks on the node, which `ls <concert>` shows as `Environment` notes.
 
 `maestro agent probe` starts a profile's agent as a concert would and stops it once it has that report and the model's
 window, to check the report against the adapter's declared baseline and keep the window. A mismatch is a fault of

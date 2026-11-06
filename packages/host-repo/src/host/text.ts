@@ -1,6 +1,11 @@
 import type { HostText } from "@maestro/core/host";
-import { compact, type Enrichment, type HostEvent } from "@maestro/ir";
-import { type EnvironmentCheck, METRIC } from "../harness/types";
+import {
+	compact,
+	type Enrichment,
+	type HostEvent,
+	isPlainObject,
+} from "@maestro/ir";
+import { METRIC } from "../harness/types";
 import { REPORT_FIELDS, type Report } from "./frame";
 import { lastLine } from "./run-lines";
 
@@ -124,9 +129,21 @@ function actor(enrichment: Enrichment): string | undefined {
 /** The headings of the report lists an agent's notes show, by report field. */
 const NOTED = { obstacles: "Obstacles", lessons: "Lessons" } as const;
 
-/** The checks of an agent's latest environment report its enrichment holds; none for an older record. */
-const checksOf = ({ environment }: Enrichment): EnvironmentCheck[] =>
-	Array.isArray(environment) ? (environment as EnvironmentCheck[]) : [];
+/** An environment check as a record holds it. */
+type StoredCheck = { part: string; mark: string; faults: string[] };
+
+const storedCheck = (value: unknown): StoredCheck[] =>
+	isPlainObject(value) &&
+	typeof value.part === "string" &&
+	typeof value.mark === "string" &&
+	Array.isArray(value.faults) &&
+	value.faults.every((f) => typeof f === "string")
+		? [{ part: value.part, mark: value.mark, faults: value.faults }]
+		: [];
+
+/** The checks of an agent's latest environment report its enrichment holds, less any malformed; none for an older record. */
+const checksOf = ({ environment }: Enrichment): StoredCheck[] =>
+	Array.isArray(environment) ? environment.flatMap(storedCheck) : [];
 
 /** The report an agent's enrichment holds, if any; a report as text, from an older record, reads as its `summary`. */
 function envelopeOf({ report }: Enrichment): Report | undefined {
@@ -144,24 +161,11 @@ function reportOf(enrichment: Enrichment): Record<string, unknown> | undefined {
 	return { ...report, environment: checks };
 }
 
-/** What a fault of an environment check says in a note, as the profile and `harness` are named in it. */
-function faultNote(harness: string, { part, faults }: EnvironmentCheck) {
-	return faults.map((fault) => {
-		const extra = /^(.+) loaded, not declared$/.exec(fault)?.[1];
-		if (extra !== undefined)
-			return `${part}: ${harness} loaded ${extra}, which the profile does not declare`;
-		const missing = /^(.+) declared, not loaded$/.exec(fault)?.[1];
-		if (missing !== undefined)
-			return `${part}: ${harness} did not load ${missing}, which the profile declares`;
-		return `${part}: ${harness} ${fault}`;
-	});
-}
-
 /** An agent's report obstacles and lessons, then the faults of its environment report, each non-empty list under its heading. */
 function notes(enrichment: Enrichment): Record<string, string[]> {
 	const lists = new Map(Object.entries(envelopeOf(enrichment) ?? {}));
-	const faults = checksOf(enrichment).flatMap((check) =>
-		faultNote(stringOf(enrichment.harness) ?? "the harness", check),
+	const faults = checksOf(enrichment).flatMap(({ part, faults }) =>
+		faults.map((fault) => `${part}: ${fault}`),
 	);
 	return Object.fromEntries([
 		...Object.entries(NOTED).flatMap(([field, heading]) => {

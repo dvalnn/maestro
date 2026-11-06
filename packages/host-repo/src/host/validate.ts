@@ -34,6 +34,7 @@ import {
 	APPLY_KIND,
 	type ApplyConfig,
 	agentConfig,
+	andList,
 	applyConfig,
 	CHECK_KIND,
 	type CheckConfig,
@@ -382,22 +383,20 @@ function sessionRules(
 	});
 }
 
-/** The checks `named` that config does not have, which `id` runs or lets its agent run. */
-function checkNames(
-	setup: RepoSetup,
-	id: string,
-	named: string[],
-	verb: string,
-	add: string,
-): Finding[] {
+/** The checks `named` that config does not have, which check node `id` runs. */
+function checkNames(setup: RepoSetup, id: string, named: string[]): Finding[] {
 	const checks = Object.keys(setup.target?.checks ?? {});
 	return named
 		.filter((name) => !checks.includes(name))
 		.map((name) => ({
 			code: "HOST.check",
 			node: id,
-			message: `'${id}' ${verb} check '${name}', which config 'target.checks' does not have`,
-			hint: useOneOf(checks, add),
+			message: `'${id}' runs check '${name}', which config 'target.checks' does not have`,
+			hint: useOneOf(
+				checks,
+				"Add it under 'target.checks', or give the node an inline check",
+			),
+			unset: [[["target", "checks", name]]],
 		}));
 }
 
@@ -409,44 +408,53 @@ function checksNamed(r: RepoNode): string[] {
 	return [];
 }
 
-/** Each check config has that the agent `id` may run, but without the hint an agent reads it by. */
-function hintless(setup: RepoSetup, id: string, named: string[]): Finding[] {
-	const checks = setup.target?.checks ?? {};
-	return named
-		.filter((name) => Object.hasOwn(checks, name) && !checks[name]?.hint)
-		.map((name) => {
-			const { message, hint } = noHint(name);
-			return {
-				code: "HOST.check",
-				node: id,
-				message: `${id}: ${message}`,
-				hint,
-			};
-		});
+/** The ids of the `agents` that name each check, by check name, in graph order. */
+function namedBy(agents: readonly AgentNode[]): Map<string, Set<string>> {
+	const by = new Map<string, Set<string>>();
+	for (const { node, config } of agents)
+		for (const name of config.checks ?? [])
+			by.set(name, (by.get(name) ?? new Set()).add(node.id));
+	return by;
 }
 
-/** A check a node names that config does not have, or that an agent may run but has no hint. */
-function names(setup: RepoSetup, r: RepoNode): Finding[] {
-	const id = r.node.id;
-	if (r.kind === "apply" || r.kind === "commits") return [];
-	return r.kind === "check"
-		? checkNames(
-				setup,
-				id,
-				checksNamed(r),
-				"runs",
-				"Add it under 'target.checks', or give the node an inline check",
-			)
-		: [
-				...checkNames(
-					setup,
-					id,
-					checksNamed(r),
-					"may run",
-					"Add it under 'target.checks'",
-				),
-				...hintless(setup, id, checksNamed(r)),
+/**
+ * A finding for each check that `agents` may run but config lacks, or has without the hint an agent reads it by, naming
+ * every agent that names it.
+ */
+function agentChecks(
+	setup: RepoSetup,
+	agents: readonly AgentNode[],
+): Finding[] {
+	const checks = setup.target?.checks ?? {};
+	return [...namedBy(agents)].flatMap(([name, found]): Finding[] => {
+		const ids = [...found];
+		const [node] = ids;
+		if (!Object.hasOwn(checks, name))
+			return [
+				{
+					code: "HOST.check",
+					node,
+					message: `${andList(ids.map((id) => `'${id}'`))} may run check '${name}', which config 'target.checks' does not have`,
+					hint: "Add it under 'target.checks'",
+					unset: [[["target", "checks", name]]],
+				},
 			];
+		if (checks[name]?.hint) return [];
+		const { message, hint } = noHint(name);
+		return [
+			{
+				code: "HOST.check",
+				node,
+				message: `${andList(ids)}: ${message}`,
+				hint,
+			},
+		];
+	});
+}
+
+/** The checks a check node names that config does not have. */
+function names(setup: RepoSetup, r: RepoNode): Finding[] {
+	return r.kind === "check" ? checkNames(setup, r.node.id, checksNamed(r)) : [];
 }
 
 /** The config entries the graph's repo nodes read by name: each check a node names. A profile needs no entry. */
@@ -858,6 +866,7 @@ export async function validateRepo(
 				? checkBinds(setup, "target.prepare", setup.target.prepare)
 				: []),
 			...nodes.flatMap((r) => [...names(setup, r), ...nodeBinds(setup, r)]),
+			...agentChecks(setup, agents),
 			...doubleExtends(graph, chained),
 			...sessionRules(graph, profiled.seatedOf, agents),
 		].map(error),

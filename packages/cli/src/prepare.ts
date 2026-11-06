@@ -8,7 +8,6 @@ import {
 } from "@maestro/core/compose";
 import { CORE_CONFIG, type Composed, type Layer } from "@maestro/core/config";
 import type { ConcertRecord, Staged } from "@maestro/core/perform";
-import { unsetProfiles } from "@maestro/host-repo";
 import {
 	type Diagnostic,
 	type Ir,
@@ -508,20 +507,6 @@ export function requireNoParamFiles(ir: Ir, target: string): void {
 		}
 }
 
-const COUNTS = [
-	"zero",
-	"one",
-	"two",
-	"three",
-	"four",
-	"five",
-	"six",
-	"seven",
-	"eight",
-	"nine",
-	"ten",
-];
-
 /** Pre-flight of `prepared` under the session's config and hosts: its plan, or the errors with the plan so far. */
 export function compared(
 	session: Session,
@@ -552,33 +537,38 @@ export async function preflight(
 	return result.plan;
 }
 
+const flagsOf = (presets: readonly string[]) =>
+	presets.map((p) => `--preset ${p}`).join(" or ");
+
 /**
- * `diagnostics` with the refusals of several profiles left without a harness or model made one error that names them
- * all, and, when presets set both for every one of them, the fix of passing one.
+ * `diagnostics` with the fix of passing a preset where presets set what config left out. When several diagnostics left
+ * settings out and some preset sets them all, those go last with their hints cleared but the final one's, which names
+ * the presets; otherwise each is given the presets that set its own.
  */
-export async function gathered(
+export async function withPresetFixes(
 	session: Session,
 	diagnostics: readonly Diagnostic[],
 ): Promise<Diagnostic[]> {
-	const unset = unsetProfiles(diagnostics);
-	const [first] = diagnostics.filter((d) => unsetProfiles([d]).length);
-	if (unset.length < 2 || !first) return [...diagnostics];
-	const presets = await presetsSetting(
-		session.config,
-		session.deps.hosts,
-		unset,
-	);
+	const fillers = (unset: Diagnostic["unset"]) =>
+		presetsSetting(session.config, session.deps.hosts, unset ?? []);
+	const gaps = diagnostics.filter((d) => d.unset);
 	const all =
-		unset.length === 2 ? "both" : `all ${COUNTS[unset.length] ?? unset.length}`;
-	const fix = presets.length
-		? `Pass ${presets.map((p) => `--preset ${p}`).join(" or ")}, which ${presets.length > 1 ? "each set" : "sets"} ${all}`
-		: "Set them under profiles: in .maestro/config.yaml, or pass --preset";
-	const merged: Diagnostic = {
-		...first,
-		message: `${unset.length} profiles have no harness or model: ${unset.map((u) => u.name).join(", ")}`,
-		hint: fix,
-	};
-	return [...diagnostics.filter((d) => !unsetProfiles([d]).length), merged];
+		gaps.length > 1 ? await fillers(gaps.flatMap((d) => d.unset ?? [])) : [];
+	if (all.length) {
+		const rest = diagnostics.filter((d) => !d.unset);
+		const last = gaps.length - 1;
+		const closing = `Pass ${flagsOf(all)}, which ${all.length > 1 ? "each set" : "sets"} all of these`;
+		return [
+			...rest,
+			...gaps.map((d, i) => ({ ...d, hint: i === last ? closing : "" })),
+		];
+	}
+	return Promise.all(
+		diagnostics.map(async (d) => {
+			const presets = d.unset ? await fillers(d.unset) : [];
+			return presets.length ? { ...d, hint: `Pass ${flagsOf(presets)}` } : d;
+		}),
+	);
 }
 
 /**

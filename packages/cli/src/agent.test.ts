@@ -73,14 +73,14 @@ const TUNED = [
 ];
 
 describe("agent ls", () => {
-	test("lists each profile with its runtime and winning root, a pack shadow marked, a broken row's other faults under it", async () => {
+	test("lists each profile with its runtime and winning root, a pack shadow marked, a harness set without a model shown, a broken row's faults under it", async () => {
 		const w = await roster();
 		const listed = await w.call(["agent", "ls"]);
 		expect(listed.err).toBe("");
 		expect(listed.code).toBe(0);
 		expect(listed.out.split("\n")).toEqual([
 			"Profiles         harness  model   from",
-			"  broken         -        -       workspace",
+			"  broken         pi       -       workspace",
 			"  demo/builder   claude   sonnet  workspace  [shadows pack]",
 			"  demo/reviewer  stub     none    pack",
 			"  scout          pi       gpt     user",
@@ -109,7 +109,7 @@ describe("agent ls", () => {
 				root: "workspace",
 				dir: join(w.cwd, ".maestro/profiles/broken"),
 				shadowsPack: false,
-				error: "profile broken: no model",
+				harness: "pi",
 			},
 			{
 				name: "demo/builder",
@@ -123,8 +123,7 @@ describe("agent ls", () => {
 			expect.objectContaining({ name: "scout", root: "user" }),
 			expect.objectContaining({
 				name: "slow",
-				error:
-					"profile slow: no model; profile slow: limits.timeout 'soon' is not a duration",
+				error: "profile slow: limits.timeout 'soon' is not a duration",
 			}),
 		]);
 		const empty = await (await world()).call(["agent", "ls"]);
@@ -390,7 +389,10 @@ describe("agent probe", () => {
 	test("starts the stub as a concert would, checks each part of its report, and exits 0 when nothing contradicts", async () => {
 		const w = await roster();
 		const probed = await w.call(["agent", "probe", "demo/reviewer"]);
-		expect(probed).toMatchObject({ code: 0, err: "probing stub…" });
+		expect(probed).toMatchObject({
+			code: 0,
+			err: "probing stub for demo/reviewer…",
+		});
 		expect(probed.out).toEndWith(`Environment   probed stub
 ✓ tools       none
 ✓ subagents   off
@@ -401,6 +403,26 @@ describe("agent probe", () => {
 ? compaction  stub's own
 
 0 faults`);
+	});
+
+	test("prints only the title, runtime, context and environment sections", async () => {
+		const w = await roster();
+		const probed = await w.call(["agent", "probe", "demo/reviewer"]);
+		const sections = probed.out.split("\n\n");
+		expect(sections[0]).toStartWith("demo/reviewer\n  harness     stub");
+		expect(sections[0]).not.toContain("from");
+		expect(sections.at(-2)).toStartWith("Environment   probed stub");
+		for (const absent of ["Instructions", "Attachments", "Limits"])
+			expect(probed.out).not.toContain(absent);
+	});
+
+	test("the harness row and the Environment title carry the version the harness reported", async () => {
+		const w = await roster();
+		const probed = await w.call(["agent", "probe", "demo/reviewer"], {
+			env: { MAESTRO_STUB_ENVIRONMENT: '{"version":"1.2.3"}' },
+		});
+		expect(probed.out).toContain("harness     stub 1.2.3");
+		expect(probed.out).toContain("probed stub 1.2.3");
 	});
 
 	test("a part the harness loads and the profile does not declare is a fault under its row, wrapped within 80 columns, which exits 1; an unreported part is ?", async () => {
@@ -481,7 +503,7 @@ describe("agent probe", () => {
 				await w.call(["agent", "probe", "demo/reviewer"], { env }),
 			).toMatchObject({
 				code: 1,
-				err: `probing stub…\nerror: MAESTRO_STUB_ENVIRONMENT holds '${value}', not a JSON object\n  Set it to an object such as '{"mcp":["github"]}', or unset it`,
+				err: `probing stub for demo/reviewer…\nerror: MAESTRO_STUB_ENVIRONMENT holds '${value}', not a JSON object\n  Set it to an object such as '{"mcp":["github"]}', or unset it`,
 			});
 		},
 	);

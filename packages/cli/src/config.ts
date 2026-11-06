@@ -18,15 +18,11 @@ import {
 	type Source,
 	schemaErrors,
 	sourceOf,
+	valueAt,
 	valuesLayer,
 } from "@maestro/core/config";
 import type { Host, Roots } from "@maestro/core/host";
-import {
-	isPlainObject,
-	type JsonSchema,
-	messageOf,
-	validator,
-} from "@maestro/ir";
+import { type JsonSchema, messageOf, validator } from "@maestro/ir";
 import { packIdOf } from "./loader";
 import { CliError } from "./output";
 
@@ -298,32 +294,25 @@ async function unknownFix(
 }
 
 /**
- * The presets, by name, that set every one of `wanted`, a profile's name and its runtime fields, whether under the
- * profile's name or under `*`. A preset that cannot be read is no candidate.
+ * The presets, by name, that set every entry of `unset`, each a list of key paths of which any one sets it; a value
+ * of null counts as unset. A preset that cannot be read is no candidate.
  */
 export async function presetsSetting(
 	config: Pick<LoadedConfig, "presets">,
 	hosts: readonly Host[],
-	wanted: readonly { name: string; fields: readonly string[] }[],
+	unset: readonly (readonly KeyPath[])[],
 ): Promise<string[]> {
 	const names = [...new Set(await presetNames(config.presets))].toSorted();
 	const paths = pathKeys(hosts);
-	const sets = (profiles: unknown, name: string, field: string) =>
-		[name, "*"].some((key) => {
-			const runtime = isPlainObject(profiles)
-				? (profiles[key] as { runtime?: Record<string, unknown> } | undefined)
-						?.runtime
-				: undefined;
-			return runtime?.[field] != null;
-		});
 	const found: string[] = [];
 	for (const name of names) {
 		const layer = await presetLayer(name, config.presets, paths).catch(
 			() => undefined,
 		);
 		if (!layer) continue;
-		const { profiles } = layered([layer]).values;
-		if (wanted.every((w) => w.fields.every((f) => sets(profiles, w.name, f))))
+		const { values } = layered([layer]);
+		const sets = (path: KeyPath) => valueAt(values, path) != null;
+		if (unset.every((alternatives) => alternatives.some(sets)))
 			found.push(name);
 	}
 	return found;

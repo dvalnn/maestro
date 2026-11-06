@@ -17,9 +17,9 @@ import {
 	type ProfileRoot,
 	probe,
 	probeRequest,
+	probeSections,
 	profileRoot,
 	profileSections,
-	resolveProfile,
 	resolveUnsettled,
 	SandboxUnavailable,
 	type SeatedAgent,
@@ -27,7 +27,6 @@ import {
 	seatedAgents,
 	sourceWords,
 	type Unsettled,
-	unsetMessage,
 	unsetOf,
 	windowOf,
 } from "@maestro/host-repo";
@@ -35,6 +34,7 @@ import {
 	type AgentEnvironment,
 	type EnvironmentCheck,
 	environmentChecks,
+	faultCount,
 } from "@maestro/host-repo/harness";
 import { messageOf } from "@maestro/ir";
 import {
@@ -49,7 +49,7 @@ import {
 	splitFirst,
 	type Values,
 } from "./command";
-import { builtinHarnesses, DECLARED } from "./hosts";
+import { builtinHarnesses } from "./hosts";
 import { CliError, EXIT, jsonOf, paint, table, usageError } from "./output";
 import { prepare } from "./prepare";
 import { sectionsText } from "./sections";
@@ -79,7 +79,8 @@ type Listed = {
 	shadowsPack: boolean;
 	harness?: string;
 	model?: string;
-	error?: string;
+	/** The messages of the diagnostics that kept the profile from resolving, with their `profile <name>: ` lead. */
+	faults: string[];
 };
 
 type Setup = Pick<HostSetup, "layers" | "roots">;
@@ -141,9 +142,13 @@ function requestOf(positionals: readonly string[]): Request {
 async function showText(
 	s: Inspection,
 	view: SectionsView,
+	report: ProbeReport | undefined,
 	color: boolean,
 ): Promise<string> {
-	return sectionsText(await profileSections(s, view), color);
+	return sectionsText(
+		report ? probeSections(s, view, report) : await profileSections(s, view),
+		color,
+	);
 }
 
 const FAULT_SEPARATOR = "; ";
@@ -160,32 +165,22 @@ async function listedOf(name: string, setup: Setup): Promise<Listed[]> {
 		shadowsPack: found.shadows.some((d) => profileRoot(d, roots) === "pack"),
 	};
 	try {
-		const { harness, model } = (await resolveProfile(name, setup)).fields
+		const { harness, model } = (await resolveUnsettled(name, setup)).fields
 			.runtime;
-		return [{ ...base, harness, model }];
+		return [{ ...base, harness, model, faults: [] }];
 	} catch (error) {
 		if (!(error instanceof ConfigError)) throw error;
-		const message = error.diagnostics
-			.map((d) => d.message)
-			.join(FAULT_SEPARATOR);
-		return [{ ...base, error: message }];
+		return [{ ...base, faults: error.diagnostics.map((d) => d.message) }];
 	}
 }
 
-/** The faults in a row's error but an unset harness or model, each without the `profile <name>: ` lead the row shows. */
-function otherFaults({ name, error }: Listed): string[] {
+/** `fault` without the `profile <name>: ` lead the row already shows. */
+const shownFault = (name: string, fault: string) => {
 	const lead = `profile ${name}: `;
-	const unsetFaults = [
-		unsetMessage(name, "harness"),
-		unsetMessage(name, "model"),
-		unsetMessage(name, "harness or model"),
-	];
-	return (error?.split(FAULT_SEPARATOR) ?? [])
-		.filter((m) => !unsetFaults.includes(m))
-		.map((m) => (m.startsWith(lead) ? m.slice(lead.length) : m));
-}
+	return fault.startsWith(lead) ? fault.slice(lead.length) : fault;
+};
 
-/** The roster as a table: name, harness, model, the winning root and a pack shadow, other faults under a broken row. */
+/** The roster as a table: name, harness, model, the winning root and a pack shadow, faults under a broken row. */
 function lsText(listed: readonly Listed[], color: boolean): string {
 	const header = ["Profiles", "harness", "model", "from"].map((h) =>
 		paint("bold", h, color),
@@ -201,23 +196,28 @@ function lsText(listed: readonly Listed[], color: boolean): string {
 	return [
 		top,
 		...lines.flatMap((line, i) => {
-			const other = listed[i] ? otherFaults(listed[i]) : [];
-			return other.length
-				? [
-						line,
-						`${INDENT}${INDENT}${paint("red", other.join(FAULT_SEPARATOR), color)}`,
-					]
-				: [line];
+			const row = listed[i];
+			if (!row?.faults.length) return [line];
+			const faults = row.faults.map((f) => shownFault(row.name, f));
+			return [
+				line,
+				`${INDENT}${INDENT}${paint("red", faults.join(FAULT_SEPARATOR), color)}`,
+			];
 		}),
 	].join("\n");
 }
+
+/** `row` as `--json` gives it: its faults joined as `error`. */
+const listedJson = ({ faults, ...row }: Listed) =>
+	faults.length ? { ...row, error: faults.join(FAULT_SEPARATOR) } : row;
 
 async function ls(setup: Setup, deps: Deps, values: Values): Promise<number> {
 	const held = await heldNames(setup.roots);
 	const listed = (
 		await Promise.all(held.map((n) => listedOf(n, setup)))
 	).flat();
-	if (isSet(values, "json")) deps.stdout(jsonOf({ profiles: listed }));
+	if (isSet(values, "json"))
+		deps.stdout(jsonOf({ profiles: listed.map(listedJson) }));
 	else if (listed.length) {
 		deps.stdout(lsText(listed, colorOf(deps, values).out));
 	} else
@@ -252,13 +252,13 @@ async function probed(
 			`harness '${runtime.harness}' is not loaded`,
 			`Set 'profiles.${profile.name}.runtime.harness' to one of: ${harnesses.map((h) => h.name).join(", ")}`,
 		);
-	deps.stderr(`probing ${runtime.harness}…`);
+	deps.stderr(`probing ${runtime.harness} for ${profile.name}…`);
 	const scratch = await mkdtemp(join(tmpdir(), "maestro-probe-"));
 	try {
 		const req = probeRequest(profile, setup, scratch);
 		const { observed, window } = await probe(harness, req);
 		if (window !== undefined) keepWindow(setup.store, runtime, window);
-		return { how: "probed", ...(observed && { observed }) };
+		return observed ? { observed } : {};
 	} catch (error) {
 		if (error instanceof CliError) throw error;
 		if (error instanceof SandboxUnavailable)
@@ -275,20 +275,14 @@ async function probed(
 const checksOf = (declared: AgentEnvironment | null, report?: ProbeReport) =>
 	declared && report ? environmentChecks(declared, report.observed ?? {}) : [];
 
-const faultCount = (checks: readonly EnvironmentCheck[]) =>
-	checks.reduce((n, c) => n + c.faults.length, 0);
-
-/** The `environment` of `--json`: the declaration, and with a report what was observed and each part's check. */
+/** The `environment` of `--json`: the declaration, and with a report what was observed and each part's `checks`. */
 const environmentJson = (
 	declared: AgentEnvironment | null,
+	checks: readonly EnvironmentCheck[],
 	report?: ProbeReport,
 ) =>
 	report
-		? {
-				declared,
-				observed: report.observed ?? null,
-				checks: checksOf(declared, report),
-			}
+		? { declared, observed: report.observed ?? null, checks }
 		: { declared };
 
 /** `fields` as words, such as `harness and model`. */
@@ -313,6 +307,15 @@ function probeCommand(name: string, values: Values): string {
 	].join(" ");
 }
 
+/** The agent environment each shipped harness launches with, by harness name. */
+const declaredEnvironments = ({ env }: Deps) =>
+	new Map(
+		builtinHarnesses(env).flatMap(
+			({ name, environment }): [string, AgentEnvironment][] =>
+				environment ? [[name, environment]] : [],
+		),
+	);
+
 /** Prints `profile` as `agent show` does, `report` checked when it has one; exits 1 for a fault in it. */
 async function show(
 	profile: Unsettled,
@@ -321,7 +324,7 @@ async function show(
 	values: Values,
 ): Promise<number> {
 	const { deps, config } = session;
-	const s = inspectProfile(profile, config.roots, DECLARED);
+	const s = inspectProfile(profile, config.roots, declaredEnvironments(deps));
 	const store = repoSetupOf(session)?.store;
 	const { harness, model } = profile.fields.runtime;
 	const window =
@@ -329,13 +332,14 @@ async function show(
 			? undefined
 			: windowOf(store, { harness, model });
 	const { declared } = s.environment;
+	const checks = checksOf(declared, report);
 	const { out: color, err: errColor } = colorOf(deps, values);
 	if (isSet(values, "json"))
 		deps.stdout(
 			jsonOf({
 				...s,
 				window: window ?? null,
-				environment: environmentJson(declared, report),
+				environment: environmentJson(declared, checks, report),
 			}),
 		);
 	else
@@ -346,9 +350,9 @@ async function show(
 					roots: config.roots,
 					home: deps.env.HOME,
 					...(window !== undefined && { window }),
-					...(report && { report }),
 					probeCommand: probeCommand(profile.name, values),
 				},
+				report,
 				color,
 			),
 		);
@@ -357,7 +361,7 @@ async function show(
 		deps.stderr(
 			`${fieldWords(unset)} unset\n${INDENT}${paint("dim", unsetFix(profile.name, unset), errColor)}`,
 		);
-	return faultCount(checksOf(declared, report)) ? EXIT.failed : EXIT.ok;
+	return faultCount(checks) ? EXIT.failed : EXIT.ok;
 }
 
 /**

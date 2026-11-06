@@ -299,8 +299,8 @@ takes no concert and uses the command's own config alone. `show` leaves the chec
 
 ### Agent profiles
 
-`agent ls` lists a profile that does not resolve too, with its error under its row. An unknown profile is a usage error
-naming the nearest one.
+`agent ls` lists a profile that does not resolve too, with its error under its row, and shows a harness set without a
+model. An unknown profile is a usage error naming the nearest one.
 
 `agent show <profile>` prints the profile's sections at one column. A profile whose harness or model is unset shows `-`
 for each, says its Environment has `no harness to declare one`, ends with the fix on stderr, and exits 0.
@@ -348,7 +348,8 @@ each value with its layer, file and line or `-c`. Presets combine without a merg
 layers `stub` over `risky`.
 
 A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`; the
-workspace's file wins the name whole.
+workspace's file wins the name whole. A compose error that a missing setting raised, such as a profile with no harness
+or a check config lacks, gets the hint `Pass --preset <name>` when presets set it, each one named.
 
 `-c <key>=<value>` sets one key, checked by the same schemas, and an error names the flag. The key is a dotted path,
 with a key holding a `.` in double quotes; the value is YAML, so `=true` is a boolean, `=[a, b]` a list, and the tags

@@ -410,7 +410,7 @@ describe("profiles with no runtime", () => {
 		expect(json(composed)).toMatchObject({ ok: false });
 	});
 
-	test("the hint says all three, and names every preset that covers them, each set", async () => {
+	test("several gaps end on one line naming every preset that sets all of them", async () => {
 		const w = await repoWorld();
 		for (const name of ["other", "third"])
 			profileIn(w.cwd, name, "instructions: instructions.md\n", {
@@ -422,12 +422,14 @@ describe("profiles with no runtime", () => {
 		await Bun.write(join(w.cwd, ".maestro/presets/beta.yaml"), both);
 		const composed = await w.call(["compose", await trioFile()]);
 		expect(composed.err.split("\n")).toEqual([
-			"error: 3 profiles have no harness or model: smoke, other, third",
-			"  Pass --preset alpha or --preset beta, which each set all three",
+			"error: profile smoke: no harness or model",
+			"error: profile other: no harness or model",
+			"error: profile third: no harness or model",
+			"  Pass --preset alpha or --preset beta, which each set all of these",
 		]);
 	});
 
-	test("with no preset setting both fields for every profile, the hint falls back to config", async () => {
+	test("with no preset setting every gap, each gap gets the presets that set it, else the config fix", async () => {
 		const w = await repoWorld();
 		profileIn(w.cwd, "other", "instructions: instructions.md\n", {
 			"instructions.md": "terse",
@@ -436,14 +438,20 @@ describe("profiles with no runtime", () => {
 			join(w.cwd, ".maestro/presets/harness.yaml"),
 			"profiles:\n  '*':\n    runtime: { harness: stub }\n",
 		);
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/just-smoke.yaml"),
+			"profiles:\n  smoke:\n    runtime: { harness: stub, model: none }\n",
+		);
 		const composed = await w.call(["compose", await pairFile()]);
 		expect(composed.err.split("\n")).toEqual([
-			"error: 2 profiles have no harness or model: smoke, other",
-			"  Set them under profiles: in .maestro/config.yaml, or pass --preset",
+			"error: profile smoke: no harness or model",
+			"  Pass --preset just-smoke",
+			"error: profile other: no harness or model",
+			"  Set profiles.other.runtime.harness and profiles.other.runtime.model",
 		]);
 	});
 
-	test("compose prints the graph on stdout, one gap naming every profile and the preset that covers them on stderr, and exits 1", async () => {
+	test("compose prints the graph on stdout, the gaps on stderr ending on the preset that sets them all, and exits 1", async () => {
 		const w = await repoWorld();
 		profileIn(w.cwd, "other", "instructions: instructions.md\n", {
 			"instructions.md": "terse",
@@ -461,33 +469,14 @@ describe("profiles with no runtime", () => {
 		expect(composed.code).toBe(1);
 		expect(composed.out).toContain("flowchart");
 		expect(composed.err.split("\n")).toEqual([
-			"error: 2 profiles have no harness or model: smoke, other",
-			"  Pass --preset all, which sets both",
+			"error: profile smoke: no harness or model",
+			"error: profile other: no harness or model",
+			"  Pass --preset all, which sets all of these",
 		]);
 		expect(await Bun.file(out).exists()).toBe(false);
 		expect(
 			(await w.call(["compose", file, "--graph", "--preset", "all"])).code,
 		).toBe(0);
-	});
-
-	test("the hint names a preset that sets each profile by name, and none that misses one", async () => {
-		const w = await repoWorld();
-		profileIn(w.cwd, "other", "instructions: instructions.md\n", {
-			"instructions.md": "terse",
-		});
-		const set = "runtime: { harness: stub, model: none }";
-		await Bun.write(
-			join(w.cwd, ".maestro/presets/named.yaml"),
-			`profiles:\n  smoke:\n    ${set}\n  other:\n    ${set}\n`,
-		);
-		await Bun.write(
-			join(w.cwd, ".maestro/presets/half.yaml"),
-			`profiles:\n  smoke:\n    ${set}\n`,
-		);
-		const composed = await w.call(["compose", await pairFile()]);
-		expect(composed.err.split("\n")[1]).toBe(
-			"  Pass --preset named, which sets both",
-		);
 	});
 
 	test("a refusal from a -c exits as --json does", async () => {
@@ -513,6 +502,33 @@ describe("profiles with no runtime", () => {
 			"error: profile smoke: no harness or model",
 			"  Set profiles.smoke.runtime.harness and profiles.smoke.runtime.model",
 		]);
+	});
+
+	test("a check config lacks is a gap carrying the setting it lacks, and a preset that sets it is the fix", async () => {
+		const w = await repoWorld(SMOKE_RUNTIME("stub"));
+		const file = (await smokeFile()).replace(".ts", "-checked.ts");
+		writeFileSync(
+			file,
+			readFileSync(await smokeFile(), "utf8").replace(
+				'task: "nothing",',
+				'task: "nothing", checks: ["absent"],',
+			),
+		);
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/checked.yaml"),
+			'target:\n  checks:\n    absent: { run: "true", hint: it passes }\n',
+		);
+		const composed = await w.call(["compose", file]);
+		expect(composed.code).toBe(1);
+		expect(composed.err.split("\n")).toEqual([
+			"error: 'a' may run check 'absent', which config 'target.checks' does not have",
+			"  Pass --preset checked",
+		]);
+		const { diagnostics } = json(await w.call(["compose", file, "--json"]));
+		expect(diagnostics[0].unset).toEqual([[["target", "checks", "absent"]]]);
+		expect((await w.call(["compose", file, "--preset", "checked"])).code).toBe(
+			0,
+		);
 	});
 });
 
@@ -566,6 +582,32 @@ describe("profiles", () => {
 		expect((await w.call(["compose", file, "--plan"])).out).toMatch(
 			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}a +smoke\/smoke +smoke +stub +none +low$/,
 		);
+	});
+
+	test("--plan with a profile that leaves its harness and model unset prints the plan, then the diagnostics, and exits 1", async () => {
+		const w = await repoWorld();
+		const file = await smokeFile();
+		profileIn(w.cwd, "smoke", "limits: { tokens: 1 }\n");
+		const done = await w.call(["compose", file, "--plan"]);
+		expect(done.code).toBe(1);
+		expect(done.out).toMatch(
+			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}a +smoke\/smoke +smoke +- +- +-$/,
+		);
+		expect(done.err).toContain("profile smoke: no harness or model");
+	});
+
+	test("--plan with a profile config refuses for another fault still prints the plan, its runtime shown as dashes", async () => {
+		const w = await repoWorld(SMOKE_RUNTIME("stub"));
+		const done = await w.call([
+			"compose",
+			await smokeFile(),
+			"-c",
+			"profiles.smoke.limits.timeout=bogus",
+			"--plan",
+		]);
+		expect(done.code).not.toBe(0);
+		expect(done.out).toMatch(/\n {2}a +smoke\/smoke +smoke +- +- +-$/);
+		expect(done.err).toContain("limits.timeout 'bogus'");
 	});
 
 	test("seats rebinds a seat by <composition>/<seat>: the preset over the workspace config, -c over the preset", async () => {
@@ -1115,7 +1157,7 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 		const id = idOf(done);
 		const listed = (await w.call(["ls", id])).out;
 		expect(listed).toContain(
-			"\nEnvironment\nreview  skills: stub loaded deploy, which the profile does not declare",
+			"\nEnvironment\nreview  skills: deploy loaded, not declared",
 		);
 		expect(listed).not.toContain("github");
 		const { review } = json(await w.call(["ls", id, "--json"])).reports;
@@ -1211,7 +1253,7 @@ describe("ls Environment notes", () => {
 		const id = idOf(done);
 		const listed = await faulty.call(["ls", id]);
 		expect(listed.out).toContain(
-			"\nEnvironment\nreview  mcp: stub loaded github, which the profile does not declare",
+			"\nEnvironment\nreview  mcp: github loaded, not declared",
 		);
 		const reports = json(await faulty.call(["ls", id, "--json"])).reports;
 		expect(reports.review.environment).toContainEqual({

@@ -550,6 +550,10 @@ export function checkConfig(config: unknown): CheckConfig {
 export const useOneOf = (names: string[], add: string) =>
 	names.length ? `Use one of: ${listed(names)}` : add;
 
+/** `items` as prose: `a`, `a and b`, `a, b and c`. */
+export const andList = (items: readonly string[]) =>
+	new Intl.ListFormat("en-GB", { type: "conjunction" }).format(items);
+
 /** The names of `names`, quoted and comma-separated, or `none` when there are none. */
 export const listed = (names: Iterable<string>) =>
 	[...names].map((n) => `'${n}'`).join(", ") || "none";

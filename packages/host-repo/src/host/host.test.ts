@@ -786,6 +786,7 @@ describe("compose", () => {
 		[
 			"a check node",
 			{ id: "x", kind: "check", config: { lane: fresh, check: "lint" } },
+			"Use one of: 'hello', 'red', 'missing'",
 		],
 		[
 			"an agent allowed to run it",
@@ -800,10 +801,11 @@ describe("compose", () => {
 				},
 				literals: { prompt: "go" },
 			},
+			"Add it under 'target.checks'",
 		],
-	] as [string, NodeSpec][])(
-		"%s naming a check config lacks is a HOST error listing the target's checks",
-		async (_, spec) => {
+	] as [string, NodeSpec, string][])(
+		"%s naming a check config lacks is a HOST error with the fix",
+		async (_, spec, hint) => {
 			const { host } = stubHost(() => [OK]);
 			const ir = irOf(host, [spec], "x");
 			const composed = await compose({
@@ -818,9 +820,47 @@ describe("compose", () => {
 			});
 			expect(
 				composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.hint]),
-			).toEqual([["HOST.check", "Use one of: 'hello', 'red', 'missing'"]]);
+			).toEqual([["HOST.check", hint]]);
 		},
 	);
+
+	test("agents naming a check config lacks are one HOST error naming each of them", async () => {
+		const { host } = stubHost(() => [OK]);
+		const agent = (id: string, checks: string[]): NodeSpec => ({
+			id,
+			kind: "agent",
+			config: { profile: "builder", seat: id, lane: fresh, checks },
+			literals: { prompt: "go" },
+		});
+		const ir = irOf(
+			host,
+			[agent("a", ["lint"]), agent("b", ["lint"]), agent("c", ["lint"])],
+			"c",
+		);
+		const composed = await compose({
+			ir,
+			config: configOf(toyTarget()),
+			roots: ROOTS,
+			core: CORE_CONFIG,
+			packs: {},
+			hosts: [host],
+			loadCode: noCode,
+			caps: {},
+		});
+		expect(
+			composed.ok
+				? []
+				: composed.diagnostics
+						.filter((d) => d.code === "HOST.check")
+						.map((d) => [d.node, d.message, d.unset]),
+		).toEqual([
+			[
+				"a",
+				"'a', 'b' and 'c' may run check 'lint', which config 'target.checks' does not have",
+				[[["target", "checks", "lint"]]],
+			],
+		]);
+	});
 });
 
 describe("perform", () => {

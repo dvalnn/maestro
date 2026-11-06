@@ -3,8 +3,8 @@ import { dirname, relative } from "node:path";
 import type { Roots } from "@maestro/core/host";
 import {
 	type AgentEnvironment,
-	type EnvironmentCheck,
 	environmentChecks,
+	faultCount,
 	type ObservedEnvironment,
 } from "../harness/index";
 import {
@@ -38,14 +38,13 @@ export type Section = {
 };
 
 /** What a harness reported it loaded when probed; `observed` absent when it reported nothing. */
-export type ProbeReport = { how: "probed"; observed?: ObservedEnvironment };
+export type ProbeReport = { observed?: ObservedEnvironment };
 
-/** What a profile's sections need besides the profile: its model's window, a probe's report and where to look. */
+/** What a profile's sections need besides the profile: its model's window and where to look. */
 export type SectionsView = {
 	roots: Roots;
 	home?: string;
 	window?: number;
-	report?: ProbeReport;
 	/** The command that probes the profile, which a declared-only environment points at. */
 	probeCommand?: string;
 };
@@ -111,12 +110,14 @@ function headSection(s: Inspection, places: Places): Section {
 
 const RUNTIME_KEYS = ["harness", "model", "thinking"] as const;
 
-function runtimeSection(s: Inspection): Section {
+/** The runtime rows of `s`; with `version`, the harness row carries the version the harness reported. */
+function runtimeSection(s: Inspection, version?: string): Section {
 	const rows = RUNTIME_KEYS.flatMap((key): SectionRow[] => {
 		const value = s.runtime[key];
 		if (value === undefined)
 			return key === "thinking" ? [] : [{ key, value: "-" }];
-		return [sourcedRow(s, `runtime.${key}`, key, value)];
+		const shown = key === "harness" && version ? `${value} ${version}` : value;
+		return [sourcedRow(s, `runtime.${key}`, key, shown)];
 	});
 	return { title: "Runtime", rows };
 }
@@ -255,16 +256,13 @@ function reportSection(
 	report: ProbeReport,
 ): Section {
 	const { observed } = report;
-	const checks: EnvironmentCheck[] = environmentChecks(
-		declared,
-		observed ?? {},
-	);
+	const checks = environmentChecks(declared, observed ?? {});
 	const version = observed?.version ? ` ${observed.version}` : "";
 	const said = observed ? `${harness}${version}` : `nothing from ${harness}`;
-	const faults = checks.reduce((n, c) => n + c.faults.length, 0);
+	const faults = faultCount(checks);
 	return {
 		title: "Environment",
-		value: `${report.how} ${said}`,
+		value: `probed ${said}`,
 		rows: environmentRows(declared, harness).flatMap((r) => {
 			const check = checks.find((c) => c.part === r.part);
 			return check
@@ -286,7 +284,11 @@ function reportSection(
 }
 
 /** The Environment section: declared only, with a dim pointer at `probe`, or checked against `report`. */
-function environmentSection(s: Inspection, view: SectionsView): Section {
+function environmentSection(
+	s: Inspection,
+	view: SectionsView,
+	report?: ProbeReport,
+): Section {
 	const { harness } = s.runtime;
 	if (harness === undefined)
 		return {
@@ -301,7 +303,7 @@ function environmentSection(s: Inspection, view: SectionsView): Section {
 			value: `not declared by ${harness}`,
 			rows: [],
 		};
-	if (view.report) return reportSection(declared, harness, view.report);
+	if (report) return reportSection(declared, harness, report);
 	return {
 		title: "Environment",
 		value: "declared only",
@@ -330,7 +332,24 @@ export async function profileSections(
 		...(await attachmentSections(s, view)),
 		...readOnlySections(s, view),
 		...limitsSections(s),
-		...contextSections(s, view.window, view.report?.how === "probed"),
+		...contextSections(s, view.window, false),
 		environmentSection(s, view),
+	];
+}
+
+/**
+ * The sections of `agent probe`: the title, the runtime rows with the harness's probed version, the context window
+ * and the environment checklist. The rest stays `profileSections`'s.
+ */
+export function probeSections(
+	s: Inspection,
+	view: SectionsView,
+	report: ProbeReport,
+): Section[] {
+	const version = report.observed?.version;
+	return [
+		{ title: s.name, rows: runtimeSection(s, version).rows },
+		...contextSections(s, view.window, true),
+		environmentSection(s, view, report),
 	];
 }

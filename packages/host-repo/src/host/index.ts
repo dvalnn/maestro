@@ -1,4 +1,4 @@
-import type { Composed } from "@maestro/core/config";
+import { type Composed, ConfigError } from "@maestro/core/config";
 import {
 	type Bounds,
 	type Host,
@@ -12,7 +12,7 @@ import { revisionOf } from "../lane/index";
 import {
 	type Binding,
 	profilesDigest,
-	resolveProfile,
+	resolveUnsettled,
 	seatBinding,
 	type Unsettled,
 } from "../profile/index";
@@ -51,13 +51,12 @@ export {
 	resolveUnsettled,
 	sourceWords,
 	type Unsettled,
-	unsetMessage,
 	unsetOf,
-	unsetProfiles,
 	type ValueSource,
 } from "../profile/index";
 export {
 	type ProbeReport,
+	probeSections,
 	profileSections,
 	type Section,
 	type SectionFoot,
@@ -92,7 +91,7 @@ export type AgentRuntime = {
 	/** `<composition id>/<seat>`. */
 	seat: string;
 	profile: string;
-} & Runtime;
+} & Partial<Runtime>;
 
 /** An agent node seated in a composition: where it sits, the profile it is bound to, and the prompt a profile gives it. */
 export type SeatedAgent = {
@@ -129,14 +128,17 @@ export function agentTable(agents: readonly AgentRuntime[]): string[][] {
 			a.node,
 			a.seat,
 			a.profile,
-			a.harness,
-			a.model,
+			a.harness ?? "-",
+			a.model ?? "-",
 			a.thinking ?? "-",
 		]),
 	];
 }
 
-/** The agent nodes of `ir`, each with the profile its seat runs under `config` and the runtime that resolves to. */
+/**
+ * The agent nodes of `ir`, each with the profile its seat runs under `config` and the runtime that resolves to. A
+ * profile config refuses has no runtime here: its diagnostics say why.
+ */
 export async function agentRuntimes(
 	ir: Ir,
 	config: Composed,
@@ -145,12 +147,18 @@ export async function agentRuntimes(
 ): Promise<AgentRuntime[]> {
 	const setup = hostSetup(host, config, roots);
 	return Promise.all(
-		seatedAgents(ir, setup).map(async ({ node, key, binding }) => ({
-			node,
-			seat: key,
-			profile: binding.profile,
-			...(await resolveProfile(binding.profile, setup)).fields.runtime,
-		})),
+		seatedAgents(ir, setup).map(async ({ node, key, binding }) => {
+			const row = { node, seat: key, profile: binding.profile };
+			try {
+				return {
+					...row,
+					...(await resolveUnsettled(binding.profile, setup)).fields.runtime,
+				};
+			} catch (error) {
+				if (error instanceof ConfigError) return row;
+				throw error;
+			}
+		}),
 	);
 }
 

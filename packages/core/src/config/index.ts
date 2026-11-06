@@ -1,6 +1,11 @@
 import { availableParallelism } from "node:os";
 import { dirname, resolve } from "node:path";
-import type { Diagnostic, JsonSchema, SourceLocation } from "@maestro/ir";
+import type {
+	Diagnostic,
+	JsonSchema,
+	KeyPath,
+	SourceLocation,
+} from "@maestro/ir";
 import {
 	durationMs,
 	timeoutProblem,
@@ -49,8 +54,7 @@ export type Source = {
 	fix?: string;
 };
 
-/** Config keys from the top level down. */
-export type KeyPath = readonly string[];
+export type { KeyPath };
 
 /** Layered config: its plain values, and the source of each value by key path. */
 export type Composed = {
@@ -598,7 +602,8 @@ export function layeredOver(
 	};
 }
 
-const valueAt = (root: unknown, path: KeyPath) =>
+/** The value of `root` at `path`; undefined where any key along it is missing. */
+export const valueAt = (root: unknown, path: KeyPath) =>
 	path.reduce<unknown>((at, key) => (isRecord(at) ? at[key] : undefined), root);
 
 function setAt(root: Record<string, unknown>, path: KeyPath, value: unknown) {

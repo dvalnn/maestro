@@ -206,7 +206,7 @@ describe("compose and config", () => {
 		expect(listed.out).toMatch(/^demo\.greet\.name +unset +unset$/m);
 		expect(
 			json(await w.call(["config", "demo.greet", "--json"])).values,
-		).toContainEqual({ key: "demo.greet.name", layer: "unset" });
+		).toContainEqual({ key: "demo.greet.name", value: null, layer: "unset" });
 	});
 
 	test("config on a bare file lists the session's values and its required param unset", async () => {

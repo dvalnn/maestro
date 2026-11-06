@@ -1,17 +1,12 @@
 import { basename, dirname, extname, resolve } from "node:path";
-import type { Composed } from "@maestro/core/config";
+import { type Composed, valueAt } from "@maestro/core/config";
 import {
 	type AgentRuntime,
 	agentRuntimes,
 	agentTable,
 	HOST_NAME,
 } from "@maestro/host-repo";
-import {
-	canonicalJson,
-	type Diagnostic,
-	isPlainObject,
-	type Plan,
-} from "@maestro/ir";
+import { canonicalJson, type Diagnostic, type Plan } from "@maestro/ir";
 import { flow, listing, render, summary } from "@maestro/render-text";
 import {
 	COMMON,
@@ -36,11 +31,11 @@ import {
 	compared,
 	compositionHelp,
 	configured,
-	gathered,
 	type Prepared,
 	persist,
 	prepare,
 	type Reading,
+	withPresetFixes,
 } from "./prepare";
 import { openSession, overridesOf, type Session } from "./session";
 
@@ -149,7 +144,7 @@ export const compose: Command = {
 			printDiagnostics(
 				session,
 				target,
-				await gathered(session, result.diagnostics),
+				await withPresetFixes(session, result.diagnostics),
 			);
 			return diagnosedExit(result.diagnostics);
 		}
@@ -173,22 +168,26 @@ export const compose: Command = {
 	},
 };
 
+type ConfigRow = {
+	key: string;
+	value: unknown;
+	layer: string;
+	file?: string;
+	line?: number;
+	flag?: string;
+};
+
 /** The values of `config` with where each came from: one row per key, a list as one value. */
-function rowsOf({ values, sources }: Composed) {
-	const at = (path: readonly string[]) =>
-		path.reduce<unknown>(
-			(found, key) => (isPlainObject(found) ? found[key] : undefined),
-			values,
-		);
+function rowsOf({ values, sources }: Composed): ConfigRow[] {
 	return sources
-		.filter(({ path }) => !Array.isArray(at(path.slice(0, -1))))
+		.filter(({ path }) => !Array.isArray(valueAt(values, path.slice(0, -1))))
 		.map(({ path, source }) => ({
 			key: path.join("."),
-			value: at(path),
+			value: valueAt(values, path),
 			layer: source.layer,
-			file: source.file,
-			line: source.line,
-			flag: source.flag,
+			...(source.file !== undefined && { file: source.file }),
+			...(source.line !== undefined && { line: source.line }),
+			...(source.flag !== undefined && { flag: source.flag }),
 		}));
 }
 
@@ -227,16 +226,9 @@ export const config: Command = {
 			args,
 		);
 		const json = isSet(early, "json");
-		const rows = [
+		const rows: ConfigRow[] = [
 			...rowsOf(composed),
-			...unset.map((key) => ({
-				key,
-				value: undefined,
-				layer: "unset" as const,
-				file: undefined,
-				line: undefined,
-				flag: undefined,
-			})),
+			...unset.map((key) => ({ key, value: null, layer: "unset" })),
 		];
 		if (json) {
 			deps.stdout(jsonOf({ values: rows }));
@@ -247,7 +239,7 @@ export const config: Command = {
 				rows.map((r) => [
 					r.key,
 					layerOf(r),
-					r.value === undefined ? "unset" : JSON.stringify(r.value),
+					r.layer === "unset" ? "unset" : JSON.stringify(r.value),
 					r.file ? `${r.file}:${r.line}` : (r.flag ?? ""),
 				]),
 			),

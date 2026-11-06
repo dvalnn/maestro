@@ -46,8 +46,9 @@ Red nodes are the failing exits, each returning `error` diagnostics.
 
 `Diagnostic` is the one diagnostic type of ir, the SDK and core: `code`, `severity`, `message` and `hint` (the next
 step), plus optional `node`, `scope`, `source` and `path` (a JSON Pointer). Without those four it is about the whole IR.
-Every diagnostic `parseIr` returns is an `error` with a hint and a path, and one whose path points into a node with a
-string `id` also names that node in `node`.
+`unset` is set when config left a setting out: each entry is one missing setting, listing the key paths (`KeyPath`) that
+could set it, any one of which does. Every diagnostic `parseIr` returns is an `error` with a hint and a path, and one
+whose path points into a node with a string `id` also names that node in `node`.
 
 Refs: CORE-17.
 

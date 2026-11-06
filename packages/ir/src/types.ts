@@ -4,6 +4,9 @@ import type { Outcome } from "./outcome";
 
 export type Severity = "error" | "warning";
 
+/** Config keys from the top level down. */
+export type KeyPath = readonly string[];
+
 /**
  * A finding about a graph (CORE-17), from ir, the SDK or core. `code` is stable, with a prefix from the sdk-spec
  * Diagnostics catalogue, and any `error` stops compose. `hint` is the next step. Without `node`, `scope`, `source` and
@@ -19,6 +22,11 @@ export type Diagnostic = {
 	source?: SourceLocation;
 	/** A JSON Pointer into the IR. */
 	path?: string;
+	/**
+	 * The config settings whose absence raised it. Each entry is one missing setting, listing the key paths that
+	 * could set it, any one of which does.
+	 */
+	unset?: KeyPath[][];
 };
 
 /** A JSON Schema (draft 2020-12) document. Opaque to the IR. */

@@ -24,6 +24,7 @@ export {
 	contextProblems,
 	type EnvironmentCheck,
 	environmentChecks,
+	faultCount,
 	type Harness,
 	type HarnessEvent,
 	type HarnessRequest,
