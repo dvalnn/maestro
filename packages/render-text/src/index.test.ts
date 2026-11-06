@@ -44,24 +44,26 @@ const SHIP = [
 ];
 
 describe("text forms", () => {
-	test("summary: instances, host counts and warnings in one line", async () => {
+	test("summary: instances, host counts and diagnostics by severity in one line", async () => {
 		expect(summary(await plan("minimal"))).toBe("minimal: 1 node instance");
 		const warned = await plan("fanout-fanin-loop");
 		warned.bounds.counts = { calls: { upTo: 5 } };
 		warned.diagnostics = [
+			{ code: "x", severity: "error", message: "m", hint: "h" },
+			{ code: "x", severity: "error", message: "m", hint: "h" },
 			{ code: "x", severity: "warning", message: "m", hint: "h" },
 		];
 		expect(summary(warned)).toBe(
-			"fanout-fanin-loop: up to 13 node instances, up to 5 calls, 1 warning",
+			"fanout-fanin-loop: up to 13 node instances, up to 5 calls, 2 errors, 1 warning",
 		);
 	});
 
-	test("listing: a diagnostic by its severity word, indented", async () => {
+	test("listing: leaves diagnostics to the summary count", async () => {
 		const warned = await plan("minimal");
 		warned.diagnostics = [
 			{ code: "x", severity: "warning", message: "m", hint: "h" },
 		];
-		expect(listing(warned)).toEndWith("warnings:\n  warning: m");
+		expect(listing(warned)).not.toContain(": m");
 	});
 
 	test("listing: each node's count and expansions, then bounds", async () => {

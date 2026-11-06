@@ -10,6 +10,7 @@ import {
 	indexGraph,
 	isGroup,
 	type Plan,
+	type Severity,
 } from "@maestro/ir";
 import { label, START, STOP } from "./mermaid";
 
@@ -17,6 +18,8 @@ export { flow } from "./flow";
 
 /** Longest value or key list a text form shows before it cuts with an ellipsis. */
 const MAX_SHOWN = 40;
+
+const SEVERITIES: readonly Severity[] = ["error", "warning"];
 
 const cut = (s: string) =>
 	s.length > MAX_SHOWN ? `${s.slice(0, MAX_SHOWN - 1)}…` : s;
@@ -36,13 +39,16 @@ const expansionOf = (n: IrNode, e: Expansion) =>
 		? `${n.test.at === "start" ? 0 : 1} to ${e.upTo}`
 		: shownExpansion(e);
 
-/** The plan in one line: node instances, each host count and any warnings. */
+/** The plan in one line: node instances, each host count, then its diagnostics counted by severity. */
 export function summary(plan: Plan): string {
 	const { bounds, diagnostics } = plan;
 	const parts = [
 		counted(amount(bounds.instances), "node instance"),
 		...Object.entries(bounds.counts).map(([name, c]) => `${amount(c)} ${name}`),
-		...(diagnostics.length ? [counted(diagnostics.length, "warning")] : []),
+		...SEVERITIES.flatMap((s) => {
+			const n = diagnostics.filter((d) => d.severity === s).length;
+			return n ? [counted(n, s)] : [];
+		}),
 	];
 	return `${plan.ir.composition.id}: ${parts.join(", ")}`;
 }
@@ -78,11 +84,11 @@ function nodeLines(plan: Plan, graph: GraphIndex): string[] {
 	]);
 }
 
-/** The plan in full: each node with its kind, instance count and expansions, then bounds and warnings. */
+/** The plan in full: each node with its kind, instance count and expansions, then its bounds. */
 export function listing(plan: Plan): string {
 	const graph = indexGraph(plan.ir);
 	const { bounds } = plan;
-	const lines = [
+	return [
 		summary(plan),
 		"nodes:",
 		...nodeLines(plan, graph),
@@ -91,13 +97,7 @@ export function listing(plan: Plan): string {
 			["instances", amount(bounds.instances)],
 			...Object.entries(bounds.counts).map(([name, c]) => [name, amount(c)]),
 		]),
-	];
-	if (plan.diagnostics.length)
-		lines.push(
-			"warnings:",
-			...plan.diagnostics.map((d) => `  ${d.severity}: ${d.message}`),
-		);
-	return lines.join("\n");
+	].join("\n");
 }
 
 /** A group header's label: its kind, then its expansion alone for one path or `<path>: <expansion>` per path. */
