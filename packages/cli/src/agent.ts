@@ -12,6 +12,7 @@ import {
 	heldNames,
 	type Inspection,
 	inspectProfile,
+	isSettled,
 	keepWindow,
 	type Profile,
 	type ProfileRoot,
@@ -20,11 +21,14 @@ import {
 	profileRoot,
 	readablePath,
 	resolveProfile,
+	resolveUnsettled,
 	SandboxUnavailable,
 	type SeatedAgent,
 	seatedAgents,
 	sourceWords,
+	type Unsettled,
 	unsetMessage,
+	unsetOf,
 	windowOf,
 } from "@maestro/host-repo";
 import {
@@ -36,7 +40,6 @@ import {
 } from "@maestro/host-repo/harness";
 import { messageOf } from "@maestro/ir";
 import { padCells } from "@maestro/render-text/live";
-import { Document, isScalar } from "yaml";
 import {
 	COMMON,
 	type Command,
@@ -75,14 +78,6 @@ import {
 
 const AGENT_OPTIONS: Options = {
 	...COMMON,
-	yaml: {
-		type: "boolean",
-		desc: "show: print the profile as one folded profile.yaml",
-	},
-	probe: {
-		type: "boolean",
-		desc: "show: start the agent as a concert would, check what its harness loads, then stop it",
-	},
 	concert: {
 		type: "string",
 		arg: "id",
@@ -99,22 +94,16 @@ const AGENT_OPTIONS: Options = {
 	},
 };
 
-const FIX = "Run 'maestro agent ls', or 'maestro agent show <profile>'";
+const FIX =
+	"Run 'maestro agent ls', 'maestro agent show <profile>', or 'maestro agent probe <profile>'";
 const NAME_PROFILE = "Name one as 'maestro agent ls' lists it";
 const NAME_NODE = "Name one as 'maestro ls <concert>' lists it";
 const NAME_COMPOSITION = "Name it by file path or <pack>.<composition>";
 /** The flags only `show` takes, and the pairs of them that exclude each other. */
-const SHOW_FLAGS = ["yaml", "probe", "concert", "seat", "prompt"] as const;
+const SHOW_FLAGS = ["concert", "seat", "prompt"] as const;
 const EXCLUSIVE = [
-	["yaml", "json"],
-	["yaml", "probe"],
-	["yaml", "concert"],
-	["probe", "concert"],
 	["seat", "concert"],
 	["prompt", "concert"],
-	["prompt", "probe"],
-	["prompt", "yaml"],
-	["seat", "yaml"],
 ] as const;
 const MARK_STYLE = { "✓": "green", "✗": "red", "?": "dim" } as const;
 
@@ -131,8 +120,9 @@ type SeatRequest = { key: string; target: string; prompt: boolean };
 
 type Request =
 	| { action: "ls" }
-	| { action: "show"; name: string; probe: boolean }
-	| ({ action: "seat"; probe: boolean } & SeatRequest)
+	| { action: "show"; name: string }
+	| { action: "probe"; name: string }
+	| ({ action: "seat" } & SeatRequest)
 	| { action: "recorded"; concert: string; node: string };
 
 type Listed = {
@@ -182,12 +172,11 @@ function showRequest(rest: readonly string[], values: Values): Request {
 			concert,
 			node: only(rest, "node", NAME_NODE, "show"),
 		};
-	const probe = isSet(values, "probe");
 	const prompt = isSet(values, "prompt");
 	const key = textOf(values, "seat");
 	if (key !== undefined) {
 		const target = only(rest, "composition", NAME_COMPOSITION, "show");
-		return { action: "seat", key, target, probe, prompt };
+		return { action: "seat", key, target, prompt };
 	}
 	if (prompt)
 		throw usageError(
@@ -197,7 +186,16 @@ function showRequest(rest: readonly string[], values: Values): Request {
 	return {
 		action: "show",
 		name: only(rest, "profile", NAME_PROFILE, "show"),
-		probe,
+	};
+}
+
+function probeRequestOf(rest: readonly string[], values: Values): Request {
+	const flag = SHOW_FLAGS.find((f) => given(values, f));
+	if (flag !== undefined)
+		throw usageError(`agent probe takes no --${flag}`, `Drop --${flag}`);
+	return {
+		action: "probe",
+		name: only(rest, "profile", NAME_PROFILE, "probe"),
 	};
 }
 
@@ -206,8 +204,9 @@ function requestOf(values: Values, positionals: readonly string[]): Request {
 	const [action, ...rest] = positionals;
 	if (action === "ls") return lsRequest(rest, values);
 	if (action === "show") return showRequest(rest, values);
+	if (action === "probe") return probeRequestOf(rest, values);
 	throw usageError(
-		`expected ls or show, got ${action === undefined ? "nothing" : `'${action}'`}`,
+		`expected ls, show or probe, got ${action === undefined ? "nothing" : `'${action}'`}`,
 		FIX,
 	);
 }
@@ -278,7 +277,8 @@ const RUNTIME_KEYS = ["harness", "model", "thinking"] as const;
 function runtimeLines(s: Inspection, look: Look): string[] {
 	const rows = RUNTIME_KEYS.flatMap((key) => {
 		const value = s.runtime[key];
-		if (value === undefined) return [];
+		if (value === undefined)
+			return key === "thinking" ? [] : [row(key, "-", look)];
 		return [row(key, sourced(value, wordsAt(s, `runtime.${key}`), look), look)];
 	});
 	return [paint("bold", "Runtime", look.color), ...rows];
@@ -349,8 +349,8 @@ function limitsLines(s: Inspection, look: Look): string[] {
 }
 
 /**
- * The context policy's rows, then the model's window in tokens where one is known, or `? not reported` after a probe
- * that kept none.
+ * The context policy's rows, then the model's window in tokens where one is known, with what it is kept for after a
+ * probe, or `? not reported` after one that kept none.
  */
 function contextLines(
 	s: Inspection,
@@ -361,8 +361,11 @@ function contextLines(
 	const rows = Object.entries(s.context ?? {}).map(([key, value]) =>
 		row(key, sourced(String(value), wordsAt(s, `context.${key}`), look), look),
 	);
-	if (window !== undefined) rows.push(row("window", String(window), look));
-	else if (probed)
+	if (window !== undefined) {
+		const { harness, model } = s.runtime;
+		const kept = probed ? `  kept for ${harness} ${model}` : "";
+		rows.push(row("window", `${window}${kept}`, look));
+	} else if (probed)
 		rows.push(
 			`${paint("dim", "?", look.color)} ${row("window", "not reported", look).slice(INDENT.length)}`,
 		);
@@ -458,12 +461,13 @@ function reportLines(
 	];
 }
 
-/** The Environment section: declared only, with a dim pointer at `--probe`, or checked against `report`. */
+/** The Environment section: declared only, with a dim pointer at `probe`, or checked against `report`. */
 function environmentLines(
 	declared: AgentEnvironment | null,
 	harness: string,
 	look: Colored,
 	report?: Report,
+	probeCommand?: string,
 ): string[] {
 	if (declared === null)
 		return [head("Environment", `not declared by ${harness}`, look)];
@@ -471,7 +475,11 @@ function environmentLines(
 	return [
 		head("Environment", "declared only", look),
 		...environmentRows(declared, harness).map((r) => row(r.key, r.value, look)),
-		paint("dim", `Add --probe to check it against ${harness}`, look.color),
+		paint(
+			"dim",
+			`Run ${probeCommand} to check it against ${harness}`,
+			look.color,
+		),
 	];
 }
 
@@ -482,6 +490,7 @@ async function showText(
 	look: Look,
 	report?: Report,
 	seated?: Seated,
+	probeCommand?: string,
 ): Promise<string> {
 	const sections = [
 		headLines(s, look, seated),
@@ -491,74 +500,20 @@ async function showText(
 		readOnlyLines(s, look),
 		limitsLines(s, look),
 		contextLines(s, window, look, report?.how === "probed"),
-		environmentLines(s.environment.declared, s.runtime.harness, look, report),
+		s.runtime.harness === undefined
+			? [head("Environment", "no harness to declare one", look)]
+			: environmentLines(
+					s.environment.declared,
+					s.runtime.harness,
+					look,
+					report,
+					probeCommand,
+				),
 	];
 	return sections
 		.filter((lines) => lines.length)
 		.map((lines) => lines.join("\n"))
 		.join("\n\n");
-}
-
-/** The fields of `s` as its `profile.yaml` would hold them, paths read as `readable`, empty fields left out. */
-function profileValues(s: Inspection, places: Places): Record<string, unknown> {
-	const { runtime, instructions, attachments, readOnly, limits, context } = s;
-	const at = (path: string) => readable(path, s.dir, places);
-	const entries = Object.entries(attachments);
-	return {
-		runtime,
-		...(instructions !== undefined && { instructions: at(instructions) }),
-		...(entries.length && {
-			attachments: Object.fromEntries(
-				entries.map(([key, a]) => [key, { path: at(a.path), hint: a.hint }]),
-			),
-		}),
-		...(readOnly.length && { readOnly }),
-		...(Object.keys(limits).length && { limits }),
-		...(context !== undefined && { context }),
-	};
-}
-
-/** The trailing comment of each value: its source's words, and for an attachment where the agent sees it. */
-function commentsOf(s: Inspection): Map<string, string[]> {
-	const comments = new Map<string, string[]>();
-	const add = (key: string, text: string) =>
-		comments.set(key, [...(comments.get(key) ?? []), text]);
-	for (const key of Object.keys(s.sources)) {
-		const words = wordsAt(s, key);
-		if (words !== undefined) add(key, words);
-	}
-	for (const [key, a] of Object.entries(s.attachments))
-		add(`attachments.${key}.path`, `agent sees ${a.agent}`);
-	return comments;
-}
-
-const YAML_OPTIONS = { lineWidth: 0 };
-
-/** `values` as a YAML document led by `comments`, one `#` line each. */
-function yamlOf(values: unknown, comments: readonly string[]): Document {
-	const doc = new Document(values);
-	const lead = comments.map((line) => ` ${line}`).join("\n");
-	if (doc.contents) doc.contents.commentBefore = lead;
-	return doc;
-}
-
-/** `s` as one folded `profile.yaml`, each layer and agent path a trailing comment, then its environment. */
-function showYaml(s: Inspection, places: Places): string {
-	const profile = yamlOf(profileValues(s, places), [
-		s.name,
-		`from    ${placeOf(s.dir, s.name, places)}`,
-		...s.shadows.map((dir) => `shadows ${placeOf(dir, s.name, places)}`),
-	]);
-	for (const [key, texts] of commentsOf(s)) {
-		const node = profile.getIn(key.split("."), true);
-		if (isScalar(node)) node.comment = ` ${texts.join("; ")}`;
-	}
-	const { declared } = s.environment;
-	const environment =
-		declared === null
-			? `# environment not declared by ${s.runtime.harness}`
-			: yamlOf(declared, ["environment, declared only"]).toString(YAML_OPTIONS);
-	return `${profile.toString(YAML_OPTIONS)}---\n${environment}`.trimEnd();
 }
 
 const FAULT_SEPARATOR = "; ";
@@ -587,24 +542,17 @@ async function listedOf(name: string, setup: Setup): Promise<Listed[]> {
 	}
 }
 
-/**
- * The faults in a row's error, each without the `profile <name>: ` lead the row already shows: whether any is an unset
- * harness or model, and the rest.
- */
-function faultsOf({ name, error }: Listed) {
+/** The faults in a row's error but an unset harness or model, each without the `profile <name>: ` lead the row shows. */
+function otherFaults({ name, error }: Listed): string[] {
 	const lead = `profile ${name}: `;
 	const unsetFaults = [
 		unsetMessage(name, "harness"),
 		unsetMessage(name, "model"),
 		unsetMessage(name, "harness or model"),
 	];
-	const all = error?.split(FAULT_SEPARATOR) ?? [];
-	return {
-		unset: all.some((m) => unsetFaults.includes(m)),
-		other: all
-			.filter((m) => !unsetFaults.includes(m))
-			.map((m) => (m.startsWith(lead) ? m.slice(lead.length) : m)),
-	};
+	return (error?.split(FAULT_SEPARATOR) ?? [])
+		.filter((m) => !unsetFaults.includes(m))
+		.map((m) => (m.startsWith(lead) ? m.slice(lead.length) : m));
 }
 
 /** The roster as a table: name, harness, model, the winning root and a pack shadow, other faults under a broken row. */
@@ -623,7 +571,7 @@ function lsText(listed: readonly Listed[], color: boolean): string {
 	return [
 		top,
 		...lines.flatMap((line, i) => {
-			const other = listed[i] ? faultsOf(listed[i]).other : [];
+			const other = listed[i] ? otherFaults(listed[i]) : [];
 			return other.length
 				? [
 						line,
@@ -634,16 +582,6 @@ function lsText(listed: readonly Listed[], color: boolean): string {
 	].join("\n");
 }
 
-/** The footer counting profiles with no harness or model, or none when every profile has both. */
-function unsetFooter(listed: readonly Listed[], color: boolean): string {
-	const count = listed.filter((l) => faultsOf(l).unset).length;
-	if (count === 0) return "";
-	const what = `${count} ${count === 1 ? "profile has" : "profiles have"} no harness or model`;
-	const fix =
-		"Set them under profiles: in .maestro/config.yaml, or pass --preset";
-	return `${what}\n${INDENT}${paint("dim", fix, color)}`;
-}
-
 async function ls(setup: Setup, deps: Deps, values: Values): Promise<number> {
 	const held = await heldNames(setup.roots);
 	const listed = (
@@ -651,10 +589,7 @@ async function ls(setup: Setup, deps: Deps, values: Values): Promise<number> {
 	).flat();
 	if (isSet(values, "json")) deps.stdout(jsonOf({ profiles: listed }));
 	else if (listed.length) {
-		const color = colorOf(deps, values);
-		deps.stdout(lsText(listed, color.out));
-		const footer = unsetFooter(listed, color.err);
-		if (footer) deps.stderr(footer);
+		deps.stdout(lsText(listed, colorOf(deps, values).out));
 	} else
 		deps.stderr(
 			"no profile in any profile root\nCreate .maestro/profiles/<name>/profile.yaml, or install a pack that ships one",
@@ -729,22 +664,47 @@ function promptText(prompts: readonly Prompted[], color: boolean): string {
 		.join("\n\n");
 }
 
+/** `fields` as words, such as `harness and model`. */
+const fieldWords = (fields: readonly string[]) => fields.join(" and ");
+
+/** Where to set `fields` of profile `name`, or pass them. */
+const unsetFix = (name: string, fields: readonly string[]) =>
+	`Pass --preset, or set profiles.${name}.runtime${fields.length === 1 ? `.${fields[0]}` : ""} in .maestro/config.yaml`;
+
+const SHELL_SAFE = /^[\w@%+=:,./-]+$/;
+const quoted = (text: string) =>
+	SHELL_SAFE.test(text) ? text : `'${text.replaceAll("'", "'\\''")}'`;
+
+/** The `maestro agent probe` command for profile `name`, with the `--preset` and `-c` flags `values` gives. */
+function probeCommand(name: string, values: Values): string {
+	const { presets, config } = overridesOf(values);
+	return [
+		"maestro agent probe",
+		name,
+		...(presets ?? []).map((p) => `--preset ${quoted(p)}`),
+		...(config ?? []).map((c) => `-c ${quoted(c)}`),
+	].join(" ");
+}
+
+/** Prints `profile` as `agent show` does, `report` checked when it has one; exits 1 for a fault in it. */
 async function show(
-	profile: Profile,
-	probing: boolean,
+	profile: Unsettled,
+	report: Report | undefined,
 	session: Session,
 	values: Values,
 	seated?: Seated,
 ): Promise<number> {
 	const { deps, config } = session;
 	const s = inspectProfile(profile, config.roots, DECLARED);
-	const report = probing ? await probed(profile, session) : undefined;
 	const store = repoSetupOf(session)?.store;
+	const { harness, model } = profile.fields.runtime;
 	const window =
-		store === undefined ? undefined : windowOf(store, profile.fields.runtime);
+		store === undefined || harness === undefined || model === undefined
+			? undefined
+			: windowOf(store, { harness, model });
 	const { declared } = s.environment;
 	const places = { roots: config.roots, home: deps.env.HOME };
-	const { out: color } = colorOf(deps, values);
+	const { out: color, err: errColor } = colorOf(deps, values);
 	if (isSet(values, "json"))
 		deps.stdout(
 			jsonOf({
@@ -758,12 +718,42 @@ async function show(
 			}),
 		);
 	else if (seated?.prompts) deps.stdout(promptText(seated.prompts, color));
-	else if (isSet(values, "yaml")) deps.stdout(showYaml(s, places));
 	else
 		deps.stdout(
-			await showText(s, window, { ...places, color }, report, seated),
+			await showText(
+				s,
+				window,
+				{ ...places, color },
+				report,
+				seated,
+				probeCommand(profile.name, values),
+			),
+		);
+	const unset = unsetOf(profile);
+	if (unset.length)
+		deps.stderr(
+			`${fieldWords(unset)} unset\n${INDENT}${paint("dim", unsetFix(profile.name, unset), errColor)}`,
 		);
 	return faultCount(checksOf(declared, report)) ? EXIT.failed : EXIT.ok;
+}
+
+/**
+ * Probes profile `name` and prints what its harness reported, as `agent show` does.
+ * @throws CliError, a usage error, when the profile leaves its harness or model unset.
+ */
+async function probeProfile(
+	name: string,
+	setup: Setup,
+	session: Session,
+	values: Values,
+): Promise<number> {
+	const profile = await resolveUnsettled(name, setup);
+	if (!isSettled(profile))
+		throw usageError(
+			`profile ${name} leaves ${fieldWords(unsetOf(profile))} unset, so there is nothing to probe`,
+			unsetFix(name, unsetOf(profile)),
+		);
+	return show(profile, await probed(profile, session), session, values);
 }
 
 /**
@@ -788,7 +778,7 @@ function seatAgents(
 
 /** Shows the profile seat `request.key` is bound to, or with `request.prompt` the system prompts of its agents. */
 async function showSeat(
-	request: SeatRequest & { probe: boolean },
+	request: SeatRequest,
 	session: Session,
 	values: Values,
 ): Promise<number> {
@@ -808,7 +798,7 @@ async function showSeat(
 				([prompt, group]) => ({ nodes: group.map((a) => a.node), prompt }),
 			)
 		: undefined;
-	return show(profile, request.probe, session, values, {
+	return show(profile, undefined, session, values, {
 		key: request.key,
 		binding,
 		...(prompts && { prompts }),
@@ -838,7 +828,7 @@ function recordedReport(events: readonly Record<string, unknown>[]) {
 	return { harness: ran.harness, model, report };
 }
 
-/** The environment a node of a concert recorded, checked as `--probe` checks it; a fault never fails the command. */
+/** The environment a node of a concert recorded, checked as `agent probe` checks it; a fault never fails the command. */
 async function recorded(
 	{ concert, node }: { concert: string; node: string },
 	session: Session,
@@ -885,7 +875,7 @@ async function recorded(
 export const agent: Command = {
 	pages: (args) => splitFirst(AGENT_OPTIONS, args).first === "show",
 	usage:
-		"agent ls [flags]  (alias: ag)\n       maestro agent show <profile> [--probe] [flags]\n       maestro agent show --seat <composition id>/<seat> <composition> [--prompt] [flags]\n       maestro agent show --concert <id> <node> [flags]",
+		"agent ls [flags]  (alias: ag)\n       maestro agent show <profile> [flags]\n       maestro agent probe <profile> [flags]\n       maestro agent show --seat <composition id>/<seat> <composition> [--prompt] [flags]\n       maestro agent show --concert <id> <node> [flags]",
 	arguments: [
 		["<profile>", "A profile, as 'maestro agent ls' lists it"],
 		[
@@ -907,10 +897,12 @@ export const agent: Command = {
 		if (request.action === "seat") return showSeat(request, session, values);
 		const { config } = session;
 		const setup = { layers: config.layers, roots: config.roots };
+		if (request.action === "probe")
+			return probeProfile(request.name, setup, session, values);
 		if (request.action === "show")
 			return show(
-				await resolveProfile(request.name, setup),
-				request.probe,
+				await resolveUnsettled(request.name, setup),
+				undefined,
 				session,
 				values,
 			);

@@ -215,14 +215,14 @@ fails the agent.
 Pre-flight turns a percentage into tokens, rounded down, of the window kept for the profile's harness and model, and
 refuses, naming the profile, the field and the harness:
 
-- a percentage, or `compact` on pi, of a model whose window is not kept; the fix is
-  `maestro agent show <profile> --probe`, or `at` in tokens;
+- a percentage, or `compact` on pi, of a model whose window is not kept; the fix is `maestro agent probe <profile>`, or
+  `at` in tokens;
 - a capped `compact` on a harness that reports no compaction, or a claude `at` outside its compaction window of 100000
   to 1000000 tokens;
 - an `at` not below the window kept.
 
-`agent show --probe` and every agent turn keep the window the harness reports. Pre-flight never probes, so it spends
-nothing (ADR 0014). Prompt size, the window and each compaction reach the record as progress events.
+`agent probe` and every agent turn keep the window the harness reports. Pre-flight never probes, so it spends nothing
+(ADR 0014). Prompt size, the window and each compaction reach the record as progress events.
 
 ## Sessions
 
@@ -351,7 +351,7 @@ name; `seats.<composition id>/<seat>` in config rebinds it to another. Resolutio
 resume.
 
 `maestro agent ls` lists every profile and the root that wins it, and `maestro agent show` prints what one resolves to
-and the layer behind each value. Its `--probe` is under Harness adapters.
+and the layer behind each value. `maestro agent probe` is under Harness adapters.
 
 ### Limits
 
@@ -520,9 +520,9 @@ bubblewrap.
 An adapter also streams the harness's startup report as an `environment` event: what it loaded, each part by name. The
 host records it and never enforces it.
 
-`maestro agent show --probe` starts a profile's agent as a concert would and stops it once it has that report and the
-model's window, to check the report against the adapter's declared baseline and keep the window. A mismatch is a fault
-of inspection, never of a concert. It marks each part `✓`, `✗` or `?` (not reported) and exits 1 on a fault. It spends a
+`maestro agent probe` starts a profile's agent as a concert would and stops it once it has that report and the model's
+window, to check the report against the adapter's declared baseline and keep the window. A mismatch is a fault of
+inspection, never of a concert. It marks each part `✓`, `✗` or `?` (not reported) and exits 1 on a fault. It spends a
 startup, and on claude one short turn.
 
 The baseline pins the tools an agent gets, so a tool a harness release adds never reaches one. A probe faults each tool
@@ -564,7 +564,7 @@ Environment variables rehearse a branch a placeholder never takes. A resume need
 [^delay]: A duration such as `2s` or `500ms`; unset, it answers at once. It applies to scripted events too.
 
 [^environment]:
-    Such as `{"mcp":["github"]}`, to rehearse a fault for `agent show --probe` or `--concert`; `null` leaves a part
+    Such as `{"mcp":["github"]}`, to rehearse a fault for `agent probe` or `agent show --concert`; `null` leaves a part
     unreported, and `window` reports a model's window.
 
 ## Validation rules

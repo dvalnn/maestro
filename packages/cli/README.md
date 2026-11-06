@@ -302,19 +302,21 @@ takes no concert and uses the command's own config alone. `show` leaves the chec
 `agent ls` lists a profile that does not resolve too, with its error under its row. An unknown profile is a usage error
 naming the nearest one.
 
-`agent show <profile>` prints the profile's sections at one column.
+`agent show <profile>` prints the profile's sections at one column. A profile whose harness or model is unset shows `-`
+for each, says its Environment has `no harness to declare one`, ends with the fix on stderr, and exits 0.
 
 - A value names its layer in brackets (`[preset risky]`, `[-c]`, `[user config]`, `[workspace config]`) only when a
   layer above its `profile.yaml` set it, and each attachment shows the host path and where the agent sees it.
 - The environment is what the profile's harness adapter launches with: tools, subagents, skills, MCP servers, hooks,
   context files and compaction.
-- `--yaml` folds the profile into one `profile.yaml`, the layers and agent paths as trailing comments, then the
-  environment as a second document. `--json` gives the same fields with absolute paths, each value's source as its layer
-  with its file and line or its `-c` flag, as `config --json` does.
-- `--probe` starts the harness as a concert would (the same sandbox, flags, instructions and attachments, an empty
-  scratch lane, no checks), stops it once it has reported its environment and its model's context window, failing after
-  60s without a report, and checks each part: `✓` matched, `✗` a fault with its detail under the row, `?` not reported.
-  The fault count comes last, and a fault exits 1. `--json` adds `environment.observed` and `environment.checks`.
+- `--json` gives the same fields with absolute paths, each value's source as its layer with its file and line or its
+  `-c` flag, as `config --json` does.
+- `agent probe <profile>` starts the harness as a concert would (the same sandbox, flags, instructions and attachments,
+  an empty scratch lane, no checks), stops it once it has reported its environment and its model's context window,
+  failing after 60s without a report, and checks each part: `✓` matched, `✗` a fault with its detail under the row, `?`
+  not reported. The fault count comes last, and a fault exits 1. A profile with no harness is a usage error naming the
+  fix. Context shows the window with `kept for <harness> <model>`, and `show` points at `agent probe` with the
+  `--preset` and `-c` flags it was given. `--json` adds `environment.observed` and `environment.checks`.
 - Claude reports its environment through its `system/init` line and its window on its closing `result` line, so its
   probe runs one short turn; pi reports both through a maestro extension loaded with `--extension` beside
   `--no-extensions`. The window is kept per harness and model, and every agent turn refreshes it; Context shows it where

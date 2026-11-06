@@ -11,7 +11,7 @@ import { PROFILES, type Profile } from "../profile/index";
 
 /**
  * Under the host store, outside the record, which pre-flight cannot read: the context window of each model in tokens,
- * by harness, then by model as profiles name it. `agent show --probe` and every agent turn keep what the harness
+ * by harness, then by model as profiles name it. `agent probe` and every agent turn keep what the harness
  * reports.
  */
 const WINDOWS_FILE = "windows.json";
@@ -96,7 +96,7 @@ export function contextIn(profile: Profile, store: string): ContextIn {
 	if (at === undefined)
 		return {
 			message: `${PROFILES}.${profile.name}.context.at: no context window is known for ${runtime.harness} model '${runtime.model}'`,
-			fix: `Run maestro agent show ${profile.name} --probe, or write at in tokens`,
+			fix: `Run maestro agent probe ${profile.name}, or write at in tokens`,
 		};
 	if (window !== undefined && at >= window)
 		return {

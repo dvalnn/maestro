@@ -521,7 +521,7 @@ test("a runtime's thinking must be one of pi's levels, its model is not checked,
 			field: "context.strategy",
 			reason:
 				"pi compacts at a reserve below the model's window, and no window is known for model 'any/model'",
-			fix: "Run maestro agent show <profile> --probe, or use strategy handoff",
+			fix: "Run maestro agent probe <profile>, or use strategy handoff",
 		},
 	]);
 });

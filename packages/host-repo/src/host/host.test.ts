@@ -509,7 +509,7 @@ describe("compose", () => {
 			"a context trigger in percent of a model whose window is not known",
 			agentOn(fresh, "shared"),
 			"HOST.runtime",
-			"Run maestro agent show shared --probe, or write at in tokens",
+			"Run maestro agent probe shared, or write at in tokens",
 			toyTarget,
 			{},
 			"profiles.shared.context.at: no context window is known for other model 'none'",

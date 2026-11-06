@@ -495,8 +495,19 @@ export const unsetProfiles = (
 		];
 	});
 
+/** The required fields of `runtime` it leaves unset: the model is none on the stub, which runs no model. */
+const unsetFields = (runtime: Partial<Runtime>) =>
+	REQUIRED_RUNTIME.filter(
+		(f) =>
+			runtime[f] === undefined && !(f === "model" && runtime.harness === STUB),
+	);
+
 /** The errors of `merged`, profile `name` with config layered over its file, as fields. */
-function fieldErrors(name: string, merged: Merged): Diagnostic[] {
+function fieldErrors(
+	name: string,
+	merged: Merged,
+	tolerateUnset: boolean,
+): Diagnostic[] {
 	const reserved = reservedErrors(name, merged);
 	if (reserved.length) return reserved;
 	const off = offSchema(validator(), RESOLVED_SCHEMA, merged.values, {
@@ -507,10 +518,7 @@ function fieldErrors(name: string, merged: Merged): Diagnostic[] {
 	});
 	if (off.length) return off;
 	const runtime = (merged.values.runtime ?? {}) as Partial<Runtime>;
-	const missing = REQUIRED_RUNTIME.filter(
-		(f) =>
-			runtime[f] === undefined && !(f === "model" && runtime.harness === STUB),
-	);
+	const missing = tolerateUnset ? [] : unsetFields(runtime);
 	const [first, second] = missing;
 	const unset = first
 		? [
@@ -576,14 +584,14 @@ function contextOf({
 	return { strategy, at: contextAt(at), max };
 }
 
-/** The fields of `values`, which passed `fieldErrors`. */
-function fieldsOf(values: Readonly<Record<string, unknown>>): ProfileFields {
-	const { runtime, instructions, attachments, readOnly, limits, context } =
+/** The fields of `values` but its runtime, which passed `fieldErrors`. */
+function restOf(
+	values: Readonly<Record<string, unknown>>,
+): Omit<ProfileFields, "runtime"> {
+	const { instructions, attachments, readOnly, limits, context } =
 		writtenOf(values);
 	const { timeout, tokens } = limits ?? {};
 	return {
-		// The stub runs no model, so one left unset reads as the stub's own.
-		runtime: { ...runtime, model: runtime.model ?? STUB },
 		...(instructions !== undefined && { instructions }),
 		attachments: attachments ?? {},
 		readOnly: readOnly ?? [],
@@ -594,6 +602,18 @@ function fieldsOf(values: Readonly<Record<string, unknown>>): ProfileFields {
 		...(context && { context: contextOf(context) }),
 	};
 }
+
+/** The fields of `values`, which passed `fieldErrors`. */
+const fieldsOf = (
+	values: Readonly<Record<string, unknown>>,
+): ProfileFields => ({
+	// The stub runs no model, so one left unset reads as the stub's own.
+	runtime: {
+		...writtenOf(values).runtime,
+		model: writtenOf(values).runtime.model ?? STUB,
+	},
+	...restOf(values),
+});
 
 /** `sha256:<hex>` of each regular file under `dir`, by its path relative to `dir`, in path order. */
 async function fileHashes(dir: string): Promise<Record<string, string>> {
@@ -642,6 +662,19 @@ function anyProfileFor(name: string, layer: Layer): Layer[] {
 	];
 }
 
+/** A profile whose harness or model may be unset, as `resolveUnsettled` reads it. */
+export type Unsettled = Omit<Profile, "fields"> & {
+	fields: Omit<ProfileFields, "runtime"> & { runtime: Partial<Runtime> };
+};
+
+/** The required runtime fields `profile` leaves unset. */
+export const unsetOf = (profile: Unsettled) =>
+	unsetFields(profile.fields.runtime);
+
+/** Whether `profile` sets its harness, and its model unless the stub. */
+export const isSettled = (profile: Unsettled): profile is Profile =>
+	unsetOf(profile).length === 0;
+
 /**
  * Resolves profile `name`: finds its directory in the roots of `setup`, reads its `profile.yaml` as the `directory`
  * layer, and layers the config layers of `setup` over it at `profiles.<name>` with every merge tag applying (ADR 0013), each
@@ -654,6 +687,20 @@ export async function resolveProfile(
 	name: string,
 	setup: Pick<HostSetup, "layers" | "roots">,
 ): Promise<Profile> {
+	return (await resolve(name, setup, false)) as Profile;
+}
+
+/** `resolveProfile`, but a harness or model left unset is no error: `unsetOf` names what is. */
+export const resolveUnsettled = (
+	name: string,
+	setup: Pick<HostSetup, "layers" | "roots">,
+): Promise<Unsettled> => resolve(name, setup, true);
+
+async function resolve(
+	name: string,
+	setup: Pick<HostSetup, "layers" | "roots">,
+	tolerateUnset: boolean,
+): Promise<Unsettled> {
 	const { roots } = setup;
 	if (!isProfileName(name))
 		throw new ConfigError([
@@ -680,12 +727,21 @@ export async function resolveProfile(
 		[PROFILES, name],
 		layer,
 	);
-	const errors = fieldErrors(name, merged);
+	const errors = fieldErrors(name, merged, tolerateUnset);
 	if (errors.length) throw new ConfigError(errors);
+	const runtime = (merged.values.runtime ?? {}) as Partial<Runtime>;
 	return {
 		name,
 		...found,
-		fields: fieldsOf(merged.values),
+		fields: tolerateUnset
+			? {
+					runtime: {
+						...runtime,
+						...(runtime.harness === STUB && { model: runtime.model ?? STUB }),
+					},
+					...restOf(merged.values),
+				}
+			: fieldsOf(merged.values),
 		sources: merged.sources,
 		files: await fileHashes(found.dir),
 	};
@@ -698,7 +754,7 @@ export type Inspection = {
 	root: ProfileRoot;
 	dir: string;
 	shadows: string[];
-	runtime: Runtime;
+	runtime: Partial<Runtime>;
 	instructions?: string;
 	attachments: Record<string, ProfileAttachment & { agent: string }>;
 	readOnly: string[];
@@ -754,7 +810,7 @@ export function readablePath(
  * baseline `declared` gives its harness, null when none is declared. Paths are absolute.
  */
 export function inspectProfile(
-	profile: Profile,
+	profile: Unsettled,
 	roots: Roots,
 	declared: ReadonlyMap<string, AgentEnvironment>,
 ): Inspection {
@@ -792,6 +848,6 @@ export function inspectProfile(
 				valueSource(source),
 			]),
 		),
-		environment: { declared: declared.get(runtime.harness) ?? null },
+		environment: { declared: declared.get(runtime.harness ?? "") ?? null },
 	};
 }

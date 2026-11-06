@@ -111,7 +111,7 @@ function compactProblems(
 		{
 			field: "context.strategy",
 			reason: `pi compacts at a reserve below the model's window, and no window is known for model '${model}'`,
-			fix: `Run maestro agent show ${PROFILE_TOKEN} --probe, or use strategy handoff`,
+			fix: `Run maestro agent probe ${PROFILE_TOKEN}, or use strategy handoff`,
 		},
 	];
 }

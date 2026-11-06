@@ -11,8 +11,8 @@ The decision:
 
 - **The window is a file in the host store, `<data>/hosts/repo/windows.json`**, keyed by harness, then by model as the
   profile names it, in tokens.
-- **The probe and every run write it.** `agent show --probe` and each agent turn keep the window their harness reports:
-  claude on its closing `result` line, pi through its reporter extension.
+- **The probe and every run write it.** `agent probe` and each agent turn keep the window their harness reports: claude
+  on its closing `result` line, pi through its reporter extension.
 - **Pre-flight only reads it.** A percentage for a model with no kept window is refused, and the fix says to probe or to
   write `at` in tokens.
 

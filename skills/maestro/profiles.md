@@ -30,15 +30,16 @@ names, in one of these roots, highest first; the highest holding the name wins i
 
 - `maestro agent ls`: every profile and the root that wins it.
 - `maestro agent show <profile>`: what it resolves to, naming the layer behind each configured value.
+- `maestro agent probe <profile>`: starts its harness and checks what it loads; see Probe below.
 - `maestro agent show --seat <composition id>/<seat> <composition>`: the profile a seat is bound to, `seats:` first;
   `--prompt` prints the system prompt its agents get.
 - `maestro agent show --concert <id> <node>`: what an agent of a concert recorded.
 
 ## Probe
 
-`maestro agent show <profile> --probe` starts the harness as a concert would, stops once it reports its environment and
-its model's context window, marks each part `✓`, `✗` or `?` (not reported), and exits 1 on a fault. It spends a startup,
-and on claude one short turn: with a real harness, probe only on the user's go.
+`maestro agent probe <profile>` starts the harness as a concert would, stops once it reports its environment and its
+model's context window, marks each part `✓`, `✗` or `?` (not reported), and exits 1 on a fault. It spends a startup, and
+on claude one short turn: with a real harness, probe only on the user's go.
 
 The window found is kept, and every agent turn refreshes it. A profile's `context.at` may then be a share of it, such as
 `"50%"`. Pre-flight refuses a percentage, and pi's `compact`, for a model whose window is not kept: probe once, or write
