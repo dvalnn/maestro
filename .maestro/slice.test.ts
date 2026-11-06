@@ -327,7 +327,11 @@ test.each(["small", "ordinary", "risky"])(
 		);
 		expect(judges.length).toBeGreaterThan(0);
 		for (const n of judges)
-			expect(JSON.stringify(n)).toContain("its subject and closing line");
+			for (const ground of [
+				"its subject and closing line",
+				"A test must pull weight",
+			])
+				expect(JSON.stringify(n)).toContain(ground);
 	},
 );
 

@@ -4,7 +4,6 @@ import {
 	atLeastOne,
 	builder,
 	type Findings,
-	LENSES,
 	maxRepairs,
 	panel,
 	repairUntilGreen,
@@ -49,14 +48,8 @@ import {
 	use,
 	type ValueOf,
 } from "@maestro/sdk";
-import GROUNDS from "./slice/prompts/_grounds.md" with { type: "text" };
-import QUESTIONS from "./slice/prompts/_review-questions.md" with {
-	type: "text",
-};
+import { JUDGED, PANELS, QUESTIONS, task } from "./slice/lenses";
 import FIX from "./slice/prompts/fix.md" with { type: "text" };
-import LENS_SPEC_TESTS from "./slice/prompts/lens-spec-tests.md" with {
-	type: "text",
-};
 import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
 import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
 	type: "text",
@@ -72,26 +65,12 @@ export { survivorsOf, toMarkdown };
 const PATCH_EXT = ".patch";
 const NOTHING_CHANGED = "the slice changed nothing";
 
-const task = (...parts: string[]) => parts.join("\n\n");
-
 /** Each call's task: its own prompt file, then the shared fragments it rules by. */
 const TASKS = {
-	reviewer: task(REVIEWER, QUESTIONS, GROUNDS),
-	reviewerAgain: task(REVIEWER_AGAIN, REVIEWER, QUESTIONS, GROUNDS),
+	reviewer: task(REVIEWER, QUESTIONS, JUDGED),
+	reviewerAgain: task(REVIEWER_AGAIN, REVIEWER, QUESTIONS, JUDGED),
 	fix: task(FIX),
 	writer: task(WRITER, PLAIN, FIGURES),
-	/** Each panel tier's lenses, by name, as each lens's task; the consolidator rules by `GROUNDS`. */
-	lenses: {
-		ordinary: {
-			correctness: task(LENSES.correctness, GROUNDS),
-			"spec-tests": task(LENS_SPEC_TESTS, QUESTIONS, GROUNDS),
-		},
-		risky: {
-			correctness: task(LENSES.correctness, GROUNDS),
-			spec: task(LENSES.spec, QUESTIONS, GROUNDS),
-			tests: task(LENSES.tests, GROUNDS),
-		},
-	},
 };
 
 type Found = ValueOf<typeof Findings>;
@@ -215,14 +194,14 @@ function review(
 			tolerate: "rejected",
 		});
 	if (tier !== "small") {
-		const lenses = TASKS.lenses[tier];
+		const lenses = PANELS[tier];
 		const ruling = panel({
 			items: Object.keys(lenses),
 			task: (name) => lookup(lenses, name),
 			change: lane,
 			patches,
 			spec,
-			grounds: GROUNDS,
+			grounds: JUDGED,
 			skeptics: false,
 		});
 		return tally({
@@ -241,7 +220,7 @@ function review(
 		task: earlier ? TASKS.reviewerAgain : TASKS.reviewer,
 		change: lane,
 		attached,
-		grounds: GROUNDS,
+		grounds: JUDGED,
 		skeptics: true,
 		session: earlier?.lens,
 		checks: ["all"],

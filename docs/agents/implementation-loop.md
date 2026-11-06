@@ -71,7 +71,12 @@ A slice run as the slice composition adds `Leave your changes uncommitted; maest
 5. **Triage and fix** (conductor, then the author). Each finding is accepted or rejected with a one-line reason in the
    slice report. At most two fix rounds (rule 8). The conductor then commits one jj change per slice, following
    CLAUDE.md "Commit messages".
-6. **Release review** (one opus read-only subagent, once all of a release's slices are on `main`, before the release is
+6. **Stack review** (conductor, once every PR of an epic's stack is open, before the first lands). Runs
+   `maestro perform .maestro/review.ts --preset risky --request <epic brief> --revs <base>..<tip> --detach` over the
+   whole stack, for what no slice's review can show: a seam between two slices, a caller one slice changed and another
+   left behind, one concept two slices each define. Findings follow steps 4 and 5, and each fix lands on the slice that
+   owns its code.
+7. **Release review** (one opus read-only subagent, once all of a release's slices are on `main`, before the release is
    cut). Reads the release's combined diff against `architecture.md` and the ADRs for what no single slice can show: one
    concept defined twice, drift at the seams between slices, a decision buried in code. Findings follow steps 4 and 5.
    Accepted findings become issues in the release's milestone, and their fixes land as their own changes.
