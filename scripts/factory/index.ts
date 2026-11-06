@@ -690,7 +690,7 @@ async function landIn(
 	const { issue, data } = entry;
 	const text = pullText(issue, data, report, await spendOf(pass, issue));
 	await pass.maestro.apply(id, dir);
-	const message = `${text.title}\n\nCloses #${issue.number}\n`;
+	const message = `${text.title}\n\nRefs: #${issue.number}\n`;
 	const commit = data.revisionBase
 		? await pass.landing.squash(dir, message)
 		: await pass.landing.describe(dir, message);

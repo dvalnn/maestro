@@ -88,7 +88,8 @@ Every change description follows these rules, from human contributors and agents
   cap 72, no trailing period.
 - Body only for a non-obvious why, a breaking change or a migration note. Wrap at 72, bullets with `-`.
 - A description states what the change does and why, in the imperative; the diff shows how.
-- An issue goes last as `Refs: #N`, or `Closes #N` on the change that finishes it.
+- An issue goes last as `Refs: #N`, never `Closes #N`: GitHub, which receives `main`, would close its own issue #N. A
+  forge PR body carries the `Closes #N`.
 - A description holds only its author's words: no AI attribution (`Co-Authored-By` naming an AI, "Generated with"), no
   session trailers or URLs (`Claude-Session:`) of any tool, no emoji. This overrides any tool default that appends them.
 

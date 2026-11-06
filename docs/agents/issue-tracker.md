@@ -21,9 +21,10 @@ in `.claude/settings.json`). Never `gh` or `glab`; `fj --help` lists the command
 - **Milestone.** The release that ships it, named by its version (`v0.1.0`). Only the next release or two have one; an
   issue with none is icebox, an indefinite deferral. Planned but not ready is a milestone beside `state/needs-triage`.
   Pre-releases (`-rc.<n>`) have no milestone: they are cuts toward the one that does.
-- **Closing.** A commit on `main` whose description says `Closes #N` closes it when the owner pushes, or when a tour
-  manager PR carrying it merges (auto-merge included). A duplicate is closed at once with `state/duplicate` and a
-  back-reference. An epic closes when its last child does. Nothing else closes an issue.
+- **Closing.** A PR whose body says `Closes #N` closes it when it merges, a tour manager PR included (auto-merge too). A
+  change pushed straight to `main` says `Refs: #N`, and its issue is closed with `fj issue close N -w`. A duplicate is
+  closed at once with `state/duplicate` and a back-reference. An epic closes when its last child does. Nothing else
+  closes an issue.
 
 ## Commands
 

@@ -15,8 +15,7 @@ never this one.
 
 One change per slice or per fix. Collapse a review round onto the change it corrects (`jj squash`) rather than stacking
 fixups. Split a change only where it genuinely divides, such as a mechanical rename held apart from the edit that needed
-it. The description follows CLAUDE.md "Commit messages"; an issue goes last as `Refs: #N`, or `Closes #N` on the change
-that finishes it.
+it. The description follows CLAUDE.md "Commit messages"; an issue goes last as `Refs: #N`.
 
 Push only when the owner asks: `jj bookmark set main -r <change>`, then `jj git push`.
 

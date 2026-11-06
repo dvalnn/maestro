@@ -288,7 +288,7 @@ flowchart TD
 ### Landing and PRs
 
 - **Landing.** An ok slice lands in a fresh jj workspace on `main` as fetched from `origin`, or on the commit it stacked
-  on: `maestro cs apply`, then `jj describe` with the spec's subject and `Closes #N`, or for a revision `jj squash` into
+  on: `maestro cs apply`, then `jj describe` with the spec's subject and `Refs: #N`, or for a revision `jj squash` into
   the PR head with that description. It runs no check of its own: the slice's gate passed in its lane, and CI checks the
   PR against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch

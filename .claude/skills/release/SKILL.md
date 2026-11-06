@@ -56,7 +56,7 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
 
 ## Gotchas
 
-- Forgejo does not close an issue from `Closes #N` in a pushed description; close each with `fj issue close N -w`.
+- A pushed description says `Refs: #N` and closes nothing; close each issue with `fj issue close N -w`.
 - An issue with an open dependency refuses to close (HTTP 412); close its blocker first.
 - `just release` runs the full gate, so a flaky test fails the build; rerun once, and file the flake if it repeats.
 - `fj` creates the tag on the forge, and jj creates none. The tag reaches the local repository only through

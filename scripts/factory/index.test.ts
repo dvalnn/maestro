@@ -1233,7 +1233,7 @@ describe("a build", () => {
 		expect(t.applied).toEqual([`s1 in ${CACHED}`]);
 		expect(t.steps).toEqual([
 			`open factory-i7 at ${CACHED} on main`,
-			`describe ${CACHED}: feat: greet by name\n\nCloses #7\n`,
+			`describe ${CACHED}: feat: greet by name\n\nRefs: #7\n`,
 			`close factory-i7 at ${CACHED}`,
 		]);
 		expect(t.writes.filter((w) => !w.startsWith("edit"))).toEqual([
@@ -1644,7 +1644,7 @@ describe("a build", () => {
 			if (!starts)
 				expect(t.steps.slice(0, 2)).toEqual([
 					`open factory-i7 at ${CACHED} on sha7`,
-					`squash ${CACHED}: feat: greet by name\n\nCloses #7\n`,
+					`squash ${CACHED}: feat: greet by name\n\nRefs: #7\n`,
 				]);
 			expect(dataAt(parked).revisionBase).toBeUndefined();
 			writes = t.writes.length;
@@ -1827,7 +1827,7 @@ describe("a merge and a stack", () => {
 		await t.run();
 		expect(t.steps).toEqual([
 			`open factory-i8 at ${CACHED_8} on sha5`,
-			`describe ${CACHED_8}: feat: greet by name\n\nCloses #8\n`,
+			`describe ${CACHED_8}: feat: greet by name\n\nRefs: #8\n`,
 			`restack sha5..abc123 onto main in ${CACHED_8}`,
 			`close factory-i8 at ${CACHED_8}`,
 		]);
@@ -2031,7 +2031,7 @@ describe("a review", () => {
 		await t.run();
 		expect(t.steps.slice(0, 2)).toEqual([
 			`open factory-i7 at ${CACHED} on sha7`,
-			`squash ${CACHED}: feat: greet by name\n\nCloses #7\n`,
+			`squash ${CACHED}: feat: greet by name\n\nRefs: #7\n`,
 		]);
 		expect(t.writes).toContain(`push abc123 as maestro-tm/i7 from ${CACHED}`);
 		expect(merging(t.writes)).toEqual(["arm #31"]);
