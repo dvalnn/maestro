@@ -1361,7 +1361,8 @@ describe("perform", () => {
 			let attempt = 0;
 			const { host, requests } = stubHost(() => {
 				attempt++;
-				if (attempt > 1)
+				// A failing agent gets its two corrections before it fails.
+				if (attempt > (how === "fails" ? 3 : 1))
 					return [
 						{ write: "done.txt", content: "d" },
 						{ write: `${OUTBOX}/w.json`, content: "{}" },

@@ -124,7 +124,7 @@ describe("target.prepare", () => {
 		let attempt = 0;
 		const watched = { file: "w.json", format: "json", schema: {} };
 		const { host } = stubHost(() =>
-			++attempt > 1 ? [{ write: `${OUTBOX}/w.json`, content: "{}" }, OK] : [OK],
+			++attempt > 3 ? [{ write: `${OUTBOX}/w.json`, content: "{}" }, OK] : [OK],
 		);
 		const x = agent("x", "extend", "base");
 		const ir = irOf(

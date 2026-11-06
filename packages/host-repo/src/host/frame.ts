@@ -217,6 +217,13 @@ export const correction = (problem: string, kind: ReplyKind) =>
 		...kind.reply,
 	].join("\n");
 
+export const fileCorrection = (problem: string, kind: ReplyKind) =>
+	[
+		`A file you declared is not valid: ${problem}.`,
+		"Fix it, then give your final reply again.",
+		...kind.reply,
+	].join("\n");
+
 export const CUT_OFF =
 	"Your last turn was cut off by a provider error. Carry on from where you were.";
 

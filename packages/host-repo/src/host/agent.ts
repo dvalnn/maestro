@@ -79,6 +79,7 @@ import {
 	correction,
 	type Envelope,
 	envelopeOf,
+	fileCorrection,
 	frame,
 	HANDOFF_NOTE,
 	HANDOFF_TURN,
@@ -107,7 +108,7 @@ import { contextIn, keepWindow } from "./windows";
 /** Between an instance id and a session's index in the id of a session a handoff starts, as in `<instance>#2`. */
 const SESSION_INDEX = "#";
 
-/** Turns that ask the agent again for an envelope, after its first final reply is not one. */
+/** Turns that ask the agent again, after its final reply is no envelope or a declared output is missing or invalid. */
 const MAX_CORRECTIONS = 2;
 
 /** Retries of an agent's turn after a transient provider error, per node. */
@@ -292,6 +293,9 @@ type Talk = {
 	emit: HostContext["emit"];
 	staged: string;
 	kind: ReplyKind;
+	/** The directory the declared outputs are read from, and those outputs by port. */
+	outbox: string;
+	out: Record<string, Output>;
 	guard: Limiter;
 	handoff?: Handoff;
 	/** What a compaction the harness reports does under the context policy. */
@@ -437,7 +441,7 @@ type Talking = {
 
 /**
  * What follows a turn that ran to its end: how the run ends, or nothing once `state` holds the next turn. A transient
- * failure runs the turn again after a wait, up to `MAX_RETRIES` times; a reply that is no envelope gets a correction.
+ * failure runs the turn again after a wait, up to `MAX_RETRIES` times; a reply that is no envelope, or an `ok` one with a bad declared output, gets a correction.
  */
 async function follow(
 	talk: Talk,
@@ -451,19 +455,31 @@ async function follow(
 		state.req = { ...state.req, prompt: CUT_OFF };
 		return undefined;
 	}
-	const step = next(
-		result.reply,
-		state.corrections === MAX_CORRECTIONS,
-		talk.kind,
-	);
-	if (!("prompt" in step)) return step;
+	const spent = state.corrections === MAX_CORRECTIONS;
+	const step = next(result.reply, spent, talk.kind);
+	const prompt = "envelope" in step ? filed(talk, step.envelope, spent) : step;
+	if (!("prompt" in prompt)) return prompt;
 	state.corrections++;
-	state.req = { ...state.req, prompt: step.prompt };
+	state.req = { ...state.req, prompt: prompt.prompt };
 	writeFileSync(
 		join(talk.staged, `correction-${state.corrections}.md`),
-		step.prompt,
+		prompt.prompt,
 	);
 	return undefined;
+}
+
+/**
+ * What follows an `envelope` that is no failure: itself, or once it claims `ok` and is not blocked, the correction for a
+ * declared output that is missing or invalid. Once `spent`, it is returned anyway, and `settle` fails it with that problem.
+ */
+function filed(talk: Talk, envelope: Envelope, spent: boolean): Next {
+	if (envelope.blocked !== undefined || (envelope.outcome ?? "ok") !== "ok")
+		return { envelope };
+	const read = readOutbox(talk.outbox, talk.out);
+	if (!("problem" in read)) return { envelope };
+	return spent
+		? { envelope }
+		: { prompt: fileCorrection(read.problem, talk.kind) };
 }
 
 /** The handoff note at `path`, when the agent wrote one: a regular file with text, so a link cannot reach outside. */
@@ -997,6 +1013,8 @@ async function execute(
 						emit: context.emit,
 						staged: staging.staged,
 						kind,
+						outbox: staging.outbox,
+						out: config.out ?? {},
 						guard,
 						...policyOf(
 							profile,

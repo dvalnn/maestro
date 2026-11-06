@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { HarnessRequest, StubStep } from "../harness/index";
-import { stubHarness } from "../harness/index";
+import { OUTBOX, stubHarness } from "../harness/index";
 import { resolveProfile } from "../profile/index";
 import { profileAttached } from "./agent";
 import { probe, probeRequest } from "./probe";
@@ -1260,6 +1260,133 @@ go`);
 			kind: "fault",
 			reason:
 				"context: the harness compacted the session before its handoff. Lower profiles.handoff-tokens.context.at below its compaction point",
+		});
+	});
+});
+
+describe("agent output correction", () => {
+	const prose: StubStep = { emit: { type: "text", text: "not json" } };
+	const notes = {
+		file: "notes.json",
+		format: "json",
+		schema: { type: "object", required: ["n"] },
+	};
+	const good: StubStep = {
+		write: `${OUTBOX}/notes.json`,
+		content: '{"n":1}',
+	};
+	const declaring = (host: Parameters<typeof irOf>[0], verdict?: boolean) =>
+		irOf(
+			host,
+			[
+				{
+					id: "x",
+					kind: "agent",
+					config: {
+						profile: "builder",
+						seat: "builder",
+						lane: { mode: "fresh" },
+						out: { notes },
+						...(verdict && { verdict }),
+					},
+					literals: { prompt: "go" },
+				},
+			],
+			"x",
+		);
+	const attempt = async (
+		steps: (n: number) => StubStep[],
+		verdict?: boolean,
+	) => {
+		const { host, requests } = stubHost(() => steps(requests.length));
+		const { result, artifact, instances } = await performed(
+			host,
+			declaring(host, verdict),
+			configOf(toyTarget()),
+		);
+		return { result, requests, artifact, instances };
+	};
+
+	test.each([
+		["missing", [OK], "output 'notes': the agent wrote no /out/notes.json"],
+		[
+			"not a regular file",
+			[{ sh: `ln -s /etc/hostname ${OUTBOX}/notes.json` }, OK],
+			"output 'notes': /out/notes.json is not a regular file",
+		],
+		[
+			"bad JSON",
+			[{ write: `${OUTBOX}/notes.json`, content: "{" }, OK],
+			"output 'notes': /out/notes.json is not JSON",
+		],
+		[
+			"off its schema",
+			[{ write: `${OUTBOX}/notes.json`, content: "{}" }, OK],
+			"output 'notes': /out/notes.json must have required property 'n'",
+		],
+	])(
+		"a declared output %s is corrected in the same session",
+		async (_, bad, problem) => {
+			const { result, requests, artifact } = await attempt((n) =>
+				n === 1 ? bad : [{ sh: `rm -f ${OUTBOX}/notes.json` }, good, OK],
+			);
+			expect(result).toMatchObject({ outcome: "ok" });
+			expect(requests).toHaveLength(2);
+			expect(requests[1]?.prompt).toContain(problem);
+			expect(requests[1]?.session).toEqual(requests[0]?.session);
+			expect(
+				readFileSync(join(artifact("x", "staged"), "correction-1.md"), "utf8"),
+			).toBe(String(requests[1]?.prompt));
+		},
+	);
+
+	test("file corrections stop at the limit and fail with the problem", async () => {
+		const { result, requests, instances } = await attempt(() => [OK]);
+		expect(requests).toHaveLength(3);
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: "output 'notes': the agent wrote no /out/notes.json",
+		});
+		expect(instances[0]?.enrichment).toMatchObject({ report: DONE });
+		expect(requests[2]?.prompt).toContain("/out/notes.json");
+	});
+
+	test("a file fixed on the last correction settles ok", async () => {
+		const { result, requests } = await attempt((n) =>
+			n <= 2 ? [OK] : [good, OK],
+		);
+		expect(requests).toHaveLength(3);
+		expect(result).toMatchObject({ outcome: "ok" });
+	});
+
+	test("envelope and file corrections share the limit", async () => {
+		const { result, requests } = await attempt((n) =>
+			n === 1 ? [prose] : [OK],
+		);
+		expect(requests).toHaveLength(3);
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: "output 'notes': the agent wrote no /out/notes.json",
+		});
+	});
+
+	test("a rejected verdict skips the output check", async () => {
+		const { result, requests } = await attempt(
+			() => [reply({ outcome: "rejected", reason: "no", report: DONE })],
+			true,
+		);
+		expect(requests).toHaveLength(1);
+		expect(result).toMatchObject({ outcome: "rejected", reason: "no" });
+	});
+
+	test("a blocked envelope skips the output check", async () => {
+		const { result, requests } = await attempt(() => [
+			reply({ blocked: "no network", report: DONE }),
+		]);
+		expect(requests).toHaveLength(1);
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: "blocked: no network",
 		});
 	});
 });
