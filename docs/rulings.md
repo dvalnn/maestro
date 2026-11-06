@@ -122,10 +122,12 @@ A decision sets direction; a ruling settles a question the requirements left ope
   Why: the operator named it on purpose, and an installed copy of an older release must not shadow a pack under
   development. Two installed packs of one id are still refused. Applies in `cli`'s `config` module (`packDirs`).
 - **R-09 A command that only reads shows what it can; one that spends or writes refuses on any gap.** A reading view,
-  such as `compose --graph`, `config` or `agent show`, prints what the gaps leave it, then reports each gap on stderr;
-  an error-severity gap still exits non-zero ([CLI-01](requirements.md#cli-cli)). `perform`, `resume`, `encore` and
-  `changeset apply` keep refusing before they start. Why: a view is how the operator finds a gap, so refusing it hides
-  the very thing they came to see.
+  such as `compose --graph`, `config` or `agent show`, shows a gap in place (an `unset` row, a `-`) or reports it on
+  stderr. `config` shows only an unset required param, and `agent` the gaps of its profile; both exit 0. `compose`
+  previews the pre-flight `perform` runs, so it prints its view, then the gaps on stderr, and exits non-zero on an
+  error-severity gap ([CLI-01](requirements.md#cli-cli)). `perform`, `resume`, `encore` and `changeset apply` keep
+  refusing before they start. Why: a view is how the operator finds a gap, so refusing it hides the very thing they came
+  to see.
 - **R-10 `cli` speaks a host's words only where it wires the built-in hosts and in their commands.** Its `hosts` module
   wires them, and `agent` and `changeset` are the repo host's commands. What a host's view holds, such as a profile's
   sections, is the host package's to say, and `cli` renders it as `HostText` is rendered. The rest of `cli` is
