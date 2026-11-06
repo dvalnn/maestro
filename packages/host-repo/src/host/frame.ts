@@ -140,7 +140,7 @@ export type Run = {
 const LANE_TEXT = {
 	write:
 		"Your working copy is the current directory. Leave your changes uncommitted: the run records the working copy as a version when you finish.",
-	read: "Your working copy is the current directory, and it is read-only: change nothing in it.",
+	read: "Your working copy is the current directory, and it is discarded when you finish: change files freely to try something, and restore one with `git show HEAD:<path> > <path>`.",
 };
 const GIT =
 	"Git reads such as `status`, `diff` and `log` work here, and every git write fails by design. Try a git mutation in a fresh `git init` under `/tmp`.";

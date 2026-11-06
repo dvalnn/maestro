@@ -96,7 +96,7 @@ test.each([
 			out: [{ file: "findings.md", format: "markdown" }],
 		},
 		[
-			`## Working copy\n\nYour working copy is the current directory, and it is read-only: change nothing in it. ${GIT}`,
+			`## Working copy\n\nYour working copy is the current directory, and it is discarded when you finish: change files freely to try something, and restore one with \`git show HEAD:<path> > <path>\`. ${GIT}`,
 			"or failed.\n- `check all`: every test",
 			"## Reply\n\nBefore your final reply, write every one of these files, even when you reject:\n- `/out/findings.md`: Markdown\n\nYour final",
 		],
