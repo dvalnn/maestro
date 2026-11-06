@@ -106,6 +106,7 @@ home; no repo doc links into them for its facts.
 | Issue shape, brief and report                                   | `docs/agents/issue-tracker.md`                | implementation-loop                    |
 | Hand-driven slice loop, release review                          | `docs/agents/implementation-loop.md`          | CLAUDE.md, release skill               |
 | Commit messages                                                 | `CLAUDE.md`                                   | jj skill                               |
+| Toolchain and harness pins, their updates                       | `mise.toml`, `renovate.json`                  | INSTALL                                |
 | Release and semver policy                                       | `.claude/skills/release/SKILL.md`             | CLAUDE.md                              |
 | Review standards for this repo's code, compositions and prompts | `CODING_STANDARDS.md`                         | CLAUDE.md                              |
 

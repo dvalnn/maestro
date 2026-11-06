@@ -1,0 +1,14 @@
+{
+	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"extends": ["config:recommended", ":semanticCommits"],
+	"packageRules": [
+		{
+			"description": "A harness bump changes what the adapters parse, which CI cannot check without credentials",
+			"matchManagers": ["mise"],
+			"matchDepNames": ["pi", "claude"],
+			"prBodyNotes": [
+				"Before merging: re-record `packages/harness-{{depName}}/fixtures/` from the new release, and run the gated live test, `MAESTRO_PI=1` or `MAESTRO_CLAUDE=1 bun test packages/cli/src/repo.test.ts`."
+			]
+		}
+	]
+}
