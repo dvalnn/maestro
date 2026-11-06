@@ -2,8 +2,8 @@
 name: release
 description:
   Cut a maestro release, stable or `-rc.<n>` pre-release - release review, version bump, `just release`, push, the
-  Forgejo release with its assets and notes, closing the milestone. Use when the owner asks to cut, ship or issue a
-  release.
+  Forgejo and GitHub releases with their assets and notes, closing the milestone. Use when the owner asks to cut, ship
+  or issue a release.
 ---
 
 # Release
@@ -28,8 +28,9 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
 3. **Notes.** Draft them in the scratchpad in the previous release's structure and voice (read it with
    `forge.py api GET '/releases?limit=1'`): a two-line lead naming the theme, `## Install or upgrade` with the pinned
    version, `## Upgrade notes` for every breaking change a user of the previous release must act on, `## Added`,
-   `## Changed`, `## Fixed`, each bullet ending in its issue refs. Show the owner the notes and the review's findings
-   before publishing.
+   `## Changed`, `## Fixed`, each bullet ending in its issue refs as forge links,
+   `[#N](https://git.amorimcasa.org/tiago/maestro/issues/N)`, since GitHub links a bare `#N` to its own issue. Show the
+   owner the notes and the review's findings before publishing.
 4. **Bump.** One change, `chore(release): bump to <version>`, on top of `main`: the `version` of every
    `packages/*/package.json` and `packs/classics/package.json`, the pinned version in `INSTALL.md`, and in
    `skills/maestro/SKILL.md` the `checked against` line and the classics pack's version. `bun install` refreshes
@@ -49,10 +50,16 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
    `--prerelease` is for an `-rc.<n>` only. The assets are every file in `dist/`, and `install.sh` fails on any that
    `SHA256SUMS` names but the release lacks; `ls dist` against the list catches one the build added.
 
-8. **Verify.** Download one asset from the release and check it with `sha256sum -c` against the published `SHA256SUMS`.
-   `jj git fetch` brings the forge's tag home.
-9. **Close.** For a stable, `forge.py api PATCH /milestones/<id> '{"state": "closed"}'`. Reinstall the owner's binary
-   with `MAESTRO_RELEASE_DIR=$PWD/dist sh install.sh`.
+8. **GitHub.** `scripts/github-sync.sh <bump>` points `next` at the bump (the `github` skill). Then, from `dist/`:
+
+   ```sh
+   gh release create <tag> --repo dvalnn/maestro --target <bump commit id> [--prerelease] --notes-file <notes> *
+   ```
+
+9. **Verify.** Download one asset from the GitHub release, the one users install from, and check it with `sha256sum -c`
+   against the published `SHA256SUMS`. `jj git fetch` brings the forge's tag home.
+10. **Close.** For a stable, `forge.py api PATCH /milestones/<id> '{"state": "closed"}'`. Reinstall the owner's binary
+    with `MAESTRO_RELEASE_DIR=$PWD/dist sh install.sh`.
 
 ## Gotchas
 

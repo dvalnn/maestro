@@ -108,6 +108,8 @@ home; no repo doc links into them for its facts.
 | Commit messages                                                 | `CLAUDE.md`                                   | jj skill                               |
 | Toolchain and harness pins, their updates                       | `mise.toml`, `renovate.json`                  | INSTALL                                |
 | Release and semver policy                                       | `.claude/skills/release/SKILL.md`             | CLAUDE.md                              |
+| GitHub sync, PR intake, contributor credit                      | `.claude/skills/github/SKILL.md`              | release skill, CONTRIBUTING            |
+| Contributing from GitHub                                        | `CONTRIBUTING.md`                             | github skill                           |
 | Review standards for this repo's code, compositions and prompts | `CODING_STANDARDS.md`                         | CLAUDE.md                              |
 
 [^groups]:
