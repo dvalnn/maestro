@@ -1574,7 +1574,7 @@ test("a commits version reads, forks and makes a changeset, and keeps its commit
 	const { id, result, artifact } = await performed(host, ir, config);
 	expect(result).toMatchObject({ outcome: "ok" });
 	const patches = artifact("patches", "changeset");
-	expect(readdirSync(patches)).toEqual(["0001.patch", "base"]);
+	expect(readdirSync(patches).sort()).toEqual(["0001.patch", "base"]);
 	expect(readFileSync(join(patches, "0001.patch"), "utf8")).toContain("b.txt");
 	expect(await changed(config, target, `${id}.fork`)).toContain("b.txt");
 	commitTo(target, { "c.txt": "c\n" });
