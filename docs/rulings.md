@@ -129,8 +129,9 @@ A decision sets direction; a ruling settles a question the requirements left ope
 - **R-10 `cli` speaks a host's words only where it wires the built-in hosts and in their commands.** Its `hosts` module
   wires them, and `agent` and `changeset` are the repo host's commands. What a host's view holds, such as a profile's
   sections, is the host package's to say, and `cli` renders it as `HostText` is rendered. The rest of `cli` is
-  domain-free ([CORE-12](requirements.md#core-graph-and-engine-core)). Why: there is one host, and a `Host` hook for
-  commands would add a core contract no second host uses yet.
+  domain-free, but for its own tests and fixtures, which drive a host
+  ([CORE-12](requirements.md#core-graph-and-engine-core)). Why: there is one host, and a `Host` hook for commands would
+  add a core contract no second host uses yet.
 
 ### Agents
 

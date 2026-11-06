@@ -96,7 +96,8 @@ Priority: **Must** is required. **Should** is wanted and may slip. **May** is op
   - The lint rejects the words lane, seat, leg, run, review, build and quality in the core packages (`ir`, `core`,
     `sdk`, `testkit` and `render-text`).
   - `build` is allowed in `sdk`, which drives the build phase, and in `testkit`, which tests it.
-  - `cli` is held to it outside its host modules ([R-10](rulings.md#cli)).
+  - `cli` is held to it too, allowing `run` and `build`, except its host modules `hosts`, `agent` and `changeset` and
+    its own tests and fixtures, which drive a host ([R-10](rulings.md#cli)).
 - **CORE-13 (Must).** A host interface lets a host register node kinds, types, a `validate(graph, setup)` hook, a
   `bounds(node)` hook and an environment, per [Host interface](architecture.md#6-host-interface).
 - **CORE-14 (Must).** The worker protocol is defined for code nodes. The TypeScript runtime provides an in-process

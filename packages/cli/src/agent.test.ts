@@ -225,6 +225,23 @@ Run maestro agent probe demo/builder --preset risky -c profiles.demo/builder.lim
 		expect(Bun.stripANSI(colored.out)).toBe(shown.out);
 	});
 
+	test("paints the source of the instructions dim in colour", async () => {
+		const w = await roster();
+		const args = [
+			"agent",
+			"show",
+			"demo/builder",
+			"-c",
+			`profiles.demo/builder.instructions=${join(w.cwd, ".maestro/profiles/demo/builder/instructions.md")}`,
+		];
+		const plain = await w.call(args);
+		expect(plain.out).toContain("2 lines  [-c]");
+		const colored = await w.call(args, {
+			terminal: () => ({ columns: COLUMNS, rows: 24 }),
+		});
+		expect(colored.out).toContain("2 lines  \x1b[2m[-c]\x1b[22m");
+	});
+
 	test("leaves out empty sections but Environment, which a harness without a baseline does not declare", async () => {
 		const w = await roster();
 		await Bun.write(

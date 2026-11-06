@@ -275,8 +275,8 @@ export const artifact: Command = {
 			"maestro artifact ls 7f3c2a",
 		],
 		[
-			"Read the review the consolidator wrote",
-			"maestro artifact show 7f3c2a consolidator review.md",
+			"Read the report the consolidator wrote",
+			"maestro artifact show 7f3c2a consolidator report.md",
 		],
 		[
 			"Open an instance's files in your editor",

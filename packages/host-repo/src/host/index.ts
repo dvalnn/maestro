@@ -11,7 +11,6 @@ import type { Harness, Runtime } from "../harness/index";
 import { revisionOf } from "../lane/index";
 import {
 	type Binding,
-	type Profile,
 	profilesDigest,
 	resolveProfile,
 	seatBinding,
@@ -57,6 +56,14 @@ export {
 	unsetProfiles,
 	type ValueSource,
 } from "../profile/index";
+export {
+	type ProbeReport,
+	profileSections,
+	type Section,
+	type SectionFoot,
+	type SectionRow,
+	type SectionsView,
+} from "../profile/sections";
 export { SandboxUnavailable } from "../sandbox/index";
 export { BASE_FILE, MESSAGE_FILE, patchFiles } from "./apply";
 export {
@@ -112,6 +119,21 @@ export function seatedAgents(ir: Ir, setup: HostSetup): SeatedAgent[] {
 			},
 		];
 	});
+}
+
+/** The `agents:` table of `agents`: a header and one row per agent, its node, seat, profile, harness, model and thinking. */
+export function agentTable(agents: readonly AgentRuntime[]): string[][] {
+	return [
+		["node", "seat", "profile", "harness", "model", "thinking"],
+		...agents.map((a) => [
+			a.node,
+			a.seat,
+			a.profile,
+			a.harness,
+			a.model,
+			a.thinking ?? "-",
+		]),
+	];
 }
 
 /** The agent nodes of `ir`, each with the profile its seat runs under `config` and the runtime that resolves to. */

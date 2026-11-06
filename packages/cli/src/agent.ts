@@ -1,9 +1,9 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { join } from "node:path";
 import { closest } from "@maestro/core";
 import { ConfigError } from "@maestro/core/config";
-import { type HostSetup, hostSetup, type Roots } from "@maestro/core/host";
+import { type HostSetup, hostSetup } from "@maestro/core/host";
 import {
 	findProfile,
 	HOST_NAME,
@@ -12,16 +12,18 @@ import {
 	inspectProfile,
 	isSettled,
 	keepWindow,
+	type ProbeReport,
 	type Profile,
 	type ProfileRoot,
 	probe,
 	probeRequest,
 	profileRoot,
-	readablePath,
+	profileSections,
 	resolveProfile,
 	resolveUnsettled,
 	SandboxUnavailable,
 	type SeatedAgent,
+	type SectionsView,
 	seatedAgents,
 	sourceWords,
 	type Unsettled,
@@ -33,10 +35,8 @@ import {
 	type AgentEnvironment,
 	type EnvironmentCheck,
 	environmentChecks,
-	type ObservedEnvironment,
 } from "@maestro/host-repo/harness";
 import { messageOf } from "@maestro/ir";
-import { padCells } from "@maestro/render-text/live";
 import {
 	COMMON,
 	type Command,
@@ -50,16 +50,9 @@ import {
 	type Values,
 } from "./command";
 import { builtinHarnesses, DECLARED } from "./hosts";
-import {
-	CliError,
-	EXIT,
-	jsonOf,
-	paint,
-	table,
-	tildeOf,
-	usageError,
-} from "./output";
+import { CliError, EXIT, jsonOf, paint, table, usageError } from "./output";
 import { prepare } from "./prepare";
+import { sectionsText } from "./sections";
 import { openSession, overridesOf, type Session, setupOf } from "./session";
 
 const AGENT_OPTIONS: Options = COMMON;
@@ -70,15 +63,8 @@ const NAME_PROFILE = "Name one as 'maestro agent ls' lists it";
 const NAME_AGENT_NODE =
 	"Name an agent node, as 'maestro compose <composition>' lists them";
 const NAME_COMPOSITION = "Name it by file path or <pack>.<composition>";
-const MARK_STYLE = { "✓": "green", "✗": "red", "?": "dim" } as const;
 
 const INDENT = "  ";
-/** A row's key column, so its value starts at column 15 under a section header of the same width. */
-const KEY_WIDTH = 12;
-const HEAD_WIDTH = INDENT.length + KEY_WIDTH;
-const KEY_GAP = "  ";
-/** The width a fault's lines wrap at. */
-const LINE_WIDTH = 80;
 
 type Request =
 	| { action: "ls" }
@@ -95,12 +81,6 @@ type Listed = {
 	model?: string;
 	error?: string;
 };
-
-type Places = { roots: Roots; home?: string };
-
-type Colored = { color: boolean };
-
-type Look = Places & Colored;
 
 type Setup = Pick<HostSetup, "layers" | "roots">;
 
@@ -157,297 +137,13 @@ function requestOf(positionals: readonly string[]): Request {
 	);
 }
 
-/** `path` relative inside `base` or the workspace, else from `~` under home. */
-const readable = (path: string, base: string | undefined, places: Places) =>
-	tildeOf(readablePath(path, base, places.roots), places.home);
-
-/** Where profile directory `dir` of profile `name` sits: a pack's within the pack, any other as `readable`. */
-function placeOf(dir: string, name: string, places: Places): string {
-	if (profileRoot(dir, places.roots) !== "pack")
-		return `${readable(dir, undefined, places)}/`;
-	const [pack = ""] = name.split("/");
-	const bundle = places.roots.packs[pack] ?? dirname(dir);
-	return `${pack} pack: ${relative(bundle, dir)}/`;
-}
-
-const isDirectory = async (path: string) =>
-	(await stat(path).catch(() => undefined))?.isDirectory() ?? false;
-
-/** `path` as `readable` within the profile directory, with a trailing `/` for a directory. */
-async function hostPath(path: string, s: Inspection, places: Places) {
-	const shown = readable(path, s.dir, places);
-	return (await isDirectory(path)) ? `${shown}/` : shown;
-}
-
-const head = (title: string, value: string, look: Colored) =>
-	`${paint("bold", title.padEnd(HEAD_WIDTH), look.color)}${value}`;
-
-const row = (key: string, value: string, look: Colored) =>
-	`${INDENT}${paint("dim", `${key}${KEY_GAP}`.padEnd(KEY_WIDTH), look.color)}${value}`;
-
-/** The words of the source of the value at dotted `key`; none for the profile's own file. */
-function wordsAt(s: Inspection, key: string): string | undefined {
-	const source = s.sources[key];
-	return source && sourceWords(source);
-}
-
-/** `value`, then the dim `[words]` of its source when a layer other than the profile's own file set it. */
-const sourced = (value: string, words: string | undefined, look: Colored) =>
-	words === undefined
-		? value
-		: `${value}  ${paint("dim", `[${words}]`, look.color)}`;
-
-function headLines(s: Inspection, look: Look): string[] {
-	return [
-		paint("bold", s.name, look.color),
-		row("from", placeOf(s.dir, s.name, look), look),
-		...s.shadows.map((dir, i) =>
-			row(i === 0 ? "shadows" : "", placeOf(dir, s.name, look), look),
-		),
-	];
-}
-
-const RUNTIME_KEYS = ["harness", "model", "thinking"] as const;
-
-function runtimeLines(s: Inspection, look: Look): string[] {
-	const rows = RUNTIME_KEYS.flatMap((key) => {
-		const value = s.runtime[key];
-		if (value === undefined)
-			return key === "thinking" ? [] : [row(key, "-", look)];
-		return [row(key, sourced(value, wordsAt(s, `runtime.${key}`), look), look)];
-	});
-	return [paint("bold", "Runtime", look.color), ...rows];
-}
-
-const lineCount = (text: string) =>
-	text.split("\n").length - (text === "" || text.endsWith("\n") ? 1 : 0);
-
-async function instructionsLines(s: Inspection, look: Look): Promise<string[]> {
-	if (s.instructions === undefined) return [];
-	const lines = lineCount(await readFile(s.instructions, "utf8"));
-	const value = `${await hostPath(s.instructions, s, look)}, ${lines} ${lines === 1 ? "line" : "lines"}`;
-	return [
-		head(
-			"Instructions",
-			sourced(value, wordsAt(s, "instructions"), look),
-			look,
-		),
-	];
-}
-
-type Bound = { key: string; host: string; agent: string; words?: string };
-
-/** A `host`/`agent` table under section `title`, one row per bind; nothing when there is none. */
-function boundLines(title: string, rows: Bound[], look: Look): string[] {
-	if (!rows.length) return [];
-	const width = Math.max(
-		...["host", ...rows.map((r) => r.host)].map((h) => Bun.stringWidth(h)),
-	);
-	const cells = (host: string, agent: string) =>
-		`${padCells(host, width)}  ${agent}`;
-	return [
-		head(title, cells("host", "agent"), look),
-		...rows.map((r) =>
-			row(r.key, cells(r.host, sourced(r.agent, r.words, look)), look),
-		),
-	];
-}
-
-async function attachmentLines(s: Inspection, look: Look): Promise<string[]> {
-	const rows = await Promise.all(
-		Object.entries(s.attachments).map(async ([key, a]) => ({
-			key,
-			host: await hostPath(a.path, s, look),
-			agent: a.agent,
-			words: wordsAt(s, `attachments.${key}.path`),
-		})),
-	);
-	return boundLines("Attachments", rows, look);
-}
-
-/** Read-only binds, each at its own host path in the agent's sandbox. */
-function readOnlyLines(s: Inspection, look: Look): string[] {
-	const rows = s.readOnly.map((path, i) => ({
-		key: "",
-		host: readable(path, s.dir, look),
-		agent: path,
-		words: wordsAt(s, `readOnly.${i}`),
-	}));
-	return boundLines("Read-only", rows, look);
-}
-
-function limitsLines(s: Inspection, look: Look): string[] {
-	const rows = Object.entries(s.limits).map(([key, value]) =>
-		row(key, sourced(String(value), wordsAt(s, `limits.${key}`), look), look),
-	);
-	return rows.length ? [paint("bold", "Limits", look.color), ...rows] : [];
-}
-
-/**
- * The context policy's rows, then the model's window in tokens where one is known, with what it is kept for after a
- * probe, or `? not reported` after one that kept none.
- */
-function contextLines(
-	s: Inspection,
-	window: number | undefined,
-	look: Look,
-	probed: boolean,
-): string[] {
-	const rows = Object.entries(s.context ?? {}).map(([key, value]) =>
-		row(key, sourced(String(value), wordsAt(s, `context.${key}`), look), look),
-	);
-	if (window !== undefined) {
-		const { harness, model } = s.runtime;
-		const kept = probed ? `  kept for ${harness} ${model}` : "";
-		rows.push(row("window", `${window}${kept}`, look));
-	} else if (probed)
-		rows.push(
-			`${paint("dim", "?", look.color)} ${row("window", "not reported", look).slice(INDENT.length)}`,
-		);
-	return rows.length ? [paint("bold", "Context", look.color), ...rows] : [];
-}
-
-const names = (list: readonly string[]) =>
-	list.length ? list.join(" ") : "none";
-
-type EnvironmentRow = {
-	part: keyof AgentEnvironment;
-	key: string;
-	value: string;
-};
-
-/** The rows of `declared`, the environment harness `harness` launches with. */
-function environmentRows(
-	declared: AgentEnvironment,
-	harness: string,
-): EnvironmentRow[] {
-	return [
-		{ part: "tools", key: "tools", value: names(declared.tools) },
-		{
-			part: "subagents",
-			key: "subagents",
-			value: declared.subagents ? "on" : "off",
-		},
-		{ part: "skills", key: "skills", value: names(declared.skills) },
-		{ part: "mcp", key: "mcp", value: names(declared.mcp) },
-		{ part: "hooks", key: "hooks", value: names(declared.hooks) },
-		{ part: "contextFiles", key: "files", value: names(declared.contextFiles) },
-		{ part: "compaction", key: "compaction", value: `${harness}'s own` },
-	];
-}
-
-/** `text` broken at spaces into lines of at most `width` cells; a longer word keeps a line of its own. */
-function wrapWords(text: string, width: number): string[] {
-	const lines: string[] = [];
-	for (const word of text.split(" ")) {
-		const joined = `${lines.at(-1)} ${word}`;
-		if (lines.length && Bun.stringWidth(joined) <= width)
-			lines[lines.length - 1] = joined;
-		else lines.push(word);
-	}
-	return lines;
-}
-
-/** What a harness reported it loaded when probed; `observed` absent when it reported nothing. */
-type Report = { how: "probed"; observed?: ObservedEnvironment };
-
-/** A row of the checklist: its mark, then the key and value as `row` lays them, each fault under it at column 15. */
-function checkedLines(
-	{ key, value }: EnvironmentRow,
-	check: EnvironmentCheck,
-	look: Colored,
-): string[] {
-	const mark = paint(MARK_STYLE[check.mark], check.mark, look.color);
-	const lines = check.faults.flatMap((f) =>
-		wrapWords(f, LINE_WIDTH - HEAD_WIDTH),
-	);
-	return [
-		`${mark} ${row(key, value, look).slice(INDENT.length)}`,
-		...lines.map(
-			(l) => `${" ".repeat(HEAD_WIDTH)}${paint("red", l, look.color)}`,
-		),
-	];
-}
-
-const faultCount = (checks: readonly EnvironmentCheck[]) =>
-	checks.reduce((n, c) => n + c.faults.length, 0);
-
-/** The checklist of `declared` against `report`, its header naming the harness, the fault count last. */
-function reportLines(
-	declared: AgentEnvironment,
-	harness: string,
-	report: Report,
-	look: Colored,
-): string[] {
-	const { observed } = report;
-	const checks = environmentChecks(declared, observed ?? {});
-	const version = observed?.version ? ` ${observed.version}` : "";
-	const said = observed ? `${harness}${version}` : `nothing from ${harness}`;
-	const faults = faultCount(checks);
-	const count = `${faults} ${faults === 1 ? "fault" : "faults"}`;
-	return [
-		head("Environment", `${report.how} ${said}`, look),
-		...environmentRows(declared, harness).flatMap((r) => {
-			const check = checks.find((c) => c.part === r.part);
-			return check ? checkedLines(r, check, look) : [];
-		}),
-		"",
-		count,
-	];
-}
-
-/** The Environment section: declared only, with a dim pointer at `probe`, or checked against `report`. */
-function environmentLines(
-	declared: AgentEnvironment | null,
-	harness: string,
-	look: Colored,
-	report?: Report,
-	probeCommand?: string,
-): string[] {
-	if (declared === null)
-		return [head("Environment", `not declared by ${harness}`, look)];
-	if (report) return reportLines(declared, harness, report, look);
-	return [
-		head("Environment", "declared only", look),
-		...environmentRows(declared, harness).map((r) => row(r.key, r.value, look)),
-		paint(
-			"dim",
-			`Run ${probeCommand} to check it against ${harness}`,
-			look.color,
-		),
-	];
-}
-
-/** `s` as sections with bold headers and dim keys, each value at column 15, a section with nothing left out. */
+/** `s` as the sections of `agent show`, rendered in color or not. */
 async function showText(
 	s: Inspection,
-	window: number | undefined,
-	look: Look,
-	report?: Report,
-	probeCommand?: string,
+	view: SectionsView,
+	color: boolean,
 ): Promise<string> {
-	const sections = [
-		headLines(s, look),
-		runtimeLines(s, look),
-		await instructionsLines(s, look),
-		await attachmentLines(s, look),
-		readOnlyLines(s, look),
-		limitsLines(s, look),
-		contextLines(s, window, look, report?.how === "probed"),
-		s.runtime.harness === undefined
-			? [head("Environment", "no harness to declare one", look)]
-			: environmentLines(
-					s.environment.declared,
-					s.runtime.harness,
-					look,
-					report,
-					probeCommand,
-				),
-	];
-	return sections
-		.filter((lines) => lines.length)
-		.map((lines) => lines.join("\n"))
-		.join("\n\n");
+	return sectionsText(await profileSections(s, view), color);
 }
 
 const FAULT_SEPARATOR = "; ";
@@ -542,7 +238,10 @@ function repoSetupOf(session: Session) {
  * kept for pre-flight.
  * @throws CliError when the harness is not loaded, or its run fails or times out before it reports.
  */
-async function probed(profile: Profile, session: Session): Promise<Report> {
+async function probed(
+	profile: Profile,
+	session: Session,
+): Promise<ProbeReport> {
 	const { deps } = session;
 	const { runtime } = profile.fields;
 	const harnesses = builtinHarnesses(deps.env);
@@ -573,11 +272,17 @@ async function probed(profile: Profile, session: Session): Promise<Report> {
 }
 
 /** The checks of `report` against `declared`; none without both. */
-const checksOf = (declared: AgentEnvironment | null, report?: Report) =>
+const checksOf = (declared: AgentEnvironment | null, report?: ProbeReport) =>
 	declared && report ? environmentChecks(declared, report.observed ?? {}) : [];
 
+const faultCount = (checks: readonly EnvironmentCheck[]) =>
+	checks.reduce((n, c) => n + c.faults.length, 0);
+
 /** The `environment` of `--json`: the declaration, and with a report what was observed and each part's check. */
-const environmentJson = (declared: AgentEnvironment | null, report?: Report) =>
+const environmentJson = (
+	declared: AgentEnvironment | null,
+	report?: ProbeReport,
+) =>
 	report
 		? {
 				declared,
@@ -611,7 +316,7 @@ function probeCommand(name: string, values: Values): string {
 /** Prints `profile` as `agent show` does, `report` checked when it has one; exits 1 for a fault in it. */
 async function show(
 	profile: Unsettled,
-	report: Report | undefined,
+	report: ProbeReport | undefined,
 	session: Session,
 	values: Values,
 ): Promise<number> {
@@ -624,7 +329,6 @@ async function show(
 			? undefined
 			: windowOf(store, { harness, model });
 	const { declared } = s.environment;
-	const places = { roots: config.roots, home: deps.env.HOME };
 	const { out: color, err: errColor } = colorOf(deps, values);
 	if (isSet(values, "json"))
 		deps.stdout(
@@ -638,10 +342,14 @@ async function show(
 		deps.stdout(
 			await showText(
 				s,
-				window,
-				{ ...places, color },
-				report,
-				probeCommand(profile.name, values),
+				{
+					roots: config.roots,
+					home: deps.env.HOME,
+					...(window !== undefined && { window }),
+					...(report && { report }),
+					probeCommand: probeCommand(profile.name, values),
+				},
+				color,
 			),
 		);
 	const unset = unsetOf(profile);
