@@ -94,4 +94,4 @@ Use exactly:
 
 A two-way door can be walked back by reverting. A one-way door cannot: a removed command, flag or file format, a changed
 record, IR or config schema, data written that an older build cannot read. The blast radius names who feels a bad merge,
-such as `cli`, `factory`, `compositions` or `docs`. List any finding the review left upheld here, one line each.
+such as `cli`, `factory`, `compositions` or `docs`.

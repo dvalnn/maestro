@@ -19,6 +19,7 @@ import {
 	shorthand,
 	tracked,
 	turnLines,
+	unresolvedOf,
 } from "./route";
 import type { State } from "./transitions";
 
@@ -517,11 +518,50 @@ test("a PR body with nothing to add holds no relates-to, gaps or door, and says 
 	});
 	expect(body).toStartWith("Closes #5\n\n## Summary\n\ns\n\n## Evidence");
 	expect(body).toContain(
-		"- Gate: green\n- Review: ordinary review, upheld 0\n  - None.\n",
+		"- Gate: green\n- Review: ordinary review, upheld none\n\n## Merge Danger",
 	);
 	expect(body).toContain("## Merge Danger\n\n**Risk:** medium\n\n## Spend");
 	expect(body).not.toContain("Gaps");
+	expect(body).not.toContain("Unresolved");
 });
+
+const LEFT = "- F1, a.ts:3: too wide\n  skeptic: held";
+
+test.each([
+	[
+		"the writer's",
+		"## Summary\n\nx",
+		"## Summary\n\nx\n\n## Unresolved review",
+	],
+	["the built", undefined, "- Review: small review\n\n## Unresolved review"],
+])(
+	"%s PR body lists the upheld findings under their own heading",
+	(_, pr, at) => {
+		const upheld = `${LEFT}\n- F2, b.ts:1: bare`;
+		const body = pullBody({
+			issue: 5,
+			spend: [SPENT],
+			tier: "small",
+			risk: "low",
+			gaps: ["a gap"],
+			result: ready,
+			upheld,
+			pr,
+		});
+		expect(body).toContain(at);
+		expect(body).toContain(`fix round (2):\n\n${upheld}\n\n`);
+		expect(body.indexOf("Unresolved review")).toBeLessThan(
+			body.indexOf("Gaps"),
+		);
+	},
+);
+
+test.each([[undefined], [""], ["None."]])(
+	"a review whose upheld output is %j left nothing unresolved",
+	(upheld) => {
+		expect(unresolvedOf(upheld)).toBeUndefined();
+	},
+);
 
 test("a PR body labels a spend row an encore only when its concert was one", () => {
 	const body = pullBody({

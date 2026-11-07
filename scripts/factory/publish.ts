@@ -10,6 +10,7 @@ import {
 	pullBody,
 	type Stack,
 	specCommentOf,
+	unresolvedOf,
 } from "./route";
 import {
 	ask,
@@ -87,7 +88,8 @@ async function inWorkspace<T>(
 	return done;
 }
 
-type PullText = Pick<NewPull, "title" | "body">;
+/** A PR's title and body, and whether its review left findings unresolved, which holds it unarmed. */
+type PullText = Pick<NewPull, "title" | "body"> & { held: boolean };
 /** Where a landing or restack leaves its issue: in review with its PR, stacked while `stack` is set, else asking. */
 type Outcome = { pull: number; stack?: Stack } | { question: string };
 
@@ -122,7 +124,11 @@ function pullText(
 		result,
 		pr: report.pr,
 	});
-	return { title: result.spec.subject, body };
+	return {
+		title: result.spec.subject,
+		body,
+		held: unresolvedOf(report.upheld) !== undefined,
+	};
 }
 
 /**
@@ -166,19 +172,20 @@ async function awaitsStackReview(pass: Pass, { issue, data }: Entry) {
 }
 
 /**
- * Pushes `commit` from `dir` as `entry`'s branch and opens or retargets its PR into `base`, arming a low one to
- * `main`.
+ * Pushes `commit` from `dir` as `entry`'s branch and opens or retargets its PR into `base`, arming a low one to `main`
+ * unless its review left findings unresolved.
  */
 async function publish(
 	pass: Pass,
 	entry: Entry,
 	dir: string,
 	commit: string,
-	pull: NewPull,
+	{ held, ...pull }: NewPull & Pick<PullText, "held">,
 ) {
 	await pass.forge.push(dir, commit, pull.head);
 	const number = await openPull(pass.forge, pull);
 	if (
+		!held &&
 		pull.base === BASE &&
 		isLow(entry.issue, entry.data) &&
 		!(await awaitsStackReview(pass, entry))

@@ -59,6 +59,7 @@ import {
 	specCommentOf,
 	type Triage,
 	triaged,
+	unresolvedOf,
 	VERDICT_STATE,
 } from "./route";
 import {
@@ -451,6 +452,14 @@ const pullToMain = (pulls: readonly Pull[], number: number) =>
 const findingsText = ({ review, blocking = [] }: Report) =>
 	review ?? blocking.map((b) => `- ${b}`).join("\n");
 
+/** Arms the PR to `main` of `child`, the last child of a cleared stack review, unless its own review left findings. */
+async function armLast(pass: Pass, { issue, data }: Entry) {
+	const report = data.concert && (await pass.maestro.report(data.concert));
+	if (report && unresolvedOf(report.upheld)) return;
+	const pull = pullToMain(await pass.forge.pulls(), issue.number);
+	if (pull) await pass.forge.arm(pull.number);
+}
+
 /**
  * Records the findings of stack review `id` on `epic`, then feeds them to the encore of its `last` child, or files each
  * as a report when no one child is open.
@@ -524,10 +533,8 @@ async function settleReview(
 		last &&
 		stateOf(last.issue) === "in-review" &&
 		isLow(last.issue, last.data)
-	) {
-		const pull = pullToMain(await pass.forge.pulls(), last.issue.number);
-		if (pull) await pass.forge.arm(pull.number);
-	}
+	)
+		await armLast(pass, last);
 	await writeSpec(pass, issue.number, state, {
 		...data,
 		concert: id,

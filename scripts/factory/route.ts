@@ -865,17 +865,36 @@ const sum = (rows: readonly Spend[], by: (s: Spend) => number) =>
 
 const FINDING = /^- /gm;
 
+/** The review's `upheld` findings as written, none when it left none: absent, or a `None.` body. */
+export function unresolvedOf(upheld?: string) {
+	const found = upheld?.trim();
+	return found?.match(FINDING) ? found : undefined;
+}
+
 function evidenceLines({ upheld, tier, result }: Landed) {
 	const gate = (result.spec?.acceptance ?? [])
 		.map((a) => `\`${oneLine(a)}\``)
 		.join(", ");
-	const found = upheld?.trim();
-	const findings = found ? found.split("\n") : ["- None."];
+	const clean = unresolvedOf(upheld) === undefined ? ", upheld none" : "";
 	return [
 		`- Gate: ${gate ? `${gate} ` : ""}green`,
-		`- Review: ${tier} review, upheld ${found?.match(FINDING)?.length ?? 0}`,
-		...findings.map((f) => `  ${f}`),
+		`- Review: ${tier} review${clean}`,
 	];
+}
+
+/** The findings the review left upheld after its last fix round, under their own heading; none when it left none. */
+function unresolvedLines({ upheld }: Landed) {
+	const found = unresolvedOf(upheld);
+	return found
+		? [
+				"## Unresolved review",
+				"",
+				`Blocking findings still upheld after the last fix round (${found.match(FINDING)?.length}):`,
+				"",
+				found,
+				"",
+			]
+		: [];
 }
 
 function gapLines(gaps: readonly string[]) {
@@ -938,8 +957,8 @@ const closing = ({ issue, result }: Landed) =>
 	`Closes #${issue}${result.related?.length ? ` · relates to ${refs(result.related)}` : ""}`;
 
 /**
- * The writer's `pr`, then the gaps folded, one line of risk, area and review tier with the planner's contract as the
- * one-way door, the spend folded under its total, and the closing line last.
+ * The writer's `pr`, then the unresolved review, the gaps folded, one line of risk, area and review tier with the
+ * planner's contract as the one-way door, the spend folded under its total, and the closing line last.
  */
 function writtenBody(landed: Landed, pr: string) {
 	const { spend, gaps, tier } = landed;
@@ -949,6 +968,7 @@ function writtenBody(landed: Landed, pr: string) {
 	return [
 		pr,
 		"",
+		...unresolvedLines(landed),
 		...gapLines(gaps),
 		...riskLines,
 		"",
@@ -965,7 +985,8 @@ function writtenBody(landed: Landed, pr: string) {
 /**
  * The PR body of a landed slice (factory.md, Rules, Landing and PRs: PRs): the writer's followed by the tick's
  * sections, else one built from the tick's data alone, with the subject and each decision's lead as Summary, the
- * acceptance commands as the gate with the review's upheld findings as Evidence, then the gaps, risk and spend.
+ * acceptance commands as the gate with the review's upheld count as Evidence, then the unresolved review, the gaps,
+ * risk and spend.
  */
 export function pullBody(landed: Landed) {
 	if (landed.pr) return writtenBody(landed, landed.pr);
@@ -981,6 +1002,7 @@ export function pullBody(landed: Landed) {
 			...(decisions.length ? ["", ...decisions] : []),
 		]),
 		...block("Evidence", evidenceLines(landed)),
+		...unresolvedLines(landed),
 		...gapLines(gaps),
 		...block("Merge Danger", dangerLine(landed)),
 		...block("Spend", spendLines(spend)),

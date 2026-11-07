@@ -173,9 +173,10 @@ flowchart TD
   triage found it wide, else `ordinary`. Risk gates the owner's approval, width sets the review's depth, which
   `.maestro/slice.ts` and `.maestro/presets/{small,ordinary,risky}.yaml` define. Low builds, opens a PR and merges
   itself: once its PR to `main` is open, the tick arms the forge's auto-merge on it, fast-forward only, which waits on
-  the required `check` status. Medium builds and waits for the owner to merge its PR. High waits in `needs-approval` for
-  the owner to approve the spec, then merges as medium does. The owner merges by fast-forward, as `main` takes signed
-  commits only. An epic's last child arms only once its stack review clears it (Rules, Build: Stack review).
+  the required `check` status, unless the review left findings unresolved (Landing and PRs: PRs). Medium builds and
+  waits for the owner to merge its PR. High waits in `needs-approval` for the owner to approve the spec, then merges as
+  medium does. The owner merges by fast-forward, as `main` takes signed commits only. An epic's last child arms only
+  once its stack review clears it (Rules, Build: Stack review).
 - **One concert at a time.** The tick starts no second one while a concert of the milestone runs.
 - **Pick order.** Finish work first: a stack review, then an encore of a PR with changes requested, then a build, then
   triage, then a masterclass. A tick that routes a settle falls through and starts the next action. Within builds and
@@ -312,11 +313,13 @@ flowchart TD
   PR against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
   held, titled with the spec's subject, to `main` or to the dependency's branch while stacked. The slice's writer writes
-  the body in the form `.maestro/slice/prompts/writer.md` gives; below it the tick adds the agents' gaps, one line of
-  risk, area and review tier with the planner's contract as the one-way door, the spend (a row per slice concert of the
-  ticket's tour, a build or an encore as its record says, then a total) and `Closes #N` with the `Relates to` links
-  last. A writer that fails costs the build nothing: the tick builds the body from its data alone. Every landing, an
-  encore's included, rewrites the body of the PR already open on the branch.
+  the body in the form `.maestro/slice/prompts/writer.md` gives; below it the tick adds the findings the review left
+  upheld after its last fix round, counted, under `Unresolved review` (none when it left none), the agents' gaps, one
+  line of risk, area and review tier with the planner's contract as the one-way door, the spend (a row per slice concert
+  of the ticket's tour, a build or an encore as its record says, then a total) and `Closes #N` with the `Relates to`
+  links last. A writer that fails costs the build nothing: the tick builds the body from its data alone. A PR whose
+  review left findings upheld is never armed, a last child's after its stack review clears included: the owner merges
+  it. Every landing, an encore's included, rewrites the body of the PR already open on the branch.
 
 ### Masterclass
 

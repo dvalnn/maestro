@@ -332,10 +332,6 @@ export const slice = composition(
 					artifact: changes,
 					hint: "for what the change did, patch by patch",
 				},
-				upheld: {
-					artifact: reviewed.out.upheld,
-					hint: "for the findings the review left upheld",
-				},
 			},
 			out: { pr: MarkdownOut("pr.md") },
 		});

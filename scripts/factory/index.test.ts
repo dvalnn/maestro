@@ -1278,7 +1278,6 @@ describe("a build", () => {
 		expect(t.writes.filter((w) => !w.startsWith("edit"))).toEqual([
 			`push abc123 as maestro-tm/i7 from ${CACHED}`,
 			"pull maestro-tm/i7 to main: feat: greet by name",
-			"arm #30",
 			"labels #7 kind/enhancement risk/low state/in-review",
 		]);
 		expect(t.opened[0]?.body).toBe(
@@ -1294,8 +1293,13 @@ describe("a build", () => {
 				"## Evidence",
 				"",
 				"- Gate: `bun test` green",
-				"- Review: small review, upheld 1",
-				"  - F1, a.ts:3: too wide",
+				"- Review: small review",
+				"",
+				"## Unresolved review",
+				"",
+				"Blocking findings still upheld after the last fix round (1):",
+				"",
+				"- F1, a.ts:3: too wide",
 				"",
 				"<details><summary>Gaps (1)</summary>",
 				"",
@@ -2231,6 +2235,18 @@ describe("a stack review", () => {
 		expect(merging(t.writes).at(-1)).toBe(`arm #${FIRST_PULL}`);
 		expect(dataAt(t.find(9)).concert).toBe("started");
 		expect(reviewsOf(t)).toHaveLength(1);
+	});
+
+	test("leaves a low last child's PR unarmed when its slice left findings upheld, though its stack review clears", async () => {
+		const t = epicWith("in-review");
+		t.reports.s1 = { ...NO_REPORT, upheld: "- F1, a.ts:3: too wide" };
+		await t.run();
+		t.concerts.unshift(reviewConcert("started"));
+		t.results.started = { status: "ok", outputs: {} };
+		await t.run();
+		expect(reviewsOf(t)).toHaveLength(1);
+		expect(dataAt(t.find(9)).concert).toBe("started");
+		expect(merging(t.writes)).toEqual([]);
 	});
 
 	test("runs once across a pass cut before it recorded the review it started", async () => {
