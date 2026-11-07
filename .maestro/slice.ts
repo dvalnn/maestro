@@ -73,6 +73,9 @@ const TASKS = {
 	writer: task(WRITER, PLAIN, FIGURES),
 };
 
+/** Every check of `target.checks` in `.maestro/config.yaml`, as an agent may run only those it names. */
+const REPO_CHECKS = ["format", "lint", "types", "test", "all"];
+
 type Found = ValueOf<typeof Findings>;
 
 /** What one review round ruled: a consolidator's verdict, or a lens's findings and its skeptic's verdicts, if any. */
@@ -223,7 +226,7 @@ function review(
 		grounds: JUDGED,
 		skeptics: true,
 		session: earlier?.lens,
-		checks: ["all"],
+		checks: REPO_CHECKS,
 		extra: earlier && {
 			upheld: {
 				artifact: earlier.upheld,
@@ -279,7 +282,7 @@ export const slice = composition(
 			const green = use(
 				repairUntilGreen,
 				{ lane, session, spec },
-				{ params: { maxRepairs, checks: ["all"] }, label: "gate" },
+				{ params: { maxRepairs, checks: REPO_CHECKS }, label: "gate" },
 			);
 			return review(tier, green.out.lane, session, spec, earlier);
 		};
@@ -287,7 +290,7 @@ export const slice = composition(
 			label: "build",
 			task: request,
 			lane: fresh(),
-			checks: ["all"],
+			checks: REPO_CHECKS,
 		});
 		const reviewed = loop.while((s) => not(s.out.clean), {
 			init: round(built.out.lane, built.out.session),
@@ -297,7 +300,7 @@ export const slice = composition(
 					task: TASKS.fix,
 					lane: extend(s.out.lane),
 					session: s.out.session,
-					checks: ["all"],
+					checks: REPO_CHECKS,
 					attachments: {
 						upheld: {
 							artifact: s.out.upheld,

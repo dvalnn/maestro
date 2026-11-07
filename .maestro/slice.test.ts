@@ -90,6 +90,12 @@ const cases: [string, Parameters<typeof upheldOf>[0], string[]][] = [
 	["an approving consolidator", { lane, session, verdict: verdict([]) }, []],
 ];
 
+/** The checks of the project's own config, every one of which an agent that works on the lane may run. */
+const projectConfig = Bun.YAML.parse(
+	readFileSync(".maestro/config.yaml", "utf8"),
+) as { target: { checks: Record<string, unknown> } };
+const projectChecks = Object.keys(projectConfig.target.checks);
+
 const granular = ["format", "lint", "types", "test"].flatMap((name) => [
 	"-c",
 	`target.checks.${name}={run: "true", hint: ${name}}`,
@@ -190,7 +196,7 @@ const slice = async (verb: string, tier: string) => [
 ];
 
 test.each(seated)(
-	"under --preset %s, the gate's repair agent may run the target's check, and each agent runs its tier's classics profile",
+	"under --preset %s, the gate's repair agent may run every check of the project's config, and each agent runs its tier's classics profile",
 	async (tier, runtimes) => {
 		const out = await maestro(await slice("compose", tier));
 		const { plan, agents } = JSON.parse(out);
@@ -198,7 +204,7 @@ test.each(seated)(
 			n.id.startsWith("gate/loop/repair"),
 		);
 		expect(repairs.length).toBeGreaterThan(0);
-		for (const n of repairs) expect(n.config.checks).toEqual(["all"]);
+		for (const n of repairs) expect(n.config.checks).toEqual(projectChecks);
 		type Agent = {
 			profile: string;
 			harness: string;
@@ -285,7 +291,7 @@ test.each([
 	},
 );
 
-test("under --tier small, the reviewer may run every check, and a later round's reviewer is attached the findings upheld before", async () => {
+test("under --tier small, the reviewer may run every check of the project's config, and a later round's reviewer is attached the findings upheld before", async () => {
 	const out = await maestro(await slice("compose", "small"));
 	type Edge = {
 		from: { node: string; port?: string };
@@ -301,7 +307,7 @@ test("under --tier small, the reviewer may run every check, and a later round's 
 		edges.filter((e) => e.to.node === node && e.to.port === port);
 	const reviewers = nodes.filter((n) => /(^|\/)reviewer$/.test(n.id));
 	expect(reviewers.length).toBeGreaterThan(1);
-	for (const n of reviewers) expect(n.config.checks).toEqual(["all"]);
+	for (const n of reviewers) expect(n.config.checks).toEqual(projectChecks);
 	const first = reviewers.find((n) => n.id === "reviewer");
 	const later = reviewers.find((n) => n.id === "fixes/reviewer");
 	expect(Object.keys(first?.config.attachments ?? {}).sort()).toEqual([
@@ -385,7 +391,6 @@ test.each(rejecting)(
 				'target.prepare="true"',
 				"-c",
 				'target.checks.all={run: "echo x > b.ts", hint: all}',
-				...granular,
 				...granular,
 				...stubbed(profiles),
 			],
