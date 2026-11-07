@@ -210,7 +210,9 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   `needs-approval`. The owner answers by replying in a comment that mentions `@<login>`, such as
   `@forge-bot Q1: no, ok results only`, then moving the ticket to `needs-triage` (to `ready-for-agent` to continue a
   blocked build). A waiting spec in `needs-approval` is answered or redirected the same way. A reply is final: a
-  re-triage does not ask again what it settled, and rules `direct` when it leaves the change small and clear.
+  re-triage does not ask again what it settled, and rules `direct` when it leaves the change small and clear, unless the
+  last spec has requirements: the tick then passes `--respec`, and a `direct` ruling goes to the planner to revise that
+  spec.
 - **Feeding comments.** A triage, first or encore, considers each comment but the spec comment whose id is above `read`,
   in id order. It is fed as `--issue` the ask, then on an encore the spec under the heading
   `The spec the last triage proposed`, then only these:

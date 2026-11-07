@@ -28,6 +28,18 @@ export const TIERS = ["small", "ordinary", "risky"] as const;
 const AREAS = ["core", "cli", "host", "packs", "docs", "factory"] as const;
 
 export type Ruled = (typeof RULED)[number];
+
+/**
+ * Whether each ruling hands the issue on to the scouts and the planner:
+ * - `plan`, always;
+ * - `direct` on a `respec`, so the planner revises the last spec rather than a brief dropping it.
+ */
+export const plansOf = (respec: boolean): Record<Ruled, boolean> => ({
+	direct: respec,
+	plan: true,
+	duplicate: false,
+	"needs-info": false,
+});
 export type Verdict = (typeof VERDICTS)[number];
 export type Risk = (typeof RISKS)[number];
 export type Tier = (typeof TIERS)[number];
@@ -574,11 +586,17 @@ type Planned = {
 };
 
 /**
- * The triage of `ruling`, or of the planner's proposal when the triager handed the issue on: its `revision` when the
- * planner revised it by the spec `check`, asking the owner when either failed to run.
+ * The triage of `ruling`, or of the planner's proposal when the issue was handed on: its `revision` when the planner
+ * revised it by the spec `check`, asking the owner when either failed to run.
  */
-function triageOf(ruling: Ruling, { proposal, check, revision }: Planned) {
-	if (ruling.verdict !== "plan") return ruled(ruling, ruling.verdict);
+function triageOf(
+	ruling: Ruling,
+	respec: boolean,
+	{ proposal, check, revision }: Planned,
+) {
+	const { verdict } = ruling;
+	if (verdict !== "plan" && !plansOf(respec)[verdict])
+		return ruled(ruling, verdict);
 	const [planned] = proposal;
 	if (planned?.outcome !== "ok")
 		throw new Error("the planner gave no proposal");
@@ -594,12 +612,17 @@ function triageOf(ruling: Ruling, { proposal, check, revision }: Planned) {
 /**
  * The triage verdict: the triager's early ruling or the planner's proposal, which it only ever downgrades or gates,
  * never upgrades. A spec check or revision that failed to run is asked of the owner.
- * @throws Error when the triager handed the issue on and the planner gave no proposal.
+ * @param respec whether the issue carries a spec with requirements, which a direct ruling hands on to the planner.
+ * @throws Error when the issue was handed on and the planner gave no proposal.
  */
-export function settle({ ruling, ...planned }: { ruling: Ruling } & Planned): {
+export function settle({
+	ruling,
+	respec,
+	...planned
+}: { ruling: Ruling; respec: boolean } & Planned): {
 	triage: Triage;
 } {
-	const triage = triageOf(ruling, planned);
+	const triage = triageOf(ruling, respec, planned);
 	return {
 		triage: { ...triage, questions: triage.questions.map(recommendable) },
 	};

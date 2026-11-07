@@ -45,8 +45,8 @@ import {
 	NARROW,
 	type PROPOSED,
 	Proposal,
+	plansOf,
 	RUNNERS,
-	type Ruled,
 	Ruling,
 	settle,
 	Triage,
@@ -152,13 +152,6 @@ export function revisable(
 	return { findings, revise: found.length > 0 };
 }
 
-const PLANS: Record<Ruled, boolean> = {
-	direct: false,
-	plan: true,
-	duplicate: false,
-	"needs-info": false,
-};
-
 /** The proposals whose spec the checker checks. */
 const CHECKS: Record<(typeof PROPOSED)[number], boolean> = {
 	"ready-for-agent": true,
@@ -192,6 +185,11 @@ export const triage = composition(
 				4,
 				"The most question groups the triager writes, one scout each",
 			),
+			respec: Bool({
+				default: false,
+				description:
+					"Whether the issue carries a spec with requirements, which a direct ruling hands on to the planner to revise",
+			}),
 		},
 		examples: [
 			{
@@ -201,7 +199,7 @@ export const triage = composition(
 			},
 		],
 	},
-	({ issue, backlog, maxGroups }) => {
+	({ issue, backlog, maxGroups, respec }) => {
 		const issued = {
 			artifact: code(toMarkdown, {
 				in: { text: issue },
@@ -229,7 +227,7 @@ export const triage = composition(
 			},
 		});
 		const ruling = readJson(triaged.out.ruling);
-		const plans = lookup(PLANS, ruling.get("verdict"));
+		const plans = lookup(plansOf(respec), ruling.get("verdict"));
 		const groups = ruling.get("groups");
 		const cut = {
 			artifact: triaged.out.backlog,
@@ -339,6 +337,7 @@ export const triage = composition(
 		return code(settle, {
 			in: {
 				ruling,
+				respec: literal(respec, Bool()),
 				proposal,
 				check: findings,
 				revision: allSettled([readJson(revised.out.plan)], {

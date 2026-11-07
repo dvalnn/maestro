@@ -1068,8 +1068,8 @@ async function closedCited(pass: Pass, issue: number, text: string) {
 
 /**
  * Starts triage of the first intake issue, pinned ones first, on its ask and the comments since the last triage read
- * that it is fed, an encore of its last triage when it has one, then records the newest comment it considered; halts on
- * a refusal. A re-triage with nothing new to feed asks for a reply instead. True only when it started nothing, so a
+ * that it is fed, an encore of its last triage when it has one, respecced when that triage's spec has requirements,
+ * then records the newest comment it considered; halts on a refusal. A re-triage with nothing new to feed asks for a reply instead. True only when it started nothing, so a
  * masterclass may follow.
  */
 async function triage(pass: Pass, entries: Entry[]) {
@@ -1089,11 +1089,12 @@ async function triage(pass: Pass, entries: Entry[]) {
 		await askReply(pass, entry);
 		return true;
 	}
+	const last = data.triage ? data.result?.spec : undefined;
 	const text = issueText(
 		entry.issue,
 		considered.filter((c) => isFed(c, pass.login)),
 		pass.login,
-		data.triage ? data.result?.spec : undefined,
+		last,
 	);
 	const [closed, pulls, cited] = await Promise.all([
 		pass.closed(),
@@ -1112,6 +1113,7 @@ async function triage(pass: Pass, entries: Entry[]) {
 		text,
 		"--backlog",
 		backlog,
+		last?.requirements?.length ? "--respec" : "--no-respec",
 		"--tour",
 		tourOf(pass.milestone, number),
 		"--title",

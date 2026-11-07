@@ -51,4 +51,6 @@ owner wants. Leave to the scouts and the planner what the code answers, and to t
 ## Re-triage
 
 The owner's replies are final. Do not ask again what a reply settled, nor open edge cases it did not raise. Rule
-`direct` when the replies make the change small and clear, and `plan` only when they open scope a spec must settle.
+`direct` when the replies make the change small and clear, and `plan` only when they open scope a spec must settle. When
+the spec the last triage proposed has `#### Requirements`, rule `plan`: the planner revises that spec, which a brief
+would drop.

@@ -178,6 +178,7 @@ const clean: Settled<Checked>[] = [{ outcome: "ok", value: { findings: [] } }];
 const unrevised: Settled<Proposal>[] = [{ outcome: "skipped" }];
 const planned = (proposal: Proposal, check = clean, revision = unrevised) => ({
 	ruling: planning,
+	respec: false,
 	proposal: [{ outcome: "ok" as const, value: proposal }],
 	check,
 	revision,
@@ -289,6 +290,7 @@ test.each([
 				what: spec.what,
 				subject: spec.subject,
 			},
+			respec: false,
 			proposal: [{ outcome: "skipped" }],
 			check: [],
 			revision: [],
@@ -304,6 +306,19 @@ test.each([
 		});
 	},
 );
+
+test("settle takes the planner's spec over a direct ruling's brief on a respec", () => {
+	const ruling = {
+		...planning,
+		verdict: "direct" as const,
+		files: ["packages/cli/src/a.ts"],
+		groups: [],
+		what: "the brief",
+		subject: spec.subject,
+	};
+	const { triage } = settle({ ...planned(ready), ruling, respec: true });
+	expect(triage).toEqual(settle(planned(ready)).triage);
+});
 
 const straying = { ...claiming, recommend: { label: "C", why: "no reason" } };
 
@@ -408,6 +423,7 @@ test("settle fails when the triager handed the issue on and the planner gave not
 	expect(() =>
 		settle({
 			ruling: planning,
+			respec: false,
 			proposal: [{ outcome: "skipped" }],
 			check: [],
 			revision: [],
@@ -427,6 +443,7 @@ test.each([
 				groups: [],
 				questions: asking,
 			},
+			respec: false,
 			proposal: [{ outcome: "skipped" }],
 			check: [],
 			revision: [],

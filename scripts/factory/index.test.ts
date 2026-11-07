@@ -668,7 +668,7 @@ describe("a pass", () => {
 		expect(t.starts[0]).toContain("v0.1.0.i9");
 	});
 
-	test("starts triage of the oldest intake issue in the milestone, an encore with the last spec when it was triaged before", async () => {
+	test("starts triage of the oldest intake issue in the milestone, an encore respecced with the last spec when it was triaged before", async () => {
 		const outside = {
 			...issue(2, "needs-triage"),
 			milestone: OTHER_MILESTONE_ID,
@@ -706,6 +706,7 @@ describe("a pass", () => {
 				),
 				"--backlog",
 				backlog,
+				"--respec",
 				"--tour",
 				"v0.1.0.i8",
 				"--title",
@@ -733,6 +734,7 @@ describe("a pass", () => {
 			"perform",
 			expect.stringMatching(/\.maestro\/triage\.ts$/),
 		]);
+		expect(t.starts[1]?.[6]).toBe("--no-respec");
 	});
 
 	test("feeds a re-triage its own questions and the comments mentioning it newer than the last read in order, and raises the spec version", async () => {
