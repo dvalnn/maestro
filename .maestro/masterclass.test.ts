@@ -3,7 +3,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CodeContext } from "@maestro/sdk";
 import { readJson } from "@maestro/sdk/stdlib";
-import { Masterclass } from "./masterclass";
+import { Masterclass, settle } from "./masterclass";
+import PLANNER from "./masterclass/prompts/planner.md" with { type: "text" };
 import { classics, maestro, scratch, stubOutputs, targetRepo } from "./stub";
 
 const lessons = join(scratch, "lessons.md");
@@ -51,12 +52,14 @@ test("a stub perform returns the planner's proposals as the masterclass output",
 				title: "Name the unit",
 				body: "Say the unit in a name, because a bare number misleads.",
 				lessons: ["a lesson"],
+				concerts: ["c1"],
 			},
 			{
 				target: "docs/adr/",
 				title: "Seal one base",
 				body: "Record why seats read one base.",
 				lessons: ["a lesson", "another"],
+				concerts: [],
 			},
 		],
 	};
@@ -76,6 +79,7 @@ const one = {
 	title: "t",
 	body: "b",
 	lessons: ["l"],
+	concerts: ["c1"],
 };
 const proposing = (...proposals: object[]) => ({ proposals });
 
@@ -100,6 +104,9 @@ const outputs: [string, object, boolean][] = [
 	["another script", proposing({ ...one, target: "scripts/pack.ts" }), false],
 	["no lessons", proposing({ ...one, lessons: [] }), false],
 	["no body", proposing({ ...one, body: undefined }), false],
+	["no concerts", proposing({ ...one, concerts: undefined }), false],
+	["concerts that are no strings", proposing({ ...one, concerts: [1] }), false],
+	["an empty concerts list", proposing({ ...one, concerts: [] }), true],
 	["an extra field", proposing({ ...one, extra: 1 }), false],
 ];
 
@@ -141,4 +148,42 @@ test("compose seats the planner with the lessons and the backlog attached, the l
 	const attached = planner?.config.attachments ?? {};
 	expect(Object.keys(attached).sort()).toEqual(["backlog", "lessons"]);
 	expect(attached.lessons?.hint).toStartWith("first, ");
+});
+
+test("settle drops an unnamed id and a repeat, keeps the order and the proposal", () => {
+	const text =
+		"# Lessons\n\n## c2 · t\n\n- a\n- z1 · t\n\n## c1 · t\n\n- b\n\n### z2 · t\n  ## z3 · t\n";
+	const file = join(mkdtempSync(join(scratch, "settle-")), "lessons.md");
+	writeFileSync(file, text);
+	const out = settle(
+		{
+			masterclass: {
+				proposals: [
+					{ ...one, concerts: ["c2", "zz", "z1", "z2", "z3", "c1", "c2"] },
+					{ ...one, concerts: ["zz"] },
+				],
+			},
+			lessons: { path: file, contentHash: "sha256:0" },
+		},
+		{ path: (ref) => ref.path } as CodeContext,
+	);
+	expect(out.masterclass.proposals.map((p) => p.concerts)).toEqual([
+		["c2", "c1"],
+		[],
+	]);
+});
+
+test("the planner prompt's example is a proposal the schema accepts", async () => {
+	const block = /```json\n([\s\S]*?)```/.exec(PLANNER)?.[1] ?? "";
+	expect(block).toContain('"concerts"');
+	const file = join(mkdtempSync(join(scratch, "ex-")), "ex.json");
+	writeFileSync(file, block);
+	const read = await readJson(
+		{
+			file: { path: file, contentHash: "sha256:0" },
+			schema: Masterclass.schema,
+		},
+		{ path: (ref) => ref.path } as CodeContext,
+	);
+	expect("value" in read).toBe(true);
 });

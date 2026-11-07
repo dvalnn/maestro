@@ -1045,7 +1045,8 @@ const isProposals = (v: unknown): v is Proposal[] =>
 			isString(p.target) &&
 			isString(p.title) &&
 			isString(p.body) &&
-			isStrings(p.lessons),
+			isStrings(p.lessons) &&
+			isStrings(p.concerts),
 	);
 
 /**
@@ -1056,7 +1057,20 @@ export function parseMasterclass(value: unknown): Masterclass {
 	if (!isJson(value))
 		throw new Error("the masterclass output is not an object");
 	return {
-		proposals: field(value, "proposals", isProposals, "a list of proposals"),
+		proposals: field(
+			{
+				proposals: Array.isArray(value.proposals)
+					? value.proposals.map((p) =>
+							isJson(p) && p.concerts === undefined
+								? { ...p, concerts: [] }
+								: p,
+						)
+					: value.proposals,
+			},
+			"proposals",
+			isProposals,
+			"a list of proposals",
+		),
 	};
 }
 
@@ -1078,6 +1092,8 @@ export function proposalIssue(p: Proposal) {
 		`Target: \`${p.target}\``,
 		"",
 		p.body.trim(),
+		"",
+		`Concerts: ${p.concerts.length}${p.concerts.length ? ` (${p.concerts.join(", ")})` : ""}`,
 		"",
 		"## Lessons",
 		"",

@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
 import { planner } from "@maestro/classics";
 import { check, fresh, JsonOut, read } from "@maestro/host-repo-sdk";
 import {
+	type ArtifactRef,
+	type CodeContext,
 	code,
 	composition,
 	Json,
@@ -27,6 +30,7 @@ export const Promotion = Struct({
 		items: Text().schema,
 		minItems: 1,
 	}),
+	concerts: Json<string[]>({ type: "array", items: Text().schema }),
 });
 export type Promotion = ValueOf<typeof Promotion>;
 
@@ -34,10 +38,32 @@ export const Masterclass = Struct({ proposals: List(Promotion) });
 export type Masterclass = ValueOf<typeof Masterclass>;
 
 // ADR 0008: a code node's function must be exported by its composition file.
-export function settle({ masterclass }: { masterclass: Masterclass }): {
+export function settle(
+	{
+		masterclass,
+		lessons,
+	}: {
+		masterclass: Masterclass;
+		lessons: ArtifactRef;
+	},
+	ctx: CodeContext,
+): {
 	masterclass: Masterclass;
 } {
-	return { masterclass };
+	// The id is the heading text before ` · `, as `lessonsText` writes it.
+	const named = new Set(
+		[...readFileSync(ctx.path(lessons), "utf8").matchAll(/^## (.+?) · /gm)].map(
+			(m) => m[1],
+		),
+	);
+	return {
+		masterclass: {
+			proposals: masterclass.proposals.map((p) => ({
+				...p,
+				concerts: [...new Set(p.concerts)].filter((id) => named.has(id)),
+			})),
+		},
+	};
 }
 
 export const masterclass = composition(
@@ -76,7 +102,7 @@ export const masterclass = composition(
 			out: { plan: JsonOut("masterclass.json", Masterclass) },
 		});
 		return code(settle, {
-			in: { masterclass: readJson(planned.out.plan) },
+			in: { masterclass: readJson(planned.out.plan), lessons },
 			out: { masterclass: Masterclass },
 			label: "settle",
 		});

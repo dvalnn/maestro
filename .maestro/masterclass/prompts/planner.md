@@ -22,8 +22,9 @@ answer for each cluster:
 - Class: the other failures that share the cause. Propose the change that removes the class, not this instance.
 
 Prefer, in this order: remove the cause in code or structure; add a check that catches it mechanically; change a prompt.
-Propose prompt wording only for an agent's judgment that nothing mechanical can catch. A cluster of one lesson needs a
-cost beyond its own run.
+Propose prompt wording only for an agent's judgment that nothing mechanical can catch. Judge a cluster by its distinct
+concerts, not its lessons: several lessons from one concert are one incident, so a cluster from one concert needs a cost
+beyond its own run.
 
 Write `masterclass.json` in exactly this shape:
 
@@ -34,7 +35,8 @@ Write `masterclass.json` in exactly this shape:
       "target": ".maestro/slice/prompts/_grounds.md",
       "title": "one line",
       "body": "the proposed wording or change, and why",
-      "lessons": ["a merged lesson text"]
+      "lessons": ["a merged lesson text"],
+      "concerts": ["c1"]
     }
   ]
 }
@@ -50,4 +52,6 @@ body never restates them:
 `target` is the file the change lands in: `CODING_STANDARDS.md`, a path under `.maestro/` (a prompt, a profile's
 instructions, a composition, `config.yaml` with its checks), the `justfile` (the recipes the checks run), a path under
 `scripts/factory/` (the tour manager's code), or `docs/adr/` for a new ADR. The root `CLAUDE.md` is not one: the
-factory's agents never read it. `lessons` holds at least one lesson text. `proposals` may be empty.
+factory's agents never read it. `lessons` holds at least one lesson text. `concerts` holds the id of every concert whose
+lessons the cluster merges, each the text before `·` in a `## <concert id> · <tour>` heading, once. `proposals` may be
+empty.

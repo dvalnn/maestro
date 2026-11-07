@@ -618,6 +618,7 @@ const PROPOSAL = {
 	title: "Say to run just fmt first",
 	body: "Add a line to the Rules.\n",
 	lessons: ["run just fmt first", "format before the checks"],
+	concerts: ["c1", "c2"],
 };
 
 test("a masterclass output parses, an empty list of proposals too", () => {
@@ -633,7 +634,16 @@ test("a masterclass output that is not an object is malformed", () => {
 	);
 });
 
+test("a proposal without concerts parses as citing none", () => {
+	const { concerts: _, ...old } = PROPOSAL;
+	expect(parseMasterclass({ proposals: [old] })).toEqual({
+		proposals: [{ ...old, concerts: [] }],
+	});
+});
+
 test.each([
+	["with concerts that are no list", { ...PROPOSAL, concerts: "c1" }],
+	["with concerts that are no strings", { ...PROPOSAL, concerts: [1] }],
 	["missing its lessons", { ...PROPOSAL, lessons: undefined }],
 	["with a target that is no string", { ...PROPOSAL, target: 3 }],
 ])("a masterclass with a proposal %s is malformed", (_, proposal) => {
@@ -654,6 +664,10 @@ test("a proposal's issue asks its target, body, lessons and fingerprint, then gi
 	expect(ask).toStartWith(
 		"Target: `docs/agents/factory.md`\n\nAdd <! -- this --> to the Rules.",
 	);
+	expect(ask).toContain("Concerts: 2 (c1, c2)\n\n## Lessons");
+	expect(proposalIssue({ ...proposal, concerts: [] }).body).toContain(
+		"Concerts: 0\n\n## Lessons",
+	);
 	expect(ask).toContain("- run just fmt first\n- format before the checks");
 	expect(ask).toEndWith(proposalLine(proposal));
 	expect(body).toEndWith(
@@ -671,6 +685,12 @@ test("a proposal's issue asks its target, body, lessons and fingerprint, then gi
 			"",
 			"<sub>Label the issue with the choice.</sub>",
 		].join("\n"),
+	);
+});
+
+test("a proposal's fingerprint ignores its concerts", () => {
+	expect(proposalLine({ ...PROPOSAL, concerts: [] })).toBe(
+		proposalLine(PROPOSAL),
 	);
 });
 

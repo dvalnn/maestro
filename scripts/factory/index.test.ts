@@ -2582,6 +2582,7 @@ describe("masterclass", () => {
 		title,
 		body: `Say ${title}.`,
 		lessons: [`lesson on ${title}`],
+		concerts: ["c1"],
 	});
 
 	test("an ok masterclass newest files each proposal in needs-approval once", async () => {

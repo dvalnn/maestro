@@ -356,13 +356,16 @@ Tracked by Maestro Tour Manager · [spec v<N>](#issuecomment-<id>)
 
 ### Proposal issue
 
-A settled masterclass files one per proposal. The ask holds the target, the body, the lessons and the fingerprint, which
-sits last so a later masterclass finds it; a triage replaces everything below the marker with the closing line.
+A settled masterclass files one per proposal. The ask holds the target, the body, the concerts that reported the
+lessons, the lessons and the fingerprint, which sits last so a later masterclass finds it; a triage replaces everything
+below the marker with the closing line.
 
 ```markdown
 Target: `<target>`
 
 <body>
+
+Concerts: <count> (<concert id>, <concert id>)
 
 ## Lessons
 
