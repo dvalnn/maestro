@@ -43,6 +43,12 @@ async function run(cwd: string, command: string[]) {
 	return out;
 }
 
+/**
+ * The jj config that leaves a pushed branch rewritable, which jj's default protects as an untracked remote bookmark:
+ * a revision squashes into the PR head it was cut at.
+ */
+const REWRITABLE = 'revset-aliases."immutable_heads()"="trunk() | tags()"';
+
 /** The environment variable naming the SSH key that signs the commits the tick makes. */
 export const SIGNING_KEY = "MAESTRO_TM_SIGNING_KEY";
 
@@ -126,7 +132,15 @@ export function landing(
 			return claim(dir, "@");
 		},
 		squash: async (dir, message) => {
-			await run(dir, ["jj", ...as, "squash", "-m", message]);
+			await run(dir, [
+				"jj",
+				"--config",
+				REWRITABLE,
+				...as,
+				"squash",
+				"-m",
+				message,
+			]);
 			return claim(dir, "@-");
 		},
 		restack: async (dir, revisions, onto) => {

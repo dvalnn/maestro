@@ -71,8 +71,15 @@ test("a described and a restacked commit carry the account as author and committ
 	expect(who(dir, top)).toStartWith("Owner|owner@example.com|Owner");
 });
 
-test("a squash folds the change into its parent, described anew and the account's", async () => {
+test("a squash folds the change into its parent, even a pushed branch head, described anew and the account's", async () => {
 	const { dir, top } = repository();
+	const remote = mkdtempSync(join(tmpdir(), "factory-remote-"));
+	Bun.spawnSync(["git", "init", "--bare", "-q", remote]);
+	jj(dir, "git", "remote", "add", "origin", remote);
+	jj(dir, "bookmark", "create", "pr", "-r", "@-");
+	jj(dir, "git", "push", "--bookmark", "pr");
+	jj(dir, "bookmark", "untrack", "pr@origin");
+	jj(dir, "bookmark", "forget", "pr");
 	writeFileSync(join(dir, "d"), "d\n");
 	const squashed = await landing(dir, account).squash(dir, "feat: y");
 	expect(
