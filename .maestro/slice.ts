@@ -18,6 +18,7 @@ import {
 } from "@maestro/classics";
 import {
 	changeset,
+	commits,
 	extend,
 	fresh,
 	Lane,
@@ -251,7 +252,7 @@ function review(
 export const slice = composition(
 	"slice",
 	{
-		doc: "Build a request in a fresh lane, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset beside the findings its review upheld and a writer's PR body, empty when the writer failed, failing when it holds no patch.",
+		doc: "Build a request in a fresh lane, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset beside the findings its review upheld and a writer's PR body, over the PR it revises when given, empty when the writer failed, failing when it holds no patch.",
 		params: {
 			request: Text({ description: "The brief: what to build" }),
 			tier: Enum(TIERS, { description: "How deep the review goes" }),
@@ -260,6 +261,11 @@ export const slice = composition(
 				2,
 				"The most fix rounds after a review upholds findings",
 			),
+			revises: Text({
+				default: "",
+				description:
+					"Git revisions of the target holding the PR this build revises, such as C^!; empty for a fresh build",
+			}),
 		},
 		examples: [
 			{
@@ -268,7 +274,7 @@ export const slice = composition(
 			},
 		],
 	},
-	({ request, tier, maxRepairs, maxFixes }) => {
+	({ request, tier, maxRepairs, maxFixes, revises }) => {
 		const spec = code(toMarkdown, {
 			in: { text: request },
 			out: { file: Markdown() },
@@ -332,6 +338,17 @@ export const slice = composition(
 					artifact: changes,
 					hint: "for what the change did, patch by patch",
 				},
+				...(revises && {
+					revised: {
+						artifact: changeset(
+							commits(revises, { label: "revised" }).out.lane,
+							{
+								label: "pr",
+							},
+						).out.changeset,
+						hint: "for the PR the patches revise, which the body covers with them as one change",
+					},
+				}),
 			},
 			out: { pr: MarkdownOut("pr.md") },
 		});

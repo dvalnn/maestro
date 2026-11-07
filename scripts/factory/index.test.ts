@@ -986,8 +986,8 @@ const CACHED = "/cache/maestro-factory/i7";
 /** The `--request` of a build of issue `n`'s spec, before anything an encore is fed. */
 const requestFor = (n: number) =>
 	`# #${n} Greet by name\n\n#### Context\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Requirements\n\n- **R1** When greet.sh is given a name, greet.sh shall greet it.\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Touches\n\n- \`greet.sh\`\n\n#### Acceptance\n\n- [ ] bun test\n\n## The ask\n\n${ASK}\n`;
-/** The flags a build of issue 7 at low risk takes after its `--request`. */
-const LOW_FLAGS = [
+/** The flags a build of issue 7 at low risk takes after its `--request`, revising the PR commit `revises` names. */
+const lowFlags = (revises = "") => [
 	"--tier",
 	"small",
 	"--preset",
@@ -998,6 +998,8 @@ const LOW_FLAGS = [
 	"v0.1.0.i7",
 	"--title",
 	"factory: Greet by name",
+	"--revises",
+	revises,
 ];
 
 /** `stored` with its spec written at `at`, and touching `touches` when given. */
@@ -1231,6 +1233,8 @@ describe("a build", () => {
 				"v0.1.0.i8",
 				"--title",
 				"factory: Greet by name",
+				"--revises",
+				"",
 			],
 		]);
 		expect(t.find(8).labels).toEqual([
@@ -1449,7 +1453,7 @@ describe("a build", () => {
 				"s1",
 				"--request",
 				`${requestFor(7)}\n## Reply by ${OWNER}\n\n@forge-bot go on\n`,
-				...LOW_FLAGS,
+				...lowFlags("sha7^!"),
 				"-c",
 				"target.base=sha7",
 			],
@@ -1531,7 +1535,7 @@ describe("a build", () => {
 						: ["perform", expect.stringMatching(/\.maestro\/slice\.ts$/)]),
 					"--request",
 					request ?? requestFor(7),
-					...LOW_FLAGS,
+					...lowFlags(),
 				],
 			]);
 			expect(dataAt(t.find(7))).toMatchObject({ read, attempts: 2 });
@@ -2061,7 +2065,7 @@ describe("a review", () => {
 				"s1",
 				"--request",
 				`${requestFor(7)}\n## Review by ann\n\nRename it.\n\n- \`greet.sh:3\`: use printf\n  not echo\n`,
-				...LOW_FLAGS,
+				...lowFlags("sha7^!"),
 				"-c",
 				"target.base=sha7",
 			],
@@ -2301,7 +2305,7 @@ describe("a stack review", () => {
 				"s1",
 				"--request",
 				`${requestFor(7).replace(`${ASK}\n`, `Part of #9\n\n${ASK}\n`)}\n## Stack review\n\n# Review\n\nA seam breaks.\n`,
-				...LOW_FLAGS,
+				...lowFlags("sha7^!"),
 				"-c",
 				"target.base=sha7",
 			],

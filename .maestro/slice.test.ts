@@ -324,6 +324,24 @@ test("under --tier small, the reviewer may run every check of the project's conf
 	]);
 });
 
+test.each([
+	[[], ["patches", "spec"]],
+	[
+		["--revises", "HEAD^!"],
+		["patches", "revised", "spec"],
+	],
+])("the writer is attached, with %j, %j", async (flags, attached) => {
+	const out = await maestro([...(await slice("compose", "small")), ...flags]);
+	const {
+		nodes,
+	}: { nodes: { id: string; config: { attachments: object } }[] } =
+		JSON.parse(out).plan.ir;
+	const writer = nodes.find((n) => n.id === "writer");
+	expect(Object.keys(writer?.config.attachments ?? {}).sort()).toEqual(
+		attached,
+	);
+});
+
 test.each(["small", "ordinary", "risky"])(
 	"under --tier %s, every skeptic and the consolidator rule by the slice's grounds",
 	async (tier) => {

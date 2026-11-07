@@ -667,8 +667,8 @@ async function sync(pass: Pass, entries: Entry[]) {
 type Perform = { request: string; encore?: string; data: Data };
 
 /**
- * Performs `perform` for `entry` at its risk's tier, cut at its PR's head when it revises, else on `stack`'s commit
- * when it stacks, and moves it to `in-progress`; halts on a refusal.
+ * Performs `perform` for `entry` at its risk's tier, cut at its PR's head and revising that commit when it revises,
+ * else on `stack`'s commit when it stacks, and moves it to `in-progress`; halts on a refusal.
  */
 async function startSlice(
 	pass: Pass,
@@ -679,7 +679,8 @@ async function startSlice(
 	const result = data.result;
 	if (!result) return;
 	const tier = tierOf(issue, result);
-	const cut = perform.data.revisionBase ?? stack?.commit;
+	const { revisionBase } = perform.data;
+	const cut = revisionBase ?? stack?.commit;
 	const name = issue.labels
 		.find((l) => l.startsWith("area/"))
 		?.slice("area/".length);
@@ -701,6 +702,8 @@ async function startSlice(
 		tourOf(pass.milestone, issue.number),
 		"--title",
 		titleOf(issue),
+		"--revises",
+		revisionBase ? `${revisionBase}^!` : "",
 		...(cut ? ["-c", `target.base=${cut}`] : []),
 	]);
 	if (id === undefined) return;

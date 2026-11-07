@@ -280,7 +280,8 @@ flowchart TD
     `findings` name a stack review: its landed concert, fed each such review headed `## Review by <author>`, its body
     then its inline comments as `path:line` items, then the stack review's under `## Stack review`. The ticket moves to
     `in-progress`, `review` moves to the newest, and the settle lands folded into the PR's head, so the PR keeps one
-    commit per ticket.
+    commit per ticket. The build passes `--revises <PR head>^!`, so the writer's body covers that commit and the
+    revision as one change.
 
   With nothing changed the build is a fresh perform, since an encore with nothing changed is refused.
 

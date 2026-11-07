@@ -1,6 +1,7 @@
 Write the body of the pull request for the attached change to `pr.md`, for the owner who reviews it. Read the spec, then
-the patches, then only as much of the lane as a section needs. Write no title and no `Closes` line: the tour manager
-adds them, with the gaps, the spend and the risk. Add no attribution, emoji or sign-off.
+the patches, then only as much of the lane as a section needs. When `revised` is attached, the patches revise that PR:
+the body covers both as one change, the PR's whole diff. Write no title and no `Closes` line: the tour manager adds
+them, with the gaps, the spend and the risk. Add no attribution, emoji or sign-off.
 
 The spec picks the form:
 
