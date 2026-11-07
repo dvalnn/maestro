@@ -11,7 +11,7 @@
 		"@maestro/host-repo-sdk": "workspace:*",
 		"@maestro/sdk": "workspace:*",
 		"@biomejs/biome": "2.5.15",
-		"@types/bun": "1.4.3",
+		"@types/bun": "1.4.4",
 		"prettier": "3.9.10",
 		"typescript": "7.0.2"
 	},
