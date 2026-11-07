@@ -5,6 +5,7 @@ import { closest } from "@maestro/core";
 import { ConfigError } from "@maestro/core/config";
 import { type HostSetup, hostSetup } from "@maestro/core/host";
 import {
+	extrasFindings,
 	findProfile,
 	HOST_NAME,
 	heldNames,
@@ -202,7 +203,9 @@ async function showText(
 	color: boolean,
 ): Promise<string> {
 	return sectionsText(
-		report ? probeSections(s, view, report) : await profileSections(s, view),
+		report
+			? await probeSections(s, view, report)
+			: await profileSections(s, view),
 		color,
 	);
 }
@@ -290,17 +293,13 @@ function repoSetupOf(session: Session) {
 }
 
 /**
- * What the harness of `profile` reports when started as a concert would start it. The model's window it reports is
- * kept for pre-flight.
- * @throws CliError when the harness is not loaded, or its run fails or times out before it reports.
+ * The harness `profile` runs on and the repo host's setup, once the extras checks of pre-flight pass. The rest of
+ * pre-flight is not run, as its context check refuses a window none is known for, which the probe is what finds.
+ * @throws CliError when the harness or the repo host is not loaded, or an extras check finds a problem.
  */
-async function probed(
-	profile: Profile,
-	session: Session,
-): Promise<ProbeReport> {
-	const { deps } = session;
+function probeTarget(profile: Profile, session: Session) {
 	const { runtime } = profile.fields;
-	const harnesses = builtinHarnesses(deps.env);
+	const harnesses = builtinHarnesses(session.deps.env);
 	const harness = harnesses.find((h) => h.name === runtime.harness);
 	const setup = repoSetupOf(session);
 	if (!harness || !setup)
@@ -308,6 +307,26 @@ async function probed(
 			`harness '${runtime.harness}' is not loaded`,
 			`Set 'profiles.${profile.name}.runtime.harness' to one of: ${harnesses.map((h) => h.name).join(", ")}`,
 		);
+	const [finding] = extrasFindings(profile, harnesses, setup);
+	if (finding)
+		throw new CliError(
+			[finding.message, finding.hint].filter(Boolean).join("\n"),
+		);
+	return { harness, setup };
+}
+
+/**
+ * What the harness of `profile` reports when started as a concert would start it, once `probeTarget` lets it. The
+ * model's window it reports is kept for pre-flight.
+ * @throws CliError as `probeTarget` does, or when its run fails or times out before it reports.
+ */
+async function probed(
+	profile: Profile,
+	session: Session,
+): Promise<ProbeReport> {
+	const { deps } = session;
+	const { runtime } = profile.fields;
+	const { harness, setup } = probeTarget(profile, session);
 	deps.stderr(`probing ${runtime.harness} for ${profile.name}…`);
 	const scratch = await mkdtemp(join(tmpdir(), "maestro-probe-"));
 	try {

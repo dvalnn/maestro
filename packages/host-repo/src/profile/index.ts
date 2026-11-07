@@ -1,5 +1,21 @@
-import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, sep } from "node:path";
+import type { Dirent } from "node:fs";
+import {
+	lstat,
+	readdir,
+	readFile,
+	readlink,
+	realpath,
+	stat,
+} from "node:fs/promises";
+import {
+	basename,
+	dirname,
+	extname,
+	isAbsolute,
+	join,
+	relative,
+	sep,
+} from "node:path";
 import { closest, sha256Hex } from "@maestro/core";
 import {
 	type Composed,
@@ -59,7 +75,9 @@ const ATTACHMENT_DIR = "/in";
 export const PROFILE_PATHS: readonly KeyPath[] = [
 	["instructions"],
 	["attachments", "*", "path"],
+	["harnessExtras"],
 ];
+const EXTRAS = "harnessExtras";
 /** Keys reserved for later: config passes them for resolution to refuse by name. */
 const RESERVED = ["mcp", "skills"];
 const READ_ONLY = "readOnly";
@@ -88,6 +106,7 @@ const fieldsSchema = (
 			properties: { harness: TEXT, model: TEXT, thinking: TEXT },
 		},
 		instructions: TEXT,
+		harnessExtras: TEXT,
 		attachments: {
 			type: "object",
 			propertyNames: { pattern: irSchema.$defs.portName.pattern },
@@ -150,6 +169,8 @@ export type ProfileAttachment = { path: string; hint: string };
 export type ProfileFields = {
 	runtime: Runtime;
 	instructions?: string;
+	/** The directory the harness adapter copies into the config dir it owns for the session (GLOSSARY: Harness extras). */
+	harnessExtras?: string;
 	attachments: Record<string, ProfileAttachment>;
 	/** Host paths bound read-only, set in config only. */
 	readOnly: string[];
@@ -384,7 +405,10 @@ function pathsIn(
 	values: Readonly<Record<string, unknown>>,
 ): [KeyPath, string][] {
 	const { instructions, attachments } = values;
-	const found: [KeyPath, unknown][] = [[["instructions"], instructions]];
+	const found: [KeyPath, unknown][] = [
+		[["instructions"], instructions],
+		[[EXTRAS], values[EXTRAS]],
+	];
 	if (isPlainObject(attachments))
 		for (const [key, value] of Object.entries(attachments))
 			if (isPlainObject(value))
@@ -397,7 +421,8 @@ const namespaceOf = (dir: string) => dirname(dir);
 
 /**
  * What is wrong with the path at `key` in profile `name`'s file, given its real path, and the fix; undefined when it
- * is a file or directory inside the profile's namespace directory, and a file for `instructions`.
+ * is a file or directory inside the profile's namespace directory, a file for `instructions` and a directory for
+ * `harnessExtras`.
  */
 async function pathProblem(
 	name: string,
@@ -427,6 +452,11 @@ async function pathProblem(
 		];
 	if (key[0] === "instructions" && !(await stat(real)).isFile())
 		return ["which is not a file", `Point it at a file inside ${space}`];
+	if (key[0] === EXTRAS && !(await stat(real)).isDirectory())
+		return [
+			"which is not a directory",
+			`Point it at a directory inside ${space}`,
+		];
 	return undefined;
 }
 
@@ -462,6 +492,32 @@ async function sharedPaths(name: string, dir: string): Promise<string[]> {
 		return found.flat().toSorted();
 	} catch {
 		return [];
+	}
+}
+
+/**
+ * The real path of the extras directory profile `name` in `dir` gets once `layers` are layered over its file, when it
+ * is a directory inside the profile's namespace directory; none otherwise, or when the file cannot be read.
+ */
+async function winningExtras(
+	name: string,
+	dir: string,
+	layers: readonly Layer[],
+): Promise<string | undefined> {
+	try {
+		const merged = layeredOver(
+			{ layers: layers.flatMap((l) => anyProfileFor(name, l)) },
+			[PROFILES, name],
+			await fileLayer(name, dir),
+		);
+		const path = merged.values[EXTRAS];
+		if (typeof path !== "string") return undefined;
+		const real = await realpath(path);
+		const space = await realpath(namespaceOf(dir));
+		const inside = real.startsWith(space + sep);
+		return inside && (await stat(real)).isDirectory() ? real : undefined;
+	} catch {
+		return undefined;
 	}
 }
 
@@ -621,11 +677,18 @@ function contextOf({
 function restOf(
 	values: Readonly<Record<string, unknown>>,
 ): Omit<ProfileFields, "runtime"> {
-	const { instructions, attachments, readOnly, limits, context } =
-		writtenOf(values);
+	const {
+		instructions,
+		harnessExtras,
+		attachments,
+		readOnly,
+		limits,
+		context,
+	} = writtenOf(values);
 	const { timeout, tokens } = limits ?? {};
 	return {
 		...(instructions !== undefined && { instructions }),
+		...(harnessExtras !== undefined && { harnessExtras }),
 		attachments: attachments ?? {},
 		readOnly: readOnly ?? [],
 		limits: {
@@ -636,11 +699,25 @@ function restOf(
 	};
 }
 
+/** Every entry under `dir` by its path relative to `dir`, in path order, never through a link. */
+async function treeOf(dir: string): Promise<string[]> {
+	const walk = async (sub: string): Promise<string[]> => {
+		const found = await readdir(join(dir, sub), { withFileTypes: true });
+		const nested = await Promise.all(
+			found.map(async (e) => {
+				const path = join(sub, e.name);
+				return e.isDirectory() ? [path, ...(await walk(path))] : [path];
+			}),
+		);
+		return nested.flat();
+	};
+	return (await walk("")).toSorted();
+}
+
 /** `sha256:<hex>` of each regular file under `dir`, by its path relative to `dir`, in path order. */
 async function fileHashes(dir: string): Promise<Record<string, string>> {
-	const names = (await readdir(dir, { recursive: true })).toSorted();
 	const hashed = await Promise.all(
-		names.map(async (n): Promise<[string, string][]> => {
+		(await treeOf(dir)).map(async (n): Promise<[string, string][]> => {
 			const path = join(dir, n);
 			if (!(await lstat(path)).isFile()) return [];
 			return [[n, `sha256:${sha256Hex(await readFile(path))}`]];
@@ -649,19 +726,145 @@ async function fileHashes(dir: string): Promise<Record<string, string>> {
 	return Object.fromEntries(hashed.flat());
 }
 
-/** `sha256:<hex>` over the files of every profile `roots` hold, each name's that wins: any edit to one changes it. */
-export async function profilesDigest(roots: Roots): Promise<string> {
+/** The links under `dir`, by path relative to `dir`, each with its text. */
+async function linksOf(dir: string): Promise<[string, string][]> {
+	const found = await Promise.all(
+		(await treeOf(dir)).map(async (n): Promise<[string, string][]> => {
+			const path = join(dir, n);
+			if (!(await lstat(path)).isSymbolicLink()) return [];
+			return [[n, await readlink(path)]];
+		}),
+	);
+	return found.flat();
+}
+
+/** Whether real path `path` is the real directory `root` or inside it. */
+const within = (root: string, path: string) =>
+	path === root || path.startsWith(root + sep);
+
+/** The real directory inside `root` that link `entry` leads to; none for a link that leads nowhere or out of `root`. */
+async function linkedDir(root: string, entry: string) {
+	const real = await realpath(entry).catch(() => undefined);
+	if (real === undefined || !within(root, real)) return undefined;
+	return (await stat(real)).isDirectory() ? real : undefined;
+}
+
+/** The directory the walk enters at `e`, an entry of `dir` under `root`: a directory, or one a link leads to. */
+async function nextDir(root: string, dir: string, e: Dirent) {
+	const entry = join(dir, e.name);
+	if (e.isSymbolicLink()) return linkedDir(root, entry);
+	return e.isDirectory() ? entry : undefined;
+}
+
+/**
+ * The links under the real directory `root`, by path relative to it, whose real target is a directory already on the
+ * walk that reaches them, the walk following each link to a directory inside `root`.
+ */
+async function cyclicLinks(root: string): Promise<Set<string>> {
+	const cyclic = new Set<string>();
+	const walk = async (dir: string, path: readonly string[]) => {
+		for (const e of await readdir(dir, { withFileTypes: true })) {
+			const next = await nextDir(root, dir, e);
+			if (next === undefined) continue;
+			if (path.includes(next)) cyclic.add(relative(root, join(dir, e.name)));
+			else await walk(next, [...path, next]);
+		}
+	};
+	await walk(root, [root]);
+	return cyclic;
+}
+
+/** Why `link`, under the real directory `root` whose `cyclic` links are known, breaks the extras rule, when it does. */
+async function linkProblem(
+	root: string,
+	link: string,
+	cyclic: ReadonlySet<string>,
+): Promise<string | undefined> {
+	if (isAbsolute(await readlink(link))) return "is absolute";
+	const real = await realpath(link).catch((e: unknown) =>
+		e instanceof Error && "code" in e && e.code === "ELOOP" ? "loop" : "",
+	);
+	if (real === "loop") return "is cyclic";
+	if (real === "") return "points at nothing";
+	if (
+		cyclic.has(
+			relative(root, join(await realpath(dirname(link)), basename(link))),
+		)
+	)
+		return "is cyclic";
+	if (!real.startsWith(root + sep)) return "resolves outside the directory";
+	return undefined;
+}
+
+/**
+ * The errors of profile `name`'s extras directory, as `merged` sets it: one that is missing or no directory, and each
+ * link in it that is not relative to an entry inside it.
+ */
+async function extrasErrors(
+	name: string,
+	merged: Merged,
+): Promise<Diagnostic[]> {
+	const path = merged.values[EXTRAS];
+	if (typeof path !== "string") return [];
+	const source = sourceOf(merged, [EXTRAS]);
+	const found = await stat(path).catch(() => undefined);
+	if (!found?.isDirectory()) {
+		const problem = found ? "is not a directory" : "does not exist";
+		return [
+			refusal(
+				source,
+				`profile ${name}: '${EXTRAS}' is ${path}, which ${problem}`,
+				"Point it at a directory",
+			),
+		];
+	}
+	const root = await realpath(path);
+	const links = await linksOf(path);
+	const cyclic = await cyclicLinks(root);
+	const problems = await Promise.all(
+		links.map(([link]) => linkProblem(root, join(path, link), cyclic)),
+	);
+	return links.flatMap(([link], i) => {
+		const problem = problems[i];
+		return problem === undefined
+			? []
+			: [
+					refusal(
+						source,
+						`profile ${name}: ${EXTRAS} link ${link} ${problem}`,
+						`Make ${link} a relative link to an entry inside ${path}, so the directory is self-contained`,
+					),
+				];
+	});
+}
+
+/**
+ * `sha256:<hex>` over the files of every profile `roots` hold, each name's that wins: any edit to one changes it. With
+ * the config `layers` over each, it covers the extras directory that wins too, its files and the text of its links,
+ * when it sits inside the profile's namespace directory.
+ */
+export async function profilesDigest(
+	roots: Roots,
+	layers: readonly Layer[] = [],
+): Promise<string> {
 	const names = await heldNames(roots);
 	const held = await Promise.all(
 		names.map(async (name) => {
 			const found = await findProfile(name, roots);
 			if (!found) return [name, null];
 			const shared = await sharedPaths(name, found.dir);
+			const extras = await winningExtras(name, found.dir, layers);
 			return [
 				name,
 				{
 					files: await fileHashes(found.dir),
 					shared: await sharedHashes(shared),
+					...(extras && {
+						extras: {
+							files: await fileHashes(extras),
+							links: Object.fromEntries(await linksOf(extras)),
+						},
+					}),
 				},
 			];
 		}),
@@ -761,6 +964,8 @@ async function resolve(
 	);
 	const errors = fieldErrors(name, merged, tolerateUnset);
 	if (errors.length) throw new ConfigError(errors);
+	const extras = await extrasErrors(name, merged);
+	if (extras.length) throw new ConfigError(extras);
 	const runtime = (merged.values.runtime ?? {}) as Partial<Runtime>;
 	return {
 		name,
@@ -787,6 +992,7 @@ export type Inspection = {
 	shadows: string[];
 	runtime: Partial<Runtime>;
 	instructions?: string;
+	harnessExtras?: string;
 	attachments: Record<string, ProfileAttachment & { agent: string }>;
 	readOnly: string[];
 	limits: { timeout?: string; tokens?: number };
@@ -845,8 +1051,15 @@ export function inspectProfile(
 	roots: Roots,
 	declared: ReadonlyMap<string, AgentEnvironment>,
 ): Inspection {
-	const { runtime, instructions, attachments, readOnly, limits, context } =
-		profile.fields;
+	const {
+		runtime,
+		instructions,
+		harnessExtras,
+		attachments,
+		readOnly,
+		limits,
+		context,
+	} = profile.fields;
 	const { timeout, tokens } = limits;
 	return {
 		name: profile.name,
@@ -855,6 +1068,7 @@ export function inspectProfile(
 		shadows: profile.shadows,
 		runtime,
 		...(instructions !== undefined && { instructions }),
+		...(harnessExtras !== undefined && { harnessExtras }),
 		attachments: Object.fromEntries(
 			Object.entries(attachments).map(([name, a]) => [
 				name,

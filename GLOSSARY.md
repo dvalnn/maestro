@@ -208,6 +208,9 @@ fork. [Home](packages/host-repo/README.md#lookup)
 **Agent environment**: What a harness loads for an agent: tools, subagents, skills, MCP servers, hooks, context files
 and compaction. Not the host's environment. [Home](packages/host-repo/README.md#environment-report-and-probe)
 
+**Harness extras**: The one directory a profile names in `harnessExtras`, which its harness adapter copies into the
+config dir it owns for the session; the one way past the baseline. [Home](packages/host-repo/README.md#fields)
+
 **Probe**: Starting a profile's harness to read its startup environment and context window. A mismatch is a fault of
 inspection, never of a concert. [Home](packages/host-repo/README.md#environment-report-and-probe)
 

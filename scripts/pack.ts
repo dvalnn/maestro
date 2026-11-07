@@ -65,8 +65,8 @@ async function bundleOf(root: string): Promise<Blob> {
 
 /**
  * Writes the pack whose source is `dir` into `out`: `index.js`, `README.md`, `maestro-pack.json` and a copy of its
- * `profiles` directory when it has one, once the whole build has succeeded. The pack id is the directory's name and its
- * version is its package's.
+ * `profiles` directory when it has one, each link as written, once the whole build has succeeded. The pack id is the
+ * directory's name and its version is its package's.
  * @throws Error when a file the pack needs is missing, or the source does not bundle.
  */
 export async function pack(dir: string, out = join(dir, "dist")) {
@@ -88,7 +88,11 @@ export async function pack(dir: string, out = join(dir, "dist")) {
 	);
 	await rm(join(out, PROFILES), { recursive: true, force: true });
 	if (existsSync(join(root, PROFILES)))
-		await cp(join(root, PROFILES), join(out, PROFILES), { recursive: true });
+		await cp(join(root, PROFILES), join(out, PROFILES), {
+			recursive: true,
+			// A relative link stays relative, so a self-contained extras directory stays self-contained.
+			verbatimSymlinks: true,
+		});
 	return out;
 }
 

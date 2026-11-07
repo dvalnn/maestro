@@ -38,6 +38,7 @@ export {
 	OUTBOX,
 	type Output,
 	observedOf,
+	ownedEntryProblems,
 	PROFILE_TOKEN,
 	type Runtime,
 	type RuntimeProblem,

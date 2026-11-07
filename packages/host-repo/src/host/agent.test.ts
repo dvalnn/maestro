@@ -13,7 +13,7 @@ import { OUTBOX, stubHarness } from "../harness/index";
 import { resolveProfile } from "../profile/index";
 import { profileAttached } from "./agent";
 import { probe, probeRequest } from "./probe";
-import { concertUsage, releaseConcert } from "./store";
+import { concertUsage, openSession, openTarget, releaseConcert } from "./store";
 import {
 	agentOn,
 	cleanup,
@@ -577,6 +577,22 @@ describe("agent probe", () => {
 		);
 		expect(seen?.outputs).toEqual([]);
 		expect(readdirSync(seen?.lane ?? "")).toEqual([]);
+		expect(seen).not.toHaveProperty("extras");
+	});
+
+	test("a probe's request carries the resolved extras path of the profile", async () => {
+		const dir = profile(
+			"probed-kit",
+			"runtime: { harness: kit, model: none }\nharnessExtras: ../shared-kit\n",
+		);
+		await Bun.write(join(dir, "../shared-kit/models.json"), "{}\n");
+		const setup = setupOf(configOf(toyTarget()));
+		const req = probeRequest(
+			await resolveProfile("probed-kit", setup),
+			setup,
+			tmp("scratch"),
+		);
+		expect(req.extras).toBe(join(dir, "../shared-kit"));
 	});
 });
 
@@ -896,7 +912,8 @@ Change no other file. Your reply is not read.`;
 			],
 			"x",
 		);
-		const config = configOf(toyTarget());
+		const target = toyTarget();
+		const config = configOf(target);
 		const { store } = setupOf(config);
 		if (window !== undefined) keepWindow(store, STUB, window);
 		const { concert, dir, recordPath } = await start(host, ir, config);
@@ -921,6 +938,7 @@ Change no other file. Your reply is not read.`;
 			requests,
 			staged,
 			store,
+			target,
 		};
 	}
 
@@ -1250,6 +1268,55 @@ go`);
 			expect(requests).toHaveLength(turns);
 		},
 	);
+
+	const kitDir = profile(
+		"handoff-kit",
+		"runtime: { harness: kit, model: none }\ncontext: { strategy: handoff, at: 100, max: 1 }\nharnessExtras: extras\n",
+		{ "extras/models.json": "{}\n" },
+	);
+	test("each request of a run that hands off carries the extras path its session records, and the new session records the path of the one before", async () => {
+		const { id, result, requests, store, target } = await handed(
+			"handoff-kit",
+			{ first: [full(), hang] },
+		);
+		expect(result).toMatchObject({ outcome: "ok" });
+		const extras = join(kitDir, "extras");
+		expect(requests.map((r) => r.extras)).toEqual([extras, extras, extras]);
+		const { root } = openTarget(store, target);
+		expect(openSession(root, `${id}.x#2`).extras).toBe(extras);
+	});
+
+	const recordedDir = profile(
+		"handoff-kit-recorded",
+		"runtime: { harness: kit, model: none }\ncontext: { strategy: handoff, at: 100, max: 1 }\nharnessExtras: extras\n",
+		{ "extras/models.json": "{}\n" },
+	);
+	test("an agent that continues a session recorded with other extras than its profile's, then hands off, keeps the recorded path in its requests and its new session", async () => {
+		const { host, requests } = stubHost(scripted({ first: [full(), hang] }));
+		const ir = irOf(
+			host,
+			[
+				{ id: "w", name: "handoff-kit-recorded" },
+				{ id: "r", name: "handoff-kit" },
+			].map(({ id, name }) => ({
+				id,
+				kind: "agent" as const,
+				config: agentOn({ mode: "fresh" }, name),
+				literals: { prompt: "go" },
+				...(id === "r" && { session: "w" }),
+			})),
+			"r",
+		);
+		const target = toyTarget();
+		const config = configOf(target);
+		const { id, result } = await performed(host, ir, config);
+		expect(result).toMatchObject({ outcome: "ok" });
+		const recorded = join(recordedDir, "extras");
+		expect(requests).toHaveLength(6);
+		expect(requests.map((r) => r.extras)).toEqual(Array(6).fill(recorded));
+		const { root } = openTarget(setupOf(config).store, target);
+		expect(openSession(root, `${id}.r#2`).extras).toBe(recorded);
+	});
 
 	test("a compaction under a handoff policy is recorded as a fault and the agent runs on", async () => {
 		const { result, progress } = await handed("handoff-tokens", {

@@ -322,19 +322,36 @@ config gives the profile its runtime (ADR 0013).
 
 A profile is a directory whose `profile.yaml` holds:
 
-| Field          | Holds                                                        |
-| -------------- | ------------------------------------------------------------ |
-| `runtime`      | `harness`, `model`, optional `thinking`                      |
-| `instructions` | a path inside the namespace directory                        |
-| `attachments`  | paths inside the namespace directory, attached to every call |
-| `limits`       | `{ timeout, tokens }`                                        |
-| `context`      | the context policy above                                     |
+| Field           | Holds                                                        |
+| --------------- | ------------------------------------------------------------ |
+| `runtime`       | `harness`, `model`, optional `thinking`                      |
+| `instructions`  | a path inside the namespace directory                        |
+| `harnessExtras` | a directory inside the namespace directory                   |
+| `attachments`   | paths inside the namespace directory, attached to every call |
+| `limits`        | `{ timeout, tokens }`                                        |
+| `context`       | the context policy above                                     |
 
 A path may leave the profile directory but not its **namespace directory**, the directory that holds it:
 `<root>/profiles/` for a bare name, `<root>/profiles/<pack id>/` for a pack's name in the workspace or user root, the
 bundle's `profiles/` for a pack's own. So profiles of one level share a file, and a shadow made by copying a pack's
 `profiles/` keeps its paths. A link cannot escape the bound, and neither the profile directory nor the namespace
 directory is a valid path. The profiles digest covers the shared files a winning profile names.
+
+`harnessExtras` names the **harness extras**: one directory, in the harness's own layout, that the harness adapter
+copies into the config dir it owns for the session, the one way past the baseline. The host binds nothing for it; the
+adapter picks where the copy goes and when.
+
+- The directory is self-contained: each link in it is relative and resolves inside it. An absolute, dangling or cyclic
+  link, or one that resolves outside it, is refused by name, so a pack's extras never lean on a `node_modules` above
+  them. A pack build copies each link as written.
+- A `harnessExtras` set in config replaces the profile's directory whole; it must exist and be a directory, and need not
+  sit in the namespace directory. The profiles digest covers the extras directory that wins, its files and the text of
+  its links, when it sits inside the namespace directory, whether the file or config sets it; never one outside it.
+- At pre-flight, a harness without an extras check refuses the field, naming `profiles.<name>.harnessExtras` and the
+  harness; no shipped harness has one yet. A harness with one refuses an entry named like a file its adapter writes
+  itself. A directory inside the lanes is refused as a read-only bind there is.
+- A session records the extras path its profile gave when it started, and each run in it, after a handoff or a continue,
+  is given that path, never its current profile's: the agent can write its harness's config dir, but not the record.
 
 `readOnly` paths are set only in config, as `profiles.<name>.readOnly`, never in the file.
 
@@ -528,9 +545,10 @@ host records it and never enforces it. It checks each agent's report against the
 checks on the node, which `ls <concert>` shows as `Environment` notes.
 
 `maestro agent probe` starts a profile's agent as a concert would and stops it once it has that report and the model's
-window, to check the report against the adapter's declared baseline and keep the window. A mismatch is a fault of
-inspection, never of a concert. It marks each part `✓`, `✗` or `?` (not reported) and exits 1 on a fault. It spends a
-startup, and on claude one short turn.
+window, to check the report against the adapter's declared baseline and keep the window. Of pre-flight it runs only the
+harness extras checks, failing before the harness starts on a finding, and it fails with the run's reason when the run
+fails on its own, even after a partial report. A mismatch is a fault of inspection, never of a concert. It marks each
+part `✓`, `✗` or `?` (not reported) and exits 1 on a fault. It spends a startup, and on claude one short turn.
 
 The baseline pins the tools an agent gets, so a tool a harness release adds never reaches one. A probe faults each tool
 loaded beyond it and each one in it not loaded.

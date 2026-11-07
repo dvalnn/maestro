@@ -13,6 +13,9 @@ The shape is:
 - **A profile is a directory** whose `profile.yaml` is its manifest. It names its instructions and attachments by paths
   relative to itself, and every such path stays inside the profile's namespace directory, the directory that holds it,
   so profiles of one level may share a file. Nothing is discovered from the layout.
+- **A profile names one extras directory** in `harnessExtras`, by the same path rule. Its adapter reads it in the
+  harness's own layout and copies it into the config dir it owns for the session, so a directory holds every file it
+  needs and each link in it stays inside it. A harness that does not read extras refuses the field at pre-flight.
 - **Roots, highest first:** the workspace's `.maestro/profiles/`, the user's `$XDG_CONFIG_HOME/maestro/profiles/`, then
   the pack bundle's `profiles/`. The highest root holding a name wins it whole. Copying a pack's directory to a higher
   root is a deliberate shadow of it.

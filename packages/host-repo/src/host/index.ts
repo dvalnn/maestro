@@ -76,6 +76,7 @@ export {
 } from "./config";
 export { REPORT } from "./frame";
 export { type Probed, probe, probeRequest } from "./probe";
+export { extrasFindings } from "./validate";
 export { keepWindow, windowOf } from "./windows";
 
 /** `<concert id>.<node instance id>`: concert ids hold no `.`, and the instance part is not empty. */
@@ -191,7 +192,7 @@ export function repoHost({ harnesses }: RepoHostOptions): Host {
 						base: target.base ?? null,
 						sparse: target.sparse ?? null,
 						revision: await revisionOf(target.repo, baseOf(repo)),
-						profiles: await profilesDigest(setup.roots),
+						profiles: await profilesDigest(setup.roots, setup.layers),
 					}
 				: {};
 		},

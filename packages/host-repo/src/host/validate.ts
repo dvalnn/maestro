@@ -19,7 +19,11 @@ import {
 	MAESTRO_TYPE,
 	type PortRef,
 } from "@maestro/ir";
-import { type Harness, PROFILE_TOKEN } from "../harness/index";
+import {
+	type Harness,
+	PROFILE_TOKEN,
+	type RuntimeProblem,
+} from "../harness/index";
 import {
 	PROFILES,
 	type Profile,
@@ -645,6 +649,59 @@ async function resolveAll(
 	return { profiles, errors };
 }
 
+/** `problem`, one a harness found in a field of `profile`, as a diagnostic located where the field is set. */
+const runtimeDiagnostic = (profile: Profile, problem: RuntimeProblem) =>
+	configDiagnostic(
+		"HOST.runtime",
+		sourceOf(profile, problem.field.split(".")),
+		`${PROFILES}.${profile.name}.${problem.field}: ${problem.reason}`,
+		problem.fix.replaceAll(PROFILE_TOKEN, profile.name),
+	);
+
+/**
+ * What is wrong with the harness extras `profile` names on `harness`: the harness takes none without an extras check,
+ * else each problem its check finds; and a directory `bindProblems` refuses, as it refuses a read-only bind.
+ */
+function harnessExtrasProblems(
+	profile: Profile,
+	harness: Harness,
+	setup: RepoSetup,
+): Diagnostic[] {
+	const { name, fields } = profile;
+	const extras = fields.harnessExtras;
+	if (extras === undefined) return [];
+	const problems: RuntimeProblem[] = harness.extrasProblems?.(extras) ?? [
+		{
+			field: "harnessExtras",
+			reason: `${harness.name} takes no harness extras`,
+			fix: `Drop harnessExtras from profile ${PROFILE_TOKEN}, or run it on a harness that takes them`,
+		},
+	];
+	return [
+		...problems.map((p) => runtimeDiagnostic(profile, p)),
+		...bindProblems(setup, [extras], `${PROFILES}.${name}.harnessExtras`).map(
+			error,
+		),
+	];
+}
+
+/**
+ * The pre-flight findings of the harness extras of `profile` under `setup`, on its harness among `harnesses`; none
+ * when that harness is not loaded, which pre-flight refuses on its own.
+ */
+export function extrasFindings(
+	profile: Profile,
+	harnesses: readonly Harness[],
+	setup: HostSetup,
+): Diagnostic[] {
+	const harness = harnesses.find(
+		(h) => h.name === profile.fields.runtime.harness,
+	);
+	return harness
+		? harnessExtrasProblems(profile, harness, repoSetup(setup))
+		: [];
+}
+
 /**
  * What `profile` asks that `harness` cannot give, its context policy in tokens of the model's window kept under host
  * store `store`; a percentage `at` with no window kept is refused alone.
@@ -669,19 +726,12 @@ function harnessProblems(
 	const { runtime } = profile.fields;
 	const problems =
 		harness.runtimeProblems?.(runtime, policy.context, policy.window) ?? [];
-	return problems.map((p) =>
-		configDiagnostic(
-			"HOST.runtime",
-			at(p.field),
-			`${PROFILES}.${profile.name}.${p.field}: ${p.reason}`,
-			p.fix.replaceAll(PROFILE_TOKEN, profile.name),
-		),
-	);
+	return problems.map((p) => runtimeDiagnostic(profile, p));
 }
 
 /**
- * What `profile` asks that the loaded `harnesses` cannot give, and its read-only binds and attachments that
- * `bindProblems` refuses.
+ * What `profile` asks that the loaded `harnesses` cannot give, its harness extras among it, and its read-only binds and
+ * attachments that `bindProblems` refuses.
  */
 function profileProblems(
 	profile: Profile,
@@ -702,6 +752,7 @@ function profileProblems(
 		];
 	return [
 		...harnessProblems(profile, harness, setup.store),
+		...harnessExtrasProblems(profile, harness, setup),
 		...bindProblems(
 			setup,
 			fields.readOnly,

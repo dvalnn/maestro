@@ -470,6 +470,16 @@ describe("compose", () => {
 		"runtime: { harness: stub, model: none }\nattachments: { previous: { path: kb, hint: x } }\n",
 		{ "kb/a.md": "a\n" },
 	);
+	profile(
+		"stub-extras",
+		"runtime: { harness: stub, model: none }\nharnessExtras: extras\n",
+		{ "extras/models.json": "{}\n" },
+	);
+	profile(
+		"kit-clash",
+		"runtime: { harness: kit, model: none }\nharnessExtras: extras\n",
+		{ "extras/settings.json": "{}\n", "extras/models.json": "{}\n" },
+	);
 	test.each([
 		[
 			"a profile no root holds",
@@ -484,7 +494,7 @@ describe("compose", () => {
 			"a profile on a harness not loaded",
 			agentOn(fresh, "gone"),
 			"HOST.harness",
-			"Set 'profiles.gone.runtime.harness' to one of: 'stub', 'other'",
+			"Set 'profiles.gone.runtime.harness' to one of: 'stub', 'other', 'kit'",
 			toyTarget,
 			{},
 			"profile gone runs on harness 'gone', which is not loaded",
@@ -556,6 +566,24 @@ describe("compose", () => {
 			toyTarget,
 			{},
 			"profile nested attaches 'previous', which 'x' reserves",
+		],
+		[
+			"harness extras on a harness without an extras check",
+			agentOn(fresh, "stub-extras"),
+			"HOST.runtime",
+			"Drop harnessExtras from profile stub-extras, or run it on a harness that takes them",
+			toyTarget,
+			{},
+			"profiles.stub-extras.harnessExtras: stub takes no harness extras",
+		],
+		[
+			"an extras entry named like a file its harness writes itself",
+			agentOn(fresh, "kit-clash"),
+			"HOST.runtime",
+			"Rename or drop settings.json in the extras directory",
+			toyTarget,
+			{},
+			"profiles.kit-clash.harnessExtras: extras entry settings.json is a file kit writes itself",
 		],
 		[
 			"a missing read-only bind of its profile",
@@ -663,6 +691,49 @@ describe("compose", () => {
 			);
 		},
 	);
+
+	test("an extras directory inside the lanes is a HOST error, as a read-only bind there is", async () => {
+		const { host } = stubHost(() => [OK]);
+		const dataRoot = tmp("data");
+		const extras = join(dataRoot, "hosts/repo/lanes/extras");
+		mkdirSync(extras, { recursive: true });
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "x",
+					kind: "agent",
+					config: agentOn(fresh, "kit-clash"),
+					literals: { prompt: "go" },
+				},
+			],
+			"x",
+		);
+		const composed = await compose({
+			ir,
+			config: configOf(toyTarget(), {
+				dataRoot,
+				profiles: { "kit-clash": { harnessExtras: extras } },
+			}),
+			roots: ROOTS,
+			core: CORE_CONFIG,
+			packs: {},
+			hosts: [host],
+			loadCode: noCode,
+			caps: {},
+		});
+		expect(
+			composed.ok
+				? []
+				: composed.diagnostics.map((d) => [d.code, d.message, d.hint]),
+		).toEqual([
+			[
+				"HOST.bind",
+				`profiles.kit-clash.harnessExtras '${extras}' is inside a lane`,
+				"Bind a path outside the lanes",
+			],
+		]);
+	});
 
 	profile("stub-modelless", "runtime: { harness: stub }\n");
 	profile(
@@ -979,6 +1050,100 @@ describe("perform", () => {
 			tokens_out: 2,
 		});
 		expect(snapshot(target)).toEqual(before);
+	});
+
+	const kitted = profile(
+		"kitted",
+		"runtime: { harness: kit, model: none }\nharnessExtras: extras\n",
+		{ "extras/models.json": "{}\n" },
+	);
+	profile(
+		"rekitted",
+		"runtime: { harness: kit, model: none }\nharnessExtras: other\n",
+		{ "other/models.json": "{}\n" },
+	);
+	test("a minted session records its profile's extras path, and an agent continuing it is given that path, not its own profile's", async () => {
+		const { host, requests } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "first",
+					kind: "agent",
+					config: agentOn(fresh, "kitted"),
+					literals: { prompt: "go" },
+				},
+				{
+					id: "second",
+					kind: "agent",
+					config: agentOn({ mode: "extend" }, "rekitted"),
+					literals: { prompt: "go on" },
+					lane: "first",
+					session: "first",
+				},
+			],
+			"second",
+		);
+		const config = configOf(toyTarget());
+		const { id, result } = await performed(host, ir, config);
+
+		expect(result).toMatchObject({ outcome: "ok" });
+		const extras = join(kitted, "extras");
+		expect(requests.map((r) => r.extras)).toEqual([extras, extras]);
+		const { root } = openTarget(
+			setupOf(config).store,
+			config.values.target.repo,
+		);
+		expect(openSession(root, `${id}.first`).extras).toBe(extras);
+	});
+
+	profile("kit-bare", "runtime: { harness: kit, model: none }\n");
+	test("an agent whose profile sets extras, continuing a session recorded with none, is given no extras", async () => {
+		const { host, requests } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "first",
+					kind: "agent",
+					config: agentOn(fresh, "kit-bare"),
+					literals: { prompt: "go" },
+				},
+				{
+					id: "second",
+					kind: "agent",
+					config: agentOn({ mode: "extend" }, "kitted"),
+					literals: { prompt: "go on" },
+					lane: "first",
+					session: "first",
+				},
+			],
+			"second",
+		);
+		const config = configOf(toyTarget());
+		const { id, result } = await performed(host, ir, config);
+
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(requests).toHaveLength(2);
+		expect(requests.map((r) => r.extras)).toEqual([undefined, undefined]);
+		const { root } = openTarget(
+			setupOf(config).store,
+			config.values.target.repo,
+		);
+		expect(openSession(root, `${id}.first`)).not.toHaveProperty("extras");
+	});
+
+	test("a session record without an extras path loads as a session with no extras", () => {
+		const root = tmp("store");
+		const home = join(root, "sessions", encodeURIComponent("c.x"));
+		mkdirSync(home, { recursive: true });
+		writeFileSync(
+			join(home, "session.json"),
+			JSON.stringify({ harness: "stub", concert: "c", harnessId: "h" }),
+		);
+		const session = openSession(root, "c.x");
+		expect(session.harnessId).toBe("h");
+		expect(session).not.toHaveProperty("extras");
 	});
 
 	test.each([

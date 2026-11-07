@@ -282,8 +282,8 @@ type Handoff = {
 	key: string;
 	/** The task as first given, which every fresh session is given again. */
 	task: string;
-	/** Starts the instance's session of 1-based `index`. */
-	mint: (index: number) => Session;
+	/** Starts the instance's session of 1-based `index`, handed off from session `from`. */
+	mint: (index: number, from: Session) => Session;
 };
 
 /** What an instance's turns share over every session it runs. */
@@ -521,7 +521,7 @@ async function handOff(
 		};
 	talk.emit(sessionEvent(state, "handoff"));
 	state.index++;
-	state.session = handoff.mint(state.index);
+	state.session = handoff.mint(state.index, state.session);
 	const prompt = handoffMessage(
 		state.index,
 		sessionsOf(handoff.max),
@@ -760,7 +760,8 @@ const encoreMatches = (instance: HostInstance, config: AgentConfig) =>
  * The session an instance runs:
  * - the one at its `session` input, when its node takes one;
  * - in an encore, its counterpart's (`counterpartSession`), unless its seat opts out with `encore: false`;
- * - else one it starts, in an encore with why the counterpart's could not go on.
+ * - else one it starts, recording its profile's harness extras, in an encore with why the counterpart's could not go
+ *   on.
  */
 function sessionOf(
 	root: string,
@@ -787,7 +788,13 @@ function sessionOf(
 	if (matched && "session" in matched)
 		return { session: matched.session, continues: true };
 	return {
-		session: mintSession(root, harness, concert, instance.id),
+		session: mintSession(
+			root,
+			harness,
+			concert,
+			instance.id,
+			profile.fields.harnessExtras,
+		),
 		continues: false,
 		...(matched && { fallback: matched.fresh }),
 	};
@@ -996,13 +1003,16 @@ async function execute(
 				instance: instance.id,
 				context: policy.context,
 				window: policy.window,
+				...(session.extras !== undefined && { extras: session.extras }),
 			};
-			const mint = (index: number) =>
+			// A handoff keeps the run's request, so its session keeps the extras that request carries.
+			const mint = (index: number, from: Session) =>
 				mintSession(
 					store.root,
 					runtime.harness,
 					context.concert,
 					`${instance.id}${SESSION_INDEX}${index}`,
+					from.extras,
 				);
 			let observed: ObservedEnvironment | undefined;
 			const turns = await within(profile.fields.limits, live, (guard) =>

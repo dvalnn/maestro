@@ -19,8 +19,8 @@ const PROBE_PROMPT = "Reply with ok.";
 
 /**
  * The request that starts `profile`'s agent as a concert would, under `scratch`, an empty directory: the same sandbox
- * binds, instructions and attachments, an empty lane, no checks and no outputs. A context policy that needs a window
- * none is known for is left out, as the probe is what finds it.
+ * binds, instructions, attachments and harness extras, an empty lane, no checks and no outputs. A context policy
+ * that needs a window none is known for is left out, as the probe is what finds it.
  */
 export function probeRequest(
 	profile: Profile,
@@ -28,7 +28,8 @@ export function probeRequest(
 	scratch: string,
 ): HarnessRequest {
 	const repo = repoSetup(setup);
-	const { runtime, instructions, readOnly, context } = profile.fields;
+	const { runtime, instructions, readOnly, context, harnessExtras } =
+		profile.fields;
 	const policy = contextIn(profile, repo.store);
 	const attachments = Object.entries(profile.fields.attachments);
 	const made = (name: string) => {
@@ -62,6 +63,7 @@ export function probeRequest(
 		outputs: [],
 		session: { dir: made("session"), id: crypto.randomUUID() },
 		...(!("message" in policy) && policy),
+		...(harnessExtras !== undefined && { extras: harnessExtras }),
 	};
 }
 
@@ -85,7 +87,8 @@ function note(seen: Probed, e: HarnessEvent): boolean {
 /**
  * Starts `harness` on `req` and kills it once it has reported both its environment and the model's window, or once
  * `timeoutMs` pass. Returns what it reported, nothing when it reported neither before its run ended.
- * @throws Error with the run's reason when it failed before it reported, or when the time ran out with no report.
+ * @throws Error with the run's reason when it failed on its own, even after a partial report, or when the time ran out
+ * with no report.
  */
 export async function probe(
 	harness: Harness,
@@ -105,10 +108,11 @@ export async function probe(
 				await run.cancel();
 				return seen;
 			}
-		if (Object.keys(seen).length) return seen;
+		const result = await run.result;
+		// The probe's own stop is no failure of the run: it returns what was reported, if anything was.
+		if (late && Object.keys(seen).length > 0) return seen;
 		if (late)
 			throw new Error(`no startup report within ${timeoutMs / MS_PER_S}s`);
-		const result = await run.result;
 		if (result.outcome === "failed")
 			throw new Error(result.reason ?? "the harness failed");
 		return seen;

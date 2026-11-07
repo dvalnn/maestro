@@ -49,6 +49,11 @@ export type Session = {
 	home: string;
 	/** The directory its harness keeps, under `home`. */
 	dir: string;
+	/**
+	 * Host path of the harness extras its runs are given, as recorded when it started: the agent can write its harness's
+	 * config dir, but not this record. None when it has no extras.
+	 */
+	extras?: string;
 };
 
 /**
@@ -143,12 +148,16 @@ function concertPartials(root: string, concert: string): string[] {
 		: [];
 }
 
-/** Starts the session of `harness` that node instance `instance` of `concert` runs, over any an earlier run left. */
+/**
+ * Starts the session of `harness` that node instance `instance` of `concert` runs, over any an earlier run left,
+ * recording `extras`, the host path of its harness extras, when it has them.
+ */
 export function mintSession(
 	root: string,
 	harness: string,
 	concert: string,
 	instance: string,
+	extras?: string,
 ): Session {
 	const id = `${concert}.${instance}`;
 	const home = homeOf(root, id);
@@ -156,14 +165,20 @@ export function mintSession(
 	const dir = join(home, HARNESS_DIR);
 	mkdirSync(dir, { recursive: true });
 	const harnessId = crypto.randomUUID();
+	const recorded = { ...(extras !== undefined && { extras }) };
 	writeFileSync(
 		join(home, SESSION_FILE),
-		JSON.stringify({ harness, concert, harnessId }),
+		JSON.stringify({ harness, concert, harnessId, ...recorded }),
 	);
-	return { id, harnessId, harness, home, dir };
+	return { id, harnessId, harness, home, dir, ...recorded };
 }
 
-type Meta = { harness: string; concert: string; harnessId: string };
+type Meta = {
+	harness: string;
+	concert: string;
+	harnessId: string;
+	extras?: unknown;
+};
 
 const isMeta = (v: unknown): v is Meta =>
 	isPlainObject(v) &&
@@ -185,8 +200,15 @@ export function findSession(root: string, id: string): Session | undefined {
 	const home = homeOf(root, id);
 	const meta = recordAt(home);
 	if (!isMeta(meta)) return undefined;
-	const { harness, harnessId } = meta;
-	return { id, harnessId, harness, home, dir: join(home, HARNESS_DIR) };
+	const { harness, harnessId, extras } = meta;
+	return {
+		id,
+		harnessId,
+		harness,
+		home,
+		dir: join(home, HARNESS_DIR),
+		...(typeof extras === "string" && { extras }),
+	};
 }
 
 /**

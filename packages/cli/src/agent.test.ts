@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanup } from "./fixtures/packs";
 import { GREET, hostOf, json, world } from "./fixtures/world";
+import * as hosts from "./hosts";
 import { builtinHosts } from "./hosts";
 
 afterEach(cleanup);
@@ -150,6 +151,36 @@ describe("agent show", () => {
 		expect(shown).toMatchObject({ code: 0, err: "" });
 		expect(shown.out).toContain("../shared/guide.md, 1 line");
 		expect(shown.out).toMatch(/^\s*all\s+\.\.\/shared\/\s/m);
+	});
+
+	test("shows harness extras after the instructions, with their source and the directory's top-level entries", async () => {
+		const w = await roster();
+		const dir = join(w.cwd, ".maestro/profiles/demo/kit");
+		await Promise.all([
+			Bun.write(
+				join(dir, "profile.yaml"),
+				"runtime: { harness: stub, model: none }\ninstructions: i.md\nharnessExtras: extras\n",
+			),
+			Bun.write(join(dir, "i.md"), "Be terse.\n"),
+			Bun.write(join(dir, "extras/models.json"), "{}\n"),
+			Bun.write(join(dir, "extras/lib/index.js"), "x\n"),
+			Bun.write(join(w.cwd, "kit/settings.json"), "{}\n"),
+		]);
+		const shown = await w.call(["agent", "show", "demo/kit"]);
+		expect(shown).toMatchObject({ code: 0, err: "" });
+		expect(shown.out).toContain(
+			"Instructions  i.md, 1 line\n\nExtras        extras/\n  entries     lib/ models.json\n\n",
+		);
+		const set = await w.call([
+			"agent",
+			"show",
+			"demo/kit",
+			"-c",
+			`profiles.demo/kit.harnessExtras=${join(w.cwd, "kit")}`,
+		]);
+		expect(set.out).toContain(
+			"Extras        kit/  [-c]\n  entries     settings.json\n",
+		);
 	});
 
 	test("names each preset layer by its own name, a later preset winning a key", async () => {
@@ -530,6 +561,61 @@ describe("agent probe", () => {
 			});
 		},
 	);
+
+	/** A world whose profile `demo/kit` sets harness extras, on harness `harness` with `fields` besides. */
+	async function kitted(harness: string, fields = "") {
+		const w = await roster();
+		const dir = join(w.cwd, ".maestro/profiles/demo/kit");
+		await Promise.all([
+			Bun.write(
+				join(dir, "profile.yaml"),
+				`runtime: { harness: ${harness}, model: none }\nharnessExtras: extras\n${fields}`,
+			),
+			Bun.write(join(dir, "extras/models.json"), "{}\n"),
+			Bun.write(join(dir, "extras/lib/index.js"), "x\n"),
+		]);
+		return w;
+	}
+
+	/** The shipped harnesses, and the stub again as `kit`, which takes harness extras. */
+	const withKit = () => {
+		const shipped = hosts.builtinHarnesses;
+		return spyOn(hosts, "builtinHarnesses").mockImplementation((env) => {
+			const all = shipped(env);
+			const stub = all.find((h) => h.name === "stub");
+			return stub
+				? [...all, { ...stub, name: "kit", extrasProblems: () => [] }]
+				: all;
+		});
+	};
+
+	test("an extras finding fails the probe before it starts the harness", async () => {
+		const w = await kitted("stub");
+		expect(await w.call(["agent", "probe", "demo/kit"])).toMatchObject({
+			code: 1,
+			err: "error: profiles.demo/kit.harnessExtras: stub takes no harness extras\n  Drop harnessExtras from profile demo/kit, or run it on a harness that takes them",
+		});
+	});
+
+	test("with no context window known, the probe starts the harness once the extras checks pass, and lists the extras entries beside the environment", async () => {
+		const w = await kitted(
+			"kit",
+			'context: { strategy: handoff, at: "25%", max: 1 }\n',
+		);
+		const spy = withKit();
+		try {
+			const probed = await w.call(["agent", "probe", "demo/kit"]);
+			expect(probed).toMatchObject({
+				code: 0,
+				err: "probing kit for demo/kit…",
+			});
+			expect(probed.out).toContain(
+				"\n\nExtras        extras/\n  entries     lib/ models.json\n\nEnvironment   ",
+			);
+		} finally {
+			spy.mockRestore();
+		}
+	});
 
 	test("a profile with no harness is a usage error naming the fix", async () => {
 		const w = await roster();

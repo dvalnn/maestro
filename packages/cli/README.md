@@ -314,6 +314,9 @@ them when any does, and exits 0.
 
 - A value names its layer in brackets (`[preset risky]`, `[-c]`, `[user config]`, `[workspace config]`) only when a
   layer above its `profile.yaml` set it, and each attachment shows the host path and where the agent sees it.
+- A profile that sets `harnessExtras` shows an `Extras` section after `Instructions`: the directory with its source, and
+  its top-level entries. The directory is self-contained, each link in it relative and inside it; the
+  [host-repo README](../host-repo/README.md#fields) holds the rule.
 - The environment is what the profile's harness adapter launches with: tools, subagents, skills, MCP servers, hooks,
   context files and compaction.
 - `--json` gives the same fields with absolute paths, each value's source as its layer with its file and line or its
@@ -322,12 +325,15 @@ them when any does, and exits 0.
   performing: the same text as the instance's `staged/instructions.md`. The seat and profile the node is bound to go on
   stderr, with the layer that rebound the seat, if any. With `--json` it prints `{node, seat, prompt}`. A node that is
   no agent node is a usage error naming the nearest one. A profile with no harness or model still gives its prompt.
-- `agent probe <profile>` starts the harness as a concert would (the same sandbox, flags, instructions and attachments,
-  an empty scratch lane, no checks), stops it once it has reported its environment and its model's context window,
-  failing after 60s without a report, and checks each part: `✓` matched, `✗` a fault with its detail under the row, `?`
-  not reported. The fault count comes last, and a fault exits 1. A profile with no harness is a usage error naming the
-  fix. Context shows the window with `kept for <harness> <model>`, and `show` points at `agent probe` with the
-  `--preset` and `-c` flags it was given. `--json` adds `environment.observed` and `environment.checks`.
+- `agent probe <profile>` first runs pre-flight's `harnessExtras` checks, failing with the first finding before the
+  harness starts; the rest of pre-flight is skipped, so a window none is known for is no refusal. It then starts the
+  harness as a concert would (the same sandbox, flags, instructions, attachments and extras, an empty scratch lane, no
+  checks), stops it once it has reported its environment and its model's context window, failing after 60s without a
+  report or with the run's reason when the run fails on its own, and lists the extras entries above its Environment
+  section. It checks each part: `✓` matched, `✗` a fault with its detail under the row, `?` not reported. The fault
+  count comes last, and a fault exits 1. A profile with no harness is a usage error naming the fix. Context shows the
+  window with `kept for <harness> <model>`, and `show` points at `agent probe` with the `--preset` and `-c` flags it was
+  given. `--json` adds `environment.observed` and `environment.checks`.
 - Claude reports its environment through its `system/init` line and its window on its closing `result` line, so its
   probe runs one short turn; pi reports both through a maestro extension loaded with `--extension` beside
   `--no-extensions`. The window is kept per harness and model, and every agent turn refreshes it; Context shows it where

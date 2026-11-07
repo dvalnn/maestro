@@ -17,8 +17,8 @@ means no spend.
 
 ## Where a profile lives
 
-A directory holding a `profile.yaml` (`runtime`, `instructions`, `limits`, `context`, `attachments`) and the files it
-names, in one of these roots, highest first; the highest holding the name wins it whole:
+A directory holding a `profile.yaml` (`runtime`, `instructions`, `harnessExtras`, `limits`, `context`, `attachments`)
+and the files it names, in one of these roots, highest first; the highest holding the name wins it whole:
 
 - the workspace's `.maestro/profiles/<name>/`
 - the user's `$XDG_CONFIG_HOME/maestro/profiles/<name>/`
@@ -29,6 +29,11 @@ A profile's paths may leave its directory but stay inside its namespace director
 share a file such as an attachment. Copy a pack's whole `profiles/` to shadow it and its paths keep working.
 
 `readOnly` is set only in config, as `profiles.<name>.readOnly`.
+
+`harnessExtras` names one directory, in the harness's own layout, that the harness adapter copies into the config dir it
+owns for the session, such as a provider catalogue. Keep it self-contained: each link in it relative and resolving
+inside it, with no `node_modules` above it. No shipped harness takes extras yet, so pre-flight refuses the field on
+every one; `agent show` lists the directory's entries.
 
 ## Inspect
 

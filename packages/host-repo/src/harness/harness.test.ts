@@ -6,7 +6,9 @@ import { join } from "node:path";
 import { settledSchema } from "@maestro/ir";
 import { probe } from "../host/probe";
 import {
+	type Harness,
 	type HarnessEvent,
+	type HarnessResult,
 	OUTBOX,
 	SESSION_DIR,
 	stubHarness,
@@ -231,4 +233,38 @@ test("a probe stops the harness once it has reported its environment and window,
 	await expect(
 		probe(stubHarness([{ hang: true }]), request("x"), 50),
 	).rejects.toThrow("no startup report within 0.05s");
+});
+
+test("a probe fails with the reason of a run that fails on its own after a partial report", async () => {
+	const partial = stubHarness([
+		{ emit: { type: "environment", tools: ["sh"] } },
+		{ emit: { type: "fault", reason: "no token" } },
+	]);
+	await expect(probe(partial, request("x"))).rejects.toThrow("no token");
+});
+
+test("a probe whose own timeout cancels a run after a partial report, its events ended before its result, returns the report", async () => {
+	let cancelled: (r: HarnessResult) => void = () => {};
+	const result = new Promise<HarnessResult>((r) => {
+		cancelled = r;
+	});
+	const late: Harness = {
+		name: "late",
+		run: () => ({
+			events: (async function* () {
+				yield { kind: "environment", tools: ["sh"] } as HarnessEvent;
+			})(),
+			result,
+			cancel: async () =>
+				cancelled({
+					outcome: "failed",
+					reason: "cancelled",
+					reply: "",
+					metrics: {},
+				}),
+		}),
+	};
+	expect(await probe(late, request("x"), 50)).toEqual({
+		observed: { tools: ["sh"] },
+	});
 });

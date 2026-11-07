@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import type { JsonSchema } from "@maestro/ir";
 import type { Bind } from "../sandbox/index";
 
@@ -177,7 +178,10 @@ export type ContextPolicy<At = number> =
 /** A profile field a harness cannot honour, why, and the fix. */
 export type RuntimeProblem = {
 	/** The key under the profile, as in `runtime.thinking`. */
-	field: `runtime.${keyof Runtime}` | `context.${"strategy" | "at" | "max"}`;
+	field:
+		| `runtime.${keyof Runtime}`
+		| `context.${"strategy" | "at" | "max"}`
+		| "harnessExtras";
 	/** Leads with the harness's name, as in `claude has no thinking level 'turbo'`. */
 	reason: string;
 	/** `PROFILE_TOKEN` in it stands for the profile's name. */
@@ -245,6 +249,11 @@ export type HarnessRequest = {
 	context?: ContextPolicy;
 	/** The model's context window in tokens as maestro last observed it, when it has. */
 	window?: number;
+	/**
+	 * Host path of the session's harness extras directory (GLOSSARY: Harness extras), which the adapter copies into the
+	 * config dir it owns for the session, where and when it picks. The host binds nothing for it.
+	 */
+	extras?: string;
 };
 
 export type HarnessEvent =
@@ -311,7 +320,27 @@ export interface Harness {
 		context?: ContextPolicy,
 		window?: number,
 	): RuntimeProblem[];
+	/**
+	 * Each problem, one naming this harness, of the harness extras directory at host path `dir`, which its adapter reads
+	 * in the harness's own layout. Its presence declares the harness takes extras; a harness without it refuses them.
+	 */
+	extrasProblems?(dir: string): RuntimeProblem[];
 }
+
+/** The problem of each top-level entry of extras directory `dir` named like one of `owned`, the files harness `harness` writes itself. */
+export const ownedEntryProblems = (
+	harness: string,
+	owned: readonly string[],
+	dir: string,
+): RuntimeProblem[] =>
+	readdirSync(dir)
+		.filter((entry) => owned.includes(entry))
+		.toSorted()
+		.map((entry) => ({
+			field: "harnessExtras",
+			reason: `extras entry ${entry} is a file ${harness} writes itself`,
+			fix: `Rename or drop ${entry} in the extras directory`,
+		}));
 
 /** The problem of a `thinking` level that is none of `levels`, the documented levels of harness `harness`. */
 export const thinkingProblems = (

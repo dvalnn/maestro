@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, relative, sep } from "node:path";
 import { tildeOf } from "@maestro/core";
 import type { Roots } from "@maestro/core/host";
@@ -136,6 +136,27 @@ async function instructionsSections(
 			value,
 			...(source !== undefined && { source }),
 			rows: [],
+		},
+	];
+}
+
+/** The extras directory of `s` and its source, then its top-level entries, each directory's with a trailing `/`. */
+async function extrasSections(
+	s: Inspection,
+	places: Places,
+): Promise<Section[]> {
+	if (s.harnessExtras === undefined) return [];
+	const found = await readdir(s.harnessExtras, { withFileTypes: true });
+	const entries = found
+		.map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
+		.toSorted();
+	const source = wordsAt(s, "harnessExtras");
+	return [
+		{
+			title: "Extras",
+			value: await hostPath(s.harnessExtras, s, places),
+			...(source !== undefined && { source }),
+			rows: [{ key: "entries", value: names(entries) }],
 		},
 	];
 }
@@ -326,6 +347,7 @@ export async function profileSections(
 		headSection(s, view),
 		runtimeSection(s),
 		...(await instructionsSections(s, view)),
+		...(await extrasSections(s, view)),
 		...(await attachmentSections(s, view)),
 		...readOnlySections(s, view),
 		...limitsSections(s),
@@ -335,18 +357,19 @@ export async function profileSections(
 }
 
 /**
- * The sections of `agent probe`: the title, the runtime rows with the harness's probed version, the context window
- * and the environment checklist. The rest stays `profileSections`'s.
+ * The sections of `agent probe`: the title, the runtime rows with the harness's probed version, the context window,
+ * the harness extras and the environment checklist. The rest stays `profileSections`'s.
  */
-export function probeSections(
+export async function probeSections(
 	s: Inspection,
 	view: SectionsView,
 	report: ProbeReport,
-): Section[] {
+): Promise<Section[]> {
 	const version = report.observed?.version;
 	return [
 		{ title: s.name, rows: runtimeSection(s, version).rows },
 		...contextSections(s, view.window, true),
+		...(await extrasSections(s, view)),
 		environmentSection(s, view, report),
 	];
 }

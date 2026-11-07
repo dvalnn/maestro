@@ -26,6 +26,7 @@ import {
 	contextProblems,
 	type Harness,
 	type HarnessRequest,
+	ownedEntryProblems,
 	PROFILE_TOKEN,
 	type StubStep,
 	stubHarness,
@@ -126,18 +127,22 @@ const other: Harness = {
 	],
 };
 
-/** A repo host whose stub harness replays what `steps` gives each request, and the requests it got. */
+/**
+ * A repo host whose stub harness replays what `steps` gives each request, and the requests it got. The same stub runs
+ * as harness `kit` too, which takes harness extras and writes `settings.json` itself.
+ */
 export function stubHost(steps: (req: HarnessRequest) => StubStep[]) {
 	const requests: HarnessRequest[] = [];
-	const host = repoHost({
-		harnesses: [
-			stubHarness((req) => {
-				requests.push(req);
-				return steps(req);
-			}),
-			other,
-		],
+	const stub = stubHarness((req) => {
+		requests.push(req);
+		return steps(req);
 	});
+	const kit: Harness = {
+		...stub,
+		name: "kit",
+		extrasProblems: (dir) => ownedEntryProblems("kit", ["settings.json"], dir),
+	};
+	const host = repoHost({ harnesses: [stub, other, kit] });
 	return { host, requests };
 }
 

@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { once } from "node:events";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -121,6 +121,45 @@ await Promise.all([
 	),
 ]);
 symlinkSync(join(root, "outside.md"), join(W, "linked/link.md"));
+await Promise.all([
+	write(
+		"ws/.maestro/profiles/kitted/profile.yaml",
+		`${RUNTIME}harnessExtras: extras\n`,
+	),
+	write("ws/.maestro/profiles/kitted/extras/models.json", "{}\n"),
+	write("ws/.maestro/profiles/kitted/extras/lib/index.js", "x\n"),
+	write(
+		"ws/.maestro/profiles/kitshare/profile.yaml",
+		`${RUNTIME}harnessExtras: ../kit-extras\n`,
+	),
+	write("ws/.maestro/profiles/kit-extras/models.json", "{}\n"),
+	write(
+		"ws/.maestro/profiles/kitgone/profile.yaml",
+		`${RUNTIME}harnessExtras: gone\n`,
+	),
+	write(
+		"ws/.maestro/profiles/kitfile/profile.yaml",
+		`${RUNTIME}harnessExtras: profile.yaml\n`,
+	),
+	write(
+		"ws/.maestro/profiles/kitlinks/profile.yaml",
+		`${RUNTIME}harnessExtras: extras\n`,
+	),
+	write("ws/.maestro/profiles/kitlinks/extras/models.json", "{}\n"),
+	write("config-extras/models.json", "{}\n"),
+]);
+symlinkSync("../models.json", join(W, "kitted/extras/lib/models.json"));
+symlinkSync("models.json", join(W, "kit-extras/alias.json"));
+symlinkSync(join(root, "outside.md"), join(W, "kitlinks/extras/abs"));
+symlinkSync("nothing", join(W, "kitlinks/extras/dangling"));
+symlinkSync(".", join(W, "kitlinks/extras/loop"));
+symlinkSync("../profile.yaml", join(W, "kitlinks/extras/up"));
+await write("ws/.maestro/profiles/kitlinks/extras-x/f", "f\n");
+symlinkSync("../extras-x/f", join(W, "kitlinks/extras/sib"));
+mkdirSync(join(W, "kitlinks/extras/a"));
+mkdirSync(join(W, "kitlinks/extras/b"));
+symlinkSync("../b", join(W, "kitlinks/extras/a/x"));
+symlinkSync("../a", join(W, "kitlinks/extras/b/y"));
 symlinkSync(join(root, "outside.md"), join(U, "classics/builder/kb/link.md"));
 
 /**
@@ -281,6 +320,180 @@ describe("the digest of shared paths", () => {
 			await write("ws/.maestro/profiles/shared/guide.md", "guide\n");
 			rmSync(join(W, "halfbad"), { recursive: true, force: true });
 		}
+	});
+});
+
+describe("harness extras", () => {
+	test("resolves relative to the profile directory, inside or beside it in the namespace directory", async () => {
+		const kitted = await resolveProfile("kitted", setupOf({}));
+		const kitshare = await resolveProfile("kitshare", setupOf({}));
+		expect(kitted.fields.harnessExtras).toBe(join(W, "kitted/extras"));
+		expect(kitshare.fields.harnessExtras).toBe(join(W, "kit-extras"));
+	});
+
+	test.each([
+		[
+			"kitgone",
+			"profile kitgone: 'harnessExtras' is gone, which does not exist",
+			`Create it in ${W}`,
+		],
+		[
+			"kitfile",
+			"profile kitfile: 'harnessExtras' is profile.yaml, which is not a directory",
+			`Point it at a directory inside ${W}`,
+		],
+	])(
+		"refuses %s's path, naming the profile and the path",
+		async (name, message, hint) => {
+			expect(await refusal(() => resolveProfile(name, setupOf({})))).toEqual([
+				[message, hint, 2],
+			]);
+		},
+	);
+
+	test("refuses a config path that does not exist or is no directory, naming the profile and the path", async () => {
+		const gone = join(root, "config-gone");
+		const file = join(root, "config-extras/models.json");
+		const refused = async (path: string) =>
+			refusal(() =>
+				resolveProfile(
+					"auditor",
+					setupOf({
+						workspace: `profiles:\n  auditor:\n    harnessExtras: ${path}\n`,
+					}),
+				),
+			);
+		expect(await refused(gone)).toEqual([
+			[
+				`profile auditor: 'harnessExtras' is ${gone}, which does not exist`,
+				"Point it at a directory",
+				3,
+			],
+		]);
+		expect(await refused(file)).toEqual([
+			[
+				`profile auditor: 'harnessExtras' is ${file}, which is not a directory`,
+				"Point it at a directory",
+				3,
+			],
+		]);
+	});
+
+	test("refuses each link that is absolute, dangling, cyclic or resolves outside the directory, naming the profile and the link", async () => {
+		const fix = (link: string) =>
+			`Make ${link} a relative link to an entry inside ${join(W, "kitlinks/extras")}, so the directory is self-contained`;
+		expect(
+			await refusal(() => resolveProfile("kitlinks", setupOf({}))),
+		).toEqual([
+			["profile kitlinks: harnessExtras link a/x is cyclic", fix("a/x"), 2],
+			["profile kitlinks: harnessExtras link abs is absolute", fix("abs"), 2],
+			["profile kitlinks: harnessExtras link b/y is cyclic", fix("b/y"), 2],
+			[
+				"profile kitlinks: harnessExtras link dangling points at nothing",
+				fix("dangling"),
+				2,
+			],
+			["profile kitlinks: harnessExtras link loop is cyclic", fix("loop"), 2],
+			[
+				"profile kitlinks: harnessExtras link sib resolves outside the directory",
+				fix("sib"),
+				2,
+			],
+			[
+				"profile kitlinks: harnessExtras link up resolves outside the directory",
+				fix("up"),
+				2,
+			],
+		]);
+	});
+
+	test("a directory config sets replaces the profile's whole", async () => {
+		const profile = await resolveProfile(
+			"kitted",
+			setupOf({
+				workspace: "profiles:\n  kitted:\n    harnessExtras: config-extras\n",
+			}),
+		);
+		expect(profile.fields.harnessExtras).toBe(join(root, "config-extras"));
+		expect(sourceOf(profile, ["harnessExtras"])?.layer).toBe("workspace");
+	});
+
+	test.each([
+		[
+			"a file in the profile directory",
+			"ws/.maestro/profiles/kitted/extras/models.json",
+		],
+		[
+			"a file beside it in the namespace directory",
+			"ws/.maestro/profiles/kit-extras/models.json",
+		],
+	])("the digest changes when %s changes", async (_, path) => {
+		const before = await profilesDigest(ROOTS);
+		await write(path, "edited\n");
+		const after = await profilesDigest(ROOTS);
+		await write(path, "{}\n");
+		expect(after).not.toBe(before);
+		expect(await profilesDigest(ROOTS)).toBe(before);
+	});
+
+	test.each([
+		[
+			"in the profile directory",
+			join(W, "kitted/extras/lib/models.json"),
+			"../models.json",
+		],
+		[
+			"beside it in the namespace directory",
+			join(W, "kit-extras/alias.json"),
+			"models.json",
+		],
+	])(
+		"the digest changes when a link's target changes %s",
+		async (_, link, target) => {
+			const before = await profilesDigest(ROOTS);
+			rmSync(link);
+			symlinkSync(`./${target}`, link);
+			const after = await profilesDigest(ROOTS);
+			rmSync(link);
+			symlinkSync(target, link);
+			expect(after).not.toBe(before);
+			expect(await profilesDigest(ROOTS)).toBe(before);
+		},
+	);
+
+	/** The config layers of a workspace config that sets profile auditor's extras directory to `path`. */
+	const extrasAt = (path: string) =>
+		setupOf({
+			workspace: `profiles:\n  auditor:\n    harnessExtras: ${path}\n`,
+		}).layers;
+
+	test("the digest ignores a directory config sets outside the namespace directory", async () => {
+		const layers = extrasAt(join(root, "config-extras"));
+		const before = await profilesDigest(ROOTS, layers);
+		await write("config-extras/models.json", "edited\n");
+		const after = await profilesDigest(ROOTS, layers);
+		await write("config-extras/models.json", "{}\n");
+		expect(after).toBe(before);
+	});
+
+	test("the digest ignores a directory config sets beside the namespace directory, its name sharing the namespace's as a prefix", async () => {
+		await write("ws/.maestro/profiles-x/models.json", "{}\n");
+		const layers = extrasAt(`${W}-x`);
+		const before = await profilesDigest(ROOTS, layers);
+		await write("ws/.maestro/profiles-x/models.json", "edited\n");
+		const after = await profilesDigest(ROOTS, layers);
+		rmSync(`${W}-x`, { recursive: true, force: true });
+		expect(after).toBe(before);
+	});
+
+	test("the digest changes when a file changes in a directory config sets inside the namespace directory", async () => {
+		await write("ws/.maestro/profiles/config-kit/models.json", "{}\n");
+		const layers = extrasAt(join(W, "config-kit"));
+		const before = await profilesDigest(ROOTS, layers);
+		await write("ws/.maestro/profiles/config-kit/models.json", "edited\n");
+		const after = await profilesDigest(ROOTS, layers);
+		rmSync(join(W, "config-kit"), { recursive: true, force: true });
+		expect(after).not.toBe(before);
 	});
 });
 
