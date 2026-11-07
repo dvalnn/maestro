@@ -32,8 +32,12 @@ share a file such as an attachment. Copy a pack's whole `profiles/` to shadow it
 
 `harnessExtras` names one directory, in the harness's own layout, that the harness adapter copies into the config dir it
 owns for the session, such as a provider catalogue. Keep it self-contained: each link in it relative and resolving
-inside it, with no `node_modules` above it. No shipped harness takes extras yet, so pre-flight refuses the field on
-every one; `agent show` lists the directory's entries.
+inside it, with no `node_modules` above it. pi takes extras: `models.json` is its model catalogue, and each script in
+`extensions/` (or directory there with an index script) loads as an extension, in name order. pi refuses an entry named
+`auth.json` or `settings.json`, which it writes itself. An extension may replace a built-in tool such as `read`: the
+extras are your opt-in code and the sandbox stays the one boundary. pi drops an extension's own tools, so extras bring
+providers, catalogues and hooks. A harness that takes no extras refuses the field at pre-flight; `agent show` lists the
+directory's entries.
 
 ## Inspect
 

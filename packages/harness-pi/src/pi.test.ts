@@ -384,6 +384,176 @@ describe("stand-in pi", () => {
 		expect(readFileSync(join(past.outbox, "settings"), "utf8")).toBe("");
 	});
 
+	test("a profile's extras are copied into a fresh owned dir with links as links, kept on resume, rebuilt from the request's path when the dir is gone or replaced, and auth.json and settings.json are rebuilt each spawn", async () => {
+		const extras = tmp("extras");
+		mkdirSync(join(extras, "extensions", "gate"), { recursive: true });
+		writeFileSync(join(extras, "models.json"), '{"providers":{}}');
+		writeFileSync(
+			join(extras, "extensions", "b.ts"),
+			"export default () => {}",
+		);
+		writeFileSync(
+			join(extras, "extensions", "a.js"),
+			"export default () => {}",
+		);
+		writeFileSync(join(extras, "extensions", "notes.md"), "no script");
+		writeFileSync(join(extras, "extensions", "gate", "index.ts"), "x");
+		mkdirSync(join(extras, "extensions", "empty"));
+		symlinkSync("../models.json", join(extras, "extensions", "c.js"));
+		symlinkSync("gate", join(extras, "extensions", "linked"));
+		const user = tmp("user");
+		writeFileSync(join(user, "auth.json"), "{}");
+		const { bin } = standIn(
+			fixture(),
+			`cat "$PI_CODING_AGENT_DIR/models.json" > /out/models`,
+		);
+		const session = { dir: tmp("session"), id: crypto.randomUUID() };
+		const owned = join(session.dir, "agent");
+		const run = async (over: Partial<HarnessRequest> = {}) => {
+			const req = request("x", { session, extras, ...over });
+			await piHarness({ bin, agentDir: user }).run(req).result;
+			return req;
+		};
+		const argvOf = (req: HarnessRequest) =>
+			readFileSync(join(req.outbox, "argv"), "utf8").split("\n");
+
+		const first = await run();
+		expect(readFileSync(join(first.outbox, "models"), "utf8")).toBe(
+			'{"providers":{}}',
+		);
+		expect(readlinkSync(join(owned, "extensions", "c.js"))).toBe(
+			"../models.json",
+		);
+		const argv = argvOf(first);
+		const at = argv.indexOf("/maestro-environment.js");
+		expect(argv[at - 1]).toBe("--extension");
+		expect(argv).toContain("--no-extensions");
+		expect(argv).toContain("--no-approve");
+		expect(argv).toContain("--tools");
+		const base = "/session/agent/extensions";
+		expect(argv.slice(at + 1, at + 11)).toEqual([
+			"--extension",
+			`${base}/a.js`,
+			"--extension",
+			`${base}/b.ts`,
+			"--extension",
+			`${base}/c.js`,
+			"--extension",
+			`${base}/gate`,
+			"--extension",
+			`${base}/linked`,
+		]);
+		expect(argv[at + 11]).toBe("--no-prompt-templates");
+
+		// resume: the copy stays, a file the agent wrote survives, planted auth and settings are replaced
+		writeFileSync(join(owned, "written.txt"), "mine");
+		rmSync(join(owned, "auth.json"));
+		writeFileSync(join(owned, "auth.json"), "planted");
+		symlinkSync(join(user, "auth.json"), join(owned, "settings.json"));
+		writeFileSync(join(extras, "models.json"), "changed");
+		await run();
+		expect(readFileSync(join(owned, "written.txt"), "utf8")).toBe("mine");
+		expect(readFileSync(join(owned, "models.json"), "utf8")).toBe(
+			'{"providers":{}}',
+		);
+		expect(readlinkSync(join(owned, "auth.json"))).toBe(
+			join(user, "auth.json"),
+		);
+		expect(readdirSync(owned)).not.toContain("settings.json");
+
+		// a directory planted at either name is removed too
+		rmSync(join(owned, "auth.json"));
+		rmSync(join(owned, "settings.json"), { force: true });
+		mkdirSync(join(owned, "auth.json"));
+		mkdirSync(join(owned, "settings.json", "deep"), { recursive: true });
+		await run();
+		expect(readlinkSync(join(owned, "auth.json"))).toBe(
+			join(user, "auth.json"),
+		);
+		expect(readdirSync(owned)).not.toContain("settings.json");
+
+		// deleted dir: rebuilt from the request's path
+		rmSync(owned, { recursive: true });
+		await run();
+		expect(readFileSync(join(owned, "models.json"), "utf8")).toBe("changed");
+		expect(readdirSync(owned)).not.toContain("written.txt");
+
+		// replaced by a link: unlinked, not followed, rebuilt
+		rmSync(owned, { recursive: true });
+		symlinkSync(user, owned);
+		await run();
+		expect(lstatSync(owned).isDirectory()).toBe(true);
+		expect(readdirSync(user)).toEqual(["auth.json"]);
+		expect(readFileSync(join(owned, "models.json"), "utf8")).toBe("changed");
+
+		// no extras: no extra flags
+		const bare = await run({
+			extras: undefined,
+			session: { dir: tmp("s"), id: "x" },
+		});
+		expect(argvOf(bare).filter((a) => a === "--extension")).toHaveLength(1);
+	});
+
+	test("a file at the owned agent dir is replaced by a directory holding the extras, and a failed copy is retried whole", async () => {
+		const extras = tmp("extras");
+		writeFileSync(join(extras, "models.json"), "{}");
+		const user = tmp("user");
+		const { bin } = standIn(fixture());
+		const session = { dir: tmp("session"), id: crypto.randomUUID() };
+		const owned = join(session.dir, "agent");
+		const run = (over: Partial<HarnessRequest>) =>
+			piHarness({ bin, agentDir: user }).run(request("x", { session, ...over }))
+				.result;
+
+		writeFileSync(owned, "a file");
+		await run({ extras });
+		expect(lstatSync(owned).isDirectory()).toBe(true);
+		expect(readFileSync(join(owned, "models.json"), "utf8")).toBe("{}");
+
+		rmSync(owned, { recursive: true });
+		const bad = join(extras, "missing-dir");
+		expect(() =>
+			piHarness({ bin, agentDir: user }).run(
+				request("x", { session, extras: bad }),
+			),
+		).toThrow();
+		await run({ extras });
+		expect(readFileSync(join(owned, "models.json"), "utf8")).toBe("{}");
+	});
+
+	test("extras reached through a link to a directory are copied from the resolved directory", async () => {
+		const real = tmp("extras");
+		writeFileSync(join(real, "models.json"), "{}");
+		symlinkSync("models.json", join(real, "alias.json"));
+		const via = join(tmp("holder"), "linked");
+		symlinkSync(real, via);
+		const user = tmp("user");
+		const { bin } = standIn(fixture());
+		const req = request("x", { extras: via });
+		await piHarness({ bin, agentDir: user }).run(req).result;
+		const owned = join(req.session.dir, "agent");
+		expect(lstatSync(owned).isDirectory()).toBe(true);
+		expect(readFileSync(join(owned, "models.json"), "utf8")).toBe("{}");
+		expect(readlinkSync(join(owned, "alias.json"))).toBe("models.json");
+	});
+
+	test("pi accepts extras and refuses an entry named auth.json or settings.json, whether or not the run writes settings", () => {
+		const { bin, agentDir } = standIn(fixture());
+		const check = piHarness({ bin, agentDir }).extrasProblems;
+		const extras = tmp("extras");
+		writeFileSync(join(extras, "models.json"), "{}");
+		expect(check?.(extras)).toEqual([]);
+		writeFileSync(join(extras, "auth.json"), "{}");
+		writeFileSync(join(extras, "settings.json"), "{}");
+		const problems = check?.(extras) ?? [];
+		expect(problems.map((p) => p.field)).toEqual([
+			"harnessExtras",
+			"harnessExtras",
+		]);
+		expect(problems.map((p) => p.reason).join("\n")).toContain("auth.json");
+		expect(problems.map((p) => p.reason).join("\n")).toContain("settings.json");
+	});
+
 	test("a session version other than the pinned one fails the run, naming it", async () => {
 		const lines = fixture().map((l) => l.replace('"version":3', '"version":4'));
 		const result = await piHarness(standIn(lines)).run(request("x")).result;

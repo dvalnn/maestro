@@ -1,14 +1,19 @@
 import {
+	cpSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
+	statSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import {
 	baselineOf,
 	type ContextPolicy,
@@ -25,6 +30,7 @@ import {
 	METRIC,
 	type Metrics,
 	observedOf,
+	ownedEntryProblems,
 	PROFILE_TOKEN,
 	type RuntimeProblem,
 	resolveBin,
@@ -56,7 +62,12 @@ const AUTH_FILE = "auth.json";
  * The agent dir maestro owns under the session dir, as `PI_CODING_AGENT_DIR`, so nothing of the user's pi dir but
  * `auth.json` reaches pi: no `SYSTEM.md`, `APPEND_SYSTEM.md`, `settings.json` or `models.json`. It holds `auth.json`, a
  * link to the user's, bound read-write in the sandbox so a token refresh writes through, and under a `compact` policy
- * maestro's own `settings.json`. Without a user `auth.json` pi starts and reports no key. Its own `auth.json.lock`
+ * maestro's own `settings.json`. When the dir is built anew it also holds a copy of the profile's harness extras (never
+ * `auth.json` or `settings.json`, which the extras check refuses): `models.json` is pi's catalogue and each script in
+ * `extensions/` is loaded by an explicit `--extension` under `--no-extensions`. An extension there may replace a
+ * built-in tool such as `read`: the extras are the owner's opt-in code and the sandbox stays the one boundary, so no
+ * detection or refusal is added. pi's `--tools` drops an extension's own tools, so extras bring providers, catalogues
+ * and hooks only. Without a user `auth.json` pi starts and reports no key. Its own `auth.json.lock`
  * keeps concurrent agents and the user's pi from locking each other on a refresh; a lost write means logging in again.
  */
 const SESSION_AGENT = "agent";
@@ -319,7 +330,11 @@ const UNMANAGED_OFF = ["--no-prompt-templates", "--no-approve"];
  * The pi argv for a request. The prompt travels on stdin, the instructions in a file pi appends to its system prompt.
  * pi loads an explicit `--extension` under `--no-extensions` (pi docs/cli.md), which is how the reporter loads.
  */
-function piArgv(bin: string, req: HarnessRequest): string[] {
+function piArgv(
+	bin: string,
+	req: HarnessRequest,
+	extensions: string[],
+): string[] {
 	const { model, thinking } = req.runtime;
 	return [
 		bin,
@@ -329,6 +344,7 @@ function piArgv(bin: string, req: HarnessRequest): string[] {
 		...BASELINE.argv,
 		"--extension",
 		REPORTER_PATH,
+		...extensions.flatMap((path) => ["--extension", path]),
 		...UNMANAGED_OFF,
 		...(req.instructions ? ["--append-system-prompt", INSTRUCTIONS] : []),
 		"--session-dir",
@@ -364,18 +380,78 @@ function credentials(agentDir: string): string[] {
 		.filter((v): v is string => typeof v === "string" && v !== "");
 }
 
+const EXTENSIONS_DIR = "extensions";
+const SCRIPT_EXTS = new Set([".ts", ".js", ".mts", ".mjs", ".cts", ".cjs"]);
+
+const isScript = (path: string): boolean => {
+	try {
+		return statSync(path).isFile() && SCRIPT_EXTS.has(extname(path));
+	} catch {
+		return false;
+	}
+};
+
+/** The sandbox paths, in name order, of each script file, or directory with an index script, in `<owned>/extensions`; links followed. */
+function extensionsOf(owned: string): string[] {
+	const dir = join(owned, EXTENSIONS_DIR);
+	let names: string[];
+	try {
+		names = readdirSync(dir).toSorted();
+	} catch {
+		return [];
+	}
+	return names
+		.filter((name) => {
+			const path = join(dir, name);
+			try {
+				return statSync(path).isDirectory()
+					? [...SCRIPT_EXTS].some((ext) => isScript(join(path, `index${ext}`)))
+					: isScript(path);
+			} catch {
+				return false;
+			}
+		})
+		.map((name) => join(SESSION_DIR, SESSION_AGENT, EXTENSIONS_DIR, name));
+}
+
+/** Whether `path` is a real directory, not a link to one. */
+function isRealDir(path: string): boolean {
+	try {
+		return lstatSync(path).isDirectory();
+	} catch {
+		return false;
+	}
+}
+
 /**
- * Rebuilds `<owned>` from nothing, so a link the sandboxed agent planted in its place is unlinked, not followed, and
- * fills it: `settings.json` when `settings` is given, and `auth.json` as a link to `auth`, left absent when `auth` is
- * missing. Returns whether it linked. pi writes `auth.json` in place, so a refresh writes through the link.
+ * Keeps `<owned>` while it is a real directory, else rebuilds it from nothing, so a link the sandboxed agent planted in
+ * its place is unlinked, not followed, and copies `extras` into it, links as links. Then, either way, unlinks whatever
+ * stands at `auth.json` and `settings.json` and fills them: `settings.json` when `settings` is given, and `auth.json`
+ * as a link to `auth`, left absent when `auth` is missing. Returns whether it linked. pi writes `auth.json` in place,
+ * so a refresh writes through the link.
  */
 function ownedDir(
 	owned: string,
 	auth: string,
 	settings: JsonObject | undefined,
+	extras: string | undefined,
 ): boolean {
-	rmSync(owned, { recursive: true, force: true });
-	mkdirSync(owned);
+	if (!isRealDir(owned)) {
+		rmSync(owned, { recursive: true, force: true });
+		mkdirSync(owned);
+		if (extras !== undefined)
+			try {
+				cpSync(realpathSync(extras), owned, {
+					recursive: true,
+					verbatimSymlinks: true,
+				});
+			} catch (error) {
+				rmSync(owned, { recursive: true, force: true });
+				throw error;
+			}
+	}
+	rmSync(join(owned, SETTINGS_FILE), { recursive: true, force: true });
+	rmSync(join(owned, AUTH_FILE), { recursive: true, force: true });
 	if (settings)
 		writeFileSync(join(owned, SETTINGS_FILE), JSON.stringify(settings), {
 			flag: "wx",
@@ -413,9 +489,14 @@ export function piHarness(
 			bin ??= resolveBin(PI_BIN, options.bin);
 			reporter ??= stageReporter();
 			const owned = join(req.session.dir, SESSION_AGENT);
-			const linked = ownedDir(owned, auth, settingsOf(req.context, req.window));
+			const linked = ownedDir(
+				owned,
+				auth,
+				settingsOf(req.context, req.window),
+				req.extras,
+			);
 			return {
-				argv: piArgv(bin, req),
+				argv: piArgv(bin, req, extensionsOf(owned)),
 				stdin: req.prompt,
 				env: { [AGENT_DIR_VAR]: join(SESSION_DIR, SESSION_AGENT) },
 				masked: credentials(owned),
@@ -431,6 +512,8 @@ export function piHarness(
 	return {
 		...subprocessHarness(adapter, backend),
 		environment: declared,
+		extrasProblems: (dir) =>
+			ownedEntryProblems(adapter.name, [AUTH_FILE, SETTINGS_FILE], dir),
 		runtimeProblems: (runtime, context, window) => [
 			...thinkingProblems(adapter.name, THINKING_LEVELS, runtime),
 			...contextProblems(adapter.name, CONTEXT_SUPPORT, context),
