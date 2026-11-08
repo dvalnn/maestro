@@ -9,6 +9,10 @@ per lesson. Then:
   compositions and config under .maestro/) or an open or recently closed backlog issue already covers, or that only one
   run would ever need.
 
+A heading that ends in `· read` is a concert an earlier masterclass read. A proposal is kept only when at least one
+concert it cites is a heading without that suffix; one that cites no heading's concert, or only read ones, is dropped.
+Read concerts still count toward its concerts.
+
 Dropping what the backlog already proposes also covers lessons read again after a pruned masterclass concert.
 
 ## Diagnosis
@@ -53,5 +57,5 @@ body never restates them:
 instructions, a composition, `config.yaml` with its checks), the `justfile` (the recipes the checks run), a path under
 `scripts/factory/` (the tour manager's code), or `docs/adr/` for a new ADR. The root `CLAUDE.md` is not one: the
 factory's agents never read it. `lessons` holds at least one lesson text. `concerts` holds the id of every concert whose
-lessons the cluster merges, each the text before `·` in a `## <concert id> · <tour>` heading, once. `proposals` may be
-empty.
+lessons the cluster merges, each the text before the first `·` in a `## <concert id> · <tour>` heading, read or not,
+once. `proposals` may be empty.

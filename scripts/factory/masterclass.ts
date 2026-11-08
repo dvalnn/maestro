@@ -26,6 +26,8 @@ const MASTERCLASS_FILE = join(REPO, ".maestro/masterclass.ts");
 const MASTERCLASS = { pack: "masterclass", composition: "masterclass" };
 /** How many settled factory runs newer than the last masterclass make the next one due. */
 const MASTERCLASS_EVERY = 10;
+/** How many of the newest factory runs a masterclass reads, or every run past the watermark when more. */
+const MASTERCLASS_READS = 30;
 /**
  * How many of a milestone's newest concerts the masterclass step reads: a masterclass comes last in pick order and may
  * starve while there is other work, so it reads further back than the pass's window.
@@ -139,15 +141,21 @@ function sinceWatermark(
 	return runs.length >= MASTERCLASS_EVERY ? runs : undefined;
 }
 
-/** What `--lessons` takes: each of `reports`' concerts with lessons, under its id and tour. */
-function lessonsText(reports: readonly { concert: Concert; report: Report }[]) {
+/**
+ * What `--lessons` takes: each of `reports`' concerts with lessons, under its id and tour, and ` · read` after the tour
+ * when an earlier masterclass read it (its id is in `read`).
+ */
+function lessonsText(
+	reports: readonly { concert: Concert; report: Report }[],
+	read: ReadonlySet<string>,
+) {
 	return [
-		"# Lessons since the last masterclass",
+		"# Lessons of the newest factory runs",
 		"",
 		...reports
 			.filter(({ report }) => report.lessons.some((l) => l.trim()))
 			.flatMap(({ concert, report }) => [
-				`## ${concert.id} · ${concert.tour}`,
+				`## ${concert.id} · ${concert.tour}${read.has(concert.id) ? " · read" : ""}`,
 				"",
 				...[...new Set(report.lessons.map((l) => l.trim()))].map(
 					(l) => `- ${l.replaceAll("\n", "\n  ")}`,
@@ -193,8 +201,9 @@ async function startMasterclass(
 }
 
 /**
- * Starts a masterclass on the lessons of the factory runs since the last one, once `MASTERCLASS_EVERY` settled, with
- * the backlog snapshot; true when it started none.
+ * Starts a masterclass once `MASTERCLASS_EVERY` factory runs settled since the last one, on the lessons of the newest
+ * `MASTERCLASS_READS` runs, or every run since the last when more, marking those an earlier masterclass read, with the
+ * backlog snapshot; true when it started none.
  */
 export async function masterclass(pass: Pass, entries: Entry[]) {
 	const listed = await pass.maestro.concerts(
@@ -210,16 +219,21 @@ export async function masterclass(pass: Pass, entries: Entry[]) {
 		listed,
 		pass.milestone,
 	);
+	const fresh = new Set(counted.map((c) => c.id));
+	const window = listed
+		.filter((c) => isFactoryRun(c, pass.milestone))
+		.slice(0, Math.max(MASTERCLASS_READS, counted.length));
+	const read = new Set(window.filter((c) => !fresh.has(c.id)).map((c) => c.id));
 	const runs = hand.length
-		? [...counted, ...hand].sort(
+		? [...window, ...hand].sort(
 				(a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0),
 			)
-		: counted;
+		: window;
 	const reports = [];
 	for (const concert of runs.toReversed())
 		reports.push({ concert, report: await pass.maestro.report(concert.id) });
 	const lessons = join(pass.dir, "masterclass-lessons.md");
-	await Bun.write(lessons, lessonsText(reports));
+	await Bun.write(lessons, lessonsText(reports, read));
 	const [closed, pulls] = await Promise.all([
 		pass.forge.closed(CLOSED),
 		pass.forge.pulls(),

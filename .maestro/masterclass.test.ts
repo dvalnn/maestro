@@ -59,7 +59,7 @@ test("a stub perform returns the planner's proposals as the masterclass output",
 				title: "Seal one base",
 				body: "Record why seats read one base.",
 				lessons: ["a lesson", "another"],
-				concerts: [],
+				concerts: ["c1"],
 			},
 		],
 	};
@@ -150,27 +150,43 @@ test("compose seats the planner with the lessons and the backlog attached, the l
 	expect(attached.lessons?.hint).toStartWith("first, ");
 });
 
-test("settle drops an unnamed id and a repeat, keeps the order and the proposal", () => {
-	const text =
-		"# Lessons\n\n## c2 · t\n\n- a\n- z1 · t\n\n## c1 · t\n\n- b\n\n### z2 · t\n  ## z3 · t\n";
+/** `settle` on `proposals` over lessons `text`. */
+function settled(text: string, ...proposals: object[]) {
 	const file = join(mkdtempSync(join(scratch, "settle-")), "lessons.md");
 	writeFileSync(file, text);
-	const out = settle(
+	return settle(
 		{
-			masterclass: {
-				proposals: [
-					{ ...one, concerts: ["c2", "zz", "z1", "z2", "z3", "c1", "c2"] },
-					{ ...one, concerts: ["zz"] },
-				],
-			},
+			masterclass: { proposals: proposals as Masterclass["proposals"] },
 			lessons: { path: file, contentHash: "sha256:0" },
 		},
 		{ path: (ref) => ref.path } as CodeContext,
+	).masterclass.proposals;
+}
+const marked =
+	"## c1 · t · read\n\n- a\n\n## c2 · t · read\n\n- b\n\n## c3 · t\n\n- c\n";
+
+test("settle drops an unnamed id and a repeat, keeps the order, drops a proposal left with none", () => {
+	const out = settled(
+		"# Lessons\n\n## c2 · t\n\n- a\n- z1 · t\n\n## c1 · t\n\n- b\n\n### z2 · t\n  ## z3 · t\n",
+		{ ...one, concerts: ["c2", "zz", "z1", "z2", "z3", "c1", "c2"] },
+		{ ...one, concerts: ["zz"] },
 	);
-	expect(out.masterclass.proposals.map((p) => p.concerts)).toEqual([
-		["c2", "c1"],
-		[],
-	]);
+	expect(out.map((p) => p.concerts)).toEqual([["c2", "c1"]]);
+});
+
+test("settle drops a proposal that cites only read concerts or none", () => {
+	const out = settled(
+		marked,
+		{ ...one, title: "old", concerts: ["c1", "c2"] },
+		{ ...one, title: "none", concerts: [] },
+		{ ...one, title: "new", concerts: ["c3"] },
+	);
+	expect(out.map((p) => p.title)).toEqual(["new"]);
+});
+
+test("settle counts the read concerts of a proposal that cites a new one", () => {
+	const out = settled(marked, { ...one, concerts: ["c1", "c2", "c3"] });
+	expect(out.map((p) => p.concerts)).toEqual([["c1", "c2", "c3"]]);
 });
 
 test("the planner prompt's example is a proposal the schema accepts", async () => {

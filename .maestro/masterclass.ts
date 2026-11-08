@@ -50,18 +50,22 @@ export function settle(
 ): {
 	masterclass: Masterclass;
 } {
-	// The id is the heading text before ` · `, as `lessonsText` writes it.
-	const named = new Set(
-		[...readFileSync(ctx.path(lessons), "utf8").matchAll(/^## (.+?) · /gm)].map(
-			(m) => m[1],
-		),
+	const headings = [
+		...readFileSync(ctx.path(lessons), "utf8").matchAll(/^## (.+?) · (.*)$/gm),
+	];
+	const named = new Set(headings.map((m) => m[1]));
+	const read = new Set(
+		headings.filter((m) => m[2]?.endsWith(" · read")).map((m) => m[1]),
 	);
 	return {
 		masterclass: {
-			proposals: masterclass.proposals.map((p) => ({
-				...p,
-				concerts: [...new Set(p.concerts)].filter((id) => named.has(id)),
-			})),
+			proposals: masterclass.proposals
+				.map((p) => ({
+					...p,
+					concerts: [...new Set(p.concerts)].filter((id) => named.has(id)),
+				}))
+				// Dropped, not refused: docs/agents/factory.md#masterclass.
+				.filter((p) => p.concerts.some((id) => !read.has(id))),
 		},
 	};
 }
@@ -73,7 +77,7 @@ export const masterclass = composition(
 		params: {
 			lessons: Markdown({
 				description:
-					"The lessons to merge: one `## <concert id> · <tour>` heading per concert, oldest first, with one bullet per lesson",
+					"The lessons to merge: one `## <concert id> · <tour>` heading per concert, oldest first, with one bullet per lesson; ` · read` ends the heading of a concert an earlier masterclass read",
 			}),
 			backlog: Markdown({
 				description:
@@ -92,7 +96,7 @@ export const masterclass = composition(
 			attachments: {
 				lessons: {
 					artifact: literal(lessons, Markdown()),
-					hint: "first, for the lessons to merge, one heading per concert, oldest first",
+					hint: "first, for the lessons to merge, one heading per concert, oldest first, a heading ending in `· read` marking a concert an earlier masterclass read",
 				},
 				backlog: {
 					artifact: literal(backlog, Markdown()),

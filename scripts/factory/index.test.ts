@@ -2429,12 +2429,12 @@ describe("masterclass", () => {
 			]),
 		);
 	/** The `--lessons` file of runs on issues `from` and up, oldest first. */
-	const lessonsOf = (from: number, count: number) =>
+	const lessonsOf = (from: number, count: number, readBelow = 0) =>
 		[
-			"# Lessons since the last masterclass",
+			"# Lessons of the newest factory runs",
 			"",
 			...Array.from({ length: count }, (_, i) => [
-				`## r${from + i} · ${MILESTONE}.i${from + i}`,
+				`## r${from + i} · ${MILESTONE}.i${from + i}${from + i < readBelow ? " · read" : ""}`,
 				"",
 				`- lesson ${from + i}`,
 				"",
@@ -2726,6 +2726,72 @@ describe("masterclass", () => {
 		);
 		await t.run();
 		expect(t.starts).toEqual([]);
+	});
+
+	test("reads the newest 30 factory runs and marks the runs an earlier masterclass read", async () => {
+		const all = runs(30, 40);
+		const t = setup(
+			[],
+			[...all.slice(0, 12), masterclassConcert("m0"), ...all.slice(12)],
+			{},
+			undefined,
+			{ reports: lessoned(all) },
+		);
+		await t.run();
+		const lessons = argAfter(t.starts[0] ?? [], "--lessons");
+		expect(readFileSync(lessons, "utf8")).toBe(lessonsOf(40, 30, 58));
+	});
+
+	test("reads the newest 30 factory runs beside the hand slices since the watermark", async () => {
+		const all = runs(30, 40);
+		const mark = { ...masterclassConcert("m0"), startedAt: 500 };
+		const hand = { ...sliceConcert("h1", 1), tour: "trial", startedAt: 1000 };
+		const t = setup(
+			[],
+			[...all.slice(0, 12), hand, mark, ...all.slice(12)],
+			{},
+			undefined,
+			{
+				reports: {
+					...lessoned(all),
+					h1: { ...NO_REPORT, lessons: ["by hand"] },
+				},
+			},
+		);
+		await t.run();
+		const text = readFileSync(argAfter(t.starts[0] ?? [], "--lessons"), "utf8");
+		expect(text).toContain("## h1 · trial\n\n- by hand");
+		expect(text).toContain(`## r40 · ${MILESTONE}.i40 · read\n`);
+		expect(text).toContain(`## r69 · ${MILESTONE}.i69\n`);
+		expect(text).not.toContain("## r39 ");
+	});
+
+	test("reads the factory runs the 200 concerts hold", async () => {
+		const all = runs(30, 15);
+		const t = setup(
+			[],
+			[...all.slice(0, 10), masterclassConcert("m0"), ...all.slice(10)],
+			{},
+			undefined,
+			{ reports: lessoned(all) },
+		);
+		await t.run();
+		const lessons = argAfter(t.starts[0] ?? [], "--lessons");
+		expect(readFileSync(lessons, "utf8")).toBe(lessonsOf(30, 15, 35));
+	});
+
+	test("reads every run past the watermark when more than 30", async () => {
+		const all = runs(30, 45);
+		const t = setup(
+			[],
+			[...all.slice(0, 35), masterclassConcert("m0"), ...all.slice(35)],
+			{},
+			undefined,
+			{ reports: lessoned(all) },
+		);
+		await t.run();
+		const lessons = argAfter(t.starts[0] ?? [], "--lessons");
+		expect(readFileSync(lessons, "utf8")).toBe(lessonsOf(40, 35));
 	});
 
 	test("with the watermark masterclass pruned, counts from the older one", async () => {

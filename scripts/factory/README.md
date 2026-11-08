@@ -3,12 +3,12 @@
 One pass of the tour manager (`docs/agents/factory.md`): it routes a settled triage or slice, lands an ok slice as a PR,
 files approved splits and reports, restacks a stacked PR whose dependency merged, then starts one encore of a PR an
 official review requested changes on, else one build of a ready issue, else one triage of an intake issue, else a
-masterclass on the lessons once 10 factory runs settled since the last; it routes a settled masterclass by filing its
-proposals as `needs-approval` issues. A build continues the issue's last slice concert when it has a reply to feed it.
-It drives maestro through `--json` and calls the forge's REST API directly as its own account, `maestro-tm`, which also
-pushes, and on a restack force-pushes, the PR's branch, and authors (and, with a key, signs) the commits it lands. A
-triage reads only the tour manager's question comments and comments mentioning its login, which each pass reads from
-`GET /user`.
+masterclass once 10 factory runs settled since the last, on the lessons of the newest 30; it routes a settled
+masterclass by filing its proposals as `needs-approval` issues. A build continues the issue's last slice concert when it
+has a reply to feed it. It drives maestro through `--json` and calls the forge's REST API directly as its own account,
+`maestro-tm`, which also pushes, and on a restack force-pushes, the PR's branch, and authors (and, with a key, signs)
+the commits it lands. A triage reads only the tour manager's question comments and comments mentioning its login, which
+each pass reads from `GET /user`.
 
 A ticket whose dependencies are all in review builds on the newest one's PR head, and its PR targets that dependency's
 branch until the restack moves it to `main`. On a low-risk PR to `main` whose review left no findings upheld the tick

@@ -334,11 +334,16 @@ flowchart TD
 ### Masterclass
 
 A masterclass is due when the newest concert is not a masterclass and at least 10 settled slice or triage concerts on
-`<milestone>.i<n>` tours are newer than the watermark, within the milestone's newest 200 concerts. It performs
-`.maestro/masterclass.ts` with `--lessons`, the lessons of those concerts oldest first and of settled slices on the
-`release` and `trial` tours since the watermark, which are read but not counted, and `--backlog`, the backlog snapshot.
-The **watermark** is the newest ok masterclass concert in maestro's record, not state the tick keeps. A failed
-masterclass is retried only after another factory run settles; a non-ok or malformed one is reported and does not halt.
+`<milestone>.i<n>` tours are newer than the watermark, within the milestone's newest 200 concerts. The trigger counts
+only those runs; the window is wider. It performs `.maestro/masterclass.ts` with `--lessons`, the lessons of the newest
+30 of those runs, or of every run past the watermark when more, oldest first, and of settled slices on the `release` and
+`trial` tours since the watermark, which are read but not counted or marked, and `--backlog`, the backlog snapshot. A
+heading of a run at or before the watermark ends in ` · read`, as an earlier masterclass read it. `settle` keeps a
+proposal only when at least one concert it cites, after dropping ids no heading names, is not read: one citing none, or
+only read ones, is dropped, not refused, so one stale proposal never fails the masterclass. Fewer than 30 runs in the
+200 concerts are read as found. The **watermark** is the newest ok masterclass concert in maestro's record, not state
+the tick keeps. A failed masterclass is retried only after another factory run settles; a non-ok or malformed one is
+reported and does not halt.
 
 A settled masterclass files one `needs-approval` + `kind/enhancement` + `maestro-tm:masterclass` issue per proposal,
 only while the masterclass is the newest concert, deduplicated by a fingerprint over target, title and body against open
