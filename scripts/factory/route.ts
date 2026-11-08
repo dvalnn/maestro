@@ -51,12 +51,13 @@ export type Figure = {
 	notes: string[];
 };
 /**
- * A triage spec; `decisions` and `excluded` read as empty from a spec stored without them. A planner's spec has
- * `requirements`, numbered R1 on, and `consequences`; a direct ruling's has neither.
+ * A triage spec; `decisions` and `excluded` read as empty from a spec stored without them. `requirements` are numbered
+ * R1 on. A planner's spec has `consequences`; a direct ruling's is marked `brief`.
  */
 export type Spec = {
 	touches: string[];
 	what: string;
+	brief?: boolean;
 	requirements?: string[];
 	figures?: Figure[];
 	decisions: Point[];
@@ -153,6 +154,7 @@ function optional<T>(
 }
 
 const isString = (v: unknown): v is string => typeof v === "string";
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
 const isNumber = (v: unknown): v is number => Number.isInteger(v);
 const isStrings = (v: unknown): v is string[] =>
 	Array.isArray(v) && v.every(isString);
@@ -189,6 +191,7 @@ function parseSpec(value: unknown): Spec {
 	return {
 		touches: field(value, "touches", isStrings, "a list of strings"),
 		what: field(value, "what", isString, "a string"),
+		brief: optional(value, "brief", isBoolean, "a boolean"),
 		requirements: optional(
 			value,
 			"requirements",
@@ -410,8 +413,15 @@ const pointLines = (items: readonly Point[]) =>
 		...points.map((p) => `  - ${continued(p, "    ")}`),
 	]);
 
-const contextSection = ({ what, subject }: Spec) =>
-	section("Context", [what, "", `Subject: \`${subject}\``]);
+/** Whether `spec` is a direct ruling's brief: marked so, or with neither the mark nor requirements. */
+export const isBrief = (spec: Spec) => spec.brief ?? !spec.requirements;
+
+const contextSection = (spec: Spec) =>
+	section(isBrief(spec) ? "Brief" : "Context", [
+		spec.what,
+		"",
+		`Subject: \`${spec.subject}\``,
+	]);
 
 const requirementLines = (requirements: readonly string[]) =>
 	requirements.map((r, i) => `- **R${i + 1}** ${continued(r, "  ")}`);
@@ -637,9 +647,9 @@ const maintainerLines = (
 /** The version of a spec no routed triage has written yet. */
 const FIRST_VERSION = 1;
 const versionOf = ({ version }: Data) => version ?? FIRST_VERSION;
-/** What the spec comment calls `data`'s spec: a brief for a direct ruling's, which has no requirements. */
+/** What the spec comment calls `data`'s spec: a brief for a direct ruling's. */
 const kindOf = ({ result }: Data) =>
-	result?.spec && !result.spec.requirements ? "Brief" : "Spec";
+	result?.spec && isBrief(result.spec) ? "Brief" : "Spec";
 /** `data`'s spec by kind and version, as a sentence names it. */
 const nameOf = (data: Data) =>
 	`${kindOf(data).toLowerCase()} v${versionOf(data)}`;

@@ -499,7 +499,7 @@ function proposed(proposal: Proposal, unrun: string[]): Triage {
 	};
 }
 
-/** The spec of a direct ruling: its brief, built under the gate alone. */
+/** The spec of a direct ruling: its brief, marked `brief`, its acceptance ending in the target's whole gate. */
 const directSpec = ({
 	files,
 	what = "",
@@ -635,7 +635,7 @@ function triageOf(
 /**
  * The triage verdict: the triager's early ruling or the planner's proposal, which it only ever downgrades or gates,
  * never upgrades. A spec check or revision that failed to run is asked of the owner.
- * @param respec whether the issue carries a spec with requirements, which a direct ruling hands on to the planner.
+ * @param respec whether the issue carries a spec rather than a brief, which a direct ruling hands on to the planner.
  * @throws Error when the issue was handed on and the planner gave no proposal.
  */
 export function settle({

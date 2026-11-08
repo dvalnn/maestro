@@ -42,6 +42,7 @@ import {
 	dataOf,
 	encoreRequest,
 	fingerprintLine,
+	isBrief,
 	isFed,
 	isReply,
 	type Option,
@@ -1072,9 +1073,9 @@ async function closedCited(pass: Pass, issue: number, text: string) {
 
 /**
  * Starts triage of the first intake issue, pinned ones first, on its ask and the comments since the last triage read
- * that it is fed, an encore of its last triage when it has one, respecced when that triage's spec has requirements,
- * then records the newest comment it considered; halts on a refusal. A re-triage with nothing new to feed asks for a reply instead. True only when it started nothing, so a
- * masterclass may follow.
+ * that it is fed, an encore of its last triage when it has one, respecced when that triage gave a spec rather than a
+ * brief, then records the newest comment it considered; halts on a refusal. A re-triage with nothing new to feed asks
+ * for a reply instead. True only when it started nothing, so a masterclass may follow.
  */
 async function triage(pass: Pass, entries: Entry[]) {
 	const issue = pick(
@@ -1117,7 +1118,7 @@ async function triage(pass: Pass, entries: Entry[]) {
 		text,
 		"--backlog",
 		backlog,
-		last?.requirements?.length ? "--respec" : "--no-respec",
+		last && !isBrief(last) ? "--respec" : "--no-respec",
 		"--tour",
 		tourOf(pass.milestone, number),
 		"--title",

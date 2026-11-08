@@ -5,8 +5,8 @@ number, title and why, or "None.". A closed issue matters when this one builds o
 changed; the snapshot lists those under "Recently closed" by title alone. Read each issue under "Cited" in full: the
 issue or a reply cites it, often as the source of truth.
 
-Then write `ruling.json` in exactly this shape, leaving out `what`, `subject`, `duplicateOf` and `related` where the
-verdict does not need them:
+Then write `ruling.json` in exactly this shape, leaving out `what`, `requirements`, `acceptance`, `subject`,
+`duplicateOf` and `related` where the verdict does not need them:
 
 ```json
 {
@@ -15,6 +15,8 @@ verdict does not need them:
   "groups": [{ "id": "G1", "area": "the line of inquiry", "questions": ["a question the target's code answers"] }],
   "questions": [],
   "what": "the change to make",
+  "requirements": ["When <trigger>, the <system> shall <response>."],
+  "acceptance": ["bun test ./path/to/file.test.ts # R1"],
   "subject": "fix(scope): imperative summary",
   "duplicateOf": 12,
   "related": [7]
@@ -28,13 +30,20 @@ verdict does not need them:
   - `needs-info` when you and the owner do not yet share what the change is for and what it must do, with those
     questions;
   - `direct` when the change is a small diff: at most {narrow} files, a simple task whose intent is clear, so a builder
-    can do it and the owner review the PR, with `what` and `subject`. Risk does not bar it: code is as fine as docs.
-    Prefer it whenever scouting and a spec would cost more than the review;
+    can do it and the owner review the PR, with `what`, `requirements`, `acceptance` and `subject`. Risk does not bar
+    it: code is as fine as docs. Prefer it whenever scouting and a spec would cost more than the review;
   - `plan` otherwise.
 - `files`: the repo-relative paths you expect the change to create or edit.
 - `what`, for `direct`: the brief, a short paragraph by Plain English below. The builder reads the ask beside it, so the
   brief holds only what the ask leaves open: the module that owns the change, each answer the owner gave and each call
   you settled. It never restates the ask or the gate, and leaves how to the builder.
+- `requirements`, for `direct`: what the change must do, one to {maxRequirements}, numbered `R1` on by position. Each
+  holds one behaviour a user or operator can observe in one EARS sentence of at most {maxWords} words, with one `shall`
+  and no condition after it, such as `When <trigger>, the <system> shall <response>.` or
+  `If <condition>, then the <system> shall <response>.`. Fold the ask's own acceptance into them.
+- `acceptance`, for `direct`: one shell command per requirement that proves it, each starting with {runners} and ending
+  in a shell comment naming it (`# R1`). A `bun test` path starts with `./`. The target's whole gate runs after them, so
+  leave it out.
 - `subject`, for `direct`: the commit subject, as `<type>(<scope>): <summary>`.
 - `groups`, for `plan`: at most {maxGroups}, one per line of inquiry, the most decisive first, numbered G1 on, each of
   at most {groupSize} questions. Ask only what changes the plan, and settle yourself what one line settles; no group
@@ -52,5 +61,5 @@ owner wants. Leave to the scouts and the planner what the code answers, and to t
 
 The owner's replies are final. Do not ask again what a reply settled, nor open edge cases it did not raise. Rule
 `direct` when the replies make the change small and clear, and `plan` only when they open scope a spec must settle. When
-the spec the last triage proposed has `#### Requirements`, rule `plan`: the planner revises that spec, which a brief
-would drop.
+the spec the last triage proposed opens with `#### Context` rather than `#### Brief`, rule `plan`: the planner revises
+that spec, which a brief would drop.

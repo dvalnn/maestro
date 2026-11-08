@@ -151,6 +151,8 @@ const direct: Ruling = {
 	verdict: "direct",
 	groups: [],
 	what: spec.what,
+	requirements: spec.requirements,
+	acceptance: spec.acceptance,
 	subject: spec.subject,
 };
 
@@ -193,10 +195,12 @@ const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 			spec: {
 				touches: direct.files,
 				what: spec.what,
+				requirements: spec.requirements,
 				decisions: [],
 				excluded: [],
-				acceptance: ["just check"],
+				acceptance: [...spec.acceptance, "just check"],
 				subject: spec.subject,
+				brief: true,
 			},
 		},
 	],
@@ -418,6 +422,24 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 		"a direct ruling with no subject",
 		Ruling(4),
 		{ ...direct, subject: undefined },
+		false,
+	],
+	[
+		"a direct ruling with no requirements",
+		Ruling(4),
+		{ ...direct, requirements: [] },
+		false,
+	],
+	[
+		"a direct ruling with more requirements than a brief holds",
+		Ruling(4),
+		{ ...direct, requirements: ["R1", "R2", "R3", "R4"] },
+		false,
+	],
+	[
+		"a direct ruling with no acceptance",
+		Ruling(4),
+		{ ...direct, acceptance: undefined },
 		false,
 	],
 	["a direct ruling with no files", Ruling(4), { ...direct, files: [] }, false],

@@ -5,9 +5,9 @@ them, with the gaps, the spend and the risk. Add no attribution, emoji or sign-o
 
 The spec picks the form:
 
-- **Direct**, a spec with no `#### Requirements`: no spec gate ran, so the body shows the calls the builder made.
-- **Specced**, a spec with `#### Requirements`: the owner approved its shape, so the body shows how the change holds to
-  it.
+- **Direct**, a spec opening with `#### Brief`: no spec gate ran, so the body shows the calls the builder made.
+- **Specced**, a spec opening with `#### Context`: the owner approved its shape, so the body shows how the change holds
+  to it.
 
 Use exactly the form's sections, with no preamble, in the words of `GLOSSARY.md`. Size each section to the change: a
 small change gets a sentence per section.

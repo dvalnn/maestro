@@ -766,6 +766,26 @@ describe("a pass", () => {
 		expect(t.starts[1]?.[6]).toBe("--no-respec");
 	});
 
+	test("feeds a re-triage of a brief its brief, not respecced though the brief has requirements", async () => {
+		const brief = { ...ready, spec: { ...spec, brief: true } };
+		const retriaged = issue(8, "needs-triage", {
+			concert: "c0",
+			triage: "c0",
+			result: brief,
+		});
+		retriaged.comments.push({
+			id: 5,
+			body: "@forge-bot Q1: Ann",
+			author: OWNER,
+		});
+		const t = setup([retriaged]);
+		await t.run();
+		expect(t.starts[0]?.[3]).toContain(
+			"## The spec the last triage proposed\n\n#### Brief",
+		);
+		expect(t.starts[0]?.[6]).toBe("--no-respec");
+	});
+
 	test("feeds a re-triage its own questions and the comments mentioning it newer than the last read in order, and raises the spec version", async () => {
 		const retriaged = issue(7, "needs-triage", {
 			concert: "c1",

@@ -404,14 +404,19 @@ test("a spec comment reads in order: heading, Context, Requirements, Shape, Deci
 	expect(dataOf(shown)).toEqual(data);
 });
 
+const briefed = result("ready-for-agent", {
+	spec: { ...specced.spec, brief: true },
+});
+
 test.each([
-	["a direct ruling's", ready, "Brief", "brief"],
-	["a planner's", specced, "Spec", "spec"],
+	["a marked direct ruling's", briefed, "Brief", "Brief", "brief"],
+	["an unmarked direct ruling's", ready, "Brief", "Brief", "brief"],
+	["a planner's", specced, "Spec", "Context", "spec"],
 ])(
-	"%s spec heads its comment and its link by its kind",
-	(_, result, heading, link) => {
+	"%s spec heads its comment, its first section and its link by its kind",
+	(_, result, heading, first, link) => {
 		const shown = commentOf({ result }, "needs-approval", "forge-bot");
-		expect(shown).toContain(`### ${heading} v1 · risk low`);
+		expect(shown).toContain(`### ${heading} v1 · risk low\n\n#### ${first}`);
 		expect(tracked("Greet.", 9, { result })).toContain(`[${link} v1]`);
 	},
 );

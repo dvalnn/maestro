@@ -279,7 +279,7 @@ test.each([
 	["medium", ["packages/cli/src/a.ts"], "ready-for-agent"],
 	["high", ["packages/ir/src/a.ts"], "needs-approval"],
 ])(
-	"settle builds a direct ruling at %s risk on its brief under the gate alone, as %s",
+	"settle builds a direct ruling at %s risk on its marked brief, the gate after its acceptance, as %s",
 	(risk, files, verdict) => {
 		const { triage } = settle({
 			ruling: {
@@ -288,6 +288,8 @@ test.each([
 				files,
 				groups: [],
 				what: spec.what,
+				requirements: spec.requirements,
+				acceptance: [...spec.acceptance, "just check"],
 				subject: spec.subject,
 			},
 			respec: false,
@@ -299,10 +301,12 @@ test.each([
 		expect(triage.spec).toEqual({
 			touches: files,
 			what: spec.what,
+			requirements: spec.requirements,
 			decisions: [],
 			excluded: [],
-			acceptance: ["just check"],
+			acceptance: [...spec.acceptance, "just check"],
 			subject: spec.subject,
+			brief: true,
 		});
 	},
 );
@@ -314,6 +318,8 @@ test("settle takes the planner's spec over a direct ruling's brief on a respec",
 		files: ["packages/cli/src/a.ts"],
 		groups: [],
 		what: "the brief",
+		requirements: spec.requirements,
+		acceptance: spec.acceptance,
 		subject: spec.subject,
 	};
 	const { triage } = settle({ ...planned(ready), ruling, respec: true });

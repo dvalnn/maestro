@@ -41,6 +41,7 @@ import {
 	findingsOf,
 	GROUP_SIZE,
 	Group,
+	MAX_BRIEF_REQUIREMENTS,
 	MAX_REQUIREMENT_WORDS,
 	NARROW,
 	type PROPOSED,
@@ -61,7 +62,14 @@ const task = (...parts: string[]) => parts.join("\n\n");
 const TASKS = {
 	triager: (maxGroups: number) =>
 		task(
-			fill(TRIAGER, { maxGroups, groupSize: GROUP_SIZE, narrow: NARROW }),
+			fill(TRIAGER, {
+				maxGroups,
+				groupSize: GROUP_SIZE,
+				narrow: NARROW,
+				maxRequirements: MAX_BRIEF_REQUIREMENTS,
+				maxWords: MAX_REQUIREMENT_WORDS,
+				runners: RUNNERS.join(", "),
+			}),
 			PLAIN,
 			GATE,
 			QUESTIONS,
@@ -188,7 +196,7 @@ export const triage = composition(
 			respec: Bool({
 				default: false,
 				description:
-					"Whether the issue carries a spec with requirements, which a direct ruling hands on to the planner to revise",
+					"Whether the issue carries a spec rather than a brief, which a direct ruling hands on to the planner to revise",
 			}),
 		},
 		examples: [

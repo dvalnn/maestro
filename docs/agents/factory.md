@@ -203,8 +203,8 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
 
 - **Routes.** The triager runs first and rules alone: a duplicate settles there, and it asks the owner, with a
   `needs-info` verdict. A `direct` ticket goes straight to the build on a brief: the triager's `what`, only what the ask
-  leaves open, and `subject`, with `just check` as acceptance; a `plan` ticket goes on to the scouts, the planner and
-  the spec checker. Either spec is gated by risk as any other.
+  leaves open, one to three requirements with an acceptance item each, `just check` last, and `subject`; a `plan` ticket
+  goes on to the scouts, the planner and the spec checker. Either spec is gated by risk as any other.
 - **Spec check.** On findings, the planner revises its spec once in the same session; the revised spec is not checked
   again. A requirement off the EARS shape is a finding too, found by code beside the checker's; the planner can run the
   same rule as `check ears` before it finishes. A finding only the owner can rule on becomes a question, as does a check
@@ -214,7 +214,7 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   `@forge-bot Q1: no, ok results only`, then moving the ticket to `needs-triage` (to `ready-for-agent` to continue a
   blocked build). A waiting spec in `needs-approval` is answered or redirected the same way. A reply is final: a
   re-triage does not ask again what it settled, and rules `direct` when it leaves the change small and clear, unless the
-  last spec has requirements: the tick then passes `--respec`, and a `direct` ruling goes to the planner to revise that
+  last spec is not a brief: the tick then passes `--respec`, and a `direct` ruling goes to the planner to revise that
   spec.
 - **Feeding comments.** A triage, first or encore, considers each comment but the spec comment whose id is above `read`,
   in id order. It is fed as `--issue` the ask, then on an encore the spec under the heading
@@ -407,8 +407,9 @@ Concerts: <count> (<concert id>, <concert id>)
 One comment per issue, found by the `<!-- maestro-tm -->` marker on its first line, created on the tick's first write
 and edited in place after. `N` starts at 1 and rises with each routed triage. The area is left out when triage gave
 none, and so is any section with no items. With no result the heading is `### Spec v<N>`, with no risk either. A direct
-ruling's spec has no requirements and is named a brief: `### Brief v<N>` here, and `[brief v<N>]` in the closing line.
-The tick trusts the first comment opening with the marker, whoever wrote it, so only maintainers write that marker.
+ruling's spec is marked `brief` and named so: `### Brief v<N>` here, `#### Brief` in place of `#### Context`, and
+`[brief v<N>]` in the closing line. A spec with neither the mark nor requirements is a brief too. The tick trusts the
+first comment opening with the marker, whoever wrote it, so only maintainers write that marker.
 
 ````markdown
 <!-- maestro-tm -->
