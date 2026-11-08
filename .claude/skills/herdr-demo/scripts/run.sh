@@ -23,12 +23,14 @@ fi
 shift
 [[ $# -gt 0 ]] || die "no perform args; pass the composition, flags and --title"
 [[ -d $workdir ]] || die "no workdir $workdir; run scripts/toy.sh first"
+maestro=$(cd "$workdir/.." && pwd)/bin/maestro
+[[ -x $maestro ]] || die "no release binary at $maestro; run scripts/setup.sh first"
 
 quote() { printf "'%s' " "${@//\'/\'\\\'\'}"; }
 concerts() { herdr pane read "$left" --lines 300 | grep -oE "$uuid" | awk '{print $2}' || true; }
 
 before=$(concerts | grep -c . || true)
-herdr pane run "$left" "maestro perform $(quote "$@")" >/dev/null
+herdr pane run "$left" "$(quote "$maestro") perform $(quote "$@")" >/dev/null
 
 id=
 for ((i = 0; i < id_timeout; i++)); do
@@ -41,11 +43,11 @@ for ((i = 0; i < id_timeout; i++)); do
 done
 [[ -n $id ]] || die "no concert id in pane $left after ${id_timeout}s; read it with 'herdr pane read $left --lines 40'"
 
-herdr pane run "$right" "maestro watch $id" >/dev/null
+herdr pane run "$right" "$(quote "$maestro") watch $id" >/dev/null
 echo "concert $id"
 
 code=0
-(cd "$workdir" && PATH=$(dirname "$workdir")/bin:$PATH maestro wait "$id" --timeout "$timeout") || code=$?
+(cd "$workdir" && "$maestro" wait "$id" --timeout "$timeout") || code=$?
 sleep 1
 echo "--- right pane ($right)"
 herdr pane read "$right" --lines "$lines_right"

@@ -19,11 +19,10 @@ label=maestro-$name
 mkdir -p "$root/bin"
 gzip -dc "$release" > "$root/bin/maestro"
 chmod +x "$root/bin/maestro"
-path=$root/bin:$PATH
 
 ws=$(herdr workspace list | jq -r --arg l "$label" '.result.workspaces[] | select(.label == $l) | .workspace_id' | head -1)
 if [[ -z $ws ]]; then
-  ws=$(herdr workspace create --cwd "$dir" --label "$label" --env "PATH=$path" --no-focus |
+  ws=$(herdr workspace create --cwd "$dir" --label "$label" --no-focus |
     jq -r '.result.workspace.workspace_id // .result.root_pane.workspace_id')
 fi
 [[ -n $ws && $ws != null ]] || die "herdr workspace create gave no id; check 'herdr status'"
@@ -32,7 +31,7 @@ panes=$(herdr pane list --workspace "$ws" | jq -r '.result.panes[].pane_id')
 left=$(sed -n 1p <<<"$panes")
 right=$(sed -n 2p <<<"$panes")
 if [[ -z $right ]]; then
-  right=$(herdr pane split "$left" --direction right --cwd "$dir" --env "PATH=$path" --no-focus |
+  right=$(herdr pane split "$left" --direction right --cwd "$dir" --no-focus |
     jq -r '.result.pane.pane_id')
 fi
 [[ -n $left && -n $right && $right != null ]] || die "workspace $label has no two panes; close it with 'herdr workspace close $ws' and rerun"
