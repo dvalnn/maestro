@@ -5,7 +5,9 @@ behaviour the issue's ask, the spec's Context, a requirement or an acceptance it
 that logic is removed or broken: judge it as a mutation would, naming the line whose removal or change no test catches.
 Trivial logic, a one-liner whose effect the code shows plainly, needs no test, and one test over a list's shape covers
 its entries. Logic with edges, such as a limit, an empty input or one past the end, is tested at them. A missing test
-for such logic or its edges blocks. Run a mutation in the lane: break the line and run only the owning test files.
+for such logic or its edges blocks. Run mutations in the lane as one script, not an edit and a run per mutant: for each,
+back up the file with `cp`, break the line, run only the owning test files, record killed or survived, and restore the
+backup, even when the run fails.
 
 A spec decision's implementation detail is guidance: a missing test for it is advisory, unless user input reaches that
 code or the finding names the concrete failure the missing test lets through.

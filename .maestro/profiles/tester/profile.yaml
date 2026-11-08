@@ -1,0 +1,3 @@
+instructions: instructions.md
+runtime: { harness: pi, model: github-copilot/gpt-6.1-terra, thinking: medium }
+limits: { timeout: 20m, tokens: 10000000 }

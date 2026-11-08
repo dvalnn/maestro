@@ -21,6 +21,7 @@ import {
 	commits,
 	extend,
 	fresh,
+	JsonOut,
 	Lane,
 	MarkdownOut,
 	read,
@@ -37,6 +38,7 @@ import {
 	composition,
 	Dir,
 	Enum,
+	List,
 	lookup,
 	loop,
 	Markdown,
@@ -45,16 +47,19 @@ import {
 	readJson,
 	reject,
 	type Settled,
+	Struct,
 	Text,
 	use,
 	type ValueOf,
 } from "@maestro/sdk";
 import { JUDGED, PANELS, QUESTIONS, task } from "./slice/lenses";
+import TESTED_RULE from "./slice/prompts/_tested.md" with { type: "text" };
 import FIX from "./slice/prompts/fix.md" with { type: "text" };
 import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
 import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
 	type: "text",
 };
+import TESTER from "./slice/prompts/tester.md" with { type: "text" };
 import WRITER from "./slice/prompts/writer.md" with { type: "text" };
 import FIGURES from "./triage/prompts/_figures.md" with { type: "text" };
 import PLAIN from "./triage/prompts/_plain.md" with { type: "text" };
@@ -71,6 +76,7 @@ const TASKS = {
 	reviewer: task(REVIEWER, QUESTIONS, JUDGED),
 	reviewerAgain: task(REVIEWER_AGAIN, REVIEWER, QUESTIONS, JUDGED),
 	fix: task(FIX),
+	tester: task(TESTER),
 	writer: task(WRITER, PLAIN, FIGURES),
 };
 
@@ -175,6 +181,59 @@ const UPHELD = {
 /** The PR body's writer: a cheap seat that only reads the finished change. */
 const writer = seat("writer");
 
+/** The tester's map: each requirement in one list, a pinned one with its test by file and name. */
+const Unpinned = List(Struct({ requirement: Text(), why: Text() }));
+const TestMap = Struct({
+	pinned: List(Struct({ requirement: Text(), file: Text(), test: Text() })),
+	deferred: Unpinned,
+	untestable: Unpinned,
+});
+
+/** The seat that writes a spec's tests before the build, on another model family. */
+const tester = seat("tester", {
+	out: { map: JsonOut("map.json", TestMap) },
+	checks: REPO_CHECKS,
+});
+
+/** The tiers whose build starts from a tester's tests. */
+const TESTED: readonly Tier[] = ["ordinary", "risky"];
+
+/**
+ * The build of `request` against `spec`: in a fresh lane, or at a tested `tier` in a lane extending the tester's, its
+ * task then carrying the rule for the tester's tests. Gives the tester's map when tested.
+ */
+function build(tier: Tier, request: string, spec: Ref<ArtifactRef>) {
+	if (!TESTED.includes(tier))
+		return {
+			built: builder({
+				label: "build",
+				task: request,
+				lane: fresh(),
+				checks: REPO_CHECKS,
+			}),
+		};
+	const tested = tester({
+		label: "tester",
+		task: TASKS.tester,
+		lane: fresh(),
+		attachments: {
+			spec: { artifact: spec, hint: "first, for the requirements to pin" },
+		},
+	});
+	const map = {
+		artifact: tested.out.map,
+		hint: "for the tester's tests, by requirement",
+	};
+	const built = builder({
+		label: "build",
+		task: task(request, TESTED_RULE),
+		lane: extend(tested.out.lane),
+		checks: REPO_CHECKS,
+		attachments: { map },
+	});
+	return { built, map };
+}
+
 /** The lens of the round before, which a later round's lens continues, and the findings that round upheld. */
 type Earlier = { lens: Ref<string>; upheld: Ref<ArtifactRef> };
 
@@ -252,7 +311,7 @@ function review(
 export const slice = composition(
 	"slice",
 	{
-		doc: "Build a request in a fresh lane, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset beside the findings its review upheld and a writer's PR body, over the PR it revises when given, empty when the writer failed, failing when it holds no patch.",
+		doc: "Build a request in a fresh lane, or at ordinary and risky on a tester's tests written first, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset beside the findings its review upheld and a writer's PR body, over the PR it revises when given, empty when the writer failed, failing when it holds no patch.",
 		params: {
 			request: Text({ description: "The brief: what to build" }),
 			tier: Enum(TIERS, { description: "How deep the review goes" }),
@@ -292,12 +351,7 @@ export const slice = composition(
 			);
 			return review(tier, green.out.lane, session, spec, earlier);
 		};
-		const built = builder({
-			label: "build",
-			task: request,
-			lane: fresh(),
-			checks: REPO_CHECKS,
-		});
+		const { built, map } = build(tier, request, spec);
 		const reviewed = loop.while((s) => not(s.out.clean), {
 			init: round(built.out.lane, built.out.session),
 			step: (s) => {
@@ -334,6 +388,7 @@ export const slice = composition(
 			lane: read(reviewed.out.lane),
 			attachments: {
 				spec: { artifact: spec, hint: "first, for what the change had to do" },
+				...(map && { map }),
 				patches: {
 					artifact: changes,
 					hint: "for what the change did, patch by patch",

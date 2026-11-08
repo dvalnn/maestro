@@ -248,6 +248,11 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   spec and the ask as `--request`, and its tier (Rules, Policy: Risk and tier) as `--tier` and `--preset`, then the
   preset `area-<area>` when the ticket has an `area/<area>` label and `.maestro/presets/area-<area>.yaml` exists, then
   the tick's own `--preset`s. The ticket moves to `in-progress` as the perform starts.
+- **Tests first.** At `ordinary` and `risky`, a `tester` on another model family first writes the tests that pin the
+  spec's requirements through what the base's code reaches, mapping each requirement to its test or marking it deferred
+  or untestable. The builder extends the tester's lane with the map attached, makes the tests pass, and writes the tests
+  for the deferred requirements; it changes a tester's test only where it contradicts the spec or the interface it
+  builds, saying why. The review judges the tests like any other, and the writer's Evidence table names the map's tests.
 - **Dependencies.** A dependency is a forge "blocked by" link that sets build order.
 
 ```mermaid

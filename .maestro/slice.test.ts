@@ -150,32 +150,34 @@ test("upheldOf marks each finding unverified when no skeptic ruled on it", () =>
 });
 
 /** The runtime of each profile a tier seats, as `.maestro/presets/<tier>.yaml` sets it, and the writer's profile. */
-const seated: [string, Record<string, [string, string]>][] = [
+const seated: [string, Record<string, [string, string, string]>][] = [
 	[
 		"small",
 		{
-			"classics/builder": ["claude-sonnet-5-5", "low"],
-			"classics/lens": ["claude-opus-5-5", "medium"],
-			"classics/skeptic": ["claude-sonnet-5-5", "low"],
-			writer: ["claude-haiku-5-5", "high"],
+			"classics/builder": ["claude", "claude-sonnet-5-5", "low"],
+			"classics/lens": ["claude", "claude-opus-5-5", "medium"],
+			"classics/skeptic": ["claude", "claude-sonnet-5-5", "low"],
+			writer: ["claude", "claude-haiku-5-5", "high"],
 		},
 	],
 	[
 		"ordinary",
 		{
-			"classics/builder": ["claude-sonnet-5-5", "medium"],
-			"classics/lens": ["claude-opus-5-5", "medium"],
-			"classics/consolidator": ["claude-opus-5-5", "medium"],
-			writer: ["claude-haiku-5-5", "high"],
+			"classics/builder": ["claude", "claude-sonnet-5-5", "medium"],
+			"classics/lens": ["claude", "claude-opus-5-5", "medium"],
+			"classics/consolidator": ["claude", "claude-opus-5-5", "medium"],
+			tester: ["pi", "github-copilot/gpt-6.1-terra", "medium"],
+			writer: ["claude", "claude-haiku-5-5", "high"],
 		},
 	],
 	[
 		"risky",
 		{
-			"classics/builder": ["claude-opus-5-5", "medium"],
-			"classics/lens": ["claude-sonnet-5-5", "high"],
-			"classics/consolidator": ["claude-opus-5-5", "high"],
-			writer: ["claude-haiku-5-5", "high"],
+			"classics/builder": ["claude", "claude-opus-5-5", "medium"],
+			"classics/lens": ["claude", "claude-sonnet-5-5", "high"],
+			"classics/consolidator": ["claude", "claude-opus-5-5", "high"],
+			tester: ["pi", "github-copilot/gpt-6.1-sol", "medium"],
+			writer: ["claude", "claude-haiku-5-5", "high"],
 		},
 	],
 ];
@@ -212,10 +214,9 @@ test.each(seated)(
 			thinking: string;
 		};
 		for (const a of agents as Agent[])
-			expect([a.harness, a.model, a.thinking]).toEqual([
-				"claude",
-				...(runtimes[a.profile] ?? []),
-			]);
+			expect([a.harness, a.model, a.thinking]).toEqual(
+				runtimes[a.profile] ?? [],
+			);
 		expect(new Set((agents as Agent[]).map((a) => a.profile))).toEqual(
 			new Set(Object.keys(runtimes)),
 		);
@@ -324,6 +325,23 @@ test("under --tier small, the reviewer may run every check of the project's conf
 	]);
 });
 
+test("under --tier ordinary, the build extends the tester's lane, and the build and the writer read the tester's map", async () => {
+	const out = await maestro(await slice("compose", "ordinary"));
+	type Edge = {
+		from: { node: string; port?: string };
+		to: { node: string; port?: string };
+	};
+	const { edges }: { edges: Edge[] } = JSON.parse(out).plan.ir;
+	const from = (node: string, port: string) =>
+		edges
+			.filter((e) => e.to.node === node && e.to.port === port)
+			.map((e) => e.from);
+	expect(from("build", "lane")).toEqual([{ node: "tester", port: "lane" }]);
+	for (const seat of ["build", "writer"]) {
+		expect(from(seat, "map")).toEqual([{ node: "tester", port: "map" }]);
+	}
+});
+
 test.each([
 	[[], ["patches", "spec"]],
 	[
@@ -383,7 +401,13 @@ const rejecting: [
 		(tier): [string, undefined, string[], Record<string, unknown>] => [
 			tier,
 			undefined,
-			["classics/builder", "classics/lens", "classics/consolidator", "writer"],
+			[
+				"classics/builder",
+				"classics/lens",
+				"classics/consolidator",
+				"tester",
+				"writer",
+			],
 			{
 				"lenses/lens/findings.json": {
 					clean: false,

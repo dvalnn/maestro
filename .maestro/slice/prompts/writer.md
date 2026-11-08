@@ -72,6 +72,9 @@ never a run you did not see.
   line.
 - **Specced:** one row per requirement, in order, naming the test that pins it: the acceptance item whose `# R` comment
   names it, or a test the patches add. A requirement no test pins says so in its row.
+- **Map:** when `map` is attached, a tester pinned the requirements, and its tests take the place of the acceptance
+  items: each row or pair names the map's test, by file and name, or for a deferred requirement the test the patches
+  add. An untestable requirement says so, with its why.
 
 ## Off spec
 
