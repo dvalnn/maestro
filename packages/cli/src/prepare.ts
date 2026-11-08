@@ -12,7 +12,7 @@ import {
 	type Layer,
 	valueAt,
 } from "@maestro/core/config";
-import type { ConcertRecord, Staged } from "@maestro/core/perform";
+import type { ConcertRecord, Records, Staged } from "@maestro/core/perform";
 import {
 	type Diagnostic,
 	type Ir,
@@ -56,7 +56,7 @@ import {
 	usageError,
 } from "./output";
 import { paramValues } from "./params";
-import { openSession, overridesOf, type Session } from "./session";
+import { openSession, overridesOf, recordedOf, type Session } from "./session";
 
 /** A composition's IR, with what loads its code, composes it, and keeps it with a concert. */
 export type Prepared = {
@@ -78,6 +78,11 @@ export type Prepared = {
 
 /** The flags `compose` takes beyond the common ones. */
 export const COMPOSE_FLAGS = {
+	concert: {
+		type: "string",
+		arg: "id",
+		desc: "Pre-flight the graph this concert was performed from, in place of a composition",
+	},
 	out: {
 		type: "string",
 		arg: "file",
@@ -639,16 +644,27 @@ function codeHashes(ir: Ir): string {
 }
 
 /**
- * The preparation of `concert`, a resumed one: its stored IR with the code hashes as the code stands now, loaded from
- * the directory its row holds, or re-bundled from the composition file there when it was built from one, and the
- * session's config. Warns on stderr, unless `--json` in `values`, when any of those hashes differs from the recorded one.
+ * The preparation of `concert`, found in `store` of `found`, from the record: its stored IR with the code hashes as the
+ * code stands now, loaded from the directory its row holds, or re-bundled from the composition file there when it was
+ * built from one, under the config files as they stand layered with its recorded `--preset` and `-c`, then those of
+ * `values`. Its record store and concert files stay those of `found`, whatever `dataRoot` that config holds. Warns on
+ * stderr, unless `--json` in `values`, when any of those hashes differs from the recorded one.
+ * @returns the session of that config, and the preparation.
  * @throws CliError when that directory or file is gone.
+ * @throws ConfigError as `openSession` does.
  */
 export async function resumable(
-	session: Session,
+	found: Session,
+	store: Records,
 	concert: ConcertRecord,
 	values: Values,
-): Promise<Prepared> {
+): Promise<{ session: Session; prepared: Prepared }> {
+	const { config } = await openSession(
+		found.deps,
+		recordedOf(store, concert),
+		overridesOf(values),
+	);
+	const session = { ...found, config };
 	const { id, moduleDir, file } = concert;
 	const path = file === undefined ? moduleDir : join(moduleDir, file);
 	if (
@@ -668,14 +684,18 @@ export async function resumable(
 		warn(
 			session.deps,
 			values,
-			`composition changed since concert ${id}; resuming its recorded graph`,
+			`composition changed since concert ${id}; using its recorded graph`,
 		);
 	return {
-		ir,
-		loader,
-		moduleDir,
-		config: session.config.composed,
-		claims: claimsOf(packs),
-		values,
+		session,
+		prepared: {
+			ir,
+			loader,
+			moduleDir,
+			config: session.config.composed,
+			claims: claimsOf(packs),
+			file: bundle && path,
+			values,
+		},
 	};
 }

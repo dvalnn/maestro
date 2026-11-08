@@ -62,13 +62,12 @@ import {
 import {
 	artifactsOf,
 	concertOf,
-	locating,
 	openSession,
 	overridesOf,
 	recordedOf,
 	type Session,
+	withLocated,
 	withRecord,
-	withSession,
 } from "./session";
 
 /** The environment variable that puts a new concert on a tour when `--tour` is not given. */
@@ -182,15 +181,11 @@ async function detach(
 
 /** Prints how to follow the concert `id`, by the short id the foreground path hints. */
 async function followHint(deps: Deps, own: Overrides, id: string) {
-	await withSession(
-		deps,
-		await locating(deps, own),
-		async (_session, store) => {
-			deps.stderr(
-				`Follow it: maestro watch ${shortIds(store.ids()).label(id, false)}`,
-			);
-		},
-	);
+	await withLocated(deps, own, async (_session, store) => {
+		deps.stderr(
+			`Follow it: maestro watch ${shortIds(store.ids()).label(id, false)}`,
+		);
+	});
 }
 
 /** A prepared concert: the session it is performed in, what to perform, and how it is recorded. */
@@ -296,11 +291,8 @@ async function encored(
 }
 
 /**
- * The concert whose id starts with `prefix`, to resume, with its code as it stands now, and the config files as they
- * stand layered with its recorded `--preset` and `-c`, then the resume's own. Its record store and concert files stay
- * those of `session`, where it was found, whatever `dataRoot` that config holds.
- * @throws CliError when core refuses to resume it or its code is gone.
- * @throws ConfigError as `openSession` does.
+ * The concert whose id starts with `prefix`, to resume, prepared as `resumable` does.
+ * @throws CliError when core refuses to resume it, or as `resumable` does.
  */
 async function restart(
 	session: Session,
@@ -311,17 +303,7 @@ async function restart(
 	const row = concertOf(store, prefix);
 	const refused = unresumable(row);
 	if (refused) throw resumeRefused(refused);
-	const { config } = await openSession(
-		session.deps,
-		recordedOf(store, row),
-		overridesOf(values),
-	);
-	const resumed = { ...session, config };
-	return {
-		session: resumed,
-		prepared: await resumable(resumed, row, values),
-		resume: row.id,
-	};
+	return { ...(await resumable(session, store, row, values)), resume: row.id };
 }
 
 const SIGNAL_EXITS = {
@@ -446,22 +428,18 @@ async function conducted(
 	);
 }
 
-/** Pre-flights and performs what `started` makes in the session `locating` finds, and gives the exit code. */
+/** Pre-flights and performs what `started` makes in the session `withLocated` finds, and gives the exit code. */
 async function inStore(
 	deps: Deps,
 	own: Overrides,
 	json: boolean,
 	started: (session: Session, store: Records) => Promise<Start>,
 ) {
-	return withSession(
-		deps,
-		await locating(deps, own),
-		async (session, store) => {
-			const start = await started(session, store);
-			await warned(start);
-			return conducted(start, store, json);
-		},
-	);
+	return withLocated(deps, own, async (session, store) => {
+		const start = await started(session, store);
+		await warned(start);
+		return conducted(start, store, json);
+	});
 }
 
 export const perform: Command = {

@@ -125,6 +125,43 @@ describe("compose and config", () => {
 		});
 	});
 
+	test("compose --concert pre-flights the graph the concert recorded, not one built anew, and takes no composition or param flag", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["p", ...GREET]));
+		const planOf = async (args: string[]) =>
+			json(await w.call(["compose", ...args, "--json"])).plan;
+		const recorded = await planOf(["--concert", id]);
+		expect(recorded).toEqual(await planOf(GREET));
+		expect(recorded).not.toEqual(await planOf(["demo.greet", "--name", "y"]));
+		for (const [args, err] of [
+			[
+				["--concert", id, "--name", "y"],
+				/^error: unknown flag --name\n {2}See 'maestro compose --help'; 'maestro encore <id>'/,
+			],
+			[
+				[...GREET, "--concert", id],
+				/^error: maestro compose --concert takes no composition, got 'demo.greet'\n/,
+			],
+			[
+				["--concert", id, "demo.greet"],
+				/^error: maestro compose --concert takes no composition, got 'demo.greet'\n/,
+			],
+			[
+				["--concert", "--plan"],
+				/^error: maestro compose --concert needs a concert\n/,
+			],
+			[
+				["--plan", "--concert"],
+				/^error: maestro compose --concert needs a concert\n/,
+			],
+			[
+				["--concert", "fffffff"],
+				/^error: no concert 'fffffff' in the record\n/,
+			],
+		] as const)
+			expect((await w.call(["c", ...args])).err).toMatch(err);
+	});
+
 	test("an example set's file resolves against the composition file's directory, or the pack's, not the cwd", async () => {
 		const bare = await world();
 		const out = await bare.call(["compose", join(FIXTURES, "sample.ts")]);
@@ -247,19 +284,26 @@ describe("compose and config", () => {
 		expect(text).toMatch(/^dataRoot +preset stub +.*stub\.yaml:1$/m);
 	});
 
-	test("--out of a pack writes an IR that performs, and of a bare file writes its bundle beside it", async () => {
+	test("--out of a pack writes an IR that performs, and of a bare file or a concert of one writes its bundle beside it", async () => {
 		const w = await world();
 		const dir = join(w.root, "out");
-		for (const target of [GREET, [HELLO]])
+		const concert = idOf(await w.call(["p", HELLO], { hosts: [] }));
+		for (const [name, target] of [
+			["greet", GREET],
+			["hello", [HELLO]],
+			["again", ["--concert", concert]],
+		] as const)
 			expect(
 				await w.call([
 					"compose",
 					...target,
 					"--out",
-					join(dir, `${target[0] === HELLO ? "hello" : "greet"}.json`),
+					join(dir, `${name}.json`),
 				]),
 			).toMatchObject({ code: 0, err: expect.stringContaining("wrote") });
 		expect((await readdir(dir)).sort()).toEqual([
+			"again.bundle.js",
+			"again.json",
 			"greet.json",
 			"hello.bundle.js",
 			"hello.json",
@@ -267,6 +311,7 @@ describe("compose and config", () => {
 		for (const [name, hosts] of [
 			["greet", [hostOf()]],
 			["hello", []],
+			["again", []],
 		] as const)
 			expect(
 				await w.call(["perform", join(dir, `${name}.json`)], { hosts }),
@@ -585,6 +630,11 @@ describe("usage errors", () => {
 			"no composition",
 			["perform"],
 			/^error: maestro perform needs a composition\nUsage: maestro perform <composition>\n {2}Name a file or <pack>.<composition>, before its flags, or see 'maestro perform --help' for examples$/,
+		],
+		[
+			"no composition and no --concert",
+			["compose", "--plan"],
+			/^error: maestro compose needs a composition\nUsage: maestro compose <composition>\n +maestro compose --concert <id>\n {2}Name a file or <pack>.<composition>, before its flags/,
 		],
 		[
 			"an unknown composition",
@@ -1007,7 +1057,7 @@ describe("usage errors", () => {
 		expect(await w.call(["compose", "demo.nope", "--help"])).toMatchObject({
 			code: 0,
 			out: expect.stringMatching(
-				/^Build a composition[\s\S]*--graph +\S[^\n]*\n +--flow +\S[^\n]*\(experimental\)\n\nCommon flags: /,
+				/^Build a composition[\s\S]*--graph +\S[^\n]*\n +--flow +\S[^\n]*\(experimental\)\n\nExamples:\n[\s\S]*\n\nCommon flags: /,
 			),
 			err: "params not shown: pack 'demo' has no composition 'nope'",
 		});

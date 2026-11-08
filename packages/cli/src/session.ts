@@ -152,18 +152,21 @@ export const concertsOf = (store: Records, prefixes: readonly string[]) => [
 ];
 
 /**
- * The overrides a command on a recorded concert finds its record store under: its own, or none when they do not layer without the concert's
- * recorded ones beneath, as a `!delete` of a key only those set does not.
+ * Gives `body` the session a command on a recorded concert finds its record store under, and that store until it
+ * settles: the session of its own overrides `own`, or of none when they do not layer without the concert's recorded ones
+ * beneath, as a `!delete` of a key only those set does not.
  * @throws as `openSession` does, for an error other than a ConfigError.
  */
-export async function locating(deps: Deps, own: Overrides): Promise<Overrides> {
-	try {
-		await openSession(deps, own);
-		return own;
-	} catch (error) {
-		if (error instanceof ConfigError) return {};
+export async function withLocated<T>(
+	deps: Deps,
+	own: Overrides,
+	body: (session: Session, store: Records) => Promise<T>,
+): Promise<T> {
+	const session = await openSession(deps, own).catch((error: unknown) => {
+		if (error instanceof ConfigError) return openSession(deps);
 		throw error;
-	}
+	});
+	return withRecord(session, (store) => body(session, store));
 }
 
 /** The `--preset` and `-c` concert `row` was performed with, to layer beneath a command's own, as a resume does. */

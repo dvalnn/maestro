@@ -37,6 +37,8 @@ verb but `cs` takes `--json`, `--preset <name>`, `-c <key>=<value>` (repeatable)
 `--out`.
 
 - `<c>` is `<pack>.<composition>`, a `.ts` or `.js` composition file, or a `.json` IR file.
+- `maestro compose --concert <id> [--plan|--graph|--json]` shows the graph a concert was performed from, under today's
+  config files with its recorded `--preset` and `-c`.
 - Params are kebab-case flags: `maxRepairs` is `--max-repairs <value>`; a boolean is `--strict` or `--no-strict`. A
   param with no flag takes its value from config (a pack's only), then its default.
 - Compose alone falls back on the composition's first example set for params no flag or config gives (an optional one

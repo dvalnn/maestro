@@ -8,15 +8,18 @@ import {
 	colorOf,
 	type Deps,
 	isSet,
+	parse,
 	peek,
 	textOf,
 } from "./command";
 import { agentLines, agentsOf } from "./hosts";
 import {
+	ArgumentError,
 	Diagnosed,
 	diagnosedExit,
 	EXIT,
 	jsonOf,
+	NAME_CONCERT,
 	renderDiagnostics,
 	table,
 } from "./output";
@@ -30,8 +33,15 @@ import {
 	persist,
 	prepare,
 	type Reading,
+	resumable,
 } from "./prepare";
-import { openSession, overridesOf, type Session } from "./session";
+import {
+	concertOf,
+	openSession,
+	overridesOf,
+	type Session,
+	withLocated,
+} from "./session";
 
 const COMPOSE_OPTIONS = { ...COMMON, ...COMPOSE_FLAGS } as const;
 
@@ -44,6 +54,41 @@ async function prepared(reading: Reading, args: readonly string[], deps: Deps) {
 		session,
 		prepared: await prepare(session, reading, args),
 	};
+}
+
+const compositionRefused = (composition: string) =>
+	new ArgumentError(
+		`--concert takes no composition, got '${composition}'`,
+		"Drop the composition, or drop --concert",
+	);
+
+/**
+ * The concert `prefix` names, with its recorded IR, under the config files as they stand layered with its recorded
+ * `--preset` and `-c`, then those of `args`.
+ * @throws CliError, a usage error, for a composition, no concert id, a param flag or any other flag `compose` does not
+ * take, or no such concert.
+ * @throws CliError when the concert's code is gone.
+ */
+async function recorded(
+	args: readonly string[],
+	prefix: string | undefined,
+	deps: Deps,
+) {
+	const [first] = args;
+	if (first !== undefined && !first.startsWith("-"))
+		throw compositionRefused(first);
+	if (prefix === undefined || prefix.startsWith("-"))
+		throw new ArgumentError("--concert needs a concert", NAME_CONCERT);
+	const { values, positionals } = parse(
+		COMPOSE_OPTIONS,
+		args,
+		"See 'maestro compose --help'; 'maestro encore <id>' performs a concert with new params",
+	);
+	if (positionals[0] !== undefined) throw compositionRefused(positionals[0]);
+	return withLocated(deps, overridesOf(values), async (found, store) => ({
+		json: isSet(values, "json"),
+		...(await resumable(found, store, concertOf(store, prefix), values)),
+	}));
 }
 
 async function save(prepared: Prepared, out: string) {
@@ -97,25 +142,39 @@ function printDiagnostics(
 
 export const compose: Command = {
 	pages: (args) => !textOf(peek(COMPOSE_OPTIONS, args), "out"),
-	usage: "compose <composition> [flags]  (alias: c)",
+	usage:
+		"compose <composition> [flags]  (alias: c)\n       maestro compose --concert <id> [flags]",
 	arguments: [
 		[
 			"<composition>",
 			"A .ts, .js or .json file, or <pack>.<composition> as 'maestro repertoire' lists it",
 		],
 	],
+	examples: [
+		[
+			"Pre-flight a pack's composition",
+			'maestro compose classics.build_then_repair --request "Add a --verbose flag"',
+		],
+		[
+			"Show the plan a concert was performed from",
+			"maestro compose --concert 7f3c2a --plan",
+		],
+	],
 	options: COMPOSE_OPTIONS,
 	help: compositionHelp,
 	async execute(args, deps) {
+		const early = peek(COMPOSE_OPTIONS, args);
 		const {
 			json,
 			session,
 			prepared: target,
-		} = await prepared(
-			{ verb: "compose", options: COMPOSE_OPTIONS, examples: true },
-			args,
-			deps,
-		);
+		} = early.concert !== undefined
+			? await recorded(args, textOf(early, "concert"), deps)
+			: await prepared(
+					{ verb: "compose", options: COMPOSE_OPTIONS, examples: true },
+					args,
+					deps,
+				);
 		const result = await compared(session, target);
 		if (!result.ok) {
 			if (json || !result.plan) throw new Diagnosed(result.diagnostics);

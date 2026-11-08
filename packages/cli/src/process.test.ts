@@ -204,7 +204,7 @@ describe("a concert in another process", () => {
 			out: "text       done",
 			err: expect.stringMatching(
 				new RegExp(
-					`^warning: composition changed since concert ${id}; resuming its recorded graph\nconcert ${id}${closingOf(id, "ok").source}`,
+					`^warning: composition changed since concert ${id}; using its recorded graph\nconcert ${id}${closingOf(id, "ok").source}`,
 				),
 			),
 		});
@@ -299,7 +299,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 			code: 0,
 			err: expect.stringMatching(
 				new RegExp(
-					`^warning: composition changed since concert ${id}; resuming its recorded graph\nconcert ${id}${closingOf(id, "ok").source}`,
+					`^warning: composition changed since concert ${id}; using its recorded graph\nconcert ${id}${closingOf(id, "ok").source}`,
 				),
 			),
 		});

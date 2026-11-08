@@ -38,6 +38,9 @@ optional ones. A boolean takes `--name` and `--no-name`.
 - `compose --plan` lists each agent in an `agents:` table: its node, its `seat` (`<composition>/<seat>`, the key a
   `seats` entry rebinds), its profile and the harness, model and thinking it resolves to, as `compose --json` does in
   `agents`. [render-text](../render-text/README.md) holds the drawing rules of `--flow`, which sets `--graph`.
+- `compose --concert <id>` pre-flights the graph the concert recorded in place of a composition, under the config files
+  as they stand layered with its recorded presets and `-c`, then the compose's own, as `resume` does. It takes no
+  composition and no param flags: the recorded graph holds them. `--out` saves that graph as an IR file.
 
 The file rules (stem, bare-file params, imports) are in [SDK spec: File rules](../../docs/sdk-spec.md#file-rules).
 

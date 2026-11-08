@@ -43,13 +43,12 @@ import {
 import {
 	artifactsOf,
 	concertOf,
-	locating,
 	openSession,
 	overridesOf,
 	recordedOf,
 	type Session,
 	type Stored,
-	withSession,
+	withLocated,
 } from "./session";
 
 const FIX = "Flags are listed in 'maestro changeset --help'";
@@ -554,7 +553,7 @@ async function changesetRun(args: readonly string[], deps: Deps) {
 	}
 	const prefix = only(rest, "concert", NAME_CONCERT, action);
 	const own = overridesOf(values);
-	return withSession(deps, await locating(deps, own), (session, store) => {
+	return withLocated(deps, own, (session, store) => {
 		const stored = { session, store, values, json: false };
 		return action === "show" ? shown(stored, prefix) : applied(stored, prefix);
 	});
