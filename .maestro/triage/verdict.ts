@@ -1,5 +1,6 @@
 import { basename, posix } from "node:path";
 import {
+	Bool,
 	Enum,
 	Int,
 	Json,
@@ -95,8 +96,10 @@ const SHALL = /\bshall\b/gi;
 const CONDITION = /\b(when|if|unless)\b/i;
 const CODE_SPAN = /`[^`]*`/g;
 
-/** The acceptance of a direct build: the target's whole gate. */
+/** The last acceptance item of a direct build: the target's whole gate. */
 const GATE_COMMAND = "just check";
+/** The most requirements a direct ruling's brief holds. */
+export const MAX_BRIEF_REQUIREMENTS = 3;
 const NO_TOUCHES = "Which paths does the change create or edit?";
 const NO_ACCEPTANCE = `Which command proves the change done? Acceptance commands start with ${RUNNERS.join(", ")}.`;
 const outsideRepo = (paths: string[]) =>
@@ -143,10 +146,15 @@ const SpecPart = shape(
 	{ ...SPEC_FIELDS, requirements: List(Text()), consequences: Text() },
 	{ figures: Figures },
 );
-/** A triage spec; a direct ruling's has no requirements, figures or consequences. */
+/** A triage spec; a direct ruling's is marked `brief` and has no figures or consequences. */
 const Spec = shape(
 	{ touches: List(Text()), ...SPEC_FIELDS },
-	{ requirements: List(Text()), figures: Figures, consequences: Text() },
+	{
+		requirements: List(Text()),
+		figures: Figures,
+		consequences: Text(),
+		brief: Bool(),
+	},
 );
 const Child = Struct({
 	title: Text(),
@@ -180,9 +188,12 @@ const ASKS = forVerdict("needs-info", {
 	properties: { questions: { minItems: 1 } },
 });
 
-/** A rule that a direct ruling names one to `NARROW` files. */
+/** A rule that a direct ruling names one to `NARROW` files and one to `MAX_BRIEF_REQUIREMENTS` requirements. */
 const NARROWS = forVerdict("direct", {
-	properties: { files: { minItems: 1, maxItems: NARROW } },
+	properties: {
+		files: { minItems: 1, maxItems: NARROW },
+		requirements: { minItems: 1, maxItems: MAX_BRIEF_REQUIREMENTS },
+	},
 });
 
 type Shaped<R extends Types, O extends Types> = {
@@ -261,8 +272,8 @@ export const Checked = shape({ findings: List(Text()) }, {});
 export type Checked = ValueOf<typeof Checked>;
 
 /**
- * The triager's ruling: an early verdict, a direct brief of `what` and `subject`, or at most `maxGroups` groups of
- * questions for the scouts and the planner.
+ * The triager's ruling: an early verdict, a direct brief of `what`, `requirements`, `acceptance` and `subject`, or at
+ * most `maxGroups` groups of questions for the scouts and the planner.
  */
 export const Ruling = (maxGroups: number) =>
 	shape(
@@ -278,6 +289,8 @@ export const Ruling = (maxGroups: number) =>
 		},
 		{
 			what: Text(),
+			requirements: List(Text()),
+			acceptance: List(Text()),
 			subject: Text(),
 			duplicateOf: Int(),
 			related: List(Int()),
@@ -285,6 +298,8 @@ export const Ruling = (maxGroups: number) =>
 		[
 			needs("duplicate", "duplicateOf"),
 			needs("direct", "what"),
+			needs("direct", "requirements"),
+			needs("direct", "acceptance"),
 			needs("direct", "subject"),
 			NARROWS,
 			ASKS,
@@ -485,13 +500,21 @@ function proposed(proposal: Proposal, unrun: string[]): Triage {
 }
 
 /** The spec of a direct ruling: its brief, built under the gate alone. */
-const directSpec = ({ files, what = "", subject = "" }: Ruling) => ({
+const directSpec = ({
+	files,
+	what = "",
+	requirements = [],
+	acceptance = [],
+	subject = "",
+}: Ruling) => ({
 	touches: scopeOf(files).paths,
 	what,
+	requirements,
 	decisions: [],
 	excluded: [],
-	acceptance: [GATE_COMMAND],
+	acceptance: [...acceptance.filter((a) => a !== GATE_COMMAND), GATE_COMMAND],
 	subject,
+	brief: true,
 });
 
 /** The triage of a ruling the triager settled early as `verdict`, `direct` building at once on its brief. */

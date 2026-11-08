@@ -221,11 +221,14 @@ describe("config files", () => {
 			"ws/.maestro/profiles/old.yaml": "{}\n",
 			[USER_PRESET]: "{}\n",
 		});
+		const placeholders: Record<string, string> = {
+			"WS/../profiles": join(root, "ws/.maestro/profiles"),
+			WS: join(root, "ws/.maestro/presets"),
+			XDG: join(root, "xdg/maestro/presets"),
+		};
+		// One pass: a later placeholder must not match inside a path an earlier one put in.
 		const dirs = (text: string) =>
-			text
-				.replaceAll("WS/../profiles", join(root, "ws/.maestro/profiles"))
-				.replaceAll("WS", join(root, "ws/.maestro/presets"))
-				.replaceAll("XDG", join(root, "xdg/maestro/presets"));
+			text.replace(/WS\/\.\.\/profiles|WS|XDG/g, (p) => placeholders[p] ?? p);
 		const error = await loadConfig(
 			request({ overrides: [{ presets: [preset] }], cwd: join(root, cwd) }),
 		).catch((e: unknown) => e);
