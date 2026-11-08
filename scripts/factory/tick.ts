@@ -57,6 +57,8 @@ export type Pass = Deps &
 		milestoneId: number;
 		concerts: Concert[];
 		login: string;
+		/** The commit the forge holds as `main`, read once per pass after its guards. */
+		main: string;
 		/** The newest closed issues, read once per pass. */
 		closed: () => Promise<Issue[]>;
 	};

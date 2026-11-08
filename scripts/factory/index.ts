@@ -615,7 +615,7 @@ async function fileSplit(pass: Pass, { issue, data }: Entry, entries: Entry[]) {
 	await writeSpec(pass, issue.number, "in-progress", {
 		...data,
 		filed,
-		base: data.base ?? (await pass.forge.head(BASE)),
+		base: data.base ?? pass.main,
 	});
 	const { labels } = await pass.forge.issue(issue.number);
 	await pass.forge.setLabels(
@@ -680,7 +680,7 @@ async function startSlice(
 	if (!result) return;
 	const tier = tierOf(issue, result);
 	const { revisionBase } = perform.data;
-	const cut = revisionBase ?? stack?.commit;
+	const cut = revisionBase ?? stack?.commit ?? pass.main;
 	const name = issue.labels
 		.find((l) => l.startsWith("area/"))
 		?.slice("area/".length);
@@ -704,7 +704,8 @@ async function startSlice(
 		titleOf(issue),
 		"--revises",
 		revisionBase ? `${revisionBase}^!` : "",
-		...(cut ? ["-c", `target.base=${cut}`] : []),
+		"-c",
+		`target.base=${cut}`,
 	]);
 	if (id === undefined) return;
 	await move(pass, issue.number, "in-progress");
@@ -1124,6 +1125,8 @@ async function triage(pass: Pass, entries: Entry[]) {
 		"--preset",
 		TRIAGE_PRESET,
 		...pass.presets.flatMap((p) => ["--preset", p]),
+		"-c",
+		`target.base=${pass.main}`,
 	]);
 	if (id === undefined) return false;
 	pass.say(`triaging #${number}: concert ${id}`);
@@ -1156,6 +1159,8 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 	const running = concerts.find((c) => c.status === "running");
 	if (running) return deps.say(`concert ${running.id} is still running`);
 	const login = await deps.forge.login();
+	const main = await deps.forge.head(BASE);
+	await deps.landing.fetch();
 	let closed: Promise<Issue[]> | undefined;
 	const pass: Pass = {
 		...deps,
@@ -1163,6 +1168,7 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 		milestoneId,
 		concerts,
 		login,
+		main,
 		closed: () => (closed ??= deps.forge.closed(CLOSED)),
 	};
 	const steps = options.routeOnly

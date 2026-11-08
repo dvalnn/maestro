@@ -181,6 +181,8 @@ async function startMasterclass(
 			"--preset",
 			TRIAGE_PRESET,
 			...pass.presets.flatMap((p) => ["--preset", p]),
+			"-c",
+			`target.base=${pass.main}`,
 		],
 		join(pass.dir, "masterclass.log"),
 	);

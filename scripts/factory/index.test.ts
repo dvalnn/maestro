@@ -42,7 +42,7 @@ let seeded = 1;
  * A forge in memory that logs every write. Like Forgejo given a name it does not know, it ignores every query and
  * lists all open issues. `cut` names a write that fails once, as a pass cut short would.
  */
-function fakeForge(issues: Stored[], cut?: string) {
+function fakeForge(issues: Stored[], cut?: string, events: string[] = []) {
 	const writes: string[] = [];
 	const depends = new Set<string>();
 	const opened: NewPull[] = [];
@@ -172,7 +172,10 @@ function fakeForge(issues: Stored[], cut?: string) {
 		},
 		arm: async (n) => write(`arm #${n}`),
 		reviews: async (n) => reviews[n] ?? [],
-		head: async (branch) => heads[branch] ?? `sha-${branch}`,
+		head: async (branch) => {
+			events.push(`head ${branch}`);
+			return heads[branch] ?? `sha-${branch}`;
+		},
 	};
 	return {
 		forge,
@@ -205,6 +208,7 @@ function fakeMaestro(
 	concerts: Concert[],
 	results: Record<string, Result>,
 	reports: Record<string, Report>,
+	events: string[] = [],
 ) {
 	const starts: string[][] = [];
 	const logs: (string | undefined)[] = [];
@@ -224,6 +228,7 @@ function fakeMaestro(
 			logs.push(log);
 			if (refusal) throw new Error(refusal);
 			starts.push(args);
+			events.push("start");
 			return "started";
 		},
 		report: async (id) => reports[id] ?? NO_REPORT,
@@ -247,12 +252,18 @@ function fakeMaestro(
  */
 function fakeLanding(failAt?: keyof Landing, output = "", conflict?: string) {
 	const steps: string[] = [];
+	/** The shared trace of each forge head read, the fetch and each start, in order. */
+	const events: string[] = [];
 	let failing = failAt;
 	const step = (name: keyof Landing, line: string) => {
 		if (name === failing) throw new Error(output);
 		steps.push(line);
 	};
 	const landing: Landing = {
+		fetch: async () => {
+			if (failing === "fetch") throw new Error(output);
+			events.push("fetch");
+		},
 		open: async (dir, name, base) =>
 			step("open", `open ${name} at ${dir} on ${base}`),
 		describe: async (dir, message) => {
@@ -269,7 +280,7 @@ function fakeLanding(failAt?: keyof Landing, output = "", conflict?: string) {
 		},
 		close: async (dir, name) => step("close", `close ${name} at ${dir}`),
 	};
-	return { landing, steps, heal: () => (failing = undefined) };
+	return { landing, steps, events, heal: () => (failing = undefined) };
 }
 
 /** Issue `number` in `state`, with a spec comment holding `data` when given. */
@@ -360,8 +371,8 @@ function setup(
 		landing?: ReturnType<typeof fakeLanding>;
 	} = {},
 ) {
-	const forge = fakeForge(issues, cut);
-	const maestro = fakeMaestro(concerts, results, reports);
+	const forge = fakeForge(issues, cut, landing.events);
+	const maestro = fakeMaestro(concerts, results, reports, landing.events);
 	const said: string[] = [];
 	const files: string[] = [];
 	const options: Options = {
@@ -386,6 +397,7 @@ function setup(
 		...forge,
 		...maestro,
 		steps: landing.steps,
+		events: landing.events,
 		said,
 		files,
 		options,
@@ -419,6 +431,21 @@ const duplicate: Triage = {
 };
 
 describe("a pass", () => {
+	test("fetches origin once before it starts a concert, and starts at the forge's main", async () => {
+		const t = setup([issue(7, "needs-triage")]);
+		await t.run();
+		expect(t.events).toEqual(["head main", "fetch", "start"]);
+		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha-main"]);
+	});
+
+	test("fails without starting a concert when the fetch fails", async () => {
+		const t = setup([issue(7, "needs-triage")], [], {}, undefined, {
+			landing: fakeLanding("fetch", "jj git fetch exited 1:\nx"),
+		});
+		await expect(t.run()).rejects.toThrow("jj git fetch exited 1");
+		expect(t.starts).toEqual([]);
+	});
+
 	/**
 	 * Each verdict: its triage, the labels it leaves, whether the issue stays open, what its spec comment shows and the
 	 * question comment it posts.
@@ -715,6 +742,8 @@ describe("a pass", () => {
 				"triage",
 				"--preset",
 				"stub",
+				"-c",
+				"target.base=sha-main",
 			],
 		]);
 		const snapshot = readFileSync(backlog, "utf8");
@@ -938,7 +967,7 @@ describe("a pass", () => {
 			);
 			await t.run(locked);
 			expect(t.writes).toEqual([]);
-			expect(t.starts).toEqual([]);
+			expect(t.events).toEqual([]);
 			expect(t.said[0]).toStartWith(said);
 		},
 	);
@@ -1235,6 +1264,8 @@ describe("a build", () => {
 				"factory: Greet by name",
 				"--revises",
 				"",
+				"-c",
+				"target.base=sha-main",
 			],
 		]);
 		expect(t.find(8).labels).toEqual([
@@ -1277,7 +1308,7 @@ describe("a build", () => {
 		await t.run();
 		expect(t.applied).toEqual([`s1 in ${CACHED}`]);
 		expect(t.steps).toEqual([
-			`open factory-i7 at ${CACHED} on main`,
+			`open factory-i7 at ${CACHED} on sha-main`,
 			`describe ${CACHED}: feat: greet by name\n\nRefs: #7\n`,
 			`close factory-i7 at ${CACHED}`,
 		]);
@@ -1536,6 +1567,8 @@ describe("a build", () => {
 					"--request",
 					request ?? requestFor(7),
 					...lowFlags(),
+					"-c",
+					"target.base=sha-main",
 				],
 			]);
 			expect(dataAt(t.find(7))).toMatchObject({ read, attempts: 2 });
@@ -1595,7 +1628,7 @@ describe("a build", () => {
 		expect(t.find(100).body).toBe(
 			`The slice concert \`s1\` of #7 did not land from the workspace \`${CACHED}\`:\n\n\`\`\`text\njj describe exited 1:\nx\n\`\`\`\n\nLook at the workspace first: closing this issue lets the next tick replace it with a fresh one.\n\nClose this issue to lift the halt.`,
 		);
-		expect(t.steps).toEqual([`open factory-i7 at ${CACHED} on main`]);
+		expect(t.steps).toEqual([`open factory-i7 at ${CACHED} on sha-main`]);
 		expect(t.find(7).labels).toContain("state/in-progress");
 		await t.run();
 		expect(t.writes).toHaveLength(1);
@@ -1797,8 +1830,8 @@ const pullOf = (number: number, n: number, base = "main"): Pull => ({
 const STACK = { blocker: 5, commit: "sha5", pull: 21 };
 const CACHED_8 = "/cache/maestro-factory/i8";
 const RESTACKED = [
-	`open factory-i8 at ${CACHED_8} on main`,
-	`restack sha5..maestro-tm/i8@origin onto main in ${CACHED_8}`,
+	`open factory-i8 at ${CACHED_8} on sha-main`,
+	`restack sha5..maestro-tm/i8@origin onto sha-main in ${CACHED_8}`,
 	`close factory-i8 at ${CACHED_8}`,
 ];
 const OPTIONS =
@@ -1877,7 +1910,7 @@ describe("a merge and a stack", () => {
 		expect(t.steps).toEqual([
 			`open factory-i8 at ${CACHED_8} on sha5`,
 			`describe ${CACHED_8}: feat: greet by name\n\nRefs: #8\n`,
-			`restack sha5..abc123 onto main in ${CACHED_8}`,
+			`restack sha5..abc123 onto sha-main in ${CACHED_8}`,
 			`close factory-i8 at ${CACHED_8}`,
 		]);
 		expect(merging(t.writes)).toEqual([
@@ -2003,7 +2036,7 @@ describe("a merge and a stack", () => {
 			l === "state/needs-info" ? "state/ready-for-agent" : l,
 		);
 		await t.run();
-		expect(t.starts[0]).not.toContain("-c");
+		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha-main"]);
 		expect(t.starts[0]).not.toContain("encore");
 		t.concerts.push(sliceConcert("started", 8));
 		t.results.started = { status: "ok", outputs: {} };
@@ -2424,6 +2457,7 @@ describe("masterclass", () => {
 		const [args = []] = t.starts;
 		expect(args[0]).toBe("perform");
 		expect(args[1]?.endsWith(".maestro/masterclass.ts")).toBe(true);
+		expect(args.slice(-2)).toEqual(["-c", "target.base=sha-main"]);
 		expect(args[2]).toBe("--lessons");
 		expect(argAfter(args, "--tour")).toBe("v0.1.0.masterclass");
 		expect(argAfter(args, "--title")).toBe("factory: masterclass");

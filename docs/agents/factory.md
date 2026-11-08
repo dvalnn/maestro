@@ -100,26 +100,29 @@ flowchart TD
     H -->|yes| X
     H -->|no| C{"concert?"}
     C -->|running| X
-    C -->|settled| S[["route"]]
-    C -->|none| SY
-    S --> SY["sync ²"]
-    SY --> P{"pick ³"}
+    C -->|"settled or none"| B["pin main ²"]
+    B -->|settled| S[["route"]]
+    B -->|none| SY
+    S --> SY["sync ³"]
+    SY --> P{"pick ⁴"}
     P --> SR["stack review"]
     P --> E["encore"]
     P --> SL["build"]
     P --> TR["triage"]
     P --> MC["masterclass"]
     P -->|nothing| X
-    SR & E & SL & TR & MC --> W["write back ⁴"] --> X
+    SR & E & SL & TR & MC --> W["write back ⁵"] --> X
 ```
 
 1. Until the `maestro-tm:halt` issue closes (Rules, Policy: Halt).
-2. A merged PR closes its issue through its `Closes #N`; a stacked PR whose dependency merged restacks onto `main`
+2. Read the forge's `main` commit, then fetch `origin`; a failed fetch ends the pass as failed (Rules, Landing and PRs:
+   Pass base).
+3. A merged PR closes its issue through its `Closes #N`; a stacked PR whose dependency merged restacks onto `main`
    (Rules, Build: Restack); closed dependencies free tickets; an approved split files its children (Rules, Triage:
    Splits) and its last closed child closes the epic.
-3. First match wins, in the order of the arrows (Rules, Policy: Pick order). `--route-only` routes and syncs but starts
+4. First match wins, in the order of the arrows (Rules, Policy: Pick order). `--route-only` routes and syncs but starts
    nothing.
-4. Set the labels, edit the spec comment, post any question comment, and rewrite the closing line on a new version
+5. Set the labels, edit the spec comment, post any question comment, and rewrite the closing line on a new version
    (Forge surfaces).
 
 ## Routing a settle
@@ -310,10 +313,14 @@ flowchart TD
 
 ### Landing and PRs
 
-- **Landing.** An ok slice lands in a fresh jj workspace on `main` as fetched from `origin`, or on the commit it stacked
-  on: `maestro cs apply`, then `jj describe` with the spec's subject and `Refs: #N`, or for a revision `jj squash` into
-  the PR head with that description. It runs no check of its own: the slice's gate passed in its lane, and CI checks the
-  PR against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
+- **Pass base.** After its guards a pass reads the commit the forge holds as `main`, then fetches `origin` once; a
+  failed fetch fails the pass. Every triage, unstacked build, masterclass, landing, restack and split base uses that
+  commit (`-c target.base=<commit>` for a start), never the local `main`. A stacked build and a revision keep their PR's
+  commit.
+- **Landing.** An ok slice lands in a fresh jj workspace on the pass's `main` commit, or on the commit it stacked on:
+  `maestro cs apply`, then `jj describe` with the spec's subject and `Refs: #N`, or for a revision `jj squash` into the
+  PR head with that description. It runs no check of its own: the slice's gate passed in its lane, and CI checks the PR
+  against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
   held, titled with the spec's subject, to `main` or to the dependency's branch while stacked. The slice's writer writes
   the body in the form `.maestro/slice/prompts/writer.md` gives; below it the tick adds the findings the review left

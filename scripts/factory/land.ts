@@ -10,9 +10,11 @@ export type Restacked = { commit: string } | { conflict: string };
 
 /** The jj workspace a slice lands or restacks in (factory.md, Rules, Landing and PRs). */
 export type Landing = {
+	/** Brings the commits `origin` gained since the last fetch into the repository. */
+	fetch(): Promise<void>;
 	/**
-	 * Creates workspace `name` at `dir` on revision `base` as fetched from `origin`, colocated with git, in place of any
-	 * a failed landing left there.
+	 * Creates workspace `name` at `dir` on revision `base`, colocated with git, in place of any a failed landing left
+	 * there.
 	 */
 	open(dir: string, name: string, base: string): Promise<void>;
 	/** Describes the change of the workspace at `dir` as `message`, and returns its commit id. */
@@ -110,11 +112,13 @@ export function landing(
 		).trim();
 	};
 	return {
+		fetch: async () => {
+			await run(repo, ["jj", "git", "fetch", "--remote", "origin"]);
+		},
 		open: async (dir, name, base) => {
 			await forget(name);
 			rmSync(dir, { recursive: true, force: true });
 			mkdirSync(dirname(dir), { recursive: true });
-			await run(repo, ["jj", "git", "fetch"]);
 			await run(repo, [
 				"jj",
 				"workspace",

@@ -209,7 +209,7 @@ async function restackIn(
 	const restacked = await pass.landing.restack(
 		dir,
 		`${stack.commit}..${revision}`,
-		BASE,
+		pass.main,
 	);
 	if ("conflict" in restacked)
 		return {
@@ -308,7 +308,7 @@ export async function land(
 	const outcome = await inWorkspace(
 		pass,
 		issue.number,
-		data.revisionBase ?? data.stack?.commit ?? BASE,
+		data.revisionBase ?? data.stack?.commit ?? pass.main,
 		{
 			title: `landing of #${issue.number} failed`,
 			lead: `The slice concert \`${id}\` of #${issue.number} did not land`,
@@ -327,7 +327,7 @@ function restackBranch(pass: Pass, entry: Entry, stack: Stack) {
 		title: `restack of #${issue.number} failed`,
 		lead: `The stacked change of #${issue.number} did not restack onto \`${BASE}\``,
 	};
-	return inWorkspace(pass, issue.number, BASE, failure, async (dir) => {
+	return inWorkspace(pass, issue.number, pass.main, failure, async (dir) => {
 		if (!data.concert)
 			throw new Error(`#${issue.number} holds no landed concert`);
 		const report = await pass.maestro.report(data.concert);

@@ -113,3 +113,21 @@ test("a signing key at a missing path is refused by name", () => {
 		/MAESTRO_TM_SIGNING_KEY.*\/nope\/key/s,
 	);
 });
+
+test("a fetch brings the commits origin gained into the repository", async () => {
+	const origin = mkdtempSync(join(tmpdir(), "factory-origin-"));
+	jj(origin, "git", "init");
+	writeFileSync(join(origin, "a"), "a\n");
+	jj(origin, "commit", "-m", "base");
+	jj(origin, "bookmark", "create", "main", "-r", "@-");
+	const dir = mkdtempSync(join(tmpdir(), "factory-clone-"));
+	jj(dir, "git", "clone", origin, dir);
+	const lands = landing(dir, account);
+	writeFileSync(join(origin, "b"), "b\n");
+	jj(origin, "commit", "-m", "merged");
+	jj(origin, "bookmark", "set", "main", "-r", "@-");
+	const tip = jj(origin, "log", "-r", "main", "--no-graph", "-T", "commit_id");
+	expect(() => jj(dir, "log", "-r", tip)).toThrow();
+	await lands.fetch();
+	expect(jj(dir, "log", "-r", tip, "--no-graph", "-T", "commit_id")).toBe(tip);
+});
