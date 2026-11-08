@@ -15,7 +15,7 @@ jobs:
     steps:
       - name: Install bubblewrap, python3 and ssh-keygen
         run: apt-get update && apt-get install -y --no-install-recommends bubblewrap python3 openssh-client
-      - uses: https://data.forgejo.org/actions/checkout@v4
+      - uses: https://data.forgejo.org/actions/checkout@v7
       - name: Install bun, just and jj
         run: |
           curl -fsSL https://mise.run | MISE_INSTALL_PATH=/ci-cache/maestro/bin/mise sh
