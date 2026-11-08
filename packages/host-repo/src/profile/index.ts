@@ -1,12 +1,5 @@
 import type { Dirent } from "node:fs";
-import {
-	lstat,
-	readdir,
-	readFile,
-	readlink,
-	realpath,
-	stat,
-} from "node:fs/promises";
+import { readdir, readFile, readlink, realpath, stat } from "node:fs/promises";
 import {
 	basename,
 	dirname,
@@ -16,7 +9,7 @@ import {
 	relative,
 	sep,
 } from "node:path";
-import { closest, sha256Hex } from "@maestro/core";
+import { closest, sha256Hex, walk } from "@maestro/core";
 import {
 	type Composed,
 	ConfigError,
@@ -699,43 +692,33 @@ function restOf(
 	};
 }
 
-/** Every entry under `dir` by its path relative to `dir`, in path order, never through a link. */
-async function treeOf(dir: string): Promise<string[]> {
-	const walk = async (sub: string): Promise<string[]> => {
-		const found = await readdir(join(dir, sub), { withFileTypes: true });
-		const nested = await Promise.all(
-			found.map(async (e) => {
-				const path = join(sub, e.name);
-				return e.isDirectory() ? [path, ...(await walk(path))] : [path];
-			}),
-		);
-		return nested.flat();
-	};
-	return (await walk("")).toSorted();
-}
+/** The paths relative to `dir` of each entry under it that `kind` accepts, in path order. */
+const pathsOf = async (dir: string, kind: (e: Dirent) => boolean) =>
+	(await walk(dir))
+		.filter(kind)
+		.map((e) => relative(dir, join(e.parentPath, e.name)))
+		.toSorted();
 
 /** `sha256:<hex>` of each regular file under `dir`, by its path relative to `dir`, in path order. */
 async function fileHashes(dir: string): Promise<Record<string, string>> {
+	const files = await pathsOf(dir, (e) => e.isFile());
 	const hashed = await Promise.all(
-		(await treeOf(dir)).map(async (n): Promise<[string, string][]> => {
-			const path = join(dir, n);
-			if (!(await lstat(path)).isFile()) return [];
-			return [[n, `sha256:${sha256Hex(await readFile(path))}`]];
-		}),
+		files.map(async (n) => [
+			n,
+			`sha256:${sha256Hex(await readFile(join(dir, n)))}`,
+		]),
 	);
-	return Object.fromEntries(hashed.flat());
+	return Object.fromEntries(hashed);
 }
 
-/** The links under `dir`, by path relative to `dir`, each with its text. */
+/** The links under `dir`, by path relative to `dir`, each with its text, in path order. */
 async function linksOf(dir: string): Promise<[string, string][]> {
-	const found = await Promise.all(
-		(await treeOf(dir)).map(async (n): Promise<[string, string][]> => {
-			const path = join(dir, n);
-			if (!(await lstat(path)).isSymbolicLink()) return [];
-			return [[n, await readlink(path)]];
-		}),
+	const links = await pathsOf(dir, (e) => e.isSymbolicLink());
+	return Promise.all(
+		links.map(
+			async (n): Promise<[string, string]> => [n, await readlink(join(dir, n))],
+		),
 	);
-	return found.flat();
 }
 
 /** Whether real path `path` is the real directory `root` or inside it. */

@@ -71,7 +71,7 @@ export async function setup(
 ): Promise<Made> {
 	const task = TASKS[name];
 	const target = join(dir, "target");
-	await cp(GREETER, target, { recursive: true });
+	await cp(GREETER, target, { recursive: true, verbatimSymlinks: true });
 	git(target, "init", "-q", "-b", BASE);
 	git(target, "add", ".");
 	git(target, "commit", "-q", "-m", "greeter");

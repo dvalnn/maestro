@@ -1,5 +1,6 @@
-import { readdir, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
+import { walk } from "@maestro/core";
 import type { ConcertRecord } from "@maestro/core/perform";
 import { shellArg, shortIds } from "@maestro/render-text/live";
 import {
@@ -91,8 +92,7 @@ function recorded({ session, store }: Stored, row: ConcertRecord) {
 async function filesOf(path: string): Promise<File[]> {
 	if (!(await onDisk(path, () => stat(path))).isDirectory())
 		return [{ name: basename(path), path }];
-	const entries = await readdir(path, { recursive: true, withFileTypes: true });
-	return entries
+	return (await walk(path))
 		.filter((e) => e.isFile())
 		.map((e) => join(e.parentPath, e.name))
 		.sort()

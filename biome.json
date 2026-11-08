@@ -9,6 +9,7 @@
 		"ignoreUnknown": true,
 		"includes": ["**", "!.claude", "!.zed", "!docs", "!.scratch"]
 	},
+	"plugins": ["./lint/cp-links.grit"],
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab"

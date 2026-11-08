@@ -19,6 +19,7 @@ async function tree(at: string, text: string) {
 	await mkdir(join(at, "sub"), { recursive: true });
 	await writeFile(join(at, "sub", "a.txt"), text);
 	await symlink("sub/a.txt", join(at, "link"));
+	await symlink("..", join(at, "sub", "loop"));
 	return at;
 }
 

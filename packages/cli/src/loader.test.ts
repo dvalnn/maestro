@@ -179,7 +179,7 @@ describe("a bare file", () => {
 
 	test("hashes its imports, so a changed helper changes its codeHash", async () => {
 		const dir = await scratch();
-		await cp(FIXTURES, dir, { recursive: true });
+		await cp(FIXTURES, dir, { recursive: true, verbatimSymlinks: true });
 		const hash = async () =>
 			workerOf(
 				built((await openFile(join(dir, "hello.ts"))).build("hello", {})),

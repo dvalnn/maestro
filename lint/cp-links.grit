@@ -1,0 +1,13 @@
+language js
+
+`$copy($from, $to, $options)` where {
+	$copy <: or {
+		`cp`,
+		`cpSync`,
+		`$_.cp`,
+		`$_.cpSync`
+	},
+	$options <: contains `recursive: true`,
+	not $options <: contains `verbatimSymlinks: true`,
+	register_diagnostic(span=$copy, message="A recursive cp makes a relative link absolute in Bun. Add verbatimSymlinks: true")
+}

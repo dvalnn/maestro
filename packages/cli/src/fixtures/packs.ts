@@ -25,7 +25,7 @@ export async function cleanup() {
 /** A copy of the `demo` pack's source with `edit` applied to its `index.ts`. */
 export async function demoSource(edit: (text: string) => string = (t) => t) {
 	const dir = await scratch();
-	await cp(DEMO, dir, { recursive: true });
+	await cp(DEMO, dir, { recursive: true, verbatimSymlinks: true });
 	const index = join(dir, "index.ts");
 	await Bun.write(index, edit(await Bun.file(index).text()));
 	return dir;

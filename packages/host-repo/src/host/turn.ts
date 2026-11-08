@@ -177,6 +177,7 @@ export function keepTurn(
 	for (const [name, src] of Object.entries(sources))
 		cpSync(realpathSync(src), join(session.home, copies, name), {
 			recursive: true,
+			verbatimSymlinks: true,
 		});
 	const next = join(session.home, `${TURN_FILE}.next`);
 	writeFileSync(next, JSON.stringify({ ...turn, copies } satisfies Kept));

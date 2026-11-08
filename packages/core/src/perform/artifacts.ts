@@ -4,7 +4,6 @@ import {
 	lstat,
 	mkdir,
 	mkdtemp,
-	readdir,
 	readFile,
 	readlink,
 	realpath,
@@ -23,7 +22,7 @@ import {
 } from "@maestro/ir";
 import type { Host, HostSetup } from "../host";
 import type { Outputs } from "../node";
-import { sha256Hex } from "../shared";
+import { sha256Hex, walk } from "../shared";
 
 const HASH_PREFIX = "sha256:";
 
@@ -38,14 +37,16 @@ export const concertDirs = (root: string, concert: string): ConcertDirs => ({
 
 /** The bytes held under `dir`, 0 when it is not there. */
 async function sizeOf(dir: string): Promise<number> {
-	const names = await readdir(dir, { recursive: true }).catch(() => []);
+	const entries = await walk(dir).catch(() => []);
 	const sizes = await Promise.all(
-		names.map((name) =>
-			lstat(join(dir, name)).then(
-				(entry) => (entry.isFile() ? entry.size : 0),
-				() => 0,
+		entries
+			.filter((e) => e.isFile())
+			.map((e) =>
+				lstat(join(e.parentPath, e.name)).then(
+					(file) => file.size,
+					() => 0,
+				),
 			),
-		),
 	);
 	return sizes.reduce((sum, size) => sum + size, 0);
 }
@@ -208,7 +209,7 @@ export async function stage(
  */
 async function digest(path: string): Promise<string> {
 	if (!(await lstat(path)).isDirectory()) return fileDigest(path);
-	const entries = await readdir(path, { recursive: true, withFileTypes: true });
+	const entries = await walk(path);
 	const lines = await Promise.all(entries.map((e) => entryLine(path, e)));
 	return new Bun.CryptoHasher("sha256")
 		.update(lines.sort().join(""))

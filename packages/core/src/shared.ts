@@ -1,3 +1,6 @@
+import type { Dirent } from "node:fs";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import type { NodeInstance, WorkerRef } from "@maestro/ir";
 import type { Host, NodeKind } from "./host";
 import type { LoadCode, Outputs } from "./node";
@@ -5,6 +8,18 @@ import type { LoadCode, Outputs } from "./node";
 /** The hex SHA-256 of `data`. */
 export const sha256Hex = (data: string | Uint8Array) =>
 	new Bun.CryptoHasher("sha256").update(data).digest("hex");
+
+/**
+ * Every entry under the directory `dir`, at any depth, each with its `parentPath`. A link is an entry of its own and is
+ * never walked into, unlike a recursive `readdir`, which in Bun follows links.
+ */
+export async function walk(dir: string): Promise<Dirent[]> {
+	const found = await readdir(dir, { withFileTypes: true });
+	const nested = await Promise.all(
+		found.map((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [])),
+	);
+	return [...found, ...nested.flat()];
+}
 
 /** `path` with the home directory `home` at its start shown as `~`. */
 export const tildeOf = (path: string, home: string | undefined) =>
