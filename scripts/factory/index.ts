@@ -1,4 +1,4 @@
-// One pass of the tour manager (docs/agents/factory.md, One tick): it routes settles, reviews an epic's stack, builds a
+// One tick of the tour manager (docs/agents/factory.md, One tick): it routes settles, reviews an epic's stack, builds a
 // ready ticket, triages one or holds a masterclass.
 import { dlopen, FFIType, read } from "bun:ffi";
 import { existsSync, mkdirSync, openSync } from "node:fs";
@@ -80,11 +80,11 @@ import {
 	message,
 	move,
 	type Options,
-	type Pass,
 	partOf,
 	REPO,
 	RETRIAGE,
 	start,
+	type Tick,
 	TRIAGE_PRESET,
 	UNCONTINUED,
 	whichWay,
@@ -129,19 +129,19 @@ export function lock(path: string): boolean {
 }
 
 /** The milestone's open issues with their data, or undefined once it halted on data it cannot read. */
-async function load(pass: Pass): Promise<Entry[] | undefined> {
-	const issues = (await pass.forge.open({ milestone: pass.milestone })).filter(
-		(i) => i.milestone === pass.milestoneId,
+async function load(tick: Tick): Promise<Entry[] | undefined> {
+	const issues = (await tick.forge.open({ milestone: tick.milestone })).filter(
+		(i) => i.milestone === tick.milestoneId,
 	);
 	const entries: Entry[] = [];
 	for (const issue of issues) {
-		const comments = await pass.forge.comments(issue.number);
+		const comments = await tick.forge.comments(issue.number);
 		try {
 			const data = dataOf(specCommentOf(comments)?.body ?? "");
 			entries.push({ issue, comments, data });
 		} catch (error) {
 			await halt(
-				pass,
+				tick,
 				`#${issue.number} has a malformed maestro-tm-data line`,
 				`The maestro-tm-data line of #${issue.number}'s spec comment cannot be read:`,
 				message(error),
@@ -186,10 +186,10 @@ function untracked(number: number, original: number, found?: Issue) {
  * `result`, or a `needs-info` asking the owner where the request lives when it is a duplicate of an issue that does
  * not exist or is closed as `wontfix` or `duplicate`, which tracks nothing.
  */
-async function liveOriginal(pass: Pass, number: number, result: Triage) {
+async function liveOriginal(tick: Tick, number: number, result: Triage) {
 	const { duplicateOf: original, ...rest } = result;
 	if (result.verdict !== "duplicate" || original === undefined) return result;
-	const found = await pass.forge.issue(original).catch(() => undefined);
+	const found = await tick.forge.issue(original).catch(() => undefined);
 	const ask = untracked(number, original, found);
 	if (!ask) return result;
 	const question = { ask, options: [], context: [] };
@@ -200,40 +200,40 @@ async function liveOriginal(pass: Pass, number: number, result: Triage) {
  * Posts the questions of `data`'s routed result on `number`, sets its labels, closes a duplicate, then clears
  * `pending`.
  */
-async function apply(pass: Pass, number: number, data: Data, result: Triage) {
+async function apply(tick: Tick, number: number, data: Data, result: Triage) {
 	const state = VERDICT_STATE[result.verdict];
 	if (result.questions.length)
 		await ask(
-			pass,
+			tick,
 			number,
-			questionOf(result.questions, replyHow(result.questions, pass.login)),
+			questionOf(result.questions, replyHow(result.questions, tick.login)),
 		);
-	const { labels } = await pass.forge.issue(number);
-	await pass.forge.setLabels(number, triaged(labels, result));
+	const { labels } = await tick.forge.issue(number);
+	await tick.forge.setLabels(number, triaged(labels, result));
 	if (result.verdict === "duplicate")
-		await pass.forge.edit(number, { closed: true });
-	await writeSpec(pass, number, state, { ...data, pending: undefined });
-	pass.say(`routed #${number} to ${state}`);
+		await tick.forge.edit(number, { closed: true });
+	await writeSpec(tick, number, state, { ...data, pending: undefined });
+	tick.say(`routed #${number} to ${state}`);
 }
 
 /** Routes triage `id`'s settle onto `issue` (factory.md, Routing a settle), and returns false when it halted. */
-async function settle(pass: Pass, { issue, data }: Entry, id: string) {
-	const triaged = triageOf(await pass.maestro.result(id));
+async function settle(tick: Tick, { issue, data }: Entry, id: string) {
+	const triaged = triageOf(await tick.maestro.result(id));
 	const result =
 		typeof triaged === "string"
 			? triaged
-			: await liveOriginal(pass, issue.number, triaged);
+			: await liveOriginal(tick, issue.number, triaged);
 	const state = stateOf(issue) ?? "needs-triage";
 	if (typeof result === "string") {
 		const [what, ...why] = result.split(": ");
 		// The replies it was fed go to the next triage again, since an encore continues the last ok one.
-		await writeSpec(pass, issue.number, state, {
+		await writeSpec(tick, issue.number, state, {
 			...data,
 			concert: id,
 			read: undefined,
 		});
 		await halt(
-			pass,
+			tick,
 			`triage of #${issue.number} ${what}`,
 			`The triage concert \`${id}\` of #${issue.number} ${what}:`,
 			why.join(": "),
@@ -250,28 +250,28 @@ async function settle(pass: Pass, { issue, data }: Entry, id: string) {
 		version: (data.version ?? 0) + 1,
 		specAt: Date.now(),
 	};
-	await writeSpec(pass, issue.number, VERDICT_STATE[result.verdict], {
+	await writeSpec(tick, issue.number, VERDICT_STATE[result.verdict], {
 		...routed,
 		pending: true,
 	});
-	await apply(pass, issue.number, routed, result);
+	await apply(tick, issue.number, routed, result);
 	return true;
 }
 
 /** Files each of `texts` as a `needs-triage` bug found by `issue`, unless an open issue carries it. */
-async function fileReports(pass: Pass, issue: Issue, texts: readonly string[]) {
-	const bodies = (await pass.forge.open({})).map((i) => i.body);
+async function fileReports(tick: Tick, issue: Issue, texts: readonly string[]) {
+	const bodies = (await tick.forge.open({})).map((i) => i.body);
 	for (const text of texts) {
 		const line = fingerprintLine(text);
 		if (bodies.some((b) => b.includes(line))) continue;
 		const filed = reportIssue(text, issue.number);
-		const number = await pass.forge.file({
+		const number = await tick.forge.file({
 			...filed,
 			milestone: issue.milestone,
 			labels: ["state/needs-triage", "kind/bug"],
 		});
 		bodies.push(filed.body);
-		pass.say(`filed #${number}, found by #${issue.number}`);
+		tick.say(`filed #${number}, found by #${issue.number}`);
 	}
 }
 
@@ -286,14 +286,14 @@ const BLOCKED_ASK =
 	"The build stopped on the reason under Last failure in the spec comment. How should it go on?";
 
 /** Asks the owner about issue `number`'s blocked build, answered by a reply (factory.md, Rules, Build: Blocked). */
-async function block(pass: Pass, number: number) {
+async function block(tick: Tick, number: number) {
 	const questions = [
 		{ ask: BLOCKED_ASK, options: BLOCKED_OPTIONS, context: [] },
 	];
 	await ask(
-		pass,
+		tick,
 		number,
-		questionOf(questions, replyHow(questions, pass.login, YOUR_CHOICE)),
+		questionOf(questions, replyHow(questions, tick.login, YOUR_CHOICE)),
 	);
 }
 
@@ -302,13 +302,13 @@ async function block(pass: Pass, number: number) {
  * its attempts kept and no concert to continue (factory.md, Rules, Policy: Halt).
  */
 async function haltSlice(
-	pass: Pass,
+	tick: Tick,
 	{ issue, data }: Entry,
 	id: string,
 	reason: string,
 ) {
-	await move(pass, issue.number, "ready-for-agent");
-	await writeSpec(pass, issue.number, "ready-for-agent", {
+	await move(tick, issue.number, "ready-for-agent");
+	await writeSpec(tick, issue.number, "ready-for-agent", {
 		...data,
 		concert: id,
 		failure: reason,
@@ -316,7 +316,7 @@ async function haltSlice(
 		revisionBase: undefined,
 	});
 	await halt(
-		pass,
+		tick,
 		`slice of #${issue.number} could not run`,
 		`The slice concert \`${id}\` of #${issue.number} could not run:`,
 		reason,
@@ -330,7 +330,7 @@ async function haltSlice(
  * the concert to continue; a retry is fresh. Returns false when it halted.
  */
 async function fail(
-	pass: Pass,
+	tick: Tick,
 	entry: Entry,
 	id: string,
 	status: string,
@@ -339,22 +339,22 @@ async function fail(
 	const { issue, data } = entry;
 	const blocked = status === "failed" && reason.startsWith(BLOCKED);
 	if (status === "failed" && !blocked) {
-		await haltSlice(pass, entry, id, reason);
+		await haltSlice(tick, entry, id, reason);
 		return false;
 	}
 	const attempts = (data.attempts ?? 0) + (blocked ? 0 : 1);
 	const waits = blocked || attempts >= ATTEMPTS;
 	const state = waits ? "needs-info" : "ready-for-agent";
-	if (blocked) await block(pass, issue.number);
-	await move(pass, issue.number, state);
-	await writeSpec(pass, issue.number, state, {
+	if (blocked) await block(tick, issue.number);
+	await move(tick, issue.number, state);
+	await writeSpec(tick, issue.number, state, {
 		...data,
 		concert: id,
 		attempts: attempts || undefined,
 		failure: reason,
 		...(waits ? { encore: id } : UNCONTINUED),
 	});
-	pass.say(`routed #${issue.number}'s slice to ${state}: ${reason}`);
+	tick.say(`routed #${issue.number}'s slice to ${state}: ${reason}`);
 	return true;
 }
 
@@ -362,21 +362,21 @@ async function fail(
  * Routes slice `id`'s settle onto `entry` (factory.md, Routing a settle), after filing its reports; false when it
  * halted.
  */
-async function settleSlice(pass: Pass, entry: Entry, id: string) {
+async function settleSlice(tick: Tick, entry: Entry, id: string) {
 	const [result, report] = await Promise.all([
-		pass.maestro.result(id),
-		pass.maestro.report(id),
+		tick.maestro.result(id),
+		tick.maestro.report(id),
 	]);
-	await fileReports(pass, entry.issue, report.obstacles);
-	if (result.status === "ok") return land(pass, entry, id, report);
+	await fileReports(tick, entry.issue, report.obstacles);
+	if (result.status === "ok") return land(tick, entry, id, report);
 	const reason = result.reason ?? `settled ${result.status}`;
-	return fail(pass, entry, id, result.status, reason);
+	return fail(tick, entry, id, result.status, reason);
 }
 
 /** The newest triage, slice or stack review of `entry`'s tour the tick has yet to route. */
-function unrouted(pass: Pass, { issue, data }: Entry) {
-	const tour = tourOf(pass.milestone, issue.number);
-	const concert = pass.concerts.find(
+function unrouted(tick: Tick, { issue, data }: Entry) {
+	const tour = tourOf(tick.milestone, issue.number);
+	const concert = tick.concerts.find(
 		(c) => c.tour === tour && (isSlice(c) || isTriage(c) || isStackReview(c)),
 	);
 	return concert?.id === data.concert ? undefined : concert;
@@ -394,7 +394,7 @@ function expected(concert: Concert, issue: Issue) {
  * to `needs-info`, then marks it routed. A slice is kept as `parked`; a triage's verdict is dropped, since a triage is
  * cheap and its verdict stale.
  */
-async function park(pass: Pass, { issue, data }: Entry, concert: Concert) {
+async function park(tick: Tick, { issue, data }: Entry, concert: Concert) {
 	const slice = isSlice(concert);
 	const lead = slice
 		? `The slice concert \`${concert.id}\` settled after this ticket was moved, so its result is parked.`
@@ -406,20 +406,20 @@ async function park(pass: Pass, { issue, data }: Entry, concert: Concert) {
 				RETRIAGE,
 			]
 		: [RETRIAGE];
-	await ask(pass, issue.number, whichWay(lead, options));
-	await move(pass, issue.number, "needs-info");
-	await writeSpec(pass, issue.number, "needs-info", {
+	await ask(tick, issue.number, whichWay(lead, options));
+	await move(tick, issue.number, "needs-info");
+	await writeSpec(tick, issue.number, "needs-info", {
 		...data,
 		encore: undefined,
 		concert: concert.id,
-		...(slice ? { parked: concert.id } : await dropped(pass, concert.id)),
+		...(slice ? { parked: concert.id } : await dropped(tick, concert.id)),
 	});
-	pass.say(`parked #${issue.number}'s concert ${concert.id} in needs-info`);
+	tick.say(`parked #${issue.number}'s concert ${concert.id} in needs-info`);
 }
 
 /** The data a dropped triage `id` leaves: no stale result, and `id` as the triage to continue when it settled ok. */
-async function dropped(pass: Pass, id: string): Promise<Data> {
-	const ok = typeof triageOf(await pass.maestro.result(id)) !== "string";
+async function dropped(tick: Tick, id: string): Promise<Data> {
+	const ok = typeof triageOf(await tick.maestro.result(id)) !== "string";
 	return { result: undefined, ...(ok ? { triage: id } : {}) };
 }
 
@@ -427,15 +427,15 @@ async function dropped(pass: Pass, id: string): Promise<Data> {
  * Routes the parked concert of `entry` once the owner chose: applies it in `in-progress`, waits in `needs-info`, and
  * clears it on any other move; false when it halted.
  */
-async function unpark(pass: Pass, entry: Entry, parked: string) {
+async function unpark(tick: Tick, entry: Entry, parked: string) {
 	const { issue } = entry;
 	const state = stateOf(issue) ?? "needs-triage";
 	if (state === "needs-info") return true;
 	const data = { ...entry.data, parked: undefined };
 	if (state === "in-progress")
-		return settleSlice(pass, { ...entry, data }, parked);
-	await writeSpec(pass, issue.number, state, data);
-	pass.say(`cleared #${issue.number}'s parked concert ${parked}`);
+		return settleSlice(tick, { ...entry, data }, parked);
+	await writeSpec(tick, issue.number, state, data);
+	tick.say(`cleared #${issue.number}'s parked concert ${parked}`);
 	return true;
 }
 
@@ -454,11 +454,11 @@ const findingsText = ({ review, blocking = [] }: Report) =>
 	review ?? blocking.map((b) => `- ${b}`).join("\n");
 
 /** Arms the PR to `main` of `child`, the last child of a cleared stack review, unless its own review left findings. */
-async function armLast(pass: Pass, { issue, data }: Entry) {
-	const report = data.concert && (await pass.maestro.report(data.concert));
+async function armLast(tick: Tick, { issue, data }: Entry) {
+	const report = data.concert && (await tick.maestro.report(data.concert));
 	if (report && unresolvedOf(report.upheld)) return;
-	const pull = pullToMain(await pass.forge.pulls(), issue.number);
-	if (pull) await pass.forge.arm(pull.number);
+	const pull = pullToMain(await tick.forge.pulls(), issue.number);
+	if (pull) await tick.forge.arm(pull.number);
 }
 
 /**
@@ -466,16 +466,16 @@ async function armLast(pass: Pass, { issue, data }: Entry) {
  * as a report when no one child is open.
  */
 async function routeFindings(
-	pass: Pass,
+	tick: Tick,
 	epic: Issue,
 	id: string,
 	last: Entry | undefined,
 ) {
-	const report = await pass.maestro.report(id);
+	const report = await tick.maestro.report(id);
 	const review = findingsText(report);
 	if (!last) {
 		await ask(
-			pass,
+			tick,
 			epic.number,
 			reviewComment(
 				id,
@@ -483,11 +483,11 @@ async function routeFindings(
 				"No one child is open to take them, so each finding is filed as an issue.",
 			),
 		);
-		return fileReports(pass, epic, report.blocking ?? []);
+		return fileReports(tick, epic, report.blocking ?? []);
 	}
 	const { issue, data } = last;
 	await ask(
-		pass,
+		tick,
 		epic.number,
 		reviewComment(
 			id,
@@ -495,7 +495,7 @@ async function routeFindings(
 			`Its findings go to the next encore of #${issue.number}.`,
 		),
 	);
-	await writeSpec(pass, issue.number, stateOf(issue) ?? "in-review", {
+	await writeSpec(tick, issue.number, stateOf(issue) ?? "in-review", {
 		...data,
 		findings: id,
 	});
@@ -506,21 +506,21 @@ async function routeFindings(
  * rejected one routes its findings, any other halts and runs again once the halt closes. Returns false when it halted.
  */
 async function settleReview(
-	pass: Pass,
+	tick: Tick,
 	{ issue, data }: Entry,
 	id: string,
 	entries: Entry[],
 ) {
 	const state = stateOf(issue) ?? "in-progress";
-	const result = await pass.maestro.result(id);
+	const result = await tick.maestro.result(id);
 	if (result.status !== "ok" && result.status !== "rejected") {
-		await writeSpec(pass, issue.number, state, {
+		await writeSpec(tick, issue.number, state, {
 			...data,
 			concert: id,
 			stackReview: undefined,
 		});
 		await halt(
-			pass,
+			tick,
 			`stack review of #${issue.number} failed`,
 			`The stack review \`${id}\` of #${issue.number} settled ${result.status}:`,
 			result.reason ?? "no reason given",
@@ -529,43 +529,43 @@ async function settleReview(
 		return false;
 	}
 	const last = lastChild(data, entries);
-	if (result.status === "rejected") await routeFindings(pass, issue, id, last);
+	if (result.status === "rejected") await routeFindings(tick, issue, id, last);
 	else if (
 		last &&
 		stateOf(last.issue) === "in-review" &&
 		isLow(last.issue, last.data)
 	)
-		await armLast(pass, last);
-	await writeSpec(pass, issue.number, state, {
+		await armLast(tick, last);
+	await writeSpec(tick, issue.number, state, {
 		...data,
 		concert: id,
 		stackReview: id,
 	});
-	pass.say(`routed #${issue.number}'s stack review ${id}: ${result.status}`);
+	tick.say(`routed #${issue.number}'s stack review ${id}: ${result.status}`);
 	return true;
 }
 
 /** Routes one issue's newest concert the tick has not routed yet, or its parked one; false when it halted. */
-async function routeOne(pass: Pass, entry: Entry, entries: Entry[]) {
-	if (entry.data.parked) return unpark(pass, entry, entry.data.parked);
-	const concert = unrouted(pass, entry);
+async function routeOne(tick: Tick, entry: Entry, entries: Entry[]) {
+	if (entry.data.parked) return unpark(tick, entry, entry.data.parked);
+	const concert = unrouted(tick, entry);
 	if (!concert) return true;
 	if (isStackReview(concert))
-		return settleReview(pass, entry, concert.id, entries);
+		return settleReview(tick, entry, concert.id, entries);
 	if (!expected(concert, entry.issue)) {
-		await park(pass, entry, concert);
+		await park(tick, entry, concert);
 		return true;
 	}
 	return isSlice(concert)
-		? settleSlice(pass, entry, concert.id)
-		: settle(pass, entry, concert.id);
+		? settleSlice(tick, entry, concert.id)
+		: settle(tick, entry, concert.id);
 }
 
 /** Routes each issue's settles, then the newest concert when it is a masterclass; false when it halted. */
-async function route(pass: Pass, entries: Entry[]) {
+async function route(tick: Tick, entries: Entry[]) {
 	for (const entry of entries)
-		if (!(await routeOne(pass, entry, entries))) return false;
-	await routeMasterclass(pass);
+		if (!(await routeOne(tick, entry, entries))) return false;
+	await routeMasterclass(tick);
 	return true;
 }
 
@@ -575,7 +575,7 @@ const scopeOf = (label: string) => label.split("/")[0];
  * Files child `child` of `epic` unless `entries` hold it, else gives it any label scope it lacks; returns its number.
  */
 async function fileChild(
-	{ forge }: Pass,
+	{ forge }: Tick,
 	epic: Issue,
 	child: Child,
 	entries: Entry[],
@@ -605,63 +605,63 @@ async function fileChild(
 }
 
 /** Files approved split `epic`'s children with their dependencies, then moves it to `in-progress`. */
-async function fileSplit(pass: Pass, { issue, data }: Entry, entries: Entry[]) {
+async function fileSplit(tick: Tick, { issue, data }: Entry, entries: Entry[]) {
 	const filed: number[] = [];
 	for (const child of data.result?.children ?? []) {
-		const number = await fileChild(pass, issue, child, entries);
+		const number = await fileChild(tick, issue, child, entries);
 		for (const blocker of child.dependsOn.map((d) => filed[d]))
-			if (blocker !== undefined) await pass.forge.depend(number, blocker);
+			if (blocker !== undefined) await tick.forge.depend(number, blocker);
 		filed.push(number);
 	}
-	await writeSpec(pass, issue.number, "in-progress", {
+	await writeSpec(tick, issue.number, "in-progress", {
 		...data,
 		filed,
-		base: data.base ?? pass.main,
+		base: data.base ?? tick.main,
 	});
-	const { labels } = await pass.forge.issue(issue.number);
-	await pass.forge.setLabels(
+	const { labels } = await tick.forge.issue(issue.number);
+	await tick.forge.setLabels(
 		issue.number,
 		relabelled(labels, ["state", "kind"], ["state/in-progress", "kind/epic"]),
 	);
-	pass.say(`filed #${issue.number}'s children: ${filed.join(", ")}`);
+	tick.say(`filed #${issue.number}'s children: ${filed.join(", ")}`);
 }
 
 /** Closes epic `issue` once every child in `filed` has closed (factory.md, Rules, Triage: Splits). */
 async function closeEpic(
-	pass: Pass,
+	tick: Tick,
 	issue: Issue,
 	filed: number[],
 	entries: Entry[],
 ) {
 	if (entries.some((e) => filed.includes(e.issue.number))) return;
-	const children = await Promise.all(filed.map((n) => pass.forge.issue(n)));
+	const children = await Promise.all(filed.map((n) => tick.forge.issue(n)));
 	if (children.some((c) => c.closed === undefined)) return;
-	await pass.forge.edit(issue.number, { closed: true });
-	pass.say(`closed epic #${issue.number}, its children all closed`);
+	await tick.forge.edit(issue.number, { closed: true });
+	tick.say(`closed epic #${issue.number}, its children all closed`);
 }
 
 /**
- * Sets the labels of a routed result a cut pass left unset, files a split the owner approved, closes an epic whose
+ * Sets the labels of a routed result a cut tick left unset, files a split the owner approved, closes an epic whose
  * children all closed, or restacks a stacked PR whose blocker closed; false when it halted.
  */
-async function syncOne(pass: Pass, entry: Entry, entries: Entry[]) {
+async function syncOne(tick: Tick, entry: Entry, entries: Entry[]) {
 	const { issue, data } = entry;
 	const state = stateOf(issue);
 	if (data.pending && data.result)
-		await apply(pass, issue.number, data, data.result);
+		await apply(tick, issue.number, data, data.result);
 	else if (state === "ready-for-agent" && data.result?.children)
-		await fileSplit(pass, entry, entries);
+		await fileSplit(tick, entry, entries);
 	else if (state === "in-progress" && data.filed)
-		await closeEpic(pass, issue, data.filed, entries);
+		await closeEpic(tick, issue, data.filed, entries);
 	else if (state === "in-review" && data.stack)
-		return restack(pass, entry, data.stack);
+		return restack(tick, entry, data.stack);
 	return true;
 }
 
 /** Syncs each issue (factory.md, One tick: sync); false when it halted. */
-async function sync(pass: Pass, entries: Entry[]) {
+async function sync(tick: Tick, entries: Entry[]) {
 	for (const entry of entries)
-		if (!(await syncOne(pass, entry, entries))) return false;
+		if (!(await syncOne(tick, entry, entries))) return false;
 	return true;
 }
 
@@ -672,7 +672,7 @@ type Perform = { request: string; encore?: string; data: Data };
  * else on `stack`'s commit when it stacks, and moves it to `in-progress`; halts on a refusal.
  */
 async function startSlice(
-	pass: Pass,
+	tick: Tick,
 	{ issue, data }: Entry,
 	stack: Stack | undefined,
 	perform: Perform,
@@ -681,15 +681,15 @@ async function startSlice(
 	if (!result) return;
 	const tier = tierOf(issue, result);
 	const { revisionBase } = perform.data;
-	const cut = revisionBase ?? stack?.commit ?? pass.main;
+	const cut = revisionBase ?? stack?.commit ?? tick.main;
 	const name = issue.labels
 		.find((l) => l.startsWith("area/"))
 		?.slice("area/".length);
 	const area =
-		name && pass.has(`.maestro/presets/area-${name}.yaml`)
+		name && tick.has(`.maestro/presets/area-${name}.yaml`)
 			? ["--preset", `area-${name}`]
 			: [];
-	const id = await start(pass, `build of #${issue.number}`, [
+	const id = await start(tick, `build of #${issue.number}`, [
 		...(perform.encore ? ["encore", perform.encore] : ["perform", SLICE_FILE]),
 		"--request",
 		perform.request,
@@ -698,9 +698,9 @@ async function startSlice(
 		"--preset",
 		tier,
 		...area,
-		...pass.presets.flatMap((p) => ["--preset", p]),
+		...tick.presets.flatMap((p) => ["--preset", p]),
 		"--tour",
-		tourOf(pass.milestone, issue.number),
+		tourOf(tick.milestone, issue.number),
 		"--title",
 		titleOf(issue),
 		"--revises",
@@ -709,13 +709,13 @@ async function startSlice(
 		`target.base=${cut}`,
 	]);
 	if (id === undefined) return;
-	await move(pass, issue.number, "in-progress");
-	await writeSpec(pass, issue.number, "in-progress", {
+	await move(tick, issue.number, "in-progress");
+	await writeSpec(tick, issue.number, "in-progress", {
 		...perform.data,
 		slice: id,
 		stack,
 	});
-	pass.say(`building #${issue.number}: concert ${id}`);
+	tick.say(`building #${issue.number}: concert ${id}`);
 }
 
 /** Blocker issue `blocker`'s PR among `pulls` when the issue is `in-review` and the PR merges into `main`. */
@@ -731,7 +731,7 @@ async function reviewed(forge: Forge, blocker: number, pulls: Pull[]) {
  * newest blocker PR's head when each blocker is in review on a PR to `main`, else undefined, as it waits.
  */
 async function baseOf(
-	{ forge }: Pass,
+	{ forge }: Tick,
 	number: number,
 ): Promise<{ stack?: Stack } | undefined> {
 	const blockers = await forge.blockers(number);
@@ -752,7 +752,7 @@ async function baseOf(
  * (factory.md, Rules, Build: Encore).
  */
 async function performOf(
-	pass: Pass,
+	tick: Tick,
 	{ issue, comments, data }: Entry,
 	spec: Spec,
 ): Promise<Perform> {
@@ -761,7 +761,7 @@ async function performOf(
 	if (!data.encore) return fresh;
 	const considered = repliesOf(comments, data.read);
 	const changes = considered
-		.filter((c) => isReply(c, pass.login))
+		.filter((c) => isReply(c, tick.login))
 		.map((c) => ({ heading: `Reply by ${c.author}`, body: c.body }));
 	if (!changes.length) return fresh;
 	return {
@@ -804,7 +804,7 @@ const reviewChange = (r: Review): Change => ({
  * stack's, and lands folded into, so the PR keeps one commit per ticket and its base.
  */
 async function revision(
-	pass: Pass,
+	tick: Tick,
 	{ issue, data }: Entry,
 	pulls: readonly Pull[],
 ): Promise<Perform | undefined> {
@@ -812,14 +812,14 @@ async function revision(
 	const spec = data.result?.spec;
 	if (!pull || !spec || !data.concert) return undefined;
 	const reviews = requested(
-		await pass.forge.reviews(pull.number, data.review ?? 0),
+		await tick.forge.reviews(pull.number, data.review ?? 0),
 		data,
 	);
 	const changes = reviews.map(reviewChange);
 	if (data.findings)
 		changes.push({
 			heading: "Stack review",
-			body: findingsText(await pass.maestro.report(data.findings)),
+			body: findingsText(await tick.maestro.report(data.findings)),
 		});
 	if (!changes.length) return undefined;
 	return {
@@ -840,17 +840,17 @@ async function revision(
  * Starts the encore of the oldest in-review ticket with changes requested where a build would; true when it started
  * none.
  */
-async function revise(pass: Pass, entries: Entry[]) {
+async function revise(tick: Tick, entries: Entry[]) {
 	const reviewed = entries
 		.filter((e) => stateOf(e.issue) === "in-review")
 		.sort((a, b) => a.issue.number - b.issue.number);
 	if (!reviewed.length) return true;
-	const pulls = await pass.forge.pulls();
+	const pulls = await tick.forge.pulls();
 	for (const entry of reviewed) {
-		const perform = await revision(pass, entry, pulls);
-		const base = perform && (await baseOf(pass, entry.issue.number));
+		const perform = await revision(tick, entry, pulls);
+		const base = perform && (await baseOf(tick, entry.issue.number));
 		if (!perform || !base) continue;
-		await startSlice(pass, entry, entry.data.stack, perform);
+		await startSlice(tick, entry, entry.data.stack, perform);
 		return false;
 	}
 	return true;
@@ -873,21 +873,21 @@ async function reviewDue(
  * Starts the stack review of the first epic whose last child is in review (factory.md, Rules, Build: Stack review),
  * over `main`'s commits from its `base` to that child's PR head; halts on a refusal. True when it started none.
  */
-async function stackReview(pass: Pass, entries: Entry[]) {
+async function stackReview(tick: Tick, entries: Entry[]) {
 	let found: Promise<Pull[]> | undefined;
-	const pulls = () => (found ??= pass.forge.pulls());
+	const pulls = () => (found ??= tick.forge.pulls());
 	for (const entry of entries) {
 		const pull = await reviewDue(entry, entries, pulls);
 		if (!pull) continue;
-		await startReview(pass, entry, `${entry.data.base}..${pull.sha}`);
+		await startReview(tick, entry, `${entry.data.base}..${pull.sha}`);
 		return false;
 	}
 	return true;
 }
 
 /** Performs the stack review of epic `entry` over the commits `revs` names, and records it; halts on a refusal. */
-async function startReview(pass: Pass, { issue, data }: Entry, revs: string) {
-	const id = await start(pass, `stack review of #${issue.number}`, [
+async function startReview(tick: Tick, { issue, data }: Entry, revs: string) {
+	const id = await start(tick, `stack review of #${issue.number}`, [
 		"perform",
 		REVIEW_FILE,
 		"--request",
@@ -896,28 +896,28 @@ async function startReview(pass: Pass, { issue, data }: Entry, revs: string) {
 		revs,
 		"--preset",
 		STACK_REVIEW_PRESET,
-		...pass.presets.flatMap((p) => ["--preset", p]),
+		...tick.presets.flatMap((p) => ["--preset", p]),
 		"--tour",
-		tourOf(pass.milestone, issue.number),
+		tourOf(tick.milestone, issue.number),
 		"--title",
 		titleOf(issue),
 	]);
 	if (id === undefined) return;
-	await writeSpec(pass, issue.number, "in-progress", {
+	await writeSpec(tick, issue.number, "in-progress", {
 		...data,
 		stackReview: id,
 	});
-	pass.say(`reviewing #${issue.number}'s stack: concert ${id}`);
+	tick.say(`reviewing #${issue.number}'s stack: concert ${id}`);
 }
 
 /** Says in the spec comment of ready `entry` which open dependencies it waits on, writing only when that changes it. */
-async function queue(pass: Pass, { issue, comments, data }: Entry) {
-	const waiting = (await pass.forge.blockers(issue.number)).sort(
+async function queue(tick: Tick, { issue, comments, data }: Entry) {
+	const waiting = (await tick.forge.blockers(issue.number)).sort(
 		(a, b) => a - b,
 	);
-	const comment = commentOf(data, "ready-for-agent", pass.login, waiting);
+	const comment = commentOf(data, "ready-for-agent", tick.login, waiting);
 	if (specCommentOf(comments)?.body.trim() === comment.trim()) return;
-	await writeSpec(pass, issue.number, "ready-for-agent", data, waiting);
+	await writeSpec(tick, issue.number, "ready-for-agent", data, waiting);
 }
 
 /** The states whose tickets hold a spec the owner approved. */
@@ -929,7 +929,7 @@ const APPROVED: readonly State[] = [
 
 /** Closed issue `issue` as an approval at its close, undefined when it closed undone or its spec cannot be read. */
 async function closedApproval(
-	{ forge }: Pass,
+	{ forge }: Tick,
 	issue: Issue,
 ): Promise<Approval | undefined> {
 	if (
@@ -951,7 +951,7 @@ async function closedApproval(
  * or the forge's `closed_at` says it closed (factory.md, Rules, Build: Stale spec). A routed triage stamps `specAt`
  * with the tick's clock; rewriting the spec comment does not. A ticket whose data holds no `specAt` is left out.
  */
-async function approvals(pass: Pass, entries: Entry[]): Promise<Approval[]> {
+async function approvals(tick: Tick, entries: Entry[]): Promise<Approval[]> {
 	const open = entries.flatMap(({ issue, data }) => {
 		const state = stateOf(issue);
 		const touches = data.result?.spec?.touches;
@@ -963,7 +963,7 @@ async function approvals(pass: Pass, entries: Entry[]): Promise<Approval[]> {
 			: [];
 	});
 	const closed = await Promise.all(
-		(await pass.closed()).map((i) => closedApproval(pass, i)),
+		(await tick.closed()).map((i) => closedApproval(tick, i)),
 	);
 	return [...open, ...closed.filter((a) => a !== undefined)];
 }
@@ -983,7 +983,7 @@ const staleLead = (found: ReturnType<typeof overlaps>) =>
  * (factory.md, Rules, Build: Stale spec).
  */
 async function retriage(
-	pass: Pass,
+	tick: Tick,
 	{ issue, data }: Entry,
 	spec: Spec,
 	approved: () => Promise<Approval[]>,
@@ -993,7 +993,7 @@ async function retriage(
 	const found = overlaps(spec.touches, data.specAt, others);
 	if (!found.length) return false;
 	await ask(
-		pass,
+		tick,
 		issue.number,
 		questionOf(
 			[{ ask: staleLead(found), options: [], context: [] }],
@@ -1001,9 +1001,9 @@ async function retriage(
 		),
 		data.read,
 	);
-	await move(pass, issue.number, "needs-triage");
-	await writeSpec(pass, issue.number, "needs-triage", data);
-	pass.say(`#${issue.number}: spec is stale, moved to needs-triage`);
+	await move(tick, issue.number, "needs-triage");
+	await writeSpec(tick, issue.number, "needs-triage", data);
+	tick.say(`#${issue.number}: spec is stale, moved to needs-triage`);
 	return true;
 }
 
@@ -1011,44 +1011,44 @@ async function retriage(
  * Finishes work first: continues a ticket with changes requested, else builds the first buildable issue, pinned ones
  * first, that its blockers let build and whose spec is not stale; true when it started none.
  */
-async function build(pass: Pass, entries: Entry[]) {
-	if (!(await revise(pass, entries))) return false;
+async function build(tick: Tick, entries: Entry[]) {
+	if (!(await revise(tick, entries))) return false;
 	let approved: Promise<Approval[]> | undefined;
-	const approvedOnce = () => (approved ??= approvals(pass, entries));
-	for (const entry of buildable(entries, await pass.forge.pinned())) {
+	const approvedOnce = () => (approved ??= approvals(tick, entries));
+	for (const entry of buildable(entries, await tick.forge.pinned())) {
 		const spec = entry.data.result?.spec;
-		const base = await baseOf(pass, entry.issue.number);
+		const base = await baseOf(tick, entry.issue.number);
 		if (!spec) continue;
 		if (!base) {
-			await queue(pass, entry);
+			await queue(tick, entry);
 			continue;
 		}
-		const perform = await performOf(pass, entry, spec);
-		if (!perform.encore && (await retriage(pass, entry, spec, approvedOnce)))
+		const perform = await performOf(tick, entry, spec);
+		if (!perform.encore && (await retriage(tick, entry, spec, approvedOnce)))
 			continue;
-		await startSlice(pass, entry, base.stack, perform);
+		await startSlice(tick, entry, base.stack, perform);
 		return false;
 	}
 	return true;
 }
 
 /** Asks for the reply a re-triage of `entry` needs, then moves it to `needs-info` with `read` past that question. */
-async function askReply(pass: Pass, { issue, data }: Entry) {
+async function askReply(tick: Tick, { issue, data }: Entry) {
 	const questions = [
 		{
-			ask: `What changed since the last triage? No reply mentions \`@${pass.login}\` yet.`,
+			ask: `What changed since the last triage? No reply mentions \`@${tick.login}\` yet.`,
 			options: [],
 			context: [],
 		},
 	];
-	const how = `Reply \`@${pass.login} …\`, then label \`needs-triage\`.`;
-	const read = await pass.forge.comment(
+	const how = `Reply \`@${tick.login} …\`, then label \`needs-triage\`.`;
+	const read = await tick.forge.comment(
 		issue.number,
 		questionOf(questions, how),
 	);
-	await move(pass, issue.number, "needs-info");
-	await writeSpec(pass, issue.number, "needs-info", { ...data, read });
-	pass.say(
+	await move(tick, issue.number, "needs-info");
+	await writeSpec(tick, issue.number, "needs-info", { ...data, read });
+	tick.say(
 		`#${issue.number}: no reply since the last triage, moved to needs-info`,
 	);
 }
@@ -1057,12 +1057,12 @@ async function askReply(pass: Pass, { issue, data }: Entry) {
 const MISSING = /^forge: 404 /;
 
 /** The closed issues `text` cites but `issue`; a number the forge does not have is skipped. */
-async function closedCited(pass: Pass, issue: number, text: string) {
+async function closedCited(tick: Tick, issue: number, text: string) {
 	const cited = await Promise.all(
 		citedIn(text)
 			.filter((n) => n !== issue)
 			.map((n) =>
-				pass.forge.issue(n).catch((error: unknown) => {
+				tick.forge.issue(n).catch((error: unknown) => {
 					if (MISSING.test(message(error))) return undefined;
 					throw error;
 				}),
@@ -1077,42 +1077,42 @@ async function closedCited(pass: Pass, issue: number, text: string) {
  * brief, then records the newest comment it considered; halts on a refusal. A re-triage with nothing new to feed asks
  * for a reply instead. True only when it started nothing, so a masterclass may follow.
  */
-async function triage(pass: Pass, entries: Entry[]) {
+async function triage(tick: Tick, entries: Entry[]) {
 	const issue = pick(
 		entries.filter((e) => !e.data.pending).map((e) => e.issue),
-		await pass.forge.pinned(),
+		await tick.forge.pinned(),
 	);
 	const entry = entries.find((e) => e.issue === issue);
 	if (!entry) {
-		pass.say("nothing to triage");
+		tick.say("nothing to triage");
 		return true;
 	}
 	const { data, comments } = entry;
 	const { number } = entry.issue;
 	const considered = repliesOf(comments, data.read);
-	if (data.triage && !considered.some((c) => isFed(c, pass.login))) {
-		await askReply(pass, entry);
+	if (data.triage && !considered.some((c) => isFed(c, tick.login))) {
+		await askReply(tick, entry);
 		return true;
 	}
 	const last = data.triage ? data.result?.spec : undefined;
 	const text = issueText(
 		entry.issue,
-		considered.filter((c) => isFed(c, pass.login)),
-		pass.login,
+		considered.filter((c) => isFed(c, tick.login)),
+		tick.login,
 		last,
 	);
 	const [closed, pulls, cited] = await Promise.all([
-		pass.closed(),
-		pass.forge.pulls(),
-		closedCited(pass, number, text),
+		tick.closed(),
+		tick.forge.pulls(),
+		closedCited(tick, number, text),
 	]);
 	const issues = entries.map((e) => e.issue);
-	const backlog = join(pass.dir, `backlog-i${number}.md`);
+	const backlog = join(tick.dir, `backlog-i${number}.md`);
 	await Bun.write(
 		backlog,
-		snapshot(pass.milestone, number, issues, closed, pulls, cited),
+		snapshot(tick.milestone, number, issues, closed, pulls, cited),
 	);
-	const id = await start(pass, `triage of #${number}`, [
+	const id = await start(tick, `triage of #${number}`, [
 		...(data.triage ? ["encore", data.triage] : ["perform", TRIAGE_FILE]),
 		"--issue",
 		text,
@@ -1120,20 +1120,20 @@ async function triage(pass: Pass, entries: Entry[]) {
 		backlog,
 		last && !isBrief(last) ? "--respec" : "--no-respec",
 		"--tour",
-		tourOf(pass.milestone, number),
+		tourOf(tick.milestone, number),
 		"--title",
 		titleOf(entry.issue),
 		"--preset",
 		TRIAGE_PRESET,
-		...pass.presets.flatMap((p) => ["--preset", p]),
+		...tick.presets.flatMap((p) => ["--preset", p]),
 		"-c",
-		`target.base=${pass.main}`,
+		`target.base=${tick.main}`,
 	]);
 	if (id === undefined) return false;
-	pass.say(`triaging #${number}: concert ${id}`);
+	tick.say(`triaging #${number}: concert ${id}`);
 	const read = considered.at(-1)?.id;
 	if (read !== undefined)
-		await writeSpec(pass, number, stateOf(entry.issue) ?? "needs-triage", {
+		await writeSpec(tick, number, stateOf(entry.issue) ?? "needs-triage", {
 			...data,
 			read,
 		});
@@ -1141,13 +1141,13 @@ async function triage(pass: Pass, entries: Entry[]) {
 }
 
 /**
- * One pass: no action when another pass holds the lock, the tour manager is halted or a concert of the milestone runs;
+ * One tick: no action when another tick holds the lock, the tour manager is halted or a concert of the milestone runs;
  * else it routes settled concerts and a settled masterclass, syncs, and starts one stack review, else one build, else
- * one triage, else a masterclass once due, or none under `routeOnly`. Each step returns whether the pass goes on.
+ * one triage, else a masterclass once due, or none under `routeOnly`. Each step returns whether the tick goes on.
  * @throws Error when the milestone does not exist, or the forge or maestro fails or answers what the tick cannot read.
  */
-export async function pass(deps: Deps, options: Options): Promise<void> {
-	if (!deps.lock()) return deps.say("another pass holds the lock");
+export async function tick(deps: Deps, options: Options): Promise<void> {
+	if (!deps.lock()) return deps.say("another tick holds the lock");
 	const halts = await deps.forge.open({ label: HALT });
 	if (halts.some((i) => i.labels.includes(HALT)))
 		return deps.say(`halted: close the open ${HALT} issue to resume`);
@@ -1163,7 +1163,7 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 	const main = await deps.forge.head(BASE);
 	await deps.landing.fetch();
 	let closed: Promise<Issue[]> | undefined;
-	const pass: Pass = {
+	const tick: Tick = {
 		...deps,
 		...options,
 		milestoneId,
@@ -1176,15 +1176,15 @@ export async function pass(deps: Deps, options: Options): Promise<void> {
 		? [route, sync]
 		: [route, sync, stackReview, build, triage, masterclass];
 	for (const step of steps) {
-		const entries = await load(pass);
-		if (!entries || !(await step(pass, entries))) return;
+		const entries = await load(tick);
+		if (!entries || !(await step(tick, entries))) return;
 	}
 	if (options.routeOnly)
-		pass.say("route-only: routed and synced, started nothing");
+		tick.say("route-only: routed and synced, started nothing");
 }
 
 /**
- * The milestone a pass serves: `flag` when non-empty, else `MAESTRO_TM_MILESTONE` from `env` when non-empty.
+ * The milestone a tick serves: `flag` when non-empty, else `MAESTRO_TM_MILESTONE` from `env` when non-empty.
  * @throws Error naming `MAESTRO_TM_MILESTONE` and its file when neither is set.
  */
 export function milestoneOf(
@@ -1246,7 +1246,7 @@ if (import.meta.main) {
 	try {
 		const tm = forge();
 		const account = await tm.account();
-		await pass(
+		await tick(
 			{
 				forge: tm,
 				maestro: maestro(),

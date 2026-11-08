@@ -15,9 +15,9 @@ import {
 	isSlice,
 	isTriage,
 	message,
-	type Pass,
 	REPO,
 	start,
+	type Tick,
 	TRIAGE_PRESET,
 } from "./tick";
 
@@ -30,7 +30,7 @@ const MASTERCLASS_EVERY = 10;
 const MASTERCLASS_READS = 30;
 /**
  * How many of a milestone's newest concerts the masterclass step reads: a masterclass comes last in pick order and may
- * starve while there is other work, so it reads further back than the pass's window.
+ * starve while there is other work, so it reads further back than the tick's window.
  */
 const MASTERCLASS_WINDOW = 200;
 
@@ -63,34 +63,34 @@ function masterclassOf(result: Result): Masterclass | string {
  * Files each proposal of masterclass `id` as a `needs-approval` enhancement labelled `maestro-tm:masterclass`, unless
  * an open issue or one of the newest closed ones carries its fingerprint.
  */
-async function fileProposals(pass: Pass, id: string, masterclass: Masterclass) {
+async function fileProposals(tick: Tick, id: string, masterclass: Masterclass) {
 	const [open, closed] = await Promise.all([
-		pass.forge.open({}),
-		pass.forge.closed(CLOSED),
+		tick.forge.open({}),
+		tick.forge.closed(CLOSED),
 	]);
 	const bodies = [...open, ...closed].map((i) => i.body);
 	for (const proposal of masterclass.proposals) {
 		const line = proposalLine(proposal);
 		if (bodies.some((b) => b.includes(line))) continue;
 		const filed = proposalIssue(proposal);
-		const number = await pass.forge.file({
+		const number = await tick.forge.file({
 			...filed,
-			milestone: pass.milestoneId,
+			milestone: tick.milestoneId,
 			labels: ["state/needs-approval", "kind/enhancement", MASTERCLASS_LABEL],
 		});
 		bodies.push(filed.body);
-		pass.say(`filed #${number}, proposed by masterclass ${id}`);
+		tick.say(`filed #${number}, proposed by masterclass ${id}`);
 	}
 }
 
 /** Routes the newest concert when it is a masterclass; one that settled wrong is said, not halted on. */
-export async function routeMasterclass(pass: Pass) {
-	const newest = pass.concerts[0];
-	if (!newest || !isMasterclass(newest, pass.milestone)) return;
-	const masterclass = masterclassOf(await pass.maestro.result(newest.id));
+export async function routeMasterclass(tick: Tick) {
+	const newest = tick.concerts[0];
+	if (!newest || !isMasterclass(newest, tick.milestone)) return;
+	const masterclass = masterclassOf(await tick.maestro.result(newest.id));
 	if (typeof masterclass === "string")
-		return pass.say(`masterclass ${newest.id} ${masterclass}`);
-	await fileProposals(pass, newest.id, masterclass);
+		return tick.say(`masterclass ${newest.id} ${masterclass}`);
+	await fileProposals(tick, newest.id, masterclass);
 }
 
 /** The index of the watermark in `concerts`, newest first: the newest ok masterclass; -1 without one. */
@@ -167,13 +167,13 @@ function lessonsText(
 
 /** Performs the masterclass on the `lessons` and `backlog` files; halts on a refusal. */
 async function startMasterclass(
-	pass: Pass,
+	tick: Tick,
 	lessons: string,
 	backlog: string,
 	runs: number,
 ) {
 	const id = await start(
-		pass,
+		tick,
 		"masterclass",
 		[
 			"perform",
@@ -183,19 +183,19 @@ async function startMasterclass(
 			"--backlog",
 			backlog,
 			"--tour",
-			masterclassTour(pass.milestone),
+			masterclassTour(tick.milestone),
 			"--title",
 			"factory: masterclass",
 			"--preset",
 			TRIAGE_PRESET,
-			...pass.presets.flatMap((p) => ["--preset", p]),
+			...tick.presets.flatMap((p) => ["--preset", p]),
 			"-c",
-			`target.base=${pass.main}`,
+			`target.base=${tick.main}`,
 		],
-		join(pass.dir, "masterclass.log"),
+		join(tick.dir, "masterclass.log"),
 	);
 	if (id === undefined) return;
-	pass.say(
+	tick.say(
 		`holding a masterclass on the lessons of ${runs} concerts: concert ${id}`,
 	);
 }
@@ -205,23 +205,23 @@ async function startMasterclass(
  * `MASTERCLASS_READS` runs, or every run since the last when more, marking those an earlier masterclass read, with the
  * backlog snapshot; true when it started none.
  */
-export async function masterclass(pass: Pass, entries: Entry[]) {
-	const listed = await pass.maestro.concerts(
-		pass.milestone,
+export async function masterclass(tick: Tick, entries: Entry[]) {
+	const listed = await tick.maestro.concerts(
+		tick.milestone,
 		MASTERCLASS_WINDOW,
 	);
-	const counted = sinceWatermark(listed, pass.milestone);
+	const counted = sinceWatermark(listed, tick.milestone);
 	if (!counted) return true;
 	const hand = handRuns(
 		await Promise.all(
-			HAND_TOURS.map((t) => pass.maestro.concerts(t, MASTERCLASS_WINDOW)),
+			HAND_TOURS.map((t) => tick.maestro.concerts(t, MASTERCLASS_WINDOW)),
 		),
 		listed,
-		pass.milestone,
+		tick.milestone,
 	);
 	const fresh = new Set(counted.map((c) => c.id));
 	const window = listed
-		.filter((c) => isFactoryRun(c, pass.milestone))
+		.filter((c) => isFactoryRun(c, tick.milestone))
 		.slice(0, Math.max(MASTERCLASS_READS, counted.length));
 	const read = new Set(window.filter((c) => !fresh.has(c.id)).map((c) => c.id));
 	const runs = hand.length
@@ -231,24 +231,24 @@ export async function masterclass(pass: Pass, entries: Entry[]) {
 		: window;
 	const reports = [];
 	for (const concert of runs.toReversed())
-		reports.push({ concert, report: await pass.maestro.report(concert.id) });
-	const lessons = join(pass.dir, "masterclass-lessons.md");
+		reports.push({ concert, report: await tick.maestro.report(concert.id) });
+	const lessons = join(tick.dir, "masterclass-lessons.md");
 	await Bun.write(lessons, lessonsText(reports, read));
 	const [closed, pulls] = await Promise.all([
-		pass.forge.closed(CLOSED),
-		pass.forge.pulls(),
+		tick.forge.closed(CLOSED),
+		tick.forge.pulls(),
 	]);
-	const backlog = join(pass.dir, "backlog-masterclass.md");
+	const backlog = join(tick.dir, "backlog-masterclass.md");
 	await Bun.write(
 		backlog,
 		snapshot(
-			pass.milestone,
+			tick.milestone,
 			undefined,
 			entries.map((e) => e.issue),
 			closed,
 			pulls,
 		),
 	);
-	await startMasterclass(pass, lessons, backlog, runs.length);
+	await startMasterclass(tick, lessons, backlog, runs.length);
 	return false;
 }

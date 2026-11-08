@@ -1,6 +1,6 @@
 # Factory tick
 
-One pass of the tour manager (`docs/agents/factory.md`): it routes a settled triage or slice, lands an ok slice as a PR,
+One tick of the tour manager (`docs/agents/factory.md`): it routes a settled triage or slice, lands an ok slice as a PR,
 files approved splits and reports, restacks a stacked PR whose dependency merged, then starts one encore of a PR an
 official review requested changes on, else one build of a ready issue, else one triage of an intake issue, else a
 masterclass once 10 factory runs settled since the last, on the lessons of the newest 30; it routes a settled
@@ -8,7 +8,7 @@ masterclass by filing its proposals as `needs-approval` issues. A build continue
 has a reply to feed it. It drives maestro through `--json` and calls the forge's REST API directly as its own account,
 `maestro-tm`, which also pushes, and on a restack force-pushes, the PR's branch, and authors (and, with a key, signs)
 the commits it lands. A triage reads only the tour manager's question comments and comments mentioning its login, which
-each pass reads from `GET /user`.
+each tick reads from `GET /user`.
 
 A ticket whose dependencies are all in review builds on the newest one's PR head, and its PR targets that dependency's
 branch until the restack moves it to `main`. On a low-risk PR to `main` whose review left no findings upheld the tick
@@ -42,7 +42,7 @@ bun scripts/factory/index.ts [--milestone v0.1.0] [--preset xreview]... [--route
 
 | Flag           | Does                                                                                                    |
 | -------------- | ------------------------------------------------------------------------------------------------------- |
-| `--milestone`  | The milestone whose issues it triages and builds; overrides `MAESTRO_TM_MILESTONE` for that pass        |
+| `--milestone`  | The milestone whose issues it triages and builds; overrides `MAESTRO_TM_MILESTONE` for that tick        |
 | `--preset`     | A preset each triage, build and masterclass is performed with, such as `stub`; repeatable, in order[^p] |
 | `--route-only` | Routes settled concerts and syncs, then starts no build, triage or masterclass                          |
 
@@ -52,20 +52,20 @@ bun scripts/factory/index.ts [--milestone v0.1.0] [--preset xreview]... [--route
     `.maestro/presets/area-<area>.yaml`, whose content grows from the masterclass.
 
 It exits 0 when it acted or had nothing to do, 1 when the forge or maestro failed, its config is missing a key or the
-milestone does not exist (the next pass retries) and 2 on a bad flag. It keeps its lock, backlog snapshots and perform
+milestone does not exist (the next tick retries) and 2 on a bad flag. It keeps its lock, backlog snapshots and perform
 logs in `$XDG_RUNTIME_DIR/maestro-factory/`, and lands each slice in a jj workspace under
 `$XDG_CACHE_HOME/maestro-factory/`.
 
 ## Install
 
-The units run a pass every 5 minutes. Edit `WorkingDirectory`, `PATH` and the flags in the service to suit the machine;
+The units run a tick every 5 minutes. Edit `WorkingDirectory`, `PATH` and the flags in the service to suit the machine;
 the milestone is set in the `.env`, not the unit.
 
 ```sh
 cp scripts/factory/maestro-factory.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now maestro-factory.timer
-journalctl --user -u maestro-factory    # what each pass did
+journalctl --user -u maestro-factory    # what each tick did
 ```
 
 To stop it, `systemctl --user disable --now maestro-factory.timer`. A failure the tick cannot route halts it with an

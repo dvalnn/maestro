@@ -1,10 +1,10 @@
 [Unit]
-Description=One pass of the maestro factory
+Description=One tick of the maestro factory
 
 [Service]
 Type=oneshot
 WorkingDirectory=%h/Projects/maestro
 Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin
 ExecStart=/usr/bin/env mise exec -- bun scripts/factory/index.ts --preset xreview --preset xscout
-# The triage concert a pass starts is detached and must outlive the pass.
+# The triage concert a tick starts is detached and must outlive the tick.
 KillMode=process

@@ -1,5 +1,5 @@
 [Unit]
-Description=A pass of the maestro factory every 5 minutes
+Description=A tick of the maestro factory every 5 minutes
 
 [Timer]
 OnCalendar=*:0/5

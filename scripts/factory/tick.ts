@@ -1,4 +1,4 @@
-// What every step of a pass shares: its view of the forge and maestro, and the writes a step routes an issue with.
+// What every step of a tick shares: its view of the forge and maestro, and the writes a step routes an issue with.
 import { resolve } from "node:path";
 import type { Comment, Forge, Issue } from "./forge";
 import type { Landing } from "./land";
@@ -18,7 +18,7 @@ import type { State } from "./transitions";
 
 export const HALT = "maestro-tm:halt";
 export const REPO = resolve(import.meta.dir, "../..");
-/** The preset a triage and a masterclass perform with, ahead of the pass's own. */
+/** The preset a triage and a masterclass perform with, ahead of the tick's own. */
 export const TRIAGE_PRESET = "triage";
 /** A bare composition file's pack is its stem. */
 const TRIAGE = { pack: "triage", composition: "triage" };
@@ -34,7 +34,7 @@ export type Options = {
 	presets: string[];
 	/** Only route settled concerts and sync; start no build, triage or masterclass. */
 	routeOnly?: boolean;
-	/** Where the pass keeps its snapshots and perform logs. */
+	/** Where the tick keeps its snapshots and perform logs. */
 	dir: string;
 	/** Where the landing workspaces live. */
 	cache: string;
@@ -43,7 +43,7 @@ export type Deps = {
 	forge: Forge;
 	maestro: Maestro;
 	landing: Landing;
-	/** Takes the pass's lock, false when another pass holds it. */
+	/** Takes the tick's lock, false when another tick holds it. */
 	lock: () => boolean;
 	say: (line: string) => void;
 	/** Whether the repo has a file at `path`, relative to its root. */
@@ -51,15 +51,15 @@ export type Deps = {
 };
 
 export type Entry = { issue: Issue; comments: Comment[]; data: Data };
-/** One pass's view: `login` is the account the tick acts as on the forge. */
-export type Pass = Deps &
+/** One tick's view: `login` is the account the tick acts as on the forge. */
+export type Tick = Deps &
 	Options & {
 		milestoneId: number;
 		concerts: Concert[];
 		login: string;
-		/** The commit the forge holds as `main`, read once per pass after its guards. */
+		/** The commit the forge holds as `main`, read once per tick after its guards. */
 		main: string;
-		/** The newest closed issues, read once per pass. */
+		/** The newest closed issues, read once per tick. */
 		closed: () => Promise<Issue[]>;
 	};
 
@@ -102,7 +102,7 @@ export async function halt(
  * queued ticket waits on.
  */
 export async function writeSpec(
-	{ forge, login }: Pass,
+	{ forge, login }: Tick,
 	number: number,
 	state: State,
 	data: Data,
@@ -127,7 +127,7 @@ export const whichWay = (lead: string, options: Option[]) =>
 	);
 
 /**
- * Posts comment `body` on issue `number` unless one above comment id `after` holds it already, so a repeated pass
+ * Posts comment `body` on issue `number` unless one above comment id `after` holds it already, so a repeated tick
  * posts it once and a repeat of an answered question is posted again.
  */
 export async function ask(
@@ -169,16 +169,16 @@ export const isLow = (issue: Issue, { result }: Data) =>
  * it halted on the refusal of `what`.
  */
 export async function start(
-	pass: Pass,
+	tick: Tick,
 	what: string,
 	args: string[],
 	log?: string,
 ) {
 	try {
-		return await pass.maestro.start(args, log);
+		return await tick.maestro.start(args, log);
 	} catch (error) {
 		await halt(
-			pass,
+			tick,
 			`${what} did not start`,
 			`${what[0]?.toUpperCase()}${what.slice(1)} did not start:`,
 			message(error),

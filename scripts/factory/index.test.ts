@@ -11,7 +11,7 @@ import type {
 	Pull,
 	Review,
 } from "./forge";
-import { HALT, lock, milestoneOf, type Options, pass } from "./index";
+import { HALT, lock, milestoneOf, type Options, tick } from "./index";
 import type { Landing } from "./land";
 import type { Concert, Maestro, Report, Result, Spend } from "./maestro";
 import { stateOf, titleOf } from "./pick";
@@ -40,7 +40,7 @@ let seeded = 1;
 
 /**
  * A forge in memory that logs every write. Like Forgejo given a name it does not know, it ignores every query and
- * lists all open issues. `cut` names a write that fails once, as a pass cut short would.
+ * lists all open issues. `cut` names a write that fails once, as a tick cut short would.
  */
 function fakeForge(issues: Stored[], cut?: string, events: string[] = []) {
 	const writes: string[] = [];
@@ -353,7 +353,7 @@ const children = [
 ];
 
 /**
- * A pass over `issues`, `concerts` and `results`, on fakes. `Options.presets` is `["stub"]`, so each start carries
+ * A tick over `issues`, `concerts` and `results`, on fakes. `Options.presets` is `["stub"]`, so each start carries
  * `--preset stub`. The fake forge holds each issue by reference: its `body` and `comments` are the stored ones, and
  * writes edit them in place. `pins` is the list `pinned()` returns, so a test pins an issue by pushing its number. The
  * fake maestro records the argument list of each `start` in `starts` and `<id> in <dir>` of each `apply` in `applied`.
@@ -382,7 +382,7 @@ function setup(
 		cache: "/cache/maestro-factory",
 	};
 	const run = (locked = true) =>
-		pass(
+		tick(
 			{
 				forge: forge.forge,
 				maestro: maestro.maestro,
@@ -430,7 +430,7 @@ const duplicate: Triage = {
 	duplicateOf: 5,
 };
 
-describe("a pass", () => {
+describe("a tick", () => {
 	test("fetches origin once before it starts a concert, and starts at the forge's main", async () => {
 		const t = setup([issue(7, "needs-triage")]);
 		await t.run();
@@ -498,7 +498,7 @@ describe("a pass", () => {
 		],
 	];
 	test.each(verdicts)(
-		"routes %s to its labels, block and comment, and a second pass does nothing",
+		"routes %s to its labels, block and comment, and a second tick does nothing",
 		async (_, triage, labels, open, shown, question) => {
 			const triaged = issue(7, "needs-triage");
 			triaged.labels.push("area/docs", "risk/low");
@@ -617,7 +617,7 @@ describe("a pass", () => {
 		expect(t.writes.some((w) => w.startsWith("file"))).toBe(false);
 	});
 
-	test("files an approved split's children once across a cut pass, ensuring a reused child's labels", async () => {
+	test("files an approved split's children once across a cut tick, ensuring a reused child's labels", async () => {
 		const result: Triage = {
 			...base,
 			verdict: "split",
@@ -974,7 +974,7 @@ describe("a pass", () => {
 	});
 
 	const idle: [string, boolean, Stored[], string, string][] = [
-		["a held lock", false, [], "ok", "another pass holds the lock"],
+		["a held lock", false, [], "ok", "another tick holds the lock"],
 		["a halt", true, [{ ...issue(5, "none"), labels: [HALT] }], "ok", "halted"],
 		["a running concert", true, [], "running", "concert c1 is still running"],
 	];
@@ -1172,7 +1172,7 @@ describe("a stale spec", () => {
 		expect(questionsAt(t.find(7))[0]).not.toContain("#10");
 	});
 
-	test("builds the next ready ticket in the same pass, and encores a continued build without comparing", async () => {
+	test("builds the next ready ticket in the same tick, and encores a continued build without comparing", async () => {
 		const t = setup([
 			written(specced(7, "ready-for-agent"), 100),
 			written(specced(8, "in-progress"), 200),
@@ -1659,7 +1659,7 @@ describe("a build", () => {
 		expect(t.opened).toHaveLength(1);
 	});
 
-	test("opens one PR when a pass cut after the push lands again", async () => {
+	test("opens one PR when a tick cut after the push lands again", async () => {
 		const t = setup(
 			[specced(7, "in-progress", { slice: "s1" })],
 			[sliceConcert("s1", 7)],
@@ -2308,7 +2308,7 @@ describe("a stack review", () => {
 		expect(merging(t.writes)).toEqual([]);
 	});
 
-	test("runs once across a pass cut before it recorded the review it started", async () => {
+	test("runs once across a tick cut before it recorded the review it started", async () => {
 		const t = epicWith("in-review", {}, {}, "edit comment");
 		await expect(t.run()).rejects.toThrow("cut at edit comment");
 		t.concerts.unshift(reviewConcert("started"));
@@ -2689,7 +2689,7 @@ describe("masterclass", () => {
 			{ ...sliceConcert("o2", 2), tour: "v0.1.0.masterclass" },
 			{ ...sliceConcert("o3", 3), tour: "v0.1.0-i3" },
 		];
-		// Past the pass's window of 20, so the pass does not wait on it.
+		// Past the tick's window of 20, so the tick does not wait on it.
 		const running = sliceConcert("u1", 3, "running");
 		const nine = [...runs(50, 9), ...noise, running, masterclassConcert("m0")];
 		const t = setup([], nine);

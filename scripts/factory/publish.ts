@@ -23,9 +23,9 @@ import {
 	isSlice,
 	message,
 	move,
-	type Pass,
 	partOf,
 	RETRIAGE,
+	type Tick,
 	UNCONTINUED,
 	whichWay,
 	writeSpec,
@@ -45,12 +45,12 @@ async function openPull(forge: Forge, pull: NewPull) {
 }
 
 /** Forgets and removes a landed workspace; a failure is a warning, since the next landing replaces a leftover. */
-async function closeWorkspace(pass: Pass, dir: string, name: string) {
+async function closeWorkspace(tick: Tick, dir: string, name: string) {
 	try {
-		await pass.landing.close(dir, name);
+		await tick.landing.close(dir, name);
 	} catch (error) {
 		const [reason] = message(error).split("\n");
-		pass.say(`could not remove workspace ${name} at ${dir}: ${reason}`);
+		tick.say(`could not remove workspace ${name} at ${dir}: ${reason}`);
 	}
 }
 
@@ -62,21 +62,21 @@ type Failure = { title: string; lead: string };
  * halted on `failure`, keeping the workspace for the next tick to replace once the halt closes.
  */
 async function inWorkspace<T>(
-	pass: Pass,
+	tick: Tick,
 	number: number,
 	base: string,
 	failure: Failure,
 	work: (dir: string) => Promise<T>,
 ): Promise<T | undefined> {
 	const name = `factory-i${number}`;
-	const dir = join(pass.cache, `i${number}`);
+	const dir = join(tick.cache, `i${number}`);
 	let done: T;
 	try {
-		await pass.landing.open(dir, name, base);
+		await tick.landing.open(dir, name, base);
 		done = await work(dir);
 	} catch (error) {
 		await halt(
-			pass,
+			tick,
 			failure.title,
 			`${failure.lead} from the workspace \`${dir}\`:`,
 			message(error),
@@ -84,7 +84,7 @@ async function inWorkspace<T>(
 		);
 		return undefined;
 	}
-	await closeWorkspace(pass, dir, name);
+	await closeWorkspace(tick, dir, name);
 	return done;
 }
 
@@ -94,12 +94,12 @@ type PullText = Pick<NewPull, "title" | "body"> & { held: boolean };
 type Outcome = { pull: number; stack?: Stack } | { question: string };
 
 /** What each slice concert of `issue`'s tour spent, oldest first, the one still running left out. */
-async function spendOf(pass: Pass, issue: Issue) {
-	const tour = await pass.maestro.concerts(
-		tourOf(pass.milestone, issue.number),
+async function spendOf(tick: Tick, issue: Issue) {
+	const tour = await tick.maestro.concerts(
+		tourOf(tick.milestone, issue.number),
 	);
 	const slices = tour.filter((c) => isSlice(c) && c.status !== "running");
-	return Promise.all(slices.reverse().map((c) => pass.maestro.spend(c.id)));
+	return Promise.all(slices.reverse().map((c) => tick.maestro.spend(c.id)));
 }
 
 /**
@@ -155,16 +155,16 @@ function epicOf(issue: Issue) {
  * Whether `entry` is the last open child of an epic whose stack review has yet to clear it: none ran, or its findings
  * await an encore (factory.md, Rules, Build: Stack review).
  */
-async function awaitsStackReview(pass: Pass, { issue, data }: Entry) {
+async function awaitsStackReview(tick: Tick, { issue, data }: Entry) {
 	const epic = epicOf(issue);
 	if (epic === undefined) return false;
 	const epicData = dataOf(
-		specCommentOf(await pass.forge.comments(epic))?.body ?? "",
+		specCommentOf(await tick.forge.comments(epic))?.body ?? "",
 	);
 	if (!epicData.base) return false;
 	const siblings = (epicData.filed ?? []).filter((n) => n !== issue.number);
 	for (const n of siblings)
-		if ((await pass.forge.issue(n)).closed === undefined) return false;
+		if ((await tick.forge.issue(n)).closed === undefined) return false;
 	const routed =
 		epicData.stackReview !== undefined &&
 		epicData.stackReview === epicData.concert;
@@ -176,21 +176,21 @@ async function awaitsStackReview(pass: Pass, { issue, data }: Entry) {
  * unless its review left findings unresolved.
  */
 async function publish(
-	pass: Pass,
+	tick: Tick,
 	entry: Entry,
 	dir: string,
 	commit: string,
 	{ held, ...pull }: NewPull & Pick<PullText, "held">,
 ) {
-	await pass.forge.push(dir, commit, pull.head);
-	const number = await openPull(pass.forge, pull);
+	await tick.forge.push(dir, commit, pull.head);
+	const number = await openPull(tick.forge, pull);
 	if (
 		!held &&
 		pull.base === BASE &&
 		isLow(entry.issue, entry.data) &&
-		!(await awaitsStackReview(pass, entry))
+		!(await awaitsStackReview(tick, entry))
 	)
-		await pass.forge.arm(number);
+		await tick.forge.arm(number);
 	return number;
 }
 
@@ -199,17 +199,17 @@ async function publish(
  * there; a conflict asks.
  */
 async function restackIn(
-	pass: Pass,
+	tick: Tick,
 	entry: Entry,
 	dir: string,
 	stack: Stack,
 	revision: string,
 	text: PullText,
 ): Promise<Outcome> {
-	const restacked = await pass.landing.restack(
+	const restacked = await tick.landing.restack(
 		dir,
 		`${stack.commit}..${revision}`,
-		pass.main,
+		tick.main,
 	);
 	if ("conflict" in restacked)
 		return {
@@ -217,7 +217,7 @@ async function restackIn(
 		};
 	const head = branchOf(entry.issue.number);
 	const pull = { ...text, head, base: BASE };
-	return { pull: await publish(pass, entry, dir, restacked.commit, pull) };
+	return { pull: await publish(tick, entry, dir, restacked.commit, pull) };
 }
 
 /**
@@ -225,7 +225,7 @@ async function restackIn(
  * comment asking which way.
  */
 async function record(
-	pass: Pass,
+	tick: Tick,
 	{ issue, data }: Entry,
 	concert: string | undefined,
 	outcome: Outcome,
@@ -242,18 +242,18 @@ async function record(
 			{ label: "`ready-for-agent`", text: `build it again on \`${BASE}\`` },
 			RETRIAGE,
 		];
-		await ask(pass, issue.number, whichWay(outcome.question, options));
-		await move(pass, issue.number, "needs-info");
-		await writeSpec(pass, issue.number, "needs-info", landed);
-		pass.say(`asked on #${issue.number}: ${outcome.question.split("\n")[0]}`);
+		await ask(tick, issue.number, whichWay(outcome.question, options));
+		await move(tick, issue.number, "needs-info");
+		await writeSpec(tick, issue.number, "needs-info", landed);
+		tick.say(`asked on #${issue.number}: ${outcome.question.split("\n")[0]}`);
 		return;
 	}
-	await move(pass, issue.number, "in-review");
-	await writeSpec(pass, issue.number, "in-review", {
+	await move(tick, issue.number, "in-review");
+	await writeSpec(tick, issue.number, "in-review", {
 		...landed,
 		stack: outcome.stack,
 	});
-	pass.say(`#${issue.number} is in review as PR #${outcome.pull}`);
+	tick.say(`#${issue.number} is in review as PR #${outcome.pull}`);
 }
 
 /**
@@ -262,36 +262,36 @@ async function record(
  * else restacked onto `main` (factory.md, Rules, Build: Restack).
  */
 async function landIn(
-	pass: Pass,
+	tick: Tick,
 	entry: Entry,
 	id: string,
 	report: Report,
 	dir: string,
 ): Promise<Outcome> {
 	const { issue, data } = entry;
-	const text = pullText(issue, data, report, await spendOf(pass, issue));
-	await pass.maestro.apply(id, dir);
+	const text = pullText(issue, data, report, await spendOf(tick, issue));
+	await tick.maestro.apply(id, dir);
 	const message = `${text.title}\n\nRefs: #${issue.number}\n`;
 	const commit = data.revisionBase
-		? await pass.landing.squash(dir, message)
-		: await pass.landing.describe(dir, message);
+		? await tick.landing.squash(dir, message)
+		: await tick.landing.describe(dir, message);
 	const head = branchOf(issue.number);
 	const { stack } = data;
 	if (!stack)
 		return {
-			pull: await publish(pass, entry, dir, commit, {
+			pull: await publish(tick, entry, dir, commit, {
 				...text,
 				head,
 				base: BASE,
 			}),
 		};
-	const state = await stackState(pass.forge, issue.number, stack);
+	const state = await stackState(tick.forge, issue.number, stack);
 	if (state === "unmerged") return { question: unmerged(stack) };
 	if (state === "merged")
-		return restackIn(pass, entry, dir, stack, commit, text);
+		return restackIn(tick, entry, dir, stack, commit, text);
 	const base = branchOf(stack.blocker);
 	const pull = { ...text, head, base };
-	return { pull: await publish(pass, entry, dir, commit, pull), stack };
+	return { pull: await publish(tick, entry, dir, commit, pull), stack };
 }
 
 /**
@@ -299,41 +299,41 @@ async function landIn(
  * halted, keeping the workspace.
  */
 export async function land(
-	pass: Pass,
+	tick: Tick,
 	entry: Entry,
 	id: string,
 	report: Report,
 ) {
 	const { issue, data } = entry;
 	const outcome = await inWorkspace(
-		pass,
+		tick,
 		issue.number,
-		data.revisionBase ?? data.stack?.commit ?? pass.main,
+		data.revisionBase ?? data.stack?.commit ?? tick.main,
 		{
 			title: `landing of #${issue.number} failed`,
 			lead: `The slice concert \`${id}\` of #${issue.number} did not land`,
 		},
-		(dir) => landIn(pass, entry, id, report, dir),
+		(dir) => landIn(tick, entry, id, report, dir),
 	);
 	if (!outcome) return false;
-	await record(pass, entry, id, outcome);
+	await record(tick, entry, id, outcome);
 	return true;
 }
 
 /** Restacks `entry`'s pushed branch onto `main` in a fresh workspace, with its landed concert's PR text. */
-function restackBranch(pass: Pass, entry: Entry, stack: Stack) {
+function restackBranch(tick: Tick, entry: Entry, stack: Stack) {
 	const { issue, data } = entry;
 	const failure = {
 		title: `restack of #${issue.number} failed`,
 		lead: `The stacked change of #${issue.number} did not restack onto \`${BASE}\``,
 	};
-	return inWorkspace(pass, issue.number, pass.main, failure, async (dir) => {
+	return inWorkspace(tick, issue.number, tick.main, failure, async (dir) => {
 		if (!data.concert)
 			throw new Error(`#${issue.number} holds no landed concert`);
-		const report = await pass.maestro.report(data.concert);
-		const text = pullText(issue, data, report, await spendOf(pass, issue));
+		const report = await tick.maestro.report(data.concert);
+		const text = pullText(issue, data, report, await spendOf(tick, issue));
 		return restackIn(
-			pass,
+			tick,
 			entry,
 			dir,
 			stack,
@@ -347,14 +347,14 @@ function restackBranch(pass: Pass, entry: Entry, stack: Stack) {
  * Restacks `entry`'s PR onto `main` once no blocker is open and its blocker's PR merged, or asks when that PR closed
  * unmerged (factory.md, Rules, Build: Restack); false when it halted.
  */
-export async function restack(pass: Pass, entry: Entry, stack: Stack) {
-	const state = await stackState(pass.forge, entry.issue.number, stack);
+export async function restack(tick: Tick, entry: Entry, stack: Stack) {
+	const state = await stackState(tick.forge, entry.issue.number, stack);
 	if (state === "open") return true;
 	const outcome =
 		state === "merged"
-			? await restackBranch(pass, entry, stack)
+			? await restackBranch(tick, entry, stack)
 			: { question: unmerged(stack) };
 	if (!outcome) return false;
-	await record(pass, entry, entry.data.concert, outcome);
+	await record(tick, entry, entry.data.concert, outcome);
 	return true;
 }

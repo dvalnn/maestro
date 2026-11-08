@@ -115,8 +115,8 @@ flowchart TD
 ```
 
 1. Until the `maestro-tm:halt` issue closes (Rules, Policy: Halt).
-2. Read the forge's `main` commit, then fetch `origin`; a failed fetch ends the pass as failed (Rules, Landing and PRs:
-   Pass base).
+2. Read the forge's `main` commit, then fetch `origin`; a failed fetch ends the tick as failed (Rules, Landing and PRs:
+   Tick base).
 3. A merged PR closes its issue through its `Closes #N`; a stacked PR whose dependency merged restacks onto `main`
    (Rules, Build: Restack); closed dependencies free tickets; an approved split files its children (Rules, Triage:
    Splits) and its last closed child closes the epic.
@@ -238,7 +238,7 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   `ready-for-agent` for a slice, `needs-triage` for a triage) is not applied. A closed ticket is left alone. Otherwise
   the ticket moves to `needs-info`, the concert is marked routed, and a question comment asks which way:
   - A slice is kept as `parked`; the question offers `in-progress` (apply the parked result), `ready-for-agent` (build
-    again) or `needs-triage`. The next pass that finds the ticket in `in-progress` routes it as its settle; any other
+    again) or `needs-triage`. The next tick that finds the ticket in `in-progress` routes it as its settle; any other
     move clears `parked`.
   - A triage's verdict is dropped as stale, and the question offers only `needs-triage`.
 
@@ -313,11 +313,11 @@ flowchart TD
 
 ### Landing and PRs
 
-- **Pass base.** After its guards a pass reads the commit the forge holds as `main`, then fetches `origin` once; a
-  failed fetch fails the pass. Every triage, unstacked build, masterclass, landing, restack and split base uses that
+- **Tick base.** After its guards a tick reads the commit the forge holds as `main`, then fetches `origin` once; a
+  failed fetch fails the tick. Every triage, unstacked build, masterclass, landing, restack and split base uses that
   commit (`-c target.base=<commit>` for a start), never the local `main`. A stacked build and a revision keep their PR's
   commit.
-- **Landing.** An ok slice lands in a fresh jj workspace on the pass's `main` commit, or on the commit it stacked on:
+- **Landing.** An ok slice lands in a fresh jj workspace on the tick's `main` commit, or on the commit it stacked on:
   `maestro cs apply`, then `jj describe` with the spec's subject and `Refs: #N`, or for a revision `jj squash` into the
   PR head with that description. It runs no check of its own: the slice's gate passed in its lane, and CI checks the PR
   against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
@@ -352,7 +352,7 @@ shows the issue.
 
 ## Forge surfaces
 
-What the tick writes on an issue. `<login>` is the account it acts as (`maestro-tm`), read once per pass from
+What the tick writes on an issue. `<login>` is the account it acts as (`maestro-tm`), read once per tick from
 `GET /user`. Agent text in any of them is made inert: every `<!--` is broken, so it opens no HTML comment, and a Mermaid
 `-->` stays whole.
 
@@ -503,7 +503,7 @@ Reasons: <reason>; <reason> · Relates to #<n> · Last concert: `<concert id>`
 ### Data
 
 The `<data>` line is one JSON object, the tick's only state. The `read`, `review` and `revisionBase` fields are
-positions a later pass resumes from. A line the tick cannot read halts the tour manager.
+positions a later tick resumes from. A line the tick cannot read halts the tour manager.
 
 | Field          | Holds                                              | Set by                             | Cleared by                                                   |
 | -------------- | -------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------ |
