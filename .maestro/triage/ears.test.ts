@@ -19,6 +19,15 @@ const planOf = (requirements: unknown) =>
 test.each([
 	["a plain spec", planOf(["The CLI shall exit 0."]), 0, ""],
 	["a requirement off the shape", planOf(["Exit 0."]), 3, "R1 breaks"],
+	[
+		"a split plan",
+		JSON.stringify({
+			verdict: "split",
+			children: [{ title: "a", body: "b", dependsOn: [] }],
+		}),
+		0,
+		"split: no requirements to check",
+	],
 	["no requirements list", "{}", 2, ""],
 	["requirements that are not text", planOf([1]), 2, ""],
 	["a file that is not JSON", "plan", 2, ""],
