@@ -29,7 +29,7 @@ The shape is:
   so a call sets none of them and the command line keeps the last word. A call that needs another budget uses another
   seat bound to another profile.
 - **Config tunes and rebinds, in YAML only.** `profiles: { <name>: { ...fields } }` tunes a profile by name, and
-  `seats: { <composition id>/<seat>: <profile> }` rebinds a seat. Presets and `-c` use the same keys.
+  `seats: { <pack>/<composition id>/<seat>: <profile> }` rebinds a seat. Presets and `-c` use the same keys.
 - **Resolution happens at pre-flight**, and again on a resume, under the config as it stands. The IR holds the profile
   name only.
 

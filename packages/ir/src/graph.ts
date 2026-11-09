@@ -122,6 +122,8 @@ export type GraphIndex = {
 	groupsOf(id: string): string[];
 	/** The id of the innermost composition holding `id`: its nearest enclosing scope's, else the root's. */
 	compositionOf(id: string): string;
+	/** The pack of the root composition, which every node of the graph takes, a subcomposition's too. */
+	pack: string;
 	/** The nodes whose nearest enclosing group is `group`, in IR order. */
 	body(group: string): readonly IrNode[];
 	edgesInto(node: string): readonly IrEdge[];
@@ -158,6 +160,7 @@ export function indexGraph(ir: Ir): GraphIndex {
 		compositionOf: (id) =>
 			ancestors(id).flatMap((a) => scopes.get(a)?.composition ?? [])[0] ??
 			ir.composition.id,
+		pack: ir.composition.pack,
 		body: (group) => bodies.get(group) ?? [],
 		edgesInto: (node) => into.get(node) ?? [],
 		edgesFrom: (node) => from.get(node) ?? [],

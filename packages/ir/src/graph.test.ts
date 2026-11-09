@@ -120,3 +120,9 @@ test.each<[{ outcome: "ok" | "rejected"; reason?: string }, string, unknown]>([
 ])("outputValue of %j at '%s' is %j", (settled, port, value) => {
 	expect(outputValue(settled, { text: "a" }, port)).toEqual(value);
 });
+
+test("the pack is the root composition's, for a node inside a subcomposition's scope too", async () => {
+	const [ir, index] = await fixture("fanout-fanin-loop.json");
+	expect(index.pack).toBe("fixtures");
+	expect(index.compositionOf("refine/loop/step")).not.toBe(ir.composition.id);
+});

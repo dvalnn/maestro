@@ -848,6 +848,7 @@ async function executeIn(
 			.filter(isGroup)
 			.map((g) => g.kind),
 		composition: c.index.compositionOf(instance.node),
+		pack: c.index.pack,
 	});
 	const abandoned = Promise.withResolvers<HostNodeResult>();
 	const entry: Running = {

@@ -370,8 +370,8 @@ wins whole, and the others are its shadows.
 
 `profiles.<name>` in config tunes it. Per field, `-c` and `--preset` beat the config files' `profiles`, which beat the
 profile's own `profile.yaml`, so `--preset stub` always means no spend. A seat names one profile, defaulting to its own
-name; `seats.<composition id>/<seat>` in config rebinds it to another. Resolution happens at pre-flight and again on a
-resume.
+name; `seats.<pack>/<composition id>/<seat>` in config rebinds it to another. Resolution happens at pre-flight and again
+on a resume.
 
 `maestro agent ls` lists every profile and the root that wins it, and `maestro agent show` prints what one resolves to
 and the layer behind each value. `maestro agent probe` is under Harness adapters.
@@ -416,21 +416,25 @@ under it, so a formatter does not reflow it.
 
 The host owns four namespaces, and a code node sees its target as `env.repo`.
 
-| Key                             | Holds                                                          |
-| ------------------------------- | -------------------------------------------------------------- |
-| `target.repo`                   | absolute path of the repository lanes are cut from             |
-| `target.base`                   | optional default `base`; else the target's `HEAD`              |
-| `target.checks`                 | the named checks                                               |
-| `target.prepare`                | lines that set a lane up, in any form a check takes            |
-| `target.sparse`                 | directories, or `{ patterns }`, a lane checks out              |
-| `profiles.<name>`               | the fields that tune a profile[^profiles]                      |
-| `seats.<composition id>/<seat>` | the profile a seat runs[^seats]                                |
-| `sandbox.readOnly`              | host paths bound read-only into every agent, check and prepare |
-| `sandbox.path`                  | host directories first on every sandboxed `PATH`[^path]        |
+| Key                                    | Holds                                                          |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `target.repo`                          | absolute path of the repository lanes are cut from             |
+| `target.base`                          | optional default `base`; else the target's `HEAD`              |
+| `target.checks`                        | the named checks                                               |
+| `target.prepare`                       | lines that set a lane up, in any form a check takes            |
+| `target.sparse`                        | directories, or `{ patterns }`, a lane checks out              |
+| `profiles.<name>`                      | the fields that tune a profile[^profiles]                      |
+| `seats.<pack>/<composition id>/<seat>` | the profile a seat runs[^seats]                                |
+| `sandbox.readOnly`                     | host paths bound read-only into every agent, check and prepare |
+| `sandbox.path`                         | host directories first on every sandboxed `PATH`[^path]        |
 
 [^profiles]: Over its `profile.yaml`; `profiles."*"` covers every profile a layer does not name.
 
-[^seats]: Rebinds the seat's own profile, by the id of the innermost composition holding the seat.
+[^seats]:
+    Rebinds the seat's own profile. `<pack>` is the pack of the composition the concert runs, a subcomposition's seat
+    taking its root's, and a bare composition file's name less its extension. `<composition id>` is the innermost
+    composition holding the seat. Pre-flight refuses a key in any other form, and a key naming this concert's pack and
+    composition but no seat of it.
 
 [^path]:
     Each is bound read-only. It is machine-specific, so it belongs in the user config. `PATH` is `sandbox.path` in

@@ -11,7 +11,13 @@ import { compose } from "@maestro/core/compose";
 import { CORE_CONFIG, valuesLayer } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
 import { openRecord } from "@maestro/core/perform";
-import { type Ir, indexGraph } from "@maestro/ir";
+import {
+	IR_VERSION,
+	type Ir,
+	indexGraph,
+	parseIr,
+	TS_RUNTIME,
+} from "@maestro/ir";
 import { type HarnessRequest, OUTBOX, type StubStep } from "../harness/index";
 import { openSession, openTarget } from "./store";
 import {
@@ -180,12 +186,15 @@ describe("compose", () => {
 		]);
 	});
 
-	test("seats binds a seat by its innermost composition's id, at pre-flight: a profile no root holds and a seat a composition here lacks are refused", async () => {
+	test("seats binds a seat by its pack and innermost composition's id, at pre-flight: a profile no root holds and a key claimed by no seat of this pack's composition are refused", async () => {
 		const { host } = stubHost(() => [OK]);
 		const seats = {
-			"toy/builder": "nope",
-			"repair/biulder": "builder",
-			"elsewhere/builder": "builder",
+			"test/toy/builder": "nope",
+			"test/repair/biulder": "builder",
+			"test/repair/reviewer": "builder",
+			"test/toy/biulder": "builder",
+			"test/elsewhere/builder": "builder",
+			"other/repair/biulder": "builder",
 		};
 		const composed = await compose({
 			ir: scoped(host),
@@ -209,11 +218,161 @@ describe("compose", () => {
 			],
 			[
 				"HOST.seat",
-				"config key 'seats.repair/biulder' is claimed by no seat of composition 'repair'",
-				"Did you mean 'seats.repair/builder'? Rename 'seats.repair/biulder' to 'seats.repair/builder'",
+				"config key 'seats.test/repair/biulder' is claimed by no seat of composition 'test/repair'",
+				"Did you mean 'seats.test/repair/builder'? Rename 'seats.test/repair/biulder' to 'seats.test/repair/builder'",
+			],
+			[
+				"HOST.seat",
+				"config key 'seats.test/repair/reviewer' is claimed by no seat of composition 'test/repair'",
+				"Remove 'seats.test/repair/reviewer' from the config, or name a seat of 'test/repair': 'test/repair/builder'",
+			],
+			[
+				"HOST.seat",
+				"config key 'seats.test/toy/biulder' is claimed by no seat of composition 'test/toy'",
+				"Did you mean 'seats.test/toy/builder'? Rename 'seats.test/toy/biulder' to 'seats.test/toy/builder'",
 			],
 		]);
 	});
+
+	test("seats refuses a key naming this pack and a composition here that seats no agent, naming the seat keys there are", async () => {
+		const { host } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				{
+					id: "a",
+					kind: "agent",
+					config: agentOn(fresh),
+					literals: { prompt: "go" },
+				},
+				{
+					id: "probe/x",
+					kind: "check",
+					config: { lane: fresh, check: "hello" },
+				},
+			],
+			"a",
+			undefined,
+			[{ id: "probe", composition: "lint", ports: {} }],
+		);
+		const composed = await compose({
+			ir,
+			config: configOf(toyTarget(), {
+				seats: { "test/lint/builder": "builder" },
+			}),
+			roots: ROOTS,
+			core: CORE_CONFIG,
+			packs: {},
+			hosts: [host],
+			loadCode: noCode,
+			caps: {},
+		});
+		expect(
+			composed.ok
+				? []
+				: composed.diagnostics.map((d) => [d.code, d.message, d.hint]),
+		).toEqual([
+			[
+				"HOST.seat",
+				"config key 'seats.test/lint/builder' is claimed by no seat of composition 'test/lint'",
+				"Remove 'seats.test/lint/builder' from the config, or name a seat here: 'test/toy/builder'",
+			],
+		]);
+	});
+
+	test.each([
+		[
+			"seats only a check",
+			(host: Host) =>
+				irOf(
+					host,
+					[{ id: "x", kind: "check", config: { lane: fresh, check: "hello" } }],
+					"x",
+				),
+		],
+		[
+			"holds no repo node",
+			() => {
+				const parsed = parseIr({
+					irVersion: IR_VERSION,
+					composition: { id: "toy", version: "0.1.0", pack: "test" },
+					emitter: { name: "hand", version: "0.1.0" },
+					scopes: [],
+					nodes: [
+						{
+							id: "x",
+							kind: "code",
+							worker: {
+								runtime: TS_RUNTIME,
+								module: "m.ts",
+								export: "x",
+								codeHash: `sha256:${"0".repeat(64)}`,
+							},
+							out: { text: { type: "string" } },
+						},
+					],
+					edges: [],
+					result: { node: "x" },
+				});
+				if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+				return parsed.ir;
+			},
+		],
+	] as [string, (host: Host) => Ir][])(
+		"seats refuses a key naming this pack and composition when the concert %s",
+		async (_, irFor) => {
+			const { host } = stubHost(() => [OK]);
+			const composed = await compose({
+				ir: irFor(host),
+				config: configOf(toyTarget(), {
+					seats: { "test/toy/builder": "builder" },
+				}),
+				roots: ROOTS,
+				core: CORE_CONFIG,
+				packs: {},
+				hosts: [host],
+				loadCode: noCode,
+				caps: {},
+			});
+			expect(
+				composed.ok
+					? []
+					: composed.diagnostics.map((d) => [d.code, d.message, d.hint]),
+			).toEqual([
+				[
+					"HOST.seat",
+					"config key 'seats.test/toy/builder' is claimed by no seat of composition 'test/toy'",
+					"Remove 'seats.test/toy/builder' from the config: this concert seats no agent",
+				],
+			]);
+		},
+	);
+
+	test.each([
+		["its composition and seat", "repair/builder"],
+		["one segment", "builder"],
+		["four segments", "test/repair/builder/x"],
+	])(
+		"refuses a seats key without its pack at pre-flight: %s",
+		async (_, key) => {
+			const { host } = stubHost(() => [OK]);
+			const composed = await compose({
+				ir: scoped(host),
+				config: configOf(toyTarget(), { seats: { [key]: "builder" } }),
+				roots: ROOTS,
+				core: CORE_CONFIG,
+				packs: {},
+				hosts: [host],
+				loadCode: noCode,
+				caps: {},
+			});
+			expect(
+				composed.ok ? [] : composed.diagnostics.map((d) => [d.code, d.message]),
+			).toEqual([
+				["CFG.schema", `config 'seats.${key}' is not an allowed name`],
+			]);
+		},
+	);
 
 	test("needs names each check a node names, and nothing for an agent's profile", () => {
 		const { host } = stubHost(() => [OK]);
@@ -900,7 +1059,7 @@ describe("compose", () => {
 				literals: { prompt: "go" },
 			},
 			"HOST.seat",
-			"'w' and 'x' sit in two seats 'toy/builder'",
+			"'w' and 'x' sit in two seats 'test/toy/builder'",
 			undefined,
 		],
 		[
@@ -1366,8 +1525,14 @@ describe("perform", () => {
 		);
 
 	test.each([
-		["one composition's seat of the name", { "repair/builder": "rebound" }],
-		["both seats of the name", { "toy/builder": "x", "repair/builder": "x" }],
+		[
+			"one composition's seat of the name",
+			{ "test/repair/builder": "rebound" },
+		],
+		[
+			"both seats of the name",
+			{ "test/toy/builder": "x", "test/repair/builder": "x" },
+		],
 	] as [string, Record<string, string>][])(
 		"seats rebinding %s never clashes it with another composition's",
 		async (_, seats) => {
@@ -1388,14 +1553,27 @@ describe("perform", () => {
 		},
 	);
 
-	test("an agent runs the profile seats binds its seat to, keyed by the composition of its scope", async () => {
+	test("an agent runs the profile seats binds its seat to, keyed by its pack and the composition of its scope", async () => {
 		profile("rebound", "runtime: { harness: stub, model: rebound }\n");
 		const { host, requests } = stubHost(() => [OK]);
-		const seats = { "repair/builder": "rebound" };
+		const seats = { "test/repair/builder": "rebound" };
 		const config = configOf(toyTarget(), { seats });
 		const { result } = await performed(host, scoped(host), config);
 		expect(result.outcome).toBe("ok");
 		expect(requests.map((r) => r.runtime.model)).toEqual(["none", "rebound"]);
+	});
+
+	test("seats leaves another pack's composition of the same id alone", async () => {
+		profile("rebound", "runtime: { harness: stub, model: rebound }\n");
+		const { host, requests } = stubHost(() => [OK]);
+		const seats = {
+			"other/repair/builder": "rebound",
+			"other/toy/builder": "rebound",
+		};
+		const config = configOf(toyTarget(), { seats });
+		const { result } = await performed(host, scoped(host), config);
+		expect(result.outcome).toBe("ok");
+		expect(requests.map((r) => r.runtime.model)).toEqual(["none", "none"]);
 	});
 
 	test("a verdict agent that rejects is rejected with its reason and outputs", async () => {

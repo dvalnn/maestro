@@ -31,6 +31,7 @@ import {
 	resolveProfile,
 	SEATS,
 	seatBinding,
+	seatKey,
 	untunable,
 } from "../profile/index";
 import {
@@ -807,7 +808,7 @@ function attachmentClashes(r: AgentNode, profile: Profile): Finding[] {
 	});
 }
 
-/** An agent in a seat, keyed `<composition id>/<seat>`, that an earlier agent of the same key holds with another bound profile or verdict. */
+/** An agent in a seat, keyed `<pack>/<composition id>/<seat>`, that an earlier agent of the same key holds with another bound profile or verdict. */
 function seatClashes(
 	graph: GraphIndex,
 	agents: readonly AgentNode[],
@@ -815,7 +816,7 @@ function seatClashes(
 ): Finding[] {
 	const first = new Map<string, AgentNode>();
 	return agents.flatMap(({ node, config }) => {
-		const key = `${graph.compositionOf(node.id)}/${config.seat}`;
+		const key = seatKey(ownerOf(graph, node.id), config.seat);
 		const other = first.get(key);
 		if (!other) first.set(key, { node, kind: "agent", config });
 		const same =
@@ -835,30 +836,70 @@ function seatClashes(
 	});
 }
 
-/** The seats `seats` rebinds in a composition that seats agents here but holds no such seat, each refused by name. */
+/** Where the seat of node `id` of `graph` sits: the graph's pack and the node's innermost composition. */
+const ownerOf = (graph: GraphIndex, id: string) => ({
+	pack: graph.pack,
+	composition: graph.compositionOf(id),
+});
+
+/** How to fix `path`, a key of `composition` claimed by no seat: its `near` seat, else the seat keys there or here. */
+function unseatedFix(
+	path: string,
+	composition: string,
+	near: string | undefined,
+	names: readonly string[],
+	keys: readonly string[],
+): string {
+	if (near !== undefined)
+		return `Did you mean '${SEATS}.${composition}/${near}'? Rename '${path}' to '${SEATS}.${composition}/${near}'`;
+	const remove = `Remove '${path}' from the config`;
+	if (names.length)
+		return `${remove}, or name a seat of '${composition}': ${listed(names.map((n) => `${composition}/${n}`))}`;
+	return keys.length
+		? `${remove}, or name a seat here: ${listed(keys)}`
+		: `${remove}: this concert seats no agent`;
+}
+
+/**
+ * The seats `seats` rebinds in this concert's pack, in a composition of this concert that holds no such seat, each
+ * refused by name.
+ */
 function unseated(
 	graph: GraphIndex,
 	agents: readonly AgentNode[],
 	setup: HostSetup,
 ): Diagnostic[] {
+	const compositions = new Set([
+		graph.compositionOf(""), // the root's: no id sits in a scope
+		...[...graph.scopes.values()].map((s) => s.composition),
+	]);
 	const held = Map.groupBy(agents, (a) => graph.compositionOf(a.node.id));
+	const keys = [
+		...new Set(
+			agents.map((a) => seatKey(ownerOf(graph, a.node.id), a.config.seat)),
+		),
+	];
 	const seats = setup.config[SEATS];
 	return Object.keys(isPlainObject(seats) ? seats : {}).flatMap((key) => {
-		const [composition = "", seat = ""] = key.split("/");
-		const names = [
-			...new Set(held.get(composition)?.map((a) => a.config.seat)),
-		];
-		if (!names.length || names.includes(seat)) return [];
+		const [pack = "", id = "", seat = ""] = key.split("/");
+		const names = [...new Set(held.get(id)?.map((a) => a.config.seat))];
+		if (pack !== graph.pack || !compositions.has(id) || names.includes(seat))
+			return [];
+		const composition = `${pack}/${id}`;
 		const path = `${SEATS}.${key}`;
-		const near = closest(seat, names);
+		const fix = unseatedFix(
+			path,
+			composition,
+			closest(seat, names),
+			names,
+			keys,
+		);
 		return [
 			configDiagnostic(
 				"HOST.seat",
 				sourceOf(setup, [SEATS, key]),
 				`config key '${path}' is claimed by no seat of composition '${composition}'`,
-				near === undefined
-					? `Remove '${path}' from the config, or name a seat of '${composition}': ${listed(names)}`
-					: `Did you mean '${SEATS}.${composition}/${near}'? Rename '${path}' to '${SEATS}.${composition}/${near}'`,
+				fix,
 			),
 		];
 	});
@@ -879,7 +920,7 @@ async function profileFindings(
 	const bound = new Map(
 		agents.map((a) => [
 			a.node.id,
-			seatBinding(setup, graph.compositionOf(a.node.id), a.config).profile,
+			seatBinding(setup, ownerOf(graph, a.node.id), a.config).profile,
 		]),
 	);
 	const { profiles, errors } = await resolveAll([...bound.values()], setup);
@@ -904,7 +945,7 @@ async function profileFindings(
 
 /**
  * The host's compose-time rules: agents built before profiles, the profiles agents run, the lane rules (HOST-02), the
- * session rules, names config must have, binds (HOST-11) and the target. A graph without repo nodes has none to break.
+ * session rules, names config must have, binds (HOST-11) and the target. A graph without repo nodes breaks only `seats`.
  */
 export async function validateRepo(
 	graph: GraphIndex,
@@ -914,7 +955,7 @@ export async function validateRepo(
 	const legacy = legacyAgents(graph);
 	if (legacy.length) return legacy.map(error);
 	const nodes = repoNodes(graph);
-	if (!nodes.length) return [];
+	if (!nodes.length) return unseated(graph, [], hostSetup);
 	const setup = repoSetup(hostSetup);
 	const agents = nodes.filter((r): r is AgentNode => r.kind === "agent");
 	const profiled = await profileFindings(graph, agents, hostSetup, harnesses);

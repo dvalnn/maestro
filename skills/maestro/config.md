@@ -26,8 +26,8 @@ target:
 profiles: # tunes profiles by name, over each one's profile.yaml
   builder: { runtime: { harness: claude, model: sonnet, thinking: high } }
 
-seats: # points a seat at another profile, keyed <composition id>/<seat>: the innermost composition the seat runs in
-  repair_until_green/builder: builder
+seats: # points a seat at another profile, keyed <pack>/<composition id>/<seat>: the pack the concert runs, the innermost composition the seat runs in
+  classics/repair_until_green/builder: builder # a bare file mine.ts has the pack mine
 
 packs: [/home/me/packs/mine] # a pack outside the packs directory; absolute: paths are not expanded
 

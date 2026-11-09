@@ -143,10 +143,10 @@ describe("build_then_repair", () => {
 			"build_then_repair: up to 11 node instances, up to 3 repo.agent",
 		);
 		expect(out).toMatch(
-			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}build +build_then_repair\/builder +classics\/builder +pi +none +-\n/,
+			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}build +classics\/build_then_repair\/builder +classics\/builder +pi +none +-\n/,
 		);
 		expect(out).toMatch(
-			/ {2}repair_until_green\/loop\/repair +repair_until_green\/builder +classics\/builder +pi +none +-\n/,
+			/ {2}repair_until_green\/loop\/repair +classics\/repair_until_green\/builder +classics\/builder +pi +none +-\n/,
 		);
 	});
 

@@ -14,6 +14,7 @@ import {
 	profilesDigest,
 	resolveUnsettled,
 	seatBinding,
+	seatKey,
 	type Unsettled,
 } from "../profile/index";
 import { agentKind, agentPrompt } from "./agent";
@@ -90,7 +91,7 @@ export type RepoHostOptions = {
 /** What an agent node runs: its profile, and the runtime the profile resolves to. */
 export type AgentRuntime = {
 	node: string;
-	/** `<composition id>/<seat>`. */
+	/** `<pack>/<composition id>/<seat>`. */
 	seat: string;
 	profile: string;
 } & Partial<Runtime>;
@@ -98,7 +99,7 @@ export type AgentRuntime = {
 /** An agent node seated in a composition: where it sits, the profile it is bound to, and the prompt a profile gives it. */
 export type SeatedAgent = {
 	node: string;
-	/** `<composition id>/<seat>`, the key `seats` rebinds the seat by. */
+	/** `<pack>/<composition id>/<seat>`, the key `seats` rebinds the seat by. */
 	key: string;
 	binding: Binding;
 	prompt: (profile: Unsettled) => string;
@@ -110,12 +111,12 @@ export function seatedAgents(ir: Ir, setup: HostSetup): SeatedAgent[] {
 	return ir.nodes.flatMap((n): SeatedAgent[] => {
 		if (n.kind !== AGENT_KIND || isLegacyAgent(n.config)) return [];
 		const config = agentConfig(n.config);
-		const composition = graph.compositionOf(n.id);
+		const owner = { pack: graph.pack, composition: graph.compositionOf(n.id) };
 		return [
 			{
 				node: n.id,
-				key: `${composition}/${config.seat}`,
-				binding: seatBinding(setup, composition, config),
+				key: seatKey(owner, config.seat),
+				binding: seatBinding(setup, owner, config),
 				prompt: (profile) => agentPrompt(config, profile, setup),
 			},
 		];

@@ -58,8 +58,8 @@ const SEGMENT = irSchema.$defs.name.pattern.slice(1, -1);
 export const PROFILE_NAME = new RegExp(`^${SEGMENT}(?:/${SEGMENT})?$`);
 /** The `profiles` key whose entry applies to every profile its layer does not name, beneath the named entries. */
 export const ANY_PROFILE = "*";
-/** `<composition id>/<seat>`, the key `seats` rebinds a seat by (ADR 0013). */
-const SEAT_KEY = new RegExp(`^${SEGMENT}/${SEGMENT}$`);
+/** `<pack>/<composition id>/<seat>`, the key `seats` rebinds a seat by (ADR 0013). */
+const SEAT_KEY = new RegExp(`^${SEGMENT}/${SEGMENT}/${SEGMENT}$`);
 const OWNER_SEPARATOR = "/";
 /** The directory where an agent's sandbox mounts its attachments. */
 const ATTACHMENT_DIR = "/in";
@@ -307,16 +307,23 @@ const refusal = (source: Source | undefined, message: string, fix: string) =>
 /** The profile a seat runs, and where config rebound it, when it did. */
 export type Binding = { profile: string; source?: ValueSource };
 
+/** Where a seat sits: the pack of the concert's root composition, and the id of the composition holding the seat. */
+export type SeatOwner = { pack: string; composition: string };
+
+/** `<pack>/<composition>/<seat>`, the key `seats` rebinds seat `seat` of `owner` by. */
+export const seatKey = (owner: SeatOwner, seat: string) =>
+	`${owner.pack}/${owner.composition}/${seat}`;
+
 /**
- * The profile seat `seat.seat` of composition `composition` runs: the one `seats` in `setup` rebinds it to, keyed
- * `<composition>/<seat>`, else `seat.profile`, the one it declares.
+ * The profile seat `seat.seat` of `owner` runs: the one `seats` in `setup` rebinds it to, keyed
+ * `<pack>/<composition>/<seat>`, else `seat.profile`, the one it declares.
  */
 export function seatBinding(
 	setup: Pick<HostSetup, "config" | "sources">,
-	composition: string,
+	owner: SeatOwner,
 	seat: { seat: string; profile: string },
 ): Binding {
-	const key = `${composition}/${seat.seat}`;
+	const key = seatKey(owner, seat.seat);
 	const seats = setup.config[SEATS];
 	const bound =
 		isPlainObject(seats) && Object.hasOwn(seats, key) ? seats[key] : undefined;

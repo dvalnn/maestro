@@ -279,7 +279,8 @@ The agent tool answers one question for any agent on any harness: what does its 
   permission boundary. A field its harness cannot honour is a pre-flight error naming the profile, the field and the
   harness.
 - **AT-04 (Must).** A seat names one profile, and config may rebind it per composition, through `seats:` keyed
-  `<composition id>/<seat>`. There are no ad-hoc profiles. A call sets no runtime, limits or context.
+  `<pack>/<composition id>/<seat>`, so one pack's rebind leaves another pack's composition of the same id alone. There
+  are no ad-hoc profiles. A call sets no runtime, limits or context.
 - **AT-05 (Must).** One command shows a profile's effective environment, declared and, on request and where the harness
   reports it, observed. A mismatch is a fault of inspection, recorded in a concert and never enforced: no node instance
   fails on it.

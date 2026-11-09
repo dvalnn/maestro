@@ -909,11 +909,7 @@ async function execute(
 ): Promise<HostNodeResult> {
 	const setup = repoSetup(context.setup);
 	const config = agentConfig(instance.node.config);
-	const { profile: name } = seatBinding(
-		context.setup,
-		instance.composition,
-		config,
-	);
+	const { profile: name } = seatBinding(context.setup, instance, config);
 	const profile = await resolveProfile(name, context.setup);
 	const { runtime } = profile.fields;
 	const harness = harnesses.find((h) => h.name === runtime.harness);

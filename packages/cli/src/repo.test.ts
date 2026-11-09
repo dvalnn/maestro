@@ -1,6 +1,12 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { repoHost } from "@maestro/host-repo";
 import { stubHarness } from "@maestro/host-repo/harness";
@@ -617,7 +623,7 @@ describe("profiles", () => {
 		).toEqual([
 			{
 				node: "a",
-				seat: "smoke/smoke",
+				seat: "smoke/smoke/smoke",
 				profile: "smoke",
 				harness: "stub",
 				model: "big",
@@ -625,7 +631,7 @@ describe("profiles", () => {
 			},
 		]);
 		expect((await w.call(["compose", file, "--plan"])).out).toMatch(
-			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}a +smoke\/smoke +smoke +stub +none +low$/,
+			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}a +smoke\/smoke\/smoke +smoke +stub +none +low$/,
 		);
 	});
 
@@ -636,7 +642,7 @@ describe("profiles", () => {
 		const done = await w.call(["compose", file, "--plan"]);
 		expect(done.code).toBe(1);
 		expect(done.out).toMatch(
-			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}a +smoke\/smoke +smoke +- +- +-$/,
+			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}a +smoke\/smoke\/smoke +smoke +- +- +-$/,
 		);
 		expect(done.err).toContain("profile smoke: no harness or model");
 	});
@@ -651,27 +657,30 @@ describe("profiles", () => {
 			"--plan",
 		]);
 		expect(done.code).not.toBe(0);
-		expect(done.out).toMatch(/\n {2}a +smoke\/smoke +smoke +- +- +-$/);
+		expect(done.out).toMatch(/\n {2}a +smoke\/smoke\/smoke +smoke +- +- +-$/);
 		expect(done.err).toContain("limits.timeout 'bogus'");
 	});
 
-	test("seats rebinds a seat by <composition>/<seat>: the preset over the workspace config, -c over the preset", async () => {
-		const w = await repoWorld("seats:\n  smoke/smoke: ws\n");
+	test("seats rebinds a seat by <pack>/<composition>/<seat>, a bare file's pack its file name less the extension: the preset over the workspace config, -c over the preset, the plan showing the key", async () => {
+		const w = await repoWorld("seats:\n  mine/smoke/smoke: ws\n");
 		for (const name of ["ws", "pre", "flag"])
 			profileIn(w.cwd, name, `runtime: { harness: stub, model: ${name} }\n`);
 		await Bun.write(
 			join(w.cwd, ".maestro/presets/p.yaml"),
-			"seats:\n  smoke/smoke: pre\n",
+			"seats:\n  mine/smoke/smoke: pre\n",
 		);
-		const file = await smokeFile();
+		const file = join(dirname(await smokeFile()), "mine.ts");
+		renameSync(join(dirname(file), "smoke.ts"), file);
 		const bound = async (...flags: string[]) =>
 			json(await w.call(["compose", file, "--json", ...flags])).agents[0]
 				.profile;
 		expect(await bound()).toBe("ws");
 		expect(await bound("--preset", "p")).toBe("pre");
-		expect(await bound("--preset", "p", "-c", "seats.smoke/smoke=flag")).toBe(
-			"flag",
-		);
+		expect(
+			await bound("--preset", "p", "-c", "seats.mine/smoke/smoke=flag"),
+		).toBe("flag");
+		const plan = await w.call(["compose", file, "--plan"]);
+		expect(plan.out).toMatch(/\n {2}a +mine\/smoke\/smoke +ws +stub +ws +-$/m);
 	});
 
 	test("a resume resolves its profiles anew", async () => {
@@ -1234,7 +1243,7 @@ describe("agent prompt", () => {
 		expect(shown).toMatchObject({
 			code: 0,
 			out: staged,
-			err: "a · seat smoke/smoke · smoke",
+			err: "a · seat smoke/smoke/smoke · smoke",
 		});
 		const rebound = await w.call([
 			"agent",
@@ -1242,14 +1251,14 @@ describe("agent prompt", () => {
 			file,
 			"a",
 			"-c",
-			"seats.smoke/smoke=flag",
+			"seats.smoke/smoke/smoke=flag",
 		]);
-		expect(rebound.err).toBe("a · seat smoke/smoke · flag [-c]");
+		expect(rebound.err).toBe("a · seat smoke/smoke/smoke · flag [-c]");
 		expect(
 			json(await w.call(["agent", "prompt", file, "a", "--json"])),
 		).toEqual({
 			node: "a",
-			seat: { key: "smoke/smoke", profile: "smoke" },
+			seat: { key: "smoke/smoke/smoke", profile: "smoke" },
 			prompt: staged,
 		});
 	});
@@ -1268,7 +1277,7 @@ describe("agent prompt", () => {
 		const shown = await w.call(["agent", "prompt", await smokeFile(), "a"]);
 		expect(shown).toMatchObject({
 			code: 0,
-			err: "a · seat smoke/smoke · smoke",
+			err: "a · seat smoke/smoke/smoke · smoke",
 		});
 		expect(shown.out).toContain("# Your run");
 	});
