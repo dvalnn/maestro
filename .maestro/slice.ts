@@ -52,7 +52,12 @@ import {
 import FIGURES from "./prompts/_figures.md" with { type: "text" };
 import PLAIN from "./prompts/_plain.md" with { type: "text" };
 import { markdownOf, TIERS, type Tier, task } from "./shared";
-import { JUDGED, type PANELS, panelOf, QUESTIONS } from "./slice/lenses";
+import {
+	DESIGN_QUESTIONS,
+	JUDGED,
+	type PanelTier,
+	panelOf,
+} from "./slice/lenses";
 import TESTED_RULE from "./slice/prompts/_tested.md" with { type: "text" };
 import FIX from "./slice/prompts/fix.md" with { type: "text" };
 import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
@@ -70,8 +75,8 @@ const NOTHING_CHANGED = "the slice changed nothing";
 
 /** Each call's task: its own prompt file, then the shared fragments it rules by. */
 const TASKS = {
-	reviewer: task(REVIEWER, QUESTIONS, JUDGED),
-	reviewerAgain: task(REVIEWER_AGAIN, REVIEWER, QUESTIONS, JUDGED),
+	reviewer: task(REVIEWER, DESIGN_QUESTIONS, JUDGED),
+	reviewerAgain: task(REVIEWER_AGAIN, REVIEWER, DESIGN_QUESTIONS, JUDGED),
 	fix: task(FIX),
 	tester: task(TESTER),
 	writer: task(WRITER, PLAIN, FIGURES),
