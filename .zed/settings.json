@@ -1,9 +1,37 @@
 {
+  "wrap_guides": [120],
   "languages": {
+    "TypeScript": {
+      "hard_tabs": true,
+      "tab_size": 2,
+      "formatter": { "language_server": { "name": "biome" } },
+      "code_actions_on_format": { "source.organizeImports.biome": true }
+    },
+    "TSX": {
+      "hard_tabs": true,
+      "tab_size": 2,
+      "formatter": { "language_server": { "name": "biome" } },
+      "code_actions_on_format": { "source.organizeImports.biome": true }
+    },
+    "JavaScript": {
+      "hard_tabs": true,
+      "tab_size": 2,
+      "formatter": { "language_server": { "name": "biome" } },
+      "code_actions_on_format": { "source.organizeImports.biome": true }
+    },
+    "JSON": {
+      "hard_tabs": true,
+      "tab_size": 2,
+      "formatter": { "language_server": { "name": "biome" } }
+    },
+    "JSONC": {
+      "hard_tabs": true,
+      "tab_size": 2,
+      "formatter": { "language_server": { "name": "biome" } }
+    },
     "Markdown": {
       "preferred_line_length": 120,
       "soft_wrap": "none",
-      "wrap_guides": [120]
     }
   }
 }
