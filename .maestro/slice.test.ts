@@ -16,7 +16,7 @@ import {
 	stubbed,
 	stubOutputs,
 	targetRepo,
-} from "./stub";
+} from "./testing/stub";
 
 const ctx = { scratch } as CodeContext;
 

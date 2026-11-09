@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { classics, maestro } from "./stub";
+import { classics, maestro } from "./testing/stub";
 
 /** The plan of `file` composed under --preset risky with the packed classics. */
 const planOf = async (file: string, ...args: string[]) =>

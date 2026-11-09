@@ -5,7 +5,13 @@ import type { CodeContext } from "@maestro/sdk";
 import { readJson } from "@maestro/sdk/stdlib";
 import { Masterclass, settle } from "./masterclass";
 import PLANNER from "./masterclass/prompts/planner.md" with { type: "text" };
-import { classics, maestro, scratch, stubOutputs, targetRepo } from "./stub";
+import {
+	classics,
+	maestro,
+	scratch,
+	stubOutputs,
+	targetRepo,
+} from "./testing/stub";
 
 const lessons = join(scratch, "lessons.md");
 writeFileSync(lessons, "## c1 · t1\n\n- a lesson\n");

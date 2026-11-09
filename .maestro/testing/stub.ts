@@ -1,10 +1,10 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pack } from "../scripts/pack";
+import { pack } from "../../scripts/pack";
 
 export const scratch = mkdtempSync(join(tmpdir(), "maestro-"));
-export const root = join(import.meta.dir, "..");
+export const root = join(import.meta.dir, "../..");
 
 /** The classics pack's directory, once it is packed. */
 export const classics = pack(

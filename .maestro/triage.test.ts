@@ -11,7 +11,7 @@ import {
 	stubbed,
 	stubOutputs,
 	targetRepo,
-} from "./stub";
+} from "./testing/stub";
 import { answersOf } from "./triage";
 import {
 	askAlone,

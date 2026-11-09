@@ -38,7 +38,22 @@ export type Promotion = ValueOf<typeof Promotion>;
 export const Masterclass = Struct({ proposals: List(Promotion) });
 export type Masterclass = ValueOf<typeof Masterclass>;
 
+/** The concerts `lessons` has a heading for, and those an earlier masterclass read. */
+function concertsIn(lessons: string) {
+	const headings = [...lessons.matchAll(/^## (.+?) · (.*)$/gm)];
+	const idsOf = (matches: RegExpMatchArray[]) =>
+		new Set(matches.map((m) => m[1]));
+	return {
+		named: idsOf(headings),
+		alreadyRead: idsOf(headings.filter((m) => m[2]?.endsWith(" · read"))),
+	};
+}
+
 // ADR 0008: a code node's function must be exported by its composition file.
+/**
+ * The planner's proposals, each citing only concerts `lessons` names, less any that cites no concert but those an
+ * earlier masterclass read.
+ */
 export function settle(
 	{
 		masterclass,
@@ -51,12 +66,8 @@ export function settle(
 ): {
 	masterclass: Masterclass;
 } {
-	const headings = [
-		...readFileSync(ctx.path(lessons), "utf8").matchAll(/^## (.+?) · (.*)$/gm),
-	];
-	const named = new Set(headings.map((m) => m[1]));
-	const read = new Set(
-		headings.filter((m) => m[2]?.endsWith(" · read")).map((m) => m[1]),
+	const { named, alreadyRead } = concertsIn(
+		readFileSync(ctx.path(lessons), "utf8"),
 	);
 	return {
 		masterclass: {
@@ -66,7 +77,7 @@ export function settle(
 					concerts: [...new Set(p.concerts)].filter((id) => named.has(id)),
 				}))
 				// Dropped, not refused: docs/agents/factory.md#masterclass.
-				.filter((p) => p.concerts.some((id) => !read.has(id))),
+				.filter((p) => p.concerts.some((id) => !alreadyRead.has(id))),
 		},
 	};
 }
