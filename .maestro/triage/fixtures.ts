@@ -1,4 +1,4 @@
-import type { Proposal, Question, Ruling, Triage } from "./verdict";
+import type { Proposal, Question, Ruling, Triage } from "./schemas";
 
 export const CONTRACT = "touches packages/ir/src/a.ts, which set a contract";
 

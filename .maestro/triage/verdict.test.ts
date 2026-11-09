@@ -11,14 +11,9 @@ import {
 	spec,
 	unspecified,
 } from "./fixtures";
-import {
-	type Checked,
-	classify,
-	findingsOf,
-	type Proposal,
-	settle,
-	type Triage,
-} from "./verdict";
+import { classify } from "./risk";
+import type { Checked, Proposal, Triage } from "./schemas";
+import { findingsOf, settle } from "./verdict";
 
 const LOW = "touches only docs and tests, 3 paths or fewer";
 const many = (n: number) =>

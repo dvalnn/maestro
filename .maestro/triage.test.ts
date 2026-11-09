@@ -25,7 +25,7 @@ import {
 	spec,
 	unspecified,
 } from "./triage/fixtures";
-import { type Checked, Proposal, Ruling, type Triage } from "./triage/verdict";
+import { type Checked, Proposal, Ruling, type Triage } from "./triage/schemas";
 
 test("answersOf merges each group's answer in order, marking one whose scout failed unanswered", () => {
 	const dir = mkdtempSync(join(scratch, "answers-"));

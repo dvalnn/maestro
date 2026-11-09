@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { FIGURES as PLANNED } from "../../.maestro/triage/verdict";
+import { FIGURES as PLANNED } from "../../.maestro/triage/schemas";
 import {
 	askOf,
 	commentOf,

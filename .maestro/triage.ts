@@ -23,6 +23,7 @@ import {
 import FIGURES from "./prompts/_figures.md" with { type: "text" };
 import PLAIN from "./prompts/_plain.md" with { type: "text" };
 import { markdownOf, sealedBase, task } from "./shared";
+import { MAX_REQUIREMENT_WORDS } from "./triage/ears";
 import GATE from "./triage/prompts/_gate.md" with { type: "text" };
 import QUESTIONS from "./triage/prompts/_questions.md" with { type: "text" };
 import CHECKER from "./triage/prompts/checker.md" with { type: "text" };
@@ -30,22 +31,18 @@ import PLANNER from "./triage/prompts/planner.md" with { type: "text" };
 import REVISE from "./triage/prompts/revise.md" with { type: "text" };
 import SCOUT from "./triage/prompts/scout.md" with { type: "text" };
 import TRIAGER from "./triage/prompts/triager.md" with { type: "text" };
+import { NARROW } from "./triage/risk";
 import {
 	Checked,
-	findingsOf,
 	GROUP_SIZE,
 	Group,
 	MAX_BRIEF_REQUIREMENTS,
-	MAX_REQUIREMENT_WORDS,
-	NARROW,
 	type PROPOSED,
 	Proposal,
-	plansOf,
-	RUNNERS,
 	Ruling,
-	settle,
 	Triage,
-} from "./triage/verdict";
+} from "./triage/schemas";
+import { findingsOf, plansOf, RUNNERS, settle } from "./triage/verdict";
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export { settle, toMarkdown };
@@ -92,7 +89,12 @@ export function slotKey({ slot }: Slot): string {
 	return slot;
 }
 
-const numbered = (lines: string[]) => lines.map((l, i) => `${i + 1}. ${l}`);
+/** `group` as a Markdown section under a heading of `level`: its id and area, then its questions numbered. */
+const groupSection = ({ id, area, questions }: Group, level: "#" | "##") => [
+	`${level} ${id}: ${area}`,
+	"",
+	...questions.map((q, i) => `${i + 1}. ${q}`),
+];
 
 /** The group of `slot` as a Markdown file, for its scout. */
 export function groupOf(
@@ -100,11 +102,7 @@ export function groupOf(
 	ctx: CodeContext,
 ): { file: string } {
 	const file = join(ctx.scratch, "group.md");
-	const { id, area, questions } = group;
-	writeFileSync(
-		file,
-		[`# ${id}: ${area}`, "", ...numbered(questions), ""].join("\n"),
-	);
+	writeFileSync(file, [...groupSection(group, "#"), ""].join("\n"));
 	return { file };
 }
 
@@ -124,9 +122,7 @@ export function answersOf(
 	ctx: CodeContext,
 ): { answers: string } {
 	const sections = groups.flatMap((g, i) => [
-		`## ${g.id}: ${g.area}`,
-		"",
-		...numbered(g.questions),
+		...groupSection(g, "##"),
 		"",
 		answerOf(scouts[i], ctx),
 		"",
@@ -229,7 +225,7 @@ export const triage = composition(
 		const ruling = readJson(triaged.out.ruling);
 		const plans = lookup(plansOf(respec), ruling.get("verdict"));
 		const groups = ruling.get("groups");
-		const cut = {
+		const cutBacklog = {
 			artifact: triaged.out.backlog,
 			hint: "for the backlog issues that matter to this one, each with why",
 		};
@@ -256,7 +252,7 @@ export const triage = composition(
 							hint: "first, for the questions to answer",
 						},
 						issue: issued,
-						backlog: cut,
+						backlog: cutBacklog,
 					},
 				});
 			},
@@ -287,7 +283,7 @@ export const triage = composition(
 					artifact: triaged.out.ruling,
 					hint: "for the triager's questions and the files it expects to change",
 				},
-				backlog: cut,
+				backlog: cutBacklog,
 			},
 			out: { plan: JsonOut("plan.json", Proposal) },
 			when: plans,
@@ -312,11 +308,11 @@ export const triage = composition(
 			out: { check: JsonOut("check.json", Checked) },
 			when: lookup(CHECKS, plan.get("verdict")),
 		});
-		const findings = allSettled([readJson(checked.out.check)], {
+		const check = allSettled([readJson(checked.out.check)], {
 			label: "check",
 		});
-		const found = code(revisable, {
-			in: { proposal, check: findings },
+		const toRevise = code(revisable, {
+			in: { proposal, check },
 			out: { findings: Markdown(), revise: Bool() },
 			label: "revisable",
 		}).out;
@@ -327,19 +323,19 @@ export const triage = composition(
 			session: planned.out.session,
 			attachments: {
 				findings: {
-					artifact: found.findings,
+					artifact: toRevise.findings,
 					hint: "first, for the findings to settle",
 				},
 			},
 			out: { plan: JsonOut("plan.json", Proposal) },
-			when: found.revise,
+			when: toRevise.revise,
 		});
 		return code(settle, {
 			in: {
 				ruling,
 				respec: literal(respec, Bool()),
 				proposal,
-				check: findings,
+				check,
 				revision: allSettled([readJson(revised.out.plan)], {
 					label: "revision",
 				}),

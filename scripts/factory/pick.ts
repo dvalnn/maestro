@@ -1,5 +1,5 @@
 import type { Tier } from "../../.maestro/shared";
-import { RISKS, type Risk } from "../../.maestro/triage/verdict";
+import { RISKS, type Risk } from "../../.maestro/triage/risk";
 import type { Comment, Issue, Pull } from "./forge";
 import {
 	askOf,

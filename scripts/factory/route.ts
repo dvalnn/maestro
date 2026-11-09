@@ -4,13 +4,12 @@ import type {
 	Promotion as Proposal,
 } from "../../.maestro/masterclass";
 import { TIERS, type Tier } from "../../.maestro/shared";
+import { RISKS, type Risk } from "../../.maestro/triage/risk";
 import {
 	type Question,
-	RISKS,
-	type Risk,
 	VERDICTS,
 	type Verdict,
-} from "../../.maestro/triage/verdict";
+} from "../../.maestro/triage/schemas";
 import type { Comment } from "./forge";
 import { isJson, type Json } from "./json";
 import type { Spend } from "./maestro";
