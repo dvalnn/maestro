@@ -548,6 +548,24 @@ bubblewrap.
   does.
 - Nothing of the user's pi dir but `auth.json` reaches an agent.
 
+### Harness extras
+
+A profile's `harnessExtras` directory is copied into the config dir the adapter owns for the session, when that dir is
+new. What each harness reads from it:
+
+| Harness | Reads                                                                                      |
+| ------- | ------------------------------------------------------------------------------------------ |
+| pi      | `models.json`, its catalogue; each script in `extensions/`, loaded in name order           |
+| claude  | `settings.json` and its hooks, as `--setting-sources user`; each plugin in `plugins/`[^cl] |
+
+[^cl]: With extras, claude drops `disableAllHooks` and passes `--plugin-dir` when `plugins/` exists.
+
+- pi refuses an entry named `auth.json` or `settings.json`, which it writes itself; claude refuses none.
+- An extension may replace a built-in tool, and maestro adds no check: the extras are the user's opt-in code, and the
+  sandbox stays the boundary. pi drops an extension's own tools, so extras bring providers, catalogues and hooks.
+- Claude's named tools, strict MCP config and slash commands off still hold, so extras bring settings, hooks and plugin
+  hooks, never a tool, skill or MCP server.
+
 ### Environment report and probe
 
 An adapter also streams the harness's startup report as an `environment` event: what it loaded, each part by name. The

@@ -52,7 +52,7 @@ const HOOKS_OFF = [
 	"--settings",
 	JSON.stringify({ disableAllHooks: true }),
 ];
-/** Under harness extras, the session config dir's settings and hooks only: `user` is `CLAUDE_CONFIG_DIR`. */
+/** Under harness extras, `user` is `CLAUDE_CONFIG_DIR`, the session config dir (README: Harness extras). */
 const EXTRAS_HOOKS = ["--setting-sources", "user"];
 
 /**
@@ -367,8 +367,7 @@ const pluginArgv = (sessionDir: string): string[] =>
 /**
  * The claude argv for a request. The prompt travels on stdin, the instructions in a file claude appends to its system
  * prompt. The sandbox is the confinement, so claude's own permission prompts are off. The system prompt is not
- * snapshotted, or a resumed session would keep its first instructions. Under harness extras, claude reads the session
- * config dir's settings and hooks, and loads each plugin under its `plugins` dir.
+ * snapshotted, or a resumed session would keep its first instructions.
  */
 function claudeArgv(
 	bin: string,

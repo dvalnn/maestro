@@ -57,15 +57,10 @@ const THINKING_LEVELS = [
 const AUTH_FILE = "auth.json";
 /**
  * The agent dir maestro owns under the session dir, as `PI_CODING_AGENT_DIR`, so nothing of the user's pi dir but
- * `auth.json` reaches pi: no `SYSTEM.md`, `APPEND_SYSTEM.md`, `settings.json` or `models.json`. It holds `auth.json`, a
- * link to the user's, bound read-write in the sandbox so a token refresh writes through, and under a `compact` policy
- * maestro's own `settings.json`. When the dir is built anew it also holds a copy of the profile's harness extras (never
- * `auth.json` or `settings.json`, which the extras check refuses): `models.json` is pi's catalogue and each script in
- * `extensions/` is loaded by an explicit `--extension` under `--no-extensions`. An extension there may replace a
- * built-in tool such as `read`: the extras are the owner's opt-in code and the sandbox stays the one boundary, so no
- * detection or refusal is added. pi's `--tools` drops an extension's own tools, so extras bring providers, catalogues
- * and hooks only. Without a user `auth.json` pi starts and reports no key. Its own `auth.json.lock`
- * keeps concurrent agents and the user's pi from locking each other on a refresh; a lost write means logging in again.
+ * `auth.json` reaches pi. It holds `auth.json`, a link to the user's, bound read-write so a token refresh writes
+ * through, and under a `compact` policy maestro's own `settings.json`. Its `auth.json.lock` keeps concurrent agents
+ * from locking each other on a refresh; a lost write means logging in again. What it reads from harness extras, and
+ * why no check is added, is under "Harness extras" in the host-repo README.
  */
 const SESSION_AGENT = "agent";
 /** The fields of a provider entry in pi's `auth.json` that hold a credential: an API key, an OAuth token pair. */
