@@ -11,11 +11,11 @@ TERMINATED=143
 GITHUB=https://github.com
 GITHUB_API=https://api.github.com
 REPO=dvalnn/maestro
-REQUIRED_ASSETS="maestro-skill.tar.gz"
-# The binary, gzipped since 0.1.0-rc.5 to fit the forge's upload limit; a release before ships it as it is.
 BINARY=maestro-linux-x64
-# The harness versions a release supports, one `<tool> <version>` per line; releases before 0.1.0-rc.6 ship none.
+# The harness versions a release supports, one `<tool> <version>` per line.
 HARNESSES=harnesses
+REQUIRED_ASSETS="maestro-skill.tar.gz $BINARY.gz $HARNESSES"
+RETRY="Run this again, and report it if it persists"
 MIN_GIT=2.40
 MISE_URL=https://mise.jdx.dev/getting-started.html
 
@@ -71,21 +71,18 @@ fetch_assets() {
   while read -r _ asset; do
     asset=${asset#\*}
     case $asset in
-      */* | .*) fail "SHA256SUMS names '$asset', which is not a release asset" "Run this again, and report it if it persists" ;;
+      */* | .*) fail "SHA256SUMS names '$asset', which is not a release asset" "$RETRY" ;;
     esac
     fetch "$asset"
   done <SHA256SUMS
   for asset in $REQUIRED_ASSETS; do
-    [ -f "$asset" ] || fail "SHA256SUMS does not list $asset" "Pin a release that has it with MAESTRO_VERSION=<tag>"
+    [ -f "$asset" ] || fail "SHA256SUMS does not list $asset" "$RETRY"
   done
-  [ -f "$BINARY.gz" ] || [ -f "$BINARY" ] ||
-    fail "SHA256SUMS does not list $BINARY.gz" "Pin a release that has it with MAESTRO_VERSION=<tag>"
   ls classics-*.tar.gz maestro-ir-[0-9]*.tgz maestro-sdk-[0-9]*.tgz maestro-host-repo-sdk-[0-9]*.tgz >/dev/null 2>&1 ||
-    fail "SHA256SUMS does not list the classics pack or the sdk tarballs" "Pin a release that has them with MAESTRO_VERSION=<tag>"
+    fail "SHA256SUMS does not list the classics pack or the sdk tarballs" "$RETRY"
   say "verifying checksums"
-  sha256sum -c --quiet SHA256SUMS >&2 || fail "the downloaded assets do not match SHA256SUMS" "Run this again, and report it if it persists"
-  [ ! -f "$BINARY.gz" ] || gzip -dc "$BINARY.gz" >"$BINARY" ||
-    fail "cannot unpack $BINARY.gz" "Run this again, and report it if it persists"
+  sha256sum -c --quiet SHA256SUMS >&2 || fail "the downloaded assets do not match SHA256SUMS" "$RETRY"
+  gzip -dc "$BINARY.gz" >"$BINARY" || fail "cannot unpack $BINARY.gz" "$RETRY"
 }
 
 # Fails when the installed maestro, if any, lists a running concert or cannot list concerts.
@@ -123,12 +120,8 @@ install_assets() {
     run tar -xzf maestro-skill.tar.gz -C "$skill_dir"
   done
   run rm -f "$data_dir"/sdk/maestro-*-[0-9]*.tgz
-  for package in ir sdk host-repo-sdk; do
+  for package in ir sdk host-repo-sdk classics; do
     run cp maestro-"$package"-[0-9]*.tgz "$data_dir/sdk/maestro-$package.tgz"
-  done
-  # Releases before 0.1.0-beta.5 ship no classics package.
-  for tgz in maestro-classics-[0-9]*.tgz; do
-    [ ! -f "$tgz" ] || run cp "$tgz" "$data_dir/sdk/maestro-classics.tgz"
   done
 }
 
@@ -168,7 +161,6 @@ confirm() {
 
 # Warns about harnesses at another version than the release supports, and offers to pin them with mise.
 check_harnesses() {
-  [ -f "$HARNESSES" ] || return 0
   say "checking harnesses"
   installed=
   while read -r tool version; do
