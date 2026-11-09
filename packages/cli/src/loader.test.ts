@@ -16,6 +16,7 @@ import {
 } from "./fixtures/packs";
 import {
 	claimsOf,
+	codeHashOf,
 	type Loader,
 	moduleLoader,
 	openFile,
@@ -175,6 +176,13 @@ describe("a bare file", () => {
 		});
 		expect(workerOf(ir, "exclaim").codeHash).toMatch(SHA256);
 		expect((await composed(ir, file)).ok).toBe(true);
+	});
+
+	test("keeps the text it bundled, which its codeHash names", async () => {
+		const file = await openFile(join(FIXTURES, "hello.ts"));
+		const ir = built(file.build("hello", {}));
+		expect(file.text).toBeDefined();
+		expect(workerOf(ir, "exclaim").codeHash).toBe(codeHashOf(file.text ?? ""));
 	});
 
 	test("hashes its imports, so a changed helper changes its codeHash", async () => {

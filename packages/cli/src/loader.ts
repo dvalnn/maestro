@@ -54,6 +54,8 @@ export type Bundle = Loader & {
 	dir: string;
 	/** The bundle's own `module`. */
 	module: string;
+	/** The text a bare file bundled to, whose hash is its `codeHash`; a pack bundle leaves it out. */
+	text?: string;
 	compositions: readonly Described[];
 	/**
 	 * Builds the composition `name` through the bundle's own SDK, with `params` for the root and `configured` for each
@@ -549,12 +551,15 @@ export async function openFile(file: string): Promise<Bundle> {
 		return { hash, load: async () => namespace };
 	});
 	const pack = { id, version: FILE_VERSION };
-	return bundleOf(
-		what,
-		{ pack, dir: dirname(path), module, hash },
-		namespace,
-		loader,
-	);
+	return {
+		...bundleOf(
+			what,
+			{ pack, dir: dirname(path), module, hash },
+			namespace,
+			loader,
+		),
+		text,
+	};
 }
 
 /** `ir` with the `codeHash` of each code node and each key function replaced by its current one. */

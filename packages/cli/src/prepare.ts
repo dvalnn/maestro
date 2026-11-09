@@ -38,7 +38,6 @@ import { baseOf, CLI_CONFIG, presetsSetting } from "./config";
 import { flagValues, paramFlags, paramsBlock } from "./flags";
 import {
 	type Bundle,
-	bundled,
 	claimsOf,
 	codeHashOf,
 	type Loader,
@@ -68,6 +67,8 @@ export type Prepared = {
 	claims: ComposeInput["packs"];
 	/** The path of the bare composition file the IR was built from, whose code is in memory. */
 	file?: string;
+	/** The text the file bundled to, which `persist` writes; set with `file`. */
+	text?: string;
 	/** The flags the command was given. */
 	values: Values;
 	/** The root's params the flags gave, those recorded beneath them for an encore. */
@@ -374,6 +375,8 @@ type Located = {
 	composition: Described;
 	/** The path of the bare composition file, when the target is one. */
 	file?: string;
+	/** The text the bare file bundled to. */
+	text?: string;
 };
 
 /**
@@ -394,6 +397,7 @@ export async function located(
 			bundle,
 			composition: chosen(bundle, target, undefined),
 			file,
+			text: bundle.text,
 		};
 	}
 	const [id, name] = split(target);
@@ -441,7 +445,10 @@ export async function prepare(
 		await requireFile(session, target);
 		return loadIr(session, reading, target, rest);
 	}
-	const { packs, bundle, composition, file } = await located(session, target);
+	const { packs, bundle, composition, file, text } = await located(
+		session,
+		target,
+	);
 	const layers = file === undefined ? session.config.layers : [];
 	const built = await build(
 		session,
@@ -456,7 +463,7 @@ export async function prepare(
 	// A bare file's stem claims no config, so it composes under the config as loaded.
 	return file === undefined
 		? { ...built, claims }
-		: { ...built, config: session.config.composed, claims, file };
+		: { ...built, config: session.config.composed, claims, file, text };
 }
 
 /** The config a command reads without building its composition, and the required params of its root that nothing gives. */
@@ -617,16 +624,15 @@ export async function persist(
 	dir: string,
 	name: string,
 ): Promise<Prepared> {
-	const { file, ir, moduleDir, ...rest } = prepared;
+	const { file, text, ir, moduleDir, ...rest } = prepared;
 	const where = resolve(dir);
-	if (file === undefined)
+	if (file === undefined || text === undefined)
 		return {
 			...rest,
 			ir: rewriteModules(ir, moduleDir, where),
 			loader: moduleLoader(where),
 			moduleDir: where,
 		};
-	const text = await bundled(file);
 	const codeHash = codeHashOf(text);
 	await mkdir(where, { recursive: true });
 	await Bun.write(join(where, name), text);
@@ -706,6 +712,7 @@ export async function resumable(
 			config: session.config.composed,
 			claims: claimsOf(packs),
 			file: bundle && path,
+			text: bundle?.text,
 			values,
 		},
 	};
