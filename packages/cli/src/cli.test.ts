@@ -2142,7 +2142,7 @@ describe("exit codes and error states", () => {
 			],
 		});
 		expect(quiet.code).toBe(130);
-		expect(quiet.err).toBe("concert " + json(quiet).id);
+		expect(quiet.err).toBe(`concert ${json(quiet).id}`);
 	});
 
 	test("ls with no concerts says so on stderr with what to do, and under --json prints [] and nothing on stderr", async () => {
