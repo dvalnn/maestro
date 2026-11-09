@@ -243,6 +243,7 @@ for package in ir sdk host-repo-sdk classics; do
     || ! tar -tzf "$tgz" | grep -q '^package/\(src/\)\?fixtures/' || fail "$tgz holds fixtures its exports do not name"
   grep -q "\"version\": \"$version\"" <<<"$manifest" || fail "$tgz is not version $version"
   grep -q '"license": "MIT"' <<<"$manifest" || fail "$tgz is not MIT-licensed"
+  tar -tzf "$tgz" | grep -x 'package/LICENSE' >/dev/null || fail "$tgz ships no LICENSE"
   ! grep -Eq '"@maestro/[a-z-]+": "(workspace:|\^|~)' <<<"$manifest" || fail "$tgz has an inexact @maestro dependency"
 done
 

@@ -40,7 +40,7 @@ release: check pack
       packages/cli/src/maestro.ts --outfile "$build/maestro"
     gzip -9 -n -c "$build/maestro" > dist/maestro-linux-x64.gz
     for package in packages/ir packages/sdk packages/host-repo-sdk packs/classics; do
-      (cd "$package" && bun pm pack --destination ../../dist --quiet >/dev/null)
+      (cd "$package" && cp ../../LICENSE . && trap 'rm -f LICENSE' EXIT && bun pm pack --destination ../../dist --quiet >/dev/null)
     done
     pack_version=$(bun -e 'console.log(require(process.argv[1]).version)' "$PWD/packs/classics/dist/maestro-pack.json")
     cp -r packs/classics/dist "$build/classics"
