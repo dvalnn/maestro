@@ -1,6 +1,7 @@
 import { LENSES, panel } from "@maestro/classics";
 import { changeset } from "@maestro/host-repo-sdk";
 import { type ArtifactRef, lookup, type Ref } from "@maestro/sdk";
+import { task } from "../shared";
 import GROUNDS from "./prompts/_grounds.md" with { type: "text" };
 import QUESTIONS from "./prompts/_review-questions.md" with { type: "text" };
 import TEST_GROUNDS from "./prompts/_test-grounds.md" with { type: "text" };
@@ -10,8 +11,6 @@ import LENS_SPEC_TESTS from "./prompts/lens-spec-tests.md" with {
 };
 
 export { QUESTIONS };
-
-export const task = (...parts: string[]) => parts.join("\n\n");
 
 /** Every ground, which a skeptic or a consolidator rules by whatever lens found what it judges. */
 export const JUDGED = task(GROUNDS, TEST_GROUNDS);

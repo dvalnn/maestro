@@ -3,12 +3,11 @@ import type {
 	Masterclass,
 	Promotion as Proposal,
 } from "../../.maestro/masterclass";
+import { TIERS, type Tier } from "../../.maestro/shared";
 import {
 	type Question,
 	RISKS,
 	type Risk,
-	TIERS,
-	type Tier,
 	VERDICTS,
 	type Verdict,
 } from "../../.maestro/triage/verdict";
@@ -29,7 +28,7 @@ export const ATTEMPTS = 2;
 
 /** A decision or exclusion of a spec: `lead` titles it, each of `points` holds one fact. */
 export type Point = { lead: string; points: string[] };
-/** Each figure kind of `.maestro/triage/prompts/_figures.md` and the fence its source is shown in. */
+/** Each figure kind of `.maestro/prompts/_figures.md` and the fence its source is shown in. */
 const FIGURE_FENCE = {
 	seams: "mermaid",
 	sequence: "mermaid",

@@ -1,6 +1,7 @@
 import { survivorsOf, toMarkdown } from "@maestro/classics";
 import { commits } from "@maestro/host-repo-sdk";
-import { code, composition, Markdown, Text } from "@maestro/sdk";
+import { composition, Text } from "@maestro/sdk";
+import { markdownOf } from "./shared";
 import { panelOf } from "./slice/lenses";
 
 // ADR 0008: a code node's function must be exported by its composition file.
@@ -21,11 +22,7 @@ export const review = composition(
 	},
 	({ request, revs }) => {
 		const change = commits(revs).out.lane;
-		const spec = code(toMarkdown, {
-			in: { text: request },
-			out: { file: Markdown() },
-			label: "request",
-		}).out.file;
+		const spec = markdownOf(request, "request");
 		return panelOf("risky", change, spec);
 	},
 );

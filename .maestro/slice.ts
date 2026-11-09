@@ -49,7 +49,10 @@ import {
 	use,
 	type ValueOf,
 } from "@maestro/sdk";
-import { JUDGED, type PANELS, panelOf, QUESTIONS, task } from "./slice/lenses";
+import FIGURES from "./prompts/_figures.md" with { type: "text" };
+import PLAIN from "./prompts/_plain.md" with { type: "text" };
+import { markdownOf, TIERS, type Tier, task } from "./shared";
+import { JUDGED, type PANELS, panelOf, QUESTIONS } from "./slice/lenses";
 import TESTED_RULE from "./slice/prompts/_tested.md" with { type: "text" };
 import FIX from "./slice/prompts/fix.md" with { type: "text" };
 import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
@@ -58,9 +61,6 @@ import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
 };
 import TESTER from "./slice/prompts/tester.md" with { type: "text" };
 import WRITER from "./slice/prompts/writer.md" with { type: "text" };
-import FIGURES from "./triage/prompts/_figures.md" with { type: "text" };
-import PLAIN from "./triage/prompts/_plain.md" with { type: "text" };
-import { TIERS, type Tier } from "./triage/verdict";
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export { survivorsOf, toMarkdown };
@@ -337,7 +337,13 @@ const prPatches = (revises: string) =>
 export const slice = composition(
 	"slice",
 	{
-		doc: "Build a request in a fresh lane, or at ordinary and risky on a tester's tests written first, repair until the target's checks pass, review it at the tier's depth, and fix what the review upholds, up to maxFixes rounds; leave the last reviewed lane as a changeset beside the findings its review upheld and a writer's PR body, over the PR it revises when given, empty when the writer failed, failing when it holds no patch.",
+		doc: [
+			"Build a request, review it at the tier's depth and fix what the review upholds.",
+			"At ordinary and risky, a tester writes the spec's tests first and the build starts from them.",
+			"Each round repairs until the target's checks pass, then reviews; up to maxFixes fix rounds follow.",
+			"Leaves the changeset, the findings the last review upheld and a writer's PR body: over the PR it revises",
+			"when given, empty when the writer failed. Fails when the changeset holds no patch.",
+		].join("\n"),
 		params: {
 			request: Text({ description: "The brief: what to build" }),
 			tier: Enum(TIERS, { description: "How deep the review goes" }),
@@ -360,11 +366,7 @@ export const slice = composition(
 		],
 	},
 	({ request, tier, maxRepairs, maxFixes, revises }) => {
-		const spec = code(toMarkdown, {
-			in: { text: request },
-			out: { file: Markdown() },
-			label: "request",
-		}).out.file;
+		const spec = markdownOf(request, "request");
 		/** Repair `lane` until its checks pass, then review it at the tier's depth. */
 		const gateAndReview = (
 			lane: Ref<string>,

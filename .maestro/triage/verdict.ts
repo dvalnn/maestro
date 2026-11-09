@@ -12,6 +12,7 @@ import {
 	type Types,
 	type ValueOf,
 } from "@maestro/sdk";
+import { TIERS, type Tier } from "../shared";
 
 export const PROPOSED = ["ready-for-agent", "split"] as const;
 /** What the triager rules: `plan` hands the issue on to the scouts and the planner, any other settles it early. */
@@ -24,7 +25,6 @@ export const VERDICTS = [
 	"duplicate",
 ] as const;
 export const RISKS = ["low", "medium", "high"] as const;
-export const TIERS = ["small", "ordinary", "risky"] as const;
 /** The areas, in the order that breaks a tie (triage-labels.md). */
 const AREAS = ["core", "cli", "host", "packs", "docs", "factory"] as const;
 
@@ -43,7 +43,6 @@ export const plansOf = (respec: boolean): Record<Ruled, boolean> => ({
 });
 export type Verdict = (typeof VERDICTS)[number];
 export type Risk = (typeof RISKS)[number];
-export type Tier = (typeof TIERS)[number];
 type Area = (typeof AREAS)[number];
 
 const AREA_PATHS: Record<Area, readonly string[]> = {
@@ -109,7 +108,7 @@ export const GROUP_SIZE = 3;
 
 /** A decision or exclusion: `lead` only titles it, each of `points` holds one fact. */
 const Point = Struct({ lead: Text(), points: List(Text()) });
-/** The figure kinds of `_figures.md`: Mermaid templates, then `diff` sketches for a change no template fits. */
+/** The figure kinds of `.maestro/prompts/_figures.md`: Mermaid templates, then `diff` sketches for a change no template fits. */
 export const FIGURES = [
 	"seams",
 	"sequence",

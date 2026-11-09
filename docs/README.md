@@ -100,7 +100,7 @@ home; no repo doc links into them for its facts.
 | Tour manager states and rules                                   | `docs/agents/factory.md`                      | issue-tracker, triage-labels, glossary |
 | Label meanings                                                  | `docs/agents/triage-labels.md`                | factory                                |
 | Spec format, routes, spec check, PR bodies                      | `.maestro/triage/`, `.maestro/slice/` prompts | factory                                |
-| Plain English for specs, PR bodies and docs                     | `.maestro/triage/prompts/_plain.md`           | Doc conventions                        |
+| Plain English for specs, PR bodies and docs                     | `.maestro/prompts/_plain.md`                  | Doc conventions                        |
 | Forge comments the tick writes[^surfaces]                       | `docs/agents/factory.md`: Forge surfaces      | `scripts/factory/`                     |
 | Review depth tiers                                              | `.maestro/slice.ts`, `.maestro/presets/`      | factory                                |
 | Tick install, `.env`, flags, exit codes                         | `scripts/factory/README.md`                   | factory                                |
@@ -135,5 +135,5 @@ Every doc follows these when rewritten:
 - A Mermaid diagram wherever prose walks a flow, a state machine or a graph, checked with `forge-diagrams`.
 - No history, dates, draft status, ticket ids or migration notes; those live in version control and release notes.
 - Links to headings by name, never "section 12". Headings that code comments cite keep their names.
-- Prose in plain English, by `.maestro/triage/prompts/_plain.md`.
+- Prose in plain English, by `.maestro/prompts/_plain.md`.
 - Lines reflowed to 120 characters.

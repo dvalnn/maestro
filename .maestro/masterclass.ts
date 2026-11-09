@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { planner } from "@maestro/classics";
-import { check, fresh, JsonOut, read } from "@maestro/host-repo-sdk";
+import { JsonOut, read } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
 	type CodeContext,
@@ -16,7 +16,8 @@ import {
 	type ValueOf,
 } from "@maestro/sdk";
 import PLANNER from "./masterclass/prompts/planner.md" with { type: "text" };
-import PLAIN from "./triage/prompts/_plain.md" with { type: "text" };
+import PLAIN from "./prompts/_plain.md" with { type: "text" };
+import { sealedBase, task } from "./shared";
 
 /** What a promotion changes: a path, or `docs/adr/` for a new ADR. */
 export const TARGET = String.raw`^(CODING_STANDARDS\.md|docs/adr/|justfile|\.maestro/\S+|scripts/factory/\S+)$`;
@@ -73,7 +74,11 @@ export function settle(
 export const masterclass = composition(
 	"masterclass",
 	{
-		doc: "Merge many concerts' lessons into proposals for the factory's prompts, standards, compositions, config, checks and code: a planner clusters the lessons, drops what those or the backlog already covers, and proposes a target, title and wording for each. Read-only: it leaves no changeset.",
+		doc: [
+			"Merge many concerts' lessons into proposals for the factory. Read-only: it leaves no changeset.",
+			"A planner clusters the lessons, drops what they or the backlog already cover, and proposes a target, title and",
+			"wording for each: a prompt, standard, composition, config, check or code.",
+		].join("\n"),
 		params: {
 			lessons: Markdown({
 				description:
@@ -87,12 +92,11 @@ export const masterclass = composition(
 		examples: [{}],
 	},
 	({ lessons, backlog }) => {
-		// A no-op check seals one base version that every seat reads.
-		const base = check(fresh(), { run: "true" }, { label: "base" });
+		const base = sealedBase();
 		const planned = planner({
 			label: "planner",
-			task: [PLANNER, PLAIN].join("\n\n"),
-			lane: read(base.out.lane),
+			task: task(PLANNER, PLAIN),
+			lane: read(base),
 			attachments: {
 				lessons: {
 					artifact: literal(lessons, Markdown()),

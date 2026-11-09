@@ -1,14 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { atLeastOne, fill, scout, toMarkdown } from "@maestro/classics";
-import {
-	check,
-	fresh,
-	JsonOut,
-	MarkdownOut,
-	read,
-	seat,
-} from "@maestro/host-repo-sdk";
+import { JsonOut, MarkdownOut, read, seat } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
 	allSettled,
@@ -27,9 +20,10 @@ import {
 	Text,
 	type ValueOf,
 } from "@maestro/sdk";
-import FIGURES from "./triage/prompts/_figures.md" with { type: "text" };
+import FIGURES from "./prompts/_figures.md" with { type: "text" };
+import PLAIN from "./prompts/_plain.md" with { type: "text" };
+import { markdownOf, sealedBase, task } from "./shared";
 import GATE from "./triage/prompts/_gate.md" with { type: "text" };
-import PLAIN from "./triage/prompts/_plain.md" with { type: "text" };
 import QUESTIONS from "./triage/prompts/_questions.md" with { type: "text" };
 import CHECKER from "./triage/prompts/checker.md" with { type: "text" };
 import PLANNER from "./triage/prompts/planner.md" with { type: "text" };
@@ -55,8 +49,6 @@ import {
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export { settle, toMarkdown };
-
-const task = (...parts: string[]) => parts.join("\n\n");
 
 /** Each call's task: its own prompt file, then the shared fragments it rules by. */
 const TASKS = {
@@ -180,7 +172,12 @@ const checker = seat("checker", { encore: false });
 export const triage = composition(
 	"triage",
 	{
-		doc: "Triage an issue against the backlog: a triager rules early, sends a small ask straight to the build or asks the owner; scouts answer its questions, a planner proposes a verdict, a checker checks a ready spec against the code and the planner revises it once by the findings, then settle gates the verdict. Read-only: it leaves no changeset.",
+		doc: [
+			"Triage an issue against the backlog into a verdict. Read-only: it leaves no changeset.",
+			"A triager rules early: it sends a small ask straight to the build, asks the owner, or asks scouts.",
+			"A planner proposes a verdict from the scouts' answers, a checker checks a ready spec against the code,",
+			"and the planner revises it once by the findings. settle then gates the verdict.",
+		].join("\n"),
 		params: {
 			issue: Text({
 				description: "The issue to triage: its number, title and body",
@@ -209,19 +206,14 @@ export const triage = composition(
 	},
 	({ issue, backlog, maxGroups, respec }) => {
 		const issued = {
-			artifact: code(toMarkdown, {
-				in: { text: issue },
-				out: { file: Markdown() },
-				label: "issue",
-			}).out.file,
+			artifact: markdownOf(issue, "issue"),
 			hint: "first, for the issue to triage",
 		};
-		// A no-op check seals one base version that every seat reads.
-		const base = check(fresh(), { run: "true" }, { label: "base" });
+		const base = sealedBase();
 		const triaged = triager({
 			label: "triager",
 			task: TASKS.triager(maxGroups),
-			lane: read(base.out.lane),
+			lane: read(base),
 			attachments: {
 				issue: issued,
 				backlog: {
@@ -257,7 +249,7 @@ export const triage = composition(
 				return scout({
 					label: "scout",
 					task: TASKS.scout,
-					lane: read(base.out.lane),
+					lane: read(base),
 					attachments: {
 						group: {
 							artifact: asked.out.file,
@@ -284,7 +276,7 @@ export const triage = composition(
 		const planned = planner({
 			label: "planner",
 			task: TASKS.planner,
-			lane: read(base.out.lane),
+			lane: read(base),
 			attachments: {
 				issue: issued,
 				answers: {
@@ -305,7 +297,7 @@ export const triage = composition(
 		const checked = checker({
 			label: "checker",
 			task: TASKS.checker,
-			lane: read(base.out.lane),
+			lane: read(base),
 			attachments: {
 				plan: {
 					artifact: planned.out.plan,
@@ -331,7 +323,7 @@ export const triage = composition(
 		const revised = planner({
 			label: "revise",
 			task: TASKS.revise,
-			lane: read(base.out.lane),
+			lane: read(base),
 			session: planned.out.session,
 			attachments: {
 				findings: {
