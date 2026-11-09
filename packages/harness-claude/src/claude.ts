@@ -1,4 +1,3 @@
-import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
 	baselineOf,
@@ -11,10 +10,12 @@ import {
 	type HarnessRequest,
 	INSTRUCTIONS,
 	isObject,
+	isRealDir,
 	isTransient,
 	type JsonObject,
 	METRIC,
 	type Metrics,
+	mintOwnedDir,
 	type RuntimeProblem,
 	resolveBin,
 	resultBytes,
@@ -44,33 +45,42 @@ const SUBAGENT_TOOLS = ["Agent", "Task"];
 const TOOLS = ["Bash", "Read", "Write", "Edit"];
 const TOOLS_ARGV = ["--tools", TOOLS.join(",")];
 
+/** Hooks off: claude reads no settings file, and runs no hook, a plugin's included. */
+const HOOKS_OFF = [
+	"--setting-sources",
+	"",
+	"--settings",
+	JSON.stringify({ disableAllHooks: true }),
+];
+/** Under harness extras, the session config dir's settings and hooks only: `user` is `CLAUDE_CONFIG_DIR`. */
+const EXTRAS_HOOKS = ["--setting-sources", "user"];
+
 /**
- * The tools claude loads, and the parts of its environment maestro does not manage, each switched off. `--bare` would
- * drop more but also drops OAuth, which the token needs.
+ * The tools claude loads, and the parts of its environment maestro does not manage, each switched off, hooks by
+ * `hooksArgv`. `--bare` would drop more but also drops OAuth, which the token needs.
  */
-const BASELINE = baselineOf({
-	tools: { declared: TOOLS, argv: TOOLS_ARGV },
-	subagents: { declared: false, argv: TOOLS_ARGV },
-	skills: { declared: [], argv: ["--disable-slash-commands"] },
-	mcp: { declared: [], argv: ["--strict-mcp-config"] },
-	hooks: {
-		declared: [],
-		argv: [
-			"--setting-sources",
-			"",
-			"--settings",
-			JSON.stringify({ disableAllHooks: true }),
-		],
-	},
-	contextFiles: {
-		declared: [],
-		argv: [],
-		env: {
-			CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-			CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
+const baseline = (hooksArgv: string[]) =>
+	baselineOf({
+		tools: { declared: TOOLS, argv: TOOLS_ARGV },
+		subagents: { declared: false, argv: TOOLS_ARGV },
+		skills: { declared: [], argv: ["--disable-slash-commands"] },
+		mcp: { declared: [], argv: ["--strict-mcp-config"] },
+		hooks: { declared: [], argv: hooksArgv },
+		contextFiles: {
+			declared: [],
+			argv: [],
+			env: {
+				CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+				CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
+			},
 		},
-	},
-});
+	});
+const BASELINE = baseline(HOOKS_OFF);
+/** The same, with the extras' hooks on. Its declared hooks stay the baseline's, which extras may extend. */
+const EXTRAS_BASELINE = baseline(EXTRAS_HOOKS);
+
+/** The session config dir's `plugins/`, each child of which claude loads as a plugin. */
+const PLUGINS_DIR = "plugins";
 
 /** The environment claude launches with. */
 export const declared = BASELINE.declared;
@@ -345,10 +355,17 @@ function hasTranscript(session: HarnessRequest["session"]): boolean {
 	);
 }
 
+/** `--plugin-dir` for the session config dir's `plugins/`, when it is a real directory. */
+const pluginArgv = (sessionDir: string): string[] =>
+	isRealDir(join(sessionDir, SESSION_CONFIG, PLUGINS_DIR))
+		? ["--plugin-dir", join(SESSION_DIR, SESSION_CONFIG, PLUGINS_DIR)]
+		: [];
+
 /**
  * The claude argv for a request. The prompt travels on stdin, the instructions in a file claude appends to its system
  * prompt. The sandbox is the confinement, so claude's own permission prompts are off. The system prompt is not
- * snapshotted, or a resumed session would keep its first instructions.
+ * snapshotted, or a resumed session would keep its first instructions. Under harness extras, claude reads the session
+ * config dir's settings and hooks, and loads each plugin under its `plugins` dir.
  */
 function claudeArgv(
 	bin: string,
@@ -362,7 +379,9 @@ function claudeArgv(
 		"--output-format",
 		"stream-json",
 		"--verbose",
-		...BASELINE.argv,
+		...(req.extras === undefined
+			? BASELINE.argv
+			: [...EXTRAS_BASELINE.argv, ...pluginArgv(req.session.dir)]),
 		...UNMANAGED_OFF,
 		"--permission-mode",
 		"bypassPermissions",
@@ -412,7 +431,7 @@ export function claudeHarness(
 			const { token } = options;
 			if (!token) throw new Error(`${TOKEN_VAR} is not set. ${TOKEN_HINT}`);
 			bin ??= resolveBin(CLAUDE_BIN, options.bin);
-			mkdirSync(join(req.session.dir, SESSION_CONFIG), { recursive: true });
+			mintOwnedDir(join(req.session.dir, SESSION_CONFIG), req.extras);
 			const resuming = hasTranscript(req.session);
 			return {
 				argv: claudeArgv(bin, req, resuming),
@@ -432,6 +451,7 @@ export function claudeHarness(
 	return {
 		...subprocessHarness(adapter, backend),
 		environment: declared,
+		extrasProblems: () => [],
 		runtimeProblems: (runtime, context) => [
 			...thinkingProblems(adapter.name, EFFORTS, runtime),
 			...contextProblems(adapter.name, CONTEXT_SUPPORT, context),

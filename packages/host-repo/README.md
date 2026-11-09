@@ -348,8 +348,8 @@ adapter picks where the copy goes and when.
   sit in the namespace directory. The profiles digest covers the extras directory that wins, its files and the text of
   its links, when it sits inside the namespace directory, whether the file or config sets it; never one outside it.
 - At pre-flight, a harness without an extras check refuses the field, naming `profiles.<name>.harnessExtras` and the
-  harness; pi has one. A harness with one refuses an entry named like a file its adapter writes itself. A directory
-  inside the lanes is refused as a read-only bind there is.
+  harness; pi and claude have one. A harness with one refuses an entry named like a file its adapter writes itself. A
+  directory inside the lanes is refused as a read-only bind there is.
 - A session records the extras path its profile gave when it started, and each run in it, after a handoff or a continue,
   is given that path, never its current profile's: the agent can write its harness's config dir, but not the record.
 

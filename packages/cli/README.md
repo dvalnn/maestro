@@ -321,7 +321,7 @@ them when any does, and exits 0.
   its top-level entries. The directory is self-contained, each link in it relative and inside it; the
   [host-repo README](../host-repo/README.md#fields) holds the rule.
 - The environment is what the profile's harness adapter launches with: tools, subagents, skills, MCP servers, hooks,
-  context files and compaction.
+  context files and compaction. It is the adapter's baseline, which a profile's harness extras may extend.
 - `--json` gives the same fields with absolute paths, each value's source as its layer with its file and line or its
   `-c` flag, as `config --json` does.
 - `agent prompt <composition> <node>` prints the system prompt of an agent node as the agent reads it, without

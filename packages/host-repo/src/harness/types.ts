@@ -1,4 +1,11 @@
-import { readdirSync } from "node:fs";
+import {
+	cpSync,
+	lstatSync,
+	mkdirSync,
+	readdirSync,
+	realpathSync,
+	rmSync,
+} from "node:fs";
 import type { JsonSchema } from "@maestro/ir";
 import type { Bind } from "../sandbox/index";
 
@@ -341,6 +348,37 @@ export const ownedEntryProblems = (
 			reason: `extras entry ${entry} is a file ${harness} writes itself`,
 			fix: `Rename or drop ${entry} in the extras directory`,
 		}));
+
+/** Whether `path` is a real directory, not a link to one. */
+export function isRealDir(path: string): boolean {
+	try {
+		return lstatSync(path).isDirectory();
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Keeps the config dir `owned` an adapter owns under a session dir while it is a real directory, as the earlier run
+ * left it. Else rebuilds it from nothing, so a link the sandboxed agent planted in its place is unlinked, not followed,
+ * and copies the harness extras dir `extras` into it, links as links. A failed copy removes the dir and throws, so the
+ * next spawn copies whole.
+ */
+export function mintOwnedDir(owned: string, extras: string | undefined): void {
+	if (isRealDir(owned)) return;
+	rmSync(owned, { recursive: true, force: true });
+	mkdirSync(owned);
+	if (extras === undefined) return;
+	try {
+		cpSync(realpathSync(extras), owned, {
+			recursive: true,
+			verbatimSymlinks: true,
+		});
+	} catch (error) {
+		rmSync(owned, { recursive: true, force: true });
+		throw error;
+	}
+}
 
 /** The problem of a `thinking` level that is none of `levels`, the documented levels of harness `harness`. */
 export const thinkingProblems = (

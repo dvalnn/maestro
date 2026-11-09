@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
+	readlinkSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -342,6 +347,97 @@ describe("stand-in claude", () => {
 			hooks: [],
 			contextFiles: [],
 		});
+	});
+
+	test("harness extras: claude takes them and refuses no entry by name", () => {
+		const extras = tmp("extras");
+		writeFileSync(join(extras, "settings.json"), "{}");
+		mkdirSync(join(extras, "plugins"));
+		const check = claudeHarness(standIn(fixture())).extrasProblems;
+		expect(check?.(extras)).toEqual([]);
+	});
+
+	test("harness extras are copied into a new session config dir with links as links, kept on resume, and rebuilt when the dir is gone or a link", async () => {
+		const extras = tmp("extras");
+		writeFileSync(join(extras, "settings.json"), '{"hooks":{}}');
+		symlinkSync("settings.json", join(extras, "alias.json"));
+		const harness = claudeHarness(standIn(fixture()));
+		const session = { dir: tmp("session"), id: crypto.randomUUID() };
+		const config = join(session.dir, "claude");
+		const run = () => harness.run(request("x", { session, extras })).result;
+
+		await run();
+		expect(readFileSync(join(config, "settings.json"), "utf8")).toBe(
+			'{"hooks":{}}',
+		);
+		expect(readlinkSync(join(config, "alias.json"))).toBe("settings.json");
+
+		// resume: what the agent wrote stays, changed extras are not copied again
+		writeFileSync(join(config, "written.txt"), "mine");
+		writeFileSync(join(extras, "settings.json"), "changed");
+		await run();
+		expect(readFileSync(join(config, "written.txt"), "utf8")).toBe("mine");
+		expect(readFileSync(join(config, "settings.json"), "utf8")).toBe(
+			'{"hooks":{}}',
+		);
+
+		// deleted dir: rebuilt from the extras
+		rmSync(config, { recursive: true });
+		await run();
+		expect(readFileSync(join(config, "settings.json"), "utf8")).toBe("changed");
+		expect(readdirSync(config)).not.toContain("written.txt");
+
+		// replaced by a link: unlinked, not followed, rebuilt
+		const elsewhere = tmp("elsewhere");
+		writeFileSync(join(elsewhere, "keep.txt"), "x");
+		rmSync(config, { recursive: true });
+		symlinkSync(elsewhere, config);
+		await run();
+		expect(lstatSync(config).isDirectory()).toBe(true);
+		expect(readdirSync(elsewhere)).toEqual(["keep.txt"]);
+		expect(readFileSync(join(config, "settings.json"), "utf8")).toBe("changed");
+	});
+
+	test("harness extras that fail to copy fail the spawn and leave no session config dir", () => {
+		const req = request("x", { extras: join(tmp("extras"), "missing") });
+		expect(() => claudeHarness(standIn(fixture())).run(req)).toThrow();
+		expect(existsSync(join(req.session.dir, "claude"))).toBe(false);
+	});
+
+	test("harness extras launch claude with the session config dir as its only setting source, hooks on, and its plugins dir when the copy holds one", async () => {
+		const extras = tmp("extras");
+		writeFileSync(join(extras, "settings.json"), "{}");
+		const harness = claudeHarness(standIn(fixture()));
+		let session = { dir: tmp("session"), id: crypto.randomUUID() };
+		const argvOf = async () => {
+			const req = request("x", { session, extras });
+			await harness.run(req).result;
+			expect(read(req, "env")).toContain("CLAUDE_CONFIG_DIR=/session/claude");
+			return read(req, "argv").split("\n");
+		};
+		const sources = (argv: string[]) =>
+			argv.slice(argv.indexOf("--setting-sources") + 1)[0];
+
+		const plain = await argvOf();
+		expect(plain).toContain("--strict-mcp-config");
+		expect(plain).toContain("--disable-slash-commands");
+		expect(plain.slice(plain.indexOf("--tools"))[1]).toBe(
+			"Bash,Read,Write,Edit",
+		);
+		expect(sources(plain)).toBe("user");
+		expect(plain).not.toContain("--settings");
+		expect(plain.join("\n")).not.toContain("disableAllHooks");
+		expect(plain).not.toContain("--plugin-dir");
+
+		// extras holding plugins/: claude's plugin dir on the first run and on a resume
+		mkdirSync(join(extras, "plugins", "gate"), { recursive: true });
+		session = { dir: tmp("session"), id: crypto.randomUUID() };
+		for (const argv of [await argvOf(), await argvOf()]) {
+			expect(argv.slice(argv.indexOf("--plugin-dir"))[1]).toBe(
+				"/session/claude/plugins",
+			);
+			expect(sources(argv)).toBe("user");
+		}
 	});
 
 	test("a handoff policy turns claude's compaction off, and a compact one sets its window", async () => {

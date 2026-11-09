@@ -1,12 +1,8 @@
 import {
-	cpSync,
 	existsSync,
-	lstatSync,
-	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
-	realpathSync,
 	rmSync,
 	statSync,
 	symlinkSync,
@@ -29,6 +25,7 @@ import {
 	type JsonObject,
 	METRIC,
 	type Metrics,
+	mintOwnedDir,
 	observedOf,
 	ownedEntryProblems,
 	PROFILE_TOKEN,
@@ -414,21 +411,10 @@ function extensionsOf(owned: string): string[] {
 		.map((name) => join(SESSION_DIR, SESSION_AGENT, EXTENSIONS_DIR, name));
 }
 
-/** Whether `path` is a real directory, not a link to one. */
-function isRealDir(path: string): boolean {
-	try {
-		return lstatSync(path).isDirectory();
-	} catch {
-		return false;
-	}
-}
-
 /**
- * Keeps `<owned>` while it is a real directory, else rebuilds it from nothing, so a link the sandboxed agent planted in
- * its place is unlinked, not followed, and copies `extras` into it, links as links. Then, either way, unlinks whatever
- * stands at `auth.json` and `settings.json` and fills them: `settings.json` when `settings` is given, and `auth.json`
- * as a link to `auth`, left absent when `auth` is missing. Returns whether it linked. pi writes `auth.json` in place,
- * so a refresh writes through the link.
+ * Mints `<owned>` with `extras` through `mintOwnedDir`, then unlinks whatever stands at `auth.json` and `settings.json` and
+ * fills them: `settings.json` when `settings` is given, and `auth.json` as a link to `auth`, left absent when `auth` is
+ * missing. Returns whether it linked. pi writes `auth.json` in place, so a refresh writes through the link.
  */
 function ownedDir(
 	owned: string,
@@ -436,20 +422,7 @@ function ownedDir(
 	settings: JsonObject | undefined,
 	extras: string | undefined,
 ): boolean {
-	if (!isRealDir(owned)) {
-		rmSync(owned, { recursive: true, force: true });
-		mkdirSync(owned);
-		if (extras !== undefined)
-			try {
-				cpSync(realpathSync(extras), owned, {
-					recursive: true,
-					verbatimSymlinks: true,
-				});
-			} catch (error) {
-				rmSync(owned, { recursive: true, force: true });
-				throw error;
-			}
-	}
+	mintOwnedDir(owned, extras);
 	rmSync(join(owned, SETTINGS_FILE), { recursive: true, force: true });
 	rmSync(join(owned, AUTH_FILE), { recursive: true, force: true });
 	if (settings)

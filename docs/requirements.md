@@ -282,8 +282,8 @@ The agent tool answers one question for any agent on any harness: what does its 
   `<pack>/<composition id>/<seat>`, so one pack's rebind leaves another pack's composition of the same id alone. There
   are no ad-hoc profiles. A call sets no runtime, limits or context.
 - **AT-05 (Must).** One command shows a profile's effective environment, declared and, on request and where the harness
-  reports it, observed. A mismatch is a fault of inspection, recorded in a concert and never enforced: no node instance
-  fails on it.
+  reports it, observed. The declared environment is the adapter's baseline, which a profile's harness extras may extend.
+  A mismatch is a fault of inspection, recorded in a concert and never enforced: no node instance fails on it.
 - **AT-06 (Must).** Agent identity outside composition code has one config surface: a profile directory led by its
   `profile.yaml`, tuned in YAML config under `profiles:`. Layers, later winning: the profile directory, user config,
   workspace config, each preset in the order given, `-c`. The highest root wins a name whole: workspace, then user, then
