@@ -1,12 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
-	existsSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
-	readlinkSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
@@ -357,51 +355,33 @@ describe("stand-in claude", () => {
 		expect(check?.(extras)).toEqual([]);
 	});
 
-	test("harness extras are copied into a new session config dir with links as links, kept on resume, and rebuilt when the dir is gone or a link", async () => {
+	test("harness extras are copied into a new session config dir, kept on resume, and rebuilt when the dir is a link", async () => {
 		const extras = tmp("extras");
-		writeFileSync(join(extras, "settings.json"), '{"hooks":{}}');
-		symlinkSync("settings.json", join(extras, "alias.json"));
+		writeFileSync(join(extras, "settings.json"), "first");
 		const harness = claudeHarness(standIn(fixture()));
 		const session = { dir: tmp("session"), id: crypto.randomUUID() };
 		const config = join(session.dir, "claude");
+		const settings = () => readFileSync(join(config, "settings.json"), "utf8");
 		const run = () => harness.run(request("x", { session, extras })).result;
 
 		await run();
-		expect(readFileSync(join(config, "settings.json"), "utf8")).toBe(
-			'{"hooks":{}}',
-		);
-		expect(readlinkSync(join(config, "alias.json"))).toBe("settings.json");
+		expect(settings()).toBe("first");
 
 		// resume: what the agent wrote stays, changed extras are not copied again
 		writeFileSync(join(config, "written.txt"), "mine");
 		writeFileSync(join(extras, "settings.json"), "changed");
 		await run();
 		expect(readFileSync(join(config, "written.txt"), "utf8")).toBe("mine");
-		expect(readFileSync(join(config, "settings.json"), "utf8")).toBe(
-			'{"hooks":{}}',
-		);
+		expect(settings()).toBe("first");
 
-		// deleted dir: rebuilt from the extras
-		rmSync(config, { recursive: true });
-		await run();
-		expect(readFileSync(join(config, "settings.json"), "utf8")).toBe("changed");
-		expect(readdirSync(config)).not.toContain("written.txt");
-
-		// replaced by a link: unlinked, not followed, rebuilt
+		// replaced by a link: unlinked, not followed, rebuilt before the transcript lookup
 		const elsewhere = tmp("elsewhere");
-		writeFileSync(join(elsewhere, "keep.txt"), "x");
 		rmSync(config, { recursive: true });
 		symlinkSync(elsewhere, config);
 		await run();
 		expect(lstatSync(config).isDirectory()).toBe(true);
-		expect(readdirSync(elsewhere)).toEqual(["keep.txt"]);
-		expect(readFileSync(join(config, "settings.json"), "utf8")).toBe("changed");
-	});
-
-	test("harness extras that fail to copy fail the spawn and leave no session config dir", () => {
-		const req = request("x", { extras: join(tmp("extras"), "missing") });
-		expect(() => claudeHarness(standIn(fixture())).run(req)).toThrow();
-		expect(existsSync(join(req.session.dir, "claude"))).toBe(false);
+		expect(readdirSync(elsewhere)).toEqual([]);
+		expect(settings()).toBe("changed");
 	});
 
 	test("harness extras launch claude with the session config dir as its only setting source, hooks on, and its plugins dir when the copy holds one", async () => {

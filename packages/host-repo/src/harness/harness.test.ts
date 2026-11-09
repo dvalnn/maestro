@@ -1,6 +1,16 @@
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	lstatSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	readlinkSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { settledSchema } from "@maestro/ir";
@@ -9,6 +19,7 @@ import {
 	type Harness,
 	type HarnessEvent,
 	type HarnessResult,
+	mintOwnedDir,
 	OUTBOX,
 	SESSION_DIR,
 	stubHarness,
@@ -267,4 +278,47 @@ test("a probe whose own timeout cancels a run after a partial report, its events
 	expect(await probe(late, request("x"), 50)).toEqual({
 		observed: { tools: ["sh"] },
 	});
+});
+
+test("an owned dir is kept while real, else rebuilt without following a link and given a copy of the extras, links as links, removed when the copy fails", () => {
+	const real = tmp("extras");
+	writeFileSync(join(real, "settings.json"), "first");
+	symlinkSync("settings.json", join(real, "alias.json"));
+	const extras = join(tmp("holder"), "linked");
+	symlinkSync(real, extras);
+	const owned = join(tmp("session"), "owned");
+	const read = (name: string) => readFileSync(join(owned, name), "utf8");
+
+	mintOwnedDir(owned, extras);
+	expect(lstatSync(owned).isDirectory()).toBe(true);
+	expect(read("settings.json")).toBe("first");
+	expect(readlinkSync(join(owned, "alias.json"))).toBe("settings.json");
+
+	writeFileSync(join(owned, "written.txt"), "mine");
+	writeFileSync(join(real, "settings.json"), "changed");
+	mintOwnedDir(owned, extras);
+	expect(read("written.txt")).toBe("mine");
+	expect(read("settings.json")).toBe("first");
+
+	rmSync(owned, { recursive: true });
+	mintOwnedDir(owned, extras);
+	expect(read("settings.json")).toBe("changed");
+	expect(readdirSync(owned)).not.toContain("written.txt");
+
+	const elsewhere = tmp("elsewhere");
+	writeFileSync(join(elsewhere, "keep.txt"), "x");
+	rmSync(owned, { recursive: true });
+	symlinkSync(elsewhere, owned);
+	mintOwnedDir(owned, extras);
+	expect(lstatSync(owned).isDirectory()).toBe(true);
+	expect(readdirSync(elsewhere)).toEqual(["keep.txt"]);
+
+	rmSync(owned, { recursive: true });
+	writeFileSync(owned, "a file");
+	mintOwnedDir(owned, undefined);
+	expect(readdirSync(owned)).toEqual([]);
+
+	rmSync(owned, { recursive: true });
+	expect(() => mintOwnedDir(owned, join(real, "missing"))).toThrow();
+	expect(existsSync(owned)).toBe(false);
 });
