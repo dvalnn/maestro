@@ -5,13 +5,11 @@ import {
 	builder,
 	type Findings,
 	maxRepairs,
-	panel,
 	repairUntilGreen,
 	round,
 	rulingLine,
 	survivorsOf,
 	toMarkdown,
-	type Upheld,
 	upheld,
 	type Verdict,
 	type Verdicts,
@@ -39,7 +37,6 @@ import {
 	Dir,
 	Enum,
 	List,
-	lookup,
 	loop,
 	Markdown,
 	not,
@@ -52,7 +49,7 @@ import {
 	use,
 	type ValueOf,
 } from "@maestro/sdk";
-import { JUDGED, PANELS, QUESTIONS, task } from "./slice/lenses";
+import { JUDGED, type PANELS, panelOf, QUESTIONS, task } from "./slice/lenses";
 import TESTED_RULE from "./slice/prompts/_tested.md" with { type: "text" };
 import FIX from "./slice/prompts/fix.md" with { type: "text" };
 import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
@@ -85,34 +82,29 @@ const REPO_CHECKS = ["format", "lint", "types", "test", "all"];
 
 type Found = ValueOf<typeof Findings>;
 
-/** What one review round ruled: a consolidator's verdict, or a lens's findings and its skeptic's verdicts, if any. */
+/** What one review round ruled: a panel's consolidated verdict, or a reviewer's findings and its skeptic's verdicts. */
 type Ruled =
 	| { verdict: ValueOf<typeof Verdict> }
 	| { findings: Found; verdicts?: Settled<ValueOf<typeof Verdicts>>[] };
 
-/** One round's rulings, and what its state carries to the next: the reviewed lane, the builder's session and the lens's. */
+/**
+ * One round's rulings, and what its state carries to the next: the reviewed lane, the builder's session and the
+ * reviewer's.
+ */
 type Rulings = { lane: string; session: string; lens?: string } & Ruled;
 
 /**
- * The blocking findings the skeptic upheld, each with its why: none when the lens was clean, every blocking one
- * without a why when no skeptic delivered verdicts.
+ * Each blocking finding of `rulings` that was upheld, as a Markdown list item:
+ * - a panel's, as its consolidator worded it;
+ * - a reviewer's, with its skeptic's why, or marked unverified when no skeptic delivered verdicts.
  */
-function upheldFindings(
-	{ clean, findings }: Found,
-	verdicts?: Settled<ValueOf<typeof Verdicts>>[],
-): Upheld[] {
-	if (clean) return [];
-	return upheld(
-		findings.filter((f) => f.blocking),
-		verdicts?.[0]?.value,
-	);
-}
-
-/** Each upheld blocking finding of `rulings` as a Markdown list item, carrying the skeptic's why or marked unverified. */
 function upheldLines(rulings: Rulings): string[] {
 	if ("verdict" in rulings)
 		return rulings.verdict.blocking.map((b) => `- ${b}`);
-	return upheldFindings(rulings.findings, rulings.verdicts).map(
+	const { clean, findings } = rulings.findings;
+	if (clean) return [];
+	const blocking = findings.filter((f) => f.blocking);
+	return upheld(blocking, rulings.verdicts?.[0]?.value).map(
 		(f) => `- ${f.id}, ${f.where}: ${f.issue}\n  ${rulingLine(f.why)}`,
 	);
 }
@@ -132,16 +124,16 @@ export function upheldOf(
 	upheld: string;
 } {
 	const lines = upheldLines(rulings);
-	const upheld = join(ctx.scratch, "upheld.md");
+	const file = join(ctx.scratch, "upheld.md");
 	const body = lines.length ? lines : ["None."];
-	writeFileSync(upheld, ["# Upheld findings", "", ...body, ""].join("\n"));
+	writeFileSync(file, ["# Upheld findings", "", ...body, ""].join("\n"));
 	const { lane, session, lens } = rulings;
 	return {
 		lane,
 		session,
 		...(lens !== undefined && { lens }),
 		clean: lines.length === 0,
-		upheld,
+		upheld: file,
 	};
 }
 
@@ -171,7 +163,8 @@ export function requirePatch(
 	return { changeset, upheld, pr };
 }
 
-const UPHELD = {
+/** What a review round settles to. */
+const ROUND_OUT = {
 	lane: Lane,
 	session: Session,
 	clean: Bool(),
@@ -234,55 +227,60 @@ function build(tier: Tier, request: string, spec: Ref<ArtifactRef>) {
 	return { built, map };
 }
 
-/** The lens of the round before, which a later round's lens continues, and the findings that round upheld. */
+/** The upheld findings of a round's `rulings` over `lane`, carrying `session`, and the reviewer's session when any. */
+const tally = (
+	lane: Ref<string>,
+	session: Ref<string>,
+	rulings: CodeInputs<Ruled & { lens?: string }>,
+) =>
+	code(upheldOf, {
+		in: { lane, session, ...rulings },
+		out: "lens" in rulings ? { ...ROUND_OUT, lens: Session } : ROUND_OUT,
+		label: "upheld",
+		tolerate: "rejected",
+	});
+
+/** A reviewer round's session, which the next round's reviewer continues, and the findings that round upheld. */
 type Earlier = { lens: Ref<string>; upheld: Ref<ArtifactRef> };
 
 /**
- * The review of `tier` over the green lane version `lane`, ending in its upheld findings and carrying the builder's
- * `session`. Its lens continues the lens of `earlier` when given.
+ * A panel review of `tier` over the green lane version `lane`, ending in its upheld findings and carrying the builder's
+ * `session`.
  */
-function review(
-	tier: Tier,
+function panelRound(
+	tier: PanelTier,
+	lane: Ref<string>,
+	session: Ref<string>,
+	spec: Ref<ArtifactRef>,
+) {
+	const ruling = panelOf(tier, lane, spec);
+	return tally(lane, session, {
+		verdict: readJson(ruling.out.verdict, { tolerate: "rejected" }),
+	});
+}
+
+/**
+ * A reviewer and its skeptic over the green lane version `lane`, ending in the upheld findings and carrying the
+ * builder's `session` and the reviewer's. The reviewer continues the one of `earlier` when given.
+ */
+function reviewerRound(
 	lane: Ref<string>,
 	session: Ref<string>,
 	spec: Ref<ArtifactRef>,
 	earlier?: Earlier,
 ) {
 	const patches = changeset(lane, { label: "patches" }).out.changeset;
-	const tally = (rulings: CodeInputs<Ruled & { lens?: string }>) =>
-		code(upheldOf, {
-			in: { lane, session, ...rulings },
-			out: "lens" in rulings ? { ...UPHELD, lens: Session } : UPHELD,
-			label: "upheld",
-			tolerate: "rejected",
-		});
-	if (tier !== "small") {
-		const lenses = PANELS[tier];
-		const ruling = panel({
-			items: Object.keys(lenses),
-			task: (name) => lookup(lenses, name),
-			change: lane,
-			patches,
-			spec,
-			grounds: JUDGED,
-			skeptics: false,
-		});
-		return tally({
-			verdict: readJson(ruling.out.verdict, { tolerate: "rejected" }),
-		});
-	}
-	const attached = {
-		patches: {
-			artifact: patches,
-			hint: "for what the change did, patch by patch",
-		},
-		spec: { artifact: spec, hint: "for what the change must do" },
-	};
-	const { lens: found, skeptic: challenged } = round({
+	const { lens: reviewer, skeptic } = round({
 		label: "reviewer",
 		task: earlier ? TASKS.reviewerAgain : TASKS.reviewer,
 		change: lane,
-		attached,
+		attached: {
+			patches: {
+				artifact: patches,
+				hint: "for what the change did, patch by patch",
+			},
+			spec: { artifact: spec, hint: "for what the change must do" },
+		},
 		grounds: JUDGED,
 		skeptics: true,
 		session: earlier?.lens,
@@ -294,19 +292,47 @@ function review(
 			},
 		},
 	});
-	const findings = readJson(found.out.findings, {
-		tolerate: "rejected",
-		label: "findings",
-	});
-	const lensSession = found.out.session;
-	return tally({
-		findings,
-		lens: lensSession,
+	return tally(lane, session, {
+		findings: readJson(reviewer.out.findings, {
+			tolerate: "rejected",
+			label: "findings",
+		}),
+		lens: reviewer.out.session,
 		verdicts: allSettled([
-			readJson(challenged.out.verdicts, { tolerate: "rejected" }),
+			readJson(skeptic.out.verdicts, { tolerate: "rejected" }),
 		]),
 	});
 }
+
+/** A fix of the findings a round upheld, in a lane extending the round's and continuing its builder's session. */
+function fix(
+	reviewed: {
+		lane: Ref<string>;
+		session: Ref<string>;
+		upheld: Ref<ArtifactRef>;
+	},
+	spec: Ref<ArtifactRef>,
+) {
+	return builder({
+		label: "fix",
+		task: TASKS.fix,
+		lane: extend(reviewed.lane),
+		session: reviewed.session,
+		checks: REPO_CHECKS,
+		attachments: {
+			upheld: {
+				artifact: reviewed.upheld,
+				hint: "first, for the findings to fix",
+			},
+			spec: { artifact: spec, hint: "for what the change must do" },
+		},
+	});
+}
+
+/** The patches of the PR held by the target revisions `revises`. */
+const prPatches = (revises: string) =>
+	changeset(commits(revises, { label: "revised" }).out.lane, { label: "pr" })
+		.out.changeset;
 
 export const slice = composition(
 	"slice",
@@ -339,7 +365,8 @@ export const slice = composition(
 			out: { file: Markdown() },
 			label: "request",
 		}).out.file;
-		const round = (
+		/** Repair `lane` until its checks pass, then review it at the tier's depth. */
+		const gateAndReview = (
 			lane: Ref<string>,
 			session: Ref<string>,
 			earlier?: Earlier,
@@ -348,34 +375,21 @@ export const slice = composition(
 				repairUntilGreen,
 				{ lane, session, spec },
 				{ params: { maxRepairs, checks: REPO_CHECKS }, label: "gate" },
-			);
-			return review(tier, green.out.lane, session, spec, earlier);
+			).out.lane;
+			return tier === "small"
+				? reviewerRound(green, session, spec, earlier)
+				: panelRound(tier, green, session, spec);
 		};
 		const { built, map } = build(tier, request, spec);
 		const reviewed = loop.while((s) => not(s.out.clean), {
-			init: round(built.out.lane, built.out.session),
+			init: gateAndReview(built.out.lane, built.out.session),
 			step: (s) => {
-				const fixed = builder({
-					label: "fix",
-					task: TASKS.fix,
-					lane: extend(s.out.lane),
-					session: s.out.session,
-					checks: REPO_CHECKS,
-					attachments: {
-						upheld: {
-							artifact: s.out.upheld,
-							hint: "first, for the findings to fix",
-						},
-						spec: { artifact: spec, hint: "for what the change must do" },
-					},
-				});
-				return round(
-					fixed.out.lane,
-					fixed.out.session,
+				const fixed = fix(s.out, spec);
+				const earlier =
 					"lens" in s.out
 						? { lens: s.out.lens, upheld: s.out.upheld }
-						: undefined,
-				);
+						: undefined;
+				return gateAndReview(fixed.out.lane, fixed.out.session, earlier);
 			},
 			max: maxFixes,
 			label: "fixes",
@@ -395,12 +409,7 @@ export const slice = composition(
 				},
 				...(revises && {
 					revised: {
-						artifact: changeset(
-							commits(revises, { label: "revised" }).out.lane,
-							{
-								label: "pr",
-							},
-						).out.changeset,
+						artifact: prPatches(revises),
 						hint: "for the PR the patches revise, which the body covers with them as one change",
 					},
 				}),

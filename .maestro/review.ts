@@ -1,12 +1,10 @@
-import { panel, survivorsOf, toMarkdown } from "@maestro/classics";
-import { changeset, commits } from "@maestro/host-repo-sdk";
-import { code, composition, lookup, Markdown, Text } from "@maestro/sdk";
-import { JUDGED, PANELS } from "./slice/lenses";
+import { survivorsOf, toMarkdown } from "@maestro/classics";
+import { commits } from "@maestro/host-repo-sdk";
+import { code, composition, Markdown, Text } from "@maestro/sdk";
+import { panelOf } from "./slice/lenses";
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export { survivorsOf, toMarkdown };
-
-const LENSES = PANELS.risky;
 
 export const review = composition(
 	"review",
@@ -28,14 +26,6 @@ export const review = composition(
 			out: { file: Markdown() },
 			label: "request",
 		}).out.file;
-		return panel({
-			items: Object.keys(LENSES),
-			task: (name) => lookup(LENSES, name),
-			change,
-			patches: changeset(change, { label: "patches" }).out.changeset,
-			spec,
-			grounds: JUDGED,
-			skeptics: false,
-		});
+		return panelOf("risky", change, spec);
 	},
 );

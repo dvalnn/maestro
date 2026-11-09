@@ -1,4 +1,6 @@
-import { LENSES } from "@maestro/classics";
+import { LENSES, panel } from "@maestro/classics";
+import { changeset } from "@maestro/host-repo-sdk";
+import { type ArtifactRef, lookup, type Ref } from "@maestro/sdk";
 import GROUNDS from "./prompts/_grounds.md" with { type: "text" };
 import QUESTIONS from "./prompts/_review-questions.md" with { type: "text" };
 import TEST_GROUNDS from "./prompts/_test-grounds.md" with { type: "text" };
@@ -26,3 +28,24 @@ export const PANELS = {
 		design: task(LENS_DESIGN, QUESTIONS, GROUNDS),
 	},
 };
+
+/** A tier that reviews by panel. */
+export type PanelTier = keyof typeof PANELS;
+
+/** A panel of `tier`'s lenses over the lane version `change` against `spec`, no skeptics, one consolidated verdict. */
+export function panelOf(
+	tier: PanelTier,
+	change: Ref<string>,
+	spec: Ref<ArtifactRef>,
+) {
+	const lenses = PANELS[tier];
+	return panel({
+		items: Object.keys(lenses),
+		task: (name) => lookup(lenses, name),
+		change,
+		patches: changeset(change, { label: "patches" }).out.changeset,
+		spec,
+		grounds: JUDGED,
+		skeptics: false,
+	});
+}
