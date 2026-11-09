@@ -137,11 +137,14 @@ function sumUsage(
 }
 
 /**
- * A result's totals: the sum over `modelUsage`, which also counts subagents and side models, else its `usage`.
+ * A run's totals from its result: the sum over each model's usage, which also counts subagents and side models, else
+ * its `usage`. Each model's usage is `model_usage_since_last_result`, the run's own, else `modelUsage`, which also
+ * holds a resumed session's earlier runs.
  */
 function resultMetrics(e: JsonObject): Metrics {
-	const models = isObject(e.modelUsage)
-		? Object.values(e.modelUsage).filter(isObject)
+	const byModel = e.model_usage_since_last_result ?? e.modelUsage;
+	const models = isObject(byModel)
+		? Object.values(byModel).filter(isObject)
 		: [];
 	return models.length
 		? sumUsage(models, MODEL_USAGE_METRICS)

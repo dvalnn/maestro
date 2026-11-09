@@ -450,6 +450,27 @@ describe("stand-in claude", () => {
 		expect(argv.slice(argv.indexOf("--resume"), -1)).toContain(req.session.id);
 	});
 
+	test("a resumed session reports only its own run, so a fresh run and its resume sum to the last result's totals", async () => {
+		const req = request("x");
+		const metricsOf = async (lines: string[]) =>
+			(await claudeHarness(standIn(lines)).run(req).result).metrics;
+		expect(await metricsOf(fixture("session-1"))).toEqual({
+			tokens_in: 2,
+			tokens_out: 3,
+			tokens_cache_read: 649,
+			tokens_cache_write: 3129,
+		});
+		const projects = join(req.session.dir, "claude/projects/-lane");
+		mkdirSync(projects, { recursive: true });
+		writeFileSync(join(projects, `${req.session.id}.jsonl`), "{}\n");
+		expect(await metricsOf(fixture("session-2"))).toEqual({
+			tokens_in: 2,
+			tokens_out: 3,
+			tokens_cache_read: 3106,
+			tokens_cache_write: 710,
+		});
+	});
+
 	test("the token reaches claude as a masked secret, never argv, and no login file is bound", async () => {
 		const req = request("x");
 		const run = claudeHarness(standIn(fixture())).run(req);
