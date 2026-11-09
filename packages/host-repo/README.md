@@ -84,8 +84,9 @@ or one the store cannot apply, is `failed`.
 
 ## Agent run
 
-The host stages the run and reads the outbox itself, once every turn and correction has ended. The harness process is
-what the sandbox confines; the adapter runs on the host and only builds the sandbox spec.
+The host stages the run and reads the outbox itself, after every turn. A reply that claims `ok` with a declared file
+missing or invalid gets a correction turn rather than an end. The harness process is what the sandbox confines; the
+adapter runs on the host and only builds the sandbox spec.
 
 ```mermaid
 sequenceDiagram
@@ -97,7 +98,7 @@ sequenceDiagram
     adapter->>harness: start in sandbox
     harness-->>adapter: events, final reply
     adapter-->>host: events, envelope
-    opt malformed envelope, at most 2 times
+    opt malformed envelope, or ok with a bad declared file, at most 2 times
         host->>adapter: correction turn
         adapter->>harness: same session
         harness-->>adapter: final reply
@@ -123,7 +124,9 @@ The staged system-prompt file holds the profile's instructions, when it has any,
 | `## Context`      | only under a `handoff` policy[^frame-context]                    |
 | `## Reply`        | the output contract                                              |
 
-[^wc]: A write lane is left uncommitted, a read lane changed in nothing; git writes fail by design.
+[^wc]:
+    A write lane is left uncommitted, a read lane is a discarded fork the agent may change freely; git writes fail by
+    design.
 
 [^frame-checks]: Never the command itself; the agent runs them and writes no new ones (HOST-15).
 
@@ -137,7 +140,9 @@ correction turn and `session-N.md` for the message that opens session N after a 
 
 Declared outputs are files the agent writes in its **outbox**, a per-instance directory at `/out` outside the lane. The
 host reads only regular files there and checks each against its schema. The contract tells the agent to write every
-declared file, a verdict agent even when it rejects. A missing file or a schema violation is `failed`.
+declared file, a verdict agent even when it rejects. A file that is missing, not a regular file, not JSON or off its
+schema, in an `ok` reply that is not blocked, gets the same correction turns as a malformed envelope, and the node is
+`failed` once they are spent. A rejection or a blocked reply is not corrected.
 
 ### Envelope
 
@@ -153,7 +158,8 @@ The agent's final reply is its **envelope**.
 - The report is `{ summary, gaps?, obstacles?, lessons? }`: a one-line summary, then only what the record cannot show.
   It rides the enrichment too, so a blocked or failed agent keeps it.
 - A malformed envelope, such as a work agent's with an `outcome`, a verdict agent's with neither, or one both blocked
-  and giving a verdict, gets at most two correction turns in the same session, then `failed`.
+  and giving a verdict, gets at most two correction turns in the same session, then `failed`. Declared-file problems
+  draw on the same two.
 - A blocked agent ends `failed` with the reason `blocked: <cause>` and no outputs, its declared files unread (ADR 0012).
 - A rejection with declared files missing or invalid ends `rejected` with its reason and no outputs.
 
