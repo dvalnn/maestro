@@ -692,6 +692,96 @@ describe("compose", () => {
 		},
 	);
 
+	const C_FLAG = { layer: "flag", flag: "-c x=y", key: "x" } as const;
+	const RESUMED = { ...C_FLAG, concert: "7f3c2a" } as const;
+	const FILED = {
+		layer: "workspace",
+		file: "/ws/.maestro/config.yaml",
+		line: 1,
+	} as const;
+	const gone = () => join(tmp("gone"), "missing");
+	test.each([
+		["a missing target.repo", "a -c", gone, {}, "target.repo", C_FLAG],
+		["a missing target.repo", "a file", gone, {}, "target.repo", FILED],
+		["a missing target.repo", "a resume", gone, {}, "target.repo", RESUMED],
+		[
+			"a non-git target.repo",
+			"a -c",
+			() => tmp("plain"),
+			{},
+			"target.repo",
+			C_FLAG,
+		],
+		[
+			"an absolute target.sparse entry",
+			"a -c",
+			toyTarget,
+			{ sparse: ["/src"] },
+			"target.sparse",
+			C_FLAG,
+		],
+		[
+			"a relative sandbox.readOnly bind",
+			"a -c",
+			toyTarget,
+			{ sandbox: { readOnly: ["rel"] } },
+			"sandbox.readOnly",
+			C_FLAG,
+		],
+		[
+			"a relative target.checks bind",
+			"a resume",
+			toyTarget,
+			{ checks: { lint: { run: "true", hint: "h", readOnly: ["rel"] } } },
+			"target.checks.lint",
+			RESUMED,
+		],
+	] as const)(
+		"%s that %s gave carries its layer and concert",
+		async (_, _by, target, extra, key, source) => {
+			const { host } = stubHost(() => [OK]);
+			const ir = irOf(
+				host,
+				[
+					{
+						id: "x",
+						kind: "agent",
+						config: agentOn(fresh),
+						literals: { prompt: "go" },
+					},
+				],
+				"x",
+			);
+			const { sandbox, ...onTarget } = extra as Record<string, unknown>;
+			const base = configOf(target(), sandbox ? { sandbox } : {});
+			const values = {
+				...base.values,
+				target: { ...base.values.target, ...onTarget },
+			};
+			const composed = await compose({
+				ir,
+				config: {
+					...base,
+					values,
+					sources: [{ path: key.split("."), source }],
+				},
+				roots: ROOTS,
+				core: CORE_CONFIG,
+				packs: {},
+				hosts: [host],
+				loadCode: noCode,
+				caps: {},
+			});
+			expect(
+				composed.ok
+					? []
+					: composed.diagnostics.map((d) => [d.layer, d.concert]),
+			).toEqual([
+				[source.layer, "concert" in source ? source.concert : undefined],
+			]);
+		},
+	);
+
 	test("an extras directory inside the lanes is a HOST error, as a read-only bind there is", async () => {
 		const { host } = stubHost(() => [OK]);
 		const dataRoot = tmp("data");

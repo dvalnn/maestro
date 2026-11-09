@@ -296,6 +296,17 @@ function paramsOf(
 	return { values, given, params };
 }
 
+/** The codes of a build's own refusal of the params it was given. */
+const BUILD_ARGUMENT_CODES = new Set(["CFG.param", "CFG.schema"]);
+
+/** `d` on the flag layer when it is a build's own refusal of its params, which carries no layer of its own. */
+const asArgument = (d: Diagnostic): Diagnostic =>
+	d.layer === undefined &&
+	d.source === undefined &&
+	BUILD_ARGUMENT_CODES.has(d.code)
+		? { ...d, layer: "flag" }
+		: d;
+
 /**
  * Builds `composition` of `bundle` from its params, as `paramsOf` reads them.
  * @throws CliError, a usage error, for a composition in `args` when `reading` is an encore's.
@@ -319,7 +330,7 @@ async function build(
 		bare,
 	);
 	const built = bundle.build(composition.name, params.root, params.configured);
-	if (!built.ok) throw new Diagnosed(built.diagnostics);
+	if (!built.ok) throw new Diagnosed(built.diagnostics.map(asArgument));
 	return {
 		ir: built.ir,
 		loader: bundle,

@@ -8,6 +8,20 @@ export type Severity = "error" | "warning";
 export type KeyPath = readonly string[];
 
 /**
+ * The layers a config value comes from, lowest first. `example` marks a value taken from the composition's example
+ * set, which `compose` uses for a param no file or flag gives. `directory` marks a base that `layeredOver` puts
+ * beneath a subtree of the config.
+ */
+export type LayerName =
+	| "default"
+	| "example"
+	| "directory"
+	| "user"
+	| "workspace"
+	| "preset"
+	| "flag";
+
+/**
  * A finding about a graph (CORE-17), from ir, the SDK or core. `code` is stable, with a prefix from the sdk-spec
  * Diagnostics catalogue, and any `error` stops compose. `hint` is the next step. Without `node`, `scope`, `source` and
  * `path` it is about the whole IR.
@@ -27,6 +41,10 @@ export type Diagnostic = {
 	 * could set it, any one of which does.
 	 */
 	unset?: KeyPath[][];
+	/** The layer that set the faulted value. `flag` covers a param flag and a `-c`. */
+	layer?: LayerName;
+	/** The short id of the concert a resume reapplies the faulted `-c` from. */
+	concert?: string;
 };
 
 /** A JSON Schema (draft 2020-12) document. Opaque to the IR. */

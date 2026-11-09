@@ -542,14 +542,14 @@ Refs: D-03, D-31, D-34, CORE-16, ADR 0003.
 
 ## 16. Failure modes
 
-| Mode               | Outcome                                                                                  | Recovery                                                                                            |
-| ------------------ | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Compose error      | No agent starts. The CLI prints diagnostics and exits 1, a build fault.                  | Fix what the diagnostics name.                                                                      |
-| Node `failed`      | Dependents `skipped` unless a settling group or fan-in node got it as `Settled`.         | `resume` runs it again.                                                                             |
-| Node `rejected`    | Follows edge tolerance: the normal path for a red check or a negative review.            | None when tolerated, else change the input or the code, then `resume`; a plain `resume` repeats it. |
-| Host crash or kill | The record is consistent as of the last event. The host's cancel hook kills agent trees. | `resume` continues.                                                                                 |
-| Worker error       | A code node that throws, or times out, settles `failed` with the error.                  | Fix the code, then `resume`.                                                                        |
-| Disk full          | The record store, artifacts and lane stores share the data root.                         | Free disk, or move `dataRoot`.                                                                      |
+| Mode               | Outcome                                                                                                     | Recovery                                                                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Compose error      | No agent starts. The CLI prints diagnostics and exits 1, a config or build fault; 2 for the command line's. | Fix what the diagnostics name.                                                                      |
+| Node `failed`      | Dependents `skipped` unless a settling group or fan-in node got it as `Settled`.                            | `resume` runs it again.                                                                             |
+| Node `rejected`    | Follows edge tolerance: the normal path for a red check or a negative review.                               | None when tolerated, else change the input or the code, then `resume`; a plain `resume` repeats it. |
+| Host crash or kill | The record is consistent as of the last event. The host's cancel hook kills agent trees.                    | `resume` continues.                                                                                 |
+| Worker error       | A code node that throws, or times out, settles `failed` with the error.                                     | Fix the code, then `resume`.                                                                        |
+| Disk full          | The record store, artifacts and lane stores share the data root.                                            | Free disk, or move `dataRoot`.                                                                      |
 
 ## 17. Open design points
 

@@ -103,24 +103,12 @@ export const diagnosticsOf = (
 		? error.diagnostics
 		: undefined;
 
-const ARGUMENT_CODES = new Set([
-	"CFG.flag",
-	"CFG.required",
-	"CFG.param",
-	"CFG.schema",
-	"HOST.param",
-]);
-const FROM_FLAG = /\(from -c [^)]*\)$/;
-
 /**
- * Whether `d` faults what the user typed on the command line: a `-c`, or a param's flag. A value a file or a recorded
- * concert set is config, even under a param's code.
+ * Whether `d` faults what the user typed on the command line: a `-c`, or a param's flag. A value a file, a preset or a
+ * recorded concert set is config, and so is one with no layer.
  */
 const isArgument = (d: Diagnostic) =>
-	d.source === undefined &&
-	!d.message.includes(" of concert ") &&
-	(ARGUMENT_CODES.has(d.code) || FROM_FLAG.test(d.message)) &&
-	!(d.code === "CFG.required" && d.message.startsWith("config key "));
+	d.layer === "flag" && d.concert === undefined;
 
 /** The exit code of `diagnostics`: usage when any faults the command line, else failed. */
 export const diagnosedExit = (diagnostics: readonly Diagnostic[]) =>

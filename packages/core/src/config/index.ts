@@ -4,6 +4,7 @@ import type {
 	Diagnostic,
 	JsonSchema,
 	KeyPath,
+	LayerName,
 	SourceLocation,
 } from "@maestro/ir";
 import {
@@ -27,19 +28,6 @@ import {
 import type { Bounds } from "../host";
 import { isRecord } from "../shared";
 
-/**
- * The layers, lowest first. `example` marks a value taken from the composition's example set, which `compose` uses for
- * a param no file or flag gives. `directory` marks a base that `layeredOver` puts beneath a subtree of the config.
- */
-export type LayerName =
-	| "default"
-	| "example"
-	| "directory"
-	| "user"
-	| "workspace"
-	| "preset"
-	| "flag";
-
 /** Where a config value came from: its layer, and the file and line when a file set it, or the flag as typed. */
 export type Source = {
 	layer: LayerName;
@@ -54,7 +42,7 @@ export type Source = {
 	fix?: string;
 };
 
-export type { KeyPath };
+export type { KeyPath, LayerName };
 
 /** Layered config: its plain values, and the source of each value by key path. */
 export type Composed = {
@@ -137,6 +125,8 @@ export function configDiagnostic(
 			source?.flag === undefined ? message : `${message} ${origin(source)}`,
 		hint: source?.fix ?? hint,
 		...(location && { source: location }),
+		...(source && { layer: source.layer }),
+		...(source?.concert !== undefined && { concert: source.concert }),
 	};
 }
 

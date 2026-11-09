@@ -378,4 +378,11 @@ describe("configDiagnostic", () => {
 	] as const)("words the message for %s", (_, source, message) =>
 		expect(configDiagnostic("X.y", source, "m", "h").message).toBe(message),
 	);
+
+	test("carries the source's layer and concert", () => {
+		const d = configDiagnostic("X.y", { ...flag, concert: "7f3c2a" }, "m", "h");
+		expect([d.layer, d.concert]).toEqual(["flag", "7f3c2a"]);
+		const w = configDiagnostic("X.y", { layer: "workspace" }, "m", "h");
+		expect([w.layer, w.concert]).toEqual(["workspace", undefined]);
+	});
 });

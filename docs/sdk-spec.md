@@ -229,7 +229,8 @@ A code node is the SDK's answer to "this needs real code". It runs only at perfo
   it, and `rep` shows it as `optional`. A rule across params, such as two of which exactly one is given, is the build's,
   refusing with `CFG.param`.
 - The CLI validates params before build. An absent required param, or a constraint violation such as a list of fewer
-  than two models for a comparison, is a usage error with a next-step message (CLI-06).
+  than two models for a comparison, is a usage error (exit 2) with a next-step message (CLI-06) when the command line
+  gave the value. A value a config file, a preset, the example set or a default gave is a config fault, which exits 1.
 
 ### Config
 

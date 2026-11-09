@@ -73,6 +73,27 @@ async function repoWorld(extra = "", env: Record<string, string> = {}) {
 	return { ...w, call, target };
 }
 
+test("a missing target.repo exits 2 when -c gave it, and 1 when a config file did", async () => {
+	const w = await repoWorld();
+	const missing = join(w.cwd, "gone");
+	const script = join(REPO, "mark.ts");
+	const flagged = await w.call([
+		"compose",
+		script,
+		"-c",
+		`target.repo=${missing}`,
+	]);
+	expect(flagged.code).toBe(2);
+	expect(flagged.err).toContain("does not exist");
+	writeFileSync(
+		join(w.cwd, ".maestro/config.yaml"),
+		`target:\n  repo: ${missing}\n  base: main\n`,
+	);
+	const filed = await w.call(["compose", script]);
+	expect(filed.code).toBe(1);
+	expect(filed.err).toContain("does not exist");
+});
+
 test("a lane ref names a version by the instance id ls shows, ls shows its disk use and prune frees it", async () => {
 	const w = await repoWorld();
 	const marked = await w.call(["perform", join(REPO, "mark.ts")]);

@@ -288,7 +288,7 @@ function declarationErrors(
 		return [
 			configDiagnostic(
 				"CFG.required",
-				undefined,
+				{ layer: "flag" },
 				`${naming(r, name)} is required`,
 				requiredHint(r, name),
 			),

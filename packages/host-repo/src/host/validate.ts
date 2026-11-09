@@ -2,6 +2,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { closest } from "@maestro/core";
 import {
+	type Composed,
 	ConfigError,
 	configDiagnostic,
 	type KeyPath,
@@ -66,6 +67,18 @@ import { contextIn } from "./windows";
 const GIT_ENTRY = ".git";
 
 type Finding = Omit<Diagnostic, "severity">;
+
+/** What a finding points at: a node, or the layer and concert that set a config value. */
+type At = Pick<Finding, "node" | "layer" | "concert">;
+
+/** The layer, and concert, that set the value at `path` of `config`, for a finding on that value. */
+function layerAt(config: Pick<Composed, "sources">, path: KeyPath): At {
+	const { layer, concert } = sourceOf(config, path) ?? {};
+	return {
+		...(layer && { layer }),
+		...(concert !== undefined && { concert }),
+	};
+}
 
 /** An agent node and its config. */
 type AgentNode = { node: HostNode; kind: "agent"; config: AgentConfig };
@@ -496,21 +509,21 @@ function reach(
 }
 
 /**
- * A bind of `paths`, described by `what`, that is relative or missing, or reaches the lanes or, when `writable`, the
- * target repository.
+ * A bind of `paths`, described by `what` and pointing `at`, that is relative or missing, or reaches the lanes or, when
+ * `writable`, the target repository.
  */
 function bindProblems(
 	setup: RepoSetup,
 	paths: string[],
 	what: string,
-	node?: string,
+	at: At,
 	writable = false,
 ): Finding[] {
 	return paths.flatMap((path) => {
 		const found = (message: string, hint: string): Finding[] => [
 			{
 				code: "HOST.bind",
-				node,
+				...at,
 				message: `${what} '${path}' ${message}`,
 				hint,
 			},
@@ -536,20 +549,20 @@ const checkBinds = (
 	setup: RepoSetup,
 	label: string,
 	spec: CheckSpec,
-	node?: string,
+	at: At,
 ) => [
-	...bindProblems(setup, spec.readOnly, `${label} read-only bind`, node),
-	...bindProblems(setup, spec.writable, `${label} writable bind`, node, true),
+	...bindProblems(setup, spec.readOnly, `${label} read-only bind`, at),
+	...bindProblems(setup, spec.writable, `${label} writable bind`, at, true),
 ];
 
 /** The binds of a check node's inline check. */
 function nodeBinds(setup: RepoSetup, r: RepoNode): Finding[] {
 	return r.kind === "check" && typeof r.config.check === "object"
-		? checkBinds(setup, "inline check", r.config.check, r.node.id)
+		? checkBinds(setup, "inline check", r.config.check, { node: r.node.id })
 		: [];
 }
 
-function targetProblems(setup: RepoSetup): Finding[] {
+function targetProblems(setup: RepoSetup, host: HostSetup): Finding[] {
 	const repo = setup.target?.repo;
 	if (repo === undefined)
 		return [
@@ -566,6 +579,7 @@ function targetProblems(setup: RepoSetup): Finding[] {
 				code: "HOST.target",
 				message: `target repository '${repo}' does not exist`,
 				hint: "Set 'target.repo' relative to the file's workspace root, or the user config's directory",
+				...layerAt(host, ["target", "repo"]),
 			},
 		];
 	if (!existsSync(join(repo, GIT_ENTRY)))
@@ -574,13 +588,14 @@ function targetProblems(setup: RepoSetup): Finding[] {
 				code: "HOST.target",
 				message: `target repository '${repo}' is not a git repository`,
 				hint: "Point 'target.repo' at a git repository",
+				...layerAt(host, ["target", "repo"]),
 			},
 		];
 	return [];
 }
 
 /** The `target.sparse` entries that are absolute or step out through `..`. */
-function sparseProblems(setup: RepoSetup): Finding[] {
+function sparseProblems(setup: RepoSetup, host: HostSetup): Finding[] {
 	const sparse = setup.target?.sparse;
 	return (Array.isArray(sparse) ? sparse : []).flatMap((entry) => {
 		const how = isAbsolute(entry)
@@ -594,6 +609,7 @@ function sparseProblems(setup: RepoSetup): Finding[] {
 						code: "HOST.target",
 						message: `target.sparse entry '${entry}' ${how}`,
 						hint: "List directories relative to the repo root",
+						...layerAt(host, ["target", "sparse"]),
 					},
 				]
 			: [];
@@ -679,9 +695,12 @@ function harnessExtrasProblems(
 	];
 	return [
 		...problems.map((p) => runtimeDiagnostic(profile, p)),
-		...bindProblems(setup, [extras], `${PROFILES}.${name}.harnessExtras`).map(
-			error,
-		),
+		...bindProblems(
+			setup,
+			[extras],
+			`${PROFILES}.${name}.harnessExtras`,
+			layerAt(profile, ["harnessExtras"]),
+		).map(error),
 	];
 }
 
@@ -757,12 +776,14 @@ function profileProblems(
 			setup,
 			fields.readOnly,
 			`profile ${name} read-only bind`,
+			layerAt(profile, ["readOnly"]),
 		).map(error),
 		...Object.entries(fields.attachments).flatMap(([key, a]) =>
 			bindProblems(
 				setup,
 				[a.path],
 				`${PROFILES}.${name}.attachments.${key}.path`,
+				layerAt(profile, ["attachments", key, "path"]),
 			).map(error),
 		),
 	];
@@ -906,15 +927,35 @@ export async function validateRepo(
 		...rolesProblems(hostSetup),
 		...profiled.diagnostics,
 		...[
-			...targetProblems(setup),
-			...sparseProblems(setup),
-			...bindProblems(setup, setup.sandbox.readOnly, "read-only bind"),
-			...bindProblems(setup, setup.sandbox.path, "sandbox.path directory"),
+			...targetProblems(setup, hostSetup),
+			...sparseProblems(setup, hostSetup),
+			...bindProblems(
+				setup,
+				setup.sandbox.readOnly,
+				"read-only bind",
+				layerAt(hostSetup, ["sandbox", "readOnly"]),
+			),
+			...bindProblems(
+				setup,
+				setup.sandbox.path,
+				"sandbox.path directory",
+				layerAt(hostSetup, ["sandbox", "path"]),
+			),
 			...Object.entries(setup.target?.checks ?? {}).flatMap(([name, spec]) =>
-				checkBinds(setup, `check '${name}'`, spec),
+				checkBinds(
+					setup,
+					`check '${name}'`,
+					spec,
+					layerAt(hostSetup, ["target", "checks", name]),
+				),
 			),
 			...(setup.target?.prepare
-				? checkBinds(setup, "target.prepare", setup.target.prepare)
+				? checkBinds(
+						setup,
+						"target.prepare",
+						setup.target.prepare,
+						layerAt(hostSetup, ["target", "prepare"]),
+					)
 				: []),
 			...nodes.flatMap((r) => [...names(setup, r), ...nodeBinds(setup, r)]),
 			...agentChecks(setup, agents),

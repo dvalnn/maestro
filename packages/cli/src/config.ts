@@ -209,8 +209,12 @@ const CFG_PRESET = "CFG.preset";
 const CFG_FLAG = "CFG.flag";
 const NEW_CONCERT = "perform the composition as a new concert";
 
-const refused = (code: string, message: string, hint: string) =>
-	new ConfigError([configDiagnostic(code, undefined, message, hint)]);
+const refused = (
+	code: string,
+	message: string,
+	hint: string,
+	source?: Source,
+) => new ConfigError([configDiagnostic(code, source, message, hint)]);
 
 /**
  * A directory presets are looked up in, the base its presets' relative paths resolve against, and the directory whose
@@ -375,6 +379,7 @@ function overrideLayer(
 			CFG_FLAG,
 			`${flag} takes <key>=<value>`,
 			"Write it as -c <key>=<value>, as in -c concurrency=4",
+			{ layer: "flag", concert: recorded },
 		);
 	const [, key = "", value = ""] = match;
 	const path = keyPath(key);
@@ -383,6 +388,7 @@ function overrideLayer(
 			CFG_FLAG,
 			`${flag}: '${key}' is not a key path`,
 			`Join keys with '.', and quote a key holding '.', as in -c 'target.checks."a.b"=x'`,
+			{ layer: "flag", concert: recorded },
 		);
 	const nested = path
 		.map((k, depth) => `${INDENT.repeat(depth)}${JSON.stringify(k)}:`)
