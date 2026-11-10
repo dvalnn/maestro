@@ -70,8 +70,8 @@ sessions. [Home](docs/architecture.md#resume-and-encore) _Avoid_: rerun, continu
 **Tour manager**: The Maestro Tour Manager: maestro in factory mode, which triages and builds a milestone's forge
 tickets, speaking on a ticket only in comments. [Home](docs/agents/factory.md) _Avoid_: factory (for who acts), bot
 
-**Tick**: One run of `scripts/factory`: it reads the forge, routes what finished concerts left, and starts at most one
-next action. [Home](docs/agents/factory.md)
+**Tick**: One run of `scripts/factory`: it reads the forge, routes what finished concerts left, and starts what may run
+next. [Home](docs/agents/factory.md)
 
 **Settle**: A finished concert awaiting routing by the tick. [Home](docs/agents/factory.md#routing-a-settle)
 
@@ -218,7 +218,7 @@ given after doing the job. [Home](packages/host-repo/README.md#envelope)
 the run, and a red check is not one. [Home](docs/agents/factory.md#build)
 
 **Lesson**: Something the next agent in this repository should know that the code and docs do not say, listed in its
-report; the owner promotes it by hand.
+report; a masterclass proposes its promotion and the owner approves it.
 
 **Envelope**: An agent's final reply, carrying a report, the typed fields its seat call declares and, for a verdict
 agent, an outcome. [Home](packages/host-repo/README.md#envelope)
@@ -230,12 +230,15 @@ node.
 **Task**: The text an agent node runs against: what the call asks, its inputs by name, its outputs and its bar.
 [Home](packages/host-repo/README.md#task-layout) _Avoid_: task prompt
 
-**Skill**: A directory of guidance with a `SKILL.md` entry that a profile names under `skills`, mounted read-only for
-the agent and listed in its frame as a discipline, by **When** and **Read**.
-[Home](packages/host-repo/README.md#profiles-and-prompts)
+**Checklist**: The items an agent must rule on one by one, written into its task by the composition: each item met, or
+broken with where. _Avoid_: skill, which names a harness's own agent-picked guidance
 
 **Attachment**: A named artifact an agent reads, mounted read-only and listed in its task with its `hint`, type and
 size; the agent must read it. [Home](packages/host-repo/README.md#staging) _Avoid_: ref
+
+**Sighting**: A defect or smell in the target outside the task's scope, listed in an agent's report with where it is and
+what it breaches, for a masterclass to cluster and raise; it never blocks the task. Unlike an Obstacle, it did not slow
+the agent.
 
 **Outbox**: The per-instance directory outside the lane where an agent writes its declared outputs.
 [Home](packages/host-repo/README.md#outbox)
@@ -326,6 +329,12 @@ review.
 
 **Tally**: A panel's result: the upheld findings, whether none remain, and the lane and session a fix continues.
 _Avoid_: round.
+
+**Risk**: Triage's rating of a ticket before the build, `low`, `medium` or `high`, from the paths it will touch and the
+contracts it names; it decides whether tests come first and the lowest review tier. _Avoid_: tier.
+
+**Review tier**: How strong a panel's lenses are, picked from the size of the change and never below its risk's floor.
+_Avoid_: risk.
 
 **Tester**: A work agent that pins the ask's behaviour in tests before the builder starts, listing them in a test map.
 
