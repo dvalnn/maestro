@@ -96,7 +96,7 @@ type Ruled =
  * One round's rulings, and what its state carries to the next: the reviewed lane, the builder's session and the
  * reviewer's.
  */
-type Rulings = { lane: string; session: string; lens?: string } & Ruled;
+type Rulings = { lane: string; session: string; reviewer?: string } & Ruled;
 
 /**
  * Each blocking finding of `rulings` that was upheld, as a Markdown list item:
@@ -124,7 +124,7 @@ export function upheldOf(
 ): {
 	lane: string;
 	session: string;
-	lens?: string;
+	reviewer?: string;
 	clean: boolean;
 	upheld: string;
 } {
@@ -132,11 +132,11 @@ export function upheldOf(
 	const file = join(ctx.scratch, "upheld.md");
 	const body = lines.length ? lines : ["None."];
 	writeFileSync(file, ["# Upheld findings", "", ...body, ""].join("\n"));
-	const { lane, session, lens } = rulings;
+	const { lane, session, reviewer } = rulings;
 	return {
 		lane,
 		session,
-		...(lens !== undefined && { lens }),
+		...(reviewer !== undefined && { reviewer }),
 		clean: lines.length === 0,
 		upheld: file,
 	};
@@ -236,17 +236,18 @@ function build(tier: Tier, request: string, spec: Ref<ArtifactRef>) {
 const tally = (
 	lane: Ref<string>,
 	session: Ref<string>,
-	rulings: CodeInputs<Ruled & { lens?: string }>,
+	rulings: CodeInputs<Ruled & { reviewer?: string }>,
 ) =>
 	code(upheldOf, {
 		in: { lane, session, ...rulings },
-		out: "lens" in rulings ? { ...ROUND_OUT, lens: Session } : ROUND_OUT,
+		out:
+			"reviewer" in rulings ? { ...ROUND_OUT, reviewer: Session } : ROUND_OUT,
 		label: "upheld",
 		tolerate: "rejected",
 	});
 
 /** A reviewer round's session, which the next round's reviewer continues, and the findings that round upheld. */
-type Earlier = { lens: Ref<string>; upheld: Ref<ArtifactRef> };
+type Earlier = { reviewer: Ref<string>; upheld: Ref<ArtifactRef> };
 
 /**
  * A panel review of `tier` over the green lane version `lane`, ending in its upheld findings and carrying the builder's
@@ -288,7 +289,7 @@ function reviewerRound(
 		},
 		grounds: JUDGED,
 		skeptics: true,
-		session: earlier?.lens,
+		session: earlier?.reviewer,
 		checks: REPO_CHECKS,
 		extra: earlier && {
 			upheld: {
@@ -302,7 +303,7 @@ function reviewerRound(
 			tolerate: "rejected",
 			label: "findings",
 		}),
-		lens: reviewer.out.session,
+		reviewer: reviewer.out.session,
 		verdicts: allSettled([
 			readJson(skeptic.out.verdicts, { tolerate: "rejected" }),
 		]),
@@ -393,8 +394,8 @@ export const slice = composition(
 			step: (s) => {
 				const fixed = fix(s.out, spec);
 				const earlier =
-					"lens" in s.out
-						? { lens: s.out.lens, upheld: s.out.upheld }
+					"reviewer" in s.out
+						? { reviewer: s.out.reviewer, upheld: s.out.upheld }
 						: undefined;
 				return gateAndReview(fixed.out.lane, fixed.out.session, earlier);
 			},

@@ -42,8 +42,13 @@ const lane = "c.gate";
 const session = "c.build";
 const cases: [string, Parameters<typeof upheldOf>[0], string[]][] = [
 	[
-		"a clean lens",
-		{ lane, session, lens: "c.reviewer", findings: { ...found, clean: true } },
+		"a clean reviewer",
+		{
+			lane,
+			session,
+			reviewer: "c.reviewer",
+			findings: { ...found, clean: true },
+		},
 		[],
 	],
 	["no skeptic", { lane, session, findings: found }, ["F1", "F2"]],
@@ -106,7 +111,7 @@ test.each(cases)(
 	(_, rulings, ids) => {
 		const out = upheldOf(rulings, ctx);
 		expect(out).toMatchObject({ lane, session, clean: !ids.length });
-		expect(out.lens).toBe(rulings.lens);
+		expect(out.reviewer).toBe(rulings.reviewer);
 		const upheld: string[] =
 			readFileSync(out.upheld, "utf8").match(/F\d/g) ?? [];
 		expect(upheld).toEqual(ids);
@@ -227,7 +232,7 @@ test.each([
 	[true, "ok"],
 	[false, "rejected"],
 ])(
-	"a stub perform under --preset small continues the builder and the lens in their sessions across review rounds, and changing files %s settles %s, returning the last round's upheld findings",
+	"a stub perform under --preset small continues the builder and the reviewer in their sessions across review rounds, and changing files %s settles %s, returning the last round's upheld findings",
 	async (changes) => {
 		const tier = "small";
 		const target = targetRepo();
