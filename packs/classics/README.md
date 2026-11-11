@@ -19,9 +19,11 @@ are flags in kebab-case, or config under `classics.<composition>.<param>`. Its s
 `scout` and `planner` serve no composition of the pack; they are seats for compositions built on it. A `scout` answers
 the questions it is asked in `answer.md`.
 
-`builder` and `lens` attach one shared copy of `profiles/writing/`, the guide they write and judge Markdown by, adapted
-from Matt Pocock's `writing-for-agents` under the MIT license beside it. A profile may name files anywhere inside its
-namespace directory, here `profiles/`, so the pack ships the guide once; copy the whole `profiles/` to shadow the pack.
+`builder` and `lens` load `skills/writing-for-agents/`, the guide they write and judge Markdown by, and `planner` loads
+it with `skills/codebase-design/`, through the profile `skills` key. The skills are adapted from Matt Pocock's under the
+MIT license in `skills/LICENSE`, each copy recorded in `skills/UPSTREAM.md`; `tdd`, `domain-modeling` and `code-smells`
+are lifted beside them, attached by no seat yet. A profile may name files anywhere inside its namespace directory, here
+`profiles/`; copy the whole `profiles/` to shadow the pack.
 
 Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, `lens`, `skeptic` and `consolidator` 20 minutes
 and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own terms; set one in

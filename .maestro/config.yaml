@@ -32,5 +32,5 @@ profiles:
       docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
   writer:
     attachments:
-      writing: { path: packs/classics/profiles/writing, hint: "before writing the body: writing.md" }
+      writing: { path: packs/classics/skills/writing-for-agents, hint: "before writing the body: SKILL.md" }
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before drawing any Mermaid diagram: SKILL.md" }

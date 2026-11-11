@@ -1,3 +1,8 @@
+---
+name: writing-for-agents
+description: Writing documents for agents. Use when creating or editing skills, or modifying AGENTS.md or CLAUDE.md.
+---
+
 # Writing
 
 Reference for writing any document an agent consumes: a skill, an `AGENTS.md` / `CLAUDE.md`, a doc reached by a pointer.

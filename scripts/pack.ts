@@ -1,4 +1,4 @@
-// Builds the pack in <dir> into <dir>/dist: its bundle with its own SDK copy, its manifest, its README and its profiles
+// Builds the pack in <dir> into <dir>/dist: its bundle with its own SDK copy, its manifest, its README, its profiles and its skills
 // (ADR 0002).
 import { existsSync, statSync } from "node:fs";
 import { cp, mkdir, rm } from "node:fs/promises";
@@ -16,7 +16,7 @@ const ENTRY = "index.js";
 const SOURCE = "src/index.ts";
 const README = "README.md";
 const PACKAGE = "package.json";
-const PROFILES = "profiles";
+const SHIPPED_DIRS = ["profiles", "skills"];
 
 /** Throws an error that says what went wrong, then the likely fix on its own line. */
 function fail(what: string, fix: string): never {
@@ -65,7 +65,7 @@ async function bundleOf(root: string): Promise<Blob> {
 
 /**
  * Writes the pack whose source is `dir` into `out`: `index.js`, `README.md`, `maestro-pack.json` and a copy of its
- * `profiles` directory when it has one, each link as written, once the whole build has succeeded. The pack id is the
+ * `profiles` and `skills` directories when it has them, each link as written, once the whole build has succeeded. The pack id is the
  * directory's name and its version is its package's.
  * @throws Error when a file the pack needs is missing, or the source does not bundle.
  */
@@ -86,13 +86,15 @@ export async function pack(dir: string, out = join(dir, "dist")) {
 		join(out, "maestro-pack.json"),
 		`${JSON.stringify(manifest, null, "\t")}\n`,
 	);
-	await rm(join(out, PROFILES), { recursive: true, force: true });
-	if (existsSync(join(root, PROFILES)))
-		await cp(join(root, PROFILES), join(out, PROFILES), {
-			recursive: true,
-			// A relative link stays relative, so a self-contained extras directory stays self-contained.
-			verbatimSymlinks: true,
-		});
+	for (const name of SHIPPED_DIRS) {
+		await rm(join(out, name), { recursive: true, force: true });
+		if (existsSync(join(root, name)))
+			await cp(join(root, name), join(out, name), {
+				recursive: true,
+				// A relative link stays relative, so a self-contained extras directory stays self-contained.
+				verbatimSymlinks: true,
+			});
+	}
 	return out;
 }
 

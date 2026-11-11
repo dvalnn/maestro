@@ -1,7 +1,7 @@
 # Writing skills
 
-The skill-specific branch of [`writing.md`](writing.md): what changes when the document is a skill (frontmatter and the
-invocation choice). Everything else about writing it is the universal reference in `writing.md`.
+The skill-specific branch of [`SKILL.md`](SKILL.md): what changes when the document is a skill (frontmatter and the
+invocation choice). Everything else about writing it is the universal reference in `SKILL.md`.
 
 ## Invocation
 
@@ -13,7 +13,7 @@ Two choices, trading the two loads:
   at all times: permanent context load in exchange for discoverability. A model-invoked skill whose content is all
   reference is also one home for shared reference: another skill can invoke it, so reference needed by several skills
   lives in one place. Mechanics: omit `disable-model-invocation`, and write a model-facing description carrying the
-  trigger branches (the pointer-writing rules in `writing.md` apply in full).
+  trigger branches (the pointer-writing rules in `SKILL.md` apply in full).
 - A **user-invoked** skill strips the description from the agent's reach: only the human typing its name can invoke it,
   and no other skill can. Zero context load, but it spends cognitive load: you are the index that must remember it
   exists. Mechanics: set `disable-model-invocation: true`; the `description` becomes human-facing: a one-line summary,
@@ -27,7 +27,7 @@ other. Push it to a plain file outside the skill system: external reference any 
 
 ## Splitting by invocation
 
-The invocation cut of splitting (the sequence cut lives in `writing.md`): split off a model-invoked skill when you have
-a distinct leading word that should trigger it on its own (a trigger word you actually use in your prompts), or another
+The invocation cut of splitting (the sequence cut lives in `SKILL.md`): split off a model-invoked skill when you have a
+distinct leading word that should trigger it on its own (a trigger word you actually use in your prompts), or another
 skill must reach it. You pay context load for the new always-loaded description, so that independent reach has to be
 worth it.

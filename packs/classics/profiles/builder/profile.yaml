@@ -1,6 +1,3 @@
 instructions: instructions.md
 limits: { timeout: 45m, tokens: 30000000 }
-attachments:
-  writing:
-    path: ../writing
-    hint: "before writing any Markdown a human or an agent reads: writing.md, and writing-skills.md for a skill"
+skills: [classics/writing-for-agents]

@@ -188,23 +188,22 @@ describe("build_then_repair", () => {
 	});
 });
 
-test("the builder writes and the lens judges by one shared writing guide", async () => {
-	const dirs = await Promise.all(
-		["builder", "lens"].map(async (name) => {
-			const { out } = await maestro(
-				"agent",
-				"show",
-				`classics/${name}`,
-				"--json",
-			);
-			const dir: string = JSON.parse(out).attachments.writing.path;
-			for (const f of ["writing.md", "writing-skills.md", "LICENSE"])
-				expect(readFileSync(join(dir, f), "utf8")).not.toBe("");
-			return dir;
-		}),
+test.each([
+	["builder", ["writing-for-agents"]],
+	["lens", ["writing-for-agents"]],
+	["planner", ["codebase-design", "writing-for-agents"]],
+])("the %s attaches the skills %j from the pack", async (name, skills) => {
+	const { out, code } = await maestro(
+		"agent",
+		"show",
+		`classics/${name}`,
+		"--json",
 	);
-	expect(dirs[1]).toBe(dirs[0]);
-	expect(dirs[0]).toEndWith(join("pack", "profiles", "writing"));
+	expect(code).toBe(0);
+	const listed = Object.keys(JSON.parse(out).sources).filter((k) =>
+		/^skills\.\d+$/.test(k),
+	);
+	expect(listed).toHaveLength(skills.length);
 });
 
 test.each([
