@@ -336,7 +336,7 @@ test("under --tier small, the reviewer may run every check of the project's conf
 	]);
 });
 
-test("under --tier ordinary, the build extends the tester's lane, and the build and the writer read the tester's map", async () => {
+test("under --tier ordinary, the build extends the tester's lane, and the build and the writer read the tester's map as a relay", async () => {
 	const out = await maestro(await slice("compose", "ordinary"));
 	type Edge = {
 		from: { node: string; port?: string };

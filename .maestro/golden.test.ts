@@ -30,6 +30,7 @@ type Node = {
 		seat?: string;
 		profile?: string;
 		attachments?: unknown;
+		relay?: { name: string }[];
 		out?: unknown;
 		reply?: unknown;
 		lane?: { mode?: string };
@@ -101,6 +102,7 @@ const signed = (n: Node, task: unknown, { bounds }: Composed["plan"]) => ({
 	profile: n.config?.profile,
 	task,
 	attachments: n.config?.attachments,
+	relay: n.config?.relay?.map((r) => r.name),
 	out: n.config?.out,
 	reply: n.config?.reply,
 	lane: n.config?.lane?.mode,
@@ -113,7 +115,7 @@ const signed = (n: Node, task: unknown, { bounds }: Composed["plan"]) => ({
  * The agent signature of a composed plan and the sessions its agents partition into.
  * @param composed the parsed `maestro compose --json` output
  * @returns each seat name, suffixed `[item]` for a parMap's list item, mapped to its agents' seat, profile, task,
- *   attachments, `out` and `reply` schemas, lane mode, checks, verdict and instance bound in content order; and the sorted groups of
+ *   attachments, relay names, `out` and `reply` schemas, lane mode, checks, verdict and instance bound in content order; and the sorted groups of
  *   those names that share a session
  */
 function signature({ plan }: Composed) {

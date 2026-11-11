@@ -17,4 +17,4 @@ export {
 	skeptic,
 } from "./seats";
 export type { Findings, Verdict, Verdicts } from "./types";
-export { Answers, atLeastOne } from "./types";
+export { Answers, atLeastOne, TestMap } from "./types";

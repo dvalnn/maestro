@@ -8,6 +8,7 @@ import {
 	repairUntilGreen,
 	round,
 	rulingLine,
+	TestMap,
 	upheld,
 	type Verdict,
 	type Verdicts,
@@ -17,7 +18,6 @@ import {
 	commits,
 	extend,
 	fresh,
-	JsonOut,
 	Lane,
 	MarkdownOut,
 	read,
@@ -34,7 +34,6 @@ import {
 	composition,
 	Dir,
 	Enum,
-	List,
 	loop,
 	Markdown,
 	not,
@@ -42,7 +41,6 @@ import {
 	readJson,
 	reject,
 	type Settled,
-	Struct,
 	Text,
 	use,
 	type ValueOf,
@@ -184,17 +182,9 @@ const ROUND_OUT = {
 /** The PR body's writer: a cheap seat that only reads the finished change. */
 const writer = seat("writer");
 
-/** The tester's map: each requirement in one list, a pinned one with its test by file and name. */
-const Unpinned = List(Struct({ requirement: Text(), why: Text() }));
-const TestMap = Struct({
-	pinned: List(Struct({ requirement: Text(), file: Text(), test: Text() })),
-	deferred: Unpinned,
-	untestable: Unpinned,
-});
-
 /** The seat that writes a spec's tests before the build, on another model family. */
 const tester = seat("tester", {
-	out: { map: JsonOut("map.json", TestMap) },
+	reply: { map: TestMap },
 	checks: REPO_CHECKS,
 });
 
@@ -223,16 +213,13 @@ function build(tier: Tier, request: string, spec: Ref<ArtifactRef>) {
 			spec: { artifact: spec, hint: "first, for the requirements to pin" },
 		},
 	});
-	const map = {
-		artifact: tested.out.map,
-		hint: "for the tester's tests, by requirement",
-	};
+	const map = tested.out.map;
 	const built = builder({
 		label: "build",
 		task: task(request, TESTED_RULE),
 		lane: extend(tested.out.lane),
 		checks: REPO_CHECKS,
-		attachments: { map },
+		relay: { map },
 	});
 	return { built, map };
 }
@@ -418,7 +405,6 @@ export const slice = composition(
 			lane: read(reviewed.out.lane),
 			attachments: {
 				spec: { artifact: spec, hint: "first, for what the change had to do" },
-				...(map && { map }),
 				patches: {
 					artifact: changes,
 					hint: "for what the change did, patch by patch",
@@ -430,6 +416,7 @@ export const slice = composition(
 					},
 				}),
 			},
+			...(map && { relay: { map } }),
 			out: { pr: MarkdownOut("pr.md") },
 		});
 		return code(requirePatch, {

@@ -9,7 +9,8 @@ Write the tests that pin the attached spec's requirements.
   as a row of one table.
 - Leave your files formatted: run `check format`, and fix with `just fmt`.
 
-Then write `map.json`, naming every requirement in exactly one list, its `requirement` opening with its id, as `R1: …`:
+Then give your `map` field, naming every requirement in exactly one list, its `requirement` opening with its id, as
+`R1: …`:
 
 - `pinned`: a requirement you pinned, with its test's repo-relative `file` and its `test` name exactly as the test call
   gives it, without any enclosing `describe`.

@@ -23,6 +23,14 @@ export const Findings = Struct({
 	),
 });
 
+/** The tester's map: each requirement in one list, a pinned one with its test by file and name. */
+const Unpinned = List(Struct({ requirement: Text(), why: Text() }));
+export const TestMap = Struct({
+	pinned: List(Struct({ requirement: Text(), file: Text(), test: Text() })),
+	deferred: Unpinned,
+	untestable: Unpinned,
+});
+
 /** A skeptic's ruling on each finding of its lens, by the finding's id. */
 export const Verdicts = List(
 	Struct({ id: Text(), holds: Bool(), why: Text() }),
