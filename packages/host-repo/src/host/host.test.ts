@@ -1607,6 +1607,64 @@ describe("perform", () => {
 		expect(requests.map((r) => r.runtime.model)).toEqual(["none", "none"]);
 	});
 
+	test("an agent's sightings arrive in its report output and its record, and a sighting without its cites is corrected", async () => {
+		const sighting = {
+			path: "src/a.ts",
+			text: "dead branch",
+			cites: "no dead code",
+		};
+		const { host, requests } = stubHost(() =>
+			requests.length <= 1
+				? [
+						reply({
+							report: {
+								...TRIED,
+								sightings: [{ path: "src/a.ts", text: "x" }],
+							},
+						}),
+					]
+				: [reply({ report: { ...TRIED, sightings: [sighting] } })],
+		);
+		const { result, instances } = await performed(
+			host,
+			lone(host, {}),
+			configOf(toyTarget()),
+		);
+		expect(requests).toHaveLength(2);
+		expect(requests[1]?.prompt).toContain("sightings");
+		expect(result).toMatchObject({
+			outcome: "ok",
+			outputs: { report: { ...TRIED, sightings: [sighting] } },
+		});
+		expect(instances[0]?.enrichment?.report).toEqual({
+			...TRIED,
+			sightings: [sighting],
+		});
+	});
+
+	test("a node whose report schema predates sightings gets no sightings line and ends ok", async () => {
+		const { host, requests } = stubHost(() => [OK]);
+		const ir = lone(host);
+		const old = {
+			...ir,
+			nodes: ir.nodes.map((n) => {
+				const report = n.out?.report as { properties: Record<string, unknown> };
+				const { sightings: _, ...properties } = report.properties;
+				return { ...n, out: { ...n.out, report: { ...report, properties } } };
+			}),
+		} as typeof ir;
+		const { result, artifact } = await performed(
+			host,
+			old,
+			configOf(toyTarget()),
+		);
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(requests).toHaveLength(1);
+		expect(
+			readFileSync(join(artifact("x", "staged"), "instructions.md"), "utf8"),
+		).not.toContain("sightings");
+	});
+
 	test("a verdict agent that rejects is rejected with its reason and outputs", async () => {
 		const { host } = stubHost(() => [
 			reply({ outcome: "rejected", reason: "not doable", report: TRIED }),

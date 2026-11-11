@@ -191,8 +191,8 @@ In the `--json` documents:
 - `ls <concert> --json` lists `instances` in graph order, each with `inputs`, the values a leaf was fed on its wired
   ports, left out when the record has none (a group, or an instance from an older store).
 - It gives the full report of each current instance that has one as `reports`, by the instance's name:
-  `maestro ls <concert> --json | jq .reports`. An agent's report holds `summary`, `gaps`, `obstacles` and `lessons`;
-  `maestro ls --help` says what each means.
+  `maestro ls <concert> --json | jq .reports`. An agent's report holds `summary`, `gaps`, `obstacles`, `lessons` and
+  `sightings`; `maestro ls --help` says what each means.
 - `ls` (each row), `ls <concert>`, `wait`, `watch` and `perform` carry `metrics`, each metric name's total over the
   concert, and `tokens`, the concert's total as the `tokens` column counts it. `ls` rows and `ls <concert>` also carry
   `elapsedMs`, `settledAt - startedAt`, or the time since `startedAt` while the concert runs.

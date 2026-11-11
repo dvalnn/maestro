@@ -153,9 +153,14 @@ describe("repoText.notes", () => {
 					gaps: ["g"],
 					obstacles: ["no rg"],
 					lessons: ["l1", "l2"],
+					sightings: [{ path: "a.ts", text: "dead", cites: "no dead code" }],
 				},
 			},
-			{ Obstacles: ["no rg"], Lessons: ["l1", "l2"] },
+			{
+				Obstacles: ["no rg"],
+				Lessons: ["l1", "l2"],
+				Sightings: ["a.ts · no dead code · dead"],
+			},
 		],
 		[{ report: { summary: "s", obstacles: [] } }, {}],
 		[

@@ -85,6 +85,7 @@ import {
 	HANDOFF_NOTE,
 	HANDOFF_TURN,
 	handoffMessage,
+	offersSightings,
 	REPORT,
 	type ReplyKind,
 	type Run,
@@ -829,6 +830,7 @@ function toldOf(
 	config: AgentConfig,
 	profile: Unsettled,
 	named: [string, AgentCheck][],
+	sightings: boolean,
 ): Run {
 	const { context } = profile.fields;
 	return {
@@ -846,7 +848,7 @@ function toldOf(
 		],
 		skills: profileSkills(profile),
 		out: Object.values(config.out ?? {}),
-		kind: replyKind(config.verdict, config.reply),
+		kind: replyKind(config.verdict, config.reply, sightings),
 		sessions:
 			context?.strategy === "handoff" ? sessionsOf(context.max) : undefined,
 	};
@@ -860,10 +862,16 @@ export const agentPrompt = (
 	config: AgentConfig,
 	profile: Unsettled,
 	setup: HostSetup,
+	out: Record<string, unknown> | undefined,
 ) =>
 	systemPrompt(
 		profile.fields.instructions,
-		toldOf(config, profile, agentChecks(config, repoSetup(setup))),
+		toldOf(
+			config,
+			profile,
+			agentChecks(config, repoSetup(setup)),
+			offersSightings(out),
+		),
 	);
 
 /**
@@ -976,7 +984,12 @@ async function execute(
 				lane.base,
 				setup.path,
 			);
-			const told = toldOf(config, profile, named);
+			const told = toldOf(
+				config,
+				profile,
+				named,
+				offersSightings(instance.node.out),
+			);
 			const { kind, out: outputs } = told;
 			const now: Turn = {
 				task: textInput(inputs, "prompt"),

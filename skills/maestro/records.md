@@ -17,9 +17,9 @@ How to read what a concert left: its instances, their outputs and artifacts, and
 
 ## What each node leaves
 
-- An agent: `report`, `{ summary, gaps?, obstacles?, lessons? }`; `staged`, a directory of its task (`prompt.md`), its
-  system prompt (`instructions.md`: the profile's instructions, then the host's frame) and each correction turn
-  (`correction-1.md` on); `lane`, its version; and each declared output.
+- An agent: `report`, `{ summary, gaps?, obstacles?, lessons?, sightings? }`; `staged`, a directory of its task
+  (`prompt.md`), its system prompt (`instructions.md`: the profile's instructions, then the host's frame) and each
+  correction turn (`correction-1.md` on); `lane`, its version; and each declared output.
 - A check: `logs`, each line it ran and its output; `lane`, unless it only read one.
 - A changeset node: `changeset` ([changesets.md](changesets.md)).
 

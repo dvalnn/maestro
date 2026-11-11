@@ -131,17 +131,33 @@ export type Report = {
 	gaps?: string[];
 	obstacles?: string[];
 	lessons?: string[];
+	sightings?: Sighting[];
 };
+
+/** Something an agent saw outside its task's scope: where it is, what is wrong and what it breaches. */
+export type Sighting = { path: string; text: string; cites: string };
 
 const LINE = { type: "string", minLength: 1 } as const;
 const LINES = { type: "array", items: LINE } as const;
+const SIGHTING = {
+	type: "object",
+	required: ["path", "text", "cites"],
+	additionalProperties: false,
+	properties: { path: LINE, text: LINE, cites: LINE },
+} as const;
 
 /** The schema of an agent's report. Equal to the host's `REPORT`. */
 export const REPORT = {
 	type: "object",
 	required: ["summary"],
 	additionalProperties: false,
-	properties: { summary: LINE, gaps: LINES, obstacles: LINES, lessons: LINES },
+	properties: {
+		summary: LINE,
+		gaps: LINES,
+		obstacles: LINES,
+		lessons: LINES,
+		sightings: { type: "array", items: SIGHTING },
+	},
 } as const;
 
 /** The typed fields of an agent's reply, by name, each a type of JSON values. */

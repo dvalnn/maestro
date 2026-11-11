@@ -118,7 +118,7 @@ export function seatedAgents(ir: Ir, setup: HostSetup): SeatedAgent[] {
 				node: n.id,
 				key: seatKey(owner, config.seat),
 				binding: seatBinding(setup, owner, config),
-				prompt: (profile) => agentPrompt(config, profile, setup),
+				prompt: (profile) => agentPrompt(config, profile, setup, n.out),
 			},
 		];
 	});

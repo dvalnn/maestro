@@ -127,7 +127,17 @@ function actor(enrichment: Enrichment): string | undefined {
 }
 
 /** The headings of the report lists an agent's notes show, by report field. */
-const NOTED = { obstacles: "Obstacles", lessons: "Lessons" } as const;
+const NOTED = {
+	obstacles: "Obstacles",
+	lessons: "Lessons",
+	sightings: "Sightings",
+} as const;
+
+/** A report list item as a note line: a sighting reads `path · cites · text`, a line as it is. */
+const noteLine = (item: unknown) =>
+	isPlainObject(item)
+		? [item.path, item.cites, item.text].map(String).join(SEP)
+		: String(item);
 
 /** An environment check as a record holds it, its part not yet known to be one. */
 type StoredCheck = Omit<EnvironmentCheck, "part"> & { part: string };
@@ -161,7 +171,7 @@ function reportOf(enrichment: Enrichment): Record<string, unknown> | undefined {
 	return { ...report, environment: checks };
 }
 
-/** An agent's report obstacles and lessons, then the faults of its environment report, each non-empty list under its heading. */
+/** An agent's report obstacles, lessons and sightings, then the faults of its environment report, each non-empty list under its heading. */
 function notes(enrichment: Enrichment): Record<string, string[]> {
 	const lists = new Map(Object.entries(envelopeOf(enrichment) ?? {}));
 	const faults = checksOf(enrichment).flatMap(({ part, faults }) =>
@@ -171,7 +181,7 @@ function notes(enrichment: Enrichment): Record<string, string[]> {
 		...Object.entries(NOTED).flatMap(([field, heading]) => {
 			const list = lists.get(field);
 			return Array.isArray(list) && list.length
-				? [[heading, list.map(String)]]
+				? [[heading, list.map(noteLine)]]
 				: [];
 		}),
 		...(faults.length ? [["Environment", faults]] : []),

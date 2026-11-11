@@ -9,14 +9,41 @@ export const previousPath = (name: string) =>
 
 const LINE = { type: "string", minLength: 1 } as const;
 const LINES = { type: "array", items: LINE } as const;
+const SIGHTING = {
+	type: "object",
+	required: ["path", "text", "cites"],
+	additionalProperties: false,
+	properties: { path: LINE, text: LINE, cites: LINE },
+} as const;
 
 /** The schema of an agent's report, its `report` output. Equal to the SDK's `REPORT`. */
 export const REPORT = {
 	type: "object",
 	required: ["summary"],
 	additionalProperties: false,
-	properties: { summary: LINE, gaps: LINES, obstacles: LINES, lessons: LINES },
+	properties: {
+		summary: LINE,
+		gaps: LINES,
+		obstacles: LINES,
+		lessons: LINES,
+		sightings: { type: "array", items: SIGHTING },
+	},
 } as const;
+
+/** Something an agent saw outside its task's scope: where it is, what is wrong and what it breaches. */
+type Sighting = { path: string; text: string; cites: string };
+
+const { sightings: _, ...BASE_PROPERTIES } = REPORT.properties;
+
+/** `REPORT` as it was before sightings, which a node whose own report schema lacks `sightings` still holds. */
+const REPORT_WITHOUT_SIGHTINGS = { ...REPORT, properties: BASE_PROPERTIES };
+
+/** Whether the report schema in a node's `out` declares `sightings`. */
+export const offersSightings = (out: Record<string, unknown> | undefined) =>
+	Boolean(
+		(out?.report as { properties?: Record<string, unknown> } | undefined)
+			?.properties?.sightings,
+	);
 
 /** A one-line summary, then only what the record cannot show. A list is left out when empty. */
 export type Report = {
@@ -24,6 +51,7 @@ export type Report = {
 	gaps?: string[];
 	obstacles?: string[];
 	lessons?: string[];
+	sightings?: Sighting[];
 };
 
 /**
@@ -65,11 +93,19 @@ export const REPORT_FIELDS = {
 		"something outside the agent's reach that stopped or slowed it, such as a missing attachment or a tool not on the PATH; not a test that failed or a check that was red",
 	lessons:
 		"something that changes what the next agent in this repository should do, which the code and its docs do not already say",
+	sightings:
+		"a defect or smell in the target outside the task's scope that the agent saw and left unfixed; never something the task asked to be fixed",
 } as const;
 
-const LISTED = (["gaps", "obstacles", "lessons"] as const)
-	.map((field) => `    "${field}": ["<${REPORT_FIELDS[field]}>"]`)
-	.join(",\n");
+const SIGHTING_LINE = `    "sightings": [{ "path": "<the file it is in>", "text": "<${REPORT_FIELDS.sightings}>", "cites": "<the rule, doc or behaviour it breaches>" }]`;
+
+const listed = (sightings: boolean) =>
+	[
+		...(["gaps", "obstacles", "lessons"] as const).map(
+			(field) => `    "${field}": ["<${REPORT_FIELDS[field]}>"]`,
+		),
+		...(sightings ? [SIGHTING_LINE] : []),
+	].join(",\n");
 
 /** What differs between the reply kinds: the summary, the verdict members and the lines around the example. */
 type Parts = {
@@ -111,14 +147,18 @@ const VERDICT_PARTS: Parts = {
 const fieldLine = (name: string, schema: JsonSchema) =>
 	`- \`${name}\`: JSON matching this JSON Schema, left out only with \`blocked\`:\n  \`\`\`json\n  ${JSON.stringify(schema)}\n  \`\`\``;
 
-/** The reply kind of a work agent, or of a verdict agent when `verdict`, asking for the typed `fields` beside `report`. */
+/**
+ * The reply kind of a work agent, or of a verdict agent when `verdict`, asking for the typed `fields` beside `report`.
+ * Its report takes `sightings` only when `sightings` is set.
+ */
 export function replyKind(
 	verdict: boolean | undefined,
 	fields: Record<string, JsonSchema> = {},
+	sightings = true,
 ): ReplyKind {
 	const parts = verdict ? VERDICT_PARTS : WORK_PARTS;
 	const members = [
-		`  "report": {\n    "summary": "<${parts.summary}>",\n${LISTED}\n  }`,
+		`  "report": {\n    "summary": "<${parts.summary}>",\n${listed(sightings)}\n  }`,
 		...Object.keys(fields).map(
 			(name) => `  "${name}": <JSON value, as described below>`,
 		),
@@ -129,7 +169,12 @@ export function replyKind(
 			type: "object",
 			required: ["report"],
 			additionalProperties: false,
-			properties: { report: REPORT, blocked: LINE, ...parts.schema, ...fields },
+			properties: {
+				report: sightings ? REPORT : REPORT_WITHOUT_SIGHTINGS,
+				blocked: LINE,
+				...parts.schema,
+				...fields,
+			},
 		},
 		verdict: Boolean(verdict),
 		fields: Object.keys(fields),

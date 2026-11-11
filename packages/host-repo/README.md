@@ -158,8 +158,9 @@ The agent's final reply is its **envelope**.
 
 [^verdict]: `outcome` is `ok` or `rejected`, and the reason is required when rejected.
 
-- The report is `{ summary, gaps?, obstacles?, lessons? }`: a one-line summary, then only what the record cannot show.
-  It rides the enrichment too, so a blocked or failed agent keeps it.
+- The report is `{ summary, gaps?, obstacles?, lessons?, sightings? }`: a one-line summary, then only what the record
+  cannot show. A sighting is `{ path, text, cites }`: where a defect outside the task's scope is, what is wrong and what
+  it breaches. It rides the enrichment too, so a blocked or failed agent keeps it.
 - `fields` are the typed fields the seat call declares with `reply`, each named for its output port and given a JSON
   schema (`reply: { map: TestMap }`). The host's reply template shows each schema, and the envelope is checked against
   them. Every field is required unless the agent is blocked, a rejection included. A field's name is none of `report`,
