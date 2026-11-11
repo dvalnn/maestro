@@ -399,13 +399,13 @@ compose. Passing one cancels the agent and ends it `failed` with a reason naming
 
 An agent reads five layers, in this order, each with one home; no layer restates another's text.
 
-| Layer       | From                              | Holds                                                                     |
-| ----------- | --------------------------------- | ------------------------------------------------------------------------- |
-| Frame       | the host                          | working copy, checks, attachment list, output schema                      |
-| Profile     | `profiles/<name>/instructions.md` | who the agent is, how it works and what it never does, true in every call |
-| Area        | a preset's profile `attachments`  | what is true of one area or run, added to a profile                       |
-| Task        | one Markdown file per call        | what this call asks, its inputs by name, its outputs, its bar             |
-| Attachments | code nodes                        | the run's data, never instructions                                        |
+| Layer       | From                                                 | Holds                                                                                                 |
+| ----------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Frame       | the host                                             | working copy, checks, attachment list, output schema                                                  |
+| Profile     | `profiles/<name>/instructions.md`, its `attachments` | who the agent is, how it works and what it never does, and its reference material, true in every call |
+| Area        | a preset's profile `attachments`                     | what is true of one area or run, added to a profile                                                   |
+| Task        | one Markdown file per call                           | what this call asks, its inputs by name, its outputs, its bar                                         |
+| Attachments | code nodes                                           | the run's data, never instructions                                                                    |
 
 `maestro art show <id> <instance> staged/prompt.md` shows what an agent was told.
 

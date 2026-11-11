@@ -68,6 +68,16 @@ Layout:
   questions code generates stay in TypeScript, at the call.
 - Prettier reflows prompt files to 120 columns, so a JSON example is a fenced `json` block.
 
+Graph or prose, under [ADR 0016](docs/adr/0016-a-check-enters-as-a-tool-and-a-seat-earns-its-place.md):
+
+- A check enters the graph when it is deterministic and cheap, a consumer acts on its output, and the agent can resolve
+  its rejection more cheaply than the review it precedes. Its default shape is a tool in the seat's `checks`, the node a
+  backstop.
+- A graph-placed seat enters or stays only while its cost, time and quality bear it out on
+  [the bench](docs/agents/bench.md), and may override the check clauses. Judge a change to a seat there.
+- Prose goes to the layer that owns its scope, as inline text until a carrier is proven to load it. A hint names
+  reference material and never carries a rule.
+
 Review and tests, under [File rules](docs/sdk-spec.md#file-rules):
 
 - Prompt wording is reviewed as Markdown in the diff, never pinned by substring, unless a parser reads the text.

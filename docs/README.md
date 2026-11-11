@@ -112,6 +112,7 @@ home; no repo doc links into them for its facts.
 | GitHub sync, PR intake, contributor credit                      | `.claude/skills/github/SKILL.md`              | release skill, CONTRIBUTING            |
 | Contributing from GitHub                                        | `CONTRIBUTING.md`                             | github skill                           |
 | Review standards for this repo's code, compositions and prompts | `CODING_STANDARDS.md`                         | CLAUDE.md                              |
+| Where a discipline lives: graph or prose                        | `CODING_STANDARDS.md`                         | ADR 0016 holds the why                 |
 
 [^groups]:
     architecture says what a group does when it runs; the IR README says what its fields look like. sdk-spec keeps one
