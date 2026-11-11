@@ -518,6 +518,7 @@ describe("seat", () => {
 			notes: MarkdownOut("notes.md"),
 			score: JsonOut("score.json", Text()),
 		},
+		reply: { grade: Text(), tier: Text() },
 		checks: ["test"],
 	});
 	const critic = seat("critic", { profile: "acme/critic", encore: false });
@@ -533,6 +534,7 @@ describe("seat", () => {
 					earlier: { artifact: first.out.notes, hint: "first" },
 				},
 				out: { notes: MarkdownOut("more.md"), plan: MarkdownOut("plan.md") },
+				reply: { tier: Enum(["small", "large"]) },
 				checks: ["lint", "test"],
 			});
 			critic({ label: "third", task: "judge", lane: read(first.out.lane) });
@@ -548,6 +550,7 @@ describe("seat", () => {
 				lane: { mode: "fresh" },
 				verdict: true,
 				checks: ["test"],
+				reply: { grade: Text().schema, tier: Text().schema },
 				out: {
 					notes: { file: "notes.md", format: "markdown" },
 					score: { file: "score.json", format: "json" },
@@ -563,6 +566,10 @@ describe("seat", () => {
 				verdict: true,
 				checks: ["test", "lint"],
 				attachments: { earlier: { hint: "first", type: "core.markdown" } },
+				reply: {
+					grade: Text().schema,
+					tier: Enum(["small", "large"]).schema,
+				},
 				out: {
 					notes: { file: "more.md" },
 					score: { file: "score.json" },
@@ -574,6 +581,7 @@ describe("seat", () => {
 			config: { profile: "acme/critic", seat: "critic", encore: false },
 		});
 		expect(Object.keys(nodeOf(ir, "second")?.out ?? {}).sort()).toEqual([
+			"grade",
 			"lane",
 			"notes",
 			"plan",
@@ -581,6 +589,7 @@ describe("seat", () => {
 			"score",
 			"session",
 			"staged",
+			"tier",
 		]);
 		const { composeIt } = repo();
 		expect(await composeIt(ir)).toMatchObject({ ok: true });

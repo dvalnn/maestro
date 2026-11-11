@@ -269,7 +269,10 @@ function checkNames(
  * What a seat holds: the profile its agents run, whether an encore continues them, and the outputs, verdict and checks
  * the graph expects of them.
  */
-export type SeatOptions<S extends Outputs> = {
+export type SeatOptions<
+	S extends Outputs,
+	P extends Replies = Record<never, never>,
+> = {
 	/** The profile's name, bare or `<pack id>/<name>`; the seat's own name by default. */
 	profile?: string;
 	/** Marks the seat's agents as verdict agents, which rule `ok` or `rejected` on work; any other agent does the work. */
@@ -277,6 +280,8 @@ export type SeatOptions<S extends Outputs> = {
 	/** `false` starts the seat's agents fresh in an encore, rather than continuing their counterparts' sessions. */
 	encore?: boolean;
 	out?: S;
+	/** Typed reply fields every call of the seat declares, as a call's `reply` does. */
+	reply?: P;
 	/** Names of `target.checks` the agent may run. */
 	checks?: string[];
 };
@@ -313,20 +318,20 @@ function union(a: string[] = [], b: string[] = []): string[] | undefined {
 
 /**
  * Seat `name` (ADR 0013), as a function that emits a `repo.agent` node (see the host-repo README) per call: a coding
- * agent running the seat's profile on `task` in its lane. A call's outputs add to the seat's, the call's winning on a
+ * agent running the seat's profile on `task` in its lane. A call's outputs and reply fields add to the seat's, the call's winning on a
  * name, and its checks add to the seat's.
  */
-export function seat<S extends Outputs = Record<never, never>>(
-	name: string,
-	standing: SeatOptions<S> = {},
-) {
+export function seat<
+	S extends Outputs = Record<never, never>,
+	P extends Replies = Record<never, never>,
+>(name: string, standing: SeatOptions<S, P> = {}) {
 	return <
 		C extends Outputs = Record<never, never>,
 		M extends LaneMode = LaneMode,
 		R extends Replies = Record<never, never>,
 	>(
 		call: SeatCall<C, M, R>,
-	): Result<AgentOut<Omit<S, keyof C> & C, M, R>> => {
+	): Result<AgentOut<Omit<S, keyof C> & C, M, Omit<P, keyof R> & R>> => {
 		const {
 			task,
 			lane,
@@ -338,7 +343,7 @@ export function seat<S extends Outputs = Record<never, never>>(
 			...common
 		} = call;
 		const out: Outputs = { ...standing.out, ...callOut };
-		const reply: Replies = callReply;
+		const reply: Replies = { ...standing.reply, ...callReply };
 		checkNames(attachments, out, reply);
 		const ports = lanePorts(lane);
 		return hostNode("repo.agent", {
@@ -368,7 +373,7 @@ export function seat<S extends Outputs = Record<never, never>>(
 				reply: nonEmpty(mapValues(reply, (t) => t.schema)),
 				out: nonEmpty(mapValues(out, (o) => o.config)),
 			}),
-		}) as Result<AgentOut<Omit<S, keyof C> & C, M, R>>;
+		}) as Result<AgentOut<Omit<S, keyof C> & C, M, Omit<P, keyof R> & R>>;
 	};
 }
 

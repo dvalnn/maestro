@@ -17,7 +17,8 @@ are flags in kebab-case, or config under `classics.<composition>.<param>`. Its s
 | `panel_review`       | Rules on a change through each lens, a skeptic over each lens's findings, then consolidates | `lens`, `skeptic`, `consolidator` |
 
 `scout` and `planner` serve no composition of the pack; they are seats for compositions built on it. A `scout` answers
-the questions it is asked in `answer.md`.
+the questions it is asked in an `answers` reply field: per question, its `state` (`grounded` or `unsure`), what is
+`missing` when unsure, and the Markdown answer.
 
 `builder` and `lens` load `skills/writing-for-agents/`, the guide they write and judge Markdown by, and `planner` loads
 it with `skills/codebase-design/`, through the profile `skills` key. The skills are adapted from Matt Pocock's under the

@@ -1,9 +1,9 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Answers } from "@maestro/classics";
 import { atLeastOne, fill, scout } from "@maestro/classics";
 import { JsonOut, MarkdownOut, read, seat } from "@maestro/host-repo-sdk";
 import {
-	type ArtifactRef,
 	allSettled,
 	Bool,
 	type CodeContext,
@@ -107,12 +107,21 @@ export function groupOf(
 	return { file };
 }
 
-type Answered = { answer: ArtifactRef };
+type Answered = { answers: ValueOf<typeof Answers> };
 
-/** The body of a group's section: its scout's answer, or why it has none. */
-function answerOf(scout: Settled<Answered> | undefined, ctx: CodeContext) {
+/** The body of a group's section: its scout's answers, an unsure one marked, or why it has none. */
+function answerOf(scout: Settled<Answered> | undefined) {
 	if (scout?.outcome === "ok")
-		return readFileSync(ctx.path(scout.value.answer), "utf8").trim();
+		return scout.value.answers
+			.flatMap((a) => [
+				`### ${a.question}`,
+				"",
+				a.answer,
+				...(a.state === "unsure" ? ["", `Unsure, missing: ${a.missing}`] : []),
+				"",
+			])
+			.join("\n")
+			.trim();
 	const why = scout && "reason" in scout ? scout.reason : undefined;
 	return `Unanswered: the scout ${scout?.outcome ?? "did not run"}${why ? `: ${why}` : ""}.`;
 }
@@ -125,7 +134,7 @@ export function answersOf(
 	const sections = groups.flatMap((g, i) => [
 		...groupSection(g, "##"),
 		"",
-		answerOf(scouts[i], ctx),
+		answerOf(scouts[i]),
 		"",
 	]);
 	const answers = join(ctx.scratch, "answers.md");

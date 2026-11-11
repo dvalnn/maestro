@@ -63,7 +63,8 @@ A code node that settles `failed` keeps its scratch directory, its log saying `s
 - `profile`: a bare name or `<pack>/<name>`, the seat's own name by default ([profiles.md](profiles.md)).
 - `verdict: true`: an agent that rules on work, `ok` or `rejected`.
 - `encore: false`: its agents start fresh in an encore.
-- `out`: declared outputs. `checks`: names from `target.checks` the agent may run with its `check <name>` command.
+- `out`: declared outputs. `reply`: typed reply fields every call gives. `checks`: names from `target.checks` the agent
+  may run with its `check <name>` command.
 
 A call takes `task`, `lane` and the common options, and may add:
 

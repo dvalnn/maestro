@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ArtifactRef, CodeContext, Type } from "@maestro/sdk";
 import { readJson } from "@maestro/sdk/stdlib";
@@ -27,26 +27,34 @@ import {
 } from "./triage/fixtures";
 import { type Checked, Proposal, Ruling, type Triage } from "./triage/schemas";
 
-test("answersOf merges each group's answer in order, marking one whose scout failed unanswered", () => {
+test("answersOf merges each group's answers in order, marking an unsure answer and a group whose scout failed", () => {
 	const dir = mkdtempSync(join(scratch, "answers-"));
-	mkdirSync(join(dir, "a"));
-	writeFileSync(join(dir, "a/answer.md"), "In flags.ts:12.\n");
-	const ctx = {
-		scratch: dir,
-		path: (ref: ArtifactRef) => join(dir, ref.path),
-	} as CodeContext;
-	const answer = { path: "a/answer.md", contentHash: "sha256:0" };
-	const { answers } = answersOf(
+	const ctx = { scratch: dir } as CodeContext;
+	const answers = [
+		{
+			question: "Where are flags parsed?",
+			state: "grounded" as const,
+			missing: "",
+			answer: "In flags.ts:12.",
+		},
+		{
+			question: "Who calls it?",
+			state: "unsure" as const,
+			missing: "the caller outside src/",
+			answer: "Probably cli.ts.",
+		},
+	];
+	const merged = answersOf(
 		{
 			groups,
 			scouts: [
-				{ outcome: "ok", value: { answer } },
+				{ outcome: "ok", value: { answers } },
 				{ outcome: "failed", reason: "timed out" },
 			],
 		},
 		ctx,
 	);
-	expect(readFileSync(answers, "utf8")).toBe(
+	expect(readFileSync(merged.answers, "utf8")).toBe(
 		[
 			"# The scouts' answers",
 			"",
@@ -54,7 +62,15 @@ test("answersOf merges each group's answer in order, marking one whose scout fai
 			"",
 			"1. Where are flags parsed?",
 			"",
+			"### Where are flags parsed?",
+			"",
 			"In flags.ts:12.",
+			"",
+			"### Who calls it?",
+			"",
+			"Probably cli.ts.",
+			"",
+			"Unsure, missing: the caller outside src/",
 			"",
 			"## G2: the tests",
 			"",
@@ -105,8 +121,6 @@ async function performed(
 	const outputs = stubOutputs({
 		"triager/ruling.json": ruling,
 		"triager/backlog.md": "- #7 Greet: it greets too\n",
-		"scouts[G1]/scout/answer.md": "G1: in flags.ts:12.\n",
-		"scouts[G2]/scout/answer.md": "G2: in greet.test.ts:3.\n",
 		...(proposal && {
 			"planner/plan.json": proposal,
 			"checker/check.json": check,
@@ -266,9 +280,7 @@ test.each(verdicts)(
 		expect(statuses("scouts/scout")).toEqual(["ok", "ok"]);
 		const answers = artifact("answers", "answers");
 		expect(answers).toContain("## G1: the flag");
-		expect(answers.indexOf("G1: in flags.ts:12.")).toBeLessThan(
-			answers.indexOf("G2: in greet.test.ts:3."),
-		);
+		expect(answers.indexOf("## G1")).toBeLessThan(answers.indexOf("## G2"));
 	},
 );
 

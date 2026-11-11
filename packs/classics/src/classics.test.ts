@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Settled } from "@maestro/sdk";
@@ -271,6 +277,32 @@ test.each([
 		/^skills\.\d+$/.test(k),
 	);
 	expect(listed).toHaveLength(skills.length);
+});
+
+test("the scout seat carries the answers reply field and no outbox file", async () => {
+	const file = join(root, "scouted.ts");
+	symlinkSync(
+		join(import.meta.dir, "../../../node_modules"),
+		join(root, "node_modules"),
+	);
+	writeFileSync(
+		file,
+		`import { scout } from "@maestro/classics";
+import { fresh } from "@maestro/host-repo-sdk";
+import { composition } from "@maestro/sdk";
+
+export const scouted = composition("scouted", { examples: [{}] }, () =>
+	scout({ task: "answer", lane: fresh() }),
+);
+`,
+	);
+	const { out, code } = await maestro("compose", file, "--json");
+	expect(code).toBe(0);
+	const agent = JSON.parse(out).plan.ir.nodes.find(
+		(n: { config?: { seat?: string } }) => n.config?.seat === "scout",
+	);
+	expect(Object.keys(agent.config.reply)).toEqual(["answers"]);
+	expect(agent.config.out).toBeUndefined();
 });
 
 test.each([

@@ -1,9 +1,9 @@
 import { JsonOut, MarkdownOut, seat } from "@maestro/host-repo-sdk";
-import { Findings, Verdict, Verdicts } from "./types";
+import { Answers, Findings, Verdict, Verdicts } from "./types";
 
 export const scout = seat("scout", {
 	profile: "classics/scout",
-	out: { answer: MarkdownOut("answer.md") },
+	reply: { answers: Answers },
 });
 
 export const planner = seat("planner", {

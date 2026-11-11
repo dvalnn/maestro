@@ -292,8 +292,8 @@ the IR, since packs bundle it. Lanes and their versions are in [Lanes](../packag
 [^lane]: `v` is a lane output or a lane ref, which becomes a `literal` of type `Lane`.
 
 [^seat]:
-    `seat(name, { profile?, verdict?, encore?, out?, checks? })`. `profile` is a bare name or `<pack>/<name>`, by
-    default the seat's own name ([Profiles and prompts](../packages/host-repo/README.md#profiles-and-prompts)).
+    `seat(name, { profile?, verdict?, encore?, out?, reply?, checks? })`. `profile` is a bare name or `<pack>/<name>`,
+    by default the seat's own name ([Profiles and prompts](../packages/host-repo/README.md#profiles-and-prompts)).
     `verdict: true` marks a verdict agent, which may reject ([Agent node](../packages/host-repo/README.md#agent-node));
     `encore: false` starts its agents fresh in an encore. A call takes `task`, `lane`, the common options, and may add
     `session` (an agent's `out.session`, which it continues), `attachments` (each `{ artifact, hint }`), outputs,

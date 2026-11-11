@@ -690,7 +690,7 @@
 			{
 				"seat": "scout",
 				"profile": "classics/scout",
-				"task": "Answer each question of the attached group in `answer.md`.\n\n`answer.md` holds one section per question, in order, headed \"## <the question>\", its answer below, every claim with its\nfile:line. Where the target holds no answer, say so.\n",
+				"task": "Answer each question of the attached group in the `answers` field of your reply.\n",
 				"attachments": {
 					"backlog": {
 						"hint": "for the backlog issues that matter to this one, each with why",
@@ -705,10 +705,51 @@
 						"type": "core.markdown"
 					}
 				},
-				"out": {
-					"answer": {
-						"file": "answer.md",
-						"format": "markdown"
+				"reply": {
+					"answers": {
+						"items": {
+							"oneOf": [
+								{
+									"additionalProperties": false,
+									"properties": {
+										"answer": {
+											"type": "string"
+										},
+										"question": {
+											"type": "string"
+										},
+										"state": {
+											"enum": ["grounded"],
+											"type": "string"
+										}
+									},
+									"required": ["question", "answer", "state"],
+									"type": "object"
+								},
+								{
+									"additionalProperties": false,
+									"properties": {
+										"answer": {
+											"type": "string"
+										},
+										"missing": {
+											"minLength": 1,
+											"type": "string"
+										},
+										"question": {
+											"type": "string"
+										},
+										"state": {
+											"enum": ["unsure"],
+											"type": "string"
+										}
+									},
+									"required": ["question", "answer", "state", "missing"],
+									"type": "object"
+								}
+							]
+						},
+						"type": "array"
 					}
 				},
 				"lane": "read",
