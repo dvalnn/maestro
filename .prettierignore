@@ -1,5 +1,3 @@
 .scratch/**/spec.md
-packs/classics/skills/tdd
-packs/classics/skills/domain-modeling
-packs/classics/skills/codebase-design
-packs/classics/skills/code-smells
+packs/classics/skills/good-tests/tests.md
+packs/classics/skills/good-tests/mocking.md

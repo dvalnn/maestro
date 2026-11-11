@@ -262,21 +262,50 @@ describe("build_then_repair", () => {
 });
 
 test.each([
-	["builder", ["writing-for-agents"]],
-	["lens", ["writing-for-agents"]],
-	["planner", ["codebase-design", "writing-for-agents"]],
+	[
+		"builder",
+		[
+			"tdd",
+			"good-tests",
+			"codebase-design",
+			"code-smells",
+			"domain-modeling",
+			"writing-for-agents",
+		],
+	],
+	[
+		"lens",
+		["good-tests", "codebase-design", "code-smells", "writing-for-agents"],
+	],
+	["skeptic", ["good-tests", "codebase-design", "code-smells"]],
+	["consolidator", ["good-tests", "codebase-design", "code-smells"]],
+	["scout", ["codebase-design"]],
+	[
+		"planner",
+		[
+			"codebase-design",
+			"codebase-deepening",
+			"design-it-twice",
+			"domain-modeling",
+			"writing-for-agents",
+		],
+	],
 ])("the %s attaches the skills %j from the pack", async (name, skills) => {
-	const { out, code } = await maestro(
+	const { out, err, code } = await maestro(
 		"agent",
 		"show",
 		`classics/${name}`,
 		"--json",
 	);
+	expect(err).toBe("");
 	expect(code).toBe(0);
 	const listed = Object.keys(JSON.parse(out).sources).filter((k) =>
 		/^skills\.\d+$/.test(k),
 	);
 	expect(listed).toHaveLength(skills.length);
+	const file = JSON.parse(out).sources.skills.file;
+	const named = readFileSync(file, "utf8").match(/^skills: \[(.*)\]/m)?.[1];
+	expect(named?.split(", ")).toEqual(skills.map((s) => `classics/${s}`));
 });
 
 test("the scout seat carries the answers reply field and no outbox file", async () => {
