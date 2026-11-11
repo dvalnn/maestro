@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Report } from "@maestro/host-repo-sdk";
 import {
+	type ArtifactRef,
 	type CodeContext,
 	type CodeOutputs,
 	type Rejection,
@@ -103,7 +104,7 @@ const rejection = (
  * - Without a `verdict`, those held findings that block.
  * - With one, those held findings whose `<lens>/<id>` its `upholds` names.
  *
- * Rejects, with the tally as its outputs, while a finding is upheld.
+ * The `review` given rides beside them. Rejects, with the tally as its outputs, while a finding is upheld.
  * @throws Error with the consolidator's reason when it failed.
  */
 export function tallyOf({
@@ -111,11 +112,13 @@ export function tallyOf({
 	session,
 	held,
 	verdict,
+	review,
 }: {
 	lane: string;
 	session: string;
 	held: Held[];
 	verdict?: Settled<ValueOf<typeof Verdict>>[];
+	review?: ArtifactRef;
 }): Tally | Required<Rejection<Tally>> {
 	const [ruled] = verdict ?? [];
 	if (ruled?.outcome === "failed") throw new Error(ruled.reason);
@@ -123,7 +126,7 @@ export function tallyOf({
 	const upheld = verdict
 		? held.filter((f) => upholds?.includes(`${f.lens}/${f.id}`))
 		: held.filter((f) => f.blocking);
-	const tally = { lane, session, upheld };
+	const tally = { lane, session, upheld, ...(review && { review }) };
 	if (upheld.length)
 		return rejection(
 			`${upheld.length} upheld: ${upheld.map((f) => `${f.lens}/${f.id}`).join(", ")}`,

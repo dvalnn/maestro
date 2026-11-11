@@ -10,12 +10,12 @@ are flags in kebab-case, or config under `classics.<composition>.<param>`. Its s
 
 ## Compositions
 
-| Composition          | What it does                                                                                | Profiles                          |
-| -------------------- | ------------------------------------------------------------------------------------------- | --------------------------------- |
-| `build_then_repair`  | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series    | `builder`                         |
-| `repair_until_green` | Checks a lane, then repairs in the builder's session while red; used by others              | `builder`                         |
-| `panel_review`       | Rules on a change through each lens, a skeptic over each lens's findings, then consolidates | `lens`, `skeptic`, `consolidator` |
-| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them      | `tester`, `builder`               |
+| Composition          | What it does                                                                             | Profiles                          |
+| -------------------- | ---------------------------------------------------------------------------------------- | --------------------------------- |
+| `build_then_repair`  | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series | `builder`                         |
+| `repair_until_green` | Checks a lane, then repairs in the builder's session while red; used by others           | `builder`                         |
+| `panel_review`       | Rules on a change through each lens, a skeptic over each lens's findings, then tallies   | `lens`, `skeptic`, `consolidator` |
+| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them   | `tester`, `builder`               |
 
 `scout` and `planner` serve no composition of the pack; they are seats for compositions built on it. A `scout` answers
 the questions it is asked in an `answers` reply field: per question, its `state` (`grounded` or `unsure`), what is
@@ -51,5 +51,5 @@ from `target.base`, and the commits must be one linear series, with no merge.
 
 Lenses run on the `lens` profile's model and skeptics on the `skeptic`'s. Pick models of different families: a skeptic
 of the lens's family tends to share its blind spots. `panel_review` always runs them. The exported `panel`, which
-compositions built on the pack call, takes `skeptics: false`: no skeptic runs, and the consolidator rules on every
-finding unverified.
+compositions built on the pack `use`, takes `skeptics: false`: no skeptic runs, and the consolidator rules on every
+finding unverified. It ends in a `Tally`, and with `consolidate: false` has no consolidator.

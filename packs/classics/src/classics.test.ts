@@ -14,19 +14,24 @@ import {
 	code,
 	composition,
 	List,
+	literal,
+	Markdown,
+	type Ref,
 	reject,
 	type Settled,
 	Struct,
 	Text,
+	use,
 } from "@maestro/sdk";
 import { buildIr } from "@maestro/testkit";
 import { pack } from "../../../scripts/pack";
 import { BASE, PROFILES, profilesOn, setup } from "../acceptance/setup";
-import { briefOf, heldOf, tallyOf } from "./code";
+import { briefOf, heldOf, tallyOf, toMarkdown } from "./code";
 import { challenge, fix, tally } from "./moves";
 import { EXAMPLE_REQUEST } from "./repair";
-import { consolidator, lens } from "./seats";
-import { Upheld } from "./types";
+import { panel } from "./review";
+import { builder, consolidator, lens } from "./seats";
+import { Brief, Upheld } from "./types";
 
 const MAESTRO = join(import.meta.dir, "../../../packages/cli/src/maestro.ts");
 const RUNTIME = { harness: "pi", model: "none" };
@@ -97,13 +102,13 @@ describe("panel_review", () => {
 		expect(code).toBe(0);
 		const { plan } = JSON.parse(out);
 		expect(plan.bounds).toMatchObject({
-			instances: { exact: 17 },
+			instances: { exact: 19 },
 			counts: { "repo.agent": { exact: 7 } },
 		});
 		const profileOf = (id: string) =>
 			plan.ir.nodes.find((n: { id: string }) => n.id === id)?.config.profile;
-		expect(profileOf("lenses/lens")).toBe("classics/lens");
-		expect(profileOf("lenses/skeptic")).toBe("classics/skeptic");
+		expect(profileOf("panel/lenses/lens")).toBe("classics/lens");
+		expect(profileOf("panel/lenses/skeptic")).toBe("classics/skeptic");
 	});
 
 	test("--revs reviews target commits through one commits node; both or neither of --change and --revs is refused", async () => {
@@ -116,7 +121,7 @@ describe("panel_review", () => {
 		);
 		expect(code).toBe(0);
 		const { plan } = JSON.parse(out);
-		expect(plan.bounds).toMatchObject({ instances: { exact: 18 } });
+		expect(plan.bounds).toMatchObject({ instances: { exact: 20 } });
 		expect(
 			plan.ir.nodes.filter((n: { kind: string }) => n.kind === "repo.commits"),
 		).toEqual([
@@ -159,6 +164,95 @@ describe("panel_review", () => {
 			"j6 --> n6",
 		])
 			expect(out).toContain(`  ${line}\n`);
+	});
+});
+
+type Ir = ReturnType<typeof buildIr>;
+
+describe("panel", () => {
+	const LENSES = { a: "task a", b: "task b" };
+
+	/** The IR of a build that uses `panel` over `lenses` with `ports` and `params` on top of its builder's lane. */
+	function panelIr(
+		params: Partial<Parameters<typeof panel.build>[0]> = {},
+		ports: (session: Ref<string>) => object = () => ({}),
+	): Ir {
+		const root = composition("probe", { examples: [{}] }, () => {
+			const b = builder({ label: "b", task: "t", lane: fresh() });
+			const spec = code(toMarkdown, {
+				in: { text: "x" },
+				out: { file: Markdown() },
+			});
+			return use(
+				panel,
+				{ change: b.out.lane, spec: spec.out.file, ...ports(b.out.session) },
+				{ params: { lenses: LENSES, ...params } },
+			);
+		});
+		return buildIr(root, {}, { heldOf, tallyOf, toMarkdown });
+	}
+	const ids = (ir: Ir) => ir.nodes.map((n) => n.id);
+	const agents = (ir: Ir, tail: string) =>
+		ir.nodes.filter((n) => n.id.endsWith(`/${tail}`));
+	const relays = (ir: Ir, id: string) =>
+		(
+			ir.nodes.find((n) => n.id === id) as
+				| { config: { relay?: { name: string }[] } }
+				| undefined
+		)?.config.relay?.map((r) => r.name) ?? [];
+	const sessionInto = (ir: Ir, node: string) =>
+		ir.edges.find(
+			(e) => e.to.node === node && "port" in e.to && e.to.port === "session",
+		)?.from;
+
+	test("names narrows the lenses to those it lists", () => {
+		const ir = panelIr({}, () => ({ names: ["b"] }));
+		expect(ir.nodes.find((n) => n.id === "panel/lenses")).toMatchObject({
+			items: ["b"],
+		});
+	});
+
+	test("earlier relays upheld to every lens, and brief relays builder to every review seat", () => {
+		const bare = panelIr();
+		expect(relays(bare, "panel/lenses/lens")).toEqual([]);
+		const ir = panelIr({}, () => ({
+			earlier: literal([], List(Upheld)),
+			brief: literal({ summary: "s", gaps: [] }, Brief),
+		}));
+		expect(relays(ir, "panel/lenses/lens")).toEqual(["upheld", "builder"]);
+		expect(relays(ir, "panel/lenses/skeptic")).toEqual(["findings", "builder"]);
+		expect(relays(ir, "panel/consolidator")).toEqual([
+			"findings",
+			"unreviewed",
+			"builder",
+		]);
+	});
+
+	test("skeptics: false seats no skeptic, and consolidate: false no consolidator", () => {
+		expect(agents(panelIr(), "skeptic")).toHaveLength(1);
+		expect(agents(panelIr({ skeptics: false }), "skeptic")).toEqual([]);
+		const bare = panelIr({ consolidate: false }, (session) => ({ session }));
+		expect(ids(bare)).not.toContain("panel/consolidator");
+		expect(ids(bare).at(-1)).toBe("panel/upheld");
+	});
+
+	test("the tally carries the session given, else the consolidator's", () => {
+		expect(
+			sessionInto(
+				panelIr({}, (session) => ({ session })),
+				"panel/upheld",
+			),
+		).toEqual({ node: "b", port: "session" });
+		expect(sessionInto(panelIr(), "panel/upheld")).toEqual({
+			node: "panel/consolidator",
+			port: "session",
+		});
+	});
+
+	test("neither a session nor a consolidator is refused", () => {
+		expect(() => panelIr({ consolidate: false })).toThrow(
+			"classics.panel needs a session or consolidate",
+		);
 	});
 });
 

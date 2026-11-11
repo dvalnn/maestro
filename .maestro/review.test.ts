@@ -22,9 +22,11 @@ const planOf = async (file: string, ...args: string[]) =>
 test("review rules on a commit range through the risky slice's lenses, and its consolidator rules by every ground", async () => {
 	const review = await planOf(".maestro/review.ts", "--revs", "HEAD^!");
 	const slice = await planOf(".maestro/slice.ts", "--tier", "risky");
-	expect(review.expansion.lenses).toEqual(slice.expansion.lenses);
+	expect(review.expansion["panel/lenses"]).toEqual(
+		slice.expansion["panel/lenses"],
+	);
 	const consolidator = review.ir.nodes.find(
-		(n: { id: string }) => n.id === "consolidator",
+		(n: { id: string }) => n.id === "panel/consolidator",
 	);
 	expect(JSON.stringify(consolidator)).toContain(
 		JSON.stringify(JUDGED).slice(1, -1),

@@ -17,7 +17,7 @@ import {
 import type { CodeContext } from "@maestro/sdk";
 import * as stdlib from "@maestro/sdk/stdlib";
 import { buildIr, stubConcert } from "@maestro/testkit";
-import { heldOf, toMarkdown } from "../src/code";
+import { heldOf, tallyOf, toMarkdown } from "../src/code";
 import { buildThenRepair } from "../src/repair";
 import { panelReview } from "../src/review";
 import { diff, maestroTrace, sssfTrace } from "./compare";
@@ -60,6 +60,7 @@ const CODE: Readonly<
 	...stdlib,
 	toMarkdown,
 	heldOf,
+	tallyOf,
 };
 const POLL_MS = 20;
 
@@ -217,7 +218,7 @@ test("a review relays the findings its skeptics upheld to its consolidator, and 
 	const ir = buildIr(
 		panelReview,
 		{ request: TASKS.t1.request, change: lane },
-		{ toMarkdown, heldOf },
+		{ toMarkdown, heldOf, tallyOf },
 	);
 	const run = await stubConcert(ir, {
 		hosts: [repoHost({ harnesses: [reviewer] })],
@@ -233,7 +234,7 @@ test("a review relays the findings its skeptics upheld to its consolidator, and 
 		dir,
 	});
 	await run.close();
-	expect(run.result).toMatchObject({ outcome: "ok", node: "consolidator" });
+	expect(run.result).toMatchObject({ outcome: "ok", node: "panel/upheld" });
 	const [task] = prompts;
 	expect(task).toContain("## findings");
 	expect(task).toContain("lens: correctness");

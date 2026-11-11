@@ -1,6 +1,5 @@
-import { LENSES, panel } from "@maestro/classics";
-import { changeset, type Relays } from "@maestro/host-repo-sdk";
-import { type ArtifactRef, lookup, type Ref } from "@maestro/sdk";
+import { type Brief, LENSES, panel } from "@maestro/classics";
+import { type ArtifactRef, type Ref, use, type ValueOf } from "@maestro/sdk";
 import { task } from "../shared";
 import DESIGN_QUESTIONS from "./prompts/_design-questions.md" with {
 	type: "text",
@@ -45,24 +44,21 @@ export const PANELS = {
 };
 
 /** A tier that reviews by panel. */
-export type PanelTier = keyof typeof PANELS;
+type PanelTier = keyof typeof PANELS;
 
-/** A panel of `tier`'s lenses over the lane version `change` against `spec`, no skeptics, one consolidated verdict. Gives the consolidator and the findings held. */
+/** A panel of `tier`'s lenses over the lane version `change` against `spec`, no skeptics, one consolidated verdict. Ends in the tally. */
 export function panelOf(
 	tier: PanelTier,
-	change: Ref<string>,
-	spec: Ref<ArtifactRef>,
-	common?: Relays,
+	ports: {
+		change: Ref<string>;
+		spec: Ref<ArtifactRef>;
+		/** The session the tally carries. */
+		session?: Ref<string>;
+		/** The builder's brief, which every review seat reads. */
+		brief?: Ref<ValueOf<typeof Brief>>;
+	},
 ) {
-	const lenses = PANELS[tier];
-	return panel({
-		items: Object.keys(lenses),
-		task: (name) => lookup(lenses, name),
-		change,
-		patches: changeset(change, { label: "patches" }).out.changeset,
-		spec,
-		grounds: JUDGED,
-		skeptics: false,
-		common,
+	return use(panel, ports, {
+		params: { lenses: PANELS[tier], skeptics: false, grounds: JUDGED },
 	});
 }

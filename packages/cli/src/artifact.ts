@@ -280,7 +280,7 @@ export const artifact: Command = {
 		],
 		[
 			"Open an instance's files in your editor",
-			"$EDITOR $(maestro artifact show 7f3c2a consolidator --path)",
+			"$EDITOR $(maestro artifact show 7f3c2a panel/consolidator --path)",
 		],
 	],
 	execute: (args, deps) =>

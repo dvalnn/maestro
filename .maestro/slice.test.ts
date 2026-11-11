@@ -363,9 +363,9 @@ const rejecting: [
 				"writer",
 			],
 			{
-				"lenses/lens/findings.json": [finding("F1", true)],
-				"lenses/lens/verdict": "rejected F1",
-				"consolidator/verdict.json": { criteria: [], upholds: [] },
+				"panel/lenses/lens/findings.json": [finding("F1", true)],
+				"panel/lenses/lens/verdict": "rejected F1",
+				"panel/consolidator/verdict.json": { criteria: [], upholds: [] },
 			},
 		],
 	),

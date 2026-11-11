@@ -5,15 +5,15 @@ import {
 	Brief,
 	briefOf,
 	builder,
+	challenge,
 	type Findings,
 	fix,
 	heldOf,
+	lens,
 	maxRepairs,
 	type Rulings,
 	repairUntilGreen,
-	round,
 	Tally,
-	tally,
 	tallyOf,
 	testFirst,
 	type Upheld,
@@ -55,7 +55,6 @@ import {
 	DESIGN_QUESTIONS,
 	DESIGN_SEARCHES,
 	JUDGED,
-	type PanelTier,
 	panelOf,
 } from "./slice/lenses";
 import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
@@ -207,21 +206,6 @@ const REVIEWED = { ...Tally, reviewer: Session };
 type Earlier = { reviewer: Ref<string>; upheld: Ref<Held[]> };
 
 /**
- * A panel review of `tier` over the green lane version `lane`, ending in its tally and carrying the builder's
- * `session`.
- */
-function panelRound(
-	tier: PanelTier,
-	lane: Ref<string>,
-	session: Ref<string>,
-	spec: Ref<ArtifactRef>,
-	builder: Relays,
-) {
-	const { consolidator, held } = panelOf(tier, lane, spec, builder);
-	return tally({ lane, session, held, verdict: consolidator.out.verdict });
-}
-
-/**
  * A reviewer and its skeptic over the green lane version `lane`, ending in the tally, carrying the builder's `session`
  * and the reviewer's. The reviewer continues the one of `earlier` when given.
  */
@@ -232,24 +216,27 @@ function reviewerRound(
 	builder: Relays,
 	earlier?: Earlier,
 ) {
-	const patches = changeset(lane, { label: "patches" }).out.changeset;
-	const { lens: reviewer, skeptic } = round({
+	const attached = {
+		patches: {
+			artifact: changeset(lane, { label: "patches" }).out.changeset,
+			hint: "for what the change did, patch by patch",
+		},
+		spec: { artifact: spec, hint: "for what the change must do" },
+	};
+	const reviewer = lens({
 		label: REVIEWER_LENS,
 		task: earlier ? TASKS.reviewerAgain : TASKS.reviewer,
-		change: lane,
-		attached: {
-			patches: {
-				artifact: patches,
-				hint: "for what the change did, patch by patch",
-			},
-			spec: { artifact: spec, hint: "for what the change must do" },
-		},
-		grounds: JUDGED,
-		skeptics: true,
+		lane: read(lane),
 		session: earlier?.reviewer,
 		checks: REPO_CHECKS,
-		relay: earlier && { upheld: earlier.upheld },
-		common: builder,
+		relay: { ...(earlier && { upheld: earlier.upheld }), ...builder },
+		attachments: attached,
+	});
+	const skeptic = challenge(reviewer, {
+		change: lane,
+		attached,
+		grounds: JUDGED,
+		relay: builder,
 	});
 	return code(reviewedOf, {
 		in: {
@@ -323,10 +310,9 @@ export const slice = composition(
 				out: { brief: Brief },
 				label: "brief",
 			}).out;
-			const relay = { builder: brief };
 			return tier === "small"
-				? reviewerRound(green, session, spec, relay, earlier)
-				: panelRound(tier, green, session, spec, relay);
+				? reviewerRound(green, session, spec, { builder: brief }, earlier)
+				: panelOf(tier, { change: green, spec, session, brief });
 		};
 		const { built, map } = build(tier, request, spec);
 		const reviewed = loop.while((s) => not(s.ok), {

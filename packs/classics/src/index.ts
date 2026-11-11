@@ -2,7 +2,7 @@ export { briefOf, heldOf, tallyOf, toMarkdown } from "./code";
 export { challenge, fix, tally } from "./moves";
 export { fill } from "./prompt";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";
-export { LENSES, panel, panelReview, round } from "./review";
+export { LENSES, panel, panelReview } from "./review";
 export {
 	builder,
 	consolidator,

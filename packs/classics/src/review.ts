@@ -1,13 +1,13 @@
 import {
-	type Attachment,
 	changeset,
 	commits,
 	Lane,
 	type Relays,
 	read,
+	Session,
 } from "@maestro/host-repo-sdk";
 import {
-	type ArtifactRef,
+	Bool,
 	BuildError,
 	code,
 	composition,
@@ -21,10 +21,10 @@ import {
 	type Ref,
 	Struct,
 	Text,
-	type ValueOf,
+	use,
 } from "@maestro/sdk";
 import { heldOf, toMarkdown } from "./code";
-import { challenge } from "./moves";
+import { challenge, tally } from "./moves";
 import { task } from "./prompt";
 import CONSOLIDATOR from "./prompts/consolidator.md" with { type: "text" };
 import CONSOLIDATOR_GROUNDS from "./prompts/consolidator-grounds.md" with {
@@ -38,11 +38,7 @@ import SPEC from "./prompts/spec.md" with { type: "text" };
 import TESTS from "./prompts/tests.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
 import { consolidator, lens } from "./seats";
-import { Upheld } from "./types";
-
-type Consolidated = ReturnType<
-	typeof consolidator<Record<never, never>, "read">
->;
+import { Brief, Upheld } from "./types";
 
 /** Each call's task: its own prompt file, then the fragments it rules by, which a flag or a param can add. */
 const TASKS = {
@@ -61,143 +57,112 @@ export const LENSES = TASKS.lens;
 const LENS_NAMES = ["correctness", "spec", "tests"] as const;
 type LensName = (typeof LENS_NAMES)[number];
 
-type Panel<T extends string> = {
-	/** The task of the lens over `item`. */
-	task: (item: Ref<T>) => string | Ref<string>;
-	/** The lane version under review. */
-	change: Ref<string> | string;
-	patches: Ref<ArtifactRef>;
-	spec: Ref<ArtifactRef>;
-	/** The rules a finding must cite, which the skeptics and the consolidator rule by. */
-	grounds?: string;
-	/** Whether a skeptic rules over each lens's findings; without one, every finding counts as upheld. Default true. */
-	skeptics?: boolean;
-	/** Relays every lens, skeptic and the consolidator read after their own. */
-	common?: Relays;
-};
+const PATCHES_HINT = "for what the change did, patch by patch";
+const SPEC_HINT = "for what the change must do";
 
 /**
- * A lens per item, a skeptic over each lens that rejected unless `skeptics` is false, and a consolidator ruling on the
- * findings held. Gives the consolidator and the findings held.
+ * A lens per lens name, a skeptic over each lens that rejected unless `skeptics` is false, the findings held, and, with
+ * `consolidate`, a consolidator ruling on them. Ends in the tally of the change, which rejects while a finding is
+ * upheld, and carries the consolidator's `review` beside it.
+ * @throws BuildError `CFG.param` when it has neither a `session` to carry nor a consolidator's.
  */
-export function panel<T extends string>(
-	p: Panel<T> & { items: readonly T[] },
-): { consolidator: Consolidated; held: Ref<ValueOf<typeof Upheld>[]> } {
-	const attached = {
-		patches: {
-			artifact: p.patches,
-			hint: "for what the change did, patch by patch",
+export const panel = composition(
+	"panel",
+	{
+		doc: "Review a lane version through a lens per name, a skeptic over each lens that found anything, and a consolidator, ending in a Tally.",
+		ports: {
+			change: Lane,
+			spec: Markdown(),
+			session: Optional(Session),
+			earlier: Optional(List(Upheld)),
+			names: Optional(List(Text())),
+			brief: Optional(Brief),
 		},
-		spec: { artifact: p.spec, hint: "for what the change must do" },
-	};
-	const skeptics = p.skeptics ?? true;
-	const body = (item: Ref<T>) =>
-		round({
-			change: p.change,
-			task: p.task(item),
-			attached,
-			grounds: p.grounds,
-			skeptics,
-			common: p.common,
-		});
-	const rounds = iter.parMap(p.items, body, {
-		onError: "continue",
-		label: "lenses",
-	});
-	const held = code(heldOf, {
-		in: { results: rounds.out.results, names: p.items },
-		out: {
-			held: List(Upheld),
-			unreviewed: List(Struct({ lens: Text(), reason: Text() })),
+		params: {
+			lenses: Json<Record<string, string>>({
+				type: "object",
+				additionalProperties: { type: "string" },
+			}),
+			skeptics: Bool({ default: true }),
+			consolidate: Bool({ default: true }),
+			grounds: Text({ default: "" }),
+			checks: List(Text(), { default: [] }),
 		},
-	});
-	return {
-		consolidator: consolidator({
-			label: "consolidator",
-			task: TASKS.consolidator(skeptics, p.grounds),
-			lane: read(p.change),
-			relay: {
-				findings: held.out.held,
-				unreviewed: held.out.unreviewed,
-				...p.common,
+	},
+	(
+		{ lenses, skeptics, consolidate, grounds, checks },
+		{ change, spec, session, earlier, names, brief },
+	) => {
+		const attached = {
+			patches: {
+				artifact: changeset(change, { label: "patches" }).out.changeset,
+				hint: PATCHES_HINT,
 			},
-			attachments: attached,
-		}),
-		held: held.out.held,
-	};
-}
-
-type RoundOptions = {
-	change: Ref<string> | string;
-	/** The task of the lens. */
-	task: string | Ref<string>;
-	/** What the lens and the skeptic both read. */
-	attached: { patches: Attachment; spec: Attachment };
-	grounds?: string;
-	/** Whether a skeptic sits over the lens's findings. */
-	skeptics: boolean;
-	/** The lens's node label. Default `lens`. */
-	label?: string;
-	/** The session the lens continues. */
-	session?: Ref<string>;
-	/** Names of `target.checks` the lens may run. */
-	checks?: string[];
-	/** Relays for the lens only. */
-	relay?: Relays;
-	/** Relays the lens and the skeptic both read, after their own. */
-	common?: Relays;
-};
-
-/**
- * A lens over one item on `task`, and when `skeptics`, a skeptic over its findings unless it settled ok. Without a
- * skeptic it returns the lens alone.
- */
-export function round(options: RoundOptions & { skeptics: true }): {
-	lens: Lens;
-	skeptic: Skeptic;
-};
-export function round(options: RoundOptions & { skeptics: false }): Lens;
-export function round(
-	options: RoundOptions,
-): Lens | { lens: Lens; skeptic: Skeptic };
-export function round(options: RoundOptions) {
-	const found = lensOf(options);
-	if (!options.skeptics) return found;
-	return {
-		lens: found,
-		skeptic: challenge(found, {
-			change: options.change,
-			attached: options.attached,
-			grounds: options.grounds,
-			relay: options.common,
-		}),
-	};
-}
-
-function lensOf({
-	change,
-	task,
-	attached,
-	label = "lens",
-	session,
-	checks,
-	relay,
-	common,
-}: RoundOptions) {
-	return lens({
-		label,
-		task,
-		lane: read(change),
-		session,
-		checks,
-		relay: { ...relay, ...common },
-		attachments: attached,
-	});
-}
-
-type Lens = ReturnType<typeof lensOf>;
-
-type Skeptic = ReturnType<typeof challenge>;
+			spec: { artifact: spec, hint: SPEC_HINT },
+		};
+		const ground = grounds || undefined;
+		const common: Relays = brief ? { builder: brief } : {};
+		const items = names ?? Object.keys(lenses);
+		const rounds = iter.parMap(
+			items,
+			(name) => {
+				const found = lens({
+					label: "lens",
+					task: lookup(lenses, name),
+					lane: read(change),
+					checks,
+					relay: { ...(earlier && { upheld: earlier }), ...common },
+					attachments: attached,
+				});
+				if (!skeptics) return found;
+				return {
+					lens: found,
+					skeptic: challenge(found, {
+						change,
+						attached,
+						grounds: ground,
+						relay: common,
+					}),
+				};
+			},
+			{ onError: "continue", label: "lenses" },
+		);
+		const held = code(heldOf, {
+			in: { results: rounds.out.results, names: items },
+			out: {
+				held: List(Upheld),
+				unreviewed: List(Struct({ lens: Text(), reason: Text() })),
+			},
+		});
+		const consolidated = consolidate
+			? consolidator({
+					label: "consolidator",
+					task: TASKS.consolidator(skeptics, ground),
+					lane: read(change),
+					relay: {
+						findings: held.out.held,
+						unreviewed: held.out.unreviewed,
+						...common,
+					},
+					attachments: attached,
+				})
+			: undefined;
+		const carried = session ?? consolidated?.out.session;
+		if (!carried)
+			throw new BuildError({
+				code: "CFG.param",
+				message: "classics.panel needs a session or consolidate",
+				hint: "Feed the session port, or leave the consolidate param true",
+			});
+		return tally({
+			lane: change,
+			session: carried,
+			held: held.out.held,
+			verdict: consolidated?.out.verdict,
+			review: consolidated?.out.review,
+		});
+	},
+);
 
 /**
  * The lane version under review: `change`, or the target commits `revs` names.
@@ -225,7 +190,7 @@ function reviewed(
 export const panelReview = composition(
 	"panel_review",
 	{
-		doc: "Review a lane version or target commits: a lens per lens name, a skeptic over each lens that found anything, then a consolidator.",
+		doc: "Review a lane version or target commits: a lens per lens name, a skeptic over each lens that found anything, then a consolidator and a tally that rejects while a finding is upheld.",
 		params: {
 			request: Text({ description: "What the change must do" }),
 			change: Optional(Lane),
@@ -257,13 +222,16 @@ export const panelReview = composition(
 			out: { file: Markdown() },
 			label: "request",
 		});
-		const patches = changeset(change, { label: "patches" });
-		return panel({
-			items: lenses,
-			task: (name) => lookup(LENSES, name),
-			change,
-			patches: patches.out.changeset,
-			spec: spec.out.file,
-		}).consolidator;
+		return use(
+			panel,
+			{ change, spec: spec.out.file },
+			{
+				params: {
+					lenses: Object.fromEntries(
+						lenses.map((name) => [name, LENSES[name]]),
+					),
+				},
+			},
+		);
 	},
 );

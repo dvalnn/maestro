@@ -8,6 +8,7 @@ import {
 	type ArtifactRef,
 	allSettled,
 	code,
+	Markdown,
 	not,
 	type Ref,
 	type ValueOf,
@@ -72,12 +73,13 @@ export function fix(
 	});
 }
 
-/** The tally of a review of `lane`: the findings `held` that a blocking or, given `verdict`, an upheld ruling keeps. */
+/** The tally of a review of `lane`: the findings `held` that a blocking or, given `verdict`, an upheld ruling keeps, with the `review` given beside it. */
 export function tally({
 	lane,
 	session,
 	held,
 	verdict,
+	review,
 	label = "upheld",
 }: {
 	lane: Ref<string>;
@@ -85,6 +87,8 @@ export function tally({
 	held: Held;
 	/** The consolidator's `verdict` port. */
 	verdict?: Ref<ValueOf<typeof Verdict>>;
+	/** The consolidator's review, which the tally carries beside the rest. */
+	review?: Ref<ArtifactRef>;
 	label?: string;
 }) {
 	return code(tallyOf, {
@@ -93,8 +97,9 @@ export function tally({
 			session,
 			held,
 			...(verdict && { verdict: allSettled([verdict]) }),
+			...(review && { review }),
 		},
-		out: Tally,
+		out: review ? { ...Tally, review: Markdown() } : Tally,
 		label,
 		tolerate: "rejected",
 	});
