@@ -27,8 +27,8 @@ copy recorded in `skills/UPSTREAM.md`; the profiles under `profiles/` say which 
 files anywhere inside its namespace directory, here `profiles/`; copy the whole `profiles/` to shadow the pack.
 
 Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, `lens`, `skeptic`, `consolidator` and `tester` 20
-minutes and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own terms; set one in
-config as `profiles.classics/<name>.context`.
+minutes and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own terms; set one
+in config as `profiles.classics/<name>.context`.
 
 ## Params
 
