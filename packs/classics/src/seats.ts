@@ -1,5 +1,5 @@
-import { JsonOut, MarkdownOut, seat } from "@maestro/host-repo-sdk";
-import { Answers, Findings, Verdict, Verdicts } from "./types";
+import { MarkdownOut, seat } from "@maestro/host-repo-sdk";
+import { Answers, Findings, Rulings, Verdict } from "./types";
 
 export const scout = seat("scout", {
 	profile: "classics/scout",
@@ -16,20 +16,18 @@ export const builder = seat("builder", { profile: "classics/builder" });
 export const lens = seat("lens", {
 	profile: "classics/lens",
 	verdict: true,
-	out: { findings: JsonOut("findings.json", Findings) },
+	reply: { findings: Findings },
 });
 
 export const skeptic = seat("skeptic", {
 	profile: "classics/skeptic",
 	verdict: true,
-	out: { verdicts: JsonOut("verdicts.json", Verdicts) },
+	reply: { rulings: Rulings },
 });
 
 export const consolidator = seat("consolidator", {
 	profile: "classics/consolidator",
 	verdict: true,
-	out: {
-		review: MarkdownOut("review.md"),
-		verdict: JsonOut("verdict.json", Verdict),
-	},
+	out: { review: MarkdownOut("review.md") },
+	reply: { verdict: Verdict },
 });

@@ -1,3 +1,4 @@
+import { Lane, Session } from "@maestro/host-repo-sdk";
 import {
 	Bool,
 	Enum,
@@ -15,13 +16,22 @@ export const atLeastOne = (value: number, description: string) =>
 		{ default: value, description: `${description}, at least 1` },
 	);
 
-/** What a lens found: `clean` when nothing, else each finding numbered `F1` on. */
-export const Findings = Struct({
-	clean: Bool(),
-	findings: List(
-		Struct({ id: Text(), where: Text(), issue: Text(), blocking: Bool() }),
-	),
-});
+const FINDING = {
+	id: Text(),
+	where: Text({ description: "file:line of the defect" }),
+	issue: Text({ description: "the failure the defect causes" }),
+	cites: Text({
+		description:
+			"the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
+	}),
+	blocking: Bool(),
+};
+
+/** A defect a lens found, numbered `F1` on per lens; `cites` names the guideline it breaks, and a blocking one fails the lens. */
+export const Finding = Struct(FINDING);
+
+/** What a lens found, none when its work is clean. */
+export const Findings = List(Finding);
 
 /** The tester's map: each requirement in one list, a pinned one with its test by file and name. */
 const Unpinned = List(Struct({ requirement: Text(), why: Text() }));
@@ -32,16 +42,32 @@ export const TestMap = Struct({
 });
 
 /** A skeptic's ruling on each finding of its lens, by the finding's id. */
-export const Verdicts = List(
-	Struct({ id: Text(), holds: Bool(), why: Text() }),
-);
+export const Rulings = List(Struct({ id: Text(), holds: Bool(), why: Text() }));
 
-/** A consolidator's ruling: one entry per criterion, and what blocks approval. */
+/** A consolidator's ruling: one entry per criterion, and the findings it upholds as `<lens>/<id>`. */
 export const Verdict = Struct({
-	approved: Bool(),
 	criteria: List(Struct({ id: Text(), met: Bool(), evidence: Text() })),
-	blocking: List(Text()),
+	upholds: List(Text(), {
+		description: "<lens>/<id> of each finding upheld",
+	}),
 });
+
+/** A finding a review held, with its lens and the skeptic's `why`, absent when no skeptic ruled on it. */
+export const Upheld = Json<
+	ValueOf<typeof Finding> & { lens: string; why?: string }
+>({
+	type: "object",
+	properties: Object.fromEntries(
+		Object.entries({ ...FINDING, lens: Text(), why: Text() }).map(
+			([name, type]) => [name, type.schema],
+		),
+	),
+	required: [...Object.keys(FINDING), "lens"],
+	additionalProperties: false,
+});
+
+/** The ports a review round settles to: the lane and the builder's session it carries, and the findings upheld. */
+export const Tally = { lane: Lane, session: Session, upheld: List(Upheld) };
 
 const Entry = { question: Text(), answer: Text() };
 const Grounded = Struct({ ...Entry, state: Enum(["grounded"]) });

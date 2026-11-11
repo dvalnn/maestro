@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { valuesLayer } from "@maestro/core/config";
 import type { Roots } from "@maestro/core/host";
 import type { CodeEntry } from "@maestro/core/node";
-import { concertDirs, openRecord, perform } from "@maestro/core/perform";
+import { openRecord, perform } from "@maestro/core/perform";
 import { repoHost } from "@maestro/host-repo";
 import {
 	type HarnessRequest,
@@ -17,7 +17,7 @@ import {
 import type { CodeContext } from "@maestro/sdk";
 import * as stdlib from "@maestro/sdk/stdlib";
 import { buildIr, stubConcert } from "@maestro/testkit";
-import { survivorsOf, toMarkdown } from "../src/code";
+import { heldOf, toMarkdown } from "../src/code";
 import { buildThenRepair } from "../src/repair";
 import { panelReview } from "../src/review";
 import { diff, maestroTrace, sssfTrace } from "./compare";
@@ -59,7 +59,7 @@ const CODE: Readonly<
 > = {
 	...stdlib,
 	toMarkdown,
-	survivorsOf,
+	heldOf,
 };
 const POLL_MS = 20;
 
@@ -154,25 +154,25 @@ test("a trace's files are its last check's, and its target is clean only as setu
 	expect((await extract()).clean).toBe(false);
 });
 
-test("a review keeps the findings its skeptics upheld, and notes a lens that did not settle", async () => {
+test("a review relays the findings its skeptics upheld to its consolidator, and notes a lens that did not settle", async () => {
 	const { dir, config, lane } = await performedTask("t1");
 	const SKEPTIC = "lab-b/skeptic";
-	const write = (file: string, value: unknown): StubStep => ({
-		write: `${OUTBOX}/${file}`,
-		content: JSON.stringify(value),
-	});
+	const report = { summary: "done" };
 	const finding = (id: string, issue: string) => ({
 		id,
 		where: "greet.sh:2",
 		issue,
+		cites: "Reuse",
 		blocking: true,
 	});
 	const replies: [string, StubStep[]][] = [
 		[
 			"lens only: correctness",
 			[
-				write("findings.json", {
-					clean: false,
+				replying({
+					outcome: "rejected",
+					reason: "F1 blocks",
+					report,
 					findings: [
 						finding("F1", "upheld issue"),
 						finding("F2", "overturned issue"),
@@ -182,31 +182,42 @@ test("a review keeps the findings its skeptics upheld, and notes a lens that did
 		],
 		[
 			"lens only: the spec",
-			[write("findings.json", { clean: true, findings: [] })],
+			[replying({ outcome: "ok", report, findings: [] })],
 		],
 		["lens only: the tests", []],
 		[
 			"Independent lenses",
 			[
 				{ write: `${OUTBOX}/review.md`, content: "Approved.\n" },
-				write("verdict.json", { approved: true, criteria: [], blocking: [] }),
+				replying({
+					outcome: "ok",
+					report,
+					verdict: { criteria: [], upholds: [] },
+				}),
 			],
 		],
 	];
-	const verdicts = write("verdicts.json", [
-		{ id: "F1", holds: true, why: "the code shows it" },
-		{ id: "F2", holds: false, why: "the code refutes it" },
-	]);
-	const reviewer = stubHarness((req) => [
-		...(req.runtime.model === SKEPTIC
-			? [verdicts]
-			: (replies.find(([task]) => req.prompt.includes(task))?.[1] ?? [])),
-		done(req),
-	]);
+	const rulings = replying({
+		outcome: "ok",
+		report,
+		rulings: [
+			{ id: "F1", holds: true, why: "the code shows it" },
+			{ id: "F2", holds: false, why: "the code refutes it" },
+		],
+	});
+	const prompts: string[] = [];
+	const reviewer = stubHarness((req) => {
+		if (req.prompt.startsWith("Independent lenses")) prompts.push(req.prompt);
+		return req.runtime.model === SKEPTIC
+			? [rulings]
+			: (replies.find(([task]) => req.prompt.includes(task))?.[1] ?? [
+					done(req),
+				]);
+	});
 	const ir = buildIr(
 		panelReview,
 		{ request: TASKS.t1.request, change: lane },
-		{ toMarkdown, survivorsOf },
+		{ toMarkdown, heldOf },
 	);
 	const run = await stubConcert(ir, {
 		hosts: [repoHost({ harnesses: [reviewer] })],
@@ -221,20 +232,14 @@ test("a review keeps the findings its skeptics upheld, and notes a lens that did
 		code: CODE,
 		dir,
 	});
-	const kept = run.record
-		.instances(run.id)
-		.find((i) => i.node === "survivorsOf")?.outputs?.survivors;
 	await run.close();
 	expect(run.result).toMatchObject({ outcome: "ok", node: "consolidator" });
-	const survivors = await Bun.file(
-		join(concertDirs(dir, run.id).artifacts, String(Object(kept).path)),
-	).text();
-	expect(survivors).toContain(
-		"## correctness\n\n- F1, greet.sh:2 (blocking): upheld issue\n  Upheld: the code shows it",
-	);
-	expect(survivors).not.toContain("F2");
-	expect(survivors).toContain("## tests\n\nunverified: ");
-	expect(survivors).not.toContain("## spec");
+	const [task] = prompts;
+	expect(task).toContain("## findings");
+	expect(task).toContain("lens: correctness");
+	expect(task).toContain("why: the code shows it");
+	expect(task).not.toContain("overturned issue");
+	expect(task).toMatch(/## unreviewed\n[^#]*lens: tests/);
 });
 
 test("a concert cancelled during its first repair resumes without rebuilding, and ends ok", async () => {

@@ -47,7 +47,7 @@ export type Report = {
 	upheld?: string;
 	/** The PR body the slice's writer wrote. */
 	pr?: string;
-	/** A consolidator's review, and the findings its verdict blocks on. */
+	/** A consolidator's review, and the findings the review upheld. */
 	review?: string;
 	blocking?: string[];
 	/** What the tester's map holds, when the concert's tester wrote one. */
@@ -137,20 +137,15 @@ const instancesOf = (doc: Json) =>
 
 const count = (list: unknown) => (Array.isArray(list) ? list.length : 0);
 
-/** The sizes of the tester's `map.json`, from an `ls <concert> --json` and a `wait <concert> --json` document. */
-function testsOf(doc: Json, result: unknown): Report["tests"] {
+/** The sizes of the tester's `map` reply, from an `ls <concert> --json` document. */
+function testsOf(doc: Json): Report["tests"] {
 	const out = instancesOf(doc).find((i) => i.node === TESTER_NODE)?.outputs;
-	const map = isJson(out) && isJson(out.map) ? out.map : undefined;
-	if (!map || typeof map.path !== "string") return undefined;
-	if (!isJson(result) || typeof result.artifacts !== "string") return undefined;
-	const path = join(result.artifacts, map.path);
-	if (!existsSync(path)) return undefined;
-	const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-	if (!isJson(parsed)) return undefined;
+	const map = isJson(out) ? out.map : undefined;
+	if (!isJson(map)) return undefined;
 	return {
-		pinned: count(parsed.pinned),
-		deferred: count(parsed.deferred),
-		untestable: count(parsed.untestable),
+		pinned: count(map.pinned),
+		deferred: count(map.deferred),
+		untestable: count(map.untestable),
 	};
 }
 
@@ -172,16 +167,14 @@ const upheldOf = (doc: unknown) =>
 /** The writer's PR body in the `pr` output of a `wait <concert> --json` document, when it wrote one. */
 const prOf = (doc: unknown) => outputText(doc, "pr") || undefined;
 
-/** The findings the `verdict` output of a `wait <concert> --json` document blocks on, none when it is not JSON. */
+/** The findings the `upheld` output of a review's `wait <concert> --json` document holds, as `<where>: <issue>` lines. */
 function blockingOf(doc: unknown) {
-	const text = outputText(doc, "verdict");
-	if (!text) return undefined;
-	try {
-		const verdict: unknown = JSON.parse(text);
-		return isJson(verdict) ? strings(verdict.blocking) : undefined;
-	} catch {
-		return undefined;
-	}
+	const upheld =
+		isJson(doc) && isJson(doc.outputs) ? doc.outputs.upheld : undefined;
+	if (!Array.isArray(upheld)) return undefined;
+	return upheld
+		.filter(isJson)
+		.map((f) => `${String(f.where)}: ${String(f.issue)}`);
 }
 
 /** What a perform that started no concert printed: its error, else its refusal's diagnostics, one per line. */
@@ -269,7 +262,7 @@ export function maestro(bin = "maestro"): Maestro {
 				pr: prOf(result),
 				review: outputText(result, "review"),
 				blocking: blockingOf(result),
-				tests: testsOf(doc, result),
+				tests: testsOf(doc),
 			};
 		},
 		spend: async (id) => spendOf(await json(bin, ["ls", id])),

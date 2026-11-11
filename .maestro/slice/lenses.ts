@@ -47,7 +47,7 @@ export const PANELS = {
 /** A tier that reviews by panel. */
 export type PanelTier = keyof typeof PANELS;
 
-/** A panel of `tier`'s lenses over the lane version `change` against `spec`, no skeptics, one consolidated verdict. */
+/** A panel of `tier`'s lenses over the lane version `change` against `spec`, no skeptics, one consolidated verdict. Gives the consolidator and the findings held. */
 export function panelOf(
 	tier: PanelTier,
 	change: Ref<string>,

@@ -61,16 +61,16 @@ every code node of the pack.
 `@maestro/classics` exports the classics pack's parts:
 
 - `panel`: the lens, skeptic and consolidator panel, as a function over a change; given `grounds`, the rules a finding
-  must cite, its skeptics and consolidator rule by them.
-- `round`: the lens, and a skeptic unless clean, that `panel` runs per item, for one lens alone; it takes a lens label,
-  session, checks and extra lens attachments. `upheld(findings, verdicts)` matches findings to the verdicts that held
-  them.
+  must cite, its skeptics and consolidator rule by them. It gives the consolidator and `held`, the findings held.
+- `round`: the lens, and a skeptic unless the lens settled ok, that `panel` runs per item, for one lens alone; it takes
+  a lens label, session, checks and relays for the lens.
 - Seats: `builder`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`.
 - Compositions: `repairUntilGreen`, `panelReview`, `buildThenRepair`. `repairUntilGreen`'s `checks` param names the
   checks its repair agent may run, none by default; its recheck runs every check.
 - Params: `maxRepairs`, the repair bound, and `atLeastOne`, an at-least-one integer.
-- Code-node functions `survivorsOf`, `toMarkdown`; types `Findings`, `Verdict`, `Verdicts`; `fill` for prompt
-  placeholders ([prompts.md](prompts.md)).
+- Code-node functions `toMarkdown`, `heldOf` and `tallyOf`: `heldOf` gathers the findings a panel's skeptics held, and
+  `tallyOf` upholds them, by a consolidator's `upholds` when given, into a `Tally`; types `Finding`, `Findings`,
+  `Rulings`, `Verdict`, `Upheld`, `TestMap`; `fill` for prompt placeholders ([prompts.md](prompts.md)).
 
 ## Profiles, never models
 

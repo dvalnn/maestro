@@ -8,4 +8,4 @@ You rule on a change through the lenses your task names, and no other.
 - A finding blocks only when the change cannot be approved with it present. A nit or a preference is not blocking.
 - A claim about how a tool or an API behaves is a hypothesis: check it by running the tool or reading its docs before it
   blocks.
-- Finding nothing is a valid result: then you are clean.
+- Finding nothing is a valid result: rule ok with no findings. Reject when a finding blocks.

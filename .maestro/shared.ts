@@ -1,6 +1,6 @@
-import { toMarkdown } from "@maestro/classics";
+import { type tallyOf, toMarkdown } from "@maestro/classics";
 import { check, fresh } from "@maestro/host-repo-sdk";
-import { code, Markdown, type Ref } from "@maestro/sdk";
+import { code, Markdown, type Ref, reject } from "@maestro/sdk";
 
 /** The review tiers, shallowest first: the tier triage rules is the depth slice reviews at. */
 export const TIERS = ["small", "ordinary", "risky"] as const;
@@ -23,3 +23,13 @@ export const markdownOf = (text: Ref<string> | string, label: string) =>
 		out: { file: Markdown() },
 		label,
 	}).out.file;
+
+/** A round's `tally` with `extra` outputs beside it, a rejection's included. */
+export function withOutputs<E extends object>(
+	tally: ReturnType<typeof tallyOf>,
+	extra: E,
+) {
+	return "outcome" in tally
+		? reject(tally.reason, { ...tally.outputs, ...extra })
+		: { ...tally, ...extra };
+}

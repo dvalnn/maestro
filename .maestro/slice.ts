@@ -4,21 +4,21 @@ import {
 	atLeastOne,
 	builder,
 	type Findings,
+	heldOf,
 	maxRepairs,
+	type Rulings,
 	repairUntilGreen,
 	round,
-	rulingLine,
+	Tally,
 	TestMap,
-	upheld,
-	type Verdict,
-	type Verdicts,
+	tallyOf,
+	type Upheld,
 } from "@maestro/classics";
 import {
 	changeset,
 	commits,
 	extend,
 	fresh,
-	Lane,
 	MarkdownOut,
 	read,
 	Session,
@@ -27,9 +27,7 @@ import {
 import {
 	type ArtifactRef,
 	allSettled,
-	Bool,
 	type CodeContext,
-	type CodeInputs,
 	code,
 	composition,
 	Dir,
@@ -38,7 +36,7 @@ import {
 	Markdown,
 	not,
 	type Ref,
-	readJson,
+	type Result,
 	reject,
 	type Settled,
 	Text,
@@ -47,7 +45,7 @@ import {
 } from "@maestro/sdk";
 import FIGURES from "./prompts/_figures.md" with { type: "text" };
 import PLAIN from "./prompts/_plain.md" with { type: "text" };
-import { markdownOf, TIERS, type Tier, task } from "./shared";
+import { markdownOf, TIERS, type Tier, task, withOutputs } from "./shared";
 import {
 	DESIGN_QUESTIONS,
 	DESIGN_SEARCHES,
@@ -88,66 +86,66 @@ const TASKS = {
 /** Every check of `target.checks` in `.maestro/config.yaml`, as an agent may run only those it names. */
 const REPO_CHECKS = ["format", "lint", "types", "test", "all", "fmt"];
 
-type Found = ValueOf<typeof Findings>;
-
-/** What one review round ruled: a panel's consolidated verdict, or a reviewer's findings and its skeptic's verdicts. */
-type Ruled =
-	| { verdict: ValueOf<typeof Verdict> }
-	| { findings: Found; verdicts?: Settled<ValueOf<typeof Verdicts>>[] };
+/** The lens name and node label of small's reviewer, which its session group and its findings' ids carry. */
+const REVIEWER_LENS = "reviewer";
 
 /**
- * One round's rulings, and what its state carries to the next: the reviewed lane, the builder's session and the
- * reviewer's.
+ * A reviewer round's tally, and the reviewer's session beside it. A skeptic that delivered no rulings leaves every
+ * finding held without a why.
  */
-type Rulings = { lane: string; session: string; reviewer?: string } & Ruled;
-
-/**
- * Each blocking finding of `rulings` that was upheld, as a Markdown list item:
- * - a panel's, as its consolidator worded it;
- * - a reviewer's, with its skeptic's why, or marked unverified when no skeptic delivered verdicts.
- */
-function upheldLines(rulings: Rulings): string[] {
-	if ("verdict" in rulings)
-		return rulings.verdict.blocking.map((b) => `- ${b}`);
-	const { clean, findings } = rulings.findings;
-	if (clean) return [];
-	const blocking = findings.filter((f) => f.blocking);
-	return upheld(blocking, rulings.verdicts?.[0]?.value).map(
-		(f) => `- ${f.id}, ${f.where}: ${f.issue}\n  ${rulingLine(f.why)}`,
-	);
-}
-
-/**
- * The upheld blocking findings of one review round as Markdown, `clean` when there are none, and the lane and sessions
- * it carries.
- */
-export function upheldOf(
-	rulings: Rulings,
-	ctx: CodeContext,
-): {
+export function reviewedOf({
+	lane,
+	session,
+	reviewer,
+	findings,
+	rulings,
+}: {
 	lane: string;
 	session: string;
-	reviewer?: string;
-	clean: boolean;
-	upheld: string;
-} {
-	const lines = upheldLines(rulings);
-	const file = join(ctx.scratch, "upheld.md");
-	const body = lines.length ? lines : ["None."];
-	writeFileSync(file, ["# Upheld findings", "", ...body, ""].join("\n"));
-	const { lane, session, reviewer } = rulings;
-	return {
-		lane,
-		session,
-		...(reviewer !== undefined && { reviewer }),
-		clean: lines.length === 0,
-		upheld: file,
-	};
+	reviewer: string;
+	findings: ValueOf<typeof Findings>;
+	rulings: Settled<ValueOf<typeof Rulings>>[];
+}) {
+	const [ruled] = rulings;
+	const member =
+		ruled?.value !== undefined
+			? { lens: { findings }, skeptic: { rulings: ruled.value } }
+			: { findings };
+	const { held } = heldOf({
+		results: [{ outcome: "ok", value: member }],
+		names: [REVIEWER_LENS],
+	});
+	return withOutputs(tallyOf({ lane, session, held }), { reviewer });
+}
+
+/** A finding a round upheld. */
+type Held = ValueOf<typeof Upheld>;
+
+const UNVERIFIED = "Unverified: no skeptic ruled on it";
+const NO_FINDINGS = "None.";
+
+/** `upheld` as Markdown, a `### <cites>` section per cite, each finding with its skeptic's why or a mark that none ruled. */
+function upheldMarkdown(upheld: Held[]): string {
+	const cited = Map.groupBy(upheld, (f) => f.cites);
+	const sections = [...cited].flatMap(([cites, findings]) => [
+		`### ${cites}`,
+		"",
+		...findings.map(
+			(f) =>
+				`- ${f.lens}/${f.id}, ${f.where}: ${f.issue}\n  ${f.why === undefined ? UNVERIFIED : `Upheld: ${f.why}`}`,
+		),
+		"",
+	]);
+	return [
+		"# Upheld findings",
+		"",
+		...(upheld.length ? sections : [NO_FINDINGS, ""]),
+	].join("\n");
 }
 
 /**
- * The changeset, the last round's upheld findings and the writer's PR body, unchanged, when the changeset holds a
- * patch; the body is empty when the writer delivered none. A rejection when the changeset holds no patch, so the slice
+ * The changeset, the last round's upheld findings as `upheld.md` and the writer's PR body, unchanged, when the changeset
+ * holds a patch; the body is empty when the writer delivered none. A rejection when the changeset holds no patch, so the slice
  * settles `rejected`.
  */
 export function requirePatch(
@@ -157,27 +155,22 @@ export function requirePatch(
 		written,
 	}: {
 		changeset: ArtifactRef;
-		upheld: ArtifactRef;
+		upheld: Held[];
 		written: Settled<ArtifactRef>[];
 	},
 	ctx: CodeContext,
 ) {
 	if (!readdirSync(ctx.path(changeset)).some((f) => f.endsWith(PATCH_EXT)))
 		return reject(NOTHING_CHANGED);
+	const file = join(ctx.scratch, "upheld.md");
+	writeFileSync(file, upheldMarkdown(upheld));
 	const body = written[0];
-	if (body?.outcome === "ok") return { changeset, upheld, pr: body.value };
+	if (body?.outcome === "ok")
+		return { changeset, upheld: file, pr: body.value };
 	const pr = join(ctx.scratch, "pr.md");
 	writeFileSync(pr, "");
-	return { changeset, upheld, pr };
+	return { changeset, upheld: file, pr };
 }
-
-/** What a review round settles to. */
-const ROUND_OUT = {
-	lane: Lane,
-	session: Session,
-	clean: Bool(),
-	upheld: Markdown(),
-};
 
 /** The PR body's writer: a cheap seat that only reads the finished change. */
 const writer = seat("writer");
@@ -224,25 +217,14 @@ function build(tier: Tier, request: string, spec: Ref<ArtifactRef>) {
 	return { built, map };
 }
 
-/** The upheld findings of a round's `rulings` over `lane`, carrying `session`, and the reviewer's session when any. */
-const tally = (
-	lane: Ref<string>,
-	session: Ref<string>,
-	rulings: CodeInputs<Ruled & { reviewer?: string }>,
-) =>
-	code(upheldOf, {
-		in: { lane, session, ...rulings },
-		out:
-			"reviewer" in rulings ? { ...ROUND_OUT, reviewer: Session } : ROUND_OUT,
-		label: "upheld",
-		tolerate: "rejected",
-	});
+/** What a reviewer round settles to: the tally and the reviewer's session. */
+const REVIEWED = { ...Tally, reviewer: Session };
 
 /** A reviewer round's session, which the next round's reviewer continues, and the findings that round upheld. */
-type Earlier = { reviewer: Ref<string>; upheld: Ref<ArtifactRef> };
+type Earlier = { reviewer: Ref<string>; upheld: Ref<Held[]> };
 
 /**
- * A panel review of `tier` over the green lane version `lane`, ending in its upheld findings and carrying the builder's
+ * A panel review of `tier` over the green lane version `lane`, ending in its tally and carrying the builder's
  * `session`.
  */
 function panelRound(
@@ -251,15 +233,23 @@ function panelRound(
 	session: Ref<string>,
 	spec: Ref<ArtifactRef>,
 ) {
-	const ruling = panelOf(tier, lane, spec);
-	return tally(lane, session, {
-		verdict: readJson(ruling.out.verdict, { tolerate: "rejected" }),
+	const { consolidator, held } = panelOf(tier, lane, spec);
+	return code(tallyOf, {
+		in: {
+			lane,
+			session,
+			held,
+			verdict: allSettled([consolidator.out.verdict]),
+		},
+		out: Tally,
+		label: "upheld",
+		tolerate: "rejected",
 	});
 }
 
 /**
- * A reviewer and its skeptic over the green lane version `lane`, ending in the upheld findings and carrying the
- * builder's `session` and the reviewer's. The reviewer continues the one of `earlier` when given.
+ * A reviewer and its skeptic over the green lane version `lane`, ending in the tally, carrying the builder's `session`
+ * and the reviewer's. The reviewer continues the one of `earlier` when given.
  */
 function reviewerRound(
 	lane: Ref<string>,
@@ -269,7 +259,7 @@ function reviewerRound(
 ) {
 	const patches = changeset(lane, { label: "patches" }).out.changeset;
 	const { lens: reviewer, skeptic } = round({
-		label: "reviewer",
+		label: REVIEWER_LENS,
 		task: earlier ? TASKS.reviewerAgain : TASKS.reviewer,
 		change: lane,
 		attached: {
@@ -283,22 +273,19 @@ function reviewerRound(
 		skeptics: true,
 		session: earlier?.reviewer,
 		checks: REPO_CHECKS,
-		extra: earlier && {
-			upheld: {
-				artifact: earlier.upheld,
-				hint: "the findings upheld last round",
-			},
-		},
+		relay: earlier && { upheld: earlier.upheld },
 	});
-	return tally(lane, session, {
-		findings: readJson(reviewer.out.findings, {
-			tolerate: "rejected",
-			label: "findings",
-		}),
-		reviewer: reviewer.out.session,
-		verdicts: allSettled([
-			readJson(skeptic.out.verdicts, { tolerate: "rejected" }),
-		]),
+	return code(reviewedOf, {
+		in: {
+			lane,
+			session,
+			reviewer: reviewer.out.session,
+			findings: reviewer.out.findings,
+			rulings: allSettled([skeptic.out.rulings]),
+		},
+		out: REVIEWED,
+		label: "upheld",
+		tolerate: "rejected",
 	});
 }
 
@@ -307,7 +294,7 @@ function fix(
 	reviewed: {
 		lane: Ref<string>;
 		session: Ref<string>;
-		upheld: Ref<ArtifactRef>;
+		upheld: Ref<Held[]>;
 	},
 	spec: Ref<ArtifactRef>,
 ) {
@@ -317,11 +304,8 @@ function fix(
 		lane: extend(reviewed.lane),
 		session: reviewed.session,
 		checks: REPO_CHECKS,
+		relay: { upheld: reviewed.upheld },
 		attachments: {
-			upheld: {
-				artifact: reviewed.upheld,
-				hint: "first, for the findings to fix",
-			},
 			spec: { artifact: spec, hint: "for what the change must do" },
 		},
 	});
@@ -370,7 +354,7 @@ export const slice = composition(
 			lane: Ref<string>,
 			session: Ref<string>,
 			earlier?: Earlier,
-		) => {
+		): Result<typeof Tally | typeof REVIEWED> => {
 			const green = use(
 				repairUntilGreen,
 				{ lane, session, spec },
@@ -384,7 +368,7 @@ export const slice = composition(
 				: panelRound(tier, green, session, spec);
 		};
 		const { built, map } = build(tier, request, spec);
-		const reviewed = loop.while((s) => not(s.out.clean), {
+		const reviewed = loop.while((s) => not(s.ok), {
 			init: gateAndReview(built.out.lane, built.out.session),
 			step: (s) => {
 				const fixed = fix(s.out, spec);
@@ -396,9 +380,12 @@ export const slice = composition(
 			},
 			max: maxFixes,
 			label: "fixes",
+			tolerate: "rejected",
 		});
-		const changes = changeset(reviewed.out.lane, { label: "changes" }).out
-			.changeset;
+		const changes = changeset(reviewed.out.lane, {
+			label: "changes",
+			tolerate: "rejected",
+		}).out.changeset;
 		const written = writer({
 			label: "writer",
 			task: TASKS.writer,
@@ -418,6 +405,7 @@ export const slice = composition(
 			},
 			...(map && { relay: { map } }),
 			out: { pr: MarkdownOut("pr.md") },
+			tolerate: "rejected",
 		});
 		return code(requirePatch, {
 			in: {
@@ -427,6 +415,7 @@ export const slice = composition(
 			},
 			out: { changeset: Dir(), upheld: Markdown(), pr: Markdown() },
 			label: "result",
+			tolerate: "rejected",
 		});
 	},
 );

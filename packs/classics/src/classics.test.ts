@@ -8,10 +8,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Settled } from "@maestro/sdk";
+import { reject, type Settled } from "@maestro/sdk";
 import { pack } from "../../../scripts/pack";
 import { BASE, PROFILES, profilesOn, setup } from "../acceptance/setup";
-import { survivorsOf } from "./code";
+import { heldOf, tallyOf } from "./code";
 import { EXAMPLE_REQUEST } from "./repair";
 
 const MAESTRO = join(import.meta.dir, "../../../packages/cli/src/maestro.ts");
@@ -83,7 +83,7 @@ describe("panel_review", () => {
 		expect(code).toBe(0);
 		const { plan } = JSON.parse(out);
 		expect(plan.bounds).toMatchObject({
-			instances: { exact: 23 },
+			instances: { exact: 17 },
 			counts: { "repo.agent": { exact: 7 } },
 		});
 		const profileOf = (id: string) =>
@@ -102,7 +102,7 @@ describe("panel_review", () => {
 		);
 		expect(code).toBe(0);
 		const { plan } = JSON.parse(out);
-		expect(plan.bounds).toMatchObject({ instances: { exact: 24 } });
+		expect(plan.bounds).toMatchObject({ instances: { exact: 18 } });
 		expect(
 			plan.ir.nodes.filter((n: { kind: string }) => n.kind === "repo.commits"),
 		).toEqual([
@@ -132,17 +132,17 @@ describe("panel_review", () => {
 		expect(err).toContain("Did you mean 'classics.panel_review.lenses'?");
 	});
 
-	test("graphs the lens fan-out, the skeptic's guard and the collect into survivorsOf", async () => {
+	test("graphs the lens fan-out, the skeptic's guard and the collect into heldOf", async () => {
 		const { out } = await maestro("compose", ...REVIEW, "--graph");
 		for (const line of [
 			'subgraph gn2["lenses"]',
 			'n2[["parMap<br/>correctness, spec, tests"]]',
-			'n9["survivorsOf<br/>code"]',
-			'n2 ==>|"collect"| n9',
-			'n8(["skeptic<br/>repo.agent"])',
-			'f7 -.->|"when value, else skip"| j8',
-			'f4 -.->|"after, tolerates rejected"| j8',
-			"j8 --> n8",
+			'n7["heldOf<br/>code"]',
+			'n2 ==>|"collect"| n7',
+			'n6(["skeptic<br/>repo.agent"])',
+			'f5 -.->|"when value, else skip"| j6',
+			'f4 -.->|"after, tolerates rejected"| j6',
+			"j6 --> n6",
 		])
 			expect(out).toContain(`  ${line}\n`);
 	});
@@ -343,28 +343,118 @@ test.each([
 	expect(err).toContain(`error: param '${param}'`);
 });
 
-test("survivorsOf keeps every finding of a round without a skeptic, marked unverified", () => {
-	const dir = mkdtempSync(join(tmpdir(), "survivors-"));
-	const ref = { path: "findings.json", contentHash: "sha256:0" };
-	writeFileSync(
-		join(dir, ref.path),
-		JSON.stringify({
-			clean: false,
-			findings: [
-				{ id: "F1", where: "a.ts:1", issue: "first", blocking: true },
-				{ id: "F2", where: "a.ts:2", issue: "second", blocking: false },
-			],
-		}),
-	);
-	const round: Settled<{ findings: typeof ref }> = {
-		outcome: "ok",
-		value: { findings: ref },
-	};
-	const { survivors } = survivorsOf(
-		{ rounds: [round], items: ["correctness"] },
-		{ scratch: dir, path: () => join(dir, ref.path) },
-	);
-	expect(readFileSync(survivors, "utf8")).toContain(
-		"## correctness\n\n- F1, a.ts:1 (blocking): first\n  Unverified: no skeptic ruled on it\n- F2, a.ts:2 (advisory): second\n  Unverified: no skeptic ruled on it",
-	);
+const finding = (id: string, blocking: boolean) => ({
+	id,
+	where: "a.ts:1",
+	issue: "breaks Reuse",
+	cites: "Reuse",
+	blocking,
+});
+const [F1, F2, F3] = [
+	finding("F1", true),
+	finding("F2", true),
+	finding("F3", false),
+];
+const found = [F1, F2, F3];
+const rulings = (...holds: string[]) =>
+	found.map(({ id }) => ({ id, holds: holds.includes(id), why: `why ${id}` }));
+const ok = <T>(value: T): Settled<T> => ({ outcome: "ok", value });
+const idsOf = (held: { lens: string; id: string }[]) =>
+	held.map((f) => `${f.lens}/${f.id}`);
+
+describe("heldOf", () => {
+	const held = (results: Parameters<typeof heldOf>[0]["results"]) =>
+		heldOf({ results, names: ["correctness", "spec"] });
+
+	test("holds every finding of a member without a skeptic, with no why", () => {
+		const { held: kept } = held([ok({ findings: found })]);
+		expect(idsOf(kept)).toEqual([
+			"correctness/F1",
+			"correctness/F2",
+			"correctness/F3",
+		]);
+		expect(kept.every((f) => f.why === undefined)).toBe(true);
+	});
+
+	test("holds the findings its skeptic's rulings hold, each with that why", () => {
+		const { held: kept } = held([
+			ok({
+				lens: { findings: found },
+				skeptic: { rulings: rulings("F2", "F3") },
+			}),
+		]);
+		expect(kept).toEqual([
+			{ ...F2, lens: "correctness", why: "why F2" },
+			{ ...F3, lens: "correctness", why: "why F3" },
+		]);
+	});
+
+	test("takes a rejected member's value, skips a skipped one and lists one that delivered nothing as unreviewed", () => {
+		const out = held([
+			{ outcome: "rejected", reason: "F1 blocks", value: { findings: found } },
+			{ outcome: "skipped" },
+		]);
+		expect(idsOf(out.held)).toHaveLength(3);
+		expect(out.unreviewed).toEqual([]);
+		expect(
+			held([{ outcome: "skipped" }, { outcome: "failed", reason: "boom" }])
+				.unreviewed,
+		).toEqual([{ lens: "spec", reason: "boom" }]);
+	});
+});
+
+describe("tallyOf", () => {
+	const carried = { lane: "c.gate", session: "c.build" };
+	const heldAll = found.map((f) => ({ ...f, lens: "correctness" }));
+	const verdict = (...upholds: string[]) => ({ criteria: [], upholds });
+
+	test("upholds the blocking held findings when there is no verdict, and rejects naming them", () => {
+		expect<unknown>(tallyOf({ ...carried, held: heldAll })).toEqual(
+			reject("2 upheld: correctness/F1, correctness/F2", {
+				...carried,
+				upheld: heldAll.slice(0, 2),
+			}),
+		);
+		expect(tallyOf({ ...carried, held: [] })).toEqual({
+			...carried,
+			upheld: [],
+		});
+	});
+
+	test("upholds the held findings a verdict names by lens and id", () => {
+		const out = tallyOf({
+			...carried,
+			held: heldAll,
+			verdict: [ok(verdict("correctness/F2", "spec/F1"))],
+		});
+		expect(out).toMatchObject({
+			outcome: "rejected",
+			outputs: { upheld: [{ ...F2, lens: "correctness" }] },
+		});
+	});
+
+	test("tallies a consolidator clean when nothing is upheld, whether it approved or rejected", () => {
+		expect(
+			tallyOf({ ...carried, held: heldAll, verdict: [ok(verdict())] }),
+		).toEqual({ ...carried, upheld: [] });
+		expect(
+			tallyOf({
+				...carried,
+				held: heldAll,
+				verdict: [
+					{ outcome: "rejected", reason: "C1 unmet", value: verdict() },
+				],
+			}),
+		).toEqual({ ...carried, upheld: [] });
+	});
+
+	test("throws when the consolidator failed", () => {
+		expect(() =>
+			tallyOf({
+				...carried,
+				held: heldAll,
+				verdict: [{ outcome: "failed", reason: "boom" }],
+			}),
+		).toThrow("boom");
+	});
 });

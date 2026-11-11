@@ -1078,7 +1078,7 @@ describe("help and color", () => {
 			"  <concert>   A concert, as 'maestro ls' lists it",
 			"Flags:",
 			"Examples:",
-			"  # Read the verdict the consolidator wrote\n  maestro artifact show 7f3c2a consolidator verdict.json",
+			"  # Read the plan the planner wrote\n  maestro artifact show 7f3c2a planner plan.md",
 		].map((part) => out.indexOf(part));
 		expect(at.every((i) => i >= 0)).toBe(true);
 		expect(at).toEqual(at.toSorted((a, b) => a - b));

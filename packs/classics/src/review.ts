@@ -3,6 +3,7 @@ import {
 	changeset,
 	commits,
 	Lane,
+	type Relays,
 	read,
 } from "@maestro/host-repo-sdk";
 import {
@@ -13,15 +14,17 @@ import {
 	Enum,
 	iter,
 	Json,
+	List,
 	lookup,
 	Markdown,
 	not,
 	Optional,
 	type Ref,
-	readJson,
+	Struct,
 	Text,
+	type ValueOf,
 } from "@maestro/sdk";
-import { survivorsOf, toMarkdown } from "./code";
+import { heldOf, toMarkdown } from "./code";
 import CONSOLIDATOR from "./prompts/consolidator.md" with { type: "text" };
 import CONSOLIDATOR_GROUNDS from "./prompts/consolidator-grounds.md" with {
 	type: "text",
@@ -38,6 +41,7 @@ import SPEC from "./prompts/spec.md" with { type: "text" };
 import TESTS from "./prompts/tests.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
 import { consolidator, lens, skeptic } from "./seats";
+import { Upheld } from "./types";
 
 type Consolidated = ReturnType<
 	typeof consolidator<Record<never, never>, "read">
@@ -78,12 +82,12 @@ type Panel<T extends string> = {
 };
 
 /**
- * A lens per item, a skeptic over each lens that found anything unless `skeptics` is false, and a consolidator ruling
- * on the upheld findings.
+ * A lens per item, a skeptic over each lens that rejected unless `skeptics` is false, and a consolidator ruling on the
+ * findings held. Gives the consolidator and the findings held.
  */
 export function panel<T extends string>(
 	p: Panel<T> & { items: readonly T[] },
-): Consolidated {
+): { consolidator: Consolidated; held: Ref<ValueOf<typeof Upheld>[]> } {
 	const attached = {
 		patches: {
 			artifact: p.patches,
@@ -104,22 +108,23 @@ export function panel<T extends string>(
 		onError: "continue",
 		label: "lenses",
 	});
-	const kept = code(survivorsOf, {
-		in: { rounds: rounds.out.results, items: p.items },
-		out: { survivors: Markdown() },
-	});
-	return consolidator({
-		label: "consolidator",
-		task: TASKS.consolidator(skeptics, p.grounds),
-		lane: read(p.change),
-		attachments: {
-			survivors: {
-				artifact: kept.out.survivors,
-				hint: "first, for the upheld findings",
-			},
-			...attached,
+	const held = code(heldOf, {
+		in: { results: rounds.out.results, names: p.items },
+		out: {
+			held: List(Upheld),
+			unreviewed: List(Struct({ lens: Text(), reason: Text() })),
 		},
 	});
+	return {
+		consolidator: consolidator({
+			label: "consolidator",
+			task: TASKS.consolidator(skeptics, p.grounds),
+			lane: read(p.change),
+			relay: { findings: held.out.held, unreviewed: held.out.unreviewed },
+			attachments: attached,
+		}),
+		held: held.out.held,
+	};
 }
 
 type RoundOptions = {
@@ -137,12 +142,12 @@ type RoundOptions = {
 	session?: Ref<string>;
 	/** Names of `target.checks` the lens may run. */
 	checks?: string[];
-	/** Attachments for the lens only. */
-	extra?: Record<string, Attachment>;
+	/** Relays for the lens only. */
+	relay?: Relays;
 };
 
 /**
- * A lens over one item on `task`, and when `skeptics`, a skeptic over its findings unless it is clean. Without a
+ * A lens over one item on `task`, and when `skeptics`, a skeptic over its findings unless it settled ok. Without a
  * skeptic it returns the lens alone.
  */
 export function round(options: RoundOptions & { skeptics: true }): {
@@ -166,7 +171,7 @@ function lensOf({
 	label = "lens",
 	session,
 	checks,
-	extra,
+	relay,
 }: RoundOptions) {
 	return lens({
 		label,
@@ -174,7 +179,8 @@ function lensOf({
 		lane: read(change),
 		session,
 		checks,
-		attachments: { ...attached, ...extra },
+		relay,
+		attachments: attached,
 	});
 }
 
@@ -185,17 +191,10 @@ function skepticOf({ change, grounds, attached }: RoundOptions, found: Lens) {
 		label: "skeptic",
 		task: TASKS.skeptic(grounds),
 		lane: read(change),
-		when: not(
-			readJson(found.out.findings, { tolerate: "rejected" }).get("clean"),
-		),
+		when: not(found.ok),
 		tolerate: "rejected",
-		attachments: {
-			findings: {
-				artifact: found.out.findings,
-				hint: "first, for the findings to challenge",
-			},
-			...attached,
-		},
+		relay: { findings: found.out.findings },
+		attachments: attached,
 	});
 }
 
@@ -266,6 +265,6 @@ export const panelReview = composition(
 			change,
 			patches: patches.out.changeset,
 			spec: spec.out.file,
-		});
+		}).consolidator;
 	},
 );
