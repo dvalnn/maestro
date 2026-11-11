@@ -1,17 +1,18 @@
 ---
 name: code-smells
-description: Fowler code smells, a baseline for a repo that documents none. Use when writing or judging code.
+description: Fowler code smells, a baseline under any repo's own standards. Use when writing or judging code.
 ---
 
-On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below: a fixed set of
-Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
+The **smell baseline** below is a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo
+documents nothing. Two rules bind it:
 
 - **The repo overrides.** A documented repo standard always wins; where it endorses something the baseline would flag,
   suppress the smell.
-- **Always a judgement call.** Each smell is a labelled heuristic ("possible Feature Envy"), never a hard violation.
-  Like any standard here, skip anything tooling already enforces.
+- **In scope blocks.** A smell in code the change adds, or in a function it touches, is a defect to fix and blocks;
+  elsewhere it never blocks. Each smell is a heuristic: confirm it in the code, and skip anything tooling already
+  enforces.
 
-Each smell reads _what it is_ → _how to fix_; match it against the diff:
+Each smell reads _what it is_ → _how to fix_; match it against the change:
 
 - **Mysterious Name**: a function, variable, or type whose name doesn't reveal what it does or holds. → rename it; if no
   honest name comes, the design's murky.
@@ -25,7 +26,7 @@ Each smell reads _what it is_ → _how to fix_; match it against the diff:
   concept its own small type.
 - **Repeated Switches**: the same `switch`/`if`-cascade on the same type recurs across the change. → replace with
   polymorphism, or one map both sites share.
-- **Shotgun Surgery**: one logical change forces scattered edits across many files in the diff. → gather what changes
+- **Shotgun Surgery**: one logical change forces scattered edits across many files in the change. → gather what changes
   together into one module.
 - **Divergent Change**: one file or module is edited for several unrelated reasons. → split so each module changes for
   one reason.

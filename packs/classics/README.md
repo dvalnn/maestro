@@ -20,11 +20,10 @@ are flags in kebab-case, or config under `classics.<composition>.<param>`. Its s
 the questions it is asked in an `answers` reply field: per question, its `state` (`grounded` or `unsure`), what is
 `missing` when unsure, and the Markdown answer.
 
-`builder` and `lens` load `skills/writing-for-agents/`, the guide they write and judge Markdown by, and `planner` loads
-it with `skills/codebase-design/`, through the profile `skills` key. The skills are adapted from Matt Pocock's under the
-MIT license in `skills/LICENSE`, each copy recorded in `skills/UPSTREAM.md`; `tdd`, `domain-modeling` and `code-smells`
-are lifted beside them, attached by no seat yet. A profile may name files anywhere inside its namespace directory, here
-`profiles/`; copy the whole `profiles/` to shadow the pack.
+Each profile's `skills` key names the skills it loads, such as `writing-for-agents`, the guide `builder` and `lens`
+write and judge Markdown by. The skills are adapted from Matt Pocock's under the MIT license in `skills/LICENSE`, each
+copy recorded in `skills/UPSTREAM.md`; the profiles under `profiles/` say which seat loads which. A profile may name
+files anywhere inside its namespace directory, here `profiles/`; copy the whole `profiles/` to shadow the pack.
 
 Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, `lens`, `skeptic` and `consolidator` 20 minutes
 and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own terms; set one in

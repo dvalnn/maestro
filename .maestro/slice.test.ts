@@ -8,6 +8,7 @@ import {
 	type Settled,
 } from "@maestro/sdk";
 import { requirePatch, upheldOf } from "./slice";
+import { JUDGED } from "./slice/lenses";
 import {
 	call,
 	classics,
@@ -379,11 +380,7 @@ test.each(["small", "ordinary", "risky"])(
 		);
 		expect(judges.length).toBeGreaterThan(0);
 		for (const n of judges)
-			for (const ground of [
-				"its subject and closing line",
-				"A test must pull weight",
-			])
-				expect(JSON.stringify(n)).toContain(ground);
+			expect(JSON.stringify(n)).toContain(JSON.stringify(JUDGED).slice(1, -1));
 	},
 );
 
