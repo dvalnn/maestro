@@ -1,0 +1,1010 @@
+{
+	"agents": {
+		"checker": [
+			{
+				"seat": "checker",
+				"profile": "checker",
+				"task": "Check the attached spec against the code. Its spec is in the attached `plan.json`.\n\nWrite `check.json` as `{ \"findings\": [...] }`, each finding one line: what the spec says against what the code shows,\nwith its file:line. The planner revises the spec by them once, and asks the owner what only the owner can rule on.\n\n- A claim the spec makes about the base holds: every function, file, flag, behaviour and call site it names exists and\n  behaves as stated, and so does everything it says a change must also update.\n- Each figure holds as a decision does: every module, dependency, call, state and member it draws as it is before the\n  change exists as drawn, and its notes say what its labels point at.\n- Every requirement (`R1` on, by position) is proved by an acceptance item that names it after a `#`.\n- The spec misses no place the change must touch: the uninstall path beside an install, each other caller of a changed\n  function, each test or doc that states the old behaviour.\n- The spec fits the architecture. Write a finding, with its file:line, for each of: a duplicate of a helper or pattern\n  the codebase already has (grep for one); a module, abstraction or flag nothing in the ask needs; a public interface\n  wider than the ask; a package boundary crossed, such as domain words in a domain-free package; a decision with lasting\n  weight and no ADR or owner ruling behind it.\n- `findings`: one per failure that would break the build or the codebase. Leave out edge cases the ask and the owner's\n  replies do not raise. Write `\"findings\": []` when nothing fails.\n\n\nA build must pass `just check`, which runs format, lint, types and every test, and keep to CODING_STANDARDS.md.\n",
+				"attachments": {
+					"answers": {
+						"hint": "for what the scouts found",
+						"type": "core.markdown"
+					},
+					"issue": {
+						"hint": "first, for the issue to triage",
+						"type": "core.markdown"
+					},
+					"plan": {
+						"hint": "first, for the spec to check",
+						"type": "core.json-file"
+					}
+				},
+				"out": {
+					"check": {
+						"file": "check.json",
+						"format": "json",
+						"schema": {
+							"additionalProperties": false,
+							"properties": {
+								"findings": {
+									"items": {
+										"type": "string"
+									},
+									"type": "array"
+								}
+							},
+							"required": ["findings"],
+							"type": "object"
+						}
+					}
+				},
+				"lane": "read",
+				"bound": {
+					"exact": 1
+				}
+			}
+		],
+		"planner": [
+			{
+				"seat": "planner",
+				"profile": "classics/planner",
+				"task": "Revise the plan you wrote by the attached findings: the spec check's, and each requirement that breaks the EARS shape.\n\n- Settle each finding in the spec, by correcting the claim or requirement it names or by dropping detail the spec does\n  not need. When you split a requirement, renumber the acceptance comments to match. Write `plan.json` again, whole,\n  then run `check ears` again.\n- A finding only the owner can rule on, such as a security trade-off or behaviour the ask and the replies leave open,\n  goes in `questions`, as under Questions for the owner, not in the spec.\n\n\n## Questions for the owner\n\nEach question is:\n\n```json\n{\n  \"ask\": \"the question, one line\",\n  \"lead\": \"a sentence of background\",\n  \"options\": [{ \"label\": \"A\", \"text\": \"one option, a line or two\" }],\n  \"recommend\": { \"label\": \"A\", \"why\": \"the reason, read on from 'Recommended: A,'\" },\n  \"context\": [{ \"topic\": \"Cost\", \"text\": \"one point of evidence, with its file:line\" }]\n}\n```\n\nThe owner reads it as a comment: keep the options short and put the evidence in `context`, one point per item under a\none- or two-word topic such as `Claiming`, `D-24` or `Cost`.\n\n- Leave out `lead` when the ask says it all, and `options` when the answer is open.\n- Leave out `recommend` unless you have a reason for one; `recommend.label` is the label of one of the options.\n",
+				"attachments": {
+					"findings": {
+						"hint": "first, for the findings to settle",
+						"type": "core.markdown"
+					}
+				},
+				"out": {
+					"plan": {
+						"file": "plan.json",
+						"format": "json",
+						"schema": {
+							"additionalProperties": false,
+							"allOf": [
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "ready-for-agent"
+													}
+												}
+											}
+										},
+										{
+											"required": ["spec"]
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "split"
+													}
+												}
+											}
+										},
+										{
+											"required": ["children"]
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "ready-for-agent"
+													}
+												}
+											}
+										},
+										{
+											"not": {
+												"required": ["children"]
+											}
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "split"
+													}
+												}
+											}
+										},
+										{
+											"not": {
+												"required": ["spec"]
+											}
+										}
+									]
+								}
+							],
+							"properties": {
+								"children": {
+									"items": {
+										"additionalProperties": false,
+										"properties": {
+											"body": {
+												"type": "string"
+											},
+											"dependsOn": {
+												"items": {
+													"minimum": 0,
+													"type": "integer"
+												},
+												"type": "array"
+											},
+											"title": {
+												"type": "string"
+											}
+										},
+										"required": ["title", "body", "dependsOn"],
+										"type": "object"
+									},
+									"minItems": 1,
+									"type": "array"
+								},
+								"contract": {
+									"type": "string"
+								},
+								"questions": {
+									"items": {
+										"additionalProperties": false,
+										"properties": {
+											"ask": {
+												"type": "string"
+											},
+											"context": {
+												"items": {
+													"additionalProperties": false,
+													"properties": {
+														"text": {
+															"type": "string"
+														},
+														"topic": {
+															"type": "string"
+														}
+													},
+													"required": ["topic", "text"],
+													"type": "object"
+												},
+												"type": "array"
+											},
+											"lead": {
+												"type": "string"
+											},
+											"options": {
+												"items": {
+													"additionalProperties": false,
+													"properties": {
+														"label": {
+															"type": "string"
+														},
+														"text": {
+															"type": "string"
+														}
+													},
+													"required": ["label", "text"],
+													"type": "object"
+												},
+												"type": "array"
+											},
+											"recommend": {
+												"additionalProperties": false,
+												"properties": {
+													"label": {
+														"type": "string"
+													},
+													"why": {
+														"type": "string"
+													}
+												},
+												"required": ["label", "why"],
+												"type": "object"
+											}
+										},
+										"required": ["ask", "options", "context"],
+										"type": "object"
+									},
+									"type": "array"
+								},
+								"related": {
+									"items": {
+										"type": "integer"
+									},
+									"type": "array"
+								},
+								"spec": {
+									"additionalProperties": false,
+									"properties": {
+										"acceptance": {
+											"items": {
+												"type": "string"
+											},
+											"type": "array"
+										},
+										"consequences": {
+											"type": "string"
+										},
+										"decisions": {
+											"items": {
+												"additionalProperties": false,
+												"properties": {
+													"lead": {
+														"type": "string"
+													},
+													"points": {
+														"items": {
+															"type": "string"
+														},
+														"type": "array"
+													}
+												},
+												"required": ["lead", "points"],
+												"type": "object"
+											},
+											"type": "array"
+										},
+										"excluded": {
+											"items": {
+												"additionalProperties": false,
+												"properties": {
+													"lead": {
+														"type": "string"
+													},
+													"points": {
+														"items": {
+															"type": "string"
+														},
+														"type": "array"
+													}
+												},
+												"required": ["lead", "points"],
+												"type": "object"
+											},
+											"type": "array"
+										},
+										"figures": {
+											"items": {
+												"additionalProperties": false,
+												"properties": {
+													"caption": {
+														"type": "string"
+													},
+													"kind": {
+														"enum": [
+															"seams",
+															"sequence",
+															"state",
+															"interface",
+															"contract",
+															"composition",
+															"call-tree",
+															"file-tree",
+															"pseudocode"
+														],
+														"type": "string"
+													},
+													"notes": {
+														"items": {
+															"type": "string"
+														},
+														"type": "array"
+													},
+													"source": {
+														"type": "string"
+													}
+												},
+												"required": ["kind", "caption", "source", "notes"],
+												"type": "object"
+											},
+											"maxItems": 2,
+											"type": "array"
+										},
+										"requirements": {
+											"items": {
+												"type": "string"
+											},
+											"type": "array"
+										},
+										"subject": {
+											"type": "string"
+										},
+										"what": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"what",
+										"decisions",
+										"excluded",
+										"acceptance",
+										"subject",
+										"requirements",
+										"consequences"
+									],
+									"type": "object"
+								},
+								"touches": {
+									"items": {
+										"type": "string"
+									},
+									"type": "array"
+								},
+								"verdict": {
+									"enum": ["ready-for-agent", "split"],
+									"type": "string"
+								}
+							},
+							"required": ["verdict", "touches", "contract"],
+							"type": "object"
+						}
+					}
+				},
+				"lane": "read",
+				"checks": ["ears"],
+				"bound": {
+					"exact": 1
+				}
+			},
+			{
+				"seat": "planner",
+				"profile": "classics/planner",
+				"task": "Triage the attached issue: propose its verdict from the scouts' answers, the triager's ruling, the cut backlog and the\ntarget's code.\n\nWrite `plan.json` in exactly this shape: `spec` only for `ready-for-agent`, `children` only for `split`, and `related`\nonly when the backlog holds a related issue:\n\n```json\n{\n  \"verdict\": \"ready-for-agent\",\n  \"touches\": [\"path/to/file.ts\"],\n  \"contract\": \"\",\n  \"spec\": {\n    \"what\": \"the problem, why now and the change that meets it\",\n    \"requirements\": [\"When <trigger>, the <system> shall <response>.\"],\n    \"figures\": [\n      { \"kind\": \"seams\", \"caption\": \"Red: an edge that goes.\", \"source\": \"flowchart LR ...\", \"notes\": [\"one fact\"] }\n    ],\n    \"decisions\": [{ \"lead\": \"a title\", \"points\": [\"one fact\", \"In packages/module\"] }],\n    \"consequences\": \"what the change makes easier or harder, and its cost\",\n    \"excluded\": [{ \"lead\": \"a title\", \"points\": [\"one fact\"] }],\n    \"acceptance\": [\"bun test ./path/to/file.test.ts # R1\"],\n    \"subject\": \"feat(scope): imperative summary\"\n  },\n  \"children\": [{ \"title\": \"a child issue's title\", \"body\": \"its ask\", \"dependsOn\": [0] }],\n  \"related\": [7]\n}\n```\n\n## Fields\n\n- `verdict`: `ready-for-agent` when one change builds the issue as asked, `split` when it needs several.\n- `touches`: every repo-relative path the change creates or edits, whatever the verdict; empty when you cannot tell.\n- `contract`: the one-way door the change sets or changes, named in a few words, or \"\" when it sets none. A one-way door\n  cannot change after release without breaking a user: an IR field, a public CLI flag or exit code, a key of the user's\n  config, an id or path format users type, or the pack manifest. Internal tooling, an environment variable only the tour\n  manager reads and a new standalone composition are not.\n- `spec`, for `ready-for-agent`: the doc the owner aligns on and approves, by Altitude below: the need, how the system\n  must behave and the architecture it takes. Size each part to the change: a small one gets a sentence or two of\n  context, a note per design call and a line of consequences. Its prose, figure notes included, stays within about 3,000\n  characters, 5,000 at most, written by Plain English below.\n- `what`: the context, a short paragraph or two. It opens with the need as one line, \"A `<who>` needs `<what>` so that\n  `<why>`.\", then why now and the change that meets it, naming the module that owns it. Prose only: a config, code or\n  command example goes in a fenced block. The builder reads the ask beside the spec, so `what` never restates it. The\n  comment's heading carries the spec's version, so `what` never recounts an earlier one.\n- `requirements`: how the system must behave, numbered `R1` on by position. Each holds one behaviour in one EARS\n  sentence of at most 30 words, with one `shall` and no condition after it. Write as many as the behaviour\n  needs: more short requirements beat fewer long ones. Once `plan.json` is written, run `check ears` and settle each\n  requirement it names. A requirement states behaviour a user or operator can observe: config accepted or refused, what\n  is staged or run, what a command prints, what is masked. It never names a function, a constant, a file or a call\n  order. Cite a `docs/requirements.md` id only where the change touches that requirement.\n  - Ubiquitous: `The <system> shall <response>.`\n  - Event: `When <trigger>, the <system> shall <response>.`\n  - State: `While <state>, the <system> shall <response>.`\n  - Unwanted: `If <condition>, then the <system> shall <response>.`\n  - Optional: `Where <feature>, the <system> shall <response>.`\n- `figures`: the change's shape, drawn before the decisions are written, by Figures below. Leave it out when nothing\n  fits.\n- `consequences`: a short paragraph or a line: what the change makes easier or harder, and its cost.\n- `acceptance`: the shell commands that prove it done, each starting with bun, bunx, just, mise and ending in a shell comment naming\n  the requirements it proves (`# R1, R2`); every requirement is proved by one. A `bun test` path starts with `./`:\n  without it bun reads a name filter, which skips dot directories such as `.maestro`.\n- `subject`: the commit subject as `<type>(<scope>): <summary>.`.\n- `decisions` and `excluded`: each item a lead and its points. The lead only titles its points; every fact and reason\n  belongs in a point, one fact each, and a reference is a plain last point \"In `<module>`\". A decision is a choice of\n  behaviour, architecture or style the owner rules on, where another option was live, that no figure's note already\n  states. `excluded` holds only what is out of scope. Either list may be empty.\n- `children`, for `split`: the parts in order, each with the 0-based indexes of the earlier parts it depends on. Split\n  only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long. Their\n  order is drawn from `dependsOn` for you.\n- `related`: the backlog issues it relates to.\n- `questions`: only in a revision.\n\nYou do not ask the owner, outside a revision: the triager has. Settle what the ask, the replies and the code leave open\nwith the simplest option that meets the ask, and record it as a decision the owner approves or redirects.\n\n## Altitude\n\nThe spec is for the owner, who rules on intent, scope, behaviour, architecture and style. The builder implements from it\nand owns how; the reviewers own standards and edge cases. Stay at the big picture: the need, the behaviour and the\nmodules and seams the change moves, going lower only where the owner must see a detail to agree on intent. Figure labels\nand notes name modules and seams, not functions. Leave out message wording, function and constant names, call order,\ntest fixtures and which comments or docs change: a spec that dictates them hands the builder a list to copy, and every\nsuch detail is one more claim that can be wrong about the code.\n\n## Design\n\n- Codebase health comes before the feature. Before deciding, read the parts of `docs/architecture.md` and\n  `CODING_STANDARDS.md` for the packages the change touches. `what` names the module that owns the change; the change\n  extends what is there, never a parallel path.\n- When the ask can only be met by a shortcut, such as a special case in a shared module, a flag threaded through calls,\n  a second route around an existing seam or domain logic in a domain-free package, do not take it: `split`, the first\n  part the refactor the feature needs; or, when that refactor is not clear, take the clean option and name its cost in a\n  decision.\n\n## Re-triage\n\n- When the issue carries the spec the last triage proposed, start from it: change what the replies below it ask, and\n  keep the rest. A reply is final: do not widen the spec past it.\n\n\n## Plain English\n\nWrite prose the reader takes in on one pass, most of the way to ASD-STE100 Simplified Technical English: keep its\nwriting rules, not its controlled dictionary.\n\n- One idea per sentence: at most 20 words for an instruction, 25 for a description, 30 for a requirement.\n- One topic per paragraph, in at most six sentences.\n- Active voice and simple tenses: \"the tick posts the spec\", not \"the spec is being posted\".\n- One term for one thing, the term `GLOSSARY.md` uses, and one meaning per term.\n- Keep the articles and the small words; do not drop them to save space.\n- No stack of more than three nouns: \"the findings of the check\", not \"spec check finding list\".\n- Plain verbs, not phrasal verbs or verbs made into nouns: \"decide\", not \"make a decision on\".\n- Code, paths, flags and identifiers stay as written, in backticks.\n\n\n## Figures\n\nA figure draws the change's shape. Its notes are the design calls it shows, each pointed at by a superscript (`¹`, `²`)\nin a label. Draw first, then write: a call a figure shows is a note on it, not prose beside it. The owner reads the\nrendered figure; agents read its source and notes as text, so a figure says in a few lines what a paragraph would.\n\nPick the kind by what the change does to the system. Most changes need one figure or none, and none needs more than two.\n\n| Kind          | Source            | Draw when                                                                 |\n| ------------- | ----------------- | ------------------------------------------------------------------------- |\n| `seams`       | `flowchart`       | modules gain, lose or move a dependency: before and after                 |\n| `sequence`    | `sequenceDiagram` | a flow across seams is new or changes order                               |\n| `state`       | `flowchart`       | a lifecycle gains or changes a state or a move                            |\n| `interface`   | `classDiagram`    | a module's public interface grows or shrinks: its depth, before and after |\n| `contract`    | `classDiagram`    | the change sets or changes a one-way door: its shape after                |\n| `composition` | `flowchart`       | a concert gains, drops or rewires a seat                                  |\n| `call-tree`   | `diff`            | no template fits, and the point is a call added, dropped or moved         |\n| `file-tree`   | `diff`            | no template fits, and the point is files added, moved or split            |\n| `pseudocode`  | `diff`            | no template fits, and the point is logic in one place                     |\n\nWhen no sketch says it faster than a sentence, draw nothing. Never write Mermaid outside these skeletons.\n\n### Figure rules\n\n1. **Text stays complete.** Every fact a figure shows is in a label or a note, so the spec reads whole unrendered.\n   Colour, bold and dotted lines never carry a fact alone; the caption says what each styling means, or is empty.\n2. **Labels are tags.** A node is a name (`route.ts`), an edge one to three words (`[tick] PR`). Detail goes in a note.\n3. **Notes.** Superscripts run `¹` on in source order; the notes give each its note, in order, one fact each, a\n   reference as a plain last note \"In <path>\".\n4. **One idea per figure,** a dozen nodes at most. Draw only the modules, calls and states the change touches.\n5. **Parse-safe labels.** Quote any flowchart label with spaces or punctuation; a `classDiagram` relation label stays\n   bare. No `;`, no second `:`, no `/` outside quotes, no `<n>`.\n6. **No fills.** The forge sets fill and text colour per theme. Highlight with a stroke from the palette only.\n\n| Role  | Meaning                    | Node                                             | Edge                                            |\n| ----- | -------------------------- | ------------------------------------------------ | ----------------------------------------------- |\n| owner | waits on, or is, the human | `classDef owner stroke:#d4a72c,stroke-width:3px` |                                                 |\n| agent | an agent acts, or new      | `classDef agent stroke:#4c9be8,stroke-width:3px` |                                                 |\n| fault | a fault, or removed        | `classDef fault stroke:#e5534b,stroke-width:3px` | `linkStyle <i> stroke:#e5534b,stroke-width:3px` |\n| done  | a success, or added        | `classDef done stroke:#57ab5a,stroke-width:3px`  | `linkStyle <i> stroke:#57ab5a,stroke-width:3px` |\n\n`linkStyle` counts the links from 0 in source order, `~~~` included. Shapes: `[\"x\"]` a step or state, `([\"x\"])` a start,\nend or outside system, `{\"x?\"}` a decision. Edges: `-->` the normal move, `==>` the owner's move, `-.->` an exception, a\nside effect or a dependency that goes.\n\n### Skeletons\n\n`seams`; keep `before ~~~ after` after every edge, or Mermaid may stack \"after\" above \"before\":\n\n```mermaid\nflowchart LR\n  subgraph before [\"before\"]\n    direction TB\n    a1[\"module\"] -.->|\"dependency ¹\"| b1[\"module\"]\n    b1 --> c1[\"module\"]\n  end\n  subgraph after [\"after\"]\n    direction TB\n    a2[\"module\"] -->|\"dependency ²\"| c2[\"module\"]\n    b2[\"module\"] --> c2\n  end\n  before ~~~ after\n  linkStyle 0 stroke:#e5534b,stroke-width:3px\n  linkStyle 2 stroke:#57ab5a,stroke-width:3px\n```\n\n`sequence`:\n\n```mermaid\nsequenceDiagram\n  participant A as caller\n  participant B as callee\n  A->>B: call ¹\n  B-->>A: result\n  Note over A,B: what holds across the flow ²\n```\n\n`state`:\n\n```mermaid\nflowchart LR\n  s([\"start\"]) --> a[\"state\"]\n  a ==>|\"[owner] move\"| b[\"state\"]\n  b -.->|\"fault ¹\"| n[\"new state\"]\n  class n agent\n  classDef agent stroke:#4c9be8,stroke-width:3px\n```\n\n`interface`, the public members only:\n\n```mermaid\nclassDiagram\n  direction LR\n  class before[\"Module, before\"] {\n    member(arg) Result\n  }\n  class after[\"Module, after\"] {\n    member(arg) Result\n    added(arg) Result ¹\n  }\n  before ..> after : adds one\n```\n\n`contract`, the shape after the change, the field it adds or changes marked:\n\n```mermaid\nclassDiagram\n  direction LR\n  class Record {\n    field string\n    added string ¹\n  }\n  class Part {\n    field number\n  }\n  Record --> Part : holds\n  class Record:::agent\n  classDef agent stroke:#4c9be8,stroke-width:3px\n```\n\n`composition`, agent seats stroked `agent`, code nodes stadium-shaped:\n\n```mermaid\nflowchart LR\n  a[\"seat\"] --> b[\"seat\"]\n  b -->|\"hand-off ¹\"| c([\"code node\"])\n  class a,b agent\n  classDef agent stroke:#4c9be8,stroke-width:3px\n```\n\nThe sketches are plain text in a `diff`: a leading space for a line that stays, `+` for one added, `-` for one removed,\nand a `# ¹` comment on a line a note explains.\n\n```diff\n caller\n   step\n-    removed(call)\n+    added(call)    # ¹\n```\n\n\nA build must pass `just check`, which runs format, lint, types and every test, and keep to CODING_STANDARDS.md.\n",
+				"attachments": {
+					"answers": {
+						"hint": "first, for what the scouts found",
+						"type": "core.markdown"
+					},
+					"backlog": {
+						"hint": "for the backlog issues that matter to this one, each with why",
+						"type": "core.markdown"
+					},
+					"issue": {
+						"hint": "first, for the issue to triage",
+						"type": "core.markdown"
+					},
+					"ruling": {
+						"hint": "for the triager's questions and the files it expects to change",
+						"type": "core.json-file"
+					}
+				},
+				"out": {
+					"plan": {
+						"file": "plan.json",
+						"format": "json",
+						"schema": {
+							"additionalProperties": false,
+							"allOf": [
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "ready-for-agent"
+													}
+												}
+											}
+										},
+										{
+											"required": ["spec"]
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "split"
+													}
+												}
+											}
+										},
+										{
+											"required": ["children"]
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "ready-for-agent"
+													}
+												}
+											}
+										},
+										{
+											"not": {
+												"required": ["children"]
+											}
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "split"
+													}
+												}
+											}
+										},
+										{
+											"not": {
+												"required": ["spec"]
+											}
+										}
+									]
+								}
+							],
+							"properties": {
+								"children": {
+									"items": {
+										"additionalProperties": false,
+										"properties": {
+											"body": {
+												"type": "string"
+											},
+											"dependsOn": {
+												"items": {
+													"minimum": 0,
+													"type": "integer"
+												},
+												"type": "array"
+											},
+											"title": {
+												"type": "string"
+											}
+										},
+										"required": ["title", "body", "dependsOn"],
+										"type": "object"
+									},
+									"minItems": 1,
+									"type": "array"
+								},
+								"contract": {
+									"type": "string"
+								},
+								"questions": {
+									"items": {
+										"additionalProperties": false,
+										"properties": {
+											"ask": {
+												"type": "string"
+											},
+											"context": {
+												"items": {
+													"additionalProperties": false,
+													"properties": {
+														"text": {
+															"type": "string"
+														},
+														"topic": {
+															"type": "string"
+														}
+													},
+													"required": ["topic", "text"],
+													"type": "object"
+												},
+												"type": "array"
+											},
+											"lead": {
+												"type": "string"
+											},
+											"options": {
+												"items": {
+													"additionalProperties": false,
+													"properties": {
+														"label": {
+															"type": "string"
+														},
+														"text": {
+															"type": "string"
+														}
+													},
+													"required": ["label", "text"],
+													"type": "object"
+												},
+												"type": "array"
+											},
+											"recommend": {
+												"additionalProperties": false,
+												"properties": {
+													"label": {
+														"type": "string"
+													},
+													"why": {
+														"type": "string"
+													}
+												},
+												"required": ["label", "why"],
+												"type": "object"
+											}
+										},
+										"required": ["ask", "options", "context"],
+										"type": "object"
+									},
+									"type": "array"
+								},
+								"related": {
+									"items": {
+										"type": "integer"
+									},
+									"type": "array"
+								},
+								"spec": {
+									"additionalProperties": false,
+									"properties": {
+										"acceptance": {
+											"items": {
+												"type": "string"
+											},
+											"type": "array"
+										},
+										"consequences": {
+											"type": "string"
+										},
+										"decisions": {
+											"items": {
+												"additionalProperties": false,
+												"properties": {
+													"lead": {
+														"type": "string"
+													},
+													"points": {
+														"items": {
+															"type": "string"
+														},
+														"type": "array"
+													}
+												},
+												"required": ["lead", "points"],
+												"type": "object"
+											},
+											"type": "array"
+										},
+										"excluded": {
+											"items": {
+												"additionalProperties": false,
+												"properties": {
+													"lead": {
+														"type": "string"
+													},
+													"points": {
+														"items": {
+															"type": "string"
+														},
+														"type": "array"
+													}
+												},
+												"required": ["lead", "points"],
+												"type": "object"
+											},
+											"type": "array"
+										},
+										"figures": {
+											"items": {
+												"additionalProperties": false,
+												"properties": {
+													"caption": {
+														"type": "string"
+													},
+													"kind": {
+														"enum": [
+															"seams",
+															"sequence",
+															"state",
+															"interface",
+															"contract",
+															"composition",
+															"call-tree",
+															"file-tree",
+															"pseudocode"
+														],
+														"type": "string"
+													},
+													"notes": {
+														"items": {
+															"type": "string"
+														},
+														"type": "array"
+													},
+													"source": {
+														"type": "string"
+													}
+												},
+												"required": ["kind", "caption", "source", "notes"],
+												"type": "object"
+											},
+											"maxItems": 2,
+											"type": "array"
+										},
+										"requirements": {
+											"items": {
+												"type": "string"
+											},
+											"type": "array"
+										},
+										"subject": {
+											"type": "string"
+										},
+										"what": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"what",
+										"decisions",
+										"excluded",
+										"acceptance",
+										"subject",
+										"requirements",
+										"consequences"
+									],
+									"type": "object"
+								},
+								"touches": {
+									"items": {
+										"type": "string"
+									},
+									"type": "array"
+								},
+								"verdict": {
+									"enum": ["ready-for-agent", "split"],
+									"type": "string"
+								}
+							},
+							"required": ["verdict", "touches", "contract"],
+							"type": "object"
+						}
+					}
+				},
+				"lane": "read",
+				"checks": ["ears"],
+				"bound": {
+					"exact": 1
+				}
+			}
+		],
+		"scout": [
+			{
+				"seat": "scout",
+				"profile": "classics/scout",
+				"task": "Answer each question of the attached group in `answer.md`.\n\n`answer.md` holds one section per question, in order, headed \"## <the question>\", its answer below, every claim with its\nfile:line. Where the target holds no answer, say so.\n",
+				"attachments": {
+					"backlog": {
+						"hint": "for the backlog issues that matter to this one, each with why",
+						"type": "core.markdown"
+					},
+					"group": {
+						"hint": "first, for the questions to answer",
+						"type": "core.markdown"
+					},
+					"issue": {
+						"hint": "first, for the issue to triage",
+						"type": "core.markdown"
+					}
+				},
+				"out": {
+					"answer": {
+						"file": "answer.md",
+						"format": "markdown"
+					}
+				},
+				"lane": "read",
+				"bound": {
+					"upTo": 4
+				}
+			}
+		],
+		"triager": [
+			{
+				"seat": "triager",
+				"profile": "triager",
+				"task": "Triage the attached issue against the attached backlog snapshot.\n\nFirst write `backlog.md`: only the backlog issues that matter to this one, open or recently closed, each with its\nnumber, title and why, or \"None.\". A closed issue matters when this one builds on it, links it or reworks what it\nchanged; the snapshot lists those under \"Recently closed\" by title alone. Read each issue under \"Cited\" in full: the\nissue or a reply cites it, often as the source of truth.\n\nThen write `ruling.json` in exactly this shape, leaving out `what`, `requirements`, `acceptance`, `subject`,\n`duplicateOf` and `related` where the verdict does not need them:\n\n```json\n{\n  \"verdict\": \"plan\",\n  \"files\": [\"path/to/file.ts\"],\n  \"groups\": [{ \"id\": \"G1\", \"area\": \"the line of inquiry\", \"questions\": [\"a question the target's code answers\"] }],\n  \"questions\": [],\n  \"what\": \"the change to make\",\n  \"requirements\": [\"When <trigger>, the <system> shall <response>.\"],\n  \"acceptance\": [\"bun test ./path/to/file.test.ts # R1\"],\n  \"subject\": \"fix(scope): imperative summary\",\n  \"duplicateOf\": 12,\n  \"related\": [7]\n}\n```\n\n## Fields\n\n- `verdict`, the first that holds:\n  - `duplicate` when a backlog issue already asks this one, with `duplicateOf`;\n  - `needs-info` when you and the owner do not yet share what the change is for and what it must do, with those\n    questions;\n  - `direct` when the change is a small diff: at most 3 files, a simple task whose intent is clear, so a builder\n    can do it and the owner review the PR, with `what`, `requirements`, `acceptance` and `subject`. Risk does not bar\n    it: code is as fine as docs. Prefer it whenever scouting and a spec would cost more than the review;\n  - `plan` otherwise.\n- `files`: the repo-relative paths you expect the change to create or edit.\n- `what`, for `direct`: the brief, a short paragraph by Plain English below. The builder reads the ask beside it, so the\n  brief holds only what the ask leaves open: the module that owns the change, each answer the owner gave and each call\n  you settled. It never restates the ask or the gate, and leaves how to the builder.\n- `requirements`, for `direct`: what the change must do, one to 3, numbered `R1` on by position. Each\n  holds one behaviour a user or operator can observe in one EARS sentence of at most 30 words, with one `shall`\n  and no condition after it, such as `When <trigger>, the <system> shall <response>.` or\n  `If <condition>, then the <system> shall <response>.`. Fold the ask's own acceptance into them.\n- `acceptance`, for `direct`: one shell command per requirement that proves it, each starting with bun, bunx, just, mise and ending\n  in a shell comment naming it (`# R1`). A `bun test` path starts with `./`. The target's whole gate runs after them, so\n  leave it out.\n- `subject`, for `direct`: the commit subject, as `<type>(<scope>): <summary>`.\n- `groups`, for `plan`: at most 4, one per line of inquiry, the most decisive first, numbered G1 on, each of\n  at most 3 questions. Ask only what changes the plan, and settle yourself what one line settles; no group\n  when nothing needs asking.\n- `questions`, for `needs-info`: as under Questions for the owner.\n- `related`: the backlog issues it relates to.\n\n## Asking the owner\n\nYou are the seat that asks the owner about intent, and the cheapest place to. Grill for a shared understanding of it\nbefore anyone writes a spec: what the change is for, what it must and must not do, and which of the live approaches the\nowner wants. Leave to the scouts and the planner what the code answers, and to the PR review the details of how.\n\n## Re-triage\n\nThe owner's replies are final. Do not ask again what a reply settled, nor open edge cases it did not raise. Rule\n`direct` when the replies make the change small and clear, and `plan` only when they open scope a spec must settle. When\nthe spec the last triage proposed opens with `#### Context` rather than `#### Brief`, rule `plan`: the planner revises\nthat spec, which a brief would drop.\n\n\n## Plain English\n\nWrite prose the reader takes in on one pass, most of the way to ASD-STE100 Simplified Technical English: keep its\nwriting rules, not its controlled dictionary.\n\n- One idea per sentence: at most 20 words for an instruction, 25 for a description, 30 for a requirement.\n- One topic per paragraph, in at most six sentences.\n- Active voice and simple tenses: \"the tick posts the spec\", not \"the spec is being posted\".\n- One term for one thing, the term `GLOSSARY.md` uses, and one meaning per term.\n- Keep the articles and the small words; do not drop them to save space.\n- No stack of more than three nouns: \"the findings of the check\", not \"spec check finding list\".\n- Plain verbs, not phrasal verbs or verbs made into nouns: \"decide\", not \"make a decision on\".\n- Code, paths, flags and identifiers stay as written, in backticks.\n\n\nA build must pass `just check`, which runs format, lint, types and every test, and keep to CODING_STANDARDS.md.\n\n\n## Questions for the owner\n\nEach question is:\n\n```json\n{\n  \"ask\": \"the question, one line\",\n  \"lead\": \"a sentence of background\",\n  \"options\": [{ \"label\": \"A\", \"text\": \"one option, a line or two\" }],\n  \"recommend\": { \"label\": \"A\", \"why\": \"the reason, read on from 'Recommended: A,'\" },\n  \"context\": [{ \"topic\": \"Cost\", \"text\": \"one point of evidence, with its file:line\" }]\n}\n```\n\nThe owner reads it as a comment: keep the options short and put the evidence in `context`, one point per item under a\none- or two-word topic such as `Claiming`, `D-24` or `Cost`.\n\n- Leave out `lead` when the ask says it all, and `options` when the answer is open.\n- Leave out `recommend` unless you have a reason for one; `recommend.label` is the label of one of the options.\n",
+				"attachments": {
+					"backlog": {
+						"hint": "for the open and recently closed issues, to cut down to those that matter",
+						"type": "core.markdown"
+					},
+					"issue": {
+						"hint": "first, for the issue to triage",
+						"type": "core.markdown"
+					}
+				},
+				"out": {
+					"backlog": {
+						"file": "backlog.md",
+						"format": "markdown"
+					},
+					"ruling": {
+						"file": "ruling.json",
+						"format": "json",
+						"schema": {
+							"additionalProperties": false,
+							"allOf": [
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "duplicate"
+													}
+												}
+											}
+										},
+										{
+											"required": ["duplicateOf"]
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "direct"
+													}
+												}
+											}
+										},
+										{
+											"required": ["what"]
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "direct"
+													}
+												}
+											}
+										},
+										{
+											"required": ["requirements"]
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "direct"
+													}
+												}
+											}
+										},
+										{
+											"required": ["acceptance"]
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "direct"
+													}
+												}
+											}
+										},
+										{
+											"required": ["subject"]
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "direct"
+													}
+												}
+											}
+										},
+										{
+											"properties": {
+												"files": {
+													"maxItems": 3,
+													"minItems": 1
+												},
+												"requirements": {
+													"maxItems": 3,
+													"minItems": 1
+												}
+											}
+										}
+									]
+								},
+								{
+									"anyOf": [
+										{
+											"properties": {
+												"verdict": {
+													"not": {
+														"const": "needs-info"
+													}
+												}
+											}
+										},
+										{
+											"properties": {
+												"questions": {
+													"minItems": 1
+												}
+											}
+										}
+									]
+								}
+							],
+							"properties": {
+								"acceptance": {
+									"items": {
+										"type": "string"
+									},
+									"type": "array"
+								},
+								"duplicateOf": {
+									"type": "integer"
+								},
+								"files": {
+									"items": {
+										"type": "string"
+									},
+									"type": "array"
+								},
+								"groups": {
+									"items": {
+										"additionalProperties": false,
+										"properties": {
+											"area": {
+												"type": "string"
+											},
+											"id": {
+												"type": "string"
+											},
+											"questions": {
+												"items": {
+													"type": "string"
+												},
+												"maxItems": 3,
+												"minItems": 1,
+												"type": "array"
+											}
+										},
+										"required": ["id", "area", "questions"],
+										"type": "object"
+									},
+									"maxItems": 4,
+									"type": "array"
+								},
+								"questions": {
+									"items": {
+										"additionalProperties": false,
+										"properties": {
+											"ask": {
+												"type": "string"
+											},
+											"context": {
+												"items": {
+													"additionalProperties": false,
+													"properties": {
+														"text": {
+															"type": "string"
+														},
+														"topic": {
+															"type": "string"
+														}
+													},
+													"required": ["topic", "text"],
+													"type": "object"
+												},
+												"type": "array"
+											},
+											"lead": {
+												"type": "string"
+											},
+											"options": {
+												"items": {
+													"additionalProperties": false,
+													"properties": {
+														"label": {
+															"type": "string"
+														},
+														"text": {
+															"type": "string"
+														}
+													},
+													"required": ["label", "text"],
+													"type": "object"
+												},
+												"type": "array"
+											},
+											"recommend": {
+												"additionalProperties": false,
+												"properties": {
+													"label": {
+														"type": "string"
+													},
+													"why": {
+														"type": "string"
+													}
+												},
+												"required": ["label", "why"],
+												"type": "object"
+											}
+										},
+										"required": ["ask", "options", "context"],
+										"type": "object"
+									},
+									"type": "array"
+								},
+								"related": {
+									"items": {
+										"type": "integer"
+									},
+									"type": "array"
+								},
+								"requirements": {
+									"items": {
+										"type": "string"
+									},
+									"type": "array"
+								},
+								"subject": {
+									"type": "string"
+								},
+								"verdict": {
+									"enum": ["direct", "plan", "duplicate", "needs-info"],
+									"type": "string"
+								},
+								"what": {
+									"type": "string"
+								}
+							},
+							"required": ["verdict", "files", "groups", "questions"],
+							"type": "object"
+						}
+					}
+				},
+				"lane": "read",
+				"bound": {
+					"exact": 1
+				}
+			}
+		]
+	},
+	"sessions": [["checker"], ["planner", "planner"], ["scout"], ["triager"]]
+}
