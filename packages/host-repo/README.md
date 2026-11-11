@@ -648,7 +648,9 @@ Environment variables rehearse a branch a placeholder never takes. A resume need
     `rejected <reason>`, absent `ok`. An `events.jsonl` found the same way holds harness events emitted first, one JSON
     object per line, such as `{"type":"tool","id":"t1","name":"Bash","input":{"command":"ls"}}`,
     `{"type":"tool_result","id":"t1","bytes":120,"error":false}` or `{"type":"context","used":18000}`. The host
-    validates a scripted file like any output; a missing directory or other text fails the stub agent.
+    validates a scripted file like any output; a missing directory or other text fails the stub agent. A `reply` field
+    is taken the same way from `<field>.json`, parsed as JSON and validated like any reply; an output file of that name
+    fails the agent.
 
 [^delay]: A duration such as `2s` or `500ms`; unset, it answers at once. It applies to scripted events too.
 

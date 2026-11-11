@@ -18,7 +18,7 @@ writeFileSync(lessons, "## c1 · t1\n\n- a lesson\n");
 const backlog = join(scratch, "backlog.md");
 writeFileSync(backlog, "# Backlog\n\n- #7 Greet\n");
 
-/** A stub perform of the masterclass, the planner writing `masterclass`. */
+/** A stub perform of the masterclass, the planner replying `masterclass`. */
 async function performed(masterclass: unknown) {
 	const data = mkdtempSync(join(scratch, "data-"));
 	return JSON.parse(

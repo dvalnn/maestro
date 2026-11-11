@@ -35,7 +35,8 @@ Environment variables rehearse a branch a placeholder never takes. A resume need
   `<dir>/<node id>/<file>` (no `[n]` indices, serving every round), else the placeholder. A verdict agent's `verdict`
   file, found the same way, holds `ok` or `rejected <reason>`, `ok` when absent. An `events.jsonl` there holds harness
   events the agent emits first, one JSON object per line. Files are validated like any output; a missing dir fails the
-  agent.
+  agent. A `reply` field is taken the same way from `<field>.json`, parsed as JSON; an output file of that name fails
+  the agent.
 - `MAESTRO_STUB_DELAY` (a duration such as `2s`) makes each stub turn wait that long, to rehearse a slow run.
 - `MAESTRO_STUB_ENVIRONMENT` (a JSON object such as `{"mcp":["github"]}`) replaces parts of what the stub reports
   loading, to rehearse an environment fault.

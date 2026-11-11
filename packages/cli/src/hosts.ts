@@ -31,22 +31,11 @@ const STUB_ENVIRONMENT = "MAESTRO_STUB_ENVIRONMENT";
 const STUB_OUTPUTS = "MAESTRO_STUB_OUTPUTS";
 const VERDICT_FILE = "verdict";
 const EVENTS_FILE = "events.jsonl";
+const FIELD_EXTENSION = ".json";
 
 const STUB_REPORT = { summary: "stub" };
 const STUB_REPLY = { report: STUB_REPORT };
 const STUB_VERDICT = { outcome: "ok", report: STUB_REPORT };
-
-/** `envelope` with a placeholder for each typed field `req` declares, as reply text. */
-const withFields = (envelope: object, req: HarnessRequest) =>
-	JSON.stringify({
-		...envelope,
-		...Object.fromEntries(
-			Object.entries(req.reply ?? {}).map(([name, schema]) => [
-				name,
-				placeholder(schema),
-			]),
-		),
-	});
 
 /** The scripted file `file` for `req`'s agent: under its instance id, else its node id, else none. */
 function scripted(dir: string, req: HarnessRequest, file: string) {
@@ -56,10 +45,52 @@ function scripted(dir: string, req: HarnessRequest, file: string) {
 		if (!id) continue;
 		const path = join(dir, id, file);
 		if (existsSync(path) && statSync(path).isFile())
-			return readFileSync(path, "utf8");
+			return { path, text: readFileSync(path, "utf8") };
 	}
 	return undefined;
 }
+
+/** The value of reply field `name` of `req`: its scripted `<name>.json` in `dir` parsed, else the placeholder of `schema`. */
+function fieldValue(
+	dir: string | undefined,
+	req: HarnessRequest,
+	name: string,
+	schema: unknown,
+) {
+	const file = `${name}${FIELD_EXTENSION}`;
+	const clash = req.outputs.find((o) => o.file === file);
+	if (clash)
+		throw failure(
+			`reply field '${name}' and output '${clash.file}' both script '${file}'`,
+			`Rename the field or the output`,
+		);
+	const found = dir ? scripted(dir, req, file) : undefined;
+	if (!found) return placeholder(schema);
+	try {
+		return JSON.parse(found.text);
+	} catch {
+		throw failure(
+			`${STUB_OUTPUTS} file '${found.path}' is not JSON`,
+			"Write the field's value as JSON",
+		);
+	}
+}
+
+/** `envelope` with each typed field `req` declares, scripted in `dir` or else a placeholder, as reply text. */
+const withFields = (
+	envelope: object,
+	req: HarnessRequest,
+	dir: string | undefined,
+) =>
+	JSON.stringify({
+		...envelope,
+		...Object.fromEntries(
+			Object.entries(req.reply ?? {}).map(([name, schema]) => [
+				name,
+				fieldValue(dir, req, name, schema),
+			]),
+		),
+	});
 
 /** The outputs of `req` taken from `dir` where it holds them, else the placeholder. */
 function scriptedOutputs(dir: string, req: HarnessRequest): StubStep[] {
@@ -70,10 +101,10 @@ function scriptedOutputs(dir: string, req: HarnessRequest): StubStep[] {
 		);
 	return placeholderOutputs(req).map((step, i) => {
 		const file = req.outputs[i]?.file ?? "";
-		const content = scripted(dir, req, file);
-		return content === undefined
+		const found = scripted(dir, req, file);
+		return found === undefined
 			? step
-			: { write: `${OUTBOX}/${file}`, content };
+			: { write: `${OUTBOX}/${file}`, content: found.text };
 	});
 }
 
@@ -83,7 +114,7 @@ function scriptedEvents(
 	req: HarnessRequest,
 	delayMs: number | undefined,
 ): StubStep[] {
-	const text = dir ? scripted(dir, req, EVENTS_FILE) : undefined;
+	const text = dir ? scripted(dir, req, EVENTS_FILE)?.text : undefined;
 	return (text ?? "")
 		.split("\n")
 		.filter((line) => line.trim())
@@ -103,7 +134,7 @@ function scriptedEvents(
 
 /** The reply text of a verdict agent: the `verdict` file of `dir` for `req`, else `ok`. */
 function scriptedVerdict(dir: string | undefined, req: HarnessRequest) {
-	const text = dir ? scripted(dir, req, VERDICT_FILE)?.trim() : undefined;
+	const text = dir ? scripted(dir, req, VERDICT_FILE)?.text.trim() : undefined;
 	if (text === undefined || text === "ok") return STUB_VERDICT;
 	const reason = /^rejected\s+(\S[\s\S]*)$/.exec(text)?.[1];
 	if (reason === undefined)
@@ -147,8 +178,9 @@ function stubEnvironment(text: string | undefined): StubStep {
  * The harnesses the CLI ships, their credentials read from `env`. The `stub` harness reports its environment, writes a
  * placeholder for each declared output, then replies an `ok` envelope, taking `MAESTRO_STUB_DELAY` per agent turn; a
  * stub turn fails when it is not a duration. With `MAESTRO_STUB_OUTPUTS=<dir>` it takes outputs and a verdict from
- * `<dir>/<instance id>/` or `<dir>/<node id>/`, and the events of its `events.jsonl` before them, and with `MAESTRO_STUB_ENVIRONMENT=<json>` the parts it reports loaded
- * and the model's `window`.
+ * `<dir>/<instance id>/` or `<dir>/<node id>/`, each reply field from its `<field>.json` there, and the events of its
+ * `events.jsonl` before them, and with `MAESTRO_STUB_ENVIRONMENT=<json>` the parts it reports loaded and the model's
+ * `window`.
  */
 export const builtinHarnesses = (env: Record<string, string | undefined>) => [
 	piHarness({ agentDir: env.PI_CODING_AGENT_DIR || undefined }),
@@ -168,6 +200,7 @@ export const builtinHarnesses = (env: Record<string, string | undefined>) => [
 						text: withFields(
 							req.verdict ? scriptedVerdict(outputs, req) : STUB_REPLY,
 							req,
+							outputs,
 						),
 					},
 					delayMs,

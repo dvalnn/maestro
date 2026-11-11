@@ -30,7 +30,7 @@ Propose prompt wording only for an agent's judgment that nothing mechanical can 
 concerts, not its lessons: several lessons from one concert are one incident, so a cluster from one concert needs a cost
 beyond its own run.
 
-Write `masterclass.json` in exactly this shape:
+Give your `masterclass` field in exactly this shape:
 
 ```json
 {

@@ -1194,6 +1194,63 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 		expect(done.out + done.err).toContain("rows.json");
 	});
 
+	/** A loop of two verdict agents `a`, each replying a `tag` field a code node reads and refuses with. */
+	async function tagged() {
+		const file = join(await scratch(), "tagged.ts");
+		writeFileSync(
+			file,
+			`import { fresh, seat } from "@maestro/host-repo-sdk";
+import { code, composition, loop, not, Text } from "@maestro/sdk";
+
+const smoke = seat("smoke", { verdict: true });
+const a = () => smoke({ label: "a", task: "nothing", lane: fresh(), reply: { tag: Text() } });
+
+export const tagOf = ({ tag }: { tag: string }) => {
+	throw new Error(\`read \${tag}\`);
+};
+
+export const tagged = composition("tagged", { examples: [{}] }, () => {
+	const rounds = loop.while((s) => not(s.ok), {
+		init: a(),
+		step: () => a(),
+		max: 2,
+		tolerate: "rejected",
+		label: "rounds",
+	});
+	return code(tagOf, { in: { tag: rounds.out.tag }, out: { tag: Text() } });
+});
+`,
+		);
+		return file;
+	}
+
+	test("a scripted reply field reaches its port, an instance id's file wins over its node id's, and a file that is not JSON fails the agent naming it", async () => {
+		const file = await tagged();
+		const refused = async (files: Record<string, string>) => {
+			const { done } = await perform(await fixtures(files), file);
+			return done.out + done.err;
+		};
+		expect(
+			await refused({
+				"a/verdict": "rejected go on",
+				"rounds/a/tag.json": '"node"',
+			}),
+		).toContain("read node");
+		expect(
+			await refused({
+				"a/verdict": "rejected go on",
+				"rounds/a/tag.json": '"node"',
+				"rounds[0]/a/tag.json": '"instance"',
+			}),
+		).toContain("read instance");
+		expect(
+			await refused({
+				"a/verdict": "rejected go on",
+				"rounds/a/tag.json": "node",
+			}),
+		).toContain(join("rounds", "a", "tag.json"));
+	});
+
 	test("a verdict file that is neither ok nor rejected with a reason fails the agent naming the file", async () => {
 		const dir = await fixtures({ "review/verdict": "maybe" });
 		const { done } = await perform(dir, ROUNDS);

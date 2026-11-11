@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { planner } from "@maestro/classics";
-import { JsonOut, read } from "@maestro/host-repo-sdk";
+import { read } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
 	type CodeContext,
@@ -10,7 +10,6 @@ import {
 	List,
 	literal,
 	Markdown,
-	readJson,
 	Struct,
 	Text,
 	type ValueOf,
@@ -118,10 +117,10 @@ export const masterclass = composition(
 					hint: "for the open and recently closed issues, to drop a promotion one already proposes",
 				},
 			},
-			out: { plan: JsonOut("masterclass.json", Masterclass) },
+			reply: { masterclass: Masterclass },
 		});
 		return code(settle, {
-			in: { masterclass: readJson(planned.out.plan), lessons },
+			in: { masterclass: planned.out.masterclass, lessons },
 			out: { masterclass: Masterclass },
 			label: "settle",
 		});
