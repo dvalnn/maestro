@@ -111,7 +111,7 @@ const seated: [string, Record<string, [string, string, string]>][] = [
 			"classics/builder": ["claude", "claude-sonnet-5-5", "medium"],
 			"classics/lens": ["claude", "claude-opus-5-5", "medium"],
 			"classics/consolidator": ["claude", "claude-opus-5-5", "medium"],
-			tester: ["pi", "github-copilot/gpt-6.1-terra", "medium"],
+			"classics/tester": ["pi", "github-copilot/gpt-6.1-terra", "medium"],
 			writer: ["claude", "claude-haiku-5-5", "high"],
 		},
 	],
@@ -121,7 +121,7 @@ const seated: [string, Record<string, [string, string, string]>][] = [
 			"classics/builder": ["claude", "claude-opus-5-5", "medium"],
 			"classics/lens": ["claude", "claude-sonnet-5-5", "high"],
 			"classics/consolidator": ["claude", "claude-opus-5-5", "high"],
-			tester: ["pi", "github-copilot/gpt-6.1-sol", "medium"],
+			"classics/tester": ["pi", "github-copilot/gpt-6.1-sol", "medium"],
 			writer: ["claude", "claude-haiku-5-5", "high"],
 		},
 	],
@@ -295,9 +295,11 @@ test("under --tier ordinary, the build extends the tester's lane, and the build 
 		edges
 			.filter((e) => e.to.node === node && e.to.port === port)
 			.map((e) => e.from);
-	expect(from("build", "lane")).toEqual([{ node: "tester", port: "lane" }]);
-	for (const seat of ["build", "writer"]) {
-		expect(from(seat, "map")).toEqual([{ node: "tester", port: "map" }]);
+	expect(from("tested/build", "lane")).toEqual([
+		{ node: "tested/tester", port: "lane" },
+	]);
+	for (const seat of ["tested/build", "writer"]) {
+		expect(from(seat, "map")).toEqual([{ node: "tested/tester", port: "map" }]);
 	}
 });
 
@@ -357,7 +359,7 @@ const rejecting: [
 				"classics/builder",
 				"classics/lens",
 				"classics/consolidator",
-				"tester",
+				"classics/tester",
 				"writer",
 			],
 			{

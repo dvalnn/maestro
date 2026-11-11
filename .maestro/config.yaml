@@ -37,3 +37,5 @@ profiles:
     attachments:
       writing: { path: packs/classics/skills/writing-for-agents, hint: "before writing the body: SKILL.md" }
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before drawing any Mermaid diagram: SKILL.md" }
+  classics/tester:
+    runtime: { harness: pi, model: github-copilot/gpt-6.1-terra, thinking: medium }

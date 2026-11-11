@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
+	existsSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -292,6 +293,7 @@ test.each([
 	],
 	["skeptic", ["good-tests", "codebase-design", "code-smells"]],
 	["consolidator", ["good-tests", "codebase-design", "code-smells"]],
+	["tester", ["tdd", "good-tests", "codebase-design"]],
 	["scout", ["codebase-design"]],
 	[
 		"planner",
@@ -321,14 +323,19 @@ test.each([
 	expect(named?.split(", ")).toEqual(skills.map((s) => `classics/${s}`));
 });
 
+/** Writes `source` as `<name>.ts` in the workspace, beside the `node_modules` its imports resolve through, and returns its path. */
+function compositionFile(name: string, source: string) {
+	const modules = join(root, "node_modules");
+	if (!existsSync(modules))
+		symlinkSync(join(import.meta.dir, "../../../node_modules"), modules);
+	const file = join(root, `${name}.ts`);
+	writeFileSync(file, source);
+	return file;
+}
+
 test("the scout seat carries the answers reply field and no outbox file", async () => {
-	const file = join(root, "scouted.ts");
-	symlinkSync(
-		join(import.meta.dir, "../../../node_modules"),
-		join(root, "node_modules"),
-	);
-	writeFileSync(
-		file,
+	const file = compositionFile(
+		"scouted",
 		`import { scout } from "@maestro/classics";
 import { fresh } from "@maestro/host-repo-sdk";
 import { composition } from "@maestro/sdk";
@@ -345,6 +352,43 @@ export const scouted = composition("scouted", { examples: [{}] }, () =>
 	);
 	expect(Object.keys(agent.config.reply)).toEqual(["answers"]);
 	expect(agent.config.out).toBeUndefined();
+});
+
+test("test_first pins the spec in a fresh tester lane, then builds in a lane extending it with the map relayed, both under the given checks", async () => {
+	const file = compositionFile(
+		"tested",
+		`import { testFirst } from "@maestro/classics";
+import { composition, Markdown, code, use } from "@maestro/sdk";
+import { toMarkdown } from "@maestro/classics/code";
+
+export * from "@maestro/classics/code";
+export const tested = composition("tested", { examples: [{}] }, () => {
+	const spec = code(toMarkdown, { in: { text: "spec" }, out: { file: Markdown() } }).out.file;
+	return use(testFirst, { spec }, { params: { request: "build", checks: ["test"] } }).built;
+});
+`,
+	);
+	const { out, code } = await maestro("compose", file, "--json");
+	expect(code).toBe(0);
+	const { edges, nodes } = JSON.parse(out).plan.ir;
+	const node = (id: string) => nodes.find((n: { id: string }) => n.id === id);
+	const into = (to: string, port: string) =>
+		edges
+			.filter(
+				(e: { to: { node: string; port: string } }) =>
+					e.to.node === to && e.to.port === port,
+			)
+			.map((e: { from: unknown }) => e.from);
+	expect(node("test_first/tester").config.lane.mode).toBe("fresh");
+	expect(node("test_first/tester").config.checks).toEqual(["test"]);
+	expect(node("test_first/build").config.checks).toEqual(["test"]);
+	expect(into("test_first/tester", "spec")).toHaveLength(1);
+	expect(into("test_first/build", "lane")).toEqual([
+		{ node: "test_first/tester", port: "lane" },
+	]);
+	expect(into("test_first/build", "map")).toEqual([
+		{ node: "test_first/tester", port: "map" },
+	]);
 });
 
 test.each([

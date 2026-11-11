@@ -15,6 +15,7 @@ are flags in kebab-case, or config under `classics.<composition>.<param>`. Its s
 | `build_then_repair`  | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series    | `builder`                         |
 | `repair_until_green` | Checks a lane, then repairs in the builder's session while red; used by others              | `builder`                         |
 | `panel_review`       | Rules on a change through each lens, a skeptic over each lens's findings, then consolidates | `lens`, `skeptic`, `consolidator` |
+| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them      | `tester`, `builder`               |
 
 `scout` and `planner` serve no composition of the pack; they are seats for compositions built on it. A `scout` answers
 the questions it is asked in an `answers` reply field: per question, its `state` (`grounded` or `unsure`), what is
@@ -25,8 +26,8 @@ write and judge Markdown by. The skills are adapted from Matt Pocock's under the
 copy recorded in `skills/UPSTREAM.md`; the profiles under `profiles/` say which seat loads which. A profile may name
 files anywhere inside its namespace directory, here `profiles/`; copy the whole `profiles/` to shadow the pack.
 
-Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, `lens`, `skeptic` and `consolidator` 20 minutes
-and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own terms; set one in
+Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, `lens`, `skeptic`, `consolidator` and `tester` 20
+minutes and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own terms; set one in
 config as `profiles.classics/<name>.context`.
 
 ## Params
@@ -42,6 +43,8 @@ config as `profiles.classics/<name>.context`.
 |                      | `change`     | lane ref, `<concert id>.<instance id>` | optional² | The lane version under review                                                                                       |
 |                      | `revs`       | git revisions: `A..B`, `C^!` or `B`    | optional² | The target commits under review                                                                                     |
 |                      | `lenses`     | list of `correctness`, `spec`, `tests` | all three | The lenses to rule through, each once                                                                               |
+| `test_first`         | `request`    | text                                   | required  | What to build                                                                                                       |
+|                      | `checks`     | list of `target.checks` names          | none      | The checks the tester and the builder may run                                                                       |
 
 ² Exactly one of `change` and `revs`. `revs` is resolved against the target once, as the concert starts: `B` alone runs
 from `target.base`, and the commits must be one linear series, with no merge.

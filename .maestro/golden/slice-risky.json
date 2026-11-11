@@ -511,7 +511,7 @@
 		"tester": [
 			{
 				"seat": "tester",
-				"profile": "tester",
+				"profile": "classics/tester",
 				"task": "Write the tests that pin the attached spec's requirements.\n\n- Put each test in the file the requirement's acceptance item names, adding to it where it exists. Add a case to an\n  existing table or `test.each` over the same function before writing a new test. When an acceptance item names several\n  files for one requirement, pin it once, in the lowest-level file that reaches it.\n- Where the spec leaves an output's exact text open, pin what it does fix, such as that the input is refused and the\n  path the refusal names, and never match the text loosely.\n- Where the spec names conditions that combine, such as where a value is set and where it points, pin each combination\n  as a row of one table.\n- Leave your files formatted: run `check format`, and fix with `just fmt`.\n\nThen give your `map` field, naming every requirement in exactly one list, its `requirement` opening with its id, as\n`R1: …`:\n\n- `pinned`: a requirement you pinned, with its test's repo-relative `file` and its `test` name exactly as the test call\n  gives it, without any enclosing `describe`.\n- `deferred`: a requirement only a name the build adds can reach, as that name is the builder's to design, or whose only\n  check is text the spec leaves open, with why. The builder writes its test.\n- `untestable`: a requirement no test can pin, such as a doc's wording, with why.\n",
 				"attachments": {
 					"spec": {

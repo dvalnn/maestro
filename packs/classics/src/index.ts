@@ -3,7 +3,16 @@ export { challenge, fix, tally } from "./moves";
 export { fill } from "./prompt";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";
 export { LENSES, panel, panelReview, round } from "./review";
-export { builder, consolidator, lens, planner, scout, skeptic } from "./seats";
+export {
+	builder,
+	consolidator,
+	lens,
+	planner,
+	scout,
+	skeptic,
+	tester,
+} from "./seats";
+export { testFirst } from "./test-first";
 export type { Findings, Rulings, Verdict } from "./types";
 export {
 	Answers,

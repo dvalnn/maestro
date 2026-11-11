@@ -10,11 +10,12 @@ writeFileSync(
 	bin,
 	`#!/bin/sh
 case "$1 $2" in
-	"ls c2"|"ls c3"|"ls c4") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"node":"tester","outputs":{"map":{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}}},{"node":"fixes/fix","expansion":"[0]"},{"node":"fixes/fix","expansion":"[1]"},{"node":"fixes/reviewer"}],"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"],"lessons":["run just fmt first"]}}}' ;;
+	"ls c2"|"ls c3"|"ls c4") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"node":"tested/tester","outputs":{"map":{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}}},{"node":"fixes/fix","expansion":"[0]"},{"node":"fixes/fix","expansion":"[1]"},{"node":"fixes/reviewer"}],"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"],"lessons":["run just fmt first"]}}}' ;;
+	"ls c5") echo '{"instances":[{"node":"tester","outputs":{"map":{"pinned":[{}],"deferred":[],"untestable":[]}}}]}' ;;
 	"ls --tour") echo '[{"id":"l'"$5"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1"}]' ;;
 	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"pr":{"path":"pr.md"}}}' ;;
 	"wait c4") echo '{"status":"rejected","artifacts":"${dir}","outputs":{"review":{"path":"review.md"},"upheld":[{"id":"F1","lens":"spec","where":"a.ts:3","issue":"A seam breaks","cites":"R1","blocking":true}]}}' ;;
-	"wait c3") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"}}}' ;;
+	"wait c3"|"wait c5") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"}}}' ;;
 	"wait c1") echo '{"id":"c1","status":"failed","reason":"boom"}'; exit 1 ;;
 	"perform refused") echo "refused.ts does not compose" >&2; exit 2 ;;
 	"perform diagnosed") echo '{"ok":false,"diagnostics":[{"code":"CFG.preset","severity":"error","message":"--preset x names no file","hint":"Create x.yaml"},{"code":"HOST.profile","severity":"error","message":"profile p is in no profile root"}]}'; exit 2 ;;
@@ -53,6 +54,14 @@ test("reads a concert's report: each agent's obstacles, gaps and lessons, the up
 	expect(await fake.report("c4")).toMatchObject({
 		review: "# Review\n\nA seam breaks.",
 		blocking: ["a.ts:3: A seam breaks"],
+	});
+});
+
+test("reads the test map of a concert whose tester node has the earlier id", async () => {
+	expect((await fake.report("c5")).tests).toEqual({
+		pinned: 1,
+		deferred: 0,
+		untestable: 0,
 	});
 });
 

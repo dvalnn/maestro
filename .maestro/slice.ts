@@ -13,15 +13,14 @@ import {
 	repairUntilGreen,
 	round,
 	Tally,
-	TestMap,
 	tally,
 	tallyOf,
+	testFirst,
 	type Upheld,
 } from "@maestro/classics";
 import {
 	changeset,
 	commits,
-	extend,
 	fresh,
 	MarkdownOut,
 	type Relays,
@@ -59,12 +58,10 @@ import {
 	type PanelTier,
 	panelOf,
 } from "./slice/lenses";
-import TESTED_RULE from "./slice/prompts/_tested.md" with { type: "text" };
 import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
 import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
 	type: "text",
 };
-import TESTER from "./slice/prompts/tester.md" with { type: "text" };
 import WRITER from "./slice/prompts/writer.md" with { type: "text" };
 
 // ADR 0008: a code node's function must be exported by its composition file.
@@ -83,7 +80,6 @@ const TASKS = {
 		DESIGN_QUESTIONS,
 		JUDGED,
 	),
-	tester: task(TESTER),
 	writer: task(WRITER, PLAIN, FIGURES),
 };
 
@@ -179,18 +175,12 @@ export function requirePatch(
 /** The PR body's writer: a cheap seat that only reads the finished change. */
 const writer = seat("writer");
 
-/** The seat that writes a spec's tests before the build, on another model family. */
-const tester = seat("tester", {
-	reply: { map: TestMap },
-	checks: REPO_CHECKS,
-});
-
 /** The tiers whose build starts from a tester's tests. */
 const TESTED: readonly Tier[] = ["ordinary", "risky"];
 
 /**
- * The build of `request` against `spec`: in a fresh lane, or at a tested `tier` in a lane extending the tester's, its
- * task then carrying the rule for the tester's tests. Gives the tester's map when tested.
+ * The build of `request` against `spec`: in a fresh lane, or at a tested `tier` by `test_first`. Gives the tester's map when
+ * tested.
  */
 function build(tier: Tier, request: string, spec: Ref<ArtifactRef>) {
 	if (!TESTED.includes(tier))
@@ -202,22 +192,11 @@ function build(tier: Tier, request: string, spec: Ref<ArtifactRef>) {
 				checks: REPO_CHECKS,
 			}),
 		};
-	const tested = tester({
-		label: "tester",
-		task: TASKS.tester,
-		lane: fresh(),
-		attachments: {
-			spec: { artifact: spec, hint: "first, for the requirements to pin" },
-		},
-	});
-	const map = tested.out.map;
-	const built = builder({
-		label: "build",
-		task: task(request, TESTED_RULE),
-		lane: extend(tested.out.lane),
-		checks: REPO_CHECKS,
-		relay: { map },
-	});
+	const { built, map } = use(
+		testFirst,
+		{ spec },
+		{ params: { request, checks: REPO_CHECKS }, label: "tested" },
+	);
 	return { built, map };
 }
 

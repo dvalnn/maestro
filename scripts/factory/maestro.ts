@@ -4,9 +4,11 @@ import { isJson, type Json } from "./json";
 
 /** How many of a milestone's newest concerts the tick reads: one runs at a time, so the newest settle is among them. */
 const WINDOW = 20;
-/** The slice's fix agent, one instance per fix round, and its tester, whose `map` output holds the tests. */
+/** The slice's fix agent, one instance per fix round. */
 const FIX_NODE = "fixes/fix";
-const TESTER_NODE = "tester";
+/** The slice's tester, whose `map` output holds the tests: under `test_first`, and as an earlier concert named it. */
+const TESTER_NODE = "tested/tester";
+const LEGACY_TESTER_NODE = "tester";
 
 export type Concert = {
 	id: string;
@@ -139,7 +141,9 @@ const count = (list: unknown) => (Array.isArray(list) ? list.length : 0);
 
 /** The sizes of the tester's `map` reply, from an `ls <concert> --json` document. */
 function testsOf(doc: Json): Report["tests"] {
-	const out = instancesOf(doc).find((i) => i.node === TESTER_NODE)?.outputs;
+	const out = instancesOf(doc).find(
+		(i) => i.node === TESTER_NODE || i.node === LEGACY_TESTER_NODE,
+	)?.outputs;
 	const map = isJson(out) ? out.map : undefined;
 	if (!isJson(map)) return undefined;
 	return {

@@ -1,5 +1,5 @@
 import { MarkdownOut, seat } from "@maestro/host-repo-sdk";
-import { Answers, Findings, Rulings, Verdict } from "./types";
+import { Answers, Findings, Rulings, TestMap, Verdict } from "./types";
 
 export const scout = seat("scout", {
 	profile: "classics/scout",
@@ -12,6 +12,11 @@ export const planner = seat("planner", {
 });
 
 export const builder = seat("builder", { profile: "classics/builder" });
+
+export const tester = seat("tester", {
+	profile: "classics/tester",
+	reply: { map: TestMap },
+});
 
 export const lens = seat("lens", {
 	profile: "classics/lens",
