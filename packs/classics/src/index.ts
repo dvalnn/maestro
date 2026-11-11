@@ -19,6 +19,8 @@ export {
 	atLeastOne,
 	Brief,
 	Finding,
+	Overrule,
+	Overrules,
 	Tally,
 	TestMap,
 	Upheld,

@@ -100,10 +100,8 @@ A column ships with the feature that records it.
 
 - Upheld findings by catalogue row, tagged by an agent pass over each run's `upheld` output.
 - The rest of the tester's columns:
-  - `pinned` split into firm and best-effort;
-  - best-effort tests the builder changed;
-  - firm tests the builder corrected as tester mistakes;
-  - firm-tier `blocked` runs, each read as a spec flaw or a tester mistake;
+  - tests the builder overruled as tester mistakes;
+  - `blocked` runs, each read as a spec flaw or a tester mistake;
   - duplicated or vacuous tests a lens flagged, advisory ones included (catalogue row 7).
 
 ## The owner's call

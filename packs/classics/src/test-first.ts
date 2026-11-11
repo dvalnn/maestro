@@ -4,11 +4,12 @@ import { task } from "./prompt";
 import BUILD_TESTED from "./prompts/build-tested.md" with { type: "text" };
 import TESTER from "./prompts/tester.md" with { type: "text" };
 import { builder, tester } from "./seats";
+import { Overrules } from "./types";
 
 export const testFirst = composition(
 	"test_first",
 	{
-		doc: "A tester pins the spec's requirements in tests, then a builder extends its lane and makes them pass. Gives the built lane and the tester's map.",
+		doc: "A tester pins the spec's requirements in tests, then a builder extends its lane and makes them pass. Gives the built lane and the tester's map; the builder replies with the tests it overrules.",
 		ports: { spec: Markdown() },
 		params: {
 			request: Text({ description: "What to build" }),
@@ -36,6 +37,7 @@ export const testFirst = composition(
 			lane: extend(tested.out.lane),
 			checks,
 			relay: { map },
+			reply: { overrules: Overrules },
 		});
 		return { built, map };
 	},

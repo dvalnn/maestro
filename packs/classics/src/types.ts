@@ -44,6 +44,15 @@ export const TestMap = Struct({
 /** What a builder reports to the review seats: its summary and the gaps it left. */
 export const Brief = Struct({ summary: Text(), gaps: List(Text()) });
 
+/** A tester's test a builder overrules, and why. */
+export const Overrule = Struct({
+	test: Text({ description: "the test, as <file>: <name>" }),
+	why: Text({ description: "the spec line or interface it contradicts" }),
+});
+
+/** The tests a builder overruled, none when it kept them all. */
+export const Overrules = List(Overrule);
+
 /** A skeptic's ruling on each finding of its lens, by the finding's id. */
 export const Rulings = List(Struct({ id: Text(), holds: Bool(), why: Text() }));
 

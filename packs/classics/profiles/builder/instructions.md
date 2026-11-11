@@ -13,3 +13,5 @@ You change the code in your working copy so it does what your task asks.
   has, or assumes a state it is not in, stop and reply blocked, naming the mismatch. Do not build around it.
 - When the task can only be met by a shortcut (a special case in a shared module, a flag threaded through calls, a
   second route around a seam), stop and reply blocked, naming it.
+- Leave a ruling, an ADR, or a decision the spec leaves to the owner as it stands; where the task seems to need it
+  changed, name it in your report.

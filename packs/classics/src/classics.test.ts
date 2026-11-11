@@ -382,6 +382,9 @@ export const tested = composition("tested", { examples: [{}] }, () => {
 	expect(node("test_first/tester").config.lane.mode).toBe("fresh");
 	expect(node("test_first/tester").config.checks).toEqual(["test"]);
 	expect(node("test_first/build").config.checks).toEqual(["test"]);
+	expect(Object.keys(node("test_first/build").config.reply)).toEqual([
+		"overrules",
+	]);
 	expect(into("test_first/tester", "spec")).toHaveLength(1);
 	expect(into("test_first/build", "lane")).toEqual([
 		{ node: "test_first/tester", port: "lane" },

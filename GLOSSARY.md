@@ -322,4 +322,4 @@ _Avoid_: round.
 
 **Tester**: A work agent that pins the ask's behaviour in tests before the builder starts, listing them in a test map.
 
-**Test map**: The tester's list of the tests it pinned, each with its tier: firm or best-effort.
+**Test map**: The tester's list of the tests it pinned, each with its file and name.
