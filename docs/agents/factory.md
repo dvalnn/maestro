@@ -76,7 +76,6 @@ flowchart LR
     IP -.->|"[slice, tick] blocked"| NI
     IP -->|"[slice] red, infra"| RA
     IR ==>|"[owner] changes"| IP
-    IR -.->|"[tick] conflict"| NI
     NI ==>|"[owner] answer"| RA
     NI ==>|"[owner] answer triage"| NT
     NI ==>|"[owner] apply"| IP
@@ -117,9 +116,8 @@ flowchart TD
 1. Until the `maestro-tm:halt` issue closes (Rules, Policy: Halt).
 2. Read the forge's `main` commit, then fetch `origin`; a failed fetch ends the tick as failed (Rules, Landing and PRs:
    Tick base).
-3. A merged PR closes its issue through its `Closes #N`; a stacked PR whose dependency merged restacks onto `main`
-   (Rules, Build: Restack); closed dependencies free tickets; an approved split files its children (Rules, Triage:
-   Splits) and its last closed child closes the epic.
+3. A merged PR closes its issue through its `Closes #N`; closed dependencies free tickets; an approved split files its
+   children (Rules, Triage: Splits) and its last closed child closes the epic.
 4. First match wins, in the order of the arrows (Rules, Policy: Pick order). `--route-only` routes and syncs but starts
    nothing.
 5. Set the labels, edit the spec comment, post any question comment, and rewrite the closing line on a new version
@@ -183,14 +181,15 @@ flowchart TD
 - **One concert at a time.** The tick starts no second one while a concert of the milestone runs.
 - **Pick order.** Finish work first: a stack review, then an encore of a PR with changes requested, then a build, then
   triage, then a masterclass. A tick that routes a settle falls through and starts the next action. Within builds and
-  within triage, an issue the owner pinned on the forge comes first, in pinned order, then the rest oldest first.
+  within triage, an issue the owner pinned on the forge comes first, in pinned order, then the rest oldest first. A
+  build or a triage skips a ticket with an open dependency, a pinned one included (Rules, Build: Dependencies).
 - **Halt.** These stop the tick with an open `maestro-tm:halt` issue naming the cause; closing it resumes:
   - a triage that fails, does not start or gives a malformed output: the ticket keeps its state and is triaged again;
   - a build, a stack review or a masterclass that does not start;
   - a stack review that settles neither `ok` nor `rejected`: the review runs again once the halt closes;
   - a slice that settles `failed` without a `blocked:` reason, an infra fault: the issue names the concert, and the
     ticket is requeued to `ready-for-agent` with its attempts kept, and builds again;
-  - a landing or a restack that fails: the workspace is kept, and the work is redone in a fresh one;
+  - a landing that fails: the workspace is kept, and the work is redone in a fresh one;
   - an encore with nothing changed, which is refused;
   - a spec comment's data line the tick cannot read.
 - **Tour and title.** A ticket's concerts run on tour `<version>.i<n>`, such as `v0.1.0.i142`, titled
@@ -253,23 +252,19 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   or untestable. The builder extends the tester's lane with the map attached, makes the tests pass, and writes the tests
   for the deferred requirements; it changes a tester's test only where it contradicts the spec or the interface it
   builds, saying why. The review judges the tests like any other, and the writer's Evidence table names the map's tests.
-- **Dependencies.** A dependency is a forge "blocked by" link that sets build order.
+- **Dependencies.** A dependency is a forge "blocked by" link, a split's children or not, that sets triage and build
+  order: a spec is written, and built, against real `main`. Triage skips an intake ticket while any of its dependencies
+  is open, and a build skips a ready ticket while any is open. A dependency is freed when it closes, merged or not, or
+  when its link is removed; triage rules `needs-info` itself if the ask no longer stands. A ready ticket waiting on open
+  dependencies says so in its spec comment's last line, as `queued, waiting on #12, #14`, rewritten only when that set
+  changes. Once freed, the Stale spec check decides between a build and a re-triage.
 
 ```mermaid
 flowchart TD
-    D{"dependencies"} -->|"all closed"| M["build on main"]
-    D -->|"open ones all in-review, PR to main"| S["stack: cut at the newest PR head, PR to its branch"]
-    D -->|"a dependency is itself stacked"| W(["wait"])
-    S --> N{"none open, stacked-on PR merged?"}
-    N -->|yes| R["restack: copy commits onto main, force-push, retarget the PR"]
-    N -->|"copy conflicts, or closed unmerged"| NI["needs-info, question comment"]
+    D{"any dependency open?"} -->|yes| W(["wait"])
+    D -->|no| M["triage or build, on main"]
 ```
 
-- **Restack.** A stacked slice's PR opens against the dependency's branch, unarmed. Sync restacks a ticket in review,
-  and a landing restacks straight away when the dependency merged during the build; the PR is opened anew when the forge
-  closed it with its base branch, then armed when low. The question comment on a conflict offers `ready-for-agent`
-  (build again on `main`) or `needs-triage`. A ready ticket waiting on open dependencies says so in its spec comment's
-  last line, as `queued, waiting on #12, #14`, rewritten only when that set changes.
 - **Stale spec.** A fresh build of a ready ticket first compares its spec's `touches` with those of every other ticket
   whose spec was approved after its own: one in `ready-for-agent`, `in-progress` or `in-review` whose `specAt` is later,
   or one closed as completed (not `state/wontfix` or `state/duplicate`) after this spec's `specAt`, by the forge's
@@ -294,8 +289,8 @@ flowchart TD
   With nothing changed the build is a fresh perform, since an encore with nothing changed is refused.
 
 - **Stack review.** An epic's children are reviewed as one change once every child but its last is closed and the last
-  is `in-review` on a PR to `main`, so the range is linear whatever the stack's shape. Earlier children land as usual;
-  the review catches the seams between them before the epic closes.
+  is `in-review` on a PR to `main`, so the range runs along `main`. Earlier children land as usual; the review catches
+  the seams between them before the epic closes.
   - It performs `.maestro/review.ts` once per epic, on the epic's tour and title, with `--preset risky`, then the tick's
     own `--preset`s, `--revs <base>..<last PR head>`, `base` being `main`'s head when the split's children were filed,
     and a `--request` of the epic's ask and children, naming their commits by `Refs: #N`. Other tickets' commits in the
@@ -319,22 +314,21 @@ flowchart TD
 ### Landing and PRs
 
 - **Tick base.** After its guards a tick reads the commit the forge holds as `main`, then fetches `origin` once; a
-  failed fetch fails the tick. Every triage, unstacked build, masterclass, landing, restack and split base uses that
-  commit (`-c target.base=<commit>` for a start), never the local `main`. A stacked build and a revision keep their PR's
-  commit.
-- **Landing.** An ok slice lands in a fresh jj workspace on the tick's `main` commit, or on the commit it stacked on:
-  `maestro cs apply`, then `jj describe` with the spec's subject and `Refs: #N`, or for a revision `jj squash` into the
-  PR head with that description. It runs no check of its own: the slice's gate passed in its lane, and CI checks the PR
-  against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
+  failed fetch fails the tick. Every triage, fresh build, masterclass, landing and split base uses that commit
+  (`-c target.base=<commit>` for a start), never the local `main`. A revision keeps its PR's commit.
+- **Landing.** An ok slice lands in a fresh jj workspace on the tick's `main` commit, or on its PR's head for a
+  revision: `maestro cs apply`, then `jj describe` with the spec's subject and `Refs: #N`, or for a revision `jj squash`
+  into the PR head with that description. It runs no check of its own: the slice's gate passed in its lane, and CI
+  checks the PR against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
-  held, titled with the spec's subject, to `main` or to the dependency's branch while stacked. The slice's writer writes
-  the body in the form `.maestro/slice/prompts/writer.md` gives; below it the tick adds the findings the review left
-  upheld after its last fix round, counted, under `Unresolved review` (none when it left none), the agents' gaps, one
-  line of risk, area and review tier with the planner's contract as the one-way door, the spend (a row per slice concert
-  of the ticket's tour, a build or an encore as its record says, then a total) and `Closes #N` with the `Relates to`
-  links last. A writer that fails costs the build nothing: the tick builds the body from its data alone. A PR whose
-  review left findings upheld is never armed, a last child's after its stack review clears included: the owner merges
-  it. Every landing, an encore's included, rewrites the body of the PR already open on the branch.
+  held, titled with the spec's subject, to `main`. The slice's writer writes the body in the form
+  `.maestro/slice/prompts/writer.md` gives; below it the tick adds the findings the review left upheld after its last
+  fix round, counted, under `Unresolved review` (none when it left none), the agents' gaps, one line of risk, area and
+  review tier with the planner's contract as the one-way door, the spend (a row per slice concert of the ticket's tour,
+  a build or an encore as its record says, then a total) and `Closes #N` with the `Relates to` links last. A writer that
+  fails costs the build nothing: the tick builds the body from its data alone. A PR whose review left findings upheld is
+  never armed, a last child's after its stack review clears included: the owner merges it. Every landing, an encore's
+  included, rewrites the body of the PR already open on the branch.
 
 ### Masterclass
 
@@ -524,7 +518,6 @@ positions a later tick resumes from. A line the tick cannot read halts the tour 
 | `attempts`     | The rejected slices spent                          | a rejected slice                   | not cleared                                                  |
 | `failure`      | The reason the last slice failed                   | a slice that does not land         | a landing                                                    |
 | `parked`       | A slice concert routed but not applied             | a settle moved during its run      | routing it, or any other move                                |
-| `stack`        | The dependency the last build stacked on           | a stacked build                    | a restack, conflicting or not; an unstacked build            |
 | `revisionBase` | The PR head a revision is cut at and lands on      | an encore of a reviewed PR         | a landing, a fresh build, a re-triage, an infra halt         |
 | `encore`       | The slice concert to continue                      | a slice blocked or out of attempts | a retry, a landing, a parked one, a re-triage, an infra halt |
 | `review`       | Id of the newest review an encore was fed          | an encore of a reviewed PR         | not cleared                                                  |
@@ -582,5 +575,5 @@ after the ask is left out when the question has none.
 - triage's questions: ``Reply `@<login> Q1: …`, then label `needs-triage`.``;
 - a blocked slice's: the same, then label your choice;
 - a re-triage with nothing to feed: ``Reply `@<login> …`, then label `needs-triage`.``;
-- a moved ticket's, or a restack's on a conflict or a dependency closed unmerged: `Label the ticket with your choice.`;
+- a moved ticket's: `Label the ticket with your choice.`;
 - a stale spec's: `No reply needed: the next tick triages it again.`

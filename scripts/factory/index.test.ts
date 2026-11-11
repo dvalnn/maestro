@@ -60,7 +60,6 @@ function fakeForge(issues: Stored[], cut?: string, events: string[] = []) {
 			head: "maestro-tm/i6",
 			sha: "sha20",
 			base: "main",
-			merged: false,
 			body: "Closes #6",
 			additions: 3,
 			deletions: 1,
@@ -102,11 +101,6 @@ function fakeForge(issues: Stored[], cut?: string, events: string[] = []) {
 			pulls
 				.filter((p) => !closedPulls.has(p.number))
 				.map((p) => ({ ...p, sha: heads[p.head] ?? p.sha })),
-		pull: async (n) => {
-			const pull = pulls.find((p) => p.number === n);
-			if (!pull) throw new Error(`no pull #${n}`);
-			return pull;
-		},
 		setLabels: async (n, labels) => {
 			write(`labels #${n} ${labels.join(" ")}`);
 			find(n).labels = labels;
@@ -158,17 +152,16 @@ function fakeForge(issues: Stored[], cut?: string, events: string[] = []) {
 				...pull,
 				number,
 				sha: "",
-				merged: false,
 				additions: 0,
 				deletions: 0,
 				files: 0,
 			});
 			return number;
 		},
-		editPull: async (n, { body, base }) => {
-			write(base ? `retarget #${n} to ${base}` : `rewrite #${n}`);
+		editPull: async (n, body) => {
+			write(`rewrite #${n}`);
 			const pull = pulls.find((p) => p.number === n);
-			if (pull) Object.assign(pull, { body, ...(base && { base }) });
+			if (pull) Object.assign(pull, { body });
 		},
 		arm: async (n) => write(`arm #${n}`),
 		reviews: async (n) => reviews[n] ?? [],
@@ -247,10 +240,9 @@ function fakeMaestro(
 }
 
 /**
- * A landing that logs each step, and fails at the step named `failAt` with `output` until it is healed. A restack meets
- * `conflict` when given.
+ * A landing that logs each step, and fails at the step named `failAt` with `output` until it is healed.
  */
-function fakeLanding(failAt?: keyof Landing, output = "", conflict?: string) {
+function fakeLanding(failAt?: keyof Landing, output = "") {
 	const steps: string[] = [];
 	/** The shared trace of each forge head read, the fetch and each start, in order. */
 	const events: string[] = [];
@@ -273,10 +265,6 @@ function fakeLanding(failAt?: keyof Landing, output = "", conflict?: string) {
 		squash: async (dir, message) => {
 			step("squash", `squash ${dir}: ${message}`);
 			return "abc123";
-		},
-		restack: async (dir, revisions, onto) => {
-			step("restack", `restack ${revisions} onto ${onto} in ${dir}`);
-			return conflict ? { conflict } : { commit: "def456" };
 		},
 		close: async (dir, name) => step("close", `close ${name} at ${dir}`),
 	};
@@ -691,6 +679,14 @@ describe("a tick", () => {
 	test("starts triage of a pinned intake issue before an older one", async () => {
 		const t = setup([issue(2, "needs-triage"), issue(9, "needs-triage")]);
 		t.pins.push(9);
+		await t.run();
+		expect(t.starts[0]).toContain("v0.1.0.i9");
+	});
+
+	test("triages the oldest intake issue free of open dependencies, skipping a pinned one while it waits", async () => {
+		const t = setup([issue(2, "needs-triage"), issue(9, "needs-triage")]);
+		t.pins.push(2);
+		t.blocking[2] = [5];
 		await t.run();
 		expect(t.starts[0]).toContain("v0.1.0.i9");
 	});
@@ -1535,6 +1531,7 @@ describe("a build", () => {
 		t.find(14).open = false;
 		await t.run();
 		expect(t.starts).toHaveLength(1);
+		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha-main"]);
 		expect(t.find(7).labels).toContain("state/in-progress");
 	});
 
@@ -1840,45 +1837,17 @@ const pullOf = (number: number, n: number, base = "main"): Pull => ({
 	head: `maestro-tm/i${n}`,
 	sha: `sha${n}`,
 	base,
-	merged: false,
 	body: `Closes #${n}`,
 	additions: 0,
 	deletions: 0,
 	files: 0,
 });
 
-const STACK = { blocker: 5, commit: "sha5", pull: 21 };
 const CACHED_8 = "/cache/maestro-factory/i8";
-const RESTACKED = [
-	`open factory-i8 at ${CACHED_8} on sha-main`,
-	`restack sha5..maestro-tm/i8@origin onto sha-main in ${CACHED_8}`,
-	`close factory-i8 at ${CACHED_8}`,
-];
-const OPTIONS =
-	"- **`ready-for-agent`**: build it again on `main`\n- **`needs-triage`**: triage it again";
 const merging = (writes: string[]) =>
-	writes.filter(
-		(w) =>
-			w.startsWith("pull") || w.startsWith("retarget") || w.startsWith("arm"),
-	);
+	writes.filter((w) => w.startsWith("pull") || w.startsWith("arm"));
 
-/** Issue 8 in `state` stacked on #5, whose PR #21 merged and closed, with `data`. */
-function stackedOn(state: string, data: Data = {}, landing = fakeLanding()) {
-	const concerts: Concert[] = [];
-	const results: Record<string, Result> = {};
-	const t = setup(
-		[specced(8, state, { stack: STACK, ...data })],
-		concerts,
-		results,
-		undefined,
-		{ landing },
-	);
-	t.pulls.push({ ...pullOf(21, 5), merged: true });
-	t.closedPulls.add(21);
-	return { ...t, concerts, results };
-}
-
-describe("a merge and a stack", () => {
+describe("a merge", () => {
 	test("opens a medium PR to main without arming it", async () => {
 		const t = setup(
 			[atMedium(specced(7, "in-progress", { slice: "s1" }))],
@@ -1891,181 +1860,26 @@ describe("a merge and a stack", () => {
 		]);
 	});
 
-	test("builds a ticket whose blockers are all in review on the newest PR's head, and opens its PR to that branch", async () => {
-		const concerts: Concert[] = [];
-		const results: Record<string, Result> = {};
+	test("lands a slice's PR to main and arms it when low", async () => {
 		const t = setup(
-			[
-				specced(5, "in-review"),
-				specced(6, "in-review"),
-				specced(8, "ready-for-agent"),
-			],
-			concerts,
-			results,
+			[specced(8, "in-progress", { slice: "s1" })],
+			[sliceConcert("s1", 8)],
+			{ s1: { status: "ok", outputs: {} } },
 		);
-		t.pulls.push(pullOf(21, 5));
-		t.blocking[8] = [6, 5];
-		await t.run();
-		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha5"]);
-		expect(dataAt(t.find(8)).stack).toEqual(STACK);
-		concerts.push(sliceConcert("started", 8));
-		results.started = { status: "ok", outputs: {} };
-		await t.run();
-		expect(t.steps[0]).toBe(`open factory-i8 at ${CACHED_8} on sha5`);
-		expect(merging(t.writes)).toEqual([
-			"pull maestro-tm/i8 to maestro-tm/i5: feat: greet by name",
-		]);
-		expect(t.find(8).labels).toContain("state/in-review");
-		expect(dataAt(t.find(8)).stack).toEqual(STACK);
-		const writes = t.writes.length;
-		await t.run();
-		expect(t.writes).toHaveLength(writes);
-	});
-
-	test("lands a stacked slice whose blocker merged meanwhile straight onto main", async () => {
-		const t = stackedOn("in-progress", { slice: "s1" });
-		t.concerts.push(sliceConcert("s1", 8));
-		t.results.s1 = { status: "ok", outputs: {} };
 		await t.run();
 		expect(t.steps).toEqual([
-			`open factory-i8 at ${CACHED_8} on sha5`,
+			`open factory-i8 at ${CACHED_8} on sha-main`,
 			`describe ${CACHED_8}: feat: greet by name\n\nRefs: #8\n`,
-			`restack sha5..abc123 onto sha-main in ${CACHED_8}`,
 			`close factory-i8 at ${CACHED_8}`,
 		]);
 		expect(merging(t.writes)).toEqual([
 			"pull maestro-tm/i8 to main: feat: greet by name",
 			"arm #30",
 		]);
-		expect(t.writes).toContain(`push def456 as maestro-tm/i8 from ${CACHED_8}`);
 		expect(t.find(8).labels).toContain("state/in-review");
-		expect(dataAt(t.find(8)).stack).toBeUndefined();
 		const writes = t.writes.length;
 		await t.run();
 		expect(t.writes).toHaveLength(writes);
-	});
-
-	test("leaves a ticket whose blocker is itself stacked waiting, a third in the chain", async () => {
-		const t = setup([
-			specced(8, "in-review", { stack: STACK }),
-			specced(9, "ready-for-agent"),
-		]);
-		t.pulls.push(pullOf(31, 8, "maestro-tm/i5"));
-		t.blocking[8] = [5];
-		t.blocking[9] = [8];
-		await t.run();
-		expect([t.starts, t.steps]).toEqual([[], []]);
-		expect(specAt(t.find(9))?.body).toContain("waiting on #8**");
-		expect(t.writes).toHaveLength(1);
-	});
-
-	const PUSHED = `push def456 as maestro-tm/i8 from ${CACHED_8}`;
-	const restacks: [
-		string,
-		(t: ReturnType<typeof stackedOn>) => void,
-		string[],
-		Data["stack"],
-		string,
-	][] = [
-		[
-			"a low PR whose blocker merged, retargeting and arming it",
-			() => {},
-			[PUSHED, "retarget #31 to main", "arm #31"],
-			undefined,
-			"",
-		],
-		[
-			"a medium PR whose blocker merged, retargeting it unarmed",
-			(t) => atMedium(t.find(8)),
-			[PUSHED, "retarget #31 to main"],
-			undefined,
-			"",
-		],
-		[
-			"a low PR closed with its base branch, opening a new one and arming it",
-			(t) => t.closedPulls.add(31),
-			[PUSHED, "pull maestro-tm/i8 to main: feat: greet by name", "arm #30"],
-			undefined,
-			"",
-		],
-		[
-			"a PR whose blocker closed unmerged, asking the owner",
-			(t) => {
-				const blocker = t.pulls.find((p) => p.number === 21);
-				if (blocker) blocker.merged = false;
-			},
-			["comment #8", "labels #8 kind/enhancement risk/low state/needs-info"],
-			undefined,
-			whichWay(
-				"Blocker #5 closed without merging its PR #21, so this ticket's change, stacked on it, was not rebased onto `main`.",
-				OPTIONS,
-			),
-		],
-		[
-			"no PR while another blocker is open",
-			(t) => {
-				t.blocking[8] = [9];
-			},
-			[],
-			STACK,
-			"",
-		],
-	];
-	test.each(restacks)(
-		"restacks %s",
-		async (_, arrange, written, stack, question) => {
-			const t = stackedOn("in-review", { slice: "s8", concert: "s8" });
-			t.pulls.push(pullOf(31, 8, "maestro-tm/i5"));
-			arrange(t);
-			await t.run();
-			expect(t.steps).toEqual(written.includes(PUSHED) ? RESTACKED : []);
-			expect(t.writes.filter((w) => !w.startsWith("edit"))).toEqual(written);
-			expect(dataAt(t.find(8)).stack).toEqual(stack);
-			expect(questionsAt(t.find(8))).toEqual(question ? [question] : []);
-			const writes = t.writes.length;
-			await t.run();
-			expect(t.writes).toHaveLength(writes);
-		},
-	);
-
-	test("moves a stacked PR that conflicts restacking to needs-info, then a rebuild retargets and arms it", async () => {
-		const landing = fakeLanding(undefined, "", "src/a.ts    2-sided conflict");
-		const t = stackedOn(
-			"in-review",
-			{ slice: "s8", concert: "s8", encore: "s0" },
-			landing,
-		);
-		answeredOnce(t.find(8));
-		t.pulls.push(pullOf(31, 8, "maestro-tm/i5"));
-		await t.run();
-		const conflicted = t.find(8);
-		expect(conflicted.labels).toContain("state/needs-info");
-		expect(questionsAt(conflicted)).toEqual([
-			whichWay(
-				"This ticket's change conflicts with `main` once rebased onto it:\n\n```text\nsrc/a.ts    2-sided conflict\n```",
-				OPTIONS,
-			),
-		]);
-		expect(dataAt(conflicted).stack).toBeUndefined();
-		expect(t.writes.some((w) => w.startsWith("push"))).toBe(false);
-		expect(t.steps.at(-1)).toBe(`close factory-i8 at ${CACHED_8}`);
-		let writes = t.writes.length;
-		await t.run();
-		expect(t.writes).toHaveLength(writes);
-		conflicted.labels = conflicted.labels.map((l) =>
-			l === "state/needs-info" ? "state/ready-for-agent" : l,
-		);
-		await t.run();
-		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha-main"]);
-		expect(t.starts[0]).not.toContain("encore");
-		t.concerts.push(sliceConcert("started", 8));
-		t.results.started = { status: "ok", outputs: {} };
-		writes = t.writes.length;
-		await t.run();
-		expect(merging(t.writes.slice(writes))).toEqual([
-			"retarget #31 to main",
-			"arm #31",
-		]);
 	});
 });
 
@@ -2143,33 +1957,6 @@ describe("a review", () => {
 		await t.run();
 		expect(t.writes).toHaveLength(writes);
 		expect(t.starts).toHaveLength(1);
-	});
-
-	test("encores a stacked ticket's landed concert at its own PR head, which sits on its blocker's", async () => {
-		const t = setup(
-			[
-				specced(5, "in-review"),
-				specced(8, "in-review", {
-					slice: "s1",
-					concert: "s1",
-					review: 3,
-					stack: STACK,
-				}),
-			],
-			[sliceConcert("s1", 8)],
-		);
-		t.pulls.push(pullOf(21, 5), pullOf(31, 8, "maestro-tm/i5"));
-		t.blocking[8] = [5];
-		t.reviews[31] = [review(5)];
-		await t.run();
-		expect(t.starts).toHaveLength(1);
-		expect(t.starts[0]?.slice(0, 2)).toEqual(["encore", "s1"]);
-		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha8"]);
-		expect(dataAt(t.find(8))).toMatchObject({
-			review: 5,
-			revisionBase: "sha8",
-			stack: STACK,
-		});
 	});
 });
 

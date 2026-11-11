@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import type { Issue } from "./forge";
 import { buildable, pick, tierOf } from "./pick";
+
+const free = async () => true;
+
 import type { Data } from "./route";
 
 const issue = (number: number, state: string): Issue => ({
@@ -27,20 +30,34 @@ test("a pinned issue not eligible to build is skipped", () => {
 	expect(numbers(buildable(entries, [7, 5]))).toEqual([5, 2]);
 });
 
-test("a pinned newer issue is triaged before an older unpinned one, and pinned ones in pinned order", () => {
+test("a pinned newer issue is triaged before an older unpinned one, and pinned ones in pinned order", async () => {
 	const issues = [
 		issue(2, "needs-triage"),
 		issue(5, "needs-triage"),
 		issue(9, "needs-triage"),
 	];
-	expect(pick(issues)?.number).toBe(2);
-	expect(pick(issues, [9])?.number).toBe(9);
-	expect(pick(issues, [5, 9])?.number).toBe(5);
+	expect((await pick(issues, [], free))?.number).toBe(2);
+	expect((await pick(issues, [9], free))?.number).toBe(9);
+	expect((await pick(issues, [5, 9], free))?.number).toBe(5);
 });
 
-test("a pinned issue not in intake is skipped by triage", () => {
+test("a ticket with an open dependency is skipped by triage, a pinned one included", async () => {
+	const issues = [
+		issue(2, "needs-triage"),
+		issue(5, "needs-triage"),
+		issue(9, "needs-triage"),
+	];
+	const open = [2];
+	const free = async (n: number) => !open.includes(n);
+	expect((await pick(issues, [], free))?.number).toBe(5);
+	expect((await pick(issues, [2], free))?.number).toBe(5);
+	open.push(5, 9);
+	expect(await pick(issues, [], free)).toBeUndefined();
+});
+
+test("a pinned issue not in intake is skipped by triage", async () => {
 	const issues = [issue(2, "needs-triage"), issue(5, "ready-for-agent")];
-	expect(pick(issues, [5])?.number).toBe(2);
+	expect((await pick(issues, [5], free))?.number).toBe(2);
 });
 
 test.each([

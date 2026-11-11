@@ -1,4 +1,4 @@
-// Landing a slice's change as its PR, stacked on a blocker's or restacked onto `main` (factory.md, Rules, Build).
+// Landing a slice's change as its PR to `main` (factory.md, Rules, Landing and PRs).
 import { join } from "node:path";
 import type { Forge, Issue, NewPull } from "./forge";
 import type { Report, Spend } from "./maestro";
@@ -6,14 +6,11 @@ import { riskOf, tierOf, tourOf } from "./pick";
 import {
 	type Data,
 	dataOf,
-	fenced,
 	pullBody,
-	type Stack,
 	specCommentOf,
 	unresolvedOf,
 } from "./route";
 import {
-	ask,
 	BASE,
 	branchOf,
 	type Entry,
@@ -24,23 +21,16 @@ import {
 	message,
 	move,
 	partOf,
-	RETRIAGE,
 	type Tick,
 	UNCONTINUED,
-	whichWay,
 	writeSpec,
 } from "./tick";
 
-/**
- * The open PR of `pull.head` with `pull`'s body, retargeted to `pull.base` when it merges elsewhere, else a new one.
- */
+/** The open PR of `pull.head` with `pull`'s body, else a new one. */
 async function openPull(forge: Forge, pull: NewPull) {
 	const open = (await forge.pulls()).find((p) => p.head === pull.head);
 	if (!open) return forge.openPull(pull);
-	await forge.editPull(open.number, {
-		body: pull.body,
-		...(open.base !== pull.base && { base: pull.base }),
-	});
+	await forge.editPull(open.number, pull.body);
 	return open.number;
 }
 
@@ -54,31 +44,29 @@ async function closeWorkspace(tick: Tick, dir: string, name: string) {
 	}
 }
 
-type Failure = { title: string; lead: string };
-
 /**
  * Runs `work` in a fresh jj workspace `factory-i<number>` of issue `number`, at
  * `$XDG_CACHE_HOME/maestro-factory/i<number>`, on revision `base`, then forgets and removes it; undefined when it
- * halted on `failure`, keeping the workspace for the next tick to replace once the halt closes.
+ * halted, keeping the workspace for the next tick to replace once the halt closes.
  */
-async function inWorkspace<T>(
+async function inWorkspace(
 	tick: Tick,
 	number: number,
 	base: string,
-	failure: Failure,
-	work: (dir: string) => Promise<T>,
-): Promise<T | undefined> {
+	id: string,
+	work: (dir: string) => Promise<number>,
+) {
 	const name = `factory-i${number}`;
 	const dir = join(tick.cache, `i${number}`);
-	let done: T;
+	let done: number;
 	try {
 		await tick.landing.open(dir, name, base);
 		done = await work(dir);
 	} catch (error) {
 		await halt(
 			tick,
-			failure.title,
-			`${failure.lead} from the workspace \`${dir}\`:`,
+			`landing of #${number} failed`,
+			`The slice concert \`${id}\` of #${number} did not land from the workspace \`${dir}\`:`,
 			message(error),
 			"Look at the workspace first: closing this issue lets the next tick replace it with a fresh one.",
 		);
@@ -90,8 +78,6 @@ async function inWorkspace<T>(
 
 /** A PR's title and body, and whether its review left findings unresolved, which holds it unarmed. */
 type PullText = Pick<NewPull, "title" | "body"> & { held: boolean };
-/** Where a landing or restack leaves its issue: in review with its PR, stacked while `stack` is set, else asking. */
-type Outcome = { pull: number; stack?: Stack } | { question: string };
 
 /** What each slice concert of `issue`'s tour spent, oldest first, the one still running left out. */
 async function spendOf(tick: Tick, issue: Issue) {
@@ -131,18 +117,6 @@ function pullText(
 	};
 }
 
-/**
- * Where `stack` stands for issue `number`: `open` while any blocker is open, else `merged` or `unmerged` by its
- * blocker's PR.
- */
-async function stackState(forge: Forge, number: number, stack: Stack) {
-	if ((await forge.blockers(number)).length) return "open";
-	return (await forge.pull(stack.pull)).merged ? "merged" : "unmerged";
-}
-
-const unmerged = ({ blocker, pull }: Stack) =>
-	`Blocker #${blocker} closed without merging its PR #${pull}, so this ticket's change, stacked on it, was not rebased onto \`${BASE}\`.`;
-
 /** The epic issue `issue` is a child of, by its `Part of #N` first line. */
 function epicOf(issue: Issue) {
 	const found = /^#(\d+)$/.exec(
@@ -172,8 +146,8 @@ async function awaitsStackReview(tick: Tick, { issue, data }: Entry) {
 }
 
 /**
- * Pushes `commit` from `dir` as `entry`'s branch and opens or retargets its PR into `base`, arming a low one to `main`
- * unless its review left findings unresolved.
+ * Pushes `commit` from `dir` as `entry`'s branch and opens or rewrites its PR, arming a low one unless its review left
+ * findings unresolved.
  */
 async function publish(
 	tick: Tick,
@@ -186,7 +160,6 @@ async function publish(
 	const number = await openPull(tick.forge, pull);
 	if (
 		!held &&
-		pull.base === BASE &&
 		isLow(entry.issue, entry.data) &&
 		!(await awaitsStackReview(tick, entry))
 	)
@@ -194,72 +167,26 @@ async function publish(
 	return number;
 }
 
-/**
- * Copies the commits `stack.commit..revision` of `entry` onto `main` in the workspace at `dir` and publishes them
- * there; a conflict asks.
- */
-async function restackIn(
-	tick: Tick,
-	entry: Entry,
-	dir: string,
-	stack: Stack,
-	revision: string,
-	text: PullText,
-): Promise<Outcome> {
-	const restacked = await tick.landing.restack(
-		dir,
-		`${stack.commit}..${revision}`,
-		tick.main,
-	);
-	if ("conflict" in restacked)
-		return {
-			question: `This ticket's change conflicts with \`${BASE}\` once rebased onto it:\n\n${fenced(restacked.conflict)}`,
-		};
-	const head = branchOf(entry.issue.number);
-	const pull = { ...text, head, base: BASE };
-	return { pull: await publish(tick, entry, dir, restacked.commit, pull) };
-}
-
-/**
- * Writes `outcome` of `entry`'s landed slice `concert` back: `in-review` with its PR, else `needs-info` with a question
- * comment asking which way.
- */
+/** Writes `entry`'s landed slice `concert` back: `in-review` with its PR `pull`. */
 async function record(
 	tick: Tick,
 	{ issue, data }: Entry,
 	concert: string | undefined,
-	outcome: Outcome,
+	pull: number,
 ) {
-	const landed = {
+	await move(tick, issue.number, "in-review");
+	await writeSpec(tick, issue.number, "in-review", {
 		...data,
 		...UNCONTINUED,
 		concert,
 		failure: undefined,
-		stack: undefined,
-	};
-	if ("question" in outcome) {
-		const options = [
-			{ label: "`ready-for-agent`", text: `build it again on \`${BASE}\`` },
-			RETRIAGE,
-		];
-		await ask(tick, issue.number, whichWay(outcome.question, options));
-		await move(tick, issue.number, "needs-info");
-		await writeSpec(tick, issue.number, "needs-info", landed);
-		tick.say(`asked on #${issue.number}: ${outcome.question.split("\n")[0]}`);
-		return;
-	}
-	await move(tick, issue.number, "in-review");
-	await writeSpec(tick, issue.number, "in-review", {
-		...landed,
-		stack: outcome.stack,
 	});
-	tick.say(`#${issue.number} is in review as PR #${outcome.pull}`);
+	tick.say(`#${issue.number} is in review as PR #${pull}`);
 }
 
 /**
  * Applies ok slice `id` of `entry` in the workspace at `dir`, squashed into `revisionBase` when it revises, and
- * publishes it, force-pushing the branch onto the open PR: to `main`, to its blocker's branch while a blocker is open,
- * else restacked onto `main` (factory.md, Rules, Build: Restack).
+ * publishes it to `main`, force-pushing the branch onto the open PR.
  */
 async function landIn(
 	tick: Tick,
@@ -267,7 +194,7 @@ async function landIn(
 	id: string,
 	report: Report,
 	dir: string,
-): Promise<Outcome> {
+) {
 	const { issue, data } = entry;
 	const text = pullText(issue, data, report, await spendOf(tick, issue));
 	await tick.maestro.apply(id, dir);
@@ -275,28 +202,16 @@ async function landIn(
 	const commit = data.revisionBase
 		? await tick.landing.squash(dir, message)
 		: await tick.landing.describe(dir, message);
-	const head = branchOf(issue.number);
-	const { stack } = data;
-	if (!stack)
-		return {
-			pull: await publish(tick, entry, dir, commit, {
-				...text,
-				head,
-				base: BASE,
-			}),
-		};
-	const state = await stackState(tick.forge, issue.number, stack);
-	if (state === "unmerged") return { question: unmerged(stack) };
-	if (state === "merged")
-		return restackIn(tick, entry, dir, stack, commit, text);
-	const base = branchOf(stack.blocker);
-	const pull = { ...text, head, base };
-	return { pull: await publish(tick, entry, dir, commit, pull), stack };
+	return publish(tick, entry, dir, commit, {
+		...text,
+		head: branchOf(issue.number),
+		base: BASE,
+	});
 }
 
 /**
- * Lands ok slice `id` of `entry` in a fresh workspace on its base, then records where it left the issue; false when it
- * halted, keeping the workspace.
+ * Lands ok slice `id` of `entry` in a fresh workspace on its base, then records its PR; false when it halted, keeping
+ * the workspace.
  */
 export async function land(
 	tick: Tick,
@@ -305,56 +220,14 @@ export async function land(
 	report: Report,
 ) {
 	const { issue, data } = entry;
-	const outcome = await inWorkspace(
+	const pull = await inWorkspace(
 		tick,
 		issue.number,
-		data.revisionBase ?? data.stack?.commit ?? tick.main,
-		{
-			title: `landing of #${issue.number} failed`,
-			lead: `The slice concert \`${id}\` of #${issue.number} did not land`,
-		},
+		data.revisionBase ?? tick.main,
+		id,
 		(dir) => landIn(tick, entry, id, report, dir),
 	);
-	if (!outcome) return false;
-	await record(tick, entry, id, outcome);
-	return true;
-}
-
-/** Restacks `entry`'s pushed branch onto `main` in a fresh workspace, with its landed concert's PR text. */
-function restackBranch(tick: Tick, entry: Entry, stack: Stack) {
-	const { issue, data } = entry;
-	const failure = {
-		title: `restack of #${issue.number} failed`,
-		lead: `The stacked change of #${issue.number} did not restack onto \`${BASE}\``,
-	};
-	return inWorkspace(tick, issue.number, tick.main, failure, async (dir) => {
-		if (!data.concert)
-			throw new Error(`#${issue.number} holds no landed concert`);
-		const report = await tick.maestro.report(data.concert);
-		const text = pullText(issue, data, report, await spendOf(tick, issue));
-		return restackIn(
-			tick,
-			entry,
-			dir,
-			stack,
-			`${branchOf(issue.number)}@origin`,
-			text,
-		);
-	});
-}
-
-/**
- * Restacks `entry`'s PR onto `main` once no blocker is open and its blocker's PR merged, or asks when that PR closed
- * unmerged (factory.md, Rules, Build: Restack); false when it halted.
- */
-export async function restack(tick: Tick, entry: Entry, stack: Stack) {
-	const state = await stackState(tick.forge, entry.issue.number, stack);
-	if (state === "open") return true;
-	const outcome =
-		state === "merged"
-			? await restackBranch(tick, entry, stack)
-			: { question: unmerged(stack) };
-	if (!outcome) return false;
-	await record(tick, entry, entry.data.concert, outcome);
+	if (pull === undefined) return false;
+	await record(tick, entry, id, pull);
 	return true;
 }

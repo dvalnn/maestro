@@ -31,7 +31,6 @@ export type Pull = {
 	sha: string;
 	/** The branch it merges into. */
 	base: string;
-	merged: boolean;
 	body: string;
 	additions: number;
 	deletions: number;
@@ -91,8 +90,6 @@ export type Forge = {
 	pinned(): Promise<number[]>;
 	/** The open pull requests. */
 	pulls(): Promise<Pull[]>;
-	/** Pull request `number`, open or not. */
-	pull(number: number): Promise<Pull>;
 	setLabels(issue: number, labels: string[]): Promise<void>;
 	edit(issue: number, change: { body?: string; closed?: true }): Promise<void>;
 	/** The comments on `issue`, oldest first. */
@@ -110,11 +107,8 @@ export type Forge = {
 	push(dir: string, commit: string, branch: string): Promise<void>;
 	/** Opens a pull request and returns its number. */
 	openPull(pull: NewPull): Promise<number>;
-	/** Sets `pull`'s body, and the branch it merges into when `base` is given. */
-	editPull(
-		pull: number,
-		change: { body: string; base?: string },
-	): Promise<void>;
+	/** Sets `pull`'s body. */
+	editPull(pull: number, body: string): Promise<void>;
 	/** Has the forge fast-forward `main` to `pull` once its required checks pass, unless that is already armed. */
 	arm(pull: number): Promise<void>;
 	/** The reviews of `pull`, oldest first. */
@@ -321,7 +315,6 @@ const pullOf = (o: Json): Pull => ({
 	head: text(object(o.head, "head"), "ref"),
 	sha: text(object(o.head, "head"), "sha"),
 	base: text(object(o.base, "base"), "ref"),
-	merged: o.merged === true,
 	body: text(o, "body"),
 	additions: num(o, "additions"),
 	deletions: num(o, "deletions"),
@@ -472,8 +465,6 @@ export function forge(
 			),
 		pulls: async () =>
 			(await all(api, "/pulls", { state: "open" })).map(pullOf),
-		pull: async (number) =>
-			pullOf(object(await api("GET", `/pulls/${number}`), "pull")),
 		setLabels: async (issue, labels) => {
 			await api("PUT", `/issues/${issue}/labels`, { labels });
 		},
@@ -532,8 +523,8 @@ export function forge(
 			push(creds, dir, `${commit}:refs/heads/${branch}`),
 		openPull: async (pull) =>
 			num(object(await api("POST", "/pulls", pull), "pull"), "number"),
-		editPull: async (pull, change) => {
-			await api("PATCH", `/pulls/${pull}`, change);
+		editPull: async (pull, body) => {
+			await api("PATCH", `/pulls/${pull}`, { body });
 		},
 		arm: async (pull) => {
 			try {

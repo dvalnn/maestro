@@ -60,15 +60,11 @@ function keyFile() {
 	return path;
 }
 
-test("a described and a restacked commit carry the account as author and committer, unsigned without a key", async () => {
-	const { dir, top } = repository();
+test("a described commit carries the account as author and committer, unsigned without a key", async () => {
+	const { dir } = repository();
 	const lands = landing(dir, account);
 	const described = await lands.describe(dir, "feat: x");
 	expect(who(dir, described)).toBe(`${WHO}|unsigned`);
-	const restacked = await lands.restack(dir, `main..${top}`, "main");
-	if (!("commit" in restacked)) throw new Error("conflict");
-	expect(who(dir, "main..@-")).toBe(`${WHO}|unsigned`.repeat(2));
-	expect(who(dir, top)).toStartWith("Owner|owner@example.com|Owner");
 });
 
 test("a squash folds the change into its parent, even a pushed branch head, described anew and the account's", async () => {
@@ -98,14 +94,11 @@ test("a squash folds the change into its parent, even a pushed branch head, desc
 	expect(squashed).not.toBe(top);
 });
 
-test("with a signing key set, described and restacked commits are signed", async () => {
-	const { dir, top } = repository();
+test("with a signing key set, a described commit is signed", async () => {
+	const { dir } = repository();
 	const lands = landing(dir, account, keyFile());
 	const described = await lands.describe(dir, "feat: x");
 	expect(who(dir, described)).toBe(`${WHO}|signed`);
-	const restacked = await lands.restack(dir, `main..${top}`, "main");
-	if (!("commit" in restacked)) throw new Error("conflict");
-	expect(who(dir, "main..@-")).toBe(`${WHO}|signed`.repeat(2));
 });
 
 test("a signing key at a missing path is refused by name", () => {

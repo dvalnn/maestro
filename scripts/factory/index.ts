@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
 	dotenvPath,
-	type Forge,
 	forge,
 	type Issue,
 	loadEnvFile,
@@ -32,7 +31,7 @@ import {
 	titleOf,
 	tourOf,
 } from "./pick";
-import { land, restack } from "./publish";
+import { land } from "./publish";
 import {
 	ATTEMPTS,
 	type Change,
@@ -56,7 +55,6 @@ import {
 	reviewComment,
 	reviewRequest,
 	type Spec,
-	type Stack,
 	specCommentOf,
 	type Triage,
 	triaged,
@@ -642,7 +640,7 @@ async function closeEpic(
 
 /**
  * Sets the labels of a routed result a cut tick left unset, files a split the owner approved, closes an epic whose
- * children all closed, or restacks a stacked PR whose blocker closed; false when it halted.
+ * children all closed.
  */
 async function syncOne(tick: Tick, entry: Entry, entries: Entry[]) {
 	const { issue, data } = entry;
@@ -653,15 +651,11 @@ async function syncOne(tick: Tick, entry: Entry, entries: Entry[]) {
 		await fileSplit(tick, entry, entries);
 	else if (state === "in-progress" && data.filed)
 		await closeEpic(tick, issue, data.filed, entries);
-	else if (state === "in-review" && data.stack)
-		return restack(tick, entry, data.stack);
-	return true;
 }
 
-/** Syncs each issue (factory.md, One tick: sync); false when it halted. */
+/** Syncs each issue (factory.md, One tick: sync). */
 async function sync(tick: Tick, entries: Entry[]) {
-	for (const entry of entries)
-		if (!(await syncOne(tick, entry, entries))) return false;
+	for (const entry of entries) await syncOne(tick, entry, entries);
 	return true;
 }
 
@@ -669,19 +663,18 @@ type Perform = { request: string; encore?: string; data: Data };
 
 /**
  * Performs `perform` for `entry` at its risk's tier, cut at its PR's head and revising that commit when it revises,
- * else on `stack`'s commit when it stacks, and moves it to `in-progress`; halts on a refusal.
+ * else on `main`, and moves it to `in-progress`; halts on a refusal.
  */
 async function startSlice(
 	tick: Tick,
 	{ issue, data }: Entry,
-	stack: Stack | undefined,
 	perform: Perform,
 ) {
 	const result = data.result;
 	if (!result) return;
 	const tier = tierOf(issue, result);
 	const { revisionBase } = perform.data;
-	const cut = revisionBase ?? stack?.commit ?? tick.main;
+	const cut = revisionBase ?? tick.main;
 	const name = issue.labels
 		.find((l) => l.startsWith("area/"))
 		?.slice("area/".length);
@@ -713,37 +706,8 @@ async function startSlice(
 	await writeSpec(tick, issue.number, "in-progress", {
 		...perform.data,
 		slice: id,
-		stack,
 	});
 	tick.say(`building #${issue.number}: concert ${id}`);
-}
-
-/** Blocker issue `blocker`'s PR among `pulls` when the issue is `in-review` and the PR merges into `main`. */
-async function reviewed(forge: Forge, blocker: number, pulls: Pull[]) {
-	const pull = pullToMain(pulls, blocker);
-	if (!pull || stateOf(await forge.issue(blocker)) !== "in-review") return;
-	const stack: Stack = { blocker, commit: pull.sha, pull: pull.number };
-	return stack;
-}
-
-/**
- * Where issue `number` builds (factory.md, Rules, Build: Dependencies): on `main` with no open blocker, stacked on the
- * newest blocker PR's head when each blocker is in review on a PR to `main`, else undefined, as it waits.
- */
-async function baseOf(
-	{ forge }: Tick,
-	number: number,
-): Promise<{ stack?: Stack } | undefined> {
-	const blockers = await forge.blockers(number);
-	if (!blockers.length) return {};
-	const pulls = await forge.pulls();
-	const found = await Promise.all(
-		blockers.map((b) => reviewed(forge, b, pulls)),
-	);
-	const stacks = found.filter((s) => s !== undefined);
-	if (stacks.length < blockers.length) return undefined;
-	const [newest] = stacks.sort((a, b) => b.pull - a.pull);
-	return newest && { stack: newest };
 }
 
 /**
@@ -800,8 +764,8 @@ const reviewChange = (r: Review): Change => ({
 /**
  * The encore of in-review `entry`'s landed concert its PR among `pulls` asks for with changes requested, or its stack
  * review's `findings` ask for, if any. It is fed each review above `review` and the findings, moves `review` to the
- * newest, clears `findings`, and records the PR's head as `revisionBase`: the commit the build is cut at, over a
- * stack's, and lands folded into, so the PR keeps one commit per ticket and its base.
+ * newest, clears `findings`, and records the PR's head as `revisionBase`: the commit the build is cut at and lands
+ * folded into, so the PR keeps one commit per ticket.
  */
 async function revision(
 	tick: Tick,
@@ -848,9 +812,8 @@ async function revise(tick: Tick, entries: Entry[]) {
 	const pulls = await tick.forge.pulls();
 	for (const entry of reviewed) {
 		const perform = await revision(tick, entry, pulls);
-		const base = perform && (await baseOf(tick, entry.issue.number));
-		if (!perform || !base) continue;
-		await startSlice(tick, entry, entry.data.stack, perform);
+		if (!perform) continue;
+		await startSlice(tick, entry, perform);
 		return false;
 	}
 	return true;
@@ -910,11 +873,12 @@ async function startReview(tick: Tick, { issue, data }: Entry, revs: string) {
 	tick.say(`reviewing #${issue.number}'s stack: concert ${id}`);
 }
 
-/** Says in the spec comment of ready `entry` which open dependencies it waits on, writing only when that changes it. */
-async function queue(tick: Tick, { issue, comments, data }: Entry) {
-	const waiting = (await tick.forge.blockers(issue.number)).sort(
-		(a, b) => a - b,
-	);
+/** Says in the spec comment of ready `entry` which open dependencies, `waiting`, it waits on, writing only when that changes it. */
+async function queue(
+	tick: Tick,
+	{ issue, comments, data }: Entry,
+	waiting: number[],
+) {
 	const comment = commentOf(data, "ready-for-agent", tick.login, waiting);
 	if (specCommentOf(comments)?.body.trim() === comment.trim()) return;
 	await writeSpec(tick, issue.number, "ready-for-agent", data, waiting);
@@ -1017,16 +981,18 @@ async function build(tick: Tick, entries: Entry[]) {
 	const approvedOnce = () => (approved ??= approvals(tick, entries));
 	for (const entry of buildable(entries, await tick.forge.pinned())) {
 		const spec = entry.data.result?.spec;
-		const base = await baseOf(tick, entry.issue.number);
 		if (!spec) continue;
-		if (!base) {
-			await queue(tick, entry);
+		const waiting = (await tick.forge.blockers(entry.issue.number)).sort(
+			(a, b) => a - b,
+		);
+		if (waiting.length) {
+			await queue(tick, entry, waiting);
 			continue;
 		}
 		const perform = await performOf(tick, entry, spec);
 		if (!perform.encore && (await retriage(tick, entry, spec, approvedOnce)))
 			continue;
-		await startSlice(tick, entry, base.stack, perform);
+		await startSlice(tick, entry, perform);
 		return false;
 	}
 	return true;
@@ -1072,15 +1038,16 @@ async function closedCited(tick: Tick, issue: number, text: string) {
 }
 
 /**
- * Starts triage of the first intake issue, pinned ones first, on its ask and the comments since the last triage read
- * that it is fed, an encore of its last triage when it has one, respecced when that triage gave a spec rather than a
+ * Starts triage of the first intake issue with no open dependency, pinned ones first, on its ask and the comments since
+ * the last triage read that it is fed, an encore of its last triage when it has one, respecced when that triage gave a spec rather than a
  * brief, then records the newest comment it considered; halts on a refusal. A re-triage with nothing new to feed asks
  * for a reply instead. True only when it started nothing, so a masterclass may follow.
  */
 async function triage(tick: Tick, entries: Entry[]) {
-	const issue = pick(
+	const issue = await pick(
 		entries.filter((e) => !e.data.pending).map((e) => e.issue),
 		await tick.forge.pinned(),
+		async (n) => (await tick.forge.blockers(n)).length === 0,
 	);
 	const entry = entries.find((e) => e.issue === issue);
 	if (!entry) {

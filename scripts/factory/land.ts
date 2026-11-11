@@ -5,10 +5,7 @@ import type { Account } from "./forge";
 /** How much of a failed command's output a landing error keeps. */
 const OUTPUT_TAIL = 2000;
 
-/** A restacked commit, or the conflicts that kept it from restacking. */
-export type Restacked = { commit: string } | { conflict: string };
-
-/** The jj workspace a slice lands or restacks in (factory.md, Rules, Landing and PRs). */
+/** The jj workspace a slice lands in (factory.md, Rules, Landing and PRs). */
 export type Landing = {
 	/** Brings the commits `origin` gained since the last fetch into the repository. */
 	fetch(): Promise<void>;
@@ -21,8 +18,6 @@ export type Landing = {
 	describe(dir: string, message: string): Promise<string>;
 	/** Folds the change of the workspace at `dir` into its parent, described as `message`, and returns its commit id. */
 	squash(dir: string, message: string): Promise<string>;
-	/** Copies the commits of revset `revisions`, descriptions and all, onto revision `onto` in the workspace at `dir`. */
-	restack(dir: string, revisions: string, onto: string): Promise<Restacked>;
 	/** Forgets workspace `name` and removes `dir`. */
 	close(dir: string, name: string): Promise<void>;
 };
@@ -146,42 +141,6 @@ export function landing(
 				message,
 			]);
 			return claim(dir, "@-");
-		},
-		restack: async (dir, revisions, onto) => {
-			await run(dir, ["jj", ...as, "new", onto]);
-			await run(dir, [
-				"jj",
-				...as,
-				"duplicate",
-				revisions,
-				"--insert-before",
-				"@",
-			]);
-			// A duplicate keeps its author and is not signed; metaedit rewrites each as the account's, signed.
-			await run(dir, [
-				"jj",
-				...as,
-				"metaedit",
-				"--update-author",
-				"-r",
-				`${onto}..@-`,
-			]);
-			const [copy = "", conflict] = (
-				await run(dir, [
-					"jj",
-					"log",
-					"-r",
-					"@-",
-					"--no-graph",
-					"-T",
-					'commit_id ++ " " ++ conflict',
-				])
-			)
-				.trim()
-				.split(" ");
-			if (conflict !== "true") return { commit: copy };
-			const paths = await run(dir, ["jj", "resolve", "--list", "-r", "@-"]);
-			return { conflict: paths.trim() };
 		},
 		close: async (dir, name) => {
 			await forget(name);

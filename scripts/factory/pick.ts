@@ -32,14 +32,21 @@ const pinnedFirst = (pinned: readonly number[]) => {
 	return (a: number, b: number) => rank(a) - rank(b) || a - b;
 };
 
-/** The intake issue to triage next: a pinned one first, in pinned order, else the oldest. */
-export const pick = (
+/**
+ * The intake issue to triage next: a pinned one first, in pinned order, else the oldest, skipping those `isFree` says
+ * hold an open dependency, asked in that order until one is free.
+ */
+export async function pick(
 	issues: readonly Issue[],
-	pinned: readonly number[] = [],
-): Issue | undefined =>
-	issues
+	pinned: readonly number[],
+	isFree: (issue: number) => Promise<boolean>,
+): Promise<Issue | undefined> {
+	const ordered = issues
 		.filter(isIntake)
-		.sort((a, b) => pinnedFirst(pinned)(a.number, b.number))[0];
+		.sort((a, b) => pinnedFirst(pinned)(a.number, b.number));
+	for (const issue of ordered) if (await isFree(issue.number)) return issue;
+	return undefined;
+}
 
 /**
  * The slice tier, and preset, of each risk but high, whose tier triage gives (factory.md, Rules, Policy: Risk and

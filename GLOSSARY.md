@@ -87,7 +87,8 @@ show (`.maestro/review.ts`). [Home](docs/agents/factory.md#build)
 **Watermark**: The newest ok masterclass concert in the record; settled slice and triage concerts on milestone tours
 after it count toward the next masterclass. [Home](docs/agents/factory.md#masterclass)
 
-**Dependency**: A forge "blocked by" link between issues that sets build order. [Home](docs/agents/factory.md)
+**Dependency**: A forge "blocked by" link between issues that sets triage and build order.
+[Home](docs/agents/factory.md)
 
 ### Authoring
 

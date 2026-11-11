@@ -161,12 +161,6 @@ export const TRANSITIONS: readonly Transition[] = [
 	},
 	{
 		from: "in-review",
-		to: "needs-info",
-		actor: "tick",
-		event: "conflict",
-	},
-	{
-		from: "in-review",
 		to: "in-progress",
 		actor: "owner",
 		event: "changes",

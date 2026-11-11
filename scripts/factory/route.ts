@@ -88,8 +88,7 @@ export type Triage = {
  * fed, `version` the spec's, counting routed triages, `specAt` when the last routed triage wrote it (ms since the
  * epoch), `pending` marks a routed result whose labels are not yet set, `filed` holds an approved split's children,
  * `slice` the slice concert its last build started, `attempts` the red slices it spent, `failure` the reason its last
- * slice failed, `parked` a slice concert routed but not applied and `stack` the in-review blocker its last build
- * stacked on, with its PR and that PR's head commit, until the restack onto `main`. `encore` is the slice concert a
+ * slice failed and `parked` a slice concert routed but not applied. `encore` is the slice concert a
  * build continues and `review` the id of the newest review requesting changes an encore was fed. `revisionBase` is the
  * head of the PR a revision is cut at and lands on, until it lands. On an epic, `base` is `main`'s head when its
  * children were filed and `stackReview` the stack review it started; on its child, `findings` is the stack review whose
@@ -108,7 +107,6 @@ export type Data = {
 	attempts?: number;
 	failure?: string;
 	parked?: string;
-	stack?: Stack;
 	encore?: string;
 	review?: number;
 	revisionBase?: string;
@@ -116,7 +114,6 @@ export type Data = {
 	stackReview?: string;
 	findings?: string;
 };
-export type Stack = { blocker: number; commit: string; pull: number };
 
 export const VERDICT_STATE: Record<Verdict, State> = {
 	"ready-for-agent": "ready-for-agent",
@@ -158,8 +155,6 @@ const isStrings = (v: unknown): v is string[] =>
 	Array.isArray(v) && v.every(isString);
 const isNumbers = (v: unknown): v is number[] =>
 	Array.isArray(v) && v.every(isNumber);
-const isStack = (v: unknown): v is Stack =>
-	isJson(v) && isNumber(v.blocker) && isString(v.commit) && isNumber(v.pull);
 const isOneOf =
 	<T extends string>(values: readonly T[]) =>
 	(v: unknown): v is T =>
@@ -374,7 +369,6 @@ export function dataOf(comment: string): Data {
 		attempts: optional(data, "attempts", isNumber, "a count"),
 		failure: optional(data, "failure", isString, "a string"),
 		parked: optional(data, "parked", isString, "a concert id"),
-		stack: optional(data, "stack", isStack, "a stack"),
 		encore: optional(data, "encore", isString, "a concert id"),
 		review: optional(data, "review", isNumber, "a review id"),
 		revisionBase: optional(data, "revisionBase", isString, "a commit"),
