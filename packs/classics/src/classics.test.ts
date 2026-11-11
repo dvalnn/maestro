@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { reject, type Settled } from "@maestro/sdk";
 import { pack } from "../../../scripts/pack";
 import { BASE, PROFILES, profilesOn, setup } from "../acceptance/setup";
-import { heldOf, tallyOf } from "./code";
+import { briefOf, heldOf, tallyOf } from "./code";
 import { EXAMPLE_REQUEST } from "./repair";
 
 const MAESTRO = join(import.meta.dir, "../../../packages/cli/src/maestro.ts");
@@ -361,6 +361,16 @@ const rulings = (...holds: string[]) =>
 const ok = <T>(value: T): Settled<T> => ({ outcome: "ok", value });
 const idsOf = (held: { lens: string; id: string }[]) =>
 	held.map((f) => `${f.lens}/${f.id}`);
+
+test("briefOf gives the report's summary and gaps, no gaps when it left them out", () => {
+	expect(
+		briefOf({ report: { summary: "done", gaps: ["no test"] } }).brief,
+	).toEqual({ summary: "done", gaps: ["no test"] });
+	expect(briefOf({ report: { summary: "done" } }).brief).toEqual({
+		summary: "done",
+		gaps: [],
+	});
+});
 
 describe("heldOf", () => {
 	const held = (results: Parameters<typeof heldOf>[0]["results"]) =>

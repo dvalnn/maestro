@@ -85,7 +85,7 @@
 						"type": "core.markdown"
 					}
 				},
-				"relay": ["findings", "unreviewed"],
+				"relay": ["findings", "unreviewed", "builder"],
 				"out": {
 					"review": {
 						"file": "review.md",
@@ -147,7 +147,7 @@
 						"type": "core.markdown"
 					}
 				},
-				"relay": ["findings", "unreviewed"],
+				"relay": ["findings", "unreviewed", "builder"],
 				"out": {
 					"review": {
 						"file": "review.md",
@@ -211,6 +211,7 @@
 						"type": "core.markdown"
 					}
 				},
+				"relay": ["builder"],
 				"reply": {
 					"findings": {
 						"items": {
@@ -261,6 +262,7 @@
 						"type": "core.markdown"
 					}
 				},
+				"relay": ["builder"],
 				"reply": {
 					"findings": {
 						"items": {
@@ -313,6 +315,7 @@
 						"type": "core.markdown"
 					}
 				},
+				"relay": ["builder"],
 				"reply": {
 					"findings": {
 						"items": {
@@ -363,6 +366,7 @@
 						"type": "core.markdown"
 					}
 				},
+				"relay": ["builder"],
 				"reply": {
 					"findings": {
 						"items": {

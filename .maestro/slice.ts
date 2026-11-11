@@ -2,6 +2,8 @@ import { readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	atLeastOne,
+	Brief,
+	briefOf,
 	builder,
 	type Findings,
 	heldOf,
@@ -20,6 +22,8 @@ import {
 	extend,
 	fresh,
 	MarkdownOut,
+	type Relays,
+	type Report,
 	read,
 	Session,
 	seat,
@@ -232,8 +236,9 @@ function panelRound(
 	lane: Ref<string>,
 	session: Ref<string>,
 	spec: Ref<ArtifactRef>,
+	builder: Relays,
 ) {
-	const { consolidator, held } = panelOf(tier, lane, spec);
+	const { consolidator, held } = panelOf(tier, lane, spec, builder);
 	return code(tallyOf, {
 		in: {
 			lane,
@@ -255,6 +260,7 @@ function reviewerRound(
 	lane: Ref<string>,
 	session: Ref<string>,
 	spec: Ref<ArtifactRef>,
+	builder: Relays,
 	earlier?: Earlier,
 ) {
 	const patches = changeset(lane, { label: "patches" }).out.changeset;
@@ -274,6 +280,7 @@ function reviewerRound(
 		session: earlier?.reviewer,
 		checks: REPO_CHECKS,
 		relay: earlier && { upheld: earlier.upheld },
+		common: builder,
 	});
 	return code(reviewedOf, {
 		in: {
@@ -353,6 +360,7 @@ export const slice = composition(
 		const gateAndReview = (
 			lane: Ref<string>,
 			session: Ref<string>,
+			report: Ref<Report>,
 			earlier?: Earlier,
 		): Result<typeof Tally | typeof REVIEWED> => {
 			const green = use(
@@ -363,20 +371,31 @@ export const slice = composition(
 					label: "gate",
 				},
 			).out.lane;
+			const { brief } = code(briefOf, {
+				in: { report },
+				out: { brief: Brief },
+				label: "brief",
+			}).out;
+			const relay = { builder: brief };
 			return tier === "small"
-				? reviewerRound(green, session, spec, earlier)
-				: panelRound(tier, green, session, spec);
+				? reviewerRound(green, session, spec, relay, earlier)
+				: panelRound(tier, green, session, spec, relay);
 		};
 		const { built, map } = build(tier, request, spec);
 		const reviewed = loop.while((s) => not(s.ok), {
-			init: gateAndReview(built.out.lane, built.out.session),
+			init: gateAndReview(built.out.lane, built.out.session, built.out.report),
 			step: (s) => {
 				const fixed = fix(s.out, spec);
 				const earlier =
 					"reviewer" in s.out
 						? { reviewer: s.out.reviewer, upheld: s.out.upheld }
 						: undefined;
-				return gateAndReview(fixed.out.lane, fixed.out.session, earlier);
+				return gateAndReview(
+					fixed.out.lane,
+					fixed.out.session,
+					fixed.out.report,
+					earlier,
+				);
 			},
 			max: maxFixes,
 			label: "fixes",

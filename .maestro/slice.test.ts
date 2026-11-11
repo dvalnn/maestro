@@ -274,8 +274,11 @@ test("under --tier small, the reviewer may run every check of the project's conf
 		"patches",
 		"spec",
 	]);
-	expect(first?.config.relay).toBeUndefined();
-	expect(later?.config.relay?.map((r) => r.name)).toEqual(["upheld"]);
+	expect(first?.config.relay?.map((r) => r.name)).toEqual(["builder"]);
+	expect(later?.config.relay?.map((r) => r.name)).toEqual([
+		"upheld",
+		"builder",
+	]);
 	expect(into("fixes/reviewer", "upheld").map((e) => e.from)).toEqual([
 		{ node: "fixes", port: "upheld" },
 	]);
@@ -492,3 +495,34 @@ test("a stub perform under --preset ordinary --preset stub stubs every seat the 
 	);
 	expect(JSON.parse(ran.out).status).toBe("ok");
 });
+
+test.each(["small", "ordinary", "risky"])(
+	"under --tier %s, every review seat is relayed the builder's brief from a briefOf node",
+	async (tier) => {
+		const { nodes, edges } = JSON.parse(
+			await maestro(await slice("compose", tier)),
+		).plan.ir as {
+			nodes: {
+				id: string;
+				type?: string;
+				config: { seat?: string; relay?: { name: string }[] };
+			}[];
+			edges: {
+				from: { node: string; port?: string };
+				to: { node: string; port?: string };
+			}[];
+		};
+		const seats = nodes.filter((n) =>
+			/(^|\/)(reviewer|skeptic|lens|consolidator)$/.test(n.id),
+		);
+		expect(seats.length).toBeGreaterThan(1);
+		for (const n of seats) {
+			expect(n.config.relay?.map((r) => r.name).at(-1)).toBe("builder");
+			const from = edges.filter(
+				(e) => e.to.node === n.id && e.to.port === "builder",
+			);
+			expect(from.length).toBeGreaterThan(0);
+			expect(from.every((e) => e.from.node.endsWith("brief"))).toBe(true);
+		}
+	},
+);

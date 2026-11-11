@@ -84,6 +84,7 @@
 						"type": "core.markdown"
 					}
 				},
+				"relay": ["builder"],
 				"reply": {
 					"findings": {
 						"items": {
@@ -135,7 +136,7 @@
 						"type": "core.markdown"
 					}
 				},
-				"relay": ["upheld"],
+				"relay": ["upheld", "builder"],
 				"reply": {
 					"findings": {
 						"items": {
@@ -189,7 +190,7 @@
 						"type": "core.markdown"
 					}
 				},
-				"relay": ["findings"],
+				"relay": ["findings", "builder"],
 				"reply": {
 					"rulings": {
 						"items": {
@@ -231,7 +232,7 @@
 						"type": "core.markdown"
 					}
 				},
-				"relay": ["findings"],
+				"relay": ["findings", "builder"],
 				"reply": {
 					"rulings": {
 						"items": {

@@ -1,4 +1,4 @@
-export { heldOf, tallyOf, toMarkdown } from "./code";
+export { briefOf, heldOf, tallyOf, toMarkdown } from "./code";
 export { fill } from "./prompt";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";
 export { LENSES, panel, panelReview, round } from "./review";
@@ -7,6 +7,7 @@ export type { Findings, Rulings, Verdict } from "./types";
 export {
 	Answers,
 	atLeastOne,
+	Brief,
 	Finding,
 	Tally,
 	TestMap,

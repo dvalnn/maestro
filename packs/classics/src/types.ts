@@ -41,6 +41,9 @@ export const TestMap = Struct({
 	untestable: Unpinned,
 });
 
+/** What a builder reports to the review seats: its summary and the gaps it left. */
+export const Brief = Struct({ summary: Text(), gaps: List(Text()) });
+
 /** A skeptic's ruling on each finding of its lens, by the finding's id. */
 export const Rulings = List(Struct({ id: Text(), holds: Bool(), why: Text() }));
 

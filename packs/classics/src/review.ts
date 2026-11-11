@@ -79,6 +79,8 @@ type Panel<T extends string> = {
 	grounds?: string;
 	/** Whether a skeptic rules over each lens's findings; without one, every finding counts as upheld. Default true. */
 	skeptics?: boolean;
+	/** Relays every lens, skeptic and the consolidator read after their own. */
+	common?: Relays;
 };
 
 /**
@@ -103,6 +105,7 @@ export function panel<T extends string>(
 			attached,
 			grounds: p.grounds,
 			skeptics,
+			common: p.common,
 		});
 	const rounds = iter.parMap(p.items, body, {
 		onError: "continue",
@@ -120,7 +123,11 @@ export function panel<T extends string>(
 			label: "consolidator",
 			task: TASKS.consolidator(skeptics, p.grounds),
 			lane: read(p.change),
-			relay: { findings: held.out.held, unreviewed: held.out.unreviewed },
+			relay: {
+				findings: held.out.held,
+				unreviewed: held.out.unreviewed,
+				...p.common,
+			},
 			attachments: attached,
 		}),
 		held: held.out.held,
@@ -144,6 +151,8 @@ type RoundOptions = {
 	checks?: string[];
 	/** Relays for the lens only. */
 	relay?: Relays;
+	/** Relays the lens and the skeptic both read, after their own. */
+	common?: Relays;
 };
 
 /**
@@ -172,6 +181,7 @@ function lensOf({
 	session,
 	checks,
 	relay,
+	common,
 }: RoundOptions) {
 	return lens({
 		label,
@@ -179,21 +189,24 @@ function lensOf({
 		lane: read(change),
 		session,
 		checks,
-		relay,
+		relay: { ...relay, ...common },
 		attachments: attached,
 	});
 }
 
 type Lens = ReturnType<typeof lensOf>;
 
-function skepticOf({ change, grounds, attached }: RoundOptions, found: Lens) {
+function skepticOf(
+	{ change, grounds, attached, common }: RoundOptions,
+	found: Lens,
+) {
 	return skeptic({
 		label: "skeptic",
 		task: TASKS.skeptic(grounds),
 		lane: read(change),
 		when: not(found.ok),
 		tolerate: "rejected",
-		relay: { findings: found.out.findings },
+		relay: { findings: found.out.findings, ...common },
 		attachments: attached,
 	});
 }

@@ -1,5 +1,5 @@
 import { LENSES, panel } from "@maestro/classics";
-import { changeset } from "@maestro/host-repo-sdk";
+import { changeset, type Relays } from "@maestro/host-repo-sdk";
 import { type ArtifactRef, lookup, type Ref } from "@maestro/sdk";
 import { task } from "../shared";
 import DESIGN_QUESTIONS from "./prompts/_design-questions.md" with {
@@ -52,6 +52,7 @@ export function panelOf(
 	tier: PanelTier,
 	change: Ref<string>,
 	spec: Ref<ArtifactRef>,
+	common?: Relays,
 ) {
 	const lenses = PANELS[tier];
 	return panel({
@@ -62,5 +63,6 @@ export function panelOf(
 		spec,
 		grounds: JUDGED,
 		skeptics: false,
+		common,
 	});
 }

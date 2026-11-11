@@ -1,5 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Report } from "@maestro/host-repo-sdk";
 import {
 	type CodeContext,
 	type CodeOutputs,
@@ -9,6 +10,7 @@ import {
 	type ValueOf,
 } from "@maestro/sdk";
 import type {
+	Brief,
 	Findings,
 	Tally as Ports,
 	Rulings,
@@ -24,6 +26,13 @@ export function toMarkdown(
 	const file = join(ctx.scratch, "request.md");
 	writeFileSync(file, `${text}\n`);
 	return { file };
+}
+
+/** The builder's report as the brief its review seats read: its summary and gaps, `[]` when it left none. */
+export function briefOf({ report }: { report: Report }): {
+	brief: ValueOf<typeof Brief>;
+} {
+	return { brief: { summary: report.summary, gaps: report.gaps ?? [] } };
 }
 
 type Found = ValueOf<typeof Findings>;
