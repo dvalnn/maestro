@@ -5,14 +5,20 @@ import { task } from "../shared";
 import DESIGN_QUESTIONS from "./prompts/_design-questions.md" with {
 	type: "text",
 };
+import DESIGN_SEARCHES from "./prompts/_design-searches.md" with {
+	type: "text",
+};
 import GROUNDS from "./prompts/_grounds.md" with { type: "text" };
 import TEST_GROUNDS from "./prompts/_test-grounds.md" with { type: "text" };
+import LENS_CORRECTNESS_DESIGN from "./prompts/lens-correctness-design.md" with {
+	type: "text",
+};
 import LENS_DESIGN from "./prompts/lens-design.md" with { type: "text" };
 import LENS_SPEC_TESTS from "./prompts/lens-spec-tests.md" with {
 	type: "text",
 };
 
-export { DESIGN_QUESTIONS };
+export { DESIGN_QUESTIONS, DESIGN_SEARCHES };
 
 /** Every ground, which a skeptic or a consolidator rules by whatever lens found what it judges. */
 export const JUDGED = task(GROUNDS, TEST_GROUNDS);
@@ -23,13 +29,18 @@ export const JUDGED = task(GROUNDS, TEST_GROUNDS);
  */
 export const PANELS = {
 	ordinary: {
-		correctness: task(LENSES.correctness, GROUNDS),
-		"spec-tests": task(LENS_SPEC_TESTS, DESIGN_QUESTIONS, JUDGED),
+		"correctness-design": task(
+			LENS_CORRECTNESS_DESIGN,
+			DESIGN_SEARCHES,
+			DESIGN_QUESTIONS,
+			GROUNDS,
+		),
+		"spec-tests": task(LENS_SPEC_TESTS, JUDGED),
 	},
 	risky: {
 		correctness: task(LENSES.correctness, GROUNDS),
 		"spec-tests": task(LENS_SPEC_TESTS, JUDGED),
-		design: task(LENS_DESIGN, DESIGN_QUESTIONS, GROUNDS),
+		design: task(LENS_DESIGN, DESIGN_SEARCHES, DESIGN_QUESTIONS, GROUNDS),
 	},
 };
 

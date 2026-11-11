@@ -52,6 +52,7 @@ import PLAIN from "./prompts/_plain.md" with { type: "text" };
 import { markdownOf, TIERS, type Tier, task } from "./shared";
 import {
 	DESIGN_QUESTIONS,
+	DESIGN_SEARCHES,
 	JUDGED,
 	type PanelTier,
 	panelOf,
@@ -73,8 +74,14 @@ const NOTHING_CHANGED = "the slice changed nothing";
 
 /** Each call's task: its own prompt file, then the shared fragments it rules by. */
 const TASKS = {
-	reviewer: task(REVIEWER, DESIGN_QUESTIONS, JUDGED),
-	reviewerAgain: task(REVIEWER_AGAIN, REVIEWER, DESIGN_QUESTIONS, JUDGED),
+	reviewer: task(REVIEWER, DESIGN_SEARCHES, DESIGN_QUESTIONS, JUDGED),
+	reviewerAgain: task(
+		REVIEWER_AGAIN,
+		REVIEWER,
+		DESIGN_SEARCHES,
+		DESIGN_QUESTIONS,
+		JUDGED,
+	),
 	fix: task(FIX),
 	tester: task(TESTER),
 	writer: task(WRITER, PLAIN, FIGURES),
