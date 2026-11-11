@@ -328,14 +328,15 @@ config gives the profile its runtime (ADR 0013).
 
 A profile is a directory whose `profile.yaml` holds:
 
-| Field           | Holds                                                        |
-| --------------- | ------------------------------------------------------------ |
-| `runtime`       | `harness`, `model`, optional `thinking`                      |
-| `instructions`  | a path inside the namespace directory                        |
-| `harnessExtras` | a directory inside the namespace directory                   |
-| `attachments`   | paths inside the namespace directory, attached to every call |
-| `limits`        | `{ timeout, tokens }`                                        |
-| `context`       | the context policy above                                     |
+| Field           | Holds                                                           |
+| --------------- | --------------------------------------------------------------- |
+| `runtime`       | `harness`, `model`, optional `thinking`                         |
+| `instructions`  | a path inside the namespace directory                           |
+| `harnessExtras` | a directory inside the namespace directory                      |
+| `attachments`   | paths inside the namespace directory, attached to every call    |
+| `skills`        | skill names, looked up as below and mounted at `/skills/<name>` |
+| `limits`        | `{ timeout, tokens }`                                           |
+| `context`       | the context policy above                                        |
 
 A path may leave the profile directory but not its **namespace directory**, the directory that holds it:
 `<root>/profiles/` for a bare name, `<root>/profiles/<pack id>/` for a pack's name in the workspace or user root, the
@@ -359,6 +360,12 @@ adapter picks where the copy goes and when.
 - A session records the extras path its profile gave when it started, and each run in it, after a handoff or a continue,
   is given that path, never its current profile's: the agent can write its harness's config dir, but not the record.
 
+`skills` lists the skills the seat loads, each a bare name or `<pack>/<name>`. A skill is a directory with a `SKILL.md`
+whose frontmatter `description` the frame lists, and it mounts read-only at `/skills/<name>`, `<name>` being the last
+segment. Two skills of one profile cannot share it. A skill reaches a sibling in its own skills directory by
+`../<sibling>/SKILL.md`; resolution refuses a profile that does not attach each sibling its skills link, a missing skill
+or one without a `description`. The profiles digest covers every skills directory.
+
 `readOnly` paths are set only in config, as `profiles.<name>.readOnly`, never in the file.
 
 `model` is an alias such as `sonnet` or a full id on `claude`, `provider/model` on `pi`, and any string on `stub`;
@@ -378,6 +385,9 @@ wins whole, and the others are its shadows.
 profile's own `profile.yaml`, so `--preset stub` always means no spend. A seat names one profile, defaulting to its own
 name; `seats.<pack>/<composition id>/<seat>` in config rebinds it to another. Resolution happens at pre-flight and again
 on a resume.
+
+A skill is found the same way under `skills/` in place of `profiles/`: `.maestro/skills/<name>/`,
+`$XDG_CONFIG_HOME/maestro/skills/<name>/`, and a pack bundle's `skills/`, named `<pack>/<name>`.
 
 `maestro agent ls` lists every profile and the root that wins it, and `maestro agent show` prints what one resolves to
 and the layer behind each value. `maestro agent probe` is under Harness adapters.
@@ -401,7 +411,7 @@ An agent reads five layers, in this order, each with one home; no layer restates
 
 | Layer       | From                                                 | Holds                                                                                                 |
 | ----------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Frame       | the host                                             | working copy, checks, attachment list, output schema                                                  |
+| Frame       | the host                                             | working copy, checks, attachment list, skill list, output schema                                      |
 | Profile     | `profiles/<name>/instructions.md`, its `attachments` | who the agent is, how it works and what it never does, and its reference material, true in every call |
 | Area        | a preset's profile `attachments`                     | what is true of one area or run, added to a profile                                                   |
 | Task        | one Markdown file per call                           | what this call asks, its inputs by name, its outputs, its bar                                         |

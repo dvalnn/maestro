@@ -83,10 +83,7 @@ await Promise.all([
 		"packs/acme/profiles/user/profile.yaml",
 		`${RUNTIME}attachments:\n  all: { path: ../shared, hint: shared }\n`,
 	),
-	write(
-		"ws/.maestro/profiles/reserved/profile.yaml",
-		`${RUNTIME}mcp: {}\nskills: []\n`,
-	),
+	write("ws/.maestro/profiles/reserved/profile.yaml", `${RUNTIME}mcp: {}\n`),
 	write("ws/.maestro/profiles/bound/profile.yaml", "readOnly: [/etc]\n"),
 	write(
 		"ws/.maestro/profiles/dotdot/profile.yaml",
@@ -274,6 +271,132 @@ describe("shared paths", () => {
 		await write("ws/.maestro/profiles/shared/guide.md", "guide\n");
 		expect(after).not.toBe(before);
 		expect(await profilesDigest(ROOTS)).toBe(before);
+	});
+});
+
+const skill = (description: string, body = "") =>
+	`---\nname: x\ndescription: ${description}\n---\n${body}`;
+await Promise.all([
+	write(
+		"packs/classics/skills/tdd/SKILL.md",
+		skill(
+			'"Test-driven development: red, green. Use when building test-first."',
+			"Read [`codebase-design`](../codebase-design/SKILL.md).\n",
+		),
+	),
+	write(
+		"packs/classics/skills/codebase-design/SKILL.md",
+		skill("Vocabulary for deep modules. Use when designing."),
+	),
+	write("packs/classics/skills/bare/SKILL.md", "no frontmatter\n"),
+	write(
+		"packs/classics/skills/deep/SKILL.md",
+		skill("Nested links. Use when testing."),
+	),
+	write(
+		"packs/classics/skills/deep/ref/notes.md",
+		"[own](../SKILL.md) and [sibling](../../codebase-design/SKILL.md#intro)\n",
+	),
+	write(
+		"ws/.maestro/skills/codebase-design/SKILL.md",
+		skill("A bare twin. Use when clashing."),
+	),
+	write(
+		"ws/.maestro/profiles/deepd/profile.yaml",
+		`${RUNTIME}skills: [classics/deep]\n`,
+	),
+	write(
+		"ws/.maestro/profiles/clash/profile.yaml",
+		`${RUNTIME}skills: [classics/codebase-design, codebase-design]\n`,
+	),
+	write("ws/.maestro/skills/writing/SKILL.md", skill("Write docs.")),
+	write(
+		"ws/.maestro/profiles/skilled/profile.yaml",
+		`${RUNTIME}skills: [classics/tdd, classics/codebase-design, writing]\n`,
+	),
+	write(
+		"ws/.maestro/profiles/lonely/profile.yaml",
+		`${RUNTIME}skills: [classics/tdd]\n`,
+	),
+	write(
+		"ws/.maestro/profiles/ghost/profile.yaml",
+		`${RUNTIME}skills: [classics/tdc]\n`,
+	),
+	write(
+		"ws/.maestro/profiles/bare/profile.yaml",
+		`${RUNTIME}skills: [classics/bare]\n`,
+	),
+]);
+
+describe("skills", () => {
+	test("each is found like a profile, mounted by its own name and described by its frontmatter", async () => {
+		const { skills } = (await resolveProfile("skilled", setupOf({}))).fields;
+		expect(skills).toEqual([
+			{
+				name: "tdd",
+				ref: "classics/tdd",
+				dir: join(ROOTS.packs.classics ?? "", "skills/tdd"),
+				description:
+					"Test-driven development: red, green. Use when building test-first.",
+			},
+			{
+				name: "codebase-design",
+				ref: "classics/codebase-design",
+				dir: join(ROOTS.packs.classics ?? "", "skills/codebase-design"),
+				description: "Vocabulary for deep modules. Use when designing.",
+			},
+			{
+				name: "writing",
+				ref: "writing",
+				dir: join(ROOTS.workspace ?? "", "skills/writing"),
+				description: "Write docs.",
+			},
+		]);
+	});
+
+	test.each([
+		[
+			"a link to a skill the profile does not attach",
+			"lonely",
+			"profile lonely: skill classics/tdd links ../codebase-design/SKILL.md, which the profile does not attach",
+			"Add classics/codebase-design to its skills, or drop the link from tdd",
+		],
+		[
+			"a link from a nested file, resolved from its folder and with an anchor",
+			"deepd",
+			"profile deepd: skill classics/deep links ../codebase-design/SKILL.md, which the profile does not attach",
+			"Add classics/codebase-design to its skills, or drop the link from deep",
+		],
+		[
+			"two skills on one mount name",
+			"clash",
+			"profile clash: skills classics/codebase-design and codebase-design both mount at /skills/codebase-design",
+			"Drop one of classics/codebase-design and codebase-design from skills",
+		],
+		[
+			"a skill no root holds",
+			"ghost",
+			"profile ghost: skill classics/tdc is in no skill root",
+			"Did you mean 'classics/tdd'?",
+		],
+		[
+			"a skill with no description",
+			"bare",
+			`profile bare: skill classics/bare has no description in ${join(ROOTS.packs.classics ?? "", "skills/bare/SKILL.md")}`,
+			`Add a 'description' to the frontmatter of ${join(ROOTS.packs.classics ?? "", "skills/bare/SKILL.md")}`,
+		],
+	])("refuses %s", async (_, name, message, fix) => {
+		expect(await refusal(() => resolveProfile(name, setupOf({})))).toEqual([
+			[message, fix, 2],
+		]);
+	});
+
+	test("the digest changes when a skill changes", async () => {
+		const before = await profilesDigest(ROOTS);
+		await write("ws/.maestro/skills/writing/SKILL.md", skill("Edited."));
+		const after = await profilesDigest(ROOTS);
+		await write("ws/.maestro/skills/writing/SKILL.md", skill("Write docs."));
+		expect(after).not.toBe(before);
 	});
 });
 
@@ -635,11 +758,6 @@ describe("resolution", () => {
 					"profile reserved: mcp is reserved, not yet supported",
 					`Drop 'mcp' from ${join(W, "reserved/profile.yaml")}`,
 					2,
-				],
-				[
-					"profile reserved: skills is reserved, not yet supported",
-					`Drop 'skills' from ${join(W, "reserved/profile.yaml")}`,
-					3,
 				],
 			],
 			"",

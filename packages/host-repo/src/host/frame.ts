@@ -1,6 +1,6 @@
 import { type JsonSchema, validator, violations } from "@maestro/ir";
 import { OUTBOX, type Output, SESSION_DIR } from "../harness/index";
-import { attachmentPath } from "../profile/index";
+import { attachmentPath, skillPath } from "../profile/index";
 import { PREVIOUS } from "./config";
 
 /** Where the sandbox of a continuing session sees the copy of attachment `name` its last turn had. */
@@ -130,6 +130,8 @@ export type Run = {
 	checks: [name: string, hint: string][];
 	/** Its attachments, by name, each with its hint and kind. */
 	attachments: [name: string, hint: string, kind: AttachmentKind][];
+	/** Its profile's skills, by mount name, each with its description. */
+	skills: [name: string, description: string][];
 	/** The files it writes in the outbox. */
 	out: Output[];
 	kind: ReplyKind;
@@ -177,6 +179,17 @@ function attachments({ attachments }: Run) {
 	);
 }
 
+const SKILLS =
+	"When your task matches a skill's description, read its file before you act; when none matches, leave it unread.";
+
+function skills({ skills }: Run) {
+	const lines = skills.map(
+		([name, description]) =>
+			`- \`${skillPath(name)}/SKILL.md\`: ${description}`,
+	);
+	return section("Skills", lines.length ? [[SKILLS, ...lines].join("\n")] : []);
+}
+
 const contextSection = ({ sessions }: Run) =>
 	sessions === undefined
 		? []
@@ -199,7 +212,7 @@ export function reply({ out, kind }: Run): string[] {
 
 /**
  * The host's frame of an agent's run, appended to its profile's instructions: `# Your run`, then its working copy,
- * checks, attachments, context and reply, each section left out when it has nothing to say.
+ * checks, attachments, skills, context and reply, each section left out when it has nothing to say.
  */
 export const frame = (run: Run): string =>
 	[
@@ -207,6 +220,7 @@ export const frame = (run: Run): string =>
 		...workingCopy(run.lane),
 		...checks(run),
 		...attachments(run),
+		...skills(run),
 		...contextSection(run),
 		...reply(run),
 	].join("\n\n");

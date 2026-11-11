@@ -18,6 +18,10 @@ test("a write-lane builder's frame states its working copy, checks, attachments 
 			["upheld", "first, for the findings to fix", "file"],
 			["spec", "for what the change must do", "directory"],
 		],
+		skills: [
+			["tdd", "Test-driven development. Use when building test-first."],
+			["codebase-design", "Vocabulary for deep modules. Use when designing."],
+		],
 		out: [
 			{ file: "notes.md", format: "markdown" },
 			{ file: "a.json", format: "json", schema: { type: "object" } },
@@ -42,6 +46,12 @@ Run the target's checks with \`check <name>\`, and never write your own. Each pr
 Read-only, in your sandbox:
 - \`/in/upheld\` (file): first, for the findings to fix
 - \`/in/spec\` (directory): for what the change must do
+
+## Skills
+
+When your task matches a skill's description, read its file before you act; when none matches, leave it unread.
+- \`/skills/tdd/SKILL.md\`: Test-driven development. Use when building test-first.
+- \`/skills/codebase-design/SKILL.md\`: Vocabulary for deep modules. Use when designing.
 
 ## Reply
 
@@ -111,6 +121,7 @@ test.each([
 			"Git reads",
 			"## Checks",
 			"## Attachments",
+			"## Skills",
 			"## Context",
 			"write every one",
 		],
@@ -129,6 +140,7 @@ test.each([
 		const text = frame({
 			checks: [],
 			attachments: [],
+			skills: [],
 			out: [],
 			kind: VERDICT,
 			...given,

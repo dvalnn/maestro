@@ -52,6 +52,7 @@ import {
 	type ProfileFields,
 	resolveProfile,
 	seatBinding,
+	skillPath,
 	type Unsettled,
 } from "../profile/index";
 import type { Bind } from "../sandbox/index";
@@ -748,7 +749,7 @@ function extrasOf(
 	return {
 		...checks,
 		sources,
-		readOnly: [...mounts, ...checks.readOnly],
+		readOnly: [...mounts, ...skillBinds(profile), ...checks.readOnly],
 	};
 }
 
@@ -800,6 +801,14 @@ function sessionOf(
 	};
 }
 
+/** The read-only binds that mount `profile`'s skills. */
+export const skillBinds = (profile: Unsettled): Bind[] =>
+	profile.fields.skills.map((s) => ({ src: s.dir, dst: skillPath(s.name) }));
+
+/** The skills of `profile`, by mount name, each with its description. */
+export const profileSkills = (profile: Unsettled): Run["skills"] =>
+	profile.fields.skills.map((s) => [s.name, s.description]);
+
 /** The attachments of `profile`, by name, each with its hint and whether its path is a file or a directory. */
 export const profileAttached = (profile: Unsettled): Run["attachments"] =>
 	Object.entries(profile.fields.attachments).map(([name, a]) => [
@@ -811,8 +820,8 @@ export const profileAttached = (profile: Unsettled): Run["attachments"] =>
 	]);
 
 /**
- * What the frame tells an agent of `config` running `profile` about its run: its checks `named`, and its attachments,
- * the graph's then the profile's, each with its hint and kind.
+ * What the frame tells an agent of `config` running `profile` about its run: its checks `named`, its attachments, the
+ * graph's then the profile's, each with its hint and kind, and the profile's skills.
  */
 function toldOf(
 	config: AgentConfig,
@@ -833,6 +842,7 @@ function toldOf(
 			),
 			...profileAttached(profile),
 		],
+		skills: profileSkills(profile),
 		out: Object.values(config.out ?? {}),
 		kind: config.verdict ? VERDICT : WORK,
 		sessions:

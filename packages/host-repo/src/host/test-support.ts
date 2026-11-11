@@ -340,6 +340,17 @@ export function profile(
 	return dir;
 }
 
+/** Writes workspace skill `name` with `description`, and returns its directory. */
+export function skill(name: string, description: string): string {
+	const dir = join(rootsDir, "skills", name);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(
+		join(dir, "SKILL.md"),
+		`---\ndescription: ${description}\n---\n`,
+	);
+	return dir;
+}
+
 profile("builder", "runtime: { harness: stub, model: none }\n");
 profile("other", "runtime: { harness: other, model: none }\n");
 

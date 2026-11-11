@@ -8,7 +8,13 @@ import type {
 	ObservedEnvironment,
 } from "../harness/index";
 import { attachmentPath, type Profile } from "../profile/index";
-import { profileAttached, sessionsOf, stage } from "./agent";
+import {
+	profileAttached,
+	profileSkills,
+	sessionsOf,
+	skillBinds,
+	stage,
+} from "./agent";
 import { repoSetup } from "./config";
 import { type Run, WORK } from "./frame";
 import { pathBinds } from "./run-lines";
@@ -41,6 +47,7 @@ export function probeRequest(
 		lane: "write",
 		checks: [],
 		attachments: profileAttached(profile),
+		skills: profileSkills(profile),
 		out: [],
 		kind: WORK,
 		sessions:
@@ -56,6 +63,7 @@ export function probeRequest(
 				src: a.path,
 				dst: attachmentPath(name),
 			})),
+			...skillBinds(profile),
 		],
 		env: { PATH: repo.path },
 		instructions: stage(made("staged"), PROBE_PROMPT, instructions, told),

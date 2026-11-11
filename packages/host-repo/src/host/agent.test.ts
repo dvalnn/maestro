@@ -29,6 +29,7 @@ import {
 	reply,
 	sandboxed,
 	setupOf,
+	skill,
 	start,
 	stubHost,
 	tmp,
@@ -445,9 +446,10 @@ describe("agent profile", () => {
 		);
 		const dir = profile(
 			`${PACK}/builder`,
-			"runtime: { harness: stub, model: none }\nattachments: { kb: { path: kb, hint: for the house style } }\n",
+			"runtime: { harness: stub, model: none }\nskills: [tdd]\nattachments: { kb: { path: kb, hint: for the house style } }\n",
 			{ "kb/style.md": "terse\n" },
 		);
+		const tdd = skill("tdd", "Test first. Use when building.");
 		const { host, requests } = stubHost(() => [OK]);
 		const ir = irOf(
 			host,
@@ -474,9 +476,17 @@ describe("agent profile", () => {
 			src: join(dir, "kb"),
 			dst: "/in/kb",
 		});
-		expect(
-			readFileSync(join(artifact("x", "staged"), "instructions.md"), "utf8"),
-		).toContain("- `/in/kb` (directory): for the house style");
+		expect(request?.readOnly).toContainEqual({ src: tdd, dst: "/skills/tdd" });
+		const instructions = readFileSync(
+			join(artifact("x", "staged"), "instructions.md"),
+			"utf8",
+		);
+		expect(instructions).toContain(
+			"- `/in/kb` (directory): for the house style",
+		);
+		expect(instructions).toContain(
+			"- `/skills/tdd/SKILL.md`: Test first. Use when building.",
+		);
 		expect(instances[0]?.enrichment?.profile).toMatchObject({
 			name: `${PACK}/builder`,
 			dir,
