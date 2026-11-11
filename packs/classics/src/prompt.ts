@@ -24,3 +24,6 @@ export function fill(
 		);
 	return filled;
 }
+
+/** The prompt parts joined, a blank line between. */
+export const task = (...parts: string[]) => parts.join("\n\n");

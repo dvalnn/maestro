@@ -17,7 +17,6 @@ import {
 	List,
 	lookup,
 	Markdown,
-	not,
 	Optional,
 	type Ref,
 	Struct,
@@ -25,6 +24,8 @@ import {
 	type ValueOf,
 } from "@maestro/sdk";
 import { heldOf, toMarkdown } from "./code";
+import { challenge } from "./moves";
+import { task } from "./prompt";
 import CONSOLIDATOR from "./prompts/consolidator.md" with { type: "text" };
 import CONSOLIDATOR_GROUNDS from "./prompts/consolidator-grounds.md" with {
 	type: "text",
@@ -33,27 +34,19 @@ import CONSOLIDATOR_SKEPTICS from "./prompts/consolidator-skeptics.md" with {
 	type: "text",
 };
 import CORRECTNESS from "./prompts/correctness.md" with { type: "text" };
-import SKEPTIC from "./prompts/skeptic.md" with { type: "text" };
-import SKEPTIC_GROUNDS from "./prompts/skeptic-grounds.md" with {
-	type: "text",
-};
 import SPEC from "./prompts/spec.md" with { type: "text" };
 import TESTS from "./prompts/tests.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
-import { consolidator, lens, skeptic } from "./seats";
+import { consolidator, lens } from "./seats";
 import { Upheld } from "./types";
 
 type Consolidated = ReturnType<
 	typeof consolidator<Record<never, never>, "read">
 >;
 
-const task = (...parts: string[]) => parts.join("\n\n");
-
 /** Each call's task: its own prompt file, then the fragments it rules by, which a flag or a param can add. */
 const TASKS = {
 	lens: { correctness: CORRECTNESS, spec: SPEC, tests: TESTS },
-	skeptic: (grounds?: string) =>
-		grounds === undefined ? SKEPTIC : task(SKEPTIC_GROUNDS, grounds),
 	consolidator: (skeptics: boolean, grounds?: string) => {
 		const own = skeptics ? CONSOLIDATOR_SKEPTICS : CONSOLIDATOR;
 		return grounds === undefined
@@ -170,7 +163,15 @@ export function round(
 export function round(options: RoundOptions) {
 	const found = lensOf(options);
 	if (!options.skeptics) return found;
-	return { lens: found, skeptic: skepticOf(options, found) };
+	return {
+		lens: found,
+		skeptic: challenge(found, {
+			change: options.change,
+			attached: options.attached,
+			grounds: options.grounds,
+			relay: options.common,
+		}),
+	};
 }
 
 function lensOf({
@@ -196,22 +197,7 @@ function lensOf({
 
 type Lens = ReturnType<typeof lensOf>;
 
-function skepticOf(
-	{ change, grounds, attached, common }: RoundOptions,
-	found: Lens,
-) {
-	return skeptic({
-		label: "skeptic",
-		task: TASKS.skeptic(grounds),
-		lane: read(change),
-		when: not(found.ok),
-		tolerate: "rejected",
-		relay: { findings: found.out.findings, ...common },
-		attachments: attached,
-	});
-}
-
-type Skeptic = ReturnType<typeof skepticOf>;
+type Skeptic = ReturnType<typeof challenge>;
 
 /**
  * The lane version under review: `change`, or the target commits `revs` names.

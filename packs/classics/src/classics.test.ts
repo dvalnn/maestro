@@ -8,11 +8,24 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { reject, type Settled } from "@maestro/sdk";
+import { changeset, fresh } from "@maestro/host-repo-sdk";
+import {
+	code,
+	composition,
+	List,
+	reject,
+	type Settled,
+	Struct,
+	Text,
+} from "@maestro/sdk";
+import { buildIr } from "@maestro/testkit";
 import { pack } from "../../../scripts/pack";
 import { BASE, PROFILES, profilesOn, setup } from "../acceptance/setup";
 import { briefOf, heldOf, tallyOf } from "./code";
+import { challenge, fix, tally } from "./moves";
 import { EXAMPLE_REQUEST } from "./repair";
+import { consolidator, lens } from "./seats";
+import { Upheld } from "./types";
 
 const MAESTRO = join(import.meta.dir, "../../../packages/cli/src/maestro.ts");
 const RUNTIME = { harness: "pi", model: "none" };
@@ -466,5 +479,75 @@ describe("tallyOf", () => {
 				verdict: [{ outcome: "failed", reason: "boom" }],
 			}),
 		).toThrow("boom");
+	});
+});
+
+describe("moves", () => {
+	const moved = composition("moved", { examples: [{}] }, () => {
+		const found = lens({ label: "lens", task: "look", lane: fresh() });
+		const patches = changeset(found.out.lane, { label: "patches" }).out
+			.changeset;
+		const attached = {
+			patches: { artifact: patches, hint: "patches" },
+			spec: { artifact: patches, hint: "spec" },
+		};
+		challenge(found, { change: found.out.lane, attached });
+		const held = code(heldOf, {
+			in: { results: [], names: [] },
+			out: {
+				held: List(Upheld),
+				unreviewed: List(Struct({ lens: Text(), reason: Text() })),
+			},
+		});
+		const ruling = consolidator({
+			label: "ruling",
+			task: "rule",
+			lane: fresh(),
+		});
+		const upheld = tally({
+			lane: found.out.lane,
+			session: found.out.session,
+			held: held.out.held,
+			verdict: ruling.out.verdict,
+		});
+		return fix(upheld.out, patches).out.lane;
+	});
+	let ir: ReturnType<typeof buildIr>;
+	beforeAll(() => {
+		ir = buildIr(moved, {}, { heldOf, tallyOf });
+	});
+	const wired = (from: string, port: string, to: string, into = port) =>
+		ir.edges.some(
+			(e) =>
+				e.kind === "data" &&
+				e.from.node === from &&
+				e.from.port === port &&
+				e.to.node === to &&
+				e.to.port === into,
+		);
+
+	test("challenge guards the skeptic on its lens's ok and relays the lens's findings", () => {
+		expect(wired("lens", "ok", "lens_not", "value")).toBe(true);
+		expect(wired("lens", "findings", "skeptic")).toBe(true);
+	});
+
+	test("tally settles over the held findings and the verdict, tolerating a rejected upstream", () => {
+		expect(wired("heldOf", "held", "upheld")).toBe(true);
+		expect(wired("allSettled", "value", "upheld", "verdict")).toBe(true);
+		expect(
+			ir.edges.some(
+				(e) =>
+					e.to.node === "upheld" &&
+					e.kind === "control" &&
+					e.tolerate === "rejected",
+			),
+		).toBe(true);
+	});
+
+	test("fix extends the tally's lane in its session and relays what it upheld", () => {
+		const node = ir.nodes.find((n) => n.id === "fix");
+		expect(node).toMatchObject({ config: { lane: { mode: "extend" } } });
+		for (const port of ["lane", "session", "upheld"])
+			expect(wired("upheld", port, "fix")).toBe(true);
 	});
 });

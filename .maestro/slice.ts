@@ -6,6 +6,7 @@ import {
 	briefOf,
 	builder,
 	type Findings,
+	fix,
 	heldOf,
 	maxRepairs,
 	type Rulings,
@@ -13,6 +14,7 @@ import {
 	round,
 	Tally,
 	TestMap,
+	tally,
 	tallyOf,
 	type Upheld,
 } from "@maestro/classics";
@@ -58,7 +60,6 @@ import {
 	panelOf,
 } from "./slice/lenses";
 import TESTED_RULE from "./slice/prompts/_tested.md" with { type: "text" };
-import FIX from "./slice/prompts/fix.md" with { type: "text" };
 import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
 import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
 	type: "text",
@@ -82,7 +83,6 @@ const TASKS = {
 		DESIGN_QUESTIONS,
 		JUDGED,
 	),
-	fix: task(FIX),
 	tester: task(TESTER),
 	writer: task(WRITER, PLAIN, FIGURES),
 };
@@ -239,17 +239,7 @@ function panelRound(
 	builder: Relays,
 ) {
 	const { consolidator, held } = panelOf(tier, lane, spec, builder);
-	return code(tallyOf, {
-		in: {
-			lane,
-			session,
-			held,
-			verdict: allSettled([consolidator.out.verdict]),
-		},
-		out: Tally,
-		label: "upheld",
-		tolerate: "rejected",
-	});
+	return tally({ lane, session, held, verdict: consolidator.out.verdict });
 }
 
 /**
@@ -293,28 +283,6 @@ function reviewerRound(
 		out: REVIEWED,
 		label: "upheld",
 		tolerate: "rejected",
-	});
-}
-
-/** A fix of the findings a round upheld, in a lane extending the round's and continuing its builder's session. */
-function fix(
-	reviewed: {
-		lane: Ref<string>;
-		session: Ref<string>;
-		upheld: Ref<Held[]>;
-	},
-	spec: Ref<ArtifactRef>,
-) {
-	return builder({
-		label: "fix",
-		task: TASKS.fix,
-		lane: extend(reviewed.lane),
-		session: reviewed.session,
-		checks: REPO_CHECKS,
-		relay: { upheld: reviewed.upheld },
-		attachments: {
-			spec: { artifact: spec, hint: "for what the change must do" },
-		},
 	});
 }
 
@@ -385,7 +353,7 @@ export const slice = composition(
 		const reviewed = loop.while((s) => not(s.ok), {
 			init: gateAndReview(built.out.lane, built.out.session, built.out.report),
 			step: (s) => {
-				const fixed = fix(s.out, spec);
+				const fixed = fix(s.out, spec, { checks: REPO_CHECKS });
 				const earlier =
 					"reviewer" in s.out
 						? { reviewer: s.out.reviewer, upheld: s.out.upheld }
