@@ -1,11 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import {
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { valuesLayer } from "@maestro/core/config";
@@ -85,15 +79,12 @@ async function stubbed(
 	const { target } = await setup(name, dir, RUNTIME);
 	const builds: HarnessRequest[] = [];
 	const repairs: HarnessRequest[] = [];
-	/** The system prompt of each repair, read as it was staged. */
-	const repairFrames: string[] = [];
 	const hosts = [
 		repoHost({
 			harnesses: [
 				stubHarness((req) => {
 					if (!req.prompt.startsWith(task.request)) {
 						repairs.push(req);
-						repairFrames.push(readFileSync(req.instructions ?? "", "utf8"));
 						return repair(req);
 					}
 					builds.push(req);
@@ -111,7 +102,7 @@ async function stubbed(
 		{ request: task.request, maxRepairs: task.maxRepairs },
 		{ toMarkdown },
 	);
-	return { dir, target, hosts, config, ir, builds, repairs, repairFrames };
+	return { dir, target, hosts, config, ir, builds, repairs };
 }
 
 /** Performs task `name` with stubbed agents, and its trace as `compare maestro` extracts it. */
@@ -142,10 +133,10 @@ describe("the stub runs match their expected traces", () => {
 			const expected = await Bun.file(
 				join(import.meta.dir, "expected", `${name}.json`),
 			).json();
-			const { trace, repairFrames } = await performedTask(name);
+			const { trace, repairs } = await performedTask(name);
 			expect(diff(trace, expected)).toEqual([]);
-			for (const attachment of ["/in/logs", "/in/spec"])
-				expect(repairFrames[0]).toContain(attachment);
+			for (const attachment of ["── logs", "── spec"])
+				expect(repairs[0]?.prompt).toContain(attachment);
 		});
 });
 

@@ -144,8 +144,12 @@ const VERDICT_PARTS: Parts = {
 	schema: { outcome: { enum: ["ok", "rejected"] }, reason: LINE },
 };
 
+/** `schema` pretty-printed, each line indented by `indent`. */
+const pretty = (schema: JsonSchema, indent: string) =>
+	JSON.stringify(schema, null, 2).replaceAll("\n", `\n${indent}`);
+
 const fieldLine = (name: string, schema: JsonSchema) =>
-	`- \`${name}\`: JSON matching this JSON Schema, left out only with \`blocked\`:\n  \`\`\`json\n  ${JSON.stringify(schema)}\n  \`\`\``;
+	`- \`${name}\`: JSON matching this JSON Schema, left out only with \`blocked\`:\n  \`\`\`json\n  ${pretty(schema, "  ")}\n  \`\`\``;
 
 /**
  * The reply kind of a work agent, or of a verdict agent when `verdict`, asking for the typed `fields` beside `report`.
@@ -199,17 +203,12 @@ export const WORK = replyKind(false);
 
 export const VERDICT = replyKind(true);
 
-/** Whether an attachment mounts as a file or a directory. */
-export type AttachmentKind = "file" | "directory";
-
 /** What the frame says of an agent's run. */
 export type Run = {
 	/** `write` for a lane the agent changes, `read` for one it reads; absent with no lane. */
 	lane?: "write" | "read";
 	/** The checks it may run, by name, each with its hint. */
 	checks: [name: string, hint: string][];
-	/** Its attachments, by name, each with its hint and kind. */
-	attachments: [name: string, hint: string, kind: AttachmentKind][];
 	/** Its profile's skills, by mount name, each with its description. */
 	skills: [name: string, description: string][];
 	/** The files it writes in the outbox. */
@@ -249,16 +248,6 @@ function checks({ checks, lane }: Run) {
 	return section("Checks", [[lead, ...lines].join("\n")]);
 }
 
-function attachments({ attachments }: Run) {
-	const lines = attachments.map(
-		([name, hint, kind]) => `- \`${attachmentPath(name)}\` (${kind}): ${hint}`,
-	);
-	return section(
-		"Attachments",
-		lines.length ? [["Read-only, in your sandbox:", ...lines].join("\n")] : [],
-	);
-}
-
 const SKILLS =
 	"When your task matches a skill's description, read its file before you act; when none matches, leave it unread.";
 
@@ -279,7 +268,7 @@ const contextSection = ({ sessions }: Run) =>
 
 const fileLine = (o: Output) =>
 	o.format === "json"
-		? `- \`${OUTBOX}/${o.file}\`: JSON matching this JSON Schema:\n  \`\`\`json\n  ${JSON.stringify(o.schema)}\n  \`\`\``
+		? `- \`${OUTBOX}/${o.file}\`: JSON matching this JSON Schema:\n  \`\`\`json\n  ${pretty(o.schema, "  ")}\n  \`\`\``
 		: `- \`${OUTBOX}/${o.file}\`: Markdown`;
 
 /** The frame's `## Reply` section: the files to write and the reply contract. */
@@ -292,14 +281,13 @@ export function reply({ out, kind }: Run): string[] {
 
 /**
  * The host's frame of an agent's run, appended to its profile's instructions: `# Your run`, then its working copy,
- * checks, attachments, skills, context and reply, each section left out when it has nothing to say.
+ * checks, skills, context and reply, each section left out when it has nothing to say.
  */
 export const frame = (run: Run): string =>
 	[
 		"# Your run",
 		...workingCopy(run.lane),
 		...checks(run),
-		...attachments(run),
 		...skills(run),
 		...contextSection(run),
 		...reply(run),

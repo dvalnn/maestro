@@ -33,7 +33,9 @@ import {
 	Dir,
 	Enum,
 	iter,
+	List,
 	loop,
+	Markdown,
 	not,
 	type Ref,
 	Struct,
@@ -134,14 +136,13 @@ function repo(
 		test: { run: "true", hint: "the tests" },
 		lint: { run: "true", hint: "the linter" },
 	},
+	fields: (req: HarnessRequest) => Record<string, unknown> = () => ({}),
 ) {
 	const requests: HarnessRequest[] = [];
-	const framed = new Map<HarnessRequest, string>();
 	const host = repoHost({
 		harnesses: [
 			stubHarness((req) => {
 				requests.push(req);
-				framed.set(req, readFileSync(req.instructions ?? "", "utf8"));
 				return [
 					...Object.entries(writes(req)).map(([write, content]) => ({
 						write,
@@ -150,7 +151,10 @@ function repo(
 					{
 						emit: {
 							type: "text",
-							text: JSON.stringify({ report: { summary: "done" } }),
+							text: JSON.stringify({
+								report: { summary: "done" },
+								...fields(req),
+							}),
 						},
 					},
 				];
@@ -183,7 +187,7 @@ function repo(
 	};
 	const roots = profileRoots();
 	const composeIt = (ir: Ir) => composeIr(ir, { hosts: [host], config, roots });
-	return { host, hostConfig, roots, requests, framed, composeIt };
+	return { host, hostConfig, roots, requests, composeIt };
 }
 
 const CODE = { byFinding };
@@ -511,6 +515,116 @@ describe("typed reply fields", () => {
 	});
 });
 
+describe("relay", () => {
+	const TestMap = Struct({ tier: Enum(["small", "large"]), notes: Text() });
+	const first = () =>
+		builder({
+			task: "map",
+			lane: fresh(),
+			reply: { map: TestMap },
+			out: { notes: MarkdownOut("notes.md"), spec: MarkdownOut("spec.md") },
+		});
+
+	test("a task holds the relays in order, then the attachment tree, through the stub harness", async () => {
+		const ir = buildIr(
+			composition("relayed", { examples: [{}] }, () => {
+				const tested = first();
+				return builder({
+					label: "build",
+					task: "Build it.",
+					lane: fresh(),
+					relay: { Notes: tested.out.notes, Map: tested.out.map },
+					attachments: {
+						spec: { artifact: tested.out.spec, hint: "first, for the rules" },
+					},
+				});
+			}),
+		);
+		const { host, hostConfig, roots, requests } = repo(
+			(req): Record<string, string> =>
+				req.prompt.startsWith("map")
+					? {
+							"/out/notes.md": "Mind the edge.\n",
+							"/out/spec.md": "one\ntwo\n",
+						}
+					: {},
+			undefined,
+			(req) =>
+				req.prompt.startsWith("map")
+					? { map: { tier: "small", notes: "thin" } }
+					: {},
+		);
+		const concert = await stubConcert(ir, {
+			hosts: [host],
+			config: hostConfig,
+			roots,
+			code: stdlib,
+		});
+		await concert.close();
+		expect(requests[1]?.prompt).toBe(`Build it.
+
+## Notes
+
+Mind the edge.
+
+## Map
+
+tier: small
+notes: thin
+
+Read-only files your task needs. Read a file whole; browse and grep a directory.
+
+/in/
+└── spec   markdown, 2 lines, 8 B: first, for the rules`);
+	});
+
+	test.each([
+		["a directory", () => first().out.staged],
+		[
+			"a struct holding Markdown",
+			() => ({ type: Struct({ doc: Markdown() }) }) as Ref<unknown>,
+		],
+		["a list of directories", () => ({ type: List(Dir()) }) as Ref<unknown>],
+	])(
+		"a relay of %s is refused, naming it and pointing at attachments",
+		(_, ref) => {
+			const refused = composition("refused", { examples: [{}] }, () =>
+				builder({ task: "b", lane: fresh(), relay: { Held: ref() } }),
+			);
+			const thrown = (() => {
+				try {
+					buildIr(refused);
+				} catch (error) {
+					return error as BuildError;
+				}
+			})();
+			expect(thrown?.diagnostic.code).toBe("TYPE.relay");
+			expect(thrown?.diagnostic.message).toContain("relay 'Held'");
+			expect(thrown?.diagnostic.hint).toContain("attachments");
+		},
+	);
+
+	test.each(["prompt", "lane"])("a relay named %s is refused", (name) => {
+		const named = composition("named", { examples: [{}] }, () =>
+			builder({ task: "b", lane: fresh(), relay: { [name]: first().out.map } }),
+		);
+		expect(buildCode(() => buildIr(named))).toBe("SCOPE.name");
+	});
+
+	test("a relay named after an attachment is refused", () => {
+		const clash = composition("clash", { examples: [{}] }, () => {
+			const tested = first();
+			return builder({
+				task: "b",
+				lane: fresh(),
+				relay: { spec: tested.out.map },
+				attachments: { spec: { artifact: tested.out.spec, hint: "h" } },
+			});
+		});
+		expect(buildCode(() => buildIr(clash))).toBe("SCOPE.name");
+	});
+});
+
 describe("seat", () => {
 	const reviewer = seat("reviewer", {
 		verdict: true,
@@ -687,8 +801,7 @@ describe("examples", () => {
 		"the fold builds, composes, and merges $tasks in a stub concert",
 		async ({ tasks, agents, added, resolved }) => {
 			const ir = buildIr(fold, { tasks }, CODE);
-			const { host, hostConfig, roots, composeIt, requests, framed } =
-				repo(implement);
+			const { host, hostConfig, roots, composeIt, requests } = repo(implement);
 			expect(await composeIt(ir)).toMatchObject({ ok: true });
 
 			const concert = await stubConcert(ir, {
@@ -705,8 +818,8 @@ describe("examples", () => {
 			const resolver = requests.find((r) => r.prompt.startsWith("Resolve"));
 			expect(resolver !== undefined).toBe(resolved);
 			if (resolver)
-				expect(framed.get(resolver)).toContain(
-					"- `/in/incoming` (directory): Read when you need",
+				expect(resolver.prompt).toMatch(
+					/── incoming\/ +\d+ files?, [^:]+: Read when you need/,
 				);
 			const series = joinPath(
 				concertDirs(concert.dir, concert.id).artifacts,

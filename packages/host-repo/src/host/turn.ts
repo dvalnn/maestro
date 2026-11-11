@@ -136,13 +136,14 @@ const workingCopy = (last: Turn, now: Turn) =>
 		: `was \`${last.commit}\`, now \`${now.commit}\`; \`git diff ${last.commit} ${now.commit}\` shows what changed`;
 
 /**
- * The user message of a turn that continues `session`, given `now`: what changed since its last settled turn, then the
- * task, and the earlier copies of its changed attachments to bind read-only.
+ * The user message of a turn that continues `session`, given `now`: what changed since its last settled turn, then
+ * `task` as laid out, and the earlier copies of its changed attachments to bind read-only.
  * @throws Error as `lastTurn` does.
  */
 export function continuation(
 	session: Session,
 	now: Turn,
+	task: string,
 ): { message: string; readOnly: Bind[] } {
 	const last = lastTurn(session);
 	const attachments = attachmentsSince(session, last, now);
@@ -153,12 +154,9 @@ export function continuation(
 		...(last.reply === now.reply ? [] : ["- Contract: changed."]),
 	];
 	return {
-		message: [
-			"# Since your last turn",
-			lines.join("\n"),
-			"# Task",
-			now.task,
-		].join("\n\n"),
+		message: ["# Since your last turn", lines.join("\n"), "# Task", task].join(
+			"\n\n",
+		),
 		readOnly: attachments.readOnly,
 	};
 }

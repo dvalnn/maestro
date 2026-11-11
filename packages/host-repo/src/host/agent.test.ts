@@ -4,14 +4,12 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
-	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { HarnessRequest, StubStep } from "../harness/index";
 import { OUTBOX, stubHarness } from "../harness/index";
 import { resolveProfile } from "../profile/index";
-import { profileAttached } from "./agent";
 import { probe, probeRequest } from "./probe";
 import { concertUsage, openSession, openTarget, releaseConcert } from "./store";
 import {
@@ -241,7 +239,7 @@ describe("agent session", () => {
 				configOf(toyTarget()),
 			);
 			const [minted, continuing] = requests;
-			expect(minted?.prompt).toBe("go");
+			expect(minted?.prompt).toStartWith("go");
 			expect(continuing?.session).toEqual(minted?.session);
 			expect(minted?.session.dir).toEndWith(
 				`sessions/${encodeURIComponent(`${id}.w`)}/harness`,
@@ -256,12 +254,44 @@ describe("agent session", () => {
 				.split("\n\n# Task\n\n");
 			expect(since).toMatch(delta);
 			expect(since.split("\n")).toHaveLength(3);
-			expect(task).toBe(String(second.literals?.prompt ?? "go"));
+			const given = String(second.literals?.prompt ?? "go");
+			expect(task).toStartWith(given);
 			expect(previous).toEqual(first === "before" ? ["a\n"] : []);
 			kept.push(keptTask(minted?.session.dir ?? ""));
-			expect(kept).toEqual([undefined, "go", task]);
+			expect(kept).toEqual([undefined, "go", given]);
 		},
 	);
+
+	test("a continuation whose relay changed is told its task changed, and given the new relay text", async () => {
+		const relayed = (text: string): Partial<NodeSpec> => ({
+			config: {
+				...agentOn({ mode: "extend" }),
+				relay: [{ name: "Findings", schema: { type: "string" } }],
+			},
+			lane: "w",
+			literals: { prompt: "go", Findings: text },
+		});
+		const { host, requests } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				agent("w", {
+					...relayed("old"),
+					config: {
+						...agentOn({ mode: "fresh" }),
+						relay: [{ name: "Findings", schema: { type: "string" } }],
+					},
+					lane: undefined,
+				}),
+				agent("r", { ...relayed("new"), session: "w" }),
+			],
+			"r",
+		);
+		await performed(host, ir, configOf(toyTarget()));
+		expect(requests[1]?.prompt).toBe(
+			"# Since your last turn\n\n- Task: changed, the new text below.\n- Attachments: unchanged.\n- Working copy: unchanged.\n\n# Task\n\ngo\n\n## Findings\n\nnew",
+		);
+	});
 
 	test("a turn cut short keeps the earlier turn as the session's last", async () => {
 		const { host, requests } = stubHost(() =>
@@ -481,9 +511,9 @@ describe("agent profile", () => {
 			join(artifact("x", "staged"), "instructions.md"),
 			"utf8",
 		);
-		expect(instructions).toContain(
-			"- `/in/kb` (directory): for the house style",
-		);
+		expect(
+			readFileSync(join(artifact("x", "staged"), "prompt.md"), "utf8"),
+		).toContain("└── kb/   1 file, 6 B: for the house style");
 		expect(instructions).toContain(
 			"- `/skills/tdd/SKILL.md`: Test first. Use when building.",
 		);
@@ -508,40 +538,6 @@ describe("agent profile", () => {
 				"kb/style.md": expect.stringMatching(/^sha256:/),
 			},
 		});
-	});
-});
-
-describe("profileAttached", () => {
-	test("a profile attachment is a directory when its path, followed through a symlink, is one, and a file otherwise or when missing", async () => {
-		const dir = profile(
-			"kinds",
-			"runtime: { harness: stub, model: none }\nattachments: { style: { path: style.md, hint: for the style } }\n",
-			{ "style.md": "terse\n", "kb/style.md": "terse\n" },
-		);
-		symlinkSync(join(dir, "kb"), join(dir, "linked"));
-		const resolved = await resolveProfile(
-			"kinds",
-			setupOf(configOf(toyTarget())),
-		);
-		const hint = "h";
-
-		expect(
-			profileAttached({
-				...resolved,
-				fields: {
-					...resolved.fields,
-					attachments: {
-						...resolved.fields.attachments,
-						linked: { path: join(dir, "linked"), hint },
-						gone: { path: join(dir, "gone"), hint },
-					},
-				},
-			}),
-		).toEqual([
-			["style", "for the style", "file"],
-			["linked", hint, "directory"],
-			["gone", hint, "file"],
-		]);
 	});
 });
 
@@ -582,9 +578,6 @@ describe("agent probe", () => {
 		expect(seen?.env?.PATH).toStartWith(`${bin}:`);
 		const instructions = readFileSync(seen?.instructions ?? "", "utf8");
 		expect(instructions).toStartWith("Be terse.\n\n");
-		expect(instructions).toContain(
-			"- `/in/kb` (directory): for the house style",
-		);
 		expect(seen?.outputs).toEqual([]);
 		expect(readdirSync(seen?.lane ?? "")).toEqual([]);
 		expect(seen).not.toHaveProperty("extras");

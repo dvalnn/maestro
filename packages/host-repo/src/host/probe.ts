@@ -8,13 +8,7 @@ import type {
 	ObservedEnvironment,
 } from "../harness/index";
 import { attachmentPath, type Profile } from "../profile/index";
-import {
-	profileAttached,
-	profileSkills,
-	sessionsOf,
-	skillBinds,
-	stage,
-} from "./agent";
+import { profileSkills, sessionsOf, skillBinds, stage } from "./agent";
 import { repoSetup } from "./config";
 import { type Run, WORK } from "./frame";
 import { pathBinds } from "./run-lines";
@@ -46,7 +40,6 @@ export function probeRequest(
 	const told: Run = {
 		lane: "write",
 		checks: [],
-		attachments: profileAttached(profile),
 		skills: profileSkills(profile),
 		out: [],
 		kind: WORK,

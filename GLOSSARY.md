@@ -223,8 +223,12 @@ report; the owner promotes it by hand.
 **Envelope**: An agent's final reply, carrying a report, the typed fields its seat call declares and, for a verdict
 agent, an outcome. [Home](packages/host-repo/README.md#envelope)
 
-**Attachment**: A named artifact an agent reads, mounted read-only and listed in its prompt with a `hint`.
-[Home](packages/host-repo/README.md#staging) _Avoid_: ref
+**Relay**: A value an earlier node produced, a typed field or a Markdown output, that a composition inlines into a later
+agent's task. [Home](packages/host-repo/README.md#task-layout) _Avoid_: handoff, which is a context reset within one
+node.
+
+**Attachment**: A named artifact an agent reads, mounted read-only and listed in its task with its `hint`, type and
+size; the agent must read it. [Home](packages/host-repo/README.md#staging) _Avoid_: ref
 
 **Outbox**: The per-instance directory outside the lane where an agent writes its declared outputs.
 [Home](packages/host-repo/README.md#outbox)

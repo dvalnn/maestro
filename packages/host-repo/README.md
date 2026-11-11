@@ -24,6 +24,7 @@ The host contributes:
 | lane          | `fresh`, `fork`, `extend` or `read` (see Lanes)                                 |
 | outputs       | typed declarations: a JSON file with a schema, or Markdown                      |
 | `reply`       | typed fields of the agent's envelope, each with a JSON schema (see Envelope)    |
+| `relay`       | typed values or Markdown outputs, each inlined in the task under `## <name>`    |
 | `attachments` | named artifacts, each with a required `hint`, mounted read-only at `/in/<name>` |
 | checks        | the named checks it may run                                                     |
 | `session`     | optional: continue a session (see Sessions)                                     |
@@ -119,13 +120,13 @@ sequenceDiagram
 The staged system-prompt file holds the profile's instructions, when it has any, then the host's **frame**, headed
 `# Your run`, then the sections below in this order, each left out when it has nothing to say.
 
-| Section           | Says                                                             |
-| ----------------- | ---------------------------------------------------------------- |
-| `## Working copy` | the lane's write state, what git allows, the shell[^wc]          |
-| `## Checks`       | each check as `check <name>` with its `hint`[^frame-checks]      |
-| `## Attachments`  | each attachment, a file or a directory, with its hint as written |
-| `## Context`      | only under a `handoff` policy[^frame-context]                    |
-| `## Reply`        | the output contract                                              |
+| Section           | Says                                                        |
+| ----------------- | ----------------------------------------------------------- |
+| `## Working copy` | the lane's write state, what git allows, the shell[^wc]     |
+| `## Checks`       | each check as `check <name>` with its `hint`[^frame-checks] |
+| `## Skills`       | each skill of the profile's `skills`, with its description  |
+| `## Context`      | only under a `handoff` policy[^frame-context]               |
+| `## Reply`        | the output contract, each JSON schema pretty-printed        |
 
 [^wc]:
     A write lane is left uncommitted, a read lane is a discarded fork the agent may change freely; git writes fail by
@@ -135,9 +136,29 @@ The staged system-prompt file holds the profile's instructions, when it has any,
 
 [^frame-context]: A full context ends the session in a handoff; the section gives the sessions the task allows.
 
-The file is appended to the harness's own system prompt, never replacing it. A fresh start's user message is the task
-alone, on stdin. The `staged` artifact holds the exact text: `prompt.md`, `instructions.md`, `correction-N.md` for each
-correction turn and `session-N.md` for the message that opens session N after a handoff.
+The file is appended to the harness's own system prompt, never replacing it. A fresh start's user message is the task on
+stdin, laid out as below. The `staged` artifact holds the exact text: `prompt.md`, `instructions.md`, `correction-N.md`
+for each correction turn and `session-N.md` for the message that opens session N after a handoff.
+
+### Task layout
+
+The task is the call's text, then its relays, then its attachments, each part left out when the call has none. A relay
+is a `## <name>` section, in the order of the call's `relay`: a typed value as `yaml` `stringify`, a Markdown output as
+its text. Attachments, the graph's then the profile's, are a one-level tree under a must-read lead.
+
+```text
+Read-only files your task needs. Read a file whole; browse and grep a directory.
+
+/in/
+├── spec       markdown, 84 lines, 6 KB: first, for the requirements to pin
+└── patches/   12 files, 140 KB: the fix's patches, by round
+    ├── round-1.diff   diff, 210 lines, 9 KB
+    └── … 2 more entries
+```
+
+A file shows its lines and size, a directory its file count and size, then lists one level, capped at
+`MAX_LISTED_ENTRIES` (12) before `… N more entries`. A file's type is its artifact's declared format (`markdown`,
+`json`), else its extension, else left out. The host measures them at mount time.
 
 ### Outbox
 
@@ -184,7 +205,8 @@ Structured data takes the envelope, and files take the outbox:
 | Markdown a reader browses or a later agent reads | an outbox file, `MarkdownOut` |
 | Large, or browsed as a file, in any format       | an outbox file                |
 
-A `reply` field is checked with the envelope's correction turn, and the agent writes no file for it. An attachment's
+A `reply` field is checked with the envelope's correction turn, and the agent writes no file for it. A later agent reads
+a typed field or a Markdown file as a `relay`, inlined in its task, and a large file as an attachment. An attachment's
 hint says when to read the file and for what, not what it is, and not what a skill says.
 
 ### Agent-run checks
@@ -273,7 +295,7 @@ Each line is unchanged or says what changed:
 
 | Line                | Says                                                                   |
 | ------------------- | ---------------------------------------------------------------------- |
-| `Task`              | the task, changed or not                                               |
+| `Task`              | the task, changed or not, laid out as above                            |
 | `Attachments`       | by content hash, each changed, new or dropped[^previous]               |
 | `Working copy`      | the commits it stood on then and now, with the `git diff` between them |
 | `Contract: changed` | present only when the frame's `## Reply` section differs               |
@@ -435,13 +457,13 @@ compose. Passing one cancels the agent and ends it `failed` with a reason naming
 
 An agent reads five layers, in this order, each with one home; no layer restates another's text.
 
-| Layer       | From                                                 | Holds                                                                                                 |
-| ----------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Frame       | the host                                             | working copy, checks, attachment list, skill list, output schema                                      |
-| Profile     | `profiles/<name>/instructions.md`, its `attachments` | who the agent is, how it works and what it never does, and its reference material, true in every call |
-| Area        | a preset's profile `attachments`                     | what is true of one area or run, added to a profile                                                   |
-| Task        | one Markdown file per call                           | what this call asks, its inputs by name, its outputs, its bar                                         |
-| Attachments | code nodes                                           | the run's data, never instructions                                                                    |
+| Layer       | From                                                        | Holds                                                                                                        |
+| ----------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Frame       | the host                                                    | working copy, checks, skill list, output schema                                                              |
+| Profile     | `profiles/<name>/instructions.md`, its `attachments`        | who the agent is, how it works and what it never does, and its reference material, true in every call        |
+| Area        | a preset's profile `attachments`                            | what is true of one area or run, added to a profile                                                          |
+| Task        | one Markdown file per call, then the host's relays and tree | what this call asks, its inputs by name, its outputs, its bar, the relayed values and the files it must read |
+| Attachments | code nodes                                                  | the run's data, never instructions                                                                           |
 
 `maestro art show <id> <instance> staged/prompt.md` shows what an agent was told.
 

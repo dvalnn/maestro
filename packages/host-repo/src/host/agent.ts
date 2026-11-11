@@ -3,7 +3,6 @@ import {
 	mkdirSync,
 	readFileSync,
 	rmSync,
-	statSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -29,6 +28,7 @@ import {
 	validator,
 	violations,
 } from "@maestro/ir";
+import { stringify as stringifyYaml } from "yaml";
 import {
 	type AgentEnvironment,
 	type ContextPolicy,
@@ -103,6 +103,7 @@ import {
 	partialDir,
 	type Session,
 } from "./store";
+import { type Attached, type Relayed, taskOf } from "./task";
 import { continuation, digests, keepTurn, type Turn } from "./turn";
 import { contextIn, keepWindow } from "./windows";
 
@@ -153,6 +154,9 @@ function agentPorts(node: HostNode): { in: Ports; out: Ports } {
 	return {
 		in: {
 			prompt: TEXT,
+			...Object.fromEntries(
+				(config.relay ?? []).map(({ name, schema }) => [name, schema]),
+			),
 			...Object.fromEntries(attachments),
 			...lane.in,
 			...(node.in?.[SESSION_PORT] && { [SESSION_PORT]: SESSION }),
@@ -716,8 +720,36 @@ async function keepPartial(
 	return { ...result, enrichment: { ...result.enrichment, partial } };
 }
 
-/** What an agent's sandbox adds for its checks and attachments, and the host path of each attachment by name. */
-type Extras = AgentChecks & { sources: Record<string, string> };
+/** What an agent's sandbox adds for its checks and attachments, the host path of each attachment by name, and the task's list of them. */
+type Extras = AgentChecks & {
+	sources: Record<string, string>;
+	attached: Attached[];
+};
+
+/** The text of each relay of `config`, by section title, in declaration order: a Markdown output's file, a string as is, else YAML. */
+const relayedOf = (
+	config: AgentConfig,
+	inputs: Inputs,
+	context: HostContext,
+): Relayed[] =>
+	(config.relay ?? []).map(({ name: title, schema }) => {
+		const value = inputs[title];
+		const markdown =
+			typeof schema === "object" &&
+			schema[MAESTRO_TYPE] === CORE_TYPES.markdown;
+		const text = markdown
+			? readFileSync(artifactInput(inputs, context, title), "utf8")
+			: typeof value === "string"
+				? value
+				: stringifyYaml(value);
+		return { title, text };
+	});
+
+/** The format an attachment's declared artifact type names, when it names one. */
+const FORMATS: Record<string, string> = {
+	[CORE_TYPES.markdown]: "markdown",
+	[CORE_TYPES.jsonFile]: "json",
+};
 
 /**
  * The checks of the target of `setup` an agent of `config` may run, by name.
@@ -749,9 +781,19 @@ function extrasOf(
 		src,
 		dst: attachmentPath(name),
 	}));
+	const attached: Attached[] = [
+		...graph.map(([name, { hint, type }]) => ({
+			name,
+			hint,
+			format: type && FORMATS[type],
+			source: sources[name] as string,
+		})),
+		...own.map(([name, { hint, path }]) => ({ name, hint, source: path })),
+	];
 	return {
 		...checks,
 		sources,
+		attached,
 		readOnly: [...mounts, ...skillBinds(profile), ...checks.readOnly],
 	};
 }
@@ -812,19 +854,8 @@ export const skillBinds = (profile: Unsettled): Bind[] =>
 export const profileSkills = (profile: Unsettled): Run["skills"] =>
 	profile.fields.skills.map((s) => [s.name, s.description]);
 
-/** The attachments of `profile`, by name, each with its hint and whether its path is a file or a directory. */
-export const profileAttached = (profile: Unsettled): Run["attachments"] =>
-	Object.entries(profile.fields.attachments).map(([name, a]) => [
-		name,
-		a.hint,
-		statSync(a.path, { throwIfNoEntry: false })?.isDirectory()
-			? "directory"
-			: "file",
-	]);
-
 /**
- * What the frame tells an agent of `config` running `profile` about its run: its checks `named`, its attachments, the
- * graph's then the profile's, each with its hint and kind, and the profile's skills.
+ * What the frame tells an agent of `config` running `profile` about its run: its checks `named` and the profile's skills.
  */
 function toldOf(
 	config: AgentConfig,
@@ -836,16 +867,6 @@ function toldOf(
 	return {
 		lane: config.lane.mode === "read" ? "read" : "write",
 		checks: named.map(([name, spec]) => [name, spec.hint]),
-		attachments: [
-			...Object.entries(config.attachments ?? {}).map(
-				([name, a]): Run["attachments"][number] => [
-					name,
-					a.hint,
-					a.type === CORE_TYPES.dir ? "directory" : "file",
-				],
-			),
-			...profileAttached(profile),
-		],
 		skills: profileSkills(profile),
 		out: Object.values(config.out ?? {}),
 		kind: replyKind(config.verdict, config.reply, sightings),
@@ -991,15 +1012,18 @@ async function execute(
 				offersSightings(instance.node.out),
 			);
 			const { kind, out: outputs } = told;
+			const task = textInput(inputs, "prompt");
+			const relayed = relayedOf(config, inputs, context);
+			const laidOut = taskOf(task, relayed, extras.attached);
 			const now: Turn = {
-				task: textInput(inputs, "prompt"),
+				task: taskOf(task, relayed, []),
 				attachments: digests(extras.sources),
 				commit: lane.head(),
 				reply: sha256Hex(reply(told).join("\n\n")),
 			};
 			const opening = continues
-				? continuation(session, now)
-				: { message: now.task, readOnly: [] };
+				? continuation(session, now, laidOut)
+				: { message: laidOut, readOnly: [] };
 			const req: HarnessRequest = {
 				runtime,
 				prompt: opening.message,
@@ -1051,7 +1075,7 @@ async function execute(
 						...policyOf(
 							profile,
 							policy.context,
-							now.task,
+							laidOut,
 							mint,
 							context.emit,
 							guard,

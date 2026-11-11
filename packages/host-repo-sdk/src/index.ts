@@ -1,6 +1,7 @@
 import {
 	ARTIFACT_TYPES,
 	type ArtifactRef,
+	CORE_TYPES,
 	type JsonSchema,
 	MAESTRO_TYPE,
 	schemaMarkers,
@@ -125,6 +126,9 @@ export type Attachment = { artifact: Ref<ArtifactRef>; hint: string };
 
 type Attachments = Readonly<Record<string, Attachment>>;
 
+/** Values inlined in an agent's task, each under a section titled by its name: a typed value or a Markdown output. */
+export type Relays = Readonly<Record<string, Ref<unknown>>>;
+
 /** An agent's report: a one-line summary, then only what the record cannot show. A list is left out when empty. */
 export type Report = {
 	summary: string;
@@ -192,6 +196,10 @@ const defined = <T extends object>(record: T) =>
 const nonEmpty = <V>(record: Readonly<Record<string, V>>) =>
 	Object.keys(record).length ? record : undefined;
 
+/** Whether `schema` is the type of a Markdown artifact itself. */
+const isMarkdown = (schema: JsonSchema) =>
+	typeof schema === "object" && schema[MAESTRO_TYPE] === CORE_TYPES.markdown;
+
 /** An attachment's config: its `hint` and its artifact type. */
 function attachmentConfig({ artifact, hint }: Attachment) {
 	const schema: JsonSchema = artifact.type.schema;
@@ -209,14 +217,16 @@ export const AGENT_OUT_PORTS = ["lane", "report", "staged", "session"];
 export const ENVELOPE_KEYS = ["report", "blocked", "outcome", "reason"];
 
 /**
- * Refuses an attachment, output or reply field named after one of an agent's own ports or envelope keys, a reply field
- * named after an output, and a reply field whose type holds an artifact.
+ * Refuses an attachment, relay, output or reply field named after one of an agent's own ports or envelope keys, a relay
+ * named after an attachment, a reply field named after an output, a reply field whose type holds an artifact, and a
+ * relay of an artifact that is not Markdown.
  * @throws BuildError when one is.
  */
 function checkNames(
 	attachments: Attachments,
 	out: Outputs,
 	reply: Replies,
+	relay: Relays,
 ): void {
 	const checks = [
 		[
@@ -225,6 +235,8 @@ function checkNames(
 			AGENT_IN_PORTS,
 			"an agent's own port",
 		],
+		["a relay", Object.keys(relay), AGENT_IN_PORTS, "an agent's own port"],
+		["a relay", Object.keys(relay), Object.keys(attachments), "an attachment"],
 		["an output", Object.keys(out), AGENT_OUT_PORTS, "an agent's own port"],
 		[
 			"a reply field",
@@ -254,6 +266,17 @@ function checkNames(
 				hint: `Rename '${taken}'; ${what} may not take ${own.join(", ")}`,
 			});
 	}
+	const unread = Object.entries(relay).find(
+		([, { type }]) =>
+			!isMarkdown(type.schema) &&
+			schemaMarkers(type.schema).some((m) => ARTIFACT_TYPES.has(m.type)),
+	);
+	if (unread)
+		throw new BuildError({
+			code: "TYPE.relay",
+			message: `relay '${unread[0]}' is or holds an artifact that is not a Markdown output, which no relay can inline`,
+			hint: `Attach '${unread[0]}' under attachments with a hint, or relay a typed value or a Markdown output`,
+		});
 	const held = Object.entries(reply).find(([, { schema }]) =>
 		schemaMarkers(schema).some((m) => ARTIFACT_TYPES.has(m.type)),
 	);
@@ -287,8 +310,8 @@ export type SeatOptions<
 };
 
 /**
- * What a call of a seat adds: the task and the lane, the session it continues, attachments, outputs and typed reply
- * fields, and checks.
+ * What a call of a seat adds: the task and the lane, the session it continues, attachments, relays, outputs and typed
+ * reply fields, and checks.
  */
 export type SeatCall<
 	C extends Outputs,
@@ -300,6 +323,8 @@ export type SeatCall<
 	/** An earlier agent's `out.session` on the same harness, continued in place; a fresh session when absent. */
 	session?: Ref<string>;
 	attachments?: Attachments;
+	/** Values inlined in the task after its text, each under a `## <name>` section, in this order. */
+	relay?: Relays;
 	out?: C;
 	/**
 	 * Typed fields of the agent's reply, beside its report, each an output the host validates against its type. The
@@ -337,6 +362,7 @@ export function seat<
 			lane,
 			session,
 			attachments = {},
+			relay = {},
 			out: callOut,
 			reply: callReply = {},
 			checks,
@@ -344,13 +370,18 @@ export function seat<
 		} = call;
 		const out: Outputs = { ...standing.out, ...callOut };
 		const reply: Replies = { ...standing.reply, ...callReply };
-		checkNames(attachments, out, reply);
+		checkNames(attachments, out, reply, relay);
 		const ports = lanePorts(lane);
+		const relays = Object.entries(relay).map(([name, r]) => ({
+			name,
+			schema: r.type.schema,
+		}));
 		return hostNode("repo.agent", {
 			...common,
 			in: {
 				prompt: task,
 				...mapValues(attachments, (a) => a.artifact),
+				...relay,
 				...ports.in,
 				...(session && { session }),
 			},
@@ -370,6 +401,7 @@ export function seat<
 				encore: standing.encore,
 				checks: union(standing.checks, checks),
 				attachments: nonEmpty(mapValues(attachments, attachmentConfig)),
+				relay: relays.length ? relays : undefined,
 				reply: nonEmpty(mapValues(reply, (t) => t.schema)),
 				out: nonEmpty(mapValues(out, (o) => o.config)),
 			}),

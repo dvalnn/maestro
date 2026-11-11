@@ -206,6 +206,22 @@ const CURRENT_AGENT_CONFIG = {
 				},
 			},
 		},
+		relay: {
+			type: "array",
+			items: {
+				type: "object",
+				required: ["name", "schema"],
+				additionalProperties: false,
+				properties: {
+					name: {
+						type: "string",
+						pattern: PORT_NAME,
+						not: { enum: AGENT_IN_PORTS },
+					},
+					schema: { type: ["object", "boolean"] },
+				},
+			},
+		},
 		reply: {
 			type: "object",
 			propertyNames: {
@@ -314,6 +330,8 @@ export type AgentConfig = {
 	encore?: boolean;
 	checks?: string[];
 	attachments?: Record<string, Attachment>;
+	/** Values inlined in the task in this order, each at the input port of its name, with the schema of its type. */
+	relay?: { name: string; schema: JsonSchema }[];
 	/** Typed fields of the agent's reply, by name, each with the schema its value must match. */
 	reply?: Record<string, JsonSchema>;
 	out?: Record<string, Output>;

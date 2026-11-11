@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { frame, type Run, replyKind, VERDICT, WORK } from "./frame";
+import { frame, type Run, replyKind, VERDICT } from "./frame";
 
 const LISTED = `    "gaps": ["<something the task asked that was left undone or unverified, which the reader would otherwise assume done>"],
     "obstacles": ["<something outside the agent's reach that stopped or slowed it, such as a missing attachment or a tool not on the PATH; not a test that failed or a check that was red>"],
@@ -11,14 +11,10 @@ const GIT =
 const SHELL =
 	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
 
-test("a write-lane builder's frame states its working copy, checks, attachments and reply, in that order", () => {
+test("a write-lane builder's frame states its working copy, checks, skills and reply, in that order", () => {
 	const run: Run = {
 		lane: "write",
 		checks: [["all", "format, lint, types and every test"]],
-		attachments: [
-			["upheld", "first, for the findings to fix", "file"],
-			["spec", "for what the change must do", "directory"],
-		],
 		skills: [
 			["tdd", "Test-driven development. Use when building test-first."],
 			["codebase-design", "Vocabulary for deep modules. Use when designing."],
@@ -42,12 +38,6 @@ ${SHELL}
 Run the target's checks with \`check <name>\`, and never write your own. Each prints the tail of its output, then ok, rejected or failed. Run them to verify your change before you finish.
 - \`check all\`: format, lint, types and every test
 
-## Attachments
-
-Read-only, in your sandbox:
-- \`/in/upheld\` (file): first, for the findings to fix
-- \`/in/spec\` (directory): for what the change must do
-
 ## Skills
 
 When your task matches a skill's description, read its file before you act; when none matches, leave it unread.
@@ -60,7 +50,9 @@ Before your final reply, write every one of these files:
 - \`/out/notes.md\`: Markdown
 - \`/out/a.json\`: JSON matching this JSON Schema:
   \`\`\`json
-  {"type":"object"}
+  {
+    "type": "object"
+  }
   \`\`\`
 
 Your final reply is only this JSON object, with no other text:
@@ -77,7 +69,9 @@ ${LISTED}
 
 - \`map\`: JSON matching this JSON Schema, left out only with \`blocked\`:
   \`\`\`json
-  {"type":"object"}
+  {
+    "type": "object"
+  }
   \`\`\`
 - Most reports are the summary alone: give a list only for an item that clears its bar.
 - Leave out what the run already records: your changes, the checks' results and the files you wrote.
@@ -116,17 +110,16 @@ test.each([
 			"or failed.\n- `check all`: every test",
 			"## Reply\n\nBefore your final reply, write every one of these files, even when you reject:\n- `/out/findings.md`: Markdown\n\nYour final",
 		],
-		["Leave your changes uncommitted", "Run them to verify", "## Attachments"],
+		["Leave your changes uncommitted", "Run them to verify"],
 	],
 	[
-		"no lane, check or attachment",
+		"no lane or check",
 		{},
 		[`# Your run\n\n## Working copy\n\n${SHELL}\n\n## Reply\n\n`],
 		[
 			"Your working copy is",
 			"Git reads",
 			"## Checks",
-			"## Attachments",
 			"## Skills",
 			"## Context",
 			"write every one",
@@ -138,14 +131,13 @@ test.each([
 		[
 			`${SHELL}\n\n## Context\n\nYour context is bounded. When it fills, this session stops, and in one more turn you write a handoff note for a fresh session that continues your task in this working copy. Work in steps that leave the working copy coherent, so a successor can pick up from it. This task allows up to 3 sessions.\n\n## Reply\n\n`,
 		],
-		["## Checks", "## Attachments"],
+		["## Checks"],
 	],
 ] as [string, Partial<Run>, string[], string[]][])(
 	"with %s, the frame holds only the sections it has something to say in",
 	(_, given, present, absent) => {
 		const text = frame({
 			checks: [],
-			attachments: [],
 			skills: [],
 			out: [],
 			kind: VERDICT,
