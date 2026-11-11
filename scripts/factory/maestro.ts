@@ -4,6 +4,9 @@ import { isJson, type Json } from "./json";
 
 /** How many of a milestone's newest concerts the tick reads: one runs at a time, so the newest settle is among them. */
 const WINDOW = 20;
+/** The slice's fix agent, one instance per fix round, and its tester, whose `map` output holds the tests. */
+const FIX_NODE = "fixes/fix";
+const TESTER_NODE = "tester";
 
 export type Concert = {
 	id: string;
@@ -20,8 +23,8 @@ export type Result = {
 	outputs: Record<string, unknown>;
 };
 /**
- * What one slice concert spent: its run time and tokens by kind, reasoning tokens counted in `output`, and whether it
- * was an encore of another concert.
+ * What one slice concert spent: its run time and tokens by kind, reasoning tokens counted in `output`, its fix rounds,
+ * and whether it was an encore of another concert.
  */
 export type Spend = {
 	short: string;
@@ -30,6 +33,7 @@ export type Spend = {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
+	fixes: number;
 	encore: boolean;
 };
 /**
@@ -46,6 +50,8 @@ export type Report = {
 	/** A consolidator's review, and the findings its verdict blocks on. */
 	review?: string;
 	blocking?: string[];
+	/** What the tester's map holds, when the concert's tester wrote one. */
+	tests?: { pinned: number; deferred: number; untestable: number };
 };
 
 /** maestro as the tick sees it, through its `--json` documents. */
@@ -120,7 +126,31 @@ function spendOf(doc: unknown): Spend {
 		output: metric(doc.metrics, "tokens_out"),
 		cacheRead: metric(doc.metrics, "tokens_cache_read"),
 		cacheWrite: metric(doc.metrics, "tokens_cache_write"),
+		fixes: instancesOf(doc).filter((i) => i.node === FIX_NODE).length,
 		encore: typeof doc.encoreOf === "string",
+	};
+}
+
+/** The `instances` of an `ls <concert> --json` document. */
+const instancesOf = (doc: Json) =>
+	Array.isArray(doc.instances) ? doc.instances.filter(isJson) : [];
+
+const count = (list: unknown) => (Array.isArray(list) ? list.length : 0);
+
+/** The sizes of the tester's `map.json`, from an `ls <concert> --json` and a `wait <concert> --json` document. */
+function testsOf(doc: Json, result: unknown): Report["tests"] {
+	const out = instancesOf(doc).find((i) => i.node === TESTER_NODE)?.outputs;
+	const map = isJson(out) && isJson(out.map) ? out.map : undefined;
+	if (!map || typeof map.path !== "string") return undefined;
+	if (!isJson(result) || typeof result.artifacts !== "string") return undefined;
+	const path = join(result.artifacts, map.path);
+	if (!existsSync(path)) return undefined;
+	const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+	if (!isJson(parsed)) return undefined;
+	return {
+		pinned: count(parsed.pinned),
+		deferred: count(parsed.deferred),
+		untestable: count(parsed.untestable),
 	};
 }
 
@@ -239,6 +269,7 @@ export function maestro(bin = "maestro"): Maestro {
 				pr: prOf(result),
 				review: outputText(result, "review"),
 				blocking: blockingOf(result),
+				tests: testsOf(doc, result),
 			};
 		},
 		spend: async (id) => spendOf(await json(bin, ["ls", id])),

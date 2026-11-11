@@ -509,6 +509,7 @@ const SPENT = {
 	output: 2,
 	cacheRead: 3,
 	cacheWrite: 4,
+	fixes: 0,
 	encore: false,
 };
 

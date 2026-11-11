@@ -10,7 +10,7 @@ writeFileSync(
 	bin,
 	`#!/bin/sh
 case "$1 $2" in
-	"ls c2"|"ls c3") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"],"lessons":["run just fmt first"]}}}' ;;
+	"ls c2"|"ls c3") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"node":"tester","outputs":{"map":{"path":"map.json"}}},{"node":"fixes/fix","expansion":"[0]"},{"node":"fixes/fix","expansion":"[1]"},{"node":"fixes/reviewer"}],"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","gaps":["no Windows run"],"lessons":["run just fmt first"]}}}' ;;
 	"ls --tour") echo '[{"id":"l'"$5"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1"}]' ;;
 	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"pr":{"path":"pr.md"},"review":{"path":"review.md"},"verdict":{"path":"verdict.json"}}}' ;;
 	"wait c3") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"}}}' ;;
@@ -33,6 +33,10 @@ writeFileSync(
 	join(dir, "verdict.json"),
 	'{"approved":false,"criteria":[],"blocking":["A seam breaks"]}',
 );
+writeFileSync(
+	join(dir, "map.json"),
+	'{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}',
+);
 writeFileSync(join(dir, "empty.md"), "");
 const fake = maestro(bin);
 
@@ -53,10 +57,11 @@ test("reads a concert's report: each agent's obstacles, gaps and lessons, the up
 		pr: "## Summary\n\nx",
 		review: "# Review\n\nA seam breaks.",
 		blocking: ["A seam breaks"],
+		tests: { pinned: 3, deferred: 1, untestable: 0 },
 	});
 });
 
-test("reads a concert's spend: its time and tokens by kind", async () => {
+test("reads a concert's spend: its time, tokens by kind and fix rounds", async () => {
 	expect(await fake.spend("c2")).toEqual({
 		short: "c2",
 		elapsedMs: 90_000,
@@ -64,6 +69,7 @@ test("reads a concert's spend: its time and tokens by kind", async () => {
 		output: 20,
 		cacheRead: 5_000,
 		cacheWrite: 300,
+		fixes: 2,
 		encore: true,
 	});
 });

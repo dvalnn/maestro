@@ -195,6 +195,7 @@ const spendOf = (short: string): Spend => ({
 	output: 14_000,
 	cacheRead: 812_000,
 	cacheWrite: 131_000,
+	fixes: 0,
 });
 
 function fakeMaestro(
