@@ -11,7 +11,7 @@ const ARM = "main-abc1234";
 const SETTLE_MS = 100;
 const ATTEMPTS = 100;
 
-const checks = ["format", "lint", "types", "test"].flatMap((name) => [
+const checks = ["format", "lint", "types", "test", "fmt"].flatMap((name) => [
 	"-c",
 	`target.checks.${name}={run: "true", hint: ${name}}`,
 ]);

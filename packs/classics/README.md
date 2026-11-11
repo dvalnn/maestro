@@ -31,16 +31,17 @@ config as `profiles.classics/<name>.context`.
 
 ## Params
 
-| Composition          | Param        | Type                                   | Default   | What it is                                        |
-| -------------------- | ------------ | -------------------------------------- | --------- | ------------------------------------------------- |
-| `build_then_repair`  | `request`    | text                                   | required  | What to build                                     |
-|                      | `maxRepairs` | integer, at least 1                    | 2         | The most repairs before the checks count as red   |
-| `repair_until_green` | `maxRepairs` | integer, at least 1                    | 2         | As above; a composition that uses it sets its own |
-|                      | `checks`     | list of `target.checks` names          | none      | The checks the repair agent may run on its repair |
-| `panel_review`       | `request`    | text                                   | required  | What the change must do                           |
-|                      | `change`     | lane ref, `<concert id>.<instance id>` | optional² | The lane version under review                     |
-|                      | `revs`       | git revisions: `A..B`, `C^!` or `B`    | optional² | The target commits under review                   |
-|                      | `lenses`     | list of `correctness`, `spec`, `tests` | all three | The lenses to rule through, each once             |
+| Composition          | Param        | Type                                   | Default   | What it is                                                                                                          |
+| -------------------- | ------------ | -------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- |
+| `build_then_repair`  | `request`    | text                                   | required  | What to build                                                                                                       |
+|                      | `maxRepairs` | integer, at least 1                    | 2         | The most repairs before the checks count as red                                                                     |
+| `repair_until_green` | `maxRepairs` | integer, at least 1                    | 2         | As above; a composition that uses it sets its own                                                                   |
+|                      | `checks`     | list of `target.checks` names          | none      | The checks the repair agent may run on its repair                                                                   |
+|                      | `fix`        | name in `target.checks`                | none      | Runs before each check and recheck, to fix what a script can; judged by the check that follows, which runs it again |
+| `panel_review`       | `request`    | text                                   | required  | What the change must do                                                                                             |
+|                      | `change`     | lane ref, `<concert id>.<instance id>` | optional² | The lane version under review                                                                                       |
+|                      | `revs`       | git revisions: `A..B`, `C^!` or `B`    | optional² | The target commits under review                                                                                     |
+|                      | `lenses`     | list of `correctness`, `spec`, `tests` | all three | The lenses to rule through, each once                                                                               |
 
 ² Exactly one of `change` and `revs`. `revs` is resolved against the target once, as the concert starts: `B` alone runs
 from `target.base`, and the commits must be one linear series, with no merge.

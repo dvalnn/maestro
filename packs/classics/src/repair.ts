@@ -44,11 +44,24 @@ export const repairUntilGreen = composition(
 				description:
 					"The target checks the repair agent may run on its repair, by name in target.checks",
 			}),
+			fix: Text({
+				default: "",
+				description:
+					"The check in target.checks that runs before each check and recheck, to fix what a script can; empty runs none; judged by the check that follows, which runs it again",
+			}),
 		},
 	},
-	(params, { lane, session, spec }) =>
-		loop.while((s) => not(s.ok), {
-			init: check(extend(lane), undefined, { label: "check" }),
+	(params, { lane, session, spec }) => {
+		// A failed fix goes on to the check, which runs every target check, the fix included, so the failure is red there.
+		const fixed = (from: typeof lane, label: string) =>
+			params.fix ? check(extend(from), params.fix, { label }).out.lane : from;
+		const verify = (from: typeof lane, label: string, fixLabel: string) =>
+			check(extend(fixed(from, fixLabel)), undefined, {
+				label,
+				tolerate: params.fix ? "rejected" : undefined,
+			});
+		return loop.while((s) => not(s.ok), {
+			init: verify(lane, "check", "fix"),
 			step: (s) => {
 				const repair = builder({
 					label: "repair",
@@ -61,13 +74,12 @@ export const repairUntilGreen = composition(
 						spec: { artifact: spec, hint: "for what the change must do" },
 					},
 				});
-				return check(extend(repair.out.lane), undefined, {
-					label: "recheck",
-				});
+				return verify(repair.out.lane, "recheck", "refix");
 			},
 			max: params.maxRepairs,
 			tolerate: "rejected",
-		}),
+		});
+	},
 );
 
 export const buildThenRepair = composition(

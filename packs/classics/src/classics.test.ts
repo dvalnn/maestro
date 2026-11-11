@@ -28,6 +28,13 @@ const configure = (over: Record<string, unknown> = {}) =>
 		JSON.stringify({ ...config, ...over }),
 	);
 
+/** Writes the preset that runs each seated profile on the stub harness. */
+const stubPreset = () =>
+	Bun.write(
+		join(root, ".maestro/presets/stub.yaml"),
+		`profiles:\n${PROFILES.map((p) => `  ${p}: { runtime: !replace { harness: stub, model: none } }\n`).join("")}`,
+	);
+
 /** Runs the real `maestro` in the workspace, with its data and config homes inside it. */
 async function maestro(...args: string[]) {
 	const run = Bun.spawn([process.execPath, MAESTRO, ...args], {
@@ -151,10 +158,7 @@ describe("build_then_repair", () => {
 	});
 
 	test("performs on the stub harness under a --preset that sets the runtime of each seated profile by name", async () => {
-		await Bun.write(
-			join(root, ".maestro/presets/stub.yaml"),
-			`profiles:\n${PROFILES.map((p) => `  ${p}: { runtime: !replace { harness: stub, model: none } }\n`).join("")}`,
-		);
+		await stubPreset();
 		const green = ["-c", 'target.checks=!replace {test: "true"}'];
 		const { err, code } = await maestro(
 			"perform",
@@ -179,6 +183,69 @@ describe("build_then_repair", () => {
 			n.id.endsWith("/loop/repair"),
 		);
 		expect(repair.config.checks).toEqual(["test"]);
+	});
+
+	describe("the fix param", () => {
+		/** Performs a build under `checks` and `fix`, and lists each fix and check instance with its status. */
+		async function ran(checks: Record<string, string>, fix: string) {
+			await configure({
+				classics: { repair_until_green: { fix } },
+				target: {
+					...(config.target as object),
+					checks: Object.fromEntries(
+						Object.entries(checks).map(([k, run]) => [k, { run, hint: k }]),
+					),
+				},
+			});
+			const { err } = await maestro(
+				"perform",
+				...BUILD,
+				"--preset",
+				"stub",
+			).finally(() => configure());
+			const id = /^concert +(\S+)/m.exec(err)?.[1] ?? "";
+			const { out } = await maestro("ls", id);
+			return out
+				.split("\n")
+				.map((l) => l.split(/ +/))
+				.filter(([name]) => /(fix|check)$/.test(name ?? ""))
+				.map(([name, status]) => `${name?.split("/").pop()} ${status}`);
+		}
+
+		beforeAll(stubPreset);
+
+		test.each([
+			[
+				"runs before the check and before each recheck",
+				"fmt",
+				[
+					"fix ok",
+					"check rejected",
+					"refix ok",
+					"recheck rejected",
+					"refix ok",
+					"recheck rejected",
+				],
+			],
+			[
+				"empty runs no fix",
+				"",
+				["check rejected", "recheck rejected", "recheck rejected"],
+			],
+		])("%s", async (_, fix, rows) => {
+			expect(await ran({ test: "false", fmt: "true" }, fix)).toEqual(rows);
+		});
+
+		test("a failed fix is red and the check still runs", async () => {
+			expect(await ran({ test: "true", fmt: "false" }, "fmt")).toEqual([
+				"fix rejected",
+				"check rejected",
+				"refix rejected",
+				"recheck rejected",
+				"refix rejected",
+				"recheck rejected",
+			]);
+		});
 	});
 
 	test("graphs the loop's bound and its next edge", async () => {

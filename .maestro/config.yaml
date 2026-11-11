@@ -21,6 +21,9 @@ target:
     all:
       run: just check
       hint: format, lint, types and every test, stopping at the first failure, so run the granular checks first
+    fmt:
+      run: just fmt
+      hint: rewrites files with biome and prettier; run before the format check
 profiles:
   classics/builder:
     attachments:

@@ -16,7 +16,7 @@
 					}
 				},
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all"],
+				"checks": ["format", "lint", "types", "test", "all", "fmt"],
 				"bound": {
 					"upTo": 2
 				}
@@ -36,7 +36,7 @@
 					}
 				},
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all"],
+				"checks": ["format", "lint", "types", "test", "all", "fmt"],
 				"bound": {
 					"upTo": 2
 				}
@@ -56,7 +56,7 @@
 					}
 				},
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all"],
+				"checks": ["format", "lint", "types", "test", "all", "fmt"],
 				"bound": {
 					"upTo": 4
 				}
@@ -72,7 +72,7 @@
 					}
 				},
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all"],
+				"checks": ["format", "lint", "types", "test", "all", "fmt"],
 				"bound": {
 					"exact": 1
 				}
@@ -530,7 +530,7 @@
 					}
 				},
 				"lane": "fresh",
-				"checks": ["format", "lint", "types", "test", "all"],
+				"checks": ["format", "lint", "types", "test", "all", "fmt"],
 				"bound": {
 					"exact": 1
 				}

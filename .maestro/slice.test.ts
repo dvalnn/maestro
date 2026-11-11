@@ -101,7 +101,7 @@ const projectConfig = Bun.YAML.parse(
 ) as { target: { checks: Record<string, unknown> } };
 const projectChecks = Object.keys(projectConfig.target.checks);
 
-const granular = ["format", "lint", "types", "test"].flatMap((name) => [
+const granular = ["format", "lint", "types", "test", "fmt"].flatMap((name) => [
 	"-c",
 	`target.checks.${name}={run: "true", hint: ${name}}`,
 ]);
@@ -212,6 +212,11 @@ test.each(seated)(
 		);
 		expect(repairs.length).toBeGreaterThan(0);
 		for (const n of repairs) expect(n.config.checks).toEqual(projectChecks);
+		const fixes = plan.ir.nodes.filter((n: { id: string }) =>
+			/^gate\/(loop\[\d+\]\/)?(fix|refix)$/.test(n.id),
+		);
+		expect(fixes.length).toBeGreaterThan(0);
+		for (const n of fixes) expect(n.config.check).toBe("fmt");
 		type Agent = {
 			profile: string;
 			harness: string;

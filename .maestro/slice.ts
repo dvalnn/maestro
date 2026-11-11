@@ -81,7 +81,7 @@ const TASKS = {
 };
 
 /** Every check of `target.checks` in `.maestro/config.yaml`, as an agent may run only those it names. */
-const REPO_CHECKS = ["format", "lint", "types", "test", "all"];
+const REPO_CHECKS = ["format", "lint", "types", "test", "all", "fmt"];
 
 type Found = ValueOf<typeof Findings>;
 
@@ -380,7 +380,10 @@ export const slice = composition(
 			const green = use(
 				repairUntilGreen,
 				{ lane, session, spec },
-				{ params: { maxRepairs, checks: REPO_CHECKS }, label: "gate" },
+				{
+					params: { maxRepairs, checks: REPO_CHECKS, fix: "fmt" },
+					label: "gate",
+				},
 			).out.lane;
 			return tier === "small"
 				? reviewerRound(green, session, spec, earlier)
