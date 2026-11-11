@@ -295,3 +295,27 @@ _Avoid_: series
 quality
 
 **Sandbox**: The confinement an agent, a check or a prepare line runs in.
+
+### Review
+
+**Finding**: One issue a lens raises in a change: where it is, what is wrong, whether it blocks, and the guideline it
+cites.
+
+**Lens**: A verdict agent that reviews a change from one topic and lists its findings. _Avoid_: reviewer.
+
+**Skeptic**: A verdict agent that rules on another agent's findings, upholding or dismissing each.
+
+**Consolidator**: A verdict agent that merges several lenses' upheld findings into one verdict, by id, never rewording
+them.
+
+**Upheld**: A finding that survived the skeptic and the consolidator, still to be fixed.
+
+**Panel**: Lenses over one change, with their skeptics and an optional consolidator, ending in a tally. _Avoid_: round,
+review.
+
+**Tally**: A panel's result: the upheld findings, whether none remain, and the lane and session a fix continues.
+_Avoid_: round.
+
+**Tester**: A work agent that pins the ask's behaviour in tests before the builder starts, listing them in a test map.
+
+**Test map**: The tester's list of the tests it pinned, each with its tier: firm or best-effort.
