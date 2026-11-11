@@ -1,15 +1,16 @@
 import { readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-	atLeastOne,
 	Brief,
 	briefOf,
 	builder,
 	challenge,
 	type Findings,
 	fix,
+	fixUntilClean,
 	heldOf,
 	lens,
+	maxFixes,
 	maxRepairs,
 	type Rulings,
 	repairUntilGreen,
@@ -41,7 +42,6 @@ import {
 	Markdown,
 	not,
 	type Ref,
-	type Result,
 	reject,
 	type Settled,
 	Text,
@@ -55,7 +55,7 @@ import {
 	DESIGN_QUESTIONS,
 	DESIGN_SEARCHES,
 	JUDGED,
-	panelOf,
+	panelParams,
 } from "./slice/lenses";
 import REVIEWER from "./slice/prompts/reviewer.md" with { type: "text" };
 import REVIEWER_AGAIN from "./slice/prompts/reviewer-again.md" with {
@@ -83,7 +83,8 @@ const TASKS = {
 };
 
 /** Every check of `target.checks` in `.maestro/config.yaml`, as an agent may run only those it names. */
-const REPO_CHECKS = ["format", "lint", "types", "test", "all", "fmt"];
+const FIX_CHECK = "fmt";
+const REPO_CHECKS = ["format", "lint", "types", "test", "all", FIX_CHECK];
 
 /** The lens name and node label of small's reviewer, which its session group and its findings' ids carry. */
 const REVIEWER_LENS = "reviewer";
@@ -257,6 +258,63 @@ const prPatches = (revises: string) =>
 	changeset(commits(revises, { label: "revised" }).out.lane, { label: "pr" })
 		.out.changeset;
 
+/** The builder's report as the brief its review seats read. */
+const briefFrom = (report: Ref<Report>) =>
+	code(briefOf, { in: { report }, out: { brief: Brief }, label: "brief" }).out
+		.brief;
+
+/**
+ * Small's loop of gate, reviewer round and fix, in which the reviewer continues its session. Ends in the last round's
+ * tally and the reviewer's session.
+ */
+function smallLoop(
+	built: {
+		out: { lane: Ref<string>; session: Ref<string>; report: Ref<Report> };
+	},
+	spec: Ref<ArtifactRef>,
+	maxRepairs: number,
+	maxFixes: number,
+) {
+	/** Repair `lane` until its checks pass, then review it. */
+	const gateAndReview = (
+		lane: Ref<string>,
+		session: Ref<string>,
+		report: Ref<Report>,
+		earlier?: Earlier,
+	) => {
+		const green = use(
+			repairUntilGreen,
+			{ lane, session, spec },
+			{
+				params: { maxRepairs, checks: REPO_CHECKS, fix: FIX_CHECK },
+				label: "gate",
+			},
+		).out.lane;
+		return reviewerRound(
+			green,
+			session,
+			spec,
+			{ builder: briefFrom(report) },
+			earlier,
+		);
+	};
+	return loop.while((s) => not(s.ok), {
+		init: gateAndReview(built.out.lane, built.out.session, built.out.report),
+		step: (s) => {
+			const fixed = fix(s.out, spec, { checks: REPO_CHECKS });
+			return gateAndReview(
+				fixed.out.lane,
+				fixed.out.session,
+				fixed.out.report,
+				{ reviewer: s.out.reviewer, upheld: s.out.upheld },
+			);
+		},
+		max: maxFixes,
+		label: "fixes",
+		tolerate: "rejected",
+	});
+}
+
 export const slice = composition(
 	"slice",
 	{
@@ -271,10 +329,7 @@ export const slice = composition(
 			request: Text({ description: "The brief: what to build" }),
 			tier: Enum(TIERS, { description: "How deep the review goes" }),
 			maxRepairs,
-			maxFixes: atLeastOne(
-				2,
-				"The most fix rounds after a review upholds findings",
-			),
+			maxFixes,
 			revises: Text({
 				default: "",
 				description:
@@ -290,50 +345,28 @@ export const slice = composition(
 	},
 	({ request, tier, maxRepairs, maxFixes, revises }) => {
 		const spec = markdownOf(request, "request");
-		/** Repair `lane` until its checks pass, then review it at the tier's depth. */
-		const gateAndReview = (
-			lane: Ref<string>,
-			session: Ref<string>,
-			report: Ref<Report>,
-			earlier?: Earlier,
-		): Result<typeof Tally | typeof REVIEWED> => {
-			const green = use(
-				repairUntilGreen,
-				{ lane, session, spec },
-				{
-					params: { maxRepairs, checks: REPO_CHECKS, fix: "fmt" },
-					label: "gate",
-				},
-			).out.lane;
-			const { brief } = code(briefOf, {
-				in: { report },
-				out: { brief: Brief },
-				label: "brief",
-			}).out;
-			return tier === "small"
-				? reviewerRound(green, session, spec, { builder: brief }, earlier)
-				: panelOf(tier, { change: green, spec, session, brief });
-		};
 		const { built, map } = build(tier, request, spec);
-		const reviewed = loop.while((s) => not(s.ok), {
-			init: gateAndReview(built.out.lane, built.out.session, built.out.report),
-			step: (s) => {
-				const fixed = fix(s.out, spec, { checks: REPO_CHECKS });
-				const earlier =
-					"reviewer" in s.out
-						? { reviewer: s.out.reviewer, upheld: s.out.upheld }
-						: undefined;
-				return gateAndReview(
-					fixed.out.lane,
-					fixed.out.session,
-					fixed.out.report,
-					earlier,
-				);
-			},
-			max: maxFixes,
-			label: "fixes",
-			tolerate: "rejected",
-		});
+		const reviewed =
+			tier === "small"
+				? smallLoop(built, spec, maxRepairs, maxFixes)
+				: use(
+						fixUntilClean,
+						{
+							lane: built.out.lane,
+							session: built.out.session,
+							spec,
+							brief: briefFrom(built.out.report),
+						},
+						{
+							params: {
+								maxFixes,
+								maxRepairs,
+								checks: REPO_CHECKS,
+								fix: FIX_CHECK,
+								...panelParams(tier),
+							},
+						},
+					);
 		const changes = changeset(reviewed.out.lane, {
 			label: "changes",
 			tolerate: "rejected",

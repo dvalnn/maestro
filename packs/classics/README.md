@@ -53,3 +53,7 @@ Lenses run on the `lens` profile's model and skeptics on the `skeptic`'s. Pick m
 of the lens's family tends to share its blind spots. `panel_review` always runs them. The exported `panel`, which
 compositions built on the pack `use`, takes `skeptics: false`: no skeptic runs, and the consolidator rules on every
 finding unverified. It ends in a `Tally`, and with `consolidate: false` has no consolidator.
+
+The exported `fix_until_clean` is a loop of `repair_until_green` and `panel`: while the panel's `Tally` upholds a
+finding, a builder fixes it in its session and the round runs again, up to `maxFixes` times. It forwards `maxRepairs`,
+`checks`, `fix` and the panel's `lenses`, `skeptics`, `consolidate` and `grounds`.

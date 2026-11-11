@@ -1,5 +1,5 @@
-import { type Brief, LENSES, panel } from "@maestro/classics";
-import { type ArtifactRef, type Ref, use, type ValueOf } from "@maestro/sdk";
+import { LENSES, panel } from "@maestro/classics";
+import { type ArtifactRef, type Ref, use } from "@maestro/sdk";
 import { task } from "../shared";
 import DESIGN_QUESTIONS from "./prompts/_design-questions.md" with {
 	type: "text",
@@ -46,19 +46,17 @@ export const PANELS = {
 /** A tier that reviews by panel. */
 type PanelTier = keyof typeof PANELS;
 
+/** The panel params of `tier`: its lenses, no skeptics, every ground. */
+export const panelParams = (tier: PanelTier) => ({
+	lenses: PANELS[tier],
+	skeptics: false,
+	grounds: JUDGED,
+});
+
 /** A panel of `tier`'s lenses over the lane version `change` against `spec`, no skeptics, one consolidated verdict. Ends in the tally. */
 export function panelOf(
 	tier: PanelTier,
-	ports: {
-		change: Ref<string>;
-		spec: Ref<ArtifactRef>;
-		/** The session the tally carries. */
-		session?: Ref<string>;
-		/** The builder's brief, which every review seat reads. */
-		brief?: Ref<ValueOf<typeof Brief>>;
-	},
+	ports: { change: Ref<string>; spec: Ref<ArtifactRef> },
 ) {
-	return use(panel, ports, {
-		params: { lenses: PANELS[tier], skeptics: false, grounds: JUDGED },
-	});
+	return use(panel, ports, { params: panelParams(tier) });
 }

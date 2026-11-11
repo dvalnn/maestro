@@ -148,12 +148,12 @@ test.each(seated)(
 		const out = await maestro(await slice("compose", tier));
 		const { plan, agents } = JSON.parse(out);
 		const repairs = plan.ir.nodes.filter((n: { id: string }) =>
-			n.id.startsWith("gate/loop/repair"),
+			/^(fix_until_clean\/)?gate\/loop\/repair/.test(n.id),
 		);
 		expect(repairs.length).toBeGreaterThan(0);
 		for (const n of repairs) expect(n.config.checks).toEqual(projectChecks);
 		const fixes = plan.ir.nodes.filter((n: { id: string }) =>
-			/^gate\/(loop\[\d+\]\/)?(fix|refix)$/.test(n.id),
+			/^(fix_until_clean\/)?gate\/(loop\[\d+\]\/)?(fix|refix)$/.test(n.id),
 		);
 		expect(fixes.length).toBeGreaterThan(0);
 		for (const n of fixes) expect(n.config.check).toBe("fmt");
@@ -363,9 +363,14 @@ const rejecting: [
 				"writer",
 			],
 			{
-				"panel/lenses/lens/findings.json": [finding("F1", true)],
-				"panel/lenses/lens/verdict": "rejected F1",
-				"panel/consolidator/verdict.json": { criteria: [], upholds: [] },
+				"fix_until_clean/panel/lenses/lens/findings.json": [
+					finding("F1", true),
+				],
+				"fix_until_clean/panel/lenses/lens/verdict": "rejected F1",
+				"fix_until_clean/panel/consolidator/verdict.json": {
+					criteria: [],
+					upholds: [],
+				},
 			},
 		],
 	),
@@ -396,11 +401,17 @@ test.each(rejecting)(
 			JSON.parse(await maestro(["ls", id, "--json"], data));
 		const statusOf = (node: string) =>
 			instances.filter((i) => i.node === node).map((i) => i.status);
+		const [first = ""] = Object.keys(scripted);
+		expect(statusOf(first.slice(0, first.lastIndexOf("/")))).toContain(
+			"rejected",
+		);
 		if (skeptic) expect(statusOf(skeptic)).not.toEqual([]);
 		const seated = instances.filter((i) => i.node.endsWith("skeptic"));
 		expect(seated.filter((i) => i.node !== skeptic)).toEqual([]);
 		expect(seated.every((i) => i.status === "ok")).toBe(true);
-		expect(statusOf("fixes/fix")).toEqual([]);
+		expect(
+			statusOf(skeptic ? "fixes/fix" : "fix_until_clean/fixes/fix"),
+		).toEqual([]);
 	},
 );
 

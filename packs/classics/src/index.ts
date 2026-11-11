@@ -1,4 +1,5 @@
 export { briefOf, heldOf, tallyOf, toMarkdown } from "./code";
+export { fixUntilClean, maxFixes } from "./fix-until-clean";
 export { challenge, fix, tally } from "./moves";
 export { fill } from "./prompt";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";

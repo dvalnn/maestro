@@ -23,7 +23,7 @@ test("review rules on a commit range through the risky slice's lenses, and its c
 	const review = await planOf(".maestro/review.ts", "--revs", "HEAD^!");
 	const slice = await planOf(".maestro/slice.ts", "--tier", "risky");
 	expect(review.expansion["panel/lenses"]).toEqual(
-		slice.expansion["panel/lenses"],
+		slice.expansion["fix_until_clean/panel/lenses"],
 	);
 	const consolidator = review.ir.nodes.find(
 		(n: { id: string }) => n.id === "panel/consolidator",
