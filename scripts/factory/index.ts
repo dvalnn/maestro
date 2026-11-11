@@ -104,7 +104,7 @@ const SLICE_FILE = join(REPO, ".maestro/slice.ts");
 const REVIEW_FILE = join(REPO, ".maestro/review.ts");
 /** The review tier a stack review rules at. */
 const STACK_REVIEW_PRESET = "risky";
-/** How a slice's agent reports it blocked (GLOSSARY.md, Blocked). */
+/** How a slice's agent reports it blocked (ADR 0012). */
 const BLOCKED = "blocked:";
 /** The states a slice's settle is routed in; on an issue the owner moved elsewhere it is parked. */
 const BUILDING: readonly State[] = ["in-progress", "ready-for-agent"];
