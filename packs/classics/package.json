@@ -14,7 +14,8 @@
 		"@maestro/testkit": "workspace:*"
 	},
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./code": "./src/code.ts"
 	},
 	"files": [
 		"src",

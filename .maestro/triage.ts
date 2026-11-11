@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { atLeastOne, fill, scout, toMarkdown } from "@maestro/classics";
+import { atLeastOne, fill, scout } from "@maestro/classics";
 import { JsonOut, MarkdownOut, read, seat } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
@@ -45,7 +45,8 @@ import {
 import { findingsOf, plansOf, RUNNERS, settle } from "./triage/verdict";
 
 // ADR 0008: a code node's function must be exported by its composition file.
-export { settle, toMarkdown };
+export * from "@maestro/classics/code";
+export { settle };
 
 /** Each call's task: its own prompt file, then the shared fragments it rules by. */
 const TASKS = {

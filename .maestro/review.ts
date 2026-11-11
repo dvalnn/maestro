@@ -1,11 +1,10 @@
-import { survivorsOf, toMarkdown } from "@maestro/classics";
 import { commits } from "@maestro/host-repo-sdk";
 import { composition, Text } from "@maestro/sdk";
 import { markdownOf } from "./shared";
 import { panelOf } from "./slice/lenses";
 
 // ADR 0008: a code node's function must be exported by its composition file.
-export { survivorsOf, toMarkdown };
+export * from "@maestro/classics/code";
 
 export const review = composition(
 	"review",

@@ -8,8 +8,6 @@ import {
 	repairUntilGreen,
 	round,
 	rulingLine,
-	survivorsOf,
-	toMarkdown,
 	upheld,
 	type Verdict,
 	type Verdicts,
@@ -68,7 +66,7 @@ import TESTER from "./slice/prompts/tester.md" with { type: "text" };
 import WRITER from "./slice/prompts/writer.md" with { type: "text" };
 
 // ADR 0008: a code node's function must be exported by its composition file.
-export { survivorsOf, toMarkdown };
+export * from "@maestro/classics/code";
 
 const PATCH_EXT = ".patch";
 const NOTHING_CHANGED = "the slice changed nothing";
