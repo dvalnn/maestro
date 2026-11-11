@@ -85,8 +85,12 @@ export interface Lanes {
 	 * @throws on a revision git cannot resolve, a range with no commit in it, or one that is not one linear series.
 	 */
 	commits(revs: string, base: string, at: Version): Promise<void>;
-	/** The patch series from the lane chain's base up to `v`. Unchanged versions add no patch. */
-	changeset(v: Version): Promise<Changeset>;
+	/**
+	 * The patch series from the lane chain's base up to `v`, or, given `since`, the patches after that version, with its
+	 * commit as the base. Unchanged versions add no patch.
+	 * @throws when `since` is not an ancestor of `v`.
+	 */
+	changeset(v: Version, since?: Version): Promise<Changeset>;
 	/** Lane bytes on disk for a concert: its working copies and their git directories. The shared store is not counted. */
 	diskUse(concert: string): Promise<number>;
 	/** Removes a concert's lanes and versions, and returns the lane bytes freed. Forks other concerts made keep their content. */
@@ -122,6 +126,9 @@ export const DEFAULT_BASE = "HEAD";
 
 /** `git merge-base` exits 1 when the commits share no ancestor. */
 const NO_COMMON_ANCESTOR = 1;
+
+/** `git merge-base --is-ancestor` exits 1 when the first commit is not an ancestor of the second. */
+const NOT_ANCESTOR = 1;
 
 /** The fix line of revisions git cannot resolve to commits of the target. */
 const REVS_FIX = "Pass A..B, C^!, or a branch, tag or commit id";
@@ -525,6 +532,23 @@ export function openLanes(options: LanesOptions): Lanes {
 		}
 	}
 
+	/**
+	 * The commit of version `since`, which `v`, at `commit`, extends.
+	 * @throws when `since` is not an ancestor of `v`.
+	 */
+	async function sinceCommit(v: Version, commit: string, since: Version) {
+		const from = (await resolve(since)).commit;
+		const found = await spawnGit(
+			G("merge-base", "--is-ancestor", from, commit),
+		);
+		if (found.code === NOT_ANCESTOR)
+			throw new Error(
+				`${since} is not an ancestor of ${v}\nPass a version that ${v} extends`,
+			);
+		if (found.code !== 0) throw new Error(found.err.trim());
+		return from;
+	}
+
 	const refsUnder = async (prefix: string) =>
 		existsSync(store)
 			? (await value(G("for-each-ref", "--format=%(refname)", prefix)))
@@ -747,8 +771,10 @@ export function openLanes(options: LanesOptions): Lanes {
 					`${at} is already sealed`,
 				);
 			},
-			async changeset(v) {
-				const { commit, base } = await resolve(v);
+			async changeset(v, since) {
+				const { commit, base: laneBase } = await resolve(v);
+				const base =
+					since === undefined ? laneBase : await sinceCommit(v, commit, since);
 				const mbox = await git(
 					G("format-patch", "--stdout", "--no-signature", `${base}..${commit}`),
 				);

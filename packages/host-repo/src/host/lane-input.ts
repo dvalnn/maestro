@@ -164,10 +164,11 @@ export const sandboxed = (
 	log: [],
 });
 
-const LANE = { [MAESTRO_TYPE]: LANE_TYPE, type: "string" };
+/** The schema of a lane version port. */
+export const LANE_SCHEMA = { [MAESTRO_TYPE]: LANE_TYPE, type: "string" };
 
 /** The lane ports of a node whose lane input is `input`: a version in unless fresh, a version out unless read. */
 export const lanePorts = (input: LaneInput): { in: Ports; out: Ports } => ({
-	in: input.mode === "fresh" ? {} : { [LANE_PORT]: LANE },
-	out: input.mode === "read" ? {} : { [LANE_PORT]: LANE },
+	in: input.mode === "fresh" ? {} : { [LANE_PORT]: LANE_SCHEMA },
+	out: input.mode === "read" ? {} : { [LANE_PORT]: LANE_SCHEMA },
 });

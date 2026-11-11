@@ -33,6 +33,7 @@ import {
 import { artifactInput, textInput } from "./inputs";
 import {
 	baseOf,
+	LANE_SCHEMA,
 	lanePorts,
 	laneVersion,
 	versionAt,
@@ -50,6 +51,7 @@ const DIGITS = /^\d+$/;
 /** The file in a changeset directory that holds its commit message, when it has one. */
 export const MESSAGE_FILE = "message";
 const MESSAGE_PORT = "message";
+const SINCE_PORT = "since";
 
 const CHANGESET_DIR = "changeset";
 
@@ -116,7 +118,12 @@ async function executeChangeset(
 ): Promise<HostNodeResult> {
 	const setup = repoSetup(context.setup);
 	const store = openTarget(setup.store, requireTarget(setup).repo);
-	const changeset = await store.lanes.changeset(laneVersion(inputs[LANE_PORT]));
+	const changeset = await store.lanes.changeset(
+		laneVersion(inputs[LANE_PORT]),
+		inputs[SINCE_PORT] === undefined
+			? undefined
+			: laneVersion(inputs[SINCE_PORT]),
+	);
 	const message =
 		inputs[MESSAGE_PORT] === undefined
 			? undefined
@@ -143,6 +150,9 @@ export function changesetKind(): NodeKind {
 				...lanePorts({ mode: "read" }).in,
 				...(Object.hasOwn(node.in ?? {}, MESSAGE_PORT)
 					? { [MESSAGE_PORT]: { type: "string" } }
+					: {}),
+				...(Object.hasOwn(node.in ?? {}, SINCE_PORT)
+					? { [SINCE_PORT]: LANE_SCHEMA }
 					: {}),
 			},
 			out: { [CHANGESET_PORT]: { [MAESTRO_TYPE]: CORE_TYPES.dir } },

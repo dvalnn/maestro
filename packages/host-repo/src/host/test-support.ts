@@ -168,6 +168,8 @@ export type NodeSpec = {
 	/** A node whose rejection this one tolerates. */
 	tolerates?: string;
 	message?: boolean;
+	/** Declares the `since` input port, as a changeset node wired from a version does. */
+	since?: boolean;
 };
 
 /** A node of `host` with the ports its kind gives it, fed by `literals` and, from `lane`, an edge. */
@@ -182,6 +184,7 @@ function repoNode(
 		config: spec.config,
 		in: {
 			...(spec.message && { message: { type: "string" } }),
+			...(spec.since && { since: { type: "string" } }),
 			...((spec.session !== undefined ||
 				spec.literals?.session !== undefined) && {
 				session: { type: "string" },

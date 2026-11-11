@@ -42,19 +42,19 @@ A code node that settles `failed` keeps its scratch directory, its log saying `s
 
 ## `@maestro/host-repo-sdk`
 
-| Name                                    | Gives                                                                                  |
-| --------------------------------------- | -------------------------------------------------------------------------------------- |
-| `fresh(base?)`                          | A new lane cut at `base`, else `target.base`, else the target's `HEAD`                 |
-| `fork(v)`                               | A copy of version `v`; any number of nodes may fork one version                        |
-| `extend(v)`                             | The lane continued from `v`, at most once                                              |
-| `read(v)`                               | `v` with writes discarded; the node outputs no lane                                    |
-| `seat(name, { profile?, ... })`         | A coding agent; outputs `report`, `staged`, `lane`, `session` and declared ones        |
-| `check(lane, which?)`                   | Every named check, the one named, or an inline `{ run, timeout, ... }`; keeps `output` |
-| `changeset(v, { message? })`            | `v` as a changeset, `message` its commit message; end a composition on one             |
-| `commits(revs)`                         | Target commits `revs` names as a version; fork or read it, never extend                |
-| `apply(lane, cs, { strategy })`         | Changeset `cs` applied to a lane; `"3way"` (default) or `"clean"`                      |
-| `JsonOut(file, T)`, `MarkdownOut(file)` | A declared agent output, written in its outbox at `/out/<file>`                        |
-| `Lane`                                  | The lane version type, and the lane ref param type                                     |
+| Name                                    | Gives                                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `fresh(base?)`                          | A new lane cut at `base`, else `target.base`, else the target's `HEAD`                           |
+| `fork(v)`                               | A copy of version `v`; any number of nodes may fork one version                                  |
+| `extend(v)`                             | The lane continued from `v`, at most once                                                        |
+| `read(v)`                               | `v` with writes discarded; the node outputs no lane                                              |
+| `seat(name, { profile?, ... })`         | A coding agent; outputs `report`, `staged`, `lane`, `session` and declared ones                  |
+| `check(lane, which?)`                   | Every named check, the one named, or an inline `{ run, timeout, ... }`; keeps `output`           |
+| `changeset(v, { message?, since? })`    | `v` as a changeset, `message` its commit message, `since` an earlier version, only later patches |
+| `commits(revs)`                         | Target commits `revs` names as a version; fork or read it, never extend                          |
+| `apply(lane, cs, { strategy })`         | Changeset `cs` applied to a lane; `"3way"` (default) or `"clean"`                                |
+| `JsonOut(file, T)`, `MarkdownOut(file)` | A declared agent output, written in its outbox at `/out/<file>`                                  |
+| `Lane`                                  | The lane version type, and the lane ref param type                                               |
 
 ## Seats
 

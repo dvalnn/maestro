@@ -133,6 +133,34 @@ describe("apply", () => {
 		expect(readdirSync(artifact("csr", "changeset"))).not.toContain("message");
 	});
 
+	test("a changeset's since input is an earlier version, its patches and base start from there", async () => {
+		const target = toyTarget();
+		const { host } = edits({ "l.txt": "l\n" }, { "r.txt": "r\n" });
+		const nodes: NodeSpec[] = [
+			...forksOf(),
+			{
+				id: "css",
+				kind: "changeset",
+				config: {},
+				lane: "merge",
+				since: true,
+				wires: { since: "first.lane" },
+			},
+		];
+		const { artifact } = await performed(
+			host,
+			irOf(host, nodes, "merge"),
+			configOf(target),
+		);
+		const full = artifact("csl", "changeset");
+		const since = artifact("css", "changeset");
+		expect(readdirSync(since).sort()).toEqual(["0001.patch", "base"]);
+		expect(readFileSync(join(since, "0001.patch"), "utf8")).toContain("r.txt");
+		expect(readFileSync(join(since, "base"), "utf8")).not.toBe(
+			readFileSync(join(full, "base"), "utf8"),
+		);
+	});
+
 	test("a same-line conflict is rejected naming the file, and an agent extending that version resolves it", async () => {
 		const target = toyTarget();
 		const { host } = edits({ "a.txt": "left\n" }, { "a.txt": "right\n" });

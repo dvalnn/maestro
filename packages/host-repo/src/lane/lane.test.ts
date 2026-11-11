@@ -252,6 +252,36 @@ describe("fork and extend", () => {
 		expect((await lanes.changeset("c1.build")).patches).toHaveLength(1);
 	});
 
+	test("changeset since a version holds only the patches after it, based at that version's commit", async () => {
+		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
+		await sealed(lanes, "c1.build");
+		const next = await lanes.extend("c1.build", "c1.fix");
+		writeFileSync(join(next.dir, "a.txt"), "v2\n");
+		await next.seal();
+
+		const full = await lanes.changeset("c1.fix");
+		const after = await lanes.changeset("c1.fix", "c1.build");
+		expect(after.patches).toHaveLength(1);
+		expect(full.patches).toHaveLength(2);
+		expect(after.patches[0]).toContain("-v1");
+		expect(after.base).not.toBe(full.base);
+		expect((await lanes.changeset("c1.fix", "c1.fix")).patches).toEqual([]);
+	});
+
+	test("changeset since a version the lane does not extend names both versions", async () => {
+		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
+		await sealed(lanes, "c1.build");
+		const side = await lanes.fork("c1.build", "c1.side");
+		writeFileSync(join(side.dir, "a.txt"), "side\n");
+		await side.seal();
+		const next = await lanes.extend("c1.build", "c1.fix");
+		writeFileSync(join(next.dir, "a.txt"), "v2\n");
+		await next.seal();
+		await expect(lanes.changeset("c1.fix", "c1.side")).rejects.toThrow(
+			"c1.side is not an ancestor of c1.fix",
+		);
+	});
+
 	test("an unchanged lane at the end of an extend chain seals to its parent and adds no patch", async () => {
 		const lanes = openLanes({ target: toyTarget(), root: tmp("root") });
 		await sealed(lanes, "c1.build");

@@ -415,12 +415,14 @@ test("the agent's own port names are the host's, and each is refused only on the
 	}
 });
 
-test("changeset lowers a message, literal or ref, to a message input, and has none otherwise", () => {
+test("changeset lowers a message and a since, literal or ref, to inputs, and has none otherwise", () => {
 	const ir = buildIr(
 		composition("messages", { examples: [{}] }, () => {
 			const built = builder({ task: "a", lane: fresh() });
 			changeset(built.out.lane, { label: "bare" });
 			changeset(built.out.lane, { label: "literal", message: "Fix it" });
+			changeset(built.out.lane, { label: "since-literal", since: "c1.fix" });
+			changeset(built.out.lane, { label: "since-ref", since: built.out.lane });
 			return changeset(built.out.lane, {
 				label: "ref",
 				message: built.out.report.get("summary"),
@@ -431,6 +433,11 @@ test("changeset lowers a message, literal or ref, to a message input, and has no
 	expect(nodeOf(ir, "literal")?.literals).toMatchObject({ message: "Fix it" });
 	expect(nodeOf(ir, "ref")?.in).toHaveProperty("message");
 	expect(nodeOf(ir, "ref")?.literals).not.toHaveProperty("message");
+	expect(nodeOf(ir, "bare")?.in).not.toHaveProperty("since");
+	expect(nodeOf(ir, "since-literal")?.literals).toMatchObject({
+		since: "c1.fix",
+	});
+	expect(nodeOf(ir, "since-ref")?.in).toHaveProperty("since");
 });
 
 test("only a seat call takes a session, extend refuses the removed resume, and apply takes one changeset", () => {

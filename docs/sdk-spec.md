@@ -283,9 +283,11 @@ the IR, since packs bundle it. Lanes and their versions are in [Lanes](../packag
 | `JsonOut(file, type)`, `MarkdownOut(file)` | an agent output: a file in its outbox, arriving as an artifact        |
 | `seat(name, opts)`                         | a function that emits a `repo.agent` node running a profile[^seat]    |
 | `check(lane, which?)`                      | a `repo.check` node[^check]                                           |
-| `changeset(v)`                             | a `repo.changeset` node: version `v` as a patch series                |
+| `changeset(v, opts)`                       | a `repo.changeset` node: `v` as a patch series[^cs]                   |
 | `commits(revs)`                            | a `repo.commits` node: the target commits `revs` names, as a version  |
 | `apply(lane, changeset, opts)`             | a `repo.apply` node: one changeset, `opts.strategy` `3way` or `clean` |
+
+[^cs]: `opts.message` is its commit message; `opts.since`, a version `v` extends, keeps only the patches after it.
 
 [^lane]: `v` is a lane output or a lane ref, which becomes a `literal` of type `Lane`.
 

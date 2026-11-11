@@ -394,16 +394,27 @@ export function check<M extends LaneMode>(
 }
 
 /**
- * A `repo.changeset` node: the patch series of version `v` as a directory, with a commit `message` when given. It opens
- * no lane and spends no extension.
+ * A `repo.changeset` node: the patch series of version `v` as a directory, with a commit `message` when given. Given
+ * `since`, a version `v` extends, only the patches after it. It opens no lane and spends no extension.
  */
 export function changeset(
 	v: Ref<string> | string,
-	{ message, ...common }: Common & { message?: string | Ref<string> } = {},
+	{
+		message,
+		since,
+		...common
+	}: Common & {
+		message?: string | Ref<string>;
+		since?: Ref<string> | string;
+	} = {},
 ): Result<{ changeset: Type<ArtifactRef> }> {
 	return hostNode("repo.changeset", {
 		...common,
-		in: defined({ lane: versionOf(v), message }),
+		in: defined({
+			lane: versionOf(v),
+			message,
+			since: since === undefined ? undefined : versionOf(since),
+		}),
 		out: { changeset: Dir() },
 	});
 }
