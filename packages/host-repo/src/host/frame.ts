@@ -28,24 +28,26 @@ export type Report = {
 
 /**
  * An agent's final reply (GLOSSARY: Envelope). A work agent's has no `outcome` or `reason`; a verdict agent's has an
- * `outcome` unless blocked.
+ * `outcome` unless blocked. `fields` holds the typed fields its seat call declares, all of them unless blocked.
  */
 export type Envelope = {
 	report: Report;
 	blocked?: string;
 	outcome?: "ok" | "rejected";
 	reason?: string;
+	fields: Record<string, unknown>;
 };
 
-const envelopeSchema = (verdict: Record<string, JsonSchema>): JsonSchema => ({
-	type: "object",
-	required: ["report"],
-	additionalProperties: false,
-	properties: { report: REPORT, blocked: LINE, ...verdict },
-});
-
-/** What a reply kind takes: its envelope's schema, the line that asks for the declared files, and how to reply. */
-export type ReplyKind = { schema: JsonSchema; files: string; reply: string[] };
+/** What a reply kind takes: its envelope's schema, its typed fields, the line that asks for the declared files, and how to reply. */
+export type ReplyKind = {
+	schema: JsonSchema;
+	/** Whether the reply gives a verdict, unless blocked. */
+	verdict: boolean;
+	/** The names of the typed fields, each required unless the agent is blocked. */
+	fields: string[];
+	files: string;
+	reply: string[];
+};
 
 const REPLY_LEAD =
 	"Your final reply is only this JSON object, with no other text:";
@@ -69,55 +71,88 @@ const LISTED = (["gaps", "obstacles", "lessons"] as const)
 	.map((field) => `    "${field}": ["<${REPORT_FIELDS[field]}>"]`)
 	.join(",\n");
 
-export const WORK: ReplyKind = {
-	schema: envelopeSchema({}),
-	files: "Before your final reply, write every one of these files:",
-	reply: [
-		REPLY_LEAD,
-		"",
-		`\`\`\`json
-{
-  "report": {
-    "summary": "<what you did, in one line>",
-${LISTED}
-  }
-}
-\`\`\``,
-		"",
-		...LISTS,
-		"- Leave out what the run already records: your changes, the checks' results and the files you wrote.",
-		`- Add \`"blocked": "<the cause>"\` ${BLOCKED_BAR}`,
-	],
+/** What differs between the reply kinds: the summary, the verdict members and the lines around the example. */
+type Parts = {
+	files: string;
+	summary: string;
+	members: string[];
+	verdict: string[];
+	leave: string;
+	blocked: string;
+	schema: Record<string, JsonSchema>;
 };
 
-export const VERDICT: ReplyKind = {
-	schema: envelopeSchema({
-		outcome: { enum: ["ok", "rejected"] },
-		reason: LINE,
-	}),
+const WORK_PARTS: Parts = {
+	files: "Before your final reply, write every one of these files:",
+	summary: "what you did, in one line",
+	members: [],
+	verdict: [],
+	leave:
+		"- Leave out what the run already records: your changes, the checks' results and the files you wrote.",
+	blocked: `- Add \`"blocked": "<the cause>"\` ${BLOCKED_BAR}`,
+	schema: {},
+};
+
+const VERDICT_PARTS: Parts = {
 	files:
 		"Before your final reply, write every one of these files, even when you reject:",
-	reply: [
-		REPLY_LEAD,
-		"",
-		`\`\`\`json
-{
-  "report": {
-    "summary": "<your ruling, in one line>",
-${LISTED}
-  },
-  "outcome": "ok",
-  "reason": "<why, when rejected>"
-}
-\`\`\``,
-		"",
+	summary: "your ruling, in one line",
+	members: ['  "outcome": "ok"', '  "reason": "<why, when rejected>"'],
+	verdict: [
 		"- `outcome`: `ok` when the work passes your ruling, `rejected` when it does not.",
 		"- `reason`: why you rejected; leave it out when `ok`.",
-		...LISTS,
-		"- Leave out what the run already records: the checks' results and the files you wrote.",
-		`- Give \`"blocked": "<the cause>"\` in place of \`outcome\` and \`reason\` ${BLOCKED_BAR}`,
 	],
+	leave:
+		"- Leave out what the run already records: the checks' results and the files you wrote.",
+	blocked: `- Give \`"blocked": "<the cause>"\` in place of \`outcome\` and \`reason\` ${BLOCKED_BAR}`,
+	schema: { outcome: { enum: ["ok", "rejected"] }, reason: LINE },
 };
+
+const fieldLine = (name: string, schema: JsonSchema) =>
+	`- \`${name}\`: JSON matching this JSON Schema, left out only with \`blocked\`:\n  \`\`\`json\n  ${JSON.stringify(schema)}\n  \`\`\``;
+
+/** The reply kind of a work agent, or of a verdict agent when `verdict`, asking for the typed `fields` beside `report`. */
+export function replyKind(
+	verdict: boolean | undefined,
+	fields: Record<string, JsonSchema> = {},
+): ReplyKind {
+	const parts = verdict ? VERDICT_PARTS : WORK_PARTS;
+	const members = [
+		`  "report": {\n    "summary": "<${parts.summary}>",\n${LISTED}\n  }`,
+		...Object.keys(fields).map(
+			(name) => `  "${name}": <JSON value, as described below>`,
+		),
+		...parts.members,
+	];
+	return {
+		schema: {
+			type: "object",
+			required: ["report"],
+			additionalProperties: false,
+			properties: { report: REPORT, blocked: LINE, ...parts.schema, ...fields },
+		},
+		verdict: Boolean(verdict),
+		fields: Object.keys(fields),
+		files: parts.files,
+		reply: [
+			REPLY_LEAD,
+			"",
+			`\`\`\`json\n{\n${members.join(",\n")}\n}\n\`\`\``,
+			"",
+			...parts.verdict,
+			...Object.entries(fields).map(([name, schema]) =>
+				fieldLine(name, schema),
+			),
+			...LISTS,
+			parts.leave,
+			parts.blocked,
+		],
+	};
+}
+
+export const WORK = replyKind(false);
+
+export const VERDICT = replyKind(true);
 
 /** Whether an attachment mounts as a file or a directory. */
 export type AttachmentKind = "file" | "directory";
@@ -277,6 +312,27 @@ const compacted = (report: Report): Report =>
 		Object.entries(report).filter(([, v]) => !Array.isArray(v) || v.length),
 	) as Report;
 
+/** What is wrong with `envelope` beyond its schema: a clash of verdict and blocked, or a field it owes. */
+function inconsistency(
+	envelope: Record<string, unknown> & Omit<Envelope, "fields">,
+	kind: ReplyKind,
+): string | undefined {
+	const verdict = envelope.outcome ?? envelope.reason;
+	if (envelope.blocked !== undefined && verdict !== undefined)
+		return "reply.blocked excludes reply.outcome and reply.reason";
+	if (kind.verdict && envelope.blocked === undefined && !envelope.outcome)
+		return "reply.outcome is required unless reply.blocked is set";
+	if (envelope.outcome === "rejected" && !envelope.reason)
+		return "reply.reason is required when outcome is rejected";
+	const missing =
+		envelope.blocked === undefined
+			? kind.fields.find((name) => !(name in envelope))
+			: undefined;
+	if (missing !== undefined)
+		return `reply.${missing} is required unless reply.blocked is set`;
+	return undefined;
+}
+
 /** The envelope of reply kind `kind` that `reply` holds, bare or in one fenced block, or what is wrong with it. */
 export function envelopeOf(reply: string, kind: ReplyKind): Envelope | string {
 	const trimmed = reply.trim();
@@ -290,13 +346,12 @@ export function envelopeOf(reply: string, kind: ReplyKind): Envelope | string {
 		["reply", ...at].join("."),
 	);
 	if (found.length) return found.join("; ");
-	const envelope = value as Envelope;
-	const verdict = envelope.outcome ?? envelope.reason;
-	if (envelope.blocked !== undefined && verdict !== undefined)
-		return "reply.blocked excludes reply.outcome and reply.reason";
-	if (kind === VERDICT && envelope.blocked === undefined && !envelope.outcome)
-		return "reply.outcome is required unless reply.blocked is set";
-	if (envelope.outcome === "rejected" && !envelope.reason)
-		return "reply.reason is required when outcome is rejected";
-	return { ...envelope, report: compacted(envelope.report) };
+	const envelope = value as Record<string, unknown> & Omit<Envelope, "fields">;
+	const problem = inconsistency(envelope, kind);
+	if (problem !== undefined) return problem;
+	const { report, blocked, outcome, reason } = envelope;
+	const fields = Object.fromEntries(
+		kind.fields.filter((name) => name in envelope).map((n) => [n, envelope[n]]),
+	);
+	return { report: compacted(report), blocked, outcome, reason, fields };
 }

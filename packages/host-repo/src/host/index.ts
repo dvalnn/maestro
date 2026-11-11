@@ -73,6 +73,7 @@ export {
 	AGENT_OUT_PORTS,
 	CHANGESET_PORT,
 	CHECK_KIND,
+	ENVELOPE_KEYS,
 	HOST_NAME,
 } from "./config";
 export { REPORT } from "./frame";

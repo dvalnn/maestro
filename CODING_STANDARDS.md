@@ -78,6 +78,10 @@ Graph or prose, under [ADR 0016](docs/adr/0016-a-check-enters-as-a-tool-and-a-se
 - Prose goes to the layer that owns its scope, as inline text until a carrier is proven to load it. A hint names
   reference material and never carries a rule.
 
+A seat hands structured data on in a typed `reply` field, and Markdown or a large file in an outbox file; a composition
+never has an agent write a JSON file for data a `reply` field can carry
+([Handing work on](packages/host-repo/README.md#handing-work-on)).
+
 Review and tests, under [File rules](docs/sdk-spec.md#file-rules):
 
 - Prompt wording is reviewed as Markdown in the diff, never pinned by substring, unless a parser reads the text.

@@ -89,8 +89,7 @@ import {
 	type ReplyKind,
 	type Run,
 	reply,
-	VERDICT,
-	WORK,
+	replyKind,
 } from "./frame";
 import { artifactInput, textInput } from "./inputs";
 import { lanePorts, readOnlyBinds, versionAt, withLane } from "./lane-input";
@@ -143,6 +142,7 @@ function agentPorts(node: HostNode): { in: Ports; out: Ports } {
 				}
 			: { [MAESTRO_TYPE]: CORE_TYPES.markdown },
 	]);
+	const fields = Object.entries(config.reply ?? {});
 	const attachments = Object.entries(config.attachments ?? {}).map(
 		([name, attachment]) => [
 			name,
@@ -161,6 +161,7 @@ function agentPorts(node: HostNode): { in: Ports; out: Ports } {
 			staged: { [MAESTRO_TYPE]: CORE_TYPES.dir },
 			[SESSION_PORT]: SESSION,
 			...lane.out,
+			...Object.fromEntries(fields),
 			...Object.fromEntries(declared),
 		},
 	};
@@ -676,6 +677,7 @@ async function settle(
 		[SESSION_PORT]: session.id,
 		...(version && { [LANE_PORT]: version }),
 		...read.outputs,
+		...turns.envelope.fields,
 	};
 	return outcome === "ok"
 		? { outcome, outputs, metrics, enrichment }
@@ -844,7 +846,7 @@ function toldOf(
 		],
 		skills: profileSkills(profile),
 		out: Object.values(config.out ?? {}),
-		kind: config.verdict ? VERDICT : WORK,
+		kind: replyKind(config.verdict, config.reply),
 		sessions:
 			context?.strategy === "handoff" ? sessionsOf(context.max) : undefined,
 	};
@@ -1004,6 +1006,7 @@ async function execute(
 				),
 				outbox: staging.outbox,
 				outputs,
+				...(config.reply && { reply: config.reply }),
 				session: { dir: session.dir, id: session.harnessId },
 				verdict: config.verdict,
 				instance: instance.id,

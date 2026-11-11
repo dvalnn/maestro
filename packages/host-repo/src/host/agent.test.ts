@@ -1467,3 +1467,103 @@ describe("agent output correction", () => {
 		});
 	});
 });
+
+describe("agent typed reply fields", () => {
+	const reason = { type: "string", minLength: 1 };
+	const declaring = (host: Parameters<typeof irOf>[0], verdict?: boolean) =>
+		irOf(
+			host,
+			[
+				{
+					id: "x",
+					kind: "agent",
+					config: {
+						...agentOn(fresh),
+						reply: { map: { type: "object", required: ["tier"] }, why: reason },
+						...(verdict && { verdict }),
+					},
+					literals: { prompt: "go" },
+				},
+			],
+			"x",
+		);
+	const attempt = async (
+		steps: (n: number) => StubStep[],
+		verdict?: boolean,
+	) => {
+		const { host, requests } = stubHost(() => steps(requests.length));
+		const { result, instances } = await performed(
+			host,
+			declaring(host, verdict),
+			configOf(toyTarget()),
+		);
+		return { result, requests, instances };
+	};
+	const fields = { map: { tier: "small" }, why: "tiny" };
+
+	test("a valid reply settles ok with each field as an output", async () => {
+		const { result, requests, instances } = await attempt(() => [
+			reply({ report: DONE, ...fields }),
+		]);
+		expect(requests).toHaveLength(1);
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(instances[0]?.outputs).toMatchObject(fields);
+	});
+
+	test.each([
+		[
+			"a field off its schema",
+			{ report: DONE, map: {}, why: "x" },
+			"reply.map",
+		],
+		["a missing field", { report: DONE, map: fields.map }, "reply.why"],
+	])("%s is corrected in the same session", async (_, bad, problem) => {
+		const { result, requests } = await attempt((n) =>
+			n === 1 ? [reply(bad)] : [reply({ report: DONE, ...fields })],
+		);
+		expect(result).toMatchObject({ outcome: "ok" });
+		expect(requests).toHaveLength(2);
+		expect(requests[1]?.prompt).toContain(problem);
+		expect(requests[1]?.session).toEqual(requests[0]?.session);
+	});
+
+	test("an invalid field past the limit fails with its problem", async () => {
+		const { result, requests } = await attempt(() => [
+			reply({ report: DONE, map: {}, why: "x" }),
+		]);
+		expect(requests).toHaveLength(3);
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: expect.stringContaining("reply.map"),
+		});
+	});
+
+	test("a rejection gives the fields, and a blocked reply gives none", async () => {
+		const rejected = await attempt(
+			() => [
+				reply({ outcome: "rejected", reason: "no", report: DONE, ...fields }),
+			],
+			true,
+		);
+		expect(rejected.result).toMatchObject({ outcome: "rejected" });
+		const bare = await attempt(
+			(n) => [
+				n === 1
+					? reply({ outcome: "rejected", reason: "no", report: DONE })
+					: reply({
+							outcome: "rejected",
+							reason: "no",
+							report: DONE,
+							...fields,
+						}),
+			],
+			true,
+		);
+		expect(bare.requests).toHaveLength(2);
+		const blocked = await attempt(() => [
+			reply({ blocked: "no network", report: DONE }),
+		]);
+		expect(blocked.requests).toHaveLength(1);
+		expect(blocked.result).toMatchObject({ reason: "blocked: no network" });
+	});
+});

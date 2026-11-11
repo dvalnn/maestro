@@ -12,6 +12,7 @@ import { join as joinPath } from "node:path";
 import type { Roots } from "@maestro/core/host";
 import { concertDirs } from "@maestro/core/perform";
 import {
+	ENVELOPE_KEYS as HOST_ENVELOPE_KEYS,
 	AGENT_IN_PORTS as HOST_IN_PORTS,
 	AGENT_OUT_PORTS as HOST_OUT_PORTS,
 	REPORT as HOST_REPORT,
@@ -29,10 +30,13 @@ import {
 	BuildError,
 	code,
 	composition,
+	Dir,
+	Enum,
 	iter,
 	loop,
 	not,
 	type Ref,
+	Struct,
 	Text,
 } from "@maestro/sdk";
 import * as stdlib from "@maestro/sdk/stdlib";
@@ -44,6 +48,7 @@ import {
 	apply,
 	changeset,
 	check,
+	ENVELOPE_KEYS,
 	extend,
 	fork,
 	fresh,
@@ -51,6 +56,7 @@ import {
 	Lane,
 	MarkdownOut,
 	REPORT,
+	type Replies,
 	read,
 	Session,
 	seat,
@@ -380,6 +386,7 @@ test("every option of a seat call, check and apply composes against the repo hos
 test("the agent's own port names are the host's, and each is refused only on the side that has it", () => {
 	expect(AGENT_IN_PORTS).toEqual(HOST_IN_PORTS);
 	expect(AGENT_OUT_PORTS).toEqual(HOST_OUT_PORTS);
+	expect(ENVELOPE_KEYS).toEqual(HOST_ENVELOPE_KEYS);
 	expect(REPORT).toEqual(HOST_REPORT);
 	const refused = (field: "attachments" | "out", name: string) => {
 		const clash = composition("clash", { examples: [{}] }, () => {
@@ -447,6 +454,54 @@ test("only a seat call takes a session, extend refuses the removed resume, and a
 		});
 	});
 	expect(buildCode(() => buildIr(resumed))).toBe("TYPE.options");
+});
+
+/** A typed reply field read by a code node. */
+export const readTier = ({ map }: { map: { tier: string } }) => ({
+	tier: map.tier,
+});
+
+describe("typed reply fields", () => {
+	const TestMap = Struct({ tier: Enum(["small", "large"]), notes: Text() });
+	const judge = (reply: Replies, out = {}) =>
+		composition("typed", { examples: [{}] }, () =>
+			builder({ task: "map", lane: fresh(), reply, out }),
+		);
+
+	test("a reply field is an output port of its type that a node reads, and composes", async () => {
+		const typed = composition("typed", { examples: [{}] }, () => {
+			const tested = builder({
+				task: "map",
+				lane: fresh(),
+				reply: { map: TestMap },
+			});
+			return code(readTier, {
+				in: { map: tested.out.map },
+				out: { tier: Text() },
+			});
+		});
+		const ir = buildIr(typed, {}, { readTier });
+		expect(nodeOf(ir, "agent")).toMatchObject({
+			config: { reply: { map: TestMap.schema } },
+			out: { map: TestMap.schema },
+		});
+		expect(await repo().composeIt(ir)).toMatchObject({ ok: true });
+	});
+
+	test.each([
+		...["report", "blocked", "outcome", "reason", "session", "notes"].map(
+			(name): [string, Replies, string] => [
+				name,
+				{ [name]: TestMap },
+				"SCOPE.name",
+			],
+		),
+		["an artifact", { file: Dir() }, "TYPE.reply"],
+	])("a reply field named %s is refused", (_, reply, code) => {
+		expect(
+			buildCode(() => buildIr(judge(reply, { notes: MarkdownOut("n.md") }))),
+		).toBe(code);
+	});
 });
 
 describe("seat", () => {

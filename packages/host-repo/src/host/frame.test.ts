@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { frame, type Run, VERDICT, WORK } from "./frame";
+import { frame, type Run, replyKind, VERDICT, WORK } from "./frame";
 
 const LISTED = `    "gaps": ["<something the task asked that was left undone or unverified, which the reader would otherwise assume done>"],
     "obstacles": ["<something outside the agent's reach that stopped or slowed it, such as a missing attachment or a tool not on the PATH; not a test that failed or a check that was red>"],
@@ -26,7 +26,7 @@ test("a write-lane builder's frame states its working copy, checks, attachments 
 			{ file: "notes.md", format: "markdown" },
 			{ file: "a.json", format: "json", schema: { type: "object" } },
 		],
-		kind: WORK,
+		kind: replyKind(false, { map: { type: "object" } }),
 	};
 	expect(frame(run)).toBe(`# Your run
 
@@ -69,10 +69,15 @@ Your final reply is only this JSON object, with no other text:
   "report": {
     "summary": "<what you did, in one line>",
 ${LISTED}
-  }
+  },
+  "map": <JSON value, as described below>
 }
 \`\`\`
 
+- \`map\`: JSON matching this JSON Schema, left out only with \`blocked\`:
+  \`\`\`json
+  {"type":"object"}
+  \`\`\`
 - Most reports are the summary alone: give a list only for an item that clears its bar.
 - Leave out what the run already records: your changes, the checks' results and the files you wrote.
 - Add \`"blocked": "<the cause>"\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`);

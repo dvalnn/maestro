@@ -233,8 +233,8 @@ lane.
 **Seat**: A composition's slot for an agent: the profile it names and the outputs, verdict and checks the graph expects;
 config may rebind it. [Home](docs/sdk-spec.md#repo-host-sdk)
 
-**Envelope**: An agent's final reply, carrying a report and, for a verdict agent, an outcome.
-[Home](packages/host-repo/README.md#envelope)
+**Envelope**: An agent's final reply, carrying a report, the typed fields its seat call declares and, for a verdict
+agent, an outcome. [Home](packages/host-repo/README.md#envelope)
 
 **Lesson**: Something the next agent in this repository should know that the code and docs do not say, listed in its
 report; the owner promotes it by hand.

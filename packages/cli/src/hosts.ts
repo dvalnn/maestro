@@ -16,6 +16,7 @@ import {
 	type HarnessRequest,
 	isObject,
 	OUTBOX,
+	placeholder,
 	placeholderOutputs,
 	type StubStep,
 	stubHarness,
@@ -32,8 +33,20 @@ const VERDICT_FILE = "verdict";
 const EVENTS_FILE = "events.jsonl";
 
 const STUB_REPORT = { summary: "stub" };
-const STUB_REPLY = JSON.stringify({ report: STUB_REPORT });
-const STUB_VERDICT = JSON.stringify({ outcome: "ok", report: STUB_REPORT });
+const STUB_REPLY = { report: STUB_REPORT };
+const STUB_VERDICT = { outcome: "ok", report: STUB_REPORT };
+
+/** `envelope` with a placeholder for each typed field `req` declares, as reply text. */
+const withFields = (envelope: object, req: HarnessRequest) =>
+	JSON.stringify({
+		...envelope,
+		...Object.fromEntries(
+			Object.entries(req.reply ?? {}).map(([name, schema]) => [
+				name,
+				placeholder(schema),
+			]),
+		),
+	});
 
 /** The scripted file `file` for `req`'s agent: under its instance id, else its node id, else none. */
 function scripted(dir: string, req: HarnessRequest, file: string) {
@@ -98,7 +111,7 @@ function scriptedVerdict(dir: string | undefined, req: HarnessRequest) {
 			`${STUB_OUTPUTS} file '${VERDICT_FILE}' holds '${text}', not 'ok' or 'rejected <reason>'`,
 			`Write it as 'ok' or 'rejected <reason>'`,
 		);
-	return JSON.stringify({ outcome: "rejected", reason, report: STUB_REPORT });
+	return { outcome: "rejected", reason, report: STUB_REPORT };
 }
 
 /** The stub loads nothing: it runs a shell script. */
@@ -152,7 +165,10 @@ export const builtinHarnesses = (env: Record<string, string | undefined>) => [
 				{
 					emit: {
 						type: "text",
-						text: req.verdict ? scriptedVerdict(outputs, req) : STUB_REPLY,
+						text: withFields(
+							req.verdict ? scriptedVerdict(outputs, req) : STUB_REPLY,
+							req,
+						),
 					},
 					delayMs,
 				},

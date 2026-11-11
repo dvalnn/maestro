@@ -70,10 +70,15 @@ A call takes `task`, `lane` and the common options, and may add:
 - `session`: an agent's `out.session`, continued in place, told what changed since its last turn.
 - `attachments`: `{ name: { artifact, hint } }`, each mounted read-only at `/in/<name>`, `hint` saying when to read it.
 - outputs and checks.
+- `reply`: `{ name: type }`, typed fields of the agent's envelope beside `report`. Each is an output of its type, which
+  the host validates, correcting the agent, at most twice, when it is off the type. Structured data goes here, Markdown
+  and large files in outbox files. A name is none of `report`, `blocked`, `outcome`, `reason`, `lane`, `staged`,
+  `session` or an output's.
 
 A call sets no runtime, instructions, limits or context: an agent that needs another budget is another seat on another
 profile.
 
-An agent ending `ok` must write every declared file, valid, or the instance fails. Only a verdict agent rejects; one
-rejecting without its declared files ends `rejected` with no outputs. Any agent may report itself blocked: it ends
-`failed`, reason `blocked: <cause>`, no outputs.
+An agent ending `ok` must write every declared file and give every `reply` field, valid, or the instance fails; a
+rejecting verdict agent gives its fields too. Only a verdict agent rejects; one rejecting without its declared files
+ends `rejected` with no outputs. Any agent may report itself blocked: it ends `failed`, reason `blocked: <cause>`, no
+outputs.

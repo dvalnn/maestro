@@ -1063,6 +1063,37 @@ describe("compose", () => {
 			undefined,
 		],
 		[
+			"a reply field named after a declared output",
+			{
+				id: "x",
+				kind: "agent",
+				config: {
+					...agentOn(fresh),
+					reply: { notes: { type: "string" } },
+					out: { notes: { file: "n.md", format: "markdown" } },
+				},
+				literals: { prompt: "go" },
+			},
+			"HOST.reply",
+			"'x' declares 'notes' as both a reply field and an output, which share one port",
+			undefined,
+		],
+		[
+			"a reply field of an artifact type",
+			{
+				id: "x",
+				kind: "agent",
+				config: {
+					...agentOn(fresh),
+					reply: { file: { "x-maestro-type": "core.file" } },
+				},
+				literals: { prompt: "go" },
+			},
+			"HOST.reply",
+			"'x' declares reply field 'file' with an artifact type, which no reply field can hold",
+			undefined,
+		],
+		[
 			"a 1.0 agent node, built before profiles",
 			{
 				id: "x",

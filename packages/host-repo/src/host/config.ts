@@ -171,6 +171,9 @@ const LANE_INPUT = laneInput(["fork", "extend", "read"]);
 /** Output ports every agent has; a declared output takes none of these names. */
 export const AGENT_OUT_PORTS = [LANE_PORT, "report", "staged", SESSION_PORT];
 
+/** The envelope's own keys, which no typed reply field takes beside the agent's output ports. */
+export const ENVELOPE_KEYS = ["report", "blocked", "outcome", "reason"];
+
 const OUTBOX_FILE = {
 	type: "string",
 	pattern: "^[A-Za-z0-9_][A-Za-z0-9_.-]*$",
@@ -202,6 +205,14 @@ const CURRENT_AGENT_CONFIG = {
 					type: { enum: Object.values(CORE_TYPES) },
 				},
 			},
+		},
+		reply: {
+			type: "object",
+			propertyNames: {
+				pattern: PORT_NAME,
+				not: { enum: [...AGENT_OUT_PORTS, ...ENVELOPE_KEYS] },
+			},
+			additionalProperties: { type: ["object", "boolean"] },
 		},
 		out: {
 			type: "object",
@@ -303,6 +314,8 @@ export type AgentConfig = {
 	encore?: boolean;
 	checks?: string[];
 	attachments?: Record<string, Attachment>;
+	/** Typed fields of the agent's reply, by name, each with the schema its value must match. */
+	reply?: Record<string, JsonSchema>;
 	out?: Record<string, Output>;
 };
 

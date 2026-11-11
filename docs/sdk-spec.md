@@ -294,11 +294,14 @@ the IR, since packs bundle it. Lanes and their versions are in [Lanes](../packag
     default the seat's own name ([Profiles and prompts](../packages/host-repo/README.md#profiles-and-prompts)).
     `verdict: true` marks a verdict agent, which may reject ([Agent node](../packages/host-repo/README.md#agent-node));
     `encore: false` starts its agents fresh in an encore. A call takes `task`, `lane`, the common options, and may add
-    `session` (an agent's `out.session`, which it continues), `attachments` (each `{ artifact, hint }`), outputs and
-    checks. Outputs add with the call winning on a name, checks are a union, and the result's outputs are typed by both:
-    `report`, `staged`, `session`, `lane` unless it reads, and each declared output. An attachment named `prompt`,
-    `lane` or `session`, or an output named `lane`, `report`, `staged` or `session`, is a build error; an attachment
-    named `previous` is refused by the host's `validate` at compose.
+    `session` (an agent's `out.session`, which it continues), `attachments` (each `{ artifact, hint }`), outputs,
+    `reply` and checks. `reply: { name: type }` declares typed fields of the agent's envelope, each an output of its
+    type that the host validates ([Envelope](../packages/host-repo/README.md#envelope)); a name is none of `report`,
+    `blocked`, `outcome`, `reason`, `lane`, `staged`, `session` or an output's, or a build error. Outputs add with the
+    call winning on a name, checks are a union, and the result's outputs are typed by both: `report`, `staged`,
+    `session`, `lane` unless it reads, and each declared output. An attachment named `prompt`, `lane` or `session`, or
+    an output named `lane`, `report`, `staged` or `session`, is a build error; an attachment named `previous` is refused
+    by the host's `validate` at compose.
 
 [^check]:
     `which` is every named check, the one named, or an inline `{ run, timeout, ... }`. Outputs: `logs`, `output` (the

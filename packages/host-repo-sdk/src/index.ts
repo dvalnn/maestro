@@ -1,4 +1,10 @@
-import { type ArtifactRef, type JsonSchema, MAESTRO_TYPE } from "@maestro/ir";
+import {
+	ARTIFACT_TYPES,
+	type ArtifactRef,
+	type JsonSchema,
+	MAESTRO_TYPE,
+	schemaMarkers,
+} from "@maestro/ir";
 import {
 	BuildError,
 	type Common,
@@ -138,15 +144,22 @@ export const REPORT = {
 	properties: { summary: LINE, gaps: LINES, obstacles: LINES, lessons: LINES },
 } as const;
 
+/** The typed fields of an agent's reply, by name, each a type of JSON values. */
+export type Replies = Readonly<Record<string, Type<unknown>>>;
+
 /**
- * The outputs of an agent: its report, its staged prompt, its session, its lane unless it reads one, and those `O`
- * declares.
+ * The outputs of an agent: its report, its staged prompt, its session, its lane unless it reads one, those `O` declares
+ * and the typed reply fields `R` declares.
  */
-export type AgentOut<O extends Outputs, M extends LaneMode = LaneMode> = {
+export type AgentOut<
+	O extends Outputs,
+	M extends LaneMode = LaneMode,
+	R extends Replies = Record<never, never>,
+> = {
 	report: Type<Report>;
 	staged: Type<ArtifactRef>;
 	session: Type<string>;
-} & LaneOut<M> & { [K in keyof O]: O[K]["type"] };
+} & LaneOut<M> & { [K in keyof O]: O[K]["type"] } & R;
 
 const mapValues = <V, W>(
 	record: Readonly<Record<string, V>>,
@@ -176,24 +189,64 @@ export const AGENT_IN_PORTS = ["prompt", "lane", "session"];
 /** The output ports an agent has of its own, which no declared output may take. Equal to the host's `AGENT_OUT_PORTS`. */
 export const AGENT_OUT_PORTS = ["lane", "report", "staged", "session"];
 
+/** The keys of an agent's envelope, which no typed reply field takes beside the agent's output ports. Equal to the host's `ENVELOPE_KEYS`. */
+export const ENVELOPE_KEYS = ["report", "blocked", "outcome", "reason"];
+
 /**
- * Refuses an attachment or output named after one of an agent's own ports.
+ * Refuses an attachment, output or reply field named after one of an agent's own ports or envelope keys, a reply field
+ * named after an output, and a reply field whose type holds an artifact.
  * @throws BuildError when one is.
  */
-function checkNames(attachments: Attachments, out: Outputs): void {
+function checkNames(
+	attachments: Attachments,
+	out: Outputs,
+	reply: Replies,
+): void {
 	const checks = [
-		["an attachment", Object.keys(attachments), AGENT_IN_PORTS],
-		["an output", Object.keys(out), AGENT_OUT_PORTS],
+		[
+			"an attachment",
+			Object.keys(attachments),
+			AGENT_IN_PORTS,
+			"an agent's own port",
+		],
+		["an output", Object.keys(out), AGENT_OUT_PORTS, "an agent's own port"],
+		[
+			"a reply field",
+			Object.keys(reply),
+			AGENT_OUT_PORTS,
+			"an agent's own port",
+		],
+		[
+			"a reply field",
+			Object.keys(reply),
+			ENVELOPE_KEYS.filter((k) => !AGENT_OUT_PORTS.includes(k)),
+			"an envelope key",
+		],
+		[
+			"a reply field",
+			Object.keys(reply),
+			Object.keys(out),
+			"a declared output",
+		],
 	] as const;
-	for (const [what, names, own] of checks) {
+	for (const [what, names, own, holder] of checks) {
 		const taken = names.find((n) => own.includes(n));
 		if (taken !== undefined)
 			throw new BuildError({
 				code: "SCOPE.name",
-				message: `'${taken}' names an agent's own port, so ${what} cannot take it`,
+				message: `'${taken}' is ${holder}, so ${what} cannot take it`,
 				hint: `Rename '${taken}'; ${what} may not take ${own.join(", ")}`,
 			});
 	}
+	const held = Object.entries(reply).find(([, { schema }]) =>
+		schemaMarkers(schema).some((m) => ARTIFACT_TYPES.has(m.type)),
+	);
+	if (held)
+		throw new BuildError({
+			code: "TYPE.reply",
+			message: `reply field '${held[0]}' holds an artifact, which no reply field can`,
+			hint: `Declare '${held[0]}' as an output, JsonOut or MarkdownOut, or give the field a JSON value type`,
+		});
 }
 
 /**
@@ -212,14 +265,26 @@ export type SeatOptions<S extends Outputs> = {
 	checks?: string[];
 };
 
-/** What a call of a seat adds: the task and the lane, the session it continues, attachments and outputs, and checks. */
-export type SeatCall<C extends Outputs, M extends LaneMode> = Common & {
+/**
+ * What a call of a seat adds: the task and the lane, the session it continues, attachments, outputs and typed reply
+ * fields, and checks.
+ */
+export type SeatCall<
+	C extends Outputs,
+	M extends LaneMode,
+	R extends Replies = Replies,
+> = Common & {
 	task: string | Ref<string>;
 	lane: LaneInput<M>;
 	/** An earlier agent's `out.session` on the same harness, continued in place; a fresh session when absent. */
 	session?: Ref<string>;
 	attachments?: Attachments;
 	out?: C;
+	/**
+	 * Typed fields of the agent's reply, beside its report, each an output the host validates against its type. The
+	 * agent gives each unless it is blocked, a rejection included.
+	 */
+	reply?: R;
 	/** Names of `target.checks` the agent may run, beside the seat's. */
 	checks?: string[];
 };
@@ -242,20 +307,23 @@ export function seat<S extends Outputs = Record<never, never>>(
 	return <
 		C extends Outputs = Record<never, never>,
 		M extends LaneMode = LaneMode,
+		R extends Replies = Record<never, never>,
 	>(
-		call: SeatCall<C, M>,
-	): Result<AgentOut<Omit<S, keyof C> & C, M>> => {
+		call: SeatCall<C, M, R>,
+	): Result<AgentOut<Omit<S, keyof C> & C, M, R>> => {
 		const {
 			task,
 			lane,
 			session,
 			attachments = {},
 			out: callOut,
+			reply: callReply = {},
 			checks,
 			...common
 		} = call;
 		const out: Outputs = { ...standing.out, ...callOut };
-		checkNames(attachments, out);
+		const reply: Replies = callReply;
+		checkNames(attachments, out, reply);
 		const ports = lanePorts(lane);
 		return hostNode("repo.agent", {
 			...common,
@@ -270,6 +338,7 @@ export function seat<S extends Outputs = Record<never, never>>(
 				staged: Dir(),
 				session: Session,
 				...ports.out,
+				...reply,
 				...mapValues(out, (o) => o.type),
 			},
 			config: defined({
@@ -280,9 +349,10 @@ export function seat<S extends Outputs = Record<never, never>>(
 				encore: standing.encore,
 				checks: union(standing.checks, checks),
 				attachments: nonEmpty(mapValues(attachments, attachmentConfig)),
+				reply: nonEmpty(mapValues(reply, (t) => t.schema)),
 				out: nonEmpty(mapValues(out, (o) => o.config)),
 			}),
-		}) as Result<AgentOut<Omit<S, keyof C> & C, M>>;
+		}) as Result<AgentOut<Omit<S, keyof C> & C, M, R>>;
 	};
 }
 

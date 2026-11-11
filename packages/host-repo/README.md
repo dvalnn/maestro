@@ -23,14 +23,15 @@ The host contributes:
 | profile, seat | the profile by name and the seat it fills                                       |
 | lane          | `fresh`, `fork`, `extend` or `read` (see Lanes)                                 |
 | outputs       | typed declarations: a JSON file with a schema, or Markdown                      |
+| `reply`       | typed fields of the agent's envelope, each with a JSON schema (see Envelope)    |
 | `attachments` | named artifacts, each with a required `hint`, mounted read-only at `/in/<name>` |
 | checks        | the named checks it may run                                                     |
 | `session`     | optional: continue a session (see Sessions)                                     |
 | `verdict`     | marks a verdict agent                                                           |
 | `encore`      | `false` starts it fresh in an encore                                            |
 
-Outputs: the declared files as typed artifacts, `report`, outcome and reason from its envelope[^outcome], `metrics`,
-`staged` (the staged text), its latest `session` and the resulting lane version.
+Outputs: the declared files as typed artifacts, the typed `reply` fields as values, `report`, outcome and reason from
+its envelope[^outcome], `metrics`, `staged` (the staged text), its latest `session` and the resulting lane version.
 
 [^outcome]:
     `rejected` is a verdict agent's negative verdict. `failed` is a run that did not complete, or a blocked agent (ADR
@@ -148,20 +149,40 @@ schema, in an `ok` reply that is not blocked, gets the same correction turns as 
 
 The agent's final reply is its **envelope**.
 
-| Agent   | Envelope                                                           |
-| ------- | ------------------------------------------------------------------ |
-| work    | `{ report, blocked? }`                                             |
-| verdict | `{ report, outcome, reason? }`, or `{ report, blocked }`[^verdict] |
+| Agent   | Envelope                                                                      |
+| ------- | ----------------------------------------------------------------------------- |
+| work    | `{ report, ...fields, blocked? }`                                             |
+| verdict | `{ report, ...fields, outcome, reason? }`, or `{ report, blocked }`[^verdict] |
 
 [^verdict]: `outcome` is `ok` or `rejected`, and the reason is required when rejected.
 
 - The report is `{ summary, gaps?, obstacles?, lessons? }`: a one-line summary, then only what the record cannot show.
   It rides the enrichment too, so a blocked or failed agent keeps it.
-- A malformed envelope, such as a work agent's with an `outcome`, a verdict agent's with neither, or one both blocked
-  and giving a verdict, gets at most two correction turns in the same session, then `failed`. Declared-file problems
-  draw on the same two.
+- `fields` are the typed fields the seat call declares with `reply`, each named for its output port and given a JSON
+  schema (`reply: { map: TestMap }`). The host's reply template shows each schema, and the envelope is checked against
+  them. Every field is required unless the agent is blocked, a rejection included. A field's name is none of `report`,
+  `blocked`, `outcome`, `reason`, `lane`, `staged` or `session`, and no output's. A valid field is the output of its
+  name.
+- A rejection missing a field is corrected like any malformed envelope and then fails, where a rejection with declared
+  files missing ends `rejected` with no outputs: its fields are what the next seat acts on.
+- A malformed envelope, such as a work agent's with an `outcome`, a field missing or off its schema, a verdict agent's
+  with neither, or one both blocked and giving a verdict, gets at most two correction turns in the same session, then
+  `failed`. Declared-file problems draw on the same two.
 - A blocked agent ends `failed` with the reason `blocked: <cause>` and no outputs, its declared files unread (ADR 0012).
 - A rejection with declared files missing or invalid ends `rejected` with its reason and no outputs.
+
+### Handing work on
+
+Structured data takes the envelope, and files take the outbox:
+
+| The data is                                      | It goes in                    |
+| ------------------------------------------------ | ----------------------------- |
+| Structured: a verdict, a map, a list of findings | a typed `reply` field         |
+| Markdown a reader browses or a later agent reads | an outbox file, `MarkdownOut` |
+| Large, or browsed as a file, in any format       | an outbox file                |
+
+A `reply` field is checked with the envelope's correction turn, and the agent writes no file for it. An attachment's
+hint says when to read the file and for what, not what it is, and not what a skill says.
 
 ### Agent-run checks
 
@@ -603,8 +624,8 @@ profiles:
 
 - A stub agent changes nothing and replies with an ok envelope of the agent's kind; checks run for real. A check needing
   an agent's change stays red; one already green on the target passes.
-- It writes a placeholder for each declared output: the smallest value meeting the schema, `"stub"` for text. A schema
-  beyond the keywords it reads fails the agent, naming the output.
+- It writes a placeholder for each declared output and gives one for each `reply` field: the smallest value meeting the
+  schema, `"stub"` for text. A schema beyond the keywords it reads fails the agent, naming the output.
 - Instructions and prompt are staged as for a real run. A profile on `stub` needs no `model`.
 
 Environment variables rehearse a branch a placeholder never takes. A resume needs them set again.

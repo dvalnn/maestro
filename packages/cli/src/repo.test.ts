@@ -216,6 +216,34 @@ export const arts = composition("arts", { examples: [{}] }, () => {
 	return file;
 }
 
+test("a stub seat declaring a reply field ends ok, and a code node reads the placeholder", async () => {
+	const w = await repoWorld(SMOKE_RUNTIME("stub"));
+	const file = join(await scratch(), "typed.ts");
+	writeFileSync(
+		file,
+		`import { fresh, seat } from "@maestro/host-repo-sdk";
+import { code, composition, Enum, Struct, Text } from "@maestro/sdk";
+
+const smoke = seat("smoke");
+
+export const tierOf = ({ map }: { map: { tier: string } }) => {
+	if (map.tier !== "small") throw new Error(\`read \${map.tier}\`);
+	return { tier: map.tier };
+};
+
+export const typed = composition("typed", { examples: [{}] }, () => {
+	const agent = smoke({
+		task: "nothing",
+		lane: fresh(),
+		reply: { map: Struct({ tier: Enum(["small", "large"]) }) },
+	});
+	return code(tierOf, { in: { map: agent.out.map }, out: { tier: Text() } });
+});
+`,
+	);
+	expect(await w.call(["perform", file])).toMatchObject({ code: 0 });
+});
+
 test("artifact lists a concert's artifacts, prints an instance's files by a unique ending, and refuses what names none", async () => {
 	const w = await repoWorld(SMOKE_RUNTIME("stub"));
 	const done = await w.call(["perform", await artsFile()]);

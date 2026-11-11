@@ -65,6 +65,7 @@ home; no repo doc links into them for its facts.
 | Topic                                     | Home                                 | Links in from                    |
 | ----------------------------------------- | ------------------------------------ | -------------------------------- |
 | Agent node, staging, outbox, envelope     | `packages/host-repo/README.md` (new) | architecture, glossary, ADR 0012 |
+| Typed reply fields and their practice     | `packages/host-repo/README.md`       | sdk-spec, ADR 0017               |
 | Context policy, handoff, compaction       | `packages/host-repo/README.md`       | ADR 0014                         |
 | Lane mechanism and versions               | `packages/host-repo/README.md`       | requirements, sdk-spec           |
 | Changesets and apply                      | `packages/host-repo/README.md`       | CLI README                       |

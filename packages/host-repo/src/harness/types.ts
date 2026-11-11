@@ -243,6 +243,8 @@ export type HarnessRequest = {
 	outbox: string;
 	/** The files the agent must write in the outbox. */
 	outputs: Output[];
+	/** The typed fields of the agent's final reply, by name, each with the JSON schema its value must match. Only the stub reads it. */
+	reply?: Record<string, JsonSchema>;
 	/**
 	 * Host directory bound read-write at `SESSION_DIR`, and a UUID. The same dir and id continue the session; a new
 	 * id starts one.
