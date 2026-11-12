@@ -120,13 +120,13 @@ sequenceDiagram
 The staged system-prompt file holds the profile's instructions, when it has any, then the host's **frame**, headed
 `# Your run`, then the sections below in this order, each left out when it has nothing to say.
 
-| Section           | Says                                                        |
-| ----------------- | ----------------------------------------------------------- |
-| `## Working copy` | the lane's write state, what git allows, the shell[^wc]     |
-| `## Checks`       | each check as `check <name>` with its `hint`[^frame-checks] |
-| `## Skills`       | each skill of the profile's `skills`, with its description  |
-| `## Context`      | only under a `handoff` policy[^frame-context]               |
-| `## Reply`        | the output contract, each JSON schema pretty-printed        |
+| Section           | Says                                                           |
+| ----------------- | -------------------------------------------------------------- |
+| `## Working copy` | the lane's write state, what git allows, the shell[^wc]        |
+| `## Checks`       | each check as `check <name>` with its `hint`[^frame-checks]    |
+| `## Disciplines`  | each skill of the profile's `skills`, by **When** and **Read** |
+| `## Context`      | only under a `handoff` policy[^frame-context]                  |
+| `## Reply`        | the output contract, each JSON schema pretty-printed           |
 
 [^wc]:
     A write lane is left uncommitted, a read lane is a discarded fork the agent may change freely; git writes fail by
@@ -411,10 +411,10 @@ adapter picks where the copy goes and when.
   is given that path, never its current profile's: the agent can write its harness's config dir, but not the record.
 
 `skills` lists the skills the seat loads, each a bare name or `<pack>/<name>`. A skill is a directory with a `SKILL.md`
-whose frontmatter `description` the frame lists, and it mounts read-only at `/skills/<name>`, `<name>` being the last
-segment. Two skills of one profile cannot share it. A skill reaches a sibling in its own skills directory by
-`../<sibling>/SKILL.md`; resolution refuses a profile that does not attach each sibling its skills link, a missing skill
-or one without a `description`. The profiles digest covers every skills directory.
+whose frontmatter `description` gives the frame its **When**, and it mounts read-only at `/skills/<name>`, `<name>`
+being the last segment. Two skills of one profile cannot share it. A skill reaches a sibling in its own skills directory
+by `../<sibling>/SKILL.md`; resolution refuses a profile that does not attach each sibling its skills link, a missing
+skill or one without a `description`. The profiles digest covers every skills directory.
 
 `readOnly` paths are set only in config, as `profiles.<name>.readOnly`, never in the file.
 

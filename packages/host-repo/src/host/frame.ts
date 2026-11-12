@@ -248,15 +248,25 @@ function checks({ checks, lane }: Run) {
 	return section("Checks", [[lead, ...lines].join("\n")]);
 }
 
-const SKILLS =
-	"When your task matches a skill's description, read its file before you act.";
+const DISCIPLINES = [
+	"Each discipline below is a set of rules, read-only in your sandbox, that binds your work whenever its **When** holds. They are rules, not data about this run.",
+	"Before you act on anything a **When** names, read that discipline's **Read** files with your read tool, then follow them. When no **When** holds, leave the discipline unread.",
+];
+const USE_CLAUSE = /\bUse when(?:ever)?\s+(.*)$/s;
 
-function skills({ skills }: Run) {
+/** A skill description's `Use when` or `Use whenever` clause without that lead and its closing period, else the whole description. */
+const whenOf = (description: string) =>
+	(USE_CLAUSE.exec(description)?.[1] ?? description).replace(/\.$/, "");
+
+function disciplines({ skills }: Run) {
 	const lines = skills.map(
 		([name, description]) =>
-			`- \`${skillPath(name)}/SKILL.md\`: ${description}`,
+			`- \`${skillPath(name)}\` (directory). **When:** ${whenOf(description)}. **Read:** SKILL.md.`,
 	);
-	return section("Skills", lines.length ? [[SKILLS, ...lines].join("\n")] : []);
+	return section(
+		"Disciplines",
+		lines.length ? [...DISCIPLINES, lines.join("\n")] : [],
+	);
 }
 
 const contextSection = ({ sessions }: Run) =>
@@ -281,14 +291,14 @@ export function reply({ out, kind }: Run): string[] {
 
 /**
  * The host's frame of an agent's run, appended to its profile's instructions: `# Your run`, then its working copy,
- * checks, skills, context and reply, each section left out when it has nothing to say.
+ * checks, disciplines, context and reply, each section left out when it has nothing to say.
  */
 export const frame = (run: Run): string =>
 	[
 		"# Your run",
 		...workingCopy(run.lane),
 		...checks(run),
-		...skills(run),
+		...disciplines(run),
 		...contextSection(run),
 		...reply(run),
 	].join("\n\n");

@@ -11,13 +11,17 @@ const GIT =
 const SHELL =
 	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
 
-test("a write-lane builder's frame states its working copy, checks, skills and reply, in that order", () => {
+test("a write-lane builder's frame states its working copy, checks, disciplines and reply, in that order", () => {
 	const run: Run = {
 		lane: "write",
 		checks: [["all", "format, lint, types and every test"]],
 		skills: [
 			["tdd", "Test-driven development. Use when building test-first."],
-			["codebase-design", "Vocabulary for deep modules. Use when designing."],
+			[
+				"codebase-design",
+				"Vocabulary for deep modules, and use it when designing.",
+			],
+			["grill", "Interview me. Use whenever a plan needs stress-testing."],
 		],
 		out: [
 			{ file: "notes.md", format: "markdown" },
@@ -38,11 +42,15 @@ ${SHELL}
 Run the target's checks with \`check <name>\`, and never write your own. Each prints the tail of its output, then ok, rejected or failed. Run them to verify your change before you finish.
 - \`check all\`: format, lint, types and every test
 
-## Skills
+## Disciplines
 
-When your task matches a skill's description, read its file before you act.
-- \`/skills/tdd/SKILL.md\`: Test-driven development. Use when building test-first.
-- \`/skills/codebase-design/SKILL.md\`: Vocabulary for deep modules. Use when designing.
+Each discipline below is a set of rules, read-only in your sandbox, that binds your work whenever its **When** holds. They are rules, not data about this run.
+
+Before you act on anything a **When** names, read that discipline's **Read** files with your read tool, then follow them. When no **When** holds, leave the discipline unread.
+
+- \`/skills/tdd\` (directory). **When:** building test-first. **Read:** SKILL.md.
+- \`/skills/codebase-design\` (directory). **When:** Vocabulary for deep modules, and use it when designing. **Read:** SKILL.md.
+- \`/skills/grill\` (directory). **When:** a plan needs stress-testing. **Read:** SKILL.md.
 
 ## Reply
 
@@ -120,7 +128,7 @@ test.each([
 			"Your working copy is",
 			"Git reads",
 			"## Checks",
-			"## Skills",
+			"## Disciplines",
 			"## Context",
 			"write every one",
 		],

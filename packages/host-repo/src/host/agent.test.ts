@@ -515,7 +515,7 @@ describe("agent profile", () => {
 			readFileSync(join(artifact("x", "staged"), "prompt.md"), "utf8"),
 		).toContain("└── kb/   1 file, 6 B: for the house style");
 		expect(instructions).toContain(
-			"- `/skills/tdd/SKILL.md`: Test first. Use when building.",
+			"- `/skills/tdd` (directory). **When:** building. **Read:** SKILL.md.",
 		);
 		expect(instances[0]?.enrichment?.profile).toMatchObject({
 			name: `${PACK}/builder`,

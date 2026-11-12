@@ -231,7 +231,7 @@ node.
 [Home](packages/host-repo/README.md#task-layout) _Avoid_: task prompt
 
 **Skill**: A directory of guidance with a `SKILL.md` entry that a profile names under `skills`, mounted read-only for
-the agent and listed in its frame with its description. [Home](packages/host-repo/README.md#profiles-and-prompts)
+the agent and listed in its frame by **When** and **Read**. [Home](packages/host-repo/README.md#profiles-and-prompts)
 
 **Attachment**: A named artifact an agent reads, mounted read-only and listed in its task with its `hint`, type and
 size; the agent must read it. [Home](packages/host-repo/README.md#staging) _Avoid_: ref

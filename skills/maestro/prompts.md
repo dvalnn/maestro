@@ -6,8 +6,9 @@ How an agent's prompt is layered, and how a composition or pack writes its task 
 
 An agent reads five layers, in this order, each with one home; no layer restates another's text:
 
-1. **Frame**, from the host: working copy, checks, skill list, output schema. Never restated. Its Skills section lists
-   each of the profile's `skills` by `/skills/<name>/SKILL.md` and its description, to be read when the task matches.
+1. **Frame**, from the host: working copy, checks, skill list, output schema. Never restated. Its Disciplines section
+   lists each of the profile's `skills` as `/skills/<name>` with a **When** from its description and a **Read** of
+   `SKILL.md`.
 2. **Profile**, `profiles/<name>/instructions.md`: who the agent is and how it works, true in every call.
 3. **Area**, a preset's profile `attachments`: what is true of one part of the target.
 4. **Task**, one Markdown file per call, and its fragments: what this call asks, its inputs by name, its outputs, its
