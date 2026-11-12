@@ -452,8 +452,10 @@ const findingsText = ({ review, blocking = [] }: Report) =>
 
 /** Arms the PR to `main` of `child`, the last child of a cleared stack review, unless its own PR is a draft. */
 async function armLast(tick: Tick, { issue, data }: Entry) {
-	const report = data.concert && (await tick.maestro.report(data.concert));
-	if (report && report.draft) return;
+	const report = data.concert
+		? await tick.maestro.report(data.concert)
+		: undefined;
+	if (report?.draft) return;
 	const pull = pullToMain(await tick.forge.pulls(), issue.number);
 	if (pull) await tick.forge.arm(pull.number);
 }
