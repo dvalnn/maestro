@@ -21,8 +21,8 @@ Pass `--preset stub` to compose and perform; a resume reapplies it.
   already green on the target passes, so `classics.build_then_repair` ends `ok` with an empty changeset.
 - A stub agent writes a placeholder for each declared output: the smallest value meeting the schema keywords it reads
   (`required`, `properties`, `items`, `minItems`, `enum`, `const`, `minLength`, `minimum`, `anyOf`, `oneOf`), `"stub"`
-  for text. A schema beyond those fails the agent, naming the output. So `classics.panel_review` ends `ok` with an
-  unapproved verdict.
+  for text. A schema beyond those fails the agent, naming the output. So `classics.panel_review` ends `ok` with a tally
+  that upholds nothing.
 - Each agent's instructions and prompt are staged as for a real run: `maestro art show <id> <instance> staged/prompt.md`
   and `staged/instructions.md` show what it is told.
 

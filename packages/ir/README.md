@@ -432,13 +432,15 @@ Refs: ADR 0007, ADR 0008, CORE-14.
 
 ## Changelog
 
+- **1.1, unchanged**: the `repo.agent` node config gained optional `reply` and `relay`, and the `repo.changeset` node an
+  optional `since` input. All are additive, and the version stays `1.1`.
 - **1.1, unchanged**: the `report` output of a `repo.agent` node gained an optional `sightings`, a list of
   `{ path, text, cites }`. The IR format and its schema are as they were, and the version stays `1.1`. Perform checks an
   output against the node's own `out.report`, so the host asks for and accepts `sightings` only when that schema
   declares it; IR built before the key keeps the report it had.
-- **1.1**: the `repo.agent` node config is
-  `{ profile, seat, lane, verdict?, encore?, checks?, attachments?, out?, reply? }`. It lost `role`, `limits` and
-  `readOnly`, and the node lost its `identity` input port. A 1.0 agent node is refused at pre-flight (ADR 0004, ADR
-  0013). Its `report` output became an object, `{ summary, gaps?, obstacles?, lessons? }`. Its lane input lost `resume`:
-  the node outputs `session`, of the host type `repo.session`, and takes an optional `session` input to continue one.
+- **1.1**: the `repo.agent` node config is `{ profile, seat, lane, verdict?, encore?, checks?, attachments?, out? }`. It
+  lost `role`, `limits` and `readOnly`, and the node lost its `identity` input port. A 1.0 agent node is refused at
+  pre-flight (ADR 0004, ADR 0013). Its `report` output became an object, `{ summary, gaps?, obstacles?, lessons? }`. Its
+  lane input lost `resume`: the node outputs `session`, of the host type `repo.session`, and takes an optional `session`
+  input to continue one.
 - **1.0**: first version.

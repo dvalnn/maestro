@@ -274,7 +274,7 @@ The agent tool answers one question for any agent on any harness: what does its 
   `profile <name>: mcp is reserved, not yet supported`.
 - **AT-03 (Must).** A profile is a named roster entry bound to one harness. Its fields are
   `runtime { harness, model, thinking }`, `instructions` (one file, appended to the harness's system prompt),
-  `harnessExtras` (one self-contained directory in the harness's own layout), `attachments`, `readOnly` binds,
+  `harnessExtras` (one self-contained directory in the harness's own layout), `attachments`, `skills`, `readOnly` binds,
   `limits { timeout, tokens }` and `context`. It has no tools or permissions field: maestro's sandbox is the one
   permission boundary. A field its harness cannot honour is a pre-flight error naming the profile, the field and the
   harness.

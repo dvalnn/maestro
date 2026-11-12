@@ -248,10 +248,11 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   preset `area-<area>` when the ticket has an `area/<area>` label and `.maestro/presets/area-<area>.yaml` exists, then
   the tick's own `--preset`s. The ticket moves to `in-progress` as the perform starts.
 - **Tests first.** At `ordinary` and `risky`, a `tester` on another model family first writes the tests that pin the
-  spec's requirements through what the base's code reaches, mapping each requirement to its test or marking it deferred
-  or untestable. The builder extends the tester's lane with the map attached, makes the tests pass, and writes the tests
-  for the deferred requirements; it changes a tester's test only where it contradicts the spec or the interface it
-  builds, saying why. The review judges the tests like any other, and the writer's Evidence table names the map's tests.
+  spec's requirements at its public seam, mapping each requirement to its test or marking it deferred or untestable. The
+  builder extends the tester's lane with the map relayed into its task, makes the tests pass, and writes the tests for
+  the deferred requirements; it changes a tester's test only where it contradicts the spec or the interface it builds,
+  naming that test and why in its `overrules` reply. The review judges the tests like any other, and the writer's
+  Evidence table names the map's tests.
 - **Dependencies.** A dependency is a forge "blocked by" link, a split's children or not, that sets triage and build
   order: a spec is written, and built, against real `main`. Triage skips an intake ticket while any of its dependencies
   is open, and a build skips a ready ticket while any is open. A dependency is freed when it closes, merged or not, or

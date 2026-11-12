@@ -84,8 +84,8 @@ Config layers, keys and presets are in [`packages/cli/README.md`](packages/cli/R
 [host-repo README](packages/host-repo/README.md#configuration), and a profile's `model` and `thinking` in its
 [Fields](packages/host-repo/README.md#fields). Two files cover a first run:
 
-- `~/.config/maestro/config.yaml` sets each profile's `runtime`. The classics pack ships six profiles and no models; its
-  [README](packs/classics/README.md) says which composition uses which. Model ids below are placeholders.
+- `~/.config/maestro/config.yaml` sets each profile's `runtime`. The classics pack ships seven profiles and no models;
+  its [README](packs/classics/README.md) says which composition uses which. Model ids below are placeholders.
 - `.maestro/config.yaml` in the target repository names the repo, its base and its checks.
 
 ```yaml
@@ -96,6 +96,7 @@ profiles:
   classics/builder: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
   classics/lens: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
   classics/skeptic: { runtime: { harness: pi, model: <provider>/<model>, thinking: high } }
+  classics/tester: { runtime: { harness: pi, model: <provider>/<model>, thinking: high } }
   classics/consolidator: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
 ```
 
@@ -109,7 +110,7 @@ target:
 ```
 
 To spend nothing first, add a preset that moves every profile to the built-in `stub` harness, then run with
-`--preset stub`; `build_then_repair` and `panel_review` end ok, the second with an unapproved verdict:
+`--preset stub`; `build_then_repair` and `panel_review` end ok, the second with a tally that upholds nothing:
 
 ```yaml
 # .maestro/presets/stub.yaml
