@@ -11,9 +11,9 @@ whichever is nearer, and a changed input could then fail to rerun the nodes that
 The rule is:
 
 - **An attachment is an artifact.** It is an input port of the node, fed by an artifact output or a literal, so its
-  content hash is in the node's resume key (CORE-09). The host mounts it read-only at `/in/<name>`, and the staged
-  prompt lists it with its required `hint`. It is what the agent's answer depends on: a spec, a knowledge set, an
-  earlier agent's notes.
+  content hash is in the node's resume key (CORE-09). The host mounts it read-only under `/in/`, and the staged prompt
+  lists it with its required `hint`. It is what the agent's answer depends on: a spec, a knowledge set, an earlier
+  agent's notes.
 - **A bind is the environment.** It is a host path named in config or a check, mounted at its own path. It is not an
   input and not in the resume key. It is what the agent or check runs on: a toolchain, a cache, an SDK rebuilt in place,
   a lock file shared across lanes. `writable` is named by config or a check node, never by an agent node, and an agent

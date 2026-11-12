@@ -88,7 +88,7 @@ flowchart TD
   packs --> hsdk
   harness --> host
   host --> core
-  host --> hsdk
+  host -->|"/yaml only"| hsdk
   hsdk --> sdk
   core --> ir["ir"]
   sdk --> ir

@@ -231,7 +231,8 @@ node.
 [Home](packages/host-repo/README.md#task-layout) _Avoid_: task prompt
 
 **Skill**: A directory of guidance with a `SKILL.md` entry that a profile names under `skills`, mounted read-only for
-the agent and listed in its frame by **When** and **Read**. [Home](packages/host-repo/README.md#profiles-and-prompts)
+the agent and listed in its frame as a discipline, by **When** and **Read**.
+[Home](packages/host-repo/README.md#profiles-and-prompts)
 
 **Attachment**: A named artifact an agent reads, mounted read-only and listed in its task with its `hint`, type and
 size; the agent must read it. [Home](packages/host-repo/README.md#staging) _Avoid_: ref
@@ -314,8 +315,8 @@ quality
 
 **Skeptic**: A verdict agent that rules on another agent's findings, upholding or dismissing each.
 
-**Consolidator**: A work agent that rules on the spec against the lenses' upheld findings, replying its verdict, by id,
-never rewording them.
+**Consolidator**: A work agent that replies its ruling on the spec and the lenses' upheld findings as a `verdict` field,
+naming findings by id, never rewording them.
 
 **Upheld**: A finding that survived the skeptic and the consolidator, or a criterion the consolidator ruled not met,
 still to be fixed.
