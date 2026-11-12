@@ -138,7 +138,8 @@ The staged system-prompt file holds the profile's instructions, when it has any,
 
 The file is appended to the harness's own system prompt, never replacing it. A fresh start's user message is the task on
 stdin, laid out as below. The `staged` artifact holds the exact text: `prompt.md`, `instructions.md`, `correction-N.md`
-for each correction turn and `session-N.md` for the message that opens session N after a handoff.
+for each correction turn and `session-N.md` for the message that opens session N after a handoff. An agent that returned
+`reply` fields also has `outputs.yaml` there, the fields as YAML, for `maestro art show`.
 
 ### Task layout
 

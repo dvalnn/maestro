@@ -39,7 +39,7 @@ import {
 	textOf,
 	type Values,
 } from "./command";
-import { actorOf, annotated, hostTextOf } from "./host-text";
+import { actorOf, annotated, hostTextOf, summaryOf } from "./host-text";
 import {
 	concertDoc,
 	EXIT,
@@ -150,6 +150,7 @@ function drawingOf(
 			const instances = store.instances(row.id).map((i) => ({
 				...i,
 				actor: actorOf(i.enrichment, i.node, hostText),
+				summary: summaryOf(i.enrichment, i.node, hostText),
 			}));
 			return { view, agents: agentsOf(instances), instances };
 		},

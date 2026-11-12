@@ -242,9 +242,10 @@ type Widths = {
 /** What executes each current agent instance, as its host says, and its tokens, by instance. */
 export type Agents = ReadonlyMap<string, { actor?: string; tokens: number }>;
 
-/** An instance's record: who its host says ran it, and its metrics, with whether an earlier attempt left it. */
+/** An instance's record: who its host says ran it, what it says it did, and its metrics, with whether an earlier attempt left it. */
 export type Recorded = NodeInstance & {
 	actor?: string;
+	summary?: string;
 	metrics: Metrics;
 	stale: boolean;
 };

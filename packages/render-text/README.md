@@ -194,8 +194,9 @@ scroll that reaches the newest line tails again; any other scroll stops tailing.
 
 ### Inspector
 
-`@maestro/render-text/inspect` shows the part of the record that belongs to one row: a title and summary, then its
-events, which `navigated` draws in place of the tree when `nav.inspect` is set.
+`@maestro/render-text/inspect` shows the part of the record that belongs to one row: a title and summary, which gives a
+settled agent's own one-line `summary`, then its events, which `navigated` draws in place of the tree when `nav.inspect`
+is set.
 
 ### Helpers
 

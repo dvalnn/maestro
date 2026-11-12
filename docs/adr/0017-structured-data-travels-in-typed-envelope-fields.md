@@ -39,3 +39,5 @@ The rule is:
 - No IR change: the fields ride the agent node's config, and each is a value port.
 - A resume key holds the reply template, so a changed field declaration starts the agent afresh.
 - A field's value is JSON, so an artifact type is no field type.
+- `ls --json` gives the fields as `.outputs`, by instance, beside the report in `.reports`, and the host stages them in
+  `staged/outputs.yaml`.

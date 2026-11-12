@@ -6,6 +6,7 @@ import {
 	isPlainObject,
 } from "@maestro/ir";
 import { type EnvironmentCheck, isMark, METRIC } from "../harness/types";
+import { AGENT_OUT_PORTS } from "./config";
 import { REPORT_FIELDS, type Report } from "./frame";
 import { lastLine } from "./run-lines";
 
@@ -171,6 +172,9 @@ function reportOf(enrichment: Enrichment): Record<string, unknown> | undefined {
 	return { ...report, environment: checks };
 }
 
+const summaryOf = (enrichment: Enrichment) =>
+	stringOf(envelopeOf(enrichment)?.summary);
+
 /** An agent's report obstacles, lessons and sightings, then the faults of its environment report, each non-empty list under its heading. */
 function notes(enrichment: Enrichment): Record<string, string[]> {
 	const lists = new Map(Object.entries(envelopeOf(enrichment) ?? {}));
@@ -194,6 +198,8 @@ export const repoText: HostText = {
 	actor,
 	notes,
 	report: reportOf,
+	summary: summaryOf,
+	bookkeeping: AGENT_OUT_PORTS,
 	reportFields: {
 		...REPORT_FIELDS,
 		environment:

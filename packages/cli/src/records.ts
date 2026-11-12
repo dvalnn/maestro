@@ -29,7 +29,7 @@ import {
 	textOf,
 	type Values,
 } from "./command";
-import { actorOf, hostTextOf, notesOf, reportOf } from "./host-text";
+import { actorOf, hostTextOf, notesOf, reportOf, valuesOf } from "./host-text";
 import {
 	ArgumentError,
 	CliError,
@@ -368,6 +368,7 @@ async function instancesOf(
 		name: instanceName(row.ir, i),
 		notes: i.stale ? {} : notesOf(i.enrichment, i.node, hostText),
 		report: i.stale ? undefined : reportOf(i.enrichment, i.node, hostText),
+		values: i.stale ? undefined : valuesOf(row.ir, i.node, i.outputs, hostText),
 	}));
 	const short = shortIds(store.ids()).label(row.id, false);
 	if (json) {
@@ -379,6 +380,9 @@ async function instancesOf(
 				instances,
 				reports: Object.fromEntries(
 					named.flatMap((i) => (i.report ? [[i.name, i.report]] : [])),
+				),
+				outputs: Object.fromEntries(
+					named.flatMap((i) => (i.values ? [[i.name, i.values]] : [])),
 				),
 			}),
 		);

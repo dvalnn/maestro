@@ -193,6 +193,10 @@ In the `--json` documents:
 - It gives the full report of each current instance that has one as `reports`, by the instance's name:
   `maestro ls <concert> --json | jq .reports`. An agent's report holds `summary`, `gaps`, `obstacles`, `lessons` and
   `sightings`; `maestro ls --help` says what each means.
+- It gives the typed values of each current instance as `outputs`, by the instance's name, in the same shape:
+  `maestro ls <concert> --json | jq .outputs`. They are an agent's reply fields and a code node's values, without
+  artifacts, the report and the host's bookkeeping ports (an agent's `session` and `lane`); an instance with none is
+  left out. `instances[].outputs` keeps every output as recorded.
 - `ls` (each row), `ls <concert>`, `wait`, `watch` and `perform` carry `metrics`, each metric name's total over the
   concert, and `tokens`, the concert's total as the `tokens` column counts it. `ls` rows and `ls <concert>` also carry
   `elapsedMs`, `settledAt - startedAt`, or the time since `startedAt` while the concert runs.

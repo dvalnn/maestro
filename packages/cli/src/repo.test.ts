@@ -216,7 +216,7 @@ export const arts = composition("arts", { examples: [{}] }, () => {
 	return file;
 }
 
-test("a stub seat declaring a reply field ends ok, and a code node reads the placeholder", async () => {
+test("a stub seat declaring a reply field ends ok, a code node reads the placeholder, and ls gives both as outputs", async () => {
 	const w = await repoWorld(SMOKE_RUNTIME("stub"));
 	const file = join(await scratch(), "typed.ts");
 	writeFileSync(
@@ -241,7 +241,17 @@ export const typed = composition("typed", { examples: [{}] }, () => {
 });
 `,
 	);
-	expect(await w.call(["perform", file])).toMatchObject({ code: 0 });
+	const done = await w.call(["perform", file]);
+	expect(done).toMatchObject({ code: 0 });
+	const id = idOf(done);
+	const listed = json(await w.call(["ls", id, "--json"]));
+	expect(listed.outputs).toEqual({
+		agent: { map: { tier: "small" } },
+		tierOf: { tier: "small" },
+	});
+	expect(
+		(await w.call(["art", "show", id, "agent", "staged/outputs.yaml"])).out,
+	).toBe("map:\n  tier: small");
 });
 
 test("artifact lists a concert's artifacts, prints an instance's files by a unique ending, and refuses what names none", async () => {

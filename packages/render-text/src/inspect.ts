@@ -126,6 +126,10 @@ function noteSegs(s: InstanceState): Seg[][] {
 	return [];
 }
 
+/** What the instance's host says it did, left out when it says none. */
+const summarySegs = (k: Kept | undefined): Seg[][] =>
+	k?.summary ? [labelled("summary", [[flat(k.summary)]])] : [];
+
 /** An instance's recorded metrics by name, left out when absent. */
 function keptSegs(k: Kept | undefined): Seg[][] {
 	if (k === undefined) return [];
@@ -178,7 +182,7 @@ function stateSegs(
 	};
 }
 
-/** One instance: its title, context, state, reason or latest, metrics and `files` hint. */
+/** One instance: its title, context, state, reason or latest, summary, metrics and `files` hint. */
 function instanceSegs(
 	graph: GraphIndex,
 	view: View,
@@ -192,6 +196,7 @@ function instanceSegs(
 		labelled("context", [[flat(labelOf(graph, s))]]),
 		state,
 		...noteSegs(s),
+		...summarySegs(k),
 		...keptSegs(k),
 		...filesSegs(view, name, k),
 	];
@@ -265,7 +270,7 @@ function drawnOf(
 /**
  * The inspector on the row keyed `key`: its title and summary, the lines of its events as `eventLine` draws them, and
  * their count. One instance of the row's own node is summarised in full: its context, state, times, tokens, actor, a
- * `stale` mark, its reason or latest progress, its metrics by name when recorded, and a `files` line naming the
+ * `stale` mark, its reason or latest progress, its summary, its metrics by name when recorded, and a `files` line naming the
  * `maestro art` that serves its artifacts. Any other row counts the instances under it by state, with tokens and span.
  * `held.events` only grows, so only the events new since the last call are drawn.
  */

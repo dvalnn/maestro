@@ -1,6 +1,7 @@
 import type { Host, HostText } from "@maestro/core/host";
 import type { ConcertEvent, Enrichment, Ir } from "@maestro/ir";
 import type { Annotated } from "@maestro/render-text/live";
+import { artifactRefs } from "./output";
 
 /** The text hooks of the host that registers each node of `ir`, by node id, found by the namespace of its kind. */
 export function hostTextOf(
@@ -55,3 +56,30 @@ export const actorOf = (
 	node: string,
 	hostText: ReturnType<typeof hostTextOf>,
 ): string | undefined => enrichment && hostText(node)?.actor?.(enrichment);
+
+/** The one-line summary its host gives the instance of `node` that settled with `enrichment`, if any. */
+export const summaryOf = (
+	enrichment: Enrichment | undefined,
+	node: string,
+	hostText: ReturnType<typeof hostTextOf>,
+): string | undefined => enrichment && hostText(node)?.summary?.(enrichment);
+
+/**
+ * The values of `outputs`, the outputs of the instance of `node`, without its artifacts and the ports its host keeps
+ * its bookkeeping in; undefined when none is left.
+ */
+export function valuesOf(
+	ir: Ir,
+	node: string,
+	outputs: Readonly<Record<string, unknown>> | undefined,
+	hostText: ReturnType<typeof hostTextOf>,
+): Record<string, unknown> | undefined {
+	const skipped = new Set([
+		...(hostText(node)?.bookkeeping ?? []),
+		...artifactRefs(ir, node, outputs ?? {}).map((a) => a.port),
+	]);
+	const kept = Object.entries(outputs ?? {}).filter(
+		([port]) => !skipped.has(port),
+	);
+	return kept.length > 0 ? Object.fromEntries(kept) : undefined;
+}

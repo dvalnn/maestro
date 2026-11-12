@@ -233,6 +233,13 @@ export interface HostText {
 	report?(enrichment: Enrichment): Record<string, unknown> | undefined;
 	/** What each field of the objects `report` gives means, in one short line each, for `ls --help`. */
 	readonly reportFields?: Readonly<Record<string, string>>;
+	/** An instance's one-line summary of what it did. Called on a settled instance's enrichment. */
+	summary?(enrichment: Enrichment): string | undefined;
+	/**
+	 * The output ports of the host's nodes that carry its own bookkeeping rather than a typed value: what `report`
+	 * already gives, or a handle a later node wires.
+	 */
+	readonly bookkeeping?: readonly string[];
 }
 
 /** The disk a host holds for a concert. */

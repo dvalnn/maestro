@@ -675,6 +675,9 @@ async function settle(
 		return outcome === "ok"
 			? { outcome: "failed", reason: read.problem, metrics, enrichment }
 			: { outcome, reason, metrics, enrichment };
+	const { fields } = turns.envelope;
+	if (Object.keys(fields).length > 0)
+		writeFileSync(join(staging.staged, "outputs.yaml"), stringifyYaml(fields));
 	const version = await seal();
 	const outputs = {
 		report,
@@ -682,7 +685,7 @@ async function settle(
 		[SESSION_PORT]: session.id,
 		...(version && { [LANE_PORT]: version }),
 		...read.outputs,
-		...turns.envelope.fields,
+		...fields,
 	};
 	return outcome === "ok"
 		? { outcome, outputs, metrics, enrichment }

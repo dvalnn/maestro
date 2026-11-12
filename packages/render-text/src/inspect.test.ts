@@ -169,6 +169,28 @@ describe("inspectorLines", () => {
 			],
 		],
 		[
+			"an ok instance, the summary its host gives",
+			"request@",
+			{
+				instances: [
+					{
+						node: "request",
+						expansion: "",
+						stale: false,
+						summary: "read the request",
+						metrics: {},
+						artifacts: [],
+					},
+				],
+			},
+			[
+				"◆ inspect  request  code  ok  1.0s",
+				"  context  request",
+				"  state    ok   started +0.0s   ran 1.0s",
+				"  summary  read the request",
+			],
+		],
+		[
 			"a failed instance, its reason",
 			"panel/lenses/lens#[spec]",
 			{ settled: true },
