@@ -395,8 +395,14 @@ test.each([
 		"lens",
 		["good-tests", "codebase-design", "code-smells", "writing-for-agents"],
 	],
-	["skeptic", ["good-tests", "codebase-design", "code-smells"]],
-	["consolidator", ["good-tests", "codebase-design", "code-smells"]],
+	[
+		"skeptic",
+		["good-tests", "codebase-design", "code-smells", "writing-for-agents"],
+	],
+	[
+		"consolidator",
+		["good-tests", "codebase-design", "code-smells", "writing-for-agents"],
+	],
 	["tester", ["tdd", "good-tests", "codebase-design"]],
 	["scout", ["codebase-design"]],
 	[
