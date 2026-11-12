@@ -12,6 +12,7 @@ import type { HostSetup } from "@maestro/core/host";
 import {
 	ARTIFACT_TYPES,
 	boundOf,
+	CORE_TYPES,
 	type Diagnostic,
 	type GraphIndex,
 	type HostNode,
@@ -487,6 +488,36 @@ function replyClashes({ node, config }: AgentNode): Finding[] {
 			? finding(
 					`'${node.id}' declares reply field '${name}' with an artifact type, which no reply field can hold`,
 					`Declare '${name}' as an output, or give the field a JSON value type`,
+				)
+			: [];
+	});
+}
+
+/** Each relay of an agent that shares a port with an attachment, repeats an earlier relay, or is or holds an artifact that is not Markdown. */
+function relayClashes({ node, config }: AgentNode): Finding[] {
+	const relays = config.relay ?? [];
+	return relays.flatMap(({ name, schema }, i) => {
+		const finding = (message: string, hint: string): Finding[] => [
+			{ code: "HOST.relay", node: node.id, message, hint },
+		];
+		if (Object.hasOwn(config.attachments ?? {}, name))
+			return finding(
+				`'${node.id}' declares '${name}' as both a relay and an attachment, which share one port`,
+				`Rename the relay or the attachment '${name}'`,
+			);
+		if (relays.findIndex((r) => r.name === name) < i)
+			return finding(
+				`'${node.id}' declares relay '${name}' twice`,
+				`Rename or drop one relay '${name}'`,
+			);
+		const markdown =
+			typeof schema === "object" &&
+			schema[MAESTRO_TYPE] === CORE_TYPES.markdown;
+		return !markdown &&
+			schemaMarkers(schema).some((m) => ARTIFACT_TYPES.has(m.type))
+			? finding(
+					`'${node.id}' relays '${name}', which is or holds an artifact that is not a Markdown output`,
+					`Attach '${name}' under attachments, or relay a typed value or a Markdown output`,
 				)
 			: [];
 	});
@@ -1023,6 +1054,7 @@ export async function validateRepo(
 			...nodes.flatMap((r) => [...names(setup, r), ...nodeBinds(setup, r)]),
 			...agentChecks(setup, agents),
 			...agents.flatMap(replyClashes),
+			...agents.flatMap(relayClashes),
 			...doubleExtends(graph, chained),
 			...sessionRules(graph, profiled.seatedOf, agents),
 		].map(error),

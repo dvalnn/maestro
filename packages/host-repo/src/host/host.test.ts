@@ -1094,6 +1094,56 @@ describe("compose", () => {
 			undefined,
 		],
 		[
+			"a relay named after an attachment",
+			{
+				id: "x",
+				kind: "agent",
+				config: {
+					...agentOn(fresh),
+					attachments: { notes: { hint: "y", type: "core.markdown" } },
+					relay: [{ name: "notes", schema: { type: "string" } }],
+				},
+				literals: { prompt: "go" },
+				wires: { notes: "w.notes" },
+			},
+			"HOST.relay",
+			"'x' declares 'notes' as both a relay and an attachment, which share one port",
+			undefined,
+		],
+		[
+			"two relays of one name",
+			{
+				id: "x",
+				kind: "agent",
+				config: {
+					...agentOn(fresh),
+					relay: [
+						{ name: "a", schema: { type: "string" } },
+						{ name: "a", schema: { type: "string" } },
+					],
+				},
+				literals: { prompt: "go", a: "x" },
+			},
+			"HOST.relay",
+			"'x' declares relay 'a' twice",
+			undefined,
+		],
+		[
+			"a relay of a directory artifact",
+			{
+				id: "x",
+				kind: "agent",
+				config: {
+					...agentOn(fresh),
+					relay: [{ name: "tree", schema: { "x-maestro-type": "core.dir" } }],
+				},
+				literals: { prompt: "go", tree: "x" },
+			},
+			"HOST.relay",
+			"'x' relays 'tree', which is or holds an artifact that is not a Markdown output",
+			undefined,
+		],
+		[
 			"a 1.0 agent node, built before profiles",
 			{
 				id: "x",
