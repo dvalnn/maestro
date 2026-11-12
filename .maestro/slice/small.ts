@@ -14,6 +14,7 @@ import { changeset, type Report, read, Session } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
 	allSettled,
+	type CodeContext,
 	code,
 	loop,
 	not,
@@ -56,21 +57,24 @@ function withOutputs<T extends object, E extends object>(
  * A reviewer round's tally, with the builder's `brief` and the reviewer's session beside it. A skeptic that delivered
  * no rulings leaves every finding held without a why.
  */
-export function reviewedOf({
-	lane,
-	session,
-	brief,
-	reviewer,
-	findings,
-	rulings,
-}: {
-	lane: string;
-	session: string;
-	brief: ValueOf<typeof Brief>;
-	reviewer: string;
-	findings: ValueOf<typeof Findings>;
-	rulings: Settled<ValueOf<typeof Rulings>>[];
-}) {
+export function reviewedOf(
+	{
+		lane,
+		session,
+		brief,
+		reviewer,
+		findings,
+		rulings,
+	}: {
+		lane: string;
+		session: string;
+		brief: ValueOf<typeof Brief>;
+		reviewer: string;
+		findings: ValueOf<typeof Findings>;
+		rulings: Settled<ValueOf<typeof Rulings>>[];
+	},
+	ctx: CodeContext,
+) {
 	const [ruled] = rulings;
 	const member =
 		ruled?.value !== undefined
@@ -86,7 +90,10 @@ export function reviewedOf({
 		],
 		names: [REVIEWER_LENS],
 	});
-	return withOutputs(tallyOf({ lane, session, held }), { reviewer, brief });
+	return withOutputs(tallyOf({ lane, session, held }, ctx), {
+		reviewer,
+		brief,
+	});
 }
 
 /** What a reviewer round settles to: the tally, the brief it carries and the reviewer's session. */

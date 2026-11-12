@@ -32,7 +32,5 @@ export const skeptic = seat("skeptic", {
 
 export const consolidator = seat("consolidator", {
 	profile: "classics/consolidator",
-	verdict: true,
-	out: { review: MarkdownOut("review.md") },
 	reply: { verdict: Verdict },
 });

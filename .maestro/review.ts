@@ -9,7 +9,7 @@ export * from "@maestro/classics/code";
 export const review = composition(
 	"review",
 	{
-		doc: "Review a range of target commits as one change, such as an epic's stack, through the risky tier's lenses, then consolidate what they found. Leaves the consolidator's review and the findings it upheld, and rejects while any remain.",
+		doc: "Review a range of target commits as one change, such as an epic's stack, through the risky tier's lenses, then consolidate what they found. Leaves the panel's review and the findings it upheld, and rejects while any remain.",
 		params: {
 			request: Text({ description: "What the commits must do together" }),
 			revs: Text({

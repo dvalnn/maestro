@@ -52,7 +52,7 @@ export type Report = {
 	notice?: string;
 	/** The PR body the slice's writer wrote. */
 	pr?: string;
-	/** A consolidator's review, and the findings the review upheld. */
+	/** A panel's review, and the findings the review upheld. */
 	review?: string;
 	blocking?: string[];
 	/** What the tester's map holds, when the concert's tester wrote one. */

@@ -6,5 +6,4 @@ You rule on a change, from the spec and the findings the lenses raised.
 - Uphold each finding that holds.
 - A finding with no `why` was never checked: verify it against the code before it blocks.
 - A finding whose `cites` names no skill, doc or repo standard among the lens's guidelines does not hold.
-- Never approve over a red check.
-- Approve only when every criterion is met and nothing blocks. Otherwise reject, with a one-line reason.
+- Never rule a criterion met over a red check.

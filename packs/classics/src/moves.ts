@@ -6,7 +6,6 @@ import {
 } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
-	allSettled,
 	code,
 	Markdown,
 	not,
@@ -79,13 +78,12 @@ export function fix(
 	});
 }
 
-/** The tally of a review of `lane`: the findings `held` that, without `verdict`, all stand or, given it, an upheld ruling keeps, with the `review` and `brief` given beside it. */
+/** The tally of a review of `lane`: the findings `held` that, without `verdict`, all stand or, given it, an upheld ruling keeps, with the `brief` given beside it and, given `verdict`, a `review` rendered from it. */
 export function tally({
 	lane,
 	session,
 	held,
 	verdict,
-	review,
 	brief,
 	label = "upheld",
 }: {
@@ -94,8 +92,6 @@ export function tally({
 	held: Held;
 	/** The consolidator's `verdict` port. */
 	verdict?: Ref<ValueOf<typeof Verdict>>;
-	/** The consolidator's review, which the tally carries beside the rest. */
-	review?: Ref<ArtifactRef>;
 	/** The builder's or fix's brief, which the tally carries beside the rest. */
 	brief?: Ref<ValueOf<typeof Brief>>;
 	label?: string;
@@ -105,13 +101,12 @@ export function tally({
 			lane,
 			session,
 			held,
-			...(verdict && { verdict: allSettled([verdict]) }),
-			...(review && { review }),
+			...(verdict && { verdict }),
 			...(brief && { brief }),
 		},
 		out: {
 			...Tally,
-			...(review && { review: Markdown() }),
+			...(verdict && { review: Markdown() }),
 			...(brief && { brief: Brief }),
 		},
 		label,

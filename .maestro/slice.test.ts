@@ -32,6 +32,7 @@ const found = [finding("F1"), finding("F2"), finding("F3")];
 const held = (...ids: string[]) =>
 	["F1", "F2", "F3"].map((id) => ({ id, holds: ids.includes(id), why: "" }));
 
+const ctx = { scratch: "/unused" } as never;
 const lane = "c.gate";
 const session = "c.build";
 const reviewer = "c.reviewer";
@@ -79,14 +80,10 @@ const granular = ["format", "lint", "types", "test", "fmt"].flatMap((name) => [
 test.each(cases)(
 	"reviewedOf upholds the findings that survive %s, and carries the lane and sessions",
 	(_, rulings, ids) => {
-		const out = reviewedOf({
-			lane,
-			session,
-			brief,
-			reviewer,
-			findings: found,
-			rulings,
-		});
+		const out = reviewedOf(
+			{ lane, session, brief, reviewer, findings: found, rulings },
+			ctx,
+		);
 		expect(out).toMatchObject({
 			outcome: "rejected",
 			outputs: { lane, session, brief, reviewer },
@@ -98,14 +95,17 @@ test.each(cases)(
 
 test("reviewedOf tallies a reviewer that settled ok clean, its findings unheld by a skipped skeptic, and still carries the reviewer's session", () => {
 	expect(
-		reviewedOf({
-			lane,
-			session,
-			brief,
-			reviewer,
-			findings: found,
-			rulings: [{ outcome: "skipped" }],
-		}),
+		reviewedOf(
+			{
+				lane,
+				session,
+				brief,
+				reviewer,
+				findings: found,
+				rulings: [{ outcome: "skipped" }],
+			},
+			ctx,
+		),
 	).toEqual({ lane, session, brief, reviewer, upheld: [] });
 });
 

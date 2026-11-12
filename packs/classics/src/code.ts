@@ -119,13 +119,15 @@ export function heldOf({
 
 type Result = { changeset: ArtifactRef; upheld: Held[] };
 
-type Tally = CodeOutputs<typeof Ports>;
+type Tally = CodeOutputs<typeof Ports> & {
+	review?: string;
+	brief?: ValueOf<typeof Brief>;
+};
 type Args = {
 	lane: string;
 	session: string;
 	held: Held[];
-	verdict?: Settled<ValueOf<typeof Verdict>>[];
-	review?: ArtifactRef;
+	verdict?: ValueOf<typeof Verdict>;
 	brief?: ValueOf<typeof Brief>;
 };
 
@@ -142,8 +144,8 @@ const rejection = <O>(upheld: Held[], outputs: O): Required<Rejection<O>> => ({
 const CONSOLIDATOR = "consolidator";
 
 /** Each criterion of `verdict` ruled not met, as a finding of the consolidator citing the spec. */
-const unmetOf = (verdict: ValueOf<typeof Verdict> | undefined): Held[] =>
-	(verdict?.criteria ?? [])
+const unmetOf = (verdict: ValueOf<typeof Verdict>): Held[] =>
+	verdict.criteria
 		.filter((c) => !c.met)
 		.map((c) => ({
 			lens: CONSOLIDATOR,
@@ -153,36 +155,58 @@ const unmetOf = (verdict: ValueOf<typeof Verdict> | undefined): Held[] =>
 			cites: `spec ${c.id}`,
 		}));
 
+/** Each of `upheld` as a list item: its issue at its `where`, then its cites and why. */
+const upheldItems = (upheld: Held[]): string[] =>
+	upheld.map(
+		(f) =>
+			`- **${f.lens}/${f.id}** at \`${f.where}\`: ${f.issue}\n  Cites: ${f.cites}${f.why ? ` Why: ${f.why}` : ""}`,
+	);
+
+/** The review of `verdict` as Markdown: the `upheld` findings, then the criteria it rules met. Empty sections are left out. */
+function reviewOf(
+	upheld: Held[],
+	verdict: ValueOf<typeof Verdict>,
+	ctx: CodeContext,
+): string {
+	const met = verdict.criteria
+		.filter((c) => c.met)
+		.map((c) => `- **${c.id}**: ${c.evidence}`);
+	const sections = (
+		[
+			["Upheld", upheldItems(upheld)],
+			["Met", met],
+		] as const
+	).flatMap(([title, items]) =>
+		items.length ? [`## ${title}\n\n${items.join("\n")}`] : [],
+	);
+	const file = join(ctx.scratch, "review.md");
+	writeFileSync(file, `${sections.join("\n\n")}\n`);
+	return file;
+}
+
 /**
  * The review round's tally: the lane and session it carries, and the findings upheld.
  * - Without a `verdict`, every held finding.
- * - With one, those held findings whose `<lens>/<id>` its `upholds` names, then each criterion it rules not met.
+ * - With one, those held findings whose `<lens>/<id>` its `upholds` names, then each criterion it rules not met, and a
+ *   `review` rendered from it.
  *
- * The `review` and `brief` given ride beside them. Rejects, with the tally as its outputs, while a finding is upheld.
- * @throws Error with the consolidator's reason when it failed.
+ * The `brief` given rides beside them. Rejects, with the tally as its outputs, while a finding is upheld.
  */
-export function tallyOf({
-	lane,
-	session,
-	held,
-	verdict,
-	review,
-	brief,
-}: Args): Tally | Required<Rejection<Tally>> {
-	const [ruled] = verdict ?? [];
-	if (ruled?.outcome === "failed") throw new Error(ruled.reason);
-	const upholds = ruled?.value?.upholds;
+export function tallyOf(
+	{ lane, session, held, verdict, brief }: Args,
+	ctx: CodeContext,
+): Tally | Required<Rejection<Tally>> {
 	const upheld = verdict
 		? [
-				...held.filter((f) => upholds?.includes(`${f.lens}/${f.id}`)),
-				...unmetOf(ruled?.value),
+				...held.filter((f) => verdict.upholds.includes(`${f.lens}/${f.id}`)),
+				...unmetOf(verdict),
 			]
 		: held;
 	const tally = {
 		lane,
 		session,
 		upheld,
-		...(review && { review }),
+		...(verdict && { review: reviewOf(upheld, verdict, ctx) }),
 		...(brief && { brief }),
 	};
 	if (upheld.length) return rejection(upheld, tally);

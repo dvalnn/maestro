@@ -9,7 +9,6 @@ import { openRecord, perform } from "@maestro/core/perform";
 import { repoHost } from "@maestro/host-repo";
 import {
 	type HarnessRequest,
-	OUTBOX,
 	SESSION_DIR,
 	type StubStep,
 	stubHarness,
@@ -187,14 +186,7 @@ test("a review relays the findings its skeptics upheld to its consolidator, and 
 		["lens only: the tests", []],
 		[
 			"Independent lenses",
-			[
-				{ write: `${OUTBOX}/review.md`, content: "Approved.\n" },
-				replying({
-					outcome: "ok",
-					report,
-					verdict: { criteria: [], upholds: [] },
-				}),
-			],
+			[replying({ report, verdict: { criteria: [], upholds: [] } })],
 		],
 	];
 	const rulings = replying({

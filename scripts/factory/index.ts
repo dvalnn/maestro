@@ -446,7 +446,7 @@ function lastChild(data: Data, entries: readonly Entry[]) {
 const pullToMain = (pulls: readonly Pull[], number: number) =>
 	pulls.find((p) => p.head === branchOf(number) && p.base === BASE);
 
-/** A stack review's findings as Markdown: its consolidator's review, else the findings its verdict blocks on. */
+/** A stack review's findings as Markdown: its panel's review, else the findings its verdict blocks on. */
 const findingsText = ({ review, blocking = [] }: Report) =>
 	review ?? blocking.map((b) => `- ${b}`).join("\n");
 

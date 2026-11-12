@@ -60,8 +60,8 @@ gives the built lane and the tester's `TestMap`; its builder replies with the `O
 - `challenge`: a skeptic over any lens's findings, skipped when the lens settled ok; takes `grounds`, the rules a
   finding must cite.
 - `fix`: a builder fixing the findings a round upheld, in a lane extending its lane and continuing its session.
-- `tally`: the `Tally` of a review of a lane, over `held` findings, with a consolidator's `verdict`, `review` and the
-  builder's `brief` when given.
+- `tally`: the `Tally` of a review of a lane, over `held` findings, with a consolidator's `verdict`, from which it
+  renders the `review`, and the builder's `brief` when given.
 
 ## Contracts
 
@@ -86,15 +86,15 @@ placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer pa
 
 ## Seats and profiles
 
-| Seat           | Profile                 | Reply or output     | Skills                                                                                   |
-| -------------- | ----------------------- | ------------------- | ---------------------------------------------------------------------------------------- |
-| `builder`      | `classics/builder`      | the lane            | `tdd`, `good-tests`, `codebase-design`, `code-smells`, `domain-modeling`, `writing`      |
-| `tester`       | `classics/tester`       | `map`: `TestMap`    | `tdd`, `good-tests`, `codebase-design`                                                   |
-| `lens`         | `classics/lens`         | `findings`          | `good-tests`, `codebase-design`, `code-smells`, `writing`                                |
-| `skeptic`      | `classics/skeptic`      | `rulings`           | as `lens`                                                                                |
-| `consolidator` | `classics/consolidator` | `verdict`, `review` | as `lens`                                                                                |
-| `scout`        | `classics/scout`        | `answers`           | `codebase-design`                                                                        |
-| `planner`      | `classics/planner`      | `plan`              | `codebase-design`, `codebase-deepening`, `design-it-twice`, `domain-modeling`, `writing` |
+| Seat           | Profile                 | Reply or output  | Skills                                                                                   |
+| -------------- | ----------------------- | ---------------- | ---------------------------------------------------------------------------------------- |
+| `builder`      | `classics/builder`      | the lane         | `tdd`, `good-tests`, `codebase-design`, `code-smells`, `domain-modeling`, `writing`      |
+| `tester`       | `classics/tester`       | `map`: `TestMap` | `tdd`, `good-tests`, `codebase-design`                                                   |
+| `lens`         | `classics/lens`         | `findings`       | `good-tests`, `codebase-design`, `code-smells`, `writing`                                |
+| `skeptic`      | `classics/skeptic`      | `rulings`        | as `lens`                                                                                |
+| `consolidator` | `classics/consolidator` | `verdict`        | as `lens`                                                                                |
+| `scout`        | `classics/scout`        | `answers`        | `codebase-design`                                                                        |
+| `planner`      | `classics/planner`      | `plan`           | `codebase-design`, `codebase-deepening`, `design-it-twice`, `domain-modeling`, `writing` |
 
 `scout` and `planner` serve no composition of the pack; they are seats for compositions built on it. The skills are
 adapted from Matt Pocock's under the MIT license in `skills/LICENSE`, each copy recorded in `skills/UPSTREAM.md`. A

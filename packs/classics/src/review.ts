@@ -64,7 +64,7 @@ const SPEC_HINT = "for what the change must do";
 /**
  * A lens per lens name, a skeptic over each lens that rejected unless `skeptics` is false, the findings held, and, with
  * `consolidate`, a consolidator ruling on them. Ends in the tally of the change, which rejects while a finding is
- * upheld, and carries the consolidator's `review` beside it.
+ * upheld, and, given a consolidator, a `review` rendered from its verdict.
  * @throws BuildError `CFG.param` when it has neither a `session` to carry nor a consolidator's.
  */
 export const panel = composition(
@@ -168,7 +168,6 @@ export const panel = composition(
 			session: carried,
 			held: held.out.held,
 			verdict: consolidated?.out.verdict,
-			review: consolidated?.out.review,
 			brief,
 		});
 	},

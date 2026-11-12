@@ -105,7 +105,7 @@ describe("panel_review", () => {
 		expect(code).toBe(0);
 		const { plan } = JSON.parse(out);
 		expect(plan.bounds).toMatchObject({
-			instances: { exact: 19 },
+			instances: { exact: 18 },
 			counts: { "repo.agent": { exact: 7 } },
 		});
 		const profileOf = (id: string) =>
@@ -124,7 +124,7 @@ describe("panel_review", () => {
 		]);
 		expect(code).toBe(0);
 		const { plan } = JSON.parse(out);
-		expect(plan.bounds).toMatchObject({ instances: { exact: 20 } });
+		expect(plan.bounds).toMatchObject({ instances: { exact: 19 } });
 		expect(
 			plan.ir.nodes.filter((n: { kind: string }) => n.kind === "repo.commits"),
 		).toEqual([
@@ -244,6 +244,18 @@ describe("panel", () => {
 		const bare = panelIr({ consolidate: false }, (session) => ({ session }));
 		expect(ids(bare)).not.toContain("panel/consolidator");
 		expect(ids(bare).at(-1)).toBe("panel/upheld");
+	});
+
+	test("the consolidator is no verdict seat and writes no file: the tally renders the review", () => {
+		const ir = panelIr();
+		const node = ir.nodes.find((n) => n.id === "panel/consolidator");
+		const lensed = ir.nodes.find((n) => n.id === "panel/lenses/lens");
+		expect(lensed).toMatchObject({ config: { verdict: true } });
+		expect(node).not.toMatchObject({ config: { verdict: true } });
+		expect(Object.keys((node as { out: object }).out)).not.toContain("review");
+		expect(ir.nodes.find((n) => n.id === "panel/upheld")?.out).toHaveProperty(
+			"review",
+		);
 	});
 
 	test("the tally carries the session given, else the consolidator's", () => {
@@ -807,101 +819,114 @@ describe("tallyOf", () => {
 	const carried = { lane: "c.gate", session: "c.build" };
 	const heldAll = found.map((f) => ({ ...f, lens: "correctness" }));
 	const verdict = (...upholds: string[]) => ({ criteria: [], upholds });
+	const ctx = () => ({ scratch: mkdtempSync(join(root, "tally-")) }) as never;
 
 	test("upholds every held finding when there is no verdict, and rejects naming them", () => {
-		expect<unknown>(tallyOf({ ...carried, held: heldAll })).toEqual(
+		expect<unknown>(tallyOf({ ...carried, held: heldAll }, ctx())).toEqual(
 			reject("3 upheld: correctness/F1, correctness/F2, correctness/F3", {
 				...carried,
 				upheld: heldAll,
 			}),
 		);
-		expect(tallyOf({ ...carried, held: [] })).toEqual({
+		expect(tallyOf({ ...carried, held: [] }, ctx())).toEqual({
 			...carried,
 			upheld: [],
 		});
 	});
 
 	test("upholds the held findings a verdict names by lens and id", () => {
-		const out = tallyOf({
-			...carried,
-			held: heldAll,
-			verdict: [ok(verdict("correctness/F2", "spec/F1"))],
-		});
+		const out = tallyOf(
+			{
+				...carried,
+				held: heldAll,
+				verdict: verdict("correctness/F2", "spec/F1"),
+			},
+			ctx(),
+		);
 		expect(out).toMatchObject({
 			outcome: "rejected",
 			outputs: { upheld: [{ ...F2, lens: "correctness" }] },
 		});
 	});
 
-	test("tallies a consolidator clean when it upholds nothing and rules no criterion unmet, whether it approved or rejected", () => {
+	test("tallies a consolidator clean when it upholds nothing and rules no criterion unmet", () => {
 		expect(
-			tallyOf({ ...carried, held: heldAll, verdict: [ok(verdict())] }),
-		).toEqual({ ...carried, upheld: [] });
-		expect(
-			tallyOf({
-				...carried,
-				held: heldAll,
-				verdict: [
-					{ outcome: "rejected", reason: "not ready", value: verdict() },
-				],
-			}),
-		).toEqual({ ...carried, upheld: [] });
+			tallyOf({ ...carried, held: heldAll, verdict: verdict() }, ctx()),
+		).toMatchObject({ ...carried, upheld: [] });
 	});
 
-	test("upholds each criterion a consolidator rules not met, with no finding raised for it", () => {
+	test("upholds each criterion a consolidator rules not met, and renders the review from the verdict", () => {
 		const criteria = [
 			{ id: "C1", met: false, evidence: "--json prints nothing" },
 			{ id: "C2", met: true, evidence: "a.test.ts passes" },
 		];
-		expect<unknown>(
-			tallyOf({
+		const held = [{ ...F2, lens: "correctness", why: "reproduced" }];
+		const out = tallyOf(
+			{
 				...carried,
-				held: heldAll,
-				verdict: [
-					{
-						outcome: "rejected",
-						reason: "C1 unmet",
-						value: { criteria, upholds: [] },
-					},
-				],
-			}),
-		).toEqual(
-			reject("1 upheld: consolidator/C1", {
-				...carried,
-				upheld: [
-					{
-						lens: "consolidator",
-						id: "C1",
-						where: "spec C1",
-						issue: "--json prints nothing",
-						cites: "spec C1",
-					},
-				],
-			}),
+				held,
+				verdict: { criteria, upholds: ["correctness/F2"] },
+			},
+			ctx(),
+		) as { outputs: { review: string } };
+		expect(out.outputs).toMatchObject({
+			upheld: [
+				held[0],
+				{
+					lens: "consolidator",
+					id: "C1",
+					where: "spec C1",
+					issue: "--json prints nothing",
+					cites: "spec C1",
+				},
+			],
+		});
+		expect(readFileSync(out.outputs.review, "utf8")).toBe(
+			[
+				"## Upheld",
+				"",
+				`- **correctness/F2** at \`${F2.where}\`: ${F2.issue}`,
+				`  Cites: ${F2.cites} Why: reproduced`,
+				"- **consolidator/C1** at `spec C1`: --json prints nothing",
+				"  Cites: spec C1",
+				"",
+				"## Met",
+				"",
+				"- **C2**: a.test.ts passes",
+				"",
+			].join("\n"),
 		);
+	});
+
+	test("renders no review without a verdict, and leaves an empty section out", () => {
+		expect(tallyOf({ ...carried, held: [] }, ctx())).not.toHaveProperty(
+			"review",
+		);
+		const out = tallyOf(
+			{
+				...carried,
+				held: [],
+				verdict: {
+					criteria: [{ id: "C1", met: true, evidence: "ok" }],
+					upholds: [],
+				},
+			},
+			ctx(),
+		) as { review: string };
+		expect(readFileSync(out.review, "utf8")).toBe("## Met\n\n- **C1**: ok\n");
 	});
 
 	test("carries the brief given beside the tally, a rejection's included", () => {
 		const brief = { summary: "built", gaps: ["g"] };
-		expect<unknown>(tallyOf({ ...carried, held: [], brief })).toEqual({
+		expect<unknown>(tallyOf({ ...carried, held: [], brief }, ctx())).toEqual({
 			...carried,
 			upheld: [],
 			brief,
 		});
-		expect(tallyOf({ ...carried, held: heldAll, brief })).toMatchObject({
+		expect(tallyOf({ ...carried, held: heldAll, brief }, ctx())).toMatchObject({
 			outcome: "rejected",
 			outputs: { brief },
 		});
-	});
-
-	test("throws when the consolidator failed", () => {
-		expect(() =>
-			tallyOf({
-				...carried,
-				held: heldAll,
-				verdict: [{ outcome: "failed", reason: "boom" }],
-			}),
-		).toThrow("boom");
 	});
 });
 
@@ -956,7 +981,7 @@ describe("moves", () => {
 
 	test("tally settles over the held findings and the verdict, tolerating a rejected upstream", () => {
 		expect(wired("heldOf", "held", "upheld")).toBe(true);
-		expect(wired("allSettled", "value", "upheld", "verdict")).toBe(true);
+		expect(wired("ruling", "verdict", "upheld")).toBe(true);
 		expect(
 			ir.edges.some(
 				(e) =>

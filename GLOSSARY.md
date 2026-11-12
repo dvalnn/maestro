@@ -314,8 +314,8 @@ quality
 
 **Skeptic**: A verdict agent that rules on another agent's findings, upholding or dismissing each.
 
-**Consolidator**: A verdict agent that merges several lenses' upheld findings into one verdict, by id, never rewording
-them.
+**Consolidator**: A work agent that rules on the spec against the lenses' upheld findings, replying its verdict, by id,
+never rewording them.
 
 **Upheld**: A finding that survived the skeptic and the consolidator, or a criterion the consolidator ruled not met,
 still to be fixed.
