@@ -159,7 +159,7 @@ const unmetOf = (verdict: ValueOf<typeof Verdict>): Held[] =>
 const upheldItems = (upheld: Held[]): string[] =>
 	upheld.map(
 		(f) =>
-			`- **${f.lens}/${f.id}** at \`${f.where}\`: ${f.issue}\n  Cites: ${f.cites}${f.why ? ` Why: ${f.why}` : ""}`,
+			`- **${f.lens}/${f.id}** at \`${f.where}\`: ${f.issue}\n  - Cites: ${f.cites}${f.why ? `\n  - Why: ${f.why}` : ""}`,
 	);
 
 /** The review of `verdict` as Markdown: the `upheld` findings, then the criteria it rules met. Empty sections are left out. */
