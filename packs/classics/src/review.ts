@@ -26,6 +26,7 @@ import {
 import { heldOf, toMarkdown } from "./code";
 import { challenge, tally } from "./moves";
 import { task } from "./prompt";
+import AGAIN from "./prompts/again.md" with { type: "text" };
 import CONSOLIDATOR from "./prompts/consolidator.md" with { type: "text" };
 import CONSOLIDATOR_GROUNDS from "./prompts/consolidator-grounds.md" with {
 	type: "text",
@@ -103,12 +104,17 @@ export const panel = composition(
 		const ground = grounds || undefined;
 		const common: Relays = brief ? { builder: brief } : {};
 		const items = names ?? Object.keys(lenses);
+		const tasks = earlier
+			? Object.fromEntries(
+					Object.entries(lenses).map(([name, own]) => [name, task(AGAIN, own)]),
+				)
+			: lenses;
 		const rounds = iter.parMap(
 			items,
 			(name) => {
 				const found = lens({
 					label: "lens",
-					task: lookup(lenses, name),
+					task: lookup(tasks, name),
 					lane: read(change),
 					checks,
 					relay: { ...(earlier && { upheld: earlier }), ...common },

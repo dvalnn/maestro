@@ -23,7 +23,7 @@ import SKEPTIC_GROUNDS from "./prompts/skeptic-grounds.md" with {
 import { builder, skeptic } from "./seats";
 import { type Findings, Tally, type Upheld, type Verdict } from "./types";
 
-type Held = Ref<ValueOf<typeof Upheld>[]>;
+export type Held = Ref<ValueOf<typeof Upheld>[]>;
 
 /** A skeptic over the findings of `found`, skipped when `found` settled ok. */
 export function challenge(

@@ -11,7 +11,7 @@ import {
 	use,
 } from "@maestro/sdk";
 import { briefOf } from "./code";
-import { fix } from "./moves";
+import { fix, type Held } from "./moves";
 import { maxRepairs, repairUntilGreen } from "./repair";
 import { panel } from "./review";
 import { atLeastOne, Brief } from "./types";
@@ -60,6 +60,7 @@ export const fixUntilClean = composition(
 			from: typeof lane,
 			carried: typeof session,
 			given: typeof brief,
+			earlier?: Held,
 		) => {
 			const green = use(
 				repairUntilGreen,
@@ -71,7 +72,7 @@ export const fixUntilClean = composition(
 			).out.lane;
 			return use(
 				panel,
-				{ change: green, spec, session: carried, brief: given },
+				{ change: green, spec, session: carried, earlier, brief: given },
 				{
 					// A param left unset stays the config's or the panel's own default.
 					params: {
@@ -92,7 +93,12 @@ export const fixUntilClean = composition(
 					out: { brief: Brief },
 					label: "brief",
 				}).out;
-				return gateAndPanel(fixed.out.lane, fixed.out.session, next);
+				return gateAndPanel(
+					fixed.out.lane,
+					fixed.out.session,
+					next,
+					s.out.upheld,
+				);
 			},
 			max: maxFixes,
 			label: "fixes",

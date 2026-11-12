@@ -29,6 +29,7 @@ import { pack } from "../../../scripts/pack";
 import { BASE, PROFILES, profilesOn, setup } from "../acceptance/setup";
 import { briefOf, heldOf, tallyOf, toMarkdown } from "./code";
 import { challenge, fix, tally } from "./moves";
+import AGAIN from "./prompts/again.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
 import { panel } from "./review";
 import { builder, consolidator, lens } from "./seats";
@@ -214,14 +215,21 @@ describe("panel", () => {
 		});
 	});
 
-	test("earlier relays upheld to every lens, and brief relays builder to every review seat", () => {
+	test("earlier relays upheld to every lens and opens its task with again.md, and brief relays builder to every review seat", () => {
 		const bare = panelIr();
+		const table = (ir: Ir) =>
+			JSON.stringify(
+				ir.nodes.find((n) => n.id === "panel/lenses/lenses_lookup"),
+			);
+		const prompt = JSON.stringify(AGAIN).slice(1, -1);
 		expect(relays(bare, "panel/lenses/lens")).toEqual([]);
+		expect(table(bare)).not.toContain(prompt);
 		const ir = panelIr({}, () => ({
 			earlier: literal([], List(Upheld)),
 			brief: literal({ summary: "s", gaps: [] }, Brief),
 		}));
 		expect(relays(ir, "panel/lenses/lens")).toEqual(["upheld", "builder"]);
+		expect(table(ir)).toContain(prompt);
 		expect(relays(ir, "panel/lenses/skeptic")).toEqual(["findings", "builder"]);
 		expect(relays(ir, "panel/consolidator")).toEqual([
 			"findings",
@@ -528,6 +536,29 @@ export const cleaned = composition("cleaned", { examples: [{}] }, () => {
 			tolerate: "rejected",
 			test: { port: { node: "fix_until_clean/fixes/fixes_not" } },
 		});
+	});
+
+	test("the step's lenses relay the state's upheld, and the init's relay none", async () => {
+		const { out } = await maestro(["compose", file, "--json"]);
+		const { nodes, edges } = JSON.parse(out).plan.ir;
+		const lens = (round: string) =>
+			nodes
+				.find(
+					(n: { id: string }) =>
+						n.id === `fix_until_clean/${round}panel/lenses/lens`,
+				)
+				?.config.relay?.map((r: { name: string }) => r.name);
+		expect(lens("")).toBeUndefined();
+		expect(lens("fixes/")).toEqual(["upheld", "builder"]);
+		expect(
+			edges.filter(
+				(e: { to: { node: string; port?: string } }) =>
+					e.to.node === "fix_until_clean/fixes/panel/lenses/lens" &&
+					e.to.port === "upheld",
+			),
+		).toMatchObject([
+			{ from: { node: "fix_until_clean/fixes", port: "upheld" } },
+		]);
 	});
 
 	/** The fix instances of a performed `cleaned`, with each lens of each panel round rejecting on `scripted` findings. */
