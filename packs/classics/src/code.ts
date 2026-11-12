@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Report } from "@maestro/host-repo-sdk";
+import { yamlOf } from "@maestro/host-repo-sdk/yaml";
 import {
 	type ArtifactRef,
 	type CodeContext,
@@ -47,7 +48,7 @@ export function specOf(
 	const sections = Object.entries({ map, overrules }).flatMap(([name, v]) =>
 		v === undefined
 			? []
-			: [`## ${name}\n\n\`\`\`yaml\n${Bun.YAML.stringify(v, null, 2)}\n\`\`\``],
+			: [`## ${name}\n\n\`\`\`yaml\n${yamlOf(v).trimEnd()}\n\`\`\``],
 	);
 	const file = join(ctx.scratch, "spec.md");
 	writeFileSync(file, `${[request, ...sections].join("\n\n")}\n`);

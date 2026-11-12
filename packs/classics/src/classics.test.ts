@@ -727,6 +727,21 @@ describe("specOf", () => {
 			'build it\n\n## map\n\n```yaml\npinned: []\ndeferred: []\nuntestable: []\n```\n\n## overrules\n\n```yaml\n- test: "a.test.ts: t"\n  why: contradicts the spec\n```\n',
 		);
 	});
+
+	test("renders a value as a relay does, a multi-line string as a block scalar", () => {
+		expect(
+			specText({
+				request: "r",
+				map: {
+					pinned: [{ requirement: "r", file: "f", test: "1", misses: "a\nb" }],
+					deferred: [],
+					untestable: [],
+				},
+			}),
+		).toBe(
+			'r\n\n## map\n\n```yaml\npinned:\n  - requirement: r\n    file: f\n    test: "1"\n    misses: |-\n      a\n      b\ndeferred: []\nuntestable: []\n```\n',
+		);
+	});
 });
 
 test("resultOf rejects with the changeset and the upheld findings while any is upheld", () => {

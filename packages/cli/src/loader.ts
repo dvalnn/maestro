@@ -116,8 +116,9 @@ const DESCRIBED_SCHEMA: JsonSchema = {
 const HASH_PREFIX = "sha256:";
 /** The `version` of a bare file's compositions, which have no manifest to declare one. */
 const FILE_VERSION = "0.0.0";
-const SDK_IMPORT = /^@maestro\/(sdk(\/host|\/loader)?|host-repo-sdk)$/;
+const SDK_IMPORT = /^@maestro\/(sdk(\/host|\/loader)?|host-repo-sdk(\/yaml)?)$/;
 const HOST_SDK = "@maestro/host-repo-sdk";
+const YAML_SDK = "@maestro/host-repo-sdk/yaml";
 
 /** The SDK bundles `just release` embeds in the binary: the asset's name, and the path it stands at inside a bundle. */
 const EMBEDDED = {
@@ -125,6 +126,10 @@ const EMBEDDED = {
 	hostSdk: {
 		asset: "embedded-host-repo-sdk.js",
 		path: "/maestro-embedded/host-repo-sdk.js",
+	},
+	yamlSdk: {
+		asset: "embedded-host-repo-sdk-yaml.js",
+		path: "/maestro-embedded/host-repo-sdk-yaml.js",
 	},
 };
 
@@ -201,7 +206,11 @@ async function readEmbedded(): Promise<Record<string, string>> {
 
 /** Where the engine's own copy of the SDK import `specifier` is: embedded in the binary when it is, else on disk. */
 const sdkPath = (specifier: string, embedded: Record<string, string>) => {
-	const { path } = specifier === HOST_SDK ? EMBEDDED.hostSdk : EMBEDDED.sdk;
+	const { path } =
+		{
+			[HOST_SDK]: EMBEDDED.hostSdk,
+			[YAML_SDK]: EMBEDDED.yamlSdk,
+		}[specifier] ?? EMBEDDED.sdk;
 	return path in embedded ? path : Bun.resolveSync(specifier, import.meta.dir);
 };
 

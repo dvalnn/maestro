@@ -271,21 +271,23 @@ text can feed a host node's port of that type.
 ### Repo host SDK
 
 `@maestro/host-repo-sdk` builds the [repo host's](../packages/host-repo/README.md) nodes. It imports only the SDK and
-the IR, since packs bundle it. Lanes and their versions are in [Lanes](../packages/host-repo/README.md#lanes).
+the IR, since packs bundle it; its `yaml` subpath also imports `yaml`. Lanes and their versions are in
+[Lanes](../packages/host-repo/README.md#lanes).
 
-| Export                                     | Gives                                                                 |
-| ------------------------------------------ | --------------------------------------------------------------------- |
-| `Lane`                                     | the `repo.lane` type of a lane version, and the lane ref param type   |
-| `fresh(base?)`                             | a new lane                                                            |
-| `fork(v)`, `read(v)`                       | a copy of version `v`, or `v` with its writes discarded[^lane]        |
-| `extend(v)`                                | the lane continued from `v`, a lane output of this concert            |
-| `Session`                                  | the `repo.session` type of an agent's harness session                 |
-| `JsonOut(file, type)`, `MarkdownOut(file)` | an agent output: a file in its outbox, arriving as an artifact        |
-| `seat(name, opts)`                         | a function that emits a `repo.agent` node running a profile[^seat]    |
-| `check(lane, which?)`                      | a `repo.check` node[^check]                                           |
-| `changeset(v, opts)`                       | a `repo.changeset` node: `v` as a patch series[^cs]                   |
-| `commits(revs)`                            | a `repo.commits` node: the target commits `revs` names, as a version  |
-| `apply(lane, changeset, opts)`             | a `repo.apply` node: one changeset, `opts.strategy` `3way` or `clean` |
+| Export                                     | Gives                                                                            |
+| ------------------------------------------ | -------------------------------------------------------------------------------- |
+| `Lane`                                     | the `repo.lane` type of a lane version, and the lane ref param type              |
+| `fresh(base?)`                             | a new lane                                                                       |
+| `fork(v)`, `read(v)`                       | a copy of version `v`, or `v` with its writes discarded[^lane]                   |
+| `extend(v)`                                | the lane continued from `v`, a lane output of this concert                       |
+| `yamlOf(value)`                            | from `@maestro/host-repo-sdk/yaml`: a typed value as YAML, as a relay renders it |
+| `Session`                                  | the `repo.session` type of an agent's harness session                            |
+| `JsonOut(file, type)`, `MarkdownOut(file)` | an agent output: a file in its outbox, arriving as an artifact                   |
+| `seat(name, opts)`                         | a function that emits a `repo.agent` node running a profile[^seat]               |
+| `check(lane, which?)`                      | a `repo.check` node[^check]                                                      |
+| `changeset(v, opts)`                       | a `repo.changeset` node: `v` as a patch series[^cs]                              |
+| `commits(revs)`                            | a `repo.commits` node: the target commits `revs` names, as a version             |
+| `apply(lane, changeset, opts)`             | a `repo.apply` node: one changeset, `opts.strategy` `3way` or `clean`            |
 
 [^cs]: `opts.message` is its commit message; `opts.since`, a version `v` extends, keeps only the patches after it.
 

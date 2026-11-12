@@ -63,6 +63,7 @@
       "version": "0.2.0-rc.1",
       "dependencies": {
         "@maestro/core": "workspace:*",
+        "@maestro/host-repo-sdk": "workspace:*",
         "@maestro/ir": "workspace:*",
         "yaml": "2.9.1",
       },
@@ -73,6 +74,7 @@
       "dependencies": {
         "@maestro/ir": "workspace:*",
         "@maestro/sdk": "workspace:*",
+        "yaml": "2.9.1",
       },
       "devDependencies": {
         "@maestro/core": "workspace:*",

@@ -88,6 +88,7 @@ flowchart TD
   packs --> hsdk
   harness --> host
   host --> core
+  host --> hsdk
   hsdk --> sdk
   core --> ir["ir"]
   sdk --> ir

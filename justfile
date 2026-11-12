@@ -35,8 +35,9 @@ release: check pack
     bun build --target=bun --format=esm packages/cli/src/embedded-sdk.ts --outfile "$build/embedded-sdk.js"
     bun build --target=bun --format=esm --external '@maestro/sdk*' packages/host-repo-sdk/src/index.ts \
       --outfile "$build/embedded-host-repo-sdk.js"
+    bun build --target=bun --format=esm packages/host-repo-sdk/src/yaml.ts --outfile "$build/embedded-host-repo-sdk-yaml.js"
     bun build --compile --target=bun-linux-x64 --no-compile-autoload-dotenv --no-compile-autoload-bunfig --sourcemap \
-      --asset "$build/embedded-sdk.js" --asset "$build/embedded-host-repo-sdk.js" \
+      --asset "$build/embedded-sdk.js" --asset "$build/embedded-host-repo-sdk.js" --asset "$build/embedded-host-repo-sdk-yaml.js" \
       packages/cli/src/maestro.ts --outfile "$build/maestro"
     gzip -9 -n -c "$build/maestro" > dist/maestro-linux-x64.gz
     for package in packages/ir packages/sdk packages/host-repo-sdk packs/classics; do

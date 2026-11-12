@@ -15,6 +15,7 @@ import type {
 	NodeKind,
 } from "@maestro/core/host";
 import type { Inputs } from "@maestro/core/node";
+import { yamlOf } from "@maestro/host-repo-sdk/yaml";
 import {
 	CORE_TYPES,
 	compact,
@@ -28,7 +29,6 @@ import {
 	validator,
 	violations,
 } from "@maestro/ir";
-import { stringify as stringifyYaml } from "yaml";
 import {
 	type AgentEnvironment,
 	type ContextPolicy,
@@ -677,7 +677,7 @@ async function settle(
 			: { outcome, reason, metrics, enrichment };
 	const { fields } = turns.envelope;
 	if (Object.keys(fields).length > 0)
-		writeFileSync(join(staging.staged, "outputs.yaml"), stringifyYaml(fields));
+		writeFileSync(join(staging.staged, "outputs.yaml"), yamlOf(fields));
 	const version = await seal();
 	const outputs = {
 		report,
@@ -744,7 +744,7 @@ const relayedOf = (
 			? readFileSync(artifactInput(inputs, context, title), "utf8")
 			: typeof value === "string"
 				? value
-				: stringifyYaml(value);
+				: yamlOf(value);
 		return { title, text };
 	});
 

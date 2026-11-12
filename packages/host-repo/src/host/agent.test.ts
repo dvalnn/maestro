@@ -293,6 +293,36 @@ describe("agent session", () => {
 		);
 	});
 
+	test("a relay of a typed value is YAML with a multi-line string as a block scalar", async () => {
+		const { host, requests } = stubHost(() => [OK]);
+		const ir = irOf(
+			host,
+			[
+				agent("w", {
+					config: {
+						...agentOn({ mode: "fresh" }),
+						relay: [{ name: "map", schema: { type: "object" } }],
+					},
+					literals: {
+						prompt: "go",
+						map: {
+							pinned: [
+								{ requirement: "r", file: "f", test: "1", misses: "a\nb" },
+							],
+							deferred: [],
+							untestable: [],
+						},
+					},
+				}),
+			],
+			"w",
+		);
+		await performed(host, ir, configOf(toyTarget()));
+		expect(requests[0]?.prompt).toEndWith(
+			'## map\n\npinned:\n  - requirement: r\n    file: f\n    test: "1"\n    misses: |-\n      a\n      b\ndeferred: []\nuntestable: []',
+		);
+	});
+
 	test("a turn cut short keeps the earlier turn as the session's last", async () => {
 		const { host, requests } = stubHost(() =>
 			requests.length > 1 ? [{ hang: true }] : [OK],
