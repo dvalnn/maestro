@@ -58,20 +58,21 @@ every code node of the pack.
 
 ## Building on the classics
 
-`@maestro/classics` exports the classics pack's parts:
+`@maestro/classics` exports the classics pack's blocks in layers; the pack's `README.md` holds each one's ports, params
+and contracts. `@maestro/classics/code` exports its code-node functions alone.
 
-- `panel`: the lens, skeptic and consolidator panel, as a function over a change; given `grounds`, the rules a finding
-  must cite, its skeptics and consolidator rule by them. It gives the consolidator and `held`, the findings held.
-- `round`: the lens, and a skeptic unless the lens settled ok, that `panel` runs per item, for one lens alone; it takes
-  a lens label, session, checks and relays for the lens.
-- Seats: `builder`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`.
-- Compositions: `repairUntilGreen`, `panelReview`, `buildThenRepair`, `buildThenReview`. `repairUntilGreen`'s `checks`
-  param names the checks its repair agent may run, none by default; its recheck runs every check.
-- Params: `maxRepairs`, the repair bound, and `atLeastOne`, an at-least-one integer.
-- Code-node functions `toMarkdown`, `specOf`, `resultOf`, `heldOf` and `tallyOf`: `heldOf` gathers the findings a
-  panel's skeptics held, and `tallyOf` upholds them, by a consolidator's `upholds` when given, into a `Tally`; types
-  `Finding`, `Findings`, `Rulings`, `Verdict`, `Upheld`, `TestMap`; `fill` for prompt placeholders
-  ([prompts.md](prompts.md)).
+- Entries, performed as `classics.<id>`: `buildThenRepair` (`build_then_repair`), `buildThenReview`
+  (`build_then_review`), `panelReview` (`panel_review`).
+- Patterns, which a composition `use`s: `repairUntilGreen` (`repair_until_green`), `panel`, `fixUntilClean`
+  (`fix_until_clean`), `testFirst` (`test_first`).
+- Moves: `challenge`, `fix`, `tally`.
+- Contracts: `Finding`, `Upheld`, `Tally`, `TestMap`, `Brief`, `Overrules`, `Answers`, the types `Findings`, `Rulings`
+  and `Verdict`; code-node functions `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf` and `resultOf`; `fill` for
+  prompt placeholders ([prompts.md](prompts.md)); `LENSES`; params `maxRepairs`, `maxFixes` and `atLeastOne`.
+- Seats: `builder`, `tester`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`.
+
+Take the layer you need: perform an entry, `use` a pattern in a composition, or call a move or seat among your own
+nodes. `src/recipes.ts` in the pack holds five compositions of these blocks as test fixtures to copy from.
 
 ## Profiles, never models
 
