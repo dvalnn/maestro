@@ -39,12 +39,11 @@ export type Spend = {
 	encore: boolean;
 };
 /**
- * What a settled concert's agents reported, their obstacles, gaps and lessons: `upheld` is the body of the upheld
+ * What a settled concert's agents reported, their obstacles and lessons: `upheld` is the body of the upheld
  * findings the concert returned, if any.
  */
 export type Report = {
 	obstacles: string[];
-	gaps: string[];
 	lessons: string[];
 	upheld?: string;
 	/** The PR body the slice's writer wrote. */
@@ -262,7 +261,6 @@ export function maestro(bin = "maestro"): Maestro {
 			if (!isJson(doc)) throw new Error("maestro ls: not an object");
 			return {
 				obstacles: entriesOf(doc.reports, "obstacles"),
-				gaps: entriesOf(doc.reports, "gaps"),
 				lessons: entriesOf(doc.reports, "lessons"),
 				upheld: upheldOf(result),
 				pr: prOf(result),

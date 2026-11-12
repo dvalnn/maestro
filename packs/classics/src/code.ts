@@ -117,6 +117,14 @@ export function heldOf({
 type Result = { changeset: ArtifactRef; upheld: Held[] };
 
 type Tally = CodeOutputs<typeof Ports>;
+type Args = {
+	lane: string;
+	session: string;
+	held: Held[];
+	verdict?: Settled<ValueOf<typeof Verdict>>[];
+	review?: ArtifactRef;
+	brief?: ValueOf<typeof Brief>;
+};
 
 /** Rejects naming `upheld`, with `outputs` as the rejection's outputs. */
 const rejection = <O>(upheld: Held[], outputs: O): Required<Rejection<O>> => ({
@@ -132,7 +140,7 @@ const rejection = <O>(upheld: Held[], outputs: O): Required<Rejection<O>> => ({
  * - Without a `verdict`, those held findings that block.
  * - With one, those held findings whose `<lens>/<id>` its `upholds` names.
  *
- * The `review` given rides beside them. Rejects, with the tally as its outputs, while a finding is upheld.
+ * The `review` and `brief` given ride beside them. Rejects, with the tally as its outputs, while a finding is upheld.
  * @throws Error with the consolidator's reason when it failed.
  */
 export function tallyOf({
@@ -141,20 +149,21 @@ export function tallyOf({
 	held,
 	verdict,
 	review,
-}: {
-	lane: string;
-	session: string;
-	held: Held[];
-	verdict?: Settled<ValueOf<typeof Verdict>>[];
-	review?: ArtifactRef;
-}): Tally | Required<Rejection<Tally>> {
+	brief,
+}: Args): Tally | Required<Rejection<Tally>> {
 	const [ruled] = verdict ?? [];
 	if (ruled?.outcome === "failed") throw new Error(ruled.reason);
 	const upholds = ruled?.value?.upholds;
 	const upheld = verdict
 		? held.filter((f) => upholds?.includes(`${f.lens}/${f.id}`))
 		: held.filter((f) => f.blocking);
-	const tally = { lane, session, upheld, ...(review && { review }) };
+	const tally = {
+		lane,
+		session,
+		upheld,
+		...(review && { review }),
+		...(brief && { brief }),
+	};
 	if (upheld.length) return rejection(upheld, tally);
 	return tally;
 }

@@ -29,7 +29,7 @@ export const fixUntilClean = composition(
 			lane: Lane,
 			session: Session,
 			spec: Markdown(),
-			brief: Optional(Brief),
+			brief: Brief,
 		},
 		params: {
 			maxFixes,

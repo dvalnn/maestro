@@ -117,8 +117,8 @@ const writer = seat("writer");
 const TESTED: readonly Tier[] = ["ordinary", "risky"];
 
 /**
- * The build of `request` against `spec`: in a fresh lane, or at a tested `tier` by `test_first`. Gives the tester's map when
- * tested.
+ * The build of `request` against `spec`: in a fresh lane, or at a tested `tier` by `test_first`. Gives the tester's map and
+ * the tests the builder overruled when tested.
  */
 function build(tier: Tier, request: string, spec: Ref<ArtifactRef>) {
 	if (!TESTED.includes(tier))
@@ -135,7 +135,7 @@ function build(tier: Tier, request: string, spec: Ref<ArtifactRef>) {
 		{ spec },
 		{ params: { request, checks: REPO_CHECKS }, label: "tested" },
 	);
-	return { built, map };
+	return { built, map, overrules: built.out.overrules };
 }
 
 /** The patches of the PR held by the target revisions `revises`. */
@@ -173,7 +173,7 @@ export const slice = composition(
 	},
 	({ request, tier, maxRepairs, maxFixes, revises }) => {
 		const spec = markdownOf(request, "request");
-		const { built, map } = build(tier, request, spec);
+		const { built, map, overrules } = build(tier, request, spec);
 		const reviewed =
 			tier === "small"
 				? smallLoop(built, spec, maxRepairs, maxFixes)
@@ -195,6 +195,7 @@ export const slice = composition(
 							},
 						},
 					);
+		const brief = reviewed.out.brief;
 		const changes = changeset(reviewed.out.lane, {
 			label: "changes",
 			tolerate: "rejected",
@@ -216,7 +217,12 @@ export const slice = composition(
 					},
 				}),
 			},
-			...(map && { relay: { map } }),
+			relay: {
+				...(map && { map }),
+				...(overrules && { overrules }),
+				upheld: reviewed.out.upheld,
+				...(brief && { builder: brief }),
+			},
 			out: { pr: MarkdownOut("pr.md") },
 			tolerate: "rejected",
 		});

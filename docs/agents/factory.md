@@ -308,8 +308,8 @@ flowchart TD
   Obstacles never block a ticket.
 - **Reports.** Each settled slice's obstacles are filed as `needs-triage` `kind/bug` in the milestone, with
   `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line, a fingerprint of the text; a text whose line an open
-  issue carries is not filed again. An obstacle never carries a dependency. Gaps are not filed: a landed slice's PR
-  lists them, for the reviewer to file the ones worth a ticket.
+  issue carries is not filed again. An obstacle never carries a dependency. Gaps are not filed: the writer lists the
+  builder's under Gaps, for the reviewer to file the ones worth a ticket.
 
 ### Landing and PRs
 
@@ -322,13 +322,14 @@ flowchart TD
   checks the PR against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
   held, titled with the spec's subject, to `main`. The slice's writer writes the body in the form
-  `.maestro/slice/prompts/writer.md` gives; below it the tick adds the findings the review left upheld after its last
-  fix round, counted, under `Unresolved review` (none when it left none), the agents' gaps, one line of risk, area and
-  review tier with the planner's contract as the one-way door, the spend (a row per slice concert of the ticket's tour,
-  a build or an encore as its record says, then a total) and `Closes #N` with the `Relates to` links last. A writer that
-  fails costs the build nothing: the tick builds the body from its data alone. A PR whose review left findings upheld is
-  never armed, a last child's after its stack review clears included: the owner merges it. Every landing, an encore's
-  included, rewrites the body of the PR already open on the branch.
+  `.maestro/slice/prompts/writer.md` gives, with `Unresolved review` for the findings the review left upheld after its
+  last fix round and `Gaps` for the builder's; below it the tick adds one line of risk, area and review tier with the
+  planner's contract as the one-way door, the spend (a row per slice concert of the ticket's tour, a build or an encore
+  as its record says, then a total) and `Closes #N` with the `Relates to` links last. A writer that fails costs the
+  build nothing: the tick builds the body from its data alone, with the upheld findings counted under
+  `Unresolved review` and no gaps. A PR whose review left findings upheld is never armed, a last child's after its stack
+  review clears included: the owner merges it. Every landing, an encore's included, rewrites the body of the PR already
+  open on the branch.
 
 ### Masterclass
 

@@ -184,7 +184,7 @@ function fakeForge(issues: Stored[], cut?: string, events: string[] = []) {
 	};
 }
 
-const NO_REPORT: Report = { obstacles: [], gaps: [], lessons: [] };
+const NO_REPORT: Report = { obstacles: [], lessons: [] };
 /** The slice concerts that continue another. */
 const ENCORES = ["s2"];
 const spendOf = (short: string): Spend => ({
@@ -1315,7 +1315,6 @@ describe("a build", () => {
 				reports: {
 					s1: {
 						obstacles: [],
-						gaps: ["Did not verify Windows"],
 						lessons: [],
 						upheld: "- F1, a.ts:3: too wide",
 					},
@@ -1354,12 +1353,6 @@ describe("a build", () => {
 				"Blocking findings still upheld after the last fix round (1):",
 				"",
 				"- F1, a.ts:3: too wide",
-				"",
-				"<details><summary>Gaps (1)</summary>",
-				"",
-				"- Did not verify Windows",
-				"",
-				"</details>",
 				"",
 				"## Merge Danger",
 				"",
@@ -1606,12 +1599,10 @@ describe("a build", () => {
 				reports: {
 					s1: {
 						obstacles: ["No  rg on PATH", "Already filed"],
-						gaps: ["Did not verify Windows"],
 						lessons: [],
 					},
 					s2: {
 						obstacles: ["no rg\non path"],
-						gaps: [],
 						lessons: [],
 					},
 				},

@@ -505,18 +505,20 @@ describe("fix_until_clean", () => {
 		file = compositionFile(
 			"cleaned",
 			`import { fixUntilClean } from "@maestro/classics";
-import { toMarkdown } from "@maestro/classics/code";
+import { briefOf, toMarkdown } from "@maestro/classics/code";
 import { builder } from "@maestro/classics";
 import { fresh } from "@maestro/host-repo-sdk";
 import { code, composition, Markdown, use } from "@maestro/sdk";
+import { Brief } from "@maestro/classics";
 
 export * from "@maestro/classics/code";
 export const cleaned = composition("cleaned", { examples: [{}] }, () => {
 	const spec = code(toMarkdown, { in: { text: "spec" }, out: { file: Markdown() } }).out.file;
 	const built = builder({ label: "build", task: "build", lane: fresh() });
+	const { brief } = code(briefOf, { in: { report: built.out.report }, out: { brief: Brief } }).out;
 	return use(
 		fixUntilClean,
-		{ lane: built.out.lane, session: built.out.session, spec },
+		{ lane: built.out.lane, session: built.out.session, spec, brief },
 		{ params: { maxFixes: 3, lenses: { a: "task a", b: "task b" }, skeptics: false, consolidate: false } },
 	);
 });
@@ -538,7 +540,7 @@ export const cleaned = composition("cleaned", { examples: [{}] }, () => {
 		});
 	});
 
-	test("the step's lenses relay the state's upheld, and the init's relay none", async () => {
+	test("the step's lenses relay the state's upheld, and the init's relay none of it", async () => {
 		const { out } = await maestro(["compose", file, "--json"]);
 		const { nodes, edges } = JSON.parse(out).plan.ir;
 		const lens = (round: string) =>
@@ -548,7 +550,7 @@ export const cleaned = composition("cleaned", { examples: [{}] }, () => {
 						n.id === `fix_until_clean/${round}panel/lenses/lens`,
 				)
 				?.config.relay?.map((r: { name: string }) => r.name);
-		expect(lens("")).toBeUndefined();
+		expect(lens("")).toEqual(["builder"]);
 		expect(lens("fixes/")).toEqual(["upheld", "builder"]);
 		expect(
 			edges.filter(
@@ -831,6 +833,19 @@ describe("tallyOf", () => {
 				],
 			}),
 		).toEqual({ ...carried, upheld: [] });
+	});
+
+	test("carries the brief given beside the tally, a rejection's included", () => {
+		const brief = { summary: "built", gaps: ["g"] };
+		expect<unknown>(tallyOf({ ...carried, held: [], brief })).toEqual({
+			...carried,
+			upheld: [],
+			brief,
+		});
+		expect(tallyOf({ ...carried, held: heldAll, brief })).toMatchObject({
+			outcome: "rejected",
+			outputs: { brief },
+		});
 	});
 
 	test("throws when the consolidator failed", () => {

@@ -513,13 +513,12 @@ const SPENT = {
 	encore: false,
 };
 
-test("a PR body with nothing to add holds no relates-to, gaps or door, and says the review upheld none", () => {
+test("a PR body with nothing to add holds no relates-to or door, and says the review upheld none", () => {
 	const body = pullBody({
 		issue: 5,
 		spend: [SPENT],
 		tier: "ordinary",
 		risk: "medium",
-		gaps: [],
 		result: ready,
 	});
 	expect(body).toStartWith("Closes #5\n\n## Summary\n\ns\n\n## Evidence");
@@ -533,34 +532,24 @@ test("a PR body with nothing to add holds no relates-to, gaps or door, and says 
 
 const LEFT = "- F1, a.ts:3: too wide\n  skeptic: held";
 
-test.each([
-	[
-		"the writer's",
-		"## Summary\n\nx",
-		"## Summary\n\nx\n\n## Unresolved review",
-	],
-	["the built", undefined, "- Review: small review\n\n## Unresolved review"],
-])(
-	"%s PR body lists the upheld findings under their own heading",
-	(_, pr, at) => {
-		const upheld = `${LEFT}\n- F2, b.ts:1: bare`;
-		const body = pullBody({
-			issue: 5,
-			spend: [SPENT],
-			tier: "small",
-			risk: "low",
-			gaps: ["a gap"],
-			result: ready,
-			upheld,
-			pr,
-		});
-		expect(body).toContain(at);
-		expect(body).toContain(`fix round (2):\n\n${upheld}\n\n`);
-		expect(body.indexOf("Unresolved review")).toBeLessThan(
-			body.indexOf("Gaps"),
-		);
-	},
-);
+test("the built PR body lists the upheld findings under their own heading, and the writer's body leaves them to the writer", () => {
+	const upheld = `${LEFT}\n- F2, b.ts:1: bare`;
+	const landed = {
+		issue: 5,
+		spend: [SPENT],
+		tier: "small",
+		risk: "low",
+		result: ready,
+		upheld,
+	} as const;
+	const built = pullBody(landed);
+	expect(built).toContain("- Review: small review\n\n## Unresolved review");
+	expect(built).toContain(`fix round (2):\n\n${upheld}\n\n`);
+	expect(built).not.toContain("Gaps");
+	const written = pullBody({ ...landed, pr: "## Summary\n\nx" });
+	expect(written).not.toContain("Unresolved review");
+	expect(written).not.toContain("Gaps");
+});
 
 test.each([[undefined], [""], ["None."]])(
 	"a review whose upheld output is %j left nothing unresolved",
@@ -579,7 +568,6 @@ test("a PR body labels a spend row an encore only when its concert was one", () 
 		],
 		tier: "small",
 		risk: "low",
-		gaps: [],
 		result: ready,
 	});
 	expect(body).toContain("`01a1` build");
@@ -593,24 +581,22 @@ test("a PR body names the planner's contract as the one-way door", () => {
 		spend: [SPENT],
 		tier: "risky",
 		risk: "high",
-		gaps: [],
 		result: { ...ready, contract: "the --json flag" },
 	});
 	expect(body).toContain("**Risk:** high\n\n**One-way door:** the --json flag");
 });
 
-test("a PR body from the writer keeps its sections, then the gaps, risk and review, the spend folded, and closes last", () => {
+test("a PR body from the writer keeps its sections, then the risk and review, the spend folded, and closes last", () => {
 	const body = pullBody({
 		issue: 5,
 		spend: [SPENT],
 		tier: "small",
 		risk: "low",
-		gaps: ["no Windows run"],
 		result: { ...ready, related: [7] },
 		pr: "## Summary\n\nx",
 	});
 	expect(body).toStartWith(
-		"## Summary\n\nx\n\n<details><summary>Gaps (1)</summary>",
+		"## Summary\n\nx\n\n**Risk:** low · **Review:** small",
 	);
 	expect(body).toContain(
 		"**Risk:** low · **Review:** small\n\n<details><summary>Spend: 1m, 10 tokens</summary>",

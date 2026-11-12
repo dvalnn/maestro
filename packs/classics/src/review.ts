@@ -169,6 +169,7 @@ export const panel = composition(
 			held: held.out.held,
 			verdict: consolidated?.out.verdict,
 			review: consolidated?.out.review,
+			brief,
 		});
 	},
 );

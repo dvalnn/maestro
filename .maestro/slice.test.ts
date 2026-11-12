@@ -35,6 +35,7 @@ const held = (...ids: string[]) =>
 const lane = "c.gate";
 const session = "c.build";
 const reviewer = "c.reviewer";
+const brief = { summary: "built", gaps: ["gap"] };
 type Rulings = Parameters<typeof reviewedOf>[0]["rulings"];
 const cases: [string, Rulings, string[]][] = [
 	["a skeptic's holds", [{ outcome: "ok", value: held("F2", "F3") }], ["F2"]],
@@ -69,13 +70,14 @@ test.each(cases)(
 		const out = reviewedOf({
 			lane,
 			session,
+			brief,
 			reviewer,
 			findings: found,
 			rulings,
 		});
 		expect(out).toMatchObject({
 			outcome: "rejected",
-			outputs: { lane, session, reviewer },
+			outputs: { lane, session, brief, reviewer },
 		});
 		const upheld = "outputs" in out ? (out.outputs?.upheld ?? []) : [];
 		expect(upheld.map((f) => f.id)).toEqual(ids);
@@ -87,11 +89,12 @@ test("reviewedOf tallies a reviewer with no findings clean, and still carries th
 		reviewedOf({
 			lane,
 			session,
+			brief,
 			reviewer,
 			findings: [],
 			rulings: [{ outcome: "skipped" }],
 		}),
-	).toEqual({ lane, session, reviewer, upheld: [] });
+	).toEqual({ lane, session, brief, reviewer, upheld: [] });
 });
 
 /** The runtime of each profile a tier seats, as `.maestro/presets/<tier>.yaml` sets it, and the writer's profile. */

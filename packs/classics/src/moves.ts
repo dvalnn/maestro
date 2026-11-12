@@ -21,7 +21,13 @@ import SKEPTIC_GROUNDS from "./prompts/skeptic-grounds.md" with {
 	type: "text",
 };
 import { builder, skeptic } from "./seats";
-import { type Findings, Tally, type Upheld, type Verdict } from "./types";
+import {
+	Brief,
+	type Findings,
+	Tally,
+	type Upheld,
+	type Verdict,
+} from "./types";
 
 export type Held = Ref<ValueOf<typeof Upheld>[]>;
 
@@ -73,13 +79,14 @@ export function fix(
 	});
 }
 
-/** The tally of a review of `lane`: the findings `held` that a blocking or, given `verdict`, an upheld ruling keeps, with the `review` given beside it. */
+/** The tally of a review of `lane`: the findings `held` that a blocking or, given `verdict`, an upheld ruling keeps, with the `review` and `brief` given beside it. */
 export function tally({
 	lane,
 	session,
 	held,
 	verdict,
 	review,
+	brief,
 	label = "upheld",
 }: {
 	lane: Ref<string>;
@@ -89,6 +96,8 @@ export function tally({
 	verdict?: Ref<ValueOf<typeof Verdict>>;
 	/** The consolidator's review, which the tally carries beside the rest. */
 	review?: Ref<ArtifactRef>;
+	/** The builder's or fix's brief, which the tally carries beside the rest. */
+	brief?: Ref<ValueOf<typeof Brief>>;
 	label?: string;
 }) {
 	return code(tallyOf, {
@@ -98,8 +107,13 @@ export function tally({
 			held,
 			...(verdict && { verdict: allSettled([verdict]) }),
 			...(review && { review }),
+			...(brief && { brief }),
 		},
-		out: review ? { ...Tally, review: Markdown() } : Tally,
+		out: {
+			...Tally,
+			...(review && { review: Markdown() }),
+			...(brief && { brief: Brief }),
+		},
 		label,
 		tolerate: "rejected",
 	});

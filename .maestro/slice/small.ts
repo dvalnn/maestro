@@ -1,4 +1,5 @@
 import {
+	Brief,
 	challenge,
 	type Findings,
 	fix,
@@ -9,13 +10,7 @@ import {
 	Tally,
 	tallyOf,
 } from "@maestro/classics";
-import {
-	changeset,
-	type Relays,
-	type Report,
-	read,
-	Session,
-} from "@maestro/host-repo-sdk";
+import { changeset, type Report, read, Session } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
 	allSettled,
@@ -24,6 +19,7 @@ import {
 	not,
 	type PortRefs,
 	type Ref,
+	type Rejection,
 	reject,
 	type Settled,
 	use,
@@ -47,8 +43,8 @@ const REVIEWER_AGAIN_TASK = task(
 const REVIEWER_LENS = "reviewer";
 
 /** A round's `tally` with `extra` outputs beside it, a rejection's included. */
-function withOutputs<E extends object>(
-	tally: ReturnType<typeof tallyOf>,
+function withOutputs<T extends object, E extends object>(
+	tally: T | Required<Rejection<T>>,
 	extra: E,
 ) {
 	return "outcome" in tally
@@ -57,18 +53,20 @@ function withOutputs<E extends object>(
 }
 
 /**
- * A reviewer round's tally, and the reviewer's session beside it. A skeptic that delivered no rulings leaves every
- * finding held without a why.
+ * A reviewer round's tally, with the builder's `brief` and the reviewer's session beside it. A skeptic that delivered
+ * no rulings leaves every finding held without a why.
  */
 export function reviewedOf({
 	lane,
 	session,
+	brief,
 	reviewer,
 	findings,
 	rulings,
 }: {
 	lane: string;
 	session: string;
+	brief: ValueOf<typeof Brief>;
 	reviewer: string;
 	findings: ValueOf<typeof Findings>;
 	rulings: Settled<ValueOf<typeof Rulings>>[];
@@ -82,11 +80,11 @@ export function reviewedOf({
 		results: [{ outcome: "ok", value: member }],
 		names: [REVIEWER_LENS],
 	});
-	return withOutputs(tallyOf({ lane, session, held }), { reviewer });
+	return withOutputs(tallyOf({ lane, session, held }), { reviewer, brief });
 }
 
-/** What a reviewer round settles to: the tally and the reviewer's session. */
-const REVIEWED = { ...Tally, reviewer: Session };
+/** What a reviewer round settles to: the tally, the brief it carries and the reviewer's session. */
+const REVIEWED = { ...Tally, brief: Brief, reviewer: Session };
 
 /** A reviewer round's session, which the next round's reviewer continues, and the findings that round upheld. */
 type Earlier = Pick<PortRefs<typeof REVIEWED>, "reviewer" | "upheld">;
@@ -99,7 +97,7 @@ function reviewerRound(
 	lane: Ref<string>,
 	session: Ref<string>,
 	spec: Ref<ArtifactRef>,
-	builder: Relays,
+	brief: Ref<ValueOf<typeof Brief>>,
 	earlier?: Earlier,
 ) {
 	const attached = {
@@ -115,19 +113,20 @@ function reviewerRound(
 		lane: read(lane),
 		session: earlier?.reviewer,
 		checks: REPO_CHECKS,
-		relay: { ...(earlier && { upheld: earlier.upheld }), ...builder },
+		relay: { ...(earlier && { upheld: earlier.upheld }), builder: brief },
 		attachments: attached,
 	});
 	const skeptic = challenge(reviewer, {
 		change: lane,
 		attached,
 		grounds: JUDGED,
-		relay: builder,
+		relay: { builder: brief },
 	});
 	return code(reviewedOf, {
 		in: {
 			lane,
 			session,
+			brief,
 			reviewer: reviewer.out.session,
 			findings: reviewer.out.findings,
 			rulings: allSettled([skeptic.out.rulings]),
@@ -165,13 +164,7 @@ export function smallLoop(
 				label: "gate",
 			},
 		).out.lane;
-		return reviewerRound(
-			green,
-			session,
-			spec,
-			{ builder: briefFrom(report) },
-			earlier,
-		);
+		return reviewerRound(green, session, spec, briefFrom(report), earlier);
 	};
 	return loop.while((s) => not(s.ok), {
 		init: gateAndReview(built.out.lane, built.out.session, built.out.report),

@@ -824,7 +824,6 @@ export type Landed = {
 	tier: Tier;
 	risk: Risk;
 	upheld?: string;
-	gaps: readonly string[];
 	result: Triage;
 	pr?: string;
 };
@@ -899,19 +898,6 @@ function unresolvedLines({ upheld }: Landed) {
 		: [];
 }
 
-function gapLines(gaps: readonly string[]) {
-	return gaps.length
-		? [
-				`<details><summary>Gaps (${gaps.length})</summary>`,
-				"",
-				...list(gaps),
-				"",
-				"</details>",
-				"",
-			]
-		: [];
-}
-
 function dangerLine({ risk, result }: Landed) {
 	const area = result.area ? ` · **Area:** ${result.area}` : "";
 	const door = result.contract;
@@ -959,19 +945,17 @@ const closing = ({ issue, result }: Landed) =>
 	`Closes #${issue}${result.related?.length ? ` · relates to ${refs(result.related)}` : ""}`;
 
 /**
- * The writer's `pr`, then the unresolved review, the gaps folded, one line of risk, area and review tier with the
- * planner's contract as the one-way door, the spend folded under its total, and the closing line last.
+ * The writer's `pr`, then one line of risk, area and review tier with the planner's contract as the one-way door, the
+ * spend folded under its total, and the closing line last.
  */
 function writtenBody(landed: Landed, pr: string) {
-	const { spend, gaps, tier } = landed;
+	const { spend, tier } = landed;
 	const [risk, ...door] = dangerLine(landed);
 	const riskLines = [`${risk} · **Review:** ${tier}`, ...door];
 	const total = `${elapsed(sum(spend, (s) => s.elapsedMs))}, ${shorthand(sum(spend, tokenTotal))} tokens`;
 	return [
 		pr,
 		"",
-		...unresolvedLines(landed),
-		...gapLines(gaps),
 		...riskLines,
 		"",
 		`<details><summary>Spend: ${total}</summary>`,
@@ -987,12 +971,12 @@ function writtenBody(landed: Landed, pr: string) {
 /**
  * The PR body of a landed slice (factory.md, Rules, Landing and PRs: PRs): the writer's followed by the tick's
  * sections, else one built from the tick's data alone, with the subject and each decision's lead as Summary, the
- * acceptance commands as the gate with the review's upheld count as Evidence, then the unresolved review, the gaps,
- * risk and spend.
+ * acceptance commands as the gate with the review's upheld count as Evidence, then the unresolved review, risk and
+ * spend.
  */
 export function pullBody(landed: Landed) {
 	if (landed.pr) return writtenBody(landed, landed.pr);
-	const { spend, gaps, result } = landed;
+	const { spend, result } = landed;
 	const decisions = list(
 		(result.spec?.decisions ?? []).map((d) => oneLine(d.lead)),
 	);
@@ -1005,7 +989,6 @@ export function pullBody(landed: Landed) {
 		]),
 		...block("Evidence", evidenceLines(landed)),
 		...unresolvedLines(landed),
-		...gapLines(gaps),
 		...block("Merge Danger", dangerLine(landed)),
 		...block("Spend", spendLines(spend)),
 	].join("\n");

@@ -106,7 +106,6 @@ function pullText(
 		tier: tierOf(issue, result),
 		risk: riskOf(issue, result.risk),
 		upheld: report.upheld,
-		gaps: report.gaps,
 		result,
 		pr: report.pr,
 	});
