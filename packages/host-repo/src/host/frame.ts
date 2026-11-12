@@ -249,7 +249,7 @@ function checks({ checks, lane }: Run) {
 }
 
 const SKILLS =
-	"When your task matches a skill's description, read its file before you act; when none matches, leave it unread.";
+	"When your task matches a skill's description, read its file before you act.";
 
 function skills({ skills }: Run) {
 	const lines = skills.map(

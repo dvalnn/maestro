@@ -40,7 +40,7 @@ Run the target's checks with \`check <name>\`, and never write your own. Each pr
 
 ## Skills
 
-When your task matches a skill's description, read its file before you act; when none matches, leave it unread.
+When your task matches a skill's description, read its file before you act.
 - \`/skills/tdd/SKILL.md\`: Test-driven development. Use when building test-first.
 - \`/skills/codebase-design/SKILL.md\`: Vocabulary for deep modules. Use when designing.
 
