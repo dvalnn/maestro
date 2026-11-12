@@ -827,7 +827,7 @@ describe("tallyOf", () => {
 		});
 	});
 
-	test("tallies a consolidator clean when nothing is upheld, whether it approved or rejected", () => {
+	test("tallies a consolidator clean when it upholds nothing and rules no criterion unmet, whether it approved or rejected", () => {
 		expect(
 			tallyOf({ ...carried, held: heldAll, verdict: [ok(verdict())] }),
 		).toEqual({ ...carried, upheld: [] });
@@ -836,10 +836,43 @@ describe("tallyOf", () => {
 				...carried,
 				held: heldAll,
 				verdict: [
-					{ outcome: "rejected", reason: "C1 unmet", value: verdict() },
+					{ outcome: "rejected", reason: "not ready", value: verdict() },
 				],
 			}),
 		).toEqual({ ...carried, upheld: [] });
+	});
+
+	test("upholds each criterion a consolidator rules not met, with no finding raised for it", () => {
+		const criteria = [
+			{ id: "C1", met: false, evidence: "--json prints nothing" },
+			{ id: "C2", met: true, evidence: "a.test.ts passes" },
+		];
+		expect<unknown>(
+			tallyOf({
+				...carried,
+				held: heldAll,
+				verdict: [
+					{
+						outcome: "rejected",
+						reason: "C1 unmet",
+						value: { criteria, upholds: [] },
+					},
+				],
+			}),
+		).toEqual(
+			reject("1 upheld: consolidator/C1", {
+				...carried,
+				upheld: [
+					{
+						lens: "consolidator",
+						id: "C1",
+						where: "spec C1",
+						issue: "--json prints nothing",
+						cites: "spec C1",
+					},
+				],
+			}),
+		);
 	});
 
 	test("carries the brief given beside the tally, a rejection's included", () => {

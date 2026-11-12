@@ -311,7 +311,8 @@ quality
 **Consolidator**: A verdict agent that merges several lenses' upheld findings into one verdict, by id, never rewording
 them.
 
-**Upheld**: A finding that survived the skeptic and the consolidator, still to be fixed.
+**Upheld**: A finding that survived the skeptic and the consolidator, or a criterion the consolidator ruled not met,
+still to be fixed.
 
 **Panel**: Lenses over one change, with their skeptics and an optional consolidator, ending in a tally. _Avoid_: round,
 review.

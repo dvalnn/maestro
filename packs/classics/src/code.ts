@@ -137,10 +137,25 @@ const rejection = <O>(upheld: Held[], outputs: O): Required<Rejection<O>> => ({
 	outputs,
 });
 
+/** The consolidator's name on the criteria it rules not met, held beside the lenses' findings. */
+const CONSOLIDATOR = "consolidator";
+
+/** Each criterion of `verdict` ruled not met, as a finding of the consolidator citing the spec. */
+const unmetOf = (verdict: ValueOf<typeof Verdict> | undefined): Held[] =>
+	(verdict?.criteria ?? [])
+		.filter((c) => !c.met)
+		.map((c) => ({
+			lens: CONSOLIDATOR,
+			id: c.id,
+			where: `spec ${c.id}`,
+			issue: c.evidence,
+			cites: `spec ${c.id}`,
+		}));
+
 /**
  * The review round's tally: the lane and session it carries, and the findings upheld.
  * - Without a `verdict`, every held finding.
- * - With one, those held findings whose `<lens>/<id>` its `upholds` names.
+ * - With one, those held findings whose `<lens>/<id>` its `upholds` names, then each criterion it rules not met.
  *
  * The `review` and `brief` given ride beside them. Rejects, with the tally as its outputs, while a finding is upheld.
  * @throws Error with the consolidator's reason when it failed.
@@ -157,7 +172,10 @@ export function tallyOf({
 	if (ruled?.outcome === "failed") throw new Error(ruled.reason);
 	const upholds = ruled?.value?.upholds;
 	const upheld = verdict
-		? held.filter((f) => upholds?.includes(`${f.lens}/${f.id}`))
+		? [
+				...held.filter((f) => upholds?.includes(`${f.lens}/${f.id}`)),
+				...unmetOf(ruled?.value),
+			]
 		: held;
 	const tally = {
 		lane,
