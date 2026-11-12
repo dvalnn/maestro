@@ -3,13 +3,7 @@ import { join } from "node:path";
 import type { Forge, Issue, NewPull } from "./forge";
 import type { Report, Spend } from "./maestro";
 import { riskOf, tierOf, tourOf } from "./pick";
-import {
-	type Data,
-	dataOf,
-	pullBody,
-	specCommentOf,
-	unresolvedOf,
-} from "./route";
+import { type Data, dataOf, pullBody, specCommentOf } from "./route";
 import {
 	BASE,
 	branchOf,
@@ -26,11 +20,11 @@ import {
 	writeSpec,
 } from "./tick";
 
-/** The open PR of `pull.head` with `pull`'s body, else a new one. */
+/** The open PR of `pull.head` with `pull`'s title and body, else a new one. */
 async function openPull(forge: Forge, pull: NewPull) {
 	const open = (await forge.pulls()).find((p) => p.head === pull.head);
 	if (!open) return forge.openPull(pull);
-	await forge.editPull(open.number, pull.body);
+	await forge.editPull(open.number, pull.title, pull.body);
 	return open.number;
 }
 
@@ -76,8 +70,11 @@ async function inWorkspace(
 	return done;
 }
 
-/** A PR's title and body, and whether its review left findings unresolved, which holds it unarmed. */
-type PullText = Pick<NewPull, "title" | "body"> & { held: boolean };
+/** Forgejo's draft marker: a title with it opens a draft, which the forge refuses to merge. */
+const DRAFT_PREFIX = "WIP: ";
+
+/** A PR's title and body, and whether it is a draft, which holds it unarmed. */
+type PullText = Pick<NewPull, "title" | "body"> & { draft: boolean };
 
 /** What each slice concert of `issue`'s tour spent, oldest first, the one still running left out. */
 async function spendOf(tick: Tick, issue: Issue) {
@@ -108,11 +105,12 @@ function pullText(
 		upheld: report.upheld,
 		result,
 		pr: report.pr,
+		notice: report.notice,
 	});
 	return {
 		title: result.spec.subject,
 		body,
-		held: unresolvedOf(report.upheld) !== undefined,
+		draft: report.draft === true,
 	};
 }
 
@@ -145,20 +143,21 @@ async function awaitsStackReview(tick: Tick, { issue, data }: Entry) {
 }
 
 /**
- * Pushes `commit` from `dir` as `entry`'s branch and opens or rewrites its PR, arming a low one unless its review left
- * findings unresolved.
+ * Pushes `commit` from `dir` as `entry`'s branch and opens or rewrites its PR, a draft when `draft`, arming a low one
+ * unless it is a draft.
  */
 async function publish(
 	tick: Tick,
 	entry: Entry,
 	dir: string,
 	commit: string,
-	{ held, ...pull }: NewPull & Pick<PullText, "held">,
+	{ draft, ...pull }: NewPull & Pick<PullText, "draft">,
 ) {
 	await tick.forge.push(dir, commit, pull.head);
-	const number = await openPull(tick.forge, pull);
+	const title = draft ? `${DRAFT_PREFIX}${pull.title}` : pull.title;
+	const number = await openPull(tick.forge, { ...pull, title });
 	if (
-		!held &&
+		!draft &&
 		isLow(entry.issue, entry.data) &&
 		!(await awaitsStackReview(tick, entry))
 	)

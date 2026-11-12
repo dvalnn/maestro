@@ -158,10 +158,10 @@ function fakeForge(issues: Stored[], cut?: string, events: string[] = []) {
 			});
 			return number;
 		},
-		editPull: async (n, body) => {
-			write(`rewrite #${n}`);
+		editPull: async (n, title, body) => {
+			write(`rewrite #${n}: ${title}`);
 			const pull = pulls.find((p) => p.number === n);
-			if (pull) Object.assign(pull, { body });
+			if (pull) Object.assign(pull, { title, body });
 		},
 		arm: async (n) => write(`arm #${n}`),
 		reviews: async (n) => reviews[n] ?? [],
@@ -1305,7 +1305,10 @@ describe("a build", () => {
 		expect(t.starts).toHaveLength(1);
 	});
 
-	test("lands an ok slice in a fresh workspace and opens its PR", async () => {
+	const NOTICE =
+		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.";
+
+	test("lands an ok slice in a fresh workspace and opens its draft PR, unarmed, with its notice first", async () => {
 		const t = setup(
 			[specced(7, "in-progress", { slice: "s1" })],
 			[sliceConcert("s1", 7)],
@@ -1317,6 +1320,8 @@ describe("a build", () => {
 						obstacles: [],
 						lessons: [],
 						upheld: "- F1, a.ts:3: too wide",
+						draft: true,
+						notice: NOTICE,
 					},
 				},
 			},
@@ -1330,11 +1335,13 @@ describe("a build", () => {
 		]);
 		expect(t.writes.filter((w) => !w.startsWith("edit"))).toEqual([
 			`push abc123 as maestro-tm/i7 from ${CACHED}`,
-			"pull maestro-tm/i7 to main: feat: greet by name",
+			"pull maestro-tm/i7 to main: WIP: feat: greet by name",
 			"labels #7 kind/enhancement risk/low state/in-review",
 		]);
 		expect(t.opened[0]?.body).toBe(
 			[
+				NOTICE,
+				"",
 				"Closes #7 · relates to #4",
 				"",
 				"## Summary",
@@ -1373,6 +1380,33 @@ describe("a build", () => {
 		expect(t.writes).toHaveLength(writes);
 	});
 
+	test.each([
+		[
+			"a rulings edit",
+			"Draft: this change edits `docs/rulings.md`, which the owner holds.",
+		],
+	])(
+		"opens a low PR for %s as an unarmed draft, the writer's body under the notice",
+		async (_, notice) => {
+			const t = setup(
+				[specced(8, "in-progress", { slice: "s1" })],
+				[sliceConcert("s1", 8)],
+				{ s1: { status: "ok", outputs: {} } },
+				undefined,
+				{
+					reports: {
+						s1: { ...NO_REPORT, draft: true, notice, pr: "## Summary\n\nx" },
+					},
+				},
+			);
+			await t.run();
+			expect(merging(t.writes)).toEqual([
+				"pull maestro-tm/i8 to main: WIP: feat: greet by name",
+			]);
+			expect(t.opened[0]?.body).toStartWith(`${notice}\n\n## Summary\n\nx`);
+		},
+	);
+
 	test("rewrites the body of the open PR when an encore lands, with a spend row for each slice concert", async () => {
 		const t = setup(
 			[specced(6, "in-progress", { slice: "s2", encore: "s1" })],
@@ -1381,7 +1415,7 @@ describe("a build", () => {
 		);
 		await t.run();
 		expect(t.writes.filter((w) => w.startsWith("pull"))).toEqual([]);
-		expect(t.writes).toContain("rewrite #20");
+		expect(t.writes).toContain("rewrite #20: feat: greet by name");
 		const body = t.pulls.find((p) => p.number === 20)?.body ?? "";
 		expect(
 			body
@@ -2077,7 +2111,7 @@ describe("a stack review", () => {
 
 	test("leaves a low last child's PR unarmed when its slice left findings upheld, though its stack review clears", async () => {
 		const t = epicWith("in-review");
-		t.reports.s1 = { ...NO_REPORT, upheld: "- F1, a.ts:3: too wide" };
+		t.reports.s1 = { ...NO_REPORT, draft: true };
 		await t.run();
 		t.concerts.unshift(reviewConcert("started"));
 		t.results.started = { status: "ok", outputs: {} };

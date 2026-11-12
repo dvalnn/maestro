@@ -549,6 +549,11 @@ test("the built PR body lists the upheld findings under their own heading, and t
 	const written = pullBody({ ...landed, pr: "## Summary\n\nx" });
 	expect(written).not.toContain("Unresolved review");
 	expect(written).not.toContain("Gaps");
+	const drafted = pullBody({ ...landed, notice: "Draft: x." });
+	expect(drafted).toStartWith("Draft: x.\n\nCloses #5");
+	expect(
+		pullBody({ ...landed, pr: "## Summary", notice: "Draft: x." }),
+	).toStartWith("Draft: x.\n\n## Summary");
 });
 
 test.each([[undefined], [""], ["None."]])(

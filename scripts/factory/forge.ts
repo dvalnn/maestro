@@ -107,8 +107,8 @@ export type Forge = {
 	push(dir: string, commit: string, branch: string): Promise<void>;
 	/** Opens a pull request and returns its number. */
 	openPull(pull: NewPull): Promise<number>;
-	/** Sets `pull`'s body. */
-	editPull(pull: number, body: string): Promise<void>;
+	/** Sets `pull`'s title and body. */
+	editPull(pull: number, title: string, body: string): Promise<void>;
 	/** Has the forge fast-forward `main` to `pull` once its required checks pass, unless that is already armed. */
 	arm(pull: number): Promise<void>;
 	/** The reviews of `pull`, oldest first. */
@@ -523,8 +523,8 @@ export function forge(
 			push(creds, dir, `${commit}:refs/heads/${branch}`),
 		openPull: async (pull) =>
 			num(object(await api("POST", "/pulls", pull), "pull"), "number"),
-		editPull: async (pull, body) => {
-			await api("PATCH", `/pulls/${pull}`, { body });
+		editPull: async (pull, title, body) => {
+			await api("PATCH", `/pulls/${pull}`, { title, body });
 		},
 		arm: async (pull) => {
 			try {

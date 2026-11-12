@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isJson, type Json } from "./json";
+import { unresolvedOf } from "./route";
 
 /** How many of a milestone's newest concerts the tick reads: one runs at a time, so the newest settle is among them. */
 const WINDOW = 20;
@@ -46,6 +47,9 @@ export type Report = {
 	obstacles: string[];
 	lessons: string[];
 	upheld?: string;
+	/** Whether the slice's PR opens as a draft, and the notice at the top of its body that says why. */
+	draft?: boolean;
+	notice?: string;
 	/** The PR body the slice's writer wrote. */
 	pr?: string;
 	/** A consolidator's review, and the findings the review upheld. */
@@ -169,6 +173,15 @@ const upheldOf = (doc: unknown) =>
 		?.replace(/^# .*\n/, "")
 		.trim();
 
+/** The `draft` output of a `wait <concert> --json` document; a concert from before it existed is a draft when it upheld findings. */
+function draftOf(doc: unknown, upheld?: string) {
+	const draft =
+		isJson(doc) && isJson(doc.outputs) ? doc.outputs.draft : undefined;
+	return typeof draft === "boolean"
+		? draft
+		: unresolvedOf(upheld) !== undefined;
+}
+
 /** The writer's PR body in the `pr` output of a `wait <concert> --json` document, when it wrote one. */
 const prOf = (doc: unknown) => outputText(doc, "pr") || undefined;
 
@@ -259,10 +272,13 @@ export function maestro(bin = "maestro"): Maestro {
 				json(bin, ["wait", id]),
 			]);
 			if (!isJson(doc)) throw new Error("maestro ls: not an object");
+			const upheld = upheldOf(result);
 			return {
 				obstacles: entriesOf(doc.reports, "obstacles"),
 				lessons: entriesOf(doc.reports, "lessons"),
-				upheld: upheldOf(result),
+				upheld,
+				draft: draftOf(result, upheld),
+				notice: outputText(result, "notice") || undefined,
 				pr: prOf(result),
 				review: outputText(result, "review"),
 				blocking: blockingOf(result),

@@ -58,7 +58,6 @@ import {
 	specCommentOf,
 	type Triage,
 	triaged,
-	unresolvedOf,
 	VERDICT_STATE,
 } from "./route";
 import {
@@ -451,10 +450,10 @@ const pullToMain = (pulls: readonly Pull[], number: number) =>
 const findingsText = ({ review, blocking = [] }: Report) =>
 	review ?? blocking.map((b) => `- ${b}`).join("\n");
 
-/** Arms the PR to `main` of `child`, the last child of a cleared stack review, unless its own review left findings. */
+/** Arms the PR to `main` of `child`, the last child of a cleared stack review, unless its own PR is a draft. */
 async function armLast(tick: Tick, { issue, data }: Entry) {
 	const report = data.concert && (await tick.maestro.report(data.concert));
-	if (report && unresolvedOf(report.upheld)) return;
+	if (report && report.draft) return;
 	const pull = pullToMain(await tick.forge.pulls(), issue.number);
 	if (pull) await tick.forge.arm(pull.number);
 }

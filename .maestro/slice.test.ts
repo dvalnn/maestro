@@ -441,13 +441,18 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 	expect(run(patched, [{ outcome: "ok", value: pr }])).toEqual({
 		changeset: ref,
 		upheld: upheldFile,
+		draft: false,
+		notice: join(ctx, "notice.md"),
 		pr,
 	});
+	expect(readFileSync(join(ctx, "notice.md"), "utf8")).toBe("");
 	expect(readFileSync(upheldFile, "utf8")).toBe("# Upheld findings\n\nNone.\n");
 	const failed = run(patched, [{ outcome: "failed", reason: "x" }]);
 	expect(failed).toEqual({
 		changeset: ref,
 		upheld: upheldFile,
+		draft: false,
+		notice: join(ctx, "notice.md"),
 		pr: join(ctx, "pr.md"),
 	});
 	expect(readFileSync(join(ctx, "pr.md"), "utf8")).toBe("");
@@ -479,6 +484,47 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 			"  Unverified: no skeptic ruled on it",
 			"",
 		].join("\n"),
+	);
+});
+
+test("requirePatch drafts a change that leaves findings upheld or edits docs/rulings.md or docs/adr/, naming each reason in its notice", () => {
+	const ctx = mkdtempSync(join(scratch, "draft-"));
+	const dir = mkdtempSync(join(scratch, "patches-"));
+	const run = (
+		patch: string,
+		upheld: Parameters<typeof requirePatch>[0]["upheld"],
+	) => {
+		writeFileSync(join(dir, "0001.patch"), patch);
+		const out = requirePatch(
+			{
+				changeset: { path: "c", contentHash: "sha256:0" },
+				upheld,
+				written: [],
+			},
+			{ path: () => dir, scratch: ctx } as unknown as CodeContext,
+		);
+		return [
+			"draft" in out && out.draft,
+			readFileSync(join(ctx, "notice.md"), "utf8"),
+		];
+	};
+	const touching = (path: string) => `diff --git a/${path} b/${path}\n`;
+	expect(run(touching("docs/rulings.md"), [])).toEqual([
+		true,
+		"Draft: this change edits `docs/rulings.md`, which the owner holds.\n",
+	]);
+	expect(
+		run(touching("src/a.ts"), [{ ...finding("F1", true), lens: "spec" }]),
+	).toEqual([
+		true,
+		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.\n",
+	]);
+	expect(
+		run(touching("docs/adr/0001.md"), [
+			{ ...finding("F1", true), lens: "spec" },
+		])[1],
+	).toBe(
+		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.\nDraft: this change edits `docs/adr/0001.md`, which the owner holds.\n",
 	);
 });
 

@@ -826,6 +826,8 @@ export type Landed = {
 	upheld?: string;
 	result: Triage;
 	pr?: string;
+	/** The draft notice, which opens the body. */
+	notice?: string;
 };
 
 const THOUSAND = 1_000;
@@ -969,13 +971,18 @@ function writtenBody(landed: Landed, pr: string) {
 }
 
 /**
- * The PR body of a landed slice (factory.md, Rules, Landing and PRs: PRs): the writer's followed by the tick's
- * sections, else one built from the tick's data alone, with the subject and each decision's lead as Summary, the
+ * The PR body of a landed slice (factory.md, Rules, Landing and PRs: PRs), led by its draft notice when it has one: the
+ * writer's followed by the tick's sections, else one built from the tick's data alone, with the subject and each decision's lead as Summary, the
  * acceptance commands as the gate with the review's upheld count as Evidence, then the unresolved review, risk and
  * spend.
  */
 export function pullBody(landed: Landed) {
-	if (landed.pr) return writtenBody(landed, landed.pr);
+	const body = landed.pr ? writtenBody(landed, landed.pr) : builtBody(landed);
+	return landed.notice ? `${landed.notice}\n\n${body}` : body;
+}
+
+/** The PR body built from the tick's data alone. */
+function builtBody(landed: Landed) {
 	const { spend, result } = landed;
 	const decisions = list(
 		(result.spec?.decisions ?? []).map((d) => oneLine(d.lead)),

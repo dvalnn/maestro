@@ -10,11 +10,12 @@ writeFileSync(
 	bin,
 	`#!/bin/sh
 case "$1 $2" in
-	"ls c2"|"ls c3"|"ls c4") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"node":"tested/tester","outputs":{"map":{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}}},{"node":"fixes/fix","expansion":"[0]"},{"node":"fix_until_clean/fixes/fix","expansion":"[1]"},{"node":"fix_until_clean/fixes/brief"},{"node":"fixes/reviewer"}],"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","lessons":["run just fmt first"]}}}' ;;
+	"ls c2"|"ls c3"|"ls c4"|"ls c6") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"node":"tested/tester","outputs":{"map":{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}}},{"node":"fixes/fix","expansion":"[0]"},{"node":"fix_until_clean/fixes/fix","expansion":"[1]"},{"node":"fix_until_clean/fixes/brief"},{"node":"fixes/reviewer"}],"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","lessons":["run just fmt first"]}}}' ;;
 	"ls c5") echo '{"instances":[{"node":"tester","outputs":{"map":{"pinned":[{}],"deferred":[],"untestable":[]}}}]}' ;;
 	"ls --tour") echo '[{"id":"l'"$5"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1"}]' ;;
-	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"pr":{"path":"pr.md"}}}' ;;
+	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"notice":{"path":"notice.md"},"pr":{"path":"pr.md"}}}' ;;
 	"wait c4") echo '{"status":"rejected","artifacts":"${dir}","outputs":{"review":{"path":"review.md"},"upheld":[{"id":"F1","lens":"spec","where":"a.ts:3","issue":"A seam breaks","cites":"R1","blocking":true}]}}' ;;
+	"wait c6") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"}}}' ;;
 	"wait c3"|"wait c5") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"}}}' ;;
 	"wait c1") echo '{"id":"c1","status":"failed","reason":"boom"}'; exit 1 ;;
 	"perform refused") echo "refused.ts does not compose" >&2; exit 2 ;;
@@ -29,6 +30,7 @@ writeFileSync(
 	join(dir, "upheld.md"),
 	"# Upheld findings\n\n- F1, a.ts:3: too wide\n",
 );
+writeFileSync(join(dir, "notice.md"), "Draft: x\n");
 writeFileSync(join(dir, "pr.md"), "## Summary\n\nx\n");
 writeFileSync(join(dir, "review.md"), "# Review\n\nA seam breaks.\n");
 writeFileSync(join(dir, "empty.md"), "");
@@ -47,6 +49,8 @@ test("reads a concert's report: each agent's obstacles and lessons, the upheld f
 		obstacles: ["no rg"],
 		lessons: ["run just fmt first"],
 		upheld: "- F1, a.ts:3: too wide",
+		draft: true,
+		notice: "Draft: x",
 		pr: "## Summary\n\nx",
 		tests: { pinned: 3, deferred: 1, untestable: 0 },
 	});
@@ -90,9 +94,18 @@ test("lists a tour's concerts up to the limit, the tick's window by default", as
 	expect((await fake.concerts("v")).map((c) => c.id)).toEqual(["l20"]);
 });
 
+test("a concert with no draft output is a draft when it upheld findings", async () => {
+	expect((await fake.report("c6")).draft).toBe(true);
+});
+
 test("a report whose upheld file is gone has no upheld findings, and one whose PR body is empty has none", async () => {
 	const report = await fake.report("c3");
-	expect([report.upheld, report.pr]).toEqual([undefined, undefined]);
+	expect([report.upheld, report.pr, report.draft, report.notice]).toEqual([
+		undefined,
+		undefined,
+		false,
+		undefined,
+	]);
 });
 
 test("a perform started in the background returns its concert", async () => {

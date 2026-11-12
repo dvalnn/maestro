@@ -174,10 +174,10 @@ flowchart TD
   triage found it wide, else `ordinary`. Risk gates the owner's approval, width sets the review's depth, which
   `.maestro/slice.ts` and `.maestro/presets/{small,ordinary,risky}.yaml` define. Low builds, opens a PR and merges
   itself: once its PR to `main` is open, the tick arms the forge's auto-merge on it, fast-forward only, which waits on
-  the required `check` status, unless the review left findings unresolved (Landing and PRs: PRs). Medium builds and
-  waits for the owner to merge its PR. High waits in `needs-approval` for the owner to approve the spec, then merges as
-  medium does. The owner merges by fast-forward, as `main` takes signed commits only. An epic's last child arms only
-  once its stack review clears it (Rules, Build: Stack review).
+  the required `check` status, unless the PR is a draft (Landing and PRs: PRs). Medium builds and waits for the owner to
+  merge its PR. High waits in `needs-approval` for the owner to approve the spec, then merges as medium does. The owner
+  merges by fast-forward, as `main` takes signed commits only. An epic's last child arms only once its stack review
+  clears it (Rules, Build: Stack review).
 - **One concert at a time.** The tick starts no second one while a concert of the milestone runs.
 - **Pick order.** Finish work first: a stack review, then an encore of a PR with changes requested, then a build, then
   triage, then a masterclass. A tick that routes a settle falls through and starts the next action. Within builds and
@@ -327,9 +327,12 @@ flowchart TD
   planner's contract as the one-way door, the spend (a row per slice concert of the ticket's tour, a build or an encore
   as its record says, then a total) and `Closes #N` with the `Relates to` links last. A writer that fails costs the
   build nothing: the tick builds the body from its data alone, with the upheld findings counted under
-  `Unresolved review` and no gaps. A PR whose review left findings upheld is never armed, a last child's after its stack
-  review clears included: the owner merges it. Every landing, an encore's included, rewrites the body of the PR already
-  open on the branch.
+  `Unresolved review` and no gaps. A PR is a draft, opened with the `WIP: ` title prefix, which Forgejo treats as a
+  draft and refuses to merge, when the review left findings upheld or the change edits `docs/rulings.md` or `docs/adr/`.
+  The slice's result node decides it and writes the notice that opens the body, a line per reason, which the writer does
+  not write. A draft is never armed, a last child's after its stack review clears included: the owner merges it. Every
+  landing, an encore's included, rewrites the title and body of the PR already open on the branch, so an encore that
+  clears the draft drops the prefix.
 
 ### Masterclass
 
