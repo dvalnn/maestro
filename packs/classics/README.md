@@ -10,12 +10,13 @@ are flags in kebab-case, or config under `classics.<composition>.<param>`. Its s
 
 ## Compositions
 
-| Composition          | What it does                                                                             | Profiles                          |
-| -------------------- | ---------------------------------------------------------------------------------------- | --------------------------------- |
-| `build_then_repair`  | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series | `builder`                         |
-| `repair_until_green` | Checks a lane, then repairs in the builder's session while red; used by others           | `builder`                         |
-| `panel_review`       | Rules on a change through each lens, a skeptic over each lens's findings, then tallies   | `lens`, `skeptic`, `consolidator` |
-| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them   | `tester`, `builder`               |
+| Composition          | What it does                                                                                                         | Profiles                                               |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `build_then_repair`  | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series                             | `builder`                                              |
+| `build_then_review`  | Builds the request, with tests pinned first when `tested`, then repairs and reviews by panel, fixing what it upholds | `builder`, `lens`, `skeptic`, `consolidator`, `tester` |
+| `repair_until_green` | Checks a lane, then repairs in the builder's session while red; used by others                                       | `builder`                                              |
+| `panel_review`       | Rules on a change through each lens, a skeptic over each lens's findings, then tallies                               | `lens`, `skeptic`, `consolidator`                      |
+| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them                               | `tester`, `builder`                                    |
 
 `scout` and `planner` serve no composition of the pack; they are seats for compositions built on it. A `scout` answers
 the questions it is asked in an `answers` reply field: per question, its `state` (`grounded` or `unsure`), what is
@@ -35,6 +36,10 @@ in config as `profiles.classics/<name>.context`.
 | Composition          | Param        | Type                                   | Default   | What it is                                                                                                          |
 | -------------------- | ------------ | -------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- |
 | `build_then_repair`  | `request`    | text                                   | required  | What to build                                                                                                       |
+|                      | `maxRepairs` | integer, at least 1                    | 2         | The most repairs before the checks count as red                                                                     |
+| `build_then_review`  | `request`    | text                                   | required  | What to build                                                                                                       |
+|                      | `tested`     | boolean                                | false     | A tester pins the request in tests before the builder builds                                                        |
+|                      | `maxFixes`   | integer, at least 1                    | 2         | The most fix rounds after a review upholds findings                                                                 |
 |                      | `maxRepairs` | integer, at least 1                    | 2         | The most repairs before the checks count as red                                                                     |
 | `repair_until_green` | `maxRepairs` | integer, at least 1                    | 2         | As above; a composition that uses it sets its own                                                                   |
 |                      | `checks`     | list of `target.checks` names          | none      | The checks the repair agent may run on its repair                                                                   |
@@ -57,3 +62,8 @@ finding unverified. It ends in a `Tally`, and with `consolidate: false` has no c
 The exported `fix_until_clean` is a loop of `repair_until_green` and `panel`: while the panel's `Tally` upholds a
 finding, a builder fixes it in its session and the round runs again, up to `maxFixes` times. It forwards `maxRepairs`,
 `checks`, `fix` and the panel's `lenses`, `skeptics`, `consolidate` and `grounds`.
+
+`build_then_review` is `build_then_repair` with a review: `fix_until_clean` over the build, ending in a patch series.
+The lenses judge the request, with the tester's map and the builder's overrules when `tested`. Tune the panel in config
+under `classics.panel.*`. The concert settles `rejected`, with the series left, while the last panel upholds a finding.
+Example: `maestro perform classics.build_then_review --request "<what to build>" --tested`.

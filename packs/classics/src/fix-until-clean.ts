@@ -36,7 +36,7 @@ export const fixUntilClean = composition(
 			maxRepairs,
 			checks: repairUntilGreen.params.checks,
 			fix: repairUntilGreen.params.fix,
-			lenses: panel.params.lenses,
+			lenses: Optional(panel.params.lenses),
 			skeptics: Optional(Bool()),
 			consolidate: Optional(Bool()),
 			grounds: Optional(Text()),
@@ -76,7 +76,7 @@ export const fixUntilClean = composition(
 				{
 					// A param left unset stays the config's or the panel's own default.
 					params: {
-						lenses,
+						...(lenses !== undefined && { lenses }),
 						...(skeptics !== undefined && { skeptics }),
 						...(consolidate !== undefined && { consolidate }),
 						...(grounds !== undefined && { grounds }),

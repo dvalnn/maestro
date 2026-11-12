@@ -27,7 +27,7 @@ import {
 import { buildIr } from "@maestro/testkit";
 import { pack } from "../../../scripts/pack";
 import { BASE, PROFILES, profilesOn, setup } from "../acceptance/setup";
-import { briefOf, heldOf, tallyOf, toMarkdown } from "./code";
+import { briefOf, heldOf, resultOf, specOf, tallyOf, toMarkdown } from "./code";
 import { challenge, fix, tally } from "./moves";
 import AGAIN from "./prompts/again.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
@@ -607,6 +607,78 @@ export const cleaned = composition("cleaned", { examples: [{}] }, () => {
 	});
 });
 
+describe("build_then_review", () => {
+	const green = ["-c", 'target.checks=!replace {test: "true"}'];
+
+	test.each([
+		["untested", []],
+		["tested", ["--tested"]],
+	])(
+		"performs %s on the stub harness, settles ok and leaves a changeset",
+		async (_, flags) => {
+			await stubPreset();
+			const { err, code } = await maestro([
+				"perform",
+				"classics.build_then_review",
+				"--request",
+				EXAMPLE_REQUEST,
+				...flags,
+				...green,
+				"--preset",
+				"stub",
+			]);
+			expect(code).toBe(0);
+			expect(err).toMatch(/^concert +\S+ +ok( |$)/m);
+			const id = /^concert +(\S+)/m.exec(err)?.[1] ?? "";
+			const { out } = await maestro(["ls", id]);
+			for (const row of ["spec", "result", "outcome"])
+				expect(out).toMatch(new RegExp(`^${row} +ok`, "m"));
+		},
+	);
+
+	test("rejects at the fix cap, still leaving the changeset", async () => {
+		await stubPreset();
+		const outputs = mkdtempSync(join(root, "outputs-"));
+		const script = (path: string, value: unknown) => {
+			const file = join(outputs, path);
+			mkdirSync(join(file, ".."), { recursive: true });
+			writeFileSync(
+				file,
+				typeof value === "string" ? value : JSON.stringify(value),
+			);
+		};
+		for (const round of ["", "fixes/"]) {
+			const panel = `fix_until_clean/${round}panel`;
+			script(`${panel}/lenses/lens/findings.json`, [F1]);
+			script(`${panel}/lenses/lens/verdict`, "rejected F1");
+			script(`${panel}/lenses/skeptic/rulings.json`, [
+				{ id: "F1", holds: true, why: "holds" },
+			]);
+			script(`${panel}/consolidator/verdict.json`, {
+				criteria: [],
+				upholds: ["correctness/F1"],
+			});
+		}
+		const { err, code } = await maestro(
+			[
+				"perform",
+				"classics.build_then_review",
+				"--request",
+				EXAMPLE_REQUEST,
+				...green,
+				"--preset",
+				"stub",
+			],
+			{ MAESTRO_STUB_OUTPUTS: outputs },
+		);
+		expect(code).toBe(3);
+		const id = /^concert +(\S+)/m.exec(err)?.[1] ?? "";
+		const { out } = await maestro(["ls", id]);
+		expect(out).toMatch(/^result +ok/m);
+		expect(out).toMatch(/^outcome +rejected/m);
+	});
+});
+
 test.each([
 	["maxRepairs", [...BUILD, "--max-repairs", "0"]],
 	["lenses", [...REVIEW, "--lenses", "spec", "--lenses", "spec"]],
@@ -643,6 +715,36 @@ test("briefOf gives the report's summary and gaps, no gaps when it left them out
 		summary: "done",
 		gaps: [],
 	});
+});
+
+describe("specOf", () => {
+	const ctx = () => ({ scratch: mkdtempSync(join(root, "spec-")) }) as never;
+	const specText = (inputs: Parameters<typeof specOf>[0]) =>
+		readFileSync(specOf(inputs, ctx()).file, "utf8");
+
+	test("writes the request, then the map and overrules as YAML only when given", () => {
+		expect(specText({ request: "build it" })).toBe("build it\n");
+		const text = specText({
+			request: "build it",
+			map: { pinned: [], deferred: [], untestable: [] },
+			overrules: [{ test: "a.test.ts: t", why: "contradicts the spec" }],
+		});
+		expect(text).toBe(
+			'build it\n\n## map\n\n```yaml\npinned: []\ndeferred: []\nuntestable: []\n```\n\n## overrules\n\n```yaml\n- test: "a.test.ts: t"\n  why: contradicts the spec\n```\n',
+		);
+	});
+});
+
+test("resultOf rejects with the changeset and the upheld findings while any is upheld", () => {
+	const changeset = { path: "out", hash: "h" } as never;
+	const upheld = [{ ...F1, lens: "correctness" }];
+	expect<unknown>(resultOf({ changeset, upheld: [] })).toEqual({
+		changeset,
+		upheld: [],
+	});
+	expect<unknown>(resultOf({ changeset, upheld })).toEqual(
+		reject("1 upheld: correctness/F1", { changeset, upheld }),
+	);
 });
 
 describe("heldOf", () => {

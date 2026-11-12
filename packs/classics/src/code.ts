@@ -13,8 +13,10 @@ import {
 import type {
 	Brief,
 	Findings,
+	Overrules,
 	Tally as Ports,
 	Rulings,
+	TestMap,
 	Upheld,
 	Verdict,
 } from "./types";
@@ -26,6 +28,29 @@ export function toMarkdown(
 ): { file: string } {
 	const file = join(ctx.scratch, "request.md");
 	writeFileSync(file, `${text}\n`);
+	return { file };
+}
+
+/** The request as a Markdown file, then `## map` and `## overrules` as YAML for each one given. */
+export function specOf(
+	{
+		request,
+		map,
+		overrules,
+	}: {
+		request: string;
+		map?: ValueOf<typeof TestMap>;
+		overrules?: ValueOf<typeof Overrules>;
+	},
+	ctx: CodeContext,
+): { file: string } {
+	const sections = Object.entries({ map, overrules }).flatMap(([name, v]) =>
+		v === undefined
+			? []
+			: [`## ${name}\n\n\`\`\`yaml\n${Bun.YAML.stringify(v, null, 2)}\n\`\`\``],
+	);
+	const file = join(ctx.scratch, "spec.md");
+	writeFileSync(file, `${[request, ...sections].join("\n\n")}\n`);
 	return { file };
 }
 
@@ -89,14 +114,17 @@ export function heldOf({
 	return { held, unreviewed };
 }
 
+type Result = { changeset: ArtifactRef; upheld: Held[] };
+
 type Tally = CodeOutputs<typeof Ports>;
 
-const rejection = (
-	reason: string,
-	tally: Tally,
-): Required<Rejection<Tally>> => ({
-	...reject(reason, tally),
-	outputs: tally,
+/** Rejects naming `upheld`, with `outputs` as the rejection's outputs. */
+const rejection = <O>(upheld: Held[], outputs: O): Required<Rejection<O>> => ({
+	...reject(
+		`${upheld.length} upheld: ${upheld.map((f) => `${f.lens}/${f.id}`).join(", ")}`,
+		outputs,
+	),
+	outputs,
 });
 
 /**
@@ -127,10 +155,21 @@ export function tallyOf({
 		? held.filter((f) => upholds?.includes(`${f.lens}/${f.id}`))
 		: held.filter((f) => f.blocking);
 	const tally = { lane, session, upheld, ...(review && { review }) };
-	if (upheld.length)
-		return rejection(
-			`${upheld.length} upheld: ${upheld.map((f) => `${f.lens}/${f.id}`).join(", ")}`,
-			tally,
-		);
+	if (upheld.length) return rejection(upheld, tally);
 	return tally;
+}
+
+/**
+ * The change's patch series and the findings still upheld on it.
+ * Rejects, with both as outputs, while a finding is upheld.
+ */
+export function resultOf({
+	changeset,
+	upheld,
+}: {
+	changeset: ArtifactRef;
+	upheld: Held[];
+}): { changeset: ArtifactRef; upheld: Held[] } | Required<Rejection<Result>> {
+	const result = { changeset, upheld };
+	return upheld.length ? rejection(upheld, result) : result;
 }

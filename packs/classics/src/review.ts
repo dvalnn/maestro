@@ -80,10 +80,13 @@ export const panel = composition(
 			brief: Optional(Brief),
 		},
 		params: {
-			lenses: Json<Record<string, string>>({
-				type: "object",
-				additionalProperties: { type: "string" },
-			}),
+			lenses: Json<Record<string, string>>(
+				{
+					type: "object",
+					additionalProperties: { type: "string" },
+				},
+				{ default: LENSES },
+			),
 			skeptics: Bool({ default: true }),
 			consolidate: Bool({ default: true }),
 			grounds: Text({ default: "" }),

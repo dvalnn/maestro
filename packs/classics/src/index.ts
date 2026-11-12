@@ -1,4 +1,12 @@
-export { briefOf, heldOf, tallyOf, toMarkdown } from "./code";
+export { buildThenReview } from "./build-then-review";
+export {
+	briefOf,
+	heldOf,
+	resultOf,
+	specOf,
+	tallyOf,
+	toMarkdown,
+} from "./code";
 export { fixUntilClean, maxFixes } from "./fix-until-clean";
 export { challenge, fix, tally } from "./moves";
 export { fill } from "./prompt";
