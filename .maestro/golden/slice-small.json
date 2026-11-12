@@ -90,9 +90,6 @@
 						"items": {
 							"additionalProperties": false,
 							"properties": {
-								"blocking": {
-									"type": "boolean"
-								},
 								"cites": {
 									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
 									"type": "string"
@@ -109,7 +106,7 @@
 									"type": "string"
 								}
 							},
-							"required": ["id", "where", "issue", "cites", "blocking"],
+							"required": ["id", "where", "issue", "cites"],
 							"type": "object"
 						},
 						"type": "array"
@@ -142,9 +139,6 @@
 						"items": {
 							"additionalProperties": false,
 							"properties": {
-								"blocking": {
-									"type": "boolean"
-								},
 								"cites": {
 									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
 									"type": "string"
@@ -161,7 +155,7 @@
 									"type": "string"
 								}
 							},
-							"required": ["id", "where", "issue", "cites", "blocking"],
+							"required": ["id", "where", "issue", "cites"],
 							"type": "object"
 						},
 						"type": "array"

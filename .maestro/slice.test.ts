@@ -22,14 +22,13 @@ import {
 
 const _ctx = { scratch } as CodeContext;
 
-const finding = (id: string, blocking: boolean) => ({
+const finding = (id: string) => ({
 	id,
 	where: "a.ts:1",
 	issue: "breaks CODING_STANDARDS.md Shape",
 	cites: "Shape",
-	blocking,
 });
-const found = [finding("F1", true), finding("F2", true), finding("F3", false)];
+const found = [finding("F1"), finding("F2"), finding("F3")];
 const held = (...ids: string[]) =>
 	["F1", "F2", "F3"].map((id) => ({ id, holds: ids.includes(id), why: "" }));
 
@@ -39,9 +38,16 @@ const reviewer = "c.reviewer";
 const brief = { summary: "built", gaps: ["gap"] };
 type Rulings = Parameters<typeof reviewedOf>[0]["rulings"];
 const cases: [string, Rulings, string[]][] = [
-	["a skeptic's holds", [{ outcome: "ok", value: held("F2", "F3") }], ["F2"]],
-	["a failed skeptic", [{ outcome: "failed", reason: "x" }], ["F1", "F2"]],
-	["a skipped skeptic", [{ outcome: "skipped" }], ["F1", "F2"]],
+	[
+		"a skeptic's holds",
+		[{ outcome: "ok", value: held("F2", "F3") }],
+		["F2", "F3"],
+	],
+	[
+		"a failed skeptic",
+		[{ outcome: "failed", reason: "x" }],
+		["F1", "F2", "F3"],
+	],
 	[
 		"a skeptic that rejected with rulings",
 		[{ outcome: "rejected", reason: "x", value: held("F2") }],
@@ -50,7 +56,7 @@ const cases: [string, Rulings, string[]][] = [
 	[
 		"a malformed skeptic's rulings",
 		[{ outcome: "rejected", reason: "schema" }],
-		["F1", "F2"],
+		["F1", "F2", "F3"],
 	],
 ];
 
@@ -71,7 +77,7 @@ const granular = ["format", "lint", "types", "test", "fmt"].flatMap((name) => [
 ]);
 
 test.each(cases)(
-	"reviewedOf upholds the blocking findings that survive %s, and carries the lane and sessions",
+	"reviewedOf upholds the findings that survive %s, and carries the lane and sessions",
 	(_, rulings, ids) => {
 		const out = reviewedOf({
 			lane,
@@ -90,14 +96,14 @@ test.each(cases)(
 	},
 );
 
-test("reviewedOf tallies a reviewer with no findings clean, and still carries the reviewer's session", () => {
+test("reviewedOf tallies a reviewer that settled ok clean, its findings unheld by a skipped skeptic, and still carries the reviewer's session", () => {
 	expect(
 		reviewedOf({
 			lane,
 			session,
 			brief,
 			reviewer,
-			findings: [],
+			findings: found,
 			rulings: [{ outcome: "skipped" }],
 		}),
 	).toEqual({ lane, session, brief, reviewer, upheld: [] });
@@ -190,7 +196,7 @@ test.each([
 	async (changes) => {
 		const tier = "small";
 		const target = targetRepo();
-		const flagged = [finding("F1", true)];
+		const flagged = [finding("F1")];
 		const outputs = stubOutputs({
 			"reviewer/findings.json": flagged,
 			"reviewer/verdict": "rejected F1",
@@ -355,7 +361,7 @@ const rejecting: [
 		"skeptic",
 		["classics/builder", "classics/lens", "classics/skeptic", "writer"],
 		{
-			"reviewer/findings.json": [finding("F1", true)],
+			"reviewer/findings.json": [finding("F1")],
 			"reviewer/verdict": "rejected F1",
 			"skeptic/rulings.json": held(),
 		},
@@ -372,9 +378,7 @@ const rejecting: [
 				"writer",
 			],
 			{
-				"fix_until_clean/panel/lenses/lens/findings.json": [
-					finding("F1", true),
-				],
+				"fix_until_clean/panel/lenses/lens/findings.json": [finding("F1")],
 				"fix_until_clean/panel/lenses/lens/verdict": "rejected F1",
 				"fix_until_clean/panel/consolidator/verdict.json": {
 					criteria: [],
@@ -468,9 +472,9 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		patched,
 		[],
 		[
-			{ ...finding("F1", true), lens: "correctness", why: "a.ts:1 shows it" },
-			{ ...finding("F2", true), lens: "spec" },
-			{ ...finding("F3", true), lens: "spec", cites: "R3" },
+			{ ...finding("F1"), lens: "correctness", why: "a.ts:1 shows it" },
+			{ ...finding("F2"), lens: "spec" },
+			{ ...finding("F3"), lens: "spec", cites: "R3" },
 		],
 	);
 	expect(readFileSync(upheldFile, "utf8")).toBe(
@@ -520,15 +524,13 @@ test("requirePatch drafts a change that leaves findings upheld or edits docs/rul
 		"Draft: this change edits `docs/rulings.md`, which the owner holds.\n",
 	]);
 	expect(
-		run(touching("src/a.ts"), [{ ...finding("F1", true), lens: "spec" }]),
+		run(touching("src/a.ts"), [{ ...finding("F1"), lens: "spec" }]),
 	).toEqual([
 		true,
 		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.\n",
 	]);
 	expect(
-		run(touching("docs/adr/0001.md"), [
-			{ ...finding("F1", true), lens: "spec" },
-		])[1],
+		run(touching("docs/adr/0001.md"), [{ ...finding("F1"), lens: "spec" }])[1],
 	).toBe(
 		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.\nDraft: this change edits `docs/adr/0001.md`, which the owner holds.\n",
 	);

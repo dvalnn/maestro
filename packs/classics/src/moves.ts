@@ -79,7 +79,7 @@ export function fix(
 	});
 }
 
-/** The tally of a review of `lane`: the findings `held` that a blocking or, given `verdict`, an upheld ruling keeps, with the `review` and `brief` given beside it. */
+/** The tally of a review of `lane`: the findings `held` that, without `verdict`, all stand or, given it, an upheld ruling keeps, with the `review` and `brief` given beside it. */
 export function tally({
 	lane,
 	session,

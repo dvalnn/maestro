@@ -696,18 +696,13 @@ test.each([
 	expect(err).toContain(`error: param '${param}'`);
 });
 
-const finding = (id: string, blocking: boolean) => ({
+const finding = (id: string) => ({
 	id,
 	where: "a.ts:1",
 	issue: "breaks Reuse",
 	cites: "Reuse",
-	blocking,
 });
-const [F1, F2, F3] = [
-	finding("F1", true),
-	finding("F2", true),
-	finding("F3", false),
-];
+const [F1, F2, F3] = [finding("F1"), finding("F2"), finding("F3")];
 const found = [F1, F2, F3];
 const rulings = (...holds: string[]) =>
 	found.map(({ id }) => ({ id, holds: holds.includes(id), why: `why ${id}` }));
@@ -756,11 +751,16 @@ test("resultOf rejects with the changeset and the upheld findings while any is u
 });
 
 describe("heldOf", () => {
+	const rejected = <V>(value: V) => ({
+		outcome: "rejected" as const,
+		reason: "F1 blocks",
+		value,
+	});
 	const held = (results: Parameters<typeof heldOf>[0]["results"]) =>
 		heldOf({ results, names: ["correctness", "spec"] });
 
 	test("holds every finding of a member without a skeptic, with no why", () => {
-		const { held: kept } = held([ok({ findings: found })]);
+		const { held: kept } = held([rejected({ findings: found })]);
 		expect(idsOf(kept)).toEqual([
 			"correctness/F1",
 			"correctness/F2",
@@ -782,13 +782,14 @@ describe("heldOf", () => {
 		]);
 	});
 
-	test("takes a rejected member's value, skips a skipped one and lists one that delivered nothing as unreviewed", () => {
+	test("holds nothing of a member whose lens settled ok, takes a rejected member's value, skips a skipped one and lists one that delivered nothing as unreviewed", () => {
 		const out = held([
 			{ outcome: "rejected", reason: "F1 blocks", value: { findings: found } },
 			{ outcome: "skipped" },
 		]);
 		expect(idsOf(out.held)).toHaveLength(3);
 		expect(out.unreviewed).toEqual([]);
+		expect(held([ok({ findings: found })]).held).toEqual([]);
 		expect(
 			held([{ outcome: "skipped" }, { outcome: "failed", reason: "boom" }])
 				.unreviewed,
@@ -801,11 +802,11 @@ describe("tallyOf", () => {
 	const heldAll = found.map((f) => ({ ...f, lens: "correctness" }));
 	const verdict = (...upholds: string[]) => ({ criteria: [], upholds });
 
-	test("upholds the blocking held findings when there is no verdict, and rejects naming them", () => {
+	test("upholds every held finding when there is no verdict, and rejects naming them", () => {
 		expect<unknown>(tallyOf({ ...carried, held: heldAll })).toEqual(
-			reject("2 upheld: correctness/F1, correctness/F2", {
+			reject("3 upheld: correctness/F1, correctness/F2, correctness/F3", {
 				...carried,
-				upheld: heldAll.slice(0, 2),
+				upheld: heldAll,
 			}),
 		);
 		expect(tallyOf({ ...carried, held: [] })).toEqual({

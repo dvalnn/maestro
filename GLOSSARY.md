@@ -302,8 +302,7 @@ quality
 
 ### Review
 
-**Finding**: One issue a lens raises in a change: where it is, what is wrong, whether it blocks, and the guideline it
-cites.
+**Finding**: One issue a lens raises in a change: where it is, what is wrong, and the guideline it cites.
 
 **Lens**: A verdict agent that reviews a change from one topic and lists its findings. _Avoid_: reviewer.
 

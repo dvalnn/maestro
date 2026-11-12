@@ -24,10 +24,9 @@ const FINDING = {
 		description:
 			"the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
 	}),
-	blocking: Bool(),
 };
 
-/** A defect a lens found, numbered `F1` on per lens; `cites` names the guideline it breaks, and a blocking one fails the lens. */
+/** A defect a lens found, numbered `F1` on per lens; `cites` names the guideline it breaks, and every finding rejects the lens. */
 export const Finding = Struct(FINDING);
 
 /** What a lens found, none when its work is clean. */

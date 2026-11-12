@@ -164,7 +164,6 @@ test("a review relays the findings its skeptics upheld to its consolidator, and 
 		where: "greet.sh:2",
 		issue,
 		cites: "Reuse",
-		blocking: true,
 	});
 	const replies: [string, StubStep[]][] = [
 		[

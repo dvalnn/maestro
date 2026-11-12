@@ -73,8 +73,9 @@ type Member =
 	| { findings: Found };
 
 /** The findings of `member`, each held by `lens` with its skeptic's why, or every one without a why when no skeptic ruled. */
-function heldBy(lens: string, member: Member): Held[] {
-	if (!("lens" in member)) return member.findings.map((f) => ({ ...f, lens }));
+function heldBy(lens: string, member: Member, ok: boolean): Held[] {
+	if (!("lens" in member))
+		return ok ? [] : member.findings.map((f) => ({ ...f, lens }));
 	return member.lens.findings.flatMap((f) => {
 		const ruling = member.skeptic.rulings.find((r) => r.id === f.id && r.holds);
 		return ruling ? [{ ...f, lens, why: ruling.why }] : [];
@@ -85,7 +86,7 @@ function heldBy(lens: string, member: Member): Held[] {
  * The findings the review members held, and the lenses that never delivered theirs.
  * - `names` are the members' lens names, in the order of `results`.
  * - A member with a skeptic holds the findings its skeptic's rulings hold, each with that `why`; one without holds every
- *   finding, with no `why`.
+ *   finding, with no `why`, unless its lens settled ok.
  * - A skipped member, whose lens settled ok, holds none.
  * - One that delivered nothing, a failed skeptic included, is `unreviewed` with its reason: its whole lens is.
  */
@@ -104,7 +105,8 @@ export function heldOf({
 	results.forEach((result, i) => {
 		const lens = names[i] ?? `item ${i + 1}`;
 		if (result.outcome === "skipped") return;
-		if (result.value !== undefined) held.push(...heldBy(lens, result.value));
+		if (result.value !== undefined)
+			held.push(...heldBy(lens, result.value, result.outcome === "ok"));
 		else
 			unreviewed.push({
 				lens,
@@ -137,7 +139,7 @@ const rejection = <O>(upheld: Held[], outputs: O): Required<Rejection<O>> => ({
 
 /**
  * The review round's tally: the lane and session it carries, and the findings upheld.
- * - Without a `verdict`, those held findings that block.
+ * - Without a `verdict`, every held finding.
  * - With one, those held findings whose `<lens>/<id>` its `upholds` names.
  *
  * The `review` and `brief` given ride beside them. Rejects, with the tally as its outputs, while a finding is upheld.
@@ -156,7 +158,7 @@ export function tallyOf({
 	const upholds = ruled?.value?.upholds;
 	const upheld = verdict
 		? held.filter((f) => upholds?.includes(`${f.lens}/${f.id}`))
-		: held.filter((f) => f.blocking);
+		: held;
 	const tally = {
 		lane,
 		session,

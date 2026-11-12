@@ -77,7 +77,13 @@ export function reviewedOf({
 			? { lens: { findings }, skeptic: { rulings: ruled.value } }
 			: { findings };
 	const { held } = heldOf({
-		results: [{ outcome: "ok", value: member }],
+		results: [
+			{
+				outcome: ruled?.outcome === "skipped" ? "skipped" : "rejected",
+				reason: "findings",
+				value: member,
+			},
+		],
 		names: [REVIEWER_LENS],
 	});
 	return withOutputs(tallyOf({ lane, session, held }), { reviewer, brief });

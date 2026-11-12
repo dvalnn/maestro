@@ -94,7 +94,7 @@
 			{
 				"seat": "consolidator",
 				"profile": "classics/consolidator",
-				"task": "Independent lenses ruled on this change. Rule on the change against the spec. Write the ruling for a reader in review.md\nand as data in your `verdict` field. The lenses' findings are under `## findings`, each with its `lens`; a lens that\nnever ruled is under `## unreviewed`.\n\n\nRule by the grounds below. Uphold each blocking finding unless you dismiss it by naming the ground that puts it out of\nreview. A finding outside the review scope should have been a sighting: dismiss it on that ground. That the spec's\nacceptance leaves a test out is no ground. In review.md, list each finding you dismiss with its ground.\n\n\nBesides the guidelines your skills carry, a finding may cite CODING_STANDARDS.md and the `area` attachment, when a\npreset attaches one, and the spec: the request, its requirement IDs and the ADRs under docs/adr/. Drop any finding you\ncannot cite.\n\nReview scope is what the change adds plus every function it touches, unchanged lines included. A breach of anything\ncitable in scope blocks. One outside it is no finding: report it as a sighting, with its path, what it is and what it\ncites.\n\nAn acceptance item the change leaves unmet blocks. An item no change could meet as written, such as a command that runs\nno test, is the spec's fault and out of review: name it in the report's gaps.\n\nThe lane's commit message is a placeholder the tour manager replaces on landing: its subject and closing line are out of\nreview.\n\n\nJudge only the change's tests; a test the change leaves alone is out of review.\n\nLogic the change adds that reading it does not settle at a glance, such as a branch, a computation, a fixed bug or a\nbehaviour the issue's ask, the spec's Context, a requirement or an acceptance item names, needs a test that fails when\nthat logic is removed or broken: judge it as a mutation would, naming the line whose removal or change no test catches.\nTrivial logic, a one-liner whose effect the code shows plainly, needs no test, and one test over a list's shape covers\nits entries. Logic with edges, such as a limit, an empty input or one past the end, is tested at them. A missing test\nfor such logic or its edges blocks. Run mutations in the lane as one script, not an edit and a run per mutant: for each,\nback up the file with `cp`, break the line, run only the owning test files, record killed or survived, and restore the\nbackup, even when the run fails.\n\nA test the change adds blocks when it duplicates another's coverage, or pins wording, such as an error message or a\nprompt, unless the text is a contract: piped stdout, --json output, or a line something parses.\n\nNever raise a test, present or missing, that these grounds make unnecessary:\n\n- a test for trivial logic;\n- a test for a spec decision's implementation detail;\n- a test for a case neither the issue nor the spec names.\n\nA spec decision's implementation detail is raised only when user input reaches that code or the finding names the\nconcrete failure the missing test lets through.\n",
+				"task": "Independent lenses ruled on this change. Rule on the change against the spec. Write the ruling for a reader in review.md\nand as data in your `verdict` field. The lenses' findings are under `## findings`, each with its `lens`; a lens that\nnever ruled is under `## unreviewed`.\n\n\nRule by the grounds below. Uphold each finding unless you dismiss it by naming the ground that puts it out of review. A\nfinding outside the review scope should have been a sighting: dismiss it on that ground. That the spec's acceptance\nleaves a test out is no ground. In review.md, list each finding you dismiss with its ground.\n\n\nBesides the guidelines your skills carry, a finding may cite CODING_STANDARDS.md and the `area` attachment, when a\npreset attaches one, and the spec: the request, its requirement IDs and the ADRs under docs/adr/. Drop any finding you\ncannot cite.\n\nReview scope is what the change adds plus every function it touches, unchanged lines included. A breach of anything\ncitable in scope blocks. One outside it is no finding: report it as a sighting, with its path, what it is and what it\ncites.\n\nAn acceptance item the change leaves unmet blocks. An item no change could meet as written, such as a command that runs\nno test, is the spec's fault and out of review: name it in the report's gaps.\n\nThe lane's commit message is a placeholder the tour manager replaces on landing: its subject and closing line are out of\nreview.\n\n\nJudge only the change's tests; a test the change leaves alone is out of review.\n\nLogic the change adds that reading it does not settle at a glance, such as a branch, a computation, a fixed bug or a\nbehaviour the issue's ask, the spec's Context, a requirement or an acceptance item names, needs a test that fails when\nthat logic is removed or broken: judge it as a mutation would, naming the line whose removal or change no test catches.\nTrivial logic, a one-liner whose effect the code shows plainly, needs no test, and one test over a list's shape covers\nits entries. Logic with edges, such as a limit, an empty input or one past the end, is tested at them. A missing test\nfor such logic or its edges blocks. Run mutations in the lane as one script, not an edit and a run per mutant: for each,\nback up the file with `cp`, break the line, run only the owning test files, record killed or survived, and restore the\nbackup, even when the run fails.\n\nA test the change adds blocks when it duplicates another's coverage, or pins wording, such as an error message or a\nprompt, unless the text is a contract: piped stdout, --json output, or a line something parses.\n\nNever raise a test, present or missing, that these grounds make unnecessary:\n\n- a test for trivial logic;\n- a test for a spec decision's implementation detail;\n- a test for a case neither the issue nor the spec names.\n\nA spec decision's implementation detail is raised only when user input reaches that code or the finding names the\nconcrete failure the missing test lets through.\n",
 				"attachments": {
 					"patches": {
 						"hint": "for what the change did, patch by patch",
@@ -156,7 +156,7 @@
 			{
 				"seat": "consolidator",
 				"profile": "classics/consolidator",
-				"task": "Independent lenses ruled on this change. Rule on the change against the spec. Write the ruling for a reader in review.md\nand as data in your `verdict` field. The lenses' findings are under `## findings`, each with its `lens`; a lens that\nnever ruled is under `## unreviewed`.\n\n\nRule by the grounds below. Uphold each blocking finding unless you dismiss it by naming the ground that puts it out of\nreview. A finding outside the review scope should have been a sighting: dismiss it on that ground. That the spec's\nacceptance leaves a test out is no ground. In review.md, list each finding you dismiss with its ground.\n\n\nBesides the guidelines your skills carry, a finding may cite CODING_STANDARDS.md and the `area` attachment, when a\npreset attaches one, and the spec: the request, its requirement IDs and the ADRs under docs/adr/. Drop any finding you\ncannot cite.\n\nReview scope is what the change adds plus every function it touches, unchanged lines included. A breach of anything\ncitable in scope blocks. One outside it is no finding: report it as a sighting, with its path, what it is and what it\ncites.\n\nAn acceptance item the change leaves unmet blocks. An item no change could meet as written, such as a command that runs\nno test, is the spec's fault and out of review: name it in the report's gaps.\n\nThe lane's commit message is a placeholder the tour manager replaces on landing: its subject and closing line are out of\nreview.\n\n\nJudge only the change's tests; a test the change leaves alone is out of review.\n\nLogic the change adds that reading it does not settle at a glance, such as a branch, a computation, a fixed bug or a\nbehaviour the issue's ask, the spec's Context, a requirement or an acceptance item names, needs a test that fails when\nthat logic is removed or broken: judge it as a mutation would, naming the line whose removal or change no test catches.\nTrivial logic, a one-liner whose effect the code shows plainly, needs no test, and one test over a list's shape covers\nits entries. Logic with edges, such as a limit, an empty input or one past the end, is tested at them. A missing test\nfor such logic or its edges blocks. Run mutations in the lane as one script, not an edit and a run per mutant: for each,\nback up the file with `cp`, break the line, run only the owning test files, record killed or survived, and restore the\nbackup, even when the run fails.\n\nA test the change adds blocks when it duplicates another's coverage, or pins wording, such as an error message or a\nprompt, unless the text is a contract: piped stdout, --json output, or a line something parses.\n\nNever raise a test, present or missing, that these grounds make unnecessary:\n\n- a test for trivial logic;\n- a test for a spec decision's implementation detail;\n- a test for a case neither the issue nor the spec names.\n\nA spec decision's implementation detail is raised only when user input reaches that code or the finding names the\nconcrete failure the missing test lets through.\n",
+				"task": "Independent lenses ruled on this change. Rule on the change against the spec. Write the ruling for a reader in review.md\nand as data in your `verdict` field. The lenses' findings are under `## findings`, each with its `lens`; a lens that\nnever ruled is under `## unreviewed`.\n\n\nRule by the grounds below. Uphold each finding unless you dismiss it by naming the ground that puts it out of review. A\nfinding outside the review scope should have been a sighting: dismiss it on that ground. That the spec's acceptance\nleaves a test out is no ground. In review.md, list each finding you dismiss with its ground.\n\n\nBesides the guidelines your skills carry, a finding may cite CODING_STANDARDS.md and the `area` attachment, when a\npreset attaches one, and the spec: the request, its requirement IDs and the ADRs under docs/adr/. Drop any finding you\ncannot cite.\n\nReview scope is what the change adds plus every function it touches, unchanged lines included. A breach of anything\ncitable in scope blocks. One outside it is no finding: report it as a sighting, with its path, what it is and what it\ncites.\n\nAn acceptance item the change leaves unmet blocks. An item no change could meet as written, such as a command that runs\nno test, is the spec's fault and out of review: name it in the report's gaps.\n\nThe lane's commit message is a placeholder the tour manager replaces on landing: its subject and closing line are out of\nreview.\n\n\nJudge only the change's tests; a test the change leaves alone is out of review.\n\nLogic the change adds that reading it does not settle at a glance, such as a branch, a computation, a fixed bug or a\nbehaviour the issue's ask, the spec's Context, a requirement or an acceptance item names, needs a test that fails when\nthat logic is removed or broken: judge it as a mutation would, naming the line whose removal or change no test catches.\nTrivial logic, a one-liner whose effect the code shows plainly, needs no test, and one test over a list's shape covers\nits entries. Logic with edges, such as a limit, an empty input or one past the end, is tested at them. A missing test\nfor such logic or its edges blocks. Run mutations in the lane as one script, not an edit and a run per mutant: for each,\nback up the file with `cp`, break the line, run only the owning test files, record killed or survived, and restore the\nbackup, even when the run fails.\n\nA test the change adds blocks when it duplicates another's coverage, or pins wording, such as an error message or a\nprompt, unless the text is a contract: piped stdout, --json output, or a line something parses.\n\nNever raise a test, present or missing, that these grounds make unnecessary:\n\n- a test for trivial logic;\n- a test for a spec decision's implementation detail;\n- a test for a case neither the issue nor the spec names.\n\nA spec decision's implementation detail is raised only when user input reaches that code or the finding names the\nconcrete failure the missing test lets through.\n",
 				"attachments": {
 					"patches": {
 						"hint": "for what the change did, patch by patch",
@@ -237,9 +237,6 @@
 						"items": {
 							"additionalProperties": false,
 							"properties": {
-								"blocking": {
-									"type": "boolean"
-								},
 								"cites": {
 									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
 									"type": "string"
@@ -256,7 +253,7 @@
 									"type": "string"
 								}
 							},
-							"required": ["id", "where", "issue", "cites", "blocking"],
+							"required": ["id", "where", "issue", "cites"],
 							"type": "object"
 						},
 						"type": "array"
@@ -288,9 +285,6 @@
 						"items": {
 							"additionalProperties": false,
 							"properties": {
-								"blocking": {
-									"type": "boolean"
-								},
 								"cites": {
 									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
 									"type": "string"
@@ -307,7 +301,7 @@
 									"type": "string"
 								}
 							},
-							"required": ["id", "where", "issue", "cites", "blocking"],
+							"required": ["id", "where", "issue", "cites"],
 							"type": "object"
 						},
 						"type": "array"
@@ -341,9 +335,6 @@
 						"items": {
 							"additionalProperties": false,
 							"properties": {
-								"blocking": {
-									"type": "boolean"
-								},
 								"cites": {
 									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
 									"type": "string"
@@ -360,7 +351,7 @@
 									"type": "string"
 								}
 							},
-							"required": ["id", "where", "issue", "cites", "blocking"],
+							"required": ["id", "where", "issue", "cites"],
 							"type": "object"
 						},
 						"type": "array"
@@ -392,9 +383,6 @@
 						"items": {
 							"additionalProperties": false,
 							"properties": {
-								"blocking": {
-									"type": "boolean"
-								},
 								"cites": {
 									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
 									"type": "string"
@@ -411,7 +399,7 @@
 									"type": "string"
 								}
 							},
-							"required": ["id", "where", "issue", "cites", "blocking"],
+							"required": ["id", "where", "issue", "cites"],
 							"type": "object"
 						},
 						"type": "array"
