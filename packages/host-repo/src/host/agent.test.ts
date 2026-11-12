@@ -152,13 +152,13 @@ describe("agent retry", () => {
 describe("agent session", () => {
 	profile(
 		"before",
-		"runtime: { harness: stub, model: none }\nattachments: { kb: { path: kb, hint: kb }, old: { path: old, hint: old } }\n",
-		{ kb: "a\n", old: "o\n" },
+		"runtime: { harness: stub, model: none }\nattachments: { kb: { path: kb.md, hint: kb }, old: { path: old, hint: old } }\n",
+		{ "kb.md": "a\n", old: "o\n" },
 	);
 	profile(
 		"after",
-		"runtime: { harness: stub, model: none }\nattachments: { kb: { path: kb, hint: kb }, new: { path: new, hint: new } }\n",
-		{ kb: "b\n", new: "n\n" },
+		"runtime: { harness: stub, model: none }\nattachments: { kb: { path: kb.md, hint: kb }, new: { path: new, hint: new } }\n",
+		{ "kb.md": "b\n", new: "n\n" },
 	);
 	const agent = (id: string, spec: Partial<NodeSpec> = {}): NodeSpec => ({
 		id,
@@ -209,7 +209,7 @@ describe("agent session", () => {
 			"before",
 			false,
 			{ ...extending, config: agentOn({ mode: "extend" }, "after") },
-			"- Task: unchanged.\n- Attachments: `/in/kb` changed, the earlier copy at `/in/previous/kb`; `/in/new` new; `/in/old` dropped.\n- Working copy: unchanged.",
+			"- Task: unchanged.\n- Attachments: `/in/kb.md` changed, the earlier copy at `/in/previous/kb.md`; `/in/new` new; `/in/old` dropped.\n- Working copy: unchanged.",
 		],
 	])(
 		"when %s, a continuation runs in the session it is given and is told so",
@@ -506,8 +506,8 @@ describe("agent profile", () => {
 		);
 		const dir = profile(
 			`${PACK}/builder`,
-			"runtime: { harness: stub, model: none }\nskills: [tdd]\nattachments: { kb: { path: kb, hint: for the house style } }\n",
-			{ "kb/style.md": "terse\n" },
+			"runtime: { harness: stub, model: none }\nskills: [tdd]\nattachments: { kb: { path: kb, hint: for the house style }, docs: { path: README.md, hint: the readme }, raw: { path: raw, hint: the raw } }\n",
+			{ "kb/style.md": "terse\n", "README.md": "hi\n", raw: "r\n" },
 		);
 		const tdd = skill("tdd", "Test first. Use when building.");
 		const { host, requests } = stubHost(() => [OK]);
@@ -536,6 +536,14 @@ describe("agent profile", () => {
 			src: join(dir, "kb"),
 			dst: "/in/kb",
 		});
+		expect(request?.readOnly).toContainEqual({
+			src: join(dir, "README.md"),
+			dst: "/in/docs.md",
+		});
+		expect(request?.readOnly).toContainEqual({
+			src: join(dir, "raw"),
+			dst: "/in/raw",
+		});
 		expect(request?.readOnly).toContainEqual({ src: tdd, dst: "/skills/tdd" });
 		const instructions = readFileSync(
 			join(artifact("x", "staged"), "instructions.md"),
@@ -543,7 +551,7 @@ describe("agent profile", () => {
 		);
 		expect(
 			readFileSync(join(artifact("x", "staged"), "prompt.md"), "utf8"),
-		).toContain("└── kb/   1 file, 6 B: for the house style");
+		).toContain("├── docs.md   1 line, 3 B: the readme");
 		expect(instructions).toContain(
 			"- `/skills/tdd` (directory). **When:** building. **Read:** SKILL.md.",
 		);
@@ -575,8 +583,8 @@ describe("agent probe", () => {
 	test("a probe starts the profile as a concert would: its binds and attachments read-only, its PATH, its framed instructions, no outputs and an empty lane", async () => {
 		const dir = profile(
 			"probed",
-			"runtime: { harness: stub, model: none }\ninstructions: own.md\nattachments: { kb: { path: kb, hint: for the house style } }\n",
-			{ "own.md": "Be terse.\n", "kb/style.md": "terse\n" },
+			"runtime: { harness: stub, model: none }\ninstructions: own.md\nattachments: { kb: { path: kb.md, hint: for the house style } }\n",
+			{ "own.md": "Be terse.\n", "kb.md": "terse\n" },
 		);
 		const [shared, bin] = [tmp("shared"), tmp("bin")];
 		const base = setupOf(configOf(toyTarget()));
@@ -602,8 +610,8 @@ describe("agent probe", () => {
 		expect(seen?.readOnly).toContainEqual({ src: shared });
 		expect(seen?.readOnly).toContainEqual({ src: bin });
 		expect(seen?.readOnly).toContainEqual({
-			src: join(dir, "kb"),
-			dst: "/in/kb",
+			src: join(dir, "kb.md"),
+			dst: "/in/kb.md",
 		});
 		expect(seen?.env?.PATH).toStartWith(`${bin}:`);
 		const instructions = readFileSync(seen?.instructions ?? "", "utf8");

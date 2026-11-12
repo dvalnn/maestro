@@ -70,7 +70,8 @@ A code node that settles `failed` keeps its scratch directory, its log saying `s
 A call takes `task`, `lane` and the common options, and may add:
 
 - `session`: an agent's `out.session`, continued in place, told what changed since its last turn.
-- `attachments`: `{ name: { artifact, hint } }`, each mounted read-only at `/in/<name>`, `hint` saying when to read it.
+- `attachments`: `{ name: { artifact, hint } }`, each mounted read-only at `/in/<name>` (a file with its source's
+  extension added), `hint` saying when to read it.
 - `relay`: `{ name: ref }`, each inlined in the task under `## <name>`: a Markdown output as text, a string as it is,
   any other typed value as YAML.
 - outputs and checks.

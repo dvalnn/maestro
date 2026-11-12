@@ -80,13 +80,13 @@ describe("agent-runnable checks and attachments", () => {
 				req.prompt.startsWith("write")
 					? [{ write: "/out/n.md", content: "the notes" }, OK]
 					: [
-							{ sh: "cat /in/notes > /out/ref.md" },
+							{ sh: "cat /in/notes.md > /out/ref.md" },
 							{
 								sh: `(cd /tmp; check lint; check red; check slow; check stubborn; check crash; check killed; check nope) > /out/check.md 2>&1; echo "env:\${MODE-unset}" >> /out/check.md`,
 							},
 							{ sh: `echo hi > ${cache}/agent.txt` },
 							{
-								sh: "(echo x > /in/notes) 2>/dev/null || echo readonly > /out/ro.md",
+								sh: "(echo x > /in/notes.md) 2>/dev/null || echo readonly > /out/ro.md",
 							},
 							OK,
 						],
@@ -160,7 +160,7 @@ describe("agent-runnable checks and attachments", () => {
 			);
 			expect(
 				readFileSync(join(artifact("reader", "staged"), "prompt.md"), "utf8"),
-			).toContain("notes   ");
+			).toContain("notes.md   ");
 			expect(framed).toContain("`check <name>`, and never write your own");
 			expect(framed).toContain("- `check red`: passes, then fails");
 			expect(framed).not.toContain("exit 1");

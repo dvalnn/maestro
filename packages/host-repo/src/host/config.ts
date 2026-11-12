@@ -315,7 +315,7 @@ export type CheckSpec = {
 /** The artifact types an attachment can have. */
 type AttachmentType = (typeof CORE_TYPES)[keyof typeof CORE_TYPES];
 
-/** A file or directory an agent reads at `/in/<name>`, and the hint that says when it should. */
+/** A file or directory an agent reads at `/in/<name>` (a file with its source's extension added), and the hint that says when it should. */
 export type Attachment = { hint: string; type?: AttachmentType };
 
 export type AgentConfig = {

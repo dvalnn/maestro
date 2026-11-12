@@ -59,6 +59,24 @@ Read-only files your task needs. Read a file whole; browse and grep a directory.
     └── … 2 more entries`);
 });
 
+test("a file attachment is listed by its mounted name, its extension not repeated as a type", () => {
+	const dir = tmp("task");
+	writeFileSync(join(dir, "README.md"), "a\nb\n");
+	writeFileSync(join(dir, "raw"), "x\n");
+	expect(
+		taskOf(
+			"Go.",
+			[],
+			[
+				{ name: "docs", hint: "the docs", source: join(dir, "README.md") },
+				{ name: "raw", hint: "bare", format: "json", source: join(dir, "raw") },
+			],
+		),
+	).toContain(
+		"├── docs.md   2 lines, 4 B: the docs\n└── raw       json, 1 line, 2 B: bare",
+	);
+});
+
 test("a task with no attachment is its text alone", () => {
 	expect(taskOf("Fix it.", [], [])).toBe("Fix it.");
 });

@@ -28,6 +28,7 @@ An agent reads five layers, in this order, each with one home; no layer restates
 - A text shared by several tasks is a `_`-prefixed file joined after each as a paragraph.
 - Build-time one-line values fill `{name}` placeholders: `fill` in `@maestro/classics` does it, throwing on an unmatched
   name or value. Text built from Refs comes from a code node.
-- What an agent reads at perform time reaches it as an attachment, mounted at `/in/<name>` with its `hint`. A hint says
-  when to read the file and for what, not what it is and not what a skill says.
+- What an agent reads at perform time reaches it as an attachment, mounted at `/in/<name>`, a file with its source's
+  extension added, with its `hint`. A hint says when to read the file and for what, not what it is and not what a skill
+  says.
 - Keep a JSON shape example in a fenced `json` block, its field rules as prose under it.

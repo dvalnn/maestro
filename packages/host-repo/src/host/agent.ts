@@ -47,6 +47,7 @@ import {
 import type { Lane } from "../lane/index";
 import {
 	attachmentPath,
+	mountedName,
 	PROFILES,
 	type Profile,
 	type ProfileFields,
@@ -776,10 +777,15 @@ function extrasOf(
 	const graph = Object.entries(config.attachments ?? {});
 	const own = Object.entries(profile.fields.attachments);
 	const checks = stageChecks(context.scratch, named, base, path);
-	const sources: Record<string, string> = Object.fromEntries([
-		...graph.map(([name]) => [name, artifactInput(inputs, context, name)]),
-		...own.map(([name, a]) => [name, a.path]),
-	]);
+	const fromGraph = Object.fromEntries(
+		graph.map(([name]) => [name, artifactInput(inputs, context, name)]),
+	);
+	const sources: Record<string, string> = Object.fromEntries(
+		[
+			...Object.entries(fromGraph),
+			...own.map(([name, a]): [string, string] => [name, a.path]),
+		].map(([name, src]) => [mountedName(name as string, src as string), src]),
+	);
 	const mounts: Bind[] = Object.entries(sources).map(([name, src]) => ({
 		src,
 		dst: attachmentPath(name),
@@ -789,7 +795,7 @@ function extrasOf(
 			name,
 			hint,
 			format: type && FORMATS[type],
-			source: sources[name] as string,
+			source: fromGraph[name] as string,
 		})),
 		...own.map(([name, { hint, path }]) => ({ name, hint, source: path })),
 	];

@@ -1,4 +1,4 @@
-import type { Dirent } from "node:fs";
+import { type Dirent, statSync } from "node:fs";
 import { readdir, readFile, readlink, realpath, stat } from "node:fs/promises";
 import {
 	basename,
@@ -209,6 +209,16 @@ export type Profile = {
 	/** `sha256:<hex>` of each regular file under `dir`, by its path relative to `dir`. */
 	files: Record<string, string>;
 };
+
+/**
+ * The name attachment `name`, which has no dot, mounts under: `name` with its source's extension appended when `source`
+ * is a file that has one, else `name`.
+ */
+export function mountedName(name: string, source: string): string {
+	const ext = extname(source);
+	const dir = statSync(source, { throwIfNoEntry: false })?.isDirectory();
+	return ext && !dir ? `${name}${ext}` : name;
+}
 
 /** Where the sandbox sees attachment `name`. */
 export const attachmentPath = (name: string) => `${ATTACHMENT_DIR}/${name}`;
@@ -1259,7 +1269,7 @@ export function inspectProfile(
 		attachments: Object.fromEntries(
 			Object.entries(attachments).map(([name, a]) => [
 				name,
-				{ ...a, agent: attachmentPath(name) },
+				{ ...a, agent: attachmentPath(mountedName(name, a.path)) },
 			]),
 		),
 		readOnly,

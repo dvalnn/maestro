@@ -7,7 +7,7 @@ import type {
 	HarnessRequest,
 	ObservedEnvironment,
 } from "../harness/index";
-import { attachmentPath, type Profile } from "../profile/index";
+import { attachmentPath, mountedName, type Profile } from "../profile/index";
 import { profileSkills, sessionsOf, skillBinds, stage } from "./agent";
 import { repoSetup } from "./config";
 import { type Run, WORK } from "./frame";
@@ -54,7 +54,7 @@ export function probeRequest(
 			...pathBinds(repo.readOnly, readOnly),
 			...attachments.map(([name, a]) => ({
 				src: a.path,
-				dst: attachmentPath(name),
+				dst: attachmentPath(mountedName(name, a.path)),
 			})),
 			...skillBinds(profile),
 		],

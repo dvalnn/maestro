@@ -17,19 +17,23 @@ The host contributes:
 
 ### Agent node
 
-| Input         | Meaning                                                                         |
-| ------------- | ------------------------------------------------------------------------------- |
-| task          | text staged by the host, with no argument-length limit                          |
-| profile, seat | the profile by name and the seat it fills                                       |
-| lane          | `fresh`, `fork`, `extend` or `read` (see Lanes)                                 |
-| outputs       | typed declarations: a JSON file with a schema, or Markdown                      |
-| `reply`       | typed fields of the agent's envelope, each with a JSON schema (see Envelope)    |
-| `relay`       | typed values or Markdown outputs, each inlined in the task under `## <name>`    |
-| `attachments` | named artifacts, each with a required `hint`, mounted read-only at `/in/<name>` |
-| checks        | the named checks it may run                                                     |
-| `session`     | optional: continue a session (see Sessions)                                     |
-| `verdict`     | marks a verdict agent                                                           |
-| `encore`      | `false` starts it fresh in an encore                                            |
+| Input         | Meaning                                                                                 |
+| ------------- | --------------------------------------------------------------------------------------- |
+| task          | text staged by the host, with no argument-length limit                                  |
+| profile, seat | the profile by name and the seat it fills                                               |
+| lane          | `fresh`, `fork`, `extend` or `read` (see Lanes)                                         |
+| outputs       | typed declarations: a JSON file with a schema, or Markdown                              |
+| `reply`       | typed fields of the agent's envelope, each with a JSON schema (see Envelope)            |
+| `relay`       | typed values or Markdown outputs, each inlined in the task under `## <name>`            |
+| `attachments` | named artifacts, each with a required `hint`, mounted read-only at `/in/<name>`[^mount] |
+| checks        | the named checks it may run                                                             |
+| `session`     | optional: continue a session (see Sessions)                                             |
+| `verdict`     | marks a verdict agent                                                                   |
+| `encore`      | `false` starts it fresh in an encore                                                    |
+
+[^mount]:
+    A file mounts at `/in/<name>.<ext>`, `<ext>` its source's extension (a name has no dot); a source without one and a
+    directory mount at `/in/<name>`.
 
 Outputs: the declared files as typed artifacts, the typed `reply` fields as values, `report`, outcome and reason from
 its envelope[^outcome], `metrics`, `staged` (the staged text), its latest `session` and the resulting lane version.
@@ -152,15 +156,16 @@ must-read lead.
 Read-only files your task needs. Read a file whole; browse and grep a directory.
 
 /in/
-├── spec       markdown, 84 lines, 6 KB: first, for the requirements to pin
+├── spec.md    84 lines, 6 KB: first, for the requirements to pin
 └── patches/   12 files, 140 KB: the fix's patches, by round
     ├── round-1.diff   diff, 210 lines, 9 KB
     └── … 2 more entries
 ```
 
 A file shows its lines and size, a directory its file count and size, then lists one level, capped at
-`MAX_LISTED_ENTRIES` (12) before `… N more entries`. A file's type is its artifact's declared format (`markdown`,
-`json`), else its extension, else left out. The host measures them at mount time.
+`MAX_LISTED_ENTRIES` (12) before `… N more entries`. A file whose mounted name has no extension also shows its
+artifact's declared format (`markdown`, `json`) first, when it has one; a file inside a directory listing shows its
+extension as its type. The host measures them at mount time.
 
 ### Outbox
 
@@ -303,8 +308,8 @@ Each line is unchanged or says what changed:
 | `Contract: changed` | present only when the frame's `## Reply` section differs               |
 
 [^previous]:
-    A changed one's earlier copy is at `/in/previous/<name>`, so no attachment, of the graph or of a profile, may be
-    named `previous`.
+    A changed one's earlier copy is at `/in/previous/<name>` (the mounted name, see the footnote on attachments), so no
+    attachment, of the graph or of a profile, may be named `previous`.
 
 The system prompt is staged anew for every turn. The host keeps the last completed turn in the session's home, so a
 resumed concert compares against it. A fresh session's message is the task alone.

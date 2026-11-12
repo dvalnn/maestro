@@ -7,7 +7,7 @@ import {
 	statSync,
 } from "node:fs";
 import { extname, join } from "node:path";
-import { attachmentPath } from "../profile/index";
+import { attachmentPath, mountedName } from "../profile/index";
 
 /** The most entries a directory attachment lists, one level deep, before `… N more entries`. */
 export const MAX_LISTED_ENTRIES = 12;
@@ -23,7 +23,7 @@ const LAST = "└── ";
 const TRUNK = "│   ";
 const GAP = "    ";
 
-/** An attachment of a task: its mount name, its hint, the format its artifact declares if any, and its host path. */
+/** An attachment of a task: its name, its hint, the format its artifact declares if any, and its host path. */
 export type Attached = {
 	name: string;
 	hint: string;
@@ -130,10 +130,11 @@ function tree(attached: Attached[]): string {
 	const rows = attached.map((a) => {
 		const source = realpathSync(a.source);
 		const dir = statSync(source).isDirectory();
+		const name = mountedName(a.name, a.source);
 		const facts = dir
 			? dirFacts(source)
-			: fileFacts(source, a.format ?? extensionOf(source));
-		return { a, source, dir, text: label(a.name, dir), facts };
+			: fileFacts(source, extname(name) ? undefined : a.format);
+		return { a, source, dir, text: label(name, dir), facts };
 	});
 	const width = Math.max(...rows.map((r) => r.text.length));
 	return [

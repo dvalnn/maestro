@@ -575,7 +575,7 @@ notes: thin
 Read-only files your task needs. Read a file whole; browse and grep a directory.
 
 /in/
-└── spec   markdown, 2 lines, 8 B: first, for the rules`);
+└── spec.md   2 lines, 8 B: first, for the rules`);
 	});
 
 	test.each([

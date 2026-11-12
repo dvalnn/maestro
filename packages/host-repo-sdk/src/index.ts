@@ -121,7 +121,7 @@ export const MarkdownOut = (file: string): Output => ({
 
 type Outputs = Readonly<Record<string, Output>>;
 
-/** An artifact mounted read-only at `/in/<name>`, and the hint that says when the agent should read it. */
+/** An artifact mounted read-only at `/in/<name>` (a file with its source's extension added), and the hint that says when the agent should read it. */
 export type Attachment = { artifact: Ref<ArtifactRef>; hint: string };
 
 type Attachments = Readonly<Record<string, Attachment>>;

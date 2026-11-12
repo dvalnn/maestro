@@ -238,7 +238,7 @@ Runtime
 Instructions  instructions.md, 2 lines
 
 Attachments   host                 agent
-  style       style.md             /in/style
+  style       style.md             /in/style.md
   jj          .maestro/skills/jj/  /in/jj  [workspace config]
 
 Read-only     host     agent
@@ -323,7 +323,7 @@ Environment   not declared by codex`,
 				style: {
 					path: join(dir, "style.md"),
 					hint: "for the house style",
-					agent: "/in/style",
+					agent: "/in/style.md",
 				},
 				jj: { path: join(w.cwd, ".maestro/skills/jj"), agent: "/in/jj" },
 			},
