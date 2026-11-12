@@ -24,18 +24,11 @@ export const markdownOf = (text: Ref<string> | string, label: string) =>
 		label,
 	}).out.file;
 
-/** The check a repair or fix round runs to format what it changed. */
+/** The check the gate runs as its fix node, to format what a round changed. */
 export const FIX_CHECK = "fmt";
 
-/** Every check of `target.checks` in `.maestro/config.yaml`, as an agent may run only those it names. */
-export const REPO_CHECKS = [
-	"format",
-	"lint",
-	"types",
-	"test",
-	"all",
-	FIX_CHECK,
-];
+/** The checks of `target.checks` in `.maestro/config.yaml` an agent may run: every one a script cannot fix (ADR 0016). */
+export const REPO_CHECKS = ["lint", "types", "test", "all"];
 
 /** The builder's report as the brief its review seats read. */
 export const briefFrom = (report: Ref<Report>) =>

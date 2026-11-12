@@ -13,7 +13,7 @@
 				},
 				"relay": ["upheld"],
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"bound": {
 					"upTo": 2
 				}
@@ -33,7 +33,7 @@
 					}
 				},
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"bound": {
 					"upTo": 2
 				}
@@ -53,7 +53,7 @@
 					}
 				},
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"bound": {
 					"upTo": 4
 				}
@@ -63,7 +63,7 @@
 				"profile": "classics/builder",
 				"task": "x",
 				"lane": "fresh",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"bound": {
 					"exact": 1
 				}
@@ -116,7 +116,7 @@
 					}
 				},
 				"lane": "read",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"verdict": true,
 				"bound": {
 					"exact": 1
@@ -168,7 +168,7 @@
 					}
 				},
 				"lane": "read",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"verdict": true,
 				"bound": {
 					"upTo": 2

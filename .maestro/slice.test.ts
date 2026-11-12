@@ -7,6 +7,7 @@ import {
 	reject,
 	type Settled,
 } from "@maestro/sdk";
+import { FIX_CHECK } from "./shared";
 import { requirePatch, reviewedOf } from "./slice";
 import { JUDGED } from "./slice/lenses";
 import {
@@ -53,11 +54,16 @@ const cases: [string, Rulings, string[]][] = [
 	],
 ];
 
-/** The checks of the project's own config, every one of which an agent that works on the lane may run. */
+/** The checks a script can always fix, which no agent is offered (ADR 0016). */
+const FORMAT_TOOLS = ["format", FIX_CHECK];
+
+/** Every check of the project's own config but the format tools: those an agent that works on the lane may run. */
 const projectConfig = Bun.YAML.parse(
 	readFileSync(".maestro/config.yaml", "utf8"),
 ) as { target: { checks: Record<string, unknown> } };
-const projectChecks = Object.keys(projectConfig.target.checks);
+const projectChecks = Object.keys(projectConfig.target.checks).filter(
+	(name) => !FORMAT_TOOLS.includes(name),
+);
 
 const granular = ["format", "lint", "types", "test", "fmt"].flatMap((name) => [
 	"-c",

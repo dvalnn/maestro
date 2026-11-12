@@ -13,7 +13,7 @@
 				},
 				"relay": ["upheld"],
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"bound": {
 					"upTo": 2
 				}
@@ -33,7 +33,7 @@
 					}
 				},
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"bound": {
 					"upTo": 2
 				}
@@ -53,7 +53,7 @@
 					}
 				},
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"bound": {
 					"upTo": 4
 				}
@@ -84,7 +84,7 @@
 					}
 				},
 				"lane": "extend",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"bound": {
 					"exact": 1
 				}
@@ -496,7 +496,7 @@
 					}
 				},
 				"lane": "fresh",
-				"checks": ["format", "lint", "types", "test", "all", "fmt"],
+				"checks": ["lint", "types", "test", "all"],
 				"bound": {
 					"exact": 1
 				}
