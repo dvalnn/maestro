@@ -1,8 +1,8 @@
 ---
 name: domain-modeling
 description:
-  "Glossary and ADRs: their formats and the test for an ADR. Use when a domain term or a hard-to-reverse decision
-  settles, or when editing GLOSSARY.md or an ADR."
+  "The project's domain model: GLOSSARY.md and ADRs. Use when the task names or renames a domain term, edits GLOSSARY.md
+  or an ADR, or settles a decision that is hard to reverse."
 ---
 
 # Domain Modeling

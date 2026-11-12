@@ -85,7 +85,7 @@
 							"additionalProperties": false,
 							"properties": {
 								"cites": {
-									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
+									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; a skill, an attached doc or a repo standard",
 									"type": "string"
 								},
 								"id": {
@@ -134,7 +134,7 @@
 							"additionalProperties": false,
 							"properties": {
 								"cites": {
-									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
+									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; a skill, an attached doc or a repo standard",
 									"type": "string"
 								},
 								"id": {
@@ -183,7 +183,7 @@
 							"additionalProperties": false,
 							"properties": {
 								"cites": {
-									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; one the lens received",
+									"description": "the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; a skill, an attached doc or a repo standard",
 									"type": "string"
 								},
 								"id": {

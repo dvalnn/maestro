@@ -1,8 +1,8 @@
 ---
 name: codebase-design
 description:
-  "Deep modules: the vocabulary of module, interface, seam, depth and leverage. Use when designing, restructuring or
-  judging a module's interface."
+  "Deep modules: module, interface, seam, depth, leverage. Use when the task adds or changes a module, an exported
+  function or a seam, or asks to refactor or rule on a design."
 ---
 
 # Codebase Design

@@ -1,8 +1,8 @@
 ---
 name: good-tests
 description:
-  "Good tests: behaviour through public interfaces, mocking at boundaries, the anti-patterns. Use when writing, mocking
-  or judging a test."
+  "What makes a test good: behaviour through public interfaces, mocks only at boundaries, the anti-patterns. Use
+  whenever you write, change or mock a test, or rule on a change that adds or touches one."
 ---
 
 # Good Tests

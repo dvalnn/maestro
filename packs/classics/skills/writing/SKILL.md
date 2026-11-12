@@ -1,8 +1,8 @@
 ---
 name: writing
 description:
-  Writing documents for human and agent readers alike. Use when writing or judging any Markdown document, a prompt or a
-  skill.
+  "Writing for human and agent readers. Use whenever you write, edit or rule on any Markdown: a README, a doc,
+  AGENTS.md, CLAUDE.md, a prompt or a skill."
 ---
 
 # Writing

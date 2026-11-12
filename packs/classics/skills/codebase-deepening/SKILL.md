@@ -1,6 +1,8 @@
 ---
 name: codebase-deepening
-description: Deepening shallow modules by dependency category. Use when planning a refactor that merges shallow modules.
+description:
+  "Deepening shallow modules, by how their dependencies are tested. Use when the task or your plan merges, refactors or
+  deepens shallow modules, or puts a seam, port or adapter in place."
 ---
 
 # Deepening

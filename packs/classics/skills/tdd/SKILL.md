@@ -1,7 +1,8 @@
 ---
 name: tdd
 description:
-  "Test-first: the red-green loop, one seam and one test per cycle. Use when writing code together with its tests."
+  "Test-driven development: red-green-refactor, one test per cycle. Use when the task asks to build a feature, fix a bug
+  or change behaviour, before you write the code."
 ---
 
 # Test-Driven Development
