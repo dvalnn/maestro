@@ -968,3 +968,144 @@ describe("moves", () => {
 			expect(wired("upheld", port, "fix")).toBe(true);
 	});
 });
+
+describe("recipes", () => {
+	const RECIPES = join(import.meta.dir, "recipes");
+
+	/** Performs recipe `name` on the stub harness with `scripted` outputs by instance id, and lists each instance's status. */
+	async function performed(
+		name: string,
+		exported: string,
+		scripted: Record<string, unknown> = {},
+	) {
+		await Bun.write(
+			join(root, ".maestro/presets/recipes.yaml"),
+			"profiles:\n  '*': { runtime: !replace { harness: stub } }\n",
+		);
+		const outputs = mkdtempSync(join(root, "outputs-"));
+		for (const [path, value] of Object.entries(scripted)) {
+			mkdirSync(join(outputs, path, ".."), { recursive: true });
+			writeFileSync(
+				join(outputs, path),
+				typeof value === "string" ? value : JSON.stringify(value),
+			);
+		}
+		const file = compositionFile(
+			name,
+			`export { ${exported}, joined, majority } from "${RECIPES}";\nexport * from "@maestro/classics/code";\n`,
+		);
+		const ran = await maestro(
+			[
+				"perform",
+				file,
+				"-c",
+				'target.checks=!replace {test: "true"}',
+				"--preset",
+				"recipes",
+			],
+			{ MAESTRO_STUB_OUTPUTS: outputs },
+		);
+		const id = /^concert +(\S+)/m.exec(ran.err)?.[1] ?? "";
+		const { out } = await maestro(["ls", id]);
+		return { ...ran, ls: out };
+	}
+
+	/** The scripted outputs of the lens at `node`, which raises `F1` and rejects. */
+	const raised = (node: string) => ({
+		[`${node}/findings.json`]: [F1],
+		[`${node}/verdict`]: "rejected F1",
+	});
+	const rows = (ls: string, name: string) =>
+		ls.split("\n").filter((l) => l.startsWith(`${name} `));
+
+	test.each([
+		["clean, the strong seat never runs", {}, "skipped"],
+		[
+			"upheld, the strong seat fixes",
+			{
+				...raised("cheap/panel/lenses/lens"),
+				...raised("cheap/fixes/panel/lenses/lens"),
+				"cheap/panel/consolidator/verdict.json": {
+					criteria: [],
+					upholds: ["correctness/F1"],
+				},
+				"cheap/fixes/panel/consolidator/verdict.json": {
+					criteria: [],
+					upholds: ["correctness/F1"],
+				},
+				"cheap/panel/lenses/skeptic/rulings.json": [
+					{ id: "F1", holds: true, why: "holds" },
+				],
+				"cheap/fixes/panel/lenses/skeptic/rulings.json": [
+					{ id: "F1", holds: true, why: "holds" },
+				],
+			},
+			"ok",
+		],
+	])("fix_ladder: %s", async (_, scripted, strong) => {
+		const ran = await performed("fix_ladder", "fixLadder", scripted);
+		expect(ran.code).toBe(0);
+		expect(rows(ran.ls, "strong")[0]).toMatch(new RegExp(`^strong +${strong}`));
+		expect(rows(ran.ls, "strong_gate/check")[0]).toMatch(
+			new RegExp(`^strong_gate/check +${strong}`),
+		);
+	});
+
+	test.each([
+		["both families", ["a", "b"], "2 upheld: a/F1, b/F1"],
+		["family a alone", ["a"], "1 upheld: a/F1"],
+		["family b alone", ["b"], "1 upheld: b/F1"],
+	])(
+		"lens_fusion: %s raising a finding, the one tally upholds it",
+		async (_, raising, reason) => {
+			const ran = await performed(
+				"lens_fusion",
+				"lensFusion",
+				Object.fromEntries(
+					raising.flatMap((f) => [
+						...Object.entries(raised(`${f}_lenses/lens`)),
+						[
+							`${f}_lenses/skeptic/rulings.json`,
+							[{ id: "F1", holds: true, why: "holds" }],
+						],
+					]),
+				),
+			);
+			expect(ran.code).toBe(3);
+			expect(ran.ls).toContain(reason);
+		},
+	);
+
+	test.each([
+		["two of three hold it, it stands", ["a", "b"], 3],
+		["one of three holds it, it falls", ["a"], 0],
+	])("ruling_vote: %s", async (_, holders, exit) => {
+		const ran = await performed("ruling_vote", "rulingVote", {
+			...raised("lens"),
+			...Object.fromEntries(
+				["a", "b", "c"].map((v) => [
+					`voters[${v}]/skeptic/rulings.json`,
+					[{ id: "F1", holds: holders.includes(v), why: "vote" }],
+				]),
+			),
+		});
+		expect(ran.code).toBe(exit);
+	});
+
+	test("audit_sweep: a lens per area rules on the sealed base", async () => {
+		const ran = await performed("audit_sweep", "auditSweep");
+		expect(ran.code).toBe(0);
+		expect(ran.ls).toMatch(/^base +ok/m);
+		for (const area of ["src", "docs"])
+			expect(ran.ls).toMatch(
+				new RegExp(`^panel/lenses\\[${area}\\]/lens +ok`, "m"),
+			);
+	});
+
+	test("plan_review: the panel rules on the planner's plan over the sealed base", async () => {
+		const ran = await performed("plan_review", "planReview");
+		expect(ran.code).toBe(0);
+		expect(ran.ls).toMatch(/^plan +ok/m);
+		expect(ran.ls).toMatch(/^panel\/lenses\[plan\]\/lens +ok/m);
+	});
+});
