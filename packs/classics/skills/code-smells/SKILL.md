@@ -1,6 +1,8 @@
 ---
 name: code-smells
-description: Fowler code smells, a baseline under any repo's own standards. Use when writing or judging code.
+description:
+  "Code smells: Fowler's baseline under any repo's own standards, where an in-scope smell blocks. Use when writing or
+  judging a code change."
 ---
 
 The **smell baseline** below is a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo

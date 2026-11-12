@@ -1,6 +1,7 @@
 ---
 name: tdd
-description: The red-green loop, one seam and one test per cycle. Use when writing code and its tests test-first.
+description:
+  "Test-first: the red-green loop, one seam and one test per cycle. Use when writing code together with its tests."
 ---
 
 # Test-Driven Development

@@ -1,6 +1,8 @@
 ---
 name: good-tests
-description: What a good test is, how to mock and the anti-patterns. Use when writing or judging tests.
+description:
+  "Good tests: behaviour through public interfaces, mocking at boundaries, the anti-patterns. Use when writing, mocking
+  or judging a test."
 ---
 
 # Good Tests

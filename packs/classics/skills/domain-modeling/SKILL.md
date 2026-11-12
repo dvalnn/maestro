@@ -1,6 +1,8 @@
 ---
 name: domain-modeling
-description: The glossary and ADR formats and the test for an ADR. Use when writing or editing a GLOSSARY.md or an ADR.
+description:
+  "Glossary and ADRs: their formats and the test for an ADR. Use when a domain term or a hard-to-reverse decision
+  settles, or when editing GLOSSARY.md or an ADR."
 ---
 
 # Domain Modeling

@@ -1,6 +1,8 @@
 ---
 name: design-it-twice
-description: Sketch rival interfaces and compare them. Use when a module's interface is not obvious to choose.
+description:
+  "Design it twice: sketch two rival interfaces and compare them. Use when a module's interface is not obvious to
+  choose."
 ---
 
 # Design It Twice
