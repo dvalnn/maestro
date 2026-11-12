@@ -24,6 +24,8 @@ A directory, or a tarball of one, holding:
 - `README.md`: each composition's purpose, params and the profiles it needs.
 - `profiles/`, when the pack ships agents: one directory per profile, copied into `dist/profiles/` by the build. A seat
   names one as `<id>/<name>`.
+- `skills/`, when the pack ships skills: one directory per skill with a `SKILL.md`, copied into `dist/skills/` by the
+  build. A profile loads one as `<id>/<name>` in its `skills`.
 
 ## Building the entry
 
@@ -34,6 +36,7 @@ the `describe` and `build` exports maestro loads a pack through:
 
 ```ts
 // build.ts: `bun build.ts` writes the pack into dist/
+import { cp } from "node:fs/promises";
 import { glue, SDK_VERSION } from "@maestro/sdk/loader";
 
 const entry = `${import.meta.dir}/.entry.js`;
@@ -46,6 +49,8 @@ const built = await Bun.build({
 if (!built.success) throw new AggregateError(built.logs, "the pack did not bundle");
 await Bun.write("dist/index.js", built.outputs[0]);
 await Bun.write("dist/README.md", Bun.file("README.md"));
+await cp("profiles", "dist/profiles", { recursive: true });
+await cp("skills", "dist/skills", { recursive: true });
 const manifest = { id: "shop", version: "0.1.0", entry: "index.js", sdk: `^${SDK_VERSION}` };
 await Bun.write("dist/maestro-pack.json", JSON.stringify(manifest, null, 2));
 ```
