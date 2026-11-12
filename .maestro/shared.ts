@@ -1,6 +1,6 @@
-import { type tallyOf, toMarkdown } from "@maestro/classics";
-import { check, fresh } from "@maestro/host-repo-sdk";
-import { code, Markdown, type Ref, reject } from "@maestro/sdk";
+import { Brief, briefOf, toMarkdown } from "@maestro/classics";
+import { check, fresh, type Report } from "@maestro/host-repo-sdk";
+import { code, Markdown, type Ref } from "@maestro/sdk";
 
 /** The review tiers, shallowest first: the tier triage rules is the depth slice reviews at. */
 export const TIERS = ["small", "ordinary", "risky"] as const;
@@ -24,12 +24,20 @@ export const markdownOf = (text: Ref<string> | string, label: string) =>
 		label,
 	}).out.file;
 
-/** A round's `tally` with `extra` outputs beside it, a rejection's included. */
-export function withOutputs<E extends object>(
-	tally: ReturnType<typeof tallyOf>,
-	extra: E,
-) {
-	return "outcome" in tally
-		? reject(tally.reason, { ...tally.outputs, ...extra })
-		: { ...tally, ...extra };
-}
+/** The check a repair or fix round runs to format what it changed. */
+export const FIX_CHECK = "fmt";
+
+/** Every check of `target.checks` in `.maestro/config.yaml`, as an agent may run only those it names. */
+export const REPO_CHECKS = [
+	"format",
+	"lint",
+	"types",
+	"test",
+	"all",
+	FIX_CHECK,
+];
+
+/** The builder's report as the brief its review seats read. */
+export const briefFrom = (report: Ref<Report>) =>
+	code(briefOf, { in: { report }, out: { brief: Brief }, label: "brief" }).out
+		.brief;

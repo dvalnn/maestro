@@ -4,8 +4,8 @@ import { isJson, type Json } from "./json";
 
 /** How many of a milestone's newest concerts the tick reads: one runs at a time, so the newest settle is among them. */
 const WINDOW = 20;
-/** The slice's fix agent, one instance per fix round. */
-const FIX_NODE = "fixes/fix";
+/** The slice's fix agent, one instance per fix round: small's own, or under `fix_until_clean`'s scope. */
+const FIX_NODE = /^(.*\/)?fixes\/fix$/;
 /** The slice's tester, whose `map` output holds the tests: under `test_first`, and as an earlier concert named it. */
 const TESTER_NODE = "tested/tester";
 const LEGACY_TESTER_NODE = "tester";
@@ -128,7 +128,9 @@ function spendOf(doc: unknown): Spend {
 		output: metric(doc.metrics, "tokens_out"),
 		cacheRead: metric(doc.metrics, "tokens_cache_read"),
 		cacheWrite: metric(doc.metrics, "tokens_cache_write"),
-		fixes: instancesOf(doc).filter((i) => i.node === FIX_NODE).length,
+		fixes: instancesOf(doc).filter(
+			(i) => typeof i.node === "string" && FIX_NODE.test(i.node),
+		).length,
 		encore: typeof doc.encoreOf === "string",
 	};
 }
