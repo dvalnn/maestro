@@ -70,8 +70,8 @@ A call takes `task`, `lane` and the common options, and may add:
 
 - `session`: an agent's `out.session`, continued in place, told what changed since its last turn.
 - `attachments`: `{ name: { artifact, hint } }`, each mounted read-only at `/in/<name>`, `hint` saying when to read it.
-- `relay`: `{ name: ref }`, each inlined in the task under `## <name>`: a typed value as YAML, a Markdown output as
-  text.
+- `relay`: `{ name: ref }`, each inlined in the task under `## <name>`: a Markdown output as text, a string as it is,
+  any other typed value as YAML.
 - outputs and checks.
 - `reply`: `{ name: type }`, typed fields of the agent's envelope beside `report`. Each is an output of its type, which
   the host validates, correcting the agent, at most twice, when it is off the type. Structured data goes here, Markdown

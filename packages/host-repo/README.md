@@ -144,8 +144,9 @@ for each correction turn and `session-N.md` for the message that opens session N
 ### Task layout
 
 The task is the call's text, then its relays, then its attachments, each part left out when the call has none. A relay
-is a `## <name>` section, in the order of the call's `relay`: a typed value as `yaml` `stringify`, a Markdown output as
-its text. Attachments, the graph's then the profile's, are a one-level tree under a must-read lead.
+is a `## <name>` section, in the order of the call's `relay`: a Markdown output as its text, a string as it is, any
+other typed value as `yaml` `stringify`. Attachments, the graph's then the profile's, are a one-level tree under a
+must-read lead.
 
 ```text
 Read-only files your task needs. Read a file whole; browse and grep a directory.

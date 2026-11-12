@@ -297,15 +297,15 @@ the IR, since packs bundle it. Lanes and their versions are in [Lanes](../packag
     `verdict: true` marks a verdict agent, which may reject ([Agent node](../packages/host-repo/README.md#agent-node));
     `encore: false` starts its agents fresh in an encore. A call takes `task`, `lane`, the common options, and may add
     `session` (an agent's `out.session`, which it continues), `attachments` (each `{ artifact, hint }`), `relay`
-    (`{ name: ref }`, each inlined in the task under `## <name>`: a typed value as YAML, a Markdown output as its text,
-    any other artifact refused at build), outputs, `reply` and checks. `reply: { name: type }` declares typed fields of
-    the agent's envelope, each an output of its type that the host validates
-    ([Envelope](../packages/host-repo/README.md#envelope)); a name is none of `report`, `blocked`, `outcome`, `reason`,
-    `lane`, `staged`, `session` or an output's, or a build error. Outputs add with the call winning on a name, checks
-    are a union, and the result's outputs are typed by both: `report`, `staged`, `session`, `lane` unless it reads, and
-    each declared output. An attachment or relay named `prompt`, `lane` or `session`, a relay named after an attachment,
-    or an output named `lane`, `report`, `staged` or `session`, is a build error; an attachment named `previous` is
-    refused by the host's `validate` at compose.
+    (`{ name: ref }`, each inlined in the task under `## <name>`: a Markdown output as its text, a string as it is, any
+    other typed value as YAML, any other artifact refused at build), outputs, `reply` and checks.
+    `reply: { name: type }` declares typed fields of the agent's envelope, each an output of its type that the host
+    validates ([Envelope](../packages/host-repo/README.md#envelope)); a name is none of `report`, `blocked`, `outcome`,
+    `reason`, `lane`, `staged`, `session` or an output's, or a build error. Outputs add with the call winning on a name,
+    checks are a union, and the result's outputs are typed by both: `report`, `staged`, `session`, `lane` unless it
+    reads, and each declared output. An attachment or relay named `prompt`, `lane` or `session`, a relay named after an
+    attachment, or an output named `lane`, `report`, `staged` or `session`, is a build error; an attachment named
+    `previous` is refused by the host's `validate` at compose.
 
 [^check]:
     `which` is every named check, the one named, or an inline `{ run, timeout, ... }`. Outputs: `logs`, `output` (the
