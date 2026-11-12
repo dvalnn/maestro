@@ -388,21 +388,12 @@ test.each([
 			"codebase-design",
 			"code-smells",
 			"domain-modeling",
-			"writing-for-agents",
+			"writing",
 		],
 	],
-	[
-		"lens",
-		["good-tests", "codebase-design", "code-smells", "writing-for-agents"],
-	],
-	[
-		"skeptic",
-		["good-tests", "codebase-design", "code-smells", "writing-for-agents"],
-	],
-	[
-		"consolidator",
-		["good-tests", "codebase-design", "code-smells", "writing-for-agents"],
-	],
+	["lens", ["good-tests", "codebase-design", "code-smells", "writing"]],
+	["skeptic", ["good-tests", "codebase-design", "code-smells", "writing"]],
+	["consolidator", ["good-tests", "codebase-design", "code-smells", "writing"]],
 	["tester", ["tdd", "good-tests", "codebase-design"]],
 	["scout", ["codebase-design"]],
 	[
@@ -412,7 +403,7 @@ test.each([
 			"codebase-deepening",
 			"design-it-twice",
 			"domain-modeling",
-			"writing-for-agents",
+			"writing",
 		],
 	],
 ])("the %s attaches the skills %j from the pack", async (name, skills) => {

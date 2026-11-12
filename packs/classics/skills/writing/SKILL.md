@@ -1,13 +1,15 @@
 ---
-name: writing-for-agents
-description: Writing documents for agents. Use when writing or judging a skill, a prompt, AGENTS.md or CLAUDE.md.
+name: writing
+description:
+  Writing documents for human and agent readers alike. Use when writing or judging any Markdown document, a prompt or a
+  skill.
 ---
 
 # Writing
 
-Reference for writing any document an agent consumes: a skill, an `AGENTS.md` / `CLAUDE.md`, a doc reached by a pointer.
-The packaging differs; the writing does not: the same levers make each one predictable, since the agent takes the same
-_process_ every run rather than producing the same output.
+Reference for writing any document, read by a human or an agent: a skill, an `AGENTS.md` / `CLAUDE.md`, a doc reached by
+a pointer. The packaging differs; the writing does not: the same levers make each one predictable, since the agent takes
+the same _process_ every run rather than producing the same output.
 
 When the document you're writing is a skill, read [`writing-skills.md`](writing-skills.md) for frontmatter and the
 invocation choice.

@@ -86,15 +86,15 @@ placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer pa
 
 ## Seats and profiles
 
-| Seat           | Profile                 | Reply or output     | Skills                                                                                              |
-| -------------- | ----------------------- | ------------------- | --------------------------------------------------------------------------------------------------- |
-| `builder`      | `classics/builder`      | the lane            | `tdd`, `good-tests`, `codebase-design`, `code-smells`, `domain-modeling`, `writing-for-agents`      |
-| `tester`       | `classics/tester`       | `map`: `TestMap`    | `tdd`, `good-tests`, `codebase-design`                                                              |
-| `lens`         | `classics/lens`         | `findings`          | `good-tests`, `codebase-design`, `code-smells`, `writing-for-agents`                                |
-| `skeptic`      | `classics/skeptic`      | `rulings`           | as `lens`                                                                                           |
-| `consolidator` | `classics/consolidator` | `verdict`, `review` | as `lens`                                                                                           |
-| `scout`        | `classics/scout`        | `answers`           | `codebase-design`                                                                                   |
-| `planner`      | `classics/planner`      | `plan`              | `codebase-design`, `codebase-deepening`, `design-it-twice`, `domain-modeling`, `writing-for-agents` |
+| Seat           | Profile                 | Reply or output     | Skills                                                                                   |
+| -------------- | ----------------------- | ------------------- | ---------------------------------------------------------------------------------------- |
+| `builder`      | `classics/builder`      | the lane            | `tdd`, `good-tests`, `codebase-design`, `code-smells`, `domain-modeling`, `writing`      |
+| `tester`       | `classics/tester`       | `map`: `TestMap`    | `tdd`, `good-tests`, `codebase-design`                                                   |
+| `lens`         | `classics/lens`         | `findings`          | `good-tests`, `codebase-design`, `code-smells`, `writing`                                |
+| `skeptic`      | `classics/skeptic`      | `rulings`           | as `lens`                                                                                |
+| `consolidator` | `classics/consolidator` | `verdict`, `review` | as `lens`                                                                                |
+| `scout`        | `classics/scout`        | `answers`           | `codebase-design`                                                                        |
+| `planner`      | `classics/planner`      | `plan`              | `codebase-design`, `codebase-deepening`, `design-it-twice`, `domain-modeling`, `writing` |
 
 `scout` and `planner` serve no composition of the pack; they are seats for compositions built on it. The skills are
 adapted from Matt Pocock's under the MIT license in `skills/LICENSE`, each copy recorded in `skills/UPSTREAM.md`. A
