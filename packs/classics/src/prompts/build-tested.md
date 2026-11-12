@@ -8,3 +8,5 @@ pass.
 
 Write the test for each requirement the map defers, in the file its acceptance item names, once the names it needs
 exist. Your report names each deferred requirement's test.
+
+A pinned test's `misses` is yours to pin with your own tests.

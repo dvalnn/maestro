@@ -61,7 +61,7 @@
 			{
 				"seat": "builder",
 				"profile": "classics/builder",
-				"task": "x\n\nA tester wrote tests for this spec before you; the `map` section below names each one by its requirement. Make them\npass.\n\n- A test that contradicts the spec or the interface you build is the tester's mistake: correct it and name it in\n  `overrules` with why.\n- A test that faithfully pins a flaw in the spec: stop and reply blocked, naming the requirement and the flaw.\n- Never weaken a test to make the build pass.\n\nWrite the test for each requirement the map defers, in the file its acceptance item names, once the names it needs\nexist. Your report names each deferred requirement's test.\n",
+				"task": "x\n\nA tester wrote tests for this spec before you; the `map` section below names each one by its requirement. Make them\npass.\n\n- A test that contradicts the spec or the interface you build is the tester's mistake: correct it and name it in\n  `overrules` with why.\n- A test that faithfully pins a flaw in the spec: stop and reply blocked, naming the requirement and the flaw.\n- Never weaken a test to make the build pass.\n\nWrite the test for each requirement the map defers, in the file its acceptance item names, once the names it needs\nexist. Your report names each deferred requirement's test.\n\nA pinned test's `misses` is yours to pin with your own tests.\n",
 				"relay": ["map"],
 				"reply": {
 					"overrules": {
@@ -532,7 +532,7 @@
 			{
 				"seat": "tester",
 				"profile": "classics/tester",
-				"task": "Write the tests that pin the attached spec's requirements.\n\n- Put each test in the file the requirement's acceptance item names, adding to it where it exists. When an acceptance\n  item names several files for one requirement, pin it once, in the lowest-level file that reaches it.\n- Where the spec leaves an output's exact text open, pin what it does fix, such as that the input is refused and the\n  path the refusal names, and never match the text loosely.\n\nThen give your `map` field, naming every requirement in exactly one list, its `requirement` opening with its id, as\n`R1: …`:\n\n- `pinned`: a requirement you pinned, with its test's repo-relative `file` and its `test` name exactly as the test call\n  gives it, without any enclosing `describe`.\n- `deferred`: a requirement left to the builder's tests, because it sits below the spec's public seam or only a name the\n  build adds can reach, with why.\n- `untestable`: a requirement no test can pin, such as a doc's wording, with why.\n\nIn your report, give each pinned test a line on what it catches and what it misses.\n",
+				"task": "Write the tests that pin the attached spec's requirements.\n\n- Put each test in the file the requirement's acceptance item names, adding to it where it exists. When an acceptance\n  item names several files for one requirement, pin it once, in the lowest-level file that reaches it.\n- Where the spec leaves an output's exact text open, pin what it does fix, such as that the input is refused and the\n  path the refusal names, and never match the text loosely.\n\nThen give your `map` field, naming every requirement in exactly one list, its `requirement` opening with its id, as\n`R1: …`:\n\n- `pinned`: a requirement you pinned, with its test's repo-relative `file`, its `test` name exactly as the test call\n  gives it, without any enclosing `describe`, and what the test `misses`.\n- `deferred`: a requirement left to the builder's tests, because it sits below the spec's public seam or only a name the\n  build adds can reach, with why.\n- `untestable`: a requirement no test can pin, such as a doc's wording, with why.\n",
 				"attachments": {
 					"spec": {
 						"hint": "first, for the requirements to pin",
@@ -566,6 +566,10 @@
 										"file": {
 											"type": "string"
 										},
+										"misses": {
+											"description": "what the test leaves uncovered, for the builder's own tests to pin",
+											"type": "string"
+										},
 										"requirement": {
 											"type": "string"
 										},
@@ -573,7 +577,7 @@
 											"type": "string"
 										}
 									},
-									"required": ["requirement", "file", "test"],
+									"required": ["requirement", "file", "test", "misses"],
 									"type": "object"
 								},
 								"type": "array"

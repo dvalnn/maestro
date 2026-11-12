@@ -8,10 +8,8 @@ Write the tests that pin the attached spec's requirements.
 Then give your `map` field, naming every requirement in exactly one list, its `requirement` opening with its id, as
 `R1: …`:
 
-- `pinned`: a requirement you pinned, with its test's repo-relative `file` and its `test` name exactly as the test call
-  gives it, without any enclosing `describe`.
+- `pinned`: a requirement you pinned, with its test's repo-relative `file`, its `test` name exactly as the test call
+  gives it, without any enclosing `describe`, and what the test `misses`.
 - `deferred`: a requirement left to the builder's tests, because it sits below the spec's public seam or only a name the
   build adds can reach, with why.
 - `untestable`: a requirement no test can pin, such as a doc's wording, with why.
-
-In your report, give each pinned test a line on what it catches and what it misses.

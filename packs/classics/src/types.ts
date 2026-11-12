@@ -33,10 +33,20 @@ export const Finding = Struct(FINDING);
 /** What a lens found, none when its work is clean. */
 export const Findings = List(Finding);
 
-/** The tester's map: each requirement in one list, a pinned one with its test by file and name. */
 const Unpinned = List(Struct({ requirement: Text(), why: Text() }));
+/** The tester's map: each requirement in one list, a pinned one with its test by file and name, and what the test misses. */
 export const TestMap = Struct({
-	pinned: List(Struct({ requirement: Text(), file: Text(), test: Text() })),
+	pinned: List(
+		Struct({
+			requirement: Text(),
+			file: Text(),
+			test: Text(),
+			misses: Text({
+				description:
+					"what the test leaves uncovered, for the builder's own tests to pin",
+			}),
+		}),
+	),
 	deferred: Unpinned,
 	untestable: Unpinned,
 });
