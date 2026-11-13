@@ -48,7 +48,7 @@
 		}
 	],
 	"emitter": { "name": "@maestro/sdk", "version": "0.1.0" },
-	"irVersion": "1.1",
+	"irVersion": "1.2",
 	"nodes": [
 		{
 			"cardinality": { "exact": 2 },

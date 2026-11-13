@@ -653,10 +653,10 @@ test("a newer minor version than the reader knows is rejected", () => {
 	if (!result.ok) {
 		expect(result.diagnostics[0]?.code).toBe("IR.version");
 		expect(result.diagnostics[0]?.message).toBe(
-			"IR version 1.7 is newer than this maestro reads (1.1). It was emitted by a newer SDK, for example one bundled in a pack",
+			"IR version 1.7 is newer than this maestro reads (1.2). It was emitted by a newer SDK, for example one bundled in a pack",
 		);
 		expect(result.diagnostics[0]?.hint).toBe(
-			"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.1",
+			"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.2",
 		);
 	}
 });
@@ -679,10 +679,11 @@ test("a code node may carry a timeout of whole milliseconds", () => {
 	}
 });
 
-test("the schema accepts exactly the versions this reader reads, 1.0 among them", () => {
+test("the schema accepts exactly the versions this reader reads, 1.0 and 1.1 among them", () => {
 	// The schema pins accepted versions, so it and IR_VERSION are bumped together.
 	expect(irSchema.properties.irVersion.enum.at(-1)).toBe(IR_VERSION);
 	expect(parseIr(withVersion("1.0")).ok).toBe(true);
+	expect(parseIr(withVersion("1.1")).ok).toBe(true);
 });
 
 test("an independent reader with no maestro code parses the fan-out, fan-in and loop IR", () => {

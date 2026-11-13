@@ -174,9 +174,11 @@ export function use<P extends Types, Q extends Types, R>(
 				`Declare '${name}' as a port of '${sub.name}' to feed it a Ref`,
 			);
 	const id = claimId(opts.label, sub.name);
+	const pack = sub.pack ?? s.context.pack.id;
 	s.scopes.push({
 		id,
 		composition: sub.name,
+		pack,
 		ports: schemas(sub.ports),
 	});
 	const refs = Object.fromEntries(
@@ -194,8 +196,7 @@ export function use<P extends Types, Q extends Types, R>(
 			return [name, new RefImpl(source, type, s)];
 		}),
 	) as unknown as PortRefs<Q>;
-	const configured =
-		s.context.params?.[sub.pack ?? s.context.pack.id]?.[sub.name];
+	const configured = s.context.params?.[pack]?.[sub.name];
 	const params = withDefaults(sub.params, {
 		...configured,
 		...opts.params,

@@ -103,7 +103,7 @@ The prefixes are catalogued in [sdk-spec: Diagnostics catalogue](../../../../doc
     A top-level key belongs to core, an installed host or an installed pack. Under a pack's id, a key names one of its
     compositions, and under that, one of its params (D-17). A key only an unused host claims is ignored (D-24), as is a
     file or preset key under a composition the concert does not use. A `-c` key there is `CFG.unreached`: neither the
-    root nor any scope names that composition.
+    root nor any scope names that composition of that pack.
 
 [^pack]: Or a pack's value, or a composition's under it, is not a mapping.
 

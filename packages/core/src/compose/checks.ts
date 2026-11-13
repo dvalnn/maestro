@@ -39,6 +39,8 @@ const escapePointer = (s: string) =>
 /** A did-you-mean hint allows one edit per this many characters of the typed key, and at most `MAX_TYPOS`. */
 const CHARS_PER_TYPO = 3;
 const MAX_TYPOS = 2;
+/** The pack of a scope that names none; no pack id contains `*`. */
+const ANY_PACK = "*";
 
 const at = (rows: number[][], i: number, j: number) => rows[i]?.[j] ?? 0;
 
@@ -151,15 +153,18 @@ function unreached(
 	ir: Ir,
 ): Diagnostic[] {
 	const reached = new Set([
-		ir.composition.id,
-		...ir.scopes.map((s) => s.composition),
+		`${ir.composition.pack}.${ir.composition.id}`,
+		...ir.scopes.map((s) => `${s.pack ?? ANY_PACK}.${s.composition}`),
 	]);
 	const value = config.values[pack];
 	if (!isRecord(value)) return [];
 	return Object.entries(value)
 		.filter(
 			([id, params]) =>
-				Object.hasOwn(compositions, id) && !reached.has(id) && isRecord(params),
+				Object.hasOwn(compositions, id) &&
+				!reached.has(`${pack}.${id}`) &&
+				!reached.has(`${ANY_PACK}.${id}`) &&
+				isRecord(params),
 		)
 		.flatMap(([id, params]) =>
 			Object.keys(params as Record<string, unknown>)

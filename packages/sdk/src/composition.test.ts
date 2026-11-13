@@ -140,11 +140,13 @@ describe("use", () => {
 			{
 				id: "shout",
 				composition: "shout",
+				pack: context.pack.id,
 				ports: { text: { type: "string" } },
 			},
 			{
 				id: "again",
 				composition: "shout",
+				pack: context.pack.id,
 				ports: { text: { type: "string" } },
 			},
 		]);

@@ -17,7 +17,7 @@
 	"properties": {
 		"irVersion": {
 			"description": "The IR versions this schema accepts. Bumped together with IR_VERSION.",
-			"enum": ["1.0", "1.1"]
+			"enum": ["1.0", "1.1", "1.2"]
 		},
 		"composition": {
 			"type": "object",
@@ -143,6 +143,7 @@
 			"properties": {
 				"id": { "$ref": "#/$defs/id" },
 				"composition": { "$ref": "#/$defs/name" },
+				"pack": { "$ref": "#/$defs/name" },
 				"ports": { "$ref": "#/$defs/ports" }
 			}
 		},

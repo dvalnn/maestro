@@ -79,7 +79,7 @@ const planOf = (
 	expansion: Plan["expansion"] = {},
 ): Plan => ({
 	ir: {
-		irVersion: "1.1",
+		irVersion: "1.2",
 		composition: { id: "c", version: "0.1.0", pack: "p" },
 		emitter: { name: "hand", version: "1" },
 		scopes: [],

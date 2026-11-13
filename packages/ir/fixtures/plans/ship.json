@@ -109,7 +109,7 @@
 			"name": "hand",
 			"version": "1"
 		},
-		"irVersion": "1.1",
+		"irVersion": "1.2",
 		"nodes": [
 			{
 				"id": "plan",

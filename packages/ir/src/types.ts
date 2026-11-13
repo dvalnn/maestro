@@ -173,6 +173,8 @@ export type IrEdge = DataEdge | CollectEdge | ControlEdge;
 export type Scope = {
 	id: string;
 	composition: string;
+	/** The pack that declares the scope's composition; absent, the composition counts in any pack. */
+	pack?: string;
 	ports: Ports;
 };
 

@@ -56,7 +56,7 @@ Refs: CORE-17.
 
 ## Versioning
 
-`irVersion` is `"<major>.<minor>"`. This package reads `1.0` and `1.1`, and emits `1.1`.
+`irVersion` is `"<major>.<minor>"`. This package reads `1.0` to `1.2`, and emits `1.2`.
 
 - **Minor** changes are additive and optional: a new optional field, or a new value where readers already reject the
   unknown. IR written for `1.n` keeps its meaning under every later `1.m`. A breaking change to the node config of a
@@ -66,7 +66,7 @@ Refs: CORE-17.
 - A reader that supports `M.n` accepts `M.0` to `M.n`, and nothing else. It rejects another major, and a newer minor,
   with an `IR.version` diagnostic and a hint. Both checks come before the schema check, so IR of another major gets one
   clear error.
-- A 1.1 IR cannot be read by a 1.0 maestro, and the hint tells the operator to upgrade maestro. The rationale is in
+- A 1.2 IR cannot be read by a 1.1 maestro, and the hint tells the operator to upgrade maestro. The rationale is in
   [ADR 0004](../../docs/adr/0004-ir-flat-graph-and-version-policy.md).
 - The schema's `irVersion` enum lists exactly the versions this package reads. It is bumped together with `IR_VERSION`,
   and a test checks that the two agree.
@@ -78,15 +78,15 @@ Refs: CORE-16, ADR 0004, D-30.
 
 ### Document and ids
 
-| Field         | Content                                                                                             |
-| ------------- | --------------------------------------------------------------------------------------------------- |
-| `irVersion`   | See [Versioning](#versioning).                                                                      |
-| `composition` | `id`, `version`, `pack`, optional `doc`.                                                            |
-| `emitter`     | `name` and `version` of what produced the IR, optional `sourceHash`. Hand-written IR uses `"hand"`. |
-| `scopes`      | One per subcomposition use: `id`, `composition` and its `ports` with schemas.                       |
-| `nodes`       | Flat list. Nesting is by id.                                                                        |
-| `edges`       | Flat list, port to port.                                                                            |
-| `result`      | `{ "node": id }`, the node the build returned, where the result rule starts.[^result]               |
+| Field         | Content                                                                                                     |
+| ------------- | ----------------------------------------------------------------------------------------------------------- |
+| `irVersion`   | See [Versioning](#versioning).                                                                              |
+| `composition` | `id`, `version`, `pack`, optional `doc`.                                                                    |
+| `emitter`     | `name` and `version` of what produced the IR, optional `sourceHash`. Hand-written IR uses `"hand"`.         |
+| `scopes`      | One per subcomposition use: `id`, `composition`, optional `pack`[^scope-pack] and its `ports` with schemas. |
+| `nodes`       | Flat list. Nesting is by id.                                                                                |
+| `edges`       | Flat list, port to port.                                                                                    |
+| `result`      | `{ "node": id }`, the node the build returned, where the result rule starts.[^result]                       |
 
 Nodes and scopes share one id space. An id is a path of `[A-Za-z0-9_-]` segments joined by `/`. Anything inside a scope
 or a group has the id `<enclosing id>/<segment>`, so every proper prefix of an id is a declared scope or group node, its
@@ -331,7 +331,7 @@ A plan for a `parMap` over two topics, then a loop, with a host that counts one 
 
 ```json
 {
-  "ir": { "irVersion": "1.1", "nodes": [], "edges": [] },
+  "ir": { "irVersion": "1.2", "nodes": [], "edges": [] },
   "expansion": {
     "topics": { "": { "keys": ["alpha", "beta"] } },
     "loop": { "": { "upTo": 2 } }
@@ -430,8 +430,12 @@ Refs: ADR 0007, ADR 0008, CORE-14.
 
 [^state]: The previous iteration's member outputs, `ok` and `reason`.
 
+[^scope-pack]: The pack that declares the scope's composition. Absent, any pack's.
+
 ## Changelog
 
+- **1.2**: a scope gained an optional `pack`, the pack that declares its composition, which config keys of that pack
+  read. A scope without it stands for its composition in any pack, as IR before 1.2 does.
 - **1.1, unchanged**: the `repo.agent` node config gained optional `reply` and `relay`, and the `repo.changeset` node an
   optional `since` input. All are additive, and the version stays `1.1`.
 - **1.1, unchanged**: the `report` output of a `repo.agent` node gained an optional `sightings`, a list of

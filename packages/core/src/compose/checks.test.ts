@@ -247,7 +247,13 @@ describe("host nodes", () => {
 });
 
 describe("config", () => {
-	const ir = () => golden("fanout-fanin-loop.json");
+	const ir = async () => {
+		const base = await golden("fanout-fanin-loop.json");
+		return {
+			...base,
+			scopes: base.scopes.map((scope) => ({ ...scope, pack: "demo" })),
+		};
+	};
 	const unused = fakeHost({
 		name: "other",
 		kinds: [],
@@ -388,6 +394,49 @@ describe("config", () => {
 		expect(await via("refine-until-done", flag)).toEqual([]);
 		for (const layer of ["workspace", "preset"] as const)
 			expect(await via("other", { layer, file: "/w/c.yaml" })).toEqual([]);
+	});
+
+	test("reaches a composition by its declaring pack, not by its name alone", async () => {
+		const packs = {
+			demo: { "refine-until-done": ["x"] },
+			rival: { "refine-until-done": ["x"] },
+		};
+		const flag = (key: string) =>
+			parseLayer(
+				`${key.split(".")[0]}:\n  refine-until-done:\n    x: 1\ndataRoot: /data\n`,
+				{
+					layer: "flag",
+					flag: `-c ${key}=1`,
+					key,
+					base: "/w",
+				},
+			);
+		const via = async (key: string) =>
+			(await failures(await ir(), { packs, config: layered([flag(key)]) })).map(
+				(d) => d.code,
+			);
+		expect(await via("demo.refine-until-done.x")).toEqual([]);
+		expect(await via("rival.refine-until-done.x")).toEqual(["CFG.unreached"]);
+	});
+
+	test("a scope without a pack reaches its composition in any pack", async () => {
+		const pristine = await golden("fanout-fanin-loop.json");
+		const packs = {
+			rival: { "refine-until-done": ["x"], unused: ["x"] },
+		};
+		const flag = (id: string) =>
+			parseLayer(`rival:\n  ${id}:\n    x: 1\ndataRoot: /data\n`, {
+				layer: "flag",
+				flag: `-c rival.${id}.x=1`,
+				key: `rival.${id}.x`,
+				base: "/w",
+			});
+		const via = async (id: string) =>
+			(await failures(pristine, { packs, config: layered([flag(id)]) })).map(
+				(d) => d.code,
+			);
+		expect(await via("refine-until-done")).toEqual([]);
+		expect(await via("unused")).toEqual(["CFG.unreached"]);
 	});
 
 	test("locates a config error at the file and line that set the key", async () => {

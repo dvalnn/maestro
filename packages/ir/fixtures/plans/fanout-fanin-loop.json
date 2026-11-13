@@ -1,6 +1,6 @@
 {
 	"ir": {
-		"irVersion": "1.1",
+		"irVersion": "1.2",
 		"composition": {
 			"id": "fanout-fanin-loop",
 			"version": "0.1.0",

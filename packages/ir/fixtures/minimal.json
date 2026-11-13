@@ -1,5 +1,5 @@
 {
-	"irVersion": "1.1",
+	"irVersion": "1.2",
 	"composition": { "id": "minimal", "version": "0.1.0", "pack": "fixtures" },
 	"emitter": { "name": "hand", "version": "1" },
 	"scopes": [],
