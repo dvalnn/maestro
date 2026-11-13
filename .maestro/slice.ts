@@ -16,6 +16,7 @@ import {
 	code,
 	composition,
 	Dir,
+	Int,
 	Markdown,
 	reject,
 	type Settled,
@@ -102,11 +103,12 @@ const noticeLines = (upheld: number, held: string[], unreviewed: boolean) => [
 ];
 
 /**
- * The changeset, the last round's upheld findings as `upheld.md`, whether the PR is a draft with its notice, and the
- * writer's PR body, unchanged, when the changeset holds a patch; the body is empty when the writer delivered none.
+ * The changeset, the last round's upheld findings as `upheld.md`, whether the PR is a draft with its notice, the
+ * writer's PR body, unchanged, and the `delivered` given, when the changeset holds a patch; the body is empty when the
+ * writer delivered none.
  * A rejection when the changeset holds no patch, so the slice settles `rejected`.
- * - `draft` is true when the last review did not come out clean, findings remain upheld, or the patches, or those of
- *   the PR `revised`, touch `docs/rulings.md` or `docs/adr/`.
+ * - `draft` is true when the last review's `delivered`, if given, is 0, findings remain upheld, or the patches, or those
+ *   of the PR `revised`, touch `docs/rulings.md` or `docs/adr/`.
  * - `notice` holds a line per reason, empty when `draft` is false.
  */
 export function requirePatch(
@@ -114,13 +116,13 @@ export function requirePatch(
 		changeset,
 		revised,
 		upheld,
-		clean,
+		delivered,
 		written,
 	}: {
 		changeset: ArtifactRef;
 		revised?: ArtifactRef;
 		upheld: Held[];
-		clean: boolean;
+		delivered?: number;
 		written: Settled<ArtifactRef>[];
 	},
 	ctx: CodeContext,
@@ -135,18 +137,24 @@ export function requirePatch(
 			...(revisedDir ? heldTouched(revisedDir, patchesOf(revisedDir)) : []),
 		]),
 	];
-	const lines = noticeLines(upheld.length, held, !clean);
+	const lines = noticeLines(upheld.length, held, delivered === 0);
 	const file = join(ctx.scratch, "upheld.md");
 	writeFileSync(file, upheldMarkdown(upheld));
 	const notice = join(ctx.scratch, "notice.md");
 	writeFileSync(notice, lines.length ? `${lines.join("\n")}\n` : "");
 	const draft = lines.length > 0;
+	const outputs = {
+		changeset,
+		upheld: file,
+		draft,
+		notice,
+		...(delivered !== undefined && { delivered }),
+	};
 	const body = written[0];
-	if (body?.outcome === "ok")
-		return { changeset, upheld: file, draft, notice, pr: body.value };
+	if (body?.outcome === "ok") return { ...outputs, pr: body.value };
 	const pr = join(ctx.scratch, "pr.md");
 	writeFileSync(pr, "");
-	return { changeset, upheld: file, draft, notice, pr };
+	return { ...outputs, pr };
 }
 
 /** The PR body's writer: a cheap seat that only reads the finished change. */
@@ -165,8 +173,8 @@ export const slice = composition(
 			"Under a preset that sets classics.build.testFirst, a tester writes the spec's tests first and the build starts from them.",
 			"Each round repairs until the target's checks pass, then reviews; up to maxFixes fix rounds follow.",
 			"Leaves the changeset, the findings the last review upheld, whether the PR is a draft with its notice, and a",
-			"writer's PR body: over the PR it revises when given, empty when the writer failed. Fails when the changeset holds",
-			"no patch.",
+			"writer's PR body: over the PR it revises when given, empty when the writer failed, and how many lenses the last",
+			"review delivered. Fails when the changeset holds no patch.",
 		].join("\n"),
 		params: {
 			request: Text({ description: "The brief: what to build" }),
@@ -229,7 +237,7 @@ export const slice = composition(
 				changeset: changes,
 				...(prior && { revised: prior }),
 				upheld: reviewed.out.upheld,
-				clean: reviewed.ok,
+				...(reviewed.out.delivered && { delivered: reviewed.out.delivered }),
 				written: allSettled([written.out.pr], { label: "written" }),
 			},
 			out: {
@@ -238,6 +246,7 @@ export const slice = composition(
 				draft: Bool(),
 				notice: Markdown(),
 				pr: Markdown(),
+				...(reviewed.out.delivered && { delivered: Int() }),
 			},
 			label: "result",
 			tolerate: "rejected",

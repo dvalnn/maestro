@@ -11,6 +11,7 @@ import {
 	code,
 	composition,
 	firstOk,
+	Int,
 	iter,
 	List,
 	Markdown,
@@ -130,9 +131,19 @@ export const fixLadder = composition(
 	},
 );
 
-/** The findings of two held lists, one after the other. */
-export function joined({ a, b }: { a: Held[]; b: Held[] }): { held: Held[] } {
-	return { held: [...a, ...b] };
+/** The findings of two held lists, one after the other, and how many lenses delivered across both. */
+export function joined({
+	a,
+	b,
+	aDelivered,
+	bDelivered,
+}: {
+	a: Held[];
+	b: Held[];
+	aDelivered: number;
+	bDelivered: number;
+}): { held: Held[]; delivered: number } {
+	return { held: [...a, ...b], delivered: aDelivered + bDelivered };
 }
 
 /** Lens fusion: the same lens on two harness families, a skeptic over each, one tally over both. */
@@ -170,22 +181,35 @@ export const lensFusion = composition(
 				{ onError: "continue", label: `${family}_lenses` },
 			);
 			return code(heldOf, {
-				in: { results: rounds.out.results, names },
+				in: {
+					results: rounds.out.results,
+					names,
+					patches: attached.patches.artifact,
+					spec,
+				},
 				out: {
 					held: List(Upheld),
 					unreviewed: List(Struct({ lens: Text(), reason: Text() })),
+					delivered: Int(),
 				},
 				label: `${family}_held`,
-			}).out.held;
+			}).out;
 		};
+		const [a, b] = [held("a"), held("b")];
 		const both = code(joined, {
-			in: { a: held("a"), b: held("b") },
-			out: { held: List(Upheld) },
+			in: {
+				a: a.held,
+				b: b.held,
+				aDelivered: a.delivered,
+				bDelivered: b.delivered,
+			},
+			out: { held: List(Upheld), delivered: Int() },
 		});
 		return tally({
 			lane: change,
 			session: build.out.session,
 			held: both.out.held,
+			delivered: both.out.delivered,
 		});
 	},
 );

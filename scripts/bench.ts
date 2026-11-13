@@ -100,8 +100,12 @@ async function start(
 		console.log(`#${issue} ${await maestro().start(args)}`);
 }
 
+/** Whether concert `c` converged: it settled ok with nothing upheld, and its last review delivered. */
+const convergedOf = (c: Concert, report: Report) =>
+	c.status === "ok" && !unresolvedOf(report.upheld) && report.delivered !== 0;
+
 /** The row of concert `c` on `arm`'s ticket, `report` being none while it runs. */
-const rowOf = (
+export const rowOf = (
 	c: Concert,
 	[, arm = "", ticket = ""]: string[],
 	spend: Spend,
@@ -111,7 +115,7 @@ const rowOf = (
 	ticket: Number(ticket),
 	status: c.status,
 	fixes: spend.fixes,
-	converged: report ? c.status === "ok" && !unresolvedOf(report.upheld) : null,
+	converged: report ? convergedOf(c, report) : null,
 	pinned: report?.tests?.pinned ?? null,
 	deferred: report?.tests?.deferred ?? null,
 	untestable: report?.tests?.untestable ?? null,

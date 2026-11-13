@@ -2197,21 +2197,35 @@ describe("a stack review", () => {
 		);
 	});
 
-	test("halts on a review that fails, and runs it again once the halt closes", async () => {
-		const t = epicWith("in-review", { stackReview: "r1" });
-		t.concerts.push(reviewConcert("r1", "failed"));
-		t.results.r1 = failed("harness down");
-		await t.run();
-		const halt = t.writes.find((w) => w.startsWith("file"));
-		expect(halt).toBe(
-			`file #100 Tour manager halted: stack review of #9 failed: ${HALT}`,
-		);
-		expect(dataAt(t.find(9))).toMatchObject({ concert: "r1" });
-		expect(dataAt(t.find(9)).stackReview).toBeUndefined();
-		t.find(100).open = false;
-		await t.run();
-		expect(reviewsOf(t)).toHaveLength(1);
-	});
+	const halting: [string, string, Result, string][] = [
+		["fails", "failed", failed("harness down"), "failed"],
+		[
+			"no lens delivered",
+			"rejected",
+			{ ...rejected("no lens delivered a review"), outputs: { delivered: 0 } },
+			"delivered no review",
+		],
+	];
+	test.each(halting)(
+		"halts on a review that %s, and runs it again once the halt closes",
+		async (_, status, result, title) => {
+			const t = epicWith("in-review", { stackReview: "r1" });
+			t.concerts.push(reviewConcert("r1", status));
+			t.results.r1 = result;
+			t.reports.r1 = FINDINGS;
+			await t.run();
+			const halt = t.writes.find((w) => w.startsWith("file"));
+			expect(halt).toBe(
+				`file #100 Tour manager halted: stack review of #9 ${title}: ${HALT}`,
+			);
+			expect(t.starts).toEqual([]);
+			expect(dataAt(t.find(9))).toMatchObject({ concert: "r1" });
+			expect(dataAt(t.find(9)).stackReview).toBeUndefined();
+			t.find(100).open = false;
+			await t.run();
+			expect(reviewsOf(t)).toHaveLength(1);
+		},
+	);
 
 	test("halts when the review does not start", async () => {
 		const t = epicWith("in-review");

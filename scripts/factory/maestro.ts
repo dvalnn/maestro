@@ -49,6 +49,8 @@ export type Report = {
 	/** Whether the slice's PR opens as a draft, and the notice at the top of its body that says why. */
 	draft?: boolean;
 	notice?: string;
+	/** How many lenses the slice's last review delivered. */
+	delivered?: number;
 	/** The PR body the slice's writer wrote. */
 	pr?: string;
 	/** A review, and the findings the review upheld. */
@@ -157,6 +159,10 @@ function testsOf(doc: Json): Report["tests"] {
 	};
 }
 
+/** Output `name` of a `wait <concert> --json` document, as it is. */
+const outputOf = (doc: unknown, name: string) =>
+	isJson(doc) && isJson(doc.outputs) ? doc.outputs[name] : undefined;
+
 /** The text of output `name` of a `wait <concert> --json` document, under the concert's `artifacts`, trimmed. */
 function outputText(doc: unknown, name: string): string | undefined {
 	if (!isJson(doc) || typeof doc.artifacts !== "string") return undefined;
@@ -174,11 +180,18 @@ const upheldOf = (doc: unknown) =>
 
 /** The `draft` output of a `wait <concert> --json` document; a concert from before it existed is a draft when it upheld findings. */
 function draftOf(doc: unknown, upheld?: string) {
-	const draft =
-		isJson(doc) && isJson(doc.outputs) ? doc.outputs.draft : undefined;
+	const draft = outputOf(doc, "draft");
 	return typeof draft === "boolean"
 		? draft
 		: unresolvedOf(upheld) !== undefined;
+}
+
+/** The `delivered` output of a `wait <concert> --json` document, when it has one. */
+function deliveredOf(doc: unknown) {
+	const delivered = outputOf(doc, "delivered");
+	return typeof delivered === "number" && Number.isInteger(delivered)
+		? delivered
+		: undefined;
 }
 
 /** The writer's PR body in the `pr` output of a `wait <concert> --json` document, when it wrote one. */
@@ -186,8 +199,7 @@ const prOf = (doc: unknown) => outputText(doc, "pr") || undefined;
 
 /** The findings the `upheld` output of a review's `wait <concert> --json` document holds, as `<where>: <issue>` lines. */
 function blockingOf(doc: unknown) {
-	const upheld =
-		isJson(doc) && isJson(doc.outputs) ? doc.outputs.upheld : undefined;
+	const upheld = outputOf(doc, "upheld");
 	if (!Array.isArray(upheld)) return undefined;
 	return upheld
 		.filter(isJson)
@@ -277,6 +289,7 @@ export function maestro(bin = "maestro"): Maestro {
 				lessons: entriesOf(doc.reports, "lessons"),
 				upheld,
 				draft: draftOf(result, upheld),
+				delivered: deliveredOf(result),
 				notice: outputText(result, "notice") || undefined,
 				pr: prOf(result),
 				review: outputText(result, "review"),

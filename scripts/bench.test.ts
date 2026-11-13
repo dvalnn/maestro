@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { classics, root, scratch, targetRepo } from "../.maestro/testing/stub";
+import { rowOf } from "./bench";
 
 const BENCH = join(root, "scripts/bench.ts");
 const CLI = join(root, "packages/cli/src/maestro.ts");
@@ -120,3 +121,28 @@ test("start without a recorded file exits 1 naming it, and a bad verb exits 2", 
 	]);
 	expect((await bench({}, "start", ARM, empty, "999")).code).toBe(2);
 });
+
+test.each([
+	[1, true],
+	[0, false],
+	[undefined, true],
+])(
+	"a settled ok run with nothing upheld whose last review's delivered is %p converged: %p",
+	(delivered, converged) => {
+		const spend = {
+			short: "c",
+			elapsedMs: 0,
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			fixes: 0,
+			encore: false,
+		};
+		const concert = { id: "c", status: "ok", pack: "", composition: "slice" };
+		const report = { obstacles: [], lessons: [], delivered };
+		expect(rowOf(concert, ["", ARM, "246"], spend, report).converged).toBe(
+			converged,
+		);
+	},
+);

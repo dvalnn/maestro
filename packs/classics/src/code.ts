@@ -89,27 +89,28 @@ function heldBy(lens: string, member: Member, ok: boolean): Held[] {
 	});
 }
 
-/** `results` with each member named outside `known`, when given, replaced by a failed one. */
-const unnamedFailed = (
-	results: Settled<Member>[],
-	names: readonly string[],
-	known?: readonly string[],
-): Settled<Member>[] =>
-	results.map((result, i) =>
-		known && !known.includes(names[i] ?? "")
-			? { outcome: "failed", reason: `no lens named '${names[i]}'` }
-			: result,
-	);
+/**
+ * Refuses a member named outside `known`, when given.
+ * @throws Error naming the first such name and the known ones.
+ */
+function requireKnown(names: readonly string[], known?: readonly string[]) {
+	const unknown = known && names.find((name) => !known.includes(name));
+	if (unknown !== undefined)
+		throw new Error(
+			`no lens named '${unknown}'\nName one of ${known?.join(", ")}`,
+		);
+}
 
 /**
  * The findings the review members held, the lenses that never delivered theirs, and `delivered`, the count of members
  * that delivered a value.
  * - `names` are the members' lens names, in the order of `results`.
- * - A member named outside `known`, when given, delivered nothing and is `unreviewed`, whatever its result.
  * - A member with a skeptic holds the findings its skeptic's rulings hold, each with that `why`; one without holds every
  *   finding, with no `why`, unless its lens settled ok.
- * - A skipped member, whose lens settled ok so its skeptic stood down, holds none and is delivered.
+ * - A skipped member holds none and counts as delivered. `patches` and `spec` are unread inputs, there so the node does
+ *   not run when either is unavailable.
  * - One that delivered nothing, a failed skeptic included, is `unreviewed` with its reason: its whole lens is.
+ * @throws Error when a member is named outside `known`, when given.
  */
 export function heldOf({
 	results,
@@ -119,6 +120,8 @@ export function heldOf({
 	results: Settled<Member>[];
 	names: readonly string[];
 	known?: readonly string[];
+	patches?: ArtifactRef;
+	spec?: ArtifactRef;
 }): {
 	held: Held[];
 	unreviewed: { lens: string; reason: string }[];
@@ -127,7 +130,8 @@ export function heldOf({
 	const held: Held[] = [];
 	const unreviewed: { lens: string; reason: string }[] = [];
 	let delivered = 0;
-	unnamedFailed(results, names, known).forEach((result, i) => {
+	requireKnown(names, known);
+	results.forEach((result, i) => {
 		const lens = names[i] ?? `item ${i + 1}`;
 		if (result.outcome === "skipped") {
 			delivered++;

@@ -87,7 +87,7 @@ ticket, then start. A concert still running shows `-` under `converged`, and so 
 | --------------------------- | -------------------------------------------------------- |
 | `arm`, `ticket`, `status`   | The arm, the ticket and how the concert settled          |
 | `fixes`                     | Fix rounds the run took                                  |
-| `converged`                 | The run's last review upheld nothing                     |
+| `converged`                 | The run's last review delivered and upheld nothing       |
 | `pinned`, `deferred`        | Requirements the tester pinned with a test, and deferred |
 | `untestable`                | Requirements the tester marked untestable                |
 | `in`, `out`                 | Input and output tokens; reasoning counts in `out`       |

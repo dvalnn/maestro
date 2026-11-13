@@ -22,7 +22,7 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
 1. **Ready.** `jj git fetch`. For a stable, every issue in the milestone is closed or moved to the next release's
    milestone, created if it does not exist; the milestone ids come from `forge.py api GET /milestones` (the `forgejo`
    skill). A pre-release has no gate: it cuts whatever `main` holds.
-2. **Release review.** Step 6 of `docs/agents/implementation-loop.md`: one opus read-only subagent over
+2. **Release review.** Step 7 of `docs/agents/implementation-loop.md`: one opus read-only subagent over
    `jj diff --from <prev> --to main@origin`. Accepted findings become issues in the milestone and land as their own
    changes before the cut. Done when no finding blocks the release.
 3. **Notes.** Draft them in the scratchpad in the previous release's structure and voice (read it with

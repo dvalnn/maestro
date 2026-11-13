@@ -197,6 +197,8 @@ export const panel = composition(
 				results: rounds.out.results,
 				names: items,
 				known: Object.keys(lenses),
+				patches: attached.patches.artifact,
+				spec,
 			},
 			out: {
 				held: List(Upheld),

@@ -500,9 +500,18 @@ async function routeFindings(
 	});
 }
 
+/** The title of the halt stack review `result` raises, none when it settled ok or rejected with a lens delivered. */
+function reviewHalt(result: Result) {
+	if (result.status === "rejected" && result.outputs.delivered === 0)
+		return "delivered no review";
+	if (result.status === "ok" || result.status === "rejected") return undefined;
+	return "failed";
+}
+
 /**
  * Routes stack review `id` of epic `entry` (factory.md, Routing a settle): an ok one arms the last child when low, a
- * rejected one routes its findings, any other halts and runs again once the halt closes. Returns false when it halted.
+ * rejected one some lens delivered routes its findings, any other halts and runs again once the halt closes. Returns
+ * false when it halted.
  */
 async function settleReview(
 	tick: Tick,
@@ -512,7 +521,8 @@ async function settleReview(
 ) {
 	const state = stateOf(issue) ?? "in-progress";
 	const result = await tick.maestro.result(id);
-	if (result.status !== "ok" && result.status !== "rejected") {
+	const halted = reviewHalt(result);
+	if (halted) {
 		await writeSpec(tick, issue.number, state, {
 			...data,
 			concert: id,
@@ -520,7 +530,7 @@ async function settleReview(
 		});
 		await halt(
 			tick,
-			`stack review of #${issue.number} failed`,
+			`stack review of #${issue.number} ${halted}`,
 			`The stack review \`${id}\` of #${issue.number} settled ${result.status}:`,
 			result.reason ?? "no reason given",
 			`Read it with \`maestro ls ${id}\`. Closing this issue runs the review again.`,

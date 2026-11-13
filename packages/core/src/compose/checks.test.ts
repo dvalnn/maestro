@@ -396,14 +396,15 @@ describe("config", () => {
 			expect(await via("other", { layer, file: "/w/c.yaml" })).toEqual([]);
 	});
 
-	test("reaches a composition by its declaring pack, not by its name alone", async () => {
+	test("reaches a composition, the root included, by its declaring pack, not by its name alone", async () => {
 		const packs = {
 			demo: { "refine-until-done": ["x"] },
-			rival: { "refine-until-done": ["x"] },
+			rival: { "refine-until-done": ["x"], "fanout-fanin-loop": ["x"] },
+			fixtures: { "fanout-fanin-loop": ["x"] },
 		};
 		const flag = (key: string) =>
 			parseLayer(
-				`${key.split(".")[0]}:\n  refine-until-done:\n    x: 1\ndataRoot: /data\n`,
+				`${key.split(".")[0]}:\n  ${key.split(".")[1]}:\n    x: 1\ndataRoot: /data\n`,
 				{
 					layer: "flag",
 					flag: `-c ${key}=1`,
@@ -417,6 +418,8 @@ describe("config", () => {
 			);
 		expect(await via("demo.refine-until-done.x")).toEqual([]);
 		expect(await via("rival.refine-until-done.x")).toEqual(["CFG.unreached"]);
+		expect(await via("fixtures.fanout-fanin-loop.x")).toEqual([]);
+		expect(await via("rival.fanout-fanin-loop.x")).toEqual(["CFG.unreached"]);
 	});
 
 	test("a scope without a pack reaches its composition in any pack", async () => {

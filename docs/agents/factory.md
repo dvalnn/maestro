@@ -185,7 +185,8 @@ flowchart TD
 - **Halt.** These stop the tick with an open `maestro-tm:halt` issue naming the cause; closing it resumes:
   - a triage that fails, does not start or gives a malformed output: the ticket keeps its state and is triaged again;
   - a build, a stack review or a masterclass that does not start;
-  - a stack review that settles neither `ok` nor `rejected`: the review runs again once the halt closes;
+  - a stack review that settles neither `ok` nor `rejected`, or rejects because no lens delivered a review: the review
+    runs again once the halt closes;
   - a slice that settles `failed` without a `blocked:` reason, an infra fault: the issue names the concert, and the
     ticket is requeued to `ready-for-agent` with its attempts kept, and builds again;
   - a landing that fails: the workspace is kept, and the work is redone in a fresh one;

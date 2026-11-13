@@ -39,8 +39,9 @@ import {
 } from "./code";
 import { challenge, fix, tally } from "./moves";
 import AGAIN from "./prompts/again.md" with { type: "text" };
+import { joined, lensFusion } from "./recipes";
 import { EXAMPLE_REQUEST } from "./repair";
-import { panel } from "./review";
+import { panel, TASKS } from "./review";
 import { builder, consolidator, lens } from "./seats";
 import { buildChange } from "./test-first";
 import { SECTIONS, tieredReview } from "./tiered-review";
@@ -172,7 +173,8 @@ describe("panel_review", () => {
 			'subgraph gn2["lenses"]',
 			'n2[["parMap<br/>correctness, spec, tests"]]',
 			'n7["heldOf<br/>code"]',
-			'n2 ==>|"collect"| n7',
+			'n2 ==>|"collect"| j7',
+			"j7 --> n7",
 			'n6(["skeptic<br/>repo.agent"])',
 			'f5 -.->|"when value, else skip"| j6',
 			'f4 -.->|"after, tolerates rejected"| j6',
@@ -220,6 +222,18 @@ describe("panel", () => {
 		ir.edges.find(
 			(e) => e.to.node === node && "port" in e.to && e.to.port === "session",
 		)?.from;
+
+	test("the correctness lens rules on the correctness, design and smells sections, the others on their own", () => {
+		const headings = (text: string) =>
+			[...text.matchAll(/^### (.+)$/gm)].map((m) => m[1]);
+		expect(headings(TASKS.lens.correctness)).toEqual([
+			"correctness",
+			"design",
+			"smells",
+		]);
+		expect(headings(TASKS.lens.spec)).toEqual(["spec"]);
+		expect(headings(TASKS.lens.tests)).toEqual(["tests"]);
+	});
 
 	test("names narrows the lenses to those it lists", () => {
 		const ir = panelIr({}, () => ({ names: ["b"] }));
@@ -525,31 +539,51 @@ export const tested = composition("tested", { examples: [{}] }, () => {
 	]);
 });
 
-test("a panel fed a lens name it has no task for delivers no review", async () => {
+/** Performs, on the stub harness, a panel over a builder's lane with no consolidator, fed `names` and the spec `spec` makes. */
+async function panelPerformed(name: string, spec: string, names = "") {
 	await stubPreset();
 	const file = compositionFile(
-		"bogus_panel",
+		name,
 		`import { builder, panel } from "@maestro/classics";
 import { fresh } from "@maestro/host-repo-sdk";
 import { composition, List, Markdown, Text, code, use } from "@maestro/sdk";
 import { toMarkdown } from "@maestro/classics/code";
 
 export * from "@maestro/classics/code";
-export const bogus = () => ({ names: ["bogus"] });
-export const bogusPanel = composition("bogus_panel", { examples: [{}] }, () => {
+export const named = () => ({ names: [${names}] });
+export const broken = () => {
+	throw new Error("no spec");
+};
+export const performed = composition("${name}", { examples: [{}] }, () => {
 	const b = builder({ label: "b", task: "t", lane: fresh() });
-	const spec = code(toMarkdown, { in: { text: "x" }, out: { file: Markdown() } }).out.file;
-	const names = code(bogus, { in: {}, out: { names: List(Text()) } }).out.names;
-	return use(panel, { change: b.out.lane, spec, session: b.out.session, names }, { params: { consolidate: false } });
+	const spec = ${spec};
+	const names = ${names ? "code(named, { in: {}, out: { names: List(Text()) } }).out.names" : "undefined"};
+	return use(panel, { change: b.out.lane, spec, session: b.out.session, ...(names && { names }) }, { params: { consolidate: false } });
 });
 `,
 	);
 	const ran = await maestro(["perform", file, "--preset", "stub"]);
 	const id = /^concert +(\S+)/m.exec(ran.err)?.[1] ?? "";
-	expect(ran.code).toBe(3);
-	expect((await maestro(["ls", id])).out).toContain(
-		"no lens delivered a review",
+	return { code: ran.code, ls: (await maestro(["ls", id])).out };
+}
+
+const SPEC = `code(toMarkdown, { in: { text: "x" }, out: { file: Markdown() } }).out.file`;
+
+test("a panel fed a lens name it has no task for fails, naming it and the lenses it has", async () => {
+	const ran = await panelPerformed("bogus_panel", SPEC, `"spec", "bogus"`);
+	expect(ran.code).toBe(1);
+	expect(ran.ls).toMatch(/^panel\/heldOf +failed/m);
+	expect(ran.ls).toContain("no lens named 'bogus'");
+	expect(ran.ls).toContain("correctness, spec, tests");
+});
+
+test("a panel whose spec failed does not settle ok, though every lens was skipped", async () => {
+	const ran = await panelPerformed(
+		"specless_panel",
+		`code(broken, { in: {}, out: { file: Markdown() } }).out.file`,
 	);
+	expect(ran.code).toBe(1);
+	expect(ran.ls).toMatch(/^panel\/heldOf +skipped/m);
 });
 
 describe("fix_until_clean", () => {
@@ -1694,6 +1728,24 @@ describe("review_change", () => {
 		expect(await prompt("cross-lens")).toBe(top);
 	});
 
+	test("a consolidator verdict whose criterion lacks shownBy is refused at the boundary", async () => {
+		const outputs = mkdtempSync(join(root, "outputs-"));
+		mkdirSync(join(outputs, "tiered_review/consolidator"), {
+			recursive: true,
+		});
+		writeFileSync(
+			join(outputs, "tiered_review/consolidator/verdict.json"),
+			JSON.stringify({
+				criteria: [{ id: "C1", met: true, evidence: "ok" }],
+				upholds: [],
+			}),
+		);
+		const ran = await performed([], outputs);
+		expect(ran.code).toBe(1);
+		expect(ran.ls).toMatch(/^tiered_review\/consolidator +failed/m);
+		expect(ran.ls).toContain("shownBy");
+	});
+
 	test("a review no lens delivered settles rejected", async () => {
 		const outputs = mkdtempSync(join(root, "outputs-"));
 		mkdirSync(join(outputs, "tiered_review/lens/lens"), { recursive: true });
@@ -1843,6 +1895,31 @@ describe("recipes", () => {
 		expect(rows(ran.ls, "strong_gate/check")[0]).toMatch(
 			new RegExp(`^strong_gate/check +${strong}`),
 		);
+	});
+
+	test("lens_fusion: both lens seats failing, the tally rejects as no lens delivered a review", async () => {
+		const ran = await performed("lens_fusion", "lensFusion", {
+			"a_lenses/lens/verdict": "garbage",
+			"b_lenses/lens/verdict": "garbage",
+		});
+		expect(ran.code).toBe(3);
+		expect(ran.ls).toMatch(/^a_lenses\[a\]\/lens +failed/m);
+		expect(ran.ls).toMatch(/^upheld +rejected .*no lens delivered a review/m);
+	});
+
+	test("lens_fusion wires the patches and spec into each family's held node beside its results", () => {
+		const ir = buildIr(
+			lensFusion,
+			{},
+			{ briefOf, heldOf, joined, tallyOf, toMarkdown },
+		);
+		for (const held of ["a_held", "b_held"])
+			expect(
+				ir.edges
+					.filter((e) => e.to.node === held && "port" in e.to)
+					.map((e) => ("port" in e.to ? e.to.port : ""))
+					.sort(),
+			).toEqual(["patches", "results", "spec"]);
 	});
 
 	test.each([
