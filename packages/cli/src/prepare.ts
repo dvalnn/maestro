@@ -6,12 +6,7 @@ import {
 	type ComposeResult,
 	compose,
 } from "@maestro/core/compose";
-import {
-	CORE_CONFIG,
-	type Composed,
-	type Layer,
-	valueAt,
-} from "@maestro/core/config";
+import { CORE_CONFIG, type Composed, valueAt } from "@maestro/core/config";
 import type { ConcertRecord, Records, Staged } from "@maestro/core/perform";
 import {
 	type Diagnostic,
@@ -261,7 +256,7 @@ function paramsOf(
 	bundle: Bundle,
 	composition: Described,
 	args: readonly string[],
-	layers: readonly Layer[],
+	packs: readonly Bundle[],
 	bare: boolean,
 	lax = false,
 ) {
@@ -282,9 +277,13 @@ function paramsOf(
 		...flagValues(composition, flags, values, session.deps.cwd),
 	};
 	const params = paramValues({
-		layers,
+		layers: session.config.layers,
 		pack: bundle.pack.id,
 		compositions: bundle.compositions,
+		installed: packs.map((p) => ({
+			id: p.pack.id,
+			compositions: p.compositions,
+		})),
 		root: composition.name,
 		example: reading.examples ? composition.examples[0] : undefined,
 		flags: given,
@@ -318,7 +317,7 @@ async function build(
 	bundle: Bundle,
 	composition: Described,
 	args: readonly string[],
-	layers: readonly Layer[],
+	packs: readonly Bundle[],
 	bare = false,
 ): Promise<Omit<Prepared, "claims">> {
 	const { values, given, params } = paramsOf(
@@ -327,7 +326,7 @@ async function build(
 		bundle,
 		composition,
 		args,
-		layers,
+		packs,
 		bare,
 	);
 	const built = bundle.build(composition.name, params.root, params.configured);
@@ -449,14 +448,13 @@ export async function prepare(
 		session,
 		target,
 	);
-	const layers = file === undefined ? session.config.layers : [];
 	const built = await build(
 		session,
 		reading,
 		bundle,
 		composition,
 		rest,
-		layers,
+		packs,
 		file !== undefined,
 	);
 	const claims = claimsOf(packs);
@@ -485,14 +483,14 @@ export async function configured(
 			config: (await prepare(session, reading, args)).config,
 			unset: [],
 		};
-	const { bundle, composition, file } = await located(session, target);
+	const { packs, bundle, composition, file } = await located(session, target);
 	const { params } = paramsOf(
 		session,
 		reading,
 		bundle,
 		composition,
 		args.slice(1),
-		file === undefined ? session.config.layers : [],
+		packs,
 		file !== undefined,
 		true,
 	);

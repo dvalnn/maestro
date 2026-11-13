@@ -60,7 +60,8 @@ A decision sets direction; a ruling settles a question the requirements left ope
   compose bounds count node instances plus named counts a host reports, such as agent runs, with caps in the
   [compose README](../packages/core/src/compose/README.md). Why: cost is host policy that v1 does not need, and tokens
   are enough.
-- **D-24** An unclaimed config key fails compose only when no installed registrant claims it
+- **D-24** An unclaimed config key fails compose when no installed registrant claims it, and so does a `-c` key under an
+  installed pack's composition the concert does not use; the same key from a file or preset is ignored
   ([CFG-05](requirements.md#configuration-cfg)). Why: typos are caught, and a shared workspace config does not break
   compositions that use only some of its keys.
 - **D-25** Maestro targets Linux x64 only, with the sandbox backend behind an interface; arm64 and macOS come later. The

@@ -370,7 +370,10 @@ the layer above it. A tag changes that: `!replace` on a map, `!append` on a list
 `maestro config <composition>` shows where each value came from, naming a preset layer by its name (`preset risky`),
 each value with its layer, file and line or `-c`. A required param of the composition that no layer gives shows as an
 `unset` row, and in `--json` as `layer: "unset"` with `value: null`; `config` runs no pre-flight, so it exits 0. Presets
-combine without a merged file: `--preset risky --preset stub` layers `stub` over `risky`.
+combine without a merged file: `--preset risky --preset stub` layers `stub` over `risky`. A composition's params sit
+under the id of the pack that declares it, whichever root uses it: `classics.panel.skeptics` reaches the panel of any
+root. A `-c` key under a composition the concert does not use is refused (`CFG.unreached`); the same key in a file or
+preset is ignored, its value still checked against the param's schema.
 
 A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`; the
 workspace's file wins the name whole. A compose or perform error that a missing setting raised, such as a profile with

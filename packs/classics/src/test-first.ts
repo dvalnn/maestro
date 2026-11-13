@@ -4,11 +4,12 @@ import { task } from "./prompt";
 import BUILD_TESTED from "./prompts/build-tested.md" with { type: "text" };
 import TESTER from "./prompts/tester.md" with { type: "text" };
 import { builder, tester } from "./seats";
-import { Overrules } from "./types";
+import { Overrules, PACK } from "./types";
 
 export const testFirst = composition(
 	"test_first",
 	{
+		pack: PACK,
 		doc: "A tester pins the spec's requirements in tests, then a builder extends its lane and makes them pass. Gives the built lane and the tester's map; the builder replies with the tests it overrules.",
 		ports: { spec: Markdown() },
 		params: {

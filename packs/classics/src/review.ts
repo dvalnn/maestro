@@ -40,7 +40,7 @@ import SPEC from "./prompts/spec.md" with { type: "text" };
 import TESTS from "./prompts/tests.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
 import { consolidator, lens } from "./seats";
-import { Brief, Upheld } from "./types";
+import { Brief, PACK, Upheld } from "./types";
 
 /** Each call's task: its own prompt file, then the fragments it rules by, which a flag or a param can add. */
 const TASKS = {
@@ -75,6 +75,7 @@ const SPEC_HINT = "for what the change must do";
 export const panel = composition(
 	"panel",
 	{
+		pack: PACK,
 		doc: "Review a lane version through a lens per name, a skeptic over each lens that found anything, and a consolidator, ending in a Tally.",
 		ports: {
 			change: Lane,
@@ -204,6 +205,7 @@ function reviewed(
 export const panelReview = composition(
 	"panel_review",
 	{
+		pack: PACK,
 		doc: "Review a lane version or target commits: a lens per lens name, a skeptic over each lens that found anything, then a consolidator and a tally that rejects while a finding is upheld.",
 		params: {
 			request: Text({ description: "What the change must do" }),

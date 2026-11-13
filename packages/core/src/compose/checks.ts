@@ -143,6 +143,39 @@ function packErrors(
 	});
 }
 
+/** The `-c` keys under an installed pack's compositions that neither the root nor any scope of `ir` names. */
+function unreached(
+	config: Composed,
+	pack: string,
+	compositions: Readonly<Record<string, readonly string[]>>,
+	ir: Ir,
+): Diagnostic[] {
+	const reached = new Set([
+		ir.composition.id,
+		...ir.scopes.map((s) => s.composition),
+	]);
+	const value = config.values[pack];
+	if (!isRecord(value)) return [];
+	return Object.entries(value)
+		.filter(
+			([id, params]) =>
+				Object.hasOwn(compositions, id) && !reached.has(id) && isRecord(params),
+		)
+		.flatMap(([id, params]) =>
+			Object.keys(params as Record<string, unknown>)
+				.map((param) => sourceOf(config, [pack, id, param]))
+				.filter((source) => source?.flag !== undefined)
+				.map((source) =>
+					configDiagnostic(
+						"CFG.unreached",
+						source,
+						`config key '${pack}.${id}' reaches no composition of this concert`,
+						`Drop the -c, or perform a composition that uses '${id}'`,
+					),
+				),
+		);
+}
+
 /** A pack whose id is a namespace core or an installed host already claims, naming both owners. */
 function collisions(
 	core: ComposeInput["core"],
@@ -172,8 +205,9 @@ function collisions(
  * - core's schemas and those of the hosts whose kinds the graph uses check theirs;
  * - an installed pack claims its id, its compositions under it and their params under those.
  *
- * A key nothing installed claims, at any of those levels, is an error; one only an unused host claims is ignored
- * (D-24). So is a pack whose id core or a host already claims.
+ * A key nothing installed claims, at any of those levels, is an error, and so is a `-c` key under a composition the
+ * concert does not use. A file or preset key under one, or one only an unused host claims, is ignored (D-24). So is a
+ * pack whose id core or a host already claims.
  */
 export function checkConfig(
 	ajv: Validator,
@@ -198,7 +232,12 @@ export function checkConfig(
 					),
 				];
 			const compositions = packs[key];
-			return compositions ? packErrors(config, key, compositions) : [];
+			return compositions
+				? [
+						...packErrors(config, key, compositions),
+						...unreached(config, key, compositions, ir),
+					]
+				: [];
 		}),
 		...[core, ...hosts.filter((h) => used.has(h)).map((h) => h.config)].flatMap(
 			(schemas) => schemaErrors(ajv, schemas, config),

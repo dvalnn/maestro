@@ -100,6 +100,7 @@ const DESCRIBED_SCHEMA: JsonSchema = {
 		properties: {
 			name: { type: "string" },
 			doc: { type: "string" },
+			pack: { type: "string" },
 			params: {
 				type: "object",
 				required: ["properties", "required"],
@@ -476,7 +477,8 @@ async function entryOf(manifest: Manifest, dir: string): Promise<string> {
  * its SDK range checked against `sdk`, and its entry. Worker references name the entry relative to the pack's
  * directory, and their `codeHash` is the entry's, as `moduleLoader` hashes it: the whole bundle (ADR 0008).
  * @throws Error for a missing directory or manifest, a manifest off its schema, a version out of range, an entry
- * outside the pack, or one that does not import, each naming the pack. Diagnosed when importing the entry raises a build
+ * outside the pack, or one that does not import, each naming the pack. CliError when a composition declares another
+ * pack than the manifest's. Diagnosed when importing the entry raises a build
  * diagnostic. Each error's fix names how to remove the pack: from the file or `-c` that lists it, else its directory.
  */
 export async function openPack(
@@ -506,12 +508,21 @@ export async function openPack(
 		);
 	}
 	const pack = { id: manifest.id, version: manifest.version };
-	return bundleOf(
+	const bundle = bundleOf(
 		what,
 		{ pack, dir: root, module, hash },
 		namespace,
 		moduleLoader(root),
 	);
+	const stray = bundle.compositions.find(
+		(c) => c.pack !== undefined && c.pack !== pack.id,
+	);
+	if (stray)
+		throw failure(
+			`${what}: composition '${stray.name}' declares pack '${stray.pack}'`,
+			`Drop its export, or set its pack to '${pack.id}'`,
+		);
+	return bundle;
 }
 
 /**

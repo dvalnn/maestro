@@ -14,7 +14,11 @@ export function shape(inputs: { text: string }): { text: string } {
 
 export const echo = composition(
 	"echo",
-	{ ports: { text: Text() }, params: { times: Int({ default: 1 }) } },
+	{
+		pack: "demo",
+		ports: { text: Text() },
+		params: { times: Int({ default: 1 }) },
+	},
 	({ times }, { text }) =>
 		hostNode("fake.task", {
 			label: "echo",
@@ -26,6 +30,7 @@ export const echo = composition(
 export const greet = composition(
 	"greet",
 	{
+		pack: "demo",
 		doc: "Greets someone, then echoes the greeting.",
 		params: { name: Text(), loud: Int({ default: 0 }) },
 		examples: [{ name: "world" }],
@@ -51,6 +56,7 @@ export const greet = composition(
 export const ticket = composition(
 	"ticket",
 	{
+		pack: "demo",
 		params: {
 			handle: Json<{ name: string; number: number }>({
 				"x-maestro-type": "fake.handle",

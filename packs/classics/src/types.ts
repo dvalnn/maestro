@@ -9,6 +9,9 @@ import {
 	type ValueOf,
 } from "@maestro/sdk";
 
+/** The pack id its compositions declare, which their config keys sit under. */
+export const PACK = "classics";
+
 /** An integer param of at least 1, `value` by default. */
 export const atLeastOne = (value: number, description: string) =>
 	Json<number>(

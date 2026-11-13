@@ -26,6 +26,7 @@ The SDK is the only thing an author learns. It builds a graph (CORE-06) and noth
 A **composition** has:
 
 - a name (a pack-scoped id) and a doc string,
+- an optional `pack`, the id of the pack that declares it, which routes its config keys and claims nothing,
 - **params** with defaults and CLI hints: one declaration for CLI inputs and tunables (D-17),
 - at least one **example input set**, unless it declares ports,
 - a **build function** `(params, ports)` that returns the composition's result; without ports it is `(params)`.
@@ -44,8 +45,9 @@ with ports runs only through `use` and declares no examples.
 
 - One file, one exported composition, named `<stem>.<name>`. The stem is the pack id: lower case, starting with a
   letter, then letters, digits, `_` or `-`, and no installed pack's id.
-- A bare file takes its params from flags, its example set and defaults: no config key reaches it. To configure it, make
-  it a pack.
+- The params of a bare file's own compositions come from flags, its example set and defaults: no config key reaches
+  them. To configure them, make it a pack. The installed packs' compositions it uses are still reached by their own
+  keys.
 - A file imports `@maestro/sdk`, `@maestro/host-repo-sdk`, `node:` builtins and relative files. The binary resolves the
   two SDK imports to its own copies, so there is no install step.
 - A prompt longer than a line is a Markdown file beside the composition, by
@@ -222,7 +224,9 @@ A code node is the SDK's answer to "this needs real code". It runs only at perfo
 
 - A param declaration is the single source for a composition's CLI flags (SDK-01) and its tunables. Schemas carry hints:
   short description, repeatable, required, default. A param's flag is its name in kebab-case.
-- Params live in config under the id of the pack whose bundle holds the composition.
+- Params live in config under the id of the pack that declares the composition, whichever root uses it; an untagged
+  composition's sit under its root's pack. A seat is addressed by the root's pack instead, as
+  `seats.<pack>/<composition>/<seat>`.
 - Host types may be param types, the host reading each value from its text. The coding-agent host adds the lane ref,
   written `<concert id>.<node instance id>` (D-27).
 - A param declared `Optional(type)` is neither required nor defaulted: its build value is `undefined` when nothing gives
@@ -326,8 +330,8 @@ step. Severity is `error` or `warning`, and any error stops before any concert s
 - `TYPE` edge schema mismatch, a build that returns no node, a `readJson` of an artifact that is not a JSON file.
 - `BOUND` a group without a bound, a bound over a configured cap on node instances or on a host's named count, a code
   node `timeout` that is neither a duration nor a whole number of milliseconds within the timer range (`BOUND.timeout`).
-- `CFG` unclaimed key, schema violation, required key missing, examples missing or given with ports, params a build
-  refuses together (`CFG.param`).
+- `CFG` unclaimed key, unreached `-c` key, schema violation, required key missing, examples missing or given with ports,
+  params a build refuses together (`CFG.param`).
 - `HOST` anything a host `validate` hook reports, such as a lane extended twice.
 - `BUILD` an ambient read during build (SDK-11), or a build that yields different IR twice (SDK-12).
 - `ASSERT` an `assert` that fails at build.

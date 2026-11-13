@@ -14,7 +14,7 @@ import { briefOf } from "./code";
 import { fix, type Held } from "./moves";
 import { maxRepairs, repairUntilGreen } from "./repair";
 import { panel } from "./review";
-import { atLeastOne, Brief } from "./types";
+import { atLeastOne, Brief, PACK } from "./types";
 
 export const maxFixes = atLeastOne(
 	2,
@@ -24,6 +24,7 @@ export const maxFixes = atLeastOne(
 export const fixUntilClean = composition(
 	"fix_until_clean",
 	{
+		pack: PACK,
 		doc: "Repair a lane until the target's checks pass, then review it by panel; while the panel upholds findings, fix them in the builder's session and gate and review again, up to maxFixes times. Ends in the last panel's Tally.",
 		ports: {
 			lane: Lane,

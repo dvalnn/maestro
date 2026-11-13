@@ -359,6 +359,37 @@ describe("config", () => {
 		);
 	});
 
+	test("refuses a -c key under a composition the concert does not use, and ignores the same key from a file or preset", async () => {
+		const reach = {
+			demo: { other: ["x"], "refine-until-done": ["x"] },
+		};
+		const via = async (key: string, origin: Parameters<typeof parseLayer>[1]) =>
+			failures(await ir(), {
+				packs: reach,
+				config: layered([
+					parseLayer(`demo:\n  ${key}:\n    x: 1\ndataRoot: /data\n`, origin),
+				]),
+			});
+		const flag = {
+			layer: "flag",
+			flag: "-c demo.other.x=1",
+			key: "demo.other.x",
+			base: "/w",
+		} as const;
+		expect(
+			(await via("other", flag)).map((d) => [d.code, d.message, d.hint]),
+		).toEqual([
+			[
+				"CFG.unreached",
+				"config key 'demo.other' reaches no composition of this concert (from -c demo.other.x)",
+				"Drop the -c, or perform a composition that uses 'other'",
+			],
+		]);
+		expect(await via("refine-until-done", flag)).toEqual([]);
+		for (const layer of ["workspace", "preset"] as const)
+			expect(await via("other", { layer, file: "/w/c.yaml" })).toEqual([]);
+	});
+
 	test("locates a config error at the file and line that set the key", async () => {
 		const layer = parseLayer(
 			"demo:\n  greet:\n    nmae: x\ndataRoot: /data\n",

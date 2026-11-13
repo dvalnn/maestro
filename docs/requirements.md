@@ -127,8 +127,10 @@ Priority: **Must** is required. **Should** is wanted and may slip. **May** is op
   flag (root composition) or the use site (subcomposition) highest, the declared default lowest, with `-c`, presets,
   workspace and user YAML and, for `compose`, the example set between. YAML keys live under the pack id and the
   composition id (D-17).
-- **CFG-05 (Should).** A config key that no installed registrant claims fails compose with a did-you-mean hint. A key
-  claimed by an installed registrant that the concert does not use is ignored (D-24).
+- **CFG-05 (Should).** A config key that no installed registrant claims fails compose with a did-you-mean hint. A `-c`
+  key under a composition of an installed pack that the concert does not use fails compose (`CFG.unreached`). Any other
+  key claimed by an installed registrant that the concert does not use is ignored, its value still checked against the
+  param's schema (D-24).
 - **CFG-06 (Must).** The `config` command prints the composed config and validates it for a given composition.
 
 ### SDK (SDK)

@@ -60,6 +60,8 @@ export type PortValues<Q extends Types> = {
 /** A composition with ports builds only through `use`, so only one without ports takes examples (D-16, D-19). */
 export type Declaration<P extends Types, Q extends Types> = {
 	doc?: string;
+	/** The id of the pack that declares this composition; its config keys sit under it, whichever root uses it. */
+	pack?: string;
 	/**
 	 * Plain values at build: CLI inputs and tunables alike (D-17). A param without a default is required, unless
 	 * `Optional`.
@@ -81,6 +83,7 @@ export type Declaration<P extends Types, Q extends Types> = {
 export type Composition<P extends Types, Q extends Types, R> = {
 	readonly name: string;
 	readonly doc?: string;
+	readonly pack?: string;
 	readonly params: P;
 	readonly ports: Q;
 	readonly examples: Partial<ExampleValues<P>>[];
@@ -105,7 +108,13 @@ export function composition<P extends Types, Q extends Types, R>(
 			`composition name '${name}' is not a valid id`,
 			"Use lowercase letters, digits, '_' and '-', starting with a letter",
 		);
-	const { doc, params = {} as P } = declaration;
+	const { doc, pack, params = {} as P } = declaration;
+	if (pack !== undefined && !NAME.test(pack))
+		throw fail(
+			"SCOPE.name",
+			`composition pack '${pack}' is not a valid id`,
+			"Use lowercase letters, digits, '_' and '-', starting with a letter",
+		);
 	const ports = declaration.ports ?? ({} as Q);
 	const examples = declaration.examples ?? [];
 	const hasPorts = Object.keys(ports).length > 0;
@@ -121,7 +130,7 @@ export function composition<P extends Types, Q extends Types, R>(
 			`composition '${name}' declares no example input set`,
 			"Add examples with at least one set of params, which compose uses when given no flags",
 		);
-	const declared = { name, doc, params, ports, examples, build };
+	const declared = { name, doc, pack, params, ports, examples, build };
 	compositions.add(declared);
 	return declared;
 }
@@ -185,7 +194,8 @@ export function use<P extends Types, Q extends Types, R>(
 			return [name, new RefImpl(source, type, s)];
 		}),
 	) as unknown as PortRefs<Q>;
-	const configured = s.context.params?.[s.context.pack.id]?.[sub.name];
+	const configured =
+		s.context.params?.[sub.pack ?? s.context.pack.id]?.[sub.name];
 	const params = withDefaults(sub.params, {
 		...configured,
 		...opts.params,
@@ -285,6 +295,7 @@ function resultOf(name: string, returned: unknown): Ir["result"] {
 export type Described = {
 	name: string;
 	doc?: string;
+	pack?: string;
 	/** An object schema of the params: a param without a default is required, unless `Optional`. */
 	params: {
 		type: "object";
@@ -341,6 +352,7 @@ export function describe(
 	return [...compositionsOf(exports).values()].map((c) => ({
 		name: c.name,
 		doc: c.doc,
+		pack: c.pack,
 		params: {
 			type: "object",
 			properties: schemas(c.params),

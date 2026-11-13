@@ -672,6 +672,19 @@ describe("build_then_review", () => {
 	});
 });
 
+test("a -c key under a composition the root does not use is refused", async () => {
+	const { err, code } = await maestro([
+		"compose",
+		...BUILD,
+		"-c",
+		"classics.panel.skeptics=false",
+	]);
+	expect(code).toBe(2);
+	expect(err).toContain(
+		"config key 'classics.panel' reaches no composition of this concert (from -c classics.panel.skeptics)",
+	);
+});
+
 test.each([
 	["maxRepairs", [...BUILD, "--max-repairs", "0"]],
 	["lenses", [...REVIEW, "--lenses", "spec", "--lenses", "spec"]],

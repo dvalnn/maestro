@@ -33,6 +33,7 @@ const CLASH = join(FIXTURES, "clash.ts");
 const CLASH_OUT = join(FIXTURES, "clash-out.ts");
 const CLASH_NO = join(FIXTURES, "clash-no.ts");
 const LOUD = join(FIXTURES, "loud.ts");
+const USES_ECHO = join(FIXTURES, "uses_echo.ts");
 const ESC = "\u001b";
 
 /** Forgets the disk use the record keeps for `ids`, as a store from before it kept any, so the next read measures it. */
@@ -209,6 +210,30 @@ describe("compose and config", () => {
 			});
 		},
 	);
+
+	test("a pack's composition params reach a bare file that uses it, from -c, the workspace config and a preset", async () => {
+		const w = await world();
+		const out = join(w.root, "out");
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/more.yaml"),
+			"demo:\n  echo:\n    times: 4\n",
+		);
+		const timesOf = async (...extra: string[]) => {
+			const file = join(out, `${extra.length}.json`);
+			await w.call(["compose", USES_ECHO, "--out", file, ...extra]);
+			const ir = await Bun.file(file).json();
+			return ir.nodes.find((n: { id: string }) => n.id === "echo/echo").literals
+				.times;
+		};
+		expect(await timesOf()).toBe(1);
+		expect(await timesOf("-c", "demo.echo.times=3")).toBe(3);
+		expect(await timesOf("--preset", "more")).toBe(4);
+		await Bun.write(
+			join(w.cwd, ".maestro/config.yaml"),
+			`packs:\n  - ${w.pack}\ndemo:\n  echo:\n    times: 5\n`,
+		);
+		expect(await timesOf()).toBe(5);
+	});
 
 	test("config lists every value with the layer and the file and line, or the -c, it came from", async () => {
 		const w = await world();

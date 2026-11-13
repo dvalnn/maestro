@@ -135,6 +135,11 @@ describe("a pack", () => {
 			{ entry: "odd.js" },
 			"pack 'demo' at <dir>: describe().0 must have required property 'name'",
 		],
+		[
+			"a composition that declares another pack than the manifest's",
+			{ id: "other" },
+			"pack 'other' at <dir>: composition 'echo' declares pack 'demo'\nDrop its export, or set its pack to 'other'",
+		],
 	])("refuses %s, naming the pack", async (_, over, message, how = {}) => {
 		const dir = await packOf(
 			join(DEMO, "index.ts"),
@@ -199,6 +204,17 @@ describe("a bare file", () => {
 			"export const exclaim = () => ({ text: '?' });",
 		);
 		expect(await hash()).not.toBe(before);
+	});
+
+	test("loads when it re-exports another pack's tagged composition", async () => {
+		const dir = await scratch();
+		await cp(FIXTURES, dir, { recursive: true, verbatimSymlinks: true });
+		const file = join(dir, "mine.ts");
+		await Bun.write(file, 'export { echo } from "./demo/index";\n');
+		const bundle = await openFile(file);
+		expect(bundle.compositions.map((c) => [c.name, c.pack])).toEqual([
+			["echo", "demo"],
+		]);
 	});
 
 	test("inlines a Markdown text import into the IR", async () => {

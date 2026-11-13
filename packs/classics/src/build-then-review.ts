@@ -14,11 +14,12 @@ import { fixUntilClean, maxFixes } from "./fix-until-clean";
 import { EXAMPLE_REQUEST, maxRepairs } from "./repair";
 import { builder } from "./seats";
 import { testFirst } from "./test-first";
-import { Brief, Upheld } from "./types";
+import { Brief, PACK, Upheld } from "./types";
 
 export const buildThenReview = composition(
 	"build_then_review",
 	{
+		pack: PACK,
 		doc: "Build the request in a fresh lane, with tests pinned first when tested, then repair and review it by panel, fixing what the panel upholds, and leave the change as a patch series. Rejects, with the series, while findings remain upheld.",
 		params: {
 			request: Text({ description: "What to build" }),

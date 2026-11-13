@@ -55,6 +55,8 @@ export type ParamRequest = {
 	layers: readonly Layer[];
 	pack: string;
 	compositions: readonly Described[];
+	/** The installed packs whose compositions' params the layers give to every build, under any root. */
+	installed?: readonly { id: string; compositions: readonly Described[] }[];
 	/** The name of the composition to build. */
 	root: string;
 	/** The root's example input set, which fills params no config file or flag gives (D-19). Absent when the verb reads none. */
@@ -66,7 +68,7 @@ export type ParamRequest = {
 	base: (source: Source | undefined) => string;
 	/** The directory a file param's relative path in the example set resolves against: the composition file's, or the pack's. */
 	exampleDir: string;
-	/** The composition comes from a bare file, which no config key can reach. */
+	/** The root comes from a bare file, whose own params no config key can reach. */
 	bare?: boolean;
 	/** A required root param no layer or flag gives is left unset, not refused: a verb that builds nothing reads this. */
 	lax?: boolean;
@@ -379,9 +381,11 @@ function exampleFill(
  * Resolves params, lowest first: the config layers, then the flags, with a composition's keys under
  * `<pack>.<composition>`. The example set is no layer: it gives the root's value for each param the rest leave unset,
  * an optional one only when the rest give none of the root's optional params, and no merge tag acts on it. Every
- * composition of the pack is read, so a subcomposition's configured params reach its `use` through the build context;
- * only the root's must hold every required param. Declared defaults are left to the build. A root file param's value
- * is the path of a file, resolved against `base` of its source, or `exampleDir` for the example set, and becomes the reference that file is staged under.
+ * composition of the pack and of each installed pack is read, so a subcomposition's configured params reach its `use`
+ * through the build context; a bare file's own compositions are read with no layers. Only the root's must hold every
+ * required param. Declared defaults are left to the build. A root file param's value is the path of a file, resolved
+ * against `base` of its source, or `exampleDir` for the example set, and becomes the reference that file is staged
+ * under.
  * @throws ConfigError for a missing required root param, a value off its schema, a typed param no host reads or that
  * does not parse, a file param whose file cannot be read or, for `core.json-file`, is not JSON, a root param that takes
  * a directory, or another composition's param the config gives a file.
@@ -395,46 +399,75 @@ export function paramValues(request: ParamRequest): Params {
 	const flagged = request.flags ? [rooted("flag", request.flags)] : [];
 	const deferred = deferredKeys(request.hosts);
 	const set = sectionAt(
-		layered([...request.layers, ...flagged], deferred).values,
+		layered([...(request.bare ? [] : request.layers), ...flagged], deferred)
+			.values,
 		[pack, root],
 	);
 	const config = layered(
 		[
-			...request.layers,
+			...(request.bare ? [] : request.layers),
 			...flagged,
 			rooted("example", exampleFill(request, set)),
 		],
 		deferred,
 	);
 	const ajv = validator();
-	const configured: Record<string, Record<string, unknown>> = {};
+	const reading = (
+		merged: Composed,
+		composition: Described,
+		id: string,
+		isRoot: boolean,
+	): Reading => ({
+		ajv,
+		config: merged,
+		hosts: request.hosts,
+		base: (source) =>
+			source?.layer === "example" ? request.exampleDir : request.base(source),
+		composition,
+		path: [id, composition.name],
+		root: isRoot,
+		bare: request.bare ?? false,
+		examples: request.example !== undefined,
+		lax: request.lax ?? false,
+	});
+	const others = layered(request.layers, deferred);
+	const reads = [
+		...request.compositions.map((c) => ({
+			id: pack,
+			read: paramsOf(reading(config, c, pack, c.name === root)),
+			name: c.name,
+		})),
+		...(request.installed ?? [])
+			.filter((p) => p.id !== pack)
+			.flatMap((p) =>
+				p.compositions.map((c) => ({
+					id: p.id,
+					read: paramsOf(reading(others, c, p.id, false)),
+					name: c.name,
+				})),
+			),
+	];
+	const configured: Record<
+		string,
+		Record<string, Record<string, unknown>>
+	> = {};
 	const staged: Staged[] = [];
 	const diagnostics: Diagnostic[] = [];
-	for (const composition of request.compositions) {
-		const read = paramsOf({
-			ajv,
-			config,
-			hosts: request.hosts,
-			base: (source) =>
-				source?.layer === "example" ? request.exampleDir : request.base(source),
-			composition,
-			path: [pack, composition.name],
-			root: composition.name === root,
-			bare: request.bare ?? false,
-			examples: request.example !== undefined,
-			lax: request.lax ?? false,
-		});
+	for (const { id, name, read } of reads) {
 		if ("diagnostics" in read) diagnostics.push(...read.diagnostics);
 		else {
-			configured[composition.name] = read.value as Record<string, unknown>;
+			configured[id] = {
+				...configured[id],
+				[name]: read.value as Record<string, unknown>,
+			};
 			staged.push(...read.staged);
 		}
 	}
 	if (diagnostics.length) throw new ConfigError(diagnostics);
 	return {
 		composed: config,
-		root: configured[root] ?? {},
-		configured: { [pack]: configured },
+		root: configured[pack]?.[root] ?? {},
+		configured,
 		staged,
 	};
 }

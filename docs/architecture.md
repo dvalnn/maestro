@@ -368,10 +368,12 @@ the one of the code that runs.
 - **Host.** `target`, `profiles` and its other namespaces.
 - **Composition.** One param declaration in code covers CLI inputs and tunables, with defaults. A repair-loop
   subcomposition owns its maximum iteration count.
-- **Pack.** Its id, holding its compositions' params, and no other namespace.
+- **Pack.** Its id, holding its compositions' params, and no other namespace. A composition's params sit under the pack
+  that declares it, under any root, while a seat is addressed by its root's pack (`seats.<pack>/<composition>/<seat>`).
 
-A key that no installed registrant claims is a compose error with a did-you-mean hint. A key claimed by an installed but
-unused registrant is ignored.
+A key that no installed registrant claims is a compose error with a did-you-mean hint. A `-c` key under a composition
+the concert does not use is a compose error too (`CFG.unreached`). A key a file or preset gives to an installed but
+unused registrant or composition is ignored, its value still checked against the param's schema (D-24).
 
 Refs: CFG-01, CFG-02, CFG-04, CFG-05, CFG-06, D-17, D-19, D-24, HOST-12.
 

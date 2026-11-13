@@ -36,7 +36,7 @@ export type BuildContext = {
 	 * @throws Error when it cannot name `fn`, for example when two exports reach it.
 	 */
 	resolveCode: (fn: CodeFn) => WorkerRef | undefined;
-	/** The configured params of each subcomposition a `use` instantiates, under the pack being built (CFG-04). */
+	/** The configured params of each subcomposition a `use` instantiates, by the pack that declares each composition (CFG-04). */
 	params?: ConfiguredParams;
 };
 

@@ -86,6 +86,7 @@ The prefixes are catalogued in [sdk-spec: Diagnostics catalogue](../../../../doc
 | `TYPE.marker`   | checks         | An `x-maestro-type` the artifact walker cannot reach.                                      |
 | `TYPE.owner`    | checks         | An `x-maestro-type` name neither core (`CORE_TYPES`) nor an installed host owns.           |
 | `CFG.unclaimed` | checks         | A config key nothing installed claims, at any level.[^claims] Hints a near name.           |
+| `CFG.unreached` | checks         | A `-c` key under an installed pack's composition the concert never uses.[^claims]          |
 | `CFG.schema`    | checks         | A config namespace is off the schema of core or a host whose kinds the IR uses.[^pack]     |
 | `CFG.claim`     | checks         | A pack's id is a namespace core or an installed host already claims.                       |
 | `HOST.kind`     | checks         | A node kind no installed host registers.                                                   |
@@ -100,7 +101,9 @@ The prefixes are catalogued in [sdk-spec: Diagnostics catalogue](../../../../doc
 
 [^claims]:
     A top-level key belongs to core, an installed host or an installed pack. Under a pack's id, a key names one of its
-    compositions, and under that, one of its params (D-17). A key only an unused host claims is ignored (D-24).
+    compositions, and under that, one of its params (D-17). A key only an unused host claims is ignored (D-24), as is a
+    file or preset key under a composition the concert does not use. A `-c` key there is `CFG.unreached`: neither the
+    root nor any scope names that composition.
 
 [^pack]: Or a pack's value, or a composition's under it, is not a mapping.
 

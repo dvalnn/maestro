@@ -10,6 +10,7 @@ import {
 } from "./fixtures/context";
 import { fanout } from "./fixtures/examples";
 import { stamp } from "./fixtures/workers";
+import type { ConfiguredParams } from "./graph";
 import { hostNode } from "./host";
 import {
 	code,
@@ -72,6 +73,11 @@ describe("composition", () => {
 		[
 			"a bad name",
 			() => composition("Bad Name", { examples: [{}] }, () => 0),
+			"SCOPE.name",
+		],
+		[
+			"a bad pack id",
+			() => composition("c", { pack: "Bad Pack", examples: [{}] }, () => 0),
 			"SCOPE.name",
 		],
 		[
@@ -248,6 +254,31 @@ describe("use", () => {
 		const ir = build(root, {}, { ...context, params });
 		expect(nodeOf(ir, "shout/task").literals?.times).toBe(3);
 		expect(nodeOf(ir, "set/task").literals?.times).toBe(2);
+	});
+
+	test("a composition's configured params sit under the pack it declares, else the root's", () => {
+		const lib = composition(
+			"lib",
+			{
+				pack: "other",
+				ports: { text: Text() },
+				params: { times: Int({ default: 1 }) },
+			},
+			({ times }, { text }) => task({ text, times }),
+		);
+		const root = composition("t", { examples: [{}] }, () => {
+			use(lib, { text: "a" });
+			use(shout, { text: "a" });
+			return use(lib, { text: "b" }, { params: { times: 9 }, label: "set" });
+		});
+		const params: ConfiguredParams = {
+			[context.pack.id]: { lib: { times: 2 }, shout: { times: 4 } },
+			other: { lib: { times: 3 } },
+		};
+		const ir = build(root, {}, { ...context, params });
+		expect(nodeOf(ir, "lib/task").literals?.times).toBe(3);
+		expect(nodeOf(ir, "shout/task").literals?.times).toBe(4);
+		expect(nodeOf(ir, "set/task").literals?.times).toBe(9);
 	});
 });
 

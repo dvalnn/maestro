@@ -19,7 +19,7 @@ import {
 import { toMarkdown } from "./code";
 import REPAIR from "./prompts/repair.md" with { type: "text" };
 import { builder } from "./seats";
-import { atLeastOne } from "./types";
+import { atLeastOne, PACK } from "./types";
 
 /** Each call's task: its prompt file. */
 const TASKS = { repair: REPAIR };
@@ -35,6 +35,7 @@ export const maxRepairs = atLeastOne(
 export const repairUntilGreen = composition(
 	"repair_until_green",
 	{
+		pack: PACK,
 		doc: "Check a lane, then repair and check again in the session that built it while the target's checks are red, up to maxRepairs times.",
 		ports: { lane: Lane, session: Session, spec: Markdown() },
 		params: {
@@ -85,6 +86,7 @@ export const repairUntilGreen = composition(
 export const buildThenRepair = composition(
 	"build_then_repair",
 	{
+		pack: PACK,
 		doc: "Build the request in a fresh lane, repair it until the target's checks pass, and leave the change as a patch series.",
 		params: {
 			request: Text({ description: "What to build" }),
