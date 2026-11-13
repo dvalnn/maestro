@@ -33,11 +33,15 @@ test("a missing dependency names the package and the workspace that needs it", (
 	withWorkspace((root) => {
 		writePackage(join(root, "packages", "needs-yaml"), {
 			name: "needs-yaml",
-			dependencies: { "missing-factory-dependency": "1.0.0" },
+			dependencies: {
+				"missing-factory-dependency": "1.0.0",
+				"unlinked-workspace-package": "workspace:*",
+			},
 		});
 		const result = runPreflight(root);
 		expect(result.status).not.toBe(0);
 		expect(result.output).toContain("missing-factory-dependency");
+		expect(result.output).toContain("unlinked-workspace-package");
 		expect(result.output).toContain("needs-yaml");
 	});
 });

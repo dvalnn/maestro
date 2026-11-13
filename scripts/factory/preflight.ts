@@ -43,11 +43,9 @@ const missesIn = (dir: string): Miss[] => {
 	const manifest = readManifest(dir);
 	if (!manifest) return [];
 	const declared = { ...manifest.dependencies, ...manifest.devDependencies };
-	return Object.entries(declared)
-		.filter(
-			([pkg, range]) => !range.startsWith("workspace:") && !resolves(pkg, dir),
-		)
-		.map(([pkg]) => ({ pkg, workspace: manifest.name ?? dir }));
+	return Object.keys(declared)
+		.filter((pkg) => !resolves(pkg, dir))
+		.map((pkg) => ({ pkg, workspace: manifest.name ?? dir }));
 };
 
 export const missingDependencies = (root: string): Miss[] => {
