@@ -107,8 +107,8 @@ function requireKnown(names: readonly string[], known?: readonly string[]) {
  * - `names` are the members' lens names, in the order of `results`.
  * - A member with a skeptic holds the findings its skeptic's rulings hold, each with that `why`; one without holds every
  *   finding, with no `why`, unless its lens settled ok.
- * - A skipped member holds none and counts as delivered. `patches` and `spec` are unread inputs, there so the node does
- *   not run when either is unavailable.
+ * - A skipped member holds none and counts as delivered. Every other input is unread, there so the node does not run
+ *   while any input its lenses read is unavailable.
  * - One that delivered nothing, a failed skeptic included, is `unreviewed` with its reason: its whole lens is.
  * @throws Error when a member is named outside `known`, when given.
  */
@@ -120,8 +120,7 @@ export function heldOf({
 	results: Settled<Member>[];
 	names: readonly string[];
 	known?: readonly string[];
-	patches?: ArtifactRef;
-	spec?: ArtifactRef;
+	[read: string]: unknown;
 }): {
 	held: Held[];
 	unreviewed: { lens: string; reason: string }[];
@@ -151,10 +150,10 @@ export function heldOf({
 
 /**
  * `heldOf` over the members of every seat, joined in seat order, `delivered` summed. Each seat's members are
- * `<seat>Results` and their lens names `<seat>Names`.
+ * `<seat>Results` and their lens names `<seat>Names`; every other input is unread, as in `heldOf`.
  */
 export function heldAcross(
-	inputs: Record<string, Settled<Member>[] | string[]>,
+	inputs: Record<string, unknown>,
 ): ReturnType<typeof heldOf> {
 	const seats = SEATS.map((seat) =>
 		heldOf({

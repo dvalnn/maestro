@@ -1,4 +1,5 @@
 import {
+	type Attachment,
 	changeset,
 	commits,
 	Lane,
@@ -115,6 +116,17 @@ export const attachmentsOf = (
 	spec: { artifact: spec, hint: SPEC_HINT },
 });
 
+/** What a lens reads beside its lane, by name: its `relay`, then the artifact of each of its `attachments`. */
+export const readsOf = (
+	attachments: Readonly<Record<string, Attachment>>,
+	relay: Relays = {},
+): Relays => ({
+	...relay,
+	...Object.fromEntries(
+		Object.entries(attachments).map(([name, { artifact }]) => [name, artifact]),
+	),
+});
+
 /**
  * A lens per lens name, a skeptic over each lens that rejected unless `skeptics` is false, the findings held, and, with
  * `consolidate`, a consolidator ruling on them. Ends in the tally of the change, which rejects while a finding is
@@ -158,6 +170,7 @@ export const panel = composition(
 		);
 		const ground = grounds || undefined;
 		const common: Relays = brief ? { builder: brief } : {};
+		const relay = { ...(earlier && { upheld: earlier }), ...common };
 		const items = names ?? Object.keys(lenses);
 		const tasks = earlier
 			? Object.fromEntries(
@@ -172,7 +185,7 @@ export const panel = composition(
 					task: lookup(tasks, name),
 					lane: read(change),
 					checks,
-					relay: { ...(earlier && { upheld: earlier }), ...common },
+					relay,
 					attachments: attached,
 				});
 				if (!skeptics) return found;
@@ -194,11 +207,10 @@ export const panel = composition(
 		);
 		const held = code(heldOf, {
 			in: {
+				...readsOf(attached, relay),
 				results: rounds.out.results,
 				names: items,
 				known: Object.keys(lenses),
-				patches: attached.patches.artifact,
-				spec,
 			},
 			out: {
 				held: List(Upheld),

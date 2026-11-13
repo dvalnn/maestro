@@ -2223,7 +2223,7 @@ describe("a stack review", () => {
 			expect(dataAt(t.find(9)).stackReview).toBeUndefined();
 			t.find(100).open = false;
 			await t.run();
-			expect(reviewsOf(t)).toHaveLength(1);
+			expect(dataAt(t.find(9)).stackReview).toBe("started");
 		},
 	);
 

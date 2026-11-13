@@ -17,6 +17,8 @@ case "$1 $2" in
 	"wait c4") echo '{"status":"rejected","artifacts":"${dir}","outputs":{"review":{"path":"review.md"},"upheld":[{"id":"F1","lens":"spec","where":"a.ts:3","issue":"A seam breaks","cites":"R1"}]}}' ;;
 	"wait c6") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"}}}' ;;
 	"wait c3"|"wait c5") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"}}}' ;;
+	"ls d"*) echo '{}' ;;
+	"wait d"*) echo '{"status":"ok","outputs":{"delivered":'"\${2#d}"'}}' ;;
 	"wait c1") echo '{"id":"c1","status":"failed","reason":"boom"}'; exit 1 ;;
 	"perform refused") echo "refused.ts does not compose" >&2; exit 2 ;;
 	"perform diagnosed") echo '{"ok":false,"diagnostics":[{"code":"CFG.preset","severity":"error","message":"--preset x names no file","hint":"Create x.yaml"},{"code":"HOST.profile","severity":"error","message":"profile p is in no profile root"}]}'; exit 2 ;;
@@ -99,7 +101,7 @@ test("a concert with no draft output is a draft when it upheld findings", async 
 	expect((await fake.report("c6")).draft).toBe(true);
 });
 
-test("a report whose upheld file is gone has no upheld findings, and one whose PR body is empty has none", async () => {
+test("a report whose upheld file is gone has no upheld findings, one whose PR body is empty has none, and one whose delivered is not a whole number has no count", async () => {
 	const report = await fake.report("c3");
 	expect([
 		report.upheld,
@@ -108,6 +110,13 @@ test("a report whose upheld file is gone has no upheld findings, and one whose P
 		report.notice,
 		report.delivered,
 	]).toEqual([undefined, undefined, false, undefined, undefined]);
+	const delivered = async (value: string) =>
+		(await fake.report(`d${value}`)).delivered;
+	expect(await Promise.all(["0", "1.5", '"2"'].map(delivered))).toEqual([
+		0,
+		undefined,
+		undefined,
+	]);
 });
 
 test("a perform started in the background returns its concert", async () => {

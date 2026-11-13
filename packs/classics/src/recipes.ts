@@ -42,6 +42,7 @@ import {
 	toMarkdown,
 	Upheld,
 } from "./index";
+import { readsOf } from "./review";
 
 type Held = ValueOf<typeof Upheld>;
 
@@ -116,13 +117,19 @@ export const fixLadder = composition(
 			{ lane: strong.out.lane, session: strong.out.session, spec },
 			{ label: "strong_gate" },
 		).out.lane;
+		// The lenses read no rejected upstream, and the cheap rounds reject while they leave findings upheld.
+		const earlier = code(carried, {
+			in: { upheld: cheap.out.upheld },
+			out: { upheld: List(Upheld) },
+			tolerate: "rejected",
+		}).out.upheld;
 		const again = use(
 			panel,
 			{
 				change: green,
 				spec,
 				session: strong.out.session,
-				earlier: cheap.out.upheld,
+				earlier,
 				brief: next,
 			},
 			{ label: "again" },
@@ -130,6 +137,11 @@ export const fixLadder = composition(
 		return firstOk([cheap.out.lane, again.out.lane]);
 	},
 );
+
+/** The findings `upheld`, unchanged. */
+export function carried({ upheld }: { upheld: Held[] }): { upheld: Held[] } {
+	return { upheld };
+}
 
 /** The findings of two held lists, one after the other, and how many lenses delivered across both. */
 export function joined({
@@ -182,10 +194,9 @@ export const lensFusion = composition(
 			);
 			return code(heldOf, {
 				in: {
+					...readsOf(attached),
 					results: rounds.out.results,
 					names,
-					patches: attached.patches.artifact,
-					spec,
 				},
 				out: {
 					held: List(Upheld),

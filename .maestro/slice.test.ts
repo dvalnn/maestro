@@ -96,6 +96,7 @@ type Node = {
 		attachments?: Record<string, unknown>;
 	};
 	literals?: { floor?: string };
+	out?: Record<string, unknown>;
 };
 type Edge = {
 	from: { node: string; port?: string };
@@ -204,7 +205,7 @@ test.each([
 		["patches", "revised", "spec"],
 	],
 ])(
-	"under --revises, the writer and the result node take the prior patches: flags %j attach %j, and the result is told how many lenses delivered",
+	"under --revises, the writer and the result node take the prior patches: flags %j attach %j, and the result is told how many lenses delivered and leaves the count as an output",
 	async (flags, attached) => {
 		const { nodes, edges } = await composed(["low"], ...flags);
 		expect(from(edges, "result", "revised")).toEqual(
@@ -216,6 +217,9 @@ test.each([
 		expect(from(edges, "result", "delivered")).toEqual([
 			{ node: "fix_until_clean/fixes", port: "delivered" },
 		]);
+		expect(nodes.find((n) => n.id === "result")?.out).toHaveProperty(
+			"delivered",
+		);
 		const writer = nodes.find((n) => n.id === "writer");
 		expect(Object.keys(writer?.config.attachments ?? {}).sort()).toEqual(
 			attached,
@@ -234,7 +238,7 @@ test.each(["low", "medium", "high"])(
 	},
 );
 
-test("requirePatch returns a changeset that holds a patch, the writer's body unchanged, an empty body when the writer failed, and the delivered count given, and rejects one that holds none; it renders the upheld findings once, grouped by cite", () => {
+test("requirePatch returns a changeset that holds a patch, the writer's body unchanged, an empty body when the writer failed, and the delivered count given, 0 included, and rejects one that holds none; it renders the upheld findings once, grouped by cite", () => {
 	const made = (...files: string[]) => {
 		const dir = mkdtempSync(join(scratch, "changeset-"));
 		for (const f of files) writeFileSync(join(dir, f), "x");
@@ -248,8 +252,9 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		dir: string,
 		written: Settled<ArtifactRef>[],
 		upheld: Parameters<typeof requirePatch>[0]["upheld"] = [],
+		counted: { delivered?: number } = { delivered: 1 },
 	) =>
-		requirePatch({ changeset: ref, upheld, delivered: 1, written }, {
+		requirePatch({ changeset: ref, upheld, ...counted, written }, {
 			path: () => dir,
 			scratch: ctx,
 		} as unknown as CodeContext);
@@ -274,6 +279,10 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		delivered: 1,
 	});
 	expect(readFileSync(join(ctx, "pr.md"), "utf8")).toBe("");
+	expect(run(patched, [], [], { delivered: 0 })).toMatchObject({
+		delivered: 0,
+	});
+	expect(run(patched, [], [], {})).not.toHaveProperty("delivered");
 	expect(run(made("base"), [])).toEqual(reject("the slice changed nothing"));
 
 	run(

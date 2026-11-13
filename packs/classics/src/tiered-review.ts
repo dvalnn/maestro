@@ -27,7 +27,14 @@ import AGAIN from "./prompts/again.md" with { type: "text" };
 import CHECKLIST from "./prompts/checklist.md" with { type: "text" };
 import TIERED from "./prompts/tiered.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
-import { attachmentsOf, CHECKLISTS, reviewed, SUBJECT, TASKS } from "./review";
+import {
+	attachmentsOf,
+	CHECKLISTS,
+	readsOf,
+	reviewed,
+	SUBJECT,
+	TASKS,
+} from "./review";
 import { consolidator, crossLens, deepLens, lens, topLens } from "./seats";
 import {
 	atLeastOne,
@@ -179,7 +186,7 @@ export const tieredReview = composition(
 			[`${seat}Names`, picked.out[seat]],
 		]);
 		const held = code(heldAcross, {
-			in: Object.fromEntries(members),
+			in: { ...readsOf(attached, relay), ...Object.fromEntries(members) },
 			out: {
 				held: List(Upheld),
 				unreviewed: List(Struct({ lens: Text(), reason: Text() })),
