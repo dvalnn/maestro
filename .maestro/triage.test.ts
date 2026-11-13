@@ -25,7 +25,7 @@ import {
 	spec,
 	unspecified,
 } from "./triage/fixtures";
-import { type Checked, Proposal, Ruling, type Triage } from "./triage/schemas";
+import { type Checked, Proposal, Ruling, Triage } from "./triage/schemas";
 
 test("answersOf merges each group's answers in order, marking an unsure answer and a group whose scout failed", () => {
 	const dir = mkdtempSync(join(scratch, "answers-"));
@@ -379,6 +379,64 @@ test("an encore starts the planner and the checker fresh, and continues the tria
 	expect(encoreOf("scouts/scout")).toBeUndefined();
 });
 
+const duplicateRuling = {
+	...planning,
+	verdict: "duplicate",
+	groups: [],
+	duplicateOf: 7,
+};
+const rulingsOffDuplicate = [
+	planning,
+	direct,
+	{ ...planning, verdict: "needs-info", questions: [askAlone("Who?")] },
+];
+const rulingsOffDirect = [
+	planning,
+	duplicateRuling,
+	{ ...planning, verdict: "needs-info", questions: [askAlone("Who?")] },
+];
+const directFields = [
+	["what", spec.what],
+	["requirements", spec.requirements],
+	["acceptance", spec.acceptance],
+	["subject", spec.subject],
+] as const;
+
+const triages = [
+	{
+		verdict: "ready-for-agent",
+		...medium,
+		questions: [],
+		spec: { touches: [], ...spec },
+	},
+	{
+		verdict: "needs-approval",
+		...medium,
+		questions: [],
+		spec: { touches: [], ...spec },
+	},
+	{
+		verdict: "needs-info",
+		...medium,
+		questions: [askAlone("Who?")],
+		spec: { touches: [], ...spec },
+	},
+	{
+		verdict: "split",
+		...medium,
+		questions: [],
+		children,
+		spec: { touches: [], ...spec },
+	},
+	{
+		verdict: "duplicate",
+		...medium,
+		questions: [],
+		duplicateOf: 7,
+		spec: { touches: [], ...spec },
+	},
+];
+
 /** A JSON output per conditional rule of the schemas, and whether the engine's readJson takes it. */
 const outputs: [string, Type<unknown>, object, boolean][] = [
 	["a ready proposal", Proposal, ready, true],
@@ -428,7 +486,26 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 		{ ...planning, verdict: "needs-info", questions: ["Who?"] },
 		false,
 	],
+	["a duplicate ruling", Ruling(4), duplicateRuling, true],
+	...rulingsOffDuplicate.map(
+		(ruling): [string, Type<unknown>, object, boolean] => [
+			`a ${ruling.verdict} ruling with duplicateOf`,
+			Ruling(4),
+			{ ...ruling, duplicateOf: 7 },
+			false,
+		],
+	),
 	["a direct ruling", Ruling(4), direct, true],
+	...rulingsOffDirect.flatMap((ruling) =>
+		directFields.map(
+			([field, value]): [string, Type<unknown>, object, boolean] => [
+				`a ${ruling.verdict} ruling with ${field}`,
+				Ruling(4),
+				{ ...ruling, [field]: value },
+				false,
+			],
+		),
+	),
 	[
 		"a direct ruling with no subject",
 		Ruling(4),
@@ -513,6 +590,28 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 		false,
 	],
 	["a ruling with more groups than maxGroups", Ruling(1), planning, false],
+	...triages.map((triage): [string, Type<unknown>, object, boolean] => [
+		`a ${triage.verdict} triage`,
+		Triage,
+		triage,
+		true,
+	]),
+	...triages
+		.filter((triage) => triage.verdict !== "duplicate")
+		.map((triage): [string, Type<unknown>, object, boolean] => [
+			`a ${triage.verdict} triage with duplicateOf`,
+			Triage,
+			{ ...triage, duplicateOf: 7 },
+			false,
+		]),
+	...triages
+		.filter((triage) => triage.verdict !== "split")
+		.map((triage): [string, Type<unknown>, object, boolean] => [
+			`a ${triage.verdict} triage with children`,
+			Triage,
+			{ ...triage, children },
+			false,
+		]),
 ];
 
 test.each(outputs)(

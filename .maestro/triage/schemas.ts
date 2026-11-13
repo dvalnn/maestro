@@ -45,6 +45,13 @@ const needs = (verdict: Verdict | Ruled, field: string) =>
 const omits = (verdict: Verdict | Ruled, field: string) =>
 	forVerdict(verdict, { not: { required: [field] } });
 
+/** The rules that `field` is absent on every verdict of `all` but `only`. */
+const onlyOn = <V extends Verdict | Ruled>(
+	all: readonly V[],
+	only: V,
+	field: string,
+) => all.filter((v) => v !== only).map((v) => omits(v, field));
+
 /** A rule that a needs-info verdict asks at least one question. */
 const ASKS = forVerdict("needs-info", {
 	properties: { questions: { minItems: 1 } },
@@ -225,6 +232,10 @@ export const Ruling = (maxGroups: number) =>
 			needs("direct", "requirements"),
 			needs("direct", "acceptance"),
 			needs("direct", "subject"),
+			...onlyOn(RULED, "duplicate", "duplicateOf"),
+			...["what", "requirements", "acceptance", "subject"].flatMap((f) =>
+				onlyOn(RULED, "direct", f),
+			),
 			NARROWS,
 			ASKS,
 		],
@@ -255,6 +266,8 @@ export const Triage = shape(
 		needs("needs-approval", "spec"),
 		needs("split", "children"),
 		needs("duplicate", "duplicateOf"),
+		...onlyOn(VERDICTS, "duplicate", "duplicateOf"),
+		...onlyOn(VERDICTS, "split", "children"),
 		ASKS,
 	],
 );
