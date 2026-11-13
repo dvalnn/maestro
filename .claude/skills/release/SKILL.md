@@ -29,8 +29,10 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
    `forge.py api GET '/releases?limit=1'`): a two-line lead naming the theme, `## Install or upgrade` with the pinned
    version, `## Upgrade notes` for every breaking change a user of the previous release must act on, `## Added`,
    `## Changed`, `## Fixed`, each bullet ending in its issue refs as forge links,
-   `[#N](https://git.amorimcasa.org/tiago/maestro/issues/N)`, since GitHub links a bare `#N` to its own issue. Show the
-   owner the notes and the review's findings before publishing.
+   `[#N](https://git.amorimcasa.org/tiago/maestro/issues/N)`. Make a second copy for GitHub that links nothing on the
+   forge: drop the issue refs, since GitHub links a bare `#N` to its own issue, and point the `INSTALL.md` link at
+   `https://github.com/dvalnn/maestro/blob/<tag>/INSTALL.md`. Show the owner the notes and the review's findings before
+   publishing.
 4. **Bump.** One change, `chore(release): bump to <version>`, on top of `main`: the `version` of every
    `packages/*/package.json` and `packs/classics/package.json`, the pinned version in `INSTALL.md`, and in
    `skills/maestro/SKILL.md` the `checked against` line and the classics pack's version. `bun install` refreshes
@@ -53,7 +55,7 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
 8. **GitHub.** `scripts/github-sync.sh <bump>` points `next` at the bump (the `github` skill). Then, from `dist/`:
 
    ```sh
-   gh release create <tag> --repo dvalnn/maestro --target <bump commit id> [--prerelease] --notes-file <notes> *
+   gh release create <tag> --repo dvalnn/maestro --target <bump commit id> [--prerelease] --notes-file <github notes> *
    ```
 
 9. **Verify.** Download one asset from the GitHub release, the one users install from, and check it with `sha256sum -c`
