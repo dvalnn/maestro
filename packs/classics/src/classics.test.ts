@@ -39,7 +39,6 @@ import {
 } from "./code";
 import { challenge, fix, tally } from "./moves";
 import AGAIN from "./prompts/again.md" with { type: "text" };
-import TIERED_AGAIN from "./prompts/tiered-again.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
 import { panel } from "./review";
 import { builder, consolidator, lens } from "./seats";
@@ -187,6 +186,7 @@ type Ir = ReturnType<typeof buildIr>;
 
 describe("panel", () => {
 	const LENSES = { a: "task a", b: "task b" };
+	const pick = () => ({ names: ["a"] });
 
 	/** The IR of a build that uses `panel` over `lenses` with `ports` and `params` on top of its builder's lane. */
 	function panelIr(
@@ -205,7 +205,7 @@ describe("panel", () => {
 				{ params: { lenses: LENSES, ...params } },
 			);
 		});
-		return buildIr(root, {}, { heldOf, tallyOf, toMarkdown });
+		return buildIr(root, {}, { heldOf, pick, tallyOf, toMarkdown });
 	}
 	const ids = (ir: Ir) => ir.nodes.map((n) => n.id);
 	const agents = (ir: Ir, tail: string) =>
@@ -225,6 +225,15 @@ describe("panel", () => {
 		const ir = panelIr({}, () => ({ names: ["b"] }));
 		expect(ir.nodes.find((n) => n.id === "panel/lenses")).toMatchObject({
 			items: ["b"],
+		});
+	});
+
+	test("names fed from a node's output bound the fan-out by the lenses it can name", () => {
+		const ir = panelIr({}, () => ({
+			names: code(pick, { in: {}, out: { names: List(Text()) } }).out.names,
+		}));
+		expect(ir.nodes.find((n) => n.id === "panel/lenses")).toMatchObject({
+			cardinality: { upTo: 2 },
 		});
 	});
 
@@ -282,6 +291,20 @@ describe("panel", () => {
 			node: "panel/consolidator",
 			port: "session",
 		});
+	});
+
+	test("the tally takes delivered from the held findings, so a panel no lens delivered for rejects", () => {
+		const ir = panelIr();
+		expect(
+			ir.edges.some(
+				(e) =>
+					e.kind === "data" &&
+					e.from.node === "panel/heldOf" &&
+					e.from.port === "delivered" &&
+					e.to.node === "panel/upheld" &&
+					e.to.port === "delivered",
+			),
+		).toBe(true);
 	});
 
 	test("neither a session nor a consolidator is refused", () => {
@@ -502,6 +525,33 @@ export const tested = composition("tested", { examples: [{}] }, () => {
 	]);
 });
 
+test("a panel fed a lens name it has no task for delivers no review", async () => {
+	await stubPreset();
+	const file = compositionFile(
+		"bogus_panel",
+		`import { builder, panel } from "@maestro/classics";
+import { fresh } from "@maestro/host-repo-sdk";
+import { composition, List, Markdown, Text, code, use } from "@maestro/sdk";
+import { toMarkdown } from "@maestro/classics/code";
+
+export * from "@maestro/classics/code";
+export const bogus = () => ({ names: ["bogus"] });
+export const bogusPanel = composition("bogus_panel", { examples: [{}] }, () => {
+	const b = builder({ label: "b", task: "t", lane: fresh() });
+	const spec = code(toMarkdown, { in: { text: "x" }, out: { file: Markdown() } }).out.file;
+	const names = code(bogus, { in: {}, out: { names: List(Text()) } }).out.names;
+	return use(panel, { change: b.out.lane, spec, session: b.out.session, names }, { params: { consolidate: false } });
+});
+`,
+	);
+	const ran = await maestro(["perform", file, "--preset", "stub"]);
+	const id = /^concert +(\S+)/m.exec(ran.err)?.[1] ?? "";
+	expect(ran.code).toBe(3);
+	expect((await maestro(["ls", id])).out).toContain(
+		"no lens delivered a review",
+	);
+});
+
 describe("fix_until_clean", () => {
 	const green = ["-c", 'target.checks=!replace {test: "true"}'];
 	let file: string;
@@ -683,6 +733,39 @@ describe("build_then_review", () => {
 	});
 });
 
+describe("build_then_review when no lens delivers", () => {
+	test("rejects at the fix cap with the reason, though nothing is upheld", async () => {
+		await stubPreset();
+		const outputs = mkdtempSync(join(root, "outputs-"));
+		for (const round of ["", "fixes/"]) {
+			const verdict = join(
+				outputs,
+				`fix_until_clean/${round}tiered_review/lens/lens/verdict`,
+			);
+			mkdirSync(join(verdict, ".."), { recursive: true });
+			writeFileSync(verdict, "garbage");
+		}
+		const { err, code } = await maestro(
+			[
+				"perform",
+				"classics.build_then_review",
+				"--request",
+				EXAMPLE_REQUEST,
+				"-c",
+				'target.checks=!replace {test: "true"}',
+				"--preset",
+				"stub",
+			],
+			{ MAESTRO_STUB_OUTPUTS: outputs },
+		);
+		expect(code).toBe(3);
+		const id = /^concert +(\S+)/m.exec(err)?.[1] ?? "";
+		const { out } = await maestro(["ls", id]);
+		expect(out).toMatch(/^outcome +rejected/m);
+		expect(out).toContain("no lens delivered a review");
+	});
+});
+
 describe("build_then_review's build and review config", () => {
 	const REVIEWED = [
 		"classics.build_then_review",
@@ -852,15 +935,18 @@ describe("specOf", () => {
 	});
 });
 
-test("resultOf rejects with the changeset and the upheld findings while any is upheld", () => {
+test("resultOf rejects with the changeset and the upheld findings while any is upheld or no lens delivered", () => {
 	const changeset = { path: "out", hash: "h" } as never;
 	const upheld = [{ ...F1, lens: "correctness" }];
-	expect<unknown>(resultOf({ changeset, upheld: [] })).toEqual({
+	expect<unknown>(resultOf({ changeset, upheld: [], delivered: 1 })).toEqual({
 		changeset,
 		upheld: [],
 	});
-	expect<unknown>(resultOf({ changeset, upheld })).toEqual(
+	expect<unknown>(resultOf({ changeset, upheld, delivered: 1 })).toEqual(
 		reject("1 upheld: correctness/F1", { changeset, upheld }),
+	);
+	expect<unknown>(resultOf({ changeset, upheld: [], delivered: 0 })).toEqual(
+		reject("no lens delivered a review", { changeset, upheld: [] }),
 	);
 });
 
@@ -896,18 +982,24 @@ describe("heldOf", () => {
 		]);
 	});
 
-	test("holds nothing of a member whose lens settled ok, takes a rejected member's value, skips a skipped one and lists one that delivered nothing as unreviewed", () => {
+	test("holds nothing of a member whose lens settled ok, takes a rejected member's value, delivers a skipped one with none held and lists one that delivered nothing as unreviewed", () => {
 		const out = held([
 			{ outcome: "rejected", reason: "F1 blocks", value: { findings: found } },
 			{ outcome: "skipped" },
 		]);
 		expect(idsOf(out.held)).toHaveLength(3);
 		expect(out.unreviewed).toEqual([]);
-		expect(held([ok({ findings: found })]).held).toEqual([]);
+		expect(out.delivered).toBe(2);
+		expect(held([ok({ findings: found })])).toMatchObject({
+			held: [],
+			delivered: 1,
+		});
 		expect(
-			held([{ outcome: "skipped" }, { outcome: "failed", reason: "boom" }])
-				.unreviewed,
-		).toEqual([{ lens: "spec", reason: "boom" }]);
+			held([{ outcome: "failed", reason: "boom" }, { outcome: "skipped" }]),
+		).toMatchObject({
+			unreviewed: [{ lens: "correctness", reason: "boom" }],
+			delivered: 1,
+		});
 	});
 });
 
@@ -945,6 +1037,37 @@ describe("tallyOf", () => {
 		});
 	});
 
+	test.each([
+		["a finding that was held but not upheld", ["F1"], [], ["F1"]],
+		["a made-up finding named in both lists", ["F9"], ["F9"], []],
+	])(
+		"does not hide a criterion shown only by %s",
+		(_, shownBy, upholds, held) => {
+			const out = tallyOf(
+				{
+					...carried,
+					held: held.map((id) => ({ ...F1, id, lens: "correctness" })),
+					verdict: {
+						criteria: [
+							{
+								id: "C1",
+								met: false,
+								evidence: "unmet",
+								shownBy: shownBy.map((id) => `correctness/${id}`),
+							},
+						],
+						upholds: upholds.map((id) => `correctness/${id}`),
+					},
+				},
+				ctx(),
+			);
+			expect(out).toMatchObject({
+				outcome: "rejected",
+				outputs: { upheld: [{ lens: "consolidator", id: "C1" }] },
+			});
+		},
+	);
+
 	test("tallies a consolidator clean when it upholds nothing and rules no criterion unmet", () => {
 		expect(
 			tallyOf({ ...carried, held: heldAll, verdict: verdict() }, ctx()),
@@ -953,8 +1076,25 @@ describe("tallyOf", () => {
 
 	test("upholds each criterion a consolidator rules not met, and renders the review from the verdict", () => {
 		const criteria = [
-			{ id: "C1", met: false, evidence: "--json prints nothing" },
-			{ id: "C2", met: true, evidence: "a.test.ts passes" },
+			{
+				id: "C1",
+				met: false,
+				evidence: "--json prints nothing",
+				shownBy: [],
+			},
+			{ id: "C2", met: true, evidence: "a.test.ts passes", shownBy: [] },
+			{
+				id: "C3",
+				met: false,
+				evidence: "F2 breaks it",
+				shownBy: ["correctness/F2"],
+			},
+			{
+				id: "C4",
+				met: false,
+				evidence: "exit code wrong",
+				shownBy: ["correctness/F1"],
+			},
 		];
 		const held = [{ ...F2, lens: "correctness", why: "reproduced" }];
 		const out = tallyOf(
@@ -975,6 +1115,13 @@ describe("tallyOf", () => {
 					issue: "--json prints nothing",
 					cites: "spec C1",
 				},
+				{
+					lens: "consolidator",
+					id: "C4",
+					where: "spec C4",
+					issue: "exit code wrong",
+					cites: "spec C4",
+				},
 			],
 		});
 		expect(readFileSync(out.outputs.review, "utf8")).toBe(
@@ -986,6 +1133,12 @@ describe("tallyOf", () => {
 				"  - Why: reproduced",
 				"- **consolidator/C1** at `spec C1`: --json prints nothing",
 				"  - Cites: spec C1",
+				"- **consolidator/C4** at `spec C4`: exit code wrong",
+				"  - Cites: spec C4",
+				"",
+				"## Not met",
+				"",
+				"- **C3**: F2 breaks it (shown by correctness/F2)",
 				"",
 				"## Met",
 				"",
@@ -1004,7 +1157,7 @@ describe("tallyOf", () => {
 				...carried,
 				held: [],
 				verdict: {
-					criteria: [{ id: "C1", met: true, evidence: "ok" }],
+					criteria: [{ id: "C1", met: true, evidence: "ok", shownBy: [] }],
 					upholds: [],
 				},
 			},
@@ -1020,10 +1173,12 @@ describe("tallyOf", () => {
 				...carried,
 				upheld: [],
 				review: expect.any(String),
+				delivered: 0,
 			}),
 		);
 		expect(tallyOf({ ...clean, delivered: 1 }, ctx())).toMatchObject({
 			upheld: [],
+			delivered: 1,
 		});
 	});
 
@@ -1129,7 +1284,7 @@ describe("heldAcross", () => {
 		...over,
 	});
 
-	test("joins the members of every seat in seat order and counts those that delivered a value, none when every member failed or was skipped", () => {
+	test("joins the members of every seat in seat order and counts those that delivered a value or were skipped, none when every member failed", () => {
 		const out = heldAcross(
 			seats({
 				lensResults: [rejected({ findings: [F1] })],
@@ -1144,13 +1299,13 @@ describe("heldAcross", () => {
 		);
 		expect(idsOf(out.held)).toEqual(["lens/F1", "top-lens/F2"]);
 		expect(out.unreviewed).toEqual([{ lens: "cross-lens", reason: "boom" }]);
-		expect(out.delivered).toBe(2);
+		expect(out.delivered).toBe(3);
 		expect(
 			heldAcross(
 				seats({
 					lensResults: [{ outcome: "failed", reason: "boom" }],
 					lensNames: ["lens"],
-					topLensResults: [{ outcome: "skipped" }],
+					topLensResults: [{ outcome: "failed", reason: "boom" }],
 					topLensNames: ["top-lens"],
 				}),
 			).delivered,
@@ -1309,8 +1464,34 @@ describe("tieredOf", () => {
 		expect(out).toMatchObject({ lines: 0, sections: ["correctness", "spec"] });
 	});
 
-	test("a rename and a change of ignored paths alone count no line", () => {
-		expect(tiered({ "b.ts": [0, 0] }).lines).toBe(0);
+	test("a pure rename counts no line and its new path still picks the sections", () => {
+		expect(tiered({ "SKILL.md": [0, 0] })).toMatchObject({
+			lines: 0,
+			sections: ["correctness", "spec", "docs", "agent-doc"],
+		});
+	});
+
+	test("a path with spaces, which git follows with a tab, is read without it", () => {
+		const spaced = diffOf(
+			"a/my dir/a b.md b/my dir/a b.md",
+			"--- a/my dir/a b.md\t\n+++ b/my dir/a b.md\t\n@@ -1 +1,2 @@\n-x\n+y\n+z\n",
+		);
+		expect(tiered(mailOf(spaced))).toMatchObject({
+			lines: 3,
+			sections: ["correctness", "spec", "docs"],
+		});
+		expect(tiered(mailOf(spaced), { ignore: ["**/*.md"] }).lines).toBe(0);
+		const quoted = diffOf(
+			'"a/my dir/\\303\\251 b.md" "b/my dir/\\303\\251 b.md"',
+			'--- "a/my dir/\\303\\251 b.md"\t\n+++ "b/my dir/\\303\\251 b.md"\t\n@@ -1 +1,2 @@\n-x\n+y\n+z\n',
+		);
+		expect(tiered(mailOf(quoted))).toMatchObject({
+			lines: 3,
+			sections: ["correctness", "spec", "docs"],
+		});
+	});
+
+	test("a change of ignored paths alone counts no line", () => {
 		expect(tiered({ "bun.lock": [9, 9] })).toMatchObject({
 			lines: 0,
 			sections: ["correctness", "spec"],
@@ -1381,7 +1562,7 @@ describe("tiered_review", () => {
 		).toContain("THE GROUNDS");
 	});
 
-	test("earlier opens the selector's lead with tiered-again.md and relays upheld to every lens", () => {
+	test("earlier opens the selector's lead with again.md and relays upheld to every lens", () => {
 		const lead = (ir: Ir) =>
 			(
 				node(ir, "tiered_review/tieredOf") as unknown as {
@@ -1397,10 +1578,10 @@ describe("tiered_review", () => {
 				).config.relay?.map((r) => r.name),
 			);
 		const bare = tieredIr();
-		expect(lead(bare)).not.toContain(TIERED_AGAIN.slice(0, 40));
+		expect(lead(bare)).not.toContain(AGAIN.slice(0, 40));
 		expect(relays(bare)).toEqual(Object.values(SEATS).map(() => undefined));
 		const again = tieredIr({}, () => ({ earlier: literal([], List(Upheld)) }));
-		expect(lead(again).startsWith(TIERED_AGAIN)).toBe(true);
+		expect(lead(again).startsWith(AGAIN)).toBe(true);
 		expect(relays(again)).toEqual(Object.values(SEATS).map(() => ["upheld"]));
 	});
 });

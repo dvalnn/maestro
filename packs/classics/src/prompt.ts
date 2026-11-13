@@ -25,5 +25,8 @@ export function fill(
 	return filled;
 }
 
-/** The prompt parts joined, a blank line between. */
-export const task = (...parts: string[]) => parts.join("\n\n");
+/** The prompt parts joined, one blank line between: every part but the last loses its trailing whitespace. */
+export const task = (...parts: string[]) =>
+	parts
+		.map((part, i) => (i < parts.length - 1 ? part.trimEnd() : part))
+		.join("\n\n");

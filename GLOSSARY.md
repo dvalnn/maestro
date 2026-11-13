@@ -323,7 +323,7 @@ assembled sections, and lists its findings. _Avoid_: reviewer.
 naming findings by id, never rewording them.
 
 **Upheld**: A finding the consolidator kept, after the skeptic where a panel runs one, or a criterion the consolidator
-ruled not met, still to be fixed.
+ruled not met that no upheld finding shows, still to be fixed.
 
 **Panel**: Lenses over one change, with their skeptics and an optional consolidator, ending in a tally. _Avoid_: round,
 review.

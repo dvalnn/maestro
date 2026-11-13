@@ -6,7 +6,6 @@ import {
 	Session,
 } from "@maestro/host-repo-sdk";
 import {
-	code,
 	composition,
 	List,
 	loop,
@@ -15,7 +14,7 @@ import {
 	Text,
 	use,
 } from "@maestro/sdk";
-import { toMarkdown } from "./code";
+import { requestOf } from "./moves";
 import REPAIR from "./prompts/repair.md" with { type: "text" };
 import { builder } from "./seats";
 import { buildChange } from "./test-first";
@@ -98,11 +97,7 @@ export const buildThenRepair = composition(
 		const built = use(
 			buildChange,
 			{
-				spec: code(toMarkdown, {
-					in: { text: request },
-					out: { file: Markdown() },
-					label: "request",
-				}).out.file,
+				spec: requestOf(request),
 			},
 			{ params: { request } },
 		);

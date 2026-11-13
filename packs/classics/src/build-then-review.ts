@@ -1,15 +1,8 @@
 import { changeset } from "@maestro/host-repo-sdk";
-import {
-	code,
-	composition,
-	Dir,
-	List,
-	Markdown,
-	Text,
-	use,
-} from "@maestro/sdk";
-import { resultOf, toMarkdown } from "./code";
+import { code, composition, Dir, List, Text, use } from "@maestro/sdk";
+import { resultOf } from "./code";
 import { fixUntilClean, maxFixes } from "./fix-until-clean";
+import { requestOf } from "./moves";
 import { EXAMPLE_REQUEST } from "./repair";
 import { buildChange } from "./test-first";
 import { PACK, Upheld } from "./types";
@@ -18,7 +11,7 @@ export const buildThenReview = composition(
 	"build_then_review",
 	{
 		pack: PACK,
-		doc: "Build the request in a fresh lane, with tests pinned first under classics.build.testFirst, then repair and review it by tiered review, fixing what the review upholds, and leave the change as a patch series. Rejects, with the series, while findings remain upheld.",
+		doc: "Build the request in a fresh lane, with tests pinned first under classics.build.testFirst, then repair and review it by tiered review, fixing what the review upholds, and leave the change as a patch series. Rejects, with the series, while findings remain upheld or when the last review delivered nothing.",
 		params: {
 			request: Text({ description: "What to build" }),
 			maxFixes,
@@ -29,11 +22,7 @@ export const buildThenReview = composition(
 		const built = use(
 			buildChange,
 			{
-				spec: code(toMarkdown, {
-					in: { text: request },
-					out: { file: Markdown() },
-					label: "request",
-				}).out.file,
+				spec: requestOf(request),
 			},
 			{ params: { request } },
 		);
@@ -45,6 +34,7 @@ export const buildThenReview = composition(
 					tolerate: "rejected",
 				}).out.changeset,
 				upheld: reviewed.out.upheld,
+				...(reviewed.out.delivered && { delivered: reviewed.out.delivered }),
 			},
 			out: { changeset: Dir(), upheld: List(Upheld) },
 			label: "outcome",

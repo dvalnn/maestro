@@ -36,7 +36,7 @@ Both build through `build`: set `classics.build.testFirst` for tests first. `bui
 with a review: `fix_until_clean` over the build, ending in a patch series. The lenses judge the request, with the
 tester's map and the builder's overrules when `classics.build.testFirst`. Tune the review in config under
 `classics.tiered_review.*`, its params in the [Params](#params) table. The concert settles `rejected`, with the series
-left, while the last review upholds a finding.
+left, while the last review upholds a finding or delivered no review.
 
 ## Patterns
 
@@ -54,16 +54,19 @@ left, while the last review upholds a finding.
 `panel` takes `lenses`, a map of lens name to task text, `skeptics`, `consolidate`, `grounds` and `checks`; the
 [Params](#params) table has their defaults. Without `skeptics`, no skeptic runs and the consolidator rules on every
 finding unverified. Without `consolidate`, no consolidator runs and it needs a `session`. `earlier` is the previous
-round's `Upheld`, which each lens reads; `names` sets the lenses at run time. Its `Tally` rejects while a finding is
-upheld, so `ok` means clean.
+round's `Upheld`, which each lens reads; `names` sets the lenses at run time, of the `lenses` given. Its `Tally` rejects
+while a finding is upheld, or when no lens delivered a review, so `ok` means clean. A lens task is a role and the
+checklist sections it rules on: `correctness` rules on `correctness`, `design` and `smells`, `spec` on `spec` and
+`tests` on `tests`.
 
 `tiered_review` runs one `changeset` of the change through a selector, `tieredOf`, which counts the lines changed
-outside the `ignore` globs and picks the tier: `small` up to `small` lines, `medium` up to `medium`, `large` up to
-`large`, `xlarge` above; `floor` raises it. The tier seats its lenses, each a `parMap` of at most one: `lens` at small,
-`deep-lens` at medium, `top-lens` at large, `top-lens` and `cross-lens` at xlarge. Every lens rules on the same
-checklist: `correctness` and `spec` always, then `tests`, `design`, `smells`, `docs` and `agent-doc` for the paths the
-change touches, each item numbered so a finding cites `<section> <n>`. One consolidator rules on what they held, and the
-`Tally` rejects while a finding is upheld, or when no lens delivered a review. `earlier` is the previous round's
+outside the `ignore` globs, a renamed file's new path counting none, and picks the tier: `small` up to `small` lines,
+`medium` up to `medium`, `large` up to `large`, `xlarge` above; `floor` raises it. The tier seats its lenses, each a
+`parMap` of at most one: `lens` at small, `deep-lens` at medium, `top-lens` at large, `top-lens` and `cross-lens` at
+xlarge. Every lens rules on the same checklist: `correctness` and `spec` always, then `tests`, `design`, `smells`,
+`docs` and `agent-doc` for the paths of its diffs that hold a hunk or a rename (a copy, a mode-only change and a binary
+diff select nothing), each item numbered so a finding cites `<section> <n>`. One consolidator rules on what they held,
+and the `Tally` rejects while a finding is upheld, or when no lens delivered a review. `earlier` is the previous round's
 `Upheld`, which each lens reads.
 
 `build` takes the request as `spec`, so only a composition `use`s it. It returns the `lane`, the builder's `session`, a
@@ -85,17 +88,17 @@ ports of `fix_until_clean`.
 
 ## Contracts
 
-| Contract                | Holds                                                                                                                                            |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Finding`, `Findings`   | A lens's defect: `id`, `where`, `issue`, and `cites`, the guideline it breaks; none when clean                                                   |
-| `Rulings`               | A skeptic's `holds` and `why` per finding id                                                                                                     |
-| `Verdict`               | A consolidator's `criteria` met or not, and `upholds`, the `<lens>/<id>` it keeps; each criterion ruled not met is upheld as `consolidator/<id>` |
-| `Upheld`                | A finding a review held, with its `lens` and the skeptic's `why`                                                                                 |
-| `Tally`                 | What a review settles to: the `lane`, the builder's `session` and the `upheld` list                                                              |
-| `TestMap`               | The tester's `pinned` requirements with test and `misses`, `deferred` and `untestable` ones                                                      |
-| `Brief`                 | A builder's `summary` and `gaps`, for the review seats                                                                                           |
-| `Overrule`, `Overrules` | A tester's test a builder rejects, and why                                                                                                       |
-| `Answers`               | A scout's answer per question: `grounded`, or `unsure` with what is `missing`                                                                    |
+| Contract                | Holds                                                                                                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Finding`, `Findings`   | A lens's defect: `id`, `where`, `issue`, and `cites`, the guideline it breaks; none when clean                                                                                                  |
+| `Rulings`               | A skeptic's `holds` and `why` per finding id                                                                                                                                                    |
+| `Verdict`               | A consolidator's `criteria` met or not, each with `shownBy`, and `upholds`, the `<lens>/<id>` it keeps; a criterion ruled not met that no upheld finding shows is upheld as `consolidator/<id>` |
+| `Upheld`                | A finding a review held, with its `lens` and the skeptic's `why`                                                                                                                                |
+| `Tally`                 | What a review settles to: the `lane`, the builder's `session`, the `upheld` list, and `delivered`, the lenses that delivered a review                                                           |
+| `TestMap`               | The tester's `pinned` requirements with test and `misses`, `deferred` and `untestable` ones                                                                                                     |
+| `Brief`                 | A builder's `summary` and `gaps`, for the review seats                                                                                                                                          |
+| `Overrule`, `Overrules` | A tester's test a builder rejects, and why                                                                                                                                                      |
+| `Answers`               | A scout's answer per question: `grounded`, or `unsure` with what is `missing`                                                                                                                   |
 
 Read a run's reply fields with `maestro ls <id> --json | jq .outputs`.
 

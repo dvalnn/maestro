@@ -18,9 +18,8 @@ import * as stdlib from "@maestro/sdk/stdlib";
 import { buildIr, stubConcert } from "@maestro/testkit";
 import { briefOf, heldOf, specOf, tallyOf, toMarkdown } from "../src/code";
 import CHECKLIST from "../src/prompts/checklist.md" with { type: "text" };
-import CORRECTNESS from "../src/prompts/correctness.md" with { type: "text" };
 import { buildThenRepair } from "../src/repair";
-import { panelReview } from "../src/review";
+import { CHECKLISTS, panelReview } from "../src/review";
 import { diff, maestroTrace, sssfTrace } from "./compare";
 import { BASE, git, profilesOn, setup } from "./setup";
 import { TASKS, type TaskName } from "./tasks";
@@ -231,7 +230,7 @@ test("a review relays the findings its skeptics upheld to its consolidator, and 
 	await run.close();
 	expect(run.result).toMatchObject({ outcome: "ok", node: "panel/upheld" });
 	const [lensTask] = lensTasks;
-	for (const text of [CORRECTNESS, CHECKLIST])
+	for (const text of [CHECKLISTS.correctness, CHECKLIST])
 		expect(lensTask).toContain(text.trim());
 	const [task] = prompts;
 	expect(task).toContain("## findings");

@@ -5,5 +5,6 @@ function around it, and for each function it touches read every caller and calle
 2. Each guarantee a removed or replaced line gave still holds in the new code.
 3. Every caller and callee of a touched function still works with what a changed call throws, returns or needs first,
    and no sibling caller the change left alone is now wrong.
+4. Each unchanged line of a touched function holds too: a fault there is in review.
 
-Give each finding on items 1 to 3 the concrete input that makes it fail.
+Give each finding on items 1 to 4 the concrete input that makes it fail.

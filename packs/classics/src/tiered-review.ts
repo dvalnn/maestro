@@ -21,20 +21,13 @@ import {
 	use,
 } from "@maestro/sdk";
 import { heldAcross, tieredOf } from "./code";
-import { tally } from "./moves";
+import { requestOf, tally } from "./moves";
 import { task } from "./prompt";
-import AGENT_DOC from "./prompts/_agent-doc.md" with { type: "text" };
-import CORRECTNESS from "./prompts/_correctness.md" with { type: "text" };
-import DESIGN from "./prompts/_design.md" with { type: "text" };
-import DOCS from "./prompts/_docs.md" with { type: "text" };
-import SMELLS from "./prompts/_smells.md" with { type: "text" };
-import SPEC from "./prompts/_spec.md" with { type: "text" };
-import TESTS from "./prompts/_tests.md" with { type: "text" };
+import AGAIN from "./prompts/again.md" with { type: "text" };
 import CHECKLIST from "./prompts/checklist.md" with { type: "text" };
 import TIERED from "./prompts/tiered.md" with { type: "text" };
-import TIERED_AGAIN from "./prompts/tiered-again.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
-import { attachmentsOf, requestOf, reviewed, SUBJECT, TASKS } from "./review";
+import { attachmentsOf, CHECKLISTS, reviewed, SUBJECT, TASKS } from "./review";
 import { consolidator, crossLens, deepLens, lens, topLens } from "./seats";
 import {
 	atLeastOne,
@@ -53,18 +46,18 @@ const SOURCE = ["**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,sh}"];
 
 /** The checklist sections in the order they appear, each with the paths that pull it in, none for always. */
 export const SECTIONS = {
-	correctness: { text: CORRECTNESS },
-	spec: { text: SPEC },
+	correctness: { text: CHECKLISTS.correctness },
+	spec: { text: CHECKLISTS.spec },
 	tests: {
 		globs: ["**/*.test.*", "**/*_test.*", "**/test/**", "**/tests/**"],
-		text: TESTS,
+		text: CHECKLISTS.tests,
 	},
-	design: { globs: SOURCE, text: DESIGN },
-	smells: { globs: SOURCE, text: SMELLS },
-	docs: { globs: ["**/*.md"], text: DOCS },
+	design: { globs: SOURCE, text: CHECKLISTS.design },
+	smells: { globs: SOURCE, text: CHECKLISTS.smells },
+	docs: { globs: ["**/*.md"], text: CHECKLISTS.docs },
 	"agent-doc": {
 		globs: ["**/AGENTS.md", "**/CLAUDE.md", "**/SKILL.md"],
-		text: AGENT_DOC,
+		text: CHECKLISTS["agent-doc"],
 	},
 };
 
@@ -153,7 +146,7 @@ export const tieredReview = composition(
 				large,
 				...(floor && { floor }),
 				sections: SECTIONS,
-				lead: earlier ? task(TIERED_AGAIN, TIERED) : TIERED,
+				lead: earlier ? task(AGAIN, TIERED) : TIERED,
 				close: CHECKLIST,
 			},
 			out: {

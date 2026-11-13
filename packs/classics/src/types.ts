@@ -70,7 +70,17 @@ export const Rulings = List(Struct({ id: Text(), holds: Bool(), why: Text() }));
 
 /** A consolidator's ruling: one entry per criterion, and the findings it upholds as `<lens>/<id>`. */
 export const Verdict = Struct({
-	criteria: List(Struct({ id: Text(), met: Bool(), evidence: Text() })),
+	criteria: List(
+		Struct({
+			id: Text(),
+			met: Bool(),
+			evidence: Text(),
+			shownBy: List(Text(), {
+				description:
+					"the upheld findings that already show this failure, as <lens>/<id>; [] when the criterion is met or no upheld finding shows it",
+			}),
+		}),
+	),
 	upholds: List(Text(), {
 		description: "<lens>/<id> of each finding upheld",
 	}),

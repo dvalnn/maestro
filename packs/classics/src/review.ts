@@ -13,6 +13,7 @@ import {
 	code,
 	composition,
 	Enum,
+	Int,
 	iter,
 	Json,
 	List,
@@ -24,9 +25,16 @@ import {
 	Text,
 	use,
 } from "@maestro/sdk";
-import { heldOf, toMarkdown } from "./code";
-import { challenge, tally } from "./moves";
+import { heldOf } from "./code";
+import { challenge, requestOf, tally } from "./moves";
 import { task } from "./prompt";
+import AGENT_DOC from "./prompts/_agent-doc.md" with { type: "text" };
+import CORRECTNESS from "./prompts/_correctness.md" with { type: "text" };
+import DESIGN from "./prompts/_design.md" with { type: "text" };
+import DOCS from "./prompts/_docs.md" with { type: "text" };
+import SMELLS from "./prompts/_smells.md" with { type: "text" };
+import SPEC from "./prompts/_spec.md" with { type: "text" };
+import TESTS from "./prompts/_tests.md" with { type: "text" };
 import AGAIN from "./prompts/again.md" with { type: "text" };
 import CHECKLIST from "./prompts/checklist.md" with { type: "text" };
 import CONSOLIDATOR from "./prompts/consolidator.md" with { type: "text" };
@@ -36,19 +44,50 @@ import CONSOLIDATOR_GROUNDS from "./prompts/consolidator-grounds.md" with {
 import CONSOLIDATOR_SKEPTICS from "./prompts/consolidator-skeptics.md" with {
 	type: "text",
 };
-import CORRECTNESS from "./prompts/correctness.md" with { type: "text" };
-import SPEC from "./prompts/spec.md" with { type: "text" };
-import TESTS from "./prompts/tests.md" with { type: "text" };
+import LENS_CORRECTNESS from "./prompts/lens-correctness.md" with {
+	type: "text",
+};
+import LENS_SPEC from "./prompts/lens-spec.md" with { type: "text" };
+import LENS_TESTS from "./prompts/lens-tests.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
 import { consolidator, lens } from "./seats";
 import { Brief, PACK, Upheld } from "./types";
 
+/** Every checklist section's text, by section name. */
+export const CHECKLISTS = {
+	correctness: CORRECTNESS,
+	spec: SPEC,
+	tests: TESTS,
+	design: DESIGN,
+	smells: SMELLS,
+	docs: DOCS,
+	"agent-doc": AGENT_DOC,
+};
+
+/** Each panel lens's role, and the checklist sections it rules on, in order. */
+const PANEL = {
+	correctness: {
+		role: LENS_CORRECTNESS,
+		sections: ["correctness", "design", "smells"],
+	},
+	spec: { role: LENS_SPEC, sections: ["spec"] },
+	tests: { role: LENS_TESTS, sections: ["tests"] },
+} as const;
+
+/** A panel lens's task: its role, each of its sections of the checklist under `### <name>`, then how it is done. */
+const lensTask = (name: keyof typeof PANEL) =>
+	task(
+		PANEL[name].role,
+		...PANEL[name].sections.map((s) => `### ${s}\n\n${CHECKLISTS[s]}`),
+		CHECKLIST,
+	);
+
 /** Each call's task: its own prompt file, then the fragments it rules by, which a flag or a param can add. */
 export const TASKS = {
 	lens: {
-		correctness: task(CORRECTNESS, CHECKLIST),
-		spec: task(SPEC, CHECKLIST),
-		tests: task(TESTS, CHECKLIST),
+		correctness: lensTask("correctness"),
+		spec: lensTask("spec"),
+		tests: lensTask("tests"),
 	},
 	consolidator: (skeptics: boolean, grounds?: string) => {
 		const own = skeptics ? CONSOLIDATOR_SKEPTICS : CONSOLIDATOR;
@@ -76,18 +115,10 @@ export const attachmentsOf = (
 	spec: { artifact: spec, hint: SPEC_HINT },
 });
 
-/** The request as a Markdown file. */
-export const requestOf = (request: string) =>
-	code(toMarkdown, {
-		in: { text: request },
-		out: { file: Markdown() },
-		label: "request",
-	}).out.file;
-
 /**
  * A lens per lens name, a skeptic over each lens that rejected unless `skeptics` is false, the findings held, and, with
  * `consolidate`, a consolidator ruling on them. Ends in the tally of the change, which rejects while a finding is
- * upheld, and, given a consolidator, a `review` rendered from its verdict.
+ * upheld, or when no lens delivered a review, and, given a consolidator, a `review` rendered from its verdict.
  * @throws BuildError `CFG.param` when it has neither a `session` to carry nor a consolidator's.
  */
 export const panel = composition(
@@ -155,13 +186,22 @@ export const panel = composition(
 					}),
 				};
 			},
-			{ onError: "continue", label: "lenses" },
+			{
+				onError: "continue",
+				label: "lenses",
+				...(names && { max: Object.keys(lenses).length }),
+			},
 		);
 		const held = code(heldOf, {
-			in: { results: rounds.out.results, names: items },
+			in: {
+				results: rounds.out.results,
+				names: items,
+				known: Object.keys(lenses),
+			},
 			out: {
 				held: List(Upheld),
 				unreviewed: List(Struct({ lens: Text(), reason: Text() })),
+				delivered: Int(),
 			},
 		});
 		const consolidated = consolidate
@@ -189,6 +229,7 @@ export const panel = composition(
 			session: carried,
 			held: held.out.held,
 			verdict: consolidated?.out.verdict,
+			delivered: held.out.delivered,
 			brief,
 		});
 	},

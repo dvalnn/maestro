@@ -7,12 +7,13 @@ import {
 import {
 	type ArtifactRef,
 	code,
+	Int,
 	Markdown,
 	not,
 	type Ref,
 	type ValueOf,
 } from "@maestro/sdk";
-import { tallyOf } from "./code";
+import { tallyOf, toMarkdown } from "./code";
 import { task } from "./prompt";
 import FIX from "./prompts/fix.md" with { type: "text" };
 import SKEPTIC from "./prompts/skeptic.md" with { type: "text" };
@@ -27,6 +28,14 @@ import {
 	type Upheld,
 	type Verdict,
 } from "./types";
+
+/** The request as a Markdown file. */
+export const requestOf = (request: string) =>
+	code(toMarkdown, {
+		in: { text: request },
+		out: { file: Markdown() },
+		label: "request",
+	}).out.file;
 
 export type Held = Ref<ValueOf<typeof Upheld>[]>;
 
@@ -78,7 +87,13 @@ export function fix(
 	});
 }
 
-/** The tally of a review of `lane`: the findings `held` that, without `verdict`, all stand or, given it, an upheld ruling keeps, with the `brief` given beside it and, given `verdict`, a `review` rendered from it. A `delivered` of 0 rejects it. */
+/**
+ * The tally of a review of `lane`, over the findings `held`.
+ * - Without `verdict`, every held finding stands.
+ * - With one, the findings it upholds stand, and a `review` is rendered from it.
+ *
+ * The `brief` and `delivered` given ride beside it; a `delivered` of 0 rejects it.
+ */
 export function tally({
 	lane,
 	session,
@@ -112,6 +127,7 @@ export function tally({
 			...Tally,
 			...(verdict && { review: Markdown() }),
 			...(brief && { brief: Brief }),
+			...(delivered && { delivered: Int() }),
 		},
 		label,
 		tolerate: "rejected",

@@ -11,6 +11,7 @@ import {
 	type Settled,
 	type ValueOf,
 } from "@maestro/sdk";
+import { task } from "./prompt";
 import {
 	type Brief,
 	type Findings,
@@ -88,64 +89,75 @@ function heldBy(lens: string, member: Member, ok: boolean): Held[] {
 	});
 }
 
+/** `results` with each member named outside `known`, when given, replaced by a failed one. */
+const unnamedFailed = (
+	results: Settled<Member>[],
+	names: readonly string[],
+	known?: readonly string[],
+): Settled<Member>[] =>
+	results.map((result, i) =>
+		known && !known.includes(names[i] ?? "")
+			? { outcome: "failed", reason: `no lens named '${names[i]}'` }
+			: result,
+	);
+
 /**
- * The findings the review members held, and the lenses that never delivered theirs.
+ * The findings the review members held, the lenses that never delivered theirs, and `delivered`, the count of members
+ * that delivered a value.
  * - `names` are the members' lens names, in the order of `results`.
+ * - A member named outside `known`, when given, delivered nothing and is `unreviewed`, whatever its result.
  * - A member with a skeptic holds the findings its skeptic's rulings hold, each with that `why`; one without holds every
  *   finding, with no `why`, unless its lens settled ok.
- * - A skipped member, whose lens settled ok, holds none.
+ * - A skipped member, whose lens settled ok so its skeptic stood down, holds none and is delivered.
  * - One that delivered nothing, a failed skeptic included, is `unreviewed` with its reason: its whole lens is.
  */
 export function heldOf({
 	results,
 	names,
+	known,
 }: {
 	results: Settled<Member>[];
 	names: readonly string[];
+	known?: readonly string[];
 }): {
 	held: Held[];
 	unreviewed: { lens: string; reason: string }[];
+	delivered: number;
 } {
 	const held: Held[] = [];
 	const unreviewed: { lens: string; reason: string }[] = [];
-	results.forEach((result, i) => {
+	let delivered = 0;
+	unnamedFailed(results, names, known).forEach((result, i) => {
 		const lens = names[i] ?? `item ${i + 1}`;
-		if (result.outcome === "skipped") return;
-		if (result.value !== undefined)
+		if (result.outcome === "skipped") {
+			delivered++;
+			return;
+		}
+		if (result.value !== undefined) {
+			delivered++;
 			held.push(...heldBy(lens, result.value, result.outcome === "ok"));
-		else
+		} else
 			unreviewed.push({
 				lens,
 				reason: ("reason" in result && result.reason) || result.outcome,
 			});
 	});
-	return { held, unreviewed };
+	return { held, unreviewed, delivered };
 }
 
-/** The members of `results` that delivered a value: a skipped member and one that delivered nothing do not count. */
-const deliveredOf = (results: Settled<Member>[]): number =>
-	results.filter((r) => r.outcome !== "skipped" && r.value !== undefined)
-		.length;
-
 /**
- * The findings the members of every seat held, the lenses that never delivered theirs, and `delivered`, the count of
- * members that delivered a value. Each seat's members are `<seat>Results` and their lens names `<seat>Names`, joined
- * in seat order as `heldOf` reads them.
+ * `heldOf` over the members of every seat, joined in seat order, `delivered` summed. Each seat's members are
+ * `<seat>Results` and their lens names `<seat>Names`.
  */
 export function heldAcross(
 	inputs: Record<string, Settled<Member>[] | string[]>,
-): {
-	held: Held[];
-	unreviewed: { lens: string; reason: string }[];
-	delivered: number;
-} {
-	const seats = SEATS.map((seat) => {
-		const results = inputs[`${seat}Results`] as Settled<Member>[];
-		return {
-			...heldOf({ results, names: inputs[`${seat}Names`] as string[] }),
-			delivered: deliveredOf(results),
-		};
-	});
+): ReturnType<typeof heldOf> {
+	const seats = SEATS.map((seat) =>
+		heldOf({
+			results: inputs[`${seat}Results`] as Settled<Member>[],
+			names: inputs[`${seat}Names`] as string[],
+		}),
+	);
 	return {
 		held: seats.flatMap((s) => s.held),
 		unreviewed: seats.flatMap((s) => s.unreviewed),
@@ -158,6 +170,7 @@ type Result = { changeset: ArtifactRef; upheld: Held[] };
 type Tally = CodeOutputs<typeof Ports> & {
 	review?: string;
 	brief?: ValueOf<typeof Brief>;
+	delivered?: number;
 };
 type Args = {
 	lane: string;
@@ -181,10 +194,22 @@ const NO_REVIEW = "no lens delivered a review";
 /** The consolidator's name on the criteria it rules not met, held beside the lenses' findings. */
 const CONSOLIDATOR = "consolidator";
 
-/** Each criterion of `verdict` ruled not met, as a finding of the consolidator citing the spec. */
-const unmetOf = (verdict: ValueOf<typeof Verdict>): Held[] =>
+type Criterion = ValueOf<typeof Verdict>["criteria"][number];
+
+/** The `<lens>/<id>` of `finding`. */
+const keyOf = (finding: Held) => `${finding.lens}/${finding.id}`;
+
+/** Whether `criterion` names, as showing it, a finding of `kept`, the keys of the held findings upheld. */
+const isShown = (criterion: Criterion, kept: ReadonlySet<string>) =>
+	criterion.shownBy.some((id) => kept.has(id));
+
+/** Each criterion of `verdict` ruled not met and shown by no upheld finding, as a finding of the consolidator citing the spec. */
+const unmetOf = (
+	verdict: ValueOf<typeof Verdict>,
+	kept: ReadonlySet<string>,
+): Held[] =>
 	verdict.criteria
-		.filter((c) => !c.met)
+		.filter((c) => !c.met && !isShown(c, kept))
 		.map((c) => ({
 			lens: CONSOLIDATOR,
 			id: c.id,
@@ -200,18 +225,25 @@ const upheldItems = (upheld: Held[]): string[] =>
 			`- **${f.lens}/${f.id}** at \`${f.where}\`: ${f.issue}\n  - Cites: ${f.cites}${f.why ? `\n  - Why: ${f.why}` : ""}`,
 	);
 
-/** The review of `verdict` as Markdown: the `upheld` findings, then the criteria it rules met. Empty sections are left out. */
+/** The review of `verdict` as Markdown: the `upheld` findings, the criteria an upheld finding shows, then those it rules met. Empty sections are left out. */
 function reviewOf(
 	upheld: Held[],
 	verdict: ValueOf<typeof Verdict>,
+	kept: ReadonlySet<string>,
 	ctx: CodeContext,
 ): string {
 	const met = verdict.criteria
 		.filter((c) => c.met)
 		.map((c) => `- **${c.id}**: ${c.evidence}`);
+	const shown = verdict.criteria
+		.filter((c) => !c.met && isShown(c, kept))
+		.map(
+			(c) => `- **${c.id}**: ${c.evidence} (shown by ${c.shownBy.join(", ")})`,
+		);
 	const sections = (
 		[
 			["Upheld", upheldItems(upheld)],
+			["Not met", shown],
 			["Met", met],
 		] as const
 	).flatMap(([title, items]) =>
@@ -225,28 +257,28 @@ function reviewOf(
 /**
  * The review round's tally: the lane and session it carries, and the findings upheld.
  * - Without a `verdict`, every held finding.
- * - With one, those held findings whose `<lens>/<id>` its `upholds` names, then each criterion it rules not met, and a
- *   `review` rendered from it.
+ * - With one, those held findings whose `<lens>/<id>` its `upholds` names, then each criterion it rules not met that no
+ *   upheld finding it names in `shownBy` shows, and a `review` rendered from it.
  *
- * The `brief` given rides beside them. Rejects, with the tally as its outputs, while a finding is upheld, and, whatever
- * the verdict, when `delivered` is 0.
+ * The `brief` and `delivered` given ride beside them. Rejects, with the tally as its outputs, while a finding is
+ * upheld, and, whatever the verdict, when `delivered` is 0.
  */
 export function tallyOf(
 	{ lane, session, held, verdict, brief, delivered }: Args,
 	ctx: CodeContext,
 ): Tally | Required<Rejection<Tally>> {
-	const upheld = verdict
-		? [
-				...held.filter((f) => verdict.upholds.includes(`${f.lens}/${f.id}`)),
-				...unmetOf(verdict),
-			]
+	const stands = verdict
+		? held.filter((f) => verdict.upholds.includes(keyOf(f)))
 		: held;
+	const kept = new Set(stands.map(keyOf));
+	const upheld = verdict ? [...stands, ...unmetOf(verdict, kept)] : held;
 	const tally = {
 		lane,
 		session,
 		upheld,
-		...(verdict && { review: reviewOf(upheld, verdict, ctx) }),
+		...(verdict && { review: reviewOf(upheld, verdict, kept, ctx) }),
 		...(brief && { brief }),
+		...(delivered !== undefined && { delivered }),
 	};
 	if (delivered === 0) return rejection(upheld, tally, NO_REVIEW);
 	if (upheld.length) return rejection(upheld, tally);
@@ -255,16 +287,19 @@ export function tallyOf(
 
 /**
  * The change's patch series and the findings still upheld on it.
- * Rejects, with both as outputs, while a finding is upheld.
+ * Rejects, with both as outputs, while a finding is upheld, and when the last review's `delivered`, if given, is 0.
  */
 export function resultOf({
 	changeset,
 	upheld,
+	delivered,
 }: {
 	changeset: ArtifactRef;
 	upheld: Held[];
-}): { changeset: ArtifactRef; upheld: Held[] } | Required<Rejection<Result>> {
+	delivered?: number;
+}): Result | Required<Rejection<Result>> {
 	const result = { changeset, upheld };
+	if (delivered === 0) return rejection(upheld, result, NO_REVIEW);
 	return upheld.length ? rejection(upheld, result) : result;
 }
 
@@ -274,8 +309,8 @@ const MESSAGE_END = "\n---\n";
 const SIGNATURE = /\n-- \n[^\n]*\n*$/;
 const DIFF_START = /^diff --git /m;
 const HUNK_START = /^@@.*$/m;
-const PLAIN_PATH = /^(?:\+\+\+ b\/|--- a\/|rename to )(.+)$/;
-const QUOTED_PATH = /^(?:\+\+\+ "b\/|--- "a\/|rename to ")(.+)"$/;
+const PLAIN_PATH = /^(?:\+\+\+ b\/|--- a\/|rename to )(.+?)\t?$/;
+const QUOTED_PATH = /^(?:\+\+\+ "b\/|--- "a\/|rename to ")(.+)"\t?$/;
 const ESCAPES: Record<string, number> = {
 	a: 7,
 	b: 8,
@@ -304,7 +339,7 @@ function pathOf(line: string): string | undefined {
 	return quoted === undefined ? PLAIN_PATH.exec(line)?.[1] : unquote(quoted);
 }
 
-/** The path one file's diff names and the lines its hunks add or remove; undefined for a file with no hunk. */
+/** The path one file's diff names and the lines its hunks add or remove; undefined for a diff naming no path. */
 function countFile(file: string): [string, number] | undefined {
 	const [header = "", ...hunks] = file.split(HUNK_START);
 	const path = header
@@ -313,7 +348,7 @@ function countFile(file: string): [string, number] | undefined {
 			(found, line) => pathOf(line) ?? found,
 			undefined,
 		);
-	if (path === undefined || hunks.length === 0) return undefined;
+	if (path === undefined) return undefined;
 	const changed = hunks
 		.join("\n")
 		.split("\n")
@@ -321,7 +356,10 @@ function countFile(file: string): [string, number] | undefined {
 	return [path, changed.length];
 }
 
-/** Adds to `lines`, by path, the lines the diffs of `patch` add or remove inside a hunk; a commit message and git's signature count none. */
+/**
+ * Adds to `lines`, by path, the lines the diffs of `patch` add or remove inside a hunk.
+ * A path touched without a hunk counts 0; a commit message and git's signature count none.
+ */
 function countPatch(patch: string, lines: Map<string, number>) {
 	for (const mail of patch.split(MAIL_START)) {
 		const end = mail.indexOf(MESSAGE_END);
@@ -347,10 +385,11 @@ type Section = {
 /**
  * A tiered review's tier, checklist and seats, from its changeset.
  * - `lines` is the added plus removed lines inside the hunks of the `*.patch` files, over paths matching no `ignore` glob.
+ *   A renamed file's new path counts no line and is still a touched path.
  * - `tier` is the first of small, medium and large whose threshold `lines` does not pass, else xlarge, raised to
  *   `floor`.
- * - `sections` are the names of each section, in the order given, that has no `globs` or whose globs match a counted
- *   path; `checklist` is `lead`, each one's text under `### <name>`, then `close`.
+ * - `sections` are the names of each section, in the order given, that has no `globs` or whose globs match a touched
+ *   path outside `ignore`; `checklist` is `lead`, each one's text under `### <name>`, then `close`.
  * - Each seat's output is a one-item list of its seat name when the tier is one it rules in, else empty.
  */
 export function tieredOf(
@@ -394,11 +433,11 @@ export function tieredOf(
 			!globs || counted.some(([path]) => matchesAny(globs, path)),
 	);
 	const names = picked.map(([name]) => name);
-	const checklist = [
+	const checklist = task(
 		lead,
 		...picked.map(([name, { text }]) => `### ${name}\n\n${text}`),
 		close,
-	].join("\n\n");
+	);
 	const seats = Object.fromEntries(
 		SEATS.map((seat) => [
 			seat,
