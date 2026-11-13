@@ -70,8 +70,8 @@ sessions. [Home](docs/architecture.md#resume-and-encore) _Avoid_: rerun, continu
 **Tour manager**: The Maestro Tour Manager: maestro in factory mode, which triages and builds a milestone's forge
 tickets, speaking on a ticket only in comments. [Home](docs/agents/factory.md) _Avoid_: factory (for who acts), bot
 
-**Tick**: One run of `scripts/factory`: it reads the forge, routes what finished concerts left, and starts what may run
-next. [Home](docs/agents/factory.md)
+**Tick**: One run of `scripts/factory`: it reads the forge, routes what finished concerts left, and starts at most one
+next action. [Home](docs/agents/factory.md)
 
 **Settle**: A finished concert awaiting routing by the tick. [Home](docs/agents/factory.md#routing-a-settle)
 
@@ -218,7 +218,7 @@ given after doing the job. [Home](packages/host-repo/README.md#envelope)
 the run, and a red check is not one. [Home](docs/agents/factory.md#build)
 
 **Lesson**: Something the next agent in this repository should know that the code and docs do not say, listed in its
-report; a masterclass proposes its promotion and the owner approves it.
+report; the owner promotes it by hand.
 
 **Envelope**: An agent's final reply, carrying a report, the typed fields its seat call declares and, for a verdict
 agent, an outcome. [Home](packages/host-repo/README.md#envelope)
