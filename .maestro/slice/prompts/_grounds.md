@@ -1,4 +1,4 @@
-Besides the guidelines your skills carry, a finding may cite CODING_STANDARDS.md and the `area` attachment, when a
+A finding may cite a checklist item of your task, when it has one, CODING_STANDARDS.md and the `area` attachment, when a
 preset attaches one, and the spec: the request, its requirement IDs and the ADRs under docs/adr/. Drop any finding you
 cannot cite.
 

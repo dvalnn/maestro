@@ -318,7 +318,7 @@ Environment   not declared by codex`,
 			dir,
 			shadows: [join(w.pack, "profiles/builder")],
 			runtime: { harness: "claude", model: "opus", thinking: "high" },
-			instructions: join(dir, "instructions.md"),
+			instructions: [join(dir, "instructions.md")],
 			attachments: {
 				style: {
 					path: join(dir, "style.md"),

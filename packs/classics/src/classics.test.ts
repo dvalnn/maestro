@@ -9,7 +9,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { changeset, fresh } from "@maestro/host-repo-sdk";
 import {
 	code,
@@ -391,50 +391,32 @@ describe("build_then_repair", () => {
 	});
 });
 
+const TESTING = ["testing.md", "instructions.md"];
+
 test.each([
-	[
-		"builder",
-		[
-			"tdd",
-			"good-tests",
-			"codebase-design",
-			"code-smells",
-			"domain-modeling",
-			"writing",
-		],
-	],
-	["lens", ["good-tests", "codebase-design", "code-smells", "writing"]],
-	["skeptic", ["good-tests", "codebase-design", "code-smells", "writing"]],
-	["consolidator", ["good-tests", "codebase-design", "code-smells", "writing"]],
-	["tester", ["tdd", "good-tests", "codebase-design"]],
-	["scout", ["codebase-design"]],
-	[
-		"planner",
-		[
-			"codebase-design",
-			"codebase-deepening",
-			"design-it-twice",
-			"domain-modeling",
-			"writing",
-		],
-	],
-])("the %s attaches the skills %j from the pack", async (name, skills) => {
-	const { out, err, code } = await maestro([
-		"agent",
-		"show",
-		`classics/${name}`,
-		"--json",
-	]);
-	expect(err).toBe("");
-	expect(code).toBe(0);
-	const listed = Object.keys(JSON.parse(out).sources).filter((k) =>
-		/^skills\.\d+$/.test(k),
-	);
-	expect(listed).toHaveLength(skills.length);
-	const file = JSON.parse(out).sources.skills.file;
-	const named = readFileSync(file, "utf8").match(/^skills: \[(.*)\]/m)?.[1];
-	expect(named?.split(", ")).toEqual(skills.map((s) => `classics/${s}`));
-});
+	["builder", TESTING],
+	["tester", TESTING],
+	["lens", ["instructions.md"]],
+	["skeptic", ["instructions.md"]],
+	["consolidator", ["instructions.md"]],
+	["scout", ["instructions.md"]],
+	["planner", ["instructions.md"]],
+])(
+	"the %s lists the instruction files %j and attaches no guidance",
+	async (name, files) => {
+		const { out, err, code } = await maestro([
+			"agent",
+			"show",
+			`classics/${name}`,
+			"--json",
+		]);
+		expect(err).toBe("");
+		expect(code).toBe(0);
+		const shown = JSON.parse(out);
+		expect(shown.attachments).toEqual({});
+		expect(shown.instructions.map((f: string) => basename(f))).toEqual(files);
+	},
+);
 
 /** Writes `source` as `<name>.ts` in the workspace, beside the `node_modules` its imports resolve through, and returns its path. */
 function compositionFile(name: string, source: string) {

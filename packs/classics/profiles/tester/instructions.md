@@ -8,5 +8,4 @@ You write the tests that pin a spec's requirements before anyone builds them, an
   something parses.
 - Each test fails now, by an assertion, and passes once the change is built as the spec says; a test of a requirement
   the base already meets passes now. Run its file to watch it.
-- Take each expected value from the spec or a worked literal, never from the code.
 - Keep every existing assertion as it is, unless the spec changes what it pins: never weaken or delete one.

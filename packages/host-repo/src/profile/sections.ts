@@ -127,8 +127,14 @@ async function instructionsSections(
 	places: Places,
 ): Promise<Section[]> {
 	if (s.instructions === undefined) return [];
-	const lines = lineCount(await readFile(s.instructions, "utf8"));
-	const value = `${await hostPath(s.instructions, s, places)}, ${lines} ${lines === 1 ? "line" : "lines"}`;
+	const texts = await Promise.all(
+		s.instructions.map((f) => readFile(f, "utf8")),
+	);
+	const lines = texts.reduce((n, t) => n + lineCount(t), 0);
+	const paths = await Promise.all(
+		s.instructions.map((f) => hostPath(f, s, places)),
+	);
+	const value = `${paths.join(", ")}, ${lines} ${lines === 1 ? "line" : "lines"}`;
 	const source = wordsAt(s, "instructions");
 	return [
 		{

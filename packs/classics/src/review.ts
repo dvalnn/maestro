@@ -27,6 +27,7 @@ import { heldOf, toMarkdown } from "./code";
 import { challenge, tally } from "./moves";
 import { task } from "./prompt";
 import AGAIN from "./prompts/again.md" with { type: "text" };
+import CHECKLIST from "./prompts/checklist.md" with { type: "text" };
 import CONSOLIDATOR from "./prompts/consolidator.md" with { type: "text" };
 import CONSOLIDATOR_GROUNDS from "./prompts/consolidator-grounds.md" with {
 	type: "text",
@@ -43,7 +44,11 @@ import { Brief, Upheld } from "./types";
 
 /** Each call's task: its own prompt file, then the fragments it rules by, which a flag or a param can add. */
 const TASKS = {
-	lens: { correctness: CORRECTNESS, spec: SPEC, tests: TESTS },
+	lens: {
+		correctness: task(CORRECTNESS, CHECKLIST),
+		spec: task(SPEC, CHECKLIST),
+		tests: task(TESTS, CHECKLIST),
+	},
 	consolidator: (skeptics: boolean, grounds?: string) => {
 		const own = skeptics ? CONSOLIDATOR_SKEPTICS : CONSOLIDATOR;
 		return grounds === undefined

@@ -268,16 +268,17 @@ The agent tool answers one question for any agent on any harness: what does its 
   the harness's defaults, with no user skills, MCP servers, hooks, context files, memory or agent profiles, and subagent
   tools off where the harness allows. The baseline is fixed in the adapter, not a profile field.
 - **AT-02 (Must).** Anything beyond the baseline is opt-in and owned by maestro, never read from the user's harness
-  directories. A profile's skills mount at `/skills`. The one way past the baseline is `harnessExtras`: the harness
-  adapter copies the directory's contents into a session-owned config dir, and a harness without an extras check refuses
-  the field at pre-flight. `mcp` is a reserved profile key and the schema rejects it with
-  `profile <name>: mcp is reserved, not yet supported`.
+  directories. Guidance is written into a profile's `instructions`, never attached. The one way past the baseline is
+  `harnessExtras`: the harness adapter copies the directory's contents into a session-owned config dir, and a harness
+  without an extras check refuses the field at pre-flight. `mcp` is a reserved profile key and the schema rejects it
+  with `profile <name>: mcp is reserved, not yet supported`; `skills` is refused as no longer a profile field, with
+  `instructions` as the fix.
 - **AT-03 (Must).** A profile is a named roster entry bound to one harness. Its fields are
-  `runtime { harness, model, thinking }`, `instructions` (one file, appended to the harness's system prompt),
-  `harnessExtras` (one self-contained directory in the harness's own layout), `attachments`, `skills`, `readOnly` binds,
-  `limits { timeout, tokens }` and `context`. It has no tools or permissions field: maestro's sandbox is the one
-  permission boundary. A field its harness cannot honour is a pre-flight error naming the profile, the field and the
-  harness.
+  `runtime { harness, model, thinking }`, `instructions` (a file or an ordered list of files, joined and appended to the
+  harness's system prompt), `harnessExtras` (one self-contained directory in the harness's own layout), `attachments`,
+  `readOnly` binds, `limits { timeout, tokens }` and `context`. It has no tools or permissions field: maestro's sandbox
+  is the one permission boundary. A field its harness cannot honour is a pre-flight error naming the profile, the field
+  and the harness.
 - **AT-04 (Must).** A seat names one profile, and config may rebind it per composition, through `seats:` keyed
   `<pack>/<composition id>/<seat>`, so one pack's rebind leaves another pack's composition of the same id alone. There
   are no ad-hoc profiles. A call sets no runtime, limits or context.

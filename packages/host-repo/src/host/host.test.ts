@@ -1267,8 +1267,8 @@ describe("compose", () => {
 describe("perform", () => {
 	profile(
 		"careful",
-		"runtime: { harness: stub, model: none }\ninstructions: instructions.md\n",
-		{ "instructions.md": "You are careful." },
+		"runtime: { harness: stub, model: none }\ninstructions: [intro.md, instructions.md]\n",
+		{ "intro.md": "Be exact.", "instructions.md": "You are careful." },
 	);
 	test("environment gives code nodes the target, its base, the revision it names, its sparse patterns, null when unset, and a digest of the profiles", async () => {
 		const { host } = stubHost(() => []);
@@ -1370,7 +1370,9 @@ describe("perform", () => {
 		).toEqual({ n: 1 });
 		const staged = artifact("first", "staged");
 		const instructions = readFileSync(join(staged, "instructions.md"), "utf8");
-		expect(instructions).toStartWith("You are careful.\n\n# Your run\n");
+		expect(instructions).toStartWith(
+			"Be exact.\n\nYou are careful.\n\n# Your run\n",
+		);
 		expect(instructions).toContain(`${OUTBOX}/notes.json`);
 		expect(first?.instructions).toEndWith("/staged/instructions.md");
 		expect(readFileSync(join(staged, "prompt.md"), "utf8")).toBe("first task");

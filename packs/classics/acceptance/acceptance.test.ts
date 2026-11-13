@@ -17,6 +17,8 @@ import type { CodeContext } from "@maestro/sdk";
 import * as stdlib from "@maestro/sdk/stdlib";
 import { buildIr, stubConcert } from "@maestro/testkit";
 import { heldOf, tallyOf, toMarkdown } from "../src/code";
+import CHECKLIST from "../src/prompts/checklist.md" with { type: "text" };
+import CORRECTNESS from "../src/prompts/correctness.md" with { type: "text" };
 import { buildThenRepair } from "../src/repair";
 import { panelReview } from "../src/review";
 import { diff, maestroTrace, sssfTrace } from "./compare";
@@ -166,7 +168,7 @@ test("a review relays the findings its skeptics upheld to its consolidator, and 
 	});
 	const replies: [string, StubStep[]][] = [
 		[
-			"lens only: correctness",
+			"the correctness reviewer",
 			[
 				replying({
 					outcome: "rejected",
@@ -179,11 +181,8 @@ test("a review relays the findings its skeptics upheld to its consolidator, and 
 				}),
 			],
 		],
-		[
-			"lens only: the spec",
-			[replying({ outcome: "ok", report, findings: [] })],
-		],
-		["lens only: the tests", []],
+		["the spec reviewer", [replying({ outcome: "ok", report, findings: [] })]],
+		["the test reviewer", []],
 		[
 			"Independent lenses",
 			[replying({ report, verdict: { criteria: [], upholds: [] } })],
@@ -198,8 +197,11 @@ test("a review relays the findings its skeptics upheld to its consolidator, and 
 		],
 	});
 	const prompts: string[] = [];
+	const lensTasks: string[] = [];
 	const reviewer = stubHarness((req) => {
 		if (req.prompt.startsWith("Independent lenses")) prompts.push(req.prompt);
+		if (req.prompt.includes("the correctness reviewer"))
+			lensTasks.push(req.prompt);
 		return req.runtime.model === SKEPTIC
 			? [rulings]
 			: (replies.find(([task]) => req.prompt.includes(task))?.[1] ?? [
@@ -226,6 +228,9 @@ test("a review relays the findings its skeptics upheld to its consolidator, and 
 	});
 	await run.close();
 	expect(run.result).toMatchObject({ outcome: "ok", node: "panel/upheld" });
+	const [lensTask] = lensTasks;
+	for (const text of [CORRECTNESS, CHECKLIST])
+		expect(lensTask).toContain(text.trim());
 	const [task] = prompts;
 	expect(task).toContain("## findings");
 	expect(task).toContain("lens: correctness");

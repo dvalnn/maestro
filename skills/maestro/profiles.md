@@ -17,8 +17,8 @@ means no spend.
 
 ## Where a profile lives
 
-A directory holding a `profile.yaml` (`runtime`, `instructions`, `harnessExtras`, `limits`, `context`, `attachments`,
-`skills`) and the files it names, in one of these roots, highest first; the highest holding the name wins it whole:
+A directory holding a `profile.yaml` (`runtime`, `instructions`, `harnessExtras`, `limits`, `context`, `attachments`)
+and the files it names, in one of these roots, highest first; the highest holding the name wins it whole:
 
 - the workspace's `.maestro/profiles/<name>/`
 - the user's `$XDG_CONFIG_HOME/maestro/profiles/<name>/`
@@ -30,10 +30,9 @@ share a file such as an attachment. Copy a pack's whole `profiles/` to shadow it
 
 `readOnly` is set only in config, as `profiles.<name>.readOnly`.
 
-`skills` is a list of skill names, each a bare name or `<pack>/<name>`, found like a profile under `skills/` in the same
-roots (`.maestro/skills/<name>/`, a pack's `skills/`). Each is a directory with a `SKILL.md` whose frontmatter
-`description` gives the frame its **When**, mounted read-only at `/skills/<name>`. A skill linking a sibling as
-`../<sibling>/SKILL.md` needs that sibling in the list too, or the profile is refused.
+`instructions` is a file or a list of files inside the namespace directory, joined in order into the system prompt, so
+seats of one namespace share a file: `instructions: [../testing.md, instructions.md]`. Guidance a seat follows goes
+there, never in an attachment. `skills` is no profile field, and a profile setting it is refused.
 
 `harnessExtras` names one directory, in the harness's own layout, that the harness adapter copies into the config dir it
 owns for the session, such as a provider catalogue. Keep it self-contained: each link in it relative and resolving

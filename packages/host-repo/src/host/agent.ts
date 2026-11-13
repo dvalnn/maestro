@@ -53,7 +53,6 @@ import {
 	type ProfileFields,
 	resolveProfile,
 	seatBinding,
-	skillPath,
 	type Unsettled,
 } from "../profile/index";
 import type { Bind } from "../sandbox/index";
@@ -597,19 +596,19 @@ async function converse(
 	return { metrics: state.metrics, session: state.session, ...end };
 }
 
-/** The system prompt of `run`: the profile's `instructions` when it has any, then the host's frame of the run. */
-function systemPrompt(instructions: string | undefined, run: Run): string {
-	const own = instructions
-		? `${readFileSync(instructions, "utf8").trimEnd()}\n\n`
-		: "";
-	return `${own}${frame(run)}`;
+/** The system prompt of `run`: the profile's `instructions` files in order when it has any, then the host's frame of the run. */
+function systemPrompt(instructions: string[] | undefined, run: Run): string {
+	const own = (instructions ?? []).map(
+		(file) => `${readFileSync(file, "utf8").trimEnd()}\n\n`,
+	);
+	return `${own.join("")}${frame(run)}`;
 }
 
 /** Stages the user message and the system-prompt file of `run`. Returns the system-prompt file's path. */
 export function stage(
 	dir: string,
 	prompt: string,
-	instructions: string | undefined,
+	instructions: string[] | undefined,
 	run: Run,
 ) {
 	writeFileSync(join(dir, "prompt.md"), prompt);
@@ -803,7 +802,7 @@ function extrasOf(
 		...checks,
 		sources,
 		attached,
-		readOnly: [...mounts, ...skillBinds(profile), ...checks.readOnly],
+		readOnly: [...mounts, ...checks.readOnly],
 	};
 }
 
@@ -855,17 +854,7 @@ function sessionOf(
 	};
 }
 
-/** The read-only binds that mount `profile`'s skills. */
-export const skillBinds = (profile: Unsettled): Bind[] =>
-	profile.fields.skills.map((s) => ({ src: s.dir, dst: skillPath(s.name) }));
-
-/** The skills of `profile`, by mount name, each with its description. */
-export const profileSkills = (profile: Unsettled): Run["skills"] =>
-	profile.fields.skills.map((s) => [s.name, s.description]);
-
-/**
- * What the frame tells an agent of `config` running `profile` about its run: its checks `named` and the profile's skills.
- */
+/** What the frame tells an agent of `config` running `profile` about its run: its checks `named`. */
 function toldOf(
 	config: AgentConfig,
 	profile: Unsettled,
@@ -876,7 +865,6 @@ function toldOf(
 	return {
 		lane: config.lane.mode === "read" ? "read" : "write",
 		checks: named.map(([name, spec]) => [name, spec.hint]),
-		skills: profileSkills(profile),
 		out: Object.values(config.out ?? {}),
 		kind: replyKind(config.verdict, config.reply, sightings),
 		sessions:

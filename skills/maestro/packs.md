@@ -23,9 +23,7 @@ A directory, or a tarball of one, holding:
   and `@maestro/sdk`.
 - `README.md`: each composition's purpose, params and the profiles it needs.
 - `profiles/`, when the pack ships agents: one directory per profile, copied into `dist/profiles/` by the build. A seat
-  names one as `<id>/<name>`.
-- `skills/`, when the pack ships skills: one directory per skill with a `SKILL.md`, copied into `dist/skills/` by the
-  build. A profile loads one as `<id>/<name>` in its `skills`.
+  names one as `<id>/<name>`. A file several profiles list in `instructions` sits beside them in `profiles/`.
 
 ## Building the entry
 
@@ -50,7 +48,6 @@ if (!built.success) throw new AggregateError(built.logs, "the pack did not bundl
 await Bun.write("dist/index.js", built.outputs[0]);
 await Bun.write("dist/README.md", Bun.file("README.md"));
 await cp("profiles", "dist/profiles", { recursive: true });
-await cp("skills", "dist/skills", { recursive: true });
 const manifest = { id: "shop", version: "0.1.0", entry: "index.js", sdk: `^${SDK_VERSION}` };
 await Bun.write("dist/maestro-pack.json", JSON.stringify(manifest, null, 2));
 ```

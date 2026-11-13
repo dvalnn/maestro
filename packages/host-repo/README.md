@@ -124,13 +124,12 @@ sequenceDiagram
 The staged system-prompt file holds the profile's instructions, when it has any, then the host's **frame**, headed
 `# Your run`, then the sections below in this order, each left out when it has nothing to say.
 
-| Section           | Says                                                           |
-| ----------------- | -------------------------------------------------------------- |
-| `## Working copy` | the lane's write state, what git allows, the shell[^wc]        |
-| `## Checks`       | each check as `check <name>` with its `hint`[^frame-checks]    |
-| `## Disciplines`  | each skill of the profile's `skills`, by **When** and **Read** |
-| `## Context`      | only under a `handoff` policy[^frame-context]                  |
-| `## Reply`        | the output contract, each JSON schema pretty-printed           |
+| Section           | Says                                                        |
+| ----------------- | ----------------------------------------------------------- |
+| `## Working copy` | the lane's write state, what git allows, the shell[^wc]     |
+| `## Checks`       | each check as `check <name>` with its `hint`[^frame-checks] |
+| `## Context`      | only under a `handoff` policy[^frame-context]               |
+| `## Reply`        | the output contract, each JSON schema pretty-printed        |
 
 [^wc]:
     A write lane is left uncommitted, a read lane is a discarded fork the agent may change freely; git writes fail by
@@ -214,7 +213,7 @@ Structured data takes the envelope, and files take the outbox:
 
 A `reply` field is checked with the envelope's correction turn, and the agent writes no file for it. A later agent reads
 a typed field or a Markdown file as a `relay`, inlined in its task, and a large file as an attachment. An attachment's
-hint says when to read the file and for what, not what it is, and not what a skill says.
+hint says when to read the file and for what, not what it is, and not what the file says.
 
 ### Agent-run checks
 
@@ -383,21 +382,24 @@ config gives the profile its runtime (ADR 0013).
 
 A profile is a directory whose `profile.yaml` holds:
 
-| Field           | Holds                                                           |
-| --------------- | --------------------------------------------------------------- |
-| `runtime`       | `harness`, `model`, optional `thinking`                         |
-| `instructions`  | a path inside the namespace directory                           |
-| `harnessExtras` | a directory inside the namespace directory                      |
-| `attachments`   | paths inside the namespace directory, attached to every call    |
-| `skills`        | skill names, looked up as below and mounted at `/skills/<name>` |
-| `limits`        | `{ timeout, tokens }`                                           |
-| `context`       | the context policy above                                        |
+| Field           | Holds                                                        |
+| --------------- | ------------------------------------------------------------ |
+| `runtime`       | `harness`, `model`, optional `thinking`                      |
+| `instructions`  | a path inside the namespace directory, or a list of them     |
+| `harnessExtras` | a directory inside the namespace directory                   |
+| `attachments`   | paths inside the namespace directory, attached to every call |
+| `limits`        | `{ timeout, tokens }`                                        |
+| `context`       | the context policy above                                     |
 
 A path may leave the profile directory but not its **namespace directory**, the directory that holds it:
 `<root>/profiles/` for a bare name, `<root>/profiles/<pack id>/` for a pack's name in the workspace or user root, the
 bundle's `profiles/` for a pack's own. So profiles of one level share a file, and a shadow made by copying a pack's
 `profiles/` keeps its paths. A link cannot escape the bound, and neither the profile directory nor the namespace
 directory is a valid path. The profiles digest covers the shared files a winning profile names.
+
+A list under `instructions` is joined in order into the system prompt, so profiles of one namespace share a file
+(`[../testing.md, instructions.md]`) without copying it. A listed path outside the namespace directory is refused by
+name at resolution, so a shadow made by copying a pack's `profiles/` keeps the files its instructions list.
 
 `harnessExtras` names the **harness extras**: one directory, in the harness's own layout, that the harness adapter
 copies into the config dir it owns for the session, the one way past the baseline. The host binds nothing for it; the
@@ -415,11 +417,9 @@ adapter picks where the copy goes and when.
 - A session records the extras path its profile gave when it started, and each run in it, after a handoff or a continue,
   is given that path, never its current profile's: the agent can write its harness's config dir, but not the record.
 
-`skills` lists the skills the seat loads, each a bare name or `<pack>/<name>`. A skill is a directory with a `SKILL.md`
-whose frontmatter `description` gives the frame its **When**, and it mounts read-only at `/skills/<name>`, `<name>`
-being the last segment. Two skills of one profile cannot share it. A skill reaches a sibling in its own skills directory
-by `../<sibling>/SKILL.md`; resolution refuses a profile that does not attach each sibling its skills link, a missing
-skill or one without a `description`. The profiles digest covers every skills directory.
+Guidance a seat follows goes into its `instructions`, never an attachment
+([ADR 0018](../../docs/adr/0018-the-graph-gives-guidance-and-the-agent-never-picks-it.md)). `skills` is no profile
+field: resolution refuses it by name, with `instructions` as the fix.
 
 `readOnly` paths are set only in config, as `profiles.<name>.readOnly`, never in the file.
 
@@ -440,9 +440,6 @@ wins whole, and the others are its shadows.
 profile's own `profile.yaml`, so `--preset stub` always means no spend. A seat names one profile, defaulting to its own
 name; `seats.<pack>/<composition id>/<seat>` in config rebinds it to another. Resolution happens at pre-flight and again
 on a resume.
-
-A skill is found the same way under `skills/` in place of `profiles/`: `.maestro/skills/<name>/`,
-`$XDG_CONFIG_HOME/maestro/skills/<name>/`, and a pack bundle's `skills/`, named `<pack>/<name>`.
 
 `maestro agent ls` lists every profile and the root that wins it, and `maestro agent show` prints what one resolves to
 and the layer behind each value. `maestro agent probe` is under Harness adapters.
@@ -466,7 +463,7 @@ An agent reads five layers, in this order, each with one home; no layer restates
 
 | Layer       | From                                                        | Holds                                                                                                        |
 | ----------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Frame       | the host                                                    | working copy, checks, skill list, output schema                                                              |
+| Frame       | the host                                                    | working copy, checks, output schema                                                                          |
 | Profile     | `profiles/<name>/instructions.md`, its `attachments`        | who the agent is, how it works and what it never does, and its reference material, true in every call        |
 | Area        | a preset's profile `attachments`                            | what is true of one area or run, added to a profile                                                          |
 | Task        | one Markdown file per call, then the host's relays and tree | what this call asks, its inputs by name, its outputs, its bar, the relayed values and the files it must read |

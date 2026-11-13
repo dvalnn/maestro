@@ -1,3 +1,2 @@
-instructions: instructions.md
+instructions: [../testing.md, instructions.md]
 limits: { timeout: 20m, tokens: 10000000 }
-skills: [classics/tdd, classics/good-tests, classics/codebase-design]

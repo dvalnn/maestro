@@ -13,7 +13,6 @@
 	"dependencies": {
 		"@maestro/core": "workspace:*",
 		"@maestro/host-repo-sdk": "workspace:*",
-		"@maestro/ir": "workspace:*",
-		"yaml": "2.9.1"
+		"@maestro/ir": "workspace:*"
 	}
 }

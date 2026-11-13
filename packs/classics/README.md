@@ -86,20 +86,25 @@ placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer pa
 
 ## Seats and profiles
 
-| Seat           | Profile                 | Reply or output  | Skills                                                                                   |
-| -------------- | ----------------------- | ---------------- | ---------------------------------------------------------------------------------------- |
-| `builder`      | `classics/builder`      | the lane         | `tdd`, `good-tests`, `codebase-design`, `code-smells`, `domain-modeling`, `writing`      |
-| `tester`       | `classics/tester`       | `map`: `TestMap` | `tdd`, `good-tests`, `codebase-design`                                                   |
-| `lens`         | `classics/lens`         | `findings`       | `good-tests`, `codebase-design`, `code-smells`, `writing`                                |
-| `skeptic`      | `classics/skeptic`      | `rulings`        | as `lens`                                                                                |
-| `consolidator` | `classics/consolidator` | `verdict`        | as `lens`                                                                                |
-| `scout`        | `classics/scout`        | `answers`        | `codebase-design`                                                                        |
-| `planner`      | `classics/planner`      | `plan`           | `codebase-design`, `codebase-deepening`, `design-it-twice`, `domain-modeling`, `writing` |
+| Seat           | Profile                 | Reply or output  | Instructions                    |
+| -------------- | ----------------------- | ---------------- | ------------------------------- |
+| `builder`      | `classics/builder`      | the lane         | `testing.md`, `instructions.md` |
+| `tester`       | `classics/tester`       | `map`: `TestMap` | `testing.md`, `instructions.md` |
+| `lens`         | `classics/lens`         | `findings`       | `instructions.md`[^lens]        |
+| `skeptic`      | `classics/skeptic`      | `rulings`        | `instructions.md`               |
+| `consolidator` | `classics/consolidator` | `verdict`        | `instructions.md`               |
+| `scout`        | `classics/scout`        | `answers`        | `instructions.md`               |
+| `planner`      | `classics/planner`      | `plan`           | `instructions.md`               |
 
-`scout` and `planner` serve no composition of the pack; they are seats for compositions built on it. The skills are
-adapted from Matt Pocock's under the MIT license in `skills/LICENSE`, each copy recorded in `skills/UPSTREAM.md`. A
-profile may name files anywhere inside its namespace directory, here `profiles/`; copy the whole `profiles/` to shadow
-the pack.
+[^lens]:
+    Each lens's task holds a checklist drawn from `skills/`, which it rules on item by item; `LENSES` holds the tasks.
+
+`scout` and `planner` serve no composition of the pack; they are seats for compositions built on it. No profile attaches
+guidance: each seat's instructions carry what its one job needs, and `builder` and `tester` share `profiles/testing.md`
+([ADR 0018](../../docs/adr/0018-the-graph-gives-guidance-and-the-agent-never-picks-it.md)). The text under `skills/` is
+the source those instructions and checklists are written from, adapted from Matt Pocock's skills under the MIT license
+in `skills/LICENSE`, each copy recorded in `skills/UPSTREAM.md`; no profile reads it. A profile may name files anywhere
+inside its namespace directory, here `profiles/`; copy the whole `profiles/` to shadow the pack.
 
 Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, `lens`, `skeptic`, `consolidator` and `tester` 20
 minutes and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own terms; set one

@@ -7,7 +7,6 @@ import {
 	isAbsolute,
 	join,
 	relative,
-	resolve as resolvePath,
 	sep,
 } from "node:path";
 import { closest, sha256Hex, walk } from "@maestro/core";
@@ -36,7 +35,6 @@ import {
 	timeoutProblem,
 	validator,
 } from "@maestro/ir";
-import { parse as parseYaml } from "yaml";
 import {
 	type AgentEnvironment,
 	type ContextAt,
@@ -49,16 +47,10 @@ import {
 export const PROFILES = "profiles";
 /** The config namespace that rebinds seats to profiles. */
 export const SEATS = "seats";
-/** A kind of directory a root holds: its directory under the root, the file that makes a subdirectory one, its noun. */
-type Kind = { dir: string; file: string; noun: string };
-const PROFILE_KIND: Kind = {
-	dir: "profiles",
-	file: "profile.yaml",
-	noun: "profile",
-};
-/** A Markdown link's target, without its `#anchor`. */
-const LINK_TARGET = /\]\(([^)\s#]+)(?:#[^)\s]*)?\)/g;
-const SKILL_KIND: Kind = { dir: "skills", file: "SKILL.md", noun: "skill" };
+/** The directory under each root of `Roots` that holds its profiles. */
+const PROFILES_DIR = "profiles";
+/** The file that makes a directory a profile. */
+const PROFILE_FILE = "profile.yaml";
 const CODE = "HOST.profile";
 
 const SEGMENT = irSchema.$defs.name.pattern.slice(1, -1);
@@ -71,8 +63,6 @@ const SEAT_KEY = new RegExp(`^${SEGMENT}/${SEGMENT}/${SEGMENT}$`);
 const OWNER_SEPARATOR = "/";
 /** The directory where an agent's sandbox mounts its attachments. */
 const ATTACHMENT_DIR = "/in";
-/** The directory where an agent's sandbox mounts its skills. */
-const SKILL_MOUNT = "/skills";
 
 /** The keys of a profile that hold file paths, relative to its directory in its file. `*` matches any one key. */
 export const PROFILE_PATHS: readonly KeyPath[] = [
@@ -81,8 +71,19 @@ export const PROFILE_PATHS: readonly KeyPath[] = [
 	["harnessExtras"],
 ];
 const EXTRAS = "harnessExtras";
-/** Keys reserved for later: config passes them for resolution to refuse by name. */
-const RESERVED = ["mcp"];
+/** Keys a profile may not set, each with why and the fix for one set at `where`. */
+const REFUSED: Record<string, { why: string; fix: (where: string) => string }> =
+	{
+		mcp: {
+			why: "is reserved, not yet supported",
+			fix: (where) => `Drop ${where}`,
+		},
+		skills: {
+			why: "is no longer a profile field",
+			fix: (where) =>
+				`Drop ${where}, and write its guidance into 'instructions'`,
+		},
+	};
 const READ_ONLY = "readOnly";
 /** The runtime fields that must be set once config is layered over the file. */
 const REQUIRED_RUNTIME = ["harness", "model"] as const;
@@ -108,13 +109,13 @@ const fieldsSchema = (
 			additionalProperties: false,
 			properties: { harness: TEXT, model: TEXT, thinking: TEXT },
 		},
-		instructions: TEXT,
-		harnessExtras: TEXT,
-		skills: {
-			type: "array",
-			items: { type: "string", pattern: PROFILE_NAME.source },
-			uniqueItems: true,
+		instructions: {
+			type: ["string", "array"],
+			minLength: 1,
+			minItems: 1,
+			items: TEXT,
 		},
+		harnessExtras: TEXT,
 		attachments: {
 			type: "object",
 			propertyNames: { pattern: irSchema.$defs.portName.pattern },
@@ -157,7 +158,7 @@ export const PROFILES_CONFIG: JsonSchema = {
 	},
 	additionalProperties: fieldsSchema(
 		false,
-		Object.fromEntries(RESERVED.map((k) => [k, {}])),
+		Object.fromEntries(Object.keys(REFUSED).map((k) => [k, {}])),
 	),
 };
 
@@ -173,22 +174,14 @@ export const SEATS_CONFIG: JsonSchema = {
 /** A file or directory an agent reads, and the hint that says when it should. `path` is absolute. */
 export type ProfileAttachment = { path: string; hint: string };
 
-/** A skill a profile loads: `name` is its mount name, `ref` as the profile writes it. `dir` is absolute. */
-export type ProfileSkill = {
-	name: string;
-	ref: string;
-	dir: string;
-	description: string;
-};
-
 /** A profile's fields once config is layered over its file. Every path is absolute. */
 export type ProfileFields = {
 	runtime: Runtime;
-	instructions?: string;
+	/** The system prompt's files, joined in order. */
+	instructions?: string[];
 	/** The directory the harness adapter copies into the config dir it owns for the session (GLOSSARY: Harness extras). */
 	harnessExtras?: string;
 	attachments: Record<string, ProfileAttachment>;
-	skills: ProfileSkill[];
 	/** Host paths bound read-only, set in config only. */
 	readOnly: string[];
 	/** `timeout` in milliseconds. */
@@ -223,65 +216,58 @@ export function mountedName(name: string, source: string): string {
 /** Where the sandbox sees attachment `name`. */
 export const attachmentPath = (name: string) => `${ATTACHMENT_DIR}/${name}`;
 
-/** Where the sandbox sees skill `name`. */
-export const skillPath = (name: string) => `${SKILL_MOUNT}/${name}`;
-
 /** Whether `name` is a bare name or `<pack id>/<name>`. */
 export const isProfileName = (name: string) => PROFILE_NAME.test(name);
 
-/** Whether `dir` holds a `kind.file` file. */
-const isHeld = async (dir: string, kind: Kind) =>
-	(await stat(join(dir, kind.file)).catch(() => undefined))?.isFile() ?? false;
+/** Whether `dir` is a profile: a directory holding a `profile.yaml` file. */
+const isProfile = async (dir: string) =>
+	(await stat(join(dir, PROFILE_FILE)).catch(() => undefined))?.isFile() ??
+	false;
 
-/** The `kind` directories of the workspace and user roots, highest first. */
-const unowned = (roots: Roots, kind: Kind) =>
+/** The profile directories of the workspace and user roots, highest first. */
+const unowned = (roots: Roots) =>
 	[roots.workspace, roots.user]
 		.filter((r): r is string => r !== undefined)
-		.map((r) => join(r, kind.dir));
+		.map((r) => join(r, PROFILES_DIR));
 
-/** The `kind` directory of pack `id`, undefined when no pack of that id is installed. */
-function packDir(roots: Roots, id: string, kind: Kind) {
+/** The profile directory of pack `id`, undefined when no pack of that id is installed. */
+function packDir(roots: Roots, id: string) {
 	const bundle = Object.hasOwn(roots.packs, id) ? roots.packs[id] : undefined;
-	return bundle === undefined ? undefined : join(bundle, kind.dir);
+	return bundle === undefined ? undefined : join(bundle, PROFILES_DIR);
 }
 
 /** Where `name` may live, highest root first: a bare name in the workspace and user roots, a pack's in its pack's too. */
-function candidates(name: string, roots: Roots, kind = PROFILE_KIND): string[] {
+function candidates(name: string, roots: Roots): string[] {
 	const [owner = "", own] = name.split(OWNER_SEPARATOR);
-	if (own === undefined) return unowned(roots, kind).map((r) => join(r, owner));
-	const pack = packDir(roots, owner, kind);
+	if (own === undefined) return unowned(roots).map((r) => join(r, owner));
+	const pack = packDir(roots, owner);
 	return [
-		...unowned(roots, kind).map((r) => join(r, owner, own)),
+		...unowned(roots).map((r) => join(r, owner, own)),
 		...(pack === undefined ? [] : [join(pack, own)]),
 	];
-}
-
-/** The directory that holds `kind` entry `name` in `roots`, the first found winning whole, and the lower ones it shadows. */
-async function findIn(
-	name: string,
-	roots: Roots,
-	kind: Kind,
-): Promise<{ dir: string; shadows: string[] } | undefined> {
-	if (!isProfileName(name)) return undefined;
-	const dirs = candidates(name, roots, kind);
-	const held = await Promise.all(dirs.map((d) => isHeld(d, kind)));
-	const [dir, ...shadows] = dirs.filter((_, i) => held[i]);
-	return dir === undefined ? undefined : { dir, shadows };
 }
 
 /**
  * The directory that holds profile `name` in `roots`, the first found winning whole, and the lower ones it shadows.
  * Undefined when no root holds it, or `name` is no profile name.
  */
-export const findProfile = (name: string, roots: Roots) =>
-	findIn(name, roots, PROFILE_KIND);
+export async function findProfile(
+	name: string,
+	roots: Roots,
+): Promise<{ dir: string; shadows: string[] } | undefined> {
+	if (!isProfileName(name)) return undefined;
+	const dirs = candidates(name, roots);
+	const held = await Promise.all(dirs.map(isProfile));
+	const [dir, ...shadows] = dirs.filter((_, i) => held[i]);
+	return dir === undefined ? undefined : { dir, shadows };
+}
 
 export type ProfileRoot = "workspace" | "user" | "pack";
 
 /** The root kind of `roots` that holds `dir`, a directory `findProfile` gave. */
 export function profileRoot(dir: string, roots: Roots): ProfileRoot {
 	const holds = (root: string) =>
-		dir.startsWith(join(root, PROFILE_KIND.dir) + sep);
+		dir.startsWith(join(root, PROFILES_DIR) + sep);
 	if (roots.workspace !== undefined && holds(roots.workspace))
 		return "workspace";
 	return holds(roots.user) ? "user" : "pack";
@@ -290,18 +276,14 @@ export function profileRoot(dir: string, roots: Roots): ProfileRoot {
 /** The entries of `dir`, none when it is missing or no directory. */
 const entries = (dir: string) => readdir(dir).catch((): string[] => []);
 
-/** Those of `names`, each a path under `root`, that are `kind` entries. */
-async function entriesAmong(
-	root: string,
-	names: string[],
-	kind: Kind,
-): Promise<string[]> {
-	const held = await Promise.all(names.map((n) => isHeld(join(root, n), kind)));
+/** Those of `names`, each a path under `root`, that are profiles. */
+async function profilesAmong(root: string, names: string[]): Promise<string[]> {
+	const held = await Promise.all(names.map((n) => isProfile(join(root, n))));
 	return names.filter((_, i) => held[i]);
 }
 
-/** The `kind` names `roots` hold, each once and sorted: bare and two-level in the unowned roots, and each pack's. */
-async function namesIn(roots: Roots, kind: Kind): Promise<string[]> {
+/** The profile names `roots` hold, each once and sorted: bare and two-level in the unowned roots, and each pack's. */
+export async function heldNames(roots: Roots): Promise<string[]> {
 	const inUnowned = async (root: string) => {
 		const tops = await entries(root);
 		const nested = await Promise.all(
@@ -309,26 +291,20 @@ async function namesIn(roots: Roots, kind: Kind): Promise<string[]> {
 				(await entries(join(root, t))).map((n) => `${t}/${n}`),
 			),
 		);
-		return entriesAmong(root, [...tops, ...nested.flat()], kind);
+		return profilesAmong(root, [...tops, ...nested.flat()]);
 	};
 	const inPacks = Object.entries(roots.packs).map(async ([id, bundle]) => {
-		const root = join(bundle, kind.dir);
-		return (await entriesAmong(root, await entries(root), kind)).map(
+		const root = join(bundle, PROFILES_DIR);
+		return (await profilesAmong(root, await entries(root))).map(
 			(n) => `${id}/${n}`,
 		);
 	});
-	const all = await Promise.all([
-		...unowned(roots, kind).map(inUnowned),
-		...inPacks,
-	]);
+	const all = await Promise.all([...unowned(roots).map(inUnowned), ...inPacks]);
 	return [...new Set(all.flat())].filter(isProfileName).toSorted();
 }
 
-/** The profile names `roots` hold, each once and sorted: bare and two-level in the unowned roots, and each pack's. */
-export const heldNames = (roots: Roots) => namesIn(roots, PROFILE_KIND);
-
 /**
- * The fix for `kind` entry `name`, which no root holds, then `otherwise`. The first that applies:
+ * The fix for profile `name`, which no root holds, then `otherwise`. The first that applies:
  * - a name of `held` near it;
  * - for a pack's name, the pack to install or update;
  * - where to create it.
@@ -338,19 +314,18 @@ function missingFix(
 	roots: Roots,
 	held: readonly string[],
 	otherwise: string,
-	kind = PROFILE_KIND,
 ) {
 	const near = closest(name, held);
 	if (near !== undefined) return `Did you mean '${near}'?`;
 	const [pack = "", own] = name.split(OWNER_SEPARATOR);
 	if (own !== undefined)
 		return Object.hasOwn(roots.packs, pack)
-			? `Update pack '${pack}' to a version with ${kind.noun} '${own}', or ${otherwise}`
+			? `Update pack '${pack}' to a version with profile '${own}', or ${otherwise}`
 			: `Install pack '${pack}', or ${otherwise}`;
-	const [first] = candidates(name, roots, kind);
+	const [first] = candidates(name, roots);
 	return first === undefined
 		? otherwise
-		: `Create ${join(first, kind.file)}, or ${otherwise}`;
+		: `Create ${join(first, PROFILE_FILE)}, or ${otherwise}`;
 }
 
 const refusal = (source: Source | undefined, message: string, fix: string) =>
@@ -410,10 +385,11 @@ export async function untunable(setup: HostSetup): Promise<Diagnostic[]> {
 
 /** The message and fix for `key` set in `file`, profile `name`'s file, when a profile file may not set it. */
 function refusedKey(name: string, file: string, key: string) {
-	if (RESERVED.includes(key))
+	const refused = REFUSED[key];
+	if (refused)
 		return [
-			`profile ${name}: ${key} is reserved, not yet supported`,
-			`Drop '${key}' from ${file}`,
+			`profile ${name}: ${key} ${refused.why}`,
+			refused.fix(`'${key}' from ${file}`),
 		] as const;
 	if (key === READ_ONLY)
 		return [
@@ -428,7 +404,7 @@ function refusedKey(name: string, file: string, key: string) {
  * @throws ConfigError when it cannot be read, is not YAML config, or sets a key a profile file may not.
  */
 async function fileLayer(name: string, dir: string): Promise<Layer> {
-	const file = join(dir, PROFILE_KIND.file);
+	const file = join(dir, PROFILE_FILE);
 	const text = await readFile(file, "utf8").catch((error: unknown) => {
 		const why = error instanceof Error && "code" in error ? error.code : error;
 		throw new ConfigError([
@@ -458,7 +434,9 @@ function pathsIn(
 ): [KeyPath, string][] {
 	const { instructions, attachments } = values;
 	const found: [KeyPath, unknown][] = [
-		[["instructions"], instructions],
+		...[instructions]
+			.flat()
+			.map((i): [KeyPath, unknown] => [["instructions"], i]),
 		[[EXTRAS], values[EXTRAS]],
 	];
 	if (isPlainObject(attachments))
@@ -611,17 +589,19 @@ function timeoutErrors(name: string, merged: Merged): Diagnostic[] {
 	];
 }
 
-/** An error for each reserved key config sets for profile `name`, naming where. */
-function reservedErrors(name: string, merged: Merged): Diagnostic[] {
-	return RESERVED.filter((k) => Object.hasOwn(merged.values, k)).map((k) => {
-		const source = sourceOf(merged, [k]);
-		const from = source?.file === undefined ? "" : ` from ${source.file}`;
-		return refusal(
-			source,
-			`profile ${name}: ${k} is reserved, not yet supported`,
-			`Drop '${PROFILES}.${name}.${k}'${from}`,
-		);
-	});
+/** An error for each refused key config sets for profile `name`, naming where. */
+function refusedErrors(name: string, merged: Merged): Diagnostic[] {
+	return Object.entries(REFUSED)
+		.filter(([k]) => Object.hasOwn(merged.values, k))
+		.map(([k, { why, fix }]) => {
+			const source = sourceOf(merged, [k]);
+			const from = source?.file === undefined ? "" : ` from ${source.file}`;
+			return refusal(
+				source,
+				`profile ${name}: ${k} ${why}`,
+				fix(`'${PROFILES}.${name}.${k}'${from}`),
+			);
+		});
 }
 
 /** The required fields of `runtime` it leaves unset: the model is none on the stub, which runs no model. */
@@ -641,142 +621,14 @@ export const unsetKeys = (
 		[PROFILES, ANY_PROFILE, "runtime", f],
 	]);
 
-/** The `description` in the frontmatter of `text`, a `SKILL.md`; undefined when it has none or the block is no YAML. */
-function descriptionOf(text: string): string | undefined {
-	const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
-	if (block === undefined) return undefined;
-	try {
-		const { description } = parseYaml(block) ?? {};
-		return typeof description === "string" && description.trim()
-			? description.trim()
-			: undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-/** The skill `ref`, as profile `name` names it at `source`, or the error that refuses it. */
-async function findSkill(
-	name: string,
-	ref: string,
-	roots: Roots,
-	source: Source | undefined,
-): Promise<ProfileSkill | Diagnostic> {
-	const found = await findIn(ref, roots, SKILL_KIND);
-	if (!found) {
-		const held = await namesIn(roots, SKILL_KIND);
-		return refusal(
-			source,
-			`profile ${name}: skill ${ref} is in no skill root`,
-			missingFix(ref, roots, held, `drop '${ref}' from skills`, SKILL_KIND),
-		);
-	}
-	const file = join(found.dir, SKILL_KIND.file);
-	const description = descriptionOf(await readFile(file, "utf8"));
-	if (description === undefined)
-		return refusal(
-			source,
-			`profile ${name}: skill ${ref} has no description in ${file}`,
-			`Add a 'description' to the frontmatter of ${file}`,
-		);
-	return {
-		name: basename(ref),
-		ref,
-		dir: found.dir,
-		description,
-	};
-}
-
-/** Each sibling `skill` links to the entry of, once, resolving each link from the folder of the Markdown file holding it. */
-async function linkedSiblings(skill: ProfileSkill): Promise<string[]> {
-	const files = await pathsOf(
-		skill.dir,
-		(e) => e.isFile() && extname(e.name) === ".md",
-	);
-	const space = dirname(skill.dir);
-	const found = await Promise.all(
-		files.map(async (f) => {
-			const text = await readFile(join(skill.dir, f), "utf8");
-			return [...text.matchAll(LINK_TARGET)]
-				.map((m) => resolvePath(skill.dir, dirname(f), m[1] as string))
-				.filter(
-					(t) =>
-						basename(t) === SKILL_KIND.file &&
-						dirname(dirname(t)) === space &&
-						dirname(t) !== skill.dir,
-				)
-				.map((t) => basename(dirname(t)));
-		}),
-	);
-	return [...new Set(found.flat())];
-}
-
-/** The errors of `skills`, profile `name`'s: two on one mount name, and each link to a sibling it does not attach. */
-async function skillErrors(
-	name: string,
-	skills: readonly ProfileSkill[],
-	source: Source | undefined,
-): Promise<Diagnostic[]> {
-	const mounts = skills.map((s) => s.name);
-	const refs = skills.map((s) => s.ref);
-	const clashes = skills
-		.filter((s, i) => mounts.indexOf(s.name) !== i)
-		.map((s) => {
-			const first = skills[mounts.indexOf(s.name)]?.ref;
-			return refusal(
-				source,
-				`profile ${name}: skills ${first} and ${s.ref} both mount at ${skillPath(s.name)}`,
-				`Drop one of ${first} and ${s.ref} from skills`,
-			);
-		});
-	const linked = await Promise.all(skills.map(linkedSiblings));
-	const unattached = skills.flatMap((s, i) =>
-		(linked[i] ?? [])
-			.map((sibling) => join(dirname(s.ref), sibling))
-			.filter((sibling) => !refs.includes(sibling))
-			.map((sibling) =>
-				refusal(
-					source,
-					`profile ${name}: skill ${s.ref} links ../${basename(sibling)}/SKILL.md, which the profile does not attach`,
-					`Add ${sibling} to its skills, or drop the link from ${s.name}`,
-				),
-			),
-	);
-	return [...clashes, ...unattached];
-}
-
-/**
- * The skills `merged` names for profile `name`, found in `roots`.
- * @throws ConfigError for a skill no root holds or without a description, two on one mount name, and a skill linking
- * a sibling the profile does not attach.
- */
-async function resolveSkills(
-	name: string,
-	merged: Merged,
-	roots: Roots,
-): Promise<ProfileSkill[]> {
-	const refs = (merged.values.skills ?? []) as string[];
-	const source = sourceOf(merged, ["skills"]);
-	const found = await Promise.all(
-		refs.map((ref) => findSkill(name, ref, roots, source)),
-	);
-	const missing = found.filter((f): f is Diagnostic => "message" in f);
-	const skills = found.filter((f): f is ProfileSkill => !("message" in f));
-	const errors = missing.length
-		? missing
-		: await skillErrors(name, skills, source);
-	if (errors.length) throw new ConfigError(errors);
-	return skills;
-}
-
 /** The errors of `merged`, profile `name` with config layered over its file, as fields. */
 function fieldErrors(
 	name: string,
 	merged: Merged,
 	tolerateUnset: boolean,
 ): Diagnostic[] {
-	const reserved = reservedErrors(name, merged);
-	if (reserved.length) return reserved;
+	const refused = refusedErrors(name, merged);
+	if (refused.length) return refused;
 	const off = offSchema(validator(), RESOLVED_SCHEMA, merged.values, {
 		config: merged,
 		path: [],
@@ -814,8 +666,9 @@ type WrittenContext = Omit<ContextPolicy, "at" | "max"> & {
 /** A profile's values as config writes them, once they passed the schema. */
 type Written = Omit<
 	ProfileFields,
-	"runtime" | "limits" | "context" | "skills"
+	"runtime" | "limits" | "context" | "instructions"
 > & {
+	instructions?: string | string[];
 	runtime: Omit<Runtime, "model"> & { model?: string };
 	limits?: { timeout?: string; tokens?: number };
 	context?: WrittenContext;
@@ -856,10 +709,10 @@ function contextOf({
 	return { strategy, at: contextAt(at), max };
 }
 
-/** The fields of `values` but its runtime and skills, which passed `fieldErrors`. */
+/** The fields of `values` but its runtime, which passed `fieldErrors`. */
 function restOf(
 	values: Readonly<Record<string, unknown>>,
-): Omit<ProfileFields, "runtime" | "skills"> {
+): Omit<ProfileFields, "runtime"> {
 	const {
 		instructions,
 		harnessExtras,
@@ -870,7 +723,7 @@ function restOf(
 	} = writtenOf(values);
 	const { timeout, tokens } = limits ?? {};
 	return {
-		...(instructions !== undefined && { instructions }),
+		...(instructions !== undefined && { instructions: [instructions].flat() }),
 		...(harnessExtras !== undefined && { harnessExtras }),
 		attachments: attachments ?? {},
 		readOnly: readOnly ?? [],
@@ -1011,27 +864,10 @@ async function extrasErrors(
 	});
 }
 
-/** `sha256:<hex>` of each file under each skills directory `roots` hold, one map of files by path per directory. */
-async function skillHashes(roots: Roots): Promise<Record<string, string>[]> {
-	const dirs = [
-		...unowned(roots, SKILL_KIND),
-		...Object.keys(roots.packs).flatMap(
-			(id) => packDir(roots, id, SKILL_KIND) ?? [],
-		),
-	];
-	return Promise.all(
-		dirs.map(async (dir) =>
-			(await stat(dir).catch(() => undefined))?.isDirectory()
-				? fileHashes(dir)
-				: {},
-		),
-	);
-}
-
 /**
- * `sha256:<hex>` over the files of every profile `roots` hold, each name's that wins, and of every skills directory:
- * any edit to one changes it. With the config `layers` over each, it covers the extras directory that wins too, its
- * files and the text of its links, when it sits inside the profile's namespace directory.
+ * `sha256:<hex>` over the files of every profile `roots` hold, each name's that wins: any edit to one changes it. With
+ * the config `layers` over each, it covers the extras directory that wins too, its files and the text of its links,
+ * when it sits inside the profile's namespace directory.
  */
 export async function profilesDigest(
 	roots: Roots,
@@ -1059,12 +895,7 @@ export async function profilesDigest(
 			];
 		}),
 	);
-	return `sha256:${sha256Hex(
-		canonicalJson({
-			profiles: Object.fromEntries(held),
-			skills: await skillHashes(roots),
-		}),
-	)}`;
+	return `sha256:${sha256Hex(canonicalJson(Object.fromEntries(held)))}`;
 }
 
 /**
@@ -1107,7 +938,7 @@ export const isSettled = (profile: Unsettled): profile is Profile =>
  * layer, and layers the config layers of `setup` over it at `profiles.<name>` with every merge tag applying (ADR 0013), each
  * layer's `profiles."*"` beneath its `profiles.<name>`.
  * @throws ConfigError when the name is no profile name, no root holds it, its file cannot be read or sets a refused
- * key, a path in its file is wrong by `pathProblem`, or the fields set a reserved key, are off their schema or leave the
+ * key, a path in its file is wrong by `pathProblem`, or the fields set a refused key, are off their schema or leave the
  * harness unset, or the model unset on any harness but the stub.
  */
 export async function resolveProfile(
@@ -1161,7 +992,6 @@ async function resolve(
 	if (errors.length) throw new ConfigError(errors);
 	const extras = await extrasErrors(name, merged);
 	if (extras.length) throw new ConfigError(extras);
-	const skills = await resolveSkills(name, merged, roots);
 	const runtime = (merged.values.runtime ?? {}) as Partial<Runtime>;
 	return {
 		name,
@@ -1173,7 +1003,6 @@ async function resolve(
 				...(runtime.harness === STUB && { model: runtime.model ?? STUB }),
 			},
 			...restOf(merged.values),
-			skills,
 		},
 		sources: merged.sources,
 		files: await fileHashes(found.dir),
@@ -1188,7 +1017,7 @@ export type Inspection = {
 	dir: string;
 	shadows: string[];
 	runtime: Partial<Runtime>;
-	instructions?: string;
+	instructions?: string[];
 	harnessExtras?: string;
 	attachments: Record<string, ProfileAttachment & { agent: string }>;
 	readOnly: string[];

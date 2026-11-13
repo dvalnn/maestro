@@ -22,7 +22,7 @@ const FINDING = {
 	issue: Text({ description: "the failure the defect causes" }),
 	cites: Text({
 		description:
-			"the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; a skill, an attached doc or a repo standard",
+			"the guideline it breaks, as its source prints it, or source and heading for an unnamed rule; a checklist item, an attached doc or a repo standard",
 	}),
 };
 

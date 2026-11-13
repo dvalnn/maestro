@@ -1,3 +1,2 @@
 instructions: instructions.md
 limits: { timeout: 20m, tokens: 10000000 }
-skills: [classics/good-tests, classics/codebase-design, classics/code-smells, classics/writing]

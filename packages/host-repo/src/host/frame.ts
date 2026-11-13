@@ -1,6 +1,6 @@
 import { type JsonSchema, validator, violations } from "@maestro/ir";
 import { OUTBOX, type Output, SESSION_DIR } from "../harness/index";
-import { attachmentPath, skillPath } from "../profile/index";
+import { attachmentPath } from "../profile/index";
 import { PREVIOUS } from "./config";
 
 /** Where the sandbox of a continuing session sees the copy of attachment `name` its last turn had. */
@@ -209,8 +209,6 @@ export type Run = {
 	lane?: "write" | "read";
 	/** The checks it may run, by name, each with its hint. */
 	checks: [name: string, hint: string][];
-	/** Its profile's skills, by mount name, each with its description. */
-	skills: [name: string, description: string][];
 	/** The files it writes in the outbox. */
 	out: Output[];
 	kind: ReplyKind;
@@ -248,27 +246,6 @@ function checks({ checks, lane }: Run) {
 	return section("Checks", [[lead, ...lines].join("\n")]);
 }
 
-const DISCIPLINES = [
-	"Each discipline below is a set of rules, read-only in your sandbox, that binds your work whenever its **When** holds. They are rules, not data about this run.",
-	"Before you act on anything a **When** names, read that discipline's **Read** files with your read tool, then follow them. When no **When** holds, leave the discipline unread.",
-];
-const USE_CLAUSE = /\bUse when(?:ever)?\s+(.*)$/s;
-
-/** A skill description's `Use when` or `Use whenever` clause without that lead and its closing period, else the whole description. */
-const whenOf = (description: string) =>
-	(USE_CLAUSE.exec(description)?.[1] ?? description).replace(/\.$/, "");
-
-function disciplines({ skills }: Run) {
-	const lines = skills.map(
-		([name, description]) =>
-			`- \`${skillPath(name)}\` (directory). **When:** ${whenOf(description)}. **Read:** SKILL.md.`,
-	);
-	return section(
-		"Disciplines",
-		lines.length ? [...DISCIPLINES, lines.join("\n")] : [],
-	);
-}
-
 const contextSection = ({ sessions }: Run) =>
 	sessions === undefined
 		? []
@@ -291,14 +268,13 @@ export function reply({ out, kind }: Run): string[] {
 
 /**
  * The host's frame of an agent's run, appended to its profile's instructions: `# Your run`, then its working copy,
- * checks, disciplines, context and reply, each section left out when it has nothing to say.
+ * checks, context and reply, each section left out when it has nothing to say.
  */
 export const frame = (run: Run): string =>
 	[
 		"# Your run",
 		...workingCopy(run.lane),
 		...checks(run),
-		...disciplines(run),
 		...contextSection(run),
 		...reply(run),
 	].join("\n\n");
