@@ -25,14 +25,15 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
 2. **Release review.** Step 7 of `docs/agents/implementation-loop.md`: one opus read-only subagent over
    `jj diff --from <prev> --to main@origin`. Accepted findings become issues in the milestone and land as their own
    changes before the cut. Done when no finding blocks the release.
-3. **Notes.** Draft them in the scratchpad in the previous release's structure and voice (read it with
-   `forge.py api GET '/releases?limit=1'`): a two-line lead naming the theme, `## Install or upgrade` with the pinned
-   version, `## Upgrade notes` for every breaking change a user of the previous release must act on, `## Added`,
-   `## Changed`, `## Fixed`, each bullet ending in its issue refs as forge links,
-   `[#N](https://git.amorimcasa.org/tiago/maestro/issues/N)`. Make a second copy for GitHub that links nothing on the
-   forge: drop the issue refs, since GitHub links a bare `#N` to its own issue, and point the `INSTALL.md` link at
-   `https://github.com/dvalnn/maestro/blob/<tag>/INSTALL.md`. Show the owner the notes and the review's findings before
-   publishing.
+3. **Notes.** Draft them in the scratchpad in the structure and voice of the last release of the same kind (read the
+   releases with `forge.py api GET '/releases?limit=6'`). A stable's notes are the net change since the last stable:
+   merge its candidates' notes and leave out what one candidate added and a later one removed. The structure: a two-line
+   lead naming the theme, `## Install or upgrade` with the pinned version, `## Upgrade notes` for every breaking change
+   a user of the previous release must act on, `## Added`, `## Changed`, `## Fixed`, each bullet ending in its issue
+   refs as forge links, `[#N](https://git.amorimcasa.org/tiago/maestro/issues/N)`. Make a second copy for GitHub that
+   links nothing on the forge: drop the issue refs, since GitHub links a bare `#N` to its own issue, and point the
+   `INSTALL.md` link at `https://github.com/dvalnn/maestro/blob/<tag>/INSTALL.md`. Show the owner the notes and the
+   review's findings before publishing.
 4. **Bump.** One change, `chore(release): bump to <version>`, on top of `main`: the `version` of every
    `packages/*/package.json` and `packs/classics/package.json`, the pinned version in `INSTALL.md`, and in
    `skills/maestro/SKILL.md` the `checked against` line and the classics pack's version. `bun install` refreshes
@@ -43,14 +44,13 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
 7. **Publish.** From `dist/`, so each asset keeps its file name:
 
    ```sh
-   fj release create <tag> --create-tag <tag> --branch main [--prerelease] \
-     --body "$(cat <notes>)" -a SHA256SUMS -a install.sh -a maestro-linux-x64.gz -a maestro-skill.tar.gz \
-     -a classics-<v>.tar.gz -a maestro-classics-<v>.tgz -a maestro-ir-<v>.tgz -a maestro-sdk-<v>.tgz -a harnesses \
-     -a maestro-host-repo-sdk-<v>.tgz
+   bash -c 'assets=(); for f in *; do assets+=(-a "$f"); done
+     fj release -R origin create <tag> --create-tag <tag> --branch main [--prerelease] \
+       --body "$(cat <notes>)" "${assets[@]}"'
    ```
 
    `--prerelease` is for an `-rc.<n>` only. The assets are every file in `dist/`, and `install.sh` fails on any that
-   `SHA256SUMS` names but the release lacks; `ls dist` against the list catches one the build added.
+   `SHA256SUMS` names but the release lacks. `forge.py api GET /releases/tags/<tag>` shows the count that arrived.
 
 8. **GitHub.** `scripts/github-sync.sh <bump>` points `next` at the bump (the `github` skill). Then, from `dist/`:
 
@@ -65,7 +65,9 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
 
 ## Gotchas
 
-- A pushed description says `Refs: #N` and closes nothing; close each issue with `fj issue close N -w`.
+- A pushed description says `Refs: #N` and closes nothing; close each issue with
+  `forge.py api PATCH /issues/N '{"state": "closed"}'`.
+- `fj` takes `-R origin` after its subcommand, as in `fj release -R origin create`.
 - An issue with an open dependency refuses to close (HTTP 412); close its blocker first.
 - `just release` runs the full gate, so a flaky test fails the build; rerun once, and file the flake if it repeats.
 - `fj` creates the tag on the forge, and jj creates none. The tag reaches the local repository only through

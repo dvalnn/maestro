@@ -54,6 +54,16 @@ release: check pack
     cp install.sh dist/install.sh
     scripts/smoke-install.sh dist
 
+# add a jj workspace on main at ../maestro-<name>, its dependencies installed
+ws name:
+    jj workspace add ../maestro-{{name}} -r main
+    cd ../maestro-{{name}} && bun install --frozen-lockfile
+
+# forget the workspace `ws` added and delete its directory
+ws-rm name:
+    jj workspace forget maestro-{{name}}
+    rm -rf ../maestro-{{name}}
+
 # build a pack into its dist/
 pack dir="packs/classics":
     bun scripts/pack.ts {{dir}}

@@ -64,6 +64,7 @@ A slice run as the slice composition adds `Leave your changes uncommitted; maest
    - A duplicate of a helper or pattern the codebase already has?
    - An interface wider than the brief needs?
    - A decision taken in code with no ADR or owner ruling behind it (rule 4)?
+   - A changed branch no test pins? Mutate each one in a scratch copy and name the test that fails.
 
    Every finding cites the rule, requirement or ADR it breaks, names `file:line` and states the failure. A finding
    without a citation is dropped.
