@@ -78,13 +78,14 @@ export function fix(
 	});
 }
 
-/** The tally of a review of `lane`: the findings `held` that, without `verdict`, all stand or, given it, an upheld ruling keeps, with the `brief` given beside it and, given `verdict`, a `review` rendered from it. */
+/** The tally of a review of `lane`: the findings `held` that, without `verdict`, all stand or, given it, an upheld ruling keeps, with the `brief` given beside it and, given `verdict`, a `review` rendered from it. A `delivered` of 0 rejects it. */
 export function tally({
 	lane,
 	session,
 	held,
 	verdict,
 	brief,
+	delivered,
 	label = "upheld",
 }: {
 	lane: Ref<string>;
@@ -94,6 +95,8 @@ export function tally({
 	verdict?: Ref<ValueOf<typeof Verdict>>;
 	/** The builder's or fix's brief, which the tally carries beside the rest. */
 	brief?: Ref<ValueOf<typeof Brief>>;
+	/** How many lenses delivered a review. */
+	delivered?: Ref<number>;
 	label?: string;
 }) {
 	return code(tallyOf, {
@@ -103,6 +106,7 @@ export function tally({
 			held,
 			...(verdict && { verdict }),
 			...(brief && { brief }),
+			...(delivered && { delivered }),
 		},
 		out: {
 			...Tally,

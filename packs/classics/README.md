@@ -21,11 +21,12 @@ among its own nodes. The exports are in `src/index.ts`; `@maestro/classics/code`
 
 ## Entries
 
-| Entry               | What it does                                                                                                         | Profiles                                               |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `build_then_repair` | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series                             | `builder`                                              |
-| `build_then_review` | Builds the request, with tests pinned first when `tested`, then repairs and reviews by panel, fixing what it upholds | `builder`, `lens`, `skeptic`, `consolidator`, `tester` |
-| `panel_review`      | Rules on a change through each lens, a skeptic over each lens's findings, then tallies                               | `lens`, `skeptic`, `consolidator`                      |
+| Entry               | What it does                                                                                                         | Profiles                                                      |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `build_then_repair` | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series                             | `builder`                                                     |
+| `build_then_review` | Builds the request, with tests pinned first when `tested`, then repairs and reviews by panel, fixing what it upholds | `builder`, `lens`, `skeptic`, `consolidator`, `tester`        |
+| `panel_review`      | Rules on a change through each lens, a skeptic over each lens's findings, then tallies                               | `lens`, `skeptic`, `consolidator`                             |
+| `review_change`     | Rules on a change through the lenses its size picks, on one checklist from the paths it touches, then tallies        | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
 
 Example: `maestro perform classics.build_then_review --request "<what to build>" --tested`.
 
@@ -36,20 +37,35 @@ left, while the last panel upholds a finding.
 
 ## Patterns
 
-| Pattern              | What it does                                                                                    | Ports                                                        | Profiles                                     |
-| -------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------- |
-| `repair_until_green` | Checks a lane, then repairs in the builder's session while red                                  | `lane`, `session`, `spec`                                    | `builder`                                    |
-| `panel`              | Rules through a lens per name, a skeptic over each, a consolidator; ends in a `Tally`           | `change`, `spec`, `session`¹, `earlier`¹, `names`¹, `brief`¹ | `lens`, `skeptic`², `consolidator`²          |
-| `fix_until_clean`    | Loops `repair_until_green` and `panel`; while the `Tally` upholds a finding, a builder fixes it | `lane`, `session`, `spec`, `brief`                           | `builder`, `lens`, `skeptic`, `consolidator` |
-| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them          | `spec`                                                       | `tester`, `builder`                          |
+| Pattern              | What it does                                                                                                  | Ports                                                        | Profiles                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------- |
+| `repair_until_green` | Checks a lane, then repairs in the builder's session while red                                                | `lane`, `session`, `spec`                                    | `builder`                                                     |
+| `panel`              | Rules through a lens per name, a skeptic over each, a consolidator; ends in a `Tally`                         | `change`, `spec`, `session`¹, `earlier`¹, `names`¹, `brief`¹ | `lens`, `skeptic`², `consolidator`²                           |
+| `tiered_review`      | Rules through the lenses the change's size picks, on one checklist, a consolidator; ends in a `Tally`         | `change`, `spec`, `session`¹, `earlier`¹, `brief`¹           | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
+| `fix_until_clean`    | Loops `repair_until_green` and `panel`; while the `Tally` upholds a finding, a builder fixes it               | `lane`, `session`, `spec`, `brief`                           | `builder`, `lens`, `skeptic`, `consolidator`                  |
+| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them                        | `spec`                                                       | `tester`, `builder`                                           |
+| `build`              | Builds the request in a fresh lane, through `test_first` when `testFirst`; gives what `fix_until_clean` takes | `spec`                                                       | `builder`, `tester`²                                          |
 
-¹ Optional. ² Not used when its param, `skeptics` or `consolidate`, is false.
+¹ Optional. ² Not used when its param, `skeptics`, `consolidate` or `testFirst`, is false.
 
 `panel` takes `lenses`, a map of lens name to task text, `skeptics`, `consolidate`, `grounds` and `checks`; the
 [Params](#params) table has their defaults. Without `skeptics`, no skeptic runs and the consolidator rules on every
 finding unverified. Without `consolidate`, no consolidator runs and it needs a `session`. `earlier` is the previous
 round's `Upheld`, which each lens reads; `names` sets the lenses at run time. Its `Tally` rejects while a finding is
 upheld, so `ok` means clean.
+
+`tiered_review` runs one `changeset` of the change through a selector, `tieredOf`, which counts the lines changed
+outside the `ignore` globs and picks the tier: `small` up to `small` lines, `medium` up to `medium`, `large` up to
+`large`, `xlarge` above; `floor` raises it. The tier seats its lenses, each a `parMap` of at most one: `lens` at small,
+`deep-lens` at medium, `top-lens` at large, `top-lens` and `cross-lens` at xlarge. Every lens rules on the same
+checklist: `correctness` and `spec` always, then `tests`, `design`, `smells`, `docs` and `agent-doc` for the paths the
+change touches, each item numbered so a finding cites `<section> <n>`. One consolidator rules on what they held, and the
+`Tally` rejects while a finding is upheld, or when no lens delivered a review. `earlier` is the previous round's
+`Upheld`, which each lens reads.
+
+`build` takes the request as `spec`, so only a composition `use`s it. It returns the `lane`, the builder's `session`, a
+`spec` of the request, then the tester's map and the builder's overrules when `testFirst`, and the `brief`: the four
+ports of `fix_until_clean`.
 
 `fix_until_clean` forwards `maxRepairs`, `checks`, `fix` and the panel's `lenses`, `skeptics`, `consolidate` and
 `grounds`, and runs at most `maxFixes` fix rounds; a panel param it leaves unset stays the panel's own. `test_first`
@@ -77,12 +93,11 @@ gives the built lane and the tester's `TestMap`; its builder replies with the `O
 | `Overrule`, `Overrules` | A tester's test a builder rejects, and why                                                                                                       |
 | `Answers`               | A scout's answer per question: `grounded`, or `unsure` with what is `missing`                                                                    |
 
-`Findings`, `Rulings` and `Verdict` are exported as types only; a reply declares `List(Finding)` for findings. Read a
-run's reply fields with `maestro ls <id> --json | jq .outputs`.
+Read a run's reply fields with `maestro ls <id> --json | jq .outputs`.
 
-Code-node values: `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf` and `resultOf`. `fill` fills prompt
-placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer param of at least 1. `maxRepairs` and
-`maxFixes` are the params of those names, for a composition built on the pack to reuse.
+Code-node values: `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `heldAcross`, `tallyOf`, `tieredOf` and `resultOf`.
+`fill` fills prompt placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer param of at least 1.
+`maxRepairs` and `maxFixes` are the params of those names, for a composition built on the pack to reuse.
 
 ## Seats and profiles
 
@@ -91,6 +106,9 @@ placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer pa
 | `builder`      | `classics/builder`      | the lane         | `testing.md`, `instructions.md` |
 | `tester`       | `classics/tester`       | `map`: `TestMap` | `testing.md`, `instructions.md` |
 | `lens`         | `classics/lens`         | `findings`       | `instructions.md`[^lens]        |
+| `deepLens`     | `classics/deep-lens`    | `findings`       | the `lens` instructions         |
+| `topLens`      | `classics/top-lens`     | `findings`       | the `lens` instructions         |
+| `crossLens`    | `classics/cross-lens`   | `findings`       | the `lens` instructions         |
 | `skeptic`      | `classics/skeptic`      | `rulings`        | `instructions.md`               |
 | `consolidator` | `classics/consolidator` | `verdict`        | `instructions.md`               |
 | `scout`        | `classics/scout`        | `answers`        | `instructions.md`               |
@@ -106,10 +124,12 @@ the source those instructions and checklists are written from, adapted from Matt
 in `skills/LICENSE`, each copy recorded in `skills/UPSTREAM.md`; no profile reads it. A profile may name files anywhere
 inside its namespace directory, here `profiles/`; copy the whole `profiles/` to shadow the pack.
 
-Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, `lens`, `skeptic`, `consolidator` and `tester` 20
-minutes and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own terms; set one
-in config as `profiles.classics/<name>.context`. Lenses run on the `lens` profile's model and skeptics on the
-`skeptic`'s; pick models of different families, since a skeptic of the lens's family tends to share its blind spots.
+Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, the lens profiles, `skeptic`, `consolidator` and
+`tester` 20 minutes and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own
+terms; set one in config as `profiles.classics/<name>.context`. Lenses run on the `lens` profile's model and skeptics on
+the `skeptic`'s; pick models of different families, since a skeptic of the lens's family tends to share its blind spots.
+In a tiered review, set each tier's seat to a stronger model than the last, and `cross-lens` to another family than
+`top-lens`.
 
 ## Params
 
@@ -133,14 +153,29 @@ in config as `profiles.classics/<name>.context`. Lenses run on the `lens` profil
 |                      | `consolidate`                                  | boolean                                | true        | A consolidator rules on the held findings; false needs a `session`                                                  |
 |                      | `grounds`                                      | text                                   | empty       | The rules a finding must cite, held by the skeptics and the consolidator                                            |
 |                      | `checks`                                       | list of `target.checks` names          | none        | The checks the lenses may run                                                                                       |
+| `tiered_review`      | `small`                                        | integer, at least 1                    | 200         | The most changed lines of a small change                                                                            |
+|                      | `medium`                                       | integer                                | 800         | The most changed lines of a medium change; `small`, `medium` and `large` must rise                                  |
+|                      | `large`                                        | integer                                | 2000        | The most changed lines of a large change; a bigger one is xlarge                                                    |
+|                      | `ignore`                                       | list of globs                          | listed⁴     | Paths whose changed lines do not count                                                                              |
+|                      | `floor`                                        | `small`, `medium`, `large`, `xlarge`   | none        | The tier a review is at least, however small the change                                                             |
+|                      | `grounds`                                      | text                                   | empty       | The rules a finding must cite, held by the consolidator                                                             |
+|                      | `checks`                                       | list of `target.checks` names          | none        | The checks the lenses may run                                                                                       |
+| `review_change`      | `request`                                      | text                                   | required    | What the change must do                                                                                             |
+|                      | `change`, `revs`                               | as `panel_review`                      | optional³   | The lane version or target commits under review                                                                     |
 | `fix_until_clean`    | `maxFixes`                                     | integer, at least 1                    | 2           | The most fix rounds after a review upholds findings                                                                 |
 |                      | `maxRepairs`, `checks`, `fix`                  | as `repair_until_green`                | as there    | Forwarded to `repair_until_green`                                                                                   |
 |                      | `lenses`, `skeptics`, `consolidate`, `grounds` | as `panel`                             | the panel's | Forwarded to `panel` when set                                                                                       |
 | `test_first`         | `request`                                      | text                                   | required    | What to build                                                                                                       |
 |                      | `checks`                                       | list of `target.checks` names          | none        | The checks the tester and the builder may run                                                                       |
+| `build`              | `request`                                      | text                                   | required    | What to build                                                                                                       |
+|                      | `testFirst`                                    | boolean                                | false       | A tester pins the spec in tests before the builder builds                                                           |
+|                      | `checks`                                       | list of `target.checks` names          | none        | The checks the builder may run when `testFirst` is false                                                            |
 
 ³ Exactly one of `change` and `revs`. `revs` is resolved against the target once, as the concert starts: `B` alone runs
 from `target.base`, and the commits must be one linear series, with no merge.
+
+⁴ `**/*.lock`, `**/*.lockb`, `**/package-lock.json`, `**/pnpm-lock.yaml`, `**/dist/**`, `**/*.generated.*` and
+`**/*.min.*`.
 
 ## Recipes
 

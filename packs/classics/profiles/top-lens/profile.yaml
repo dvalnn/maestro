@@ -1,0 +1,2 @@
+instructions: ../lens/instructions.md
+limits: { timeout: 20m, tokens: 10000000 }

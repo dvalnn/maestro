@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Report } from "@maestro/host-repo-sdk";
 import { yamlOf } from "@maestro/host-repo-sdk/yaml";
@@ -11,15 +11,20 @@ import {
 	type Settled,
 	type ValueOf,
 } from "@maestro/sdk";
-import type {
-	Brief,
-	Findings,
-	Overrules,
-	Tally as Ports,
-	Rulings,
-	TestMap,
-	Upheld,
-	Verdict,
+import {
+	type Brief,
+	type Findings,
+	type Overrules,
+	type Tally as Ports,
+	type Rulings,
+	SEAT_TIERS,
+	SEATS,
+	type SeatKey,
+	type TestMap,
+	TIERS,
+	type Tier,
+	type Upheld,
+	type Verdict,
 } from "./types";
 
 /** `text` as a Markdown file. */
@@ -117,6 +122,37 @@ export function heldOf({
 	return { held, unreviewed };
 }
 
+/** The members of `results` that delivered a value: a skipped member and one that delivered nothing do not count. */
+const deliveredOf = (results: Settled<Member>[]): number =>
+	results.filter((r) => r.outcome !== "skipped" && r.value !== undefined)
+		.length;
+
+/**
+ * The findings the members of every seat held, the lenses that never delivered theirs, and `delivered`, the count of
+ * members that delivered a value. Each seat's members are `<seat>Results` and their lens names `<seat>Names`, joined
+ * in seat order as `heldOf` reads them.
+ */
+export function heldAcross(
+	inputs: Record<string, Settled<Member>[] | string[]>,
+): {
+	held: Held[];
+	unreviewed: { lens: string; reason: string }[];
+	delivered: number;
+} {
+	const seats = SEATS.map((seat) => {
+		const results = inputs[`${seat}Results`] as Settled<Member>[];
+		return {
+			...heldOf({ results, names: inputs[`${seat}Names`] as string[] }),
+			delivered: deliveredOf(results),
+		};
+	});
+	return {
+		held: seats.flatMap((s) => s.held),
+		unreviewed: seats.flatMap((s) => s.unreviewed),
+		delivered: seats.reduce((sum, s) => sum + s.delivered, 0),
+	};
+}
+
 type Result = { changeset: ArtifactRef; upheld: Held[] };
 
 type Tally = CodeOutputs<typeof Ports> & {
@@ -129,16 +165,18 @@ type Args = {
 	held: Held[];
 	verdict?: ValueOf<typeof Verdict>;
 	brief?: ValueOf<typeof Brief>;
+	delivered?: number;
 };
 
-/** Rejects naming `upheld`, with `outputs` as the rejection's outputs. */
-const rejection = <O>(upheld: Held[], outputs: O): Required<Rejection<O>> => ({
-	...reject(
-		`${upheld.length} upheld: ${upheld.map((f) => `${f.lens}/${f.id}`).join(", ")}`,
-		outputs,
-	),
-	outputs,
-});
+/** Rejects with `reason`, naming `upheld` by default, and `outputs` as the rejection's outputs. */
+const rejection = <O>(
+	upheld: Held[],
+	outputs: O,
+	reason = `${upheld.length} upheld: ${upheld.map((f) => `${f.lens}/${f.id}`).join(", ")}`,
+): Required<Rejection<O>> => ({ ...reject(reason, outputs), outputs });
+
+/** The reason a review rejects when no lens delivered one. */
+const NO_REVIEW = "no lens delivered a review";
 
 /** The consolidator's name on the criteria it rules not met, held beside the lenses' findings. */
 const CONSOLIDATOR = "consolidator";
@@ -190,10 +228,11 @@ function reviewOf(
  * - With one, those held findings whose `<lens>/<id>` its `upholds` names, then each criterion it rules not met, and a
  *   `review` rendered from it.
  *
- * The `brief` given rides beside them. Rejects, with the tally as its outputs, while a finding is upheld.
+ * The `brief` given rides beside them. Rejects, with the tally as its outputs, while a finding is upheld, and, whatever
+ * the verdict, when `delivered` is 0.
  */
 export function tallyOf(
-	{ lane, session, held, verdict, brief }: Args,
+	{ lane, session, held, verdict, brief, delivered }: Args,
 	ctx: CodeContext,
 ): Tally | Required<Rejection<Tally>> {
 	const upheld = verdict
@@ -209,6 +248,7 @@ export function tallyOf(
 		...(verdict && { review: reviewOf(upheld, verdict, ctx) }),
 		...(brief && { brief }),
 	};
+	if (delivered === 0) return rejection(upheld, tally, NO_REVIEW);
 	if (upheld.length) return rejection(upheld, tally);
 	return tally;
 }
@@ -226,4 +266,147 @@ export function resultOf({
 }): { changeset: ArtifactRef; upheld: Held[] } | Required<Rejection<Result>> {
 	const result = { changeset, upheld };
 	return upheld.length ? rejection(upheld, result) : result;
+}
+
+const PATCH_EXT = ".patch";
+const MAIL_START = /^From [0-9a-f]{40} .*$/gm;
+const MESSAGE_END = "\n---\n";
+const SIGNATURE = /\n-- \n[^\n]*\n*$/;
+const DIFF_START = /^diff --git /m;
+const HUNK_START = /^@@.*$/m;
+const PLAIN_PATH = /^(?:\+\+\+ b\/|--- a\/|rename to )(.+)$/;
+const QUOTED_PATH = /^(?:\+\+\+ "b\/|--- "a\/|rename to ")(.+)"$/;
+const ESCAPES: Record<string, number> = {
+	a: 7,
+	b: 8,
+	t: 9,
+	n: 10,
+	v: 11,
+	f: 12,
+	r: 13,
+};
+const OCTAL_LENGTH = 4;
+
+/** Git's C-style quoting of a path undone: the escapes `\ooo`, `\\`, `\"`, `\t` and the like. */
+function unquote(quoted: string): string {
+	const bytes = quoted.split(/(\\\d{3}|\\.)/).flatMap((part) => {
+		if (!part.startsWith("\\")) return [...Buffer.from(part)];
+		if (part.length === OCTAL_LENGTH)
+			return [Number.parseInt(part.slice(1), 8)];
+		return [ESCAPES[part[1] as string] ?? part.charCodeAt(1)];
+	});
+	return Buffer.from(bytes).toString("utf8");
+}
+
+/** The path a `+++ b/`, `--- a/` or `rename to` header line names, unquoted; undefined for any other line. */
+function pathOf(line: string): string | undefined {
+	const quoted = QUOTED_PATH.exec(line)?.[1];
+	return quoted === undefined ? PLAIN_PATH.exec(line)?.[1] : unquote(quoted);
+}
+
+/** The path one file's diff names and the lines its hunks add or remove; undefined for a file with no hunk. */
+function countFile(file: string): [string, number] | undefined {
+	const [header = "", ...hunks] = file.split(HUNK_START);
+	const path = header
+		.split("\n")
+		.reduce<string | undefined>(
+			(found, line) => pathOf(line) ?? found,
+			undefined,
+		);
+	if (path === undefined || hunks.length === 0) return undefined;
+	const changed = hunks
+		.join("\n")
+		.split("\n")
+		.filter((line) => /^[+-]/.test(line));
+	return [path, changed.length];
+}
+
+/** Adds to `lines`, by path, the lines the diffs of `patch` add or remove inside a hunk; a commit message and git's signature count none. */
+function countPatch(patch: string, lines: Map<string, number>) {
+	for (const mail of patch.split(MAIL_START)) {
+		const end = mail.indexOf(MESSAGE_END);
+		if (end < 0) continue;
+		const diffs = mail.slice(end).replace(SIGNATURE, "");
+		for (const file of diffs.split(DIFF_START).slice(1)) {
+			const counted = countFile(file);
+			if (counted)
+				lines.set(counted[0], (lines.get(counted[0]) ?? 0) + counted[1]);
+		}
+	}
+}
+
+const matchesAny = (globs: readonly string[], path: string) =>
+	globs.some((g) => new Bun.Glob(g).match(path));
+
+type Section = {
+	/** The paths that pull the section in; none, it is always in. */
+	globs?: string[];
+	text: string;
+};
+
+/**
+ * A tiered review's tier, checklist and seats, from its changeset.
+ * - `lines` is the added plus removed lines inside the hunks of the `*.patch` files, over paths matching no `ignore` glob.
+ * - `tier` is the first of small, medium and large whose threshold `lines` does not pass, else xlarge, raised to
+ *   `floor`.
+ * - `sections` are the names of each section, in the order given, that has no `globs` or whose globs match a counted
+ *   path; `checklist` is `lead`, each one's text under `### <name>`, then `close`.
+ * - Each seat's output is a one-item list of its seat name when the tier is one it rules in, else empty.
+ */
+export function tieredOf(
+	{
+		changeset,
+		ignore,
+		small,
+		medium,
+		large,
+		floor,
+		sections,
+		lead,
+		close,
+	}: {
+		changeset: ArtifactRef;
+		ignore: string[];
+		small: number;
+		medium: number;
+		large: number;
+		floor?: Tier;
+		sections: Record<string, Section>;
+		lead: string;
+		close: string;
+	},
+	ctx: CodeContext,
+) {
+	const patches = new Map<string, number>();
+	const dir = ctx.path(changeset);
+	for (const name of readdirSync(dir).sort())
+		if (name.endsWith(PATCH_EXT))
+			countPatch(readFileSync(join(dir, name), "utf8"), patches);
+	const counted = [...patches].filter(([path]) => !matchesAny(ignore, path));
+	const lines = counted.reduce((sum, [, n]) => sum + n, 0);
+	const limits = { small, medium, large, xlarge: Number.POSITIVE_INFINITY };
+	const tier =
+		TIERS.slice(floor ? TIERS.indexOf(floor) : 0).find(
+			(t) => lines <= limits[t],
+		) ?? "xlarge";
+	const picked = Object.entries(sections).filter(
+		([, { globs }]) =>
+			!globs || counted.some(([path]) => matchesAny(globs, path)),
+	);
+	const names = picked.map(([name]) => name);
+	const checklist = [
+		lead,
+		...picked.map(([name, { text }]) => `### ${name}\n\n${text}`),
+		close,
+	].join("\n\n");
+	const seats = Object.fromEntries(
+		SEATS.map((seat) => [
+			seat,
+			(SEAT_TIERS[seat].tiers as readonly Tier[]).includes(tier)
+				? [SEAT_TIERS[seat].name]
+				: [],
+		]),
+	) as Record<SeatKey, string[]>;
+	ctx.log(`${lines} changed lines, tier ${tier}, sections ${names.join(", ")}`);
+	return { lines, tier, sections: names, checklist, ...seats };
 }

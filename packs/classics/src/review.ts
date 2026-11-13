@@ -7,6 +7,7 @@ import {
 	Session,
 } from "@maestro/host-repo-sdk";
 import {
+	type ArtifactRef,
 	Bool,
 	BuildError,
 	code,
@@ -43,7 +44,7 @@ import { consolidator, lens } from "./seats";
 import { Brief, PACK, Upheld } from "./types";
 
 /** Each call's task: its own prompt file, then the fragments it rules by, which a flag or a param can add. */
-const TASKS = {
+export const TASKS = {
 	lens: {
 		correctness: task(CORRECTNESS, CHECKLIST),
 		spec: task(SPEC, CHECKLIST),
@@ -65,6 +66,23 @@ type LensName = (typeof LENS_NAMES)[number];
 
 const PATCHES_HINT = "for what the change did, patch by patch";
 const SPEC_HINT = "for what the change must do";
+
+/** The attachments every review seat reads: the change's `patches` and the `spec`. */
+export const attachmentsOf = (
+	patches: Ref<ArtifactRef>,
+	spec: Ref<ArtifactRef>,
+) => ({
+	patches: { artifact: patches, hint: PATCHES_HINT },
+	spec: { artifact: spec, hint: SPEC_HINT },
+});
+
+/** The request as a Markdown file. */
+export const requestOf = (request: string) =>
+	code(toMarkdown, {
+		in: { text: request },
+		out: { file: Markdown() },
+		label: "request",
+	}).out.file;
 
 /**
  * A lens per lens name, a skeptic over each lens that rejected unless `skeptics` is false, the findings held, and, with
@@ -103,13 +121,10 @@ export const panel = composition(
 		{ lenses, skeptics, consolidate, grounds, checks },
 		{ change, spec, session, earlier, names, brief },
 	) => {
-		const attached = {
-			patches: {
-				artifact: changeset(change, { label: "patches" }).out.changeset,
-				hint: PATCHES_HINT,
-			},
-			spec: { artifact: spec, hint: SPEC_HINT },
-		};
+		const attached = attachmentsOf(
+			changeset(change, { label: "patches" }).out.changeset,
+			spec,
+		);
 		const ground = grounds || undefined;
 		const common: Relays = brief ? { builder: brief } : {};
 		const items = names ?? Object.keys(lenses);
@@ -179,25 +194,37 @@ export const panel = composition(
 	},
 );
 
+/** The params of an entry that reviews a lane version or target commits. */
+export const SUBJECT = {
+	change: Optional(Lane),
+	revs: Optional(
+		Text({
+			description:
+				"Git revisions of the target: A..B, C^!, or B from target.base",
+		}),
+	),
+};
+
 /**
  * The lane version under review: `change`, or the target commits `revs` names.
- * @throws BuildError `CFG.param` unless exactly one is given.
+ * @throws BuildError `CFG.param` naming composition `id` unless exactly one is given.
  */
-function reviewed(
+export function reviewed(
+	id: string,
 	change: string | undefined,
 	revs: string | undefined,
 ): Ref<string> | string {
 	if (change !== undefined && revs !== undefined)
 		throw new BuildError({
 			code: "CFG.param",
-			message: "classics.panel_review takes --change or --revs, not both",
+			message: `classics.${id} takes --change or --revs, not both`,
 			hint: "Drop one of --change and --revs",
 		});
 	if (change !== undefined) return change;
 	if (revs !== undefined) return commits(revs).out.lane;
 	throw new BuildError({
 		code: "CFG.param",
-		message: "classics.panel_review needs --change or --revs",
+		message: `classics.${id} needs --change or --revs`,
 		hint: "Pass --revs main..feature, or --change <concert id>.<node instance id>",
 	});
 }
@@ -209,13 +236,7 @@ export const panelReview = composition(
 		doc: "Review a lane version or target commits: a lens per lens name, a skeptic over each lens that found anything, then a consolidator and a tally that rejects while a finding is upheld.",
 		params: {
 			request: Text({ description: "What the change must do" }),
-			change: Optional(Lane),
-			revs: Optional(
-				Text({
-					description:
-						"Git revisions of the target: A..B, C^!, or B from target.base",
-				}),
-			),
+			...SUBJECT,
 			lenses: Json<LensName[]>(
 				{ type: "array", items: Enum(LENS_NAMES).schema, uniqueItems: true },
 				{
@@ -232,15 +253,10 @@ export const panelReview = composition(
 		],
 	},
 	({ request, change: given, revs, lenses }) => {
-		const change = reviewed(given, revs);
-		const spec = code(toMarkdown, {
-			in: { text: request },
-			out: { file: Markdown() },
-			label: "request",
-		});
+		const change = reviewed("panel_review", given, revs);
 		return use(
 			panel,
-			{ change, spec: spec.out.file },
+			{ change, spec: requestOf(request) },
 			{
 				params: {
 					lenses: Object.fromEntries(

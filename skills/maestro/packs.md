@@ -64,14 +64,14 @@ every code node of the pack.
 and contracts. `@maestro/classics/code` exports its code-node functions alone.
 
 - Entries, performed as `classics.<id>`: `buildThenRepair` (`build_then_repair`), `buildThenReview`
-  (`build_then_review`), `panelReview` (`panel_review`).
-- Patterns, which a composition `use`s: `repairUntilGreen` (`repair_until_green`), `panel`, `fixUntilClean`
-  (`fix_until_clean`), `testFirst` (`test_first`).
+  (`build_then_review`), `panelReview` (`panel_review`), `reviewChange` (`review_change`).
+- Patterns, which a composition `use`s: `repairUntilGreen` (`repair_until_green`), `panel`, `tieredReview`
+  (`tiered_review`), `fixUntilClean` (`fix_until_clean`), `testFirst` (`test_first`), `buildChange` (`build`).
 - Moves: `challenge`, `fix`, `tally`.
-- Contracts: `Finding`, `Upheld`, `Tally`, `TestMap`, `Brief`, `Overrules`, `Answers`, the types `Findings`, `Rulings`
-  and `Verdict`; code-node functions `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf` and `resultOf`; `fill` for
-  prompt placeholders ([prompts.md](prompts.md)); `LENSES`; params `maxRepairs`, `maxFixes` and `atLeastOne`.
-- Seats: `builder`, `tester`, `lens`, `skeptic`, `consolidator`, `scout`, `planner`.
+- Contracts: `Finding`, `Findings`, `Rulings`, `Verdict`, `Upheld`, `Tally`, `TestMap`, `Brief`, `Overrules`, `Answers`;
+  code-node functions `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `heldAcross`, `tallyOf`, `tieredOf` and `resultOf`;
+  `fill` for prompt placeholders ([prompts.md](prompts.md)); `LENSES`; params `maxRepairs`, `maxFixes` and `atLeastOne`.
+- Seats: `builder`, `tester`, `lens`, `deepLens`, `topLens`, `crossLens`, `skeptic`, `consolidator`, `scout`, `planner`.
 
 Take the layer you need: perform an entry, `use` a pattern in a composition, or call a move or seat among your own
 nodes. `src/recipes.ts` in the pack holds five compositions of these blocks as test fixtures to copy from.

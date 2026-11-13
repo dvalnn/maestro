@@ -110,3 +110,18 @@ export const Answers = List(
 		oneOf: [Grounded.schema, Unsure.schema],
 	}),
 );
+
+/** The review tiers, smallest first. */
+export const TIERS = ["small", "medium", "large", "xlarge"] as const;
+export type Tier = (typeof TIERS)[number];
+
+/** Each seat a tiered review can rule through, by the key of its selector port: its seat name and the tiers it rules in. */
+export const SEAT_TIERS = {
+	lens: { name: "lens", tiers: ["small"] },
+	deepLens: { name: "deep-lens", tiers: ["medium"] },
+	topLens: { name: "top-lens", tiers: ["large", "xlarge"] },
+	crossLens: { name: "cross-lens", tiers: ["xlarge"] },
+} as const;
+
+export type SeatKey = keyof typeof SEAT_TIERS;
+export const SEATS = Object.keys(SEAT_TIERS) as SeatKey[];

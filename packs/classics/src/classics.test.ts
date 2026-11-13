@@ -26,13 +26,25 @@ import {
 } from "@maestro/sdk";
 import { buildIr } from "@maestro/testkit";
 import { pack } from "../../../scripts/pack";
-import { BASE, PROFILES, profilesOn, setup } from "../acceptance/setup";
-import { briefOf, heldOf, resultOf, specOf, tallyOf, toMarkdown } from "./code";
+import { BASE, git, PROFILES, profilesOn, setup } from "../acceptance/setup";
+import {
+	briefOf,
+	heldAcross,
+	heldOf,
+	resultOf,
+	specOf,
+	tallyOf,
+	tieredOf,
+	toMarkdown,
+} from "./code";
 import { challenge, fix, tally } from "./moves";
 import AGAIN from "./prompts/again.md" with { type: "text" };
+import TIERED_AGAIN from "./prompts/tiered-again.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
 import { panel } from "./review";
 import { builder, consolidator, lens } from "./seats";
+import { buildChange } from "./test-first";
+import { SECTIONS, tieredReview } from "./tiered-review";
 import { Brief, Upheld } from "./types";
 
 const MAESTRO = join(import.meta.dir, "../../../packages/cli/src/maestro.ts");
@@ -46,6 +58,7 @@ const REVIEW = [
 ];
 const BUILD = ["classics.build_then_repair", "--request", EXAMPLE_REQUEST];
 let root: string;
+let target: string;
 let config: Record<string, unknown>;
 
 /** Writes the workspace config, the built pack's and the toy target's, with `over` on top. */
@@ -85,7 +98,7 @@ async function maestro(args: string[], env: Record<string, string> = {}) {
 
 beforeAll(async () => {
 	root = mkdtempSync(join(tmpdir(), "classics-cli-"));
-	const { target } = await setup("t1", root, RUNTIME);
+	({ target } = await setup("t1", root, RUNTIME));
 	config = {
 		packs: [await pack(join(import.meta.dir, ".."), join(root, "pack"))],
 		target: {
@@ -912,6 +925,20 @@ describe("tallyOf", () => {
 		expect(readFileSync(out.review, "utf8")).toBe("## Met\n\n- **C1**: ok\n");
 	});
 
+	test("rejects when no lens delivered, whatever the verdict, and not when one did", () => {
+		const clean = { ...carried, held: [], verdict: verdict() };
+		expect<unknown>(tallyOf({ ...clean, delivered: 0 }, ctx())).toEqual(
+			reject("no lens delivered a review", {
+				...carried,
+				upheld: [],
+				review: expect.any(String),
+			}),
+		);
+		expect(tallyOf({ ...clean, delivered: 1 }, ctx())).toMatchObject({
+			upheld: [],
+		});
+	});
+
 	test("carries the brief given beside the tally, a rejection's included", () => {
 		const brief = { summary: "built", gaps: ["g"] };
 		expect<unknown>(tallyOf({ ...carried, held: [], brief }, ctx())).toEqual({
@@ -993,6 +1020,483 @@ describe("moves", () => {
 		expect(node).toMatchObject({ config: { lane: { mode: "extend" } } });
 		for (const port of ["lane", "session", "upheld"])
 			expect(wired("upheld", port, "fix")).toBe(true);
+	});
+});
+
+describe("heldAcross", () => {
+	const rejected = <V>(value: V) => ({
+		outcome: "rejected" as const,
+		reason: "F1 blocks",
+		value,
+	});
+	const seats = (over: Partial<Parameters<typeof heldAcross>[0]> = {}) => ({
+		lensResults: [],
+		lensNames: [],
+		deepLensResults: [],
+		deepLensNames: [],
+		topLensResults: [],
+		topLensNames: [],
+		crossLensResults: [],
+		crossLensNames: [],
+		...over,
+	});
+
+	test("joins the members of every seat in seat order and counts those that delivered a value, none when every member failed or was skipped", () => {
+		const out = heldAcross(
+			seats({
+				lensResults: [rejected({ findings: [F1] })],
+				lensNames: ["lens"],
+				topLensResults: [rejected({ findings: [F2] })],
+				topLensNames: ["top-lens"],
+				crossLensResults: [{ outcome: "failed", reason: "boom" }],
+				crossLensNames: ["cross-lens"],
+				deepLensResults: [{ outcome: "skipped" }],
+				deepLensNames: ["deep-lens"],
+			}),
+		);
+		expect(idsOf(out.held)).toEqual(["lens/F1", "top-lens/F2"]);
+		expect(out.unreviewed).toEqual([{ lens: "cross-lens", reason: "boom" }]);
+		expect(out.delivered).toBe(2);
+		expect(
+			heldAcross(
+				seats({
+					lensResults: [{ outcome: "failed", reason: "boom" }],
+					lensNames: ["lens"],
+					topLensResults: [{ outcome: "skipped" }],
+					topLensNames: ["top-lens"],
+				}),
+			).delivered,
+		).toBe(0);
+	});
+});
+
+describe("tieredOf", () => {
+	const SIZES = { small: 200, medium: 800, large: 2000 };
+	const IGNORE = ["**/*.lock"];
+	const ctx = () =>
+		({
+			path: (ref: string) => ref,
+			scratch: mkdtempSync(join(root, "tiered-")),
+			log: () => {},
+		}) as never;
+
+	/** A `git format-patch` mail changing each path by `[added, removed]` lines, in one hunk and closed by git's signature; `[0, 0]` is a pure rename. */
+	const mail = (files: Record<string, [number, number]>) =>
+		`From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\nSubject: [PATCH] x\n\n---\n${Object.entries(
+			files,
+		)
+			.map(([path, [added, removed]]) =>
+				added + removed === 0
+					? `diff --git a/old/${path} b/${path}\nsimilarity index 100%\nrename from old/${path}\nrename to ${path}\n`
+					: `diff --git a/${path} b/${path}\nindex 1..2 100644\n--- a/${path}\n+++ b/${path}\n@@ -1,${removed} +1,${added} @@\n${"-x\n".repeat(removed)}${"+y\n".repeat(added)}`,
+			)
+			.join("")}-- \n2.43.0\n\n`;
+
+	/** `tieredOf` over one patch of `files`, with `over` on top of the defaults. */
+	function tiered(
+		files: Record<string, [number, number]> | string,
+		over: Partial<Parameters<typeof tieredOf>[0]> = {},
+		extra: Record<string, string> = {},
+	) {
+		const dir = mkdtempSync(join(root, "changeset-"));
+		writeFileSync(
+			join(dir, "0001.patch"),
+			typeof files === "string" ? files : mail(files),
+		);
+		for (const [name, text] of Object.entries(extra))
+			writeFileSync(join(dir, name), text);
+		return tieredOf(
+			{
+				changeset: dir as never,
+				ignore: IGNORE,
+				...SIZES,
+				sections: SECTIONS,
+				lead: "LEAD",
+				close: "CLOSE",
+				...over,
+			},
+			ctx(),
+		);
+	}
+	const seatsOf = (out: ReturnType<typeof tiered>) => ({
+		lens: out.lens,
+		deepLens: out.deepLens,
+		topLens: out.topLens,
+		crossLens: out.crossLens,
+	});
+
+	test.each([
+		[200, "small", { lens: ["lens"] }],
+		[201, "medium", { deepLens: ["deep-lens"] }],
+		[800, "medium", { deepLens: ["deep-lens"] }],
+		[801, "large", { topLens: ["top-lens"] }],
+		[2000, "large", { topLens: ["top-lens"] }],
+		[2001, "xlarge", { topLens: ["top-lens"], crossLens: ["cross-lens"] }],
+	])(
+		"%i changed lines are %s, seating only that tier's lenses",
+		(n, tier, seated) => {
+			const out = tiered({ "a.txt": [n - 5, 5] });
+			expect(out).toMatchObject({ lines: n, tier });
+			expect(seatsOf(out)).toEqual({
+				lens: [],
+				deepLens: [],
+				topLens: [],
+				crossLens: [],
+				...seated,
+			});
+		},
+	);
+
+	test("counts no line of an ignored path", () => {
+		const out = tiered({ "bun.lock": [1500, 0], "a.txt": [30, 0] });
+		expect(out).toMatchObject({ lines: 30, tier: "small" });
+	});
+
+	test("a floor lifts the tier and never lowers it", () => {
+		expect(tiered({ "a.txt": [30, 0] }, { floor: "large" }).tier).toBe("large");
+		expect(tiered({ "a.txt": [3000, 0] }, { floor: "small" }).tier).toBe(
+			"xlarge",
+		);
+	});
+
+	test.each([
+		["docs/x.md", ["correctness", "spec", "docs"]],
+		["CLAUDE.md", ["correctness", "spec", "docs", "agent-doc"]],
+		["a.test.ts", ["correctness", "spec", "tests", "design", "smells"]],
+		["a.ts", ["correctness", "spec", "design", "smells"]],
+		["bun.lock", ["correctness", "spec"]],
+	])("the path %s picks the sections %j", (path, names) => {
+		const out = tiered({ [path]: [3, 0] });
+		expect(out.sections).toEqual(names);
+		const headings = [...out.checklist.matchAll(/^### (.+)$/gm)].map(
+			(m) => m[1],
+		);
+		expect(headings).toEqual(names);
+		expect(out.checklist.startsWith("LEAD\n\n### correctness\n")).toBe(true);
+		expect(out.checklist.endsWith("\n\nCLOSE")).toBe(true);
+	});
+
+	/** A `git format-patch` mail whose one commit message is `message`, over the raw diff `diffs`. */
+	const mailOf = (diffs: string, message = "x") =>
+		`From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\nSubject: [PATCH] x\n\n${message}\n---\n${diffs}`;
+	const diffOf = (head: string, body: string) =>
+		`diff --git ${head}\nindex 1..2 100644\n${body}`;
+	const QUOTED = diffOf(
+		'"a/docs/\\303\\274ber.ts" "b/docs/\\303\\274ber.ts"',
+		'--- "a/docs/\\303\\274ber.ts"\n+++ "b/docs/\\303\\274ber.ts"\n@@ -1,2 +1,3 @@\n-x\n+y\n+z\n w\n',
+	);
+
+	test("a file whose name git quotes counts its lines under the unquoted path and picks its sections", () => {
+		const out = tiered(mailOf(QUOTED));
+		expect(out).toMatchObject({
+			lines: 3,
+			sections: ["correctness", "spec", "design", "smells"],
+		});
+	});
+
+	test("an ASCII file then a quoted one are each credited their own lines", () => {
+		const ascii = diffOf(
+			"a/a.md b/a.md",
+			"--- a/a.md\n+++ b/a.md\n@@ -1 +1,2 @@\n-x\n+y\n+z\n",
+		);
+		const out = tiered(mailOf(ascii + QUOTED), { ignore: ["**/*.md"] });
+		expect(out.lines).toBe(3);
+		expect(out.sections).toEqual(["correctness", "spec", "design", "smells"]);
+	});
+
+	test("a deleted file counts under its old path, and a removed line starting with dashes counts", () => {
+		const gone = diffOf(
+			"a/gone.ts b/gone.ts",
+			"deleted file mode 100644\n--- a/gone.ts\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-x\n--- y\n",
+		);
+		const out = tiered(mailOf(gone));
+		expect(out).toMatchObject({ lines: 2 });
+		expect(out.sections).toContain("design");
+	});
+
+	test("counts only patch files, and no diff inside a commit message", () => {
+		const diff =
+			"diff --git a/m.ts b/m.ts\n--- a/m.ts\n+++ b/m.ts\n@@ -1 +1 @@\n-x\n+y\n";
+		const out = tiered(mailOf("", diff), {}, { message: diff, base: diff });
+		expect(out).toMatchObject({ lines: 0, sections: ["correctness", "spec"] });
+	});
+
+	test("a rename and a change of ignored paths alone count no line", () => {
+		expect(tiered({ "b.ts": [0, 0] }).lines).toBe(0);
+		expect(tiered({ "bun.lock": [9, 9] })).toMatchObject({
+			lines: 0,
+			sections: ["correctness", "spec"],
+		});
+	});
+});
+
+describe("tiered_review", () => {
+	/** The IR of a build that uses `tiered_review` over a builder's lane, with `ports` and `params` on top. */
+	function tieredIr(
+		params: Partial<Parameters<typeof tieredReview.build>[0]> = {},
+		ports: () => object = () => ({}),
+	): Ir {
+		const root = composition("probe", { examples: [{}] }, () => {
+			const b = builder({ label: "b", task: "t", lane: fresh() });
+			const spec = code(toMarkdown, {
+				in: { text: "x" },
+				out: { file: Markdown() },
+			});
+			return use(
+				tieredReview,
+				{ change: b.out.lane, spec: spec.out.file, ...ports() },
+				{ params },
+			);
+		});
+		return buildIr(root, {}, { heldAcross, tallyOf, tieredOf, toMarkdown });
+	}
+	const node = (ir: Ir, id: string) => ir.nodes.find((n) => n.id === id);
+	const profileOf = (ir: Ir, id: string) =>
+		(node(ir, id) as unknown as { config: { profile: string } }).config.profile;
+	const SEATS = {
+		lens: "lens",
+		deepLens: "deep-lens",
+		topLens: "top-lens",
+		crossLens: "cross-lens",
+	};
+
+	test("one changeset feeds the selector and every lens's patches; each seat is a parMap of at most one, on its own profile, and no skeptic runs", () => {
+		const ir = tieredIr({ grounds: "THE GROUNDS" });
+		expect(ir.nodes.filter((n) => n.kind === "repo.changeset")).toHaveLength(1);
+		const from = (to: string, port: string) =>
+			ir.edges
+				.filter((e) => e.to.node === to && "port" in e.to && e.to.port === port)
+				.map((e) => e.from.node);
+		expect(from("tiered_review/tieredOf", "changeset")).toEqual([
+			"tiered_review/patches",
+		]);
+		for (const name of Object.values(SEATS)) {
+			const member = `tiered_review/${name}/lens`;
+			expect(node(ir, `tiered_review/${name}`)).toMatchObject({
+				kind: "parMap",
+				cardinality: { upTo: 1 },
+				onError: "continue",
+			});
+			expect(profileOf(ir, member)).toBe(`classics/${name}`);
+			expect(from(member, "patches")).toEqual(["tiered_review/patches"]);
+			expect(from(member, "prompt")).toEqual(["tiered_review/tieredOf"]);
+		}
+		expect(
+			ir.nodes.map((n) => n.id).filter((id) => /skeptic/.test(id)),
+		).toEqual([]);
+		expect(
+			(
+				node(ir, "tiered_review/consolidator") as unknown as {
+					literals: { prompt: string };
+				}
+			).literals.prompt,
+		).toContain("THE GROUNDS");
+	});
+
+	test("earlier opens the selector's lead with tiered-again.md and relays upheld to every lens", () => {
+		const lead = (ir: Ir) =>
+			(
+				node(ir, "tiered_review/tieredOf") as unknown as {
+					literals: { lead: string };
+				}
+			).literals.lead;
+		const relays = (ir: Ir) =>
+			Object.values(SEATS).map((name) =>
+				(
+					node(ir, `tiered_review/${name}/lens`) as unknown as {
+						config: { relay?: { name: string }[] };
+					}
+				).config.relay?.map((r) => r.name),
+			);
+		const bare = tieredIr();
+		expect(lead(bare)).not.toContain(TIERED_AGAIN.slice(0, 40));
+		expect(relays(bare)).toEqual(Object.values(SEATS).map(() => undefined));
+		const again = tieredIr({}, () => ({ earlier: literal([], List(Upheld)) }));
+		expect(lead(again).startsWith(TIERED_AGAIN)).toBe(true);
+		expect(relays(again)).toEqual(Object.values(SEATS).map(() => ["upheld"]));
+	});
+});
+
+describe("review_change", () => {
+	const REVIEW_CHANGE = [
+		"classics.review_change",
+		"--request",
+		EXAMPLE_REQUEST,
+		"--revs",
+		"main..feature",
+	];
+	beforeAll(() => {
+		git(target, "checkout", "-q", "-b", "feature");
+		writeFileSync(join(target, "feature.txt"), "line\n".repeat(10));
+		git(target, "add", ".");
+		git(target, "commit", "-q", "-m", "feature");
+		git(target, "checkout", "-q", BASE);
+	});
+	const BEHIND = ["-c", "classics.tiered_review.small=1"];
+	const XLARGE = [
+		...BEHIND,
+		"-c",
+		"classics.tiered_review.medium=2",
+		"-c",
+		"classics.tiered_review.large=3",
+	];
+
+	/** Performs `review_change` on the stub harness, with `outputs` scripting what its agents deliver. */
+	async function performed(flags: string[], outputs?: string) {
+		await stubPreset();
+		const { err, code } = await maestro(
+			["perform", ...REVIEW_CHANGE, ...flags, "--preset", "stub"],
+			outputs ? { MAESTRO_STUB_OUTPUTS: outputs } : {},
+		);
+		const id = /^concert +(\S+)/m.exec(err)?.[1] ?? "";
+		return { code, id, ls: (await maestro(["ls", id])).out };
+	}
+
+	test("--revs builds one commits node feeding the selector; both or neither of --change and --revs is refused by name", async () => {
+		const { out, code } = await maestro([
+			"compose",
+			...REVIEW_CHANGE,
+			"--json",
+		]);
+		expect(code).toBe(0);
+		const { ir } = JSON.parse(out).plan;
+		expect(
+			ir.nodes.filter((n: { kind: string }) => n.kind === "repo.commits"),
+		).toHaveLength(1);
+		expect(
+			ir.edges.filter(
+				(e: { from: { node: string }; to: { node: string } }) =>
+					e.from.node === "commits" && e.to.node === "tiered_review/patches",
+			),
+		).toHaveLength(1);
+		expect(
+			await maestro(["compose", ...REVIEW_CHANGE, "--change", "c.x"]),
+		).toMatchObject({
+			code: 2,
+			err: "error: classics.review_change takes --change or --revs, not both\n  Drop one of --change and --revs\n",
+		});
+		expect(
+			await maestro(["perform", ...REVIEW_CHANGE.slice(0, 3)]),
+		).toMatchObject({
+			code: 2,
+			err: "error: classics.review_change needs --change or --revs\n  Pass --revs main..feature, or --change <concert id>.<node instance id>\n",
+		});
+	});
+
+	test("thresholds that do not rise are refused, naming all three", async () => {
+		const { err, code } = await maestro([
+			"compose",
+			...REVIEW_CHANGE,
+			"-c",
+			"classics.tiered_review.medium=100",
+		]);
+		expect(code).toBe(2);
+		expect(err).toContain("classics.tiered_review.small, medium and large");
+		expect(err).toContain("got 200, 100 and 2000");
+	});
+
+	test("a small commit runs the lens alone", async () => {
+		const ran = await performed([]);
+		expect(ran.code).toBe(0);
+		expect(ran.ls).toMatch(/^tiered_review\/lens\[lens\]\/lens +ok/m);
+		expect(ran.ls).not.toMatch(/\[(deep|top|cross)-lens\]/);
+	});
+
+	test("an xlarge commit runs top-lens and cross-lens on the same task", async () => {
+		const ran = await performed(XLARGE);
+		expect(ran.code).toBe(0);
+		expect(ran.ls).toMatch(/^tiered_review\/top-lens\[top-lens\]\/lens +ok/m);
+		expect(ran.ls).toMatch(
+			/^tiered_review\/cross-lens\[cross-lens\]\/lens +ok/m,
+		);
+		expect(ran.ls).not.toMatch(/^tiered_review\/lens\[lens\]/m);
+		const prompt = async (name: string) =>
+			(
+				await maestro([
+					"art",
+					"show",
+					ran.id,
+					`tiered_review/${name}[${name}]/lens`,
+					"staged/prompt.md",
+				])
+			).out;
+		const top = await prompt("top-lens");
+		expect(top).toContain("### correctness");
+		expect(await prompt("cross-lens")).toBe(top);
+	});
+
+	test("a review no lens delivered settles rejected", async () => {
+		const outputs = mkdtempSync(join(root, "outputs-"));
+		mkdirSync(join(outputs, "tiered_review/lens/lens"), { recursive: true });
+		writeFileSync(join(outputs, "tiered_review/lens/lens/verdict"), "garbage");
+		const ran = await performed([], outputs);
+		expect(ran.code).toBe(3);
+		expect(ran.ls).toMatch(/^tiered_review\/lens\[lens\]\/lens +failed/m);
+		expect(ran.ls).toMatch(/^tiered_review\/upheld +rejected/m);
+		expect(ran.ls).toContain("no lens delivered a review");
+	});
+});
+
+describe("build", () => {
+	/** The IR of a build that uses `build` with `params`, and the spec as a Markdown file. */
+	function buildIrOf(params: { testFirst?: boolean; checks?: string[] }) {
+		const root = composition("probe", { examples: [{}] }, () => {
+			const spec = code(toMarkdown, {
+				in: { text: "x" },
+				out: { file: Markdown() },
+			});
+			return use(
+				buildChange,
+				{ spec: spec.out.file },
+				{ params: { request: "make it", ...params } },
+			).brief;
+		});
+		return buildIr(root, {}, { briefOf, specOf, toMarkdown });
+	}
+	const node = (ir: Ir, id: string) =>
+		ir.nodes.find((n) => n.id === id) as
+			| { config: Record<string, unknown>; in?: object }
+			| undefined;
+	const into = (ir: Ir, to: string) =>
+		ir.edges
+			.filter((e) => e.to.node === to && "port" in e.to)
+			.map((e) => `${e.from.node}.${"port" in e.from ? e.from.port : ""}`);
+
+	test("untested, one builder in a fresh lane under the checks, no tester, a spec of the request alone", () => {
+		const ir = buildIrOf({ checks: ["test"] });
+		expect(node(ir, "build/build")?.config).toMatchObject({
+			lane: { mode: "fresh" },
+			checks: ["test"],
+		});
+		expect(ir.nodes.map((n) => n.id).filter((id) => /tester/.test(id))).toEqual(
+			[],
+		);
+		expect(into(ir, "build/spec")).toEqual([]);
+		expect(into(ir, "build/brief")).toEqual(["build/build.report"]);
+	});
+
+	test("tested, the tester and builder of test_first, a spec of the request, the map and the overrules", () => {
+		const ir = buildIrOf({ testFirst: true, checks: ["test"] });
+		expect(node(ir, "build/test_first/tester")).toBeDefined();
+		expect(node(ir, "build/test_first/tester")?.config.checks ?? []).toEqual(
+			[],
+		);
+		expect(into(ir, "build/spec").sort()).toEqual([
+			"build/test_first/build.overrules",
+			"build/test_first/tester.map",
+		]);
+		expect(into(ir, "build/brief")).toEqual(["build/test_first/build.report"]);
+	});
+
+	test("is no entry: it takes the spec as a port, so compose refuses it", async () => {
+		const { err, code } = await maestro([
+			"compose",
+			"classics.build",
+			"--request",
+			"x",
+		]);
+		expect(code).toBe(1);
+		expect(err).toContain("composition 'build' has ports");
 	});
 });
 

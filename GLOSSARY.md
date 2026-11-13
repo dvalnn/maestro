@@ -314,7 +314,8 @@ quality
 
 **Finding**: One issue a lens raises in a change: where it is, what is wrong, and the guideline it cites.
 
-**Lens**: A verdict agent that reviews a change from one topic and lists its findings. _Avoid_: reviewer.
+**Lens**: A verdict agent that rules on a change by the checklist in its task, one topic's or a tiered review's
+assembled sections, and lists its findings. _Avoid_: reviewer.
 
 **Skeptic**: A verdict agent that rules on another agent's findings, upholding or dismissing each.
 
@@ -334,7 +335,7 @@ _Avoid_: round.
 contracts it names; it decides whether tests come first and the lowest review tier. _Avoid_: tier.
 
 **Tiered review**: A review that picks its lenses and their checklist from the size of the change and the ticket's risk,
-then runs them as a panel. _Avoid_: panel.
+then runs them and tallies what they find. _Avoid_: panel.
 
 **Review tier**: How strong a tiered review's lenses are, picked from the size of the change and never below its risk's
 floor. _Avoid_: risk.

@@ -18,10 +18,30 @@ export const tester = seat("tester", {
 	reply: { map: TestMap },
 });
 
+const LENS_REPLY = { findings: Findings };
+
 export const lens = seat("lens", {
 	profile: "classics/lens",
 	verdict: true,
-	reply: { findings: Findings },
+	reply: LENS_REPLY,
+});
+
+export const deepLens = seat("deep-lens", {
+	profile: "classics/deep-lens",
+	verdict: true,
+	reply: LENS_REPLY,
+});
+
+export const topLens = seat("top-lens", {
+	profile: "classics/top-lens",
+	verdict: true,
+	reply: LENS_REPLY,
+});
+
+export const crossLens = seat("cross-lens", {
+	profile: "classics/cross-lens",
+	verdict: true,
+	reply: LENS_REPLY,
 });
 
 export const skeptic = seat("skeptic", {
