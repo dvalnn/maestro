@@ -1,7 +1,16 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import type {
 	Comment,
 	Forge,
@@ -12,7 +21,7 @@ import type {
 	Review,
 } from "./forge";
 import { HALT, lock, milestoneOf, type Options, tick } from "./index";
-import type { Landing } from "./land";
+import { type Landing, landing as repositoryLanding } from "./land";
 import type { Concert, Maestro, Report, Result, Spend } from "./maestro";
 import { stateOf, titleOf } from "./pick";
 import {
@@ -268,6 +277,11 @@ function fakeLanding(failAt?: keyof Landing, output = "") {
 			return "abc123";
 		},
 		close: async (dir, name) => step("close", `close ${name} at ${dir}`),
+		export: async (revision, root) => ({
+			commit: revision,
+			dir: join(root, revision),
+			differs: false,
+		}),
 	};
 	return { landing, steps, events, heal: () => (failing = undefined) };
 }
@@ -357,7 +371,10 @@ function setup(
 		landing = fakeLanding(),
 	}: {
 		reports?: Record<string, Report>;
-		landing?: ReturnType<typeof fakeLanding>;
+		landing?: Pick<
+			ReturnType<typeof fakeLanding>,
+			"landing" | "steps" | "events"
+		>;
 	} = {},
 ) {
 	const forge = fakeForge(issues, cut, landing.events);
@@ -2648,6 +2665,315 @@ describe("masterclass", () => {
 		expect(t.starts.length).toBe(1);
 		const lessons = argAfter(t.starts[0] ?? [], "--lessons");
 		expect(readFileSync(lessons, "utf8")).toBe(lessonsOf(50, 15));
+	});
+});
+
+// Seams: tick's maestro arguments and diagnostics with real jj/landing; the tick command's exit status.
+const compositionRepos: string[] = [];
+afterEach(() => {
+	for (const dir of compositionRepos.splice(0))
+		rmSync(dir, { recursive: true, force: true });
+});
+
+const compositionFiles = [
+	"triage.ts",
+	"slice.ts",
+	"review.ts",
+	"masterclass.ts",
+];
+const EPIC_GRAPH = 'export default "epic-base";\n';
+const MAIN_GRAPH = 'export default "forge-main";\n';
+const CHECKOUT_GRAPH = 'export default "checkout";\n';
+
+function compositionRepository() {
+	const root = mkdtempSync(join(tmpdir(), "factory-compositions-"));
+	compositionRepos.push(root);
+	const origin = join(root, "origin");
+	const repo = join(root, "checkout");
+	mkdirSync(origin);
+	const jj = (dir: string, ...args: string[]) => {
+		const child = Bun.spawnSync(
+			[
+				"jj",
+				"--config",
+				'user.name="Owner"',
+				"--config",
+				'user.email="owner@example.com"',
+				...args,
+			],
+			{ cwd: dir },
+		);
+		if (child.exitCode !== 0) throw new Error(child.stderr.toString());
+		return child.stdout.toString().trim();
+	};
+	const tree = (dir: string, contents: string) => {
+		mkdirSync(join(dir, ".maestro"), { recursive: true });
+		for (const file of compositionFiles)
+			writeFileSync(join(dir, ".maestro", file), contents);
+		writeFileSync(join(dir, ".maestro/config.yaml"), "# checkout config\n");
+	};
+	jj(origin, "git", "init");
+	tree(origin, EPIC_GRAPH);
+	jj(origin, "commit", "-m", "epic base");
+	const base = jj(origin, "log", "-r", "@-", "--no-graph", "-T", "commit_id");
+	tree(origin, MAIN_GRAPH);
+	jj(origin, "commit", "-m", "main graph");
+	jj(origin, "bookmark", "create", "main", "-r", "@-");
+	const main = jj(origin, "log", "-r", "main", "--no-graph", "-T", "commit_id");
+	jj(root, "git", "clone", origin, repo);
+	tree(repo, CHECKOUT_GRAPH);
+	mkdirSync(join(repo, "node_modules"));
+	return { root, origin, repo, main, base, cache: join(root, "cache") };
+}
+
+function compositionTick(
+	repository: ReturnType<typeof compositionRepository>,
+	issues: Stored[],
+	concerts: Concert[] = [],
+) {
+	const t = setup(issues, concerts, {}, undefined, {
+		landing: {
+			landing: repositoryLanding(repository.repo, {
+				login: BOT,
+				name: BOT,
+				email: `${BOT}@example.com`,
+			}),
+			steps: [],
+			events: [],
+		},
+	});
+	t.options.cache = repository.cache;
+	t.forge.head = async () => repository.main;
+	return t;
+}
+
+/** Runs the real tick command, replacing only the forge HTTP API and the external maestro executable. */
+async function compositionCommand(
+	repository: ReturnType<typeof compositionRepository>,
+	revision: string,
+) {
+	const { root, origin, repo, main } = repository;
+	cpSync(import.meta.dir, join(repo, "scripts/factory"), {
+		recursive: true,
+		verbatimSymlinks: true,
+	});
+	cpSync(
+		join(import.meta.dir, "../../.maestro/triage"),
+		join(repo, ".maestro/triage"),
+		{ recursive: true, verbatimSymlinks: true },
+	);
+	rmSync(join(repo, "node_modules"), { recursive: true });
+	symlinkSync(
+		join(import.meta.dir, "../../node_modules"),
+		join(repo, "node_modules"),
+	);
+	mkdirSync(join(repo, "forge/owner"), { recursive: true });
+	symlinkSync(origin, join(repo, "forge/owner/repo"));
+	const remote = Bun.spawnSync(
+		["git", "remote", "set-url", "origin", "forge/owner/repo"],
+		{ cwd: repo },
+	);
+	if (remote.exitCode !== 0) throw new Error(remote.stderr.toString());
+	const capture = join(root, "perform.json");
+	const halts = join(root, "halts.json");
+	const preload = join(root, "forge.ts");
+	writeFileSync(
+		preload,
+		`
+import { writeFileSync } from "node:fs";
+const intake = {
+	number: 7, title: "Greet by name", body: "Make greet.sh greet by name.",
+	labels: [{name: "state/needs-triage"}], milestone: {id: 11},
+};
+globalThis.fetch = async (url, init) => {
+	const path = new URL(url).pathname.replace("/api/v1", "").replace("/repos/owner/repo", "");
+	if (init.method === "POST" && path === "/issues") {
+		writeFileSync(${JSON.stringify(halts)}, init.body);
+		return Response.json({number: 100});
+	}
+	const routes = {
+		"/user": {login: "forge-bot", full_name: "Tour Manager", email: "tm@example.com"},
+		"/milestones": [{id: 11, title: "v0.1.0"}],
+		"/branches/main": {commit: {id: ${JSON.stringify(main)}}},
+		"/issues": url.includes("state=closed") ? [] : [intake],
+		"/issues/pinned": [], "/pulls": [],
+		"/issues/7/comments": [], "/issues/7/dependencies": [],
+	};
+	if (!(path in routes)) return new Response(path, {status: 404});
+	return Response.json(routes[path]);
+};
+`,
+	);
+	const bin = join(root, "bin");
+	mkdirSync(bin);
+	writeFileSync(
+		join(bin, "maestro"),
+		`#!${process.execPath}
+import { readFileSync, writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "ls") console.log("[]");
+else if (args[0] === "perform") {
+	writeFileSync(${JSON.stringify(capture)}, JSON.stringify({
+		args, contents: readFileSync(args[1], "utf8"),
+	}));
+	console.log(JSON.stringify({id: "started"}));
+} else process.exit(1);
+`,
+		{ mode: 0o755 },
+	);
+	const child = Bun.spawn(
+		[
+			process.execPath,
+			"--preload",
+			preload,
+			join(repo, "scripts/factory/index.ts"),
+			"--milestone",
+			MILESTONE,
+			"--compositions-at",
+			revision,
+		],
+		{
+			cwd: repo,
+			env: {
+				...process.env,
+				PATH: `${bin}:${process.env.PATH}`,
+				MAESTRO_TM_TOKEN: "test-token",
+				MAESTRO_TM_SIGNING_KEY: "",
+				XDG_CONFIG_HOME: join(root, "config"),
+				XDG_RUNTIME_DIR: join(root, "runtime"),
+				XDG_CACHE_HOME: repository.cache,
+			},
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	);
+	const [code, out, err] = await Promise.all([
+		child.exited,
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+	]);
+	return { code, out, err, capture, halts };
+}
+
+const performedFile = (t: { starts: string[][] }) => {
+	expect(t.starts).toHaveLength(1);
+	expect(t.starts[0]?.[0]).toBe("perform");
+	const file = t.starts[0]?.[1];
+	if (!file) throw new Error("no performed composition path");
+	return file;
+};
+
+describe("compositions at the cut", () => {
+	test("fresh triage, build and masterclass perform the forge's main graph rather than the checkout's", async () => {
+		const repository = compositionRepository();
+		const cases: [Stored[], Concert[], string][] = [
+			[[issue(7, "needs-triage")], [], "triage.ts"],
+			[[specced(7, "ready-for-agent")], [], "slice.ts"],
+			[
+				[],
+				Array.from({ length: 10 }, (_, i) => triageConcert(`c${i}`, i + 50)),
+				"masterclass.ts",
+			],
+		];
+		for (const [issues, concerts, name] of cases) {
+			const t = compositionTick(repository, issues, concerts);
+			await t.run();
+			const file = performedFile(t);
+			expect(file.endsWith(join(".maestro", name))).toBe(true);
+			expect(readFileSync(file, "utf8")).toBe(MAIN_GRAPH);
+			expect(t.starts[0]?.slice(-2)).toEqual([
+				"-c",
+				`target.base=${repository.main}`,
+			]);
+		}
+	});
+
+	test("a fresh stack review performs the epic's recorded base graph rather than main or the checkout", async () => {
+		const repository = compositionRepository();
+		const epic = issue(9, "in-progress", {
+			result: { ...base, verdict: "split", risk: "medium", children },
+			filed: [5, 7],
+			base: repository.base,
+		});
+		epic.labels.push("kind/epic");
+		const first = { ...issue(5, "in-review"), open: false, closed: 1 };
+		const last = specced(7, "in-review", { slice: "s1", concert: "s1" });
+		const t = compositionTick(repository, [epic, first, last]);
+		t.pulls.push(pullOf(31, 7));
+		await t.run();
+		const file = performedFile(t);
+		expect(file.endsWith(".maestro/review.ts")).toBe(true);
+		expect(readFileSync(file, "utf8")).toBe(EPIC_GRAPH);
+		expect(t.starts[0]).toContain(`${repository.base}..sha7`);
+	});
+
+	test("--compositions-at @ performs the checkout revision instead of the forge's main graph", async () => {
+		const command = await compositionCommand(compositionRepository(), "@");
+		expect(command.code).toBe(0);
+		const performed = JSON.parse(readFileSync(command.capture, "utf8"));
+		expect(performed.contents).toBe(CHECKOUT_GRAPH);
+	});
+
+	test("keeps an export in the cache when the runtime directory is removed and later ticks use other commits", async () => {
+		const repository = compositionRepository();
+		const first = compositionTick(repository, [issue(7, "needs-triage")]);
+		await first.run();
+		const file = performedFile(first);
+		expect(relative(repository.cache, file).split(sep)[0]).not.toBe("..");
+		rmSync(first.options.dir, { recursive: true, force: true });
+		const next = compositionTick(repository, [issue(8, "needs-triage")]);
+		await next.run();
+		expect(performedFile(next)).toBe(file);
+		const other = compositionTick(repository, [issue(9, "needs-triage")]);
+		other.forge.head = async () => repository.base;
+		await other.run();
+		expect(performedFile(other)).not.toBe(file);
+		expect(readFileSync(file, "utf8")).toBe(MAIN_GRAPH);
+	});
+
+	test("an unavailable composition revision exits 1 without starting a concert or filing a halt", async () => {
+		const command = await compositionCommand(
+			compositionRepository(),
+			"no-such-composition-revision",
+		);
+		expect(command.code).toBe(1);
+		expect(existsSync(command.capture)).toBe(false);
+		expect(existsSync(command.halts)).toBe(false);
+	});
+
+	test("an encore reopens its first concert's graph, kept at its commit after main moves on", async () => {
+		const repository = compositionRepository();
+		const first = compositionTick(repository, [specced(7, "ready-for-agent")]);
+		await first.run();
+		const file = performedFile(first);
+		const encore = compositionTick(repository, [
+			answeredOnce(specced(7, "ready-for-agent", { encore: "c0" })),
+		]);
+		encore.forge.head = async () => repository.base;
+		await encore.run();
+		expect(encore.starts).toHaveLength(1);
+		expect(encore.starts[0]?.slice(0, 2)).toEqual(["encore", "c0"]);
+		expect(encore.starts[0]?.some((arg) => arg.endsWith(".ts"))).toBe(false);
+		expect(readFileSync(file, "utf8")).toBe(MAIN_GRAPH);
+	});
+
+	test("a checkout whose .maestro/ matches the performed tree prints no mismatch line", async () => {
+		const repository = compositionRepository();
+		const t = compositionTick(repository, [issue(7, "needs-triage")]);
+		t.options.compositionsAt = "@";
+		await t.run();
+		expect(readFileSync(performedFile(t), "utf8")).toBe(CHECKOUT_GRAPH);
+		expect(t.said.filter((line) => line.includes("config.yaml"))).toEqual([]);
+	});
+
+	test("a checkout mismatch names the performed commit and the checkout config on one line", async () => {
+		const repository = compositionRepository();
+		const t = compositionTick(repository, [issue(7, "needs-triage")]);
+		await t.run();
+		const notices = t.said.filter((line) => line.includes(repository.main));
+		expect(notices).toHaveLength(1);
+		expect(notices[0]).toContain(".maestro/config.yaml");
+		expect(notices[0]?.split("\n")).toHaveLength(1);
 	});
 });
 

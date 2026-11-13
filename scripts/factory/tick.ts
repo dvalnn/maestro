@@ -1,5 +1,5 @@
 // What every step of a tick shares: its view of the forge and maestro, and the writes a step routes an issue with.
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { Comment, Forge, Issue } from "./forge";
 import type { Landing } from "./land";
 import type { Concert, Maestro } from "./maestro";
@@ -36,8 +36,10 @@ export type Options = {
 	routeOnly?: boolean;
 	/** Where the tick keeps its snapshots and perform logs. */
 	dir: string;
-	/** Where the landing workspaces live. */
+	/** Where the landing workspaces and the composition exports live. */
 	cache: string;
+	/** The revision each fresh concert's composition is performed at, in place of the commit its lane is cut from. */
+	compositionsAt?: string;
 };
 export type Deps = {
 	forge: Forge;
@@ -77,6 +79,23 @@ export const branchOf = (issue: number) => `maestro-tm/i${issue}`;
 export const firstLine = (body: string) => body.split("\n")[0]?.trimEnd();
 /** The first line of a child of epic `epic`. */
 export const partOf = (epic: number) => `Part of #${epic}`;
+
+/**
+ * The path of composition `name` of `.maestro/` as it stands at `cut`, or at `compositionsAt` when set, exported into
+ * the cache once per commit; says so when the checkout's `.maestro/` differs from it.
+ * @throws Error when the tree cannot be exported, so the tick ends without starting a concert.
+ */
+export async function compositionAt(tick: Tick, name: string, cut: string) {
+	const exported = await tick.landing.export(
+		tick.compositionsAt ?? cut,
+		join(tick.cache, "compositions"),
+	);
+	if (exported.differs)
+		tick.say(
+			`performing .maestro/ at ${exported.commit}, which differs from the checkout's; config, presets and profiles still come from the checkout's .maestro/config.yaml`,
+		);
+	return join(exported.dir, ".maestro", name);
+}
 
 /** Files the halt issue: `lead`, then `detail` verbatim in a code block, then what to do next. */
 export async function halt(

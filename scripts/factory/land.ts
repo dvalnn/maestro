@@ -1,9 +1,30 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { dirname } from "node:path";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	renameSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import type { Account } from "./forge";
 
 /** How much of a failed command's output a landing error keeps. */
 const OUTPUT_TAIL = 2000;
+
+/** The directory the tick performs compositions from. */
+const COMPOSITIONS = ".maestro";
+
+/** The `.maestro/` tree of one commit, exported for the tick to perform from. */
+export type Export = {
+	/** The commit the tree is exported at. */
+	commit: string;
+	/** The directory holding the exported `.maestro/`, beside a link to the checkout's `node_modules`. */
+	dir: string;
+	/** Whether the checkout's `.maestro/` differs from the exported tree. */
+	differs: boolean;
+};
 
 /** The jj workspace a slice lands in (factory.md, Rules, Landing and PRs). */
 export type Landing = {
@@ -20,24 +41,75 @@ export type Landing = {
 	squash(dir: string, message: string): Promise<string>;
 	/** Forgets workspace `name` and removes `dir`. */
 	close(dir: string, name: string): Promise<void>;
+	/**
+	 * Exports the `.maestro/` tree at the commit `revision` names into `root/<commit>`, once per commit: a later call
+	 * for the same commit reuses it.
+	 * @throws Error when `revision` names no single commit, or the commit has no `.maestro/` tree.
+	 */
+	export(revision: string, root: string): Promise<Export>;
 };
 
 /**
- * The stdout of `command` in `cwd`.
+ * The stdout of `command` in `cwd` as bytes.
  * @throws Error with the tail of its output when it exits non-zero.
  */
-async function run(cwd: string, command: string[]) {
+async function bytes(cwd: string, command: string[]) {
 	const child = Bun.spawn(command, { cwd, stdout: "pipe", stderr: "pipe" });
 	const [out, err, code] = await Promise.all([
-		new Response(child.stdout).text(),
+		new Response(child.stdout).bytes(),
 		new Response(child.stderr).text(),
 		child.exited,
 	]);
 	if (code !== 0)
 		throw new Error(
-			`${command.join(" ")} exited ${code}:\n${`${out}${err}`.trim().slice(-OUTPUT_TAIL)}`,
+			`${command.join(" ")} exited ${code}:\n${`${new TextDecoder().decode(out)}${err}`.trim().slice(-OUTPUT_TAIL)}`,
 		);
 	return out;
+}
+
+/**
+ * The stdout of `command` in `cwd`.
+ * @throws Error with the tail of its output when it exits non-zero.
+ */
+const run = async (cwd: string, command: string[]) =>
+	new TextDecoder().decode(await bytes(cwd, command));
+
+/** The jj fileset naming exactly the file at root-relative `path`. */
+const rootFile = (path: string) => `root-file:${JSON.stringify(path)}`;
+
+/**
+ * Writes the `.maestro/` tree of `commit` in the repository at `repo` into a fresh directory under `root`, beside a
+ * link to `repo`'s `node_modules` so its package imports resolve, and returns that directory.
+ * @throws Error when `commit` has no `.maestro/` tree.
+ */
+async function exportTree(repo: string, commit: string, root: string) {
+	const listed = await run(repo, [
+		"jj",
+		"file",
+		"list",
+		"-r",
+		commit,
+		`root:${JSON.stringify(COMPOSITIONS)}`,
+	]);
+	const files = listed.split("\n").filter(Boolean);
+	if (!files.length) throw new Error(`${commit} has no ${COMPOSITIONS}/ tree`);
+	mkdirSync(root, { recursive: true });
+	const dir = mkdtempSync(join(root, `.${commit}-`));
+	try {
+		for (const file of files) {
+			const path = join(dir, file);
+			mkdirSync(dirname(path), { recursive: true });
+			writeFileSync(
+				path,
+				await bytes(repo, ["jj", "file", "show", "-r", commit, rootFile(file)]),
+			);
+		}
+		symlinkSync(join(repo, "node_modules"), join(dir, "node_modules"));
+		return dir;
+	} catch (error) {
+		rmSync(dir, { recursive: true, force: true });
+		throw error;
+	}
 }
 
 /**
@@ -66,6 +138,46 @@ function identity(account: Account, signingKey?: string) {
 			: []),
 	];
 	return settings.flatMap((setting) => ["--config", setting]);
+}
+
+/**
+ * The commit `revision` names in the repository at `repo`.
+ * @throws Error when it names none or more than one.
+ */
+async function commitOf(repo: string, revision: string) {
+	const commits = (
+		await run(repo, [
+			"jj",
+			"log",
+			"-r",
+			revision,
+			"--no-graph",
+			"-T",
+			'commit_id ++ "\\n"',
+		])
+	)
+		.split("\n")
+		.filter(Boolean);
+	const [commit] = commits;
+	if (!commit || commits.length > 1)
+		throw new Error(
+			`${revision} names ${commits.length} commits, not one, to export ${COMPOSITIONS}/ at`,
+		);
+	return commit;
+}
+
+/** The export of `commit`'s `.maestro/` tree at `root/<commit>`, made when it is not there yet. */
+async function kept(repo: string, commit: string, root: string) {
+	const dir = join(root, commit);
+	if (existsSync(join(dir, COMPOSITIONS))) return dir;
+	const made = await exportTree(repo, commit, root);
+	try {
+		renameSync(made, dir);
+	} catch (error) {
+		rmSync(made, { recursive: true, force: true });
+		if (!existsSync(join(dir, COMPOSITIONS))) throw error;
+	}
+	return dir;
 }
 
 /**
@@ -145,6 +257,21 @@ export function landing(
 		close: async (dir, name) => {
 			await forget(name);
 			rmSync(dir, { recursive: true, force: true });
+		},
+		export: async (revision, root) => {
+			const commit = await commitOf(repo, revision);
+			const dir = await kept(repo, commit, root);
+			const diff = await run(repo, [
+				"jj",
+				"diff",
+				"--summary",
+				"--from",
+				commit,
+				"--to",
+				"@",
+				`root:${JSON.stringify(COMPOSITIONS)}`,
+			]);
+			return { commit, dir, differs: diff.trim() !== "" };
 		},
 	};
 }

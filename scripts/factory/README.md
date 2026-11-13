@@ -36,24 +36,30 @@ and email come from `GET /user` and author every commit the tick describes. The 
 A low-risk PR whose base moved after it was pushed cannot fast-forward, and stays open for the owner to rebase.
 
 ```sh
-bun scripts/factory/index.ts [--milestone v0.1.0] [--preset xreview]... [--route-only]
+bun scripts/factory/index.ts [--milestone v0.1.0] [--preset xreview]... [--route-only] [--compositions-at <revision>]
 ```
 
-| Flag           | Does                                                                                                    |
-| -------------- | ------------------------------------------------------------------------------------------------------- |
-| `--milestone`  | The milestone whose issues it triages and builds; overrides `MAESTRO_TM_MILESTONE` for that tick        |
-| `--preset`     | A preset each triage, build and masterclass is performed with, such as `stub`; repeatable, in order[^p] |
-| `--route-only` | Routes settled concerts and syncs, then starts no build, triage or masterclass                          |
+| Flag                | Does                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `--milestone`       | The milestone whose issues it triages and builds; overrides `MAESTRO_TM_MILESTONE` for that tick              |
+| `--preset`          | A preset each triage, build and masterclass is performed with, such as `stub`; repeatable, in order[^p]       |
+| `--route-only`      | Routes settled concerts and syncs, then starts no build, triage or masterclass                                |
+| `--compositions-at` | The jj revision each fresh concert's `.maestro/` is performed at, such as `@`, in place of its cut commit[^c] |
 
 [^p]:
     A build layers them last, after its risk's preset and its area's; a triage and a masterclass layer them after the
     `triage` preset, which they name themselves. An area preset is an optional file,
     `.maestro/presets/area-<area>.yaml`, whose content grows from the masterclass.
 
-It exits 0 when it acted or had nothing to do, 1 when the forge or maestro failed, its config is missing a key or the
-milestone does not exist (the next tick retries) and 2 on a bad flag. It keeps its lock, backlog snapshots and perform
-logs in `$XDG_RUNTIME_DIR/maestro-factory/`, and lands each slice in a jj workspace under
-`$XDG_CACHE_HOME/maestro-factory/`.
+[^c]:
+    Without it, a triage, a build and a masterclass perform `.maestro/` at the forge's `main` commit, and a stack review
+    at the epic's base (`docs/agents/factory.md`, Rules, Landing and PRs: Compositions).
+
+It exits 0 when it acted or had nothing to do, 1 when the forge or maestro failed, its config is missing a key, the
+milestone does not exist or `.maestro/` cannot be exported at the chosen revision (the next tick retries) and 2 on a bad
+flag. It keeps its lock, backlog snapshots and perform logs in `$XDG_RUNTIME_DIR/maestro-factory/`, lands each slice in
+a jj workspace under `$XDG_CACHE_HOME/maestro-factory/`, and keeps each commit's `.maestro/` export, never pruned, in
+`$XDG_CACHE_HOME/maestro-factory/compositions/<commit>/`, since an encore reopens it.
 
 ## Install
 

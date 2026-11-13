@@ -65,6 +65,7 @@ import {
 	BASE,
 	branchOf,
 	CLOSED,
+	compositionAt,
 	type Deps,
 	type Entry,
 	firstLine,
@@ -98,9 +99,9 @@ const LOCK_NB = 4;
 /** Linux's EWOULDBLOCK, which is EAGAIN. */
 const EWOULDBLOCK = 11;
 export const MILESTONE_KEY = "MAESTRO_TM_MILESTONE";
-const TRIAGE_FILE = join(REPO, ".maestro/triage.ts");
-const SLICE_FILE = join(REPO, ".maestro/slice.ts");
-const REVIEW_FILE = join(REPO, ".maestro/review.ts");
+const TRIAGE_FILE = "triage.ts";
+const SLICE_FILE = "slice.ts";
+const REVIEW_FILE = "review.ts";
 /** The preset a stack review rules at. */
 const STACK_REVIEW_PRESET = "high";
 /** How a slice's agent reports it blocked (ADR 0012). */
@@ -694,7 +695,9 @@ async function startSlice(
 			? ["--preset", `area-${name}`]
 			: [];
 	const id = await start(tick, `build of #${issue.number}`, [
-		...(perform.encore ? ["encore", perform.encore] : ["perform", SLICE_FILE]),
+		...(perform.encore
+			? ["encore", perform.encore]
+			: ["perform", await compositionAt(tick, SLICE_FILE, cut)]),
 		"--request",
 		perform.request,
 		"--preset",
@@ -850,22 +853,32 @@ async function stackReview(tick: Tick, entries: Entry[]) {
 	const pulls = () => (found ??= tick.forge.pulls());
 	for (const entry of entries) {
 		const pull = await reviewDue(entry, entries, pulls);
-		if (!pull) continue;
-		await startReview(tick, entry, `${entry.data.base}..${pull.sha}`);
+		const { base } = entry.data;
+		if (!pull || !base) continue;
+		await startReview(tick, entry, base, pull.sha);
 		return false;
 	}
 	return true;
 }
 
-/** Performs the stack review of epic `entry` over the commits `revs` names, and records it; halts on a refusal. */
-async function startReview(tick: Tick, { issue, data }: Entry, revs: string) {
+/**
+ * Performs the stack review of epic `entry` over `main`'s commits from `base` to `head`, with the review composition at
+ * `base`, and records it; halts on a refusal.
+ */
+async function startReview(
+	tick: Tick,
+	{ issue, data }: Entry,
+	base: string,
+	head: string,
+) {
+	const file = await compositionAt(tick, REVIEW_FILE, base);
 	const id = await start(tick, `stack review of #${issue.number}`, [
 		"perform",
-		REVIEW_FILE,
+		file,
 		"--request",
 		reviewRequest(issue, data.result?.children ?? [], data.filed ?? []),
 		"--revs",
-		revs,
+		`${base}..${head}`,
 		"--preset",
 		STACK_REVIEW_PRESET,
 		...tick.presets.flatMap((p) => ["--preset", p]),
@@ -1089,7 +1102,9 @@ async function triage(tick: Tick, entries: Entry[]) {
 		snapshot(tick.milestone, number, issues, closed, pulls, cited),
 	);
 	const id = await start(tick, `triage of #${number}`, [
-		...(data.triage ? ["encore", data.triage] : ["perform", TRIAGE_FILE]),
+		...(data.triage
+			? ["encore", data.triage]
+			: ["perform", await compositionAt(tick, TRIAGE_FILE, tick.main)]),
 		"--issue",
 		text,
 		"--backlog",
@@ -1182,18 +1197,24 @@ if (import.meta.main) {
 		console.error(`tour manager: ${message(error)}`);
 		process.exit(EXIT_FAILED);
 	}
-	let values: { milestone?: string; preset?: string[]; "route-only"?: boolean };
+	let values: {
+		milestone?: string;
+		preset?: string[];
+		"route-only"?: boolean;
+		"compositions-at"?: string;
+	};
 	try {
 		({ values } = parseArgs({
 			options: {
 				milestone: { type: "string" },
 				preset: { type: "string", multiple: true },
 				"route-only": { type: "boolean" },
+				"compositions-at": { type: "string" },
 			},
 		}));
 	} catch (error) {
 		console.error(
-			`${message(error)}\nusage: bun scripts/factory/index.ts [--milestone <name>] [--preset <name>]... [--route-only]`,
+			`${message(error)}\nusage: bun scripts/factory/index.ts [--milestone <name>] [--preset <name>]... [--route-only] [--compositions-at <revision>]`,
 		);
 		process.exit(EXIT_USAGE);
 	}
@@ -1207,6 +1228,7 @@ if (import.meta.main) {
 		options = {
 			presets: values.preset ?? [],
 			routeOnly: values["route-only"],
+			compositionsAt: values["compositions-at"],
 			milestone: milestoneOf(values.milestone, process.env),
 			dir: join(runtime, "maestro-factory"),
 			cache: join(

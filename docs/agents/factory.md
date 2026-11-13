@@ -317,6 +317,12 @@ flowchart TD
 - **Tick base.** After its guards a tick reads the commit the forge holds as `main`, then fetches `origin` once; a
   failed fetch fails the tick. Every triage, fresh build, masterclass, landing and split base uses that commit
   (`-c target.base=<commit>` for a start), never the local `main`. A revision keeps its PR's commit.
+- **Compositions.** A fresh concert performs its composition as it stands at the commit its lane is cut from: the tick's
+  `main` commit for a triage, a build and a masterclass, the epic's `base` for a stack review. The tick exports that
+  commit's whole `.maestro/` tree once into its cache and performs from there, so a stale checkout cannot drop a node;
+  an encore reopens the tree its first concert ran. Config, presets and profiles still come from the checkout, and the
+  tick says so when the checkout's `.maestro/` differs. A failed export fails the tick. `--compositions-at` picks
+  another revision on purpose, such as `@` for an unmerged graph change.
 - **Landing.** An ok slice lands in a fresh jj workspace on the tick's `main` commit, or on its PR's head for a
   revision: `maestro cs apply`, then `jj describe` with the spec's subject and `Refs: #N`, or for a revision `jj squash`
   into the PR head with that description. It runs no check of its own: the slice's gate passed in its lane, and CI

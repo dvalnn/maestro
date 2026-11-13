@@ -11,18 +11,18 @@ import {
 } from "./route";
 import {
 	CLOSED,
+	compositionAt,
 	type Entry,
 	isSlice,
 	isTriage,
 	message,
-	REPO,
 	start,
 	type Tick,
 	TRIAGE_PRESET,
 } from "./tick";
 
 const MASTERCLASS_LABEL = "maestro-tm:masterclass";
-const MASTERCLASS_FILE = join(REPO, ".maestro/masterclass.ts");
+const MASTERCLASS_FILE = "masterclass.ts";
 const MASTERCLASS = { pack: "masterclass", composition: "masterclass" };
 /** How many settled factory runs newer than the last masterclass make the next one due. */
 const MASTERCLASS_EVERY = 10;
@@ -172,12 +172,13 @@ async function startMasterclass(
 	backlog: string,
 	runs: number,
 ) {
+	const file = await compositionAt(tick, MASTERCLASS_FILE, tick.main);
 	const id = await start(
 		tick,
 		"masterclass",
 		[
 			"perform",
-			MASTERCLASS_FILE,
+			file,
 			"--lessons",
 			lessons,
 			"--backlog",
