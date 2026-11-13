@@ -24,6 +24,8 @@ A directory, or a tarball of one, holding:
 - `README.md`: each composition's purpose, params and the profiles it needs.
 - `profiles/`, when the pack ships agents: one directory per profile, copied into `dist/profiles/` by the build. A seat
   names one as `<id>/<name>`. A file several profiles list in `instructions` sits beside them in `profiles/`.
+- `skills/`, when the pack ships reference text: copied into `dist/skills/` as it is, each link as written. No profile
+  reads it.
 
 ## Building the entry
 
@@ -94,6 +96,11 @@ shop:
 
 Precedence, highest first: the CLI flag, the preset, the workspace file, the user file, the param's default; compose
 alone also reads the example set, below config. A key the pack does not claim fails compose with a did-you-mean.
+
+A composition declares its pack with `pack: "<id>"` in its options; that routes its params to `<id>.<name>.<param>`
+without claiming anything. A used composition's params sit under its declaring pack, whichever root the file is in. A
+bare file's own compositions get no key. A `-c` key under a composition the concert does not use is refused as
+`CFG.unreached`, exit 2; the same key from a file or preset is ignored.
 
 ## Trust
 

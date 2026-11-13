@@ -121,8 +121,8 @@ such as `cli`, `factory`, `compositions` or `docs`.
 ## Unresolved review
 
 When `## upheld` lists findings, write this section where the form puts it, before Gaps: one item per finding, grouped
-by `cites`, each `<lens>/<id>, <where>: <issue>` with its `why`, or "unverified" when it has none. Leave the section out
-when `## upheld` is empty.
+by `cites`, each `<lens>/<id>, <where>: <issue>` with its `why` when it has one. Leave the section out when `## upheld`
+is empty.
 
 ## Gaps
 

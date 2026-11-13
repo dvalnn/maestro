@@ -19,8 +19,9 @@ Done when the file composes and a stub concert of it settles as intended.
 - One file, one exported composition, named `<stem>.<name>`: the stem is its pack id.
 - The stem is lower case, starts with a letter, then letters, digits, `_` or `-`, and is no installed pack's id.
 - At least one example set (`examples: [{ ... }]`); it serves compose only.
-- A bare file takes params from flags, its example set and defaults: no config key reaches it. To configure it, make it
-  a pack ([packs.md](packs.md)).
+- A bare file's own compositions take params from flags, their example set and defaults: no config key reaches them. To
+  configure them, make the file a pack ([packs.md](packs.md)). The installed packs' compositions it uses keep their own
+  keys.
 - Import `@maestro/sdk`, `@maestro/host-repo-sdk`, `node:` builtins and relative files. The binary resolves the two SDK
   imports to its own copies, so no install step.
 - A prompt longer than a line is a Markdown file in `.maestro/<id>/prompts/`, by [prompts.md](prompts.md).

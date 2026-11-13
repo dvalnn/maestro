@@ -203,13 +203,25 @@ test.each([
 		["--revises", "HEAD^!"],
 		["patches", "revised", "spec"],
 	],
-])("the writer is attached, with %j, %j", async (flags, attached) => {
-	const { nodes } = await composed(["low"], ...flags);
-	const writer = nodes.find((n) => n.id === "writer");
-	expect(Object.keys(writer?.config.attachments ?? {}).sort()).toEqual(
-		attached,
-	);
-});
+])(
+	"under --revises, the writer and the result node take the prior patches: flags %j attach %j, and the result is told whether the fixes cleaned",
+	async (flags, attached) => {
+		const { nodes, edges } = await composed(["low"], ...flags);
+		expect(from(edges, "result", "revised")).toEqual(
+			from(edges, "writer", "revised"),
+		);
+		expect(from(edges, "result", "revised").length).toBe(
+			attached.includes("revised") ? 1 : 0,
+		);
+		expect(from(edges, "result", "clean")).toEqual([
+			{ node: "fix_until_clean/fixes", port: "ok" },
+		]);
+		const writer = nodes.find((n) => n.id === "writer");
+		expect(Object.keys(writer?.config.attachments ?? {}).sort()).toEqual(
+			attached,
+		);
+	},
+);
 
 test.each(["low", "medium", "high"])(
 	"under --preset %s, the consolidator rules by the slice's grounds",
@@ -237,7 +249,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		written: Settled<ArtifactRef>[],
 		upheld: Parameters<typeof requirePatch>[0]["upheld"] = [],
 	) =>
-		requirePatch({ changeset: ref, upheld, written }, {
+		requirePatch({ changeset: ref, upheld, clean: true, written }, {
 			path: () => dir,
 			scratch: ctx,
 		} as unknown as CodeContext);
@@ -289,21 +301,30 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 	);
 });
 
-test("requirePatch drafts a change that leaves findings upheld or edits docs/rulings.md or docs/adr/, naming each reason in its notice", () => {
+test("requirePatch drafts a change that leaves findings upheld, edits a held path or got no review, naming each reason in its notice", () => {
 	const ctx = mkdtempSync(join(scratch, "draft-"));
 	const dir = mkdtempSync(join(scratch, "patches-"));
 	const run = (
 		patch: string,
 		upheld: Parameters<typeof requirePatch>[0]["upheld"],
+		clean = true,
+		revised?: string,
 	) => {
 		writeFileSync(join(dir, "0001.patch"), patch);
+		const earlier = mkdtempSync(join(scratch, "revised-"));
+		if (revised) writeFileSync(join(earlier, "0001.patch"), revised);
 		const out = requirePatch(
 			{
 				changeset: { path: "c", contentHash: "sha256:0" },
+				...(revised && { revised: { path: "r", contentHash: "sha256:1" } }),
 				upheld,
+				clean,
 				written: [],
 			},
-			{ path: () => dir, scratch: ctx } as unknown as CodeContext,
+			{
+				path: (ref: ArtifactRef) => (ref.path === "r" ? earlier : dir),
+				scratch: ctx,
+			} as unknown as CodeContext,
 		);
 		return [
 			"draft" in out && out.draft,
@@ -315,6 +336,25 @@ test("requirePatch drafts a change that leaves findings upheld or edits docs/rul
 		true,
 		"Draft: this change edits `docs/rulings.md`, which the owner holds.\n",
 	]);
+	const quoted =
+		'diff --git "a/docs/adr/\\303\\251.md" "b/docs/adr/\\303\\251.md"\n';
+	expect(run(quoted, [])[1]).toBe(
+		"Draft: this change edits `docs/adr/\\303\\251.md`, which the owner holds.\n",
+	);
+	expect(
+		run(touching("src/a.ts"), [], true, touching("docs/rulings.md"))[1],
+	).toBe(
+		"Draft: this change edits `docs/rulings.md`, which the owner holds.\n",
+	);
+	expect(run(touching("src/a.ts"), [], false)).toEqual([
+		true,
+		"Draft: no lens delivered a review of this change.\n",
+	]);
+	expect(
+		run(touching("src/a.ts"), [{ ...finding("F1"), lens: "spec" }], false)[1],
+	).toBe(
+		"Draft: no lens delivered a review of this change.\nDraft: 1 finding remains upheld after the last fix round; see Unresolved review.\n",
+	);
 	expect(
 		run(touching("src/a.ts"), [{ ...finding("F1"), lens: "spec" }]),
 	).toEqual([

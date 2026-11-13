@@ -328,7 +328,7 @@ ruled not met, still to be fixed.
 **Panel**: Lenses over one change, with their skeptics and an optional consolidator, ending in a tally. _Avoid_: round,
 review.
 
-**Tally**: A panel's result: the upheld findings, whether none remain, and the lane and session a fix continues.
+**Tally**: A review's result: the upheld findings, whether none remain, and the lane and session a fix continues.
 _Avoid_: round.
 
 **Risk**: Triage's rating of a ticket before the build, `low`, `medium` or `high`, from the paths it will touch and the

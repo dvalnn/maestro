@@ -62,7 +62,11 @@ function upheldMarkdown(upheld: Held[]): string {
 
 /** The paths the owner holds: a change to one opens its PR as a draft. */
 const HELD_PATHS = ["docs/rulings.md", "docs/adr/"];
-const DIFF_HEADER = /^diff --git a\/(.+) b\/(.+)$/gm;
+// git quotes a path with non-ASCII bytes; the held prefixes are ASCII, so the raw quoted text is matched as it is.
+const DIFF_HEADER = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/gm;
+
+const patchesOf = (dir: string) =>
+	readdirSync(dir).filter((f) => f.endsWith(PATCH_EXT));
 
 /** The held paths the patches in the changeset at `dir` touch, each once. */
 function heldTouched(dir: string, patches: string[]) {
@@ -80,8 +84,11 @@ function heldTouched(dir: string, patches: string[]) {
 	];
 }
 
-/** The draft notice's line for each reason `upheld` or `held` gives, none when neither does. */
-const noticeLines = (upheld: number, held: string[]) => [
+const NO_REVIEW_NOTICE = "Draft: no lens delivered a review of this change.";
+
+/** The draft notice's line for each reason `upheld`, `held` or an `unreviewed` change gives, none when none does. */
+const noticeLines = (upheld: number, held: string[], unreviewed: boolean) => [
+	...(unreviewed ? [NO_REVIEW_NOTICE] : []),
 	...(upheld
 		? [
 				`Draft: ${upheld} ${upheld === 1 ? "finding remains" : "findings remain"} upheld after the last fix round; see Unresolved review.`,
@@ -98,25 +105,37 @@ const noticeLines = (upheld: number, held: string[]) => [
  * The changeset, the last round's upheld findings as `upheld.md`, whether the PR is a draft with its notice, and the
  * writer's PR body, unchanged, when the changeset holds a patch; the body is empty when the writer delivered none.
  * A rejection when the changeset holds no patch, so the slice settles `rejected`.
- * - `draft` is true when findings remain upheld or the patches touch `docs/rulings.md` or `docs/adr/`.
+ * - `draft` is true when the last review did not come out clean, findings remain upheld, or the patches, or those of
+ *   the PR `revised`, touch `docs/rulings.md` or `docs/adr/`.
  * - `notice` holds a line per reason, empty when `draft` is false.
  */
 export function requirePatch(
 	{
 		changeset,
+		revised,
 		upheld,
+		clean,
 		written,
 	}: {
 		changeset: ArtifactRef;
+		revised?: ArtifactRef;
 		upheld: Held[];
+		clean: boolean;
 		written: Settled<ArtifactRef>[];
 	},
 	ctx: CodeContext,
 ) {
 	const dir = ctx.path(changeset);
-	const patches = readdirSync(dir).filter((f) => f.endsWith(PATCH_EXT));
+	const patches = patchesOf(dir);
 	if (!patches.length) return reject(NOTHING_CHANGED);
-	const lines = noticeLines(upheld.length, heldTouched(dir, patches));
+	const revisedDir = revised && ctx.path(revised);
+	const held = [
+		...new Set([
+			...heldTouched(dir, patches),
+			...(revisedDir ? heldTouched(revisedDir, patchesOf(revisedDir)) : []),
+		]),
+	];
+	const lines = noticeLines(upheld.length, held, !clean);
 	const file = join(ctx.scratch, "upheld.md");
 	writeFileSync(file, upheldMarkdown(upheld));
 	const notice = join(ctx.scratch, "notice.md");
@@ -177,6 +196,7 @@ export const slice = composition(
 			label: "changes",
 			tolerate: "rejected",
 		}).out.changeset;
+		const prior = revises ? prPatches(revises) : undefined;
 		const written = writer({
 			label: "writer",
 			task: WRITER_TASK,
@@ -190,9 +210,9 @@ export const slice = composition(
 					artifact: changes,
 					hint: "for what the change did, patch by patch",
 				},
-				...(revises && {
+				...(prior && {
 					revised: {
-						artifact: prPatches(revises),
+						artifact: prior,
 						hint: "for the PR the patches revise, which the body covers with them as one change",
 					},
 				}),
@@ -207,7 +227,9 @@ export const slice = composition(
 		return code(requirePatch, {
 			in: {
 				changeset: changes,
+				...(prior && { revised: prior }),
 				upheld: reviewed.out.upheld,
+				clean: reviewed.ok,
 				written: allSettled([written.out.pr], { label: "written" }),
 			},
 			out: {

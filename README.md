@@ -28,7 +28,8 @@ model call, performs it in isolated lanes, and hands back a changeset you decide
 - **Bounded loops.** Repair rounds, fan-outs and escalations are capped in the composition, not by hope.
 - **Mix model families.** Each profile picks its harness and model, Claude Code or pi, so a skeptic can challenge a
   reviewer from another family.
-- **Ready-made compositions.** The `classics` pack ships `build_then_repair`, `repair_until_green` and `panel_review`.
+- **Ready-made compositions.** The `classics` pack ships `build_then_repair`, `build_then_review`, `panel_review` and
+  `review_change`.
 - **Agents can drive it.** A release installs a `maestro` skill for Claude Code, Codex and pi.
 
 ## Install

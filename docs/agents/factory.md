@@ -328,11 +328,11 @@ flowchart TD
   record says, then a total) and `Closes #N` with the `Relates to` links last. A writer that fails costs the build
   nothing: the tick builds the body from its data alone, with the upheld findings counted under `Unresolved review` and
   no gaps. A PR is a draft, opened with the `WIP: ` title prefix, which Forgejo treats as a draft and refuses to merge,
-  when the review left findings upheld or the change edits `docs/rulings.md` or `docs/adr/`. The slice's result node
-  decides it and writes the notice that opens the body, a line per reason, which the writer does not write. A draft is
-  never armed, a last child's after its stack review clears included: the owner merges it. Every landing, an encore's
-  included, rewrites the title and body of the PR already open on the branch, so an encore that clears the draft drops
-  the prefix.
+  when the review left findings upheld, no lens delivered a review, or the change, or an earlier round of the same PR,
+  edits `docs/rulings.md` or `docs/adr/`. The slice's result node decides it and writes the notice that opens the body,
+  a line per reason, which the writer does not write. A draft is never armed, a last child's after its stack review
+  clears included: the owner merges it. Every landing, an encore's included, rewrites the title and body of the PR
+  already open on the branch, so an encore that clears the draft drops the prefix.
 
 ### Masterclass
 

@@ -21,7 +21,8 @@ The rule is:
 - **A profile's instructions are a list of files**, joined in order, so seats of one namespace share a file without
   copying it.
 - **A lens rules on a checklist in its task.** A tiered review's code node reads the change and picks the review tier
-  and the checklist sections ahead of a panel. Only the review has such a selector; another seat gets one when use asks.
+  and the checklist sections ahead of the lenses. Only the review has such a selector; another seat gets one when use
+  asks.
 - **The spec carries the project's shapes**: the modules, seams and patterns a change follows. A builder's guidance is
   generic, and the spec is built properly and sized to the task.
 

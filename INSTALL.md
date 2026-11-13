@@ -131,7 +131,8 @@ maestro perform classics.build_then_repair --request "<what to build>"
 
 ## 5. Upgrade
 
-Run the install command again, after letting running concerts settle or stopping them with `maestro kill`. Config stays.
+Run the install command again, after letting running concerts settle or stopping them with `maestro kill`. Config keys
+may change between releases: read the release notes.
 
 A record with a changed schema is refused with a message naming `record.db`: move it aside, as the message says. A pack
 with a new code hash makes a resumed concert rerun its code nodes.
