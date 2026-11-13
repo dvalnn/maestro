@@ -39,12 +39,13 @@ export type Spend = {
 	encore: boolean;
 };
 /**
- * What a settled concert's agents reported, their obstacles and lessons: `upheld` is the body of the upheld
+ * What a settled concert's agents reported, their obstacles, lessons and sightings: `upheld` is the body of the upheld
  * findings the concert returned, if any.
  */
 export type Report = {
 	obstacles: string[];
 	lessons: string[];
+	sightings: Sighting[];
 	upheld?: string;
 	/** Whether the slice's PR opens as a draft, and the notice at the top of its body that says why. */
 	draft?: boolean;
@@ -59,6 +60,9 @@ export type Report = {
 	/** What the tester's map holds, when the concert's tester wrote one. */
 	tests?: { pinned: number; deferred: number; untestable: number };
 };
+
+/** A defect an agent saw outside its task: `cites` is the rule or behaviour it breaches. */
+export type Sighting = { path: string; cites: string; text: string };
 
 /** maestro as the tick sees it, through its `--json` documents. */
 export type Maestro = {
@@ -115,6 +119,22 @@ const strings = (v: unknown) =>
 const entriesOf = (reports: unknown, key: string) =>
 	Object.values(isJson(reports) ? reports : {}).flatMap((r) =>
 		isJson(r) ? strings(r[key]) : [],
+	);
+
+const isSighting = (v: unknown): v is Sighting =>
+	isJson(v) &&
+	typeof v.path === "string" &&
+	typeof v.cites === "string" &&
+	typeof v.text === "string";
+
+/** Each report's well-formed sightings, over the `reports` of an `ls <concert> --json` document. */
+const sightingsOf = (reports: unknown): Sighting[] =>
+	Object.values(isJson(reports) ? reports : {}).flatMap((r) =>
+		isJson(r) && Array.isArray(r.sightings)
+			? r.sightings
+					.filter(isSighting)
+					.map(({ path, cites, text }) => ({ path, cites, text }))
+			: [],
 	);
 
 const metric = (metrics: unknown, name: string) => {
@@ -287,6 +307,7 @@ export function maestro(bin = "maestro"): Maestro {
 			return {
 				obstacles: entriesOf(doc.reports, "obstacles"),
 				lessons: entriesOf(doc.reports, "lessons"),
+				sightings: sightingsOf(doc.reports),
 				upheld,
 				draft: draftOf(result, upheld),
 				delivered: deliveredOf(result),

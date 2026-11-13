@@ -193,7 +193,7 @@ function fakeForge(issues: Stored[], cut?: string, events: string[] = []) {
 	};
 }
 
-const NO_REPORT: Report = { obstacles: [], lessons: [] };
+const NO_REPORT: Report = { obstacles: [], lessons: [], sightings: [] };
 /** The slice concerts that continue another. */
 const ENCORES = ["s2"];
 const spendOf = (short: string): Spend => ({
@@ -1383,6 +1383,7 @@ describe("a build", () => {
 				reports: {
 					s1: {
 						obstacles: [],
+						sightings: [],
 						lessons: [],
 						upheld: "- F1, a.ts:3: too wide",
 						draft: true,
@@ -1685,7 +1686,7 @@ describe("a build", () => {
 		},
 	);
 
-	test("files each obstacle once across two settles, none an open issue carries, and no gap", async () => {
+	test("settled slices and parked results file no obstacles or sightings", async () => {
 		const carried = issue(40, "needs-triage");
 		carried.body = "<!-- factory-fingerprint c1cac570f6de -->";
 		const concerts = [sliceConcert("s1", 7, "rejected")];
@@ -1699,10 +1700,12 @@ describe("a build", () => {
 					s1: {
 						obstacles: ["No  rg on PATH", "Already filed"],
 						lessons: [],
+						sightings: [],
 					},
 					s2: {
 						obstacles: ["no rg\non path"],
 						lessons: [],
+						sightings: [],
 					},
 				},
 			},
@@ -1710,14 +1713,58 @@ describe("a build", () => {
 		await t.run();
 		concerts.unshift(sliceConcert("s2", 7, "rejected"));
 		await t.run();
-		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([
-			"file #100 No  rg on PATH: state/needs-triage kind/bug",
-		]);
-		expect(t.find(100).body).toBe(
-			"Found by #7\n\nNo  rg on PATH\n\n<!-- factory-fingerprint d2473150ba7b -->",
-		);
-		expect(t.find(100).milestone).toBe(MILESTONE_ID);
+		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([]);
 		expect(t.find(7).labels).toContain("state/needs-info");
+
+		const sighting = {
+			path: "packages/host-repo/src/report.ts",
+			cites: "Reports retain sightings",
+			text: "The reader drops sightings.",
+		};
+		const report = {
+			...NO_REPORT,
+			obstacles: ["No rg on PATH"],
+			sightings: [sighting],
+		};
+		for (const parked of [false, true]) {
+			const landed = setup(
+				[
+					specced(7, "in-progress", {
+						slice: "s1",
+						...(parked ? { concert: "s1", parked: "s1" } : {}),
+					}),
+				],
+				[sliceConcert("s1", 7)],
+				{ s1: { status: "ok", outputs: {} } },
+				undefined,
+				{ reports: { s1: report } },
+			);
+			landed.options.routeOnly = true;
+			await landed.run();
+			expect(landed.find(7).labels).toContain("state/in-review");
+			expect(landed.writes.filter((w) => w.startsWith("file"))).toEqual([]);
+		}
+	});
+
+	test("a blocked slice files none of its obstacles or sightings", async () => {
+		const t = setup(
+			[specced(7, "in-progress", { slice: "s1" })],
+			[sliceConcert("s1", 7, "failed")],
+			{ s1: failed("blocked: the check contradicts the spec") },
+			undefined,
+			{
+				reports: {
+					s1: {
+						...NO_REPORT,
+						obstacles: ["No rg on PATH"],
+						sightings: [{ path: "a.ts", cites: "R1", text: "drops x" }],
+					},
+				},
+			},
+		);
+		await t.run();
+		expect(t.find(7).labels).toContain("state/needs-info");
+		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([]);
 	});
 
 	test("halts on a landing that fails, naming the workspace it keeps", async () => {
@@ -2270,20 +2317,26 @@ describe("a stack review", () => {
 		expect(reviewsOf(t)).toEqual([]);
 	});
 
-	test("files each blocking finding as an issue found by the epic when no child is open, listing them without a review", async () => {
+	test("files each blocking finding no open issue carries, in the epic's milestone and found by it, when no child is open, listing them without a review", async () => {
 		const t = epicWith("in-review", { stackReview: "r1" });
 		t.find(7).open = false;
+		t.find(9).body += "\n<!-- factory-fingerprint c1cac570f6de -->";
 		t.concerts.push(reviewConcert("r1", "rejected"));
 		t.results.r1 = rejected("the consolidator blocked");
-		t.reports.r1 = { ...FINDINGS, review: undefined };
+		t.reports.r1 = {
+			...FINDINGS,
+			blocking: ["A seam breaks", "A caller is left behind", "Already filed"],
+			review: undefined,
+		};
 		await t.run();
 		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([
 			"file #100 A seam breaks: state/needs-triage kind/bug",
 			"file #101 A caller is left behind: state/needs-triage kind/bug",
 		]);
 		expect(t.find(100).body).toStartWith("Found by #9");
+		expect(t.find(100).milestone).toBe(MILESTONE_ID);
 		expect(t.find(9).comments.at(-1)?.body).toBe(
-			"### Stack review · `r1`\n\n- A seam breaks\n- A caller is left behind\n\nNo one child is open to take them, so each finding is filed as an issue.\n",
+			"### Stack review · `r1`\n\n- A seam breaks\n- A caller is left behind\n- Already filed\n\nNo one child is open to take them, so each finding is filed as an issue.\n",
 		);
 	});
 
@@ -2413,6 +2466,108 @@ describe("masterclass", () => {
 		expect(t.logs).toEqual([join(t.options.dir, "masterclass.log")]);
 	});
 
+	test("passes obstacles and sightings in a reports file under the lessons' concert headings", async () => {
+		const ten = runs(50, 10).map((c) => ({
+			...c,
+			startedAt: Number(c.id.slice(1)) + 100,
+		}));
+		const old = { ...sliceConcert("r49", 49), startedAt: 10 };
+		const hand = { ...sliceConcert("h1", 1), tour: "trial", startedAt: 155.5 };
+		const sighting = {
+			path: "packages/host-repo/src/report.ts",
+			cites: "Reports retain sightings",
+			text: "The reader drops sightings.",
+		};
+		const sighted = { ...NO_REPORT, sightings: [sighting] };
+		const t = setup(
+			[specced(50, "needs-info", { concert: "r50", parked: "r50" })],
+			[...ten, hand, { ...masterclassConcert("m0"), startedAt: 50 }, old],
+			{},
+			undefined,
+			{
+				reports: {
+					...lessoned([...ten, old, hand]),
+					r49: {
+						...NO_REPORT,
+						lessons: ["old lesson"],
+						obstacles: ["Old obstacle"],
+					},
+					r50: {
+						...NO_REPORT,
+						lessons: ["parked lesson"],
+						obstacles: ["No rg on PATH"],
+					},
+					r51: sighted,
+					h1: {
+						...NO_REPORT,
+						lessons: ["hand lesson"],
+						obstacles: ["Hand obstacle"],
+					},
+				},
+			},
+		);
+		await t.run();
+		expect(t.starts).toHaveLength(1);
+		const args = t.starts[0] ?? [];
+		expect(args).toContain("--reports");
+		const path = argAfter(args, "--reports");
+		expect(path).not.toBe(argAfter(args, "--lessons"));
+		const text = readFileSync(path, "utf8");
+		const sections = text
+			.split(/^## /m)
+			.slice(1)
+			.map((s) => s.split("\n"));
+		expect(sections.map((s) => s[0])).toEqual([
+			"r49 · v0.1.0.i49 · read",
+			"r50 · v0.1.0.i50",
+			"r51 · v0.1.0.i51",
+			"h1 · trial",
+		]);
+		expect(sections[0]).toContain("- Old obstacle");
+		expect(sections[1]).toContain("- No rg on PATH");
+		expect(sections[2]).toContain(
+			"- packages/host-repo/src/report.ts · Reports retain sightings · The reader drops sightings.",
+		);
+		expect(sections[3]).toContain("- Hand obstacle");
+		const lessons = readFileSync(argAfter(args, "--lessons"), "utf8");
+		expect(lessons.split("\n")).toContain("## r49 · v0.1.0.i49 · read");
+		expect(lessons.split("\n")).toContain("## r50 · v0.1.0.i50");
+		expect(lessons.split("\n")).toContain("## h1 · trial");
+		expect(lessons.split("\n")).not.toContain("- No rg on PATH");
+	});
+
+	test("starts an overdue masterclass ahead of intake triage at twenty runs past the watermark", async () => {
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[...runs(50, 20), masterclassConcert("m0")],
+		);
+		await t.run();
+		expect(t.starts).toHaveLength(1);
+		expect(t.starts[0]?.[1]?.endsWith(".maestro/masterclass.ts")).toBe(true);
+		expect(t.starts[0]).toContain("v0.1.0.masterclass");
+	});
+
+	test("triages ahead of a masterclass at nineteen runs past the watermark", async () => {
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[...runs(50, 19), masterclassConcert("m0")],
+		);
+		await t.run();
+		expect(t.starts).toHaveLength(1);
+		expect(t.starts[0]?.[1]?.endsWith(".maestro/triage.ts")).toBe(true);
+	});
+
+	test("starts no overdue masterclass while the newest concert is one", async () => {
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[masterclassConcert("m1", "failed"), ...runs(50, 20)],
+			{ m1: { status: "failed", reason: "boom", outputs: {} } },
+		);
+		await t.run();
+		expect(t.starts).toHaveLength(1);
+		expect(t.starts[0]?.[1]?.endsWith(".maestro/triage.ts")).toBe(true);
+	});
+
 	test("a lesson a concert reports twice reaches the file once", async () => {
 		const ten = runs(50, 10);
 		const t = setup([], ten, {}, undefined, {
@@ -2424,6 +2579,22 @@ describe("masterclass", () => {
 		await t.run();
 		const lessons = argAfter(t.starts[0] ?? [], "--lessons");
 		expect(readFileSync(lessons, "utf8")).toBe(lessonsOf(50, 10));
+	});
+
+	test("a report a concert gives twice reaches the reports file once, a blank one never, a multiline one indented", async () => {
+		const ten = runs(50, 10);
+		const t = setup([], ten, {}, undefined, {
+			reports: {
+				...lessoned(ten),
+				r50: { ...NO_REPORT, obstacles: ["No rg", " No rg \n", "rg\nmissing"] },
+				r51: { ...NO_REPORT, obstacles: ["  "] },
+			},
+		});
+		await t.run();
+		const reports = argAfter(t.starts[0] ?? [], "--reports");
+		expect(readFileSync(reports, "utf8")).toBe(
+			"# Obstacles and sightings of the newest factory runs\n\n## r50 · v0.1.0.i50\n\n- No rg\n- rg\n  missing\n",
+		);
 	});
 
 	test("reads the lessons of release and trial slices since the watermark, without counting them", async () => {
@@ -2571,6 +2742,27 @@ describe("masterclass", () => {
 		await t.run();
 		expect(t.writes.length).toBe(2);
 		expect(t.starts).toEqual([]);
+	});
+
+	test("files each proposal with its bug or enhancement kind", async () => {
+		const proposals = [
+			{ ...proposal("repair"), kind: "bug", reports: ["No rg on PATH"] },
+			{ ...proposal("promote"), kind: "enhancement", reports: [] },
+		];
+		const t = setup([], [masterclassConcert("m1")], {
+			m1: { status: "ok", outputs: { masterclass: { proposals } } },
+		});
+		await t.run();
+		expect(t.find(100).labels).toEqual([
+			"state/needs-approval",
+			"kind/bug",
+			"maestro-tm:masterclass",
+		]);
+		expect(t.find(101).labels).toEqual([
+			"state/needs-approval",
+			"kind/enhancement",
+			"maestro-tm:masterclass",
+		]);
 	});
 
 	test("a proposal a recently closed issue holds is not filed again", async () => {
@@ -2830,11 +3022,12 @@ async function compositionCommand(
 		recursive: true,
 		verbatimSymlinks: true,
 	});
-	cpSync(
-		join(import.meta.dir, "../../.maestro/triage"),
-		join(repo, ".maestro/triage"),
-		{ recursive: true, verbatimSymlinks: true },
-	);
+	for (const dir of ["triage", "masterclass"])
+		cpSync(
+			join(import.meta.dir, `../../.maestro/${dir}`),
+			join(repo, `.maestro/${dir}`),
+			{ recursive: true, verbatimSymlinks: true },
+		);
 	rmSync(join(repo, "node_modules"), { recursive: true });
 	symlinkSync(
 		join(import.meta.dir, "../../node_modules"),

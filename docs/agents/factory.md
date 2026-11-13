@@ -107,10 +107,11 @@ flowchart TD
     P --> SR["stack review"]
     P --> E["encore"]
     P --> SL["build"]
+    P -->|overdue| MO["masterclass"]
     P --> TR["triage"]
-    P --> MC["masterclass"]
+    P -->|due| MC["masterclass"]
     P -->|nothing| X
-    SR & E & SL & TR & MC --> W["write back ⁵"] --> X
+    SR & E & SL & MO & TR & MC --> W["write back ⁵"] --> X
 ```
 
 1. Until the `maestro-tm:halt` issue closes (Rules, Policy: Halt).
@@ -144,11 +145,10 @@ flowchart TD
     A -->|no| NI2["needs-info"]
     O -->|"blocked ⁴"| NI3["needs-info"]
     O -->|"failed, not blocked"| HALT["halt"]
-    O -.->|any| REP["file reports ⁵"]
-    K -->|masterclass| PR["needs-approval ⁶"]
+    K -->|masterclass| PR["needs-approval ⁵"]
     K -->|"stack review"| SV{"outcome"}
     SV -->|ok| ARM["arm the last child"]
-    SV -->|"rejected ⁷"| FD["the last child's encore"]
+    SV -->|"rejected ⁶"| FD["the last child's encore"]
     SV -->|failed| HALT
     M -->|yes| PK["needs-info"]
 
@@ -162,9 +162,8 @@ flowchart TD
 3. A slice whose last reviewed lane holds no patch settles `rejected` with `the slice changed nothing` (Rules, Build:
    Attempts).
 4. Rules, Build: Blocked.
-5. New obstacles, filed as `needs-triage` (Rules, Build: Reports).
-6. One issue per proposal (Rules, Masterclass).
-7. Rules, Build: Stack review.
+5. One issue per proposal, a slice's obstacles and sightings among what it merges (Rules, Masterclass).
+6. Rules, Build: Stack review.
 
 ## Rules
 
@@ -179,9 +178,10 @@ flowchart TD
   commits only. An epic's last child arms only once its stack review clears it (Rules, Build: Stack review).
 - **One concert at a time.** The tick starts no second one while a concert of the milestone runs.
 - **Pick order.** Finish work first: a stack review, then an encore of a PR with changes requested, then a build, then
-  triage, then a masterclass. A tick that routes a settle falls through and starts the next action. Within builds and
-  within triage, an issue the owner pinned on the forge comes first, in pinned order, then the rest oldest first. A
-  build or a triage skips a ticket with an open dependency, a pinned one included (Rules, Build: Dependencies).
+  an overdue masterclass, then triage, then a due masterclass (Rules, Masterclass). A tick that routes a settle falls
+  through and starts the next action. Within builds and within triage, an issue the owner pinned on the forge comes
+  first, in pinned order, then the rest oldest first. A build or a triage skips a ticket with an open dependency, a
+  pinned one included (Rules, Build: Dependencies).
 - **Halt.** These stop the tick with an open `maestro-tm:halt` issue naming the cause; closing it resumes:
   - a triage that fails, does not start or gives a malformed output: the ticket keeps its state and is triaged again;
   - a build, a stack review or a masterclass that does not start;
@@ -298,7 +298,9 @@ flowchart TD
     range are context only. An epic filed before stack reviews holds no `base` and gets none.
   - An `ok` review arms the last child when low. A `rejected` one posts its review on the epic as a stack review comment
     and feeds it to the last child's next encore, as a review requesting changes is; the child arms once that encore
-    lands. With no one child open by then, each blocking finding is filed as under Reports, `Found by` the epic.
+    lands. With no one child open by then, each blocking finding is filed as `needs-triage` `kind/bug` in the milestone,
+    with `Found by #<epic>` and a `<!-- factory-fingerprint <hex> -->` line, a fingerprint of the text; a finding whose
+    line an open issue carries is not filed again.
   - The encore's own slice review covers the fix; the stack review does not run again.
 - **Attempts.** A `rejected` slice, an empty one included, spends an attempt and is retried with a fresh perform. After
   2 attempts the ticket goes to `needs-info`. An answer does not reset them: an answered ticket out of attempts gets one
@@ -307,10 +309,9 @@ flowchart TD
   spec comment's Last failure, and a question comment asks how to go on, offering `ready-for-agent` (continue with my
   answer) or `needs-triage`, answered as under Triage: Answers; on `ready-for-agent` the slice continues as an encore.
   Obstacles never block a ticket.
-- **Reports.** Each settled slice's obstacles are filed as `needs-triage` `kind/bug` in the milestone, with
-  `Found by #N` and a `<!-- factory-fingerprint <hex> -->` line, a fingerprint of the text; a text whose line an open
-  issue carries is not filed again. An obstacle never carries a dependency. Gaps are not filed: the writer lists the
-  builder's under Gaps, for the reviewer to file the ones worth a ticket.
+- **Reports.** A settled slice files no issue for its obstacles or sightings, whatever its outcome: the next masterclass
+  reads them beside its lessons and proposes one issue per cause (Rules, Masterclass). Gaps are not filed: the writer
+  lists the builder's under Gaps, for the reviewer to file the ones worth a ticket.
 
 ### Landing and PRs
 
@@ -347,18 +348,22 @@ A masterclass is due when the newest concert is not a masterclass and at least 1
 `<milestone>.i<n>` tours are newer than the watermark, within the milestone's newest 200 concerts. The trigger counts
 only those runs; the window is wider. It performs `.maestro/masterclass.ts` with `--lessons`, the lessons of the newest
 30 of those runs, or of every run past the watermark when more, oldest first, and of settled slices on the `release` and
-`trial` tours since the watermark, which are read but not counted or marked, and `--backlog`, the backlog snapshot. A
+`trial` tours since the watermark, which are read but not counted or marked, `--reports`, the obstacles and sightings of
+the same runs under the same headings, a sighting as `path · cites · text`, and `--backlog`, the backlog snapshot. A
 heading of a run at or before the watermark ends in ` · read`, as an earlier masterclass read it. `settle` keeps a
-proposal only when at least one concert it cites, after dropping ids no heading names, is not read: one citing none, or
-only read ones, is dropped, not refused, so one stale proposal never fails the masterclass. Fewer than 30 runs in the
-200 concerts are read as found. The **watermark** is the newest ok masterclass concert in maestro's record, not state
-the tick keeps. A failed masterclass is retried only after another factory run settles; a non-ok or malformed one is
-reported and does not halt.
+proposal only when at least one concert it cites, after dropping ids no heading of either file names, is not read: one
+citing none, or only read ones, is dropped, not refused, so one stale proposal never fails the masterclass. Fewer than
+30 runs in the 200 concerts are read as found. The **watermark** is the newest ok masterclass concert in maestro's
+record, not state the tick keeps. A failed masterclass is retried only after another factory run settles; a non-ok or
+malformed one is reported and does not halt. Once 20 factory runs are past the watermark the masterclass is overdue and
+starts ahead of triage, so a busy intake cannot starve it; the newest concert still must not be a masterclass.
 
-A settled masterclass files one `needs-approval` + `kind/enhancement` + `maestro-tm:masterclass` issue per proposal,
-only while the masterclass is the newest concert, deduplicated by a fingerprint over target, title and body against open
-issues and the 20 newest closed ones. The planner writes each proposal by `_plain.md`. Forge surfaces: Proposal issue
-shows the issue.
+A proposal merges at least one lesson or one report, and its target is any repo-relative path, or `docs/adr/` for a new
+ADR. Its kind is `bug` for a defect the reports show, or `enhancement` for a promotion of lessons; an older output with
+no kind reads as an enhancement merging no reports. A settled masterclass files one `needs-approval` + `kind/<kind>` +
+`maestro-tm:masterclass` issue per proposal, only while the masterclass is the newest concert, deduplicated by a
+fingerprint over target, title and body against open issues and the 20 newest closed ones. The planner writes each
+proposal by `_plain.md`. Forge surfaces: Proposal issue shows the issue.
 
 ## Forge surfaces
 
@@ -381,9 +386,9 @@ Tracked by Maestro Tour Manager · [spec v<N>](#issuecomment-<id>)
 
 ### Proposal issue
 
-A settled masterclass files one per proposal. The ask holds the target, the body, the concerts that reported the
-lessons, the lessons and the fingerprint, which sits last so a later masterclass finds it; a triage replaces everything
-below the marker with the closing line.
+A settled masterclass files one per proposal. The ask holds the target, the body, the concerts that reported the lessons
+and reports, the lessons, the obstacles and sightings when it merges any, and the fingerprint, which sits last so a
+later masterclass finds it; a triage replaces everything below the marker with the closing line.
 
 ```markdown
 Target: `<target>`
@@ -395,6 +400,10 @@ Concerts: <count> (<concert id>, <concert id>)
 ## Lessons
 
 - <lesson>
+
+## Obstacles and sightings
+
+- <obstacle, or path · cites · text>
 
 <!-- factory-fingerprint <hash> -->
 

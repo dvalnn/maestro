@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
 import { validator } from "@maestro/ir";
-import type {
-	Masterclass,
-	Promotion as Proposal,
-} from "../../.maestro/masterclass";
+import type { Promotion as Proposal } from "../../.maestro/masterclass";
+import { KINDS } from "../../.maestro/masterclass/kinds";
 import type { Risk } from "../../.maestro/triage/risk";
 import {
 	type Child,
@@ -23,7 +21,7 @@ import {
 	type Transition,
 } from "./transitions";
 
-export type { Masterclass, Proposal };
+export type { Proposal };
 /** How many red slices a ticket spends before it goes to `needs-info` (factory.md, Rules, Build: Attempts). */
 export const ATTEMPTS = 2;
 
@@ -925,7 +923,11 @@ export function reportIssue(text: string, found: number) {
 	return { title, body: body.join("\n") };
 }
 
-const isProposals = (v: unknown): v is Proposal[] =>
+/** A proposal as the tick reads it, `kind` and `reports` filled in where an older output leaves them out. */
+export type Parsed = Required<Proposal>;
+export type Masterclass = { proposals: Parsed[] };
+
+const isProposals = (v: unknown): v is Parsed[] =>
 	Array.isArray(v) &&
 	v.every(
 		(p) =>
@@ -933,9 +935,22 @@ const isProposals = (v: unknown): v is Proposal[] =>
 			isString(p.target) &&
 			isString(p.title) &&
 			isString(p.body) &&
+			KINDS.some((k) => k === p.kind) &&
 			isStrings(p.lessons) &&
+			isStrings(p.reports) &&
 			isStrings(p.concerts),
 	);
+
+/** `p` with what an older masterclass output leaves out: no concerts, the `enhancement` kind, no reports. */
+const defaulted = (p: unknown) =>
+	isJson(p)
+		? {
+				...p,
+				concerts: p.concerts ?? [],
+				kind: p.kind ?? "enhancement",
+				reports: p.reports ?? [],
+			}
+		: p;
 
 /**
  * `value` as a masterclass output.
@@ -948,11 +963,7 @@ export function parseMasterclass(value: unknown): Masterclass {
 		proposals: field(
 			{
 				proposals: Array.isArray(value.proposals)
-					? value.proposals.map((p) =>
-							isJson(p) && p.concerts === undefined
-								? { ...p, concerts: [] }
-								: p,
-						)
+					? value.proposals.map(defaulted)
 					: value.proposals,
 			},
 			"proposals",
@@ -975,7 +986,8 @@ const PROPOSAL_MOVES: readonly Option[] = [
  * The title and body of the issue proposal `p` is filed as: the ask, its agent text made inert and its fingerprint
  * last, then the marker and the maintainer's turn.
  */
-export function proposalIssue(p: Proposal) {
+export function proposalIssue(p: Omit<Proposal, "kind">) {
+	const reports = p.reports ?? [];
 	const ask = [
 		`Target: \`${p.target}\``,
 		"",
@@ -986,6 +998,9 @@ export function proposalIssue(p: Proposal) {
 		"## Lessons",
 		"",
 		...p.lessons.map((l) => `- ${l}`),
+		...(reports.length
+			? ["", "## Obstacles and sightings", "", ...reports.map((r) => `- ${r}`)]
+			: []),
 	].map(inert);
 	const turn = maintainerLines(
 		"the proposal awaits approval",

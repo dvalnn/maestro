@@ -1,7 +1,7 @@
-// The masterclass: once enough factory runs settled, it reads their lessons and files what it proposes
+// The masterclass: once enough factory runs settled, it reads their lessons and reports and files what it proposes
 // (factory.md, Rules, Masterclass).
 import { join } from "node:path";
-import type { Concert, Report, Result } from "./maestro";
+import type { Concert, Report, Result, Sighting } from "./maestro";
 import { snapshot } from "./pick";
 import {
 	type Masterclass,
@@ -26,6 +26,8 @@ const MASTERCLASS_FILE = "masterclass.ts";
 const MASTERCLASS = { pack: "masterclass", composition: "masterclass" };
 /** How many settled factory runs newer than the last masterclass make the next one due. */
 const MASTERCLASS_EVERY = 10;
+/** How many settled factory runs newer than the last masterclass make the next one overdue: it starts ahead of triage. */
+const MASTERCLASS_OVERDUE = 2 * MASTERCLASS_EVERY;
 /** How many of the newest factory runs a masterclass reads, or every run past the watermark when more. */
 const MASTERCLASS_READS = 30;
 /**
@@ -60,8 +62,8 @@ function masterclassOf(result: Result): Masterclass | string {
 }
 
 /**
- * Files each proposal of masterclass `id` as a `needs-approval` enhancement labelled `maestro-tm:masterclass`, unless
- * an open issue or one of the newest closed ones carries its fingerprint.
+ * Files each proposal of masterclass `id` as a `needs-approval` issue of its kind labelled `maestro-tm:masterclass`,
+ * unless an open issue or one of the newest closed ones carries its fingerprint.
  */
 async function fileProposals(tick: Tick, id: string, masterclass: Masterclass) {
 	const [open, closed] = await Promise.all([
@@ -76,7 +78,11 @@ async function fileProposals(tick: Tick, id: string, masterclass: Masterclass) {
 		const number = await tick.forge.file({
 			...filed,
 			milestone: tick.milestoneId,
-			labels: ["state/needs-approval", "kind/enhancement", MASTERCLASS_LABEL],
+			labels: [
+				"state/needs-approval",
+				`kind/${proposal.kind}`,
+				MASTERCLASS_LABEL,
+			],
 		});
 		bodies.push(filed.body);
 		tick.say(`filed #${number}, proposed by masterclass ${id}`);
@@ -126,11 +132,12 @@ function handRuns(
  * masterclass, the watermark, or all of them without one (factory.md, Rules, Masterclass). The watermark is read from
  * the record, not kept by the tick: pruning any other concert leaves it intact, and pruning it makes the older
  * masterclass, or none, the watermark, so its lessons are read again. Undefined when no masterclass is due: the newest
- * concert is a masterclass, or fewer than `MASTERCLASS_EVERY` runs are past the watermark.
+ * concert is a masterclass, or fewer than `due` runs are past the watermark.
  */
 function sinceWatermark(
 	concerts: readonly Concert[],
 	milestone: string,
+	due: number,
 ): Concert[] | undefined {
 	const [newest] = concerts;
 	if (!newest || isMasterclass(newest, milestone)) return undefined;
@@ -138,8 +145,14 @@ function sinceWatermark(
 	const runs = (mark < 0 ? concerts : concerts.slice(0, mark)).filter((c) =>
 		isFactoryRun(c, milestone),
 	);
-	return runs.length >= MASTERCLASS_EVERY ? runs : undefined;
+	return runs.length >= due ? runs : undefined;
 }
+
+/** A concert's heading in `--lessons` and `--reports`: its id and tour, and ` · read` when its id is in `read`. */
+const heading = (concert: Concert, read: ReadonlySet<string>) =>
+	`## ${concert.id} · ${concert.tour}${read.has(concert.id) ? " · read" : ""}`;
+
+const bullet = (text: string) => `- ${text.replaceAll("\n", "\n  ")}`;
 
 /**
  * What `--lessons` takes: each of `reports`' concerts with lessons, under its id and tour, and ` · read` after the tour
@@ -155,21 +168,48 @@ function lessonsText(
 		...reports
 			.filter(({ report }) => report.lessons.some((l) => l.trim()))
 			.flatMap(({ concert, report }) => [
-				`## ${concert.id} · ${concert.tour}${read.has(concert.id) ? " · read" : ""}`,
+				heading(concert, read),
 				"",
-				...[...new Set(report.lessons.map((l) => l.trim()))].map(
-					(l) => `- ${l.replaceAll("\n", "\n  ")}`,
-				),
+				...[...new Set(report.lessons.map((l) => l.trim()))].map(bullet),
 				"",
 			]),
 	].join("\n");
 }
 
-/** Performs the masterclass on the `lessons` and `backlog` files; halts on a refusal. */
+/** One report list item as a line: a sighting reads `path · cites · text`, as the host writes its note. */
+const reportLine = (r: string | Sighting) =>
+	(typeof r === "string" ? r : `${r.path} · ${r.cites} · ${r.text}`).trim();
+
+/**
+ * What `--reports` takes: each of `reports`' concerts with obstacles or sightings, under the heading `--lessons` gives
+ * it, one bullet per distinct report.
+ */
+function reportsText(
+	reports: readonly { concert: Concert; report: Report }[],
+	read: ReadonlySet<string>,
+) {
+	return [
+		"# Obstacles and sightings of the newest factory runs",
+		"",
+		...reports.flatMap(({ concert, report }) => {
+			const lines = [
+				...new Set(
+					[...report.obstacles, ...report.sightings]
+						.map(reportLine)
+						.filter(Boolean),
+				),
+			];
+			return lines.length
+				? [heading(concert, read), "", ...lines.map(bullet), ""]
+				: [];
+		}),
+	].join("\n");
+}
+
+/** Performs the masterclass on the `lessons`, `reports` and `backlog` files; halts on a refusal. */
 async function startMasterclass(
 	tick: Tick,
-	lessons: string,
-	backlog: string,
+	files: { lessons: string; reports: string; backlog: string },
 	runs: number,
 ) {
 	const file = await compositionAt(tick, MASTERCLASS_FILE, tick.main);
@@ -180,9 +220,11 @@ async function startMasterclass(
 			"perform",
 			file,
 			"--lessons",
-			lessons,
+			files.lessons,
+			"--reports",
+			files.reports,
 			"--backlog",
-			backlog,
+			files.backlog,
 			"--tour",
 			masterclassTour(tick.milestone),
 			"--title",
@@ -202,16 +244,16 @@ async function startMasterclass(
 }
 
 /**
- * Starts a masterclass once `MASTERCLASS_EVERY` factory runs settled since the last one, on the lessons of the newest
+ * Starts a masterclass once `due` factory runs settled since the last one, on the lessons and reports of the newest
  * `MASTERCLASS_READS` runs, or every run since the last when more, marking those an earlier masterclass read, with the
  * backlog snapshot; true when it started none.
  */
-export async function masterclass(tick: Tick, entries: Entry[]) {
+async function hold(tick: Tick, entries: Entry[], due: number) {
 	const listed = await tick.maestro.concerts(
 		tick.milestone,
 		MASTERCLASS_WINDOW,
 	);
-	const counted = sinceWatermark(listed, tick.milestone);
+	const counted = sinceWatermark(listed, tick.milestone, due);
 	if (!counted) return true;
 	const hand = handRuns(
 		await Promise.all(
@@ -235,6 +277,8 @@ export async function masterclass(tick: Tick, entries: Entry[]) {
 		reports.push({ concert, report: await tick.maestro.report(concert.id) });
 	const lessons = join(tick.dir, "masterclass-lessons.md");
 	await Bun.write(lessons, lessonsText(reports, read));
+	const reported = join(tick.dir, "masterclass-reports.md");
+	await Bun.write(reported, reportsText(reports, read));
 	const [closed, pulls] = await Promise.all([
 		tick.forge.closed(CLOSED),
 		tick.forge.pulls(),
@@ -250,6 +294,21 @@ export async function masterclass(tick: Tick, entries: Entry[]) {
 			pulls,
 		),
 	);
-	await startMasterclass(tick, lessons, backlog, runs.length);
+	await startMasterclass(
+		tick,
+		{ lessons, reports: reported, backlog },
+		runs.length,
+	);
 	return false;
 }
+
+/** Starts a masterclass once `MASTERCLASS_EVERY` factory runs settled since the last one; true when it started none. */
+export const masterclass = (tick: Tick, entries: Entry[]) =>
+	hold(tick, entries, MASTERCLASS_EVERY);
+
+/**
+ * Starts a masterclass once `MASTERCLASS_OVERDUE` factory runs settled since the last one, so that triage cannot starve
+ * it; true when it started none.
+ */
+export const overdueMasterclass = (tick: Tick, entries: Entry[]) =>
+	hold(tick, entries, MASTERCLASS_OVERDUE);

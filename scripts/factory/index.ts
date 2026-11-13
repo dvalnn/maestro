@@ -16,7 +16,11 @@ import {
 } from "./forge";
 import { landing, SIGNING_KEY } from "./land";
 import { type Concert, maestro, type Report, type Result } from "./maestro";
-import { masterclass, routeMasterclass } from "./masterclass";
+import {
+	masterclass,
+	overdueMasterclass,
+	routeMasterclass,
+} from "./masterclass";
 import {
 	type Approval,
 	buildable,
@@ -256,7 +260,7 @@ async function settle(tick: Tick, { issue, data }: Entry, id: string) {
 	return true;
 }
 
-/** Files each of `texts` as a `needs-triage` bug found by `issue`, unless an open issue carries it. */
+/** Files each of `texts` as a `needs-triage` bug found by `issue`, unless an open issue carries it (factory.md, Stack review). */
 async function fileReports(tick: Tick, issue: Issue, texts: readonly string[]) {
 	const bodies = (await tick.forge.open({})).map((i) => i.body);
 	for (const text of texts) {
@@ -357,15 +361,14 @@ async function fail(
 }
 
 /**
- * Routes slice `id`'s settle onto `entry` (factory.md, Routing a settle), after filing its reports; false when it
- * halted.
+ * Routes slice `id`'s settle onto `entry` (factory.md, Routing a settle); its reports wait for a masterclass. False
+ * when it halted.
  */
 async function settleSlice(tick: Tick, entry: Entry, id: string) {
 	const [result, report] = await Promise.all([
 		tick.maestro.result(id),
 		tick.maestro.report(id),
 	]);
-	await fileReports(tick, entry.issue, report.obstacles);
 	if (result.status === "ok") return land(tick, entry, id, report);
 	const reason = result.reason ?? `settled ${result.status}`;
 	return fail(tick, entry, id, result.status, reason);
@@ -1134,7 +1137,7 @@ async function triage(tick: Tick, entries: Entry[]) {
 /**
  * One tick: no action when another tick holds the lock, the tour manager is halted or a concert of the milestone runs;
  * else it routes settled concerts and a settled masterclass, syncs, and starts one stack review, else one build, else
- * one triage, else a masterclass once due, or none under `routeOnly`. Each step returns whether the tick goes on.
+ * a masterclass once overdue, else one triage, else a masterclass once due, or none under `routeOnly`. Each step returns whether the tick goes on.
  * @throws Error when the milestone does not exist, or the forge or maestro fails or answers what the tick cannot read.
  */
 export async function tick(deps: Deps, options: Options): Promise<void> {
@@ -1165,7 +1168,15 @@ export async function tick(deps: Deps, options: Options): Promise<void> {
 	};
 	const steps = options.routeOnly
 		? [route, sync]
-		: [route, sync, stackReview, build, triage, masterclass];
+		: [
+				route,
+				sync,
+				stackReview,
+				build,
+				overdueMasterclass,
+				triage,
+				masterclass,
+			];
 	for (const step of steps) {
 		const entries = await load(tick);
 		if (!entries || !(await step(tick, entries))) return;

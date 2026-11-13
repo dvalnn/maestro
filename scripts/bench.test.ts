@@ -140,7 +140,7 @@ test.each([
 			encore: false,
 		};
 		const concert = { id: "c", status: "ok", pack: "", composition: "slice" };
-		const report = { obstacles: [], lessons: [], delivered };
+		const report = { obstacles: [], lessons: [], sightings: [], delivered };
 		expect(rowOf(concert, ["", ARM, "246"], spend, report).converged).toBe(
 			converged,
 		);

@@ -6,6 +6,7 @@ import { readJson } from "@maestro/sdk/stdlib";
 import { Masterclass, settle } from "./masterclass";
 import PLANNER from "./masterclass/prompts/planner.md" with { type: "text" };
 import {
+	call,
 	classics,
 	maestro,
 	scratch,
@@ -104,11 +105,22 @@ const outputs: [string, object, boolean][] = [
 	["a new ADR", proposing({ ...one, target: "docs/adr/" }), true],
 	["the checks' recipes", proposing({ ...one, target: "justfile" }), true],
 	["no proposals", proposing(), true],
-	["README.md", proposing({ ...one, target: "README.md" }), false],
-	["a named ADR", proposing({ ...one, target: "docs/adr/0020-x.md" }), false],
-	["CLAUDE.md", proposing({ ...one, target: "CLAUDE.md" }), false],
-	["another script", proposing({ ...one, target: "scripts/pack.ts" }), false],
+	["README.md", proposing({ ...one, target: "README.md" }), true],
+	["a named ADR", proposing({ ...one, target: "docs/adr/0020-x.md" }), true],
+	["CLAUDE.md", proposing({ ...one, target: "CLAUDE.md" }), true],
+	["another script", proposing({ ...one, target: "scripts/pack.ts" }), true],
 	["no lessons", proposing({ ...one, lessons: [] }), false],
+	[
+		"reports and no lessons",
+		proposing({ ...one, lessons: [], reports: ["No rg on PATH"] }),
+		true,
+	],
+	[
+		"neither lessons nor reports",
+		proposing({ ...one, lessons: [], reports: [] }),
+		false,
+	],
+	["a kind it has no label for", proposing({ ...one, kind: "feature" }), false],
 	["no body", proposing({ ...one, body: undefined }), false],
 	["no concerts", proposing({ ...one, concerts: undefined }), false],
 	["concerts that are no strings", proposing({ ...one, concerts: [1] }), false],
@@ -193,6 +205,149 @@ test("settle drops a proposal that cites only read concerts or none", () => {
 test("settle counts the read concerts of a proposal that cites a new one", () => {
 	const out = settled(marked, { ...one, concerts: ["c1", "c2", "c3"] });
 	expect(out.map((p) => p.concerts)).toEqual([["c1", "c2", "c3"]]);
+});
+
+test("settle counts a concert the reports name and the lessons do not, and keeps a cluster mixing read and fresh", () => {
+	const dir = mkdtempSync(join(scratch, "settle-reports-"));
+	const lessonsFile = join(dir, "lessons.md");
+	const reportsFile = join(dir, "reports.md");
+	writeFileSync(lessonsFile, "## c1 · t · read\n\n- a\n");
+	writeFileSync(reportsFile, "## c1 · t · read\n\n- x\n\n## c2 · t\n\n- y\n");
+	const bug = { ...one, kind: "bug", lessons: [], reports: ["y"] };
+	const out = settle(
+		{
+			masterclass: {
+				proposals: [
+					{ ...bug, title: "fresh", concerts: ["c2"] },
+					{ ...bug, title: "mixed", concerts: ["c1", "c2"] },
+					{ ...bug, title: "read", concerts: ["c1"] },
+				] as Masterclass["proposals"],
+			},
+			lessons: { path: lessonsFile, contentHash: "sha256:0" },
+			reports: { path: reportsFile, contentHash: "sha256:0" },
+		},
+		{ path: (ref) => ref.path } as CodeContext,
+	).masterclass.proposals;
+	expect(out.map((p) => [p.title, p.concerts])).toEqual([
+		["fresh", ["c2"]],
+		["mixed", ["c1", "c2"]],
+	]);
+});
+
+/** The masterclass CLI with separate lessons and reports, and a scripted planner reply. */
+async function withReports(
+	mode: string,
+	scripted: unknown,
+	reports: string,
+	text = "# Lessons\n",
+) {
+	const dir = mkdtempSync(join(scratch, "reports-"));
+	const lessonsFile = join(dir, "lessons.md");
+	const reportsFile = join(dir, "reports.md");
+	writeFileSync(lessonsFile, text);
+	writeFileSync(reportsFile, reports);
+	return call(
+		[
+			mode,
+			".maestro/masterclass.ts",
+			"--preset",
+			"stub",
+			"--lessons",
+			lessonsFile,
+			"--reports",
+			reportsFile,
+			"--backlog",
+			backlog,
+			"--json",
+			"-c",
+			`packs=[${await classics}]`,
+			"-c",
+			`target.repo=${targetRepo()}`,
+			"-c",
+			'target.prepare="true"',
+		],
+		join(dir, "data"),
+		{
+			MAESTRO_STUB_OUTPUTS: stubOutputs({
+				"planner/masterclass.json": scripted,
+			}),
+		},
+	);
+}
+
+const reportTexts = [
+	"No rg on PATH",
+	"scripts/factory/maestro.ts · Reports retain sightings · The reader drops sightings.",
+];
+const reportProposal = {
+	...one,
+	kind: "bug",
+	lessons: [],
+	reports: reportTexts,
+	concerts: ["c1", "c2"],
+};
+const reportHeadings =
+	"## c1 · v.i1\n\n- No rg on PATH\n\n## c2 · v.i2\n\n- scripts/factory/maestro.ts · Reports retain sightings · The reader drops sightings.\n";
+
+test("the planner receives reports beside lessons and backlog and settles one reports-only bug cluster", async () => {
+	const scripted = { proposals: [reportProposal] };
+	const composed = await withReports("compose", scripted, reportHeadings);
+	expect(composed.code).toBe(0);
+	const { plan } = JSON.parse(composed.out);
+	const planner = (
+		plan.ir.nodes as {
+			id: string;
+			config: { attachments: Record<string, unknown> };
+		}[]
+	).find((n) => n.id === "planner");
+	expect(Object.keys(planner?.config.attachments ?? {}).sort()).toEqual([
+		"backlog",
+		"lessons",
+		"reports",
+	]);
+	const performed = await withReports("perform", scripted, reportHeadings);
+	expect(performed.code).toBe(0);
+	const concert = JSON.parse(performed.out);
+	expect(concert.status).toBe("ok");
+	expect(concert.outputs.masterclass).toEqual(scripted);
+});
+
+test("a masterclass drops report clusters citing only read concerts and keeps a fresh reports-only cluster", async () => {
+	const old = { ...reportProposal, title: "old reports", concerts: ["c1"] };
+	const fresh = { ...reportProposal, title: "fresh reports", concerts: ["c2"] };
+	const performed = await withReports(
+		"perform",
+		{ proposals: [old, fresh] },
+		reportHeadings.replace("## c1 · v.i1\n", "## c1 · v.i1 · read\n"),
+	);
+	expect(performed.code).toBe(0);
+	const concert = JSON.parse(performed.out);
+	expect(concert.status).toBe("ok");
+	expect(concert.outputs.masterclass).toEqual({ proposals: [fresh] });
+});
+
+test("a proposal can target package source but not an absolute or parent path", async () => {
+	for (const [target, accepted] of [
+		["packages/host-repo/src/report.ts", true],
+		["/packages/host-repo/src/report.ts", false],
+		["packages/../outside.ts", false],
+	] as const) {
+		const file = join(mkdtempSync(join(scratch, "target-")), "proposal.json");
+		writeFileSync(
+			file,
+			JSON.stringify({
+				proposals: [{ ...one, kind: "enhancement", reports: [], target }],
+			}),
+		);
+		const read = await readJson(
+			{
+				file: { path: file, contentHash: "sha256:0" },
+				schema: Masterclass.schema,
+			},
+			{ path: (ref) => ref.path } as CodeContext,
+		);
+		expect("value" in read).toBe(accepted);
+	}
 });
 
 test("the planner prompt's example is a proposal the schema accepts", async () => {

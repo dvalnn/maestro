@@ -1,13 +1,14 @@
-Read the attached lessons and backlog. The lessons file has one heading per concert, oldest first, each with one bullet
-per lesson. Then:
+Read the attached lessons, reports and backlog. The lessons file has one heading per concert, oldest first, each with
+one bullet per lesson. The reports file, when attached, has the same headings, each with one bullet per obstacle an
+agent hit or sighting it made; a sighting reads `path · cites · text`, a defect seen outside its task. Then:
 
-- merge lessons that say the same thing;
-- cluster related ones;
+- merge lessons, and reports, that say the same thing;
+- cluster related ones, lessons and reports together where they share a cause;
 - diagnose each cluster, by Diagnosis below;
-- propose one promotion per cluster worth keeping;
-- skip a lesson that the factory's standing text (CODING_STANDARDS.md, docs/adr/, the justfile, the prompts, profiles,
-  compositions and config under .maestro/) or an open or recently closed backlog issue already covers, or that only one
-  run would ever need.
+- propose one change per cluster worth keeping;
+- skip a lesson or report that the factory's standing text (CODING_STANDARDS.md, docs/adr/, the justfile, the prompts,
+  profiles, compositions and config under .maestro/) or an open or recently closed backlog issue already covers, or that
+  only one run would ever need.
 
 A heading that ends in `· read` is a concert an earlier masterclass read. A proposal is kept only when at least one
 concert it cites is a heading without that suffix; one that cites no heading's concert, or only read ones, is dropped.
@@ -17,8 +18,8 @@ Dropping what the backlog already proposes also covers lessons read again after 
 
 ## Diagnosis
 
-A lesson reports one incident, a symptom. Before you propose, read the code, prompts and config the lessons name, and
-answer for each cluster:
+A lesson, an obstacle or a sighting reports one incident, a symptom. Before you propose, read the code, prompts and
+config they name, and answer for each cluster:
 
 - Cost: what the failure cost. Drop a failure that a check or a review caught and the agent fixed in the same run.
 - Cause: the factory mechanism that should have prevented the failure, and why it did not. Name the mechanism, not the
@@ -27,8 +28,8 @@ answer for each cluster:
 
 Prefer, in this order: remove the cause in code or structure; add a check that catches it mechanically; change a prompt.
 Propose prompt wording only for an agent's judgment that nothing mechanical can catch. Judge a cluster by its distinct
-concerts, not its lessons: several lessons from one concert are one incident, so a cluster from one concert needs a cost
-beyond its own run.
+concerts, not its entries: several from one concert are one incident, so a cluster from one concert needs a cost beyond
+its own run.
 
 Give your `masterclass` field in exactly this shape:
 
@@ -39,23 +40,27 @@ Give your `masterclass` field in exactly this shape:
       "target": ".maestro/slice/prompts/_grounds.md",
       "title": "one line",
       "body": "the proposed wording or change, and why",
+      "kind": "enhancement",
       "lessons": ["a merged lesson text"],
+      "reports": [],
       "concerts": ["c1"]
     }
   ]
 }
 ```
 
-Write each `title` and `body` by Plain English below. The issue shows the target and the lessons beside the body, so the
-body never restates them:
+Write each `title` and `body` by Plain English below. The issue shows the target, the lessons and the reports beside the
+body, so the body never restates them:
 
 - `title`: the change, one imperative line.
 - `body`: the cause in one sentence, then the change, as the wording to add or the edit to make, then why it removes the
-  class, in at most two short paragraphs. Never repeat a lesson's wording.
+  class, in at most two short paragraphs. Never repeat a lesson's or a report's wording.
 
-`target` is the file the change lands in: `CODING_STANDARDS.md`, a path under `.maestro/` (a prompt, a profile's
-instructions, a composition, `config.yaml` with its checks), the `justfile` (the recipes the checks run), a path under
-`scripts/factory/` (the tour manager's code), or `docs/adr/` for a new ADR. The root `CLAUDE.md` is not one: the
-factory's agents never read it. `lessons` holds at least one lesson text. `concerts` holds the id of every concert whose
-lessons the cluster merges, each the text before the first `·` in a `## <concert id> · <tour>` heading, read or not,
-once. `proposals` may be empty.
+`kind` is `bug` for a defect the reports show, `enhancement` for a promotion of lessons. `target` is the file the change
+lands in, as a path from the repository root, such as `CODING_STANDARDS.md`, a path under `.maestro/` (a prompt, a
+profile's instructions, a composition, `config.yaml` with its checks), the `justfile`, a path under `scripts/factory/`
+(the tour manager's code), a package's source a sighting names, or `docs/adr/` for a new ADR. The root `CLAUDE.md` is
+not one: the factory's agents never read it. `lessons` holds the lesson texts the cluster merges, and `reports` the
+obstacle and sighting texts, each as its bullet reads; together they hold at least one. `concerts` holds the id of every
+concert whose lessons or reports the cluster merges, each the text before the first `·` in a `## <concert id> · <tour>`
+heading, read or not, once. `proposals` may be empty.

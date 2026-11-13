@@ -654,10 +654,17 @@ const PROPOSAL = {
 	concerts: ["c1", "c2"],
 };
 
-test("a masterclass output parses, an empty list of proposals too", () => {
-	expect(parseMasterclass({ proposals: [PROPOSAL] })).toEqual({
-		proposals: [PROPOSAL],
-	});
+test("an older masterclass proposal defaults to an enhancement with no reports", () => {
+	for (const proposal of [
+		PROPOSAL,
+		{ ...PROPOSAL, kind: "enhancement" },
+		{ ...PROPOSAL, reports: [] },
+	]) {
+		const expected = { ...PROPOSAL, kind: "enhancement" as const, reports: [] };
+		expect(parseMasterclass({ proposals: [proposal] })).toEqual({
+			proposals: [expected],
+		});
+	}
 	expect(parseMasterclass({ proposals: [] })).toEqual({ proposals: [] });
 });
 
@@ -669,8 +676,14 @@ test("a masterclass output that is not an object is malformed", () => {
 
 test("a proposal without concerts parses as citing none", () => {
 	const { concerts: _, ...old } = PROPOSAL;
+	const expected = {
+		...old,
+		concerts: [],
+		kind: "enhancement" as const,
+		reports: [],
+	};
 	expect(parseMasterclass({ proposals: [old] })).toEqual({
-		proposals: [{ ...old, concerts: [] }],
+		proposals: [expected],
 	});
 });
 
@@ -679,6 +692,8 @@ test.each([
 	["with concerts that are no strings", { ...PROPOSAL, concerts: [1] }],
 	["missing its lessons", { ...PROPOSAL, lessons: undefined }],
 	["with a target that is no string", { ...PROPOSAL, target: 3 }],
+	["of a kind it has no label for", { ...PROPOSAL, kind: "feature" }],
+	["with reports that are no list", { ...PROPOSAL, reports: "No rg" }],
 ])("a masterclass with a proposal %s is malformed", (_, proposal) => {
 	expect(() => parseMasterclass({ proposals: [proposal] })).toThrow(
 		"proposals",
@@ -719,6 +734,31 @@ test("a proposal's issue asks its target, body, lessons and fingerprint, then gi
 			"<sub>Label the issue with the choice.</sub>",
 		].join("\n"),
 	);
+});
+
+test("a proposal issue lists merged obstacles and sightings under their own heading", () => {
+	const proposal = {
+		...PROPOSAL,
+		kind: "bug",
+		reports: [
+			"No rg on PATH",
+			"packages/host-repo/src/report.ts · Reports retain sightings · The reader drops sightings.",
+		],
+	};
+	const { body } = proposalIssue(proposal);
+	const sections = body
+		.split(/^## /m)
+		.slice(1)
+		.map((s) => s.split("\n"));
+	const reports = sections.filter((s) => s.includes("- No rg on PATH"));
+	expect(reports).toHaveLength(1);
+	expect(reports[0]?.[0]).not.toBe("Lessons");
+	expect(reports[0]).toContain(
+		"- packages/host-repo/src/report.ts · Reports retain sightings · The reader drops sightings.",
+	);
+	const lessons = sections.find((s) => s[0] === "Lessons");
+	expect(lessons).toContain("- run just fmt first");
+	expect(lessons).not.toContain("- No rg on PATH");
 });
 
 test("a proposal's fingerprint ignores its concerts", () => {
