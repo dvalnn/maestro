@@ -35,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/dvalnn/maestro/next/install.sh | MA
 Set `MAESTRO_VERSION` to a tag, `v` included, to pin a release. A pin wins over the channel:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dvalnn/maestro/next/install.sh | MAESTRO_VERSION=v0.2.0-rc.3 sh
+curl -fsSL https://raw.githubusercontent.com/dvalnn/maestro/next/install.sh | MAESTRO_VERSION=v0.2.0 sh
 ```
 
 The script needs `curl` and `sha256sum`, checks every asset against `SHA256SUMS` before touching anything, and refuses
