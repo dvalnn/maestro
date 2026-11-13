@@ -333,8 +333,11 @@ _Avoid_: round.
 **Risk**: Triage's rating of a ticket before the build, `low`, `medium` or `high`, from the paths it will touch and the
 contracts it names; it decides whether tests come first and the lowest review tier. _Avoid_: tier.
 
-**Review tier**: How strong a panel's lenses are, picked from the size of the change and never below its risk's floor.
-_Avoid_: risk.
+**Tiered review**: A review that picks its lenses and their checklist from the size of the change and the ticket's risk,
+then runs them as a panel. _Avoid_: panel.
+
+**Review tier**: How strong a tiered review's lenses are, picked from the size of the change and never below its risk's
+floor. _Avoid_: risk.
 
 **Tester**: A work agent that pins the ask's behaviour in tests before the builder starts, listing them in a test map.
 
