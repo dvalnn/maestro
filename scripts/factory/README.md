@@ -60,6 +60,10 @@ logs in `$XDG_RUNTIME_DIR/maestro-factory/`, and lands each slice in a jj worksp
 The units run a tick every 5 minutes. Edit `WorkingDirectory`, `PATH` and the flags in the service to suit the machine;
 the milestone is set in the `.env`, not the unit.
 
+The service runs `scripts/factory/preflight.ts` before each tick. It installs nothing: when a package a workspace
+declares does not resolve, it names the package and the workspace, prints `run: bun install` and the tick does not
+start. Copy the service again after a change to it, then `systemctl --user daemon-reload`.
+
 ```sh
 cp scripts/factory/maestro-factory.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload
