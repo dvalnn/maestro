@@ -130,6 +130,7 @@ const Spec = shape(
 		brief: Bool(),
 	},
 );
+export type Spec = ValueOf<typeof Spec>;
 const Child = Struct({
 	title: Text(),
 	body: Text(),

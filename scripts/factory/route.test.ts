@@ -116,6 +116,49 @@ test("a stored result's string question parses as an ask alone", () => {
 	]);
 });
 
+test("a triage naming an area outside the composition is malformed", () => {
+	expect(() =>
+		parseTriage({ ...stored, questions: [claiming], area: "elsewhere" }),
+	).toThrow();
+});
+
+test("a triage with an undeclared field is malformed", () => {
+	expect(() =>
+		parseTriage({ ...stored, questions: [claiming], unexpected: true }),
+	).toThrow();
+	expect(() =>
+		parseTriage({
+			...stored,
+			questions: [{ ...claiming, unexpected: true }],
+		}),
+	).toThrow();
+});
+
+test("a needs-info triage without a question is malformed", () => {
+	expect(() => parseTriage({ ...stored, questions: [] })).toThrow();
+});
+
+test("a triage spec with more than two figures is malformed", () => {
+	const figure = { kind: "seams", caption: "", source: "", notes: [] };
+	expect(() =>
+		parseTriage({
+			verdict: "ready-for-agent",
+			risk: "low",
+			reasons: [],
+			questions: [],
+			spec: {
+				touches: [],
+				what: "w",
+				decisions: [],
+				excluded: [],
+				acceptance: [],
+				subject: "s",
+				figures: [figure, figure, figure],
+			},
+		}),
+	).toThrow();
+});
+
 test("a question recommending none of its options is malformed", () => {
 	const straying = { ...claiming, recommend: { label: "C", why: "w" } };
 	expect(() => parseTriage({ ...stored, questions: [straying] })).toThrow(
@@ -695,4 +738,18 @@ test("a proposal's fingerprint changes with its title and ignores case and folde
 			body: "Add a line   to the Rules.",
 		}),
 	).toBe(proposalLine(PROPOSAL));
+});
+
+test("a child that depends on itself or a later child makes a triage malformed", () => {
+	const child = (dependsOn: number[]) => ({ title: "t", body: "b", dependsOn });
+	const split = (children: ReturnType<typeof child>[]) => ({
+		verdict: "split",
+		risk: "low",
+		reasons: [],
+		questions: [],
+		children,
+	});
+	expect(() => parseTriage(split([child([0])]))).toThrow();
+	expect(() => parseTriage(split([child([]), child([2])]))).toThrow();
+	expect(parseTriage(split([child([]), child([0])])).children).toHaveLength(2);
 });

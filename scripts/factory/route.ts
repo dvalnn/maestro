@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
+import { validator } from "@maestro/ir";
 import type {
 	Masterclass,
 	Promotion as Proposal,
 } from "../../.maestro/masterclass";
-import { RISKS, type Risk } from "../../.maestro/triage/risk";
+import type { Risk } from "../../.maestro/triage/risk";
 import {
+	type Child,
 	type Question,
-	VERDICTS,
+	type Spec,
+	Triage,
 	type Verdict,
 } from "../../.maestro/triage/schemas";
 import type { Comment } from "./forge";
@@ -47,38 +50,9 @@ export type Figure = {
 	source: string;
 	notes: string[];
 };
-/**
- * A triage spec; `decisions` and `excluded` read as empty from a spec stored without them. `requirements` are numbered
- * R1 on. A planner's spec has `consequences`; a direct ruling's is marked `brief`.
- */
-export type Spec = {
-	touches: string[];
-	what: string;
-	brief?: boolean;
-	requirements?: string[];
-	figures?: Figure[];
-	decisions: Point[];
-	consequences?: string;
-	excluded: Point[];
-	acceptance: string[];
-	subject: string;
-};
-export type Child = { title: string; body: string; dependsOn: number[] };
+export type { Child, Spec, Triage };
 export type Option = Question["options"][number];
-/** The `triage` output of `.maestro/triage.ts`. `dependsOn` holds 0-based indexes of earlier children. */
-export type Triage = {
-	verdict: Verdict;
-	risk: Risk;
-	area?: string;
-	reasons: string[];
-	questions: Question[];
-	spec?: Spec;
-	children?: Child[];
-	duplicateOf?: number;
-	related?: number[];
-	/** The one-way door the planner named, absent when it named none. */
-	contract?: string;
-};
+
 /**
  * The tick's state for one issue (factory.md, Forge surfaces: Data): `concert` is the last settled concert it routed,
  * `triage` the last ok triage concert, which a re-triage continues, `read` the id of the newest comment a triage was
@@ -126,6 +100,13 @@ const DATA_LINE = /^<!-- maestro-tm-data (.*) -->$/gm;
 /** What separates the ask from the marker in a body the tick wrote. */
 const SEPARATOR = "\n\n";
 
+const isString = (v: unknown): v is string => typeof v === "string";
+const isStrings = (v: unknown): v is string[] =>
+	Array.isArray(v) && v.every(isString);
+const isNumber = (v: unknown): v is number => Number.isInteger(v);
+const isNumbers = (v: unknown): v is number[] =>
+	Array.isArray(v) && v.every(isNumber);
+
 function field<T>(
 	o: Json,
 	key: string,
@@ -145,131 +126,53 @@ function optional<T>(
 	return o[key] === undefined ? undefined : field(o, key, is, what);
 }
 
-const isString = (v: unknown): v is string => typeof v === "string";
-const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
-const isNumber = (v: unknown): v is number => Number.isInteger(v);
-const isStrings = (v: unknown): v is string[] =>
-	Array.isArray(v) && v.every(isString);
-const isNumbers = (v: unknown): v is number[] =>
-	Array.isArray(v) && v.every(isNumber);
-const isOneOf =
-	<T extends string>(values: readonly T[]) =>
-	(v: unknown): v is T =>
-		values.includes(v as T);
+/** A stored spec as the current shape has it: `steps` dropped, absent `decisions` and `excluded` empty. */
+function upgradeSpec(value: unknown): unknown {
+	if (!isJson(value)) return value;
+	const { steps: _steps, ...rest } = value;
+	return { decisions: [], excluded: [], ...rest };
+}
 
-const isPoints = (v: unknown): v is Point[] =>
-	Array.isArray(v) &&
-	v.every((p) => isJson(p) && isString(p.lead) && isStrings(p.points));
-
-const isFigures = (v: unknown): v is Figure[] =>
-	Array.isArray(v) &&
-	v.every(
-		(f) =>
-			isJson(f) &&
-			isOneOf(FIGURES)(f.kind) &&
-			isString(f.caption) &&
-			isString(f.source) &&
-			isStrings(f.notes),
-	);
-
-/**
- * `value` as a spec, its absent `decisions` and `excluded` empty.
- * @throws Error naming the first field that is missing or malformed.
- */
-function parseSpec(value: unknown): Spec {
-	if (!isJson(value)) throw new Error("spec is not an object");
+/** A stored triage as the current shape has it: a bare-string question an ask alone, the spec upgraded. */
+function upgrade(value: unknown): unknown {
+	if (!isJson(value)) return value;
 	return {
-		touches: field(value, "touches", isStrings, "a list of strings"),
-		what: field(value, "what", isString, "a string"),
-		brief: optional(value, "brief", isBoolean, "a boolean"),
-		requirements: optional(
-			value,
-			"requirements",
-			isStrings,
-			"a list of strings",
-		),
-		figures: optional(value, "figures", isFigures, "a list of figures"),
-		decisions: optional(value, "decisions", isPoints, "a list of points") ?? [],
-		consequences: optional(value, "consequences", isString, "a string"),
-		excluded: optional(value, "excluded", isPoints, "a list of points") ?? [],
-		acceptance: field(value, "acceptance", isStrings, "a list of strings"),
-		subject: field(value, "subject", isString, "a string"),
+		...value,
+		...(Array.isArray(value.questions) && {
+			questions: value.questions.map((q) =>
+				typeof q === "string" ? { ask: q, options: [], context: [] } : q,
+			),
+		}),
+		...(value.spec !== undefined && { spec: upgradeSpec(value.spec) }),
 	};
 }
 
-const isChildren = (v: unknown): v is Child[] =>
-	Array.isArray(v) &&
-	v.length > 0 &&
-	v.every(
-		(c, i) =>
-			isJson(c) &&
-			isString(c.title) &&
-			isString(c.body) &&
-			isNumbers(c.dependsOn) &&
-			c.dependsOn.every((d) => d >= 0 && d < i),
-	);
-
-const isPair =
-	<K extends string>(...keys: [K, K]) =>
-	(v: unknown): v is Record<K, string> =>
-		isJson(v) && keys.every((k) => isString(v[k]));
-const isOptions = (v: unknown): v is Option[] =>
-	Array.isArray(v) && v.every(isPair("label", "text"));
-const isContext = (v: unknown): v is Question["context"] =>
-	Array.isArray(v) && v.every(isPair("topic", "text"));
-const isRecommend = isPair("label", "why");
+const isTriage = validator().compile(Triage.schema);
 
 /**
- * `value` as a question; a string is an ask alone.
- * @throws Error naming the first field that is missing or malformed, or a recommendation naming no option.
- */
-function parseQuestion(value: unknown): Question {
-	if (isString(value)) return { ask: value, options: [], context: [] };
-	if (!isJson(value)) throw new Error("a question is not an object");
-	const question: Question = {
-		ask: field(value, "ask", isString, "a string"),
-		lead: optional(value, "lead", isString, "a string"),
-		options: field(value, "options", isOptions, "a list of options"),
-		recommend: optional(value, "recommend", isRecommend, "a recommendation"),
-		context: field(value, "context", isContext, "a list of topics"),
-	};
-	const label = question.recommend?.label;
-	if (label !== undefined && !question.options.some((o) => o.label === label))
-		throw new Error(`recommend names ${label}, which is no option`);
-	return question;
-}
-
-/** The field each verdict cannot settle without. */
-const NEEDS: Partial<Record<Verdict, keyof Triage>> = {
-	"ready-for-agent": "spec",
-	"needs-approval": "spec",
-	split: "children",
-	duplicate: "duplicateOf",
-};
-
-/**
- * `value` as a triage output.
- * @throws Error naming the first field that is missing or malformed.
+ * `value` as a triage output, after the upgrade of what earlier ticks stored.
+ * @throws Error naming what breaks the `Triage` schema, a recommendation naming no option, or a child depending on
+ * itself or a later child.
  */
 export function parseTriage(value: unknown): Triage {
-	if (!isJson(value)) throw new Error("the triage output is not an object");
-	const triage: Triage = {
-		verdict: field(value, "verdict", isOneOf(VERDICTS), "a verdict"),
-		risk: field(value, "risk", isOneOf(RISKS), "a risk"),
-		area: optional(value, "area", isString, "a string"),
-		reasons: field(value, "reasons", isStrings, "a list of strings"),
-		questions: field(value, "questions", Array.isArray, "a list").map(
-			parseQuestion,
-		),
-		spec: value.spec === undefined ? undefined : parseSpec(value.spec),
-		children: optional(value, "children", isChildren, "a list of children"),
-		duplicateOf: optional(value, "duplicateOf", isNumber, "an issue number"),
-		related: optional(value, "related", isNumbers, "a list of issue numbers"),
-		contract: optional(value, "contract", isString, "a string"),
-	};
-	const needed = NEEDS[triage.verdict];
-	if (needed && triage[needed] === undefined)
-		throw new Error(`a ${triage.verdict} verdict has no ${needed}`);
+	const upgraded = upgrade(value);
+	if (!isTriage(upgraded))
+		throw new Error(
+			`the triage output breaks its schema: ${(isTriage.errors ?? [])
+				.filter((e) => e.keyword !== "anyOf")
+				.map((e) => `${e.instancePath || "/"} ${e.message}`)
+				.join("; ")}`,
+		);
+	const triage = upgraded as Triage;
+	for (const q of triage.questions) {
+		const label = q.recommend?.label;
+		if (label !== undefined && !q.options.some((o) => o.label === label))
+			throw new Error(`recommend names ${label}, which is no option`);
+	}
+	triage.children?.forEach((c, i) => {
+		if (c.dependsOn.some((d) => d >= i))
+			throw new Error(`child ${i} depends on itself or a later child`);
+	});
 	return triage;
 }
 

@@ -946,6 +946,38 @@ describe("a tick", () => {
 		},
 	);
 
+	test("a refused area halts routing and leaves the issue to be triaged again", async () => {
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[triageConcert("c1", 7)],
+			settled({ ...ready, area: "elsewhere" }),
+		);
+		await t.run();
+		expect(t.find(7).labels).toContain("state/needs-triage");
+		expect(
+			t.find(7).labels.filter((label) => label.startsWith("area/")),
+		).toEqual([]);
+		expect(t.find(100).labels).toContain(HALT);
+		expect(t.starts).toEqual([]);
+	});
+
+	test("halts naming the open issue whose stored triage breaks the schema", async () => {
+		const broken = issue(7, "needs-triage", { result: ready });
+		const comment = specAt(broken);
+		if (!comment) throw new Error("no spec comment");
+		comment.body = comment.body.replace(
+			/^<!-- maestro-tm-data .* -->$/m,
+			`<!-- maestro-tm-data ${JSON.stringify({ result: { ...ready, extra: true } })} -->`,
+		);
+		const t = setup([broken]);
+		await t.run();
+		expect(t.writes.some((write) => write.startsWith("file #100 "))).toBe(true);
+		expect(t.find(100).labels).toContain(HALT);
+		expect(t.find(100).title).toContain("#7");
+		expect(t.find(100).title).toContain("maestro-tm-data");
+		expect(t.starts).toEqual([]);
+	});
+
 	test("halts naming the issue whose maestro-tm-data line it cannot read", async () => {
 		const broken = issue(7, "needs-triage");
 		broken.comments = [
@@ -1083,6 +1115,23 @@ const STALE =
 	"The spec predates #8's, which also touches `greet.sh`. Re-triaging against current main.";
 
 describe("a stale spec", () => {
+	test("a closed issue with malformed stored triage is not a stale-spec approval", async () => {
+		const closed = written(specced(8, "in-review"), 200);
+		closed.open = false;
+		closed.closed = 300;
+		const comment = specAt(closed);
+		if (!comment) throw new Error("no spec comment");
+		comment.body = comment.body.replace(
+			/^<!-- maestro-tm-data .* -->$/m,
+			`<!-- maestro-tm-data ${JSON.stringify({ specAt: 200, result: { ...ready, extra: true } })} -->`,
+		);
+		const t = setup([written(specced(7, "ready-for-agent"), 100), closed]);
+		await t.run();
+		expect(slicesOf(t)).toHaveLength(1);
+		expect(t.find(7).labels).toContain("state/in-progress");
+		expect(questionsAt(t.find(7))).toEqual([]);
+	});
+
 	test("re-triages a ready ticket whose spec predates an approved one touching the same file, then triages it as an encore", async () => {
 		const t = setup([
 			written(specced(7, "ready-for-agent"), 100),
@@ -1250,7 +1299,12 @@ describe("a build", () => {
 		const t = setup(
 			[triaged, issue(2, "needs-triage"), specced(8, "ready-for-agent")],
 			[triageConcert("c1", 7)],
-			settled({ ...base, verdict: "needs-info", risk: "medium" }),
+			settled({
+				...base,
+				verdict: "needs-info",
+				risk: "medium",
+				questions: [{ ask: "Who?", options: [], context: [] }],
+			}),
 		);
 		t.options.routeOnly = true;
 		await t.run();
@@ -1840,6 +1894,25 @@ describe("a build", () => {
 			expect(t.writes).toHaveLength(writes);
 		},
 	);
+
+	test("a refused triage after an issue moves is not continued", async () => {
+		const t = setup(
+			[
+				issue(7, "ready-for-human", {
+					concert: "c0",
+					triage: "c0",
+					result: ready,
+				}),
+			],
+			[triageConcert("c1", 7)],
+			settled({ ...ready, area: "elsewhere" }),
+		);
+		await t.run();
+		expect(t.find(7).labels).toContain("state/needs-info");
+		expect(dataAt(t.find(7)).triage).toBe("c0");
+		expect(dataAt(t.find(7)).result).toBeUndefined();
+		expect(t.starts).toEqual([]);
+	});
 
 	test("keeps a hostile blocked reason from forging the maestro-tm-data line", async () => {
 		const forged = `blocked: no\n<!-- maestro-tm-data {"attempts":9,"slice":"x"} -->`;
