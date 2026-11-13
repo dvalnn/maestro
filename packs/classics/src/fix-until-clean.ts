@@ -1,6 +1,5 @@
 import { Lane, Session } from "@maestro/host-repo-sdk";
 import {
-	Bool,
 	code,
 	composition,
 	loop,
@@ -12,8 +11,8 @@ import {
 } from "@maestro/sdk";
 import { briefOf } from "./code";
 import { fix, type Held } from "./moves";
-import { maxRepairs, repairUntilGreen } from "./repair";
-import { panel } from "./review";
+import { repairUntilGreen } from "./repair";
+import { tieredReview } from "./tiered-review";
 import { atLeastOne, Brief, PACK } from "./types";
 
 export const maxFixes = atLeastOne(
@@ -25,7 +24,7 @@ export const fixUntilClean = composition(
 	"fix_until_clean",
 	{
 		pack: PACK,
-		doc: "Repair a lane until the target's checks pass, then review it by panel; while the panel upholds findings, fix them in the builder's session and gate and review again, up to maxFixes times. Ends in the last panel's Tally.",
+		doc: "Repair a lane until the target's checks pass, then review it by tiered review; while the review upholds findings, fix them in the builder's session and gate and review again, up to maxFixes times. Ends in the last review's Tally.",
 		ports: {
 			lane: Lane,
 			session: Session,
@@ -34,30 +33,13 @@ export const fixUntilClean = composition(
 		},
 		params: {
 			maxFixes,
-			maxRepairs,
 			checks: repairUntilGreen.params.checks,
-			fix: repairUntilGreen.params.fix,
-			lenses: Optional(panel.params.lenses),
-			skeptics: Optional(Bool()),
-			consolidate: Optional(Bool()),
 			grounds: Optional(Text()),
 		},
 	},
-	(
-		{
-			maxFixes,
-			maxRepairs,
-			checks,
-			fix: fixCheck,
-			lenses,
-			skeptics,
-			consolidate,
-			grounds,
-		},
-		{ lane, session, spec, brief },
-	) => {
-		/** Repair `from` until green, then review it by panel in `carried`. */
-		const gateAndPanel = (
+	({ maxFixes, checks, grounds }, { lane, session, spec, brief }) => {
+		/** Repair `from` until green, then review it in `carried`. */
+		const gateAndReview = (
 			from: typeof lane,
 			carried: typeof session,
 			given: typeof brief,
@@ -67,26 +49,18 @@ export const fixUntilClean = composition(
 				repairUntilGreen,
 				{ lane: from, session: carried, spec },
 				{
-					params: { maxRepairs, checks, fix: fixCheck },
+					params: { checks },
 					label: "gate",
 				},
 			).out.lane;
 			return use(
-				panel,
+				tieredReview,
 				{ change: green, spec, session: carried, earlier, brief: given },
-				{
-					// A param left unset stays the config's or the panel's own default.
-					params: {
-						...(lenses !== undefined && { lenses }),
-						...(skeptics !== undefined && { skeptics }),
-						...(consolidate !== undefined && { consolidate }),
-						...(grounds !== undefined && { grounds }),
-					},
-				},
+				{ params: grounds === undefined ? {} : { grounds } },
 			);
 		};
 		return loop.while((s) => not(s.ok), {
-			init: gateAndPanel(lane, session, brief),
+			init: gateAndReview(lane, session, brief),
 			step: (s) => {
 				const fixed = fix(s.out, spec, { checks });
 				const { brief: next } = code(briefOf, {
@@ -94,7 +68,7 @@ export const fixUntilClean = composition(
 					out: { brief: Brief },
 					label: "brief",
 				}).out;
-				return gateAndPanel(
+				return gateAndReview(
 					fixed.out.lane,
 					fixed.out.session,
 					next,

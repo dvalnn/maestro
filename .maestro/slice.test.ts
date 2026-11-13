@@ -7,20 +7,9 @@ import {
 	reject,
 	type Settled,
 } from "@maestro/sdk";
-import { FIX_CHECK } from "./shared";
-import { requirePatch, reviewedOf } from "./slice";
-import { JUDGED } from "./slice/lenses";
-import {
-	call,
-	classics,
-	maestro,
-	scratch,
-	stubbed,
-	stubOutputs,
-	targetRepo,
-} from "./testing/stub";
-
-const _ctx = { scratch } as CodeContext;
+import { JUDGED } from "./shared";
+import { requirePatch } from "./slice";
+import { call, classics, maestro, scratch, targetRepo } from "./testing/stub";
 
 const finding = (id: string) => ({
 	id,
@@ -28,41 +17,9 @@ const finding = (id: string) => ({
 	issue: "breaks CODING_STANDARDS.md Shape",
 	cites: "Shape",
 });
-const found = [finding("F1"), finding("F2"), finding("F3")];
-const held = (...ids: string[]) =>
-	["F1", "F2", "F3"].map((id) => ({ id, holds: ids.includes(id), why: "" }));
-
-const ctx = { scratch: "/unused" } as never;
-const lane = "c.gate";
-const session = "c.build";
-const reviewer = "c.reviewer";
-const brief = { summary: "built", gaps: ["gap"] };
-type Rulings = Parameters<typeof reviewedOf>[0]["rulings"];
-const cases: [string, Rulings, string[]][] = [
-	[
-		"a skeptic's holds",
-		[{ outcome: "ok", value: held("F2", "F3") }],
-		["F2", "F3"],
-	],
-	[
-		"a failed skeptic",
-		[{ outcome: "failed", reason: "x" }],
-		["F1", "F2", "F3"],
-	],
-	[
-		"a skeptic that rejected with rulings",
-		[{ outcome: "rejected", reason: "x", value: held("F2") }],
-		["F2"],
-	],
-	[
-		"a malformed skeptic's rulings",
-		[{ outcome: "rejected", reason: "schema" }],
-		["F1", "F2", "F3"],
-	],
-];
 
 /** The checks a script can always fix, which no agent is offered (ADR 0016). */
-const FORMAT_TOOLS = ["format", FIX_CHECK];
+const FORMAT_TOOLS = ["format", "fmt"];
 
 /** Every check of the project's own config but the format tools: those an agent that works on the lane may run. */
 const projectConfig = Bun.YAML.parse(
@@ -77,246 +34,168 @@ const granular = ["format", "lint", "types", "test", "fmt"].flatMap((name) => [
 	`target.checks.${name}={run: "true", hint: ${name}}`,
 ]);
 
-test.each(cases)(
-	"reviewedOf upholds the findings that survive %s, and carries the lane and sessions",
-	(_, rulings, ids) => {
-		const out = reviewedOf(
-			{ lane, session, brief, reviewer, findings: found, rulings },
-			ctx,
-		);
-		expect(out).toMatchObject({
-			outcome: "rejected",
-			outputs: { lane, session, brief, reviewer },
-		});
-		const upheld = "outputs" in out ? (out.outputs?.upheld ?? []) : [];
-		expect(upheld.map((f) => f.id)).toEqual(ids);
-	},
-);
+type Runtime = [string, string, string];
+const LENSES: Record<string, Runtime> = {
+	"classics/lens": ["claude", "claude-haiku-5-5", "medium"],
+	"classics/deep-lens": ["claude", "claude-sonnet-5-5", "medium"],
+	"classics/top-lens": ["claude", "claude-opus-5-5", "medium"],
+	"classics/cross-lens": ["pi", "github-copilot/gpt-6.1-sol", "medium"],
+};
+const WRITER: Runtime = ["claude", "claude-haiku-5-5", "high"];
 
-test("reviewedOf tallies a reviewer that settled ok clean, its findings unheld by a skipped skeptic, and still carries the reviewer's session", () => {
-	expect(
-		reviewedOf(
-			{
-				lane,
-				session,
-				brief,
-				reviewer,
-				findings: found,
-				rulings: [{ outcome: "skipped" }],
-			},
-			ctx,
-		),
-	).toEqual({ lane, session, brief, reviewer, upheld: [] });
-});
-
-/** The runtime of each profile a tier seats, as `.maestro/presets/<tier>.yaml` sets it, and the writer's profile. */
-const seated: [string, Record<string, [string, string, string]>][] = [
+/** The runtime of each profile a risk preset seats, as `.maestro/presets/<risk>.yaml` and the config set it. */
+const seated: [string, Record<string, Runtime>][] = [
 	[
-		"small",
+		"low",
 		{
+			...LENSES,
 			"classics/builder": ["claude", "claude-sonnet-5-5", "low"],
-			"classics/lens": ["claude", "claude-opus-5-5", "medium"],
-			"classics/skeptic": ["claude", "claude-sonnet-5-5", "low"],
-			writer: ["claude", "claude-haiku-5-5", "high"],
+			"classics/consolidator": ["claude", "claude-sonnet-5-5", "medium"],
+			writer: WRITER,
 		},
 	],
 	[
-		"ordinary",
+		"medium",
 		{
+			...LENSES,
 			"classics/builder": ["claude", "claude-sonnet-5-5", "medium"],
-			"classics/lens": ["claude", "claude-opus-5-5", "medium"],
 			"classics/consolidator": ["claude", "claude-opus-5-5", "medium"],
 			"classics/tester": ["pi", "github-copilot/gpt-6.1-terra", "medium"],
-			writer: ["claude", "claude-haiku-5-5", "high"],
+			writer: WRITER,
 		},
 	],
 	[
-		"risky",
+		"high",
 		{
+			...LENSES,
 			"classics/builder": ["claude", "claude-opus-5-5", "medium"],
-			"classics/lens": ["claude", "claude-sonnet-5-5", "high"],
 			"classics/consolidator": ["claude", "claude-opus-5-5", "high"],
 			"classics/tester": ["pi", "github-copilot/gpt-6.1-sol", "medium"],
-			writer: ["claude", "claude-haiku-5-5", "high"],
+			writer: WRITER,
 		},
 	],
 ];
 
-/** The arguments that run `verb` on `.maestro/slice.ts` under `--preset tier` with the packed classics. */
-const slice = async (verb: string, tier: string) => [
+/** The arguments that run `verb` on `.maestro/slice.ts` under the `presets`, with the packed classics. */
+const slice = async (verb: string, ...presets: string[]) => [
 	verb,
 	".maestro/slice.ts",
-	"--preset",
-	tier,
+	...presets.flatMap((p) => ["--preset", p]),
 	"--request",
 	"x",
-	"--tier",
-	tier,
 	"--json",
 	"-c",
 	`packs=[${await classics}]`,
 ];
 
-test.each(seated)(
-	"under --preset %s, the gate's repair agent may run every check of the project's config, and each agent runs its tier's classics profile",
-	async (tier, runtimes) => {
-		const out = await maestro(await slice("compose", tier));
-		const { plan, agents } = JSON.parse(out);
-		const repairs = plan.ir.nodes.filter((n: { id: string }) =>
-			/^(fix_until_clean\/)?gate\/loop\/repair/.test(n.id),
-		);
-		expect(repairs.length).toBeGreaterThan(0);
-		for (const n of repairs) expect(n.config.checks).toEqual(projectChecks);
-		const fixes = plan.ir.nodes.filter((n: { id: string }) =>
-			/^(fix_until_clean\/)?gate\/(loop\[\d+\]\/)?(fix|refix)$/.test(n.id),
-		);
-		expect(fixes.length).toBeGreaterThan(0);
-		for (const n of fixes) expect(n.config.check).toBe("fmt");
-		type Agent = {
+type Node = {
+	id: string;
+	config: {
+		checks?: string[];
+		check?: string;
+		attachments?: Record<string, unknown>;
+	};
+	literals?: { floor?: string };
+};
+type Edge = {
+	from: { node: string; port?: string };
+	to: { node: string; port?: string };
+};
+
+/** The plan and agents of `.maestro/slice.ts` composed under the `presets`, with `flags` after its request. */
+async function composed(presets: string[], ...flags: string[]) {
+	const out = await maestro([
+		...(await slice("compose", ...presets)),
+		...flags,
+	]);
+	const { plan, agents } = JSON.parse(out);
+	return {
+		nodes: plan.ir.nodes as Node[],
+		edges: plan.ir.edges as Edge[],
+		agents: agents as {
+			node: string;
 			profile: string;
 			harness: string;
 			model: string;
 			thinking: string;
-		};
-		for (const a of agents as Agent[])
+		}[],
+	};
+}
+
+const from = (edges: Edge[], node: string, port: string) =>
+	edges
+		.filter((e) => e.to.node === node && e.to.port === port)
+		.map((e) => e.from);
+
+test.each(seated)(
+	"under --preset %s, each agent runs its profile's runtime, and every agent that works on the lane may run the project's checks",
+	async (risk, runtimes) => {
+		const { nodes, agents } = await composed([risk]);
+		for (const a of agents)
 			expect([a.harness, a.model, a.thinking]).toEqual(
 				runtimes[a.profile] ?? [],
 			);
-		expect(new Set((agents as Agent[]).map((a) => a.profile))).toEqual(
+		expect(new Set(agents.map((a) => a.profile))).toEqual(
 			new Set(Object.keys(runtimes)),
 		);
+		const workers = agents.filter(
+			(a) => a.profile !== "writer" && a.profile !== "classics/consolidator",
+		);
+		for (const a of workers)
+			expect(nodes.find((n) => n.id === a.node)?.config.checks).toEqual(
+				projectChecks,
+			);
+		const fixes = nodes.filter((n) =>
+			/gate\/(loop\[\d+\]\/)?(fix|refix)$/.test(n.id),
+		);
+		expect(fixes.length).toBeGreaterThan(0);
+		for (const n of fixes) expect(n.config.check).toBe("fmt");
 	},
 );
 
 test.each([
-	[true, "ok"],
-	[false, "rejected"],
+	["low", false, "small"],
+	["medium", true, "small"],
+	["high", true, "large"],
 ])(
-	"a stub perform under --preset small continues the builder and the reviewer in their sessions across review rounds, and changing files %s settles %s, shipping the findings still upheld at the fix cap",
-	async (changes) => {
-		const tier = "small";
-		const target = targetRepo();
-		const flagged = [finding("F1")];
-		const outputs = stubOutputs({
-			"reviewer/findings.json": flagged,
-			"reviewer/verdict": "rejected F1",
-			"fixes[0]/reviewer/findings.json": flagged,
-			"fixes[0]/reviewer/verdict": "rejected F1",
-			"fixes[1]/reviewer/findings.json": flagged,
-			"fixes[1]/reviewer/verdict": "rejected F1",
-			"skeptic/rulings.json": held("F1"),
-			"fixes/skeptic/rulings.json": held("F1"),
-		});
-		const data = mkdtempSync(join(scratch, "data-"));
-		const ran = await call(
-			[
-				...(await slice("perform", tier)),
-				"-c",
-				`target.repo=${target}`,
-				"-c",
-				'target.prepare="true"',
-				"-c",
-				`target.checks.all={run: ${JSON.stringify(changes ? "echo x > b.ts" : "true")}, hint: all}`,
-				...granular,
-				...stubbed(Object.keys(new Map(seated).get(tier) ?? {})),
-			],
-			data,
-			{ MAESTRO_STUB_OUTPUTS: outputs },
-		);
-		const performed = JSON.parse(ran.out);
-		expect([performed.status, performed.reason]).toEqual(
-			changes ? ["ok", undefined] : ["rejected", "the slice changed nothing"],
-		);
-		if (changes) {
-			expect(
-				await maestro(["cs", "show", performed.id, "-C", target], data),
-			).toContain("b.ts");
-			const upheld = join(performed.artifacts, performed.outputs.upheld.path);
-			expect(readFileSync(upheld, "utf8")).toContain("- reviewer/F1, a.ts:1:");
+	"under --preset %s, a tester is composed: %s, the build extends its lane, and the writer and the lenses read the build's spec; the review's floor is %s",
+	async (risk, tested, floor) => {
+		const { nodes, edges } = await composed([risk]);
+		const ids = nodes.map((n) => n.id);
+		expect(ids.includes("build/test_first/tester")).toBe(tested);
+		if (tested)
+			expect(from(edges, "build/test_first/build", "lane")).toEqual([
+				{ node: "build/test_first/tester", port: "lane" },
+			]);
+		else {
+			expect(ids).toContain("build/build");
+			expect(nodes.find((n) => n.id === "build/build")?.config.checks).toEqual(
+				projectChecks,
+			);
 		}
-		type Instance = {
-			node: string;
-			expansion: string;
-			outputs?: { session?: string };
-		};
-		const { instances }: { instances: Instance[] } = JSON.parse(
-			await maestro(["ls", performed.id, "--json"], data),
-		);
-		const sessions = (node: string) =>
-			instances
-				.filter((i) => i.node === node)
-				.map((i) => [i.expansion, i.outputs?.session]);
-		const { id } = performed;
-		expect(sessions("fixes/fix")).toEqual([
-			["[0]", `${id}.build`],
-			["[1]", `${id}.build`],
-		]);
-		expect(sessions("fixes/reviewer")).toEqual([
-			["[0]", `${id}.reviewer`],
-			["[1]", `${id}.reviewer`],
-		]);
+		const spec = [{ node: "build/spec", port: "file" }];
+		expect(from(edges, "writer", "spec")).toEqual(spec);
+		const lenses = ids.filter((id) => /tiered_review\/[^/]+\/lens$/.test(id));
+		expect(lenses.length).toBeGreaterThan(0);
+		for (const id of lenses) expect(from(edges, id, "spec")).toEqual(spec);
+		for (const n of nodes.filter((n) => n.id.endsWith("/tieredOf")))
+			expect(n.literals?.floor).toBe(floor);
 	},
 );
 
-test("under --tier small, the reviewer may run every check of the project's config, and a later round's reviewer is relayed the findings upheld before", async () => {
-	const out = await maestro(await slice("compose", "small"));
-	type Edge = {
-		from: { node: string; port?: string };
-		to: { node: string; port?: string };
-	};
-	type Node = {
-		id: string;
-		config: {
-			checks?: string[];
-			attachments: Record<string, unknown>;
-			relay?: { name: string }[];
-		};
-	};
-	const { nodes, edges }: { nodes: Node[]; edges: Edge[] } =
-		JSON.parse(out).plan.ir;
-	const into = (node: string, port: string) =>
-		edges.filter((e) => e.to.node === node && e.to.port === port);
-	const reviewers = nodes.filter((n) => /(^|\/)reviewer$/.test(n.id));
-	expect(reviewers.length).toBeGreaterThan(1);
-	for (const n of reviewers) expect(n.config.checks).toEqual(projectChecks);
-	const first = reviewers.find((n) => n.id === "reviewer");
-	const later = reviewers.find((n) => n.id === "fixes/reviewer");
-	expect(Object.keys(first?.config.attachments ?? {}).sort()).toEqual([
-		"patches",
-		"spec",
-	]);
-	expect(Object.keys(later?.config.attachments ?? {}).sort()).toEqual([
-		"patches",
-		"spec",
-	]);
-	expect(first?.config.relay?.map((r) => r.name)).toEqual(["builder"]);
-	expect(later?.config.relay?.map((r) => r.name)).toEqual([
-		"upheld",
-		"builder",
-	]);
-	expect(into("fixes/reviewer", "upheld").map((e) => e.from)).toEqual([
-		{ node: "fixes", port: "upheld" },
-	]);
+test("with only the stub preset, no tester is composed", async () => {
+	const { nodes } = await composed(["stub"]);
+	expect(nodes.map((n) => n.id)).not.toContain("build/test_first/tester");
 });
 
-test("under --tier ordinary, the build extends the tester's lane, and the build and the writer read the tester's map as a relay", async () => {
-	const out = await maestro(await slice("compose", "ordinary"));
-	type Edge = {
-		from: { node: string; port?: string };
-		to: { node: string; port?: string };
-	};
-	const { edges }: { edges: Edge[] } = JSON.parse(out).plan.ir;
-	const from = (node: string, port: string) =>
-		edges
-			.filter((e) => e.to.node === node && e.to.port === port)
-			.map((e) => e.from);
-	expect(from("tested/build", "lane")).toEqual([
-		{ node: "tested/tester", port: "lane" },
-	]);
-	for (const seat of ["tested/build", "writer"]) {
-		expect(from(seat, "map")).toEqual([{ node: "tested/tester", port: "map" }]);
-	}
-});
+test.each(["--risk", "--tier", "--max-fixes", "--max-repairs"])(
+	"slice refuses %s as an unknown flag",
+	async (flag) => {
+		const ran = await call([...(await slice("compose", "low")), flag, "1"]);
+		expect(ran.code).toBe(2);
+		expect(ran.out).toContain(`unknown flag ${flag}`);
+	},
+);
 
 test.each([
 	[[], ["patches", "spec"]],
@@ -325,106 +204,21 @@ test.each([
 		["patches", "revised", "spec"],
 	],
 ])("the writer is attached, with %j, %j", async (flags, attached) => {
-	const out = await maestro([...(await slice("compose", "small")), ...flags]);
-	const {
-		nodes,
-	}: { nodes: { id: string; config: { attachments: object } }[] } =
-		JSON.parse(out).plan.ir;
+	const { nodes } = await composed(["low"], ...flags);
 	const writer = nodes.find((n) => n.id === "writer");
 	expect(Object.keys(writer?.config.attachments ?? {}).sort()).toEqual(
 		attached,
 	);
 });
 
-test.each(["small", "ordinary", "risky"])(
-	"under --tier %s, every skeptic and the consolidator rule by the slice's grounds",
-	async (tier) => {
-		const { plan } = JSON.parse(await maestro(await slice("compose", tier)));
-		const judges = (plan.ir.nodes as { id: string }[]).filter((n) =>
-			/(^|\/)(skeptic|consolidator)$/.test(n.id),
-		);
+test.each(["low", "medium", "high"])(
+	"under --preset %s, the consolidator rules by the slice's grounds",
+	async (risk) => {
+		const { nodes } = await composed([risk]);
+		const judges = nodes.filter((n) => n.id.endsWith("/consolidator"));
 		expect(judges.length).toBeGreaterThan(0);
 		for (const n of judges)
 			expect(JSON.stringify(n)).toContain(JSON.stringify(JUDGED).slice(1, -1));
-	},
-);
-
-/** Per tier, the stub outputs of a review whose lenses reject with F1, and the node of the skeptic that clears it, if the tier has one. */
-const rejecting: [
-	string,
-	string | undefined,
-	string[],
-	Record<string, unknown>,
-][] = [
-	[
-		"small",
-		"skeptic",
-		["classics/builder", "classics/lens", "classics/skeptic", "writer"],
-		{
-			"reviewer/findings.json": [finding("F1")],
-			"reviewer/verdict": "rejected F1",
-			"skeptic/rulings.json": held(),
-		},
-	],
-	...["ordinary", "risky"].map(
-		(tier): [string, undefined, string[], Record<string, unknown>] => [
-			tier,
-			undefined,
-			[
-				"classics/builder",
-				"classics/lens",
-				"classics/consolidator",
-				"classics/tester",
-				"writer",
-			],
-			{
-				"fix_until_clean/panel/lenses/lens/findings.json": [finding("F1")],
-				"fix_until_clean/panel/lenses/lens/verdict": "rejected F1",
-				"fix_until_clean/panel/consolidator/verdict.json": {
-					criteria: [],
-					upholds: [],
-				},
-			},
-		],
-	),
-];
-
-test.each(rejecting)(
-	"under --tier %s, a lens that rejects meets a skeptic only where the tier seats one, and a cleared or dismissed finding calls for no fix",
-	async (tier, skeptic, profiles, scripted) => {
-		const data = mkdtempSync(join(scratch, "data-"));
-		const ran = await call(
-			[
-				...(await slice("perform", tier)),
-				"-c",
-				`target.repo=${targetRepo()}`,
-				"-c",
-				'target.prepare="true"',
-				"-c",
-				'target.checks.all={run: "echo x > b.ts", hint: all}',
-				...granular,
-				...stubbed(profiles),
-			],
-			data,
-			{ MAESTRO_STUB_OUTPUTS: stubOutputs(scripted) },
-		);
-		const { id, status } = JSON.parse(ran.out);
-		expect(status).toBe("ok");
-		const { instances }: { instances: { node: string; status: string }[] } =
-			JSON.parse(await maestro(["ls", id, "--json"], data));
-		const statusOf = (node: string) =>
-			instances.filter((i) => i.node === node).map((i) => i.status);
-		const [first = ""] = Object.keys(scripted);
-		expect(statusOf(first.slice(0, first.lastIndexOf("/")))).toContain(
-			"rejected",
-		);
-		if (skeptic) expect(statusOf(skeptic)).not.toEqual([]);
-		const seated = instances.filter((i) => i.node.endsWith("skeptic"));
-		expect(seated.filter((i) => i.node !== skeptic)).toEqual([]);
-		expect(seated.every((i) => i.status === "ok")).toBe(true);
-		expect(
-			statusOf(skeptic ? "fixes/fix" : "fix_until_clean/fixes/fix"),
-		).toEqual([]);
 	},
 );
 
@@ -472,9 +266,9 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		patched,
 		[],
 		[
-			{ ...finding("F1"), lens: "correctness", why: "a.ts:1 shows it" },
-			{ ...finding("F2"), lens: "spec" },
-			{ ...finding("F3"), lens: "spec", cites: "R3" },
+			{ ...finding("F1"), lens: "lens", why: "a.ts:1 shows it" },
+			{ ...finding("F2"), lens: "deep-lens" },
+			{ ...finding("F3"), lens: "deep-lens", cites: "R3" },
 		],
 	);
 	expect(readFileSync(upheldFile, "utf8")).toBe(
@@ -483,15 +277,13 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 			"",
 			"### Shape",
 			"",
-			"- correctness/F1, a.ts:1: breaks CODING_STANDARDS.md Shape",
+			"- lens/F1, a.ts:1: breaks CODING_STANDARDS.md Shape",
 			"  Upheld: a.ts:1 shows it",
-			"- spec/F2, a.ts:1: breaks CODING_STANDARDS.md Shape",
-			"  Unverified: no skeptic ruled on it",
+			"- deep-lens/F2, a.ts:1: breaks CODING_STANDARDS.md Shape",
 			"",
 			"### R3",
 			"",
-			"- spec/F3, a.ts:1: breaks CODING_STANDARDS.md Shape",
-			"  Unverified: no skeptic ruled on it",
+			"- deep-lens/F3, a.ts:1: breaks CODING_STANDARDS.md Shape",
 			"",
 		].join("\n"),
 	);
@@ -536,63 +328,23 @@ test("requirePatch drafts a change that leaves findings upheld or edits docs/rul
 	);
 });
 
-test("a stub perform under --preset ordinary --preset stub stubs every seat the presets name", async () => {
-	const args = (await slice("perform", "ordinary")).toSpliced(
-		4,
-		0,
-		"--preset",
-		"stub",
-	);
-	const composed = JSON.parse(await maestro(["compose", ...args.slice(1)]));
-	const harnesses = (composed.agents as { harness: string }[]).map(
-		(a) => a.harness,
-	);
-	expect(harnesses.length).toBeGreaterThan(0);
-	expect(new Set(harnesses)).toEqual(new Set(["stub"]));
-	const target = targetRepo();
-	const ran = await call(
-		[
-			...args,
-			"-c",
-			`target.repo=${target}`,
-			"-c",
-			'target.prepare="true"',
-			"-c",
-			'target.checks.all={run: "echo x > b.ts", hint: all}',
-			...granular,
-		],
-		mkdtempSync(join(scratch, "data-")),
-	);
-	expect(JSON.parse(ran.out).status).toBe("ok");
-});
-
-test.each(["small", "ordinary", "risky"])(
-	"under --tier %s, every review seat is relayed the builder's brief from a briefOf node",
-	async (tier) => {
-		const { nodes, edges } = JSON.parse(
-			await maestro(await slice("compose", tier)),
-		).plan.ir as {
-			nodes: {
-				id: string;
-				type?: string;
-				config: { seat?: string; relay?: { name: string }[] };
-			}[];
-			edges: {
-				from: { node: string; port?: string };
-				to: { node: string; port?: string };
-			}[];
-		};
-		const seats = nodes.filter((n) =>
-			/(^|\/)(reviewer|skeptic|lens|consolidator)$/.test(n.id),
+test.each(["low", "medium", "high"])(
+	"a stub perform under --preset %s --preset stub settles ok",
+	async (risk) => {
+		const args = await slice("perform", risk, "stub");
+		const ran = await call(
+			[
+				...args,
+				"-c",
+				`target.repo=${targetRepo()}`,
+				"-c",
+				'target.prepare="true"',
+				"-c",
+				'target.checks.all={run: "echo x > b.ts", hint: all}',
+				...granular,
+			],
+			mkdtempSync(join(scratch, "data-")),
 		);
-		expect(seats.length).toBeGreaterThan(1);
-		for (const n of seats) {
-			expect(n.config.relay?.map((r) => r.name).at(-1)).toBe("builder");
-			const from = edges.filter(
-				(e) => e.to.node === n.id && e.to.port === "builder",
-			);
-			expect(from.length).toBeGreaterThan(0);
-			expect(from.every((e) => e.from.node.endsWith("brief"))).toBe(true);
-		}
+		expect(JSON.parse(ran.out).status).toBe("ok");
 	},
 );

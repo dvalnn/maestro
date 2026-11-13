@@ -2,7 +2,6 @@ import {
 	changeset,
 	check,
 	extend,
-	fresh,
 	Lane,
 	Session,
 } from "@maestro/host-repo-sdk";
@@ -19,6 +18,7 @@ import {
 import { toMarkdown } from "./code";
 import REPAIR from "./prompts/repair.md" with { type: "text" };
 import { builder } from "./seats";
+import { buildChange } from "./test-first";
 import { atLeastOne, PACK } from "./types";
 
 /** Each call's task: its prompt file. */
@@ -95,15 +95,20 @@ export const buildThenRepair = composition(
 		examples: [{ request: EXAMPLE_REQUEST }],
 	},
 	({ request, maxRepairs }) => {
-		const spec = code(toMarkdown, {
-			in: { text: request },
-			out: { file: Markdown() },
-			label: "request",
-		});
-		const built = builder({ label: "build", task: request, lane: fresh() });
+		const built = use(
+			buildChange,
+			{
+				spec: code(toMarkdown, {
+					in: { text: request },
+					out: { file: Markdown() },
+					label: "request",
+				}).out.file,
+			},
+			{ params: { request } },
+		);
 		const fixed = use(
 			repairUntilGreen,
-			{ lane: built.out.lane, session: built.out.session, spec: spec.out.file },
+			{ lane: built.lane, session: built.session, spec: built.spec },
 			{ params: { maxRepairs } },
 		);
 		return changeset(fixed.out.lane, { label: "result" });

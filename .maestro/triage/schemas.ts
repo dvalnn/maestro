@@ -10,7 +10,6 @@ import {
 	type Types,
 	type ValueOf,
 } from "@maestro/sdk";
-import { TIERS } from "../shared";
 import { AREAS, NARROW, RISKS } from "./risk";
 
 /** What the triager rules: `plan` hands the issue on to the scouts and the planner, any other settles it early. */
@@ -239,7 +238,6 @@ export const Triage = shape(
 	{
 		verdict: Enum(VERDICTS),
 		risk: Enum(RISKS),
-		tier: Enum(TIERS),
 		reasons: List(Text()),
 		questions: List(Question),
 	},

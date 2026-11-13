@@ -46,7 +46,7 @@ test(
 			writeFileSync(join(recorded, `${n}.base`), "main\n");
 			writeFileSync(
 				join(recorded, `${n}.presets`),
-				`${n === RISKY ? "risky" : "ordinary"}\nstub\n`,
+				`${n === RISKY ? "high" : "medium"}\nstub\n`,
 			);
 		}
 		const env = {
@@ -78,7 +78,7 @@ test(
 			{ env: { ...process.env, ...env }, stdout: "pipe" },
 		);
 		const origin = JSON.parse(await new Response(first.stdout).text());
-		expect(origin.presets).toEqual(["ordinary", "stub"]);
+		expect(origin.presets).toEqual(["medium", "stub"]);
 		expect(origin.config).toContain("target.base=main");
 		expect(origin.params.request).toBe("# #246 ticket");
 

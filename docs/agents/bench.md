@@ -8,13 +8,13 @@ shows. Judge a change by this table, not by anecdote.
 Five fixed tickets, each replayed fresh as a new concert on its original base and presets, under tour `bench`. Swap one
 out only with a note in this doc naming the ticket and why.
 
-| Ticket | Tier     | Catalogue rows[^rows] |
-| ------ | -------- | --------------------- |
-| #246   | ordinary | 2, 3, 11              |
-| #334   | ordinary | 1, 6                  |
-| #336   | ordinary | 6, 9                  |
-| #360   | ordinary | 1, 12                 |
-| #335   | risky    | 1, 5, 6               |
+| Ticket | Risk   | Catalogue rows[^rows] |
+| ------ | ------ | --------------------- |
+| #246   | medium | 2, 3, 11              |
+| #334   | medium | 1, 6                  |
+| #336   | medium | 6, 9                  |
+| #360   | medium | 1, 12                 |
+| #335   | high   | 1, 5, 6               |
 
 [^rows]:
     Rows of the factory failure catalogue: 1 test gaps found by mutation, 2 fix rounds that hit the cap unresolved, 3
@@ -25,7 +25,7 @@ out only with a note in this doc naming the ticket and why.
 
 One list of tickets; a replay runs the stage the change touches:
 
-- A slice change replays `slice` from the spec recorded on the ticket, at its original tier.
+- A slice change replays `slice` from the spec recorded on the ticket, on its original presets.
 - A triage change replays triage from the ticket first, then `slice` from the new spec.
 
 A ticket's recorded files, kept in one directory for every arm:

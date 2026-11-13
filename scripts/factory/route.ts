@@ -3,7 +3,6 @@ import type {
 	Masterclass,
 	Promotion as Proposal,
 } from "../../.maestro/masterclass";
-import { TIERS, type Tier } from "../../.maestro/shared";
 import { RISKS, type Risk } from "../../.maestro/triage/risk";
 import {
 	type Question,
@@ -70,8 +69,6 @@ export type Option = Question["options"][number];
 export type Triage = {
 	verdict: Verdict;
 	risk: Risk;
-	/** The review tier triage gave; absent from a result triaged before it gave one. */
-	tier?: Tier;
 	area?: string;
 	reasons: string[];
 	questions: Question[];
@@ -259,7 +256,6 @@ export function parseTriage(value: unknown): Triage {
 	const triage: Triage = {
 		verdict: field(value, "verdict", isOneOf(VERDICTS), "a verdict"),
 		risk: field(value, "risk", isOneOf(RISKS), "a risk"),
-		tier: optional(value, "tier", isOneOf(TIERS), "a tier"),
 		area: optional(value, "area", isString, "a string"),
 		reasons: field(value, "reasons", isStrings, "a list of strings"),
 		questions: field(value, "questions", Array.isArray, "a list").map(
@@ -821,7 +817,6 @@ export const encoreRequest = (request: string, changes: readonly Change[]) =>
 export type Landed = {
 	issue: number;
 	spend: readonly Spend[];
-	tier: Tier;
 	risk: Risk;
 	upheld?: string;
 	result: Triage;
@@ -874,15 +869,13 @@ export function unresolvedOf(upheld?: string) {
 	return found?.match(FINDING) ? found : undefined;
 }
 
-function evidenceLines({ upheld, tier, result }: Landed) {
+function evidenceLines({ upheld, result }: Landed) {
 	const gate = (result.spec?.acceptance ?? [])
 		.map((a) => `\`${oneLine(a)}\``)
 		.join(", ");
-	const clean = unresolvedOf(upheld) === undefined ? ", upheld none" : "";
-	return [
-		`- Gate: ${gate ? `${gate} ` : ""}green`,
-		`- Review: ${tier} review${clean}`,
-	];
+	const review =
+		unresolvedOf(upheld) === undefined ? "upheld none" : "findings upheld";
+	return [`- Gate: ${gate ? `${gate} ` : ""}green`, `- Review: ${review}`];
 }
 
 /** The findings the review left upheld after its last fix round, under their own heading; none when it left none. */
@@ -947,13 +940,13 @@ const closing = ({ issue, result }: Landed) =>
 	`Closes #${issue}${result.related?.length ? ` · relates to ${refs(result.related)}` : ""}`;
 
 /**
- * The writer's `pr`, then one line of risk, area and review tier with the planner's contract as the one-way door, the
+ * The writer's `pr`, then one line of risk and area with the planner's contract as the one-way door, the
  * spend folded under its total, and the closing line last.
  */
 function writtenBody(landed: Landed, pr: string) {
-	const { spend, tier } = landed;
+	const { spend } = landed;
 	const [risk, ...door] = dangerLine(landed);
-	const riskLines = [`${risk} · **Review:** ${tier}`, ...door];
+	const riskLines = [risk, ...door];
 	const total = `${elapsed(sum(spend, (s) => s.elapsedMs))}, ${shorthand(sum(spend, tokenTotal))} tokens`;
 	return [
 		pr,

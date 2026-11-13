@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Issue } from "./forge";
-import { buildable, pick, tierOf } from "./pick";
+import { buildable, pick, riskOf } from "./pick";
 
 const free = async () => true;
 
@@ -61,21 +61,9 @@ test("a pinned issue not in intake is skipped by triage", async () => {
 });
 
 test.each([
-	["low risk", "low", undefined, [], "small"],
-	["high risk that triage made risky", "high", "risky", [], "risky"],
-	["high risk that triage made ordinary", "high", "ordinary", [], "ordinary"],
-	["high risk triaged before tiers", "high", undefined, [], "ordinary"],
-	[
-		"high risk the owner relabelled medium",
-		"high",
-		"risky",
-		["risk/medium"],
-		"ordinary",
-	],
-] as const)(
-	"a ticket at %s builds at its tier",
-	(_, risk, tier, labels, built) => {
-		const ticket = { ...issue(1, "ready-for-agent"), labels: [...labels] };
-		expect(tierOf(ticket, { risk, tier })).toBe(built);
-	},
-);
+	["its label", "high", ["risk/medium"], "medium"],
+	["triage's risk without a label", "high", [], "high"],
+] as const)("the risk of a ticket is %s", (_, triaged, labels, risk) => {
+	const ticket = { ...issue(1, "ready-for-agent"), labels: [...labels] };
+	expect(riskOf(ticket, triaged)).toBe(risk);
+});

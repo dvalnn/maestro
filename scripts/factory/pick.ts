@@ -1,4 +1,3 @@
-import type { Tier } from "../../.maestro/shared";
 import { RISKS, type Risk } from "../../.maestro/triage/risk";
 import type { Comment, Issue, Pull } from "./forge";
 import {
@@ -8,7 +7,6 @@ import {
 	lastSpecLines,
 	QUESTION,
 	type Spec,
-	type Triage,
 } from "./route";
 import { INTAKE, STATES, type State } from "./transitions";
 
@@ -48,25 +46,9 @@ export async function pick(
 	return undefined;
 }
 
-/**
- * The slice tier, and preset, of each risk but high, whose tier triage gives (factory.md, Rules, Policy: Risk and
- * tier).
- */
-const TIER: Record<Exclude<Risk, "high">, Tier> = {
-	low: "small",
-	medium: "ordinary",
-};
-
 /** The risk of `issue`: its `risk/` label's, else the one triage gave it. */
 export const riskOf = (issue: Issue, triaged: Risk) =>
 	RISKS.find((r) => issue.labels.includes(`risk/${r}`)) ?? triaged;
-
-/** The slice tier of `issue`: its risk's, or at high risk the tier `triaged` gave, `ordinary` when it gave none. */
-export function tierOf(issue: Issue, triaged: Pick<Triage, "risk" | "tier">) {
-	const risk = riskOf(issue, triaged.risk);
-	if (risk !== "high") return TIER[risk];
-	return triaged.tier === "risky" ? "risky" : "ordinary";
-}
 
 /**
  * The `ready-for-agent` issues a build may take, pinned ones first in pinned order, then oldest first: each with a

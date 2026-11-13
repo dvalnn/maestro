@@ -21,30 +21,33 @@ among its own nodes. The exports are in `src/index.ts`; `@maestro/classics/code`
 
 ## Entries
 
-| Entry               | What it does                                                                                                         | Profiles                                                      |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `build_then_repair` | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series                             | `builder`                                                     |
-| `build_then_review` | Builds the request, with tests pinned first when `tested`, then repairs and reviews by panel, fixing what it upholds | `builder`, `lens`, `skeptic`, `consolidator`, `tester`        |
-| `panel_review`      | Rules on a change through each lens, a skeptic over each lens's findings, then tallies                               | `lens`, `skeptic`, `consolidator`                             |
-| `review_change`     | Rules on a change through the lenses its size picks, on one checklist from the paths it touches, then tallies        | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
+| Entry               | What it does                                                                                                  | Profiles                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `build_then_repair` | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series                      | `builder`, `tester`¹                                                                |
+| `build_then_review` | Builds the request, then repairs and reviews by tiered review, fixing what it upholds                         | `builder`, `tester`¹, `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
+| `panel_review`      | Rules on a change through each lens, a skeptic over each lens's findings, then tallies                        | `lens`, `skeptic`, `consolidator`                                                   |
+| `review_change`     | Rules on a change through the lenses its size picks, on one checklist from the paths it touches, then tallies | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator`                       |
 
-Example: `maestro perform classics.build_then_review --request "<what to build>" --tested`.
+¹ Under `classics.build.testFirst`.
 
-`build_then_review` is `build_then_repair` with a review: `fix_until_clean` over the build, ending in a patch series.
-The lenses judge the request, with the tester's map and the builder's overrules when `tested`. Tune the panel in config
-under `classics.panel.*`, its params in the [Params](#params) table. The concert settles `rejected`, with the series
-left, while the last panel upholds a finding.
+Example: `maestro perform classics.build_then_review --request "<what to build>" -c classics.build.testFirst=true`.
+
+Both build through `build`: set `classics.build.testFirst` for tests first. `build_then_review` is `build_then_repair`
+with a review: `fix_until_clean` over the build, ending in a patch series. The lenses judge the request, with the
+tester's map and the builder's overrules when `classics.build.testFirst`. Tune the review in config under
+`classics.tiered_review.*`, its params in the [Params](#params) table. The concert settles `rejected`, with the series
+left, while the last review upholds a finding.
 
 ## Patterns
 
-| Pattern              | What it does                                                                                                  | Ports                                                        | Profiles                                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------- |
-| `repair_until_green` | Checks a lane, then repairs in the builder's session while red                                                | `lane`, `session`, `spec`                                    | `builder`                                                     |
-| `panel`              | Rules through a lens per name, a skeptic over each, a consolidator; ends in a `Tally`                         | `change`, `spec`, `session`¹, `earlier`¹, `names`¹, `brief`¹ | `lens`, `skeptic`², `consolidator`²                           |
-| `tiered_review`      | Rules through the lenses the change's size picks, on one checklist, a consolidator; ends in a `Tally`         | `change`, `spec`, `session`¹, `earlier`¹, `brief`¹           | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
-| `fix_until_clean`    | Loops `repair_until_green` and `panel`; while the `Tally` upholds a finding, a builder fixes it               | `lane`, `session`, `spec`, `brief`                           | `builder`, `lens`, `skeptic`, `consolidator`                  |
-| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them                        | `spec`                                                       | `tester`, `builder`                                           |
-| `build`              | Builds the request in a fresh lane, through `test_first` when `testFirst`; gives what `fix_until_clean` takes | `spec`                                                       | `builder`, `tester`²                                          |
+| Pattern              | What it does                                                                                                  | Ports                                                        | Profiles                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| `repair_until_green` | Checks a lane, then repairs in the builder's session while red                                                | `lane`, `session`, `spec`                                    | `builder`                                                                |
+| `panel`              | Rules through a lens per name, a skeptic over each, a consolidator; ends in a `Tally`                         | `change`, `spec`, `session`¹, `earlier`¹, `names`¹, `brief`¹ | `lens`, `skeptic`², `consolidator`²                                      |
+| `tiered_review`      | Rules through the lenses the change's size picks, on one checklist, a consolidator; ends in a `Tally`         | `change`, `spec`, `session`¹, `earlier`¹, `brief`¹           | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator`            |
+| `fix_until_clean`    | Loops `repair_until_green` and `tiered_review`; while the `Tally` upholds a finding, a builder fixes it       | `lane`, `session`, `spec`, `brief`                           | `builder`, `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
+| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them                        | `spec`                                                       | `tester`, `builder`                                                      |
+| `build`              | Builds the request in a fresh lane, through `test_first` when `testFirst`; gives what `fix_until_clean` takes | `spec`                                                       | `builder`, `tester`²                                                     |
 
 ¹ Optional. ² Not used when its param, `skeptics`, `consolidate` or `testFirst`, is false.
 
@@ -67,9 +70,10 @@ change touches, each item numbered so a finding cites `<section> <n>`. One conso
 `spec` of the request, then the tester's map and the builder's overrules when `testFirst`, and the `brief`: the four
 ports of `fix_until_clean`.
 
-`fix_until_clean` forwards `maxRepairs`, `checks`, `fix` and the panel's `lenses`, `skeptics`, `consolidate` and
-`grounds`, and runs at most `maxFixes` fix rounds; a panel param it leaves unset stays the panel's own. `test_first`
-gives the built lane and the tester's `TestMap`; its builder replies with the `Overrules` of any test it rejects.
+`fix_until_clean` forwards `checks` to `repair_until_green` and `grounds` to `tiered_review`, and runs at most
+`maxFixes` fix rounds; a param it leaves unset stays the callee's own, so `classics.tiered_review.*` reaches it, and of
+`classics.repair_until_green.*` the `maxRepairs` and `fix` params do. `test_first` gives the built lane and the tester's
+`TestMap`; its builder replies with the `Overrules` of any test it rejects.
 
 ## Moves
 
@@ -133,43 +137,41 @@ In a tiered review, set each tier's seat to a stronger model than the last, and 
 
 ## Params
 
-| Composition          | Param                                          | Type                                   | Default     | What it is                                                                                                          |
-| -------------------- | ---------------------------------------------- | -------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------- |
-| `build_then_repair`  | `request`                                      | text                                   | required    | What to build                                                                                                       |
-|                      | `maxRepairs`                                   | integer, at least 1                    | 2           | The most repairs before the checks count as red                                                                     |
-| `build_then_review`  | `request`                                      | text                                   | required    | What to build                                                                                                       |
-|                      | `tested`                                       | boolean                                | false       | A tester pins the request in tests before the builder builds                                                        |
-|                      | `maxFixes`                                     | integer, at least 1                    | 2           | The most fix rounds after a review upholds findings                                                                 |
-|                      | `maxRepairs`                                   | integer, at least 1                    | 2           | The most repairs before the checks count as red                                                                     |
-| `repair_until_green` | `maxRepairs`                                   | integer, at least 1                    | 2           | As above; a composition that uses it sets its own                                                                   |
-|                      | `checks`                                       | list of `target.checks` names          | none        | The checks the repair agent may run on its repair                                                                   |
-|                      | `fix`                                          | name in `target.checks`                | none        | Runs before each check and recheck, to fix what a script can; judged by the check that follows, which runs it again |
-| `panel_review`       | `request`                                      | text                                   | required    | What the change must do                                                                                             |
-|                      | `change`                                       | lane ref, `<concert id>.<instance id>` | optional³   | The lane version under review                                                                                       |
-|                      | `revs`                                         | git revisions: `A..B`, `C^!` or `B`    | optional³   | The target commits under review                                                                                     |
-|                      | `lenses`                                       | list of `correctness`, `spec`, `tests` | all three   | The lenses to rule through, each once                                                                               |
-| `panel`              | `lenses`                                       | map of lens name to task text          | the three   | The lenses to rule through, as `panel_review`'s but named by task text, not by lens name                            |
-|                      | `skeptics`                                     | boolean                                | true        | A skeptic rules on each lens's findings; false leaves the consolidator to rule on all of them unverified            |
-|                      | `consolidate`                                  | boolean                                | true        | A consolidator rules on the held findings; false needs a `session`                                                  |
-|                      | `grounds`                                      | text                                   | empty       | The rules a finding must cite, held by the skeptics and the consolidator                                            |
-|                      | `checks`                                       | list of `target.checks` names          | none        | The checks the lenses may run                                                                                       |
-| `tiered_review`      | `small`                                        | integer, at least 1                    | 200         | The most changed lines of a small change                                                                            |
-|                      | `medium`                                       | integer                                | 800         | The most changed lines of a medium change; `small`, `medium` and `large` must rise                                  |
-|                      | `large`                                        | integer                                | 2000        | The most changed lines of a large change; a bigger one is xlarge                                                    |
-|                      | `ignore`                                       | list of globs                          | listed⁴     | Paths whose changed lines do not count                                                                              |
-|                      | `floor`                                        | `small`, `medium`, `large`, `xlarge`   | none        | The tier a review is at least, however small the change                                                             |
-|                      | `grounds`                                      | text                                   | empty       | The rules a finding must cite, held by the consolidator                                                             |
-|                      | `checks`                                       | list of `target.checks` names          | none        | The checks the lenses may run                                                                                       |
-| `review_change`      | `request`                                      | text                                   | required    | What the change must do                                                                                             |
-|                      | `change`, `revs`                               | as `panel_review`                      | optional³   | The lane version or target commits under review                                                                     |
-| `fix_until_clean`    | `maxFixes`                                     | integer, at least 1                    | 2           | The most fix rounds after a review upholds findings                                                                 |
-|                      | `maxRepairs`, `checks`, `fix`                  | as `repair_until_green`                | as there    | Forwarded to `repair_until_green`                                                                                   |
-|                      | `lenses`, `skeptics`, `consolidate`, `grounds` | as `panel`                             | the panel's | Forwarded to `panel` when set                                                                                       |
-| `test_first`         | `request`                                      | text                                   | required    | What to build                                                                                                       |
-|                      | `checks`                                       | list of `target.checks` names          | none        | The checks the tester and the builder may run                                                                       |
-| `build`              | `request`                                      | text                                   | required    | What to build                                                                                                       |
-|                      | `testFirst`                                    | boolean                                | false       | A tester pins the spec in tests before the builder builds                                                           |
-|                      | `checks`                                       | list of `target.checks` names          | none        | The checks the builder may run when `testFirst` is false                                                            |
+| Composition          | Param            | Type                                   | Default   | What it is                                                                                                          |
+| -------------------- | ---------------- | -------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- |
+| `build_then_repair`  | `request`        | text                                   | required  | What to build                                                                                                       |
+|                      | `maxRepairs`     | integer, at least 1                    | 2         | The most repairs before the checks count as red                                                                     |
+| `build_then_review`  | `request`        | text                                   | required  | What to build                                                                                                       |
+|                      | `maxFixes`       | integer, at least 1                    | 2         | The most fix rounds after a review upholds findings                                                                 |
+| `repair_until_green` | `maxRepairs`     | integer, at least 1                    | 2         | As above; a composition that uses it sets its own                                                                   |
+|                      | `checks`         | list of `target.checks` names          | none      | The checks the repair agent may run on its repair                                                                   |
+|                      | `fix`            | name in `target.checks`                | none      | Runs before each check and recheck, to fix what a script can; judged by the check that follows, which runs it again |
+| `panel_review`       | `request`        | text                                   | required  | What the change must do                                                                                             |
+|                      | `change`         | lane ref, `<concert id>.<instance id>` | optional³ | The lane version under review                                                                                       |
+|                      | `revs`           | git revisions: `A..B`, `C^!` or `B`    | optional³ | The target commits under review                                                                                     |
+|                      | `lenses`         | list of `correctness`, `spec`, `tests` | all three | The lenses to rule through, each once                                                                               |
+| `panel`              | `lenses`         | map of lens name to task text          | the three | The lenses to rule through, as `panel_review`'s but named by task text, not by lens name                            |
+|                      | `skeptics`       | boolean                                | true      | A skeptic rules on each lens's findings; false leaves the consolidator to rule on all of them unverified            |
+|                      | `consolidate`    | boolean                                | true      | A consolidator rules on the held findings; false needs a `session`                                                  |
+|                      | `grounds`        | text                                   | empty     | The rules a finding must cite, held by the skeptics and the consolidator                                            |
+|                      | `checks`         | list of `target.checks` names          | none      | The checks the lenses may run                                                                                       |
+| `tiered_review`      | `small`          | integer, at least 1                    | 200       | The most changed lines of a small change                                                                            |
+|                      | `medium`         | integer                                | 800       | The most changed lines of a medium change; `small`, `medium` and `large` must rise                                  |
+|                      | `large`          | integer                                | 2000      | The most changed lines of a large change; a bigger one is xlarge                                                    |
+|                      | `ignore`         | list of globs                          | listed⁴   | Paths whose changed lines do not count                                                                              |
+|                      | `floor`          | `small`, `medium`, `large`, `xlarge`   | none      | The tier a review is at least, however small the change                                                             |
+|                      | `grounds`        | text                                   | empty     | The rules a finding must cite, held by the consolidator                                                             |
+|                      | `checks`         | list of `target.checks` names          | none      | The checks the lenses may run                                                                                       |
+| `review_change`      | `request`        | text                                   | required  | What the change must do                                                                                             |
+|                      | `change`, `revs` | as `panel_review`                      | optional³ | The lane version or target commits under review                                                                     |
+| `fix_until_clean`    | `maxFixes`       | integer, at least 1                    | 2         | The most fix rounds after a review upholds findings                                                                 |
+|                      | `checks`         | as `repair_until_green`                | none      | Forwarded to `repair_until_green`, and the checks of the `fix` move                                                 |
+|                      | `grounds`        | as `tiered_review`                     | unset     | Forwarded to `tiered_review` when set                                                                               |
+| `test_first`         | `request`        | text                                   | required  | What to build                                                                                                       |
+|                      | `checks`         | list of `target.checks` names          | none      | The checks the tester and the builder may run                                                                       |
+| `build`              | `request`        | text                                   | required  | What to build                                                                                                       |
+|                      | `testFirst`      | boolean                                | false     | A tester pins the spec in tests before the builder builds                                                           |
+|                      | `checks`         | list of `target.checks` names          | none      | The checks the builder may run when `testFirst` is false                                                            |
 
 ³ Exactly one of `change` and `revs`. `revs` is resolved against the target once, as the concert starts: `B` alone runs
 from `target.base`, and the commits must be one linear series, with no merge.

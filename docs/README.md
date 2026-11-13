@@ -14,7 +14,7 @@ Which kind of doc owns a topic:
 - **`docs/requirements.md`**: requirements by id, citing decisions by id.
 - **`docs/rulings.md`**: the decision register (D-nn, R-nn), one line of decision plus its why.
 - **`docs/adr/`**: a decision that weighed alternatives.
-- **`.maestro/`** prompts and presets: the factory's formats and review tiers. Docs describe the flow and link in.
+- **`.maestro/`** prompts and presets: the factory's formats and risk presets. Docs describe the flow and link in.
 - **`GLOSSARY.md`**: one-line definitions and the naming rule. A rule inside an entry moves to its home.
 
 The shipped skills (`skills/`) sit outside this map. They may restate what a repo doc owns, and they are never a topic's
@@ -103,7 +103,7 @@ home; no repo doc links into them for its facts.
 | Spec format, routes, spec check, PR bodies                      | `.maestro/triage/`, `.maestro/slice/` prompts | factory                                |
 | Plain English for specs, PR bodies and docs                     | `.maestro/prompts/_plain.md`                  | Doc conventions                        |
 | Forge comments the tick writes[^surfaces]                       | `docs/agents/factory.md`: Forge surfaces      | `scripts/factory/`                     |
-| Review depth tiers                                              | `.maestro/slice.ts`, `.maestro/presets/`      | factory                                |
+| Review depth tiers                                              | `packs/classics/`, `.maestro/presets/`        | factory                                |
 | Tick install, `.env`, flags, exit codes                         | `scripts/factory/README.md`                   | factory                                |
 | Issue shape, brief and report                                   | `docs/agents/issue-tracker.md`                | implementation-loop                    |
 | Hand-driven slice loop, release review                          | `docs/agents/implementation-loop.md`          | CLAUDE.md, release skill               |

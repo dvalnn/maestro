@@ -24,12 +24,34 @@ target:
     fmt:
       run: just fmt
       hint: rewrites files with biome and prettier; run before the format check
+classics:
+  build: { checks: [lint, types, test, all] }
+  test_first: { checks: [lint, types, test, all] }
+  fix_until_clean: { checks: [lint, types, test, all] }
+  tiered_review: { checks: [lint, types, test, all] }
+  repair_until_green: { fix: fmt }
 profiles:
   classics/builder:
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before drawing any Mermaid diagram: SKILL.md" }
       docs: { path: docs/README.md, hint: "before adding to or editing any doc: each topic's home and the doc conventions" }
   classics/lens:
+    runtime: { harness: claude, model: claude-haiku-5-5, thinking: medium }
+    attachments:
+      diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
+      docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
+  classics/deep-lens:
+    runtime: { harness: claude, model: claude-sonnet-5-5, thinking: medium }
+    attachments:
+      diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
+      docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
+  classics/top-lens:
+    runtime: { harness: claude, model: claude-opus-5-5, thinking: medium }
+    attachments:
+      diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
+      docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
+  classics/cross-lens:
+    runtime: { harness: pi, model: github-copilot/gpt-6.1-sol, thinking: medium }
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
       docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }

@@ -19,21 +19,13 @@ const LOW = "touches only docs and tests, 3 paths or fewer";
 const many = (n: number) =>
 	Array.from({ length: n }, (_, i) => `packages/cli/src/f${i}.ts`);
 
-const risks: [string, string[], string, string, string, string[]][] = [
-	[
-		"a contract path",
-		["packages/ir/src/a.ts"],
-		"",
-		"high",
-		"ordinary",
-		[CONTRACT],
-	],
+const risks: [string, string[], string, string, string[]][] = [
+	["a contract path", ["packages/ir/src/a.ts"], "", "high", [CONTRACT]],
 	[
 		"a contract path given as ./",
 		["./packages/ir/src/a.ts"],
 		"",
 		"high",
-		"ordinary",
 		[CONTRACT],
 	],
 	[
@@ -41,7 +33,6 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		["packages/ir"],
 		"",
 		"high",
-		"ordinary",
 		["touches packages/ir, which set a contract"],
 	],
 	[
@@ -49,7 +40,6 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		["packs/classics/package.json"],
 		"",
 		"high",
-		"ordinary",
 		["touches packs/classics/package.json, which set a contract"],
 	],
 	[
@@ -57,7 +47,6 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		["packages/ir/src/a.test.ts", "packages/cli/src/a.ts"],
 		"",
 		"medium",
-		"ordinary",
 		[],
 	],
 	[
@@ -65,7 +54,6 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		["scripts/factory/index.ts", ".maestro/slice.ts"],
 		"",
 		"medium",
-		"ordinary",
 		[],
 	],
 	[
@@ -73,7 +61,6 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		many(8),
 		"",
 		"high",
-		"risky",
 		["touches 8 paths besides docs and tests, 8 or more"],
 	],
 	[
@@ -81,7 +68,6 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		[...many(7), "packages/cli/src/a.test.ts", "docs/a.md"],
 		"",
 		"medium",
-		"ordinary",
 		[],
 	],
 	[
@@ -89,7 +75,6 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		["docs/adr/0001-a.md"],
 		"",
 		"high",
-		"ordinary",
 		["touches docs/adr/0001-a.md, which set a contract"],
 	],
 	[
@@ -97,7 +82,6 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		["packages/cli/src/a.ts"],
 		"the --json flag",
 		"high",
-		"ordinary",
 		["the planner names a contract: the --json flag"],
 	],
 	[
@@ -105,7 +89,6 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		["docs/a.md", "docs/architecture.md", "packages/cli/src/a.test.ts"],
 		"",
 		"low",
-		"small",
 		[LOW],
 	],
 	[
@@ -113,7 +96,6 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		[".claude/skills/a/SKILL.md", ".maestro/presets/README.md"],
 		"",
 		"low",
-		"small",
 		[LOW],
 	],
 	[
@@ -121,19 +103,15 @@ const risks: [string, string[], string, string, string, string[]][] = [
 		["docs/a.md", "docs/b.md", "docs/c.md", "docs/d.md"],
 		"",
 		"medium",
-		"ordinary",
 		[],
 	],
-	["a source file", ["packages/cli/src/a.ts"], "", "medium", "ordinary", []],
-	["no paths", [], "", "medium", "ordinary", []],
+	["a source file", ["packages/cli/src/a.ts"], "", "medium", []],
+	["no paths", [], "", "medium", []],
 ];
 
-test.each(risks)(
-	"classify rules %s",
-	(_, touches, contract, risk, tier, reasons) => {
-		expect(classify(touches, contract)).toMatchObject({ risk, tier, reasons });
-	},
-);
+test.each(risks)("classify rules %s", (_, touches, contract, risk, reasons) => {
+	expect(classify(touches, contract)).toMatchObject({ risk, reasons });
+});
 
 const areas: [string, string[], Triage["area"]][] = [
 	[
@@ -186,7 +164,6 @@ const overrides: [string, Proposal, Triage][] = [
 		{
 			verdict: "needs-info",
 			risk: "medium",
-			tier: "ordinary",
 			reasons: [],
 			questions: [askAlone("Which paths does the change create or edit?")],
 			spec: { touches: [], ...spec },
@@ -198,7 +175,6 @@ const overrides: [string, Proposal, Triage][] = [
 		{
 			verdict: "needs-info",
 			risk: "medium",
-			tier: "ordinary",
 			reasons: [],
 			questions: [
 				askAlone(
@@ -232,7 +208,6 @@ const overrides: [string, Proposal, Triage][] = [
 		{
 			verdict: "needs-approval",
 			risk: "high",
-			tier: "ordinary",
 			area: "cli",
 			reasons: ["the planner names a contract: the --json flag"],
 			contract: "the --json flag",

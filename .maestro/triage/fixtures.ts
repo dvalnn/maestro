@@ -34,9 +34,8 @@ export const ready: Proposal = {
 	...unspecified,
 	spec,
 };
-export const medium: Pick<Triage, "risk" | "tier" | "area" | "reasons"> = {
+export const medium: Pick<Triage, "risk" | "area" | "reasons"> = {
 	risk: "medium",
-	tier: "ordinary",
 	area: "cli",
 	reasons: [],
 };

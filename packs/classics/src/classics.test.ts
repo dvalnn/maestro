@@ -296,10 +296,10 @@ describe("build_then_repair", () => {
 		const { out } = await maestro(["compose", ...BUILD, "--plan"]);
 		expect(out).toContain("repair_until_green/loop expands to 0 to 2");
 		expect(out).toContain(
-			"build_then_repair: up to 11 node instances, up to 3 repo.agent",
+			"build_then_repair: up to 13 node instances, up to 3 repo.agent",
 		);
 		expect(out).toMatch(
-			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}build +classics\/build_then_repair\/builder +classics\/builder +pi +none +-\n/,
+			/\nagents:\n {2}node +seat +profile +harness +model +thinking\n {2}build\/build +classics\/build\/builder +classics\/builder +pi +none +-\n/,
 		);
 		expect(out).toMatch(
 			/ {2}repair_until_green\/loop\/repair +classics\/repair_until_green\/builder +classics\/builder +pi +none +-\n/,
@@ -399,7 +399,7 @@ describe("build_then_repair", () => {
 
 	test("graphs the loop's bound and its next edge", async () => {
 		const { out } = await maestro(["compose", ...BUILD, "--graph"]);
-		for (const line of ['n3[["loop<br/>0 to 2"]]', 'n6 -.->|"next"| n3'])
+		for (const line of ['n5[["loop<br/>0 to 2"]]', 'n8 -.->|"next"| n5'])
 			expect(out).toContain(`${line}\n`);
 	});
 });
@@ -523,14 +523,14 @@ export const cleaned = composition("cleaned", { examples: [{}] }, () => {
 	return use(
 		fixUntilClean,
 		{ lane: built.out.lane, session: built.out.session, spec, brief },
-		{ params: { maxFixes: 3, lenses: { a: "task a", b: "task b" }, skeptics: false, consolidate: false } },
+		{ params: { maxFixes: 3 } },
 	);
 });
 `,
 		);
 	});
 
-	test("loops while the panel's tally is not ok, up to maxFixes, each round gating then reviewing", async () => {
+	test("loops while the review's tally is not ok, up to maxFixes, each round gating then reviewing", async () => {
 		const { out, code } = await maestro(["compose", file, "--json"]);
 		expect(code).toBe(0);
 		const { plan } = JSON.parse(out);
@@ -551,7 +551,7 @@ export const cleaned = composition("cleaned", { examples: [{}] }, () => {
 			nodes
 				.find(
 					(n: { id: string }) =>
-						n.id === `fix_until_clean/${round}panel/lenses/lens`,
+						n.id === `fix_until_clean/${round}tiered_review/lens/lens`,
 				)
 				?.config.relay?.map((r: { name: string }) => r.name);
 		expect(lens("")).toEqual(["builder"]);
@@ -559,7 +559,7 @@ export const cleaned = composition("cleaned", { examples: [{}] }, () => {
 		expect(
 			edges.filter(
 				(e: { to: { node: string; port?: string } }) =>
-					e.to.node === "fix_until_clean/fixes/panel/lenses/lens" &&
+					e.to.node === "fix_until_clean/fixes/tiered_review/lens/lens" &&
 					e.to.port === "upheld",
 			),
 		).toMatchObject([
@@ -567,7 +567,7 @@ export const cleaned = composition("cleaned", { examples: [{}] }, () => {
 		]);
 	});
 
-	/** The fix instances of a performed `cleaned`, with each lens of each panel round rejecting on `scripted` findings. */
+	/** The fix instances of a performed `cleaned`, with each round's lens rejecting on `scripted` findings. */
 	async function fixes(scripted: Record<string, unknown>) {
 		await stubPreset();
 		const outputs = mkdtempSync(join(root, "outputs-"));
@@ -598,12 +598,13 @@ export const cleaned = composition("cleaned", { examples: [{}] }, () => {
 
 	test("performs maxFixes fix rounds when every round upholds a finding", async () => {
 		const lens = {
-			"findings.json": [{ ...F1 }],
-			verdict: "rejected F1",
+			"lens/lens/findings.json": [{ ...F1 }],
+			"lens/lens/verdict": "rejected F1",
+			"consolidator/verdict.json": { criteria: [], upholds: ["lens/F1"] },
 		};
 		const rounds = ["", "fixes/"].flatMap((p) =>
 			Object.entries(lens).map(([f, v]) => [
-				`fix_until_clean/${p}panel/lenses/lens/${f}`,
+				`fix_until_clean/${p}tiered_review/${f}`,
 				v,
 			]),
 		);
@@ -618,7 +619,7 @@ describe("build_then_review", () => {
 
 	test.each([
 		["untested", []],
-		["tested", ["--tested"]],
+		["tested", ["-c", "classics.build.testFirst=true"]],
 	])(
 		"performs %s on the stub harness, settles ok and leaves a changeset",
 		async (_, flags) => {
@@ -637,7 +638,7 @@ describe("build_then_review", () => {
 			expect(err).toMatch(/^concert +\S+ +ok( |$)/m);
 			const id = /^concert +(\S+)/m.exec(err)?.[1] ?? "";
 			const { out } = await maestro(["ls", id]);
-			for (const row of ["spec", "result", "outcome"])
+			for (const row of ["build/spec", "result", "outcome"])
 				expect(out).toMatch(new RegExp(`^${row} +ok`, "m"));
 		},
 	);
@@ -654,15 +655,12 @@ describe("build_then_review", () => {
 			);
 		};
 		for (const round of ["", "fixes/"]) {
-			const panel = `fix_until_clean/${round}panel`;
-			script(`${panel}/lenses/lens/findings.json`, [F1]);
-			script(`${panel}/lenses/lens/verdict`, "rejected F1");
-			script(`${panel}/lenses/skeptic/rulings.json`, [
-				{ id: "F1", holds: true, why: "holds" },
-			]);
-			script(`${panel}/consolidator/verdict.json`, {
+			const review = `fix_until_clean/${round}tiered_review`;
+			script(`${review}/lens/lens/findings.json`, [F1]);
+			script(`${review}/lens/lens/verdict`, "rejected F1");
+			script(`${review}/consolidator/verdict.json`, {
 				criteria: [],
-				upholds: ["correctness/F1"],
+				upholds: ["lens/F1"],
 			});
 		}
 		const { err, code } = await maestro(
@@ -682,6 +680,96 @@ describe("build_then_review", () => {
 		const { out } = await maestro(["ls", id]);
 		expect(out).toMatch(/^result +ok/m);
 		expect(out).toMatch(/^outcome +rejected/m);
+	});
+});
+
+describe("build_then_review's build and review config", () => {
+	const REVIEWED = [
+		"classics.build_then_review",
+		"--request",
+		EXAMPLE_REQUEST,
+		"--json",
+	];
+	const composed = async (...args: string[]) => {
+		const { out, code } = await maestro(["compose", ...REVIEWED, ...args]);
+		expect(code).toBe(0);
+		const { plan, agents } = JSON.parse(out);
+		return {
+			ir: plan.ir,
+			profiles: new Set<string>(
+				agents.map((a: { profile: string }) => a.profile),
+			),
+		};
+	};
+
+	test("seats the builder, the four lenses and the consolidator, and a tester under classics.build.testFirst, whose spec the lenses read", async () => {
+		const lenses = new Set([
+			"classics/lens",
+			"classics/deep-lens",
+			"classics/top-lens",
+			"classics/cross-lens",
+		]);
+		const plain = await composed();
+		expect(plain.profiles).toEqual(
+			new Set(["classics/builder", "classics/consolidator", ...lenses]),
+		);
+		const tested = await composed("-c", "classics.build.testFirst=true");
+		expect(tested.profiles).toEqual(
+			new Set([...plain.profiles, "classics/tester"]),
+		);
+		const specs = tested.ir.edges.filter(
+			(e: { to: { node: string; port?: string } }) =>
+				/tiered_review\/[^/]+\/lens$/.test(e.to.node) && e.to.port === "spec",
+		);
+		expect(specs.length).toBeGreaterThan(0);
+		for (const e of specs)
+			expect(e.from).toEqual({ node: "build/spec", port: "file" });
+	});
+
+	test.each([
+		["classics.fix_until_clean.lenses=[a]", "lenses", true],
+		["classics.build.testFirst=maybe", "testFirst", false],
+	])("refuses -c %s", async (flag, mention, unclaimed) => {
+		const { out, code } = await maestro(["compose", ...REVIEWED, "-c", flag]);
+		expect(code).toBe(2);
+		expect(out).toContain(mention);
+		if (unclaimed) expect(out).toContain("CFG.unclaimed");
+	});
+
+	test.each(["--tested", "--max-repairs"])(
+		"refuses %s as unknown",
+		async (flag) => {
+			const { out, code } = await maestro(["compose", ...REVIEWED, flag, "1"]);
+			expect(code).toBe(2);
+			expect(out).toContain(`unknown flag ${flag}`);
+		},
+	);
+});
+
+describe("build_then_repair's build", () => {
+	test("under classics.build.testFirst, a tester whose lane the builder extends, and a repair that reads build's spec", async () => {
+		const { out, code } = await maestro([
+			"compose",
+			...BUILD,
+			"-c",
+			"classics.build.testFirst=true",
+			"--json",
+		]);
+		expect(code).toBe(0);
+		const { edges } = JSON.parse(out).plan.ir;
+		const into = (node: string, port: string) =>
+			edges
+				.filter(
+					(e: { to: { node: string; port?: string } }) =>
+						e.to.node === node && e.to.port === port,
+				)
+				.map((e: { from: unknown }) => e.from);
+		expect(into("build/test_first/build", "lane")).toEqual([
+			{ node: "build/test_first/tester", port: "lane" },
+		]);
+		expect(into("repair_until_green/loop/repair", "spec")).toEqual([
+			{ node: "build/spec", port: "file" },
+		]);
 	});
 });
 
@@ -1554,22 +1642,16 @@ describe("recipes", () => {
 		[
 			"upheld, the strong seat fixes",
 			{
-				...raised("cheap/panel/lenses/lens"),
-				...raised("cheap/fixes/panel/lenses/lens"),
-				"cheap/panel/consolidator/verdict.json": {
+				...raised("cheap/tiered_review/lens/lens"),
+				...raised("cheap/fixes/tiered_review/lens/lens"),
+				"cheap/tiered_review/consolidator/verdict.json": {
 					criteria: [],
-					upholds: ["correctness/F1"],
+					upholds: ["lens/F1"],
 				},
-				"cheap/fixes/panel/consolidator/verdict.json": {
+				"cheap/fixes/tiered_review/consolidator/verdict.json": {
 					criteria: [],
-					upholds: ["correctness/F1"],
+					upholds: ["lens/F1"],
 				},
-				"cheap/panel/lenses/skeptic/rulings.json": [
-					{ id: "F1", holds: true, why: "holds" },
-				],
-				"cheap/fixes/panel/lenses/skeptic/rulings.json": [
-					{ id: "F1", holds: true, why: "holds" },
-				],
 			},
 			"ok",
 		],

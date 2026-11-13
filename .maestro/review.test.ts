@@ -1,34 +1,32 @@
 import { expect, test } from "bun:test";
-import { JUDGED } from "./slice/lenses";
+import { JUDGED } from "./shared";
 import { classics, maestro } from "./testing/stub";
 
-/** The plan of `file` composed under --preset risky with the packed classics. */
-const planOf = async (file: string, ...args: string[]) =>
+type Node = { id: string; literals?: { floor?: string } };
+
+/** The plan of `.maestro/review.ts` composed under `--preset high` with the packed classics. */
+const planOf = async () =>
 	JSON.parse(
 		await maestro([
 			"compose",
-			file,
+			".maestro/review.ts",
 			"--preset",
-			"risky",
+			"high",
 			"--request",
 			"x",
-			...args,
+			"--revs",
+			"HEAD^!",
 			"--json",
 			"-c",
 			`packs=[${await classics}]`,
 		]),
 	).plan;
 
-test("review rules on a commit range through the risky slice's lenses, and its consolidator rules by every ground", async () => {
-	const review = await planOf(".maestro/review.ts", "--revs", "HEAD^!");
-	const slice = await planOf(".maestro/slice.ts", "--tier", "risky");
-	expect(review.expansion["panel/lenses"]).toEqual(
-		slice.expansion["fix_until_clean/panel/lenses"],
-	);
-	const consolidator = review.ir.nodes.find(
-		(n: { id: string }) => n.id === "panel/consolidator",
-	);
-	expect(JSON.stringify(consolidator)).toContain(
+test("review composes tiered_review at floor large under --preset high, its consolidator ruling by every ground", async () => {
+	const { nodes }: { nodes: Node[] } = (await planOf()).ir;
+	const byId = (id: string) => nodes.find((n) => n.id === id);
+	expect(byId("tiered_review/tieredOf")?.literals?.floor).toBe("large");
+	expect(JSON.stringify(byId("tiered_review/consolidator"))).toContain(
 		JSON.stringify(JUDGED).slice(1, -1),
 	);
 });

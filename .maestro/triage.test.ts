@@ -191,7 +191,6 @@ const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 		{
 			verdict: "needs-approval",
 			risk: "high",
-			tier: "ordinary",
 			area: "core",
 			reasons: [CONTRACT],
 			questions: [],

@@ -1,5 +1,4 @@
 import { basename, posix } from "node:path";
-import type { Tier } from "../shared";
 
 export const RISKS = ["low", "medium", "high"] as const;
 export type Risk = (typeof RISKS)[number];
@@ -87,11 +86,11 @@ const setsContract = (path: string) =>
 const isDocOrTest = (path: string) =>
 	under(path, "docs/") || MARKDOWN.test(path) || TEST_FILE.test(path);
 
-/** The risk and review tier of touching `touches`, and each rule that fired. */
+/** The risk of touching `touches`, and each rule that fired. */
 function riskOf(
 	touches: string[],
 	contract: string,
-): { risk: Risk; tier: Tier; reasons: string[] } {
+): { risk: Risk; reasons: string[] } {
 	const reasons: string[] = [];
 	const setting = touches.filter(setsContract);
 	if (setting.length)
@@ -103,16 +102,14 @@ function riskOf(
 			`touches ${code.length} paths besides docs and tests, ${WIDE} or more`,
 		);
 	if (contract) reasons.push(`the planner names a contract: ${contract}`);
-	if (reasons.length)
-		return { risk: "high", tier: wide ? "risky" : "ordinary", reasons };
+	if (reasons.length) return { risk: "high", reasons };
 	// An empty list proves nothing about its paths, so it is not low.
 	if (touches.length && touches.length <= NARROW && touches.every(isDocOrTest))
 		return {
 			risk: "low",
-			tier: "small",
 			reasons: [`touches only docs and tests, ${NARROW} paths or fewer`],
 		};
-	return { risk: "medium", tier: "ordinary", reasons };
+	return { risk: "medium", reasons };
 }
 
 /** The area holding most of `touches`, a tie going to the area first in `AREAS`, or none when no path is in one. */
@@ -126,17 +123,17 @@ function areaOf(touches: string[]): { area?: Area } {
 }
 
 /**
- * The risk, review tier and area of a change that touches `touches`, each normalised and those outside the repo left
+ * The risk and area of a change that touches `touches`, each normalised and those outside the repo left
  * out, and each risk rule that fired:
  * - high, when a path other than a test sets a contract, `WIDE` paths or more are neither docs nor tests, or the trimmed
- *   `contract` is not empty; its tier is `risky` when that width fired, else `ordinary`;
- * - low, when one to `NARROW` paths are all docs or tests, at tier `small`;
- * - medium, otherwise, at tier `ordinary`.
+ *   `contract` is not empty;
+ * - low, when one to `NARROW` paths are all docs or tests;
+ * - medium, otherwise.
  */
 export function classify(
 	touches: string[],
 	contract: string,
-): { risk: Risk; tier: Tier; area?: Area; reasons: string[] } {
+): { risk: Risk; area?: Area; reasons: string[] } {
 	const { paths } = scopeOf(touches);
 	return { ...riskOf(paths, contract), ...areaOf(paths) };
 }

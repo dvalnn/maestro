@@ -2,7 +2,7 @@
 import { join } from "node:path";
 import type { Forge, Issue, NewPull } from "./forge";
 import type { Report, Spend } from "./maestro";
-import { riskOf, tierOf, tourOf } from "./pick";
+import { riskOf, tourOf } from "./pick";
 import { type Data, dataOf, pullBody, specCommentOf } from "./route";
 import {
 	BASE,
@@ -100,7 +100,6 @@ function pullText(
 	const body = pullBody({
 		issue: issue.number,
 		spend,
-		tier: tierOf(issue, result),
 		risk: riskOf(issue, result.risk),
 		upheld: report.upheld,
 		result,

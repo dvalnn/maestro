@@ -1,0 +1,6 @@
+classics:
+  build: { testFirst: false }
+  tiered_review: { floor: small }
+profiles:
+  classics/builder: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: low } }
+  classics/consolidator: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: medium } }

@@ -46,7 +46,7 @@ bun scripts/factory/index.ts [--milestone v0.1.0] [--preset xreview]... [--route
 | `--route-only` | Routes settled concerts and syncs, then starts no build, triage or masterclass                          |
 
 [^p]:
-    A build layers them last, after its tier's preset and its area's; a triage and a masterclass layer them after the
+    A build layers them last, after its risk's preset and its area's; a triage and a masterclass layer them after the
     `triage` preset, which they name themselves. An area preset is an optional file,
     `.maestro/presets/area-<area>.yaml`, whose content grows from the masterclass.
 

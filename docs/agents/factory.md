@@ -170,14 +170,13 @@ flowchart TD
 
 ### Policy
 
-- **Risk and tier.** `risk/low` is the `small` slice tier and `risk/medium` is `ordinary`; `risk/high` is `risky` when
-  triage found it wide, else `ordinary`. Risk gates the owner's approval, width sets the review's depth, which
-  `.maestro/slice.ts` and `.maestro/presets/{small,ordinary,risky}.yaml` define. Low builds, opens a PR and merges
-  itself: once its PR to `main` is open, the tick arms the forge's auto-merge on it, fast-forward only, which waits on
-  the required `check` status, unless the PR is a draft (Landing and PRs: PRs). Medium builds and waits for the owner to
-  merge its PR. High waits in `needs-approval` for the owner to approve the spec, then merges as medium does. The owner
-  merges by fast-forward, as `main` takes signed commits only. An epic's last child arms only once its stack review
-  clears it (Rules, Build: Stack review).
+- **Risk.** The risk names the slice's preset, `.maestro/presets/{low,medium,high}.yaml`, which sets whether tests come
+  first, the review's floor and the runtimes; the review's depth otherwise follows the change's size. Risk gates the
+  owner's approval too. Low builds, opens a PR and merges itself: once its PR to `main` is open, the tick arms the
+  forge's auto-merge on it, fast-forward only, which waits on the required `check` status, unless the PR is a draft
+  (Landing and PRs: PRs). Medium builds and waits for the owner to merge its PR. High waits in `needs-approval` for the
+  owner to approve the spec, then merges as medium does. The owner merges by fast-forward, as `main` takes signed
+  commits only. An epic's last child arms only once its stack review clears it (Rules, Build: Stack review).
 - **One concert at a time.** The tick starts no second one while a concert of the milestone runs.
 - **Pick order.** Finish work first: a stack review, then an encore of a PR with changes requested, then a build, then
   triage, then a masterclass. A tick that routes a settle falls through and starts the next action. Within builds and
@@ -244,10 +243,10 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
 ### Build
 
 - **Build.** A ready ticket is built when its triage left a spec and it is no split's epic: `.maestro/slice.ts` with the
-  spec and the ask as `--request`, and its tier (Rules, Policy: Risk and tier) as `--tier` and `--preset`, then the
-  preset `area-<area>` when the ticket has an `area/<area>` label and `.maestro/presets/area-<area>.yaml` exists, then
-  the tick's own `--preset`s. The ticket moves to `in-progress` as the perform starts.
-- **Tests first.** At `ordinary` and `risky`, a `tester` on another model family first writes the tests that pin the
+  spec and the ask as `--request`, and its risk (Rules, Policy: Risk) as `--preset`, then the preset `area-<area>` when
+  the ticket has an `area/<area>` label and `.maestro/presets/area-<area>.yaml` exists, then the tick's own `--preset`s.
+  The ticket moves to `in-progress` as the perform starts.
+- **Tests first.** At medium and high risk, a `tester` on another model family first writes the tests that pin the
   spec's requirements at its public seam, mapping each requirement to its test, with what that test misses, or marking
   it deferred or untestable. The builder extends the tester's lane with the map relayed into its task, makes the tests
   pass, and writes the tests for the deferred requirements and what each pin misses; it changes a tester's test only
@@ -292,7 +291,7 @@ flowchart TD
 - **Stack review.** An epic's children are reviewed as one change once every child but its last is closed and the last
   is `in-review` on a PR to `main`, so the range runs along `main`. Earlier children land as usual; the review catches
   the seams between them before the epic closes.
-  - It performs `.maestro/review.ts` once per epic, on the epic's tour and title, with `--preset risky`, then the tick's
+  - It performs `.maestro/review.ts` once per epic, on the epic's tour and title, with `--preset high`, then the tick's
     own `--preset`s, `--revs <base>..<last PR head>`, `base` being `main`'s head when the split's children were filed,
     and a `--request` of the epic's ask and children, naming their commits by `Refs: #N`. Other tickets' commits in the
     range are context only. An epic filed before stack reviews holds no `base` and gets none.
@@ -324,16 +323,16 @@ flowchart TD
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
   held, titled with the spec's subject, to `main`. The slice's writer writes the body in the form
   `.maestro/slice/prompts/writer.md` gives, with `Unresolved review` for the findings the review left upheld after its
-  last fix round and `Gaps` for the builder's; below it the tick adds one line of risk, area and review tier with the
-  planner's contract as the one-way door, the spend (a row per slice concert of the ticket's tour, a build or an encore
-  as its record says, then a total) and `Closes #N` with the `Relates to` links last. A writer that fails costs the
-  build nothing: the tick builds the body from its data alone, with the upheld findings counted under
-  `Unresolved review` and no gaps. A PR is a draft, opened with the `WIP: ` title prefix, which Forgejo treats as a
-  draft and refuses to merge, when the review left findings upheld or the change edits `docs/rulings.md` or `docs/adr/`.
-  The slice's result node decides it and writes the notice that opens the body, a line per reason, which the writer does
-  not write. A draft is never armed, a last child's after its stack review clears included: the owner merges it. Every
-  landing, an encore's included, rewrites the title and body of the PR already open on the branch, so an encore that
-  clears the draft drops the prefix.
+  last fix round and `Gaps` for the builder's; below it the tick adds one line of risk and area with the planner's
+  contract as the one-way door, the spend (a row per slice concert of the ticket's tour, a build or an encore as its
+  record says, then a total) and `Closes #N` with the `Relates to` links last. A writer that fails costs the build
+  nothing: the tick builds the body from its data alone, with the upheld findings counted under `Unresolved review` and
+  no gaps. A PR is a draft, opened with the `WIP: ` title prefix, which Forgejo treats as a draft and refuses to merge,
+  when the review left findings upheld or the change edits `docs/rulings.md` or `docs/adr/`. The slice's result node
+  decides it and writes the notice that opens the body, a line per reason, which the writer does not write. A draft is
+  never armed, a last child's after its stack review clears included: the owner merges it. Every landing, an encore's
+  included, rewrites the title and body of the PR already open on the branch, so an encore that clears the draft drops
+  the prefix.
 
 ### Masterclass
 

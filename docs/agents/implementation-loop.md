@@ -51,10 +51,10 @@ A slice run as the slice composition adds `Leave your changes uncommitted; maest
    - a read-only review slice, such as an API review: high effort.
 
    Or the slice runs as the slice composition:
-   `maestro perform .maestro/slice.ts --preset <tier> --tier <tier> --request <brief> --detach --tour release.<version>`,
-   from a checkout at `main` (`packages/cli/README.md`). Its lane splits from `main` (`target.base`); a slice that
-   depends on work not yet on `main` sets `-c target.base=<commit>`. Start it detached, never as a session background
-   task: a rewind or a session end cancels it. The release's tour lets `ls` list its slices together.
+   `maestro perform .maestro/slice.ts --preset <risk> --request <brief> --detach --tour release.<version>`, from a
+   checkout at `main` (`packages/cli/README.md`). Its lane splits from `main` (`target.base`); a slice that depends on
+   work not yet on `main` sets `-c target.base=<commit>`. Start it detached, never as a session background task: a
+   rewind or a session end cancels it. The release's tour lets `ls` list its slices together.
 
 3. **Mechanical gate** (conductor). The conductor runs `just check` itself. Anything a linter can check stays in Biome.
 4. **Review** (one fresh read-only subagent, the other model from the implementer, at high effort). Runs the
@@ -72,7 +72,7 @@ A slice run as the slice composition adds `Leave your changes uncommitted; maest
    slice report. At most two fix rounds (rule 8). The conductor then commits one jj change per slice, following
    CLAUDE.md "Commit messages".
 6. **Stack review** (conductor, once every PR of an epic's stack is open, before the first lands). Runs
-   `maestro perform .maestro/review.ts --preset risky --request <epic brief> --revs <base>..<tip> --detach` over the
+   `maestro perform .maestro/review.ts --preset high --request <epic brief> --revs <base>..<tip> --detach` over the
    whole stack, for what no slice's review can show: a seam between two slices, a caller one slice changed and another
    left behind, one concept two slices each define. Findings follow steps 4 and 5, and each fix lands on the slice that
    owns its code. The tour manager runs its own on a factory epic (`factory.md`, Rules, Build: Stack review).

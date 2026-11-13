@@ -457,7 +457,7 @@ export const perform: Command = {
 		],
 		[
 			"Rehearse with the stub preset, which spends nothing",
-			'maestro perform .maestro/slice.ts --preset stub --request "Add a --verbose flag" --tier small',
+			'maestro perform .maestro/slice.ts --preset stub --request "Add a --verbose flag"',
 		],
 		[
 			"Put the concert on a tour, with a title",

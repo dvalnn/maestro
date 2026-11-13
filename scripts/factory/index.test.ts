@@ -1034,10 +1034,8 @@ const requestFor = (n: number) =>
 	`# #${n} Greet by name\n\n#### Context\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Requirements\n\n- **R1** When greet.sh is given a name, greet.sh shall greet it.\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Touches\n\n- \`greet.sh\`\n\n#### Acceptance\n\n- [ ] bun test\n\n## The ask\n\n${ASK}\n`;
 /** The flags a build of issue 7 at low risk takes after its `--request`, revising the PR commit `revises` names. */
 const lowFlags = (revises = "") => [
-	"--tier",
-	"small",
 	"--preset",
-	"small",
+	"low",
 	"--preset",
 	"stub",
 	"--tour",
@@ -1200,21 +1198,19 @@ describe("a build", () => {
 		expect(t.starts[0]).toContain("v0.1.0.i8");
 	});
 
-	test("adds the area preset between the tier's and the tick's, each of the tick's in order", async () => {
+	test("adds the area preset between the risk's and the tick's, each of the tick's in order", async () => {
 		const t = setup([specced(7, "ready-for-agent")]);
 		t.options.presets.push("xreview");
 		t.find(7).labels.push("area/cli");
 		t.files.push(".maestro/presets/area-cli.yaml");
 		await t.run();
-		expect(t.starts[0]?.slice(4, 10)).toEqual([
-			"--tier",
-			"small",
+		expect(t.starts[0]?.slice(4, 8)).toEqual([
 			"--preset",
-			"small",
+			"low",
 			"--preset",
 			"area-cli",
 		]);
-		expect(t.starts[0]?.slice(10, 14)).toEqual([
+		expect(t.starts[0]?.slice(8, 12)).toEqual([
 			"--preset",
 			"stub",
 			"--preset",
@@ -1222,7 +1218,7 @@ describe("a build", () => {
 		]);
 	});
 
-	test("takes the tier alone when the area has no preset file", async () => {
+	test("takes the risk preset alone when the area has no preset file", async () => {
 		const t = setup([specced(7, "ready-for-agent")]);
 		t.find(7).labels.push("area/cli");
 		t.options.presets = [];
@@ -1269,10 +1265,8 @@ describe("a build", () => {
 				expect.stringMatching(/\.maestro\/slice\.ts$/),
 				"--request",
 				requestFor(8),
-				"--tier",
-				"ordinary",
 				"--preset",
-				"ordinary",
+				"medium",
 				"--preset",
 				"stub",
 				"--tour",
@@ -1353,7 +1347,7 @@ describe("a build", () => {
 				"## Evidence",
 				"",
 				"- Gate: `bun test` green",
-				"- Review: small review",
+				"- Review: findings upheld",
 				"",
 				"## Unresolved review",
 				"",
@@ -2050,7 +2044,7 @@ describe("a stack review", () => {
 			"--revs",
 			"base0..sha7",
 			"--preset",
-			"risky",
+			"high",
 			"--preset",
 			"stub",
 			"--tour",

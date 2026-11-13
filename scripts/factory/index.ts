@@ -25,9 +25,9 @@ import {
 	issueText,
 	overlaps,
 	pick,
+	riskOf,
 	snapshot,
 	stateOf,
-	tierOf,
 	titleOf,
 	tourOf,
 } from "./pick";
@@ -101,8 +101,8 @@ export const MILESTONE_KEY = "MAESTRO_TM_MILESTONE";
 const TRIAGE_FILE = join(REPO, ".maestro/triage.ts");
 const SLICE_FILE = join(REPO, ".maestro/slice.ts");
 const REVIEW_FILE = join(REPO, ".maestro/review.ts");
-/** The review tier a stack review rules at. */
-const STACK_REVIEW_PRESET = "risky";
+/** The preset a stack review rules at. */
+const STACK_REVIEW_PRESET = "high";
 /** How a slice's agent reports it blocked (ADR 0012). */
 const BLOCKED = "blocked:";
 /** The states a slice's settle is routed in; on an issue the owner moved elsewhere it is parked. */
@@ -446,7 +446,7 @@ function lastChild(data: Data, entries: readonly Entry[]) {
 const pullToMain = (pulls: readonly Pull[], number: number) =>
 	pulls.find((p) => p.head === branchOf(number) && p.base === BASE);
 
-/** A stack review's findings as Markdown: its panel's review, else the findings its verdict blocks on. */
+/** A stack review's findings as Markdown: its review, else the findings its verdict blocks on. */
 const findingsText = ({ review, blocking = [] }: Report) =>
 	review ?? blocking.map((b) => `- ${b}`).join("\n");
 
@@ -663,7 +663,7 @@ async function sync(tick: Tick, entries: Entry[]) {
 type Perform = { request: string; encore?: string; data: Data };
 
 /**
- * Performs `perform` for `entry` at its risk's tier, cut at its PR's head and revising that commit when it revises,
+ * Performs `perform` for `entry` under its risk's preset, cut at its PR's head and revising that commit when it revises,
  * else on `main`, and moves it to `in-progress`; halts on a refusal.
  */
 async function startSlice(
@@ -673,7 +673,7 @@ async function startSlice(
 ) {
 	const result = data.result;
 	if (!result) return;
-	const tier = tierOf(issue, result);
+	const risk = riskOf(issue, result.risk);
 	const { revisionBase } = perform.data;
 	const cut = revisionBase ?? tick.main;
 	const name = issue.labels
@@ -687,10 +687,8 @@ async function startSlice(
 		...(perform.encore ? ["encore", perform.encore] : ["perform", SLICE_FILE]),
 		"--request",
 		perform.request,
-		"--tier",
-		tier,
 		"--preset",
-		tier,
+		risk,
 		...area,
 		...tick.presets.flatMap((p) => ["--preset", p]),
 		"--tour",

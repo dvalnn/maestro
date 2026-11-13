@@ -517,13 +517,12 @@ test("a PR body with nothing to add holds no relates-to or door, and says the re
 	const body = pullBody({
 		issue: 5,
 		spend: [SPENT],
-		tier: "ordinary",
 		risk: "medium",
 		result: ready,
 	});
 	expect(body).toStartWith("Closes #5\n\n## Summary\n\ns\n\n## Evidence");
 	expect(body).toContain(
-		"- Gate: green\n- Review: ordinary review, upheld none\n\n## Merge Danger",
+		"- Gate: green\n- Review: upheld none\n\n## Merge Danger",
 	);
 	expect(body).toContain("## Merge Danger\n\n**Risk:** medium\n\n## Spend");
 	expect(body).not.toContain("Gaps");
@@ -537,13 +536,12 @@ test("the built PR body lists the upheld findings under their own heading, and t
 	const landed = {
 		issue: 5,
 		spend: [SPENT],
-		tier: "small",
 		risk: "low",
 		result: ready,
 		upheld,
 	} as const;
 	const built = pullBody(landed);
-	expect(built).toContain("- Review: small review\n\n## Unresolved review");
+	expect(built).toContain("- Review: findings upheld\n\n## Unresolved review");
 	expect(built).toContain(`fix round (2):\n\n${upheld}\n\n`);
 	expect(built).not.toContain("Gaps");
 	const written = pullBody({ ...landed, pr: "## Summary\n\nx" });
@@ -571,7 +569,6 @@ test("a PR body labels a spend row an encore only when its concert was one", () 
 			{ ...SPENT, short: "02b2" },
 			{ ...SPENT, short: "03c3", encore: true },
 		],
-		tier: "small",
 		risk: "low",
 		result: ready,
 	});
@@ -584,27 +581,23 @@ test("a PR body names the planner's contract as the one-way door", () => {
 	const body = pullBody({
 		issue: 5,
 		spend: [SPENT],
-		tier: "risky",
 		risk: "high",
 		result: { ...ready, contract: "the --json flag" },
 	});
 	expect(body).toContain("**Risk:** high\n\n**One-way door:** the --json flag");
 });
 
-test("a PR body from the writer keeps its sections, then the risk and review, the spend folded, and closes last", () => {
+test("a PR body from the writer keeps its sections, then the risk, the spend folded, and closes last", () => {
 	const body = pullBody({
 		issue: 5,
 		spend: [SPENT],
-		tier: "small",
 		risk: "low",
 		result: { ...ready, related: [7] },
 		pr: "## Summary\n\nx",
 	});
-	expect(body).toStartWith(
-		"## Summary\n\nx\n\n**Risk:** low · **Review:** small",
-	);
+	expect(body).toStartWith("## Summary\n\nx\n\n**Risk:** low");
 	expect(body).toContain(
-		"**Risk:** low · **Review:** small\n\n<details><summary>Spend: 1m, 10 tokens</summary>",
+		"**Risk:** low\n\n<details><summary>Spend: 1m, 10 tokens</summary>",
 	);
 	expect(body).toEndWith("</details>\n\nCloses #5 · relates to #7");
 	expect(body).not.toContain("## Evidence");

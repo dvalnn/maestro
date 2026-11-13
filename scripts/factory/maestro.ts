@@ -5,11 +5,10 @@ import { unresolvedOf } from "./route";
 
 /** How many of a milestone's newest concerts the tick reads: one runs at a time, so the newest settle is among them. */
 const WINDOW = 20;
-/** The slice's fix agent, one instance per fix round: small's own, or under `fix_until_clean`'s scope. */
+/** The slice's fix agent, one instance per fix round, directly or under `fix_until_clean`'s scope. */
 const FIX_NODE = /^(.*\/)?fixes\/fix$/;
-/** The slice's tester, whose `map` output holds the tests: under `test_first`, and as an earlier concert named it. */
-const TESTER_NODE = "tested/tester";
-const LEGACY_TESTER_NODE = "tester";
+/** The slice's tester, whose `map` output holds the tests: under `test_first`, and as earlier concerts named it. */
+const TESTER_NODES = ["build/test_first/tester", "tested/tester", "tester"];
 
 export type Concert = {
 	id: string;
@@ -52,7 +51,7 @@ export type Report = {
 	notice?: string;
 	/** The PR body the slice's writer wrote. */
 	pr?: string;
-	/** A panel's review, and the findings the review upheld. */
+	/** A review, and the findings the review upheld. */
 	review?: string;
 	blocking?: string[];
 	/** What the tester's map holds, when the concert's tester wrote one. */
@@ -147,7 +146,7 @@ const count = (list: unknown) => (Array.isArray(list) ? list.length : 0);
 /** The sizes of the tester's `map` reply, from an `ls <concert> --json` document. */
 function testsOf(doc: Json): Report["tests"] {
 	const out = instancesOf(doc).find(
-		(i) => i.node === TESTER_NODE || i.node === LEGACY_TESTER_NODE,
+		(i) => typeof i.node === "string" && TESTER_NODES.includes(i.node),
 	)?.outputs;
 	const map = isJson(out) ? out.map : undefined;
 	if (!isJson(map)) return undefined;

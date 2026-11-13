@@ -319,8 +319,8 @@ model. An unknown profile is a usage error naming the nearest one.
 for each, says its Environment has `no harness to declare one`, ends with the fix on stderr, naming the presets that set
 them when any does, and exits 0.
 
-- A value names its layer in brackets (`[preset risky]`, `[-c]`, `[user config]`, `[workspace config]`) only when a
-  layer above its `profile.yaml` set it, and each attachment shows the host path and where the agent sees it.
+- A value names its layer in brackets (`[preset high]`, `[-c]`, `[user config]`, `[workspace config]`) only when a layer
+  above its `profile.yaml` set it, and each attachment shows the host path and where the agent sees it.
 - A profile that sets `harnessExtras` shows an `Extras` section after `Instructions`: the directory with its source, and
   its top-level entries. The directory is self-contained, each link in it relative and inside it; the
   [host-repo README](../host-repo/README.md#fields) holds the rule.
@@ -367,13 +367,13 @@ Layers, lowest first: the defaults, `$XDG_CONFIG_HOME/maestro/config.yaml`, the 
 preset each `--preset <name>` names, in order, then each `-c` in order. The full ladder is in
 [architecture: Configuration](../../docs/architecture.md#8-configuration). Maps merge by key and a list is replaced by
 the layer above it. A tag changes that: `!replace` on a map, `!append` on a list, `!delete` to drop a key.
-`maestro config <composition>` shows where each value came from, naming a preset layer by its name (`preset risky`),
-each value with its layer, file and line or `-c`. A required param of the composition that no layer gives shows as an
-`unset` row, and in `--json` as `layer: "unset"` with `value: null`; `config` runs no pre-flight, so it exits 0. Presets
-combine without a merged file: `--preset risky --preset stub` layers `stub` over `risky`. A composition's params sit
-under the id of the pack that declares it, whichever root uses it: `classics.panel.skeptics` reaches the panel of any
-root. A `-c` key under a composition the concert does not use is refused (`CFG.unreached`); the same key in a file or
-preset is ignored, its value still checked against the param's schema.
+`maestro config <composition>` shows where each value came from, naming a preset layer by its name (`preset high`), each
+value with its layer, file and line or `-c`. A required param of the composition that no layer gives shows as an `unset`
+row, and in `--json` as `layer: "unset"` with `value: null`; `config` runs no pre-flight, so it exits 0. Presets combine
+without a merged file: `--preset high --preset stub` layers `stub` over `high`. A composition's params sit under the id
+of the pack that declares it, whichever root uses it: `classics.panel.skeptics` reaches the panel of any root. A `-c`
+key under a composition the concert does not use is refused (`CFG.unreached`); the same key in a file or preset is
+ignored, its value still checked against the param's schema.
 
 A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`; the
 workspace's file wins the name whole. A compose or perform error that a missing setting raised, such as a profile with

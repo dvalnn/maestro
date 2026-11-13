@@ -16,7 +16,7 @@ import {
 import type { CodeContext } from "@maestro/sdk";
 import * as stdlib from "@maestro/sdk/stdlib";
 import { buildIr, stubConcert } from "@maestro/testkit";
-import { heldOf, tallyOf, toMarkdown } from "../src/code";
+import { briefOf, heldOf, specOf, tallyOf, toMarkdown } from "../src/code";
 import CHECKLIST from "../src/prompts/checklist.md" with { type: "text" };
 import CORRECTNESS from "../src/prompts/correctness.md" with { type: "text" };
 import { buildThenRepair } from "../src/repair";
@@ -60,6 +60,8 @@ const CODE: Readonly<
 > = {
 	...stdlib,
 	toMarkdown,
+	specOf,
+	briefOf,
 	heldOf,
 	tallyOf,
 };
@@ -102,7 +104,7 @@ async function stubbed(
 	const ir = buildIr(
 		buildThenRepair,
 		{ request: task.request, maxRepairs: task.maxRepairs },
-		{ toMarkdown },
+		{ toMarkdown, specOf, briefOf },
 	);
 	return { dir, target, hosts, config, ir, builds, repairs };
 }
@@ -283,7 +285,7 @@ test("a concert cancelled during its first repair resumes without rebuilding, an
 		.filter((e) => e.type === "reused")
 		.map((e) => e.node);
 	record.close();
-	expect(reused).toContain("build");
+	expect(reused).toContain("build/build");
 });
 
 describe("compare", () => {

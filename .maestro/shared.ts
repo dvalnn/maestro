@@ -1,10 +1,10 @@
-import { Brief, briefOf, toMarkdown } from "@maestro/classics";
-import { check, fresh, type Report } from "@maestro/host-repo-sdk";
+import { toMarkdown } from "@maestro/classics";
+import { check, fresh } from "@maestro/host-repo-sdk";
 import { code, Markdown, type Ref } from "@maestro/sdk";
-
-/** The review tiers, shallowest first: the tier triage rules is the depth slice reviews at. */
-export const TIERS = ["small", "ordinary", "risky"] as const;
-export type Tier = (typeof TIERS)[number];
+import GROUNDS from "./slice/prompts/_grounds.md" with { type: "text" };
+import TEST_GROUNDS from "./slice/prompts/_test-grounds.md" with {
+	type: "text",
+};
 
 /** A seat's task: `parts`, each a prompt file or fragment, a blank line apart. */
 export const task = (...parts: string[]) => parts.join("\n\n");
@@ -24,13 +24,5 @@ export const markdownOf = (text: Ref<string> | string, label: string) =>
 		label,
 	}).out.file;
 
-/** The check the gate runs as its fix node, to format what a round changed. */
-export const FIX_CHECK = "fmt";
-
-/** The checks of `target.checks` in `.maestro/config.yaml` an agent may run: every one a script cannot fix (ADR 0016). */
-export const REPO_CHECKS = ["lint", "types", "test", "all"];
-
-/** The builder's report as the brief its review seats read. */
-export const briefFrom = (report: Ref<Report>) =>
-	code(briefOf, { in: { report }, out: { brief: Brief }, label: "brief" }).out
-		.brief;
+/** Every ground, which the consolidator rules a finding by whatever lens found it. */
+export const JUDGED = task(GROUNDS, TEST_GROUNDS);

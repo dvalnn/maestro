@@ -10,7 +10,7 @@ writeFileSync(
 	bin,
 	`#!/bin/sh
 case "$1 $2" in
-	"ls c2"|"ls c3"|"ls c4"|"ls c6") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"node":"tested/tester","outputs":{"map":{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}}},{"node":"fixes/fix","expansion":"[0]"},{"node":"fix_until_clean/fixes/fix","expansion":"[1]"},{"node":"fix_until_clean/fixes/brief"},{"node":"fixes/reviewer"}],"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","lessons":["run just fmt first"]}}}' ;;
+	"ls c2"|"ls c3"|"ls c4"|"ls c6") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"node":"build/test_first/tester","outputs":{"map":{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}}},{"node":"fixes/fix","expansion":"[0]"},{"node":"fix_until_clean/fixes/fix","expansion":"[1]"},{"node":"fix_until_clean/fixes/brief"},{"node":"fixes/reviewer"}],"reports":{"build":{"summary":"s","obstacles":["no rg"]},"reviewer":{"summary":"s","lessons":["run just fmt first"]}}}' ;;
 	"ls c5") echo '{"instances":[{"node":"tester","outputs":{"map":{"pinned":[{}],"deferred":[],"untestable":[]}}}]}' ;;
 	"ls --tour") echo '[{"id":"l'"$5"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1"}]' ;;
 	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"notice":{"path":"notice.md"},"pr":{"path":"pr.md"}}}' ;;

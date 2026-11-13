@@ -1,3 +1,6 @@
 profiles:
   classics/builder: { attachments: { area: { path: .maestro/areas/cli.md, hint: what trips a change to the CLI } } }
   classics/lens: { attachments: { area: { path: .maestro/areas/cli.md, hint: what trips a change to the CLI } } }
+  classics/deep-lens: { attachments: { area: { path: .maestro/areas/cli.md, hint: what trips a change to the CLI } } }
+  classics/top-lens: { attachments: { area: { path: .maestro/areas/cli.md, hint: what trips a change to the CLI } } }
+  classics/cross-lens: { attachments: { area: { path: .maestro/areas/cli.md, hint: what trips a change to the CLI } } }

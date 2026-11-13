@@ -19,14 +19,8 @@ const SLICE_FILE = join(import.meta.dir, "../.maestro/slice.ts");
 /** How many of the bench's newest concerts the table reads. */
 const WINDOW = 200;
 
-/** The bench's fixed tickets and the tier each is built at. */
-const TICKETS = [
-	{ issue: 246, tier: "ordinary" },
-	{ issue: 334, tier: "ordinary" },
-	{ issue: 336, tier: "ordinary" },
-	{ issue: 360, tier: "ordinary" },
-	{ issue: 335, tier: "risky" },
-];
+/** The bench's fixed tickets. */
+const TICKETS = [246, 334, 336, 360, 335];
 
 type Row = {
 	arm: string;
@@ -65,30 +59,26 @@ function recorded(dir: string, issue: number, ext: string) {
  * @throws Error naming the first recorded file that is missing.
  */
 function plan(arm: string, dir: string, issues: number[], extra: string[]) {
-	return TICKETS.filter((t) => issues.includes(t.issue)).map(
-		({ issue, tier }) => {
-			const presets = recorded(dir, issue, "presets").split(/\s+/);
-			return {
-				issue,
-				args: [
-					"perform",
-					SLICE_FILE,
-					"--request",
-					recorded(dir, issue, "md"),
-					"--tier",
-					tier,
-					...presets.flatMap((p) => ["--preset", p]),
-					...extra,
-					"--tour",
-					tourOf(arm, issue),
-					"--title",
-					`bench #${issue} ${arm}`,
-					"-c",
-					`target.base=${recorded(dir, issue, "base")}`,
-				],
-			};
-		},
-	);
+	return TICKETS.filter((issue) => issues.includes(issue)).map((issue) => {
+		const presets = recorded(dir, issue, "presets").split(/\s+/);
+		return {
+			issue,
+			args: [
+				"perform",
+				SLICE_FILE,
+				"--request",
+				recorded(dir, issue, "md"),
+				...presets.flatMap((p) => ["--preset", p]),
+				...extra,
+				"--tour",
+				tourOf(arm, issue),
+				"--title",
+				`bench #${issue} ${arm}`,
+				"-c",
+				`target.base=${recorded(dir, issue, "base")}`,
+			],
+		};
+	});
 }
 
 /**
@@ -214,7 +204,7 @@ class UsageError extends Error {}
 
 /** The ticket numbers in `words`, all five when it is empty. */
 function ticketsOf(words: string[]) {
-	const all = TICKETS.map((t) => t.issue);
+	const all = TICKETS;
 	if (!words.length) return all;
 	const issues = words.map(Number);
 	const unknownIssue = words.find((_, i) => !all.includes(issues[i] ?? 0));
