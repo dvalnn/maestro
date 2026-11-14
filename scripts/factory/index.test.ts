@@ -15,7 +15,7 @@ import { titleOf } from "./concerts";
 import type { Comment, Pull, Review } from "./forge";
 import { HALT, lock, milestoneOf, type Options, tick } from "./index";
 import { landing as repositoryLanding } from "./land";
-import type { Concert, Report, Result } from "./maestro";
+import { type Concert, maestro, type Report, type Result } from "./maestro";
 import { stateOf } from "./pick";
 import {
 	commentOf,
@@ -2835,6 +2835,106 @@ describe("compositions at the cut", () => {
 		expect(command.code).toBe(1);
 		expect(existsSync(command.capture)).toBe(false);
 		expect(existsSync(command.halts)).toBe(false);
+	});
+});
+
+// Seams: tick's refusal and the calls it makes to the forge and external maestro.
+describe("a tick's milestone and maestro list", () => {
+	const dirs: string[] = [];
+	afterEach(() => {
+		for (const dir of dirs.splice(0))
+			rmSync(dir, { recursive: true, force: true });
+	});
+
+	function boundaryTick(milestone: string, answer: unknown) {
+		const dir = mkdtempSync(join(tmpdir(), "factory-milestone-"));
+		dirs.push(dir);
+		const calls = join(dir, "maestro-calls.json");
+		const bin = join(dir, "maestro");
+		writeFileSync(
+			bin,
+			`#!${process.execPath}
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)));
+console.log(${JSON.stringify(JSON.stringify(answer))});
+process.exit(2);
+`,
+			{ mode: 0o755 },
+		);
+		const forge = fakeForge([]).forge;
+		const lookedUp: string[] = [];
+		const said: string[] = [];
+		forge.milestone = async (title) => {
+			lookedUp.push(title);
+			return MILESTONE_ID;
+		};
+		const run = () =>
+			tick(
+				{
+					forge,
+					maestro: maestro(bin),
+					landing: fakeLanding().landing,
+					lock: () => true,
+					say: (line) => said.push(line),
+					has: () => false,
+				},
+				{ milestone, presets: [], dir, cache: dir },
+			);
+		return { run, calls, lookedUp, said };
+	}
+
+	test("refuses a milestone that is not a tour slug before looking it up or calling maestro", async () => {
+		for (const milestone of [
+			"Factory self-build",
+			"factory_self-build",
+			"factory..build",
+			"factory--build",
+			"-factory",
+			"factory.",
+			"",
+			"a".repeat(65),
+		]) {
+			const t = boundaryTick(milestone, []);
+			const error = await t.run().catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(Error);
+			expect((error as Error).message).toContain("MAESTRO_TM_MILESTONE");
+			expect((error as Error).message).toContain("--milestone");
+			expect(t.lookedUp).toEqual([]);
+			expect(existsSync(t.calls)).toBe(false);
+		}
+	});
+
+	test("a valid milestone still waits for its running concert", async () => {
+		for (const milestone of [
+			"factory-self-build",
+			"release-2.build-3",
+			"a".repeat(64),
+		]) {
+			const t = boundaryTick(milestone, [
+				{ id: "c1", status: "running", pack: "slice", composition: "slice" },
+			]);
+			await t.run();
+			expect(t.lookedUp).toEqual([milestone]);
+			expect(JSON.parse(readFileSync(t.calls, "utf8")).slice(0, 3)).toEqual([
+				"ls",
+				"--tour",
+				milestone,
+			]);
+			expect(t.said).toEqual(["concert c1 is still running"]);
+		}
+	});
+
+	test("surfaces the error returned by maestro ls", async () => {
+		const message = "--tour takes a slug: refused by maestro";
+		const t = boundaryTick("v0.1.0", { ok: false, error: message });
+		const error = await t.run().catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toContain(message);
+		expect(JSON.parse(readFileSync(t.calls, "utf8")).slice(0, 3)).toEqual([
+			"ls",
+			"--tour",
+			"v0.1.0",
+		]);
 	});
 });
 

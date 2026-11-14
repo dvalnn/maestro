@@ -102,6 +102,18 @@ const LOCK_EX = 2;
 const LOCK_NB = 4;
 /** Linux's EWOULDBLOCK, which is EAGAIN. */
 const EWOULDBLOCK = 11;
+/** The tour slug rule, copied from `parseTour` in packages/cli/src/output.ts (scripts do not import the CLI). */
+const TOUR_SEGMENT = "[a-z0-9]+(?:-[a-z0-9]+)*";
+const TOUR = new RegExp(`^${TOUR_SEGMENT}(?:\\.${TOUR_SEGMENT})*$`);
+const TOUR_MAX_LENGTH = 64;
+const isTourSlug = (text: string) =>
+	TOUR.test(text) && text.length <= TOUR_MAX_LENGTH;
+function requireSlug(milestone: string): void {
+	if (isTourSlug(milestone)) return;
+	throw new Error(
+		`${MILESTONE_KEY} or --milestone takes a slug of at most ${TOUR_MAX_LENGTH} characters, not '${milestone}'\nWrite it as lower-case words joined by hyphens, such as factory-self-build: a tour is <milestone>.i<issue>`,
+	);
+}
 export const MILESTONE_KEY = "MAESTRO_TM_MILESTONE";
 /** How a slice's agent reports it blocked (ADR 0012). */
 const BLOCKED = "blocked:";
@@ -1097,6 +1109,7 @@ async function triage(tick: Tick, entries: Entry[]) {
  * @throws Error when the milestone does not exist, or the forge or maestro fails or answers what the tick cannot read.
  */
 export async function tick(deps: Deps, options: Options): Promise<void> {
+	requireSlug(options.milestone);
 	if (!deps.lock()) return deps.say("another tick holds the lock");
 	const halts = await deps.forge.open({ label: HALT });
 	if (halts.some((i) => i.labels.includes(HALT)))

@@ -293,7 +293,11 @@ export function maestro(bin = "maestro"): Maestro {
 				"--limit",
 				`${limit}`,
 			]);
-			if (!Array.isArray(rows)) throw new Error("maestro ls: not a list");
+			if (!Array.isArray(rows)) {
+				const error = (rows as { ok?: unknown; error?: unknown } | null)?.error;
+				if (typeof error === "string") throw new Error(error);
+				throw new Error("maestro ls: not a list");
+			}
 			return rows.map(concertOf);
 		},
 		result: async (id) => resultOf(await json(bin, ["wait", id])),
