@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { isJson, type Json } from "./json";
 import { unresolvedOf } from "./route";
 
-/** How many of a milestone's newest concerts the tick reads: one runs at a time, so the newest settle is among them. */
+/**
+ * How many of a milestone's newest concerts of one kind the tick reads: a kind runs one at a time, so its newest
+ * settle is among them.
+ */
 const WINDOW = 20;
 /** The slice's fix agent, one instance per fix round, directly or under `fix_until_clean`'s scope. */
 const FIX_NODE = /^(.*\/)?fixes\/fix$/;
@@ -20,6 +23,8 @@ export type Concert = {
 	startedAt?: number;
 	/** The commit its lane is cut from: its last `target.base` config, since an encore's follows those it continues. */
 	base?: string;
+	/** When it settled, in milliseconds; absent while it runs. */
+	settledAt?: number;
 };
 export type Result = {
 	status: string;
@@ -68,8 +73,15 @@ export type Sighting = { path: string; cites: string; text: string };
 
 /** maestro as the tick sees it, through its `--json` documents. */
 export type Maestro = {
-	/** The newest `limit` concerts on `tour` and the tours under it, newest first; `limit` defaults to the tick's window. */
-	concerts(tour: string, limit?: number): Promise<Concert[]>;
+	/**
+	 * The newest `limit` concerts on `tour` and the tours under it, newest first; `limit` defaults to the tick's window,
+	 * and `kind` keeps only the concerts of that pack and composition.
+	 */
+	concerts(
+		tour: string,
+		limit?: number,
+		kind?: { pack: string; composition: string },
+	): Promise<Concert[]>;
 	result(id: string): Promise<Result>;
 	/**
 	 * Starts `maestro <args>` in the background and returns its concert's id; what it printed is written to `log`,
@@ -112,6 +124,7 @@ const concertOf = (o: unknown): Concert => {
 		base: strings(o.config)
 			.findLast((c) => c.startsWith(BASE_CONFIG))
 			?.slice(BASE_CONFIG.length),
+		settledAt: typeof o.settledAt === "number" ? o.settledAt : undefined,
 	};
 };
 
@@ -299,13 +312,14 @@ async function json(
 
 export function maestro(bin = "maestro"): Maestro {
 	return {
-		concerts: async (tour, limit = WINDOW) => {
+		concerts: async (tour, limit = WINDOW, kind) => {
 			const rows = await json(bin, [
 				"ls",
 				"--tour",
 				tour,
 				"--limit",
 				`${limit}`,
+				...(kind ? ["--composition", `${kind.pack}.${kind.composition}`] : []),
 			]);
 			if (!Array.isArray(rows)) {
 				const error = (rows as { ok?: unknown; error?: unknown } | null)?.error;

@@ -3,7 +3,7 @@
 import { basename, dirname, join } from "node:path";
 import type { Risk } from "../../.maestro/triage/risk";
 import type { Issue } from "./forge";
-import type { Concert } from "./maestro";
+import type { Concert, Maestro } from "./maestro";
 import { riskOf } from "./pick";
 import { halt, message, type Tick } from "./tick";
 
@@ -38,6 +38,43 @@ const is = (kind: Kind) => (c: Concert) =>
 export const isTriage = is(TRIAGE);
 export const isSlice = is(SLICE);
 export const isStackReview = is(STACK_REVIEW);
+
+/** Whether `c` runs in the code slot: a slice, an encore of one, or a stack review. */
+const fillsCode = (c: Concert) => isSlice(c) || isStackReview(c);
+
+/** Which slots hold a running concert: `code` for a slice, an encore or a stack review; `second` for a triage, an encore of one or a masterclass. */
+export type Slots = { code: boolean; second: boolean };
+
+/** The slots the running concerts of `concerts` fill: one for code, one for a triage or a masterclass. */
+export function busySlots(concerts: readonly Concert[]): Slots {
+	const running = concerts.filter((c) => c.status === "running");
+	return {
+		code: running.some(fillsCode),
+		second: running.some((c) => !fillsCode(c)),
+	};
+}
+
+/**
+ * The newest concerts of `milestone`, newest first, listed kind by kind so that a kind's running concert and newest
+ * settle are never crowded out by another kind's.
+ */
+export async function listConcerts(
+	maestro: Maestro,
+	milestone: string,
+): Promise<Concert[]> {
+	const lists = await Promise.all(
+		[SLICE, TRIAGE, STACK_REVIEW, MASTERCLASS].map((k) =>
+			maestro.concerts(milestone, undefined, k),
+		),
+	);
+	// Equal start times order by descending id, as maestro's own list does.
+	return lists
+		.flat()
+		.sort(
+			(a, b) =>
+				(b.startedAt ?? 0) - (a.startedAt ?? 0) || (a.id < b.id ? 1 : -1),
+		);
+}
 
 /** The tour of `issue`'s concerts in `milestone` (factory.md, Rules, Policy: Tour and title). */
 export const tourOf = (milestone: string, issue: number) =>

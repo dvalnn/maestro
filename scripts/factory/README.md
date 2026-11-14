@@ -1,13 +1,13 @@
 # Factory tick
 
 One tick of the tour manager (`docs/agents/factory.md`): it routes a settled triage or slice, lands an ok slice as a PR,
-files approved splits, then starts one encore of a PR an official review requested changes on, else one build of a ready
-issue, else a masterclass once 20 factory runs settled since the last, else one triage of an intake issue, else a
-masterclass once 10 did, on the lessons, obstacles and sightings of the newest 30; it routes a settled masterclass by
-filing its proposals as `needs-approval` issues. A build continues the issue's last slice concert when it has a reply to
-feed it. It drives maestro through `--json` and calls the forge's REST API directly as its own account, `maestro-tm`,
-which also force-pushes the PR's branch, and authors (and, with a key, signs) the commits it lands. A triage reads only
-the tour manager's question comments and comments mentioning its login, which each tick reads from `GET /user`.
+files approved splits, then starts at most one concert in a free slot, a triage or masterclass beside a build (the two
+slots and their pick order: `docs/agents/factory.md`, Rules, Policy: One concert per slot). It routes a settled
+masterclass by filing its proposals as `needs-approval` issues. A build continues the issue's last slice concert when it
+has a reply to feed it. It drives maestro through `--json` and calls the forge's REST API directly as its own account,
+`maestro-tm`, which also force-pushes the PR's branch, and authors (and, with a key, signs) the commits it lands. A
+triage reads only the tour manager's question comments and comments mentioning its login, which each tick reads from
+`GET /user`.
 
 A ticket with an open dependency is neither triaged nor built until every dependency closes, so a spec is written
 against real `main` and every PR targets it. On a low-risk PR to `main` whose review left no findings upheld the tick

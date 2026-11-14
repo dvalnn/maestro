@@ -797,7 +797,6 @@ describe("a tick", () => {
 	const idle: [string, boolean, Stored[], string, string][] = [
 		["a held lock", false, [], "ok", "another tick holds the lock"],
 		["a halt", true, [{ ...issue(5, "none"), labels: [HALT] }], "ok", "halted"],
-		["a running concert", true, [], "running", "concert c1 is still running"],
 	];
 	test.each(idle)(
 		"does nothing on %s",
@@ -1294,10 +1293,13 @@ describe("a build", () => {
 		);
 		expect(t.writes).not.toContain("edit #8");
 		concerts.push(sliceConcert("started", 8, "running"));
-		const writes = t.writes.length;
 		await t.run();
-		expect(t.writes).toHaveLength(writes);
-		expect(t.starts).toHaveLength(1);
+		expect(t.starts.map(started)).toEqual([
+			"perform slice.ts",
+			"perform triage.ts",
+		]);
+		expect(t.starts[1]).toContain(`${MILESTONE}.i2`);
+		expect(t.find(8).labels).toContain("state/in-progress");
 	});
 
 	const NOTICE =
@@ -2160,6 +2162,180 @@ function epicWith(
 const reviewsOf = (t: { starts: string[][] }) =>
 	t.starts.filter((a) => a[1]?.endsWith("review.ts"));
 
+// Seams: a tick's forge-visible routing and sync, and the concerts it starts through maestro.
+describe("two slots in a tick", () => {
+	test("routes and syncs while both slots are occupied, without starting another concert", async () => {
+		const split: Triage = {
+			...base,
+			verdict: "split",
+			risk: "medium",
+			children,
+		};
+		const t = setup(
+			[
+				issue(7, "needs-triage"),
+				issue(9, "ready-for-agent", { concert: "old", result: split }),
+				issue(10, "needs-triage"),
+			],
+			[
+				sliceConcert("s1", 11, "running"),
+				triageConcert("c2", 12, "running"),
+				triageConcert("c1", 7),
+			],
+			settled(ready),
+		);
+		await t.run();
+		expect(t.find(7).labels).toContain("state/ready-for-agent");
+		expect(dataAt(t.find(9)).filed).toEqual([100, 101]);
+		expect(t.starts).toEqual([]);
+	});
+
+	test("leaves an issue's newest running concert unrouted until it settles", async () => {
+		const concerts = [
+			triageConcert("c2", 7, "running"),
+			triageConcert("c1", 7),
+		];
+		const results = {
+			...settled(ready),
+			c2: { status: "ok", outputs: { triage: ready } },
+		};
+		const t = setup([issue(7, "needs-triage")], concerts, results);
+		t.options.routeOnly = true;
+		await t.run();
+		expect(t.events).toEqual(["head main", "fetch"]);
+		expect(t.find(7).labels).toContain("state/needs-triage");
+		expect(t.writes).toEqual([]);
+		concerts[0] = triageConcert("c2", 7);
+		await t.run();
+		expect(dataAt(t.find(7)).concert).toBe("c2");
+		expect(t.find(7).labels).toContain("state/ready-for-agent");
+		expect(t.starts).toEqual([]);
+	});
+
+	test("a busy code slot skips builds, stale bounces and dependency queueing but triages another issue", async () => {
+		const stale = written(specced(7, "ready-for-agent"), "b1");
+		const queued = specced(8, "ready-for-agent");
+		const landing = fakeLanding();
+		landing.changed.push("greet.sh");
+		const t = setup(
+			[stale, queued, specced(9, "in-progress"), issue(10, "needs-triage")],
+			[sliceConcert("s1", 9, "running")],
+			{},
+			undefined,
+			{ landing },
+		);
+		t.blocking[8] = [99];
+		const before = specAt(queued)?.body;
+		await t.run();
+		expect(t.starts.map(started)).toEqual(["perform triage.ts"]);
+		expect(t.starts[0]).toContain(`${MILESTONE}.i10`);
+		expect(t.find(7).labels).toContain("state/ready-for-agent");
+		expect(questionsAt(t.find(7))).toEqual([]);
+		expect(specAt(t.find(8))?.body).toBe(before);
+	});
+
+	test("a busy second slot builds instead of triaging another issue", async () => {
+		const t = setup(
+			[specced(7, "ready-for-agent"), issue(8, "needs-triage")],
+			[triageConcert("c1", 9, "running")],
+		);
+		await t.run();
+		expect(t.starts.map(started)).toEqual(["perform slice.ts"]);
+		expect(t.starts[0]).toContain(`${MILESTONE}.i7`);
+	});
+
+	test("a running issue's tour is skipped when picking the other slot", async () => {
+		const triage = setup(
+			[issue(7, "needs-triage"), issue(8, "needs-triage")],
+			[sliceConcert("s1", 7, "running")],
+		);
+		await triage.run();
+		expect(triage.starts.map(started)).toEqual(["perform triage.ts"]);
+		expect(triage.starts[0]).toContain(`${MILESTONE}.i8`);
+		expect(triage.find(7).labels).toContain("state/needs-triage");
+		expect(triage.find(7).comments).toEqual([]);
+
+		const build = setup(
+			[specced(7, "ready-for-agent"), specced(8, "ready-for-agent")],
+			[triageConcert("c1", 7, "running")],
+		);
+		const before = specAt(build.find(7))?.body;
+		await build.run();
+		expect(build.starts.map(started)).toEqual(["perform slice.ts"]);
+		expect(build.starts[0]).toContain(`${MILESTONE}.i8`);
+		expect(specAt(build.find(7))?.body).toBe(before);
+	});
+
+	test.each([
+		["review encore", "slice"],
+		["stack review", "epic"],
+	])("a running triage on the tour holds back its %s", async (_, kind) => {
+		if (kind === "epic") {
+			const t = epicWith("in-review");
+			t.concerts.push(triageConcert("c1", 9, "running"));
+			await t.run();
+			expect(t.starts).toEqual([]);
+			return;
+		}
+		const t = setup(
+			[specced(7, "in-review", { slice: "s1", concert: "s1", review: 3 })],
+			[triageConcert("c1", 7, "running"), sliceConcert("s1", 7)],
+		);
+		t.pulls.push(pullOf(31, 7));
+		t.reviews[31] = [review(5)];
+		await t.run();
+		expect(t.starts).toEqual([]);
+	});
+
+	test("starts a stack review while a masterclass runs", async () => {
+		const t = epicWith("in-review");
+		t.concerts.push(masterclassConcert("m1", "running"));
+		await t.run();
+		expect(t.starts.map(started)).toEqual(["perform review.ts"]);
+	});
+});
+
+// Seam: the tick reads the external maestro list, whose tour, composition and limit filters act before its window.
+describe("concerts beyond the milestone window", () => {
+	function listFromMaestro(t: ReturnType<typeof setup>, concerts: Concert[]) {
+		const bin = join(t.options.dir, "maestro-list");
+		writeFileSync(
+			bin,
+			`#!${process.execPath}
+const args = process.argv.slice(2);
+const value = (flag) => args[args.indexOf(flag) + 1];
+const tour = value("--tour");
+const composition = args.includes("--composition") ? value("--composition") : undefined;
+const limit = Number(value("--limit"));
+const rows = ${JSON.stringify(concerts)};
+console.log(JSON.stringify(rows.filter((c) => (c.tour === tour || c.tour?.startsWith(tour + ".")) && (!composition || c.pack + "." + c.composition === composition)).slice(0, limit)));
+`,
+			{ mode: 0o755 },
+		);
+		t.maestro.concerts = maestro(bin).concerts;
+	}
+
+	const newer = Array.from({ length: 25 }, (_, i) => reviewConcert(`r${i}`));
+
+	test("a running slice still occupies its slot behind more than twenty newer reviews", async () => {
+		const t = setup([specced(7, "ready-for-agent"), issue(8, "needs-triage")]);
+		listFromMaestro(t, [...newer, sliceConcert("s1", 9, "running")]);
+		await t.run();
+		expect(t.starts.map(started)).toEqual(["perform triage.ts"]);
+		expect(t.starts[0]).toContain(`${MILESTONE}.i8`);
+	});
+
+	test("routes a settled triage behind more than twenty newer reviews", async () => {
+		const t = setup([issue(7, "needs-triage")], [], settled(ready));
+		listFromMaestro(t, [...newer, triageConcert("c1", 7)]);
+		t.options.routeOnly = true;
+		await t.run();
+		expect(t.find(7).labels).toContain("state/ready-for-agent");
+		expect(dataAt(t.find(7)).concert).toBe("c1");
+		expect(t.starts).toEqual([]);
+	});
+});
+
 describe("a stack review", () => {
 	test("starts once the epic's last child is in review, over main from the epic's base to its PR head", async () => {
 		const t = epicWith("in-review");
@@ -2369,6 +2545,7 @@ test("a concert's title is its issue's, cut with an ellipsis past 60 characters"
 	expect(titled("x".repeat(61))).toBe(`factory: ${"x".repeat(59)}…`);
 });
 
+// Seam: a tick starts a masterclass with lessons and reports from settled concerts.
 describe("masterclass", () => {
 	/** `count` settled factory runs on issues `from` and up, newest first, slices and triages in turn. */
 	const runs = (from: number, count: number) =>
@@ -2398,6 +2575,122 @@ describe("masterclass", () => {
 				"",
 			]).flat(),
 		].join("\n");
+
+	test("a running triage prevents an overdue masterclass while another settle is routed", async () => {
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[
+				triageConcert("c2", 9, "running"),
+				triageConcert("c1", 7),
+				...runs(50, 20),
+			],
+			settled({
+				...base,
+				verdict: "needs-info",
+				risk: "medium",
+				questions: [{ ask: "Who?", options: [], context: [] }],
+			}),
+		);
+		await t.run();
+		expect(t.find(7).labels).toContain("state/needs-info");
+		expect(t.starts).toEqual([]);
+	});
+
+	test("a running slice leaves the second slot to an overdue masterclass, then triage, then a due masterclass", async () => {
+		const running = sliceConcert("s1", 1, "running");
+		const overdue = setup(
+			[issue(7, "needs-triage")],
+			[running, ...runs(50, 20)],
+		);
+		await overdue.run();
+		expect(overdue.starts.map(started)).toEqual(["perform masterclass.ts"]);
+
+		const intake = setup(
+			[issue(7, "needs-triage")],
+			[running, ...runs(50, 10)],
+		);
+		await intake.run();
+		expect(intake.starts.map(started)).toEqual(["perform triage.ts"]);
+
+		const due = setup([], [running, ...runs(50, 10)]);
+		await due.run();
+		expect(due.starts.map(started)).toEqual(["perform masterclass.ts"]);
+	});
+
+	test("a failed masterclass is not retried after only a newer stack review", async () => {
+		const t = setup(
+			[],
+			[
+				reviewConcert("r1"),
+				masterclassConcert("m1", "failed"),
+				...runs(50, 20),
+			],
+			{
+				m1: failed("boom"),
+			},
+		);
+		await t.run();
+		expect(t.starts).toEqual([]);
+	});
+
+	/** Concert `c` with the start and settle times maestro lists. */
+	const timed = (c: Concert, startedAt: number, settledAt?: number) => ({
+		...c,
+		startedAt,
+		settledAt,
+	});
+	const older = Array.from({ length: 9 }, (_, i) =>
+		timed(sliceConcert(`o${i}`, i + 1, "rejected"), i + 1, i + 2),
+	).reverse();
+	const okMasterclass = {
+		m0: { status: "ok", outputs: { masterclass: { proposals: [] } } },
+	};
+
+	test("a failed masterclass is not retried on a slice that settled before it failed", async () => {
+		const t = setup(
+			[],
+			[
+				timed(sliceConcert("s9", 99, "rejected"), 15, 18),
+				timed(masterclassConcert("m1", "failed"), 10, 20),
+				...older,
+			],
+			{ m1: failed("boom") },
+		);
+		await t.run();
+		expect(t.starts).toEqual([]);
+	});
+
+	test("retries a failed masterclass after an older slice settles", async () => {
+		const concerts = [
+			timed(masterclassConcert("m1", "failed"), 100, 150),
+			timed(sliceConcert("long", 99, "running"), 90),
+			...older,
+		];
+		const t = setup([], concerts, { m1: failed("boom") });
+		await t.run();
+		expect(t.starts).toEqual([]);
+		concerts[1] = timed(sliceConcert("long", 99, "rejected"), 90, 160);
+		await t.run();
+		expect(t.starts.map(started)).toEqual(["perform masterclass.ts"]);
+	});
+
+	test("counts a slice that started before an ok masterclass and settled after it began", async () => {
+		const newer = Array.from({ length: 9 }, (_, i) =>
+			timed(sliceConcert(`n${i}`, 20 + i, "rejected"), 200 + i, 210 + i),
+		).reverse();
+		const t = setup(
+			[],
+			[
+				...newer,
+				timed(masterclassConcert("m0"), 100, 150),
+				timed(sliceConcert("x", 50, "rejected"), 50, 120),
+				...older,
+			],
+			okMasterclass,
+		);
+		await t.run();
+		expect(t.starts.map(started)).toEqual(["perform masterclass.ts"]);
+	});
 
 	test("starts once ten factory runs settled since the last ok masterclass, on their lessons oldest first", async () => {
 		const ten = runs(50, 10);
@@ -2688,6 +2981,30 @@ describe("masterclass", () => {
 		concerts: ["c1"],
 	});
 
+	test("files a settled masterclass's proposals after a newer slice starts, only once", async () => {
+		const t = setup(
+			[],
+			[sliceConcert("s1", 7, "running"), masterclassConcert("m1")],
+			{
+				m1: {
+					status: "ok",
+					outputs: { masterclass: { proposals: [proposal("one")] } },
+				},
+			},
+		);
+		t.options.routeOnly = true;
+		await t.run();
+		expect(t.writes.filter((w) => w.startsWith("file"))).toHaveLength(1);
+		expect(t.find(100).labels).toEqual([
+			"state/needs-approval",
+			"kind/enhancement",
+			"maestro-tm:masterclass",
+		]);
+		await t.run();
+		expect(t.writes.filter((w) => w.startsWith("file"))).toHaveLength(1);
+		expect(t.starts).toEqual([]);
+	});
+
 	test("an ok masterclass newest files each proposal in needs-approval once", async () => {
 		const proposals = [proposal("one"), proposal("two")];
 		const t = setup([], [masterclassConcert("m1"), ...runs(50, 10)], {
@@ -2826,14 +3143,48 @@ describe("masterclass", () => {
 		expect(readFileSync(lessons, "utf8")).toBe(lessonsOf(40, 30, 58));
 	});
 
+	test("reads an unread long-running slice even behind thirty newer factory runs", async () => {
+		const newer = Array.from({ length: 9 }, (_, i) =>
+			timed(sliceConcert(`n${i}`, 100 + i, "rejected"), 200 + i, 220 + i),
+		).reverse();
+		const read = Array.from({ length: 30 }, (_, i) =>
+			timed(sliceConcert(`r${i}`, 200 + i, "rejected"), 60 + i, 90 + i / 10),
+		).reverse();
+		const long = timed(sliceConcert("long", 99, "rejected"), 50, 120);
+		const t = setup(
+			[],
+			[...newer, timed(masterclassConcert("m0"), 100, 150), ...read, long],
+			okMasterclass,
+			undefined,
+			{
+				reports: {
+					long: {
+						...NO_REPORT,
+						lessons: ["long lesson"],
+						obstacles: ["long obstacle"],
+					},
+				},
+			},
+		);
+		await t.run();
+		expect(t.starts.map(started)).toEqual(["perform masterclass.ts"]);
+		const args = t.starts[0] ?? [];
+		expect(readFileSync(argAfter(args, "--lessons"), "utf8")).toContain(
+			"## long · v0.1.0.i99\n\n- long lesson\n",
+		);
+		expect(readFileSync(argAfter(args, "--reports"), "utf8")).toContain(
+			"## long · v0.1.0.i99\n\n- long obstacle\n",
+		);
+	});
+
 	test("reads the newest 30 factory runs beside the hand slices since the watermark", async () => {
 		const all = runs(30, 40);
-		const mark = { ...masterclassConcert("m0"), startedAt: 500 };
+		const mark = { ...masterclassConcert("m0"), startedAt: 157.5 };
 		const hand = { ...sliceConcert("h1", 1), tour: "trial", startedAt: 1000 };
 		const t = setup(
 			[],
 			[...all.slice(0, 12), hand, mark, ...all.slice(12)],
-			{},
+			okMasterclass,
 			undefined,
 			{
 				reports: {
@@ -2910,14 +3261,17 @@ describe("a tick's milestone and maestro list", () => {
 		writeFileSync(
 			bin,
 			`#!${process.execPath}
-import { writeFileSync } from "node:fs";
-writeFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)));
+import { renameSync, writeFileSync } from "node:fs";
+const call = ${JSON.stringify(calls)} + "." + process.pid;
+writeFileSync(call, JSON.stringify(process.argv.slice(2)));
+renameSync(call, ${JSON.stringify(calls)});
 console.log(${JSON.stringify(JSON.stringify(answer))});
 process.exit(2);
 `,
 			{ mode: 0o755 },
 		);
-		const forge = fakeForge([]).forge;
+		const landing = fakeLanding();
+		const forge = fakeForge([], undefined, landing.events).forge;
 		const lookedUp: string[] = [];
 		const said: string[] = [];
 		forge.milestone = async (title) => {
@@ -2929,14 +3283,14 @@ process.exit(2);
 				{
 					forge,
 					maestro: maestro(bin),
-					landing: fakeLanding().landing,
+					landing: landing.landing,
 					lock: () => true,
 					say: (line) => said.push(line),
 					has: () => false,
 				},
-				{ milestone, presets: [], dir, cache: dir },
+				{ milestone, presets: [], dir, cache: dir, routeOnly: true },
 			);
-		return { run, calls, lookedUp, said };
+		return { run, calls, lookedUp, said, events: landing.events };
 	}
 
 	test("the tick and --tour agree on each milestone's masterclass tour", async () => {
@@ -3026,14 +3380,20 @@ process.exit(2);
 		}
 	});
 
-	test("a valid milestone still waits for its running concert", async () => {
+	test("a valid milestone routes and syncs while its concert runs", async () => {
 		for (const milestone of [
 			"factory-self-build",
 			"release-2.build-3",
 			"a".repeat(52),
 		]) {
 			const t = boundaryTick(milestone, [
-				{ id: "c1", status: "running", pack: "slice", composition: "slice" },
+				{
+					id: "c1",
+					status: "running",
+					pack: "slice",
+					composition: "slice",
+					tour: `${milestone}.i1`,
+				},
 			]);
 			await t.run();
 			expect(t.lookedUp).toEqual([milestone]);
@@ -3042,7 +3402,7 @@ process.exit(2);
 				"--tour",
 				milestone,
 			]);
-			expect(t.said).toEqual(["concert c1 is still running"]);
+			expect(t.events).toEqual(["head main", "fetch"]);
 		}
 	});
 

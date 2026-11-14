@@ -7,10 +7,13 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { isTourSlug, TOUR_MAX_LENGTH } from "@maestro/core";
 import {
+	busySlots,
 	isSlice,
 	isStackReview,
 	isTriage,
+	listConcerts,
 	masterclassTour,
+	type Slots,
 	startSlice,
 	startStackReview,
 	startTriage,
@@ -409,13 +412,24 @@ async function settleSlice(tick: Tick, entry: Entry, id: string) {
 	return fail(tick, entry, id, result.status, reason);
 }
 
-/** The newest triage, slice or stack review of `entry`'s tour the tick has yet to route. */
-function unrouted(tick: Tick, { issue, data }: Entry) {
+/** The concerts of `issue`'s tour, newest first. */
+const onTour = (tick: Tick, issue: Issue) => {
 	const tour = tourOf(tick.milestone, issue.number);
-	const concert = tick.concerts.find(
-		(c) => c.tour === tour && (isSlice(c) || isTriage(c) || isStackReview(c)),
+	return tick.concerts.filter((c) => c.tour === tour);
+};
+
+/** The newest triage, slice or stack review of `entry`'s tour the tick has yet to route; none while it runs. */
+function unrouted(tick: Tick, { issue, data }: Entry) {
+	const concert = onTour(tick, issue).find(
+		(c) => isSlice(c) || isTriage(c) || isStackReview(c),
 	);
+	if (concert?.status === "running") return undefined;
 	return concert?.id === data.concert ? undefined : concert;
+}
+
+/** Whether no concert of `issue`'s tour runs, so a step may triage, build, bounce or queue it. */
+function idle(tick: Tick, issue: Issue) {
+	return !onTour(tick, issue).some((c) => c.status === "running");
 }
 
 /** Whether `issue` is still where `concert` left it: being built for a slice, in intake for a triage. */
@@ -897,7 +911,7 @@ async function revision(
  */
 async function revise(tick: Tick, entries: Entry[]) {
 	const reviewed = entries
-		.filter((e) => stateOf(e.issue) === "in-review")
+		.filter((e) => stateOf(e.issue) === "in-review" && idle(tick, e.issue))
 		.sort((a, b) => a.issue.number - b.issue.number);
 	if (!reviewed.length) return true;
 	const pulls = await tick.forge.pulls();
@@ -931,6 +945,7 @@ async function stackReview(tick: Tick, entries: Entry[]) {
 	let found: Promise<Pull[]> | undefined;
 	const pulls = () => (found ??= tick.forge.pulls());
 	for (const entry of entries) {
+		if (!idle(tick, entry.issue)) continue;
 		const pull = await reviewDue(entry, entries, pulls);
 		const { base } = entry.data;
 		if (!pull || !base) continue;
@@ -1021,7 +1036,9 @@ async function retriage(tick: Tick, { issue, data }: Entry, spec: Spec) {
  */
 async function build(tick: Tick, entries: Entry[]) {
 	if (!(await revise(tick, entries))) return false;
-	for (const entry of buildable(entries, await tick.forge.pinned())) {
+	for (const entry of buildable(entries, await tick.forge.pinned()).filter(
+		(e) => idle(tick, e.issue),
+	)) {
 		const spec = entry.data.result?.spec;
 		if (!spec) continue;
 		const waiting = (await tick.forge.blockers(entry.issue.number)).sort(
@@ -1086,7 +1103,9 @@ async function closedCited(tick: Tick, issue: number, text: string) {
  */
 async function triage(tick: Tick, entries: Entry[]) {
 	const issue = await pick(
-		entries.filter((e) => !e.data.pending).map((e) => e.issue),
+		entries
+			.filter((e) => !e.data.pending && idle(tick, e.issue))
+			.map((e) => e.issue),
 		await tick.forge.pinned(),
 		async (n) => (await tick.forge.blockers(n)).length === 0,
 	);
@@ -1141,10 +1160,17 @@ async function triage(tick: Tick, entries: Entry[]) {
 	return false;
 }
 
+/** The tick's steps: route and sync, then each start step whose slot is free, in pick order. */
+const stepsFor = (busy: Slots) => [
+	route,
+	sync,
+	...(busy.code ? [] : [stackReview, build]),
+	...(busy.second ? [] : [overdueMasterclass, triage, masterclass]),
+];
+
 /**
- * One tick: no action when another tick holds the lock, the tour manager is halted or a concert of the milestone runs;
- * else it routes settled concerts and a settled masterclass, syncs, and starts one stack review, else one build, else
- * a masterclass once overdue, else one triage, else a masterclass once due, or none under `routeOnly`. Each step returns whether the tick goes on.
+ * One tick: routes settled concerts, syncs, and starts at most one concert in a free slot; the order is in
+ * `docs/agents/factory.md`, One tick. Each step returns whether the tick goes on.
  * @throws Error when the milestone does not exist, or the forge or maestro fails or answers what the tick cannot read.
  */
 export async function tick(deps: Deps, options: Options): Promise<void> {
@@ -1158,9 +1184,8 @@ export async function tick(deps: Deps, options: Options): Promise<void> {
 		throw new Error(
 			`no milestone ${options.milestone} upstream\nCreate it, or set ${MILESTONE_KEY} or --milestone to an existing one`,
 		);
-	const concerts = await deps.maestro.concerts(options.milestone);
-	const running = concerts.find((c) => c.status === "running");
-	if (running) return deps.say(`concert ${running.id} is still running`);
+	const concerts = await listConcerts(deps.maestro, options.milestone);
+	const busy = busySlots(concerts);
 	const login = await deps.forge.login();
 	const main = await deps.forge.head(BASE);
 	await deps.landing.fetch();
@@ -1174,17 +1199,7 @@ export async function tick(deps: Deps, options: Options): Promise<void> {
 		main,
 		closed: () => (closed ??= deps.forge.closed(CLOSED)),
 	};
-	const steps = options.routeOnly
-		? [route, sync]
-		: [
-				route,
-				sync,
-				stackReview,
-				build,
-				overdueMasterclass,
-				triage,
-				masterclass,
-			];
+	const steps = options.routeOnly ? [route, sync] : stepsFor(busy);
 	for (const step of steps) {
 		const entries = await load(tick);
 		if (!entries || !(await step(tick, entries))) return;

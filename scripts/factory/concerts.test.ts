@@ -1,16 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
+	busySlots,
 	isMasterclass,
 	isSlice,
 	isStackReview,
 	isTriage,
+	listConcerts,
 	startMasterclass,
 	startSlice,
 	startStackReview,
 	startTriage,
 } from "./concerts";
 import type { Issue } from "./forge";
+import type { Concert } from "./maestro";
 import {
 	BOT,
 	fakeForge,
@@ -372,5 +375,53 @@ describe("recognising a concert", () => {
 		expect(isMasterclass(mine, MILESTONE)).toBe(true);
 		expect(isMasterclass(mine, "v0.2.0")).toBe(false);
 		expect(isMasterclass(concert("triage", mine.tour), MILESTONE)).toBe(false);
+	});
+});
+
+describe("the busy slots", () => {
+	const running = (pack: string): Concert => ({
+		id: "c1",
+		status: "running",
+		pack,
+		composition: pack,
+	});
+
+	test.each([
+		["slice", { code: true, second: false }],
+		["review", { code: true, second: false }],
+		["triage", { code: false, second: true }],
+		["masterclass", { code: false, second: true }],
+	])("a running %s fills its slot", (pack, slots) => {
+		expect(busySlots([running(pack)])).toEqual(slots);
+	});
+
+	test("a settled concert fills no slot", () => {
+		expect(busySlots([{ ...running("slice"), status: "ok" }])).toEqual({
+			code: false,
+			second: false,
+		});
+	});
+});
+
+describe("listing a milestone's concerts", () => {
+	test("orders concerts with the same start time by descending id, as maestro does", async () => {
+		const slice: Concert = {
+			id: "a1",
+			status: "ok",
+			pack: "slice",
+			composition: "slice",
+			tour: `${MILESTONE}.i7`,
+			startedAt: 5,
+		};
+		const triage: Concert = {
+			...slice,
+			id: "b2",
+			status: "running",
+			pack: "triage",
+			composition: "triage",
+		};
+		const { maestro } = fakeMaestro([slice, triage], {}, {});
+		const listed = await listConcerts(maestro, MILESTONE);
+		expect(listed.map((c) => c.id)).toEqual(["b2", "a1"]);
 	});
 });

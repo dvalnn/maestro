@@ -206,10 +206,21 @@ export function fakeMaestro(
 	const recorded: Record<string, string> = {};
 	const applied: string[] = [];
 	let refusal: string | undefined;
+	const stamped = concerts.some((c) => c.startedAt !== undefined);
 	const maestro: Maestro = {
-		concerts: async (tour, limit = 20) =>
+		// Real maestro stamps every concert; a list with no times takes its place in `concerts`, newest first.
+		concerts: async (tour, limit = 20, kind) =>
 			concerts
-				.filter((c) => c.tour === tour || c.tour?.startsWith(`${tour}.`))
+				.map((c, i) => ({
+					...c,
+					startedAt: stamped ? c.startedAt : concerts.length - i,
+				}))
+				.filter(
+					(c) =>
+						(c.tour === tour || c.tour?.startsWith(`${tour}.`)) &&
+						(!kind ||
+							(c.pack === kind.pack && c.composition === kind.composition)),
+				)
 				.slice(0, limit),
 		result: async (id) => {
 			const result = results[id];

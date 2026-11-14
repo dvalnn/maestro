@@ -89,7 +89,7 @@ closed issue is no label: the forge's closed state.
 
 ## One tick
 
-The double-bordered step is detailed under Routing a settle.
+`route` is zoomed under Routing a settle, and `pick` below the notes.
 
 ```mermaid
 flowchart TD
@@ -97,21 +97,11 @@ flowchart TD
     L -->|yes| X(["exit"])
     L -->|no| H{"halted? ¹"}
     H -->|yes| X
-    H -->|no| C{"concert?"}
-    C -->|running| X
-    C -->|"settled or none"| B["pin main ²"]
-    B -->|settled| S[["route"]]
-    B -->|none| SY
+    H -->|no| B["pin main ²"]
+    B --> S[["route"]]
     S --> SY["sync ³"]
-    SY --> P{"pick ⁴"}
-    P --> SR["stack review"]
-    P --> E["encore"]
-    P --> SL["build"]
-    P -->|overdue| MO["masterclass"]
-    P --> TR["triage"]
-    P -->|due| MC["masterclass"]
-    P -->|nothing| X
-    SR & E & SL & MO & TR & MC --> W["write back ⁵"] --> X
+    SY --> P[["pick ⁴"]]
+    P --> W["write back ⁵"] --> X
 ```
 
 1. Until the `maestro-tm:halt` issue closes (Rules, Policy: Halt).
@@ -119,51 +109,101 @@ flowchart TD
    Tick base).
 3. A merged PR closes its issue through its `Closes #N`; closed dependencies free tickets; an approved split files its
    children (Rules, Triage: Splits) and its last closed child closes the epic.
-4. First match wins, in the order of the arrows (Rules, Policy: Pick order). `--route-only` routes and syncs but starts
-   nothing.
+4. Zoomed below. It starts at most one concert, in a free slot (Rules, Policy: Pick order and One concert per slot).
+   `--route-only` routes and syncs but starts nothing.
 5. Set the labels, edit the spec comment, post any question comment, and rewrite the closing line on a new version
    (Forge surfaces).
 
+The pick step. The first step that starts a concert ends the pick; one that starts none passes on, along `none`:
+
+```mermaid
+flowchart TD
+    P(["pick"]) --> C{"code slot free?"}
+    C -->|yes| SR{"stack review?"}
+    C -->|no| Q
+    SR -->|none| E{"encore?"}
+    E -->|none| SL{"build?"}
+    SL -->|none| Q{"second slot free?"}
+    Q -->|yes| MO{"overdue masterclass?"}
+    Q -->|no| X(["none started"])
+    MO -->|none| TR{"triage?"}
+    TR -->|none| MC{"due masterclass?"}
+    MC -->|none| X
+    SR -->|starts| S(["one started"])
+    E -->|starts| S
+    SL -->|starts| S
+    MO -->|starts| S
+    TR -->|starts| S
+    MC -->|starts| S
+```
+
 ## Routing a settle
 
-Red marks the halt.
+By the kind of concert that settled, each zoomed below. Red marks the halt.
 
 ```mermaid
 flowchart TD
     S(["settled"]) --> M{"moved? ¹"}
+    M -->|yes| PK["needs-info"]
     M -->|no| K{"concert"}
-    K -->|triage| V{"verdict"}
+    K -->|triage| TR[["triage"]]
+    K -->|slice| SL[["slice"]]
+    K -->|"stack review"| SV[["stack review"]]
+    K -->|masterclass| PR["needs-approval ²"]
+```
+
+1. The owner moved the ticket during the run: a slice is parked, a triage's verdict dropped (Rules, Triage: Moved during
+   a run).
+2. One issue per proposal, a slice's obstacles and sightings among what it merges (Rules, Masterclass).
+
+A triage:
+
+```mermaid
+flowchart TD
+    V{"verdict"}
     V -->|"low, medium"| RA["ready-for-agent"]
     V -->|"high, split"| NA["needs-approval"]
     V -->|dup| DU["duplicate"]
-    V -->|question| NI1["needs-info"]
-    V -->|failed| HALT
-    K -->|slice| O{"outcome"}
-    O -->|ok| LAND["land ²"] --> IR["in-review"]
-    O -->|"rejected ³"| A{"attempts left?"}
-    A -->|yes| RA2["ready-for-agent"]
-    A -->|no| NI2["needs-info"]
-    O -->|"blocked ⁴"| NI3["needs-info"]
-    O -->|"failed, not blocked"| HALT["halt"]
-    K -->|masterclass| PR["needs-approval ⁵"]
-    K -->|"stack review"| SV{"outcome"}
-    SV -->|ok| ARM["arm the last child"]
-    SV -->|"rejected ⁶"| FD["the last child's encore"]
-    SV -->|failed| HALT
-    M -->|yes| PK["needs-info"]
+    V -->|question| NI["needs-info"]
+    V -->|failed| HALT["halt"]
 
     classDef fault stroke:#e5534b,stroke-width:3px
     class HALT fault
 ```
 
-1. The owner moved the ticket during the run: a slice is parked, a triage's verdict dropped (Rules, Triage: Moved during
-   a run).
-2. Rules, Landing and PRs: Landing.
-3. A slice whose last reviewed lane holds no patch settles `rejected` with `the slice changed nothing` (Rules, Build:
+A slice:
+
+```mermaid
+flowchart TD
+    O{"outcome"}
+    O -->|ok| LAND["land ¹"] --> IR["in-review"]
+    O -->|"rejected ²"| A{"attempts left?"}
+    A -->|yes| RA["ready-for-agent"]
+    A -->|no| NI["needs-info"]
+    O -->|"blocked ³"| NB["needs-info"]
+    O -->|"failed, not blocked"| HALT["halt"]
+
+    classDef fault stroke:#e5534b,stroke-width:3px
+    class HALT fault
+```
+
+1. Rules, Landing and PRs: Landing.
+2. A slice whose last reviewed lane holds no patch settles `rejected` with `the slice changed nothing` (Rules, Build:
    Attempts).
-4. Rules, Build: Blocked.
-5. One issue per proposal, a slice's obstacles and sightings among what it merges (Rules, Masterclass).
-6. Rules, Build: Stack review.
+3. Rules, Build: Blocked.
+
+A stack review (Rules, Build: Stack review):
+
+```mermaid
+flowchart TD
+    SV{"outcome"}
+    SV -->|ok| ARM["arm the last child"]
+    SV -->|rejected| FD["the last child's encore"]
+    SV -->|failed| HALT["halt"]
+
+    classDef fault stroke:#e5534b,stroke-width:3px
+    class HALT fault
+```
 
 ## Rules
 
@@ -177,12 +217,17 @@ flowchart TD
   owner to approve the spec, unless a stale spec's re-triage keeps the approved spec (Rules, Build: Stale spec), then
   merges as medium does. The owner merges by fast-forward, as `main` takes signed commits only. An epic's last child
   arms only once its stack review clears it (Rules, Build: Stack review).
-- **One concert at a time.** The tick starts no second one while a concert of the milestone runs.
+- **One concert per slot.** The code slot holds a slice, its encore or a stack review; the second slot holds a triage,
+  its encore or a masterclass. The tick routes and syncs on every run, then starts a concert only in a free slot. A
+  running concert holds its slot however many newer concerts of other kinds there are. A busy code slot skips the whole
+  build step, Stale spec bounces and dependency queueing included; a busy second slot skips triage and masterclass. An
+  issue whose own concert runs is neither triaged nor built, and that concert is routed once it settles. A masterclass
+  is routed and retried as Masterclass says.
 - **Pick order.** Finish work first: a stack review, then an encore of a PR with changes requested, then a build, then
-  an overdue masterclass, then triage, then a due masterclass (Rules, Masterclass). A tick that routes a settle falls
-  through and starts the next action. Within builds and within triage, an issue the owner pinned on the forge comes
-  first, in pinned order, then the rest oldest first. A build or a triage skips a ticket with an open dependency, a
-  pinned one included (Rules, Build: Dependencies).
+  an overdue masterclass, then triage, then a due masterclass (Rules, Masterclass). A tick that routes a settle still
+  starts one concert in a free slot; the next run fills the other slot. Within builds and within triage, an issue the
+  owner pinned on the forge comes first, in pinned order, then the rest oldest first. A build or a triage skips a ticket
+  with an open dependency, a pinned one included (Rules, Build: Dependencies).
 - **Halt.** These stop the tick with an open `maestro-tm:halt` issue naming the cause; closing it resumes:
   - a triage that fails, does not start or gives a malformed output: the ticket keeps its state and is triaged again;
   - a build, a stack review or a masterclass that does not start;
@@ -369,26 +414,33 @@ flowchart TD
 
 ### Masterclass
 
-A masterclass is due when the newest concert is not a masterclass and at least 10 settled slice or triage concerts on
-`<milestone>.i<n>` tours are newer than the watermark, within the milestone's newest 200 concerts. The trigger counts
-only those runs; the window is wider. It performs `.maestro/masterclass.ts` with `--lessons`, the lessons of the newest
-30 of those runs, or of every run past the watermark when more, oldest first, and of settled slices on the `release` and
-`trial` tours since the watermark, which are read but not counted or marked, `--reports`, the obstacles and sightings of
-the same runs under the same headings, a sighting as `path · cites · text`, and `--backlog`, the backlog snapshot. A
-heading of a run at or before the watermark ends in ` · read`, as an earlier masterclass read it. `settle` keeps a
-proposal only when at least one concert it cites, after dropping ids no heading of either file names, is not read: one
-citing none, or only read ones, is dropped, not refused, so one stale proposal never fails the masterclass. Fewer than
-30 runs in the 200 concerts are read as found. The **watermark** is the newest ok masterclass concert in maestro's
-record, not state the tick keeps. A failed masterclass is retried only after another factory run settles; a non-ok or
-malformed one is reported and does not halt. Once 20 factory runs are past the watermark the masterclass is overdue and
-starts ahead of triage, so a busy intake cannot starve it; the newest concert still must not be a masterclass.
+A masterclass performs `.maestro/masterclass.ts` on the lessons and reports of the factory runs, the slice and triage
+concerts settled on `<milestone>.i<n>` tours, and proposes issues from them.
 
-A proposal merges at least one lesson or one report, and its target is any repo-relative path, or `docs/adr/` for a new
-ADR. Its kind is `bug` for a defect the reports show, or `enhancement` for a promotion of lessons; an older output with
-no kind reads as an enhancement merging no reports. A settled masterclass files one `needs-approval` + `kind/<kind>` +
-`maestro-tm:masterclass` issue per proposal, only while the masterclass is the newest concert, deduplicated by a
-fingerprint over target, title and body against open issues and the 20 newest closed ones. The planner writes each
-proposal by `_plain.md`. Forge surfaces: Proposal issue shows the issue.
+- **Watermark.** The newest ok masterclass concert in maestro's record, not state the tick keeps. A factory run is
+  unread when it settled after the watermark began, or when there is none.
+- **Due.** At least 10 unread factory runs within the milestone's newest 200 concerts: the trigger counts only those
+  runs, the window is wider. The newest masterclass, of any status, must also have a factory run that settled after it.
+  So a masterclass that settles non-ok or malformed is reported, does not halt, and is retried only after another
+  factory run settles.
+- **Overdue.** At 20 unread runs it starts ahead of triage, so a busy intake cannot starve it (Policy: Pick order).
+- **Inputs.**
+  - `--lessons`: the lessons of the newest 30 factory runs, or of every unread one when more, oldest first, and of the
+    settled slices on the `release` and `trial` tours started since the watermark, which are read but neither counted
+    nor marked. Fewer than 30 runs in the 200 concerts are read as found. The heading of a run an earlier masterclass
+    read ends in ` · read`.
+  - `--reports`: the obstacles and sightings of the same runs under the same headings, a sighting as
+    `path · cites · text`.
+  - `--backlog`: the backlog snapshot.
+- **Proposals.** Each merges at least one lesson or one report, and targets a repo-relative path, or `docs/adr/` for a
+  new ADR. Its kind is `bug` for a defect the reports show, or `enhancement` for a promotion of lessons; an older output
+  with no kind reads as an enhancement merging no reports. The planner writes each by `_plain.md`. `settle` keeps a
+  proposal only when a concert it cites, after dropping ids no heading names, is unread: one citing none, or only read
+  ones, is dropped, not refused, so one stale proposal never fails the masterclass.
+- **Routing.** A settled masterclass files one `needs-approval` + `kind/<kind>` + `maestro-tm:masterclass` issue per
+  proposal (Forge surfaces: Proposal issue) on every tick until a triage or another masterclass starts after it; a
+  slice, encore or stack review starting after it does not stop that. A fingerprint over target, title and body, matched
+  against open issues and the 20 newest closed ones, files a repeat once.
 
 ## Forge surfaces
 

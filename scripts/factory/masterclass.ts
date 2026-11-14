@@ -73,10 +73,15 @@ async function fileProposals(tick: Tick, id: string, masterclass: Masterclass) {
 	}
 }
 
-/** Routes the newest concert when it is a masterclass; one that settled wrong is said, not halted on. */
+/**
+ * Routes the newest masterclass once it settled, until a triage or another masterclass starts after it; one that
+ * settled wrong is said, not halted on. A slice, an encore or a stack review starting after it does not stop its routing.
+ */
 export async function routeMasterclass(tick: Tick) {
-	const newest = tick.concerts[0];
-	if (!newest || !isMasterclass(newest, tick.milestone)) return;
+	const at = tick.concerts.findIndex((c) => isMasterclass(c, tick.milestone));
+	const newest = tick.concerts[at];
+	if (!newest || newest.status === "running") return;
+	if (tick.concerts.slice(0, at).some(isTriage)) return;
 	const masterclass = masterclassOf(await tick.maestro.result(newest.id));
 	if (typeof masterclass === "string")
 		return tick.say(`masterclass ${newest.id} ${masterclass}`);
@@ -112,29 +117,52 @@ function handRuns(
 }
 
 /**
- * The factory runs among `concerts`, newest first, that no masterclass has read: those newer than the newest ok
- * masterclass, the watermark, or all of them without one (factory.md, Rules, Masterclass). The watermark is read from
- * the record, not kept by the tick: pruning any other concert leaves it intact, and pruning it makes the older
- * masterclass, or none, the watermark, so its lessons are read again.
+ * Whether `c`, at index `i` of a listing newest first, settled after `at`, a time of the concert at index `ref`: by its
+ * settle when both times are known, else by the listing, where one listed before `ref` started, so settled, after it.
+ */
+const settledAfter = (
+	c: Concert,
+	i: number,
+	ref: number,
+	at: number | undefined,
+) =>
+	at !== undefined && c.settledAt !== undefined ? c.settledAt > at : i < ref;
+
+/**
+ * The factory runs among `concerts`, newest first, that no masterclass has read: those that settled after the newest ok
+ * masterclass, the watermark, began its reading, or all of them without one (factory.md, Rules, Masterclass). The
+ * watermark is read from the record, not kept by the tick: pruning any other concert leaves it intact, and pruning it
+ * makes the older masterclass, or none, the watermark, so its lessons are read again.
  */
 function unreadRuns(concerts: readonly Concert[], milestone: string) {
 	const mark = markOf(concerts, milestone);
-	return (mark < 0 ? concerts : concerts.slice(0, mark)).filter((c) =>
-		isFactoryRun(c, milestone),
+	const at = concerts[mark]?.startedAt;
+	return concerts.filter(
+		(c, i) =>
+			isFactoryRun(c, milestone) && (mark < 0 || settledAfter(c, i, mark, at)),
 	);
 }
 
 /**
- * The unread factory runs among `concerts`, or undefined when no masterclass is due: the newest concert is a
- * masterclass, or fewer than `due` runs are unread.
+ * The unread factory runs among `concerts`, or undefined when no masterclass is due: the newest masterclass has no
+ * factory run that settled after it, or fewer than `due` runs are unread.
  */
 function sinceWatermark(
 	concerts: readonly Concert[],
 	milestone: string,
 	due: number,
 ): Concert[] | undefined {
-	const [newest] = concerts;
-	if (!newest || isMasterclass(newest, milestone)) return undefined;
+	// The gate measures from the newest masterclass's settle, of any status, so a failed one is not retried on a run it
+	// already outlived; unread runs measure from the watermark's start, when its reading ended.
+	const last = concerts.findIndex((c) => isMasterclass(c, milestone));
+	const at = concerts[last]?.settledAt;
+	if (
+		last >= 0 &&
+		!concerts.some(
+			(c, i) => isFactoryRun(c, milestone) && settledAfter(c, i, last, at),
+		)
+	)
+		return undefined;
 	const runs = unreadRuns(concerts, milestone);
 	return runs.length >= due ? runs : undefined;
 }
@@ -252,9 +280,13 @@ async function hold(tick: Tick, entries: Entry[], due: number) {
 	if (!counted) return true;
 	const hand = await listHandRuns(tick, listed);
 	const fresh = new Set(counted.map((c) => c.id));
-	const window = listed
-		.filter((c) => isFactoryRun(c, tick.milestone))
-		.slice(0, Math.max(MASTERCLASS_READS, counted.length));
+	const readIds = new Set(
+		listed
+			.filter((c) => isFactoryRun(c, tick.milestone) && !fresh.has(c.id))
+			.slice(0, Math.max(0, MASTERCLASS_READS - counted.length))
+			.map((c) => c.id),
+	);
+	const window = listed.filter((c) => fresh.has(c.id) || readIds.has(c.id));
 	const read = new Set(window.filter((c) => !fresh.has(c.id)).map((c) => c.id));
 	const runs = hand.length
 		? [...window, ...hand].sort(
