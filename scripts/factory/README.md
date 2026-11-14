@@ -36,7 +36,7 @@ and email come from `GET /user` and author every commit the tick describes. The 
 A low-risk PR whose base moved after it was pushed cannot fast-forward, and stays open for the owner to rebase.
 
 ```sh
-bun scripts/factory/index.ts [--milestone v0.1.0] [--preset xreview]... [--route-only] [--compositions-at <revision>]
+bun scripts/factory/index.ts [--milestone v0.1.0] [--preset xscout]... [--route-only] [--compositions-at <revision>]
 ```
 
 | Flag                | Does                                                                                                          |

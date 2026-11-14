@@ -3,4 +3,6 @@ classics:
   tiered_review: { floor: small }
 profiles:
   classics/builder: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: medium } }
-  classics/consolidator: { runtime: { harness: claude, model: claude-opus-5-5, thinking: medium } }
+  classics/consolidator: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: high } }
+  classics/lens: { runtime: { harness: pi, model: github-copilot/gpt-6-luna, thinking: high } }
+  classics/deep-lens: { runtime: { harness: pi, model: github-copilot/gpt-6.1-terra, thinking: high } }

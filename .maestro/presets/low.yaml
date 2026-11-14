@@ -2,5 +2,7 @@ classics:
   build: { testFirst: false }
   tiered_review: { floor: small }
 profiles:
-  classics/builder: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: low } }
-  classics/consolidator: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: medium } }
+  classics/builder: { runtime: { harness: claude, model: claude-haiku-5-5, thinking: medium } }
+  classics/consolidator: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: high } }
+  classics/lens: { runtime: { harness: pi, model: github-copilot/gpt-6-luna, thinking: medium } }
+  classics/deep-lens: { runtime: { harness: pi, model: github-copilot/gpt-6.1-terra, thinking: medium } }

@@ -1295,7 +1295,7 @@ describe("a build", () => {
 
 	test("adds the area preset between the risk's and the tick's, each of the tick's in order", async () => {
 		const t = setup([specced(7, "ready-for-agent")]);
-		t.options.presets.push("xreview");
+		t.options.presets.push("xscout");
 		t.find(7).labels.push("area/cli");
 		t.files.push(".maestro/presets/area-cli.yaml");
 		await t.run();
@@ -1309,7 +1309,7 @@ describe("a build", () => {
 			"--preset",
 			"stub",
 			"--preset",
-			"xreview",
+			"xscout",
 		]);
 	});
 

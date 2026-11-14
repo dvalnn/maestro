@@ -1,3 +1,0 @@
-profiles:
-  classics/lens: { runtime: !replace { harness: pi, model: github-copilot/gpt-6.1-sol, thinking: medium } }
-  classics/skeptic: { runtime: !replace { harness: pi, model: github-copilot/gpt-6.1-terra, thinking: medium } }
