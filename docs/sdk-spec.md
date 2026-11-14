@@ -309,9 +309,9 @@ the IR, since packs bundle it; its `yaml` subpath also imports `yaml`. Lanes and
     validates ([Envelope](../packages/host-repo/README.md#envelope)); a name is none of `report`, `blocked`, `outcome`,
     `reason`, `lane`, `staged`, `session` or an output's, or a build error. Outputs add with the call winning on a name,
     checks are a union, and the result's outputs are typed by both: `report`, `staged`, `session`, `lane` unless it
-    reads, and each declared output. An attachment or relay named `prompt`, `lane` or `session`, a relay named after an
-    attachment, or an output named `lane`, `report`, `staged` or `session`, is a build error; an attachment named
-    `previous` is refused by the host's `validate` at compose.
+    reads, and each declared output. An attachment or relay named `prompt`, `lane` or `session`, an attachment named
+    `previous`, a relay named after an attachment, or an output named `lane`, `report`, `staged` or `session`, is a
+    build error.
 
 [^check]:
     `which` is every named check, the one named, or an inline `{ run, timeout, ... }`. Outputs: `logs`, `output` (the

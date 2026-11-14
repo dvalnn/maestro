@@ -1,4 +1,5 @@
 import type { HostText } from "@maestro/core/host";
+import { AGENT_OUT_PORTS } from "@maestro/host-repo-sdk/call";
 import {
 	compact,
 	type Enrichment,
@@ -6,7 +7,6 @@ import {
 	isPlainObject,
 } from "@maestro/ir";
 import { type EnvironmentCheck, isMark, METRIC } from "../harness/types";
-import { AGENT_OUT_PORTS } from "./config";
 import { REPORT_FIELDS, type Report } from "./frame";
 import { lastLine } from "./run-lines";
 

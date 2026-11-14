@@ -1,11 +1,4 @@
-import {
-	ARTIFACT_TYPES,
-	type ArtifactRef,
-	CORE_TYPES,
-	type JsonSchema,
-	MAESTRO_TYPE,
-	schemaMarkers,
-} from "@maestro/ir";
+import { type ArtifactRef, type JsonSchema, MAESTRO_TYPE } from "@maestro/ir";
 import {
 	BuildError,
 	type Common,
@@ -22,6 +15,9 @@ import {
 	type Types,
 } from "@maestro/sdk";
 import { hostNode } from "@maestro/sdk/host";
+import { callProblems } from "./call";
+
+export { AGENT_IN_PORTS, AGENT_OUT_PORTS, ENVELOPE_KEYS } from "./call";
 
 /** A lane version, `<concert id>.<node instance id>`. As a param, it is a lane ref to a version of an earlier concert. */
 export const Lane: Type<string> = {
@@ -196,96 +192,11 @@ const defined = <T extends object>(record: T) =>
 const nonEmpty = <V>(record: Readonly<Record<string, V>>) =>
 	Object.keys(record).length ? record : undefined;
 
-/** Whether `schema` is the type of a Markdown artifact itself. */
-const isMarkdown = (schema: JsonSchema) =>
-	typeof schema === "object" && schema[MAESTRO_TYPE] === CORE_TYPES.markdown;
-
 /** An attachment's config: its `hint` and its artifact type. */
 function attachmentConfig({ artifact, hint }: Attachment) {
 	const schema: JsonSchema = artifact.type.schema;
 	const type = typeof schema === "object" ? schema[MAESTRO_TYPE] : undefined;
 	return defined({ hint, type });
-}
-
-/** The input ports an agent has of its own, which no attachment may take. Equal to the host's `AGENT_IN_PORTS`. */
-export const AGENT_IN_PORTS = ["prompt", "lane", "session"];
-
-/** The output ports an agent has of its own, which no declared output may take. Equal to the host's `AGENT_OUT_PORTS`. */
-export const AGENT_OUT_PORTS = ["lane", "report", "staged", "session"];
-
-/** The keys of an agent's envelope, which no typed reply field takes beside the agent's output ports. Equal to the host's `ENVELOPE_KEYS`. */
-export const ENVELOPE_KEYS = ["report", "blocked", "outcome", "reason"];
-
-/**
- * Refuses an attachment, relay, output or reply field named after one of an agent's own ports or envelope keys, a relay
- * named after an attachment, a reply field named after an output, a reply field whose type holds an artifact, and a
- * relay of an artifact that is not Markdown.
- * @throws BuildError when one is.
- */
-function checkNames(
-	attachments: Attachments,
-	out: Outputs,
-	reply: Replies,
-	relay: Relays,
-): void {
-	const checks = [
-		[
-			"an attachment",
-			Object.keys(attachments),
-			AGENT_IN_PORTS,
-			"an agent's own port",
-		],
-		["a relay", Object.keys(relay), AGENT_IN_PORTS, "an agent's own port"],
-		["a relay", Object.keys(relay), Object.keys(attachments), "an attachment"],
-		["an output", Object.keys(out), AGENT_OUT_PORTS, "an agent's own port"],
-		[
-			"a reply field",
-			Object.keys(reply),
-			AGENT_OUT_PORTS,
-			"an agent's own port",
-		],
-		[
-			"a reply field",
-			Object.keys(reply),
-			ENVELOPE_KEYS.filter((k) => !AGENT_OUT_PORTS.includes(k)),
-			"an envelope key",
-		],
-		[
-			"a reply field",
-			Object.keys(reply),
-			Object.keys(out),
-			"a declared output",
-		],
-	] as const;
-	for (const [what, names, own, holder] of checks) {
-		const taken = names.find((n) => own.includes(n));
-		if (taken !== undefined)
-			throw new BuildError({
-				code: "SCOPE.name",
-				message: `'${taken}' is ${holder}, so ${what} cannot take it`,
-				hint: `Rename '${taken}'; ${what} may not take ${own.join(", ")}`,
-			});
-	}
-	const unread = Object.entries(relay).find(
-		([, { type }]) =>
-			!isMarkdown(type.schema) &&
-			schemaMarkers(type.schema).some((m) => ARTIFACT_TYPES.has(m.type)),
-	);
-	if (unread)
-		throw new BuildError({
-			code: "TYPE.relay",
-			message: `relay '${unread[0]}' is or holds an artifact that is not a Markdown output, which no relay can inline`,
-			hint: `Attach '${unread[0]}' under attachments with a hint, or relay a typed value or a Markdown output`,
-		});
-	const held = Object.entries(reply).find(([, { schema }]) =>
-		schemaMarkers(schema).some((m) => ARTIFACT_TYPES.has(m.type)),
-	);
-	if (held)
-		throw new BuildError({
-			code: "TYPE.reply",
-			message: `reply field '${held[0]}' holds an artifact, which no reply field can`,
-			hint: `Declare '${held[0]}' as an output, JsonOut or MarkdownOut, or give the field a JSON value type`,
-		});
 }
 
 /**
@@ -370,12 +281,24 @@ export function seat<
 		} = call;
 		const out: Outputs = { ...standing.out, ...callOut };
 		const reply: Replies = { ...standing.reply, ...callReply };
-		checkNames(attachments, out, reply, relay);
 		const ports = lanePorts(lane);
 		const relays = Object.entries(relay).map(([name, r]) => ({
 			name,
 			schema: r.type.schema,
 		}));
+		const config = {
+			attachments: nonEmpty(mapValues(attachments, attachmentConfig)),
+			relay: relays.length ? relays : undefined,
+			reply: nonEmpty(mapValues(reply, (t) => t.schema)),
+			out: nonEmpty(mapValues(out, (o) => o.config)),
+		};
+		const [problem] = callProblems(config);
+		if (problem)
+			throw new BuildError({
+				code: problem.rule === "name" ? "SCOPE.name" : `TYPE.${problem.field}`,
+				message: problem.message,
+				hint: problem.hint,
+			});
 		return hostNode("repo.agent", {
 			...common,
 			in: {
@@ -400,10 +323,7 @@ export function seat<
 				verdict: standing.verdict,
 				encore: standing.encore,
 				checks: union(standing.checks, checks),
-				attachments: nonEmpty(mapValues(attachments, attachmentConfig)),
-				relay: relays.length ? relays : undefined,
-				reply: nonEmpty(mapValues(reply, (t) => t.schema)),
-				out: nonEmpty(mapValues(out, (o) => o.config)),
+				...config,
 			}),
 		}) as Result<AgentOut<Omit<S, keyof C> & C, M, Omit<P, keyof R> & R>>;
 	};

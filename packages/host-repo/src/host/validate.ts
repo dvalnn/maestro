@@ -10,9 +10,11 @@ import {
 } from "@maestro/core/config";
 import type { HostSetup } from "@maestro/core/host";
 import {
-	ARTIFACT_TYPES,
+	callProblems,
+	RESERVED_ATTACHMENTS,
+} from "@maestro/host-repo-sdk/call";
+import {
 	boundOf,
-	CORE_TYPES,
 	type Diagnostic,
 	type GraphIndex,
 	type HostNode,
@@ -21,7 +23,6 @@ import {
 	isPlainObject,
 	MAESTRO_TYPE,
 	type PortRef,
-	schemaMarkers,
 } from "@maestro/ir";
 import {
 	type Harness,
@@ -57,7 +58,6 @@ import {
 	LEGACY_ROLE,
 	listed,
 	noHint,
-	RESERVED_ATTACHMENTS,
 	type RepoSetup,
 	ROLES,
 	repoSetup,
@@ -473,54 +473,14 @@ function agentChecks(
 	});
 }
 
-/** Each typed reply field of an agent that shares a port with a declared output, or whose schema holds an artifact. */
-function replyClashes({ node, config }: AgentNode): Finding[] {
-	return Object.entries(config.reply ?? {}).flatMap(([name, schema]) => {
-		const finding = (message: string, hint: string): Finding[] => [
-			{ code: "HOST.reply", node: node.id, message, hint },
-		];
-		if (Object.hasOwn(config.out ?? {}, name))
-			return finding(
-				`'${node.id}' declares '${name}' as both a reply field and an output, which share one port`,
-				`Rename the reply field or the output '${name}'`,
-			);
-		return schemaMarkers(schema).some((m) => ARTIFACT_TYPES.has(m.type))
-			? finding(
-					`'${node.id}' declares reply field '${name}' with an artifact type, which no reply field can hold`,
-					`Declare '${name}' as an output, or give the field a JSON value type`,
-				)
-			: [];
-	});
-}
-
-/** Each relay of an agent that shares a port with an attachment, repeats an earlier relay, or is or holds an artifact that is not Markdown. */
-function relayClashes({ node, config }: AgentNode): Finding[] {
-	const relays = config.relay ?? [];
-	return relays.flatMap(({ name, schema }, i) => {
-		const finding = (message: string, hint: string): Finding[] => [
-			{ code: "HOST.relay", node: node.id, message, hint },
-		];
-		if (Object.hasOwn(config.attachments ?? {}, name))
-			return finding(
-				`'${node.id}' declares '${name}' as both a relay and an attachment, which share one port`,
-				`Rename the relay or the attachment '${name}'`,
-			);
-		if (relays.findIndex((r) => r.name === name) < i)
-			return finding(
-				`'${node.id}' declares relay '${name}' twice`,
-				`Rename or drop one relay '${name}'`,
-			);
-		const markdown =
-			typeof schema === "object" &&
-			schema[MAESTRO_TYPE] === CORE_TYPES.markdown;
-		return !markdown &&
-			schemaMarkers(schema).some((m) => ARTIFACT_TYPES.has(m.type))
-			? finding(
-					`'${node.id}' relays '${name}', which is or holds an artifact that is not a Markdown output`,
-					`Attach '${name}' under attachments, or relay a typed value or a Markdown output`,
-				)
-			: [];
-	});
+/** Each name or type rule an agent's seat call breaks, which the SDK refuses at build and a hand-written graph can still break. */
+function callClashes({ node, config }: AgentNode): Finding[] {
+	return callProblems(config).map((p) => ({
+		code: `HOST.${p.field}`,
+		node: node.id,
+		message: `'${node.id}': ${p.message}`,
+		hint: p.hint,
+	}));
 }
 
 /** The checks a check node names that config does not have. */
@@ -1053,8 +1013,7 @@ export async function validateRepo(
 				: []),
 			...nodes.flatMap((r) => [...names(setup, r), ...nodeBinds(setup, r)]),
 			...agentChecks(setup, agents),
-			...agents.flatMap(replyClashes),
-			...agents.flatMap(relayClashes),
+			...agents.flatMap(callClashes),
 			...doubleExtends(graph, chained),
 			...sessionRules(graph, profiled.seatedOf, agents),
 		].map(error),

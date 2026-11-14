@@ -134,9 +134,10 @@
 											"!@maestro/ir",
 											"!@maestro/core",
 											"!@maestro/core/**",
-											"!@maestro/host-repo-sdk/yaml"
+											"!@maestro/host-repo-sdk/yaml",
+											"!@maestro/host-repo-sdk/call"
 										],
-										"message": "host-repo imports core, ir and host-repo-sdk/yaml alone."
+										"message": "host-repo imports core, ir, host-repo-sdk/yaml and host-repo-sdk/call alone."
 									},
 									{
 										"group": [

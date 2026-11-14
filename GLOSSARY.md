@@ -207,6 +207,9 @@ and compaction. Not the host's environment. [Home](packages/host-repo/README.md#
 **Seat**: A composition's slot for an agent: the profile it names and the outputs, verdict and checks the graph expects;
 config may rebind it. [Home](docs/sdk-spec.md#repo-host-sdk)
 
+**Seat call**: A composition's use of a seat, giving one agent node its task, lane, attachments, relays, declared
+outputs and reply fields. [Home](docs/sdk-spec.md#repo-host-sdk)
+
 **Work agent**: An agent that does the work: it finishes `ok` or is blocked, and never rejects.
 
 **Verdict agent**: An agent that rules on work, marked `verdict` on its node: `ok`, `rejected`, or blocked.

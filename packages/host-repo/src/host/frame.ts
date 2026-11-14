@@ -1,7 +1,7 @@
+import { PREVIOUS } from "@maestro/host-repo-sdk/call";
 import { type JsonSchema, validator, violations } from "@maestro/ir";
 import { OUTBOX, type Output, SESSION_DIR } from "../harness/index";
 import { attachmentPath } from "../profile/index";
-import { PREVIOUS } from "./config";
 
 /** Where the sandbox of a continuing session sees the copy of attachment `name` its last turn had. */
 export const previousPath = (name: string) =>

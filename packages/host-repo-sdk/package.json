@@ -6,6 +6,7 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./call": "./src/call.ts",
 		"./yaml": "./src/yaml.ts"
 	},
 	"dependencies": {

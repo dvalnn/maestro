@@ -35,12 +35,6 @@ export const SESSION_TYPE = "repo.session";
 export const LANE_PORT = "lane";
 /** The port an agent's session travels on: out of every agent, into one that continues it. */
 export const SESSION_PORT = "session";
-/** Input ports an agent may have of its own. */
-export const AGENT_IN_PORTS = ["prompt", LANE_PORT, SESSION_PORT];
-/** The attachment directory holding a continuing agent's earlier copies of its changed attachments. */
-export const PREVIOUS = "previous";
-/** The names no attachment takes: the agent's own ports, and `PREVIOUS`. */
-export const RESERVED_ATTACHMENTS = [...AGENT_IN_PORTS, PREVIOUS];
 /** The port an apply node takes its changeset on. */
 export const CHANGESET_PORT = "changeset";
 /** The key of an agent node config built before profiles, which `validate` refuses by name. */
@@ -168,12 +162,6 @@ const laneInput = (others: readonly string[]) =>
 	}) as const;
 const LANE_INPUT = laneInput(["fork", "extend", "read"]);
 
-/** Output ports every agent has; a declared output takes none of these names. */
-export const AGENT_OUT_PORTS = [LANE_PORT, "report", "staged", SESSION_PORT];
-
-/** The envelope's own keys, which no typed reply field takes beside the agent's output ports. */
-export const ENVELOPE_KEYS = ["report", "blocked", "outcome", "reason"];
-
 const OUTBOX_FILE = {
 	type: "string",
 	pattern: "^[A-Za-z0-9_][A-Za-z0-9_.-]*$",
@@ -192,10 +180,7 @@ const CURRENT_AGENT_CONFIG = {
 		checks: { type: "array", items: NAME, uniqueItems: true },
 		attachments: {
 			type: "object",
-			propertyNames: {
-				pattern: PORT_NAME,
-				not: { enum: RESERVED_ATTACHMENTS },
-			},
+			propertyNames: { pattern: PORT_NAME },
 			additionalProperties: {
 				type: "object",
 				required: ["hint"],
@@ -213,26 +198,18 @@ const CURRENT_AGENT_CONFIG = {
 				required: ["name", "schema"],
 				additionalProperties: false,
 				properties: {
-					name: {
-						type: "string",
-						pattern: PORT_NAME,
-						not: { enum: AGENT_IN_PORTS },
-					},
+					name: { type: "string", pattern: PORT_NAME },
 					schema: { type: ["object", "boolean"] },
 				},
 			},
 		},
 		reply: {
 			type: "object",
-			propertyNames: {
-				pattern: PORT_NAME,
-				not: { enum: [...AGENT_OUT_PORTS, ...ENVELOPE_KEYS] },
-			},
+			propertyNames: { pattern: PORT_NAME },
 			additionalProperties: { type: ["object", "boolean"] },
 		},
 		out: {
 			type: "object",
-			propertyNames: { not: { enum: AGENT_OUT_PORTS } },
 			additionalProperties: {
 				oneOf: [
 					{

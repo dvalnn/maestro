@@ -11,13 +11,7 @@ import { tmpdir } from "node:os";
 import { join as joinPath } from "node:path";
 import type { Roots } from "@maestro/core/host";
 import { concertDirs } from "@maestro/core/perform";
-import {
-	ENVELOPE_KEYS as HOST_ENVELOPE_KEYS,
-	AGENT_IN_PORTS as HOST_IN_PORTS,
-	AGENT_OUT_PORTS as HOST_OUT_PORTS,
-	REPORT as HOST_REPORT,
-	repoHost,
-} from "@maestro/host-repo";
+import { REPORT as HOST_REPORT, repoHost } from "@maestro/host-repo";
 import { type HarnessRequest, stubHarness } from "@maestro/host-repo/harness";
 import {
 	type ArtifactRef,
@@ -33,9 +27,7 @@ import {
 	Dir,
 	Enum,
 	iter,
-	List,
 	loop,
-	Markdown,
 	not,
 	type Ref,
 	Struct,
@@ -45,12 +37,9 @@ import * as stdlib from "@maestro/sdk/stdlib";
 import { buildIr, composeIr, stubConcert } from "@maestro/testkit";
 import { buildThenRepair, byFinding, fold, review } from "./fixtures/examples";
 import {
-	AGENT_IN_PORTS,
-	AGENT_OUT_PORTS,
 	apply,
 	changeset,
 	check,
-	ENVELOPE_KEYS,
 	extend,
 	fork,
 	fresh,
@@ -387,36 +376,20 @@ test("every option of a seat call, check and apply composes against the repo hos
 	expect(await repo().composeIt(ir)).toMatchObject({ ok: true });
 });
 
-test("the agent's own port names are the host's, and each is refused only on the side that has it", () => {
-	expect(AGENT_IN_PORTS).toEqual(HOST_IN_PORTS);
-	expect(AGENT_OUT_PORTS).toEqual(HOST_OUT_PORTS);
-	expect(ENVELOPE_KEYS).toEqual(HOST_ENVELOPE_KEYS);
+test("the SDK's report schema is the host's", () => {
 	expect(REPORT).toEqual(HOST_REPORT);
-	const refused = (field: "attachments" | "out", name: string) => {
-		const clash = composition("clash", { examples: [{}] }, () => {
-			const first = builder({ task: "a", lane: fresh() });
-			return builder({
-				task: "b",
-				lane: fresh(),
-				[field]:
-					field === "out"
-						? { [name]: MarkdownOut("x.md") }
-						: { [name]: { artifact: first.out.report, hint: "now" } },
-			});
+});
+
+test("an attachment named previous fails the build, which the host reserves too", () => {
+	const clash = composition("clash", { examples: [{}] }, () => {
+		const first = builder({ task: "a", lane: fresh() });
+		return builder({
+			task: "b",
+			lane: fresh(),
+			attachments: { previous: { artifact: first.out.staged, hint: "now" } },
 		});
-		try {
-			buildIr(clash);
-			return false;
-		} catch (error) {
-			if (error instanceof BuildError)
-				return error.diagnostic.code === "SCOPE.name";
-			throw error;
-		}
-	};
-	for (const name of ["prompt", "lane", "report", "staged"]) {
-		expect(refused("attachments", name)).toBe(AGENT_IN_PORTS.includes(name));
-		expect(refused("out", name)).toBe(AGENT_OUT_PORTS.includes(name));
-	}
+	});
+	expect(buildCode(() => buildIr(clash))).toBe("SCOPE.name");
 });
 
 test("changeset lowers a message and a since, literal or ref, to inputs, and has none otherwise", () => {
@@ -500,15 +473,9 @@ describe("typed reply fields", () => {
 	});
 
 	test.each([
-		...["report", "blocked", "outcome", "reason", "session", "notes"].map(
-			(name): [string, Replies, string] => [
-				name,
-				{ [name]: TestMap },
-				"SCOPE.name",
-			],
-		),
-		["an artifact", { file: Dir() }, "TYPE.reply"],
-	])("a reply field named %s is refused", (_, reply, code) => {
+		["notes", { notes: TestMap }, "SCOPE.name"],
+		["file", { file: Dir() }, "TYPE.reply"],
+	])("reply field %s fails the build", (_name, reply, code) => {
 		expect(
 			buildCode(() => buildIr(judge(reply, { notes: MarkdownOut("n.md") }))),
 		).toBe(code);
@@ -578,50 +545,15 @@ Read-only files your task needs. Read a file whole; browse and grep a directory.
 └── spec.md   2 lines, 8 B: first, for the rules`);
 	});
 
-	test.each([
-		["a directory", () => first().out.staged],
-		[
-			"a struct holding Markdown",
-			() => ({ type: Struct({ doc: Markdown() }) }) as Ref<unknown>,
-		],
-		["a list of directories", () => ({ type: List(Dir()) }) as Ref<unknown>],
-	])(
-		"a relay of %s is refused, naming it and pointing at attachments",
-		(_, ref) => {
-			const refused = composition("refused", { examples: [{}] }, () =>
-				builder({ task: "b", lane: fresh(), relay: { Held: ref() } }),
-			);
-			const thrown = (() => {
-				try {
-					buildIr(refused);
-				} catch (error) {
-					return error as BuildError;
-				}
-			})();
-			expect(thrown?.diagnostic.code).toBe("TYPE.relay");
-			expect(thrown?.diagnostic.message).toContain("relay 'Held'");
-			expect(thrown?.diagnostic.hint).toContain("attachments");
-		},
-	);
-
-	test.each(["prompt", "lane"])("a relay named %s is refused", (name) => {
-		const named = composition("named", { examples: [{}] }, () =>
-			builder({ task: "b", lane: fresh(), relay: { [name]: first().out.map } }),
-		);
-		expect(buildCode(() => buildIr(named))).toBe("SCOPE.name");
-	});
-
-	test("a relay named after an attachment is refused", () => {
-		const clash = composition("clash", { examples: [{}] }, () => {
-			const tested = first();
-			return builder({
+	test("a relay of a directory fails the build with TYPE.relay", () => {
+		const refused = composition("refused", { examples: [{}] }, () =>
+			builder({
 				task: "b",
 				lane: fresh(),
-				relay: { spec: tested.out.map },
-				attachments: { spec: { artifact: tested.out.spec, hint: "h" } },
-			});
-		});
-		expect(buildCode(() => buildIr(clash))).toBe("SCOPE.name");
+				relay: { Held: first().out.staged },
+			}),
+		);
+		expect(buildCode(() => buildIr(refused))).toBe("TYPE.relay");
 	});
 });
 

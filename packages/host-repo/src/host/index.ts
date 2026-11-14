@@ -68,12 +68,9 @@ export {
 export { SandboxUnavailable } from "../sandbox/index";
 export { BASE_FILE, MESSAGE_FILE, patchFiles } from "./apply";
 export {
-	AGENT_IN_PORTS,
 	AGENT_KIND,
-	AGENT_OUT_PORTS,
 	CHANGESET_PORT,
 	CHECK_KIND,
-	ENVELOPE_KEYS,
 	HOST_NAME,
 } from "./config";
 export { REPORT } from "./frame";
