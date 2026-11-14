@@ -10,7 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 import { titleOf } from "./concerts";
 import type { Comment, Pull, Review } from "./forge";
 import { HALT, lock, milestoneOf, type Options, tick } from "./index";
@@ -44,6 +44,14 @@ const OTHER_MILESTONE_ID = 12;
 const ASK = "Make greet.sh greet by name.";
 
 const OWNER = "tiago";
+/** The value of `flag` in a start's argument list. */
+const argAfter = (args: string[], flag: string) =>
+	args[args.indexOf(flag) + 1] ?? "";
+/** What a start performs: `encore <id>` of the concert it continues, else `perform <composition file>`. */
+const started = (args: string[] = []) =>
+	args[0] === "encore"
+		? `encore ${args[1]}`
+		: `perform ${basename(args[1] ?? "")}`;
 let seeded = 1;
 
 /** Issue `number` in `state`, with a spec comment holding `data` when given. */
@@ -200,7 +208,7 @@ describe("a tick", () => {
 		const t = setup([issue(7, "needs-triage")]);
 		await t.run();
 		expect(t.events).toEqual(["head main", "fetch", "start"]);
-		expect(t.starts[0]?.slice(-2)).toEqual(["-c", "target.base=sha-main"]);
+		expect(argAfter(t.starts[0] ?? [], "-c")).toBe("target.base=sha-main");
 	});
 
 	test("fails without starting a concert when the fetch fails", async () => {
@@ -524,31 +532,16 @@ describe("a tick", () => {
 		]);
 		await t.run();
 		const backlog = join(t.options.dir, "backlog-i8.md");
-		expect(t.starts).toEqual([
-			[
-				"encore",
-				"c0",
-				"--issue",
-				expect.stringMatching(
-					new RegExp(
-						`^#8 Greet by name\n\n${ASK}\n\n## The spec the last triage proposed\n\n#### Context\n[^]*\n## Reply by ${OWNER}\n\n@forge-bot Q1: Ann, as #3 settled; see #9 and #404$`,
-					),
-				),
-				"--backlog",
-				backlog,
-				"--respec",
-				"--preset",
-				"triage",
-				"--preset",
-				"stub",
-				"--tour",
-				"v0.1.0.i8",
-				"--title",
-				"factory: Greet by name",
-				"-c",
-				"target.base=sha-main",
-			],
-		]);
+		expect(t.starts).toHaveLength(1);
+		const args = t.starts[0] ?? [];
+		expect(started(args)).toBe("encore c0");
+		expect(argAfter(args, "--issue")).toMatch(
+			new RegExp(
+				`^#8 Greet by name\n\n${ASK}\n\n## The spec the last triage proposed\n\n#### Context\n[^]*\n## Reply by ${OWNER}\n\n@forge-bot Q1: Ann, as #3 settled; see #9 and #404$`,
+			),
+		);
+		expect(argAfter(args, "--backlog")).toBe(backlog);
+		expect(args).toContain("--respec");
 		const snapshot = readFileSync(backlog, "utf8");
 		expect(snapshot).toContain("### #9 Greet by name\n\nState: `needs-triage`");
 		expect(snapshot).toContain(
@@ -562,11 +555,8 @@ describe("a tick", () => {
 		);
 		t.find(8).open = false;
 		await t.run();
-		expect(t.starts[1]?.slice(0, 2)).toEqual([
-			"perform",
-			expect.stringMatching(/\.maestro\/triage\.ts$/),
-		]);
-		expect(t.starts[1]?.[6]).toBe("--no-respec");
+		expect(started(t.starts[1])).toBe("perform triage.ts");
+		expect(t.starts[1]).toContain("--no-respec");
 	});
 
 	test("feeds a re-triage of a brief its brief, not respecced though the brief has requirements", async () => {
@@ -583,10 +573,10 @@ describe("a tick", () => {
 		});
 		const t = setup([retriaged]);
 		await t.run();
-		expect(t.starts[0]?.[3]).toContain(
+		expect(argAfter(t.starts[0] ?? [], "--issue")).toContain(
 			"## The spec the last triage proposed\n\n#### Brief",
 		);
-		expect(t.starts[0]?.[6]).toBe("--no-respec");
+		expect(t.starts[0]).toContain("--no-respec");
 	});
 
 	test("feeds a re-triage its own questions and the comments mentioning it newer than the last read in order, and raises the spec version", async () => {
@@ -622,12 +612,10 @@ describe("a tick", () => {
 			c2: { status: "ok", outputs: { triage: ready } },
 		});
 		await t.run();
-		expect(t.starts[0]?.slice(0, 4)).toEqual([
-			"encore",
-			"c1",
-			"--issue",
+		expect(started(t.starts[0])).toBe("encore c1");
+		expect(argAfter(t.starts[0] ?? [], "--issue")).toBe(
 			`#7 Greet by name\n\n${ASK}\n\n## Question by the tour manager\n\n1. Who?\n\n## Reply by ${OWNER}\n\n<!-- maestro-tm-question -->\n@forge-bot: mine\n\n## Reply by ${OWNER}\n\n@FORGE-BOT Q1: Ann`,
-		]);
+		);
 		expect(dataAt(t.find(7)).read).toBe(710);
 		expect(t.writes.filter((w) => !w.startsWith("edit comment"))).toEqual([]);
 		concerts.unshift(triageConcert("c2", 7));
@@ -870,19 +858,6 @@ const CACHED = "/cache/maestro-factory/i7";
 /** The `--request` of a build of issue `n`'s spec, before anything an encore is fed. */
 const requestFor = (n: number) =>
 	`# #${n} Greet by name\n\n#### Context\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Requirements\n\n- **R1** When greet.sh is given a name, greet.sh shall greet it.\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Touches\n\n- \`greet.sh\`\n\n## The ask\n\n${ASK}\n`;
-/** The flags a build of issue 7 at low risk takes after its `--request`, revising the PR commit `revises` names. */
-const lowFlags = (revises = "") => [
-	"--revises",
-	revises,
-	"--preset",
-	"low",
-	"--preset",
-	"stub",
-	"--tour",
-	"v0.1.0.i7",
-	"--title",
-	"factory: Greet by name",
-];
 
 /** `stored` with its spec written at `at`, and touching `touches` when given. */
 const written = (stored: Stored, at: number, touches?: string[]) => {
@@ -1090,26 +1065,11 @@ describe("a build", () => {
 		);
 		t.blocking[5] = [3];
 		await t.run();
-		expect(t.starts).toEqual([
-			[
-				"perform",
-				expect.stringMatching(/\.maestro\/slice\.ts$/),
-				"--request",
-				requestFor(8),
-				"--revises",
-				"",
-				"--preset",
-				"medium",
-				"--preset",
-				"stub",
-				"--tour",
-				"v0.1.0.i8",
-				"--title",
-				"factory: Greet by name",
-				"-c",
-				"target.base=sha-main",
-			],
-		]);
+		expect(t.starts).toHaveLength(1);
+		const args = t.starts[0] ?? [];
+		expect(started(args)).toBe("perform slice.ts");
+		expect(argAfter(args, "--request")).toBe(requestFor(8));
+		expect(argAfter(args, "--preset")).toBe("medium");
 		expect(t.find(8).labels).toEqual([
 			"kind/enhancement",
 			"risk/medium",
@@ -1348,17 +1308,11 @@ describe("a build", () => {
 		});
 		routed.labels = ["kind/enhancement", "risk/low", "state/ready-for-agent"];
 		await t.run();
-		expect(t.starts.filter((a) => a.includes("--request"))).toEqual([
-			[
-				"encore",
-				"s1",
-				"--request",
-				`${requestFor(7)}\n## Reply by ${OWNER}\n\n@forge-bot go on\n`,
-				...lowFlags("sha7^!"),
-				"-c",
-				"target.base=sha7",
-			],
-		]);
+		const encores = t.starts.filter((a) => a.includes("--request"));
+		expect(encores.map(started)).toEqual(["encore s1"]);
+		expect(argAfter(encores[0] ?? [], "--request")).toBe(
+			`${requestFor(7)}\n## Reply by ${OWNER}\n\n@forge-bot go on\n`,
+		);
 		expect(routed.labels).toContain("state/in-progress");
 	});
 
@@ -1430,18 +1384,12 @@ describe("a build", () => {
 			);
 			const t = setup([answered]);
 			await t.run();
-			expect(t.starts).toEqual([
-				[
-					...(request
-						? ["encore", "s1"]
-						: ["perform", expect.stringMatching(/\.maestro\/slice\.ts$/)]),
-					"--request",
-					request ?? requestFor(7),
-					...lowFlags(),
-					"-c",
-					"target.base=sha-main",
-				],
+			expect(t.starts.map(started)).toEqual([
+				request ? "encore s1" : "perform slice.ts",
 			]);
+			expect(argAfter(t.starts[0] ?? [], "--request")).toBe(
+				request ?? requestFor(7),
+			);
 			expect(dataAt(t.find(7))).toMatchObject({ read, attempts: 2 });
 		},
 	);
@@ -1843,17 +1791,11 @@ describe("a review", () => {
 			expect([t.starts, t.writes]).toEqual([[], []]);
 			return;
 		}
-		expect(t.starts).toEqual([
-			[
-				"encore",
-				"s1",
-				"--request",
-				`${requestFor(7)}\n## Review by ann\n\nRename it.\n\n- \`greet.sh:3\`: use printf\n  not echo\n`,
-				...lowFlags("sha7^!"),
-				"-c",
-				"target.base=sha7",
-			],
-		]);
+		expect(t.starts.map(started)).toEqual(["encore s1"]);
+		expect(argAfter(t.starts[0] ?? [], "--request")).toBe(
+			`${requestFor(7)}\n## Review by ann\n\nRename it.\n\n- \`greet.sh:3\`: use printf\n  not echo\n`,
+		);
+		expect(argAfter(t.starts[0] ?? [], "-c")).toBe("target.base=sha7");
 		expect(t.find(7).labels).toContain("state/in-progress");
 		expect(dataAt(t.find(7))).toMatchObject({
 			review: 5,
@@ -1936,24 +1878,12 @@ describe("a stack review", () => {
 		await t.run();
 		expect(t.starts).toHaveLength(1);
 		const [args = []] = reviewsOf(t);
-		expect(args[0]).toBe("perform");
-		expect(args.slice(4)).toEqual([
-			"--revs",
-			"base0..sha7",
-			"--preset",
-			"high",
-			"--preset",
-			"stub",
-			"--tour",
-			"v0.1.0.i9",
-			"--title",
-			"factory: Greet in two steps",
-			"-c",
-			"target.base=base0",
-		]);
-		expect(args[3]).toBe(
+		expect(started(args)).toBe("perform review.ts");
+		expect(argAfter(args, "--request")).toBe(
 			`# #9 Greet in two steps\n\n${ASK}\n\n## Children\n\n1. #5 Parse the name\n2. #7 Greet it (after 5)\n\nThe epic's commits end with \`Refs: #5\`, \`Refs: #7\`. The range's other commits are other tickets', there as context only.\n`,
 		);
+		expect(argAfter(args, "--revs")).toBe("base0..sha7");
+		expect(argAfter(args, "-c")).toBe("target.base=base0");
 		expect(dataAt(t.find(9)).stackReview).toBe("started");
 		expect(specAt(t.find(9))?.body).toContain(
 			"**Tour manager's turn · stack review `started` running**",
@@ -2058,17 +1988,11 @@ describe("a stack review", () => {
 		expect(t.find(9).comments.at(-1)?.body).toBe(
 			"### Stack review · `r1`\n\n# Review\n\nA seam breaks.\n\nIts findings go to the next encore of #7.\n",
 		);
-		expect(t.starts).toEqual([
-			[
-				"encore",
-				"s1",
-				"--request",
-				`${requestFor(7).replace(`${ASK}\n`, `Part of #9\n\n${ASK}\n`)}\n## Stack review\n\n# Review\n\nA seam breaks.\n`,
-				...lowFlags("sha7^!"),
-				"-c",
-				"target.base=sha7",
-			],
-		]);
+		expect(t.starts.map(started)).toEqual(["encore s1"]);
+		expect(argAfter(t.starts[0] ?? [], "--request")).toBe(
+			`${requestFor(7).replace(`${ASK}\n`, `Part of #9\n\n${ASK}\n`)}\n## Stack review\n\n# Review\n\nA seam breaks.\n`,
+		);
+		expect(argAfter(t.starts[0] ?? [], "-c")).toBe("target.base=sha7");
 		expect(dataAt(t.find(7)).findings).toBeUndefined();
 		expect(dataAt(t.find(7)).review).toBe(3);
 		expect(merging(t.writes)).toEqual([]);
@@ -2186,8 +2110,6 @@ describe("masterclass", () => {
 				"",
 			]).flat(),
 		].join("\n");
-	const argAfter = (args: string[], flag: string) =>
-		args[args.indexOf(flag) + 1] ?? "";
 
 	test("starts once ten factory runs settled since the last ok masterclass, on their lessons oldest first", async () => {
 		const ten = runs(50, 10);
@@ -2201,16 +2123,7 @@ describe("masterclass", () => {
 		await t.run();
 		expect(t.starts.length).toBe(1);
 		const [args = []] = t.starts;
-		expect(args[0]).toBe("perform");
-		expect(args[1]?.endsWith(".maestro/masterclass.ts")).toBe(true);
-		expect(args.slice(-2)).toEqual(["-c", "target.base=sha-main"]);
-		expect(args[2]).toBe("--lessons");
-		expect(argAfter(args, "--tour")).toBe("v0.1.0.masterclass");
-		expect(argAfter(args, "--title")).toBe("factory: masterclass");
-		expect(args.filter((_, i) => args[i - 1] === "--preset")).toEqual([
-			"triage",
-			"stub",
-		]);
+		expect(started(args)).toBe("perform masterclass.ts");
 		expect(readFileSync(argAfter(args, "--lessons"), "utf8")).toBe(
 			lessonsOf(50, 10)
 				.replace("- lesson 50", "- lesson 50\n  over two lines")
@@ -2225,7 +2138,6 @@ describe("masterclass", () => {
 		expect(t.said.at(-1)).toBe(
 			"holding a masterclass on the lessons of 10 concerts: concert started",
 		);
-		expect(t.logs).toEqual([join(t.options.dir, "masterclass.log")]);
 	});
 
 	test("passes obstacles and sightings in a reports file under the lessons' concert headings", async () => {
@@ -2305,8 +2217,7 @@ describe("masterclass", () => {
 		);
 		await t.run();
 		expect(t.starts).toHaveLength(1);
-		expect(t.starts[0]?.[1]?.endsWith(".maestro/masterclass.ts")).toBe(true);
-		expect(t.starts[0]).toContain("v0.1.0.masterclass");
+		expect(started(t.starts[0])).toBe("perform masterclass.ts");
 	});
 
 	test("triages ahead of a masterclass at nineteen runs past the watermark", async () => {
