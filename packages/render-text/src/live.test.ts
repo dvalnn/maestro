@@ -375,6 +375,22 @@ describe("eventLine", () => {
 		]);
 	});
 
+	test("pads the instance to at most 24 cells, however long the graph's longest path, and shows a longer one whole", () => {
+		const long = `${"deep/".repeat(6)}node`;
+		const wide: Ir = {
+			...ir,
+			nodes: [...ir.nodes, { ...ir.nodes[0], id: long } as Ir["nodes"][0]],
+		};
+		const [short, deep] = eventsOf([
+			["best", "", 0, { type: "running" }],
+			[long, "", 0, { type: "running" }],
+		]).map((e) => eventLine(wide, e, VIEW));
+		expect([short, deep]).toEqual([
+			`  +0.0s  ${"best".padEnd(24)}  running`,
+			`  +0.0s  ${long}  running`,
+		]);
+	});
+
 	test("shows a host's word and detail, a kind without one as the word, an announced actor as an agent's detail", () => {
 		const worded = (word: string, detail: string) => ({
 			wording: { word, detail },

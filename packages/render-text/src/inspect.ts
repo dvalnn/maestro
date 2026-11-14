@@ -239,7 +239,18 @@ type Drawn = { read: number; lines: string[]; count: number };
 /** The event lines drawn of each `Held.events`, by row key and how they are drawn. */
 const DRAWN = new WeakMap<readonly Annotated[], Map<string, Drawn>>();
 
-/** The lines of the events of row `key`, cut at `view.columns - 1` cells; only events new since the last call are drawn. */
+/** Whether row `key` holds more than one instance: it names no single expansion and has nodes under it. */
+function holdsMany(ir: Ir, graph: GraphIndex, key: string): boolean {
+	const { node } = rowOf(graph, key);
+	return (
+		!key.includes("#") && ir.nodes.some((n) => n.id.startsWith(`${node}/`))
+	);
+}
+
+/**
+ * The lines of the events of row `key`, cut at `view.columns - 1` cells, each naming its instance only where the row
+ * holds more than one; only events new since the last call are drawn.
+ */
 function drawnOf(
 	ir: Ir,
 	graph: GraphIndex,
@@ -253,8 +264,9 @@ function drawnOf(
 	const id = `${key}\n${width}\n${view.color}`;
 	const was = byView.get(id) ?? { read: 0, lines: [], count: 0 };
 	const fresh = selected(graph, key, events.slice(was.read));
+	const named = holdsMany(ir, graph, key);
 	const lines = fresh.flatMap((e) =>
-		eventLine(ir, e, { ...view, columns: width })
+		eventLine(ir, e, { ...view, columns: width }, named)
 			.split("\n")
 			.map((l) => Bun.sliceAnsi(l, 0, width)),
 	);

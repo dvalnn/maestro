@@ -300,7 +300,7 @@ describe("watch --frames", () => {
 		const [, opened = "", ...rest] = framed.out.split(/^── (?=[a-z])/m);
 		expect(opened).toMatch(/^◆ inspect {2}echo\/echo +fake\.task +failed /m);
 		expect(opened).toMatch(/^ {2}metrics {2}tokens_in 1\.2k$/m);
-		expect(opened).toMatch(/^ +\S+ {2}echo\/echo +failed +flaky$/m);
+		expect(opened).toMatch(/^ +\+\S+ {2}failed +flaky$/m);
 		expect(rest.map((f) => f.split("\n")[0])).toEqual(["quit", "enter", "esc"]);
 		const [quit = "", again = "", back = ""] = rest;
 		expect(again).toMatch(/^◆ inspect /m);
@@ -472,7 +472,7 @@ describe("watch on a running concert", async () => {
 	});
 	/** An inspector draw that shows `echo` settled `ok`. */
 	const echoSettled = (lines: readonly string[]) =>
-		inspecting(lines) && lines.some((l) => /echo\/echo +ok$/.test(l));
+		inspecting(lines) && lines.some((l) => /^ +\+\S+ {2}ok$/.test(l));
 	const inspector = fakeScreen(
 		["\r", ESC, "q"],
 		inTurn(
@@ -560,11 +560,11 @@ describe("watch on a running concert", async () => {
 		const opened = draws.findIndex(inspecting);
 		const first = draws[opened] ?? [];
 		expect(first[3]).toMatch(/^◆ inspect {2}echo\/echo +fake\.task +running /);
-		expect(first).toContainEqual(expect.stringMatching(/echo\/echo +running$/));
+		expect(first).toContainEqual(expect.stringMatching(/^ +\+\S+ {2}running$/));
 		expect(first).toContainEqual(
-			expect.stringMatching(/echo\/echo +tool +ran bash /),
+			expect.stringMatching(/^ +\+\S+ {2}tool +ran bash /),
 		);
-		expect(first.some((l) => /echo\/echo +ok$/.test(l))).toBe(false);
+		expect(first.some((l) => /^ +\+\S+ {2}ok$/.test(l))).toBe(false);
 		const settled = draws.findIndex(echoSettled);
 		expect(settled).toBeGreaterThan(opened);
 		expect(draws[settled]?.at(-1)).toStartWith("◆ tail ");

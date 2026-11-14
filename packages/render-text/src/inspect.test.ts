@@ -267,7 +267,7 @@ describe("inspectorLines", () => {
 	});
 
 	test("cuts each event line at one cell short of the terminal, and counts an event drawn on several lines once", () => {
-		const columns = 40;
+		const columns = 30;
 		const { lines, count } = inspected("panel/lenses/lens#[spec]", {
 			settled: true,
 			columns,
@@ -318,7 +318,7 @@ describe("navigated", () => {
 		expect(scrolled.lines.at(7)).toMatch(/test-loop +running$/);
 	});
 
-	test("caps a summary too tall for the terminal, counting the lines left out, so the events keep their rows", () => {
+	test("caps a summary too tall for the terminal, counting the lines left out, so the events keep their rows, unnamed on a one-instance row", () => {
 		const f = navigated(
 			PANEL_IR,
 			seen(new Map(), events),
@@ -336,8 +336,8 @@ describe("navigated", () => {
 		]);
 		expect(f.body).toBe(3);
 		expect(f.lines.slice(8, 11)).toEqual([
-			expect.stringMatching(/test-loop\[1\]\/repair +running$/),
-			expect.stringMatching(/test-loop\[1\]\/repair +tool$/),
+			" +1m50s  running",
+			" +2m00s  tool",
 			"",
 		]);
 	});

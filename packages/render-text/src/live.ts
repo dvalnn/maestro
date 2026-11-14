@@ -757,6 +757,8 @@ const PROGRESS_WORD = "progress";
 const TIME_WIDTH = 7;
 /** The room a node path keeps per group for that group's key, a two-digit round. */
 const KEY_ROOM = "[nn]".length;
+/** The most cells the node column pads to; a longer name pushes its own line's later columns right. */
+const NODE_CAP = 24;
 /** The fewest cells a wrapped detail keeps per row, however narrow the terminal. */
 const MIN_DETAIL_WIDTH = 20;
 /** What follows a detail's first line when more lines with text follow it. */
@@ -914,27 +916,41 @@ function wrapped(segs: readonly Seg[], width: number): Seg[][] {
 	return rows;
 }
 
-/** The width of the node column: the longest node path of `ir` with room for a two-digit key per group. */
+/** The width of the node column: the longest node path of `ir` with room for a two-digit key per group, at most `NODE_CAP`. */
 const nodeWidthOf = (ir: Ir, graph: GraphIndex) =>
-	Math.max(
-		0,
-		...ir.nodes.map(
-			(n) => n.id.length + graph.groupsOf(n.id).length * KEY_ROOM,
+	Math.min(
+		NODE_CAP,
+		Math.max(
+			0,
+			...ir.nodes.map(
+				(n) => n.id.length + graph.groupsOf(n.id).length * KEY_ROOM,
+			),
 		),
 	);
 
+const nameSegs = (ir: Ir, graph: GraphIndex, event: Annotated): Seg[] => {
+	const name = flat(formatInstance(event, graph.groupsOf(event.node)));
+	return [[`${GAP}${padCells(name, nodeWidthOf(ir, graph))}`]];
+};
+
 /**
- * One event as text: the time since the concert's start, the instance, a word for what happened and its detail's first
- * line. With `view.columns` above 0 the detail wraps at that width under its own column; at 0 it stays on one line.
+ * One event as text: the time since the concert's start, the instance unless `named` is false, a word for what happened
+ * and its detail's first line. With `view.columns` above 0 the detail wraps at that width under its own column; at 0 it
+ * stays on one line.
  */
-export function eventLine(ir: Ir, event: Annotated, view: View): string {
+export function eventLine(
+	ir: Ir,
+	event: Annotated,
+	view: View,
+	named = true,
+): string {
 	const graph = indexGraph(ir);
 	const [raw, detail] = wordOf(event);
 	const word = flat(raw);
-	const name = flat(formatInstance(event, graph.groupsOf(event.node)));
 	const head: Seg[] = [
 		[elapsed(event.at - view.concert.startedAt), "dim"],
-		[`${GAP}${padCells(name, nodeWidthOf(ir, graph))}${GAP}`],
+		...(named ? nameSegs(ir, graph, event) : []),
+		[GAP],
 		[word, WORD_STYLE.get(word)],
 		[`${" ".repeat(Math.max(0, WORD_WIDTH - Bun.stringWidth(word)))}${GAP}`],
 	];
