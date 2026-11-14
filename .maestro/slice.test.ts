@@ -18,18 +18,23 @@ const finding = (id: string) => ({
 	cites: "Shape",
 });
 
-/** The checks a script can always fix, which no agent is offered (ADR 0016). */
-const FORMAT_TOOLS = ["format", "fmt"];
+/** The check a script can always fix, which no agent is offered (ADR 0016). */
+const FORMAT_TOOLS = ["fmt"];
 
-/** Every check of the project's own config but the format tools: those an agent that works on the lane may run. */
+/** Every check of the project's own config but fmt: those an agent that works on the lane may run. */
 const projectConfig = Bun.YAML.parse(
 	readFileSync(".maestro/config.yaml", "utf8"),
-) as { target: { checks: Record<string, unknown> } };
+) as { target: { checks: Record<string, { run: string }> } };
 const projectChecks = Object.keys(projectConfig.target.checks).filter(
 	(name) => !FORMAT_TOOLS.includes(name),
 );
 
-const granular = ["format", "lint", "types", "test", "fmt"].flatMap((name) => [
+test("the target offers no format check and all runs just check without a tree gate", () => {
+	expect(Object.keys(projectConfig.target.checks)).not.toContain("format");
+	expect(projectConfig.target.checks.all?.run).toBe("just check");
+});
+
+const granular = ["lint", "types", "test", "fmt"].flatMap((name) => [
 	"-c",
 	`target.checks.${name}={run: "true", hint: ${name}}`,
 ]);

@@ -23,4 +23,4 @@ jobs:
         with:
           install_args: bun just jj
       - run: bun install --frozen-lockfile
-      - run: just check
+      - run: just ci

@@ -8,7 +8,7 @@ target:
   checks:
     lint:
       run: just lint
-      hint: the domain words script
+      hint: rewrites code files with biome's safe lint fixes and import sorting, then checks the domain words
     types:
       run: just types
       hint: tsc typecheck
@@ -17,10 +17,10 @@ target:
       hint: every bun test, including .maestro
     all:
       run: just check
-      hint: format, lint, types and every test, stopping at the first failure, so run the granular checks first
+      hint: fmt and lint, which rewrite code and Markdown files, then types and every test, stopping at the first failure, so run the granular checks first
     fmt:
       run: just fmt
-      hint: rewrites files with biome and prettier; run before the format check
+      hint: rewrites code files with biome's formatter and Markdown files with prettier
 classics:
   build: { checks: [lint, types, test, all] }
   test_first: { checks: [lint, types, test, all] }

@@ -1,13 +1,20 @@
-# format check, lint, typecheck, test, in that order
-check: format lint types test
+# format, fix lints, typecheck, test, in that order
+check: fmt lint types test
 
-# check formatting
-format:
-    bunx biome check .
-    bunx prettier --check "**/*.md"
+# run check, then fail if it changed a tracked file or added an untracked one
+ci: check
+    #!/usr/bin/env bash
+    set -euo pipefail
+    changed=$(git status --porcelain --untracked-files=all)
+    if [ -n "$changed" ]; then
+      echo "just check changed these files; run just check and commit the result:" >&2
+      echo "$changed" >&2
+      exit 1
+    fi
 
-# check the domain words
+# apply Biome's safe lint fixes and import sorting without formatting, then check the domain words
 lint:
+    bunx biome check --write --formatter-enabled=false .
     bun scripts/domain-words.ts
 
 # typecheck

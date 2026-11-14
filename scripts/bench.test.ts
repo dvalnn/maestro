@@ -13,7 +13,7 @@ const SETTLE_MS = 100;
 const ATTEMPTS = 100;
 const REPLAY_MS = 30_000;
 
-const checks = ["format", "lint", "types", "test", "fmt"].flatMap((name) => [
+const checks = ["lint", "types", "test", "fmt"].flatMap((name) => [
 	"-c",
 	`target.checks.${name}={run: "true", hint: ${name}}`,
 ]);
