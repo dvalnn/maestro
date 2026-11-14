@@ -1,10 +1,4 @@
-import {
-	changeset,
-	Lane,
-	type Relays,
-	read,
-	Session,
-} from "@maestro/host-repo-sdk";
+import { Lane, read, Session } from "@maestro/host-repo-sdk";
 import {
 	BuildError,
 	code,
@@ -15,27 +9,19 @@ import {
 	List,
 	Markdown,
 	Optional,
-	Struct,
 	Text,
 	type Type,
 	use,
 } from "@maestro/sdk";
-import { heldAcross, tieredOf } from "./code";
+import { tieredOf } from "./code";
 import { requestOf, tally } from "./moves";
 import { task } from "./prompt";
 import AGAIN from "./prompts/again.md" with { type: "text" };
 import CHECKLIST from "./prompts/checklist.md" with { type: "text" };
 import TIERED from "./prompts/tiered.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
-import {
-	attachmentsOf,
-	CHECKLISTS,
-	readsOf,
-	reviewed,
-	SUBJECT,
-	TASKS,
-} from "./review";
-import { consolidator, crossLens, deepLens, lens, topLens } from "./seats";
+import { CHECKLISTS, reviewed, SUBJECT, TASKS } from "./review";
+import { crossLens, deepLens, lens, topLens } from "./seats";
 import {
 	atLeastOne,
 	Brief,
@@ -142,76 +128,59 @@ export const tieredReview = composition(
 				message: `classics.tiered_review.small, medium and large must rise, got ${small}, ${medium} and ${large}`,
 				hint: "Set classics.tiered_review.small below medium and medium below large",
 			});
-		const patches = changeset(change, { label: "patches" }).out.changeset;
-		const attached = attachmentsOf(patches, spec);
-		const picked = code(tieredOf, {
-			in: {
-				changeset: patches,
-				ignore,
-				small,
-				medium,
-				large,
-				...(floor && { floor }),
-				sections: SECTIONS,
-				lead: earlier ? task(AGAIN, TIERED) : TIERED,
-				close: CHECKLIST,
+		return tally(
+			{
+				change,
+				spec,
+				earlier,
+				brief,
+				consolidator: TASKS.consolidator(false, grounds || undefined),
+				session,
 			},
-			out: {
-				lines: Int(),
-				tier: Text(),
-				sections: List(Text()),
-				checklist: Text(),
-				...SEAT_LISTS,
+			({ attached, relay }) => {
+				const picked = code(tieredOf, {
+					in: {
+						changeset: attached.patches.artifact,
+						ignore,
+						small,
+						medium,
+						large,
+						...(floor && { floor }),
+						sections: SECTIONS,
+						lead: earlier ? task(AGAIN, TIERED) : TIERED,
+						close: CHECKLIST,
+					},
+					out: {
+						lines: Int(),
+						tier: Text(),
+						sections: List(Text()),
+						checklist: Text(),
+						...SEAT_LISTS,
+					},
+				});
+				return Object.fromEntries(
+					SEATS.map((seat) => [
+						seat,
+						{
+							results: iter.parMap(
+								picked.out[seat],
+								() =>
+									CALLS[seat]({
+										label: "lens",
+										task: picked.out.checklist,
+										lane: read(change),
+										checks,
+										relay,
+										attachments: attached,
+									}),
+								{ max: 1, onError: "continue", label: SEAT_TIERS[seat].name },
+							).out.results,
+							names: picked.out[seat],
+						},
+					]),
+				);
 			},
-		});
-		const common: Relays = brief ? { builder: brief } : {};
-		const relay = { ...(earlier && { upheld: earlier }), ...common };
-		const members = SEATS.flatMap((seat) => [
-			[
-				`${seat}Results`,
-				iter.parMap(
-					picked.out[seat],
-					() =>
-						CALLS[seat]({
-							label: "lens",
-							task: picked.out.checklist,
-							lane: read(change),
-							checks,
-							relay,
-							attachments: attached,
-						}),
-					{ max: 1, onError: "continue", label: SEAT_TIERS[seat].name },
-				).out.results,
-			],
-			[`${seat}Names`, picked.out[seat]],
-		]);
-		const held = code(heldAcross, {
-			in: { ...readsOf(attached, relay), ...Object.fromEntries(members) },
-			out: {
-				held: List(Upheld),
-				unreviewed: List(Struct({ lens: Text(), reason: Text() })),
-				delivered: Int(),
-			},
-		});
-		const consolidated = consolidator({
-			label: "consolidator",
-			task: TASKS.consolidator(false, grounds || undefined),
-			lane: read(change),
-			relay: {
-				findings: held.out.held,
-				unreviewed: held.out.unreviewed,
-				...common,
-			},
-			attachments: attached,
-		});
-		return tally({
-			lane: change,
-			session: session ?? consolidated.out.session,
-			held: held.out.held,
-			verdict: consolidated.out.verdict,
-			delivered: held.out.delivered,
-			brief,
-		});
+		);
 	},
 );
 

@@ -1,25 +1,13 @@
+import { check, extend, fresh, read, seat } from "@maestro/host-repo-sdk";
 import {
-	changeset,
-	check,
-	extend,
-	fresh,
-	read,
-	seat,
-} from "@maestro/host-repo-sdk";
-import {
-	type ArtifactRef,
 	code,
 	composition,
 	firstOk,
-	Int,
 	iter,
 	List,
 	Markdown,
 	not,
-	type Ref,
 	type Settled,
-	Struct,
-	Text,
 	use,
 	type ValueOf,
 } from "@maestro/sdk";
@@ -31,18 +19,16 @@ import {
 	Finding,
 	type Findings,
 	fixUntilClean,
-	heldOf,
 	LENSES,
 	lens,
 	panel,
 	planner,
-	type Rulings,
+	Rulings,
 	repairUntilGreen,
 	tally,
 	toMarkdown,
 	Upheld,
 } from "./index";
-import { readsOf } from "./review";
 
 type Held = ValueOf<typeof Upheld>;
 
@@ -65,15 +51,6 @@ function built() {
 /** One version of the target, sealed by a no-op check, for a read-only review to read. */
 const sealedBase = () =>
 	check(fresh(), { run: "true" }, { label: "base" }).out.lane;
-
-/** What a skeptic reads beside the lane. */
-const attach = (change: Ref<string>, spec: Ref<ArtifactRef>) => ({
-	patches: {
-		artifact: changeset(change, { label: "patches" }).out.changeset,
-		hint: "for what the change did, patch by patch",
-	},
-	spec: { artifact: spec, hint: "for what the change must do" },
-});
 
 const strongBuilder = seat("builder_strong", { profile: "classics/builder" });
 
@@ -143,21 +120,6 @@ export function carried({ upheld }: { upheld: Held[] }): { upheld: Held[] } {
 	return { upheld };
 }
 
-/** The findings of two held lists, one after the other, and how many lenses delivered across both. */
-export function joined({
-	a,
-	b,
-	aDelivered,
-	bDelivered,
-}: {
-	a: Held[];
-	b: Held[];
-	aDelivered: number;
-	bDelivered: number;
-}): { held: Held[]; delivered: number } {
-	return { held: [...a, ...b], delivered: aDelivered + bDelivered };
-}
-
 /** Lens fusion: the same lens on two harness families, a skeptic over each, one tally over both. */
 export const lensFusion = composition(
 	"lens_fusion",
@@ -168,81 +130,66 @@ export const lensFusion = composition(
 	() => {
 		const { spec, build } = built();
 		const change = build.out.lane;
-		const attached = attach(change, spec);
-		const held = (family: string) => {
-			const onFamily = seat(`lens_${family}`, {
-				profile: "classics/lens",
-				verdict: true,
-				reply: { findings: List(Finding) },
-			});
-			const names = [family];
-			const rounds = iter.parMap(
-				names,
-				() => {
-					const found = onFamily({
-						label: "lens",
-						task: LENSES[LENS],
-						lane: read(change),
-						attachments: attached,
+		return tally(
+			{ change, spec, session: build.out.session },
+			({ attached }) => {
+				const group = (family: string) => {
+					const onFamily = seat(`lens_${family}`, {
+						profile: "classics/lens",
+						verdict: true,
+						reply: { findings: List(Finding) },
 					});
 					return {
-						lens: found,
-						skeptic: challenge(found, { change, attached }),
+						results: iter.parMap(
+							[family],
+							() => {
+								const found = onFamily({
+									label: "lens",
+									task: LENSES[LENS],
+									lane: read(change),
+									attachments: attached,
+								});
+								return {
+									lens: found,
+									skeptic: challenge(found, { change, attached }),
+								};
+							},
+							{ onError: "continue", label: `${family}_lenses` },
+						).out.results,
+						names: [family],
 					};
-				},
-				{ onError: "continue", label: `${family}_lenses` },
-			);
-			return code(heldOf, {
-				in: {
-					...readsOf(attached),
-					results: rounds.out.results,
-					names,
-				},
-				out: {
-					held: List(Upheld),
-					unreviewed: List(Struct({ lens: Text(), reason: Text() })),
-					delivered: Int(),
-				},
-				label: `${family}_held`,
-			}).out;
-		};
-		const [a, b] = [held("a"), held("b")];
-		const both = code(joined, {
-			in: {
-				a: a.held,
-				b: b.held,
-				aDelivered: a.delivered,
-				bDelivered: b.delivered,
+				};
+				return { a: group("a"), b: group("b") };
 			},
-			out: { held: List(Upheld), delivered: Int() },
-		});
-		return tally({
-			lane: change,
-			session: build.out.session,
-			held: both.out.held,
-			delivered: both.out.delivered,
-		});
+		);
 	},
 );
 
 const VOTERS = ["a", "b", "c"];
 
-/** The lens's findings that most of the skeptics' rulings hold. */
+/**
+ * One ruling per finding of the lens, held when most of the voters hold it (each counts once), with the holders' whys joined.
+ */
 export function majority({
 	findings,
 	votes,
 }: {
 	findings: ValueOf<typeof Findings>;
 	votes: Settled<{ rulings: ValueOf<typeof Rulings> }>[];
-}): { held: Held[] } {
+}): { rulings: ValueOf<typeof Rulings> } {
 	const needed = Math.floor(votes.length / 2) + 1;
-	const holds = (id: string) =>
-		votes.filter((v) => v.value?.rulings.some((r) => r.id === id && r.holds))
-			.length;
 	return {
-		held: findings
-			.filter((f) => holds(f.id) >= needed)
-			.map((f) => ({ ...f, lens: LENS })),
+		rulings: findings.map(({ id }) => {
+			const holders = votes.flatMap((v) => {
+				const held = v.value?.rulings.find((r) => r.id === id && r.holds);
+				return held ? [held] : [];
+			});
+			return {
+				id,
+				holds: holders.length >= needed,
+				why: holders.map((r) => r.why).join("; "),
+			};
+		}),
 	};
 }
 
@@ -256,28 +203,42 @@ export const rulingVote = composition(
 	() => {
 		const { spec, build } = built();
 		const change = build.out.lane;
-		const attached = attach(change, spec);
-		const lensed = lens({
-			label: "lens",
-			task: LENSES[LENS],
-			lane: read(change),
-			attachments: attached,
-		});
-		const votes = iter.parMap(
-			VOTERS,
-			() => challenge(lensed, { change, attached }),
-			{ onError: "continue", label: "voters" },
+		return tally(
+			{ change, spec, session: build.out.session },
+			({ attached }) => ({
+				lens: {
+					results: iter.parMap(
+						[LENS],
+						() => {
+							const found = lens({
+								label: "lens",
+								task: LENSES[LENS],
+								lane: read(change),
+								attachments: attached,
+							});
+							const votes = iter.parMap(
+								VOTERS,
+								() => challenge(found, { change, attached }),
+								{ onError: "continue", label: "voters" },
+							);
+							return {
+								lens: found,
+								skeptic: code(majority, {
+									in: {
+										findings: found.out.findings,
+										votes: votes.out.results,
+									},
+									out: { rulings: Rulings },
+									tolerate: "rejected",
+								}),
+							};
+						},
+						{ onError: "continue", label: "lenses" },
+					).out.results,
+					names: [LENS],
+				},
+			}),
 		);
-		const voted = code(majority, {
-			in: { findings: lensed.out.findings, votes: votes.out.results },
-			out: { held: List(Upheld) },
-			tolerate: "rejected",
-		});
-		return tally({
-			lane: change,
-			session: build.out.session,
-			held: voted.out.held,
-		});
 	},
 );
 

@@ -244,7 +244,7 @@ test.each(["low", "medium", "high"])(
 	},
 );
 
-test("requirePatch returns a changeset that holds a patch, the writer's body unchanged, an empty body when the writer failed, and the delivered count given, 0 included, and rejects one that holds none; it renders the upheld findings once, grouped by cite", () => {
+test("requirePatch returns a changeset that holds a patch, the writer's body unchanged, an empty body when the writer failed, and the delivered count, 0 included, and rejects one that holds none; it renders the upheld findings once, grouped by cite", () => {
 	const made = (...files: string[]) => {
 		const dir = mkdtempSync(join(scratch, "changeset-"));
 		for (const f of files) writeFileSync(join(dir, f), "x");
@@ -258,9 +258,9 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		dir: string,
 		written: Settled<ArtifactRef>[],
 		upheld: Parameters<typeof requirePatch>[0]["upheld"] = [],
-		counted: { delivered?: number } = { delivered: 1 },
+		delivered = 1,
 	) =>
-		requirePatch({ changeset: ref, upheld, ...counted, written }, {
+		requirePatch({ changeset: ref, upheld, delivered, written }, {
 			path: () => dir,
 			scratch: ctx,
 		} as unknown as CodeContext);
@@ -285,10 +285,9 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		delivered: 1,
 	});
 	expect(readFileSync(join(ctx, "pr.md"), "utf8")).toBe("");
-	expect(run(patched, [], [], { delivered: 0 })).toMatchObject({
+	expect(run(patched, [], [], 0)).toMatchObject({
 		delivered: 0,
 	});
-	expect(run(patched, [], [], {})).not.toHaveProperty("delivered");
 	expect(run(made("base"), [])).toEqual(reject("the slice changed nothing"));
 
 	run(

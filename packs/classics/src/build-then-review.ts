@@ -34,7 +34,7 @@ export const buildThenReview = composition(
 					tolerate: "rejected",
 				}).out.changeset,
 				upheld: reviewed.out.upheld,
-				...(reviewed.out.delivered && { delivered: reviewed.out.delivered }),
+				delivered: reviewed.out.delivered,
 			},
 			out: { changeset: Dir(), upheld: List(Upheld) },
 			label: "outcome",

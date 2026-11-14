@@ -1,7 +1,6 @@
 export { buildThenReview } from "./build-then-review";
 export {
 	briefOf,
-	heldAcross,
 	heldOf,
 	resultOf,
 	specOf,

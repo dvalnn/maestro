@@ -1,5 +1,6 @@
 import {
 	type Attachment,
+	changeset,
 	extend,
 	type Relays,
 	read,
@@ -8,26 +9,24 @@ import {
 	type ArtifactRef,
 	code,
 	Int,
+	List,
 	Markdown,
 	not,
 	type Ref,
+	type Settled,
+	Struct,
+	Text,
 	type ValueOf,
 } from "@maestro/sdk";
-import { tallyOf, toMarkdown } from "./code";
+import { heldOf, type Member, tallyOf, toMarkdown } from "./code";
 import { task } from "./prompt";
 import FIX from "./prompts/fix.md" with { type: "text" };
 import SKEPTIC from "./prompts/skeptic.md" with { type: "text" };
 import SKEPTIC_GROUNDS from "./prompts/skeptic-grounds.md" with {
 	type: "text",
 };
-import { builder, skeptic } from "./seats";
-import {
-	Brief,
-	type Findings,
-	Tally,
-	type Upheld,
-	type Verdict,
-} from "./types";
+import { builder, consolidator, skeptic } from "./seats";
+import { Brief, type Findings, Tally, Upheld, type Verdict } from "./types";
 
 /** The request as a Markdown file. */
 export const requestOf = (request: string) =>
@@ -87,49 +86,124 @@ export function fix(
 	});
 }
 
+const PATCHES_HINT = "for what the change did, patch by patch";
+const SPEC_HINT = "for what the change must do";
+
+/** The attachments every review seat reads: the change's `patches` and the `spec`. */
+const attachmentsOf = (patches: Ref<ArtifactRef>, spec: Ref<ArtifactRef>) => ({
+	patches: { artifact: patches, hint: PATCHES_HINT },
+	spec: { artifact: spec, hint: SPEC_HINT },
+});
+
+/** What a review's lenses read, for a picker to build them from. */
+type Reads = {
+	/** The lane version under review. */
+	change: Ref<string>;
+	attached: { patches: Attachment; spec: Attachment };
+	/** What a lens reads beside its lane: the `earlier` findings and the `brief`, when given. */
+	relay: Relays;
+	/** What every review seat reads beside its lane: the `brief`, when given. */
+	common: Relays;
+};
+
+/** One group of review members a picker builds: their settled results and the lens name of each, in order. */
+type Group = {
+	results: Ref<Settled<Member>[]>;
+	names: Ref<string[]> | string[];
+	/** The names a member may take. */
+	known?: string[];
+};
+
+/** How a review settles: through a consolidator's `task`, or on a `session` it carries, or both. */
+type Settles =
+	| { consolidator: string; session?: Ref<string> }
+	| { consolidator?: undefined; session: Ref<string> };
+
 /**
- * The tally of a review of `lane`, over the findings `held`.
- * - Without `verdict`, every held finding stands.
- * - With one, the findings it upholds stand, and a `review` is rendered from it.
+ * The tally of a review of `change` against `spec`, over the groups of lenses `pick` builds from its reads.
+ * - The held node waits on every input the lenses read, and counts the members that delivered, so a review whose lenses
+ *   were all skipped, or none delivered, rejects.
+ * - With a `consolidator`, a consolidator ruling on the held findings, and a `review` rendered from its verdict, then a
+ *   tally of those it upholds; without, every held finding stands.
+ * - The session carried is `session`, else the consolidator's.
  *
- * The `brief` and `delivered` given ride beside it; a `delivered` of 0 rejects it.
+ * The `brief` given rides beside the tally.
  */
-export function tally({
-	lane,
-	session,
-	held,
-	verdict,
-	brief,
-	delivered,
-	label = "upheld",
-}: {
-	lane: Ref<string>;
-	session: Ref<string>;
-	held: Held;
-	/** The consolidator's `verdict` port. */
-	verdict?: Ref<ValueOf<typeof Verdict>>;
-	/** The builder's or fix's brief, which the tally carries beside the rest. */
-	brief?: Ref<ValueOf<typeof Brief>>;
-	/** How many lenses delivered a review. */
-	delivered?: Ref<number>;
-	label?: string;
-}) {
-	return code(tallyOf, {
+export function tally(
+	review: {
+		change: Ref<string>;
+		spec: Ref<ArtifactRef>;
+		/** The previous round's findings, which a lens reads. */
+		earlier?: Held;
+		brief?: Ref<ValueOf<typeof Brief>>;
+		label?: string;
+	} & Settles,
+	pick: (reads: Reads) => Record<string, Group>,
+) {
+	const { change, spec, earlier, brief, label = "upheld" } = review;
+	const attached = attachmentsOf(
+		changeset(change, { label: "patches" }).out.changeset,
+		spec,
+	);
+	const common: Relays = brief ? { builder: brief } : {};
+	const relay = { ...(earlier && { upheld: earlier }), ...common };
+	const groups = pick({ change, attached, relay, common });
+	const held = code(heldOf, {
 		in: {
-			lane,
-			session,
-			held,
-			...(verdict && { verdict }),
-			...(brief && { brief }),
-			...(delivered && { delivered }),
+			patches: attached.patches.artifact,
+			spec: attached.spec.artifact,
+			...(earlier && { upheld: earlier }),
+			...(brief && { builder: brief }),
+			groups: Object.keys(groups),
+			...Object.fromEntries(
+				Object.entries(groups).flatMap(([g, { results, names, known }]) => [
+					[`${g}Results`, results],
+					[`${g}Names`, names],
+					...(known ? [[`${g}Known`, known]] : []),
+				]),
+			),
 		},
 		out: {
-			...Tally,
-			...(verdict && { review: Markdown() }),
-			...(brief && { brief: Brief }),
-			...(delivered && { delivered: Int() }),
+			held: List(Upheld),
+			unreviewed: List(Struct({ lens: Text(), reason: Text() })),
+			delivered: Int(),
 		},
-		label,
-		tolerate: "rejected",
 	});
+	const settle = (
+		session: Ref<string>,
+		verdict?: Ref<ValueOf<typeof Verdict>>,
+	) =>
+		code(tallyOf, {
+			in: {
+				lane: change,
+				session,
+				held: held.out.held,
+				...(verdict && { verdict }),
+				...(brief && { brief }),
+				delivered: held.out.delivered,
+			},
+			out: {
+				...Tally,
+				...(verdict && { review: Markdown() }),
+				...(brief && { brief: Brief }),
+			},
+			label,
+			tolerate: "rejected",
+		});
+	if (review.consolidator === undefined) return settle(review.session);
+	const consolidated = consolidator({
+		label: "consolidator",
+		task: review.consolidator,
+		lane: read(change),
+		relay: {
+			findings: held.out.held,
+			unreviewed: held.out.unreviewed,
+			...common,
+		},
+		attachments: attached,
+	});
+	return settle(
+		review.session ?? consolidated.out.session,
+		consolidated.out.verdict,
+	);
 }

@@ -2,6 +2,7 @@ import { Lane, Session } from "@maestro/host-repo-sdk";
 import {
 	Bool,
 	Enum,
+	Int,
 	Json,
 	List,
 	Struct,
@@ -100,8 +101,16 @@ export const Upheld = Json<
 	additionalProperties: false,
 });
 
-/** The ports a review round settles to: the lane and the builder's session it carries, and the findings upheld. */
-export const Tally = { lane: Lane, session: Session, upheld: List(Upheld) };
+/**
+ * The ports a review settles to: the lane and the builder's session it carries, the findings upheld, and `delivered`,
+ * how many lenses delivered a review.
+ */
+export const Tally = {
+	lane: Lane,
+	session: Session,
+	upheld: List(Upheld),
+	delivered: Int(),
+};
 
 const Entry = { question: Text(), answer: Text() };
 const Grounded = Struct({ ...Entry, state: Enum(["grounded"]) });

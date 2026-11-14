@@ -71,8 +71,8 @@ and contracts. `@maestro/classics/code` exports its code-node functions alone.
   (`tiered_review`), `fixUntilClean` (`fix_until_clean`), `testFirst` (`test_first`), `buildChange` (`build`).
 - Moves: `challenge`, `fix`, `tally`.
 - Contracts: `Finding`, `Findings`, `Rulings`, `Verdict`, `Upheld`, `Tally`, `TestMap`, `Brief`, `Overrules`, `Answers`;
-  code-node functions `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `heldAcross`, `tallyOf`, `tieredOf` and `resultOf`;
-  `fill` for prompt placeholders ([prompts.md](prompts.md)); `LENSES`; params `maxRepairs`, `maxFixes` and `atLeastOne`.
+  code-node functions `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf`, `tieredOf` and `resultOf`; `fill` for
+  prompt placeholders ([prompts.md](prompts.md)); `LENSES`; params `maxRepairs`, `maxFixes` and `atLeastOne`.
 - Seats: `builder`, `tester`, `lens`, `deepLens`, `topLens`, `crossLens`, `skeptic`, `consolidator`, `scout`, `planner`.
 
 Take the layer you need: perform an entry, `use` a pattern in a composition, or call a move or seat among your own

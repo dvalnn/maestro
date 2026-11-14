@@ -104,10 +104,10 @@ const noticeLines = (upheld: number, held: string[], unreviewed: boolean) => [
 
 /**
  * The changeset, the last round's upheld findings as `upheld.md`, whether the PR is a draft with its notice, the
- * writer's PR body, unchanged, and the `delivered` given, when the changeset holds a patch; the body is empty when the
+ * writer's PR body, unchanged, and the `delivered` count, when the changeset holds a patch; the body is empty when the
  * writer delivered none.
  * A rejection when the changeset holds no patch, so the slice settles `rejected`.
- * - `draft` is true when the last review's `delivered`, if given, is 0, findings remain upheld, or the patches, or those
+ * - `draft` is true when the last review's `delivered` is 0, findings remain upheld, or the patches, or those
  *   of the PR `revised`, touch `docs/rulings.md` or `docs/adr/`.
  * - `notice` holds a line per reason, empty when `draft` is false.
  */
@@ -122,7 +122,7 @@ export function requirePatch(
 		changeset: ArtifactRef;
 		revised?: ArtifactRef;
 		upheld: Held[];
-		delivered?: number;
+		delivered: number;
 		written: Settled<ArtifactRef>[];
 	},
 	ctx: CodeContext,
@@ -148,7 +148,7 @@ export function requirePatch(
 		upheld: file,
 		draft,
 		notice,
-		...(delivered !== undefined && { delivered }),
+		delivered,
 	};
 	const body = written[0];
 	if (body?.outcome === "ok") return { ...outputs, pr: body.value };
@@ -237,7 +237,7 @@ export const slice = composition(
 				changeset: changes,
 				...(prior && { revised: prior }),
 				upheld: reviewed.out.upheld,
-				...(reviewed.out.delivered && { delivered: reviewed.out.delivered }),
+				delivered: reviewed.out.delivered,
 				written: allSettled([written.out.pr], { label: "written" }),
 			},
 			out: {
@@ -246,7 +246,7 @@ export const slice = composition(
 				draft: Bool(),
 				notice: Markdown(),
 				pr: Markdown(),
-				...(reviewed.out.delivered && { delivered: Int() }),
+				delivered: Int(),
 			},
 			label: "result",
 			tolerate: "rejected",

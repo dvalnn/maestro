@@ -72,7 +72,7 @@ type Found = ValueOf<typeof Findings>;
 type Held = ValueOf<typeof Upheld>;
 
 /** What one member of a review panel delivers: its lens's findings, with its skeptic's rulings when it has a skeptic. */
-type Member =
+export type Member =
 	| {
 			lens: { findings: Found };
 			skeptic: { rulings: ValueOf<typeof Rulings> };
@@ -101,33 +101,16 @@ function requireKnown(names: readonly string[], known?: readonly string[]) {
 		);
 }
 
-/**
- * The findings the review members held, the lenses that never delivered theirs, and `delivered`, the count of members
- * that delivered a value.
- * - `names` are the members' lens names, in the order of `results`.
- * - A member with a skeptic holds the findings its skeptic's rulings hold, each with that `why`; one without holds every
- *   finding, with no `why`, unless its lens settled ok.
- * - A skipped member holds none and counts as delivered. Every other input is unread, there so the node does not run
- *   while any input its lenses read is unavailable.
- * - One that delivered nothing, a failed skeptic included, is `unreviewed` with its reason: its whole lens is.
- * @throws Error when a member is named outside `known`, when given.
- */
-export function heldOf({
-	results,
-	names,
-	known,
-}: {
-	results: Settled<Member>[];
-	names: readonly string[];
-	known?: readonly string[];
-	[read: string]: unknown;
-}): {
-	held: Held[];
-	unreviewed: { lens: string; reason: string }[];
-	delivered: number;
-} {
+type Unreviewed = { lens: string; reason: string };
+
+/** What one group of members held: its findings, the lenses that never delivered, and how many members delivered. */
+function heldIn(
+	results: Settled<Member>[],
+	names: readonly string[],
+	known?: readonly string[],
+): { held: Held[]; unreviewed: Unreviewed[]; delivered: number } {
 	const held: Held[] = [];
-	const unreviewed: { lens: string; reason: string }[] = [];
+	const unreviewed: Unreviewed[] = [];
 	let delivered = 0;
 	requireKnown(names, known);
 	results.forEach((result, i) => {
@@ -149,22 +132,38 @@ export function heldOf({
 }
 
 /**
- * `heldOf` over the members of every seat, joined in seat order, `delivered` summed. Each seat's members are
- * `<seat>Results` and their lens names `<seat>Names`; every other input is unread, as in `heldOf`.
+ * The findings the members of every group held, in `groups` order, the lenses that never delivered theirs, and
+ * `delivered`, the count of members that delivered a value, over all groups.
+ * - A group `g` brings its members as `gResults`, their lens names, in that order, as `gNames`, and, when given, the
+ *   names a member may take as `gKnown`.
+ * - A member with a skeptic holds the findings its skeptic's rulings hold, each with that `why`; one without holds every
+ *   finding, with no `why`, unless its lens settled ok.
+ * - A skipped member holds none and counts as delivered. `patches`, `spec`, `upheld` and `builder` are unread, there so
+ *   the node does not run while any input its lenses read is unavailable.
+ * - One that delivered nothing, a failed skeptic included, is `unreviewed` with its reason: its whole lens is.
+ * @throws Error when a member is named outside its group's `gKnown`, when given.
  */
-export function heldAcross(
-	inputs: Record<string, unknown>,
-): ReturnType<typeof heldOf> {
-	const seats = SEATS.map((seat) =>
-		heldOf({
-			results: inputs[`${seat}Results`] as Settled<Member>[],
-			names: inputs[`${seat}Names`] as string[],
-		}),
+export function heldOf(inputs: {
+	patches: ArtifactRef;
+	spec: ArtifactRef;
+	upheld?: Held[];
+	builder?: ValueOf<typeof Brief>;
+	groups: string[];
+	[results: `${string}Results`]: Settled<Member>[];
+	[names: `${string}Names`]: string[];
+	[known: `${string}Known`]: string[];
+}): { held: Held[]; unreviewed: Unreviewed[]; delivered: number } {
+	const per = inputs.groups.map((g) =>
+		heldIn(
+			inputs[`${g}Results`] ?? [],
+			inputs[`${g}Names`] ?? [],
+			inputs[`${g}Known`],
+		),
 	);
 	return {
-		held: seats.flatMap((s) => s.held),
-		unreviewed: seats.flatMap((s) => s.unreviewed),
-		delivered: seats.reduce((sum, s) => sum + s.delivered, 0),
+		held: per.flatMap((p) => p.held),
+		unreviewed: per.flatMap((p) => p.unreviewed),
+		delivered: per.reduce((sum, p) => sum + p.delivered, 0),
 	};
 }
 
@@ -173,7 +172,6 @@ type Result = { changeset: ArtifactRef; upheld: Held[] };
 type Tally = CodeOutputs<typeof Ports> & {
 	review?: string;
 	brief?: ValueOf<typeof Brief>;
-	delivered?: number;
 };
 type Args = {
 	lane: string;
@@ -181,7 +179,7 @@ type Args = {
 	held: Held[];
 	verdict?: ValueOf<typeof Verdict>;
 	brief?: ValueOf<typeof Brief>;
-	delivered?: number;
+	delivered: number;
 };
 
 /** Rejects with `reason`, naming `upheld` by default, and `outputs` as the rejection's outputs. */
@@ -263,7 +261,7 @@ function reviewOf(
  * - With one, those held findings whose `<lens>/<id>` its `upholds` names, then each criterion it rules not met that no
  *   upheld finding it names in `shownBy` shows, and a `review` rendered from it.
  *
- * The `brief` and `delivered` given ride beside them. Rejects, with the tally as its outputs, while a finding is
+ * The `brief` given rides beside them. Rejects, with the tally as its outputs, while a finding is
  * upheld, and, whatever the verdict, when `delivered` is 0.
  */
 export function tallyOf(
@@ -281,7 +279,7 @@ export function tallyOf(
 		upheld,
 		...(verdict && { review: reviewOf(upheld, verdict, kept, ctx) }),
 		...(brief && { brief }),
-		...(delivered !== undefined && { delivered }),
+		delivered,
 	};
 	if (delivered === 0) return rejection(upheld, tally, NO_REVIEW);
 	if (upheld.length) return rejection(upheld, tally);
@@ -290,7 +288,7 @@ export function tallyOf(
 
 /**
  * The change's patch series and the findings still upheld on it.
- * Rejects, with both as outputs, while a finding is upheld, and when the last review's `delivered`, if given, is 0.
+ * Rejects, with both as outputs, while a finding is upheld, and when the last review's `delivered` is 0.
  */
 export function resultOf({
 	changeset,
@@ -299,7 +297,7 @@ export function resultOf({
 }: {
 	changeset: ArtifactRef;
 	upheld: Held[];
-	delivered?: number;
+	delivered: number;
 }): Result | Required<Rejection<Result>> {
 	const result = { changeset, upheld };
 	if (delivered === 0) return rejection(upheld, result, NO_REVIEW);

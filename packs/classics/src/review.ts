@@ -1,20 +1,9 @@
+import { commits, Lane, read, Session } from "@maestro/host-repo-sdk";
 import {
-	type Attachment,
-	changeset,
-	commits,
-	Lane,
-	type Relays,
-	read,
-	Session,
-} from "@maestro/host-repo-sdk";
-import {
-	type ArtifactRef,
 	Bool,
 	BuildError,
-	code,
 	composition,
 	Enum,
-	Int,
 	iter,
 	Json,
 	List,
@@ -22,11 +11,9 @@ import {
 	Markdown,
 	Optional,
 	type Ref,
-	Struct,
 	Text,
 	use,
 } from "@maestro/sdk";
-import { heldOf } from "./code";
 import { challenge, requestOf, tally } from "./moves";
 import { task } from "./prompt";
 import AGENT_DOC from "./prompts/_agent-doc.md" with { type: "text" };
@@ -51,7 +38,7 @@ import LENS_CORRECTNESS from "./prompts/lens-correctness.md" with {
 import LENS_SPEC from "./prompts/lens-spec.md" with { type: "text" };
 import LENS_TESTS from "./prompts/lens-tests.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
-import { consolidator, lens } from "./seats";
+import { lens } from "./seats";
 import { Brief, PACK, Upheld } from "./types";
 
 /** Every checklist section's text, by section name. */
@@ -104,29 +91,6 @@ export const LENSES = TASKS.lens;
 const LENS_NAMES = ["correctness", "spec", "tests"] as const;
 type LensName = (typeof LENS_NAMES)[number];
 
-const PATCHES_HINT = "for what the change did, patch by patch";
-const SPEC_HINT = "for what the change must do";
-
-/** The attachments every review seat reads: the change's `patches` and the `spec`. */
-export const attachmentsOf = (
-	patches: Ref<ArtifactRef>,
-	spec: Ref<ArtifactRef>,
-) => ({
-	patches: { artifact: patches, hint: PATCHES_HINT },
-	spec: { artifact: spec, hint: SPEC_HINT },
-});
-
-/** What a lens reads beside its lane, by name: its `relay`, then the artifact of each of its `attachments`. */
-export const readsOf = (
-	attachments: Readonly<Record<string, Attachment>>,
-	relay: Relays = {},
-): Relays => ({
-	...relay,
-	...Object.fromEntries(
-		Object.entries(attachments).map(([name, { artifact }]) => [name, artifact]),
-	),
-});
-
 /**
  * A lens per lens name, a skeptic over each lens that rejected unless `skeptics` is false, the findings held, and, with
  * `consolidate`, a consolidator ruling on them. Ends in the tally of the change, which rejects while a finding is
@@ -164,88 +128,59 @@ export const panel = composition(
 		{ lenses, skeptics, consolidate, grounds, checks },
 		{ change, spec, session, earlier, names, brief },
 	) => {
-		const attached = attachmentsOf(
-			changeset(change, { label: "patches" }).out.changeset,
-			spec,
-		);
 		const ground = grounds || undefined;
-		const common: Relays = brief ? { builder: brief } : {};
-		const relay = { ...(earlier && { upheld: earlier }), ...common };
-		const items = names ?? Object.keys(lenses);
 		const tasks = earlier
 			? Object.fromEntries(
 					Object.entries(lenses).map(([name, own]) => [name, task(AGAIN, own)]),
 				)
 			: lenses;
-		const rounds = iter.parMap(
-			items,
-			(name) => {
-				const found = lens({
-					label: "lens",
-					task: lookup(tasks, name),
-					lane: read(change),
-					checks,
-					relay,
-					attachments: attached,
-				});
-				if (!skeptics) return found;
-				return {
-					lens: found,
-					skeptic: challenge(found, {
-						change,
-						attached,
-						grounds: ground,
-						relay: common,
-					}),
-				};
-			},
-			{
-				onError: "continue",
-				label: "lenses",
-				...(names && { max: Object.keys(lenses).length }),
-			},
-		);
-		const held = code(heldOf, {
-			in: {
-				...readsOf(attached, relay),
-				results: rounds.out.results,
-				names: items,
-				known: Object.keys(lenses),
-			},
-			out: {
-				held: List(Upheld),
-				unreviewed: List(Struct({ lens: Text(), reason: Text() })),
-				delivered: Int(),
-			},
-		});
-		const consolidated = consolidate
-			? consolidator({
-					label: "consolidator",
-					task: TASKS.consolidator(skeptics, ground),
-					lane: read(change),
-					relay: {
-						findings: held.out.held,
-						unreviewed: held.out.unreviewed,
-						...common,
-					},
-					attachments: attached,
-				})
-			: undefined;
-		const carried = session ?? consolidated?.out.session;
-		if (!carried)
+		const items = names ?? Object.keys(lenses);
+		const settles = consolidate
+			? { consolidator: TASKS.consolidator(skeptics, ground), session }
+			: session && { session };
+		if (!settles)
 			throw new BuildError({
 				code: "CFG.param",
 				message: "classics.panel needs a session or consolidate",
 				hint: "Feed the session port, or leave the consolidate param true",
 			});
-		return tally({
-			lane: change,
-			session: carried,
-			held: held.out.held,
-			verdict: consolidated?.out.verdict,
-			delivered: held.out.delivered,
-			brief,
-		});
+		return tally(
+			{ change, spec, earlier, brief, ...settles },
+			({ attached, relay, common }) => ({
+				lenses: {
+					results: iter.parMap(
+						items,
+						(name) => {
+							const found = lens({
+								label: "lens",
+								task: lookup(tasks, name),
+								lane: read(change),
+								checks,
+								relay,
+								attachments: attached,
+							});
+							if (!skeptics) return found;
+							return {
+								lens: found,
+								skeptic: challenge(found, {
+									change,
+									attached,
+									grounds: ground,
+									relay: common,
+								}),
+							};
+						},
+						{
+							onError: "continue",
+							label: "lenses",
+							...(names && { max: Object.keys(lenses).length }),
+						},
+					).out.results,
+					names: items,
+					known: Object.keys(lenses),
+				},
+			}),
+		);
 	},
 );
 

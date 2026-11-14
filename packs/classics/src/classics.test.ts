@@ -20,7 +20,6 @@ import {
 	type Ref,
 	reject,
 	type Settled,
-	Struct,
 	Text,
 	use,
 } from "@maestro/sdk";
@@ -29,8 +28,8 @@ import { pack } from "../../../scripts/pack";
 import { BASE, git, PROFILES, profilesOn, setup } from "../acceptance/setup";
 import {
 	briefOf,
-	heldAcross,
 	heldOf,
+	type Member,
 	resultOf,
 	specOf,
 	tallyOf,
@@ -39,10 +38,10 @@ import {
 } from "./code";
 import { challenge, fix, tally } from "./moves";
 import AGAIN from "./prompts/again.md" with { type: "text" };
-import { joined, lensFusion } from "./recipes";
+import { majority } from "./recipes";
 import { EXAMPLE_REQUEST } from "./repair";
 import { panel } from "./review";
-import { builder, consolidator, lens } from "./seats";
+import { builder, lens } from "./seats";
 import { buildChange } from "./test-first";
 import { SECTIONS, tieredReview } from "./tiered-review";
 import { Brief, Upheld } from "./types";
@@ -293,20 +292,6 @@ describe("panel", () => {
 			node: "panel/consolidator",
 			port: "session",
 		});
-	});
-
-	test("the tally takes delivered from the held findings, so a panel no lens delivered for rejects", () => {
-		const ir = panelIr();
-		expect(
-			ir.edges.some(
-				(e) =>
-					e.kind === "data" &&
-					e.from.node === "panel/heldOf" &&
-					e.from.port === "delivered" &&
-					e.to.node === "panel/upheld" &&
-					e.to.port === "delivered",
-			),
-		).toBe(true);
 	});
 
 	test("neither a session nor a consolidator is refused", () => {
@@ -998,11 +983,34 @@ describe("heldOf", () => {
 		reason: "F1 blocks",
 		value,
 	});
-	const held = (results: Parameters<typeof heldOf>[0]["results"]) =>
-		heldOf({ results, names: ["correctness", "spec"] });
+	const failed = { outcome: "failed" as const, reason: "boom" };
+	const reads = {
+		patches: { path: "p", contentHash: "sha256:0" },
+		spec: { path: "s", contentHash: "sha256:1" },
+	};
+	type Group = {
+		results: Settled<Member>[];
+		names: string[];
+		known?: string[];
+	};
+	/** `heldOf` over `groups`, in the order given. */
+	const held = (groups: Record<string, Group>) =>
+		heldOf({
+			...reads,
+			groups: Object.keys(groups),
+			...Object.fromEntries(
+				Object.entries(groups).flatMap(([g, { results, names, known }]) => [
+					[`${g}Results`, results],
+					[`${g}Names`, names],
+					...(known ? [[`${g}Known`, known]] : []),
+				]),
+			),
+		});
+	const one = (results: Settled<Member>[]) =>
+		held({ lenses: { results, names: ["correctness", "spec"] } });
 
 	test("holds every finding of a member without a skeptic, with no why", () => {
-		const { held: kept } = held([rejected({ findings: found })]);
+		const { held: kept } = one([rejected({ findings: found })]);
 		expect(idsOf(kept)).toEqual([
 			"correctness/F1",
 			"correctness/F2",
@@ -1012,7 +1020,7 @@ describe("heldOf", () => {
 	});
 
 	test("holds the findings its skeptic's rulings hold, each with that why", () => {
-		const { held: kept } = held([
+		const { held: kept } = one([
 			ok({
 				lens: { findings: found },
 				skeptic: { rulings: rulings("F2", "F3") },
@@ -1025,28 +1033,60 @@ describe("heldOf", () => {
 	});
 
 	test("holds nothing of a member whose lens settled ok, takes a rejected member's value, delivers a skipped one with none held and lists one that delivered nothing as unreviewed", () => {
-		const out = held([
+		const out = one([
 			{ outcome: "rejected", reason: "F1 blocks", value: { findings: found } },
 			{ outcome: "skipped" },
 		]);
 		expect(idsOf(out.held)).toHaveLength(3);
 		expect(out.unreviewed).toEqual([]);
 		expect(out.delivered).toBe(2);
-		expect(held([ok({ findings: found })])).toMatchObject({
+		expect(one([ok({ findings: found })])).toMatchObject({
 			held: [],
 			delivered: 1,
 		});
-		expect(
-			held([{ outcome: "failed", reason: "boom" }, { outcome: "skipped" }]),
-		).toMatchObject({
+		expect(one([failed, { outcome: "skipped" }])).toMatchObject({
 			unreviewed: [{ lens: "correctness", reason: "boom" }],
 			delivered: 1,
 		});
 	});
+
+	test("joins the groups in the order named and sums the members that delivered, none when every member failed", () => {
+		const groups = (order: string[]) =>
+			held(
+				Object.fromEntries(
+					order.map((g) => [
+						g,
+						{
+							lens: {
+								results: [rejected({ findings: [F1] })],
+								names: ["lens"],
+							},
+							top: { results: [rejected({ findings: [F2] })], names: ["top"] },
+							cross: { results: [failed], names: ["cross"] },
+							deep: {
+								results: [{ outcome: "skipped" as const }],
+								names: ["deep"],
+							},
+						}[g] as Group,
+					]),
+				),
+			);
+		const out = groups(["lens", "deep", "top", "cross"]);
+		expect(idsOf(out.held)).toEqual(["lens/F1", "top/F2"]);
+		expect(out.unreviewed).toEqual([{ lens: "cross", reason: "boom" }]);
+		expect(out.delivered).toBe(3);
+		expect(idsOf(groups(["top", "lens"]).held)).toEqual(["top/F2", "lens/F1"]);
+		expect(
+			held({
+				a: { results: [failed], names: ["a"] },
+				b: { results: [failed], names: ["b"] },
+			}).delivered,
+		).toBe(0);
+	});
 });
 
 describe("tallyOf", () => {
-	const carried = { lane: "c.gate", session: "c.build" };
+	const carried = { lane: "c.gate", session: "c.build", delivered: 1 };
 	const heldAll = found.map((f) => ({ ...f, lens: "correctness" }));
 	const verdict = (...upholds: string[]) => ({ criteria: [], upholds });
 	const ctx = () => ({ scratch: mkdtempSync(join(root, "tally-")) }) as never;
@@ -1241,32 +1281,18 @@ describe("tallyOf", () => {
 describe("moves", () => {
 	const moved = composition("moved", { examples: [{}] }, () => {
 		const found = lens({ label: "lens", task: "look", lane: fresh() });
-		const patches = changeset(found.out.lane, { label: "patches" }).out
+		const changes = changeset(found.out.lane, { label: "changes" }).out
 			.changeset;
 		const attached = {
-			patches: { artifact: patches, hint: "patches" },
-			spec: { artifact: patches, hint: "spec" },
+			patches: { artifact: changes, hint: "patches" },
+			spec: { artifact: changes, hint: "spec" },
 		};
 		challenge(found, { change: found.out.lane, attached });
-		const held = code(heldOf, {
-			in: { results: [], names: [] },
-			out: {
-				held: List(Upheld),
-				unreviewed: List(Struct({ lens: Text(), reason: Text() })),
-			},
-		});
-		const ruling = consolidator({
-			label: "ruling",
-			task: "rule",
-			lane: fresh(),
-		});
-		const upheld = tally({
-			lane: found.out.lane,
-			session: found.out.session,
-			held: held.out.held,
-			verdict: ruling.out.verdict,
-		});
-		return fix(upheld.out, patches).out.lane;
+		const upheld = tally(
+			{ change: found.out.lane, spec: changes, session: found.out.session },
+			() => ({}),
+		);
+		return fix(upheld.out, changes).out.lane;
 	});
 	let ir: ReturnType<typeof buildIr>;
 	beforeAll(() => {
@@ -1287,71 +1313,11 @@ describe("moves", () => {
 		expect(wired("lens", "findings", "skeptic")).toBe(true);
 	});
 
-	test("tally settles over the held findings and the verdict, tolerating a rejected upstream", () => {
-		expect(wired("heldOf", "held", "upheld")).toBe(true);
-		expect(wired("ruling", "verdict", "upheld")).toBe(true);
-		expect(
-			ir.edges.some(
-				(e) =>
-					e.to.node === "upheld" &&
-					e.kind === "control" &&
-					e.tolerate === "rejected",
-			),
-		).toBe(true);
-	});
-
 	test("fix extends the tally's lane in its session and relays what it upheld", () => {
 		const node = ir.nodes.find((n) => n.id === "fix");
 		expect(node).toMatchObject({ config: { lane: { mode: "extend" } } });
 		for (const port of ["lane", "session", "upheld"])
 			expect(wired("upheld", port, "fix")).toBe(true);
-	});
-});
-
-describe("heldAcross", () => {
-	const rejected = <V>(value: V) => ({
-		outcome: "rejected" as const,
-		reason: "F1 blocks",
-		value,
-	});
-	const seats = (over: Partial<Parameters<typeof heldAcross>[0]> = {}) => ({
-		lensResults: [],
-		lensNames: [],
-		deepLensResults: [],
-		deepLensNames: [],
-		topLensResults: [],
-		topLensNames: [],
-		crossLensResults: [],
-		crossLensNames: [],
-		...over,
-	});
-
-	test("joins the members of every seat in seat order and counts those that delivered a value or were skipped, none when every member failed", () => {
-		const out = heldAcross(
-			seats({
-				lensResults: [rejected({ findings: [F1] })],
-				lensNames: ["lens"],
-				topLensResults: [rejected({ findings: [F2] })],
-				topLensNames: ["top-lens"],
-				crossLensResults: [{ outcome: "failed", reason: "boom" }],
-				crossLensNames: ["cross-lens"],
-				deepLensResults: [{ outcome: "skipped" }],
-				deepLensNames: ["deep-lens"],
-			}),
-		);
-		expect(idsOf(out.held)).toEqual(["lens/F1", "top-lens/F2"]);
-		expect(out.unreviewed).toEqual([{ lens: "cross-lens", reason: "boom" }]);
-		expect(out.delivered).toBe(3);
-		expect(
-			heldAcross(
-				seats({
-					lensResults: [{ outcome: "failed", reason: "boom" }],
-					lensNames: ["lens"],
-					topLensResults: [{ outcome: "failed", reason: "boom" }],
-					topLensNames: ["top-lens"],
-				}),
-			).delivered,
-		).toBe(0);
 	});
 });
 
@@ -1559,7 +1525,7 @@ describe("tiered_review", () => {
 				{ params },
 			);
 		});
-		return buildIr(root, {}, { heldAcross, tallyOf, tieredOf, toMarkdown });
+		return buildIr(root, {}, { heldOf, tallyOf, tieredOf, toMarkdown });
 	}
 	const node = (ir: Ir, id: string) => ir.nodes.find((n) => n.id === id);
 	const profileOf = (ir: Ir, id: string) =>
@@ -1604,7 +1570,7 @@ describe("tiered_review", () => {
 		).toContain("THE GROUNDS");
 	});
 
-	test("earlier opens the selector's lead with again.md and relays upheld to every lens, and the held node waits on all a lens reads", () => {
+	test("earlier opens the selector's lead with again.md and relays upheld to every lens", () => {
 		const lead = (ir: Ir) =>
 			(
 				node(ir, "tiered_review/tieredOf") as unknown as {
@@ -1625,11 +1591,6 @@ describe("tiered_review", () => {
 		const again = tieredIr({}, () => ({ earlier: literal([], List(Upheld)) }));
 		expect(lead(again).startsWith(AGAIN)).toBe(true);
 		expect(relays(again)).toEqual(Object.values(SEATS).map(() => ["upheld"]));
-		expect(
-			Object.keys(
-				(node(again, "tiered_review/heldAcross") as { in: object }).in,
-			),
-		).toEqual(expect.arrayContaining(["patches", "spec", "upheld"]));
 	});
 });
 
@@ -1837,6 +1798,35 @@ describe("build", () => {
 describe("recipes", () => {
 	const RECIPES = join(import.meta.dir, "recipes");
 
+	test("majority counts voters, not rulings, and a failed vote holds nothing", () => {
+		const vote = (...rs: { holds: boolean; why: string }[]) =>
+			ok({ rulings: rs.map((r) => ({ id: "F1", ...r })) });
+		const no = vote({ holds: false, why: "n" });
+		const rule = (votes: Settled<{ rulings: ReturnType<typeof rulings> }>[]) =>
+			majority({ findings: [F1], votes }).rulings;
+		expect(
+			rule([
+				vote({ holds: true, why: "p" }, { holds: true, why: "q" }),
+				no,
+				no,
+			]),
+		).toEqual([{ id: "F1", holds: false, why: "p" }]);
+		expect(
+			rule([
+				vote({ holds: true, why: "x" }),
+				vote({ holds: true, why: "y" }),
+				no,
+			]),
+		).toEqual([{ id: "F1", holds: true, why: "x; y" }]);
+		expect(
+			rule([
+				vote({ holds: true, why: "x" }),
+				{ outcome: "failed", reason: "boom" },
+				no,
+			]),
+		).toEqual([{ id: "F1", holds: false, why: "x" }]);
+	});
+
 	/** Performs recipe `name` on the stub harness with `scripted` outputs by instance id, and lists each instance's status. */
 	async function performed(
 		name: string,
@@ -1857,7 +1847,7 @@ describe("recipes", () => {
 		}
 		const file = compositionFile(
 			name,
-			`export { ${exported}, carried, joined, majority } from "${RECIPES}";\nexport * from "@maestro/classics/code";\n`,
+			`export { ${exported}, carried, majority } from "${RECIPES}";\nexport * from "@maestro/classics/code";\n`,
 		);
 		const ran = await maestro(
 			[
@@ -1943,21 +1933,6 @@ describe("recipes", () => {
 		},
 	);
 
-	test("lens_fusion wires the patches and spec into each family's held node beside its results", () => {
-		const ir = buildIr(
-			lensFusion,
-			{},
-			{ briefOf, heldOf, joined, tallyOf, toMarkdown },
-		);
-		for (const held of ["a_held", "b_held"])
-			expect(
-				ir.edges
-					.filter((e) => e.to.node === held && "port" in e.to)
-					.map((e) => ("port" in e.to ? e.to.port : ""))
-					.sort(),
-			).toEqual(["patches", "results", "spec"]);
-	});
-
 	test.each([
 		["both families", ["a", "b"], "2 upheld: a/F1, b/F1"],
 		["family a alone", ["a"], "1 upheld: a/F1"],
@@ -1988,15 +1963,23 @@ describe("recipes", () => {
 		["one of three holds it, it falls", ["a"], 0],
 	])("ruling_vote: %s", async (_, holders, exit) => {
 		const ran = await performed("ruling_vote", "rulingVote", {
-			...raised("lens"),
+			...raised("lenses[correctness]/lens"),
 			...Object.fromEntries(
 				["a", "b", "c"].map((v) => [
-					`voters[${v}]/skeptic/rulings.json`,
+					`lenses[correctness]/voters[${v}]/skeptic/rulings.json`,
 					[{ id: "F1", holds: holders.includes(v), why: "vote" }],
 				]),
 			),
 		});
 		expect(ran.code).toBe(exit);
+	});
+
+	test("ruling_vote: a lens that delivers nothing rejects the run", async () => {
+		const ran = await performed("ruling_vote", "rulingVote", {
+			"lenses[correctness]/lens/verdict": "garbage",
+		});
+		expect(ran.code).toBe(3);
+		expect(ran.ls).toMatch(/^upheld +rejected .*no lens delivered a review/m);
 	});
 
 	test("audit_sweep: a lens per area rules on the sealed base", async () => {

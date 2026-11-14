@@ -83,8 +83,10 @@ ports of `fix_until_clean`.
 - `challenge`: a skeptic over any lens's findings, skipped when the lens settled ok; takes `grounds`, the rules a
   finding must cite.
 - `fix`: a builder fixing the findings a round upheld, in a lane extending its lane and continuing its session.
-- `tally`: the `Tally` of a review of a lane, over `held` findings, with a consolidator's `verdict`, from which it
-  renders the `review`, and the builder's `brief` when given.
+- `tally`: the `Tally` of a review. It takes the `change`, the `spec`, the previous round's `earlier` and the builder's
+  `brief` when given, a consolidator's task or a `session` to carry, and a lens picker that builds each group of lenses
+  from the reads it hands over. It owns the reads, the held node, the consolidator and the `delivered` count, so the
+  held node always waits on what the lenses read, and a review no lens delivered rejects.
 
 ## Contracts
 
@@ -102,9 +104,9 @@ ports of `fix_until_clean`.
 
 Read a run's reply fields with `maestro ls <id> --json | jq .outputs`.
 
-Code-node values: `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `heldAcross`, `tallyOf`, `tieredOf` and `resultOf`.
-`fill` fills prompt placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer param of at least 1.
-`maxRepairs` and `maxFixes` are the params of those names, for a composition built on the pack to reuse.
+Code-node values: `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf`, `tieredOf` and `resultOf`. `fill` fills prompt
+placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer param of at least 1. `maxRepairs` and
+`maxFixes` are the params of those names, for a composition built on the pack to reuse.
 
 ## Seats and profiles
 
