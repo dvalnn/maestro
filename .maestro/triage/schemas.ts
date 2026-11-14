@@ -121,7 +121,6 @@ const SPEC_FIELDS = {
 	what: Text(),
 	decisions: List(Point),
 	excluded: List(Point),
-	acceptance: List(Text()),
 	subject: Text(),
 };
 /** The planner's spec: `requirements` in EARS, numbered R1 on by position. */
@@ -255,7 +254,7 @@ export const Checked = shape({ findings: List(Text()) }, {});
 export type Checked = ValueOf<typeof Checked>;
 
 /**
- * The triager's ruling: an early verdict, a direct brief of `what`, `requirements`, `acceptance` and `subject`, or at
+ * The triager's ruling: an early verdict, a direct brief of `what`, `requirements` and `subject`, or at
  * most `maxGroups` groups of questions for the scouts and the planner.
  */
 export const Ruling = (maxGroups: number) =>
@@ -273,7 +272,6 @@ export const Ruling = (maxGroups: number) =>
 		{
 			what: Text(),
 			requirements: List(Text()),
-			acceptance: List(Text()),
 			subject: Text(),
 			duplicateOf: Int(),
 			related: List(Int()),
@@ -284,10 +282,9 @@ export const Ruling = (maxGroups: number) =>
 			needs("direct", "what"),
 			...onlyOn(RULED, "needs-info", "ahead"),
 			needs("direct", "requirements"),
-			needs("direct", "acceptance"),
 			needs("direct", "subject"),
 			...onlyOn(RULED, "duplicate", "duplicateOf"),
-			...["what", "requirements", "acceptance", "subject"].flatMap((f) =>
+			...["what", "requirements", "subject"].flatMap((f) =>
 				onlyOn(RULED, "direct", f),
 			),
 			NARROWS,

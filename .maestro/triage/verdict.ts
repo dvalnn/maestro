@@ -12,12 +12,7 @@ import type {
 	Verdict,
 } from "./schemas";
 
-/** The programs an acceptance command may start with to count as runnable. */
-export const RUNNERS = ["bun", "bunx", "just", "mise"];
-/** The last acceptance item of a direct build: the target's whole gate. */
-const GATE_COMMAND = "just check";
 const NO_TOUCHES = "Which paths does the change create or edit?";
-const NO_ACCEPTANCE = `Which command proves the change done? Acceptance commands start with ${RUNNERS.join(", ")}.`;
 const outsideRepo = (paths: string[]) =>
 	`Which repo-relative paths does the change touch in place of ${paths.join(", ")}?`;
 
@@ -32,9 +27,6 @@ export const plansOf = (respec: boolean): Record<Ruled, boolean> => ({
 	duplicate: false,
 	"needs-info": false,
 });
-
-const isRunnable = (command: string) =>
-	RUNNERS.includes(command.trim().split(/\s+/)[0] ?? "");
 
 /** The question for each dependency of the child at `index` that is not an earlier child. */
 const orderGaps = ({ title, dependsOn }: Child, index: number) =>
@@ -54,16 +46,14 @@ function scopeGaps(touches: string[]): string[] {
 
 /**
  * The question for each gap of `proposal`:
- * - a ready one's missing or outside paths, or missing runnable acceptance command;
+ * - a ready one's missing or outside paths;
  * - a split's child that depends on one not before it.
  */
 function gapsOf(proposal: Proposal): string[] {
 	if (proposal.verdict === "split")
 		return (proposal.children ?? []).flatMap(orderGaps);
 	if (proposal.verdict !== "ready-for-agent") return [];
-	const gaps = scopeGaps(proposal.touches);
-	if (!proposal.spec?.acceptance.some(isRunnable)) gaps.push(NO_ACCEPTANCE);
-	return gaps;
+	return scopeGaps(proposal.touches);
 }
 
 /** The verdict of `proposed`: needs-info when it asks any of `questions`, else gated when ready at high risk. */
@@ -113,12 +103,11 @@ function proposed(proposal: Proposal, unrun: string[]): Triage {
 	};
 }
 
-/** The spec of a direct ruling: its brief, marked `brief`, its acceptance ending in the target's whole gate. */
+/** The spec of a direct ruling: its brief, marked `brief`. */
 const directSpec = ({
 	files,
 	what = "",
 	requirements = [],
-	acceptance = [],
 	subject = "",
 }: Ruling) => ({
 	touches: scopeOf(files).paths,
@@ -126,7 +115,6 @@ const directSpec = ({
 	requirements,
 	decisions: [],
 	excluded: [],
-	acceptance: [...acceptance.filter((a) => a !== GATE_COMMAND), GATE_COMMAND],
 	subject,
 	brief: true,
 });

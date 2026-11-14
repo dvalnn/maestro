@@ -6,7 +6,7 @@ pass.
 - A test that faithfully pins a flaw in the spec: stop and reply blocked, naming the requirement and the flaw.
 - Never weaken a test to make the build pass.
 
-Write the test for each requirement the map defers, in the file its acceptance item names, once the names it needs
-exist. Your report names each deferred requirement's test.
+Write the test for each requirement the map defers, in the test file that owns it, once the names it needs exist. Your
+report names each deferred requirement's test.
 
 A pinned test's `misses` is yours to pin with your own tests.

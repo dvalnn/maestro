@@ -202,8 +202,8 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
 
 - **Routes.** The triager runs first and rules alone: a duplicate settles there, and it asks the owner, with a
   `needs-info` verdict. A `direct` ticket goes straight to the build on a brief: the triager's `what`, only what the ask
-  leaves open, one to three requirements with an acceptance item each, `just check` last, and `subject`; a `plan` ticket
-  goes on to the scouts, the planner and the spec checker. Either spec is gated by risk as any other.
+  leaves open, one to three requirements and `subject`; a `plan` ticket goes on to the scouts, the planner and the spec
+  checker. Either spec is gated by risk as any other.
 - **Spec check.** On findings, the planner revises its spec once in the same session; the revised spec is not checked
   again. A requirement off the EARS shape is a finding too, found by code beside the checker's; the planner can run the
   same rule as `check ears` before it finishes. A finding only the owner can rule on becomes a question, as does a check
@@ -468,10 +468,6 @@ Subject: `<subject>`
 
 - **<lead>**
   - <point>
-
-#### Acceptance
-
-- [ ] <item naming the requirements it proves>
 
 <details><summary><b>Touches</b> · <n> files</summary>
 

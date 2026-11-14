@@ -40,7 +40,7 @@ import {
 	Ruling,
 	Triage,
 } from "./triage/schemas";
-import { findingsOf, plansOf, RUNNERS, settle } from "./triage/verdict";
+import { findingsOf, plansOf, settle } from "./triage/verdict";
 
 // ADR 0008: a code node's function must be exported by its composition file.
 export * from "@maestro/classics/code";
@@ -56,7 +56,6 @@ const TASKS = {
 				narrow: NARROW,
 				maxRequirements: MAX_BRIEF_REQUIREMENTS,
 				maxWords: MAX_REQUIREMENT_WORDS,
-				runners: RUNNERS.join(", "),
 			}),
 			PLAIN,
 			GATE,
@@ -64,7 +63,6 @@ const TASKS = {
 	scout: task(SCOUT),
 	planner: task(
 		fill(PLANNER, {
-			runners: RUNNERS.join(", "),
 			maxWords: MAX_REQUIREMENT_WORDS,
 		}),
 		PLAIN,

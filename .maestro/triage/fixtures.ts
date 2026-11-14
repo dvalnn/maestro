@@ -22,7 +22,6 @@ export const spec = {
 		{ lead: "Name source", points: ["The first argument", "In greet.sh"] },
 	],
 	excluded: [{ lead: "Flags", points: [] }],
-	acceptance: ["bun test ./packages/cli/src/a.test.ts # R1"],
 	subject: "feat(cli): greet by name",
 };
 export const unspecified = {

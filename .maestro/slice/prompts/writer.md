@@ -79,20 +79,20 @@ figure fits, say the shape in a sentence.
 
 ## Evidence
 
-Nothing ran for you here: the gate passed before you, so cite the tests the patches add or the spec's acceptance names,
-never a run you did not see.
+Nothing ran for you here: the gate passed before you, so cite the tests the patches add or the tester's map names, never
+a run you did not see.
 
 - **Direct:** Before is what the issue asked for, failing or missing. After names the test that now pins it, as
   pseudocode of its inputs and outcome, or the command output that shows it. Give one pair for the change the issue
   asked for, and at most two more for what the owner would otherwise check by hand, each Before and After one short
   line.
-- **Specced:** one row per requirement, in order, naming the test that pins it: the acceptance item whose `# R` comment
-  names it, or a test the patches add. A requirement no test pins says so in its row.
+- **Specced:** one row per requirement, in order, naming the test that pins it: a test the patches add. A requirement no
+  test pins says so in its row.
 - **Overrules:** when the spec has a `## overrules` section, the build overruled those tests: name each in its row or
   pair, with its why.
-- **Map:** when the spec has a `## map` section, a tester pinned the requirements, and its tests take the place of the
-  acceptance items: each row or pair names the map's test, by file and name, or for a deferred requirement the test the
-  patches add. An untestable requirement says so, with its why.
+- **Map:** when the spec has a `## map` section, a tester pinned the requirements, and its tests are the ones to name:
+  each row or pair names the map's test, by file and name, or for a deferred requirement the test the patches add. An
+  untestable requirement says so, with its why.
 
 ## Off spec
 

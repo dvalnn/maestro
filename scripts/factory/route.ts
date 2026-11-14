@@ -124,10 +124,10 @@ function optional<T>(
 	return o[key] === undefined ? undefined : field(o, key, is, what);
 }
 
-/** A stored spec as the current shape has it: `steps` dropped, absent `decisions` and `excluded` empty. */
+/** A stored spec as the current shape has it: `steps` and `acceptance` dropped, absent `decisions` and `excluded` empty. */
 function upgradeSpec(value: unknown): unknown {
 	if (!isJson(value)) return value;
-	const { steps: _steps, ...rest } = value;
+	const { steps: _steps, acceptance: _acceptance, ...rest } = value;
 	return { decisions: [], excluded: [], ...rest };
 }
 
@@ -338,12 +338,6 @@ const designSections = (spec: Spec) => [
 const touchLines = (touches: readonly string[]) =>
 	list(touches.map((t) => `\`${t}\``));
 
-const acceptanceLines = (acceptance: readonly string[]) =>
-	section(
-		"Acceptance",
-		acceptance.map((a) => `- [ ] ${a}`),
-	);
-
 /** `lines` folded under a summary of `heading` and their `count`, left out when there are none. */
 const folded = (heading: string, count: string, lines: string[]) =>
 	lines.length
@@ -366,7 +360,6 @@ const files = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
 const specLines = (spec: Spec) => [
 	...contextSection(spec),
 	...designSections(spec),
-	...acceptanceLines(spec.acceptance),
 	...folded("Touches", files(spec.touches.length), touchLines(spec.touches)),
 ];
 
@@ -375,7 +368,6 @@ const requestedLines = (spec: Spec) => [
 	...contextSection(spec),
 	...designSections(spec),
 	...section("Touches", touchLines(spec.touches)),
-	...acceptanceLines(spec.acceptance),
 ];
 
 /** The spec a re-triage starts from, every section open, under its own heading. */
@@ -775,13 +767,10 @@ export function unresolvedOf(upheld?: string) {
 	return found?.match(FINDING) ? found : undefined;
 }
 
-function evidenceLines({ upheld, result }: Landed) {
-	const gate = (result.spec?.acceptance ?? [])
-		.map((a) => `\`${oneLine(a)}\``)
-		.join(", ");
+function evidenceLines({ upheld }: Landed) {
 	const review =
 		unresolvedOf(upheld) === undefined ? "upheld none" : "findings upheld";
-	return [`- Gate: ${gate ? `${gate} ` : ""}green`, `- Review: ${review}`];
+	return ["- Gate: green", `- Review: ${review}`];
 }
 
 /** The findings the review left upheld after its last fix round, under their own heading; none when it left none. */
@@ -872,7 +861,7 @@ function writtenBody(landed: Landed, pr: string) {
 /**
  * The PR body of a landed slice (factory.md, Rules, Landing and PRs: PRs), led by its draft notice when it has one: the
  * writer's followed by the tick's sections, else one built from the tick's data alone, with the subject and each decision's lead as Summary, the
- * acceptance commands as the gate with the review's upheld count as Evidence, then the unresolved review, risk and
+ * gate as green with the review's upheld count as Evidence, then the unresolved review, risk and
  * spend.
  */
 export function pullBody(landed: Landed) {

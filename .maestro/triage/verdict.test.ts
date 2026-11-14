@@ -15,6 +15,29 @@ import { classify } from "./risk";
 import type { Checked, Proposal, Triage } from "./schemas";
 import { findingsOf, settle } from "./verdict";
 
+// Seam: settle returns the triage verdict, its owner questions and the spec handed on.
+test("a ready plan without acceptance asks no question about a proving command", () => {
+	const proposal = {
+		...ready,
+		spec: {
+			what: spec.what,
+			requirements: spec.requirements,
+			figures: spec.figures,
+			consequences: spec.consequences,
+			decisions: spec.decisions,
+			excluded: spec.excluded,
+			subject: spec.subject,
+		},
+	} as unknown as Proposal;
+	expect(() => settle(planned(proposal))).not.toThrow();
+	const { triage } = settle(planned(proposal));
+	expect(triage).toMatchObject({ verdict: "ready-for-agent", questions: [] });
+	expect<unknown>(triage.spec).toEqual({
+		touches: ready.touches,
+		...proposal.spec,
+	});
+});
+
 const LOW = "touches only docs and tests, 3 paths or fewer";
 const many = (n: number) =>
 	Array.from({ length: n }, (_, i) => `packages/cli/src/f${i}.ts`);
@@ -185,24 +208,6 @@ const overrides: [string, Proposal, Triage][] = [
 		},
 	],
 	[
-		"no runnable acceptance into needs-info",
-		{ ...ready, spec: { ...spec, acceptance: ["greet.sh greets by name"] } },
-		{
-			verdict: "needs-info",
-			...medium,
-			questions: [
-				askAlone(
-					"Which command proves the change done? Acceptance commands start with bun, bunx, just, mise.",
-				),
-			],
-			spec: {
-				touches: ready.touches,
-				...spec,
-				acceptance: ["greet.sh greets by name"],
-			},
-		},
-	],
-	[
 		"a high-risk ready into needs-approval",
 		{ ...ready, contract: " the --json flag " },
 		{
@@ -249,7 +254,7 @@ test.each([
 	["medium", ["packages/cli/src/a.ts"], "ready-for-agent"],
 	["high", ["packages/ir/src/a.ts"], "needs-approval"],
 ])(
-	"settle builds a direct ruling at %s risk on its marked brief, the gate after its acceptance, as %s",
+	"settle builds a direct ruling at %s risk on its marked brief, as %s",
 	(risk, files, verdict) => {
 		const { triage } = settle({
 			ruling: {
@@ -259,7 +264,6 @@ test.each([
 				groups: [],
 				what: spec.what,
 				requirements: spec.requirements,
-				acceptance: [...spec.acceptance, "just check"],
 				subject: spec.subject,
 			},
 			respec: false,
@@ -274,7 +278,6 @@ test.each([
 			requirements: spec.requirements,
 			decisions: [],
 			excluded: [],
-			acceptance: [...spec.acceptance, "just check"],
 			subject: spec.subject,
 			brief: true,
 		});
@@ -289,7 +292,6 @@ test("settle takes the planner's spec over a direct ruling's brief on a respec",
 		groups: [],
 		what: "the brief",
 		requirements: spec.requirements,
-		acceptance: spec.acceptance,
 		subject: spec.subject,
 	};
 	const { triage } = settle({ ...planned(ready), ruling, respec: true });

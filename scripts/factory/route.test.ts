@@ -7,6 +7,7 @@ import {
 	dataOf,
 	elapsed,
 	FIGURES,
+	lastSpecLines,
 	MARKER,
 	parseMasterclass,
 	parseTriage,
@@ -16,6 +17,7 @@ import {
 	questionOf,
 	type Triage as Routed,
 	replyHow,
+	requestOf,
 	shorthand,
 	tracked,
 	turnLines,
@@ -32,7 +34,6 @@ test("a stored spec that carries steps parses without them", () => {
 		touches: ["a.ts"],
 		what: "w",
 		steps: ["x"],
-		acceptance: [],
 		subject: "s",
 	};
 	const triage = {
@@ -151,7 +152,6 @@ test("a triage spec with more than two figures is malformed", () => {
 				what: "w",
 				decisions: [],
 				excluded: [],
-				acceptance: [],
 				subject: "s",
 				figures: [figure, figure, figure],
 			},
@@ -191,7 +191,6 @@ const spec = {
 	what: "w",
 	decisions: [],
 	excluded: [],
-	acceptance: [],
 	subject: "s",
 };
 const result = (verdict: Routed["verdict"], more = {}): Routed => ({
@@ -361,11 +360,11 @@ const reviewed = {
 	excluded: [
 		{ lead: "Others", points: ["No greeting by title", "In greet.sh"] },
 	],
-	acceptance: ["bun test"],
 	subject: "feat: greet",
 };
 
-test("a spec comment reads in order: heading, Context, Requirements, Shape, Decisions, Consequences, Left out, Acceptance, folded Touches, one foot line, then the turn", () => {
+// Seams: the spec comment, build and re-triage requests, PR body, and stored comment data.
+test("a spec comment reads in order without an Acceptance section", () => {
 	const data: Data = {
 		concert: "c1",
 		version: 2,
@@ -428,10 +427,6 @@ test("a spec comment reads in order: heading, Context, Requirements, Shape, Deci
 			"  - No greeting by title",
 			"  - In greet.sh",
 			"",
-			"#### Acceptance",
-			"",
-			"- [ ] bun test",
-			"",
 			"<details><summary><b>Touches</b> · 2 files</summary>",
 			"",
 			"- `a.ts`",
@@ -445,6 +440,43 @@ test("a spec comment reads in order: heading, Context, Requirements, Shape, Deci
 		].join("\n"),
 	);
 	expect(dataOf(shown)).toEqual(data);
+});
+
+test("a stored spec comment drops acceptance and keeps the rest of the spec", () => {
+	const legacy = { ...reviewed, acceptance: ["bun test"] };
+	const stored = {
+		version: 1,
+		result: result("ready-for-agent", { spec: legacy }),
+	};
+	const body = `<!-- maestro-tm -->\n<!-- maestro-tm-data ${JSON.stringify(stored)} -->`;
+	const parsed = dataOf(body);
+	const { acceptance: _acceptance, ...kept } = legacy;
+	expect<unknown>(parsed.result?.spec).toEqual(kept);
+});
+
+test("build and re-triage requests leave out the stored spec's Acceptance section", () => {
+	const legacy = { ...reviewed, acceptance: ["bun test"] };
+	const parsed = parseTriage(result("ready-for-agent", { spec: legacy }));
+	if (!parsed.spec) throw new Error("no spec");
+	const request = requestOf(
+		{ number: 7, title: "Greet", body: "The ask." },
+		parsed.spec,
+	);
+	const last = lastSpecLines(parsed.spec).join("\n");
+	for (const text of [request, last]) {
+		expect(text).toContain("#### Requirements\n\n- **R1**");
+		expect(text).toContain("#### Touches\n\n- `a.ts`");
+		expect(text).not.toContain("#### Acceptance");
+	}
+});
+
+test("a built PR's Gate line names no command from the stored spec", () => {
+	const legacy = { ...reviewed, acceptance: ["bun test"] };
+	const parsed = parseTriage(result("ready-for-agent", { spec: legacy }));
+	const body = pullBody({ issue: 5, spend: [], risk: "low", result: parsed });
+	expect(body.split("\n").find((line) => line.startsWith("- Gate:"))).toBe(
+		"- Gate: green",
+	);
 });
 
 const briefed = result("ready-for-agent", {
@@ -518,7 +550,7 @@ test("a spec comment leaves out a Touches with no items, fold and all", () => {
 	const shown = commentOf(data, "needs-approval", "forge-bot");
 	expect(shown).not.toContain("<details>");
 	expect(shown).not.toContain("<summary>");
-	expect(shown).toContain("- [ ] bun test\n\n---");
+	expect(shown).toContain("  - In greet.sh\n\n---");
 });
 
 test.each([

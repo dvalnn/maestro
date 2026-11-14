@@ -168,7 +168,6 @@ const direct: Ruling = {
 	groups: [],
 	what: spec.what,
 	requirements: spec.requirements,
-	acceptance: spec.acceptance,
 	subject: spec.subject,
 };
 
@@ -213,7 +212,6 @@ const verdicts: [string, Ruling, Proposal | undefined, Triage][] = [
 				requirements: spec.requirements,
 				decisions: [],
 				excluded: [],
-				acceptance: [...spec.acceptance, "just check"],
 				subject: spec.subject,
 				brief: true,
 			},
@@ -564,7 +562,6 @@ const rulingsOffDirect = [
 const directFields = [
 	["what", spec.what],
 	["requirements", spec.requirements],
-	["acceptance", spec.acceptance],
 	["subject", spec.subject],
 ] as const;
 
@@ -681,6 +678,12 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 		],
 	),
 	["a direct ruling", Ruling(4), direct, true],
+	[
+		"a direct ruling with acceptance",
+		Ruling(4),
+		{ ...direct, acceptance: ["bun test"] },
+		false,
+	],
 	...rulingsOffDirect.flatMap((ruling) =>
 		directFields.map(
 			([field, value]): [string, Type<unknown>, object, boolean] => [
@@ -709,12 +712,6 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 		{ ...direct, requirements: ["R1", "R2", "R3", "R4"] },
 		false,
 	],
-	[
-		"a direct ruling with no acceptance",
-		Ruling(4),
-		{ ...direct, acceptance: undefined },
-		false,
-	],
 	["a direct ruling with no files", Ruling(4), { ...direct, files: [] }, false],
 	[
 		"a direct ruling with more files than a direct build takes",
@@ -730,6 +727,12 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 			verdict: "needs-info",
 			questions: [{ ...claiming, recommend: { label: "B" } }],
 		},
+		false,
+	],
+	[
+		"a ready proposal whose spec carries acceptance",
+		Proposal,
+		{ ...ready, spec: { ...spec, acceptance: ["bun test"] } },
 		false,
 	],
 	[

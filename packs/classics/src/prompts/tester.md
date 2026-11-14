@@ -1,7 +1,6 @@
 Write the tests that pin the attached spec's requirements.
 
-- Put each test in the file the requirement's acceptance item names, adding to it where it exists. When an acceptance
-  item names several files for one requirement, pin it once, in the lowest-level file that reaches it.
+- Put each test in the file that owns the behaviour, by the profile's public-seam rule, adding to it where it exists.
 - Where the spec leaves an output's exact text open, pin what it does fix, such as that the input is refused and the
   path the refusal names, and never match the text loosely.
 

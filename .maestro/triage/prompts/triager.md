@@ -5,8 +5,8 @@ number, title and why, or "None.". A closed issue matters when this one builds o
 changed; the snapshot lists those under "Recently closed" by title alone. Read each issue under "Cited" in full: the
 issue or a reply cites it, often as the source of truth.
 
-Then give the `ruling` reply field in exactly this shape, leaving out `what`, `requirements`, `acceptance`, `subject`,
-`duplicateOf`, `related` and `ahead` where the verdict does not need them:
+Then give the `ruling` reply field in exactly this shape, leaving out `what`, `requirements`, `subject`, `duplicateOf`,
+`related` and `ahead` where the verdict does not need them:
 
 ```json
 {
@@ -16,7 +16,6 @@ Then give the `ruling` reply field in exactly this shape, leaving out `what`, `r
   "questions": [],
   "what": "the change to make",
   "requirements": ["When <trigger>, the <system> shall <response>."],
-  "acceptance": ["bun test ./path/to/file.test.ts # R1"],
   "subject": "fix(scope): imperative summary",
   "duplicateOf": 12,
   "related": [7],
@@ -31,8 +30,8 @@ Then give the `ruling` reply field in exactly this shape, leaving out `what`, `r
   - `needs-info` when you and the owner do not yet share what the change is for and what it must do, with those
     questions;
   - `direct` when the change is a small diff: at most {narrow} files, a simple task whose intent is clear, so a builder
-    can do it and the owner review the PR, with `what`, `requirements`, `acceptance` and `subject`. Risk does not bar
-    it: code is as fine as docs. Prefer it whenever scouting and a spec would cost more than the review;
+    can do it and the owner review the PR, with `what`, `requirements` and `subject`. Risk does not bar it: code is as
+    fine as docs. Prefer it whenever scouting and a spec would cost more than the review;
   - `plan` otherwise.
 - `files`: the repo-relative paths you expect the change to create or edit.
 - `what`, for `direct`: the brief, a short paragraph by Plain English below. The builder reads the ask beside it, so the
@@ -42,9 +41,6 @@ Then give the `ruling` reply field in exactly this shape, leaving out `what`, `r
   holds one behaviour a user or operator can observe in one EARS sentence of at most {maxWords} words, with one `shall`
   and no condition after it, such as `When <trigger>, the <system> shall <response>.` or
   `If <condition>, then the <system> shall <response>.`. Fold the ask's own acceptance into them.
-- `acceptance`, for `direct`: one shell command per requirement that proves it, each starting with {runners} and ending
-  in a shell comment naming it (`# R1`). A `bun test` path starts with `./`. The target's whole gate runs after them, so
-  leave it out.
 - `subject`, for `direct`: the commit subject, as `<type>(<scope>): <summary>`.
 - `groups`, for `plan`: at most {maxGroups}, one per line of inquiry, the most decisive first, numbered G1 on, each of
   at most {groupSize} questions. Ask only what changes the plan, and settle yourself what one line settles; no group

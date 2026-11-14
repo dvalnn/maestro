@@ -18,7 +18,6 @@ Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-ag
     "decisions": [{ "lead": "a title", "points": ["one fact", "In packages/module"] }],
     "consequences": "what the change makes easier or harder, and its cost",
     "excluded": [{ "lead": "a title", "points": ["one fact"] }],
-    "acceptance": ["bun test ./path/to/file.test.ts # R1"],
     "subject": "feat(scope): imperative summary"
   },
   "children": [{ "title": "a child issue's title", "body": "its ask", "dependsOn": [0] }],
@@ -56,9 +55,6 @@ Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-ag
 - `figures`: the change's shape, drawn before the decisions are written, by Figures below. Leave it out when nothing
   fits.
 - `consequences`: a short paragraph or a line: what the change makes easier or harder, and its cost.
-- `acceptance`: the shell commands that prove it done, each starting with {runners} and ending in a shell comment naming
-  the requirements it proves (`# R1, R2`); every requirement is proved by one. A `bun test` path starts with `./`:
-  without it bun reads a name filter, which skips dot directories such as `.maestro`.
 - `subject`: the commit subject as `<type>(<scope>): <summary>.`.
 - `decisions` and `excluded`: each item a lead and its points. The lead only titles its points; every fact and reason
   belongs in a point, one fact each, and a reference is a plain last point "In `<module>`". A decision is a choice of

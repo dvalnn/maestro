@@ -2,9 +2,9 @@ Check the attached spec against the code. Its spec is the plan inlined in this t
 
 Rule each checklist item below met or broken, reading the code for each. Give the `check` reply field as
 `{ "findings": [...] }`: a met item writes nothing, and a broken item writes one finding per failure, one line, opening
-with the item's name (`Premise`, `Base`, `Figures`, `Acceptance`, `Sites`, `Architecture`, `YAGNI`), then what the spec
-says against what the code shows, with its file:line. The planner revises the spec by them once, and asks the owner what
-only the owner can rule on. Write `"findings": []` when every item is met.
+with the item's name (`Premise`, `Base`, `Figures`, `Sites`, `Architecture`, `YAGNI`), then what the spec says against
+what the code shows, with its file:line. The planner revises the spec by them once, and asks the owner what only the
+owner can rule on. Write `"findings": []` when every item is met.
 
 - Premise: the problem the spec states exists in the code. The behaviour it calls missing or wrong is missing or wrong
   there; cite the file:line that contradicts it.
@@ -12,7 +12,6 @@ only the owner can rule on. Write `"findings": []` when every item is met.
   and behaves as stated, and so does everything it says a change must also update.
 - Figures: each figure holds as a decision does: every module, dependency, call, state and member it draws as it is
   before the change exists as drawn, and its notes say what its labels point at.
-- Acceptance: every requirement (`R1` on, by position) is proved by an acceptance item that names it after a `#`.
 - Sites: the spec misses no place the change must touch: the uninstall path beside an install, each other caller of a
   changed function, each test or doc that states the old behaviour.
 - Architecture: the spec fits the architecture. Break it for each of: a duplicate of a helper or pattern the codebase

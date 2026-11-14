@@ -6,8 +6,5 @@ Review scope is what the change adds plus every function it touches, unchanged l
 citable in scope blocks. One outside it is no finding: report it as a sighting, with its path, what it is and what it
 cites.
 
-An acceptance item the change leaves unmet blocks. An item no change could meet as written, such as a command that runs
-no test, is the spec's fault and out of review: name it in the report's gaps.
-
 The lane's commit message is a placeholder the tour manager replaces on landing: its subject and closing line are out of
 review.

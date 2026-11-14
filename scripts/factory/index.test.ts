@@ -346,7 +346,6 @@ const spec = {
 		{ lead: "Name source", points: ["The first argument", "In greet.sh"] },
 	],
 	excluded: [{ lead: "Flags", points: ["No --loud flag"] }],
-	acceptance: ["bun test"],
 	subject: "feat: greet by name",
 };
 const base = { reasons: ["one script --> two"], questions: [] };
@@ -462,7 +461,7 @@ describe("a tick", () => {
 			ready,
 			["state/ready-for-agent", "risk/low", "area/cli"],
 			true,
-			"### Spec v1 · risk low · area cli\n\n#### Context\n\nGreet the first argument.\n\nSubject: `feat: greet by name`\n\n#### Requirements\n\n- **R1** When greet.sh is given a name, greet.sh shall greet it.\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Acceptance\n\n- [ ] bun test\n\n<details><summary><b>Touches</b> · 1 file</summary>\n\n- `greet.sh`\n\n</details>\n\nReasons: one script --> two",
+			"### Spec v1 · risk low · area cli\n\n#### Context\n\nGreet the first argument.\n\nSubject: `feat: greet by name`\n\n#### Requirements\n\n- **R1** When greet.sh is given a name, greet.sh shall greet it.\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n<details><summary><b>Touches</b> · 1 file</summary>\n\n- `greet.sh`\n\n</details>\n\nReasons: one script --> two",
 			"",
 		],
 		[
@@ -1110,7 +1109,7 @@ const rejected = (reason: string): Result => ({
 const CACHED = "/cache/maestro-factory/i7";
 /** The `--request` of a build of issue `n`'s spec, before anything an encore is fed. */
 const requestFor = (n: number) =>
-	`# #${n} Greet by name\n\n#### Context\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Requirements\n\n- **R1** When greet.sh is given a name, greet.sh shall greet it.\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Touches\n\n- \`greet.sh\`\n\n#### Acceptance\n\n- [ ] bun test\n\n## The ask\n\n${ASK}\n`;
+	`# #${n} Greet by name\n\n#### Context\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Requirements\n\n- **R1** When greet.sh is given a name, greet.sh shall greet it.\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Touches\n\n- \`greet.sh\`\n\n## The ask\n\n${ASK}\n`;
 /** The flags a build of issue 7 at low risk takes after its `--request`, revising the PR commit `revises` names. */
 const lowFlags = (revises = "") => [
 	"--preset",
@@ -1448,7 +1447,7 @@ describe("a build", () => {
 				"",
 				"## Evidence",
 				"",
-				"- Gate: `bun test` green",
+				"- Gate: green",
 				"- Review: findings upheld",
 				"",
 				"## Unresolved review",
