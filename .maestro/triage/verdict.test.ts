@@ -407,6 +407,28 @@ test("settle fails when the triager handed the issue on and the planner gave not
 	).toThrow("the planner gave no proposal");
 });
 
+test("settle carries what waits from a needs-info ruling", () => {
+	const ruling = {
+		...planning,
+		verdict: "needs-info" as const,
+		groups: [],
+		questions: [askAlone("Who?")],
+		ahead: "Next round: ask where once the owner chooses who.",
+	};
+	const { triage } = settle({
+		ruling,
+		respec: false,
+		proposal: [{ outcome: "skipped" }],
+		check: [],
+		revision: [],
+	});
+	expect(triage).toMatchObject({
+		verdict: "needs-info",
+		questions: [askAlone("Who?")],
+		ahead: "Next round: ask where once the owner chooses who.",
+	});
+});
+
 const asking = [straying, claiming];
 
 test.each([

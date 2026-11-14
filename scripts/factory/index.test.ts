@@ -541,6 +541,36 @@ describe("a tick", () => {
 		},
 	);
 
+	test("routes what waits after the last question and before the closing rule", async () => {
+		const triage = {
+			...base,
+			verdict: "needs-info",
+			risk: "medium",
+			questions: [
+				{ ask: "Who?", options: [], context: [] },
+				{ ask: "When?", options: [], context: [] },
+			],
+			ahead: "Next round: ask where <!-- after the answers.",
+		};
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[triageConcert("c1", 7)],
+			settled(triage),
+		);
+		await t.run();
+		const comments = questionsAt(t.find(7));
+		expect(comments).toHaveLength(1);
+		const lines = (comments[0] ?? "").split("\n");
+		const lastQuestion = lines.indexOf("**Q2 · When?**");
+		const ahead = lines.indexOf(
+			"Next round: ask where <! -- after the answers.",
+		);
+		const closingRule = lines.lastIndexOf("---");
+		expect(lastQuestion).toBeGreaterThanOrEqual(0);
+		expect(ahead).toBeGreaterThan(lastQuestion);
+		expect(closingRule).toBeGreaterThan(ahead);
+	});
+
 	const asking: Triage = {
 		...base,
 		verdict: "needs-info",

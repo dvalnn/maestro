@@ -606,6 +606,25 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 	],
 	["a planning ruling", Ruling(4), planning, true],
 	[
+		"a needs-info ruling with ahead",
+		Ruling(4),
+		{
+			...planning,
+			verdict: "needs-info",
+			questions: [askAlone("Who?")],
+			ahead: "Next round: ask where.",
+		},
+		true,
+	],
+	...[planning, direct, duplicateRuling].map(
+		(ruling): [string, Type<unknown>, object, boolean] => [
+			`a ${ruling.verdict} ruling with ahead`,
+			Ruling(4),
+			{ ...ruling, ahead: "Next round: ask where." },
+			false,
+		],
+	),
+	[
 		"a needs-info ruling asking with options, a recommendation and context",
 		Ruling(4),
 		{
@@ -730,6 +749,12 @@ const outputs: [string, Type<unknown>, object, boolean][] = [
 		Triage,
 		triage,
 		true,
+	]),
+	...triages.map((triage): [string, Type<unknown>, object, boolean] => [
+		`a ${triage.verdict} triage with ahead`,
+		Triage,
+		{ ...triage, ahead: "Next round: ask where." },
+		triage.verdict === "needs-info",
 	]),
 	...triages
 		.filter((triage) => triage.verdict !== "duplicate")

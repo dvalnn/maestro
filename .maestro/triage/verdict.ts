@@ -133,7 +133,7 @@ const directSpec = ({
 
 /** The triage of a ruling the triager settled early as `verdict`, `direct` building at once on its brief. */
 function ruled(ruling: Ruling, ruledAs: Exclude<Ruled, "plan">): Triage {
-	const { files, questions, duplicateOf, related } = ruling;
+	const { files, questions, duplicateOf, related, ahead } = ruling;
 	const direct = ruledAs === "direct";
 	const classified = classify(files, "");
 	const verdict = verdictOf(
@@ -148,6 +148,7 @@ function ruled(ruling: Ruling, ruledAs: Exclude<Ruled, "plan">): Triage {
 		...(direct && { spec: directSpec(ruling) }),
 		...(verdict === "duplicate" && { duplicateOf }),
 		...relatedOf(related),
+		...(verdict === "needs-info" && ahead && { ahead }),
 	};
 }
 

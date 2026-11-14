@@ -208,7 +208,11 @@ async function apply(tick: Tick, number: number, data: Data, result: Triage) {
 		await ask(
 			tick,
 			number,
-			questionOf(result.questions, replyHow(result.questions, tick.login)),
+			questionOf(
+				result.questions,
+				replyHow(result.questions, tick.login),
+				result.ahead,
+			),
 		);
 	const { labels } = await tick.forge.issue(number);
 	await tick.forge.setLabels(number, triaged(labels, result));

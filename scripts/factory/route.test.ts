@@ -793,3 +793,25 @@ test("a child that depends on itself or a later child makes a triage malformed",
 	expect(() => parseTriage(split([child([]), child([2])]))).toThrow();
 	expect(parseTriage(split([child([]), child([0])])).children).toHaveLength(2);
 });
+
+test("a question comment sets ahead between blank lines after the last question and before the closing rule", () => {
+	const questions = [{ ask: "Who?", options: [], context: [] }];
+	expect(questionOf(questions, "How.", "Next round: where.")).toBe(
+		[
+			"<!-- maestro-tm-question -->",
+			"",
+			"### Maestro asks · 1 question",
+			"",
+			"---",
+			"",
+			"**Q1 · Who?**",
+			"",
+			"Next round: where.",
+			"",
+			"---",
+			"",
+			"<sub>How.</sub>",
+			"",
+		].join("\n"),
+	);
+});

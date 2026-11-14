@@ -634,9 +634,13 @@ const questionLines = (q: Question, n: number) => [
 
 /**
  * A question comment (factory.md, Forge surfaces: Question comments): the marker, the heading, `questions` between
- * rules, then `how` to answer. Agent text in it is made inert.
+ * rules, `ahead` when given, then `how` to answer. Agent text in it is made inert.
  */
-export const questionOf = (questions: readonly Question[], how: string) =>
+export const questionOf = (
+	questions: readonly Question[],
+	how: string,
+	ahead?: string,
+) =>
 	[
 		QUESTION,
 		"",
@@ -644,6 +648,7 @@ export const questionOf = (questions: readonly Question[], how: string) =>
 			asks(questions.length),
 			"",
 			...questions.flatMap((q, i) => [RULE, "", ...questionLines(q, i + 1)]),
+			...(ahead ? [ahead, ""] : []),
 			...closingLines(how),
 		].map(inert),
 		"",

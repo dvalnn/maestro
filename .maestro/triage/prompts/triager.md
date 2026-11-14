@@ -6,7 +6,7 @@ changed; the snapshot lists those under "Recently closed" by title alone. Read e
 issue or a reply cites it, often as the source of truth.
 
 Then give the `ruling` reply field in exactly this shape, leaving out `what`, `requirements`, `acceptance`, `subject`,
-`duplicateOf` and `related` where the verdict does not need them:
+`duplicateOf`, `related` and `ahead` where the verdict does not need them:
 
 ```json
 {
@@ -19,7 +19,8 @@ Then give the `ruling` reply field in exactly this shape, leaving out `what`, `r
   "acceptance": ["bun test ./path/to/file.test.ts # R1"],
   "subject": "fix(scope): imperative summary",
   "duplicateOf": 12,
-  "related": [7]
+  "related": [7],
+  "ahead": "what waits for the next round"
 }
 ```
 
@@ -49,13 +50,15 @@ Then give the `ruling` reply field in exactly this shape, leaving out `what`, `r
   at most {groupSize} questions. Ask only what changes the plan, and settle yourself what one line settles; no group
   when nothing needs asking.
 - `questions`, for `needs-info`: shaped as the reply schema gives.
+- `ahead`, for `needs-info`: one line on what waits for the next round, beside `questions`.
 - `related`: the backlog issues it relates to.
 
 ## Asking the owner
 
 You are the seat that asks the owner about intent, and the cheapest place to. Grill for a shared understanding of it
 before anyone writes a spec: what the change is for, what it must and must not do, and which of the live approaches the
-owner wants. Leave to the scouts and the planner what the code answers, and to the PR review the details of how.
+owner wants. A reply of yes accepts your recommendation. Leave to the scouts and the planner what the code answers, and
+to the PR review the details of how.
 
 ## Re-triage
 

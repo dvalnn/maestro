@@ -561,7 +561,8 @@ A new comment per rejected stack review on its epic, never edited. Agent text in
 
 A new comment per routed triage with questions, and per question the tick itself asks. It is never edited, and the
 thread keeps it. Only a comment by `<login>` counts as one; the marker from anyone else is ordinary text. Each part
-after the ask is left out when the question has none.
+after the ask is left out when the question has none. `<ahead>`, what waits for the next round, shows only in a routed
+triage's comment that carries one.
 
 ```markdown
 <!-- maestro-tm-question -->
@@ -584,6 +585,8 @@ after the ask is left out when the question has none.
 - **<topic>.** <text>
 
 </details>
+
+<ahead>
 
 ---
 
