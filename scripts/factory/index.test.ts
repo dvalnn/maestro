@@ -11,19 +11,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
-import type {
-	Comment,
-	Forge,
-	Issue,
-	NewIssue,
-	NewPull,
-	Pull,
-	Review,
-} from "./forge";
+import { titleOf } from "./concerts";
+import type { Comment, Pull, Review } from "./forge";
 import { HALT, lock, milestoneOf, type Options, tick } from "./index";
-import { type Landing, landing as repositoryLanding } from "./land";
-import type { Concert, Maestro, Report, Result, Spend } from "./maestro";
-import { stateOf, titleOf } from "./pick";
+import { landing as repositoryLanding } from "./land";
+import type { Concert, Report, Result } from "./maestro";
+import { stateOf } from "./pick";
 import {
 	commentOf,
 	type Data,
@@ -35,256 +28,23 @@ import {
 	type Triage,
 	tracked,
 } from "./route";
+import {
+	BOT,
+	FIRST_PULL,
+	fakeForge,
+	fakeLanding,
+	fakeMaestro,
+	MILESTONE,
+	MILESTONE_ID,
+	NO_REPORT,
+	type Stored,
+} from "./test-support";
 
-const MILESTONE = "v0.1.0";
-const MILESTONE_ID = 11;
 const OTHER_MILESTONE_ID = 12;
-const FIRST_PULL = 30;
 const ASK = "Make greet.sh greet by name.";
 
-type Stored = Issue & { open: boolean; comments: Comment[] };
-const BOT = "forge-bot";
 const OWNER = "tiago";
 let seeded = 1;
-
-/**
- * A forge in memory that logs every write. Like Forgejo given a name it does not know, it ignores every query and
- * lists all open issues. `cut` names a write that fails once, as a tick cut short would.
- */
-function fakeForge(issues: Stored[], cut?: string, events: string[] = []) {
-	const writes: string[] = [];
-	const depends = new Set<string>();
-	const opened: NewPull[] = [];
-	const blocking: Record<number, number[]> = {};
-	const heads: Record<string, string> = {};
-	const pins: number[] = [];
-	const closedPulls = new Set<number>();
-	const reviews: Record<number, Review[]> = {};
-	const closed: Issue[] = [
-		{ number: 1, title: "An old one", body: "", labels: [] },
-	];
-	const pulls: Pull[] = [
-		{
-			number: 20,
-			head: "maestro-tm/i6",
-			sha: "sha20",
-			base: "main",
-			body: "Closes #6",
-			additions: 3,
-			deletions: 1,
-			files: 2,
-		},
-	];
-	let next = 100;
-	let nextComment = 1000;
-	let failing = cut;
-	const write = (line: string) => {
-		if (failing && line.startsWith(failing)) {
-			failing = undefined;
-			throw new Error(`forge: cut at ${line}`);
-		}
-		writes.push(line);
-	};
-	const find = (n: number) => {
-		const issue = issues.find((i) => i.number === n);
-		if (!issue) throw new Error(`no issue #${n}`);
-		return issue;
-	};
-	const forge: Forge = {
-		account: async () => ({ login: BOT, name: BOT, email: `${BOT}@x` }),
-		login: async () => BOT,
-		milestone: async (title) =>
-			title === MILESTONE ? MILESTONE_ID : undefined,
-		issue: async (n) => {
-			const issue = issues.find((i) => i.number === n);
-			if (!issue) throw new Error(`forge: 404 from GET /issues/${n}: {}`);
-			return issue;
-		},
-		open: async () => issues.filter((i) => i.open),
-		closed: async () => [
-			...closed,
-			...issues.filter((i) => !i.open && i.closed !== undefined),
-		],
-		pinned: async () => pins,
-		pulls: async () =>
-			pulls
-				.filter((p) => !closedPulls.has(p.number))
-				.map((p) => ({ ...p, sha: heads[p.head] ?? p.sha })),
-		setLabels: async (n, labels) => {
-			write(`labels #${n} ${labels.join(" ")}`);
-			find(n).labels = labels;
-		},
-		edit: async (n, { body, closed }) => {
-			write(`edit #${n}${closed ? " closed" : ""}`);
-			const issue = find(n);
-			if (body !== undefined) issue.body = body;
-			if (closed) issue.open = false;
-		},
-		comments: async (n) => find(n).comments,
-		comment: async (n, body) => {
-			write(`comment #${n}`);
-			find(n).comments.push({ id: nextComment, body, author: BOT });
-			return nextComment++;
-		},
-		editComment: async (id, body) => {
-			write(`edit comment ${id}`);
-			const comment = issues
-				.flatMap((i) => i.comments)
-				.find((c) => c.id === id);
-			if (!comment) throw new Error(`no comment ${id}`);
-			comment.body = body;
-		},
-		file: async (issue: NewIssue) => {
-			write(`file #${next} ${issue.title}: ${issue.labels.join(" ")}`);
-			issues.push({ ...issue, number: next, open: true, comments: [] });
-			return next++;
-		},
-		depend: async (n, blocker) => {
-			if (depends.has(`${n}<${blocker}`)) return;
-			write(`depend #${n} on #${blocker}`);
-			depends.add(`${n}<${blocker}`);
-			blocking[n] = [...(blocking[n] ?? []), blocker];
-		},
-		blockers: async (n) =>
-			(blocking[n] ?? []).filter(
-				(b) => issues.find((i) => i.number === b)?.open ?? true,
-			),
-		push: async (dir, commit, branch) => {
-			write(`push ${commit} as ${branch} from ${dir}`);
-			heads[branch] = commit;
-		},
-		openPull: async (pull) => {
-			write(`pull ${pull.head} to ${pull.base}: ${pull.title}`);
-			const number = FIRST_PULL + opened.length;
-			opened.push(pull);
-			pulls.push({
-				...pull,
-				number,
-				sha: "",
-				additions: 0,
-				deletions: 0,
-				files: 0,
-			});
-			return number;
-		},
-		editPull: async (n, title, body) => {
-			write(`rewrite #${n}: ${title}`);
-			const pull = pulls.find((p) => p.number === n);
-			if (pull) Object.assign(pull, { title, body });
-		},
-		arm: async (n) => write(`arm #${n}`),
-		reviews: async (n) => reviews[n] ?? [],
-		head: async (branch) => {
-			events.push(`head ${branch}`);
-			return heads[branch] ?? `sha-${branch}`;
-		},
-	};
-	return {
-		forge,
-		writes,
-		find,
-		opened,
-		blocking,
-		pins,
-		pulls,
-		closedPulls,
-		reviews,
-		closed,
-	};
-}
-
-const NO_REPORT: Report = { obstacles: [], lessons: [], sightings: [] };
-/** The slice concerts that continue another. */
-const ENCORES = ["s2"];
-const spendOf = (short: string): Spend => ({
-	short,
-	encore: ENCORES.includes(short),
-	elapsedMs: 720_000,
-	input: 100,
-	output: 14_000,
-	cacheRead: 812_000,
-	cacheWrite: 131_000,
-	fixes: 0,
-});
-
-function fakeMaestro(
-	concerts: Concert[],
-	results: Record<string, Result>,
-	reports: Record<string, Report>,
-	events: string[] = [],
-) {
-	const starts: string[][] = [];
-	const logs: (string | undefined)[] = [];
-	const applied: string[] = [];
-	let refusal: string | undefined;
-	const maestro: Maestro = {
-		concerts: async (tour, limit = 20) =>
-			concerts
-				.filter((c) => c.tour === tour || c.tour?.startsWith(`${tour}.`))
-				.slice(0, limit),
-		result: async (id) => {
-			const result = results[id];
-			if (!result) throw new Error(`no result for ${id}`);
-			return result;
-		},
-		start: async (args, log) => {
-			logs.push(log);
-			if (refusal) throw new Error(refusal);
-			starts.push(args);
-			events.push("start");
-			return "started";
-		},
-		report: async (id) => reports[id] ?? NO_REPORT,
-		spend: async (id) => spendOf(id),
-		apply: async (id, dir) => {
-			applied.push(`${id} in ${dir}`);
-		},
-	};
-	return {
-		maestro,
-		starts,
-		logs,
-		applied,
-		refuse: (r: string) => (refusal = r),
-	};
-}
-
-/**
- * A landing that logs each step, and fails at the step named `failAt` with `output` until it is healed.
- */
-function fakeLanding(failAt?: keyof Landing, output = "") {
-	const steps: string[] = [];
-	/** The shared trace of each forge head read, the fetch and each start, in order. */
-	const events: string[] = [];
-	let failing = failAt;
-	const step = (name: keyof Landing, line: string) => {
-		if (name === failing) throw new Error(output);
-		steps.push(line);
-	};
-	const landing: Landing = {
-		fetch: async () => {
-			if (failing === "fetch") throw new Error(output);
-			events.push("fetch");
-		},
-		open: async (dir, name, base) =>
-			step("open", `open ${name} at ${dir} on ${base}`),
-		describe: async (dir, message) => {
-			step("describe", `describe ${dir}: ${message}`);
-			return "abc123";
-		},
-		squash: async (dir, message) => {
-			step("squash", `squash ${dir}: ${message}`);
-			return "abc123";
-		},
-		close: async (dir, name) => step("close", `close ${name} at ${dir}`),
-		export: async (revision, root) => ({
-			commit: revision,
-			dir: join(root, revision),
-			differs: false,
-		}),
-	};
-	return { landing, steps, events, heal: () => (failing = undefined) };
-}
 
 /** Issue `number` in `state`, with a spec comment holding `data` when given. */
 const issue = (
@@ -777,14 +537,14 @@ describe("a tick", () => {
 				"--backlog",
 				backlog,
 				"--respec",
-				"--tour",
-				"v0.1.0.i8",
-				"--title",
-				"factory: Greet by name",
 				"--preset",
 				"triage",
 				"--preset",
 				"stub",
+				"--tour",
+				"v0.1.0.i8",
+				"--title",
+				"factory: Greet by name",
 				"-c",
 				"target.base=sha-main",
 			],
@@ -1112,6 +872,8 @@ const requestFor = (n: number) =>
 	`# #${n} Greet by name\n\n#### Context\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Requirements\n\n- **R1** When greet.sh is given a name, greet.sh shall greet it.\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Touches\n\n- \`greet.sh\`\n\n## The ask\n\n${ASK}\n`;
 /** The flags a build of issue 7 at low risk takes after its `--request`, revising the PR commit `revises` names. */
 const lowFlags = (revises = "") => [
+	"--revises",
+	revises,
 	"--preset",
 	"low",
 	"--preset",
@@ -1120,8 +882,6 @@ const lowFlags = (revises = "") => [
 	"v0.1.0.i7",
 	"--title",
 	"factory: Greet by name",
-	"--revises",
-	revises,
 ];
 
 /** `stored` with its spec written at `at`, and touching `touches` when given. */
@@ -1293,35 +1053,6 @@ describe("a build", () => {
 		expect(t.starts[0]).toContain("v0.1.0.i8");
 	});
 
-	test("adds the area preset between the risk's and the tick's, each of the tick's in order", async () => {
-		const t = setup([specced(7, "ready-for-agent")]);
-		t.options.presets.push("xscout");
-		t.find(7).labels.push("area/cli");
-		t.files.push(".maestro/presets/area-cli.yaml");
-		await t.run();
-		expect(t.starts[0]?.slice(4, 8)).toEqual([
-			"--preset",
-			"low",
-			"--preset",
-			"area-cli",
-		]);
-		expect(t.starts[0]?.slice(8, 12)).toEqual([
-			"--preset",
-			"stub",
-			"--preset",
-			"xscout",
-		]);
-	});
-
-	test("takes the risk preset alone when the area has no preset file", async () => {
-		const t = setup([specced(7, "ready-for-agent")]);
-		t.find(7).labels.push("area/cli");
-		t.options.presets = [];
-		await t.run();
-		expect(t.starts[0]).not.toContain("area-cli");
-		expect(t.starts[0]?.filter((a) => a === "--preset")).toHaveLength(1);
-	});
-
 	test("route-only routes a settle and starts no build or triage", async () => {
 		const triaged = issue(7, "needs-triage");
 		triaged.labels.push("area/docs", "risk/low");
@@ -1365,6 +1096,8 @@ describe("a build", () => {
 				expect.stringMatching(/\.maestro\/slice\.ts$/),
 				"--request",
 				requestFor(8),
+				"--revises",
+				"",
 				"--preset",
 				"medium",
 				"--preset",
@@ -1373,8 +1106,6 @@ describe("a build", () => {
 				"v0.1.0.i8",
 				"--title",
 				"factory: Greet by name",
-				"--revises",
-				"",
 				"-c",
 				"target.base=sha-main",
 			],
@@ -2217,6 +1948,8 @@ describe("a stack review", () => {
 			"v0.1.0.i9",
 			"--title",
 			"factory: Greet in two steps",
+			"-c",
+			"target.base=base0",
 		]);
 		expect(args[3]).toBe(
 			`# #9 Greet in two steps\n\n${ASK}\n\n## Children\n\n1. #5 Parse the name\n2. #7 Greet it (after 5)\n\nThe epic's commits end with \`Refs: #5\`, \`Refs: #7\`. The range's other commits are other tickets', there as context only.\n`,
@@ -3159,49 +2892,6 @@ const performedFile = (t: { starts: string[][] }) => {
 };
 
 describe("compositions at the cut", () => {
-	test("fresh triage, build and masterclass perform the forge's main graph rather than the checkout's", async () => {
-		const repository = compositionRepository();
-		const cases: [Stored[], Concert[], string][] = [
-			[[issue(7, "needs-triage")], [], "triage.ts"],
-			[[specced(7, "ready-for-agent")], [], "slice.ts"],
-			[
-				[],
-				Array.from({ length: 10 }, (_, i) => triageConcert(`c${i}`, i + 50)),
-				"masterclass.ts",
-			],
-		];
-		for (const [issues, concerts, name] of cases) {
-			const t = compositionTick(repository, issues, concerts);
-			await t.run();
-			const file = performedFile(t);
-			expect(file.endsWith(join(".maestro", name))).toBe(true);
-			expect(readFileSync(file, "utf8")).toBe(MAIN_GRAPH);
-			expect(t.starts[0]?.slice(-2)).toEqual([
-				"-c",
-				`target.base=${repository.main}`,
-			]);
-		}
-	});
-
-	test("a fresh stack review performs the epic's recorded base graph rather than main or the checkout", async () => {
-		const repository = compositionRepository();
-		const epic = issue(9, "in-progress", {
-			result: { ...base, verdict: "split", risk: "medium", children },
-			filed: [5, 7],
-			base: repository.base,
-		});
-		epic.labels.push("kind/epic");
-		const first = { ...issue(5, "in-review"), open: false, closed: 1 };
-		const last = specced(7, "in-review", { slice: "s1", concert: "s1" });
-		const t = compositionTick(repository, [epic, first, last]);
-		t.pulls.push(pullOf(31, 7));
-		await t.run();
-		const file = performedFile(t);
-		expect(file.endsWith(".maestro/review.ts")).toBe(true);
-		expect(readFileSync(file, "utf8")).toBe(EPIC_GRAPH);
-		expect(t.starts[0]).toContain(`${repository.base}..sha7`);
-	});
-
 	test("--compositions-at @ performs the checkout revision instead of the forge's main graph", async () => {
 		const command = await compositionCommand(compositionRepository(), "@");
 		expect(command.code).toBe(0);
@@ -3234,41 +2924,6 @@ describe("compositions at the cut", () => {
 		expect(command.code).toBe(1);
 		expect(existsSync(command.capture)).toBe(false);
 		expect(existsSync(command.halts)).toBe(false);
-	});
-
-	test("an encore reopens its first concert's graph, kept at its commit after main moves on", async () => {
-		const repository = compositionRepository();
-		const first = compositionTick(repository, [specced(7, "ready-for-agent")]);
-		await first.run();
-		const file = performedFile(first);
-		const encore = compositionTick(repository, [
-			answeredOnce(specced(7, "ready-for-agent", { encore: "c0" })),
-		]);
-		encore.forge.head = async () => repository.base;
-		await encore.run();
-		expect(encore.starts).toHaveLength(1);
-		expect(encore.starts[0]?.slice(0, 2)).toEqual(["encore", "c0"]);
-		expect(encore.starts[0]?.some((arg) => arg.endsWith(".ts"))).toBe(false);
-		expect(readFileSync(file, "utf8")).toBe(MAIN_GRAPH);
-	});
-
-	test("a checkout whose .maestro/ matches the performed tree prints no mismatch line", async () => {
-		const repository = compositionRepository();
-		const t = compositionTick(repository, [issue(7, "needs-triage")]);
-		t.options.compositionsAt = "@";
-		await t.run();
-		expect(readFileSync(performedFile(t), "utf8")).toBe(CHECKOUT_GRAPH);
-		expect(t.said.filter((line) => line.includes("config.yaml"))).toEqual([]);
-	});
-
-	test("a checkout mismatch names the performed commit and the checkout config on one line", async () => {
-		const repository = compositionRepository();
-		const t = compositionTick(repository, [issue(7, "needs-triage")]);
-		await t.run();
-		const notices = t.said.filter((line) => line.includes(repository.main));
-		expect(notices).toHaveLength(1);
-		expect(notices[0]).toContain(".maestro/config.yaml");
-		expect(notices[0]?.split("\n")).toHaveLength(1);
 	});
 });
 

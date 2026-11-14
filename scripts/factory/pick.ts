@@ -69,17 +69,6 @@ export const buildable = <T extends { issue: Issue; data: Data }>(
 		)
 		.sort((a, b) => pinnedFirst(pinned)(a.issue.number, b.issue.number));
 
-/** The tour of `issue`'s concerts in `milestone` (factory.md, Rules, Policy: Tour and title). */
-export const tourOf = (milestone: string, issue: number) =>
-	`${milestone}.i${issue}`;
-
-/** The longest issue title a concert's title carries whole. */
-const TITLE_CHARS = 60;
-
-/** The title of `issue`'s concerts: `factory: ` and the issue's title, cut with an ellipsis past `TITLE_CHARS`. */
-export const titleOf = ({ title }: Issue) =>
-	`factory: ${title.length > TITLE_CHARS ? `${title.slice(0, TITLE_CHARS - 1)}…` : title}`;
-
 /**
  * `comment` as a triage reads it: a question comment `login` posted headed as the tour manager's, any other by its
  * author.

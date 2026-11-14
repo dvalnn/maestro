@@ -294,8 +294,8 @@ flowchart TD
   the seams between them before the epic closes.
   - It performs `.maestro/review.ts` once per epic, on the epic's tour and title, with `--preset high`, then the tick's
     own `--preset`s, `--revs <base>..<last PR head>`, `base` being `main`'s head when the split's children were filed,
-    and a `--request` of the epic's ask and children, naming their commits by `Refs: #N`. Other tickets' commits in the
-    range are context only. An epic filed before stack reviews holds no `base` and gets none.
+    `-c target.base=<base>`, and a `--request` of the epic's ask and children, naming their commits by `Refs: #N`. Other
+    tickets' commits in the range are context only. An epic filed before stack reviews holds no `base` and gets none.
   - An `ok` review arms the last child when low. A `rejected` one posts its review on the epic as a stack review comment
     and feeds it to the last child's next encore, as a review requesting changes is; the child arms once that encore
     lands. With no one child open by then, each blocking finding is filed as `needs-triage` `kind/bug` in the milestone,
@@ -317,7 +317,8 @@ flowchart TD
 
 - **Tick base.** After its guards a tick reads the commit the forge holds as `main`, then fetches `origin` once; a
   failed fetch fails the tick. Every triage, fresh build, masterclass, landing and split base uses that commit
-  (`-c target.base=<commit>` for a start), never the local `main`. A revision keeps its PR's commit.
+  (`-c target.base=<commit>` for a start), never the local `main`. A revision keeps its PR's commit, and a stack review
+  pins its epic's `base`.
 - **Compositions.** A fresh concert performs its composition as it stands at the commit its lane is cut from: the tick's
   `main` commit for a triage, a build and a masterclass, the epic's `base` for a stack review. The tick exports that
   commit's whole `.maestro/` tree once into its cache and performs from there, so a stale checkout cannot drop a node;

@@ -1,5 +1,5 @@
 // What every step of a tick shares: its view of the forge and maestro, and the writes a step routes an issue with.
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { Comment, Forge, Issue } from "./forge";
 import type { Landing } from "./land";
 import type { Concert, Maestro } from "./maestro";
@@ -18,12 +18,6 @@ import type { State } from "./transitions";
 
 export const HALT = "maestro-tm:halt";
 export const REPO = resolve(import.meta.dir, "../..");
-/** The preset a triage and a masterclass perform with, ahead of the tick's own. */
-export const TRIAGE_PRESET = "triage";
-/** A bare composition file's pack is its stem. */
-const TRIAGE = { pack: "triage", composition: "triage" };
-const SLICE = { pack: "slice", composition: "slice" };
-const STACK_REVIEW = { pack: "review", composition: "review" };
 export const BASE = "main";
 /** How many closed issues the backlog snapshot lists. */
 export const CLOSED = 20;
@@ -68,34 +62,10 @@ export type Tick = Deps &
 export const message = (error: unknown) =>
 	error instanceof Error ? error.message : String(error);
 
-export const isTriage = (c: Concert) =>
-	c.pack === TRIAGE.pack && c.composition === TRIAGE.composition;
-export const isSlice = (c: Concert) =>
-	c.pack === SLICE.pack && c.composition === SLICE.composition;
-export const isStackReview = (c: Concert) =>
-	c.pack === STACK_REVIEW.pack && c.composition === STACK_REVIEW.composition;
-
 export const branchOf = (issue: number) => `maestro-tm/i${issue}`;
 export const firstLine = (body: string) => body.split("\n")[0]?.trimEnd();
 /** The first line of a child of epic `epic`. */
 export const partOf = (epic: number) => `Part of #${epic}`;
-
-/**
- * The path of composition `name` of `.maestro/` as it stands at `cut`, or at `compositionsAt` when set, exported into
- * the cache once per commit; says so when the checkout's `.maestro/` differs from it.
- * @throws Error when the tree cannot be exported, so the tick ends without starting a concert.
- */
-export async function compositionAt(tick: Tick, name: string, cut: string) {
-	const exported = await tick.landing.export(
-		tick.compositionsAt ?? cut,
-		join(tick.cache, "compositions"),
-	);
-	if (exported.differs)
-		tick.say(
-			`performing .maestro/ at ${exported.commit}, which differs from the checkout's; config, presets and profiles still come from the checkout's .maestro/config.yaml`,
-		);
-	return join(exported.dir, ".maestro", name);
-}
 
 /** Files the halt issue: `lead`, then `detail` verbatim in a code block, then what to do next. */
 export async function halt(
@@ -182,26 +152,3 @@ export const UNCONTINUED: Data = { encore: undefined, revisionBase: undefined };
 /** Whether `issue` is low risk, so its PR to `main` merges on its own (factory.md, Rules, Policy: Risk). */
 export const isLow = (issue: Issue, { result }: Data) =>
 	result !== undefined && riskOf(issue, result.risk) === "low";
-
-/**
- * Starts `maestro <args>`, writing what it printed to `log` when given, and returns its concert's id; undefined once
- * it halted on the refusal of `what`.
- */
-export async function start(
-	tick: Tick,
-	what: string,
-	args: string[],
-	log?: string,
-) {
-	try {
-		return await tick.maestro.start(args, log);
-	} catch (error) {
-		await halt(
-			tick,
-			`${what} did not start`,
-			`${what[0]?.toUpperCase()}${what.slice(1)} did not start:`,
-			message(error),
-		);
-		return undefined;
-	}
-}

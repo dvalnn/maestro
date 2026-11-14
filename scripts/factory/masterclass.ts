@@ -1,6 +1,7 @@
 // The masterclass: once enough factory runs settled, it reads their lessons and reports and files what it proposes
 // (factory.md, Rules, Masterclass).
 import { join } from "node:path";
+import { isMasterclass, isSlice, isTriage, startMasterclass } from "./concerts";
 import type { Concert, Report, Result, Sighting } from "./maestro";
 import { snapshot } from "./pick";
 import {
@@ -9,21 +10,9 @@ import {
 	proposalIssue,
 	proposalLine,
 } from "./route";
-import {
-	CLOSED,
-	compositionAt,
-	type Entry,
-	isSlice,
-	isTriage,
-	message,
-	start,
-	type Tick,
-	TRIAGE_PRESET,
-} from "./tick";
+import { CLOSED, type Entry, message, type Tick } from "./tick";
 
 const MASTERCLASS_LABEL = "maestro-tm:masterclass";
-const MASTERCLASS_FILE = "masterclass.ts";
-const MASTERCLASS = { pack: "masterclass", composition: "masterclass" };
 /** How many settled factory runs newer than the last masterclass make the next one due. */
 const MASTERCLASS_EVERY = 10;
 /** How many settled factory runs newer than the last masterclass make the next one overdue: it starts ahead of triage. */
@@ -36,11 +25,6 @@ const MASTERCLASS_READS = 30;
  */
 const MASTERCLASS_WINDOW = 200;
 
-const masterclassTour = (milestone: string) => `${milestone}.masterclass`;
-const isMasterclass = (c: Concert, milestone: string) =>
-	c.pack === MASTERCLASS.pack &&
-	c.composition === MASTERCLASS.composition &&
-	c.tour === masterclassTour(milestone);
 /** Whether `c` is a settled slice or triage of an issue's tour in `milestone`. */
 function isFactoryRun(c: Concert, milestone: string) {
 	const prefix = `${milestone}.i`;
@@ -206,43 +190,6 @@ function reportsText(
 	].join("\n");
 }
 
-/** Performs the masterclass on the `lessons`, `reports` and `backlog` files; halts on a refusal. */
-async function startMasterclass(
-	tick: Tick,
-	files: { lessons: string; reports: string; backlog: string },
-	runs: number,
-) {
-	const file = await compositionAt(tick, MASTERCLASS_FILE, tick.main);
-	const id = await start(
-		tick,
-		"masterclass",
-		[
-			"perform",
-			file,
-			"--lessons",
-			files.lessons,
-			"--reports",
-			files.reports,
-			"--backlog",
-			files.backlog,
-			"--tour",
-			masterclassTour(tick.milestone),
-			"--title",
-			"factory: masterclass",
-			"--preset",
-			TRIAGE_PRESET,
-			...tick.presets.flatMap((p) => ["--preset", p]),
-			"-c",
-			`target.base=${tick.main}`,
-		],
-		join(tick.dir, "masterclass.log"),
-	);
-	if (id === undefined) return;
-	tick.say(
-		`holding a masterclass on the lessons of ${runs} concerts: concert ${id}`,
-	);
-}
-
 /**
  * Starts a masterclass once `due` factory runs settled since the last one, on the lessons and reports of the newest
  * `MASTERCLASS_READS` runs, or every run since the last when more, marking those an earlier masterclass read, with the
@@ -294,11 +241,15 @@ async function hold(tick: Tick, entries: Entry[], due: number) {
 			pulls,
 		),
 	);
-	await startMasterclass(
-		tick,
-		{ lessons, reports: reported, backlog },
-		runs.length,
-	);
+	const id = await startMasterclass(tick, {
+		lessons,
+		reports: reported,
+		backlog,
+	});
+	if (id !== undefined)
+		tick.say(
+			`holding a masterclass on the lessons of ${runs.length} concerts: concert ${id}`,
+		);
 	return false;
 }
 

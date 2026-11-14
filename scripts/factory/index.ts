@@ -6,6 +6,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
+	isSlice,
+	isStackReview,
+	isTriage,
+	startSlice,
+	startStackReview,
+	startTriage,
+	tourOf,
+} from "./concerts";
+import {
 	dotenvPath,
 	forge,
 	type Issue,
@@ -29,11 +38,8 @@ import {
 	issueText,
 	overlaps,
 	pick,
-	riskOf,
 	snapshot,
 	stateOf,
-	titleOf,
-	tourOf,
 } from "./pick";
 import { land } from "./publish";
 import {
@@ -69,25 +75,19 @@ import {
 	BASE,
 	branchOf,
 	CLOSED,
-	compositionAt,
 	type Deps,
 	type Entry,
 	firstLine,
 	HALT,
 	halt,
 	isLow,
-	isSlice,
-	isStackReview,
-	isTriage,
 	message,
 	move,
 	type Options,
 	partOf,
 	REPO,
 	RETRIAGE,
-	start,
 	type Tick,
-	TRIAGE_PRESET,
 	UNCONTINUED,
 	whichWay,
 	writeSpec,
@@ -103,11 +103,6 @@ const LOCK_NB = 4;
 /** Linux's EWOULDBLOCK, which is EAGAIN. */
 const EWOULDBLOCK = 11;
 export const MILESTONE_KEY = "MAESTRO_TM_MILESTONE";
-const TRIAGE_FILE = "triage.ts";
-const SLICE_FILE = "slice.ts";
-const REVIEW_FILE = "review.ts";
-/** The preset a stack review rules at. */
-const STACK_REVIEW_PRESET = "high";
 /** How a slice's agent reports it blocked (ADR 0012). */
 const BLOCKED = "blocked:";
 /** The states a slice's settle is routed in; on an issue the owner moved elsewhere it is parked. */
@@ -681,45 +676,22 @@ async function sync(tick: Tick, entries: Entry[]) {
 type Perform = { request: string; encore?: string; data: Data };
 
 /**
- * Performs `perform` for `entry` under its risk's preset, cut at its PR's head and revising that commit when it revises,
- * else on `main`, and moves it to `in-progress`; halts on a refusal.
+ * Performs `perform` for `entry`, cut at its PR's head and revising that commit when it revises, else on `main`, and
+ * moves it to `in-progress`; halts on a refusal.
  */
-async function startSlice(
+async function startBuild(
 	tick: Tick,
 	{ issue, data }: Entry,
 	perform: Perform,
 ) {
 	const result = data.result;
 	if (!result) return;
-	const risk = riskOf(issue, result.risk);
-	const { revisionBase } = perform.data;
-	const cut = revisionBase ?? tick.main;
-	const name = issue.labels
-		.find((l) => l.startsWith("area/"))
-		?.slice("area/".length);
-	const area =
-		name && tick.has(`.maestro/presets/area-${name}.yaml`)
-			? ["--preset", `area-${name}`]
-			: [];
-	const id = await start(tick, `build of #${issue.number}`, [
-		...(perform.encore
-			? ["encore", perform.encore]
-			: ["perform", await compositionAt(tick, SLICE_FILE, cut)]),
-		"--request",
-		perform.request,
-		"--preset",
-		risk,
-		...area,
-		...tick.presets.flatMap((p) => ["--preset", p]),
-		"--tour",
-		tourOf(tick.milestone, issue.number),
-		"--title",
-		titleOf(issue),
-		"--revises",
-		revisionBase ? `${revisionBase}^!` : "",
-		"-c",
-		`target.base=${cut}`,
-	]);
+	const id = await startSlice(tick, issue, {
+		request: perform.request,
+		risk: result.risk,
+		encore: perform.encore,
+		revisionBase: perform.data.revisionBase,
+	});
 	if (id === undefined) return;
 	await move(tick, issue.number, "in-progress");
 	await writeSpec(tick, issue.number, "in-progress", {
@@ -832,7 +804,7 @@ async function revise(tick: Tick, entries: Entry[]) {
 	for (const entry of reviewed) {
 		const perform = await revision(tick, entry, pulls);
 		if (!perform) continue;
-		await startSlice(tick, entry, perform);
+		await startBuild(tick, entry, perform);
 		return false;
 	}
 	return true;
@@ -862,38 +834,31 @@ async function stackReview(tick: Tick, entries: Entry[]) {
 		const pull = await reviewDue(entry, entries, pulls);
 		const { base } = entry.data;
 		if (!pull || !base) continue;
-		await startReview(tick, entry, base, pull.sha);
+		await reviewEpic(tick, entry, base, pull.sha);
 		return false;
 	}
 	return true;
 }
 
 /**
- * Performs the stack review of epic `entry` over `main`'s commits from `base` to `head`, with the review composition at
- * `base`, and records it; halts on a refusal.
+ * Performs the stack review of epic `entry` over `main`'s commits from `base` to `head`, and records it; halts on a
+ * refusal.
  */
-async function startReview(
+async function reviewEpic(
 	tick: Tick,
 	{ issue, data }: Entry,
 	base: string,
 	head: string,
 ) {
-	const file = await compositionAt(tick, REVIEW_FILE, base);
-	const id = await start(tick, `stack review of #${issue.number}`, [
-		"perform",
-		file,
-		"--request",
-		reviewRequest(issue, data.result?.children ?? [], data.filed ?? []),
-		"--revs",
-		`${base}..${head}`,
-		"--preset",
-		STACK_REVIEW_PRESET,
-		...tick.presets.flatMap((p) => ["--preset", p]),
-		"--tour",
-		tourOf(tick.milestone, issue.number),
-		"--title",
-		titleOf(issue),
-	]);
+	const id = await startStackReview(tick, issue, {
+		request: reviewRequest(
+			issue,
+			data.result?.children ?? [],
+			data.filed ?? [],
+		),
+		base,
+		head,
+	});
 	if (id === undefined) return;
 	await writeSpec(tick, issue.number, "in-progress", {
 		...data,
@@ -1021,7 +986,7 @@ async function build(tick: Tick, entries: Entry[]) {
 		const perform = await performOf(tick, entry, spec);
 		if (!perform.encore && (await retriage(tick, entry, spec, approvedOnce)))
 			continue;
-		await startSlice(tick, entry, perform);
+		await startBuild(tick, entry, perform);
 		return false;
 	}
 	return true;
@@ -1108,25 +1073,12 @@ async function triage(tick: Tick, entries: Entry[]) {
 		backlog,
 		snapshot(tick.milestone, number, issues, closed, pulls, cited),
 	);
-	const id = await start(tick, `triage of #${number}`, [
-		...(data.triage
-			? ["encore", data.triage]
-			: ["perform", await compositionAt(tick, TRIAGE_FILE, tick.main)]),
-		"--issue",
+	const id = await startTriage(tick, entry.issue, {
 		text,
-		"--backlog",
 		backlog,
-		last && !isBrief(last) ? "--respec" : "--no-respec",
-		"--tour",
-		tourOf(tick.milestone, number),
-		"--title",
-		titleOf(entry.issue),
-		"--preset",
-		TRIAGE_PRESET,
-		...tick.presets.flatMap((p) => ["--preset", p]),
-		"-c",
-		`target.base=${tick.main}`,
-	]);
+		respec: last !== undefined && !isBrief(last),
+		encore: data.triage,
+	});
 	if (id === undefined) return false;
 	tick.say(`triaging #${number}: concert ${id}`);
 	const read = considered.at(-1)?.id;

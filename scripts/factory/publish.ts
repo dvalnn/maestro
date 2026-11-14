@@ -1,8 +1,9 @@
 // Landing a slice's change as its PR to `main` (factory.md, Rules, Landing and PRs).
 import { join } from "node:path";
+import { isSlice, tourOf } from "./concerts";
 import type { Forge, Issue, NewPull } from "./forge";
 import type { Report, Spend } from "./maestro";
-import { riskOf, tourOf } from "./pick";
+import { riskOf } from "./pick";
 import { type Data, dataOf, pullBody, specCommentOf } from "./route";
 import {
 	BASE,
@@ -11,7 +12,6 @@ import {
 	firstLine,
 	halt,
 	isLow,
-	isSlice,
 	message,
 	move,
 	partOf,
