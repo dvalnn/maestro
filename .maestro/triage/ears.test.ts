@@ -18,7 +18,7 @@ const planOf = (requirements: unknown) =>
 
 test.each([
 	["a plain spec", planOf(["The CLI shall exit 0."]), 0, ""],
-	["a requirement off the shape", planOf(["Exit 0."]), 3, "R1 breaks"],
+	["a requirement off the shape", planOf(["Exit 0."]), 1, "R1 breaks"],
 	[
 		"a split plan",
 		JSON.stringify({
@@ -28,20 +28,20 @@ test.each([
 		0,
 		"split: no requirements to check",
 	],
-	["no requirements list", "{}", 2, ""],
-	["requirements that are not text", planOf([1]), 2, ""],
-	["input that is not JSON", "plan", 2, ""],
-	["empty input", "", 2, ""],
+	["no requirements list", "{}", 3, ""],
+	["requirements that are not text", planOf([1]), 3, ""],
+	["input that is not JSON", "plan", 3, ""],
+	["empty input", "", 3, ""],
 ])("check ears on %s exits %i", (_, plan, exitCode, out) => {
 	const ran = run(plan);
 	expect(ran.exitCode).toBe(exitCode);
 	expect(ran.out).toContain(out);
-	if (exitCode === 2) expect(ran.err).not.toBe("");
+	if (exitCode === 3) expect(ran.err).not.toBe("");
 });
 
 test("check ears reports every requirement that breaks the EARS shape", () => {
 	const ran = run(planOf(["Exit 0.", "The CLI shall exit 0.", "Print help."]));
-	expect(ran.exitCode).toBe(3);
+	expect(ran.exitCode).toBe(1);
 	expect(
 		ran.out
 			.trim()

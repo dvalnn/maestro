@@ -39,9 +39,10 @@ export const earsFindings = (requirements: string[]) =>
 			: [];
 	});
 
-/** The exit code of a check that ran and found its subject failing. */
-const FAILED_EXIT = 3;
-const USAGE_EXIT = 2;
+/** The exit code of a check that ran and found requirements off the EARS shape. */
+const FINDINGS_EXIT = 1;
+/** The exit code for input that is not a plan JSON with a requirements list; the host reads it as `failed`. */
+const USAGE_EXIT = 3;
 
 /**
  * The requirements of the plan JSON `text`:
@@ -62,7 +63,7 @@ function requirementsOf(text: string): string[] | "split" | undefined {
 		: undefined;
 }
 
-/** Prints each requirement of the plan JSON on standard input that breaks the EARS shape, and exits 3 if any. */
+/** Prints each requirement of the plan JSON on standard input that breaks the EARS shape, and exits 1 if any. */
 async function main(): Promise<number> {
 	let requirements: ReturnType<typeof requirementsOf>;
 	try {
@@ -83,7 +84,7 @@ async function main(): Promise<number> {
 	}
 	const findings = earsFindings(requirements);
 	for (const finding of findings) console.log(finding);
-	return findings.length ? FAILED_EXIT : 0;
+	return findings.length ? FINDINGS_EXIT : 0;
 }
 
 if (import.meta.main) process.exit(await main());
