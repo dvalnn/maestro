@@ -5,7 +5,7 @@ number, title and why, or "None.". A closed issue matters when this one builds o
 changed; the snapshot lists those under "Recently closed" by title alone. Read each issue under "Cited" in full: the
 issue or a reply cites it, often as the source of truth.
 
-Then write `ruling.json` in exactly this shape, leaving out `what`, `requirements`, `acceptance`, `subject`,
+Then give the `ruling` reply field in exactly this shape, leaving out `what`, `requirements`, `acceptance`, `subject`,
 `duplicateOf` and `related` where the verdict does not need them:
 
 ```json

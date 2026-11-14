@@ -25,7 +25,7 @@ import {
 	spec,
 	unspecified,
 } from "./triage/fixtures";
-import { type Checked, Proposal, Ruling, Triage } from "./triage/schemas";
+import { Checked, Proposal, Ruling, Triage } from "./triage/schemas";
 
 test("answersOf merges each group's answers in order, marking an unsure answer and a group whose scout failed", () => {
 	const dir = mkdtempSync(join(scratch, "answers-"));
@@ -317,6 +317,107 @@ test.each([
 /** The composed plan of the triage, with `--backlog`. */
 const composed = async () =>
 	JSON.parse(await maestro(await triage("compose", "--backlog", backlog)));
+
+type TriageNode = {
+	id: string;
+	config: {
+		reply?: Record<string, unknown>;
+		out?: Record<string, { file: string; format: string }>;
+		relay?: { name: string }[];
+		attachments?: Record<string, { type?: string }>;
+	};
+	literals?: { prompt?: string };
+};
+type TriageEdge = {
+	from: { node: string; port: string };
+	to: { node: string; port: string };
+};
+
+/** The seats and their data hand-offs as the composed plan exposes them. */
+async function handoffs() {
+	const { plan } = await composed();
+	const nodes = plan.ir.nodes as TriageNode[];
+	const edges = plan.ir.edges as TriageEdge[];
+	const node = (id: string) => nodes.find((n) => n.id === id);
+	const from = (id: string, port: string) =>
+		edges
+			.filter((e) => e.to.node === id && e.to.port === port)
+			.map((e) => e.from);
+	return { node, from };
+}
+
+test("the triage seats return typed reply fields instead of JSON outbox files", async () => {
+	const { node } = await handoffs();
+	for (const [id, field, schema] of [
+		["triager", "ruling", Ruling(4).schema],
+		["planner", "plan", Proposal.schema],
+		["revise", "plan", Proposal.schema],
+		["checker", "check", Checked.schema],
+	] as const) {
+		expect(node(id)?.config.reply?.[field]).toEqual(schema);
+		expect(
+			Object.values(node(id)?.config.out ?? {}).filter(
+				(out) => out.format === "json",
+			),
+		).toEqual([]);
+	}
+});
+
+test("the triager hands on its cut backlog as a Markdown outbox file", async () => {
+	const { node } = await handoffs();
+	expect(node("triager")?.config.out?.backlog).toEqual({
+		file: "backlog.md",
+		format: "markdown",
+	});
+});
+
+test("the planner receives the triager's ruling as a relay", async () => {
+	const { node, from } = await handoffs();
+	const relays = node("planner")?.config.relay ?? [];
+	expect(
+		relays.filter(({ name }) =>
+			from("planner", name).some(
+				(source) => source.node === "triager" && source.port === "ruling",
+			),
+		),
+	).toHaveLength(1);
+});
+
+test("the checker receives the planner's plan as a relay", async () => {
+	const { node, from } = await handoffs();
+	const relays = node("checker")?.config.relay ?? [];
+	expect(
+		relays.filter(({ name }) =>
+			from("checker", name).some(
+				(source) => source.node === "planner" && source.port === "plan",
+			),
+		),
+	).toHaveLength(1);
+});
+
+test("the planner and checker receive the scouts' answers as a file attachment", async () => {
+	const { node, from } = await handoffs();
+	for (const id of ["planner", "checker"]) {
+		expect(node(id)?.config.attachments?.answers?.type).toBe("core.markdown");
+		expect(from(id, "answers")).toEqual([{ node: "answers", port: "answers" }]);
+	}
+});
+
+test("no triage task names a ruling, plan or check JSON file", async () => {
+	const { node } = await handoffs();
+	for (const id of [
+		"triager",
+		"scouts/scout",
+		"planner",
+		"checker",
+		"revise",
+	]) {
+		const prompt = node(id)?.literals?.prompt;
+		expect(typeof prompt).toBe("string");
+		for (const file of ["ruling.json", "plan.json", "check.json"])
+			expect(prompt).not.toContain(file);
+	}
+});
 
 test("compose seats the triager on sonnet, the scouts on haiku, the planner and its revision on opus at high and the spec checker on terra at medium", async () => {
 	const { agents } = await composed();

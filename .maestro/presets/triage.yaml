@@ -1,8 +1,9 @@
 target:
   checks:
     ears:
-      run: bun .maestro/triage/ears.ts /out/plan.json
-      hint: the EARS shape of each requirement in the `plan.json` you wrote; run it after writing the plan
+      run: bun .maestro/triage/ears.ts
+      timeout: 1m
+      hint: the EARS shape of each requirement in your plan; pipe the plan's JSON in on standard input, e.g. `check ears <<'EOF'` then the plan, then `EOF`
 profiles:
   triager: { runtime: { harness: claude, model: claude-sonnet-5-5, thinking: medium } }
   classics/scout: { runtime: { harness: claude, model: claude-haiku-5-5, thinking: medium } }

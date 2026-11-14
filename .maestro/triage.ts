@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Answers } from "@maestro/classics";
 import { atLeastOne, fill, scout } from "@maestro/classics";
-import { JsonOut, MarkdownOut, read, seat } from "@maestro/host-repo-sdk";
+import { MarkdownOut, read, seat } from "@maestro/host-repo-sdk";
 import {
 	allSettled,
 	Bool,
@@ -14,7 +14,6 @@ import {
 	literal,
 	lookup,
 	Markdown,
-	readJson,
 	type Settled,
 	Struct,
 	Text,
@@ -170,10 +169,14 @@ const planner = seat("planner", {
 	profile: "classics/planner",
 	encore: false,
 	checks: ["ears"],
+	reply: { plan: Proposal },
 });
 
 /** The checker, fresh in an encore: a re-triage rewrites the spec it checks. */
-const checker = seat("checker", { encore: false });
+const checker = seat("checker", {
+	encore: false,
+	reply: { check: Checked },
+});
 
 export const triage = composition(
 	"triage",
@@ -227,12 +230,10 @@ export const triage = composition(
 					hint: "for the open and recently closed issues, to cut down to those that matter",
 				},
 			},
-			out: {
-				ruling: JsonOut("ruling.json", Ruling(maxGroups)),
-				backlog: MarkdownOut("backlog.md"),
-			},
+			out: { backlog: MarkdownOut("backlog.md") },
+			reply: { ruling: Ruling(maxGroups) },
 		});
-		const ruling = readJson(triaged.out.ruling);
+		const ruling = triaged.out.ruling;
 		const plans = lookup(plansOf(respec), ruling.get("verdict"));
 		const groups = ruling.get("groups");
 		const cutBacklog = {
@@ -289,36 +290,28 @@ export const triage = composition(
 					artifact: answers.out.answers,
 					hint: "first, for what the scouts found",
 				},
-				ruling: {
-					artifact: triaged.out.ruling,
-					hint: "for the triager's questions and the files it expects to change",
-				},
 				backlog: cutBacklog,
 			},
-			out: { plan: JsonOut("plan.json", Proposal) },
+			relay: { ruling },
 			when: plans,
 		});
-		const plan = readJson(planned.out.plan);
+		const plan = planned.out.plan;
 		const proposal = allSettled([plan], { label: "proposal" });
 		const checked = checker({
 			label: "checker",
 			task: TASKS.checker,
 			lane: read(base),
 			attachments: {
-				plan: {
-					artifact: planned.out.plan,
-					hint: "first, for the spec to check",
-				},
 				issue: issued,
 				answers: {
 					artifact: answers.out.answers,
 					hint: "for what the scouts found",
 				},
 			},
-			out: { check: JsonOut("check.json", Checked) },
+			relay: { plan },
 			when: lookup(CHECKS, plan.get("verdict")),
 		});
-		const check = allSettled([readJson(checked.out.check)], {
+		const check = allSettled([checked.out.check], {
 			label: "check",
 		});
 		const toRevise = code(revisable, {
@@ -337,7 +330,6 @@ export const triage = composition(
 					hint: "first, for the findings to settle",
 				},
 			},
-			out: { plan: JsonOut("plan.json", Proposal) },
 			when: toRevise.revise,
 		});
 		return code(settle, {
@@ -346,7 +338,7 @@ export const triage = composition(
 				respec: literal(respec, Bool()),
 				proposal,
 				check,
-				revision: allSettled([readJson(revised.out.plan)], {
+				revision: allSettled([revised.out.plan], {
 					label: "revision",
 				}),
 			},

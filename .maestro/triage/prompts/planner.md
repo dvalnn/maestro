@@ -1,8 +1,8 @@
 Triage the attached issue: propose its verdict from the scouts' answers, the triager's ruling, the cut backlog and the
 target's code.
 
-Write `plan.json` in exactly this shape: `spec` only for `ready-for-agent`, `children` only for `split`, and `related`
-only when the backlog holds a related issue:
+Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-agent`, `children` only for `split`, and
+`related` only when the backlog holds a related issue:
 
 ```json
 {
@@ -44,10 +44,10 @@ only when the backlog holds a related issue:
   comment's heading carries the spec's version, so `what` never recounts an earlier one.
 - `requirements`: how the system must behave, numbered `R1` on by position. Each holds one behaviour in one EARS
   sentence of at most {maxWords} words, with one `shall` and no condition after it. Write as many as the behaviour
-  needs: more short requirements beat fewer long ones. Once `plan.json` is written, run `check ears` and settle each
-  requirement it names. A requirement states behaviour a user or operator can observe: config accepted or refused, what
-  is staged or run, what a command prints, what is masked. It never names a function, a constant, a file or a call
-  order. Cite a `docs/requirements.md` id only where the change touches that requirement.
+  needs: more short requirements beat fewer long ones. Before you reply, pipe the plan's JSON to `check ears` on
+  standard input and settle each requirement it names. A requirement states behaviour a user or operator can observe:
+  config accepted or refused, what is staged or run, what a command prints, what is masked. It never names a function, a
+  constant, a file or a call order. Cite a `docs/requirements.md` id only where the change touches that requirement.
   - Ubiquitous: `The <system> shall <response>.`
   - Event: `When <trigger>, the <system> shall <response>.`
   - State: `While <state>, the <system> shall <response>.`

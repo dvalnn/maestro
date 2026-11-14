@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-
 /** The most words in one requirement. */
 export const MAX_REQUIREMENT_WORDS = 30;
 /** The words an EARS requirement opens with, one per pattern. */
@@ -64,17 +62,13 @@ function requirementsOf(text: string): string[] | "split" | undefined {
 		: undefined;
 }
 
-/** Prints each requirement of the plan file named by the first argument that breaks the EARS shape, and exits 3 if any. */
-function main(file: string | undefined): number {
-	if (!file) {
-		console.error("usage: bun .maestro/triage/ears.ts <plan.json>");
-		return USAGE_EXIT;
-	}
+/** Prints each requirement of the plan JSON on standard input that breaks the EARS shape, and exits 3 if any. */
+async function main(): Promise<number> {
 	let requirements: ReturnType<typeof requirementsOf>;
 	try {
-		requirements = requirementsOf(readFileSync(file, "utf8"));
+		requirements = requirementsOf(await Bun.stdin.text());
 	} catch (error) {
-		console.error(`${file}: ${(error as Error).message}`);
+		console.error(`standard input: ${(error as Error).message}`);
 		return USAGE_EXIT;
 	}
 	if (requirements === "split") {
@@ -82,7 +76,9 @@ function main(file: string | undefined): number {
 		return 0;
 	}
 	if (!requirements) {
-		console.error(`${file}: no spec.requirements list. Write plan.json first`);
+		console.error(
+			"standard input: no spec.requirements list. Pipe the whole plan JSON in",
+		);
 		return USAGE_EXIT;
 	}
 	const findings = earsFindings(requirements);
@@ -90,4 +86,4 @@ function main(file: string | undefined): number {
 	return findings.length ? FAILED_EXIT : 0;
 }
 
-if (import.meta.main) process.exit(main(process.argv[2]));
+if (import.meta.main) process.exit(await main());

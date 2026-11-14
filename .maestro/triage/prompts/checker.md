@@ -1,7 +1,8 @@
-Check the attached spec against the code. Its spec is in the attached `plan.json`.
+Check the attached spec against the code. Its spec is the plan inlined in this task.
 
-Write `check.json` as `{ "findings": [...] }`, each finding one line: what the spec says against what the code shows,
-with its file:line. The planner revises the spec by them once, and asks the owner what only the owner can rule on.
+Give the `check` reply field as `{ "findings": [...] }`, each finding one line: what the spec says against what the code
+shows, with its file:line. The planner revises the spec by them once, and asks the owner what only the owner can rule
+on.
 
 - A claim the spec makes about the base holds: every function, file, flag, behaviour and call site it names exists and
   behaves as stated, and so does everything it says a change must also update.
