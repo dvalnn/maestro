@@ -9,6 +9,28 @@ X as produced by that stage. _Performance_ keeps its plain meaning, speed. A run
 
 Each entry is a one-line definition; the rest of a term lives in its home, linked.
 
+## Contents
+
+- [Lifecycle](#lifecycle): Compose, Pre-flight, Plan, Perform, Concert, Encore, Fingerprint, Short id, Concert record,
+  Node instance, Resume key, Stale instance, Event, Outcome, Node result, Result rule, Metric
+- [Tour manager](#tour-manager): Tour, Tour manager, Tick, Settle, Slice, Stack review, Masterclass, Watermark,
+  Dependency
+- [Authoring](#authoring): Composition, Subcomposition, Params, Ports, Plain value, Ref, Example input set, Code node,
+  Pack
+- [Graph](#graph): Graph, IR, Node, Group node, Iteration, On error, Host node, Edge, Barrier, Status port, Missing
+  output, Settled, Reducer, Artifact, Worker
+- [Configuration](#configuration): Core config, Config namespace, Registrant, Workspace, Data root, Composed config, Gap
+- [Engine and hosts](#engine-and-hosts): Engine, Host, Host setup, Conductor
+- [Agents](#agents): Agent node, Harness, Runtime, Agent environment, Probe, Instructions, Seat, Seat call, Work agent,
+  Verdict agent, Blocked, Obstacle, Lesson, Envelope, Relay, Task, Checklist, Attachment, Sighting, Outbox, Session,
+  Context policy, Handoff, Handoff note
+- [Profiles](#profiles): Profile, Preset, Namespace directory, Shadow, Harness extras, Bind
+- [Lanes and changesets](#lanes-and-changesets): Target, Lane, Lane ref, Prepare, Changeset, Partial, Changeset node,
+  Commits node, Apply node
+- [Checks and sandbox](#checks-and-sandbox): Check node, Sandbox
+- [Review](#review): Finding, Lens, Skeptic, Consolidator, Upheld, Panel, Tally, Risk, Tiered review, Review tier,
+  Tester, Test map
+
 ## Language
 
 ### Lifecycle
