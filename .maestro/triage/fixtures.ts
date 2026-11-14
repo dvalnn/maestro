@@ -64,3 +64,8 @@ export const claiming: Question = {
 
 export const failed =
 	"The spec misses uninstall, which removes the file (install.ts:12).";
+
+export const premiseFinding =
+	"Premise: greet.sh already greets by name (greet.sh:3), so the spec's missing behaviour exists.";
+export const yagniFinding =
+	"YAGNI: the flags requirement answers neither the ask nor the replies (greet.sh:9).";

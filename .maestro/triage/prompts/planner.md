@@ -80,7 +80,8 @@ and owns how; the reviewers own standards and edge cases. Stay at the big pictur
 modules and seams the change moves, going lower only where the owner must see a detail to agree on intent. Figure labels
 and notes name modules and seams, not functions. Leave out message wording, function and constant names, call order,
 test fixtures and which comments or docs change: a spec that dictates them hands the builder a list to copy, and every
-such detail is one more claim that can be wrong about the code.
+such detail is one more claim that can be wrong about the code. When the issue reports a bug, state the wrong behaviour
+and the behaviour that must hold, not the fix.
 
 ## Design
 

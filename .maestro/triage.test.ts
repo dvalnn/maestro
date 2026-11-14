@@ -21,9 +21,11 @@ import {
 	groups,
 	medium,
 	planning,
+	premiseFinding,
 	ready,
 	spec,
 	unspecified,
+	yagniFinding,
 } from "./triage/fixtures";
 import { Checked, Proposal, Question, Ruling, Triage } from "./triage/schemas";
 
@@ -311,6 +313,35 @@ test.each([
 			questions: [claiming],
 		});
 		expect(concert.outputs.triage.spec.what).toBe("revised");
+	},
+);
+
+test.each([
+	[
+		"a premise finding, with the false claim corrected",
+		premiseFinding,
+		{ ...spec, what: "Greet.sh greets by name already; keep it so." },
+	],
+	[
+		"a YAGNI finding, with the deferred item moved to excluded",
+		yagniFinding,
+		{
+			...spec,
+			excluded: [{ lead: "Flags", points: ["Not asked for"] }],
+		},
+	],
+])(
+	"a stub perform proposes the revised spec for %s",
+	async (_, finding, revisedSpec) => {
+		const { concert, artifact } = await performed(
+			planning,
+			ready,
+			{ findings: [finding] },
+			{ ...ready, spec: revisedSpec },
+		);
+		expect(concert.status).toBe("ok");
+		expect(artifact("revisable", "findings")).toContain(finding);
+		expect(concert.outputs.triage.spec).toMatchObject(revisedSpec);
 	},
 );
 
