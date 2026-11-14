@@ -4,4 +4,4 @@ Revise the plan you wrote by the attached findings: the spec check's, and each r
   not need. When you split a requirement, renumber the acceptance comments to match. Give the `plan` reply field again,
   whole, after piping it to `check ears` again on standard input.
 - A finding only the owner can rule on, such as a security trade-off or behaviour the ask and the replies leave open,
-  goes in `questions`, as under Questions for the owner, not in the spec.
+  goes in `questions`, shaped as the reply schema gives, not in the spec.

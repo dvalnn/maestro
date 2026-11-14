@@ -25,7 +25,7 @@ import {
 	spec,
 	unspecified,
 } from "./triage/fixtures";
-import { Checked, Proposal, Ruling, Triage } from "./triage/schemas";
+import { Checked, Proposal, Question, Ruling, Triage } from "./triage/schemas";
 
 test("answersOf merges each group's answers in order, marking an unsure answer and a group whose scout failed", () => {
 	const dir = mkdtempSync(join(scratch, "answers-"));
@@ -435,15 +435,49 @@ test("compose seats the triager on sonnet, the scouts on haiku, the planner and 
 	]);
 });
 
-test("only the triager is given the question format", async () => {
+test("the triager's and the revision's tasks hold no JSON example of a question", async () => {
 	const { plan } = await composed();
-	const task = (id: string) =>
-		JSON.stringify(
-			(plan.ir.nodes as { id: string }[]).find((n) => n.id === id),
-		);
-	expect(task("triager")).toContain("## Questions for the owner");
-	for (const id of ["planner", "checker"])
-		expect(task(id)).not.toContain("## Questions for the owner");
+	const keys = ["ask", "options", "context"];
+	for (const id of ["triager", "revise"]) {
+		const node = (plan.ir.nodes as { id: string }[]).find((n) => n.id === id);
+		const text = JSON.stringify(node)
+			.replace(/\\n/g, "\n")
+			.replace(/\\"/g, '"');
+		const blocks = [...text.matchAll(/```json\n([\s\S]*?)```/g)];
+		const found = (v: unknown): boolean =>
+			Array.isArray(v)
+				? v.some(found)
+				: typeof v === "object" && v !== null
+					? keys.every((k) => k in v) || Object.values(v).some(found)
+					: false;
+		for (const [, body] of blocks) {
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(body ?? "");
+			} catch {
+				continue;
+			}
+			expect(found(parsed)).toBe(false);
+		}
+	}
+});
+
+test("the Question schema describes itself and each of its fields, nested ones too", () => {
+	const missing = (schema: unknown, path: string): string[] => {
+		const s = schema as {
+			description?: string;
+			properties?: Record<string, unknown>;
+			items?: unknown;
+		};
+		return [
+			...(s.description ? [] : [path]),
+			...Object.entries(s.properties ?? {}).flatMap(([k, v]) =>
+				missing(v, `${path}.${k}`),
+			),
+			...(s.items ? missing(s.items, `${path}[]`) : []),
+		];
+	};
+	expect(missing(Question.schema, "Question")).toEqual([]);
 });
 
 test("the scouts and the planner are attached the triager's cut of the backlog, never the snapshot", async () => {

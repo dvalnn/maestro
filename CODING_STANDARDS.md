@@ -64,8 +64,8 @@ Layout:
   directory beside it named for it (`.maestro/triage/`, `.maestro/slice/`). A pack stays flat by kind, with one
   `src/prompts/`.
 - All prompt text is Markdown in `prompts/`, named and imported as [Prompts](packages/host-repo/README.md#prompts) says;
-  `md.d.ts` types the import. Only one-line attachment hints, labels, `doc` strings, param descriptions and the owner
-  questions code generates stay in TypeScript, at the call.
+  `md.d.ts` types the import. Only one-line attachment hints, labels, `doc` strings, param descriptions, one-line reply
+  field descriptions and the owner questions code generates stay in TypeScript, at the call.
 - Prettier reflows prompt files to 120 columns, so a JSON example is a fenced `json` block.
 
 Graph or prose, under [ADR 0016](docs/adr/0016-a-check-enters-as-a-tool-and-a-seat-earns-its-place.md):

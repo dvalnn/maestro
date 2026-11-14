@@ -24,7 +24,6 @@ import PLAIN from "./prompts/_plain.md" with { type: "text" };
 import { markdownOf, sealedBase, task } from "./shared";
 import { MAX_REQUIREMENT_WORDS } from "./triage/ears";
 import GATE from "./triage/prompts/_gate.md" with { type: "text" };
-import QUESTIONS from "./triage/prompts/_questions.md" with { type: "text" };
 import CHECKER from "./triage/prompts/checker.md" with { type: "text" };
 import PLANNER from "./triage/prompts/planner.md" with { type: "text" };
 import REVISE from "./triage/prompts/revise.md" with { type: "text" };
@@ -61,7 +60,6 @@ const TASKS = {
 			}),
 			PLAIN,
 			GATE,
-			QUESTIONS,
 		),
 	scout: task(SCOUT),
 	planner: task(
@@ -74,7 +72,7 @@ const TASKS = {
 		GATE,
 	),
 	checker: task(CHECKER, GATE),
-	revise: task(REVISE, QUESTIONS),
+	revise: task(REVISE),
 };
 
 const Slot = Struct({ slot: Text(), group: Group });

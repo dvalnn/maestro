@@ -74,6 +74,7 @@ function shape<R extends Types, O extends Types>(
 	required: R,
 	optional: O,
 	rules: Rule[] = [],
+	description?: string,
 ): Type<Shaped<R, O>> {
 	const properties = Object.fromEntries(
 		Object.entries({ ...required, ...optional }).map(([k, t]) => [k, t.schema]),
@@ -83,6 +84,7 @@ function shape<R extends Types, O extends Types>(
 		properties,
 		required: Object.keys(required),
 		additionalProperties: false,
+		...(description && { description }),
 		// JSON Schema refuses an empty allOf.
 		...(rules.length > 0 && { allOf: rules }),
 	});
@@ -153,11 +155,61 @@ const Children = Json<Child[]>({
 /** A question for the owner: the ask, a lead line, short options, the option recommended and the evidence by topic. */
 export const Question = shape(
 	{
-		ask: Text(),
-		options: List(Struct({ label: Text(), text: Text() })),
-		context: List(Struct({ topic: Text(), text: Text() })),
+		ask: Text({ description: "The question, one line." }),
+		options: List(
+			Struct(
+				{
+					label: Text({ description: "The option's label, such as A." }),
+					text: Text({ description: "The option, a line or two." }),
+				},
+				{ description: "One option: a label and a line or two of text." },
+			),
+			{
+				description:
+					"Short options for the owner to pick from. An open answer gives an empty list.",
+			},
+		),
+		context: List(
+			Struct(
+				{
+					topic: Text({
+						description:
+							"A one- or two-word topic, such as Claiming, D-24 or Cost.",
+					}),
+					text: Text({
+						description: "One point of evidence, with its file:line.",
+					}),
+				},
+				{ description: "One point of evidence under a topic." },
+			),
+			{
+				description:
+					"The evidence, one point per item, so the options stay short.",
+			},
+		),
 	},
-	{ lead: Text(), recommend: Struct({ label: Text(), why: Text() }) },
+	{
+		lead: Text({
+			description:
+				"A sentence of background. Leave it out when the ask says it all.",
+		}),
+		recommend: Struct(
+			{
+				label: Text({
+					description: "The label of one of the options.",
+				}),
+				why: Text({
+					description: "The reason, read on from 'Recommended: <label>,'.",
+				}),
+			},
+			{
+				description:
+					"The option you recommend. Give it only with a reason; leave it out otherwise.",
+			},
+		),
+	},
+	[],
+	"A question for the owner, who reads it as a comment: keep the options short and put the evidence in context.",
 );
 export type Question = ValueOf<typeof Question>;
 

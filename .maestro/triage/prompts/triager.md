@@ -48,7 +48,7 @@ Then give the `ruling` reply field in exactly this shape, leaving out `what`, `r
 - `groups`, for `plan`: at most {maxGroups}, one per line of inquiry, the most decisive first, numbered G1 on, each of
   at most {groupSize} questions. Ask only what changes the plan, and settle yourself what one line settles; no group
   when nothing needs asking.
-- `questions`, for `needs-info`: as under Questions for the owner.
+- `questions`, for `needs-info`: shaped as the reply schema gives.
 - `related`: the backlog issues it relates to.
 
 ## Asking the owner
