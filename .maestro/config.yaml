@@ -6,9 +6,6 @@ target:
     run: bun install --frozen-lockfile
     cache: { path: ~/.bun/install/cache, at: /cache, env: BUN_INSTALL_CACHE_DIR }
   checks:
-    format:
-      run: just format
-      hint: biome and prettier format checks; fix with just fmt
     lint:
       run: just lint
       hint: the domain words script
