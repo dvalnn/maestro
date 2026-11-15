@@ -56,10 +56,11 @@ bun scripts/factory/index.ts [--milestone v0.1.0] [--preset xscout]... [--route-
     at the epic's base (`docs/agents/factory.md`, Rules, Landing and PRs: Compositions).
 
 It exits 0 when it acted or had nothing to do, 1 when the forge or maestro failed, its config is missing a key, the
-milestone does not exist or `.maestro/` cannot be exported at the chosen revision (the next tick retries) and 2 on a bad
-flag. It keeps its lock, backlog snapshots and perform logs in `$XDG_RUNTIME_DIR/maestro-factory/`, lands each slice in
-a jj workspace under `$XDG_CACHE_HOME/maestro-factory/`, and keeps each commit's `.maestro/` export, never pruned, in
-`$XDG_CACHE_HOME/maestro-factory/compositions/<commit>/`, since an encore reopens it.
+milestone does not exist, `.maestro/` cannot be exported at the chosen revision or the checkout's `.maestro/` or
+`packs/` differs from the commit a concert starts at (the next tick retries) and 2 on a bad flag. It keeps its lock,
+backlog snapshots and perform logs in `$XDG_RUNTIME_DIR/maestro-factory/`, lands each slice in a jj workspace under
+`$XDG_CACHE_HOME/maestro-factory/`, and keeps each checkout's export of each commit's `.maestro/`, never pruned, in
+`$XDG_CACHE_HOME/maestro-factory/compositions/<checkout>/<commit>/`, since an encore reopens it.
 
 ## Install
 

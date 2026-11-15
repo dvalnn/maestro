@@ -291,12 +291,13 @@ describe("starting a concert", () => {
 		expect(t.starts[0]?.slice(-2)).toEqual(pinned("base0"));
 	});
 
-	test("says once that the exported .maestro/ differs from the checkout's, naming the commit", async () => {
+	test("refuses a differing export without starting or filing a halt", async () => {
 		const differing = setup({ differs: true });
-		await startTriage(differing.tick, issue, TRIAGE_INPUT);
-		expect(differing.said).toEqual([
-			`performing .maestro/ at ${MAIN}, which differs from the checkout's; config, presets and profiles still come from the checkout's .maestro/config.yaml`,
-		]);
+		await expect(
+			startTriage(differing.tick, issue, TRIAGE_INPUT),
+		).rejects.toThrow();
+		expect(differing.starts).toEqual([]);
+		expect(differing.writes).toEqual([]);
 		const same = setup();
 		await startTriage(same.tick, issue, TRIAGE_INPUT);
 		expect(same.said).toEqual([]);

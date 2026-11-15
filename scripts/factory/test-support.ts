@@ -212,6 +212,7 @@ export function fakeMaestro(
 		},
 		report: async (id) => reports[id] ?? NO_REPORT,
 		spend: async (id) => spendOf(id),
+		tree: async (id) => `/cache/compositions/${id}/.maestro`,
 		apply: async (id, dir) => {
 			applied.push(`${id} in ${dir}`);
 		},
@@ -261,7 +262,16 @@ export function fakeLanding(
 		close: async (dir, name) => step("close", `close ${name} at ${dir}`),
 		export: async (revision, root) => {
 			exported.push(revision);
-			return { commit: revision, dir: join(root, revision), differs };
+			return {
+				commit: revision,
+				dir: join(root, revision),
+				differs,
+				paths: differs ? [".maestro/config.yaml"] : [],
+			};
+		},
+		reopen: async (moduleDir, root) => {
+			const dir = join(moduleDir, "..");
+			return { commit: dir.slice(root.length + 1), dir, differs, paths: [] };
 		},
 	};
 	return {

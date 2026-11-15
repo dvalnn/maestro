@@ -332,9 +332,13 @@ flowchart TD
 - **Compositions.** A fresh concert performs its composition as it stands at the commit its lane is cut from: the tick's
   `main` commit for a triage, a build and a masterclass, the epic's `base` for a stack review. The tick exports that
   commit's whole `.maestro/` tree once into its cache and performs from there, so a stale checkout cannot drop a node;
-  an encore reopens the tree its first concert ran. Config, presets and profiles still come from the checkout, and the
-  tick says so when the checkout's `.maestro/` differs. A failed export fails the tick. `--compositions-at` picks
-  another revision on purpose, such as `@` for an unmerged graph change.
+  an encore reopens the tree its first concert ran. Config, presets, profiles and packs still come from the checkout, so
+  the tick compares the checkout's `.maestro/` and `packs/` (ignored files included, each pack's `node_modules/` left
+  out) with the commit it exports, or with the commit of the tree an encore reopens. On a difference it prints the
+  commit and each differing path and fails the tick without a halt issue; the operator updates the checkout and the next
+  tick retries. An encore whose tree is not an export in the tick's cache, or links another checkout's `node_modules`,
+  halts as a failed start does. A failed export fails the tick. `--compositions-at` picks another revision on purpose,
+  such as `@` for an unmerged graph change.
 - **Landing.** An ok slice lands in a fresh jj workspace on the tick's `main` commit, or on its PR's head for a
   revision: `maestro cs apply`, then `jj describe` with the spec's subject and `Refs: #N`, or for a revision `jj squash`
   into the PR head with that description. It runs no check of its own: the slice's gate passed in its lane, and CI

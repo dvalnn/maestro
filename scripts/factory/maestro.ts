@@ -79,6 +79,11 @@ export type Maestro = {
 	/** What concert `id` spent. */
 	spend(id: string): Promise<Spend>;
 	/**
+	 * The `.maestro/` directory concert `id`'s tree holds its composition in, which an encore of it reopens.
+	 * @throws Error when maestro's record of it names none.
+	 */
+	tree(id: string): Promise<string>;
+	/**
 	 * Applies concert `id`'s changeset to the checkout at `dir`, staged.
 	 * @throws Error with maestro's message when it does not apply.
 	 */
@@ -323,6 +328,12 @@ export function maestro(bin = "maestro"): Maestro {
 			};
 		},
 		spend: async (id) => spendOf(await json(bin, ["ls", id])),
+		tree: async (id) => {
+			const doc = await json(bin, ["ls", id]);
+			if (!isJson(doc) || typeof doc.moduleDir !== "string")
+				throw new Error(`maestro ls ${id}: its record names no tree`);
+			return doc.moduleDir;
+		},
 		apply: (id, dir) => run(bin, ["cs", "apply", id, "-C", dir]),
 		start: async (args, log) => {
 			const doc = await json(bin, [...args, "--detach"], log);

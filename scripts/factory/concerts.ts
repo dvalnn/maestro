@@ -3,6 +3,7 @@
 import { join } from "node:path";
 import type { Risk } from "../../.maestro/triage/risk";
 import type { Issue } from "./forge";
+import type { Export } from "./land";
 import type { Concert } from "./maestro";
 import { riskOf } from "./pick";
 import { halt, message, type Tick } from "./tick";
@@ -60,19 +61,28 @@ const named = (tick: Tick, issue: Issue) => ({
 });
 
 /**
+ * Refuses a start when the checkout's `.maestro/` or `packs/` differs from `exported`'s commit.
+ * @throws Error naming the commit and each differing path, so the tick ends without a halt.
+ */
+function agree(exported: Export) {
+	if (!exported.differs) return;
+	throw new Error(
+		`the checkout's .maestro/ or packs/ differs from commit ${exported.commit}, so no concert starts; update the checkout to it:\n${exported.paths.map((p) => `  ${p}`).join("\n")}`,
+	);
+}
+
+/**
  * The path of composition `file` of `.maestro/` as it stands at `cut`, or at `compositionsAt` when set, exported into
- * the cache once per commit; says so when the checkout's `.maestro/` differs from it.
- * @throws Error when the tree cannot be exported, so the tick ends without starting a concert.
+ * the cache once per checkout and commit.
+ * @throws Error when the tree cannot be exported, or the checkout differs from it, so the tick ends without starting
+ * a concert.
  */
 async function compositionAt(tick: Tick, file: string, cut: string) {
 	const exported = await tick.landing.export(
 		tick.compositionsAt ?? cut,
 		join(tick.cache, "compositions"),
 	);
-	if (exported.differs)
-		tick.say(
-			`performing .maestro/ at ${exported.commit}, which differs from the checkout's; config, presets and profiles still come from the checkout's .maestro/config.yaml`,
-		);
+	agree(exported);
 	return join(exported.dir, ".maestro", file);
 }
 
@@ -94,8 +104,33 @@ type Run = {
 	log?: string;
 };
 
+/**
+ * Compares the checkout with the tree encore `id` reopens; undefined once it halted on a tree the tick cannot pin.
+ * @throws Error when the checkout differs from the tree's commit.
+ */
+async function reopened(tick: Tick, run: Run, id: string) {
+	let exported: Export;
+	try {
+		exported = await tick.landing.reopen(
+			await tick.maestro.tree(id),
+			join(tick.cache, "compositions"),
+		);
+	} catch (error) {
+		await halt(
+			tick,
+			`${run.what} did not start`,
+			`${run.what[0]?.toUpperCase()}${run.what.slice(1)} did not start:`,
+			message(error),
+		);
+		return false;
+	}
+	agree(exported);
+	return true;
+}
+
 /** Starts `run`'s concert and returns its id; undefined once it halted on maestro's refusal. */
 async function startConcert(tick: Tick, run: Run) {
+	if (run.encore && !(await reopened(tick, run, run.encore))) return undefined;
 	const head = run.encore
 		? ["encore", run.encore]
 		: ["perform", await compositionAt(tick, run.kind.file, run.cut)];

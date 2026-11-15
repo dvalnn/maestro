@@ -2907,6 +2907,7 @@ function compositionTick(
 async function compositionCommand(
 	repository: ReturnType<typeof compositionRepository>,
 	revision: string,
+	prepare?: (repo: string) => void,
 ) {
 	const { root, origin, repo, main } = repository;
 	cpSync(import.meta.dir, join(repo, "scripts/factory"), {
@@ -2931,6 +2932,7 @@ async function compositionCommand(
 		{ cwd: repo },
 	);
 	if (remote.exitCode !== 0) throw new Error(remote.stderr.toString());
+	prepare?.(repo);
 	const capture = join(root, "perform.json");
 	const halts = join(root, "halts.json");
 	const preload = join(root, "forge.ts");
@@ -3020,7 +3022,287 @@ const performedFile = (t: { starts: string[][] }) => {
 	return file;
 };
 
+// Seams: the tick command's exit, diagnostics, and starts; a tick's encore against real landing and maestro interfaces.
 describe("compositions at the cut", () => {
+	/** Commits the prepared checkout and returns the commit the tick will compare. */
+	function cut(repo: string) {
+		const commit = Bun.spawnSync(
+			[
+				"jj",
+				"--config",
+				'user.name="Owner"',
+				"--config",
+				'user.email="owner@example.com"',
+				"commit",
+				"-m",
+				"prepared checkout",
+			],
+			{ cwd: repo },
+		);
+		if (commit.exitCode !== 0) throw new Error(commit.stderr.toString());
+		const log = Bun.spawnSync(
+			["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"],
+			{ cwd: repo },
+		);
+		if (log.exitCode !== 0) throw new Error(log.stderr.toString());
+		return log.stdout.toString().trim();
+	}
+
+	test("refuses a fresh concert when workspace files differ, naming every path and the compared commit without a halt", async () => {
+		const repository = compositionRepository();
+		let commit = "";
+		const command = await compositionCommand(repository, "@-", (repo) => {
+			mkdirSync(join(repo, "packs/example"), { recursive: true });
+			writeFileSync(join(repo, "packs/example/profile.yaml"), "old\n");
+			commit = cut(repo);
+			writeFileSync(join(repo, ".maestro/config.yaml"), "changed\n");
+			writeFileSync(join(repo, "packs/example/profile.yaml"), "changed\n");
+		});
+		expect(command.code).toBe(1);
+		expect(existsSync(command.capture)).toBe(false);
+		expect(existsSync(command.halts)).toBe(false);
+		const diagnostics = command.out + command.err;
+		expect(diagnostics).toContain(commit);
+		expect(diagnostics).toContain(".maestro/config.yaml");
+		expect(diagnostics).toContain("packs/example/profile.yaml");
+	});
+
+	test("refuses a fresh concert when only the workspace config differs", async () => {
+		const command = await compositionCommand(
+			compositionRepository(),
+			"@-",
+			(repo) => {
+				cut(repo);
+				writeFileSync(join(repo, ".maestro/config.yaml"), "changed\n");
+			},
+		);
+		expect(command.code).toBe(1);
+		expect(existsSync(command.capture)).toBe(false);
+		expect(command.out + command.err).toContain(".maestro/config.yaml");
+	});
+
+	test("refuses a fresh concert when only a pack differs", async () => {
+		const command = await compositionCommand(
+			compositionRepository(),
+			"@-",
+			(repo) => {
+				mkdirSync(join(repo, "packs/example"), { recursive: true });
+				writeFileSync(join(repo, "packs/example/profile.yaml"), "old\n");
+				cut(repo);
+				writeFileSync(join(repo, "packs/example/profile.yaml"), "changed\n");
+			},
+		);
+		expect(command.code).toBe(1);
+		expect(existsSync(command.capture)).toBe(false);
+		expect(command.out + command.err).toContain("packs/example/profile.yaml");
+	});
+
+	test("stops the tick before a later triage when a build's checkout differs", async () => {
+		const repository = compositionRepository();
+		const t = compositionTick(repository, [
+			specced(7, "ready-for-agent"),
+			issue(8, "needs-triage"),
+		]);
+		await expect(t.run()).rejects.toThrow();
+		expect(t.starts).toEqual([]);
+		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([]);
+	});
+
+	test("starts a matching fresh concert with ignored pack node_modules", async () => {
+		const command = await compositionCommand(
+			compositionRepository(),
+			"@-",
+			(repo) => {
+				writeFileSync(
+					join(repo, ".gitignore"),
+					"packs/example/node_modules/\n",
+				);
+				cut(repo);
+				mkdirSync(join(repo, "packs/example/node_modules/dependency"), {
+					recursive: true,
+				});
+				writeFileSync(
+					join(repo, "packs/example/node_modules/dependency/index.js"),
+					"module.exports = 1;\n",
+				);
+			},
+		);
+		expect(command.code).toBe(0);
+		expect(existsSync(command.capture)).toBe(true);
+		expect(existsSync(command.halts)).toBe(false);
+	});
+
+	test("refuses a fresh concert for an ignored workspace profile", async () => {
+		const command = await compositionCommand(
+			compositionRepository(),
+			"@-",
+			(repo) => {
+				writeFileSync(join(repo, ".gitignore"), ".maestro/profiles/dist/\n");
+				cut(repo);
+				mkdirSync(join(repo, ".maestro/profiles/dist"), { recursive: true });
+				writeFileSync(
+					join(repo, ".maestro/profiles/dist/local.yaml"),
+					"local\n",
+				);
+			},
+		);
+		expect(command.code).toBe(1);
+		expect(existsSync(command.capture)).toBe(false);
+		expect(command.out + command.err).toContain(
+			".maestro/profiles/dist/local.yaml",
+		);
+	});
+
+	test("refuses a fresh concert for an ignored pack profile", async () => {
+		const command = await compositionCommand(
+			compositionRepository(),
+			"@-",
+			(repo) => {
+				writeFileSync(join(repo, ".gitignore"), "packs/example/profiles/\n");
+				cut(repo);
+				mkdirSync(join(repo, "packs/example/profiles"), { recursive: true });
+				writeFileSync(
+					join(repo, "packs/example/profiles/local.yaml"),
+					"local\n",
+				);
+			},
+		);
+		expect(command.code).toBe(1);
+		expect(existsSync(command.capture)).toBe(false);
+		expect(command.out + command.err).toContain(
+			"packs/example/profiles/local.yaml",
+		);
+	});
+	async function encoreTick(
+		repository: ReturnType<typeof compositionRepository>,
+		moduleDir: string,
+	) {
+		const retriaged = answeredOnce(
+			issue(7, "needs-triage", {
+				concert: "c0",
+				triage: "c0",
+				result: ready,
+			}),
+		);
+		const t = compositionTick(repository, [retriaged]);
+		const bin = join(repository.root, "encore-maestro");
+		const capture = join(repository.root, "encore-start.json");
+		writeFileSync(
+			bin,
+			`#!${process.execPath}
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "ls" && args[1] === "c0") console.log(JSON.stringify({moduleDir: ${JSON.stringify(moduleDir)}, file: "triage.ts", config: ["target.base=${repository.main}"]}));
+else if (args[0] === "ls") console.log("[]");
+else if (args[0] === "encore") { writeFileSync(${JSON.stringify(capture)}, JSON.stringify(args)); console.log('{"id":"started"}'); }
+else process.exit(1);
+`,
+			{ mode: 0o755 },
+		);
+		Object.assign(t.maestro, maestro(bin));
+		return { ...t, capture };
+	}
+
+	async function exportedCheckout(
+		repository: ReturnType<typeof compositionRepository>,
+	) {
+		return repositoryLanding(repository.repo, {
+			login: BOT,
+			name: BOT,
+			email: `${BOT}@example.com`,
+		}).export("@", join(repository.cache, "compositions"));
+	}
+
+	test("refuses an encore against the commit of its recorded tree rather than its lane base", async () => {
+		const repository = compositionRepository();
+		const exported = await exportedCheckout(repository);
+		expect(exported.commit).not.toBe(repository.main);
+		writeFileSync(join(repository.repo, ".maestro/config.yaml"), "changed\n");
+		const t = await encoreTick(repository, join(exported.dir, ".maestro"));
+		const error = await t.run().catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(Error);
+		expect(`${String(error)}\n${t.said.join("\n")}`).toContain(exported.commit);
+		expect(`${String(error)}\n${t.said.join("\n")}`).toContain(
+			".maestro/config.yaml",
+		);
+		expect(existsSync(t.capture)).toBe(false);
+		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([]);
+	});
+
+	test("refuses an encore when only a pack differs from its recorded tree", async () => {
+		const repository = compositionRepository();
+		mkdirSync(join(repository.repo, "packs/example"), { recursive: true });
+		writeFileSync(join(repository.repo, "packs/example/profile.yaml"), "old\n");
+		const exported = await exportedCheckout(repository);
+		writeFileSync(
+			join(repository.repo, "packs/example/profile.yaml"),
+			"changed\n",
+		);
+		const t = await encoreTick(repository, join(exported.dir, ".maestro"));
+		await expect(t.run()).rejects.toThrow();
+		expect(existsSync(t.capture)).toBe(false);
+	});
+
+	test("continues a matching encore even when the lane base differs from the recorded tree", async () => {
+		const repository = compositionRepository();
+		const exported = await exportedCheckout(repository);
+		expect(exported.commit).not.toBe(repository.main);
+		const t = await encoreTick(repository, join(exported.dir, ".maestro"));
+		await t.run();
+		expect(JSON.parse(readFileSync(t.capture, "utf8")).slice(0, 2)).toEqual([
+			"encore",
+			"c0",
+		]);
+		expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([]);
+	});
+
+	test("refuses an encore for ignored files in the workspace or a pack", async () => {
+		for (const path of [
+			".maestro/profiles/dist/local.yaml",
+			"packs/example/profiles/local.yaml",
+		]) {
+			const repository = compositionRepository();
+			writeFileSync(join(repository.repo, ".gitignore"), `${path}\n`);
+			const exported = await exportedCheckout(repository);
+			mkdirSync(join(repository.repo, path, ".."), { recursive: true });
+			writeFileSync(join(repository.repo, path), "local\n");
+			const t = await encoreTick(repository, join(exported.dir, ".maestro"));
+			await expect(t.run()).rejects.toThrow();
+			expect(existsSync(t.capture)).toBe(false);
+			expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([]);
+		}
+	});
+
+	test("halts an encore whose exported tree links another checkout's node_modules", async () => {
+		const repository = compositionRepository();
+		const tree = join(repository.cache, "compositions", repository.main);
+		mkdirSync(join(tree, ".maestro"), { recursive: true });
+		for (const name of compositionFiles) {
+			writeFileSync(join(repository.repo, ".maestro", name), MAIN_GRAPH);
+			writeFileSync(join(tree, ".maestro", name), MAIN_GRAPH);
+		}
+		writeFileSync(join(tree, ".maestro/config.yaml"), "# checkout config\n");
+		const otherModules = join(repository.root, "other-node_modules");
+		mkdirSync(otherModules);
+		symlinkSync(otherModules, join(tree, "node_modules"));
+		const t = await encoreTick(repository, join(tree, ".maestro"));
+		await t.run();
+		expect(existsSync(t.capture)).toBe(false);
+		expect(t.writes.some((w) => w.startsWith("file") && w.includes(HALT))).toBe(
+			true,
+		);
+	});
+
+	test("halts an encore whose recorded tree is not a cache export", async () => {
+		const repository = compositionRepository();
+		const t = await encoreTick(repository, join(repository.repo, ".maestro"));
+		await t.run();
+		expect(existsSync(t.capture)).toBe(false);
+		expect(t.writes.some((w) => w.startsWith("file") && w.includes(HALT))).toBe(
+			true,
+		);
+	});
+
 	test("--compositions-at @ performs the checkout revision instead of the forge's main graph", async () => {
 		const command = await compositionCommand(compositionRepository(), "@");
 		expect(command.code).toBe(0);
@@ -3031,18 +3313,21 @@ describe("compositions at the cut", () => {
 	test("keeps an export in the cache when the runtime directory is removed and later ticks use other commits", async () => {
 		const repository = compositionRepository();
 		const first = compositionTick(repository, [issue(7, "needs-triage")]);
+		first.options.compositionsAt = "@";
 		await first.run();
 		const file = performedFile(first);
 		expect(relative(repository.cache, file).split(sep)[0]).not.toBe("..");
 		rmSync(first.options.dir, { recursive: true, force: true });
 		const next = compositionTick(repository, [issue(8, "needs-triage")]);
+		next.options.compositionsAt = "@";
 		await next.run();
 		expect(performedFile(next)).toBe(file);
+		for (const name of compositionFiles)
+			writeFileSync(join(repository.repo, ".maestro", name), MAIN_GRAPH);
 		const other = compositionTick(repository, [issue(9, "needs-triage")]);
-		other.forge.head = async () => repository.base;
 		await other.run();
 		expect(performedFile(other)).not.toBe(file);
-		expect(readFileSync(file, "utf8")).toBe(MAIN_GRAPH);
+		expect(readFileSync(file, "utf8")).toBe(CHECKOUT_GRAPH);
 	});
 
 	test("an unavailable composition revision exits 1 without starting a concert or filing a halt", async () => {
