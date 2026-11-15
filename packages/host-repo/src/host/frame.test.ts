@@ -7,7 +7,7 @@ const LISTED = `    "gaps": ["<something the task asked that was left undone or 
     "sightings": [{ "path": "<the file it is in>", "text": "<a defect or smell in the target outside the task's scope that the agent saw and left unfixed; never something the task asked to be fixed>", "cites": "<the rule, doc or behaviour it breaches>" }]`;
 
 const GIT =
-	"Git reads such as `status`, `diff` and `log` work here, and every git write fails by design. Try a git mutation in a fresh `git init` under `/tmp`.";
+	"Git reads such as `status`, `diff` and `log` work here, and every git write fails by design. Try a git mutation in a fresh `git init` under `/tmp`. `/tmp` is empty again at the start of each turn: keep nothing there that a later turn needs.";
 const SHELL =
 	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
 
@@ -87,21 +87,35 @@ ${LISTED}
 - Leave out what the run already records: the checks' results and the files you wrote.
 - Give \`"blocked": "<the cause>"\` in place of \`outcome\` and \`reason\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`;
 
+test("a read-lane frame keeps a draft in the working copy and omits the verify line", () => {
+	const text = frame({
+		lane: "read",
+		checks: [["all", "every test"]],
+		out: [{ file: "findings.md", format: "markdown" }],
+		kind: VERDICT,
+	});
+	expect(text).toBe(`# Your run
+
+## Working copy
+
+Your working copy is the current directory, and it is discarded when you finish: change files freely to try something, and restore one with \`git show HEAD:<path> > <path>\`. Keep a draft you will revise in the working copy. ${GIT}
+
+${SHELL}
+
+## Checks
+
+Run the target's checks with \`check <name>\`, and never write your own. Each prints the tail of its output, then ok, rejected or failed.
+- \`check all\`: every test
+
+## Reply
+
+Before your final reply, write every one of these files, even when you reject:
+- \`/out/findings.md\`: Markdown
+
+${VERDICT_REPLY}`);
+});
+
 test.each([
-	[
-		"a read lane with a check and an output",
-		{
-			lane: "read",
-			checks: [["all", "every test"]],
-			out: [{ file: "findings.md", format: "markdown" }],
-		},
-		[
-			`## Working copy\n\nYour working copy is the current directory, and it is discarded when you finish: change files freely to try something, and restore one with \`git show HEAD:<path> > <path>\`. ${GIT}`,
-			"or failed.\n- `check all`: every test",
-			"## Reply\n\nBefore your final reply, write every one of these files, even when you reject:\n- `/out/findings.md`: Markdown\n\nYour final",
-		],
-		["Leave your changes uncommitted", "Run them to verify"],
-	],
 	[
 		"no lane or check",
 		{},

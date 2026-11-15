@@ -219,10 +219,10 @@ export type Run = {
 const LANE_TEXT = {
 	write:
 		"Your working copy is the current directory. Leave your changes uncommitted: the run records the working copy as a version when you finish.",
-	read: "Your working copy is the current directory, and it is discarded when you finish: change files freely to try something, and restore one with `git show HEAD:<path> > <path>`.",
+	read: "Your working copy is the current directory, and it is discarded when you finish: change files freely to try something, and restore one with `git show HEAD:<path> > <path>`. Keep a draft you will revise in the working copy.",
 };
 const GIT =
-	"Git reads such as `status`, `diff` and `log` work here, and every git write fails by design. Try a git mutation in a fresh `git init` under `/tmp`.";
+	"Git reads such as `status`, `diff` and `log` work here, and every git write fails by design. Try a git mutation in a fresh `git init` under `/tmp`. `/tmp` is empty again at the start of each turn: keep nothing there that a later turn needs.";
 const SHELL =
 	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
 const CHECKS =
