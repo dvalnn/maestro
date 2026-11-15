@@ -793,6 +793,24 @@ test("a proposal issue lists merged obstacles and sightings under their own head
 	expect(lessons).not.toContain("- No rg on PATH");
 });
 
+// Seam: the issue body a proposal files on the forge.
+test("a proposal with no lessons or reports has no Lessons heading", () => {
+	const { body } = proposalIssue({ ...PROPOSAL, lessons: [], reports: [] });
+	expect(body.split("\n")).not.toContain("## Lessons");
+});
+
+test("a reports-only proposal puts Obstacles and sightings directly after its Concerts line", () => {
+	const { body } = proposalIssue({
+		...PROPOSAL,
+		lessons: [],
+		reports: ["No rg on PATH", "The reader drops sightings."],
+	});
+	expect(body.split("\n")).not.toContain("## Lessons");
+	expect(body).toContain(
+		"Concerts: 2 (c1, c2)\n\n## Obstacles and sightings\n\n- No rg on PATH\n- The reader drops sightings.",
+	);
+});
+
 test("a proposal's fingerprint ignores its concerts", () => {
 	expect(proposalLine({ ...PROPOSAL, concerts: [] })).toBe(
 		proposalLine(PROPOSAL),

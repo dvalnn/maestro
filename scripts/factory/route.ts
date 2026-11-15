@@ -988,10 +988,9 @@ export function proposalIssue(p: Omit<Proposal, "kind">) {
 		p.body.trim(),
 		"",
 		`Concerts: ${p.concerts.length}${p.concerts.length ? ` (${p.concerts.join(", ")})` : ""}`,
-		"",
-		"## Lessons",
-		"",
-		...p.lessons.map((l) => `- ${l}`),
+		...(p.lessons.length
+			? ["", "## Lessons", "", ...p.lessons.map((l) => `- ${l}`)]
+			: []),
 		...(reports.length
 			? ["", "## Obstacles and sightings", "", ...reports.map((r) => `- ${r}`)]
 			: []),
