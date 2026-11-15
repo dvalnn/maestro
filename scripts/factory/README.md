@@ -59,12 +59,17 @@ workspace of its first concert's commit, each with its own installed dependencie
 
 ## Install
 
-The units run a tick every 5 minutes. Edit `WorkingDirectory`, `PATH` and the flags in the service to suit the machine;
-the milestone is set in the `.env`, not the unit.
+The tick runs from its own jj clone, `~/.local/share/maestro-factory/repo`, never from a dev checkout. Each tick moves
+the clone to origin's `main` and installs its dependencies, so it runs only pushed code and a PR that changes
+dependencies cannot strand it. The clone is the factory's own: nobody works in it. Once, by hand:
 
-The service runs `scripts/factory/preflight.ts` before each tick. It installs nothing: when a package a workspace
-declares does not resolve, it names the package and the workspace, prints `run: bun install` and the tick does not
-start. Copy the service again after a change to it, then `systemctl --user daemon-reload`.
+```sh
+jj git clone --colocate <origin url> ~/.local/share/maestro-factory/repo
+(cd ~/.local/share/maestro-factory/repo && mise trust)
+```
+
+The units run a tick every 5 minutes. Edit `PATH` and the flags in the service to suit the machine; the milestone is set
+in the `.env`, not the unit. Copy the service again after a change to it, then `systemctl --user daemon-reload`.
 
 ```sh
 cp scripts/factory/maestro-factory.{service,timer} ~/.config/systemd/user/
