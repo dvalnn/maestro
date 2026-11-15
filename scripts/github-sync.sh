@@ -30,7 +30,8 @@ for arg in "$@"; do
   esac
 done
 
-jj git remote list | grep -q "^$REMOTE " ||
+# No `grep -q`: it quits at the first match, and under pipefail jj's SIGPIPE on the lines after it reads as no remote.
+jj git remote list | grep "^$REMOTE " >/dev/null ||
   fail "no remote named $REMOTE" "Add it: jj git remote add $REMOTE git@github.com:dvalnn/maestro.git"
 jj git fetch --remote origin --remote "$REMOTE"
 [ -n "$(jj log --no-graph -r "($rev) & ::main@origin" -T 'commit_id')" ] ||
