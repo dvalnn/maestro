@@ -307,3 +307,32 @@ test("the Forgejo and GitHub workflows both run the ci recipe and define no tree
 		).toEqual([]);
 	}
 });
+
+const COMMIT = "a".repeat(40);
+test.each([
+	[
+		"a commit",
+		`<<<<<<< ${COMMIT}\nmain\n=======\npr\n>>>>>>> ${"b".repeat(40)}\n`,
+	],
+	[
+		"a renamed path",
+		`<<<<<<< ${COMMIT}:old.md\nmain\n=======\npr\n>>>>>>> ${COMMIT}:new.md\n`,
+	],
+	["a commit, in CRLF", `<<<<<<< ${COMMIT}\r\nmain\r\n>>>>>>> ${COMMIT}\r\n`],
+	["a commit, widened", `<<<<<<<<< ${COMMIT}\nmain\n>>>>>>>>> ${COMMIT}\n`],
+])(
+	"lint refuses a conflict marker labelled with %s left in and names its path",
+	async (_, marked) => {
+		const dir = checkout({ "docs/marked.md": marked });
+		const result = await run(dir, "just", "lint");
+		expect(result.code).not.toBe(0);
+		expect(result.out).toContain("docs/marked.md:1:");
+	},
+);
+
+test("lint passes a marker too short or labelled with less than a commit", async () => {
+	const dir = checkout({
+		"docs/marked.md": `<<<<<< ${COMMIT}\n<<<<<<< ${"a".repeat(39)}\n>>>>>>> HEAD\n`,
+	});
+	expect((await run(dir, "just", "lint")).code).toBe(0);
+});

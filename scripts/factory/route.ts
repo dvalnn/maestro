@@ -60,7 +60,8 @@ export type Option = Question["options"][number];
  * `slice` the slice concert its last build started, `attempts` the red slices it spent, `failure` the reason its last
  * slice failed and `parked` a slice concert routed but not applied. `encore` is the slice concert a
  * build continues and `review` the id of the newest review requesting changes an encore was fed. `revisionBase` is the
- * head of the PR a revision is cut at and lands on, until it lands. On an epic, `base` is `main`'s head when its
+ * head of the PR a revision is cut at and lands on, until it lands, and `conflicted` the paths it conflicted in with
+ * `main` when it is cut at their merge instead. On an epic, `base` is `main`'s head when its
  * children were filed and `stackReview` the stack review it started; on its child, `findings` is the stack review whose
  * findings an encore has yet to be fed.
  */
@@ -81,6 +82,7 @@ export type Data = {
 	encore?: string;
 	review?: number;
 	revisionBase?: string;
+	conflicted?: string[];
 	base?: string;
 	stackReview?: string;
 	findings?: string;
@@ -272,6 +274,7 @@ export function dataOf(comment: string): Data {
 		encore: optional(data, "encore", isString, "a concert id"),
 		review: optional(data, "review", isNumber, "a review id"),
 		revisionBase: optional(data, "revisionBase", isString, "a commit"),
+		conflicted: optional(data, "conflicted", isStrings, "a list of paths"),
 		base: optional(data, "base", isString, "a commit"),
 		stackReview: optional(data, "stackReview", isString, "a concert id"),
 		findings: optional(data, "findings", isString, "a concert id"),

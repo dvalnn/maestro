@@ -293,12 +293,20 @@ flowchart TD
   followed by what changed, each part under its heading:
   - a `ready-for-agent` ticket whose `encore` is set: each comment mentioning `@<login>` above `read`, a question
     comment excepted, headed `## Reply by <author>`; `read` moves to the newest comment it considered;
-  - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`, or whose
-    `findings` name a stack review: its landed concert, fed each such review headed `## Review by <author>`, its body
-    then its inline comments as `path:line` items, then the stack review's under `## Stack review`. The ticket moves to
-    `in-progress`, `review` moves to the newest, and the settle lands folded into the PR's head, so the PR keeps one
-    commit per ticket. The build passes `--revises <PR head>^!`, so the writer's body covers that commit and the
-    revision as one change.
+  - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`, whose PR
+    to `main` conflicts with the tick's `main`, or whose `findings` name a stack review: its landed concert, fed each
+    such review headed `## Review by <author>`, its body then its inline comments as `path:line` items, then the
+    conflict under `## Conflict with main`, then the stack review's under `## Stack review`. The ticket moves to
+    `in-progress`, `review` moves to the newest, and the build is cut at, and the settle lands folded into, its
+    `revisionBase`, so the PR keeps one commit per ticket: the PR's head, or under Conflict its merge onto `main`. The
+    build passes `--revises <revisionBase>^!`, so the writer's body covers that commit and the revision as one change.
+  - **Conflict.** A conflicting PR's `revisionBase` is the PR merged onto the tick's `main` with git's conflict markers
+    left in, `main` its parent, and its conflicted paths are recorded as `conflicted`. The request names the paths
+    holding markers and which side each marker opens, and apart the paths one side deleted while the other changed,
+    which hold the changed version and no marker. `just lint` fails while a marker of such a merge is left, so the gate
+    holds the build until each is resolved; a deleted path is the builder's call. The landed PR is one commit on `main`.
+    A conflict no build can be told, a binary file both sides changed or a file both renamed apart, starts nothing: each
+    tick says so, and the PR waits for a rebase by hand. A PR whose base moved without a conflict is left as it is.
 
   With nothing changed the build is a fresh perform, since an encore with nothing changed is refused.
 
@@ -330,18 +338,18 @@ flowchart TD
 
 - **Tick base.** After its guards a tick reads the commit the forge holds as `main`, then fetches `origin` once; a
   failed fetch fails the tick. Every triage, fresh build, masterclass, landing and split base uses that commit
-  (`-c target.base=<commit>` for a start), never the local `main`. A revision keeps its PR's commit, and a stack review
-  pins its epic's `base`.
+  (`-c target.base=<commit>` for a start), never the local `main`. A revision keeps its PR's commit, or its merge onto
+  that commit when they conflict, and a stack review pins its epic's `base`.
 - **Compositions.** Only what is approved on `main` runs. A fresh concert performs from a jj workspace of the tick's
   repository at the tick's `main` commit, with its own installed dependencies, so the graph, config, presets, profiles
-  and packs all come from `main`; its lane is still cut at its own base, the PR's head for a revision or the epic's
+  and packs all come from `main`; its lane is still cut at its own base, the `revisionBase` for a revision or the epic's
   `base` for a stack review. An encore runs in the tree of its first concert's commit, rebuilt when removed; one whose
   tree names no commit the repository has halts as a failed start does. Each start removes the other trees, so one is on
   disk. A tree that cannot be made fails the tick without a halt issue.
-- **Landing.** An ok slice lands in a fresh jj workspace on the tick's `main` commit, or on its PR's head for a
+- **Landing.** An ok slice lands in a fresh jj workspace on the tick's `main` commit, or on its `revisionBase` for a
   revision: `maestro cs apply`, then `jj describe` with the spec's subject and `Refs: #N`, or for a revision `jj squash`
-  into the PR head with that description. It runs no check of its own: the slice's gate passed in its lane, and CI
-  checks the PR against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
+  into the `revisionBase` with that description. It runs no check of its own: the slice's gate passed in its lane, and
+  CI checks the PR against its base. Once the PR is open the ticket moves to `in-review` and the workspace is removed.
 - **PRs.** One change per ticket, pushed by `maestro-tm` over HTTPS as `maestro-tm/i<n>`, replacing what the branch
   held, titled with the spec's subject, to `main`. The slice's writer writes the body in the form
   `.maestro/slice/prompts/writer.md` gives, with `Unresolved review` for the findings the review left upheld after its
@@ -354,7 +362,10 @@ flowchart TD
   edits `docs/rulings.md` or `docs/adr/`. The slice's result node decides it and writes the notice that opens the body,
   a line per reason, which the writer does not write. A draft is never armed, a last child's after its stack review
   clears included: the owner merges it. Every landing, an encore's included, rewrites the title and body of the PR
-  already open on the branch, so an encore that clears the draft drops the prefix.
+  already open on the branch, so an encore that clears the draft drops the prefix. A revision's landing then comments on
+  the PR that it was revised, by which concert, with the conflicts it resolved, and asks each official reviewer who
+  requested changes on the PR to review it again, before the ticket moves to `in-review`, so a tick cut in between lands
+  and answers again.
 
 ### Masterclass
 
@@ -549,7 +560,8 @@ positions a later tick resumes from. A line the tick cannot read halts the tour 
 | `attempts`     | The rejected slices spent                          | a rejected slice                   | not cleared                                                  |
 | `failure`      | The reason the last slice failed                   | a slice that does not land         | a landing                                                    |
 | `parked`       | A slice concert routed but not applied             | a settle moved during its run      | routing it, or any other move                                |
-| `revisionBase` | The PR head a revision is cut at and lands on      | an encore of a reviewed PR         | a landing, a fresh build, a re-triage, an infra halt         |
+| `revisionBase` | The commit a revision is cut at and lands on       | an encore of a reviewed PR         | a landing, a fresh build, a re-triage, an infra halt         |
+| `conflicted`   | The paths a revision's PR conflicted in with main  | an encore of a conflicting PR      | as `revisionBase` is                                         |
 | `encore`       | The slice concert to continue                      | a slice blocked or out of attempts | a retry, a landing, a parked one, a re-triage, an infra halt |
 | `review`       | Id of the newest review an encore was fed          | an encore of a reviewed PR         | not cleared                                                  |
 | `base`         | An epic's `main` head when its children were filed | an approved split's filing         | not cleared                                                  |

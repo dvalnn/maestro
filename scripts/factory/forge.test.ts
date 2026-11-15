@@ -148,6 +148,17 @@ test("arming a PR asks the forge to fast-forward, so signed commits stay signed"
 	expect(JSON.parse(String(calls[0]?.init.body)).Do).toBe("fast-forward-only");
 });
 
+test("asking for a review again posts the reviewers to the PR's requested reviewers", async () => {
+	const { calls, send } = recording(() => [201, []]);
+	await withShims(() => forge(signedIn, send).requestReview(30, ["ann"]));
+	expect(calls[0]?.url).toEndWith(
+		"/repos/owner/repo/pulls/30/requested_reviewers",
+	);
+	expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+		reviewers: ["ann"],
+	});
+});
+
 test.each([
 	["already armed", "Pull request is already scheduled to auto merge", true],
 	["refused otherwise", "merge failed because of conflict", false],

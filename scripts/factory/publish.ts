@@ -1,7 +1,13 @@
 // Landing a slice's change as its PR to `main` (factory.md, Rules, Landing and PRs).
 import { join } from "node:path";
 import { isSlice, tourOf } from "./concerts";
-import type { Forge, Issue, NewPull } from "./forge";
+import {
+	type Forge,
+	GHOST,
+	type Issue,
+	type NewPull,
+	REQUEST_CHANGES,
+} from "./forge";
 import type { Report, Spend } from "./maestro";
 import { riskOf } from "./pick";
 import { type Data, dataOf, pullBody, specCommentOf } from "./route";
@@ -141,13 +147,46 @@ async function awaitsStackReview(tick: Tick, { issue, data }: Entry) {
 	return !routed || data.findings !== undefined;
 }
 
+/** Every review's id, so reading reviews fetches no inline comments. */
+const NO_COMMENTS = Number.MAX_SAFE_INTEGER;
+
 /**
- * Pushes `commit` from `dir` as `entry`'s branch and opens or rewrites its PR, a draft when `draft`, arming a low one
- * unless it is a draft.
+ * Says on PR `pull` that revision `id` of `entry` landed on it, with the conflicts it resolved, and asks each official
+ * reviewer who requested changes on it, but a deleted one, to review again (factory.md, Rules, Landing and PRs: PRs).
+ */
+async function answer(tick: Tick, { data }: Entry, id: string, pull: number) {
+	const requested = (await tick.forge.reviews(pull, NO_COMMENTS)).filter(
+		(r) => r.official && r.state === REQUEST_CHANGES,
+	);
+	const reviewers = [
+		...new Set(requested.map((r) => r.author).filter((a) => a !== GHOST)),
+	];
+	const conflicted = data.conflicted ?? [];
+	await tick.forge.comment(
+		pull,
+		[
+			`Revised by concert \`${id}\`; the description covers the whole PR again.`,
+			...(conflicted.length
+				? [
+						`It is rebased onto \`main\`, with the conflicts in ${conflicted.map((p) => `\`${p}\``).join(", ")} resolved.`,
+					]
+				: []),
+			...(reviewers.length
+				? [`Review requested again from ${reviewers.join(", ")}.`]
+				: []),
+		].join(" "),
+	);
+	if (reviewers.length) await tick.forge.requestReview(pull, reviewers);
+}
+
+/**
+ * Pushes `commit` of slice `id` from `dir` as `entry`'s branch and opens or rewrites its PR, a draft when `draft`,
+ * answers its reviewers when it revised the PR, then arms a low one unless it is a draft.
  */
 async function publish(
 	tick: Tick,
 	entry: Entry,
+	id: string,
 	dir: string,
 	commit: string,
 	{ draft, ...pull }: NewPull & Pick<PullText, "draft">,
@@ -155,6 +194,9 @@ async function publish(
 	await tick.forge.push(dir, commit, pull.head);
 	const title = draft ? `${DRAFT_PREFIX}${pull.title}` : pull.title;
 	const number = await openPull(tick.forge, { ...pull, title });
+	// Answering before arming keeps a PR merged at once open for it, and before recording lets a tick cut while
+	// answering land and answer again.
+	if (entry.data.revisionBase) await answer(tick, entry, id, number);
 	if (
 		!draft &&
 		isLow(entry.issue, entry.data) &&
@@ -199,7 +241,7 @@ async function landIn(
 	const commit = data.revisionBase
 		? await tick.landing.squash(dir, message)
 		: await tick.landing.describe(dir, message);
-	return publish(tick, entry, dir, commit, {
+	return publish(tick, entry, id, dir, commit, {
 		...text,
 		head: branchOf(issue.number),
 		base: BASE,
@@ -207,8 +249,7 @@ async function landIn(
 }
 
 /**
- * Lands ok slice `id` of `entry` in a fresh workspace on its base, then records its PR; false when it halted, keeping
- * the workspace.
+ * Lands ok slice `id` of `entry` in a fresh workspace on its base, then records its PR; false when it halted, keeping the workspace.
  */
 export async function land(
 	tick: Tick,

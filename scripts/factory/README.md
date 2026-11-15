@@ -29,11 +29,12 @@ already set wins over the file:
 [^m]: Moving to the next release is editing this value.
 
 The host, owner and repo come from the `origin` remote (ssh or https). The account needs write access to the repo, which
-lets it push branches, open PRs, comment, label, file issues and arm auto-merge; give it no admin right. Its login, name
-and email come from `GET /user` and author every commit the tick describes. The systemd unit needs no new
-`Environment=`, since the keys live in the `.env`.
+lets it push branches, open PRs, comment, request reviews, label, file issues and arm auto-merge; give it no admin
+right. Its login, name and email come from `GET /user` and author every commit the tick describes. The systemd unit
+needs no new `Environment=`, since the keys live in the `.env`.
 
-A low-risk PR whose base moved after it was pushed cannot fast-forward, and stays open for the owner to rebase.
+A PR that conflicts with `main` is encored from its merge onto it and lands rebased, and the tick answers a PR it
+revises; see `docs/agents/factory.md`, Rules, Build: Encore and Landing and PRs.
 
 ```sh
 bun scripts/factory/index.ts [--milestone v0.1.0] [--preset xscout]... [--route-only]

@@ -206,3 +206,101 @@ test("a tree directory that is no workspace is rebuilt, and a revision naming no
 	expect(existsSync(join(tree, ".maestro/slice.ts"))).toBe(true);
 	await expect(lands.tree("main | @", root)).rejects.toThrow("not one");
 });
+
+test("conflicts commits a conflicting merge onto main with git's markers in, which a workspace opens, and leaves a clean one alone", async () => {
+	const { dir, top } = repository();
+	const main = jj(dir, "log", "-r", "main", "--no-graph", "-T", "commit_id");
+	const lands = landing(dir, account);
+	expect(await lands.conflicts(top, main)).toBeUndefined();
+	jj(dir, "new", "main");
+	writeFileSync(join(dir, "c"), "main\n");
+	writeFileSync(join(dir, "café"), "main\n");
+	writeFileSync(join(dir, "a\tb"), "main\n");
+	writeFileSync(join(dir, ":(bad)f"), "main\n");
+	writeFileSync(join(dir, ".gitattributes"), "wide conflict-marker-size=9\n");
+	writeFileSync(join(dir, "wide"), "main\n");
+	jj(dir, "commit", "-m", "moved");
+	const moved = jj(dir, "log", "-r", "@-", "--no-graph", "-T", "commit_id");
+	jj(dir, "new", top);
+	writeFileSync(join(dir, "café"), "pr\n");
+	writeFileSync(join(dir, "a\tb"), "pr\n");
+	writeFileSync(join(dir, ":(bad)f"), "pr\n");
+	writeFileSync(join(dir, ".gitattributes"), "wide conflict-marker-size=9\n");
+	writeFileSync(join(dir, "wide"), "pr\n");
+	jj(dir, "commit", "-m", "pr");
+	const pr = jj(dir, "log", "-r", "@-", "--no-graph", "-T", "commit_id");
+	const found = await lands.conflicts(pr, moved);
+	expect(found && { ...found, commit: undefined }).toEqual({
+		commit: undefined,
+		paths: [":(bad)f", "a\tb", "c", "café", "wide"],
+		deletedOnto: [],
+		deletedInHead: [],
+	});
+	const commit = found && "commit" in found ? found.commit : "";
+	expect(
+		jj(dir, "log", "-r", `${commit}-`, "--no-graph", "-T", "commit_id"),
+	).toBe(moved);
+	expect(jj(dir, "bookmark", "list")).not.toContain("conflicts");
+	const workspace = join(
+		mkdtempSync(join(tmpdir(), "factory-conflicts-")),
+		"w",
+	);
+	await lands.open(workspace, "conflicts", commit);
+	expect(readFileSync(join(workspace, "c"), "utf8")).toBe(
+		`<<<<<<< ${moved}\nmain\n=======\nc\n>>>>>>> ${pr}\n`,
+	);
+	expect(readFileSync(join(workspace, "wide"), "utf8")).toStartWith(
+		`<<<<<<<<< ${moved}\n`,
+	);
+});
+
+test("conflicts names a path one side deleted while the other changed it apart", async () => {
+	const { dir, top } = repository();
+	const lands = landing(dir, account);
+	jj(dir, "new", top);
+	writeFileSync(join(dir, "b"), "changed\n");
+	rmSync(join(dir, "c"));
+	jj(dir, "commit", "-m", "onto");
+	const onto = jj(dir, "log", "-r", "@-", "--no-graph", "-T", "commit_id");
+	jj(dir, "new", top);
+	rmSync(join(dir, "b"));
+	writeFileSync(join(dir, "c"), "changed\n");
+	jj(dir, "commit", "-m", "head");
+	const head = jj(dir, "log", "-r", "@-", "--no-graph", "-T", "commit_id");
+	const found = await lands.conflicts(head, onto);
+	expect(found && { ...found, commit: undefined }).toEqual({
+		commit: undefined,
+		paths: ["b", "c"],
+		deletedOnto: ["c"],
+		deletedInHead: ["b"],
+	});
+});
+
+test.each([
+	["a binary file both sides changed", "binary"],
+	["a file both sides renamed apart", "rename"],
+])(
+	"conflicts commits nothing for %s, which no builder can be told how to resolve, and names it",
+	async (_, kind) => {
+		const { dir } = repository();
+		const lands = landing(dir, account);
+		writeFileSync(join(dir, "bin"), new Uint8Array([0, 1, 2]));
+		jj(dir, "commit", "-m", "binary");
+		const base = jj(dir, "log", "-r", "@-", "--no-graph", "-T", "commit_id");
+		const side = (byte: number) => {
+			jj(dir, "new", base);
+			if (kind === "binary")
+				writeFileSync(join(dir, "bin"), new Uint8Array([0, byte]));
+			else {
+				rmSync(join(dir, "b"));
+				writeFileSync(join(dir, `b${byte}`), "b\n");
+			}
+			jj(dir, "commit", "-m", `side ${byte}`);
+			return jj(dir, "log", "-r", "@-", "--no-graph", "-T", "commit_id");
+		};
+		const onto = side(7);
+		const found = await lands.conflicts(side(9), onto);
+		expect(found && "untold" in found && found.untold.length > 0).toBe(true);
+		expect(jj(dir, "bookmark", "list")).not.toContain("conflicts");
+	},
+);

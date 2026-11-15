@@ -25,7 +25,7 @@ import {
 	REQUEST_CHANGES,
 	type Review,
 } from "./forge";
-import { landing, SIGNING_KEY } from "./land";
+import { type Conflicts, landing, SIGNING_KEY } from "./land";
 import { type Concert, maestro, type Report, type Result } from "./maestro";
 import {
 	masterclass,
@@ -350,8 +350,7 @@ async function haltSlice(
 		...data,
 		concert: id,
 		failure: reason,
-		encore: undefined,
-		revisionBase: undefined,
+		...UNCONTINUED,
 	});
 	await halt(
 		tick,
@@ -749,7 +748,10 @@ async function performOf(
 	spec: Spec,
 ): Promise<Perform> {
 	const request = requestOf(issue, spec);
-	const fresh = { request, data: { ...data, revisionBase: undefined } };
+	const fresh = {
+		request,
+		data: { ...data, revisionBase: undefined, conflicted: undefined },
+	};
 	if (!data.encore) return fresh;
 	const considered = repliesOf(comments, data.read);
 	const changes = considered
@@ -789,11 +791,68 @@ const reviewChange = (r: Review): Change => ({
 		.join("\n\n"),
 });
 
+/** `paths` as a Markdown list of code spans. */
+const pathList = (paths: readonly string[]) =>
+	paths.map((p) => `- \`${p}\``).join("\n");
+
 /**
- * The encore of in-review `entry`'s landed concert its PR among `pulls` asks for with changes requested, or its stack
- * review's `findings` ask for, if any. It is fed each review above `review` and the findings, moves `review` to the
- * newest, clears `findings`, and records the PR's head as `revisionBase`: the commit the build is cut at and lands
- * folded into, so the PR keeps one commit per ticket.
+ * What an encore is fed when `pull` conflicts with `main`: it is cut at their merge, whose markers it resolves, and is
+ * told which paths one side deleted (factory.md, Rules, Build: Encore).
+ */
+function conflictChange(
+	pull: Pull,
+	main: string,
+	{ paths, deletedOnto, deletedInHead }: Conflicts,
+): Change {
+	const marked = paths.filter(
+		(p) => !deletedOnto.includes(p) && !deletedInHead.includes(p),
+	);
+	return {
+		heading: "Conflict with main",
+		body: [
+			`The PR conflicts with \`main\`, so this build starts from the PR merged onto \`main\`'s \`${main}\`.`,
+			...(marked.length
+				? [
+						`Resolve every conflict marker git left, keeping what \`main\` changed and what the PR does: \`<<<<<<< ${main}\` opens \`main\`'s side and \`>>>>>>> ${pull.sha}\` closes the PR's, each label followed by \`:<path>\` where a rename is involved. In:`,
+						pathList(marked),
+					]
+				: []),
+			...(deletedOnto.length
+				? [
+						"`main` deleted these and the PR changed them, and the build holds the PR's version: delete each, or keep it if the PR still needs it:",
+						pathList(deletedOnto),
+					]
+				: []),
+			...(deletedInHead.length
+				? [
+						"The PR deleted these and `main` changed them, and the build holds `main`'s version: delete each as the PR does, or keep `main`'s change if the PR still needs it:",
+						pathList(deletedInHead),
+					]
+				: []),
+		].join("\n\n"),
+	};
+}
+
+/**
+ * How PR `pull` to `main` conflicts with the tick's `main`, if it does; a PR to another branch is not checked, and one
+ * no build can be told about is said, for a rebase by hand.
+ */
+async function conflictsOf(tick: Tick, pull: Pull) {
+	if (pull.base !== BASE) return undefined;
+	const found = await tick.landing.conflicts(pull.sha, tick.main);
+	if (found && "untold" in found)
+		tick.say(
+			`PR #${pull.number} conflicts with main where no build can be told how, so it waits for a rebase by hand: ${found.untold.join(", ")}`,
+		);
+	return found;
+}
+
+/**
+ * The encore of in-review `entry`'s landed concert its PR among `pulls` asks for with changes requested, a conflict
+ * with `main`, or its stack review's `findings`, if any, and none while it conflicts in a way no build can be told. It is fed each review above `review`, the conflict and the
+ * findings, moves `review` to the newest, clears `findings`, and records as `revisionBase` the commit the build is cut
+ * at and lands folded into, so the PR keeps one commit per ticket: the PR's head, or its merge onto `main` when they
+ * conflict, with the conflicted paths as `conflicted`.
  */
 async function revision(
 	tick: Tick,
@@ -803,11 +862,14 @@ async function revision(
 	const pull = pulls.find((p) => p.head === branchOf(issue.number));
 	const spec = data.result?.spec;
 	if (!pull || !spec || !data.concert) return undefined;
+	const conflicts = await conflictsOf(tick, pull);
+	if (conflicts && "untold" in conflicts) return undefined;
 	const reviews = requested(
 		await tick.forge.reviews(pull.number, data.review ?? 0),
 		data,
 	);
 	const changes = reviews.map(reviewChange);
+	if (conflicts) changes.push(conflictChange(pull, tick.main, conflicts));
 	if (data.findings)
 		changes.push({
 			heading: "Stack review",
@@ -823,7 +885,8 @@ async function revision(
 				? Math.max(...reviews.map((r) => r.id))
 				: data.review,
 			findings: undefined,
-			revisionBase: pull.sha,
+			revisionBase: conflicts?.commit ?? pull.sha,
+			conflicted: conflicts?.paths,
 		},
 	};
 }

@@ -137,7 +137,7 @@ function setup(
 		reports?: Record<string, Report>;
 		landing?: Pick<
 			ReturnType<typeof fakeLanding>,
-			"landing" | "steps" | "events"
+			"landing" | "steps" | "events" | "conflicting"
 		>;
 	} = {},
 ) {
@@ -168,6 +168,7 @@ function setup(
 		...maestro,
 		steps: landing.steps,
 		events: landing.events,
+		conflicting: landing.conflicting,
 		said,
 		files,
 		options,
@@ -1974,7 +1975,10 @@ describe("a review", () => {
 		[
 			"encores the landed concert on an official review requesting changes newer than the last fed, feeding it alone",
 			[
+				review(1, { author: "Ghost" }),
+				review(2, { state: "APPROVED", author: "bob" }),
 				review(3),
+				review(4, { official: false, author: "cy" }),
 				review(5),
 				review(6, { official: false }),
 				review(7, { state: "APPROVED" }),
@@ -2019,12 +2023,87 @@ describe("a review", () => {
 		]);
 		expect(t.writes).toContain(`push abc123 as maestro-tm/i7 from ${CACHED}`);
 		expect(merging(t.writes)).toEqual(["arm #31"]);
+		expect(t.pullComments).toHaveLength(1);
+		expect(t.writes).toContain("request review of #31 from ann");
+		expect(t.writes.indexOf("request review of #31 from ann")).toBeLessThan(
+			t.writes.indexOf("arm #31"),
+		);
 		expect(dataAt(t.find(7)).revisionBase).toBeUndefined();
 		expect(t.find(7).labels).toContain("state/in-review");
 		const writes = t.writes.length;
 		await t.run();
 		expect(t.writes).toHaveLength(writes);
 		expect(t.starts).toHaveLength(1);
+	});
+});
+
+describe("a PR that conflicts with main", () => {
+	test.each([
+		["main", true],
+		["maestro-tm/i5", false],
+	])(
+		"to %s is encored from its merge onto main, which it lands on and answers: %p",
+		async (base, encores) => {
+			const concerts: Concert[] = [sliceConcert("s1", 7)];
+			const results: Record<string, Result> = {};
+			const t = setup(
+				[specced(7, "in-review", { slice: "s1", concert: "s1" })],
+				concerts,
+				results,
+			);
+			t.pulls.push(pullOf(31, 7, base));
+			t.conflicting.sha7 = {
+				paths: ["greet.sh", "gone.sh", "old.sh"],
+				deletedOnto: ["gone.sh"],
+				deletedInHead: ["old.sh"],
+			};
+			await t.run();
+			if (!encores) {
+				expect([t.starts, t.writes]).toEqual([[], []]);
+				return;
+			}
+			const [started = []] = t.starts;
+			expect(started.slice(0, 2)).toEqual(["encore", "s1"]);
+			expect(argAfter(started, "-c")).toBe("target.base=merged-sha7");
+			expect(argAfter(started, "--revises")).toBe("merged-sha7^!");
+			const conflict =
+				(argAfter(started, "--request") ?? "").split(
+					"## Conflict with main\n",
+				)[1] ?? "";
+			const lists = conflict
+				.split("\n\n")
+				.filter((part) => part.startsWith("- "));
+			expect(lists).toEqual(["- `greet.sh`", "- `gone.sh`", "- `old.sh`\n"]);
+			expect(conflict).toContain("`<<<<<<< sha-main`");
+			expect(conflict).toContain("`>>>>>>> sha7`");
+			expect(dataAt(t.find(7))).toMatchObject({
+				revisionBase: "merged-sha7",
+				conflicted: ["greet.sh", "gone.sh", "old.sh"],
+			});
+			concerts.unshift(sliceConcert("started", 7));
+			results.started = { status: "ok", outputs: {} };
+			delete t.conflicting.sha7;
+			await t.run();
+			expect(t.steps[0]).toBe(`open factory-i7 at ${CACHED} on merged-sha7`);
+			expect(t.pullComments).toHaveLength(1);
+			for (const named of ["`started`", "`greet.sh`", "`gone.sh`", "`old.sh`"])
+				expect(t.pullComments[0]).toContain(named);
+			expect(t.writes.some((w) => w.startsWith("request review"))).toBe(false);
+			expect(dataAt(t.find(7)).conflicted).toBeUndefined();
+		},
+	);
+
+	test("no build can be told how to resolve waits for a rebase by hand, said each tick, though changes are requested", async () => {
+		const t = setup(
+			[specced(7, "in-review", { slice: "s1", concert: "s1" })],
+			[sliceConcert("s1", 7)],
+		);
+		t.pulls.push(pullOf(31, 7));
+		t.reviews[31] = [review(5)];
+		t.conflicting.sha7 = { untold: ["logo.png"] };
+		await t.run();
+		expect([t.starts, t.writes]).toEqual([[], []]);
+		expect(t.said.filter((l) => l.includes("logo.png"))).toHaveLength(1);
 	});
 });
 

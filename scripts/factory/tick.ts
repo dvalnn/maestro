@@ -145,7 +145,11 @@ export const RETRIAGE: Option = {
 };
 
 /** The data of a ticket with no concert to continue. */
-export const UNCONTINUED: Data = { encore: undefined, revisionBase: undefined };
+export const UNCONTINUED: Data = {
+	encore: undefined,
+	revisionBase: undefined,
+	conflicted: undefined,
+};
 
 /** Whether `issue` is low risk, so its PR to `main` merges on its own (factory.md, Rules, Policy: Risk). */
 export const isLow = (issue: Issue, { result }: Data) =>

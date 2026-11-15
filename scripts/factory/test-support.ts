@@ -9,7 +9,7 @@ import type {
 	Pull,
 	Review,
 } from "./forge";
-import type { Landing } from "./land";
+import type { Conflicts, Landing } from "./land";
 import type { Concert, Maestro, Report, Result, Spend } from "./maestro";
 
 export const MILESTONE = "v0.1.0";
@@ -36,6 +36,8 @@ export function fakeForge(
 	const pins: number[] = [];
 	const closedPulls = new Set<number>();
 	const reviews: Record<number, Review[]> = {};
+	/** `#<n>: <body>` of each comment on a PR, which is no stored issue. */
+	const pullComments: string[] = [];
 	const closed: Issue[] = [
 		{ number: 1, title: "An old one", body: "", labels: [] },
 	];
@@ -99,7 +101,9 @@ export function fakeForge(
 		comments: async (n) => find(n).comments,
 		comment: async (n, body) => {
 			write(`comment #${n}`);
-			find(n).comments.push({ id: nextComment, body, author: BOT });
+			const issue = issues.find((i) => i.number === n);
+			if (issue) issue.comments.push({ id: nextComment, body, author: BOT });
+			else pullComments.push(`#${n}: ${body}`);
 			return nextComment++;
 		},
 		editComment: async (id, body) => {
@@ -150,6 +154,8 @@ export function fakeForge(
 		},
 		arm: async (n) => write(`arm #${n}`),
 		reviews: async (n) => reviews[n] ?? [],
+		requestReview: async (n, reviewers) =>
+			write(`request review of #${n} from ${reviewers.join(", ")}`),
 		head: async (branch) => {
 			events.push(`head ${branch}`);
 			return heads[branch] ?? `sha-${branch}`;
@@ -165,6 +171,7 @@ export function fakeForge(
 		pulls,
 		closedPulls,
 		reviews,
+		pullComments,
 		closed,
 	};
 }
@@ -237,13 +244,18 @@ export function fakeMaestro(
 
 /**
  * A landing that logs each step, and fails at the step named `failAt` with `output` until it is healed. `changed` holds
- * the paths main changed since any spec's base, and `compared` each `from..to` asked.
+ * the paths main changed since any spec's base, and `compared` each `from..to` asked. `conflicting` maps a PR head to
+ * its conflicts with `main`, whose merge is `merged-<head>`.
  */
 export function fakeLanding(failAt?: keyof Landing, output = "") {
 	const changed: string[] = [];
 	const compared: string[] = [];
 	const steps: string[] = [];
 	const trees: string[] = [];
+	const conflicting: Record<
+		string,
+		Omit<Conflicts, "commit"> | { untold: string[] }
+	> = {};
 	/** The revisions the repository does not have. */
 	const unknown = new Set<string>();
 	/** The shared trace of each forge head read, the fetch and each start, in order. */
@@ -282,6 +294,12 @@ export function fakeLanding(failAt?: keyof Landing, output = "") {
 			trees.push(revision);
 			return join(root, revision);
 		},
+		conflicts: async (head) => {
+			const found = conflicting[head];
+			return found && "untold" in found
+				? found
+				: found && { commit: `merged-${head}`, ...found };
+		},
 	};
 	return {
 		landing,
@@ -291,6 +309,7 @@ export function fakeLanding(failAt?: keyof Landing, output = "") {
 		unknown,
 		changed,
 		compared,
+		conflicting,
 		heal: () => (failing = undefined),
 	};
 }
