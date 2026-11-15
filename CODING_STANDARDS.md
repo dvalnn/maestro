@@ -15,6 +15,9 @@ in `just check`, never tests.
   at its entry point, and only that type travels inward. An `as` cast never stands in for the parse.
 - Optional and nullable only where absence means something. A field every caller sets is required, and a narrower type
   beats a runtime null check.
+- Make only the valid combinations representable. Fields, unions or flags that only hold together in some combinations
+  become a discriminated union of the real cases, so the compiler rules out the rest and no branch, check or test guards
+  them.
 
 ## Comments
 
