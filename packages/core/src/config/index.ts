@@ -340,7 +340,7 @@ const originOf = (text: LayerText): { source: Source; base: string } =>
 /**
  * Parses one YAML config file, or the YAML a flag gives, into a layer. Its merge tags:
  * - `!replace` on a mapping: it replaces what is beneath instead of merging into it;
- * - `!append` on a list: it follows the list beneath;
+ * - `!append` on a list: it follows the list beneath, or the scalar beneath as a one-item list;
  * - `!delete` with no value: it removes the key a lower layer set.
  * @throws ConfigError on invalid YAML, a file that is not a mapping, any other tag, or a tag on the wrong shape.
  */
@@ -449,10 +449,16 @@ function merged(
 	if (top.kind === "scalar") return flagged(beneath, top);
 	if (top.kind === "map") return mergedMap(beneath, top, path, deferred);
 	if (!top.append || beneath === undefined) return { ...top, append: false };
+	if (beneath.kind === "scalar")
+		return {
+			...top,
+			items: [{ value: beneath.value, source: beneath.source }, ...top.items],
+			append: false,
+		};
 	if (beneath.kind !== "list")
 		throw tagError(
 			top.source,
-			`${APPEND} on '${spell(path)}', which is a ${beneath.kind === "map" ? "mapping" : "scalar"} beneath it, and only a list takes it`,
+			`${APPEND} on '${spell(path)}', which is a mapping beneath it, and only a list takes it`,
 			"Drop the tag to replace it",
 		);
 	return { ...top, items: [...beneath.items, ...top.items], append: false };
@@ -525,7 +531,7 @@ function replacedOf(tree: Merged, path: KeyPath): KeyPath[] {
  * Merges `layers`, lowest first: mappings by key, any other value replaced whole, as the merge tags say. At or below a
  * `deferred` key path, whose base `layeredOver` gives later, a `!delete` that finds nothing beneath is left pending.
  * `*` in a deferred path matches any one key.
- * @throws ConfigError on a `!delete` of a key nothing beneath sets, or an `!append` over a value that is not a list.
+ * @throws ConfigError on a `!delete` of a key nothing beneath sets, or an `!append` over a mapping.
  */
 export function layered(
 	layers: readonly Layer[],

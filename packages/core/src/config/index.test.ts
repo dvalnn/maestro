@@ -75,6 +75,18 @@ describe("merge tags", () => {
 		});
 	});
 
+	test("!append over a scalar puts it before the appended items", () => {
+		const layers = [user(), parse("keep: !append [2, 3]\n")];
+		expect(() => layered(layers)).not.toThrow();
+		expect(layered(layers).values.keep).toEqual([1, 2, 3]);
+	});
+
+	test("!append over a mapping is refused at the appending file", () => {
+		expect(refusal(() => layered([user(), parse("a: !append [x]\n")]))).toEqual(
+			[["CFG.tag", expect.any(String), { file: WORKSPACE, line: 1 }]],
+		);
+	});
+
 	test.each([
 		["an unknown tag", "a: !merge {}\n", "workspace", "unknown tag !merge", 1],
 		["a YAML tag", "a:\n  b: !!str 1\n", "workspace", "unknown tag !!str", 2],
@@ -111,13 +123,6 @@ describe("merge tags", () => {
 			"zz: !delete\n",
 			"merge",
 			"!delete on 'zz', which nothing beneath sets",
-			1,
-		],
-		[
-			"!append over a scalar",
-			"keep: !append [1]\n",
-			"merge",
-			"!append on 'keep', which is a scalar beneath it, and only a list takes it",
 			1,
 		],
 	])(
@@ -201,6 +206,43 @@ describe("a deferred path", () => {
 		expect(sourceOf(over, ["map", "z"])).toMatchObject({ layer: "user" });
 		expect(sourceOf(over, ["map", "w"])).toMatchObject({ layer: "flag" });
 		expect(sourceOf(over, ["file"])).toMatchObject({ layer: "directory" });
+	});
+
+	test("!append keeps a profile scalar's source and resolves each path against its own file", () => {
+		const pack = parseLayer(
+			"name: lens\ninstructions: ../lens/instructions.md\n",
+			{
+				file: "/packs/classics/profiles/deep-lens/profile.yaml",
+				layer: "directory",
+				paths: [["instructions"]],
+			},
+		);
+		const workspace = parseLayer(
+			"tuned:\n  one:\n    instructions: !append [reviewer.md]\n",
+			{
+				file: WORKSPACE,
+				layer: "workspace",
+				paths: [["tuned", "*", "instructions"]],
+			},
+		);
+		const composed = layered([workspace], DEFERRED);
+		const merge = () => layeredOver(composed, ["tuned", "one"], pack);
+		expect(merge).not.toThrow();
+		const over = merge();
+		expect(over.values.instructions).toEqual([
+			"/packs/classics/profiles/lens/instructions.md",
+			"/w/.maestro/reviewer.md",
+		]);
+		expect(sourceOf(over, ["instructions", "0"])).toEqual({
+			layer: "directory",
+			file: "/packs/classics/profiles/deep-lens/profile.yaml",
+			line: 2,
+		});
+		expect(sourceOf(over, ["instructions", "1"])).toEqual({
+			layer: "workspace",
+			file: WORKSPACE,
+			line: 3,
+		});
 	});
 
 	test.each([
