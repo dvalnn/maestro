@@ -1,6 +1,12 @@
-import { toMarkdown } from "@maestro/classics";
+import { copyMarkdown, toMarkdown } from "@maestro/classics";
 import { check, fresh } from "@maestro/host-repo-sdk";
-import { code, Markdown, type Ref } from "@maestro/sdk";
+import {
+	type ArtifactRef,
+	code,
+	literal,
+	Markdown,
+	type Ref,
+} from "@maestro/sdk";
 import GROUNDS from "./prompts/_grounds.md" with { type: "text" };
 import TEST_GROUNDS from "./prompts/_test-grounds.md" with { type: "text" };
 
@@ -18,6 +24,17 @@ export const sealedBase = () =>
 export const markdownOf = (text: Ref<string> | string, label: string) =>
 	code(toMarkdown, {
 		in: { text },
+		out: { file: Markdown() },
+		label,
+	}).out.file;
+
+/**
+ * The parameter file at `path` as a copy in a code node's scratch, by a node labelled `label`, so the agent's recorded
+ * inputs hold what it read; the calling composition must export `copyMarkdown` (ADR 0008).
+ */
+export const fileOf = (path: ArtifactRef, label: string) =>
+	code(copyMarkdown, {
+		in: { file: literal(path, Markdown()) },
 		out: { file: Markdown() },
 		label,
 	}).out.file;

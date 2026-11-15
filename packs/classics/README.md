@@ -105,9 +105,9 @@ encore that turns `testFirst` off continues that builder's session.
 
 Read a run's reply fields with `maestro ls <id> --json | jq .outputs`.
 
-Code-node values: `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf`, `tieredOf` and `resultOf`. `fill` fills prompt
-placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer param of at least 1. `maxRepairs` and
-`maxFixes` are the params of those names, for a composition built on the pack to reuse.
+Code-node values: `toMarkdown`, `copyMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf`, `tieredOf` and `resultOf`.
+`fill` fills prompt placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer param of at least 1.
+`maxRepairs` and `maxFixes` are the params of those names, for a composition built on the pack to reuse.
 
 ## Seats and profiles
 

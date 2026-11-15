@@ -6,7 +6,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { Answers } from "@maestro/classics";
 import type { ArtifactRef, CodeContext, Type, ValueOf } from "@maestro/sdk";
 import { readJson } from "@maestro/sdk/stdlib";
@@ -519,6 +519,105 @@ test("triage accepts --sightings and attaches the file to the planner only", asy
 		).toBeUndefined();
 });
 
+test("triage feeds parameter-file attachments from code nodes", async () => {
+	const sightings = join(
+		mkdtempSync(join(scratch, "sightings-")),
+		"sightings.md",
+	);
+	writeFileSync(sightings, "- a sighting\n");
+	const { plan } = JSON.parse(
+		await maestro(
+			await triage("compose", "--backlog", backlog, "--sightings", sightings),
+		),
+	);
+	const nodes = plan.ir.nodes as (TriageNode & { kind: string })[];
+	const edges = plan.ir.edges as TriageEdge[];
+	for (const [id, port, hint] of [
+		[
+			"triager",
+			"backlog",
+			"for the open and recently closed issues, to cut down to those that matter",
+		],
+		[
+			"planner",
+			"sightings",
+			"for the known defects and smells no masterclass has read yet, to see the debt around the change",
+		],
+	] as const) {
+		const attachment = nodes.find((node) => node.id === id)?.config
+			.attachments?.[port];
+		expect(attachment).toEqual({ type: "core.markdown", hint });
+		const sources = edges.filter(
+			(edge) => edge.to.node === id && edge.to.port === port,
+		);
+		expect(sources).toHaveLength(1);
+		expect(nodes.find((node) => node.id === sources[0]?.from.node)?.kind).toBe(
+			"code",
+		);
+	}
+});
+
+test("an encore records the triager's current backlog snapshot", async () => {
+	const dir = mkdtempSync(join(scratch, "encore-backlog-"));
+	const snapshot = join(dir, "snapshot.md");
+	const data = join(dir, "data");
+	writeFileSync(snapshot, "# Backlog\n\n- first snapshot\n");
+	const env = {
+		MAESTRO_STUB_OUTPUTS: stubOutputs({
+			"triager/ruling.json": planning,
+			"triager/backlog.md": "- #7 Greet: it greets too\n",
+			"planner/plan.json": ready,
+			"checker/check.json": { findings: [] },
+		}),
+	};
+	const first = await call(
+		[
+			...(await triage("perform", "--backlog", snapshot)),
+			"-c",
+			`target.repo=${targetRepo()}`,
+			"-c",
+			'target.prepare="true"',
+			...stubbed(["triager", "classics/scout", "classics/planner", "checker"]),
+		],
+		data,
+		env,
+	);
+	expect(first.code).toBe(0);
+	const firstConcert = JSON.parse(first.out);
+	expect(firstConcert.status).toBe("ok");
+	const recorded = async (id: string) => {
+		const listed = await call(["ls", id, "--json"], data);
+		expect(listed.code).toBe(0);
+		const {
+			instances,
+		}: {
+			instances: (Instance & { inputs?: Record<string, { path?: string }> })[];
+		} = JSON.parse(listed.out);
+		const path = instances.find((instance) => instance.node === "triager")
+			?.inputs?.backlog?.path;
+		expect(path).toBeDefined();
+		expect(basename(path ?? "")).toBe("snapshot.md");
+		return readFileSync(
+			join(data, "maestro/concerts", id, "artifacts", path ?? ""),
+			"utf8",
+		);
+	};
+	expect(await recorded(firstConcert.id)).toBe(
+		"# Backlog\n\n- first snapshot\n",
+	);
+	writeFileSync(snapshot, "# Backlog\n\n- second snapshot\n");
+	const encore = await call(["encore", firstConcert.id, "--json"], data, env);
+	expect(encore.code).toBe(0);
+	const nextConcert = JSON.parse(encore.out);
+	expect(nextConcert.status).toBe("ok");
+	expect(await recorded(nextConcert.id)).toBe(
+		"# Backlog\n\n- second snapshot\n",
+	);
+	expect(await recorded(firstConcert.id)).toBe(
+		"# Backlog\n\n- first snapshot\n",
+	);
+});
+
 test("an encore rereads the sightings file recorded by its first triage", async () => {
 	const dir = mkdtempSync(join(scratch, "encore-sightings-"));
 	const sightings = join(dir, "sightings.md");
@@ -607,7 +706,7 @@ type TriageNode = {
 		reply?: Record<string, unknown>;
 		out?: Record<string, { file: string; format: string }>;
 		relay?: { name: string }[];
-		attachments?: Record<string, { type?: string }>;
+		attachments?: Record<string, { type?: string; hint?: string }>;
 	};
 	literals?: { prompt?: string };
 };
@@ -772,7 +871,10 @@ test("the scouts and the planner are attached the triager's cut of the backlog, 
 	};
 	const node = (id: string) =>
 		(plan.ir.nodes as Node[]).find((n) => n.id === id);
-	const snapshot = Object.values(node("triager")?.literals ?? {}).find(
+	const source = (plan.ir.edges as Edge[]).find(
+		(e) => e.to.node === "triager" && e.to.port === "backlog",
+	)?.from.node;
+	const snapshot = Object.values(node(source ?? "")?.literals ?? {}).find(
 		(v) => typeof v === "object",
 	);
 	expect(snapshot).toBeDefined();

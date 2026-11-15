@@ -23,7 +23,7 @@ import {
 } from "@maestro/sdk";
 import FIGURES from "./prompts/_figures.md" with { type: "text" };
 import PLAIN from "./prompts/_plain.md" with { type: "text" };
-import { markdownOf, sealedBase, task } from "./shared";
+import { fileOf, markdownOf, sealedBase, task } from "./shared";
 import { MAX_REQUIREMENT_WORDS } from "./triage/ears";
 import GATE from "./triage/prompts/_gate.md" with { type: "text" };
 import CHECKER from "./triage/prompts/checker.md" with { type: "text" };
@@ -155,16 +155,6 @@ export function revisable(
 	return { findings, revise: found.length > 0 };
 }
 
-/** The sightings file as the planner's own artifact, recorded among its inputs; an encore copies the file anew. */
-export function sightingsOf(
-	{ sightings }: { sightings: ArtifactRef },
-	ctx: CodeContext,
-): { file: string } {
-	const file = join(ctx.scratch, "sightings.md");
-	copyFileSync(ctx.path(sightings), file);
-	return { file };
-}
-
 /** The proposals whose spec the checker checks. */
 const CHECKS: Record<(typeof PROPOSED)[number], boolean> = {
 	"ready-for-agent": true,
@@ -240,7 +230,7 @@ export const triage = composition(
 			attachments: {
 				issue: issued,
 				backlog: {
-					artifact: literal(backlog, Markdown()),
+					artifact: fileOf(backlog, "backlog"),
 					hint: "for the open and recently closed issues, to cut down to those that matter",
 				},
 			},
@@ -307,11 +297,7 @@ export const triage = composition(
 				backlog: cutBacklog,
 				...(sightings && {
 					sightings: {
-						artifact: code(sightingsOf, {
-							in: { sightings: literal(sightings, Markdown()) },
-							out: { file: Markdown() },
-							label: "sightings",
-						}).out.file,
+						artifact: fileOf(sightings, "sightings"),
 						hint: "for the known defects and smells no masterclass has read yet, to see the debt around the change",
 					},
 				}),

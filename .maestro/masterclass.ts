@@ -18,7 +18,10 @@ import {
 import { KINDS } from "./masterclass/kinds";
 import PLANNER from "./masterclass/prompts/planner.md" with { type: "text" };
 import PLAIN from "./prompts/_plain.md" with { type: "text" };
-import { sealedBase, task } from "./shared";
+import { fileOf, sealedBase, task } from "./shared";
+
+// ADR 0008: a code node's function must be exported by its composition file.
+export * from "@maestro/classics/code";
 
 /** What a promotion changes: a repo-relative path that neither starts with `/` nor holds `..`, `docs/adr/` for a new ADR. */
 export const TARGET = String.raw`^(?!/)(?!.*\.\.).+$`;
@@ -75,7 +78,6 @@ function concertsIn(files: readonly string[]) {
 	};
 }
 
-// ADR 0008: a code node's function must be exported by its composition file.
 /**
  * The planner's proposals, each citing only concerts `lessons` or `reports` names, less any that cites no concert but
  * those an earlier masterclass read.
@@ -146,17 +148,17 @@ export const masterclass = composition(
 			lane: read(base),
 			attachments: {
 				lessons: {
-					artifact: literal(lessons, Markdown()),
+					artifact: fileOf(lessons, "lessons"),
 					hint: "first, for the lessons to merge, one heading per concert, oldest first, a heading ending in `· read` marking a concert an earlier masterclass read",
 				},
 				...(reports && {
 					reports: {
-						artifact: literal(reports, Markdown()),
+						artifact: fileOf(reports, "reports"),
 						hint: "for the obstacles and sightings to merge, under the lessons' concert headings",
 					},
 				}),
 				backlog: {
-					artifact: literal(backlog, Markdown()),
+					artifact: fileOf(backlog, "backlog"),
 					hint: "for the open and recently closed issues, to drop a promotion one already proposes",
 				},
 			},

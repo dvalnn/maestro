@@ -28,6 +28,7 @@ import { pack } from "../../../scripts/pack";
 import { BASE, git, PROFILES, profilesOn, setup } from "../acceptance/setup";
 import {
 	briefOf,
+	copyMarkdown,
 	heldOf,
 	type Member,
 	resultOf,
@@ -2041,4 +2042,17 @@ describe("recipes", () => {
 		expect(ran.ls).toMatch(/^plan +ok/m);
 		expect(ran.ls).toMatch(/^panel\/lenses\[plan\]\/lens +ok/m);
 	});
+});
+
+test("copyMarkdown copies a Markdown file unchanged into scratch under its base name", () => {
+	const dir = mkdtempSync(join(root, "copy-"));
+	const source = join(dir, "backlog.md");
+	writeFileSync(source, "# Backlog\n\n- #1 one\n");
+	const scratch = mkdtempSync(join(root, "scratch-"));
+	const { file } = copyMarkdown({ file: source as never }, {
+		scratch,
+		path: (ref: unknown) => ref as string,
+	} as never);
+	expect(file).toBe(join(scratch, "backlog.md"));
+	expect(readFileSync(file, "utf8")).toBe("# Backlog\n\n- #1 one\n");
 });

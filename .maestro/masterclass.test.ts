@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import type { CodeContext } from "@maestro/sdk";
 import { readJson } from "@maestro/sdk/stdlib";
 import { Masterclass, settle } from "./masterclass";
@@ -310,6 +310,124 @@ test("the planner receives reports beside lessons and backlog and settles one re
 	const concert = JSON.parse(performed.out);
 	expect(concert.status).toBe("ok");
 	expect(concert.outputs.masterclass).toEqual(scripted);
+});
+
+// Seam: the masterclass CLI's composed attachments and recorded planner inputs.
+test("masterclass feeds parameter-file attachments from code nodes", async () => {
+	const result = await withReports(
+		"compose",
+		{ proposals: [] },
+		reportHeadings,
+	);
+	expect(result.code).toBe(0);
+	const { plan } = JSON.parse(result.out);
+	const nodes = plan.ir.nodes as {
+		id: string;
+		kind: string;
+		config: { attachments?: Record<string, unknown> };
+	}[];
+	const edges = plan.ir.edges as {
+		from: { node: string };
+		to: { node: string; port: string };
+	}[];
+	const planner = nodes.find((node) => node.id === "planner");
+	for (const [port, hint] of [
+		[
+			"lessons",
+			"first, for the lessons to merge, one heading per concert, oldest first, a heading ending in `· read` marking a concert an earlier masterclass read",
+		],
+		[
+			"reports",
+			"for the obstacles and sightings to merge, under the lessons' concert headings",
+		],
+		[
+			"backlog",
+			"for the open and recently closed issues, to drop a promotion one already proposes",
+		],
+	] as const) {
+		expect(planner?.config.attachments?.[port]).toEqual({
+			type: "core.markdown",
+			hint,
+		});
+		const sources = edges.filter(
+			(edge) => edge.to.node === "planner" && edge.to.port === port,
+		);
+		expect(sources).toHaveLength(1);
+		expect(nodes.find((node) => node.id === sources[0]?.from.node)?.kind).toBe(
+			"code",
+		);
+	}
+});
+
+test("masterclass records the planner's lessons, reports and backlog contents", async () => {
+	const dir = mkdtempSync(join(scratch, "recorded-masterclass-"));
+	const files = {
+		lessons: {
+			path: join(dir, "course-notes.md"),
+			text: "## c1 · lessons\n\n- a lesson\n",
+		},
+		reports: {
+			path: join(dir, "factory-reports.md"),
+			text: "## c1 · reports\n\n- a sighting\n",
+		},
+		backlog: {
+			path: join(dir, "issue-snapshot.md"),
+			text: "# Backlog\n\n- #7 Greet\n",
+		},
+	};
+	for (const file of Object.values(files)) writeFileSync(file.path, file.text);
+	const data = join(dir, "data");
+	const result = await call(
+		[
+			"perform",
+			".maestro/masterclass.ts",
+			"--preset",
+			"stub",
+			"--lessons",
+			files.lessons.path,
+			"--reports",
+			files.reports.path,
+			"--backlog",
+			files.backlog.path,
+			"--json",
+			"-c",
+			`packs=[${await classics}]`,
+			"-c",
+			`target.repo=${targetRepo()}`,
+			"-c",
+			'target.prepare="true"',
+		],
+		data,
+		{
+			MAESTRO_STUB_OUTPUTS: stubOutputs({
+				"planner/masterclass.json": { proposals: [] },
+			}),
+		},
+	);
+	expect(result.code).toBe(0);
+	const concert = JSON.parse(result.out);
+	expect(concert.status).toBe("ok");
+	const listed = await call(["ls", concert.id, "--json"], data);
+	expect(listed.code).toBe(0);
+	const {
+		instances,
+	}: {
+		instances: { node: string; inputs?: Record<string, { path?: string }> }[];
+	} = JSON.parse(listed.out);
+	const inputs = instances.find(
+		(instance) => instance.node === "planner",
+	)?.inputs;
+	for (const [port, file] of Object.entries(files)) {
+		const path = inputs?.[port]?.path;
+		expect(path).toBeDefined();
+		expect(basename(path ?? "")).toBe(basename(file.path));
+		expect(
+			readFileSync(
+				join(data, "maestro/concerts", concert.id, "artifacts", path ?? ""),
+				"utf8",
+			),
+		).toBe(file.text);
+	}
 });
 
 test("a masterclass drops report clusters citing only read concerts and keeps a fresh reports-only cluster", async () => {

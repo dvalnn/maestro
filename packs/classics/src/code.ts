@@ -1,5 +1,10 @@
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+	copyFileSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
+import { basename, join } from "node:path";
 import type { Report } from "@maestro/host-repo-sdk";
 import { yamlOf } from "@maestro/host-repo-sdk/yaml";
 import {
@@ -36,6 +41,17 @@ export function toMarkdown(
 	const file = join(ctx.scratch, "request.md");
 	writeFileSync(file, `${text}\n`);
 	return { file };
+}
+
+/** The Markdown file `file`, unchanged, under its base name in scratch, so a run records what it held. */
+export function copyMarkdown(
+	{ file }: { file: ArtifactRef },
+	ctx: CodeContext,
+): { file: string } {
+	const source = ctx.path(file);
+	const copy = join(ctx.scratch, basename(source));
+	copyFileSync(source, copy);
+	return { file: copy };
 }
 
 /** The request as a Markdown file, then `## map` and `## overrules` as YAML for each one given. */
