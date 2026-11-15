@@ -276,15 +276,14 @@ flowchart TD
     D -->|no| M["triage or build, on main"]
 ```
 
-- **Stale spec.** A fresh build of a ready ticket first compares its spec's `touches` with those of every other ticket
-  whose spec was approved after its own: one in `ready-for-agent`, `in-progress` or `in-review` whose `specAt` is later,
-  or one closed as completed (not `state/wontfix` or `state/duplicate`) after this spec's `specAt`, by the forge's
-  `closed_at`. A ticket whose data holds no `specAt` is never bounced and is no overlap source. On a shared file the
-  ticket is not built: the tick posts a question comment,
-  ``The spec predates #N's, which also touches `<file>`. Re-triaging against current main.``, naming each such ticket
-  and its shared files (unless one above `read` holds it already), moves the ticket to `needs-triage`, and goes on to
-  the next buildable ticket. Triage then re-triages it as an encore and writes a spec newer than those it overlapped. An
-  encore of a running or landed build is not compared.
+- **Stale spec.** A fresh build of a ready ticket first asks whether `main` changed any of its spec's `touches` since
+  `specBase`, the commit its triage was cut from. A ticket whose data holds no `specBase` is never bounced. Tickets
+  still in flight do not count: only what landed on `main` dates a spec. On a changed file the ticket is not built: the
+  tick posts a question comment,
+  ``The spec was written on main at <commit>; main has since changed `<file>`. Re-triaging against current main.``,
+  naming each changed file (unless one above `read` holds it already), moves the ticket to `needs-triage`, and goes on
+  to the next buildable ticket. Triage then re-triages it as an encore, cut from current `main`. An encore of a running
+  or landed build is not compared.
 - **Encore.** A ticket continues its last slice concert, so the builder keeps what it learned and is told only what
   changed: `encore <id>` with a fresh build's presets, tour, title and base, and a `--request` of the spec and the ask
   followed by what changed, each part under its heading:
@@ -537,7 +536,7 @@ positions a later tick resumes from. A line the tick cannot read halts the tour 
 | `triage`       | The last ok triage, which a re-triage continues    | a routed or dropped ok triage      | not cleared                                                  |
 | `read`         | Id of the newest comment a triage was fed          | a triage or encore, a reply ask    | a failed triage                                              |
 | `version`      | The spec's version                                 | a routed triage                    | not cleared                                                  |
-| `specAt`       | When a routed triage wrote the spec, in ms         | a routed triage                    | not cleared                                                  |
+| `specBase`     | The `main` commit the routed triage was cut from   | a routed triage                    | not cleared                                                  |
 | `result`       | That triage's output; a string is a question's ask | a routed triage                    | the owner moving the ticket in its triage                    |
 | `pending`      | A result whose labels are not yet applied          | a routed triage                    | the labels applied                                           |
 | `filed`        | An approved split's children                       | the split's approval               | not cleared                                                  |

@@ -133,6 +133,14 @@ test("a fetch brings the commits origin gained into the repository", async () =>
 	expect(jj(dir, "log", "-r", tip, "--no-graph", "-T", "commit_id")).toBe(tip);
 });
 
+test("changed names the given paths that differ between two commits, a path added since included", async () => {
+	const { dir, top } = repository();
+	const main = jj(dir, "log", "-r", "main", "--no-graph", "-T", "commit_id");
+	const lands = landing(dir, account);
+	expect(await lands.changed(main, top, ["a", "c", "new"])).toEqual(["c"]);
+	expect(await lands.changed(main, top, [])).toEqual([]);
+});
+
 /**
  * A jj repository whose `main` holds a package with one local dependency, its lockfile and `.maestro/slice.ts`, and the
  * commit of `main`.

@@ -54,8 +54,8 @@ export type Option = Question["options"][number];
 /**
  * The tick's state for one issue (factory.md, Forge surfaces: Data): `concert` is the last settled concert it routed,
  * `triage` the last ok triage concert, which a re-triage continues, `read` the id of the newest comment a triage was
- * fed, `version` the spec's, counting routed triages, `specAt` when the last routed triage wrote it (ms since the
- * epoch), `pending` marks a routed result whose labels are not yet set, `filed` holds an approved split's children,
+ * fed, `version` the spec's, counting routed triages, `specBase` the commit of `main` the last routed triage was cut
+ * from, which its spec was written against, `pending` marks a routed result whose labels are not yet set, `filed` holds an approved split's children,
  * `slice` the slice concert its last build started, `attempts` the red slices it spent, `failure` the reason its last
  * slice failed and `parked` a slice concert routed but not applied. `encore` is the slice concert a
  * build continues and `review` the id of the newest review requesting changes an encore was fed. `revisionBase` is the
@@ -68,7 +68,7 @@ export type Data = {
 	triage?: string;
 	read?: number;
 	version?: number;
-	specAt?: number;
+	specBase?: string;
 	result?: Triage;
 	pending?: true;
 	filed?: number[];
@@ -258,7 +258,7 @@ export function dataOf(comment: string): Data {
 		triage: optional(data, "triage", isString, "a concert id"),
 		read: optional(data, "read", isNumber, "a comment id"),
 		version: optional(data, "version", isNumber, "a count"),
-		specAt: optional(data, "specAt", isNumber, "a time"),
+		specBase: optional(data, "specBase", isString, "a commit"),
 		result: data.result === undefined ? undefined : parseTriage(data.result),
 		pending: data.pending === true || undefined,
 		filed: optional(data, "filed", isNumbers, "a list of issue numbers"),

@@ -9,6 +9,12 @@ const OUTPUT_TAIL = 2000;
 export type Landing = {
 	/** Brings the commits `origin` gained since the last fetch into the repository. */
 	fetch(): Promise<void>;
+	/** Each of `paths` whose content differs between commits `from` and `to`. */
+	changed(
+		from: string,
+		to: string,
+		paths: readonly string[],
+	): Promise<string[]>;
 	/**
 	 * Creates workspace `name` at `dir` on revision `base`, colocated with git, in place of any a failed landing left
 	 * there.
@@ -33,6 +39,9 @@ export type Landing = {
 	 */
 	tree(revision: string, root: string): Promise<string>;
 };
+
+/** The jj fileset naming exactly the file at root-relative `path`. */
+const rootFile = (path: string) => `root-file:${JSON.stringify(path)}`;
 
 /**
  * The stdout of `command` in `cwd`.
@@ -168,6 +177,23 @@ export function landing(
 		fetch: async () => {
 			await run(repo, ["jj", "git", "fetch", "--remote", "origin"]);
 		},
+		changed: async (from, to, paths) =>
+			paths.length
+				? (
+						await run(repo, [
+							"jj",
+							"diff",
+							"--from",
+							from,
+							"--to",
+							to,
+							"--name-only",
+							...paths.map(rootFile),
+						])
+					)
+						.split("\n")
+						.filter(Boolean)
+				: [],
 		open,
 		describe: async (dir, message) => {
 			await run(dir, ["jj", ...as, "describe", "-m", message]);

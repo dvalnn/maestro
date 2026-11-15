@@ -169,30 +169,3 @@ export function snapshot(
 			: []),
 	].join("\n");
 }
-
-/**
- * A ticket whose spec was approved, or that closed as completed, at `at` (ms since the epoch), and the files it
- * touches.
- */
-export type Approval = {
-	number: number;
-	at: number;
-	touches: readonly string[];
-};
-
-/**
- * Each of `approvals` strictly after `since`, so a tie is not newer, whose files include one of `touches`, with the
- * files they share.
- */
-export const overlaps = (
-	touches: readonly string[],
-	since: number,
-	approvals: readonly Approval[],
-) =>
-	approvals
-		.filter((a) => a.at > since)
-		.map((a) => ({
-			number: a.number,
-			files: a.touches.filter((f) => touches.includes(f)),
-		}))
-		.filter((o) => o.files.length);

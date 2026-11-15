@@ -18,6 +18,8 @@ export type Concert = {
 	tour?: string;
 	/** When it started, in milliseconds. */
 	startedAt?: number;
+	/** The commit its lane is cut from: its last `target.base` config, since an encore's follows those it continues. */
+	base?: string;
 };
 export type Result = {
 	status: string;
@@ -96,6 +98,8 @@ function str(o: Json, key: string): string {
 	return v;
 }
 
+const BASE_CONFIG = "target.base=";
+
 const concertOf = (o: unknown): Concert => {
 	if (!isJson(o)) throw new Error("maestro: a concert is not an object");
 	return {
@@ -105,6 +109,9 @@ const concertOf = (o: unknown): Concert => {
 		composition: str(o, "composition"),
 		tour: typeof o.tour === "string" ? o.tour : undefined,
 		startedAt: typeof o.startedAt === "number" ? o.startedAt : undefined,
+		base: strings(o.config)
+			.findLast((c) => c.startsWith(BASE_CONFIG))
+			?.slice(BASE_CONFIG.length),
 	};
 };
 

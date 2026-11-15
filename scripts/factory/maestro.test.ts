@@ -19,7 +19,7 @@ case "$1 $2" in
 	"ls c2"|"ls c3"|"ls c4"|"ls c6") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"node":"build/test_first/tester","outputs":{"map":{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}}},{"node":"fixes/fix","expansion":"[0]"},{"node":"fix_until_clean/fixes/fix","expansion":"[1]"},{"node":"fix_until_clean/fixes/brief"},{"node":"fixes/reviewer"}],"reports":{"build":{"summary":"s","obstacles":["no rg"],"sightings":[{"path":"a.ts","cites":"R1","text":"drops x"},{"path":"b.ts","text":"no cites"}]},"reviewer":{"summary":"s","lessons":["run just fmt first"]}}}' ;;
 	"ls tree") echo '{"moduleDir":"/cache/trees/abc/.maestro","file":"slice.ts"}' ;;
 	"ls c5") echo '{"instances":[{"node":"tester","outputs":{"map":{"pinned":[{}],"deferred":[],"untestable":[]}}}]}' ;;
-	"ls --tour") echo '[{"id":"l'"$5"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1"}]' ;;
+	"ls --tour") echo '[{"id":"l'"$5"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1","config":["target.base=old","x=1","target.base=abc"]}]' ;;
 	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"delivered":2,"notice":{"path":"notice.md"},"pr":{"path":"pr.md"}}}' ;;
 	"wait c4") echo '{"status":"rejected","artifacts":"${dir}","outputs":{"review":{"path":"review.md"},"upheld":[{"id":"F1","lens":"spec","where":"a.ts:3","issue":"A seam breaks","cites":"R1"}]}}' ;;
 	"wait c6") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"}}}' ;;
@@ -98,7 +98,7 @@ test("reads a concert's spend: its time, tokens by kind and fix rounds", async (
 	});
 });
 
-test("lists a tour's concerts up to the limit, the tick's window by default", async () => {
+test("lists a tour's concerts up to the limit, the tick's window by default, each with its cut, an encore's last", async () => {
 	expect(await fake.concerts("v", 200)).toEqual([
 		{
 			id: "l200",
@@ -106,6 +106,7 @@ test("lists a tour's concerts up to the limit, the tick's window by default", as
 			pack: "slice",
 			composition: "slice",
 			tour: "v.i1",
+			base: "abc",
 		},
 	]);
 	expect((await fake.concerts("v")).map((c) => c.id)).toEqual(["l20"]);

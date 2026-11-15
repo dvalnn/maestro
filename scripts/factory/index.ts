@@ -33,12 +33,10 @@ import {
 	writeUnreadSightings,
 } from "./masterclass";
 import {
-	type Approval,
 	buildable,
 	citedIn,
 	isIntake,
 	issueText,
-	overlaps,
 	pick,
 	snapshot,
 	stateOf,
@@ -225,8 +223,9 @@ async function apply(tick: Tick, number: number, data: Data, result: Triage) {
 	tick.say(`routed #${number} to ${state}`);
 }
 
-/** Routes triage `id`'s settle onto `issue` (factory.md, Routing a settle), and returns false when it halted. */
-async function settle(tick: Tick, { issue, data }: Entry, id: string) {
+/** Routes triage `concert`'s settle onto `issue` (factory.md, Routing a settle), and returns false when it halted. */
+async function settle(tick: Tick, { issue, data }: Entry, concert: Concert) {
+	const { id } = concert;
 	const triaged = triageOf(await tick.maestro.result(id));
 	const result =
 		typeof triaged === "string"
@@ -257,7 +256,7 @@ async function settle(tick: Tick, { issue, data }: Entry, id: string) {
 		triage: id,
 		result,
 		version: (data.version ?? 0) + 1,
-		specAt: Date.now(),
+		specBase: concert.base,
 	};
 	await writeSpec(tick, issue.number, VERDICT_STATE[result.verdict], {
 		...routed,
@@ -578,7 +577,7 @@ async function routeOne(tick: Tick, entry: Entry, entries: Entry[]) {
 	}
 	return isSlice(concert)
 		? settleSlice(tick, entry, concert.id)
-		: settle(tick, entry, concert.id);
+		: settle(tick, entry, concert);
 }
 
 /** Routes each issue's settles, then the newest concert when it is a masterclass; false when it halted. */
@@ -886,83 +885,30 @@ async function queue(
 	await writeSpec(tick, issue.number, "ready-for-agent", data, waiting);
 }
 
-/** The states whose tickets hold a spec the owner approved. */
-const APPROVED: readonly State[] = [
-	"ready-for-agent",
-	"in-progress",
-	"in-review",
-];
-
-/** Closed issue `issue` as an approval at its close, undefined when it closed undone or its spec cannot be read. */
-async function closedApproval(
-	{ forge }: Tick,
-	issue: Issue,
-): Promise<Approval | undefined> {
-	if (
-		issue.closed === undefined ||
-		NOT_DONE.some((l) => issue.labels.includes(l))
-	)
-		return undefined;
-	const comment = specCommentOf(await forge.comments(issue.number));
-	try {
-		const touches = dataOf(comment?.body ?? "").result?.spec?.touches;
-		return touches && { number: issue.number, at: issue.closed, touches };
-	} catch {
-		return undefined;
-	}
-}
+/** The lead of the comment saying main changed `files` since `base`, the commit the spec was written on. */
+const staleLead = (base: string, files: readonly string[]) =>
+	`The spec was written on main at ${base.slice(0, 12)}; main has since changed ${files
+		.map((f) => `\`${f}\``)
+		.join(", ")}. Re-triaging against current main.`;
 
 /**
- * Every ticket whose spec the owner approved or that closed as completed, with when its spec was written (`specAt`)
- * or the forge's `closed_at` says it closed (factory.md, Rules, Build: Stale spec). A routed triage stamps `specAt`
- * with the tick's clock; rewriting the spec comment does not. A ticket whose data holds no `specAt` is left out.
+ * Moves ready `entry` to `needs-triage` with a question comment naming the files of its spec that changed on main since
+ * the commit its triage read, and returns true; false when none did, or it holds no `specBase`, and builds (factory.md,
+ * Rules, Build: Stale spec).
  */
-async function approvals(tick: Tick, entries: Entry[]): Promise<Approval[]> {
-	const open = entries.flatMap(({ issue, data }) => {
-		const state = stateOf(issue);
-		const touches = data.result?.spec?.touches;
-		return state &&
-			APPROVED.includes(state) &&
-			touches &&
-			data.specAt !== undefined
-			? [{ number: issue.number, at: data.specAt, touches }]
-			: [];
-	});
-	const closed = await Promise.all(
-		(await tick.closed()).map((i) => closedApproval(tick, i)),
+async function retriage(tick: Tick, { issue, data }: Entry, spec: Spec) {
+	if (data.specBase === undefined) return false;
+	const files = await tick.landing.changed(
+		data.specBase,
+		tick.main,
+		spec.touches,
 	);
-	return [...open, ...closed.filter((a) => a !== undefined)];
-}
-
-/** The lead of the comment saying a spec predates the `found` approvals that share files with it. */
-const staleLead = (found: ReturnType<typeof overlaps>) =>
-	`The spec predates ${found
-		.map(
-			(o) =>
-				`#${o.number}'s, which also touches ${o.files.map((f) => `\`${f}\``).join(", ")}`,
-		)
-		.join(" and ")}. Re-triaging against current main.`;
-
-/**
- * Moves ready `entry` to `needs-triage` with a question comment naming the tickets approved or closed after its spec
- * that touch the same files, and returns true; false when it shares none, or holds no `specAt`, and builds
- * (factory.md, Rules, Build: Stale spec).
- */
-async function retriage(
-	tick: Tick,
-	{ issue, data }: Entry,
-	spec: Spec,
-	approved: () => Promise<Approval[]>,
-) {
-	if (data.specAt === undefined) return false;
-	const others = (await approved()).filter((a) => a.number !== issue.number);
-	const found = overlaps(spec.touches, data.specAt, others);
-	if (!found.length) return false;
+	if (!files.length) return false;
 	await ask(
 		tick,
 		issue.number,
 		questionOf(
-			[{ ask: staleLead(found), options: [], context: [] }],
+			[{ ask: staleLead(data.specBase, files), options: [], context: [] }],
 			"No reply needed: the next tick triages it again.",
 		),
 		data.read,
@@ -979,8 +925,6 @@ async function retriage(
  */
 async function build(tick: Tick, entries: Entry[]) {
 	if (!(await revise(tick, entries))) return false;
-	let approved: Promise<Approval[]> | undefined;
-	const approvedOnce = () => (approved ??= approvals(tick, entries));
 	for (const entry of buildable(entries, await tick.forge.pinned())) {
 		const spec = entry.data.result?.spec;
 		if (!spec) continue;
@@ -992,8 +936,7 @@ async function build(tick: Tick, entries: Entry[]) {
 			continue;
 		}
 		const perform = await performOf(tick, entry, spec);
-		if (!perform.encore && (await retriage(tick, entry, spec, approvedOnce)))
-			continue;
+		if (!perform.encore && (await retriage(tick, entry, spec))) continue;
 		await startBuild(tick, entry, perform);
 		return false;
 	}

@@ -235,8 +235,13 @@ export function fakeMaestro(
 	};
 }
 
-/** A landing that logs each step, and fails at the step named `failAt` with `output` until it is healed. */
+/**
+ * A landing that logs each step, and fails at the step named `failAt` with `output` until it is healed. `changed` holds
+ * the paths main changed since any spec's base, and `compared` each `from..to` asked.
+ */
 export function fakeLanding(failAt?: keyof Landing, output = "") {
+	const changed: string[] = [];
+	const compared: string[] = [];
 	const steps: string[] = [];
 	const trees: string[] = [];
 	/** The revisions the repository does not have. */
@@ -268,6 +273,10 @@ export function fakeLanding(failAt?: keyof Landing, output = "") {
 			if (unknown.has(revision)) throw new Error(`${revision} names 0 commits`);
 			return revision;
 		},
+		changed: async (from, to, paths) => {
+			compared.push(`${from}..${to}`);
+			return paths.filter((p) => changed.includes(p));
+		},
 		tree: async (revision, root) => {
 			if (failing === "tree") throw new Error(output);
 			trees.push(revision);
@@ -280,6 +289,8 @@ export function fakeLanding(failAt?: keyof Landing, output = "") {
 		events,
 		trees,
 		unknown,
+		changed,
+		compared,
 		heal: () => (failing = undefined),
 	};
 }

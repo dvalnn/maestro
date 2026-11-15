@@ -100,6 +100,7 @@ const triageConcert = (id: string, n: number, status = "ok"): Concert => ({
 	pack: "triage",
 	composition: "triage",
 	tour: `${MILESTONE}.i${n}`,
+	base: `base-${id}`,
 });
 
 const spec = {
@@ -295,7 +296,7 @@ describe("a tick", () => {
 				triage: "c1",
 				result: triage,
 				version: 1,
-				specAt: expect.any(Number),
+				specBase: "base-c1",
 			});
 			const writes = t.writes.length;
 			await t.run();
@@ -855,15 +856,15 @@ const CACHED = "/cache/maestro-factory/i7";
 const requestFor = (n: number) =>
 	`# #${n} Greet by name\n\n#### Context\n\nGreet the first argument.\n\nSubject: \`feat: greet by name\`\n\n#### Requirements\n\n- **R1** When greet.sh is given a name, greet.sh shall greet it.\n\n#### Decisions\n\n- **Name source**\n  - The first argument\n  - In greet.sh\n\n#### Left out\n\n- **Flags**\n  - No --loud flag\n\n#### Touches\n\n- \`greet.sh\`\n\n## The ask\n\n${ASK}\n`;
 
-/** `stored` with its spec written at `at`, and touching `touches` when given. */
-const written = (stored: Stored, at: number, touches?: string[]) => {
+/** `stored` with its spec written on main at `base`, and touching `touches` when given. */
+const written = (stored: Stored, base: string, touches?: string[]) => {
 	const data = dataAt(stored);
 	const result = data.result;
 	const comment = specAt(stored);
 	if (!result?.spec || !comment) throw new Error("no spec to rewrite");
 	const spec = { ...result.spec, touches: touches ?? result.spec.touches };
 	comment.body = commentOf(
-		{ ...data, specAt: at, result: { ...result, spec } },
+		{ ...data, specBase: base, result: { ...result, spec } },
 		stateOf(stored) ?? "needs-triage",
 		BOT,
 	);
@@ -871,8 +872,6 @@ const written = (stored: Stored, at: number, touches?: string[]) => {
 };
 const slicesOf = (t: { starts: string[][] }) =>
 	t.starts.filter((a) => a[1]?.endsWith("slice.ts"));
-const STALE =
-	"The spec predates #8's, which also touches `greet.sh`. Re-triaging against current main.";
 
 // Seams: tick's external maestro start arguments and the Markdown files those arguments name.
 // Reports and concert listings enter through the external maestro port; the watermark is never read directly.
@@ -1093,89 +1092,58 @@ describe("sightings at triage", () => {
 });
 
 describe("a stale spec", () => {
-	test("a closed issue with malformed stored triage is not a stale-spec approval", async () => {
-		const closed = written(specced(8, "in-review"), 200);
-		closed.open = false;
-		closed.closed = 300;
-		const comment = specAt(closed);
-		if (!comment) throw new Error("no spec comment");
-		comment.body = comment.body.replace(
-			/^<!-- maestro-tm-data .* -->$/m,
-			`<!-- maestro-tm-data ${JSON.stringify({ specAt: 200, result: { ...ready, extra: true } })} -->`,
-		);
-		const t = setup([written(specced(7, "ready-for-agent"), 100), closed]);
-		await t.run();
-		expect(slicesOf(t)).toHaveLength(1);
-		expect(t.find(7).labels).toContain("state/in-progress");
-		expect(questionsAt(t.find(7))).toEqual([]);
-	});
+	/** A tick over `issues` whose main changed `changed` since any spec's base. */
+	const landed = (issues: Stored[], changed: string[]) => {
+		const landing = fakeLanding();
+		landing.changed.push(...changed);
+		return { ...setup(issues, [], {}, undefined, { landing }), landing };
+	};
 
-	test("re-triages a ready ticket whose spec predates an approved one touching the same file, then triages it as an encore", async () => {
-		const t = setup([
-			written(specced(7, "ready-for-agent"), 100),
-			written(specced(8, "in-progress"), 200),
-		]);
+	test("re-triages a ready ticket whose touched file changed on main since its spec, then triages it as an encore", async () => {
+		const t = landed(
+			[written(specced(7, "ready-for-agent"), "b1")],
+			["greet.sh"],
+		);
 		await t.run();
 		expect(slicesOf(t)).toEqual([]);
 		expect(t.find(7).labels).toContain("state/needs-triage");
-		expect(questionsAt(t.find(7))).toHaveLength(1);
-		expect(questionsAt(t.find(7))[0]).toContain(STALE);
+		expect(t.landing.compared).toEqual(["b1..sha-main"]);
+		const [question] = questionsAt(t.find(7));
+		expect(question).toContain("b1");
+		expect(question).toContain("`greet.sh`");
 		expect(t.starts[0]?.slice(0, 2)).toEqual(["encore", "c0"]);
 		expect(t.starts[0]?.join(" ")).toContain("## Question by the tour manager");
 	});
 
 	test.each([
-		["no shared file", 200, ["other.sh"]],
-		["an older spec", 50, ["greet.sh"]],
-		["a spec written at the same moment", 100, ["greet.sh"]],
-	])(
-		"builds a ready ticket whose spec shares no file with a later one, or is the newer: %s",
-		async (_, at, touches) => {
-			const t = setup([
-				written(specced(7, "ready-for-agent"), 100),
-				written(specced(8, "ready-for-agent"), at, touches),
-			]);
-			await t.run();
-			expect(slicesOf(t)).toHaveLength(1);
-			expect(t.find(7).labels).toContain("state/in-progress");
-		},
-	);
-
-	test("builds a ready ticket after an overlapping one lands, since rewriting its spec comment does not date its spec anew", async () => {
-		const t = setup(
-			[
-				written(specced(7, "in-progress", { slice: "s1" }), 100),
-				written(specced(9, "ready-for-agent"), 200),
-			],
-			[sliceConcert("s1", 7)],
-			{ s1: { status: "ok", outputs: {} } },
-		);
-		await t.run();
-		expect(t.find(7).labels).toContain("state/in-review");
-		expect(slicesOf(t)).toHaveLength(1);
-		expect(t.find(9).labels).toContain("state/in-progress");
-	});
-
-	test("builds a ready ticket, or one whose overlap source is undated, when its stored data predates specAt", async () => {
-		const undated = specced(7, "ready-for-agent");
-		const t = setup([undated, written(specced(8, "in-progress"), 200)]);
+		["main changed none of its files", "b1", ["other.sh"]],
+		["its data holds no base", undefined, ["greet.sh"]],
+	])("builds a ready ticket when %s", async (_, base, changed) => {
+		const ready = specced(7, "ready-for-agent");
+		const t = landed([base ? written(ready, base) : ready], changed);
 		await t.run();
 		expect(slicesOf(t)).toHaveLength(1);
 		expect(t.find(7).labels).toContain("state/in-progress");
-
-		const u = setup([
-			written(specced(7, "ready-for-agent"), 100),
-			specced(8, "in-progress"),
-		]);
-		await u.run();
-		expect(slicesOf(u)).toHaveLength(1);
 	});
 
-	test("posts a second bounce for the same overlap once the first was read, instead of stranding the ticket", async () => {
-		const t = setup([
-			written(specced(7, "ready-for-agent"), 100),
-			written(specced(8, "in-progress"), 200),
-		]);
+	test("builds a ready ticket whose spec overlaps another ready one that has not landed", async () => {
+		const t = landed(
+			[
+				written(specced(7, "ready-for-agent"), "b1"),
+				written(specced(8, "ready-for-agent"), "b2"),
+			],
+			[],
+		);
+		await t.run();
+		expect(t.find(7).labels).toContain("state/in-progress");
+		expect(questionsAt(t.find(8))).toEqual([]);
+	});
+
+	test("posts a second bounce for the same change once the first was read, instead of stranding the ticket", async () => {
+		const t = landed(
+			[written(specced(7, "ready-for-agent"), "b1")],
+			["greet.sh"],
+		);
 		await t.run();
 		const ready = t.find(7);
 		ready.labels = ready.labels.map((l) =>
@@ -1190,42 +1158,23 @@ describe("a stale spec", () => {
 		]);
 	});
 
-	test("names every overlapping ticket, and a ticket closed as completed after the spec but not one closed undone", async () => {
-		const done = written(specced(9, "in-review"), 10);
-		done.open = false;
-		done.closed = 300;
-		const dropped = written(specced(10, "wontfix"), 10, ["greet.sh"]);
-		dropped.open = false;
-		dropped.closed = 300;
-		dropped.labels.push("state/wontfix");
-		const t = setup([
-			written(specced(7, "ready-for-agent"), 100),
-			written(specced(8, "in-progress"), 200, ["greet.sh", "a.ts"]),
-			done,
-			dropped,
-		]);
-		await t.run();
-		expect(questionsAt(t.find(7))[0]).toContain(
-			"The spec predates #8's, which also touches `greet.sh` and #9's, which also touches `greet.sh`. Re-triaging",
-		);
-		expect(questionsAt(t.find(7))[0]).not.toContain("#10");
-	});
-
 	test("builds the next ready ticket in the same tick, and encores a continued build without comparing", async () => {
-		const t = setup([
-			written(specced(7, "ready-for-agent"), 100),
-			written(specced(8, "in-progress"), 200),
-			written(specced(9, "ready-for-agent"), 300, ["other.sh"]),
-		]);
+		const t = landed(
+			[
+				written(specced(7, "ready-for-agent"), "b1"),
+				written(specced(9, "ready-for-agent"), "b1", ["other.sh"]),
+			],
+			["greet.sh"],
+		);
 		await t.run();
 		expect(t.find(7).labels).toContain("state/needs-triage");
 		expect(slicesOf(t)).toHaveLength(1);
 		expect(t.find(9).labels).toContain("state/in-progress");
 
 		const encored = answeredOnce(
-			written(specced(7, "ready-for-agent", { encore: "c1" }), 100),
+			written(specced(7, "ready-for-agent", { encore: "c1" }), "b1"),
 		);
-		const u = setup([encored, written(specced(8, "in-progress"), 200)]);
+		const u = landed([encored], ["greet.sh"]);
 		await u.run();
 		expect(u.starts[0]?.slice(0, 2)).toEqual(["encore", "c1"]);
 	});
