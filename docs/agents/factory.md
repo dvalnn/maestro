@@ -308,7 +308,9 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   it deferred or untestable. The builder extends the tester's lane with the map relayed into its task, makes the tests
   pass, and writes the tests for the deferred requirements and what each pin misses; it changes a tester's test only
   where it contradicts the spec or the interface it builds, naming that test and why in its `overrules` reply. The
-  review judges the tests like any other, and the writer's Evidence table names the map's tests.
+  review judges the tests like any other, and the writer's Evidence table names the map's tests. An encore runs with no
+  tester, `-c classics.build.testFirst=false`, as the change it continues already holds the tests: its builder continues
+  the last one's session.
 - **Dependencies.** A dependency is a forge "blocked by" link, a split's children or not, that sets triage and build
   order: a spec is written, and built, against real `main`. Triage skips an intake ticket while any of its dependencies
   is open, and a build skips a ready ticket while any is open. A dependency is freed when it closes, merged or not, or

@@ -43,6 +43,11 @@ const OWNER = "tiago";
 /** The value of `flag` in a start's argument list. */
 const argAfter = (args: string[], flag: string) =>
 	args[args.indexOf(flag) + 1] ?? "";
+/** Each `-c` config a start sets, in order. */
+const configsOf = (args: string[] = []) =>
+	args.flatMap((arg, i) => (args[i - 1] === "-c" ? [arg] : []));
+/** The config an encore sets before its cut: tests come first only on a first build. */
+const ENCORE_CONFIG = "classics.build.testFirst=false";
 /** What a start performs: `encore <id>` of the concert it continues, else `perform <composition file>`. */
 const started = (args: string[] = []) =>
 	args[0] === "encore"
@@ -206,7 +211,7 @@ describe("a tick", () => {
 		const t = setup([issue(7, "needs-triage")]);
 		await t.run();
 		expect(t.events).toEqual(["head main", "fetch", "start"]);
-		expect(argAfter(t.starts[0] ?? [], "-c")).toBe("target.base=sha-main");
+		expect(configsOf(t.starts[0])).toEqual(["target.base=sha-main"]);
 	});
 
 	test("fails without starting a concert when the fetch fails", async () => {
@@ -1279,6 +1284,7 @@ describe("a build", () => {
 		expect(started(args)).toBe("perform slice.ts");
 		expect(argAfter(args, "--request")).toBe(requestFor(8));
 		expect(argAfter(args, "--preset")).toBe("medium");
+		expect(configsOf(args)).toEqual(["target.base=sha-main"]);
 		expect(t.find(8).labels).toEqual([
 			"kind/enhancement",
 			"risk/medium",
@@ -2010,7 +2016,7 @@ describe("a review", () => {
 		expect(argAfter(t.starts[0] ?? [], "--request")).toBe(
 			`${requestFor(7)}\n## Review by ann\n\nRename it.\n\n- \`greet.sh:3\`: use printf\n  not echo\n`,
 		);
-		expect(argAfter(t.starts[0] ?? [], "-c")).toBe("target.base=sha7");
+		expect(configsOf(t.starts[0])).toEqual([ENCORE_CONFIG, "target.base=sha7"]);
 		expect(t.find(7).labels).toContain("state/in-progress");
 		expect(dataAt(t.find(7))).toMatchObject({
 			review: 5,
@@ -2066,7 +2072,10 @@ describe("a PR that conflicts with main", () => {
 			}
 			const [started = []] = t.starts;
 			expect(started.slice(0, 2)).toEqual(["encore", "s1"]);
-			expect(argAfter(started, "-c")).toBe("target.base=merged-sha7");
+			expect(configsOf(started)).toEqual([
+				ENCORE_CONFIG,
+				"target.base=merged-sha7",
+			]);
 			expect(argAfter(started, "--revises")).toBe("merged-sha7^!");
 			const conflict =
 				(argAfter(started, "--request") ?? "").split(
@@ -2456,7 +2465,7 @@ describe("a stack review", () => {
 		expect(argAfter(t.starts[0] ?? [], "--request")).toBe(
 			`${requestFor(7).replace(`${ASK}\n`, `Part of #9\n\n${ASK}\n`)}\n## Stack review\n\n# Review\n\nA seam breaks.\n`,
 		);
-		expect(argAfter(t.starts[0] ?? [], "-c")).toBe("target.base=sha7");
+		expect(configsOf(t.starts[0])).toEqual([ENCORE_CONFIG, "target.base=sha7"]);
 		expect(dataAt(t.find(7)).findings).toBeUndefined();
 		expect(dataAt(t.find(7)).review).toBe(3);
 		expect(merging(t.writes)).toEqual([]);

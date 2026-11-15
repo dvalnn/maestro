@@ -248,6 +248,8 @@ export function startSlice(
 			input.request,
 			"--revises",
 			revisionBase ? `${revisionBase}^!` : "",
+			// Tests come first only on the first build: an encore's change already holds them.
+			...(input.encore ? ["-c", "classics.build.testFirst=false"] : []),
 		],
 		presets: [
 			riskOf(issue, input.risk),
