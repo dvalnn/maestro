@@ -32,6 +32,7 @@ import CONSOLIDATOR_GROUNDS from "./prompts/consolidator-grounds.md" with {
 import CONSOLIDATOR_SKEPTICS from "./prompts/consolidator-skeptics.md" with {
 	type: "text",
 };
+import GATED from "./prompts/gated.md" with { type: "text" };
 import LENS_CORRECTNESS from "./prompts/lens-correctness.md" with {
 	type: "text",
 };
@@ -85,6 +86,19 @@ export const TASKS = {
 	},
 };
 
+/** The param saying the target's checks already passed on the change under review. */
+export const gated = Bool({
+	default: false,
+	description:
+		"Whether the target's checks already passed on the change: its lenses then run none and are told so",
+});
+
+/** A lens's task: `own`, after `AGAIN` on a re-review, then `GATED` when the change is `gated`. */
+export const lensLead = (
+	own: string,
+	{ earlier, gated }: { earlier?: boolean; gated?: boolean },
+) => task(...(earlier ? [AGAIN] : []), own, ...(gated ? [GATED] : []));
+
 /** Each lens a review can rule through, by name, as the task of its lens. */
 export const LENSES = TASKS.lens;
 
@@ -122,18 +136,20 @@ export const panel = composition(
 			consolidate: Bool({ default: true }),
 			grounds: Text({ default: "" }),
 			checks: List(Text(), { default: [] }),
+			gated,
 		},
 	},
 	(
-		{ lenses, skeptics, consolidate, grounds, checks },
+		{ lenses, skeptics, consolidate, grounds, checks, gated },
 		{ change, spec, session, earlier, names, brief },
 	) => {
 		const ground = grounds || undefined;
-		const tasks = earlier
-			? Object.fromEntries(
-					Object.entries(lenses).map(([name, own]) => [name, task(AGAIN, own)]),
-				)
-			: lenses;
+		const tasks = Object.fromEntries(
+			Object.entries(lenses).map(([name, own]) => [
+				name,
+				lensLead(own, { earlier: earlier !== undefined, gated }),
+			]),
+		);
 		const items = names ?? Object.keys(lenses);
 		const settles = consolidate
 			? { consolidator: TASKS.consolidator(skeptics, ground), session }
@@ -155,7 +171,7 @@ export const panel = composition(
 								label: "lens",
 								task: lookup(tasks, name),
 								lane: read(change),
-								checks,
+								checks: gated ? [] : checks,
 								relay,
 								attachments: attached,
 							});

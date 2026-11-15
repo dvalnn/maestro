@@ -15,12 +15,17 @@ import {
 } from "@maestro/sdk";
 import { tieredOf } from "./code";
 import { requestOf, tally } from "./moves";
-import { task } from "./prompt";
-import AGAIN from "./prompts/again.md" with { type: "text" };
 import CHECKLIST from "./prompts/checklist.md" with { type: "text" };
 import TIERED from "./prompts/tiered.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
-import { CHECKLISTS, reviewed, SUBJECT, TASKS } from "./review";
+import {
+	CHECKLISTS,
+	gated,
+	lensLead,
+	reviewed,
+	SUBJECT,
+	TASKS,
+} from "./review";
 import { crossLens, deepLens, lens, topLens } from "./seats";
 import {
 	atLeastOne,
@@ -116,10 +121,11 @@ export const tieredReview = composition(
 				default: [],
 				description: "The target checks the lenses may run, by name",
 			}),
+			gated,
 		},
 	},
 	(
-		{ small, medium, large, ignore, floor, grounds, checks },
+		{ small, medium, large, ignore, floor, grounds, checks, gated },
 		{ change, spec, session, earlier, brief },
 	) => {
 		if (!(small < medium && medium < large))
@@ -147,7 +153,7 @@ export const tieredReview = composition(
 						large,
 						...(floor && { floor }),
 						sections: SECTIONS,
-						lead: earlier ? task(AGAIN, TIERED) : TIERED,
+						lead: lensLead(TIERED, { earlier: earlier !== undefined, gated }),
 						close: CHECKLIST,
 					},
 					out: {
@@ -169,7 +175,7 @@ export const tieredReview = composition(
 										label: "lens",
 										task: picked.out.checklist,
 										lane: read(change),
-										checks,
+										checks: gated ? [] : checks,
 										relay,
 										attachments: attached,
 									}),

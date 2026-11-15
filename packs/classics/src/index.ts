@@ -12,7 +12,7 @@ export { fixUntilClean, maxFixes } from "./fix-until-clean";
 export { challenge, fix, tally } from "./moves";
 export { fill } from "./prompt";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";
-export { LENSES, panel, panelReview } from "./review";
+export { gated, LENSES, lensLead, panel, panelReview } from "./review";
 export {
 	builder,
 	consolidator,

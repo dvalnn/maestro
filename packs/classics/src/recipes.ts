@@ -19,8 +19,10 @@ import {
 	Finding,
 	type Findings,
 	fixUntilClean,
+	gated,
 	LENSES,
 	lens,
+	lensLead,
 	panel,
 	planner,
 	Rulings,
@@ -125,9 +127,10 @@ export const lensFusion = composition(
 	"lens_fusion",
 	{
 		doc: "Rule through the same lens on two harness families, each under a skeptic, and join what they held in one tally.",
+		params: { gated },
 		examples: [{}],
 	},
-	() => {
+	({ gated }) => {
 		const { spec, build } = built();
 		const change = build.out.lane;
 		return tally(
@@ -145,7 +148,7 @@ export const lensFusion = composition(
 							() => {
 								const found = onFamily({
 									label: "lens",
-									task: LENSES[LENS],
+									task: lensLead(LENSES[LENS], { gated }),
 									lane: read(change),
 									attachments: attached,
 								});

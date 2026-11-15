@@ -11,6 +11,8 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-26.04
+    env:
+      TEST_SERIAL: 1
     steps:
       # Ubuntu confines unprivileged user namespaces with AppArmor, and bubblewrap needs them.
       - name: Let bubblewrap sandbox here

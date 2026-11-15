@@ -38,6 +38,7 @@ import {
 } from "./code";
 import { challenge, fix, tally } from "./moves";
 import AGAIN from "./prompts/again.md" with { type: "text" };
+import GATED from "./prompts/gated.md" with { type: "text" };
 import { majority } from "./recipes";
 import { EXAMPLE_REQUEST } from "./repair";
 import { panel } from "./review";
@@ -259,6 +260,26 @@ describe("panel", () => {
 			"unreviewed",
 			"builder",
 		]);
+	});
+
+	test("gated runs the lenses under no checks and closes their task with gated.md", () => {
+		const checksOf = (ir: Ir) =>
+			(
+				ir.nodes.find((n) => n.id === "panel/lenses/lens") as unknown as {
+					config: { checks?: string[] };
+				}
+			).config.checks ?? [];
+		const table = (ir: Ir) =>
+			JSON.stringify(
+				ir.nodes.find((n) => n.id === "panel/lenses/lenses_lookup"),
+			);
+		const prompt = JSON.stringify(GATED).slice(1, -1);
+		const open = panelIr({ checks: ["test"] });
+		expect(checksOf(open)).toEqual(["test"]);
+		expect(table(open)).not.toContain(prompt);
+		const gated = panelIr({ checks: ["test"], gated: true });
+		expect(checksOf(gated)).toEqual([]);
+		expect(table(gated)).toContain(prompt);
 	});
 
 	test("skeptics: false seats no skeptic, and consolidate: false no consolidator", () => {
@@ -1591,6 +1612,30 @@ describe("tiered_review", () => {
 		const again = tieredIr({}, () => ({ earlier: literal([], List(Upheld)) }));
 		expect(lead(again).startsWith(AGAIN)).toBe(true);
 		expect(relays(again)).toEqual(Object.values(SEATS).map(() => ["upheld"]));
+	});
+
+	test("gated runs every lens under no checks and ends the selector's lead with gated.md", () => {
+		const lensChecks = (ir: Ir) =>
+			Object.values(SEATS).map(
+				(name) =>
+					(
+						node(ir, `tiered_review/${name}/lens`) as unknown as {
+							config: { checks?: string[] };
+						}
+					).config.checks ?? [],
+			);
+		const lead = (ir: Ir) =>
+			(
+				node(ir, "tiered_review/tieredOf") as unknown as {
+					literals: { lead: string };
+				}
+			).literals.lead;
+		const open = tieredIr({ checks: ["test"] });
+		expect(lensChecks(open)).toEqual(Object.values(SEATS).map(() => ["test"]));
+		expect(lead(open)).not.toContain(GATED);
+		const gated = tieredIr({ checks: ["test"], gated: true });
+		expect(lensChecks(gated)).toEqual(Object.values(SEATS).map(() => []));
+		expect(lead(gated).endsWith(GATED)).toBe(true);
 	});
 });
 

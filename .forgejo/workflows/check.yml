@@ -12,6 +12,7 @@ jobs:
     env:
       MISE_DATA_DIR: /ci-cache/maestro/mise
       BUN_INSTALL_CACHE_DIR: /ci-cache/maestro/bun
+      TEST_SERIAL: 1
     steps:
       - name: Install bubblewrap, python3 and ssh-keygen
         run: apt-get update && apt-get install -y --no-install-recommends bubblewrap python3 openssh-client

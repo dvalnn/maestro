@@ -227,7 +227,8 @@ const SHELL =
 	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
 const CHECKS =
 	"Run the target's checks with `check <name>`, and never write your own. Each prints the tail of its output, then ok, rejected or failed.";
-const VERIFY = "Run them to verify your change before you finish.";
+const VERIFY =
+	"While you work, run only the tests your change touches; run each check once, on your finished change.";
 
 /** A `## heading` section of `paragraphs`, or nothing when it has none. */
 const section = (heading: string, paragraphs: string[]) =>

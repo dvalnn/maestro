@@ -25,13 +25,17 @@ const FORMAT_TOOLS = ["fmt"];
 const projectConfig = Bun.YAML.parse(
 	readFileSync(".maestro/config.yaml", "utf8"),
 ) as { target: { checks: Record<string, { run: string }> } };
+/** The profiles of the agents that write the lane; the lenses only read a tree the gate passed. */
+const WRITERS = ["classics/builder", "classics/tester"];
 const projectChecks = Object.keys(projectConfig.target.checks).filter(
 	(name) => !FORMAT_TOOLS.includes(name),
 );
 
-test("the target offers no format check and all runs just check without a tree gate", () => {
-	expect(Object.keys(projectConfig.target.checks)).not.toContain("format");
-	expect(projectConfig.target.checks.all?.run).toBe("just check");
+test("the target offers neither a format check nor an all check, so a gate runs the suite once", () => {
+	expect(Object.keys(projectConfig.target.checks)).not.toContainAnyValues([
+		"format",
+		"all",
+	]);
 });
 
 const granular = ["lint", "types", "test", "fmt"].flatMap((name) => [
@@ -140,7 +144,7 @@ const from = (edges: Edge[], node: string, port: string) =>
 		.map((e) => e.from);
 
 test.each(seated)(
-	"under --preset %s, each agent runs its profile's runtime, and every agent that works on the lane may run the project's checks",
+	"under --preset %s, each agent runs its profile's runtime, and only the agents that write the lane may run the project's checks",
 	async (risk, runtimes) => {
 		const { nodes, agents } = await composed([risk]);
 		for (const a of agents)
@@ -150,12 +154,9 @@ test.each(seated)(
 		expect(new Set(agents.map((a) => a.profile))).toEqual(
 			new Set(Object.keys(runtimes)),
 		);
-		const workers = agents.filter(
-			(a) => a.profile !== "writer" && a.profile !== "classics/consolidator",
-		);
-		for (const a of workers)
-			expect(nodes.find((n) => n.id === a.node)?.config.checks).toEqual(
-				projectChecks,
+		for (const a of agents)
+			expect(nodes.find((n) => n.id === a.node)?.config.checks ?? []).toEqual(
+				WRITERS.includes(a.profile) ? projectChecks : [],
 			);
 		const fixes = nodes.filter((n) =>
 			/gate\/(loop\[\d+\]\/)?(fix|refix)$/.test(n.id),
@@ -396,8 +397,9 @@ test.each(["low", "medium", "high"])(
 				`target.repo=${targetRepo()}`,
 				"-c",
 				'target.prepare="true"',
+				// The stub agents change nothing, so a check that the gate runs makes the change.
 				"-c",
-				'target.checks.all={run: "echo x > b.ts", hint: all}',
+				'target.checks.touch={run: "echo x > b.ts", hint: touch}',
 				...granular,
 			],
 			mkdtempSync(join(scratch, "data-")),

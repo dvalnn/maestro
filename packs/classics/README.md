@@ -51,7 +51,7 @@ left, while the last review upholds a finding or delivered no review.
 
 ¹ Optional. ² Not used when its param, `skeptics`, `consolidate` or `testFirst`, is false.
 
-`panel` takes `lenses`, a map of lens name to task text, `skeptics`, `consolidate`, `grounds` and `checks`; the
+`panel` takes `lenses`, a map of lens name to task text, `skeptics`, `consolidate`, `grounds`, `checks` and `gated`; the
 [Params](#params) table has their defaults. Without `skeptics`, no skeptic runs and the consolidator rules on every
 finding unverified. Without `consolidate`, no consolidator runs and it needs a `session`. `earlier` is the previous
 round's `Upheld`, which each lens reads; `names` sets the lenses at run time, of the `lenses` given. Its `Tally` rejects
@@ -67,7 +67,7 @@ xlarge. Every lens rules on the same checklist: `correctness` and `spec` always,
 `docs` and `agent-doc` for the paths of its diffs that hold a hunk or a rename (a copy, a mode-only change and a binary
 diff select nothing), each item numbered so a finding cites `<section> <n>`. One consolidator rules on what they held,
 and the `Tally` rejects while a finding is upheld, or when no lens delivered a review. `earlier` is the previous round's
-`Upheld`, which each lens reads.
+`Upheld`, which each lens reads. `fix_until_clean` reviews only what its gate passed, so it sets `gated`.
 
 `build` takes the request as `spec`, so only a composition `use`s it. It returns the `lane`, the builder's `session`, a
 `spec` of the request, then the tester's map and the builder's overrules when `testFirst`, and the `brief`: the four
@@ -160,6 +160,7 @@ In a tiered review, set each tier's seat to a stronger model than the last, and 
 |                      | `consolidate`    | boolean                                | true      | A consolidator rules on the held findings; false needs a `session`                                                  |
 |                      | `grounds`        | text                                   | empty     | The rules a finding must cite, held by the skeptics and the consolidator                                            |
 |                      | `checks`         | list of `target.checks` names          | none      | The checks the lenses may run                                                                                       |
+|                      | `gated`          | boolean                                | false     | The target's checks already passed on the change: the lenses run none and are told so                               |
 | `tiered_review`      | `small`          | integer, at least 1                    | 200       | The most changed lines of a small change                                                                            |
 |                      | `medium`         | integer                                | 800       | The most changed lines of a medium change; `small`, `medium` and `large` must rise                                  |
 |                      | `large`          | integer                                | 2000      | The most changed lines of a large change; a bigger one is xlarge                                                    |
@@ -167,6 +168,7 @@ In a tiered review, set each tier's seat to a stronger model than the last, and 
 |                      | `floor`          | `small`, `medium`, `large`, `xlarge`   | none      | The tier a review is at least, however small the change                                                             |
 |                      | `grounds`        | text                                   | empty     | The rules a finding must cite, held by the consolidator                                                             |
 |                      | `checks`         | list of `target.checks` names          | none      | The checks the lenses may run                                                                                       |
+|                      | `gated`          | boolean                                | false     | The target's checks already passed on the change: the lenses run none and are told so                               |
 | `review_change`      | `request`        | text                                   | required  | What the change must do                                                                                             |
 |                      | `change`, `revs` | as `panel_review`                      | optional³ | The lane version or target commits under review                                                                     |
 | `fix_until_clean`    | `maxFixes`       | integer, at least 1                    | 2         | The most fix rounds after a review upholds findings                                                                 |
@@ -189,7 +191,7 @@ from `target.base`, and the commits must be one linear series, with no merge.
 `src/recipes.ts` holds five compositions of these blocks as test fixtures to copy from, not exports:
 
 - fix ladder: fix rounds on a cheap builder seat, then a gated, reviewed fix on a stronger one.
-- lens fusion: the same lens on two harness families, a skeptic over each, one tally over both.
+- lens fusion: the same lens on two harness families, a skeptic over each, one tally over both; `gated` as `panel`'s.
 - ruling vote: three skeptics over one lens, a finding standing when most hold it.
 - audit sweep: a lens per area over the base, with no change under review.
 - plan review: a planner writes the plan, and the panel rules on it over a sealed base.

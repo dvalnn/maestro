@@ -1,3 +1,6 @@
+# the tests run in parallel, unless TEST_SERIAL is set: CI's smaller runner times out subprocess tests under load
+parallel := if env("TEST_SERIAL", "") == "" { "--parallel" } else { "" }
+
 # format, fix lints, typecheck, test, in that order
 check: fmt lint types test
 
@@ -24,8 +27,8 @@ types:
 
 # run every test
 test:
-    bun test
-    bun test ./.maestro
+    bun test {{parallel}} --only-failures
+    bun test {{parallel}} --only-failures ./.maestro
 
 # auto-format
 fmt:

@@ -15,17 +15,14 @@ target:
     test:
       run: just test
       hint: every bun test, including .maestro
-    all:
-      run: just check
-      hint: fmt and lint, which rewrite code and Markdown files, then types and every test, stopping at the first failure, so run the granular checks first
     fmt:
       run: just fmt
       hint: rewrites code files with biome's formatter and Markdown files with prettier
 classics:
-  build: { checks: [lint, types, test, all] }
-  test_first: { checks: [lint, types, test, all] }
-  fix_until_clean: { checks: [lint, types, test, all] }
-  tiered_review: { checks: [lint, types, test, all] }
+  build: { checks: [lint, types, test] }
+  test_first: { checks: [lint, types, test] }
+  fix_until_clean: { checks: [lint, types, test] }
+  tiered_review: { checks: [lint, types, test] }
   repair_until_green: { fix: fmt }
 profiles:
   classics/builder:

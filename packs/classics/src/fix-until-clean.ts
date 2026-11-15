@@ -56,7 +56,7 @@ export const fixUntilClean = composition(
 			return use(
 				tieredReview,
 				{ change: green, spec, session: carried, earlier, brief: given },
-				{ params: grounds === undefined ? {} : { grounds } },
+				{ params: { gated: true, ...(grounds !== undefined && { grounds }) } },
 			);
 		};
 		return loop.while((s) => not(s.ok), {

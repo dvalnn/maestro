@@ -31,7 +31,7 @@ ${SHELL}
 
 ## Checks
 
-Run the target's checks with \`check <name>\`, and never write your own. Each prints the tail of its output, then ok, rejected or failed. Run them to verify your change before you finish.
+Run the target's checks with \`check <name>\`, and never write your own. Each prints the tail of its output, then ok, rejected or failed. While you work, run only the tests your change touches; run each check once, on your finished change.
 - \`check all\`: format, lint, types and every test
 
 ## Reply
