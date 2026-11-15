@@ -1,12 +1,20 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	mkdtempSync,
+	readFileSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
-import type { ArtifactRef, CodeContext, Type } from "@maestro/sdk";
+import type { Answers } from "@maestro/classics";
+import type { ArtifactRef, CodeContext, Type, ValueOf } from "@maestro/sdk";
 import { readJson } from "@maestro/sdk/stdlib";
 import {
 	call,
 	classics,
 	maestro,
+	root,
 	scratch,
 	stubbed,
 	stubOutputs,
@@ -33,19 +41,82 @@ import {
 } from "./triage/fixtures";
 import { Checked, Proposal, Question, Ruling, Triage } from "./triage/schemas";
 
+// Seam: the compiler's diagnostics for the triage port fixtures.
+function rejectsExtraField(file: string) {
+	const dir = mkdtempSync(join(scratch, "fixture-types-"));
+	cpSync(join(root, ".maestro"), join(dir, ".maestro"), {
+		recursive: true,
+		verbatimSymlinks: true,
+	});
+	for (const entry of [
+		"node_modules",
+		"packages",
+		"packs",
+		"scripts",
+		"tsconfig.json",
+		"md.d.ts",
+	])
+		symlinkSync(join(root, entry), join(dir, entry));
+
+	const path = join(dir, file);
+	const source = readFileSync(path, "utf8");
+	const grounded = [
+		...source.matchAll(
+			/\{[^{}]*\bstate\s*:\s*["']grounded["'](?:\s+as\s+const)?\s*,[^{}]*\}/g,
+		),
+	];
+	expect(grounded).toHaveLength(1);
+	const object = grounded[0];
+	if (!object || object.index === undefined)
+		throw new Error("grounded fixture not found");
+	const missing = /\bmissing\s*:/.exec(object[0]);
+	const position = object.index + (missing?.index ?? 1);
+	const changed = missing
+		? source
+		: `${source.slice(0, position)}\nmissing: "",${source.slice(position)}`;
+	writeFileSync(path, changed);
+	const line =
+		changed.slice(0, position).split("\n").length + (missing ? 0 : 1);
+	const run = Bun.spawnSync(
+		[
+			process.execPath,
+			join(root, "node_modules/typescript/bin/tsc"),
+			"--noEmit",
+			"--pretty",
+			"false",
+		],
+		{ cwd: dir },
+	);
+	expect(run.exitCode).not.toBe(0);
+	expect(
+		run.stdout
+			.toString()
+			.split("\n")
+			.some(
+				(diagnostic) =>
+					diagnostic.startsWith(`${file}(${line},`) &&
+					diagnostic.includes("error TS2353:"),
+			),
+	).toBe(true);
+}
+
+test("the compiler rejects a grounded fixture carrying missing", () => {
+	for (const file of [".maestro/triage.test.ts", ".maestro/triage/fixtures.ts"])
+		rejectsExtraField(file);
+}, 60_000);
+
 test("answersOf merges each group's answers in order, marking an unsure answer and a group whose scout failed", () => {
 	const dir = mkdtempSync(join(scratch, "answers-"));
 	const ctx = { scratch: dir } as CodeContext;
-	const answers = [
+	const answers: ValueOf<typeof Answers> = [
 		{
 			question: "Where are flags parsed?",
-			state: "grounded" as const,
-			missing: "",
+			state: "grounded",
 			answer: "In flags.ts:12.",
 		},
 		{
 			question: "Who calls it?",
-			state: "unsure" as const,
+			state: "unsure",
 			missing: "the caller outside src/",
 			answer: "Probably cli.ts.",
 		},

@@ -1,17 +1,21 @@
-import type { Proposal, Question, Ruling, Triage } from "./schemas";
+import type { Answers } from "@maestro/classics";
+import type { ValueOf } from "@maestro/sdk";
+import type { Group, Proposal, Question, Ruling, Triage } from "./schemas";
+
+type Answer = ValueOf<typeof Answers>[number];
 
 export const CONTRACT = "touches packages/ir/src/a.ts, which set a contract";
 
 export const askAlone = (ask: string) => ({ ask, options: [], context: [] });
 
-export const spec = {
+export const spec: NonNullable<Proposal["spec"]> = {
 	what: "Make greet.sh greet by name.",
 	requirements: [
 		"When greet.sh is given a name, greet.sh shall greet that name.",
 	],
 	figures: [
 		{
-			kind: "pseudocode" as const,
+			kind: "pseudocode",
 			caption: "",
 			source: " greet(name)\n-  print hello\n+  print hello, name ¹",
 			notes: ["The name is the first argument"],
@@ -24,7 +28,7 @@ export const spec = {
 	excluded: [{ lead: "Flags", points: [] }],
 	subject: "feat(cli): greet by name",
 };
-export const unspecified = {
+export const unspecified: Pick<Proposal, "touches" | "contract"> = {
 	touches: ["packages/cli/src/a.ts"],
 	contract: "",
 };
@@ -39,7 +43,7 @@ export const medium: Pick<Triage, "risk" | "area" | "reasons"> = {
 	reasons: [],
 };
 
-export const groups = [
+export const groups: Group[] = [
 	{ id: "G1", area: "the flag", questions: ["Where are flags parsed?"] },
 	{ id: "G2", area: "the tests", questions: ["Which test covers greet?"] },
 ];
@@ -67,15 +71,15 @@ export const diagnosing: Ruling = {
 	],
 	questions: [],
 };
-export const grounded = {
+export const grounded: Answer = {
 	question: "Which command fails, with what output?",
-	state: "grounded" as const,
+	state: "grounded",
 	answer:
 		"Ran `sh greet.sh`: `greet.sh: 3: name: unbound variable`. Cause at greet.sh:3.",
 };
-export const unsure = {
+export const unsure: Answer = {
 	question: "Which file:line holds the cause?",
-	state: "unsure" as const,
+	state: "unsure",
 	missing: "the reproduction: greet.sh does not exist in the lane",
 	answer: "Could not run it.",
 };
