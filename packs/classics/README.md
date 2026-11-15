@@ -40,14 +40,14 @@ left, while the last review upholds a finding or delivered no review.
 
 ## Patterns
 
-| Pattern              | What it does                                                                                                  | Ports                                                        | Profiles                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `repair_until_green` | Checks a lane, then repairs in the builder's session while red                                                | `lane`, `session`, `spec`                                    | `builder`                                                                |
-| `panel`              | Rules through a lens per name, a skeptic over each, a consolidator; ends in a `Tally`                         | `change`, `spec`, `session`¹, `earlier`¹, `names`¹, `brief`¹ | `lens`, `skeptic`², `consolidator`²                                      |
-| `tiered_review`      | Rules through the lenses the change's size picks, on one checklist, a consolidator; ends in a `Tally`         | `change`, `spec`, `session`¹, `earlier`¹, `brief`¹           | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator`            |
-| `fix_until_clean`    | Loops `repair_until_green` and `tiered_review`; while the `Tally` upholds a finding, a builder fixes it       | `lane`, `session`, `spec`, `brief`                           | `builder`, `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
-| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them                        | `spec`                                                       | `tester`, `builder`                                                      |
-| `build`              | Builds the request in a fresh lane, through `test_first` when `testFirst`; gives what `fix_until_clean` takes | `spec`                                                       | `builder`, `tester`²                                                     |
+| Pattern              | What it does                                                                                                                 | Ports                                                        | Profiles                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| `repair_until_green` | Checks a lane, then repairs in the builder's session while red                                                               | `lane`, `session`, `spec`                                    | `builder`                                                                |
+| `panel`              | Rules through a lens per name, a skeptic over each, a consolidator; ends in a `Tally`                                        | `change`, `spec`, `session`¹, `earlier`¹, `names`¹, `brief`¹ | `lens`, `skeptic`², `consolidator`²                                      |
+| `tiered_review`      | Rules through the lenses the change's size picks, on one checklist, a consolidator; ends in a `Tally`                        | `change`, `spec`, `session`¹, `earlier`¹, `brief`¹           | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator`            |
+| `fix_until_clean`    | Loops `repair_until_green` and `tiered_review`; while the `Tally` upholds a finding, a builder fixes it                      | `lane`, `session`, `spec`, `brief`                           | `builder`, `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
+| `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them                                       | `spec`                                                       | `tester`, `builder`                                                      |
+| `build`              | Builds the request in a fresh lane, after a tester as `test_first` does when `testFirst`; gives what `fix_until_clean` takes | `spec`                                                       | `builder`, `tester`²                                                     |
 
 ¹ Optional. ² Not used when its param, `skeptics`, `consolidate` or `testFirst`, is false.
 
@@ -71,7 +71,8 @@ and the `Tally` rejects while a finding is upheld, or when no lens delivered a r
 
 `build` takes the request as `spec`, so only a composition `use`s it. It returns the `lane`, the builder's `session`, a
 `spec` of the request, then the tester's map and the builder's overrules when `testFirst`, and the `brief`: the four
-ports of `fix_until_clean`.
+ports of `fix_until_clean`. The tester joins `build`'s own scope, so its builder is `build/build` either way, and an
+encore that turns `testFirst` off continues that builder's session.
 
 `fix_until_clean` forwards `checks` to `repair_until_green` and `grounds` to `tiered_review`, and runs at most
 `maxFixes` fix rounds; a param it leaves unset stays the callee's own, so `classics.tiered_review.*` reaches it, and of
@@ -178,7 +179,7 @@ In a tiered review, set each tier's seat to a stronger model than the last, and 
 |                      | `checks`         | list of `target.checks` names          | none      | The checks the tester and the builder may run                                                                       |
 | `build`              | `request`        | text                                   | required  | What to build                                                                                                       |
 |                      | `testFirst`      | boolean                                | false     | A tester pins the spec in tests before the builder builds                                                           |
-|                      | `checks`         | list of `target.checks` names          | none      | The checks the builder may run when `testFirst` is false                                                            |
+|                      | `checks`         | list of `target.checks` names          | none      | The checks the builder, and the tester when `testFirst`, may run                                                    |
 
 ³ Exactly one of `change` and `revs`. `revs` is resolved against the target once, as the concert starts: `B` alone runs
 from `target.base`, and the commits must be one linear series, with no merge.

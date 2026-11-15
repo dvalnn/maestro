@@ -895,8 +895,8 @@ describe("build_then_repair's build", () => {
 						e.to.node === node && e.to.port === port,
 				)
 				.map((e: { from: unknown }) => e.from);
-		expect(into("build/test_first/build", "lane")).toEqual([
-			{ node: "build/test_first/tester", port: "lane" },
+		expect(into("build/build", "lane")).toEqual([
+			{ node: "build/tester", port: "lane" },
 		]);
 		expect(into("repair_until_green/loop/repair", "spec")).toEqual([
 			{ node: "build/spec", port: "file" },
@@ -1815,17 +1815,15 @@ describe("build", () => {
 		expect(into(ir, "build/brief")).toEqual(["build/build.report"]);
 	});
 
-	test("tested, the tester and builder of test_first, a spec of the request, the map and the overrules", () => {
+	test("tested, a tester beside the builder, which keeps its id, both under the checks, a spec of the request, the map and the overrules", () => {
 		const ir = buildIrOf({ testFirst: true, checks: ["test"] });
-		expect(node(ir, "build/test_first/tester")).toBeDefined();
-		expect(node(ir, "build/test_first/tester")?.config.checks ?? []).toEqual(
-			[],
-		);
+		expect(node(ir, "build/tester")?.config.checks).toEqual(["test"]);
+		expect(node(ir, "build/build")?.config.checks).toEqual(["test"]);
 		expect(into(ir, "build/spec").sort()).toEqual([
-			"build/test_first/build.overrules",
-			"build/test_first/tester.map",
+			"build/build.overrules",
+			"build/tester.map",
 		]);
-		expect(into(ir, "build/brief")).toEqual(["build/test_first/build.report"]);
+		expect(into(ir, "build/brief")).toEqual(["build/build.report"]);
 	});
 
 	test("is no entry: it takes the spec as a port, so compose refuses it", async () => {

@@ -1,12 +1,13 @@
 import { extend, fresh } from "@maestro/host-repo-sdk";
 import {
+	type ArtifactRef,
 	Bool,
 	code,
 	composition,
 	List,
 	Markdown,
+	type Ref,
 	Text,
-	use,
 } from "@maestro/sdk";
 import { briefOf, specOf } from "./code";
 import { task } from "./prompt";
@@ -14,6 +15,36 @@ import BUILD_TESTED from "./prompts/build-tested.md" with { type: "text" };
 import TESTER from "./prompts/tester.md" with { type: "text" };
 import { builder, tester } from "./seats";
 import { Brief, Overrules, PACK } from "./types";
+
+/**
+ * A tester pinning `spec` in tests in a fresh lane, then a builder of `request` extending its lane, both under
+ * `checks`, as nodes of the calling composition, so `build` names its builder alike with or without a tester.
+ */
+function testThenBuild(
+	request: string,
+	checks: string[],
+	spec: Ref<ArtifactRef>,
+) {
+	const tested = tester({
+		label: "tester",
+		task: TESTER,
+		lane: fresh(),
+		checks,
+		attachments: {
+			spec: { artifact: spec, hint: "first, for the requirements to pin" },
+		},
+	});
+	const map = tested.out.map;
+	const built = builder({
+		label: "build",
+		task: task(request, BUILD_TESTED),
+		lane: extend(tested.out.lane),
+		checks,
+		relay: { map },
+		reply: { overrules: Overrules },
+	});
+	return { built, map };
+}
 
 export const testFirst = composition(
 	"test_first",
@@ -30,27 +61,7 @@ export const testFirst = composition(
 			}),
 		},
 	},
-	({ request, checks }, { spec }) => {
-		const tested = tester({
-			label: "tester",
-			task: TESTER,
-			lane: fresh(),
-			checks,
-			attachments: {
-				spec: { artifact: spec, hint: "first, for the requirements to pin" },
-			},
-		});
-		const map = tested.out.map;
-		const built = builder({
-			label: "build",
-			task: task(request, BUILD_TESTED),
-			lane: extend(tested.out.lane),
-			checks,
-			relay: { map },
-			reply: { overrules: Overrules },
-		});
-		return { built, map };
-	},
+	({ request, checks }, { spec }) => testThenBuild(request, checks, spec),
 );
 
 export const buildChange = composition(
@@ -69,14 +80,13 @@ export const buildChange = composition(
 			checks: List(Text(), {
 				default: [],
 				description:
-					"The target checks the builder may run when testFirst is false, by name in target.checks",
+					"The target checks the builder, and the tester when testFirst, may run, by name in target.checks",
 			}),
 		},
 	},
 	({ request, testFirst: tested, checks }, { spec }) => {
-		const first = tested
-			? use(testFirst, { spec }, { params: { request } })
-			: undefined;
+		// The tester joins this scope, not one of its own, so an encore that turns it off continues the same builder.
+		const first = tested ? testThenBuild(request, checks, spec) : undefined;
 		const built =
 			first?.built ??
 			builder({ label: "build", task: request, lane: fresh(), checks });

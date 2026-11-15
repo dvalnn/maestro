@@ -175,10 +175,10 @@ test.each([
 	async (risk, tested, floor) => {
 		const { nodes, edges } = await composed([risk]);
 		const ids = nodes.map((n) => n.id);
-		expect(ids.includes("build/test_first/tester")).toBe(tested);
+		expect(ids.includes("build/tester")).toBe(tested);
 		if (tested)
-			expect(from(edges, "build/test_first/build", "lane")).toEqual([
-				{ node: "build/test_first/tester", port: "lane" },
+			expect(from(edges, "build/build", "lane")).toEqual([
+				{ node: "build/tester", port: "lane" },
 			]);
 		else {
 			expect(ids).toContain("build/build");
@@ -198,7 +198,7 @@ test.each([
 
 test("with only the stub preset, no tester is composed", async () => {
 	const { nodes } = await composed(["stub"]);
-	expect(nodes.map((n) => n.id)).not.toContain("build/test_first/tester");
+	expect(nodes.map((n) => n.id)).not.toContain("build/tester");
 });
 
 test.each(["--risk", "--tier", "--max-fixes", "--max-repairs"])(

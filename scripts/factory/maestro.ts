@@ -10,8 +10,13 @@ import { unresolvedOf } from "./route";
 const WINDOW = 20;
 /** The slice's fix agent, one instance per fix round, directly or under `fix_until_clean`'s scope. */
 const FIX_NODE = /^(.*\/)?fixes\/fix$/;
-/** The slice's tester, whose `map` output holds the tests: under `test_first`, and as earlier concerts named it. */
-const TESTER_NODES = ["build/test_first/tester", "tested/tester", "tester"];
+/** The slice's tester, whose `map` output holds the tests: beside the builder, and as earlier concerts named it. */
+const TESTER_NODES = [
+	"build/tester",
+	"build/test_first/tester",
+	"tested/tester",
+	"tester",
+];
 
 export type Concert = {
 	id: string;
