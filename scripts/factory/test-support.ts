@@ -208,14 +208,19 @@ export function fakeMaestro(
 	/** The concert ids the record no longer holds. */
 	const pruned = new Set<string>();
 	let refusal: string | undefined;
-	const stamped = concerts.some((c) => c.startedAt !== undefined);
 	const maestro: Maestro = {
 		// Real maestro stamps every concert; a list with no times takes its place in `concerts`, newest first.
 		concerts: async (tour, limit = 20, kind) =>
 			concerts
+				// maestro writes a settle time for every settled concert; a fixture without one settled as it started,
+				// and one without either times its place in the record, newest first
 				.map((c, i) => ({
 					...c,
-					startedAt: stamped ? c.startedAt : concerts.length - i,
+					startedAt: c.startedAt ?? concerts.length - i,
+					settledAt:
+						c.status === "running"
+							? undefined
+							: (c.settledAt ?? c.startedAt ?? concerts.length - i),
 				}))
 				.filter(
 					(c) =>

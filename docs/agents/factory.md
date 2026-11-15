@@ -419,18 +419,22 @@ flowchart TD
 A masterclass performs `.maestro/masterclass.ts` on the lessons and reports of the factory runs, the slice and triage
 concerts settled on `<milestone>.i<n>` tours, and proposes issues from them.
 
-- **Watermark.** The newest ok masterclass concert in maestro's record, not state the tick keeps. A factory run is
-  unread when it settled after the watermark began, or when there is none.
-- **Due.** At least 10 unread factory runs within the milestone's newest 200 concerts: the trigger counts only those
-  runs, the window is wider. The newest masterclass, of any status, must also have a factory run that settled after it.
-  So a masterclass that settles non-ok or malformed is reported, does not halt, and is retried only after another
-  factory run settles.
+- **Listing.** The step lists the milestone and the `release` and `trial` tours back to the start of maestro's record,
+  widening its limit on the `concerts` port until a listing comes back shorter than asked, so a run is unread however
+  early it started.
+- **Watermark.** The newest ok masterclass concert in maestro's record, by start time, not state the tick keeps. A run
+  is unread when it settled at or after the watermark began, or when there is no ok masterclass. A run that settles in
+  the seconds between the listing and the masterclass start is not in the inputs and counts as read: a known gap.
+- **Due.** At least 10 unread factory runs, and no masterclass running; a running slice does not hold it. If the newest
+  masterclass did not settle ok, a factory run must also have settled after it, so a masterclass that settles non-ok is
+  reported, does not halt, and is retried only after another factory run settles. An ok masterclass newest does not
+  block the next one, even when its output was malformed.
 - **Overdue.** At 20 unread runs it starts ahead of triage, so a busy intake cannot starve it (Policy: Pick order).
 - **Inputs.**
-  - `--lessons`: the lessons of the newest 30 factory runs, or of every unread one when more, oldest first, and of the
-    settled slices on the `release` and `trial` tours started since the watermark, which are read but neither counted
-    nor marked. Fewer than 30 runs in the 200 concerts are read as found. The heading of a run an earlier masterclass
-    read ends in ` · read`.
+  - `--lessons`: the lessons of every unread factory run, then of the newest read runs up to 30 in all, oldest first,
+    and of the settled slices on the `release` and `trial` tours that settled at or after the watermark's start, which
+    are read but neither counted nor marked. The heading of a run that settled before the watermark started ends in
+    ` · read`.
   - `--reports`: the obstacles and sightings of the same runs under the same headings, a sighting as
     `path · cites · text`.
   - `--backlog`: the backlog snapshot.

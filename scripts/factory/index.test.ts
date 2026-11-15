@@ -940,7 +940,12 @@ describe("sightings at triage", () => {
 				startedAt: 160,
 			},
 			{ ...sliceConcert("trial-new", 5), tour: "trial", startedAt: 170 },
-			{ ...sliceConcert("hand-old", 6), tour: "trial", startedAt: 100 },
+			{
+				...sliceConcert("hand-old", 6),
+				tour: "trial",
+				startedAt: 100,
+				settledAt: 99,
+			},
 			{ ...triageConcert("hand-triage", 6), tour: "trial", startedAt: 180 },
 		];
 		const t = setup([issue(7, "needs-triage")], concerts, {}, undefined, {
@@ -989,6 +994,86 @@ describe("sightings at triage", () => {
 			"- trial.sh · R2 · Drops the trial result.",
 			"- unrelated.sh · Errors go to stderr · Errors go to stdout.",
 			"- z.ts · R3 · Drops the triage report.",
+		]);
+	});
+
+	test("triage receives sightings of factory and hand runs that settle at or after the watermark", async () => {
+		const mark = {
+			...masterclassConcert("m0"),
+			startedAt: 100,
+			settledAt: 110,
+		};
+		const factory = {
+			...sliceConcert("late", 1),
+			startedAt: 40,
+			settledAt: 120,
+		};
+		const hand = {
+			...sliceConcert("hand", 2),
+			tour: "trial",
+			startedAt: 30,
+			settledAt: 100,
+		};
+		const old = { ...sliceConcert("old", 3), startedAt: 20, settledAt: 99 };
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[mark, factory, hand, old],
+			{
+				m0: { status: "ok", outputs: { masterclass: { proposals: [] } } },
+			},
+			undefined,
+			{
+				reports: {
+					late: { ...NO_REPORT, sightings: [sighting] },
+					hand: { ...NO_REPORT, sightings: [neighbour] },
+					old: {
+						...NO_REPORT,
+						sightings: [{ ...sighting, text: "Already read" }],
+					},
+				},
+			},
+		);
+		await t.run();
+		expect(started(t.starts[0])).toBe("perform triage.ts");
+		expect(
+			bullets(readFileSync(sightingsPath(t.starts[0] ?? []), "utf8")),
+		).toEqual([
+			"- packages/host-repo/src/report.ts · Reports retain sightings · The reader drops sightings.",
+			"- unrelated.sh · Errors go to stderr · Errors go to stdout.",
+		]);
+	});
+
+	test("triage receives a late settler's sightings from beyond 400 milestone concerts", async () => {
+		const noise = Array.from({ length: 450 }, (_, i) => ({
+			...sliceConcert(`n${i}`, i),
+			pack: "other",
+			composition: "other",
+			startedAt: 2000 - i,
+			settledAt: 2100 - i,
+		}));
+		const mark = {
+			...masterclassConcert("m0"),
+			startedAt: 100,
+			settledAt: 110,
+		};
+		const late = {
+			...sliceConcert("deep", 1),
+			startedAt: 40,
+			settledAt: 120,
+		};
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[...noise, mark, late],
+			{ m0: { status: "ok", outputs: { masterclass: { proposals: [] } } } },
+			undefined,
+			{ reports: { deep: { ...NO_REPORT, sightings: [sighting] } } },
+		);
+		await t.run();
+		expect(started(t.starts[0])).toBe("perform triage.ts");
+		expect(
+			bullets(readFileSync(sightingsPath(t.starts[0] ?? []), "utf8")),
+		).toEqual([
+			"- packages/host-repo/src/report.ts · Reports retain sightings · The reader drops sightings.",
 		]);
 	});
 
@@ -2648,79 +2733,381 @@ describe("masterclass", () => {
 		expect(due.starts.map(started)).toEqual(["perform masterclass.ts"]);
 	});
 
-	test("a failed masterclass is not retried after only a newer stack review", async () => {
-		const t = setup(
-			[],
-			[
-				reviewConcert("r1"),
-				masterclassConcert("m1", "failed"),
-				...runs(50, 20),
-			],
-			{
-				m1: failed("boom"),
-			},
-		);
-		await t.run();
-		expect(t.starts).toEqual([]);
-	});
-
 	/** Concert `c` with the start and settle times maestro lists. */
 	const timed = (c: Concert, startedAt: number, settledAt?: number) => ({
 		...c,
 		startedAt,
 		settledAt,
 	});
-	const older = Array.from({ length: 9 }, (_, i) =>
-		timed(sliceConcert(`o${i}`, i + 1, "rejected"), i + 1, i + 2),
-	).reverse();
 	const okMasterclass = {
 		m0: { status: "ok", outputs: { masterclass: { proposals: [] } } },
 	};
 
-	test("a failed masterclass is not retried on a slice that settled before it failed", async () => {
+	// Seam: a tick's maestro start and the lessons, reports and sightings files passed to it.
+	// Concert listings and reports are supplied at the external maestro boundary.
+	test("an ok newest watermark counts late settlers and reads them before filling with read runs", async () => {
+		const mark = {
+			...masterclassConcert("m0"),
+			startedAt: 1000,
+			settledAt: 1010,
+		};
+		const read = runs(100, 35).map((c, i) => ({
+			...c,
+			startedAt: 900 - i,
+			settledAt: 999,
+		}));
+		const late = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 800 - i,
+			settledAt: 1000 + i,
+		}));
 		const t = setup(
 			[],
-			[
-				timed(sliceConcert("s9", 99, "rejected"), 15, 18),
-				timed(masterclassConcert("m1", "failed"), 10, 20),
-				...older,
-			],
-			{ m1: failed("boom") },
+			[mark, ...read, ...late],
+			{
+				m0: { status: "ok", outputs: { masterclass: { proposals: [] } } },
+			},
+			undefined,
+			{
+				reports: Object.fromEntries(
+					[...read, ...late].map((c) => [
+						c.id,
+						{
+							...NO_REPORT,
+							lessons: [`lesson ${c.id}`],
+							obstacles: [`obstacle ${c.id}`],
+						},
+					]),
+				),
+			},
 		);
 		await t.run();
-		expect(t.starts).toEqual([]);
+		expect(t.starts).toHaveLength(1);
+		expect(started(t.starts[0])).toBe("perform masterclass.ts");
+		["--lessons", "--reports"].forEach((flag) => {
+			const text = readFileSync(argAfter(t.starts[0] ?? [], flag), "utf8");
+			late.forEach((c) => {
+				expect(text).toContain(`## ${c.id} · ${c.tour}\n`);
+				expect(text).toContain(
+					flag === "--lessons" ? `- lesson ${c.id}` : `- obstacle ${c.id}`,
+				);
+			});
+			read.slice(0, 20).forEach((c) => {
+				expect(text).toContain(`## ${c.id} · ${c.tour} · read\n`);
+			});
+			read.slice(20).forEach((c) => {
+				expect(text).not.toContain(`## ${c.id} ·`);
+			});
+			const headings = [...text.matchAll(/^## (\S+) ·/gm)].map((m) => m[1]);
+			expect(headings).toEqual(
+				[...late, ...read.slice(0, 20)]
+					.sort((x, y) => (x.startedAt ?? 0) - (y.startedAt ?? 0))
+					.map((c) => c.id),
+			);
+		});
 	});
 
-	test("retries a failed masterclass after an older slice settles", async () => {
-		const concerts = [
-			timed(masterclassConcert("m1", "failed"), 100, 150),
-			timed(sliceConcert("long", 99, "running"), 90),
-			...older,
-		];
-		const t = setup([], concerts, { m1: failed("boom") });
+	test("late release and trial slices are read without making a masterclass due", async () => {
+		const mark = {
+			...masterclassConcert("m0"),
+			startedAt: 100,
+			settledAt: 110,
+		};
+		const factory = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 200 - i,
+			settledAt: 210 + i,
+		}));
+		const release = {
+			...sliceConcert("release-late", 1),
+			tour: "release.rc1",
+			startedAt: 40,
+			settledAt: 120,
+		};
+		const trial = {
+			...sliceConcert("trial-equal", 2),
+			tour: "trial",
+			startedAt: 30,
+			settledAt: 100,
+		};
+		const old = {
+			...sliceConcert("hand-old", 3),
+			tour: "trial",
+			startedAt: 20,
+			settledAt: 99,
+		};
+		const hand = [release, trial, old];
+		const nine = setup([], [...factory.slice(0, 9), mark, ...hand]);
+		await nine.run();
+		expect(nine.starts).toEqual([]);
+		const t = setup([], [...factory, mark, ...hand], {}, undefined, {
+			reports: Object.fromEntries(
+				hand.map((c) => [
+					c.id,
+					{
+						...NO_REPORT,
+						lessons: [`lesson ${c.id}`],
+						obstacles: [`obstacle ${c.id}`],
+					},
+				]),
+			),
+		});
 		await t.run();
-		expect(t.starts).toEqual([]);
-		concerts[1] = timed(sliceConcert("long", 99, "rejected"), 90, 160);
-		await t.run();
-		expect(t.starts.map(started)).toEqual(["perform masterclass.ts"]);
+		expect(t.starts).toHaveLength(1);
+		for (const flag of ["--lessons", "--reports"]) {
+			const text = readFileSync(argAfter(t.starts[0] ?? [], flag), "utf8");
+			for (const c of [release, trial]) {
+				expect(text).toContain(`## ${c.id} · ${c.tour}\n`);
+				expect(text).toContain(
+					flag === "--lessons" ? `- lesson ${c.id}` : `- obstacle ${c.id}`,
+				);
+			}
+			expect(text).not.toContain("hand-old");
+		}
 	});
 
-	test("counts a slice that started before an ok masterclass and settled after it began", async () => {
-		const newer = Array.from({ length: 9 }, (_, i) =>
-			timed(sliceConcert(`n${i}`, 20 + i, "rejected"), 200 + i, 210 + i),
-		).reverse();
+	test("reads late settlers beyond the first 200 milestone and hand concerts", async () => {
+		const noise = (tour: string, prefix: string) =>
+			Array.from({ length: 205 }, (_, i) => ({
+				...sliceConcert(`${prefix}${i}`, i),
+				tour,
+				pack: "other",
+				composition: "other",
+				startedAt: 2000 - i,
+				settledAt: 2100 - i,
+			}));
+		const mark = {
+			...masterclassConcert("m0"),
+			startedAt: 1000,
+			settledAt: 1010,
+		};
+		const late = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 900 - i,
+			settledAt: 1100 + i,
+		}));
+		const release = {
+			...sliceConcert("release-deep", 1),
+			tour: "release",
+			startedAt: 40,
+			settledAt: 1200,
+		};
+		const trial = {
+			...sliceConcert("trial-deep", 2),
+			tour: "trial",
+			startedAt: 30,
+			settledAt: 1200,
+		};
+		const all = [...late, release, trial];
 		const t = setup(
 			[],
 			[
-				...newer,
-				timed(masterclassConcert("m0"), 100, 150),
-				timed(sliceConcert("x", 50, "rejected"), 50, 120),
-				...older,
+				...noise(`${MILESTONE}.other`, "n"),
+				mark,
+				...late,
+				...noise("release", "rnoise"),
+				release,
+				...noise("trial", "tnoise"),
+				trial,
 			],
 			okMasterclass,
+			undefined,
+			{
+				reports: Object.fromEntries(
+					all.map((c) => [c.id, { ...NO_REPORT, lessons: [`lesson ${c.id}`] }]),
+				),
+			},
 		);
 		await t.run();
-		expect(t.starts.map(started)).toEqual(["perform masterclass.ts"]);
+		expect(t.starts).toHaveLength(1);
+		const text = readFileSync(argAfter(t.starts[0] ?? [], "--lessons"), "utf8");
+		for (const c of all)
+			expect(text).toContain(`## ${c.id} · ${c.tour}\n\n- lesson ${c.id}`);
+	});
+
+	test("reads late settlers behind 450 milestone concerts", async () => {
+		const noise = Array.from({ length: 450 }, (_, i) => ({
+			...sliceConcert(`n${i}`, i),
+			pack: "other",
+			composition: "other",
+			startedAt: 2000 - i,
+			settledAt: 2100 - i,
+		}));
+		const mark = {
+			...masterclassConcert("m0"),
+			startedAt: 1000,
+			settledAt: 1010,
+		};
+		const late = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 900 - i,
+			settledAt: 1100 + i,
+		}));
+		const t = setup([], [...noise, mark, ...late], okMasterclass, undefined, {
+			reports: lessoned(late),
+		});
+		await t.run();
+		expect(t.starts).toHaveLength(1);
+		const text = readFileSync(argAfter(t.starts[0] ?? [], "--lessons"), "utf8");
+		for (const c of late) expect(text).toContain(`## ${c.id} ·`);
+	});
+
+	test("an older running masterclass beyond the tick window prevents another behind a newer ok one", async () => {
+		const noise = Array.from({ length: 21 }, (_, i) => ({
+			...sliceConcert(`n${i}`, i),
+			pack: "other",
+			composition: "other",
+			startedAt: 2000 - i,
+			settledAt: 2100 - i,
+		}));
+		const ten = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 1900 - i,
+			settledAt: 1950 + i,
+		}));
+		const mark = {
+			...masterclassConcert("m1"),
+			startedAt: 1500,
+			settledAt: 1510,
+		};
+		const running = {
+			...masterclassConcert("running", "running"),
+			startedAt: 1000,
+		};
+		const t = setup([], [...noise, ...ten, mark, running]);
+		await t.run();
+		expect(t.starts).toEqual([]);
+	});
+
+	test("a factory run settling in the same millisecond as a failed masterclass does not permit a retry", async () => {
+		const failure = {
+			...masterclassConcert("failed", "failed"),
+			startedAt: 1000,
+			settledAt: 1100,
+		};
+		const mark = {
+			...masterclassConcert("m0"),
+			startedAt: 500,
+			settledAt: 510,
+		};
+		const ten = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 900 - i,
+			settledAt: i === 0 ? 1100 : 1000 + i,
+		}));
+		const t = setup([], [failure, ...ten, mark], {
+			failed: { status: "failed", reason: "boom", outputs: {} },
+		});
+		await t.run();
+		expect(t.starts).toEqual([]);
+	});
+
+	test("without an ok masterclass counts settled factory runs beyond the first listing", async () => {
+		const noise = Array.from({ length: 205 }, (_, i) => ({
+			...sliceConcert(`noise${i}`, i),
+			pack: "other",
+			composition: "other",
+			startedAt: 2000 - i,
+			settledAt: 2100 - i,
+		}));
+		const ten = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 900 - i,
+			settledAt: 950 - i,
+		}));
+		const t = setup([], [...noise, ...ten], {}, undefined, {
+			reports: lessoned(ten),
+		});
+		await t.run();
+		expect(t.starts).toHaveLength(1);
+		expect(started(t.starts[0])).toBe("perform masterclass.ts");
+		expect(readFileSync(argAfter(t.starts[0] ?? [], "--lessons"), "utf8")).toBe(
+			lessonsOf(50, 10),
+		);
+	});
+
+	test("a failed masterclass is retried only after a factory run settles later", async () => {
+		const failure = {
+			...masterclassConcert("failed", "failed"),
+			startedAt: 1000,
+			settledAt: 1100,
+		};
+		const mark = {
+			...masterclassConcert("m0"),
+			startedAt: 500,
+			settledAt: 510,
+		};
+		const ten = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 900 - i,
+			settledAt: 1000 + i,
+		}));
+		const results = {
+			failed: { status: "failed", reason: "boom", outputs: {} },
+		};
+		const waiting = setup([], [failure, ...ten, mark], results);
+		await waiting.run();
+		expect(waiting.starts).toEqual([]);
+		const later = {
+			...sliceConcert("later", 1),
+			startedAt: 800,
+			settledAt: 1200,
+		};
+		const retry = setup([], [failure, ...ten, later, mark], results);
+		await retry.run();
+		expect(retry.starts).toHaveLength(1);
+		expect(started(retry.starts[0])).toBe("perform masterclass.ts");
+	});
+
+	test("a running masterclass behind twenty newer masterclasses prevents another", async () => {
+		const newer = Array.from({ length: 20 }, (_, i) => ({
+			...masterclassConcert(`m${i}`),
+			startedAt: 2000 - i,
+			settledAt: 2010 - i,
+		}));
+		const running = {
+			...masterclassConcert("running", "running"),
+			startedAt: 100,
+		};
+		const ten = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 1900 - i,
+			settledAt: 2100 + i,
+		}));
+		const results = Object.fromEntries(
+			newer.map((c) => [c.id, okMasterclass.m0]),
+		);
+		const t = setup([], [...ten, ...newer, running], results);
+		await t.run();
+		expect(t.starts).toEqual([]);
+	});
+
+	test("a failed masterclass is not retried after only a later stack review settles", async () => {
+		const failure = {
+			...masterclassConcert("failed", "failed"),
+			startedAt: 1000,
+			settledAt: 1100,
+		};
+		const mark = {
+			...masterclassConcert("m0"),
+			startedAt: 500,
+			settledAt: 510,
+		};
+		const ten = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 900 - i,
+			settledAt: 1000 + i,
+		}));
+		const review = {
+			...reviewConcert("review"),
+			startedAt: 1050,
+			settledAt: 1200,
+		};
+		const t = setup([], [review, failure, ...ten, mark], {
+			failed: { status: "failed", reason: "boom", outputs: {} },
+		});
+		await t.run();
+		expect(t.starts).toEqual([]);
 	});
 
 	test("starts once ten factory runs settled since the last ok masterclass, on their lessons oldest first", async () => {
@@ -2895,7 +3282,7 @@ describe("masterclass", () => {
 			hand("m1", "release.rc1", 1004.5),
 			hand("m2", "trial", 1006),
 			hand("m0", "release", 400),
-			hand("m3", "release", 500),
+			{ ...hand("m3", "release", 400), settledAt: 499 },
 			{ ...hand("m4", "release", 1007), pack: "other", composition: "other" },
 			{ ...hand("m5", "trial", 1008), status: "running" },
 		];
@@ -3210,8 +3597,8 @@ describe("masterclass", () => {
 
 	test("reads the newest 30 factory runs beside the hand slices since the watermark", async () => {
 		const all = runs(30, 40);
-		const mark = { ...masterclassConcert("m0"), startedAt: 157.5 };
-		const hand = { ...sliceConcert("h1", 1), tour: "trial", startedAt: 1000 };
+		const mark = masterclassConcert("m0");
+		const hand = { ...sliceConcert("h1", 1), tour: "trial" };
 		const t = setup(
 			[],
 			[...all.slice(0, 12), hand, mark, ...all.slice(12)],

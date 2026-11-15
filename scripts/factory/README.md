@@ -3,8 +3,10 @@
 One tick of the tour manager (`docs/agents/factory.md`): it routes a settled triage or slice, lands an ok slice as a PR,
 files approved splits, then starts at most one concert in a free slot, a triage or masterclass beside a build (the two
 slots and their pick order: `docs/agents/factory.md`, Rules, Policy: One concert per slot). It routes a settled
-masterclass by filing its proposals as `needs-approval` issues. A build continues the issue's last slice concert when it
-has a reply to feed it. It drives maestro through `--json` and calls the forge's REST API directly as its own account,
+masterclass by filing its proposals as `needs-approval` issues. A masterclass reads every run that settled at or after
+the start of the last ok masterclass, however far back it started, then the newest read runs up to 30 in all
+([Masterclass](../../docs/agents/factory.md#masterclass)). A build continues the issue's last slice concert when it has
+a reply to feed it. It drives maestro through `--json` and calls the forge's REST API directly as its own account,
 `maestro-tm`, which also force-pushes the PR's branch, and authors (and, with a key, signs) the commits it lands. A
 triage reads only the tour manager's question comments and comments mentioning its login, which each tick reads from
 `GET /user`.
