@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { isTourSlug, TOUR_MAX_LENGTH } from "@maestro/core";
 import {
 	isSlice,
 	isStackReview,
@@ -103,12 +104,6 @@ const LOCK_EX = 2;
 const LOCK_NB = 4;
 /** Linux's EWOULDBLOCK, which is EAGAIN. */
 const EWOULDBLOCK = 11;
-/** The tour slug rule, copied from `parseTour` in packages/cli/src/output.ts (scripts do not import the CLI). */
-const TOUR_SEGMENT = "[a-z0-9]+(?:-[a-z0-9]+)*";
-const TOUR = new RegExp(`^${TOUR_SEGMENT}(?:\\.${TOUR_SEGMENT})*$`);
-const TOUR_MAX_LENGTH = 64;
-const isTourSlug = (text: string) =>
-	TOUR.test(text) && text.length <= TOUR_MAX_LENGTH;
 function requireSlug(milestone: string): void {
 	if (isTourSlug(milestone)) return;
 	throw new Error(

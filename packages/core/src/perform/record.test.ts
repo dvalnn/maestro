@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Ir, parseIr } from "@maestro/ir";
+import { isTourSlug, TOUR_MAX_LENGTH, TOUR_SEGMENT } from "../index";
 import {
 	CONCERT_FINISHED,
 	openRecord,
@@ -523,4 +524,41 @@ test("enrichments reads the enriched current instances of the concerts named, no
 		{ concert: "d", node: "a", enrichment: { n: "d" } },
 	]);
 	record.close();
+});
+
+test("a tour slug is dot-separated lower-case hyphen-joined words of at most 64 characters", () => {
+	expect(TOUR_MAX_LENGTH).toBe(64);
+	expect(new RegExp(`^${TOUR_SEGMENT}$`).test("release-2")).toBe(true);
+	const verdicts = Object.fromEntries(
+		[
+			"release-2.part-3",
+			"spring-tour",
+			"0",
+			"a".repeat(64),
+			"a".repeat(65),
+			"",
+			".release",
+			"release.",
+			"release..part",
+			"Release",
+			"release--part",
+			"-release",
+			"release_part",
+		].map((slug) => [slug, isTourSlug(slug)]),
+	);
+	expect(verdicts).toEqual({
+		"release-2.part-3": true,
+		"spring-tour": true,
+		"0": true,
+		["a".repeat(64)]: true,
+		["a".repeat(65)]: false,
+		"": false,
+		".release": false,
+		"release.": false,
+		"release..part": false,
+		Release: false,
+		"release--part": false,
+		"-release": false,
+		release_part: false,
+	});
 });

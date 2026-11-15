@@ -139,6 +139,17 @@ CREATE TABLE events (
 CREATE INDEX events_by_concert ON events (concert, seq);
 `;
 
+/** One segment of a tour slug: lower-case letters and digits in words joined by single hyphens. */
+export const TOUR_SEGMENT = "[a-z0-9]+(?:-[a-z0-9]+)*";
+/** The most characters a tour slug has in all. */
+export const TOUR_MAX_LENGTH = 64;
+const TOUR = new RegExp(`^${TOUR_SEGMENT}(?:\\.${TOUR_SEGMENT})*$`);
+
+/** Whether `text` is a tour slug: one or more dot-separated {@link TOUR_SEGMENT}s, at most {@link TOUR_MAX_LENGTH} characters in all. */
+export function isTourSlug(text: string): boolean {
+	return TOUR.test(text) && text.length <= TOUR_MAX_LENGTH;
+}
+
 /** A concert is `running` until it settles with its result's outcome. */
 export type ConcertStatus = "running" | Exclude<Outcome, "skipped">;
 

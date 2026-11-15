@@ -1,6 +1,6 @@
 import { constants } from "node:os";
 import { join } from "node:path";
-import { tildeOf } from "@maestro/core";
+import { isTourSlug, TOUR_MAX_LENGTH, tildeOf } from "@maestro/core";
 import { ConfigError } from "@maestro/core/config";
 import type {
 	ConcertRecord,
@@ -482,17 +482,13 @@ export function encoreRefused({ concert }: Unencorable): CliError {
 	);
 }
 
-const TOUR_SEGMENT = "[a-z0-9]+(?:-[a-z0-9]+)*";
-const TOUR = new RegExp(`^${TOUR_SEGMENT}(?:\\.${TOUR_SEGMENT})*$`);
-const TOUR_MAX_LENGTH = 64;
-
 /**
  * `text` as a tour slug: one or more dot-separated segments, each lower-case letters and digits in words joined by
  * single hyphens, at most 64 characters in all.
  * @throws CliError, a usage error naming `source`, for anything else.
  */
 export function parseTour(source: string, text: string): string {
-	if (!TOUR.test(text) || text.length > TOUR_MAX_LENGTH)
+	if (!isTourSlug(text))
 		throw usageError(
 			`${source} takes a slug of at most ${TOUR_MAX_LENGTH} characters, not '${text}'`,
 			"Write it as lower-case words joined by hyphens, in non-empty segments joined by dots, such as release-2.build-3",

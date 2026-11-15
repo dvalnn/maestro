@@ -3341,7 +3341,7 @@ else process.exit(1);
 	});
 });
 
-// Seams: tick's refusal and the calls it makes to the forge and external maestro.
+// Seams: tick's refusal and the calls it makes to the forge and external maestro; the real CLI's --tour exit code.
 describe("a tick's milestone and maestro list", () => {
 	const dirs: string[] = [];
 	afterEach(() => {
@@ -3385,6 +3385,56 @@ process.exit(2);
 			);
 		return { run, calls, lookedUp, said };
 	}
+
+	test("the tick and --tour accept the same tour slugs", async () => {
+		const slugs: [string, boolean][] = [
+			["release-2.build-3", true],
+			["0", true],
+			["a".repeat(64), true],
+			["", false],
+			[".release", false],
+			["release..build", false],
+			["release.", false],
+			["Release", false],
+			["release--build", false],
+			["release_build", false],
+			["a".repeat(65), false],
+		];
+		for (const [slug, accepted] of slugs) {
+			const t = boundaryTick(slug, [
+				{ id: "c1", status: "running", pack: "slice", composition: "slice" },
+			]);
+			const tickAccepted = await t.run().then(
+				() => true,
+				() => false,
+			);
+			const dir = mkdtempSync(join(tmpdir(), "factory-tour-cli-"));
+			dirs.push(dir);
+			const cli = Bun.spawnSync(
+				[
+					process.execPath,
+					join(import.meta.dir, "../../packages/cli/src/maestro.ts"),
+					"ls",
+					"--tour",
+					slug,
+					"--json",
+				],
+				{
+					cwd: dir,
+					env: {
+						HOME: dir,
+						XDG_CONFIG_HOME: join(dir, "config"),
+						XDG_DATA_HOME: join(dir, "data"),
+					},
+				},
+			);
+			expect({ slug, accepted: tickAccepted }).toEqual({ slug, accepted });
+			expect({ slug, code: cli.exitCode }).toEqual({
+				slug,
+				code: accepted ? 0 : 2,
+			});
+		}
+	});
 
 	test("refuses a milestone that is not a tour slug before looking it up or calling maestro", async () => {
 		for (const milestone of [

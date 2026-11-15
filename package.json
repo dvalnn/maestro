@@ -8,6 +8,7 @@
 	],
 	"devDependencies": {
 		"@maestro/classics": "workspace:*",
+		"@maestro/core": "workspace:*",
 		"@maestro/ir": "workspace:*",
 		"@maestro/host-repo-sdk": "workspace:*",
 		"@maestro/sdk": "workspace:*",
