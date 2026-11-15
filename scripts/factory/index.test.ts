@@ -1101,7 +1101,7 @@ describe("a stale spec", () => {
 
 	test("re-triages a ready ticket whose touched file changed on main since its spec, then triages it as an encore", async () => {
 		const t = landed(
-			[written(specced(7, "ready-for-agent"), "b1")],
+			[written(specced(7, "ready-for-agent", { version: 1 }), "b1")],
 			["greet.sh"],
 		);
 		await t.run();
@@ -1113,6 +1113,52 @@ describe("a stale spec", () => {
 		expect(question).toContain("`greet.sh`");
 		expect(t.starts[0]?.slice(0, 2)).toEqual(["encore", "c0"]);
 		expect(t.starts[0]?.join(" ")).toContain("## Question by the tour manager");
+		expect(dataAt(t.find(7)).approved).toBe(1);
+	});
+
+	/** A re-triage gated for approval whose planner reworded the spec, and set `kept` when `kept`. */
+	const gated = (kept: boolean): Triage => ({
+		...ready,
+		verdict: "needs-approval",
+		risk: "high",
+		spec: {
+			...spec,
+			requirements: ["When greet.sh gets a name, greet.sh shall greet it."],
+		},
+		...(kept && { kept: true }),
+	});
+
+	test.each([
+		[
+			"builds the approved spec word for word when triage keeps it",
+			true,
+			1,
+			"ready-for-agent",
+		],
+		["asks again when triage changes the spec", false, 1, "needs-approval"],
+		[
+			"asks again when no stale bounce approved it",
+			true,
+			undefined,
+			"needs-approval",
+		],
+	])("%s", async (_, kept, approved, state) => {
+		const t = setup(
+			[specced(7, "needs-triage", { version: 1, approved })],
+			[triageConcert("c1", 7)],
+			settled(gated(kept)),
+		);
+		t.options.routeOnly = true;
+		await t.run();
+		expect(t.find(7).labels).toContain(`state/${state}`);
+		const data = dataAt(t.find(7));
+		expect(data.approved).toBeUndefined();
+		expect(data.result?.spec).toEqual(
+			state === "ready-for-agent" ? spec : gated(kept).spec,
+		);
+		expect(questionsAt(t.find(7))).toHaveLength(
+			state === "ready-for-agent" ? 1 : 0,
+		);
 	});
 
 	test.each([

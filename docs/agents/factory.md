@@ -174,8 +174,9 @@ flowchart TD
   owner's approval too. Low builds, opens a PR and merges itself: once its PR to `main` is open, the tick arms the
   forge's auto-merge on it, fast-forward only, which waits on the required `check` status, unless the PR is a draft
   (Landing and PRs: PRs). Medium builds and waits for the owner to merge its PR. High waits in `needs-approval` for the
-  owner to approve the spec, then merges as medium does. The owner merges by fast-forward, as `main` takes signed
-  commits only. An epic's last child arms only once its stack review clears it (Rules, Build: Stack review).
+  owner to approve the spec, unless a stale spec's re-triage keeps the approved spec (Rules, Build: Stale spec), then
+  merges as medium does. The owner merges by fast-forward, as `main` takes signed commits only. An epic's last child
+  arms only once its stack review clears it (Rules, Build: Stack review).
 - **One concert at a time.** The tick starts no second one while a concert of the milestone runs.
 - **Pick order.** Finish work first: a stack review, then an encore of a PR with changes requested, then a build, then
   an overdue masterclass, then triage, then a due masterclass (Rules, Masterclass). A tick that routes a settle falls
@@ -282,8 +283,11 @@ flowchart TD
   tick posts a question comment,
   ``The spec was written on main at <commit>; main has since changed `<file>`. Re-triaging against current main.``,
   naming each changed file (unless one above `read` holds it already), moves the ticket to `needs-triage`, and goes on
-  to the next buildable ticket. Triage then re-triages it as an encore, cut from current `main`. An encore of a running
-  or landed build is not compared.
+  to the next buildable ticket. The bounce records the spec's version as `approved`, and triage re-triages it as an
+  encore, cut from current `main`, shown the spec as the one the owner approved. When the planner finds it still holds
+  as written, it sets `kept`, and the tick routes the approved triage itself, word for word, to `ready-for-agent`, with
+  a question comment saying it is approved again. Any other re-triage routes as usual, and a gated one waits in
+  `needs-approval`. An encore of a running or landed build is not compared.
 - **Encore.** A ticket continues its last slice concert, so the builder keeps what it learned and is told only what
   changed: `encore <id>` with a fresh build's presets, tour, title and base, and a `--request` of the spec and the ask
   followed by what changed, each part under its heading:
@@ -537,6 +541,7 @@ positions a later tick resumes from. A line the tick cannot read halts the tour 
 | `read`         | Id of the newest comment a triage was fed          | a triage or encore, a reply ask    | a failed triage                                              |
 | `version`      | The spec's version                                 | a routed triage                    | not cleared                                                  |
 | `specBase`     | The `main` commit the routed triage was cut from   | a routed triage                    | not cleared                                                  |
+| `approved`     | The spec version a stale bounce took off ready     | a stale bounce                     | a routed triage                                              |
 | `result`       | That triage's output; a string is a question's ask | a routed triage                    | the owner moving the ticket in its triage                    |
 | `pending`      | A result whose labels are not yet applied          | a routed triage                    | the labels applied                                           |
 | `filed`        | An approved split's children                       | the split's approval               | not cleared                                                  |

@@ -214,7 +214,7 @@ export type Question = ValueOf<typeof Question>;
 
 /**
  * The planner's proposal: `touches` whatever the verdict, and the part each verdict needs. A revision adds the
- * `questions` its spec check left for the owner.
+ * `questions` its spec check left for the owner. `kept` says the spec the owner approved still holds as written.
  */
 export const Proposal = shape(
 	{
@@ -227,12 +227,14 @@ export const Proposal = shape(
 		children: Children,
 		related: List(Int()),
 		questions: List(Question),
+		kept: Bool(),
 	},
 	[
 		needs("ready-for-agent", "spec"),
 		needs("split", "children"),
 		omits("ready-for-agent", "children"),
 		omits("split", "spec"),
+		omits("split", "kept"),
 	],
 );
 export type Proposal = ValueOf<typeof Proposal>;
@@ -294,8 +296,8 @@ export const Ruling = (maxGroups: number) =>
 export type Ruling = ValueOf<ReturnType<typeof Ruling>>;
 
 /**
- * The triage verdict the tick acts on: the part each verdict needs, `area` only when a path falls in one, and `related`
- * and `contract` only when there are any.
+ * The triage verdict the tick acts on: the part each verdict needs, `area` only when a path falls in one, `related`
+ * and `contract` only when there are any, and `kept` when the planner kept the spec the owner approved.
  */
 export const Triage = shape(
 	{
@@ -312,6 +314,7 @@ export const Triage = shape(
 		related: List(Int()),
 		contract: Text(),
 		ahead: Text(),
+		kept: Bool(),
 	},
 	[
 		needs("ready-for-agent", "spec"),

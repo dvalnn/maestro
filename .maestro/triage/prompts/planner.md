@@ -65,6 +65,9 @@ Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-ag
   only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long. Their
   order is drawn from `dependsOn` for you.
 - `related`: the backlog issues it relates to.
+- `kept`: `true` only when the issue holds a spec the owner approved and it still holds against current main as written.
+  The tour manager then builds the approved spec itself, and yours is not read. Leave it out whenever the spec needs any
+  change.
 - `questions`: only in a revision, and for a diagnose group (its area starts with "Diagnose:") whose answer is `unsure`
   or missing from the answers, where you ask at once. Ask what the scout could not establish: the reproduction, or the
   cause once the bug reproduced.

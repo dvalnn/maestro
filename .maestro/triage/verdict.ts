@@ -100,6 +100,7 @@ function proposed(proposal: Proposal, unrun: string[]): Triage {
 		...(verdict === "split" && { children }),
 		...relatedOf(related),
 		...(contract && { contract }),
+		...(proposal.kept && spec && !questions.length && { kept: true }),
 	};
 }
 

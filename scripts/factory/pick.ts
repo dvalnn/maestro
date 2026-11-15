@@ -87,12 +87,13 @@ export const issueText = (
 	replies: readonly Comment[],
 	login: string,
 	last?: Spec,
+	approved = false,
 ) =>
 	[
 		`#${issue.number} ${issue.title}`,
 		"",
 		askOf(issue.body),
-		...(last ? ["", ...lastSpecLines(last)] : []),
+		...(last ? ["", ...lastSpecLines(last, approved)] : []),
 		...replies.flatMap((r) => {
 			const [heading, body] = fed(r, login);
 			return ["", heading, "", body?.trim()];

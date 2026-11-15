@@ -223,14 +223,26 @@ async function apply(tick: Tick, number: number, data: Data, result: Triage) {
 	tick.say(`routed #${number} to ${state}`);
 }
 
+/** Whether `data`'s spec is the one a stale bounce took off `ready-for-agent`. */
+const isApproved = ({ approved, version }: Data) =>
+	approved !== undefined && approved === version;
+
 /** Routes triage `concert`'s settle onto `issue` (factory.md, Routing a settle), and returns false when it halted. */
 async function settle(tick: Tick, { issue, data }: Entry, concert: Concert) {
 	const { id } = concert;
 	const triaged = triageOf(await tick.maestro.result(id));
-	const result =
+	const live =
 		typeof triaged === "string"
 			? triaged
 			: await liveOriginal(tick, issue.number, triaged);
+	const approved = isApproved(data) ? data.result : undefined;
+	const reapproved =
+		typeof live !== "string" && live.kept === true && approved !== undefined;
+	// A kept spec builds as the owner approved it, word for word.
+	const result =
+		reapproved && approved
+			? { ...approved, verdict: "ready-for-agent" as const, questions: [] }
+			: live;
 	const state = stateOf(issue) ?? "needs-triage";
 	if (typeof result === "string") {
 		const [what, ...why] = result.split(": ");
@@ -257,7 +269,24 @@ async function settle(tick: Tick, { issue, data }: Entry, concert: Concert) {
 		result,
 		version: (data.version ?? 0) + 1,
 		specBase: concert.base,
+		approved: undefined,
 	};
+	if (reapproved)
+		await ask(
+			tick,
+			issue.number,
+			questionOf(
+				[
+					{
+						ask: `Triage found the approved spec v${data.version} still holds against current main, so v${routed.version} keeps it as approved.`,
+						options: [],
+						context: [],
+					},
+				],
+				"No reply needed: the next tick builds it.",
+			),
+			data.read,
+		);
 	await writeSpec(tick, issue.number, VERDICT_STATE[result.verdict], {
 		...routed,
 		pending: true,
@@ -914,7 +943,10 @@ async function retriage(tick: Tick, { issue, data }: Entry, spec: Spec) {
 		data.read,
 	);
 	await move(tick, issue.number, "needs-triage");
-	await writeSpec(tick, issue.number, "needs-triage", data);
+	await writeSpec(tick, issue.number, "needs-triage", {
+		...data,
+		approved: data.version,
+	});
 	tick.say(`#${issue.number}: spec is stale, moved to needs-triage`);
 	return true;
 }
@@ -1012,6 +1044,7 @@ async function triage(tick: Tick, entries: Entry[]) {
 		considered.filter((c) => isFed(c, tick.login)),
 		tick.login,
 		last,
+		isApproved(data),
 	);
 	const [closed, pulls, cited] = await Promise.all([
 		tick.closed(),

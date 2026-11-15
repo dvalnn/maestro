@@ -322,6 +322,13 @@ test("settle takes the planner's revision over its first plan, asking the owner 
 	expect(triage.spec).toEqual({ touches: ready.touches, ...revised.spec });
 });
 
+test("settle carries a kept spec, but not one it asks the owner about", () => {
+	expect(settle(planned({ ...ready, kept: true })).triage.kept).toBe(true);
+	const asked = settle(planned({ ...ready, kept: true, touches: [] })).triage;
+	expect(asked.verdict).toBe("needs-info");
+	expect(asked.kept).toBeUndefined();
+});
+
 test("settle keeps the first plan as it is when the planner revised nothing", () => {
 	const { triage } = settle(planned(ready, findings));
 	expect(triage).toMatchObject({ verdict: "ready-for-agent", questions: [] });
