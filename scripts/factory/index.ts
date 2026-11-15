@@ -10,6 +10,7 @@ import {
 	isSlice,
 	isStackReview,
 	isTriage,
+	masterclassTour,
 	startSlice,
 	startStackReview,
 	startTriage,
@@ -103,9 +104,9 @@ const LOCK_NB = 4;
 /** Linux's EWOULDBLOCK, which is EAGAIN. */
 const EWOULDBLOCK = 11;
 function requireSlug(milestone: string): void {
-	if (isTourSlug(milestone)) return;
+	if (isTourSlug(masterclassTour(milestone))) return;
 	throw new Error(
-		`${MILESTONE_KEY} or --milestone takes a slug of at most ${TOUR_MAX_LENGTH} characters, not '${milestone}'\nWrite it as lower-case words joined by hyphens, such as factory-self-build: a tour is <milestone>.i<issue>`,
+		`${MILESTONE_KEY} or --milestone takes a slug of at most ${TOUR_MAX_LENGTH - masterclassTour("").length} characters, not '${milestone}'\nWrite it as lower-case words joined by hyphens, such as factory-self-build: a tour is <milestone>.i<issue>`,
 	);
 }
 export const MILESTONE_KEY = "MAESTRO_TM_MILESTONE";

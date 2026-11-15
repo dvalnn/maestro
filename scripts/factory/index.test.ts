@@ -2860,11 +2860,13 @@ process.exit(2);
 		return { run, calls, lookedUp, said };
 	}
 
-	test("the tick and --tour accept the same tour slugs", async () => {
+	test("the tick and --tour agree on each milestone's masterclass tour", async () => {
 		const slugs: [string, boolean][] = [
 			["release-2.build-3", true],
 			["0", true],
-			["a".repeat(64), true],
+			["a".repeat(52), true],
+			["a".repeat(53), false],
+			["a".repeat(64), false],
 			["", false],
 			[".release", false],
 			["release..build", false],
@@ -2890,7 +2892,7 @@ process.exit(2);
 					join(import.meta.dir, "../../packages/cli/src/maestro.ts"),
 					"ls",
 					"--tour",
-					slug,
+					`${slug}.masterclass`,
 					"--json",
 				],
 				{
@@ -2926,8 +2928,22 @@ process.exit(2);
 			expect(error).toBeInstanceOf(Error);
 			expect((error as Error).message).toContain("MAESTRO_TM_MILESTONE");
 			expect((error as Error).message).toContain("--milestone");
+			expect((error as Error).message).toContain("52");
 			expect(t.lookedUp).toEqual([]);
 			expect(existsSync(t.calls)).toBe(false);
+		}
+	});
+
+	test("refuses an overlength milestone before looking it up or calling maestro", async () => {
+		for (const milestone of ["a".repeat(53), "a".repeat(64), "a".repeat(80)]) {
+			const t = boundaryTick(milestone, []);
+			const error = await t.run().catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(Error);
+			expect(t.lookedUp).toEqual([]);
+			expect(existsSync(t.calls)).toBe(false);
+			expect((error as Error).message).toContain("52");
+			expect((error as Error).message).toContain("MAESTRO_TM_MILESTONE");
+			expect((error as Error).message).toContain("--milestone");
 		}
 	});
 
@@ -2935,7 +2951,7 @@ process.exit(2);
 		for (const milestone of [
 			"factory-self-build",
 			"release-2.build-3",
-			"a".repeat(64),
+			"a".repeat(52),
 		]) {
 			const t = boundaryTick(milestone, [
 				{ id: "c1", status: "running", pack: "slice", composition: "slice" },

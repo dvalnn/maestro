@@ -99,6 +99,13 @@ const writeIr = (codeHash: string) => ({
 
 afterEach(cleanup);
 
+// Seam: the CLI's exit code for a tour supplied by an operator.
+test("--tour accepts a 64-character tour", async () => {
+	const w = await world();
+	const result = await w.call(["ls", "--tour", "a".repeat(64), "--json"]);
+	expect(result.code).toBe(0);
+});
+
 describe("compose and config", () => {
 	test("compose prints the summary, the plan with --plan, and one document with --json", async () => {
 		const w = await world();

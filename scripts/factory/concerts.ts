@@ -48,7 +48,8 @@ export const titleOf = ({ title }: Issue) =>
 	`factory: ${title.length > TITLE_CHARS ? `${title.slice(0, TITLE_CHARS - 1)}…` : title}`;
 
 /** The tour of `milestone`'s masterclasses. */
-const masterclassTour = (milestone: string) => `${milestone}.masterclass`;
+export const masterclassTour = (milestone: string) =>
+	`${milestone}.masterclass`;
 /** Whether `c` is a masterclass of `milestone`. */
 export const isMasterclass = (c: Concert, milestone: string) =>
 	is(MASTERCLASS)(c) && c.tour === masterclassTour(milestone);
