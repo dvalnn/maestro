@@ -205,6 +205,8 @@ export function fakeMaestro(
 	/** The `.maestro/` directory each concert id was recorded with, by id. */
 	const recorded: Record<string, string> = {};
 	const applied: string[] = [];
+	/** The concert ids the record no longer holds. */
+	const pruned = new Set<string>();
 	let refusal: string | undefined;
 	const stamped = concerts.some((c) => c.startedAt !== undefined);
 	const maestro: Maestro = {
@@ -237,6 +239,7 @@ export function fakeMaestro(
 		},
 		report: async (id) => reports[id] ?? NO_REPORT,
 		spend: async (id) => spendOf(id),
+		has: async (id) => !pruned.has(id),
 		tree: async (id) => recorded[id] ?? `/cache/trees/${TREE_COMMIT}/.maestro`,
 		apply: async (id, dir) => {
 			applied.push(`${id} in ${dir}`);
@@ -248,6 +251,7 @@ export function fakeMaestro(
 		logs,
 		cwds,
 		recorded,
+		pruned,
 		applied,
 		refuse: (r: string) => (refusal = r),
 	};

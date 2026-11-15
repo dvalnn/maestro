@@ -1095,6 +1095,10 @@ async function closedCited(tick: Tick, issue: number, text: string) {
 	return cited.filter((i): i is Issue => i?.closed !== undefined);
 }
 
+/** The triage concert `id` an encore continues; undefined when there is none or `maestro prune` deleted it, so triage afresh. */
+const continuable = async (tick: Tick, id: string | undefined) =>
+	id && (await tick.maestro.has(id)) ? id : undefined;
+
 /**
  * Starts triage of the first intake issue with no open dependency, pinned ones first, on its ask and the comments since
  * the last triage read that it is fed and the unread sightings, an encore of its last triage when it has one, respecced when that triage gave a spec rather than a
@@ -1143,11 +1147,12 @@ async function triage(tick: Tick, entries: Entry[]) {
 	// Rewritten before an encore too: the encore of a triage the tick started rereads this path from its params.
 	const sightings = join(tick.dir, `sightings-i${number}.md`);
 	await writeUnreadSightings(tick, sightings);
+	const encore = await continuable(tick, data.triage);
 	const id = await startTriage(tick, entry.issue, {
 		text,
 		backlog,
 		respec: last !== undefined && !isBrief(last),
-		...(data.triage ? { encore: data.triage } : { sightings }),
+		...(encore ? { encore } : { sightings }),
 	});
 	if (id === undefined) return false;
 	tick.say(`triaging #${number}: concert ${id}`);

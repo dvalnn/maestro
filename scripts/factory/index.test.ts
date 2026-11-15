@@ -509,6 +509,28 @@ describe("a tick", () => {
 		expect(t.starts[0]).toContain("v0.1.0.i9");
 	});
 
+	test("triages afresh, with the sightings, when the triage concert it would continue was pruned", async () => {
+		const retriaged = issue(8, "needs-triage", {
+			concert: "c0",
+			triage: "c0",
+			result: ready,
+		});
+		retriaged.comments.push({
+			id: 5,
+			body: "@forge-bot Q1: Ann",
+			author: OWNER,
+		});
+		const t = setup([retriaged]);
+		t.pruned.add("c0");
+		await t.run();
+		const args = t.starts[0] ?? [];
+		expect(started(args)).toMatch(/triage\.ts$/);
+		expect(argAfter(args, "--sightings")).toBe(
+			join(t.options.dir, "sightings-i8.md"),
+		);
+		expect(t.writes.some((w) => w.includes("halted"))).toBe(false);
+	});
+
 	test("starts triage of the oldest intake issue in the milestone, an encore respecced with the last spec when it was triaged before", async () => {
 		const outside = {
 			...issue(2, "needs-triage"),

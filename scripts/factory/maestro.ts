@@ -97,6 +97,8 @@ export type Maestro = {
 	report(id: string): Promise<Report>;
 	/** What concert `id` spent. */
 	spend(id: string): Promise<Spend>;
+	/** Whether maestro's record still holds concert `id`, which `maestro prune` may have deleted. */
+	has(id: string): Promise<boolean>;
 	/**
 	 * The `.maestro/` directory concert `id`'s tree holds its composition in, which an encore of it reopens.
 	 * @throws Error when maestro's record of it names none.
@@ -356,10 +358,16 @@ export function maestro(bin = "maestro"): Maestro {
 			};
 		},
 		spend: async (id) => spendOf(await json(bin, ["ls", id])),
+		has: async (id) => {
+			const doc = await json(bin, ["ls", id]);
+			return !(isJson(doc) && doc.ok === false);
+		},
 		tree: async (id) => {
 			const doc = await json(bin, ["ls", id]);
 			if (!isJson(doc) || typeof doc.moduleDir !== "string")
-				throw new Error(`maestro ls ${id}: its record names no tree`);
+				throw new Error(
+					`maestro ls ${id}: ${refusal(doc) || "its record names no tree"}`,
+				);
 			return doc.moduleDir;
 		},
 		apply: (id, dir) => run(bin, ["cs", "apply", id, "-C", dir]),

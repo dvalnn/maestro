@@ -24,6 +24,7 @@ case "$1 $2" in
 	"wait c4") echo '{"status":"rejected","artifacts":"${dir}","outputs":{"review":{"path":"review.md"},"upheld":[{"id":"F1","lens":"spec","where":"a.ts:3","issue":"A seam breaks","cites":"R1"}]}}' ;;
 	"wait c6") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"}}}' ;;
 	"wait c3"|"wait c5") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"}}}' ;;
+	"ls gone") echo '{"ok":false,"error":"no concert gone in the record"}' ;;
 	"ls d"*) echo '{}' ;;
 	"wait d"*) echo '{"status":"ok","outputs":{"delivered":'"\${2#d}"'}}' ;;
 	"wait c1") echo '{"id":"c1","status":"failed","reason":"boom"}'; exit 1 ;;
@@ -82,7 +83,10 @@ test("reads the test map of a concert whose tester node has the earlier id", asy
 
 test("reads the .maestro/ directory an encore of a concert reruns", async () => {
 	expect(await fake.tree("tree")).toBe("/cache/trees/abc/.maestro");
-	await expect(fake.tree("d1")).rejects.toThrow();
+	await expect(fake.tree("d1")).rejects.toThrow("names no tree");
+	await expect(fake.tree("gone")).rejects.toThrow(
+		"no concert gone in the record",
+	);
 });
 
 test("reads a concert's spend: its time, tokens by kind and fix rounds", async () => {
