@@ -6,7 +6,7 @@ import { rowOf } from "./bench";
 
 const BENCH = join(root, "scripts/bench.ts");
 const CLI = join(root, "packages/cli/src/maestro.ts");
-const TICKETS = [246, 334, 336, 360, 335];
+const TICKETS = [246, 334, 336, 360, 335, 138];
 const RISKY = 335;
 const ARM = "main-abc1234";
 const SETTLE_MS = 100;
@@ -33,7 +33,7 @@ const bench = async (env: Record<string, string>, ...args: string[]) => {
 };
 
 test(
-	"start replays the five tickets detached on stubs, and table prints a row for each",
+	"start replays the six tickets detached on stubs, and table prints a row for each",
 	async () => {
 		const bin = mkdtempSync(join(scratch, "bin-"));
 		writeFileSync(
@@ -101,7 +101,7 @@ test(
 		expect(table[0]).toMatch(
 			/^arm\s+ticket\s+status\s+fixes\s+converged\s+pinned\s+deferred\s+untestable\s+in\s+out/,
 		);
-		expect(table[1]).toMatch(/^main-abc1234\s+#246\s+ok/);
+		expect(table[1]).toMatch(/^main-abc1234\s+#138\s+ok/);
 	},
 	REPLAY_MS,
 );

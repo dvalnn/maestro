@@ -204,6 +204,11 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   `needs-info` verdict. A `direct` ticket goes straight to the build on a brief: the triager's `what`, only what the ask
   leaves open, one to three requirements and `subject`; a `plan` ticket goes on to the scouts, the planner and the spec
   checker. Either spec is gated by risk as any other.
+- **Bugs.** The triager never rules `direct` on an issue that reports broken behaviour: it plans one, with a diagnose
+  group first. That group's scout reproduces the bug and reports the command, its failing output, each file it wrote and
+  the cause as `file:line`, or marks the answer `unsure` and names what is missing. The planner then names the command
+  and the cause in the spec; for an `unsure` or unanswered diagnose group it asks the owner, so the ticket settles
+  `needs-info`.
 - **Spec check.** On findings, the planner revises its spec once in the same session; the revised spec is not checked
   again. A requirement off the EARS shape is a finding too, found by code beside the checker's; the planner can run the
   same rule as `check ears` before it finishes. A finding only the owner can rule on becomes a question, as does a check
@@ -212,9 +217,9 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   `needs-approval`. The owner answers by replying in a comment that mentions `@<login>`, such as
   `@forge-bot Q1: no, ok results only`, then moving the ticket to `needs-triage` (to `ready-for-agent` to continue a
   blocked build). A waiting spec in `needs-approval` is answered or redirected the same way. A reply is final: a
-  re-triage does not ask again what it settled, and rules `direct` when it leaves the change small and clear, unless the
-  last spec is not a brief: the tick then passes `--respec`, and a `direct` ruling goes to the planner to revise that
-  spec.
+  re-triage does not ask again what it settled, and rules `direct` when it leaves the change small and clear and the
+  issue reports no broken behaviour, unless the last spec is not a brief: the tick then passes `--respec`, and a
+  `direct` ruling goes to the planner to revise that spec.
 - **Feeding comments.** A triage, first or encore, considers each comment but the spec comment whose id is above `read`,
   in id order. It is fed as `--issue` the ask, then on an encore the spec under the heading
   `The spec the last triage proposed`, then only these:

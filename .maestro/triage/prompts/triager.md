@@ -29,10 +29,15 @@ Then give the `ruling` reply field in exactly this shape, leaving out `what`, `r
   - `duplicate` when a backlog issue already asks this one, with `duplicateOf`;
   - `needs-info` when you and the owner do not yet share what the change is for and what it must do, with those
     questions;
-  - `direct` when the change is a small diff: at most {narrow} files, a simple task whose intent is clear, so a builder
-    can do it and the owner review the PR, with `what`, `requirements` and `subject`. Risk does not bar it: code is as
-    fine as docs. Prefer it whenever scouting and a spec would cost more than the review;
+  - `direct` when the issue does not report broken behaviour, and the change is a small diff: at most {narrow} files, a
+    simple task whose intent is clear, so a builder can do it and the owner review the PR, with `what`, `requirements`
+    and `subject`. Risk does not bar it: code is as fine as docs. Prefer it whenever scouting and a spec would cost more
+    than the review;
   - `plan` otherwise.
+- A bug is an issue whose text reports broken behaviour: what happens against what should. Never rule `direct` on a bug,
+  whatever its size: only `plan` runs the scouts that reproduce it. Plan a bug with a diagnose group as `G1`, whose
+  `area` starts with "Diagnose:" and names the broken behaviour, and whose questions ask the scout to reproduce it with
+  a failing command and to find the cause.
 - `files`: the repo-relative paths you expect the change to create or edit.
 - `what`, for `direct`: the brief, a short paragraph by Plain English below. The builder reads the ask beside it, so the
   brief holds only what the ask leaves open: the module that owns the change, each answer the owner gave and each call
@@ -59,6 +64,7 @@ to the PR review the details of how.
 ## Re-triage
 
 The owner's replies are final. Do not ask again what a reply settled, nor open edge cases it did not raise. Rule
-`direct` when the replies make the change small and clear, and `plan` only when they open scope a spec must settle. When
-the spec the last triage proposed opens with `#### Context` rather than `#### Brief`, rule `plan`: the planner revises
-that spec, which a brief would drop.
+`direct` when the replies make the change small and clear and the issue does not report broken behaviour, and `plan`
+when they open scope a spec must settle or the issue reports broken behaviour. When the spec the last triage proposed
+opens with `#### Context` rather than `#### Brief`, rule `plan`: the planner revises that spec, which a brief would
+drop.

@@ -50,6 +50,36 @@ export const planning: Ruling = {
 	questions: [],
 };
 
+export const bugIssue =
+	"#2 greet.sh crashes without a name\n\nRunning `greet.sh` with no argument prints `unbound variable`; it should greet the world.";
+export const diagnosing: Ruling = {
+	verdict: "plan",
+	files: ["packages/cli/src/a.ts"],
+	groups: [
+		{
+			id: "G1",
+			area: "Diagnose: greet.sh crashes without a name",
+			questions: [
+				"Which command fails, with what output?",
+				"Which file:line holds the cause?",
+			],
+		},
+	],
+	questions: [],
+};
+export const grounded = {
+	question: "Which command fails, with what output?",
+	state: "grounded" as const,
+	answer:
+		"Ran `sh greet.sh`: `greet.sh: 3: name: unbound variable`. Cause at greet.sh:3.",
+};
+export const unsure = {
+	question: "Which file:line holds the cause?",
+	state: "unsure" as const,
+	missing: "the reproduction: greet.sh does not exist in the lane",
+	answer: "Could not run it.",
+};
+
 export const claiming: Question = {
 	ask: "Where should a loose file's config live?",
 	lead: "A loose file has params.",

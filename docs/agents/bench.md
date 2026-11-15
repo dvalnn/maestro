@@ -1,11 +1,11 @@
 # Replay bench
 
-For the owner and agents judging a change to a factory concert: which five tickets to replay, how, and what the table
+For the owner and agents judging a change to a factory concert: which six tickets to replay, how, and what the table
 shows. Judge a change by this table, not by anecdote.
 
 ## Tickets
 
-Five fixed tickets, each replayed fresh as a new concert on its original base and presets, under tour `bench`. Swap one
+Six fixed tickets, each replayed fresh as a new concert on its original base and presets, under tour `bench`. Swap one
 out only with a note in this doc naming the ticket and why.
 
 | Ticket | Risk   | Catalogue rows[^rows] |
@@ -15,6 +15,10 @@ out only with a note in this doc naming the ticket and why.
 | #336   | medium | 6, 9                  |
 | #360   | medium | 1, 12                 |
 | #335   | high   | 1, 5, 6               |
+| #138   | high   | 9                     |
+
+#138 is the closed `kind/bug` ticket, the bug route's replay: its fix is the tour manager's commit `07152fa`, so its
+slice concert exists to record. Its recorded files stay outside the repo.
 
 [^rows]:
     Rows of the factory failure catalogue: 1 test gaps found by mutation, 2 fix rounds that hit the cap unresolved, 3
@@ -71,7 +75,7 @@ bun scripts/bench.ts start <arm> <dir> [<ticket>...] [-- <perform flag>...]
 ```
 
 It starts the slice concerts detached, each on tour `bench.<arm>.i<ticket>` with its recorded presets and cut at its
-recorded base, and prints `#<ticket> <concert id>` for each. With no ticket it starts all five; naming tickets runs just
+recorded base, and prints `#<ticket> <concert id>` for each. With no ticket it starts all six; naming tickets runs just
 those again. The arm is one tour segment, so it holds no dot. Flags after `--` go to every `maestro perform`.
 
 ```sh

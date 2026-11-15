@@ -1,4 +1,4 @@
-// The replay bench (docs/agents/bench.md): starts one arm's five slice concerts, and prints every arm's results.
+// The replay bench (docs/agents/bench.md): starts one arm's six slice concerts, and prints every arm's results.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -20,7 +20,7 @@ const SLICE_FILE = join(import.meta.dir, "../.maestro/slice.ts");
 const WINDOW = 200;
 
 /** The bench's fixed tickets. */
-const TICKETS = [246, 334, 336, 360, 335];
+const TICKETS = [246, 334, 336, 360, 335, 138];
 
 type Row = {
 	arm: string;
@@ -206,7 +206,7 @@ function render(found: Row[]) {
 
 class UsageError extends Error {}
 
-/** The ticket numbers in `words`, all five when it is empty. */
+/** The ticket numbers in `words`, all six when it is empty. */
 function ticketsOf(words: string[]) {
 	const all = TICKETS;
 	if (!words.length) return all;

@@ -64,10 +64,13 @@ Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-ag
   only when each part lands and is reviewable on its own; an issue one change can build stays whole, however long. Their
   order is drawn from `dependsOn` for you.
 - `related`: the backlog issues it relates to.
-- `questions`: only in a revision.
+- `questions`: only in a revision, and for a diagnose group (its area starts with "Diagnose:") whose answer is `unsure`
+  or missing from the answers, where you ask at once. Ask what the scout could not establish: the reproduction, or the
+  cause once the bug reproduced.
 
-You do not ask the owner, outside a revision: the triager has. Settle what the ask, the replies and the code leave open
-with the simplest option that meets the ask, and record it as a decision the owner approves or redirects.
+You do not ask the owner, outside a revision or an unsure or unanswered diagnose group: the triager has. Settle what the
+ask, the replies and the code leave open with the simplest option that meets the ask, and record it as a decision the
+owner approves or redirects.
 
 ## Altitude
 
@@ -88,6 +91,12 @@ and the behaviour that must hold, not the fix.
   a second route around an existing seam or domain logic in a domain-free package, do not take it: `split`, the first
   part the refactor the feature needs; or, when that refactor is not clear, take the clean option and name its cost in a
   decision.
+
+## Diagnosing a bug
+
+- When a diagnose answer is `grounded`, the spec names the reproducing command and the cause with its `file:line`, and
+  states the wrong behaviour and the behaviour that must hold, not the fix.
+- When a reply of the owner already answers a diagnose question, spec from that reply and do not ask it again.
 
 ## Re-triage
 

@@ -15,9 +15,12 @@ import {
 import { answersOf } from "./triage";
 import {
 	askAlone,
+	bugIssue,
 	CONTRACT,
 	claiming,
+	diagnosing,
 	failed,
+	grounded,
 	groups,
 	medium,
 	planning,
@@ -25,6 +28,7 @@ import {
 	ready,
 	spec,
 	unspecified,
+	unsure,
 	yagniFinding,
 } from "./triage/fixtures";
 import { Checked, Proposal, Question, Ruling, Triage } from "./triage/schemas";
@@ -106,6 +110,10 @@ const triage = async (verb: string, ...flags: string[]) => [
 	`packs=[${await classics}]`,
 ];
 
+/** `args` with the value of `--issue` replaced by `issue`. */
+const withIssue = (args: string[], issue: string) =>
+	args.map((a, i) => (args[i - 1] === "--issue" ? issue : a));
+
 type Instance = {
 	node: string;
 	expansion: string;
@@ -119,6 +127,8 @@ async function performed(
 	proposal?: Proposal,
 	check: Checked = { findings: [] },
 	revision?: Proposal,
+	extra: Record<string, unknown> = {},
+	issue = "#1 Greet by name",
 ) {
 	const outputs = stubOutputs({
 		"triager/ruling.json": ruling,
@@ -128,12 +138,13 @@ async function performed(
 			"checker/check.json": check,
 		}),
 		...(revision && { "revise/plan.json": revision }),
+		...extra,
 	});
 	const data = mkdtempSync(join(scratch, "data-"));
 	const concert = JSON.parse(
 		await maestro(
 			[
-				...(await triage("perform", "--backlog", backlog)),
+				...withIssue(await triage("perform", "--backlog", backlog), issue),
 				"-c",
 				`target.repo=${targetRepo()}`,
 				"-c",
@@ -342,6 +353,79 @@ test.each([
 		expect(concert.outputs.triage.spec).toMatchObject(revisedSpec);
 	},
 );
+
+const bugProposal: Proposal = {
+	...ready,
+	spec: {
+		...spec,
+		what: "greet.sh crashes without a name; `sh greet.sh` fails at greet.sh:3.",
+	},
+};
+const askingCause = { ...ready, questions: [claiming] };
+
+test("a stub perform of a bug runs its diagnose group's scout and hands the answers to the planner", async () => {
+	const { concert, statuses, artifact } = await performed(
+		diagnosing,
+		bugProposal,
+		{ findings: [] },
+		undefined,
+		{ "scouts/scout/answers.json": [grounded] },
+		bugIssue,
+	);
+	expect(concert.status).toBe("ok");
+	expect(statuses("scouts/scout")).toEqual(["ok"]);
+	const answers = artifact("answers", "answers");
+	expect(answers).toContain("## G1: Diagnose: greet.sh crashes without a name");
+	expect(answers).toContain("unbound variable");
+	expect(concert.outputs.triage).toMatchObject({ verdict: "ready-for-agent" });
+});
+
+test.each([
+	[
+		"an unsure diagnose answer",
+		{ "scouts/scout/answers.json": [unsure] },
+		"the reproduction: greet.sh does not exist in the lane",
+	],
+	[
+		"a diagnose scout that failed",
+		{ "scouts/scout/answers.json": "not json" },
+		"Unanswered: the scout failed",
+	],
+])(
+	"a stub perform settles needs-info with the planner's question for %s",
+	async (_, extra, shown) => {
+		const { concert, artifact } = await performed(
+			diagnosing,
+			askingCause,
+			{ findings: [] },
+			undefined,
+			extra,
+			bugIssue,
+		);
+		expect(concert.status).toBe("ok");
+		expect(artifact("answers", "answers")).toContain(shown);
+		expect(concert.outputs.triage).toMatchObject({
+			verdict: "needs-info",
+			questions: [claiming],
+		});
+	},
+);
+
+test("a stub perform settles needs-info when the revision keeps the diagnose question", async () => {
+	const { concert, statuses } = await performed(
+		diagnosing,
+		ready,
+		{ findings: [failed] },
+		askingCause,
+		{ "scouts/scout/answers.json": [unsure] },
+		bugIssue,
+	);
+	expect(statuses("revise")).toEqual(["ok"]);
+	expect(concert.outputs.triage).toMatchObject({
+		verdict: "needs-info",
+		questions: [claiming],
+	});
+});
 
 /** The composed plan of the triage, with `--backlog`. */
 const composed = async () =>
