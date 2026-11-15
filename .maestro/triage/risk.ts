@@ -1,4 +1,4 @@
-import { basename, posix } from "node:path";
+import { posix } from "node:path";
 
 export const RISKS = ["low", "medium", "high"] as const;
 export type Risk = (typeof RISKS)[number];
@@ -35,19 +35,11 @@ const CONTRACT_DOCS = [
 	"docs/adr/",
 	"GLOSSARY.md",
 ];
-/** Paths besides Markdown that set a contract, read as `CONTRACT_DOCS` is. */
-const CONTRACT_PATHS = [
-	"packages/ir/",
-	"packages/sdk/",
-	".forgejo/",
-	"justfile",
-	"mise.toml",
-	".maestro/config.yaml",
-	".maestro/presets/",
-	"scripts/factory/transitions.ts",
-];
-/** File names that set a contract in any directory. */
-const MANIFESTS = ["package.json", "bun.lock"];
+/**
+ * Paths besides Markdown that set a contract, read as `CONTRACT_DOCS` is: the public API, and `mise.toml`, whose harness
+ * pins ship in a release. The factory's own tooling and the manifests are not: the owner reads them when merging.
+ */
+const CONTRACT_PATHS = ["packages/ir/", "packages/sdk/", "mise.toml"];
 /** The fewest paths besides docs and tests that make a change wide. */
 const WIDE = 8;
 /** The most paths of a narrow change: a low-risk one, or a direct ruling's. */
@@ -78,10 +70,9 @@ export function scopeOf(touches: string[]): {
 
 const setsContract = (path: string) =>
 	!TEST_FILE.test(path) &&
-	(MANIFESTS.includes(basename(path)) ||
-		(MARKDOWN.test(path) ? CONTRACT_DOCS : CONTRACT_PATHS).some((p) =>
-			p.endsWith("/") ? under(path, p) : path === p,
-		));
+	(MARKDOWN.test(path) ? CONTRACT_DOCS : CONTRACT_PATHS).some((p) =>
+		p.endsWith("/") ? under(path, p) : path === p,
+	);
 
 const isDocOrTest = (path: string) =>
 	under(path, "docs/") || MARKDOWN.test(path) || TEST_FILE.test(path);

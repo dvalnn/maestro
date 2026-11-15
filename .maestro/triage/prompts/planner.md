@@ -31,8 +31,9 @@ Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-ag
 - `touches`: every repo-relative path the change creates or edits, whatever the verdict; empty when you cannot tell.
 - `contract`: the one-way door the change sets or changes, named in a few words, or "" when it sets none. A one-way door
   cannot change after release without breaking a user: an IR field, a public CLI flag or exit code, a key of the user's
-  config, an id or path format users type, or the pack manifest. Internal tooling, an environment variable only the tour
-  manager reads and a new standalone composition are not.
+  config, an id or path format users type, or the pack manifest. This repo's own tooling is not, since no user reaches
+  it: a param, port or schema of a `.maestro/` composition, the triage plan or spec, the factory's labels and scripts,
+  the justfile, CI, an environment variable only the tour manager reads, and a new standalone composition.
 - `spec`, for `ready-for-agent`: the doc the owner aligns on and approves, by Altitude below: the need, how the system
   must behave and the architecture it takes. Size each part to the change: a small one gets a sentence or two of
   context, a note per design call and a line of consequences. Its prose, figure notes included, stays within about 3,000

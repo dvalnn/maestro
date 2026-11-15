@@ -59,11 +59,16 @@ const risks: [string, string[], string, string, string[]][] = [
 		["touches packages/ir, which set a contract"],
 	],
 	[
-		"a manifest",
-		["packs/classics/package.json"],
+		"a manifest and the factory's tooling",
+		[
+			"packs/classics/package.json",
+			"bun.lock",
+			"justfile",
+			".maestro/config.yaml",
+		],
 		"",
-		"high",
-		["touches packs/classics/package.json, which set a contract"],
+		"medium",
+		[],
 	],
 	[
 		"a test under a contract directory",
