@@ -1,10 +1,8 @@
 import { toMarkdown } from "@maestro/classics";
 import { check, fresh } from "@maestro/host-repo-sdk";
 import { code, Markdown, type Ref } from "@maestro/sdk";
-import GROUNDS from "./slice/prompts/_grounds.md" with { type: "text" };
-import TEST_GROUNDS from "./slice/prompts/_test-grounds.md" with {
-	type: "text",
-};
+import GROUNDS from "./prompts/_grounds.md" with { type: "text" };
+import TEST_GROUNDS from "./prompts/_test-grounds.md" with { type: "text" };
 
 /** A seat's task: `parts`, each a prompt file or fragment, a blank line apart. */
 export const task = (...parts: string[]) => parts.join("\n\n");

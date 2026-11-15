@@ -37,7 +37,7 @@ Give your `masterclass` field in exactly this shape:
 {
   "proposals": [
     {
-      "target": ".maestro/slice/prompts/_grounds.md",
+      "target": ".maestro/prompts/_grounds.md",
       "title": "one line",
       "body": "the proposed wording or change, and why",
       "kind": "enhancement",

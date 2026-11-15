@@ -12,10 +12,11 @@ ci: check
       exit 1
     fi
 
-# apply Biome's safe lint fixes and import sorting without formatting, then check the domain words
+# apply Biome's safe lint fixes and import sorting without formatting, then check the domain words and prompt imports
 lint:
     bunx biome check --write --formatter-enabled=false .
     bun scripts/domain-words.ts
+    bun scripts/prompt-imports.ts
 
 # typecheck
 types:

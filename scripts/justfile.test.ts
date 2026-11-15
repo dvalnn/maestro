@@ -25,7 +25,7 @@ function put(dir: string, path: string, text: string) {
 	writeFileSync(join(dir, path), text);
 }
 
-/** A checkout using the project's recipes, lint configuration and domain-word command, with real installed tools. */
+/** A checkout using the project's recipes, lint configuration, domain-word and prompt-import commands, with real installed tools. */
 function checkout(files: Record<string, string>) {
 	const dir = mkdtempSync(join(tmpdir(), "justfile-"));
 	checkouts.push(dir);
@@ -35,6 +35,7 @@ function checkout(files: Record<string, string>) {
 		"package.json",
 		"lint/cp-links.grit",
 		"scripts/domain-words.ts",
+		"scripts/prompt-imports.ts",
 	]) {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
 		copyFileSync(join(root, path), join(dir, path));
@@ -178,6 +179,25 @@ test("check stops at a lint error after formatting, before types and tests", asy
 	);
 	expect(`${result.out}\n${result.err}`.split(/\s+/)).not.toContain("TS2322:");
 	expect(existsSync(join(dir, "tested"))).toBe(false);
+});
+
+test("check refuses a shared module's composition-owned prompt import and names both files", async () => {
+	const dir = checkout({
+		"sample.ts": "export const value = 1;\n",
+		".maestro/shared.ts":
+			'import grounds from "./slice/prompts/_grounds.md" with { type: "text" };\nexport { grounds };\n',
+		".maestro/slice.ts": "export const slice = {};\n",
+		".maestro/slice/prompts/_grounds.md": "Fixture grounds.\n",
+		"sample.test.ts":
+			'import { test } from "bun:test";\n\ntest("passes", () => {});\n',
+		".maestro/sample.test.ts":
+			'import { test } from "bun:test";\n\ntest("passes", () => {});\n',
+	});
+	const result = await run(dir, "just", "check");
+	expect(result.code).not.toBe(0);
+	const paths = `${result.out}\n${result.err}`.split(/[\s`"'():,]+/);
+	expect(paths).toContain(".maestro/shared.ts");
+	expect(paths).toContain(".maestro/slice/prompts/_grounds.md");
 });
 
 test("check stops at a formatter failure, before lint fixes", async () => {

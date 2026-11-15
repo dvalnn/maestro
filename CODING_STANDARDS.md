@@ -58,8 +58,12 @@ under [Prompts](packages/host-repo/README.md#prompts). Review each home against 
 | 1 Frame       | host `frame.ts`                                        | a task, a rule of one composition       |
 | 2 Profile     | `profiles/<seat>/instructions.md`                      | an attachment name, an output shape     |
 | 3 Area        | a preset's `attachments`, e.g. `.maestro/areas/<a>.md` | the call's task                         |
-| 4 Task        | `prompts/<call>.md` and its `_` fragments              | who the agent is, what the frame states |
+| 4 Task        | `prompts/<call>.md` and its `_` fragments[^fragments]  | who the agent is, what the frame states |
 | 5 Attachments | data a code node writes for the call                   | instructions                            |
+
+[^fragments]:
+    Where each fragment lives and who may import it: [Prompts](packages/host-repo/README.md#prompts). `just lint`
+    refuses any other prompt import.
 
 Layout:
 

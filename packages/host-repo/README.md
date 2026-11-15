@@ -480,6 +480,25 @@ A fragment shared by several tasks starts with `_` (`_gate.md`); where a call pi
 plus a plain suffix (`reviewer-again.md`). A JSON shape example is a fenced `json` block with its field rules as prose
 under it, so a formatter does not reflow it.
 
+Prompt text lives where its scope says:
+
+| Scope                    | True of                            | Home                                                       |
+| ------------------------ | ---------------------------------- | ---------------------------------------------------------- |
+| Profile                  | the agent, in every call           | `profiles/<name>/instructions.md`                          |
+| Area                     | one part of the target or one run  | a preset's profile `attachments`                           |
+| Task                     | one call                           | `<label>.md` in its owner's prompts directory              |
+| A composition's fragment | several tasks of one composition   | `_<name>.md` in `.maestro/<id>/prompts/` or `src/prompts/` |
+| A shared fragment        | tasks of more than one composition | `_<name>.md` in `.maestro/prompts/`                        |
+
+A composition imports prompts only from its own prompts directory or the shared `.maestro/prompts/`; a pack only from
+its `src/prompts/`. A composition owns `.maestro/<id>.ts`, its tests and everything under `.maestro/<id>/`. A module
+outside every composition, such as a shared helper, imports only from `.maestro/prompts/`. When a second composition
+needs a composition's fragment, the fragment moves to `.maestro/prompts/`.
+
+A review seat's task is one job, the one concern it reviews, and a numbered checklist it rules on item by item: met, or
+broken with its `file:line`. Who the seat is stays in its profile, and no guidance reaches it as an attachment
+([ADR 0018](../../docs/adr/0018-the-graph-gives-guidance-and-the-agent-never-picks-it.md)).
+
 ## Configuration
 
 The host owns four namespaces, and a code node sees its target as `env.repo`.
