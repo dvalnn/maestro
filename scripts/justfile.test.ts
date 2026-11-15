@@ -213,7 +213,7 @@ test("check stops at a formatter failure, before lint fixes", async () => {
 	);
 });
 
-test("check stops at a failing first test suite, before the .maestro suite", async () => {
+test("check runs the .maestro suite even when the first suite fails", async () => {
 	const dir = checkout({
 		"sample.ts": "export const value = 1;\n",
 		"sample.md": "# Heading\n",
@@ -224,7 +224,7 @@ test("check stops at a failing first test suite, before the .maestro suite", asy
 	});
 	const result = await run(dir, "just", "check");
 	expect(result.code).not.toBe(0);
-	expect(existsSync(join(dir, "hidden-tested"))).toBe(false);
+	expect(existsSync(join(dir, "hidden-tested"))).toBe(true);
 });
 
 test("the check-only format command is not offered", async () => {

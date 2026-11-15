@@ -24,6 +24,8 @@ export async function world() {
 	const env = {
 		XDG_DATA_HOME: join(root, "data"),
 		XDG_CONFIG_HOME: join(root, "config"),
+		// the caller's FORCE_COLOR must not color a spawned child's piped output
+		FORCE_COLOR: "",
 	};
 	const call = async (
 		args: string[],
