@@ -209,6 +209,11 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   the cause as `file:line`, or marks the answer `unsure` and names what is missing. The planner then names the command
   and the cause in the spec; for an `unsure` or unanswered diagnose group it asks the owner, so the ticket settles
   `needs-info`.
+- **Sightings.** Before every triage start the tick rewrites `sightings-i<n>.md`, one bullet per distinct sighting, as
+  `path · cites · text`, of the runs the next masterclass reads as unread (Rules, Masterclass), or a line saying there
+  are none. A fresh triage takes it as `--sightings` and hands it to the planner alone, which reports what it sees past
+  its change under its report's `sightings`, for the next masterclass. An encore takes no `--sightings`: it rereads the
+  path its first triage recorded, so a triage started without one runs on without it. A triage moves no watermark.
 - **Spec check.** On findings, the planner revises its spec once in the same session; the revised spec is not checked
   again. A requirement off the EARS shape is a finding too, found by code beside the checker's; the planner can run the
   same rule as `check ears` before it finishes. A finding only the owner can rule on becomes a question, as does a check

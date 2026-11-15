@@ -124,18 +124,16 @@ async function startConcert(tick: Tick, run: Run) {
 }
 
 /**
- * Starts the triage of `issue` on `main`, continuing `encore` when given, over its `text` and `backlog` file, and
- * returns its id.
+ * Starts the triage of `issue` on `main` over its `text` and `backlog` file: a fresh one with the `sightings` file, or
+ * an encore of `encore`, which rereads the sightings file its recorded params name, if any.
  */
 export const startTriage = (
 	tick: Tick,
 	issue: Issue,
-	input: {
-		text: string;
-		backlog: string;
-		respec: boolean;
-		encore?: string;
-	},
+	input: { text: string; backlog: string; respec: boolean } & (
+		| { sightings: string; encore?: undefined }
+		| { encore: string }
+	),
 ) =>
 	startConcert(tick, {
 		kind: TRIAGE,
@@ -147,6 +145,7 @@ export const startTriage = (
 			input.text,
 			"--backlog",
 			input.backlog,
+			...(input.encore === undefined ? ["--sightings", input.sightings] : []),
 			input.respec ? "--respec" : "--no-respec",
 		],
 		presets: [TRIAGE_PRESET],

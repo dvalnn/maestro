@@ -29,6 +29,7 @@ import {
 	masterclass,
 	overdueMasterclass,
 	routeMasterclass,
+	writeUnreadSightings,
 } from "./masterclass";
 import {
 	type Approval,
@@ -1045,7 +1046,7 @@ async function closedCited(tick: Tick, issue: number, text: string) {
 
 /**
  * Starts triage of the first intake issue with no open dependency, pinned ones first, on its ask and the comments since
- * the last triage read that it is fed, an encore of its last triage when it has one, respecced when that triage gave a spec rather than a
+ * the last triage read that it is fed and the unread sightings, an encore of its last triage when it has one, respecced when that triage gave a spec rather than a
  * brief, then records the newest comment it considered; halts on a refusal. A re-triage with nothing new to feed asks
  * for a reply instead. True only when it started nothing, so a masterclass may follow.
  */
@@ -1085,11 +1086,14 @@ async function triage(tick: Tick, entries: Entry[]) {
 		backlog,
 		snapshot(tick.milestone, number, issues, closed, pulls, cited),
 	);
+	// Rewritten before an encore too: the encore of a triage the tick started rereads this path from its params.
+	const sightings = join(tick.dir, `sightings-i${number}.md`);
+	await writeUnreadSightings(tick, sightings);
 	const id = await startTriage(tick, entry.issue, {
 		text,
 		backlog,
 		respec: last !== undefined && !isBrief(last),
-		encore: data.triage,
+		...(data.triage ? { encore: data.triage } : { sightings }),
 	});
 	if (id === undefined) return false;
 	tick.say(`triaging #${number}: concert ${id}`);

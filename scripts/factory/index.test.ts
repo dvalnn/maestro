@@ -878,6 +878,224 @@ const slicesOf = (t: { starts: string[][] }) =>
 const STALE =
 	"The spec predates #8's, which also touches `greet.sh`. Re-triaging against current main.";
 
+// Seams: tick's external maestro start arguments and the Markdown files those arguments name.
+// Reports and concert listings enter through the external maestro port; the watermark is never read directly.
+describe("sightings at triage", () => {
+	const sighting = {
+		path: "packages/host-repo/src/report.ts",
+		cites: "Reports retain sightings",
+		text: "The reader drops sightings.",
+	};
+	const neighbour = {
+		path: "unrelated.sh",
+		cites: "Errors go to stderr",
+		text: "Errors go to stdout.",
+	};
+	const bullets = (text: string) =>
+		text
+			.split("\n")
+			.filter((line) => line.startsWith("- "))
+			.sort();
+	const sightingsPath = (args: string[]) => {
+		expect(args).toContain("--sightings");
+		return argAfter(args, "--sightings");
+	};
+
+	test("a fresh triage receives distinct unread sightings from factory and hand slices, not read reports or obstacles", async () => {
+		const concerts = [
+			...Array.from({ length: 21 }, (_, i) => ({
+				...sliceConcert(`noise${i}`, 100 + i),
+				pack: "other",
+				composition: "other",
+			})),
+			{ ...triageConcert("r2", 2), startedAt: 200 },
+			{ ...sliceConcert("r1", 1, "rejected"), startedAt: 150 },
+			{ ...masterclassConcert("m0"), startedAt: 100 },
+			sliceConcert("old", 3),
+			{
+				...sliceConcert("release-new", 4),
+				tour: "release.rc1",
+				startedAt: 160,
+			},
+			{ ...sliceConcert("trial-new", 5), tour: "trial", startedAt: 170 },
+			{ ...sliceConcert("hand-old", 6), tour: "trial", startedAt: 100 },
+			{ ...triageConcert("hand-triage", 6), tour: "trial", startedAt: 180 },
+		];
+		const t = setup([issue(7, "needs-triage")], concerts, {}, undefined, {
+			reports: {
+				r1: {
+					...NO_REPORT,
+					sightings: [sighting, sighting],
+					obstacles: ["No rg"],
+					lessons: ["Name the unit"],
+				},
+				r2: {
+					...NO_REPORT,
+					sightings: [
+						sighting,
+						{ path: "z.ts", cites: "R3", text: "Drops the triage report." },
+					],
+				},
+				"release-new": { ...NO_REPORT, sightings: [neighbour] },
+				"trial-new": {
+					...NO_REPORT,
+					sightings: [
+						{ path: "trial.sh", cites: "R2", text: "Drops the trial result." },
+					],
+				},
+				old: {
+					...NO_REPORT,
+					sightings: [{ ...sighting, text: "Already read" }],
+				},
+				"hand-old": {
+					...NO_REPORT,
+					sightings: [{ ...sighting, text: "At the watermark" }],
+				},
+				"hand-triage": {
+					...NO_REPORT,
+					sightings: [{ ...sighting, text: "Not a hand slice" }],
+				},
+			},
+		});
+		await t.run();
+		expect(t.starts).toHaveLength(1);
+		const args = t.starts[0] ?? [];
+		expect(started(args)).toBe("perform triage.ts");
+		const text = readFileSync(sightingsPath(args), "utf8");
+		expect(bullets(text)).toEqual([
+			"- packages/host-repo/src/report.ts · Reports retain sightings · The reader drops sightings.",
+			"- trial.sh · R2 · Drops the trial result.",
+			"- unrelated.sh · Errors go to stderr · Errors go to stdout.",
+			"- z.ts · R3 · Drops the triage report.",
+		]);
+	});
+
+	test("a fresh triage receives a nonempty sightings file with no sighting bullets when unread reports have none", async () => {
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[sliceConcert("r1", 1)],
+			{},
+			undefined,
+			{
+				reports: {
+					r1: {
+						...NO_REPORT,
+						obstacles: ["No rg"],
+						lessons: ["Name the unit"],
+					},
+				},
+			},
+		);
+		await t.run();
+		const text = readFileSync(sightingsPath(t.starts[0] ?? []), "utf8");
+		expect(text.trim().length).toBeGreaterThan(0);
+		expect(bullets(text)).toEqual([]);
+		// A heading alone is not an empty-report notice; its prose is reviewed, not matched by wording.
+		expect(
+			text.split("\n").filter((line) => line.trim() && !line.startsWith("#"))
+				.length,
+		).toBeGreaterThan(0);
+	});
+
+	test("a fresh triage of a milestone with no concerts receives a sightings file with no sighting bullets", async () => {
+		const t = setup([issue(7, "needs-triage")]);
+		await t.run();
+		const text = readFileSync(sightingsPath(t.starts[0] ?? []), "utf8");
+		expect(text.trim().length).toBeGreaterThan(0);
+		expect(bullets(text)).toEqual([]);
+	});
+
+	test("a fresh triage keeps a multiline sighting as one bullet and skips a running hand slice", async () => {
+		const t = setup(
+			[issue(7, "needs-triage")],
+			[
+				sliceConcert("r1", 1),
+				{ ...sliceConcert("trial-running", 5, "running"), tour: "trial" },
+			],
+			{},
+			undefined,
+			{
+				reports: {
+					r1: {
+						...NO_REPORT,
+						sightings: [
+							{ path: "a.ts", cites: "R1", text: "Drops\nthe name." },
+						],
+					},
+					"trial-running": { ...NO_REPORT, sightings: [neighbour] },
+				},
+			},
+		);
+		await t.run();
+		const text = readFileSync(sightingsPath(t.starts[0] ?? []), "utf8");
+		expect(text).toContain("- a.ts · R1 · Drops\n  the name.");
+		expect(bullets(text)).toEqual(["- a.ts · R1 · Drops"]);
+	});
+
+	test("the tick refreshes the first triage's per-issue sightings file before starting its encore without the flag", async () => {
+		const intake = issue(7, "needs-triage");
+		const reports: Record<string, Report> = {
+			r1: { ...NO_REPORT, sightings: [sighting] },
+		};
+		const t = setup([intake], [sliceConcert("r1", 1)], {}, undefined, {
+			reports,
+		});
+		await t.run();
+		const path = sightingsPath(t.starts[0] ?? []);
+		expect(bullets(readFileSync(path, "utf8"))).toEqual([
+			"- packages/host-repo/src/report.ts · Reports retain sightings · The reader drops sightings.",
+		]);
+		intake.comments.push({ id: 900, body: "@forge-bot go on", author: OWNER });
+		await t.forge.comment(
+			7,
+			commentOf(
+				{ concert: "started", triage: "started", result: ready },
+				"needs-triage",
+				BOT,
+			),
+		);
+		reports.r1 = { ...NO_REPORT, sightings: [neighbour] };
+		const start = t.maestro.start;
+		let atStart: string[] = [];
+		t.maestro.start = async (args, log) => {
+			atStart = bullets(readFileSync(path, "utf8"));
+			return start(args, log);
+		};
+		await t.run();
+		expect(t.starts).toHaveLength(2);
+		expect(started(t.starts[1])).toBe("encore started");
+		expect(t.starts[1]).not.toContain("--sightings");
+		expect(atStart).toEqual([
+			"- unrelated.sh · Errors go to stderr · Errors go to stdout.",
+		]);
+	});
+
+	test("sightings read by triage remain fresh in the next masterclass's reports", async () => {
+		const concerts = Array.from({ length: 10 }, (_, i) =>
+			sliceConcert(`r${10 - i}`, 10 - i),
+		);
+		const t = setup([issue(70, "needs-triage")], concerts, {}, undefined, {
+			reports: { r1: { ...NO_REPORT, sightings: [sighting] } },
+		});
+		await t.run();
+		expect(
+			bullets(readFileSync(sightingsPath(t.starts[0] ?? []), "utf8")),
+		).toEqual([
+			"- packages/host-repo/src/report.ts · Reports retain sightings · The reader drops sightings.",
+		]);
+		await t.forge.edit(70, { closed: true });
+		await t.run();
+		expect(started(t.starts[1])).toBe("perform masterclass.ts");
+		const text = readFileSync(argAfter(t.starts[1] ?? [], "--reports"), "utf8");
+		expect(text.split("\n").filter((line) => line.startsWith("## "))).toEqual([
+			"## r1 · v0.1.0.i1",
+		]);
+		expect(bullets(text)).toEqual([
+			"- packages/host-repo/src/report.ts · Reports retain sightings · The reader drops sightings.",
+		]);
+	});
+});
+
 describe("a stale spec", () => {
 	test("a closed issue with malformed stored triage is not a stale-spec approval", async () => {
 		const closed = written(specced(8, "in-review"), 200);

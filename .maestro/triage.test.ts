@@ -427,6 +427,105 @@ test("a stub perform settles needs-info when the revision keeps the diagnose que
 	});
 });
 
+// Seam: triage's CLI and the attachments exposed by its composed plan.
+test("triage accepts --sightings and attaches the file to the planner only", async () => {
+	const sightings = join(
+		mkdtempSync(join(scratch, "sightings-")),
+		"sightings.md",
+	);
+	writeFileSync(sightings, "- a.ts · R1 · Drops a name.\n");
+	const result = await call(
+		await triage("compose", "--backlog", backlog, "--sightings", sightings),
+	);
+	expect(result.code).toBe(0);
+	const { plan } = JSON.parse(result.out);
+	const nodes = plan.ir.nodes as TriageNode[];
+	const planner = nodes.find((node) => node.id === "planner");
+	expect(planner?.config.attachments?.sightings?.type).toBe("core.markdown");
+	for (const id of ["triager", "checker"])
+		expect(
+			nodes.find((node) => node.id === id)?.config.attachments?.sightings,
+		).toBeUndefined();
+});
+
+test("an encore rereads the sightings file recorded by its first triage", async () => {
+	const dir = mkdtempSync(join(scratch, "encore-sightings-"));
+	const sightings = join(dir, "sightings.md");
+	const data = join(dir, "data");
+	writeFileSync(sightings, "- a.ts · R1 · Drops a name.\n");
+	const env = {
+		MAESTRO_STUB_OUTPUTS: stubOutputs({
+			"triager/ruling.json": planning,
+			"triager/backlog.md": "- #7 Greet: it greets too\n",
+			"planner/plan.json": ready,
+			"checker/check.json": { findings: [] },
+		}),
+	};
+	const first = await call(
+		[
+			...(await triage(
+				"perform",
+				"--backlog",
+				backlog,
+				"--sightings",
+				sightings,
+			)),
+			"-c",
+			`target.repo=${targetRepo()}`,
+			"-c",
+			'target.prepare="true"',
+			...stubbed(["triager", "classics/scout", "classics/planner", "checker"]),
+		],
+		data,
+		env,
+	);
+	expect(first.code).toBe(0);
+	const firstConcert = JSON.parse(first.out);
+	expect(firstConcert.status).toBe("ok");
+	const attached = async (id: string) => {
+		const listed = await call(["ls", id, "--json"], data);
+		expect(listed.code).toBe(0);
+		const {
+			instances,
+		}: {
+			instances: (Instance & { inputs?: Record<string, { path?: string }> })[];
+		} = JSON.parse(listed.out);
+		const path = instances.find((instance) => instance.node === "planner")
+			?.inputs?.sightings?.path;
+		expect(path).toBeDefined();
+		return readFileSync(
+			join(data, "maestro/concerts", id, "artifacts", path ?? ""),
+			"utf8",
+		);
+	};
+	expect(await attached(firstConcert.id)).toBe("- a.ts · R1 · Drops a name.\n");
+	writeFileSync(sightings, "- b.ts · R2 · Drops the result.\n");
+	const encore = await call(
+		[
+			"encore",
+			firstConcert.id,
+			"--issue",
+			"#1 Greet by name\n\nKeep the greeting plain.",
+			"--json",
+		],
+		data,
+		env,
+	);
+	expect(encore.code).toBe(0);
+	const nextConcert = JSON.parse(encore.out);
+	expect(nextConcert.status).toBe("ok");
+	expect(await attached(nextConcert.id)).toBe(
+		"- b.ts · R2 · Drops the result.\n",
+	);
+});
+
+test("triage without --sightings keeps the planner's issue, answers and backlog attachments only", async () => {
+	const { node } = await handoffs();
+	expect(Object.keys(node("planner")?.config.attachments ?? {}).sort()).toEqual(
+		["answers", "backlog", "issue"],
+	);
+});
+
 /** The composed plan of the triage, with `--backlog`. */
 const composed = async () =>
 	JSON.parse(await maestro(await triage("compose", "--backlog", backlog)));

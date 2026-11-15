@@ -65,7 +65,12 @@ const presets = (...kinds: string[]) =>
 	[...kinds, "stub", "xscout"].flatMap((p) => ["--preset", p]);
 const pinned = (cut: string) => ["-c", `target.base=${cut}`];
 const NAMED = ["--tour", "v0.1.0.i7", "--title", "factory: Greet by name"];
-const TRIAGE_INPUT = { text: "#7", backlog: "/run/backlog.md", respec: true };
+const TRIAGE_INPUT = {
+	text: "#7",
+	backlog: "/run/backlog.md",
+	sightings: "/run/sightings-i7.md",
+	respec: true,
+};
 const triageFlags = (respec: string) => [
 	"--issue",
 	"#7",
@@ -212,7 +217,14 @@ describe("starting a concert", () => {
 		const t = setup();
 		expect(await start(t)).toBe("started");
 		expect(t.exported).toEqual([exported]);
-		expect(t.starts).toEqual([argv]);
+		const starts = t.starts.map((args) => {
+			if (!argv[1]?.endsWith("triage.ts")) return args;
+			const at = args.indexOf("--sightings");
+			expect(at).toBeGreaterThanOrEqual(0);
+			expect(args[at + 1]).toBe("/run/sightings-i7.md");
+			return [...args.slice(0, at), ...args.slice(at + 2)];
+		});
+		expect(starts).toEqual([argv]);
 	});
 
 	test("adds the area preset between the risk's and the tick's, only when the repo has its file", async () => {
@@ -248,6 +260,27 @@ describe("starting a concert", () => {
 			pinned(MAIN),
 			pinned("rev1"),
 		]);
+	});
+
+	// Seam: startTriage's arguments to the external maestro, not the composition's private params.
+	test("a triage encore leaves sightings to its recorded params", async () => {
+		for (const input of [
+			{ ...TRIAGE_INPUT, encore: "c0" },
+			{ text: "#7", backlog: "/run/backlog.md", respec: true, encore: "c0" },
+		]) {
+			const t = setup();
+			await startTriage(t.tick, issue, input);
+			expect(t.starts).toEqual([
+				[
+					"encore",
+					"c0",
+					...triageFlags("--respec"),
+					...presets("triage"),
+					...NAMED,
+					...pinned(MAIN),
+				],
+			]);
+		}
 	});
 
 	test("compositionsAt moves only the commit the composition is exported at", async () => {

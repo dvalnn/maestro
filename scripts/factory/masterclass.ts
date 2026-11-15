@@ -115,8 +115,18 @@ function handRuns(
  * The factory runs among `concerts`, newest first, that no masterclass has read: those newer than the newest ok
  * masterclass, the watermark, or all of them without one (factory.md, Rules, Masterclass). The watermark is read from
  * the record, not kept by the tick: pruning any other concert leaves it intact, and pruning it makes the older
- * masterclass, or none, the watermark, so its lessons are read again. Undefined when no masterclass is due: the newest
- * concert is a masterclass, or fewer than `due` runs are past the watermark.
+ * masterclass, or none, the watermark, so its lessons are read again.
+ */
+function unreadRuns(concerts: readonly Concert[], milestone: string) {
+	const mark = markOf(concerts, milestone);
+	return (mark < 0 ? concerts : concerts.slice(0, mark)).filter((c) =>
+		isFactoryRun(c, milestone),
+	);
+}
+
+/**
+ * The unread factory runs among `concerts`, or undefined when no masterclass is due: the newest concert is a
+ * masterclass, or fewer than `due` runs are unread.
  */
 function sinceWatermark(
 	concerts: readonly Concert[],
@@ -125,12 +135,23 @@ function sinceWatermark(
 ): Concert[] | undefined {
 	const [newest] = concerts;
 	if (!newest || isMasterclass(newest, milestone)) return undefined;
-	const mark = markOf(concerts, milestone);
-	const runs = (mark < 0 ? concerts : concerts.slice(0, mark)).filter((c) =>
-		isFactoryRun(c, milestone),
-	);
+	const runs = unreadRuns(concerts, milestone);
 	return runs.length >= due ? runs : undefined;
 }
+
+/** The milestone's newest `MASTERCLASS_WINDOW` concerts, newest first. */
+const listMilestone = (tick: Tick) =>
+	tick.maestro.concerts(tick.milestone, MASTERCLASS_WINDOW);
+
+/** The hand runs of `HAND_TOURS` past the watermark of `listed`, the milestone's listing. */
+const listHandRuns = async (tick: Tick, listed: readonly Concert[]) =>
+	handRuns(
+		await Promise.all(
+			HAND_TOURS.map((t) => tick.maestro.concerts(t, MASTERCLASS_WINDOW)),
+		),
+		listed,
+		tick.milestone,
+	);
 
 /** A concert's heading in `--lessons` and `--reports`: its id and tour, and ` · read` when its id is in `read`. */
 const heading = (concert: Concert, read: ReadonlySet<string>) =>
@@ -191,24 +212,45 @@ function reportsText(
 }
 
 /**
+ * Writes to `file` each distinct sighting of the runs the next masterclass reads as unread: the factory runs past the
+ * watermark and the hand runs that started after it, one bullet each as `path · cites · text`, or a line saying there
+ * are none. It moves no watermark, so those runs stay unread.
+ */
+export async function writeUnreadSightings(tick: Tick, file: string) {
+	const listed = await listMilestone(tick);
+	const runs = [
+		...unreadRuns(listed, tick.milestone),
+		...(await listHandRuns(tick, listed)),
+	];
+	const lines = new Set<string>();
+	for (const run of runs)
+		for (const sighting of (await tick.maestro.report(run.id)).sightings) {
+			const line = reportLine(sighting);
+			if (line) lines.add(line);
+		}
+	await Bun.write(
+		file,
+		[
+			"# Sightings of the factory runs no masterclass has read",
+			"",
+			...(lines.size
+				? [...lines].map(bullet)
+				: ["No unread factory run reported a sighting."]),
+			"",
+		].join("\n"),
+	);
+}
+
+/**
  * Starts a masterclass once `due` factory runs settled since the last one, on the lessons and reports of the newest
  * `MASTERCLASS_READS` runs, or every run since the last when more, marking those an earlier masterclass read, with the
  * backlog snapshot; true when it started none.
  */
 async function hold(tick: Tick, entries: Entry[], due: number) {
-	const listed = await tick.maestro.concerts(
-		tick.milestone,
-		MASTERCLASS_WINDOW,
-	);
+	const listed = await listMilestone(tick);
 	const counted = sinceWatermark(listed, tick.milestone, due);
 	if (!counted) return true;
-	const hand = handRuns(
-		await Promise.all(
-			HAND_TOURS.map((t) => tick.maestro.concerts(t, MASTERCLASS_WINDOW)),
-		),
-		listed,
-		tick.milestone,
-	);
+	const hand = await listHandRuns(tick, listed);
 	const fresh = new Set(counted.map((c) => c.id));
 	const window = listed
 		.filter((c) => isFactoryRun(c, tick.milestone))

@@ -87,10 +87,16 @@ and the behaviour that must hold, not the fix.
 - Codebase health comes before the feature. Before deciding, read the parts of `docs/architecture.md` and
   `CODING_STANDARDS.md` for the packages the change touches. `what` names the module that owns the change; the change
   extends what is there, never a parallel path.
-- When the ask can only be met by a shortcut, such as a special case in a shared module, a flag threaded through calls,
-  a second route around an existing seam or domain logic in a domain-free package, do not take it: `split`, the first
-  part the refactor the feature needs; or, when that refactor is not clear, take the clean option and name its cost in a
-  decision.
+- The sightings attachment, when given, lists defects and smells earlier runs saw and no masterclass has read yet. Use
+  those on the paths the change touches or leans on to see the debt around it.
+- When the change leans on, or would add to, a defect in a module it touches, or the ask can only be met by a shortcut,
+  such as a special case in a shared module, a flag threaded through calls, a second route around an existing seam or
+  domain logic in a domain-free package, neither build on the defect nor take the shortcut: `split`, the first part the
+  refactor; or, when that refactor is not clear, take the clean option and name, in a decision, the debt it leaves
+  standing.
+- A split holds only the refactors the change leans on or would cause. A defect or smell past that fence goes under your
+  report's `sightings`, with the rule, doc or behaviour it breaches as its `cites`, never into the spec. A deepening
+  candidate is a smell: report it only with the standard or doc it strains, and leave it out when you can cite none.
 
 ## Diagnosing a bug
 

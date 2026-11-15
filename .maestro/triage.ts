@@ -1,9 +1,10 @@
-import { writeFileSync } from "node:fs";
+import { copyFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Answers } from "@maestro/classics";
 import { atLeastOne, fill, scout } from "@maestro/classics";
 import { MarkdownOut, read, seat } from "@maestro/host-repo-sdk";
 import {
+	type ArtifactRef,
 	allSettled,
 	Bool,
 	type CodeContext,
@@ -14,6 +15,7 @@ import {
 	literal,
 	lookup,
 	Markdown,
+	Optional,
 	type Settled,
 	Struct,
 	Text,
@@ -153,6 +155,16 @@ export function revisable(
 	return { findings, revise: found.length > 0 };
 }
 
+/** The sightings file as the planner's own artifact, recorded among its inputs; an encore copies the file anew. */
+export function sightingsOf(
+	{ sightings }: { sightings: ArtifactRef },
+	ctx: CodeContext,
+): { file: string } {
+	const file = join(ctx.scratch, "sightings.md");
+	copyFileSync(ctx.path(sightings), file);
+	return { file };
+}
+
 /** The proposals whose spec the checker checks. */
 const CHECKS: Record<(typeof PROPOSED)[number], boolean> = {
 	"ready-for-agent": true,
@@ -191,6 +203,12 @@ export const triage = composition(
 				description:
 					"The backlog snapshot: the open and recently closed issues to check it against",
 			}),
+			sightings: Optional(
+				Markdown({
+					description:
+						"The sightings of the factory runs no masterclass has read yet, one bullet each as `path · cites · text`",
+				}),
+			),
 			maxGroups: atLeastOne(
 				4,
 				"The most question groups the triager writes, one scout each",
@@ -209,7 +227,7 @@ export const triage = composition(
 			},
 		],
 	},
-	({ issue, backlog, maxGroups, respec }) => {
+	({ issue, backlog, sightings, maxGroups, respec }) => {
 		const issued = {
 			artifact: markdownOf(issue, "issue"),
 			hint: "first, for the issue to triage",
@@ -287,6 +305,16 @@ export const triage = composition(
 					hint: "first, for what the scouts found",
 				},
 				backlog: cutBacklog,
+				...(sightings && {
+					sightings: {
+						artifact: code(sightingsOf, {
+							in: { sightings: literal(sightings, Markdown()) },
+							out: { file: Markdown() },
+							label: "sightings",
+						}).out.file,
+						hint: "for the known defects and smells no masterclass has read yet, to see the debt around the change",
+					},
+				}),
 			},
 			relay: { ruling },
 			when: plans,
