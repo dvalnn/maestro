@@ -2,11 +2,10 @@ import { expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { classics, root, scratch, targetRepo } from "../.maestro/testing/stub";
-import { rowOf } from "./bench";
+import { rowOf, TICKETS } from "./bench";
 
 const BENCH = join(root, "scripts/bench.ts");
 const CLI = join(root, "packages/cli/src/maestro.ts");
-const TICKETS = [246, 334, 336, 360, 335, 138];
 const RISKY = 335;
 const ARM = "main-abc1234";
 const SETTLE_MS = 100;

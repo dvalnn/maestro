@@ -20,7 +20,7 @@ const SLICE_FILE = join(import.meta.dir, "../.maestro/slice.ts");
 const WINDOW = 200;
 
 /** The bench's fixed tickets. */
-const TICKETS = [246, 334, 336, 360, 335, 138];
+export const TICKETS = [246, 334, 336, 360, 335, 138];
 
 type Row = {
 	arm: string;
