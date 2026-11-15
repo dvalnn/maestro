@@ -1180,7 +1180,6 @@ if (import.meta.main) {
 		milestone?: string;
 		preset?: string[];
 		"route-only"?: boolean;
-		"compositions-at"?: string;
 	};
 	try {
 		({ values } = parseArgs({
@@ -1188,12 +1187,11 @@ if (import.meta.main) {
 				milestone: { type: "string" },
 				preset: { type: "string", multiple: true },
 				"route-only": { type: "boolean" },
-				"compositions-at": { type: "string" },
 			},
 		}));
 	} catch (error) {
 		console.error(
-			`${message(error)}\nusage: bun scripts/factory/index.ts [--milestone <name>] [--preset <name>]... [--route-only] [--compositions-at <revision>]`,
+			`${message(error)}\nusage: bun scripts/factory/index.ts [--milestone <name>] [--preset <name>]... [--route-only]`,
 		);
 		process.exit(EXIT_USAGE);
 	}
@@ -1207,7 +1205,6 @@ if (import.meta.main) {
 		options = {
 			presets: values.preset ?? [],
 			routeOnly: values["route-only"],
-			compositionsAt: values["compositions-at"],
 			milestone: milestoneOf(values.milestone, process.env),
 			dir: join(runtime, "maestro-factory"),
 			cache: join(

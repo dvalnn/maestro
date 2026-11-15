@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
-	realpathSync,
-	renameSync,
+	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -133,186 +133,68 @@ test("a fetch brings the commits origin gained into the repository", async () =>
 	expect(jj(dir, "log", "-r", tip, "--no-graph", "-T", "commit_id")).toBe(tip);
 });
 
-/** A jj repository whose `main` holds `.maestro/slice.ts` importing `.maestro/shared.ts`, both edited since in `@`. */
-function graphRepository() {
-	const dir = mkdtempSync(join(tmpdir(), "factory-graph-"));
+/**
+ * A jj repository whose `main` holds a package with one local dependency, its lockfile and `.maestro/slice.ts`, and the
+ * commit of `main`.
+ */
+function treeRepository() {
+	const dir = mkdtempSync(join(tmpdir(), "factory-tree-"));
 	jj(dir, "git", "init");
-	mkdirSync(join(dir, ".maestro/prompts"), { recursive: true });
+	mkdirSync(join(dir, "dep"));
 	writeFileSync(
-		join(dir, ".maestro/slice.ts"),
-		'import { graph } from "./shared";\nexport default graph;\n',
+		join(dir, "dep/package.json"),
+		'{"name":"dep","version":"1.0.0"}\n',
 	);
 	writeFileSync(
-		join(dir, ".maestro/shared.ts"),
-		'export const graph = "main";\n',
+		join(dir, "package.json"),
+		'{"name":"t","private":true,"dependencies":{"dep":"file:./dep"}}\n',
 	);
-	writeFileSync(join(dir, ".maestro/prompts/tester.md"), "Test it.\n");
+	writeFileSync(join(dir, ".gitignore"), "node_modules\n");
+	const installed = Bun.spawnSync(["bun", "install"], { cwd: dir });
+	if (installed.exitCode !== 0) throw new Error(installed.stderr.toString());
+	rmSync(join(dir, "node_modules"), { recursive: true });
+	mkdirSync(join(dir, ".maestro"));
+	writeFileSync(join(dir, ".maestro/slice.ts"), "export default 1;\n");
 	jj(dir, "commit", "-m", "graph");
 	jj(dir, "bookmark", "create", "main", "-r", "@-");
-	writeFileSync(
-		join(dir, ".maestro/shared.ts"),
-		'export const graph = "checkout";\n',
-	);
-	mkdirSync(join(dir, "node_modules"));
-	const main = jj(dir, "log", "-r", "main", "--no-graph", "-T", "commit_id");
-	return { dir, main };
+	writeFileSync(join(dir, ".maestro/slice.ts"), "export default 2;\n");
+	jj(dir, "commit", "-m", "next");
+	const at = (revision: string) =>
+		jj(dir, "log", "-r", revision, "--no-graph", "-T", "commit_id");
+	return { dir, main: at("main"), next: at("@-") };
 }
 
-test("an export holds the composition and the files it imports as they stand at the same commit", async () => {
-	const { dir, main } = graphRepository();
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	const exported = await landing(dir, account).export("main", root);
-	expect(exported.commit).toBe(main);
-	expect(readFileSync(join(exported.dir, ".maestro/slice.ts"), "utf8")).toBe(
-		'import { graph } from "./shared";\nexport default graph;\n',
-	);
-	expect(readFileSync(join(exported.dir, ".maestro/shared.ts"), "utf8")).toBe(
-		'export const graph = "main";\n',
-	);
-	expect(
-		readFileSync(join(exported.dir, ".maestro/prompts/tester.md"), "utf8"),
-	).toBe("Test it.\n");
-	expect(realpathSync(join(exported.dir, "node_modules"))).toBe(
-		realpathSync(join(dir, "node_modules")),
-	);
-});
-
-// Seam: exports handed to concert starts and the packages they resolve through their linked checkout.
-test("exports of one commit in two checkouts each resolve their own node_modules", async () => {
-	const { dir, main } = graphRepository();
-	const other = mkdtempSync(join(tmpdir(), "factory-other-checkout-"));
-	jj(other, "git", "clone", dir, other);
-	mkdirSync(join(other, "node_modules"));
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	const first = await landing(dir, account).export(main, root);
-	const second = await landing(other, account).export(main, root);
-	expect(first.dir).not.toBe(second.dir);
-	expect(realpathSync(join(first.dir, "node_modules"))).toBe(
-		realpathSync(join(dir, "node_modules")),
-	);
-	expect(realpathSync(join(second.dir, "node_modules"))).toBe(
-		realpathSync(join(other, "node_modules")),
-	);
-});
-
-test("an export reports whether the checkout's .maestro/ differs from it", async () => {
-	const { dir } = graphRepository();
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
+test("a tree is a workspace of its commit with its dependencies installed, reused, and the only one kept", async () => {
+	const { dir, main, next } = treeRepository();
+	const root = join(mkdtempSync(join(tmpdir(), "factory-trees-")), "trees");
 	const lands = landing(dir, account);
-	expect((await lands.export("main", root)).differs).toBe(true);
-	expect((await lands.export("@", root)).differs).toBe(false);
-});
-
-test("an export does not differ from a checkout that changed only files outside .maestro/", async () => {
-	const { dir } = graphRepository();
-	writeFileSync(join(dir, "greet.sh"), "echo hi\n");
-	jj(dir, "commit", "-m", "other");
-	writeFileSync(join(dir, "greet.sh"), "echo hello\n");
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	expect((await landing(dir, account).export("@-", root)).differs).toBe(false);
-});
-
-test("an export at a revision that names no commit is refused", async () => {
-	const { dir } = graphRepository();
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	await expect(
-		landing(dir, account).export("no-such-revision", root),
-	).rejects.toThrow();
-	expect(readdirSync(root)).toEqual([]);
-});
-
-test("an export at a revision that names more than one commit is refused", async () => {
-	const { dir } = graphRepository();
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	await expect(
-		landing(dir, account).export("main | @", root),
-	).rejects.toThrow();
-	expect(readdirSync(root)).toEqual([]);
-});
-
-test("an export at a commit without a .maestro/ tree is refused, leaving nothing behind", async () => {
-	const { dir } = repository();
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	await expect(landing(dir, account).export("main", root)).rejects.toThrow();
-	expect(readdirSync(root)).toEqual([]);
-});
-
-test("an export names each path under .maestro/ and packs/ that differs, ignored files included, and no pack node_modules", async () => {
-	const { dir } = graphRepository();
-	writeFileSync(
-		join(dir, ".gitignore"),
-		"packs/p/profiles/\npacks/p/node_modules/\n",
+	const first = await lands.tree("main", root);
+	expect(first).toBe(join(root, main));
+	expect(readFileSync(join(first, ".maestro/slice.ts"), "utf8")).toBe(
+		"export default 1;\n",
 	);
-	mkdirSync(join(dir, "packs/p"), { recursive: true });
-	writeFileSync(join(dir, "packs/p/a.yaml"), "a\n");
-	jj(dir, "commit", "-m", "pack");
-	writeFileSync(join(dir, "packs/p/a.yaml"), "b\n");
-	mkdirSync(join(dir, "packs/p/profiles"), { recursive: true });
-	writeFileSync(join(dir, "packs/p/profiles/x.yaml"), "x\n");
-	mkdirSync(join(dir, "packs/p/node_modules"), { recursive: true });
-	writeFileSync(join(dir, "packs/p/node_modules/m.js"), "m\n");
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	const exported = await landing(dir, account).export("@-", root);
-	expect(exported.paths).toEqual(["packs/p/a.yaml", "packs/p/profiles/x.yaml"]);
-});
-
-test("a reopened tree is compared at the commit its place in the cache names, and one of another checkout is refused", async () => {
-	const { dir, main } = graphRepository();
-	const other = mkdtempSync(join(tmpdir(), "factory-other-checkout-"));
-	jj(other, "git", "clone", dir, other);
-	mkdirSync(join(other, "node_modules"));
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	const made = await landing(dir, account).export(main, root);
-	const reopened = await landing(dir, account).reopen(
-		join(made.dir, ".maestro"),
-		root,
+	expect(existsSync(join(first, "node_modules/dep/package.json"))).toBe(true);
+	writeFileSync(join(first, "kept"), "k\n");
+	expect(await lands.tree(main, root)).toBe(first);
+	expect(existsSync(join(first, "kept"))).toBe(true);
+	const second = await lands.tree(next, root);
+	expect(readdirSync(root)).toEqual([next]);
+	expect(readFileSync(join(second, ".maestro/slice.ts"), "utf8")).toBe(
+		"export default 2;\n",
 	);
-	expect(reopened.commit).toBe(main);
-	expect(reopened.paths).toEqual([".maestro/shared.ts"]);
-	await expect(
-		landing(other, account).reopen(join(made.dir, ".maestro"), root),
-	).rejects.toThrow();
-	await expect(
-		landing(dir, account).reopen(join(dir, ".maestro"), root),
-	).rejects.toThrow();
-});
-
-test("a tree in the earlier <root>/<commit> cache layout that links the checkout's node_modules is reopened at its commit", async () => {
-	const { dir, main } = graphRepository();
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	const made = await landing(dir, account).export(main, root);
-	const old = join(root, main);
-	renameSync(made.dir, old);
-	const reopened = await landing(dir, account).reopen(
-		join(old, ".maestro"),
-		root,
+	expect(jj(dir, "workspace", "list")).not.toContain(
+		`tree-${main.slice(0, 12)}`,
 	);
-	expect(reopened.commit).toBe(main);
-	expect(reopened.paths).toEqual([".maestro/shared.ts"]);
 });
 
-test("an export names both paths of a renamed file under .maestro/", async () => {
-	const { dir } = graphRepository();
-	jj(dir, "commit", "-m", "edit");
-	renameSync(
-		join(dir, ".maestro/prompts/tester.md"),
-		join(dir, ".maestro/prompts/checker.md"),
-	);
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	const exported = await landing(dir, account).export("@-", root);
-	expect(exported.paths).toEqual([
-		".maestro/prompts/checker.md",
-		".maestro/prompts/tester.md",
-	]);
-});
-
-test("an export ignores a tracked change under a pack's node_modules/", async () => {
-	const { dir } = graphRepository();
-	mkdirSync(join(dir, "packs/p/node_modules"), { recursive: true });
-	writeFileSync(join(dir, "packs/p/node_modules/m.js"), "m\n");
-	jj(dir, "commit", "-m", "tracked modules");
-	writeFileSync(join(dir, "packs/p/node_modules/m.js"), "changed\n");
-	const root = mkdtempSync(join(tmpdir(), "factory-exports-"));
-	const exported = await landing(dir, account).export("@-", root);
-	expect(exported.paths).toEqual([]);
+test("a tree directory that is no workspace is rebuilt, and a revision naming no single commit is refused", async () => {
+	const { dir, main } = treeRepository();
+	const root = join(mkdtempSync(join(tmpdir(), "factory-trees-")), "trees");
+	mkdirSync(join(root, main), { recursive: true });
+	writeFileSync(join(root, main, "half"), "h\n");
+	const lands = landing(dir, account);
+	const tree = await lands.tree(main, root);
+	expect(existsSync(join(tree, "half"))).toBe(false);
+	expect(existsSync(join(tree, ".maestro/slice.ts"))).toBe(true);
+	await expect(lands.tree("main | @", root)).rejects.toThrow("not one");
 });

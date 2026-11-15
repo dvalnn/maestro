@@ -18,11 +18,12 @@ import {
 	fakeMaestro,
 	MILESTONE,
 	MILESTONE_ID,
+	TREE_COMMIT,
 } from "./test-support";
 import type { Tick } from "./tick";
 
 const MAIN = "main-sha";
-const COMPOSITIONS = "/cache/compositions";
+const TREES = "/cache/trees";
 const issue: Issue = {
 	number: 7,
 	title: "Greet by name",
@@ -31,8 +32,11 @@ const issue: Issue = {
 };
 
 /** A tick on fakes whose `main` is `MAIN`, with the presets `stub` and `xscout` and `files` in the repo. */
-function setup({ differs = false, files = [] as string[] } = {}) {
-	const landing = fakeLanding(undefined, "", differs);
+function setup({ files = [] as string[], treeFails = false } = {}) {
+	const landing = fakeLanding(
+		treeFails ? "tree" : undefined,
+		"bun install exited 1",
+	);
 	const maestro = fakeMaestro([], {}, {});
 	const forge = fakeForge([]);
 	const said: string[] = [];
@@ -57,9 +61,9 @@ function setup({ differs = false, files = [] as string[] } = {}) {
 }
 type Setup = ReturnType<typeof setup>;
 
-/** The path of `.maestro/<file>` as exported at `commit`. */
-const exportedAt = (commit: string, file: string) =>
-	join(COMPOSITIONS, commit, ".maestro", file);
+/** The path of `.maestro/<file>` in the tree of `commit`. */
+const treeAt = (commit: string, file: string) =>
+	join(TREES, commit, ".maestro", file);
 /** `--preset` for each of `kinds`, then the tick's own, in order. */
 const presets = (...kinds: string[]) =>
 	[...kinds, "stub", "xscout"].flatMap((p) => ["--preset", p]);
@@ -105,7 +109,7 @@ describe("starting a concert", () => {
 			MAIN,
 			[
 				"perform",
-				exportedAt(MAIN, "triage.ts"),
+				treeAt(MAIN, "triage.ts"),
 				...triageFlags("--respec"),
 				...presets("triage"),
 				...NAMED,
@@ -118,7 +122,7 @@ describe("starting a concert", () => {
 			MAIN,
 			[
 				"perform",
-				exportedAt(MAIN, "triage.ts"),
+				treeAt(MAIN, "triage.ts"),
 				...triageFlags("--no-respec"),
 				...presets("triage"),
 				...NAMED,
@@ -131,7 +135,7 @@ describe("starting a concert", () => {
 			MAIN,
 			[
 				"perform",
-				exportedAt(MAIN, "slice.ts"),
+				treeAt(MAIN, "slice.ts"),
 				"--request",
 				"build it",
 				"--revises",
@@ -148,7 +152,7 @@ describe("starting a concert", () => {
 			MAIN,
 			[
 				"perform",
-				exportedAt(MAIN, "slice.ts"),
+				treeAt(MAIN, "slice.ts"),
 				"--request",
 				"build it",
 				"--revises",
@@ -159,13 +163,13 @@ describe("starting a concert", () => {
 			],
 		],
 		[
-			"a slice revision, cut at and revising its base",
+			"a slice revision, in main's tree, cut at and revising its base",
 			(t) =>
 				startSlice(t.tick, issue, { ...BUILD_INPUT, revisionBase: "rev1" }),
-			"rev1",
+			MAIN,
 			[
 				"perform",
-				exportedAt("rev1", "slice.ts"),
+				treeAt(MAIN, "slice.ts"),
 				"--request",
 				"build it",
 				"--revises",
@@ -176,12 +180,12 @@ describe("starting a concert", () => {
 			],
 		],
 		[
-			"a stack review, its composition and lane cut at the epic's base",
+			"a stack review, in main's tree, its lane cut at the epic's base",
 			kinds.review,
-			"base0",
+			MAIN,
 			[
 				"perform",
-				exportedAt("base0", "review.ts"),
+				treeAt(MAIN, "review.ts"),
 				"--request",
 				"review it",
 				"--revs",
@@ -197,7 +201,7 @@ describe("starting a concert", () => {
 			MAIN,
 			[
 				"perform",
-				exportedAt(MAIN, "masterclass.ts"),
+				treeAt(MAIN, "masterclass.ts"),
 				"--lessons",
 				"l.md",
 				"--reports",
@@ -213,10 +217,11 @@ describe("starting a concert", () => {
 			],
 		],
 	];
-	test.each(cases)("performs %s", async (_, start, exported, argv) => {
+	test.each(cases)("performs %s", async (_, start, commit, argv) => {
 		const t = setup();
 		expect(await start(t)).toBe("started");
-		expect(t.exported).toEqual([exported]);
+		expect(t.trees).toEqual([commit]);
+		expect(t.cwds).toEqual([join(TREES, commit)]);
 		const starts = t.starts.map((args) => {
 			if (!argv[1]?.endsWith("triage.ts")) return args;
 			const at = args.indexOf("--sightings");
@@ -243,7 +248,7 @@ describe("starting a concert", () => {
 		expect(t.logs).toEqual(["/run/masterclass.log"]);
 	});
 
-	test("an encore continues its concert without exporting a composition, still pinning its cut", async () => {
+	test("an encore continues its concert in the tree of its commit, still pinning its cut", async () => {
 		const t = setup();
 		await startTriage(t.tick, issue, { ...TRIAGE_INPUT, encore: "c0" });
 		await startSlice(t.tick, issue, {
@@ -251,7 +256,11 @@ describe("starting a concert", () => {
 			encore: "c1",
 			revisionBase: "rev1",
 		});
-		expect(t.exported).toEqual([]);
+		expect(t.trees).toEqual([TREE_COMMIT, TREE_COMMIT]);
+		expect(t.cwds).toEqual([
+			join(TREES, TREE_COMMIT),
+			join(TREES, TREE_COMMIT),
+		]);
 		expect(t.starts.map((a) => a.slice(0, 2))).toEqual([
 			["encore", "c0"],
 			["encore", "c1"],
@@ -283,25 +292,43 @@ describe("starting a concert", () => {
 		}
 	});
 
-	test("compositionsAt moves only the commit the composition is exported at", async () => {
+	test.each([
+		["names no commit", "/cache/trees/not-a-commit/.maestro", "not-a-commit"],
+		[
+			"is at a commit the repository lacks",
+			`/cache/trees/${TREE_COMMIT}/.maestro`,
+			"does not have",
+		],
+	])("an encore whose tree %s halts without starting", async (_, dir, text) => {
 		const t = setup();
-		t.tick.compositionsAt = "@";
-		await startStackReview(t.tick, issue, REVIEW_INPUT);
-		expect(t.exported).toEqual(["@"]);
-		expect(t.starts[0]?.slice(-2)).toEqual(pinned("base0"));
+		t.recorded.c0 = dir;
+		t.unknown.add(TREE_COMMIT);
+		expect(
+			await startTriage(t.tick, issue, { ...TRIAGE_INPUT, encore: "c0" }),
+		).toBeUndefined();
+		expect(t.trees).toEqual([]);
+		expect(t.starts).toEqual([]);
+		expect(t.writes).toEqual([
+			"file #100 Tour manager halted: triage of #7 did not start: maestro-tm:halt",
+		]);
+		expect(t.find(100).body).toContain(text);
+		expect(t.find(100).body).toContain("Start a fresh concert");
 	});
 
-	test("refuses a differing export without starting or filing a halt", async () => {
-		const differing = setup({ differs: true });
-		await expect(
-			startTriage(differing.tick, issue, TRIAGE_INPUT),
-		).rejects.toThrow();
-		expect(differing.starts).toEqual([]);
-		expect(differing.writes).toEqual([]);
-		const same = setup();
-		await startTriage(same.tick, issue, TRIAGE_INPUT);
-		expect(same.said).toEqual([]);
-	});
+	test.each([
+		["a fresh concert", TRIAGE_INPUT],
+		["an encore", { ...TRIAGE_INPUT, encore: "c0" }],
+	])(
+		"%s whose tree cannot be made fails the tick, with no halt and no start",
+		async (_, input) => {
+			const t = setup({ treeFails: true });
+			await expect(startTriage(t.tick, issue, input)).rejects.toThrow(
+				"bun install exited 1",
+			);
+			expect(t.starts).toEqual([]);
+			expect(t.writes).toEqual([]);
+		},
+	);
 
 	test.each(Object.entries(kinds))(
 		"a refused %s files a halt issue and returns no id",

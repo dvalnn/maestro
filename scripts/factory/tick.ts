@@ -30,10 +30,8 @@ export type Options = {
 	routeOnly?: boolean;
 	/** Where the tick keeps its snapshots and perform logs. */
 	dir: string;
-	/** Where the landing workspaces and the composition exports live. */
+	/** Where the landing workspaces and the concerts' trees live. */
 	cache: string;
-	/** The revision each fresh concert's composition is performed at, in place of the commit its lane is cut from. */
-	compositionsAt?: string;
 };
 export type Deps = {
 	forge: Forge;

@@ -1,9 +1,8 @@
 // Starting the tick's concerts and recognising them: each kind is named once here, with the argv its start builds
 // (factory.md, Rules, Policy: Tick base, Tour and title).
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { Risk } from "../../.maestro/triage/risk";
 import type { Issue } from "./forge";
-import type { Export } from "./land";
 import type { Concert } from "./maestro";
 import { riskOf } from "./pick";
 import { halt, message, type Tick } from "./tick";
@@ -60,39 +59,13 @@ const named = (tick: Tick, issue: Issue) => ({
 	title: titleOf(issue),
 });
 
-/**
- * Refuses a start when the checkout's `.maestro/` or `packs/` differs from `exported`'s commit.
- * @throws Error naming the commit and each differing path, so the tick ends without a halt.
- */
-function agree(exported: Export) {
-	if (!exported.differs) return;
-	throw new Error(
-		`the checkout's .maestro/ or packs/ differs from commit ${exported.commit}, so no concert starts; update the checkout to it:\n${exported.paths.map((p) => `  ${p}`).join("\n")}`,
-	);
-}
-
-/**
- * The path of composition `file` of `.maestro/` as it stands at `cut`, or at `compositionsAt` when set, exported into
- * the cache once per checkout and commit.
- * @throws Error when the tree cannot be exported, or the checkout differs from it, so the tick ends without starting
- * a concert.
- */
-async function compositionAt(tick: Tick, file: string, cut: string) {
-	const exported = await tick.landing.export(
-		tick.compositionsAt ?? cut,
-		join(tick.cache, "compositions"),
-	);
-	agree(exported);
-	return join(exported.dir, ".maestro", file);
-}
-
 type Run = {
 	kind: Kind;
 	/** What halts the tick when it does not start, such as "masterclass". */
 	what: string;
 	/** The commit the concert's lane is cut from, which `-c target.base` pins. */
 	cut: string;
-	/** The concert to continue, else a fresh one performs `kind`'s composition at `cut`. */
+	/** The concert to continue, else a fresh one performs `kind`'s composition in a tree of the tick's `main`. */
 	encore?: string;
 	/** The kind's own flags. */
 	params: string[];
@@ -104,36 +77,62 @@ type Run = {
 	log?: string;
 };
 
+/** A full commit id. */
+const COMMIT = /^[0-9a-f]{40}$/;
+
+/** What halts the tick when `run` does not start, as `halt` takes it. */
+const refused = (run: Run, error: unknown) =>
+	[
+		`${run.what} did not start`,
+		`${run.what[0]?.toUpperCase()}${run.what.slice(1)} did not start:`,
+		message(error),
+	] as const;
+
 /**
- * Compares the checkout with the tree encore `id` reopens; undefined once it halted on a tree the tick cannot pin.
- * @throws Error when the checkout differs from the tree's commit.
+ * The commit encore `id` ran at, from the tree it recorded.
+ * @throws Error when the record names no tree, its tree is at no commit, or the repository does not have the commit.
  */
-async function reopened(tick: Tick, run: Run, id: string) {
-	let exported: Export;
+async function encoreCommit(tick: Tick, id: string) {
+	const commit = basename(dirname(await tick.maestro.tree(id)));
+	if (!COMMIT.test(commit))
+		throw new Error(
+			`${id}'s tree is not at a commit: ${commit}\nStart a fresh concert for it instead`,
+		);
 	try {
-		exported = await tick.landing.reopen(
-			await tick.maestro.tree(id),
-			join(tick.cache, "compositions"),
+		return await tick.landing.commit(commit);
+	} catch {
+		throw new Error(
+			`${id}'s tree is at commit ${commit}, which the repository does not have\nStart a fresh concert for it instead`,
 		);
-	} catch (error) {
-		await halt(
-			tick,
-			`${run.what} did not start`,
-			`${run.what[0]?.toUpperCase()}${run.what.slice(1)} did not start:`,
-			message(error),
-		);
-		return false;
 	}
-	agree(exported);
-	return true;
 }
 
-/** Starts `run`'s concert and returns its id; undefined once it halted on maestro's refusal. */
+/**
+ * The tree `run`'s concert performs in, at the tick's `main` whatever its cut, so only approved code runs, or, for an
+ * encore, at the commit its first concert's tree holds; undefined once an encore halted on a commit that is not one the
+ * repository has.
+ * @throws Error when the tree cannot be made, so the tick ends without a halt and the next retries.
+ */
+async function treeOf(tick: Tick, run: Run) {
+	const root = join(tick.cache, "trees");
+	if (!run.encore) return tick.landing.tree(tick.main, root);
+	let commit: string;
+	try {
+		commit = await encoreCommit(tick, run.encore);
+	} catch (error) {
+		await halt(tick, ...refused(run, error));
+		return undefined;
+	}
+	return tick.landing.tree(commit, root);
+}
+
+/** Starts `run`'s concert in its tree and returns its id; undefined once it halted on a refusal. */
 async function startConcert(tick: Tick, run: Run) {
-	if (run.encore && !(await reopened(tick, run, run.encore))) return undefined;
+	const dir = await treeOf(tick, run);
+	if (!dir) return undefined;
 	const head = run.encore
 		? ["encore", run.encore]
-		: ["perform", await compositionAt(tick, run.kind.file, run.cut)];
+		: ["perform", join(dir, ".maestro", run.kind.file)];
 	const args = [
 		...head,
 		...run.params,
@@ -146,14 +145,9 @@ async function startConcert(tick: Tick, run: Run) {
 		`target.base=${run.cut}`,
 	];
 	try {
-		return await tick.maestro.start(args, run.log);
+		return await tick.maestro.start(args, run.log, dir);
 	} catch (error) {
-		await halt(
-			tick,
-			`${run.what} did not start`,
-			`${run.what[0]?.toUpperCase()}${run.what.slice(1)} did not start:`,
-			message(error),
-		);
+		await halt(tick, ...refused(run, error));
 		return undefined;
 	}
 }

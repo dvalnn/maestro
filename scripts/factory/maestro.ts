@@ -71,10 +71,10 @@ export type Maestro = {
 	result(id: string): Promise<Result>;
 	/**
 	 * Starts `maestro <args>` in the background and returns its concert's id; what it printed is written to `log`,
-	 * when given.
+	 * when given. It runs in `cwd`, else in the tick's own directory.
 	 * @throws Error with maestro's refusal when it does not start.
 	 */
-	start(args: string[], log?: string): Promise<string>;
+	start(args: string[], log?: string, cwd?: string): Promise<string>;
 	report(id: string): Promise<Report>;
 	/** What concert `id` spent. */
 	spend(id: string): Promise<Spend>;
@@ -262,16 +262,18 @@ async function run(bin: string, args: string[]) {
 }
 
 /**
- * The `--json` document `bin <args>` prints, whatever its exit code, since `wait` exits with the concert's; its
- * stdout, then its stderr, are written to `log` when given.
+ * The `--json` document `bin <args>` prints in `cwd`, the process's own when unset, whatever its exit code, since
+ * `wait` exits with the concert's; its stdout, then its stderr, are written to `log` when given.
  * @throws Error with its stderr when it prints none.
  */
 async function json(
 	bin: string,
 	args: string[],
 	log?: string,
+	cwd?: string,
 ): Promise<unknown> {
 	const child = Bun.spawn([bin, ...args, "--json"], {
+		cwd,
 		stdout: "pipe",
 		stderr: "pipe",
 	});
@@ -335,8 +337,8 @@ export function maestro(bin = "maestro"): Maestro {
 			return doc.moduleDir;
 		},
 		apply: (id, dir) => run(bin, ["cs", "apply", id, "-C", dir]),
-		start: async (args, log) => {
-			const doc = await json(bin, [...args, "--detach"], log);
+		start: async (args, log, cwd) => {
+			const doc = await json(bin, [...args, "--detach"], log, cwd);
 			if (isJson(doc) && typeof doc.id === "string") return doc.id;
 			throw new Error(`maestro ${args[0]}:\n${refusal(doc)}`);
 		},

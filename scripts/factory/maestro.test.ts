@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { maestro } from "./maestro";
@@ -11,7 +17,7 @@ writeFileSync(
 	`#!/bin/sh
 case "$1 $2" in
 	"ls c2"|"ls c3"|"ls c4"|"ls c6") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"node":"build/test_first/tester","outputs":{"map":{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}}},{"node":"fixes/fix","expansion":"[0]"},{"node":"fix_until_clean/fixes/fix","expansion":"[1]"},{"node":"fix_until_clean/fixes/brief"},{"node":"fixes/reviewer"}],"reports":{"build":{"summary":"s","obstacles":["no rg"],"sightings":[{"path":"a.ts","cites":"R1","text":"drops x"},{"path":"b.ts","text":"no cites"}]},"reviewer":{"summary":"s","lessons":["run just fmt first"]}}}' ;;
-	"ls tree") echo '{"moduleDir":"/cache/compositions/k/abc/.maestro","file":"slice.ts"}' ;;
+	"ls tree") echo '{"moduleDir":"/cache/trees/abc/.maestro","file":"slice.ts"}' ;;
 	"ls c5") echo '{"instances":[{"node":"tester","outputs":{"map":{"pinned":[{}],"deferred":[],"untestable":[]}}}]}' ;;
 	"ls --tour") echo '[{"id":"l'"$5"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1"}]' ;;
 	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"delivered":2,"notice":{"path":"notice.md"},"pr":{"path":"pr.md"}}}' ;;
@@ -24,6 +30,7 @@ case "$1 $2" in
 	"perform refused") echo "refused.ts does not compose" >&2; exit 2 ;;
 	"perform diagnosed") echo '{"ok":false,"diagnostics":[{"code":"CFG.preset","severity":"error","message":"--preset x names no file","hint":"Create x.yaml"},{"code":"HOST.profile","severity":"error","message":"profile p is in no profile root"}]}'; exit 2 ;;
 	"perform errored") printf '%s\n' '{"ok":false,"error":"no such file: x.ts\\nCheck the path","exit":2}'; exit 2 ;;
+	"perform where") echo '{"id":"'"$(pwd -P)"'"}' ;;
 	"perform "*) echo '{"id":"c9","status":"running"}' ;;
 esac
 `,
@@ -73,8 +80,8 @@ test("reads the test map of a concert whose tester node has the earlier id", asy
 	});
 });
 
-test("reads the .maestro/ directory an encore of a concert reopens", async () => {
-	expect(await fake.tree("tree")).toBe("/cache/compositions/k/abc/.maestro");
+test("reads the .maestro/ directory an encore of a concert reruns", async () => {
+	expect(await fake.tree("tree")).toBe("/cache/trees/abc/.maestro");
 	await expect(fake.tree("d1")).rejects.toThrow();
 });
 
@@ -128,6 +135,12 @@ test("a report whose upheld file is gone has no upheld findings, one whose PR bo
 
 test("a perform started in the background returns its concert", async () => {
 	expect(await fake.start(["perform", "x.ts"])).toBe("c9");
+});
+
+test("a perform started in a directory runs there", async () => {
+	expect(await fake.start(["perform", "where"], undefined, dir)).toBe(
+		realpathSync(dir),
+	);
 });
 
 test("a perform started with a log writes what it printed there", async () => {

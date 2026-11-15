@@ -183,6 +183,9 @@ const spendOf = (short: string): Spend => ({
 	fixes: 0,
 });
 
+/** The commit the tree of every concert in `fakeMaestro` holds, until its `recorded` says otherwise. */
+export const TREE_COMMIT = "e".repeat(40);
+
 export function fakeMaestro(
 	concerts: Concert[],
 	results: Record<string, Result>,
@@ -191,6 +194,9 @@ export function fakeMaestro(
 ) {
 	const starts: string[][] = [];
 	const logs: (string | undefined)[] = [];
+	const cwds: (string | undefined)[] = [];
+	/** The `.maestro/` directory each concert id was recorded with, by id. */
+	const recorded: Record<string, string> = {};
 	const applied: string[] = [];
 	let refusal: string | undefined;
 	const maestro: Maestro = {
@@ -203,8 +209,9 @@ export function fakeMaestro(
 			if (!result) throw new Error(`no result for ${id}`);
 			return result;
 		},
-		start: async (args, log) => {
+		start: async (args, log, cwd) => {
 			logs.push(log);
+			cwds.push(cwd);
 			if (refusal) throw new Error(refusal);
 			starts.push(args);
 			events.push("start");
@@ -212,7 +219,7 @@ export function fakeMaestro(
 		},
 		report: async (id) => reports[id] ?? NO_REPORT,
 		spend: async (id) => spendOf(id),
-		tree: async (id) => `/cache/compositions/${id}/.maestro`,
+		tree: async (id) => recorded[id] ?? `/cache/trees/${TREE_COMMIT}/.maestro`,
 		apply: async (id, dir) => {
 			applied.push(`${id} in ${dir}`);
 		},
@@ -221,22 +228,19 @@ export function fakeMaestro(
 		maestro,
 		starts,
 		logs,
+		cwds,
+		recorded,
 		applied,
 		refuse: (r: string) => (refusal = r),
 	};
 }
 
-/**
- * A landing that logs each step, and fails at the step named `failAt` with `output` until it is healed. `differs` is
- * what each export says of the checkout, and `exported` lists the revisions exported.
- */
-export function fakeLanding(
-	failAt?: keyof Landing,
-	output = "",
-	differs = false,
-) {
+/** A landing that logs each step, and fails at the step named `failAt` with `output` until it is healed. */
+export function fakeLanding(failAt?: keyof Landing, output = "") {
 	const steps: string[] = [];
-	const exported: string[] = [];
+	const trees: string[] = [];
+	/** The revisions the repository does not have. */
+	const unknown = new Set<string>();
 	/** The shared trace of each forge head read, the fetch and each start, in order. */
 	const events: string[] = [];
 	let failing = failAt;
@@ -260,25 +264,22 @@ export function fakeLanding(
 			return "abc123";
 		},
 		close: async (dir, name) => step("close", `close ${name} at ${dir}`),
-		export: async (revision, root) => {
-			exported.push(revision);
-			return {
-				commit: revision,
-				dir: join(root, revision),
-				differs,
-				paths: differs ? [".maestro/config.yaml"] : [],
-			};
+		commit: async (revision) => {
+			if (unknown.has(revision)) throw new Error(`${revision} names 0 commits`);
+			return revision;
 		},
-		reopen: async (moduleDir, root) => {
-			const dir = join(moduleDir, "..");
-			return { commit: dir.slice(root.length + 1), dir, differs, paths: [] };
+		tree: async (revision, root) => {
+			if (failing === "tree") throw new Error(output);
+			trees.push(revision);
+			return join(root, revision);
 		},
 	};
 	return {
 		landing,
 		steps,
 		events,
-		exported,
+		trees,
+		unknown,
 		heal: () => (failing = undefined),
 	};
 }
