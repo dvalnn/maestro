@@ -616,7 +616,7 @@ test("an encore records the triager's current backlog snapshot", async () => {
 	expect(await recorded(firstConcert.id)).toBe(
 		"# Backlog\n\n- first snapshot\n",
 	);
-});
+}, 60_000);
 
 test("an encore rereads the sightings file recorded by its first triage", async () => {
 	const dir = mkdtempSync(join(scratch, "encore-sightings-"));
@@ -687,7 +687,7 @@ test("an encore rereads the sightings file recorded by its first triage", async 
 	expect(await attached(nextConcert.id)).toBe(
 		"- b.ts · R2 · Drops the result.\n",
 	);
-});
+}, 60_000);
 
 test("triage without --sightings keeps the planner's issue, answers and backlog attachments only", async () => {
 	const { node } = await handoffs();

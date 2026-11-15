@@ -1,10 +1,9 @@
-import { copyFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Answers } from "@maestro/classics";
 import { atLeastOne, fill, scout } from "@maestro/classics";
 import { MarkdownOut, read, seat } from "@maestro/host-repo-sdk";
 import {
-	type ArtifactRef,
 	allSettled,
 	Bool,
 	type CodeContext,

@@ -8,7 +8,6 @@ import {
 	composition,
 	Json,
 	List,
-	literal,
 	Markdown,
 	Optional,
 	Struct,
