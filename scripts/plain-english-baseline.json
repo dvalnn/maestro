@@ -15,7 +15,7 @@
 	".maestro/triage/prompts/checker.md": 5,
 	".maestro/triage/prompts/planner.md": 15,
 	".maestro/triage/prompts/revise.md": 1,
-	".maestro/triage/prompts/scout.md": 2,
+	".maestro/triage/prompts/scout.md": 1,
 	".maestro/triage/prompts/triager.md": 7,
 	"CLAUDE.md": 3,
 	"CODING_STANDARDS.md": 3,

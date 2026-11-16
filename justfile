@@ -77,6 +77,26 @@ ws-rm name:
     jj workspace forget maestro-{{name}}
     rm -rf ../maestro-{{name}}
 
+# run this checkout's maestro CLI in the current folder
+[no-cd, positional-arguments]
+maestro *args:
+    bun "{{justfile_directory()}}/packages/cli/src/maestro.ts" "$@"
+
+# in empty temp XDG folders, perform a stub concert of hello.ts, then run maestro with the given command in the current folder
+[no-cd, positional-arguments]
+maestro-stub *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{justfile_directory()}}"
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+    mkdir -p "$work/data" "$work/config/maestro/presets" "$work/fixtures"
+    export XDG_DATA_HOME="$work/data" XDG_CONFIG_HOME="$work/config"
+    cp "$root/.maestro/presets/stub.yaml" "$work/config/maestro/presets/"
+    cp -r "$root/packages/cli/src/fixtures/hello.ts" "$root/packages/cli/src/fixtures/demo" "$work/fixtures/"
+    (cd "$work/fixtures" && bun "$root/packages/cli/src/maestro.ts" perform hello.ts --preset stub >/dev/null)
+    bun "$root/packages/cli/src/maestro.ts" "$@"
+
 # build a pack into its dist/
 pack dir="packs/classics":
     bun scripts/pack.ts {{dir}}
