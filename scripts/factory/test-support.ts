@@ -27,6 +27,7 @@ export function fakeForge(
 	issues: Stored[],
 	cut?: string,
 	events: string[] = [],
+	milestone = MILESTONE,
 ) {
 	const writes: string[] = [];
 	const depends = new Set<string>();
@@ -72,7 +73,7 @@ export function fakeForge(
 		account: async () => ({ login: BOT, name: BOT, email: `${BOT}@x` }),
 		login: async () => BOT,
 		milestone: async (title) =>
-			title === MILESTONE ? MILESTONE_ID : undefined,
+			title === milestone ? MILESTONE_ID : undefined,
 		issue: async (n) => {
 			const issue = issues.find((i) => i.number === n);
 			if (!issue) throw new Error(`forge: 404 from GET /issues/${n}: {}`);

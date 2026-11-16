@@ -87,7 +87,7 @@ Takes a lane input (`fresh`, `fork` or `extend`) and one changeset on its `chang
 strategy, `3way` by default or `clean` (HOST-14).
 
 A clean apply is `ok` with the new lane version. A conflict is `rejected`, the reason naming the files, with a version
-holding the markers for an agent to extend and resolve; under `clean` nothing is applied. A changeset that is not one,
+holding the markers for an agent to extend and resolve. Under `clean` nothing is applied. A changeset that is not one,
 or one the store cannot apply, is `failed`.
 
 ## Agent run

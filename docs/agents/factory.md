@@ -436,10 +436,10 @@ concerts settled on `<milestone>.i<n>` tours, and proposes issues from them.
   block the next one, even when its output was malformed.
 - **Overdue.** At 20 unread runs it starts ahead of triage, so a busy intake cannot starve it (Policy: Pick order).
 - **Inputs.**
-  - `--lessons`: the lessons of every unread factory run, then of the newest read runs up to 30 in all, oldest first,
-    and of the settled slices on the `release` and `trial` tours that settled at or after the watermark's start, which
-    are read but neither counted nor marked. The heading of a run that settled before the watermark started ends in
-    ` · read`.
+  - `--lessons`: the lessons of every unread factory run and of the newest read runs, up to 30 in all, and of the
+    settled slices on the `release` and `trial` tours that settled at or after the watermark's start. The factory runs
+    are never among those slices. All of them are ordered oldest start first. The slices are read but neither counted
+    nor marked. The heading of a run that settled before the watermark started ends in ` · read`.
   - `--reports`: the obstacles and sightings of the same runs under the same headings, a sighting as
     `path · cites · text`.
   - `--backlog`: the backlog snapshot.

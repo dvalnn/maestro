@@ -99,7 +99,7 @@ const unreadSince = (c: Concert, mark: Concert | undefined) =>
 
 /**
  * The settled slices of `tours` that settled at or after the start of the watermark of `concerts`, or all of them
- * without one, newest start first. They are read but never counted toward `MASTERCLASS_EVERY`.
+ * without one, newest start first, leaving out the milestone's factory runs. They are read but never counted toward `MASTERCLASS_EVERY`.
  */
 function handRuns(
 	tours: readonly (readonly Concert[])[],
@@ -109,7 +109,9 @@ function handRuns(
 	const mark = markOf(concerts, milestone);
 	return tours
 		.flat()
-		.filter((c) => isSlice(c) && unreadSince(c, mark))
+		.filter(
+			(c) => isSlice(c) && !isFactoryRun(c, milestone) && unreadSince(c, mark),
+		)
 		.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
 }
 

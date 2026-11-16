@@ -47,9 +47,9 @@ inside it, with no `node_modules` above it. pi takes extras: `models.json` is it
 `auth.json` or `settings.json`, which it writes itself. An extension may replace a built-in tool such as `read`: the
 extras are your opt-in code and the sandbox stays the one boundary. pi drops an extension's own tools, so extras bring
 providers, catalogues and hooks. claude takes extras too, refusing no entry: `settings.json` is its settings file, with
-any hooks in it, and each plugin is a directory under `plugins/`. Its named tools, strict MCP config and slash commands
-off still hold, so extras bring settings, hooks and plugin hooks, never a tool, skill or MCP server. A harness that
-takes no extras refuses the field at pre-flight; `agent show` lists the directory's entries.
+any hooks in it, and each plugin is a directory under `plugins/`. Named tools, strict MCP config and slash commands stay
+off, so extras bring settings, hooks and plugin hooks, never a tool, skill or MCP server. A harness that takes no extras
+refuses the field at pre-flight; `agent show` lists the directory's entries.
 
 ## Inspect
 

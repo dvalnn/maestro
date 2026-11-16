@@ -138,20 +138,22 @@ function setup(
 	{
 		reports = {},
 		landing = fakeLanding(),
+		milestone = MILESTONE,
 	}: {
 		reports?: Record<string, Report>;
+		milestone?: string;
 		landing?: Pick<
 			ReturnType<typeof fakeLanding>,
 			"landing" | "steps" | "events" | "conflicting"
 		>;
 	} = {},
 ) {
-	const forge = fakeForge(issues, cut, landing.events);
+	const forge = fakeForge(issues, cut, landing.events, milestone);
 	const maestro = fakeMaestro(concerts, results, reports, landing.events);
 	const said: string[] = [];
 	const files: string[] = [];
 	const options: Options = {
-		milestone: MILESTONE,
+		milestone,
 		presets: ["stub"],
 		dir: mkdtempSync(join(tmpdir(), "factory-")),
 		cache: "/cache/maestro-factory",
@@ -2805,6 +2807,92 @@ describe("masterclass", () => {
 					.map((c) => c.id),
 			);
 		});
+	});
+
+	// Seams: a tick's masterclass input files and the operator's concert count at its start.
+	const handNamedMilestone = (milestone: string) => {
+		const factory = Array.from({ length: 10 }, (_, i) => ({
+			...(i === 0
+				? triageConcert(`r${i}`, i + 1)
+				: sliceConcert(`r${i}`, i + 1)),
+			tour: `${milestone}.i${i + 1}`,
+		}));
+		const hand = [
+			{ ...sliceConcert("hand-near", 5), tour: `${milestone}.i5.extra` },
+			{
+				...sliceConcert("hand-other", 1),
+				tour: milestone === "release" ? "trial.rc1" : "release.rc1",
+			},
+		];
+		const t = setup([], [...factory, ...hand], {}, undefined, {
+			milestone,
+			reports: Object.fromEntries(
+				[...factory, ...hand].map((c) => [
+					c.id,
+					{
+						...NO_REPORT,
+						lessons: [`lesson ${c.id}`],
+						obstacles: [`obstacle ${c.id}`],
+					},
+				]),
+			),
+		});
+		return { t, factory, hand };
+	};
+
+	test("a hand-named milestone gives each factory run one lessons heading", async () => {
+		for (const milestone of ["release", "trial"]) {
+			const { t, factory, hand } = handNamedMilestone(milestone);
+			await t.run();
+			expect(t.starts.map(started)).toEqual(["perform masterclass.ts"]);
+			const text = readFileSync(
+				argAfter(t.starts[0] ?? [], "--lessons"),
+				"utf8",
+			);
+			const headings = text
+				.split("\n")
+				.filter((line) => line.startsWith("## "));
+			expect(
+				headings.filter((line) => line === `## r4 · ${milestone}.i5`),
+			).toHaveLength(1);
+			expect(headings).toHaveLength(12);
+			for (const c of [...factory, ...hand])
+				expect(
+					headings.filter((line) => line === `## ${c.id} · ${c.tour}`),
+				).toHaveLength(1);
+		}
+	});
+
+	test("a hand-named milestone gives each factory run one reports heading", async () => {
+		for (const milestone of ["release", "trial"]) {
+			const { t, factory, hand } = handNamedMilestone(milestone);
+			await t.run();
+			expect(t.starts.map(started)).toEqual(["perform masterclass.ts"]);
+			const text = readFileSync(
+				argAfter(t.starts[0] ?? [], "--reports"),
+				"utf8",
+			);
+			const headings = text
+				.split("\n")
+				.filter((line) => line.startsWith("## "));
+			expect(
+				headings.filter((line) => line === `## r4 · ${milestone}.i5`),
+			).toHaveLength(1);
+			expect(headings).toHaveLength(12);
+			for (const c of [...factory, ...hand])
+				expect(
+					headings.filter((line) => line === `## ${c.id} · ${c.tour}`),
+				).toHaveLength(1);
+		}
+	});
+
+	test("a masterclass start counts each concert once for a hand-named milestone", async () => {
+		for (const milestone of ["release", "trial"]) {
+			const { t } = handNamedMilestone(milestone);
+			await t.run();
+			expect(t.starts.map(started)).toEqual(["perform masterclass.ts"]);
+			expect(t.said.at(-1)?.match(/\b\d+\b/g)).toEqual(["12"]);
+		}
 	});
 
 	test("late release and trial slices are read without making a masterclass due", async () => {
