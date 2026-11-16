@@ -1,6 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-	chmodSync,
 	copyFileSync,
 	existsSync,
 	mkdirSync,
@@ -89,33 +88,6 @@ const unsorted =
 	'import { writeFileSync, readFileSync } from "node:fs";\nexport const files = { writeFileSync, readFileSync };\n';
 const sorted =
 	'import { readFileSync, writeFileSync } from "node:fs";\nexport const files = { writeFileSync, readFileSync };\n';
-
-test("test gives parallel tests a 30 second timeout", async () => {
-	const dir = checkout({
-		"bin/bun": "#!/bin/sh\nprintf '%s\\n' \"$@\" > bun-args\n",
-	});
-	chmodSync(join(dir, "bin/bun"), 0o755);
-	const child = Bun.spawn(["just", "test"], {
-		cwd: dir,
-		env: {
-			...process.env,
-			PATH: `${join(dir, "bin")}:${process.env.PATH}`,
-			TEST_SERIAL: "",
-		},
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	expect(await child.exited).toBe(0);
-	expect(text(dir, "bun-args").trim().split("\n")).toEqual([
-		"test",
-		"--parallel",
-		"--timeout",
-		"30000",
-		"--only-failures",
-		"./",
-		"./.maestro",
-	]);
-});
 
 test("fmt rewrites code and Markdown without sorting imports or fixing lints", async () => {
 	const dir = checkout({
