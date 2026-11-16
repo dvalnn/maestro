@@ -2,7 +2,6 @@ import { stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import { walk } from "@maestro/core";
 import type { ConcertRecord } from "@maestro/core/perform";
-import { indexGraph } from "@maestro/ir";
 import { shellArg, shortIds } from "@maestro/render-text/live";
 import {
 	COMMON,
@@ -74,19 +73,18 @@ async function onDisk<T>(path: string, read: () => Promise<T>): Promise<T> {
 
 function recorded({ session, store }: Stored, row: ConcertRecord) {
 	const area = artifactsOf(session, row.id);
-	const graph = indexGraph(row.ir);
 	const instances = instancesInOrder(store, row);
 	const artifacts: Listed[] = instances.flatMap((i) => {
 		const refs = artifactRefs(row.ir, i.node, i.outputs ?? {});
 		return i.artifacts.map((ref) => ({
-			instance: graph.instanceName(i),
+			instance: i.name,
 			port: refs.find((r) => r.ref.path === ref.path)?.port ?? NO_PORT,
 			path: join(area, ref.path),
 			contentHash: ref.contentHash,
 			...(i.stale && { stale: true as const }),
 		}));
 	});
-	return { names: instances.map((i) => graph.instanceName(i)), artifacts };
+	return { names: instances.map((i) => i.name), artifacts };
 }
 
 /** Each file of the artifact at `path`: itself as its basename, or each file under it as `<dir>/<inner path>`. */

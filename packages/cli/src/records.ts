@@ -4,13 +4,7 @@ import {
 	type ConcertRecord,
 	openRecord,
 } from "@maestro/core/perform";
-import {
-	compact,
-	DURATION_EXAMPLE,
-	indexGraph,
-	MS_PER_UNIT,
-	tokensOf,
-} from "@maestro/ir";
+import { compact, DURATION_EXAMPLE, MS_PER_UNIT, tokensOf } from "@maestro/ir";
 import {
 	agentText,
 	cutTo,
@@ -356,22 +350,20 @@ async function instancesOf(
 	const color = colorOf(session.deps, values).out;
 	const row = concertOf(store, prefix);
 	const hostText = hostTextOf(session.deps.hosts, row.ir);
-	const graph = indexGraph(row.ir);
 	const every = instancesInOrder(store, row);
 	const chosen =
 		which === undefined
 			? undefined
 			: resolveInstanceName(
 					which,
-					every.map((i) => graph.instanceName(i)),
+					every.map((i) => i.name),
 					row.id,
 				);
 	const instances = every.filter(
-		(i) => chosen === undefined || graph.instanceName(i) === chosen,
+		(i) => chosen === undefined || i.name === chosen,
 	);
 	const named = instances.map((i) => ({
 		...i,
-		name: graph.instanceName(i),
 		notes: i.stale ? {} : notesOf(i.enrichment, i.node, hostText),
 		report: i.stale ? undefined : reportOf(i.enrichment, i.node, hostText),
 		values: i.stale ? undefined : valuesOf(row.ir, i.node, i.outputs, hostText),
@@ -383,10 +375,7 @@ async function instancesOf(
 				...concertColumns(row),
 				short,
 				...spendOf(store, row.id),
-				instances: instances.map((i) => ({
-					...i,
-					name: graph.instanceName(i),
-				})),
+				instances,
 				reports: Object.fromEntries(
 					named.flatMap((i) => (i.report ? [[i.name, i.report]] : [])),
 				),

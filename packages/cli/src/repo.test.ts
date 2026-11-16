@@ -333,6 +333,13 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 		`══ notes.md\n${ended(readFileSync(notes, "utf8"))}══ staged/instructions.md\n${ended(staged("instructions.md"))}══ staged/prompt.md\n${prompt}`,
 	);
 	expect(await raw("a", "notes.md", "--path")).toBe(`${notes}\n`);
+	const instances = json(await w.call(["ls", id, "--json"])).instances;
+	const b = instances.find(
+		(i: { node: string; expansion: string }) =>
+			i.node === "parMap/b" && i.expansion === "[x]",
+	);
+	expect(b.name).toBe("parMap[x]/b");
+	expect(listed.filter((a) => a.instance === b.name).length).toBeGreaterThan(0);
 	const bStaged = listed.find((a) => a.instance === "parMap[x]/b")?.path ?? "";
 	expect(await raw("parMap[x]/b")).toBe(
 		`══ staged/instructions.md\n${readFileSync(join(bStaged, "instructions.md"), "utf8")}══ staged/prompt.md\n${readFileSync(join(bStaged, "prompt.md"), "utf8")}`,
@@ -921,6 +928,17 @@ describe("changeset", () => {
 		const fan = idOf(await w.call(["perform", join(REPO, "fan.ts")]));
 		expect((await w.cs("show", fan, "--node", "innerSet")).out).toContain(
 			"+inner",
+		);
+		const nested = json(await w.call(["ls", fan, "--json"])).instances.find(
+			(i: { node: string; expansion: string }) =>
+				i.node === "rounds/fan/nestedSet" && i.expansion === "[0][lens]",
+		);
+		expect(nested.name).toBe("rounds[0]/fan[lens]/nestedSet");
+		const artifacts: { instance: string; port: string }[] = json(
+			await w.call(["art", "ls", fan, "--json"]),
+		);
+		expect(artifacts).toContainEqual(
+			expect.objectContaining({ instance: nested.name, port: "changeset" }),
 		);
 		expect(await w.cs("show", fan, "--node", "set")).toMatchObject({
 			code: 2,

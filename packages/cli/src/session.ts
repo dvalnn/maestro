@@ -11,7 +11,7 @@ import {
 	openRecord,
 	type Records,
 } from "@maestro/core/perform";
-import { messageOf } from "@maestro/ir";
+import { indexGraph, messageOf } from "@maestro/ir";
 import {
 	inGraphOrder,
 	seen,
@@ -136,13 +136,18 @@ export function concertOf(store: Records, prefix: string): ConcertRecord {
 	return found;
 }
 
-/** The instances of concert `row`, in graph order. */
-export const instancesInOrder = (store: Records, row: ConcertRecord) =>
-	inGraphOrder(
+/**
+ * The instances of concert `row` its graph places, each with its `name`, in graph order. A stale instance the graph no
+ * longer places, after a resume with an IR that dropped its node, is left out and never named.
+ */
+export function instancesInOrder(store: Records, row: ConcertRecord) {
+	const graph = indexGraph(row.ir);
+	return inGraphOrder(
 		row.ir,
 		store.instances(row.id),
 		seen(new Map(), store.events(row.id)),
-	);
+	).map((i) => ({ ...i, name: graph.instanceName(i) }));
+}
 
 /** The concerts the prefixes `prefixes` start, each once, in the order first named. */
 export const concertsOf = (store: Records, prefixes: readonly string[]) => [
