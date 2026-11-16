@@ -24,7 +24,10 @@ const FORMAT_TOOLS = ["fmt"];
 /** Every check of the project's own config but fmt: those an agent that works on the lane may run. */
 const projectConfig = Bun.YAML.parse(
 	readFileSync(".maestro/config.yaml", "utf8"),
-) as { target: { checks: Record<string, { run: string }> } };
+) as {
+	target: { checks: Record<string, { run: string }> };
+	profiles: { "classics/lens": { attachments: Record<string, unknown> } };
+};
 /** The profiles of the agents that write the lane; the lenses only read a tree the gate passed. */
 const WRITERS = ["classics/builder", "classics/tester"];
 const projectChecks = Object.keys(projectConfig.target.checks).filter(
@@ -247,6 +250,59 @@ test.each(["low", "medium", "high"])(
 		expect(judges.length).toBeGreaterThan(0);
 		for (const n of judges)
 			expect(JSON.stringify(n)).toContain(JSON.stringify(JUDGED).slice(1, -1));
+	},
+);
+
+// Seam: the slice's composed seats and the effective profile attachments exposed by agent show.
+async function profileAttachments(profile: string, risk: string) {
+	const shown = JSON.parse(
+		await maestro([
+			"agent",
+			"show",
+			profile,
+			"--preset",
+			risk,
+			"--json",
+			"-c",
+			`packs=[${await classics}]`,
+		]),
+	) as { attachments: Record<string, { path: string; hint: string }> };
+	return shown.attachments;
+}
+
+test.each(["low", "medium", "high"])(
+	"under --preset %s, ruling profiles carry the lens's attachment keys and paths",
+	async (risk) => {
+		const { nodes, agents } = await composed([risk]);
+		const judges = nodes.filter(
+			(n) => n.id.endsWith("/skeptic") || n.id.endsWith("/consolidator"),
+		);
+		expect(judges.length).toBeGreaterThan(0);
+		const profiles = new Set([
+			"classics/skeptic",
+			"classics/consolidator",
+			...judges.map((n) => agents.find((a) => a.node === n.id)?.profile ?? ""),
+		]);
+		const lens = await profileAttachments("classics/lens", risk);
+		const keys = Object.keys(
+			projectConfig.profiles["classics/lens"].attachments,
+		).sort();
+		for (const profile of profiles) {
+			const attached = await profileAttachments(profile, risk);
+			expect(Object.keys(attached).sort()).toEqual(keys);
+			for (const key of keys) expect(attached[key]?.path).toBe(lens[key]?.path);
+		}
+	},
+);
+
+test.each(["low", "medium", "high"])(
+	"under --preset %s, ruling profiles introduce diagrams and docs before judging",
+	async (risk) => {
+		for (const profile of ["classics/skeptic", "classics/consolidator"]) {
+			const attached = await profileAttachments(profile, risk);
+			for (const key of ["diagrams", "docs"])
+				expect(attached[key]?.hint).toStartWith("before judging");
+		}
 	},
 );
 

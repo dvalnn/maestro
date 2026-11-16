@@ -34,6 +34,14 @@ profiles:
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
       docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
+  classics/skeptic:
+    attachments:
+      diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
+      docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
+  classics/consolidator:
+    attachments:
+      diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
+      docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
   classics/deep-lens:
     runtime: { harness: claude, model: claude-sonnet-5-5, thinking: medium }
     attachments:
