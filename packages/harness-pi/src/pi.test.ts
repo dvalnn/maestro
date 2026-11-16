@@ -5,7 +5,6 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
-	readlinkSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
@@ -272,7 +271,7 @@ describe("stand-in pi", () => {
 		]);
 	});
 
-	test("pi runs on an agent dir under the session dir holding only a link to the user's auth.json, which it reads and writes through in the sandbox; without one it starts on an empty dir", async () => {
+	test("pi runs on an agent dir under the session dir holding only the user's auth.json bound over a placeholder, which it reads, writes through and locks beside itself in the sandbox; without one it starts on an empty dir", async () => {
 		const user = join(tmp("home"), ".pi", "agent");
 		mkdirSync(user, { recursive: true });
 		const auth = join(user, "auth.json");
@@ -281,7 +280,7 @@ describe("stand-in pi", () => {
 		writeFileSync(join(user, "settings.json"), "{}");
 		const { bin } = standIn(
 			fixture(),
-			`ls -A "$PI_CODING_AGENT_DIR" > /out/owned\ncat "$PI_CODING_AGENT_DIR/auth.json" > /out/auth\nprintf '{"refreshed":{}}' > "$PI_CODING_AGENT_DIR/auth.json"`,
+			`ls -A "$PI_CODING_AGENT_DIR" > /out/owned\ncat "$PI_CODING_AGENT_DIR/auth.json" > /out/auth\nprintf '{"refreshed":{}}' > "$PI_CODING_AGENT_DIR/auth.json"\nlock="$(realpath "$PI_CODING_AGENT_DIR/auth.json").lock"\nmkdir "$lock" && echo locked > /out/lock && rmdir "$lock"`,
 		);
 		const req = request("x");
 		await piHarness({ bin, agentDir: user }).run(req).result;
@@ -290,8 +289,10 @@ describe("stand-in pi", () => {
 		expect(read("env")).toContain("PI_CODING_AGENT_DIR=/session/agent\n");
 		expect(read("owned")).toBe("auth.json\n");
 		expect(read("auth")).toBe('{"openai":{"type":"api_key","key":"sk-1"}}');
+		expect(read("lock")).toBe("locked\n");
 		expect(readdirSync(owned)).toEqual(["auth.json"]);
-		expect(readlinkSync(join(owned, "auth.json"))).toBe(auth);
+		expect(lstatSync(join(owned, "auth.json")).isFile()).toBe(true);
+		expect(readFileSync(join(owned, "auth.json"), "utf8")).toBe("");
 		expect(readFileSync(auth, "utf8")).toBe('{"refreshed":{}}');
 
 		rmSync(auth);
@@ -453,9 +454,7 @@ describe("stand-in pi", () => {
 		expect(readFileSync(join(owned, "models.json"), "utf8")).toBe(
 			'{"providers":{}}',
 		);
-		expect(readlinkSync(join(owned, "auth.json"))).toBe(
-			join(user, "auth.json"),
-		);
+		expect(lstatSync(join(owned, "auth.json")).isFile()).toBe(true);
 		expect(readdirSync(owned)).not.toContain("settings.json");
 
 		// a directory planted at either name is removed too
@@ -464,9 +463,7 @@ describe("stand-in pi", () => {
 		mkdirSync(join(owned, "auth.json"));
 		mkdirSync(join(owned, "settings.json", "deep"), { recursive: true });
 		await run();
-		expect(readlinkSync(join(owned, "auth.json"))).toBe(
-			join(user, "auth.json"),
-		);
+		expect(lstatSync(join(owned, "auth.json")).isFile()).toBe(true);
 		expect(readdirSync(owned)).not.toContain("settings.json");
 
 		// replaced by a link: unlinked, not followed, rebuilt

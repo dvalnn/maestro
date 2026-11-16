@@ -201,10 +201,10 @@ export function subprocessHarness(
 					...instructions,
 				],
 				writable: [
-					...(spec.writable ?? []),
-					...(req.writable ?? []),
 					{ src: req.outbox, dst: OUTBOX },
 					{ src: req.session.dir, dst: SESSION_DIR },
+					...(spec.writable ?? []),
+					...(req.writable ?? []),
 				],
 			});
 			let emit!: ReadableStreamDefaultController<HarnessEvent>;

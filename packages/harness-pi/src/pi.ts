@@ -5,7 +5,6 @@ import {
 	readFileSync,
 	rmSync,
 	statSync,
-	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -57,9 +56,10 @@ const THINKING_LEVELS = [
 const AUTH_FILE = "auth.json";
 /**
  * The agent dir maestro owns under the session dir, as `PI_CODING_AGENT_DIR`, so nothing of the user's pi dir but
- * `auth.json` reaches pi. It holds `auth.json`, a link to the user's, bound read-write so a token refresh writes
- * through, and under a `compact` policy maestro's own `settings.json`. Its `auth.json.lock` keeps concurrent agents
- * from locking each other on a refresh; a lost write means logging in again. What it reads from harness extras, and
+ * `auth.json` reaches pi. It holds `auth.json`, the user's file bound read-write over it so a token refresh writes
+ * through, and under a `compact` policy maestro's own `settings.json`. A file bound there, not a link, puts pi's
+ * `auth.json.lock` beside it in this dir, as pi 1.5.2 locks the resolved path; that keeps concurrent agents from
+ * locking each other on a refresh. A lost write means logging in again. What it reads from harness extras, and
  * why no check is added, is under "Harness extras" in the host-repo README.
  */
 const SESSION_AGENT = "agent";
@@ -408,8 +408,9 @@ function extensionsOf(owned: string): string[] {
 
 /**
  * Mints `<owned>` with `extras` through `mintOwnedDir`, then unlinks whatever stands at `auth.json` and `settings.json` and
- * fills them: `settings.json` when `settings` is given, and `auth.json` as a link to `auth`, left absent when `auth` is
- * missing. Returns whether it linked. pi writes `auth.json` in place, so a refresh writes through the link.
+ * fills them: `settings.json` when `settings` is given, and `auth.json` as an empty mount point for the user's, left
+ * absent when `auth` is missing. Returns whether it made the mount point. The sandbox binds the user's file over it, and
+ * pi writes it in place, so a refresh reaches the user's file.
  */
 function ownedDir(
 	owned: string,
@@ -425,7 +426,7 @@ function ownedDir(
 			flag: "wx",
 		});
 	if (!existsSync(auth)) return false;
-	symlinkSync(auth, join(owned, AUTH_FILE));
+	writeFileSync(join(owned, AUTH_FILE), "", { flag: "wx" });
 	return true;
 }
 
@@ -457,7 +458,7 @@ export function piHarness(
 			bin ??= resolveBin(PI_BIN, options.bin);
 			reporter ??= stageReporter();
 			const owned = join(req.session.dir, SESSION_AGENT);
-			const linked = ownedDir(
+			const bound = ownedDir(
 				owned,
 				auth,
 				settingsOf(req.context, req.window),
@@ -467,12 +468,14 @@ export function piHarness(
 				argv: piArgv(bin, req, extensionsOf(owned)),
 				stdin: req.prompt,
 				env: { [AGENT_DIR_VAR]: join(SESSION_DIR, SESSION_AGENT) },
-				masked: credentials(owned),
+				masked: credentials(agentDir),
 				readOnly: [
 					{ src: dirname(bin) },
 					{ src: reporter, dst: REPORTER_PATH },
 				],
-				writable: linked ? [{ src: auth }] : [],
+				writable: bound
+					? [{ src: auth, dst: join(SESSION_DIR, SESSION_AGENT, AUTH_FILE) }]
+					: [],
 			};
 		},
 		parser,
