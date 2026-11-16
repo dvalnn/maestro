@@ -410,9 +410,9 @@ profiles:
 ```
 
 A relative path resolves against its config layer's base directory (see the CLI README, Config). A file that is missing
-or no file is refused at pre-flight, naming `profiles.<name>.instructions`, the path and the config line. The profiles
-digest covers a config-set instruction file only when it sits inside the winning profile's directory; one elsewhere,
-such as the workspace's `.maestro/instructions/`, is left out, so an edit to it does not change the digest.
+or no file is refused at pre-flight. The refusal names `profiles.<name>.instructions`, the path and the config line. The
+profiles digest covers a config-set instruction file only inside the winning profile's directory. One elsewhere, such as
+the workspace's `.maestro/instructions/`, is left out, so an edit to it does not change the digest.
 
 `harnessExtras` names the **harness extras**: one directory, in the harness's own layout, that the harness adapter
 copies into the config dir it owns for the session, the one way past the baseline. The host binds nothing for it; the

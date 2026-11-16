@@ -56,6 +56,9 @@ const GIT_ENV = {
 	GIT_AUTHOR_EMAIL: "op@x",
 	GIT_COMMITTER_NAME: "op",
 	GIT_COMMITTER_EMAIL: "op@x",
+	GIT_CONFIG_COUNT: "1",
+	GIT_CONFIG_KEY_0: "maintenance.auto",
+	GIT_CONFIG_VALUE_0: "false",
 };
 
 const gitIn = (repo: string, ...args: string[]) => {
