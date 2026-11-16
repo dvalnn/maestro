@@ -172,20 +172,20 @@ function treeRepository() {
 	return { dir, main: at("main"), next: at("@-") };
 }
 
-test("a tree is a workspace of its commit with its dependencies installed, reused, and the only one kept", async () => {
+test("a tree is a workspace of its commit with its dependencies installed, reused, and the only one kept but those a running concert holds", async () => {
 	const { dir, main, next } = treeRepository();
 	const root = join(mkdtempSync(join(tmpdir(), "factory-trees-")), "trees");
 	const lands = landing(dir, account);
-	const first = await lands.tree("main", root);
+	const first = await lands.tree("main", root, []);
 	expect(first).toBe(join(root, main));
 	expect(readFileSync(join(first, ".maestro/slice.ts"), "utf8")).toBe(
 		"export default 1;\n",
 	);
 	expect(existsSync(join(first, "node_modules/dep/package.json"))).toBe(true);
 	writeFileSync(join(first, "kept"), "k\n");
-	expect(await lands.tree(main, root)).toBe(first);
+	expect(await lands.tree(main, root, [])).toBe(first);
 	expect(existsSync(join(first, "kept"))).toBe(true);
-	const second = await lands.tree(next, root);
+	const second = await lands.tree(next, root, []);
 	expect(readdirSync(root)).toEqual([next]);
 	expect(readFileSync(join(second, ".maestro/slice.ts"), "utf8")).toBe(
 		"export default 2;\n",
@@ -193,6 +193,9 @@ test("a tree is a workspace of its commit with its dependencies installed, reuse
 	expect(jj(dir, "workspace", "list")).not.toContain(
 		`tree-${main.slice(0, 12)}`,
 	);
+	// A running concert's tree survives the start of another.
+	await lands.tree(main, root, [next]);
+	expect(readdirSync(root).sort()).toEqual([main, next].sort());
 });
 
 test("a tree directory that is no workspace is rebuilt, and a revision naming no single commit is refused", async () => {
@@ -201,10 +204,10 @@ test("a tree directory that is no workspace is rebuilt, and a revision naming no
 	mkdirSync(join(root, main), { recursive: true });
 	writeFileSync(join(root, main, "half"), "h\n");
 	const lands = landing(dir, account);
-	const tree = await lands.tree(main, root);
+	const tree = await lands.tree(main, root, []);
 	expect(existsSync(join(tree, "half"))).toBe(false);
 	expect(existsSync(join(tree, ".maestro/slice.ts"))).toBe(true);
-	await expect(lands.tree("main | @", root)).rejects.toThrow("not one");
+	await expect(lands.tree("main | @", root, [])).rejects.toThrow("not one");
 });
 
 test("conflicts commits a conflicting merge onto main with git's markers in, which a workspace opens, and leaves a clean one alone", async () => {

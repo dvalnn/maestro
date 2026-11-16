@@ -146,6 +146,18 @@ async function encoreCommit(tick: Tick, id: string) {
 }
 
 /**
+ * The commits whose trees a running concert performs in, which no tree being made may remove.
+ * @throws Error when a running concert's record cannot be read, so no tree is removed on a guess.
+ */
+async function busyTrees(tick: Tick) {
+	const running = (await listConcerts(tick.maestro, tick.milestone)).filter(
+		(c) => c.status === "running",
+	);
+	const dirs = await Promise.all(running.map((c) => tick.maestro.tree(c.id)));
+	return dirs.map((d) => basename(dirname(d)));
+}
+
+/**
  * The tree `run`'s concert performs in, at the tick's `main` whatever its cut, so only approved code runs, or, for an
  * encore, at the commit its first concert's tree holds; undefined once an encore halted on a commit that is not one the
  * repository has.
@@ -153,7 +165,8 @@ async function encoreCommit(tick: Tick, id: string) {
  */
 async function treeOf(tick: Tick, run: Run) {
 	const root = join(tick.cache, "trees");
-	if (!run.encore) return tick.landing.tree(tick.main, root);
+	const keep = await busyTrees(tick);
+	if (!run.encore) return tick.landing.tree(tick.main, root, keep);
 	let commit: string;
 	try {
 		commit = await encoreCommit(tick, run.encore);
@@ -161,7 +174,7 @@ async function treeOf(tick: Tick, run: Run) {
 		await halt(tick, ...refused(run, error));
 		return undefined;
 	}
-	return tick.landing.tree(commit, root);
+	return tick.landing.tree(commit, root, keep);
 }
 
 /** Starts `run`'s concert in its tree and returns its id; undefined once it halted on a refusal. */

@@ -272,6 +272,7 @@ export function fakeLanding(failAt?: keyof Landing, output = "") {
 	const compared: string[] = [];
 	const steps: string[] = [];
 	const trees: string[] = [];
+	const kept: string[][] = [];
 	const conflicting: Record<
 		string,
 		Omit<Conflicts, "commit"> | { untold: string[] }
@@ -309,7 +310,8 @@ export function fakeLanding(failAt?: keyof Landing, output = "") {
 			compared.push(`${from}..${to}`);
 			return paths.filter((p) => changed.includes(p));
 		},
-		tree: async (revision, root) => {
+		tree: async (revision, root, keep) => {
+			kept.push([...keep]);
 			if (failing === "tree") throw new Error(output);
 			trees.push(revision);
 			return join(root, revision);
@@ -326,6 +328,7 @@ export function fakeLanding(failAt?: keyof Landing, output = "") {
 		steps,
 		events,
 		trees,
+		kept,
 		unknown,
 		changed,
 		compared,

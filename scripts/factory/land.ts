@@ -34,10 +34,15 @@ export type Landing = {
 	/**
 	 * A jj workspace of the repository at the commit `revision` names, at `root/<commit>`, with its dependencies
 	 * installed, and returns its directory. It reuses the tree there, installs again to heal a half install, rebuilds a
-	 * directory that is no workspace and removes every other tree under `root`, so at most one is on disk.
+	 * directory that is no workspace and removes every other tree under `root` except those of the commits in `keep`,
+	 * which running concerts perform in.
 	 * @throws Error when `revision` names no single commit, or the workspace or its install fails.
 	 */
-	tree(revision: string, root: string): Promise<string>;
+	tree(
+		revision: string,
+		root: string,
+		keep: readonly string[],
+	): Promise<string>;
 	/**
 	 * Merges commit `head` onto commit `onto` and, when they conflict only in ways a builder can be told, commits the
 	 * merge with git's conflict markers left in, `onto` its parent, and returns it; else returns the paths it cannot
@@ -263,11 +268,13 @@ export function landing(
 		},
 		close,
 		commit: (revision) => commitOf(repo, revision),
-		tree: async (revision, root) => {
+		tree: async (revision, root, keep) => {
 			const commit = await commitOf(repo, revision);
 			const dir = join(root, commit);
 			mkdirSync(root, { recursive: true });
-			for (const other of readdirSync(root).filter((n) => n !== commit))
+			for (const other of readdirSync(root).filter(
+				(n) => n !== commit && !keep.includes(n),
+			))
 				await close(join(root, other), treeName(other));
 			if (!existsSync(join(dir, ".jj")))
 				await open(dir, treeName(commit), commit);

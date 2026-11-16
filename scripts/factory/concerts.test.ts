@@ -35,12 +35,16 @@ const issue: Issue = {
 };
 
 /** A tick on fakes whose `main` is `MAIN`, with the presets `stub` and `xscout` and `files` in the repo. */
-function setup({ files = [] as string[], treeFails = false } = {}) {
+function setup({
+	files = [] as string[],
+	treeFails = false,
+	concerts = [] as Concert[],
+} = {}) {
 	const landing = fakeLanding(
 		treeFails ? "tree" : undefined,
 		"bun install exited 1",
 	);
-	const maestro = fakeMaestro([], {}, {});
+	const maestro = fakeMaestro(concerts, {}, {});
 	const forge = fakeForge([]);
 	const said: string[] = [];
 	const tick: Tick = {
@@ -345,6 +349,56 @@ describe("starting a concert", () => {
 			expect(t.find(100).body).toContain("maestro: no such preset");
 		},
 	);
+});
+
+test("a start keeps the trees of the running concerts, of any kind, and not those of settled ones", async () => {
+	const busy = "a".repeat(40);
+	const done = "b".repeat(40);
+	const t = setup({
+		concerts: [
+			{
+				id: "run",
+				tour: MILESTONE,
+				status: "running",
+				pack: "slice",
+				composition: "slice",
+			},
+			{
+				id: "old",
+				tour: MILESTONE,
+				status: "ok",
+				pack: "triage",
+				composition: "triage",
+			},
+		],
+	});
+	t.recorded.run = `/cache/trees/${busy}/.maestro`;
+	t.recorded.old = `/cache/trees/${done}/.maestro`;
+	await startTriage(t.tick, issue, TRIAGE_INPUT);
+	t.recorded.c0 = `/cache/trees/${done}/.maestro`;
+	await startTriage(t.tick, issue, { ...TRIAGE_INPUT, encore: "c0" });
+	expect(t.kept).toEqual([[busy], [busy]]);
+});
+
+test("a start whose running concert's tree cannot be read makes no tree and throws", async () => {
+	const t = setup({
+		concerts: [
+			{
+				id: "run",
+				tour: MILESTONE,
+				status: "running",
+				pack: "slice",
+				composition: "slice",
+			},
+		],
+	});
+	t.tick.maestro.tree = async () => {
+		throw new Error("ls failed");
+	};
+	await expect(startTriage(t.tick, issue, TRIAGE_INPUT)).rejects.toThrow(
+		"ls failed",
+	);
+	expect(t.trees).toEqual([]);
 });
 
 describe("recognising a concert", () => {
