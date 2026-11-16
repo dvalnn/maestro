@@ -3026,6 +3026,29 @@ describe("masterclass", () => {
 		);
 	});
 
+	test("an ok watermark beyond the first 200 milestone concerts keeps earlier runs from counting", async () => {
+		const noise = Array.from({ length: 205 }, (_, i) => ({
+			...sliceConcert(`noise${i}`, i),
+			pack: "other",
+			composition: "other",
+			startedAt: 2000 - i,
+			settledAt: 2100 - i,
+		}));
+		const mark = {
+			...masterclassConcert("m0"),
+			startedAt: 1000,
+			settledAt: 1010,
+		};
+		const ten = runs(50, 10).map((c, i) => ({
+			...c,
+			startedAt: 800 - i,
+			settledAt: 900 - i,
+		}));
+		const t = setup([], [...noise, mark, ...ten], okMasterclass);
+		await t.run();
+		expect(t.starts).toEqual([]);
+	});
+
 	test("a failed masterclass is retried only after a factory run settles later", async () => {
 		const failure = {
 			...masterclassConcert("failed", "failed"),
