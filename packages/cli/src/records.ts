@@ -377,7 +377,10 @@ async function instancesOf(
 				...concertColumns(row),
 				short,
 				...spendOf(store, row.id),
-				instances,
+				instances: instances.map((i) => ({
+					...i,
+					name: instanceName(row.ir, i),
+				})),
 				reports: Object.fromEntries(
 					named.flatMap((i) => (i.report ? [[i.name, i.report]] : [])),
 				),

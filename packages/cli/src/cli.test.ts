@@ -1521,6 +1521,89 @@ describe("the record", () => {
 		expect(await drafts()).toEqual(first);
 	});
 
+	// Seam: the JSON documents and exit codes of ls on a performed concert and one of its instances.
+	async function loopFanConcert() {
+		const w = await world();
+		const done = {
+			outcome: "ok",
+			outputs: { text: "done" },
+			enrichment: { summary: "reviewed" },
+		} as const;
+		const host: Host = {
+			...fakeHost({
+				steps: {
+					init: [done],
+					"rounds/fan/worker": [done],
+					"rounds/finish": [done],
+				},
+			}),
+			text: { report: (e) => ({ summary: e.summary }) },
+		};
+		const performed = await w.call(["perform", join(FIXTURES, "loop-fan.ts")], {
+			hosts: [host],
+		});
+		expect(performed.code).toBe(0);
+		return { w, host, id: idOf(performed) };
+	}
+
+	test("ls --json names each instance by the id of its reports and outputs, including a fan-out inside a loop", async () => {
+		const { w, host, id } = await loopFanConcert();
+		const result = await w.call(["ls", id, "--json"], { hosts: [host] });
+		expect(result.code).toBe(0);
+		const doc = json(result);
+		const workers = doc.instances.filter(
+			(i: { node: string }) => i.node === "rounds/fan/worker",
+		);
+		expect(workers.map((i: { expansion: string }) => i.expansion)).toEqual([
+			"[0][lens]",
+			"[0][risk]",
+		]);
+		for (const name of [
+			"rounds[0]/fan[lens]/worker",
+			"rounds[0]/fan[risk]/worker",
+		]) {
+			expect(doc.reports[name]).toEqual({ summary: "reviewed" });
+			expect(doc.outputs[name]).toEqual({ text: "done" });
+		}
+		expect(workers.map((i: { name: string }) => i.name)).toEqual([
+			"rounds[0]/fan[lens]/worker",
+			"rounds[0]/fan[risk]/worker",
+		]);
+		expect(doc.instances).toMatchObject([
+			{ node: "init", name: "init" },
+			{ node: "rounds", name: "rounds" },
+			{ node: "rounds/fan", name: "rounds[0]/fan" },
+			{ node: "rounds/fan/worker", name: "rounds[0]/fan[lens]/worker" },
+			{ node: "rounds/fan/worker", name: "rounds[0]/fan[risk]/worker" },
+			{ node: "rounds/firstOk", name: "rounds[0]/firstOk" },
+			{ node: "rounds/firstOk_text", name: "rounds[0]/firstOk_text" },
+			{ node: "rounds/finish", name: "rounds[0]/finish" },
+			{ node: "rounds/finish_not", name: "rounds[0]/finish_not" },
+		]);
+	});
+
+	test("ls --json accepts an instance name from the listing and returns only that named instance", async () => {
+		const { w, host, id } = await loopFanConcert();
+		const doc = json(await w.call(["ls", id, "--json"], { hosts: [host] }));
+		const worker = doc.instances.find(
+			(i: { node: string; expansion: string }) =>
+				i.node === "rounds/fan/worker" && i.expansion === "[0][lens]",
+		);
+		expect(worker.name).toBe("rounds[0]/fan[lens]/worker");
+		const result = await w.call(["ls", id, worker.name, "--json"], {
+			hosts: [host],
+		});
+		expect(result.code).toBe(0);
+		const filtered = json(result);
+		expect(filtered.instances).toEqual([worker]);
+		expect(filtered.reports).toEqual({
+			"rounds[0]/fan[lens]/worker": { summary: "reviewed" },
+		});
+		expect(filtered.outputs).toEqual({
+			"rounds[0]/fan[lens]/worker": { text: "done" },
+		});
+	});
+
 	test("ls --json gives an instance's wired inputs, and leaves the field out of a row that has none", async () => {
 		const w = await world();
 		const id = idOf(

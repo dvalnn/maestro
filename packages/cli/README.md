@@ -188,8 +188,9 @@ error. With `--json`, `instances` and `reports` hold that instance alone.
 
 In the `--json` documents:
 
-- `ls <concert> --json` lists `instances` in graph order, each with `inputs`, the values a leaf was fed on its wired
-  ports, left out when the record has none (a group, or an instance from an older store).
+- `ls <concert> --json` lists `instances` in graph order, each with its `name`, the id that keys `reports` and `outputs`
+  and that `ls <concert> <name>` accepts, and `inputs`, the values a leaf was fed on its wired ports, left out when the
+  record has none (a group, or an instance from an older store).
 - It gives the full report of each current instance that has one as `reports`, by the instance's name:
   `maestro ls <concert> --json | jq .reports`. An agent's report holds `summary`, `gaps`, `obstacles`, `lessons` and
   `sightings`; `maestro ls --help` says what each means.
