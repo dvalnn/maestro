@@ -20,7 +20,7 @@ import {
 	stubOutputs,
 	targetRepo,
 } from "./testing/stub";
-import { answersOf } from "./triage";
+import { answersOf, sketchesOf } from "./triage";
 import {
 	askAlone,
 	bugIssue,
@@ -104,6 +104,39 @@ test("the compiler rejects a grounded fixture carrying missing", () => {
 	for (const file of [".maestro/triage.test.ts", ".maestro/triage/fixtures.ts"])
 		rejectsExtraField(file);
 }, 60_000);
+
+test("sketchesOf gathers each sketch in order, marking one whose designer failed as missing", () => {
+	const dir = mkdtempSync(join(scratch, "sketches-"));
+	const sketch = join(dir, "sketch.md");
+	writeFileSync(sketch, "greet(name)\n");
+	const ctx = {
+		scratch: dir,
+		path: (ref: ArtifactRef) => ref.path,
+	} as CodeContext;
+	const gathered = sketchesOf(
+		{
+			sketches: [
+				{ outcome: "failed", reason: "timed out" },
+				{ outcome: "ok", value: { path: sketch } as ArtifactRef },
+			],
+		},
+		ctx,
+	);
+	expect(readFileSync(gathered.sketches, "utf8")).toBe(
+		[
+			"# The designers' sketches",
+			"",
+			"## Sketch 1",
+			"",
+			"Missing: the designer failed: timed out.",
+			"",
+			"## Sketch 2",
+			"",
+			"greet(name)",
+			"",
+		].join("\n"),
+	);
+});
 
 test("answersOf merges each group's answers in order, marking an unsure answer and a group whose scout failed", () => {
 	const dir = mkdtempSync(join(scratch, "answers-"));
@@ -1175,6 +1208,341 @@ test.each(outputs)(
 			ctx,
 		);
 		expect("value" in read).toBe(ok);
+	},
+);
+
+// Seams: triage compose --json (graph, attachments, sessions and runtimes),
+// and perform/encore/ls --json (executed seats, their inputs and the settled verdict).
+type DesignsPlan = {
+	plan: {
+		ir: {
+			nodes: (TriageNode & {
+				kind: string;
+				config: { profile?: string; seat?: string; encore?: boolean };
+			})[];
+			edges: TriageEdge[];
+		};
+	};
+	agents: { node: string; profile: string; model: string; thinking: string }[];
+};
+
+async function designsComposed(...flags: string[]): Promise<DesignsPlan> {
+	const run = await call(
+		await triage("compose", "--backlog", backlog, ...flags),
+	);
+	expect(run.code).toBe(0);
+	return JSON.parse(run.out);
+}
+
+const designerNodes = (shape: DesignsPlan) =>
+	shape.plan.ir.nodes.filter((node) => node.config?.profile === "designer");
+
+const sourcesOf = (shape: DesignsPlan, node: string, port: string) =>
+	shape.plan.ir.edges
+		.filter((edge) => edge.to.node === node && edge.to.port === port)
+		.map((edge) => edge.from);
+
+type DesignsInstance = {
+	node: string;
+	expansion: string;
+	status: string;
+	inputs?: { session?: string; plan?: Proposal; sketches?: ArtifactRef };
+	outputs?: { session?: string };
+	enrichment?: { harness?: string };
+};
+
+async function designsListed(id: string, data: string) {
+	const listed = await call(["ls", id, "--json"], data);
+	expect(listed.code).toBe(0);
+	const { instances }: { instances: DesignsInstance[] } = JSON.parse(
+		listed.out,
+	);
+	return instances;
+}
+
+const firstDesignPlan: Proposal = {
+	verdict: "split",
+	...unspecified,
+	children,
+};
+const mergedPlan: Proposal = {
+	...ready,
+	spec: { ...spec, what: "The merged contract shape." },
+};
+
+async function designsPerformed(
+	shape: DesignsPlan,
+	{
+		ruling = planning,
+		proposal = firstDesignPlan,
+		merge = mergedPlan,
+		revision = ready,
+		extra = {},
+	}: {
+		ruling?: Ruling;
+		proposal?: Proposal;
+		merge?: Proposal;
+		revision?: Proposal;
+		extra?: Record<string, unknown>;
+	} = {},
+) {
+	const sketches = Object.fromEntries(
+		designerNodes(shape).flatMap((node) =>
+			Object.values(node.config.out ?? {}).map((out) => [
+				`${node.id}/${out.file}`,
+				"A rival contract: greet(name).\n",
+			]),
+		),
+	);
+	const env = {
+		MAESTRO_STUB_OUTPUTS: stubOutputs({
+			"triager/ruling.json": ruling,
+			"triager/backlog.md": "- #7 Greet: it greets too\n",
+			"planner/plan.json": proposal,
+			"merge/plan.json": merge,
+			"checker/check.json": { findings: [] },
+			"revise/plan.json": revision,
+			...sketches,
+			...extra,
+		}),
+	};
+	const data = mkdtempSync(join(scratch, "designs-data-"));
+	const run = await call(
+		[
+			...(await triage("perform", "--backlog", backlog, "--designs")),
+			"--preset",
+			"stub",
+			"-c",
+			`target.repo=${targetRepo()}`,
+			"-c",
+			'target.prepare="true"',
+		],
+		data,
+		env,
+	);
+	expect(run.code).toBe(0);
+	const concert: { id: string; status: string; outputs: { triage: Triage } } =
+		JSON.parse(run.out);
+	const instances = await designsListed(concert.id, data);
+	const sketchesRead = () => {
+		const path = instances.find((instance) => instance.node === "merge")?.inputs
+			?.sketches?.path;
+		expect(path).toBeDefined();
+		return readFileSync(
+			join(data, "maestro/concerts", concert.id, "artifacts", path ?? ""),
+			"utf8",
+		);
+	};
+	return { concert, instances, data, env, sketchesRead };
+}
+
+const ranDesigners = (shape: DesignsPlan, instances: DesignsInstance[]) =>
+	instances.filter((instance) =>
+		designerNodes(shape).some((node) => node.id === instance.node),
+	);
+
+test("--designs is opt-in and --no-designs keeps the default graph and seats", async () => {
+	const baseline = await designsComposed();
+	const off = await designsComposed("--no-designs");
+	expect(off.plan.ir.nodes).toEqual(baseline.plan.ir.nodes);
+	expect(off.plan.ir.edges).toEqual(baseline.plan.ir.edges);
+	expect(off.agents).toEqual(baseline.agents);
+	const on = await designsComposed("--designs");
+	expect(designerNodes(baseline)).toEqual([]);
+	expect(
+		baseline.plan.ir.nodes.find((node) => node.id === "merge"),
+	).toBeUndefined();
+	expect(designerNodes(on).length).toBeGreaterThan(0);
+	expect(on.plan.ir.nodes.find((node) => node.id === "merge")).toBeDefined();
+});
+
+test("designers compose fresh on Sonnet at medium with the planner's evidence, never its plan or sightings", async () => {
+	const sightings = join(
+		mkdtempSync(join(scratch, "designs-sightings-")),
+		"sightings.md",
+	);
+	writeFileSync(sightings, "- a.ts · R1 · Drops a name.\n");
+	const shape = await designsComposed("--designs", "--sightings", sightings);
+	const designers = designerNodes(shape);
+	expect(designers.length).toBeGreaterThan(0);
+	for (const node of designers) {
+		expect(node.config.encore).toBe(false);
+		for (const port of ["issue", "answers", "backlog"]) {
+			expect(node.config.attachments?.[port]?.type).toBe("core.markdown");
+			expect(sourcesOf(shape, node.id, port)).toEqual(
+				sourcesOf(shape, "planner", port),
+			);
+		}
+		expect(node.config.attachments?.sightings).toBeUndefined();
+		expect(
+			shape.plan.ir.edges.filter(
+				(edge) => edge.to.node === node.id && edge.from.node === "planner",
+			),
+		).toEqual([]);
+		expect(
+			Object.values(node.config.out ?? {}).map((out) => out.format),
+		).toEqual(["markdown"]);
+		expect(shape.agents.find((agent) => agent.node === node.id)).toMatchObject({
+			profile: "designer",
+			model: "claude-sonnet-5-5",
+			thinking: "medium",
+		});
+	}
+});
+
+test("merge continues the planner's seat and session and hands its whole plan to checking and revision", async () => {
+	const shape = await designsComposed("--designs");
+	const node = (id: string) =>
+		shape.plan.ir.nodes.find((entry) => entry.id === id);
+	expect(node("merge")?.config.seat).toBe(node("planner")?.config.seat);
+	expect(node("merge")?.config.reply?.plan).toEqual(Proposal.schema);
+	expect(node("merge")?.config.attachments?.sketches?.type).toBe(
+		"core.markdown",
+	);
+	expect(sourcesOf(shape, "merge", "session")).toEqual([
+		{ node: "planner", port: "session" },
+	]);
+	expect(sourcesOf(shape, "checker", "plan")).toEqual([
+		{ node: "merge", port: "plan" },
+	]);
+	expect(sourcesOf(shape, "revise", "session")).toEqual([
+		{ node: "merge", port: "session" },
+	]);
+});
+
+test("a designs stub perform runs both designers and settles the merge plan rather than the first plan", async () => {
+	const shape = await designsComposed("--designs");
+	const { concert, instances, sketchesRead } = await designsPerformed(shape);
+	expect(concert.status).toBe("ok");
+	expect(
+		ranDesigners(shape, instances).map((instance) => instance.status),
+	).toEqual(["ok", "ok"]);
+	expect(sketchesRead().split("A rival contract: greet(name).")).toHaveLength(
+		3,
+	);
+	const merge = instances.find((instance) => instance.node === "merge");
+	expect(merge?.status).toBe("ok");
+	for (const instance of [...ranDesigners(shape, instances), merge])
+		expect(instance?.enrichment?.harness).toBe("stub");
+	expect(merge?.inputs?.session).toBe(
+		instances.find((instance) => instance.node === "planner")?.outputs?.session,
+	);
+	expect(
+		instances.find((instance) => instance.node === "checker")?.inputs?.plan,
+	).toEqual(mergedPlan);
+	expect(concert.outputs.triage).toEqual({
+		verdict: "ready-for-agent",
+		...medium,
+		questions: [],
+		spec: {
+			touches: ready.touches,
+			...spec,
+			what: "The merged contract shape.",
+		},
+	});
+});
+
+test("a designs stub perform revises findings in the merge plan even when the first plan was valid", async () => {
+	const shape = await designsComposed("--designs");
+	const { concert, instances } = await designsPerformed(shape, {
+		proposal: ready,
+		merge: { ...ready, spec: { ...spec, requirements: [offShape] } },
+		revision: {
+			...ready,
+			spec: { ...spec, what: "The revised merged contract." },
+		},
+	});
+	const revision = instances.find((instance) => instance.node === "revise");
+	expect(revision?.status).toBe("ok");
+	expect(revision?.inputs?.session).toBe(
+		instances.find((instance) => instance.node === "merge")?.outputs?.session,
+	);
+	expect(concert.outputs.triage.spec?.what).toBe(
+		"The revised merged contract.",
+	);
+});
+
+test("a failed designer does not prevent merging the surviving sketch", async () => {
+	const shape = await designsComposed("--designs");
+	const first = await designsPerformed(shape);
+	const designer = ranDesigners(shape, first.instances)[0];
+	expect(designer?.outputs?.session).toBeDefined();
+	const id = designer?.outputs?.session?.slice(first.concert.id.length + 1);
+	const { concert, instances, sketchesRead } = await designsPerformed(shape, {
+		extra: {
+			[`${id}/events.jsonl`]: `${JSON.stringify({ type: "fault", reason: "designer unavailable" })}\n`,
+		},
+	});
+	expect(
+		ranDesigners(shape, instances)
+			.map((instance) => instance.status)
+			.sort(),
+	).toEqual(["failed", "ok"]);
+	expect(instances.find((instance) => instance.node === "merge")?.status).toBe(
+		"ok",
+	);
+	expect(sketchesRead().split("A rival contract: greet(name).")).toHaveLength(
+		2,
+	);
+	expect(concert.outputs.triage.spec?.what).toBe("The merged contract shape.");
+}, 60_000);
+
+test("an encore with designs starts both designers in new sessions", async () => {
+	const shape = await designsComposed("--designs");
+	const first = await designsPerformed(shape);
+	const encore = await call(
+		[
+			"encore",
+			first.concert.id,
+			"--issue",
+			"#1 Greet by name\n\nKeep the greeting plain.",
+			"--json",
+		],
+		first.data,
+		first.env,
+	);
+	expect(encore.code).toBe(0);
+	const next = JSON.parse(encore.out);
+	expect(next.status).toBe("ok");
+	const designers = ranDesigners(
+		shape,
+		await designsListed(next.id, first.data),
+	);
+	expect(designers.map((instance) => instance.status)).toEqual(["ok", "ok"]);
+	const sessions = ranDesigners(shape, first.instances).map(
+		(instance) => instance.outputs?.session,
+	);
+	for (const designer of designers) {
+		expect(designer.outputs?.session).toBeDefined();
+		expect(sessions).not.toContain(designer.outputs?.session);
+	}
+}, 60_000);
+
+test.each<Ruling>([
+	direct,
+	{ ...planning, verdict: "duplicate", groups: [], duplicateOf: 7 },
+	{
+		...planning,
+		verdict: "needs-info",
+		groups: [],
+		questions: [askAlone("Who?")],
+	},
+])(
+	"a designs stub perform runs no designers or merge when the ruling bypasses planning: %j",
+	async (ruling) => {
+		const shape = await designsComposed("--designs");
+		const { concert, instances } = await designsPerformed(shape, { ruling });
+		expect(concert.status).toBe("ok");
+		expect(
+			ranDesigners(shape, instances).filter(
+				(instance) => instance.status !== "skipped",
+			),
+		).toEqual([]);
+		expect(
+			instances
+				.filter((instance) => instance.node === "merge")
+				.map((instance) => instance.status),
+		).toEqual(["skipped"]);
 	},
 );
 

@@ -244,7 +244,8 @@ flowchart TD
 
 ### Triage
 
-Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `planner.md`, `checker.md`, `revise.md`).
+Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `planner.md`, `checker.md`, `revise.md`,
+`designer-minimal.md`, `designer-common.md`, `merge.md`).
 
 - **Routes.** The triager runs first and rules alone: a duplicate settles there, and it asks the owner, with a
   `needs-info` verdict. A `direct` ticket goes straight to the build on a brief: the triager's `what`, only what the ask
@@ -264,6 +265,10 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   again. A requirement off the EARS shape is a finding too, found by code beside the checker's; the planner can run the
   same rule as `check ears` before it finishes. A finding only the owner can rule on becomes a question, as does a check
   or revision that failed to run. The builder never sees the findings. A split is not checked.
+- **Designs.** With `--designs`, off by default and never passed by the tick, two designers on the `designer` profile
+  sketch the change's contract beside the planner, each under its own constraint, from the issue, the scouts' answers
+  and the cut backlog. The planner then merges the sketches in its own session, a failed designer's marked missing, and
+  that merged plan is the one checked, revised and settled. An encore starts the designers fresh.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, whatever its risk, never to
   `needs-approval`. The owner answers by replying in a comment that mentions `@<login>`, such as
   `@forge-bot Q1: no, ok results only`, then moving the ticket to `needs-triage` (to `ready-for-agent` to continue a

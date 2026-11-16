@@ -1,9 +1,10 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Answers } from "@maestro/classics";
 import { atLeastOne, fill, scout } from "@maestro/classics";
 import { MarkdownOut, read, seat } from "@maestro/host-repo-sdk";
 import {
+	type ArtifactRef,
 	allSettled,
 	Bool,
 	type CodeContext,
@@ -15,6 +16,7 @@ import {
 	lookup,
 	Markdown,
 	Optional,
+	type Ref,
 	type Settled,
 	Struct,
 	Text,
@@ -24,8 +26,17 @@ import FIGURES from "./prompts/_figures.md" with { type: "text" };
 import PLAIN from "./prompts/_plain.md" with { type: "text" };
 import { fileOf, markdownOf, sealedBase, task } from "./shared";
 import { MAX_REQUIREMENT_WORDS } from "./triage/ears";
+import DESIGNER from "./triage/prompts/_designer.md" with { type: "text" };
 import GATE from "./triage/prompts/_gate.md" with { type: "text" };
+import SHAPE from "./triage/prompts/_shape.md" with { type: "text" };
 import CHECKER from "./triage/prompts/checker.md" with { type: "text" };
+import DESIGNER_COMMON from "./triage/prompts/designer-common.md" with {
+	type: "text",
+};
+import DESIGNER_MINIMAL from "./triage/prompts/designer-minimal.md" with {
+	type: "text",
+};
+import MERGE from "./triage/prompts/merge.md" with { type: "text" };
 import PLANNER from "./triage/prompts/planner.md" with { type: "text" };
 import REVISE from "./triage/prompts/revise.md" with { type: "text" };
 import SCOUT from "./triage/prompts/scout.md" with { type: "text" };
@@ -69,10 +80,17 @@ const TASKS = {
 		PLAIN,
 		FIGURES,
 		GATE,
+		SHAPE,
 	),
 	checker: task(CHECKER, GATE),
 	revise: task(REVISE),
+	"designer-minimal": task(DESIGNER_MINIMAL, DESIGNER, SHAPE),
+	"designer-common": task(DESIGNER_COMMON, DESIGNER, SHAPE),
+	merge: task(MERGE),
 };
+
+/** Each designer's label, which names its task and its constraint from the classics `design-it-twice` skill. */
+const DESIGNS = ["designer-minimal", "designer-common"] as const;
 
 const Slot = Struct({ slot: Text(), group: Group });
 type Slot = ValueOf<typeof Slot>;
@@ -139,6 +157,27 @@ export function answersOf(
 	return { answers };
 }
 
+/** The designers' sketches as one Markdown file, a section per designer in order, marking a sketch that is missing. */
+export function sketchesOf(
+	{ sketches }: { sketches: Settled<ArtifactRef>[] },
+	ctx: CodeContext,
+): { sketches: string } {
+	const sections = sketches.flatMap((sketch, i) => [
+		`## Sketch ${i + 1}`,
+		"",
+		sketch.outcome === "ok"
+			? readFileSync(ctx.path(sketch.value), "utf8").trim()
+			: `Missing: the designer ${sketch.outcome}${"reason" in sketch ? `: ${sketch.reason}` : ""}.`,
+		"",
+	]);
+	const file = join(ctx.scratch, "sketches.md");
+	writeFileSync(
+		file,
+		["# The designers' sketches", "", ...sections].join("\n"),
+	);
+	return { sketches: file };
+}
+
 /** The findings the planner revises its plan by, as one Markdown file, and whether there are any. */
 export function revisable(
 	planned: Parameters<typeof findingsOf>[0],
@@ -169,11 +208,63 @@ const planner = seat("planner", {
 	reply: { plan: Proposal },
 });
 
+/** A designer, fresh in an encore: it sketches from the evidence the re-triage gathers anew. */
+const designer = seat("designer", { encore: false });
+
 /** The checker, fresh in an encore: a re-triage rewrites the spec it checks. */
 const checker = seat("checker", {
 	encore: false,
 	reply: { check: Checked },
 });
+
+type Planned = ReturnType<typeof planner>["out"];
+type Attachments = Parameters<typeof designer>[0]["attachments"];
+
+/**
+ * The planner's plan merged, in its own `session`, with the sketches of designers who start from its `evidence`, never
+ * its plan; each runs `when` the planner does.
+ */
+function merged({
+	session,
+	evidence,
+	base,
+	when,
+}: {
+	session: Planned["session"];
+	evidence: Attachments;
+	base: Parameters<typeof read>[0];
+	when: Ref<boolean>;
+}) {
+	const sketches = DESIGNS.map(
+		(label) =>
+			designer({
+				label,
+				task: TASKS[label],
+				lane: read(base),
+				attachments: evidence,
+				out: { sketch: MarkdownOut("sketch.md") },
+				when,
+			}).out.sketch,
+	);
+	const gathered = code(sketchesOf, {
+		in: { sketches: allSettled(sketches, { label: "designs" }) },
+		out: { sketches: Markdown() },
+		label: "sketches",
+	});
+	return planner({
+		label: "merge",
+		task: TASKS.merge,
+		lane: read(base),
+		session,
+		attachments: {
+			sketches: {
+				artifact: gathered.out.sketches,
+				hint: "first, for the rival contract shapes to weigh",
+			},
+		},
+		when,
+	}).out;
+}
 
 export const triage = composition(
 	"triage",
@@ -183,6 +274,7 @@ export const triage = composition(
 			"A triager rules early: it sends a small ask straight to the build, asks the owner, or asks scouts.",
 			"A planner proposes a verdict from the scouts' answers, a checker checks a ready spec against the code,",
 			"and the planner revises it once by the findings. settle then gates the verdict.",
+			"With designs, two designers sketch rival contract shapes beside the planner, which merges them into its plan.",
 		].join("\n"),
 		params: {
 			issue: Text({
@@ -202,6 +294,11 @@ export const triage = composition(
 				4,
 				"The most question groups the triager writes, one scout each",
 			),
+			designs: Bool({
+				default: false,
+				description:
+					"Whether two designers sketch rival contract shapes from the planner's evidence, which the planner merges into its plan",
+			}),
 			respec: Bool({
 				default: false,
 				description:
@@ -216,7 +313,7 @@ export const triage = composition(
 			},
 		],
 	},
-	({ issue, backlog, sightings, maxGroups, respec }) => {
+	({ issue, backlog, sightings, maxGroups, designs, respec }) => {
 		const issued = {
 			artifact: markdownOf(issue, "issue"),
 			hint: "first, for the issue to triage",
@@ -283,17 +380,20 @@ export const triage = composition(
 			out: { answers: Markdown() },
 			label: "answers",
 		});
+		const evidence = {
+			issue: issued,
+			answers: {
+				artifact: answers.out.answers,
+				hint: "first, for what the scouts found",
+			},
+			backlog: cutBacklog,
+		};
 		const planned = planner({
 			label: "planner",
 			task: TASKS.planner,
 			lane: read(base),
 			attachments: {
-				issue: issued,
-				answers: {
-					artifact: answers.out.answers,
-					hint: "first, for what the scouts found",
-				},
-				backlog: cutBacklog,
+				...evidence,
 				...(sightings && {
 					sightings: {
 						artifact: fileOf(sightings, "sightings"),
@@ -304,7 +404,10 @@ export const triage = composition(
 			relay: { ruling },
 			when: plans,
 		});
-		const plan = planned.out.plan;
+		const proposed = designs
+			? merged({ session: planned.out.session, evidence, base, when: plans })
+			: planned.out;
+		const plan = proposed.plan;
 		const proposal = allSettled([plan], { label: "proposal" });
 		const checked = checker({
 			label: "checker",
@@ -332,7 +435,7 @@ export const triage = composition(
 			label: "revise",
 			task: TASKS.revise,
 			lane: read(base),
-			session: planned.out.session,
+			session: proposed.session,
 			attachments: {
 				findings: {
 					artifact: toRevise.findings,

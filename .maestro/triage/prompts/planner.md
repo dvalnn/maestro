@@ -93,6 +93,7 @@ and the behaviour that must hold, not the fix.
   extends what is there, never a parallel path.
 - The sightings attachment, when given, lists defects and smells earlier runs saw and no masterclass has read yet. Use
   those on the paths the change touches or leans on to see the debt around it.
+- When the change sets or changes a contract, weigh a rival shape before you settle one.
 - When the change leans on, or would add to, a defect in a module it touches, or the ask can only be met by a shortcut,
   such as a special case in a shared module, a flag threaded through calls, a second route around an existing seam or
   domain logic in a domain-free package, neither build on the defect nor take the shortcut: `split`, the first part the
