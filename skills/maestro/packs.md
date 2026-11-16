@@ -69,10 +69,13 @@ and contracts. `@maestro/classics/code` exports its code-node functions alone.
   (`build_then_review`), `panelReview` (`panel_review`), `reviewChange` (`review_change`).
 - Patterns, which a composition `use`s: `repairUntilGreen` (`repair_until_green`), `panel`, `tieredReview`
   (`tiered_review`), `fixUntilClean` (`fix_until_clean`), `testFirst` (`test_first`), `buildChange` (`build`).
-- Moves: `challenge`, `fix`, `tally`.
-- Contracts: `Finding`, `Findings`, `Rulings`, `Verdict`, `Upheld`, `Tally`, `TestMap`, `Brief`, `Overrules`, `Answers`;
-  code-node functions `toMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf`, `tieredOf` and `resultOf`; `fill` for
-  prompt placeholders ([prompts.md](prompts.md)); `LENSES`; params `maxRepairs`, `maxFixes` and `atLeastOne`.
+- Moves: `challenge`, `fix`, `tally`. `tally` takes the `change`, the `spec` and a picker of each lens group's results.
+  It makes the changeset, the held node and the consolidator itself.
+- Contracts: `Finding`, `Findings`, `Rulings`, `Verdict`, `Upheld`, `Tally`, `TestMap`, `Brief`, `Overrules`, `Answers`.
+- Code-node functions: `toMarkdown`, `copyMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf`, `tieredOf` and
+  `resultOf`.
+- Also: `fill` for prompt placeholders ([prompts.md](prompts.md)); `LENSES` and `lensLead`, a lens's task; params
+  `maxRepairs`, `maxFixes`, `gated` and `atLeastOne`.
 - Seats: `builder`, `tester`, `lens`, `deepLens`, `topLens`, `crossLens`, `skeptic`, `consolidator`, `scout`, `planner`.
 
 Take the layer you need: perform an entry, `use` a pattern in a composition, or call a move or seat among your own
