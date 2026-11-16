@@ -16,8 +16,9 @@ as `profiles.classics/<name>.runtime`.
 | Contracts | The typed reply fields and code-node values the layers above pass on      |
 | Seats     | One agent role each, bound to a profile                                   |
 
-A consumer takes the layer it needs: perform an entry, `use` a pattern in its own composition, or call a move or seat
-among its own nodes. The exports are in `src/index.ts`; `@maestro/classics/code` exports the code-node functions alone.
+A consumer takes the layer it needs. It can perform an entry, `use` a pattern in its own composition, or call a move or
+seat among its own nodes. The exports are in `src/index.ts`; `@maestro/classics/code` exports the code-node functions
+alone.
 
 ## Entries
 

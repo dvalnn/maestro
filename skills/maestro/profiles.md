@@ -18,7 +18,8 @@ means no spend.
 ## Where a profile lives
 
 A directory holding a `profile.yaml` (`runtime`, `instructions`, `harnessExtras`, `limits`, `context`, `attachments`)
-and the files it names, in one of these roots, highest first; the highest holding the name wins it whole:
+and the files it names is a profile. It lives in one of these roots, highest first, and the highest holding the name
+wins it whole:
 
 - the workspace's `.maestro/profiles/<name>/`
 - the user's `$XDG_CONFIG_HOME/maestro/profiles/<name>/`

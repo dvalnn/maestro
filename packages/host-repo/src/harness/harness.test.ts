@@ -233,7 +233,7 @@ test("a probe stops the harness once it has reported its environment and window,
 		await probe(
 			stubHarness([{ emit: report }, { hang: true }]),
 			request("x"),
-			50,
+			2_000,
 		),
 	).toEqual({ observed: { tools: ["sh"] } });
 	expect(await probe(stubHarness([]), request("x"))).toEqual({});

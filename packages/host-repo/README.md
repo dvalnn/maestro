@@ -363,7 +363,7 @@ A concert leaves a **changeset** (a patch series) attached to the record only by
 changeset is a directory: `base`, the target commit the lane chain was cut from (with `since`, the commit of that
 version), then `0001.patch`, `0002.patch` and on, one commit each, subject the lane version that wrote it, and a
 `message` file when made with one. An empty changeset holds `base` alone. A changeset made with `since` has a base that
-exists only in maestro's store, so it serves `apply` and attachments inside a concert, not `cs show` or `cs apply`
+exists only in maestro's store. So it serves `apply` and attachments inside a concert, not `cs show` or `cs apply`
 against the target.
 
 - `maestro cs` takes the `result` node's changeset, else the last `ok` instance's, or the one a flag picks: another

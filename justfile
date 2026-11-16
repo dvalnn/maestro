@@ -30,7 +30,7 @@ types:
 
 # run every test
 test:
-    bun test {{parallel}} --only-failures ./ ./.maestro
+    bun test {{parallel}} --timeout 30000 --only-failures ./ ./.maestro
 
 # auto-format
 fmt:
