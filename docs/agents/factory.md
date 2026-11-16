@@ -266,9 +266,9 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   same rule as `check ears` before it finishes. A finding only the owner can rule on becomes a question, as does a check
   or revision that failed to run. The builder never sees the findings. A split is not checked.
 - **Designs.** With `--designs`, off by default and never passed by the tick, two designers on the `designer` profile
-  sketch the change's contract beside the planner, each under its own constraint, from the issue, the scouts' answers
-  and the cut backlog. The planner then merges the sketches in its own session, a failed designer's marked missing, and
-  that merged plan is the one checked, revised and settled. An encore starts the designers fresh.
+  sketch the change's contract beside the planner. Each works under its own constraint, from the issue, the scouts'
+  answers and the cut backlog. The planner then merges the sketches in its own session, and a failed designer's sketch
+  is marked missing. The merged plan is the one checked, revised and settled. An encore starts the designers fresh.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, whatever its risk, never to
   `needs-approval`. The owner answers by replying in a comment that mentions `@<login>`, such as
   `@forge-bot Q1: no, ok results only`, then moving the ticket to `needs-triage` (to `ready-for-agent` to continue a
