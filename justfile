@@ -15,12 +15,13 @@ ci: check
       exit 1
     fi
 
-# apply Biome's safe lint fixes and import sorting without formatting, then check the domain words and prompt imports,
+# apply Biome's safe lint fixes and import sorting without formatting, then check the domain words, prompt imports and Plain English limits,
 # and that no git conflict marker of a merge onto main is left in (factory.md, Rules, Build: Encore)
 lint:
     bunx biome check --write --formatter-enabled=false .
     bun scripts/domain-words.ts
     bun scripts/prompt-imports.ts
+    bun scripts/plain-english.ts
     ! grep -rnIE --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.jj '^(<{7,}|>{7,}) [0-9a-f]{40}' .
 
 # typecheck

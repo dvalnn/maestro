@@ -138,5 +138,7 @@ Every doc follows these when rewritten:
 - A Mermaid diagram wherever prose walks a flow, a state machine or a graph, checked with `forge-diagrams`.
 - No history, dates, draft status, ticket ids or migration notes; those live in version control and release notes.
 - Links to headings by name, never "section 12". Headings that code comments cite keep their names.
-- Prose in plain English, by `.maestro/prompts/_plain.md`.
+- Prose in plain English, by `.maestro/prompts/_plain.md`. `just lint` holds each doc to its sentence and paragraph
+  limits (`scripts/plain-english.ts`); a doc's count can only fall below `scripts/plain-english-baseline.json`, which
+  `--update` lowers.
 - Lines reflowed to 120 characters.

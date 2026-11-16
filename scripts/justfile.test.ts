@@ -40,6 +40,13 @@ function checkout(files: Record<string, string>) {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
 		copyFileSync(join(root, path), join(dir, path));
 	}
+	for (const path of [
+		"scripts/plain-english.ts",
+		"scripts/plain-english-baseline.json",
+	]) {
+		if (existsSync(join(root, path)))
+			copyFileSync(join(root, path), join(dir, path));
+	}
 	mkdirSync(join(dir, "packages"));
 	put(dir, ".gitignore", "node_modules/\n");
 	put(
@@ -49,6 +56,13 @@ function checkout(files: Record<string, string>) {
 	);
 	symlinkSync(join(root, "node_modules"), join(dir, "node_modules"));
 	for (const [path, text] of Object.entries(files)) put(dir, path, text);
+	for (const args of [
+		["init", "-q"],
+		["add", "."],
+	]) {
+		const result = Bun.spawnSync(["git", ...args], { cwd: dir });
+		expect(result.exitCode).toBe(0);
+	}
 	return dir;
 }
 
@@ -129,6 +143,64 @@ test("lint also refuses domain words and names their path", async () => {
 	expect(
 		result.err.split("\n").map((line) => line.trim().split(":")[0]),
 	).toContain("packages/core/src/sample.ts");
+});
+
+const longSentence =
+	"The builder checks each document before review so a long sentence fails early and the author can shorten it before the patch reaches another busy reviewer.";
+
+function hasProseLocation(output: string, path: string, line: number) {
+	return output.split("\n").some((entry) => {
+		const tokens = entry.split(/[\s"'`()[\]{},:]+/);
+		return tokens.includes(path) && tokens.includes(String(line));
+	});
+}
+
+test("lint refuses a long sentence and a long paragraph at their starting lines", async () => {
+	const dir = checkout({
+		"scripts/plain-english-baseline.json": "{}\n",
+		"docs/sentence.md": `# Title\n\n${longSentence}\n`,
+		"docs/paragraph.md":
+			"# Title\n\nOne. Two. Three. Four.\nFive. Six. Seven.\n",
+	});
+	const result = await run(dir, "just", "lint");
+	expect(result.code).not.toBe(0);
+	const output = `${result.out}\n${result.err}`;
+	expect(hasProseLocation(output, "docs/sentence.md", 3)).toBe(true);
+	expect(hasProseLocation(output, "docs/paragraph.md", 3)).toBe(true);
+});
+
+test("lint scans tracked Markdown but not drafts or deleted files", async () => {
+	const dir = checkout({
+		".gitignore": "node_modules/\nignored/\n",
+		"scripts/plain-english-baseline.json": "{}\n",
+		"docs/tracked.md": `${longSentence}\n`,
+		"docs/deleted.md": `${longSentence}\n`,
+	});
+	rmSync(join(dir, "docs/deleted.md"));
+	put(dir, "docs/untracked.md", `${longSentence}\n`);
+	put(dir, "ignored/draft.md", `${longSentence}\n`);
+	const result = await run(dir, "just", "lint");
+	expect(result.code).not.toBe(0);
+	const output = `${result.out}\n${result.err}`;
+	expect(hasProseLocation(output, "docs/tracked.md", 1)).toBe(true);
+	expect(output).not.toContain("docs/deleted.md");
+	expect(output).not.toContain("docs/untracked.md");
+	expect(output).not.toContain("ignored/draft.md");
+});
+
+test("lint passes below the baseline and suggests updating that file", async () => {
+	const dir = checkout({
+		"scripts/plain-english-baseline.json": '{"docs/ratchet.md": 2}\n',
+		"docs/ratchet.md": `${longSentence}\n`,
+	});
+	const result = await run(dir, "just", "lint");
+	expect(result.code).toBe(0);
+	const tokens = `${result.out}\n${result.err}`.split(/[\s"'`()[\]{},:]+/);
+	expect(tokens).toContain("docs/ratchet.md");
+	expect(tokens).toContain("--update");
+	expect(text(dir, "scripts/plain-english-baseline.json")).toBe(
+		'{"docs/ratchet.md": 2}\n',
+	);
 });
 
 test("check formats and fixes lints before types, then runs both test suites", async () => {
