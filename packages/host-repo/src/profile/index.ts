@@ -865,6 +865,33 @@ async function extrasErrors(
 }
 
 /**
+ * The errors of profile `name`'s instruction files, as `merged` sets them: each that is missing or no file. The
+ * profile's own file had its paths checked already; this covers what config sets or appends.
+ */
+async function instructionsErrors(
+	name: string,
+	merged: Merged,
+): Promise<Diagnostic[]> {
+	const paths = [merged.values.instructions].flat();
+	const key = `profiles.${name}.instructions`;
+	const errors: Diagnostic[] = [];
+	for (const [i, path] of paths.entries()) {
+		if (typeof path !== "string") continue;
+		const source = sourceOf(merged, ["instructions", String(i)]);
+		const found = await stat(path).catch(() => undefined);
+		if (found?.isFile()) continue;
+		errors.push(
+			refusal(
+				source,
+				`${key}: ${path} ${found ? "is not a file" : "does not exist"}`,
+				"Point it at an existing file",
+			),
+		);
+	}
+	return errors;
+}
+
+/**
  * `sha256:<hex>` over the files of every profile `roots` hold, each name's that wins: any edit to one changes it. With
  * the config `layers` over each, it covers the extras directory that wins too, its files and the text of its links,
  * when it sits inside the profile's namespace directory.
@@ -992,6 +1019,8 @@ async function resolve(
 	if (errors.length) throw new ConfigError(errors);
 	const extras = await extrasErrors(name, merged);
 	if (extras.length) throw new ConfigError(extras);
+	const instructions = await instructionsErrors(name, merged);
+	if (instructions.length) throw new ConfigError(instructions);
 	const runtime = (merged.values.runtime ?? {}) as Partial<Runtime>;
 	return {
 		name,

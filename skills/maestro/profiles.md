@@ -32,7 +32,11 @@ share a file such as an attachment. Copy a pack's whole `profiles/` to shadow it
 
 `instructions` is a file or a list of files inside the namespace directory, joined in order into the system prompt, so
 seats of one namespace share a file: `instructions: [../testing.md, instructions.md]`. Guidance a seat follows goes
-there, never in an attachment. `skills` is no profile field, and a profile setting it is refused.
+there, never in an attachment. Config may also set or append `instructions` files from anywhere, such as
+`instructions: !append [.maestro/instructions/builder.md]`, instead of shadowing a pack's `profiles/`; a relative path
+resolves against its config layer's base directory, and a missing file is refused at pre-flight. The profiles digest
+leaves out a config-set file outside the winning profile's directory. `skills` is no profile field, and a profile
+setting it is refused.
 
 `harnessExtras` names one directory, in the harness's own layout, that the harness adapter copies into the config dir it
 owns for the session, such as a provider catalogue. Keep it self-contained: each link in it relative and resolving

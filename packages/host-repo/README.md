@@ -401,6 +401,19 @@ A list under `instructions` is joined in order into the system prompt, so profil
 (`[../testing.md, instructions.md]`) without copying it. A listed path outside the namespace directory is refused by
 name at resolution, so a shadow made by copying a pack's `profiles/` keeps the files its instructions list.
 
+Config may set or append `instructions` files from anywhere, as an alternative to shadowing a pack's `profiles/`:
+
+```yaml
+profiles:
+  classics/builder:
+    instructions: !append [.maestro/instructions/builder.md]
+```
+
+A relative path resolves against its config layer's base directory (see the CLI README, Config). A file that is missing
+or no file is refused at pre-flight, naming `profiles.<name>.instructions`, the path and the config line. The profiles
+digest covers a config-set instruction file only when it sits inside the winning profile's directory; one elsewhere,
+such as the workspace's `.maestro/instructions/`, is left out, so an edit to it does not change the digest.
+
 `harnessExtras` names the **harness extras**: one directory, in the harness's own layout, that the harness adapter
 copies into the config dir it owns for the session, the one way past the baseline. The host binds nothing for it; the
 adapter picks where the copy goes and when.

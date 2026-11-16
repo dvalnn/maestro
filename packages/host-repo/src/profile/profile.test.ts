@@ -527,6 +527,78 @@ describe("harness extras", () => {
 describe("resolution", () => {
 	const dir = join(U, "classics/builder");
 
+	test("refuses a missing instruction file config sets or appends, naming its key, path and config line", async () => {
+		const path = join(root, "missing-config-instructions.md");
+		for (const value of [path, `!append [${path}]`]) {
+			const setup = setupOf({
+				workspace: `profiles:\n  classics/builder:\n    instructions: ${value}\n    runtime: { model: opus }\n`,
+			});
+			const error: unknown = await resolveProfile(
+				"classics/builder",
+				setup,
+			).then(
+				() => undefined,
+				(e: unknown) => e,
+			);
+			expect(error).toBeInstanceOf(ConfigError);
+			if (!(error instanceof ConfigError)) return;
+			expect(error.diagnostics).toHaveLength(1);
+			const diagnostic = error.diagnostics[0];
+			expect(diagnostic?.message).toContain(
+				"profiles.classics/builder.instructions",
+			);
+			expect(diagnostic?.message).toContain(path);
+			expect(diagnostic?.source).toMatchObject({
+				file: join(root, "workspace.yaml"),
+				line: 3,
+			});
+		}
+	});
+
+	test("blames a missing instruction file on the config line that set it, not the layer that appended after it", async () => {
+		const path = join(root, "missing-user-instructions.md");
+		const setup = setupOf({
+			user: `profiles:\n  classics/builder:\n    instructions: ${path}\n    runtime: { model: opus }\n`,
+			workspace: `profiles:\n  classics/builder:\n    instructions: !append [${join(dir, "instructions.md")}]\n`,
+		});
+		const error: unknown = await resolveProfile("classics/builder", setup).then(
+			() => undefined,
+			(e: unknown) => e,
+		);
+		expect(error).toBeInstanceOf(ConfigError);
+		if (!(error instanceof ConfigError)) return;
+		expect(error.diagnostics).toHaveLength(1);
+		expect(error.diagnostics[0]?.message).toContain(path);
+		expect(error.diagnostics[0]?.source).toMatchObject({
+			file: join(root, "user.yaml"),
+			line: 3,
+		});
+	});
+
+	test("refuses an instruction path config sets or appends when it is a directory, naming its key and path", async () => {
+		const path = join(root, "config-extras");
+		for (const value of [path, `!append [${path}]`]) {
+			const setup = setupOf({
+				workspace: `profiles:\n  classics/builder:\n    instructions: ${value}\n    runtime: { model: opus }\n`,
+			});
+			const error: unknown = await resolveProfile(
+				"classics/builder",
+				setup,
+			).then(
+				() => undefined,
+				(e: unknown) => e,
+			);
+			expect(error).toBeInstanceOf(ConfigError);
+			if (!(error instanceof ConfigError)) return;
+			expect(error.diagnostics).toHaveLength(1);
+			const diagnostic = error.diagnostics[0];
+			expect(diagnostic?.message).toContain(
+				"profiles.classics/builder.instructions",
+			);
+			expect(diagnostic?.message).toContain(path);
+		}
+	});
+
 	test("layers the config of a host setup over the directory, each field from its layer, with the hash of each regular file", async () => {
 		const setup = setupOf({
 			user: "profiles:\n  classics/builder:\n    runtime: { model: sonnet }\n",
