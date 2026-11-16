@@ -8,6 +8,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { openRecord } from "@maestro/core/perform";
 import { repoHost } from "@maestro/host-repo";
 import { stubHarness } from "@maestro/host-repo/harness";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
@@ -829,6 +830,20 @@ for (const { gate, harness, model } of REAL_HARNESSES) {
 			const agent = instances.find((i: { node: string }) => i.node === "write");
 			expect(agent.outputs.report.summary.toLowerCase()).toContain("kumquat");
 			expect(agent.metrics.tokens_in).toBeGreaterThan(0);
+			if (harness === "claude") {
+				const record = openRecord(join(w.root, "data/maestro/record.db"));
+				const events = record.events(idOf(done));
+				record.close();
+				expect(
+					events.some(
+						(e) =>
+							e.type === "progress" &&
+							e.event.kind === "thinking" &&
+							typeof e.event.text === "string" &&
+							e.event.text.length > 0,
+					),
+				).toBe(true);
+			}
 			const [instructions] = [
 				...new Bun.Glob("**/staged/instructions.md").scanSync({
 					cwd: w.root,

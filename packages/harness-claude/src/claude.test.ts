@@ -309,6 +309,8 @@ describe("stand-in claude", () => {
 			"--output-format",
 			"stream-json",
 			"--verbose",
+			"--thinking-display",
+			"summarized",
 			"--tools",
 			"Bash,Read,Write,Edit",
 			"--disable-slash-commands",
@@ -399,6 +401,12 @@ describe("stand-in claude", () => {
 			argv.slice(argv.indexOf("--setting-sources") + 1)[0];
 
 		const plain = await argvOf();
+		expect(
+			plain.slice(
+				plain.indexOf("--thinking-display"),
+				plain.indexOf("--thinking-display") + 2,
+			),
+		).toEqual(["--thinking-display", "summarized"]);
 		expect(plain).toContain("--strict-mcp-config");
 		expect(plain).toContain("--disable-slash-commands");
 		expect(plain.slice(plain.indexOf("--tools"))[1]).toBe(
@@ -409,10 +417,16 @@ describe("stand-in claude", () => {
 		expect(plain.join("\n")).not.toContain("disableAllHooks");
 		expect(plain).not.toContain("--plugin-dir");
 
-		// extras holding plugins/: claude's plugin dir on the first run and on a resume
+		// extras holding plugins/: both launches start a fresh session without a transcript
 		mkdirSync(join(extras, "plugins", "gate"), { recursive: true });
 		session = { dir: tmp("session"), id: crypto.randomUUID() };
 		for (const argv of [await argvOf(), await argvOf()]) {
+			expect(
+				argv.slice(
+					argv.indexOf("--thinking-display"),
+					argv.indexOf("--thinking-display") + 2,
+				),
+			).toEqual(["--thinking-display", "summarized"]);
 			expect(argv.slice(argv.indexOf("--plugin-dir"))[1]).toBe(
 				"/session/claude/plugins",
 			);
@@ -448,6 +462,12 @@ describe("stand-in claude", () => {
 		const argv = read(req, "argv").split("\n");
 		expect(argv).not.toContain("--session-id");
 		expect(argv.slice(argv.indexOf("--resume"), -1)).toContain(req.session.id);
+		expect(
+			argv.slice(
+				argv.indexOf("--thinking-display"),
+				argv.indexOf("--thinking-display") + 2,
+			),
+		).toEqual(["--thinking-display", "summarized"]);
 	});
 
 	test("a resumed session reports only its own run, so a fresh run and its resume sum to the last result's totals", async () => {

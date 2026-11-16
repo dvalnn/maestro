@@ -381,6 +381,8 @@ function claudeArgv(
 		"--output-format",
 		"stream-json",
 		"--verbose",
+		"--thinking-display",
+		"summarized",
 		...(req.extras === undefined
 			? BASELINE.argv
 			: [...EXTRAS_BASELINE.argv, ...pluginArgv(req.session.dir)]),
