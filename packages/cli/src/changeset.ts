@@ -13,7 +13,7 @@ import {
 	MESSAGE_FILE,
 	patchFiles,
 } from "@maestro/host-repo";
-import { type Ir, isPlainObject } from "@maestro/ir";
+import { type Ir, indexGraph, isPlainObject } from "@maestro/ir";
 import { type Changes, shortIds } from "@maestro/render-text/live";
 import {
 	type Command,
@@ -34,9 +34,8 @@ import {
 	artifactRefs,
 	CliError,
 	EXIT,
-	instanceName,
 	NAME_CONCERT,
-	nameOf,
+	resolveInstanceName,
 	table,
 	usageError,
 } from "./output";
@@ -194,10 +193,11 @@ function named(
 	node: string,
 	partial: boolean,
 ) {
+	const graph = indexGraph(row.ir);
 	const names = new Map(
-		store.instances(row.id).map((i) => [instanceName(row.ir, i), i]),
+		store.instances(row.id).map((i) => [graph.instanceName(i), i]),
 	);
-	const name = nameOf(node, names.keys(), row.id);
+	const name = resolveInstanceName(node, names.keys(), row.id);
 	const instance = names.get(name);
 	const kept = instance && partialOf(instance);
 	if (partial) {
@@ -354,7 +354,7 @@ async function picked(stored: Stored, prefix: string): Promise<Picked> {
 		),
 		row,
 		short,
-		instance: instanceName(row.ir, instance),
+		instance: indexGraph(row.ir).instanceName(instance),
 	};
 }
 

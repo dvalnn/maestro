@@ -1,6 +1,5 @@
 import {
 	compact,
-	formatInstance,
 	type GraphIndex,
 	type Ir,
 	indexGraph,
@@ -189,7 +188,7 @@ function instanceSegs(
 	s: InstanceState,
 	k: Kept | undefined,
 ): Seg[][] {
-	const name = formatInstance(s, graph.groupsOf(s.node));
+	const name = graph.instanceName(s);
 	const { title, state } = stateSegs(graph, view, s, name, k);
 	return [
 		title,
@@ -266,7 +265,7 @@ function drawnOf(
 	const fresh = selected(graph, key, events.slice(was.read));
 	const named = holdsMany(ir, graph, key);
 	const lines = fresh.flatMap((e) =>
-		eventLine(ir, e, { ...view, columns: width }, named)
+		eventLine(ir, e, { ...view, columns: width }, named, graph)
 			.split("\n")
 			.map((l) => Bun.sliceAnsi(l, 0, width)),
 	);

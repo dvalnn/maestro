@@ -2,7 +2,6 @@ import {
 	type Cardinality,
 	type DataEdge,
 	type Expansion,
-	formatInstance,
 	type GraphIndex,
 	type GroupNode,
 	type IrEdge,
@@ -54,7 +53,7 @@ export function summary(plan: Plan): string {
 }
 
 const instance = (graph: GraphIndex, node: string, path: string) =>
-	formatInstance({ node, expansion: path }, graph.groupsOf(node));
+	graph.instanceName({ node, expansion: path });
 
 /** Aligns rows of cells into columns two spaces apart, each line indented by two. */
 function table(rows: readonly string[][]): string[] {

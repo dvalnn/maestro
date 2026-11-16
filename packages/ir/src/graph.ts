@@ -1,3 +1,5 @@
+import type { ArtifactRef } from "./artifact-ref";
+import { formatInstance, parseInstance } from "./expansion";
 import type { Outcome } from "./outcome";
 import type {
 	Cardinality,
@@ -109,7 +111,7 @@ const list = (xs: string[]) => `[${xs.toSorted().join(", ")}]`;
 
 /**
  * Lookups over a graph. `parent` and `ancestors` read the id alone; the others give `undefined` or an empty list for
- * an id that resolves to nothing.
+ * an id that resolves to nothing, except `instanceName` and `parseSelector`, which take the node id as given.
  */
 export type GraphIndex = {
 	nodes: ReadonlyMap<string, IrNode>;
@@ -120,6 +122,17 @@ export type GraphIndex = {
 	ancestors(id: string): string[];
 	/** Enclosing groups, outermost first. Scopes do not affect execution, so they are left out. */
 	groupsOf(id: string): string[];
+	/**
+	 * The instance's display name, such as `lens[risk]/skeptic`.
+	 * @throws when the expansion is not a path with one key per enclosing group.
+	 */
+	instanceName(instance: NonNullable<ArtifactRef["producer"]>): string;
+	/**
+	 * The node and keys a name selects: one instance, or with keys left off the later groups, every instance under it.
+	 * Not a strict inverse of `instanceName`. `undefined` when a key is malformed or misplaced. It does not check that
+	 * the node exists, so a caller validates the node.
+	 */
+	parseSelector(text: string): { node: string; keys: string[] } | undefined;
 	/** The id of the innermost composition holding `id`: its nearest enclosing scope's, else the root's. */
 	compositionOf(id: string): string;
 	/** The pack of the root composition, which every node of the graph takes, a subcomposition's too. */
@@ -157,6 +170,9 @@ export function indexGraph(ir: Ir): GraphIndex {
 		parent: parentOf,
 		ancestors,
 		groupsOf,
+		instanceName: (instance) =>
+			formatInstance(instance, groupsOf(instance.node)),
+		parseSelector: (text) => parseInstance(text, groupsOf),
 		compositionOf: (id) =>
 			ancestors(id).flatMap((a) => scopes.get(a)?.composition ?? [])[0] ??
 			ir.composition.id,

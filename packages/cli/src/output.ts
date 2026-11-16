@@ -17,11 +17,10 @@ import {
 	DURATION_EXAMPLE,
 	durationMs,
 	findMarked,
-	formatInstance,
+	type GraphIndex,
 	type Ir,
 	indexGraph,
 	isPlainObject,
-	type NodeInstance,
 	replaceAt,
 	tokensOf,
 	withoutKeys,
@@ -347,7 +346,7 @@ export function printClosing(
 		area === undefined
 			? undefined
 			: {
-					at: atOf(row.ir, result),
+					at: atOf(indexGraph(row.ir), result),
 					reason: reasonOf(result),
 					outputs: outputRows(row.ir, area, result),
 					summary: terminal && {
@@ -364,12 +363,15 @@ export function printClosing(
 }
 
 /** The instance `result` settled at, when it is not ok. */
-const atOf = (ir: Ir, result: ConcertResult) =>
+const atOf = (graph: GraphIndex, result: ConcertResult) =>
 	result.outcome === "ok" ||
 	result.node === undefined ||
 	result.expansion === undefined
 		? undefined
-		: instanceName(ir, { node: result.node, expansion: result.expansion });
+		: graph.instanceName({
+				node: result.node,
+				expansion: result.expansion,
+			});
 
 /** Concert `id`'s metrics and their `tokensOf` total, as its `--json` documents carry them. */
 export const spendOf = (store: Records, id: string) => {
@@ -533,10 +535,6 @@ export function compositionOf(text: string | undefined) {
 	return { pack: text.slice(0, dot), composition: text.slice(dot + 1) };
 }
 
-/** `instance` of `ir`'s graph as one name, such as `lens[risk]/skeptic`. */
-export const instanceName = (ir: Ir, instance: NodeInstance) =>
-	formatInstance(instance, indexGraph(ir).groupsOf(instance.node));
-
 /** How many names an error listing matches shows. */
 const LISTED = 5;
 
@@ -565,7 +563,7 @@ function endsIn(name: string, text: string): boolean {
  * `loop[0]/build`.
  * @throws CliError, a usage error naming `maestro ls <concert>` when it names none, or listing the names it ends.
  */
-export function nameOf(
+export function resolveInstanceName(
 	text: string,
 	names: Iterable<string>,
 	concert: string,

@@ -11,7 +11,6 @@ import {
 	type FoldNode,
 	firstDuplicate,
 	formatExpansion,
-	formatInstance,
 	type GraphIndex,
 	type GroupNode,
 	type HostNode,
@@ -598,7 +597,7 @@ const worseOf = (current: Halt | undefined, halt: Halt): Halt =>
 		: halt;
 
 const shown = (c: Live, instance: NodeInstance) =>
-	formatInstance(instance, c.index.groupsOf(instance.node));
+	c.index.instanceName(instance);
 
 /** The first of `states` to settle. */
 const firstSettled = (states: readonly (State | undefined)[]) =>

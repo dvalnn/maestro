@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import {
+	formatExpansion,
 	type GraphIndex,
 	type Ir,
 	indexGraph,
@@ -125,4 +126,61 @@ test("the pack is the root composition's, for a node inside a subcomposition's s
 	const [ir, index] = await fixture("fanout-fanin-loop.json");
 	expect(index.pack).toBe("fixtures");
 	expect(index.compositionOf("refine/loop/step")).not.toBe(ir.composition.id);
+});
+
+test("instanceName keys each enclosing group of a nested instance", async () => {
+	const [, index] = await fixture("nested-groups.json");
+	expect(
+		index.instanceName({
+			node: "angles/polish/step",
+			expansion: "[risk][2]",
+		}),
+	).toBe("angles[risk]/polish[2]/step");
+});
+
+test("instanceName leaves a node outside every group unkeyed", async () => {
+	const [, index] = await fixture("nested-groups.json");
+	expect(index.instanceName({ node: "angles", expansion: "" })).toBe("angles");
+	expect(index.instanceName({ node: "ghost", expansion: "" })).toBe("ghost");
+});
+
+test("instanceName throws on an expansion without one key per group", async () => {
+	const [, index] = await fixture("nested-groups.json");
+	expect(() =>
+		index.instanceName({ node: "angles/polish/step", expansion: "[risk]" }),
+	).toThrow();
+	expect(() =>
+		index.instanceName({ node: "angles/polish/step", expansion: "oops" }),
+	).toThrow();
+});
+
+test("parseSelector reads back the node and keys instanceName shows", async () => {
+	const [, index] = await fixture("nested-groups.json");
+	const node = "angles/polish/step";
+	for (const keys of [
+		["risk", "2"],
+		["", "x"],
+	]) {
+		const name = index.instanceName({ node, expansion: formatExpansion(keys) });
+		expect(index.parseSelector(name)).toEqual({ node, keys });
+	}
+});
+
+test("parseSelector takes a prefix selector as every instance under the first group key", async () => {
+	const [, index] = await fixture("nested-groups.json");
+	expect(index.parseSelector("angles[risk]/polish/step")).toEqual({
+		node: "angles/polish/step",
+		keys: ["risk"],
+	});
+	expect(index.parseSelector("angles/polish/step")).toEqual({
+		node: "angles/polish/step",
+		keys: [],
+	});
+});
+
+test("parseSelector gives an unknown node id no keys, and refuses a misplaced key", async () => {
+	const [, index] = await fixture("nested-groups.json");
+	expect(index.parseSelector("ghost")).toEqual({ node: "ghost", keys: [] });
+	expect(index.parseSelector("ghost[x]")).toBeUndefined();
+	expect(index.parseSelector("angles/polish[2]/step")).toBeUndefined();
 });

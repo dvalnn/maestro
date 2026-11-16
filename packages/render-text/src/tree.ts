@@ -1,5 +1,4 @@
 import {
-	formatInstance,
 	type GraphIndex,
 	type GroupNode,
 	type IrNode,
@@ -430,8 +429,7 @@ const isOpen = (w: Walk, key: string, auto: boolean) =>
 /** Whether a container opens of itself: it holds running work, or the concert settled and it holds the last failure. */
 const holds = (w: Walk, states: readonly InstanceState[]) =>
 	states.some((s) => s.state === "running") || holdsFailure(w, states);
-const idOf = (w: Walk, s: NodeInstance) =>
-	formatInstance(s, w.graph.groupsOf(s.node));
+const idOf = (w: Walk, s: NodeInstance) => w.graph.instanceName(s);
 const pinnedRow = (w: Walk, row: Omit<Row, "pinned">): Row => ({
 	...row,
 	pinned: row.shown === "running" || w.pinned.has(row.key),

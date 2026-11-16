@@ -4,7 +4,6 @@ import {
 	type Expansion,
 	firstDuplicate,
 	formatExpansion,
-	formatInstance,
 	type GraphIndex,
 	type GroupNode,
 	type Ir,
@@ -150,10 +149,10 @@ function expansionOf(
 	const region = { expansion: { upTo: bound }, items: [] };
 	const items = starts(s, group, keys) ? itemsOf(s, group, keys) : undefined;
 	if (!items) return region;
-	const name = formatInstance(
-		{ node: group.id, expansion: formatExpansion(keys) },
-		s.graph.groupsOf(group.id),
-	);
+	const name = s.graph.instanceName({
+		node: group.id,
+		expansion: formatExpansion(keys),
+	});
 	if (items.length > bound) {
 		s.diagnostics.push(
 			error(

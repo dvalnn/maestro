@@ -17,8 +17,8 @@ Each entry is a one-line definition; the rest of a term lives in its home, linke
   Dependency
 - [Authoring](#authoring): Composition, Subcomposition, Params, Ports, Plain value, Ref, Example input set, Code node,
   Pack
-- [Graph](#graph): Graph, IR, Node, Group node, Iteration, On error, Host node, Edge, Barrier, Status port, Missing
-  output, Settled, Reducer, Artifact, Worker
+- [Graph](#graph): Graph, IR, Node, Group node, Iteration, Instance name, On error, Host node, Edge, Barrier, Status
+  port, Missing output, Settled, Reducer, Artifact, Worker
 - [Configuration](#configuration): Core config, Config namespace, Registrant, Workspace, Data root, Composed config, Gap
 - [Engine and hosts](#engine-and-hosts): Engine, Host, Host setup, Conductor
 - [Agents](#agents): Agent node, Harness, Runtime, Agent environment, Probe, Instructions, Seat, Seat call, Work agent,
@@ -150,6 +150,9 @@ engine. [Home](packages/ir/README.md)
 
 **Iteration**: One pass of a `loop`, `map`, `find` or `fold` body, numbered from 0; a `parMap` or `parFind` has items,
 not iterations.
+
+**Instance name**: The display form of a node instance, such as `lens[risk]/skeptic`; stable, because hosts see it as
+`HostInstance.id` and stored `reason` text holds it. [Home](packages/cli/README.md#concert-ids)
 
 **On error**: What a `parMap` or `map` does at a member that is not `ok`: `stop` the group or `continue`.
 [Home](docs/architecture.md#groups)

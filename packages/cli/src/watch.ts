@@ -1,10 +1,5 @@
 import type { ConcertRecord, Records } from "@maestro/core/perform";
-import {
-	type ConcertEvent,
-	indexGraph,
-	parseInstance,
-	tokensOf,
-} from "@maestro/ir";
+import { type ConcertEvent, indexGraph, tokensOf } from "@maestro/ir";
 import { navigated, selectedUnder } from "@maestro/render-text/inspect";
 import {
 	type Annotated,
@@ -45,8 +40,8 @@ import {
 	EXIT,
 	exitOf,
 	NAME_CONCERT,
-	nameOf,
 	printClosing,
+	resolveInstanceName,
 	UNFRAMED,
 	usageError,
 	viewOf,
@@ -114,8 +109,9 @@ const eventLines =
 	(deps: Deps, color: boolean, terminal?: Terminal): Show =>
 	(events, row) => {
 		const view = viewOf(row, color, terminal && { ...UNFRAMED, ...terminal() });
+		const graph = indexGraph(row.ir);
 		for (const e of annotated(events, hostTextOf(deps.hosts, row.ir)))
-			deps.stdout(eventLine(row.ir, e, view));
+			deps.stdout(eventLine(row.ir, e, view, true, graph));
 	};
 
 /** What a graph view folds in and draws of a concert, read afresh from the record on each call. */
@@ -362,17 +358,17 @@ function framed(
 /**
  * `show`, fed only the events under the instance `id` names, as the inspector selects them: `id` as `ls <concert>`
  * prints it, or a whole-segment ending of one node or scope id.
- * @throws CliError, a usage error, as `nameOf` does when `id` is neither, such as when it misplaces a key.
+ * @throws CliError, a usage error, as `resolveInstanceName` does when `id` is neither, such as when it misplaces a key.
  */
 function narrowed(show: Show, row: ConcertRecord, id: string): Show {
 	const graph = indexGraph(row.ir);
 	const has = (node: string) => graph.nodes.has(node) || graph.scopes.has(node);
-	const exact = parseInstance(id, graph.groupsOf);
+	const exact = graph.parseSelector(id);
 	const { node, keys } =
 		exact !== undefined && has(exact.node)
 			? exact
 			: {
-					node: nameOf(
+					node: resolveInstanceName(
 						id,
 						[...graph.nodes.keys(), ...graph.scopes.keys()],
 						row.id,

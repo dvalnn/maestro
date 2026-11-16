@@ -2,7 +2,6 @@ import { styleText } from "node:util";
 import {
 	type ConcertEvent,
 	compact,
-	formatInstance,
 	type GraphIndex,
 	type HostEvent,
 	type Ir,
@@ -929,22 +928,22 @@ const nodeWidthOf = (ir: Ir, graph: GraphIndex) =>
 	);
 
 const nameSegs = (ir: Ir, graph: GraphIndex, event: Annotated): Seg[] => {
-	const name = flat(formatInstance(event, graph.groupsOf(event.node)));
+	const name = flat(graph.instanceName(event));
 	return [[`${GAP}${padCells(name, nodeWidthOf(ir, graph))}`]];
 };
 
 /**
  * One event as text: the time since the concert's start, the instance unless `named` is false, a word for what happened
  * and its detail's first line. With `view.columns` above 0 the detail wraps at that width under its own column; at 0 it
- * stays on one line.
+ * stays on one line. A batch passes one `graph` of `ir` to index it once.
  */
 export function eventLine(
 	ir: Ir,
 	event: Annotated,
 	view: View,
 	named = true,
+	graph: GraphIndex = indexGraph(ir),
 ): string {
-	const graph = indexGraph(ir);
 	const [raw, detail] = wordOf(event);
 	const word = flat(raw);
 	const head: Seg[] = [
