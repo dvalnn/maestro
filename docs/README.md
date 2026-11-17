@@ -139,6 +139,6 @@ Every doc follows these when rewritten:
 - No history, dates, draft status, ticket ids or migration notes; those live in version control and release notes.
 - Links to headings by name, never "section 12". Headings that code comments cite keep their names.
 - Prose in plain English, by `.maestro/prompts/_plain.md`. `just lint` holds each doc to its sentence and paragraph
-  limits (`scripts/plain-english.ts`); a doc's count can only fall below `scripts/plain-english-baseline.json`, which
-  `--update` lowers.
+  limits (`scripts/plain-english.ts`); a doc's count can only fall below `scripts/plain-english-baseline.json`. Lint
+  lowers that baseline itself with `--update`.
 - Lines reflowed to 120 characters.

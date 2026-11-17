@@ -8,7 +8,7 @@ target:
   checks:
     lint:
       run: just lint
-      hint: rewrites code files with biome's safe lint fixes and import sorting, then checks the domain words, prompt imports, the Plain English sentence and paragraph limits of Markdown prose and that no git conflict marker is left
+      hint: rewrites code files with biome's safe lint fixes and import sorting, lowers the Plain English baseline itself, then checks the domain words, prompt imports, the Plain English sentence and paragraph limits of Markdown prose and that no git conflict marker is left
     types:
       run: just types
       hint: tsc typecheck
