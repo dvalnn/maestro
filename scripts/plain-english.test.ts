@@ -190,6 +190,83 @@ async function cli(dir: string, ...args: string[]) {
 	return { code, out, err };
 }
 
+test("a non-object baseline is refused and names the baseline file", async () => {
+	for (const baseline of ["[1]", "null", '"text"', "1", "true"]) {
+		const dir = checkout(baseline, {});
+		const result = await cli(dir);
+		expect(result.code).toBe(1);
+		expect(result.err).toContain("plain-english-baseline.json");
+	}
+});
+
+test("an invalid baseline count is refused and names its file and key", async () => {
+	for (const value of [
+		'"many"',
+		'"99"',
+		"-1",
+		"1.5",
+		"null",
+		"true",
+		"[]",
+		"{}",
+	]) {
+		const dir = checkout(`{"a.md": ${value}}`, {
+			"a.md": `${words(30)}.\n`,
+		});
+		const result = await cli(dir);
+		expect(result.code).toBe(1);
+		expect(result.err).toContain("plain-english-baseline.json");
+		expect(result.err).toContain("a.md");
+	}
+});
+
+test("a refused baseline reports an error without a stack trace", async () => {
+	const dir = checkout('{"a.md": "many"}', {});
+	const result = await cli(dir);
+	expect(result.code).toBe(1);
+	expect(result.out).toBe("");
+	const lines = result.err.trim().split("\n");
+	expect(lines).toHaveLength(2);
+	expect(lines[0]).toContain("plain-english-baseline.json");
+	expect(lines[0]).toContain("a.md");
+	expect(lines[1]).toMatch(/^Fix /);
+	expect(result.err).not.toMatch(/(?:^|\n)\s*at\s+.*:\d+:\d+/);
+});
+
+test("update leaves a refused baseline unchanged", async () => {
+	for (const baseline of ['{"a.md": "many"}\n', "[1]\n"]) {
+		const dir = checkout(baseline, { "a.md": `${words(30)}.\n` });
+		const result = await cli(dir, "--update");
+		expect(result.code).toBe(1);
+		expect(
+			readFileSync(join(dir, "scripts/plain-english-baseline.json"), "utf8"),
+		).toBe(baseline);
+	}
+});
+
+test("a missing baseline gives every tracked file a zero baseline", async () => {
+	const dir = checkout("{}\n", { "a.md": `${words(26)}.\n` });
+	rmSync(join(dir, "scripts/plain-english-baseline.json"));
+	const result = await cli(dir);
+	expect(result.code).toBe(1);
+	expect(result.err).toContain("a.md:1:");
+});
+
+test("valid counts allow findings and update drops a zero entry", async () => {
+	const dir = checkout('{"a.md": 1, "b.md": 0}\n', {
+		"a.md": `${words(26)}.\n`,
+		"b.md": "Short.\n",
+	});
+	const result = await cli(dir);
+	expect(result.code).toBe(0);
+	expect(result.out).toBe("");
+	expect(result.err).toBe("");
+	expect((await cli(dir, "--update")).code).toBe(0);
+	expect(
+		readFileSync(join(dir, "scripts/plain-english-baseline.json"), "utf8"),
+	).toBe('{\n\t"a.md": 1\n}\n');
+});
+
 test("the command prints every finding of a file above its baseline", async () => {
 	const dir = checkout("{}\n", {
 		"a.md": `${words(26)}.\n\nShort.\n\n${words(27)}.\n`,
@@ -222,4 +299,11 @@ test("update lowers the baseline file, drops finished entries and formats stably
 	);
 	expect(formatted.exitCode).toBe(0);
 	expect((await cli(dir)).code).toBe(0);
+});
+
+test("a baseline count keyed __proto__ is kept and reported when below its baseline", async () => {
+	const dir = checkout('{"__proto__": 1}\n', {});
+	const result = await cli(dir);
+	expect(result.code).toBe(0);
+	expect(result.out).toContain("__proto__: count 0 is below its baseline 1");
 });

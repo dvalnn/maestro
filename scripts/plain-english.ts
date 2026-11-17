@@ -182,7 +182,23 @@ export type Baseline = Record<string, number>;
 /** The baseline at `path`, empty when there is none. */
 export async function readBaseline(path: string): Promise<Baseline> {
 	const file = Bun.file(path);
-	return (await file.exists()) ? ((await file.json()) as Baseline) : {};
+	if (!(await file.exists())) return {};
+	return parseBaseline(await file.json(), path);
+}
+
+/** The baseline in `value`, read from `path`; throws an error naming the file and key when it is not an object of non-negative integer counts. */
+function parseBaseline(value: unknown, path: string): Baseline {
+	if (typeof value !== "object" || value === null || Array.isArray(value))
+		throw new Error(`${path}: the baseline must be a JSON object of counts`);
+	const entries: [string, number][] = [];
+	for (const [key, count] of Object.entries(value)) {
+		if (!Number.isInteger(count) || count < 0)
+			throw new Error(
+				`${path}: the count for ${JSON.stringify(key)} must be a non-negative integer`,
+			);
+		entries.push([key, count]);
+	}
+	return Object.fromEntries(entries);
 }
 
 /** The baseline as JSON, one line per file, sorted by path, as Biome formats it. */
@@ -233,7 +249,16 @@ const describe = (f: Finding) =>
 if (import.meta.main) {
 	const root = resolve(import.meta.dir, "..");
 	const path = resolve(root, BASELINE);
-	const baseline = await readBaseline(path);
+	let baseline: Baseline;
+	try {
+		baseline = await readBaseline(path);
+	} catch (e) {
+		if (e instanceof SyntaxError) throw e;
+		console.error(
+			`${(e as Error).message}\nFix the baseline, or restore it from git`,
+		);
+		process.exit(EXIT_FOUND);
+	}
 	if (process.argv.includes("--update")) {
 		await Bun.write(path, formatBaseline(await lowered(root, baseline)));
 	} else {
