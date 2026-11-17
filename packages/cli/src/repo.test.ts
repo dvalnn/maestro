@@ -12,7 +12,7 @@ import { openRecord } from "@maestro/core/perform";
 import { repoHost } from "@maestro/host-repo";
 import { stubHarness } from "@maestro/host-repo/harness";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
-import { idOf, json, world } from "./fixtures/world";
+import { idOf, json, shortOf, world } from "./fixtures/world";
 import { builtinHosts } from "./hosts";
 import { diffColored } from "./output";
 
@@ -1331,7 +1331,7 @@ export const tagged = composition("tagged", { examples: [{}] }, () => {
 		const dir = await fixtures({
 			"review/events.jsonl": [
 				'{"type":"environment","mcp":["github"]}',
-				'{"type":"environment","skills":["deploy"]}',
+				'{"type":"environment","tools":[],"skills":["deploy"]}',
 				"",
 			].join("\n"),
 		});
@@ -1342,10 +1342,34 @@ export const tagged = composition("tagged", { examples: [{}] }, () => {
 			"\nEnvironment\nreview  skills: deploy loaded, not declared",
 		);
 		expect(listed).not.toContain("github");
-		const { review } = json(await w.call(["ls", id, "--json"])).reports;
+		const { reports, instances } = json(await w.call(["ls", id, "--json"]));
+		const { review } = reports;
 		expect(
 			review.environment.flatMap((c: { faults: string[] }) => c.faults),
 		).toEqual(["deploy loaded, not declared"]);
+		expect(
+			instances.find((i: { name: string }) => i.name === "review")?.enrichment
+				.environment,
+		).toEqual([
+			{ part: "tools", mark: "✓", faults: [] },
+			{ part: "subagents", mark: "?", faults: [] },
+			{
+				part: "skills",
+				mark: "✗",
+				faults: ["deploy loaded, not declared"],
+			},
+			{ part: "mcp", mark: "?", faults: [] },
+			{ part: "hooks", mark: "?", faults: [] },
+			{ part: "contextFiles", mark: "?", faults: [] },
+			{ part: "compaction", mark: "?", faults: [] },
+		]);
+		expect(review.environment).toEqual([
+			{
+				part: "skills",
+				mark: "✗",
+				faults: ["deploy loaded, not declared"],
+			},
+		]);
 	});
 
 	test("a missing directory fails the stub agent naming the variable and the path", async () => {
@@ -1447,5 +1471,42 @@ describe("ls Environment notes", () => {
 		const clean = await repoWorld(SMOKE_RUNTIME("stub"));
 		const ok = idOf(await clean.call(["perform", file]));
 		expect((await clean.call(["ls", ok])).out).not.toContain("Environment");
+		const cleanReport = json(await clean.call(["ls", ok, "--json"])).reports
+			.review;
+		expect(cleanReport).toBeDefined();
+		expect(Object.hasOwn(cleanReport, "environment")).toBe(false);
+	});
+
+	test("a cut Environment note points to a report holding the full fault", async () => {
+		const name =
+			"repository-environment-service-with-a-name-too-long-for-the-terminal";
+		const w = await repoWorld(SMOKE_RUNTIME("stub"), {
+			MAESTRO_STUB_ENVIRONMENT: JSON.stringify({ mcp: [name] }),
+		});
+		const done = await w.call(["perform", join(REPO, "rounds.ts")]);
+		expect(done.code).toBe(0);
+		const id = idOf(done);
+		const listed = await w.call(["ls", id], {
+			terminal: () => ({ columns: 40, rows: 24 }),
+			env: { NO_COLOR: "1" },
+		});
+		expect(listed.code).toBe(0);
+		const lines = listed.out.split("\n");
+		expect(lines).toContain("Environment");
+		const note = lines[lines.indexOf("Environment") + 1] ?? "";
+		expect(note.endsWith("…")).toBe(true);
+		expect(Bun.stringWidth(note)).toBeLessThanOrEqual(40);
+		expect(lines.at(-1)?.trim()).toBe(
+			`Full reports: maestro ls ${shortOf(id)} --json | jq .reports`,
+		);
+		const full = await w.call(["ls", shortOf(id), "--json"]);
+		expect(full.code).toBe(0);
+		expect(json(full).reports.review.environment).toContainEqual({
+			part: "mcp",
+			mark: "✗",
+			faults: [
+				"repository-environment-service-with-a-name-too-long-for-the-terminal loaded, not declared",
+			],
+		});
 	});
 });

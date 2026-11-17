@@ -164,10 +164,10 @@ function envelopeOf({ report }: Enrichment): Report | undefined {
 		: undefined;
 }
 
-/** The envelope's report, with the checks of the latest environment report when it held any. */
+/** The envelope's report, with the checks of the latest environment report that hold a fault, when any did. */
 function reportOf(enrichment: Enrichment): Record<string, unknown> | undefined {
 	const report = envelopeOf(enrichment);
-	const checks = checksOf(enrichment);
+	const checks = checksOf(enrichment).filter(({ faults }) => faults.length);
 	if (!checks.length) return report;
 	return { ...report, environment: checks };
 }
@@ -203,6 +203,6 @@ export const repoText: HostText = {
 	reportFields: {
 		...REPORT_FIELDS,
 		environment:
-			"each part of the agent's environment checked against what its harness reported loading, with its faults",
+			"each part of the agent's environment whose check against what its harness reported loading found a fault, with its faults",
 	},
 };

@@ -347,8 +347,8 @@ them when any does, and exits 0.
   `--no-extensions`. The window is kept per harness and model, and every agent turn refreshes it; Context shows it where
   known, and `--json` carries it as `window`.
 - Every agent session records its harness's report: `ls <concert>` lists the faults of an agent's latest one, as the
-  profile declares its environment, under an `Environment` heading, and `ls --json` carries the checks in the instance's
-  report.
+  profile declares its environment, under an `Environment` heading. `ls --json` carries every check under the instance's
+  `enrichment.environment`, and only the checks with faults in its report.
 
 ### Repertoire
 

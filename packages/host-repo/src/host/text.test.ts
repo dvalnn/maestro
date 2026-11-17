@@ -132,6 +132,42 @@ describe("repoText.report", () => {
 				],
 			},
 		],
+		[
+			{
+				report: { summary: "s" },
+				environment: [
+					{ part: "tools", mark: "✓", faults: [] },
+					{ part: "mcp", mark: "✗", faults: ["x loaded, not declared"] },
+					{ part: "hooks", mark: "?", faults: [] },
+					{
+						part: "skills",
+						mark: "✗",
+						faults: ["a declared, not loaded", "b loaded, not declared"],
+					},
+				],
+			},
+			{
+				summary: "s",
+				environment: [
+					{ part: "mcp", mark: "✗", faults: ["x loaded, not declared"] },
+					{
+						part: "skills",
+						mark: "✗",
+						faults: ["a declared, not loaded", "b loaded, not declared"],
+					},
+				],
+			},
+		],
+		[
+			{
+				report: { summary: "s" },
+				environment: [
+					{ part: "tools", mark: "✓", faults: [] },
+					{ part: "hooks", mark: "?", faults: [] },
+				],
+			},
+			{ summary: "s" },
+		],
 	])("report of %j is %j", (enrichment, report) => {
 		expect(repoText.report?.(enrichment)).toEqual(report);
 	});
