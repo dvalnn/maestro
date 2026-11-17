@@ -19,7 +19,8 @@ Each entry is a one-line definition; the rest of a term lives in its home, linke
   Pack
 - [Graph](#graph): Graph, IR, Node, Group node, Iteration, Instance name, On error, Host node, Edge, Barrier, Status
   port, Missing output, Settled, Reducer, Artifact, Worker
-- [Configuration](#configuration): Core config, Config namespace, Registrant, Workspace, Data root, Composed config, Gap
+- [Configuration](#configuration): Core config, Config namespace, Registrant, Workspace, Data root, Config snapshot,
+  Composed config, Gap
 - [Engine and hosts](#engine-and-hosts): Engine, Host, Host setup, Conductor
 - [Agents](#agents): Agent node, Harness, Runtime, Agent environment, Probe, Instructions, Seat, Seat call, Work agent,
   Verdict agent, Blocked, Obstacle, Lesson, Envelope, Relay, Task, Checklist, Attachment, Sighting, Outbox, Session,
@@ -51,8 +52,8 @@ plan (as a verb)
 **Concert**: One run of the perform stage over a graph, with an id, a record and a result. _Avoid_: run, execution,
 performance
 
-**Encore**: A new concert that performs an earlier one's composition again, its agents continuing their counterparts'
-sessions. [Home](docs/architecture.md#resume-and-encore) _Avoid_: rerun, continue
+**Encore**: A new concert that performs an earlier one's composition again with a new ask under its recorded config, its
+agents continuing their counterparts' sessions. [Home](docs/architecture.md#resume-and-encore) _Avoid_: rerun, continue
 
 **Fingerprint**: A digest of a concert's IR, config values and host facts.
 [Home](docs/architecture.md#resume-and-encore)
@@ -192,6 +193,9 @@ the user's. [Home](docs/architecture.md#8-configuration)
 
 **Data root**: The directory holding the record store, concert areas, scratch and host stores.
 [Home](docs/architecture.md#data-root)
+
+**Config snapshot**: The config layers a concert was performed under, and its workspace directory, which later commands
+on it compose. [Home](docs/architecture.md#config-snapshot)
 
 **Composed config**: The config layers merged, with each value's source layer.
 

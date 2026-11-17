@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync, realpathSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { cp, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Host } from "@maestro/core/host";
 import { fakeHost } from "@maestro/testkit";
@@ -249,6 +249,110 @@ describe("the real maestro.ts", () => {
 });
 
 describe("resume", () => {
+	// Seam: result documents expose the config a host received; ls reads each persisted snapshot.
+	test("resume overrides last one attempt, and an encore keeps the performed presets and -c with its own -c above them, in its snapshot and resume", async () => {
+		const w = await world();
+		const host: Host = {
+			...fakeHost({
+				steps: {
+					first: [FIRST],
+					"echo/echo": (_instance, _inputs, { setup }) => ({
+						outcome: "rejected",
+						reason: "again",
+						outputs: { text: JSON.stringify(setup.config.mode) },
+					}),
+				},
+			}),
+			config: { mode: { type: "object" } },
+		};
+		const presets = join(w.cwd, ".maestro/presets");
+		await Bun.write(join(presets, "a.yaml"), "mode: { source: a, keep: a }\n");
+		await Bun.write(join(presets, "b.yaml"), "mode: { keep: b, from: b }\n");
+		const performed = await w.call(
+			[
+				"perform",
+				...GREET,
+				...["--preset", "a", "--preset", "b", "-c", "mode.keep=perform"],
+				"--json",
+			],
+			{ hosts: [host] },
+		);
+		expect(performed.code).toBe(3);
+		const id = json(performed).id;
+		await rm(presets, { recursive: true });
+		await Bun.write(join(w.cwd, ".maestro/config.yaml"), "[broken YAML");
+		await Bun.write(
+			join(w.env.XDG_CONFIG_HOME, "maestro/config.yaml"),
+			"[broken YAML",
+		);
+		const moved = join(await scratch(), "data");
+		await cp(w.env.XDG_DATA_HOME, moved, {
+			recursive: true,
+			verbatimSymlinks: true,
+		});
+		const outside = {
+			cwd: await scratch(),
+			hosts: [host],
+			env: { XDG_DATA_HOME: moved },
+		};
+		const modeOf = async (args: string[]) => {
+			const ran = await w.call([...args, "--json"], outside);
+			expect(ran.code).toBe(3);
+			return { id: json(ran).id, mode: JSON.parse(json(ran).outputs.text) };
+		};
+		const tweaked = await w.call(
+			["resume", id, "-c", "mode.keep=attempt", "--json"],
+			outside,
+		);
+		expect(tweaked.code).toBe(3);
+		expect(JSON.parse(json(tweaked).outputs.text)).toEqual({
+			source: "a",
+			keep: "attempt",
+			from: "b",
+		});
+		expect(json(tweaked).artifacts).toBe(
+			join(moved, "maestro/concerts", id, "artifacts"),
+		);
+		expect((await modeOf(["resume", id])).mode).toEqual({
+			source: "a",
+			keep: "perform",
+			from: "b",
+		});
+		const encore = await modeOf([
+			...["encore", id, "--name", "y"],
+			...["-c", "mode.keep=encore", "-c", "mode.added=true"],
+		]);
+		expect(encore.mode).toEqual({
+			source: "a",
+			keep: "encore",
+			from: "b",
+			added: true,
+		});
+		const kept = await modeOf(["encore", id, "-c", "mode.from=again"]);
+		expect(kept.mode).toEqual({ source: "a", keep: "perform", from: "again" });
+		const row = async (concert: string) =>
+			json(await w.call(["ls", concert, "--json"], outside));
+		expect(await row(encore.id)).toMatchObject({
+			encoreOf: id,
+			params: { name: "y" },
+			presets: ["a", "b"],
+			config: ["mode.keep=perform", "mode.keep=encore", "mode.added=true"],
+			snapshot: {
+				mode: { source: "a", keep: "encore", from: "b", added: true },
+			},
+		});
+		expect(await row(kept.id)).toMatchObject({
+			presets: ["a", "b"],
+			config: ["mode.keep=perform", "mode.from=again"],
+		});
+		expect((await modeOf(["resume", encore.id])).mode).toEqual({
+			source: "a",
+			keep: "encore",
+			from: "b",
+			added: true,
+		});
+	});
+
 	const failing = (node: string) =>
 		fakeHost({ steps: { [node]: [{ outcome: "failed", reason: "flaky" }] } });
 
@@ -406,10 +510,14 @@ export const work = composition("work", { examples: [{}] }, () => {
 		});
 	});
 
-	test("names a recorded -c or --preset that no longer holds as the concert's, with a fix the resume can apply", async () => {
+	test("a recorded key the running maestro no longer claims refuses resume and encore, naming the concert and repair, which needs no preset file", async () => {
 		const w = await world();
 		const presets = join(w.cwd, ".maestro/presets");
 		await Bun.write(join(presets, "stub.yaml"), "mode:\n  from: stub\n");
+		await Bun.write(
+			join(w.cwd, ".maestro/config.yaml"),
+			`packs: [${w.pack}]\nextra: { x: 1 }\n`,
+		);
 		const claiming = (namespaces: string[], over: object = {}): Host => ({
 			...fakeHost(over),
 			config: Object.fromEntries(namespaces.map((ns) => [ns, {}])),
@@ -423,26 +531,49 @@ export const work = composition("work", { examples: [{}] }, () => {
 					hosts: [failFirst],
 				}),
 			);
-		const id = await perform("-c", "extra.x=1");
-		const resume = (concert: string, ...flags: string[]) =>
-			w.call(["resume", concert, ...flags], {
-				hosts: [
-					claiming(["mode"], {
-						steps: { first: [FIRST], "echo/echo": [ECHO] },
-					}),
-				],
-			});
-		expect(await resume(id)).toMatchObject({
-			code: 1,
-			err: `error: config key 'extra' is claimed by no installed host, pack or core (from -c extra.x of concert ${shortOf(id)})\n  Set that key, or !delete it, with -c on the resume, or perform the composition as a new concert`,
-		});
-		expect(await resume(id, "-c", "extra=!delete")).toMatchObject({ code: 0 });
+		const id = await perform("-c", "extra.y=2");
+		await Bun.write(
+			join(w.cwd, ".maestro/config.yaml"),
+			`packs: [${w.pack}]\n`,
+		);
+		const current = {
+			hosts: [
+				claiming(["mode"], { steps: { first: [FIRST], "echo/echo": [ECHO] } }),
+			],
+		};
+		const named = (text: string) => {
+			const words = text.split(/[\s'"`,:;.()]+/);
+			expect(
+				words.filter((word) => word === id || word === shortOf(id)),
+			).not.toEqual([]);
+			expect(words).toEqual(
+				expect.arrayContaining(["-c", "resume", "perform"]),
+			);
+		};
+		const refused = await w.call(["resume", id], current);
+		expect(refused.code).toBe(1);
+		named(refused.err);
+		for (const args of [
+			["resume", id],
+			["encore", id, "-c", "concurrency=2"],
+		]) {
+			const document = await w.call([...args, "--json"], current);
+			expect(document.code).not.toBe(0);
+			const diagnostics: { message: string; hint?: string }[] =
+				json(document).diagnostics;
+			named(diagnostics.map((d) => `${d.message}\n${d.hint}`).join("\n"));
+		}
+		const repaired = await w.call(
+			["resume", id, "-c", "extra=!delete", "--json"],
+			current,
+		);
+		expect(repaired.code).toBe(0);
+		expect(json(repaired).outputs).toEqual({ text: "done" });
 
 		const again = await perform();
 		await rm(join(presets, "stub.yaml"));
-		expect(await resume(again)).toMatchObject({
-			code: 1,
-			err: `error: concert ${shortOf(again)} was performed with --preset stub, and no stub.yaml is in ${presets} or ${join(w.env.XDG_CONFIG_HOME, "maestro/presets")}\n  Restore stub.yaml, or perform the composition as a new concert`,
+		expect(await w.call(["resume", again], current)).toMatchObject({
+			code: 0,
 		});
 
 		const plain = idOf(
@@ -550,58 +681,6 @@ describe("encore", () => {
 			config: ["concurrency=2", "concurrency=3"],
 		});
 	});
-
-	test("the encore's presets replace the concert's whole list, under the concert's -c, and none keeps the list", async () => {
-		const w = await world();
-		const presets = join(w.cwd, ".maestro/presets");
-		await Bun.write(join(presets, "a.yaml"), "mode:\n  from: a\n  keep: a\n");
-		await Bun.write(join(presets, "b.yaml"), "mode:\n  keep: b\n");
-		const seen: unknown[] = [];
-		const host: Host = {
-			...fakeHost({
-				steps: {
-					first: (_instance, _inputs, { setup }) => {
-						seen.push(setup.config.mode);
-						return FIRST;
-					},
-				},
-			}),
-			config: { mode: { type: "object" } },
-		};
-		const first = idOf(
-			await w.call(
-				[
-					"perform",
-					...GREET,
-					...["--preset", "a", "--preset", "b", "-c", "mode.c=1"],
-				],
-				{ hosts: [host] },
-			),
-		);
-		const encore = idOf(
-			await w.call(["encore", first, "--preset", "b"], {
-				hosts: [host],
-			}),
-		);
-		const kept = idOf(
-			await w.call(["encore", first, "-c", "mode.c=2"], {
-				hosts: [host],
-			}),
-		);
-		expect(seen).toEqual([
-			{ from: "a", keep: "b", c: 1 },
-			{ keep: "b", c: 1 },
-			{ from: "a", keep: "b", c: 2 },
-		]);
-		expect(json(await w.call(["ls", encore, "--json"]))).toMatchObject({
-			presets: ["b"],
-			config: ["mode.c=1"],
-		});
-		expect(json(await w.call(["ls", kept, "--json"]))).toMatchObject({
-			presets: ["a", "b"],
-			config: ["mode.c=1", "mode.c=2"],
-		});
-	});
 });
 
 describe("kill", () => {
@@ -660,6 +739,129 @@ describe("kill", () => {
 });
 
 describe("a file param", () => {
+	// Seam: file contents in perform and encore result documents, and the snapshot values ls exposes.
+	test("a recorded file param keeps its value and base across folders and refuses an unchanged encore", async () => {
+		const w = await world();
+		const source = await demoSource(
+			(
+				text,
+			) => `${text.replace('import { code, composition, Int, Json, Text, use } from "@maestro/sdk";', 'import { type ArtifactRef, type CodeContext, code, composition, Int, Json, Markdown, Text, use } from "@maestro/sdk";\nimport { readFileSync } from "node:fs";')}
+export function readDoc(inputs: { doc: ArtifactRef }, ctx: CodeContext) {
+	return { text: readFileSync(ctx.path(inputs.doc), "utf8") };
+}
+export const doc = composition("doc", { pack: "demo", examples: [{}], params: { doc: Markdown(), round: Int({ default: 0 }) } }, ({ doc }) =>
+	code(readDoc, { in: { doc }, out: { text: Text() } }),
+);
+`,
+		);
+		await packOf(join(source, "index.ts"), w.pack);
+		const user = join(w.env.XDG_CONFIG_HOME, "maestro");
+		await Bun.write(join(user, "note.md"), "first");
+		await Bun.write(
+			join(user, "config.yaml"),
+			"demo:\n  doc:\n    doc: note.md\n",
+		);
+		const performed = await w.call(["perform", "demo.doc", "--json"], {
+			hosts: [],
+		});
+		expect(performed.code).toBe(0);
+		expect(json(performed).outputs).toEqual({ text: "first" });
+		const id = json(performed).id;
+		const moved = join(await scratch(), "config");
+		await Bun.write(join(moved, "maestro/note.md"), "other");
+		const elsewhere = {
+			cwd: await scratch(),
+			hosts: [],
+			env: { XDG_CONFIG_HOME: moved },
+		};
+		const unchanged = await w.call(["encore", id, "--json"], elsewhere);
+		expect(unchanged.code).toBe(1);
+		expect(json(unchanged).ok).toBe(false);
+		expect(json(await w.call(["ls", "--json"], elsewhere))).toHaveLength(1);
+		const row = json(await w.call(["ls", id, "--json"], elsewhere));
+		expect(row.snapshot.demo.doc.doc).toBe("note.md");
+		const encore = await w.call(
+			["encore", id, "--round", "1", "--json"],
+			elsewhere,
+		);
+		expect(encore.code).toBe(0);
+		expect(json(encore).outputs).toEqual({ text: "first" });
+	});
+
+	test.each([
+		{
+			shape: "a list appended across layers",
+			schema: "List(Markdown())",
+			user: "[first.md]",
+			workspace: "!append [second.md]",
+			files: "inputs.docs",
+			expected: "workspace first|workspace second",
+		},
+		{
+			shape: "a Struct split across layers",
+			schema: "Struct({ first: Markdown(), second: Markdown() })",
+			user: "{ first: first.md }",
+			workspace: "{ second: second.md }",
+			files: "[inputs.docs.first, inputs.docs.second]",
+			expected: "user first|user second",
+		},
+		{
+			shape: "a scalar merged into a list",
+			schema: "List(Markdown())",
+			user: "first.md",
+			workspace: "!append [second.md]",
+			files: "inputs.docs",
+			expected: "workspace first|workspace second",
+		},
+	])(
+		"an encore from another folder reads the performed files for $shape",
+		async (scenario) => {
+			const w = await world();
+			const source = join(await scratch(), "index.ts");
+			await Bun.write(
+				source,
+				`import { readFileSync } from "node:fs";
+import { code, composition, Int, List, Markdown, Struct, Text } from "@maestro/sdk";
+export function readDocs(inputs, ctx) {
+	return { text: ${scenario.files}.map((ref) => readFileSync(ctx.path(ref), "utf8")).join("|") };
+}
+export const docs = composition("docs", {
+	pack: "demo", examples: [{}],
+	params: { docs: ${scenario.schema}, round: Int({ default: 0 }) },
+}, ({ docs }) => code(readDocs, { in: { docs }, out: { text: Text() } }));
+`,
+			);
+			await packOf(source, w.pack);
+			const user = join(w.env.XDG_CONFIG_HOME, "maestro");
+			await Bun.write(
+				join(user, "config.yaml"),
+				`demo:\n  docs:\n    docs: ${scenario.user}\n`,
+			);
+			await Bun.write(
+				join(w.cwd, ".maestro/config.yaml"),
+				`packs: [${w.pack}]\ndemo:\n  docs:\n    docs: ${scenario.workspace}\n`,
+			);
+			await Bun.write(join(user, "first.md"), "user first");
+			await Bun.write(join(user, "second.md"), "user second");
+			await Bun.write(join(w.cwd, "first.md"), "workspace first");
+			await Bun.write(join(w.cwd, "second.md"), "workspace second");
+			const performed = await w.call(["perform", "demo.docs", "--json"], {
+				hosts: [],
+			});
+			expect(performed.code).toBe(0);
+			expect(json(performed).outputs).toEqual({ text: scenario.expected });
+			const outside = await scratch();
+			await Bun.write(join(outside, "first.md"), "outside first");
+			await Bun.write(join(outside, "second.md"), "outside second");
+			const encore = await w.call(
+				["encore", json(performed).id, "--round", "1", "--json"],
+				{ cwd: outside, hosts: [] },
+			);
+			expect(encore.code).toBe(0);
+			expect(json(encore).outputs).toEqual({ text: scenario.expected });
+		},
+	);
+
 	test("reaches a node as its staged copy, which a resume keeps and an encore reads anew", async () => {
 		const w = await world();
 		const spec = join(w.cwd, "spec.md");

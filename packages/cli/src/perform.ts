@@ -10,7 +10,6 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
 	type Concert,
-	type ConcertRecord,
 	type ConcertResult,
 	perform as conduct,
 	type Records,
@@ -33,7 +32,9 @@ import {
 	peek,
 	splitFirst,
 	textOf,
+	textsOf,
 	type Values,
+	without,
 } from "./command";
 import type { Overrides } from "./config";
 import {
@@ -62,9 +63,10 @@ import {
 import {
 	artifactsOf,
 	concertOf,
+	type Located,
 	openSession,
 	overridesOf,
-	recordedOf,
+	recordedSession,
 	type Session,
 	withLocated,
 	withRecord,
@@ -74,7 +76,13 @@ import {
 const TOUR_VARIABLE = "MAESTRO_TOUR";
 
 const PERFORM_OPTIONS = { ...COMMON, ...PERFORM_FLAGS } as const;
-const RESUME_OPTIONS = { ...COMMON, detach: PERFORM_FLAGS.detach } as const;
+/** Resume and encore compose their concert's snapshot, so they take `-c`, layered over it, but no `--preset` (ADR 0019). */
+const RECORDED_OPTIONS = without(COMMON, "preset");
+const RESUME_OPTIONS = {
+	...RECORDED_OPTIONS,
+	detach: PERFORM_FLAGS.detach,
+} as const;
+const ENCORE_OPTIONS = { ...RECORDED_OPTIONS, ...PERFORM_FLAGS } as const;
 
 const DETACH = "--detach";
 /** The line a perform announces its concert with on stderr. */
@@ -166,7 +174,6 @@ async function detach(
 	command: string,
 	args: readonly string[],
 	json: boolean,
-	own: Overrides,
 ): Promise<number> {
 	const started = await detached(deps, command, args);
 	if ("exit" in started) {
@@ -175,13 +182,13 @@ async function detach(
 		return started.exit;
 	}
 	deps.stdout(json ? jsonOf(resultDoc(started.id, undefined)) : started.id);
-	if (deps.stderrTerminal && !json) await followHint(deps, own, started.id);
+	if (deps.stderrTerminal && !json) await followHint(deps, started.id);
 	return EXIT.ok;
 }
 
 /** Prints how to follow the concert `id`, by the short id the foreground path hints. */
-async function followHint(deps: Deps, own: Overrides, id: string) {
-	await withLocated(deps, own, async (_session, store) => {
+async function followHint(deps: Deps, id: string) {
+	await withLocated(deps, async (_located, store) => {
 		deps.stderr(
 			`Follow it: maestro watch ${shortIds(store.ids()).label(id, false)}`,
 		);
@@ -220,12 +227,9 @@ async function begin(
 ): Promise<Start> {
 	const prepared = await prepare(
 		session,
-		{
-			verb: recorded ? "encore" : "perform",
-			options: PERFORM_OPTIONS,
-			examples: false,
-			recorded,
-		},
+		recorded
+			? { verb: "encore", options: ENCORE_OPTIONS, examples: false, recorded }
+			: { verb: "perform", options: PERFORM_OPTIONS, examples: false },
 		args,
 	);
 	if (prepared.staged === undefined)
@@ -243,59 +247,44 @@ async function begin(
 }
 
 /**
- * The overrides an encore of `row` layers and records: its own `--preset` list in place of the concert's whole list when
- * it gives any, and its own `-c` after the concert's.
+ * An encore of the concert whose id starts with `prefix`: its composition performed anew with the flags of `args` over
+ * its recorded params, under its snapshot and then each `-c` of `own`, which its own snapshot records (ADR 0019).
+ * @throws CliError, a usage error, when `args` hold a composition.
+ * @throws CliError when the concert has no snapshot.
+ * @throws ConfigError as `recordedConfig` does.
  */
-function encoreOverrides(store: Records, row: ConcertRecord, own: Overrides) {
-	const { recorded } = recordedOf(store, row);
-	const replaced = own.presets !== undefined && own.presets.length > 0;
+async function encored(
+	located: Located,
+	store: Records,
+	prefix: string,
+	own: readonly string[],
+	args: readonly string[],
+): Promise<Start> {
+	const row = concertOf(store, prefix);
+	const session = await recordedSession(located, store, row, own);
+	const target =
+		row.file === undefined
+			? `${row.pack}.${row.composition}`
+			: join(row.moduleDir, row.file);
+	const start = await begin(session, [target, ...args], row.params ?? {});
 	return {
-		layers: [
-			replaced ? { presets: own.presets } : { presets: row.presets, recorded },
-			{ config: row.config, recorded },
-			{ config: own.config },
-		],
-		kept: {
-			presets: replaced ? own.presets : row.presets,
-			config: [...(row.config ?? []), ...(own.config ?? [])],
+		...start,
+		encore: row.id,
+		overrides: {
+			presets: row.presets,
+			config: [...(row.config ?? []), ...own],
 		},
 	};
 }
 
 /**
- * An encore of the concert whose id starts with `prefix`: its composition performed anew with the flags of `args` over
- * its recorded params, under the config files as they stand layered with its `--preset` and `-c` and the encore's `own`.
- * @throws CliError, a usage error, when `args` hold a composition.
- * @throws ConfigError as `openSession` does.
- */
-async function encored(
-	session: Session,
-	store: Records,
-	prefix: string,
-	own: Overrides,
-	args: readonly string[],
-): Promise<Start> {
-	const row = concertOf(store, prefix);
-	const { layers, kept } = encoreOverrides(store, row, own);
-	const { config } = await openSession(session.deps, ...layers);
-	const target =
-		row.file === undefined
-			? `${row.pack}.${row.composition}`
-			: join(row.moduleDir, row.file);
-	const start = await begin(
-		{ ...session, config },
-		[target, ...args],
-		row.params ?? {},
-	);
-	return { ...start, encore: row.id, overrides: kept };
-}
-
-/**
- * The concert whose id starts with `prefix`, to resume, prepared as `resumable` does.
- * @throws CliError when core refuses to resume it, or as `resumable` does.
+ * The concert whose id starts with `prefix`, to resume under its snapshot and then the `-c` of `values`, which hold for
+ * this attempt only, prepared as `resumable` does.
+ * @throws CliError when core refuses to resume it, when it has no snapshot, or as `resumable` does.
+ * @throws ConfigError as `recordedConfig` does.
  */
 async function restart(
-	session: Session,
+	located: Located,
 	store: Records,
 	prefix: string,
 	values: Values,
@@ -303,7 +292,10 @@ async function restart(
 	const row = concertOf(store, prefix);
 	const refused = unresumable(row);
 	if (refused) throw resumeRefused(refused);
-	return { ...(await resumable(session, store, row, values)), resume: row.id };
+	const own = textsOf(values, "config");
+	const session = await recordedSession(located, store, row, own);
+	const prepared = await resumable(session, row, values);
+	return { session, prepared, resume: row.id };
 }
 
 const SIGNAL_EXITS = {
@@ -337,7 +329,7 @@ async function report(
 	session: Session,
 	store: Records,
 	json: boolean,
-	{ color, values }: { color: Colors; values: Values },
+	color: Colors,
 	id: string,
 	{ result, stopped }: { result: ConcertResult; stopped?: number },
 ): Promise<number> {
@@ -350,7 +342,7 @@ async function report(
 		printClosing(deps, store, concertOf(store, id), result, {
 			color,
 			artifacts: artifactsOf(session, id),
-			changes: await changesOf({ session, store, values }, id),
+			changes: await changesOf({ session, store }, id),
 		});
 	if (stopped === undefined) return exitOf(result.outcome);
 	if (stopped === EXIT.interrupted && !json)
@@ -392,6 +384,7 @@ async function conducted(
 			? {
 					encore: start.encore,
 					stage: prepared.staged,
+					workspaceDir: session.config.workspace,
 					origin: {
 						workspace: session.config.core.workspace,
 						moduleDir: prepared.moduleDir,
@@ -412,31 +405,17 @@ async function conducted(
 			`Follow it: maestro watch ${shortIds(store.ids()).label(concert.id, false)}`,
 		);
 	const settledConcert = await settled(concert);
-	return report(
-		session,
-		store,
-		json,
-		{
-			color,
-			values: {
-				preset: prepared.values.preset,
-				config: prepared.values.config,
-			},
-		},
-		concert.id,
-		settledConcert,
-	);
+	return report(session, store, json, color, concert.id, settledConcert);
 }
 
-/** Pre-flights and performs what `started` makes in the session `withLocated` finds, and gives the exit code. */
+/** Pre-flights and performs what `started` makes in the record store of the data root, and gives the exit code. */
 async function inStore(
 	deps: Deps,
-	own: Overrides,
 	json: boolean,
-	started: (session: Session, store: Records) => Promise<Start>,
+	started: (located: Located, store: Records) => Promise<Start>,
 ) {
-	return withLocated(deps, own, async (session, store) => {
-		const start = await started(session, store);
+	return withLocated(deps, async (located, store) => {
+		const start = await started(located, store);
 		await warned(start);
 		return conducted(start, store, json);
 	});
@@ -473,13 +452,7 @@ export const perform: Command = {
 	async execute(args, deps) {
 		const early = peek(PERFORM_OPTIONS, args);
 		if (isSet(early, "detach"))
-			return detach(
-				deps,
-				"perform",
-				args,
-				isSet(early, "json"),
-				overridesOf(early),
-			);
+			return detach(deps, "perform", args, isSet(early, "json"));
 		const session = await openSession(deps, overridesOf(early));
 		const start = await begin(session, args);
 		await warned(start);
@@ -498,7 +471,7 @@ export const resume: Command = {
 			"maestro resume 7f3c2a",
 		],
 		[
-			"Resume with a config value changed",
+			"Resume with -c over the concert's recorded config, for this attempt",
 			"maestro resume 7f3c2a -c concurrency=2",
 		],
 	],
@@ -511,18 +484,9 @@ export const resume: Command = {
 		);
 		const prefix = only(positionals, "concert", NAME_CONCERT);
 		if (isSet(values, "detach"))
-			return detach(
-				deps,
-				"resume",
-				args,
-				isSet(values, "json"),
-				overridesOf(values),
-			);
-		return inStore(
-			deps,
-			overridesOf(values),
-			isSet(values, "json"),
-			(s, store) => restart(s, store, prefix, values),
+			return detach(deps, "resume", args, isSet(values, "json"));
+		return inStore(deps, isSet(values, "json"), (located, store) =>
+			restart(located, store, prefix, values),
 		);
 	},
 };
@@ -539,21 +503,24 @@ export const encore: Command = {
 			"Change one of its params",
 			'maestro encore 7f3c2a --request "Add a --quiet flag"',
 		],
+		[
+			"Set a config value with -c over the concert's recorded config",
+			"maestro encore 7f3c2a -c concurrency=2",
+		],
 	],
-	options: PERFORM_OPTIONS,
+	options: ENCORE_OPTIONS,
 	async execute(args, deps) {
-		const { first, rest } = splitFirst(PERFORM_OPTIONS, args);
+		const { first, rest } = splitFirst(ENCORE_OPTIONS, args);
 		const prefix = only(
 			first === undefined ? [] : [first],
 			"concert",
 			NAME_CONCERT,
 		);
-		const early = peek(PERFORM_OPTIONS, rest);
-		const own = overridesOf(early);
+		const early = peek(ENCORE_OPTIONS, rest);
 		if (isSet(early, "detach"))
-			return detach(deps, "encore", args, isSet(early, "json"), own);
-		return inStore(deps, own, isSet(early, "json"), (s, store) =>
-			encored(s, store, prefix, own, rest),
+			return detach(deps, "encore", args, isSet(early, "json"));
+		return inStore(deps, isSet(early, "json"), (located, store) =>
+			encored(located, store, prefix, textsOf(early, "config"), rest),
 		);
 	},
 };

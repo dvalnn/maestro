@@ -1,8 +1,8 @@
 # Perform
 
 Steps to perform a composition and read its result, then reference for `compose`, `perform` and the follow verbs. Every
-verb but `cs` takes `--json`, `--preset <name>`, `-c <key>=<value>` (repeatable) and `--debug`; every other flag is in
-`maestro <verb> --help`.
+verb but `cs` takes `--json` and `--debug`, and `--preset <name>` and `-c <key>=<value>` (repeatable) where its help
+lists them; every other flag is in `maestro <verb> --help`.
 
 ## Steps
 
@@ -37,8 +37,8 @@ verb but `cs` takes `--json`, `--preset <name>`, `-c <key>=<value>` (repeatable)
 `--out`.
 
 - `<c>` is `<pack>.<composition>`, a `.ts` or `.js` composition file, or a `.json` IR file.
-- `maestro compose --concert <id> [--plan|--graph|--json]` shows the graph a concert was performed from, under today's
-  config files with its recorded `--preset` and `-c`.
+- `maestro compose --concert <id> [--plan|--graph|--json]` shows the plan a concert was performed from, under its
+  recorded config, from any folder.
 - Params are kebab-case flags: `maxRepairs` is `--max-repairs <value>`; a boolean is `--strict` or `--no-strict`. A
   param with no flag takes its value from config (a pack's only), then its default.
 - Compose alone falls back on the composition's first example set for params no flag or config gives (an optional one

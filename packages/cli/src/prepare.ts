@@ -7,7 +7,7 @@ import {
 	compose,
 } from "@maestro/core/compose";
 import { CORE_CONFIG, type Composed, valueAt } from "@maestro/core/config";
-import type { ConcertRecord, Records, Staged } from "@maestro/core/perform";
+import type { ConcertRecord, Staged } from "@maestro/core/perform";
 import {
 	type Diagnostic,
 	type Ir,
@@ -50,7 +50,7 @@ import {
 	usageError,
 } from "./output";
 import { paramValues } from "./params";
-import { openSession, overridesOf, recordedOf, type Session } from "./session";
+import { openSession, overridesOf, type Session } from "./session";
 
 /** A composition's IR, with what loads its code, composes it, and keeps it with a concert. */
 export type Prepared = {
@@ -288,7 +288,7 @@ function paramsOf(
 		example: reading.examples ? composition.examples[0] : undefined,
 		flags: given,
 		hosts: session.deps.hosts,
-		base: (source) => baseOf(session.config, session.deps.cwd, source),
+		base: (source) => baseOf(session.deps.cwd, source),
 		exampleDir: bundle.dir,
 		bare,
 		lax,
@@ -613,35 +613,27 @@ export async function withPresetFixes(
 	);
 }
 
+/** What `--out` saves: an IR, the directory of its modules, and a bare file's bundle text. */
+export type Saving = Pick<Prepared, "ir" | "moduleDir" | "file" | "text">;
+
 /**
- * `prepared` with its code under `dir`, so it loads as an IR file from there: a bare file's bundle is written as
+ * The IR of `saving` with its code under `dir`, so it loads as an IR file from there: a bare file's bundle is written as
  * `name`, and a pack's or an IR file's modules are made relative to `dir`.
  */
 export async function persist(
-	prepared: Prepared,
+	{ file, text, ir, moduleDir }: Saving,
 	dir: string,
 	name: string,
-): Promise<Prepared> {
-	const { file, text, ir, moduleDir, ...rest } = prepared;
+): Promise<Ir> {
 	const where = resolve(dir);
 	if (file === undefined || text === undefined)
-		return {
-			...rest,
-			ir: rewriteModules(ir, moduleDir, where),
-			loader: moduleLoader(where),
-			moduleDir: where,
-		};
+		return rewriteModules(ir, moduleDir, where);
 	const codeHash = codeHashOf(text);
 	await mkdir(where, { recursive: true });
 	await Bun.write(join(where, name), text);
-	return {
-		...rest,
-		ir: mapWorkers(ir, (ref) =>
-			ref.module === STDLIB_MODULE ? ref : { ...ref, module: name, codeHash },
-		),
-		loader: moduleLoader(where),
-		moduleDir: where,
-	};
+	return mapWorkers(ir, (ref) =>
+		ref.module === STDLIB_MODULE ? ref : { ...ref, module: name, codeHash },
+	);
 }
 
 /** The name of the bundle written for a bare file beside the IR at `out`: `<out stem>.bundle.js`. */
@@ -659,27 +651,16 @@ function codeHashes(ir: Ir): string {
 }
 
 /**
- * The preparation of `concert`, found in `store` of `found`, from the record: its stored IR with the code hashes as the
+ * The preparation of `concert` in `session`, the session of its snapshot: its stored IR with the code hashes as the
  * code stands now, loaded from the directory its row holds, or re-bundled from the composition file there when it was
- * built from one, under the config files as they stand layered with its recorded `--preset` and `-c`, then those of
- * `values`. Its record store and concert files stay those of `found`, whatever `dataRoot` that config holds. Warns on
- * stderr, unless `--json` in `values`, when any of those hashes differs from the recorded one.
- * @returns the session of that config, and the preparation.
+ * built from one. Warns on stderr, unless `--json` in `values`, when any of those hashes differs from the recorded one.
  * @throws CliError when that directory or file is gone.
- * @throws ConfigError as `openSession` does.
  */
 export async function resumable(
-	found: Session,
-	store: Records,
+	session: Session,
 	concert: ConcertRecord,
 	values: Values,
-): Promise<{ session: Session; prepared: Prepared }> {
-	const { config } = await openSession(
-		found.deps,
-		recordedOf(store, concert),
-		overridesOf(values),
-	);
-	const session = { ...found, config };
+): Promise<Prepared> {
 	const { id, moduleDir, file } = concert;
 	const path = file === undefined ? moduleDir : join(moduleDir, file);
 	if (
@@ -702,16 +683,13 @@ export async function resumable(
 			`composition changed since concert ${id}; using its recorded graph`,
 		);
 	return {
-		session,
-		prepared: {
-			ir,
-			loader,
-			moduleDir,
-			config: session.config.composed,
-			claims: claimsOf(packs),
-			file: bundle && path,
-			text: bundle?.text,
-			values,
-		},
+		ir,
+		loader,
+		moduleDir,
+		config: session.config.composed,
+		claims: claimsOf(packs),
+		file: bundle && path,
+		text: bundle?.text,
+		values,
 	};
 }

@@ -280,9 +280,12 @@ fails before any node runs, is cancelled, or loses its process has a result with
 
 ### Resume and encore
 
-**Resume** keeps the concert's id and runs its stored IR. A recorded `ok` instance is reused when its key still matches:
-a hash of the node definition, its code hash recomputed from the current code, and its input values with artifact
-content hashes.
+Both run from any folder under the concert's [config snapshot](#config-snapshot), their own `-c` on top, validated
+against the running maestro.
+
+**Resume** keeps the concert's id and runs its stored IR. Its `-c` holds for that attempt only, and the snapshot stays.
+It reuses a recorded `ok` instance whose key still matches. The key is a hash of the node definition, its code hash
+recomputed from the current code, and its input values with artifact content hashes.
 
 - The code hash covers the whole bundle, so any edit to the composition file reruns every code node, and each dependent
   reruns when its inputs changed. A resume whose recomputed code hashes differ from the recorded ones warns that the
@@ -294,8 +297,8 @@ content hashes.
 composition again. Every instance runs again and nothing is reused, and a resumed encore stays one.
 
 - Params: the flags the earlier concert recorded, the encore's own overriding them.
-- Config: the config files as they stand, then the earlier `-c`, then the encore's own. The encore's presets replace the
-  earlier list whole when it gives any, else the earlier list stands.
+- Config: the earlier concert's snapshot, then the encore's own `-c`, which the encore's snapshot records. An encore
+  takes no `--preset`; a new preset or seat is a new `perform`.
 - Refusal: each concert records a **fingerprint**, a digest of its IR, its config values and the host facts (the target
   revision and a digest of the profiles). An encore is refused before it is recorded when its fingerprint equals its
   concert's, or while its concert or another in its encore chain is running.
@@ -339,23 +342,26 @@ Params and config resolve by one ladder, highest precedence first:
 7. The declared default.
 
 A profile's fields are the exception: per field, the command line (`--preset`, `-c`) beats the config files' `profiles`,
-which beat the profile directory's `profile.yaml` (`rulings.md` "Profiles"). A resume applies the same order.
+which beat the profile directory's `profile.yaml` (`rulings.md` "Profiles"). A command on a performed concert composes
+its [config snapshot](#config-snapshot) in place of the files.
 
 ### Layers, presets and `-c`
 
 Files are YAML; merge tags, presets and `-c` syntax are in the [CLI README](../packages/cli/README.md#config). A
 composition's keys live under its pack id and then its composition id, and hosts keep pure-config namespaces.
 
-- The record keeps each `--preset` and `-c` as typed, so keep secrets out of `-c`; put them in `.env`. A resume
-  reapplies them but finds the record store by today's `dataRoot`, so a moved data root needs `-c dataRoot=` again.
+- The record keeps each concert's config layers as its snapshot, values included, so keep secrets out of config files
+  and `-c`; put them in `.env`.
 - A relative path is relative to the workspace root, the directory holding `.maestro/`, in a workspace file, preset and
-  `-c`, and to the user config directory in a user file and preset. A `-c` outside a workspace is relative to the cwd.
+  `-c`, and to the user config directory in a user file and preset. A `-c` outside a workspace is relative to the cwd. A
+  resume's or encore's `-c` is relative to the concert's recorded workspace root, else the cwd.
 
 ### Core keys
 
 The core validates a closed schema for `concurrency`, `dataRoot`, `workspace`, `caps` and `limits`, each described in
-`CoreConfig` and `ConcertLimits` in `packages/core/src/config/index.ts`; the CLI adds `packs` ([Packs](#13-packs)). The
-host's namespaces (`target`, `profiles`, `seats`, `sandbox`) are in the
+`CoreConfig` and `ConcertLimits` in `packages/core/src/config/index.ts`; the CLI adds `packs` ([Packs](#13-packs)). Only
+the CLI's defaults set `dataRoot`, to the [data root](#data-root): a config file, preset or `-c` that sets it is
+refused. The host's namespaces (`target`, `profiles`, `seats`, `sandbox`) are in the
 [host-repo README](../packages/host-repo/README.md#configuration).
 
 ### Who owns what
@@ -404,13 +410,11 @@ The **record store** is local and embedded: SQLite in WAL mode through `bun:sqli
 no coordination beyond lane isolation. It holds:
 
 - Concerts: the IR, the id of the performing process, where the code came from (workspace, module directory, file), tour
-  and title, each `--preset` name in order, each `-c` as typed, the root's params the flags gave, the concert an encore
-  repeats and its fingerprint, the `limits` of the latest attempt, and the disk it holds, measured as it settles and
-  again when an encore of it settles.
+  and title, each `--preset` name in order, each `-c` as typed, the config snapshot, the root's params the flags gave,
+  the concert an encore repeats and its fingerprint, the `limits` of the latest attempt, and the disk it holds, measured
+  as it settles and again when an encore of it settles.
 - Node instances: outcomes with reasons, durations, metrics, artifact references and each leaf's wired inputs.
 - Events.
-
-No config is kept for reuse: a resume re-reads the config files.
 
 - **Stale rows.** A resume marks the concert's instance rows **stale**. Each one it reuses or replaces stops being
   stale, and the metrics of a replaced attempt still count towards the concert's.
@@ -428,9 +432,23 @@ No config is kept for reuse: a resume re-reads the config files.
 - **Artifacts** are files under the concert's area, referenced by content hash and provenance (the node instance that
   produced them). Large values are artifacts, not inline.
 
+### Config snapshot
+
+`perform` records a concert's **config snapshot**, which later commands on it compose in place of the config files
+([ADR 0019](adr/0019-a-concert-records-its-config.md)).
+
+- **What it holds.** The text of each config layer `perform` parsed, lowest first: a config file's or preset's YAML, or
+  a `-c`'s. Beside each text is how it was read: its layer, file or flag, path keys, and the directory its relative
+  paths resolve against. A later command parses each text again, so it resolves the files `perform` resolved. The
+  snapshot also holds the workspace directory, whose `.maestro/` profiles are read.
+- **How it composes.** The code defaults of the running maestro, with the data root of `$XDG_DATA_HOME` and the recorded
+  workspace name, then the snapshot. A resume or encore adds its own `-c`, relative to the recorded workspace root.
+- **Who reads it.** The [CLI README](../packages/cli/README.md) lists the commands and what each does when the snapshot
+  is missing, unreadable or no longer composes.
+
 ### Data root
 
-`$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`), unless config's `dataRoot` moves it.
+`$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`). Set `$XDG_DATA_HOME` to move it; no config key does.
 
 | Path                 | Holds                                                                    |
 | -------------------- | ------------------------------------------------------------------------ |
@@ -552,7 +570,7 @@ Refs: D-03, D-31, D-34, CORE-16, ADR 0003.
 | Node `rejected`    | Follows edge tolerance: the normal path for a red check or a negative review.                               | None when tolerated, else change the input or the code, then `resume`; a plain `resume` repeats it. |
 | Host crash or kill | The record is consistent as of the last event. The host's cancel hook kills agent trees.                    | `resume` continues.                                                                                 |
 | Worker error       | A code node that throws, or times out, settles `failed` with the error.                                     | Fix the code, then `resume`.                                                                        |
-| Disk full          | The record store, artifacts and lane stores share the data root.                                            | Free disk, or move `dataRoot`.                                                                      |
+| Disk full          | The record store, artifacts and lane stores share the data root.                                            | Free disk, or move the data root with `$XDG_DATA_HOME`.                                             |
 
 ## 17. Open design points
 

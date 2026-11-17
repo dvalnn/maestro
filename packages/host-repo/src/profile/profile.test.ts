@@ -651,6 +651,7 @@ describe("resolution", () => {
 		expect(sourceOf(profile, ["runtime", "harness"])).toEqual({
 			layer: "directory",
 			file: join(dir, "profile.yaml"),
+			base: dir,
 			line: 1,
 		});
 		expect(profile.files).toEqual({
@@ -670,6 +671,7 @@ describe("resolution", () => {
 		expect(sourceOf(profile, ["runtime", "harness"])).toEqual({
 			layer: "preset",
 			file: join(root, "preset.yaml"),
+			base: root,
 			line: 3,
 		});
 	});

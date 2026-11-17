@@ -93,12 +93,13 @@ A decision sets direction; a ruling settles a question the requirements left ope
 
 ### Resume
 
-- **R-01 Resume runs under the config as it stands.** `resume` re-runs pre-flight under the current config and hosts,
-  then performs the stored IR with its code hashes recomputed. The record keeps `--preset` and `-c` as typed, and a
-  resume reapplies them over the config files as they stand. The resume key holds no config beyond a host node's own, so
-  a changed profile or preset alone reruns no `ok` instance. Why: the IR is the build's snapshot, and config resolved at
-  perform and code pinned by hash are its intended edges. Applies in `cli`'s `prepare` module (`resumable`) and `core`'s
-  perform `resume` module.
+- **R-01 Resume runs under the recorded config, then its own `-c`.** `resume` composes the code defaults, the concert's
+  config snapshot and its own `-c`, re-runs pre-flight under the running maestro, then performs the stored IR with its
+  code hashes recomputed. Its `-c` holds for that attempt only, and it reads no config file
+  ([ADR 0019](adr/0019-a-concert-records-its-config.md)). The resume key holds no config beyond a host node's own, so a
+  changed profile alone reruns no `ok` instance. Why: the IR and the snapshot are what the concert ran, and code pinned
+  by hash is their intended edge. Applies in `cli`'s `session` module (`recordedSession`) and `core`'s perform `resume`
+  module.
 
 ### Profiles
 
@@ -119,11 +120,12 @@ A decision sets direction; a ruling settles a question the requirements left ope
 
 ### CLI
 
-- **R-05 `config` prints values as they are, secrets included.** It writes to the operator's own stdout, not to a log or
-  the record. Masking waits for secret handling (D-33). Applies in `cli`'s `compose` module.
-- **R-06 Each command reads and writes one record store**, the one `dataRoot` resolves to. `ls` has no `--all`, because
-  listing other stores needs workspace discovery, which maestro does not do. A host-specific `ls` column, such as a
-  target, would come through the host's hooks, never from `cli`.
+- **R-05 `config` prints values as they are, secrets included.** It writes to the operator's own stdout, not to a log.
+  The record does keep config values, in each concert's snapshot, so secrets belong in `.env`. Masking waits for secret
+  handling (D-33). Applies in `cli`'s `compose` module.
+- **R-06 Each command reads and writes one record store**, the one under `$XDG_DATA_HOME/maestro`. `ls` has no `--all`,
+  because listing other stores needs workspace discovery, which maestro does not do. A host-specific `ls` column, such
+  as a target, would come through the host's hooks, never from `cli`.
 - **R-07 A pack listed under `packs:` wins over an installed pack of the same id**, on every command that loads packs.
   Why: the operator named it on purpose, and an installed copy of an older release must not shadow a pack under
   development. Two installed packs of one id are still refused. Applies in `cli`'s `config` module (`packDirs`).

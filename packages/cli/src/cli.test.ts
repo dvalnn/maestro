@@ -107,6 +107,114 @@ test("--tour accepts a 64-character tour", async () => {
 });
 
 describe("compose and config", () => {
+	// Seam: recorded readers' exit codes and JSON, with config files and code unavailable, after a host stops declaring a deferred key.
+	test("recorded readers show the performed plan and composed snapshot without config files or composition code, and every concert when one no longer composes", async () => {
+		const w = await world();
+		const former: Host = {
+			...hostOf(),
+			config: {
+				mode: { type: "object", required: ["token"] },
+				profiles: { type: "object" },
+			},
+			paths: [["mode", "path"]],
+			deferred: [["profiles"]],
+		};
+		const config = join(w.cwd, ".maestro/config.yaml");
+		const recorded = `packs: [${w.pack}]\nmode: { token: recorded, path: relative }\n`;
+		await Bun.write(config, recorded);
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/fast.yaml"),
+			"concurrency: 3\n",
+		);
+		const perform = async (...flags: string[]) => {
+			const performed = await w.call(["perform", ...GREET, ...flags], {
+				hosts: [former],
+			});
+			expect(performed.code).toBe(0);
+			return idOf(performed);
+		};
+		const healthy = await perform("--preset", "fast");
+		await Bun.write(
+			config,
+			`${recorded}profiles:\n  retired:\n    missing: !delete\n`,
+		);
+		const pending = await perform();
+		const compose = (id: string, flag: string, options = {}) =>
+			w.call(["compose", "--concert", id, flag], {
+				hosts: [former],
+				...options,
+			});
+		const before = await compose(healthy, "--json");
+		expect(before.code).toBe(0);
+		const plan = json(before).plan;
+		expect(plan.bounds.instances).toEqual({ exact: 4 });
+		const pendingPlan = await compose(pending, "--plan");
+		expect(pendingPlan.code).toBe(0);
+		await Bun.write(config, "[broken YAML");
+		await Bun.write(
+			join(w.env.XDG_CONFIG_HOME, "maestro/config.yaml"),
+			"[broken YAML",
+		);
+		await Bun.write(
+			join(w.pack, "index.js"),
+			"throw new Error('composition must not load');",
+		);
+		const reader: Host = {
+			...hostOf(),
+			config: { mode: { type: "object", required: ["future"] } },
+			paths: [["mode", "path"]],
+		};
+		const outside = { cwd: await scratch(), hosts: [reader] };
+		const composed = await compose(healthy, "--json", outside);
+		expect(composed.code).toBe(0);
+		expect(json(composed)).toMatchObject({ ok: true, plan });
+		const after = await compose(pending, "--plan", outside);
+		expect(after.code).toBe(0);
+		expect(after.out).toBe(pendingPlan.out);
+		expect(after.err).not.toBe("");
+		const document = await compose(pending, "--json", outside);
+		expect(document.code).toBe(0);
+		expect(json(document)).toMatchObject({
+			ok: true,
+			plan: { bounds: { instances: { exact: 4 } } },
+		});
+		const snapshot = {
+			concurrency: 3,
+			workspace: "ws",
+			mode: { token: "recorded", path: join(w.cwd, "relative") },
+		};
+		const listed = await w.call(["ls", "--json"], outside);
+		expect(listed.code).toBe(0);
+		const rows = json(listed);
+		expect(rows.map((row: { id: string }) => row.id).sort()).toEqual(
+			[healthy, pending].sort(),
+		);
+		expect(
+			rows.find((row: { id: string }) => row.id === pending),
+		).not.toHaveProperty("snapshot");
+		expect(
+			rows.find((row: { id: string }) => row.id === healthy),
+		).toMatchObject({ status: "ok", snapshot });
+		const single = async (id: string) => {
+			const shown = await w.call(["ls", id, "--json"], outside);
+			expect(shown.code).toBe(0);
+			return json(shown);
+		};
+		expect(await single(healthy)).toMatchObject({ id: healthy, snapshot });
+		const unshown = await single(pending);
+		expect(unshown).toMatchObject({ id: pending, status: "ok" });
+		expect(unshown).not.toHaveProperty("snapshot");
+		const table = await w.call(["ls"], outside);
+		expect(table.code).toBe(0);
+		expect(
+			table.out
+				.split("\n")
+				.slice(1)
+				.map((line) => line.split(/\s+/)[0])
+				.sort(),
+		).toEqual([shortOf(healthy), shortOf(pending)].sort());
+	});
+
 	test("compose prints the summary, the plan with --plan, and one document with --json", async () => {
 		const w = await world();
 		const summary = await w.call(["c", ...GREET]);
@@ -301,7 +409,7 @@ describe("compose and config", () => {
 		const w = await world();
 		const presets = join(w.cwd, ".maestro/presets");
 		await Bun.write(join(presets, "risky.yaml"), "concurrency: 4\n");
-		await Bun.write(join(presets, "stub.yaml"), "dataRoot: data\n");
+		await Bun.write(join(presets, "stub.yaml"), "workspace: rehearsal\n");
 		const text = (
 			await w.call([
 				"config",
@@ -313,7 +421,7 @@ describe("compose and config", () => {
 			])
 		).out;
 		expect(text).toMatch(/^concurrency +preset risky +4 +.*risky\.yaml:1$/m);
-		expect(text).toMatch(/^dataRoot +preset stub +.*stub\.yaml:1$/m);
+		expect(text).toMatch(/^workspace +preset stub +.*stub\.yaml:1$/m);
 	});
 
 	test("--out of a pack writes an IR that performs, and of a bare file or a concert of one writes its bundle beside it", async () => {
@@ -651,6 +759,33 @@ describe("perform", () => {
 });
 
 describe("usage errors", () => {
+	// Seam: usage exits for forbidden flags, including common flags placed before the verb.
+	test("recorded commands refuse presets and readers refuse config overrides as usage errors", async () => {
+		const w = await world();
+		await Bun.write(join(w.cwd, ".maestro/presets/fast.yaml"), "{}\n");
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const readers = [
+			["ls"],
+			["ls", id],
+			["compose", "--concert", id],
+			["cs", "show", id],
+			["cs", "apply", id],
+		];
+		const presets = [["resume", id], ["encore", id], ...readers].map(
+			(command) => ({ command, flags: ["--preset", "fast"] }),
+		);
+		const overrides = readers.flatMap((command) =>
+			["-c", "--config"].map((flag) => ({
+				command,
+				flags: [flag, "concurrency=2"],
+			})),
+		);
+		for (const { command, flags } of [...presets, ...overrides]) {
+			expect((await w.call([...command, ...flags])).code).toBe(2);
+			expect((await w.call([...flags, ...command])).code).toBe(2);
+		}
+	});
+
 	const USAGE: [string, string[], RegExp][] = [
 		["no command", [], /^error: no command given\nUsage: maestro/],
 		[
@@ -900,7 +1035,7 @@ describe("usage errors", () => {
 		],
 		[
 			"a -c with an empty key",
-			["ls", "--config", "=4"],
+			["perform", ...GREET, "--config", "=4"],
 			/^error: -c =4: '' is not a key path\n/,
 		],
 		[
@@ -1016,7 +1151,7 @@ describe("usage errors", () => {
 		},
 	);
 
-	test("--help prints a command's flags on stdout and exits 0, -c and --no-color among every verb's", async () => {
+	test("--help advertises preset and config flags only on commands that accept them", async () => {
 		const w = await world();
 		for (const args of [["--help"], ["p", "-h"], ["w", "-h"]])
 			expect(await w.call(args)).toMatchObject({
@@ -1043,10 +1178,27 @@ describe("usage errors", () => {
 		expect(verbs).toContain("tour");
 		for (const verb of verbs) {
 			const { out } = await w.call([verb, "--help"]);
-			expect(out).toEndWith(
-				"\n\nCommon flags: --preset, -c/--config, --color, --debug, -h/--help (see 'maestro --help')",
+			const flags: string[] = out.match(/--[a-z][a-z-]*/g) ?? [];
+			expect(flags.includes("--preset")).toBe(
+				!["resume", "encore", "ls"].includes(verb),
 			);
-			expect(out).not.toContain("--config <key=value>");
+			expect(flags.includes("--config")).toBe(verb !== "ls");
+		}
+		const forms: [string[], boolean][] = [
+			[["compose", "--concert", "x"], false],
+			[["compose", "demo.greet"], true],
+			[["cs", "show"], false],
+			[["cs", "apply"], false],
+			[["cs", "drop"], true],
+		];
+		for (const [form, takes] of forms) {
+			const flags: string[] =
+				(await w.call([...form, "--help"])).out.match(/--[a-z][a-z-]*/g) ?? [];
+			expect([
+				form,
+				flags.includes("--preset"),
+				flags.includes("--config"),
+			]).toEqual([form, takes, takes]);
 		}
 		const { out: root } = await w.call(["--help"]);
 		expect(root).toMatch(/^ {2}-c, --config <key=value> +\S/m);
@@ -1129,7 +1281,7 @@ describe("help and color", () => {
 
 	test("maestro --help lists the common flags, the exit codes and the environment", async () => {
 		const { out } = await (await world()).call(["--help"]);
-		expect(out).toContain("Common flags (every command):");
+		expect(out).toContain("Common flags (each command lists those it takes):");
 		expect(out).toMatch(/Exit codes:\n {2}0 {4}Done/);
 		expect(out).toMatch(/\n {2}124 {2}wait --timeout/);
 		for (const name of [
@@ -1216,7 +1368,7 @@ describe("help and color", () => {
 		expect((await w.call(["ls", "--limit", "--json"])).err).toStartWith(
 			"error: --limit needs a value\n",
 		);
-		expect((await w.call(["ls", "-c"])).err).toStartWith(
+		expect((await w.call(["resume", "-c"])).err).toStartWith(
 			"error: --config needs a value\n",
 		);
 	});
@@ -1310,6 +1462,63 @@ describe("--version", () => {
 });
 
 describe("the record", () => {
+	// Seam: ls exit codes, table rows and JSON when the stored snapshot cannot be read.
+	test("ls keeps every concert and omits an unreadable snapshot", async () => {
+		const w = await world();
+		const perform = async () => {
+			const result = await w.call(["perform", ...GREET], {
+				hosts: [hostOf()],
+			});
+			expect(result.code).toBe(0);
+			return idOf(result);
+		};
+		const before = await perform();
+		const unreadable = await perform();
+		const after = await perform();
+		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+		db.run("UPDATE concerts SET snapshot = ? WHERE id = ?", ["[", unreadable]);
+		db.close();
+		const outside = { cwd: await scratch(), hosts: [hostOf()] };
+		const listed = await w.call(["ls", "--json"], outside);
+		expect(listed.code).toBe(0);
+		const rows = json(listed);
+		expect(rows.map((row: { id: string }) => row.id).sort()).toEqual(
+			[before, unreadable, after].sort(),
+		);
+		for (const id of [before, after])
+			expect(rows.find((row: { id: string }) => row.id === id)).toMatchObject({
+				status: "ok",
+				snapshot: { workspace: "ws" },
+			});
+		expect(
+			rows.find((row: { id: string }) => row.id === unreadable),
+		).not.toHaveProperty("snapshot");
+		const single = await w.call(["ls", unreadable, "--json"], outside);
+		expect(single.code).toBe(0);
+		expect(json(single)).toMatchObject({ id: unreadable, status: "ok" });
+		expect(json(single)).not.toHaveProperty("snapshot");
+		const table = await w.call(["ls"], outside);
+		expect(table.code).toBe(0);
+		expect(
+			table.out
+				.split("\n")
+				.slice(1)
+				.map((line) => line.split(/\s+/)[0])
+				.sort(),
+		).toEqual([shortOf(before), shortOf(unreadable), shortOf(after)].sort());
+		const plan = await w.call(
+			["compose", "--concert", before, "--plan"],
+			outside,
+		);
+		const shown = await w.call(
+			["compose", "--concert", unreadable, "--plan"],
+			outside,
+		);
+		expect(shown.code).toBe(0);
+		expect(shown.out).toBe(plan.out);
+		expect(shown.err).toContain("snapshot");
+	});
+
 	test("tours and titles are set at perform, changed by tour, filtered by ls, and the flag beats MAESTRO_TOUR", async () => {
 		const w = await world();
 		const perform = async (args: string[], env: Record<string, string> = {}) =>
@@ -1891,7 +2100,7 @@ describe("the record", () => {
 		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
 		for (const twin of twins)
 			db.run(
-				"INSERT INTO concerts SELECT ?, composition, pack, ir, pid, status, started_at, settled_at, result_node, result_expansion, reason, workspace, tour, title, module_dir, file, profile, config, params, encore_of, fingerprint, limits, disk_use FROM concerts WHERE id = ?",
+				"INSERT INTO concerts SELECT ?, composition, pack, ir, pid, status, started_at, settled_at, result_node, result_expansion, reason, workspace, tour, title, module_dir, file, profile, config, params, encore_of, fingerprint, limits, disk_use, snapshot FROM concerts WHERE id = ?",
 				[twin, ids[0] ?? ""],
 			);
 		db.close();
@@ -2129,6 +2338,51 @@ describe("prune", () => {
 });
 
 describe("prune --dry-run", () => {
+	// Seam: independently measured ls diskUse and prune wouldFree under a recorded config.
+	test("prune and ls measure the same disk use outside the recorded workspace", async () => {
+		const w = await world();
+		const host: Host = {
+			...hostOf(ECHO, {
+				usage: (
+					_id: string,
+					setup: { config: { mode?: { bytes?: number } } },
+				) => setup.config.mode?.bytes ?? 0,
+			}),
+			config: { mode: { type: "object" } },
+		};
+		const performed = await w.call(
+			["perform", ...GREET, "-c", "mode.bytes=10000"],
+			{ hosts: [host] },
+		);
+		expect(performed.code).toBe(0);
+		const id = idOf(performed);
+		await Bun.write(
+			join(w.env.XDG_DATA_HOME, "maestro/concerts", id, "artifacts/a.txt"),
+			"1234567",
+		);
+		const cwd = await scratch();
+		await Bun.write(join(cwd, ".maestro/config.yaml"), "mode: { bytes: 37 }\n");
+		const outside = { cwd, hosts: [host] };
+		unmeasured(w, id);
+		const listed = await w.call(["ls", "--json"], outside);
+		expect(listed.code).toBe(0);
+		expect(json(listed)).toMatchObject([{ id, diskUse: 10007 }]);
+		unmeasured(w, id);
+		const dry = await w.call(["prune", id, "--dry-run", "--json"], outside);
+		expect(dry.code).toBe(0);
+		expect(json(dry)).toMatchObject({
+			pruned: [],
+			freed: 0,
+			failures: [],
+			wouldPrune: [{ id, bytes: 10007 }],
+			wouldFree: 10007,
+		});
+		unmeasured(w, id);
+		const pruned = await w.call(["prune", id, "--yes", "--json"], outside);
+		expect(pruned.code).toBe(0);
+		expect(json(pruned)).toEqual({ pruned: [id], freed: 10007, failures: [] });
+	});
+
 	test("lists each concert it would prune with its status, time and size, then the total, and prunes nothing", async () => {
 		const w = await world();
 		const done = idOf(
@@ -2188,6 +2442,65 @@ describe("prune --dry-run edges", () => {
 });
 
 describe("diagnostics by who set the value", () => {
+	// Seam: config refusals in CLI JSON; only diagnostic kinds and identifiers are pinned.
+	test("dataRoot is an unknown key in files presets and flags with XDG_DATA_HOME as the fix", async () => {
+		const cases = [
+			{
+				flags: ["-c", "dataRoot=x"],
+				file: ".maestro/config.yaml",
+				yaml: "",
+				code: 2,
+			},
+			{
+				flags: [],
+				file: ".maestro/config.yaml",
+				yaml: "dataRoot: x\n",
+				code: 1,
+			},
+			{
+				flags: ["--preset", "moved"],
+				file: ".maestro/presets/moved.yaml",
+				yaml: "dataRoot: x\n",
+				code: 1,
+			},
+		];
+		for (const scenario of cases) {
+			const w = await world();
+			await Bun.write(
+				join(w.cwd, scenario.file),
+				`packs: [${w.pack}]\n${scenario.yaml}`,
+			);
+			const refused = await w.call([
+				"compose",
+				...GREET,
+				"--json",
+				...scenario.flags,
+			]);
+			expect(refused.code).toBe(scenario.code);
+			const document = json(refused);
+			expect(document.ok).toBe(false);
+			const diagnostics: {
+				code: string;
+				severity: string;
+				message: string;
+				hint?: string;
+			}[] = document.diagnostics;
+			expect(
+				diagnostics.map((d) => ({
+					code: d.code,
+					severity: d.severity,
+					words: d.message.match(/[A-Za-z_$][A-Za-z_0-9$]*/g),
+					variables: d.hint?.match(/\$[A-Z_]+/g),
+				})),
+			).toContainEqual({
+				code: "CFG.unclaimed",
+				severity: "error",
+				words: expect.arrayContaining(["dataRoot"]),
+				variables: expect.arrayContaining(["$XDG_DATA_HOME"]),
+			});
+		}
+	});
+
 	test("a param a config file or a deleted core key leaves bad exits 1, and the same fault on the command line exits 2", async () => {
 		const w = await world();
 		const config = join(w.cwd, ".maestro/config.yaml");

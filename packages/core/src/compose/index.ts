@@ -122,3 +122,25 @@ export async function compose(input: ComposeInput): Promise<ComposeResult> {
 		? { ok: false, diagnostics, plan }
 		: { ok: true, plan };
 }
+
+/**
+ * The plan of `ir`, which a concert already performed: its groups of plain values expanded and its bounds, with no
+ * code loading, `validate` hook or cap, so it carries no diagnostic. A host's counts come from its `bounds` hook only
+ * for a kind every node of which holds against the kind as the running host registers it; any other kind counts none.
+ */
+export function recordedPlan(ir: Ir, hosts: readonly Host[]): Plan {
+	const graph = indexGraph(ir);
+	const { expansion } = expand(ir, graph);
+	const expansionOf: ExpansionOf = (group, path) =>
+		expansion[group.id]?.[path] ?? unexpanded(group, path);
+	const lookup = kindLookup(hosts);
+	const faulted = new Set<string | undefined>(
+		checkHosts(validator(), ir, lookup).flatMap((d) =>
+			d.node === undefined ? [] : [graph.nodes.get(d.node)?.kind],
+		),
+	);
+	const checked = (kind: string) =>
+		faulted.has(kind) ? undefined : lookup(kind);
+	const bounds = boundsOf(ir, graph, expansionOf, checked);
+	return { ir, expansion, bounds, diagnostics: [] };
+}

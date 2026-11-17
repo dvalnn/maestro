@@ -30,6 +30,7 @@ import {
 	artifactsOf,
 	concertOf,
 	instancesInOrder,
+	ownConfig,
 	type Stored,
 	withStore,
 } from "./session";
@@ -283,5 +284,10 @@ export const artifact: Command = {
 		],
 	],
 	execute: (args, deps) =>
-		withStore(ARTIFACT_OPTIONS, args, deps, FIX, checked, artifacted),
+		withStore(
+			{ open: ownConfig, options: ARTIFACT_OPTIONS, fix: FIX, check: checked },
+			args,
+			deps,
+			artifacted,
+		),
 };

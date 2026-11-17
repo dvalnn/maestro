@@ -83,11 +83,13 @@ describe("param values", () => {
 			source("greet", "name"),
 			source("greet", "loud"),
 			source("echo", "times"),
-		]).toEqual([
-			{ layer: "workspace", file: WORKSPACE, line: 3 },
-			{ layer: "flag" },
-			{ layer: "preset", file: PRESET, line: 3 },
-		]);
+		]).toEqual(
+			[
+				{ layer: "workspace", file: WORKSPACE, line: 3 },
+				{ layer: "flag" },
+				{ layer: "preset", file: PRESET, line: 3 },
+			].map((source) => expect.objectContaining(source)),
+		);
 		const ir = built(pack.build("greet", params.root, params.configured));
 		expect(literalOf(ir, "echo/echo", "times")).toBe(3);
 
@@ -290,7 +292,7 @@ describe("a file param", () => {
 				request({
 					layers: config.layers,
 					flags: flag === undefined ? undefined : { doc: flag },
-					base: (source) => baseOf(config, cwd, source),
+					base: (source) => baseOf(cwd, source),
 				}),
 			);
 			const [one] = read.staged;

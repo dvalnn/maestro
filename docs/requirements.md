@@ -117,12 +117,14 @@ Priority: **Must** is required. **Should** is wanted and may slip. **May** is op
 ### Configuration (CFG)
 
 - **CFG-01 (Must).** Core config is a small closed schema of engine concerns only: concurrency cap, caps by name, the
-  data root (by default under the user's XDG data home), the workspace's name and the concert's `limits`.
+  data root (under the user's XDG data home, set by the CLI and by no config), the workspace's name and the concert's
+  `limits`.
 - **CFG-02 (Must).** Every other top-level config key belongs to a namespace owned by a registrant. The core checks YAML
   syntax, layers the files, and hands each namespace to its owner's schema at compose time (D-07).
 - **CFG-03 (Must).** A composition declares typed params with defaults in code (D-17). Params live in the SDK and the
   CLI; the IR holds what they built. Subcompositions declare params and ports. A param value can end up in the IR as a
-  literal, so secrets belong in config or the environment, never in params.
+  literal, and a concert's record keeps its config values. So secrets belong in the environment or `.env`, never in
+  params or config.
 - **CFG-04 (Must).** A param's value resolves by the ladder in [Configuration](architecture.md#8-configuration): the CLI
   flag (root composition) or the use site (subcomposition) highest, the declared default lowest, with `-c`, presets,
   workspace and user YAML and, for `compose`, the example set between. YAML keys live under the pack id and the

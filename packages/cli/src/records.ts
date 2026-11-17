@@ -28,6 +28,7 @@ import {
 	peek,
 	textOf,
 	type Values,
+	without,
 } from "./command";
 import { actorOf, hostTextOf, notesOf, reportOf, valuesOf } from "./host-text";
 import {
@@ -58,6 +59,10 @@ import {
 	diskOf,
 	instancesInOrder,
 	isMaestro,
+	type Located,
+	locate,
+	openRecorded,
+	ownConfig,
 	type Session,
 	type Stored,
 	withStore,
@@ -68,8 +73,9 @@ const LIST_LIMIT = 20;
 const KILL_GRACE_S = 10;
 const KILL_GRACE_MS = KILL_GRACE_S * MS_PER_UNIT.s;
 
+/** `ls` reads the record alone, so it takes no `--preset` or `-c` (ADR 0019). */
 const LS_OPTIONS = {
-	...COMMON,
+	...without(COMMON, "preset", "config"),
 	...FILTER_OPTIONS,
 	limit: {
 		type: "string",
@@ -78,11 +84,22 @@ const LS_OPTIONS = {
 	},
 } as const satisfies Options;
 
-/** The record's columns but its IR, and `elapsedMs`: the concert's run time, up to now while it runs. */
-const concertColumns = ({ ir: _ir, ...row }: ConcertRecord) => ({
-	...row,
-	elapsedMs: (row.settledAt ?? Date.now()) - row.startedAt,
-});
+/**
+ * The record's columns but its IR, its snapshot as the values it composes to over the code defaults, left out when it
+ * cannot be read or no longer composes, and `elapsedMs`: the concert's run time, up to now while it runs.
+ */
+const concertColumns = (
+	{ session, store }: Stored<Located>,
+	concert: ConcertRecord,
+) => {
+	const { ir: _ir, snapshot: _snapshot, ...row } = concert;
+	const opened = openRecorded(session, store, concert);
+	return {
+		...row,
+		...(opened.kind === "composes" && { snapshot: opened.composed.values }),
+		elapsedMs: (row.settledAt ?? Date.now()) - row.startedAt,
+	};
+};
 
 const tokenCell = (metrics: Metrics) => {
 	const tokens = tokensOf(metrics);
@@ -138,7 +155,7 @@ function notesLines(
 
 /** How many entries the notes of each of `concerts`' current instances hold, by concert id, then by heading. */
 function noteCounts(
-	{ store, session }: Stored,
+	{ store, session }: Stored<Located>,
 	concerts: readonly ConcertRecord[],
 ): Map<string, Record<string, number>> {
 	const texts = new Map(
@@ -217,11 +234,14 @@ export const ls: Command = {
 	help: reportHelp,
 	execute: (args, deps) =>
 		withStore(
-			LS_OPTIONS,
+			{
+				open: async (deps) => locate(deps),
+				options: LS_OPTIONS,
+				fix: "Flags are listed in 'maestro ls --help'",
+				check: lsChecked,
+			},
 			args,
 			deps,
-			"Flags are listed in 'maestro ls --help'",
-			lsChecked,
 			async (stored, { id, instance, query }) =>
 				id === undefined
 					? listed(stored, query)
@@ -247,7 +267,7 @@ function highlighted(
 }
 
 /** The empty list: `[]` under `--json`, else what matched nothing and what to do about it on stderr. */
-function none({ session: { deps }, json }: Stored, filtered: boolean) {
+function none({ session: { deps }, json }: Stored<Located>, filtered: boolean) {
 	if (json) deps.stdout(jsonOf([]));
 	else if (filtered) {
 		deps.stderr("no concerts match");
@@ -259,7 +279,7 @@ function none({ session: { deps }, json }: Stored, filtered: boolean) {
 	return EXIT.ok;
 }
 
-async function listed(stored: Stored, query: ConcertFilter) {
+async function listed(stored: Stored<Located>, query: ConcertFilter) {
 	const { session, store, values, json } = stored;
 	const color = colorOf(session.deps, values).out;
 	const limit = query.limit ?? LIST_LIMIT;
@@ -277,7 +297,7 @@ async function listed(stored: Stored, query: ConcertFilter) {
 	const counts = noteCounts(stored, concerts);
 	const rows = await Promise.all(
 		concerts.map(async (c) => ({
-			...concertColumns(c),
+			...concertColumns(stored, c),
 			short: short.label(c.id, false),
 			...spendOf(store, c.id),
 			diskUse: await diskOf(stored, c),
@@ -343,7 +363,7 @@ export function olderHint(values: Values, limit: number, color: boolean) {
 }
 
 async function instancesOf(
-	{ session, store, values, json }: Stored,
+	{ session, store, values, json }: Stored<Located>,
 	prefix: string,
 	which?: string,
 ) {
@@ -372,7 +392,7 @@ async function instancesOf(
 	if (json) {
 		session.deps.stdout(
 			jsonOf({
-				...concertColumns(row),
+				...concertColumns({ session, store, values, json }, row),
 				short,
 				...spendOf(store, row.id),
 				instances,
@@ -448,7 +468,7 @@ async function waited(
 		printClosing(deps, store, concertOf(store, id), result, {
 			color: colorOf(deps, values),
 			artifacts: artifactsOf(session, id),
-			changes: await changesOf({ session, store, values }, id),
+			changes: await changesOf({ session, store }, id),
 		});
 	else
 		deps.stderr(
@@ -463,11 +483,14 @@ export const wait: Command = {
 	options: WAIT_OPTIONS,
 	execute: (args, deps) =>
 		withStore(
-			WAIT_OPTIONS,
+			{
+				open: ownConfig,
+				options: WAIT_OPTIONS,
+				fix: "Flags are listed in 'maestro wait --help'",
+				check: waitChecked,
+			},
 			args,
 			deps,
-			"Flags are listed in 'maestro wait --help'",
-			waitChecked,
 			waited,
 		),
 };
@@ -529,11 +552,15 @@ export const kill: Command = {
 	options: COMMON,
 	execute: (args, deps) =>
 		withStore(
-			COMMON,
+			{
+				open: ownConfig,
+				options: COMMON,
+				fix: "Flags are listed in 'maestro kill --help'",
+				check: (_values, positionals) =>
+					only(positionals, "concert", NAME_CONCERT),
+			},
 			args,
 			deps,
-			"Flags are listed in 'maestro kill --help'",
-			(_values, positionals) => only(positionals, "concert", NAME_CONCERT),
 			killed,
 		),
 };
@@ -588,11 +615,14 @@ export const tour: Command = {
 	],
 	execute: (args, deps) =>
 		withStore(
-			COMMON,
+			{
+				open: ownConfig,
+				options: COMMON,
+				fix: "Flags are listed in 'maestro tour --help'",
+				check: tourAndConcerts,
+			},
 			args,
 			deps,
-			"Flags are listed in 'maestro tour --help'",
-			tourAndConcerts,
 			toured,
 		),
 };

@@ -3,7 +3,13 @@ import { chmod, symlink } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { ConfigError, sourceOf } from "@maestro/core/config";
-import { type ConfigRequest, loadConfig, loadDotenv } from "./config";
+import {
+	baseOf,
+	type ConfigRequest,
+	loadConfig,
+	loadDotenv,
+	recordedConfig,
+} from "./config";
 import { cleanup, scratch } from "./fixtures/packs";
 import { builtinHosts } from "./hosts";
 
@@ -16,7 +22,11 @@ async function tree(files: Record<string, string>) {
 		await Bun.write(join(root, path), text);
 	const request = (over: Partial<ConfigRequest> = {}): ConfigRequest => ({
 		cwd: join(root, "ws/sub/deeper"),
-		env: { HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "xdg") },
+		env: {
+			HOME: join(root, "home"),
+			XDG_CONFIG_HOME: join(root, "xdg"),
+			XDG_DATA_HOME: join(root, "data"),
+		},
 		hosts: builtinHosts({}),
 		...over,
 	});
@@ -39,19 +49,19 @@ describe("config files", () => {
 		const { root, request } = await tree({
 			[USER]: "concurrency: 2\ncaps:\n  instances: 10\npacks: [packs/a]\n",
 			[WORKSPACE]: "concurrency: 3\ncaps:\n  calls: 4\ntarget:\n  repo: app\n",
-			[PRESET]: "\nconcurrency: 5\ndataRoot: data\n",
+			[PRESET]: "\nconcurrency: 5\nworkspace: ws\n",
 			[USER_PRESET]: "concurrency: 6\ncaps:\n  calls: 9\n",
 			"ws/sub/deeper/.keep": "",
 		});
 		const config = await loadConfig(
 			request({
-				overrides: [{ presets: ["fast"], config: ["concurrency=7"] }],
+				overrides: { presets: ["fast"], config: ["concurrency=7"] },
 			}),
 		);
 		expect(config.core).toEqual({
 			concurrency: 7,
 			caps: { instances: 10, calls: 4 },
-			dataRoot: join(root, "ws/data"),
+			dataRoot: join(root, "data/maestro"),
 			workspace: "ws",
 			limits: {},
 		});
@@ -67,12 +77,32 @@ describe("config files", () => {
 			source("concurrency"),
 			source("caps", "instances"),
 			source("caps", "calls"),
-			source("dataRoot"),
+			source("workspace"),
 		]).toEqual([
-			{ layer: "flag", flag: "-c concurrency=7", key: "concurrency" },
-			{ layer: "user", file: join(root, USER), line: 3 },
-			{ layer: "workspace", file: join(root, WORKSPACE), line: 3 },
-			{ layer: "preset", file: join(root, PRESET), line: 3 },
+			{
+				layer: "flag",
+				flag: "-c concurrency=7",
+				key: "concurrency",
+				base: join(root, "ws"),
+			},
+			{
+				layer: "user",
+				file: join(root, USER),
+				base: join(root, "xdg/maestro"),
+				line: 3,
+			},
+			{
+				layer: "workspace",
+				file: join(root, WORKSPACE),
+				base: join(root, "ws"),
+				line: 3,
+			},
+			{
+				layer: "preset",
+				file: join(root, PRESET),
+				base: join(root, "ws"),
+				line: 3,
+			},
 		]);
 	});
 
@@ -109,71 +139,77 @@ describe("config files", () => {
 		expect(config.workspace).toBeUndefined();
 	});
 
-	test("a workspace may set its own data root, relative to the workspace root", async () => {
+	test("a workspace name leaves its data root under XDG_DATA_HOME", async () => {
 		const { root, request } = await tree({
-			[WORKSPACE]: "dataRoot: data\nworkspace: shop\n",
+			[WORKSPACE]: "workspace: shop\n",
 		});
 		expect((await loadConfig(request())).core).toMatchObject({
-			dataRoot: join(root, "ws/data"),
+			dataRoot: join(root, "data/maestro"),
 			workspace: "shop",
 		});
 	});
 
 	test("outside a workspace, take a preset from the user's presets, its paths relative to the user config directory", async () => {
 		const { root, request } = await tree({
-			[USER_PRESET]: "concurrency: 6\ndataRoot: data\n",
+			[USER_PRESET]: "concurrency: 6\ntarget: { repo: data }\n",
 		});
 		const config = await loadConfig(
-			request({ cwd: root, overrides: [{ presets: ["fast"] }] }),
+			request({ cwd: root, overrides: { presets: ["fast"] } }),
 		);
 		expect(config.core).toMatchObject({
 			concurrency: 6,
-			dataRoot: join(root, "xdg/maestro/data"),
+			dataRoot: join(root, "data/maestro"),
+		});
+		expect(config.composed.values.target).toEqual({
+			repo: join(root, "xdg/maestro/data"),
 		});
 		expect(sourceOf(config.composed, ["concurrency"])).toEqual({
 			layer: "preset",
 			file: join(root, USER_PRESET),
+			base: join(root, "xdg/maestro"),
 			line: 1,
 		});
 	});
 
 	test("layer several presets in order, a later one winning a key, each -c over them all", async () => {
 		const { root, request } = await tree({
-			[PRESET]: "concurrency: 5\ndataRoot: data\ncaps:\n  calls: 4\n",
+			[PRESET]: "concurrency: 5\nworkspace: ws\ncaps:\n  calls: 4\n",
 			"ws/.maestro/presets/stub.yaml":
 				"concurrency: 6\ncaps:\n  instances: 8\n",
 		});
 		const config = await loadConfig(
 			request({
-				overrides: [{ presets: ["fast", "stub"], config: ["caps.calls=9"] }],
+				overrides: { presets: ["fast", "stub"], config: ["caps.calls=9"] },
 			}),
 		);
 		expect(config.core).toMatchObject({
 			concurrency: 6,
-			dataRoot: join(root, "ws/data"),
+			dataRoot: join(root, "data/maestro"),
 			caps: { calls: 9, instances: 8 },
 		});
 		const source = (...path: string[]) => sourceOf(config.composed, path);
 		expect([
-			source("dataRoot"),
+			source("workspace"),
 			source("concurrency"),
 			source("caps", "calls"),
-		]).toEqual([
-			{ layer: "preset", file: join(root, PRESET), line: 2 },
-			{
-				layer: "preset",
-				file: join(root, "ws/.maestro/presets/stub.yaml"),
-				line: 1,
-			},
-			{ layer: "flag", flag: "-c caps.calls=9", key: "caps.calls" },
-		]);
+		]).toEqual(
+			[
+				{ layer: "preset", file: join(root, PRESET), line: 2 },
+				{
+					layer: "preset",
+					file: join(root, "ws/.maestro/presets/stub.yaml"),
+					line: 1,
+				},
+				{ layer: "flag", flag: "-c caps.calls=9", key: "caps.calls" },
+			].map((source) => expect.objectContaining(source)),
+		);
 	});
 
 	test("refuse a second preset that is missing, by its name", async () => {
 		const { request } = await tree({ [PRESET]: "concurrency: 5\n" });
 		expect(
 			await refusal(
-				loadConfig(request({ overrides: [{ presets: ["fast", "slow"] }] })),
+				loadConfig(request({ overrides: { presets: ["fast", "slow"] } })),
 			),
 		).toEqual([
 			["CFG.preset", expect.stringContaining("--preset slow names no file")],
@@ -230,7 +266,7 @@ describe("config files", () => {
 		const dirs = (text: string) =>
 			text.replace(/WS\/\.\.\/profiles|WS|XDG/g, (p) => placeholders[p] ?? p);
 		const error = await loadConfig(
-			request({ overrides: [{ presets: [preset] }], cwd: join(root, cwd) }),
+			request({ overrides: { presets: [preset] }, cwd: join(root, cwd) }),
 		).catch((e: unknown) => e);
 		if (!(error instanceof ConfigError)) throw error;
 		expect(error.diagnostics.map((d) => [d.code, d.message, d.hint])).toEqual([
@@ -241,7 +277,7 @@ describe("config files", () => {
 	test("a -c with a quote in its value is named as a shell would have it typed", async () => {
 		const { request } = await tree({});
 		const { composed } = await loadConfig(
-			request({ overrides: [{ config: ["target.note=it's"] }] }),
+			request({ overrides: { config: ["target.note=it's"] } }),
 		);
 		expect(sourceOf(composed, ["target", "note"])?.flag).toBe(
 			"-c 'target.note=it'\\''s'",
@@ -255,19 +291,17 @@ describe("config files", () => {
 		});
 		const config = await loadConfig(
 			request({
-				overrides: [
-					{
-						config: [
-							"packs=!append [b]",
-							"target.checks.lint=!delete",
-							"profiles.reviewer.runtime=!replace {harness: claude, model: y}",
-							'target.checks."a.b"=x',
-							"target.repo=app",
-							"concurrency=4",
-							"target.note=|\n  one\n  two",
-						],
-					},
-				],
+				overrides: {
+					config: [
+						"packs=!append [b]",
+						"target.checks.lint=!delete",
+						"profiles.reviewer.runtime=!replace {harness: claude, model: y}",
+						'target.checks."a.b"=x',
+						"target.repo=app",
+						"concurrency=4",
+						"target.note=|\n  one\n  two",
+					],
+				},
 			}),
 		);
 		expect(config.packs).toEqual([
@@ -284,9 +318,9 @@ describe("config files", () => {
 		});
 		expect(config.core.concurrency).toBe(4);
 		const outside = await loadConfig(
-			request({ cwd: root, overrides: [{ config: ["dataRoot=d"] }] }),
+			request({ cwd: root, overrides: { config: ["target.repo=d"] } }),
 		);
-		expect(outside.core.dataRoot).toBe(join(root, "d"));
+		expect(outside.composed.values.target).toEqual({ repo: join(root, "d") });
 	});
 
 	test.each([
@@ -315,7 +349,7 @@ describe("config files", () => {
 		async (_, arg, code, message) => {
 			const { request } = await tree({});
 			const found = await refusal(
-				loadConfig(request({ overrides: [{ config: [arg] }] })),
+				loadConfig(request({ overrides: { config: [arg] } })),
 			);
 			expect(found).toEqual([[code, message]]);
 		},
@@ -449,5 +483,50 @@ describe("the .env beside the user config", () => {
 		expect(() => loadDotenv({ XDG_CONFIG_HOME: join(root, "xdg") })).toThrow(
 			`cannot read ${file}: EACCES: permission denied, open '${file}'\nMake it readable, or remove it`,
 		);
+	});
+});
+
+describe("a recorded concert's config", () => {
+	// Seam: the config a resume or encore composes, and where its relative paths resolve.
+	test("resolves a resume's -c path against the recorded workspace root, and a recorded layer's text again against its recorded base", async () => {
+		const { root, request } = await tree({});
+		const snapshot = {
+			workspace: join(root, "ws"),
+			layers: [
+				{
+					text: "demo:\n  doc:\n    doc: note.md\n",
+					from: {
+						layer: "user" as const,
+						file: "/old/xdg/maestro/config.yaml",
+					},
+				},
+				{
+					text: '"mode":\n  "path": rel\n',
+					from: {
+						layer: "flag" as const,
+						flag: "-c mode.path=rel",
+						key: "mode.path",
+						base: "/old/ws",
+						paths: [["mode", "path"]],
+					},
+				},
+			],
+		};
+		const config = await recordedConfig({
+			...request({ cwd: join(root, "elsewhere") }),
+			recorded: { snapshot, workspaceName: "ws", label: "abc" },
+			config: ["target.repo=rel"],
+		});
+		expect(config.composed.values.target).toEqual({
+			repo: join(root, "ws/rel"),
+		});
+		const source = sourceOf(config.composed, ["demo", "doc", "doc"]);
+		expect(baseOf(join(root, "elsewhere"), source)).toBe("/old/xdg/maestro");
+		expect(config.core.workspace).toBe("ws");
+		expect(config.composed.values.mode).toEqual({ path: "/old/ws/rel" });
+		expect(sourceOf(config.composed, ["mode", "path"])).toMatchObject({
+			flag: "-c mode.path=rel",
+			concert: "abc",
+		});
 	});
 });

@@ -4,7 +4,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Ir, parseIr } from "@maestro/ir";
+import { coreDefaults, layered, parseLayer } from "../config";
 import { isTourSlug, TOUR_MAX_LENGTH, TOUR_SEGMENT } from "../index";
+import { perform } from "./perform";
 import {
 	CONCERT_FINISHED,
 	openRecord,
@@ -23,7 +25,7 @@ const IR_FIXTURE = join(
 );
 const A = { node: "a", expansion: "" };
 const V4 = 4;
-const CURRENT_VERSION = 8;
+const CURRENT_VERSION = 9;
 /** The record store schema at version 4, the oldest one an upgrade starts from. */
 const V4_SCHEMA = `
 CREATE TABLE concerts (
@@ -135,8 +137,8 @@ const userVersion = (path: string) => {
 	return version;
 };
 
-async function fixtureIr(): Promise<Ir> {
-	const parsed = parseIr(await Bun.file(IR_FIXTURE).json());
+async function fixtureIr(file = IR_FIXTURE): Promise<Ir> {
+	const parsed = parseIr(await Bun.file(file).json());
 	if (!parsed.ok) throw new Error("the IR fixture does not parse");
 	return parsed.ir;
 }
@@ -190,6 +192,7 @@ test("a version-4 record store opens upgraded, with its rows kept, and reopens u
 	expect(found).toMatchObject({ id: "c", status: "ok" });
 	expect(found).not.toHaveProperty("limits");
 	expect(found).not.toHaveProperty("diskUse");
+	expect(found).not.toHaveProperty("snapshot");
 	record.close();
 	expect(userVersion(path)).toBe(CURRENT_VERSION);
 	expect(columns(path)).toEqual(columns(fresh));
@@ -562,3 +565,132 @@ test("a tour slug is dot-separated lower-case hyphen-joined words of at most 64 
 		release_part: false,
 	});
 });
+
+// Seam: perform writes the snapshot, and a reopened record reader returns it.
+test("a performed concert records the text of each parsed config layer, lowest first, which parses again to the same config", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const layer = (text: string, file: string) =>
+		parseLayer(text, { file, layer: "workspace", paths: [["mode", "path"]] });
+	const lower = layer(
+		"mode: { path: rel, keep: a, n: .inf }\n",
+		"/w/.maestro/config.yaml",
+	);
+	const upper = layer("mode: !replace { keep: b }\n", "/w/.maestro/more.yaml");
+	const config = layered([coreDefaults(dir, "w"), lower, upper]);
+	const concert = await perform({
+		ir: await fixtureIr(
+			join(import.meta.dir, "../../../ir/fixtures/minimal.json"),
+		),
+		config,
+		hosts: [],
+		roots: { user: dir, packs: {} },
+		loadCode: async () => (inputs: Readonly<Record<string, unknown>>) => ({
+			text: `Hello, ${String(inputs.name)}`,
+		}),
+		recordPath: path,
+		dir: join(dir, "concerts"),
+		concurrency: 1,
+		workspaceDir: "/w",
+	});
+	expect(await concert.done).toMatchObject({ outcome: "ok" });
+	const reader = openRecord(path);
+	try {
+		const snapshot = reader.find(concert.id)?.snapshot;
+		if (snapshot === undefined || snapshot === "unreadable")
+			throw new Error("no snapshot was recorded");
+		expect(snapshot.workspace).toBe("/w");
+		expect(snapshot.layers.map((l) => l.from)).toEqual([
+			{
+				file: "/w/.maestro/config.yaml",
+				layer: "workspace",
+				paths: [["mode", "path"]],
+			},
+			{
+				file: "/w/.maestro/more.yaml",
+				layer: "workspace",
+				paths: [["mode", "path"]],
+			},
+		]);
+		expect(
+			snapshot.layers.map((l) => layered([parseLayer(l.text, l.from)]).values),
+		).toEqual([
+			{
+				mode: {
+					path: "/w/.maestro/rel",
+					keep: "a",
+					n: Number.POSITIVE_INFINITY,
+				},
+			},
+			{ mode: { keep: "b" } },
+		]);
+	} finally {
+		reader.close();
+	}
+});
+
+test.each([
+	["malformed JSON", "["],
+	["a later format", '{"format":"future"}'],
+	["a workspace that is no path", '{"workspace":5,"layers":[]}'],
+	[
+		"layers in the entries form",
+		'{"layers":[{"source":{"layer":"user"},"entries":{"a":{"value":1}}}]}',
+	],
+	[
+		"a file layer whose base is no path",
+		'{"layers":[{"text":"packs: [rel]\\n","from":{"layer":"user","file":"/u/config.yaml","base":5}}]}',
+	],
+	[
+		"a flag layer with no base",
+		'{"layers":[{"text":"a: 1\\n","from":{"layer":"flag","flag":"-c a=1","key":"a"}}]}',
+	],
+	[
+		"a layer with no text",
+		'{"layers":[{"from":{"layer":"user","file":"/u/config.yaml"}}]}',
+	],
+	[
+		"a layer whose text is no string",
+		'{"layers":[{"text":5,"from":{"layer":"user","file":"/u/config.yaml"}}]}',
+	],
+	[
+		"a layer read with no layer name",
+		'{"layers":[{"text":"a: 1\\n","from":{"file":"/u/config.yaml"}}]}',
+	],
+	[
+		"a layer named for none of the layers",
+		'{"layers":[{"text":"a: 1\\n","from":{"layer":"elsewhere","file":"/u/config.yaml"}}]}',
+	],
+	[
+		"a layer whose concert is no string",
+		'{"layers":[{"text":"a: 1\\n","from":{"layer":"user","file":"/u/config.yaml","concert":5}}]}',
+	],
+	[
+		"path keys that are not key paths",
+		'{"layers":[{"text":"a: 1\\n","from":{"layer":"user","file":"/u/c.yaml","paths":["a"]}}]}',
+	],
+])(
+	"a concert whose snapshot is %s reads as unreadable, beside its other columns",
+	async (_kind, column) => {
+		dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+		const path = join(dir, "record.db");
+		const writer = openRecord(path);
+		writer.close();
+		const db = new Database(path);
+		db.exec(
+			`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, module_dir, snapshot)
+		VALUES ('c', 'greet', 'demo', ?, 1, 'ok', 1, 'w', '/m', ?)`,
+			[JSON.stringify(await fixtureIr()), column],
+		);
+		db.close();
+		const reader = openRecord(path);
+		try {
+			expect(reader.find("c")).toMatchObject({
+				id: "c",
+				snapshot: "unreadable",
+			});
+		} finally {
+			reader.close();
+		}
+	},
+);

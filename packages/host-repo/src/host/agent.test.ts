@@ -556,6 +556,7 @@ describe("agent profile", () => {
 					source: {
 						layer: "directory",
 						file: join(dir, "profile.yaml"),
+						base: dir,
 						line: 1,
 					},
 				},

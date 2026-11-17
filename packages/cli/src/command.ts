@@ -118,6 +118,11 @@ export type Command = {
 	pages?: boolean | ((args: readonly string[]) => boolean);
 	examples?: readonly Example[];
 	execute(args: readonly string[], deps: Deps): Promise<number>;
+	/**
+	 * The flags the form of the command `args` select takes, when it is narrower than `options`, such as
+	 * `compose --concert`, which takes no `--preset` or `-c`. `--help` lists those.
+	 */
+	formOptions?(args: readonly string[]): Options;
 	/** What `--help` adds after the flags for `args`, such as the params of the composition they name. */
 	help?(args: readonly string[], deps: Deps): Promise<string | undefined>;
 };
@@ -155,7 +160,7 @@ export function filterOf(values: Values): ConcertFilter {
 	};
 }
 
-/** The flags every command takes. */
+/** The flags most commands take; a command that reads a recorded config leaves out `--preset` and `-c`. */
 export const COMMON: Options = {
 	json: { type: "boolean", desc: "Print one JSON document on stdout" },
 	preset: {
@@ -289,17 +294,22 @@ export function only(
 	return first;
 }
 
-/** The flags every command takes but `--json`, which a command may leave out. */
-export const SHARED: Options = Object.fromEntries(
-	Object.entries(COMMON).filter(([name]) => name !== "json"),
-);
+/** `options` but those named `names`. */
+export const without = (options: Options, ...names: string[]): Options =>
+	Object.fromEntries(
+		Object.entries(options).filter(([name]) => !names.includes(name)),
+	);
+
+/** The common flags but `--json`, which `--help` names on one line where a command takes them. */
+export const SHARED: Options = without(COMMON, "json");
 
 const flagName = (name: string, o: OptionSpec) =>
 	`${o.short ? `-${o.short}, ` : "    "}--${name}${o.arg ? ` <${o.arg}>` : ""}`;
 
-/** `--preset, -c/--config, --color, --debug, -h/--help`: the shared flags, by name. */
-const sharedNames = () =>
+/** The shared flags `options` take, by name, such as `--preset, -c/--config, --color, --debug, -h/--help`. */
+const sharedNames = (options: Options) =>
 	Object.entries(SHARED)
+		.filter(([name]) => Object.hasOwn(options, name))
 		.map(([name, { short }]) => `${short ? `-${short}/` : ""}--${name}`)
 		.join(", ");
 
@@ -325,18 +335,19 @@ function flagRows(
 }
 
 /**
- * Help for `command`, which `summary` describes: the summary, its usage, its arguments, each flag but the shared ones
- * with its description, `extra` when given, its examples, and a line naming the shared flags. With `color` the
- * headings are bold and the flags cyan.
+ * Help for `command`, which `summary` describes: the summary, its usage, its arguments, each flag of `options` but the
+ * shared ones with its description, `extra` when given, its examples, and a line naming the shared flags `options`
+ * hold. With `color` the headings are bold and the flags cyan.
  */
 export function helpOf(
 	command: Command,
 	summary: string,
 	extra?: string,
 	color = false,
+	options: Options = command.options,
 ): string {
 	const heading = (text: string) => paint("bold", text, color);
-	const own = Object.entries(command.options).filter(
+	const own = Object.entries(options).filter(
 		([name, o]) => !o.hidden && !Object.hasOwn(SHARED, name),
 	);
 	const sections = [
@@ -348,7 +359,7 @@ export function helpOf(
 		extra,
 		command.examples &&
 			`${heading("Examples:")}\n${command.examples.map(([comment, run]) => `  # ${comment}\n  ${run}`).join("\n")}`,
-		`Common flags: ${sharedNames()} (see 'maestro --help')`,
+		`Common flags: ${sharedNames(options)} (see 'maestro --help')`,
 	];
 	return sections.filter((section) => section !== undefined).join("\n\n");
 }

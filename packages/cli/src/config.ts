@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { closest } from "@maestro/core";
 import {
-	CORE_PATHS,
 	type Composed,
 	ConfigError,
 	type CoreConfig,
@@ -22,6 +21,7 @@ import {
 	valuesLayer,
 } from "@maestro/core/config";
 import type { Host, Roots } from "@maestro/core/host";
+import type { ConfigSnapshot } from "@maestro/core/perform";
 import { type JsonSchema, messageOf, validator } from "@maestro/ir";
 import { packIdOf } from "./loader";
 import { CliError } from "./output";
@@ -50,9 +50,8 @@ export const CLI_CONFIG: Readonly<Record<string, JsonSchema>> = {
 	[PACKS]: { type: "array", items: { type: "string", minLength: 1 } },
 };
 
-/** The key paths whose relative values are anchored to their config file, or to the workspace root: core's, the CLI's and each host's. */
+/** The key paths whose relative values are anchored to their config file, or to the workspace root: each host's and the CLI's. */
 const pathKeys = (hosts: readonly Host[]) => [
-	...CORE_PATHS,
 	...hosts.flatMap((h) => h.paths ?? []),
 	[PACKS],
 ];
@@ -67,16 +66,14 @@ export type Environment = Readonly<Record<string, string | undefined>>;
 export type Overrides = {
 	presets?: readonly string[];
 	config?: readonly string[];
-	/** The short id of the concert they were recorded with, when a resume reapplies them. */
-	recorded?: string;
 };
 
 export type ConfigRequest = {
 	cwd: string;
 	env: Environment;
 	hosts: readonly Host[];
-	/** Layered above the config files in order, each as its presets, then each of its `-c`, in order. */
-	overrides?: readonly Overrides[];
+	/** Layered above the config files: its presets, then each of its `-c`, in order. */
+	overrides?: Overrides;
 };
 
 /**
@@ -207,7 +204,8 @@ async function fileLayer(
 const CFG_PRESET = "CFG.preset";
 /** The code of a refused `-c`. */
 const CFG_FLAG = "CFG.flag";
-const NEW_CONCERT = "perform the composition as a new concert";
+/** The key no config sets: the data root is `$XDG_DATA_HOME/maestro` (ADR 0019). */
+const DATA_ROOT = "dataRoot";
 
 const refused = (
 	code: string,
@@ -237,15 +235,13 @@ async function presetNames(dirs: readonly PresetDir[]): Promise<string[]> {
 }
 
 /**
- * The layer of preset `name`, from the first of `dirs` that holds `<name>.yaml`; `recorded` is the short id of the
- * concert a resume reapplies it from.
+ * The layer of preset `name`, from the first of `dirs` that holds `<name>.yaml`.
  * @throws ConfigError when `name` is a path, or no directory of `dirs` holds it.
  */
 async function presetLayer(
 	name: string,
 	dirs: readonly PresetDir[],
 	paths: readonly KeyPath[],
-	recorded?: string,
 ): Promise<Layer> {
 	const file = `${name}${PRESET_EXTENSION}`;
 	const looked = lookedIn(dirs);
@@ -260,12 +256,6 @@ async function presetLayer(
 		if (found) return found;
 	}
 	const moved = await moveFix(file, dirs);
-	if (recorded)
-		throw refused(
-			CFG_PRESET,
-			`concert ${recorded} was performed with --preset ${name}, and no ${file} is in ${looked}`,
-			moved ?? `Restore ${file}, or ${NEW_CONCERT}`,
-		);
 	throw refused(
 		CFG_PRESET,
 		`--preset ${name} names no file in ${looked}`,
@@ -335,17 +325,6 @@ const SHELL_SAFE = /^[\w.=/:,@+-]*$/;
 const typed = (arg: string) =>
 	`-c ${SHELL_SAFE.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`}`;
 
-/** How a `-c` is named and fixed: as typed, and with concert `recorded` when a resume reapplies it. */
-const flagOrigin = (arg: string, key: string, recorded: string | undefined) =>
-	recorded === undefined
-		? { flag: typed(arg), key }
-		: {
-				flag: typed(arg),
-				key,
-				concert: recorded,
-				fix: `Set that key, or !delete it, with -c on the resume, or ${NEW_CONCERT}`,
-			};
-
 /** The keys of `key` from the top level down, or undefined when it is not keys joined by `.`. */
 function keyPath(key: string): string[] | undefined {
 	const path: string[] = [];
@@ -362,7 +341,7 @@ function keyPath(key: string): string[] | undefined {
 
 /**
  * The layer of one `-c <key>=<value>`: the value, read as YAML with its merge tags, at the key, its relative paths
- * resolved against `base`; `recorded` is the short id of the concert a resume reapplies it from.
+ * resolved against `base`.
  * @throws ConfigError naming the flag as typed when it is not `<key>=<value>`, its key is not keys joined by `.`, or
  * its value is not YAML.
  */
@@ -370,7 +349,6 @@ function overrideLayer(
 	arg: string,
 	base: string,
 	paths: readonly KeyPath[],
-	recorded?: string,
 ): Layer {
 	const flag = typed(arg);
 	const match = OVERRIDE.exec(arg);
@@ -379,7 +357,7 @@ function overrideLayer(
 			CFG_FLAG,
 			`${flag} takes <key>=<value>`,
 			"Write it as -c <key>=<value>, as in -c concurrency=4",
-			{ layer: "flag", concert: recorded },
+			{ layer: "flag" },
 		);
 	const [, key = "", value = ""] = match;
 	const path = keyPath(key);
@@ -388,54 +366,37 @@ function overrideLayer(
 			CFG_FLAG,
 			`${flag}: '${key}' is not a key path`,
 			`Join keys with '.', and quote a key holding '.', as in -c 'target.checks."a.b"=x'`,
-			{ layer: "flag", concert: recorded },
+			{ layer: "flag" },
 		);
 	const nested = path
 		.map((k, depth) => `${INDENT.repeat(depth)}${JSON.stringify(k)}:`)
 		.join("\n");
 	const indented = value.replaceAll("\n", `\n${INDENT.repeat(path.length)}`);
 	return parseLayer(`${nested} ${indented}\n`, {
-		...flagOrigin(arg, key, recorded),
+		flag: typed(arg),
+		key,
 		base,
 		layer: "flag",
 		paths,
 	});
 }
 
-/** The layers of `overrides` in order: each one's presets, then each of its `-c`, in order. */
+/** The layers of `overrides`: its presets, then each of its `-c`, in order. */
 async function overrideLayers(
-	overrides: readonly Overrides[],
+	{ presets = [], config = [] }: Overrides,
 	presetDirs: readonly PresetDir[],
 	base: string,
 	paths: readonly KeyPath[],
 ): Promise<Layer[]> {
 	const layers: Layer[] = [];
-	for (const { presets = [], config = [], recorded } of overrides) {
-		for (const preset of presets)
-			layers.push(await presetLayer(preset, presetDirs, paths, recorded));
-		layers.push(
-			...config.map((arg) => overrideLayer(arg, base, paths, recorded)),
-		);
-	}
-	return layers;
+	for (const preset of presets)
+		layers.push(await presetLayer(preset, presetDirs, paths));
+	return [...layers, ...config.map((arg) => overrideLayer(arg, base, paths))];
 }
 
-/**
- * The directory a relative path from `source` resolves against, as `loadConfig` resolves the config's path keys: the
- * user config directory for the user file and a user preset, the workspace root for the workspace file, a workspace
- * preset and a `-c`, else `cwd`, the outside of a workspace included.
- */
-export function baseOf(
-	{ workspace, roots }: Pick<LoadedConfig, "workspace" | "roots">,
-	cwd: string,
-	source: Source | undefined,
-): string {
-	const { layer, file, flag } = source ?? {};
-	const userPreset = file?.startsWith(join(roots.user, PRESETS_DIR));
-	if (layer === "user" || (layer === "preset" && userPreset)) return roots.user;
-	const anchored = layer === "workspace" || layer === "preset" || flag;
-	return workspace && anchored ? workspace : resolve(cwd);
-}
+/** The directory a relative path from `source` resolves against: the base its layer was read with, else `cwd`. */
+export const baseOf = (cwd: string, source: Source | undefined): string =>
+	source?.base ?? resolve(cwd);
 
 /**
  * Finds and layers the config files for `request`, lowest first:
@@ -443,9 +404,8 @@ export function baseOf(
  * - the user file, `$XDG_CONFIG_HOME/maestro/config.yaml`, when it exists;
  * - the workspace file, `.maestro/config.yaml` in the nearest directory from the cwd up holding `.maestro/`, when it
  *   exists;
- * - for each of `overrides` in order, the preset each of its `--preset` names in order, `<name>.yaml` in the
- *   workspace's `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`, then a layer per
- *   `-c <key>=<value>`, in order.
+ * - the preset each `--preset` of `overrides` names, in order, `<name>.yaml` in the workspace's `.maestro/presets/`,
+ *   else in `$XDG_CONFIG_HOME/maestro/presets/`, then a layer per `-c <key>=<value>` of it, in order.
  *
  * Relative paths in the user file and a user preset resolve against the user config directory, those in the workspace
  * file, a workspace preset and a `-c` against the workspace root, or the cwd outside a workspace. The installed packs
@@ -458,12 +418,10 @@ export async function loadConfig({
 	cwd,
 	env,
 	hosts,
-	overrides = [],
+	overrides = {},
 }: ConfigRequest): Promise<LoadedConfig> {
 	const workspace = await workspaceOf(cwd);
-	const dataRoot = join(xdg(env, "XDG_DATA_HOME", ".local/share"), APP);
-	const packsDir = join(dataRoot, PACKS_DIR);
-	const userDir = join(xdg(env, "XDG_CONFIG_HOME", ".config"), APP);
+	const { userDir } = placesOf(env);
 	const paths = pathKeys(hosts);
 	const presetDirs = [
 		...(workspace
@@ -487,9 +445,7 @@ export async function loadConfig({
 				workspace,
 			)),
 	];
-	const layers = [
-		coreDefaults(dataRoot, workspace ? basename(workspace) : ""),
-		valuesLayer({ [PACKS]: [] }, { layer: "default" }),
+	const found = [
 		...files.filter((l): l is Layer => Boolean(l)),
 		...(await overrideLayers(
 			overrides,
@@ -498,24 +454,189 @@ export async function loadConfig({
 			paths,
 		)),
 	];
-	const composed = layered(layers, deferredKeys(hosts));
-	const core = coreConfig(composed);
-	const errors = schemaErrors(validator(), CLI_CONFIG, composed);
-	if (errors.length) throw new ConfigError(errors);
+	const name = workspace ? basename(workspace) : "";
+	return composedOf(found, name, {
+		env,
+		hosts,
+		workspace,
+		presets: presetDirs,
+	});
+}
+
+/** Where maestro keeps its files, from the XDG base directories of `env`. */
+export function placesOf(env: Environment) {
+	const dataRoot = join(xdg(env, "XDG_DATA_HOME", ".local/share"), APP);
+	return {
+		/** The data root: the record store, concert areas and host stores. */
+		dataRoot,
+		packsDir: join(dataRoot, PACKS_DIR),
+		userDir: join(xdg(env, "XDG_CONFIG_HOME", ".config"), APP),
+	};
+}
+
+/** The code defaults: core's, with the data root of `env` and the workspace named `name`, and no packs listed. */
+const defaultLayers = (env: Environment, name: string): Layer[] => [
+	coreDefaults(placesOf(env).dataRoot, name),
+	valuesLayer({ [PACKS]: [] }, { layer: "default" }),
+];
+
+/** A `CFG.unclaimed` error for each of `layers` that sets or deletes `dataRoot`. */
+const dataRootErrors = (layers: readonly Layer[]) =>
+	layers.flatMap((layer) => {
+		const set = layer.entries.get(DATA_ROOT);
+		return set
+			? [
+					configDiagnostic(
+						"CFG.unclaimed",
+						set.source,
+						`config key '${DATA_ROOT}' is claimed by nothing: the data root is $XDG_DATA_HOME/${APP}`,
+						`Remove '${DATA_ROOT}' from the config, and set $XDG_DATA_HOME to move the data root`,
+					),
+				]
+			: [];
+	});
+
+/** The installed packs `composed` lists and those of `env`, and the host roots, with those of `workspace`. */
+async function packsAndRoots(
+	composed: Composed,
+	env: Environment,
+	workspace: string | undefined,
+) {
+	const { packsDir, userDir } = placesOf(env);
 	const packs = await packDirs(composed, packsDir);
 	const roots: Roots = {
 		...(workspace && { workspace: join(workspace, WORKSPACE_DIR) }),
 		user: userDir,
 		packs: await packRoots(packs),
 	};
+	return { packs, packsDir, roots };
+}
+
+/**
+ * The config of `layers` over the code defaults, with the workspace named `name`: merged, core's and the CLI's keys
+ * checked, and the packs it lists found. The host roots hold `workspace`'s `.maestro/`.
+ * @throws ConfigError for a layer that sets `dataRoot`, layers that do not merge, or core or CLI keys off their schemas.
+ */
+async function composedOf(
+	layers: readonly Layer[],
+	name: string,
+	{
+		env,
+		hosts,
+		workspace,
+		presets,
+	}: Pick<LoadedConfig, "workspace" | "presets"> & {
+		env: Environment;
+		hosts: readonly Host[];
+	},
+): Promise<LoadedConfig> {
+	const refusedRoot = dataRootErrors(layers);
+	if (refusedRoot.length) throw new ConfigError(refusedRoot);
+	const all = [...defaultLayers(env, name), ...layers];
+	const composed = layered(all, deferredKeys(hosts));
+	const core = coreConfig(composed);
+	const errors = schemaErrors(validator(), CLI_CONFIG, composed);
+	if (errors.length) throw new ConfigError(errors);
 	return {
-		layers,
+		layers: all,
 		composed,
 		core,
-		packs,
-		packsDir,
 		workspace,
-		presets: presetDirs,
-		roots,
+		presets,
+		...(await packsAndRoots(composed, env, workspace)),
 	};
+}
+
+/** A performed concert's config, as the record keeps it. */
+export type Recorded = {
+	snapshot: ConfigSnapshot;
+	/** The name of the workspace it was performed in, empty outside one. */
+	workspaceName: string;
+	/** Its short id, which a diagnostic on a value its snapshot set names. */
+	label: string;
+};
+
+/**
+ * The layers of `recorded`'s snapshot, each parsed again from its text as perform read it, its values credited to the
+ * concert with a fix that names it.
+ * @throws ConfigError when a text no longer parses.
+ */
+const snapshotLayers = ({ snapshot, label }: Recorded) =>
+	snapshot.layers.map(({ text, from }) => ({
+		...parseLayer(text, {
+			...from,
+			concert: label,
+			fix: `Set that key, or !delete it, with -c on a resume or encore of concert ${label}, or perform its composition anew`,
+		}),
+		parsed: { text, from },
+	}));
+
+/** What `recordedConfig` loads: a concert's snapshot, then each `-c` of `config`. */
+type RecordedRequest = Omit<ConfigRequest, "overrides"> & {
+	recorded: Recorded;
+	config?: readonly string[];
+};
+
+/**
+ * The config of a recorded concert (ADR 0019): the code defaults, then its snapshot, then a layer per `-c` of `config`,
+ * whose relative paths resolve against the recorded workspace root, else `cwd`, as a perform's `-c` does. No config
+ * file is read and no preset found. The host roots hold the recorded workspace's `.maestro/`.
+ * @throws ConfigError as `loadConfig` does.
+ */
+export async function recordedConfig({
+	cwd,
+	env,
+	hosts,
+	recorded,
+	config = [],
+}: RecordedRequest): Promise<LoadedConfig> {
+	const paths = pathKeys(hosts);
+	const base = recorded.snapshot.workspace ?? resolve(cwd);
+	const layers = [
+		...snapshotLayers(recorded),
+		...config.map((arg) => overrideLayer(arg, base, paths)),
+	];
+	return composedOf(layers, recorded.workspaceName, {
+		env,
+		hosts,
+		workspace: recorded.snapshot.workspace,
+		presets: [],
+	});
+}
+
+/**
+ * The config a reader shows a concert of workspace `name` under (ADR 0019): the code defaults, then the snapshot of
+ * `recorded` when given, merged under `hosts` and checked against nothing.
+ * @throws ConfigError when its layers do not parse or merge.
+ */
+export const shownConfig = (
+	{ env, hosts }: Pick<ConfigRequest, "env" | "hosts">,
+	name: string,
+	recorded?: Recorded,
+) =>
+	layered(
+		[
+			...defaultLayers(env, name),
+			...(recorded ? snapshotLayers(recorded) : []),
+		],
+		deferredKeys(hosts),
+	);
+
+/** The host roots of `composed`, a config checked against nothing, with `workspace`'s `.maestro/`. */
+export async function shownRoots(
+	composed: Composed,
+	env: Environment,
+	workspace: string | undefined,
+): Promise<Roots> {
+	const listed = composed.values[PACKS];
+	const lists =
+		Array.isArray(listed) && listed.every((p) => typeof p === "string");
+	const { roots } = await packsAndRoots(
+		lists
+			? composed
+			: { ...composed, values: { ...composed.values, [PACKS]: [] } },
+		env,
+		workspace,
+	);
+	return roots;
 }

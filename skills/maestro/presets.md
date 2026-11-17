@@ -21,7 +21,8 @@ Maps merge by key; a list in a higher layer replaces the lower one. YAML tags ch
 ## Presets
 
 A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else the user's `$XDG_CONFIG_HOME/maestro/presets/`;
-the workspace's wins the name whole. `--preset <name>` applies it on any verb.
+the workspace's wins the name whole. `--preset <name>` applies it on each verb whose `--help` lists it, such as
+`perform`, `compose` and `config`; a resume or encore keeps the presets its concert recorded.
 
 ```yaml
 # .maestro/presets/cheap.yaml: the builder on a cheaper model; its harness and thinking merge from below
@@ -37,5 +38,5 @@ The stub preset, for a no-spend concert, is in [stub.md](stub.md).
 `-c profiles.builder.runtime.model=haiku`, `-c 'packs=!append [../b]'`, `-c target.checks.lint=!delete`. A key holding a
 `.` goes in double quotes.
 
-The record keeps each `-c` as typed, so secrets stay in the `.env`. A resume reapplies the concert's `--preset` and `-c`
-but finds the record store by today's `dataRoot`: pass a `-c dataRoot=` again.
+The record keeps the concert's config layers, values included, so secrets stay in the `.env`. A resume or encore runs
+under that recorded config and takes `-c` but no `--preset`. No config sets `dataRoot`: set `$XDG_DATA_HOME` instead.

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Diagnostic, HostNode, Ir } from "@maestro/ir";
-import type { Bounds, Host, HostSetup } from "../host";
+import type { Bounds, Host, HostSetup, NodeKind } from "../host";
 import {
 	composeWith,
 	DATA_ROOT,
@@ -8,6 +8,7 @@ import {
 	golden,
 	sdkBuilt,
 } from "./fixtures/support";
+import { recordedPlan } from "./index";
 
 const planOf = async (ir: Ir, hosts?: Host[], caps = {}) => {
 	const result = await composeWith(ir, { caps, ...(hosts ? { hosts } : {}) });
@@ -203,6 +204,30 @@ describe("bounds (D-23)", () => {
 		expect((await planOf(ir, [calls()])).bounds.counts).toEqual({
 			calls: { upTo: 10 },
 		});
+	});
+
+	// Seam: the plan a recorded concert shows, under hosts that changed since it ran.
+	test("a recorded plan counts a host's kinds only where every node holds against the kind as it stands", async () => {
+		const ir = await golden("fanout-fanin-loop.json");
+		expect(recordedPlan(ir, [calls()]).bounds).toEqual(
+			(await planOf(ir, [calls()])).bounds,
+		);
+		const strict = (kind: NodeKind): NodeKind => ({
+			...kind,
+			config: { type: "object", required: ["units"] },
+		});
+		const host = calls();
+		const changed = {
+			...host,
+			kinds: host.kinds.map(strict),
+			bounds: (node: HostNode): Bounds => ({
+				calls: (node.config as { units: unknown[] }).units.length,
+			}),
+		};
+		const plan = recordedPlan(ir, [changed]);
+		expect(plan.bounds.counts).toEqual({});
+		expect(plan.bounds.instances).toEqual({ upTo: 13 });
+		expect(plan.diagnostics).toEqual([]);
 	});
 
 	test.each([

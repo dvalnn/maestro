@@ -276,10 +276,11 @@ describe("starting a concert", () => {
 			pinned(MAIN),
 			pinned("rev1"),
 		]);
+		expect(t.starts.flat()).not.toContain("--preset");
 	});
 
 	// Seam: startTriage's arguments to the external maestro, not the composition's private params.
-	test("a triage encore leaves sightings to its recorded params", async () => {
+	test("a triage encore leaves sightings and presets to its recorded params and config", async () => {
 		for (const input of [
 			{ ...TRIAGE_INPUT, encore: "c0" },
 			{ text: "#7", backlog: "/run/backlog.md", respec: true, encore: "c0" },
@@ -287,14 +288,7 @@ describe("starting a concert", () => {
 			const t = setup();
 			await startTriage(t.tick, issue, input);
 			expect(t.starts).toEqual([
-				[
-					"encore",
-					"c0",
-					...triageFlags("--respec"),
-					...presets("triage"),
-					...NAMED,
-					...pinned(MAIN),
-				],
+				["encore", "c0", ...triageFlags("--respec"), ...NAMED, ...pinned(MAIN)],
 			]);
 		}
 	});

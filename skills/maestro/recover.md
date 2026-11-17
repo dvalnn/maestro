@@ -5,11 +5,11 @@ How to pick a stopped or finished concert back up, and how to clear concerts awa
 ## Resume
 
 `maestro resume <id>`, after fixing what failed or rejected, reuses each `ok` instance whose inputs and code are
-unchanged and performs the rest again. It reapplies the concert's `--preset` and `-c` over the config files as they are
-now; its own go on top.
+unchanged and performs the rest again. It runs from any folder under the concert's recorded config, its own `-c` on top
+for that attempt only, and reads no config file.
 
-- It finds the record store by today's `dataRoot`: a concert performed with `-c dataRoot=<dir>` needs that `-c` again.
-- An error naming a recorded flag is fixed with a `-c` on the resume (`-c <key>=!delete` drops a recorded key), or by
+- It takes no `--preset`. A concert performed before config snapshots cannot be resumed: perform it anew.
+- An error naming the concert is fixed with a `-c` on the resume (`-c <key>=!delete` drops a recorded key), or by
   performing anew.
 - It takes no composition, `--tour` or `--title`, and is refused for a running concert (wait or kill it first) or an
   `ok` one (perform anew).
@@ -20,8 +20,9 @@ now; its own go on top.
 ## Encore
 
 `maestro encore <id>` performs the composition again as a new linked concert, each agent continuing its counterpart's
-session and told what changed, with its param flags (the encore's own override them) and its recorded `-c` under the
-encore's own. Every node runs again on fresh lanes.
+session and told what changed, with its param flags (the encore's own override them), under the concert's recorded
+config with the encore's own `-c` on top. It takes no `--preset`: a new preset or seat is a new perform. Every node runs
+again on fresh lanes.
 
 - The session continued is the same node's at the same keys, a loop's last iteration, unless its seat says
   `encore: false` or it takes a `session`.

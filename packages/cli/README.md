@@ -38,9 +38,11 @@ optional ones. A boolean takes `--name` and `--no-name`.
 - `compose --plan` lists each agent in an `agents:` table: its node, its `seat` (`<pack>/<composition>/<seat>`, the key
   a `seats` entry rebinds), its profile and the harness, model and thinking it resolves to, as `compose --json` does in
   `agents`. [render-text](../render-text/README.md) holds the drawing rules of `--flow`, which sets `--graph`.
-- `compose --concert <id>` pre-flights the graph the concert recorded in place of a composition, under the config files
-  as they stand layered with its recorded presets and `-c`, then the compose's own, as `resume` does. It takes no
-  composition and no param flags: the recorded graph holds them. `--out` saves that graph as an IR file.
+- `compose --concert <id>` shows the plan the concert recorded, under its
+  [config snapshot](../../docs/architecture.md#config-snapshot), with no pre-flight and no composition code loaded. It
+  takes no composition, param flags, `--preset` or `-c`. `--out` saves that graph as an IR file. A concert recorded
+  before snapshots is refused. When a snapshot cannot be read or no longer composes, the plan shows under maestro's
+  built-in defaults, and stderr says why.
 
 The file rules (stem, bare-file params, imports) are in [SDK spec: File rules](../../docs/sdk-spec.md#file-rules).
 
@@ -136,13 +138,13 @@ camelCase, with sizes in bytes.
 
 ### Resume and encore
 
+Both run from any folder under the concert's [config snapshot](../../docs/architecture.md#config-snapshot), their own
+`-c` on top; they take no `--preset`.
+
 `resume` reuses each `ok` instance still valid.
 
-- It re-reads the config files, layers the concert's recorded presets and `-c` on them, in order, then the resume's own
-  `--preset` and `-c`. An error from a recorded flag names the concert; fix it with a `-c` or `--preset` on the resume,
-  or perform the composition as a new concert.
-- The record store is found by today's `dataRoot`: a recorded `-c dataRoot=` changes the config only, so pass it again
-  to resume a concert in another store.
+- Its `-c` holds for that attempt only; the snapshot stays. A recorded value the running maestro refuses names the
+  concert: fix it with a `-c` on the resume, such as `-c <key>=!delete` for a key it dropped, or perform anew.
 - It runs the graph recorded at first perform, so an edit adds or removes no node. Code nodes load from the file as it
   is now and their hash covers the whole bundle (ADR 0008): any edit to the composition file reruns every code node, and
   dependents rerun when their inputs changed. A changed code hash prints a warning on stderr and the resume goes on.
@@ -151,8 +153,8 @@ camelCase, with sizes in bytes.
 `encore` takes `--tour` and `--title`, and no composition.
 
 - It builds the concert's composition anew with the param flags it was performed with, the encore's own overriding them,
-  under the config files as they stand, the concert's recorded `-c` and the encore's own on top. The encore's presets
-  replace the concert's whole list when it gives any.
+  under the concert's snapshot and the encore's own `-c`, which the new concert's snapshot records. A new preset or seat
+  is a new `perform`.
 - Every node runs again, and an agent continues its counterpart's session, unless its seat says `encore: false`. An
   agent that starts fresh says why in its `encoreFresh`, shown by `ls <concert> --json`. An encore of an encore matches
   against the encore.
@@ -203,6 +205,11 @@ In the `--json` documents:
   `elapsedMs`, `settledAt - startedAt`, or the time since `startedAt` while the concert runs.
 - `ls <concert> --json` shows the recorded `--preset` list and `-c` flags as `presets` and `config`, and the concert's
   limits as `limits`, `timeout` in milliseconds.
+- `ls --json` rows and `ls <concert> --json` show the values the
+  [config snapshot](../../docs/architecture.md#config-snapshot) composes to as `snapshot`. A row leaves it out when it
+  cannot be read or no longer composes, and every other concert is still listed.
+- `ls` reads no config file, and takes no `--preset` or `-c`. It measures a concert's disk use under its snapshot, as
+  `prune` does.
 
 ### Watching
 
@@ -296,9 +303,11 @@ concert's code, or 0 while it runs.
 
 ### Changesets
 
-The checkout is `target.repo` from the concert's config, layered as a resume layers it, then the command's own; `drop`
-takes no concert and uses the command's own config alone. `show` leaves the checkout untouched, `apply` stages on its
-`HEAD` and `drop` resets its tracked files. `-C <repo>` is `-c target.repo=<repo>`.
+`show` and `apply` work in `-C <repo>`, else the `target.repo` of the concert's snapshot; they read no config file and
+take no `--preset` or `-c`. A gone checkout, or a snapshot that no longer composes, is named with `-C <repo>` as the
+fix, and `-C` also reads a concert recorded before snapshots. `drop` takes no concert and uses the config files, its own
+flags and `-C` as `-c target.repo=<repo>`. `show` leaves the checkout untouched, `apply` stages on its `HEAD` and `drop`
+resets its tracked files.
 
 - The changeset is the result node's when it made one, else the last `ok` instance's that did; `--node <id>` names one.
   A concert that is not `ok` is warned of on stderr.
@@ -404,28 +413,31 @@ profiles:
   "*": { runtime: !replace { harness: stub } }
 ```
 
-A concert's record keeps each `--preset` and each `-c` as typed, in order. Keep secrets out of `-c`: set them in
-`$XDG_CONFIG_HOME/maestro/.env`. maestro loads that `.env` when it exists, a variable the shell sets winning; the
-release binary reads no `.env` or `bunfig.toml` from the cwd, while a run through `bun` from the repository still does.
-The Claude Code harness reads its token from `CLAUDE_CODE_OAUTH_TOKEN`, set there or in the shell; get one with
-`claude setup-token`.
+A concert's record keeps each `--preset` and each `-c` as typed, in order, and the values of every config layer in its
+snapshot. Keep secrets out of config files, presets and `-c`: set them in `$XDG_CONFIG_HOME/maestro/.env`. maestro loads
+that `.env` when it exists, a variable the shell sets winning; the release binary reads no `.env` or `bunfig.toml` from
+the cwd, while a run through `bun` from the repository still does. The Claude Code harness reads its token from
+`CLAUDE_CODE_OAUTH_TOKEN`, set there or in the shell; get one with `claude setup-token`.
 
-The core keys are `packs`, `concurrency`, `dataRoot`, `workspace`, `caps` and `limits`, described in
+The core keys are `packs`, `concurrency`, `workspace`, `caps` and `limits`, described in
 [architecture: Core keys](../../docs/architecture.md#core-keys); the repo host's `target`, `profiles` and `sandbox` are
 in the [host-repo README](../host-repo/README.md#configuration). A pack is operator-trusted code: `maestro` loads and
 executes what `packs` lists, and every directory under `$XDG_DATA_HOME/maestro/packs/`, with the user's own permissions.
 
 Past a `limits` value the concert is cancelled as `kill` cancels it, and settles `failed` naming the limit, such as
 `passed limits.tokens (2000000): 2104331 tokens`. The token sum is checked as each node instance settles, so a long
-agent is bounded mid-run by its profile's own `limits`. A resume reads them as the config stands, its recorded `-c`
-beneath its own. `timeout` restarts at each attempt, while the token sum counts earlier attempts, so a resume already
-past `tokens` fails at its next settled instance unless `-c` raises it.
+agent is bounded mid-run by its profile's own `limits`. A resume reads them from the snapshot, its own `-c` on top.
+`timeout` restarts at each attempt, while the token sum counts earlier attempts, so a resume already past `tokens` fails
+at its next settled instance unless `-c` raises it.
 
-A relative `packs`, `dataRoot`, `target.repo` or other path key is relative to the workspace root, the directory that
-holds `.maestro/`, in the workspace file, a workspace preset and a `-c`, and to the user config directory in the user
-file and a user preset. A `-c` outside a workspace is relative to the cwd.
+A relative `packs`, `target.repo` or other path key is relative to the workspace root, the directory that holds
+`.maestro/`, in the workspace file, a workspace preset and a `-c`, and to the user config directory in the user file and
+a user preset. A `-c` outside a workspace is relative to the cwd. A resume's or encore's `-c` is relative to the
+concert's recorded workspace root, else the cwd.
 
 ## Data root
 
-The layout is in [architecture: Data root](../../docs/architecture.md#data-root). The repo host keeps its lanes,
-versions and sessions in `hosts/repo/<target id>/`, and each model's context window in `hosts/repo/windows.json`.
+The data root is `$XDG_DATA_HOME/maestro`; set `$XDG_DATA_HOME` to move it. A `dataRoot` in a config file, preset or
+`-c` is refused. The layout is in [architecture: Data root](../../docs/architecture.md#data-root). The repo host keeps
+its lanes, versions and sessions in `hosts/repo/<target id>/`, and each model's context window in
+`hosts/repo/windows.json`.

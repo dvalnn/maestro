@@ -7,7 +7,9 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { cp } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
+import type { Host } from "@maestro/core/host";
 import { openRecord } from "@maestro/core/perform";
 import { repoHost } from "@maestro/host-repo";
 import { stubHarness } from "@maestro/host-repo/harness";
@@ -630,6 +632,64 @@ describe("profiles with no runtime", () => {
 });
 
 describe("profiles", () => {
+	// Seam: real repo-host execution and its CLI record and staged instructions.
+	test("resume and encore keep stub profile layers and the recorded workspace outside it", async () => {
+		const w = await repoWorld();
+		profileIn(
+			w.cwd,
+			"smoke",
+			"runtime: { harness: unavailable, model: expensive, thinking: high }\ninstructions: instructions.md\n",
+			{ "instructions.md": "directory instructions" },
+		);
+		const preset = join(w.cwd, ".maestro/presets/stub.yaml");
+		await Bun.write(
+			preset,
+			'profiles:\n  "*":\n    runtime: !replace { harness: stub }\n    instructions: !delete\n',
+		);
+		const gate = join(w.root, "gate");
+		const file = await gated(gate);
+		const performed = await w.call(["perform", file, "--preset", "stub"]);
+		expect(performed.code).toBe(1);
+		const id = idOf(performed);
+		expect(id).not.toBe("");
+		writeFileSync(gate, "");
+		rmSync(preset);
+		writeFileSync(join(w.cwd, ".maestro/config.yaml"), "[broken YAML");
+		const foreign = await scratch();
+		profileIn(
+			foreign,
+			"smoke",
+			"runtime: { harness: unavailable, model: foreign }\n",
+		);
+		writeFileSync(join(foreign, ".maestro/config.yaml"), "[broken YAML");
+		const outside = { cwd: foreign };
+		const resumed = await w.call(["resume", id, "--json"], outside);
+		expect(resumed.code).toBe(0);
+		const encore = await w.call(
+			["encore", id, "-c", "concurrency=2", "--json"],
+			outside,
+		);
+		expect(encore.code).toBe(0);
+		const neutral = { cwd: await scratch() };
+		for (const concert of [id, json(encore).id]) {
+			const listed = await w.call(["ls", concert, "--json"], outside);
+			expect(listed.code).toBe(0);
+			const instances: { node: string; enrichment?: object }[] =
+				json(listed).instances;
+			const agent = instances.find((instance) => instance.node === "a");
+			expect(agent).toMatchObject({
+				enrichment: { harness: "stub", model: "stub" },
+			});
+			expect(agent?.enrichment).not.toHaveProperty("thinking");
+			const staged = await w.call(
+				["art", "show", concert, "a", "staged/instructions.md"],
+				neutral,
+			);
+			expect(staged.code).toBe(0);
+			expect(staged.out.split("\n")).not.toContain("directory instructions");
+		}
+	});
+
 	test("a runtime field on the command line or in a preset beats the config file's", async () => {
 		const w = await repoWorld(SMOKE_RUNTIME("gone"));
 		const file = await gated();
@@ -885,6 +945,174 @@ describe("changeset", () => {
 
 	const a = (repo: string) => readFileSync(join(repo, "a.txt"), "utf8");
 
+	// Seam: changeset commands' diffs and effects on real checkouts, not host internals.
+	test("changeset show and apply use the snapshot checkout from any folder, without config files or the preset performed with", async () => {
+		const w = await edited();
+		const preset = join(w.cwd, ".maestro/presets/free.yaml");
+		await Bun.write(preset, "{}\n");
+		writeFileSync(
+			join(w.cwd, ".maestro/config.yaml"),
+			`target: { repo: ${relative(w.cwd, w.target)}, base: main }\n`,
+		);
+		const id = idOf(
+			await w.call(["perform", join(REPO, "edit.ts"), "--preset", "free"]),
+		);
+		const expected = (await w.cs("show", id)).out;
+		const clone = join(await scratch(), "clone");
+		git(w.target, "clone", "-q", w.target, clone);
+		writeFileSync(
+			join(w.cwd, ".maestro/config.yaml"),
+			`target: { repo: ${clone} }\n`,
+		);
+		await Bun.write(
+			join(w.env.XDG_CONFIG_HOME, "maestro/config.yaml"),
+			"[broken YAML",
+		);
+		rmSync(preset);
+		const outside = { cwd: await scratch(), env: GIT_ENV };
+		expect(
+			json(await w.call(["ls", id, "--json"], outside)).snapshot.target.repo,
+		).toBe(w.target);
+		const show = (...args: string[]) =>
+			w.call(["cs", "show", id, ...args], outside);
+		expect(await show()).toMatchObject({ code: 0, out: expected });
+		expect(await show("-C", w.target)).toMatchObject({
+			code: 0,
+			out: expected,
+		});
+		expect(await w.cs("show", id)).toMatchObject({ code: 0, out: expected });
+		expect(a(w.target)).toBe("one\n");
+		expect((await w.call(["cs", "apply", id], outside)).code).toBe(0);
+		expect(a(w.target)).toBe("edited\n");
+		expect(git(w.target, "diff", "--cached", "--name-only")).toBe("a.txt");
+		expect(a(clone)).toBe("one\n");
+	});
+
+	// Seam: changeset refusals name the uncomposable key and the supported checkout recovery.
+	test("changeset show and apply suggest -C when the recorded config no longer composes", async () => {
+		const w = await edited();
+		const host = repoHost({ harnesses: [] });
+		const former: Host = {
+			...host,
+			config: { ...host.config, retired: { type: "object" } },
+			deferred: [...(host.deferred ?? []), ["retired"]],
+		};
+		writeFileSync(
+			join(w.cwd, ".maestro/config.yaml"),
+			`target: { repo: ${w.target}, base: main }\nretired:\n  missing: !delete\n`,
+		);
+		const performed = await w.call(["perform", join(REPO, "edit.ts")], {
+			hosts: [former],
+		});
+		expect(performed.code).toBe(0);
+		const id = idOf(performed);
+		const outside = { cwd: await scratch(), env: GIT_ENV };
+		for (const action of ["show", "apply"]) {
+			const refused = await w.call(["cs", action, id], outside);
+			expect(refused.code).not.toBe(0);
+			expect(refused.out).toBe("");
+			const words = refused.err.split(/[\s'"`,:;()]+/);
+			expect(words).toEqual(
+				expect.arrayContaining(["retired.missing", "-C", "<repo>"]),
+			);
+			expect(words).not.toContain("-c");
+		}
+		expect(a(w.target)).toBe("one\n");
+		const recovered = await w.call(["cs", "show", id, "-C", w.target], outside);
+		expect(recovered.code).toBe(0);
+		expect(recovered.out).toBe((await w.cs("show", w.id)).out);
+		expect(
+			(await w.call(["cs", "apply", id, "-C", w.target], outside)).code,
+		).toBe(0);
+		expect(a(w.target)).toBe("edited\n");
+	});
+
+	// Seam: recorded changeset commands work even when the installed-pack directory cannot be scanned.
+	test("changeset show and apply read the recorded checkout without scanning installed packs", async () => {
+		const w = await edited();
+		const expected = (await w.cs("show", w.id)).out;
+		writeFileSync(
+			join(w.env.XDG_DATA_HOME, "maestro/packs"),
+			"not a directory\n",
+		);
+		const outside = { cwd: await scratch(), env: GIT_ENV };
+		const shown = await w.call(["cs", "show", w.id], outside);
+		expect(shown.code).toBe(0);
+		expect(shown.out).toBe(expected);
+		expect((await w.call(["cs", "apply", w.id], outside)).code).toBe(0);
+		expect(a(w.target)).toBe("edited\n");
+	});
+
+	test("a gone snapshot checkout is named with the -C recovery for show and apply", async () => {
+		const w = await edited();
+		rmSync(w.target, { recursive: true });
+		const outside = { cwd: await scratch(), env: GIT_ENV };
+		for (const action of ["show", "apply"]) {
+			const refused = await w.call(["cs", action, w.id], outside);
+			expect(refused.code).not.toBe(0);
+			const words = refused.err.split(/[\s'"`,:;.()]+/);
+			expect(words).toEqual(expect.arrayContaining([w.target, "-C", "<repo>"]));
+		}
+	});
+
+	test("older concerts stay listed and refuse snapshot commands but show and apply accept -C", async () => {
+		const w = await edited();
+		const expected = (await w.cs("show", w.id)).out;
+		const legacy = Bun.randomUUIDv7();
+		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+		// Copy only columns an older store knew, leaving the snapshot absent after its upgrade.
+		db.run(
+			`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, settled_at, reason, workspace, module_dir, file)
+			SELECT ?, composition, pack, ir, pid, 'failed', 1, 3, 'stopped', workspace, module_dir, file FROM concerts WHERE id = ?`,
+			[legacy, w.id],
+		);
+		db.run(
+			`INSERT INTO instances (concert, node, expansion, status, outputs, stale)
+			SELECT ?, node, expansion, status, outputs, 0 FROM instances WHERE concert = ?`,
+			[legacy, w.id],
+		);
+		db.close();
+		const area = join(w.env.XDG_DATA_HOME, "maestro/concerts");
+		await cp(join(area, w.id), join(area, legacy), {
+			recursive: true,
+			verbatimSymlinks: true,
+		});
+		const listed = await w.call(["ls", "--json"]);
+		expect(listed.code).toBe(0);
+		expect(json(listed).map((row: { id: string }) => row.id)).toContain(legacy);
+		for (const args of [
+			["compose", "--concert", legacy],
+			["resume", legacy],
+			["encore", legacy],
+		]) {
+			const refused = await w.call(args, { env: GIT_ENV });
+			expect(refused.code).not.toBe(0);
+			const words = refused.err.split(/[\s'"`,:;.()]+/);
+			expect(words).toContain("perform");
+		}
+		for (const verb of ["show", "apply"]) {
+			const refused = await w.call(["cs", verb, legacy], { env: GIT_ENV });
+			expect(refused.code).not.toBe(0);
+			expect(refused.err.split(/[\s'"`,:;.()]+/)).toContain("-C");
+		}
+		const clone = join(await scratch(), "clone");
+		git(w.target, "clone", "-q", w.target, clone);
+		rmSync(w.target, { recursive: true });
+		await Bun.write(
+			join(w.env.XDG_CONFIG_HOME, "maestro/config.yaml"),
+			"[broken YAML",
+		);
+		const outside = { cwd: await scratch(), env: GIT_ENV };
+		const shown = await w.call(["cs", "show", legacy, "-C", clone], outside);
+		expect(shown.code).toBe(0);
+		expect(shown.out).toBe(expected);
+		expect(
+			(await w.call(["cs", "apply", legacy, "-C", clone], outside)).code,
+		).toBe(0);
+		expect(a(clone)).toBe("edited\n");
+		expect(git(clone, "diff", "--cached", "--name-only")).toBe("a.txt");
+	});
+
 	test("show prints the diff byte for byte, so a patch ending on a blank context line applies", async () => {
 		const w = await edited("blank.ts", "one\n\n");
 		const shown = await w.cs("show", w.id);
@@ -953,7 +1181,7 @@ describe("changeset", () => {
 		]);
 		const unset = ["-c", "target.checks.lint=!delete"];
 		expect(await w.cs("show", idOf(checked), ...unset)).toMatchObject({
-			code: 0,
+			code: 2,
 		});
 	});
 
@@ -1054,40 +1282,6 @@ describe("changeset", () => {
 			code: 1,
 			err: `error: base ${base} is not in ${other}\n  Fetch it first`,
 		});
-	});
-
-	test("a preset-performed concert's changeset reads from outside its workspace with -C, and without it names the workspace", async () => {
-		const w = await edited();
-		await Bun.write(join(w.cwd, ".maestro/presets/free.yaml"), "{}\n");
-		const id = idOf(
-			await w.call(["perform", join(REPO, "edit.ts"), "--preset", "free"]),
-		);
-		const outside = { env: GIT_ENV, cwd: await scratch() };
-		const cs = (...args: string[]) =>
-			w.call(["cs", "show", id, ...args], outside);
-		expect(await cs("-C", w.target)).toMatchObject({
-			code: 0,
-			out: expect.stringContaining("+edited"),
-		});
-		expect(await cs("-c", `target.repo=${w.target}`)).toMatchObject({
-			code: 0,
-		});
-		const refused = await cs();
-		expect(refused.code).toBe(1);
-		expect(refused.err).toMatch(
-			/preset needs its workspace\n {2}Pass -C <repo>, or run from inside workspace 'ws'$/,
-		);
-		expect(refused.err).not.toContain("Resume");
-
-		const ambient = join(w.root, "config/maestro/config.yaml");
-		await Bun.write(ambient, `target:\n  repo: ${w.target}\n`);
-		expect(await cs()).toMatchObject({ code: 1, err: refused.err });
-		rmSync(ambient);
-
-		rmSync(join(w.cwd, ".maestro/presets/free.yaml"));
-		const missing = await w.call(["cs", "show", id], { env: GIT_ENV });
-		expect(missing.err).toContain("Restore");
-		expect(missing.err).not.toContain("needs its workspace");
 	});
 
 	test("changeset takes the result's changeset, else the last ok one with a warning, and refuses an empty one", async () => {

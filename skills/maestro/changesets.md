@@ -17,9 +17,9 @@ checkout; `--stat` or `--summary` for less. Hand that to the user.
 
 Applying is the user's step, taken on their yes.
 
-- `maestro cs apply <id>` stages it on the checkout's `HEAD`: `target.repo` as the concert was performed with, or
-  `-C <repo>`. It refuses an empty changeset, uncommitted tracked changes, and a checkout without the base (fetch it).
-  Exit 3: a patch left conflict markers in the files.
+- `maestro cs apply <id>` stages it on the checkout's `HEAD`: the `target.repo` the concert recorded, or `-C <repo>`.
+  `-C` also serves an older concert, or one whose checkout is gone. It refuses an empty changeset, uncommitted tracked
+  changes, and a checkout without the base (fetch it). Exit 3: a patch left conflict markers in the files.
 - `--commit` then commits it with the changeset's `message` and the user's git identity; with no `message` it stages
   nothing and exits 1.
 - `maestro cs drop --yes [-C <repo>]` resets the checkout's tracked files, undoing an apply.

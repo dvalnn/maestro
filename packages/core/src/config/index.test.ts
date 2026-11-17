@@ -62,6 +62,7 @@ describe("merge tags", () => {
 		expect(sourceOf(composed, ["list", "0"])).toEqual({
 			layer: "user",
 			file: USER,
+			base: "/home/u/.config/maestro",
 			line: 4,
 		});
 		expect(sourceOf(composed, ["list", "1"])).toMatchObject({
@@ -149,6 +150,7 @@ describe("merge tags", () => {
 	test.each([
 		["invalid YAML", "a: [1\n", 2],
 		["a YAML merge key", "base: &b\n  x: 1\nc:\n  <<: *b\n", 4],
+		["a recursive alias", "a: &a {b: *a}\n", 1],
 	])("refuses %s, naming the file and line", (_, text, line) => {
 		expect(refusal(() => parse(text))).toEqual([
 			["CFG.yaml", expect.any(String), { file: WORKSPACE, line }],
@@ -201,6 +203,7 @@ describe("a deferred path", () => {
 		expect(sourceOf(over, ["list", "0"])).toEqual({
 			layer: "directory",
 			file: BASE,
+			base: "/p",
 			line: 1,
 		});
 		expect(sourceOf(over, ["map", "z"])).toMatchObject({ layer: "user" });
@@ -236,11 +239,13 @@ describe("a deferred path", () => {
 		expect(sourceOf(over, ["instructions", "0"])).toEqual({
 			layer: "directory",
 			file: "/packs/classics/profiles/deep-lens/profile.yaml",
+			base: "/packs/classics/profiles/deep-lens",
 			line: 2,
 		});
 		expect(sourceOf(over, ["instructions", "1"])).toEqual({
 			layer: "workspace",
 			file: WORKSPACE,
+			base: "/w/.maestro",
 			line: 3,
 		});
 	});

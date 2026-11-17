@@ -69,6 +69,7 @@ import {
 import {
 	type ConcertOrigin,
 	type ConcertResult,
+	type ConfigSnapshot,
 	openWriter,
 	type RecordWriter,
 	type Settling,
@@ -87,6 +88,8 @@ type PerformBase = {
 	recordPath: string;
 	/** What a new concert's row keeps beside its IR. A resumed concert keeps its own. */
 	origin?: ConcertOrigin;
+	/** The directory of the workspace a new concert is performed in, which its config snapshot records (ADR 0019). */
+	workspaceDir?: string;
 	/** The directory each concert's artifact area and scratch directories go under, in `<dir>/<concert id>/`. */
 	dir: string;
 	/** The most node instances executing at once in this concert (D-26). A positive integer. */
@@ -270,6 +273,15 @@ const fingerprintOf = (
 	facts: Record<string, Facts>,
 ) => sha256Hex(canonicalJson({ ir, config: config.values, facts }));
 
+/** The snapshot of `config` the record keeps, performed in `workspaceDir`. */
+const snapshotOf = (
+	{ layers }: Composed,
+	workspaceDir: string | undefined,
+): ConfigSnapshot => ({
+	...(workspaceDir !== undefined && { workspace: workspaceDir }),
+	layers: layers.flatMap(({ parsed }) => (parsed ? [parsed] : [])),
+});
+
 /** Records the concert as running, and finds what a resume may reuse of it and the concert it encores. */
 function enter(
 	id: string,
@@ -289,6 +301,7 @@ function enter(
 		encoreOf: encore,
 		fingerprint: facts && fingerprintOf(ir, opened.config, facts),
 		limits,
+		snapshot: snapshotOf(opened.config, opened.workspaceDir),
 	});
 	return { kept: new Map(), encore };
 }

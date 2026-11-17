@@ -184,10 +184,12 @@ async function startConcert(tick: Tick, run: Run) {
 	const head = run.encore
 		? ["encore", run.encore]
 		: ["perform", join(dir, ".maestro", run.kind.file)];
+	// An encore runs under its concert's recorded config, presets included, and takes no --preset (ADR 0019).
+	const presets = run.encore ? [] : [...run.presets, ...tick.presets];
 	const args = [
 		...head,
 		...run.params,
-		...[...run.presets, ...tick.presets].flatMap((p) => ["--preset", p]),
+		...presets.flatMap((p) => ["--preset", p]),
 		"--tour",
 		run.tour,
 		"--title",

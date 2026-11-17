@@ -48,7 +48,7 @@ host's git store.
 
 ## Data root
 
-`$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`), unless config's `dataRoot` moves it:
+`$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`); set `$XDG_DATA_HOME` to move it:
 
 | Path                             | Holds                                                                      |
 | -------------------------------- | -------------------------------------------------------------------------- |

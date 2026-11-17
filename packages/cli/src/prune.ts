@@ -26,6 +26,7 @@ import {
 import {
 	concertsOf,
 	diskOf,
+	ownConfig,
 	type Session,
 	type Stored,
 	setupOf,
@@ -286,11 +287,14 @@ export const prune: Command = {
 	],
 	execute: (args, deps) =>
 		withStore(
-			PRUNE_OPTIONS,
+			{
+				open: ownConfig,
+				options: PRUNE_OPTIONS,
+				fix: "Flags are listed in 'maestro prune --help'",
+				check: selectionChecked,
+			},
 			args,
 			deps,
-			"Flags are listed in 'maestro prune --help'",
-			selectionChecked,
 			pruned,
 		),
 };

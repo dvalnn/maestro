@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Composed } from "@maestro/core/config";
-import type { Host } from "@maestro/core/host";
+import type { Host, Roots } from "@maestro/core/host";
 import { claudeHarness } from "@maestro/harness-claude";
 import { piHarness } from "@maestro/harness-pi";
 import {
@@ -23,7 +23,6 @@ import {
 } from "@maestro/host-repo/harness";
 import type { Plan } from "@maestro/ir";
 import { failure, parseDuration, table } from "./output";
-import type { Session } from "./session";
 
 const STUB_DELAY = "MAESTRO_STUB_DELAY";
 const STUB_ENVIRONMENT = "MAESTRO_STUB_ENVIRONMENT";
@@ -218,12 +217,13 @@ export const builtinHosts = (
 
 /** What each agent node of `plan` will run: its profile and the runtime that resolves to. */
 export async function agentsOf(
-	session: Session,
+	hosts: readonly Host[],
+	roots: Roots,
 	config: Composed,
 	plan: Plan,
 ): Promise<AgentRuntime[]> {
-	const host = session.deps.hosts.find((h) => h.name === HOST_NAME);
-	return host ? agentRuntimes(plan.ir, config, host, session.config.roots) : [];
+	const host = hosts.find((h) => h.name === HOST_NAME);
+	return host ? agentRuntimes(plan.ir, config, host, roots) : [];
 }
 
 /** The `agents:` block: the table the host gives, indented. */

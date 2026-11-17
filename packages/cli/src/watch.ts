@@ -49,6 +49,7 @@ import {
 import {
 	artifactsOf,
 	concertOf,
+	ownConfig,
 	type Session,
 	type Stored,
 	withStore,
@@ -305,7 +306,7 @@ async function browsed(
 		frame(row.ir, state, { ...view, rows: EVERY_ROW }, agents),
 	);
 	if (row.status === "running") return EXIT.interrupted;
-	return closed(session, store, values, row, { color, ending: "block" });
+	return closed(session, store, row, { color, ending: "block" });
 }
 
 /**
@@ -407,7 +408,7 @@ async function watched(
 	if (deps.screen && deps.terminal && ending === "block")
 		return browsed(stored, deps.screen, row, deps.terminal);
 	const settled = await polled(store, row, show);
-	return closed(session, store, values, settled, {
+	return closed(session, store, settled, {
 		color: colorOf(deps, values),
 		ending,
 	});
@@ -417,7 +418,6 @@ async function watched(
 async function closed(
 	session: Session,
 	store: Records,
-	values: Values,
 	row: ConcertRecord,
 	{ color, ending }: { color: Colors; ending: WatchEnd },
 ) {
@@ -431,7 +431,7 @@ async function closed(
 			artifacts: ending === "block" ? artifactsOf(session, row.id) : undefined,
 			changes:
 				ending === "block"
-					? await changesOf({ session, store, values }, row.id)
+					? await changesOf({ session, store }, row.id)
 					: undefined,
 		});
 	return exitOf(doc.status);
@@ -443,11 +443,14 @@ export const watch: Command = {
 	options: WATCH_OPTIONS,
 	execute: (args, deps) =>
 		withStore(
-			WATCH_OPTIONS,
+			{
+				open: ownConfig,
+				options: WATCH_OPTIONS,
+				fix: "Flags are listed in 'maestro watch --help'",
+				check: watchChecked,
+			},
 			args,
 			deps,
-			"Flags are listed in 'maestro watch --help'",
-			watchChecked,
 			watched,
 		),
 };

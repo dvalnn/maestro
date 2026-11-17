@@ -1,7 +1,11 @@
-import { basename, dirname, extname, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import { recordedPlan } from "@maestro/core/compose";
 import { type Composed, valueAt } from "@maestro/core/config";
+import type { Roots } from "@maestro/core/host";
+import type { ConcertRecord } from "@maestro/core/perform";
 import { canonicalJson, type Diagnostic, type Plan } from "@maestro/ir";
 import { flow, listing, render, summary } from "@maestro/render-text";
+import { shortIds } from "@maestro/render-text/live";
 import {
 	COMMON,
 	type Command,
@@ -11,8 +15,12 @@ import {
 	parse,
 	peek,
 	textOf,
+	type Values,
+	without,
 } from "./command";
+import { shownRoots } from "./config";
 import { agentLines, agentsOf } from "./hosts";
+import { bundled } from "./loader";
 import {
 	ArgumentError,
 	Diagnosed,
@@ -29,31 +37,31 @@ import {
 	compared,
 	compositionHelp,
 	configured,
-	type Prepared,
 	persist,
 	prepare,
 	type Reading,
-	resumable,
+	type Saving,
 } from "./prepare";
 import {
 	concertOf,
+	openRecorded,
 	openSession,
 	overridesOf,
-	type Session,
+	unreadError,
 	withLocated,
 } from "./session";
 
 const COMPOSE_OPTIONS = { ...COMMON, ...COMPOSE_FLAGS } as const;
+/** `compose --concert` reads the concert's recorded config, so it takes no `--preset` or `-c` (ADR 0019). */
+const CONCERT_OPTIONS = without(COMPOSE_OPTIONS, "preset", "config");
 
-/** Prepares the target in `args`. @returns the session, the preparation and whether `--json` is set. */
+/** The flags of `args`, read before `compose` knows its form: a `--concert` among them picks the recorded plan's. */
+const formFlags = (args: readonly string[]) => peek(COMPOSE_OPTIONS, args);
+
+/** Prepares the target in `args`. @returns the session and the preparation. */
 async function prepared(reading: Reading, args: readonly string[], deps: Deps) {
-	const early = peek(COMMON, args);
-	const session = await openSession(deps, overridesOf(early));
-	return {
-		json: isSet(early, "json"),
-		session,
-		prepared: await prepare(session, reading, args),
-	};
+	const session = await openSession(deps, overridesOf(peek(COMMON, args)));
+	return { session, prepared: await prepare(session, reading, args) };
 }
 
 const compositionRefused = (composition: string) =>
@@ -62,48 +70,78 @@ const compositionRefused = (composition: string) =>
 		"Drop the composition, or drop --concert",
 	);
 
+/** What a concert's agents show under when its snapshot is not used, in a message to the user. */
+const DEFAULTS = "maestro's built-in defaults";
+
+/** What a plan is shown with: the command's flags, and the config and host roots its agents resolve under. */
+type Shown = { deps: Deps; values: Values; config: Composed; roots: Roots };
+
+/** What `--out` saves of concert `row`: its recorded IR, and the bundle of the composition file it was built from. */
+async function savingOf(row: ConcertRecord): Promise<Saving> {
+	const { ir, moduleDir, file } = row;
+	if (file === undefined) return { ir, moduleDir };
+	const path = join(moduleDir, file);
+	return { ir, moduleDir, file: path, text: await bundled(path) };
+}
+
 /**
- * The concert `prefix` names, with its recorded IR, under the config files as they stand layered with its recorded
- * `--preset` and `-c`, then those of `args`.
- * @throws CliError, a usage error, for a composition, no concert id, a param flag or any other flag `compose` does not
- * take, or no such concert.
- * @throws CliError when the concert's code is gone.
+ * Shows the plan concert `prefix` was performed from: its recorded IR, expanded and bounded with no pre-flight, under
+ * its config snapshot, else, saying why on stderr, under maestro's built-in defaults when the snapshot cannot be read
+ * or does not compose. Reads no config file and loads no composition code (ADR 0019).
+ * @throws CliError, a usage error, for a composition, no concert id, a param flag, `--preset`, `-c` or any other flag
+ * `compose` does not take, or no such concert.
+ * @throws CliError when the concert was recorded before snapshots.
  */
-async function recorded(
+async function showConcert(
 	args: readonly string[],
 	prefix: string | undefined,
 	deps: Deps,
-) {
+): Promise<number> {
 	const [first] = args;
 	if (first !== undefined && !first.startsWith("-"))
 		throw compositionRefused(first);
 	if (prefix === undefined || prefix.startsWith("-"))
 		throw new ArgumentError("--concert needs a concert", NAME_CONCERT);
 	const { values, positionals } = parse(
-		COMPOSE_OPTIONS,
+		CONCERT_OPTIONS,
 		args,
 		"See 'maestro compose --help'; 'maestro encore <id>' performs a concert with new params",
 	);
 	if (positionals[0] !== undefined) throw compositionRefused(positionals[0]);
-	return withLocated(deps, overridesOf(values), async (found, store) => ({
-		json: isSet(values, "json"),
-		...(await resumable(found, store, concertOf(store, prefix), values)),
-	}));
+	return withLocated(deps, async (located, store) => {
+		const row = concertOf(store, prefix);
+		const opened = openRecorded(located, store, row);
+		if (opened.kind === "predates") throw unreadError(opened);
+		const { composed, workspace } = opened;
+		const roots = await shownRoots(composed, deps.env, workspace);
+		const shown = { deps, values, config: composed, roots };
+		if (opened.kind === "unreadable")
+			deps.stderr(`${opened.problem}, so its agents show under ${DEFAULTS}`);
+		else if (opened.kind === "does-not-compose") {
+			const label = shortIds(store.ids()).label(row.id, false);
+			deps.stderr(
+				`concert ${label}'s config snapshot does not compose under the installed hosts, so its agents show under ${DEFAULTS}:`,
+			);
+			printDiagnostics(shown, opened.error.diagnostics);
+		}
+		return planShown(shown, recordedPlan(row.ir, deps.hosts), () =>
+			savingOf(row),
+		);
+	});
 }
 
-async function save(prepared: Prepared, out: string) {
+async function save(saving: Saving, out: string) {
 	const file = resolve(out);
-	const saved = await persist(prepared, dirname(file), bundleName(file));
-	await Bun.write(file, `${canonicalJson(saved.ir)}\n`);
+	const ir = await persist(saving, dirname(file), bundleName(file));
+	await Bun.write(file, `${canonicalJson(ir)}\n`);
 }
+
+const agentsIn = ({ deps, roots, config }: Shown, plan: Plan) =>
+	agentsOf(deps.hosts, roots, config, plan);
 
 /** The plan in full, then its `agents:` block when it has agent nodes. */
-async function planText(
-	session: Session,
-	config: Composed,
-	plan: Plan,
-): Promise<string> {
-	const agents = await agentsOf(session, config, plan);
+async function planText(shown: Shown, plan: Plan): Promise<string> {
+	const agents = await agentsIn(shown, plan);
 	return agents.length
 		? `${listing(plan)}\n${agentLines(agents)}`
 		: listing(plan);
@@ -113,31 +151,68 @@ async function planText(
  * Prints the summary, or the plan in full with `--plan`, and the graph with `--graph`, its authored flow with `--flow`,
  * which sets `--graph`.
  */
-async function print(
-	session: Session,
-	prepared: Prepared,
-	plan: Plan,
-): Promise<void> {
-	const { deps } = session;
-	const { values } = prepared;
+async function print(shown: Shown, plan: Plan): Promise<void> {
+	const { deps, values } = shown;
 	const full = isSet(values, "plan");
 	const graph = isSet(values, "graph") || isSet(values, "flow");
 	if (full || !graph)
-		deps.stdout(
-			full ? await planText(session, prepared.config, plan) : summary(plan),
-		);
+		deps.stdout(full ? await planText(shown, plan) : summary(plan));
 	if (graph) deps.stdout(isSet(values, "flow") ? flow(plan) : render(plan));
 }
 
 /** Prints `diagnostics` on stderr. */
 function printDiagnostics(
-	session: Session,
-	prepared: Prepared,
+	{ deps, values }: Shown,
 	diagnostics: readonly Diagnostic[],
 ): void {
-	const { deps } = session;
-	const { err } = colorOf(deps, prepared.values);
+	const { err } = colorOf(deps, values);
 	for (const line of renderDiagnostics(diagnostics, err)) deps.stderr(line);
+}
+
+/** Saves what `saving` gives with `--out`, and prints `plan` as the flags of `shown` say. */
+async function planShown(
+	shown: Shown,
+	plan: Plan,
+	saving: () => Promise<Saving>,
+): Promise<number> {
+	const { deps, values } = shown;
+	const out = textOf(values, "out");
+	if (out) await save(await saving(), out);
+	if (isSet(values, "json")) {
+		deps.stdout(
+			jsonOf({ ok: true, plan, agents: await agentsIn(shown, plan) }),
+		);
+		return EXIT.ok;
+	}
+	await print(shown, plan);
+	printDiagnostics(shown, plan.diagnostics);
+	if (out) deps.stderr(`wrote ${out}`);
+	return EXIT.ok;
+}
+
+/** Pre-flights the composition `args` name, and shows its plan. */
+async function composeFile(
+	args: readonly string[],
+	deps: Deps,
+): Promise<number> {
+	const { session, prepared: target } = await prepared(
+		{ verb: "compose", options: COMPOSE_OPTIONS, examples: true },
+		args,
+		deps,
+	);
+	const shown = {
+		deps,
+		values: target.values,
+		config: target.config,
+		roots: session.config.roots,
+	};
+	const result = await compared(session, target);
+	if (result.ok) return planShown(shown, result.plan, async () => target);
+	if (isSet(target.values, "json") || !result.plan)
+		throw new Diagnosed(result.diagnostics);
+	await print(shown, result.plan);
+	printDiagnostics(shown, result.diagnostics);
+	return diagnosedExit(result.diagnostics);
 }
 
 export const compose: Command = {
@@ -161,44 +236,14 @@ export const compose: Command = {
 		],
 	],
 	options: COMPOSE_OPTIONS,
+	formOptions: (args) =>
+		formFlags(args).concert === undefined ? COMPOSE_OPTIONS : CONCERT_OPTIONS,
 	help: compositionHelp,
 	async execute(args, deps) {
-		const early = peek(COMPOSE_OPTIONS, args);
-		const {
-			json,
-			session,
-			prepared: target,
-		} = early.concert !== undefined
-			? await recorded(args, textOf(early, "concert"), deps)
-			: await prepared(
-					{ verb: "compose", options: COMPOSE_OPTIONS, examples: true },
-					args,
-					deps,
-				);
-		const result = await compared(session, target);
-		if (!result.ok) {
-			if (json || !result.plan) throw new Diagnosed(result.diagnostics);
-			await print(session, target, result.plan);
-			printDiagnostics(session, target, result.diagnostics);
-			return diagnosedExit(result.diagnostics);
-		}
-		const { plan } = result;
-		const out = textOf(target.values, "out");
-		if (out) await save(target, out);
-		if (json) {
-			deps.stdout(
-				jsonOf({
-					ok: true,
-					plan,
-					agents: await agentsOf(session, target.config, plan),
-				}),
-			);
-			return EXIT.ok;
-		}
-		await print(session, target, plan);
-		printDiagnostics(session, target, plan.diagnostics);
-		if (out) deps.stderr(`wrote ${out}`);
-		return EXIT.ok;
+		const flags = formFlags(args);
+		return flags.concert === undefined
+			? composeFile(args, deps)
+			: showConcert(args, textOf(flags, "concert"), deps);
 	},
 };
 

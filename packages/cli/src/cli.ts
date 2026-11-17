@@ -180,7 +180,7 @@ const rootHelp = (color: boolean) => {
 		`  ${paint("cyan", "--version", color)}  Print the maestro, SDK, IR and Bun versions`,
 		`  ${paint("cyan", "--help", color)}     Show this help`,
 		"",
-		heading("Common flags (every command):"),
+		heading("Common flags (each command lists those it takes):"),
 		sharedFlags(color),
 		"",
 		heading("Exit codes:"),
@@ -372,7 +372,8 @@ export async function main(
 			const { out } = colorOf(deps, common);
 			const extra = await extraHelp(command, args, deps);
 			return await withPager(deps, true, (paged) => {
-				paged.stdout(helpOf(command, verb.summary, extra, out));
+				const form = command.formOptions?.(args);
+				paged.stdout(helpOf(command, verb.summary, extra, out, form));
 				return EXIT.ok;
 			});
 		}

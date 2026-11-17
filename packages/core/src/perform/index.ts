@@ -11,6 +11,7 @@ export {
 	type ConcertRecord,
 	type ConcertResult,
 	type ConcertStatus,
+	type ConfigSnapshot,
 	type EnrichedInstance,
 	type InstanceRecord,
 	openRecord,

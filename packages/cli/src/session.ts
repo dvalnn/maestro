@@ -1,7 +1,7 @@
 import { readFileSync, readlinkSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
-import { ConfigError } from "@maestro/core/config";
+import { type Composed, ConfigError } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
 import { hostSetup } from "@maestro/core/host";
 import {
@@ -27,8 +27,17 @@ import {
 	type Values,
 	warn,
 } from "./command";
-import { type LoadedConfig, loadConfig, type Overrides } from "./config";
-import { listedOf, usageError } from "./output";
+import {
+	type LoadedConfig,
+	loadConfig,
+	type Overrides,
+	placesOf,
+	type Recorded,
+	recordedConfig,
+	shownConfig,
+	shownRoots,
+} from "./config";
+import { CliError, listedOf, usageError } from "./output";
 
 /** The executable's name, which a process performing a concert shows in its command line. */
 const COMMAND = "maestro";
@@ -65,11 +74,12 @@ export const selfOf = (
 ): string[] =>
 	stem(executable) === RUNTIME && script ? [executable, script] : [executable];
 
-/** The config a command resolved, and where the data root keeps what a command reads and writes. */
-export type Session = {
+/** A command's deps, and where the data root, `$XDG_DATA_HOME/maestro`, keeps what a command reads and writes. */
+export type Located = {
 	deps: Deps;
-	config: LoadedConfig;
 	files: {
+		/** The data root. */
+		root: string;
 		/** The one record store. */
 		record: string;
 		/** Each concert's artifact area, in `<concert id>/`. */
@@ -77,9 +87,25 @@ export type Session = {
 	};
 };
 
+/** The config a command resolved, beside where the data root keeps its files. */
+export type Session = Located & { config: LoadedConfig };
+
+/** Where the data root of `deps`' environment keeps what a command reads and writes. Reads no config. */
+export function locate(deps: Deps): Located {
+	const root = placesOf(deps.env).dataRoot;
+	return {
+		deps,
+		files: {
+			root,
+			record: join(root, "record.db"),
+			concerts: join(root, "concerts"),
+		},
+	};
+}
+
 /** The absolute path of concert `id`'s artifact area. */
-export const artifactsOf = (session: Session, id: string) =>
-	concertDirs(resolve(session.files.concerts), id).artifacts;
+export const artifactsOf = (located: Located, id: string) =>
+	concertDirs(resolve(located.files.concerts), id).artifacts;
 
 /** Each `--preset` and each `-c` of `values`. */
 export const overridesOf = (values: Values): Overrides => ({
@@ -87,10 +113,10 @@ export const overridesOf = (values: Values): Overrides => ({
 	config: textsOf(values, "config"),
 });
 
-/** The session for `deps`, its config layered for `overrides` in order. @throws ConfigError as `loadConfig` does. */
+/** The session for `deps`, its config layered for `overrides`. @throws ConfigError as `loadConfig` does. */
 export async function openSession(
 	deps: Deps,
-	...overrides: Overrides[]
+	overrides?: Overrides,
 ): Promise<Session> {
 	const config = await loadConfig({
 		cwd: deps.cwd,
@@ -98,15 +124,101 @@ export async function openSession(
 		hosts: deps.hosts,
 		overrides,
 	});
-	const { dataRoot } = config.core;
-	return {
-		deps,
+	return { ...locate(deps), config };
+}
+
+/** Why a concert's snapshot cannot be read: a row recorded before snapshots, or one this version cannot parse. */
+type Unread = {
+	kind: "predates" | "unreadable";
+	/** What went wrong. */
+	problem: string;
+	/** What to do next. */
+	fix: string;
+};
+
+/** The error for a snapshot that cannot be read, `problem` then `fix` on a line each. */
+export const unreadError = ({ problem, fix }: Unread) =>
+	new CliError(`${problem}\n${fix}`);
+
+/** Concert `row` of `store` as its config snapshot records it, or why the snapshot cannot be read. */
+function recordedOf(store: Records, row: ConcertRecord): Recorded | Unread {
+	const label = shortIds(store.ids()).label(row.id, false);
+	const { snapshot } = row;
+	if (snapshot === "unreadable")
+		return {
+			kind: "unreadable",
+			problem: `concert ${label}'s config snapshot is not one this maestro reads`,
+			fix: "Upgrade maestro, or perform its composition anew with 'maestro perform'",
+		};
+	if (!snapshot)
+		return {
+			kind: "predates",
+			problem: `concert ${label} predates config snapshots, so its config is not known`,
+			fix: "Perform its composition anew with 'maestro perform'",
+		};
+	return { snapshot, workspaceName: row.workspace, label };
+}
+
+/**
+ * The session of concert `row` of `store`, which `located` opened: the code defaults, its snapshot, then each `-c` of
+ * `config`, checked as `recordedConfig` does. Reads no config file.
+ * @throws CliError when the row was recorded before config snapshots, or holds one this version cannot read.
+ * @throws ConfigError as `recordedConfig` does.
+ */
+export async function recordedSession(
+	located: Located,
+	store: Records,
+	row: ConcertRecord,
+	config: readonly string[] = [],
+): Promise<Session> {
+	const { deps } = located;
+	const snapshot = recordedOf(store, row);
+	if ("problem" in snapshot) throw unreadError(snapshot);
+	const recorded = await recordedConfig({
+		cwd: deps.cwd,
+		env: deps.env,
+		hosts: deps.hosts,
+		recorded: snapshot,
 		config,
-		files: {
-			record: join(dataRoot, "record.db"),
-			concerts: join(dataRoot, "concerts"),
-		},
-	};
+	});
+	return { ...located, config: recorded };
+}
+
+/**
+ * A recorded concert's config as a reader opens it. `composed` is the snapshot's config, or the code defaults alone
+ * when the snapshot is not read or does not compose; `workspace` is the directory it was performed in, when its
+ * snapshot records one.
+ */
+export type Opened = { composed: Composed } & (
+	| (Unread & { workspace?: undefined })
+	| { kind: "composes"; workspace: string | undefined }
+	| {
+			kind: "does-not-compose";
+			workspace: string | undefined;
+			error: ConfigError;
+	  }
+);
+
+/**
+ * Concert `row`'s config, as every reader of the record opens it (ADR 0019): the code defaults, then its snapshot,
+ * merged under the running hosts and checked against nothing. Never throws for a row it cannot read or compose.
+ */
+export function openRecorded(
+	{ deps }: Located,
+	store: Records,
+	row: ConcertRecord,
+): Opened {
+	const recorded = recordedOf(store, row);
+	const defaults = () => shownConfig(deps, row.workspace);
+	if ("problem" in recorded) return { ...recorded, composed: defaults() };
+	const { workspace } = recorded.snapshot;
+	try {
+		const composed = shownConfig(deps, row.workspace, recorded);
+		return { kind: "composes", composed, workspace };
+	} catch (error) {
+		if (!(error instanceof ConfigError)) throw error;
+		return { kind: "does-not-compose", composed: defaults(), workspace, error };
+	}
 }
 
 /**
@@ -156,46 +268,21 @@ export const concertsOf = (store: Records, prefixes: readonly string[]) => [
 	).values(),
 ];
 
-/**
- * Gives `body` the session a command on a recorded concert finds its record store under, and that store until it
- * settles: the session of its own overrides `own`, or of none when they do not layer without the concert's recorded ones
- * beneath, as a `!delete` of a key only those set does not.
- * @throws as `openSession` does, for an error other than a ConfigError.
- */
-export async function withLocated<T>(
-	deps: Deps,
-	own: Overrides,
-	body: (session: Session, store: Records) => Promise<T>,
-): Promise<T> {
-	const session = await openSession(deps, own).catch((error: unknown) => {
-		if (error instanceof ConfigError) return openSession(deps);
-		throw error;
-	});
-	return withRecord(session, (store) => body(session, store));
-}
-
-/** The `--preset` and `-c` concert `row` was performed with, to layer beneath a command's own, as a resume does. */
-export const recordedOf = (store: Records, row: ConcertRecord): Overrides => ({
-	presets: row.presets,
-	config: row.config,
-	recorded: shortIds(store.ids()).label(row.id, false),
-});
-
 /** What a command that works on the record is handed. */
-export type Stored = {
-	session: Session;
+export type Stored<S extends Located = Session> = {
+	session: S;
 	store: Records;
 	values: Values;
 	json: boolean;
 };
 
-/** Opens the record store of `session`, made with its data root when it is new, and gives `body` it until it settles. */
+/** Opens the record store of `located`, made with its data root when it is new, and gives `body` it until it settles. */
 export async function withRecord<T>(
-	session: Session,
+	located: Located,
 	body: (store: Records) => Promise<T>,
 ): Promise<T> {
-	await mkdir(session.config.core.dataRoot, { recursive: true });
-	const store = openRecord(session.files.record);
+	await mkdir(located.files.root, { recursive: true });
+	const store = openRecord(located.files.record);
 	try {
 		return await body(store);
 	} finally {
@@ -203,36 +290,45 @@ export async function withRecord<T>(
 	}
 }
 
-/**
- * Opens the session for `overrides` and its record store, and gives `body` both until it settles.
- * @throws ConfigError as `openSession` does.
- */
-export async function withSession<T>(
+/** Opens the record store of `deps`' data root, reading no config, and gives `body` it until it settles. */
+export async function withLocated<T>(
 	deps: Deps,
-	overrides: Overrides,
-	body: (session: Session, store: Records) => Promise<T>,
+	body: (located: Located, store: Records) => Promise<T>,
 ): Promise<T> {
-	const session = await openSession(deps, overrides);
-	return withRecord(session, (store) => body(session, store));
+	const located = locate(deps);
+	return withRecord(located, (store) => body(located, store));
 }
 
+/** Opens the config of the current folder, layered with the command's own `--preset` and `-c`. */
+export const ownConfig = (deps: Deps, values: Values) =>
+	openSession(deps, overridesOf(values));
+
+/** What `withStore` reads a command's arguments and opens the session with. */
+export type StoreRead<S extends Located, T> = {
+	/** Opens the session for the flags: `ownConfig`, or `locate` for a command that reads no config (ADR 0019). */
+	open: (deps: Deps, values: Values) => Promise<S>;
+	options: Options;
+	/** Ends the usage error for a flag `options` does not take. */
+	fix: string;
+	/** Validates and parses the flags and positionals alone, before anything is opened. */
+	check: (values: Values, positionals: readonly string[]) => T;
+};
+
 /**
- * Reads `args` against `options`, has the pure `check` validate and parse the flags and positionals alone, then gives
- * `body` the session, the record store, what it read and what `check` returned. The store is not opened when `check`
- * throws.
- * @throws CliError, a usage error ending with `fix`, for flags `options` does not take, or whatever `check` throws.
+ * Reads `args` as `read` says, has its pure `check` validate them, then gives `body` what `read.open` opens for the
+ * flags, the record store, what it read and what `check` returned. Nothing is opened when `check` throws.
+ * @throws CliError, a usage error, for flags `read.options` does not take, or whatever `check` throws.
  */
-export async function withStore<T>(
-	options: Options,
+export async function withStore<S extends Located, T>(
+	{ open, options, fix, check }: StoreRead<S, T>,
 	args: readonly string[],
 	deps: Deps,
-	fix: string,
-	check: (values: Values, positionals: readonly string[]) => T,
-	body: (stored: Stored, parsed: T) => Promise<number>,
+	body: (stored: Stored<S>, parsed: T) => Promise<number>,
 ): Promise<number> {
 	const { values, positionals } = parse(options, args, fix);
 	const parsed = check(values, positionals);
-	return withSession(deps, overridesOf(values), (session, store) =>
+	const session = await open(deps, values);
+	return withRecord(session, (store) =>
 		body({ session, store, values, json: isSet(values, "json") }, parsed),
 	);
 }
@@ -242,21 +338,23 @@ export const setupOf = (session: Session, host: Host) =>
 	hostSetup(host, session.config.composed, session.config.roots);
 
 /**
- * The bytes `concert` holds: its directory under the data root, and what each host reports holding for it. A settled
- * concert's comes from the record, measured once and kept there when the record holds none. A host that cannot measure
- * its share counts none, why goes to stderr, and nothing is kept.
+ * The bytes `concert` holds: its directory under the data root, and what each host reports holding for it under its
+ * config as `openRecorded` opens it. A settled concert's comes from the record, measured once and kept there when the
+ * record holds none. A host that cannot measure its share counts none, why goes to stderr, and nothing is kept.
  */
 export async function diskOf(
-	{ session, store, values }: Stored,
+	{ session, store, values }: Stored<Located>,
 	concert: ConcertRecord,
 ): Promise<number> {
 	const { id, status, diskUse } = concert;
 	if (status !== "running" && diskUse !== undefined) return diskUse;
+	const { composed, workspace } = openRecorded(session, store, concert);
+	const roots = await shownRoots(composed, session.deps.env, workspace);
 	const { bytes, failures } = await diskUseOf(
 		session.files.concerts,
 		id,
 		session.deps.hosts,
-		(host) => setupOf(session, host),
+		(host) => hostSetup(host, composed, roots),
 	);
 	for (const { host, error } of failures)
 		warn(

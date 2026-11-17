@@ -8,7 +8,7 @@ import type {
 	NodeInstance,
 	Outcome,
 } from "@maestro/ir";
-import type { ConcertLimits } from "../config";
+import type { ConcertLimits, KeyPath, LayerName, ParsedLayer } from "../config";
 import type { HostNodeResult, Metrics } from "../host";
 import type { Inputs, Outputs } from "../node";
 import { instanceKey, isRecord } from "../shared";
@@ -26,6 +26,7 @@ const UPGRADE_STEPS = [
 	ALTER TABLE concerts ADD COLUMN fingerprint TEXT`,
 	"ALTER TABLE concerts ADD COLUMN limits TEXT",
 	"ALTER TABLE concerts ADD COLUMN disk_use INTEGER",
+	"ALTER TABLE concerts ADD COLUMN snapshot TEXT",
 ];
 /** The version of the schema below, kept in SQLite's `user_version`. */
 const SCHEMA_VERSION = OLDEST_UPGRADABLE_VERSION + UPGRADE_STEPS.length;
@@ -66,6 +67,8 @@ export const CONCERT_FINISHED = "the concert finished before it settled";
 // row written before presets repeated), `params` its root params as given (JSON), `encore_of` the concert it is an
 // encore of, `fingerprint` the digest `begin` was given, and `limits` the ceiling of its latest attempt (JSON), NULL
 // when it had none. `disk_use` is the bytes the concert holds on disk, measured when it settles, NULL until then.
+// `snapshot` is its config snapshot (JSON): each layer's text and how it was read, NULL in a row written before
+// snapshots were kept (ADR 0019).
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -90,7 +93,8 @@ CREATE TABLE concerts (
 	encore_of TEXT,
 	fingerprint TEXT,
 	limits TEXT,
-	disk_use INTEGER
+	disk_use INTEGER,
+	snapshot TEXT
 ) STRICT;
 CREATE TABLE instances (
 	concert TEXT NOT NULL,
@@ -186,6 +190,20 @@ export type ConcertRecord = ConcertOrigin & {
 	settledAt?: number;
 	/** The bytes it holds on disk, as last measured, left out when it was never measured. */
 	diskUse?: number;
+	/**
+	 * The config it was performed under, left out in a row recorded before snapshots were kept, and `unreadable` where
+	 * the row holds one this version cannot read.
+	 */
+	snapshot?: ConfigSnapshot | "unreadable";
+};
+
+/**
+ * A concert's config snapshot (ADR 0019): the text of each config layer it was composed from and how it was read, lowest
+ * first, and the directory of the workspace it was performed in, absent outside one.
+ */
+export type ConfigSnapshot = {
+	workspace?: string;
+	layers: readonly ParsedLayer[];
 };
 
 /**
@@ -304,6 +322,7 @@ export interface RecordWriter {
 				encoreOf: string;
 				fingerprint: string;
 				limits: ConcertLimits;
+				snapshot: ConfigSnapshot;
 			}
 		>,
 	): void;
@@ -391,6 +410,7 @@ type ConcertRow = {
 	fingerprint: string | null;
 	limits: string | null;
 	disk_use: number | null;
+	snapshot: string | null;
 };
 
 type InstanceStatus = InstanceRecord["status"];
@@ -841,8 +861,8 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 		if (refused) throw refused;
 		db.exec(
 			`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, tour, title, module_dir,
-			file, profile, config, params, encore_of, fingerprint, limits)
-			VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			file, profile, config, params, encore_of, fingerprint, limits, snapshot)
+			VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			beginRow(concert),
 		);
 	};
@@ -980,6 +1000,7 @@ function beginRow(concert: Parameters<RecordWriter["begin"]>[0]) {
 		concert.encoreOf ?? null,
 		concert.fingerprint ?? null,
 		limitsColumn(concert.limits),
+		json(concert.snapshot),
 	];
 }
 
@@ -1037,10 +1058,75 @@ function concertOf(row: ConcertRow): ConcertRecord {
 		...(row.profile !== null && { presets: presetsOf(row.profile) }),
 		...(row.config !== null && { config: JSON.parse(row.config) }),
 		...(row.params !== null && { params: JSON.parse(row.params) }),
+		...laterColumns(row),
+	};
+}
+
+/** The columns of `row` that upgrade steps added, each left out where it is NULL. */
+function laterColumns(row: ConcertRow): Partial<ConcertRecord> {
+	return {
 		...(row.encore_of !== null && { encoreOf: row.encore_of }),
 		...(row.limits !== null && { limits: JSON.parse(row.limits) }),
 		...(row.disk_use !== null && { diskUse: row.disk_use }),
+		...(row.snapshot !== null && { snapshot: snapshotOf(row.snapshot) }),
 	};
+}
+
+const isString = (value: unknown) => typeof value === "string";
+
+const isKeyPaths = (paths: unknown): paths is KeyPath[] =>
+	Array.isArray(paths) &&
+	paths.every((path) => Array.isArray(path) && path.every(isString));
+
+const isOptionalString = (value: unknown) =>
+	value === undefined || isString(value);
+
+/** Every layer name, so that a name `LayerName` gains and this lacks fails the type check. */
+const LAYER_NAMES: Record<LayerName, true> = {
+	default: true,
+	example: true,
+	directory: true,
+	user: true,
+	workspace: true,
+	preset: true,
+	flag: true,
+};
+
+const isLayerName = (name: unknown) =>
+	typeof name === "string" && Object.hasOwn(LAYER_NAMES, name);
+
+/** Whether `from` names a file, with its base when given, or a flag with its key and base. */
+const isLayerOrigin = (from: Record<string, unknown>) =>
+	isString(from.file)
+		? isOptionalString(from.base)
+		: isString(from.flag) && isString(from.key) && isString(from.base);
+
+/** Whether `from` is how a file's text, or a flag's, was read: a `LayerText`. */
+const isLayerText = (from: unknown) =>
+	isRecord(from) &&
+	isLayerName(from.layer) &&
+	(from.paths === undefined || isKeyPaths(from.paths)) &&
+	isOptionalString(from.concert) &&
+	isOptionalString(from.fix) &&
+	isLayerOrigin(from);
+
+const isParsedLayer = (layer: unknown): layer is ParsedLayer =>
+	isRecord(layer) && isString(layer.text) && isLayerText(layer.from);
+
+/** The snapshot `column` holds, or `unreadable` when it is not JSON of one, as a later version may write. */
+function snapshotOf(column: string): ConfigSnapshot | "unreadable" {
+	try {
+		const { workspace, layers } = JSON.parse(column);
+		if (
+			(workspace === undefined || isString(workspace)) &&
+			Array.isArray(layers) &&
+			layers.every(isParsedLayer)
+		)
+			return { ...(workspace !== undefined && { workspace }), layers };
+	} catch {
+		// Malformed JSON reads as unreadable, as an unknown shape does.
+	}
+	return "unreadable";
 }
 
 /** The result of a concert that settled other than `ok`, with `outputs` when it was rejected. */

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { ConfigError } from "@maestro/core/config";
@@ -28,8 +28,9 @@ import {
 	textOf,
 	type Values,
 	warn,
+	without,
 } from "./command";
-import type { Environment, Overrides } from "./config";
+import type { Environment } from "./config";
 import {
 	artifactRefs,
 	CliError,
@@ -42,10 +43,10 @@ import {
 import {
 	artifactsOf,
 	concertOf,
+	type Located,
+	openRecorded,
 	openSession,
 	overridesOf,
-	recordedOf,
-	type Session,
 	type Stored,
 	withLocated,
 } from "./session";
@@ -59,7 +60,7 @@ const CHANGESET_OPTIONS = {
 		type: "string",
 		short: "C",
 		arg: "repo",
-		desc: "The checkout to work in, as -c target.repo=<repo>, a relative path from the current directory",
+		desc: "The checkout to work in, a relative path from the current directory (default: show, apply: the concert's target.repo; drop: the config's)",
 	},
 	node: {
 		type: "string",
@@ -83,6 +84,14 @@ const CHANGESET_OPTIONS = {
 } as const satisfies Options;
 
 type Action = "show" | "apply" | "drop";
+
+/** The flags the action `args` name takes: show and apply read the concert's recorded config, so no `--preset` or `-c`. */
+function formOptions(args: readonly string[]): Options {
+	const action = splitFirst(CHANGESET_OPTIONS, args).first;
+	return action === "show" || action === "apply"
+		? without(CHANGESET_OPTIONS, "preset", "config")
+		: CHANGESET_OPTIONS;
+}
 
 /** The flags of this command each action takes; it refuses the others named here. */
 const ACTION_FLAGS: Readonly<Record<Action, readonly string[]>> = {
@@ -246,65 +255,75 @@ function chosen(
 	return { instance, dir: join(artifacts, ref.path) };
 }
 
-const repoOf = ({ config }: Session) => {
-	const target = config.composed.values.target;
+/** The checkout `target.repo` names in `values`, when it names one. */
+const repoOf = (values: Readonly<Record<string, unknown>>) => {
+	const { target } = values;
 	const repo = isPlainObject(target) ? target.repo : undefined;
 	return typeof repo === "string" ? repo : undefined;
 };
 
 const NAMES_REPO = "target.repo=";
 
-/**
- * The session for `layered` over `recorded`, a concert's `--preset` and `-c`, or over nothing when `recorded` does not
- * load outside any workspace and `layered` names the checkout.
- * @throws ConfigError, as `recorded` raised it, when the current directory is inside a workspace.
- * @throws CliError when `recorded` does not load outside a workspace and `layered` names no checkout, naming the
- * concert's `workspace`.
- */
-async function sessionOf(
-	deps: Deps,
-	layered: Overrides,
-	recorded: Overrides,
-	workspace: string,
-): Promise<Session> {
-	try {
-		return await openSession(deps, recorded, layered);
-	} catch (error) {
-		if (!(error instanceof ConfigError)) throw error;
-		const own = await openSession(deps, layered);
-		if (own.config.workspace) throw error;
-		if (layered.config?.some((c) => c.startsWith(NAMES_REPO))) return own;
-		throw new CliError(
-			`concert ${recorded.recorded}'s preset needs its workspace\nPass -C <repo>${workspace && `, or run from inside workspace '${workspace}'`}`,
-		);
-	}
-}
+/** The checkout `-C` of `values` names, resolved from the current directory, when it names one. */
+const flagRepo = (deps: Deps, values: Values) => {
+	const repo = textOf(values, "repo");
+	return repo === undefined ? undefined : resolve(deps.cwd, repo);
+};
 
 /**
- * The checkout `target.repo` names in the config files layered with `recorded`, a concert's `--preset` and `-c` when
- * given, then this command's own, `-C` last.
- * @throws CliError, a usage error, when `target.repo` is not set; else as `sessionOf` does.
+ * The checkout `target.repo` names in the config files layered with this command's own `--preset` and `-c`, `-C` last.
+ * @throws CliError, a usage error, when `target.repo` is not set.
+ * @throws ConfigError as `openSession` does.
  */
-async function checkoutOf(
-	deps: Deps,
-	values: Values,
-	recorded?: Overrides,
-	workspace = "",
-): Promise<Checkout> {
+async function checkoutOf(deps: Deps, values: Values): Promise<Checkout> {
 	const own = overridesOf(values);
-	const repo = textOf(values, "repo");
+	const repo = flagRepo(deps, values);
 	const sugar =
-		repo === undefined
-			? []
-			: [`${NAMES_REPO}${JSON.stringify(resolve(deps.cwd, repo))}`];
+		repo === undefined ? [] : [`${NAMES_REPO}${JSON.stringify(repo)}`];
 	const layered = { ...own, config: [...(own.config ?? []), ...sugar] };
-	const session = recorded
-		? await sessionOf(deps, layered, recorded, workspace)
-		: await openSession(deps, layered);
-	const found = repoOf(session);
+	const { config } = await openSession(deps, layered);
+	const found = repoOf(config.composed.values);
 	if (found === undefined)
 		throw usageError("config 'target.repo' is not set", "Pass -C <repo>");
 	return { repo: found, env: deps.env };
+}
+
+/** What reading a concert's changeset takes of a command's `Stored`. */
+type StoredRead = Pick<Stored<Located>, "session" | "store" | "values">;
+
+/**
+ * The checkout concert `row`, labelled `label`, works in (ADR 0019): the one `-C` of `values` names, else its
+ * snapshot's `target.repo`.
+ * @throws CliError when, without `-C`, its snapshot cannot be read or no longer composes, names no checkout, or the
+ * checkout it names is gone.
+ */
+async function recordedCheckout(
+	{ session, store, values }: StoredRead,
+	row: ConcertRecord,
+	label: string,
+): Promise<Checkout> {
+	const { deps } = session;
+	const flagged = flagRepo(deps, values);
+	if (flagged !== undefined) return { repo: flagged, env: deps.env };
+	const opened = openRecorded(session, store, row);
+	if (opened.kind === "does-not-compose")
+		throw new CliError(
+			`concert ${label}'s config snapshot no longer composes: ${opened.error.diagnostics.map((d) => d.message).join("; ")}\nPass -C <repo> to name its checkout`,
+		);
+	if (opened.kind === "predates" || opened.kind === "unreadable")
+		throw new CliError(
+			`${opened.problem}\nPass -C <repo> to name its checkout`,
+		);
+	const repo = repoOf(opened.composed.values);
+	if (repo === undefined)
+		throw new CliError(
+			`concert ${label} ran with no target.repo\nPass -C <repo>`,
+		);
+	if (!(await stat(repo).catch(() => undefined))?.isDirectory())
+		throw new CliError(
+			`the checkout ${repo} of concert ${label} is gone\nPass -C <repo> to name another checkout of it`,
+		);
+	return { repo, env: deps.env };
 }
 
 /**
@@ -333,7 +352,7 @@ async function readChangeset(dir: string, short: string) {
 	return { base, message, patches };
 }
 
-async function picked(stored: Stored, prefix: string): Promise<Picked> {
+async function picked(stored: StoredRead, prefix: string): Promise<Picked> {
 	const { session, store, values } = stored;
 	const row = concertOf(store, prefix);
 	const { instance, dir } = chosen(
@@ -346,12 +365,7 @@ async function picked(stored: Stored, prefix: string): Promise<Picked> {
 	const short = shortIds(store.ids()).label(row.id, false);
 	return {
 		...(await readChangeset(dir, short)),
-		checkout: await checkoutOf(
-			session.deps,
-			values,
-			recordedOf(store, row),
-			row.workspace,
-		),
+		checkout: await recordedCheckout(stored, row, short),
 		row,
 		short,
 		instance: indexGraph(row.ir).instanceName(instance),
@@ -364,7 +378,7 @@ async function picked(stored: Stored, prefix: string): Promise<Picked> {
  */
 function checked(
 	{ checkout, row, short, instance, base }: Picked,
-	{ session, values }: Stored,
+	{ session, values }: Stored<Located>,
 ) {
 	if (run(checkout, ["cat-file", "-e", `${base}^{commit}`]).code !== 0)
 		throw new CliError(
@@ -409,12 +423,12 @@ const diffOf = (p: Picked, tree: string, flags: readonly string[]) =>
  * stdout, or when the concert has no changeset or its diff cannot be read.
  */
 export async function changesOf(
-	{ session, store, values }: Pick<Stored, "session" | "store" | "values">,
+	{ session, store }: Pick<Stored<Located>, "session" | "store">,
 	id: string,
 ): Promise<Changes | undefined> {
 	if (!session.deps.terminal) return undefined;
 	try {
-		const p = await picked({ session, store, values, json: false }, id);
+		const p = await picked({ session, store, values: {} }, id);
 		const rows = new TextDecoder()
 			.decode(diffOf(p, await treeOf(p), ["--numstat"]))
 			.split("\n")
@@ -433,7 +447,7 @@ export async function changesOf(
 	}
 }
 
-async function shown(stored: Stored, prefix: string) {
+async function shown(stored: Stored<Located>, prefix: string) {
 	const { session, values } = stored;
 	const { deps } = session;
 	const p = await picked(stored, prefix);
@@ -478,7 +492,7 @@ function refused(p: Picked, patch: string, ran: Ran, deps: Deps): never {
 	);
 }
 
-async function applied(stored: Stored, prefix: string) {
+async function applied(stored: Stored<Located>, prefix: string) {
 	const { session, values } = stored;
 	const { deps } = session;
 	const p = await picked(stored, prefix);
@@ -540,7 +554,7 @@ async function dropped(deps: Deps, values: Values) {
 }
 
 async function changesetRun(args: readonly string[], deps: Deps) {
-	const { values, positionals } = parse(CHANGESET_OPTIONS, args, FIX);
+	const { values, positionals } = parse(formOptions(args), args, FIX);
 	const [word, ...rest] = positionals;
 	const action = actionOf(word, values);
 	if (action === "drop") {
@@ -552,8 +566,7 @@ async function changesetRun(args: readonly string[], deps: Deps) {
 		return dropped(deps, values);
 	}
 	const prefix = only(rest, "concert", NAME_CONCERT, action);
-	const own = overridesOf(values);
-	return withLocated(deps, own, (session, store) => {
+	return withLocated(deps, (session, store) => {
 		const stored = { session, store, values, json: false };
 		return action === "show" ? shown(stored, prefix) : applied(stored, prefix);
 	});
@@ -565,6 +578,7 @@ export const changeset: Command = {
 		"changeset show|apply <concert> [flags]  (alias: cs)\n       maestro changeset drop [flags]",
 	arguments: [["<concert>", "A concert, as 'maestro ls' lists it"]],
 	options: CHANGESET_OPTIONS,
+	formOptions,
 	examples: [
 		["What did the concert change?", "maestro changeset show 7f3c2a --stat"],
 		[

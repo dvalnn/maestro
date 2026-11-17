@@ -33,7 +33,7 @@ test("persist writes the text its IR's codeHash names, though the file changed a
 	const written = await readFile(join(out, "hello.bundle.js"), "utf8");
 	expect(written).toBe(loaded);
 	const hashes: string[] = [];
-	mapWorkers(saved.ir, (ref) => {
+	mapWorkers(saved, (ref) => {
 		if (ref.module !== STDLIB_MODULE) hashes.push(ref.codeHash);
 		return ref;
 	});

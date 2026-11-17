@@ -13,7 +13,7 @@ profiles:
   "*": { runtime: !replace { harness: stub } }
 ```
 
-Pass `--preset stub` to compose and perform; a resume reapplies it.
+Pass `--preset stub` to compose and perform; a resume or encore keeps it, from the concert's recorded config.
 
 ## What it does
 

@@ -341,8 +341,8 @@ flowchart TD
   a question comment saying it is approved again. Any other re-triage routes as usual, and a gated one waits in
   `needs-approval`. An encore of a running or landed build is not compared.
 - **Encore.** A ticket continues its last slice concert, so the builder keeps what it learned and is told only what
-  changed: `encore <id>` with a fresh build's presets, tour, title and base, and a `--request` of the spec and the ask
-  followed by what changed, each part under its heading:
+  changed: `encore <id>` with a fresh build's tour, title and base, its presets kept in the concert's recorded config,
+  and a `--request` of the spec and the ask followed by what changed, each part under its heading:
   - a `ready-for-agent` ticket whose `encore` is set: each comment mentioning `@<login>` above `read`, a question
     comment excepted, headed `## Reply by <author>`; `read` moves to the newest comment it considered;
   - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`, whose PR

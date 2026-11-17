@@ -36,6 +36,7 @@ home; no repo doc links into them for its facts.
 | Resume and code-hash reuse               | architecture: Execution model         | CLI README                         |
 | Worker protocol                          | architecture: Workers and code nodes  | sdk-spec                           |
 | Record store, events, data root          | architecture: Record and events       | IR README, CLI README              |
+| Config snapshot of a concert             | architecture: Config snapshot         | CLI README, glossary, ADR 0019     |
 | Static and live rendering                | `packages/render-text/README.md`      | architecture, CLI README           |
 | Host interface (members)                 | architecture: Host interface          | ADR 0010 holds the why             |
 | Packs: manifest, discovery, trust        | architecture: Packs                   | INSTALL, ADR 0002                  |

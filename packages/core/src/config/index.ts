@@ -36,10 +36,12 @@ export type Source = {
 	flag?: string;
 	/** The key the flag sets, as typed. */
 	key?: string;
-	/** The short id of the concert a resume reapplies the flag from. */
+	/** The short id of the recorded concert whose snapshot set it. */
 	concert?: string;
 	/** The fix a diagnostic on a value it set gives, in place of its own. */
 	fix?: string;
+	/** The directory a relative path it gave resolves against, absent for a value no text gave. */
+	base?: string;
 };
 
 export type { KeyPath, LayerName };
@@ -69,8 +71,8 @@ type Deletion = { kind: "delete"; source: Source };
 type Tagged = MapOf<Tagged> | List | Scalar | Deletion;
 type Merged = MapOf<Merged> | List | Scalar;
 
-/** One config file or set of values, with its merge tags, ready to layer. */
-export type Layer = MapOf<Tagged>;
+/** One config file or set of values, with its merge tags, ready to layer, and the text it was parsed from, if any. */
+export type Layer = MapOf<Tagged> & { parsed?: ParsedLayer };
 
 /** A config file, or layering, that cannot be used. */
 export class ConfigError extends Error {
@@ -298,6 +300,10 @@ export type LayerText = {
 	layer: LayerName;
 	/** The key paths whose values are file paths: a string, or a list of strings. `*` matches any one key. */
 	paths?: readonly KeyPath[];
+	/** The short id of the recorded concert whose snapshot holds the text. */
+	concert?: string;
+	/** The fix a diagnostic on one of its values gives, in place of its own. */
+	fix?: string;
 } & (
 	| {
 			/** The file's path, as diagnostics name it. */
@@ -310,42 +316,65 @@ export type LayerText = {
 			flag: string;
 			/** The key the flag sets, as typed. */
 			key: string;
-			/** The short id of the concert a resume reapplies the flag from. */
-			concert?: string;
-			/** The fix a diagnostic on one of its values gives, in place of its own. */
-			fix?: string;
 			/** The directory the flag's relative paths resolve against. */
 			base: string;
 	  }
 );
 
-/** The source `text` credits its values to, but for their line, and the directory its relative paths resolve in. */
-const originOf = (text: LayerText): { source: Source; base: string } =>
+/** A layer's text, and how it was read, which `parseLayer` reads again to the same layer (ADR 0019). */
+export type ParsedLayer = { text: string; from: LayerText };
+
+/** The source `text` credits its values to, but for their line, with the directory its relative paths resolve in. */
+const originOf = ({
+	layer,
+	concert,
+	fix,
+	...text
+}: LayerText): Source & { base: string } =>
 	"file" in text
 		? {
-				source: { layer: text.layer, file: text.file },
+				layer,
+				file: text.file,
 				base: text.base ?? dirname(text.file),
+				concert,
+				fix,
 			}
-		: {
-				source: {
-					layer: text.layer,
-					flag: text.flag,
-					key: text.key,
-					concert: text.concert,
-					fix: text.fix,
-				},
-				base: text.base,
-			};
+		: { layer, flag: text.flag, key: text.key, base: text.base, concert, fix };
+
+/**
+ * The layer of a file's `root` mapping.
+ * @throws ConfigError as `mapOf` does, and for an alias that holds itself, which recurses until the stack overflows.
+ */
+function rootMap(
+	root: YAMLMap,
+	reading: Reading,
+	source: Source,
+): MapOf<Tagged> {
+	try {
+		return mapOf(root, reading, source, false);
+	} catch (error) {
+		if (!(error instanceof RangeError)) throw error;
+		throw new ConfigError([
+			configDiagnostic(
+				"CFG.yaml",
+				source,
+				"an alias holds itself",
+				"Replace the recursive alias with the value it names",
+			),
+		]);
+	}
+}
 
 /**
  * Parses one YAML config file, or the YAML a flag gives, into a layer. Its merge tags:
  * - `!replace` on a mapping: it replaces what is beneath instead of merging into it;
  * - `!append` on a list: it follows the list beneath, or the scalar beneath as a one-item list;
  * - `!delete` with no value: it removes the key a lower layer set.
- * @throws ConfigError on invalid YAML, a file that is not a mapping, any other tag, or a tag on the wrong shape.
+ * @throws ConfigError on invalid YAML, an alias that holds itself, a file that is not a mapping, any other tag, or a tag on
+ * the wrong shape.
  */
 export function parseLayer(text: string, from: LayerText): Layer {
-	const { source: origin, base } = originOf(from);
+	const origin = originOf(from);
 	const lines = new LineCounter();
 	const doc = parseDocument(text, { lineCounter: lines, prettyErrors: false });
 	const sourceAt = (offset: number): Source =>
@@ -368,8 +397,9 @@ export function parseLayer(text: string, from: LayerText): Layer {
 	}
 	const root = doc.contents;
 	const source = sourceAt(0);
+	const parsed = { text, from };
 	if (root === null)
-		return { kind: "map", source, entries: new Map(), replace: false };
+		return { kind: "map", source, entries: new Map(), replace: false, parsed };
 	if (!isMap(root) || root.tag !== undefined)
 		throw new ConfigError([
 			configDiagnostic(
@@ -379,8 +409,8 @@ export function parseLayer(text: string, from: LayerText): Layer {
 				"Write the file as untagged 'key: value' lines",
 			),
 		]);
-	const parsed = mapOf(root, { doc, sourceAt }, source, false);
-	return anchored(parsed, from.paths ?? [], base);
+	const layer = rootMap(root, { doc, sourceAt }, source);
+	return { ...anchored(layer, from.paths ?? [], origin.base), parsed };
 }
 
 function treeOfValue(value: unknown, source: Source): Tagged {
@@ -724,9 +754,6 @@ export const CORE_CONFIG: Readonly<Record<string, JsonSchema>> = {
 		},
 	},
 };
-
-/** The core config keys whose values are file paths. */
-export const CORE_PATHS: readonly KeyPath[] = [["dataRoot"]];
 
 export type CoreConfig = {
 	/** The most node instances in flight at once in one concert. Defaults to the CPU count. */
