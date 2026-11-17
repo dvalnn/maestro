@@ -1554,10 +1554,9 @@ describe("the record", () => {
 		const workers = doc.instances.filter(
 			(i: { node: string }) => i.node === "rounds/fan/worker",
 		);
-		expect(workers.map((i: { expansion: string }) => i.expansion)).toEqual([
-			"[0][lens]",
-			"[0][risk]",
-		]);
+		expect(
+			workers.map((i: { expansion: string }) => i.expansion).sort(),
+		).toEqual(["[0][lens]", "[0][risk]"]);
 		for (const name of [
 			"rounds[0]/fan[lens]/worker",
 			"rounds[0]/fan[risk]/worker",
@@ -1565,16 +1564,23 @@ describe("the record", () => {
 			expect(doc.reports[name]).toEqual({ summary: "reviewed" });
 			expect(doc.outputs[name]).toEqual({ text: "done" });
 		}
-		expect(workers.map((i: { name: string }) => i.name)).toEqual([
+		expect(workers.map((i: { name: string }) => i.name).sort()).toEqual([
 			"rounds[0]/fan[lens]/worker",
 			"rounds[0]/fan[risk]/worker",
 		]);
-		expect(doc.instances).toMatchObject([
+		// The two parallel workers sit together at graph position 3, in either order;
+		// every other instance keeps its graph order.
+		expect(
+			doc.instances.slice(3, 5).map((i: { node: string }) => i.node),
+		).toEqual(["rounds/fan/worker", "rounds/fan/worker"]);
+		expect(
+			doc.instances.filter(
+				(i: { node: string }) => i.node !== "rounds/fan/worker",
+			),
+		).toMatchObject([
 			{ node: "init", name: "init" },
 			{ node: "rounds", name: "rounds" },
 			{ node: "rounds/fan", name: "rounds[0]/fan" },
-			{ node: "rounds/fan/worker", name: "rounds[0]/fan[lens]/worker" },
-			{ node: "rounds/fan/worker", name: "rounds[0]/fan[risk]/worker" },
 			{ node: "rounds/firstOk", name: "rounds[0]/firstOk" },
 			{ node: "rounds/firstOk_text", name: "rounds[0]/firstOk_text" },
 			{ node: "rounds/finish", name: "rounds[0]/finish" },
