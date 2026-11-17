@@ -28,9 +28,20 @@ lint:
 types:
     bunx tsc --noEmit
 
-# run every test
-test:
-    bun test {{parallel}} --timeout 30000 --only-failures ./ ./.maestro
+# run every test, or only the given test files (paths from the repository root)
+[positional-arguments]
+test *paths:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    targets=()
+    for path in "$@"; do
+      case "$path" in
+        /* | ./*) targets+=("$path") ;;
+        *) targets+=("./$path") ;;
+      esac
+    done
+    [ "${#targets[@]}" -gt 0 ] || targets=(./ ./.maestro)
+    exec bun test {{parallel}} --timeout 30000 --only-failures "${targets[@]}"
 
 # auto-format
 fmt:

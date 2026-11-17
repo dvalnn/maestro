@@ -14,7 +14,7 @@ target:
       hint: tsc typecheck
     test:
       run: just test
-      hint: every bun test, including .maestro
+      hint: every bun test, including .maestro; `just test <path>…` runs only those files, under bun
     fmt:
       run: just fmt
       hint: rewrites code files with biome's formatter and Markdown files with prettier
