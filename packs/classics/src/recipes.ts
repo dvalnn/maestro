@@ -27,6 +27,7 @@ import {
 	planner,
 	Rulings,
 	repairUntilGreen,
+	reviewReads,
 	tally,
 	toMarkdown,
 	Upheld,
@@ -133,37 +134,38 @@ export const lensFusion = composition(
 	({ gated }) => {
 		const { spec, build } = built();
 		const change = build.out.lane;
+		const reads = reviewReads({ change, spec });
+		const { attached } = reads;
+		const group = (family: string) => {
+			const onFamily = seat(`lens_${family}`, {
+				profile: "classics/lens",
+				verdict: true,
+				reply: { findings: List(Finding) },
+			});
+			return {
+				results: iter.parMap(
+					[family],
+					() => {
+						const found = onFamily({
+							label: "lens",
+							task: lensLead(LENSES[LENS], { gated }),
+							lane: read(change),
+							attachments: attached,
+						});
+						return {
+							lens: found,
+							skeptic: challenge(found, { change, attached }),
+						};
+					},
+					{ onError: "continue", label: `${family}_lenses` },
+				).out.results,
+				names: [family],
+			};
+		};
 		return tally(
-			{ change, spec, session: build.out.session },
-			({ attached }) => {
-				const group = (family: string) => {
-					const onFamily = seat(`lens_${family}`, {
-						profile: "classics/lens",
-						verdict: true,
-						reply: { findings: List(Finding) },
-					});
-					return {
-						results: iter.parMap(
-							[family],
-							() => {
-								const found = onFamily({
-									label: "lens",
-									task: lensLead(LENSES[LENS], { gated }),
-									lane: read(change),
-									attachments: attached,
-								});
-								return {
-									lens: found,
-									skeptic: challenge(found, { change, attached }),
-								};
-							},
-							{ onError: "continue", label: `${family}_lenses` },
-						).out.results,
-						names: [family],
-					};
-				};
-				return { a: group("a"), b: group("b") };
-			},
+			reads,
+			{ a: group("a"), b: group("b") },
+			{ session: build.out.session },
 		);
 	},
 );
@@ -206,9 +208,11 @@ export const rulingVote = composition(
 	() => {
 		const { spec, build } = built();
 		const change = build.out.lane;
+		const reads = reviewReads({ change, spec });
+		const { attached } = reads;
 		return tally(
-			{ change, spec, session: build.out.session },
-			({ attached }) => ({
+			reads,
+			{
 				lens: {
 					results: iter.parMap(
 						[LENS],
@@ -240,7 +244,8 @@ export const rulingVote = composition(
 					).out.results,
 					names: [LENS],
 				},
-			}),
+			},
+			{ session: build.out.session },
 		);
 	},
 );

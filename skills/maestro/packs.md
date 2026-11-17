@@ -69,8 +69,9 @@ and contracts. `@maestro/classics/code` exports its code-node functions alone.
   (`build_then_review`), `panelReview` (`panel_review`), `reviewChange` (`review_change`).
 - Patterns, which a composition `use`s: `repairUntilGreen` (`repair_until_green`), `panel`, `tieredReview`
   (`tiered_review`), `fixUntilClean` (`fix_until_clean`), `testFirst` (`test_first`), `buildChange` (`build`).
-- Moves: `challenge`, `fix`, `tally`. `tally` takes the `change`, the `spec` and a picker of each lens group's results.
-  It makes the changeset, the held node and the consolidator itself.
+- Moves: `challenge`, `fix`, `reviewReads`, `tally`. `reviewReads` builds what the lenses read from the `change` and the
+  `spec`; `tally` takes those reads, each lens group's results and how the review settles. `reviewReads` makes the
+  changeset, and `tally` the held node and the consolidator.
 - Contracts: `Finding`, `Findings`, `Rulings`, `Verdict`, `Upheld`, `Tally`, `TestMap`, `Brief`, `Overrules`, `Answers`.
 - Code-node functions: `toMarkdown`, `copyMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf`, `tieredOf` and
   `resultOf`.

@@ -91,10 +91,11 @@ encore that turns `testFirst` off continues that builder's session.
 - `challenge`: a skeptic over any lens's findings, skipped when the lens settled ok; takes `grounds`, the rules a
   finding must cite.
 - `fix`: a builder fixing the findings a round upheld, in a lane extending its lane and continuing its session.
-- `tally`: the `Tally` of a review. It takes the `change`, the `spec`, the previous round's `earlier` and the builder's
-  `brief` when given, a consolidator's task or a `session` to carry, and a lens picker that builds each group of lenses
-  from the reads it hands over. It owns the reads, the held node, the consolidator and the `delivered` count, so the
-  held node always waits on what the lenses read, and a review no counted lens delivered rejects.
+- `reviewReads`: what a review's lenses read. It takes the `change`, the `spec`, the previous round's `earlier` and the
+  builder's `brief` when given, and returns the change's patches and the spec as attachments, and the relays.
+- `tally`: the `Tally` of a review. It takes the reads its lenses read, each group of lenses, and a consolidator's task
+  or a `session` to carry. It owns the held node, the consolidator and the `delivered` count, so the held node waits on
+  what the lenses read, and a review no counted lens delivered rejects.
 
 ## Contracts
 

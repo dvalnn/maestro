@@ -14,7 +14,7 @@ import {
 	Text,
 	use,
 } from "@maestro/sdk";
-import { challenge, requestOf, tally } from "./moves";
+import { challenge, requestOf, reviewReads, tally } from "./moves";
 import { task } from "./prompt";
 import AGENT_DOC from "./prompts/_agent-doc.md" with { type: "text" };
 import CORRECTNESS from "./prompts/_correctness.md" with { type: "text" };
@@ -160,42 +160,46 @@ export const panel = composition(
 				message: "classics.panel needs a session or consolidate",
 				hint: "Feed the session port, or leave the consolidate param true",
 			});
+		const reads = reviewReads({ change, spec, earlier, brief });
+		const { attached, relay, common } = reads;
+		const lensesOf = iter.parMap(
+			items,
+			(name) => {
+				const found = lens({
+					label: "lens",
+					task: lookup(tasks, name),
+					lane: read(change),
+					checks: gated ? [] : checks,
+					relay,
+					attachments: attached,
+				});
+				if (!skeptics) return found;
+				return {
+					lens: found,
+					skeptic: challenge(found, {
+						change,
+						attached,
+						grounds: ground,
+						relay: common,
+					}),
+				};
+			},
+			{
+				onError: "continue",
+				label: "lenses",
+				...(names && { max: Object.keys(lenses).length }),
+			},
+		);
 		return tally(
-			{ change, spec, earlier, brief, ...settles },
-			({ attached, relay, common }) => ({
+			reads,
+			{
 				lenses: {
-					results: iter.parMap(
-						items,
-						(name) => {
-							const found = lens({
-								label: "lens",
-								task: lookup(tasks, name),
-								lane: read(change),
-								checks: gated ? [] : checks,
-								relay,
-								attachments: attached,
-							});
-							if (!skeptics) return found;
-							return {
-								lens: found,
-								skeptic: challenge(found, {
-									change,
-									attached,
-									grounds: ground,
-									relay: common,
-								}),
-							};
-						},
-						{
-							onError: "continue",
-							label: "lenses",
-							...(names && { max: Object.keys(lenses).length }),
-						},
-					).out.results,
+					results: lensesOf.out.results,
 					names: items,
 					known: Object.keys(lenses),
 				},
-			}),
+			},
+			settles,
 		);
 	},
 );

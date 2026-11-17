@@ -95,10 +95,13 @@ const attachmentsOf = (patches: Ref<ArtifactRef>, spec: Ref<ArtifactRef>) => ({
 	spec: { artifact: spec, hint: SPEC_HINT },
 });
 
-/** What a review's lenses read, for a picker to build them from. */
-type Reads = {
+/** What a review's lenses read, from `reviewReads`, and what its tally reads back. */
+export type Reads = {
 	/** The lane version under review. */
 	change: Ref<string>;
+	/** The previous round's findings, which a lens reads. */
+	earlier?: Held;
+	brief?: Ref<ValueOf<typeof Brief>>;
 	attached: { patches: Attachment; spec: Attachment };
 	/** What a lens reads beside its lane: the `earlier` findings and the `brief`, when given. */
 	relay: Relays;
@@ -106,8 +109,28 @@ type Reads = {
 	common: Relays;
 };
 
-/** One group of review members a picker builds: their settled results and the lens name of each, in order. */
-type Group = {
+/** What the lenses of a review of `change` against `spec` read: its patches and spec as attachments, and the relays. */
+export function reviewReads(review: {
+	change: Ref<string>;
+	spec: Ref<ArtifactRef>;
+	earlier?: Held;
+	brief?: Ref<ValueOf<typeof Brief>>;
+}): Reads {
+	const { change, spec, earlier, brief } = review;
+	const patches = changeset(change, { label: "patches" }).out.changeset;
+	const common: Relays = brief ? { builder: brief } : {};
+	return {
+		change,
+		earlier,
+		brief,
+		attached: attachmentsOf(patches, spec),
+		relay: { ...(earlier && { upheld: earlier }), ...common },
+		common,
+	};
+}
+
+/** One group of a review's members: their settled results and the lens name of each, in order. */
+export type Group = {
 	results: Ref<Settled<Member>[]>;
 	names: Ref<string[]> | string[];
 	/** The names a member may take. */
@@ -122,37 +145,26 @@ type Settles =
 	| { consolidator?: undefined; session: Ref<string> };
 
 /**
- * The tally of a review of `change` against `spec`, over the groups of lenses `pick` builds from its reads.
+ * The tally of a review over the `groups` of lenses built from `reads`, which must be those its lenses read.
  * - The held node waits on every input the lenses read, and counts the members that delivered, outside groups that do
  *   not count, so a review whose lenses were all skipped, or none of those counted delivered, rejects.
  * - With a `consolidator`, a consolidator ruling on the held findings, and a `review` rendered from its verdict, then a
  *   tally of those it upholds; without, every held finding stands.
  * - The session carried is `session`, else the consolidator's.
  *
- * The `brief` given rides beside the tally.
+ * The `brief` read rides beside the tally.
  */
 export function tally(
-	review: {
-		change: Ref<string>;
-		spec: Ref<ArtifactRef>;
-		/** The previous round's findings, which a lens reads. */
-		earlier?: Held;
-		brief?: Ref<ValueOf<typeof Brief>>;
-		label?: string;
-	} & Settles,
-	pick: (reads: Reads) => Record<string, Group>,
+	reads: Reads,
+	groups: Record<string, Group>,
+	settles: Settles & { label?: string },
 ) {
-	const { change, spec, earlier, brief, label = "upheld" } = review;
-	const attached = attachmentsOf(
-		changeset(change, { label: "patches" }).out.changeset,
-		spec,
-	);
-	const common: Relays = brief ? { builder: brief } : {};
-	const relay = { ...(earlier && { upheld: earlier }), ...common };
-	const groups = pick({ change, attached, relay, common });
+	const { change, earlier, brief, attached, common } = reads;
+	const { label = "upheld" } = settles;
 	const uncounted = Object.keys(groups).filter(
 		(g) => groups[g]?.counts === false,
 	);
+	// Hold: gather every group's findings and count the members that delivered, once all the lenses settled.
 	const held = code(heldOf, {
 		in: {
 			patches: attached.patches.artifact,
@@ -175,6 +187,7 @@ export function tally(
 			delivered: Int(),
 		},
 	});
+	// Settle: tally the held findings, or the ones a verdict upholds, into the review's outcome.
 	const settle = (
 		session: Ref<string>,
 		verdict?: Ref<ValueOf<typeof Verdict>>,
@@ -196,10 +209,12 @@ export function tally(
 			label,
 			tolerate: "rejected",
 		});
-	if (review.consolidator === undefined) return settle(review.session);
+	// Without a consolidator, every held finding stands.
+	if (settles.consolidator === undefined) return settle(settles.session);
+	// Consolidate: one seat rules on the held findings and the lenses that never delivered.
 	const consolidated = consolidator({
 		label: "consolidator",
-		task: review.consolidator,
+		task: settles.consolidator,
 		lane: read(change),
 		relay: {
 			findings: held.out.held,
@@ -209,7 +224,7 @@ export function tally(
 		attachments: attached,
 	});
 	return settle(
-		review.session ?? consolidated.out.session,
+		settles.session ?? consolidated.out.session,
 		consolidated.out.verdict,
 	);
 }

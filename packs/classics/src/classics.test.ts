@@ -37,7 +37,7 @@ import {
 	tieredOf,
 	toMarkdown,
 } from "./code";
-import { challenge, fix, tally } from "./moves";
+import { challenge, fix, reviewReads, tally } from "./moves";
 import AGAIN from "./prompts/again.md" with { type: "text" };
 import GATED from "./prompts/gated.md" with { type: "text" };
 import TIERED_STANDARDS from "./prompts/tiered-standards.md" with {
@@ -1324,8 +1324,9 @@ describe("moves", () => {
 		};
 		challenge(found, { change: found.out.lane, attached });
 		const upheld = tally(
-			{ change: found.out.lane, spec: changes, session: found.out.session },
-			() => ({}),
+			reviewReads({ change: found.out.lane, spec: changes }),
+			{},
+			{ session: found.out.session },
 		);
 		return fix(upheld.out, changes).out.lane;
 	});

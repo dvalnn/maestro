@@ -10,7 +10,7 @@ export {
 	toMarkdown,
 } from "./code";
 export { fixUntilClean, maxFixes } from "./fix-until-clean";
-export { challenge, fix, tally } from "./moves";
+export { challenge, fix, reviewReads, tally } from "./moves";
 export { fill } from "./prompt";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";
 export { gated, LENSES, lensLead, panel, panelReview } from "./review";

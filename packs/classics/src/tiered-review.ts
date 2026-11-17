@@ -14,7 +14,7 @@ import {
 	use,
 } from "@maestro/sdk";
 import { type Section, tieredOf } from "./code";
-import { requestOf, tally } from "./moves";
+import { requestOf, reviewReads, tally } from "./moves";
 import { task } from "./prompt";
 import CHECKLIST from "./prompts/checklist.md" with { type: "text" };
 import TIERED from "./prompts/tiered.md" with { type: "text" };
@@ -150,66 +150,60 @@ export const tieredReview = composition(
 				message: `classics.tiered_review.small, medium and large must rise, got ${small}, ${medium} and ${large}`,
 				hint: "Set classics.tiered_review.small below medium and medium below large",
 			});
-		// `tally` frames every classics review: it takes the change's patches, hands what a lens reads to the
-		// function below, which seats the lenses, then holds their findings, has the consolidator rule on them and
-		// settles the verdict.
-		const review = {
-			change,
-			spec,
-			earlier,
-			brief,
-			session,
-			consolidator: TASKS.consolidator(false, grounds || undefined),
-		};
-		return tally(review, ({ attached, relay }) => {
-			// The selector reads the patches and returns the tier, the seats it fills and each half's checklist.
-			const lead = lensLead(TIERED, { earlier: earlier !== undefined, gated });
-			const selected = code(tieredOf, {
-				in: {
-					changeset: attached.patches.artifact,
-					ignore,
-					small,
-					medium,
-					large,
-					...(floor && { floor }),
-					sections: SECTIONS,
-					leads: { behaviour: lead, standards: task(lead, STANDARDS) },
-					close: CHECKLIST,
-				},
-				out: {
-					lines: Int(),
-					tier: Text(),
-					sections: List(Text()),
-					behaviour: Text(),
-					standards: Text(),
-					...SEAT_LISTS,
-				},
-			});
-			// A seat's lens rules on its half's checklist. The selector gives each seat a list of its own name
-			// when it sits and an empty one when not, so mapping over that list runs the lens once or not at all.
-			const seat = (key: SeatKey, call: typeof lens) => {
-				const { name, half } = SEAT_TIERS[key];
-				const lenses = iter.parMap(
-					selected.out[key],
-					() =>
-						call({
-							label: "lens",
-							task: selected.out[half],
-							lane: read(change),
-							checks: gated ? [] : checks,
-							relay,
-							attachments: attached,
-						}),
-					{ max: 1, onError: "continue", label: name },
-				);
-				return {
-					results: lenses.out.results,
-					names: selected.out[key],
-					// Only a behaviour lens delivering makes the review delivered.
-					counts: half === "behaviour",
-				};
-			};
+		// What every lens reads: the change, its patches and spec, and what it relays.
+		const reads = reviewReads({ change, spec, earlier, brief });
+		const { attached, relay } = reads;
+		// The selector reads the patches and returns the tier, the seats it fills and each half's checklist.
+		const lead = lensLead(TIERED, { earlier: earlier !== undefined, gated });
+		const selected = code(tieredOf, {
+			in: {
+				changeset: attached.patches.artifact,
+				ignore,
+				small,
+				medium,
+				large,
+				...(floor && { floor }),
+				sections: SECTIONS,
+				leads: { behaviour: lead, standards: task(lead, STANDARDS) },
+				close: CHECKLIST,
+			},
+			out: {
+				lines: Int(),
+				tier: Text(),
+				sections: List(Text()),
+				behaviour: Text(),
+				standards: Text(),
+				...SEAT_LISTS,
+			},
+		});
+		// A seat's lens rules on its half's checklist. The selector gives each seat a list of its own name
+		// when it sits and an empty one when not, so mapping over that list runs the lens once or not at all.
+		const seat = (key: SeatKey, call: typeof lens) => {
+			const { name, half } = SEAT_TIERS[key];
+			const lenses = iter.parMap(
+				selected.out[key],
+				() =>
+					call({
+						label: "lens",
+						task: selected.out[half],
+						lane: read(change),
+						checks: gated ? [] : checks,
+						relay,
+						attachments: attached,
+					}),
+				{ max: 1, onError: "continue", label: name },
+			);
 			return {
+				results: lenses.out.results,
+				names: selected.out[key],
+				// Only a behaviour lens delivering makes the review delivered.
+				counts: half === "behaviour",
+			};
+		};
+		// The tally holds what the lenses found, has the consolidator rule on it, and settles the review.
+		return tally(
+			reads,
+			{
 				lens: seat("lens", lens),
 				lensStandards: seat("lensStandards", lensStandards),
 				deepLens: seat("deepLens", deepLens),
@@ -217,8 +211,12 @@ export const tieredReview = composition(
 				topLens: seat("topLens", topLens),
 				topLensStandards: seat("topLensStandards", topLensStandards),
 				crossLens: seat("crossLens", crossLens),
-			};
-		});
+			},
+			{
+				consolidator: TASKS.consolidator(false, grounds || undefined),
+				session,
+			},
+		);
 	},
 );
 
