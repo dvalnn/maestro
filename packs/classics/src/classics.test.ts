@@ -40,13 +40,16 @@ import {
 import { challenge, fix, tally } from "./moves";
 import AGAIN from "./prompts/again.md" with { type: "text" };
 import GATED from "./prompts/gated.md" with { type: "text" };
+import TIERED_STANDARDS from "./prompts/tiered-standards.md" with {
+	type: "text",
+};
 import { majority } from "./recipes";
 import { EXAMPLE_REQUEST } from "./repair";
 import { panel } from "./review";
 import { builder, lens } from "./seats";
 import { buildChange } from "./test-first";
 import { SECTIONS, tieredReview } from "./tiered-review";
-import { Brief, Upheld } from "./types";
+import { SEATS as ALL_SEATS, Brief, SEAT_TIERS, Upheld } from "./types";
 
 const MAESTRO = join(import.meta.dir, "../../../packages/cli/src/maestro.ts");
 const RUNTIME = { harness: "pi", model: "none" };
@@ -811,7 +814,7 @@ describe("build_then_review when no lens delivers", () => {
 		const id = /^concert +(\S+)/m.exec(err)?.[1] ?? "";
 		const { out } = await maestro(["ls", id]);
 		expect(out).toMatch(/^outcome +rejected/m);
-		expect(out).toContain("no lens delivered a review");
+		expect(out).toContain("no lens that counts delivered a review");
 	});
 });
 
@@ -995,7 +998,7 @@ test("resultOf rejects with the changeset and the upheld findings while any is u
 		reject("1 upheld: correctness/F1", { changeset, upheld }),
 	);
 	expect<unknown>(resultOf({ changeset, upheld: [], delivered: 0 })).toEqual(
-		reject("no lens delivered a review", { changeset, upheld: [] }),
+		reject("no lens that counts delivered a review", { changeset, upheld: [] }),
 	);
 });
 
@@ -1015,11 +1018,12 @@ describe("heldOf", () => {
 		names: string[];
 		known?: string[];
 	};
-	/** `heldOf` over `groups`, in the order given. */
-	const held = (groups: Record<string, Group>) =>
+	/** `heldOf` over `groups`, in the order given, those in `uncounted` not counting toward `delivered`. */
+	const held = (groups: Record<string, Group>, uncounted?: string[]) =>
 		heldOf({
 			...reads,
 			groups: Object.keys(groups),
+			...(uncounted && { uncounted }),
 			...Object.fromEntries(
 				Object.entries(groups).flatMap(([g, { results, names, known }]) => [
 					[`${g}Results`, results],
@@ -1104,6 +1108,15 @@ describe("heldOf", () => {
 				b: { results: [failed], names: ["b"] },
 			}).delivered,
 		).toBe(0);
+		const twin = held(
+			{
+				lens: { results: [failed], names: ["lens"] },
+				twin: { results: [rejected({ findings: [F1] })], names: ["twin"] },
+			},
+			["twin"],
+		);
+		expect(idsOf(twin.held)).toEqual(["twin/F1"]);
+		expect(twin.delivered).toBe(0);
 	});
 });
 
@@ -1273,7 +1286,7 @@ describe("tallyOf", () => {
 	test("rejects when no lens delivered, whatever the verdict, and not when one did", () => {
 		const clean = { ...carried, held: [], verdict: verdict() };
 		expect<unknown>(tallyOf({ ...clean, delivered: 0 }, ctx())).toEqual(
-			reject("no lens delivered a review", {
+			reject("no lens that counts delivered a review", {
 				...carried,
 				upheld: [],
 				review: expect.any(String),
@@ -1384,41 +1397,66 @@ describe("tieredOf", () => {
 				ignore: IGNORE,
 				...SIZES,
 				sections: SECTIONS,
-				lead: "LEAD",
+				leads: { behaviour: "LEAD", standards: "STANDARDS" },
 				close: "CLOSE",
 				...over,
 			},
 			ctx(),
 		);
 	}
-	const seatsOf = (out: ReturnType<typeof tiered>) => ({
-		lens: out.lens,
-		deepLens: out.deepLens,
-		topLens: out.topLens,
-		crossLens: out.crossLens,
-	});
+	const seatsOf = (out: ReturnType<typeof tiered>) =>
+		Object.fromEntries(ALL_SEATS.map((seat) => [seat, out[seat]])) as Record<
+			string,
+			string[]
+		>;
+	const NONE = Object.fromEntries(ALL_SEATS.map((seat) => [seat, []]));
 
+	const headings = (text: string) =>
+		[...text.matchAll(/^### (.+)$/gm)].map((m) => m[1]);
+
+	const SMALL = { lensStandards: ["lens-standards"] };
+	const MEDIUM = { deepLensStandards: ["deep-lens-standards"] };
+	const LARGE = { topLensStandards: ["top-lens-standards"] };
 	test.each([
-		[200, "small", { lens: ["lens"] }],
-		[201, "medium", { deepLens: ["deep-lens"] }],
-		[800, "medium", { deepLens: ["deep-lens"] }],
-		[801, "large", { topLens: ["top-lens"] }],
-		[2000, "large", { topLens: ["top-lens"] }],
-		[2001, "xlarge", { topLens: ["top-lens"], crossLens: ["cross-lens"] }],
+		[200, "small", { lens: ["lens"] }, SMALL],
+		[201, "medium", { deepLens: ["deep-lens"] }, MEDIUM],
+		[800, "medium", { deepLens: ["deep-lens"] }, MEDIUM],
+		[801, "large", { topLens: ["top-lens"] }, LARGE],
+		[2000, "large", { topLens: ["top-lens"] }, LARGE],
+		[
+			2001,
+			"xlarge",
+			{ topLens: ["top-lens"], crossLens: ["cross-lens"] },
+			LARGE,
+		],
 	])(
-		"%i changed lines are %s, seating only that tier's lenses",
-		(n, tier, seated) => {
-			const out = tiered({ "a.txt": [n - 5, 5] });
-			expect(out).toMatchObject({ lines: n, tier });
-			expect(seatsOf(out)).toEqual({
-				lens: [],
-				deepLens: [],
-				topLens: [],
-				crossLens: [],
-				...seated,
+		"%i changed lines are %s and seat its behaviour lenses, and its standards lens only when a standards section is picked",
+		(n, tier, behaviour, standards) => {
+			const prose = tiered({ "a.txt": [n - 5, 5] });
+			expect(prose).toMatchObject({ lines: n, tier, standards: "" });
+			expect(seatsOf(prose)).toEqual({ ...NONE, ...behaviour });
+			expect(seatsOf(tiered({ "a.ts": [n - 5, 5] }))).toEqual({
+				...NONE,
+				...behaviour,
+				...standards,
 			});
 		},
 	);
+
+	test("each half's checklist holds its picked sections under its lead and the close", () => {
+		const out = tiered({ "CLAUDE.md": [3, 0], "a.test.ts": [3, 0] });
+		expect(headings(out.behaviour)).toEqual(["correctness", "spec", "tests"]);
+		expect(headings(out.standards)).toEqual([
+			"design",
+			"smells",
+			"docs",
+			"agent-doc",
+		]);
+		expect(out.behaviour.startsWith("LEAD\n\n### correctness\n")).toBe(true);
+		expect(out.standards.startsWith("STANDARDS\n\n### design\n")).toBe(true);
+		for (const text of [out.behaviour, out.standards])
+			expect(text.endsWith("\n\nCLOSE")).toBe(true);
+	});
 
 	test("counts no line of an ignored path", () => {
 		const out = tiered({ "bun.lock": [1500, 0], "a.txt": [30, 0] });
@@ -1441,12 +1479,9 @@ describe("tieredOf", () => {
 	])("the path %s picks the sections %j", (path, names) => {
 		const out = tiered({ [path]: [3, 0] });
 		expect(out.sections).toEqual(names);
-		const headings = [...out.checklist.matchAll(/^### (.+)$/gm)].map(
-			(m) => m[1],
+		expect([...headings(out.behaviour), ...headings(out.standards)]).toEqual(
+			names,
 		);
-		expect(headings).toEqual(names);
-		expect(out.checklist.startsWith("LEAD\n\n### correctness\n")).toBe(true);
-		expect(out.checklist.endsWith("\n\nCLOSE")).toBe(true);
 	});
 
 	/** A `git format-patch` mail whose one commit message is `message`, over the raw diff `diffs`. */
@@ -1552,14 +1587,43 @@ describe("tiered_review", () => {
 	const node = (ir: Ir, id: string) => ir.nodes.find((n) => n.id === id);
 	const profileOf = (ir: Ir, id: string) =>
 		(node(ir, id) as unknown as { config: { profile: string } }).config.profile;
-	const SEATS = {
-		lens: "lens",
-		deepLens: "deep-lens",
-		topLens: "top-lens",
-		crossLens: "cross-lens",
-	};
+	const SEATS = Object.values(SEAT_TIERS).map(({ name }) => name);
+	const STANDARDS_SEATS = SEATS.filter((name) => name.endsWith("-standards"));
+	const leads = (ir: Ir) =>
+		(
+			node(ir, "tiered_review/tieredOf") as unknown as {
+				literals: { leads: { behaviour: string; standards: string } };
+			}
+		).literals.leads;
 
-	test("one changeset feeds the selector and every lens's patches; each seat is a parMap of at most one, on its own profile, and no skeptic runs", () => {
+	test("each standards lens rules on the standards checklist, whose lead adds the standards prompt, and is left out of the delivered count", () => {
+		const ir = tieredIr();
+		const taskPort = (name: string) =>
+			ir.edges
+				.filter(
+					(e) =>
+						e.to.node === `tiered_review/${name}/lens` &&
+						"port" in e.to &&
+						e.to.port === "prompt",
+				)
+				.map((e) => ("port" in e.from ? e.from.port : undefined));
+		for (const name of SEATS)
+			expect(taskPort(name)).toEqual([
+				STANDARDS_SEATS.includes(name) ? "standards" : "behaviour",
+			]);
+		const { behaviour, standards } = leads(ir);
+		expect(standards).toContain(TIERED_STANDARDS.trim());
+		expect(behaviour).not.toContain(TIERED_STANDARDS.trim());
+		expect(
+			(
+				node(ir, "tiered_review/heldOf") as unknown as {
+					literals: { uncounted: string[] };
+				}
+			).literals.uncounted,
+		).toEqual(["lensStandards", "deepLensStandards", "topLensStandards"]);
+	});
+
+	test("one changeset feeds the selector and every lens's patches; each seat is a parMap of at most one on its tier's profile, and no skeptic runs", () => {
 		const ir = tieredIr({ grounds: "THE GROUNDS" });
 		expect(ir.nodes.filter((n) => n.kind === "repo.changeset")).toHaveLength(1);
 		const from = (to: string, port: string) =>
@@ -1569,16 +1633,18 @@ describe("tiered_review", () => {
 		expect(from("tiered_review/tieredOf", "changeset")).toEqual([
 			"tiered_review/patches",
 		]);
-		for (const name of Object.values(SEATS)) {
+		for (const name of SEATS) {
 			const member = `tiered_review/${name}/lens`;
 			expect(node(ir, `tiered_review/${name}`)).toMatchObject({
 				kind: "parMap",
 				cardinality: { upTo: 1 },
 				onError: "continue",
 			});
-			expect(profileOf(ir, member)).toBe(`classics/${name}`);
 			expect(from(member, "patches")).toEqual(["tiered_review/patches"]);
 			expect(from(member, "prompt")).toEqual(["tiered_review/tieredOf"]);
+			expect(profileOf(ir, member)).toBe(
+				`classics/${name.replace(/-standards$/, "")}`,
+			);
 		}
 		expect(
 			ir.nodes.map((n) => n.id).filter((id) => /skeptic/.test(id)),
@@ -1592,15 +1658,9 @@ describe("tiered_review", () => {
 		).toContain("THE GROUNDS");
 	});
 
-	test("earlier opens the selector's lead with again.md and relays upheld to every lens", () => {
-		const lead = (ir: Ir) =>
-			(
-				node(ir, "tiered_review/tieredOf") as unknown as {
-					literals: { lead: string };
-				}
-			).literals.lead;
+	test("earlier opens the selector's leads with again.md and relays upheld to every lens", () => {
 		const relays = (ir: Ir) =>
-			Object.values(SEATS).map((name) =>
+			SEATS.map((name) =>
 				(
 					node(ir, `tiered_review/${name}/lens`) as unknown as {
 						config: { relay?: { name: string }[] };
@@ -1608,16 +1668,17 @@ describe("tiered_review", () => {
 				).config.relay?.map((r) => r.name),
 			);
 		const bare = tieredIr();
-		expect(lead(bare)).not.toContain(AGAIN.slice(0, 40));
-		expect(relays(bare)).toEqual(Object.values(SEATS).map(() => undefined));
+		expect(leads(bare).behaviour).not.toContain(AGAIN.slice(0, 40));
+		expect(relays(bare)).toEqual(SEATS.map(() => undefined));
 		const again = tieredIr({}, () => ({ earlier: literal([], List(Upheld)) }));
-		expect(lead(again).startsWith(AGAIN)).toBe(true);
-		expect(relays(again)).toEqual(Object.values(SEATS).map(() => ["upheld"]));
+		for (const lead of Object.values(leads(again)))
+			expect(lead.startsWith(AGAIN)).toBe(true);
+		expect(relays(again)).toEqual(SEATS.map(() => ["upheld"]));
 	});
 
-	test("gated runs every lens under no checks and ends the selector's lead with gated.md", () => {
+	test("gated runs every lens under no checks and ends the selector's behaviour lead with gated.md", () => {
 		const lensChecks = (ir: Ir) =>
-			Object.values(SEATS).map(
+			SEATS.map(
 				(name) =>
 					(
 						node(ir, `tiered_review/${name}/lens`) as unknown as {
@@ -1625,18 +1686,12 @@ describe("tiered_review", () => {
 						}
 					).config.checks ?? [],
 			);
-		const lead = (ir: Ir) =>
-			(
-				node(ir, "tiered_review/tieredOf") as unknown as {
-					literals: { lead: string };
-				}
-			).literals.lead;
 		const open = tieredIr({ checks: ["test"] });
-		expect(lensChecks(open)).toEqual(Object.values(SEATS).map(() => ["test"]));
-		expect(lead(open)).not.toContain(GATED);
+		expect(lensChecks(open)).toEqual(SEATS.map(() => ["test"]));
+		expect(leads(open).behaviour).not.toContain(GATED);
 		const gated = tieredIr({ checks: ["test"], gated: true });
-		expect(lensChecks(gated)).toEqual(Object.values(SEATS).map(() => []));
-		expect(lead(gated).endsWith(GATED)).toBe(true);
+		expect(lensChecks(gated)).toEqual(SEATS.map(() => []));
+		expect(leads(gated).behaviour.endsWith(GATED)).toBe(true);
 	});
 });
 
@@ -1774,7 +1829,7 @@ describe("review_change", () => {
 		expect(ran.code).toBe(3);
 		expect(ran.ls).toMatch(/^tiered_review\/lens\[lens\]\/lens +failed/m);
 		expect(ran.ls).toMatch(/^tiered_review\/upheld +rejected/m);
-		expect(ran.ls).toContain("no lens delivered a review");
+		expect(ran.ls).toContain("no lens that counts delivered a review");
 	});
 });
 
@@ -1952,7 +2007,7 @@ describe("recipes", () => {
 			"both lens seats",
 			["a", "b"],
 			3,
-			/^upheld +rejected .*no lens delivered a review/m,
+			/^upheld +rejected .*no lens that counts delivered a review/m,
 		],
 		["lens seat a", ["a"], 0, /^upheld +ok/m],
 		["lens seat b", ["b"], 0, /^upheld +ok/m],
@@ -2023,7 +2078,9 @@ describe("recipes", () => {
 			"lenses[correctness]/lens/verdict": "garbage",
 		});
 		expect(ran.code).toBe(3);
-		expect(ran.ls).toMatch(/^upheld +rejected .*no lens delivered a review/m);
+		expect(ran.ls).toMatch(
+			/^upheld +rejected .*no lens that counts delivered a review/m,
+		);
 	});
 
 	test("audit_sweep: a lens per area rules on the sealed base", async () => {

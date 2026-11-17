@@ -22,12 +22,12 @@ alone.
 
 ## Entries
 
-| Entry               | What it does                                                                                                  | Profiles                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `build_then_repair` | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series                      | `builder`, `tester`¹                                                                |
-| `build_then_review` | Builds the request, then repairs and reviews by tiered review, fixing what it upholds                         | `builder`, `tester`¹, `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
-| `panel_review`      | Rules on a change through each lens, a skeptic over each lens's findings, then tallies                        | `lens`, `skeptic`, `consolidator`                                                   |
-| `review_change`     | Rules on a change through the lenses its size picks, on one checklist from the paths it touches, then tallies | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator`                       |
+| Entry               | What it does                                                                                                | Profiles                                                                            |
+| ------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `build_then_repair` | Builds the request in a fresh lane, repairs until the checks pass, leaves a patch series                    | `builder`, `tester`¹                                                                |
+| `build_then_review` | Builds the request, then repairs and reviews by tiered review, fixing what it upholds                       | `builder`, `tester`¹, `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
+| `panel_review`      | Rules on a change through each lens, a skeptic over each lens's findings, then tallies                      | `lens`, `skeptic`, `consolidator`                                                   |
+| `review_change`     | Rules on a change through the lenses its size picks, on a checklist from the paths it touches, then tallies | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator`                       |
 
 ¹ Under `classics.build.testFirst`.
 
@@ -45,7 +45,7 @@ left, while the last review upholds a finding or delivered no review.
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | `repair_until_green` | Checks a lane, then repairs in the builder's session while red                                                               | `lane`, `session`, `spec`                                    | `builder`                                                                |
 | `panel`              | Rules through a lens per name, a skeptic over each, a consolidator; ends in a `Tally`                                        | `change`, `spec`, `session`¹, `earlier`¹, `names`¹, `brief`¹ | `lens`, `skeptic`², `consolidator`²                                      |
-| `tiered_review`      | Rules through the lenses the change's size picks, on one checklist, a consolidator; ends in a `Tally`                        | `change`, `spec`, `session`¹, `earlier`¹, `brief`¹           | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator`            |
+| `tiered_review`      | Rules through the lenses the change's size picks, on a checklist, a consolidator; ends in a `Tally`                          | `change`, `spec`, `session`¹, `earlier`¹, `brief`¹           | `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator`            |
 | `fix_until_clean`    | Loops `repair_until_green` and `tiered_review`; while the `Tally` upholds a finding, a builder fixes it                      | `lane`, `session`, `spec`, `brief`                           | `builder`, `lens`, `deep-lens`, `top-lens`, `cross-lens`, `consolidator` |
 | `test_first`         | A tester pins the spec in tests and maps them; a builder extends its lane to pass them                                       | `spec`                                                       | `tester`, `builder`                                                      |
 | `build`              | Builds the request in a fresh lane, after a tester as `test_first` does when `testFirst`; gives what `fix_until_clean` takes | `spec`                                                       | `builder`, `tester`²                                                     |
@@ -64,11 +64,17 @@ checklist sections it rules on: `correctness` rules on `correctness`, `design` a
 outside the `ignore` globs, a renamed file's new path counting none, and picks the tier: `small` up to `small` lines,
 `medium` up to `medium`, `large` up to `large`, `xlarge` above; `floor` raises it. The tier seats its lenses, each a
 `parMap` of at most one: `lens` at small, `deep-lens` at medium, `top-lens` at large, `top-lens` and `cross-lens` at
-xlarge. Every lens rules on the same checklist: `correctness` and `spec` always, then `tests`, `design`, `smells`,
-`docs` and `agent-doc` for the paths of its diffs that hold a hunk or a rename (a copy, a mode-only change and a binary
-diff select nothing), each item numbered so a finding cites `<section> <n>`. One consolidator rules on what they held,
-and the `Tally` rejects while a finding is upheld, or when no lens delivered a review. `earlier` is the previous round's
-`Upheld`, which each lens reads. `fix_until_clean` reviews only what its gate passed, so it sets `gated`.
+xlarge. Beside each of `lens`, `deep-lens` and `top-lens` sits its standards lens on the same profile: `lens-standards`,
+`deep-lens-standards` and `top-lens-standards`. The selector splits the checklist in two halves. The behaviour lenses,
+`cross-lens` among them, rule on `correctness` and `spec` always, then `tests`. The standards lenses rule on `design`,
+`smells`, `docs` and `agent-doc`, and on any coding standards the shared profile carries.
+
+A section joins the checklist for the paths of its diffs that hold a hunk or a rename (a copy, a mode-only change and a
+binary diff select nothing), each item numbered so a finding cites `<section> <n>`. A change that picks no standards
+section seats no standards lens. Both lenses read the shared profile's instructions, so their findings may overlap. One
+consolidator rules on what they held, and the `Tally` rejects while a finding is upheld, or when no behaviour lens
+delivered a review: a standards lens alone never counts. `earlier` is the previous round's `Upheld`, which each lens
+reads. `fix_until_clean` reviews only what its gate passed, so it sets `gated`.
 
 `build` takes the request as `spec`, so only a composition `use`s it. It returns the `lane`, the builder's `session`, a
 `spec` of the request, then the tester's map and the builder's overrules when `testFirst`, and the `brief`: the four
@@ -88,7 +94,7 @@ encore that turns `testFirst` off continues that builder's session.
 - `tally`: the `Tally` of a review. It takes the `change`, the `spec`, the previous round's `earlier` and the builder's
   `brief` when given, a consolidator's task or a `session` to carry, and a lens picker that builds each group of lenses
   from the reads it hands over. It owns the reads, the held node, the consolidator and the `delivered` count, so the
-  held node always waits on what the lenses read, and a review no lens delivered rejects.
+  held node always waits on what the lenses read, and a review no counted lens delivered rejects.
 
 ## Contracts
 
@@ -112,18 +118,21 @@ Code-node values: `toMarkdown`, `copyMarkdown`, `specOf`, `briefOf`, `heldOf`, `
 
 ## Seats and profiles
 
-| Seat           | Profile                 | Reply or output  | Instructions                    |
-| -------------- | ----------------------- | ---------------- | ------------------------------- |
-| `builder`      | `classics/builder`      | the lane         | `testing.md`, `instructions.md` |
-| `tester`       | `classics/tester`       | `map`: `TestMap` | `testing.md`, `instructions.md` |
-| `lens`         | `classics/lens`         | `findings`       | `instructions.md`[^lens]        |
-| `deepLens`     | `classics/deep-lens`    | `findings`       | the `lens` instructions         |
-| `topLens`      | `classics/top-lens`     | `findings`       | the `lens` instructions         |
-| `crossLens`    | `classics/cross-lens`   | `findings`       | the `lens` instructions         |
-| `skeptic`      | `classics/skeptic`      | `rulings`        | `instructions.md`               |
-| `consolidator` | `classics/consolidator` | `verdict`        | `instructions.md`               |
-| `scout`        | `classics/scout`        | `answers`        | `instructions.md`               |
-| `planner`      | `classics/planner`      | `plan`           | `instructions.md`               |
+| Seat                | Profile                 | Reply or output  | Instructions                    |
+| ------------------- | ----------------------- | ---------------- | ------------------------------- |
+| `builder`           | `classics/builder`      | the lane         | `testing.md`, `instructions.md` |
+| `tester`            | `classics/tester`       | `map`: `TestMap` | `testing.md`, `instructions.md` |
+| `lens`              | `classics/lens`         | `findings`       | `instructions.md`[^lens]        |
+| `deepLens`          | `classics/deep-lens`    | `findings`       | the `lens` instructions         |
+| `topLens`           | `classics/top-lens`     | `findings`       | the `lens` instructions         |
+| `crossLens`         | `classics/cross-lens`   | `findings`       | the `lens` instructions         |
+| `lensStandards`     | `classics/lens`         | `findings`       | the `lens` instructions         |
+| `deepLensStandards` | `classics/deep-lens`    | `findings`       | the `lens` instructions         |
+| `topLensStandards`  | `classics/top-lens`     | `findings`       | the `lens` instructions         |
+| `skeptic`           | `classics/skeptic`      | `rulings`        | `instructions.md`               |
+| `consolidator`      | `classics/consolidator` | `verdict`        | `instructions.md`               |
+| `scout`             | `classics/scout`        | `answers`        | `instructions.md`               |
+| `planner`           | `classics/planner`      | `plan`           | `instructions.md`               |
 
 [^lens]:
     Each lens's task holds a checklist drawn from `skills/`, which it rules on item by item; `LENSES` holds the tasks.
@@ -142,9 +151,9 @@ the config layer's base directory. See the host-repo README, Profiles.
 Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, the lens profiles, `skeptic`, `consolidator` and
 `tester` 20 minutes and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own
 terms; set one in config as `profiles.classics/<name>.context`. Lenses run on the `lens` profile's model and skeptics on
-the `skeptic`'s; pick models of different families, since a skeptic of the lens's family tends to share its blind spots.
+the `skeptic`'s. Pick models of different families, since a skeptic of the lens's family tends to share its blind spots.
 In a tiered review, set each tier's seat to a stronger model than the last, and `cross-lens` to another family than
-`top-lens`.
+`top-lens`. A standards seat runs its tier's profile until `seats.<pack>/tiered_review/<seat>` rebinds it to its own.
 
 ## Params
 

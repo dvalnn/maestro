@@ -20,6 +20,7 @@ import { task } from "./prompt";
 import {
 	type Brief,
 	type Findings,
+	type Half,
 	type Overrules,
 	type Tally as Ports,
 	type Rulings,
@@ -149,7 +150,7 @@ function heldIn(
 
 /**
  * The findings the members of every group held, in `groups` order, the lenses that never delivered theirs, and
- * `delivered`, the count of members that delivered a value, over all groups.
+ * `delivered`, the count of members that delivered a value, over all groups but those in `uncounted`.
  * - A group `g` brings its members as `gResults`, their lens names, in that order, as `gNames`, and, when given, the
  *   names a member may take as `gKnown`.
  * - A member with a skeptic holds the findings its skeptic's rulings hold, each with that `why`; one without holds every
@@ -165,21 +166,25 @@ export function heldOf(inputs: {
 	upheld?: Held[];
 	builder?: ValueOf<typeof Brief>;
 	groups: string[];
+	uncounted?: string[];
 	[results: `${string}Results`]: Settled<Member>[];
 	[names: `${string}Names`]: string[];
 	[known: `${string}Known`]: string[];
 }): { held: Held[]; unreviewed: Unreviewed[]; delivered: number } {
-	const per = inputs.groups.map((g) =>
-		heldIn(
+	const per = inputs.groups.map((g) => ({
+		group: g,
+		...heldIn(
 			inputs[`${g}Results`] ?? [],
 			inputs[`${g}Names`] ?? [],
 			inputs[`${g}Known`],
 		),
-	);
+	}));
 	return {
 		held: per.flatMap((p) => p.held),
 		unreviewed: per.flatMap((p) => p.unreviewed),
-		delivered: per.reduce((sum, p) => sum + p.delivered, 0),
+		delivered: per
+			.filter((p) => !inputs.uncounted?.includes(p.group))
+			.reduce((sum, p) => sum + p.delivered, 0),
 	};
 }
 
@@ -205,8 +210,8 @@ const rejection = <O>(
 	reason = `${upheld.length} upheld: ${upheld.map((f) => `${f.lens}/${f.id}`).join(", ")}`,
 ): Required<Rejection<O>> => ({ ...reject(reason, outputs), outputs });
 
-/** The reason a review rejects when no lens delivered one. */
-const NO_REVIEW = "no lens delivered a review";
+/** The reason a review rejects when no lens that counts delivered one. */
+const NO_REVIEW = "no lens that counts delivered a review";
 
 /** The consolidator's name on the criteria it rules not met, held beside the lenses' findings. */
 const CONSOLIDATOR = "consolidator";
@@ -393,21 +398,24 @@ function countPatch(patch: string, lines: Map<string, number>) {
 const matchesAny = (globs: readonly string[], path: string) =>
 	globs.some((g) => new Bun.Glob(g).match(path));
 
-type Section = {
+export type Section = {
 	/** The paths that pull the section in; none, it is always in. */
 	globs?: string[];
 	text: string;
 };
 
 /**
- * A tiered review's tier, checklist and seats, from its changeset.
+ * A tiered review's tier, the checklist of each half and its seats, from its changeset.
  * - `lines` is the added plus removed lines inside the hunks of the `*.patch` files, over paths matching no `ignore` glob.
  *   A renamed file's new path counts no line and is still a touched path.
  * - `tier` is the first of small, medium and large whose threshold `lines` does not pass, else xlarge, raised to
  *   `floor`.
- * - `sections` are the names of each section, in the order given, that has no `globs` or whose globs match a touched
- *   path outside `ignore`; `checklist` is `lead`, each one's text under `### <name>`, then `close`.
- * - Each seat's output is a one-item list of its seat name when the tier is one it rules in, else empty.
+ * - `sections` are the names of each section, half by half in the order given, that has no `globs` or whose globs match
+ *   a touched path outside `ignore`.
+ * - Each half's checklist is its lead from `leads`, each picked section's text under `### <name>`, then `close`; it is
+ *   empty when the half picked none.
+ * - Each seat's output is a one-item list of its seat name when it rules in `tier` and its half's checklist is not
+ *   empty, else empty.
  */
 export function tieredOf(
 	{
@@ -418,7 +426,7 @@ export function tieredOf(
 		large,
 		floor,
 		sections,
-		lead,
+		leads,
 		close,
 	}: {
 		changeset: ArtifactRef;
@@ -427,8 +435,8 @@ export function tieredOf(
 		medium: number;
 		large: number;
 		floor?: Tier;
-		sections: Record<string, Section>;
-		lead: string;
+		sections: Record<Half, Record<string, Section>>;
+		leads: Record<Half, string>;
 		close: string;
 	},
 	ctx: CodeContext,
@@ -445,24 +453,41 @@ export function tieredOf(
 		TIERS.slice(floor ? TIERS.indexOf(floor) : 0).find(
 			(t) => lines <= limits[t],
 		) ?? "xlarge";
-	const picked = Object.entries(sections).filter(
-		([, { globs }]) =>
-			!globs || counted.some(([path]) => matchesAny(globs, path)),
-	);
-	const names = picked.map(([name]) => name);
-	const checklist = task(
-		lead,
-		...picked.map(([name, { text }]) => `### ${name}\n\n${text}`),
-		close,
-	);
+	const halfOf = (half: Half) => {
+		const picked = Object.entries(sections[half]).filter(
+			([, { globs }]) =>
+				!globs || counted.some(([path]) => matchesAny(globs, path)),
+		);
+		const checklist = picked.length
+			? task(
+					leads[half],
+					...picked.map(([name, { text }]) => `### ${name}\n\n${text}`),
+					close,
+				)
+			: "";
+		return { names: picked.map(([name]) => name), checklist };
+	};
+	const halves = {
+		behaviour: halfOf("behaviour"),
+		standards: halfOf("standards"),
+	};
+	const names = [...halves.behaviour.names, ...halves.standards.names];
 	const seats = Object.fromEntries(
-		SEATS.map((seat) => [
-			seat,
-			(SEAT_TIERS[seat].tiers as readonly Tier[]).includes(tier)
-				? [SEAT_TIERS[seat].name]
-				: [],
-		]),
+		SEATS.map((seat) => {
+			const { name, tiers, half } = SEAT_TIERS[seat];
+			const sits =
+				(tiers as readonly Tier[]).includes(tier) &&
+				halves[half].checklist !== "";
+			return [seat, sits ? [name] : []];
+		}),
 	) as Record<SeatKey, string[]>;
 	ctx.log(`${lines} changed lines, tier ${tier}, sections ${names.join(", ")}`);
-	return { lines, tier, sections: names, checklist, ...seats };
+	return {
+		lines,
+		tier,
+		sections: names,
+		behaviour: halves.behaviour.checklist,
+		standards: halves.standards.checklist,
+		...seats,
+	};
 }

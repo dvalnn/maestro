@@ -112,6 +112,8 @@ type Group = {
 	names: Ref<string[]> | string[];
 	/** The names a member may take. */
 	known?: string[];
+	/** Whether its members delivering counts toward the review being delivered; their findings count either way. */
+	counts?: boolean;
 };
 
 /** How a review settles: through a consolidator's `task`, or on a `session` it carries, or both. */
@@ -121,8 +123,8 @@ type Settles =
 
 /**
  * The tally of a review of `change` against `spec`, over the groups of lenses `pick` builds from its reads.
- * - The held node waits on every input the lenses read, and counts the members that delivered, so a review whose lenses
- *   were all skipped, or none delivered, rejects.
+ * - The held node waits on every input the lenses read, and counts the members that delivered, outside groups that do
+ *   not count, so a review whose lenses were all skipped, or none of those counted delivered, rejects.
  * - With a `consolidator`, a consolidator ruling on the held findings, and a `review` rendered from its verdict, then a
  *   tally of those it upholds; without, every held finding stands.
  * - The session carried is `session`, else the consolidator's.
@@ -148,6 +150,9 @@ export function tally(
 	const common: Relays = brief ? { builder: brief } : {};
 	const relay = { ...(earlier && { upheld: earlier }), ...common };
 	const groups = pick({ change, attached, relay, common });
+	const uncounted = Object.keys(groups).filter(
+		(g) => groups[g]?.counts === false,
+	);
 	const held = code(heldOf, {
 		in: {
 			patches: attached.patches.artifact,
@@ -155,6 +160,7 @@ export function tally(
 			...(earlier && { upheld: earlier }),
 			...(brief && { builder: brief }),
 			groups: Object.keys(groups),
+			...(uncounted.length && { uncounted }),
 			...Object.fromEntries(
 				Object.entries(groups).flatMap(([g, { results, names, known }]) => [
 					[`${g}Results`, results],

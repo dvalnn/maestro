@@ -38,6 +38,24 @@ export const topLens = seat("top-lens", {
 	reply: LENS_REPLY,
 });
 
+export const lensStandards = seat("lens-standards", {
+	profile: "classics/lens",
+	verdict: true,
+	reply: LENS_REPLY,
+});
+
+export const deepLensStandards = seat("deep-lens-standards", {
+	profile: "classics/deep-lens",
+	verdict: true,
+	reply: LENS_REPLY,
+});
+
+export const topLensStandards = seat("top-lens-standards", {
+	profile: "classics/top-lens",
+	verdict: true,
+	reply: LENS_REPLY,
+});
+
 export const crossLens = seat("cross-lens", {
 	profile: "classics/cross-lens",
 	verdict: true,

@@ -13,10 +13,12 @@ import {
 	type Type,
 	use,
 } from "@maestro/sdk";
-import { tieredOf } from "./code";
+import { type Section, tieredOf } from "./code";
 import { requestOf, tally } from "./moves";
+import { task } from "./prompt";
 import CHECKLIST from "./prompts/checklist.md" with { type: "text" };
 import TIERED from "./prompts/tiered.md" with { type: "text" };
+import STANDARDS from "./prompts/tiered-standards.md" with { type: "text" };
 import { EXAMPLE_REQUEST } from "./repair";
 import {
 	CHECKLISTS,
@@ -26,10 +28,19 @@ import {
 	SUBJECT,
 	TASKS,
 } from "./review";
-import { crossLens, deepLens, lens, topLens } from "./seats";
+import {
+	crossLens,
+	deepLens,
+	deepLensStandards,
+	lens,
+	lensStandards,
+	topLens,
+	topLensStandards,
+} from "./seats";
 import {
 	atLeastOne,
 	Brief,
+	type Half,
 	PACK,
 	SEAT_TIERS,
 	SEATS,
@@ -38,26 +49,28 @@ import {
 	Upheld,
 } from "./types";
 
-const CALLS = { lens, deepLens, topLens, crossLens };
-
 const SOURCE = ["**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,sh}"];
 
-/** The checklist sections in the order they appear, each with the paths that pull it in, none for always. */
+/** The checklist sections, by the half of the review that rules on them, each with the paths that pull it in, none for always. */
 export const SECTIONS = {
-	correctness: { text: CHECKLISTS.correctness },
-	spec: { text: CHECKLISTS.spec },
-	tests: {
-		globs: ["**/*.test.*", "**/*_test.*", "**/test/**", "**/tests/**"],
-		text: CHECKLISTS.tests,
+	behaviour: {
+		correctness: { text: CHECKLISTS.correctness },
+		spec: { text: CHECKLISTS.spec },
+		tests: {
+			globs: ["**/*.test.*", "**/*_test.*", "**/test/**", "**/tests/**"],
+			text: CHECKLISTS.tests,
+		},
 	},
-	design: { globs: SOURCE, text: CHECKLISTS.design },
-	smells: { globs: SOURCE, text: CHECKLISTS.smells },
-	docs: { globs: ["**/*.md"], text: CHECKLISTS.docs },
-	"agent-doc": {
-		globs: ["**/AGENTS.md", "**/CLAUDE.md", "**/SKILL.md"],
-		text: CHECKLISTS["agent-doc"],
+	standards: {
+		design: { globs: SOURCE, text: CHECKLISTS.design },
+		smells: { globs: SOURCE, text: CHECKLISTS.smells },
+		docs: { globs: ["**/*.md"], text: CHECKLISTS.docs },
+		"agent-doc": {
+			globs: ["**/AGENTS.md", "**/CLAUDE.md", "**/SKILL.md"],
+			text: CHECKLISTS["agent-doc"],
+		},
 	},
-};
+} satisfies Record<Half, Record<string, Section>>;
 
 const IGNORE = [
 	"**/*.lock",
@@ -69,22 +82,25 @@ const IGNORE = [
 	"**/*.min.*",
 ];
 
+/** The selector's output of each seat: its own name when it sits, else nothing. */
 const SEAT_LISTS = Object.fromEntries(
 	SEATS.map((seat) => [seat, List(Text())]),
 ) as Record<SeatKey, Type<string[]>>;
 
 /**
  * A review whose lenses and checklist follow the change: one `changeset` node feeds the selector, which counts the
- * changed lines and picks the seats of that tier, and each seat's lens, which rules on the one checklist the selector
- * assembled from the paths touched. A consolidator rules on what they held, and the tally rejects while a finding is
- * upheld, or when no lens delivered a review.
+ * changed lines, picks the seats of that tier and assembles each half of the checklist from the paths touched.
+ * - Each tier seats a behaviour lens and, on the same profile, a standards lens, each ruling on its half of
+ *   `SECTIONS`. A standards lens sits only when its half picked a section.
+ * - A consolidator rules on what they held, and the tally rejects while a finding is upheld, or when no behaviour lens
+ *   delivered a review: a standards lens's findings count, its delivering does not.
  * @throws BuildError `CFG.param` unless `small` < `medium` < `large`.
  */
 export const tieredReview = composition(
 	"tiered_review",
 	{
 		pack: PACK,
-		doc: "Review a lane version through the lenses its size picks, each ruling on one checklist assembled from the paths it touches, then a consolidator and a Tally.",
+		doc: "Review a lane version through the behaviour and standards lenses its size picks, each ruling on its half of a checklist assembled from the paths it touches, then a consolidator and a Tally.",
 		ports: {
 			change: Lane,
 			spec: Markdown(),
@@ -134,59 +150,75 @@ export const tieredReview = composition(
 				message: `classics.tiered_review.small, medium and large must rise, got ${small}, ${medium} and ${large}`,
 				hint: "Set classics.tiered_review.small below medium and medium below large",
 			});
-		return tally(
-			{
-				change,
-				spec,
-				earlier,
-				brief,
-				consolidator: TASKS.consolidator(false, grounds || undefined),
-				session,
-			},
-			({ attached, relay }) => {
-				const picked = code(tieredOf, {
-					in: {
-						changeset: attached.patches.artifact,
-						ignore,
-						small,
-						medium,
-						large,
-						...(floor && { floor }),
-						sections: SECTIONS,
-						lead: lensLead(TIERED, { earlier: earlier !== undefined, gated }),
-						close: CHECKLIST,
-					},
-					out: {
-						lines: Int(),
-						tier: Text(),
-						sections: List(Text()),
-						checklist: Text(),
-						...SEAT_LISTS,
-					},
-				});
-				return Object.fromEntries(
-					SEATS.map((seat) => [
-						seat,
-						{
-							results: iter.parMap(
-								picked.out[seat],
-								() =>
-									CALLS[seat]({
-										label: "lens",
-										task: picked.out.checklist,
-										lane: read(change),
-										checks: gated ? [] : checks,
-										relay,
-										attachments: attached,
-									}),
-								{ max: 1, onError: "continue", label: SEAT_TIERS[seat].name },
-							).out.results,
-							names: picked.out[seat],
-						},
-					]),
+		// `tally` frames every classics review: it takes the change's patches, hands what a lens reads to the
+		// function below, which seats the lenses, then holds their findings, has the consolidator rule on them and
+		// settles the verdict.
+		const review = {
+			change,
+			spec,
+			earlier,
+			brief,
+			session,
+			consolidator: TASKS.consolidator(false, grounds || undefined),
+		};
+		return tally(review, ({ attached, relay }) => {
+			// The selector reads the patches and returns the tier, the seats it fills and each half's checklist.
+			const lead = lensLead(TIERED, { earlier: earlier !== undefined, gated });
+			const selected = code(tieredOf, {
+				in: {
+					changeset: attached.patches.artifact,
+					ignore,
+					small,
+					medium,
+					large,
+					...(floor && { floor }),
+					sections: SECTIONS,
+					leads: { behaviour: lead, standards: task(lead, STANDARDS) },
+					close: CHECKLIST,
+				},
+				out: {
+					lines: Int(),
+					tier: Text(),
+					sections: List(Text()),
+					behaviour: Text(),
+					standards: Text(),
+					...SEAT_LISTS,
+				},
+			});
+			// A seat's lens rules on its half's checklist. The selector gives each seat a list of its own name
+			// when it sits and an empty one when not, so mapping over that list runs the lens once or not at all.
+			const seat = (key: SeatKey, call: typeof lens) => {
+				const { name, half } = SEAT_TIERS[key];
+				const lenses = iter.parMap(
+					selected.out[key],
+					() =>
+						call({
+							label: "lens",
+							task: selected.out[half],
+							lane: read(change),
+							checks: gated ? [] : checks,
+							relay,
+							attachments: attached,
+						}),
+					{ max: 1, onError: "continue", label: name },
 				);
-			},
-		);
+				return {
+					results: lenses.out.results,
+					names: selected.out[key],
+					// Only a behaviour lens delivering makes the review delivered.
+					counts: half === "behaviour",
+				};
+			};
+			return {
+				lens: seat("lens", lens),
+				lensStandards: seat("lensStandards", lensStandards),
+				deepLens: seat("deepLens", deepLens),
+				deepLensStandards: seat("deepLensStandards", deepLensStandards),
+				topLens: seat("topLens", topLens),
+				topLensStandards: seat("topLensStandards", topLensStandards),
+				crossLens: seat("crossLens", crossLens),
+			};
+		});
 	},
 );
 
@@ -194,7 +226,7 @@ export const reviewChange = composition(
 	"review_change",
 	{
 		pack: PACK,
-		doc: "Review a lane version or target commits through the lenses the change's size picks, one checklist from the paths it touches, then a consolidator and a tally that rejects while a finding is upheld, or when no lens delivered a review.",
+		doc: "Review a lane version or target commits through the behaviour and standards lenses the change's size picks, a checklist from the paths it touches, then a consolidator and a tally that rejects while a finding is upheld, or when no behaviour lens delivered a review.",
 		params: {
 			request: Text({ description: "What the change must do" }),
 			...SUBJECT,

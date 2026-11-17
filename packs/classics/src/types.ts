@@ -134,13 +134,37 @@ export const Answers = List(
 export const TIERS = ["small", "medium", "large", "xlarge"] as const;
 export type Tier = (typeof TIERS)[number];
 
-/** Each seat a tiered review can rule through, by the key of its selector port: its seat name and the tiers it rules in. */
+/** The half of a tiered review's checklist a section belongs to, and so the lens that rules on it. */
+export type Half = "behaviour" | "standards";
+
+/**
+ * Each seat a tiered review can rule through, by the key of its selector port: its seat name, the tiers it rules in and
+ * the half of the checklist it rules on. A tier seats a behaviour lens and, on the same profile, its standards twin.
+ */
 export const SEAT_TIERS = {
-	lens: { name: "lens", tiers: ["small"] },
-	deepLens: { name: "deep-lens", tiers: ["medium"] },
-	topLens: { name: "top-lens", tiers: ["large", "xlarge"] },
-	crossLens: { name: "cross-lens", tiers: ["xlarge"] },
-} as const;
+	lens: { name: "lens", tiers: ["small"], half: "behaviour" },
+	lensStandards: {
+		name: "lens-standards",
+		tiers: ["small"],
+		half: "standards",
+	},
+	deepLens: { name: "deep-lens", tiers: ["medium"], half: "behaviour" },
+	deepLensStandards: {
+		name: "deep-lens-standards",
+		tiers: ["medium"],
+		half: "standards",
+	},
+	topLens: { name: "top-lens", tiers: ["large", "xlarge"], half: "behaviour" },
+	topLensStandards: {
+		name: "top-lens-standards",
+		tiers: ["large", "xlarge"],
+		half: "standards",
+	},
+	crossLens: { name: "cross-lens", tiers: ["xlarge"], half: "behaviour" },
+} as const satisfies Record<
+	string,
+	{ name: string; tiers: readonly Tier[]; half: Half }
+>;
 
 export type SeatKey = keyof typeof SEAT_TIERS;
 export const SEATS = Object.keys(SEAT_TIERS) as SeatKey[];

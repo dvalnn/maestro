@@ -84,9 +84,11 @@ A decision sets direction; a ruling settles a question the requirements left ope
   handles at perform time is deferred. Why: YAGNI.
 - **D-34** Maestro targets modern Linux x64, and RHEL 8 is best-effort: [ADR 0003](adr/0003-modern-linux-baseline.md).
 - **D-35** Starting a concert from an earlier concert's results is deferred: [ADR 0015](adr/0015-concert-fork.md).
-- **D-36** A review's depth comes from the size of the change and risk only sets a floor; the lenses rule on one
-  checklist whose sections the changed paths pick, and a consolidator rules at every tier with no skeptic stage. Why:
-  size is measured while risk is a judgement, so risk may raise a review's depth and never lower it
+- **D-36** A review's depth comes from the size of the change and risk only sets a floor; each tier's behaviour and
+  standards lenses rule on their halves of a checklist whose sections the changed paths pick, and a consolidator rules
+  at every tier with no skeptic stage. Why: size is measured while risk is a judgement, so risk may raise a review's
+  depth and never lower it. Two lenses on half a checklist each caught defects the one lens passed on the bench. Only
+  behaviour lenses count toward delivered, since a review with no correctness ruling proves nothing
   ([classics README](../packs/classics/README.md)).
 
 ## Rulings
