@@ -6,6 +6,11 @@ export const scout = seat("scout", {
 	reply: { answers: Answers },
 });
 
+export const scoutDeep = seat("scout-deep", {
+	profile: "classics/scout-deep",
+	reply: { answers: Answers },
+});
+
 export const planner = seat("planner", {
 	profile: "classics/planner",
 	out: { plan: MarkdownOut("plan.md") },

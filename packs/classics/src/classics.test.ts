@@ -448,6 +448,7 @@ test.each([
 	["skeptic", ["instructions.md"]],
 	["consolidator", ["instructions.md"]],
 	["scout", ["instructions.md"]],
+	["scout-deep", ["instructions.md"]],
 	["planner", ["instructions.md"]],
 ])(
 	"the %s lists the instruction files %j and attaches no guidance",
@@ -475,6 +476,26 @@ function compositionFile(name: string, source: string) {
 	writeFileSync(file, source);
 	return file;
 }
+
+// Seam: agent show exposes the shipped profile after packing and path resolution.
+test("scout-deep shares the scout's instructions and bounds a run to twenty minutes and ten million tokens", async () => {
+	const shown = async (name: string) => {
+		const run = await maestro([
+			"agent",
+			"show",
+			`classics/${name}`,
+			"--json",
+			"-c",
+			`profiles.classics/${name}.runtime=!replace { harness: stub, model: none }`,
+		]);
+		expect(run.code).toBe(0);
+		return JSON.parse(run.out);
+	};
+	const scout = await shown("scout");
+	const deep = await shown("scout-deep");
+	expect(deep.instructions).toEqual(scout.instructions);
+	expect(deep.limits).toEqual({ timeout: "20m", tokens: 10000000 });
+});
 
 test("the scout seat carries the answers reply field and no outbox file", async () => {
 	const file = compositionFile(

@@ -213,8 +213,20 @@ export const Question = shape(
 export type Question = ValueOf<typeof Question>;
 
 /**
+ * An answer still unsure after the scout-deep rung, or whose deep scout failed, which settle asks the owner. `key` is
+ * its group's slot and its question's number, such as `G2.1`, unique across the groups where question text is not.
+ */
+export const Exhausted = Struct({
+	key: Text(),
+	question: Text(),
+	missing: Text(),
+});
+export type Exhausted = ValueOf<typeof Exhausted>;
+
+/**
  * The planner's proposal: `touches` whatever the verdict, and the part each verdict needs. A revision adds the
  * `questions` its spec check left for the owner. `kept` says the spec the owner approved still holds as written.
+ * `answered` names the keys of the exhausted answers an owner's reply answers, which settle then does not ask.
  */
 export const Proposal = shape(
 	{
@@ -228,6 +240,7 @@ export const Proposal = shape(
 		related: List(Int()),
 		questions: List(Question),
 		kept: Bool(),
+		answered: List(Text()),
 	},
 	[
 		needs("ready-for-agent", "spec"),

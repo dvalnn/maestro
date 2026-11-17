@@ -4,6 +4,7 @@ import { classify, type Risk, scopeOf } from "./risk";
 import type {
 	Checked,
 	Child,
+	Exhausted,
 	Proposal,
 	Question,
 	Ruled,
@@ -72,17 +73,37 @@ const relatedOf = (related?: number[]) => (related?.length ? { related } : {});
 
 const askAlone = (ask: string): Question => ({ ask, options: [], context: [] });
 
+/** The question for an answer still unsure after the scout-deep rung: its question, with what is missing. */
+const askExhausted = ({ key, question, missing }: Exhausted): Question => ({
+	ask: question,
+	lead: `The scouts could not ground answer ${key}.`,
+	options: [],
+	context: [{ topic: "Missing", text: missing }],
+});
+
+/** The question for each of `exhausted` but those whose key `proposal` names as answered by an owner's reply. */
+function exhaustedGaps(proposal: Proposal, exhausted: Exhausted[]): Question[] {
+	const answered = new Set(proposal.answered ?? []);
+	return exhausted.filter((e) => !answered.has(e.key)).map(askExhausted);
+}
+
 /**
- * The triage of a planner's `proposal`, asking the owner its gaps, its own questions and `unrun`. A ready proposal's
- * spec stays in the result whatever the verdict, for a re-triage to continue and the owner to approve.
+ * The triage of a planner's `proposal`, asking the owner its gaps, its own questions, each of `exhausted` it does not
+ * name as answered and `unrun`. A ready proposal's spec stays in the result whatever the verdict, for a re-triage to
+ * continue and the owner to approve.
  */
-function proposed(proposal: Proposal, unrun: string[]): Triage {
+function proposed(
+	proposal: Proposal,
+	exhausted: Exhausted[],
+	unrun: string[],
+): Triage {
 	const { touches, spec, children, related } = proposal;
 	const contract = proposal.contract.trim();
 	const classified = classify(touches, contract);
 	const questions = [
 		...gapsOf(proposal).map(askAlone),
 		...(proposal.questions ?? []),
+		...exhaustedGaps(proposal, exhausted),
 		...unrun.map(askAlone),
 	];
 	const verdict = verdictOf(proposal.verdict, classified.risk, questions);
@@ -178,6 +199,8 @@ type Planned = {
 	proposal: Settled<Proposal>[];
 	check: Settled<Checked>[];
 	revision: Settled<Proposal>[];
+	/** The answers still unsure after the scout-deep rung, given only when the triage builds it. */
+	exhausted?: Settled<Exhausted[]>[];
 };
 
 /**
@@ -187,7 +210,7 @@ type Planned = {
 function triageOf(
 	ruling: Ruling,
 	respec: boolean,
-	{ proposal, check, revision }: Planned,
+	{ proposal, check, revision, exhausted = [] }: Planned,
 ) {
 	const { verdict } = ruling;
 	if (verdict !== "plan" && !plansOf(respec)[verdict])
@@ -201,12 +224,14 @@ function triageOf(
 		...unrunOf("spec check", check),
 		...unrunOf("planner's revision", revision),
 	];
-	return proposed(final, unrun);
+	const [answers] = exhausted;
+	return proposed(final, answers?.outcome === "ok" ? answers.value : [], unrun);
 }
 
 /**
  * The triage verdict: the triager's early ruling or the planner's proposal, which it only ever downgrades or gates,
- * never upgrades. A spec check or revision that failed to run is asked of the owner.
+ * never upgrades. A spec check or revision that failed to run is asked of the owner, as is each `exhausted` answer the
+ * proposal does not name as answered.
  * @param respec whether the issue carries a spec rather than a brief, which a direct ruling hands on to the planner.
  * @throws Error when the issue was handed on and the planner gave no proposal.
  */

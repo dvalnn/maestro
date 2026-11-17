@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Answers } from "@maestro/classics";
-import { atLeastOne, fill, scout } from "@maestro/classics";
+import { atLeastOne, fill, scout, scoutDeep } from "@maestro/classics";
 import { MarkdownOut, read, seat } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
@@ -44,6 +44,7 @@ import TRIAGER from "./triage/prompts/triager.md" with { type: "text" };
 import { NARROW } from "./triage/risk";
 import {
 	Checked,
+	Exhausted,
 	GROUP_SIZE,
 	Group,
 	MAX_BRIEF_REQUIREMENTS,
@@ -122,39 +123,166 @@ export function groupOf(
 }
 
 type Answered = { answers: ValueOf<typeof Answers> };
+type Answer = ValueOf<typeof Answers>[number];
 
-/** The body of a group's section: its scout's answers, an unsure one marked, or why it has none. */
-function answerOf(scout: Settled<Answered> | undefined) {
-	if (scout?.outcome === "ok")
-		return scout.value.answers
-			.flatMap((a) => [
-				`### ${a.question}`,
-				"",
-				a.answer,
-				...(a.state === "unsure" ? ["", `Unsure, missing: ${a.missing}`] : []),
-				"",
-			])
+/** A question one scout marked unsure, with what it found missing. */
+const Unsure = Struct({ question: Text(), missing: Text() });
+/** A group that climbs to scout-deep: its slot, its group and only the questions its scout marked unsure. */
+const Climb = Struct({
+	slot: Text(),
+	id: Text(),
+	area: Text(),
+	unsure: List(Unsure),
+});
+type Climb = ValueOf<typeof Climb>;
+
+/** The number of answer `a`, the `i`th of its scout's, in `group`: its question's, or one past the group's when it names none. */
+const numberOf = (group: Group, a: Answer, i: number) => {
+	const at = group.questions.indexOf(a.question);
+	return at >= 0 ? at + 1 : group.questions.length + i + 1;
+};
+
+/** The grounded check: each group whose scout marked any answer `unsure`, with those questions and their `missing` notes. */
+export function climbsOf({
+	groups,
+	scouts,
+}: {
+	groups: Group[];
+	scouts: Settled<Answered>[];
+}): { climbs: Climb[] } {
+	const climbs = groups.flatMap((group, g) => {
+		const scouted = scouts[g];
+		if (scouted?.outcome !== "ok") return [];
+		const unsure = scouted.value.answers.flatMap((a) =>
+			a.state === "unsure"
+				? [{ question: a.question, missing: a.missing }]
+				: [],
+		);
+		const { id, area } = group;
+		return unsure.length ? [{ slot: `G${g + 1}`, id, area, unsure }] : [];
+	});
+	return { climbs };
+}
+
+export function climbKey({ slot }: Climb): string {
+	return slot;
+}
+
+/** The unsure questions of `climb` as a Markdown file, each with what its first scout found missing, for scout-deep. */
+export function climbOf(
+	{ climb: { id, area, unsure } }: { climb: Climb },
+	ctx: CodeContext,
+): { file: string } {
+	const file = join(ctx.scratch, "group.md");
+	const questions = unsure.flatMap((u, i) => [
+		`${i + 1}. ${u.question}`,
+		`   - Missing after the first scout: ${u.missing}`,
+	]);
+	writeFileSync(file, [`# ${id}: ${area}`, "", ...questions, ""].join("\n"));
+	return { file };
+}
+
+/** An answer as its Markdown section, an unsure one marked, an exhausted one marked with its key. */
+function sectionOf(a: Answer, exhaustedAs?: string) {
+	const mark =
+		a.state !== "unsure"
+			? []
+			: exhaustedAs
+				? ["", `Exhausted (${exhaustedAs}), missing: ${a.missing}`]
+				: ["", `Unsure, missing: ${a.missing}`];
+	return [`### ${a.question}`, "", a.answer, ...mark, ""];
+}
+
+type Deepened = { answers: Answer[]; exhausted: Exhausted[] };
+
+/**
+ * The answers of a group's scout with those of its scout-deep in place of its unsure ones, matched by question. An
+ * unsure answer is exhausted when the deep one is unsure too, left out, or its scout-deep failed.
+ */
+function deepened(
+	slot: string,
+	group: Group,
+	answers: Answer[],
+	climb: Climb | undefined,
+	deep: Settled<Answered> | undefined,
+): Deepened {
+	if (!climb) return { answers, exhausted: [] };
+	const deeper = deep?.outcome === "ok" ? deep.value.answers : [];
+	const exhausted: Exhausted[] = [];
+	const merged = answers.map((a, i) => {
+		if (a.state !== "unsure") return a;
+		const found = deeper.find((d) => d.question === a.question);
+		if (found?.state === "grounded") return found;
+		const still = found ?? a;
+		const key = `${slot}.${numberOf(group, a, i)}`;
+		exhausted.push({ key, question: a.question, missing: still.missing });
+		return still;
+	});
+	return { answers: merged, exhausted };
+}
+
+/** The body of a group's section: its answers, an unsure or exhausted one marked, or why it has none. */
+function answerOf(
+	scout: Settled<Answered> | undefined,
+	deepen: (answers: Answer[]) => Deepened,
+): { body: string; exhausted: Exhausted[] } {
+	if (scout?.outcome === "ok") {
+		const { answers, exhausted } = deepen(scout.value.answers);
+		const keys = new Map(exhausted.map((e) => [e.question, e.key]));
+		const body = answers
+			.flatMap((a) => sectionOf(a, keys.get(a.question)))
 			.join("\n")
 			.trim();
+		return { body, exhausted };
+	}
 	const why = scout && "reason" in scout ? scout.reason : undefined;
-	return `Unanswered: the scout ${scout?.outcome ?? "did not run"}${why ? `: ${why}` : ""}.`;
+	return {
+		body: `Unanswered: the scout ${scout?.outcome ?? "did not run"}${why ? `: ${why}` : ""}.`,
+		exhausted: [],
+	};
+}
+
+type Scouted = { groups: Group[]; scouts: Settled<Answered>[] };
+type Climbed = Scouted & { climbs: Climb[]; deeps: Settled<Answered>[] };
+
+/** The answers file of `groups`, each group's answers deepened by its climb when it has one, and the exhausted ones. */
+function gathered(
+	{ groups, scouts, climbs = [], deeps = [] }: Scouted & Partial<Climbed>,
+	ctx: CodeContext,
+): { answers: string; exhausted: Exhausted[] } {
+	const exhausted: Exhausted[] = [];
+	const sections = groups.flatMap((g, i) => {
+		const slot = `G${i + 1}`;
+		const c = climbs.findIndex((climb) => climb.slot === slot);
+		const answered = answerOf(scouts[i], (answers) =>
+			deepened(slot, g, answers, climbs[c], deeps[c]),
+		);
+		exhausted.push(...answered.exhausted);
+		return [...groupSection(g, "##"), "", answered.body, ""];
+	});
+	const answers = join(ctx.scratch, "answers.md");
+	const body = sections.length ? sections : ["No questions.", ""];
+	writeFileSync(answers, ["# The scouts' answers", "", ...body].join("\n"));
+	return { answers, exhausted };
 }
 
 /** The scouts' answers as one Markdown file, a section per group in order, marking a group whose scout failed. */
 export function answersOf(
-	{ groups, scouts }: { groups: Group[]; scouts: Settled<Answered>[] },
+	scouted: Scouted,
 	ctx: CodeContext,
 ): { answers: string } {
-	const sections = groups.flatMap((g, i) => [
-		...groupSection(g, "##"),
-		"",
-		answerOf(scouts[i]),
-		"",
-	]);
-	const answers = join(ctx.scratch, "answers.md");
-	const body = sections.length ? sections : ["No questions.", ""];
-	writeFileSync(answers, ["# The scouts' answers", "", ...body].join("\n"));
-	return { answers };
+	return { answers: gathered(scouted, ctx).answers };
+}
+
+/**
+ * The scouts' answers as `answersOf` gives them, each scout-deep answer of the `climbs` in place of its unsure one, and
+ * the answers still unsure after it, or whose scout-deep failed, marked and given as `exhausted`.
+ */
+export function climbedAnswersOf(
+	climbed: Climbed,
+	ctx: CodeContext,
+): { answers: string; exhausted: Exhausted[] } {
+	return gathered(climbed, ctx);
 }
 
 /** The designers' sketches as one Markdown file, a section per designer in order, marking a sketch that is missing. */
@@ -275,6 +403,7 @@ export const triage = composition(
 			"A planner proposes a verdict from the scouts' answers, a checker checks a ready spec against the code,",
 			"and the planner revises it once by the findings. settle then gates the verdict.",
 			"With designs, two designers sketch rival contract shapes beside the planner, which merges them into its plan.",
+			"With scoutDeep, a group with an unsure answer gets one scout-deep look; an answer still unsure is asked of the owner.",
 		].join("\n"),
 		params: {
 			issue: Text({
@@ -299,6 +428,11 @@ export const triage = composition(
 				description:
 					"Whether two designers sketch rival contract shapes from the planner's evidence, which the planner merges into its plan",
 			}),
+			scoutDeep: Bool({
+				default: false,
+				description:
+					"Whether a group whose scout marks an answer unsure gets one stronger scout-deep look, and an answer still unsure after it is asked of the owner",
+			}),
 			respec: Bool({
 				default: false,
 				description:
@@ -313,7 +447,15 @@ export const triage = composition(
 			},
 		],
 	},
-	({ issue, backlog, sightings, maxGroups, designs, respec }) => {
+	({
+		issue,
+		backlog,
+		sightings,
+		maxGroups,
+		designs,
+		scoutDeep: deep,
+		respec,
+	}) => {
 		const issued = {
 			artifact: markdownOf(issue, "issue"),
 			hint: "first, for the issue to triage",
@@ -375,15 +517,68 @@ export const triage = composition(
 				label: "scouts",
 			},
 		);
-		const answers = code(answersOf, {
-			in: { groups, scouts: scouts.out.results },
-			out: { answers: Markdown() },
-			label: "answers",
-		});
+		const climbs = deep
+			? code(climbsOf, {
+					in: { groups, scouts: scouts.out.results },
+					out: { climbs: List(Climb) },
+					label: "grounded",
+				}).out.climbs
+			: undefined;
+		const deeps = climbs
+			? iter.parMap(
+					climbs,
+					(climb) => {
+						const asked = code(climbOf, {
+							in: { climb },
+							out: { file: Markdown() },
+							label: "group",
+						});
+						return scoutDeep({
+							label: "scout-deep",
+							task: TASKS.scout,
+							lane: read(base),
+							attachments: {
+								group: {
+									artifact: asked.out.file,
+									hint: "first, for the questions to answer and what the first scout found missing",
+								},
+								issue: issued,
+								backlog: cutBacklog,
+							},
+						});
+					},
+					{
+						onError: "continue",
+						key: climbKey,
+						max: maxGroups,
+						label: "deeps",
+					},
+				)
+			: undefined;
+		const climbed =
+			climbs && deeps
+				? code(climbedAnswersOf, {
+						in: {
+							groups,
+							scouts: scouts.out.results,
+							climbs,
+							deeps: deeps.out.results,
+						},
+						out: { answers: Markdown(), exhausted: List(Exhausted) },
+						label: "answers",
+					}).out
+				: undefined;
+		const answers =
+			climbed ??
+			code(answersOf, {
+				in: { groups, scouts: scouts.out.results },
+				out: { answers: Markdown() },
+				label: "answers",
+			}).out;
 		const evidence = {
 			issue: issued,
 			answers: {
-				artifact: answers.out.answers,
+				artifact: answers.answers,
 				hint: "first, for what the scouts found",
 			},
 			backlog: cutBacklog,
@@ -416,7 +611,7 @@ export const triage = composition(
 			attachments: {
 				issue: issued,
 				answers: {
-					artifact: answers.out.answers,
+					artifact: answers.answers,
 					hint: "for what the scouts found",
 				},
 			},
@@ -452,6 +647,11 @@ export const triage = composition(
 				check,
 				revision: allSettled([revised.out.plan], {
 					label: "revision",
+				}),
+				...(climbed && {
+					exhausted: allSettled([climbed.exhausted], {
+						label: "exhausted",
+					}),
 				}),
 			},
 			out: { triage: Triage },

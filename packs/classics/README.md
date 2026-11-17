@@ -133,28 +133,30 @@ Code-node values: `toMarkdown`, `copyMarkdown`, `specOf`, `briefOf`, `heldOf`, `
 | `skeptic`           | `classics/skeptic`      | `rulings`        | `instructions.md`               |
 | `consolidator`      | `classics/consolidator` | `verdict`        | `instructions.md`               |
 | `scout`             | `classics/scout`        | `answers`        | `instructions.md`               |
+| `scoutDeep`         | `classics/scout-deep`   | `answers`        | the `scout` instructions        |
 | `planner`           | `classics/planner`      | `plan`           | `instructions.md`               |
 
 [^lens]:
     Each lens's task holds a checklist drawn from `skills/`, which it rules on item by item; `LENSES` holds the tasks.
 
-`scout` and `planner` serve no composition of the pack; they are seats for compositions built on it. No profile attaches
-guidance: each seat's instructions carry what its one job needs, and `builder` and `tester` share `profiles/testing.md`
-([ADR 0018](../../docs/adr/0018-the-graph-gives-guidance-and-the-agent-never-picks-it.md)). The text under `skills/` is
-the source those instructions and checklists are written from, adapted from Matt Pocock's skills under the MIT license
-in `skills/LICENSE`, each copy recorded in `skills/UPSTREAM.md`; no profile reads it. A profile may name files anywhere
-inside its namespace directory, here `profiles/`; copy the whole `profiles/` to shadow the pack.
+`scout`, `scoutDeep` and `planner` serve no composition of the pack; they are seats for compositions built on it. No
+profile attaches guidance: each seat's instructions carry what its one job needs, and `builder` and `tester` share
+`profiles/testing.md` ([ADR 0018](../../docs/adr/0018-the-graph-gives-guidance-and-the-agent-never-picks-it.md)). The
+text under `skills/` is the source those instructions and checklists are written from, adapted from Matt Pocock's skills
+under the MIT license in `skills/LICENSE`, each copy recorded in `skills/UPSTREAM.md`; no profile reads it. A profile
+may name files anywhere inside its namespace directory, here `profiles/`; copy the whole `profiles/` to shadow the pack.
 
 Config can add to a profile from anywhere:
 `profiles.classics/builder.instructions: !append [.maestro/instructions/builder.md]`. A relative path resolves against
 the config layer's base directory. See the host-repo README, Profiles.
 
-Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, the lens profiles, `skeptic`, `consolidator` and
-`tester` 20 minutes and 10M tokens, the others none. None sets a `context` policy, so the harness compacts on its own
-terms; set one in config as `profiles.classics/<name>.context`. Lenses run on the `lens` profile's model and skeptics on
-the `skeptic`'s. Pick models of different families, since a skeptic of the lens's family tends to share its blind spots.
-In a tiered review, set each tier's seat to a stronger model than the last, and `cross-lens` to another family than
-`top-lens`. A standards seat runs its tier's profile until `seats.<pack>/tiered_review/<seat>` rebinds it to its own.
+Each `profile.yaml` sets limits: `builder` 45 minutes and 30M tokens, the lens profiles, `scout-deep`, `skeptic`,
+`consolidator` and `tester` 20 minutes and 10M tokens, the others none. None sets a `context` policy, so the harness
+compacts on its own terms; set one in config as `profiles.classics/<name>.context`. Lenses run on the `lens` profile's
+model and skeptics on the `skeptic`'s. Pick models of different families, since a skeptic of the lens's family tends to
+share its blind spots. In a tiered review, set each tier's seat to a stronger model than the last, and `cross-lens` to
+another family than `top-lens`. A standards seat runs its tier's profile until `seats.<pack>/tiered_review/<seat>`
+rebinds it to its own.
 
 ## Params
 

@@ -84,14 +84,15 @@ Config layers, keys and presets are in [`packages/cli/README.md`](packages/cli/R
 [host-repo README](packages/host-repo/README.md#configuration), and a profile's `model` and `thinking` in its
 [Fields](packages/host-repo/README.md#fields). Two files cover a first run:
 
-- `~/.config/maestro/config.yaml` sets each profile's `runtime`. The classics pack ships ten profiles and no models; its
-  [README](packs/classics/README.md) says which composition uses which. Model ids below are placeholders.
+- `~/.config/maestro/config.yaml` sets each profile's `runtime`. The classics pack ships eleven profiles and no models;
+  its [README](packs/classics/README.md) says which composition uses which. Model ids below are placeholders.
 - `.maestro/config.yaml` in the target repository names the repo, its base and its checks.
 
 ```yaml
 # ~/.config/maestro/config.yaml
 profiles:
   classics/scout: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
+  classics/scout-deep: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
   classics/planner: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
   classics/builder: { runtime: { harness: claude, model: <claude-model>, thinking: high } }
   classics/lens: { runtime: { harness: claude, model: <claude-model>, thinking: high } }

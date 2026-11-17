@@ -20,7 +20,7 @@ import {
 	stubOutputs,
 	targetRepo,
 } from "./testing/stub";
-import { answersOf, sketchesOf } from "./triage";
+import { answersOf, climbedAnswersOf, sketchesOf } from "./triage";
 import {
 	askAlone,
 	bugIssue,
@@ -190,6 +190,123 @@ test("answersOf merges each group's answers in order, marking an unsure answer a
 			"",
 		].join("\n"),
 	);
+});
+
+const reproduction = "the reproduction: greet.sh does not exist in the lane";
+
+test("climbedAnswersOf keys each exhausted answer by its group's slot and question number, unique across groups sharing a question", () => {
+	const ctx = {
+		scratch: mkdtempSync(join(scratch, "climbed-")),
+	} as CodeContext;
+	const asked = [grounded.question, unsure.question];
+	const twin = { id: "G1", area: "twin", questions: asked };
+	const climb = (slot: string) => ({
+		slot,
+		id: "G1",
+		area: "twin",
+		unsure: [{ question: unsure.question, missing: reproduction }],
+	});
+	const scouted = {
+		outcome: "ok" as const,
+		value: { answers: [grounded, unsure] },
+	};
+	const climbed = climbedAnswersOf(
+		{
+			groups: [twin, twin],
+			scouts: [scouted, scouted],
+			climbs: [climb("G1"), climb("G2")],
+			deeps: [
+				{
+					outcome: "ok",
+					value: {
+						answers: [
+							{ ...unsure, state: "unsure" as const, missing: "the cause" },
+						],
+					},
+				},
+				{ outcome: "failed", reason: "timed out" },
+			],
+		},
+		ctx,
+	);
+	expect(climbed.exhausted).toEqual([
+		{ key: "G1.2", question: unsure.question, missing: "the cause" },
+		{ key: "G2.2", question: unsure.question, missing: reproduction },
+	]);
+	const file = readFileSync(climbed.answers, "utf8");
+	expect(file).toContain("Exhausted (G1.2), missing: the cause");
+	expect(file).toContain(`Exhausted (G2.2), missing: ${reproduction}`);
+	expect(file.split(grounded.answer)).toHaveLength(3);
+});
+
+test("climbedAnswersOf takes a later group's scout-deep answer when an earlier group is wholly grounded", () => {
+	const ctx = {
+		scratch: mkdtempSync(join(scratch, "climbed-")),
+	} as CodeContext;
+	const resolved = {
+		...grounded,
+		question: unsure.question,
+		answer: "The cause is greet.sh:3.",
+	};
+	const climbed = climbedAnswersOf(
+		{
+			groups: [
+				{ id: "G1", area: "known", questions: [grounded.question] },
+				{ id: "G2", area: "unknown", questions: [unsure.question] },
+			],
+			scouts: [
+				{ outcome: "ok", value: { answers: [grounded] } },
+				{ outcome: "ok", value: { answers: [unsure] } },
+			],
+			climbs: [
+				{
+					slot: "G2",
+					id: "G2",
+					area: "unknown",
+					unsure: [{ question: unsure.question, missing: reproduction }],
+				},
+			],
+			deeps: [{ outcome: "ok", value: { answers: [resolved] } }],
+		},
+		ctx,
+	);
+	expect(climbed.exhausted).toEqual([]);
+	const file = readFileSync(climbed.answers, "utf8");
+	expect(file).toContain(resolved.answer);
+	expect(file).not.toContain(reproduction);
+});
+
+test("climbedAnswersOf keys an exhausted answer that rephrases its question apart from the group's questions", () => {
+	const ctx = {
+		scratch: mkdtempSync(join(scratch, "climbed-")),
+	} as CodeContext;
+	const rephrased = { ...unsure, question: "Where does greet.sh break?" };
+	const climbed = climbedAnswersOf(
+		{
+			groups: [
+				{
+					id: "G1",
+					area: "twin",
+					questions: [grounded.question, unsure.question],
+				},
+			],
+			scouts: [{ outcome: "ok", value: { answers: [rephrased] } }],
+			climbs: [
+				{
+					slot: "G1",
+					id: "G1",
+					area: "twin",
+					unsure: [{ question: rephrased.question, missing: reproduction }],
+				},
+			],
+			deeps: [{ outcome: "failed", reason: "timed out" }],
+		},
+		ctx,
+	);
+	const keys = climbed.exhausted.map((e) => e.key);
+	expect(keys).toHaveLength(1);
+	expect(keys).not.toContain("G1.1");
+	expect(keys).not.toContain("G1.2");
 });
 
 const children = [
@@ -1543,6 +1660,221 @@ test.each<Ruling>([
 				.filter((instance) => instance.node === "merge")
 				.map((instance) => instance.status),
 		).toEqual(["skipped"]);
+	},
+);
+
+// Seams: compose --json exposes the opt-in graph and runtime; perform/ls --json
+// exposes which seats ran, their attached evidence and the final owner questions.
+const deepNodes = (shape: DesignsPlan) =>
+	shape.plan.ir.nodes.filter(
+		(node) => node.config?.profile === "classics/scout-deep",
+	);
+
+async function deepComposed(...flags: string[]): Promise<DesignsPlan> {
+	const run = await call(
+		await triage("compose", "--backlog", backlog, ...flags),
+	);
+	expect(run.code).toBe(0);
+	return JSON.parse(run.out);
+}
+
+test("scoutDeep is opt-in and seats scout-deep on Sonnet at high only in the on graph", async () => {
+	const baseline = await deepComposed();
+	const off = await deepComposed("--no-scout-deep");
+	expect(off.plan.ir.nodes).toEqual(baseline.plan.ir.nodes);
+	expect(off.plan.ir.edges).toEqual(baseline.plan.ir.edges);
+	expect(off.agents).toEqual(baseline.agents);
+	expect(deepNodes(off)).toEqual([]);
+	const on = await deepComposed("--scout-deep");
+	expect(deepNodes(on)).toHaveLength(1);
+	const deep = deepNodes(on)[0];
+	expect(on.agents.find((agent) => agent.node === deep?.id)).toMatchObject({
+		profile: "classics/scout-deep",
+		model: "claude-sonnet-5-5",
+		thinking: "high",
+	});
+});
+
+type DeepInstance = Instance & {
+	inputs?: Record<string, unknown>;
+};
+
+const deepMissing = "the reproduction: greet.sh does not exist in the lane";
+
+async function deepPerformed(
+	shape: DesignsPlan,
+	ruling: Ruling,
+	first: ValueOf<typeof Answers>,
+	second: ValueOf<typeof Answers> | string,
+) {
+	const deep = deepNodes(shape)[0];
+	expect(deep).toBeDefined();
+	const data = mkdtempSync(join(scratch, "scout-deep-data-"));
+	const run = await call(
+		[
+			...(await triage("perform", "--backlog", backlog, "--scout-deep")),
+			"-c",
+			`target.repo=${targetRepo()}`,
+			"-c",
+			'target.prepare="true"',
+			...stubbed([
+				"triager",
+				"classics/scout",
+				"classics/scout-deep",
+				"classics/planner",
+				"checker",
+			]),
+		],
+		data,
+		{
+			MAESTRO_STUB_OUTPUTS: stubOutputs({
+				"triager/ruling.json": ruling,
+				"triager/backlog.md": "- #7 Greet: it greets too\n",
+				"scouts/scout/answers.json": first,
+				[`${deep?.id}/answers.json`]: second,
+				"planner/plan.json": ready,
+				"checker/check.json": { findings: [] },
+			}),
+		},
+	);
+	expect(run.code).toBe(0);
+	const concert = JSON.parse(run.out);
+	expect(concert.status).toBe("ok");
+	const listed = await call(["ls", concert.id, "--json"], data);
+	expect(listed.code).toBe(0);
+	const { instances }: { instances: DeepInstance[] } = JSON.parse(listed.out);
+	const attached = (instance: DeepInstance | undefined, port: string) => {
+		const ref = instance?.inputs?.[port] as ArtifactRef | undefined;
+		expect(ref?.path).toBeDefined();
+		return readFileSync(
+			join(data, "maestro/concerts", concert.id, "artifacts", ref?.path ?? ""),
+			"utf8",
+		);
+	};
+	return {
+		concert,
+		instances,
+		deep: instances.filter(
+			(instance) => instance.node === deep?.id && instance.status !== "skipped",
+		),
+		attached,
+	};
+}
+
+test("scout-deep answers only the unsure group's questions and replaces its unsure answer for planning and checking", async () => {
+	const shape = await deepComposed("--scout-deep");
+	const resolved = {
+		...grounded,
+		question: unsure.question,
+		answer: "The cause is greet.sh:3; reproduced in the sealed base.",
+	};
+	const oneGroup = {
+		...planning,
+		groups: [
+			{
+				id: "G8",
+				area: "unknown",
+				questions: [grounded.question, unsure.question],
+			},
+		],
+	};
+	const result = await deepPerformed(
+		shape,
+		oneGroup,
+		[grounded, unsure],
+		[resolved],
+	);
+	expect(result.deep.map((instance) => instance.status)).toEqual(["ok"]);
+	const climbed = result.deep[0];
+	const group = result.attached(climbed, "group");
+	expect(group).toContain(unsure.question);
+	expect(group).toContain(deepMissing);
+	expect(group).not.toContain(grounded.question);
+	expect(result.attached(climbed, "issue")).toContain("#1 Greet by name");
+	expect(result.attached(climbed, "backlog")).toBe(
+		"- #7 Greet: it greets too\n",
+	);
+	for (const node of ["planner", "checker"]) {
+		const answers = result.attached(
+			result.instances.find((instance) => instance.node === node),
+			"answers",
+		);
+		expect(answers).toContain(resolved.answer);
+		expect(answers).toContain(grounded.answer);
+		expect(answers).not.toContain(unsure.answer);
+		expect(answers).not.toContain(deepMissing);
+	}
+	expect(result.concert.outputs.triage).toMatchObject({
+		verdict: "ready-for-agent",
+		questions: [],
+	});
+});
+
+test("scout-deep runs no seat for a group whose scout is wholly grounded", async () => {
+	const shape = await deepComposed("--scout-deep");
+	const result = await deepPerformed(
+		shape,
+		{
+			...planning,
+			groups: [{ id: "G1", area: "known", questions: [grounded.question] }],
+		},
+		[grounded],
+		"not json",
+	);
+	expect(result.deep).toEqual([]);
+	expect(result.concert.outputs.triage).toMatchObject({
+		verdict: "ready-for-agent",
+		questions: [],
+	});
+});
+
+test.each([
+	["still unsure", [unsure]],
+	["missing from the reply", []],
+	["failed", "not json"],
+] as [string, ValueOf<typeof Answers> | string][])(
+	"an answer %s after scout-deep is exhausted in each group and asks the owner while keeping the ready spec",
+	async (_, reply) => {
+		const shape = await deepComposed("--scout-deep");
+		const result = await deepPerformed(
+			shape,
+			{
+				...planning,
+				groups: [
+					{
+						id: "G9",
+						area: "first",
+						questions: [grounded.question, unsure.question],
+					},
+					{
+						id: "G9",
+						area: "second",
+						questions: [grounded.question, unsure.question],
+					},
+				],
+			},
+			[grounded, unsure],
+			reply,
+		);
+		expect(result.deep.map((instance) => instance.status)).toEqual([
+			typeof reply === "string" ? "failed" : "ok",
+			typeof reply === "string" ? "failed" : "ok",
+		]);
+		const answers = result.attached(
+			result.instances.find((instance) => instance.node === "planner"),
+			"answers",
+		);
+		expect(answers).toContain(grounded.answer);
+		expect(answers).toContain(deepMissing);
+		const output = result.concert.outputs.triage;
+		expect(output.verdict).toBe("needs-info");
+		expect(output.spec).toEqual({ touches: ready.touches, ...spec });
+		expect(output.questions).toHaveLength(2);
+		for (const question of output.questions) {
+			const text = JSON.stringify(question);
+			expect(text).toContain(unsure.question);
+			expect(text).toContain(deepMissing);
+		}
 	},
 );
 

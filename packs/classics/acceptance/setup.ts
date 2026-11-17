@@ -12,6 +12,7 @@ export const BASE = "main";
 /** The profile of each of the pack's seats. */
 export const PROFILES = [
 	"scout",
+	"scout-deep",
 	"planner",
 	"builder",
 	"lens",

@@ -21,7 +21,8 @@ Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-ag
     "subject": "feat(scope): imperative summary"
   },
   "children": [{ "title": "a child issue's title", "body": "its ask", "dependsOn": [0] }],
-  "related": [7]
+  "related": [7],
+  "answered": ["G2.1"]
 }
 ```
 
@@ -68,9 +69,13 @@ Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-ag
 - `kept`: `true` only when the issue holds a spec the owner approved and it still holds against current main as written.
   The tour manager then builds the approved spec itself, and yours is not read. Leave it out whenever the spec needs any
   change.
+- `answered`: the key of each answer marked `Exhausted` in the answers, such as `G2.1`, that an owner's reply answers,
+  and no other. Leave it out when a reply answers none.
 - `questions`: only in a revision, and for a diagnose group (its area starts with "Diagnose:") whose answer is `unsure`
   or missing from the answers, where you ask at once. Ask what the scout could not establish: the reproduction, or the
   cause once the bug reproduced.
+
+The owner is asked each answer marked `Exhausted` for you, so neither guess its answer nor ask it again.
 
 You do not ask the owner, outside a revision or an unsure or unanswered diagnose group: the triager has. Settle what the
 ask, the replies and the code leave open with the simplest option that meets the ask, and record it as a decision the

@@ -22,6 +22,7 @@ export {
 	lens,
 	planner,
 	scout,
+	scoutDeep,
 	skeptic,
 	tester,
 	topLens,

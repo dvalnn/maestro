@@ -12,7 +12,7 @@ import {
 	unspecified,
 } from "./fixtures";
 import { classify } from "./risk";
-import type { Checked, Proposal, Triage } from "./schemas";
+import type { Checked, Exhausted, Proposal, Triage } from "./schemas";
 import { findingsOf, settle } from "./verdict";
 
 // Seam: settle returns the triage verdict, its owner questions and the spec handed on.
@@ -474,3 +474,89 @@ test.each([
 		expect(settle(input).triage.questions).toStrictEqual([kept, claiming]);
 	},
 );
+
+const reproduction = "the reproduction: greet.sh does not exist in the lane";
+const exhaustedCause: Exhausted = {
+	key: "G1.2",
+	question: "Which file:line holds the cause?",
+	missing: reproduction,
+};
+const exhaustedFlag: Exhausted = {
+	key: "G2.1",
+	question: "Where are flags parsed?",
+	missing: "the parser outside src/",
+};
+const exhausting = (exhausted: Exhausted[]): Settled<Exhausted[]>[] => [
+	{ outcome: "ok", value: exhausted },
+];
+/** The text of each question settle asks, its ask and evidence together. */
+const asked = (triage: Triage) =>
+	triage.questions.map((q) => JSON.stringify(q));
+
+test("settle asks the owner each exhausted answer from its question and missing note, keeping the ready spec", () => {
+	const { triage } = settle({
+		...planned(ready),
+		exhausted: exhausting([exhaustedCause, exhaustedFlag]),
+	});
+	expect(triage.verdict).toBe("needs-info");
+	expect(triage.spec).toEqual({ touches: ready.touches, ...spec });
+	expect(triage.questions.map((q) => q.ask)).toEqual([
+		"Which file:line holds the cause?",
+		"Where are flags parsed?",
+	]);
+	expect(asked(triage)[0]).toContain(reproduction);
+	expect(asked(triage)[1]).toContain("the parser outside src/");
+});
+
+test("settle does not ask an exhausted answer whose key the proposal names as answered by a reply", () => {
+	const { triage } = settle({
+		...planned({ ...ready, answered: ["G1.2"] }),
+		exhausted: exhausting([exhaustedCause, exhaustedFlag]),
+	});
+	expect(triage.verdict).toBe("needs-info");
+	expect(triage.questions.map((q) => q.ask)).toEqual([
+		"Where are flags parsed?",
+	]);
+});
+
+test("settle reads the answered keys from the revision it settles", () => {
+	const revision: Settled<Proposal>[] = [
+		{ outcome: "ok", value: { ...ready, answered: ["G1.2"] } },
+	];
+	const { triage } = settle({
+		...planned(ready, findings, revision),
+		exhausted: exhausting([exhaustedCause]),
+	});
+	expect(triage).toMatchObject({ verdict: "ready-for-agent", questions: [] });
+});
+
+test.each([
+	["a misquoted key", ["g1.2"]],
+	["the question's text", [exhaustedCause.question]],
+])("settle still asks an exhausted answer named by %s", (_, answered) => {
+	const { triage } = settle({
+		...planned({ ...ready, answered }),
+		exhausted: exhausting([exhaustedCause]),
+	});
+	expect(triage.verdict).toBe("needs-info");
+	expect(triage.questions.map((q) => q.ask)).toEqual([exhaustedCause.question]);
+});
+
+test("settle asks the other group's exhausted answer when two groups share a question's text", () => {
+	const shared = { ...exhaustedCause, key: "G2.2", missing: "the cause" };
+	const { triage } = settle({
+		...planned({ ...ready, answered: ["G1.2"] }),
+		exhausted: exhausting([exhaustedCause, shared]),
+	});
+	expect(triage.questions).toHaveLength(1);
+	expect(asked(triage)[0]).toContain("the cause");
+	expect(asked(triage)[0]).not.toContain(reproduction);
+});
+
+test("settle asks nothing for the exhausted answers when the answers never ran", () => {
+	const { triage } = settle({
+		...planned(ready),
+		exhausted: [{ outcome: "skipped" }],
+	});
+	expect(triage).toMatchObject({ verdict: "ready-for-agent", questions: [] });
+});

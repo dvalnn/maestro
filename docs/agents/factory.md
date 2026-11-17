@@ -273,6 +273,13 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   sketch the change's contract beside the planner. Each works under its own constraint, from the issue, the scouts'
   answers and the cut backlog. The planner then merges the sketches in its own session, and a failed designer's sketch
   is marked missing. The merged plan is the one checked, revised and settled. An encore starts the designers fresh.
+- **Scout-deep.** With `--scout-deep`, off by default and never passed by the tick, each group whose scout marks an
+  answer `unsure` gets one `scout-deep` seat on the `classics/scout-deep` profile. It is asked only those questions,
+  with each one's `missing` note, the issue and the cut backlog. A grounded deep answer takes the unsure one's place in
+  the answers the planner and the spec checker read. An answer still unsure, left out of the deep reply, or whose
+  `scout-deep` failed is marked exhausted with a key such as `G2.1`. Settle asks the owner each one, so the ticket goes
+  to `needs-info` with its spec kept. On a re-triage the planner names the keys an owner's reply answers, and settle
+  asks only the others.
 - **Answers.** Any verdict that asks the owner a question goes to `needs-info`, whatever its risk, never to
   `needs-approval`. The owner answers by replying in a comment that mentions `@<login>`, such as
   `@forge-bot Q1: no, ok results only`, then moving the ticket to `needs-triage` (to `ready-for-agent` to continue a
