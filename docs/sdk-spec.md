@@ -177,7 +177,8 @@ A **Ref** is a symbolic handle to a typed value that will exist at perform time.
 - **Mapping between ports** is by typed assignment. A mismatch is a compose-time type error (CORE-02) naming both ports
   and schemas.
 - **Known at build (D-16).** Params and composed config are plain values; node outputs and file contents are Refs. A
-  plain value may feed a port, and a Ref never feeds a param.
+  plain value may feed a port, and a Ref never feeds a param. An input given `undefined` leaves its port unfed, as if
+  the key were absent, so an optional input is written `key: value`.
 - **Build, compose, perform.** Build runs the author's code as compose's first step, on plain values: a build-time `if`
   changes the graph's shape, a Ref is a placeholder and coercing it throws, and ambient state (environment, clock,
   randomness) is frozen (SDK-11). The loader builds twice and compares the IR (SDK-12), byte-stable for identical params

@@ -65,6 +65,20 @@ describe("code", () => {
 		});
 	});
 
+	test("leaves an input given undefined unfed, with no port or literal", () => {
+		const node = nodeOf(
+			buildOf(() =>
+				code(merge, {
+					in: { parts: ["a"], sep: "\n", prefix: undefined },
+					out: { text: Text() },
+				}),
+			),
+			"merge",
+		);
+		expect(node.in).not.toHaveProperty("prefix");
+		expect(node.literals).not.toHaveProperty("prefix");
+	});
+
 	test("has no timeout by default", () => {
 		const node = nodeOf(
 			buildOf(() => code(stamp)),

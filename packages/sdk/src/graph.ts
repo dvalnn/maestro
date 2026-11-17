@@ -710,7 +710,10 @@ type Wiring = {
 	upstream: Set<string>;
 };
 
-/** Feeds each input port by an edge or a literal. Returns the upstream nodes outside any enclosing group. */
+/**
+ * Feeds each input port by an edge or a literal, leaving one given `undefined` unfed. Returns the upstream nodes outside
+ * any enclosing group.
+ */
 function wire(
 	node: IrNode,
 	inputs: Record<string, unknown>,
@@ -718,7 +721,8 @@ function wire(
 ): Set<string> {
 	const w: Wiring = { ports: {}, literals: {}, upstream: new Set() };
 	for (const [port, value] of Object.entries(inputs))
-		wirePort(node.id, port, inputRef(port, value), fanin, w);
+		if (value !== undefined)
+			wirePort(node.id, port, inputRef(port, value), fanin, w);
 	if (Object.keys(w.ports).length) node.in = w.ports;
 	if (Object.keys(w.literals).length) node.literals = w.literals;
 	return w.upstream;

@@ -1,10 +1,14 @@
 // Exported functions that code nodes and map keys name. Builds never call them.
 import { type ArtifactRef, type CodeContext, reject } from "../index";
 
-export function merge(inputs: { parts: string[]; sep: string }): {
+export function merge(inputs: {
+	parts: string[];
+	sep: string;
+	prefix?: string;
+}): {
 	text: string;
 } {
-	return { text: inputs.parts.join(inputs.sep) };
+	return { text: (inputs.prefix ?? "") + inputs.parts.join(inputs.sep) };
 }
 
 export function stamp(): { at: number } {
