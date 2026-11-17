@@ -5,9 +5,12 @@ them, with the spend and the risk. Add no attribution, emoji or sign-off.
 
 The spec picks the form:
 
-- **Direct**, a spec opening with `#### Brief`: no spec gate ran, so the body shows the calls the builder made.
 - **Specced**, a spec opening with `#### Context`: the owner approved its shape, so the body shows how the change holds
   to it.
+- **Direct**, any other spec, such as one opening with `#### Brief` or a hand brief opening with `Slice:`. No spec gate
+  ran, so the body shows the calls the builder made.
+
+A `## map` or `## overrules` section does not pick the form; Evidence applies it to both forms.
 
 Use exactly the form's sections, with no preamble, in the words of `GLOSSARY.md`. Size each section to the change: a
 small change gets a sentence per section.
