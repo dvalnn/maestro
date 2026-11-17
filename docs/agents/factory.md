@@ -118,7 +118,7 @@ The pick step. The first step that starts a concert ends the pick; one that star
 
 ```mermaid
 flowchart TD
-    P(["pick"]) --> C{"code slot free?"}
+    P(["pick"]) --> C{"code slot free and main not red?"}
     C -->|yes| SR{"stack review?"}
     C -->|no| Q
     SR -->|none| E{"encore?"}
@@ -218,11 +218,15 @@ flowchart TD
   merges as medium does. The owner merges by fast-forward, as `main` takes signed commits only. An epic's last child
   arms only once its stack review clears it (Rules, Build: Stack review).
 - **One concert per slot.** The code slot holds a slice, its encore or a stack review; the second slot holds a triage,
-  its encore or a masterclass. The tick routes and syncs on every run, then starts a concert only in a free slot. A
-  running concert holds its slot however many newer concerts of other kinds there are. A busy code slot skips the whole
-  build step, Stale spec bounces and dependency queueing included; a busy second slot skips triage and masterclass. An
-  issue whose own concert runs is neither triaged nor built, and that concert is routed once it settles. A masterclass
-  is routed and retried as Masterclass says.
+  its encore or a masterclass. The tick routes and syncs on every run unless a status read fails (Red `main`), then
+  starts a concert only in a free slot. A running concert holds its slot however many newer concerts of other kinds
+  there are. A busy code slot skips the whole build step, Stale spec bounces and dependency queueing included; a busy
+  second slot skips triage and masterclass. An issue whose own concert runs is neither triaged nor built, and that
+  concert is routed once it settles. A masterclass is routed and retried as Masterclass says.
+- **Red `main`.** `main` is red when the `check / check (push)` status of its commit is `failure` or `error`; a
+  `pending` or absent one is not. A red `main` skips the whole build step, Stale spec bounces and stack reviews
+  included, and the tick says `main <sha> fails check: no build starts until it is green`. A status read the forge fails
+  stops the tick, and `--route-only` reads none.
 - **Pick order.** Finish work first: a stack review, then an encore of a PR with changes requested, then a build, then
   an overdue masterclass, then triage, then a due masterclass (Rules, Masterclass). A tick that routes a settle still
   starts one concert in a free slot; the next run fills the other slot. Within builds and within triage, an issue the

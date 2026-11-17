@@ -2280,8 +2280,118 @@ function epicWith(
 const reviewsOf = (t: { starts: string[][] }) =>
 	t.starts.filter((a) => a[1]?.endsWith("review.ts"));
 
-// Seams: a tick's forge-visible routing and sync, and the concerts it starts through maestro.
+// Seams: a tick's forge-visible routing and sync, its messages, errors, and the concerts it starts through maestro.
 describe("two slots in a tick", () => {
+	test("a red main holds slices and leaves triage to the second slot", async () => {
+		for (const state of ["failure", "error"]) {
+			const t = setup([
+				specced(7, "ready-for-agent"),
+				issue(8, "needs-triage"),
+			]);
+			Object.assign(t.forge, {
+				status: async (sha: string) => (sha === "sha-main" ? state : "success"),
+			});
+			await t.run();
+			expect(t.starts.map(started)).toEqual(["perform triage.ts"]);
+			expect(t.starts[0]).toContain(`${MILESTONE}.i8`);
+			expect(t.find(7).labels).toContain("state/ready-for-agent");
+			expect(t.said).toContain(
+				"main sha-main fails check: no build starts until it is green",
+			);
+		}
+	});
+
+	test("a red main holds slice encores and stack reviews", async () => {
+		for (const state of ["failure", "error"]) {
+			const encore = setup(
+				[specced(7, "in-review", { slice: "s1", concert: "s1", review: 3 })],
+				[sliceConcert("s1", 7)],
+			);
+			encore.pulls.push(pullOf(31, 7));
+			encore.reviews[31] = [review(5)];
+			Object.assign(encore.forge, { status: async () => state });
+			await encore.run();
+			expect(encore.starts).toEqual([]);
+
+			const stack = epicWith("in-review");
+			Object.assign(stack.forge, { status: async () => state });
+			await stack.run();
+			expect(stack.starts).toEqual([]);
+		}
+	});
+
+	test("a red main is reported even when the code slot is busy", async () => {
+		const t = setup([], [sliceConcert("s1", 9, "running")]);
+		Object.assign(t.forge, { status: async () => "failure" });
+		await t.run();
+		expect(t.said).toContain(
+			"main sha-main fails check: no build starts until it is green",
+		);
+	});
+
+	test("a red main still routes and syncs before triage", async () => {
+		const split: Triage = {
+			...base,
+			verdict: "split",
+			risk: "medium",
+			children,
+		};
+		const t = setup(
+			[
+				issue(7, "needs-triage"),
+				issue(9, "ready-for-agent", { concert: "old", result: split }),
+				issue(10, "needs-triage"),
+			],
+			[triageConcert("c1", 7)],
+			settled(ready),
+		);
+		Object.assign(t.forge, { status: async () => "failure" });
+		await t.run();
+		expect(t.find(7).labels).toContain("state/ready-for-agent");
+		expect(dataAt(t.find(9)).filed).toEqual([100, 101]);
+		expect(t.starts.map(started)).toEqual(["perform triage.ts"]);
+		expect(t.starts[0]).toContain(`${MILESTONE}.i10`);
+	});
+
+	test("a non-red main permits slices and stack reviews", async () => {
+		for (const state of ["success", "pending", "warning", undefined]) {
+			const build = setup([specced(7, "ready-for-agent")]);
+			Object.assign(build.forge, { status: async () => state });
+			await build.run();
+			expect(build.starts.map(started)).toEqual(["perform slice.ts"]);
+			expect(build.said.some((l) => l.includes("fails check"))).toBe(false);
+
+			const stack = epicWith("in-review");
+			Object.assign(stack.forge, { status: async () => state });
+			await stack.run();
+			expect(stack.starts.map(started)).toEqual(["perform review.ts"]);
+		}
+	});
+
+	test("a failed main status read stops the tick before any concert starts", async () => {
+		const t = setup([specced(7, "ready-for-agent"), issue(8, "needs-triage")]);
+		const failure = new Error("status read failed");
+		Object.assign(t.forge, {
+			status: async () => {
+				throw failure;
+			},
+		});
+		await expect(t.run()).rejects.toBe(failure);
+		expect(t.starts).toEqual([]);
+	});
+
+	test("route-only reads no status, so a failing read does not stop it", async () => {
+		const t = setup([specced(7, "ready-for-agent")]);
+		Object.assign(t.forge, {
+			status: async () => {
+				throw new Error("status read");
+			},
+		});
+		t.options.routeOnly = true;
+		await t.run();
+		expect(t.said.some((line) => line.includes("fails check"))).toBe(false);
+		expect(t.starts).toEqual([]);
+	});
 	test("routes and syncs while both slots are occupied, without starting another concert", async () => {
 		const split: Triage = {
 			...base,
@@ -2693,6 +2803,13 @@ describe("masterclass", () => {
 				"",
 			]).flat(),
 		].join("\n");
+
+	test("a red main leaves an overdue masterclass to the second slot", async () => {
+		const t = setup([specced(7, "ready-for-agent")], runs(50, 20));
+		Object.assign(t.forge, { status: async () => "failure" });
+		await t.run();
+		expect(t.starts.map(started)).toEqual(["perform masterclass.ts"]);
+	});
 
 	test("a running triage prevents an overdue masterclass while another settle is routed", async () => {
 		const t = setup(

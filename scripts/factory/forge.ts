@@ -117,7 +117,12 @@ export type Forge = {
 	requestReview(pull: number, reviewers: string[]): Promise<void>;
 	/** The commit `branch` points at. */
 	head(branch: string): Promise<string>;
+	/** The state of the `check` push context on `commit`, or none when CI has posted none. */
+	status(commit: string): Promise<string | undefined>;
 };
+
+/** The context Forgejo Actions gives the push run of the `check` workflow. */
+const CHECK_PUSH = "check / check (push)";
 
 /** Sends one HTTP request; the forge's seam for tests. */
 export type Send = (url: string, init: RequestInit) => Promise<Response>;
@@ -277,6 +282,15 @@ function num(o: Json, key: string): number {
 
 const text = (o: Json, key: string) =>
 	typeof o[key] === "string" ? o[key] : "";
+
+/** The state a commit status holds.
+ * @throws Error when it holds none.
+ */
+function state(o: Json): string {
+	const v = o.status;
+	if (typeof v !== "string") throw new Error("forge: status is not a string");
+	return v;
+}
 
 /** The time `o[key]` holds, in ms since the epoch, when it holds one. */
 function time(o: Json, key: string): number | undefined {
@@ -548,6 +562,21 @@ export function forge(
 		head: async (branch) => {
 			const found = object(await api("GET", `/branches/${branch}`), "branch");
 			return text(object(found.commit, "commit"), "id");
+		},
+		status: async (commit) => {
+			for (let page = 1; ; page++) {
+				const found = object(
+					await api(
+						"GET",
+						`/commits/${commit}/status?${query({ limit: PAGE, page })}`,
+					),
+					"status",
+				);
+				const statuses = objects(found.statuses ?? [], "statuses");
+				const push = statuses.find((s) => s.context === CHECK_PUSH);
+				if (push) return state(push);
+				if (statuses.length < PAGE) return undefined;
+			}
 		},
 	};
 }

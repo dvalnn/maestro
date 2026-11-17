@@ -296,6 +296,38 @@ test("head reads the commit a branch points at", async () => {
 	expect(calls[0]?.url).toEndWith("/branches/main");
 });
 
+test("status reads the check push context and ignores the pull request one", async () => {
+	const { calls, send } = recording(() => [
+		200,
+		{
+			state: "success",
+			statuses: [
+				{ context: "check / check (pull_request)", status: "success" },
+				{ context: "check / check (push)", status: "failure" },
+			],
+		},
+	]);
+	expect(await withShims(() => forge(signedIn, send).status("abc"))).toBe(
+		"failure",
+	);
+	expect(calls[0]?.url).toContain("/commits/abc/status?");
+});
+
+test("status is none while only the pull request context exists", async () => {
+	const { send } = recording(() => [
+		200,
+		{
+			state: "failure",
+			statuses: [
+				{ context: "check / check (pull_request)", status: "failure" },
+			],
+		},
+	]);
+	expect(
+		await withShims(() => forge(signedIn, send).status("abc")),
+	).toBeUndefined();
+});
+
 test("closed reads when each issue closed, none for an open one", async () => {
 	const { send } = recording(() => [
 		200,
@@ -309,4 +341,40 @@ test("closed reads when each issue closed, none for an open one", async () => {
 		Date.parse("2026-11-03T11:00:00Z"),
 		undefined,
 	]);
+});
+
+test("status finds the push context on a later page", async () => {
+	const filler = Array.from({ length: 50 }, (_, i) => ({
+		context: `other-${i}`,
+		status: "success",
+	}));
+	const { calls, send } = recording((url) => [
+		200,
+		{
+			statuses: url.includes("page=2")
+				? [{ context: "check / check (push)", status: "error" }]
+				: filler,
+		},
+	]);
+	expect(await withShims(() => forge(signedIn, send).status("abc"))).toBe(
+		"error",
+	);
+	expect(calls).toHaveLength(2);
+});
+
+test("status refuses a push context whose state is not text", async () => {
+	const { send } = recording(() => [
+		200,
+		{ statuses: [{ context: "check / check (push)", status: 42 }] },
+	]);
+	await expect(
+		withShims(() => forge(signedIn, send).status("abc")),
+	).rejects.toThrow();
+});
+
+test("status is none when the commit has no statuses list", async () => {
+	const { send } = recording(() => [200, { state: "pending", statuses: null }]);
+	expect(
+		await withShims(() => forge(signedIn, send).status("abc")),
+	).toBeUndefined();
 });

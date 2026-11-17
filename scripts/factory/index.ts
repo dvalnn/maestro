@@ -1165,11 +1165,20 @@ async function triage(tick: Tick, entries: Entry[]) {
 	return false;
 }
 
+/** Whether the `check` push status of `commit` is `failure` or `error`; says so when it is. */
+async function failsCheck(deps: Deps, commit: string): Promise<boolean> {
+	const state = await deps.forge.status(commit);
+	const red = state === "failure" || state === "error";
+	if (red)
+		deps.say(`main ${commit} fails check: no build starts until it is green`);
+	return red;
+}
+
 /** The tick's steps: route and sync, then each start step whose slot is free, in pick order. */
-const stepsFor = (busy: Slots) => [
+const stepsFor = (busy: Slots, red: boolean) => [
 	route,
 	sync,
-	...(busy.code ? [] : [stackReview, build]),
+	...(busy.code || red ? [] : [stackReview, build]),
 	...(busy.second ? [] : [overdueMasterclass, triage, masterclass]),
 ];
 
@@ -1193,6 +1202,7 @@ export async function tick(deps: Deps, options: Options): Promise<void> {
 	const busy = busySlots(concerts);
 	const login = await deps.forge.login();
 	const main = await deps.forge.head(BASE);
+	const red = !options.routeOnly && (await failsCheck(deps, main));
 	await deps.landing.fetch();
 	let closed: Promise<Issue[]> | undefined;
 	const tick: Tick = {
@@ -1204,7 +1214,7 @@ export async function tick(deps: Deps, options: Options): Promise<void> {
 		main,
 		closed: () => (closed ??= deps.forge.closed(CLOSED)),
 	};
-	const steps = options.routeOnly ? [route, sync] : stepsFor(busy);
+	const steps = options.routeOnly ? [route, sync] : stepsFor(busy, red);
 	for (const step of steps) {
 		const entries = await load(tick);
 		if (!entries || !(await step(tick, entries))) return;

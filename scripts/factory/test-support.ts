@@ -161,6 +161,7 @@ export function fakeForge(
 			events.push(`head ${branch}`);
 			return heads[branch] ?? `sha-${branch}`;
 		},
+		status: async () => "success",
 	};
 	return {
 		forge,
