@@ -2019,12 +2019,25 @@ describe("perform", () => {
 			"x",
 		);
 		const done = performed(host, ir, configOf(toyTarget()));
+		// The outer bwrap can be the only sandbox process listed for a while. Kill
+		// only once `sleep` runs, so the whole set is listed and no child is orphaned.
+		const comm = (pid: number) => {
+			try {
+				return readFileSync(`/proc/${pid}/comm`, "utf8").trim();
+			} catch {
+				return ""; // exited since it was listed
+			}
+		};
 		let pids: number[] = [];
-		while (!pids.length) {
-			await Bun.sleep(20);
+		while (!pids.some((pid) => comm(pid) === "sleep")) {
+			await Bun.sleep(0);
 			pids = sandboxed();
 		}
-		for (const pid of pids) process.kill(pid, "SIGKILL");
+		for (const pid of pids) {
+			try {
+				process.kill(pid, "SIGKILL");
+			} catch {} // exited since it was listed, e.g. under its outer bwrap's kill
+		}
 		expect((await done).result).toMatchObject({
 			outcome: "failed",
 			reason: "check 'inline' line 1 was killed by signal SIGKILL",
