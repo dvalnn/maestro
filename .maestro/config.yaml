@@ -26,33 +26,40 @@ classics:
   repair_until_green: { fix: fmt }
 profiles:
   classics/builder:
+    instructions: !append [CODING_STANDARDS.md]
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before drawing any Mermaid diagram: SKILL.md" }
       docs: { path: docs/README.md, hint: "before adding to or editing any doc: each topic's home and the doc conventions" }
   classics/lens:
+    instructions: !append [CODING_STANDARDS.md]
     runtime: { harness: claude, model: claude-haiku-5-5, thinking: medium }
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
       docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
   classics/skeptic:
+    instructions: !append [CODING_STANDARDS.md]
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
       docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
   classics/consolidator:
+    instructions: !append [CODING_STANDARDS.md]
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
       docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
   classics/deep-lens:
+    instructions: !append [CODING_STANDARDS.md]
     runtime: { harness: claude, model: claude-sonnet-5-5, thinking: medium }
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
       docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
   classics/top-lens:
+    instructions: !append [CODING_STANDARDS.md]
     runtime: { harness: claude, model: claude-opus-5-5, thinking: medium }
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
       docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
   classics/cross-lens:
+    instructions: !append [CODING_STANDARDS.md]
     runtime: { harness: pi, model: github-copilot/gpt-6.1-sol, thinking: medium }
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
@@ -61,4 +68,9 @@ profiles:
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before drawing any Mermaid diagram: SKILL.md" }
   classics/tester:
+    instructions: !append [CODING_STANDARDS.md]
     runtime: { harness: pi, model: github-copilot/gpt-6.1-terra, thinking: medium }
+  classics/planner:
+    instructions: !append [CODING_STANDARDS.md]
+  designer:
+    instructions: !append [CODING_STANDARDS.md]

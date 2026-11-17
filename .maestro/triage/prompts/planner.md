@@ -88,9 +88,9 @@ and the behaviour that must hold, not the fix.
 
 ## Design
 
-- Codebase health comes before the feature. Before deciding, read the parts of `docs/architecture.md` and
-  `CODING_STANDARDS.md` for the packages the change touches. `what` names the module that owns the change; the change
-  extends what is there, never a parallel path.
+- Codebase health comes before the feature. Before deciding, read the parts of `docs/architecture.md` for the packages
+  the change touches, and hold the design to the coding standards in your instructions. `what` names the module that
+  owns the change; the change extends what is there, never a parallel path.
 - The sightings attachment, when given, lists defects and smells earlier runs saw and no masterclass has read yet. Use
   those on the paths the change touches or leans on to see the debt around it.
 - When the change sets or changes a contract, weigh a rival shape before you settle one.
