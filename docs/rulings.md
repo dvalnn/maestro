@@ -125,9 +125,9 @@ A decision sets direction; a ruling settles a question the requirements left ope
 - **R-05 `config` prints values as they are, secrets included.** It writes to the operator's own stdout, not to a log.
   The record does keep config values, in each concert's snapshot, so secrets belong in `.env`. Masking waits for secret
   handling (D-33). Applies in `cli`'s `compose` module.
-- **R-06 Each command reads and writes one record store**, the one under `$XDG_DATA_HOME/maestro`. `ls` has no `--all`,
-  because listing other stores needs workspace discovery, which maestro does not do. A host-specific `ls` column, such
-  as a target, would come through the host's hooks, never from `cli`.
+- **R-06 Each command reads and writes one record store**, the one under `$XDG_DATA_HOME/maestro`. `--all` on `ls` and
+  `prune` stays within that store, because listing other stores needs workspace discovery, which maestro does not do. A
+  host-specific `ls` column, such as a target, would come through the host's hooks, never from `cli`.
 - **R-07 A pack listed under `packs:` wins over an installed pack of the same id**, on every command that loads packs.
   Why: the operator named it on purpose, and an installed copy of an older release must not shadow a pack under
   development. Two installed packs of one id are still refused. Applies in `cli`'s `config` module (`packDirs`).

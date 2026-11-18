@@ -168,7 +168,8 @@ Both run from any folder under the concert's [config snapshot](../../docs/archit
 and one node's expansions keep the order they started in. `ls --composition` takes `<pack>.<composition>`, such as
 `greet.hello`, and the list shows compositions the same way. It lists the newest 20 by default; on a terminal, when the
 limit leaves older concerts out, a dim line names the command that shows more, such as
-`Older concerts: maestro ls --limit 40`, carrying the filters given. Piped output never has it.
+`Older concerts: maestro ls --limit 40`, carrying the filters given. Piped output never has it. `ls --all` lists every
+concert that matches the filters, with no hint, and refuses `--limit` beside it.
 
 - **Spend.** An agent instance has an agent column, `<harness> · <model> · <effort>  <total> tok`, in `ls <concert>` and
   `watch`: the model without its provider (`github-copilot/claude-haiku-5.5` shows as `claude-haiku-5.5`), the effort
@@ -370,7 +371,9 @@ and the exit is 1.
 
 `prune` deletes a settled concert's files and what its hosts hold, which it releases under the concert's snapshot. A
 concert whose snapshot is missing, unreadable or no longer composes stays, and prune says why. Without `--before` there
-is no age cutoff, and `--status running` is refused.
+is no age cutoff, and `--status running` is refused. `prune --all` selects every settled concert in the record store and
+leaves running ones out. It takes no concert ids or filters, and it asks first and keeps a concert it cannot release, as
+a filtered prune does.
 
 ## Config
 

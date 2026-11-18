@@ -38,9 +38,10 @@ Either resumes. A concert that already settled exits 0 and says so on stderr.
 
 ## Prune and tours
 
-`maestro prune` deletes concerts with their records and lanes. It selects by id or the filters in `prune --help`, asks
-before deleting (`--yes` without a terminal), and takes the lane refs into a pruned concert with it. It refuses a
-running concert named by id or `--status running`, and leaves running ones out of a filter.
+`maestro prune` deletes concerts with their records and lanes. It selects by id, by the filters in `prune --help`, or
+with `--all`, every settled concert, asks before deleting (`--yes` without a terminal), and takes the lane refs into a
+pruned concert with it. It refuses a running concert named by id or `--status running`, and leaves running ones out of a
+filter.
 
 Give one task's concerts a tour at perform time, so `ls --tour <slug>` finds them (and tours under it, `epic` matching
 `epic.story`) and `prune --tour <slug> --yes` clears them. `maestro tour set <slug> <id>...` and

@@ -759,6 +759,71 @@ describe("perform", () => {
 });
 
 describe("usage errors", () => {
+	// Seam: usage exits and the exact flag tokens named in operator-facing diagnostics.
+	test("ls refuses --all with --limit and names both flags", async () => {
+		const w = await world();
+		for (const flags of [
+			["--all", "--limit", "1"],
+			["--limit", "1", "--all"],
+		]) {
+			const refused = await w.call(["ls", ...flags]);
+			expect(refused.code).toBe(2);
+			expect(refused.out).toBe("");
+			expect(refused.err.match(/--[a-z][a-z-]*/g)).toEqual(
+				expect.arrayContaining(["--all", "--limit"]),
+			);
+		}
+	});
+
+	test("ls refuses --all with --limit=value and prune refuses a selection before --all", async () => {
+		const w = await world();
+		const ls = await w.call(["ls", "--limit=1", "--all"]);
+		expect(ls.code).toBe(2);
+		expect(ls.out).toBe("");
+		const pruned = await w.call(["prune", "--status", "ok", "--all", "--yes"]);
+		expect(pruned.code).toBe(2);
+		expect(pruned.out).toBe("");
+		expect(pruned.err.match(/--[a-z][a-z-]*/g)).toContain("--all");
+	});
+
+	test("prune without a selection names --all among its choices", async () => {
+		const w = await world();
+		const refused = await w.call(["prune"]);
+		expect(refused.code).toBe(2);
+		expect(refused.out).toBe("");
+		expect(refused.err.match(/--[a-z][a-z-]*/g)).toContain("--all");
+		expect(existsSync(w.env.XDG_DATA_HOME)).toBe(false);
+		const document = await w.call(["prune", "--json"]);
+		expect(document.code).toBe(2);
+		expect(document.err).toBe("");
+		expect(json(document)).toMatchObject({ ok: false });
+		expect(json(document).error ?? json(document).diagnostics).toBeDefined();
+	});
+
+	test("prune refuses --all combined with ids or any selection filter", async () => {
+		const w = await world();
+		const performed = await w.call(["perform", ...GREET], {
+			hosts: [hostOf()],
+		});
+		expect(performed.code).toBe(0);
+		const id = idOf(performed);
+		expect((await w.call(["prune", "--all", "--dry-run"])).code).toBe(0);
+		for (const selection of [
+			[id],
+			["--before", "1d"],
+			["--tour", "history"],
+			["--workspace", "ws"],
+			["--status", "ok"],
+			["--composition", "demo.greet"],
+		]) {
+			const refused = await w.call(["prune", "--all", ...selection, "--yes"]);
+			expect(refused.code).toBe(2);
+			expect(refused.out).toBe("");
+			expect(refused.err).not.toBe("");
+		}
+		expect(json(await w.call(["ls", "--json"]))).toMatchObject([{ id }]);
+	});
+
 	// Seam: usage exits for forbidden flags, including common flags placed before the verb.
 	test("recorded commands refuse presets and readers refuse config overrides as usage errors", async () => {
 		const w = await world();
@@ -907,11 +972,6 @@ describe("usage errors", () => {
 			"watch of an unknown concert",
 			["w", "nope"],
 			/^error: no concert 'nope' in the record\n {2}Check the id with 'maestro ls'$/,
-		],
-		[
-			"prune with no selection",
-			["prune"],
-			/^error: prune needs concert ids, --before, --tour, --workspace, --status or --composition\n {2}Name concerts, or pick them with a filter from 'maestro prune --help'$/,
 		],
 		[
 			"prune with ids and --before",
@@ -1250,6 +1310,15 @@ describe("usage errors", () => {
 });
 
 describe("help and color", () => {
+	// Seam: the selection alternatives in the command's rendered usage.
+	test("prune help shows --all as a selection beside concert ids and filters", async () => {
+		const w = await world();
+		const help = await w.call(["prune", "--help"]);
+		expect(help.code).toBe(0);
+		const usage = help.out.match(/Usage:[\s\S]*?(?=\n\n|$)/)?.[0] ?? "";
+		expect(usage.match(/--[a-z][a-z-]*/g) ?? []).toContain("--all");
+	});
+
 	const TERMINAL = () => ({ columns: 80, rows: 24 });
 	const COMMON_LINE =
 		"Common flags: --color, --debug, -h/--help (see 'maestro --help')";
@@ -1463,6 +1532,47 @@ describe("--version", () => {
 });
 
 describe("the record", () => {
+	// Seam: ls tables, JSON arrays and exit codes over the operator's record store.
+	test("ls --all lists every match newest first without an older-concerts hint", async () => {
+		const w = await world();
+		const failed: string[] = [];
+		for (let i = 0; i < 21; i++) {
+			const performed = await w.call(
+				["perform", ...GREET, "--tour", "history"],
+				{
+					hosts: [hostOf({ outcome: "failed", reason: "flaky" })],
+				},
+			);
+			expect(performed.code).toBe(1);
+			failed.unshift(idOf(performed));
+		}
+		const done = await w.call(["perform", ...GREET], { hosts: [hostOf()] });
+		expect(done.code).toBe(0);
+		const every = [idOf(done), ...failed];
+		for (const [flags, expected] of [
+			[[], every],
+			[["--status", "failed"], failed],
+		] as const) {
+			const table = await w.call(["ls", "--all", ...flags], {
+				terminal: () => ({ columns: 200, rows: 24 }),
+				env: { NO_COLOR: "1" },
+			});
+			expect(table.code).toBe(0);
+			expect(
+				table.out
+					.split("\n")
+					.slice(1)
+					.map((line) => line.split(/\s+/)[0]),
+			).toEqual(expected.map(shortOf));
+			const listed = await w.call(["ls", "--all", ...flags, "--json"]);
+			expect(listed.code).toBe(0);
+			expect(listed.err).toBe("");
+			const rows: { id: string }[] = json(listed);
+			expect(Array.isArray(rows)).toBe(true);
+			expect(rows.map((row) => row.id)).toEqual(expected);
+		}
+	});
+
 	// Seam: ls exit codes, table rows and JSON when the stored snapshot cannot be read.
 	test("ls keeps every concert and omits an unreadable snapshot", async () => {
 		const w = await world();
@@ -2179,6 +2289,106 @@ test("wait, watch, kill, tour, artifact and prune run on a recorded concert when
 });
 
 describe("prune", () => {
+	// Seam: prune output and exit codes, confirmation, and the concerts still visible through ls.
+	test("prune --all deletes every settled concert and skips running concerts", async () => {
+		const w = await world();
+		const settled: string[] = [];
+		for (const echo of [
+			ECHO,
+			{ outcome: "failed", reason: "flaky" },
+			{ outcome: "rejected", reason: "no" },
+		]) {
+			const performed = await w.call(["perform", ...GREET], {
+				hosts: [hostOf(echo)],
+			});
+			settled.push(idOf(performed));
+		}
+		const started = Promise.withResolvers<void>();
+		const finish = Promise.withResolvers<typeof ECHO>();
+		const performing = w.call(["perform", ...GREET], {
+			hosts: [
+				hostOf(ECHO, {
+					steps: {
+						first: () => {
+							started.resolve();
+							return finish.promise;
+						},
+					},
+				}),
+			],
+		});
+		try {
+			await started.promise;
+			const before: { id: string; status: string }[] = json(
+				await w.call(["ls", "--json"]),
+			);
+			const running = before.filter((row) => row.status === "running");
+			expect(running).toHaveLength(1);
+			const pruned = await w.call(["prune", "--all", "--yes", "--json"]);
+			expect(pruned.code).toBe(0);
+			expect(json(pruned)).toMatchObject({
+				pruned: expect.arrayContaining(settled),
+				failures: [],
+			});
+			expect(json(pruned).pruned).toHaveLength(3);
+			const after: { id: string; status: string }[] = json(
+				await w.call(["ls", "--json"]),
+			);
+			expect(after.map((row) => ({ id: row.id, status: row.status }))).toEqual(
+				running.map((row) => ({ id: row.id, status: "running" })),
+			);
+		} finally {
+			finish.resolve(ECHO);
+			await performing;
+		}
+	});
+
+	test("prune --all asks before deleting and a declined confirmation keeps every concert", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const asked: string[] = [];
+		const declined = await w.call(["prune", "--all"], {
+			confirm: async (question) => {
+				asked.push(question);
+				return false;
+			},
+		});
+		expect(declined.code).toBe(0);
+		expect(asked).toHaveLength(1);
+		expect(asked[0]).not.toBe("");
+		expect(json(await w.call(["ls", "--json"]))).toMatchObject([{ id }]);
+		const accepted = await w.call(["prune", "--all"], {
+			confirm: async () => true,
+		});
+		expect(accepted.code).toBe(0);
+		expect(accepted.out).toBe(id);
+		expect(json(await w.call(["ls", "--json"]))).toEqual([]);
+	});
+
+	test("prune --all --yes reports an unreleasable concert as kept and deletes the others", async () => {
+		const w = await world();
+		const gone = idOf(
+			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
+		);
+		const kept = idOf(
+			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
+		);
+		const host = hostOf(ECHO, {
+			release: (id: string) => {
+				if (id === kept) throw new Error("release unavailable");
+			},
+		});
+		const pruned = await w.call(["prune", "--all", "--yes", "--json"], {
+			hosts: [host],
+		});
+		expect(pruned.code).toBe(1);
+		const doc = json(pruned);
+		expect(doc.pruned).toEqual([gone]);
+		expect(doc.failures).toEqual([{ id: kept, reason: expect.any(String) }]);
+		expect(doc.failures[0].reason).not.toBe("");
+		expect(json(await w.call(["ls", "--json"]))).toMatchObject([{ id: kept }]);
+	});
+
 	const ids = async (w: Awaited<ReturnType<typeof world>>) =>
 		json(await w.call(["ls", "--json"])).map((r: { id: string }) => r.id);
 
@@ -2402,6 +2612,23 @@ describe("prune", () => {
 });
 
 describe("prune --dry-run", () => {
+	// Seam: the dry-run listing and the unchanged store as read through ls.
+	test("prune --all --dry-run lists every selected concert and deletes none", async () => {
+		const w = await world();
+		const a = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const b = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const dry = await w.call(["prune", "--all", "--dry-run"]);
+		expect(dry.code).toBe(0);
+		expect(
+			dry.out
+				.split("\n")
+				.map((line) => line.split(/\s+/)[0])
+				.sort(),
+		).toEqual([a, b].sort());
+		const after: { id: string }[] = json(await w.call(["ls", "--json"]));
+		expect(after.map((row) => row.id)).toEqual([b, a]);
+	});
+
 	// Seam: independently measured ls diskUse and prune wouldFree under a recorded config.
 	test("prune and ls measure the same disk use outside the recorded workspace", async () => {
 		const w = await world();

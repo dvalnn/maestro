@@ -42,6 +42,10 @@ const PRUNE_OPTIONS = {
 		arg: "duration",
 		desc: `Prune concerts that settled longer ago than this, such as ${DURATION_EXAMPLE}`,
 	},
+	all: {
+		type: "boolean",
+		desc: "Prune every settled concert, leaving running ones out",
+	},
 	...FILTER_OPTIONS,
 	status: {
 		...FILTER_OPTIONS.status,
@@ -88,20 +92,21 @@ function cutoffOf(values: Values): number {
 		: Date.now() - parseDuration("--before", before);
 }
 
-/** The concerts to prune: those named, or those matching `filter` that settled before `cutoff`. */
+/** The concerts to prune: those named, or those matching `filter` that settled before `cutoff`; `--all` is the empty filter at any age. */
 type Selection =
 	| { named: readonly string[] }
 	| { filter: ConcertFilter; cutoff: number };
 
 /**
  * The selection the flags and positionals make.
- * @throws CliError, a usage error, for a selection that is none or both, or a bad filter value.
+ * @throws CliError, a usage error, for a selection that is none or more than one, or a bad filter value.
  */
 function selectionChecked(
 	values: Values,
 	positionals: readonly string[],
 ): Selection {
 	const filtered = FILTER_FLAGS.some((f) => textOf(values, f) !== undefined);
+	if (isSet(values, "all")) return everyChecked(positionals, filtered);
 	if (positionals.length > 0 && filtered)
 		throw usageError(
 			"prune takes concert ids or filters, not both",
@@ -110,10 +115,26 @@ function selectionChecked(
 	if (positionals.length > 0) return { named: positionals };
 	if (!filtered)
 		throw usageError(
-			"prune needs concert ids, --before, --tour, --workspace, --status or --composition",
-			"Name concerts, or pick them with a filter from 'maestro prune --help'",
+			"prune needs concert ids, --all, --before, --tour, --workspace, --status or --composition",
+			"Name concerts, pass --all, or pick them with a filter from 'maestro prune --help'",
 		);
 	return { cutoff: cutoffOf(values), filter: prunable(values) };
+}
+
+/**
+ * The selection of `--all`: every settled concert.
+ * @throws CliError, a usage error, when ids or a filter come with it.
+ */
+function everyChecked(
+	positionals: readonly string[],
+	filtered: boolean,
+): Selection {
+	if (positionals.length > 0 || filtered)
+		throw usageError(
+			"prune takes --all alone, without concert ids or filters",
+			"Drop --all, or drop the ids and --before, --tour, --workspace, --status and --composition",
+		);
+	return { filter: {}, cutoff: Number.POSITIVE_INFINITY };
 }
 
 /**
@@ -296,7 +317,7 @@ async function pruned(stored: Stored, selection: Selection) {
 }
 
 export const prune: Command = {
-	usage: "prune <concert>... | <filter>... [flags]",
+	usage: "prune <concert>... | <filter>... | --all [flags]",
 	arguments: [["<concert>", "A settled concert, as 'maestro ls' lists it"]],
 	options: PRUNE_OPTIONS,
 	examples: [

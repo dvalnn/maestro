@@ -23,6 +23,7 @@ import {
 	type Deps,
 	FILTER_OPTIONS,
 	filterOf,
+	isSet,
 	type Options,
 	only,
 	peek,
@@ -78,6 +79,10 @@ const LS_OPTIONS = {
 		type: "string",
 		arg: "count",
 		desc: `Show at most this many, newest first (default ${LIST_LIMIT})`,
+	},
+	all: {
+		type: "boolean",
+		desc: "Show every concert that matches, newest first",
 	},
 } as const satisfies Options;
 
@@ -183,12 +188,23 @@ function lsChecked(values: Values, positionals: readonly string[]) {
 		);
 	if (id === undefined && instance !== undefined)
 		throw new ArgumentError("takes an instance after a concert", NAME_CONCERT);
-	const limit = textOf(values, "limit");
-	const query = {
-		...filterOf(values),
-		limit: limit === undefined ? LIST_LIMIT : parseCount("--limit", limit),
-	};
+	const query = { ...filterOf(values), limit: limitOf(values) };
 	return { id, instance, query };
+}
+
+/**
+ * The most concerts `ls` lists, or undefined for every one under `--all`.
+ * @throws CliError, a usage error, for a bad `--limit` or one beside `--all`.
+ */
+function limitOf(values: Values): number | undefined {
+	const limit = textOf(values, "limit");
+	if (isSet(values, "all") && limit !== undefined)
+		throw usageError(
+			"--all and --limit cannot be used together",
+			"Drop --limit to list every concert, or drop --all to list at most that many",
+		);
+	if (isSet(values, "all")) return undefined;
+	return limit === undefined ? LIST_LIMIT : parseCount("--limit", limit);
 }
 
 /** What `ls --help` adds: the mark, and the fields of the reports `--json` gives, as the hosts word them. */
@@ -275,9 +291,13 @@ function none({ session: { deps }, json }: Stored, filtered: boolean) {
 async function listed(stored: Stored, query: ConcertFilter) {
 	const { session, store, values, json } = stored;
 	const color = colorOf(session.deps, values).out;
-	const limit = query.limit ?? LIST_LIMIT;
-	const fetched = store.concerts({ ...query, limit: limit + 1 });
-	const concerts = fetched.slice(0, limit);
+	// `query.limit` is undefined under `--all`, which fetches every match and cuts none.
+	const { limit } = query;
+	const fetched = store.concerts({
+		...query,
+		limit: limit === undefined ? undefined : limit + 1,
+	});
+	const concerts = limit === undefined ? fetched : fetched.slice(0, limit);
 	const marked = session.deps.terminal !== undefined;
 	if (concerts.length === 0) {
 		const { limit: _, ...filter } = query;
@@ -328,7 +348,10 @@ async function listed(stored: Stored, query: ConcertFilter) {
 	);
 	const shown = color ? highlighted(short, rows, text) : text;
 	const more =
-		!json && session.deps.terminal && fetched.length > limit
+		!json &&
+		session.deps.terminal &&
+		limit !== undefined &&
+		fetched.length > limit
 			? `\n${olderHint(values, limit, color)}`
 			: "";
 	session.deps.stdout(json ? jsonOf(rows) : shown + more);

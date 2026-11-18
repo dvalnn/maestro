@@ -74,7 +74,8 @@ other concert's starts with.
 
 - `maestro wait <id> --timeout <duration>` prints what `perform` prints once the concert settles and exits with its
   code; on the timeout it exits 124. A duration is a whole number and one unit: `500ms`, `90s`, `15m`, `12h`, `7d`.
-- `maestro ls` lists concerts, newest first; `ls --help` lists its filters, such as `--status running` and `--tour`.
+- `maestro ls` lists concerts, newest first; `ls --help` lists its filters, such as `--status running` and `--tour`, and
+  `--all` lists every match instead of the newest 20.
 - `maestro watch <id>` piped prints JSON Lines, one per instance state change, ending with a `{"type":"concert",...}`
   line holding `wait --json`'s document. `--events` gives one line per event; `--events --instance <id>` keeps one
   instance's, or everything under a group or scope. It takes no timeout: bound it as `timeout 90s maestro watch <id>`.
