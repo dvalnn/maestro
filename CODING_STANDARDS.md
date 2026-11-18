@@ -9,6 +9,7 @@ in `just check`, never tests.
 - Cognitive complexity per function: Biome fails above 10, aim for 6 or less. Bring a function down by extracting a
   named step. A table of callbacks or a flag threaded through calls still counts as its branches.
 - An object literal holds names and values. A value it takes more than one call to compute is a named `const` above it.
+  A type declaration, such as `List(Text())` or a `Struct`, is a value written in place, not a computation.
 - Pass an optional value as `key: value` where the receiver reads `undefined` as absent, as a node's inputs do. Spread
   `...(cond && { key: value })` only when the condition is something other than the value.
 
