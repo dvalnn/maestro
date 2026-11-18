@@ -77,13 +77,13 @@ A call takes `task`, `lane` and the common options, and may add:
 - outputs and checks.
 - `reply`: `{ name: type }`, typed fields of the agent's envelope beside `report`. Each is an output of its type, which
   the host validates, correcting the agent, at most twice, when it is off the type. Structured data goes here, Markdown
-  and large files in outbox files. A name is none of `report`, `blocked`, `outcome`, `reason`, `lane`, `staged`,
-  `session` or an output's.
+  and large files in outbox files. A name is none of `report`, `blocked`, `outcome`, the status ports `ok` and `reason`,
+  `lane`, `staged`, `session` or an output's.
 
 A call sets no runtime, instructions, limits or context: an agent that needs another budget is another seat on another
 profile.
 
 An agent ending `ok` must write every declared file and give every `reply` field, valid, or the instance fails; a
-rejecting verdict agent gives its fields too. Only a verdict agent rejects; one rejecting without its declared files
-ends `rejected` with no outputs. Any agent may report itself blocked: it ends `failed`, reason `blocked: <cause>`, no
-outputs.
+rejecting verdict agent gives its fields too. Only a verdict agent rejects, its report's summary the reason; one
+rejecting without its declared files ends `rejected` with no outputs. Any agent may report itself blocked: it ends
+`failed`, reason `blocked: <cause>`, no outputs.

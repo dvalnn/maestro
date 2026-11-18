@@ -1471,7 +1471,7 @@ describe("agent output correction", () => {
 
 	test("a rejected verdict skips the output check", async () => {
 		const { result, requests } = await attempt(
-			() => [reply({ outcome: "rejected", reason: "no", report: DONE })],
+			() => [reply({ outcome: "rejected", report: { summary: "no" } })],
 			true,
 		);
 		expect(requests).toHaveLength(1);
@@ -1562,19 +1562,16 @@ describe("agent typed reply fields", () => {
 
 	test("a rejection gives the fields, and a blocked reply gives none", async () => {
 		const rejected = await attempt(
-			() => [
-				reply({ outcome: "rejected", reason: "no", report: DONE, ...fields }),
-			],
+			() => [reply({ outcome: "rejected", report: DONE, ...fields })],
 			true,
 		);
 		expect(rejected.result).toMatchObject({ outcome: "rejected" });
 		const bare = await attempt(
 			(n) => [
 				n === 1
-					? reply({ outcome: "rejected", reason: "no", report: DONE })
+					? reply({ outcome: "rejected", report: DONE })
 					: reply({
 							outcome: "rejected",
-							reason: "no",
 							report: DONE,
 							...fields,
 						}),

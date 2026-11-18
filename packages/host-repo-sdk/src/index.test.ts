@@ -472,6 +472,13 @@ describe("typed reply fields", () => {
 		expect(await repo().composeIt(ir)).toMatchObject({ ok: true });
 	});
 
+	test.each(["ok", "reason"])(
+		"a reply field named %s is refused at build",
+		(name) => {
+			expect(() => buildIr(judge({ [name]: Text() }))).toThrow(BuildError);
+		},
+	);
+
 	test.each([
 		["notes", { notes: TestMap }, "SCOPE.name"],
 		["file", { file: Dir() }, "TYPE.reply"],

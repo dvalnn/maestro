@@ -173,8 +173,7 @@ test("a review relays the findings its skeptics upheld to its consolidator, and 
 			[
 				replying({
 					outcome: "rejected",
-					reason: "F1 blocks",
-					report,
+					report: { summary: "F1 blocks" },
 					findings: [
 						finding("F1", "upheld issue"),
 						finding("F2", "overturned issue"),

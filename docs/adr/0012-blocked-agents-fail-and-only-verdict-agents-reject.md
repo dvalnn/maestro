@@ -14,9 +14,9 @@ The rule is:
 - **Every agent may reply `blocked: "<cause>"`** when it cannot proceed, the cause is outside its reach, and nothing
   later in the concert will change it. A blocked agent settles `failed` with the reason `blocked: <cause>`. The host
   does not demand its declared files, and seals no lane version.
-- **Only a verdict agent gives a verdict**, `outcome: ok | rejected` with a `reason` when rejected. `verdict: true` on
-  an agent or a seat marks one, and the host passes the mark to the harness. Any other agent is a work agent: its
-  envelope has no `outcome`, so it finishes or is blocked.
+- **Only a verdict agent gives a verdict**, `outcome: ok | rejected`, with the report's summary as a rejection's reason.
+  `verdict: true` on an agent or a seat marks one, and the host passes the mark to the harness. Any other agent is a
+  work agent: its envelope has no `outcome`, so it finishes or is blocked.
 - **Unfinished work is never passed on.** A failed agent's changes are kept for manual recovery as a partial changeset,
   outside the lane chain, which `maestro cs show|apply --node <id> --partial` reads; no node, retry or resume takes it
   as a lane.

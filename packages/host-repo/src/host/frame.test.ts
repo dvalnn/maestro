@@ -76,16 +76,14 @@ const VERDICT_REPLY = `Your final reply is only this JSON object, with no other 
     "summary": "<your ruling, in one line>",
 ${LISTED}
   },
-  "outcome": "ok",
-  "reason": "<why, when rejected>"
+  "outcome": "ok"
 }
 \`\`\`
 
 - \`outcome\`: \`ok\` when the work passes your ruling, \`rejected\` when it does not.
-- \`reason\`: why you rejected; leave it out when \`ok\`.
 - Most reports are the summary alone: give a list only for an item that clears its bar.
 - Leave out what the run already records: the checks' results and the files you wrote.
-- Give \`"blocked": "<the cause>"\` in place of \`outcome\` and \`reason\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`;
+- Give \`"blocked": "<the cause>"\` in place of \`outcome\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`;
 
 test("a read-lane frame keeps a draft in the working copy and omits the verify line", () => {
 	const text = frame({

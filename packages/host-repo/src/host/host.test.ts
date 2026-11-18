@@ -1700,15 +1700,25 @@ describe("perform", () => {
 		).not.toContain("sightings");
 	});
 
-	test("a verdict agent that rejects is rejected with its reason and outputs", async () => {
-		const { host } = stubHost(() => [
-			reply({ outcome: "rejected", reason: "not doable", report: TRIED }),
+	test("a verdict rejection without an envelope reason settles with its report summary and outputs", async () => {
+		const { host, requests } = stubHost(() => [
+			reply({ outcome: "rejected", report: TRIED }),
 		]);
 		const ir = lone(host, { verdict: true });
-		const { result } = await performed(host, ir, configOf(toyTarget()));
+		const { result, instances } = await performed(
+			host,
+			ir,
+			configOf(toyTarget()),
+		);
 		expect(result).toMatchObject({
 			outcome: "rejected",
-			reason: "not doable",
+			reason: "tried",
+			outputs: { report: TRIED },
+		});
+		expect(requests).toHaveLength(1);
+		expect(instances[0]).toMatchObject({
+			status: "rejected",
+			reason: "tried",
 			outputs: { report: TRIED },
 		});
 	});
@@ -1717,8 +1727,8 @@ describe("perform", () => {
 		[
 			"a verdict agent that rejects",
 			true,
-			{ outcome: "rejected", reason: "not doable", report: TRIED },
-			{ outcome: "rejected", reason: "not doable" },
+			{ outcome: "rejected", report: TRIED },
+			{ outcome: "rejected", reason: "tried" },
 		],
 		[
 			"a blocked agent",
@@ -1773,8 +1783,8 @@ describe("perform", () => {
 		[
 			"a verdict agent's blocked beside its verdict",
 			true,
-			{ blocked: "no network", outcome: "rejected", reason: "x", report: DONE },
-			"reply.blocked excludes reply.outcome and reply.reason",
+			{ blocked: "no network", outcome: "rejected", report: DONE },
+			"reply.blocked excludes reply.outcome",
 			"- `outcome`: `ok` when the work passes your ruling",
 			"- Add `",
 		],

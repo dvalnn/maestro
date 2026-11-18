@@ -35,12 +35,12 @@ The host contributes:
     A file mounts at `/in/<name>.<ext>`, `<ext>` its source's extension (a name has no dot); a source without one and a
     directory mount at `/in/<name>`.
 
-Outputs: the declared files as typed artifacts, the typed `reply` fields as values, `report`, outcome and reason from
-its envelope[^outcome], `metrics`, `staged` (the staged text), its latest `session` and the resulting lane version.
+Outputs: the declared files as typed artifacts, the typed `reply` fields as values, `report` and outcome from its
+envelope[^outcome], `metrics`, `staged` (the staged text), its latest `session` and the resulting lane version.
 
 [^outcome]:
-    `rejected` is a verdict agent's negative verdict. `failed` is a run that did not complete, or a blocked agent (ADR
-    0012).
+    `rejected` is a verdict agent's negative verdict, its reason the report's summary. `failed` is a run that did not
+    complete, or a blocked agent (ADR 0012).
 
 The profile gives the agent its runtime (harness, model, thinking level), instructions, limits, context policy,
 read-only binds and own attachments. An attachment's content hash is in the resume key, and a bind is not (ADR 0011).
@@ -178,26 +178,26 @@ schema, in an `ok` reply that is not blocked, gets the same correction turns as 
 
 The agent's final reply is its **envelope**.
 
-| Agent   | Envelope                                                                      |
-| ------- | ----------------------------------------------------------------------------- |
-| work    | `{ report, ...fields, blocked? }`                                             |
-| verdict | `{ report, ...fields, outcome, reason? }`, or `{ report, blocked }`[^verdict] |
+| Agent   | Envelope                                                             |
+| ------- | -------------------------------------------------------------------- |
+| work    | `{ report, ...fields, blocked? }`                                    |
+| verdict | `{ report, ...fields, outcome }`, or `{ report, blocked }`[^verdict] |
 
-[^verdict]: `outcome` is `ok` or `rejected`, and the reason is required when rejected.
+[^verdict]: `outcome` is `ok` or `rejected`. A rejection's reason is the report's summary, the agent's ruling.
 
 - The report is `{ summary, gaps?, obstacles?, lessons?, sightings? }`: a one-line summary, then only what the record
   cannot show. A sighting is `{ path, text, cites }`: where a defect outside the task's scope is, what is wrong and what
   it breaches. It rides the enrichment too, so a blocked or failed agent keeps it.
 - `fields` are the typed fields the seat call declares with `reply`, each named for its output port and given a JSON
   schema (`reply: { map: TestMap }`). The host's reply template shows each schema, and the envelope is checked against
-  them. Every field is required unless the agent is blocked, a rejection included. A field's name is none of `report`,
-  `blocked`, `outcome`, `reason`, `lane`, `staged` or `session`, and no output's. A valid field is the output of its
-  name.
+  them. Every field is required unless the agent is blocked, a rejection included. A field's name is none of the
+  envelope's `report`, `blocked` or `outcome`, the status ports `ok` or `reason`, the agent's `lane`, `staged` or
+  `session`, and no output's. A valid field is the output of its name.
 - A rejection missing a field is corrected like any malformed envelope and then fails, where a rejection with declared
   files missing ends `rejected` with no outputs: its fields are what the next seat acts on.
-- A malformed envelope, such as a work agent's with an `outcome`, a field missing or off its schema, a verdict agent's
-  with neither, or one both blocked and giving a verdict, gets at most two correction turns in the same session, then
-  `failed`. Declared-file problems draw on the same two.
+- A malformed envelope, such as one with a key its kind does not list, a work agent's with an `outcome`, a field missing
+  or off its schema, a verdict agent's with neither, or one both blocked and giving a verdict, gets at most two
+  correction turns in the same session, then `failed`. Declared-file problems draw on the same two.
 - A blocked agent ends `failed` with the reason `blocked: <cause>` and no outputs, its declared files unread (ADR 0012).
 - A rejection with declared files missing or invalid ends `rejected` with its reason and no outputs.
 

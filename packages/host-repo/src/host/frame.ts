@@ -55,14 +55,13 @@ export type Report = {
 };
 
 /**
- * An agent's final reply (GLOSSARY: Envelope). A work agent's has no `outcome` or `reason`; a verdict agent's has an
+ * An agent's final reply (GLOSSARY: Envelope). A work agent's has no `outcome`; a verdict agent's has an
  * `outcome` unless blocked. `fields` holds the typed fields its seat call declares, all of them unless blocked.
  */
 export type Envelope = {
 	report: Report;
 	blocked?: string;
 	outcome?: "ok" | "rejected";
-	reason?: string;
 	fields: Record<string, unknown>;
 };
 
@@ -133,15 +132,14 @@ const VERDICT_PARTS: Parts = {
 	files:
 		"Before your final reply, write every one of these files, even when you reject:",
 	summary: "your ruling, in one line",
-	members: ['  "outcome": "ok"', '  "reason": "<why, when rejected>"'],
+	members: ['  "outcome": "ok"'],
 	verdict: [
 		"- `outcome`: `ok` when the work passes your ruling, `rejected` when it does not.",
-		"- `reason`: why you rejected; leave it out when `ok`.",
 	],
 	leave:
 		"- Leave out what the run already records: the checks' results and the files you wrote.",
-	blocked: `- Give \`"blocked": "<the cause>"\` in place of \`outcome\` and \`reason\` ${BLOCKED_BAR}`,
-	schema: { outcome: { enum: ["ok", "rejected"] }, reason: LINE },
+	blocked: `- Give \`"blocked": "<the cause>"\` in place of \`outcome\` ${BLOCKED_BAR}`,
+	schema: { outcome: { enum: ["ok", "rejected"] } },
 };
 
 /** `schema` pretty-printed, each line indented by `indent`. */
@@ -337,13 +335,10 @@ function inconsistency(
 	envelope: Record<string, unknown> & Omit<Envelope, "fields">,
 	kind: ReplyKind,
 ): string | undefined {
-	const verdict = envelope.outcome ?? envelope.reason;
-	if (envelope.blocked !== undefined && verdict !== undefined)
-		return "reply.blocked excludes reply.outcome and reply.reason";
+	if (envelope.blocked !== undefined && envelope.outcome !== undefined)
+		return "reply.blocked excludes reply.outcome";
 	if (kind.verdict && envelope.blocked === undefined && !envelope.outcome)
 		return "reply.outcome is required unless reply.blocked is set";
-	if (envelope.outcome === "rejected" && !envelope.reason)
-		return "reply.reason is required when outcome is rejected";
 	const missing =
 		envelope.blocked === undefined
 			? kind.fields.find((name) => !(name in envelope))
@@ -369,9 +364,9 @@ export function envelopeOf(reply: string, kind: ReplyKind): Envelope | string {
 	const envelope = value as Record<string, unknown> & Omit<Envelope, "fields">;
 	const problem = inconsistency(envelope, kind);
 	if (problem !== undefined) return problem;
-	const { report, blocked, outcome, reason } = envelope;
+	const { report, blocked, outcome } = envelope;
 	const fields = Object.fromEntries(
 		kind.fields.filter((name) => name in envelope).map((n) => [n, envelope[n]]),
 	);
-	return { report: compacted(report), blocked, outcome, reason, fields };
+	return { report: compacted(report), blocked, outcome, fields };
 }

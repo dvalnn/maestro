@@ -21,7 +21,8 @@ The rule is:
   `rejected` with no outputs, because a rejection's fields are what the next seat acts on.
 - **The reply template lists each field with its schema**, so the contract the agent reads and the check the host runs
   are one declaration.
-- **A field's name is none of the envelope's keys or an agent's own ports**, nor an output's: it would share a port.
+- **A field's name is none of the envelope's keys, the status ports or an agent's own ports**, nor an output's: it would
+  share a port.
 - **The practice is guidance through API design, not mechanism.** Structured data is a typed field, Markdown is an
   outbox file, and a large or browsed file of any format is an outbox file. Nothing refuses another choice. The table is
   in the host-repo README ([Handing work on](../../packages/host-repo/README.md#handing-work-on)).

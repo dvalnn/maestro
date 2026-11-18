@@ -141,7 +141,7 @@ function scriptedVerdict(dir: string | undefined, req: HarnessRequest) {
 			`${STUB_OUTPUTS} file '${VERDICT_FILE}' holds '${text}', not 'ok' or 'rejected <reason>'`,
 			`Write it as 'ok' or 'rejected <reason>'`,
 		);
-	return { outcome: "rejected", reason, report: STUB_REPORT };
+	return { outcome: "rejected", report: { ...STUB_REPORT, summary: reason } };
 }
 
 /** The stub loads nothing: it runs a shell script. */

@@ -13,7 +13,7 @@ export const AGENT_IN_PORTS = ["prompt", "lane", "session"];
 export const AGENT_OUT_PORTS = ["lane", "report", "staged", "session"];
 
 /** The keys of an agent's envelope, which no typed reply field takes beside the agent's output ports. */
-export const ENVELOPE_KEYS = ["report", "blocked", "outcome", "reason"];
+export const ENVELOPE_KEYS = ["report", "blocked", "outcome"];
 
 /** The attachment directory holding a continuing agent's earlier copies of its changed attachments. */
 export const PREVIOUS = "previous";

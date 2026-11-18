@@ -170,8 +170,8 @@ Priority: **Must** is required. **Should** is wanted and may slip. **May** is op
 ### Coding-agent host (HOST)
 
 - **HOST-01 (Must).** An agent node runs one profile against a prompt in a lane of a target. It produces typed outputs
-  (declared files), its envelope (a report, and either the cause it is blocked by or, from a verdict agent, an outcome
-  with a reason when rejected), metrics (token counts), and a lane handle.
+  (declared files), its envelope (a report, and either the cause it is blocked by or, from a verdict agent, an outcome),
+  a rejection's reason being the report's summary, metrics (token counts), and a lane handle.
 - **HOST-02 (Must).** Lanes are versioned handles, taken as `fresh(base)`, `fork(handle)`, `extend(handle)` or
   `read(handle)`. A read spends no extension. A version may be extended at most once and forked or read any number of
   times, and a node takes exactly one lane input. A host `validate` hook enforces this. The mechanism is in

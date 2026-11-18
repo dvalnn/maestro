@@ -660,7 +660,9 @@ async function settle(
 			metrics,
 			enrichment: ran,
 		};
-	const { blocked, outcome = "ok", reason = "", report } = turns.envelope;
+	const { blocked, outcome = "ok", report } = turns.envelope;
+	// A rejected verdict's reason is its ruling, the report's summary (ADR 0012).
+	const reason = report.summary;
 	// The report rides the enrichment too, since a blocked or failed agent has no outputs.
 	const enrichment = { ...ran, report };
 	if (blocked !== undefined)

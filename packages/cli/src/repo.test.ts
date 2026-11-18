@@ -1387,12 +1387,20 @@ describe("MAESTRO_STUB_OUTPUTS", () => {
 			"review/verdict": "rejected missing a test\n",
 			"rounds[0]/review/verdict": "ok",
 		});
-		const { done, instances } = await perform(dir, ROUNDS);
+		const { w, done, instances } = await perform(dir, ROUNDS);
 		expect(done).toMatchObject({ code: 0 });
 		expect(instances.map((i) => [i.id, i.status])).toEqual([
 			["review", "rejected"],
 			["rounds[0]/review", "ok"],
 		]);
+		const listed = json(await w.call(["ls", idOf(done), "--json"]));
+		expect(listed.instances).toContainEqual(
+			expect.objectContaining({
+				name: "review",
+				status: "rejected",
+				reason: "missing a test",
+			}),
+		);
 	});
 
 	test("a node id's fixture serves every round, and a node without one gets the placeholder", async () => {
