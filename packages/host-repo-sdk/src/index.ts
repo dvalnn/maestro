@@ -286,11 +286,16 @@ export function seat<
 			name,
 			schema: r.type.schema,
 		}));
+		const attachmentConfigs = nonEmpty(
+			mapValues(attachments, attachmentConfig),
+		);
+		const replySchemas = nonEmpty(mapValues(reply, (t) => t.schema));
+		const outputConfigs = nonEmpty(mapValues(out, (o) => o.config));
 		const config = {
-			attachments: nonEmpty(mapValues(attachments, attachmentConfig)),
+			attachments: attachmentConfigs,
 			relay: relays.length ? relays : undefined,
-			reply: nonEmpty(mapValues(reply, (t) => t.schema)),
-			out: nonEmpty(mapValues(out, (o) => o.config)),
+			reply: replySchemas,
+			out: outputConfigs,
 		};
 		const [problem] = callProblems(config);
 		if (problem)
@@ -306,7 +311,7 @@ export function seat<
 				...mapValues(attachments, (a) => a.artifact),
 				...relay,
 				...ports.in,
-				...(session && { session }),
+				session,
 			},
 			out: {
 				report: Json<Report>(REPORT),

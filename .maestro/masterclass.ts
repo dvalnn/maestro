@@ -71,10 +71,9 @@ function concertsIn(files: readonly string[]) {
 	const headings = files.flatMap((f) => [...f.matchAll(/^## (.+?) · (.*)$/gm)]);
 	const idsOf = (matches: RegExpMatchArray[]) =>
 		new Set(matches.map((m) => m[1]));
-	return {
-		named: idsOf(headings),
-		alreadyRead: idsOf(headings.filter((m) => m[2]?.endsWith(" · read"))),
-	};
+	const named = idsOf(headings);
+	const alreadyRead = idsOf(headings.filter((m) => m[2]?.endsWith(" · read")));
+	return { named, alreadyRead };
 }
 
 /**
@@ -100,17 +99,14 @@ export function settle(
 			f ? [readFileSync(ctx.path(f), "utf8")] : [],
 		),
 	);
-	return {
-		masterclass: {
-			proposals: masterclass.proposals
-				.map((p) => ({
-					...p,
-					concerts: [...new Set(p.concerts)].filter((id) => named.has(id)),
-				}))
-				// Dropped, not refused: docs/agents/factory.md#masterclass.
-				.filter((p) => p.concerts.some((id) => !alreadyRead.has(id))),
-		},
-	};
+	const proposals = masterclass.proposals
+		.map((p) => {
+			const concerts = [...new Set(p.concerts)].filter((id) => named.has(id));
+			return { ...p, concerts };
+		})
+		// Dropped, not refused: docs/agents/factory.md#masterclass.
+		.filter((p) => p.concerts.some((id) => !alreadyRead.has(id)));
+	return { masterclass: { proposals } };
 }
 
 export const masterclass = composition(
@@ -167,7 +163,7 @@ export const masterclass = composition(
 			in: {
 				masterclass: planned.out.masterclass,
 				lessons,
-				...(reports && { reports }),
+				reports,
 			},
 			out: { masterclass: Masterclass },
 			label: "settle",

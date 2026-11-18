@@ -164,22 +164,23 @@ export function tally(
 	const uncounted = Object.keys(groups).filter(
 		(g) => groups[g]?.counts === false,
 	);
+	const groupPorts = Object.fromEntries(
+		Object.entries(groups).flatMap(([g, { results, names, known }]) => [
+			[`${g}Results`, results],
+			[`${g}Names`, names],
+			...(known ? [[`${g}Known`, known]] : []),
+		]),
+	);
 	// Hold: gather every group's findings and count the members that delivered, once all the lenses settled.
 	const held = code(heldOf, {
 		in: {
 			patches: attached.patches.artifact,
 			spec: attached.spec.artifact,
-			...(earlier && { upheld: earlier }),
-			...(brief && { builder: brief }),
+			upheld: earlier,
+			builder: brief,
 			groups: Object.keys(groups),
 			...(uncounted.length && { uncounted }),
-			...Object.fromEntries(
-				Object.entries(groups).flatMap(([g, { results, names, known }]) => [
-					[`${g}Results`, results],
-					[`${g}Names`, names],
-					...(known ? [[`${g}Known`, known]] : []),
-				]),
-			),
+			...groupPorts,
 		},
 		out: {
 			held: List(Upheld),
@@ -197,8 +198,8 @@ export function tally(
 				lane: change,
 				session,
 				held: held.out.held,
-				...(verdict && { verdict }),
-				...(brief && { brief }),
+				verdict,
+				brief,
 				delivered: held.out.delivered,
 			},
 			out: {

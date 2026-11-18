@@ -235,7 +235,7 @@ export const slice = composition(
 		return code(requirePatch, {
 			in: {
 				changeset: changes,
-				...(prior && { revised: prior }),
+				revised: prior,
 				upheld: reviewed.out.upheld,
 				delivered: reviewed.out.delivered,
 				written: allSettled([written.out.pr], { label: "written" }),

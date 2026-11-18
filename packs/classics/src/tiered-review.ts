@@ -162,7 +162,7 @@ export const tieredReview = composition(
 				small,
 				medium,
 				large,
-				...(floor && { floor }),
+				floor,
 				sections: SECTIONS,
 				leads: { behaviour: lead, standards: task(lead, STANDARDS) },
 				close: CHECKLIST,
