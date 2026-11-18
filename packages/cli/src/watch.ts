@@ -22,7 +22,6 @@ import {
 } from "@maestro/render-text/press";
 import { changesOf } from "./changeset";
 import {
-	COMMON,
 	type Colors,
 	type Command,
 	colorOf,
@@ -30,6 +29,7 @@ import {
 	isSet,
 	type Options,
 	only,
+	RECORDED,
 	type Screen,
 	textOf,
 	type Values,
@@ -49,8 +49,7 @@ import {
 import {
 	artifactsOf,
 	concertOf,
-	ownConfig,
-	type Session,
+	type Located,
 	type Stored,
 	withStore,
 } from "./session";
@@ -73,7 +72,7 @@ const FRAMES_RULE = "──";
 const KEY_TOKENS = /\s+/;
 
 const WATCH_OPTIONS = {
-	...COMMON,
+	...RECORDED,
 	json: {
 		type: "boolean",
 		desc: "Print a JSON Lines stream of events, ending with the concert document",
@@ -416,7 +415,7 @@ async function watched(
 
 /** Ends the watch of the settled `row` as `ending` says, colored on the streams `color` names, and gives its exit code. */
 async function closed(
-	session: Session,
+	session: Located,
 	store: Records,
 	row: ConcertRecord,
 	{ color, ending }: { color: Colors; ending: WatchEnd },
@@ -444,7 +443,6 @@ export const watch: Command = {
 	execute: (args, deps) =>
 		withStore(
 			{
-				open: ownConfig,
 				options: WATCH_OPTIONS,
 				fix: "Flags are listed in 'maestro watch --help'",
 				check: watchChecked,

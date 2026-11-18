@@ -208,8 +208,8 @@ In the `--json` documents:
 - `ls --json` rows and `ls <concert> --json` show the values the
   [config snapshot](../../docs/architecture.md#config-snapshot) composes to as `snapshot`. A row leaves it out when it
   cannot be read or no longer composes, and every other concert is still listed.
-- `ls` reads no config file, and takes no `--preset` or `-c`. It measures a concert's disk use under its snapshot, as
-  `prune` does.
+- `ls`, `wait`, `watch`, `kill`, `tour`, `prune` and `artifact` read no config file, and take no `--preset` or `-c`.
+  `ls` measures a concert's disk use under its snapshot, and `prune` releases what its hosts hold under it.
 
 ### Watching
 
@@ -368,8 +368,9 @@ and the exit is 1.
 
 ### Pruning
 
-`prune` deletes a settled concert's files and what its hosts hold. Without `--before` there is no age cutoff, and
-`--status running` is refused.
+`prune` deletes a settled concert's files and what its hosts hold, which it releases under the concert's snapshot. A
+concert whose snapshot is missing, unreadable or no longer composes stays, and prune says why. Without `--before` there
+is no age cutoff, and `--status running` is refused.
 
 ## Config
 

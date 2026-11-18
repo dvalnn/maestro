@@ -52,4 +52,5 @@ A JSON Schema annotation names the type, on any subschema of a port, param or sc
 - Ajv's strict mode rejects unknown keywords, so every place that compiles port schemas registers the keyword through
   `packages/ir`.
 - The content-versus-reference reading of an artifact schema is documented once, in `packages/ir`.
-- Core owns where scratch directories live. It sits under the data root, which `dataRoot` configures.
+- Core owns where scratch directories live. It sits under the data root, which no config key sets
+  ([ADR 0019](0019-a-concert-records-its-config.md)).

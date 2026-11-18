@@ -4,12 +4,12 @@ import { walk } from "@maestro/core";
 import type { ConcertRecord } from "@maestro/core/perform";
 import { shellArg, shortIds } from "@maestro/render-text/live";
 import {
-	COMMON,
 	type Command,
 	colorOf,
 	type Deps,
 	isSet,
 	type Options,
+	RECORDED,
 	type Values,
 	warn,
 } from "./command";
@@ -30,7 +30,6 @@ import {
 	artifactsOf,
 	concertOf,
 	instancesInOrder,
-	ownConfig,
 	type Stored,
 	withStore,
 } from "./session";
@@ -42,7 +41,7 @@ const NO_PORT = "-";
 const NEWLINE = 0x0a;
 
 const ARTIFACT_OPTIONS = {
-	...COMMON,
+	...RECORDED,
 	path: {
 		type: "boolean",
 		desc: "Print absolute paths, one per line, not content",
@@ -285,7 +284,11 @@ export const artifact: Command = {
 	],
 	execute: (args, deps) =>
 		withStore(
-			{ open: ownConfig, options: ARTIFACT_OPTIONS, fix: FIX, check: checked },
+			{
+				options: ARTIFACT_OPTIONS,
+				fix: FIX,
+				check: checked,
+			},
 			args,
 			deps,
 			artifacted,

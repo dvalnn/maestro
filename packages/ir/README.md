@@ -48,9 +48,9 @@ Red nodes are the failing exits, each returning `error` diagnostics.
 step), plus optional `node`, `scope`, `source` and `path` (a JSON Pointer). Without those four it is about the whole IR.
 `unset` is set when config left a setting out: each entry is one missing setting, listing the key paths (`KeyPath`) that
 could set it, any one of which does. `layer` (`LayerName`) names the config layer that set the faulted value, `flag` for
-a param flag or a `-c`, and `concert` is the short id of the concert a resume reapplies that `-c` from; the CLI picks
-its exit code from them. Every diagnostic `parseIr` returns is an `error` with a hint and a path, and one whose path
-points into a node with a string `id` also names that node in `node`.
+a param flag or a `-c`, and `concert` is the short id of the recorded concert whose snapshot set the value; the CLI
+picks its exit code from them. Every diagnostic `parseIr` returns is an `error` with a hint and a path, and one whose
+path points into a node with a string `id` also names that node in `node`.
 
 Refs: CORE-17.
 

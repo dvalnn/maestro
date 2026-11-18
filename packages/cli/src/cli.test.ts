@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import type { Host } from "@maestro/core/host";
+import type { Host, HostSetup } from "@maestro/core/host";
 import { openRecord } from "@maestro/core/perform";
 import { IR_VERSION } from "@maestro/ir";
 import { shortId, shortIds, stateWord } from "@maestro/render-text/live";
@@ -1176,13 +1176,14 @@ describe("usage errors", () => {
 			...(await w.call(["--help"])).out.matchAll(/^ {2}([a-z]+) /gm),
 		].map(([, verb = ""]) => verb);
 		expect(verbs).toContain("tour");
+		const reads = ["ls", "wait", "watch", "kill", "tour", "prune", "artifact"];
 		for (const verb of verbs) {
 			const { out } = await w.call([verb, "--help"]);
 			const flags: string[] = out.match(/--[a-z][a-z-]*/g) ?? [];
 			expect(flags.includes("--preset")).toBe(
-				!["resume", "encore", "ls"].includes(verb),
+				!["resume", "encore", ...reads].includes(verb),
 			);
-			expect(flags.includes("--config")).toBe(verb !== "ls");
+			expect(flags.includes("--config")).toBe(!reads.includes(verb));
 		}
 		const forms: [string[], boolean][] = [
 			[["compose", "--concert", "x"], false],
@@ -1251,7 +1252,7 @@ describe("usage errors", () => {
 describe("help and color", () => {
 	const TERMINAL = () => ({ columns: 80, rows: 24 });
 	const COMMON_LINE =
-		"Common flags: --preset, -c/--config, --color, --debug, -h/--help (see 'maestro --help')";
+		"Common flags: --color, --debug, -h/--help (see 'maestro --help')";
 
 	test("a command's help is its summary, usage, arguments, flags, examples and the common flags, in that order", async () => {
 		const { out } = await (await world()).call(["artifact", "--help"]);
@@ -2155,6 +2156,28 @@ describe("the record", () => {
 	});
 });
 
+// Seam: every command on a recorded concert opens the record store alone, so broken config files cannot stop it.
+test("wait, watch, kill, tour, artifact and prune run on a recorded concert when the config files are broken", async () => {
+	const w = await world();
+	const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+	await Bun.write(join(w.cwd, ".maestro/config.yaml"), "[broken YAML");
+	await Bun.write(
+		join(w.env.XDG_CONFIG_HOME, "maestro/config.yaml"),
+		"[broken YAML",
+	);
+	for (const args of [
+		["wait", id],
+		["watch", id],
+		["kill", id],
+		["tour", "set", "t", id],
+		["artifact", "ls", id],
+		["prune", id, "--yes"],
+	])
+		expect([args[0], (await w.call(args, { hosts: [hostOf()] })).code]).toEqual(
+			[args[0], 0],
+		);
+});
+
 describe("prune", () => {
 	const ids = async (w: Awaited<ReturnType<typeof world>>) =>
 		json(await w.call(["ls", "--json"])).map((r: { id: string }) => r.id);
@@ -2210,6 +2233,47 @@ describe("prune", () => {
 			freed: 0,
 			failures: [],
 		});
+	});
+
+	// Seam: the setup prune hands a host, and prune's refusal of a concert whose config snapshot cannot be read.
+	test("releases what the hosts hold under the recorded config, and keeps a concert whose snapshot cannot be read", async () => {
+		const w = await world();
+		const seen: unknown[] = [];
+		const host: Host = {
+			...hostOf(ECHO, {
+				release: (_id: string, setup: HostSetup) =>
+					void seen.push(setup.config),
+			}),
+			config: { mode: { type: "object" } },
+		};
+		const config = join(w.cwd, ".maestro/config.yaml");
+		await Bun.write(config, `packs: [${w.pack}]\nmode: { tag: recorded }\n`);
+		const perform = async () =>
+			idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
+		const [kept, unread, gone] = [
+			await perform(),
+			await perform(),
+			await perform(),
+		];
+		await Bun.write(config, `packs: [${w.pack}]\nmode: { tag: current }\n`);
+		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+		db.run("UPDATE concerts SET snapshot = NULL WHERE id = ?", [kept]);
+		db.run("UPDATE concerts SET snapshot = ? WHERE id = ?", ["[", unread]);
+		db.close();
+
+		for (const id of [kept, unread])
+			expect(
+				await w.call(["prune", id, "--yes"], { hosts: [host] }),
+			).toMatchObject({
+				code: 1,
+			});
+		expect(await ids(w)).toEqual(expect.arrayContaining([kept, unread]));
+		expect(seen).toEqual([]);
+
+		expect(
+			await w.call(["prune", gone, "--yes"], { hosts: [host] }),
+		).toMatchObject({ code: 0 });
+		expect(seen).toEqual([{ mode: { tag: "recorded" } }]);
 	});
 
 	test("--before takes the settled concerts older than it, narrowed by --tour", async () => {

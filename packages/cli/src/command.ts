@@ -300,6 +300,9 @@ export const without = (options: Options, ...names: string[]): Options =>
 		Object.entries(options).filter(([name]) => !names.includes(name)),
 	);
 
+/** The common flags of a command that reads no config (ADR 0019): no `--preset` or `-c`. */
+export const RECORDED: Options = without(COMMON, "preset", "config");
+
 /** The common flags but `--json`, which `--help` names on one line where a command takes them. */
 export const SHARED: Options = without(COMMON, "json");
 

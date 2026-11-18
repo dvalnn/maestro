@@ -26,9 +26,9 @@ import {
 	type Options,
 	only,
 	peek,
+	RECORDED,
 	textOf,
 	type Values,
-	without,
 } from "./command";
 import { actorOf, hostTextOf, notesOf, reportOf, valuesOf } from "./host-text";
 import {
@@ -60,10 +60,7 @@ import {
 	instancesInOrder,
 	isMaestro,
 	type Located,
-	locate,
 	openRecorded,
-	ownConfig,
-	type Session,
 	type Stored,
 	withStore,
 } from "./session";
@@ -75,7 +72,7 @@ const KILL_GRACE_MS = KILL_GRACE_S * MS_PER_UNIT.s;
 
 /** `ls` reads the record alone, so it takes no `--preset` or `-c` (ADR 0019). */
 const LS_OPTIONS = {
-	...without(COMMON, "preset", "config"),
+	...RECORDED,
 	...FILTER_OPTIONS,
 	limit: {
 		type: "string",
@@ -88,10 +85,7 @@ const LS_OPTIONS = {
  * The record's columns but its IR, its snapshot as the values it composes to over the code defaults, left out when it
  * cannot be read or no longer composes, and `elapsedMs`: the concert's run time, up to now while it runs.
  */
-const concertColumns = (
-	{ session, store }: Stored<Located>,
-	concert: ConcertRecord,
-) => {
+const concertColumns = ({ session, store }: Stored, concert: ConcertRecord) => {
 	const { ir: _ir, snapshot: _snapshot, ...row } = concert;
 	const opened = openRecorded(session, store, concert);
 	return {
@@ -155,7 +149,7 @@ function notesLines(
 
 /** How many entries the notes of each of `concerts`' current instances hold, by concert id, then by heading. */
 function noteCounts(
-	{ store, session }: Stored<Located>,
+	{ store, session }: Stored,
 	concerts: readonly ConcertRecord[],
 ): Map<string, Record<string, number>> {
 	const texts = new Map(
@@ -235,7 +229,6 @@ export const ls: Command = {
 	execute: (args, deps) =>
 		withStore(
 			{
-				open: async (deps) => locate(deps),
 				options: LS_OPTIONS,
 				fix: "Flags are listed in 'maestro ls --help'",
 				check: lsChecked,
@@ -267,7 +260,7 @@ function highlighted(
 }
 
 /** The empty list: `[]` under `--json`, else what matched nothing and what to do about it on stderr. */
-function none({ session: { deps }, json }: Stored<Located>, filtered: boolean) {
+function none({ session: { deps }, json }: Stored, filtered: boolean) {
 	if (json) deps.stdout(jsonOf([]));
 	else if (filtered) {
 		deps.stderr("no concerts match");
@@ -279,7 +272,7 @@ function none({ session: { deps }, json }: Stored<Located>, filtered: boolean) {
 	return EXIT.ok;
 }
 
-async function listed(stored: Stored<Located>, query: ConcertFilter) {
+async function listed(stored: Stored, query: ConcertFilter) {
 	const { session, store, values, json } = stored;
 	const color = colorOf(session.deps, values).out;
 	const limit = query.limit ?? LIST_LIMIT;
@@ -363,7 +356,7 @@ export function olderHint(values: Values, limit: number, color: boolean) {
 }
 
 async function instancesOf(
-	{ session, store, values, json }: Stored<Located>,
+	{ session, store, values, json }: Stored,
 	prefix: string,
 	which?: string,
 ) {
@@ -430,7 +423,7 @@ async function instancesOf(
 }
 
 const WAIT_OPTIONS = {
-	...COMMON,
+	...RECORDED,
 	timeout: {
 		type: "string",
 		arg: "duration",
@@ -484,7 +477,6 @@ export const wait: Command = {
 	execute: (args, deps) =>
 		withStore(
 			{
-				open: ownConfig,
 				options: WAIT_OPTIONS,
 				fix: "Flags are listed in 'maestro wait --help'",
 				check: waitChecked,
@@ -499,7 +491,7 @@ export const wait: Command = {
  * Settles concert `id` failed, as a reader does for a concert whose process exited, taking only maestro's processes as
  * live.
  */
-function reap(session: Session, id: string) {
+function reap(session: Located, id: string) {
 	const reader = openRecord(session.files.record, { alive: isMaestro });
 	try {
 		reader.find(id);
@@ -549,12 +541,11 @@ export const kill: Command = {
 			"A running concert, as 'maestro ls' lists it; a settled one exits 0 and says so",
 		],
 	],
-	options: COMMON,
+	options: RECORDED,
 	execute: (args, deps) =>
 		withStore(
 			{
-				open: ownConfig,
-				options: COMMON,
+				options: RECORDED,
 				fix: "Flags are listed in 'maestro kill --help'",
 				check: (_values, positionals) =>
 					only(positionals, "concert", NAME_CONCERT),
@@ -608,7 +599,7 @@ export const tour: Command = {
 		["<slug>", "The tour, such as epic or epic.story"],
 		["<concert>", "A concert, as 'maestro ls' lists it"],
 	],
-	options: COMMON,
+	options: RECORDED,
 	examples: [
 		["Put two concerts on a tour", "maestro tour set epic.story 7f3c2a 9b1d04"],
 		["Take a concert off its tour", "maestro tour clear 7f3c2a"],
@@ -616,8 +607,7 @@ export const tour: Command = {
 	execute: (args, deps) =>
 		withStore(
 			{
-				open: ownConfig,
-				options: COMMON,
+				options: RECORDED,
 				fix: "Flags are listed in 'maestro tour --help'",
 				check: tourAndConcerts,
 			},

@@ -43,7 +43,6 @@ import {
 import {
 	artifactsOf,
 	concertOf,
-	type Located,
 	openRecorded,
 	openSession,
 	overridesOf,
@@ -289,7 +288,7 @@ async function checkoutOf(deps: Deps, values: Values): Promise<Checkout> {
 }
 
 /** What reading a concert's changeset takes of a command's `Stored`. */
-type StoredRead = Pick<Stored<Located>, "session" | "store" | "values">;
+type StoredRead = Pick<Stored, "session" | "store" | "values">;
 
 /**
  * The checkout concert `row`, labelled `label`, works in (ADR 0019): the one `-C` of `values` names, else its
@@ -378,7 +377,7 @@ async function picked(stored: StoredRead, prefix: string): Promise<Picked> {
  */
 function checked(
 	{ checkout, row, short, instance, base }: Picked,
-	{ session, values }: Stored<Located>,
+	{ session, values }: Stored,
 ) {
 	if (run(checkout, ["cat-file", "-e", `${base}^{commit}`]).code !== 0)
 		throw new CliError(
@@ -423,7 +422,7 @@ const diffOf = (p: Picked, tree: string, flags: readonly string[]) =>
  * stdout, or when the concert has no changeset or its diff cannot be read.
  */
 export async function changesOf(
-	{ session, store }: Pick<Stored<Located>, "session" | "store">,
+	{ session, store }: Pick<Stored, "session" | "store">,
 	id: string,
 ): Promise<Changes | undefined> {
 	if (!session.deps.terminal) return undefined;
@@ -447,7 +446,7 @@ export async function changesOf(
 	}
 }
 
-async function shown(stored: Stored<Located>, prefix: string) {
+async function shown(stored: Stored, prefix: string) {
 	const { session, values } = stored;
 	const { deps } = session;
 	const p = await picked(stored, prefix);
@@ -492,7 +491,7 @@ function refused(p: Picked, patch: string, ran: Ran, deps: Deps): never {
 	);
 }
 
-async function applied(stored: Stored<Located>, prefix: string) {
+async function applied(stored: Stored, prefix: string) {
 	const { session, values } = stored;
 	const { deps } = session;
 	const p = await picked(stored, prefix);

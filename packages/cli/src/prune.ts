@@ -4,12 +4,12 @@ import type { ConcertFilter, ConcertRecord } from "@maestro/core/perform";
 import { DURATION_EXAMPLE, messageOf } from "@maestro/ir";
 import { duration } from "@maestro/render-text/live";
 import {
-	COMMON,
 	type Command,
 	FILTER_OPTIONS,
 	filterOf,
 	isSet,
 	type Options,
+	RECORDED,
 	textOf,
 	type Values,
 } from "./command";
@@ -26,17 +26,17 @@ import {
 import {
 	concertsOf,
 	diskOf,
-	ownConfig,
-	type Session,
+	type Located,
+	openRecorded,
 	type Stored,
-	setupOf,
+	setupsOf,
 	withStore,
 } from "./session";
 
 const SETTLED = STATUSES.filter((s) => s !== "running");
 
 const PRUNE_OPTIONS = {
-	...COMMON,
+	...RECORDED,
 	before: {
 		type: "string",
 		arg: "duration",
@@ -133,29 +133,50 @@ function selected({ store }: Stored, selection: Selection): ConcertRecord[] {
 		.filter((c) => c.settledAt !== undefined && c.settledAt < cutoff);
 }
 
+/** What a concert that prune refuses is told to do instead. */
+const CLEANUP =
+	"Clean it up with the old-concert cleanup script that ships with v0.3.0";
+
+/**
+ * Releases what each host holds for `row`, under its recorded config.
+ * @returns why the concert stays, if it does: its snapshot does not read or compose, or a host cannot release it.
+ */
+async function released(
+	{ session, store }: Stored,
+	row: ConcertRecord,
+): Promise<string | undefined> {
+	const opened = openRecorded(session, store, row);
+	if (opened.kind !== "composes")
+		return `${"problem" in opened ? opened.problem : messageOf(opened.error)}\n${CLEANUP}`;
+	const setup = await setupsOf(session, opened);
+	for (const host of session.deps.hosts) {
+		try {
+			await host.resources?.release(row.id, setup(host));
+		} catch (error) {
+			return `host '${host.name}' could not release it: ${messageOf(error)}`;
+		}
+	}
+	return undefined;
+}
+
 /**
  * Releases what each host holds for `concert`, then drops its rows and directory. The concert stays when it is running
- * by now, or a host cannot release it.
+ * by now, or `released` says why it stays.
  * @returns why it stays, if it does.
  */
 async function pruneOne(
-	{ session, store }: Stored,
+	stored: Stored,
 	concert: string,
 ): Promise<Failure | undefined> {
+	const { session, store } = stored;
 	const row = store.find(concert);
 	if (row?.status === "running")
 		return { id: concert, reason: `it is running in process ${row.pid}` };
-	for (const host of session.deps.hosts) {
-		try {
-			await host.resources?.release(concert, setupOf(session, host));
-		} catch (error) {
-			return {
-				id: concert,
-				reason: `host '${host.name}' could not release it: ${messageOf(error)}`,
-			};
-		}
+	if (row) {
+		const reason = await released(stored, row);
+		if (reason !== undefined) return { id: concert, reason };
+		store.remove(concert);
 	}
-	if (row) store.remove(concert);
 	await rm(join(session.files.concerts, concert), {
 		recursive: true,
 		force: true,
@@ -164,7 +185,7 @@ async function pruneOne(
 }
 
 async function confirmed(
-	session: Session,
+	session: Located,
 	yes: boolean,
 	count: number,
 	bytes: number,
@@ -288,7 +309,6 @@ export const prune: Command = {
 	execute: (args, deps) =>
 		withStore(
 			{
-				open: ownConfig,
 				options: PRUNE_OPTIONS,
 				fix: "Flags are listed in 'maestro prune --help'",
 				check: selectionChecked,

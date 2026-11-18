@@ -269,8 +269,8 @@ export const concertsOf = (store: Records, prefixes: readonly string[]) => [
 ];
 
 /** What a command that works on the record is handed. */
-export type Stored<S extends Located = Session> = {
-	session: S;
+export type Stored = {
+	session: Located;
 	store: Records;
 	values: Values;
 	json: boolean;
@@ -299,14 +299,8 @@ export async function withLocated<T>(
 	return withRecord(located, (store) => body(located, store));
 }
 
-/** Opens the config of the current folder, layered with the command's own `--preset` and `-c`. */
-export const ownConfig = (deps: Deps, values: Values) =>
-	openSession(deps, overridesOf(values));
-
-/** What `withStore` reads a command's arguments and opens the session with. */
-export type StoreRead<S extends Located, T> = {
-	/** Opens the session for the flags: `ownConfig`, or `locate` for a command that reads no config (ADR 0019). */
-	open: (deps: Deps, values: Values) => Promise<S>;
+/** What `withStore` reads a command's arguments with. */
+export type StoreRead<T> = {
 	options: Options;
 	/** Ends the usage error for a flag `options` does not take. */
 	fix: string;
@@ -315,19 +309,19 @@ export type StoreRead<S extends Located, T> = {
 };
 
 /**
- * Reads `args` as `read` says, has its pure `check` validate them, then gives `body` what `read.open` opens for the
- * flags, the record store, what it read and what `check` returned. Nothing is opened when `check` throws.
+ * Reads `args` as `read` says, has its pure `check` validate them, then gives `body` the located data root, which reads
+ * no config (ADR 0019), its record store, what it read and what `check` returned. Nothing is opened when `check` throws.
  * @throws CliError, a usage error, for flags `read.options` does not take, or whatever `check` throws.
  */
-export async function withStore<S extends Located, T>(
-	{ open, options, fix, check }: StoreRead<S, T>,
+export async function withStore<T>(
+	{ options, fix, check }: StoreRead<T>,
 	args: readonly string[],
 	deps: Deps,
-	body: (stored: Stored<S>, parsed: T) => Promise<number>,
+	body: (stored: Stored, parsed: T) => Promise<number>,
 ): Promise<number> {
 	const { values, positionals } = parse(options, args, fix);
 	const parsed = check(values, positionals);
-	const session = await open(deps, values);
+	const session = locate(deps);
 	return withRecord(session, (store) =>
 		body({ session, store, values, json: isSet(values, "json") }, parsed),
 	);
@@ -337,24 +331,31 @@ export async function withStore<S extends Located, T>(
 export const setupOf = (session: Session, host: Host) =>
 	hostSetup(host, session.config.composed, session.config.roots);
 
+/** The setup core gives each host under `opened`, a recorded concert's config (ADR 0019). */
+export async function setupsOf(
+	session: Located,
+	{ composed, workspace }: Opened,
+): Promise<(host: Host) => ReturnType<typeof hostSetup>> {
+	const roots = await shownRoots(composed, session.deps.env, workspace);
+	return (host) => hostSetup(host, composed, roots);
+}
+
 /**
  * The bytes `concert` holds: its directory under the data root, and what each host reports holding for it under its
  * config as `openRecorded` opens it. A settled concert's comes from the record, measured once and kept there when the
  * record holds none. A host that cannot measure its share counts none, why goes to stderr, and nothing is kept.
  */
 export async function diskOf(
-	{ session, store, values }: Stored<Located>,
+	{ session, store, values }: Stored,
 	concert: ConcertRecord,
 ): Promise<number> {
 	const { id, status, diskUse } = concert;
 	if (status !== "running" && diskUse !== undefined) return diskUse;
-	const { composed, workspace } = openRecorded(session, store, concert);
-	const roots = await shownRoots(composed, session.deps.env, workspace);
 	const { bytes, failures } = await diskUseOf(
 		session.files.concerts,
 		id,
 		session.deps.hosts,
-		(host) => hostSetup(host, composed, roots),
+		await setupsOf(session, openRecorded(session, store, concert)),
 	);
 	for (const { host, error } of failures)
 		warn(
