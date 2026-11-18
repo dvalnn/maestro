@@ -446,6 +446,10 @@ no coordination beyond lane isolation. It holds:
 - **Who reads it.** The [CLI README](../packages/cli/README.md) lists the commands and what each does when the snapshot
   is missing, unreadable or no longer composes.
 
+- **The replaced snapshot.** The skill's `prune-old-concerts.sh` gives a concert `{"layers":[]}`, the code defaults,
+  while it retries `maestro prune`, and puts the earlier snapshot back after. A concert holds the defaults snapshot only
+  then, or after a kill the shell cannot catch.
+
 ### Data root
 
 `$XDG_DATA_HOME/maestro` (default `~/.local/share/maestro`). Set `$XDG_DATA_HOME` to move it; no config key does.

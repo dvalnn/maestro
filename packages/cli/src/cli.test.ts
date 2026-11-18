@@ -2486,6 +2486,21 @@ describe("prune", () => {
 		expect(seen).toEqual([{ mode: { tag: "recorded" } }]);
 	});
 
+	test("a refused snapshot names the cleanup script in the maestro skill", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+		for (const snapshot of [null, "["]) {
+			db.run("UPDATE concerts SET snapshot = ? WHERE id = ?", [snapshot, id]);
+			const refused = await w.call(["prune", id, "--yes"], {
+				hosts: [hostOf()],
+			});
+			expect(refused.code).not.toBe(0);
+			expect(refused.err).toContain("scripts/prune-old-concerts.sh");
+		}
+		db.close();
+	});
+
 	test("--before takes the settled concerts older than it, narrowed by --tour", async () => {
 		const w = await world();
 		const perform = async (tour: string) =>

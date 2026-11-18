@@ -156,7 +156,7 @@ function selected({ store }: Stored, selection: Selection): ConcertRecord[] {
 
 /** What a concert that prune refuses is told to do instead. */
 const CLEANUP =
-	"Clean it up with the old-concert cleanup script that ships with v0.3.0";
+	"Clean it up with scripts/prune-old-concerts.sh in the maestro skill, such as ~/.claude/skills/maestro/scripts/prune-old-concerts.sh <concert> --yes";
 
 /**
  * Releases what each host holds for `row`, under its recorded config.

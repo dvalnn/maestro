@@ -14,8 +14,8 @@ jobs:
       BUN_INSTALL_CACHE_DIR: /ci-cache/maestro/bun
       TEST_SERIAL: 1
     steps:
-      - name: Install bubblewrap, python3 and ssh-keygen
-        run: apt-get update && apt-get install -y --no-install-recommends bubblewrap python3 openssh-client
+      - name: Install bubblewrap, python3, ssh-keygen and sqlite3
+        run: apt-get update && apt-get install -y --no-install-recommends bubblewrap python3 openssh-client sqlite3
       - uses: https://data.forgejo.org/actions/checkout@v7
       - name: Install bun, just and jj
         run: |
