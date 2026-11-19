@@ -71,8 +71,8 @@ and contracts. `@maestro/classics/code` exports its code-node functions alone.
   (`tiered_review`), `fixUntilClean` (`fix_until_clean`), `testFirst` (`test_first`), `buildChange` (`build`).
 - Moves: `challenge`, `fix`, `reviewReads`, `tally`. `reviewReads` builds what the lenses read from the `change` and the
   `spec`; `tally` takes those reads, each lens group's results and how the review settles. `reviewReads` makes the
-  changeset, and `tally` the held node and the consolidator. `challenge` and `tally` take the lens's `checklist`, which
-  they relay to the skeptic and the consolidator.
+  changeset, and `tally` the held node and the consolidator. `challenge` takes the lens's `checklist` and relays it to
+  its skeptic; `tally` takes the lenses' and relays them to the consolidator.
 - Contracts: `Finding`, `Findings`, `Rulings`, `Verdict`, `Upheld`, `Tally`, `TestMap`, `Brief`, `Overrule`,
   `Overrules`, `Answers`.
 - Code-node functions: `toMarkdown`, `copyMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf`, `tieredOf` and
