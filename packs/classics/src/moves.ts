@@ -124,7 +124,7 @@ export function reviewReads(review: {
 		earlier,
 		brief,
 		attached: attachmentsOf(patches, spec),
-		relay: { ...(earlier && { upheld: earlier }), ...common },
+		relay: { upheld: earlier, ...common },
 		common,
 	};
 }

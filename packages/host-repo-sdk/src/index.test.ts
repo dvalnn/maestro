@@ -552,6 +552,39 @@ Read-only files your task needs. Read a file whole; browse and grep a directory.
 └── spec.md   2 lines, 8 B: first, for the rules`);
 	});
 
+	test("an undefined relay is absent from the task", async () => {
+		const relayed = composition("optional-relay", { examples: [{}] }, () => {
+			const tested = first();
+			return builder({
+				label: "build",
+				task: "Build it.",
+				lane: fresh(),
+				relay: { a: tested.out.notes, b: undefined },
+			});
+		});
+		expect(() => buildIr(relayed)).not.toThrow();
+		const ir = buildIr(relayed);
+		const { host, hostConfig, roots, requests } = repo(
+			(req): Record<string, string> =>
+				req.prompt === "map"
+					? { "/out/notes.md": "Mind the edge.\n", "/out/spec.md": "spec\n" }
+					: {},
+			undefined,
+			(req) =>
+				req.prompt === "map" ? { map: { tier: "small", notes: "thin" } } : {},
+		);
+		const concert = await stubConcert(ir, {
+			hosts: [host],
+			config: hostConfig,
+			roots,
+			code: stdlib,
+		});
+		await concert.close();
+		expect(
+			requests[1]?.prompt.split("\n").filter((line) => line.startsWith("## ")),
+		).toEqual(["## a"]);
+	});
+
 	test("a relay of a directory fails the build with TYPE.relay", () => {
 		const refused = composition("refused", { examples: [{}] }, () =>
 			builder({

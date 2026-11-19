@@ -123,7 +123,7 @@ export type Attachment = { artifact: Ref<ArtifactRef>; hint: string };
 type Attachments = Readonly<Record<string, Attachment>>;
 
 /** Values inlined in an agent's task, each under a section titled by its name: a typed value or a Markdown output. */
-export type Relays = Readonly<Record<string, Ref<unknown>>>;
+export type Relays = Readonly<Record<string, Ref<unknown> | undefined>>;
 
 /** An agent's report: a one-line summary, then only what the record cannot show. A list is left out when empty. */
 export type Report = {
@@ -282,7 +282,8 @@ export function seat<
 		const out: Outputs = { ...standing.out, ...callOut };
 		const reply: Replies = { ...standing.reply, ...callReply };
 		const ports = lanePorts(lane);
-		const relays = Object.entries(relay).map(([name, r]) => ({
+		const present = defined(relay) as Record<string, Ref<unknown>>;
+		const relays = Object.entries(present).map(([name, r]) => ({
 			name,
 			schema: r.type.schema,
 		}));
@@ -309,7 +310,7 @@ export function seat<
 			in: {
 				prompt: task,
 				...mapValues(attachments, (a) => a.artifact),
-				...relay,
+				...present,
 				...ports.in,
 				session,
 			},
