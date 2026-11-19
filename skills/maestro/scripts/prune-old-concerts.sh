@@ -13,7 +13,7 @@ for arg in "$@"; do
 	case $arg in
 	--yes) yes=1 ;;
 	-*)
-		echo "unknown flag '$arg'" >&2
+		printf '%s\n' "unknown flag '$arg'" >&2
 		echo "Usage: prune-old-concerts.sh [--yes] <concert-id>..." >&2
 		exit 2
 		;;
@@ -75,8 +75,8 @@ restore() {
 	done
 	written=$left
 	if [ -n "$written" ]; then
-		echo "could not restore the snapshot of concert$written in $db" >&2
-		echo "Each holds {\"layers\":[]}; its earlier snapshot, as an SQL literal, is in $work/<concert>" >&2
+		printf '%s\n' "could not restore the snapshot of concert$written in $db" >&2
+		printf '%s\n' "Each holds {\"layers\":[]}; its earlier snapshot, as an SQL literal, is in $work/<concert>" >&2
 		return 1
 	fi
 }

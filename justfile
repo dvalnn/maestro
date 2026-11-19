@@ -16,6 +16,7 @@ ci: check
     fi
 
 # apply Biome's safe lint fixes and import sorting without formatting, lower the Plain English baseline, then check the domain words, prompt imports and Plain English limits,
+# that no echo of a variable is left in a #!/bin/sh script (print it with printf '%s\n'),
 # and that no git conflict marker of a merge onto main is left in (factory.md, Rules, Build: Encore)
 lint:
     bunx biome check --write --formatter-enabled=false .
@@ -24,6 +25,7 @@ lint:
     bun scripts/plain-english.ts --update
     bun scripts/plain-english.ts
     ! grep -rnIE --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.jj '^(<{7,}|>{7,}) [0-9a-f]{40}' .
+    ! grep -rlZ --include='*.sh' --exclude-dir=node_modules --exclude-dir=.git '^#!/bin/sh' . | xargs -0 -r grep -nE '^[[:space:]]*echo\b[^#]*\$'
 
 # typecheck
 types:

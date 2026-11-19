@@ -259,6 +259,14 @@ test("the old-concert script names an argument that an escape-aware echo would c
 	expect(result.err.split("\n")[0]).toBe("'\\c' is not a concert id");
 }, 30_000);
 
+// Seam: the script's exit status and diagnostics on stderr.
+test("the old-concert script names an unknown flag under an escape-aware echo", async () => {
+	const w = await setup();
+	const result = await w.escapeAwareScript(["-\\c"]);
+	expect(result.code).not.toBe(0);
+	expect(result.err).toContain("-\\c");
+}, 30_000);
+
 test("an argument holding two ids or a glob leaves both concerts and snapshots unchanged", async () => {
 	const w = await setup();
 	const first = await w.perform();
