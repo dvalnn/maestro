@@ -448,7 +448,7 @@ type Talking = {
 
 /**
  * What follows a turn that ran to its end: how the run ends, or nothing once `state` holds the next turn. A transient
- * failure runs the turn again after a wait, up to `MAX_RETRIES` times; a reply that is no envelope, or an `ok` one with a bad declared output, gets a correction.
+ * failure runs the turn again after a wait, up to `MAX_RETRIES` times; a reply that arrives after a limit passed fails the run with that limit; a reply that is no envelope, or an `ok` one with a bad declared output, gets a correction.
  */
 async function follow(
 	talk: Talk,
@@ -462,6 +462,7 @@ async function follow(
 		state.req = { ...state.req, prompt: CUT_OFF };
 		return undefined;
 	}
+	if (talk.live.limit !== undefined) return { failure: talk.live.limit };
 	const spent = state.corrections === MAX_CORRECTIONS;
 	const step = next(result.reply, spent, talk.kind);
 	const prompt = "envelope" in step ? filed(talk, step.envelope, spent) : step;

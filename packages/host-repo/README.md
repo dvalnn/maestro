@@ -246,10 +246,12 @@ flowchart LR
     note -->|note written| fresh["fresh session"]
     note -->|no note| failed
     fresh -->|new session| turn
-    turn -.->|"failed turn, passed limit"| failed
+    turn -.->|"passed limit ¹"| failed
     classDef fault stroke:#e5534b,stroke-width:3px
     class failed fault
 ```
+
+1. A turn that fails for good, or a reply that arrives after a limit passed, ends the agent `failed`.
 
 - A model call whose prompt reaches `at` cancels the turn, unless the turn settles with its result first, which then
   stands. A passed limit or a cancel ends the agent before the handoff.

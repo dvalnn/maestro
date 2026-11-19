@@ -788,6 +788,49 @@ describe("agent limits", () => {
 	const partialOf = (instances: { enrichment?: Record<string, unknown> }[]) =>
 		String(instances[0]?.enrichment?.partial);
 
+	test("a reply after a passed token limit fails and resume reruns the agent with its partial kept", async () => {
+		const config = configOf(toyTarget());
+		const { host, requests } = stubHost(() =>
+			requests.length === 1
+				? [edit, OK, { emit: { type: "settled" } }, usage(100)]
+				: [OK],
+		);
+		const ir = lone(host, { tokens: 50 });
+		const first = await performed(host, ir, config);
+		expect(first.result).toMatchObject({
+			outcome: "failed",
+			reason: "passed its token limit of 50 (101 spent)",
+		});
+		expect(first.instances[0]?.status).toBe("failed");
+		const partial = partialOf(first.instances);
+		const patches = readdirSync(partial)
+			.filter((f) => f.endsWith(".patch"))
+			.map((f) => readFileSync(join(partial, f), "utf8"))
+			.join("");
+		expect(patches).toContain("+lost");
+
+		const resumed = await performed(host, ir, config, { resume: first.id });
+		expect(resumed.result).toMatchObject({ outcome: "ok" });
+		expect(requests).toHaveLength(2);
+		const kept = readdirSync(partial)
+			.filter((f) => f.endsWith(".patch"))
+			.map((f) => readFileSync(join(partial, f), "utf8"))
+			.join("");
+		expect(kept).toContain("+lost");
+	});
+
+	test("a reply after a passed timeout fails with the timeout reason", async () => {
+		const { result, instances } = await limited({ timeout: "1s" }, () => [
+			OK,
+			{ emit: { type: "settled" }, delayMs: 1500 },
+		]);
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason: "passed its timeout of 1s",
+		});
+		expect(instances[0]?.status).toBe("failed");
+	});
+
 	test("a token limit ends the agent failed with its reason and keeps the partial", async () => {
 		const { result, instances } = await limited({ tokens: 50 }, () => [
 			edit,
@@ -1348,6 +1391,23 @@ go`);
 		expect(requests.map((r) => r.extras)).toEqual(Array(6).fill(recorded));
 		const { root } = openTarget(setupOf(config).store, target);
 		expect(openSession(root, `${id}.r#2`).extras).toBe(recorded);
+	});
+
+	test("a reply after a passed compaction cap fails with the cap reason", async () => {
+		const { result, instance } = await handed("compact-capped", {
+			first: [
+				OK,
+				{ emit: { type: "settled" } },
+				{ emit: { type: "compaction" } },
+				{ emit: { type: "compaction" } },
+			],
+		});
+		expect(result).toMatchObject({
+			outcome: "failed",
+			reason:
+				"context: compacted 2 times, past profiles.compact-capped.context.max of 1. Raise profiles.compact-capped.context.max, or split the task",
+		});
+		expect(instance?.status).toBe("failed");
 	});
 
 	test("a compaction under a handoff policy is recorded as a fault and the agent runs on", async () => {
