@@ -289,7 +289,7 @@ the IR, since packs bundle it; its `yaml` subpath also imports `yaml`. Lanes and
 | `Session`                                  | the `repo.session` type of an agent's harness session                            |
 | `JsonOut(file, type)`, `MarkdownOut(file)` | an agent output: a file in its outbox, arriving as an artifact                   |
 | `seat(name, opts)`                         | a function that emits a `repo.agent` node running a profile[^seat]               |
-| `check(lane, which?)`                      | a `repo.check` node[^check]                                                      |
+| `check(lane, which?, opts)`                | a `repo.check` node[^check]                                                      |
 | `changeset(v, opts)`                       | a `repo.changeset` node: `v` as a patch series[^cs]                              |
 | `commits(revs)`                            | a `repo.commits` node: the target commits `revs` names, as a version             |
 | `apply(lane, changeset, opts)`             | a `repo.apply` node: one changeset, `opts.strategy` `3way` or `clean`            |
@@ -315,8 +315,9 @@ the IR, since packs bundle it; its `yaml` subpath also imports `yaml`. Lanes and
     `lane`, `report`, `staged` or `session`, is a build error.
 
 [^check]:
-    `which` is every named check, the one named, or an inline `{ run, timeout, ... }`. Outputs: `logs`, `output` (the
-    check's `$MAESTRO_CHECK_OUTPUT` directory) and `lane` unless it reads.
+    `which` is every named check, the one named, or an inline `{ run, timeout, ... }`; with `stopOnFail` in `opts`, the
+    first check that fails or rejects stops the node. Outputs: `logs`, `output` (the check's `$MAESTRO_CHECK_OUTPUT`
+    directory) and `lane` unless it reads.
 
 N lanes merge by folding `apply` over their changesets with `iter.fold`, a resolver agent extending on conflict (the
 `fold` fixture below).
