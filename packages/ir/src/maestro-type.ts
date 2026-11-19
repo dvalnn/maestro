@@ -305,6 +305,10 @@ const escapeSegment = (s: string) =>
 const unescapeSegment = (s: string) =>
 	s.replaceAll("~1", "/").replaceAll("~0", "~");
 
+/** The unescaped key segments of the JSON Pointer `pointer`, as `findMarked` writes it: empty for the whole value. */
+export const pointerSegments = (pointer: string): string[] =>
+	pointer === "" ? [] : pointer.slice(1).split("/").map(unescapeSegment);
+
 function child(at: unknown, key: string): unknown {
 	if (Array.isArray(at)) return at[Number(key)];
 	if (typeof at === "object" && at !== null)
@@ -321,7 +325,7 @@ export function replaceAt(
 	value: unknown,
 ): unknown {
 	if (pointer === "") return value;
-	const keys = pointer.slice(1).split("/").map(unescapeSegment);
+	const keys = pointerSegments(pointer);
 	const last = keys.pop() ?? "";
 	let at = root;
 	for (const key of keys) at = child(at, key);

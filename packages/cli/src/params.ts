@@ -27,6 +27,7 @@ import {
 	type JsonSchema,
 	type Marked,
 	messageOf,
+	pointerSegments,
 	replaceAt,
 	schemaMarkers,
 	type Validator,
@@ -126,15 +127,17 @@ function typed(
 	schema: JsonSchema,
 	value: unknown,
 ): Read {
-	const source = sourceOf(r.config, [...r.path, name]);
-	const refuse: Refuse = (message, hint) => ({
-		diagnostics: [configDiagnostic("CFG.param", source, message, hint)],
-	});
+	const refuseAt =
+		(source: Source | undefined): Refuse =>
+		(message, hint) => ({
+			diagnostics: [configDiagnostic("CFG.param", source, message, hint)],
+		});
+	const refuse = refuseAt(sourceOf(r.config, [...r.path, name]));
 	let result = structuredClone(value);
 	const staged: Staged[] = [];
 	for (const marked of findMarked(schema, value)) {
 		const read = ARTIFACT_TYPES.has(marked.type)
-			? fileOf(r, name, marked, refuse)
+			? fileOf(r, name, marked, refuseAt)
 			: hostValue(r, name, marked, refuse);
 		if ("diagnostics" in read) return read;
 		result = replaceAt(result, marked.pointer, read.value);
@@ -165,21 +168,23 @@ function notJson(bytes: Uint8Array): string | undefined {
 }
 
 /**
- * The reference to the file a marked value names, resolved as its config source's paths are, and that file to stage
- * under it.
+ * The reference to the file a marked value names, resolved as the paths of the layer that set that value are, and that
+ * file to stage under it.
  */
 function fileOf(
 	r: Reading,
 	name: string,
-	{ type, value }: Marked,
-	refuse: Refuse,
+	{ type, value, pointer }: Marked,
+	refuseAt: (source: Source | undefined) => Refuse,
 ): Converted {
+	const at = sourceOf(r.config, [...r.path, name, ...pointerSegments(pointer)]);
+	const refuse = refuseAt(at);
 	if (typeof value !== "string")
 		return refuse(
 			`${naming(r, name)} takes ${type}, the path of a file`,
 			fixing(r, name),
 		);
-	const source = resolve(r.base(sourceOf(r.config, [...r.path, name])), value);
+	const source = resolve(r.base(at), value);
 	const named = `${naming(r, name)} names '${value}'`;
 	if (UNSAFE_NAME.test(basename(source)))
 		return refuse(
@@ -384,8 +389,8 @@ function exampleFill(
  * composition of the pack and of each installed pack is read, so a subcomposition's configured params reach its `use`
  * through the build context; a bare file's own compositions are read with no layers. Only the root's must hold every
  * required param. Declared defaults are left to the build. A root file param's value is the path of a file, resolved
- * against `base` of its source, or `exampleDir` for the example set, and becomes the reference that file is staged
- * under.
+ * against `base` of the layer that set that value, or `exampleDir` for the example set, and becomes the reference that
+ * file is staged under.
  * @throws ConfigError for a missing required root param, a value off its schema, a typed param no host reads or that
  * does not parse, a file param whose file cannot be read or, for `core.json-file`, is not JSON, a root param that takes
  * a directory, or another composition's param the config gives a file.

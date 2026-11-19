@@ -6,7 +6,7 @@ import {
 	parseLayer,
 	sourceOf,
 } from "@maestro/core/config";
-import type { Ir } from "@maestro/ir";
+import type { Ir, JsonSchema } from "@maestro/ir";
 import type { Described } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
 import { baseOf, loadConfig } from "./config";
@@ -253,12 +253,12 @@ describe("a typed param", () => {
 });
 
 describe("a file param", () => {
-	const ticket = (type: string, name = "ticket"): Described[] => [
+	const ticket = (doc: JsonSchema, name = "ticket"): Described[] => [
 		{
 			name,
 			params: {
 				type: "object",
-				properties: { doc: { "x-maestro-type": type } },
+				properties: { doc },
 				required: [],
 				additionalProperties: false,
 			},
@@ -268,7 +268,7 @@ describe("a file param", () => {
 	const request = (over: Partial<ParamRequest>): ParamRequest => ({
 		layers: [],
 		pack: "demo",
-		compositions: ticket("core.markdown"),
+		compositions: ticket({ "x-maestro-type": "core.markdown" }),
 		root: "ticket",
 		hosts: [],
 		base: () => CWD,
@@ -315,6 +315,86 @@ describe("a file param", () => {
 		});
 	});
 
+	test.each([
+		{
+			shape: "a list appended over three layers",
+			schema: { type: "array", items: { "x-maestro-type": "core.markdown" } },
+			user: "[a.md]",
+			workspace: "!append [b.md]",
+			preset: "!append [c.md]",
+			expected: ["user/a.md", "workspace/b.md", "preset/c.md"],
+		},
+		{
+			shape: "a field inside an appended list item",
+			schema: {
+				type: "array",
+				items: {
+					type: "object",
+					properties: { file: { "x-maestro-type": "core.markdown" } },
+				},
+			},
+			user: "[{ file: a.md }]",
+			workspace: "!append [{ file: b.md }]",
+			preset: "",
+			expected: ["user/a.md", "workspace/b.md"],
+		},
+		{
+			shape: "a deeper struct whose field names need unescaping",
+			schema: {
+				type: "object",
+				properties: {
+					"x/y": { "x-maestro-type": "core.markdown" },
+					inner: {
+						type: "object",
+						properties: { "p~q": { "x-maestro-type": "core.markdown" } },
+					},
+				},
+			},
+			user: '{ "x/y": a.md }',
+			workspace: '{ inner: { "p~q": b.md } }',
+			preset: "",
+			expected: ["user/a.md", "workspace/b.md"],
+		},
+		{
+			shape: "a whole list one layer gives",
+			schema: { type: "array", items: { "x-maestro-type": "core.markdown" } },
+			user: "",
+			workspace: "[a.md, b.md]",
+			preset: "",
+			expected: ["workspace/a.md", "workspace/b.md"],
+		},
+	])(
+		"reads each file of $shape from the layer that set it",
+		async (scenario) => {
+			const root = await scratch();
+			const dirs: Record<string, string> = {
+				[USER]: "user",
+				[WORKSPACE]: "workspace",
+				[PRESET]: "preset",
+			};
+			for (const dir of Object.values(dirs))
+				for (const file of ["a.md", "b.md", "c.md"])
+					await Bun.write(join(root, dir, file), file);
+			const at = (value: string) =>
+				value ? `demo:\n  ticket:\n    doc: ${value}\n` : "";
+			const layers = fileLayers(
+				at(scenario.user),
+				at(scenario.workspace),
+				at(scenario.preset),
+			);
+			const read = paramValues(
+				request({
+					layers,
+					compositions: ticket(scenario.schema),
+					base: (source) => join(root, dirs[source?.file ?? ""] ?? "none"),
+				}),
+			);
+			expect(read.staged.map((s) => s.source)).toEqual(
+				scenario.expected.map((p) => join(root, p)),
+			);
+		},
+	);
+
 	test("takes an example set's path relative to the example directory, not the base", async () => {
 		const dir = await scratch();
 		await Bun.write(join(dir, "spec.md"), "x");
@@ -337,9 +417,47 @@ describe("a file param", () => {
 		]);
 	});
 
+	test.each([
+		{ failure: "unreadable", type: "core.markdown", path: "gone.md" },
+		{ failure: "not JSON", type: "core.json-file", path: "bad.json" },
+		{ failure: "unsafe name", type: "core.markdown", path: "bad\\name.md" },
+	])(
+		"a file refusal for $failure cites the layer that set the field",
+		async (scenario) => {
+			const dir = await scratch();
+			await Bun.write(join(dir, "good.md"), "first");
+			await Bun.write(join(dir, "bad.json"), "[oops");
+			await Bun.write(join(dir, "bad\\name.md"), "unsafe");
+			const compositions = ticket({
+				type: "object",
+				properties: {
+					first: { "x-maestro-type": "core.markdown" },
+					second: { "x-maestro-type": scenario.type },
+				},
+			});
+			const layers = fileLayers(
+				"demo:\n  ticket:\n    doc:\n      first: good.md\n",
+				`demo:\n  ticket:\n    doc:\n      second: ${JSON.stringify(scenario.path)}\n`,
+			);
+			try {
+				paramValues(request({ layers, compositions, base: () => dir }));
+				throw new Error("expected a file refusal");
+			} catch (error) {
+				expect(error).toBeInstanceOf(ConfigError);
+				if (!(error instanceof ConfigError)) throw error;
+				expect(error.diagnostics.map((d) => d.source?.file)).toEqual([
+					WORKSPACE,
+				]);
+			}
+		},
+	);
+
 	test("refuses a directory, and a file the config gives another composition", () => {
 		const layers = fileLayers("demo:\n  sub:\n    doc: spec.md\n");
-		const compositions = [...ticket("core.dir"), ...ticket("core.file", "sub")];
+		const compositions = [
+			...ticket({ "x-maestro-type": "core.dir" }),
+			...ticket({ "x-maestro-type": "core.file" }, "sub"),
+		];
 		expect(
 			refusal(() => paramValues(request({ layers, compositions }))),
 		).toEqual([

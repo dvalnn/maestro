@@ -795,7 +795,7 @@ export const doc = composition("doc", { pack: "demo", examples: [{}], params: { 
 			user: "[first.md]",
 			workspace: "!append [second.md]",
 			files: "inputs.docs",
-			expected: "workspace first|workspace second",
+			expected: "user first|workspace second",
 		},
 		{
 			shape: "a Struct split across layers",
@@ -803,7 +803,7 @@ export const doc = composition("doc", { pack: "demo", examples: [{}], params: { 
 			user: "{ first: first.md }",
 			workspace: "{ second: second.md }",
 			files: "[inputs.docs.first, inputs.docs.second]",
-			expected: "user first|user second",
+			expected: "user first|workspace second",
 		},
 		{
 			shape: "a scalar merged into a list",
@@ -811,10 +811,10 @@ export const doc = composition("doc", { pack: "demo", examples: [{}], params: { 
 			user: "first.md",
 			workspace: "!append [second.md]",
 			files: "inputs.docs",
-			expected: "workspace first|workspace second",
+			expected: "user first|workspace second",
 		},
 	])(
-		"an encore from another folder reads the performed files for $shape",
+		"perform and encore resolve each file against its recorded layer for $shape",
 		async (scenario) => {
 			const w = await world();
 			const source = join(await scratch(), "index.ts");
@@ -850,6 +850,10 @@ export const docs = composition("docs", {
 			});
 			expect(performed.code).toBe(0);
 			expect(json(performed).outputs).toEqual({ text: scenario.expected });
+			await Bun.write(join(user, "first.md"), "user first anew");
+			await Bun.write(join(w.cwd, "second.md"), "workspace second anew");
+			await rm(join(user, "config.yaml"));
+			await rm(join(w.cwd, ".maestro/config.yaml"));
 			const outside = await scratch();
 			await Bun.write(join(outside, "first.md"), "outside first");
 			await Bun.write(join(outside, "second.md"), "outside second");
@@ -858,7 +862,9 @@ export const docs = composition("docs", {
 				{ cwd: outside, hosts: [] },
 			);
 			expect(encore.code).toBe(0);
-			expect(json(encore).outputs).toEqual({ text: scenario.expected });
+			expect(json(encore).outputs).toEqual({
+				text: "user first anew|workspace second anew",
+			});
 		},
 	);
 

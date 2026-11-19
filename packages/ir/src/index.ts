@@ -61,6 +61,7 @@ export {
 	findMarked,
 	MAESTRO_TYPE,
 	type Marked,
+	pointerSegments,
 	registerMaestroType,
 	replaceAt,
 	schemaMarkers,
