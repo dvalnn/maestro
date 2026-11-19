@@ -17,6 +17,11 @@ for arg in "$@"; do
 		echo "Usage: prune-old-concerts.sh [--yes] <concert-id>..." >&2
 		exit 2
 		;;
+	'' | *[!0-9a-f-]*)
+		printf '%s\n' "'$arg' is not a concert id" >&2
+		echo "Pass the full ids that 'maestro prune' printed" >&2
+		exit 2
+		;;
 	*) ids="$ids $arg" ;;
 	esac
 done

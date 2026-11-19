@@ -52,6 +52,9 @@ async function setup() {
 		args: string[],
 		overrides: Record<string, string | undefined> = {},
 	) => run(["bash", SCRIPT, ...args], overrides);
+	// The script under a shell whose `echo` expands backslash sequences.
+	const escapeAwareScript = (args: string[]) =>
+		run(["bash", "-O", "xpg_echo", SCRIPT, ...args]);
 	// The script on a pseudo-terminal, answering its prompt with `input`.
 	const asked = (
 		args: string[],
@@ -92,7 +95,7 @@ async function setup() {
 		expect(id).not.toBe("");
 		return id;
 	};
-	return { ...w, maestro, script, asked, spied, perform };
+	return { ...w, maestro, script, escapeAwareScript, asked, spied, perform };
 }
 
 function snapshot(data: string, id: string, value: string | null) {
@@ -234,6 +237,48 @@ test("an unknown concert stops the old-concert script before it changes a snapsh
 	const result = await w.script([id, missing, "--yes"]);
 	expect(result.code).toBe(first.code);
 	expect(snapshotOf(w.env.XDG_DATA_HOME, id)).toBeNull();
+}, 30_000);
+
+test("the old-concert script names an argument that is not a concert id", async () => {
+	const w = await setup();
+	for (const arg of ["", "not-an-id", "ABC", "\\c"]) {
+		const result = await w.script(["--yes", arg]);
+		expect(result.code).toBe(2);
+		const lines = result.err.split("\n");
+		expect(lines[0]).toBe(`'${arg}' is not a concert id`);
+		expect(lines[1]).toContain(
+			"Pass the full ids that 'maestro prune' printed",
+		);
+	}
+}, 30_000);
+
+test("the old-concert script names an argument that an escape-aware echo would cut short", async () => {
+	const w = await setup();
+	const result = await w.escapeAwareScript(["--yes", "\\c"]);
+	expect(result.code).toBe(2);
+	expect(result.err.split("\n")[0]).toBe("'\\c' is not a concert id");
+}, 30_000);
+
+test("an argument holding two ids or a glob leaves both concerts and snapshots unchanged", async () => {
+	const w = await setup();
+	const first = await w.perform();
+	const second = await w.perform();
+	await Bun.write(join(w.cwd, first), "glob target");
+	const before = await w.maestro(["ls", "--json"]);
+	expect(before.code).toBe(0);
+	const concerts = json(before);
+	expect(concerts.map((row: { id: string }) => row.id).sort()).toEqual(
+		[first, second].sort(),
+	);
+	for (const concert of concerts) expect(concert).toHaveProperty("snapshot");
+
+	for (const arg of [`${first} ${second}`, "*"]) {
+		const result = await w.script([arg, "--yes"]);
+		expect(result.code).toBe(2);
+		const after = await w.maestro(["ls", "--json"]);
+		expect(after.code).toBe(0);
+		expect(json(after)).toEqual(concerts);
+	}
 }, 30_000);
 
 test("a running concert stops the old-concert script before it changes a snapshot", async () => {
