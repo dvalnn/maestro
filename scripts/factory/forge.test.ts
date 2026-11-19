@@ -216,7 +216,13 @@ test("reviews read the inline comments of an official review requesting changes 
 	const { send } = recording((url) => {
 		if (url.includes("/reviews/5/comments")) return [200, JSON.parse(comments)];
 		if (url.includes("/issues/9/comments")) return [200, JSON.parse(thread)];
-		if (url.includes("/reviews?")) return [200, JSON.parse(reviews)];
+		if (url.includes("/reviews?"))
+			return [
+				200,
+				new URL(url).searchParams.get("page") === "1"
+					? JSON.parse(reviews)
+					: [],
+			];
 		return [404, {}];
 	});
 	const path = process.env.PATH;
@@ -274,6 +280,27 @@ test("reviews read the inline comments of an official review requesting changes 
 	}
 });
 
+test("open reads every issue when the forge caps pages at 20", async () => {
+	const numbers = [
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+		22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+		41, 42, 43, 44, 45,
+	];
+	const issues = numbers.map((number) => ({ number }));
+	const { calls, send } = recording((url) => {
+		const page = Number(new URL(url).searchParams.get("page"));
+		return [200, issues.slice((page - 1) * 20, page * 20)];
+	});
+	const result = await withShims(() => forge(signedIn, send).open({}));
+	expect(result.map((issue) => issue.number)).toEqual(numbers);
+	expect(
+		calls.map((call) => new URL(call.url).searchParams.get("page")),
+	).toEqual(["1", "2", "3", "4"]);
+	expect(
+		calls.map((call) => new URL(call.url).searchParams.get("limit")),
+	).toEqual(["50", "50", "50", "50"]);
+});
+
 test("pinned reads the numbers in the order the API lists them", async () => {
 	const { calls, send } = recording(() => [
 		200,
@@ -314,18 +341,22 @@ test("status reads the check push context and ignores the pull request one", asy
 });
 
 test("status is none while only the pull request context exists", async () => {
-	const { send } = recording(() => [
+	const { calls, send } = recording((url) => [
 		200,
 		{
 			state: "failure",
-			statuses: [
-				{ context: "check / check (pull_request)", status: "failure" },
-			],
+			statuses:
+				new URL(url).searchParams.get("page") === "1"
+					? [{ context: "check / check (pull_request)", status: "failure" }]
+					: [],
 		},
 	]);
 	expect(
 		await withShims(() => forge(signedIn, send).status("abc")),
 	).toBeUndefined();
+	expect(
+		calls.map((call) => new URL(call.url).searchParams.get("page")),
+	).toEqual(["1", "2"]);
 });
 
 test("closed reads when each issue closed, none for an open one", async () => {
@@ -341,6 +372,24 @@ test("closed reads when each issue closed, none for an open one", async () => {
 		Date.parse("2026-11-03T11:00:00Z"),
 		undefined,
 	]);
+});
+
+test("status finds the push context after a short page", async () => {
+	const { calls, send } = recording((url) => [
+		200,
+		{
+			statuses:
+				new URL(url).searchParams.get("page") === "1"
+					? [{ context: "check / check (pull_request)", status: "success" }]
+					: [{ context: "check / check (push)", status: "failure" }],
+		},
+	]);
+	expect(await withShims(() => forge(signedIn, send).status("abc"))).toBe(
+		"failure",
+	);
+	expect(
+		calls.map((call) => new URL(call.url).searchParams.get("page")),
+	).toEqual(["1", "2"]);
 });
 
 test("status finds the push context on a later page", async () => {

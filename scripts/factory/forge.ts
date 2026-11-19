@@ -380,19 +380,21 @@ const query = (params: Record<string, string | number | undefined>) =>
 		),
 	).toString();
 
+/** Reads every page of `path` until one is empty, or until `enough` holds for the items read so far; `pick` takes a page's items from its body. */
 async function all(
 	api: Api,
 	path: string,
 	params: Record<string, string | undefined>,
+	pick: (body: unknown) => Json[] = (body) => objects(body, path),
+	enough: (items: Json[]) => boolean = () => false,
 ) {
 	const items: Json[] = [];
 	for (let page = 1; ; page++) {
-		const got = objects(
+		const got = pick(
 			await api("GET", `${path}?${query({ ...params, limit: PAGE, page })}`),
-			path,
 		);
 		items.push(...got);
-		if (got.length < PAGE) return items;
+		if (got.length === 0 || enough(items)) return items;
 	}
 }
 
@@ -564,19 +566,16 @@ export function forge(
 			return text(object(found.commit, "commit"), "id");
 		},
 		status: async (commit) => {
-			for (let page = 1; ; page++) {
-				const found = object(
-					await api(
-						"GET",
-						`/commits/${commit}/status?${query({ limit: PAGE, page })}`,
-					),
-					"status",
-				);
-				const statuses = objects(found.statuses ?? [], "statuses");
-				const push = statuses.find((s) => s.context === CHECK_PUSH);
-				if (push) return state(push);
-				if (statuses.length < PAGE) return undefined;
-			}
+			const isPush = (s: Json) => s.context === CHECK_PUSH;
+			const statuses = await all(
+				api,
+				`/commits/${commit}/status`,
+				{},
+				(body) => objects(object(body, "status").statuses ?? [], "statuses"),
+				(items) => items.some(isPush),
+			);
+			const push = statuses.find(isPush);
+			return push && state(push);
 		},
 	};
 }
