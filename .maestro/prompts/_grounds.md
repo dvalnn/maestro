@@ -1,6 +1,6 @@
-A finding may cite a checklist item of your task or under `## checklist`, CODING_STANDARDS.md and the `area` attachment, when a
-preset attaches one, and the spec: the request, its requirement IDs and the ADRs under docs/adr/. Drop any finding you
-cannot cite.
+A finding may cite a checklist item of your task or under `## checklist`, CODING_STANDARDS.md and the `area` attachment,
+when a preset attaches one, and the spec: the request, its requirement IDs and the ADRs under docs/adr/. Drop any
+finding you cannot cite.
 
 Review scope is what the change adds plus every function it touches, unchanged lines included. A breach of anything
 citable in scope blocks. One outside it is no finding: report it as a sighting, with its path, what it is and what it
