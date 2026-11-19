@@ -46,6 +46,7 @@ import {
 	usageError,
 	viewOf,
 } from "./output";
+import { withPager } from "./pager";
 import {
 	artifactsOf,
 	concertOf,
@@ -399,14 +400,22 @@ async function watched(
 	const row = concertOf(store, prefix);
 	if (inputs !== undefined) return framed(stored, row, inputs);
 	const { show: all, live, ending } = showOf(deps, store, values, json);
-	const show = instance === undefined ? all : narrowed(all, row, instance);
+	const narrow = (show: Show) =>
+		instance === undefined ? show : narrowed(show, row, instance);
 	if (live && row.status === "running")
 		deps.stderr(
 			`watching concert ${row.id}; ctrl-c stops watching, not the concert`,
 		);
 	if (deps.screen && deps.terminal && ending === "block")
 		return browsed(stored, deps.screen, row, deps.terminal);
-	const settled = await polled(store, row, show);
+	// Only the record says the concert has settled, which `pages` cannot see: its event lines are paged here, and the
+	// closing row is printed after the pager closes.
+	const settled =
+		live && ending === "row" && row.status !== "running"
+			? await withPager(deps, true, (paged) =>
+					polled(store, row, narrow(showOf(paged, store, values, json).show)),
+				)
+			: await polled(store, row, narrow(all));
 	return closed(session, store, settled, {
 		color: colorOf(deps, values),
 		ending,

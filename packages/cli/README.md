@@ -75,12 +75,13 @@ and table headers, the closing block, the `watch` views, the `error:` and `warni
 diagnostic's code shows only under `--json`), and `--help`.
 
 When `TERM` is set and not `dumb`, a command that prints a finished document and nothing after it pages it on a
-terminal, as `git` does, but not under `--json`. `perform`, `resume`, `encore`, `wait`, `watch`, `kill`, `prune`,
-`tour`, `agent ls`, and `changeset apply` and `drop` are never paged: they stream progress, ask, or print a line after
-their output. The pager is `$PAGER` run as a shell command; `LESS` is `FRX` for it unless you set it. When it cannot
+terminal, as `git` does, but not under `--json`. `perform`, `resume`, `encore`, `wait`, `kill`, `prune`, `tour`,
+`agent ls`, and `changeset apply` and `drop` are never paged: they stream progress, ask, or print a line after their
+output. `watch` is paged only for the event lines of a concert that had settled, its closing row going to stderr after
+the pager closes. The pager is `$PAGER` run as a shell command; `LESS` is `FRX` for it unless you set it. When it cannot
 start, output goes straight through; when the shell cannot find it (exit 127), maestro names `PAGER` on stderr and
 prints the output as it is, the exit code staying the command's. A pipe is never paged, so
-`maestro art show <concert> <instance> review.md | glow -p` works. While the pager is open, Ctrl-C goes to it.
+`maestro art show <concert> <instance> review.md | glow -p` works; Ctrl-C goes to an open pager.
 
 ## Performing
 

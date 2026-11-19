@@ -402,6 +402,53 @@ describe("watch with a screen", () => {
 	});
 });
 
+describe("watch pages a settled concert's events", () => {
+	const env = { TERM: "xterm" };
+	const paged = async (args: string[], terminal?: typeof TERMINAL) => {
+		const w = await world();
+		const id = idOf(await w.call(["p", ...GREET], { hosts: [hostOf()] }));
+		let text = "";
+		let closed = false;
+		let rowBeforeClose = false;
+		let err = "";
+		const outcome = await w.call(["watch", id, ...args], {
+			terminal,
+			env,
+			stderr: (line) => {
+				err += line;
+				if (line.includes("concert") && !closed) rowBeforeClose = true;
+			},
+			startPager: () => ({
+				write: (bytes: Uint8Array) => {
+					text += new TextDecoder().decode(bytes);
+				},
+				close: async () => {
+					closed = true;
+					return 0;
+				},
+			}),
+		});
+		return { outcome, text, err, closed, rowBeforeClose };
+	};
+
+	test("--events and --instance on a terminal send the lines to the pager and the closing row to stderr", async () => {
+		const all = await paged(["--events"], TERMINAL);
+		expect(all.closed).toBe(true);
+		expect(all.rowBeforeClose).toBe(false);
+		expect(all.text).not.toBe("");
+		expect(all.outcome).toMatchObject({ code: 0, out: "" });
+		expect(all.err).toContain("concert");
+		const one = await paged(["--instance", "echo/echo"], TERMINAL);
+		expect(one.text).not.toBe("");
+		expect(one.text.length).toBeLessThan(all.text.length);
+	});
+
+	test("a pipe and --json print straight to stdout", async () => {
+		expect((await paged(["--events"])).text).toBe("");
+		expect((await paged(["--events", "--json"], TERMINAL)).text).toBe("");
+	});
+});
+
 describe("watch on a running concert", async () => {
 	// A frozen clock keeps the running times still, so an unchanged frame is drawn once.
 	setSystemTime(START);
@@ -460,7 +507,16 @@ describe("watch on a running concert", async () => {
 			);
 	});
 	const json = watching(["--events", "--json"], { terminal: TERMINAL });
-	const lines = watching(["--events"], { terminal: TERMINAL });
+	// A pager that is wanted and usable here would take the lines, so a running watch must start none.
+	const pagersStarted: string[] = [];
+	const lines = watching(["--events"], {
+		terminal: TERMINAL,
+		env: { TERM: "xterm" },
+		startPager: (command) => {
+			pagersStarted.push(command);
+			throw new Error("no pager for a running watch");
+		},
+	});
 	const narrow = watching(["--events"], { terminal: NARROW });
 	/** Whether the cursor row shows `echo` running. */
 	const onEcho = (lines: readonly string[]) =>
@@ -607,6 +663,7 @@ describe("watch on a running concert", async () => {
 
 	test("--events on a terminal colors its lines, and wraps a long detail under its column at the terminal's width", () => {
 		expect(listed.writes.join("\n")).toMatch(SGR);
+		expect(pagersStarted).toEqual([]);
 		const wrapped = wrapping.writes
 			.map(stripVTControlCharacters)
 			.find((w) => w.includes("ran bash"));
