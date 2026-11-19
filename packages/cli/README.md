@@ -443,6 +443,6 @@ concert's recorded workspace root, else the cwd.
 ## Data root
 
 The data root is `$XDG_DATA_HOME/maestro`; set `$XDG_DATA_HOME` to move it. A `dataRoot` in a config file, preset or
-`-c` is refused. The layout is in [architecture: Data root](../../docs/architecture.md#data-root). The repo host keeps
-its lanes, versions and sessions in `hosts/repo/<target id>/`, and each model's context window in
-`hosts/repo/windows.json`.
+`-c` is refused. `maestro --data-root` prints the resolved directory. The layout is in
+[architecture: Data root](../../docs/architecture.md#data-root). The repo host keeps its lanes, versions and sessions in
+`hosts/repo/<target id>/`, and each model's context window in `hosts/repo/windows.json`.
