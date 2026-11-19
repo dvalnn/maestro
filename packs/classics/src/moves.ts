@@ -46,6 +46,7 @@ export function challenge(
 		attached,
 		grounds,
 		relay,
+		checklist,
 	}: {
 		/** The lane version the skeptic reads. */
 		change: Ref<string> | string;
@@ -54,6 +55,8 @@ export function challenge(
 		grounds?: string;
 		/** Relays the skeptic reads after the findings. */
 		relay?: Relays;
+		/** The checklist the lens ruled on, relayed after `relay`. */
+		checklist?: Ref<string>;
 	},
 ) {
 	return skeptic({
@@ -62,7 +65,7 @@ export function challenge(
 		lane: read(change),
 		when: not(found.ok),
 		tolerate: "rejected",
-		relay: { findings: found.out.findings, ...relay },
+		relay: { findings: found.out.findings, ...relay, checklist },
 		attachments: attached,
 	});
 }
@@ -148,8 +151,8 @@ type Settles =
  * The tally of a review over the `groups` of lenses built from `reads`, which must be those its lenses read.
  * - The held node waits on every input the lenses read, and counts the members that delivered, outside groups that do
  *   not count, so a review whose lenses were all skipped, or none of those counted delivered, rejects.
- * - With a `consolidator`, a consolidator ruling on the held findings, and a `review` rendered from its verdict, then a
- *   tally of those it upholds; without, every held finding stands.
+ * - With a `consolidator`, a consolidator ruling on the held findings, which reads the `checklist` when given, and a
+ *   `review` rendered from its verdict, then a tally of those it upholds; without, every held finding stands.
  * - The session carried is `session`, else the consolidator's.
  *
  * The `brief` read rides beside the tally.
@@ -157,7 +160,11 @@ type Settles =
 export function tally(
 	reads: Reads,
 	groups: Record<string, Group>,
-	settles: Settles & { label?: string },
+	settles: Settles & {
+		label?: string;
+		/** The checklists the lenses ruled on, relayed to the consolidator only. */
+		checklist?: Ref<string>;
+	},
 ) {
 	const { change, earlier, brief, attached, common } = reads;
 	const { label = "upheld" } = settles;
@@ -221,6 +228,7 @@ export function tally(
 			findings: held.out.held,
 			unreviewed: held.out.unreviewed,
 			...common,
+			checklist: settles.checklist,
 		},
 		attachments: attached,
 	});

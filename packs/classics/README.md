@@ -52,13 +52,21 @@ left, while the last review upholds a finding or delivered no review.
 
 ¹ Optional. ² Not used when its param, `skeptics`, `consolidate` or `testFirst`, is false.
 
-`panel` takes `lenses`, a map of lens name to task text, `skeptics`, `consolidate`, `grounds`, `checks` and `gated`; the
-[Params](#params) table has their defaults. Without `skeptics`, no skeptic runs and the consolidator rules on every
+`panel` takes `lenses`, a map of lens name to role text, `checklists`, `skeptics`, `consolidate`, `grounds`, `checks`
+and `gated`; the [Params](#params) table has their defaults. Without `skeptics`, no skeptic runs and the consolidator rules on every
 finding unverified. Without `consolidate`, no consolidator runs and it needs a `session`. `earlier` is the previous
 round's `Upheld`, which each lens reads; `names` sets the lenses at run time, of the `lenses` given. Its `Tally` rejects
 while a finding is upheld, or when no lens delivered a review, so `ok` means clean. A lens task is a role and the
 checklist sections it rules on: `correctness` rules on `correctness`, `design` and `smells`, `spec` on `spec` and
 `tests` on `tests`.
+
+`checklists` maps a lens name to the checklist it rules on. A lens with an entry gets its role, that checklist, then the closing instructions. One without gets its
+`lenses` text as its whole task. A `checklists` name that is no lens is ignored. A `lenses` value under a default lens
+name that holds a full task now gets that lens's default checklist appended, unless its `checklists` entry is set too.
+
+While any lens has a checklist, each skeptic reads under `## checklist` the one of the lens it challenges, or that the
+lens rules on none. The consolidator reads each lens's checklist under its name. The consolidator of `tiered_review`
+reads the sections picked.
 
 `tiered_review` runs one `changeset` of the change through a selector, `tieredOf`, which counts the lines changed
 outside the `ignore` globs, a renamed file's new path counting none, and picks the tier: `small` up to `small` lines,
@@ -89,13 +97,14 @@ encore that turns `testFirst` off continues that builder's session.
 ## Moves
 
 - `challenge`: a skeptic over any lens's findings, skipped when the lens settled ok; takes `grounds`, the rules a
-  finding must cite.
+  finding must cite. It also takes `checklist`, which the lens ruled on.
 - `fix`: a builder fixing the findings a round upheld, in a lane extending its lane and continuing its session.
 - `reviewReads`: what a review's lenses read. It takes the `change`, the `spec`, the previous round's `earlier` and the
   builder's `brief` when given, and returns the change's patches and the spec as attachments, and the relays.
 - `tally`: the `Tally` of a review. It takes the reads its lenses read, each group of lenses, and a consolidator's task
   or a `session` to carry. It owns the held node, the consolidator and the `delivered` count, so the held node waits on
-  what the lenses read, and a review no counted lens delivered rejects.
+  what the lenses read, and a review no counted lens delivered rejects. It also takes the `checklist` the consolidator
+  reads.
 
 ## Contracts
 
@@ -114,7 +123,7 @@ encore that turns `testFirst` off continues that builder's session.
 Read a run's reply fields with `maestro ls <id> --json | jq .outputs`.
 
 Code-node values: `toMarkdown`, `copyMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf`, `tieredOf` and `resultOf`.
-`fill` fills prompt placeholders, `LENSES` holds each lens's task, and `atLeastOne` is an integer param of at least 1.
+`fill` fills prompt placeholders, `LENSES` holds each lens's task, `ROLES` and `LENS_CHECKLISTS` its role and its checklist, and `atLeastOne` is an integer param of at least 1.
 `maxRepairs` and `maxFixes` are the params of those names, for a composition built on the pack to reuse.
 
 ## Seats and profiles

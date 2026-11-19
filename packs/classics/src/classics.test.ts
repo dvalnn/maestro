@@ -38,7 +38,9 @@ import {
 	toMarkdown,
 } from "./code";
 import { challenge, fix, reviewReads, tally } from "./moves";
+import { task } from "./prompt";
 import AGAIN from "./prompts/again.md" with { type: "text" };
+import CHECKLIST from "./prompts/checklist.md" with { type: "text" };
 import GATED from "./prompts/gated.md" with { type: "text" };
 import TIERED_STANDARDS from "./prompts/tiered-standards.md" with {
 	type: "text",
@@ -122,7 +124,7 @@ describe("panel_review", () => {
 		expect(code).toBe(0);
 		const { plan } = JSON.parse(out);
 		expect(plan.bounds).toMatchObject({
-			instances: { exact: 18 },
+			instances: { exact: 21 },
 			counts: { "repo.agent": { exact: 7 } },
 		});
 		const profileOf = (id: string) =>
@@ -141,7 +143,7 @@ describe("panel_review", () => {
 		]);
 		expect(code).toBe(0);
 		const { plan } = JSON.parse(out);
-		expect(plan.bounds).toMatchObject({ instances: { exact: 19 } });
+		expect(plan.bounds).toMatchObject({ instances: { exact: 22 } });
 		expect(
 			plan.ir.nodes.filter((n: { kind: string }) => n.kind === "repo.commits"),
 		).toEqual([
@@ -176,13 +178,13 @@ describe("panel_review", () => {
 		for (const line of [
 			'subgraph gn2["lenses"]',
 			'n2[["parMap<br/>correctness, spec, tests"]]',
-			'n7["heldOf<br/>code"]',
-			'n2 ==>|"collect"| j7',
+			'n8["heldOf<br/>code"]',
+			'n2 ==>|"collect"| j8',
+			"j8 --> n8",
+			'n7(["skeptic<br/>repo.agent"])',
+			'f6 -.->|"when value, else skip"| j7',
+			'f4 -.->|"after, tolerates rejected"| j7',
 			"j7 --> n7",
-			'n6(["skeptic<br/>repo.agent"])',
-			'f5 -.->|"when value, else skip"| j6',
-			'f4 -.->|"after, tolerates rejected"| j6',
-			"j6 --> n6",
 		])
 			expect(out).toContain(`  ${line}\n`);
 	});
@@ -263,6 +265,37 @@ describe("panel", () => {
 			"findings",
 			"unreviewed",
 			"builder",
+		]);
+	});
+
+	test("a lens with a checklist is told it by role, and its skeptic and the consolidator read it, a lens without one reads that it has none", () => {
+		const tasks = (ir: Ir) =>
+			JSON.stringify(
+				ir.nodes.find((n) => n.id === "panel/lenses/lenses_lookup"),
+			);
+		const ir = panelIr({ checklists: { a: "### s\n\nitem", z: "unused" } });
+		expect(tasks(ir)).toContain(
+			JSON.stringify(task("task a", "### s\n\nitem", CHECKLIST)).slice(1, -1),
+		);
+		expect(tasks(ir)).toContain('"task b"');
+		expect(relays(ir, "panel/lenses/skeptic")).toEqual([
+			"findings",
+			"checklist",
+		]);
+		expect(
+			JSON.stringify(ir.nodes.find((n) => n.id === "panel/lenses/checklists")),
+		).toContain("This lens rules on no checklist.");
+		expect(relays(ir, "panel/consolidator")).toEqual([
+			"findings",
+			"unreviewed",
+			"checklist",
+		]);
+		expect(JSON.stringify(ir)).not.toContain("unused");
+		const none = panelIr({ checklists: { z: "unused" } });
+		expect(relays(none, "panel/lenses/skeptic")).toEqual(["findings"]);
+		expect(relays(none, "panel/consolidator")).toEqual([
+			"findings",
+			"unreviewed",
 		]);
 	});
 
@@ -1478,6 +1511,11 @@ describe("tieredOf", () => {
 		expect(out.standards.startsWith("STANDARDS\n\n### design\n")).toBe(true);
 		for (const text of [out.behaviour, out.standards])
 			expect(text.endsWith("\n\nCLOSE")).toBe(true);
+		expect(headings(out.checklist)).toEqual([
+			...headings(out.behaviour),
+			...headings(out.standards),
+		]);
+		expect(out.checklist).not.toMatch(/LEAD|STANDARDS|CLOSE/);
 	});
 
 	test("counts no line of an ignored path", () => {

@@ -398,6 +398,10 @@ function countPatch(patch: string, lines: Map<string, number>) {
 const matchesAny = (globs: readonly string[], path: string) =>
 	globs.some((g) => new Bun.Glob(g).match(path));
 
+/** A checklist section's `text` under `### <name>`. */
+export const sectionOf = (name: string, text: string) =>
+	`### ${name}\n\n${text}`;
+
 export type Section = {
 	/** The paths that pull the section in; none, it is always in. */
 	globs?: string[];
@@ -414,6 +418,7 @@ export type Section = {
  *   a touched path outside `ignore`.
  * - Each half's checklist is its lead from `leads`, each picked section's text under `### <name>`, then `close`; it is
  *   empty when the half picked none.
+ * - `checklist` is each picked section's text under `### <name>`, both halves in order, without leads or `close`.
  * - Each seat's output is a one-item list of its seat name when it rules in `tier` and its half's checklist is not
  *   empty, else empty.
  */
@@ -461,11 +466,15 @@ export function tieredOf(
 		const checklist = picked.length
 			? task(
 					leads[half],
-					...picked.map(([name, { text }]) => `### ${name}\n\n${text}`),
+					...picked.map(([name, { text }]) => sectionOf(name, text)),
 					close,
 				)
 			: "";
-		return { names: picked.map(([name]) => name), checklist };
+		return {
+			names: picked.map(([name]) => name),
+			checklist,
+			sections: picked.map(([name, { text }]) => sectionOf(name, text)),
+		};
 	};
 	const halves = {
 		behaviour: halfOf("behaviour"),
@@ -488,6 +497,10 @@ export function tieredOf(
 		sections: names,
 		behaviour: halves.behaviour.checklist,
 		standards: halves.standards.checklist,
+		checklist: [
+			...halves.behaviour.sections,
+			...halves.standards.sections,
+		].join("\n\n"),
 		...seats,
 	};
 }

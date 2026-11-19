@@ -5,9 +5,11 @@ import {
 	firstOk,
 	iter,
 	List,
+	literal,
 	Markdown,
 	not,
 	type Settled,
+	Text,
 	use,
 	type ValueOf,
 } from "@maestro/sdk";
@@ -20,11 +22,13 @@ import {
 	type Findings,
 	fixUntilClean,
 	gated,
+	LENS_CHECKLISTS,
 	LENSES,
 	lens,
 	lensLead,
 	panel,
 	planner,
+	ROLES,
 	Rulings,
 	repairUntilGreen,
 	reviewReads,
@@ -136,6 +140,7 @@ export const lensFusion = composition(
 		const change = build.out.lane;
 		const reads = reviewReads({ change, spec });
 		const { attached } = reads;
+		const checklist = literal(LENS_CHECKLISTS[LENS], Text());
 		const group = (family: string) => {
 			const onFamily = seat(`lens_${family}`, {
 				profile: "classics/lens",
@@ -154,7 +159,7 @@ export const lensFusion = composition(
 						});
 						return {
 							lens: found,
-							skeptic: challenge(found, { change, attached }),
+							skeptic: challenge(found, { change, attached, checklist }),
 						};
 					},
 					{ onError: "continue", label: `${family}_lenses` },
@@ -210,6 +215,7 @@ export const rulingVote = composition(
 		const change = build.out.lane;
 		const reads = reviewReads({ change, spec });
 		const { attached } = reads;
+		const checklist = literal(LENS_CHECKLISTS[LENS], Text());
 		return tally(
 			reads,
 			{
@@ -225,7 +231,7 @@ export const rulingVote = composition(
 							});
 							const votes = iter.parMap(
 								VOTERS,
-								() => challenge(found, { change, attached }),
+								() => challenge(found, { change, attached, checklist }),
 								{ onError: "continue", label: "voters" },
 							);
 							return {
@@ -272,8 +278,11 @@ export const auditSweep = composition(
 					lenses: Object.fromEntries(
 						AREAS.map((area) => [
 							area,
-							`${LENSES[LENS]}\n\nRule only on what is under ${area}/.`,
+							`${ROLES[LENS]}\n\nRule only on what is under ${area}/.`,
 						]),
+					),
+					checklists: Object.fromEntries(
+						AREAS.map((area) => [area, LENS_CHECKLISTS[LENS]]),
 					),
 				},
 			},

@@ -3,3 +3,5 @@ those grounds, and rule whether it holds. A finding holds only when it also brea
 grounds name. Uphold a finding only with its evidence in why: the file:line that shows it, or the output of a check you
 ran; a finding you could not verify does not hold. For a missing test, name in why the line whose removal no test
 catches, and the tests you read.
+
+When `## checklist` is given, a finding whose item is not there, or does not say what it claims, does not hold.

@@ -13,7 +13,15 @@ export { fixUntilClean, maxFixes } from "./fix-until-clean";
 export { challenge, fix, reviewReads, tally } from "./moves";
 export { fill } from "./prompt";
 export { buildThenRepair, maxRepairs, repairUntilGreen } from "./repair";
-export { gated, LENSES, lensLead, panel, panelReview } from "./review";
+export {
+	gated,
+	LENS_CHECKLISTS,
+	LENSES,
+	lensLead,
+	panel,
+	panelReview,
+	ROLES,
+} from "./review";
 export {
 	builder,
 	consolidator,

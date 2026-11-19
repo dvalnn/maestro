@@ -173,6 +173,7 @@ export const tieredReview = composition(
 				sections: List(Text()),
 				behaviour: Text(),
 				standards: Text(),
+				checklist: Text(),
 				...SEAT_LISTS,
 			},
 		});
@@ -215,6 +216,7 @@ export const tieredReview = composition(
 			{
 				consolidator: TASKS.consolidator(false, grounds || undefined),
 				session,
+				checklist: selected.out.checklist,
 			},
 		);
 	},

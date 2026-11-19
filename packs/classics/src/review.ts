@@ -7,6 +7,7 @@ import {
 	iter,
 	Json,
 	List,
+	literal,
 	lookup,
 	Markdown,
 	Optional,
@@ -14,6 +15,7 @@ import {
 	Text,
 	use,
 } from "@maestro/sdk";
+import { sectionOf } from "./code";
 import { challenge, requestOf, reviewReads, tally } from "./moves";
 import { task } from "./prompt";
 import AGENT_DOC from "./prompts/_agent-doc.md" with { type: "text" };
@@ -63,20 +65,38 @@ const PANEL = {
 	tests: { role: LENS_TESTS, sections: ["tests"] },
 } as const;
 
-/** A panel lens's task: its role, each of its sections of the checklist under `### <name>`, then how it is done. */
-const lensTask = (name: keyof typeof PANEL) =>
-	task(
-		PANEL[name].role,
-		...PANEL[name].sections.map((s) => `### ${s}\n\n${CHECKLISTS[s]}`),
-		CHECKLIST,
-	);
+/** Each panel lens's role, by lens name. */
+export const ROLES = {
+	correctness: PANEL.correctness.role,
+	spec: PANEL.spec.role,
+	tests: PANEL.tests.role,
+};
+
+/** Each panel lens's checklist, by lens name: each of its sections under `### <name>`. */
+export const LENS_CHECKLISTS = Object.fromEntries(
+	Object.entries(PANEL).map(([name, { sections }]) => [
+		name,
+		sections.map((s) => sectionOf(s, CHECKLISTS[s])).join("\n\n"),
+	]),
+) as Record<keyof typeof PANEL, string>;
+
+/** A lens's task: its `role`, its `checklist`, then how it is done. */
+const lensTask = (role: string, checklist: string) =>
+	task(role, checklist, CHECKLIST);
+
+/** `table` of the `names` alone. */
+export const only = (table: Record<string, string>, names: readonly string[]) =>
+	Object.fromEntries(names.map((name) => [name, table[name] as string]));
+
+/** What a skeptic reads for a lens that rules on no checklist, when another lens of its panel has one. */
+const NO_CHECKLIST = "This lens rules on no checklist.";
 
 /** Each call's task: its own prompt file, then the fragments it rules by, which a flag or a param can add. */
 export const TASKS = {
 	lens: {
-		correctness: lensTask("correctness"),
-		spec: lensTask("spec"),
-		tests: lensTask("tests"),
+		correctness: lensTask(ROLES.correctness, LENS_CHECKLISTS.correctness),
+		spec: lensTask(ROLES.spec, LENS_CHECKLISTS.spec),
+		tests: lensTask(ROLES.tests, LENS_CHECKLISTS.tests),
 	},
 	consolidator: (skeptics: boolean, grounds?: string) => {
 		const own = skeptics ? CONSOLIDATOR_SKEPTICS : CONSOLIDATOR;
@@ -130,7 +150,18 @@ export const panel = composition(
 					type: "object",
 					additionalProperties: { type: "string" },
 				},
-				{ default: LENSES },
+				{ default: ROLES },
+			),
+			checklists: Json<Record<string, string>>(
+				{
+					type: "object",
+					additionalProperties: { type: "string" },
+				},
+				{
+					default: LENS_CHECKLISTS,
+					description:
+						"The checklist each lens rules on, by lens name: its task is its role, then this, then the closing instructions; a name that is no lens is ignored",
+				},
 			),
 			skeptics: Bool({ default: true }),
 			consolidate: Bool({ default: true }),
@@ -140,19 +171,53 @@ export const panel = composition(
 		},
 	},
 	(
-		{ lenses, skeptics, consolidate, grounds, checks, gated },
+		{ lenses, checklists, skeptics, consolidate, grounds, checks, gated },
 		{ change, spec, session, earlier, names, brief },
 	) => {
 		const ground = grounds || undefined;
+		// The checklist of each lens that has one; a `checklists` name that is no lens is left out.
+		const ruled = Object.fromEntries(
+			Object.keys(lenses).flatMap((name) =>
+				Object.hasOwn(checklists, name)
+					? [[name, checklists[name] as string]]
+					: [],
+			),
+		);
 		const tasks = Object.fromEntries(
-			Object.entries(lenses).map(([name, own]) => [
+			Object.entries(lenses).map(([name, role]) => [
 				name,
-				lensLead(own, { earlier: earlier !== undefined, gated }),
+				lensLead(
+					ruled[name] === undefined ? role : lensTask(role, ruled[name]),
+					{
+						earlier: earlier !== undefined,
+						gated,
+					},
+				),
 			]),
+		);
+		// A skeptic and the consolidator read the checklists the lenses ruled on, when any lens has one.
+		const anyRuled = Object.keys(ruled).length > 0;
+		const consolidated = anyRuled
+			? literal(
+					Object.entries(ruled)
+						.map(
+							([name, text]) =>
+								`### ${name}\n\n${text.replaceAll(/^### /gm, "#### ")}`,
+						)
+						.join("\n\n"),
+					Text(),
+				)
+			: undefined;
+		const challenged = Object.fromEntries(
+			Object.keys(lenses).map((name) => [name, ruled[name] ?? NO_CHECKLIST]),
 		);
 		const items = names ?? Object.keys(lenses);
 		const settles = consolidate
-			? { consolidator: TASKS.consolidator(skeptics, ground), session }
+			? {
+					consolidator: TASKS.consolidator(skeptics, ground),
+					session,
+					checklist: consolidated,
+				}
 			: session && { session };
 		if (!settles)
 			throw new BuildError({
@@ -181,6 +246,9 @@ export const panel = composition(
 						attached,
 						grounds: ground,
 						relay: common,
+						checklist: anyRuled
+							? lookup(challenged, name, { label: "checklists" })
+							: undefined,
 					}),
 				};
 			},
@@ -269,9 +337,8 @@ export const panelReview = composition(
 			{ change, spec: requestOf(request) },
 			{
 				params: {
-					lenses: Object.fromEntries(
-						lenses.map((name) => [name, LENSES[name]]),
-					),
+					lenses: only(ROLES, lenses),
+					checklists: only(LENS_CHECKLISTS, lenses),
 				},
 			},
 		);
