@@ -2895,7 +2895,7 @@ describe("exit codes and error states", () => {
 		expect(await w.call(["ls", "--status", "failed"])).toEqual({
 			code: 0,
 			out: "",
-			err: "no concerts match\nDrop a filter, or run 'maestro ls' for all",
+			err: "no concerts match\nDrop a filter, or run 'maestro ls --all' for all",
 		});
 		expect(await w.call(["ls", "--json"])).toEqual({
 			code: 0,

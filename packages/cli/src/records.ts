@@ -280,7 +280,7 @@ function none({ session: { deps }, json }: Stored, filtered: boolean) {
 	if (json) deps.stdout(jsonOf([]));
 	else if (filtered) {
 		deps.stderr("no concerts match");
-		deps.stderr("Drop a filter, or run 'maestro ls' for all");
+		deps.stderr("Drop a filter, or run 'maestro ls --all' for all");
 	} else {
 		deps.stderr("no concerts");
 		deps.stderr("Perform one with 'maestro perform <pack>.<composition>'");
@@ -366,12 +366,10 @@ const shellWord = (value: string) =>
 
 /** The hint after a list the limit cut: `ls` with the filters given and twice the limit. */
 export function olderHint(values: Values, limit: number, color: boolean) {
-	const filters = ["status", "composition", "tour", "workspace"].flatMap(
-		(name) => {
-			const value = textOf(values, name);
-			return value === undefined ? [] : [` --${name} ${shellWord(value)}`];
-		},
-	);
+	const filters = Object.keys(FILTER_OPTIONS).flatMap((name) => {
+		const value = textOf(values, name);
+		return value === undefined ? [] : [` --${name} ${shellWord(value)}`];
+	});
 	return hintLine(
 		`Older concerts: maestro ls${filters.join("")} --limit ${limit * 2}`,
 		color,
