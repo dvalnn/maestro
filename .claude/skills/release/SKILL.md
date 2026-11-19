@@ -36,8 +36,8 @@ of the same kind: the last stable for a stable, the last tag for a pre-release.
    review's findings before publishing.
 4. **Bump.** One change, `chore(release): bump to <version>`, on top of `main`: the `version` of every
    `packages/*/package.json` and `packs/classics/package.json`, the pinned version in `INSTALL.md`, and in
-   `skills/maestro/SKILL.md` the `checked against` line and the classics pack's version. `bun install` refreshes
-   `bun.lock`. `jj show <prev>` is the previous bump to match; a `grep` for the old version finds no stray.
+   `skills/maestro/SKILL.md` the `checked against` line. `bun install` refreshes `bun.lock`. `jj show <prev>` is the
+   previous bump to match; a `grep` for the old version finds no stray.
 5. **Build.** `mise exec -- just release` runs the gate, builds `dist/` and smoke-tests the install. It must end with
    `smoke: passed`.
 6. **Push.** `jj bookmark set main -r <bump>`, `jj git push --bookmark main`.
