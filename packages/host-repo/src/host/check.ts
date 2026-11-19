@@ -15,6 +15,7 @@ import {
 	type CheckSpec,
 	checkConfig,
 	LANE_PORT,
+	listed,
 	namedCheck,
 	repoSetup,
 	requireTarget,
@@ -22,7 +23,7 @@ import {
 } from "./config";
 import { lanePorts, sandboxed, withLane } from "./lane-input";
 import { type Live, liveInstances } from "./live";
-import { runLines, type Verdict } from "./run-lines";
+import { runLines, type Sandboxed, type Verdict } from "./run-lines";
 import { openTarget } from "./store";
 
 /** The name an inline check goes by in reasons and logs. */
@@ -59,6 +60,29 @@ function overall(verdicts: Verdict[]): Verdict {
 		: { outcome, reason: reasons.join("; ") };
 }
 
+function skippedNote(skipped: [string, CheckSpec][]): string[] {
+	return skipped.length
+		? [`skipped after a red check: ${listed(skipped.map(([name]) => name))}`]
+		: [];
+}
+
+async function runChecks(
+	s: Sandboxed,
+	checks: [string, CheckSpec][],
+	stopOnFail = false,
+): Promise<Verdict[]> {
+	const verdicts: Verdict[] = [];
+	for (const [i, [name, spec]] of checks.entries()) {
+		const verdict = await runLines(s, `check '${name}'`, spec);
+		verdicts.push(verdict);
+		if (stopOnFail && verdict.outcome !== "ok") {
+			s.log.push(...skippedNote(checks.slice(i + 1)));
+			break;
+		}
+	}
+	return verdicts;
+}
+
 async function execute(
 	instance: HostInstance,
 	inputs: Inputs,
@@ -84,9 +108,7 @@ async function execute(
 			mkdirSync(output);
 			s.output = output;
 			s.writable.push({ src: output });
-			const verdicts: Verdict[] = [];
-			for (const [name, spec] of checks)
-				verdicts.push(await runLines(s, `check '${name}'`, spec));
+			const verdicts = await runChecks(s, checks, config.stopOnFail);
 			const logs = join(context.scratch, "check.log");
 			writeFileSync(logs, `${s.log.join("\n")}\n`);
 			const { outcome, reason = "" } = overall(verdicts);

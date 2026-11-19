@@ -244,7 +244,11 @@ export const CHECK_CONFIG = {
 	type: "object",
 	required: ["lane"],
 	additionalProperties: false,
-	properties: { lane: LANE_INPUT, check: { anyOf: [NAME, INLINE_CHECK] } },
+	properties: {
+		lane: LANE_INPUT,
+		check: { anyOf: [NAME, INLINE_CHECK] },
+		stopOnFail: { type: "boolean" },
+	},
 } as const;
 
 export const APPLY_CONFIG = {
@@ -334,7 +338,12 @@ type RawCheck = string | string[] | RawLongCheck;
 type RawPrepare = RawCheck | (RawLongCheck & { cache?: PrepareCache });
 
 /** A check node's config, its inline check parsed. */
-export type CheckConfig = { lane: LaneInput; check?: string | CheckSpec };
+export type CheckConfig = {
+	lane: LaneInput;
+	check?: string | CheckSpec;
+	/** Skip the checks after the first one that ends failed or rejected. Unset runs every check. */
+	stopOnFail?: boolean;
+};
 
 type RawSetup = {
 	target?: {
@@ -544,14 +553,14 @@ export function agentCheck(target: Target, name: string): AgentCheck {
  * @throws Error when it does not match its schema, or its timeout is not a duration.
  */
 export function checkConfig(config: unknown): CheckConfig {
-	const { lane, check } = parsed<{ lane: LaneInput; check?: RawCheck }>(
-		CHECK_CONFIG,
-		config ?? {},
-		"config",
-	);
+	const { lane, check, stopOnFail } = parsed<{
+		lane: LaneInput;
+		check?: RawCheck;
+		stopOnFail?: boolean;
+	}>(CHECK_CONFIG, config ?? {}, "config");
 	return typeof check === "object"
-		? { lane, check: checkSpec(check) }
-		: { lane, check };
+		? { lane, check: checkSpec(check), stopOnFail }
+		: { lane, check, stopOnFail };
 }
 
 /** The hint for a name not among `names`: use one of them, or `add` when there are none. */

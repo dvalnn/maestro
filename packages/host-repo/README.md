@@ -47,10 +47,13 @@ read-only binds and own attachments. An attachment's content hash is in the resu
 
 ### Check node
 
-Runs deterministic commands in a lane: one named check of the target, every named check (all failures reported), or an
-inline `{ run, hint?, timeout }` (D-22). It is not a code node: it runs untrusted target commands in the sandbox.
+Runs deterministic commands in a lane: one named check of the target, every named check, or an inline
+`{ run, hint?, timeout }` (D-22). Every check's failure is reported unless the node stops early, below. It is not a code
+node: it runs untrusted target commands in the sandbox.
 
 - Each line runs through `sh -c` in the sandbox, in order, and the first failing line stops its check.
+- With `stopOnFail: true` on the node, the first check that ends failed or rejected stops the node, and `check.log`
+  names the checks it skipped. Unset, every check runs.
 - Every line, of a check or of prepare, sees `MAESTRO_LANE_BASE`, the commit its lane was cut from, which overrides a
   configured `env` entry of that name.
 - `MAESTRO_CHECK_OUTPUT` names a writable directory outside the lane, which a configured `env` cannot override. As the

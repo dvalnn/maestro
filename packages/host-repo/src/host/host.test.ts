@@ -1564,6 +1564,87 @@ describe("perform", () => {
 		expect(readFileSync(artifact("x", "logs"), "utf8")).toContain("$ ");
 	});
 
+	const checkWithStop = (host: Host, stopOnFail: boolean) =>
+		irOf(
+			host,
+			[{ id: "x", kind: "check", config: { lane: fresh, stopOnFail } }],
+			"x",
+		);
+
+	test.each([
+		[1, "rejected"],
+		[3, "failed"],
+	] as [number, "rejected" | "failed"][])(
+		"a check node stops after a red check that exits %i and names the skipped checks",
+		async (exit, outcome) => {
+			const { host } = stubHost(() => [OK]);
+			const target = toyTarget();
+			const config = configOf(target, {
+				target: {
+					repo: target,
+					base: "main",
+					checks: {
+						green: "touch $MAESTRO_CHECK_OUTPUT/before",
+						red: `touch $MAESTRO_CHECK_OUTPUT/red; exit ${exit}`,
+						later_alpha: "touch $MAESTRO_CHECK_OUTPUT/after1",
+						later_beta: "touch $MAESTRO_CHECK_OUTPUT/after2",
+					},
+				},
+			});
+			const ir = checkWithStop(host, true);
+			const { result, artifact } = await performed(host, ir, config);
+			expect(result.outcome).toBe(outcome);
+			expect(readdirSync(artifact("x", "output")).sort()).toEqual([
+				"before",
+				"red",
+			]);
+			const log = readFileSync(artifact("x", "logs"), "utf8");
+			expect(log).toContain("later_alpha");
+			expect(log).toContain("later_beta");
+		},
+	);
+
+	test("a check node with stopOnFail false runs checks after a red check", async () => {
+		const { host } = stubHost(() => [OK]);
+		const target = toyTarget();
+		const config = configOf(target, {
+			target: {
+				repo: target,
+				base: "main",
+				checks: {
+					red: "exit 1",
+					later: "touch $MAESTRO_CHECK_OUTPUT/after",
+				},
+			},
+		});
+		const ir = checkWithStop(host, false);
+		const { result, artifact } = await performed(host, ir, config);
+		expect(result.outcome).toBe("rejected");
+		expect(readdirSync(artifact("x", "output"))).toEqual(["after"]);
+	});
+
+	test("a check node whose last check is red logs what it logs without stopOnFail", async () => {
+		const target = toyTarget();
+		const config = configOf(target, {
+			target: {
+				repo: target,
+				base: "main",
+				checks: { green: "true", red: "exit 1" },
+			},
+		});
+		const logOf = async (stopOnFail: boolean) => {
+			const { host } = stubHost(() => [OK]);
+			const { result, artifact } = await performed(
+				host,
+				checkWithStop(host, stopOnFail),
+				config,
+			);
+			expect(result.outcome).toBe("rejected");
+			return readFileSync(artifact("x", "logs"), "utf8");
+		};
+		expect(await logOf(true)).toBe(await logOf(false));
+	});
+
 	/** An IR of one agent `x` that may be a verdict agent and may declare the Markdown output `notes`. */
 	const lone = (
 		host: Parameters<typeof irOf>[0],
