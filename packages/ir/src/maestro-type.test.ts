@@ -9,6 +9,7 @@ import {
 	MAESTRO_TYPE,
 	type Marked,
 	registerMaestroType,
+	schemaMarkers,
 	unreachableMarkers,
 } from "./index";
 
@@ -144,6 +145,20 @@ test.each(["#/$defs/missing", "#/$defs/%ZZ", "#h", "other.json#/$defs/h"])(
 test("registering the keyword twice on one Ajv is a no-op", () => {
 	const ajv = registerMaestroType(strictAjv());
 	expect(ajv.compile(handle)("h0")).toBe(true);
+});
+
+test("schemaMarkers follows a local ref to a definition with tilde and slash in its key", () => {
+	const schema = {
+		$ref: "#/$defs/a~01b~1c",
+		$defs: { "a~1b/c": handle },
+	};
+	expect(schemaMarkers(schema)).toEqual([
+		{
+			type: "fake.handle",
+			pointer: "/$defs/a~01b~1c",
+			reachable: true,
+		},
+	]);
 });
 
 const UNWALKED_KEYWORDS: [string, JsonSchema, string][] = [

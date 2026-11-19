@@ -281,10 +281,7 @@ function anchorRef(root: JsonSchema, schema: SchemaObject): Target | undefined {
 /** The unescaped segments of a URI-encoded JSON Pointer, or undefined when it does not decode. */
 function decodeSegments(fragment: string): string[] | undefined {
 	try {
-		return decodeURIComponent(fragment)
-			.split("/")
-			.slice(1)
-			.map(unescapeSegment);
+		return pointerSegments(decodeURIComponent(fragment));
 	} catch {
 		return undefined;
 	}
@@ -299,7 +296,8 @@ function step(at: unknown, key: string): unknown {
 const isObject = (v: unknown): v is SchemaObject =>
 	typeof v === "object" && v !== null && !Array.isArray(v);
 
-const escapeSegment = (s: string) =>
+/** `s` escaped as one RFC 6901 JSON Pointer segment. */
+export const escapeSegment = (s: string) =>
 	s.replaceAll("~", "~0").replaceAll("/", "~1");
 
 const unescapeSegment = (s: string) =>

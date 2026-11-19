@@ -1,5 +1,5 @@
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020";
-import { registerMaestroType } from "./maestro-type";
+import { pointerSegments, registerMaestroType } from "./maestro-type";
 import type { JsonSchema } from "./types";
 
 /** The message of a thrown value, an `Error` or not. */
@@ -26,9 +26,6 @@ const shared = registerMaestroType(
 /** The process's schema validator. */
 export const validator = (): Validator => shared;
 
-const unescapePointer = (s: string) =>
-	s.replaceAll("~1", "/").replaceAll("~0", "~");
-
 /**
  * One message per way `data` violates `schema`, each led by `subject` of the offending position's path segments. A key
  * off its `propertyNames` is named by its own path, once.
@@ -51,7 +48,7 @@ export function violations(
 	return (validate.errors ?? [])
 		.filter((e) => e.propertyName === undefined)
 		.map((e) => {
-			const segments = e.instancePath.split("/").slice(1).map(unescapePointer);
+			const segments = pointerSegments(e.instancePath);
 			const { additionalProperty: extra, propertyName: key } = e.params;
 			if (typeof key === "string")
 				return `${subject([...segments, key])} is not an allowed name`;

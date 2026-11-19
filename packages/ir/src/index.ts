@@ -58,6 +58,7 @@ export {
 	ARTIFACT_TYPES,
 	artifactsAsRefs,
 	CORE_TYPES,
+	escapeSegment,
 	findMarked,
 	MAESTRO_TYPE,
 	type Marked,

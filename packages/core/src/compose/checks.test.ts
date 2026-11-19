@@ -86,6 +86,12 @@ describe("edge types", () => {
 			{ type: "object", properties: { k: NUMBER } },
 			" at /properties/k",
 		],
+		[
+			"a shared property of another type under a key holding ~ and /",
+			{ type: "object", properties: { "a~b/c": STRING } },
+			{ type: "object", properties: { "a~b/c": NUMBER } },
+			" at /properties/a~0b~1c",
+		],
 		["another marker", marked(CORE_TYPES.file), marked(CORE_TYPES.dir), ""],
 		["a marker into a plain type", marked(CORE_TYPES.file), STRING, ""],
 		[
@@ -133,6 +139,22 @@ describe("edge types", () => {
 		const [found] = await failures(irOf([code("a", "a", { out })]));
 		expect(found?.code).toBe("TYPE.marker");
 		expect(found?.path).toBe("/nodes/0/out/v/anyOf/0");
+	});
+
+	test("reports escaped schema positions under property keys", async () => {
+		const out = {
+			v: {
+				properties: {
+					"property~1/name": { anyOf: [marked(CORE_TYPES.file)] },
+				},
+			},
+		};
+		const result = await composeWith(irOf([code("a", "a", { out })]));
+		expect(result.ok).toBe(false);
+		const diagnostics = result.ok ? [] : result.diagnostics;
+		expect(diagnostics.map((d) => [d.code, d.path])).toEqual([
+			["TYPE.marker", "/nodes/0/out/v/properties/property~01~1name/anyOf/0"],
+		]);
 	});
 
 	test("rejects a node kind no installed host registers", async () => {

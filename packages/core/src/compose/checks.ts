@@ -1,6 +1,7 @@
 import {
 	CORE_TYPES,
 	type Diagnostic,
+	escapeSegment,
 	type GraphIndex,
 	type HostNode,
 	IMPLICIT_OUT,
@@ -32,9 +33,6 @@ import { type HostKind, isRecord, loadFunction } from "../shared";
 import type { ComposeInput } from "./index";
 
 type Lookup = (kind: string) => HostKind | undefined;
-
-const escapePointer = (s: string) =>
-	s.replaceAll("~", "~0").replaceAll("/", "~1");
 
 /** A did-you-mean hint allows one edit per this many characters of the typed key, and at most `MAX_TYPOS`. */
 const CHARS_PER_TYPO = 3;
@@ -254,7 +252,7 @@ export function checkConfig(
 function schemasOf(ir: Ir): [string, JsonSchema][] {
 	const ports = (at: string, p: Ports | undefined): [string, JsonSchema][] =>
 		Object.entries(p ?? {}).map(([name, s]) => [
-			`${at}/${escapePointer(name)}`,
+			`${at}/${escapeSegment(name)}`,
 			s,
 		]);
 	return [
@@ -393,7 +391,7 @@ function propertyMismatch(
 		const found = mismatch(
 			sub,
 			other,
-			`${at}/properties/${escapePointer(key)}`,
+			`${at}/properties/${escapeSegment(key)}`,
 		);
 		if (found) return found;
 	}
