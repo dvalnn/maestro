@@ -43,29 +43,14 @@ if [ "$yes" = 0 ]; then
 	esac
 fi
 
-# The data root as maestro resolves it: XDG_DATA_HOME when the shell sets it (maestro keeps it over the .env, and
-# ignores it when relative), else the one in maestro's .env, else ~/.local/share.
-absolute() { case $1 in /*) echo "$1" ;; esac; }
-if [ -n "${XDG_DATA_HOME+set}" ]; then
-	data=$(absolute "$XDG_DATA_HOME")
-else
-	config=$(absolute "${XDG_CONFIG_HOME:-}")
-	config=${config:-${HOME:-~}/.config}
-	data=
-	if [ -f "$config/maestro/.env" ]; then
-		# The last assignment wins; a quoted value ends at its closing quote, an unquoted one at ` #`.
-		value=$(sed -n 's/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}XDG_DATA_HOME[[:space:]]*=[[:space:]]*//p' "$config/maestro/.env" |
-			tail -n 1 | sed \
-			-e "s/^\"\([^\"]*\)\".*/\1/;t" \
-			-e "s/^'\([^']*\)'.*/\1/;t" \
-			-e 's/^`\([^`]*\)`.*/\1/;t' \
-			-e 's/#.*//' -e 's/[[:space:]]*$//')
-		data=$(absolute "$value")
-	fi
-fi
-XDG_DATA_HOME=${data:-${HOME:-~}/.local/share}
+# maestro resolves the data root once; the maestro calls below share its record store through XDG_DATA_HOME.
+root=$(maestro --data-root) || exit 1
+db=$root/record.db
+# Parameter expansion, not dirname: command substitution would strip a trailing newline of the parent.
+XDG_DATA_HOME=${root%/maestro}
+# A root of /maestro has an empty parent, which maestro reads as unset.
+XDG_DATA_HOME=${XDG_DATA_HOME:-/}
 export XDG_DATA_HOME
-db=$XDG_DATA_HOME/maestro/record.db
 
 work=$(mktemp -d) || exit 1
 written=

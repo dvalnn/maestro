@@ -15,6 +15,7 @@ import {
 	sharedFlags,
 	splitFirst,
 } from "./command";
+import { placesOf } from "./config";
 import {
 	ArgumentError,
 	CliError,
@@ -177,8 +178,9 @@ const rootHelp = (color: boolean) => {
 		),
 		"",
 		heading("Flags:"),
-		`  ${paint("cyan", "--version", color)}  Print the maestro, SDK, IR and Bun versions`,
-		`  ${paint("cyan", "--help", color)}     Show this help`,
+		`  ${paint("cyan", "--version", color)}    Print the maestro, SDK, IR and Bun versions`,
+		`  ${paint("cyan", "--data-root", color)}  Print the directory that holds maestro's record and packs`,
+		`  ${paint("cyan", "--help", color)}       Show this help`,
 		"",
 		heading("Common flags (each command lists those it takes):"),
 		sharedFlags(color),
@@ -311,12 +313,14 @@ function verbOf(word: string): Verb {
 }
 
 /**
- * What `maestro` with no command word does: prints the version or the help it asks for, else refuses.
+ * What `maestro` with no command word does: prints the version, the data root or the help it asks for, else refuses.
  * @throws CliError, a usage error, for a flag the common ones lack, or when it asks for neither.
  */
 async function bare(argv: readonly string[], deps: Deps): Promise<number> {
 	const common = peek(COMMON, argv);
 	if (argv.includes("--version")) deps.stdout(versionLine());
+	else if (argv.includes("--data-root"))
+		deps.stdout(placesOf(deps.env).dataRoot);
 	else if (isSet(common, "help"))
 		return withPager(deps, true, (out) => {
 			out.stdout(rootHelp(colorOf(deps, common).out));

@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { Host, HostSetup } from "@maestro/core/host";
@@ -1518,6 +1518,47 @@ describe("help and color", () => {
 		).toBe(colored);
 		expect(err).toBe("");
 	});
+});
+
+// Seam: root-flag stdout and exit status, including the real CLI's .env loading.
+test("--data-root prints the resolved data root and appears in root help", async () => {
+	const w = await world();
+	const result = await w.call(["--data-root"]);
+	expect(result).toEqual({
+		code: 0,
+		out: join(w.root, "data/maestro"),
+		err: "",
+	});
+	const help = await w.call(["--help"]);
+	expect(help.code).toBe(0);
+	expect(help.out.match(/--[a-z][a-z-]*/g)).toContain("--data-root");
+});
+
+test("--data-root uses the data home loaded from the user .env", async () => {
+	const w = await world();
+	const data = join(w.root, "data from env");
+	await mkdir(join(w.env.XDG_CONFIG_HOME, "maestro"), { recursive: true });
+	await Bun.write(
+		join(w.env.XDG_CONFIG_HOME, "maestro/.env"),
+		`XDG_DATA_HOME="${data}"\n`,
+	);
+	const child = Bun.spawn(
+		[process.execPath, join(import.meta.dir, "maestro.ts"), "--data-root"],
+		{
+			cwd: w.cwd,
+			env: { ...process.env, ...w.env, XDG_DATA_HOME: undefined },
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	);
+	const [out, err, code] = await Promise.all([
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+		child.exited,
+	]);
+	expect(code).toBe(0);
+	expect(out).toBe(`${data}/maestro\n`);
+	expect(err).toBe("");
 });
 
 describe("--version", () => {

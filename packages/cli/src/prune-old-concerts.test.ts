@@ -306,6 +306,20 @@ for (const [name, line] of [
 	}, 30_000);
 }
 
+test("the old-concert script shares maestro's data root when the .env data home contains an escaped quote", async () => {
+	const w = await setup();
+	const data = join(w.root, 'dotenv\\"data');
+	await dotenv(w, `XDG_DATA_HOME="${data}"`);
+	const env = { XDG_DATA_HOME: undefined };
+	const id = await w.perform(env);
+	snapshot(data, id, null);
+	const result = await w.script([id, "--yes"], env);
+	expect(result.code).toBe(0);
+	const listed = await w.maestro(["ls", "--json"], env);
+	expect(listed.code).toBe(0);
+	expect(json(listed)).toEqual([]);
+}, 30_000);
+
 test("the old-concert script keeps the shell's data home over the .env", async () => {
 	const w = await setup();
 	await dotenv(w, `XDG_DATA_HOME=${join(w.root, "elsewhere")}`);
