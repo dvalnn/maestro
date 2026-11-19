@@ -354,11 +354,13 @@ export type CheckOut<M extends LaneMode = LaneMode> = {
  * - absent, every check of `target.checks`;
  * - a name, that check of `target.checks`;
  * - an inline check.
+ *
+ * With `stopOnFail`, the first check that fails or rejects stops the node, so a later check does not run.
  */
 export function check<M extends LaneMode>(
 	lane: LaneInput<M>,
 	which?: string | InlineCheck,
-	common: Common = {},
+	{ stopOnFail, ...common }: Common & { stopOnFail?: boolean } = {},
 ): Result<CheckOut<M>> {
 	const ports = lanePorts(lane);
 	return hostNode("repo.check", {
@@ -368,6 +370,7 @@ export function check<M extends LaneMode>(
 		config: defined({
 			lane: ports.config,
 			check: typeof which === "object" ? defined(which) : which,
+			stopOnFail,
 		}),
 	}) as Result<CheckOut<M>>;
 }

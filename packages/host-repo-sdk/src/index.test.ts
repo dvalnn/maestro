@@ -214,7 +214,7 @@ describe("lanes", () => {
 				const look = check(
 					read(copied.out.lane),
 					{ run: "true" },
-					{ label: "look" },
+					{ label: "look", stopOnFail: true },
 				);
 				// @ts-expect-error a node that reads its lane outputs none
 				void look.out.lane;
@@ -226,6 +226,9 @@ describe("lanes", () => {
 			in: { lane: Lane.schema },
 			literals: { lane: "c.lens/skeptic" },
 			config: { lane: { mode: "fork" } },
+		});
+		expect(nodeOf(ir, "look")).toMatchObject({
+			config: { stopOnFail: true },
 		});
 		expect(nodeOf(ir, "look")?.out).toEqual({
 			logs: expect.anything(),
