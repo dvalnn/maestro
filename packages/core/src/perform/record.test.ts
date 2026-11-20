@@ -751,7 +751,7 @@ test("a resume counts the time its hosts take to give their facts against its ti
 	let slow = false;
 	const { options } = await factsFixture({
 		environment: async () => {
-			if (slow) Bun.sleepSync(150);
+			if (slow) await Bun.sleep(150);
 			return { place: "/checkout" };
 		},
 		code: async () => () => ({ text: "hello" }),
